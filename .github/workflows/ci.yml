@@ -2,9 +2,22 @@ name: CI
 
 on:
   pull_request:
+  merge_group:
+    types:
+      - checks_requested
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      release_pr_base_sha:
+        description: Base SHA supplied by the trusted Release PR workflow.
+        required: false
+        type: string
+      release_pr_head_sha:
+        description: Head SHA supplied by the trusted Release PR workflow.
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -21,6 +34,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Setup Node
@@ -35,6 +49,25 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      # A merge group contains no single PR. Every member already passed this PR-specific gate;
+      # the remaining jobs still rebuild and test the combined merge-group commit.
+      - name: Verify pull request release intent
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RELEASE_INTENT_MODE: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'changeset-release/main' && 'release-plan' || 'changesets' }}
+        run: node scripts/release-packages-intent.mjs "$RELEASE_INTENT_MODE" "$BASE_SHA" "$HEAD_SHA"
+
+      - name: Verify dispatched release pull request intent
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          BASE_SHA: ${{ inputs.release_pr_base_sha }}
+          HEAD_SHA: ${{ inputs.release_pr_head_sha }}
+        run: |
+          test "$GITHUB_REF" = "refs/heads/changeset-release/main"
+          node scripts/release-packages-intent.mjs release-plan "$BASE_SHA" "$HEAD_SHA" --require-head
 
       - name: Build
         run: pnpm build
@@ -141,3 +174,23 @@ jobs:
 
       - name: Audit and smoke packed packages
         run: pnpm run smoke:capture-public
+
+  required:
+    name: Required
+    if: always()
+    needs:
+      - verify
+      - capture-smoke
+      - capture-public-tarball
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI gate
+        env:
+          CAPTURE_PUBLIC_TARBALL_RESULT: ${{ needs.capture-public-tarball.result }}
+          CAPTURE_SMOKE_RESULT: ${{ needs.capture-smoke.result }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+        run: |
+          test "$VERIFY_RESULT" = "success"
+          test "$CAPTURE_SMOKE_RESULT" = "success"
+          test "$CAPTURE_PUBLIC_TARBALL_RESULT" = "success"

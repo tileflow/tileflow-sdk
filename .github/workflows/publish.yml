@@ -3,7 +3,7 @@ name: Publish
 on:
   push:
     tags:
-      - v*
+      - release-*
 
 concurrency:
   group: npm-publish
@@ -18,7 +18,7 @@ jobs:
       contents: read
       id-token: write
     env:
-      NPM_TAG: ${{ contains(github.ref_name, 'alpha') && 'alpha' || 'latest' }}
+      NPM_TAG: alpha
       NPM_CONFIG_PROVENANCE: 'true'
     steps:
       - name: Checkout
@@ -42,10 +42,17 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Validate release tag and package versions
+      - name: Validate release batch and package versions
+        shell: bash
         run: |
-          node scripts/validate-release.mjs "$GITHUB_REF_NAME"
+          set -euo pipefail
+
+          node scripts/validate-release.mjs "$GITHUB_REF_NAME" --require-packages
           test "$GITHUB_SHA" = "$(git rev-parse origin/main)"
+          release_plan_change="$(
+            git diff --name-only "$GITHUB_SHA^1" "$GITHUB_SHA" -- .changeset/release-plan.json
+          )"
+          test "$release_plan_change" = ".changeset/release-plan.json"
 
       - name: Build packages
         run: pnpm build
@@ -78,7 +85,7 @@ jobs:
             filename="$(
               cd "$package_dir"
               pnpm pack --pack-destination "$pack_dir" --json \
-                | node -e "let data = ''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => console.log(JSON.parse(data).filename));"
+                | node -e "let data = ''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => { const parsed = JSON.parse(data); const results = Array.isArray(parsed) ? parsed : [parsed]; if (results.length !== 1 || typeof results[0]?.filename !== 'string') throw new Error('Unexpected pnpm pack JSON.'); console.log(results[0].filename); });"
             )"
 
             if [[ "$filename" = /* ]]
@@ -88,6 +95,12 @@ jobs:
               echo "$pack_dir/$filename" >> "$pack_dir/tarballs.txt"
             fi
           done
+
+          node scripts/select-release-tarballs.mjs \
+            .changeset/release-plan.json \
+            "$pack_dir/tarballs.txt" \
+            "$pack_dir/selected-tarballs.txt" \
+            "$pack_dir/registry-dependencies.txt"
 
       - name: Provision pinned capture browser dependencies
         run: pnpm --filter @tileflow/capture exec playwright install-deps chromium
@@ -114,6 +127,24 @@ jobs:
           published_dir="$RUNNER_TEMP/tileflow-packs/registry"
           mkdir -p "$published_dir"
 
+          while IFS=$'\t' read -r dependency_name dependency_version
+          do
+            [[ -n "$dependency_name" ]] || continue
+            if dependency_output="$(npm view "$dependency_name@$dependency_version" version --prefer-online 2>&1)"
+            then
+              if [[ "$dependency_output" != "$dependency_version" ]]
+              then
+                echo "$dependency_name@$dependency_version returned unexpected registry version $dependency_output."
+                exit 1
+              fi
+              continue
+            fi
+
+            echo "$dependency_output"
+            echo "Release packages require $dependency_name@$dependency_version, but that exact version is not available from npm."
+            exit 1
+          done < "$RUNNER_TEMP/tileflow-packs/registry-dependencies.txt"
+
           while IFS= read -r tarball
           do
             package_json="$(tar -xOf "$tarball" package/package.json)"
@@ -135,6 +166,12 @@ jobs:
 
             if view_output="$(npm view "$package_name@$package_version" version --prefer-online 2>&1)"
             then
+              if [[ "$view_output" != "$package_version" ]]
+              then
+                echo "$package_name@$package_version returned unexpected registry version $view_output."
+                exit 1
+              fi
+
               published_tarball="$(
                 npx npm@11.19.0 pack "$package_name@$package_version" \
                   --pack-destination "$published_dir" \
@@ -166,17 +203,18 @@ jobs:
             fi
 
             echo "$tarball" >> "$RUNNER_TEMP/tileflow-packs/publish.txt"
-          done < "$RUNNER_TEMP/tileflow-packs/tarballs.txt"
+          done < "$RUNNER_TEMP/tileflow-packs/selected-tarballs.txt"
 
+          selected_count="$(wc -l < "$RUNNER_TEMP/tileflow-packs/selected-tarballs.txt" | tr -d ' ')"
           publish_count="$(wc -l < "$RUNNER_TEMP/tileflow-packs/publish.txt" | tr -d ' ')"
           published_count="$(wc -l < "$RUNNER_TEMP/tileflow-packs/published.txt" | tr -d ' ')"
-          if [[ "$((publish_count + published_count))" != "11" ]]
+          if [[ "$((publish_count + published_count))" != "$selected_count" ]]
           then
-            echo "Expected 11 validated package versions, found $((publish_count + published_count))."
+            echo "Expected $selected_count validated release packages, found $((publish_count + published_count))."
             exit 1
           fi
 
-          echo "Registry preflight passed: $publish_count new, $published_count identical."
+          echo "Registry preflight passed for $selected_count release packages: $publish_count new, $published_count identical."
 
       - name: Publish packages
         shell: bash

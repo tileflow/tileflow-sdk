@@ -55,10 +55,20 @@ try {
   for (const name of expectedNames) {
     assert.ok(tarballs.has(name), `Packed smoke is missing ${name}.`);
   }
+  const packedVersions = new Map(
+    await Promise.all(
+      expectedNames.map(async (name) => {
+        const manifest = JSON.parse(
+          await readTarballFile(tarballs.get(name), 'package/package.json'),
+        );
+        return [name, manifest.version];
+      }),
+    ),
+  );
 
   const audit = [];
   for (const name of expectedNames) {
-    audit.push(await auditPublicTarball(name, tarballs.get(name)));
+    audit.push(await auditPublicTarball(name, tarballs.get(name), packedVersions));
   }
 
   await writeFile(
@@ -381,7 +391,7 @@ async function discoverTarballs(directory) {
   return tarballs;
 }
 
-async function auditPublicTarball(packageName, tarball) {
+async function auditPublicTarball(packageName, tarball, packedVersions) {
   assert.ok(tarball, `Missing tarball for ${packageName}.`);
   const listing = await run('tar', ['-tzf', tarball], {label: `list ${packageName} tarball`});
   const entries = listing.stdout.trim().split('\n').filter(Boolean);
@@ -423,8 +433,8 @@ async function auditPublicTarball(packageName, tarball) {
       if (publicPackageNameSet.has(dependency)) {
         assert.equal(
           range,
-          manifest.version,
-          `${packageName} must pack ${dependency} at ${manifest.version}.`,
+          packedVersions.get(dependency),
+          `${packageName} must pack ${dependency} at its current workspace version.`,
         );
       }
     }

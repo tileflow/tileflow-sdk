@@ -276,6 +276,10 @@ async function createHistoryFixture({
   if (mergeCommit) {
     await runGit(root, ['switch', baseBranch]);
     await runGit(root, [
+      '-c',
+      'user.name=Tileflow release test',
+      '-c',
+      'user.email=release-test@tileflow.invalid',
       'merge',
       '--no-ff',
       'release',

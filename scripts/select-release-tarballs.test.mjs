@@ -54,6 +54,47 @@ test('rejects a selected package that points at the wrong batch dependency versi
   }
 });
 
+test('rejects a selected dependency that would publish after its consumer', async () => {
+  const fixture = await createTarballFixture({
+    '@tileflow/core': {
+      version: '0.1.0-alpha.17',
+      dependencies: {'@tileflow/static': '0.1.0-alpha.17'},
+    },
+    '@tileflow/static': {version: '0.1.0-alpha.17'},
+  });
+  try {
+    await writePlan(fixture, [release('@tileflow/core'), release('@tileflow/static')]);
+    await assert.rejects(runSelector(fixture), (error) => {
+      assert.match(
+        `${error.stderr ?? ''}${error.stdout ?? ''}`,
+        /@tileflow\/static must be published before its selected dependent @tileflow\/core/u,
+      );
+      return true;
+    });
+  } finally {
+    await rm(fixture.root, {force: true, recursive: true});
+  }
+});
+
+test('does not impose publication order for development-only dependencies', async () => {
+  const fixture = await createTarballFixture({
+    '@tileflow/capture': {devDependencies: {'@tileflow/react': '0.1.0-alpha.16'}},
+    '@tileflow/react': {version: '0.1.0-alpha.17'},
+  });
+  try {
+    await writePlan(fixture, [release('@tileflow/capture'), release('@tileflow/react')]);
+    await runSelector(fixture);
+    assert.deepEqual(
+      nonEmptyLines(await readFile(fixture.selectedPath, 'utf8')).map(
+        (path) => path.match(/tileflow-(capture|react)-/u)?.[1],
+      ),
+      ['capture', 'react'],
+    );
+  } finally {
+    await rm(fixture.root, {force: true, recursive: true});
+  }
+});
+
 test('rejects missing and duplicate public tarballs', async () => {
   const fixture = await createTarballFixture();
   try {

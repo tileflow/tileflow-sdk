@@ -55,6 +55,7 @@ assert.deepEqual(
 );
 
 const releasesByName = new Map(plan.packages.map((release) => [release.name, release]));
+const selectedOrder = new Map(selectedNames.map((name, index) => [name, index]));
 const selected = [];
 const registryDependencies = new Map();
 
@@ -65,12 +66,9 @@ for (const release of plan.packages) {
   assert.equal(packed.manifest.version, release.to, `${release.name} tarball version mismatch.`);
   selected.push(packed.tarball);
 
-  for (const dependencyGroup of [
-    'dependencies',
-    'devDependencies',
-    'optionalDependencies',
-    'peerDependencies',
-  ]) {
+  // Development dependencies are not installed from the published artifact and therefore do not
+  // constrain registry availability or publication order.
+  for (const dependencyGroup of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
     for (const [dependency, range] of Object.entries(packed.manifest[dependencyGroup] ?? {})) {
       if (!publicPackageNameSet.has(dependency)) continue;
 
@@ -80,6 +78,10 @@ for (const release of plan.packages) {
       );
       const dependencyRelease = releasesByName.get(dependency);
       if (dependencyRelease) {
+        assert.ok(
+          selectedOrder.get(dependency) < selectedOrder.get(release.name),
+          `${dependency} must be published before its selected dependent ${release.name}.`,
+        );
         assert.equal(
           range,
           dependencyRelease.to,

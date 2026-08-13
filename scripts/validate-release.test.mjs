@@ -6,7 +6,11 @@ import {join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
-import {packageDirectories, publicPackageNames} from './release-packages.mjs';
+import {
+  createUpdatedChangelog,
+  packageDirectories,
+  publicPackageNames,
+} from './release-packages.mjs';
 
 const execFileAsync = promisify(execFile);
 const scriptPath = fileURLToPath(new URL('validate-release.mjs', import.meta.url));
@@ -16,24 +20,20 @@ test('accepts a non-empty independent release batch', async () => {
   try {
     await writeManifest(root, 0, {version: '0.1.0-alpha.17'});
     await writePlan(root, [release('@tileflow/core')]);
-    const {stdout} = await runValidator(root, ['release-20260813.1', '--require-packages']);
-    assert.match(stdout, /Validated release-20260813\.1 for 1 independent package/u);
+    const {stdout} = await runValidator(root, ['--require-packages']);
+    assert.match(stdout, /Validated release plan for 1 independent package/u);
   } finally {
     await rm(root, {force: true, recursive: true});
   }
 });
 
-test('rejects old version tags, invalid dates, and empty required batches', async () => {
+test('rejects tag arguments, incomplete history options, and empty required batches', async () => {
   const root = await createReleaseFixture();
   try {
     await writePlan(root, []);
-    await rejectsValidator(root, ['v0.1.0-alpha.17'], /Expected a release-YYYYMMDD\.N batch tag/u);
-    await rejectsValidator(root, ['release-20260230.1'], /contains an invalid calendar date/u);
-    await rejectsValidator(
-      root,
-      ['release-20260813.1', '--require-packages'],
-      /Release plan is empty/u,
-    );
+    await rejectsValidator(root, ['release-20260813.1'], /Unknown release validation argument/u);
+    await rejectsValidator(root, ['--base', 'a'.repeat(40)], /must be provided together/u);
+    await rejectsValidator(root, ['--require-packages'], /Release plan is empty/u);
   } finally {
     await rm(root, {force: true, recursive: true});
   }
@@ -45,7 +45,7 @@ test('rejects skipped alpha versions and selected manifest drift', async () => {
     await writePlan(root, [release('@tileflow/core', {to: '0.1.0-alpha.18'})]);
     await rejectsValidator(
       root,
-      ['release-20260813.2', '--require-packages'],
+      ['--require-packages'],
       /must use the next independent alpha version/u,
     );
 
@@ -53,7 +53,7 @@ test('rejects skipped alpha versions and selected manifest drift', async () => {
     await writePlan(root, [release('@tileflow/core')]);
     await rejectsValidator(
       root,
-      ['release-20260813.2', '--require-packages'],
+      ['--require-packages'],
       /manifest does not match the release plan/u,
     );
   } finally {
@@ -65,18 +65,10 @@ test('rejects duplicate and dependency-unsafe release entries', async () => {
   const root = await createReleaseFixture();
   try {
     await writePlan(root, [release('@tileflow/core'), release('@tileflow/core')]);
-    await rejectsValidator(
-      root,
-      ['release-20260813.3', '--require-packages'],
-      /Release plan packages must be unique/u,
-    );
+    await rejectsValidator(root, ['--require-packages'], /Release plan packages must be unique/u);
 
     await writePlan(root, [release('@tileflow/dev'), release('@tileflow/core')]);
-    await rejectsValidator(
-      root,
-      ['release-20260813.3', '--require-packages'],
-      /dependency-safe repository order/u,
-    );
+    await rejectsValidator(root, ['--require-packages'], /dependency-safe repository order/u);
   } finally {
     await rm(root, {force: true, recursive: true});
   }
@@ -87,10 +79,141 @@ test('rejects a populated plan with no changeset audit trail', async () => {
   try {
     await writeManifest(root, 0, {version: '0.1.0-alpha.17'});
     await writePlan(root, [release('@tileflow/core')], []);
+    await rejectsValidator(root, ['--require-packages'], /must retain its changeset names/u);
+  } finally {
+    await rm(root, {force: true, recursive: true});
+  }
+});
+
+test('binds an automatic publish to the reviewed base, exact head, and consumed changesets', async () => {
+  const {base, head, root} = await createHistoryFixture();
+  try {
+    const {stdout} = await runValidator(root, [
+      '--base',
+      base,
+      '--head',
+      head,
+      '--require-packages',
+    ]);
+    assert.match(stdout, /Validated release plan for 1 independent package/u);
+
     await rejectsValidator(
       root,
-      ['release-20260813.4', '--require-packages'],
-      /must retain its changeset names/u,
+      ['--base', base, '--head', base, '--require-packages'],
+      /release head must match the checkout HEAD/u,
+    );
+  } finally {
+    await rm(root, {force: true, recursive: true});
+  }
+});
+
+test('accepts squash, rebase-shaped, and merge-commit release histories', async (t) => {
+  for (const fixtureOptions of [
+    {label: 'squash'},
+    {label: 'rebase-shaped multi-commit', trailingCommit: true},
+    {label: 'merge commit', mergeCommit: true},
+  ]) {
+    await t.test(fixtureOptions.label, async () => {
+      const {base, head, root} = await createHistoryFixture(fixtureOptions);
+      try {
+        await runValidator(root, ['--base', base, '--head', head, '--require-packages']);
+      } finally {
+        await rm(root, {force: true, recursive: true});
+      }
+    });
+  }
+});
+
+test('rejects an unchanged stale plan and a changeset that was not consumed', async () => {
+  const stale = await createHistoryFixture();
+  try {
+    const staleBase = stale.head;
+    await writeFile(join(stale.root, 'README.md'), '# Unrelated change\n');
+    const staleHead = await commitFixture(stale.root, 'unrelated change after release');
+    await rejectsValidator(
+      stale.root,
+      ['--base', staleBase, '--head', staleHead, '--require-packages'],
+      /must change \.changeset\/release-plan\.json/u,
+    );
+  } finally {
+    await rm(stale.root, {force: true, recursive: true});
+  }
+
+  const unconsumed = await createHistoryFixture({keepChangeset: true});
+  try {
+    await rejectsValidator(
+      unconsumed.root,
+      ['--base', unconsumed.base, '--head', unconsumed.head, '--require-packages'],
+      /must consume every pending changeset and add none/u,
+    );
+  } finally {
+    await rm(unconsumed.root, {force: true, recursive: true});
+  }
+});
+
+test('rejects a new changeset or source change added by the Release PR', async () => {
+  for (const fixtureOptions of [{newHeadChangeset: true}, {hitchhikeSource: true}]) {
+    const {base, head, root} = await createHistoryFixture(fixtureOptions);
+    try {
+      await rejectsValidator(
+        root,
+        ['--base', base, '--head', head, '--require-packages'],
+        fixtureOptions.newHeadChangeset
+          ? /must consume every pending changeset and add none/u
+          : /may contain only deterministic version, changelog, plan, and changeset outputs/u,
+      );
+    } finally {
+      await rm(root, {force: true, recursive: true});
+    }
+  }
+});
+
+test('rejects a release plan whose previous version differs from the reviewed base', async () => {
+  const {base, head, root} = await createHistoryFixture({
+    releaseOverride: {from: '0.1.0-alpha.15', to: '0.1.0-alpha.16'},
+  });
+  try {
+    await rejectsValidator(
+      root,
+      ['--base', base, '--head', head, '--require-packages'],
+      /does not exactly match the reviewed changesets and base versions/u,
+    );
+  } finally {
+    await rm(root, {force: true, recursive: true});
+  }
+});
+
+test('rejects a base commit that is not an ancestor of the release head', async () => {
+  const {base, head, root} = await createHistoryFixture();
+  try {
+    const tree = await runGit(root, ['rev-parse', `${base}^{tree}`]);
+    const unrelatedBase = await runGit(root, [
+      '-c',
+      'user.name=Tileflow release test',
+      '-c',
+      'user.email=release-test@tileflow.invalid',
+      'commit-tree',
+      tree,
+      '-m',
+      'unrelated base',
+    ]);
+    await rejectsValidator(
+      root,
+      ['--base', unrelatedBase, '--head', head, '--require-packages'],
+      /merge-base --is-ancestor/u,
+    );
+  } finally {
+    await rm(root, {force: true, recursive: true});
+  }
+});
+
+test('rejects version drift in an unselected package', async () => {
+  const {base, head, root} = await createHistoryFixture({unselectedDrift: true});
+  try {
+    await rejectsValidator(
+      root,
+      ['--base', base, '--head', head, '--require-packages'],
+      /@tileflow\/static changed version without being selected/u,
     );
   } finally {
     await rm(root, {force: true, recursive: true});
@@ -104,6 +227,64 @@ async function createReleaseFixture() {
     await writeManifest(root, index);
   }
   return root;
+}
+
+async function createHistoryFixture({
+  hitchhikeSource = false,
+  keepChangeset = false,
+  mergeCommit = false,
+  newHeadChangeset = false,
+  releaseOverride = {},
+  trailingCommit = false,
+  unselectedDrift = false,
+} = {}) {
+  const root = await createReleaseFixture();
+  await writeFile(
+    join(root, '.changeset', 'release.md'),
+    '---\n"@tileflow/core": patch\n---\n\nRelease this package independently.\n',
+  );
+  await runGit(root, ['init']);
+  const base = await commitFixture(root, 'base with reviewed changeset');
+  const baseBranch = await runGit(root, ['branch', '--show-current']);
+  if (mergeCommit) await runGit(root, ['switch', '-c', 'release']);
+
+  const selectedRelease = release('@tileflow/core', releaseOverride);
+  await writeManifest(root, 0, {version: selectedRelease.to});
+  if (unselectedDrift) await writeManifest(root, 1, {version: '0.1.0-alpha.17'});
+  await writePlan(root, [selectedRelease]);
+  if (!keepChangeset) await rm(join(root, '.changeset', 'release.md'));
+  if (newHeadChangeset) {
+    await writeFile(
+      join(root, '.changeset', 'unexpected.md'),
+      '---\n"@tileflow/core": patch\n---\n\nUnexpected follow-up.\n',
+    );
+  }
+  if (hitchhikeSource) {
+    await mkdir(join(root, 'packages', 'core', 'src'), {recursive: true});
+    await writeFile(join(root, 'packages', 'core', 'src', 'unexpected.ts'), 'export {};\n');
+  }
+  const baseChangelog = `# ${selectedRelease.name}\n`;
+  const changelogPath = join(root, 'packages', 'core', 'CHANGELOG.md');
+  if (!trailingCommit) {
+    await writeFile(changelogPath, createUpdatedChangelog(baseChangelog, selectedRelease));
+  }
+  let head = await commitFixture(root, 'version reviewed packages');
+  if (trailingCommit) {
+    await writeFile(changelogPath, createUpdatedChangelog(baseChangelog, selectedRelease));
+    head = await commitFixture(root, 'write generated changelog');
+  }
+  if (mergeCommit) {
+    await runGit(root, ['switch', baseBranch]);
+    await runGit(root, [
+      'merge',
+      '--no-ff',
+      'release',
+      '-m',
+      'merge official release pull request',
+    ]);
+    head = await runGit(root, ['rev-parse', 'HEAD']);
+  }
+  return {base, head, root};
 }
 
 async function writeManifest(root, index, overrides = {}) {
@@ -154,4 +335,23 @@ async function rejectsValidator(root, args, pattern) {
     assert.match(`${error.stderr ?? ''}${error.stdout ?? ''}`, pattern);
     return true;
   });
+}
+
+async function runGit(root, args) {
+  const {stdout} = await execFileAsync('git', args, {cwd: root});
+  return stdout.trim();
+}
+
+async function commitFixture(root, message) {
+  await runGit(root, ['add', '.']);
+  await runGit(root, [
+    '-c',
+    'user.name=Tileflow release test',
+    '-c',
+    'user.email=release-test@tileflow.invalid',
+    'commit',
+    '-m',
+    message,
+  ]);
+  return runGit(root, ['rev-parse', 'HEAD']);
 }

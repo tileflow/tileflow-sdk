@@ -1,16 +1,121 @@
 name: Publish
+run-name: Publish ${{ github.event.workflow_run.head_sha }}
 
 on:
-  push:
-    tags:
-      - release-*
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - main
 
-concurrency:
-  group: npm-publish
-  cancel-in-progress: false
+permissions:
+  contents: read
 
 jobs:
+  eligibility:
+    name: Release eligibility
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.head_repository.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      base_sha: ${{ steps.release.outputs.base_sha }}
+      eligible: ${{ steps.release.outputs.eligible }}
+      release_sha: ${{ steps.release.outputs.release_sha }}
+    env:
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Checkout tested main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Resolve associated pull request
+        id: pull-request
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          RELEASE_SHA: ${{ env.RELEASE_SHA }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const {
+              assertTrustedMainCiRun,
+              classifyAssociatedPullRequests,
+            } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release-workflow.mjs`);
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+            const releaseSha = assertTrustedMainCiRun(context.payload.workflow_run, repository);
+            if (releaseSha !== process.env.RELEASE_SHA) {
+              throw new Error(`Workflow release SHA mismatch: ${releaseSha} != ${process.env.RELEASE_SHA}.`);
+            }
+
+            const pullRequests = await github.paginate(
+              github.rest.repos.listPullRequestsAssociatedWithCommit,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                commit_sha: releaseSha,
+                per_page: 100,
+              },
+            );
+            const release = classifyAssociatedPullRequests(pullRequests, repository, releaseSha);
+            core.setOutput('base_sha', release.baseSha ?? '');
+            core.setOutput('pull_number', release.pullNumber?.toString() ?? '');
+            core.setOutput('trusted_release', release.trustedRelease ? 'true' : 'false');
+
+      - name: Classify release plan change
+        id: release
+        shell: bash
+        env:
+          ASSOCIATED_BASE_SHA: ${{ steps.pull-request.outputs.base_sha }}
+          PULL_NUMBER: ${{ steps.pull-request.outputs.pull_number }}
+          TRUSTED_RELEASE: ${{ steps.pull-request.outputs.trusted_release }}
+        run: |
+          set -euo pipefail
+
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          first_parent="$(git rev-parse "$RELEASE_SHA^1")"
+          base_sha="${ASSOCIATED_BASE_SHA:-$first_parent}"
+          git merge-base --is-ancestor "$base_sha" "$RELEASE_SHA"
+
+          if git diff --quiet "$base_sha" "$RELEASE_SHA" -- .changeset/release-plan.json
+          then
+            plan_changed=false
+          else
+            plan_changed=true
+          fi
+
+          if [[ "$TRUSTED_RELEASE" = true && "$plan_changed" != true ]]
+          then
+            echo "Official Release PR #$PULL_NUMBER did not change the release plan."
+            exit 1
+          fi
+          if [[ "$TRUSTED_RELEASE" != true && "$plan_changed" = true ]]
+          then
+            echo "Only changeset-release/main may change the release plan on main."
+            exit 1
+          fi
+
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+          echo "eligible=$TRUSTED_RELEASE" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+
   publish:
+    name: Publish selected packages
+    needs: eligibility
+    if: needs.eligibility.outputs.eligible == 'true'
+    concurrency:
+      group: npm-publish
+      queue: max
     environment: npm-publish
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -18,14 +123,17 @@ jobs:
       contents: read
       id-token: write
     env:
+      BASE_SHA: ${{ needs.eligibility.outputs.base_sha }}
       NPM_TAG: alpha
       NPM_CONFIG_PROVENANCE: 'true'
+      RELEASE_SHA: ${{ needs.eligibility.outputs.release_sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ env.RELEASE_SHA }}
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -42,17 +150,19 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Validate release batch and package versions
+      - name: Validate automatic release and package versions
         shell: bash
         run: |
           set -euo pipefail
 
-          node scripts/validate-release.mjs "$GITHUB_REF_NAME" --require-packages
-          test "$GITHUB_SHA" = "$(git rev-parse origin/main)"
-          release_plan_change="$(
-            git diff --name-only "$GITHUB_SHA^1" "$GITHUB_SHA" -- .changeset/release-plan.json
-          )"
-          test "$release_plan_change" = ".changeset/release-plan.json"
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
+          node scripts/release-packages-intent.mjs \
+            release-plan "$BASE_SHA" "$RELEASE_SHA" --require-head
+          node scripts/validate-release.mjs \
+            --base "$BASE_SHA" \
+            --head "$RELEASE_SHA" \
+            --require-packages
 
       - name: Build packages
         run: pnpm build
@@ -150,6 +260,9 @@ jobs:
             package_json="$(tar -xOf "$tarball" package/package.json)"
             package_name="$(PACKAGE_JSON="$package_json" node -e "const packageJson = JSON.parse(process.env.PACKAGE_JSON); console.log(packageJson.name);")"
             package_version="$(PACKAGE_JSON="$package_json" node -e "const packageJson = JSON.parse(process.env.PACKAGE_JSON); console.log(packageJson.version);")"
+            previous_version="$(
+              PACKAGE_NAME="$package_name" node -e "const plan = require('./.changeset/release-plan.json'); const release = plan.packages.find(({name}) => name === process.env.PACKAGE_NAME); if (!release) throw new Error('Selected package is missing from the release plan.'); console.log(release.from);"
+            )"
 
             if current_tag="$(npm view "$package_name" "dist-tags.$NPM_TAG" --prefer-online 2>&1)"
             then
@@ -199,6 +312,25 @@ jobs:
             then
               echo "$view_output"
               echo "Unable to determine registry state for $package_name@$package_version."
+              exit 1
+            fi
+
+            if [[ "$current_tag" != "$previous_version" ]]
+            then
+              echo "$package_name must advance from $previous_version, but the $NPM_TAG dist-tag currently points to ${current_tag:-<missing>}."
+              echo "A prior release may still be pending or this release may be stale; investigate before retrying."
+              exit 1
+            fi
+            if previous_output="$(npm view "$package_name@$previous_version" version --prefer-online 2>&1)"
+            then
+              if [[ "$previous_output" != "$previous_version" ]]
+              then
+                echo "$package_name@$previous_version returned unexpected registry version $previous_output."
+                exit 1
+              fi
+            else
+              echo "$previous_output"
+              echo "$package_name cannot advance to $package_version because $previous_version is not available from npm."
               exit 1
             fi
 

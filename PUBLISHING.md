@@ -3,7 +3,8 @@
 This repository is the only source of public Tileflow SDK releases. Each package has its own
 version and is published only when its reviewed changeset selects it. A release batch may contain
 one package or several packages at different versions; unchanged packages are not versioned merely
-to keep the workspace aligned.
+to keep the workspace aligned. The Release PR merge SHA is the immutable identity of that batch;
+there is no release tag.
 
 Hosted platform, API, dashboard, database, and renderer workspaces are never published from this
 repository.
@@ -69,8 +70,8 @@ installed from the public registry after the batch completes.
 API, style, icon-package, deploy, or rendering contracts with the private Tileflow platform. A
 change to one of those contracts requires the cross-repository gate before publication:
 
-1. Push the SDK candidate branch and record its full commit SHA. Do not use a moving branch name as
-   release evidence.
+1. Record the exact current head SHA of the generated Release PR. Do not use its moving branch name
+   as release evidence.
 2. In the private platform repository, manually dispatch the `SDK Candidate` workflow with that
    commit SHA as its `sdk_ref` input.
 3. The workflow checks out the SDK candidate separately, builds and packs it with pnpm, and
@@ -80,8 +81,9 @@ change to one of those contracts requires the cross-repository gate before publi
 4. Require the workflow's platform boundary, affected API/database/web/renderer, Atocha consumer,
    `pnpm check`, and `pnpm build` gates to pass. Run the hosted canary sequence when wire, deploy,
    icon, style, session, or Static Maps behavior changed.
-5. Deploy compatible platform behavior before or together with the SDK batch and obtain the
-   release owner's rollout approval.
+5. If the Release PR head changes, repeat the gate against the new SHA. Deploy compatible platform
+   behavior and obtain the release owner's rollout approval before merging the Release PR, because
+   publication begins automatically after its `main` CI succeeds.
 
 If GitHub Actions is unavailable, a release owner may reproduce the same isolation locally in a
 disposable sandbox with candidate tarballs and temporary exact overrides. That is a recovery path,
@@ -103,10 +105,9 @@ Every npm package must authorize GitHub Actions Trusted Publishing from:
 - environment: `npm-publish`
 - allowed action: `npm publish`
 
-The GitHub `npm-publish` environment must allow deployment from protected tag pattern
-`release-*`. Replace the historical `v*` deployment policy before creating the first batch tag.
-Keep required reviewers empty if releases are intended to run without a manual environment
-approval.
+The GitHub `npm-publish` environment must allow deployment from the protected `main` branch only.
+Keep required reviewers empty because merging the Release PR is the explicit human approval; an
+additional environment approval would make the documented automatic flow wait for a second click.
 
 The workflow requests `id-token: write`, unsets `NODE_AUTH_TOKEN`, and publishes with npm
 provenance. Do not add a long-lived npm automation token. The equivalent one-time npm CLI setup for
@@ -130,8 +131,8 @@ installation examples.
 
 ## Validate a release candidate
 
-After the release pull request has produced a non-empty release plan, run the repository gates from
-this checkout:
+After the Release PR has produced a non-empty release plan, run the repository gates from that
+checkout:
 
 ```sh
 pnpm install --frozen-lockfile
@@ -139,90 +140,73 @@ pnpm build
 pnpm check
 pnpm run smoke:capture-public
 pnpm run publish:alpha:dry-run
-node --test \
-  scripts/release-packages.test.mjs \
-  scripts/validate-release.test.mjs \
-  scripts/select-release-tarballs.test.mjs
-node scripts/validate-release.mjs release-20260813.1 --require-packages
+pnpm run test:release
+git fetch --no-tags origin main
+base_sha="$(git merge-base origin/main HEAD)"
+head_sha="$(git rev-parse HEAD)"
+node scripts/validate-release.mjs \
+  --base "$base_sha" \
+  --head "$head_sha" \
+  --require-packages
 ```
 
-Use a syntactically valid placeholder batch tag for the local validator; the real tag is created
-only after the release pull request is merged. Inspect the packed output for every package, even
-though only release-plan packages will be published. Confirm that tarballs contain intended public
-files, correct repository metadata, no credentials or machine paths, and exact internal package
-versions.
+Inspect the packed output for every package, even though only release-plan packages will be
+published. Confirm that tarballs contain intended public files, correct repository metadata, no
+credentials or machine paths, and exact internal package versions.
 
 Complete the cross-repository compatibility gate when the candidate changes a shared contract.
-Then merge the release pull request and wait for the full `main` CI matrix to pass. That merge or
-squash commit is the only commit eligible for the batch tag: it must introduce or change
-`.changeset/release-plan.json` relative to its first parent. This one-commit eligibility prevents a
-later documentation or tooling commit from reusing a stale release plan.
+When its `Required` check is green and the package list, versions, summaries, changelogs, and private
+compatibility evidence are correct, mark the Release PR ready and merge it. That merge is the final,
+irreversible publication approval. No release branch naming convention is required for normal
+development branches, and no release tag is created manually.
 
-## Create a release batch
-
-A release is triggered by one lightweight tag with this exact shape:
-
-```text
-release-YYYYMMDD.N
-```
-
-The date is UTC, `N` starts at `1` each day and has no leading zero, and every batch tag is unique.
-The tag must point directly at the release pull request's merge or squash commit. It identifies the
-release event, not a shared package version. For example, one
-`release-20260813.2` batch could publish `@tileflow/core@0.1.0-alpha.17` and
-`@tileflow/react@0.1.0-alpha.19` while leaving every other package unchanged.
-
-From an up-to-date checkout immediately after the release pull request has merged, with `HEAD` still
-at that merge or squash commit:
-
-```sh
-git switch main
-git pull --ff-only
-git tag --list 'release-*' --sort=-version:refname
-test "$(git diff --name-only HEAD^1 HEAD -- .changeset/release-plan.json)" = \
-  '.changeset/release-plan.json'
-node scripts/validate-release.mjs release-20260813.1 --require-packages
-git tag release-20260813.1
-git push origin release-20260813.1
-```
-
-Choose the actual UTC date and next unused daily sequence. The workflow rejects an empty plan, an
-invalid calendar tag, a tag whose commit is not the current `origin/main` commit, and a commit that
-did not change the release plan relative to its first parent. Never move or reuse a release tag. If
-another commit reaches `main` before the tag is created, do not tag that later commit; create a new
-release pull request so a fresh reviewed plan becomes eligible.
+Closing the Release PR without merging does not publish. Neither does merging a normal source PR,
+a fork PR, or a commit that does not introduce a newly reviewed release plan.
 
 ## Workflow behavior
 
-For every `release-*` tag, `.github/workflows/publish.yml`:
+After the official Release PR reaches `main`, `.github/workflows/publish.yml` waits for the complete
+`CI` workflow on that exact commit. Only when `CI / Required` and all of its matrix dependencies have
+succeeded does the publish workflow:
 
-1. validates the batch tag, non-empty release plan, independent alpha bumps, package metadata,
-   exact `main` commit, and one-commit release-plan eligibility;
-2. builds and verifies the whole workspace;
-3. packs and audits all eleven public packages, including the clean packed capture consumer;
-4. selects only release-plan tarballs;
-5. verifies that unselected internal dependency versions already exist on npm;
-6. preflights only selected package versions and the `alpha` dist-tag;
-7. skips a selected version only when npm already has identical tarball contents and `alpha`
+1. verifies that the tested commit belongs to this repository, is on `main`, and is associated with
+   exactly one merged same-repository PR from `changeset-release/main`;
+2. reconstructs the release plan from the Release PR base manifests and reviewed changesets, then
+   rejects stale plans, unconsumed changesets, or version drift in unselected packages;
+3. builds and verifies the whole workspace;
+4. packs and audits all eleven public packages, including the clean packed capture consumer;
+5. selects only release-plan tarballs in dependency-safe order;
+6. verifies that unselected internal dependency versions already exist on npm;
+7. preflights only selected package versions and requires each package's current `alpha` version to
+   equal the reviewed previous version, preventing out-of-order releases;
+8. skips a selected version only when npm already has identical tarball contents and `alpha`
    already points to it; and
-8. publishes only missing selected tarballs through Trusted Publishing with provenance.
+9. publishes only missing selected tarballs through Trusted Publishing with provenance.
 
 npm versions are immutable. The workflow never overwrites a version and never silently moves
-`alpha` backwards.
+`alpha` backwards. Ordinary green `main` builds are classified and skipped without requesting an
+npm OIDC token.
 
 ## Retry and recovery
 
-The workflow is safe to rerun for the same tag after a network error or partial batch. Packages
-already published by that attempt are byte-compared with the candidate and skipped; missing
-packages continue through publication. Rerun the existing GitHub Actions run for the same tag—do
-not create a replacement tag or bump versions merely to retry infrastructure.
+The workflow is safe to rerun for the same Release PR merge commit after a network error or partial
+batch. Packages already published by that attempt are byte-compared with the candidate and skipped;
+missing packages continue through publication. Rerun the existing GitHub Actions `Publish` run for
+that exact commit; do not remerge, manufacture a tag, or bump versions merely to retry
+infrastructure.
+
+If `Publish` was never created because the exact `main` CI run failed for an infrastructure reason,
+rerun that CI run first. Do not rerun or bypass CI for a real code failure. Do not merge a second
+Release PR until the earlier `Publish` run finishes: publication runs are serialized, but their CI
+runs may complete in a different order and the monotonic-version guard will safely reject an older
+release that arrives late.
 
 The retry stops if an existing version has different contents, if its `alpha` dist-tag no longer
 matches, or if an internal dependency is unavailable. Investigate instead of bypassing those
 checks. If published package behavior is defective, keep the immutable version, deprecate it when
-appropriate, add a corrective changeset, and publish a new alpha version in a new batch. Do not use
-unpublish as rollback; restore compatible platform pins or roll forward both sides of a shared
-contract.
+appropriate, add a corrective changeset, and publish a new alpha version through a new Release PR.
+Do not use unpublish as rollback; restore compatible platform pins or roll forward both sides of a
+shared contract.
 
 ## Consumer installation
 

@@ -1,6 +1,6 @@
 {
   "name": "@tileflow/cli",
-  "version": "0.1.0-alpha.14",
+  "version": "0.1.0-alpha.15",
   "description": "Command-line tools for Tileflow config, capture, visual testing, and deploy.",
   "type": "module",
   "homepage": "https://tileflow.dev",

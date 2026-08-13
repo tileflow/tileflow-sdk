@@ -17,6 +17,22 @@ const packDirectory = suppliedPackDirectory
 const consumerDirectory = join(temporaryRoot, 'consumer');
 const auditDirectory = join(temporaryRoot, 'audit');
 const npmCacheDirectory = join(temporaryRoot, 'npm-cache');
+const publicPackageNames = [
+  '@tileflow/core',
+  '@tileflow/static',
+  '@tileflow/dev',
+  '@tileflow/capture',
+  '@tileflow/vite',
+  '@tileflow/next',
+  '@tileflow/webpack',
+  '@tileflow/react',
+  '@tileflow/vue',
+  '@tileflow/svelte',
+  '@tileflow/cli',
+];
+const publicPackageNameSet = new Set(publicPackageNames);
+const expectedRepository = 'git+https://github.com/tileflow/tileflow-sdk.git';
+const expectedBugs = 'https://github.com/tileflow/tileflow-sdk/issues';
 const transparentPng = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWP4WSz2H4QZYAwAWswKBc9NlmIAAAAASUVORK5CYII=',
   'base64',
@@ -34,12 +50,14 @@ try {
     ? await discoverTarballs(packDirectory)
     : await packRequiredPackages(packDirectory);
   const requiredNames = ['@tileflow/core', '@tileflow/dev', '@tileflow/capture', '@tileflow/cli'];
-  for (const name of requiredNames) {
+  const expectedNames = publicPackageNames;
+  assert.equal(tarballs.size, expectedNames.length, 'Unexpected number of packed packages.');
+  for (const name of expectedNames) {
     assert.ok(tarballs.has(name), `Packed smoke is missing ${name}.`);
   }
 
   const audit = [];
-  for (const name of ['@tileflow/capture', '@tileflow/cli']) {
+  for (const name of expectedNames) {
     audit.push(await auditPublicTarball(name, tarballs.get(name)));
   }
 
@@ -339,7 +357,7 @@ function argumentValue(flag) {
 }
 
 async function packRequiredPackages(directory) {
-  const packages = ['core', 'dev', 'capture', 'cli'];
+  const packages = publicPackageNames.map((name) => name.replace('@tileflow/', ''));
   const tarballs = new Map();
   for (const packageDirectory of packages) {
     const result = await run(pnpmCommand(), ['pack', '--pack-destination', directory, '--json'], {
@@ -367,19 +385,49 @@ async function auditPublicTarball(packageName, tarball) {
   assert.ok(tarball, `Missing tarball for ${packageName}.`);
   const listing = await run('tar', ['-tzf', tarball], {label: `list ${packageName} tarball`});
   const entries = listing.stdout.trim().split('\n').filter(Boolean);
+  const manifest = JSON.parse(await readTarballFile(tarball, 'package/package.json'));
   const forbiddenPath =
     /(?:^|\/)(?:test|tests|fixtures?|captures?|\.tileflow|ms-playwright|chromium)(?:\/|$)|\.png$|\.receipt\.json$|\.map$/iu;
   for (const entry of entries) {
     assert.equal(forbiddenPath.test(entry), false, `Unexpected packed path: ${entry}`);
   }
-  assert.ok(entries.includes('package/dist/index.js'));
-  assert.ok(entries.includes('package/dist/index.d.ts'));
+  const entryPoints = manifestEntryPoints(manifest);
+  assert.ok(entryPoints.size > 0, `${packageName} does not declare a public entry point.`);
+  for (const entryPoint of entryPoints) {
+    assert.ok(
+      entries.includes(`package/${entryPoint.slice(2)}`),
+      `${packageName} tarball is missing declared entry point ${entryPoint}.`,
+    );
+  }
   assert.ok(entries.includes('package/README.md'));
   if (packageName === '@tileflow/capture') {
     assert.ok(
       entries.includes('package/THIRD_PARTY_NOTICES.md'),
       'Capture tarball is missing third-party notices.',
     );
+  }
+
+  assert.equal(manifest.name, packageName);
+  assert.equal(manifest.publishConfig?.access, 'public');
+  assert.equal(manifest.publishConfig?.registry, undefined);
+  assert.equal(manifest.repository?.url, expectedRepository);
+  assert.equal(manifest.bugs?.url, expectedBugs);
+  assert.equal(JSON.stringify(manifest).includes('workspace:'), false);
+  for (const dependencyGroup of [
+    'dependencies',
+    'devDependencies',
+    'optionalDependencies',
+    'peerDependencies',
+  ]) {
+    for (const [dependency, range] of Object.entries(manifest[dependencyGroup] ?? {})) {
+      if (publicPackageNameSet.has(dependency)) {
+        assert.equal(
+          range,
+          manifest.version,
+          `${packageName} must pack ${dependency} at ${manifest.version}.`,
+        );
+      }
+    }
   }
 
   const target = join(auditDirectory, packageName.replace('@tileflow/', ''));
@@ -411,6 +459,23 @@ async function auditPublicTarball(packageName, tarball) {
     unpackedBytes,
     fileCount: paths.length,
   };
+}
+
+function manifestEntryPoints(manifest) {
+  const entryPoints = new Set();
+  const visit = (value) => {
+    if (typeof value === 'string') {
+      if (value.startsWith('./') && !value.includes('*')) entryPoints.add(value);
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    for (const child of Object.values(value)) visit(child);
+  };
+  visit(manifest.exports);
+  visit(manifest.main);
+  visit(manifest.module);
+  visit(manifest.types);
+  return entryPoints;
 }
 
 async function listFiles(directory) {

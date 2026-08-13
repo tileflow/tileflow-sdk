@@ -1,6 +1,6 @@
 {
   "name": "@tileflow/dev",
-  "version": "0.1.0-alpha.14",
+  "version": "0.1.0-alpha.15",
   "description": "Node development utilities for Tileflow configs and builds.",
   "type": "module",
   "sideEffects": false,

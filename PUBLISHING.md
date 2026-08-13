@@ -44,20 +44,65 @@ Each npm package must authorize GitHub Actions Trusted Publishing from:
 - organization: `tileflow`
 - repository: `tileflow-sdk`
 - workflow: `publish.yml`
+- environment: `npm-publish`
+- allowed action: `npm publish`
 
 Configure all eleven packages before creating the first release tag from this repository. The
-workflow requires `id-token: write` and publishes packed tarballs with no long-lived npm token.
+workflow requires `id-token: write`, runs only on matching release tags, publishes packed tarballs
+with no long-lived npm token, and records npm provenance for each published version.
+
+`@tileflow/capture` did not exist when this repository was created, and npm cannot attach a Trusted
+Publisher to a package that does not exist. Bootstrap an isolated `0.0.0-bootstrap.0` artifact once
+under the non-consumer `bootstrap` dist-tag with an authenticated maintainer after all local and
+remote gates pass. Do not call that bootstrap alpha.14: its code depends on SDK contracts newer
+than the published alpha.14 set. Configure its Trusted Publisher immediately afterward; the first
+consumer capture release and every later release must use the OIDC workflow.
+
+The equivalent npm CLI configuration for an existing package is:
+
+```sh
+npx npm@11.19.0 trust github @tileflow/core \
+  --repo tileflow/tileflow-sdk \
+  --file publish.yml \
+  --env npm-publish \
+  --allow-publish
+```
+
+Repeat it for the complete package set and confirm with
+`npx npm@11.19.0 trust list <package>`. Trust commands require npm 11.15 or newer, a maintainer
+session, and two-factor authentication; do not create an automation token for the release workflow.
+
+Create the one-time capture bootstrap from an audited alpha.15 build without changing the committed
+release manifests:
+
+```sh
+bootstrap_root="$(mktemp -d)"
+pnpm --filter @tileflow/capture pack --pack-destination "$bootstrap_root"
+mkdir "$bootstrap_root/package"
+tar -xzf "$bootstrap_root"/tileflow-capture-0.1.0-alpha.15.tgz \
+  -C "$bootstrap_root/package" --strip-components=1
+npm pkg set version=0.0.0-bootstrap.0 \
+  dependencies.@tileflow/core=0.1.0-alpha.15 \
+  dependencies.@tileflow/dev=0.1.0-alpha.15 \
+  --prefix "$bootstrap_root/package"
+npx npm@11.19.0 publish "$bootstrap_root/package" --access public --tag bootstrap
+```
+
+Inspect the generated package and confirm the `bootstrap` dist-tag before configuring its Trusted
+Publisher. Remove the temporary directory afterward. Never add the bootstrap tag to installation
+examples or move `alpha` to it.
 
 ## Release checklist
 
-1. Confirm the release scope and update all affected package versions together.
+1. Confirm the release scope, confirm `main` CI is green, and update all affected package versions
+   together.
 2. Update package READMEs, contracts, third-party notices, and changelog/release notes as needed.
 3. Run the local gates:
 
    ```sh
    pnpm install --frozen-lockfile
-   pnpm check
    pnpm build
+   pnpm check
    pnpm run smoke:capture-public
    pnpm run publish:alpha:dry-run
    ```
@@ -65,17 +110,21 @@ workflow requires `id-token: write` and publishes packed tarballs with no long-l
 4. Inspect every dry-run tarball. Confirm it contains only intended public files, carries the
    `tileflow/tileflow-sdk` repository metadata, and contains no credentials or machine paths.
 5. Complete the cross-repository compatibility gate when a shared contract changed.
-6. Commit, tag, and push:
+6. Commit and push `main`; wait for the complete CI matrix to pass.
+7. Validate that every package trusts `tileflow/tileflow-sdk`, `publish.yml`, and the
+   `npm-publish` environment.
+8. Create and push the exact matching tag:
 
    ```sh
-   git commit -m "Release 0.1.0-alpha.N"
+   node scripts/validate-release.mjs v0.1.0-alpha.N
    git tag v0.1.0-alpha.N
-   git push origin main
    git push origin v0.1.0-alpha.N
    ```
 
 Tags containing `alpha` publish with the `alpha` dist-tag. Other `v*` tags publish with `latest`.
-The workflow skips an exact package version that npm already contains and never overwrites it.
+The workflow has no manual publish trigger. It refuses a tag that differs from package versions,
+builds before running the full test suite, checks the packed capture consumer, and verifies byte
+integrity before skipping an exact version that npm already contains. It never overwrites a version.
 
 ## Consumer installation
 

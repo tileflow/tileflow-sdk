@@ -27,7 +27,7 @@
     "format:check": "prettier --check .",
     "fix": "prettier --write . && eslint --fix .",
     "smoke:capture-public": "node scripts/capture-public-smoke.mjs",
-    "publish:alpha:dry-run": "pnpm run check && pnpm run build:packages && pnpm run smoke:capture-public && pnpm -r --filter @tileflow/core --filter @tileflow/static --filter @tileflow/dev --filter @tileflow/capture --filter @tileflow/vite --filter @tileflow/next --filter @tileflow/webpack --filter @tileflow/react --filter @tileflow/vue --filter @tileflow/svelte --filter @tileflow/cli publish --dry-run --force --access public --tag alpha --no-git-checks"
+    "publish:alpha:dry-run": "pnpm run build:packages && pnpm run check && pnpm run smoke:capture-public && pnpm -r --filter @tileflow/core --filter @tileflow/static --filter @tileflow/dev --filter @tileflow/capture --filter @tileflow/vite --filter @tileflow/next --filter @tileflow/webpack --filter @tileflow/react --filter @tileflow/vue --filter @tileflow/svelte --filter @tileflow/cli publish --dry-run --access public --tag alpha --no-git-checks"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

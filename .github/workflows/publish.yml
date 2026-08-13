@@ -1,39 +1,38 @@
 name: Publish
 
 on:
-  workflow_dispatch:
-    inputs:
-      npm_tag:
-        description: npm dist-tag to publish
-        required: true
-        default: alpha
-        type: choice
-        options:
-          - alpha
-          - latest
   push:
     tags:
       - v*
 
-permissions:
-  contents: read
-  id-token: write
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
 
 jobs:
   publish:
+    environment: npm-publish
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
     env:
-      NPM_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.npm_tag || (contains(github.ref_name, 'alpha') && 'alpha' || 'latest') }}
-      NPM_CONFIG_PROVENANCE: 'false'
+      NPM_TAG: ${{ contains(github.ref_name, 'alpha') && 'alpha' || 'latest' }}
+      NPM_CONFIG_PROVENANCE: 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
+          package-manager-cache: false
+          registry-url: https://registry.npmjs.org
 
       - name: Setup pnpm
         run: |
@@ -43,11 +42,16 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
-      - name: Verify
-        run: pnpm check
+      - name: Validate release tag and package versions
+        run: |
+          node scripts/validate-release.mjs "$GITHUB_REF_NAME"
+          test "$GITHUB_SHA" = "$(git rev-parse origin/main)"
 
       - name: Build packages
         run: pnpm build
+
+      - name: Verify
+        run: pnpm check
 
       - name: Pack packages
         shell: bash
@@ -91,8 +95,85 @@ jobs:
       - name: Provision pinned capture browser shell
         run: pnpm --filter @tileflow/cli cli -- setup capture --json
 
+      - name: Authorize the pinned Chromium sandbox
+        run: bash scripts/configure-linux-chromium-sandbox.sh
+
       - name: Smoke packed capture CLI
         run: node scripts/capture-public-smoke.mjs --pack-dir "$RUNNER_TEMP/tileflow-packs"
+
+      - name: Preflight npm registry
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          : > "$RUNNER_TEMP/tileflow-packs/publish.txt"
+          : > "$RUNNER_TEMP/tileflow-packs/published.txt"
+          published_dir="$RUNNER_TEMP/tileflow-packs/registry"
+          mkdir -p "$published_dir"
+
+          while IFS= read -r tarball
+          do
+            package_json="$(tar -xOf "$tarball" package/package.json)"
+            package_name="$(PACKAGE_JSON="$package_json" node -e "const packageJson = JSON.parse(process.env.PACKAGE_JSON); console.log(packageJson.name);")"
+            package_version="$(PACKAGE_JSON="$package_json" node -e "const packageJson = JSON.parse(process.env.PACKAGE_JSON); console.log(packageJson.version);")"
+
+            if current_tag="$(npm view "$package_name" "dist-tags.$NPM_TAG" --prefer-online 2>&1)"
+            then
+              if [[ -n "$current_tag" ]]
+              then
+                node scripts/assert-version-not-behind.mjs "$package_version" "$current_tag"
+              fi
+            elif [[ "$current_tag" != *E404* ]]
+            then
+              echo "$current_tag"
+              echo "Unable to determine the current $NPM_TAG dist-tag for $package_name."
+              exit 1
+            fi
+
+            if view_output="$(npm view "$package_name@$package_version" version --prefer-online 2>&1)"
+            then
+              published_tarball="$(
+                npx npm@11.19.0 pack "$package_name@$package_version" \
+                  --pack-destination "$published_dir" \
+                  --json \
+                  | node -e "let data = ''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => { const result = JSON.parse(data); if (!Array.isArray(result) || result.length !== 1 || typeof result[0]?.filename !== 'string') throw new Error('Unexpected npm pack JSON.'); console.log(result[0].filename); });"
+              )"
+              if [[ "$published_tarball" != /* ]]
+              then
+                published_tarball="$published_dir/$published_tarball"
+              fi
+
+              node scripts/compare-package-tarballs.mjs "$tarball" "$published_tarball"
+              published_tag="$(npm view "$package_name" "dist-tags.$NPM_TAG" --prefer-online)"
+              if [[ "$published_tag" != "$package_version" ]]
+              then
+                echo "$package_name@$package_version exists but the $NPM_TAG dist-tag points to $published_tag."
+                exit 1
+              fi
+
+              echo "$tarball" >> "$RUNNER_TEMP/tileflow-packs/published.txt"
+              continue
+            fi
+
+            if [[ "$view_output" != *E404* ]]
+            then
+              echo "$view_output"
+              echo "Unable to determine registry state for $package_name@$package_version."
+              exit 1
+            fi
+
+            echo "$tarball" >> "$RUNNER_TEMP/tileflow-packs/publish.txt"
+          done < "$RUNNER_TEMP/tileflow-packs/tarballs.txt"
+
+          publish_count="$(wc -l < "$RUNNER_TEMP/tileflow-packs/publish.txt" | tr -d ' ')"
+          published_count="$(wc -l < "$RUNNER_TEMP/tileflow-packs/published.txt" | tr -d ' ')"
+          if [[ "$((publish_count + published_count))" != "11" ]]
+          then
+            echo "Expected 11 validated package versions, found $((publish_count + published_count))."
+            exit 1
+          fi
+
+          echo "Registry preflight passed: $publish_count new, $published_count identical."
 
       - name: Publish packages
         shell: bash
@@ -108,15 +189,10 @@ jobs:
 
           while IFS= read -r tarball
           do
-            package_json="$(tar -xOf "$tarball" package/package.json)"
-            package_name="$(PACKAGE_JSON="$package_json" node -e "const packageJson = JSON.parse(process.env.PACKAGE_JSON); console.log(packageJson.name);")"
-            package_version="$(PACKAGE_JSON="$package_json" node -e "const packageJson = JSON.parse(process.env.PACKAGE_JSON); console.log(packageJson.version);")"
-
-            if npm view "$package_name@$package_version" version >/dev/null 2>&1
-            then
-              echo "Skipping $package_name@$package_version because it is already published."
-              continue
-            fi
-
-            npx npm@latest publish "$tarball" --access public --tag "$NPM_TAG" --loglevel verbose
-          done < "$RUNNER_TEMP/tileflow-packs/tarballs.txt"
+            npx npm@11.19.0 publish "$tarball" \
+              --access public \
+              --registry https://registry.npmjs.org \
+              --tag "$NPM_TAG" \
+              --provenance \
+              --loglevel verbose
+          done < "$RUNNER_TEMP/tileflow-packs/publish.txt"

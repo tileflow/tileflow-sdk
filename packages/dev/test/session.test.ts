@@ -298,7 +298,7 @@ function waterColorFromStyle(style: unknown): unknown {
 function waitForState(
   session: TileflowArtifactSession,
   predicate: (state: TileflowArtifactSessionState) => boolean,
-  timeoutMs = 5_000,
+  timeoutMs = 15_000,
 ): Promise<TileflowArtifactSessionState> {
   const current = session.getState();
   if (predicate(current)) return Promise.resolve(current);

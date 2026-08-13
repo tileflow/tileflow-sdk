@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {existsSync} from 'node:fs';
 import {chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile} from 'node:fs/promises';
@@ -7,6 +6,7 @@ import {createServer} from 'node:http';
 import {homedir, tmpdir} from 'node:os';
 import {basename, delimiter, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {runCommand} from './run-command.mjs';
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const temporaryRoot = await mkdtemp(join(tmpdir(), 'tileflow-public-capture-smoke-'));
@@ -504,32 +504,10 @@ async function readTarballFile(tarball, path) {
 }
 
 function run(command, args, options = {}) {
-  return new Promise((resolveRun, rejectRun) => {
-    const child = spawn(command, args, {
-      cwd: options.cwd ?? repositoryRoot,
-      env: options.env ?? process.env,
-      shell: false,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk) => (stdout += chunk));
-    child.stderr.on('data', (chunk) => (stderr += chunk));
-    child.once('error', rejectRun);
-    child.once('exit', (code, signal) => {
-      if (code === 0) {
-        resolveRun({stdout, stderr});
-        return;
-      }
-      rejectRun(
-        new Error(
-          `${options.label ?? command} failed${signal ? ` after ${signal}` : ` with exit ${code}`}\n${stderr || stdout}`,
-        ),
-      );
-    });
+  return runCommand(command, args, {
+    cwd: options.cwd ?? repositoryRoot,
+    env: options.env ?? process.env,
+    label: options.label,
   });
 }
 

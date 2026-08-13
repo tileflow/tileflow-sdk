@@ -80,11 +80,6 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Release o
 [PUBLISHING.md](PUBLISHING.md). The durable local capture and visual-testing behavior is recorded in
 [`docs/contracts/local-visual-capture.md`](docs/contracts/local-visual-capture.md).
 
-## Repository history
-
-This public repository began as a reviewed source snapshot. Earlier development history remains in
-the original development repository and was intentionally not imported.
-
 ## Licensing
 
 No project-level source license is included in this snapshot. Third-party license and notice files

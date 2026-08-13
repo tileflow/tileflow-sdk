@@ -151,6 +151,11 @@ export async function verifyRepositoryReleaseIntent({
   let declarationSource;
 
   if (mode === 'changesets') {
+    assert.equal(
+      changedFiles.includes('.changeset/release-plan.json'),
+      false,
+      'Only the official changeset-release/main Release PR may change .changeset/release-plan.json.',
+    );
     const changesetFiles = await readChangedChangesets(repositoryRoot, changedFiles);
     declaredPackages = readChangesetDeclarations(changesetFiles);
     declarationSource = 'changed .changeset/*.md files';

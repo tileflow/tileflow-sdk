@@ -22,7 +22,7 @@
     "typecheck": "turbo typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
-    "test:release": "node --test scripts/release-packages-intent.test.mjs scripts/release-packages.test.mjs scripts/run-command.test.mjs scripts/select-release-tarballs.test.mjs scripts/validate-release.test.mjs",
+    "test:release": "node --test scripts/release-packages-intent.test.mjs scripts/release-packages.test.mjs scripts/release-workflow.test.mjs scripts/run-command.test.mjs scripts/select-release-tarballs.test.mjs scripts/validate-release.test.mjs",
     "verify": "pnpm -r --workspace-concurrency=1 --if-present run verify",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

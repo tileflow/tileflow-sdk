@@ -54,25 +54,7 @@ export async function readPendingChangesets() {
   );
 }
 
-export function nextAlphaVersion(currentVersion, releaseType) {
-  const parsed = semver.parse(currentVersion);
-  assert.ok(parsed, `Invalid package version: ${currentVersion}.`);
-  assert.match(currentVersion, /^\d+\.\d+\.\d+-alpha\.\d+$/u, 'Expected a numeric alpha version.');
-  assert.ok(supportedReleaseTypes.has(releaseType), `Unsupported release type: ${releaseType}.`);
-
-  if (releaseType === 'patch') {
-    return `${parsed.major}.${parsed.minor}.${parsed.patch}-alpha.${parsed.prerelease[1] + 1}`;
-  }
-
-  const stableBase = `${parsed.major}.${parsed.minor}.${parsed.patch}`;
-  const targetBase = semver.inc(stableBase, releaseType);
-  assert.ok(targetBase);
-  return `${targetBase}-alpha.0`;
-}
-
-export async function buildReleasePlan() {
-  const manifests = await readPublicManifests();
-  const changesets = await readPendingChangesets();
+export function createReleasePlan(manifests, changesets) {
   const selected = new Map();
 
   for (const changeset of changesets) {
@@ -120,6 +102,41 @@ export async function buildReleasePlan() {
   };
 }
 
+export function nextAlphaVersion(currentVersion, releaseType) {
+  const parsed = semver.parse(currentVersion);
+  assert.ok(parsed, `Invalid package version: ${currentVersion}.`);
+  assert.match(currentVersion, /^\d+\.\d+\.\d+-alpha\.\d+$/u, 'Expected a numeric alpha version.');
+  assert.ok(supportedReleaseTypes.has(releaseType), `Unsupported release type: ${releaseType}.`);
+
+  if (releaseType === 'patch') {
+    return `${parsed.major}.${parsed.minor}.${parsed.patch}-alpha.${parsed.prerelease[1] + 1}`;
+  }
+
+  const stableBase = `${parsed.major}.${parsed.minor}.${parsed.patch}`;
+  const targetBase = semver.inc(stableBase, releaseType);
+  assert.ok(targetBase);
+  return `${targetBase}-alpha.0`;
+}
+
+export function createUpdatedChangelog(previous, release) {
+  const heading = `## ${release.to}`;
+  assert.equal(
+    previous.includes(heading),
+    false,
+    `${release.name} changelog already contains ${release.to}.`,
+  );
+  const lines = release.summaries.map((summary) => `- ${summary.trim()}`).join('\n');
+  const firstBreak = previous.indexOf('\n');
+  assert.ok(firstBreak >= 0, `${release.name} changelog must begin with a heading line.`);
+  return `${previous.slice(0, firstBreak + 1)}\n${heading}\n\n${lines}\n${previous.slice(firstBreak + 1)}`;
+}
+
+export async function buildReleasePlan() {
+  const manifests = await readPublicManifests();
+  const changesets = await readPendingChangesets();
+  return createReleasePlan(manifests, changesets);
+}
+
 export async function applyReleasePlan(plan) {
   assert.ok(plan.packages.length > 0, 'No publishable changesets are pending.');
   const manifests = await readPublicManifests();
@@ -143,16 +160,7 @@ export async function applyReleasePlan(plan) {
       if (error.code !== 'ENOENT') throw error;
       previous = `# ${release.name}\n`;
     }
-    const heading = `## ${release.to}`;
-    assert.equal(
-      previous.includes(heading),
-      false,
-      `${release.name} changelog already contains ${release.to}.`,
-    );
-    const lines = release.summaries.map((summary) => `- ${summary.trim()}`).join('\n');
-    const firstBreak = previous.indexOf('\n');
-    const updated = `${previous.slice(0, firstBreak + 1)}\n${heading}\n\n${lines}\n${previous.slice(firstBreak + 1)}`;
-    await writeFile(changelogPath, updated);
+    await writeFile(changelogPath, createUpdatedChangelog(previous, release));
   }
 
   for (const file of plan.changesets) {

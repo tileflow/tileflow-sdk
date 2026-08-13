@@ -164,6 +164,36 @@ test('compares the complete PR and ignores unchanged changesets already on main'
   }
 });
 
+test('rejects a release plan edited by a normal source pull request', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tileflow-release-intent-plan-'));
+  try {
+    await mkdir(join(root, '.changeset'), {recursive: true});
+    await writeFile(
+      join(root, '.changeset', 'release-plan.json'),
+      '{"schemaVersion":1,"packages":[],"changesets":[]}\n',
+    );
+    await runGit(root, ['init']);
+    const base = await commitFixture(root, 'base release plan');
+    await writeFile(
+      join(root, '.changeset', 'release-plan.json'),
+      '{"schemaVersion":1,"packages":[{"name":"@tileflow/core"}],"changesets":[]}\n',
+    );
+    const head = await commitFixture(root, 'manually edit release plan');
+
+    await assert.rejects(
+      verifyRepositoryReleaseIntent({
+        repositoryRoot: root,
+        mode: 'changesets',
+        baseRevision: base,
+        headRevision: head,
+      }),
+      /Only the official changeset-release\/main Release PR/u,
+    );
+  } finally {
+    await rm(root, {force: true, recursive: true});
+  }
+});
+
 async function runGit(root, args) {
   const {stdout} = await execFileAsync('git', args, {cwd: root});
   return stdout.trim();

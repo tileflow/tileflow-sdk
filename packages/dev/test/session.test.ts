@@ -234,6 +234,11 @@ test('watches added, changed, removed, and newly effective local icon directorie
   assert.equal(session.getState().status, 'ready');
   const initial = assetFingerprint(session);
 
+  const initialGeneration = session.getState().generation;
+  await writeFile(join(cwd, 'icons-b', 'other.svg'), svg('#343434'));
+  await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+  assert.equal(session.getState().generation, initialGeneration);
+
   await writeFile(join(cwd, 'icons-a', 'added.svg'), svg('#444444'));
   await waitForState(session, (state) => state.status === 'ready' && state.generation >= 2);
   const added = assetFingerprint(session);
@@ -259,6 +264,51 @@ test('watches added, changed, removed, and newly effective local icon directorie
     (state) => state.status === 'ready' && state.generation > switchedGeneration,
   );
   assert.notEqual(assetFingerprint(session), switched);
+});
+
+test('adds and unwatches icon directories outside the config tree', async (t) => {
+  const parent = await mkdtemp(join(tmpdir(), 'tileflow-dev-external-watch-'));
+  const cwd = join(parent, 'project');
+  const iconsA = join(parent, 'icons-a');
+  const iconsB = join(parent, 'icons-b');
+  await mkdir(cwd);
+  await mkdir(iconsA);
+  await mkdir(iconsB);
+  await writeFile(join(iconsA, 'pin.svg'), svg('#111111'));
+  await writeFile(join(iconsB, 'pin.svg'), svg('#222222'));
+  await writeFile(join(cwd, 'tileflow.config.ts'), iconConfig('../icons-a'));
+
+  const session = await createTileflowArtifactSession({cwd, debounceMs: 10, watch: true});
+  t.after(async () => {
+    await session.close();
+    await rm(parent, {force: true, recursive: true});
+  });
+
+  await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+  const initialGeneration = session.getState().generation;
+  await writeFile(join(iconsA, 'pin.svg'), svg('#333333'));
+  const changed = await waitForState(
+    session,
+    (state) => state.status === 'ready' && state.generation > initialGeneration,
+  );
+
+  await writeFile(join(cwd, 'tileflow.config.ts'), iconConfig('../icons-b'));
+  await waitForState(
+    session,
+    (state) => state.status === 'ready' && state.generation > changed.generation,
+  );
+  await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+  const switchedGeneration = session.getState().generation;
+
+  await writeFile(join(iconsA, 'pin.svg'), svg('#444444'));
+  await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+  assert.equal(session.getState().generation, switchedGeneration);
+
+  await writeFile(join(iconsB, 'pin.svg'), svg('#555555'));
+  await waitForState(
+    session,
+    (state) => state.status === 'ready' && state.generation > switchedGeneration,
+  );
 });
 
 const tokenModule = `import tokens from './tokens.json';\nexport default tokens;\n`;

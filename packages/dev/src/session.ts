@@ -137,6 +137,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
       });
       this.#watcher.on('all', (event, path) => {
         if (event === 'addDir' || event === 'unlinkDir') return;
+        if (!this.#shouldRefreshForWatchEvent(path)) return;
         this.#scheduleRefresh(path);
       });
       this.#watcher.on('error', (error) => {
@@ -218,10 +219,14 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
 
     const extension = extname(resolvedPath).toLowerCase();
     if (configExtensions.has(extension)) return false;
-    if (iconExtensions.has(extension)) {
-      return ![...this.#watchedArtifactPaths].some((path) => isSameOrInside(path, resolvedPath));
-    }
+    if (iconExtensions.has(extension)) return false;
     return true;
+  }
+
+  #shouldRefreshForWatchEvent(path: string): boolean {
+    const resolvedPath = resolve(path);
+    if (!iconExtensions.has(extname(resolvedPath).toLowerCase())) return true;
+    return [...this.#watchedArtifactPaths].some((path) => isSameOrInside(path, resolvedPath));
   }
 
   #publish(state: TileflowArtifactSessionState): void {
@@ -257,10 +262,14 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
     this.#watchedArtifactPaths = next;
 
     for (const path of previous) {
-      if (!next.has(path)) void this.#watcher.unwatch(path);
+      if (!next.has(path) && !isSameOrInside(dirname(this.#configPath), path)) {
+        void this.#watcher.unwatch(path);
+      }
     }
     for (const path of next) {
-      if (!previous.has(path)) this.#watcher.add(path);
+      if (!previous.has(path) && !isSameOrInside(dirname(this.#configPath), path)) {
+        this.#watcher.add(path);
+      }
     }
   }
 }

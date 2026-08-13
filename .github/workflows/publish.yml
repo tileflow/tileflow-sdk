@@ -1,0 +1,122 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      npm_tag:
+        description: npm dist-tag to publish
+        required: true
+        default: alpha
+        type: choice
+        options:
+          - alpha
+          - latest
+  push:
+    tags:
+      - v*
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NPM_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.npm_tag || (contains(github.ref_name, 'alpha') && 'alpha' || 'latest') }}
+      NPM_CONFIG_PROVENANCE: 'false'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify
+        run: pnpm check
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Pack packages
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          pack_dir="$RUNNER_TEMP/tileflow-packs"
+          mkdir -p "$pack_dir"
+          : > "$pack_dir/tarballs.txt"
+
+          for package_dir in \
+            packages/core \
+            packages/static \
+            packages/dev \
+            packages/capture \
+            packages/vite \
+            packages/next \
+            packages/webpack \
+            packages/react \
+            packages/vue \
+            packages/svelte \
+            packages/cli
+          do
+            filename="$(
+              cd "$package_dir"
+              pnpm pack --pack-destination "$pack_dir" --json \
+                | node -e "let data = ''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => console.log(JSON.parse(data).filename));"
+            )"
+
+            if [[ "$filename" = /* ]]
+            then
+              echo "$filename" >> "$pack_dir/tarballs.txt"
+            else
+              echo "$pack_dir/$filename" >> "$pack_dir/tarballs.txt"
+            fi
+          done
+
+      - name: Provision pinned capture browser dependencies
+        run: pnpm --filter @tileflow/capture exec playwright install-deps chromium
+
+      - name: Provision pinned capture browser shell
+        run: pnpm --filter @tileflow/cli cli -- setup capture --json
+
+      - name: Smoke packed capture CLI
+        run: node scripts/capture-public-smoke.mjs --pack-dir "$RUNNER_TEMP/tileflow-packs"
+
+      - name: Publish packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset NODE_AUTH_TOKEN
+
+          if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" || -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]]
+          then
+            echo "GitHub did not expose the OIDC request credentials."
+            exit 1
+          fi
+
+          while IFS= read -r tarball
+          do
+            package_json="$(tar -xOf "$tarball" package/package.json)"
+            package_name="$(PACKAGE_JSON="$package_json" node -e "const packageJson = JSON.parse(process.env.PACKAGE_JSON); console.log(packageJson.name);")"
+            package_version="$(PACKAGE_JSON="$package_json" node -e "const packageJson = JSON.parse(process.env.PACKAGE_JSON); console.log(packageJson.version);")"
+
+            if npm view "$package_name@$package_version" version >/dev/null 2>&1
+            then
+              echo "Skipping $package_name@$package_version because it is already published."
+              continue
+            fi
+
+            npx npm@latest publish "$tarball" --access public --tag "$NPM_TAG" --loglevel verbose
+          done < "$RUNNER_TEMP/tileflow-packs/tarballs.txt"

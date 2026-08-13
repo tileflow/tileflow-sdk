@@ -1,0 +1,58 @@
+{
+  "name": "@tileflow/dev",
+  "version": "0.1.0-alpha.14",
+  "description": "Node development utilities for Tileflow configs and builds.",
+  "type": "module",
+  "sideEffects": false,
+  "homepage": "https://tileflow.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tileflow/tileflow-sdk.git",
+    "directory": "packages/dev"
+  },
+  "bugs": {
+    "url": "https://github.com/tileflow/tileflow-sdk/issues"
+  },
+  "keywords": [
+    "tileflow",
+    "maps",
+    "maplibre",
+    "development",
+    "styles"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean --platform node --external sharp",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "verify": "pnpm run typecheck && pnpm run test"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@mapbox/vector-tile": "2.0.5",
+    "@maplibre/maplibre-gl-style-spec": "24.8.5",
+    "@tileflow/core": "workspace:*",
+    "chokidar": "4.0.3",
+    "jiti": "^2.7.0",
+    "maplibre-gl": "5.24.0",
+    "pbf": "4.0.2",
+    "saxes": "6.0.0"
+  },
+  "optionalDependencies": {
+    "sharp": "0.35.3"
+  }
+}

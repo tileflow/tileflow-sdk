@@ -1,0 +1,489 @@
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {existsSync} from 'node:fs';
+import {chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile} from 'node:fs/promises';
+import {createServer} from 'node:http';
+import {homedir, tmpdir} from 'node:os';
+import {basename, delimiter, join, resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
+
+const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
+const temporaryRoot = await mkdtemp(join(tmpdir(), 'tileflow-public-capture-smoke-'));
+const suppliedPackDirectory = argumentValue('--pack-dir');
+const packDirectory = suppliedPackDirectory
+  ? resolve(suppliedPackDirectory)
+  : join(temporaryRoot, 'packs');
+const consumerDirectory = join(temporaryRoot, 'consumer');
+const auditDirectory = join(temporaryRoot, 'audit');
+const npmCacheDirectory = join(temporaryRoot, 'npm-cache');
+const transparentPng = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWP4WSz2H4QZYAwAWswKBc9NlmIAAAAASUVORK5CYII=',
+  'base64',
+);
+let server;
+
+try {
+  await Promise.all([
+    mkdir(packDirectory, {recursive: true}),
+    mkdir(consumerDirectory, {recursive: true}),
+    mkdir(auditDirectory, {recursive: true}),
+  ]);
+
+  const tarballs = suppliedPackDirectory
+    ? await discoverTarballs(packDirectory)
+    : await packRequiredPackages(packDirectory);
+  const requiredNames = ['@tileflow/core', '@tileflow/dev', '@tileflow/capture', '@tileflow/cli'];
+  for (const name of requiredNames) {
+    assert.ok(tarballs.has(name), `Packed smoke is missing ${name}.`);
+  }
+
+  const audit = [];
+  for (const name of ['@tileflow/capture', '@tileflow/cli']) {
+    audit.push(await auditPublicTarball(name, tarballs.get(name)));
+  }
+
+  await writeFile(
+    join(consumerDirectory, 'package.json'),
+    `${JSON.stringify({name: 'tileflow-public-capture-smoke', private: true, type: 'module'}, null, 2)}\n`,
+  );
+  await run(
+    npmCommand(),
+    [
+      'install',
+      '--ignore-scripts',
+      '--no-audit',
+      '--no-fund',
+      '--package-lock=false',
+      ...requiredNames.map((name) => tarballs.get(name)),
+    ],
+    {
+      cwd: consumerDirectory,
+      env: {...process.env, npm_config_cache: npmCacheDirectory},
+      label: 'clean packed-package install',
+    },
+  );
+
+  const packedCli = JSON.parse(
+    await readTarballFile(tarballs.get('@tileflow/cli'), 'package/package.json'),
+  );
+  const installedCli = JSON.parse(
+    await readFile(join(consumerDirectory, 'node_modules/@tileflow/cli/package.json'), 'utf8'),
+  );
+  assert.equal(installedCli.version, packedCli.version);
+
+  const systemBrowserSentinel = join(temporaryRoot, 'system-browser-was-used');
+  const trapDirectory = join(temporaryRoot, 'browser-traps');
+  await mkdir(trapDirectory);
+  for (const command of ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable']) {
+    const trapPath = join(trapDirectory, command);
+    await writeFile(
+      trapPath,
+      `#!/bin/sh\nprintf used > ${shellQuote(systemBrowserSentinel)}\nexit 91\n`,
+    );
+    await chmod(trapPath, 0o755);
+  }
+  const isolatedEnvironment = {
+    ...process.env,
+    PATH: `${trapDirectory}${delimiter}${process.env.PATH ?? ''}`,
+    TILEFLOW_API_KEY: '',
+  };
+  const cliEntry = join(consumerDirectory, 'node_modules/@tileflow/cli/dist/index.js');
+  assert.ok(existsSync(cliEntry), 'The packed CLI entry point was not installed locally.');
+
+  server = createServer((request, response) => {
+    const path = request.url?.split('?')[0] ?? '/';
+    response.setHeader('Access-Control-Allow-Origin', '*');
+    if (path === '/tiles/world/tiles.json') {
+      response.writeHead(200, {'content-type': 'application/json'});
+      response.end(
+        JSON.stringify({
+          tilejson: '3.0.0',
+          minzoom: 0,
+          maxzoom: 14,
+          tiles: [`${origin}/tiles/world/{z}/{x}/{y}.pbf`],
+        }),
+      );
+      return;
+    }
+    if (path.endsWith('.pbf')) {
+      response.writeHead(200, {'content-type': 'application/x-protobuf'});
+      response.end(Buffer.alloc(0));
+      return;
+    }
+    if (path.endsWith('/sprite.json') || path.endsWith('/sprite@2x.json')) {
+      response.writeHead(200, {'content-type': 'application/json'});
+      response.end('{}');
+      return;
+    }
+    if (path.endsWith('/sprite.png') || path.endsWith('/sprite@2x.png')) {
+      response.writeHead(200, {'content-type': 'image/png'});
+      response.end(transparentPng);
+      return;
+    }
+    if (path !== '/') {
+      response.writeHead(404).end();
+      return;
+    }
+    response.writeHead(200, {'content-type': 'text/html; charset=utf-8'});
+    response.end(
+      '<!doctype html><style>html,body{margin:0}.proof{width:192px;height:128px;background:#2468ac}</style><div class="proof" data-tileflow-map="proof" data-tileflow-capture-id="proof" data-tileflow-state="idle"></div>',
+    );
+  });
+  const origin = await listenLoopback(server);
+  await writeFile(
+    join(consumerDirectory, 'tileflow.config.ts'),
+    `export default {
+  maps: {
+    proof: {
+      renderer: 'generated',
+      labels: 'none',
+      poi: 'none',
+      buildings: 'hidden',
+      glyphs: ${JSON.stringify(`${origin}/fonts/{fontstack}/{range}.pbf`)},
+      sprite: ${JSON.stringify(`${origin}/sprites/osm-bright/sprite`)},
+      tiles: {url: ${JSON.stringify(`${origin}/tiles/world/tiles.json`)}},
+      modules: [{
+        type: 'roads', detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
+        extras: {ferry: false, paths: true, rail: true}
+      }]
+    },
+  },
+  scenes: {
+    generated: {
+      map: 'proof',
+      camera: {type: 'center', center: [0, 0], zoom: 1},
+      viewport: {width: 192, height: 128, dpr: 1},
+    },
+    application: {
+      map: 'proof',
+      camera: {type: 'center', center: [0, 0], zoom: 1},
+      viewport: {width: 192, height: 128, dpr: 1},
+      target: {kind: 'application', path: '/', captureId: 'proof'},
+    },
+  },
+};
+`,
+  );
+
+  const standaloneCapture = await run(
+    process.execPath,
+    [cliEntry, 'capture', 'generated', '--json'],
+    {
+      cwd: consumerDirectory,
+      env: isolatedEnvironment,
+      label: 'packed CLI standalone generated capture before setup',
+    },
+  );
+  const standaloneDocument = JSON.parse(standaloneCapture.stdout);
+  assert.equal(standaloneDocument.schemaVersion, 1);
+  assert.equal(standaloneDocument.command, 'capture');
+  assert.equal(standaloneDocument.captures?.length, 1);
+  const standaloneEntry = standaloneDocument.captures[0];
+  assert.deepEqual(
+    {
+      dpr: standaloneEntry.dpr,
+      height: standaloneEntry.height,
+      map: standaloneEntry.map,
+      networkDependent: standaloneEntry.networkDependent,
+      scene: standaloneEntry.scene,
+      status: standaloneEntry.status,
+      target: standaloneEntry.target,
+      width: standaloneEntry.width,
+      warnings: standaloneEntry.warnings,
+    },
+    {
+      dpr: 1,
+      height: 128,
+      map: 'proof',
+      networkDependent: false,
+      scene: 'generated',
+      status: 'captured',
+      target: 'map',
+      width: 192,
+      warnings: [],
+    },
+  );
+  const standalonePng = await readFile(join(consumerDirectory, standaloneEntry.outputPath));
+  assert.deepEqual([...standalonePng.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  const standaloneSha256 = createHash('sha256').update(standalonePng).digest('hex');
+  assert.equal(standaloneEntry.sha256, standaloneSha256);
+  const standaloneReceipt = JSON.parse(
+    await readFile(join(consumerDirectory, standaloneEntry.receiptPath), 'utf8'),
+  );
+  assert.equal(standaloneReceipt.image.sha256, standaloneSha256);
+  assert.equal(standaloneReceipt.image.physicalWidth, 192);
+  assert.equal(standaloneReceipt.image.physicalHeight, 128);
+  assert.equal(standaloneReceipt.networkDependent, false);
+  assert.deepEqual(standaloneReceipt.source, {tilesetVersion: null});
+  assert.equal(standaloneReceipt.renderer.playwright, '1.60.0');
+  assert.equal(standaloneReceipt.renderer.chromiumRevision, '1223');
+
+  const setup = await run(
+    process.execPath,
+    [cliEntry, 'setup', 'capture', '--json', '--no-browser-install'],
+    {
+      cwd: consumerDirectory,
+      env: isolatedEnvironment,
+      label: 'packed CLI prepared-browser verification after capture',
+    },
+  );
+  const setupDocument = JSON.parse(setup.stdout);
+  assert.deepEqual(
+    {
+      command: setupDocument.command,
+      chromiumRevision: setupDocument.renderer?.chromiumRevision,
+      playwright: setupDocument.renderer?.playwright,
+      schemaVersion: setupDocument.schemaVersion,
+      status: setupDocument.status,
+    },
+    {
+      command: 'setup.capture',
+      chromiumRevision: '1223',
+      playwright: '1.60.0',
+      schemaVersion: 1,
+      status: 'ready',
+    },
+  );
+
+  const applicationCapture = await run(
+    process.execPath,
+    [cliEntry, 'capture', 'application', '--app-origin', origin, '--json', '--no-browser-install'],
+    {
+      cwd: consumerDirectory,
+      env: isolatedEnvironment,
+      label: 'packed CLI application capture',
+    },
+  );
+  const captureDocument = JSON.parse(applicationCapture.stdout);
+  assert.equal(captureDocument.schemaVersion, 1);
+  assert.equal(captureDocument.command, 'capture');
+  assert.equal(captureDocument.captures?.length, 1);
+  const entry = captureDocument.captures[0];
+  assert.deepEqual(
+    {
+      dpr: entry.dpr,
+      height: entry.height,
+      map: entry.map,
+      networkDependent: entry.networkDependent,
+      scene: entry.scene,
+      status: entry.status,
+      target: entry.target,
+      width: entry.width,
+    },
+    {
+      dpr: 1,
+      height: 128,
+      map: 'proof',
+      networkDependent: false,
+      scene: 'application',
+      status: 'captured',
+      target: 'application',
+      width: 192,
+    },
+  );
+  assert.match(entry.outputPath, /^\.tileflow\/captures\/application\.png$/u);
+  assert.match(entry.receiptPath, /^\.tileflow\/captures\/application\.receipt\.json$/u);
+
+  const png = await readFile(join(consumerDirectory, entry.outputPath));
+  assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  const sha256 = createHash('sha256').update(png).digest('hex');
+  assert.equal(entry.sha256, sha256);
+  const receipt = JSON.parse(await readFile(join(consumerDirectory, entry.receiptPath), 'utf8'));
+  assert.equal(receipt.schemaVersion, 1);
+  assert.equal(receipt.image.sha256, sha256);
+  assert.equal(receipt.image.physicalWidth, 192);
+  assert.equal(receipt.image.physicalHeight, 128);
+  assert.equal(receipt.networkDependent, false);
+  assert.deepEqual(receipt.source, {tilesetVersion: null});
+  assert.equal(receipt.renderer.playwright, '1.60.0');
+  assert.equal(receipt.renderer.chromiumRevision, '1223');
+  assert.equal(
+    existsSync(systemBrowserSentinel),
+    false,
+    'Capture invoked a system browser command.',
+  );
+
+  console.log(
+    JSON.stringify(
+      {
+        schemaVersion: 1,
+        command: 'capture.public-smoke',
+        status: 'passed',
+        installedCli: `${installedCli.name}@${installedCli.version}`,
+        renderer: setupDocument.renderer,
+        capture: {
+          scene: standaloneEntry.scene,
+          sha256: standaloneSha256,
+          width: standaloneEntry.width,
+          height: standaloneEntry.height,
+          networkDependent: standaloneEntry.networkDependent,
+        },
+        tarballs: audit,
+      },
+      null,
+      2,
+    ),
+  );
+} finally {
+  if (server) await closeServer(server);
+  await rm(temporaryRoot, {force: true, recursive: true});
+}
+
+function argumentValue(flag) {
+  const index = process.argv.indexOf(flag);
+  if (index === -1) return undefined;
+  const value = process.argv[index + 1];
+  assert.ok(value && !value.startsWith('--'), `${flag} requires a path.`);
+  return value;
+}
+
+async function packRequiredPackages(directory) {
+  const packages = ['core', 'dev', 'capture', 'cli'];
+  const tarballs = new Map();
+  for (const packageDirectory of packages) {
+    const result = await run(pnpmCommand(), ['pack', '--pack-destination', directory, '--json'], {
+      cwd: join(repositoryRoot, 'packages', packageDirectory),
+      label: `pack @tileflow/${packageDirectory}`,
+    });
+    const packed = JSON.parse(result.stdout);
+    tarballs.set(packed.name, resolve(packed.filename));
+  }
+  return tarballs;
+}
+
+async function discoverTarballs(directory) {
+  const tarballs = new Map();
+  for (const name of await readdir(directory)) {
+    if (!name.endsWith('.tgz')) continue;
+    const path = join(directory, name);
+    const manifest = JSON.parse(await readTarballFile(path, 'package/package.json'));
+    tarballs.set(manifest.name, path);
+  }
+  return tarballs;
+}
+
+async function auditPublicTarball(packageName, tarball) {
+  assert.ok(tarball, `Missing tarball for ${packageName}.`);
+  const listing = await run('tar', ['-tzf', tarball], {label: `list ${packageName} tarball`});
+  const entries = listing.stdout.trim().split('\n').filter(Boolean);
+  const forbiddenPath =
+    /(?:^|\/)(?:test|tests|fixtures?|captures?|\.tileflow|ms-playwright|chromium)(?:\/|$)|\.png$|\.receipt\.json$|\.map$/iu;
+  for (const entry of entries) {
+    assert.equal(forbiddenPath.test(entry), false, `Unexpected packed path: ${entry}`);
+  }
+  assert.ok(entries.includes('package/dist/index.js'));
+  assert.ok(entries.includes('package/dist/index.d.ts'));
+  assert.ok(entries.includes('package/README.md'));
+  if (packageName === '@tileflow/capture') {
+    assert.ok(
+      entries.includes('package/THIRD_PARTY_NOTICES.md'),
+      'Capture tarball is missing third-party notices.',
+    );
+  }
+
+  const target = join(auditDirectory, packageName.replace('@tileflow/', ''));
+  await mkdir(target, {recursive: true});
+  await run('tar', ['-xzf', tarball, '-C', target], {label: `extract ${packageName} tarball`});
+  const paths = await listFiles(target);
+  let unpackedBytes = 0;
+  for (const path of paths) {
+    const metadata = await stat(path);
+    unpackedBytes += metadata.size;
+    if (!/\.(?:js|ts|json|md|txt)$/iu.test(path)) continue;
+    const text = await readFile(path, 'utf8');
+    assert.equal(
+      text.includes(repositoryRoot),
+      false,
+      `Packed file contains repository path: ${path}`,
+    );
+    assert.equal(text.includes(homedir()), false, `Packed file contains home path: ${path}`);
+    assert.equal(
+      /tf_(?:live|test)_[A-Za-z0-9_-]{8,}/u.test(text),
+      false,
+      `Packed file contains a credential-shaped value: ${path}`,
+    );
+  }
+  return {
+    package: packageName,
+    file: basename(tarball),
+    compressedBytes: (await stat(tarball)).size,
+    unpackedBytes,
+    fileCount: paths.length,
+  };
+}
+
+async function listFiles(directory) {
+  const files = [];
+  for (const entry of await readdir(directory, {withFileTypes: true})) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) files.push(...(await listFiles(path)));
+    else if (entry.isFile()) files.push(path);
+    else assert.fail(`Packed tarball contains a non-regular entry: ${path}`);
+  }
+  return files;
+}
+
+async function readTarballFile(tarball, path) {
+  return (await run('tar', ['-xOf', tarball, path], {label: `read ${path}`})).stdout;
+}
+
+function run(command, args, options = {}) {
+  return new Promise((resolveRun, rejectRun) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd ?? repositoryRoot,
+      env: options.env ?? process.env,
+      shell: false,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => (stdout += chunk));
+    child.stderr.on('data', (chunk) => (stderr += chunk));
+    child.once('error', rejectRun);
+    child.once('exit', (code, signal) => {
+      if (code === 0) {
+        resolveRun({stdout, stderr});
+        return;
+      }
+      rejectRun(
+        new Error(
+          `${options.label ?? command} failed${signal ? ` after ${signal}` : ` with exit ${code}`}\n${stderr || stdout}`,
+        ),
+      );
+    });
+  });
+}
+
+function listenLoopback(httpServer) {
+  return new Promise((resolveListen, rejectListen) => {
+    httpServer.once('error', rejectListen);
+    httpServer.listen(0, '127.0.0.1', () => {
+      httpServer.removeListener('error', rejectListen);
+      const address = httpServer.address();
+      assert.ok(address && typeof address === 'object');
+      resolveListen(`http://127.0.0.1:${address.port}`);
+    });
+  });
+}
+
+function closeServer(httpServer) {
+  return new Promise((resolveClose, rejectClose) => {
+    httpServer.close((error) => (error ? rejectClose(error) : resolveClose()));
+  });
+}
+
+function shellQuote(value) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function npmCommand() {
+  return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+}
+
+function pnpmCommand() {
+  return process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+}

@@ -1,0 +1,62 @@
+{
+  "name": "@tileflow/react",
+  "version": "0.1.0-alpha.14",
+  "description": "React components for rendering Tileflow maps with MapLibre.",
+  "type": "module",
+  "sideEffects": false,
+  "homepage": "https://tileflow.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tileflow/tileflow-sdk.git",
+    "directory": "packages/react"
+  },
+  "bugs": {
+    "url": "https://github.com/tileflow/tileflow-sdk/issues"
+  },
+  "keywords": [
+    "tileflow",
+    "react",
+    "maps",
+    "maplibre",
+    "tiles"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "verify": "pnpm run build && tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./static": {
+      "types": "./dist/static.d.ts",
+      "import": "./dist/static.js",
+      "default": "./dist/static.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@tileflow/core": "workspace:*",
+    "@tileflow/static": "workspace:*"
+  },
+  "peerDependencies": {
+    "maplibre-gl": ">=5",
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "maplibre-gl": "^5.24.0",
+    "react": "^19.2.7",
+    "@types/react": "^19.2.17"
+  }
+}

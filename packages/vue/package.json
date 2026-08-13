@@ -1,0 +1,58 @@
+{
+  "name": "@tileflow/vue",
+  "version": "0.1.0-alpha.14",
+  "description": "Vue component for rendering Tileflow maps with MapLibre.",
+  "type": "module",
+  "sideEffects": false,
+  "homepage": "https://tileflow.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tileflow/tileflow-sdk.git",
+    "directory": "packages/vue"
+  },
+  "bugs": {
+    "url": "https://github.com/tileflow/tileflow-sdk/issues"
+  },
+  "keywords": [
+    "tileflow",
+    "vue",
+    "maps",
+    "maplibre",
+    "tiles"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean --external vue --external maplibre-gl",
+    "test": "tsx --test test/*.test.ts",
+    "verify": "pnpm run build && pnpm run test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@tileflow/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "maplibre-gl": ">=5",
+    "vue": ">=3.3"
+  },
+  "devDependencies": {
+    "@vue/server-renderer": "3.5.39",
+    "maplibre-gl": "^5.24.0",
+    "tsx": "^4.23.1",
+    "vue": "^3.5.26"
+  }
+}

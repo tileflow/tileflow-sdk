@@ -1,0 +1,65 @@
+{
+  "name": "@tileflow/cli",
+  "version": "0.1.0-alpha.14",
+  "description": "Command-line tools for Tileflow config, capture, visual testing, and deploy.",
+  "type": "module",
+  "homepage": "https://tileflow.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tileflow/tileflow-sdk.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/tileflow/tileflow-sdk/issues"
+  },
+  "keywords": [
+    "tileflow",
+    "cli",
+    "maps",
+    "maplibre",
+    "tiles"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "tileflow": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean --no-splitting --platform node",
+    "cli": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "verify": "pnpm run typecheck && pnpm run test"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.0.10",
+    "@tileflow/capture": "workspace:*",
+    "@tileflow/core": "workspace:*",
+    "@tileflow/dev": "workspace:*",
+    "hono": "4.12.34",
+    "commander": "^15.0.0",
+    "picocolors": "^1.1.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/pngjs": "6.0.5",
+    "pngjs": "7.0.0"
+  }
+}

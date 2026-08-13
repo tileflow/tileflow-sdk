@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck, lint, and test
+        run: pnpm check
+
+      - name: Build
+        run: pnpm build
+
+  capture-smoke:
+    name: Capture smoke (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache exact Chromium headless shell
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+            ~/AppData/Local/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-1.60.0-chromium-headless-shell-1223
+
+      - name: Install Linux Chromium dependencies
+        if: runner.os == 'Linux'
+        run: pnpm --filter @tileflow/capture exec playwright install-deps chromium
+
+      - name: Provision pinned Chromium headless shell
+        run: pnpm --filter @tileflow/capture exec playwright install --only-shell chromium
+
+      - name: Run cross-platform capture and browser suite
+        run: pnpm --filter @tileflow/capture run smoke:browser
+        env:
+          TILEFLOW_RUN_BROWSER_TESTS: '1'
+
+  capture-public-tarball:
+    name: Clean packed capture consumer
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build public packages
+        run: pnpm build
+
+      - name: Cache exact Chromium headless shell
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-1.60.0-chromium-headless-shell-1223
+
+      - name: Install Linux Chromium dependencies
+        run: pnpm --filter @tileflow/capture exec playwright install-deps chromium
+
+      - name: Provision pinned Chromium headless shell
+        run: pnpm --filter @tileflow/capture exec playwright install --only-shell chromium
+
+      - name: Audit and smoke packed packages
+        run: pnpm run smoke:capture-public

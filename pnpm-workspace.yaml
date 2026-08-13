@@ -1,0 +1,13 @@
+packages:
+  - 'packages/*'
+
+allowBuilds:
+  esbuild: true
+  sharp: true
+
+overrides:
+  esbuild: 0.28.1
+  fast-uri: 3.1.5
+  nanoid: 3.3.17
+  postcss: 8.5.23
+  sharp: 0.35.3

@@ -1,0 +1,63 @@
+{
+  "name": "@tileflow/svelte",
+  "version": "0.1.0-alpha.14",
+  "description": "Svelte component for rendering Tileflow maps with MapLibre.",
+  "type": "module",
+  "sideEffects": false,
+  "svelte": "./src/index.js",
+  "homepage": "https://tileflow.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tileflow/tileflow-sdk.git",
+    "directory": "packages/svelte"
+  },
+  "bugs": {
+    "url": "https://github.com/tileflow/tileflow-sdk/issues"
+  },
+  "keywords": [
+    "tileflow",
+    "svelte",
+    "maps",
+    "maplibre",
+    "tiles"
+  ],
+  "types": "./src/index.d.ts",
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "build": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "node --test test/*.test.js",
+    "verify": "pnpm run build && pnpm run test",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json",
+    "lint": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "svelte": "./src/index.js",
+      "import": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./TileflowMap.svelte": {
+      "types": "./src/TileflowMap.svelte.d.ts",
+      "svelte": "./src/TileflowMap.svelte",
+      "default": "./src/TileflowMap.svelte"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@tileflow/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "maplibre-gl": ">=5",
+    "svelte": ">=5"
+  },
+  "devDependencies": {
+    "maplibre-gl": "^5.24.0",
+    "svelte": "^5.43.17",
+    "svelte-check": "^4.3.4"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules
+.turbo
+dist
+coverage
+pnpm-lock.yaml
+package-lock.json
+
+packages/*/dist
+packages/core/OSM_BRIGHT_LICENSE.md
+packages/core/src/templates/osm-bright/LICENSE.md
+packages/core/src/templates/osm-bright/style.json

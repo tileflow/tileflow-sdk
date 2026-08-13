@@ -1,0 +1,65 @@
+{
+  "name": "@tileflow/capture",
+  "version": "0.1.0-alpha.14",
+  "description": "Deterministic local visual capture and comparison for Tileflow maps.",
+  "type": "module",
+  "sideEffects": false,
+  "homepage": "https://tileflow.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tileflow/tileflow-sdk.git",
+    "directory": "packages/capture"
+  },
+  "bugs": {
+    "url": "https://github.com/tileflow/tileflow-sdk/issues"
+  },
+  "keywords": [
+    "tileflow",
+    "maps",
+    "maplibre",
+    "visual-testing",
+    "playwright"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean --platform node",
+    "test": "tsx --test --test-concurrency=1 test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "smoke:browser": "pnpm run test",
+    "verify": "pnpm run typecheck && pnpm run test"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@tileflow/core": "workspace:*",
+    "@tileflow/dev": "workspace:*",
+    "maplibre-gl": "5.24.0",
+    "pixelmatch": "7.2.0",
+    "playwright": "1.60.0",
+    "pngjs": "7.0.0"
+  },
+  "devDependencies": {
+    "@tileflow/react": "workspace:*",
+    "@types/node": "^25.9.2",
+    "@types/pngjs": "6.0.5",
+    "next": "16.2.11",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "vite": "^8.0.16",
+    "webpack": "5.108.3"
+  }
+}

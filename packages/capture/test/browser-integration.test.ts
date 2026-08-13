@@ -1,0 +1,228 @@
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {once} from 'node:events';
+import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {createServer, Server} from 'node:http';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import test from 'node:test';
+import type {MapLibreStyle, NormalizedTileflowCaptureScene} from '@tileflow/core';
+import {createTileflowBuildArtifacts, type TileflowBuildAsset} from '@tileflow/dev';
+import {launchTileflowCaptureBrowser} from '../src/browser';
+import {
+  captureStandaloneTileflowScene,
+  readPngDimensions,
+  tileflowSyntheticAssetOrigin,
+} from '../src/standalone';
+
+test(
+  'renders local sprite pixels through one headless Browser without a listener',
+  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1'},
+  async () => {
+    const originalListen = Server.prototype.listen;
+    let listenAttempts = 0;
+    Server.prototype.listen = function forbiddenListen() {
+      listenAttempts += 1;
+      throw new Error('Capture opened a forbidden HTTP listener.');
+    };
+    const browser = await launchTileflowCaptureBrowser({allowInstall: false});
+
+    try {
+      const first = await captureStandaloneTileflowScene({
+        assets,
+        browser,
+        scene,
+        style,
+      });
+      const second = await captureStandaloneTileflowScene({
+        assets,
+        browser,
+        scene,
+        style,
+      });
+      const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+
+      assert.equal(hash(first.png), hash(second.png));
+      assert.equal(first.networkDependent, false);
+      assert.deepEqual(first.warnings, []);
+      assert.equal(listenAttempts, 0);
+      assert.deepEqual([...first.png.slice(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+    } finally {
+      Server.prototype.listen = originalListen;
+      await browser.close();
+    }
+  },
+);
+
+test(
+  'renders validated compiler-generated roads twice against loopback vector fixtures',
+  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 30_000},
+  async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tileflow-generated-browser-'));
+    let origin = '';
+    const requests = new Set<string>();
+    const server = createServer((request, response) => {
+      const path = request.url?.split('?')[0] ?? '/';
+      requests.add(path);
+      response.setHeader('Access-Control-Allow-Origin', '*');
+      if (path === '/tiles/world/tiles.json') {
+        response.writeHead(200, {'Content-Type': 'application/json'});
+        response.end(
+          JSON.stringify({
+            tilejson: '3.0.0',
+            minzoom: 0,
+            maxzoom: 14,
+            tiles: [`${origin}/tiles/world/{z}/{x}/{y}.pbf`],
+          }),
+        );
+        return;
+      }
+      if (path.endsWith('.pbf')) {
+        response.writeHead(200, {'Content-Type': 'application/x-protobuf'});
+        response.end(Buffer.alloc(0));
+        return;
+      }
+      if (path.endsWith('/sprite.json') || path.endsWith('/sprite@2x.json')) {
+        response.writeHead(200, {'Content-Type': 'application/json'});
+        response.end('{}');
+        return;
+      }
+      if (path.endsWith('/sprite.png') || path.endsWith('/sprite@2x.png')) {
+        response.writeHead(200, {'Content-Type': 'image/png'});
+        response.end(transparentPng);
+        return;
+      }
+      response.writeHead(404).end();
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    origin = `http://127.0.0.1:${address.port}`;
+    let browser: Awaited<ReturnType<typeof launchTileflowCaptureBrowser>> | undefined;
+
+    try {
+      await writeFile(
+        join(cwd, 'tileflow.config.ts'),
+        `export default {
+  maps: {
+    proof: {
+      renderer: 'generated',
+      labels: 'none',
+      poi: 'none',
+      buildings: 'hidden',
+      modules: [{
+        type: 'roads', detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
+        extras: {ferry: false, paths: true, rail: true}
+      }]
+    }
+  }
+};\n`,
+      );
+      const artifacts = await createTileflowBuildArtifacts({cwd, tileBaseUrl: origin});
+      const generatedStyle = artifacts.styles.proof;
+      assert.ok(generatedStyle);
+      assert.ok(generatedStyle.layers.some((layer) => layer.id === 'roads-casing'));
+      assert.ok(generatedStyle.layers.some((layer) => layer.id === 'roads-bridges'));
+      browser = await launchTileflowCaptureBrowser({allowInstall: false});
+      const first = await captureStandaloneTileflowScene({
+        assets: artifacts.assets,
+        browser,
+        scene: generatedScene,
+        style: generatedStyle,
+      });
+      const second = await captureStandaloneTileflowScene({
+        assets: artifacts.assets,
+        browser,
+        scene: generatedScene,
+        style: generatedStyle,
+      });
+      const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+
+      assert.equal(hash(first.png), hash(second.png));
+      assert.deepEqual(readPngDimensions(first.png), {height: 256, width: 256});
+      assert.equal(first.networkDependent, false);
+      assert.deepEqual(first.warnings, []);
+      assert.equal(requests.has('/tiles/world/tiles.json'), true);
+      assert.equal(
+        [...requests].some((path) => path.endsWith('.pbf')),
+        true,
+      );
+    } finally {
+      await browser?.close();
+      await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
+      await rm(cwd, {force: true, recursive: true});
+    }
+  },
+);
+
+const scene: NormalizedTileflowCaptureScene = {
+  map: 'proof',
+  camera: {
+    type: 'center',
+    center: [0, 0],
+    zoom: 1,
+    bearing: 0,
+    pitch: 0,
+  },
+  viewport: {width: 64, height: 64, dpr: 1},
+  target: {kind: 'map'},
+};
+
+const generatedScene: NormalizedTileflowCaptureScene = {
+  map: 'proof',
+  camera: {type: 'center', center: [0, 0], zoom: 1, bearing: 0, pitch: 0},
+  viewport: {width: 256, height: 256, dpr: 1},
+  target: {kind: 'map'},
+};
+
+const style: MapLibreStyle = {
+  version: 8,
+  name: 'Capture integration fixture',
+  sprite: `${tileflowSyntheticAssetOrigin}/icons/proof/sprite`,
+  sources: {
+    marker: {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: {},
+            geometry: {type: 'Point', coordinates: [0, 0]},
+          },
+        ],
+      },
+    },
+  },
+  layers: [
+    {id: 'background', type: 'background', paint: {'background-color': '#F6F7F3'}},
+    {
+      id: 'marker',
+      type: 'symbol',
+      source: 'marker',
+      layout: {'icon-allow-overlap': true, 'icon-image': 'marker'},
+    },
+  ],
+};
+
+const assets: TileflowBuildAsset[] = [
+  {
+    contentType: 'application/json; charset=utf-8',
+    fileName: 'icons/proof/sprite.json',
+    source: JSON.stringify({marker: {height: 2, pixelRatio: 1, width: 2, x: 0, y: 0}}),
+  },
+  {
+    contentType: 'image/png',
+    fileName: 'icons/proof/sprite.png',
+    source: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWP4WSz2H4QZYAwAWswKBc9NlmIAAAAASUVORK5CYII=',
+      'base64',
+    ),
+  },
+];
+
+const transparentPng = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWP4WSz2H4QZYAwAWswKBc9NlmIAAAAASUVORK5CYII=',
+  'base64',
+);

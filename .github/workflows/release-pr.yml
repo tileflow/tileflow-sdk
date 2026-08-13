@@ -1,0 +1,98 @@
+name: Release PR
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: release-pr
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      release_pr_number: ${{ steps.changesets.outputs['pr-number'] }}
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Create or update the release pull request
+        id: changesets
+        uses: changesets/action@198f833dd7d863100ea6e28967bc9a9fdefadb0a # v2.1.0
+        with:
+          github-token: ${{ github.token }}
+          version-script: pnpm release:version
+          commit-message: Version changed packages
+          pr-title: Release changed packages
+          pr-draft: create
+          create-github-releases: false
+          push-git-tags: false
+          push-with-git-cli: false
+
+  dispatch-ci:
+    if: ${{ needs.version.outputs.release_pr_number != '' }}
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      pull-requests: read
+    steps:
+      - name: Dispatch CI for the release branch
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        env:
+          RELEASE_PR_NUMBER: ${{ needs.version.outputs.release_pr_number }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const pullNumber = Number(process.env.RELEASE_PR_NUMBER);
+            if (!Number.isSafeInteger(pullNumber) || pullNumber <= 0) {
+              throw new Error(`Invalid release pull request number: ${process.env.RELEASE_PR_NUMBER}`);
+            }
+
+            const {data: pullRequest} = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+            });
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+            if (pullRequest.head.repo?.full_name !== repository) {
+              throw new Error(`Refusing to dispatch CI for a branch outside ${repository}.`);
+            }
+            if (pullRequest.base.ref !== 'main' || pullRequest.head.ref !== 'changeset-release/main') {
+              throw new Error(`Unexpected release pull request branches: ${pullRequest.head.ref} -> ${pullRequest.base.ref}.`);
+            }
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'ci.yml',
+              ref: pullRequest.head.ref,
+              inputs: {
+                release_pr_base_sha: pullRequest.base.sha,
+                release_pr_head_sha: pullRequest.head.sha,
+              },
+            });

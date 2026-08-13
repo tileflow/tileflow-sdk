@@ -86,11 +86,15 @@ npm pkg set version=0.0.0-bootstrap.0 \
   dependencies.@tileflow/dev=0.1.0-alpha.15 \
   --prefix "$bootstrap_root/package"
 npx npm@11.19.0 publish "$bootstrap_root/package" --access public --tag bootstrap
+npx npm@11.19.0 dist-tag rm @tileflow/capture latest
+npx npm@11.19.0 dist-tag ls @tileflow/capture
 ```
 
-Inspect the generated package and confirm the `bootstrap` dist-tag before configuring its Trusted
+npm assigns `latest` to the first version of a newly created package even when that first publish
+uses a different tag. Remove that automatic tag immediately. Inspect the generated package and
+confirm that `bootstrap: 0.0.0-bootstrap.0` is the only dist-tag before configuring its Trusted
 Publisher. Remove the temporary directory afterward. Never add the bootstrap tag to installation
-examples or move `alpha` to it.
+examples or move `alpha` or `latest` to it.
 
 ## Release checklist
 

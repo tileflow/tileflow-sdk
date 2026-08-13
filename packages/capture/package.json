@@ -1,6 +1,6 @@
 {
   "name": "@tileflow/capture",
-  "version": "0.1.0-alpha.15",
+  "version": "0.1.0-alpha.16",
   "description": "Deterministic local visual capture and comparison for Tileflow maps.",
   "type": "module",
   "sideEffects": false,

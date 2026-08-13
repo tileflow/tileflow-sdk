@@ -93,10 +93,13 @@ jobs:
         run: pnpm --filter @tileflow/capture exec playwright install-deps chromium
 
       - name: Provision pinned capture browser shell
-        run: pnpm --filter @tileflow/cli cli -- setup capture --json
+        run: pnpm --filter @tileflow/capture exec playwright install --only-shell chromium
 
       - name: Authorize the pinned Chromium sandbox
         run: bash scripts/configure-linux-chromium-sandbox.sh
+
+      - name: Verify the pinned capture browser shell
+        run: pnpm --filter @tileflow/cli run cli setup capture --json --no-browser-install
 
       - name: Smoke packed capture CLI
         run: node scripts/capture-public-smoke.mjs --pack-dir "$RUNNER_TEMP/tileflow-packs"

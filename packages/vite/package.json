@@ -1,6 +1,6 @@
 {
   "name": "@tileflow/vite",
-  "version": "0.1.0-alpha.15",
+  "version": "0.1.0-alpha.16",
   "description": "Vite plugin for Tileflow map style development and static artifacts.",
   "type": "module",
   "sideEffects": false,

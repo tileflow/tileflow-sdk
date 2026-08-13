@@ -1,6 +1,6 @@
 {
   "name": "@tileflow/react",
-  "version": "0.1.0-alpha.15",
+  "version": "0.1.0-alpha.16",
   "description": "React components for rendering Tileflow maps with MapLibre.",
   "type": "module",
   "sideEffects": false,

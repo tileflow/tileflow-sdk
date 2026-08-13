@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalEnv": ["pnpm_config_verify_deps_before_run"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

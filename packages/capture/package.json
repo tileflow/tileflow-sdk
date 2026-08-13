@@ -1,6 +1,6 @@
 {
   "name": "@tileflow/capture",
-  "version": "0.1.0-alpha.16",
+  "version": "0.0.0-development",
   "description": "Deterministic local visual capture and comparison for Tileflow maps.",
   "type": "module",
   "sideEffects": false,
@@ -45,8 +45,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@tileflow/core": "workspace:*",
-    "@tileflow/dev": "workspace:*",
+    "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
+    "@tileflow/dev": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "maplibre-gl": "5.24.0",
     "pixelmatch": "7.2.0",
     "playwright": "1.60.0",

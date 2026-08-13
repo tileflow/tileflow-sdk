@@ -20,23 +20,20 @@ pnpm --filter @tileflow/core verify
 pnpm --filter @tileflow/core typecheck
 ```
 
-When a change should publish a package, add its release intent before opening the pull request:
+Do not edit package versions, add changesets, create release tags, or run `npm publish`. Every
+source package keeps `0.0.0-development`. Merging a normal PR to `main` is the entire release
+action: after `CI / Required` succeeds, automation compares packed artifacts with npm and publishes
+only the packages whose public contents changed, each at its next independent numeric alpha.
+
+Repository-only changes publish nothing. A package README, export, runtime dependency, executable
+mode, or built file is part of that package's public artifact and causes its release automatically.
+Keep builds deterministic and review the source PR with the understanding that a green merge can
+become public immediately.
+
+Before submitting a package change, exercise the packed consumer:
 
 ```sh
-pnpm changeset
-```
-
-Select only the packages whose own public artifact or compatibility contract changed. A normal
-source pull request never publishes directly; after it reaches `main`, automation prepares the
-separate Release PR that versions the selected packages.
-
-Merging the Release PR is the final and irreversible publication approval. Its selected packages
-publish automatically only after the complete `main` CI run succeeds. Do not create release tags,
-run `npm publish`, or edit the generated versions, changelogs, and release plan by hand.
-
-Before submitting a package or release change, also exercise the packed consumer:
-
-```sh
+pnpm run release:verify-source
 pnpm run smoke:capture-public
 pnpm run publish:alpha:dry-run
 ```
@@ -49,10 +46,9 @@ explicitly.
 
 Keep package exports and README examples aligned. Update
 `docs/contracts/local-visual-capture.md` when scene, readiness, receipt, capture, or visual-baseline
-behavior changes. Changes to hosted API or icon-package wire contracts require coordinated
-validation with the Tileflow platform before release. Run the private `SDK Candidate` workflow
-against the exact, current Release PR head SHA before merging it, and repeat that gate whenever the
-head changes.
+behavior changes. Shared hosted API and rendering contracts must remain backward compatible because
+npm and platform production cannot update atomically; deploy compatible server behavior before
+merging the SDK client change.
 
-Do not commit generated `dist` files, browser binaries, captures, credentials, `.env` files, or
-machine-specific paths.
+Do not commit generated `dist` files, browser binaries, captures, credentials, `.env` files,
+machine-specific paths, or temporary registry/release plans.

@@ -1,6 +1,6 @@
 {
   "name": "@tileflow/static",
-  "version": "0.1.0-alpha.16",
+  "version": "0.0.0-development",
   "description": "Static map request schemas and helpers for Tileflow.",
   "type": "module",
   "sideEffects": false,

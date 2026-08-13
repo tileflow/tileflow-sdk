@@ -1,6 +1,6 @@
 {
   "name": "@tileflow/react",
-  "version": "0.1.0-alpha.16",
+  "version": "0.0.0-development",
   "description": "React components for rendering Tileflow maps with MapLibre.",
   "type": "module",
   "sideEffects": false,
@@ -47,8 +47,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@tileflow/core": "workspace:*",
-    "@tileflow/static": "workspace:*"
+    "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
+    "@tileflow/static": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0"
   },
   "peerDependencies": {
     "maplibre-gl": ">=5",

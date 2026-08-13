@@ -1,6 +1,6 @@
 {
   "name": "@tileflow/svelte",
-  "version": "0.1.0-alpha.16",
+  "version": "0.0.0-development",
   "description": "Svelte component for rendering Tileflow maps with MapLibre.",
   "type": "module",
   "sideEffects": false,
@@ -49,7 +49,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@tileflow/core": "workspace:*"
+    "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0"
   },
   "peerDependencies": {
     "maplibre-gl": ">=5",

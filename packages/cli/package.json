@@ -1,6 +1,6 @@
 {
   "name": "@tileflow/cli",
-  "version": "0.1.0-alpha.16",
+  "version": "0.0.0-development",
   "description": "Command-line tools for Tileflow config, capture, visual testing, and deploy.",
   "type": "module",
   "homepage": "https://tileflow.dev",
@@ -50,9 +50,9 @@
   },
   "dependencies": {
     "@hono/node-server": "2.0.10",
-    "@tileflow/capture": "workspace:*",
-    "@tileflow/core": "workspace:*",
-    "@tileflow/dev": "workspace:*",
+    "@tileflow/capture": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
+    "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
+    "@tileflow/dev": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "hono": "4.12.34",
     "commander": "^15.0.0",
     "picocolors": "^1.1.1",

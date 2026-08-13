@@ -2,29 +2,26 @@ import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {readFile, writeFile} from 'node:fs/promises';
 import {promisify} from 'node:util';
-import semver from 'semver';
-import {publicPackageNames, publicPackageNameSet} from './release-packages.mjs';
+import {assertSelectedRuntimeDependencies, validateReleasePlan} from './reconcile-release.mjs';
+import {
+  publicPackageNames,
+  publicPackageNameSet,
+  runtimeDependencySnapshot,
+} from './release-config.mjs';
 
 const execFileAsync = promisify(execFile);
-const [planPath, tarballListPath, selectedPath, registryDependenciesPath] = process.argv.slice(2);
+const [planPath, tarballListPath, selectedPath] = process.argv.slice(2);
 assert.ok(
-  planPath && tarballListPath && selectedPath && registryDependenciesPath,
-  'Expected plan, tarball list, selected-tarball output, and registry-dependency output paths.',
+  planPath && tarballListPath && selectedPath,
+  'Expected plan, tarball list, and output path.',
 );
-assert.equal(process.argv.slice(2).length, 4, 'Unexpected release-tarball selector arguments.');
+assert.equal(process.argv.slice(2).length, 3, 'Unexpected release-tarball selector arguments.');
 
-const plan = JSON.parse(await readFile(planPath, 'utf8'));
-assert.equal(plan.schemaVersion, 1, 'Unsupported release plan schema.');
-assert.ok(Array.isArray(plan.packages), 'Release plan packages must be an array.');
+const plan = validateReleasePlan(JSON.parse(await readFile(planPath, 'utf8')));
 assert.ok(plan.packages.length > 0, 'Release plan is empty.');
-
-const selectedNames = plan.packages.map(({name}) => name);
-assert.equal(new Set(selectedNames).size, selectedNames.length, 'Release packages must be unique.');
-assert.deepEqual(
-  selectedNames,
-  publicPackageNames.filter((name) => selectedNames.includes(name)),
-  'Release packages must use dependency-safe repository order.',
-);
+const versions = new Map(plan.baselines.map(({name, version}) => [name, version]));
+for (const release of plan.packages) versions.set(release.name, release.to);
+const baselines = new Map(plan.baselines.map((baseline) => [baseline.name, baseline]));
 
 const tarballs = (await readFile(tarballListPath, 'utf8'))
   .split('\n')
@@ -44,7 +41,6 @@ for (const tarball of tarballs) {
     publicPackageNameSet.has(manifest.name),
     `Unexpected tarball package: ${manifest.name}.`,
   );
-  assert.ok(semver.valid(manifest.version), `Invalid tarball version for ${manifest.name}.`);
   assert.equal(byName.has(manifest.name), false, `Duplicate tarball for ${manifest.name}.`);
   byName.set(manifest.name, {manifest, tarball});
 }
@@ -54,69 +50,30 @@ assert.deepEqual(
   'Packed public package set is incomplete.',
 );
 
-const releasesByName = new Map(plan.packages.map((release) => [release.name, release]));
-const selectedOrder = new Map(selectedNames.map((name, index) => [name, index]));
+const selectedNames = new Set(plan.packages.map(({name}) => name));
+const releases = new Map(plan.packages.map((release) => [release.name, release]));
 const selected = [];
-const registryDependencies = new Map();
-
-for (const release of plan.packages) {
-  assert.ok(publicPackageNameSet.has(release.name), `Unknown release package: ${release.name}.`);
-  const packed = byName.get(release.name);
-  assert.ok(packed, `Missing release tarball for ${release.name}.`);
-  assert.equal(packed.manifest.version, release.to, `${release.name} tarball version mismatch.`);
-  selected.push(packed.tarball);
-
-  // Development dependencies are not installed from the published artifact and therefore do not
-  // constrain registry availability or publication order.
-  for (const dependencyGroup of ['dependencies', 'optionalDependencies', 'peerDependencies']) {
-    for (const [dependency, range] of Object.entries(packed.manifest[dependencyGroup] ?? {})) {
-      if (!publicPackageNameSet.has(dependency)) continue;
-
-      assert.ok(
-        semver.valid(range),
-        `${release.name} must pack ${dependency} as one exact version, found ${range}.`,
-      );
-      const dependencyRelease = releasesByName.get(dependency);
-      if (dependencyRelease) {
-        assert.ok(
-          selectedOrder.get(dependency) < selectedOrder.get(release.name),
-          `${dependency} must be published before its selected dependent ${release.name}.`,
-        );
-        assert.equal(
-          range,
-          dependencyRelease.to,
-          `${release.name} must depend on the ${dependency} version in this release batch.`,
-        );
-        continue;
-      }
-
-      const packedDependency = byName.get(dependency);
-      assert.ok(packedDependency, `Missing packed internal dependency ${dependency}.`);
-      assert.equal(
-        range,
-        packedDependency.manifest.version,
-        `${release.name} internal dependency ${dependency} does not match the workspace tarball.`,
-      );
-      registryDependencies.set(`${dependency}\0${range}`, {name: dependency, version: range});
-    }
+for (const name of publicPackageNames) {
+  const packed = byName.get(name);
+  assert.equal(packed.manifest.version, versions.get(name), `${name} tarball version mismatch.`);
+  const snapshot = runtimeDependencySnapshot(packed.manifest);
+  if (selectedNames.has(name)) {
+    assert.deepEqual(
+      snapshot,
+      releases.get(name).runtimeDependencies,
+      `${name} internal dependency topology differs from its release plan.`,
+    );
+    assertSelectedRuntimeDependencies(name, snapshot, versions);
+  } else {
+    assert.deepEqual(
+      snapshot,
+      baselines.get(name).runtimeDependencies,
+      `${name} is unselected and must preserve its published internal dependency ranges.`,
+    );
   }
+
+  if (selectedNames.has(name)) selected.push(packed.tarball);
 }
 
-const registryDependencyLines = [...registryDependencies.values()]
-  .sort(
-    (left, right) =>
-      publicPackageNames.indexOf(left.name) - publicPackageNames.indexOf(right.name) ||
-      left.version.localeCompare(right.version),
-  )
-  .map(({name, version}) => `${name}\t${version}`);
-
-await Promise.all([
-  writeFile(selectedPath, `${selected.join('\n')}\n`),
-  writeFile(
-    registryDependenciesPath,
-    registryDependencyLines.length === 0 ? '' : `${registryDependencyLines.join('\n')}\n`,
-  ),
-]);
-console.log(
-  `Selected ${selected.length} release tarball(s); ${registryDependencyLines.length} internal dependency version(s) must already exist on npm.`,
-);
+await writeFile(selectedPath, `${selected.join('\n')}\n`);
+console.log(`Selected ${selected.length} dependency-safe release tarball(s).`);

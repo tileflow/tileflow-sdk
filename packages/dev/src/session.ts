@@ -253,14 +253,15 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
   #updateArtifactWatchPaths(paths: readonly string[]): void {
     if (!this.#watcher) return;
     const next = new Set(paths.map((path) => resolve(this.#cwd, path)));
+    const previous = this.#watchedArtifactPaths;
+    this.#watchedArtifactPaths = next;
 
-    for (const path of this.#watchedArtifactPaths) {
+    for (const path of previous) {
       if (!next.has(path)) void this.#watcher.unwatch(path);
     }
     for (const path of next) {
-      if (!this.#watchedArtifactPaths.has(path)) this.#watcher.add(path);
+      if (!previous.has(path)) this.#watcher.add(path);
     }
-    this.#watchedArtifactPaths = next;
   }
 }
 

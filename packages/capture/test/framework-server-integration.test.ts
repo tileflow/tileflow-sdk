@@ -4,7 +4,6 @@ import {execFile} from 'node:child_process';
 import {once} from 'node:events';
 import {mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {createServer, type Server as NodeServer, Server} from 'node:http';
-import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
@@ -122,9 +121,13 @@ async function captureFromOnlyApplicationServer(cwd: string, appOrigin: string) 
 }
 
 async function createFrameworkFixture(kind: 'next' | 'webpack') {
-  const cwd = await mkdtemp(join(tmpdir(), `tileflow-${kind}-capture-`));
   const packageRoot = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
-  await symlink(join(packageRoot, 'node_modules'), join(cwd, 'node_modules'), 'dir');
+  const cwd = await mkdtemp(join(packageRoot, `.tileflow-test-${kind}-capture-`));
+  await symlink(
+    join(packageRoot, 'node_modules'),
+    join(cwd, 'node_modules'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
   await writeFile(join(cwd, 'tileflow.config.ts'), tileflowConfig, 'utf8');
 
   if (kind === 'next') {

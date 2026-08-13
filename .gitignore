@@ -8,6 +8,7 @@ dist
 coverage
 packages/*/dist
 packages/*/.turbo
+packages/*/.tileflow-test-*
 
 .tileflow/captures/
 .tileflow/diffs/

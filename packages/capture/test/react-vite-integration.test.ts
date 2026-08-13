@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import {mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
 import {Server} from 'node:http';
-import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
@@ -12,10 +11,14 @@ test(
   'captures React wrapper readiness at narrow and desktop sizes through one Vite server',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
   async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'tileflow-react-vite-capture-'));
     const capturePackageRoot = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
+    const cwd = await mkdtemp(join(capturePackageRoot, '.tileflow-test-react-vite-capture-'));
     const reactSource = fileURLToPath(new URL('../../react/src/index.ts', import.meta.url));
-    await symlink(join(capturePackageRoot, 'node_modules'), join(cwd, 'node_modules'), 'dir');
+    await symlink(
+      join(capturePackageRoot, 'node_modules'),
+      join(cwd, 'node_modules'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
     await Promise.all([
       writeFile(
         join(cwd, 'index.html'),

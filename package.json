@@ -22,7 +22,7 @@
     "typecheck": "turbo typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
-    "verify": "pnpm -r --if-present run verify",
+    "verify": "pnpm -r --workspace-concurrency=1 --if-present run verify",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "fix": "prettier --write . && eslint --fix .",

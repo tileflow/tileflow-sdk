@@ -120,7 +120,7 @@ export async function applyReleaseVersions(document, root = repositoryRoot) {
     if (releasePlan && releases.has(name)) {
       applySelectedRuntimeDependencies(entry.manifest, versions);
       assert.deepEqual(
-        runtimeDependencySnapshot(entry.manifest),
+        publishableRuntimeDependencySnapshot(entry.manifest),
         releases.get(name).runtimeDependencies,
         `${name} source dependency topology changed after release planning.`,
       );
@@ -132,6 +132,18 @@ export async function applyReleaseVersions(document, root = repositoryRoot) {
     }
     await writeFile(entry.path, `${JSON.stringify(entry.manifest, null, 2)}\n`);
   }
+}
+
+function publishableRuntimeDependencySnapshot(manifest) {
+  const snapshot = runtimeDependencySnapshot(manifest);
+  for (const dependencies of Object.values(snapshot)) {
+    for (const [dependency, range] of Object.entries(dependencies)) {
+      dependencies[dependency] = range.startsWith('workspace:')
+        ? range.slice('workspace:'.length)
+        : range;
+    }
+  }
+  return snapshot;
 }
 
 function applyBaselineRuntimeDependencies(manifest, snapshot, {strict, versions}) {
@@ -149,12 +161,12 @@ function applyBaselineRuntimeDependencies(manifest, snapshot, {strict, versions}
     for (const dependency of Object.keys(sourceSnapshot[group] ?? {})) {
       const baselineRange = snapshot[group]?.[dependency];
       if (baselineRange !== undefined) {
-        manifest[group][dependency] = baselineRange;
+        manifest[group][dependency] = `workspace:${baselineRange}`;
         continue;
       }
       const dependencyVersion = versions.get(dependency);
       assert.ok(dependencyVersion, `${manifest.name} has no baseline version for ${dependency}.`);
-      manifest[group][dependency] = automaticInternalRuntimeRange(dependencyVersion);
+      manifest[group][dependency] = `workspace:${automaticInternalRuntimeRange(dependencyVersion)}`;
     }
   }
 }
@@ -165,7 +177,7 @@ function applySelectedRuntimeDependencies(manifest, versions) {
       if (!publicPackageNameSet.has(dependency)) continue;
       const dependencyVersion = versions.get(dependency);
       assert.ok(dependencyVersion, `${manifest.name} has no release version for ${dependency}.`);
-      manifest[group][dependency] = automaticInternalRuntimeRange(dependencyVersion);
+      manifest[group][dependency] = `workspace:${automaticInternalRuntimeRange(dependencyVersion)}`;
     }
   }
 }

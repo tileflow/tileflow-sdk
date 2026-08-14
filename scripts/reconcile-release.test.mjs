@@ -212,7 +212,11 @@ test('floors selected dependents at effective dependency versions and preserves 
       });
       await applyReleaseVersions(plan, root);
       const dev = JSON.parse(await readFile(join(root, 'packages', 'dev', 'package.json'), 'utf8'));
-      assert.equal(dev.dependencies['@tileflow/core'], scenario.expectedRange, scenario.name);
+      assert.equal(
+        dev.dependencies['@tileflow/core'],
+        `workspace:${scenario.expectedRange}`,
+        scenario.name,
+      );
     } finally {
       await rm(root, {force: true, recursive: true});
     }
@@ -239,7 +243,7 @@ test('candidate application keeps source dependency additions and removals visib
     );
     assert.equal(
       dev.dependencies['@tileflow/core'],
-      automaticInternalRuntimeRange('0.1.0-alpha.16'),
+      `workspace:${automaticInternalRuntimeRange('0.1.0-alpha.16')}`,
     );
   } finally {
     await rm(addedRoot, {force: true, recursive: true});

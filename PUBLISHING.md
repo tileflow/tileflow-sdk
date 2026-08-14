@@ -58,6 +58,9 @@ artifact and do not affect release selection or publication order.
 The reconciler downloads each package currently named by its npm `alpha` dist-tag, records its
 internal runtime ranges, temporarily applies those eleven registry versions and per-edge ranges to
 a clean checkout, builds all packages, and packs them.
+The ephemeral checkout retains the `workspace:` prefix on those exact release ranges so pnpm and
+Turborepo preserve dependency-first build order; `pnpm pack` removes only that workspace protocol
+when it writes the public tarball manifest.
 It compares the extracted candidate and registry package trees. It considers public file names,
 file modes, file bytes, and publishable manifest metadata. It ignores only:
 

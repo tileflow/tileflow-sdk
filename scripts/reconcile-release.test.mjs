@@ -266,36 +266,44 @@ test('candidate application keeps source dependency additions and removals visib
   }
 });
 
-test('validates final tarballs, shared internal ranges, and unselected immutability', async () => {
+test('accepts final tarballs after applying workspace ranges and preserves unselected immutability', async () => {
   const root = await mkdtemp(join(tmpdir(), 'tileflow-reconcile-test-'));
   try {
     const versions = Object.fromEntries(publicPackageNames.map((name) => [name, '0.1.0-alpha.16']));
     const registry = await tarballSet(root, 'registry', versions, {
       '@tileflow/dev': {
-        manifest: {dependencies: {'@tileflow/core': internalRuntimeRange}},
+        manifest: {dependencies: {'@tileflow/core': '0.1.0-alpha.16'}},
       },
     });
     const state = await registryState(registry, versions);
     const plan = releasePlan([releaseEntry('@tileflow/core')], {
       '@tileflow/dev': {
-        dependencies: {'@tileflow/core': internalRuntimeRange},
+        dependencies: {'@tileflow/core': '0.1.0-alpha.16'},
       },
     });
     const finalVersions = {...versions, '@tileflow/core': '0.1.0-alpha.17'};
     const final = await tarballSet(root, 'final', finalVersions, {
       '@tileflow/core': {files: {'dist/index.js': 'export const changed = true;\n'}},
       '@tileflow/dev': {
-        manifest: {dependencies: {'@tileflow/core': internalRuntimeRange}},
+        manifest: {dependencies: {'@tileflow/core': '0.1.0-alpha.16'}},
       },
     });
-    await sourceManifestTree(root, finalVersions, {
-      '@tileflow/dev': {dependencies: {'@tileflow/core': internalRuntimeRange}},
+    await sourceManifestTree(root, {}, {
+      '@tileflow/dev': {dependencies: {'@tileflow/core': internalWorkspaceRuntimeRange}},
     });
+    await applyReleaseVersions(plan, root);
+
+    const appliedDev = JSON.parse(
+      await readFile(join(root, 'packages', 'dev', 'package.json'), 'utf8'),
+    );
+    assert.equal(appliedDev.version, '0.1.0-alpha.16');
+    assert.equal(appliedDev.dependencies['@tileflow/core'], 'workspace:0.1.0-alpha.16');
 
     await validateFinalRelease({
       plan,
       registryState: state,
       finalTarballs: final.paths,
+      // Deliberately pass the applied checkout that reproduced the production failure.
       root,
     });
 
@@ -303,13 +311,79 @@ test('validates final tarballs, shared internal ranges, and unselected immutabil
       '@tileflow/core': {files: {'dist/index.js': 'export const changed = true;\n'}},
       '@tileflow/dev': {
         files: {'dist/index.js': 'unselected drift\n'},
-        manifest: {dependencies: {'@tileflow/core': internalRuntimeRange}},
+        manifest: {dependencies: {'@tileflow/core': '0.1.0-alpha.16'}},
       },
     });
     await assert.rejects(
       validateFinalRelease({plan, registryState: state, finalTarballs: drifted.paths, root}),
       /changed materially without being selected/u,
     );
+
+    const workspaceFinal = await tarballSet(root, 'workspace-final', finalVersions, {
+      '@tileflow/core': {files: {'dist/index.js': 'export const changed = true;\n'}},
+      '@tileflow/dev': {
+        manifest: {dependencies: {'@tileflow/core': 'workspace:0.1.0-alpha.16'}},
+      },
+    });
+    await assert.rejects(
+      validateFinalRelease({
+        plan,
+        registryState: state,
+        finalTarballs: workspaceFinal.paths,
+        root,
+      }),
+      /Expected an exact alpha or an automatic alpha-only range, found workspace:0\.1\.0-alpha\.16/u,
+    );
+  } finally {
+    await rm(root, {force: true, recursive: true});
+  }
+});
+
+test('validates selected dependents after applying workspace release ranges', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tileflow-reconcile-selected-range-test-'));
+  try {
+    const versions = Object.fromEntries(publicPackageNames.map((name) => [name, '0.1.0-alpha.16']));
+    const runtimeDependencies = {
+      '@tileflow/dev': {dependencies: {'@tileflow/core': '0.1.0-alpha.16'}},
+    };
+    const registry = await tarballSet(root, 'registry', versions, {
+      '@tileflow/dev': {manifest: runtimeDependencies['@tileflow/dev']},
+    });
+    const state = await registryState(registry, versions);
+    const plan = releasePlan(
+      [releaseEntry('@tileflow/core'), releaseEntry('@tileflow/dev')],
+      runtimeDependencies,
+    );
+    const finalVersions = {
+      ...versions,
+      '@tileflow/core': '0.1.0-alpha.17',
+      '@tileflow/dev': '0.1.0-alpha.17',
+    };
+    const finalRange = automaticInternalRuntimeRange('0.1.0-alpha.17');
+    const final = await tarballSet(root, 'final', finalVersions, {
+      '@tileflow/core': {files: {'dist/index.js': 'export const changedCore = true;\n'}},
+      '@tileflow/dev': {
+        files: {'dist/index.js': 'export const changedDev = true;\n'},
+        manifest: {dependencies: {'@tileflow/core': finalRange}},
+      },
+    });
+    await sourceManifestTree(root, {}, {
+      '@tileflow/dev': {dependencies: {'@tileflow/core': internalWorkspaceRuntimeRange}},
+    });
+    await applyReleaseVersions(plan, root);
+
+    const appliedDev = JSON.parse(
+      await readFile(join(root, 'packages', 'dev', 'package.json'), 'utf8'),
+    );
+    assert.equal(appliedDev.version, '0.1.0-alpha.17');
+    assert.equal(appliedDev.dependencies['@tileflow/core'], `workspace:${finalRange}`);
+
+    await validateFinalRelease({
+      plan,
+      registryState: state,
+      finalTarballs: final.paths,
+      root,
+    });
   } finally {
     await rm(root, {force: true, recursive: true});
   }

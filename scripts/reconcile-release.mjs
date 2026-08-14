@@ -341,7 +341,6 @@ export async function validateFinalRelease({
   plan,
   registryState,
   finalTarballs,
-  root = repositoryRoot,
 }) {
   validateReleasePlan(plan);
   await validateRegistryState(registryState);
@@ -354,9 +353,8 @@ export async function validateFinalRelease({
     })),
     'Release plan registry baselines changed before final validation.',
   );
-  const manifests = await readPublicManifests(root);
-  validatePublicManifests(manifests);
   const finalByName = await readTarballsByName(finalTarballs);
+  validatePublicManifests(finalByName);
   const registryByName = new Map(registryState.packages.map((entry) => [entry.name, entry]));
   const versions = versionMapFromDocument(plan);
   const selected = new Set(plan.packages.map(({name}) => name));

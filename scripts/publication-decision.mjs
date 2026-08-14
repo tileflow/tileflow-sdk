@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import {fileURLToPath} from 'node:url';
-import {nextAlphaVersion} from './release-config.mjs';
+
+// The OIDC publish job intentionally installs no workspace dependencies.
+const numericAlphaPattern =
+  /^((?:0|[1-9]\d*))\.((?:0|[1-9]\d*))\.((?:0|[1-9]\d*))-alpha\.((?:0|[1-9]\d*))$/u;
+
+function nextAlphaVersion(value) {
+  const match = numericAlphaPattern.exec(value ?? '');
+  assert.ok(match, `Expected a numeric alpha version, found ${value ?? '<missing>'}.`);
+  return `${match[1]}.${match[2]}.${match[3]}-alpha.${BigInt(match[4]) + 1n}`;
+}
 
 export function classifyPublicationState({currentTag, from, targetState, to}) {
   assert.equal(to, nextAlphaVersion(from), `Expected ${nextAlphaVersion(from)} after ${from}.`);

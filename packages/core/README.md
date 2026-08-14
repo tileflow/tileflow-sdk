@@ -235,7 +235,8 @@ adds it as `archiveVersion` to the TileJSON URL and records it as
 
 ## Public API
 
-Use the package root only:
+Application config, compilation, runtime resolution, and capture-scene APIs come from the package
+root:
 
 ```ts
 import {
@@ -254,6 +255,24 @@ Capture scene schemas, types, normalization, limits, and schema version are also
 package root. See the [local visual capture contract](https://tileflow.dev/docs/agent-workflow) for
 the CLI workflow and readiness boundary.
 
-Subpaths under `src/`, `themes/`, `templates/`, and `modules/` are internal implementation details and can change during alpha releases.
+Framework adapters can import the browser-only lifecycle kernel explicitly:
+
+```ts
+import {
+  attachTileflowMapLifecycle,
+  createTileflowMarkerController,
+  createTileflowSessionStarter,
+  createTileflowTransformRequest,
+} from '@tileflow/core/browser';
+```
+
+The browser subpath is not re-exported from the root. It is safe to import during SSR, does not
+depend on MapLibre, and reads no browser globals during module evaluation. Adapter authors inject
+their frame scheduler plus MapLibre event and marker operations after mount. The package contract
+is documented in
+[`docs/contracts/framework-browser-runtime.md`](../../docs/contracts/framework-browser-runtime.md).
+
+Other subpaths under `src/`, `themes/`, `templates/`, and `modules/` are internal implementation
+details and can change during alpha releases.
 
 Docs: https://tileflow.dev/docs

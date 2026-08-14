@@ -1,6 +1,7 @@
 # Tileflow SDK documentation
 
 - [Local visual capture contract](contracts/local-visual-capture.md)
+- [Framework browser runtime contract](contracts/framework-browser-runtime.md)
 - [Package release procedure](../PUBLISHING.md)
 - [Contributor setup](../CONTRIBUTING.md)
 - [Product documentation](https://tileflow.dev/docs)

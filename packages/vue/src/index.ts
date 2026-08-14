@@ -27,19 +27,24 @@ import {
   mergeTileflowAnalytics,
   normalizeTileflowCaptureId,
   normalizeTileflowStaticImageSize,
-  resolveTileflowAnalyticsRequestUrl,
   resolveTileflowManifestMap,
   resolveTileflowMapMode,
   resolveTileflowRuntimeStyle,
   resolveTileflowStaticImageUrl,
   shouldLoadTileflowManifest,
-  startTileflowSession,
   type TileflowAnalytics,
   type TileflowConfig,
   type TileflowMapMarker,
   type TileflowProjectThemes,
   type TileflowRuntimeManifestMap,
 } from '@tileflow/core';
+import {
+  attachTileflowMapLifecycle,
+  createTileflowMarkerController,
+  createTileflowSessionStarter,
+  createTileflowTransformRequest,
+  type TileflowMapLifecycleAttachment,
+} from '@tileflow/core/browser';
 
 export type TileflowMapMode = 'interactive' | 'image';
 export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
@@ -133,9 +138,27 @@ export const TileflowMap = defineComponent({
     const mapRef = shallowRef<MapLibreMap | null>(null);
     const captureState = ref<'error' | 'idle' | 'loading'>('loading');
     const sessionId = createTileflowSessionId();
-    const markerInstances: maplibregl.Marker[] = [];
-    const sessionStarts = new Set<string>();
+    const markerController = createTileflowMarkerController<
+      MapLibreMap,
+      TileflowMapMarker,
+      maplibregl.Marker
+    >({
+      attach(markerInstance, map, marker) {
+        markerInstance.setLngLat(marker.coordinates).addTo(map);
+        markerInstance.getElement().title = marker.label ?? marker.id;
+      },
+      create: (marker) =>
+        new maplibregl.Marker({
+          color: marker.color ?? '#C6A15B',
+        }),
+      remove: (marker) => marker.remove(),
+    });
+    const sessionStarter = createTileflowSessionStarter({
+      sessionId,
+      source: 'vue',
+    });
     let imageResizeObserver: ResizeObserver | null = null;
+    let mapLifecycle: TileflowMapLifecycleAttachment | null = null;
     let mapResizeObserver: ResizeObserver | null = null;
     let manifestLoadId = 0;
     let readinessRunId = 0;
@@ -259,11 +282,26 @@ export const TileflowMap = defineComponent({
 
     const destroyMap = () => {
       readinessRunId += 1;
-      mapResizeObserver?.disconnect();
+      const lifecycle = mapLifecycle;
+      const resizeObserver = mapResizeObserver;
+      const map = mapRef.value;
+      mapLifecycle = null;
       mapResizeObserver = null;
-      clearMarkers(markerInstances);
-      mapRef.value?.remove();
       mapRef.value = null;
+
+      try {
+        lifecycle?.dispose();
+      } finally {
+        try {
+          resizeObserver?.disconnect();
+        } finally {
+          try {
+            markerController.clear();
+          } finally {
+            map?.remove();
+          }
+        }
+      }
     };
 
     const recreateMap = () => {
@@ -275,6 +313,7 @@ export const TileflowMap = defineComponent({
       }
 
       const runtime = runtimeStyle.value;
+      const analyticsForMap = resolvedAnalytics.value;
       const map = new maplibregl.Map({
         ...props.mapOptions,
         attributionControl: props.mapOptions?.attributionControl ?? {compact: true},
@@ -282,11 +321,14 @@ export const TileflowMap = defineComponent({
         container: containerRef.value,
         interactive: resolvedInteractive.value,
         style: runtime.style as StyleSpecification | string,
-        transformRequest: createTransformRequest(
-          resolvedAnalytics.value,
+        transformRequest: createTileflowTransformRequest<
+          RequestParameters,
+          Parameters<RequestTransformFunction>[1]
+        >({
+          getAnalytics: () => analyticsForMap,
           sessionId,
-          props.mapOptions?.transformRequest,
-        ),
+          transformRequest: props.mapOptions?.transformRequest ?? undefined,
+        }),
         zoom: resolvedZoom.value,
       });
 
@@ -301,49 +343,32 @@ export const TileflowMap = defineComponent({
       });
       mapResizeObserver.observe(containerRef.value);
 
-      map.on('load', () => {
-        const analyticsForLoad = resolvedAnalytics.value;
-        const styleId =
-          analyticsForLoad?.styleId ??
-          (typeof runtime.style === 'string' ? runtime.style : props.map);
+      mapLifecycle = attachTileflowMapLifecycle({
+        getSession: () => {
+          const analyticsForLoad = resolvedAnalytics.value;
 
-        emit('load', map);
+          return {
+            analytics: analyticsForLoad,
+            styleId:
+              analyticsForLoad?.styleId ??
+              (typeof runtime.style === 'string' ? runtime.style : props.map),
+          };
+        },
+        map,
+        onLoad: (loadedMap) => emit('load', loadedMap),
+        scheduler: {
+          cancelFrame: (frame: number) => cancelAnimationFrame(frame),
+          requestFrame: (callback) => requestAnimationFrame(callback),
+        },
+        sessionStarter,
+        setState: (state) => {
+          captureState.value = state;
+        },
+        subscribe: (subscribedMap, event, listener) => {
+          const subscription = subscribedMap.on(event, listener);
 
-        if (analyticsForLoad?.mapId) {
-          const sessionKey = `${sessionId}:${analyticsForLoad.mapId}:${styleId ?? ''}`;
-
-          if (!sessionStarts.has(sessionKey)) {
-            sessionStarts.add(sessionKey);
-            startTileflowSession(analyticsForLoad, {
-              mapId: analyticsForLoad.mapId,
-              sessionId,
-              source: 'vue',
-              styleId,
-            });
-          }
-        }
-      });
-      map.on('dataloading', () => {
-        readinessRunId += 1;
-        captureState.value = 'loading';
-      });
-      map.on('styledataloading', () => {
-        readinessRunId += 1;
-        captureState.value = 'loading';
-      });
-      map.on('idle', () => {
-        const runId = ++readinessRunId;
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            if (runId === readinessRunId && mapRef.value === map) {
-              captureState.value = 'idle';
-            }
-          });
-        });
-      });
-      map.on('error', () => {
-        readinessRunId += 1;
-        captureState.value = 'error';
+          return () => subscription.unsubscribe();
+        },
       });
 
       syncMarkers();
@@ -359,22 +384,12 @@ export const TileflowMap = defineComponent({
     const syncMarkers = () => {
       const map = mapRef.value;
 
-      clearMarkers(markerInstances);
-
       if (!map) {
+        markerController.clear();
         return;
       }
 
-      for (const marker of props.markers) {
-        const markerInstance = new maplibregl.Marker({
-          color: marker.color ?? '#C6A15B',
-        })
-          .setLngLat(marker.coordinates)
-          .addTo(map);
-
-        markerInstance.getElement().title = marker.label ?? marker.id;
-        markerInstances.push(markerInstance);
-      }
+      markerController.replace(map, props.markers);
     };
 
     const markImageReady = async (image: HTMLImageElement) => {
@@ -520,58 +535,6 @@ export const TileflowMap = defineComponent({
 
 export default TileflowMap;
 
-function createTransformRequest(
-  analytics: TileflowAnalytics | undefined,
-  sessionId: string,
-  userTransformRequest?: TileflowMapOptions['transformRequest'],
-): RequestTransformFunction | undefined {
-  if ((!analytics || analytics.enabled === false) && !userTransformRequest) {
-    return undefined;
-  }
-
-  return (url, resourceType) => {
-    const request = userTransformRequest?.(url, resourceType);
-
-    if (isPromiseLike(request)) {
-      return request.then(
-        (resolvedRequest) =>
-          applyTileflowAnalyticsRequest(url, resolvedRequest, analytics, sessionId) ??
-          resolvedRequest,
-      );
-    }
-
-    return applyTileflowAnalyticsRequest(url, request, analytics, sessionId);
-  };
-}
-
-function applyTileflowAnalyticsRequest(
-  url: string,
-  request: RequestParameters | undefined,
-  analytics: TileflowAnalytics | undefined,
-  sessionId: string,
-): RequestParameters | undefined {
-  const requestUrl = request?.url ?? url;
-  const nextUrl = resolveTileflowAnalyticsRequestUrl(requestUrl, analytics, sessionId);
-
-  if (!nextUrl) {
-    return request;
-  }
-
-  return request ? {...request, url: nextUrl} : {url: nextUrl};
-}
-
-function isPromiseLike<T>(value: T | Promise<T> | undefined): value is Promise<T> {
-  return Boolean(value && typeof (value as Promise<T>).then === 'function');
-}
-
 function formatHeight(height: number | string): string {
   return typeof height === 'number' ? `${height}px` : height;
-}
-
-function clearMarkers(markerInstances: maplibregl.Marker[]): void {
-  for (const marker of markerInstances) {
-    marker.remove();
-  }
-
-  markerInstances.splice(0);
 }

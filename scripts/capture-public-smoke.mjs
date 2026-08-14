@@ -115,6 +115,24 @@ try {
     },
   );
 
+  const coreBrowserImport = join(consumerDirectory, 'import-core-browser.mjs');
+  await writeFile(
+    coreBrowserImport,
+    `for (const name of ['window', 'document', 'navigator', 'requestAnimationFrame', 'ResizeObserver']) {
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    get() { throw new Error('browser global read during import: ' + name); },
+  });
+}
+const entry = await import('@tileflow/core/browser');
+if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
+`,
+  );
+  await run(process.execPath, [coreBrowserImport], {
+    cwd: consumerDirectory,
+    label: 'packed core browser import without DOM',
+  });
+
   const packedCli = JSON.parse(
     await readTarballFile(tarballs.get('@tileflow/cli'), 'package/package.json'),
   );

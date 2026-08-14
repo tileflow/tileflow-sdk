@@ -13,8 +13,6 @@ import maplibregl, {
   type LngLatLike,
   type Map as MapLibreMap,
   type MapOptions as MapLibreMapOptions,
-  type RequestParameters,
-  type RequestTransformFunction,
   type StyleSpecification,
 } from 'maplibre-gl';
 import {
@@ -25,19 +23,23 @@ import {
   mergeTileflowAnalytics,
   normalizeTileflowCaptureId,
   normalizeTileflowStaticImageSize,
-  resolveTileflowAnalyticsRequestUrl,
   resolveTileflowManifestMap,
   resolveTileflowMapMode,
   resolveTileflowRuntimeStyle,
   resolveTileflowStaticImageUrl,
   shouldLoadTileflowManifest,
-  startTileflowSession,
   type TileflowAnalytics,
   type TileflowConfig,
   type TileflowMapMarker,
   type TileflowProjectThemes,
   type TileflowRuntimeManifestMap,
 } from '@tileflow/core';
+import {
+  attachTileflowMapLifecycle,
+  createTileflowMarkerController,
+  createTileflowSessionStarter,
+  createTileflowTransformRequest,
+} from '@tileflow/core/browser';
 
 export type MapMarker = TileflowMapMarker;
 export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
@@ -99,7 +101,6 @@ export function Map({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
-  const markerInstancesRef = useRef<maplibregl.Marker[]>([]);
   const stableMapOptions = useStableMapOptions(mapOptions);
   const resolvedCenter = useStableMapOptionValue<LngLatLike>(
     center ?? stableMapOptions?.center ?? defaultCenter,
@@ -112,9 +113,30 @@ export function Map({
   const onLoadRef = useRef(onLoad);
   const mapNameRef = useRef(mapName);
   const resolvedAnalyticsRef = useRef<TileflowAnalytics | undefined>(undefined);
-  const sessionStartsRef = useRef(new Set<string>());
   const readinessRunRef = useRef(0);
   const sessionId = useMemo(() => createTileflowSessionId(), []);
+  const sessionStarter = useMemo(
+    () => createTileflowSessionStarter({sessionId, source: 'react'}),
+    [sessionId],
+  );
+  const markerController = useMemo(
+    () =>
+      createTileflowMarkerController<MapLibreMap, MapMarker, maplibregl.Marker>({
+        attach(markerInstance, map, marker) {
+          markerInstance.setLngLat(marker.coordinates).addTo(map);
+          markerInstance.getElement().title = marker.label ?? marker.id;
+        },
+        create(marker) {
+          return new maplibregl.Marker({
+            color: marker.color ?? '#C6A15B',
+          });
+        },
+        remove(markerInstance) {
+          markerInstance.remove();
+        },
+      }),
+    [],
+  );
   const [manifestMap, setManifestMap] = useState<TileflowRuntimeManifestMap | null>(null);
   const [imageSize, setImageSize] = useState<{
     height: number;
@@ -235,11 +257,13 @@ export function Map({
   );
   const transformRequest = useMemo(
     () =>
-      createTransformRequest(
-        () => resolvedAnalyticsRef.current,
+      createTileflowTransformRequest({
+        always: true,
+        asyncAnalyticsTiming: 'resolution',
+        getAnalytics: () => resolvedAnalyticsRef.current,
         sessionId,
-        stableMapOptions?.transformRequest,
-      ),
+        transformRequest: stableMapOptions?.transformRequest ?? undefined,
+      }),
     [sessionId, stableMapOptions?.transformRequest],
   );
 
@@ -277,26 +301,8 @@ export function Map({
       return;
     }
 
-    const setLoading = () => {
-      readinessRunRef.current += 1;
-      setCaptureState('loading');
-    };
-    const setError = () => {
-      readinessRunRef.current += 1;
-      setCaptureState('error');
-    };
-    const setIdleAfterFrames = () => {
-      const run = ++readinessRunRef.current;
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (readinessRunRef.current === run && mapRef.current === map) {
-            setCaptureState('idle');
-          }
-        });
-      });
-    };
-
-    setLoading();
+    readinessRunRef.current += 1;
+    setCaptureState('loading');
 
     const map = new maplibregl.Map({
       ...stableMapOptions,
@@ -322,42 +328,61 @@ export function Map({
 
     resizeObserver.observe(containerRef.current);
 
-    map.on('load', () => {
-      const analyticsForLoad = resolvedAnalyticsRef.current;
-      const styleId =
-        analyticsForLoad?.styleId ??
-        (typeof runtimeStyle.style === 'string' ? runtimeStyle.style : mapNameRef.current);
+    const lifecycle = attachTileflowMapLifecycle({
+      getSession: () => {
+        const analyticsForLoad = resolvedAnalyticsRef.current;
 
-      onLoadRef.current?.(map);
-
-      if (analyticsForLoad?.mapId) {
-        const sessionKey = `${sessionId}:${analyticsForLoad.mapId}:${styleId ?? ''}`;
-
-        if (!sessionStartsRef.current.has(sessionKey)) {
-          sessionStartsRef.current.add(sessionKey);
-          startTileflowSession(analyticsForLoad, {
-            mapId: analyticsForLoad.mapId,
-            sessionId,
-            source: 'react',
-            styleId,
-          });
-        }
-      }
+        return {
+          analytics: analyticsForLoad,
+          styleId:
+            analyticsForLoad?.styleId ??
+            (typeof runtimeStyle.style === 'string' ? runtimeStyle.style : mapNameRef.current),
+        };
+      },
+      map,
+      onLoad: (loadedMap) => {
+        onLoadRef.current?.(loadedMap);
+      },
+      scheduler: {
+        cancelFrame: (frame: number) => cancelAnimationFrame(frame),
+        requestFrame: (callback) => requestAnimationFrame(callback),
+      },
+      sessionStarter,
+      setState: setCaptureState,
+      subscribe: (subscribedMap, event, listener) => {
+        const subscription = subscribedMap.on(event, listener);
+        return () => subscription.unsubscribe();
+      },
     });
-    map.on('dataloading', setLoading);
-    map.on('styledataloading', setLoading);
-    map.on('idle', setIdleAfterFrames);
-    map.on('error', setError);
 
     return () => {
       readinessRunRef.current += 1;
-      resizeObserver.disconnect();
-      clearMarkers(markerInstancesRef.current);
-      markerInstancesRef.current = [];
-      map.remove();
-      mapRef.current = null;
+      try {
+        lifecycle.dispose();
+      } finally {
+        try {
+          resizeObserver.disconnect();
+        } finally {
+          try {
+            markerController.clear();
+          } finally {
+            try {
+              map.remove();
+            } finally {
+              if (mapRef.current === map) mapRef.current = null;
+            }
+          }
+        }
+      }
     };
-  }, [resolvedInteractive, runtimeStyle, sessionId, stableMapOptions, transformRequest]);
+  }, [
+    markerController,
+    resolvedInteractive,
+    runtimeStyle,
+    sessionStarter,
+    stableMapOptions,
+    transformRequest,
+  ]);
 
   useLayoutEffect(() => {
     if (!isImageMode) return;
@@ -386,30 +411,18 @@ export function Map({
   useEffect(() => {
     const map = mapRef.current;
 
-    clearMarkers(markerInstancesRef.current);
-    markerInstancesRef.current = [];
+    markerController.clear();
 
     if (!map) {
       return;
     }
 
-    markerInstancesRef.current = markers.map((marker) => {
-      const markerInstance = new maplibregl.Marker({
-        color: marker.color ?? '#C6A15B',
-      })
-        .setLngLat(marker.coordinates)
-        .addTo(map);
-
-      markerInstance.getElement().title = marker.label ?? marker.id;
-
-      return markerInstance;
-    });
+    markerController.replace(map, markers);
 
     return () => {
-      clearMarkers(markerInstancesRef.current);
-      markerInstancesRef.current = [];
+      markerController.clear();
     };
-  }, [markers, runtimeStyle]);
+  }, [markerController, markers, runtimeStyle]);
 
   const frameStyle: CSSProperties = {
     height,
@@ -463,50 +476,6 @@ export function Map({
       style={frameStyle}
     />
   );
-}
-
-function createTransformRequest(
-  getAnalytics: () => TileflowAnalytics | undefined,
-  sessionId: string,
-  userTransformRequest?: TileflowMapOptions['transformRequest'],
-): RequestTransformFunction | undefined {
-  return (url, resourceType) => {
-    const request = userTransformRequest?.(url, resourceType);
-
-    if (isPromiseLike(request)) {
-      return request.then(
-        (resolvedRequest) =>
-          applyTileflowAnalyticsRequest(url, resolvedRequest, getAnalytics(), sessionId) ??
-          resolvedRequest,
-      );
-    }
-
-    return applyTileflowAnalyticsRequest(url, request, getAnalytics(), sessionId);
-  };
-}
-
-function applyTileflowAnalyticsRequest(
-  url: string,
-  request: RequestParameters | undefined,
-  analytics: TileflowAnalytics | undefined,
-  sessionId: string,
-): RequestParameters | undefined {
-  const requestUrl = request?.url ?? url;
-  const nextUrl = resolveTileflowAnalyticsRequestUrl(requestUrl, analytics, sessionId);
-
-  if (!nextUrl) {
-    return request;
-  }
-
-  return request ? {...request, url: nextUrl} : {url: nextUrl};
-}
-
-function isPromiseLike<T>(value: T | Promise<T> | undefined): value is Promise<T> {
-  return Boolean(value && typeof (value as Promise<T>).then === 'function');
-}
-
-function clearMarkers(markerInstances: maplibregl.Marker[]): void {
-  markerInstances.forEach((marker) => marker.remove());
 }
 
 function useStableMapOptions(

@@ -1,6 +1,6 @@
 {
   "name": "@tileflow/dev",
-  "version": "0.1.0-alpha.16",
+  "version": "0.0.0-development",
   "description": "Node development utilities for Tileflow configs and builds.",
   "type": "module",
   "sideEffects": false,
@@ -45,7 +45,7 @@
   "dependencies": {
     "@mapbox/vector-tile": "2.0.5",
     "@maplibre/maplibre-gl-style-spec": "24.8.5",
-    "@tileflow/core": "workspace:*",
+    "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "chokidar": "4.0.3",
     "jiti": "^2.7.0",
     "maplibre-gl": "5.24.0",

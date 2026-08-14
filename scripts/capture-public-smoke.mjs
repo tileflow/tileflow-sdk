@@ -1,36 +1,37 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {existsSync} from 'node:fs';
-import {chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile} from 'node:fs/promises';
+import {chmod, cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {homedir, tmpdir} from 'node:os';
 import {basename, delimiter, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import semver from 'semver';
+import {assertSelectedRuntimeDependencies, validateReleasePlan} from './reconcile-release.mjs';
+import {
+  internalRuntimeRange,
+  publicPackageNames,
+  publicPackageNameSet,
+  runtimeDependencyGroups,
+  runtimeDependencySnapshot,
+  validatePublishedInternalRuntimeRange,
+} from './release-config.mjs';
 import {runCommand} from './run-command.mjs';
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
-const temporaryRoot = await mkdtemp(join(tmpdir(), 'tileflow-public-capture-smoke-'));
 const suppliedPackDirectory = argumentValue('--pack-dir');
+const suppliedReleasePlan = argumentValue('--release-plan');
+assert.ok(
+  !suppliedReleasePlan || suppliedPackDirectory,
+  '--release-plan requires final tarballs supplied through --pack-dir.',
+);
+const temporaryRoot = await mkdtemp(join(tmpdir(), 'tileflow-public-capture-smoke-'));
 const packDirectory = suppliedPackDirectory
   ? resolve(suppliedPackDirectory)
   : join(temporaryRoot, 'packs');
 const consumerDirectory = join(temporaryRoot, 'consumer');
 const auditDirectory = join(temporaryRoot, 'audit');
 const npmCacheDirectory = join(temporaryRoot, 'npm-cache');
-const publicPackageNames = [
-  '@tileflow/core',
-  '@tileflow/static',
-  '@tileflow/dev',
-  '@tileflow/capture',
-  '@tileflow/vite',
-  '@tileflow/next',
-  '@tileflow/webpack',
-  '@tileflow/react',
-  '@tileflow/vue',
-  '@tileflow/svelte',
-  '@tileflow/cli',
-];
-const publicPackageNameSet = new Set(publicPackageNames);
 const expectedRepository = 'git+https://github.com/tileflow/tileflow-sdk.git';
 const expectedBugs = 'https://github.com/tileflow/tileflow-sdk/issues';
 const transparentPng = Buffer.from(
@@ -40,6 +41,9 @@ const transparentPng = Buffer.from(
 let server;
 
 try {
+  const releasePlan = suppliedReleasePlan
+    ? validateReleasePlan(JSON.parse(await readFile(resolve(suppliedReleasePlan), 'utf8')))
+    : null;
   await Promise.all([
     mkdir(packDirectory, {recursive: true}),
     mkdir(consumerDirectory, {recursive: true}),
@@ -65,10 +69,29 @@ try {
       }),
     ),
   );
+  const releaseContext = releasePlan
+    ? {
+        baselines: new Map(releasePlan.baselines.map((baseline) => [baseline.name, baseline])),
+        releases: new Map(releasePlan.packages.map((release) => [release.name, release])),
+        versions: new Map(releasePlan.baselines.map(({name, version}) => [name, version])),
+      }
+    : null;
+  if (releaseContext) {
+    for (const release of releasePlan.packages) {
+      releaseContext.versions.set(release.name, release.to);
+    }
+    for (const name of expectedNames) {
+      assert.equal(
+        packedVersions.get(name),
+        releaseContext.versions.get(name),
+        `${name} packed smoke version differs from its release plan.`,
+      );
+    }
+  }
 
   const audit = [];
   for (const name of expectedNames) {
-    audit.push(await auditPublicTarball(name, tarballs.get(name), packedVersions));
+    audit.push(await auditPublicTarball(name, tarballs.get(name), packedVersions, releaseContext));
   }
 
   await writeFile(
@@ -370,8 +393,25 @@ async function packRequiredPackages(directory) {
   const packages = publicPackageNames.map((name) => name.replace('@tileflow/', ''));
   const tarballs = new Map();
   for (const packageDirectory of packages) {
+    const sourceRoot = join(repositoryRoot, 'packages', packageDirectory);
+    const stagingRoot = join(temporaryRoot, 'staging', packageDirectory);
+    await cp(sourceRoot, stagingRoot, {recursive: true});
+    const manifestPath = join(stagingRoot, 'package.json');
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));
+    manifest.version = '0.1.0-alpha.16';
+    for (const dependencyGroup of [...runtimeDependencyGroups, 'devDependencies']) {
+      for (const [dependency, range] of Object.entries(manifest[dependencyGroup] ?? {})) {
+        if (!publicPackageNameSet.has(dependency) || !range.startsWith('workspace:')) continue;
+        manifest[dependencyGroup][dependency] =
+          dependencyGroup === 'devDependencies'
+            ? '0.1.0-alpha.16'
+            : range.slice('workspace:'.length);
+      }
+    }
+    await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
     const result = await run(pnpmCommand(), ['pack', '--pack-destination', directory, '--json'], {
-      cwd: join(repositoryRoot, 'packages', packageDirectory),
+      cwd: stagingRoot,
       label: `pack @tileflow/${packageDirectory}`,
     });
     const packed = JSON.parse(result.stdout);
@@ -391,7 +431,7 @@ async function discoverTarballs(directory) {
   return tarballs;
 }
 
-async function auditPublicTarball(packageName, tarball, packedVersions) {
+async function auditPublicTarball(packageName, tarball, packedVersions, releaseContext) {
   assert.ok(tarball, `Missing tarball for ${packageName}.`);
   const listing = await run('tar', ['-tzf', tarball], {label: `list ${packageName} tarball`});
   const entries = listing.stdout.trim().split('\n').filter(Boolean);
@@ -423,21 +463,41 @@ async function auditPublicTarball(packageName, tarball, packedVersions) {
   assert.equal(manifest.repository?.url, expectedRepository);
   assert.equal(manifest.bugs?.url, expectedBugs);
   assert.equal(JSON.stringify(manifest).includes('workspace:'), false);
-  for (const dependencyGroup of [
-    'dependencies',
-    'devDependencies',
-    'optionalDependencies',
-    'peerDependencies',
-  ]) {
+  const runtimeDependencies = runtimeDependencySnapshot(manifest);
+  if (releaseContext?.releases.has(packageName)) {
+    assert.deepEqual(
+      runtimeDependencies,
+      releaseContext.releases.get(packageName).runtimeDependencies,
+      `${packageName} packed smoke topology differs from its release plan.`,
+    );
+    assertSelectedRuntimeDependencies(packageName, runtimeDependencies, releaseContext.versions);
+  } else if (releaseContext) {
+    assert.deepEqual(
+      runtimeDependencies,
+      releaseContext.baselines.get(packageName).runtimeDependencies,
+      `${packageName} unselected packed smoke ranges differ from npm baseline.`,
+    );
+  }
+  for (const dependencyGroup of runtimeDependencyGroups) {
     for (const [dependency, range] of Object.entries(manifest[dependencyGroup] ?? {})) {
       if (publicPackageNameSet.has(dependency)) {
-        assert.equal(
-          range,
-          packedVersions.get(dependency),
-          `${packageName} must pack ${dependency} at its current workspace version.`,
-        );
+        const rangeKind = validatePublishedInternalRuntimeRange(range);
+        if (rangeKind === 'automatic-range') {
+          assert.equal(
+            semver.satisfies(packedVersions.get(dependency), range, {includePrerelease: true}),
+            true,
+            `${packageName} must accept packed ${dependency}@${packedVersions.get(dependency)}.`,
+          );
+        }
       }
     }
+  }
+  for (const [dependency, range] of Object.entries(manifest.devDependencies ?? {})) {
+    if (!publicPackageNameSet.has(dependency)) continue;
+    assert.ok(
+      range === packedVersions.get(dependency) || range === internalRuntimeRange,
+      `${packageName} has an unexpected development-only range for ${dependency}: ${range}.`,
+    );
   }
 
   const target = join(auditDirectory, packageName.replace('@tileflow/', ''));

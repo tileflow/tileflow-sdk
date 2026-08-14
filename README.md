@@ -76,8 +76,12 @@ The packed-consumer smoke installs the same `core`, `dev`, `capture`, and `cli` 
 receive, audits their contents, and renders a deterministic local capture with the exact Playwright
 Chromium headless shell.
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Release owners should follow
-[PUBLISHING.md](PUBLISHING.md). The durable local capture and visual-testing behavior is recorded in
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Every package source manifest
+uses `0.0.0-development`; after a normal pull request reaches `main` and its complete CI succeeds,
+the protected publishing workflow compares packed artifacts with npm and releases only material
+changes at their next independent alpha. There are no changesets, release tags, or Release PRs.
+The exact operational and recovery contract lives in [PUBLISHING.md](PUBLISHING.md). The durable
+local capture and visual-testing behavior is recorded in
 [`docs/contracts/local-visual-capture.md`](docs/contracts/local-visual-capture.md).
 
 ## Licensing

@@ -1,5 +1,5 @@
 name: Publish
-run-name: Publish ${{ github.event.workflow_run.head_sha }}
+run-name: Reconcile npm alpha from ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
 on:
   workflow_run:
@@ -9,39 +9,58 @@ on:
       - completed
     branches:
       - main
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
 jobs:
-  eligibility:
-    name: Release eligibility
+  reconcile:
+    name: Reconcile changed packages
     if: >-
-      ${{ github.event.workflow_run.conclusion == 'success' &&
+      ${{
+        (github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
           github.event.workflow_run.event == 'push' &&
           github.event.workflow_run.head_branch == 'main' &&
-          github.event.workflow_run.head_repository.full_name == github.repository }}
+          github.event.workflow_run.head_repository.full_name == github.repository &&
+          github.event.workflow_run.head_sha == github.sha) ||
+        ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+          github.ref == 'refs/heads/main')
+      }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 40
     permissions:
+      actions: read
       contents: read
-      pull-requests: read
     outputs:
-      base_sha: ${{ steps.release.outputs.base_sha }}
-      eligible: ${{ steps.release.outputs.eligible }}
-      release_sha: ${{ steps.release.outputs.release_sha }}
+      bundle_digest: ${{ steps.bundle.outputs.bundle_digest }}
+      eligible: ${{ steps.ci.outputs.eligible }}
+      release_sha: ${{ env.RELEASE_SHA }}
+      selected_count: ${{ steps.plan.outputs.selected_count }}
     env:
-      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      NPM_CONFIG_PROVENANCE: 'true'
+      NPM_TAG: alpha
+      # Ephemeral manifest versions intentionally differ from pnpm's installed workspace snapshot.
+      pnpm_config_verify_deps_before_run: warn
+      RELEASE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
     steps:
-      - name: Checkout tested main commit
+      - name: Checkout proposed main commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ env.RELEASE_SHA }}
 
-      - name: Resolve associated pull request
-        id: pull-request
+      - name: Verify exact successful main CI
+        id: ci
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         env:
           RELEASE_SHA: ${{ env.RELEASE_SHA }}
@@ -49,91 +68,289 @@ jobs:
           github-token: ${{ github.token }}
           script: |
             const {
+              assertSuccessfulRequiredJob,
               assertTrustedMainCiRun,
-              classifyAssociatedPullRequests,
+              findSuccessfulMainCiRun,
             } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release-workflow.mjs`);
             const repository = `${context.repo.owner}/${context.repo.repo}`;
-            const releaseSha = assertTrustedMainCiRun(context.payload.workflow_run, repository);
-            if (releaseSha !== process.env.RELEASE_SHA) {
-              throw new Error(`Workflow release SHA mismatch: ${releaseSha} != ${process.env.RELEASE_SHA}.`);
-            }
+            let run = null;
 
-            const pullRequests = await github.paginate(
-              github.rest.repos.listPullRequestsAssociatedWithCommit,
-              {
+            if (context.eventName === 'workflow_run') {
+              run = context.payload.workflow_run;
+              assertTrustedMainCiRun(run, repository, process.env.RELEASE_SHA);
+            } else {
+              const {data} = await github.rest.actions.listWorkflowRuns({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                commit_sha: releaseSha,
+                workflow_id: 'ci.yml',
+                branch: 'main',
+                event: 'push',
+                status: 'completed',
+                head_sha: process.env.RELEASE_SHA,
                 per_page: 100,
-              },
-            );
-            const release = classifyAssociatedPullRequests(pullRequests, repository, releaseSha);
-            core.setOutput('base_sha', release.baseSha ?? '');
-            core.setOutput('pull_number', release.pullNumber?.toString() ?? '');
-            core.setOutput('trusted_release', release.trustedRelease ? 'true' : 'false');
+              });
+              run = findSuccessfulMainCiRun(data.workflow_runs, repository, process.env.RELEASE_SHA);
+            }
 
-      - name: Classify release plan change
-        id: release
+            if (run) {
+              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: run.id,
+                filter: 'latest',
+                per_page: 100,
+              });
+              assertSuccessfulRequiredJob(jobs);
+            }
+
+            core.setOutput('eligible', run ? 'true' : 'false');
+            core.notice(
+              run
+                ? `Release reconciliation is bound to successful CI run ${run.id} for ${process.env.RELEASE_SHA}.`
+                : `No successful push CI exists for ${process.env.RELEASE_SHA}; reconciliation is skipped.`,
+            );
+
+      - name: Require current main head
+        if: steps.ci.outputs.eligible == 'true'
+        id: head
         shell: bash
-        env:
-          ASSOCIATED_BASE_SHA: ${{ steps.pull-request.outputs.base_sha }}
-          PULL_NUMBER: ${{ steps.pull-request.outputs.pull_number }}
-          TRUSTED_RELEASE: ${{ steps.pull-request.outputs.trusted_release }}
         run: |
           set -euo pipefail
-
+          test "$GITHUB_SHA" = "$RELEASE_SHA"
           test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
-          first_parent="$(git rev-parse "$RELEASE_SHA^1")"
-          base_sha="${ASSOCIATED_BASE_SHA:-$first_parent}"
-          git merge-base --is-ancestor "$base_sha" "$RELEASE_SHA"
-
-          if git diff --quiet "$base_sha" "$RELEASE_SHA" -- .changeset/release-plan.json
+          git fetch --no-tags origin main
+          if [[ "$(git rev-parse origin/main)" = "$RELEASE_SHA" ]]
           then
-            plan_changed=false
+            echo 'current=true' >> "$GITHUB_OUTPUT"
           else
-            plan_changed=true
+            echo 'current=false' >> "$GITHUB_OUTPUT"
+            echo 'main advanced after this run started; the newer commit will reconcile npm.'
           fi
 
-          if [[ "$TRUSTED_RELEASE" = true && "$plan_changed" != true ]]
+      - name: Setup Node
+        if: steps.head.outputs.current == 'true'
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+          registry-url: https://registry.npmjs.org
+
+      - name: Setup pnpm
+        if: steps.head.outputs.current == 'true'
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+
+      - name: Install
+        if: steps.head.outputs.current == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify development manifests
+        if: steps.head.outputs.current == 'true'
+        run: pnpm run release:verify-source
+
+      - name: Download current npm alpha baselines
+        if: steps.head.outputs.current == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_root="$RUNNER_TEMP/tileflow-release"
+          registry_dir="$release_root/registry"
+          mkdir -p "$registry_dir"
+          : > "$release_root/registry.tsv"
+
+          for package_name in \
+            @tileflow/core \
+            @tileflow/static \
+            @tileflow/dev \
+            @tileflow/capture \
+            @tileflow/vite \
+            @tileflow/next \
+            @tileflow/webpack \
+            @tileflow/react \
+            @tileflow/vue \
+            @tileflow/svelte \
+            @tileflow/cli
+          do
+            current_version="$(npm view "$package_name" "dist-tags.$NPM_TAG" --prefer-online)"
+            filename="$(
+              npx --yes npm@11.19.0 pack "$package_name@$current_version" \
+                --pack-destination "$registry_dir" \
+                --json \
+                | node -e "let data = ''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => { const result = JSON.parse(data); if (!Array.isArray(result) || result.length !== 1 || typeof result[0]?.filename !== 'string') throw new Error('Unexpected npm pack JSON.'); console.log(result[0].filename); });"
+            )"
+            if [[ "$filename" != /* ]]
+            then
+              filename="$registry_dir/$filename"
+            fi
+            printf '%s\t%s\t%s\n' "$package_name" "$current_version" "$filename" \
+              >> "$release_root/registry.tsv"
+          done
+
+          node scripts/reconcile-release.mjs \
+            registry \
+            "$release_root/registry.tsv" \
+            "$release_root/registry.json"
+
+      - name: Build and pack at current registry versions
+        if: steps.head.outputs.current == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_root="$RUNNER_TEMP/tileflow-release"
+          node scripts/reconcile-release.mjs apply "$release_root/registry.json"
+          pnpm exec turbo build --force
+          node scripts/reconcile-release.mjs \
+            pack \
+            "$release_root/candidate" \
+            "$release_root/candidate-tarballs.txt"
+
+      - name: Plan changed package releases
+        if: steps.head.outputs.current == 'true'
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_root="$RUNNER_TEMP/tileflow-release"
+          node scripts/reconcile-release.mjs \
+            plan \
+            "$RELEASE_SHA" \
+            "$release_root/registry.json" \
+            "$release_root/candidate-tarballs.txt" \
+            "$release_root/plan.json"
+          selected_count="$(PLAN_PATH="$release_root/plan.json" node -e "const plan = require(process.env.PLAN_PATH); console.log(plan.packages.length);")"
+          echo "selected_count=$selected_count" >> "$GITHUB_OUTPUT"
+          node scripts/reconcile-release.mjs summary "$release_root/plan.json"
+
+      - name: Apply target versions, rebuild, and verify
+        if: steps.plan.outputs.selected_count != '' && steps.plan.outputs.selected_count != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_root="$RUNNER_TEMP/tileflow-release"
+          node scripts/reconcile-release.mjs apply "$release_root/plan.json"
+          pnpm exec turbo build --force
+          pnpm check
+          node scripts/reconcile-release.mjs \
+            pack \
+            "$release_root/final" \
+            "$release_root/final-tarballs.txt"
+          node scripts/reconcile-release.mjs \
+            validate \
+            "$release_root/plan.json" \
+            "$release_root/registry.json" \
+            "$release_root/final-tarballs.txt"
+          node scripts/select-release-tarballs.mjs \
+            "$release_root/plan.json" \
+            "$release_root/final-tarballs.txt" \
+            "$release_root/selected-tarballs.txt"
+
+      - name: Provision pinned capture browser dependencies
+        if: steps.plan.outputs.selected_count != '' && steps.plan.outputs.selected_count != '0'
+        run: pnpm --filter @tileflow/capture exec playwright install-deps chromium
+
+      - name: Provision pinned capture browser shell
+        if: steps.plan.outputs.selected_count != '' && steps.plan.outputs.selected_count != '0'
+        run: pnpm --filter @tileflow/capture exec playwright install --only-shell chromium
+
+      - name: Authorize the pinned Chromium sandbox
+        if: steps.plan.outputs.selected_count != '' && steps.plan.outputs.selected_count != '0'
+        run: bash scripts/configure-linux-chromium-sandbox.sh
+
+      - name: Verify the pinned capture browser shell
+        if: steps.plan.outputs.selected_count != '' && steps.plan.outputs.selected_count != '0'
+        run: pnpm --filter @tileflow/cli run cli setup capture --json --no-browser-install
+
+      - name: Smoke final packed packages
+        if: steps.plan.outputs.selected_count != '' && steps.plan.outputs.selected_count != '0'
+        run: >-
+          node scripts/capture-public-smoke.mjs
+          --pack-dir "$RUNNER_TEMP/tileflow-release/final"
+          --release-plan "$RUNNER_TEMP/tileflow-release/plan.json"
+
+      - name: Recheck current main before handing off publication
+        if: steps.plan.outputs.selected_count != '' && steps.plan.outputs.selected_count != '0'
+        id: publish-head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if [[ "$(git rev-parse origin/main)" = "$RELEASE_SHA" ]]
           then
-            echo "Official Release PR #$PULL_NUMBER did not change the release plan."
-            exit 1
-          fi
-          if [[ "$TRUSTED_RELEASE" != true && "$plan_changed" = true ]]
-          then
-            echo "Only changeset-release/main may change the release plan on main."
-            exit 1
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'current=false' >> "$GITHUB_OUTPUT"
+            echo 'main advanced during release validation; no release bundle will be created from the stale commit.'
           fi
 
-          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
-          echo "eligible=$TRUSTED_RELEASE" >> "$GITHUB_OUTPUT"
-          echo "release_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+      - name: Create immutable release bundle
+        if: steps.publish-head.outputs.current == 'true'
+        id: bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_root="$RUNNER_TEMP/tileflow-release"
+          mkdir -p "$release_root/selected"
+          : > "$release_root/selected-relative.txt"
+          while IFS= read -r tarball
+          do
+            [[ -n "$tarball" ]] || continue
+            filename="$(basename "$tarball")"
+            cp "$tarball" "$release_root/selected/$filename"
+            echo "selected/$filename" >> "$release_root/selected-relative.txt"
+          done < "$release_root/selected-tarballs.txt"
+          tar -cf "$release_root/release-bundle.tar" \
+            -C "$release_root" \
+            plan.json \
+            selected-relative.txt \
+            selected
+          bundle_digest="$(shasum -a 256 "$release_root/release-bundle.tar" | cut -d ' ' -f 1)"
+          echo "bundle_digest=$bundle_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Upload immutable release bundle
+        if: steps.publish-head.outputs.current == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm-release-${{ env.RELEASE_SHA }}
+          path: ${{ runner.temp }}/tileflow-release/release-bundle.tar
+          if-no-files-found: error
+          retention-days: 1
 
   publish:
-    name: Publish selected packages
-    needs: eligibility
-    if: needs.eligibility.outputs.eligible == 'true'
-    concurrency:
-      group: npm-publish
-      queue: max
+    name: Publish changed packages
+    needs: reconcile
+    if: >-
+      ${{
+        needs.reconcile.outputs.eligible == 'true' &&
+        needs.reconcile.outputs.selected_count != '' &&
+        needs.reconcile.outputs.selected_count != '0' &&
+        needs.reconcile.outputs.bundle_digest != ''
+      }}
     environment: npm-publish
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 10
     permissions:
+      actions: read
       contents: read
       id-token: write
     env:
-      BASE_SHA: ${{ needs.eligibility.outputs.base_sha }}
-      NPM_TAG: alpha
+      BUNDLE_DIGEST: ${{ needs.reconcile.outputs.bundle_digest }}
       NPM_CONFIG_PROVENANCE: 'true'
-      RELEASE_SHA: ${{ needs.eligibility.outputs.release_sha }}
+      NPM_TAG: alpha
+      RELEASE_SHA: ${{ needs.reconcile.outputs.release_sha }}
     steps:
-      - name: Checkout
+      - name: Checkout exact release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ env.RELEASE_SHA }}
+
+      - name: Download immutable release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: npm-release-${{ env.RELEASE_SHA }}
+          path: ${{ runner.temp }}/tileflow-release-download
 
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -142,151 +359,47 @@ jobs:
           package-manager-cache: false
           registry-url: https://registry.npmjs.org
 
-      - name: Setup pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@11.13.1 --activate
-
-      - name: Install
-        run: pnpm install --frozen-lockfile
-
-      - name: Validate automatic release and package versions
+      - name: Verify release bundle and current main
         shell: bash
         run: |
           set -euo pipefail
-
+          bundle="$RUNNER_TEMP/tileflow-release-download/release-bundle.tar"
+          test "$(shasum -a 256 "$bundle" | cut -d ' ' -f 1)" = "$BUNDLE_DIGEST"
+          mkdir -p "$RUNNER_TEMP/tileflow-release"
+          tar -xf "$bundle" -C "$RUNNER_TEMP/tileflow-release"
           test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
-          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
-          node scripts/release-packages-intent.mjs \
-            release-plan "$BASE_SHA" "$RELEASE_SHA" --require-head
-          node scripts/validate-release.mjs \
-            --base "$BASE_SHA" \
-            --head "$RELEASE_SHA" \
-            --require-packages
-
-      - name: Build packages
-        run: pnpm build
-
-      - name: Verify
-        run: pnpm check
-
-      - name: Pack packages
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          pack_dir="$RUNNER_TEMP/tileflow-packs"
-          mkdir -p "$pack_dir"
-          : > "$pack_dir/tarballs.txt"
-
-          for package_dir in \
-            packages/core \
-            packages/static \
-            packages/dev \
-            packages/capture \
-            packages/vite \
-            packages/next \
-            packages/webpack \
-            packages/react \
-            packages/vue \
-            packages/svelte \
-            packages/cli
-          do
-            filename="$(
-              cd "$package_dir"
-              pnpm pack --pack-destination "$pack_dir" --json \
-                | node -e "let data = ''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => { const parsed = JSON.parse(data); const results = Array.isArray(parsed) ? parsed : [parsed]; if (results.length !== 1 || typeof results[0]?.filename !== 'string') throw new Error('Unexpected pnpm pack JSON.'); console.log(results[0].filename); });"
-            )"
-
-            if [[ "$filename" = /* ]]
-            then
-              echo "$filename" >> "$pack_dir/tarballs.txt"
-            else
-              echo "$pack_dir/$filename" >> "$pack_dir/tarballs.txt"
-            fi
-          done
-
-          node scripts/select-release-tarballs.mjs \
-            .changeset/release-plan.json \
-            "$pack_dir/tarballs.txt" \
-            "$pack_dir/selected-tarballs.txt" \
-            "$pack_dir/registry-dependencies.txt"
-
-      - name: Provision pinned capture browser dependencies
-        run: pnpm --filter @tileflow/capture exec playwright install-deps chromium
-
-      - name: Provision pinned capture browser shell
-        run: pnpm --filter @tileflow/capture exec playwright install --only-shell chromium
-
-      - name: Authorize the pinned Chromium sandbox
-        run: bash scripts/configure-linux-chromium-sandbox.sh
-
-      - name: Verify the pinned capture browser shell
-        run: pnpm --filter @tileflow/cli run cli setup capture --json --no-browser-install
-
-      - name: Smoke packed capture CLI
-        run: node scripts/capture-public-smoke.mjs --pack-dir "$RUNNER_TEMP/tileflow-packs"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
+          PLAN_PATH="$RUNNER_TEMP/tileflow-release/plan.json" RELEASE_SHA="$RELEASE_SHA" \
+            node -e "const plan = require(process.env.PLAN_PATH); if (plan.sourceSha !== process.env.RELEASE_SHA || !Array.isArray(plan.packages) || plan.packages.length === 0) throw new Error('Release bundle does not match the source SHA.');"
 
       - name: Preflight npm registry
         shell: bash
         run: |
           set -euo pipefail
-
-          : > "$RUNNER_TEMP/tileflow-packs/publish.txt"
-          : > "$RUNNER_TEMP/tileflow-packs/published.txt"
-          published_dir="$RUNNER_TEMP/tileflow-packs/registry"
+          release_root="$RUNNER_TEMP/tileflow-release"
+          : > "$release_root/publish.txt"
+          : > "$release_root/published.txt"
+          published_dir="$release_root/published"
           mkdir -p "$published_dir"
 
-          while IFS=$'\t' read -r dependency_name dependency_version
+          while IFS= read -r relative_tarball
           do
-            [[ -n "$dependency_name" ]] || continue
-            if dependency_output="$(npm view "$dependency_name@$dependency_version" version --prefer-online 2>&1)"
-            then
-              if [[ "$dependency_output" != "$dependency_version" ]]
-              then
-                echo "$dependency_name@$dependency_version returned unexpected registry version $dependency_output."
-                exit 1
-              fi
-              continue
-            fi
-
-            echo "$dependency_output"
-            echo "Release packages require $dependency_name@$dependency_version, but that exact version is not available from npm."
-            exit 1
-          done < "$RUNNER_TEMP/tileflow-packs/registry-dependencies.txt"
-
-          while IFS= read -r tarball
-          do
+            [[ -n "$relative_tarball" ]] || continue
+            tarball="$release_root/$relative_tarball"
             package_json="$(tar -xOf "$tarball" package/package.json)"
-            package_name="$(PACKAGE_JSON="$package_json" node -e "const packageJson = JSON.parse(process.env.PACKAGE_JSON); console.log(packageJson.name);")"
-            package_version="$(PACKAGE_JSON="$package_json" node -e "const packageJson = JSON.parse(process.env.PACKAGE_JSON); console.log(packageJson.version);")"
-            previous_version="$(
-              PACKAGE_NAME="$package_name" node -e "const plan = require('./.changeset/release-plan.json'); const release = plan.packages.find(({name}) => name === process.env.PACKAGE_NAME); if (!release) throw new Error('Selected package is missing from the release plan.'); console.log(release.from);"
-            )"
+            package_name="$(PACKAGE_JSON="$package_json" node -e "console.log(JSON.parse(process.env.PACKAGE_JSON).name);")"
+            package_version="$(PACKAGE_JSON="$package_json" node -e "console.log(JSON.parse(process.env.PACKAGE_JSON).version);")"
+            previous_version="$(PLAN_PATH="$release_root/plan.json" PACKAGE_NAME="$package_name" node -e "const release = require(process.env.PLAN_PATH).packages.find(({name}) => name === process.env.PACKAGE_NAME); if (!release) throw new Error('Package is absent from release plan.'); console.log(release.from);")"
+            planned_version="$(PLAN_PATH="$release_root/plan.json" PACKAGE_NAME="$package_name" node -e "const release = require(process.env.PLAN_PATH).packages.find(({name}) => name === process.env.PACKAGE_NAME); if (!release) throw new Error('Package is absent from release plan.'); console.log(release.to);")"
+            test "$package_version" = "$planned_version"
 
-            if current_tag="$(npm view "$package_name" "dist-tags.$NPM_TAG" --prefer-online 2>&1)"
-            then
-              if [[ -n "$current_tag" ]]
-              then
-                node scripts/assert-version-not-behind.mjs "$package_version" "$current_tag"
-              fi
-            elif [[ "$current_tag" != *E404* ]]
-            then
-              echo "$current_tag"
-              echo "Unable to determine the current $NPM_TAG dist-tag for $package_name."
-              exit 1
-            fi
-
+            current_tag="$(npm view "$package_name" "dist-tags.$NPM_TAG" --prefer-online)"
             if view_output="$(npm view "$package_name@$package_version" version --prefer-online 2>&1)"
             then
-              if [[ "$view_output" != "$package_version" ]]
-              then
-                echo "$package_name@$package_version returned unexpected registry version $view_output."
-                exit 1
-              fi
-
+              test "$view_output" = "$package_version"
               published_tarball="$(
-                npx npm@11.19.0 pack "$package_name@$package_version" \
+                npx --yes npm@11.19.0 pack "$package_name@$package_version" \
                   --pack-destination "$published_dir" \
                   --json \
                   | node -e "let data = ''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => { const result = JSON.parse(data); if (!Array.isArray(result) || result.length !== 1 || typeof result[0]?.filename !== 'string') throw new Error('Unexpected npm pack JSON.'); console.log(result[0].filename); });"
@@ -295,77 +408,71 @@ jobs:
               then
                 published_tarball="$published_dir/$published_tarball"
               fi
-
-              node scripts/compare-package-tarballs.mjs "$tarball" "$published_tarball"
-              published_tag="$(npm view "$package_name" "dist-tags.$NPM_TAG" --prefer-online)"
-              if [[ "$published_tag" != "$package_version" ]]
+              if node scripts/compare-package-tarballs.mjs "$tarball" "$published_tarball"
               then
-                echo "$package_name@$package_version exists but the $NPM_TAG dist-tag points to $published_tag."
-                exit 1
-              fi
-
-              echo "$tarball" >> "$RUNNER_TEMP/tileflow-packs/published.txt"
-              continue
-            fi
-
-            if [[ "$view_output" != *E404* ]]
-            then
-              echo "$view_output"
-              echo "Unable to determine registry state for $package_name@$package_version."
-              exit 1
-            fi
-
-            if [[ "$current_tag" != "$previous_version" ]]
-            then
-              echo "$package_name must advance from $previous_version, but the $NPM_TAG dist-tag currently points to ${current_tag:-<missing>}."
-              echo "A prior release may still be pending or this release may be stale; investigate before retrying."
-              exit 1
-            fi
-            if previous_output="$(npm view "$package_name@$previous_version" version --prefer-online 2>&1)"
-            then
-              if [[ "$previous_output" != "$previous_version" ]]
-              then
-                echo "$package_name@$previous_version returned unexpected registry version $previous_output."
-                exit 1
+                target_state=identical
+              else
+                target_state=different
               fi
             else
-              echo "$previous_output"
-              echo "$package_name cannot advance to $package_version because $previous_version is not available from npm."
-              exit 1
+              if [[ "$view_output" != *E404* ]]
+              then
+                echo "$view_output"
+                echo "Unable to determine registry state for $package_name@$package_version."
+                exit 1
+              fi
+              target_state=missing
             fi
 
-            echo "$tarball" >> "$RUNNER_TEMP/tileflow-packs/publish.txt"
-          done < "$RUNNER_TEMP/tileflow-packs/selected-tarballs.txt"
+            decision="$(
+              node scripts/publication-decision.mjs \
+                "$previous_version" \
+                "$package_version" \
+                "$current_tag" \
+                "$target_state"
+            )"
+            if [[ "$decision" = publish ]]
+            then
+              previous_output="$(npm view "$package_name@$previous_version" version --prefer-online)"
+              test "$previous_output" = "$previous_version"
+              echo "$tarball" >> "$release_root/publish.txt"
+            elif [[ "$decision" = published ]]
+            then
+              echo "$tarball" >> "$release_root/published.txt"
+            else
+              echo "Unexpected publication decision for $package_name: $decision."
+              exit 1
+            fi
+          done < "$release_root/selected-relative.txt"
 
-          selected_count="$(wc -l < "$RUNNER_TEMP/tileflow-packs/selected-tarballs.txt" | tr -d ' ')"
-          publish_count="$(wc -l < "$RUNNER_TEMP/tileflow-packs/publish.txt" | tr -d ' ')"
-          published_count="$(wc -l < "$RUNNER_TEMP/tileflow-packs/published.txt" | tr -d ' ')"
-          if [[ "$((publish_count + published_count))" != "$selected_count" ]]
-          then
-            echo "Expected $selected_count validated release packages, found $((publish_count + published_count))."
-            exit 1
-          fi
+          selected_count="$(wc -l < "$release_root/selected-relative.txt" | tr -d ' ')"
+          publish_count="$(wc -l < "$release_root/publish.txt" | tr -d ' ')"
+          published_count="$(wc -l < "$release_root/published.txt" | tr -d ' ')"
+          test "$((publish_count + published_count))" = "$selected_count"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
+          echo "Registry preflight passed for $selected_count package(s): $publish_count new, $published_count identical."
 
-          echo "Registry preflight passed for $selected_count release packages: $publish_count new, $published_count identical."
-
-      - name: Publish packages
+      - name: Publish changed packages
         shell: bash
         run: |
           set -euo pipefail
           unset NODE_AUTH_TOKEN
-
           if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" || -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]]
           then
-            echo "GitHub did not expose the OIDC request credentials."
+            echo 'GitHub did not expose OIDC request credentials.'
             exit 1
           fi
 
           while IFS= read -r tarball
           do
-            npx npm@11.19.0 publish "$tarball" \
+            [[ -n "$tarball" ]] || continue
+            git fetch --no-tags origin main
+            test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
+            npx --yes npm@11.19.0 publish "$tarball" \
               --access public \
               --registry https://registry.npmjs.org \
               --tag "$NPM_TAG" \
               --provenance \
               --loglevel verbose
-          done < "$RUNNER_TEMP/tileflow-packs/publish.txt"
+          done < "$RUNNER_TEMP/tileflow-release/publish.txt"

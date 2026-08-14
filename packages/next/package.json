@@ -1,6 +1,6 @@
 {
   "name": "@tileflow/next",
-  "version": "0.1.0-alpha.16",
+  "version": "0.0.0-development",
   "description": "Next.js adapter for Tileflow map style development and static artifacts.",
   "type": "module",
   "sideEffects": false,
@@ -48,7 +48,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@tileflow/dev": "workspace:*"
+    "@tileflow/dev": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0"
   },
   "peerDependencies": {
     "next": ">=14"

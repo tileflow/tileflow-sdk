@@ -1,22 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {assertTrustedMainCiRun, classifyAssociatedPullRequests} from './release-workflow.mjs';
+import {
+  assertSuccessfulRequiredJob,
+  assertTrustedMainCiRun,
+  findSuccessfulMainCiRun,
+} from './release-workflow.mjs';
 
 const repository = 'tileflow/tileflow-sdk';
 const releaseSha = 'a'.repeat(40);
-const baseSha = 'b'.repeat(40);
 
-test('accepts only a successful push CI run from tileflow-sdk main', () => {
-  const workflowRun = {
-    name: 'CI',
-    path: '.github/workflows/ci.yml',
-    conclusion: 'success',
-    event: 'push',
-    head_branch: 'main',
-    head_repository: {full_name: repository},
-    head_sha: releaseSha,
-  };
-  assert.equal(assertTrustedMainCiRun(workflowRun, repository), releaseSha);
+test('accepts only a successful push CI run from tileflow-sdk main at the exact SHA', () => {
+  const workflowRun = trustedRun();
+  assert.equal(assertTrustedMainCiRun(workflowRun, repository, releaseSha), releaseSha);
 
   for (const override of [
     {name: 'CI clone'},
@@ -26,62 +21,48 @@ test('accepts only a successful push CI run from tileflow-sdk main', () => {
     {head_branch: 'feature'},
     {head_repository: {full_name: 'attacker/tileflow-sdk'}},
     {head_sha: 'main'},
+    {head_sha: 'b'.repeat(40)},
   ]) {
-    assert.throws(() => assertTrustedMainCiRun({...workflowRun, ...override}, repository));
-  }
-});
-
-test('recognizes only the merged official Release PR', () => {
-  const trusted = pullRequest();
-  assert.deepEqual(classifyAssociatedPullRequests([trusted], repository, releaseSha), {
-    baseSha,
-    pullNumber: 42,
-    trustedRelease: true,
-  });
-
-  assert.deepEqual(
-    classifyAssociatedPullRequests(
-      [pullRequest({head: {ref: 'feature', repo: {full_name: repository}}})],
-      repository,
-      releaseSha,
-    ),
-    {baseSha, pullNumber: 42, trustedRelease: false},
-  );
-});
-
-test('ignores forks, wrong bases, unmerged PRs, and unrelated commits', () => {
-  for (const override of [
-    {merged_at: null},
-    {base: {ref: 'next', sha: baseSha}},
-    {head: {ref: 'changeset-release/main', repo: {full_name: 'attacker/tileflow-sdk'}}},
-    {merge_commit_sha: 'c'.repeat(40)},
-  ]) {
-    assert.deepEqual(
-      classifyAssociatedPullRequests([pullRequest(override)], repository, releaseSha),
-      {baseSha: null, pullNumber: null, trustedRelease: false},
+    assert.throws(() =>
+      assertTrustedMainCiRun({...workflowRun, ...override}, repository, releaseSha),
     );
   }
 });
 
-test('fails closed when one commit maps to multiple merged main PRs', () => {
-  assert.throws(
-    () =>
-      classifyAssociatedPullRequests(
-        [pullRequest(), pullRequest({number: 43})],
-        repository,
-        releaseSha,
-      ),
-    /multiple merged main pull requests/u,
+test('finds exact successful main CI evidence for scheduled and dispatched reconciliation', () => {
+  const run = trustedRun();
+  assert.equal(
+    findSuccessfulMainCiRun(
+      [{...run, conclusion: 'failure'}, {...run, event: 'workflow_dispatch'}, run],
+      repository,
+      releaseSha,
+    ),
+    run,
   );
+  assert.equal(
+    findSuccessfulMainCiRun([{...run, head_sha: 'b'.repeat(40)}], repository, releaseSha),
+    null,
+  );
+  assert.equal(findSuccessfulMainCiRun([], repository, releaseSha), null);
 });
 
-function pullRequest(overrides = {}) {
+test('requires the single CI Required job to be green', () => {
+  const required = {name: 'Required', conclusion: 'success'};
+  assert.equal(assertSuccessfulRequiredJob([{name: 'Build'}, required]), required);
+  assert.throws(() => assertSuccessfulRequiredJob([]));
+  assert.throws(() => assertSuccessfulRequiredJob([{...required, conclusion: 'failure'}]));
+  assert.throws(() => assertSuccessfulRequiredJob([required, required]));
+});
+
+function trustedRun() {
   return {
-    number: 42,
-    merged_at: '2026-08-13T17:00:00Z',
-    base: {ref: 'main', sha: baseSha},
-    head: {ref: 'changeset-release/main', repo: {full_name: repository}},
-    merge_commit_sha: releaseSha,
-    ...overrides,
+    id: 123,
+    name: 'CI',
+    path: '.github/workflows/ci.yml',
+    conclusion: 'success',
+    event: 'push',
+    head_branch: 'main',
+    head_repository: {full_name: repository},
+    head_sha: releaseSha,
   };
 }

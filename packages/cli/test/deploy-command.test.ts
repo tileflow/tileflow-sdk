@@ -11,6 +11,7 @@ import {fileURLToPath} from 'node:url';
 const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const tsxLoader = import.meta.resolve('tsx');
 const fakeApiKey = `tf_live_${'a'.repeat(48)}`;
+const accountSessionToken = `tf_session_${'b'.repeat(64)}`;
 
 test('deploy sends CI provenance but keeps it and the bearer key out of the manifest', async (t) => {
   const fixture = await createFixture(t);
@@ -77,7 +78,6 @@ test('deploy reports an idempotent hosted no-op without changing the manifest co
     mapId: 'map_test',
     mapUrl: 'https://api.example.test/maps/map_test/style.json',
     styleId: 'sty_test',
-    url: 'https://api.example.test/v1/styles/prj_test/madrid.json',
     version: 7,
   });
   const result = await runCli(
@@ -113,7 +113,6 @@ test('deploy reports a changed hosted version while accepting additive response 
     mapId: 'map_test',
     mapUrl: 'https://api.example.test/maps/map_test/style.json',
     styleId: 'sty_test',
-    url: 'https://api.example.test/v1/styles/prj_test/madrid.json',
     version: 8,
   });
   const result = await runCli(
@@ -264,7 +263,6 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
       mapId: 'map_test',
       mapUrl: 'https://api.example.test/maps/map_test/style.json',
       styleId: 'sty_test',
-      url: 'https://api.example.test/v1/styles/prj_test/madrid.json',
       version: 1,
     };
   });
@@ -365,7 +363,19 @@ export default {maps: {madrid: {name: 'Madrid'}}};
   await mkdir(authDirectory, {recursive: true});
   await writeFile(
     join(authDirectory, 'config.json'),
-    `${JSON.stringify({apiKey: fakeApiKey, apiUrl: api.url})}\n`,
+    `${JSON.stringify({
+      sessions: {
+        [api.url]: {
+          account: {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'},
+          accountSession: `tf_session_${'b'.repeat(64)}`,
+          apiOrigin: api.url,
+          createdAt: '2026-08-15T00:00:00.000Z',
+          expiresAt: '2026-12-01T00:00:00.000Z',
+          sessionId: 'cli_session_ada',
+        },
+      },
+      version: 2,
+    })}\n`,
     'utf8',
   );
 
@@ -388,12 +398,234 @@ export default {maps: {madrid: {name: 'Madrid'}}};
   );
 
   assert.equal(result.code, 1);
-  assert.match(`${result.stdout}\n${result.stderr}`, /Missing Tileflow API key/);
+  assert.match(`${result.stdout}\n${result.stderr}`, /explicit project-bound Tileflow API key/);
   assert.match(`${result.stdout}\n${result.stderr}`, /TILEFLOW_API_KEY/);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /tileflow login/);
   assert.equal(requests, 0);
   await assert.rejects(() => readFile(configMarkerPath, 'utf8'), {code: 'ENOENT'});
 });
+
+test('an ambiguous account-session deploy fails before config execution with exact project options', async (t) => {
+  const fixture = await createFixture(t);
+  const configMarkerPath = join(fixture.directory, 'ambiguous-config-imported.txt');
+  await writeFile(
+    fixture.configPath,
+    `import {writeFileSync} from 'node:fs';
+writeFileSync(${JSON.stringify(configMarkerPath)}, 'imported');
+export default {maps: {madrid: {name: 'Madrid'}}};
+`,
+  );
+  let requests = 0;
+  const api = await createFakeApi(t, async (request) => {
+    requests += 1;
+    assert.match(request.url ?? '', /^\/v1\/cli\/projects\?/u);
+    assert.equal(request.headers.authorization, `Bearer ${accountSessionToken}`);
+    return {
+      items: [accountProjectTarget('acme', 'web'), accountProjectTarget('acme', 'worker')],
+      nextCursor: null,
+      schemaVersion: 1,
+    };
+  });
+  await writeAccountSession(fixture.directory, api.url);
+
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      api.url,
+    ],
+    {HOME: fixture.directory, USERPROFILE: fixture.directory},
+  );
+
+  assert.equal(result.code, 1);
+  assert.equal(requests, 1);
+  assert.match(result.stdout, /Project target is ambiguous: @acme\/web, @acme\/worker/);
+  assert.ok(
+    result.stdout.includes(
+      `tileflow deploy --config ${fixture.configPath} --manifest ${fixture.manifestPath} --api-url ${api.url} --project @acme/web`,
+    ),
+    result.stdout,
+  );
+  await assert.rejects(() => readFile(configMarkerPath, 'utf8'), {code: 'ENOENT'});
+});
+
+test('one account session exchanges a visible target for a brief deploy capability', async (t) => {
+  const fixture = await createFixture(t);
+  const observedSecretPath = join(fixture.directory, 'account-config-observed-secret.txt');
+  await writeFile(
+    fixture.configPath,
+    `import {writeFileSync} from 'node:fs';
+writeFileSync(${JSON.stringify(observedSecretPath)}, process.env.TILEFLOW_API_KEY ?? 'missing');
+export default {maps: {madrid: {name: 'Madrid'}}};
+`,
+  );
+  const capability = `tf_cap_${'c'.repeat(96)}`;
+  const requests: string[] = [];
+  const api = await createFakeApi(t, async (request) => {
+    requests.push(`${request.method} ${request.url}`);
+    if (request.url?.startsWith('/v1/cli/projects?')) {
+      assert.equal(request.headers.authorization, `Bearer ${accountSessionToken}`);
+      return {
+        items: [accountProjectTarget('acme', 'web'), accountProjectTarget('acme', 'worker')],
+        nextCursor: null,
+        schemaVersion: 1,
+      };
+    }
+    if (request.url === '/v1/cli/project-capabilities') {
+      assert.equal(request.headers.authorization, `Bearer ${accountSessionToken}`);
+      assert.deepEqual(JSON.parse(await readRequestBody(request)), {
+        project: '@acme/web',
+        scopes: ['styles:write'],
+      });
+      return {
+        capability,
+        expiresAt: '2026-08-15T23:59:00.000Z',
+        reference: '@acme/web',
+        schemaVersion: 1,
+        scopes: ['styles:write'],
+      };
+    }
+    assert.equal(request.url, '/v1/styles');
+    assert.equal(request.headers.authorization, `Bearer ${capability}`);
+    await readRequestBody(request);
+    return {
+      mapId: 'map_test',
+      mapUrl: 'https://api.example.test/maps/map_test/style.json',
+      styleId: 'sty_test',
+    };
+  });
+  await writeAccountSession(fixture.directory, api.url);
+
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      api.url,
+      '--project',
+      '@acme/web',
+    ],
+    {HOME: fixture.directory, USERPROFILE: fixture.directory},
+  );
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(requests, [
+    'GET /v1/cli/projects?includeArchived=false&limit=100',
+    'POST /v1/cli/project-capabilities',
+    'POST /v1/styles',
+  ]);
+  assert.equal(await readFile(observedSecretPath, 'utf8'), 'missing');
+  assert.doesNotMatch(
+    `${result.stdout}\n${result.stderr}\n${await readFile(fixture.manifestPath, 'utf8')}`,
+    new RegExp(`${accountSessionToken}|${capability}`),
+  );
+});
+
+test('an explicit project key rejects a mismatched --project before config execution', async (t) => {
+  const fixture = await createFixture(t);
+  const configMarkerPath = join(fixture.directory, 'mismatch-config-imported.txt');
+  await writeFile(
+    fixture.configPath,
+    `import {writeFileSync} from 'node:fs';
+writeFileSync(${JSON.stringify(configMarkerPath)}, 'imported');
+export default {maps: {madrid: {name: 'Madrid'}}};
+`,
+  );
+  let requests = 0;
+  const api = await createFakeApi(t, async (request) => {
+    requests += 1;
+    assert.equal(request.url, '/v1/me');
+    assert.equal(request.headers.authorization, `Bearer ${fakeApiKey}`);
+    return {
+      apiKeyId: 'key_test',
+      credentialType: 'project_api_key',
+      organization: {id: 'org_acme', name: 'Acme', slug: 'acme'},
+      project: {id: 'prj_web', name: 'Web', slug: 'web'},
+      projectId: 'prj_web',
+      scopes: ['styles:write'],
+    };
+  });
+
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      api.url,
+      '--project',
+      '@acme/other',
+    ],
+    {TILEFLOW_API_KEY: fakeApiKey},
+  );
+
+  assert.equal(result.code, 1);
+  assert.equal(requests, 1);
+  assert.match(result.stdout, /belongs to @acme\/web, not @acme\/other/);
+  await assert.rejects(() => readFile(configMarkerPath, 'utf8'), {code: 'ENOENT'});
+});
+
+test('/v1/me validation returns one canonical project property', async () => {
+  const source = await readFile(new URL('../src/index.ts', import.meta.url), 'utf8');
+  const validator = source.slice(
+    source.indexOf('async function validateApiKey'),
+    source.indexOf('function isAuthIdentity'),
+  );
+  assert.equal(validator.match(/project: body\.project/gu)?.length, 1);
+});
+
+function accountProjectTarget(organizationSlug: string, projectSlug: string) {
+  return {
+    organization: {
+      id: `org_${organizationSlug}`,
+      name: organizationSlug[0].toUpperCase() + organizationSlug.slice(1),
+      slug: organizationSlug,
+    },
+    project: {
+      archivedAt: null,
+      createdAt: '2026-08-15T00:00:00.000Z',
+      id: `prj_${projectSlug}`,
+      name: projectSlug[0].toUpperCase() + projectSlug.slice(1),
+      slug: projectSlug,
+      updatedAt: '2026-08-15T00:00:00.000Z',
+    },
+    reference: `@${organizationSlug}/${projectSlug}`,
+  };
+}
+
+async function writeAccountSession(home: string, apiUrl: string) {
+  const authDirectory = join(home, '.tileflow');
+  await mkdir(authDirectory, {recursive: true});
+  await writeFile(
+    join(authDirectory, 'config.json'),
+    `${JSON.stringify({
+      sessions: {
+        [apiUrl]: {
+          account: {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'},
+          accountSession: accountSessionToken,
+          apiOrigin: apiUrl,
+          createdAt: '2026-08-15T00:00:00.000Z',
+          expiresAt: '2026-12-01T00:00:00.000Z',
+          sessionId: 'cli_session_ada',
+        },
+      },
+      version: 2,
+    })}\n`,
+    {mode: 0o600},
+  );
+}
 
 async function createFixture(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-cli-adversarial-'));
@@ -436,7 +668,6 @@ async function createFakeApi(
     mapId: 'map_test',
     mapUrl: 'https://api.example.test/maps/map_test/style.json',
     styleId: 'sty_test',
-    url: 'https://api.example.test/v1/styles/prj_test/madrid.json',
   },
 ) {
   const server = createServer(async (request, response) => {

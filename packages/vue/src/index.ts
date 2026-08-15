@@ -20,7 +20,7 @@ import {
   watch,
 } from 'vue';
 import {
-  createTileflowSessionId,
+  createTileflowSessionController,
   defaultTileflowManifestUrl,
   loadTileflowManifest,
   type MapLibreStyle,
@@ -137,7 +137,6 @@ export const TileflowMap = defineComponent({
     const imageSize = shallowRef<{height: number; width: number} | null>(null);
     const mapRef = shallowRef<MapLibreMap | null>(null);
     const captureState = ref<'error' | 'idle' | 'loading'>('loading');
-    const sessionId = createTileflowSessionId();
     const markerController = createTileflowMarkerController<
       MapLibreMap,
       TileflowMapMarker,
@@ -152,10 +151,6 @@ export const TileflowMap = defineComponent({
           color: marker.color ?? '#C6A15B',
         }),
       remove: (marker) => marker.remove(),
-    });
-    const sessionStarter = createTileflowSessionStarter({
-      sessionId,
-      source: 'vue',
     });
     let imageResizeObserver: ResizeObserver | null = null;
     let mapLifecycle: TileflowMapLifecycleAttachment | null = null;
@@ -314,6 +309,12 @@ export const TileflowMap = defineComponent({
 
       const runtime = runtimeStyle.value;
       const analyticsForMap = resolvedAnalytics.value;
+      const session = createTileflowSessionController({source: 'vue'});
+      const sessionStarter = createTileflowSessionStarter({
+        getSessionId: () => session.sessionId,
+        sessionId: session.sessionId,
+        source: 'vue',
+      });
       const map = new maplibregl.Map({
         ...props.mapOptions,
         attributionControl: props.mapOptions?.attributionControl ?? {compact: true},
@@ -326,7 +327,8 @@ export const TileflowMap = defineComponent({
           Parameters<RequestTransformFunction>[1]
         >({
           getAnalytics: () => analyticsForMap,
-          sessionId,
+          sessionController: session,
+          sessionId: session.sessionId,
           transformRequest: props.mapOptions?.transformRequest ?? undefined,
         }),
         zoom: resolvedZoom.value,

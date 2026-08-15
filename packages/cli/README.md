@@ -203,13 +203,40 @@ source revision or `null`; credentials, URL queries, hidden properties, response
 absolute paths are omitted. It is read-only apart from executable config's own possible side
 effects and removes `TILEFLOW_API_KEY` before loading config.
 
-Hosted writes require a project credential. These are two independent paths:
+Hosted writes have two independent authorization paths:
 
-- Manual deploy: run `npm exec --no -- tileflow login` once on the developer
-  machine, then validate and deploy from that machine.
-- CI deploy: create a dashboard `CI deploy` key, store it as
+- Personal developer session: run `npm exec --no -- tileflow login` once for a
+  Tileflow API origin. Login authenticates the account and selects no project.
+  The CLI exchanges that account session for a brief, narrow capability only
+  after resolving an exact project target.
+- CI/project key: create a dashboard `CI deploy` key, store it as
   `TILEFLOW_API_KEY`, and let the repository workflow deploy without a local
-  login.
+  login. The server binds that key to exactly one project.
+
+Inspect account and project context explicitly:
+
+```sh
+npm exec --no -- tileflow whoami --json
+npm exec --no -- tileflow projects list --json
+npm exec --no -- tileflow deploy --project @acme/web
+npm exec --no -- tileflow tileset upload data.pmtiles --id madrid --project @acme/web
+npm exec --no -- tileflow projects archive @acme/legacy --json
+npm exec --no -- tileflow logout
+```
+
+If the account has exactly one accessible active project, a hosted command may
+resolve it automatically. With more than one, project writes fail before config
+execution or network mutation, print deterministically sorted
+`@organization/project` choices, and give an exact retry containing
+`--project`. There is no first/default project, `projects use`, per-directory
+selection, or `login --project`. Commands such as `projects show`, `archive`,
+and `unarchive` already carry an exact positional target. `projects create`
+requires `--organization @organization` only when the account can manage more
+than one organization.
+
+An explicit key or `TILEFLOW_API_KEY` never uses the saved account session. If
+it is combined with `--project`, the selector is an assertion: the CLI checks
+`/v1/me` and rejects any mismatch before loading executable config or writing.
 
 The CI key grants only `styles:write` and `status:read`. It cannot upload
 tilesets or render images. Give it an expiration, rotate the repository secret
@@ -263,8 +290,11 @@ SVG/PNG/JPEG/WebP files without a key. Deploy uploads the four generated sprite
 files before its first style write and reuses byte-identical packages by content
 hash. Source icons and absolute paths remain local; generated atlas bytes and
 sorted icon names are public. External `sprite` URLs remain references and are
-not snapshotted. Hosted packages are limited to 256 icons and 8 MiB generated
-bytes, with 24 retained packages and 64 MiB per project.
+not snapshotted. Each hosted package is limited to 256 icons and 8 MiB generated
+bytes as a processing envelope. There is no package-count quota; physically
+retained generated packages share the organization's 5/10-GB hosted-storage
+pool with retained PMTiles, remain protected by deployment/library references,
+and otherwise enter the technical orphan grace before deletion.
 
 ## Agent icon catalog
 

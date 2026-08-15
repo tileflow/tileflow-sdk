@@ -16,49 +16,67 @@ import {
 
 type WidthStops = readonly (readonly [number, number])[];
 
-function casingStops(widths: WidthStops): WidthStops {
-  return widths.map(
-    ([level, width]) => [level, width + Math.min(10, Math.max(1.5, width * 0.22))] as const,
-  );
-}
-
 function scaleStops(widths: WidthStops, scale: number): WidthStops {
   return widths.map(([level, width]) => [level, width * scale] as const);
 }
 
-function cityRoadStyle(color: string, widths: WidthStops): TileflowRoadClassStyle {
+function roadWidth(widths: WidthStops, oneWayScale: number, casingAddition = 0) {
+  if (oneWayScale === 1) {
+    return zoom.linear(widths.map(([level, width]) => [level, width + casingAddition] as const));
+  }
+
+  return expression<number>([
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    ...widths.flatMap(([level, width]) => [
+      level,
+      [
+        'match',
+        ['get', 'oneway'],
+        [1, -1],
+        width * oneWayScale + casingAddition,
+        width + casingAddition,
+      ],
+    ]),
+  ]);
+}
+
+function cityRoadStyle(
+  color: string,
+  casingColor: string,
+  widths: WidthStops,
+  oneWayScale = 1,
+): TileflowRoadClassStyle {
   const tunnelWidths = scaleStops(widths, 0.18);
   const fill = {
     cap: 'round' as const,
     color,
     join: 'round' as const,
     opacity: 1,
-    width: zoom.linear(widths),
+    width: roadWidth(widths, oneWayScale),
   };
   const casing = {
     cap: 'round' as const,
-    color: '#FFFFFF',
+    color: casingColor,
     join: 'round' as const,
     opacity: 0.96,
-    width: zoom.linear(casingStops(widths)),
+    width: roadWidth(widths, oneWayScale, 2),
   };
 
   return {
     surface: {casing, fill},
-    bridge: {
-      casing,
-      fill: {...fill, color: '#A9B8C8'},
-    },
+    bridge: {casing, fill},
     tunnel: {
       casing: {
         ...casing,
         opacity: 1,
-        width: zoom.linear(casingStops(tunnelWidths)),
+        width: roadWidth(tunnelWidths, oneWayScale, 2),
       },
       fill: {
         ...fill,
         opacity: 1,
-        width: zoom.linear(tunnelWidths),
+        width: roadWidth(tunnelWidths, oneWayScale),
       },
     },
   };
@@ -90,7 +108,7 @@ function contextualPathStyle(): TileflowRoadClassStyle {
   };
   const casing = {
     cap: 'round' as const,
-    color: '#FFFFFF',
+    color: '#DDE2E7',
     join: 'round' as const,
     opacity: expression<number>(['match', ['get', 'subclass'], ['pedestrian'], 1, 0]),
     width: expression<number>([
@@ -153,7 +171,7 @@ export default defineTileflow({
         building: '#FFF8EC', // Hex color.
         road: '#F8F9FB', // Hex color.
         roadMajor: '#B4C2D0', // Hex color.
-        roadCasing: '#FFFFFF', // Hex color.
+        roadCasing: '#D5DCE3', // Hex color.
         boundary: '#C5CCD4', // Hex color.
         text: '#3F4B57', // Hex color.
         textMuted: '#687786', // Hex color.
@@ -206,7 +224,7 @@ export default defineTileflow({
           // Optional keys: bridge, casing, ferry, minor, motorway, path, primary,
           // rail, secondary, trunk, tunnel.
           bridge: '#A9B8C8', // Hex color.
-          casing: '#FFFFFF', // Hex color.
+          casing: '#D5DCE3', // Hex color.
           minor: '#F8F9FB', // Hex color.
           motorway: '#AAB9C9', // Hex color.
           path: '#E5EAEE', // Hex color.
@@ -268,7 +286,7 @@ export default defineTileflow({
             paths: true, // true | false.
           },
           classes: {
-            motorway: cityRoadStyle('#AAB9C9', [
+            motorway: cityRoadStyle('#AAB9C9', '#96A7B8', [
               [10, 2],
               [14, 8],
               [16, 18],
@@ -276,59 +294,64 @@ export default defineTileflow({
               [19, 72],
               [22, 220],
             ]),
-            trunk: cityRoadStyle('#AFBECD', [
+            trunk: cityRoadStyle('#AFBECD', '#9BAAB9', [
               [10, 1.8],
-              [14, 7.5],
-              [16, 17],
-              [17, 29],
-              [19, 68],
-              [22, 205],
-            ]),
-            primary: cityRoadStyle('#AEBCCA', [
-              [10, 1.5],
               [14, 7],
-              [16, 16],
-              [17, 27],
-              [19, 62],
-              [22, 190],
+              [16, 15],
+              [17, 24],
+              [19, 56],
+              [22, 170],
             ]),
-            secondary: cityRoadStyle('#D4DCE4', [
+            primary: cityRoadStyle(
+              '#AEBCCA',
+              '#9AA8B6',
+              [
+                [10, 1.5],
+                [14, 6],
+                [16, 13],
+                [17, 20],
+                [19, 46],
+                [22, 140],
+              ],
+              0.58,
+            ),
+            secondary: cityRoadStyle('#D4DCE4', '#C0C9D2', [
               [11, 1.2],
-              [14, 5.5],
-              [16, 12],
-              [17, 21],
-              [19, 48],
-              [22, 150],
+              [14, 4.5],
+              [16, 9],
+              [17, 15],
+              [19, 34],
+              [22, 105],
             ]),
-            tertiary: cityRoadStyle('#E1E6EB', [
+            tertiary: cityRoadStyle('#E1E6EB', '#CDD3D9', [
               [12, 1],
-              [14, 4],
-              [16, 10],
-              [17, 17],
-              [19, 38],
-              [22, 120],
+              [14, 3.5],
+              [16, 7.5],
+              [17, 12],
+              [19, 26],
+              [22, 82],
             ]),
-            minor: cityRoadStyle('#F8F9FB', [
+            minor: cityRoadStyle('#F8F9FB', '#E1E5E9', [
               [13, 1],
-              [15, 5],
-              [16, 8],
-              [17, 13],
-              [19, 30],
-              [22, 90],
-            ]),
-            service: cityRoadStyle('#F8F9FB', [
-              [14, 0.7],
-              [16, 5],
-              [17, 9],
+              [15, 4],
+              [16, 6],
+              [17, 8],
               [19, 20],
               [22, 60],
             ]),
-            track: cityRoadStyle('#EEF1F3', [
+            service: cityRoadStyle('#F8F9FB', '#E1E5E9', [
+              [14, 0.7],
+              [16, 3.5],
+              [17, 5.5],
+              [19, 13],
+              [22, 40],
+            ]),
+            track: cityRoadStyle('#EEF1F3', '#D8DDE1', [
               [14, 0.5],
-              [16, 3],
-              [17, 5],
-              [19, 12],
-              [22, 36],
+              [16, 2],
+              [17, 3],
+              [19, 7],
+              [22, 22],
             ]),
             path: contextualPathStyle(),
           },

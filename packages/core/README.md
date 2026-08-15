@@ -59,7 +59,7 @@ export default defineTileflow({
         }),
         poi: poi({categories: ['food', 'culture', 'transit'], color: 'category'}),
       },
-      view: {center: [-3.7038, 40.4168], zoom: 12},
+      view: {center: [-3.7038, 40.4168], pitch: 35, zoom: 12},
     },
   },
 });

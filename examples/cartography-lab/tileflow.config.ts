@@ -48,7 +48,9 @@ function cityRoadStyle(
   widths: WidthStops,
   oneWayScale = 1,
 ): TileflowRoadClassStyle {
-  const tunnelWidths = scaleStops(widths, 0.18);
+  // Tunnels keep most of the road hierarchy instead of collapsing into hairlines.
+  // A dashed casing distinguishes the underground segment without hiding its geometry.
+  const tunnelWidths = scaleStops(widths, 0.72);
   const fill = {
     cap: 'round' as const,
     color,
@@ -70,12 +72,13 @@ function cityRoadStyle(
     tunnel: {
       casing: {
         ...casing,
-        opacity: 1,
+        dash: [3, 2],
+        opacity: 0.86,
         width: roadWidth(tunnelWidths, oneWayScale, 2),
       },
       fill: {
         ...fill,
-        opacity: 1,
+        opacity: 0.74,
         width: roadWidth(tunnelWidths, oneWayScale),
       },
     },
@@ -270,15 +273,15 @@ export default defineTileflow({
             // dash, blur, gapWidth, and offset.
             construction: {
               surface: {
-                casing: {color: '#C7CDD3', dash: [2, 1], opacity: 0.72},
-                fill: {color: '#E5E8EB', dash: [2, 1], opacity: 0.78},
+                casing: {color: '#D79A56', dash: [1.5, 1], opacity: 0.9},
+                fill: {color: '#F4D4A4', dash: [1.5, 1], opacity: 0.96},
               },
             },
-            ramp: {widthScale: 0.68}, // Finite number > 0.
+            ramp: {widthScale: 0.52}, // Finite number > 0.
             unpaved: {
               surface: {
-                casing: {color: '#D2CCC1', dash: [2, 1], opacity: 0.78},
-                fill: {color: '#E9E4DA', dash: [2, 1], opacity: 0.88},
+                casing: {color: '#C4B69B', dash: [1.5, 1], opacity: 0.9},
+                fill: {color: '#E7D8BB', dash: [1.5, 1], opacity: 0.96},
               },
             },
           },
@@ -287,18 +290,18 @@ export default defineTileflow({
             // restrictions for that mode without exposing OpenMapTiles field names.
             access: {
               surface: {
-                casing: {dash: [1.5, 1], opacity: 0.5},
-                fill: {dash: [1.5, 1], opacity: 0.58},
+                casing: {color: '#B7A5AA', dash: [1, 1], opacity: 0.72},
+                fill: {color: '#E3D7DA', dash: [1, 1], opacity: 0.8},
               },
             },
           },
           serviceTypes: {
             // Optional keys: alley, crossover, driveway, parkingAisle, yard.
-            alley: {widthScale: 0.78},
-            crossover: {widthScale: 0.58},
-            driveway: {widthScale: 0.7},
-            parkingAisle: {widthScale: 0.56},
-            yard: {widthScale: 0.64},
+            alley: {widthScale: 0.68},
+            crossover: {widthScale: 0.5},
+            driveway: {widthScale: 0.58},
+            parkingAisle: {widthScale: 0.42},
+            yard: {widthScale: 0.55},
           },
           areas: {
             // Polygon pedestrian plazas; line-like pedestrian ways use classes.pedestrian.
@@ -313,7 +316,7 @@ export default defineTileflow({
             // Optional semantic targets: motorway, trunk, primary, secondary,
             // tertiary, minor, service, track, pathway, footway, cycleway,
             // steps, pedestrian. Each accepts surface, tunnel, bridge, enabled.
-            motorway: cityRoadStyle('#AAB9C9', '#96A7B8', [
+            motorway: cityRoadStyle('#AAB9C9', '#F8FAFC', [
               [10, 2],
               [14, 8],
               [16, 18],
@@ -321,7 +324,7 @@ export default defineTileflow({
               [19, 72],
               [22, 220],
             ]),
-            trunk: cityRoadStyle('#AFBECD', '#9BAAB9', [
+            trunk: cityRoadStyle('#AFBECD', '#F8FAFC', [
               [10, 1.8],
               [14, 7],
               [16, 15],
@@ -331,7 +334,7 @@ export default defineTileflow({
             ]),
             primary: cityRoadStyle(
               '#AEBCCA',
-              '#9AA8B6',
+              '#F8FAFC',
               [
                 [10, 1.5],
                 [14, 6],
@@ -342,7 +345,7 @@ export default defineTileflow({
               ],
               0.58,
             ),
-            secondary: cityRoadStyle('#D4DCE4', '#C0C9D2', [
+            secondary: cityRoadStyle('#D4DCE4', '#FAFBFC', [
               [11, 1.2],
               [14, 4.5],
               [16, 9],
@@ -350,7 +353,7 @@ export default defineTileflow({
               [19, 34],
               [22, 105],
             ]),
-            tertiary: cityRoadStyle('#E1E6EB', '#CDD3D9', [
+            tertiary: cityRoadStyle('#E1E6EB', '#FAFBFC', [
               [12, 1],
               [14, 3.5],
               [16, 7.5],
@@ -358,7 +361,7 @@ export default defineTileflow({
               [19, 26],
               [22, 82],
             ]),
-            minor: cityRoadStyle('#F8F9FB', '#E1E5E9', [
+            minor: cityRoadStyle('#F8F9FB', '#FFFFFF', [
               [13, 1],
               [15, 4],
               [16, 6],
@@ -366,14 +369,14 @@ export default defineTileflow({
               [19, 20],
               [22, 60],
             ]),
-            service: cityRoadStyle('#F8F9FB', '#E1E5E9', [
+            service: cityRoadStyle('#F8F9FB', '#FFFFFF', [
               [14, 0.7],
               [16, 3.5],
               [17, 5.5],
               [19, 13],
               [22, 40],
             ]),
-            track: cityRoadStyle('#EEF1F3', '#D8DDE1', [
+            track: cityRoadStyle('#EEF1F3', '#FFFFFF', [
               [14, 0.5],
               [16, 2],
               [17, 3],
@@ -484,7 +487,7 @@ export default defineTileflow({
           },
         }),
         buildings: buildings({
-          mode: 'flat', // 'flat' | '3d'.
+          mode: '3d', // 'flat' | '3d'.
           fill: {color: '#FFF8EC', minZoom: 13, opacity: 1},
           outline: {color: '#E7D8BC', minZoom: 14, opacity: 1, width: 0.8},
         }),
@@ -539,6 +542,7 @@ export default defineTileflow({
       },
       view: {
         center: [-3.69275, 40.40866], // [longitude -180..180, latitude -90..90].
+        pitch: 45, // Number from 0 through 85; 0 is a top-down map.
         zoom: 14, // Number from 0 through 24; optional bearing is -180..180.
       },
     },

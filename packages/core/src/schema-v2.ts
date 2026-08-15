@@ -680,6 +680,7 @@ const viewSchema = z
     center: z
       .tuple([z.number().finite().min(-180).max(180), z.number().finite().min(-90).max(90)])
       .optional(),
+    pitch: z.number().finite().min(0).max(85).optional(),
     zoom: zoomNumberSchema.optional(),
   })
   .strict();

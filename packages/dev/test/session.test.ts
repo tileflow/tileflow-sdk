@@ -232,7 +232,7 @@ test('selects map and scene previews with their configured cameras and viewport'
   const project = {
     maps: {
       first: {},
-      second: {view: {bearing: 12, center: [2, 3] as [number, number], zoom: 9}},
+      second: {view: {bearing: 12, center: [2, 3] as [number, number], pitch: 35, zoom: 9}},
     },
     scenes: {
       bounds: {
@@ -259,7 +259,7 @@ test('selects map and scene previews with their configured cameras and viewport'
   };
 
   assert.deepEqual(resolveTileflowPreview(project, {map: 'second'}), {
-    camera: {type: 'center', center: [2, 3], zoom: 9, bearing: 12, pitch: 0},
+    camera: {type: 'center', center: [2, 3], zoom: 9, bearing: 12, pitch: 35},
     label: 'second',
     mapName: 'second',
   });
@@ -289,6 +289,7 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.equal(mapResponse.status, 200);
   assert.match(mapHtml, /\/styles\/second\.json/);
   assert.match(mapHtml, /"center":\[2,3\]/);
+  assert.match(mapHtml, /"pitch":35/);
   assert.match(mapHtml, /"zoom":9/);
   assert.doesNotMatch(mapHtml, /-3\.7038/);
   assert.match(mapHtml, /cameraRanges/);
@@ -448,7 +449,7 @@ const invalidConfig = `export default {maps: {main: {basemap: {type: 'streets', 
 const previewConfig = `export default {
   maps: {
     first: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}},
-    second: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, view: {bearing: 12, center: [2, 3], zoom: 9}}
+    second: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, view: {bearing: 12, center: [2, 3], pitch: 35, zoom: 9}}
   },
   scenes: {
     bounds: {

@@ -176,6 +176,7 @@ export type TileflowTerrain = TileflowTerrainMode | TileflowTerrainConfig;
 export type TileflowViewConfig = {
   bearing?: number;
   center?: readonly [number, number];
+  pitch?: number;
   zoom?: number;
 };
 

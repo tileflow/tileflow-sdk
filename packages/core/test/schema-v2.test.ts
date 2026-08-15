@@ -15,12 +15,14 @@ test('accepts the canonical Streets project shape', () => {
       madrid: {
         basemap: streets(),
         modules: {roads: roads({hierarchy: 'strong'})},
+        view: {center: [-3.7038, 40.4168], pitch: 45, zoom: 15},
       },
     },
   };
 
   assert.deepEqual(parseTileflowProject(project), project);
   assert.deepEqual(validateConfig(project), {valid: true, messages: []});
+  assert.throws(() => parseTileflowMap({basemap: streets(), view: {pitch: 86}}), /view\.pitch/);
 });
 
 test('rejects every removed renderer and data path with its exact location', () => {

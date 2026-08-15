@@ -290,7 +290,7 @@ export function resolveTileflowPreview(
       center: map.view?.center ? [map.view.center[0], map.view.center[1]] : [0, 0],
       zoom: map.view?.zoom ?? 0,
       bearing: map.view?.bearing ?? 0,
-      pitch: 0,
+      pitch: map.view?.pitch ?? 0,
     },
     label: mapName,
     mapName,

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {createStyleFromProject, validateConfig} from '@tileflow/core';
 import project from '../tileflow.config';
@@ -35,4 +36,28 @@ test('covers the canonical cartographic review surfaces with standalone scenes',
     height: 844,
     dpr: 2,
   });
+});
+
+test('workspace cartography commands prepare the packaged CLI before running it', async () => {
+  const workspacePackage = JSON.parse(
+    await readFile(new URL('../../../package.json', import.meta.url), 'utf8'),
+  ) as {scripts: Record<string, string>};
+
+  assert.equal(
+    workspacePackage.scripts['cartography:prepare'],
+    'turbo build --filter=@tileflow/cli',
+  );
+
+  for (const command of [
+    'capture:cartography',
+    'dev:cartography',
+    'visual:cartography',
+    'visual:cartography:update',
+  ]) {
+    assert.match(
+      workspacePackage.scripts[command] ?? '',
+      /^pnpm run cartography:prepare && node packages\/cli\/dist\/index\.js /,
+      `${command} must not consume stale workspace package output`,
+    );
+  }
 });

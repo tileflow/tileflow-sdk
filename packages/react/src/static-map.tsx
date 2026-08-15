@@ -10,7 +10,12 @@ import {
   useState,
 } from 'react';
 import {normalizeTileflowCaptureId} from '@tileflow/core';
-import type {StaticMapResult, StaticSceneInput} from '@tileflow/static';
+import {
+  type StaticMapResult,
+  type StaticSceneInput,
+  validateStaticMapIdempotencyKey,
+} from '@tileflow/static';
+import {createStaticMapRequestKey, resolveStaticMap, stableStringify} from './static-map-request';
 
 type StaticMapBaseProps = StaticSceneInput & {
   alt?: string;
@@ -27,17 +32,17 @@ type StaticMapBaseProps = StaticSceneInput & {
 
 type StaticMapImageProps = {
   createUrl?: never;
+  idempotencyKey?: never;
   imageUrl: string;
 };
 
 type StaticMapCreateProps = {
   createUrl: string;
+  idempotencyKey: string;
   imageUrl?: never;
 };
 
 export type StaticMapProps = StaticMapBaseProps & (StaticMapCreateProps | StaticMapImageProps);
-
-const inFlightRequests = new Map<string, Promise<StaticMapResult>>();
 
 export function StaticMap({
   alt = '',
@@ -47,6 +52,7 @@ export function StaticMap({
   createUrl,
   imageStyle,
   imageUrl,
+  idempotencyKey,
   keepPreviousImage = false,
   loading = 'lazy',
   map,
@@ -71,7 +77,9 @@ export function StaticMap({
     () => stableStringify({camera, map, overlays, size}),
     [camera, map, overlays, size],
   );
-  const requestKey = imageUrl ? `image:${imageUrl}` : `create:${createUrl}:${sceneKey}`;
+  const intentKey = imageUrl
+    ? `image:${imageUrl}`
+    : `create:${createUrl}:${idempotencyKey ?? ''}:${sceneKey}`;
 
   useLayoutEffect(() => {
     imageLoadRunRef.current += 1;
@@ -81,7 +89,7 @@ export function StaticMap({
       if (image.naturalWidth === 0) setCaptureState('error');
       else void markImageReady(image);
     }
-  }, [requestKey]);
+  }, [intentKey]);
 
   async function markImageReady(image: HTMLImageElement) {
     const runId = ++imageLoadRunRef.current;
@@ -117,16 +125,34 @@ export function StaticMap({
       return;
     }
 
+    const validation = validateStaticMapIdempotencyKey(idempotencyKey ?? '');
+    if (!validation.ok) {
+      const keyError = new Error(`Invalid Static Maps idempotency key: ${validation.error}`);
+      if (!keepPreviousImage) setResult(null);
+      setError(keyError);
+      imageLoadRunRef.current += 1;
+      setCaptureState('error');
+      onErrorRef.current?.(keyError);
+      return;
+    }
+
     if (!keepPreviousImage) {
       setResult(null);
     }
 
     setError(null);
+    const requestController = new AbortController();
 
     resolveStaticMap({
       createUrl,
-      requestKey,
+      idempotencyKey: validation.key,
+      requestKey: createStaticMapRequestKey({
+        createUrl,
+        idempotencyKey: validation.key,
+        sceneKey,
+      }),
       scene: JSON.parse(sceneKey) as StaticSceneInput,
+      signal: requestController.signal,
     })
       .then((nextResult) => {
         if (cancelled) {
@@ -157,8 +183,9 @@ export function StaticMap({
 
     return () => {
       cancelled = true;
+      requestController.abort();
     };
-  }, [createUrl, imageUrl, keepPreviousImage, requestKey, sceneKey]);
+  }, [createUrl, idempotencyKey, imageUrl, intentKey, keepPreviousImage, sceneKey]);
 
   return (
     <div
@@ -206,64 +233,14 @@ export function StaticMap({
   );
 }
 
-async function resolveStaticMap(input: {
-  createUrl: string;
-  requestKey: string;
-  scene: StaticSceneInput;
-}) {
-  const existing = inFlightRequests.get(input.requestKey);
-
-  if (existing) {
-    return existing;
-  }
-
-  const promise = fetch(input.createUrl, {
-    body: JSON.stringify(input.scene),
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    method: 'POST',
-  })
-    .then(async (response) => {
-      if (!response.ok) {
-        throw new Error(`Static map endpoint failed: ${response.status}`);
-      }
-
-      return (await response.json()) as StaticMapResult;
-    })
-    .finally(() => {
-      inFlightRequests.delete(input.requestKey);
-    });
-
-  inFlightRequests.set(input.requestKey, promise);
-  return promise;
-}
-
 function imageResult(imageUrl: string): StaticMapResult {
   return {
     cached: true,
     hash: '',
     imageUrl,
+    operationId: null,
+    remainingUnits: null,
     status: 'ready',
+    unitCost: 0,
   };
-}
-
-function stableStringify(value: unknown): string {
-  return JSON.stringify(sortJson(value));
-}
-
-function sortJson(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(sortJson);
-  }
-
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, entry]) => [key, sortJson(entry)]),
-    );
-  }
-
-  return value;
 }

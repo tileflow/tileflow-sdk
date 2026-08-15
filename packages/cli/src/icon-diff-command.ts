@@ -182,6 +182,7 @@ type IconDiffOptions = {
   force?: boolean;
   json?: boolean;
   open?: boolean;
+  project?: string;
   report?: string;
 };
 
@@ -192,8 +193,11 @@ export function registerIconDiffCommand(
     defaultConfigPath: string;
     openReport: (path: string) => void;
     resolveApi: (options: {
+      against: string;
       apiKey?: string;
       apiUrl?: string;
+      config?: string;
+      project?: string;
     }) => Promise<{apiKey: string; apiUrl: string} | null>;
   },
 ): void {
@@ -202,12 +206,9 @@ export function registerIconDiffCommand(
     .description('Preview a local icon package against an active hosted revision')
     .requiredOption('--against <environment>', 'named map environment to compare')
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)
-    .option(
-      '--api-url <url>',
-      'Tileflow API URL',
-      process.env.TILEFLOW_API_URL ?? dependencies.defaultApiUrl,
-    )
+    .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
     .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
+    .option('--project <target>', 'target @organization/project')
     .option('--json', 'print deterministic schema-version-1 JSON')
     .option('--report <path>', 'write a self-contained HTML visual report')
     .option('--open', 'open an explicitly requested report')
@@ -232,8 +233,11 @@ async function runIconDiff(
   dependencies: {
     openReport: (path: string) => void;
     resolveApi: (options: {
+      against: string;
       apiKey?: string;
       apiUrl?: string;
+      config?: string;
+      project?: string;
     }) => Promise<{apiKey: string; apiUrl: string} | null>;
   },
 ): Promise<void> {

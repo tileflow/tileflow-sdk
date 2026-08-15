@@ -5,8 +5,8 @@ import {Command} from 'commander';
 import {spawn} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
 import {existsSync, readFileSync} from 'node:fs';
-import {chmod, mkdir, readFile, stat, unlink, writeFile} from 'node:fs/promises';
-import {homedir, hostname, platform} from 'node:os';
+import {mkdir, readFile, stat, writeFile} from 'node:fs/promises';
+import {hostname, platform} from 'node:os';
 import {dirname, resolve} from 'node:path';
 import {createInterface} from 'node:readline/promises';
 import pc from 'picocolors';
@@ -37,11 +37,27 @@ import {
   TileflowValidationError,
   writeTileflowBuildArtifacts,
 } from '@tileflow/dev';
+import {
+  type AccountIdentity,
+  type AuthConfigV2,
+  type CliAccountSessionV2,
+  installAccountSession,
+  loadAuthConfig,
+  normalizeApiOrigin,
+  parseProjectReference,
+  type ProjectIdentity,
+  projectReference,
+  removeAccountSession,
+  removeAuthFile,
+  resolveAccountSession,
+  writeAuthFileAtomic,
+} from './account-session';
 import {registerCaptureCommands} from './capture-command';
 import {allowsStoredDeployCredential, resolveDeploySource} from './deploy-source';
 import {registerFeatureInspectCommand} from './feature-inspect-command';
 import {registerIconDiffCommand} from './icon-diff-command';
 import {registerIconListCommand} from './icon-list-command';
+import {registerProjectCommands, resolveAccountProjectTarget} from './project-commands';
 import {registerVisualCommands} from './visual-command';
 
 const packageJson = JSON.parse(
@@ -56,19 +72,11 @@ const defaultManifestPath = defaultTileflowManifestPath;
 const defaultTileset = defaultTileflowTileset;
 const maxTilesetUploadBytes = 32 * 1024 * 1024;
 
-type AuthConfig = {
-  apiKey?: string;
-  apiUrl?: string;
-  appUrl?: string;
-  createdAt?: string;
-  deviceName?: string;
-  keyPrefix?: string;
-  projectId?: string;
-  scopes?: string[];
-};
-
 type ApiProfile = {
   apiKeyId: string;
+  credentialType: 'project_api_key';
+  organization: ProjectIdentity;
+  project: ProjectIdentity;
   projectId: string;
   scopes: string[];
 };
@@ -84,11 +92,12 @@ type DeviceAuthorization = {
 };
 
 type DeviceToken = {
-  apiKey: string;
+  account: AccountIdentity;
+  accountSession: string;
   apiUrl: string;
-  keyPrefix: string;
-  projectId: string;
-  scopes: string[];
+  createdAt: string;
+  expiresAt: string;
+  sessionId: string;
 };
 
 type DeployedManifestMap = {
@@ -124,6 +133,7 @@ type StatusTileset = {
 type StatusStyle = {
   environment: string;
   key: string;
+  mapId: string;
   size: number;
   uploaded: string;
 };
@@ -176,122 +186,112 @@ program
 
 program
   .command('login')
-  .description('Authorize this machine for Tileflow deploys')
+  .description('Authorize this machine for your Tileflow account')
   .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option(
     '--app-url <url>',
     'Tileflow Dashboard URL',
     process.env.TILEFLOW_APP_URL ?? defaultAppUrl,
   )
-  .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
-  .option('--manual', 'paste an API key instead of opening the dashboard')
   .option('--no-browser', 'print the authorization URL without opening it')
-  .action(
-    async (options: {
-      apiKey?: string;
-      apiUrl?: string;
-      appUrl?: string;
-      manual?: boolean;
-      noBrowser?: boolean;
-    }) => {
-      const apiUrl = normalizeUrl(options.apiUrl ?? defaultApiUrl);
-      const appUrl = normalizeUrl(options.appUrl ?? defaultAppUrl);
+  .action(async (options: {apiUrl?: string; appUrl?: string; noBrowser?: boolean}) => {
+    const apiUrl = normalizeUrl(options.apiUrl ?? defaultApiUrl);
+    const appUrl = normalizeUrl(options.appUrl ?? defaultAppUrl);
 
-      if (options.apiKey || options.manual) {
-        const apiKey = options.apiKey ?? (await promptForApiKey(appUrl));
-
-        if (!apiKey) {
-          logError('Missing Tileflow API key.');
-          process.exitCode = 1;
-          return;
-        }
-
-        const profile = await validateApiKey(apiUrl, apiKey);
-
-        if (!profile.ok) {
-          logError(profile.error);
-          process.exitCode = 1;
-          return;
-        }
-
-        await writeAuthConfig({
-          apiKey,
-          apiUrl,
-          appUrl,
-          createdAt: new Date().toISOString(),
-          keyPrefix: getKeyPrefix(apiKey),
-          projectId: profile.value.projectId,
-          scopes: profile.value.scopes,
-        });
-        logSuccess('Signed in to Tileflow.');
-        printAuthDetails({
-          apiUrl,
-          appUrl,
-          keyPrefix: getKeyPrefix(apiKey),
-          projectId: profile.value.projectId,
-          scopes: profile.value.scopes,
-        });
-        return;
-      }
-
-      try {
-        await loginWithDeviceFlow({
-          apiUrlOverride: options.apiUrl ? normalizeUrl(options.apiUrl) : undefined,
-          appUrl,
-          noBrowser: Boolean(options.noBrowser),
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Login failed.';
-        logError(message);
-        process.exitCode = 1;
-      }
-    },
-  );
+    try {
+      await loginWithDeviceFlow({
+        expectedApiUrl: apiUrl,
+        appUrl,
+        noBrowser: Boolean(options.noBrowser),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Login failed.';
+      logError(message);
+      process.exitCode = 1;
+    }
+  });
 
 program
   .command('logout')
-  .description('Remove the saved Tileflow CLI credential')
-  .action(async () => {
-    const configPath = authConfigPath();
-
-    if (!existsSync(configPath)) {
+  .description("Revoke this origin's Tileflow account session")
+  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
+  .action(async (options: {apiUrl?: string}) => {
+    const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
+    const config = await loadAuthConfig().catch((error: unknown) => {
+      logError(safeAuthError(error));
+      return null;
+    });
+    if (!config) {
+      process.exitCode = 1;
+      return;
+    }
+    const session = config.sessions[apiUrl];
+    if (!session) {
       logWarning('No Tileflow login is saved.');
       return;
     }
 
-    await unlink(configPath);
-    logSuccess('Removed Tileflow login.');
+    const response = await fetch(`${apiUrl}/v1/cli/account/session`, {
+      headers: {Authorization: `Bearer ${session.accountSession}`},
+      method: 'DELETE',
+    }).catch(() => null);
+    if (!response || (response.status !== 401 && !response.ok)) {
+      logError('Could not revoke the Tileflow account session; local state was preserved.');
+      process.exitCode = 1;
+      return;
+    }
+
+    const removed = removeAccountSession(config, apiUrl);
+    if (Object.keys(removed.config.sessions).length) {
+      await writeAuthFileAtomic(removed.config);
+    } else {
+      await removeAuthFile();
+    }
+    logSuccess('Signed out of this Tileflow origin.');
   });
 
 program
   .command('whoami')
-  .description('Show the active Tileflow CLI credential')
-  .action(async () => {
-    const auth = await readAuthConfig();
+  .description('Show the authenticated Tileflow account')
+  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
+  .option('--json', 'print deterministic schema-version-1 JSON')
+  .action(async (options: {apiUrl?: string; json?: boolean}) => {
+    const config = await loadAuthConfig().catch((error: unknown) => {
+      logAuthCommandError(options.json, safeAuthError(error));
+      return null;
+    });
+    if (!config) return;
+    const selected = resolveAccountSession(config, options.apiUrl ?? defaultApiUrl);
 
-    if (!auth?.apiKey || !auth.apiUrl) {
+    if (selected.kind !== 'selected') {
       logError('Not logged in.');
       printNextSteps([`Run ${command('tileflow login')} to authorize this machine.`]);
       process.exitCode = 1;
       return;
     }
 
-    const profile = await validateApiKey(normalizeUrl(auth.apiUrl), auth.apiKey);
+    const profile = await validateAccountSession(selected.session);
 
     if (!profile.ok) {
-      logError(profile.error);
+      logAuthCommandError(options.json, profile.error);
       process.exitCode = 1;
       return;
     }
 
+    const document = {
+      schemaVersion: 1,
+      account: profile.value.account,
+      apiUrl: selected.session.apiOrigin,
+      session: profile.value.session,
+    };
+
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(document)}\n`);
+      return;
+    }
+
     logSuccess('Tileflow CLI is authenticated.');
-    printAuthDetails({
-      apiUrl: normalizeUrl(auth.apiUrl),
-      appUrl: auth.appUrl ? normalizeUrl(auth.appUrl) : undefined,
-      keyPrefix: auth.keyPrefix ?? getKeyPrefix(auth.apiKey),
-      projectId: profile.value.projectId,
-      scopes: profile.value.scopes,
-    });
+    printAccountDetails(selected.session);
   });
 
 program
@@ -512,8 +512,9 @@ program
   .option('-c, --config <path>', 'config path', defaultConfigPath)
   .option('--manifest <path>', 'manifest path written for frontend bundlers', defaultManifestPath)
   .option('--tileset <id>', 'Tileflow tileset ID override')
-  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL ?? defaultApiUrl)
+  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
+  .option('--project <target>', 'target @organization/project')
   .action(
     async (options: {
       config: string;
@@ -521,10 +522,23 @@ program
       tileset?: string;
       apiUrl?: string;
       apiKey?: string;
+      project?: string;
     }) => {
       const source = resolveDeploySource(process.env);
       const api = await requireApiOptions(options, {
         allowStoredCredential: allowsStoredDeployCredential(source),
+        capabilityScopes: ['styles:write'],
+        retryCommand: cliInvocation([
+          'tileflow',
+          'deploy',
+          '--config',
+          options.config,
+          '--manifest',
+          options.manifest,
+          ...(options.tileset ? ['--tileset', options.tileset] : []),
+          '--api-url',
+          options.apiUrl ?? defaultApiUrl,
+        ]),
       });
       if (!api) return;
 
@@ -633,16 +647,15 @@ program
         const body = (await response.json()) as {
           changed?: boolean;
           deploymentId?: string;
-          mapId?: string;
-          url: string;
-          mapUrl?: string;
+          mapId: string;
+          mapUrl: string;
           styleId?: string;
           version?: number;
         };
-        const styleUrl = body.mapUrl ?? body.url;
+        const styleUrl = body.mapUrl;
         deployedMaps[mapName] = {
           environment: mapName,
-          mapId: body.mapId ?? mapName,
+          mapId: body.mapId,
           styleId: body.styleId,
           styleUrl,
           tilesetId,
@@ -679,8 +692,9 @@ tileset
   .requiredOption('--id <id>', 'tileset ID')
   .option('--name <name>', 'display name')
   .option('--schema <schema>', 'tile schema', 'openmaptiles')
-  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL ?? defaultApiUrl)
+  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
+  .option('--project <target>', 'target @organization/project')
   .action(
     async (options: {
       id: string;
@@ -688,8 +702,23 @@ tileset
       schema: string;
       apiUrl?: string;
       apiKey?: string;
+      project?: string;
     }) => {
-      const api = await requireApiOptions(options);
+      const api = await requireApiOptions(options, {
+        capabilityScopes: ['tilesets:write'],
+        retryCommand: cliInvocation([
+          'tileflow',
+          'tileset',
+          'register',
+          '--id',
+          options.id,
+          ...(options.name ? ['--name', options.name] : []),
+          '--schema',
+          options.schema,
+          '--api-url',
+          options.apiUrl ?? defaultApiUrl,
+        ]),
+      });
       if (!api) return;
 
       const response = await fetch(`${api.apiUrl}/v1/tilesets`, {
@@ -713,8 +742,9 @@ tileset
   .command('upload <file>')
   .description('Upload a small PMTiles archive through the API')
   .requiredOption('--id <id>', 'tileset ID')
-  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL ?? defaultApiUrl)
+  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
+  .option('--project <target>', 'target @organization/project')
   .action(
     async (
       file: string,
@@ -722,9 +752,22 @@ tileset
         id: string;
         apiUrl?: string;
         apiKey?: string;
+        project?: string;
       },
     ) => {
-      const api = await requireApiOptions(options);
+      const api = await requireApiOptions(options, {
+        capabilityScopes: ['tilesets:write'],
+        retryCommand: cliInvocation([
+          'tileflow',
+          'tileset',
+          'upload',
+          file,
+          '--id',
+          options.id,
+          '--api-url',
+          options.apiUrl ?? defaultApiUrl,
+        ]),
+      });
       if (!api) return;
 
       const filePath = resolve(process.cwd(), file);
@@ -753,11 +796,21 @@ tileset
 program
   .command('status')
   .description('Show registered tilesets, uploaded archives, and deployed styles')
-  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL ?? defaultApiUrl)
+  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
+  .option('--project <target>', 'target @organization/project')
   .option('--json', 'print raw JSON')
-  .action(async (options: {apiUrl?: string; apiKey?: string; json?: boolean}) => {
-    const api = await requireApiOptions(options);
+  .action(async (options: {apiUrl?: string; apiKey?: string; json?: boolean; project?: string}) => {
+    const api = await requireApiOptions(options, {
+      capabilityScopes: ['status:read'],
+      retryCommand: cliInvocation([
+        'tileflow',
+        'status',
+        '--api-url',
+        options.apiUrl ?? defaultApiUrl,
+        ...(options.json ? ['--json'] : []),
+      ]),
+    });
     if (!api) return;
 
     const response = await fetch(`${api.apiUrl}/v1/status`, {
@@ -794,6 +847,17 @@ registerIconDiffCommand(iconsCommand, {
     const source = resolveDeploySource(process.env);
     return requireApiOptions(options, {
       allowStoredCredential: allowsStoredDeployCredential(source),
+      capabilityScopes: ['status:read'],
+      retryCommand: cliInvocation([
+        'tileflow',
+        'icons',
+        'diff',
+        '--against',
+        options.against,
+        ...(options.config ? ['--config', options.config] : []),
+        '--api-url',
+        options.apiUrl ?? defaultApiUrl,
+      ]),
       silent: true,
     });
   },
@@ -802,6 +866,10 @@ const inspectCommand = program.command('inspect').description('Inspect map data 
 registerFeatureInspectCommand(inspectCommand, {defaultConfigPath});
 registerCaptureCommands(program, {defaultConfigPath});
 registerVisualCommands(program, {defaultConfigPath});
+registerProjectCommands(program, {
+  defaultApiUrl,
+  loadAuthConfig,
+});
 
 program.parseAsync().catch((error: unknown) => {
   printCliError(error);
@@ -837,8 +905,8 @@ function closeNodeServer(server: TileflowDevServer | undefined): Promise<void> {
 }
 
 async function loginWithDeviceFlow(options: {
-  apiUrlOverride?: string;
   appUrl: string;
+  expectedApiUrl: string;
   noBrowser: boolean;
 }) {
   const codeVerifier = randomBase64Url(32);
@@ -847,7 +915,6 @@ async function loginWithDeviceFlow(options: {
   const authorization = await startDeviceAuthorization(options.appUrl, {
     codeChallenge,
     deviceName: hostname(),
-    requestedScopes: ['static:write', 'status:read', 'styles:write', 'tilesets:write'],
   });
 
   printKeyValue('Code', pc.bold(authorization.userCode));
@@ -875,32 +942,31 @@ async function loginWithDeviceFlow(options: {
   const token = await pollDeviceToken(options.appUrl, authorization, {
     codeVerifier,
   });
-  const apiUrl = normalizeUrl(options.apiUrlOverride ?? token.apiUrl);
-  const profile = await validateApiKey(apiUrl, token.apiKey);
+  const apiUrl = normalizeApiOrigin(token.apiUrl);
+
+  if (apiUrl !== normalizeApiOrigin(options.expectedApiUrl)) {
+    throw new Error(`The dashboard returned an unexpected Tileflow API origin: ${apiUrl}.`);
+  }
+
+  const session: CliAccountSessionV2 = {
+    account: token.account,
+    accountSession: token.accountSession,
+    apiOrigin: apiUrl,
+    createdAt: token.createdAt,
+    expiresAt: token.expiresAt,
+    sessionId: token.sessionId,
+  };
+  const profile = await validateAccountSession(session);
 
   if (!profile.ok) {
     throw new Error(profile.error);
   }
 
-  await writeAuthConfig({
-    apiKey: token.apiKey,
-    apiUrl,
-    appUrl: options.appUrl,
-    createdAt: new Date().toISOString(),
-    deviceName: hostname(),
-    keyPrefix: getKeyPrefix(token.apiKey),
-    projectId: profile.value.projectId,
-    scopes: profile.value.scopes,
-  });
+  await installAccountSession({...session, account: profile.value.account});
 
   logSuccess('Signed in to Tileflow.');
-  printAuthDetails({
-    apiUrl,
-    appUrl: options.appUrl,
-    keyPrefix: getKeyPrefix(token.apiKey),
-    projectId: profile.value.projectId,
-    scopes: profile.value.scopes,
-  });
+  printAccountDetails({...session, account: profile.value.account});
+  printKeyValue('Dashboard', link(options.appUrl));
 }
 
 async function startDeviceAuthorization(
@@ -908,7 +974,6 @@ async function startDeviceAuthorization(
   body: {
     codeChallenge: string;
     deviceName: string;
-    requestedScopes: string[];
   },
 ) {
   const response = await fetch(`${appUrl}/api/cli/device/start`, {
@@ -954,7 +1019,7 @@ async function pollDeviceToken(
       | (Partial<DeviceToken> & {error?: string})
       | null;
 
-    if (response.ok && payload?.apiKey && payload.apiUrl) {
+    if (response.ok && isDeviceToken(payload)) {
       return payload as DeviceToken;
     }
 
@@ -972,21 +1037,48 @@ async function pollDeviceToken(
   throw new Error('CLI authorization expired. Run `tileflow login` again.');
 }
 
-async function promptForApiKey(appUrl: string) {
-  printTitle('Manual login', 'Paste a Tileflow API key to authorize this machine.');
-  printKeyValue('Create key', link(`${appUrl}/dashboard`));
-  logMuted('The key is stored locally in ~/.tileflow/config.json.');
-
-  const readline = createInterface({
-    input: process.stdin,
-    output: process.stdout,
+async function validateAccountSession(
+  session: CliAccountSessionV2,
+): Promise<
+  | {ok: true; value: {account: AccountIdentity; session: {expiresAt: string; id: string}}}
+  | {error: string; ok: false}
+> {
+  const response = await fetch(`${session.apiOrigin}/v1/cli/account`, {
+    headers: {Authorization: `Bearer ${session.accountSession}`},
   });
+  const body = (await response.json().catch(() => null)) as Record<string, unknown> | null;
 
-  try {
-    return (await readline.question(`${pc.cyan('?')} Tileflow API key: `)).trim();
-  } finally {
-    readline.close();
+  if (!response.ok) {
+    return {
+      error:
+        body && typeof body.error === 'string'
+          ? body.error
+          : `Account session validation failed (${response.status}).`,
+      ok: false,
+    };
   }
+
+  const account = body ? asRecord(body.account) : {};
+  const sessionProfile = body ? asRecord(body.session) : {};
+  if (
+    body?.schemaVersion !== 1 ||
+    !isAccountIdentity(account) ||
+    typeof sessionProfile.id !== 'string' ||
+    sessionProfile.id !== session.sessionId ||
+    !validIsoDate(sessionProfile.expiresAt) ||
+    sessionProfile.expiresAt !== session.expiresAt ||
+    Object.hasOwn(body, 'project')
+  ) {
+    return {error: 'Account session validation returned an invalid response.', ok: false};
+  }
+
+  return {
+    ok: true,
+    value: {
+      account,
+      session: {expiresAt: sessionProfile.expiresAt, id: sessionProfile.id},
+    },
+  };
 }
 
 async function validateApiKey(
@@ -1017,8 +1109,15 @@ async function validateApiKey(
     !body ||
     !('apiKeyId' in body) ||
     typeof body.apiKeyId !== 'string' ||
+    !('credentialType' in body) ||
+    body.credentialType !== 'project_api_key' ||
+    !('organization' in body) ||
+    !isAuthIdentity(body.organization) ||
+    !('project' in body) ||
+    !isAuthIdentity(body.project) ||
     !('projectId' in body) ||
     typeof body.projectId !== 'string' ||
+    body.projectId !== body.project.id ||
     !Array.isArray(body.scopes)
   ) {
     return {
@@ -1031,10 +1130,85 @@ async function validateApiKey(
     ok: true,
     value: {
       apiKeyId: body.apiKeyId,
+      credentialType: body.credentialType,
+      organization: body.organization,
+      project: body.project,
       projectId: body.projectId,
       scopes: body.scopes.filter((scope): scope is string => typeof scope === 'string'),
     },
   };
+}
+
+function isAuthIdentity(value: unknown): value is ProjectIdentity {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const identity = value as Record<string, unknown>;
+  return (
+    typeof identity.id === 'string' &&
+    identity.id.length > 0 &&
+    identity.id.length <= 160 &&
+    typeof identity.name === 'string' &&
+    identity.name.length > 0 &&
+    identity.name.length <= 200 &&
+    typeof identity.slug === 'string' &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(identity.slug)
+  );
+}
+
+function isAccountIdentity(value: unknown): value is AccountIdentity {
+  const account = asRecord(value);
+  return (
+    typeof account.id === 'string' &&
+    account.id.length > 0 &&
+    account.id.length <= 200 &&
+    typeof account.name === 'string' &&
+    account.name.length > 0 &&
+    account.name.length <= 200 &&
+    typeof account.email === 'string' &&
+    account.email.length > 2 &&
+    account.email.length <= 320 &&
+    account.email.includes('@')
+  );
+}
+
+function isDeviceToken(value: unknown): value is DeviceToken {
+  const token = asRecord(value);
+  return (
+    isAccountIdentity(token.account) &&
+    typeof token.accountSession === 'string' &&
+    /^tf_session_[0-9a-f]{64}$/u.test(token.accountSession) &&
+    typeof token.apiUrl === 'string' &&
+    safeApiOrigin(token.apiUrl) !== null &&
+    validIsoDate(token.createdAt) &&
+    validIsoDate(token.expiresAt) &&
+    Date.parse(token.expiresAt) > Date.parse(token.createdAt) &&
+    typeof token.sessionId === 'string' &&
+    token.sessionId.length > 0 &&
+    token.sessionId.length <= 200 &&
+    !Object.hasOwn(token, 'project')
+  );
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function safeApiOrigin(value: string) {
+  try {
+    return normalizeApiOrigin(value);
+  } catch {
+    return null;
+  }
+}
+
+function validIsoDate(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length <= 64 &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u.test(value) &&
+    Number.isFinite(Date.parse(value))
+  );
 }
 
 function createPkceChallenge(verifier: string) {
@@ -1043,10 +1217,6 @@ function createPkceChallenge(verifier: string) {
 
 function randomBase64Url(byteLength: number) {
   return randomBytes(byteLength).toString('base64url');
-}
-
-function getKeyPrefix(apiKey: string) {
-  return apiKey.slice(0, 18);
 }
 
 function sleep(ms: number) {
@@ -1072,31 +1242,6 @@ function openBrowser(url: string, errorsToStderr = false) {
   child.unref();
 }
 
-async function readAuthConfig(): Promise<AuthConfig | null> {
-  try {
-    return JSON.parse(await readFile(authConfigPath(), 'utf8')) as AuthConfig;
-  } catch {
-    return null;
-  }
-}
-
-async function writeAuthConfig(config: AuthConfig & {apiKey: string; apiUrl: string}) {
-  const configPath = authConfigPath();
-  const configDir = dirname(configPath);
-
-  await mkdir(configDir, {mode: 0o700, recursive: true});
-  await chmod(configDir, 0o700).catch(() => undefined);
-  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, {
-    encoding: 'utf8',
-    mode: 0o600,
-  });
-  await chmod(configPath, 0o600).catch(() => undefined);
-}
-
-function authConfigPath() {
-  return resolve(homedir(), '.tileflow', 'config.json');
-}
-
 async function writeDeployManifest(manifestPath: string, manifest: DeployedManifest) {
   const outputPath = resolve(process.cwd(), manifestPath);
 
@@ -1110,45 +1255,167 @@ async function requireApiOptions(
   options: {
     apiUrl?: string;
     apiKey?: string;
+    project?: string;
   },
-  behavior: {allowStoredCredential?: boolean; silent?: boolean} = {},
+  behavior: {
+    allowStoredCredential?: boolean;
+    capabilityScopes?: Array<'static:write' | 'status:read' | 'styles:write' | 'tilesets:write'>;
+    retryCommand?: string;
+    silent?: boolean;
+  } = {},
 ): Promise<{apiUrl: string; apiKey: string} | null> {
-  const allowStoredCredential = behavior.allowStoredCredential !== false;
-  const auth = allowStoredCredential ? await readAuthConfig() : null;
-  const apiKey = options.apiKey ?? auth?.apiKey;
-  const apiUrl = normalizeUrl(options.apiUrl ?? auth?.apiUrl ?? defaultApiUrl);
+  const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
+  const requested = options.project ? parseProjectReference(options.project) : null;
 
-  if (!apiKey) {
+  if (options.project && !requested) {
+    if (!behavior.silent) logError('Project must use @organization/project syntax.');
+    process.exitCode = 1;
+    return null;
+  }
+
+  if (options.apiKey) {
+    if (requested) {
+      const profile = await validateApiKey(apiUrl, options.apiKey);
+      if (!profile.ok) {
+        if (!behavior.silent) logError(profile.error);
+        process.exitCode = 1;
+        return null;
+      }
+      if (projectReference(profile.value) !== options.project) {
+        if (!behavior.silent) {
+          logError(
+            `This project key belongs to ${projectReference(profile.value)}, not ${options.project}.`,
+          );
+        }
+        process.exitCode = 1;
+        return null;
+      }
+    }
+    return {apiKey: options.apiKey, apiUrl};
+  }
+
+  const allowStoredCredential =
+    behavior.allowStoredCredential !== false &&
+    allowsStoredDeployCredential(resolveDeploySource(process.env));
+  if (!allowStoredCredential) {
     if (!behavior.silent) {
-      logError('Missing Tileflow API key.');
-      printNextSteps(
-        allowStoredCredential
-          ? [
-              `Run ${command('tileflow login')} to authorize this machine.`,
-              `Or set ${pc.cyan('TILEFLOW_API_KEY')} for this command.`,
-            ]
-          : [
-              `Set ${pc.cyan('TILEFLOW_API_KEY')} from the CI secret store.`,
-              'Use a dashboard-created CI deploy key with this workflow.',
-            ],
+      logError('CI requires an explicit project-bound Tileflow API key.');
+      printNextSteps([
+        `Set ${pc.cyan('TILEFLOW_API_KEY')} from the CI secret store.`,
+        'The saved personal account session is never used in CI.',
+      ]);
+    }
+    process.exitCode = 1;
+    return null;
+  }
+
+  let config: AuthConfigV2;
+  try {
+    config = await loadAuthConfig();
+  } catch (error) {
+    if (!behavior.silent) logError(safeAuthError(error));
+    process.exitCode = 1;
+    return null;
+  }
+  const resolvedSession = resolveAccountSession(config, apiUrl);
+  if (resolvedSession.kind !== 'selected') {
+    if (!behavior.silent) {
+      logError(
+        resolvedSession.kind === 'expired'
+          ? 'The Tileflow account session has expired.'
+          : 'No Tileflow account session is saved.',
       );
+      printNextSteps([`Run ${command('tileflow login')} to authorize this machine.`]);
     }
     process.exitCode = 1;
     return null;
   }
 
-  if (!apiUrl) {
+  const target = await resolveAccountProjectTarget(resolvedSession.session, options.project);
+  if (target.kind === 'remote') {
+    if (!behavior.silent) logError(target.error);
+    process.exitCode = 1;
+    return null;
+  }
+  if (target.kind !== 'selected') {
     if (!behavior.silent) {
-      logError(`Missing ${pc.cyan('TILEFLOW_API_URL')}.`);
+      const references = target.targets.map((candidate) => candidate.reference);
+      if (target.kind === 'ambiguous') {
+        const retry = `${behavior.retryCommand ?? 'tileflow <command>'} --project ${references[0]}`;
+        logError(`Project target is ambiguous: ${references.join(', ')}.`);
+        printNextSteps([`Retry exactly with ${command(retry)}.`]);
+      } else if (target.kind === 'invalid') {
+        logError('Project must use @organization/project syntax.');
+      } else {
+        logError(
+          options.project
+            ? `Project ${options.project} is not accessible to this account.`
+            : 'No active project is accessible to this account.',
+        );
+      }
     }
     process.exitCode = 1;
     return null;
   }
 
-  return {
-    apiKey,
-    apiUrl,
-  };
+  const capability = await requestProjectCapability(
+    resolvedSession.session,
+    target.target.reference,
+    behavior.capabilityScopes ?? ['status:read'],
+  );
+  if (!capability.ok) {
+    if (!behavior.silent) logError(capability.error);
+    process.exitCode = 1;
+    return null;
+  }
+
+  return {apiKey: capability.capability, apiUrl};
+}
+
+async function requestProjectCapability(
+  session: CliAccountSessionV2,
+  project: string,
+  scopes: Array<'static:write' | 'status:read' | 'styles:write' | 'tilesets:write'>,
+): Promise<{capability: string; ok: true} | {error: string; ok: false}> {
+  const response = await fetch(`${session.apiOrigin}/v1/cli/project-capabilities`, {
+    body: JSON.stringify({project, scopes}),
+    headers: {
+      Authorization: `Bearer ${session.accountSession}`,
+      'Content-Type': 'application/json',
+    },
+    method: 'POST',
+  });
+  const source = await response.text();
+  if (source.length > 1024 * 1024) {
+    return {error: 'Capability response exceeded the safe size limit.', ok: false};
+  }
+  let body: Record<string, unknown> = {};
+  try {
+    body = asRecord(source ? (JSON.parse(source) as unknown) : null);
+  } catch {
+    // The stable error below does not echo an untrusted response body.
+  }
+  if (!response.ok) {
+    return {
+      error:
+        typeof body.error === 'string'
+          ? body.error
+          : `Project capability request failed (${response.status}).`,
+      ok: false,
+    };
+  }
+  if (
+    typeof body.capability !== 'string' ||
+    !body.capability.startsWith('tf_cap_') ||
+    body.capability.length > 8_192 ||
+    body.reference !== project ||
+    !validIsoDate(body.expiresAt) ||
+    !Array.isArray(body.scopes) ||
+    body.scopes.join('\0') !== [...scopes].sort().join('\0')
+  ) {
+    return {error: 'Project capability response was invalid.', ok: false};
+  }
+  return {capability: body.capability, ok: true};
 }
 
 async function printApiResponse(response: Response, successMessage: string) {
@@ -1268,24 +1535,28 @@ function printValidationErrors(messages: readonly {message: string; path: string
   }
 }
 
-function printAuthDetails(details: {
-  apiUrl?: string;
-  appUrl?: string;
-  keyPrefix?: string;
-  projectId: string;
-  scopes: readonly string[];
-}) {
-  printKeyValue('Project', pc.bold(details.projectId));
-  if (details.apiUrl) {
-    printKeyValue('API', link(details.apiUrl));
+function printAccountDetails(session: CliAccountSessionV2) {
+  printKeyValue('Account', pc.bold(session.account.name));
+  printKeyValue('Email', session.account.email);
+  printKeyValue('API', link(session.apiOrigin));
+  printKeyValue('Expires', formatDate(session.expiresAt));
+}
+
+function logAuthCommandError(json: boolean | undefined, message: string) {
+  if (json) {
+    console.error(message);
+    process.stdout.write(
+      `${JSON.stringify({schemaVersion: 1, ok: false, error: {code: 'authentication_failed'}})}\n`,
+    );
+  } else {
+    logError(message);
   }
-  if (details.appUrl) {
-    printKeyValue('Dashboard', link(details.appUrl));
-  }
-  if (details.keyPrefix) {
-    printKeyValue('Key', `${details.keyPrefix}...`);
-  }
-  printKeyValue('Scopes', details.scopes.length ? details.scopes.join(', ') : 'none');
+  process.exitCode = 1;
+}
+
+function safeAuthError(error: unknown) {
+  const message = error instanceof Error ? error.message : '';
+  return message && message.length <= 300 ? message : 'Tileflow auth state is unavailable.';
 }
 
 function printDeployedMaps(maps: Record<string, DeployedManifestMap>) {
@@ -1330,6 +1601,14 @@ function plural(count: number, singular: string, pluralForm = `${singular}s`) {
 
 function command(value: string) {
   return pc.cyan(value);
+}
+
+function cliInvocation(parts: string[]) {
+  return parts.map(quoteCliArgument).join(' ');
+}
+
+function quoteCliArgument(value: string) {
+  return /^[A-Za-z0-9_./:@%+=,-]+$/u.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 function link(value: string) {
@@ -1562,7 +1841,7 @@ function printProjectStatus(status: ProjectStatus, apiUrl: string) {
   }
   for (const style of status.styles) {
     console.log(
-      `  ${pc.green('✓')} ${style.environment.padEnd(16)} ${link(`${apiUrl}/v1/styles/${status.projectId}/${style.environment}.json`).padEnd(36)} ${formatBytes(style.size).padStart(10)}  ${pc.gray(formatDate(style.uploaded))}`,
+      `  ${pc.green('✓')} ${style.environment.padEnd(16)} ${link(`${apiUrl}/maps/${style.mapId}/style.json`).padEnd(36)} ${formatBytes(style.size).padStart(10)}  ${pc.gray(formatDate(style.uploaded))}`,
     );
   }
 }

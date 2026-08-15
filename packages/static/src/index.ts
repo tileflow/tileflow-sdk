@@ -166,14 +166,70 @@ export type StaticMapResult = {
   cached: boolean;
   hash: string;
   imageUrl: string;
+  operationId: string | null;
+  remainingUnits: number | null;
   status: 'ready';
+  unitCost: 0 | 15;
 };
 
 export type StaticMapCreateOptions = {
   apiKey?: string;
   apiUrl?: string;
   fetch?: typeof fetch;
+  idempotencyKey: string;
+  maxWaitMs?: number;
+  pollIntervalMs?: number;
+  signal?: AbortSignal;
 };
+
+const staticMapIdempotencyKeyPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
+
+export const staticMapReadyResultSchema = z
+  .object({
+    cached: z.boolean(),
+    hash: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+    imageUrl: z
+      .string()
+      .trim()
+      .url()
+      .max(2048)
+      .refine(isSafeHttpUrl, {message: 'Expected an http(s) URL without credentials'}),
+    operationId: z.string().min(20).max(68),
+    remainingUnits: z.number().int().nonnegative(),
+    status: z.literal('ready'),
+    unitCost: z.literal(15),
+  })
+  .strict();
+
+export const staticMapProcessingResultSchema = z
+  .object({
+    operationId: z.string().min(20).max(68),
+    retryAfterMs: z.number().int().min(0).max(5000),
+    status: z.literal('processing'),
+  })
+  .strict();
+
+export function validateStaticMapIdempotencyKey(
+  value: unknown,
+): {key: string; ok: true} | {error: string; ok: false} {
+  if (typeof value !== 'string' || !staticMapIdempotencyKeyPattern.test(value)) {
+    return {
+      error:
+        'Idempotency key must contain 8-128 ASCII letters, digits, dot, underscore, colon, or hyphen and start with a letter or digit',
+      ok: false,
+    };
+  }
+
+  return {key: value, ok: true};
+}
+
+export function createStaticMapIdempotencyKey() {
+  const key = `static_${crypto.randomUUID()}`;
+  if (!validateStaticMapIdempotencyKey(key).ok) {
+    throw new Error('Unable to create a valid Tileflow Static Maps idempotency key');
+  }
+  return key;
+}
 
 export function line(input: Omit<z.input<typeof lineOverlaySchema>, 'type'>): StaticOverlay {
   return normalizeOverlay({...input, type: 'line'});
@@ -312,6 +368,12 @@ export async function hashRenderManifest(manifest: StaticRenderManifest) {
   return base64Url(new Uint8Array(digest));
 }
 
+export async function hashStaticSceneRequest(scene: StaticSceneInput) {
+  const validation = validateStaticScene(scene);
+  if (!validation.ok) throw new Error(`Invalid Tileflow static scene: ${validation.error}`);
+  return hashStableValue(validation.scene);
+}
+
 export function compileStaticOverlays(overlays: StaticOverlay[]) {
   const sources: Record<string, Record<string, unknown>> = {};
   const layers: Array<Record<string, unknown>> = [];
@@ -392,14 +454,14 @@ export function compileStaticOverlays(overlays: StaticOverlay[]) {
 
 export async function createStaticMap(
   scene: StaticSceneInput,
-  options: StaticMapCreateOptions = {},
+  options: StaticMapCreateOptions,
 ): Promise<StaticMapResult> {
   return requestStaticMap(scene, options, '/v1/static/maps');
 }
 
 export async function precacheStaticMap(
   scene: StaticSceneInput,
-  options: StaticMapCreateOptions = {},
+  options: StaticMapCreateOptions,
 ): Promise<StaticMapResult> {
   return requestStaticMap(scene, options, '/v1/static/maps/precache');
 }
@@ -415,28 +477,73 @@ async function requestStaticMap(
     throw new Error(`Invalid Tileflow static scene: ${validation.error}`);
   }
 
+  const idempotency = validateStaticMapIdempotencyKey(options.idempotencyKey);
+  if (!idempotency.ok) {
+    throw new Error(`Invalid Tileflow Static Maps idempotency key: ${idempotency.error}`);
+  }
+
+  const maxWaitMs = boundedClientDuration(options.maxWaitMs, 30_000, 100, 120_000, 'maxWaitMs');
+  const pollIntervalMs = boundedClientDuration(
+    options.pollIntervalMs,
+    500,
+    0,
+    5_000,
+    'pollIntervalMs',
+  );
   const fetcher = options.fetch ?? fetch;
   const apiUrl = normalizeUrl(options.apiUrl ?? 'https://api.tileflow.dev');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'Idempotency-Key': idempotency.key,
   };
 
   if (options.apiKey) {
     headers.Authorization = `Bearer ${options.apiKey}`;
   }
 
-  const response = await fetcher(`${apiUrl}${path}`, {
-    body: JSON.stringify(validation.scene),
-    headers,
-    method: 'POST',
+  return runWithinStaticMapBudget(maxWaitMs, options.signal, async (signal) => {
+    const body = JSON.stringify(validation.scene);
+    let operationId: string | null = null;
+
+    while (true) {
+      const response = await fetcher(`${apiUrl}${path}`, {
+        body,
+        headers,
+        method: 'POST',
+        signal,
+      });
+      throwIfAborted(signal);
+
+      if (!response.ok) {
+        const error = await response.text();
+        throwIfAborted(signal);
+        throw new Error(`Tileflow static map failed: ${response.status} ${error}`);
+      }
+
+      const json = await readJsonResponse(response);
+      throwIfAborted(signal);
+      if (response.status !== 202) {
+        const parsed = staticMapReadyResultSchema.safeParse(json);
+        if (!parsed.success) {
+          throw new Error(
+            `Tileflow static map returned an invalid response: ${parsed.error.message}`,
+          );
+        }
+        assertStaticMapOperationIdentity(operationId, parsed.data.operationId);
+        return parsed.data;
+      }
+
+      const pending = staticMapProcessingResultSchema.safeParse(json);
+      if (!pending.success) {
+        throw new Error(
+          `Tileflow static map returned an invalid response: ${pending.error.message}`,
+        );
+      }
+      assertStaticMapOperationIdentity(operationId, pending.data.operationId);
+      operationId ??= pending.data.operationId;
+      await delay(Math.max(pollIntervalMs, pending.data.retryAfterMs), signal);
+    }
   });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Tileflow static map failed: ${response.status} ${error}`);
-  }
-
-  return (await response.json()) as StaticMapResult;
 }
 
 export function stableStringify(value: unknown): string {
@@ -526,6 +633,136 @@ function base64Url(bytes: Uint8Array) {
   }
 
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+async function hashStableValue(value: unknown) {
+  const bytes = new TextEncoder().encode(stableStringify(value));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return base64Url(new Uint8Array(digest));
+}
+
+function boundedClientDuration(
+  value: number | undefined,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+  name: string,
+) {
+  const resolved = value ?? fallback;
+  if (!Number.isSafeInteger(resolved) || resolved < minimum || resolved > maximum) {
+    throw new Error(
+      `Tileflow Static Maps ${name} must be an integer from ${minimum} to ${maximum}`,
+    );
+  }
+  return resolved;
+}
+
+async function readJsonResponse(response: Response) {
+  try {
+    return (await response.json()) as unknown;
+  } catch {
+    throw new Error('Tileflow static map returned an invalid response: expected JSON');
+  }
+}
+
+async function runWithinStaticMapBudget<T>(
+  maxWaitMs: number,
+  externalSignal: AbortSignal | undefined,
+  operation: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const timeoutError = new Error(`Tileflow static map timed out after ${maxWaitMs}ms`);
+  const abortFromCaller = () => controller.abort(externalSignal?.reason);
+
+  if (externalSignal?.aborted) {
+    abortFromCaller();
+  } else {
+    externalSignal?.addEventListener('abort', abortFromCaller, {once: true});
+  }
+
+  const timeout = setTimeout(() => controller.abort(timeoutError), maxWaitMs);
+  try {
+    throwIfAborted(controller.signal);
+    const pending = operation(controller.signal);
+    return await raceWithAbort(pending, controller.signal);
+  } finally {
+    clearTimeout(timeout);
+    externalSignal?.removeEventListener('abort', abortFromCaller);
+  }
+}
+
+function delay(milliseconds: number, signal: AbortSignal) {
+  if (milliseconds === 0) {
+    throwIfAborted(signal);
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, milliseconds);
+    const onAbort = () => {
+      clearTimeout(timeout);
+      reject(abortReason(signal));
+    };
+
+    if (signal.aborted) {
+      onAbort();
+    } else {
+      signal.addEventListener('abort', onAbort, {once: true});
+    }
+  });
+}
+
+function raceWithAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(abortReason(signal));
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      cleanup();
+      reject(abortReason(signal));
+    };
+    const cleanup = () => signal.removeEventListener('abort', onAbort);
+
+    signal.addEventListener('abort', onAbort, {once: true});
+    operation.then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error: unknown) => {
+        cleanup();
+        reject(error);
+      },
+    );
+  });
+}
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw abortReason(signal);
+}
+
+function abortReason(signal: AbortSignal): Error {
+  if (signal.reason instanceof Error) return signal.reason;
+  const error = new Error('Tileflow static map request was aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
+function assertStaticMapOperationIdentity(expected: string | null, actual: string) {
+  if (expected !== null && actual !== expected) {
+    throw new Error('Tileflow static map changed operation identity while polling');
+  }
+}
+
+function isSafeHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
+  } catch {
+    return false;
+  }
 }
 
 function normalizeUrl(value: string) {

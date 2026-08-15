@@ -7,7 +7,7 @@
   } from 'maplibre-gl';
   import {createEventDispatcher, onMount, tick} from 'svelte';
   import {
-    createTileflowSessionId,
+    createTileflowSessionController,
     defaultTileflowManifestUrl,
     loadTileflowManifest,
     mergeTileflowAnalytics,
@@ -75,8 +75,6 @@
   let readinessRunId = 0;
 
   const dispatch = createEventDispatcher<{load: MapLibreMap}>();
-  const sessionId = createTileflowSessionId();
-  const sessionStarter = createTileflowSessionStarter({sessionId, source: 'svelte'});
   const markerController = createTileflowMarkerController<
     MapLibreMap,
     TileflowMapMarker,
@@ -270,6 +268,12 @@
     }
 
     const runtime = runtimeStyle;
+    const session = createTileflowSessionController({source: 'svelte'});
+    const sessionStarter = createTileflowSessionStarter({
+      getSessionId: () => session.sessionId,
+      sessionId: session.sessionId,
+      source: 'svelte',
+    });
     const maplibreMap = new maplibregl.Map({
       ...mapOptions,
       attributionControl: mapOptions?.attributionControl ?? {compact: true},
@@ -281,7 +285,8 @@
         always: true,
         asyncAnalyticsTiming: 'request',
         getAnalytics: () => resolvedAnalytics,
-        sessionId,
+        sessionController: session,
+        sessionId: session.sessionId,
         transformRequest: mapOptions?.transformRequest ?? undefined,
       }),
       zoom: resolvedZoom,

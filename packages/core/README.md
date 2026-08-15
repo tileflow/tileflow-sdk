@@ -272,6 +272,19 @@ their frame scheduler plus MapLibre event and marker operations after mount. The
 is documented in
 [`docs/contracts/framework-browser-runtime.md`](../../docs/contracts/framework-browser-runtime.md).
 
+## Hosted session authorization
+
+The framework adapters use `createTileflowSessionController` to obtain one short-lived session
+grant before eligible hosted style, tile, font, or sprite requests. Concurrent resources share the
+same preflight, grants are attached only to reviewed HTTP(S) origins, and an expired unused session
+rotates once when the server requests it. A controller also rotates after six hours or 10,000
+eligible requests. The preflight has a 10-second client timeout by default; direct controller users
+can set `grantTimeoutMs` from 1 to 120,000 milliseconds.
+
+`analytics.enabled: false` disables only the optional analytics beacon. It does not disable this
+server-owned commercial authorization. User `transformRequest` callbacks still run first; Tileflow
+then decorates only the resulting eligible URL and preserves the other request options.
+
 Other subpaths under `src/`, `themes/`, `templates/`, and `modules/` are internal implementation
 details and can change during alpha releases.
 

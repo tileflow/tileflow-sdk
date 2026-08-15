@@ -2,6 +2,7 @@ import {
   resolveTileflowAnalyticsRequestUrl,
   startTileflowSession,
   type TileflowAnalytics,
+  type TileflowSessionController,
 } from './runtime';
 
 export type TileflowMapReadinessState = 'error' | 'idle' | 'loading';
@@ -76,6 +77,7 @@ export type TileflowMarkerController<TMap, TDefinition, TMarker> = {
 };
 
 export function createTileflowSessionStarter(options: {
+  getSessionId?: () => string;
   sessionId: string;
   source: string;
   startSession?: TileflowSessionSender;
@@ -89,12 +91,13 @@ export function createTileflowSessionStarter(options: {
     },
     start(analytics, styleId) {
       const mapId = analytics?.mapId;
+      const sessionId = options.getSessionId?.() ?? options.sessionId;
 
       if (!mapId) {
         return false;
       }
 
-      const key = `${options.sessionId}:${mapId}:${styleId ?? ''}`;
+      const key = `${sessionId}:${mapId}:${styleId ?? ''}`;
 
       if (starts.has(key)) {
         return false;
@@ -103,7 +106,7 @@ export function createTileflowSessionStarter(options: {
       starts.add(key);
       send(analytics, {
         mapId,
-        sessionId: options.sessionId,
+        sessionId,
         source: options.source,
         styleId,
       });
@@ -247,6 +250,7 @@ export function createTileflowTransformRequest<
   always: true;
   asyncAnalyticsTiming?: TileflowAsyncAnalyticsTiming;
   getAnalytics: () => TileflowAnalytics | undefined;
+  sessionController?: TileflowSessionController;
   sessionId: string;
   transformRequest?: TileflowUserTransformRequest<TRequest, TResourceType>;
 }): TileflowTransformRequest<TRequest, TResourceType>;
@@ -257,6 +261,7 @@ export function createTileflowTransformRequest<
   always?: boolean;
   asyncAnalyticsTiming?: TileflowAsyncAnalyticsTiming;
   getAnalytics: () => TileflowAnalytics | undefined;
+  sessionController?: TileflowSessionController;
   sessionId: string;
   transformRequest?: TileflowUserTransformRequest<TRequest, TResourceType>;
 }): TileflowTransformRequest<TRequest, TResourceType> | undefined;
@@ -267,13 +272,15 @@ export function createTileflowTransformRequest<
   always?: boolean;
   asyncAnalyticsTiming?: TileflowAsyncAnalyticsTiming;
   getAnalytics: () => TileflowAnalytics | undefined;
+  sessionController?: TileflowSessionController;
   sessionId: string;
   transformRequest?: TileflowUserTransformRequest<TRequest, TResourceType>;
 }): TileflowTransformRequest<TRequest, TResourceType> | undefined {
   if (!options.always && !options.transformRequest) {
     const analytics = options.getAnalytics();
+    const requiresCommercialSession = Boolean(options.sessionController && analytics?.mapId);
 
-    if (!analytics || analytics.enabled === false) {
+    if (!requiresCommercialSession && (!analytics || analytics.enabled === false)) {
       return undefined;
     }
   }
@@ -288,20 +295,22 @@ export function createTileflowTransformRequest<
     if (isPromiseLike(request)) {
       return request.then(
         (resolvedRequest) =>
-          applyTileflowAnalyticsRequest(
+          applyTileflowRequest(
             url,
             resolvedRequest,
             asyncAnalyticsTiming === 'resolution' ? options.getAnalytics() : analyticsAtRequest,
             options.sessionId,
+            options.sessionController,
           ) ?? resolvedRequest,
       );
     }
 
-    return applyTileflowAnalyticsRequest(
+    return applyTileflowRequest(
       url,
       request,
       asyncAnalyticsTiming === 'resolution' ? options.getAnalytics() : analyticsAtRequest,
       options.sessionId,
+      options.sessionController,
     );
   };
 }
@@ -346,16 +355,44 @@ export function createTileflowMarkerController<TMap, TDefinition, TMarker>(optio
   };
 }
 
-function applyTileflowAnalyticsRequest<TRequest extends TileflowTransformRequestParameters>(
+function applyTileflowRequest<TRequest extends TileflowTransformRequestParameters>(
   url: string,
   request: TRequest | undefined,
   analytics: TileflowAnalytics | undefined,
   sessionId: string,
-): TileflowComposedRequest<TRequest> | undefined {
-  const nextUrl = resolveTileflowAnalyticsRequestUrl(request?.url ?? url, analytics, sessionId);
+  sessionController: TileflowSessionController | undefined,
+): Promise<TileflowComposedRequest<TRequest>> | TileflowComposedRequest<TRequest> | undefined {
+  const requestUrl = request?.url ?? url;
 
+  if (sessionController) {
+    return sessionController
+      .resolveRequestUrl(requestUrl, analytics)
+      .then(
+        (nextUrl) =>
+          composeTileflowRequest(url, request, nextUrl, true) ??
+          ({url} as TileflowComposedRequest<TRequest>),
+      );
+  }
+
+  return composeTileflowRequest(
+    url,
+    request,
+    resolveTileflowAnalyticsRequestUrl(requestUrl, analytics, sessionId),
+    false,
+  );
+}
+
+function composeTileflowRequest<TRequest extends TileflowTransformRequestParameters>(
+  originalUrl: string,
+  request: TRequest | undefined,
+  nextUrl: string | undefined,
+  ensureRequest: boolean,
+): TileflowComposedRequest<TRequest> | undefined {
   if (!nextUrl) {
-    return request;
+    return (
+      request ??
+      (ensureRequest ? ({url: originalUrl} as TileflowComposedRequest<TRequest>) : undefined)
+    );
   }
 
   return (

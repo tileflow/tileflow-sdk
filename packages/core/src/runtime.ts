@@ -20,6 +20,49 @@ export type TileflowAnalytics = {
   styleId?: string;
 };
 
+export type TileflowSessionGrantResponse = {
+  billingEnabled?: false;
+  disposition?: 'ordinary' | 'unbilled_fail_open';
+  expiresAt?: string;
+  grant?: string;
+  meterMode?: 'disabled' | 'shadow' | 'enforced';
+  ok: boolean;
+  resourceOrigins?: string[];
+  sessionId: string;
+  usageMode?: 'session';
+  code?: string;
+  retryWithNewSession?: boolean;
+};
+
+export type TileflowSessionController = {
+  readonly sessionId: string;
+  resolveRequestUrl(
+    url: string,
+    analytics: TileflowAnalytics | undefined,
+  ): Promise<string | undefined>;
+};
+
+type TileflowSessionGrantState = {
+  expiresAt: number;
+  resourceOrigins: Set<string>;
+  token: string | null;
+};
+
+type TileflowSessionState = {
+  binding: string | null;
+  grant: TileflowSessionGrantState | null;
+  grantPromise: Promise<TileflowResolvedSessionGrant> | null;
+  pendingGrantRequests: number;
+  requestCount: number;
+  sessionId: string;
+  startedAt: number;
+};
+
+type TileflowResolvedSessionGrant = {
+  grant: TileflowSessionGrantState;
+  session: TileflowSessionState;
+};
+
 export type TileflowMapMarker = {
   id: string;
   coordinates: [number, number];
@@ -174,6 +217,345 @@ export function createTileflowSessionId(): string {
   return `ses_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
 }
 
+export function createTileflowSessionController(input: {
+  fetch?: typeof fetch;
+  grantTimeoutMs?: number;
+  now?: () => Date;
+  sessionIdFactory?: () => string;
+  source: string;
+}): TileflowSessionController {
+  const fetchGrant = input.fetch ?? globalThis.fetch;
+  const grantTimeoutMs = validateSessionGrantTimeout(input.grantTimeoutMs);
+  const now = input.now ?? (() => new Date());
+  const sessionIdFactory = input.sessionIdFactory ?? createTileflowSessionId;
+  const createSession = (startedAt: number): TileflowSessionState => ({
+    binding: null,
+    grant: null,
+    grantPromise: null,
+    pendingGrantRequests: 0,
+    requestCount: 0,
+    sessionId: sessionIdFactory(),
+    startedAt,
+  });
+  let activeSession = createSession(now().getTime());
+
+  async function resolveGrant(
+    session: TileflowSessionState,
+    analytics: TileflowAnalytics,
+    at: number,
+  ): Promise<TileflowResolvedSessionGrant> {
+    if (session.grant && session.grant.expiresAt - at > 30_000) {
+      return {grant: session.grant, session};
+    }
+
+    session.pendingGrantRequests += 1;
+    try {
+      if (!session.grantPromise) {
+        const pending = (async () => {
+          try {
+            const nextGrant = await requestSessionGrant({
+              analytics,
+              at,
+              fetchGrant,
+              timeoutMs: grantTimeoutMs,
+              sessionId: session.sessionId,
+              source: input.source,
+            });
+            session.grant = nextGrant;
+            return {grant: nextGrant, session};
+          } catch (error) {
+            if (!(error instanceof TileflowSessionRestartError)) throw error;
+
+            const replacement = createSession(at);
+            replacement.binding = session.binding;
+            replacement.requestCount = session.pendingGrantRequests;
+            if (activeSession === session) activeSession = replacement;
+            const replacementPending = requestSessionGrant({
+              analytics,
+              at,
+              fetchGrant,
+              timeoutMs: grantTimeoutMs,
+              sessionId: replacement.sessionId,
+              source: input.source,
+            }).then((nextGrant) => {
+              replacement.grant = nextGrant;
+              return {grant: nextGrant, session: replacement};
+            });
+            replacement.grantPromise = replacementPending;
+            try {
+              return await replacementPending;
+            } finally {
+              if (replacement.grantPromise === replacementPending) {
+                replacement.grantPromise = null;
+              }
+            }
+          } finally {
+            session.grantPromise = null;
+          }
+        })();
+        session.grantPromise = pending;
+      }
+
+      return await session.grantPromise;
+    } finally {
+      session.pendingGrantRequests -= 1;
+    }
+  }
+
+  return {
+    get sessionId() {
+      return activeSession.sessionId;
+    },
+    async resolveRequestUrl(url, analytics) {
+      // `enabled` controls the optional analytics beacon only. Commercial authorization is a
+      // server-owned delivery requirement and must not disappear when telemetry is disabled.
+      if (!analytics || !analytics.mapId) return undefined;
+      const at = now().getTime();
+      if (
+        at - activeSession.startedAt >= 6 * 60 * 60 * 1000 ||
+        activeSession.requestCount >= 10_000
+      ) {
+        activeSession = createSession(at);
+      }
+
+      const apiOrigin = originOf(getTileflowAnalyticsApiUrl(analytics));
+      const binding = JSON.stringify([getTileflowAnalyticsApiUrl(analytics), analytics.mapId]);
+      let session = activeSession;
+      const grantedOrigins =
+        session.binding === binding ? session.grant?.resourceOrigins : undefined;
+      if (!isEligibleResource(url, analytics.mapId, apiOrigin, grantedOrigins)) {
+        return undefined;
+      }
+
+      if (session.binding !== null && session.binding !== binding) {
+        session = createSession(at);
+        activeSession = session;
+      }
+      session.binding = binding;
+
+      // Reserve the request slot before awaiting preflight so concurrent resources cannot all
+      // observe the same 9,999 count and overrun the documented session boundary.
+      session.requestCount += 1;
+      const resolved = await resolveGrant(session, analytics, at);
+      const nextUrl = new URL(url);
+      nextUrl.searchParams.set('session', resolved.session.sessionId);
+      nextUrl.searchParams.set('map', analytics.mapId);
+      if (analytics.styleId) nextUrl.searchParams.set('styleId', analytics.styleId);
+      if (resolved.grant.token) nextUrl.searchParams.set('grant', resolved.grant.token);
+      return nextUrl.toString();
+    },
+  };
+}
+
+async function requestSessionGrant(input: {
+  analytics: TileflowAnalytics;
+  at: number;
+  fetchGrant: typeof fetch;
+  sessionId: string;
+  source: string;
+  timeoutMs: number;
+}) {
+  return runWithinSessionGrantTimeout(input.timeoutMs, async (signal) => {
+    const apiUrl = getTileflowAnalyticsApiUrl(input.analytics);
+    const response = await input.fetchGrant(`${apiUrl}/v1/sessions/start`, {
+      body: JSON.stringify({
+        mapId: input.analytics.mapId,
+        sdkVersion: input.analytics.sdkVersion,
+        sessionId: input.sessionId,
+        source: input.analytics.source ?? input.source,
+        styleId: input.analytics.styleId,
+      }),
+      credentials: 'omit',
+      headers: {'Content-Type': 'application/json'},
+      method: 'POST',
+      signal,
+    });
+    throwIfSessionGrantAborted(signal);
+    const body = (await response.json().catch(() => null)) as unknown;
+    throwIfSessionGrantAborted(signal);
+    if (
+      response.status === 409 &&
+      isRecord(body) &&
+      body.code === 'COMMERCIAL_SESSION_RESTART_REQUIRED' &&
+      body.ok === false &&
+      body.retryWithNewSession === true &&
+      body.sessionId === input.sessionId
+    ) {
+      throw new TileflowSessionRestartError();
+    }
+    if (!response.ok) {
+      throw new Error(`Tileflow session grant failed: ${response.status}`);
+    }
+    const parsed = parseSessionGrantResponse(body, input.sessionId);
+    if (!parsed) {
+      throw new Error('Tileflow session grant response was invalid.');
+    }
+    const expiresAt = parsed.grant ? Date.parse(parsed.expiresAt!) : input.at + 60_000;
+    if (
+      (response.status === 201 && (!parsed.grant || !parsed.expiresAt)) ||
+      (parsed.grant && (!Number.isFinite(expiresAt) || expiresAt <= input.at))
+    ) {
+      throw new Error('Tileflow session grant response was invalid.');
+    }
+    return {
+      expiresAt,
+      resourceOrigins: new Set(
+        [originOf(apiUrl), ...(parsed.resourceOrigins ?? []).map(originOf)].filter(
+          (value): value is string => Boolean(value),
+        ),
+      ),
+      token: parsed.grant ?? null,
+    };
+  });
+}
+
+function validateSessionGrantTimeout(value: number | undefined): number {
+  const resolved = value ?? 10_000;
+  if (!Number.isSafeInteger(resolved) || resolved < 1 || resolved > 120_000) {
+    throw new Error('Tileflow session grantTimeoutMs must be an integer from 1 to 120000');
+  }
+  return resolved;
+}
+
+async function runWithinSessionGrantTimeout<T>(
+  timeoutMs: number,
+  operation: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const timeoutError = new Error(`Tileflow session grant timed out after ${timeoutMs}ms`);
+  const timeout = setTimeout(() => controller.abort(timeoutError), timeoutMs);
+
+  try {
+    return await raceSessionGrantWithAbort(operation(controller.signal), controller.signal);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function raceSessionGrantWithAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(sessionGrantAbortReason(signal));
+
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      cleanup();
+      reject(sessionGrantAbortReason(signal));
+    };
+    const cleanup = () => signal.removeEventListener('abort', onAbort);
+
+    signal.addEventListener('abort', onAbort, {once: true});
+    operation.then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error: unknown) => {
+        cleanup();
+        reject(error);
+      },
+    );
+  });
+}
+
+function throwIfSessionGrantAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw sessionGrantAbortReason(signal);
+}
+
+function sessionGrantAbortReason(signal: AbortSignal): Error {
+  if (signal.reason instanceof Error) return signal.reason;
+  const error = new Error('Tileflow session grant was aborted');
+  error.name = 'AbortError';
+  return error;
+}
+
+function parseSessionGrantResponse(
+  value: unknown,
+  expectedSessionId: string,
+): TileflowSessionGrantResponse | null {
+  if (!isRecord(value) || value.ok !== true || value.sessionId !== expectedSessionId) return null;
+  if (value.usageMode !== undefined && value.usageMode !== 'session') return null;
+  if (value.billingEnabled !== undefined && value.billingEnabled !== false) return null;
+  if (
+    value.disposition !== undefined &&
+    value.disposition !== 'ordinary' &&
+    value.disposition !== 'unbilled_fail_open'
+  ) {
+    return null;
+  }
+  if (
+    value.meterMode !== undefined &&
+    value.meterMode !== 'disabled' &&
+    value.meterMode !== 'shadow' &&
+    value.meterMode !== 'enforced'
+  ) {
+    return null;
+  }
+  if (
+    value.grant !== undefined &&
+    (typeof value.grant !== 'string' || value.grant.length === 0 || value.grant.length > 8192)
+  ) {
+    return null;
+  }
+  if (value.expiresAt !== undefined && typeof value.expiresAt !== 'string') return null;
+  if (value.grant !== undefined && value.expiresAt === undefined) return null;
+  if (
+    value.resourceOrigins !== undefined &&
+    (!Array.isArray(value.resourceOrigins) ||
+      value.resourceOrigins.length > 32 ||
+      value.resourceOrigins.some((origin) => !originOf(origin)))
+  ) {
+    return null;
+  }
+  return value as TileflowSessionGrantResponse;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+class TileflowSessionRestartError extends Error {
+  constructor() {
+    super('Tileflow session must restart');
+    this.name = 'TileflowSessionRestartError';
+  }
+}
+
+function isEligibleResource(
+  value: string,
+  mapId: string,
+  apiOrigin: string | null,
+  grantedOrigins: Set<string> | undefined,
+) {
+  try {
+    const url = new URL(value);
+    if (url.username || url.password) return false;
+    const originAllowed =
+      url.origin === apiOrigin ||
+      grantedOrigins?.has(url.origin) ||
+      (apiOrigin === 'https://api.tileflow.dev' && url.origin === 'https://cdn.tileflow.dev');
+    if (!originAllowed) return false;
+    return (
+      url.pathname === `/maps/${encodeURIComponent(mapId)}/style.json` ||
+      url.pathname.startsWith('/tiles/') ||
+      url.pathname.startsWith('/v1/tiles/') ||
+      url.pathname.startsWith('/fonts/') ||
+      url.pathname.startsWith('/sprites/')
+    );
+  } catch {
+    return false;
+  }
+}
+
+function originOf(value: unknown) {
+  if (typeof value !== 'string') return null;
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 export function resolveTileflowAnalyticsRequestUrl(
   url: string,
   analytics: TileflowAnalytics | undefined,
@@ -222,7 +604,7 @@ export function startTileflowSession(
   }
 
   const endpoint =
-    analytics.endpoint ?? `${getTileflowAnalyticsApiUrl(analytics)}/v1/sessions/start`;
+    analytics.endpoint ?? `${getTileflowAnalyticsApiUrl(analytics)}/v1/sessions/analytics`;
   const payload = JSON.stringify({
     mapId: input.mapId,
     metadata: analytics.metadata,
@@ -247,7 +629,7 @@ export function startTileflowSession(
     },
     keepalive: true,
     method: 'POST',
-  });
+  }).catch(() => undefined);
 }
 
 export function getTileflowAnalyticsApiUrl(analytics: TileflowAnalytics): string {
@@ -271,10 +653,6 @@ export function mergeTileflowAnalytics(
   userAnalytics: TileflowAnalytics | undefined,
   runtimeAnalytics: TileflowAnalytics | undefined,
 ): TileflowAnalytics | undefined {
-  if (userAnalytics?.enabled === false) {
-    return userAnalytics;
-  }
-
   if (!userAnalytics && !runtimeAnalytics?.mapId) {
     return undefined;
   }
@@ -431,7 +809,7 @@ export function inferTileflowAnalyticsFromStyleUrl(
 ): TileflowAnalytics | undefined {
   try {
     const url = new URL(styleUrl, getTileflowLocationOrigin());
-    const match = url.pathname.match(/\/(?:v1\/)?maps\/([^/]+)\/style\.json$/);
+    const match = url.pathname.match(/^\/maps\/([^/]+)\/style\.json$/);
 
     if (!match?.[1]) {
       return undefined;

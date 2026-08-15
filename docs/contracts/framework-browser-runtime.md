@@ -16,7 +16,8 @@ compiler and config APIs from entering the framework runtime accidentally.
 The subpath is safe to import during server rendering. Evaluating it does not read `window`,
 `document`, `navigator`, `requestAnimationFrame`, or `ResizeObserver`. It has no MapLibre runtime or
 type dependency. Callers inject an animation-frame scheduler, MapLibre event subscriptions,
-session sending when tests need a fake, and marker construction/attachment/removal adapters.
+session sending when tests need a fake, a commercial session controller when hosted delivery needs
+authorization, and marker construction/attachment/removal adapters.
 Browser globals may therefore be used only by an adapter after its framework has mounted.
 
 The browser entry contains lifecycle mechanics, not map ownership. It does not create MapLibre
@@ -50,10 +51,16 @@ checks, `decode()`, load/error fallbacks, resize measurement, and cancellation a
 
 ## Session starts
 
-`createTileflowSessionStarter` belongs to one framework component instance and survives MapLibre
-map recreations. It deduplicates the exact key `sessionId:mapId:styleId`, with an empty final field
-when the style id is absent. A different style id is a different start. Missing analytics or map id
-does not reserve a key.
+`createTileflowSessionStarter` deduplicates the exact key `sessionId:mapId:styleId`, with an empty
+final field when the style id is absent. A different session or style id is a different start.
+Missing analytics or map id does not reserve a key. A caller may provide a fixed identity or a
+getter so an expired unused commercial reservation can rotate before the load event without
+leaving the analytics beacon attached to the retired identity.
+
+Tileflow's adapters create one commercial session controller and one starter for each MapLibre map
+instance. A framework-driven map reconstruction therefore receives a fresh identity, as required
+by the hosted map-view contract. The starter reads the controller's current identity at the load
+event.
 
 The key is reserved before the sender is called. The starter deliberately does not interpret
 `analytics.enabled`: the default `startTileflowSession` sender owns that policy. This preserves the
@@ -66,17 +73,23 @@ using beacon or fetch, so merely importing or constructing a starter is SSR-safe
 ## Request transforms
 
 `createTileflowTransformRequest` invokes the caller's transform first and forwards the original
-resource type. It preserves synchronous results as synchronous and chains asynchronous results
-without swallowing rejection. Analytics operates on the user result's URL when present, otherwise
-the original URL. A rewritten result preserves every other user request field; without a rewrite,
-the exact user result or `undefined` is returned.
+resource type. Without a commercial controller it preserves synchronous results as synchronous
+and retains the legacy analytics URL decoration. With a controller it awaits the server-owned
+preflight and returns an asynchronous request, even when the user transform is synchronous.
+Authorization operates on the user result's URL when present, otherwise the original URL. A
+rewritten result preserves every other user request field. Rejections from either the user
+transform or commercial preflight propagate to MapLibre.
+
+The controller authorizes only reviewed Tileflow resource URLs. `analytics.enabled: false` remains
+an optional telemetry choice and cannot remove the commercial transform when a hosted map id is
+present.
 
 Two policies are explicit compatibility inputs:
 
 - `always: true` returns a transform even when analytics and a user transform are absent. React and
   Svelte use this policy.
-- Without `always`, the helper returns `undefined` when no user transform exists and analytics is
-  absent or disabled. Vue uses this policy.
+- Without `always`, the helper returns `undefined` when no user transform exists and neither
+  analytics nor a hosted commercial session requires it. Vue uses this policy.
 
 Async analytics timing is also explicit. `request` snapshots analytics after the user transform is
 invoked and before its promise settles; Svelte uses this behavior. `resolution` reads analytics
@@ -126,5 +139,6 @@ installed `@tileflow/core/browser` export from a clean consumer before capture t
 ## Non-goals
 
 This kernel does not introduce entities, feature state, clustering, selection, popups, business
-events, hosted platform calls beyond existing analytics, framework-independent DOM, or a new
-runtime package. Those capabilities require separate product and API decisions.
+events, hosted platform calls beyond analytics and commercial session preflight,
+framework-independent DOM, or a new runtime package. Those capabilities require separate product
+and API decisions.

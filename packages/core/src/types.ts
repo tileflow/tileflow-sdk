@@ -323,7 +323,10 @@ export type TileflowPoiLabels = 'none' | 'minimal' | 'balanced' | 'full';
 export type TileflowPoiDensity = 'sparse' | 'balanced' | 'dense';
 export type TileflowPoiColorMode = 'uniform' | 'category';
 export type TileflowPoiClassMapping = Record<string, readonly string[]>;
-export type TileflowPoiCategoryStyle = TileflowSymbolStyle;
+export type TileflowPoiCategoryStyle = TileflowSymbolStyle & {
+  /** Inclusive OpenMapTiles importance-rank ceiling for this semantic category. */
+  maxRank?: number;
+};
 export type TileflowPoiModuleConfig = {
   type: 'poi';
   categories?: readonly TileflowPoiCategory[];

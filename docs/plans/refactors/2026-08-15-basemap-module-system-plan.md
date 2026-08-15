@@ -171,6 +171,15 @@ part of the primary vector-data API.
       one semantic `minZoom` governs both label and marker layers, documented the compound range
       contract, reviewed and regenerated all eleven Streets baselines, and passed 77/77 core tests,
       3/3 Streets tests, `pnpm check`, and `pnpm build`.
+- [x] (2026-08-15) Audited the overscaled Tileflow World POI candidates around Puerta del Sol and
+      fixed the next street-scale quality gap. Calibrated `balanced` beyond the old rank-24 cliff,
+      added exact per-category `maxRank`, expanded the workbench's semantic class buckets, and
+      balanced shopping, food, lodging, services, culture, and transit independently. Added a
+      dedicated `transport-areas` graph slot after proving that road-area polygons in the old
+      surface-fill tail covered their own pedestrian line axes. Focused schema/compiler/style tests
+      pass; regenerated and reviewed all eleven Streets baselines; and passed 79/79 core tests, 3/3
+      Streets tests, `pnpm check`, `pnpm build`, `pnpm run smoke:capture-public`, and
+      `pnpm run publish:alpha:dry-run`.
 
 ## Surprises & Discoveries
 
@@ -282,6 +291,23 @@ part of the primary vector-data API.
   OpenMapTiles and OpenStreetMap, while the SDK's explicit source attribution omitted OpenFreeMap.
   Evidence: the public TileJSON and `defaultAttribution` in `packages/core/src/data/index.ts`.
 
+- Observation: OpenMapTiles POI rank is useful for importance but is not distributed equally by
+  semantic category. At the zoom-17 Sol sample, the 256-pixel viewport contained 28 POIs while the
+  source z14 tile contained 11,210; only a rank-14 attraction and rank-1 railway survived the old
+  balanced ceiling of 24, while valid shops occupied roughly 31-118 and lodging/food often ranked
+  much higher. A single global ceiling therefore alternated between an empty map and category
+  domination.
+  Evidence: bounded `tileflow inspect features` output at Sol plus the before/after
+  `madrid-sol-close` captures.
+
+- Observation: road-area contributions shared `transport-surface-fill` with line fills but used a
+  local order after every class line. A polygon pedestrian plaza consequently covered the
+  pedestrian, footway, and crossing axes that were present in Tileflow World, making a data-rich
+  area look empty until the fill moved to a dedicated earlier graph slot.
+  Evidence: inspected `transportation`/`transportation_name` features for Montera, Preciados, and
+  Carmen; the graph-order regression in `packages/core/test/domain-compilers.test.ts`; and the Sol
+  visual capture.
+
 ## Decision Log
 
 - Decision: Make a clean break; do not normalize old and new authoring models together.
@@ -325,6 +351,14 @@ part of the primary vector-data API.
   with one constraint graph.
   Rationale: labels, POI, transit, aeroways, and roads interact. Neither module object order nor
   compiler invocation order may decide collisions, ownership, or z-order.
+  Date/Author: 2026-08-15, Codex.
+
+- Decision: Treat POI presets as candidate ceilings and allow an exact inclusive category
+  `maxRank` to replace them.
+  Rationale: source rank remains the deterministic importance signal, but food, lodging, shopping,
+  culture, and transit need different ceilings before collision placement. This preserves an
+  agent-friendly semantic API and avoids raw MapLibre filters or thousands of unconditional
+  candidates.
   Date/Author: 2026-08-15, Codex.
 
 - Decision: Give every frozen reference layer exactly one domain owner as test evidence.

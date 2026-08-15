@@ -205,7 +205,7 @@ export function compileRoads(
         layer: area.layer,
         localOrder: areaOrder++,
         owner: 'roads',
-        slot: 'transport-surface-fill',
+        slot: 'transport-areas',
         target: `roads.areas.${target.name}.${area.phase}`,
       });
     }

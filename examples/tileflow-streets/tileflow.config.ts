@@ -204,8 +204,12 @@ export default defineTileflow({
           // label, lodging, services, shopping, transit.
           coffee: '#A8612D', // Hex color.
           culture: '#7A58A6', // Hex color.
+          education: '#6D8493', // Hex color.
           food: '#B45C25', // Hex color.
+          health: '#C45B75', // Hex color.
           label: '#455564', // Hex color.
+          lodging: '#C54D9B', // Hex color.
+          services: '#607887', // Hex color.
           shopping: '#2B79D0', // Hex color.
           transit: '#466F97', // Hex color.
         },
@@ -374,7 +378,7 @@ export default defineTileflow({
               [19, 36],
               [22, 105],
             ]),
-            tertiary: cityRoadStyle('#CAD4DD', '#FFFFFF', [
+            tertiary: cityRoadStyle('#C2CFD9', '#FFFFFF', [
               [12, 1.4],
               [14, 4.5],
               [16, 8],
@@ -382,7 +386,7 @@ export default defineTileflow({
               [19, 26],
               [22, 82],
             ]),
-            minor: cityRoadStyle('#D9E2E9', '#FFFFFF', [
+            minor: cityRoadStyle('#D0DBE4', '#FFFFFF', [
               [12.5, 0.8],
               [14, 2.5],
               [15, 4.5],
@@ -391,7 +395,7 @@ export default defineTileflow({
               [19, 21],
               [22, 60],
             ]),
-            service: cityRoadStyle('#E7ECF0', '#FFFFFF', [
+            service: cityRoadStyle('#DDE5EB', '#FFFFFF', [
               [14, 1],
               [16, 3.5],
               [17, 5.5],
@@ -448,12 +452,13 @@ export default defineTileflow({
             pedestrian: pathRoadStyle(
               '#F7F9FA',
               [
-                [14, 1.2],
-                [17, 7],
-                [19, 20],
-                [22, 52],
+                [14, 0.7],
+                [16, 2.2],
+                [17, 4],
+                [19, 10],
+                [22, 30],
               ],
-              {casingColor: '#CDD7E0'},
+              {casingColor: '#C9D6E0'},
             ),
           },
         }),
@@ -644,8 +649,16 @@ export default defineTileflow({
           classMapping: {
             // Avoid treating every tram and bus stop as a city-scale landmark.
             'major-transit': ['railway', 'station', 'subway'],
+            // Tileflow World preserves useful OpenMapTiles classes beyond the compact
+            // built-in buckets. Keep them semantic here instead of exposing raw layers.
+            culture: ['art_gallery', 'attraction', 'memorial', 'monument'],
+            food: ['ice_cream'],
+            services: ['atm', 'information', 'post'],
+            shopping: ['clothing_store', 'grocery'],
           },
           color: 'category', // 'uniform' | 'category'.
+          // Balanced keeps a broad candidate set; MapLibre collision placement makes
+          // the final viewport-aware selection from the overscaled z14 source tile.
           density: 'balanced', // 'sparse' | 'balanced' | 'dense'.
           icons: false, // false | true | 'essential' | 'full'; non-false needs an icon set/sprite.
           labels: 'balanced', // 'none' | 'minimal' | 'balanced' | 'full'.
@@ -653,23 +666,15 @@ export default defineTileflow({
           placement: {
             coupleIconAndLabel: false, // true | false.
             iconPadding: 3, // Finite number >= 0, in pixels.
-            textPadding: 8, // Finite number >= 0, in pixels.
+            textPadding: 14, // Finite number >= 0, in pixels.
           },
           styles: {
             // Important orientation landmarks arrive first; everyday businesses wait
             // until street zooms. Rank filtering keeps dense centres readable.
             culture: {
+              maxRank: 120, // Positive integer; replaces the category's preset rank ceiling.
               minZoom: 12.5,
               priority: 95,
-              marker: {
-                color: '#7656A5',
-                radius: zoom.linear([
-                  [12.5, 3],
-                  [17, 5],
-                ]),
-                strokeColor: '#FFFFFF',
-                strokeWidth: 1.5,
-              },
               text: {
                 color: '#7656A5',
                 haloColor: '#FFFFFF',
@@ -682,6 +687,7 @@ export default defineTileflow({
               },
             },
             'major-transit': {
+              maxRank: 40, // Positive integer.
               minZoom: 12.5,
               priority: 100,
               marker: {
@@ -705,64 +711,44 @@ export default defineTileflow({
               },
             },
             lodging: {
+              maxRank: 100, // Positive integer.
               minZoom: 14,
               priority: 75,
-              marker: {
-                color: '#C54D9B',
-                radius: zoom.linear([
-                  [14, 2.5],
-                  [17, 4.5],
-                ]),
-                strokeColor: '#FFFFFF',
-                strokeWidth: 1.5,
-              },
-              text: {color: '#738B9A', haloColor: '#FFFFFF', haloWidth: 1.5},
+              text: {color: '#C54D9B', haloColor: '#FFFFFF', haloWidth: 1.5},
             },
             education: {
+              maxRank: 100, // Positive integer.
               minZoom: 14.5,
               priority: 65,
               text: {color: '#6D8493', haloColor: '#FFFFFF', haloWidth: 1.5},
             },
             health: {
+              maxRank: 120, // Positive integer.
               minZoom: 15,
               priority: 70,
               text: {color: '#8C7387', haloColor: '#FFFFFF', haloWidth: 1.5},
             },
             shopping: {
-              minZoom: 15,
+              maxRank: 70, // Positive integer.
+              minZoom: 14.75,
               priority: 55,
-              marker: {
-                color: '#2B79D0',
-                radius: zoom.linear([
-                  [15, 2.5],
-                  [17, 4],
-                ]),
-                strokeColor: '#FFFFFF',
-                strokeWidth: 1.25,
-              },
               text: {color: '#2B79D0', haloColor: '#FFFFFF', haloWidth: 1.4},
             },
             services: {
-              minZoom: 15.5,
+              maxRank: 100, // Positive integer.
+              minZoom: 15,
               priority: 55,
               text: {color: '#607887', haloColor: '#FFFFFF', haloWidth: 1.4},
             },
             food: {
-              minZoom: 15.5,
+              maxRank: 120, // Positive integer.
+              minZoom: 15,
               priority: 50,
-              marker: {
-                color: '#D46B2C',
-                radius: zoom.linear([
-                  [15.5, 2.5],
-                  [17, 4],
-                ]),
-                strokeColor: '#FFFFFF',
-                strokeWidth: 1.25,
-              },
               text: {color: '#B45C25', haloColor: '#FFFFFF', haloWidth: 1.4},
             },
             coffee: {
-              minZoom: 17,
+              maxRank: 180, // Positive integer.
+              minZoom: 16,
               priority: 40,
               text: {color: '#A8612D', haloColor: '#FFFFFF', haloWidth: 1.4},
             },

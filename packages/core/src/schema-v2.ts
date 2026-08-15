@@ -332,6 +332,9 @@ const symbolStyleSchema = z
     text: textStyleSchema.optional(),
   })
   .strict();
+const poiCategoryStyleSchema = symbolStyleSchema
+  .extend({maxRank: z.number().int().min(1).optional()})
+  .strict();
 
 const roadClassSchema = z.enum([
   'motorway',
@@ -662,7 +665,7 @@ const poiModuleSchema = z
       .strict()
       .optional(),
     preset: z.enum(['none', 'minimal', 'balanced', 'full']).optional(),
-    styles: z.record(identifierSchema, symbolStyleSchema).optional(),
+    styles: z.record(identifierSchema, poiCategoryStyleSchema).optional(),
   })
   .strict();
 

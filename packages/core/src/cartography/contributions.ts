@@ -6,6 +6,7 @@ export const tileflowLayerSlots = [
   'hydro',
   'terrain',
   'buildings',
+  'transport-areas',
   'transport-tunnel-shadow',
   'transport-tunnel-casing',
   'transport-tunnel-fill',

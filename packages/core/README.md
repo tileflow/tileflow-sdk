@@ -189,6 +189,11 @@ POI `density`, `labels`, and `icons` are independent policies. Density bounds el
 ranks, label detail controls text ranks, icon detail controls icon ranks, and
 `placement.coupleIconAndLabel` deliberately keeps only features eligible for both. Without
 coupling, icon and label layers collide normally but can be styled and zoomed independently.
+The `balanced` policy keeps a practical cross-category candidate set from an overscaled
+OpenMapTiles source tile; MapLibre collision placement still decides which candidates fit the
+current viewport. Use a category style's inclusive `maxRank` when different feature families need
+different candidate ceilings; the explicit category value replaces the density/label/icon preset
+ceiling for that category without exposing a raw layer ID or filter.
 
 Theme tokens provide shared color and typography defaults. A module-level exact style wins over a
 theme token for that target. Precedence is deterministic:

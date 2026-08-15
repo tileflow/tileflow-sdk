@@ -50,6 +50,11 @@ Shared symbol ranges govern text and icon together and are inherited by an optio
 marker can refine that range because it compiles to a separate circle layer; incompatible text and
 icon ranges fail because those parts share one MapLibre symbol layer.
 
+POI density and label/icon detail choose rank-bounded candidate sets before MapLibre collision
+placement. Because importance ranks are not distributed equally across categories, a category may
+set an inclusive `maxRank`; that explicit semantic ceiling replaces the preset ceiling for the
+category's marker, icon, and label without exposing a raw source-layer filter.
+
 The compiler creates every `streets-*` layer from a domain compiler. It resolves domain conflicts
 before graph assembly—for example, roads determine eligible road-label classes, aeroways own
 runway geometry while labels own aerodrome text, and transit owns rail/ferry/cableway geometry
@@ -67,7 +72,8 @@ pairwise disjoint, preventing the same path from being painted by multiple seman
 Line-like pedestrian ways use `roads.classes.pedestrian`; polygon plazas use the separate
 `roads.areas.pedestrian` fill target. Both share the same semantic selector, while the geometry
 constraint prevents overlap and lets authors style plaza fill, outline, opacity, or pattern without
-raw MapLibre filters.
+raw MapLibre filters. Road areas occupy a dedicated graph slot below tunnel, surface, and bridge
+line stacks, so a plaza polygon cannot cover its pedestrian street axes or any crossing road.
 
 Road conditions are orthogonal to class and structure. `roads.modifiers` supports `construction`,
 `expressway`, `indoor`, `official`, `ramp`, and `unpaved`; `roads.restrictions` supports `access`,

@@ -415,6 +415,29 @@ test('compiles pedestrian polygons as a semantic road area even without line cla
     contributions.some((entry) => entry.layer.id.includes('surface-pedestrian')),
     false,
   );
+  assert.equal(pedestrianArea.slot, 'transport-areas');
+});
+
+test('orders road areas below every generated road line stack', () => {
+  const ids = assembleTileflowLayers(
+    compileRoads(
+      roads({
+        areas: {pedestrian: {fill: {color: '#F1F3F5'}}},
+        detail: 'all',
+        extras: {paths: true},
+      }),
+      context,
+    ),
+  ).map((layer) => layer.id);
+
+  assert.ok(
+    ids.indexOf('streets-road-pedestrian-area') <
+      ids.indexOf('streets-road-surface-pedestrian-casing'),
+  );
+  assert.ok(
+    ids.indexOf('streets-road-pedestrian-area') <
+      ids.indexOf('streets-road-surface-pedestrian-fill'),
+  );
 });
 
 test('coordinates label eligibility with roads and compiles exact label and POI styles', () => {
@@ -453,7 +476,7 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
     ],
   );
   assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /14/);
-  assert.match(JSON.stringify(poiContributions[1]?.layer.filter), /24/);
+  assert.match(JSON.stringify(poiContributions[1]?.layer.filter), /80/);
 });
 
 test('compiles a semantic POI marker through the shared circle primitive', () => {
@@ -651,6 +674,12 @@ test('POI density, label detail, icon detail, and coupling change emitted layers
     ['streets-poi-food'],
   );
   assert.match(JSON.stringify(coupled[0]?.layer.filter), /14/);
+
+  const balancedLabels = compilePoi(
+    poi({categories: ['food'], density: 'balanced', icons: false, labels: 'balanced'}),
+    context,
+  );
+  assert.match(JSON.stringify(balancedLabels[0]?.layer.filter), /80/);
 });
 
 test('POI categories can introduce their labels at different zoom levels', () => {
@@ -682,4 +711,33 @@ test('POI categories can introduce their labels at different zoom levels', () =>
   assert.equal(food?.minzoom, 15.5);
   assert.equal(cultureMarker?.minzoom, 12.5);
   assert.equal(foodMarker?.minzoom, 15.5);
+});
+
+test('POI categories can replace global rank presets with exact semantic ceilings', () => {
+  const contributions = compilePoi(
+    poi({
+      categories: ['culture', 'lodging'],
+      density: 'balanced',
+      icons: false,
+      labels: 'balanced',
+      styles: {
+        culture: {maxRank: 120},
+        lodging: {marker: {radius: 3}, maxRank: 360},
+      },
+    }),
+    context,
+  );
+  const culture = contributions.find(
+    (entry) => entry.layer.id === 'streets-poi-culture-label',
+  )?.layer;
+  const lodgingLabel = contributions.find(
+    (entry) => entry.layer.id === 'streets-poi-lodging-label',
+  )?.layer;
+  const lodgingMarker = contributions.find(
+    (entry) => entry.layer.id === 'streets-poi-lodging-marker',
+  )?.layer;
+
+  assert.match(JSON.stringify(culture?.filter), /120/);
+  assert.match(JSON.stringify(lodgingLabel?.filter), /360/);
+  assert.match(JSON.stringify(lodgingMarker?.filter), /360/);
 });

@@ -17,6 +17,18 @@ npm exec --no -- tileflow dev
 a missing package. Other package managers work; use the equivalent command for
 the lockfile already owned by the project.
 
+`tileflow dev` previews the first map by default and uses that map's configured `view`. Select a
+different map or a committed standalone scene explicitly:
+
+```sh
+npm exec --no -- tileflow dev --map madrid
+npm exec --no -- tileflow dev --scene madrid-mobile
+```
+
+A scene preview applies its committed camera and CSS viewport dimensions. Capture remains the
+authority for exact DPR and pixels. `--map` and `--scene` are mutually exclusive, and scenes whose
+target is an application must be viewed through that application's normal development server.
+
 ## Local visual feedback
 
 Explore with capture itself. The first run may install Playwright's exact pinned Chromium headless

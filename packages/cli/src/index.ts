@@ -29,6 +29,7 @@ import {
   getTileflowMapNames,
   loadTileflowConfig,
   loadValidTileflowConfig,
+  resolveTileflowPreview,
   type TileflowArtifactSessionState,
   TileflowIconCompilationError,
   type TileflowMapIconPackageBinding,
@@ -372,101 +373,138 @@ program
   .command('dev')
   .description('Run a local map preview')
   .option('-c, --config <path>', 'config path', defaultConfigPath)
+  .option('--map <name>', 'preview one configured map')
   .option('-p, --port <port>', 'preview port', '3333')
+  .option('--scene <name>', 'preview one committed standalone map scene')
   .option(
     '--tile-base-url <url>',
     'Tileflow tile API URL',
     process.env.TILEFLOW_TILE_BASE_URL ?? defaultApiUrl,
   )
   .option('--json', 'emit schema-version-1 NDJSON lifecycle events')
-  .action(async (options: {config: string; json?: boolean; port: string; tileBaseUrl: string}) => {
-    const port = parsePort(options.port);
-    if (port === null) {
-      logError(`Invalid port: ${options.port}`);
-      process.exitCode = 1;
-      return;
-    }
-
-    delete process.env.TILEFLOW_API_KEY;
-    const origin = `http://localhost:${port}`;
-    const session = await createTileflowArtifactSession({
-      assetBaseUrl: origin,
-      config: options.config,
-      styleBaseUrl: origin,
-      tileBaseUrl: options.tileBaseUrl,
-      watch: true,
-    });
-    const fetch = createTileflowDevRequestHandler({
-      config: options.config,
-      onError: printTileflowPreviewError,
-      session,
-      tileBaseUrl: options.tileBaseUrl,
-    });
-    let invalidSinceLastReady = false;
-    const emitState = (state: TileflowArtifactSessionState) => {
-      const recovered = invalidSinceLastReady && state.status === 'ready';
-      if (state.status === 'invalid') invalidSinceLastReady = true;
-      if (state.status === 'ready') invalidSinceLastReady = false;
-      if (options.json) {
-        const firstDiagnostic = state.status === 'invalid' ? state.diagnostics[0] : undefined;
-        process.stdout.write(
-          `${JSON.stringify({
-            schemaVersion: 1,
-            command: 'dev',
-            event: recovered ? 'recovered' : state.status,
-            generation: state.generation,
-            ...('lastGoodGeneration' in state && state.lastGoodGeneration !== undefined
-              ? {lastGoodGeneration: state.lastGoodGeneration}
-              : {}),
-            ...(firstDiagnostic?.code ? {code: firstDiagnostic.code} : {}),
-            ...(firstDiagnostic?.phase ? {phase: firstDiagnostic.phase} : {}),
-            ...(state.status === 'invalid' ? {diagnostics: state.diagnostics} : {}),
-          })}\n`,
-        );
+  .action(
+    async (options: {
+      config: string;
+      json?: boolean;
+      map?: string;
+      port: string;
+      scene?: string;
+      tileBaseUrl: string;
+    }) => {
+      const port = parsePort(options.port);
+      if (port === null) {
+        logError(`Invalid port: ${options.port}`);
+        process.exitCode = 1;
         return;
       }
-      if (state.status === 'invalid') {
-        console.error(
-          [
-            `Tileflow generation ${state.generation} is invalid; preserving the last valid preview.`,
-            ...state.diagnostics.map(
-              (diagnostic) => `- ${diagnostic.path || '(root)'}: ${diagnostic.message}`,
-            ),
-          ].join('\n'),
-        );
-      } else if (recovered) {
-        logSuccess(`Tileflow preview recovered at generation ${state.generation}.`);
-      }
-    };
-    emitState(session.getState());
-    const unsubscribe = session.subscribe(emitState);
-    let server: ReturnType<typeof serve> | undefined;
 
-    try {
-      await new Promise<void>((resolveListening, rejectListening) => {
-        const createdServer = serve({fetch, port}, () => resolveListening());
-        createdServer.once('error', rejectListening);
-        server = createdServer;
+      if (options.map !== undefined && options.scene !== undefined) {
+        logError('Choose either --map or --scene, not both.');
+        process.exitCode = 1;
+        return;
+      }
+
+      delete process.env.TILEFLOW_API_KEY;
+      const origin = `http://localhost:${port}`;
+      const session = await createTileflowArtifactSession({
+        assetBaseUrl: origin,
+        config: options.config,
+        styleBaseUrl: origin,
+        tileBaseUrl: options.tileBaseUrl,
+        watch: true,
       });
-      if (!options.json) {
-        logSuccess('Tileflow preview is running and watching for changes.');
-        printKeyValue('Local', link(origin));
-        printKeyValue('Config', pathLabel(options.config));
-        logMuted('Press Ctrl+C to stop.');
+      const initialArtifacts = session.getLastGoodArtifacts();
+
+      try {
+        if (initialArtifacts) {
+          resolveTileflowPreview(initialArtifacts.project, {
+            map: options.map,
+            scene: options.scene,
+          });
+        }
+      } catch (error) {
+        await session.close();
+        logError(error instanceof Error ? error.message : 'Invalid Tileflow preview selection.');
+        process.exitCode = 1;
+        return;
       }
-      await waitForTerminationSignal(server!);
-    } finally {
-      unsubscribe();
-      await closeNodeServer(server);
-      const generation = session.getState().generation;
-      await session.close();
-      if (options.json) {
-        process.stdout.write(
-          `${JSON.stringify({schemaVersion: 1, command: 'dev', event: 'stopped', generation})}\n`,
-        );
+
+      const fetch = createTileflowDevRequestHandler({
+        config: options.config,
+        map: options.map,
+        onError: printTileflowPreviewError,
+        scene: options.scene,
+        session,
+        tileBaseUrl: options.tileBaseUrl,
+      });
+      let invalidSinceLastReady = false;
+      const emitState = (state: TileflowArtifactSessionState) => {
+        const recovered = invalidSinceLastReady && state.status === 'ready';
+        if (state.status === 'invalid') invalidSinceLastReady = true;
+        if (state.status === 'ready') invalidSinceLastReady = false;
+        if (options.json) {
+          const firstDiagnostic = state.status === 'invalid' ? state.diagnostics[0] : undefined;
+          process.stdout.write(
+            `${JSON.stringify({
+              schemaVersion: 1,
+              command: 'dev',
+              event: recovered ? 'recovered' : state.status,
+              generation: state.generation,
+              ...('lastGoodGeneration' in state && state.lastGoodGeneration !== undefined
+                ? {lastGoodGeneration: state.lastGoodGeneration}
+                : {}),
+              ...(firstDiagnostic?.code ? {code: firstDiagnostic.code} : {}),
+              ...(firstDiagnostic?.phase ? {phase: firstDiagnostic.phase} : {}),
+              ...(state.status === 'invalid' ? {diagnostics: state.diagnostics} : {}),
+            })}\n`,
+          );
+          return;
+        }
+        if (state.status === 'invalid') {
+          console.error(
+            [
+              `Tileflow generation ${state.generation} is invalid; preserving the last valid preview.`,
+              ...state.diagnostics.map(
+                (diagnostic) => `- ${diagnostic.path || '(root)'}: ${diagnostic.message}`,
+              ),
+            ].join('\n'),
+          );
+        } else if (recovered) {
+          logSuccess(`Tileflow preview recovered at generation ${state.generation}.`);
+        }
+      };
+      emitState(session.getState());
+      const unsubscribe = session.subscribe(emitState);
+      let server: ReturnType<typeof serve> | undefined;
+
+      try {
+        await new Promise<void>((resolveListening, rejectListening) => {
+          const createdServer = serve({fetch, port}, () => resolveListening());
+          createdServer.once('error', rejectListening);
+          server = createdServer;
+        });
+        if (!options.json) {
+          logSuccess('Tileflow preview is running and watching for changes.');
+          printKeyValue('Local', link(origin));
+          printKeyValue('Config', pathLabel(options.config));
+          if (options.map) printKeyValue('Map', options.map);
+          if (options.scene) printKeyValue('Scene', options.scene);
+          logMuted('Press Ctrl+C to stop.');
+        }
+        await waitForTerminationSignal(server!);
+      } finally {
+        unsubscribe();
+        await closeNodeServer(server);
+        const generation = session.getState().generation;
+        await session.close();
+        if (options.json) {
+          process.stdout.write(
+            `${JSON.stringify({schemaVersion: 1, command: 'dev', event: 'stopped', generation})}\n`,
+          );
+        }
       }
-    }
-  });
+    },
+  );
 
 program
   .command('deploy')

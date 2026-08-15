@@ -1,6 +1,7 @@
 import {
   buildings,
   defineTileflow,
+  filter,
   labels,
   land,
   poi,
@@ -62,6 +63,30 @@ function cityRoadStyle(color: string, widths: WidthStops): TileflowRoadClassStyl
   };
 }
 
+function pedestrianPathStyle(): TileflowRoadClassStyle {
+  const fill = {
+    cap: 'round' as const,
+    color: '#78CDB2',
+    join: 'round' as const,
+    opacity: 0.9,
+    width: zoom.linear([
+      [14, 0.45],
+      [17, 0.85],
+      [19, 1.35],
+      [22, 3],
+    ]),
+  };
+
+  return {
+    surface: {casing: {visible: false}, fill},
+    bridge: {casing: {visible: false}, fill},
+    tunnel: {
+      casing: {visible: false},
+      fill: {...fill, dash: [2, 2], opacity: 0.55},
+    },
+  };
+}
+
 function roadLabelStyle(major: boolean): TileflowTextStyle {
   return {
     color: major ? '#FFFFFF' : '#5E6B78',
@@ -93,7 +118,7 @@ export default defineTileflow({
         background: '#F6F7F5', // Hex: #RGB | #RGBA | #RRGGBB | #RRGGBBAA.
         land: '#F7F7F5', // Hex color.
         water: '#83D8EA', // Hex color.
-        park: '#B9EDCB', // Hex color.
+        park: '#AFEAC5', // Hex color.
         building: '#FFF8EC', // Hex color.
         road: '#F8F9FB', // Hex color.
         roadMajor: '#B4C2D0', // Hex color.
@@ -122,9 +147,9 @@ export default defineTileflow({
         },
         landcover: {
           // Optional keys: grass, ice, park, protected, sand, wood.
-          grass: '#C5ECD2', // Hex color.
-          park: '#B9EDCB', // Hex color.
-          protected: '#C1E9CF', // Hex color.
+          grass: '#AFEAC5', // Hex color.
+          park: '#AFEAC5', // Hex color.
+          protected: '#AFEAC5', // Hex color.
           sand: '#F1E8D0', // Hex color.
           wood: '#B7DFC5', // Hex color.
         },
@@ -185,10 +210,10 @@ export default defineTileflow({
           background: {color: '#F7F7F5', opacity: 1},
           landcover: {
             farmland: {color: '#DCE9CF', opacity: 1},
-            grass: {color: '#C5ECD2', opacity: 1},
+            grass: {color: '#AFEAC5', opacity: 1},
             ice: {color: '#F4FAFC', opacity: 1},
-            park: {color: '#B9EDCB', opacity: 1},
-            protected: {color: '#C1E9CF', opacity: 1},
+            park: {color: '#AFEAC5', opacity: 1},
+            protected: {color: '#AFEAC5', opacity: 1},
             sand: {color: '#F1E8D0', opacity: 1},
             scrub: {color: '#CEE7CD', opacity: 1},
             wood: {color: '#B7DFC5', opacity: 1},
@@ -274,18 +299,18 @@ export default defineTileflow({
               [19, 12],
               [22, 36],
             ]),
-            path: cityRoadStyle('#E5EAEE', [
-              [14, 0.4],
-              [16, 2],
-              [17, 3],
-              [19, 7],
-              [22, 20],
-            ]),
+            path: pedestrianPathStyle(),
           },
         }),
         transit: transit({
           rail: {
             color: '#A6AFB8',
+            filter: filter([
+              'all',
+              ['match', ['get', 'class'], ['rail', 'transit'], true, false],
+              ['!', ['has', 'service']],
+              ['!=', ['get', 'brunnel'], 'tunnel'],
+            ]),
             minZoom: 12,
             opacity: 0.56,
             width: zoom.linear([
@@ -297,6 +322,12 @@ export default defineTileflow({
           railHatching: {
             color: '#F7F8F9',
             dash: [1, 2.5],
+            filter: filter([
+              'all',
+              ['match', ['get', 'class'], ['rail', 'transit'], true, false],
+              ['!', ['has', 'service']],
+              ['!=', ['get', 'brunnel'], 'tunnel'],
+            ]),
             minZoom: 13,
             opacity: 0.8,
             width: zoom.linear([
@@ -307,6 +338,12 @@ export default defineTileflow({
           },
           serviceRail: {
             color: '#B8C0C8',
+            filter: filter([
+              'all',
+              ['==', ['get', 'class'], 'rail'],
+              ['has', 'service'],
+              ['!=', ['get', 'brunnel'], 'tunnel'],
+            ]),
             minZoom: 14,
             opacity: 0.42,
             width: zoom.linear([
@@ -335,8 +372,8 @@ export default defineTileflow({
               tertiary: roadLabelStyle(false),
               minor: roadLabelStyle(false),
               service: roadLabelStyle(false),
-              track: roadLabelStyle(false),
-              path: roadLabelStyle(false),
+              track: {...roadLabelStyle(false), visible: false},
+              path: {...roadLabelStyle(false), visible: false},
             },
           },
         }),

@@ -487,7 +487,7 @@ export default defineTileflow({
           },
         }),
         buildings: buildings({
-          mode: '3d', // 'flat' | '3d'.
+          mode: 'flat', // 'flat' | '3d'.
           fill: {color: '#FFF8EC', minZoom: 13, opacity: 1},
           outline: {color: '#E7D8BC', minZoom: 14, opacity: 1, width: 0.8},
         }),
@@ -542,7 +542,6 @@ export default defineTileflow({
       },
       view: {
         center: [-3.69275, 40.40866], // [longitude -180..180, latitude -90..90].
-        pitch: 45, // Number from 0 through 85; 0 is a top-down map.
         zoom: 14, // Number from 0 through 24; optional bearing is -180..180.
       },
     },

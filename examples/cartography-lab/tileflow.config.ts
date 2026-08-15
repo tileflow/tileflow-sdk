@@ -1,4 +1,70 @@
-import {defineTileflow, labels, poi, roads, streets} from '@tileflow/core';
+import {
+  buildings,
+  defineTileflow,
+  labels,
+  poi,
+  roads,
+  streets,
+  type TileflowRoadClassStyle,
+  type TileflowTextStyle,
+  transit,
+  zoom,
+} from '@tileflow/core';
+
+type WidthStops = readonly (readonly [number, number])[];
+
+function casingStops(widths: WidthStops): WidthStops {
+  return widths.map(
+    ([level, width]) => [level, width + Math.min(10, Math.max(1.5, width * 0.22))] as const,
+  );
+}
+
+function cityRoadStyle(color: string, widths: WidthStops): TileflowRoadClassStyle {
+  const fill = {
+    cap: 'round' as const,
+    color,
+    join: 'round' as const,
+    opacity: 1,
+    width: zoom.linear(widths),
+  };
+  const casing = {
+    cap: 'round' as const,
+    color: '#FFFFFF',
+    join: 'round' as const,
+    opacity: 0.96,
+    width: zoom.linear(casingStops(widths)),
+  };
+
+  return {
+    surface: {casing, fill},
+    bridge: {
+      casing,
+      fill: {...fill, color: '#A9B8C8'},
+    },
+    tunnel: {
+      casing: {...casing, opacity: 0.72},
+      fill: {...fill, color: '#BCC8D4', opacity: 0.82},
+    },
+  };
+}
+
+function roadLabelStyle(major: boolean): TileflowTextStyle {
+  return {
+    color: major ? '#FFFFFF' : '#5E6B78',
+    font: [major ? 'Noto Sans Bold' : 'Noto Sans Regular'],
+    haloBlur: 0.4,
+    haloColor: major ? '#718397' : '#FFFFFF',
+    haloWidth: major ? 1.2 : 2,
+    padding: 2,
+    size: zoom.linear([
+      [13, 10.5],
+      [16, 13],
+      [18, major ? 16 : 15],
+      [20, major ? 18 : 17],
+    ]),
+    spacing: major ? 190 : 230,
+  };
+}
 
 export default defineTileflow({
   themes: {
@@ -10,69 +76,75 @@ export default defineTileflow({
       colors: {
         // Optional keys: background, land, water, park, building, road, roadMajor,
         // roadCasing, boundary, text, textMuted, and textHalo.
-        background: '#E4DFD4', // Hex: #RGB | #RGBA | #RRGGBB | #RRGGBBAA.
-        land: '#F5F2EB', // Hex color.
-        water: '#A7CED7', // Hex color.
-        park: '#C6D8B7', // Hex color.
-        building: '#D6CFC3', // Hex color.
-        road: '#FCFBF8', // Hex color.
-        roadMajor: '#EBCB8F', // Hex color.
-        roadCasing: '#BBB1A1', // Hex color.
-        boundary: '#999184', // Hex color.
-        text: '#252B2D', // Hex color.
-        textMuted: '#626866', // Hex color.
-        textHalo: '#FBF9F4', // Hex color.
+        background: '#F6F7F5', // Hex: #RGB | #RGBA | #RRGGBB | #RRGGBBAA.
+        land: '#F7F7F5', // Hex color.
+        water: '#83D8EA', // Hex color.
+        park: '#BDEBCF', // Hex color.
+        building: '#EEF1F5', // Hex color.
+        road: '#F8F9FB', // Hex color.
+        roadMajor: '#B4C2D0', // Hex color.
+        roadCasing: '#FFFFFF', // Hex color.
+        boundary: '#C5CCD4', // Hex color.
+        text: '#3F4B57', // Hex color.
+        textMuted: '#687786', // Hex color.
+        textHalo: '#FFFFFF', // Hex color.
       },
       modules: {
         hydro: {
           // Optional keys: ferry, label, water, waterway.
-          label: '#3F7580', // Hex color.
-          water: '#A7CED7', // Hex color.
-          waterway: '#79AFBB', // Hex color.
+          label: '#43869A', // Hex color.
+          water: '#83D8EA', // Hex color.
+          waterway: '#65B9CE', // Hex color.
         },
         labels: {
           // Optional keys: country, halo, muted, neighborhood, poi, primary, road,
           // settlement, water.
-          country: '#2F3536', // Hex color.
-          neighborhood: '#565D5B', // Hex color.
-          road: '#525653', // Hex color.
-          settlement: '#252B2D', // Hex color.
-          water: '#3F7580', // Hex color.
+          country: '#3F4B57', // Hex color.
+          halo: '#FFFFFF', // Hex color.
+          neighborhood: '#687786', // Hex color.
+          road: '#5E6B78', // Hex color.
+          settlement: '#3F4B57', // Hex color.
+          water: '#43869A', // Hex color.
         },
         landcover: {
           // Optional keys: grass, ice, park, protected, sand, wood.
-          grass: '#D3DDC0', // Hex color.
-          park: '#C6D8B7', // Hex color.
-          protected: '#BBD0AC', // Hex color.
-          sand: '#E8DCC2', // Hex color.
-          wood: '#B8CDAA', // Hex color.
+          grass: '#CBEBD5', // Hex color.
+          park: '#BDEBCF', // Hex color.
+          protected: '#C5E8D1', // Hex color.
+          sand: '#F1E8D0', // Hex color.
+          wood: '#B9DFC7', // Hex color.
         },
         landuse: {
           // Optional keys: cemetery, civic, commercial, industrial, residential.
-          cemetery: '#CDD5C4', // Hex color.
-          civic: '#E3DED3', // Hex color.
-          commercial: '#E7DAD1', // Hex color.
-          industrial: '#DED9D0', // Hex color.
-          residential: '#ECE8E0', // Hex color.
+          cemetery: '#D4E8D9', // Hex color.
+          civic: '#F3F5F7', // Hex color.
+          commercial: '#FFF8EC', // Hex color.
+          industrial: '#F1F2F3', // Hex color.
+          residential: '#F6F7F8', // Hex color.
         },
         poi: {
           // Optional keys: coffee, culture, education, food, halo, health, icon,
           // label, lodging, services, shopping, transit.
-          coffee: '#9A5D35', // Hex color.
-          culture: '#775985', // Hex color.
-          food: '#A6603D', // Hex color.
-          label: '#3D4342', // Hex color.
-          shopping: '#8C5E70', // Hex color.
-          transit: '#496E8A', // Hex color.
+          coffee: '#A8612D', // Hex color.
+          culture: '#7A58A6', // Hex color.
+          food: '#B45C25', // Hex color.
+          label: '#455564', // Hex color.
+          shopping: '#2B79D0', // Hex color.
+          transit: '#466F97', // Hex color.
         },
         roads: {
           // Optional keys: bridge, casing, ferry, minor, motorway, path, primary,
           // rail, secondary, trunk, tunnel.
-          casing: '#BBB1A1', // Hex color.
-          motorway: '#DFAE58', // Hex color.
-          primary: '#EBCB8F', // Hex color.
-          secondary: '#F1DDB4', // Hex color.
-          trunk: '#E5BC70', // Hex color.
+          bridge: '#A9B8C8', // Hex color.
+          casing: '#FFFFFF', // Hex color.
+          minor: '#F8F9FB', // Hex color.
+          motorway: '#AAB9C9', // Hex color.
+          path: '#E5EAEE', // Hex color.
+          primary: '#B4C2D0', // Hex color.
+          rail: '#A6AFB8', // Hex color.
+          secondary: '#D4DCE4', // Hex color.
+          trunk: '#AFBECD', // Hex color.
+          tunnel: '#BCC8D4', // Hex color.
         },
       },
       typography: {
@@ -96,29 +168,162 @@ export default defineTileflow({
         // Optional keys: land, water, roads, transit, aeroways, buildings,
         // boundaries, labels, poi. Object order never controls layer order.
         roads: roads({
-          detail: 'streets', // 'none' | 'highways' | 'major' | 'streets' | 'all'.
+          detail: 'all', // 'none' | 'highways' | 'major' | 'streets' | 'all'.
           hierarchy: 'clear', // 'subtle' | 'clear' | 'strong'.
-          outline: 'subtle', // 'none' | 'subtle' | 'strong'.
+          outline: 'strong', // 'none' | 'subtle' | 'strong'.
           weight: 'regular', // 'thin' | 'regular' | 'bold'.
+          oneWayMarkers: true, // true | false.
           extras: {
             paths: true, // true | false.
           },
+          classes: {
+            motorway: cityRoadStyle('#AAB9C9', [
+              [10, 2],
+              [14, 8],
+              [16, 18],
+              [17, 31],
+              [19, 72],
+              [22, 220],
+            ]),
+            trunk: cityRoadStyle('#AFBECD', [
+              [10, 1.8],
+              [14, 7.5],
+              [16, 17],
+              [17, 29],
+              [19, 68],
+              [22, 205],
+            ]),
+            primary: cityRoadStyle('#B4C2D0', [
+              [10, 1.5],
+              [14, 7],
+              [16, 16],
+              [17, 27],
+              [19, 62],
+              [22, 190],
+            ]),
+            secondary: cityRoadStyle('#D4DCE4', [
+              [11, 1.2],
+              [14, 5.5],
+              [16, 12],
+              [17, 21],
+              [19, 48],
+              [22, 150],
+            ]),
+            tertiary: cityRoadStyle('#E1E6EB', [
+              [12, 1],
+              [14, 4],
+              [16, 10],
+              [17, 17],
+              [19, 38],
+              [22, 120],
+            ]),
+            minor: cityRoadStyle('#F8F9FB', [
+              [13, 1],
+              [15, 5],
+              [16, 8],
+              [17, 13],
+              [19, 30],
+              [22, 90],
+            ]),
+            service: cityRoadStyle('#F8F9FB', [
+              [14, 0.7],
+              [16, 5],
+              [17, 9],
+              [19, 20],
+              [22, 60],
+            ]),
+            track: cityRoadStyle('#EEF1F3', [
+              [14, 0.5],
+              [16, 3],
+              [17, 5],
+              [19, 12],
+              [22, 36],
+            ]),
+            path: cityRoadStyle('#E5EAEE', [
+              [14, 0.4],
+              [16, 2],
+              [17, 3],
+              [19, 7],
+              [22, 20],
+            ]),
+          },
+        }),
+        transit: transit({
+          rail: {
+            color: '#A6AFB8',
+            minZoom: 12,
+            opacity: 0.56,
+            width: zoom.linear([
+              [12, 0.5],
+              [16, 1.2],
+              [18, 2],
+            ]),
+          },
+          railHatching: {
+            color: '#F7F8F9',
+            dash: [1, 2.5],
+            minZoom: 13,
+            opacity: 0.8,
+            width: zoom.linear([
+              [13, 0.3],
+              [17, 0.8],
+              [19, 1.2],
+            ]),
+          },
+          serviceRail: {
+            color: '#B8C0C8',
+            minZoom: 14,
+            opacity: 0.42,
+            width: zoom.linear([
+              [14, 0.4],
+              [17, 1],
+              [19, 1.6],
+            ]),
+          },
+        }),
+        buildings: buildings({
+          mode: 'flat', // 'flat' | '3d'.
+          fill: {color: '#EEF1F5', minZoom: 13, opacity: 0.92},
+          outline: {color: '#D6DCE3', minZoom: 14, opacity: 0.9, width: 0.8},
         }),
         labels: labels({
           language: 'local', // 'auto' | 'local' | 'en' | another language field suffix.
           places: 'all', // 'none' | 'major' | 'all'.
-          roads: 'streets', // 'none' | 'highways' | 'major' | 'streets' | 'all'.
+          roads: 'all', // 'none' | 'highways' | 'major' | 'streets' | 'all'.
           water: 'all', // 'none' | 'major' | 'all'.
+          styles: {
+            roads: {
+              motorway: roadLabelStyle(true),
+              trunk: roadLabelStyle(true),
+              primary: roadLabelStyle(true),
+              secondary: roadLabelStyle(false),
+              tertiary: roadLabelStyle(false),
+              minor: roadLabelStyle(false),
+              service: roadLabelStyle(false),
+              track: roadLabelStyle(false),
+              path: roadLabelStyle(false),
+            },
+          },
         }),
         poi: poi({
           // Built-ins: food, coffee, culture, transit, shopping, lodging, health,
           // education, services; custom safe category IDs are also accepted.
-          categories: ['food', 'coffee', 'culture', 'transit', 'shopping'],
+          categories: [
+            'food',
+            'coffee',
+            'culture',
+            'transit',
+            'shopping',
+            'lodging',
+            'health',
+            'education',
+            'services',
+          ],
           color: 'category', // 'uniform' | 'category'.
-          density: 'balanced', // 'sparse' | 'balanced' | 'dense'.
+          density: 'dense', // 'sparse' | 'balanced' | 'dense'.
           icons: false, // false | true | 'essential' | 'full'; non-false needs an icon set/sprite.
-          labels: 'balanced', // 'none' | 'minimal' | 'balanced' | 'full'.
-          minZoom: 13, // Number from 0 through 24.
+          labels: 'full', // 'none' | 'minimal' | 'balanced' | 'full'.
+          minZoom: 15, // Number from 0 through 24.
           placement: {
             coupleIconAndLabel: true, // true | false.
             iconPadding: 3, // Finite number >= 0, in pixels.
@@ -166,7 +371,7 @@ export default defineTileflow({
       camera: {
         type: 'center', // 'center' | 'bounds'.
         center: [-3.69275, 40.40866], // [longitude -180..180, latitude -90..90].
-        zoom: 16.5, // 0..24; optional bearing -180..180 and pitch 0..85.
+        zoom: 17, // 0..24; optional bearing -180..180 and pitch 0..85.
       },
       viewport: {
         width: 1280, // Integer from 64 through 4096 CSS pixels.

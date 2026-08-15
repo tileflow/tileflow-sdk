@@ -132,6 +132,15 @@ part of the primary vector-data API.
       blocked in this worktree by the host `EMFILE` limit. Final evidence: 69/69 core tests and 3/3
       lab tests pass, followed by `pnpm check`, `pnpm build`, packaged public smoke, and the alpha
       publication dry-run without publishing.
+- [x] (2026-08-15) Audited Tileflow World road fields and completed the road-intelligence follow-up:
+      bind ramp/access/surface/mode/service/stacking fields, compile semantic road modifiers,
+      restrictions, service subtypes, and construction classes as data-driven paint within stable
+      class layers, then refine the Cartography Lab recipe and review the close-street/motorway
+      evidence. Focused core tests pass 71/71, the lab tests pass 3/3, and the generated Style JSON
+      is MapLibre-valid. The close-street and motorway captures were reviewed. The nine-scene diff
+      correctly reports the deliberate road/palette changes plus the already changed close-street
+      camera, so no baseline was replaced implicitly. `pnpm check`, `pnpm build`, packaged public
+      smoke, and the alpha publication dry-run all pass without publishing.
 
 ## Surprises & Discoveries
 
@@ -221,6 +230,20 @@ part of the primary vector-data API.
   `packages/core/src/modules/labels/compiler.ts`, the raw filters in
   `examples/cartography-lab/tileflow.config.ts`, Tileflow World feature inspection at zoom 17, and
   the OpenMapTiles transportation/transportation_name schema.
+
+- Observation: Tileflow World revision `2026-06-07` declares OpenMapTiles `3.16.0`, sixteen vector
+  layers, and maximum source zoom 14. Its transportation layer already carries `access`, `bicycle`,
+  `brunnel`, `expressway`, `foot`, `horse`, `indoor`, `layer`, `level`, `mtb_scale`, `network`,
+  `official`, `oneway`, `ramp`, `service`, `subclass`, `surface`, and `toll`; the SDK contract exposed
+  only a subset. Atocha and motorway samples confirm real ramps, access restrictions, paved/unpaved
+  surfaces, service subtypes, mode restrictions, bridge/tunnel levels, and construction encoded as
+  classes such as `minor_construction`. No source layer declares crossings or traffic signals.
+  Evidence: public TileJSON and bounded `tileflow inspect features` samples at the committed Madrid
+  close-street and motorway cameras.
+
+- Observation: Tileflow World's TileJSON attribution includes OpenFreeMap in addition to
+  OpenMapTiles and OpenStreetMap, while the SDK's explicit source attribution omitted OpenFreeMap.
+  Evidence: the public TileJSON and `defaultAttribution` in `packages/core/src/data/index.ts`.
 
 ## Decision Log
 
@@ -381,6 +404,16 @@ part of the primary vector-data API.
   schema details into author config.
   Date/Author: 2026-08-15, owner and Codex.
 
+- Decision: Model road conditions as keyed semantic treatments over the existing class × structure
+  model. Use `modifiers` for construction/ramp/unpaved, `restrictions` for general and mode-specific
+  access, and `serviceTypes` for road-service subtypes. Reuse existing paint vocabulary plus
+  relative width scaling, compile fixed-precedence feature expressions inside stable class layers,
+  and resolve all selectors through the data contract.
+  Rationale: these fields describe orthogonal characteristics, not new road classes. Data-driven
+  paint lets a feature combine, for example, a ramp width and unpaved dash without a combinatorial
+  layer explosion or raw OpenMapTiles filters in author config.
+  Date/Author: 2026-08-15, owner and Codex.
+
 ## Outcomes & Retrospective
 
 The initial SDK implementation completed the Streets-first cutover. `streets()` now compiles a
@@ -409,9 +442,10 @@ config.
 The visual refinement loop subsequently reopened Milestone 5: the coarse `path` target is not a
 sufficient semantic road language. The active follow-up above makes path families disjoint before
 calling the road module complete again. MapTiler's layer inventory is design evidence only; traffic
-signals, zebra crossings, junction symbols, shields, access restrictions, ramps, and construction
-remain separate semantic capabilities and must be added only where the versioned data contract can
-supply them rather than by copying another style's layer IDs.
+signals and zebra crossings still require upstream data, while junction symbols and shields retain
+source evidence but need their own semantic authoring contracts. Access restrictions, ramps,
+unpaved surfaces, construction, and service subtypes are covered by the road-intelligence follow-up
+because the audited versioned data contract already supplies them.
 
 That follow-up is now complete. The lab no longer reads OpenMapTiles `subclass` to distinguish its
 paths: it styles the five public road targets directly. Geometry and road-label compilers share one
@@ -420,6 +454,15 @@ are removed from both domains, and remapped `class`/`subclass` field names are c
 current Editorial City recipe emits 150 layers because each enabled path semantic owns its complete
 structure phases rather than sharing one overlapping `path` layer, the lab gives path casings their
 own layers, and pedestrian polygons have a dedicated semantic fill.
+
+The road-intelligence pass then made orthogonal source properties part of the same road language
+rather than adding parallel domains. Streets now has data-driven defaults for ramps, unpaved and
+construction geometry, restricted access, and service subtypes. Authors can override those
+treatments semantically for surface/tunnel/bridge phases, and remapped `layer`/`level` fields control
+stable intra-layer ordering. The compiler keeps zoom interpolation at the expression root, composes
+matching treatments by fixed per-property precedence, and does not multiply the 150-layer lab
+inventory for combinations such as an unpaved ramp. Tileflow World's public attribution now matches
+its TileJSON by retaining OpenFreeMap, OpenMapTiles, and OpenStreetMap contributors.
 
 ## Context and Orientation
 
@@ -677,7 +720,9 @@ labels. Add city/coast/rural multi-zoom evidence and compare coverage against th
 
 Implement class visibility, zoom, source filters, surface/tunnel/bridge, fill/casing/shadow, color,
 opacity, width curves, line cap/join, dash/pattern, one-way, semantic pedestrian/footway/cycleway/
-steps/pathway targets, areas/piers. The five path-family filters must be pairwise disjoint and use
+steps/pathway targets, areas/piers, construction/ramp/unpaved treatments, access/mode restrictions,
+service subtypes, and level-aware intra-layer ordering. The five path-family filters must be
+pairwise disjoint and use
 the resolved OpenMapTiles `class` and `subclass` bindings for both geometry and labels. Structure
 phases apply uniformly to every road target. Move rail, ferry, and cableways to transit rather than
 retaining `roads.extras.rail/ferry`. Road labels remain labels.
@@ -809,6 +854,9 @@ at each stopping point.
 - Path-family geometry and labels expose `pedestrian`, `footway`, `cycleway`, `steps`, and residual
   `pathway` without raw filters. Their generated selectors are pairwise disjoint, honor remapped
   `class`/`subclass` fields, and work independently for surface, tunnel, and bridge layers.
+- Road modifiers, restrictions, and service subtypes honor remapped data fields, compose by fixed
+  per-property precedence, and remain data-driven inside stable semantic class layers. Explicit
+  treatment keys affect output or fail schema validation; object order cannot alter precedence.
 - Generated layers have one owner and stable unique IDs. No compiler searches/patches OSM IDs.
 - Generated IDs and structural ordering are covered by basemap version; a breaking change bumps
   `tileflow:basemapVersion` and updates fixtures, receipts, and migration notes together.
@@ -887,6 +935,9 @@ Path semantics checkpoint: 67 core tests PASS; 3 Cartography Lab tests PASS; con
 Pedestrian-area checkpoint: 69 core tests PASS; 3 Cartography Lab tests PASS; close-street and
   zoom-18 Atocha captures reviewed; full Style JSON validation, workspace check/build, packaged
   public smoke, and alpha dry-run PASS; older visual baselines intentionally unchanged
+Road-intelligence checkpoint: 71 core tests PASS; 3 Cartography Lab tests PASS; close-street and
+  motorway captures reviewed; nine-scene diff recorded intentional output/camera drift without
+  updating baselines; workspace check/build, packaged public smoke, and alpha dry-run PASS
 Formatting: all changed files pass Prettier and git diff --check; the repository-wide command still
   reports the two unchanged reconcile-release files that also fail on the clean base
 ```

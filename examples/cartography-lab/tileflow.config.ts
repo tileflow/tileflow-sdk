@@ -264,6 +264,42 @@ export default defineTileflow({
           extras: {
             paths: true, // true | false.
           },
+          modifiers: {
+            // Optional keys: construction, ramp, unpaved. Treatments accept enabled,
+            // widthScale, surface, tunnel, and bridge; phases accept color, opacity,
+            // dash, blur, gapWidth, and offset.
+            construction: {
+              surface: {
+                casing: {color: '#C7CDD3', dash: [2, 1], opacity: 0.72},
+                fill: {color: '#E5E8EB', dash: [2, 1], opacity: 0.78},
+              },
+            },
+            ramp: {widthScale: 0.68}, // Finite number > 0.
+            unpaved: {
+              surface: {
+                casing: {color: '#D2CCC1', dash: [2, 1], opacity: 0.78},
+                fill: {color: '#E9E4DA', dash: [2, 1], opacity: 0.88},
+              },
+            },
+          },
+          restrictions: {
+            // Optional keys: access, bicycle, foot, horse. A key styles explicit
+            // restrictions for that mode without exposing OpenMapTiles field names.
+            access: {
+              surface: {
+                casing: {dash: [1.5, 1], opacity: 0.5},
+                fill: {dash: [1.5, 1], opacity: 0.58},
+              },
+            },
+          },
+          serviceTypes: {
+            // Optional keys: alley, crossover, driveway, parkingAisle, yard.
+            alley: {widthScale: 0.78},
+            crossover: {widthScale: 0.58},
+            driveway: {widthScale: 0.7},
+            parkingAisle: {widthScale: 0.56},
+            yard: {widthScale: 0.64},
+          },
           areas: {
             // Polygon pedestrian plazas; line-like pedestrian ways use classes.pedestrian.
             pedestrian: {

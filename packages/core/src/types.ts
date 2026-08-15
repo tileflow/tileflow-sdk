@@ -204,6 +204,28 @@ export type TileflowRoadLayerStyle = {
   fill?: TileflowLineStyle;
   shadow?: TileflowLineStyle;
 };
+export type TileflowRoadTreatmentLineStyle = {
+  blur?: number;
+  color?: string;
+  dash?: readonly number[];
+  gapWidth?: number;
+  offset?: number;
+  opacity?: number;
+};
+export type TileflowRoadTreatmentLayerStyle = {
+  casing?: TileflowRoadTreatmentLineStyle;
+  fill?: TileflowRoadTreatmentLineStyle;
+  shadow?: TileflowRoadTreatmentLineStyle;
+};
+export type TileflowRoadTreatmentStyle = Partial<
+  Record<TileflowRoadStructure, TileflowRoadTreatmentLayerStyle>
+> & {
+  enabled?: boolean;
+  widthScale?: number;
+};
+export type TileflowRoadModifier = 'construction' | 'ramp' | 'unpaved';
+export type TileflowRoadRestriction = 'access' | 'bicycle' | 'foot' | 'horse';
+export type TileflowRoadServiceType = 'alley' | 'crossover' | 'driveway' | 'parkingAisle' | 'yard';
 export type TileflowRoadClassStyle = Partial<
   Record<TileflowRoadStructure, TileflowRoadLayerStyle>
 > & {enabled?: boolean};
@@ -221,8 +243,11 @@ export type TileflowRoadsModuleConfig = {
   enabled?: boolean;
   extras?: TileflowRoadExtras;
   hierarchy?: TileflowRoadHierarchy;
+  modifiers?: Partial<Record<TileflowRoadModifier, TileflowRoadTreatmentStyle>>;
   oneWayMarkers?: boolean;
   outline?: TileflowRoadOutline;
+  restrictions?: Partial<Record<TileflowRoadRestriction, TileflowRoadTreatmentStyle>>;
+  serviceTypes?: Partial<Record<TileflowRoadServiceType, TileflowRoadTreatmentStyle>>;
   structures?: Partial<Record<TileflowRoadStructure, TileflowRoadLayerStyle>>;
   weight?: TileflowRoadWeight;
   widthScale?: Partial<Record<TileflowRoadClass, number>>;

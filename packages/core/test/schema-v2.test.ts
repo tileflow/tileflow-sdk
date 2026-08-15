@@ -71,6 +71,13 @@ test('accepts semantic path road targets and rejects the old overlapping path ta
         roads: roads({
           areas: {pedestrian: {color: '#F1F3F5', outlineColor: '#D5DCE3'}},
           classes: {pedestrian: {}, footway: {}, cycleway: {}, steps: {}, pathway: {}},
+          modifiers: {
+            construction: {surface: {fill: {dash: [2, 1], opacity: 0.7}}},
+            ramp: {widthScale: 0.7},
+            unpaved: {surface: {fill: {color: '#E9E4DA'}}},
+          },
+          restrictions: {access: {surface: {fill: {opacity: 0.5}}}},
+          serviceTypes: {driveway: {widthScale: 0.75}, parkingAisle: {widthScale: 0.6}},
         }),
       },
     }),
@@ -83,6 +90,15 @@ test('accepts semantic path road targets and rejects the old overlapping path ta
         modules: {roads: {type: 'roads', classes: {path: {}}}},
       } as never),
     /path/,
+  );
+
+  assert.throws(
+    () =>
+      parseTileflowMap({
+        basemap: streets(),
+        modules: {roads: {...roads(), modifiers: {crossing: {widthScale: 0.5}}}},
+      } as never),
+    /crossing/,
   );
 });
 

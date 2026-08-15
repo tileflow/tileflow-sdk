@@ -20,24 +20,38 @@ export type OpenMapTilesLayerBindings = {
 };
 
 export type OpenMapTilesFieldBindings = {
+  access: string;
   adminLevel: string;
+  bicycle: string;
   brunnel: string;
   class: string;
   disputed: string;
+  expressway: string;
+  foot: string;
   height: string;
   hide3d: string;
+  horse: string;
+  indoor: string;
   intermittent: string;
+  layer: string;
+  level: string;
   minHeight: string;
+  mtbScale: string;
   name: string;
   nameEnglish: string;
   nameLatin: string;
+  network: string;
+  official: string;
   oneway: string;
+  ramp: string;
   rank: string;
   ref: string;
   renderHeight: string;
   renderMinHeight: string;
   service: string;
   subclass: string;
+  surface: string;
+  toll: string;
 };
 
 export type OpenMapTilesSchemaOptions = {
@@ -103,27 +117,41 @@ const canonicalLayers = {
 } as const satisfies OpenMapTilesLayerBindings;
 
 const canonicalFields = {
+  access: 'access',
   adminLevel: 'admin_level',
+  bicycle: 'bicycle',
   brunnel: 'brunnel',
   class: 'class',
   disputed: 'disputed',
+  expressway: 'expressway',
+  foot: 'foot',
   height: 'height',
   hide3d: 'hide_3d',
+  horse: 'horse',
+  indoor: 'indoor',
   intermittent: 'intermittent',
+  layer: 'layer',
+  level: 'level',
   minHeight: 'min_height',
+  mtbScale: 'mtb_scale',
   name: 'name',
   nameEnglish: 'name:en',
   nameLatin: 'name:latin',
+  network: 'network',
+  official: 'official',
   oneway: 'oneway',
+  ramp: 'ramp',
   rank: 'rank',
   ref: 'ref',
   renderHeight: 'render_height',
   renderMinHeight: 'render_min_height',
   service: 'service',
   subclass: 'subclass',
+  surface: 'surface',
+  toll: 'toll',
 } as const satisfies OpenMapTilesFieldBindings;
 
-const defaultAttribution = '© OpenMapTiles © OpenStreetMap contributors';
+const defaultAttribution = '© OpenFreeMap, © OpenMapTiles, © OpenStreetMap contributors';
 
 export function openMapTiles(options: OpenMapTilesSchemaOptions = {}): OpenMapTilesSchema {
   return {

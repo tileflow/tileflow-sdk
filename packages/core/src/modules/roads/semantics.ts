@@ -28,6 +28,26 @@ const pathSubclasses: Record<(typeof tileflowPathRoadClasses)[number], readonly 
   pedestrian: ['pedestrian'],
 };
 
+const constructionClasses: Record<TileflowRoadClass, readonly string[]> = {
+  motorway: ['motorway_construction'],
+  trunk: ['trunk_construction'],
+  primary: ['primary_construction'],
+  secondary: ['secondary_construction'],
+  tertiary: ['tertiary_construction'],
+  minor: ['minor_construction'],
+  service: ['service_construction'],
+  track: ['track_construction'],
+  pathway: ['path_construction'],
+  footway: ['path_construction'],
+  cycleway: ['path_construction'],
+  steps: ['path_construction'],
+  pedestrian: ['path_construction'],
+};
+
+export const tileflowRoadConstructionClasses = [
+  ...new Set(Object.values(constructionClasses).flat()),
+] as readonly string[];
+
 export function isTileflowPathRoadClass(
   roadClass: TileflowRoadClass,
 ): roadClass is (typeof tileflowPathRoadClasses)[number] {
@@ -41,16 +61,16 @@ export function tileflowRoadClassFilter(
   if (isTileflowPathRoadClass(roadClass)) {
     return [
       'all',
-      ['==', ['get', fields.class], 'path'],
+      ['match', ['get', fields.class], ['path', ...constructionClasses[roadClass]], true, false],
       ['match', ['get', fields.subclass], pathSubclasses[roadClass], true, false],
     ];
   }
 
   const classes =
     roadClass === 'minor'
-      ? ['minor', 'residential', 'unclassified']
+      ? ['minor', 'residential', 'unclassified', ...constructionClasses[roadClass]]
       : roadClass === 'service'
-        ? ['service']
-        : [roadClass];
+        ? ['service', ...constructionClasses[roadClass]]
+        : [roadClass, ...constructionClasses[roadClass]];
   return ['match', ['get', fields.class], classes, true, false];
 }

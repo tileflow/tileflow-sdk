@@ -280,6 +280,32 @@ const roadStructureMapSchema = z
     tunnel: roadLayerStyleSchema.optional(),
   })
   .strict();
+const roadTreatmentLineStyleSchema = z
+  .object({
+    blur: z.number().finite().optional(),
+    color: z.string().trim().min(1).optional(),
+    dash: z.array(z.number().finite().nonnegative()).min(2).optional(),
+    gapWidth: z.number().finite().nonnegative().optional(),
+    offset: z.number().finite().optional(),
+    opacity: z.number().finite().min(0).max(1).optional(),
+  })
+  .strict();
+const roadTreatmentLayerStyleSchema = z
+  .object({
+    casing: roadTreatmentLineStyleSchema.optional(),
+    fill: roadTreatmentLineStyleSchema.optional(),
+    shadow: roadTreatmentLineStyleSchema.optional(),
+  })
+  .strict();
+const roadTreatmentStyleSchema = z
+  .object({
+    bridge: roadTreatmentLayerStyleSchema.optional(),
+    enabled: z.boolean().optional(),
+    surface: roadTreatmentLayerStyleSchema.optional(),
+    tunnel: roadTreatmentLayerStyleSchema.optional(),
+    widthScale: z.number().finite().positive().optional(),
+  })
+  .strict();
 
 const landModuleSchema = z
   .object({
@@ -397,8 +423,35 @@ const roadsModuleSchema = z
     enabled: z.boolean().optional(),
     extras: z.object({paths: z.boolean().optional()}).strict().optional(),
     hierarchy: z.enum(['subtle', 'clear', 'strong']).optional(),
+    modifiers: z
+      .object({
+        construction: roadTreatmentStyleSchema.optional(),
+        ramp: roadTreatmentStyleSchema.optional(),
+        unpaved: roadTreatmentStyleSchema.optional(),
+      })
+      .strict()
+      .optional(),
     oneWayMarkers: z.boolean().optional(),
     outline: z.enum(['none', 'subtle', 'strong']).optional(),
+    restrictions: z
+      .object({
+        access: roadTreatmentStyleSchema.optional(),
+        bicycle: roadTreatmentStyleSchema.optional(),
+        foot: roadTreatmentStyleSchema.optional(),
+        horse: roadTreatmentStyleSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    serviceTypes: z
+      .object({
+        alley: roadTreatmentStyleSchema.optional(),
+        crossover: roadTreatmentStyleSchema.optional(),
+        driveway: roadTreatmentStyleSchema.optional(),
+        parkingAisle: roadTreatmentStyleSchema.optional(),
+        yard: roadTreatmentStyleSchema.optional(),
+      })
+      .strict()
+      .optional(),
     structures: roadStructureMapSchema.optional(),
     weight: z.enum(['thin', 'regular', 'bold']).optional(),
     widthScale: z.partialRecord(roadClassSchema, z.number().finite().positive()).optional(),
@@ -509,24 +562,38 @@ const layerBindingsSchema = z
   .strict();
 const fieldBindingsSchema = z
   .object({
+    access: z.string().trim().min(1),
     adminLevel: z.string().trim().min(1),
+    bicycle: z.string().trim().min(1),
     brunnel: z.string().trim().min(1),
     class: z.string().trim().min(1),
     disputed: z.string().trim().min(1),
+    expressway: z.string().trim().min(1),
+    foot: z.string().trim().min(1),
     height: z.string().trim().min(1),
     hide3d: z.string().trim().min(1),
+    horse: z.string().trim().min(1),
+    indoor: z.string().trim().min(1),
     intermittent: z.string().trim().min(1),
+    layer: z.string().trim().min(1),
+    level: z.string().trim().min(1),
     minHeight: z.string().trim().min(1),
+    mtbScale: z.string().trim().min(1),
     name: z.string().trim().min(1),
     nameEnglish: z.string().trim().min(1),
     nameLatin: z.string().trim().min(1),
+    network: z.string().trim().min(1),
+    official: z.string().trim().min(1),
     oneway: z.string().trim().min(1),
+    ramp: z.string().trim().min(1),
     rank: z.string().trim().min(1),
     ref: z.string().trim().min(1),
     renderHeight: z.string().trim().min(1),
     renderMinHeight: z.string().trim().min(1),
     service: z.string().trim().min(1),
     subclass: z.string().trim().min(1),
+    surface: z.string().trim().min(1),
+    toll: z.string().trim().min(1),
   })
   .strict();
 const openMapTilesSchema = z

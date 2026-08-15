@@ -104,6 +104,18 @@ roads({
     steps: {surface: {fill: {color: '#C7CED6', dash: [1, 1], width: 1.4}}},
     pathway: {surface: {fill: {color: '#E8ECEF', width: 1.2}}},
   },
+  modifiers: {
+    ramp: {widthScale: 0.7},
+    unpaved: {surface: {fill: {color: '#E6DFD3', dash: [2, 1]}}},
+    construction: {surface: {fill: {dash: [2, 1], opacity: 0.7}}},
+  },
+  restrictions: {
+    access: {surface: {fill: {dash: [1.5, 1], opacity: 0.55}}},
+  },
+  serviceTypes: {
+    driveway: {widthScale: 0.75},
+    parkingAisle: {widthScale: 0.6},
+  },
 });
 ```
 
@@ -115,6 +127,13 @@ generated layer ID is needed.
 `classes.pedestrian` styles line-like pedestrian ways. Polygon pedestrian plazas are a distinct
 geometry and use `areas.pedestrian`, including optional fill opacity, outline color, or sprite
 pattern. This prevents plazas from degrading into a thin polygon outline.
+
+Road treatments refine a class without creating another class or exposing source fields. `ramp`,
+`unpaved`, and `construction` live under `modifiers`; explicit general, bicycle, foot, and horse
+restrictions live under `restrictions`; and `alley`, `crossover`, `driveway`, `parkingAisle`, and
+`yard` live under `serviceTypes`. Treatments reuse surface/tunnel/bridge and casing/fill/shadow
+paint controls, plus a relative `widthScale`. The compiler emits feature-driven paint expressions
+inside the existing stable class layers rather than multiplying every possible combination.
 
 POI `density`, `labels`, and `icons` are independent policies. Density bounds eligible feature
 ranks, label detail controls text ranks, icon detail controls icon ranks, and

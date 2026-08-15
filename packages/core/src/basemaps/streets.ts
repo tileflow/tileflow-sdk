@@ -50,7 +50,38 @@ export const tileflowStreetsRecipe = Object.freeze({
     labels: labels(),
     land: land(),
     poi: poi({icons: false}),
-    roads: roads(),
+    roads: roads({
+      modifiers: {
+        construction: {
+          surface: {
+            casing: {dash: [2, 1], opacity: 0.62},
+            fill: {dash: [2, 1], opacity: 0.68},
+          },
+        },
+        ramp: {widthScale: 0.72},
+        unpaved: {
+          surface: {
+            casing: {dash: [2, 1], opacity: 0.72},
+            fill: {dash: [2, 1], opacity: 0.82},
+          },
+        },
+      },
+      restrictions: {
+        access: {
+          surface: {
+            casing: {dash: [1.5, 1], opacity: 0.48},
+            fill: {dash: [1.5, 1], opacity: 0.52},
+          },
+        },
+      },
+      serviceTypes: {
+        alley: {widthScale: 0.82},
+        crossover: {widthScale: 0.62},
+        driveway: {widthScale: 0.76},
+        parkingAisle: {widthScale: 0.62},
+        yard: {widthScale: 0.7},
+      },
+    }),
     transit: transit(),
     water: water(),
   }),

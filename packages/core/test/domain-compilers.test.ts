@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {labels, openMapTiles, poi, resolveTileflowData, roads, water, zoom} from '../src';
+import {
+  expression,
+  labels,
+  openMapTiles,
+  poi,
+  resolveTileflowData,
+  roads,
+  water,
+  zoom,
+} from '../src';
 import {assembleTileflowLayers} from '../src/cartography/graph';
 import {compileAeroways} from '../src/modules/aeroways/compiler';
 import {compileBoundaries} from '../src/modules/boundaries/compiler';
@@ -199,7 +208,7 @@ test('compiles disjoint semantic path families across structures and remapped fi
         'all',
         [
           'all',
-          ['==', ['get', 'kind'], 'path'],
+          ['match', ['get', 'kind'], ['path', 'path_construction'], true, false],
           ['match', ['get', 'kind_detail'], subclasses, true, false],
         ],
         structure === 'surface'
@@ -214,6 +223,119 @@ test('compiles disjoint semantic path families across structures and remapped fi
     false,
     'the old overlapping path target must not be emitted',
   );
+});
+
+test('composes remapping-aware road treatments without multiplying generated layers', () => {
+  const data = resolveTileflowData({
+    type: 'vector-tiles',
+    attribution: '© Test',
+    schema: openMapTiles({
+      fields: {
+        access: 'permission',
+        bicycle: 'bike_permission',
+        class: 'kind',
+        layer: 'stack_order',
+        level: 'floor_level',
+        ramp: 'ramp_flag',
+        service: 'service_kind',
+        subclass: 'kind_detail',
+        surface: 'pavement',
+      },
+    }),
+    url: '/tiles.json',
+  });
+  const contributions = compileRoads(
+    roads({
+      classes: {
+        primary: {surface: {fill: {color: '#AABBCC', opacity: 1, width: 10}}},
+        service: {surface: {fill: {color: '#F5F5F5', opacity: 1, width: 8}}},
+      },
+      detail: 'all',
+      modifiers: {
+        construction: {surface: {fill: {color: '#DDEEFF'}}},
+        ramp: {widthScale: 0.5},
+        unpaved: {surface: {fill: {dash: [2, 1]}}},
+      },
+      restrictions: {
+        access: {surface: {fill: {opacity: 0.4}}},
+        bicycle: {surface: {fill: {color: '#778899'}}},
+      },
+      serviceTypes: {driveway: {widthScale: 0.6}},
+    }),
+    {...context, data},
+  );
+  const primary = contributions.find(
+    (entry) => entry.layer.id === 'streets-road-surface-primary-fill',
+  )!;
+  const service = contributions.find(
+    (entry) => entry.layer.id === 'streets-road-surface-service-fill',
+  )!;
+  const primaryPaint = primary.layer.paint as Record<string, unknown>;
+  const serializedPrimary = JSON.stringify(primary.layer);
+  const serializedService = JSON.stringify(service.layer);
+
+  assert.match(serializedPrimary, /primary_construction/);
+  assert.match(serializedPrimary, /ramp_flag/);
+  assert.match(serializedPrimary, /pavement/);
+  assert.match(serializedPrimary, /permission/);
+  assert.match(serializedPrimary, /bike_permission/);
+  assert.match(serializedService, /service_kind/);
+  assert.match(serializedService, /driveway/);
+  assert.deepEqual(primary.layer.layout, {
+    'line-sort-key': ['coalesce', ['get', 'stack_order'], ['get', 'floor_level'], 0],
+    'line-cap': 'round',
+    'line-join': 'round',
+  });
+  assert.deepEqual(primaryPaint['line-width'], [
+    'case',
+    ['==', ['get', 'ramp_flag'], 1],
+    ['*', 10, 0.5],
+    10,
+  ]);
+  assert.deepEqual(primaryPaint['line-dasharray'], [
+    'case',
+    ['==', ['get', 'pavement'], 'unpaved'],
+    ['literal', [2, 1]],
+    ['literal', [1, 0]],
+  ]);
+  assert.equal(
+    contributions.filter((entry) => entry.layer.id === primary.layer.id).length,
+    1,
+    'treatments must remain data-driven instead of duplicating semantic class layers',
+  );
+});
+
+test('keeps zoom interpolation at the expression root when treatments refine widths', () => {
+  const primary = compileRoads(
+    roads({
+      classes: {
+        primary: {
+          surface: {
+            fill: {
+              width: expression<number>([
+                'interpolate',
+                ['linear'],
+                ['zoom'],
+                10,
+                2,
+                16,
+                ['match', ['get', 'oneway'], [1, -1], 8, 12],
+              ]),
+            },
+          },
+        },
+      },
+      detail: 'major',
+      modifiers: {ramp: {widthScale: 0.7}},
+    }),
+    context,
+  ).find((entry) => entry.layer.id === 'streets-road-surface-primary-fill')!;
+  const width = (primary.layer.paint as Record<string, unknown>)['line-width'] as unknown[];
+
+  assert.equal(width[0], 'interpolate');
+  assert.deepEqual(width.slice(0, 4), ['interpolate', ['linear'], ['zoom'], 10]);
+  assert.match(JSON.stringify(width), /"ramp"/);
+  assert.match(JSON.stringify(width), /"oneway"/);
 });
 
 test('an explicit semantic path class has an effect without enabling the whole path family', () => {
@@ -269,7 +391,7 @@ test('compiles pedestrian polygons as a semantic road area even without line cla
     ['==', ['geometry-type'], 'Polygon'],
     [
       'all',
-      ['==', ['get', 'kind'], 'path'],
+      ['match', ['get', 'kind'], ['path', 'path_construction'], true, false],
       ['match', ['get', 'kind_detail'], ['pedestrian'], true, false],
     ],
   ]);

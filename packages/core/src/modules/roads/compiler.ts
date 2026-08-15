@@ -2,7 +2,7 @@ import type {TileflowDomainCompileContext} from '../../cartography/context';
 import type {TileflowLayerContribution, TileflowLayerSlot} from '../../cartography/contributions';
 import {applyFillStyle, applyLineStyle} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
-import {zoom} from '../../cartography/values';
+import {expression, toMapLibreStyleValue, zoom} from '../../cartography/values';
 import {textFont} from '../../themes';
 import type {
   TileflowRoadClass,
@@ -10,12 +10,15 @@ import type {
   TileflowRoadLayerStyle,
   TileflowRoadsModuleConfig,
   TileflowRoadStructure,
+  TileflowRoadTreatmentLineStyle,
+  TileflowRoadTreatmentStyle,
 } from '../../types';
 import {resolveRoads, roadStyleMetrics, visibleRoadClasses} from './index';
 import {
   isTileflowPathRoadClass,
   tileflowPathRoadClasses,
   tileflowRoadClassFilter,
+  tileflowRoadConstructionClasses,
 } from './semantics';
 
 const roadClassOrder: readonly TileflowRoadClass[] = [
@@ -51,6 +54,33 @@ const structureSlots: Record<
   },
 };
 
+const serviceTypeValues = {
+  alley: 'alley',
+  crossover: 'crossover',
+  driveway: 'driveway',
+  parkingAisle: 'parking_aisle',
+  yard: 'yard',
+} as const;
+
+const treatmentPaintDefaults = {
+  blur: 0,
+  color: '#000000',
+  dash: [1, 0] as readonly number[],
+  gapWidth: 0,
+  offset: 0,
+  opacity: 1,
+  width: 1,
+} as const;
+
+type RoadTreatmentEntry = {
+  condition: unknown[];
+  style: TileflowRoadTreatmentStyle;
+};
+type ConditionalBranch = {
+  condition: unknown[];
+  resolve: (baseOutput: unknown) => unknown;
+};
+
 export function compileRoads(
   request: TileflowRoadsModuleConfig | undefined,
   context: TileflowDomainCompileContext,
@@ -76,6 +106,7 @@ export function compileRoads(
       ),
       request?.classes?.[roadClass],
     );
+    const treatments = resolveRoadTreatments(request, schema.fields, roadClass);
 
     for (const structure of ['tunnel', 'surface', 'bridge'] as const) {
       const structureConfig = classConfig[structure];
@@ -83,6 +114,7 @@ export function compileRoads(
       for (const [phaseIndex, phase] of (['shadow', 'casing', 'fill'] as const).entries()) {
         const style = structureConfig[phase];
         if (!style || style.visible === false) continue;
+        const treatedStyle = applyRoadTreatments(style, treatments, structure, phase);
         contributions.push({
           kind: 'layer',
           layer: applyLineStyle(
@@ -96,8 +128,16 @@ export function compileRoads(
                 tileflowRoadClassFilter(schema.fields, roadClass),
                 structureFilter(schema.fields.brunnel, structure),
               ],
+              layout: {
+                'line-sort-key': [
+                  'coalesce',
+                  ['get', schema.fields.layer],
+                  ['get', schema.fields.level],
+                  0,
+                ],
+              },
             },
-            style,
+            treatedStyle,
           ),
           localOrder: classIndex * 10 + phaseIndex,
           owner: 'roads',
@@ -224,6 +264,148 @@ export function compileRoads(
   }
 
   return contributions;
+}
+
+function resolveRoadTreatments(
+  request: TileflowRoadsModuleConfig | undefined,
+  fields: TileflowDomainCompileContext['data']['schema']['fields'],
+  roadClass: TileflowRoadClass,
+): RoadTreatmentEntry[] {
+  const entries: RoadTreatmentEntry[] = [];
+  const add = (style: TileflowRoadTreatmentStyle | undefined, condition: unknown[]) => {
+    if (style && style.enabled !== false) entries.push({condition, style});
+  };
+
+  add(request?.modifiers?.construction, [
+    'match',
+    ['get', fields.class],
+    tileflowRoadConstructionClasses,
+    true,
+    false,
+  ]);
+  add(request?.restrictions?.bicycle, restrictedAccessFilter(fields.bicycle));
+  add(request?.restrictions?.foot, restrictedAccessFilter(fields.foot));
+  add(request?.restrictions?.horse, restrictedAccessFilter(fields.horse));
+  add(request?.restrictions?.access, restrictedAccessFilter(fields.access));
+  add(request?.modifiers?.ramp, ['==', ['get', fields.ramp], 1]);
+  add(request?.modifiers?.unpaved, ['==', ['get', fields.surface], 'unpaved']);
+
+  if (roadClass === 'service') {
+    for (const [serviceType, value] of Object.entries(serviceTypeValues)) {
+      add(request?.serviceTypes?.[serviceType as keyof typeof serviceTypeValues], [
+        '==',
+        ['get', fields.service],
+        value,
+      ]);
+    }
+  }
+
+  return entries;
+}
+
+function applyRoadTreatments(
+  base: TileflowRoadLayerStyle[keyof TileflowRoadLayerStyle] & object,
+  treatments: readonly RoadTreatmentEntry[],
+  structure: TileflowRoadStructure,
+  phase: 'casing' | 'fill' | 'shadow',
+): typeof base {
+  const result = {...base} as Record<string, unknown>;
+  const paintProperties = [
+    'blur',
+    'color',
+    'dash',
+    'gapWidth',
+    'offset',
+    'opacity',
+  ] as const satisfies readonly (keyof TileflowRoadTreatmentLineStyle)[];
+
+  for (const property of paintProperties) {
+    const branches = treatments.flatMap(({condition, style}) => {
+      const value = style[structure]?.[phase]?.[property];
+      return value === undefined
+        ? []
+        : [{condition, resolve: () => expressionOutput(value)} satisfies ConditionalBranch];
+    });
+    if (branches.length > 0) {
+      result[property] = conditionalStyleValue(
+        result[property],
+        branches,
+        treatmentPaintDefaults[property],
+      );
+    }
+  }
+
+  const widthBranches = treatments.flatMap(({condition, style}) =>
+    style.widthScale === undefined
+      ? []
+      : [
+          {
+            condition,
+            resolve: (baseOutput: unknown) => ['*', expressionOutput(baseOutput), style.widthScale],
+          } satisfies ConditionalBranch,
+        ],
+  );
+  if (widthBranches.length > 0) {
+    result.width = conditionalStyleValue(result.width, widthBranches, treatmentPaintDefaults.width);
+  }
+
+  return result as typeof base;
+}
+
+function conditionalStyleValue(
+  base: unknown,
+  branches: readonly ConditionalBranch[],
+  fallback: unknown,
+) {
+  const resolvedBase = toMapLibreStyleValue((base ?? fallback) as never);
+  return expression(
+    rewriteZoomOutputs(resolvedBase, (baseOutput) => [
+      'case',
+      ...branches.flatMap(({condition, resolve}) => [condition, resolve(baseOutput)]),
+      expressionOutput(baseOutput),
+    ]),
+  );
+}
+
+function rewriteZoomOutputs(
+  value: unknown,
+  rewrite: (output: unknown) => unknown,
+): readonly unknown[] {
+  if (!Array.isArray(value)) return rewrite(value) as readonly unknown[];
+  if (value[0] === 'interpolate' && isZoomInput(value[2])) {
+    return value.map((entry, index) => (index >= 4 && index % 2 === 0 ? rewrite(entry) : entry));
+  }
+  if (value[0] === 'step' && isZoomInput(value[1])) {
+    return value.map((entry, index) =>
+      index === 2 || (index >= 4 && index % 2 === 0) ? rewrite(entry) : entry,
+    );
+  }
+  return rewrite(value) as readonly unknown[];
+}
+
+function expressionOutput(value: unknown): unknown {
+  return Array.isArray(value) && typeof value[0] !== 'string' ? ['literal', value] : value;
+}
+
+function isZoomInput(value: unknown): boolean {
+  return Array.isArray(value) && value.length === 1 && value[0] === 'zoom';
+}
+
+function restrictedAccessFilter(field: string): unknown[] {
+  return [
+    'all',
+    ['has', field],
+    [
+      '!',
+      [
+        'match',
+        ['get', field],
+        ['yes', 'designated', 'official', 'permissive', 'unknown'],
+        true,
+        false,
+      ],
+    ],
+  ];
 }
 
 function defaultClassStyles(

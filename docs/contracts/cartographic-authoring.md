@@ -65,6 +65,23 @@ Line-like pedestrian ways use `roads.classes.pedestrian`; polygon plazas use the
 constraint prevents overlap and lets authors style plaza fill, outline, opacity, or pattern without
 raw MapLibre filters.
 
+Road conditions are orthogonal to class and structure. `roads.modifiers` supports `construction`,
+`ramp`, and `unpaved`; `roads.restrictions` supports `access`, `bicycle`, `foot`, and `horse`; and
+`roads.serviceTypes` supports `alley`, `crossover`, `driveway`, `parkingAisle`, and `yard`. Each
+treatment can be disabled, scale inherited widths, and refine the surface/tunnel/bridge
+shadow/casing/fill paint. Treatment paint is deliberately feature-driven and limited to constant
+color, opacity, dash, blur, gap width, and offset; exact class widths and zoom curves remain in
+`roads.classes`. Fixed per-property precedence is construction, bicycle restriction, foot
+restriction, horse restriction, general access restriction, ramp, unpaved, then service subtype.
+Object key order never changes it. A
+feature matching several conditions can therefore take its ramp width and unpaved dash at the same
+time, while the earlier treatment wins only when both set the same paint property.
+
+The road compiler reads all selectors through the versioned data bindings. It also uses remappable
+`layer` and `level` fields as the stable line sort key inside a semantic layer. Construction classes
+remain part of their base semantic road target, so visibility and road-label eligibility continue
+to compose with the roads module rather than creating a parallel construction domain.
+
 ## Data contract
 
 Tileflow World is an OpenMapTiles-compatible default resolved offline from the SDK version. A
@@ -102,10 +119,12 @@ Work in this order:
 Phrase gaps as cartographic intent—label hierarchy, boundary emphasis, road width by zoom—not as a
 request to expose a reference style's layer ID.
 
-Reference-style inventories can reveal missing concepts, but they are not Tileflow APIs. Traffic
-signals, zebra crossings, junctions, shields, construction, ramps, and restricted access require
-their own semantic contracts and versioned data support; do not emulate them with copied layer IDs
-or silently claim support when the selected dataset does not expose the required feature.
+Reference-style inventories can reveal missing concepts, but they are not Tileflow APIs. Tileflow
+World already supplies the fields used by road treatments, while traffic signals and zebra
+crossings are absent from its current TileJSON contract. Junction symbols and shields have source
+evidence but still require dedicated semantic authoring contracts. Do not emulate missing concepts
+with copied layer IDs or silently claim support when the selected dataset does not expose the
+required feature.
 
 ## Preview, baselines, and promotion
 

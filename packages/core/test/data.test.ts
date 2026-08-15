@@ -20,6 +20,7 @@ test('resolves omitted data to a deterministic Tileflow World revision', () => {
     `https://api.example.test/tiles/world/tiles.json?archiveVersion=${tileflowWorldRevision}`,
   );
   assert.equal(resolved.sourceId, 'tileflow');
+  assert.equal(resolved.attribution, '© OpenFreeMap, © OpenMapTiles, © OpenStreetMap contributors');
   assert.deepEqual(resolved.identity, {
     kind: 'tileflow-world',
     revision: tileflowWorldRevision,
@@ -49,12 +50,28 @@ test('resolves explicit official and external vector data without network access
 
 test('supports explicit schema bindings and identifies canonical OpenMapTiles', () => {
   const canonical = openMapTiles();
-  const remapped = openMapTiles({layers: {road: 'roads_v2'}, fields: {class: 'kind'}});
+  const remapped = openMapTiles({
+    layers: {road: 'roads_v2'},
+    fields: {
+      access: 'permission',
+      class: 'kind',
+      layer: 'stacking_order',
+      ramp: 'is_ramp',
+      service: 'service_kind',
+      surface: 'pavement',
+    },
+  });
 
   assert.equal(isCanonicalOpenMapTilesSchema(canonical), true);
   assert.equal(isCanonicalOpenMapTilesSchema(remapped), false);
   assert.equal(remapped.layers.road, 'roads_v2');
   assert.equal(remapped.fields.class, 'kind');
+  assert.equal(remapped.fields.access, 'permission');
+  assert.equal(remapped.fields.ramp, 'is_ramp');
+  assert.equal(remapped.fields.surface, 'pavement');
+  assert.equal(canonical.fields.bicycle, 'bicycle');
+  assert.equal(canonical.fields.mtbScale, 'mtb_scale');
+  assert.equal(canonical.fields.toll, 'toll');
 });
 
 test('rejects private URL credentials, invalid revisions, and missing attribution', () => {

@@ -159,6 +159,82 @@ test('applies road hierarchy, weight, and per-class width scales to generated wi
   );
 });
 
+test('compiles disjoint semantic path families across structures and remapped fields', () => {
+  const data = resolveTileflowData({
+    type: 'vector-tiles',
+    attribution: '© Test',
+    schema: openMapTiles({fields: {class: 'kind', subclass: 'kind_detail'}}),
+    url: '/tiles.json',
+  });
+  const contributions = compileRoads(roads({detail: 'all', extras: {paths: true}}), {
+    ...context,
+    data,
+  });
+
+  const expectedSubclasses = {
+    pathway: ['path', 'bridleway', 'corridor'],
+    footway: ['footway'],
+    cycleway: ['cycleway'],
+    steps: ['steps'],
+    pedestrian: ['pedestrian'],
+  } as const;
+
+  for (const [roadClass, subclasses] of Object.entries(expectedSubclasses)) {
+    for (const structure of ['surface', 'tunnel', 'bridge']) {
+      const layer = contributions.find(
+        (entry) => entry.layer.id === `streets-road-${structure}-${roadClass}-fill`,
+      )?.layer;
+      assert.ok(layer, `${roadClass} ${structure} fill must exist`);
+      assert.deepEqual(layer.filter, [
+        'all',
+        [
+          'all',
+          ['==', ['get', 'kind'], 'path'],
+          ['match', ['get', 'kind_detail'], subclasses, true, false],
+        ],
+        structure === 'surface'
+          ? ['match', ['get', 'brunnel'], ['tunnel', 'bridge'], false, true]
+          : ['==', ['get', 'brunnel'], structure],
+      ]);
+    }
+  }
+
+  assert.equal(
+    contributions.some((entry) => entry.layer.id.includes('-path-')),
+    false,
+    'the old overlapping path target must not be emitted',
+  );
+});
+
+test('an explicit semantic path class has an effect without enabling the whole path family', () => {
+  const contributions = compileRoads(
+    roads({
+      classes: {cycleway: {surface: {fill: {color: '#123456'}}}},
+      detail: 'none',
+    }),
+    context,
+  );
+
+  const cycleway = contributions.find(
+    (entry) => entry.layer.id === 'streets-road-surface-cycleway-fill',
+  );
+  assert.equal((cycleway?.layer.paint as Record<string, unknown>)['line-color'], '#123456');
+  assert.equal(
+    contributions.some((entry) => entry.layer.id === 'streets-road-surface-footway-fill'),
+    false,
+  );
+
+  const labelsForCycleway = compileLabels(
+    labels({roadClasses: ['cycleway'], roads: 'all'}),
+    roads({classes: {cycleway: {}}}),
+    context,
+  );
+  assert.equal(
+    labelsForCycleway.some((entry) => entry.layer.id === 'streets-label-road-cycleway'),
+    true,
+  );
+});
+
 test('coordinates label eligibility with roads and compiles exact label and POI styles', () => {
   const labelContributions = compileLabels(
     labels({
@@ -196,6 +272,42 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
   );
   assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /14/);
   assert.match(JSON.stringify(poiContributions[1]?.layer.filter), /24/);
+});
+
+test('road labels use the same semantic path selectors as road geometry', () => {
+  const selectedRoadClasses = ['pedestrian', 'footway', 'cycleway', 'steps', 'pathway'] as const;
+  const labelContributions = compileLabels(
+    labels({
+      roadClasses: selectedRoadClasses,
+      roads: 'all',
+    }),
+    roads({detail: 'all', extras: {paths: true}}),
+    context,
+  );
+
+  const subclasses = new Set<string>();
+  for (const roadClass of ['pedestrian', 'footway', 'cycleway', 'steps', 'pathway']) {
+    const layer = labelContributions.find(
+      (entry) => entry.layer.id === `streets-label-road-${roadClass}`,
+    )?.layer;
+    assert.ok(layer, `${roadClass} label must exist`);
+    const serialized = JSON.stringify(layer.filter);
+    assert.match(serialized, /"class"/);
+    assert.match(serialized, /"subclass"/);
+    for (const value of ['pedestrian', 'footway', 'cycleway', 'steps']) {
+      if (serialized.includes(`"${value}"`)) subclasses.add(value);
+    }
+  }
+  assert.deepEqual([...subclasses].sort(), ['cycleway', 'footway', 'pedestrian', 'steps']);
+  assert.deepEqual(
+    compileLabels(
+      labels({roadClasses: [...selectedRoadClasses].reverse(), roads: 'all'}),
+      roads({detail: 'all', extras: {paths: true}}),
+      context,
+    ).map((entry) => entry.layer.id),
+    labelContributions.map((entry) => entry.layer.id),
+    'selection array order must not control symbol layer order',
+  );
 });
 
 test('POI density, label detail, icon detail, and coupling change emitted layers', () => {

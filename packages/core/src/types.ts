@@ -189,7 +189,11 @@ export type TileflowRoadClass =
   | 'minor'
   | 'service'
   | 'track'
-  | 'path';
+  | 'pathway'
+  | 'footway'
+  | 'cycleway'
+  | 'steps'
+  | 'pedestrian';
 export type TileflowRoadHierarchy = 'subtle' | 'clear' | 'strong';
 export type TileflowRoadWeight = 'thin' | 'regular' | 'bold';
 export type TileflowRoadOutline = 'none' | 'subtle' | 'strong';

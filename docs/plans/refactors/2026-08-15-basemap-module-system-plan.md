@@ -114,6 +114,12 @@ part of the primary vector-data API.
       the URL. Config-triggered and manual reloads now preserve the current camera, while missing or
       invalid camera parameters fall back to the configured map or scene camera. Focused dev and lab
       tests cover URL round-tripping, bounds replacement, query preservation, and invalid fallback.
+- [x] (2026-08-15) Replaced the coarse public `path` road target with disjoint semantic targets for
+      `pedestrian`, `footway`, `cycleway`, `steps`, and residual `pathway`; apply the same taxonomy to
+      road labels and all surface/tunnel/bridge phases; remove the Cartography Lab's raw
+      `class`/`subclass` expressions; validate the output and review the close-street scene. Focused
+      core tests pass 67/67, the lab config validates, its tests pass 3/3, the Atocha zoom-17 preview
+      was reviewed, and the complete workspace/build/public-smoke/alpha-dry-run gates pass.
 
 ## Surprises & Discoveries
 
@@ -186,6 +192,17 @@ part of the primary vector-data API.
   modules, `vectorTiles(openMapTiles())`, and capture receipt schema 2.
   Evidence: the first `pnpm run smoke:capture-public` final-gate run and the migrated fixture in
   `scripts/capture-public-smoke.mjs`.
+
+- Observation: the first Streets road API collapses every OpenMapTiles path into one public `path`
+  target, even though the data contract exposes `subclass`. This forced the Cartography Lab to use
+  raw MapLibre expressions to make pedestrian streets road-like, footways narrow, and pedestrian
+  labels eligible. Tile inspection around Atocha confirms named and unnamed `pedestrian`, `footway`,
+  and `steps` features, including bridge and tunnel variants; the official schema also defines
+  `cycleway`, `path`, `bridleway`, `corridor`, and `platform` subclasses.
+  Evidence: `packages/core/src/modules/roads/compiler.ts`,
+  `packages/core/src/modules/labels/compiler.ts`, the raw filters in
+  `examples/cartography-lab/tileflow.config.ts`, Tileflow World feature inspection at zoom 17, and
+  the OpenMapTiles transportation/transportation_name schema.
 
 ## Decision Log
 
@@ -334,9 +351,21 @@ part of the primary vector-data API.
   Rationale: protected provider credentials belong in runtime `transformRequest`.
   Date/Author: 2026-08-15, Codex.
 
+- Decision: Public road targets are cartographic semantics, not raw OpenMapTiles `class` values.
+  Replace ambiguous `path` with disjoint `pedestrian`, `footway`, `cycleway`, `steps`, and
+  `pathway` targets. The OpenMapTiles contract maps each target to `class=path` plus a non-overlapping
+  `subclass` set; `pathway` owns residual outdoor path subclasses and does not catch the four named
+  targets. Road geometry and road labels share this selector contract, while labels remain owned by
+  the labels module. Existing structure controls automatically apply to every target, so each can
+  independently style surface, tunnel, bridge, casing, fill, and shadow without raw layer IDs.
+  Rationale: agents and humans should ask for a pedestrian street or cycleway directly. A generic
+  path layer overlaps the more precise targets, makes ordering determine appearance, and leaks data
+  schema details into author config.
+  Date/Author: 2026-08-15, owner and Codex.
+
 ## Outcomes & Retrospective
 
-The SDK implementation is feature-complete for the Streets-first scope. `streets()` now compiles a
+The initial SDK implementation completed the Streets-first cutover. `streets()` now compiles a
 104-layer default map directly from nine keyed module domains and one resolved OpenMapTiles data
 contract. There is no runtime template, fallback renderer, layer translator, or hidden data
 precedence. The lab's explicit Editorial City overlays compile 111 layers and have nine reviewed
@@ -358,6 +387,20 @@ owning package READMEs. All repository, build, packaged-smoke, and publication d
 The only cross-repository release dependency is the hosted API accepting the new compiled-style
 artifact; this repository deliberately does not implement that service or restore legacy serialized
 config.
+
+The visual refinement loop subsequently reopened Milestone 5: the coarse `path` target is not a
+sufficient semantic road language. The active follow-up above makes path families disjoint before
+calling the road module complete again. MapTiler's layer inventory is design evidence only; traffic
+signals, zebra crossings, junction symbols, shields, access restrictions, ramps, and construction
+remain separate semantic capabilities and must be added only where the versioned data contract can
+supply them rather than by copying another style's layer IDs.
+
+That follow-up is now complete. The lab no longer reads OpenMapTiles `subclass` to distinguish its
+paths: it styles the five public road targets directly. Geometry and road-label compilers share one
+selector implementation, exact class requests participate in label eligibility, disabled classes
+are removed from both domains, and remapped `class`/`subclass` field names are covered by tests. The
+current Editorial City recipe emits 141 layers because each enabled path semantic owns its complete
+structure phases rather than sharing one overlapping `path` layer.
 
 ## Context and Orientation
 
@@ -614,8 +657,11 @@ labels. Add city/coast/rural multi-zoom evidence and compare coverage against th
 ### Milestone 5: complete roads
 
 Implement class visibility, zoom, source filters, surface/tunnel/bridge, fill/casing/shadow, color,
-opacity, width curves, line cap/join, dash/pattern, one-way, paths, areas/piers. Move rail, ferry, and
-cableways to transit rather than retaining `roads.extras.rail/ferry`. Road labels remain labels.
+opacity, width curves, line cap/join, dash/pattern, one-way, semantic pedestrian/footway/cycleway/
+steps/pathway targets, areas/piers. The five path-family filters must be pairwise disjoint and use
+the resolved OpenMapTiles `class` and `subclass` bindings for both geometry and labels. Structure
+phases apply uniformly to every road target. Move rail, ferry, and cableways to transit rather than
+retaining `roads.extras.rail/ferry`. Road labels remain labels.
 
 Add overview, motorway, neighborhood, close-street, bridge/tunnel, and mobile evidence. Use OSM
 Bright and Google Maps manually for coverage/hierarchy, not pixel copying.
@@ -741,6 +787,9 @@ at each stopping point.
 - Empty modules yields complete Streets; partial overlays preserve defaults; disabling is explicit.
 - Module-key permutations produce identical resolved design, graph, metadata, layers, and style hash.
 - Every explicit field affects a target or returns stable code/path; none is ignored.
+- Path-family geometry and labels expose `pedestrian`, `footway`, `cycleway`, `steps`, and residual
+  `pathway` without raw filters. Their generated selectors are pairwise disjoint, honor remapped
+  `class`/`subclass` fields, and work independently for surface, tunnel, and bridge layers.
 - Generated layers have one owner and stable unique IDs. No compiler searches/patches OSM IDs.
 - Generated IDs and structural ordering are covered by basemap version; a breaking change bumps
   `tileflow:basemapVersion` and updates fixtures, receipts, and migration notes together.
@@ -805,7 +854,8 @@ Scenes: madrid-overview, madrid-neighborhood, madrid-close-street, madrid-motorw
 User-owned diff: editorial palette adjustments in lab config
 Baseline core: build passes; 46 tests pass via node --import tsx --test before ledger test
 Ledger checkpoint: 47 core tests pass after adding the frozen ownership test
-Direct Streets: 104 default layers; Editorial City: 111 layers; no inherited IDs or default sprite
+Direct Streets: 104 default layers; current Editorial City: 141 layers; no inherited IDs or default
+  sprite
 Workspace verify: 194 pass, 13 intentional integration skips
 Visual checkpoint: nine reviewed schema-2 baselines with resolved Tileflow World data identity
 Default icons: text-only POI recipe; local/hosted icon packages are explicit
@@ -813,6 +863,8 @@ Hosted contract: CLI sends validated Style JSON + receipt and hosted sprite URL;
   coordination remains external to this repository
 Final gates: pnpm check PASS; pnpm build PASS; pnpm run smoke:capture-public PASS;
   pnpm run publish:alpha:dry-run PASS (no publication)
+Path semantics checkpoint: 67 core tests PASS; 3 Cartography Lab tests PASS; config validation PASS;
+  zoom-17 Atocha preview reviewed; packaged public smoke and alpha dry-run PASS
 Formatting: all changed files pass Prettier and git diff --check; the repository-wide command still
   reports the two unchanged reconcile-release files that also fail on the clean base
 ```

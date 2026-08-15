@@ -252,7 +252,11 @@ const roadClassSchema = z.enum([
   'minor',
   'service',
   'track',
-  'path',
+  'pathway',
+  'footway',
+  'cycleway',
+  'steps',
+  'pedestrian',
 ]);
 const roadLayerStyleSchema = z
   .object({

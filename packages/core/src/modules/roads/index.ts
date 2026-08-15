@@ -7,9 +7,12 @@ import type {
   TileflowRoadsModuleOptions,
   TileflowRoadWeight,
 } from '../../types';
+import {tileflowPathRoadClasses} from './semantics';
 
 export type ResolvedRoadsModuleOptions = {
   detail: TileflowRoadDetail;
+  disabledClasses: readonly TileflowRoadClass[];
+  explicitClasses: readonly TileflowRoadClass[];
   extras: {paths: boolean};
   hierarchy: TileflowRoadHierarchy;
   oneWayMarkers: boolean;
@@ -29,6 +32,8 @@ export type RoadStyleMetrics = {
 
 const defaults = {
   detail: 'streets',
+  disabledClasses: [],
+  explicitClasses: [],
   extras: {paths: false},
   hierarchy: 'clear',
   oneWayMarkers: false,
@@ -45,7 +50,11 @@ const defaultRoadWidthScale = {
   minor: 1,
   service: 1,
   track: 1,
-  path: 1,
+  pathway: 1,
+  footway: 1,
+  cycleway: 1,
+  steps: 1,
+  pedestrian: 1,
 } as const satisfies Record<TileflowRoadClass, number>;
 
 const highwayRoadClasses = ['motorway', 'trunk'] as const;
@@ -55,13 +64,30 @@ const streetRoadClasses = ['minor'] as const;
 const serviceRoadClasses = ['service', 'track'] as const;
 const majorRoadClassSet = new Set<string>(majorRoadClasses);
 
-export function roadClassesForDetail(detail: TileflowRoadDetail): string[] {
+export function roadClassesForDetail(detail: TileflowRoadDetail): TileflowRoadClass[] {
   if (detail === 'none') return [];
   return [
     ...(detail === 'highways' ? highwayRoadClasses : majorRoadClasses),
     ...(detail === 'streets' || detail === 'all' ? streetRoadClasses : []),
     ...(detail === 'all' ? serviceRoadClasses : []),
   ];
+}
+
+export function roadClassesWithPaths(
+  detail: TileflowRoadDetail,
+  paths: boolean,
+): TileflowRoadClass[] {
+  return [...roadClassesForDetail(detail), ...(paths ? tileflowPathRoadClasses : [])];
+}
+
+export function visibleRoadClasses(options: ResolvedRoadsModuleOptions): TileflowRoadClass[] {
+  const disabled = new Set(options.disabledClasses);
+  return [
+    ...new Set([
+      ...roadClassesWithPaths(options.detail, options.extras.paths),
+      ...options.explicitClasses,
+    ]),
+  ].filter((roadClass) => !disabled.has(roadClass));
 }
 
 export function isMajorRoadClass(roadClass: string): boolean {
@@ -77,6 +103,12 @@ export function resolveRoads(
 ): ResolvedRoadsModuleOptions {
   return {
     detail: request?.detail ?? defaults.detail,
+    disabledClasses: Object.entries(request?.classes ?? {})
+      .filter(([, style]) => style?.enabled === false)
+      .map(([roadClass]) => roadClass as TileflowRoadClass),
+    explicitClasses: Object.entries(request?.classes ?? {})
+      .filter(([, style]) => style?.enabled !== false)
+      .map(([roadClass]) => roadClass as TileflowRoadClass),
     extras: {paths: request?.extras?.paths ?? defaults.extras.paths},
     hierarchy: request?.hierarchy ?? defaults.hierarchy,
     oneWayMarkers: request?.oneWayMarkers ?? defaults.oneWayMarkers,

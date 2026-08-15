@@ -14,6 +14,7 @@ import type {
   TileflowWaterLabelClass,
 } from '../../types';
 import {resolveRoads} from '../roads';
+import {tileflowRoadClasses, tileflowRoadClassFilter} from '../roads/semantics';
 import {resolveLabels, visibleRoadLabelClasses} from './index';
 
 const placeClasses: Record<TileflowPlaceLabelClass, readonly string[]> = {
@@ -97,25 +98,13 @@ export function compileLabels(
       }),
     },
     roads: Object.fromEntries(
-      (
-        [
-          'motorway',
-          'trunk',
-          'primary',
-          'secondary',
-          'tertiary',
-          'minor',
-          'service',
-          'track',
-          'path',
-        ] as TileflowRoadClass[]
-      ).map((roadClass) => [
+      tileflowRoadClasses.map((roadClass) => [
         roadClass,
         textStyle(context, 'roads', {
           color: colors.labels.road,
           minZoom: ['motorway', 'trunk', 'primary'].includes(roadClass)
             ? 10
-            : roadClass === 'path'
+            : ['pathway', 'footway', 'cycleway', 'steps', 'pedestrian'].includes(roadClass)
               ? 15
               : 13,
           placement: 'line',
@@ -226,7 +215,7 @@ export function compileLabels(
             filter: [
               'all',
               ['has', schema.fields.name],
-              classFilter(schema.fields.class, [roadClass]),
+              tileflowRoadClassFilter(schema.fields, roadClass),
             ],
           },
           mergeTileflowDesign(style, {field}),

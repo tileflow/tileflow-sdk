@@ -89,6 +89,26 @@ constants, raw MapLibre expressions through `expression(...)`, and zoom function
 `zoom.step(...)`, `zoom.linear(...)`, or `zoom.exponential(...)`. Exact controls address stable
 concepts such as `roads.classes.primary.surface.fill`, not renderer layer IDs.
 
+The road module distinguishes the path family semantically:
+
+```ts
+roads({
+  extras: {paths: true},
+  classes: {
+    pedestrian: {surface: {fill: {color: '#F5F6F7', width: 6}}},
+    footway: {surface: {fill: {color: '#D9DEE3', width: 1.2}}},
+    cycleway: {surface: {fill: {color: '#9ED8C5', width: 1.5}}},
+    steps: {surface: {fill: {color: '#C7CED6', dash: [1, 1], width: 1.4}}},
+    pathway: {surface: {fill: {color: '#E8ECEF', width: 1.2}}},
+  },
+});
+```
+
+These targets are non-overlapping translations of the OpenMapTiles road class and subclass. The
+same names are available under `labels().roadClasses` and `labels().styles.roads`. Surface, tunnel,
+and bridge phases can be controlled independently for each target; no raw source filter or
+generated layer ID is needed.
+
 POI `density`, `labels`, and `icons` are independent policies. Density bounds eligible feature
 ranks, label detail controls text ranks, icon detail controls icon ranks, and
 `placement.coupleIconAndLabel` deliberately keeps only features eligible for both. Without

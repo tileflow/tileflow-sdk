@@ -51,6 +51,16 @@ before graph assembly—for example, roads determine eligible road-label classes
 runway geometry while labels own aerodrome text, and transit owns rail/ferry/cableway geometry
 while POI owns stations and stops.
 
+Road targets are cartographic semantics rather than raw source values. Motor-road targets are
+`motorway`, `trunk`, `primary`, `secondary`, `tertiary`, `minor`, `service`, and `track`. The path
+family is split into `pedestrian`, `footway`, `cycleway`, `steps`, and residual `pathway`. Enabling
+`roads({extras: {paths: true}})` draws the complete family with independent stable layers; naming a
+class explicitly also enables that class without enabling its siblings. Every class can style
+`surface`, `tunnel`, and `bridge`, each with `shadow`, `casing`, and `fill`. The labels module uses
+the same class names and selectors, so authors do not write OpenMapTiles `class`/`subclass` filters.
+The selectors remain valid when those field names are remapped by the data contract and are
+pairwise disjoint, preventing the same path from being painted by multiple semantic targets.
+
 ## Data contract
 
 Tileflow World is an OpenMapTiles-compatible default resolved offline from the SDK version. A
@@ -87,6 +97,11 @@ Work in this order:
 
 Phrase gaps as cartographic intent—label hierarchy, boundary emphasis, road width by zoom—not as a
 request to expose a reference style's layer ID.
+
+Reference-style inventories can reveal missing concepts, but they are not Tileflow APIs. Traffic
+signals, zebra crossings, junctions, shields, construction, ramps, and restricted access require
+their own semantic contracts and versioned data support; do not emulate them with copied layer IDs
+or silently claim support when the selected dataset does not expose the required feature.
 
 ## Preview, baselines, and promotion
 

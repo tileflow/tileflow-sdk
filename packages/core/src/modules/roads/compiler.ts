@@ -10,10 +10,15 @@ import type {
   TileflowRoadsModuleConfig,
   TileflowRoadStructure,
 } from '../../types';
-import {resolveRoads, roadClassesForDetail, roadStyleMetrics} from './index';
+import {resolveRoads, roadStyleMetrics, visibleRoadClasses} from './index';
+import {
+  isTileflowPathRoadClass,
+  tileflowPathRoadClasses,
+  tileflowRoadClassFilter,
+} from './semantics';
 
 const roadClassOrder: readonly TileflowRoadClass[] = [
-  'path',
+  ...tileflowPathRoadClasses,
   'track',
   'service',
   'minor',
@@ -51,12 +56,9 @@ export function compileRoads(
 ): TileflowLayerContribution[] {
   if (request?.enabled === false) return [];
   const semantics = resolveRoads(request);
-  if (semantics.detail === 'none') return [];
+  const visible = new Set<TileflowRoadClass>(visibleRoadClasses(semantics));
+  if (visible.size === 0) return [];
   const metrics = roadStyleMetrics(semantics);
-  const visible = new Set<TileflowRoadClass>(
-    roadClassesForDetail(semantics.detail) as TileflowRoadClass[],
-  );
-  if (semantics.extras.paths) visible.add('path');
 
   const defaults = defaultClassStyles(context, metrics, semantics);
   const contributions: TileflowLayerContribution[] = [];
@@ -91,7 +93,7 @@ export function compileRoads(
               'source-layer': schema.layers.road,
               filter: [
                 'all',
-                classFilter(schema.fields.class, roadClass),
+                tileflowRoadClassFilter(schema.fields, roadClass),
                 structureFilter(schema.fields.brunnel, structure),
               ],
             },
@@ -204,7 +206,8 @@ function defaultClassStyles(
   return Object.fromEntries(
     roadClassOrder.map((roadClass) => {
       const fillColor = roadColor(context, roadClass);
-      const minor = ['path', 'track', 'service', 'minor'].includes(roadClass);
+      const minor =
+        isTileflowPathRoadClass(roadClass) || ['track', 'service', 'minor'].includes(roadClass);
       const width = roadWidth(
         roadClass,
         metrics.weightScale *
@@ -252,7 +255,9 @@ function roadColor(context: TileflowDomainCompileContext, roadClass: TileflowRoa
   if (roadClass === 'secondary' || roadClass === 'tertiary') {
     return context.colors.roads.secondary;
   }
-  if (roadClass === 'path' || roadClass === 'track') return context.colors.roads.path;
+  if (isTileflowPathRoadClass(roadClass) || roadClass === 'track') {
+    return context.colors.roads.path;
+  }
   return context.colors.roads.minor;
 }
 
@@ -295,9 +300,25 @@ function roadWidth(roadClass: TileflowRoadClass, scale: number) {
       [13, 0.35],
       [16, 1.8],
     ],
-    path: [
+    pathway: [
       [13, 0.3],
       [16, 1.4],
+    ],
+    footway: [
+      [13, 0.25],
+      [16, 1.2],
+    ],
+    cycleway: [
+      [13, 0.3],
+      [16, 1.5],
+    ],
+    steps: [
+      [14, 0.35],
+      [16, 1.4],
+    ],
+    pedestrian: [
+      [13, 0.5],
+      [16, 3.4],
     ],
   };
   return zoom.linear(stops[roadClass].map(([z, value]) => [z, value * scale] as const));
@@ -308,16 +329,6 @@ function widen(
   addition: number,
 ): ReturnType<typeof roadWidth> {
   return zoom.linear(value.stops.map(([z, width]) => [z, width + addition] as const));
-}
-
-function classFilter(field: string, roadClass: TileflowRoadClass): unknown[] {
-  const classes =
-    roadClass === 'minor'
-      ? ['minor', 'residential', 'unclassified']
-      : roadClass === 'service'
-        ? ['service']
-        : [roadClass];
-  return ['match', ['get', field], classes, true, false];
 }
 
 function structureFilter(field: string, structure: TileflowRoadStructure): unknown[] {

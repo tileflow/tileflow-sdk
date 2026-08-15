@@ -82,53 +82,32 @@ function cityRoadStyle(
   };
 }
 
-function contextualPathWidth(pedestrian: number, footway: number) {
-  return expression<number>(['match', ['get', 'subclass'], ['pedestrian'], pedestrian, footway]);
-}
-
-function contextualPathStyle(): TileflowRoadClassStyle {
+function pathRoadStyle(
+  color: string,
+  widths: WidthStops,
+  options: {casingColor?: string; dash?: readonly number[]} = {},
+): TileflowRoadClassStyle {
   const fill = {
     cap: 'round' as const,
-    color: expression<string>(['match', ['get', 'subclass'], ['pedestrian'], '#F3F5F7', '#78CDB2']),
+    color,
+    ...(options.dash ? {dash: [...options.dash]} : {}),
     join: 'round' as const,
     opacity: 1,
-    width: expression<number>([
-      'interpolate',
-      ['linear'],
-      ['zoom'],
-      14,
-      contextualPathWidth(1.2, 0.45).value,
-      17,
-      contextualPathWidth(8, 0.85).value,
-      19,
-      contextualPathWidth(18, 1.35).value,
-      22,
-      contextualPathWidth(48, 3).value,
-    ]),
+    width: zoom.linear(widths),
   };
-  const casing = {
-    cap: 'round' as const,
-    color: '#DDE2E7',
-    join: 'round' as const,
-    opacity: expression<number>(['match', ['get', 'subclass'], ['pedestrian'], 1, 0]),
-    width: expression<number>([
-      'interpolate',
-      ['linear'],
-      ['zoom'],
-      14,
-      contextualPathWidth(2.5, 0.45).value,
-      17,
-      contextualPathWidth(10, 0.85).value,
-      19,
-      contextualPathWidth(21, 1.35).value,
-      22,
-      contextualPathWidth(54, 3).value,
-    ]),
-  };
+  const casing = options.casingColor
+    ? {
+        cap: 'round' as const,
+        color: options.casingColor,
+        join: 'round' as const,
+        opacity: 1,
+        width: zoom.linear(widths.map(([level, width]) => [level, width + 2] as const)),
+      }
+    : undefined;
 
   return {
-    surface: {casing, fill},
-    bridge: {casing, fill},
+    surface: {casing: casing ?? {visible: false}, fill},
+    bridge: {casing: casing ?? {visible: false}, fill},
     tunnel: {
       casing: {visible: false},
       fill: {...fill, dash: [2, 2], opacity: 0.55},
@@ -286,6 +265,9 @@ export default defineTileflow({
             paths: true, // true | false.
           },
           classes: {
+            // Optional semantic targets: motorway, trunk, primary, secondary,
+            // tertiary, minor, service, track, pathway, footway, cycleway,
+            // steps, pedestrian. Each accepts surface, tunnel, bridge, enabled.
             motorway: cityRoadStyle('#AAB9C9', '#96A7B8', [
               [10, 2],
               [14, 8],
@@ -353,7 +335,44 @@ export default defineTileflow({
               [19, 7],
               [22, 22],
             ]),
-            path: contextualPathStyle(),
+            pathway: pathRoadStyle('#F2F4F6', [
+              [14, 0.4],
+              [17, 0.8],
+              [19, 1.3],
+              [22, 3],
+            ]),
+            footway: pathRoadStyle('#F4F6F8', [
+              [14, 0.45],
+              [17, 0.85],
+              [19, 1.35],
+              [22, 3],
+            ]),
+            cycleway: pathRoadStyle('#BDE4D8', [
+              [14, 0.55],
+              [17, 1.1],
+              [19, 1.8],
+              [22, 4],
+            ]),
+            steps: pathRoadStyle(
+              '#D8DEE5',
+              [
+                [15, 0.55],
+                [17, 1.2],
+                [19, 2.2],
+                [22, 5],
+              ],
+              {dash: [1, 0.75]},
+            ),
+            pedestrian: pathRoadStyle(
+              '#F3F5F7',
+              [
+                [14, 1.2],
+                [17, 8],
+                [19, 18],
+                [22, 48],
+              ],
+              {casingColor: '#DDE2E7'},
+            ),
           },
         }),
         transit: transit({
@@ -427,16 +446,11 @@ export default defineTileflow({
               minor: roadLabelStyle(false),
               service: roadLabelStyle(false),
               track: {...roadLabelStyle(false), visible: false},
-              path: {
-                ...roadLabelStyle(false),
-                filter: filter([
-                  'all',
-                  ['has', 'name'],
-                  ['==', ['get', 'class'], 'path'],
-                  ['==', ['get', 'subclass'], 'pedestrian'],
-                ]),
-                minZoom: 15,
-              },
+              pathway: {...roadLabelStyle(false), minZoom: 16, visible: false},
+              footway: {...roadLabelStyle(false), minZoom: 16, visible: false},
+              cycleway: {...roadLabelStyle(false), minZoom: 16, visible: false},
+              steps: {...roadLabelStyle(false), minZoom: 17, visible: false},
+              pedestrian: {...roadLabelStyle(false), minZoom: 15},
             },
           },
         }),

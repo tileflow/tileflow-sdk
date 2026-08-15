@@ -6,7 +6,8 @@ import type {
   TileflowRoadClass,
   TileflowRoadLabelDetail,
 } from '../../types';
-import {type ResolvedRoadsModuleOptions, roadClassesForDetail} from '../roads';
+import {type ResolvedRoadsModuleOptions, roadClassesWithPaths, visibleRoadClasses} from '../roads';
+import {tileflowRoadClasses} from '../roads/semantics';
 
 export type ResolvedLabelsModuleOptions = {
   language: TileflowLabelLanguage;
@@ -44,15 +45,12 @@ export function visibleRoadLabelClasses(
   roads: ResolvedRoadsModuleOptions,
   explicitClasses?: readonly TileflowRoadClass[],
 ): string[] {
-  const visibleGeometry = new Set(roadClassesForDetail(roads.detail));
-  if (roads.extras.paths) visibleGeometry.add('path');
-  const eligible = new Set(roadClassesForDetail(detail));
-  if (detail === 'all' && roads.extras.paths) eligible.add('path');
+  const visibleGeometry = new Set(visibleRoadClasses(roads));
   const explicit = explicitClasses ? new Set(explicitClasses) : undefined;
-  return [...eligible].filter(
-    (roadClass) =>
-      visibleGeometry.has(roadClass) && (!explicit || explicit.has(roadClass as never)),
-  );
+  const eligible = explicit
+    ? tileflowRoadClasses.filter((roadClass) => explicit.has(roadClass))
+    : roadClassesWithPaths(detail, detail === 'all' && roads.extras.paths);
+  return eligible.filter((roadClass) => visibleGeometry.has(roadClass));
 }
 
 function cloneJson<T>(value: T): T {

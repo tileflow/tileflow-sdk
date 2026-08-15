@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {parseTileflowMap, parseTileflowProject, roads, streets, validateConfig} from '../src';
+import {
+  labels,
+  parseTileflowMap,
+  parseTileflowProject,
+  roads,
+  streets,
+  validateConfig,
+} from '../src';
 
 test('accepts the canonical Streets project shape', () => {
   const project = {
@@ -52,6 +59,29 @@ test('rejects unknown semantic controls instead of ignoring them', () => {
         modules: {roads: {...roads(), magicWidth: 12}},
       }),
     /modules\.roads/,
+  );
+});
+
+test('accepts semantic path road targets and rejects the old overlapping path target', () => {
+  assert.doesNotThrow(() =>
+    parseTileflowMap({
+      basemap: streets(),
+      modules: {
+        labels: labels({roadClasses: ['pedestrian', 'footway', 'cycleway', 'steps', 'pathway']}),
+        roads: roads({
+          classes: {pedestrian: {}, footway: {}, cycleway: {}, steps: {}, pathway: {}},
+        }),
+      },
+    }),
+  );
+
+  assert.throws(
+    () =>
+      parseTileflowMap({
+        basemap: streets(),
+        modules: {roads: {type: 'roads', classes: {path: {}}}},
+      } as never),
+    /path/,
   );
 });
 

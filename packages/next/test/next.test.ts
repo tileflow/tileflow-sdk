@@ -13,7 +13,7 @@ test('emits production artifacts without adding a webpack config', async () => {
   try {
     await writeFile(
       join(cwd, 'tileflow.config.ts'),
-      "export default { maps: { main: { basemap: {type: 'streets', basemapVersion: 1, variant: 'light'} } } };\n",
+      "export default { maps: { main: { basemap: {type: 'streets', basemapVersion: 2, variant: 'light'} } } };\n",
       'utf8',
     );
     process.env.NODE_ENV = 'production';
@@ -79,7 +79,7 @@ test('refreshes direct style requests after a config edit without requiring a ma
 });
 
 function configWithBackground(background: string): string {
-  return `export default {maps: {main: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, theme: {colors: {background: '${background}'}}}}};\n`;
+  return `export default {maps: {main: {basemap: {type: 'streets', basemapVersion: 2, variant: 'light'}, theme: {colors: {background: '${background}'}}}}};\n`;
 }
 
 function backgroundColor(style: unknown): unknown {

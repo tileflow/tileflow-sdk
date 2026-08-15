@@ -447,7 +447,7 @@ test('keeps selection and config failures on stderr with empty JSON stdout', asy
   await writeFile(
     join(directory, 'tileflow.config.ts'),
     `if (process.env.TILEFLOW_API_KEY) throw new Error('ambient key reached config');
-export default {maps: {proof: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}}}, scenes: {proof: {map: 'proof', camera: {type: 'center', center: [0, 0], zoom: 1}, viewport: {width: 32, height: 32}}}};
+export default {maps: {proof: {basemap: {type: 'streets', basemapVersion: 2, variant: 'light'}}}, scenes: {proof: {map: 'proof', camera: {type: 'center', center: [0, 0], zoom: 1}, viewport: {width: 32, height: 32}}}};
 `,
   );
   const invalid = await runCli(directory, ['capture', 'proof', '--json'], {
@@ -471,7 +471,7 @@ test('style-invalid JSON is phase-aware and preserves an existing output pair', 
     join(directory, 'tileflow.config.ts'),
     `export default {
   maps: {proof: {
-    basemap: {type: 'streets', basemapVersion: 1, variant: 'light'},
+    basemap: {type: 'streets', basemapVersion: 2, variant: 'light'},
     overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]
   }},
   scenes: {proof: {
@@ -536,7 +536,7 @@ test(
     await writeFile(
       join(directory, 'tileflow.config.ts'),
       `export default {maps: {proof: {
-  basemap: {type: 'streets', basemapVersion: 1, variant: 'light'},
+  basemap: {type: 'streets', basemapVersion: 2, variant: 'light'},
   modules: {
     buildings: {type: 'buildings', enabled: false},
     labels: {type: 'labels', enabled: false},
@@ -582,7 +582,7 @@ test(
       `export default {
   maps: {
     proof: {
-      basemap: {type: 'streets', basemapVersion: 1, variant: 'light'},
+      basemap: {type: 'streets', basemapVersion: 2, variant: 'light'},
       glyphs: ${JSON.stringify(`${fixture.origin}/fonts/{fontstack}/{range}.pbf`)},
       sprite: ${JSON.stringify(`${fixture.origin}/sprites/streets/v1/sprite`)},
       data: {

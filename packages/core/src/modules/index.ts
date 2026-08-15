@@ -19,7 +19,11 @@ export type {
 export {poi} from './poi';
 export {roads} from './roads';
 export {transit} from './transit';
-export type {TileflowTransitModuleConfig, TileflowTransitModuleOptions} from './transit';
+export type {
+  TileflowTransitModuleConfig,
+  TileflowTransitModuleOptions,
+  TileflowTransitRailStyle,
+} from './transit';
 export {water} from './water';
 export type {
   TileflowWaterModuleConfig,

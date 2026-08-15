@@ -26,7 +26,17 @@ const variants = [
       buildings: buildings({mode: 'flat'}),
       labels: labels({places: 'all', roads: 'all', water: 'all'}),
       land: land(),
-      poi: poi({icons: 'full', labels: 'full', preset: 'full'}),
+      poi: poi({
+        icons: 'full',
+        labels: 'full',
+        preset: 'full',
+        styles: {
+          food: {
+            icon: {haloColor: '#ffffff', haloWidth: 1, keepUpright: true},
+            marker: {pitchAlignment: 'map', pitchScale: 'viewport', radius: 3},
+          },
+        },
+      }),
       roads: roads({detail: 'all', extras: {paths: true}, hierarchy: 'strong'}),
       transit: transit(),
       water: water(),
@@ -56,16 +66,23 @@ const variants = [
         styles: {
           places: {
             city: {
-              haloWidth: 2,
-              size: zoom.step([
-                [4, 11],
-                [8, 16],
-              ]),
+              priority: 80,
+              text: {
+                haloWidth: 2,
+                keepUpright: true,
+                maxAngle: 40,
+                radialOffset: 1,
+                size: zoom.step([
+                  [4, 11],
+                  [8, 16],
+                ]),
+                variableAnchors: ['top', 'bottom'],
+              },
             },
           },
         },
       }),
-      water: water({bodies: {color: '#17384d'}}),
+      water: water({bodies: {fill: {color: '#17384d'}}}),
     },
   },
 ] as const;

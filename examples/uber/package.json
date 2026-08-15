@@ -1,0 +1,32 @@
+{
+  "name": "@tileflow/example-uber",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "capture": "tileflow capture --all --config tileflow.config.ts --app-origin http://127.0.0.1:5173",
+    "dev": "vite --host 127.0.0.1",
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify": "pnpm run typecheck && pnpm run test",
+    "visual": "tileflow visual diff uber-la uber-nyc --config tileflow.config.ts --app-origin http://127.0.0.1:5173 --baseline-dir test/visual-baselines",
+    "visual:update": "tileflow visual update uber-la uber-nyc --config tileflow.config.ts --app-origin http://127.0.0.1:5173 --baseline-dir test/visual-baselines"
+  },
+  "dependencies": {
+    "@tileflow/core": "workspace:*",
+    "@tileflow/react": "workspace:*",
+    "maplibre-gl": "^5.24.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@tileflow/cli": "workspace:*",
+    "@tileflow/vite": "workspace:*",
+    "@types/node": "^25.9.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "tsx": "^4.23.1",
+    "vite": "^8.0.16"
+  }
+}

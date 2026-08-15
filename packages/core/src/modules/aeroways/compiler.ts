@@ -1,6 +1,6 @@
 import type {TileflowDomainCompileContext} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
-import {applyFillStyle, applyLineStyle} from '../../cartography/layer-style';
+import {applyLineStyle, createAreaLayers} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {zoom} from '../../cartography/values';
 import type {TileflowAerowaysModuleConfig} from './index';
@@ -13,7 +13,7 @@ export function compileAeroways(
     {
       type: 'aeroways',
       enabled: true,
-      area: {color: context.colors.road, minZoom: 10, opacity: 0.42},
+      area: {fill: {color: context.colors.road, minZoom: 10, opacity: 0.42}},
       runway: {
         casing: {
           color: context.colors.roads.casing,
@@ -57,24 +57,26 @@ export function compileAeroways(
 
   const {sourceId: source, schema} = context.data;
   const contributions: TileflowLayerContribution[] = [];
-  if (config.area?.visible !== false) {
-    contributions.push({
-      kind: 'layer',
-      layer: applyFillStyle(
-        {
-          id: 'streets-aeroway-area',
-          type: 'fill',
-          source,
-          'source-layer': schema.layers.aeroway,
-          filter: ['==', ['geometry-type'], 'Polygon'],
-        },
-        config.area ?? {},
-      ),
-      localOrder: 0,
-      owner: 'aeroways',
-      slot: 'aeroways',
-      target: 'aeroways.area',
-    });
+  if (config.area) {
+    for (const area of createAreaLayers(
+      {
+        id: 'streets-aeroway-area',
+        type: 'fill',
+        source,
+        'source-layer': schema.layers.aeroway,
+        filter: ['==', ['geometry-type'], 'Polygon'],
+      },
+      config.area,
+    )) {
+      contributions.push({
+        kind: 'layer',
+        layer: area.layer,
+        localOrder: area.phase === 'fill' ? 0 : 1,
+        owner: 'aeroways',
+        slot: 'aeroways',
+        target: `aeroways.area.${area.phase}`,
+      });
+    }
   }
 
   for (const [name, target, order] of [
@@ -82,8 +84,9 @@ export function compileAeroways(
     ['runway', config.runway, 20],
   ] as const) {
     for (const [phase, style, phaseOrder] of [
-      ['casing', target?.casing, 0],
-      ['fill', target?.fill, 1],
+      ['shadow', target?.shadow, 0],
+      ['casing', target?.casing, 1],
+      ['fill', target?.fill, 2],
     ] as const) {
       if (!style || style.visible === false) continue;
       contributions.push({

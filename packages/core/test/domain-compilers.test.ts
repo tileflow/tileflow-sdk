@@ -104,7 +104,7 @@ test('compiles buildings, boundaries, aeroways, and transit without shared layer
   assert.ok(ids.includes('streets-buildings-fill'));
   assert.ok(ids.includes('streets-boundary-admin2'));
   assert.ok(ids.includes('streets-aeroway-runway-fill'));
-  assert.ok(ids.includes('streets-transit-rail'));
+  assert.ok(ids.includes('streets-transit-rail-surface'));
   assert.equal(new Set(ids).size, ids.length);
 });
 
@@ -376,7 +376,12 @@ test('compiles pedestrian polygons as a semantic road area even without line cla
   });
   const contributions = compileRoads(
     roads({
-      areas: {pedestrian: {color: '#F1F3F5', outlineColor: '#D5DCE3'}},
+      areas: {
+        pedestrian: {
+          fill: {color: '#F1F3F5'},
+          outline: {color: '#D5DCE3', width: 1},
+        },
+      },
       detail: 'none',
     }),
     {...context, data},
@@ -398,8 +403,14 @@ test('compiles pedestrian polygons as a semantic road area even without line cla
   assert.deepEqual(pedestrianArea.layer.paint, {
     'fill-color': '#F1F3F5',
     'fill-opacity': 1,
-    'fill-outline-color': '#D5DCE3',
   });
+  const pedestrianOutline = contributions.find(
+    (entry) => entry.layer.id === 'streets-road-pedestrian-area-outline',
+  );
+  assert.equal(
+    (pedestrianOutline?.layer.paint as Record<string, unknown>)['line-color'],
+    '#D5DCE3',
+  );
   assert.equal(
     contributions.some((entry) => entry.layer.id.includes('surface-pedestrian')),
     false,
@@ -410,7 +421,7 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
   const labelContributions = compileLabels(
     labels({
       roads: 'all',
-      styles: {roads: {primary: {color: '#112233', size: 15}}},
+      styles: {roads: {primary: {text: {color: '#112233', size: 15}}}},
     }),
     roads({detail: 'major'}),
     context,
@@ -443,6 +454,34 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
   );
   assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /14/);
   assert.match(JSON.stringify(poiContributions[1]?.layer.filter), /24/);
+});
+
+test('compiles a semantic POI marker through the shared circle primitive', () => {
+  const contributions = compilePoi(
+    poi({
+      categories: ['culture'],
+      icons: false,
+      labels: 'none',
+      styles: {
+        culture: {
+          marker: {
+            color: '#7755AA',
+            radius: 5,
+            strokeColor: '#FFFFFF',
+            strokeWidth: 2,
+          },
+        },
+      },
+    }),
+    context,
+  );
+  const marker = contributions.find(
+    (entry) => entry.layer.id === 'streets-poi-culture-marker',
+  )?.layer;
+
+  assert.equal(marker?.type, 'circle');
+  assert.equal((marker?.paint as Record<string, unknown>)['circle-color'], '#7755AA');
+  assert.equal((marker?.paint as Record<string, unknown>)['circle-stroke-width'], 2);
 });
 
 test('road labels use the same semantic path selectors as road geometry', () => {
@@ -479,6 +518,111 @@ test('road labels use the same semantic path selectors as road geometry', () => 
     labelContributions.map((entry) => entry.layer.id),
     'selection array order must not control symbol layer order',
   );
+});
+
+test('composes expressway, toll, indoor, official, and mountain-bike intelligence from bound data', () => {
+  const data = resolveTileflowData({
+    type: 'vector-tiles',
+    attribution: '© Test',
+    schema: openMapTiles({
+      fields: {
+        expressway: 'fast_flag',
+        indoor: 'inside_flag',
+        mtbScale: 'trail_grade',
+        official: 'official_flag',
+        toll: 'paid_flag',
+      },
+    }),
+    url: '/tiles.json',
+  });
+  const contributions = compileRoads(
+    roads({
+      detail: 'all',
+      extras: {paths: true},
+      modifiers: {
+        expressway: {surface: {fill: {color: '#112233'}}},
+        indoor: {surface: {fill: {opacity: 0.35}}},
+        official: {surface: {casing: {color: '#445566'}}},
+      },
+      mountainBike: {
+        '0': {surface: {fill: {color: '#55AA66'}}},
+        '3+': {surface: {fill: {color: '#AA5544'}}},
+      },
+      restrictions: {toll: {surface: {fill: {dash: [3, 1]}}}},
+    }),
+    {...context, data},
+  );
+  const primary = JSON.stringify(
+    contributions.find((entry) => entry.layer.id === 'streets-road-surface-primary-fill')?.layer,
+  );
+  const pathway = JSON.stringify(
+    contributions.find((entry) => entry.layer.id === 'streets-road-surface-pathway-fill')?.layer,
+  );
+  const pathwayCasing = JSON.stringify(
+    contributions.find((entry) => entry.layer.id === 'streets-road-surface-pathway-casing')?.layer,
+  );
+
+  assert.match(primary, /fast_flag/);
+  assert.match(primary, /paid_flag/);
+  assert.match(primary, /inside_flag/);
+  assert.match(pathway, /trail_grade/);
+  assert.match(pathway, /3\+/);
+  assert.match(pathwayCasing, /official_flag/);
+  assert.equal(
+    contributions.filter((entry) => entry.layer.id === 'streets-road-surface-primary-fill').length,
+    1,
+  );
+});
+
+test('compiles network-specific road shields and motorway junction labels without raw IDs', () => {
+  const data = resolveTileflowData({
+    type: 'vector-tiles',
+    attribution: '© Test',
+    schema: openMapTiles({
+      fields: {
+        class: 'kind',
+        name: 'label',
+        network: 'route_network',
+        ref: 'route_ref',
+        subclass: 'detail',
+      },
+      layers: {roadName: 'road_labels'},
+    }),
+    url: '/tiles.json',
+  });
+  const contributions = compileLabels(
+    labels({
+      junctions: true,
+      roads: 'all',
+      shields: 'all',
+      styles: {
+        junctions: {text: {color: '#556677'}},
+        shields: {
+          default: {text: {color: '#334455'}},
+          networks: {'gb-motorway': {text: {color: '#FFFFFF'}}},
+        },
+      },
+    }),
+    roads({detail: 'all'}),
+    {...context, data},
+  );
+  const generic = contributions.find(
+    (entry) => entry.layer.id === 'streets-label-road-shield',
+  )?.layer;
+  const network = contributions.find(
+    (entry) => entry.layer.id === 'streets-label-road-shield-gb-motorway',
+  )?.layer;
+  const junction = contributions.find(
+    (entry) => entry.layer.id === 'streets-label-road-junction',
+  )?.layer;
+
+  assert.equal(generic?.['source-layer'], 'road_labels');
+  assert.match(JSON.stringify(generic?.filter), /route_network/);
+  assert.match(JSON.stringify(network?.filter), /gb-motorway/);
+  assert.match(JSON.stringify(network?.layout), /route_ref/);
+  assert.match(JSON.stringify(junction?.filter), /motorway_junction/);
+  assert.match(JSON.stringify(junction?.filter), /detail/);
+  assert.equal((junction?.paint as Record<string, unknown>)['text-color'], '#556677');
 });
 
 test('POI density, label detail, icon detail, and coupling change emitted layers', () => {

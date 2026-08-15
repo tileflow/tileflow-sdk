@@ -1,6 +1,6 @@
 import type {TileflowDomainCompileContext} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
-import {applyFillStyle, applyLineStyle} from '../../cartography/layer-style';
+import {applyLineStyle, createAreaLayers} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {zoom} from '../../cartography/values';
 import type {TileflowWaterModuleConfig, TileflowWaterwayClass} from './index';
@@ -20,9 +20,9 @@ export function compileWater(
     {
       type: 'water',
       enabled: true,
-      bodies: {color: context.colors.hydro.water, opacity: 1},
+      bodies: {fill: {color: context.colors.hydro.water, opacity: 1}},
       intermittent: {
-        bodies: {color: context.colors.hydro.water, opacity: 0.68},
+        bodies: {fill: {color: context.colors.hydro.water, opacity: 0.68}},
         waterways: {color: context.colors.hydro.waterway, opacity: 0.65, dash: [2, 1]},
       },
       waterways: {
@@ -63,44 +63,48 @@ export function compileWater(
   const source = context.data.sourceId;
   const {fields, layers} = context.data.schema;
   const contributions: TileflowLayerContribution[] = [];
-  if (config.bodies?.visible !== false) {
-    contributions.push({
-      kind: 'layer',
-      layer: applyFillStyle(
-        {
-          id: 'streets-water',
-          type: 'fill',
-          source,
-          'source-layer': layers.water,
-          filter: ['!=', ['get', fields.intermittent], 1],
-        },
-        config.bodies ?? {},
-      ),
-      localOrder: 0,
-      owner: 'water',
-      slot: 'hydro',
-      target: 'water.bodies',
-    });
+  if (config.bodies) {
+    for (const area of createAreaLayers(
+      {
+        id: 'streets-water',
+        type: 'fill',
+        source,
+        'source-layer': layers.water,
+        filter: ['!=', ['get', fields.intermittent], 1],
+      },
+      config.bodies,
+    )) {
+      contributions.push({
+        kind: 'layer',
+        layer: area.layer,
+        localOrder: area.phase === 'fill' ? 0 : 1,
+        owner: 'water',
+        slot: 'hydro',
+        target: `water.bodies.${area.phase}`,
+      });
+    }
   }
 
-  if (config.intermittent?.bodies?.visible !== false) {
-    contributions.push({
-      kind: 'layer',
-      layer: applyFillStyle(
-        {
-          id: 'streets-water-intermittent',
-          type: 'fill',
-          source,
-          'source-layer': layers.water,
-          filter: ['==', ['get', fields.intermittent], 1],
-        },
-        config.intermittent?.bodies ?? {},
-      ),
-      localOrder: 1,
-      owner: 'water',
-      slot: 'hydro',
-      target: 'water.intermittent.bodies',
-    });
+  if (config.intermittent?.bodies) {
+    for (const area of createAreaLayers(
+      {
+        id: 'streets-water-intermittent',
+        type: 'fill',
+        source,
+        'source-layer': layers.water,
+        filter: ['==', ['get', fields.intermittent], 1],
+      },
+      config.intermittent.bodies,
+    )) {
+      contributions.push({
+        kind: 'layer',
+        layer: area.layer,
+        localOrder: area.phase === 'fill' ? 2 : 3,
+        owner: 'water',
+        slot: 'hydro',
+        target: `water.intermittent.bodies.${area.phase}`,
+      });
+    }
   }
 
   let localOrder = 10;

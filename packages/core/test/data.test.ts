@@ -96,5 +96,5 @@ test('rejects private URL credentials, invalid revisions, and missing attributio
 });
 
 test('defines Streets as a versioned light recipe identity', () => {
-  assert.deepEqual(streets(), {type: 'streets', basemapVersion: 1, variant: 'light'});
+  assert.deepEqual(streets(), {type: 'streets', basemapVersion: 2, variant: 'light'});
 });

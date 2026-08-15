@@ -1,10 +1,13 @@
 import type {TileflowDomainCompileContext} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
-import {applyTextStyle} from '../../cartography/layer-style';
+import {applySymbolStyle} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
-import type {TileflowTextStyle} from '../../cartography/styles';
+import type {
+  TileflowSymbolPlacementStyle,
+  TileflowSymbolStyle,
+  TileflowTextStyle,
+} from '../../cartography/styles';
 import {expression, zoom} from '../../cartography/values';
-import {textFont} from '../../themes';
 import type {
   TileflowLabelLanguage,
   TileflowLabelsModuleConfig,
@@ -39,49 +42,49 @@ export function compileLabels(
   const {colors} = context;
   const defaults = {
     places: {
-      continent: textStyle(context, 'places', {
+      continent: symbolStyle(context, 'places', {
         minZoom: 0,
         size: zoom.linear([
           [0, 11],
           [4, 15],
         ]),
       }),
-      country: textStyle(context, 'places', {
+      country: symbolStyle(context, 'places', {
         minZoom: 1,
         size: zoom.linear([
           [1, 10],
           [6, 16],
         ]),
       }),
-      state: textStyle(context, 'places', {
+      state: symbolStyle(context, 'places', {
         minZoom: 3,
         size: zoom.linear([
           [3, 10],
           [8, 14],
         ]),
       }),
-      city: textStyle(context, 'places', {
+      city: symbolStyle(context, 'places', {
         minZoom: 4,
         size: zoom.linear([
           [4, 11],
           [12, 18],
         ]),
       }),
-      town: textStyle(context, 'places', {
+      town: symbolStyle(context, 'places', {
         minZoom: 7,
         size: zoom.linear([
           [7, 10],
           [14, 16],
         ]),
       }),
-      village: textStyle(context, 'places', {
+      village: symbolStyle(context, 'places', {
         minZoom: 10,
         size: zoom.linear([
           [10, 10],
           [16, 14],
         ]),
       }),
-      neighborhood: textStyle(context, 'places', {
+      neighborhood: symbolStyle(context, 'places', {
         color: colors.labels.neighborhood,
         minZoom: 12,
         size: zoom.linear([
@@ -89,7 +92,7 @@ export function compileLabels(
           [17, 13],
         ]),
       }),
-      other: textStyle(context, 'places', {
+      other: symbolStyle(context, 'places', {
         minZoom: 12,
         size: zoom.linear([
           [12, 9],
@@ -100,7 +103,7 @@ export function compileLabels(
     roads: Object.fromEntries(
       tileflowRoadClasses.map((roadClass) => [
         roadClass,
-        textStyle(context, 'roads', {
+        symbolStyle(context, 'roads', {
           color: colors.labels.road,
           minZoom: ['motorway', 'trunk', 'primary'].includes(roadClass)
             ? 10
@@ -115,43 +118,51 @@ export function compileLabels(
           spacing: 280,
         }),
       ]),
-    ) as Partial<Record<TileflowRoadClass, TileflowTextStyle>>,
-    shields: textStyle(context, 'roads', {
+    ) as Partial<Record<TileflowRoadClass, TileflowSymbolStyle>>,
+    shields: {
+      default: symbolStyle(context, 'roads', {
+        color: colors.labels.road,
+        minZoom: 8,
+        placement: 'line',
+        size: 10,
+        spacing: 240,
+      }),
+    },
+    junctions: symbolStyle(context, 'roads', {
       color: colors.labels.road,
-      minZoom: 8,
-      placement: 'line',
+      minZoom: 14,
+      placement: 'point',
       size: 10,
-      spacing: 240,
     }),
     water: {
-      ocean: textStyle(context, 'water', {
+      ocean: symbolStyle(context, 'water', {
         minZoom: 2,
         size: zoom.linear([
           [2, 12],
           [8, 18],
         ]),
       }),
-      other: textStyle(context, 'water', {
+      other: symbolStyle(context, 'water', {
         minZoom: 5,
         size: zoom.linear([
           [5, 11],
           [14, 15],
         ]),
       }),
-      line: textStyle(context, 'water', {
+      line: symbolStyle(context, 'water', {
         minZoom: 7,
         placement: 'line',
         size: 13,
         spacing: 320,
       }),
-      waterway: textStyle(context, 'water', {
+      waterway: symbolStyle(context, 'water', {
         minZoom: 10,
         placement: 'line',
         size: 12,
         spacing: 320,
       }),
     },
-    aerodrome: textStyle(context, 'places', {
+    aerodrome: symbolStyle(context, 'places', {
       minZoom: 9,
       size: zoom.linear([
         [9, 10],
@@ -159,7 +170,10 @@ export function compileLabels(
       ]),
     }),
   } satisfies NonNullable<TileflowLabelsModuleConfig['styles']>;
-  const styles = mergeTileflowDesign(defaults, request?.styles);
+  const styles = mergeTileflowDesign<NonNullable<TileflowLabelsModuleConfig['styles']>>(
+    defaults,
+    request?.styles,
+  );
   const result: TileflowLayerContribution[] = [];
   const {sourceId: source, schema} = context.data;
   const field = labelField(semantics.language, context);
@@ -173,13 +187,13 @@ export function compileLabels(
         : (Object.keys(placeClasses) as TileflowPlaceLabelClass[]);
   for (const placeClass of visiblePlaceClasses) {
     const style = styles.places?.[placeClass];
-    if (!style || style.visible === false) continue;
+    if (!style || style.visible === false || style.text?.visible === false) continue;
     const id = `streets-label-place-${placeClass}`;
     result.push(
       symbolContribution(
         `labels.places.${placeClass}`,
         order++,
-        applyTextStyle(
+        applySymbolStyle(
           {
             id,
             type: 'symbol',
@@ -191,7 +205,7 @@ export function compileLabels(
               classFilter(schema.fields.class, placeClasses[placeClass]),
             ],
           },
-          mergeTileflowDesign(style, {field}),
+          mergeTileflowDesign(style, {text: {field}}),
         ),
       ),
     );
@@ -200,13 +214,13 @@ export function compileLabels(
   const visibleRoads = visibleRoadLabelClasses(semantics.roads, roads, semantics.roadClasses);
   for (const roadClass of visibleRoads as TileflowRoadClass[]) {
     const style = styles.roads?.[roadClass];
-    if (!style || style.visible === false) continue;
+    if (!style || style.visible === false || style.text?.visible === false) continue;
     const id = `streets-label-road-${roadClass}`;
     result.push(
       symbolContribution(
         `labels.roads.${roadClass}`,
         200 + order++,
-        applyTextStyle(
+        applySymbolStyle(
           {
             id,
             type: 'symbol',
@@ -218,31 +232,119 @@ export function compileLabels(
               tileflowRoadClassFilter(schema.fields, roadClass),
             ],
           },
-          mergeTileflowDesign(style, {field}),
+          mergeTileflowDesign(style, {text: {field}}),
         ),
       ),
     );
   }
 
-  if (
-    visibleRoads.some((roadClass) =>
-      ['motorway', 'trunk', 'primary', 'secondary'].includes(roadClass),
-    )
-  ) {
+  const shieldRoads =
+    semantics.shields === 'none'
+      ? []
+      : semantics.shields === 'major'
+        ? visibleRoads.filter((roadClass) =>
+            ['motorway', 'trunk', 'primary', 'secondary'].includes(roadClass),
+          )
+        : visibleRoads;
+  const shieldDefaults = styles.shields?.default;
+  const shieldNetworks = Object.entries(styles.shields?.networks ?? {}).sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+  if (shieldDefaults && shieldDefaults.visible !== false && shieldRoads.length > 0) {
+    const baseFilter = [
+      'all',
+      ['has', schema.fields.ref],
+      roadClassesFilter(schema.fields, shieldRoads as TileflowRoadClass[]),
+    ];
+    const overriddenNetworks = shieldNetworks.map(([network]) => network);
     result.push(
       symbolContribution(
-        'labels.shields',
+        'labels.shields.default',
         400,
-        applyTextStyle(
+        applySymbolStyle(
           {
             id: 'streets-label-road-shield',
             type: 'symbol',
             source,
             'source-layer': schema.layers.roadName,
-            filter: ['has', schema.fields.ref],
+            filter:
+              overriddenNetworks.length === 0
+                ? baseFilter
+                : [
+                    'all',
+                    baseFilter,
+                    [
+                      '!',
+                      ['match', ['get', schema.fields.network], overriddenNetworks, true, false],
+                    ],
+                  ],
           },
-          mergeTileflowDesign(styles.shields, {
-            field: expression<string>(['get', schema.fields.ref]),
+          mergeTileflowDesign(shieldDefaults, {
+            text: {field: expression<string>(['get', schema.fields.ref])},
+          }),
+        ),
+      ),
+    );
+
+    for (const [network, networkStyle] of shieldNetworks) {
+      if (networkStyle.visible === false) continue;
+      result.push(
+        symbolContribution(
+          `labels.shields.networks.${network}`,
+          401 + order++,
+          applySymbolStyle(
+            {
+              id: `streets-label-road-shield-${network}`,
+              type: 'symbol',
+              source,
+              'source-layer': schema.layers.roadName,
+              filter: ['all', baseFilter, ['==', ['get', schema.fields.network], network]],
+            },
+            mergeTileflowDesign(shieldDefaults, networkStyle, {
+              text: {field: expression<string>(['get', schema.fields.ref])},
+            }),
+          ),
+        ),
+      );
+    }
+  }
+
+  const geometryRoads = visibleRoadLabelClasses('all', roads);
+  if (
+    semantics.junctions &&
+    geometryRoads.some((roadClass) => ['motorway', 'trunk'].includes(roadClass)) &&
+    styles.junctions &&
+    styles.junctions?.visible !== false &&
+    styles.junctions?.text?.visible !== false
+  ) {
+    result.push(
+      symbolContribution(
+        'labels.junctions',
+        450,
+        applySymbolStyle(
+          {
+            id: 'streets-label-road-junction',
+            type: 'symbol',
+            source,
+            'source-layer': schema.layers.roadName,
+            filter: [
+              'all',
+              [
+                'any',
+                ['==', ['get', schema.fields.class], 'motorway_junction'],
+                ['==', ['get', schema.fields.subclass], 'junction'],
+              ],
+              ['any', ['has', schema.fields.ref], ['has', schema.fields.name]],
+            ],
+          },
+          mergeTileflowDesign(styles.junctions, {
+            text: {
+              field: expression<string>([
+                'coalesce',
+                ['get', schema.fields.ref],
+                ['get', schema.fields.name],
+              ]),
+            },
           }),
         ),
       ),
@@ -282,12 +384,12 @@ export function compileLabels(
         : waterTargets;
     for (const target of visibleTargets) {
       const style = styles.water?.[target.name];
-      if (!style || style.visible === false) continue;
+      if (!style || style.visible === false || style.text?.visible === false) continue;
       result.push(
         symbolContribution(
           `labels.water.${target.name}`,
           500 + order++,
-          applyTextStyle(
+          applySymbolStyle(
             {
               id: `streets-label-water-${target.name}`,
               type: 'symbol',
@@ -295,19 +397,23 @@ export function compileLabels(
               'source-layer': target.sourceLayer,
               filter: target.filter,
             },
-            mergeTileflowDesign(style, {field}),
+            mergeTileflowDesign(style, {text: {field}}),
           ),
         ),
       );
     }
   }
 
-  if (styles.aerodrome?.visible !== false) {
+  if (
+    styles.aerodrome &&
+    styles.aerodrome.visible !== false &&
+    styles.aerodrome.text?.visible !== false
+  ) {
     result.push(
       symbolContribution(
         'labels.aerodrome',
         700,
-        applyTextStyle(
+        applySymbolStyle(
           {
             id: 'streets-label-aerodrome',
             type: 'symbol',
@@ -315,7 +421,7 @@ export function compileLabels(
             'source-layer': schema.layers.aerodromeLabel,
             filter: ['has', schema.fields.name],
           },
-          mergeTileflowDesign(styles.aerodrome, {field}),
+          mergeTileflowDesign(styles.aerodrome, {text: {field}}),
         ),
       ),
     );
@@ -324,23 +430,35 @@ export function compileLabels(
   return result;
 }
 
-function textStyle(
+function symbolStyle(
   context: TileflowDomainCompileContext,
   domain: 'places' | 'roads' | 'water',
-  overrides: TileflowTextStyle,
-): TileflowTextStyle {
-  return mergeTileflowDesign(
-    {
-      allowOverlap: false,
-      color: domain === 'water' ? context.colors.labels.water : context.colors.labels.primary,
-      font: textFont(context.typography, domain),
-      haloColor: context.colors.labels.halo,
-      haloWidth: 1.2,
-      optional: true,
-      padding: 4,
-    },
-    overrides,
-  );
+  overrides: TileflowTextStyle & TileflowSymbolPlacementStyle,
+): TileflowSymbolStyle {
+  const {maxZoom, minZoom, placement, priority, spacing, visible, zOrder, ...text} = overrides;
+  const typography = context.typography[domain];
+  return {
+    ...(maxZoom === undefined ? {} : {maxZoom}),
+    ...(minZoom === undefined ? {} : {minZoom}),
+    ...(placement === undefined ? {} : {placement}),
+    ...(priority === undefined ? {} : {priority}),
+    ...(spacing === undefined ? {} : {spacing}),
+    ...(visible === undefined ? {} : {visible}),
+    ...(zOrder === undefined ? {} : {zOrder}),
+    text: mergeTileflowDesign(
+      {
+        allowOverlap: false,
+        color: domain === 'water' ? context.colors.labels.water : context.colors.labels.primary,
+        font: typography.font,
+        haloColor: context.colors.labels.halo,
+        haloWidth: 1.2,
+        optional: true,
+        padding: 4,
+        weight: typography.weight,
+      },
+      text,
+    ),
+  };
 }
 
 function labelField(language: TileflowLabelLanguage, context: TileflowDomainCompileContext) {
@@ -371,6 +489,15 @@ function labelField(language: TileflowLabelLanguage, context: TileflowDomainComp
 
 function classFilter(field: string, classes: readonly string[]): unknown[] {
   return ['match', ['get', field], classes, true, false];
+}
+
+function roadClassesFilter(
+  fields: TileflowDomainCompileContext['data']['schema']['fields'],
+  roadClasses: readonly TileflowRoadClass[],
+): unknown[] {
+  return roadClasses.length === 1
+    ? tileflowRoadClassFilter(fields, roadClasses[0]!)
+    : ['any', ...roadClasses.map((roadClass) => tileflowRoadClassFilter(fields, roadClass))];
 }
 
 function symbolContribution(

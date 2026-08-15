@@ -148,7 +148,7 @@ const validConfig = `import tokens from './tokens.json';
 export default {
   maps: {
     main: {
-      basemap: {type: 'streets', basemapVersion: 1, variant: 'light'},
+      basemap: {type: 'streets', basemapVersion: 2, variant: 'light'},
       modules: {
         buildings: {type: 'buildings', enabled: false},
         labels: {type: 'labels', enabled: false},

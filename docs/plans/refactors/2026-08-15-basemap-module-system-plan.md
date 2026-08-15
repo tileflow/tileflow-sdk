@@ -72,7 +72,7 @@ part of the primary vector-data API.
 ## Progress
 
 - [x] (2026-08-15 08:48Z) Audited the compiler, schema, renderer split, modules, OSM Bright template,
-      generated layers, data precedence, cartography lab, CLI deploy, manifests, capture receipts,
+      generated layers, data precedence, Streets workbench, CLI deploy, manifests, capture receipts,
       packaging, and documentation.
 - [x] (2026-08-15 08:48Z) Created and indexed an initial three-basemap/profile-based ExecPlan.
 - [x] (2026-08-15 09:10Z) Replaced that architecture after the owner chose to build Streets directly
@@ -92,7 +92,7 @@ part of the primary vector-data API.
       attributed and licensed; local/hosted icon packages replace it with validated generated
       sprites and never leak source paths.
 - [x] (2026-08-15) Migrated dev, CLI, capture receipt 2, manifest 2, build packages, wrappers, the
-      initializer, icon tooling, the nine-scene cartography lab, and durable contracts/READMEs.
+      initializer, icon tooling, the nine-scene Streets workbench, and durable contracts/READMEs.
 - [x] (2026-08-15) Deleted the legacy compiler, schema, OSM basemap, generated renderer, template
       controls, and style-override module from the executable source graph.
 - [x] (2026-08-15) Ran focused typechecks/tests, full workspace `verify` (194 pass, 13 intentional
@@ -109,14 +109,14 @@ part of the primary vector-data API.
       disabled until an explicit local or hosted icon set is provided; all nine visual baselines
       were reviewed and regenerated without that dependency. Re-ran `pnpm check`, `pnpm build`,
       packaged public smoke, and the alpha publication dry-run successfully after the removal.
-- [x] (2026-08-15) Documented the accepted values beside the active Cartography Lab recipe and made
+- [x] (2026-08-15) Documented the accepted values beside the active Streets recipe and made
       the built-in dev preview persist validated longitude, latitude, zoom, bearing, and pitch in
       the URL. Config-triggered and manual reloads now preserve the current camera, while missing or
       invalid camera parameters fall back to the configured map or scene camera. Focused dev and lab
       tests cover URL round-tripping, bounds replacement, query preservation, and invalid fallback.
 - [x] (2026-08-15) Replaced the coarse public `path` road target with disjoint semantic targets for
       `pedestrian`, `footway`, `cycleway`, `steps`, and residual `pathway`; apply the same taxonomy to
-      road labels and all surface/tunnel/bridge phases; remove the Cartography Lab's raw
+      road labels and all surface/tunnel/bridge phases; remove the Streets workbench's raw
       `class`/`subclass` expressions; validate the output and review the close-street scene. Focused
       core tests pass 67/67, the lab config validates, its tests pass 3/3, the Atocha zoom-17 preview
       was reviewed, and the complete workspace/build/public-smoke/alpha-dry-run gates pass.
@@ -135,12 +135,35 @@ part of the primary vector-data API.
 - [x] (2026-08-15) Audited Tileflow World road fields and completed the road-intelligence follow-up:
       bind ramp/access/surface/mode/service/stacking fields, compile semantic road modifiers,
       restrictions, service subtypes, and construction classes as data-driven paint within stable
-      class layers, then refine the Cartography Lab recipe and review the close-street/motorway
+      class layers, then refine the Streets recipe and review the close-street/motorway
       evidence. Focused core tests pass 71/71, the lab tests pass 3/3, and the generated Style JSON
       is MapLibre-valid. The close-street and motorway captures were reviewed. The nine-scene diff
       correctly reports the deliberate road/palette changes plus the already changed close-street
       camera, so no baseline was replaced implicitly. `pnpm check`, `pnpm build`, packaged public
       smoke, and the alpha publication dry-run all pass without publishing.
+- [x] (2026-08-15) Consolidated the public visual language before adding more domain-specific knobs:
+      split reusable layer range, paint, layout, and compound styles; complete background, fill,
+      line, text, icon, symbol, circle, and extrusion primitives; remove module-specific copies of
+      the same paint vocabulary; and migrate every module and the Streets workbench. Focused primitive
+      tests cover constant/expression mapping, compound emission, priority inversion, coupled symbol
+      range conflicts, and valid output. Deliberate visual changes were reviewed in all nine scenes
+      and accepted as new baselines rather than hidden behind byte-parity claims.
+- [x] (2026-08-15) Finished the Roads language on top of those primitives. Preserved the implemented
+      class × structure × phase × treatment model, then consume the remaining useful fields already
+      present in Tileflow World, added route shields and junction semantics after bounded source
+      audits, refined the Streets road recipe across the committed scene matrix, and kept signals,
+      crossings, sidewalks, and lane geometry outside SDK scope until a selected dataset exposes
+      them. Raised junction labels to zoom 15 after the first visual pass exposed overview clutter.
+      Final focused evidence is 76/76 core tests, 3/3 lab tests, 54 CLI tests with 6 intentional
+      skips, and a MapLibre-valid 155-layer Editorial City style on Streets contract version 2.
+- [x] (2026-08-15) Renamed the cartographic workbench from `cartography-lab` to
+      `tileflow-streets`, renamed its root commands and package identity, and migrated the separate
+      Uber-inspired React/Vite example to the same shared visual primitives and Streets v2 road,
+      transit, shield, and data contracts. Both examples pass typecheck/tests; all Streets scenes and
+      both application scenes were captured and reviewed. Uber baselines and receipts were updated
+      deliberately; later comparisons retain only the documented remote-resource nondeterminism.
+      Re-ran `pnpm check`, `pnpm build`, packaged public capture smoke, and the alpha publication
+      dry-run successfully with both examples in the workspace.
 
 ## Surprises & Discoveries
 
@@ -187,8 +210,8 @@ part of the primary vector-data API.
   Evidence: CLI deploy preparation and POST `/v1/styles`; hosted API code is outside this repo.
 
 - Observation: the branch already has a user-owned palette diff in
-  `examples/cartography-lab/tileflow.config.ts`. Do not overwrite or misattribute it.
-  Evidence: `git diff -- examples/cartography-lab/tileflow.config.ts` on `basemap-system`.
+  `examples/tileflow-streets/tileflow.config.ts`. Do not overwrite or misattribute it.
+  Evidence: `git diff -- examples/tileflow-streets/tileflow.config.ts` on `basemap-system`.
 
 - Observation: OpenMapTiles can encode a pedestrian plaza as a `Polygon` in `transportation` with
   `class=path` and `subclass=pedestrian`. A line-only semantic target renders merely its ring and
@@ -206,7 +229,7 @@ part of the primary vector-data API.
 - Observation: the four existing visual baselines differ from the current lab because the
   user-owned palette changed after those baselines were accepted. Capture completes successfully
   outside the browser sandbox and records all four diffs; do not update the baselines implicitly.
-  Evidence: `pnpm run visual:cartography` and `.tileflow/diffs` at the Milestone 0 checkpoint.
+  Evidence: the Streets visual-diff command and `.tileflow/diffs` at the Milestone 0 checkpoint.
 
 - Observation: the first direct visual pass exposed two semantic bugs that structural style tests
   could not reveal. POI `minimal`/`balanced`/`full` and `essential`/`full` collapsed to the same
@@ -221,14 +244,14 @@ part of the primary vector-data API.
   `scripts/capture-public-smoke.mjs`.
 
 - Observation: the first Streets road API collapses every OpenMapTiles path into one public `path`
-  target, even though the data contract exposes `subclass`. This forced the Cartography Lab to use
+  target, even though the data contract exposes `subclass`. This forced the Streets workbench to use
   raw MapLibre expressions to make pedestrian streets road-like, footways narrow, and pedestrian
   labels eligible. Tile inspection around Atocha confirms named and unnamed `pedestrian`, `footway`,
   and `steps` features, including bridge and tunnel variants; the official schema also defines
   `cycleway`, `path`, `bridleway`, `corridor`, and `platform` subclasses.
   Evidence: `packages/core/src/modules/roads/compiler.ts`,
   `packages/core/src/modules/labels/compiler.ts`, the raw filters in
-  `examples/cartography-lab/tileflow.config.ts`, Tileflow World feature inspection at zoom 17, and
+  `examples/tileflow-streets/tileflow.config.ts`, Tileflow World feature inspection at zoom 17, and
   the OpenMapTiles transportation/transportation_name schema.
 
 - Observation: Tileflow World revision `2026-06-07` declares OpenMapTiles `3.16.0`, sixteen vector
@@ -353,7 +376,7 @@ part of the primary vector-data API.
   Date/Author: 2026-08-15, owner and Codex.
 
 - Decision: Emit durable Streets identity as `tileflow:basemap = 'streets'`,
-  `tileflow:basemapVersion = 1`, `tileflow:variant = 'light'`, and the separate `tileflow:data`
+  `tileflow:basemapVersion = 2`, `tileflow:variant = 'light'`, and the separate `tileflow:data`
   object. Any breaking generated-layer ID or structural-order change increments basemap version.
   Rationale: raw overrides make generated IDs and placement observable even though semantic modules
   are canonical. No internal migration metadata appears in a Streets artifact.
@@ -414,20 +437,48 @@ part of the primary vector-data API.
   layer explosion or raw OpenMapTiles filters in author config.
   Date/Author: 2026-08-15, owner and Codex.
 
+- Decision: Define appearance once as module-independent visual primitives, then compose geographic
+  targets from those primitives. The canonical primitive families are background, fill, line, text,
+  icon, symbol placement, circle, and extrusion. Polygon, linear, and symbol compositions are
+  reusable structures rather than new MapLibre layer types.
+  Rationale: land, water, roads, buildings, labels, POI, transit, and aeroways currently repeat the
+  same concepts with small incompatible shapes. A single vocabulary makes `tileflow.config.ts`
+  predictable for both agents and people and allows property validation/compiler behavior to be
+  tested once.
+  Date/Author: 2026-08-15, owner and Codex.
+
+- Decision: Keep semantic selection out of ordinary appearance primitives. Modules own which
+  features belong to `primary`, `park`, `city`, `food`, and other semantic targets through the
+  versioned data contract. Common styles own visibility/range and appearance. Arbitrary MapLibre
+  filters remain an explicit advanced/raw operation rather than a property repeated on every
+  normal style object.
+  Rationale: a reusable `FillStyle` or `TextStyle` should not be able to contradict the module's
+  ownership filter silently. This also separates the two questions an agent must answer: what the
+  feature means, and how that target should look.
+  Date/Author: 2026-08-15, owner and Codex.
+
+- Decision: Roads remains one semantic module with four orthogonal axes: class, structure, drawing
+  phase, and feature treatment. Road text and shields are emitted by the shared label/symbol policy;
+  roads supplies eligibility and geometry but does not create a second collision system.
+  Rationale: this preserves deterministic z-order and prevents combinations such as a restricted
+  unpaved ramp in a tunnel from being painted by duplicate independent modules.
+  Date/Author: 2026-08-15, owner and Codex.
+
 ## Outcomes & Retrospective
 
 The initial SDK implementation completed the Streets-first cutover. `streets()` now compiles a
 105-layer default map directly from nine keyed module domains and one resolved OpenMapTiles data
 contract. There is no runtime template, fallback renderer, layer translator, or hidden data
-precedence. The lab's explicit Editorial City overlays compile 111 layers and have nine reviewed
-schema-2 baselines spanning urban, road, rail, airport, coast, rural, and mobile views.
+precedence. After the disjoint path-family and pedestrian-area work, the lab's explicit Editorial
+City overlays compile 155 layers and have nine reviewed schema-2 baselines spanning urban, road,
+rail, airport, coast, rural, and mobile views.
 
 The visual loop materially improved the design language: it exposed POI modes that were type-level
 choices but did not yet change pixels, and it exposed a duplicated rail filter that structural
 validity could not catch. Both are now deterministic module behavior with focused tests. This is why
 the lab and receipt contract are part of the compiler change rather than follow-up demo work.
 
-The Cartography Lab config is also a readable control surface: its active properties name their
+The Tileflow Streets config is also a readable control surface: its active properties name their
 accepted values inline. The dev preview writes its live camera to the URL without adding browser
 history entries, so an author can edit module code and continue reviewing the same location and zoom
 after the watcher reloads the style.
@@ -451,7 +502,7 @@ That follow-up is now complete. The lab no longer reads OpenMapTiles `subclass` 
 paths: it styles the five public road targets directly. Geometry and road-label compilers share one
 selector implementation, exact class requests participate in label eligibility, disabled classes
 are removed from both domains, and remapped `class`/`subclass` field names are covered by tests. The
-current Editorial City recipe emits 150 layers because each enabled path semantic owns its complete
+current Editorial City recipe emits 155 layers because each enabled path semantic owns its complete
 structure phases rather than sharing one overlapping `path` layer, the lab gives path casings their
 own layers, and pedestrian polygons have a dedicated semantic fill.
 
@@ -463,6 +514,26 @@ stable intra-layer ordering. The compiler keeps zoom interpolation at the expres
 matching treatments by fixed per-property precedence, and does not multiply the 150-layer lab
 inventory for combinations such as an unpaved ramp. Tileflow World's public attribution now matches
 its TileJSON by retaining OpenFreeMap, OpenMapTiles, and OpenStreetMap contributors.
+
+The final visual-language pass removed module-specific styling dialects. Background, fill, line,
+text, icon, symbol placement, circle, and extrusion now share one typed vocabulary, while area,
+line-stack, and symbol compounds reuse those primitives. Module compilers retain ownership of
+semantic feature selection, so ordinary appearance objects cannot contradict domain filters.
+
+Roads now consumes the useful audited transport fields through one class × structure × phase ×
+treatment model, including expressway, indoor, toll, construction, service, access, mode, and MTB
+difficulty semantics. Route shields and motorway-junction labels participate in the shared symbol
+policy instead of creating a second collision system. The first complete visual run revealed that
+junction numbers were too dense at overview zooms; the Streets lab now introduces them at zoom 15.
+All nine scenes were reviewed and regenerated intentionally. A subsequent visual comparison passed;
+two remote-resource scenes reported allowed nondeterministic resource drift rather than SDK errors.
+
+The workbench now ships under the product-facing `examples/tileflow-streets` name with matching
+`dev:streets`, `capture:streets`, and `visual:streets` commands. The second workspace example is a
+React/Vite ride application under `examples/uber`; its basemap config uses the same common area,
+symbol, transit-structure, and Roads treatment contracts, while routes and vehicles remain
+application-owned MapLibre overlays. Its LA and NYC captures were reviewed and accepted with
+Streets v2 style receipts.
 
 ## Context and Orientation
 
@@ -477,7 +548,7 @@ owns the primary dataset contract; `packages/core/src/modules/*/compiler.ts` cre
 layers; and `packages/core/src/cartography/graph.ts` assembles them. The deleted legacy compiler,
 OSM basemap, renderer split, and template control passes are not executable recovery paths.
 
-The visual workbench is `examples/cartography-lab/tileflow.config.ts`, owned by
+The visual workbench is `examples/tileflow-streets/tileflow.config.ts`, owned by
 `docs/contracts/cartographic-authoring.md`. It has `editorial-city` and nine scenes: Madrid overview,
 neighborhood, close street, motorway, airport, transit, rural edge, Barcelona waterfront, and Madrid
 mobile.
@@ -545,7 +616,7 @@ The internal Streets recipe is a plain frozen value:
 ```ts
 const tileflowStreetsRecipe = Object.freeze({
   id: 'streets',
-  version: 1,
+  version: 2,
   modules: Object.freeze({
     land: land(),
     water: water(),
@@ -591,6 +662,263 @@ Merge order: engine safety invariants, Streets variant recipe, named theme defau
 controls, user exact values, then raw overrides. `undefined` inherits, `enabled: false` removes,
 objects merge by typed key, arrays replace, and wrapped expressions are atomic. Factories retain
 explicitness so partial requests cannot erase Streets defaults.
+
+### Final reusable visual language
+
+The authoring path is always:
+
+```text
+semantic module -> semantic target -> reusable visual primitive(s) -> generated MapLibre layers
+```
+
+For example, `land.landcover.park` selects park features; its area style decides how their fill and
+outline look. `roads.classes.primary` selects primary roads; its line stack controls
+shadow/casing/fill. `poi.styles.food` selects a POI category; its symbol style controls icon, text,
+and collision. A visual primitive never decides what a park, primary road, or food POI is.
+
+All primitive properties that MapLibre permits to be data- or zoom-driven use
+`TileflowStyleValue<T> = T | TileflowZoomValue<T> | TileflowExpression<T>`. Constant-only layout
+properties stay constants. `zoom.step`, `zoom.linear`, `zoom.exponential`, and `expression<T>` remain
+the only wrappers; raw expression arrays are not guessed. Values are JSON-clean, expressions are
+atomic during merge, and the final MapLibre validator remains authoritative after Tileflow's
+property-specific validation.
+
+The common layer range is deliberately small:
+
+```ts
+type LayerRange = {
+  visible?: boolean;
+  minZoom?: number;
+  maxZoom?: number;
+};
+```
+
+It does not contain a normal `filter`. Semantic selection belongs to the module/data contract. An
+advanced author can still use a final fail-closed raw override with `filter(...)` and exact generated
+IDs when a semantic target does not exist.
+
+The final primitive matrix is:
+
+| Primitive              | Canonical properties                                                                                                                                                                                                                                                                                                                     | Notes                                                                                                               |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `BackgroundStyle`      | range, `color`, `opacity`, `pattern`                                                                                                                                                                                                                                                                                                     | Root canvas only; no source/filter/outline.                                                                         |
+| `FillStyle`            | range, `color`, `opacity`, `pattern`, `antialias`                                                                                                                                                                                                                                                                                        | One polygon fill layer. An outline is a separate `LineStyle`, not a fake width-less fill property.                  |
+| `LineStyle`            | range, `color`, `opacity`, `width`, `dash`, `blur`, `gapWidth`, `offset`, `pattern`, `cap`, `join`, `miterLimit`, `roundLimit`                                                                                                                                                                                                           | One line layer. Paint and layout are separately reusable internally.                                                |
+| `TextStyle`            | range, `field`, `font`, `weight`, `fallbacks`, `size`, `color`, `opacity`, `haloColor`, `haloWidth`, `haloBlur`, `letterSpacing`, `lineHeight`, `maxWidth`, `transform`, `anchor`, `offset`, `rotate`, `justify`, `variableAnchors`, `radialOffset`, `padding`, `allowOverlap`, `ignorePlacement`, `optional`, `keepUpright`, `maxAngle` | Text half of a symbol. Typography resolves semantic family/weight to the installed glyph stack.                     |
+| `IconStyle`            | range, `image`, `size`, `opacity`, `color`, `haloColor`, `haloWidth`, `haloBlur`, `rotate`, `offset`, `anchor`, `padding`, `allowOverlap`, `ignorePlacement`, `optional`, `keepUpright`, `rotationAlignment`, `pitchAlignment`                                                                                                           | Color/halo require a compatible SDF icon; missing assets fail before style output.                                  |
+| `SymbolPlacementStyle` | `placement`, `spacing`, `priority`, `zOrder`                                                                                                                                                                                                                                                                                             | Shared text/icon placement. Public `priority` means “higher wins”; the compiler translates MapLibre sort direction. |
+| `CircleStyle`          | range, `radius`, `color`, `opacity`, `blur`, `strokeColor`, `strokeWidth`, `strokeOpacity`, `pitchScale`, `pitchAlignment`                                                                                                                                                                                                               | Sprite-free point marker and future data overlays.                                                                  |
+| `ExtrusionStyle`       | range, `color`, `opacity`, `height`, `base`, `pattern`, `verticalGradient`                                                                                                                                                                                                                                                               | A real fill-extrusion primitive; no longer modeled as `FillStyle & {height, base}`.                                 |
+
+Do not expose every MapLibre property merely because it exists. Add a property to a primitive when
+at least one semantic module needs it, its merge/validation behavior is defined, and it has a
+focused output test. Rare renderer-specific properties remain raw overrides until that evidence
+exists. Raster, hillshade, heatmap, and model styling are specialized source/domain contracts, not
+part of this initial basemap primitive set.
+
+The reusable compound styles are compositions, not additional renderer primitives:
+
+```ts
+type AreaStyle = {
+  fill?: FillStyle;
+  outline?: LineStyle;
+};
+
+type LineStackStyle = {
+  shadow?: LineStyle;
+  casing?: LineStyle;
+  fill?: LineStyle;
+};
+
+type SymbolStyle = {
+  // SymbolPlacementStyle fields are flattened here.
+  placement?: 'line' | 'line-center' | 'point';
+  spacing?: StyleValue<number>;
+  priority?: StyleValue<number>;
+  zOrder?: 'auto' | 'source' | 'viewport-y';
+  text?: TextStyle;
+  icon?: IconStyle;
+  marker?: CircleStyle;
+};
+```
+
+Coupled text and icon share one MapLibre symbol layer and therefore one layer range; contradictory
+ranges fail instead of being guessed. A module such as POI may deliberately emit separate icon and
+text layers when its placement policy says they are independent. A marker is always a separate
+circle layer. The graph, not object-key order, places the resulting layers. Area targets such as
+parks and buildings use `AreaStyle`; linear targets such as roads, waterways, boundaries, runways,
+and rail use `LineStackStyle` or the relevant subset; label and POI targets use `SymbolStyle`.
+
+Internally split each primitive into range, layout, and paint contracts. This lets a road treatment
+reuse `Partial<LinePaint>` directly instead of maintaining the current duplicate
+`TileflowRoadTreatmentLineStyle`. Per-feature treatments may change data-driven paint and relative
+width, but cannot change layer range, semantic filter, cap/join, or graph placement. If a condition
+needs a different layout or layer range, it receives an explicit semantic target/layer rather than
+being accepted and ignored.
+
+Canonical module examples after the migration:
+
+```ts
+land({
+  landcover: {
+    park: {
+      fill: {color: '#AFEAC5', opacity: 1},
+      outline: {color: '#7FCBA8', width: 1},
+    },
+  },
+});
+
+labels({
+  styles: {
+    places: {
+      city: {
+        priority: 80,
+        text: {
+          color: '#455564',
+          size: zoom.linear([
+            [5, 12],
+            [12, 18],
+          ]),
+          haloColor: '#FFFFFF',
+          haloWidth: 1.5,
+        },
+      },
+    },
+  },
+});
+
+poi({
+  styles: {
+    food: {
+      priority: 50,
+      icon: {image: 'restaurant', size: 0.9},
+      text: {color: '#A8612D', size: 12},
+    },
+  },
+});
+```
+
+This is a clean break while there are no consumers. Remove deprecated aliases rather than
+supporting both shapes. The primitive migration itself is byte/pixel preserving: first normalize
+the vocabulary and compilers, then deliberately retune Streets in separately reviewed commits.
+
+### Final Roads language
+
+`roads()` is the most complex module because it composes four independent axes:
+
+```text
+class       motorway | trunk | primary | secondary | tertiary | minor | service |
+            track | pathway | footway | cycleway | steps | pedestrian
+structure   tunnel | surface | bridge
+phase       shadow | casing | fill
+treatment   construction | ramp | unpaved | access/mode restriction | service subtype |
+            expressway | toll | indoor | official | mountain-bike scale
+```
+
+The base public shape remains agent-friendly and exact:
+
+```ts
+roads({
+  detail: 'all',
+  hierarchy: 'strong',
+  weight: 'regular',
+  outline: 'strong',
+  classes: {
+    primary: {
+      surface: {
+        shadow: {
+          color: '#607080',
+          opacity: 0.15,
+          width: zoom.linear([
+            [8, 2],
+            [18, 24],
+          ]),
+        },
+        casing: {
+          color: '#9AA8B6',
+          width: zoom.linear([
+            [8, 1.5],
+            [18, 20],
+          ]),
+        },
+        fill: {
+          color: '#AEBCCA',
+          width: zoom.linear([
+            [8, 1],
+            [18, 18],
+          ]),
+        },
+      },
+      tunnel: {
+        casing: {color: '#B9C3CC', dash: [2, 1]},
+        fill: {color: '#DCE2E7', opacity: 0.75},
+      },
+      bridge: {
+        casing: {color: '#8E9EAD'},
+        fill: {color: '#AEBCCA'},
+      },
+    },
+  },
+  modifiers: {
+    construction: {surface: {fill: {dash: [2, 1], opacity: 0.7}}},
+    expressway: {widthScale: 1.06},
+    indoor: {surface: {fill: {dash: [1, 1], opacity: 0.4}}},
+    ramp: {widthScale: 0.7},
+    unpaved: {surface: {fill: {dash: [2, 1]}}},
+  },
+  restrictions: {
+    access: {surface: {fill: {opacity: 0.55}}},
+    toll: {surface: {casing: {color: '#C5B7D8'}}},
+  },
+  serviceTypes: {
+    driveway: {widthScale: 0.75},
+    parkingAisle: {widthScale: 0.6},
+  },
+  mountainBike: {
+    '4': {surface: {fill: {dash: [2, 1], opacity: 0.7}}},
+  },
+});
+```
+
+Qualitative controls choose coherent Streets defaults; exact class styles override them. Resolution
+order is engine invariants, Streets recipe, theme tokens, qualitative road controls, global
+structure styles, exact class styles, then feature treatments per property. Raw overrides remain
+last. A missing field inherits; `enabled: false` deliberately removes the target; object key order
+never controls z-order or treatment precedence.
+
+Treatments stay data-driven inside the stable class × structure × phase layer whenever they only
+change paint or relative width. Multiple conditions compose by documented per-property precedence,
+so `primary + tunnel + ramp + restricted` is still one owned primary-tunnel layer stack. The same
+feature must never be emitted once per matching condition. Class/structure/phase graph order and
+`layer`/`level` intra-layer sorting are independent of treatment precedence.
+
+Finish Roads in this order:
+
+1. Migrate road class, area, and treatment shapes onto shared `LineStackStyle`, `AreaStyle`, and
+   `Partial<LinePaint>` without changing pixels or generated IDs.
+2. Lock the current supported Tileflow World fields: class/subclass, bridge/tunnel, ramp,
+   paved/unpaved, access/bicycle/foot/horse restriction, construction, service subtype, one-way,
+   and layer/level. Cover every field remapping and multi-condition composition.
+3. Add treatments for `expressway`, `toll`, and `indoor` only after recording their real bounded
+   values. Keep the simple “any restriction” shorthand, and add per-value restriction styling only
+   if the audit proves stable useful states such as private/destination/customers.
+4. Audit `transportation_name` `ref`, `network`, `route_*`, and junction values. Then add road shields
+   and junction/roundabout semantics through the shared symbol coordinator. `labels()` owns text,
+   shield assets, priority, and collision; `roads()` supplies eligible classes and geometry.
+5. Treat `mtb_scale` and other path-specific metadata as opt-in outdoor semantics, not default
+   Streets noise. Do not expose a key until a committed scene demonstrates its use.
+6. Tune the Streets recipe, not compiler invariants: widths by class/zoom, casing contrast,
+   tunnel attenuation/dashes, bridge separation, ramp scaling, service-road hierarchy, and label
+   density. Review overview, motorway, neighborhood, close-street, bridge/tunnel, rural, and mobile
+   scenes before accepting a visual baseline.
+7. Record dataset gaps explicitly. The current OpenFreeMap/OpenMapTiles archive does not expose
+   traffic signals, zebra crossings, lane counts, or sidewalk geometry. Those require another
+   provider, an upstream change, a Tileflow-built dataset, or an additional overlay tileset before
+   an SDK API can render them. They do not block a professional Tileflow Streets basemap.
+
+Road names, shields, and POI/station symbols must share collision policy with the rest of labels.
+One-way arrows may remain road-owned geometry annotations but must use the resolved road typography
+or icon assets. Transit rail/ferry/cableway remains in `transit()`, never in `roads()`.
 
 ## Plan of Work
 
@@ -675,6 +1003,14 @@ type CartographicContribution = {
 Implement typed constants, `zoom.linear()`, `zoom.step()`, and validated expression/filter wrappers.
 Validate finite values, monotonic stops, result/property types. Expressions are atomic during merge.
 
+Consolidate the reusable visual language before adding more module-specific fields. Split range,
+paint, and layout internally; implement the background/fill/line/text/icon/symbol/circle/extrusion
+matrix above; add `AreaStyle`, `LineStackStyle`, and `SymbolStyle` compositions; remove ordinary
+appearance-level filters; and migrate every module off one-off lookalike shapes. In particular,
+replace the road treatment line copy with `Partial<LinePaint>`, replace building's fill-plus-height
+intersection with `ExtrusionStyle`, and stop using fill styles for the background layer. This
+normalization is byte/pixel preserving and covered property-by-property before Streets is retuned.
+
 Implement serializable module requests and canonical keyed merge whose own-field presence preserves
 explicitness. Resolve road-label eligibility and POI density/icon/text/coupling policy before final
 layers. Every generated layer has one owner and stable unique ID; reject conflicting ownership
@@ -707,7 +1043,7 @@ The first Streets style is complete and generated only by the nine direct domain
 Bright layer, ID, source remapping bridge, or `internalMigration` state may enter compilation. The
 reference ledger instead drives coverage tests and later visual comparisons. Switch the lab to
 `streets()` immediately. Emit durable metadata `tileflow:basemap = 'streets'`,
-`tileflow:basemapVersion = 1`, `tileflow:variant`, and the resolved `tileflow:data` identity.
+`tileflow:basemapVersion = 2`, `tileflow:variant`, and the resolved `tileflow:data` identity.
 
 ### Milestone 4: complete land and water
 
@@ -721,11 +1057,18 @@ labels. Add city/coast/rural multi-zoom evidence and compare coverage against th
 Implement class visibility, zoom, source filters, surface/tunnel/bridge, fill/casing/shadow, color,
 opacity, width curves, line cap/join, dash/pattern, one-way, semantic pedestrian/footway/cycleway/
 steps/pathway targets, areas/piers, construction/ramp/unpaved treatments, access/mode restrictions,
-service subtypes, and level-aware intra-layer ordering. The five path-family filters must be
-pairwise disjoint and use
+service subtypes, and level-aware intra-layer ordering. Use shared `LineStackStyle`, `AreaStyle`, and
+`Partial<LinePaint>` contracts; do not retain a road-only copy of visual properties. The five
+path-family filters must be pairwise disjoint and use
 the resolved OpenMapTiles `class` and `subclass` bindings for both geometry and labels. Structure
 phases apply uniformly to every road target. Move rail, ferry, and cableways to transit rather than
 retaining `roads.extras.rail/ferry`. Road labels remain labels.
+
+After locking the already implemented fields, audit and consume expressway/toll/indoor values where
+they have a stable Streets use. Audit route ref/network and junction features before adding shields
+or junction/roundabout semantics through the shared symbol policy. Treat mountain-bike scale as an
+opt-in outdoor capability. Never add signals/crossings/lanes/sidewalk authoring keys while the
+selected versioned dataset cannot supply them.
 
 Add overview, motorway, neighborhood, close-street, bridge/tunnel, and mobile evidence. Use OSM
 Bright and Google Maps manually for coverage/hierarchy, not pixel copying.
@@ -799,7 +1142,7 @@ at each stopping point.
 
     git status --short --branch
     pnpm --filter @tileflow/core verify
-    pnpm run visual:cartography
+    pnpm run visual:streets
 
 2.  Iterate with focused checks:
 
@@ -813,8 +1156,8 @@ at each stopping point.
 
 3.  Exercise the real authoring loop after each domain switch:
 
-        pnpm dev:cartography -- --scene madrid-neighborhood
-        pnpm run visual:cartography
+        pnpm dev:streets --scene madrid-neighborhood
+        pnpm run visual:streets
 
     Inspect preview, Style JSON, diffs, and feature coverage. Update baselines only after approval.
 
@@ -843,7 +1186,7 @@ at each stopping point.
 - Conformance tests prove every direct compiler honors resolved source-layer and field mappings;
   there is no temporary canonical-only mode.
 - Manifest 2 references maps/styles without data-base duplication; receipt 2 records data identity.
-- Final style metadata contains Streets ID `streets`, basemap version `1`, variant `light`, and the
+- Final style metadata contains Streets ID `streets`, basemap version `2`, variant `light`, and the
   resolved data identity. It contains no `tileflow:internalMigration` key.
 
 ### Module language and direct compilation
@@ -851,12 +1194,27 @@ at each stopping point.
 - Empty modules yields complete Streets; partial overlays preserve defaults; disabling is explicit.
 - Module-key permutations produce identical resolved design, graph, metadata, layers, and style hash.
 - Every explicit field affects a target or returns stable code/path; none is ignored.
+- Background, fill, line, text, icon, symbol placement, circle, and extrusion have one shared public
+  contract each. All modules use those contracts or documented compound styles; no module carries a
+  second incompatible copy of the same paint/layout vocabulary.
+- Every primitive property has a constant test, a supported zoom/expression test where applicable,
+  a strict invalid-value/path test, and a MapLibre-valid output test. Deliberate compiler/recipe
+  changes are reviewed across the scene matrix and accepted through explicit baseline updates.
+- Semantic feature eligibility is owned by module/data bindings rather than ordinary appearance
+  styles. Raw filters remain explicit, final, exact-ID operations and cannot enter the built-in
+  Streets recipe.
 - Path-family geometry and labels expose `pedestrian`, `footway`, `cycleway`, `steps`, and residual
   `pathway` without raw filters. Their generated selectors are pairwise disjoint, honor remapped
   `class`/`subclass` fields, and work independently for surface, tunnel, and bridge layers.
 - Road modifiers, restrictions, and service subtypes honor remapped data fields, compose by fixed
   per-property precedence, and remain data-driven inside stable semantic class layers. Explicit
   treatment keys affect output or fail schema validation; object order cannot alter precedence.
+- A road matching multiple treatments is emitted once for its class × structure × phase. Treatment
+  compilation may change only data-driven paint/relative width; any requested range/layout/order
+  change requires an explicit target or fails rather than being silently ignored.
+- Expressway/toll/indoor, shield, junction, and path-difficulty keys are exported only after bounded
+  source-value evidence and committed scene tests. Signals/crossings/lanes/sidewalk keys remain
+  absent while the versioned data contract cannot fulfill them.
 - Generated layers have one owner and stable unique IDs. No compiler searches/patches OSM IDs.
 - Generated IDs and structural ordering are covered by basemap version; a breaking change bumps
   `tileflow:basemapVersion` and updates fixtures, receipts, and migration notes together.
@@ -915,13 +1273,14 @@ Generated IDs: background, landuse, landcover, parks, water, buildings-soft,
   roads-minor, roads-major, roads-bridges, boundaries, place-labels, road-labels-major,
   road-shields, water-labels, water-line-labels, waterway-labels, poi-labels
 Initial world revision: 2026-06-07
-Lab: examples/cartography-lab/tileflow.config.ts
+Lab: examples/tileflow-streets/tileflow.config.ts
+Application example: examples/uber/tileflow.config.ts with LA and NYC application scenes
 Scenes: madrid-overview, madrid-neighborhood, madrid-close-street, madrid-motorway,
   madrid-airport, madrid-transit, madrid-rural-edge, barcelona-waterfront, madrid-mobile
 User-owned diff: editorial palette adjustments in lab config
 Baseline core: build passes; 46 tests pass via node --import tsx --test before ledger test
 Ledger checkpoint: 47 core tests pass after adding the frozen ownership test
-Direct Streets: 105 default layers; current Editorial City: 150 layers; no inherited IDs or default
+Direct Streets: 105 default layers; current Editorial City: 155 layers; no inherited IDs or default
   sprite
 Workspace verify: 194 pass, 13 intentional integration skips
 Visual checkpoint: nine reviewed schema-2 baselines with resolved Tileflow World data identity
@@ -930,14 +1289,21 @@ Hosted contract: CLI sends validated Style JSON + receipt and hosted sprite URL;
   coordination remains external to this repository
 Final gates: pnpm check PASS; pnpm build PASS; pnpm run smoke:capture-public PASS;
   pnpm run publish:alpha:dry-run PASS (no publication)
-Path semantics checkpoint: 67 core tests PASS; 3 Cartography Lab tests PASS; config validation PASS;
+Path semantics checkpoint: 67 core tests PASS; 3 Streets tests PASS; config validation PASS;
   zoom-17 Atocha preview reviewed; packaged public smoke and alpha dry-run PASS
-Pedestrian-area checkpoint: 69 core tests PASS; 3 Cartography Lab tests PASS; close-street and
+Pedestrian-area checkpoint: 69 core tests PASS; 3 Streets tests PASS; close-street and
   zoom-18 Atocha captures reviewed; full Style JSON validation, workspace check/build, packaged
   public smoke, and alpha dry-run PASS; older visual baselines intentionally unchanged
-Road-intelligence checkpoint: 71 core tests PASS; 3 Cartography Lab tests PASS; close-street and
+Road-intelligence checkpoint: 71 core tests PASS; 3 Streets tests PASS; close-street and
   motorway captures reviewed; nine-scene diff recorded intentional output/camera drift without
   updating baselines; workspace check/build, packaged public smoke, and alpha dry-run PASS
+Shared-primitives and final Roads checkpoint: 76 core tests PASS; 3 Streets tests PASS;
+  54 CLI tests PASS with 6 intentional skips; all nine scenes reviewed and baselines regenerated;
+  junction labels adjusted to zoom 15 after visual review; Editorial City compiles 155 valid layers
+  on Streets basemap version 2
+Examples checkpoint: `@tileflow/example-streets` 3/3 PASS; `@tileflow/example-uber` 3/3 PASS;
+  Streets nine-scene comparison completes; Uber LA/NYC baselines reviewed and regenerated with
+  Streets v2 receipts; follow-up comparison preserves only remote-resource warnings
 Formatting: all changed files pass Prettier and git diff --check; the repository-wide command still
   reports the two unchanged reconcile-release files that also fail on the clean base
 ```

@@ -43,7 +43,7 @@ test('prints deterministic bounded feature JSON without credentials or hidden pr
     join(directory, 'tileflow.config.ts'),
     `if (process.env.TILEFLOW_API_KEY) throw new Error('ambient API key reached config');
 export default {maps: {fixture: {
-  basemap: {type: 'streets', basemapVersion: 1, variant: 'light'},
+  basemap: {type: 'streets', basemapVersion: 2, variant: 'light'},
   data: {
     type: 'vector-tiles',
     url: 'http://127.0.0.1:${port}/tiles.json?key=PRIVATE',

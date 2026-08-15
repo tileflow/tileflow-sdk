@@ -1,0 +1,362 @@
+:root {
+  color: #101213;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  width: 100%;
+}
+
+button {
+  font: inherit;
+}
+
+.ride-map {
+  background: #edf1f2;
+  height: 100%;
+  isolation: isolate;
+  overflow: hidden;
+  position: relative;
+  width: 100%;
+}
+
+.ride-map > [data-tileflow-map] {
+  height: 100% !important;
+  min-height: 100% !important;
+}
+
+.maplibregl-ctrl-top-right {
+  display: none;
+}
+
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-attrib {
+  background: rgb(255 255 255 / 76%);
+  color: #617078;
+  font-size: 9px;
+}
+
+.scene-picker {
+  backdrop-filter: blur(12px);
+  background: rgb(255 255 255 / 88%);
+  border: 1px solid rgb(14 17 19 / 10%);
+  border-radius: 999px;
+  bottom: 18px;
+  box-shadow: 0 8px 24px rgb(14 17 19 / 14%);
+  display: flex;
+  gap: 3px;
+  left: 50%;
+  padding: 4px;
+  position: absolute;
+  translate: -50% 0;
+  z-index: 4;
+}
+
+.scene-picker button {
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  color: #59676e;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  padding: 7px 12px;
+  white-space: nowrap;
+}
+
+.scene-picker button[aria-current='page'] {
+  background: #101213;
+  color: #fff;
+}
+
+.back-control {
+  background: rgb(255 255 255 / 92%);
+  border: 0;
+  border-radius: 50%;
+  box-shadow: 0 3px 14px rgb(12 17 20 / 14%);
+  cursor: pointer;
+  height: 44px;
+  left: 18px;
+  position: absolute;
+  top: 20px;
+  width: 44px;
+  z-index: 4;
+}
+
+.back-control span {
+  border-bottom: 2px solid #101213;
+  border-left: 2px solid #101213;
+  height: 13px;
+  left: 17px;
+  position: absolute;
+  top: 15px;
+  transform: rotate(45deg);
+  width: 13px;
+}
+
+.back-control span::after {
+  background: #101213;
+  content: '';
+  height: 2px;
+  left: -2px;
+  position: absolute;
+  top: 10px;
+  transform: rotate(-45deg);
+  transform-origin: left center;
+  width: 19px;
+}
+
+.ride-vehicle {
+  filter: drop-shadow(0 2px 2px rgb(11 16 18 / 32%));
+  height: 24px;
+  pointer-events: none;
+  position: relative;
+  width: 38px;
+}
+
+.ride-vehicle__car {
+  background: linear-gradient(180deg, #5c6265 0 18%, #1d2224 22% 78%, #080a0b 82% 100%);
+  border: 1px solid #050607;
+  border-radius: 8px 5px 5px 8px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 12%);
+  display: block;
+  height: 17px;
+  left: 2px;
+  position: absolute;
+  top: 3px;
+  transform-origin: center;
+  width: 34px;
+}
+
+.ride-vehicle__car::before,
+.ride-vehicle__car::after {
+  background: #090b0c;
+  border-radius: 2px;
+  content: '';
+  height: 4px;
+  position: absolute;
+  right: 5px;
+  width: 7px;
+}
+
+.ride-vehicle__car::before {
+  top: -3px;
+}
+
+.ride-vehicle__car::after {
+  bottom: -3px;
+}
+
+.ride-vehicle__cabin {
+  background: linear-gradient(90deg, #273036, #859096 48%, #30383c);
+  border-radius: 4px;
+  height: 11px;
+  left: 8px;
+  position: absolute;
+  top: 2px;
+  width: 15px;
+}
+
+.ride-vehicle__shine {
+  background: rgb(255 255 255 / 65%);
+  border-radius: 2px;
+  height: 2px;
+  left: 3px;
+  position: absolute;
+  top: 2px;
+  width: 4px;
+}
+
+.ride-vehicle__label {
+  background: #111415;
+  border: 2px solid #fff;
+  border-radius: 4px;
+  bottom: 50%;
+  box-shadow: 0 2px 5px rgb(12 17 20 / 22%);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  left: 50%;
+  line-height: 16px;
+  min-width: 38px;
+  padding: 0 5px;
+  position: absolute;
+  text-align: center;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.ride-vehicle__label::after {
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid #111415;
+  content: '';
+  left: 50%;
+  position: absolute;
+  top: 100%;
+  translate: -50% 0;
+}
+
+.ride-vehicle__label--blue {
+  background: #5668d8;
+}
+
+.ride-vehicle__label--blue::after {
+  border-top-color: #5668d8;
+}
+
+.ride-destination--flag {
+  border-left: 2px solid #272a2c;
+  height: 30px;
+  width: 26px;
+}
+
+.ride-destination {
+  z-index: 10 !important;
+}
+
+.ride-destination__flag {
+  background: #ef2b34;
+  clip-path: polygon(0 0, 100% 0, 78% 50%, 100% 100%, 0 100%);
+  display: block;
+  height: 14px;
+  width: 22px;
+}
+
+.ride-destination--home {
+  background: #101213;
+  border: 0;
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 4px #fff,
+    0 3px 7px rgb(12 17 20 / 32%);
+  height: 28px;
+  width: 28px;
+}
+
+.ride-destination--home::after {
+  background: #101213;
+  bottom: -7px;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  content: '';
+  height: 9px;
+  left: 8px;
+  position: absolute;
+  width: 12px;
+}
+
+.ride-destination__center {
+  background: #fff;
+  border-radius: 50%;
+  display: block;
+  height: 8px;
+  left: 10px;
+  position: absolute;
+  top: 10px;
+  width: 8px;
+}
+
+.ride-pickup {
+  background: #101213;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 5px rgb(12 17 20 / 28%);
+  height: 27px;
+  rotate: 24deg;
+  width: 27px;
+}
+
+.ride-pickup__center {
+  background: #fff;
+  display: block;
+  height: 7px;
+  left: 7px;
+  position: absolute;
+  top: 7px;
+  width: 7px;
+}
+
+.trip-card {
+  align-items: stretch;
+  background: #fff;
+  border-radius: 2px;
+  box-shadow: 0 4px 12px rgb(12 17 20 / 23%);
+  display: flex;
+  height: 70px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.trip-card__eta {
+  align-items: center;
+  background: #101213;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 70px;
+}
+
+.trip-card__eta strong {
+  font-size: 25px;
+  font-weight: 500;
+  line-height: 26px;
+}
+
+.trip-card__eta small {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.trip-card__label {
+  align-items: center;
+  color: #17191a;
+  display: flex;
+  font-size: 22px;
+  min-width: 112px;
+  padding: 0 14px;
+}
+
+.trip-card__arrow {
+  border-right: 2px solid #899399;
+  border-top: 2px solid #899399;
+  height: 11px;
+  margin: auto 18px auto 0;
+  rotate: 45deg;
+  width: 11px;
+}
+
+@media (max-width: 520px) {
+  .scene-picker {
+    bottom: 12px;
+  }
+
+  .scene-picker button {
+    padding: 6px 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

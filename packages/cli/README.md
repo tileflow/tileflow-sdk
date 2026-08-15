@@ -51,7 +51,7 @@ camera, and viewport:
 
 ```ts
 export default {
-  maps: {madrid: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}}},
+  maps: {madrid: {basemap: {type: 'streets', basemapVersion: 2, variant: 'light'}}},
   scenes: {
     'madrid-desktop': {
       map: 'madrid',

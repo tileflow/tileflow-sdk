@@ -4,7 +4,7 @@
 
 The SDK owns the cartographic authoring loop because configuration, semantic modules, compilation,
 and visual evidence must change atomically. The canonical workbench is
-`examples/cartography-lab/tileflow.config.ts`. The separate `tileflow-demos` repository consumes
+`examples/tileflow-streets/tileflow.config.ts`. The separate `tileflow-demos` repository consumes
 exact npm packages after publication; it is not the place to invent SDK controls.
 
 Tileflow Streets is compiled directly from Tileflow-owned module recipes. It does not inherit,
@@ -66,16 +66,22 @@ constraint prevents overlap and lets authors style plaza fill, outline, opacity,
 raw MapLibre filters.
 
 Road conditions are orthogonal to class and structure. `roads.modifiers` supports `construction`,
-`ramp`, and `unpaved`; `roads.restrictions` supports `access`, `bicycle`, `foot`, and `horse`; and
-`roads.serviceTypes` supports `alley`, `crossover`, `driveway`, `parkingAisle`, and `yard`. Each
-treatment can be disabled, scale inherited widths, and refine the surface/tunnel/bridge
-shadow/casing/fill paint. Treatment paint is deliberately feature-driven and limited to constant
-color, opacity, dash, blur, gap width, and offset; exact class widths and zoom curves remain in
-`roads.classes`. Fixed per-property precedence is construction, bicycle restriction, foot
-restriction, horse restriction, general access restriction, ramp, unpaved, then service subtype.
-Object key order never changes it. A
-feature matching several conditions can therefore take its ramp width and unpaved dash at the same
-time, while the earlier treatment wins only when both set the same paint property.
+`expressway`, `indoor`, `official`, `ramp`, and `unpaved`; `roads.restrictions` supports `access`,
+`bicycle`, `foot`, `horse`, and `toll`; `roads.serviceTypes` supports `alley`, `crossover`,
+`driveway`, `parkingAisle`, and `yard`; and `roads.mountainBike` addresses the exact OpenMapTiles
+scales from `0` through `6`, including the intermediate `0+` through `3+` values. Each treatment
+can be disabled, scale inherited widths, and refine the surface/tunnel/bridge shadow/casing/fill
+paint with constants, zoom functions, or expressions. Fixed per-property precedence is
+construction, modal restrictions, general access, toll, expressway, ramp, unpaved, indoor,
+official, mountain-bike scale, then service subtype. Object key order never changes it. A feature
+matching several conditions can therefore take its ramp width and unpaved dash at the same time,
+while the earlier treatment wins only when both set the same paint property.
+
+`labels.shields` controls road-reference coverage independently from road names, and
+`labels.styles.shields` provides a default symbol plus optional deterministic per-network styles.
+`labels.junctions` controls motorway-junction references. Both use the same road eligibility and
+remappable data bindings as road geometry; neither requires an author to know a source-layer,
+field name, or generated layer ID.
 
 The road compiler reads all selectors through the versioned data bindings. It also uses remappable
 `layer` and `level` fields as the stable line sort key inside a semantic layer. Construction classes
@@ -92,7 +98,7 @@ data binding rather than a basemap-specific translator.
 Compiler output records exact durable identity:
 
 - `tileflow:basemap = streets`
-- `tileflow:basemapVersion = 1`
+- `tileflow:basemapVersion = 2`
 - `tileflow:variant = light | dark`
 - `tileflow:data = {kind, revision?, schema, schemaVersion, sourceId}`
 
@@ -109,22 +115,21 @@ motorways, airport geometry, transit, a rural edge, coastline, and a narrow high
 Work in this order:
 
 1. Express the requested result with the existing theme and semantic modules.
-2. Run `pnpm dev:cartography`, optionally selecting one scene with `--scene`.
-3. Run `pnpm visual:cartography` and inspect the current PNG, diff, and receipt.
+2. Run `pnpm dev:streets`, optionally selecting one scene with `--scene`.
+3. Run `pnpm visual:streets` and inspect the current PNG, diff, and receipt.
 4. If config cannot express the result, keep the revealing scene and add the smallest reusable
    semantic control to its owning module.
-5. Update approved baselines only with `pnpm visual:cartography:update`, after review.
+5. Update approved baselines only with `pnpm visual:streets:update`, after review.
 6. Merge config, compiler/module behavior, tests, documentation, and visual evidence together.
 
 Phrase gaps as cartographic intent—label hierarchy, boundary emphasis, road width by zoom—not as a
 request to expose a reference style's layer ID.
 
 Reference-style inventories can reveal missing concepts, but they are not Tileflow APIs. Tileflow
-World already supplies the fields used by road treatments, while traffic signals and zebra
-crossings are absent from its current TileJSON contract. Junction symbols and shields have source
-evidence but still require dedicated semantic authoring contracts. Do not emulate missing concepts
-with copied layer IDs or silently claim support when the selected dataset does not expose the
-required feature.
+World already supplies the fields used by road treatments, road references, networks, and motorway
+junctions. Traffic signals, zebra crossings, per-lane widths, sidewalk geometry, and barriers are
+absent from its current TileJSON contract. Do not emulate missing concepts with copied layer IDs or
+silently claim support when the selected dataset does not expose the required feature.
 
 ## Preview, baselines, and promotion
 
@@ -134,7 +139,7 @@ belongs to capture. Valid watched edits reload the same selection; invalid edits
 valid artifact and show diagnostics.
 
 Approved lab baselines and schema-version-2 receipts live under
-`examples/cartography-lab/test/visual-baselines`. Remote resources make a capture useful evidence,
+`examples/tileflow-streets/test/visual-baselines`. Remote resources make a capture useful evidence,
 not a guarantee that the network can never change. Baseline changes therefore require human visual
 review.
 

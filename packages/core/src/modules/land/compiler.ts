@@ -1,8 +1,7 @@
 import type {TileflowDomainCompileContext} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
-import {applyFillStyle, applyLayerRange} from '../../cartography/layer-style';
+import {applyBackgroundStyle, createAreaLayers} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
-import {toMapLibreStyleValue} from '../../cartography/values';
 import type {TileflowLandcoverClass, TileflowLandModuleConfig, TileflowLanduseClass} from './index';
 
 const landuseClasses: Record<TileflowLanduseClass, readonly string[]> = {
@@ -36,22 +35,22 @@ export function compileLand(
       enabled: true,
       background: {color: colors.background},
       landuse: {
-        cemetery: {color: colors.landuse.cemetery, opacity: 0.62},
-        civic: {color: colors.landuse.civic, opacity: 0.62},
-        commercial: {color: colors.landuse.commercial, opacity: 0.62},
-        industrial: {color: colors.landuse.industrial, opacity: 0.62},
-        railway: {color: colors.landuse.industrial, opacity: 0.62},
-        residential: {color: colors.landuse.residential, opacity: 0.62},
+        cemetery: {fill: {color: colors.landuse.cemetery, opacity: 0.62}},
+        civic: {fill: {color: colors.landuse.civic, opacity: 0.62}},
+        commercial: {fill: {color: colors.landuse.commercial, opacity: 0.62}},
+        industrial: {fill: {color: colors.landuse.industrial, opacity: 0.62}},
+        railway: {fill: {color: colors.landuse.industrial, opacity: 0.62}},
+        residential: {fill: {color: colors.landuse.residential, opacity: 0.62}},
       },
       landcover: {
-        farmland: {color: colors.landcover.protected, opacity: 0.88},
-        grass: {color: colors.landcover.grass, opacity: 0.88},
-        ice: {color: colors.landcover.ice, opacity: 0.88},
-        park: {color: colors.landcover.park, opacity: 0.78},
-        protected: {color: colors.landcover.protected, opacity: 0.88},
-        sand: {color: colors.landcover.sand, opacity: 0.88},
-        scrub: {color: colors.landcover.protected, opacity: 0.88},
-        wood: {color: colors.landcover.wood, opacity: 0.88},
+        farmland: {fill: {color: colors.landcover.protected, opacity: 0.88}},
+        grass: {fill: {color: colors.landcover.grass, opacity: 0.88}},
+        ice: {fill: {color: colors.landcover.ice, opacity: 0.88}},
+        park: {fill: {color: colors.landcover.park, opacity: 0.78}},
+        protected: {fill: {color: colors.landcover.protected, opacity: 0.88}},
+        sand: {fill: {color: colors.landcover.sand, opacity: 0.88}},
+        scrub: {fill: {color: colors.landcover.protected, opacity: 0.88}},
+        wood: {fill: {color: colors.landcover.wood, opacity: 0.88}},
       },
     },
     request,
@@ -68,21 +67,10 @@ export function compileLand(
     const background = config.background ?? {};
     contributions.push({
       kind: 'layer',
-      layer: applyLayerRange(
+      layer: applyBackgroundStyle(
         {
           id: 'streets-background',
           type: 'background',
-          paint: {
-            ...(background.color === undefined
-              ? {}
-              : {'background-color': toMapLibreStyleValue(background.color)}),
-            ...(background.opacity === undefined
-              ? {}
-              : {'background-opacity': toMapLibreStyleValue(background.opacity)}),
-            ...(background.pattern === undefined
-              ? {}
-              : {'background-pattern': toMapLibreStyleValue(background.pattern)}),
-          },
         },
         background,
       ),
@@ -98,49 +86,53 @@ export function compileLand(
     [TileflowLanduseClass, readonly string[]]
   >) {
     const style = config.landuse?.[name];
-    if (!style || style.visible === false) continue;
-    contributions.push({
-      kind: 'layer',
-      layer: applyFillStyle(
-        {
-          id: `streets-landuse-${name}`,
-          type: 'fill',
-          source,
-          'source-layer': schema.layers.landuse,
-          filter: classFilter(classField, classes),
-        },
-        style,
-      ),
-      localOrder: localOrder++,
-      owner: 'land',
-      slot: 'land',
-      target: `land.landuse.${name}`,
-    });
+    if (!style) continue;
+    for (const area of createAreaLayers(
+      {
+        id: `streets-landuse-${name}`,
+        type: 'fill',
+        source,
+        'source-layer': schema.layers.landuse,
+        filter: classFilter(classField, classes),
+      },
+      style,
+    )) {
+      contributions.push({
+        kind: 'layer',
+        layer: area.layer,
+        localOrder: localOrder++,
+        owner: 'land',
+        slot: 'land',
+        target: `land.landuse.${name}.${area.phase}`,
+      });
+    }
   }
 
   for (const [name, classes] of Object.entries(landcoverClasses) as Array<
     [TileflowLandcoverClass, readonly string[]]
   >) {
     const style = config.landcover?.[name];
-    if (!style || style.visible === false) continue;
+    if (!style) continue;
     const sourceLayer = name === 'park' ? schema.layers.park : schema.layers.landcover;
-    contributions.push({
-      kind: 'layer',
-      layer: applyFillStyle(
-        {
-          id: `streets-landcover-${name}`,
-          type: 'fill',
-          source,
-          'source-layer': sourceLayer,
-          ...(name === 'park' ? {} : {filter: classFilter(classField, classes)}),
-        },
-        style,
-      ),
-      localOrder: localOrder++,
-      owner: 'land',
-      slot: 'land',
-      target: `land.landcover.${name}`,
-    });
+    for (const area of createAreaLayers(
+      {
+        id: `streets-landcover-${name}`,
+        type: 'fill',
+        source,
+        'source-layer': sourceLayer,
+        ...(name === 'park' ? {} : {filter: classFilter(classField, classes)}),
+      },
+      style,
+    )) {
+      contributions.push({
+        kind: 'layer',
+        layer: area.layer,
+        localOrder: localOrder++,
+        owner: 'land',
+        slot: 'land',
+        target: `land.landcover.${name}.${area.phase}`,
+      });
+    }
   }
 
   return contributions;

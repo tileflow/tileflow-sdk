@@ -1,8 +1,9 @@
 import type {
-  TileflowFillStyle,
-  TileflowIconStyle,
-  TileflowLineStyle,
-  TileflowTextStyle,
+  TileflowAreaStyle,
+  TileflowFontWeight,
+  TileflowLinePaint,
+  TileflowLineStackStyle,
+  TileflowSymbolStyle,
 } from './cartography/styles';
 
 export type TileflowColor = `#${string}`;
@@ -120,7 +121,7 @@ export type TileflowThemeModulesConfig = {
 export type TileflowColorConfig = Partial<TileflowBaseColors> & {roadCasing?: TileflowColor};
 
 export type TileflowColors = {[K in keyof TileflowBaseColors]: string};
-export type TileflowFontWeight = 'regular' | 'medium' | 'semibold' | 'bold';
+export type {TileflowFontWeight} from './cartography/styles';
 export const tileflowHostedNotoSansWeights = ['regular', 'bold'] as const;
 export type TileflowHostedNotoSansWeight = (typeof tileflowHostedNotoSansWeights)[number];
 
@@ -200,19 +201,11 @@ export type TileflowRoadWeight = 'thin' | 'regular' | 'bold';
 export type TileflowRoadOutline = 'none' | 'subtle' | 'strong';
 export type TileflowRoadStructure = 'bridge' | 'surface' | 'tunnel';
 export type TileflowRoadExtras = {paths?: boolean};
-export type TileflowRoadLayerStyle = {
-  casing?: TileflowLineStyle;
-  fill?: TileflowLineStyle;
-  shadow?: TileflowLineStyle;
-};
-export type TileflowRoadTreatmentLineStyle = {
-  blur?: number;
-  color?: string;
-  dash?: readonly number[];
-  gapWidth?: number;
-  offset?: number;
-  opacity?: number;
-};
+export type TileflowRoadLayerStyle = TileflowLineStackStyle;
+export type TileflowRoadTreatmentLineStyle = Pick<
+  TileflowLinePaint,
+  'blur' | 'color' | 'dash' | 'gapWidth' | 'offset' | 'opacity' | 'width'
+>;
 export type TileflowRoadTreatmentLayerStyle = {
   casing?: TileflowRoadTreatmentLineStyle;
   fill?: TileflowRoadTreatmentLineStyle;
@@ -224,17 +217,34 @@ export type TileflowRoadTreatmentStyle = Partial<
   enabled?: boolean;
   widthScale?: number;
 };
-export type TileflowRoadModifier = 'construction' | 'ramp' | 'unpaved';
-export type TileflowRoadRestriction = 'access' | 'bicycle' | 'foot' | 'horse';
+export type TileflowRoadModifier =
+  | 'construction'
+  | 'expressway'
+  | 'indoor'
+  | 'official'
+  | 'ramp'
+  | 'unpaved';
+export type TileflowRoadRestriction = 'access' | 'bicycle' | 'foot' | 'horse' | 'toll';
+export type TileflowMountainBikeScale =
+  | '0'
+  | '0+'
+  | '1'
+  | '1+'
+  | '2'
+  | '2+'
+  | '3'
+  | '3+'
+  | '4'
+  | '5'
+  | '6';
 export type TileflowRoadServiceType = 'alley' | 'crossover' | 'driveway' | 'parkingAisle' | 'yard';
 export type TileflowRoadClassStyle = Partial<
   Record<TileflowRoadStructure, TileflowRoadLayerStyle>
 > & {enabled?: boolean};
 export type TileflowRoadAreaStyle = {
-  pedestrian?: TileflowFillStyle;
-  pier?: TileflowFillStyle;
-  pierLine?: TileflowLineStyle;
-  road?: TileflowFillStyle;
+  pedestrian?: TileflowAreaStyle;
+  pier?: TileflowAreaStyle;
+  road?: TileflowAreaStyle;
 };
 export type TileflowRoadsModuleConfig = {
   type: 'roads';
@@ -245,6 +255,7 @@ export type TileflowRoadsModuleConfig = {
   extras?: TileflowRoadExtras;
   hierarchy?: TileflowRoadHierarchy;
   modifiers?: Partial<Record<TileflowRoadModifier, TileflowRoadTreatmentStyle>>;
+  mountainBike?: Partial<Record<TileflowMountainBikeScale, TileflowRoadTreatmentStyle>>;
   oneWayMarkers?: boolean;
   outline?: TileflowRoadOutline;
   restrictions?: Partial<Record<TileflowRoadRestriction, TileflowRoadTreatmentStyle>>;
@@ -268,20 +279,28 @@ export type TileflowPlaceLabelClass =
   | 'town'
   | 'village';
 export type TileflowWaterLabelClass = 'line' | 'ocean' | 'other' | 'waterway';
+export type TileflowRoadShieldDetail = 'none' | 'major' | 'all';
+export type TileflowRoadShieldStyles = {
+  default?: TileflowSymbolStyle;
+  networks?: Record<string, TileflowSymbolStyle>;
+};
 export type TileflowLabelStyles = {
-  aerodrome?: TileflowTextStyle;
-  places?: Partial<Record<TileflowPlaceLabelClass, TileflowTextStyle>>;
-  roads?: Partial<Record<TileflowRoadClass, TileflowTextStyle>>;
-  shields?: TileflowTextStyle;
-  water?: Partial<Record<TileflowWaterLabelClass, TileflowTextStyle>>;
+  aerodrome?: TileflowSymbolStyle;
+  junctions?: TileflowSymbolStyle;
+  places?: Partial<Record<TileflowPlaceLabelClass, TileflowSymbolStyle>>;
+  roads?: Partial<Record<TileflowRoadClass, TileflowSymbolStyle>>;
+  shields?: TileflowRoadShieldStyles;
+  water?: Partial<Record<TileflowWaterLabelClass, TileflowSymbolStyle>>;
 };
 export type TileflowLabelsModuleConfig = {
   type: 'labels';
   enabled?: boolean;
+  junctions?: boolean;
   language?: TileflowLabelLanguage;
   places?: TileflowLabelDetail;
   roadClasses?: readonly TileflowRoadClass[];
   roads?: TileflowRoadLabelDetail;
+  shields?: TileflowRoadShieldDetail;
   styles?: TileflowLabelStyles;
   water?: TileflowLabelDetail;
 };
@@ -304,7 +323,7 @@ export type TileflowPoiLabels = 'none' | 'minimal' | 'balanced' | 'full';
 export type TileflowPoiDensity = 'sparse' | 'balanced' | 'dense';
 export type TileflowPoiColorMode = 'uniform' | 'category';
 export type TileflowPoiClassMapping = Record<string, readonly string[]>;
-export type TileflowPoiCategoryStyle = {icon?: TileflowIconStyle; text?: TileflowTextStyle};
+export type TileflowPoiCategoryStyle = TileflowSymbolStyle;
 export type TileflowPoiModuleConfig = {
   type: 'poi';
   categories?: readonly TileflowPoiCategory[];

@@ -14,7 +14,24 @@ test('accepts the canonical Streets project shape', () => {
     maps: {
       madrid: {
         basemap: streets(),
-        modules: {roads: roads({hierarchy: 'strong'})},
+        modules: {
+          labels: labels({
+            styles: {
+              places: {
+                city: {
+                  priority: 80,
+                  text: {
+                    keepUpright: true,
+                    maxAngle: 40,
+                    radialOffset: 1,
+                    variableAnchors: ['top', 'bottom'],
+                  },
+                },
+              },
+            },
+          }),
+          roads: roads({hierarchy: 'strong'}),
+        },
         view: {center: [-3.7038, 40.4168], pitch: 45, zoom: 15},
       },
     },
@@ -71,14 +88,26 @@ test('accepts semantic path road targets and rejects the old overlapping path ta
       modules: {
         labels: labels({roadClasses: ['pedestrian', 'footway', 'cycleway', 'steps', 'pathway']}),
         roads: roads({
-          areas: {pedestrian: {color: '#F1F3F5', outlineColor: '#D5DCE3'}},
+          areas: {
+            pedestrian: {
+              fill: {color: '#F1F3F5'},
+              outline: {color: '#D5DCE3', width: 1},
+            },
+          },
           classes: {pedestrian: {}, footway: {}, cycleway: {}, steps: {}, pathway: {}},
           modifiers: {
             construction: {surface: {fill: {dash: [2, 1], opacity: 0.7}}},
+            expressway: {widthScale: 1.1},
+            indoor: {surface: {fill: {opacity: 0.4}}},
+            official: {surface: {casing: {color: '#445566'}}},
             ramp: {widthScale: 0.7},
             unpaved: {surface: {fill: {color: '#E9E4DA'}}},
           },
-          restrictions: {access: {surface: {fill: {opacity: 0.5}}}},
+          mountainBike: {'0': {surface: {fill: {color: '#55AA66'}}}},
+          restrictions: {
+            access: {surface: {fill: {opacity: 0.5}}},
+            toll: {surface: {fill: {dash: [3, 1]}}},
+          },
           serviceTypes: {driveway: {widthScale: 0.75}, parkingAisle: {widthScale: 0.6}},
         }),
       },
@@ -101,6 +130,20 @@ test('accepts semantic path road targets and rejects the old overlapping path ta
         modules: {roads: {...roads(), modifiers: {crossing: {widthScale: 0.5}}}},
       } as never),
     /crossing/,
+  );
+
+  assert.throws(
+    () =>
+      parseTileflowMap({
+        basemap: streets(),
+        modules: {
+          water: {
+            type: 'water',
+            waterways: {river: {filter: {kind: 'filter', value: []}}},
+          },
+        },
+      } as never),
+    /filter/,
   );
 });
 

@@ -1,10 +1,9 @@
 import type {TileflowDomainCompileContext} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
-import {applyIconStyle, applyTextStyle} from '../../cartography/layer-style';
+import {applyCircleStyle, applySymbolStyle} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
-import type {TileflowIconStyle, TileflowTextStyle} from '../../cartography/styles';
+import type {TileflowSymbolStyle, TileflowTextStyle} from '../../cartography/styles';
 import {expression, zoom} from '../../cartography/values';
-import {textFont} from '../../themes';
 import type {TileflowPoiModuleConfig} from '../../types';
 import {type ResolvedPoiModuleOptions, resolvePoi} from './index';
 
@@ -60,15 +59,40 @@ export function compilePoi(
         ]),
       }),
     };
-    const style = mergeTileflowDesign<{icon: TileflowIconStyle; text: TileflowTextStyle}>(
-      defaults,
-      request?.styles?.[category],
-    );
+    const style = mergeTileflowDesign<
+      TileflowSymbolStyle & {
+        icon: NonNullable<TileflowSymbolStyle['icon']>;
+        text: NonNullable<TileflowSymbolStyle['text']>;
+      }
+    >(defaults, request?.styles?.[category]);
     const showText = semantics.labels !== 'none' && style.text.visible !== false;
     const showIcon = Boolean(semantics.icons) && style.icon.visible !== false;
     const densityRank = densityRankLimit(semantics.density);
     const textRank = showText ? labelRankLimit(semantics.labels) : 0;
     const iconRank = showIcon ? iconRankLimit(semantics.icons) : 0;
+
+    if (style.marker && style.marker.visible !== false) {
+      const base = createPoiLayer({
+        classes,
+        classField: schema.fields.class,
+        id: `streets-poi-${category}-marker`,
+        minZoom: semantics.minZoom,
+        rankField: schema.fields.rank,
+        rankLimit: densityRank,
+        source,
+        sourceLayer: schema.layers.poi,
+        subclassField: schema.fields.subclass,
+      });
+      const markerLayer = applyCircleStyle(
+        {
+          ...base,
+          type: 'circle',
+          layout: {'circle-sort-key': ['coalesce', ['get', schema.fields.rank], 999]},
+        },
+        style.marker,
+      );
+      result.push(poiContribution(`${category}.marker`, index * 4, markerLayer));
+    }
 
     if (semantics.placement.coupleIconAndLabel && showText && showIcon) {
       let layer = createPoiLayer({
@@ -82,14 +106,13 @@ export function compilePoi(
         sourceLayer: schema.layers.poi,
         subclassField: schema.fields.subclass,
       });
-      layer = applyTextStyle(layer, style.text);
-      layer = applyIconStyle(layer, style.icon);
-      result.push(poiContribution(category, index * 3, layer));
+      layer = applySymbolStyle(layer, style);
+      result.push(poiContribution(category, index * 4 + 1, layer));
       continue;
     }
 
     if (showIcon) {
-      const layer = applyIconStyle(
+      const layer = applySymbolStyle(
         createPoiLayer({
           classes,
           classField: schema.fields.class,
@@ -101,13 +124,13 @@ export function compilePoi(
           sourceLayer: schema.layers.poi,
           subclassField: schema.fields.subclass,
         }),
-        style.icon,
+        {...style, text: undefined},
       );
-      result.push(poiContribution(`${category}.icon`, index * 3, layer));
+      result.push(poiContribution(`${category}.icon`, index * 4 + 1, layer));
     }
 
     if (showText) {
-      const layer = applyTextStyle(
+      const layer = applySymbolStyle(
         createPoiLayer({
           classes,
           classField: schema.fields.class,
@@ -119,9 +142,9 @@ export function compilePoi(
           sourceLayer: schema.layers.poi,
           subclassField: schema.fields.subclass,
         }),
-        style.text,
+        {...style, icon: undefined},
       );
-      result.push(poiContribution(`${category}.label`, index * 3 + 1, layer));
+      result.push(poiContribution(`${category}.label`, index * 4 + 2, layer));
     }
   }
 
@@ -210,10 +233,11 @@ function poiTextStyle(
     {
       allowOverlap: false,
       color: context.colors.poi.label,
-      font: textFont(context.typography, 'poi'),
+      font: context.typography.poi.font,
       haloColor: context.colors.poi.halo,
       haloWidth: 1,
       optional: true,
+      weight: context.typography.poi.weight,
     },
     overrides,
   );

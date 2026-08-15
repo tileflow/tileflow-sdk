@@ -1,17 +1,12 @@
-import type {TileflowFillStyle, TileflowLineStyle} from '../../cartography/styles';
-import type {TileflowStyleValue} from '../../cartography/values';
+import type {TileflowAreaStyle, TileflowExtrusionStyle} from '../../cartography/styles';
 
 export type TileflowBuildingMode = '3d' | 'flat';
 
 export type TileflowBuildingsModuleOptions = {
   enabled?: boolean;
-  extrusion?: TileflowFillStyle & {
-    base?: TileflowStyleValue<number>;
-    height?: TileflowStyleValue<number>;
-  };
-  fill?: TileflowFillStyle;
+  extrusion?: TileflowExtrusionStyle;
+  flat?: TileflowAreaStyle;
   mode?: TileflowBuildingMode;
-  outline?: TileflowLineStyle;
 };
 
 export type TileflowBuildingsModuleConfig = TileflowBuildingsModuleOptions & {type: 'buildings'};

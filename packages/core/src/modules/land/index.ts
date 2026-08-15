@@ -1,4 +1,4 @@
-import type {TileflowFillStyle} from '../../cartography/styles';
+import type {TileflowAreaStyle, TileflowBackgroundStyle} from '../../cartography/styles';
 
 export type TileflowLanduseClass =
   | 'cemetery'
@@ -18,10 +18,10 @@ export type TileflowLandcoverClass =
   | 'wood';
 
 export type TileflowLandModuleOptions = {
-  background?: TileflowFillStyle;
+  background?: TileflowBackgroundStyle;
   enabled?: boolean;
-  landcover?: Partial<Record<TileflowLandcoverClass, TileflowFillStyle>>;
-  landuse?: Partial<Record<TileflowLanduseClass, TileflowFillStyle>>;
+  landcover?: Partial<Record<TileflowLandcoverClass, TileflowAreaStyle>>;
+  landuse?: Partial<Record<TileflowLanduseClass, TileflowAreaStyle>>;
 };
 
 export type TileflowLandModuleConfig = TileflowLandModuleOptions & {type: 'land'};

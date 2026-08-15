@@ -31,7 +31,7 @@ export default defineTileflow({
       basemap: streets(),
       theme: 'editorial',
       modules: {
-        water: water({bodies: {opacity: 0.95}}),
+        water: water({bodies: {fill: {opacity: 0.95}}}),
         roads: roads({
           detail: 'streets',
           hierarchy: 'strong',
@@ -54,7 +54,7 @@ export default defineTileflow({
           places: 'all',
           roads: 'streets',
           styles: {
-            places: {city: {size: 18, haloWidth: 1.5}},
+            places: {city: {text: {size: 18, haloWidth: 1.5}}},
           },
         }),
         poi: poi({categories: ['food', 'culture', 'transit'], color: 'category'}),
@@ -89,13 +89,35 @@ constants, raw MapLibre expressions through `expression(...)`, and zoom function
 `zoom.step(...)`, `zoom.linear(...)`, or `zoom.exponential(...)`. Exact controls address stable
 concepts such as `roads.classes.primary.surface.fill`, not renderer layer IDs.
 
+## Shared visual primitives
+
+The same small visual language is reused across every geographic domain. This keeps an agent from
+having to learn different spellings for the same MapLibre behavior:
+
+- `BackgroundStyle`: color, opacity, pattern, visibility, and zoom range.
+- `FillStyle`: color, opacity, pattern, antialiasing, visibility, and zoom range.
+- `LineStyle`: color, width, opacity, dash, blur, gap, offset, pattern, caps, joins, and zoom range.
+- `TextStyle`: field, font, weight, fallbacks, size, color, halo, spacing metrics, transform,
+  collision policy, rotation, fixed/variable anchoring, line constraints, and zoom range.
+- `IconStyle`: image, size, color, halo, rotation/alignment, collision policy, and zoom range.
+- `CircleStyle`: radius, fill/stroke appearance, blur, opacity, pitch behavior, and zoom range.
+- `ExtrusionStyle`: color, height, base, opacity, pattern, vertical gradient, and zoom range.
+
+Compounds express common cartographic structures: `AreaStyle` has `fill` and `outline`,
+`LineStackStyle` has `shadow`, `casing`, and `fill`, and `SymbolStyle` combines placement with
+optional `text`, `icon`, and `marker`. Geographic selection remains owned by semantic modules;
+ordinary visual styles intentionally do not accept raw source filters.
+
 The road module distinguishes the path family semantically:
 
 ```ts
 roads({
   extras: {paths: true},
   areas: {
-    pedestrian: {color: '#F1F3F5', outlineColor: '#D5DCE3'},
+    pedestrian: {
+      fill: {color: '#F1F3F5'},
+      outline: {color: '#D5DCE3', width: 1},
+    },
   },
   classes: {
     pedestrian: {surface: {fill: {color: '#F5F6F7', width: 6}}},
@@ -105,12 +127,15 @@ roads({
     pathway: {surface: {fill: {color: '#E8ECEF', width: 1.2}}},
   },
   modifiers: {
+    expressway: {widthScale: 1.06},
     ramp: {widthScale: 0.7},
     unpaved: {surface: {fill: {color: '#E6DFD3', dash: [2, 1]}}},
     construction: {surface: {fill: {dash: [2, 1], opacity: 0.7}}},
+    indoor: {surface: {fill: {dash: [1, 1], opacity: 0.4}}},
   },
   restrictions: {
     access: {surface: {fill: {dash: [1.5, 1], opacity: 0.55}}},
+    toll: {surface: {casing: {color: '#C5B7D8'}}},
   },
   serviceTypes: {
     driveway: {widthScale: 0.75},
@@ -128,12 +153,33 @@ generated layer ID is needed.
 geometry and use `areas.pedestrian`, including optional fill opacity, outline color, or sprite
 pattern. This prevents plazas from degrading into a thin polygon outline.
 
-Road treatments refine a class without creating another class or exposing source fields. `ramp`,
-`unpaved`, and `construction` live under `modifiers`; explicit general, bicycle, foot, and horse
-restrictions live under `restrictions`; and `alley`, `crossover`, `driveway`, `parkingAisle`, and
-`yard` live under `serviceTypes`. Treatments reuse surface/tunnel/bridge and casing/fill/shadow
-paint controls, plus a relative `widthScale`. The compiler emits feature-driven paint expressions
-inside the existing stable class layers rather than multiplying every possible combination.
+Road treatments refine a class without creating another class or exposing source fields.
+`construction`, `expressway`, `indoor`, `official`, `ramp`, and `unpaved` live under `modifiers`;
+general, bicycle, foot, horse, and toll restrictions live under `restrictions`; `alley`,
+`crossover`, `driveway`, `parkingAisle`, and `yard` live under `serviceTypes`; and exact
+mountain-bike difficulty values live under `mountainBike`. Treatments reuse
+surface/tunnel/bridge and casing/fill/shadow paint controls, plus a relative `widthScale`. The
+compiler emits feature-driven paint expressions inside the existing stable class layers rather
+than multiplying every possible combination.
+
+Road names, shields, and motorway junctions remain label concerns:
+
+```ts
+labels({
+  roads: 'all',
+  shields: 'all',
+  junctions: true,
+  styles: {
+    shields: {
+      default: {text: {color: '#405264', haloColor: '#fff', haloWidth: 2, weight: 'bold'}},
+      networks: {
+        'network-value': {text: {color: '#B43A35'}},
+      },
+    },
+    junctions: {text: {color: '#405264', haloColor: '#fff', haloWidth: 2}},
+  },
+});
+```
 
 POI `density`, `labels`, and `icons` are independent policies. Density bounds eligible feature
 ranks, label detail controls text ranks, icon detail controls icon ranks, and

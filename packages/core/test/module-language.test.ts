@@ -5,11 +5,11 @@ import {mergeTileflowDesign} from '../src/cartography/merge';
 
 test('creates serializable requests for every Streets domain', () => {
   const requests = {
-    land: land({landuse: {commercial: {color: '#eee'}}}),
-    water: water({bodies: {color: '#ace'}}),
+    land: land({landuse: {commercial: {fill: {color: '#eee'}}}}),
+    water: water({bodies: {fill: {color: '#ace'}}}),
     buildings: buildings({mode: '3d'}),
     boundaries: boundaries({admin2: {width: 2}}),
-    transit: transit({rail: {dash: [2, 1]}}),
+    transit: transit({rail: {surface: {dash: [2, 1]}}}),
     aeroways: aeroways({
       runway: {
         fill: {

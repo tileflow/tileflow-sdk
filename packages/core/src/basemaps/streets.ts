@@ -14,7 +14,7 @@ import type {
   TileflowRoadsModuleConfig,
 } from '../types';
 
-export const tileflowStreetsBasemapVersion = 1;
+export const tileflowStreetsBasemapVersion = 2;
 
 export type TileflowStreetsVariant = 'dark' | 'light';
 
@@ -56,6 +56,13 @@ export const tileflowStreetsRecipe = Object.freeze({
           surface: {
             casing: {dash: [2, 1], opacity: 0.62},
             fill: {dash: [2, 1], opacity: 0.68},
+          },
+        },
+        expressway: {widthScale: 1.06},
+        indoor: {
+          surface: {
+            casing: {dash: [1, 1], opacity: 0.28},
+            fill: {dash: [1, 1], opacity: 0.42},
           },
         },
         ramp: {widthScale: 0.72},

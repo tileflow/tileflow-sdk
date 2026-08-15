@@ -25,16 +25,6 @@ const zoomValueSchema = z
     stops: z.array(z.tuple([zoomNumberSchema, z.unknown()])).min(1),
   })
   .strict();
-const filterSchema = z
-  .object({kind: z.literal('filter'), value: z.array(z.unknown()).min(1)})
-  .strict();
-const valueSchema = z.union([
-  z.string(),
-  z.number().finite(),
-  z.boolean(),
-  expressionSchema,
-  zoomValueSchema,
-]);
 const numberValueSchema = z.union([z.number().finite(), expressionSchema, zoomValueSchema]);
 const stringValueSchema = z.union([z.string(), expressionSchema, zoomValueSchema]);
 const numberArrayValueSchema = z.union([
@@ -161,17 +151,24 @@ export const tileflowThemeSchema = z
   .strict();
 
 const rangeShape = {
-  filter: filterSchema.optional(),
   maxZoom: zoomNumberSchema.optional(),
   minZoom: zoomNumberSchema.optional(),
   visible: z.boolean().optional(),
 };
-const fillStyleSchema = z
+const backgroundStyleSchema = z
   .object({
     ...rangeShape,
     color: stringValueSchema.optional(),
     opacity: numberValueSchema.optional(),
-    outlineColor: stringValueSchema.optional(),
+    pattern: stringValueSchema.optional(),
+  })
+  .strict();
+const fillStyleSchema = z
+  .object({
+    ...rangeShape,
+    antialias: z.boolean().optional(),
+    color: stringValueSchema.optional(),
+    opacity: numberValueSchema.optional(),
     pattern: stringValueSchema.optional(),
   })
   .strict();
@@ -184,9 +181,11 @@ const lineStyleSchema = z
     dash: numberArrayValueSchema.optional(),
     gapWidth: numberValueSchema.optional(),
     join: z.enum(['bevel', 'miter', 'round']).optional(),
+    miterLimit: z.number().finite().min(0).optional(),
     offset: numberValueSchema.optional(),
     opacity: numberValueSchema.optional(),
     pattern: stringValueSchema.optional(),
+    roundLimit: z.number().finite().min(0).optional(),
     width: numberValueSchema.optional(),
   })
   .strict();
@@ -208,38 +207,129 @@ const textStyleSchema = z
       ])
       .optional(),
     color: stringValueSchema.optional(),
+    fallbacks: z.array(z.string().trim().min(1)).optional(),
     field: stringValueSchema.optional(),
-    font: z.array(z.string().trim().min(1)).min(1).optional(),
+    font: z.string().trim().min(1).optional(),
     haloBlur: numberValueSchema.optional(),
     haloColor: stringValueSchema.optional(),
     haloWidth: numberValueSchema.optional(),
     ignorePlacement: z.boolean().optional(),
+    justify: z.enum(['auto', 'center', 'left', 'right']).optional(),
+    keepUpright: z.boolean().optional(),
     letterSpacing: numberValueSchema.optional(),
     lineHeight: numberValueSchema.optional(),
+    maxAngle: z.number().finite().min(0).max(180).optional(),
     maxWidth: numberValueSchema.optional(),
     offset: z.tuple([z.number().finite(), z.number().finite()]).optional(),
     optional: z.boolean().optional(),
+    opacity: numberValueSchema.optional(),
     padding: numberValueSchema.optional(),
-    placement: z.enum(['line', 'line-center', 'point']).optional(),
-    priority: numberValueSchema.optional(),
+    radialOffset: numberValueSchema.optional(),
     rotate: numberValueSchema.optional(),
     size: numberValueSchema.optional(),
-    spacing: numberValueSchema.optional(),
     transform: z.enum(['lowercase', 'none', 'uppercase']).optional(),
+    variableAnchors: z
+      .array(
+        z.enum([
+          'bottom',
+          'bottom-left',
+          'bottom-right',
+          'center',
+          'left',
+          'right',
+          'top',
+          'top-left',
+          'top-right',
+        ]),
+      )
+      .min(1)
+      .optional(),
+    weight: z.enum(['regular', 'medium', 'semibold', 'bold']).optional(),
   })
   .strict();
 const iconStyleSchema = z
   .object({
     ...rangeShape,
     allowOverlap: z.boolean().optional(),
+    anchor: z
+      .enum([
+        'bottom',
+        'bottom-left',
+        'bottom-right',
+        'center',
+        'left',
+        'right',
+        'top',
+        'top-left',
+        'top-right',
+      ])
+      .optional(),
+    color: stringValueSchema.optional(),
+    haloBlur: numberValueSchema.optional(),
+    haloColor: stringValueSchema.optional(),
+    haloWidth: numberValueSchema.optional(),
     ignorePlacement: z.boolean().optional(),
     image: stringValueSchema.optional(),
     offset: z.tuple([z.number().finite(), z.number().finite()]).optional(),
     opacity: numberValueSchema.optional(),
+    keepUpright: z.boolean().optional(),
     optional: z.boolean().optional(),
     padding: numberValueSchema.optional(),
+    pitchAlignment: z.enum(['auto', 'map', 'viewport']).optional(),
     rotate: numberValueSchema.optional(),
+    rotationAlignment: z.enum(['auto', 'map', 'viewport']).optional(),
     size: numberValueSchema.optional(),
+  })
+  .strict();
+
+const symbolPlacementShape = {
+  ...rangeShape,
+  placement: z.enum(['line', 'line-center', 'point']).optional(),
+  priority: numberValueSchema.optional(),
+  spacing: numberValueSchema.optional(),
+  zOrder: z.enum(['auto', 'source', 'viewport-y']).optional(),
+};
+const circleStyleSchema = z
+  .object({
+    ...rangeShape,
+    blur: numberValueSchema.optional(),
+    color: stringValueSchema.optional(),
+    opacity: numberValueSchema.optional(),
+    pitchAlignment: z.enum(['map', 'viewport']).optional(),
+    pitchScale: z.enum(['map', 'viewport']).optional(),
+    radius: numberValueSchema.optional(),
+    strokeColor: stringValueSchema.optional(),
+    strokeOpacity: numberValueSchema.optional(),
+    strokeWidth: numberValueSchema.optional(),
+  })
+  .strict();
+const extrusionStyleSchema = z
+  .object({
+    ...rangeShape,
+    base: numberValueSchema.optional(),
+    color: stringValueSchema.optional(),
+    height: numberValueSchema.optional(),
+    opacity: numberValueSchema.optional(),
+    pattern: stringValueSchema.optional(),
+    verticalGradient: z.boolean().optional(),
+  })
+  .strict();
+const areaStyleSchema = z
+  .object({fill: fillStyleSchema.optional(), outline: lineStyleSchema.optional()})
+  .strict();
+const lineStackStyleSchema = z
+  .object({
+    casing: lineStyleSchema.optional(),
+    fill: lineStyleSchema.optional(),
+    shadow: lineStyleSchema.optional(),
+  })
+  .strict();
+const symbolStyleSchema = z
+  .object({
+    ...symbolPlacementShape,
+    icon: iconStyleSchema.optional(),
+    marker: circleStyleSchema.optional(),
+    text: textStyleSchema.optional(),
   })
   .strict();
 
@@ -258,43 +348,56 @@ const roadClassSchema = z.enum([
   'steps',
   'pedestrian',
 ]);
-const roadLayerStyleSchema = z
-  .object({
-    casing: lineStyleSchema.optional(),
-    fill: lineStyleSchema.optional(),
-    shadow: lineStyleSchema.optional(),
-  })
-  .strict();
 const roadClassStyleSchema = z
   .object({
     enabled: z.boolean().optional(),
-    bridge: roadLayerStyleSchema.optional(),
-    surface: roadLayerStyleSchema.optional(),
-    tunnel: roadLayerStyleSchema.optional(),
+    bridge: lineStackStyleSchema.optional(),
+    surface: lineStackStyleSchema.optional(),
+    tunnel: lineStackStyleSchema.optional(),
   })
   .strict();
 const roadStructureMapSchema = z
   .object({
-    bridge: roadLayerStyleSchema.optional(),
-    surface: roadLayerStyleSchema.optional(),
-    tunnel: roadLayerStyleSchema.optional(),
-  })
-  .strict();
-const roadTreatmentLineStyleSchema = z
-  .object({
-    blur: z.number().finite().optional(),
-    color: z.string().trim().min(1).optional(),
-    dash: z.array(z.number().finite().nonnegative()).min(2).optional(),
-    gapWidth: z.number().finite().nonnegative().optional(),
-    offset: z.number().finite().optional(),
-    opacity: z.number().finite().min(0).max(1).optional(),
+    bridge: lineStackStyleSchema.optional(),
+    surface: lineStackStyleSchema.optional(),
+    tunnel: lineStackStyleSchema.optional(),
   })
   .strict();
 const roadTreatmentLayerStyleSchema = z
   .object({
-    casing: roadTreatmentLineStyleSchema.optional(),
-    fill: roadTreatmentLineStyleSchema.optional(),
-    shadow: roadTreatmentLineStyleSchema.optional(),
+    casing: lineStyleSchema
+      .pick({
+        blur: true,
+        color: true,
+        dash: true,
+        gapWidth: true,
+        offset: true,
+        opacity: true,
+        width: true,
+      })
+      .optional(),
+    fill: lineStyleSchema
+      .pick({
+        blur: true,
+        color: true,
+        dash: true,
+        gapWidth: true,
+        offset: true,
+        opacity: true,
+        width: true,
+      })
+      .optional(),
+    shadow: lineStyleSchema
+      .pick({
+        blur: true,
+        color: true,
+        dash: true,
+        gapWidth: true,
+        offset: true,
+        opacity: true,
+        width: true,
+      })
+      .optional(),
   })
   .strict();
 const roadTreatmentStyleSchema = z
@@ -310,29 +413,29 @@ const roadTreatmentStyleSchema = z
 const landModuleSchema = z
   .object({
     type: z.literal('land'),
-    background: fillStyleSchema.optional(),
+    background: backgroundStyleSchema.optional(),
     enabled: z.boolean().optional(),
     landcover: z
       .object({
-        farmland: fillStyleSchema.optional(),
-        grass: fillStyleSchema.optional(),
-        ice: fillStyleSchema.optional(),
-        park: fillStyleSchema.optional(),
-        protected: fillStyleSchema.optional(),
-        sand: fillStyleSchema.optional(),
-        scrub: fillStyleSchema.optional(),
-        wood: fillStyleSchema.optional(),
+        farmland: areaStyleSchema.optional(),
+        grass: areaStyleSchema.optional(),
+        ice: areaStyleSchema.optional(),
+        park: areaStyleSchema.optional(),
+        protected: areaStyleSchema.optional(),
+        sand: areaStyleSchema.optional(),
+        scrub: areaStyleSchema.optional(),
+        wood: areaStyleSchema.optional(),
       })
       .strict()
       .optional(),
     landuse: z
       .object({
-        cemetery: fillStyleSchema.optional(),
-        civic: fillStyleSchema.optional(),
-        commercial: fillStyleSchema.optional(),
-        industrial: fillStyleSchema.optional(),
-        railway: fillStyleSchema.optional(),
-        residential: fillStyleSchema.optional(),
+        cemetery: areaStyleSchema.optional(),
+        civic: areaStyleSchema.optional(),
+        commercial: areaStyleSchema.optional(),
+        industrial: areaStyleSchema.optional(),
+        railway: areaStyleSchema.optional(),
+        residential: areaStyleSchema.optional(),
       })
       .strict()
       .optional(),
@@ -341,10 +444,10 @@ const landModuleSchema = z
 const waterModuleSchema = z
   .object({
     type: z.literal('water'),
-    bodies: fillStyleSchema.optional(),
+    bodies: areaStyleSchema.optional(),
     enabled: z.boolean().optional(),
     intermittent: z
-      .object({bodies: fillStyleSchema.optional(), waterways: lineStyleSchema.optional()})
+      .object({bodies: areaStyleSchema.optional(), waterways: lineStyleSchema.optional()})
       .strict()
       .optional(),
     waterways: z
@@ -362,12 +465,9 @@ const buildingsModuleSchema = z
   .object({
     type: z.literal('buildings'),
     enabled: z.boolean().optional(),
-    extrusion: fillStyleSchema
-      .extend({base: numberValueSchema.optional(), height: numberValueSchema.optional()})
-      .optional(),
-    fill: fillStyleSchema.optional(),
+    extrusion: extrusionStyleSchema.optional(),
+    flat: areaStyleSchema.optional(),
     mode: z.enum(['3d', 'flat']).optional(),
-    outline: lineStyleSchema.optional(),
   })
   .strict();
 const boundariesModuleSchema = z
@@ -383,16 +483,10 @@ const boundariesModuleSchema = z
 const aerowaysModuleSchema = z
   .object({
     type: z.literal('aeroways'),
-    area: fillStyleSchema.optional(),
+    area: areaStyleSchema.optional(),
     enabled: z.boolean().optional(),
-    runway: z
-      .object({casing: lineStyleSchema.optional(), fill: lineStyleSchema.optional()})
-      .strict()
-      .optional(),
-    taxiway: z
-      .object({casing: lineStyleSchema.optional(), fill: lineStyleSchema.optional()})
-      .strict()
-      .optional(),
+    runway: lineStackStyleSchema.optional(),
+    taxiway: lineStackStyleSchema.optional(),
   })
   .strict();
 const transitModuleSchema = z
@@ -401,9 +495,30 @@ const transitModuleSchema = z
     cableway: lineStyleSchema.optional(),
     enabled: z.boolean().optional(),
     ferry: lineStyleSchema.optional(),
-    rail: lineStyleSchema.optional(),
-    railHatching: lineStyleSchema.optional(),
-    serviceRail: lineStyleSchema.optional(),
+    rail: z
+      .object({
+        bridge: lineStyleSchema.optional(),
+        surface: lineStyleSchema.optional(),
+        tunnel: lineStyleSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    railHatching: z
+      .object({
+        bridge: lineStyleSchema.optional(),
+        surface: lineStyleSchema.optional(),
+        tunnel: lineStyleSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    serviceRail: z
+      .object({
+        bridge: lineStyleSchema.optional(),
+        surface: lineStyleSchema.optional(),
+        tunnel: lineStyleSchema.optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 const roadsModuleSchema = z
@@ -411,10 +526,9 @@ const roadsModuleSchema = z
     type: z.literal('roads'),
     areas: z
       .object({
-        pedestrian: fillStyleSchema.optional(),
-        pier: fillStyleSchema.optional(),
-        pierLine: lineStyleSchema.optional(),
-        road: fillStyleSchema.optional(),
+        pedestrian: areaStyleSchema.optional(),
+        pier: areaStyleSchema.optional(),
+        road: areaStyleSchema.optional(),
       })
       .strict()
       .optional(),
@@ -426,8 +540,27 @@ const roadsModuleSchema = z
     modifiers: z
       .object({
         construction: roadTreatmentStyleSchema.optional(),
+        expressway: roadTreatmentStyleSchema.optional(),
+        indoor: roadTreatmentStyleSchema.optional(),
+        official: roadTreatmentStyleSchema.optional(),
         ramp: roadTreatmentStyleSchema.optional(),
         unpaved: roadTreatmentStyleSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    mountainBike: z
+      .object({
+        '0': roadTreatmentStyleSchema.optional(),
+        '0+': roadTreatmentStyleSchema.optional(),
+        '1': roadTreatmentStyleSchema.optional(),
+        '1+': roadTreatmentStyleSchema.optional(),
+        '2': roadTreatmentStyleSchema.optional(),
+        '2+': roadTreatmentStyleSchema.optional(),
+        '3': roadTreatmentStyleSchema.optional(),
+        '3+': roadTreatmentStyleSchema.optional(),
+        '4': roadTreatmentStyleSchema.optional(),
+        '5': roadTreatmentStyleSchema.optional(),
+        '6': roadTreatmentStyleSchema.optional(),
       })
       .strict()
       .optional(),
@@ -439,6 +572,7 @@ const roadsModuleSchema = z
         bicycle: roadTreatmentStyleSchema.optional(),
         foot: roadTreatmentStyleSchema.optional(),
         horse: roadTreatmentStyleSchema.optional(),
+        toll: roadTreatmentStyleSchema.optional(),
       })
       .strict()
       .optional(),
@@ -460,42 +594,51 @@ const roadsModuleSchema = z
 
 const placeLabelStylesSchema = z
   .object({
-    city: textStyleSchema.optional(),
-    continent: textStyleSchema.optional(),
-    country: textStyleSchema.optional(),
-    neighborhood: textStyleSchema.optional(),
-    other: textStyleSchema.optional(),
-    state: textStyleSchema.optional(),
-    town: textStyleSchema.optional(),
-    village: textStyleSchema.optional(),
+    city: symbolStyleSchema.optional(),
+    continent: symbolStyleSchema.optional(),
+    country: symbolStyleSchema.optional(),
+    neighborhood: symbolStyleSchema.optional(),
+    other: symbolStyleSchema.optional(),
+    state: symbolStyleSchema.optional(),
+    town: symbolStyleSchema.optional(),
+    village: symbolStyleSchema.optional(),
   })
   .strict();
 const waterLabelStylesSchema = z
   .object({
-    line: textStyleSchema.optional(),
-    ocean: textStyleSchema.optional(),
-    other: textStyleSchema.optional(),
-    waterway: textStyleSchema.optional(),
+    line: symbolStyleSchema.optional(),
+    ocean: symbolStyleSchema.optional(),
+    other: symbolStyleSchema.optional(),
+    waterway: symbolStyleSchema.optional(),
   })
   .strict();
 const labelsModuleSchema = z
   .object({
     type: z.literal('labels'),
     enabled: z.boolean().optional(),
+    junctions: z.boolean().optional(),
     language: z.string().trim().min(1).optional(),
     places: z.enum(['none', 'major', 'all']).optional(),
     roadClasses: z.array(roadClassSchema).min(1).optional(),
     roads: z.enum(['none', 'highways', 'major', 'streets', 'all']).optional(),
     styles: z
       .object({
-        aerodrome: textStyleSchema.optional(),
+        aerodrome: symbolStyleSchema.optional(),
+        junctions: symbolStyleSchema.optional(),
         places: placeLabelStylesSchema.optional(),
-        roads: z.partialRecord(roadClassSchema, textStyleSchema).optional(),
-        shields: textStyleSchema.optional(),
+        roads: z.partialRecord(roadClassSchema, symbolStyleSchema).optional(),
+        shields: z
+          .object({
+            default: symbolStyleSchema.optional(),
+            networks: z.record(identifierSchema, symbolStyleSchema).optional(),
+          })
+          .strict()
+          .optional(),
         water: waterLabelStylesSchema.optional(),
       })
       .strict()
       .optional(),
+    shields: z.enum(['none', 'major', 'all']).optional(),
     water: z.enum(['none', 'major', 'all']).optional(),
   })
   .strict();
@@ -519,12 +662,7 @@ const poiModuleSchema = z
       .strict()
       .optional(),
     preset: z.enum(['none', 'minimal', 'balanced', 'full']).optional(),
-    styles: z
-      .record(
-        identifierSchema,
-        z.object({icon: iconStyleSchema.optional(), text: textStyleSchema.optional()}).strict(),
-      )
-      .optional(),
+    styles: z.record(identifierSchema, symbolStyleSchema).optional(),
   })
   .strict();
 
@@ -686,7 +824,7 @@ const viewSchema = z
   .strict();
 const streetsThemeSchema = tileflowThemeSchema;
 
-export const tileflowMapSchema = z
+export const tileflowMapSchema: z.ZodType<TileflowConfig> = z
   .object({
     allowedOrigins: z.array(z.string().trim().min(1).max(253)).max(20).optional(),
     basemap: basemapSchema,
@@ -701,8 +839,8 @@ export const tileflowMapSchema = z
     theme: z.union([z.string().trim().min(1), streetsThemeSchema]).optional(),
     view: viewSchema.optional(),
   })
-  .strict();
-export const configSchema = tileflowMapSchema;
+  .strict() as z.ZodType<TileflowConfig>;
+export const configSchema: z.ZodType<TileflowConfig> = tileflowMapSchema;
 
 const scenesSchema = z
   .record(tileflowCaptureSceneNameSchema, tileflowCaptureSceneSchema)
@@ -720,7 +858,7 @@ const scenesSchema = z
       } else namesByCaseFold.set(folded, name);
     }
   });
-export const tileflowProjectSchema = z
+export const tileflowProjectSchema: z.ZodType<TileflowProjectConfig> = z
   .object({
     icons: z.record(identifierSchema, iconSetSchema).optional(),
     maps: z
@@ -729,7 +867,7 @@ export const tileflowProjectSchema = z
     scenes: scenesSchema.optional(),
     themes: z.record(identifierSchema, streetsThemeSchema).optional(),
   })
-  .strict();
+  .strict() as z.ZodType<TileflowProjectConfig>;
 
 export function parseTileflowMap(input: unknown): TileflowConfig {
   const map = parseOrThrow(tileflowMapSchema, input, 'config') as TileflowConfig;

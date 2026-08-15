@@ -9,7 +9,7 @@ test('compiles a complete deterministic Streets map from omitted data and module
 
   assert.deepEqual(first, second);
   assert.equal(first.metadata?.['tileflow:basemap'], 'streets');
-  assert.equal(first.metadata?.['tileflow:basemapVersion'], 1);
+  assert.equal(first.metadata?.['tileflow:basemapVersion'], 2);
   assert.equal(first.metadata?.['tileflow:variant'], 'light');
   assert.equal(first.metadata?.['tileflow:internalMigration'], undefined);
   assert.equal(first.sprite, undefined);
@@ -35,13 +35,13 @@ test('module key order does not change Streets output', () => {
     modules: {
       roads: roads({detail: 'major'}),
       labels: labels({roads: 'major'}),
-      water: water({bodies: {color: '#ABCDEF'}}),
+      water: water({bodies: {fill: {color: '#ABCDEF'}}}),
     },
   });
   const right = createStreetsStyle({
     basemap: streets(),
     modules: {
-      water: water({bodies: {color: '#ABCDEF'}}),
+      water: water({bodies: {fill: {color: '#ABCDEF'}}}),
       labels: labels({roads: 'major'}),
       roads: roads({detail: 'major'}),
     },

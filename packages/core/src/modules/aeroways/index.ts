@@ -1,16 +1,10 @@
-import type {TileflowFillStyle, TileflowLineStyle} from '../../cartography/styles';
+import type {TileflowAreaStyle, TileflowLineStackStyle} from '../../cartography/styles';
 
 export type TileflowAerowaysModuleOptions = {
-  area?: TileflowFillStyle;
+  area?: TileflowAreaStyle;
   enabled?: boolean;
-  runway?: {
-    casing?: TileflowLineStyle;
-    fill?: TileflowLineStyle;
-  };
-  taxiway?: {
-    casing?: TileflowLineStyle;
-    fill?: TileflowLineStyle;
-  };
+  runway?: TileflowLineStackStyle;
+  taxiway?: TileflowLineStackStyle;
 };
 
 export type TileflowAerowaysModuleConfig = TileflowAerowaysModuleOptions & {type: 'aeroways'};

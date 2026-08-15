@@ -107,7 +107,7 @@ test(
         `export default {
   maps: {
     proof: {
-      basemap: {type: 'streets', basemapVersion: 1, variant: 'light'},
+      basemap: {type: 'streets', basemapVersion: 2, variant: 'light'},
       modules: {roads: {
         type: 'roads', detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
         extras: {paths: true}

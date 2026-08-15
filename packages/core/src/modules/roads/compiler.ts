@@ -1,10 +1,11 @@
 import type {TileflowDomainCompileContext} from '../../cartography/context';
 import type {TileflowLayerContribution, TileflowLayerSlot} from '../../cartography/contributions';
-import {applyFillStyle, applyLineStyle} from '../../cartography/layer-style';
+import {applyLineStyle, createAreaLayers} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {expression, toMapLibreStyleValue, zoom} from '../../cartography/values';
 import {textFont} from '../../themes';
 import type {
+  TileflowRoadAreaStyle,
   TileflowRoadClass,
   TileflowRoadClassStyle,
   TileflowRoadLayerStyle,
@@ -148,94 +149,67 @@ export function compileRoads(
     }
   }
 
-  const areaStyles = mergeTileflowDesign(
+  const areaStyles = mergeTileflowDesign<TileflowRoadAreaStyle>(
     {
-      road: {color: context.colors.road, minZoom: 13, opacity: 0.9},
+      road: {fill: {color: context.colors.road, minZoom: 13, opacity: 0.9}},
       pedestrian: {
-        color: context.colors.road,
-        minZoom: 13,
-        opacity: 1,
-        outlineColor: context.colors.roads.casing,
+        fill: {color: context.colors.road, minZoom: 13, opacity: 1},
+        outline: {color: context.colors.roads.casing, minZoom: 13, width: 1},
       },
-      pier: {color: context.colors.land, minZoom: 12, opacity: 1},
-      pierLine: {color: context.colors.roads.casing, minZoom: 12, width: 1},
+      pier: {
+        fill: {color: context.colors.land, minZoom: 12, opacity: 1},
+        outline: {color: context.colors.roads.casing, minZoom: 12, width: 1},
+      },
     },
     request?.areas,
   );
-  contributions.push(
+  const areaTargets = [
     {
-      kind: 'layer',
-      layer: applyFillStyle(
-        {
-          id: 'streets-road-area',
-          type: 'fill',
-          source,
-          'source-layer': schema.layers.road,
-          filter: ['==', ['geometry-type'], 'Polygon'],
-        },
-        areaStyles.road,
-      ),
-      localOrder: 900,
-      owner: 'roads',
-      slot: 'transport-surface-fill',
-      target: 'roads.areas.road',
+      id: 'streets-road-area',
+      filter: ['==', ['geometry-type'], 'Polygon'],
+      name: 'road',
+      style: areaStyles.road,
     },
     {
-      kind: 'layer',
-      layer: applyFillStyle(
-        {
-          id: 'streets-road-pedestrian-area',
-          type: 'fill',
-          source,
-          'source-layer': schema.layers.road,
-          filter: [
-            'all',
-            ['==', ['geometry-type'], 'Polygon'],
-            tileflowRoadClassFilter(schema.fields, 'pedestrian'),
-          ],
-        },
-        areaStyles.pedestrian,
-      ),
-      localOrder: 901,
-      owner: 'roads',
-      slot: 'transport-surface-fill',
-      target: 'roads.areas.pedestrian',
+      id: 'streets-road-pedestrian-area',
+      filter: [
+        'all',
+        ['==', ['geometry-type'], 'Polygon'],
+        tileflowRoadClassFilter(schema.fields, 'pedestrian'),
+      ],
+      name: 'pedestrian',
+      style: areaStyles.pedestrian,
     },
     {
-      kind: 'layer',
-      layer: applyFillStyle(
-        {
-          id: 'streets-road-pier-area',
-          type: 'fill',
-          source,
-          'source-layer': schema.layers.road,
-          filter: ['==', ['get', schema.fields.class], 'pier'],
-        },
-        areaStyles.pier,
-      ),
-      localOrder: 902,
-      owner: 'roads',
-      slot: 'transport-surface-fill',
-      target: 'roads.areas.pier',
+      id: 'streets-road-pier-area',
+      filter: ['==', ['get', schema.fields.class], 'pier'],
+      name: 'pier',
+      style: areaStyles.pier,
     },
-    {
-      kind: 'layer',
-      layer: applyLineStyle(
-        {
-          id: 'streets-road-pier-line',
-          type: 'line',
-          source,
-          'source-layer': schema.layers.road,
-          filter: ['==', ['get', schema.fields.class], 'pier'],
-        },
-        areaStyles.pierLine,
-      ),
-      localOrder: 903,
-      owner: 'roads',
-      slot: 'transport-surface-fill',
-      target: 'roads.areas.pierLine',
-    },
-  );
+  ] as const;
+  let areaOrder = 900;
+  for (const target of areaTargets) {
+    if (!target.style) continue;
+    for (const area of createAreaLayers(
+      {
+        id: target.id,
+        type: 'fill',
+        source,
+        'source-layer': schema.layers.road,
+        filter: target.filter,
+      },
+      target.style,
+    )) {
+      contributions.push({
+        kind: 'layer',
+        layer: area.layer,
+        localOrder: areaOrder++,
+        owner: 'roads',
+        slot: 'transport-surface-fill',
+        target: `roads.areas.${target.name}.${area.phase}`,
+      });
+    }
+  }
 
   if (semantics.oneWayMarkers) {
     contributions.push({
@@ -287,8 +261,16 @@ function resolveRoadTreatments(
   add(request?.restrictions?.foot, restrictedAccessFilter(fields.foot));
   add(request?.restrictions?.horse, restrictedAccessFilter(fields.horse));
   add(request?.restrictions?.access, restrictedAccessFilter(fields.access));
-  add(request?.modifiers?.ramp, ['==', ['get', fields.ramp], 1]);
+  add(request?.restrictions?.toll, flagFilter(fields.toll));
+  add(request?.modifiers?.expressway, flagFilter(fields.expressway));
+  add(request?.modifiers?.ramp, flagFilter(fields.ramp));
   add(request?.modifiers?.unpaved, ['==', ['get', fields.surface], 'unpaved']);
+  add(request?.modifiers?.indoor, flagFilter(fields.indoor));
+  add(request?.modifiers?.official, flagFilter(fields.official));
+
+  for (const [scale, style] of Object.entries(request?.mountainBike ?? {})) {
+    add(style, ['==', ['to-string', ['get', fields.mtbScale]], scale]);
+  }
 
   if (roadClass === 'service') {
     for (const [serviceType, value] of Object.entries(serviceTypeValues)) {
@@ -317,6 +299,7 @@ function applyRoadTreatments(
     'gapWidth',
     'offset',
     'opacity',
+    'width',
   ] as const satisfies readonly (keyof TileflowRoadTreatmentLineStyle)[];
 
   for (const property of paintProperties) {
@@ -406,6 +389,10 @@ function restrictedAccessFilter(field: string): unknown[] {
       ],
     ],
   ];
+}
+
+function flagFilter(field: string): unknown[] {
+  return ['==', ['get', field], 1];
 }
 
 function defaultClassStyles(

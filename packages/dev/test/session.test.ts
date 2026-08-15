@@ -439,17 +439,17 @@ const validConfig = `import tokens from './tokens.ts';
 export default {
   maps: {
     main: {
-      basemap: {type: 'streets', basemapVersion: 1, variant: 'light'},
+      basemap: {type: 'streets', basemapVersion: 2, variant: 'light'},
       theme: {colors: {water: tokens.water}}
     }
   }
 };
 `;
-const invalidConfig = `export default {maps: {main: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, unsupported: true}}};\n`;
+const invalidConfig = `export default {maps: {main: {basemap: {type: 'streets', basemapVersion: 2, variant: 'light'}, unsupported: true}}};\n`;
 const previewConfig = `export default {
   maps: {
-    first: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}},
-    second: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, view: {bearing: 12, center: [2, 3], pitch: 35, zoom: 9}}
+    first: {basemap: {type: 'streets', basemapVersion: 2, variant: 'light'}},
+    second: {basemap: {type: 'streets', basemapVersion: 2, variant: 'light'}, view: {bearing: 12, center: [2, 3], pitch: 35, zoom: 9}}
   },
   scenes: {
     bounds: {
@@ -506,7 +506,7 @@ function waitForState(
 }
 
 function iconConfig(source: string): string {
-  return `export default {icons: {local: {source: '${source}'}}, maps: {main: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, icons: 'local'}}};\n`;
+  return `export default {icons: {local: {source: '${source}'}}, maps: {main: {basemap: {type: 'streets', basemapVersion: 2, variant: 'light'}, icons: 'local'}}};\n`;
 }
 
 function runPreviewScript(

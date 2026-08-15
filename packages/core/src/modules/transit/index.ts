@@ -4,9 +4,15 @@ export type TileflowTransitModuleOptions = {
   cableway?: TileflowLineStyle;
   enabled?: boolean;
   ferry?: TileflowLineStyle;
-  rail?: TileflowLineStyle;
-  railHatching?: TileflowLineStyle;
-  serviceRail?: TileflowLineStyle;
+  rail?: TileflowTransitRailStyle;
+  railHatching?: TileflowTransitRailStyle;
+  serviceRail?: TileflowTransitRailStyle;
+};
+
+export type TileflowTransitRailStyle = {
+  bridge?: TileflowLineStyle;
+  surface?: TileflowLineStyle;
+  tunnel?: TileflowLineStyle;
 };
 
 export type TileflowTransitModuleConfig = TileflowTransitModuleOptions & {type: 'transit'};

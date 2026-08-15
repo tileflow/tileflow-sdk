@@ -94,8 +94,8 @@ test('artifact construction shares validation and aggregates invalid config maps
     join(cwd, 'tileflow.config.ts'),
     `export default {
   maps: {
-    zeta: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]},
-    alpha: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]}
+    zeta: {basemap: {type: 'streets', basemapVersion: 2, variant: 'light'}, overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]},
+    alpha: {basemap: {type: 'streets', basemapVersion: 2, variant: 'light'}, overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]}
   }
 };\n`,
   );
@@ -144,7 +144,7 @@ test('direct Streets roads validate and written artifacts equal in-memory styles
     `export default {
   maps: {
     madrid: {
-      basemap: {type: 'streets', basemapVersion: 1, variant: 'light'},
+      basemap: {type: 'streets', basemapVersion: 2, variant: 'light'},
       modules: {roads: {
         type: 'roads',
         detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',

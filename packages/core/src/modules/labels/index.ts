@@ -5,22 +5,27 @@ import type {
   TileflowLabelsModuleOptions,
   TileflowRoadClass,
   TileflowRoadLabelDetail,
+  TileflowRoadShieldDetail,
 } from '../../types';
 import {type ResolvedRoadsModuleOptions, roadClassesWithPaths, visibleRoadClasses} from '../roads';
 import {tileflowRoadClasses} from '../roads/semantics';
 
 export type ResolvedLabelsModuleOptions = {
   language: TileflowLabelLanguage;
+  junctions: boolean;
   places: TileflowLabelDetail;
   roadClasses?: readonly TileflowRoadClass[];
   roads: TileflowRoadLabelDetail;
+  shields: TileflowRoadShieldDetail;
   water: TileflowLabelDetail;
 };
 
 const defaults = {
   language: 'auto',
+  junctions: true,
   places: 'major',
   roads: 'major',
+  shields: 'major',
   water: 'major',
 } as const satisfies ResolvedLabelsModuleOptions;
 
@@ -33,9 +38,11 @@ export function resolveLabels(
 ): ResolvedLabelsModuleOptions {
   return {
     language: request?.language ?? defaults.language,
+    junctions: request?.junctions ?? defaults.junctions,
     places: request?.places ?? defaults.places,
     ...(request?.roadClasses ? {roadClasses: [...request.roadClasses]} : {}),
     roads: request?.roads ?? defaults.roads,
+    shields: request?.shields ?? defaults.shields,
     water: request?.water ?? defaults.water,
   };
 }

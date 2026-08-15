@@ -42,7 +42,15 @@ test('prints deterministic bounded feature JSON without credentials or hidden pr
   await writeFile(
     join(directory, 'tileflow.config.ts'),
     `if (process.env.TILEFLOW_API_KEY) throw new Error('ambient API key reached config');
-export default {maps: {fixture: {renderer: 'generated', tiles: {url: 'http://127.0.0.1:${port}/tiles.json?key=PRIVATE'}}}};
+export default {maps: {fixture: {
+  basemap: {type: 'streets', basemapVersion: 1, variant: 'light'},
+  data: {
+    type: 'vector-tiles',
+    url: 'http://127.0.0.1:${port}/tiles.json?key=PRIVATE',
+    attribution: 'Fixture data',
+    schema: {type: 'openmaptiles', contractVersion: 1}
+  }
+}}};
 `,
   );
   const arguments_ = [

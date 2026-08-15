@@ -169,11 +169,11 @@ diagnostic levels; failed resource events may add the same safe `resources` arra
 SIGINT/SIGTERM closes the watcher, contexts, browser, and any explicitly started standalone preview
 server.
 
-Receipts are canonical schema-version-1 JSON and contain only scene/map/target identity, normalized
+Receipts are canonical schema-version-2 JSON and contain only scene/map/target identity, normalized
 scene and style hashes, PNG hash and CSS/physical dimensions, Tileflow/MapLibre/Playwright/Chromium
-identity, OS/architecture class, DPR, required `source.tilesetVersion`, and `networkDependent`.
-`tilesetVersion` is the explicitly configured portable archive identifier or `null`; capture never
-infers one from mutable remote TileJSON. It participates in scene compatibility. Receipts omit time, user, origin,
+identity, OS/architecture class, DPR, required resolved `data` identity, and `networkDependent`.
+`data` records the provider kind, optional explicit revision, OpenMapTiles schema/version, and the
+stable primary source ID. It participates in scene compatibility. Receipts omit time, user, origin,
 repository, absolute path, environment, credentials, source pixels, and config source. Receipt
 parsing is canonical-JSON, exact-key, UTF-8, size, portable-identifier, hash, dimension, and
 pixel-budget validated; parser-dependent duplicate keys are rejected.

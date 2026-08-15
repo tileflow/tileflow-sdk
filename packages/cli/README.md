@@ -51,7 +51,7 @@ camera, and viewport:
 
 ```ts
 export default {
-  maps: {madrid: {}},
+  maps: {madrid: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}}},
   scenes: {
     'madrid-desktop': {
       map: 'madrid',
@@ -212,7 +212,7 @@ Hosted writes require a project credential. These are two independent paths:
   login.
 
 The CI key grants only `styles:write` and `status:read`. It cannot upload
-tilesets or render images. Give it an expiration, rotate the repository secret
+datasets or render images. Give it an expiration, rotate the repository secret
 before it expires, and avoid non-expiring CI keys.
 
 Detected CI never falls back to the credential saved by `tileflow login`: if

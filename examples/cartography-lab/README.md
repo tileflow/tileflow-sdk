@@ -1,14 +1,15 @@
 # Tileflow cartography lab
 
-This is the SDK's shared map-design workbench. `editorial-city` is a recipe built from the OSM
-basemap, an `editorial` theme, and semantic modules; it is not a separate basemap or a runtime
-preset.
+This is the SDK's shared map-design workbench. `editorial-city` uses the direct `streets()` basemap
+recipe, an `editorial` theme, and keyed semantic module overlays; it is not a separate basemap or a
+runtime preset.
 
 ![Editorial City in central Madrid](test/visual-baselines/madrid-neighborhood.png)
 
-The four committed scenes exercise one style across a city overview, a dense neighborhood, a
-waterfront, and a mobile viewport. The OSM archive revision, renderer, and hosted Noto Sans weights
-are explicit so visual evidence has a stable identity.
+The nine committed scenes exercise one style across city overview, neighborhood, close-street,
+motorway, airport, transit, rural-edge, waterfront, and mobile views. The SDK pins the default
+Tileflow World revision, and capture receipts record the resolved dataset plus the hosted Noto Sans
+and browser runtime identity.
 
 ## Work on the map
 
@@ -53,7 +54,7 @@ Only after reviewing the generated diff, accept the current render deliberately:
 pnpm visual:cartography:update
 ```
 
-Keep appearance tokens in `themes.editorial`, visibility and hierarchy in semantic modules, and
-raw `layers` overrides as a last resort. When the desired result cannot be expressed semantically,
-record the failing scene and before/after evidence, then add the smallest renderer-aware SDK
-primitive in the same pull request.
+Keep shared appearance tokens in `themes.editorial`, visibility and exact cartographic behavior in
+semantic modules, and ordered `overrides` as a last resort. When the desired result cannot be
+expressed semantically, record the failing scene and before/after evidence, then add the smallest
+missing module control and its direct layer-compiler test in the same pull request.

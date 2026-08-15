@@ -91,7 +91,6 @@ export type {
 export const defaultTileflowApiUrl = 'https://api.tileflow.dev';
 export const defaultTileflowConfigPath = 'tileflow.config.ts';
 export const defaultTileflowManifestPath = 'public/tileflow/manifest.json';
-export const defaultTileflowTileset = 'world';
 
 export type LoadTileflowConfigOptions = {
   cwd?: string;
@@ -100,10 +99,10 @@ export type LoadTileflowConfigOptions = {
 
 export type TileflowManifestOptions = {
   styleBaseUrl?: string;
-  tileBaseUrl?: string;
 };
 
 export type TileflowDevRequestHandlerOptions = {
+  apiBaseUrl?: string;
   basePath?: string;
   config?: string;
   cwd?: string;
@@ -112,7 +111,6 @@ export type TileflowDevRequestHandlerOptions = {
   scene?: string;
   session?: TileflowArtifactSession;
   styleBaseUrl?: string;
-  tileBaseUrl?: string;
 };
 
 export type TileflowPreviewSelection = {
@@ -137,11 +135,11 @@ export class TileflowPreviewSelectionError extends Error {
 }
 
 export type TileflowBuildArtifactsOptions = {
+  apiBaseUrl?: string;
   assetBaseUrl?: string;
   config?: string;
   cwd?: string;
   styleBaseUrl?: string;
-  tileBaseUrl?: string;
 };
 
 export type TileflowBuildArtifacts = {
@@ -221,17 +219,7 @@ export function asTileflowProjectConfig(input: unknown): TileflowProjectConfig {
     return input as TileflowProjectConfig;
   }
 
-  return {
-    tilesets: {
-      [defaultTileflowTileset]: {
-        id: defaultTileflowTileset,
-        name: 'World',
-      },
-    },
-    maps: {
-      main: input as TileflowConfig,
-    },
-  };
+  return {maps: {main: input as TileflowConfig}};
 }
 
 export function getTileflowMapNames(project: TileflowProjectConfig): string[] {
@@ -362,14 +350,13 @@ export async function createTileflowBuildArtifacts(
     assetBaseUrl: resolveAssetBaseUrl(options),
     cwd: options.cwd ?? process.cwd(),
   });
-  const styleOptions = {tileBaseUrl: options.tileBaseUrl};
+  const styleOptions = {apiBaseUrl: options.apiBaseUrl};
   const styles = createTileflowStyles(prepared.project, styleOptions);
 
   return {
     assets: prepared.assets,
     manifest: createManifest(prepared.project, {
       styleBaseUrl: options.styleBaseUrl,
-      tileBaseUrl: options.tileBaseUrl,
     }),
     project: prepared.project,
     styles,
@@ -509,7 +496,7 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
   const basePath = normalizeTileflowBasePath(options.basePath);
   const configPath = options.config ?? defaultTileflowConfigPath;
   const cwd = options.cwd ?? process.cwd();
-  const tileBaseUrl = options.tileBaseUrl ?? defaultTileflowApiUrl;
+  const apiBaseUrl = options.apiBaseUrl ?? defaultTileflowApiUrl;
 
   return async function handleTileflowDevRequest(request: Request) {
     if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -549,7 +536,7 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
           config: configPath,
           cwd,
           styleBaseUrl: options.styleBaseUrl ?? `${url.origin}${basePath}`,
-          tileBaseUrl,
+          apiBaseUrl,
         });
         state = {
           artifacts,
@@ -855,13 +842,77 @@ function previewHtml(
       const styleUrl = ${JSON.stringify(styleUrl)};
       const previewMapOptions = ${JSON.stringify(mapOptions)};
 
+      const cameraRanges = {
+        bearing: [-180, 180],
+        lat: [-90, 90],
+        lng: [-180, 180],
+        pitch: [0, 85],
+        zoom: [0, 24]
+      };
+
+      function readCameraFromUrl() {
+        const params = new URL(location.href).searchParams;
+        const camera = {};
+
+        for (const [name, range] of Object.entries(cameraRanges)) {
+          const values = params.getAll(name);
+          if (values.length !== 1 || values[0].trim() === "") return undefined;
+          const value = Number(values[0]);
+          if (!Number.isFinite(value) || value < range[0] || value > range[1]) return undefined;
+          camera[name] = value;
+        }
+
+        return {
+          bearing: camera.bearing,
+          center: [camera.lng, camera.lat],
+          pitch: camera.pitch,
+          zoom: camera.zoom
+        };
+      }
+
+      function resolveInitialMapOptions(options) {
+        const camera = readCameraFromUrl();
+        if (!camera) return options;
+        const resolved = {...options};
+        delete resolved.bounds;
+        delete resolved.fitBoundsOptions;
+        return {...resolved, ...camera};
+      }
+
+      function formatCameraNumber(value) {
+        return String(Number(value.toFixed(6)));
+      }
+
+      function wrapLongitude(value) {
+        return ((value + 180) % 360 + 360) % 360 - 180;
+      }
+
+      function writeCameraToUrl(map) {
+        const center = map.getCenter();
+        const url = new URL(location.href);
+        const camera = {
+          bearing: map.getBearing(),
+          lat: center.lat,
+          lng: wrapLongitude(center.lng),
+          pitch: map.getPitch(),
+          zoom: map.getZoom()
+        };
+
+        for (const [name, value] of Object.entries(camera)) {
+          url.searchParams.set(name, formatCameraNumber(value));
+        }
+        history.replaceState(history.state, "", url.href);
+      }
+
       if (styleUrl) {
         const map = new maplibregl.Map({
           container: "map",
           style: styleUrl,
-          ...previewMapOptions
+          ...resolveInitialMapOptions(previewMapOptions)
         });
         map.addControl(new maplibregl.NavigationControl(), "top-right");
+        map.on("load", () => writeCameraToUrl(map));
+        map.on("moveend", () => writeCameraToUrl(map));
       }
 
       function applyStatus(next) {

@@ -9,13 +9,13 @@ import {
 } from '@tileflow/dev';
 
 export type TileflowNextPluginOptions = {
+  apiBaseUrl?: string;
   base?: string;
   config?: string;
   cwd?: string;
   emitBuildArtifacts?: boolean;
   publicDir?: string;
   routeBase?: string | false;
-  tileBaseUrl?: string;
 };
 
 type NextRewritesConfig = Awaited<ReturnType<NonNullable<NextConfig['rewrites']>>>;
@@ -76,7 +76,7 @@ async function emitTileflowBuildArtifacts(
     cwd,
     outDir,
     styleBaseUrl: publicBaseUrl,
-    tileBaseUrl: options.tileBaseUrl,
+    apiBaseUrl: options.apiBaseUrl,
   });
 }
 

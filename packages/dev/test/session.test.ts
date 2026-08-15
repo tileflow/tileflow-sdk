@@ -3,6 +3,7 @@ import {mkdir, mkdtemp, rm, unlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
+import {runInNewContext} from 'node:vm';
 import {
   createTileflowArtifactDiagnostics,
   createTileflowArtifactSession,
@@ -203,6 +204,10 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.doesNotMatch(preview, /unpkg|fonts\.googleapis|fonts\.gstatic/);
   assert.match(preview, /__runtime\/maplibre-gl\.js/);
   assert.match(preview, /__events/);
+  assert.match(preview, /new URL\(location\.href\)\.searchParams/);
+  assert.match(preview, /delete resolved\.bounds/);
+  assert.match(preview, /history\.replaceState\(history\.state, "", url\.href\)/);
+  assert.match(preview, /map\.on\("moveend", \(\) => writeCameraToUrl\(map\)\)/);
 
   const [javascript, stylesheet] = await Promise.all([
     handler(new Request('http://localhost/__runtime/maplibre-gl.js')),
@@ -286,6 +291,8 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.match(mapHtml, /"center":\[2,3\]/);
   assert.match(mapHtml, /"zoom":9/);
   assert.doesNotMatch(mapHtml, /-3\.7038/);
+  assert.match(mapHtml, /cameraRanges/);
+  assert.match(mapHtml, /getAll\(name\)/);
 
   const sceneResponse = await createTileflowDevRequestHandler({cwd, scene: 'mobile'})(
     new Request('http://localhost/'),
@@ -299,7 +306,32 @@ test('selects map and scene previews with their configured cameras and viewport'
   const boundsResponse = await createTileflowDevRequestHandler({cwd, scene: 'bounds'})(
     new Request('http://localhost/'),
   );
-  assert.match(await boundsResponse.text(), /"bounds":\[\[1,2\],\[3,4\]\]/);
+  const boundsHtml = await boundsResponse.text();
+  assert.match(boundsHtml, /"bounds":\[\[1,2\],\[3,4\]\]/);
+
+  const persisted = runPreviewScript(
+    boundsHtml,
+    'http://localhost/?keep=this&lng=-3.7038&lat=40.4168&zoom=15.25&bearing=12&pitch=35',
+  );
+  assert.equal(JSON.stringify(persisted.mapOptions?.center), '[-3.7038,40.4168]');
+  assert.equal(persisted.mapOptions?.zoom, 15.25);
+  assert.equal('bounds' in (persisted.mapOptions ?? {}), false);
+  assert.equal('fitBoundsOptions' in (persisted.mapOptions ?? {}), false);
+  persisted.emit('load');
+  const persistedUrl = new URL(persisted.currentUrl());
+  assert.equal(persistedUrl.searchParams.get('keep'), 'this');
+  assert.equal(persistedUrl.searchParams.get('lng'), '-3.7038');
+  assert.equal(persistedUrl.searchParams.get('lat'), '40.4168');
+  assert.equal(persistedUrl.searchParams.get('zoom'), '15.25');
+  assert.equal(persistedUrl.searchParams.get('bearing'), '12');
+  assert.equal(persistedUrl.searchParams.get('pitch'), '35');
+
+  const invalidCamera = runPreviewScript(
+    mapHtml,
+    'http://localhost/?lng=-3.7038&lat=40.4168&zoom=99&bearing=0&pitch=0',
+  );
+  assert.equal(JSON.stringify(invalidCamera.mapOptions?.center), '[2,3]');
+  assert.equal(invalidCamera.mapOptions?.zoom, 9);
 
   const missingResponse = await createTileflowDevRequestHandler({cwd, map: 'missing'})(
     new Request('http://localhost/'),
@@ -406,21 +438,17 @@ const validConfig = `import tokens from './tokens.ts';
 export default {
   maps: {
     main: {
-      renderer: 'generated',
-      labels: 'none',
-      poi: 'none',
-      roads: 'hidden',
-      buildings: 'hidden',
+      basemap: {type: 'streets', basemapVersion: 1, variant: 'light'},
       theme: {colors: {water: tokens.water}}
     }
   }
 };
 `;
-const invalidConfig = `export default {maps: {main: {unsupported: true}}};\n`;
+const invalidConfig = `export default {maps: {main: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, unsupported: true}}};\n`;
 const previewConfig = `export default {
   maps: {
-    first: {renderer: 'generated'},
-    second: {renderer: 'generated', view: {bearing: 12, center: [2, 3], zoom: 9}}
+    first: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}},
+    second: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, view: {bearing: 12, center: [2, 3], zoom: 9}}
   },
   scenes: {
     bounds: {
@@ -451,7 +479,7 @@ function waterColor(
 function waterColorFromStyle(style: unknown): unknown {
   const layers = (style as {layers?: Array<{id?: string; paint?: Record<string, unknown>}>})
     ?.layers;
-  return layers?.find((layer) => layer.id === 'water')?.paint?.['fill-color'];
+  return layers?.find((layer) => layer.id === 'streets-water')?.paint?.['fill-color'];
 }
 
 function waitForState(
@@ -477,7 +505,92 @@ function waitForState(
 }
 
 function iconConfig(source: string): string {
-  return `export default {icons: {local: {source: '${source}'}}, maps: {main: {icons: 'local'}}};\n`;
+  return `export default {icons: {local: {source: '${source}'}}, maps: {main: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, icons: 'local'}}};\n`;
+}
+
+function runPreviewScript(
+  html: string,
+  href: string,
+): {
+  currentUrl(): string;
+  emit(eventName: string): void;
+  mapOptions: Record<string, unknown> | undefined;
+} {
+  const script = /<script>\s*([\s\S]*?)<\/script>\s*<\/body>/.exec(html)?.[1];
+  assert.ok(script, 'expected an inline preview script');
+
+  let mapOptions: Record<string, unknown> | undefined;
+  let currentUrl = href;
+  const listeners = new Map<string, () => void>();
+  const elements = new Map<string, {style: {display: string}; textContent: string}>();
+
+  class FakeMap {
+    readonly camera: {bearing: number; center: [number, number]; pitch: number; zoom: number};
+
+    constructor(options: Record<string, unknown>) {
+      mapOptions = options;
+      this.camera = {
+        bearing: Number(options.bearing ?? 0),
+        center: (options.center as [number, number] | undefined) ?? [0, 0],
+        pitch: Number(options.pitch ?? 0),
+        zoom: Number(options.zoom ?? 0),
+      };
+    }
+
+    addControl(): void {}
+
+    getBearing(): number {
+      return this.camera.bearing;
+    }
+
+    getCenter(): {lat: number; lng: number} {
+      return {lat: this.camera.center[1], lng: this.camera.center[0]};
+    }
+
+    getPitch(): number {
+      return this.camera.pitch;
+    }
+
+    getZoom(): number {
+      return this.camera.zoom;
+    }
+
+    on(eventName: string, listener: () => void): void {
+      listeners.set(eventName, listener);
+    }
+  }
+
+  class FakeEventSource {
+    addEventListener(): void {}
+  }
+
+  runInNewContext(script, {
+    EventSource: FakeEventSource,
+    URL,
+    document: {
+      getElementById(id: string) {
+        const element = {style: {display: ''}, textContent: ''};
+        elements.set(id, element);
+        return element;
+      },
+    },
+    history: {
+      replaceState(_state: unknown, _title: string, nextUrl: string) {
+        currentUrl = nextUrl;
+      },
+      state: null,
+    },
+    location: {href, reload() {}},
+    maplibregl: {Map: FakeMap, NavigationControl: class {}},
+  });
+
+  return {
+    currentUrl: () => currentUrl,
+    emit(eventName) {
+      listeners.get(eventName)?.();
+    },
+    mapOptions,
+  };
 }
 
 function svg(color: string): string {

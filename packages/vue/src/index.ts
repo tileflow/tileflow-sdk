@@ -70,7 +70,6 @@ export type TileflowMapProps = {
   styleBaseUrl?: string;
   styleUrl?: string;
   themes?: TileflowProjectThemes;
-  tileBaseUrl?: string;
   zoom?: number;
 };
 
@@ -125,7 +124,6 @@ export const TileflowMap = defineComponent({
     styleBaseUrl: String,
     styleUrl: String,
     themes: Object as PropType<TileflowProjectThemes>,
-    tileBaseUrl: String,
     zoom: Number,
   },
   emits: {
@@ -192,7 +190,6 @@ export const TileflowMap = defineComponent({
             styleBaseUrl: props.styleBaseUrl,
             styleUrl: props.styleUrl,
             themes: props.themes,
-            tileBaseUrl: props.tileBaseUrl,
           }),
     );
     const resolvedAnalytics = computed(() =>
@@ -473,7 +470,6 @@ export const TileflowMap = defineComponent({
         props.styleBaseUrl,
         props.styleUrl,
         props.themes,
-        props.tileBaseUrl,
         manifestMap.value,
       ],
       () => recreateMap(),

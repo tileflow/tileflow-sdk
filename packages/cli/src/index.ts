@@ -5,13 +5,13 @@ import {Command} from 'commander';
 import {spawn} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
 import {existsSync, readFileSync} from 'node:fs';
-import {chmod, mkdir, readFile, stat, unlink, writeFile} from 'node:fs/promises';
+import {chmod, mkdir, readFile, unlink, writeFile} from 'node:fs/promises';
 import {homedir, hostname, platform} from 'node:os';
 import {dirname, resolve} from 'node:path';
 import {createInterface} from 'node:readline/promises';
 import pc from 'picocolors';
 import {
-  type TileflowConfig,
+  serializeCanonicalJson,
   tileflowHostedAlphaCompatibility,
   type TileflowProjectConfig,
   validateConfig,
@@ -25,14 +25,12 @@ import {
   defaultTileflowApiUrl,
   defaultTileflowConfigPath,
   defaultTileflowManifestPath,
-  defaultTileflowTileset,
   getTileflowMapNames,
   loadTileflowConfig,
   loadValidTileflowConfig,
   resolveTileflowPreview,
   type TileflowArtifactSessionState,
   TileflowIconCompilationError,
-  type TileflowMapIconPackageBinding,
   TileflowStyleValidationError,
   TileflowValidationError,
   writeTileflowBuildArtifacts,
@@ -53,8 +51,6 @@ const defaultApiUrl = defaultTileflowApiUrl;
 const defaultAppUrl = 'https://tileflow.dev';
 const defaultConfigPath = defaultTileflowConfigPath;
 const defaultManifestPath = defaultTileflowManifestPath;
-const defaultTileset = defaultTileflowTileset;
-const maxTilesetUploadBytes = 32 * 1024 * 1024;
 
 type AuthConfig = {
   apiKey?: string;
@@ -96,29 +92,13 @@ type DeployedManifestMap = {
   mapId: string;
   styleId?: string;
   styleUrl: string;
-  tilesetId: string;
 };
 
 type DeployedManifest = {
-  version: 1;
+  version: 2;
   apiUrl: string;
   maps: Record<string, DeployedManifestMap>;
   styles: Record<string, string>;
-};
-
-type StatusArchive = {
-  r2Key: string;
-  size: number;
-  uploaded: string;
-};
-
-type StatusTileset = {
-  tilesetId: string;
-  name: string;
-  r2Key: string;
-  schema: string;
-  attribution?: string;
-  archive: StatusArchive | null;
 };
 
 type StatusStyle = {
@@ -130,8 +110,6 @@ type StatusStyle = {
 
 type ProjectStatus = {
   projectId: string;
-  tilesets: StatusTileset[];
-  orphanArchives: StatusArchive[];
   styles: StatusStyle[];
 };
 
@@ -300,11 +278,11 @@ program
   .option('-c, --config <path>', 'config path', defaultConfigPath)
   .option('--target <target>', 'validation target: local or hosted', 'local')
   .option(
-    '--tile-base-url <url>',
-    'Tileflow tile API URL',
-    process.env.TILEFLOW_TILE_BASE_URL ?? defaultApiUrl,
+    '--api-base-url <url>',
+    'Tileflow API base URL used to resolve official map assets',
+    process.env.TILEFLOW_API_URL ?? defaultApiUrl,
   )
-  .action(async (options: {config: string; target: string; tileBaseUrl: string}) => {
+  .action(async (options: {apiBaseUrl: string; config: string; target: string}) => {
     if (options.target !== 'local' && options.target !== 'hosted') {
       logError(`Invalid validation target: ${options.target}`);
       printNextSteps([
@@ -334,7 +312,7 @@ program
       return;
     }
 
-    createTileflowStyles(project, {tileBaseUrl: options.tileBaseUrl});
+    createTileflowStyles(project, {apiBaseUrl: options.apiBaseUrl});
 
     logSuccess(`Config is valid (${plural(mapNames.length, 'map')}).`);
     printChecks([
@@ -352,17 +330,17 @@ program
   .option('-c, --config <path>', 'config path', defaultConfigPath)
   .option('-o, --out <path>', 'output directory', 'dist/tileflow')
   .option(
-    '--tile-base-url <url>',
-    'Tileflow tile API URL',
-    process.env.TILEFLOW_TILE_BASE_URL ?? defaultApiUrl,
+    '--api-base-url <url>',
+    'Tileflow API base URL used to resolve official map assets',
+    process.env.TILEFLOW_API_URL ?? defaultApiUrl,
   )
-  .action(async (options: {config: string; out: string; tileBaseUrl: string}) => {
+  .action(async (options: {apiBaseUrl: string; config: string; out: string}) => {
     logInfo(`Building ${pathLabel(options.config)}.`);
     await writeTileflowBuildArtifacts({
       config: options.config,
       outDir: options.out,
       styleBaseUrl: '.',
-      tileBaseUrl: options.tileBaseUrl,
+      apiBaseUrl: options.apiBaseUrl,
     });
 
     logSuccess('Built Tileflow artifacts.');
@@ -377,9 +355,9 @@ program
   .option('-p, --port <port>', 'preview port', '3333')
   .option('--scene <name>', 'preview one committed standalone map scene')
   .option(
-    '--tile-base-url <url>',
-    'Tileflow tile API URL',
-    process.env.TILEFLOW_TILE_BASE_URL ?? defaultApiUrl,
+    '--api-base-url <url>',
+    'Tileflow API base URL used to resolve official map assets',
+    process.env.TILEFLOW_API_URL ?? defaultApiUrl,
   )
   .option('--json', 'emit schema-version-1 NDJSON lifecycle events')
   .action(
@@ -389,7 +367,7 @@ program
       map?: string;
       port: string;
       scene?: string;
-      tileBaseUrl: string;
+      apiBaseUrl: string;
     }) => {
       const port = parsePort(options.port);
       if (port === null) {
@@ -408,9 +386,9 @@ program
       const origin = `http://localhost:${port}`;
       const session = await createTileflowArtifactSession({
         assetBaseUrl: origin,
+        apiBaseUrl: options.apiBaseUrl,
         config: options.config,
         styleBaseUrl: origin,
-        tileBaseUrl: options.tileBaseUrl,
         watch: true,
       });
       const initialArtifacts = session.getLastGoodArtifacts();
@@ -431,11 +409,11 @@ program
 
       const fetch = createTileflowDevRequestHandler({
         config: options.config,
+        apiBaseUrl: options.apiBaseUrl,
         map: options.map,
         onError: printTileflowPreviewError,
         scene: options.scene,
         session,
-        tileBaseUrl: options.tileBaseUrl,
       });
       let invalidSinceLastReady = false;
       const emitState = (state: TileflowArtifactSessionState) => {
@@ -511,248 +489,190 @@ program
   .description('Deploy maps to Tileflow and write the frontend manifest')
   .option('-c, --config <path>', 'config path', defaultConfigPath)
   .option('--manifest <path>', 'manifest path written for frontend bundlers', defaultManifestPath)
-  .option('--tileset <id>', 'Tileflow tileset ID override')
   .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL ?? defaultApiUrl)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
-  .action(
-    async (options: {
-      config: string;
-      manifest: string;
-      tileset?: string;
-      apiUrl?: string;
-      apiKey?: string;
-    }) => {
-      const source = resolveDeploySource(process.env);
-      const api = await requireApiOptions(options, {
-        allowStoredCredential: allowsStoredDeployCredential(source),
-      });
-      if (!api) return;
+  .action(async (options: {config: string; manifest: string; apiUrl?: string; apiKey?: string}) => {
+    const source = resolveDeploySource(process.env);
+    const api = await requireApiOptions(options, {
+      allowStoredCredential: allowsStoredDeployCredential(source),
+    });
+    if (!api) return;
 
-      // The config is executable repository code. Keep the captured bearer
-      // credential for the HTTP request, but do not expose it while Jiti
-      // imports tileflow.config.ts or anything that file imports.
-      delete process.env.TILEFLOW_API_KEY;
+    // The config is executable repository code. Keep the captured bearer
+    // credential for the HTTP request, but do not expose it while Jiti
+    // imports tileflow.config.ts or anything that file imports.
+    delete process.env.TILEFLOW_API_KEY;
 
-      logInfo(`Deploying ${pathLabel(options.config)}.`);
-      const project = await loadTileflowConfig(options.config);
-      const validation = validateConfig(project);
+    logInfo(`Deploying ${pathLabel(options.config)}.`);
+    const project = await loadTileflowConfig(options.config);
+    const validation = validateConfig(project);
 
-      if (!validation.valid) {
-        printValidationErrors(validation.messages);
+    if (!validation.valid) {
+      printValidationErrors(validation.messages);
+      process.exitCode = 1;
+      return;
+    }
+
+    const mapNames = getTileflowMapNames(project);
+    const compiledIcons = await compileTileflowIconPackages(project, {
+      cwd: process.cwd(),
+      target: 'hosted',
+    });
+
+    // Validate the complete local style before the first remote write. Hosted
+    // sprite URLs are substituted after upload, but they do not change layer
+    // semantics.
+    createTileflowStyles(project, {apiBaseUrl: api.apiUrl});
+
+    if (!validateHostedMapCount(mapNames)) {
+      return;
+    }
+
+    const bindingsByMap = new Map(
+      compiledIcons.bindings.map((binding) => [binding.mapName, binding]),
+    );
+    const packagesByHash = new Map(
+      compiledIcons.packages.map((iconPackage) => [iconPackage.contentHash, iconPackage]),
+    );
+    const hostedSpriteByPackageHash = new Map<string, string>();
+
+    for (const iconPackage of compiledIcons.packages) {
+      const binding = compiledIcons.bindings.find(
+        (candidate) => candidate.packageHash === iconPackage.contentHash,
+      );
+      const uploaded = await uploadHostedIconPackage(api, iconPackage, binding?.label ?? 'Icons');
+
+      if (!uploaded) {
         process.exitCode = 1;
         return;
       }
 
-      const mapNames = getTileflowMapNames(project);
-      const compiledIcons = await compileTileflowIconPackages(project, {
-        cwd: process.cwd(),
-        target: 'hosted',
-      });
+      hostedSpriteByPackageHash.set(iconPackage.contentHash, uploaded.spriteUrl);
+    }
 
-      if (!validateHostedMapCount(mapNames)) {
-        return;
-      }
+    const hostedProject: TileflowProjectConfig = {
+      ...project,
+      maps: Object.fromEntries(
+        Object.entries(project.maps).map(([mapName, map]) => {
+          const binding = bindingsByMap.get(mapName);
+          if (!binding) return [mapName, map];
 
-      const bindingsByMap = new Map(
-        compiledIcons.bindings.map((binding) => [binding.mapName, binding]),
-      );
-      const packagesByHash = new Map(
-        compiledIcons.packages.map((iconPackage) => [iconPackage.contentHash, iconPackage]),
-      );
-      const deployments = mapNames.map((mapName) => {
-        const tilesetId = options.tileset ?? resolveMapTileset(project, mapName) ?? defaultTileset;
-        const iconBinding = bindingsByMap.get(mapName);
-        const iconPackage = iconBinding ? packagesByHash.get(iconBinding.packageHash) : undefined;
-        const mapConfig = createHostedDeployMapConfig(
-          project,
-          mapName,
-          tilesetId,
-          api.apiUrl,
-          iconBinding,
-        );
-        return {iconBinding, iconPackage, mapConfig, mapName, tilesetId};
-      });
-      createTileflowStyles(
-        {
-          ...project,
-          maps: Object.fromEntries(
-            deployments.map((deployment) => [deployment.mapName, deployment.mapConfig]),
-          ),
-        },
-        {tileBaseUrl: api.apiUrl},
-      );
+          const sprite = hostedSpriteByPackageHash.get(binding.packageHash);
+          if (!sprite) {
+            throw new Error(`Missing hosted sprite URL for map ${mapName}`);
+          }
 
-      for (const iconPackage of compiledIcons.packages) {
-        const binding = compiledIcons.bindings.find(
-          (candidate) => candidate.packageHash === iconPackage.contentHash,
-        );
-        const uploaded = await uploadHostedIconPackage(api, iconPackage, binding?.label ?? 'Icons');
+          return [
+            mapName,
+            {
+              ...map,
+              icons: {
+                ...(binding.mapping ? {mapping: binding.mapping} : {}),
+                sprite,
+              },
+            },
+          ];
+        }),
+      ),
+    };
+    const styles = createTileflowStyles(hostedProject, {apiBaseUrl: api.apiUrl});
+    const deployments = mapNames.map((mapName) => {
+      const iconBinding = bindingsByMap.get(mapName);
+      const iconPackage = iconBinding ? packagesByHash.get(iconBinding.packageHash) : undefined;
+      return {iconBinding, iconPackage, mapName, style: styles[mapName]!};
+    });
 
-        if (!uploaded) {
-          process.exitCode = 1;
-          return;
-        }
-      }
+    const deployedMaps: Record<string, DeployedManifestMap> = {};
+    const deployedStyles: Record<string, string> = {};
 
-      const deployedMaps: Record<string, DeployedManifestMap> = {};
-      const deployedStyles: Record<string, string> = {};
-
-      for (const deployment of deployments) {
-        const {iconBinding, iconPackage, mapConfig, mapName, tilesetId} = deployment;
-        logInfo(`Deploying map ${pc.bold(mapName)} with tileset ${pc.bold(tilesetId)}.`);
-        const response = await fetch(`${api.apiUrl}/v1/styles`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${api.apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            config: mapConfig,
-            environment: mapName,
-            ...(iconBinding && iconPackage
-              ? {
-                  iconPackage: {
-                    contentHash: iconPackage.contentHash,
-                    label: iconBinding.label,
-                  },
-                }
-              : {icons: project.icons}),
-            source,
-            themes: project.themes,
-            tilesetId,
-          }),
-        });
-
-        if (!response.ok) {
-          const body = await response.text();
-          logError(`Deploy failed for ${mapName}: ${response.status} ${body}`);
-          process.exitCode = 1;
-          return;
-        }
-
-        const body = (await response.json()) as {
-          changed?: boolean;
-          deploymentId?: string;
-          mapId?: string;
-          url: string;
-          mapUrl?: string;
-          styleId?: string;
-          version?: number;
-        };
-        const styleUrl = body.mapUrl ?? body.url;
-        deployedMaps[mapName] = {
-          environment: mapName,
-          mapId: body.mapId ?? mapName,
-          styleId: body.styleId,
-          styleUrl,
-          tilesetId,
-        };
-        deployedStyles[mapName] = styleUrl;
-        const versionLabel = Number.isInteger(body.version) ? ` (v${body.version})` : '';
-
-        if (body.changed === false) {
-          logSuccess(`Unchanged ${pc.bold(mapName)}${versionLabel}.`);
-        } else {
-          logSuccess(`Published ${pc.bold(mapName)}${versionLabel}.`);
-        }
-      }
-
-      const manifestPath = await writeDeployManifest(options.manifest, {
-        apiUrl: api.apiUrl,
-        maps: deployedMaps,
-        styles: deployedStyles,
-        version: 1,
-      });
-
-      logSuccess('Deployed Tileflow maps.');
-      printKeyValue('Manifest', pathLabel(manifestPath));
-      printDeployedMaps(deployedMaps);
-      printNextSteps([`Check hosted state with ${command('tileflow status')}.`]);
-    },
-  );
-
-const tileset = program.command('tileset').description('Manage Tileflow tilesets');
-
-tileset
-  .command('register')
-  .description('Register a project-owned tileset before uploading its PMTiles archive')
-  .requiredOption('--id <id>', 'tileset ID')
-  .option('--name <name>', 'display name')
-  .option('--schema <schema>', 'tile schema', 'openmaptiles')
-  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL ?? defaultApiUrl)
-  .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
-  .action(
-    async (options: {
-      id: string;
-      name?: string;
-      schema: string;
-      apiUrl?: string;
-      apiKey?: string;
-    }) => {
-      const api = await requireApiOptions(options);
-      if (!api) return;
-
-      const response = await fetch(`${api.apiUrl}/v1/tilesets`, {
+    for (const deployment of deployments) {
+      const {iconBinding, iconPackage, mapName, style} = deployment;
+      const serializedStyle = serializeCanonicalJson(style);
+      const styleHash = createHash('sha256').update(serializedStyle).digest('hex');
+      logInfo(`Deploying compiled map ${pc.bold(mapName)}.`);
+      const response = await fetch(`${api.apiUrl}/v1/styles`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${api.apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          tilesetId: options.id,
-          name: options.name ?? options.id,
-          schema: options.schema,
+          artifact: {
+            schemaVersion: 1,
+            style,
+            receipt: {
+              basemap: style.metadata?.['tileflow:basemap'],
+              basemapVersion: style.metadata?.['tileflow:basemapVersion'],
+              compilerVersion: packageJson.version,
+              data: style.metadata?.['tileflow:data'],
+              ...(style.metadata?.['tileflow:provenance']
+                ? {provenance: style.metadata['tileflow:provenance']}
+                : {}),
+              styleHash,
+            },
+          },
+          environment: mapName,
+          ...(iconBinding && iconPackage
+            ? {
+                iconPackage: {
+                  contentHash: iconPackage.contentHash,
+                  label: iconBinding.label,
+                },
+              }
+            : {}),
+          source,
         }),
       });
 
-      await printApiResponse(response, 'Registered tileset:');
-    },
-  );
-
-tileset
-  .command('upload <file>')
-  .description('Upload a small PMTiles archive through the API')
-  .requiredOption('--id <id>', 'tileset ID')
-  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL ?? defaultApiUrl)
-  .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
-  .action(
-    async (
-      file: string,
-      options: {
-        id: string;
-        apiUrl?: string;
-        apiKey?: string;
-      },
-    ) => {
-      const api = await requireApiOptions(options);
-      if (!api) return;
-
-      const filePath = resolve(process.cwd(), file);
-      const fileInfo = await stat(filePath);
-
-      if (!fileInfo.isFile() || fileInfo.size > maxTilesetUploadBytes) {
-        logError('Tileset upload must be a PMTiles file no larger than 32 MiB.');
+      if (!response.ok) {
+        const body = await response.text();
+        logError(`Deploy failed for ${mapName}: ${response.status} ${body}`);
         process.exitCode = 1;
         return;
       }
 
-      const bytes = await readFile(filePath);
-      const response = await fetch(`${api.apiUrl}/v1/tilesets/${options.id}/archive.pmtiles`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${api.apiKey}`,
-          'Content-Type': 'application/octet-stream',
-        },
-        body: new Blob([bytes]),
-      });
+      const body = (await response.json()) as {
+        changed?: boolean;
+        deploymentId?: string;
+        mapId?: string;
+        url: string;
+        mapUrl?: string;
+        styleId?: string;
+        version?: number;
+      };
+      const styleUrl = body.mapUrl ?? body.url;
+      deployedMaps[mapName] = {
+        environment: mapName,
+        mapId: body.mapId ?? mapName,
+        styleId: body.styleId,
+        styleUrl,
+      };
+      deployedStyles[mapName] = styleUrl;
+      const versionLabel = Number.isInteger(body.version) ? ` (v${body.version})` : '';
 
-      await printApiResponse(response, 'Uploaded tileset archive:');
-    },
-  );
+      if (body.changed === false) {
+        logSuccess(`Unchanged ${pc.bold(mapName)}${versionLabel}.`);
+      } else {
+        logSuccess(`Published ${pc.bold(mapName)}${versionLabel}.`);
+      }
+    }
+
+    const manifestPath = await writeDeployManifest(options.manifest, {
+      apiUrl: api.apiUrl,
+      maps: deployedMaps,
+      styles: deployedStyles,
+      version: 2,
+    });
+
+    logSuccess('Deployed Tileflow maps.');
+    printKeyValue('Manifest', pathLabel(manifestPath));
+    printDeployedMaps(deployedMaps);
+    printNextSteps([`Check hosted state with ${command('tileflow status')}.`]);
+  });
 
 program
   .command('status')
-  .description('Show registered tilesets, uploaded archives, and deployed styles')
+  .description('Show deployed compiled styles')
   .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL ?? defaultApiUrl)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
   .option('--json', 'print raw JSON')
@@ -847,7 +767,7 @@ async function loginWithDeviceFlow(options: {
   const authorization = await startDeviceAuthorization(options.appUrl, {
     codeChallenge,
     deviceName: hostname(),
-    requestedScopes: ['static:write', 'status:read', 'styles:write', 'tilesets:write'],
+    requestedScopes: ['static:write', 'status:read', 'styles:write'],
   });
 
   printKeyValue('Code', pc.bold(authorization.userCode));
@@ -1294,9 +1214,7 @@ function printDeployedMaps(maps: Record<string, DeployedManifestMap>) {
 
   console.log(`\n${pc.bold('Maps')}`);
   for (const [name, map] of entries) {
-    console.log(
-      `  ${pc.green('✓')} ${name.padEnd(16)} ${link(map.styleUrl)} ${pc.gray(`(${map.tilesetId})`)}`,
-    );
+    console.log(`  ${pc.green('✓')} ${name.padEnd(16)} ${link(map.styleUrl)}`);
   }
 }
 
@@ -1341,7 +1259,7 @@ function pathLabel(value: string) {
 }
 
 function starterConfig(): string {
-  return `import { defineTileflow, labels, osm, poi } from "@tileflow/core";
+  return `import { defineTileflow, labels, poi, streets } from "@tileflow/core";
 
 export default defineTileflow({
   themes: {
@@ -1361,7 +1279,7 @@ export default defineTileflow({
         textHalo: "#FFFFFF"
       },
       typography: {
-        font: "Inter"
+        font: "Noto Sans"
       }
     },
     dark: {
@@ -1380,18 +1298,18 @@ export default defineTileflow({
         textHalo: "#161A1D"
       },
       typography: {
-        font: "Inter"
+        font: "Noto Sans"
       }
     }
   },
   maps: {
     madrid: {
-      basemap: osm(),
+      basemap: streets(),
       theme: "light",
-      modules: [
-        labels({ roads: "major" }),
-        poi({ preset: "minimal", icons: "essential" })
-      ],
+      modules: {
+        labels: labels({ roads: "major" }),
+        poi: poi({ preset: "minimal", icons: "essential" })
+      },
       view: {
         center: [-3.7038, 40.4168],
         zoom: 12
@@ -1417,58 +1335,6 @@ export default defineTileflow({
 `;
 }
 
-function resolveMapTileset(project: TileflowProjectConfig, mapName: string): string | undefined {
-  const mapConfig = project.maps[mapName];
-  const tilesetName =
-    mapConfig?.tileset ?? mapConfig?.tiles?.tileset ?? mapConfig?.basemap?.tileset;
-
-  if (!tilesetName) {
-    return undefined;
-  }
-
-  return project.tilesets?.[tilesetName]?.id ?? tilesetName;
-}
-
-function createHostedDeployMapConfig(
-  project: TileflowProjectConfig,
-  mapName: string,
-  tilesetId: string,
-  apiUrl: string,
-  iconBinding?: TileflowMapIconPackageBinding,
-): TileflowConfig {
-  const mapConfig = project.maps[mapName];
-  const tilesetName =
-    mapConfig?.tileset ?? mapConfig?.tiles?.tileset ?? mapConfig?.basemap?.tileset;
-  const tilesetConfig = project.tilesets?.[tilesetName ?? ''] ?? project.tilesets?.[tilesetId];
-  const {sourceLayers: tileSourceLayers, ...tileOptions} = mapConfig.tiles ?? {};
-  const hostedTileSourceLayers = mapConfig.basemap?.sourceLayers ? undefined : tileSourceLayers;
-
-  return {
-    ...mapConfig,
-    basemap: {
-      ...mapConfig.basemap,
-      type: mapConfig.basemap?.type ?? 'osm',
-      tileset: tilesetId,
-      attribution: mapConfig.basemap?.attribution ?? tilesetConfig?.attribution,
-      sourceLayers: mapConfig.basemap?.sourceLayers ?? tilesetConfig?.sourceLayers,
-    },
-    tileset: tilesetId,
-    glyphs: mapConfig.glyphs ?? `${normalizeUrl(apiUrl)}/fonts/{fontstack}/{range}.pbf`,
-    ...(iconBinding
-      ? {
-          icons: iconBinding.mapping ? {mapping: iconBinding.mapping} : {},
-        }
-      : {}),
-    tiles: {
-      ...tileOptions,
-      sourceId: mapConfig.tiles?.sourceId ?? 'tileflow',
-      tileset: tilesetId,
-      url: `${normalizeUrl(apiUrl)}/tiles/${tilesetId}/tiles.json`,
-      ...(hostedTileSourceLayers ? {sourceLayers: hostedTileSourceLayers} : {}),
-    },
-  };
-}
-
 function validateHostedMapCount(mapNames: string[]): boolean {
   if (mapNames.length <= tileflowHostedAlphaCompatibility.maxMapsPerDeploy) {
     return true;
@@ -1486,7 +1352,7 @@ async function uploadHostedIconPackage(
   api: {apiKey: string; apiUrl: string},
   iconPackage: CompiledTileflowIconPackage,
   label: string,
-): Promise<boolean> {
+): Promise<{spriteUrl: string} | undefined> {
   const formData = new FormData();
   const fieldNames: Record<string, string> = {
     'sprite.json': 'spriteJson',
@@ -1515,46 +1381,25 @@ async function uploadHostedIconPackage(
 
   if (!response.ok) {
     logError(`Icon package upload failed: ${response.status} ${await response.text()}`);
-    return false;
+    return undefined;
   }
 
-  const body = (await response.json()) as {changed?: boolean};
+  const body = (await response.json()) as {changed?: boolean; spriteUrl?: unknown};
+  if (typeof body.spriteUrl !== 'string' || body.spriteUrl.trim().length === 0) {
+    logError('Icon package upload failed: the API response did not include a spriteUrl.');
+    return undefined;
+  }
   const totalBytes = iconPackage.manifest.files.reduce((total, file) => total + file.byteLength, 0);
   const action = body.changed === false ? 'Reused' : 'Uploaded';
   logSuccess(
     `${action} icon package ${pc.bold(label)} (${plural(iconPackage.manifest.iconNames.length, 'icon')}, ${formatBytes(totalBytes)}, ${iconPackage.contentHash.slice(0, 12)}).`,
   );
-  return true;
+  return {spriteUrl: body.spriteUrl};
 }
 
 function printProjectStatus(status: ProjectStatus, apiUrl: string) {
   printTitle('Tileflow status');
   printKeyValue('Project', pc.bold(status.projectId));
-
-  console.log(`\n${pc.bold('Tilesets')}`);
-  if (status.tilesets.length === 0) {
-    logMuted('  No tilesets registered.');
-  }
-  for (const tileset of status.tilesets) {
-    if (tileset.archive) {
-      console.log(
-        `  ${pc.green('✓')} ${tileset.tilesetId.padEnd(16)} ${tileset.r2Key.padEnd(36)} ${formatBytes(tileset.archive.size).padStart(10)}  ${pc.gray(formatDate(tileset.archive.uploaded))}`,
-      );
-    } else {
-      console.log(
-        `  ${pc.red('✕')} ${tileset.tilesetId.padEnd(16)} ${tileset.r2Key.padEnd(36)} ${pc.red('missing archive')}`,
-      );
-    }
-  }
-
-  if (status.orphanArchives.length > 0) {
-    console.log(`\n${pc.bold('Orphan archives')} ${pc.gray('(no manifest)')}`);
-    for (const archive of status.orphanArchives) {
-      console.log(
-        `  ${pc.yellow('?')} ${archive.r2Key.padEnd(53)} ${formatBytes(archive.size).padStart(10)}  ${pc.gray(formatDate(archive.uploaded))}`,
-      );
-    }
-  }
 
   console.log(`\n${pc.bold('Styles')}`);
   if (status.styles.length === 0) {

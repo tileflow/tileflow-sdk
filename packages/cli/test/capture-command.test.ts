@@ -447,7 +447,7 @@ test('keeps selection and config failures on stderr with empty JSON stdout', asy
   await writeFile(
     join(directory, 'tileflow.config.ts'),
     `if (process.env.TILEFLOW_API_KEY) throw new Error('ambient key reached config');
-export default {maps: {proof: {}}, scenes: {proof: {map: 'proof', camera: {type: 'center', center: [0, 0], zoom: 1}, viewport: {width: 32, height: 32}}}};
+export default {maps: {proof: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}}}, scenes: {proof: {map: 'proof', camera: {type: 'center', center: [0, 0], zoom: 1}, viewport: {width: 32, height: 32}}}};
 `,
   );
   const invalid = await runCli(directory, ['capture', 'proof', '--json'], {
@@ -470,7 +470,10 @@ test('style-invalid JSON is phase-aware and preserves an existing output pair', 
   await writeFile(
     join(directory, 'tileflow.config.ts'),
     `export default {
-  maps: {proof: {layers: {background: {paint: {'background-color': 42}}}}},
+  maps: {proof: {
+    basemap: {type: 'streets', basemapVersion: 1, variant: 'light'},
+    overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]
+  }},
   scenes: {proof: {
     map: 'proof',
     camera: {type: 'center', center: [0, 0], zoom: 1},
@@ -495,7 +498,7 @@ test('style-invalid JSON is phase-aware and preserves an existing output pair', 
   assert.deepEqual(document.diagnostics[0], {
     code: 'STYLE_INVALID',
     message: 'color expected, number found',
-    path: 'maps.proof.style.layers.background.paint.background-color',
+    path: 'maps.proof.style.layers.streets-background.paint.background-color',
     phase: 'style-validation',
   });
   assert.equal(await readFile(outputPath, 'utf8'), 'preserved-png');
@@ -532,7 +535,15 @@ test(
     const directory = await createDirectoryFixture(t, 'tileflow-capture-real-');
     await writeFile(
       join(directory, 'tileflow.config.ts'),
-      `export default {maps: {proof: {renderer: 'generated', labels: 'none', poi: 'none', roads: 'hidden', buildings: 'hidden'}}, scenes: {proof: {map: 'proof', camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 256, height: 256}}}};
+      `export default {maps: {proof: {
+  basemap: {type: 'streets', basemapVersion: 1, variant: 'light'},
+  modules: {
+    buildings: {type: 'buildings', enabled: false},
+    labels: {type: 'labels', enabled: false},
+    poi: {type: 'poi', enabled: false},
+    roads: {type: 'roads', enabled: false}
+  }
+}}, scenes: {proof: {map: 'proof', camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 256, height: 256}}}};
 `,
     );
     const result = await runCli(directory, ['capture', 'proof', '--json', '--no-browser-install'], {
@@ -561,7 +572,7 @@ test(
 );
 
 test(
-  'captures generated roads and emits a real promotable exploratory definition without setup',
+  'captures Streets roads and emits a real promotable exploratory definition without setup',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 45_000},
   async (t) => {
     const directory = await createDirectoryFixture(t, 'tileflow-capture-generated-road-');
@@ -571,14 +582,24 @@ test(
       `export default {
   maps: {
     proof: {
-      renderer: 'generated', labels: 'none', poi: 'none', buildings: 'hidden',
+      basemap: {type: 'streets', basemapVersion: 1, variant: 'light'},
       glyphs: ${JSON.stringify(`${fixture.origin}/fonts/{fontstack}/{range}.pbf`)},
-      sprite: ${JSON.stringify(`${fixture.origin}/sprites/osm-bright/sprite`)},
-      tiles: {url: ${JSON.stringify(`${fixture.origin}/tiles/world/tiles.json`)}},
-      modules: [{
-        type: 'roads', detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
-        extras: {ferry: false, paths: true, rail: true}
-      }]
+      sprite: ${JSON.stringify(`${fixture.origin}/sprites/streets/v1/sprite`)},
+      data: {
+        type: 'vector-tiles',
+        url: ${JSON.stringify(`${fixture.origin}/tiles/world/tiles.json`)},
+        attribution: 'Fixture data',
+        schema: {type: 'openmaptiles', contractVersion: 1}
+      },
+      modules: {
+        buildings: {type: 'buildings', enabled: false},
+        labels: {type: 'labels', enabled: false},
+        poi: {type: 'poi', enabled: false},
+        roads: {
+          type: 'roads', detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
+          extras: {ferry: false, paths: true, rail: true}
+        }
+      }
     }
   },
   scenes: {proof: {
@@ -765,6 +786,13 @@ function parseFailureDocument(stderr: string): FailureDocument {
 function createCapture(scene: string): TileflowCapture {
   const renderer = createTileflowCaptureRendererIdentity();
   const receipt = createTileflowCaptureReceipt({
+    data: {
+      kind: 'tileflow-world',
+      revision: '2026-06-07',
+      schema: 'openmaptiles',
+      schemaVersion: 1,
+      sourceId: 'tileflow',
+    },
     dpr: 1,
     height: 200,
     map: 'madrid',

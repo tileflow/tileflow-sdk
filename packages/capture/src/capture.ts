@@ -7,6 +7,7 @@ import {
   sha256Hex,
   type TileflowCaptureScene,
   tileflowCaptureSceneNameSchema,
+  type TileflowDataIdentity,
 } from '@tileflow/core';
 import {
   assertValidTileflowStyle,
@@ -231,6 +232,7 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
       ]);
       const target = scene.target.kind;
       const receipt = createTileflowCaptureReceipt({
+        data: style.metadata?.['tileflow:data'] as TileflowDataIdentity,
         dpr: scene.viewport.dpr,
         height: rendered.height,
         map: scene.map,
@@ -240,9 +242,6 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
         scene: sceneName,
         sceneSha256,
         styleSha256,
-        ...(typeof style.metadata?.['tileflow:tilesetVersion'] === 'string'
-          ? {sourceVersion: style.metadata['tileflow:tilesetVersion']}
-          : {}),
         target,
         width: rendered.width,
       });

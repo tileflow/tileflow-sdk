@@ -3,7 +3,7 @@ import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
-import type {TileflowProjectConfig} from '@tileflow/core';
+import {streets, type TileflowDataIdentity, type TileflowProjectConfig} from '@tileflow/core';
 import {selectTileflowCaptureSceneNames} from '../src/capture';
 import {
   createTileflowCaptureBrowserEnvironment,
@@ -18,7 +18,7 @@ import {
 import {readPngDimensions} from '../src/standalone';
 
 const project: TileflowProjectConfig = {
-  maps: {madrid: {}},
+  maps: {madrid: {basemap: streets()}},
   scenes: {
     narrow: {
       map: 'madrid',
@@ -31,6 +31,14 @@ const project: TileflowProjectConfig = {
       viewport: {width: 1_200, height: 800},
     },
   },
+};
+
+const dataIdentity: TileflowDataIdentity = {
+  kind: 'tileflow-world',
+  revision: '2026-06-07',
+  schema: 'openmaptiles',
+  schemaVersion: 1,
+  sourceId: 'tileflow',
 };
 
 test('sorts and validates scene selection deterministically', () => {
@@ -46,7 +54,10 @@ test('sorts and validates scene selection deterministically', () => {
 });
 
 test('does not select inherited Object.prototype members as scenes', () => {
-  const projectWithoutScenes: TileflowProjectConfig = {maps: {madrid: {}}, scenes: {}};
+  const projectWithoutScenes: TileflowProjectConfig = {
+    maps: {madrid: {basemap: streets()}},
+    scenes: {},
+  };
 
   for (const sceneName of ['constructor', 'toString']) {
     assert.throws(
@@ -56,7 +67,7 @@ test('does not select inherited Object.prototype members as scenes', () => {
   }
 
   const nonPortableProject: TileflowProjectConfig = {
-    maps: {madrid: {}},
+    maps: {madrid: {basemap: streets()}},
     scenes: {CON: project.scenes!.desktop!},
   };
   assert.throws(
@@ -107,6 +118,7 @@ test('preserves the non-secret Windows runtime environment Chromium needs to sta
 test('serializes deterministic, path-free capture receipts', () => {
   const renderer = createTileflowCaptureRendererIdentity();
   const receipt = createTileflowCaptureReceipt({
+    data: dataIdentity,
     dpr: 2,
     height: 200,
     map: 'madrid',
@@ -131,9 +143,10 @@ test('serializes deterministic, path-free capture receipts', () => {
   assert.equal(tileflowCaptureRuntime.chromiumRevision, '1223');
 });
 
-test('emits one exact receipt shape with nullable or pinned source evidence', () => {
+test('emits one exact receipt shape with explicit data identity', () => {
   const common = {
     dpr: 1 as const,
+    data: dataIdentity,
     height: 64,
     map: 'madrid',
     networkDependent: true,
@@ -145,18 +158,35 @@ test('emits one exact receipt shape with nullable or pinned source evidence', ()
     target: 'map' as const,
     width: 64,
   };
-  const unpinned = createTileflowCaptureReceipt(common);
-  const pinned = createTileflowCaptureReceipt({...common, sourceVersion: 'archive_42'});
+  const unpinned = createTileflowCaptureReceipt({
+    ...common,
+    data: {
+      kind: 'vector-tiles',
+      schema: 'openmaptiles',
+      schemaVersion: 1,
+      sourceId: 'tileflow',
+    },
+  });
+  const pinned = createTileflowCaptureReceipt(common);
 
-  assert.equal(unpinned.schemaVersion, 1);
-  assert.deepEqual(unpinned.source, {tilesetVersion: null});
-  assert.equal(pinned.schemaVersion, 1);
-  assert.deepEqual(pinned.source, {tilesetVersion: 'archive_42'});
+  assert.equal(unpinned.schemaVersion, 2);
+  assert.deepEqual(unpinned.data, {
+    kind: 'vector-tiles',
+    schema: 'openmaptiles',
+    schemaVersion: 1,
+    sourceId: 'tileflow',
+  });
+  assert.equal(pinned.schemaVersion, 2);
+  assert.deepEqual(pinned.data, dataIdentity);
   assert.deepEqual(Object.keys(unpinned).sort(), Object.keys(pinned).sort());
   assert.deepEqual(JSON.parse(serializeTileflowCaptureReceipt(pinned)), pinned);
   assert.throws(
-    () => createTileflowCaptureReceipt({...common, sourceVersion: 'unsafe/version'}),
-    /source\.tilesetVersion/,
+    () =>
+      createTileflowCaptureReceipt({
+        ...common,
+        data: {...dataIdentity, revision: 'unsafe/version'},
+      }),
+    /data\.revision/,
   );
 });
 
@@ -249,6 +279,7 @@ test('receipt creation rejects invalid public input instead of serializing it', 
   assert.throws(
     () =>
       createTileflowCaptureReceipt({
+        data: dataIdentity,
         dpr: 2,
         height: 1.25,
         map: 'madrid',
@@ -266,6 +297,7 @@ test('receipt creation rejects invalid public input instead of serializing it', 
   assert.throws(
     () =>
       createTileflowCaptureReceipt({
+        data: dataIdentity,
         dpr: 1,
         height: 64,
         map: 'madrid',
@@ -282,6 +314,7 @@ test('receipt creation rejects invalid public input instead of serializing it', 
   );
 
   const valid = createTileflowCaptureReceipt({
+    data: dataIdentity,
     dpr: 1,
     height: 64,
     map: 'madrid',

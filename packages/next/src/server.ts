@@ -6,13 +6,13 @@ import {
 } from '@tileflow/dev';
 
 export type TileflowNextRouteHandlerOptions = {
+  apiBaseUrl?: string;
   base?: string;
   config?: string;
   cwd?: string;
   onError?: (error: unknown) => void;
   routeBase?: string;
   styleBaseUrl?: string;
-  tileBaseUrl?: string;
 };
 
 export type TileflowNextRouteHandlers = {
@@ -30,7 +30,7 @@ export function createTileflowRouteHandlers(
     config: options.config ?? defaultTileflowConfigPath,
     cwd: options.cwd,
     styleBaseUrl: options.styleBaseUrl ?? basePath,
-    tileBaseUrl: options.tileBaseUrl,
+    apiBaseUrl: options.apiBaseUrl,
     watch: false,
   });
   const handlerPromise = sessionPromise.then((session) =>
@@ -41,7 +41,7 @@ export function createTileflowRouteHandlers(
       onError: options.onError ?? logTileflowError,
       session,
       styleBaseUrl: options.styleBaseUrl,
-      tileBaseUrl: options.tileBaseUrl,
+      apiBaseUrl: options.apiBaseUrl,
     }),
   );
   let refreshChain = Promise.resolve();

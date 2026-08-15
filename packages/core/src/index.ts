@@ -1,10 +1,6 @@
-export {
-  createManifest,
-  createStyle,
-  createStyleFromProject,
-  getDefaultColors,
-  tileflowHostedNotoSansWeights,
-} from './compiler';
+export {createManifest, createStyle, createStyleFromProject} from './project';
+export {getDefaultColors} from './themes';
+export {tileflowHostedNotoSansWeights} from './types';
 export {
   normalizeTileflowCaptureScene,
   normalizeTileflowCaptureId,
@@ -34,19 +30,12 @@ export type {
 } from './capture-scene';
 export type {
   MapLibreStyle,
-  TileflowAdvancedColorConfig,
-  TileflowBasemapConfig,
   TileflowBaseColors,
   TileflowBoundaryColorConfig,
-  TileflowBuildings,
   TileflowBuildingColorConfig,
-  TileflowBuildingStyleConfig,
   TileflowColor,
   TileflowColorConfig,
   TileflowColors,
-  TileflowConfig,
-  TileflowDensity,
-  TileflowFonts,
   TileflowFontWeight,
   TileflowHostedNotoSansWeight,
   TileflowHydroColorConfig,
@@ -55,18 +44,14 @@ export type {
   TileflowLabelColorConfig,
   TileflowLabelDetail,
   TileflowLabelLanguage,
-  TileflowLabels,
+  TileflowLabelStyles,
   TileflowLabelsModuleConfig,
   TileflowLabelsModuleOptions,
   TileflowLandcoverColorConfig,
   TileflowLanduseColorConfig,
-  TileflowManifest,
-  TileflowMapConfig,
-  TileflowModuleConfig,
-  TileflowOsmBasemapConfig,
-  TileflowOsmBasemapOptions,
   TileflowPoi,
   TileflowPoiCategory,
+  TileflowPoiCategoryStyle,
   TileflowPoiClassMapping,
   TileflowPoiColorMode,
   TileflowPoiColorConfig,
@@ -76,26 +61,23 @@ export type {
   TileflowPoiModuleConfig,
   TileflowPoiModuleOptions,
   TileflowProjectIconSets,
-  TileflowProjectConfig,
   TileflowProjectThemes,
+  TileflowPlaceLabelClass,
   TileflowRoadOutline,
+  TileflowRoadAreaStyle,
   TileflowRoadClass,
+  TileflowRoadClassStyle,
   TileflowRoadDetail,
   TileflowRoadExtras,
   TileflowRoadHierarchy,
+  TileflowRoadLayerStyle,
   TileflowRoadLabelDetail,
-  TileflowRoads,
   TileflowRoadColorConfig,
   TileflowRoadsModuleConfig,
   TileflowRoadsModuleOptions,
+  TileflowRoadStructure,
   TileflowRoadWeight,
-  TileflowRenderer,
   ResolvedTileflowTypography,
-  TileflowSourceLayers,
-  TileflowStyleLayerOverride,
-  TileflowStyleOptions,
-  TileflowStyleOverrideModuleConfig,
-  TileflowStyleOverrideOptions,
   TileflowTerrain,
   TileflowTerrainConfig,
   TileflowTerrainEncoding,
@@ -105,16 +87,22 @@ export type {
   TileflowThemeModulesConfig,
   TileflowThemeMode,
   TileflowThemeName,
-  TileflowTiles,
-  TileflowTilesetConfig,
   TileflowTypography,
   TileflowTypographyDomain,
   TileflowTypographyStyle,
   TileflowViewConfig,
+  TileflowWaterLabelClass,
   MapLibreSprite,
   ValidationMessage,
   ValidationResult,
-} from './compiler';
+} from './types';
+export type {
+  TileflowConfig,
+  TileflowManifest,
+  TileflowMapConfig,
+  TileflowProjectConfig,
+  TileflowStyleOptions,
+} from './project';
 export {
   configSchema,
   parseTileflowMap,
@@ -124,10 +112,78 @@ export {
   tileflowThemeSchema,
   validateConfig,
   validateTileflowConfig,
-} from './schema';
+} from './schema-v2';
 export {defineTileflow} from './config';
-export {osm} from './basemaps';
-export {labels, poi, roads, styleOverride} from './modules';
+export {streets, tileflowStreetsBasemapVersion} from './basemaps';
+export type {
+  TileflowStreetsBasemapConfig,
+  TileflowStreetsModules,
+  TileflowStreetsOptions,
+  TileflowStreetsVariant,
+} from './basemaps';
+export {
+  isCanonicalOpenMapTilesSchema,
+  openMapTiles,
+  openMapTilesContractVersion,
+  resolveTileflowData,
+  tileflowPrimarySourceId,
+  tileflowWorld,
+  tileflowWorldRevision,
+  vectorTiles,
+} from './data';
+export {expression, filter, zoom} from './cartography/values';
+export type {
+  TileflowExpression,
+  TileflowFilterExpression,
+  TileflowStyleValue,
+  TileflowZoomInterpolation,
+  TileflowZoomValue,
+} from './cartography/values';
+export {createStreetsStyle} from './cartography/streets';
+export type {TileflowStreetsCompileOptions, TileflowStreetsMapConfig} from './cartography/streets';
+export {addLayer, moveLayer, patchLayer, removeLayer} from './cartography/overrides';
+export type {TileflowLayerPlacement, TileflowRawOverride} from './cartography/overrides';
+export type {
+  OpenMapTilesFieldBindings,
+  OpenMapTilesLayerBindings,
+  OpenMapTilesSchema,
+  OpenMapTilesSchemaOptions,
+  ResolvedTileflowData,
+  TileflowDataConfig,
+  TileflowDataIdentity,
+  TileflowWorldData,
+  VectorTilesData,
+} from './data';
+export {aeroways, boundaries, buildings, labels, land, poi, roads, transit, water} from './modules';
+export type {
+  TileflowAerowaysModuleConfig,
+  TileflowAerowaysModuleOptions,
+  TileflowBoundariesModuleConfig,
+  TileflowBoundariesModuleOptions,
+  TileflowBuildingMode,
+  TileflowBuildingsModuleConfig,
+  TileflowBuildingsModuleOptions,
+  TileflowLandcoverClass,
+  TileflowLandModuleConfig,
+  TileflowLandModuleOptions,
+  TileflowLanduseClass,
+  TileflowTransitModuleConfig,
+  TileflowTransitModuleOptions,
+  TileflowWaterModuleConfig,
+  TileflowWaterModuleOptions,
+  TileflowWaterwayClass,
+} from './modules';
+export type {
+  TileflowFillStyle,
+  TileflowIconStyle,
+  TileflowLayerRange,
+  TileflowLineCap,
+  TileflowLineJoin,
+  TileflowLineStyle,
+  TileflowSymbolPlacement,
+  TileflowTextAnchor,
+  TileflowTextStyle,
+} from './cartography/styles';
 export {
   compareCodeUnits,
   hashTileflowIconPackageManifest,

@@ -560,7 +560,7 @@ function sameSceneIdentity(
     baseline.scene.map === actual.scene.map &&
     baseline.scene.target === actual.scene.target &&
     baseline.scene.sha256 === actual.scene.sha256 &&
-    baseline.source.tilesetVersion === actual.source.tilesetVersion
+    serializeCanonicalJson(baseline.data) === serializeCanonicalJson(actual.data)
   );
 }
 

@@ -17,6 +17,7 @@ const maxScannedFeatures = 20_000;
 const maxStringLength = 256;
 
 export type TileflowFeatureInspectionOptions = {
+  apiBaseUrl?: string;
   center: readonly [number, number];
   fetch?: typeof fetch;
   height?: number;
@@ -24,7 +25,6 @@ export type TileflowFeatureInspectionOptions = {
   properties?: readonly string[];
   signal?: AbortSignal;
   sourceLayers: readonly string[];
-  tileBaseUrl?: string;
   timeoutMs?: number;
   width?: number;
   zoom: number;
@@ -89,7 +89,7 @@ export async function inspectTileflowFeatures(
     );
   }
 
-  const style = createStyleFromProject(project, mapName, {tileBaseUrl: options.tileBaseUrl});
+  const style = createStyleFromProject(project, mapName, {apiBaseUrl: options.apiBaseUrl});
   assertValidTileflowStyle(style, mapName);
   const source = resolveVectorSource(style, options.sourceLayers);
   const fetchImplementation = options.fetch ?? globalThis.fetch;
@@ -168,7 +168,11 @@ export async function inspectTileflowFeatures(
 
   const uniqueFeatures = deduplicateFeatures(features).sort(compareInspectedFeatures);
   const limitedFeatures = uniqueFeatures.slice(0, options.limit);
-  const metadataVersion = style.metadata?.['tileflow:tilesetVersion'];
+  const dataIdentity = style.metadata?.['tileflow:data'];
+  const metadataVersion =
+    dataIdentity && typeof dataIdentity === 'object' && 'revision' in dataIdentity
+      ? (dataIdentity as {revision?: unknown}).revision
+      : undefined;
 
   return {
     schemaVersion: 1,

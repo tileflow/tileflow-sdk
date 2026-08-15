@@ -59,7 +59,9 @@ const fetch = createTileflowDevRequestHandler({
 `map` and `scene` are mutually exclusive. Map preview uses the configured `view`; scene preview
 uses its committed camera and CSS viewport. `resolveTileflowPreview()` exposes the validated
 selection for custom integrations. Application-target scenes remain the responsibility of the
-application's development server.
+application's development server. The built-in preview records longitude, latitude, zoom, bearing,
+and pitch in the current URL after the camera moves, so browser refreshes and config-triggered
+reloads return to the same view. Removing those query parameters restores the configured camera.
 
 If a map uses `icons: './icons/brand'`, build artifacts include the generated
 MapLibre `sprite.json`, `sprite.png`, `sprite@2x.json`, and `sprite@2x.png`

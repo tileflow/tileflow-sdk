@@ -128,7 +128,10 @@ test('filters before source I/O and rejects unknown maps with sorted valid names
   await writeFileEnsured(join(directory, 'icons', 'safe.svg'), simpleSvg('#22c55e'));
   await writeFile(
     configPath,
-    `export default {maps: {zeta: {icons: {source: './missing'}}, alpha: {icons: {source: './icons'}}}};\n`,
+    `export default {maps: {
+      zeta: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, icons: {source: './missing'}},
+      alpha: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, icons: {source: './icons'}}
+    }};\n`,
   );
 
   const selected = await runCli(
@@ -176,7 +179,7 @@ test('reports config, source, and decode failures on stderr without partial JSON
   const invalidConfig = await createDirectoryFixture(t, 'tileflow-icon-list-invalid-config-');
   await writeFile(
     join(invalidConfig, 'tileflow.config.ts'),
-    `export default {maps: {main: {unsupportedField: true}}};\n`,
+    `export default {maps: {main: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, unsupportedField: true}}};\n`,
   );
   const invalid = await runCli(invalidConfig, ['icons', 'list', '--json'], {});
   assert.equal(invalid.code, 1);
@@ -186,7 +189,7 @@ test('reports config, source, and decode failures on stderr without partial JSON
   const missingSource = await createDirectoryFixture(t, 'tileflow-icon-list-missing-source-');
   await writeFile(
     join(missingSource, 'tileflow.config.ts'),
-    `export default {maps: {main: {icons: {source: './missing'}}}};\n`,
+    `export default {maps: {main: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, icons: {source: './missing'}}}};\n`,
   );
   const missing = await runCli(missingSource, ['icons', 'list', '--json'], {});
   assert.equal(missing.code, 1);
@@ -198,7 +201,7 @@ test('reports config, source, and decode failures on stderr without partial JSON
   await writeFileEnsured(join(brokenImage, 'icons', 'broken.png'), 'not a PNG');
   await writeFile(
     join(brokenImage, 'tileflow.config.ts'),
-    `export default {maps: {main: {icons: {source: './icons'}}}};\n`,
+    `export default {maps: {main: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, icons: {source: './icons'}}}};\n`,
   );
   const broken = await runCli(brokenImage, ['icons', 'list', '--json'], {});
   assert.equal(broken.code, 1);
@@ -211,8 +214,8 @@ test('succeeds with an empty catalog array for external and absent map icons', a
   await writeFile(
     join(directory, 'tileflow.config.ts'),
     `export default {maps: {
-      external: {icons: {mapping: {poi: 'pin'}, sprite: 'https://example.invalid/${remoteMarker}'}},
-      none: {}
+      external: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, icons: {mapping: {poi: 'pin'}, sprite: 'https://example.invalid/${remoteMarker}'}},
+      none: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}}
     }};\n`,
   );
   const result = await runCli(directory, ['icons', 'list', '--json'], {});
@@ -244,10 +247,10 @@ export default {
     }
   },
   maps: {
-    none: {},
-    external: {icons: 'remote'},
-    beta: {icons: {extends: 'base', mapping: {food: 'photo'}}},
-    alpha: {icons: 'base'}
+    none: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}},
+    external: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, icons: 'remote'},
+    beta: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, icons: {extends: 'base', mapping: {food: 'photo'}}},
+    alpha: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, icons: 'base'}
   }
 };
 `,

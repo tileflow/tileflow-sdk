@@ -23,8 +23,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist",
-    "OSM_BRIGHT_LICENSE.md"
+    "dist"
   ],
   "scripts": {
     "build": "tsup src/index.ts src/browser.ts --format esm --dts --clean --no-splitting",

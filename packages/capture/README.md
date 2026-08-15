@@ -85,8 +85,8 @@ cost in advance or verify prepared CI, not as a prerequisite for normal capture.
 
 `createTileflowCaptureReceipt`, `parseTileflowCaptureReceipt`,
 `validateTileflowCaptureReceipt`, and `serializeTileflowCaptureReceipt` implement the strict,
-bounded schema-version-1 receipt contract. A receipt contains image/scene/style hashes, dimensions,
-renderer/platform identity, required nullable `source.tilesetVersion` evidence, and
+bounded schema-version-2 receipt contract. A receipt contains image/scene/style hashes, dimensions,
+renderer/platform identity, the required resolved `data` identity, and
 remote-dependency state; it contains no time, user, origin,
 repository, absolute path, config source, environment, or credential.
 

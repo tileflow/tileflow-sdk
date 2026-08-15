@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {deflateSync} from 'node:zlib';
 import {PNG} from 'pngjs';
-import {sha256Hex} from '@tileflow/core';
+import {sha256Hex, type TileflowDataIdentity} from '@tileflow/core';
 import {
   analyzeTileflowCaptureReference,
   compareTileflowCaptureToBaseline,
@@ -16,6 +16,14 @@ import {
   type TileflowCapture,
   type TileflowCaptureReceipt,
 } from '../src/index';
+
+const dataIdentity: TileflowDataIdentity = {
+  kind: 'tileflow-world',
+  revision: '2026-06-07',
+  schema: 'openmaptiles',
+  schemaVersion: 1,
+  sourceId: 'tileflow',
+};
 
 test('analyzes a bounded reference without treating it as a baseline', async () => {
   const actualPng = createPng(2, 2, [20, 40, 60, 255]);
@@ -171,6 +179,7 @@ test('classifies missing, dimension, scene, and runtime mismatches before pixel 
   assert.equal(runtime.rendererMatch, false);
 
   const pinnedActualReceipt = createTileflowCaptureReceipt({
+    data: {...dataIdentity, revision: 'archive-a'},
     dpr: actual.dpr,
     height: actual.height,
     map: actual.map,
@@ -179,13 +188,13 @@ test('classifies missing, dimension, scene, and runtime mismatches before pixel 
     renderer: actual.renderer,
     scene: actual.scene,
     sceneSha256: actual.sceneSha256,
-    sourceVersion: 'archive-a',
     styleSha256: actual.styleSha256,
     target: actual.target,
     width: actual.width,
   });
   const pinnedActual = {...actual, receipt: pinnedActualReceipt};
   const pinnedBaseline = createTileflowCaptureReceipt({
+    data: {...dataIdentity, revision: 'archive-b'},
     dpr: actual.dpr,
     height: actual.height,
     map: actual.map,
@@ -194,7 +203,6 @@ test('classifies missing, dimension, scene, and runtime mismatches before pixel 
     renderer: actual.renderer,
     scene: actual.scene,
     sceneSha256: actual.sceneSha256,
-    sourceVersion: 'archive-b',
     styleSha256: actual.styleSha256,
     target: actual.target,
     width: actual.width,
@@ -240,7 +248,7 @@ test('rejects corrupt PNGs, inconsistent hashes, and executable or additive rece
     /decoded safely/,
   );
 
-  assert.throws(() => parseTileflowCaptureReceipt('{"schemaVersion":1}'), /missing or unsupported/);
+  assert.throws(() => parseTileflowCaptureReceipt('{"schemaVersion":2}'), /missing or unsupported/);
   assert.throws(
     () => parseTileflowCaptureReceipt(JSON.stringify({...actual.receipt, execute: 'never'})),
     /missing or unsupported/,
@@ -282,7 +290,7 @@ test('rejects duplicate-key receipt JSON instead of accepting parser-dependent i
   const png = createPng(1, 1, [1, 2, 3, 255]);
   const receipt = await createReceipt(png, 1, 1);
   const canonical = serializeTileflowCaptureReceipt(receipt);
-  const ambiguous = canonical.replace('"schemaVersion":1', '"schemaVersion":0,"schemaVersion":1');
+  const ambiguous = canonical.replace('"schemaVersion":2', '"schemaVersion":0,"schemaVersion":2');
 
   assert.throws(() => parseTileflowCaptureReceipt(ambiguous), /canonical|unsupported|duplicate/i);
 });
@@ -320,6 +328,7 @@ async function createReceipt(
   const renderer = createTileflowCaptureRendererIdentity();
   if (overrides.chromiumVersion) renderer.chromiumVersion = overrides.chromiumVersion;
   return createTileflowCaptureReceipt({
+    data: dataIdentity,
     dpr: 1,
     height: physicalHeight,
     map: 'main',

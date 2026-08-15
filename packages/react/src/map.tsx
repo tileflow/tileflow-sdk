@@ -53,7 +53,6 @@ export type MapProps = {
   styleUrl?: string;
   imageUrl?: string;
   styleBaseUrl?: string;
-  tileBaseUrl?: string;
   themes?: TileflowProjectThemes;
   manifestUrl?: string;
   preferLocalDev?: boolean;
@@ -82,7 +81,6 @@ export function Map({
   styleUrl,
   imageUrl,
   styleBaseUrl,
-  tileBaseUrl,
   themes,
   manifestUrl = defaultTileflowManifestUrl,
   preferLocalDev = true,
@@ -200,7 +198,6 @@ export function Map({
       styleBaseUrl,
       styleUrl,
       themes,
-      tileBaseUrl,
     });
   }, [
     config,
@@ -212,7 +209,6 @@ export function Map({
     styleBaseUrl,
     styleUrl,
     themes,
-    tileBaseUrl,
   ]);
 
   const resolvedAnalytics = useMemo(

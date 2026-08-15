@@ -10,6 +10,7 @@ import {
   serializeCanonicalJson,
   serializeTileflowIconPackageManifest,
   sha256Hex,
+  streets,
   tileflowHostedAlphaCompatibility,
   tileflowHostedIconIdSchema,
   tileflowIconPackageFileNames,
@@ -227,7 +228,7 @@ test('diffs mappings with stable add, remove, and retarget ordering', () => {
   assert.deepEqual(diffTileflowIconMappings(null, null), {added: [], changed: [], removed: []});
 });
 
-test('inspects inherited mappings plus literal and dynamic style override references', () => {
+test('inspects inherited mappings plus literal and dynamic raw override references', () => {
   assert.deepEqual(
     resolveTileflowIconMapping(
       {
@@ -235,7 +236,12 @@ test('inspects inherited mappings plus literal and dynamic style override refere
           base: {mapping: {food: 'cafe', health: 'hospital'}},
           brand: {extends: 'base', mapping: {health: 'clinic'}},
         },
-        maps: {production: {icons: {extends: 'brand', mapping: {food: 'restaurant'}}}},
+        maps: {
+          production: {
+            basemap: streets(),
+            icons: {extends: 'brand', mapping: {food: 'restaurant'}},
+          },
+        },
       },
       'production',
     ),
@@ -250,17 +256,23 @@ test('inspects inherited mappings plus literal and dynamic style override refere
       },
       maps: {
         production: {
+          basemap: streets(),
           icons: {extends: 'brand', mapping: {health: 'hospital'}},
-          layers: {
-            literal: {layout: {'icon-image': 'tileflow:missing-literal'}},
-            dynamic: {layout: {'icon-image': ['concat', 'tileflow:', ['get', 'kind']]}},
-          },
-          modules: [
+          overrides: [
             {
-              type: 'styleOverride',
-              layers: {
-                nested: {layout: {'icon-image': ['image', 'tileflow:missing-module']}},
-              },
+              kind: 'patch',
+              id: 'streets-poi-food',
+              patch: {layout: {'icon-image': 'tileflow:missing-literal'}},
+            },
+            {
+              kind: 'patch',
+              id: 'streets-poi-culture',
+              patch: {layout: {'icon-image': ['concat', 'tileflow:', ['get', 'kind']]}},
+            },
+            {
+              kind: 'patch',
+              id: 'streets-poi-transit',
+              patch: {layout: {'icon-image': ['image', 'tileflow:missing-module']}},
             },
           ],
         },
@@ -280,25 +292,25 @@ test('inspects inherited mappings plus literal and dynamic style override refere
     {
       iconName: 'missing-literal',
       kind: 'style-override-literal',
-      path: 'maps.production.layers.literal.layout.icon-image',
+      path: 'maps.production.overrides.0.patch.layout.icon-image',
     },
     {
       iconName: 'missing-module',
       kind: 'style-override-literal',
-      path: 'maps.production.modules.0.layers.nested.layout.icon-image',
+      path: 'maps.production.overrides.2.patch.layout.icon-image',
     },
   ]);
   assert.deepEqual(analysis.unanalyzable, [
     {
       kind: 'style-override-expression',
-      path: 'maps.production.layers.dynamic.layout.icon-image',
+      path: 'maps.production.overrides.1.patch.layout.icon-image',
     },
   ]);
 
   const inherited = inspectTileflowIconReferences(
     {
       icons: {base: {mapping: {health: 'hospital'}, source: './icons'}},
-      maps: {production: {icons: 'base'}},
+      maps: {production: {basemap: streets(), icons: 'base'}},
     },
     'production',
     [],

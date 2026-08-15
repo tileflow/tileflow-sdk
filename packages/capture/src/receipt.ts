@@ -3,15 +3,16 @@ import {
   tileflowCaptureIdSchema,
   tileflowCaptureSceneLimits,
   tileflowCaptureSceneNameSchema,
+  type TileflowDataIdentity,
 } from '@tileflow/core';
 import {TileflowCaptureError} from './errors';
 import type {TileflowCaptureRendererIdentity} from './metadata';
 
-export const tileflowCaptureReceiptSchemaVersion = 1 as const;
+export const tileflowCaptureReceiptSchemaVersion = 2 as const;
 export const tileflowCaptureReceiptLimits = Object.freeze({maximumBytes: 64 * 1024});
 
 export type TileflowCaptureReceipt = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   scene: {
     name: string;
     map: string;
@@ -29,12 +30,13 @@ export type TileflowCaptureReceipt = {
   };
   renderer: TileflowCaptureRendererIdentity;
   platform: {os: string; architecture: string};
-  source: {tilesetVersion: string | null};
+  data: TileflowDataIdentity;
   networkDependent: boolean;
 };
 
 export type CreateTileflowCaptureReceiptInput = {
   dpr: 1 | 2;
+  data: TileflowDataIdentity;
   height: number;
   map: string;
   networkDependent: boolean;
@@ -43,7 +45,6 @@ export type CreateTileflowCaptureReceiptInput = {
   scene: string;
   sceneSha256: string;
   styleSha256: string;
-  sourceVersion?: string;
   target: 'map' | 'application';
   width: number;
 };
@@ -70,7 +71,7 @@ export function createTileflowCaptureReceipt(
     },
     renderer: input.renderer,
     platform: {os: process.platform, architecture: process.arch},
-    source: {tilesetVersion: input.sourceVersion ?? null},
+    data: input.data,
     networkDependent: input.networkDependent,
   });
 }
@@ -111,7 +112,7 @@ export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureR
     'image',
     'renderer',
     'platform',
-    'source',
+    'data',
     'networkDependent',
   ];
   if (receipt.schemaVersion !== tileflowCaptureReceiptSchemaVersion) {
@@ -170,8 +171,20 @@ export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureR
     throw invalidReceipt('The baseline receipt has an invalid network dependency flag.');
   }
 
-  const source = requireRecord(receipt.source, 'source');
-  requireExactKeys(source, ['tilesetVersion']);
+  const data = requireRecord(receipt.data, 'data');
+  requireExactKeys(data, [
+    'kind',
+    ...(data.revision === undefined ? [] : ['revision']),
+    'schema',
+    'schemaVersion',
+    'sourceId',
+  ]);
+  if (data.kind !== 'tileflow-world' && data.kind !== 'vector-tiles') {
+    throw invalidReceipt('The baseline receipt has an invalid data.kind.');
+  }
+  if (data.schema !== 'openmaptiles' || data.sourceId !== 'tileflow') {
+    throw invalidReceipt('The baseline receipt has an unsupported data contract.');
+  }
 
   return {
     schemaVersion: tileflowCaptureReceiptSchemaVersion,
@@ -204,7 +217,13 @@ export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureR
       os: requireBoundedString(platform.os, 'platform.os'),
       architecture: requireBoundedString(platform.architecture, 'platform.architecture'),
     },
-    source: {tilesetVersion: requireNullableSourceVersion(source.tilesetVersion)},
+    data: {
+      kind: data.kind,
+      ...(data.revision === undefined ? {} : {revision: requireSourceRevision(data.revision)}),
+      schema: data.schema,
+      schemaVersion: requirePositiveInteger(data.schemaVersion, 'data.schemaVersion'),
+      sourceId: data.sourceId,
+    },
     networkDependent: receipt.networkDependent,
   };
 }
@@ -269,10 +288,9 @@ function requireBoundedString(value: unknown, field: string): string {
   return value;
 }
 
-function requireNullableSourceVersion(value: unknown): string | null {
-  if (value === null) return null;
+function requireSourceRevision(value: unknown): string {
   if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) {
-    throw invalidReceipt('The baseline receipt has an invalid source.tilesetVersion.');
+    throw invalidReceipt('The baseline receipt has an invalid data.revision.');
   }
   return value;
 }

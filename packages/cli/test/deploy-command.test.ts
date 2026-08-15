@@ -19,7 +19,7 @@ test('deploy sends CI provenance but keeps it and the bearer key out of the mani
     fixture.configPath,
     `import {writeFileSync} from 'node:fs';
 writeFileSync(${JSON.stringify(observedSecretPath)}, process.env.TILEFLOW_API_KEY ?? 'missing');
-export default {maps: {madrid: {name: 'Madrid'}}};
+export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, name: 'Madrid'}}};
 `,
     'utf8',
   );
@@ -51,7 +51,7 @@ export default {maps: {madrid: {name: 'Madrid'}}};
     },
   );
 
-  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /Published madrid\./);
   assert.equal(authorization, `Bearer ${fakeApiKey}`);
   assert.deepEqual((requestBody as {source?: unknown}).source, {
@@ -94,7 +94,7 @@ test('deploy reports an idempotent hosted no-op without changing the manifest co
     {TILEFLOW_API_KEY: fakeApiKey},
   );
 
-  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /Unchanged madrid \(v7\)\./);
   assert.doesNotMatch(result.stdout, /Published madrid/);
   const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
@@ -152,7 +152,7 @@ test('plain validation now reports missing local icon sources', async (t) => {
   const fixture = await createFixture(t);
   await writeFile(
     fixture.configPath,
-    `export default {maps: {madrid: {icons: {source: './missing-icons'}}}};\n`,
+    `export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, icons: {source: './missing-icons'}}}};\n`,
   );
   const result = await runCli(
     fixture.directory,
@@ -169,7 +169,7 @@ test('validation rejects invalid MapLibre semantics with a stable layer path', a
   const fixture = await createFixture(t);
   await writeFile(
     fixture.configPath,
-    `export default {maps: {madrid: {layers: {background: {paint: {'background-color': 42}}}}}};\n`,
+    `export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]}}};\n`,
   );
   const result = await runCli(
     fixture.directory,
@@ -178,7 +178,10 @@ test('validation rejects invalid MapLibre semantics with a stable layer path', a
   );
 
   assert.equal(result.code, 1);
-  assert.match(result.stdout, /maps\.madrid\.style\.layers\.background\.paint\.background-color/);
+  assert.match(
+    result.stdout,
+    /maps\.madrid\.style\.layers\.streets-background\.paint\.background-color/,
+  );
   assert.match(result.stdout, /color expected, number found/);
   assert.doesNotMatch(result.stdout, /Config is valid|MapLibre style semantics/);
   assert.equal(`${result.stdout}\n${result.stderr}`.includes(fixture.directory), false);
@@ -194,8 +197,9 @@ test('deploy rejects invalid MapLibre semantics before any remote write', async 
   icons: {brand: {mapping: {restaurant: 'cafe'}, source: './icons'}},
   maps: {
     madrid: {
+      basemap: {type: 'streets', basemapVersion: 1, variant: 'light'},
       icons: 'brand',
-      layers: {background: {paint: {'background-color': 42}}}
+      overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]
     }
   }
 };\n`,
@@ -220,7 +224,10 @@ test('deploy rejects invalid MapLibre semantics before any remote write', async 
 
   assert.equal(result.code, 1);
   assert.equal(requests, 0);
-  assert.match(result.stdout, /maps\.madrid\.style\.layers\.background\.paint\.background-color/);
+  assert.match(
+    result.stdout,
+    /maps\.madrid\.style\.layers\.streets-background\.paint\.background-color/,
+  );
   assert.match(result.stdout, /color expected, number found/);
   assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
 });
@@ -251,14 +258,31 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
 
     const parsed = JSON.parse(body) as Record<string, unknown>;
     assert.equal('icons' in parsed, false);
-    assert.deepEqual((parsed.config as {icons?: unknown}).icons, {
-      mapping: {restaurant: 'cafe'},
-    });
+    const artifact = parsed.artifact as {
+      receipt?: Record<string, unknown>;
+      style?: {layers?: Array<{id?: string; layout?: Record<string, unknown>}>; sprite?: unknown};
+    };
+    assert.equal(artifact.receipt?.basemap, 'streets');
+    assert.equal(typeof artifact.receipt?.styleHash, 'string');
+    assert.equal(Object.hasOwn(artifact.receipt ?? {}, 'provenance'), false);
+    assert.equal(
+      artifact.style?.sprite,
+      `${api.url}/sprites/icp_12345678-1234-1234-1234-123456789abc/sprite`,
+    );
+    const foodPoiLayer = artifact.style?.layers?.find(
+      (layer) => layer.id === 'streets-poi-food-icon',
+    );
+    assert.deepEqual(foodPoiLayer?.layout?.['icon-image'], [
+      'coalesce',
+      ['image', 'cafe'],
+      ['image', 'restaurant_11'],
+      ['image', 'marker_11'],
+    ]);
     assert.deepEqual(parsed.iconPackage, {
       contentHash: requests[0]?.url?.split('/').pop(),
       label: 'brand',
     });
-    assert.doesNotMatch(JSON.stringify(parsed.config), /\.\/icons|source-secret|"source"\s*:/);
+    assert.doesNotMatch(JSON.stringify(artifact), /\.\/icons|source-secret/);
     return {
       changed: true,
       mapId: 'map_test',
@@ -282,7 +306,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     {TILEFLOW_API_KEY: fakeApiKey},
   );
 
-  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
   assert.deepEqual(
     requests.map((request) => `${request.method} ${request.url?.split('/').slice(0, 3).join('/')}`),
     [`PUT /v1/icon-packages`, `POST /v1/styles`],
@@ -353,7 +377,7 @@ test('CI deploy fails closed instead of reusing a credential saved by local logi
     fixture.configPath,
     `import {writeFileSync} from 'node:fs';
 writeFileSync(${JSON.stringify(configMarkerPath)}, 'imported');
-export default {maps: {madrid: {name: 'Madrid'}}};
+export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, name: 'Madrid'}}};
 `,
     'utf8',
   );
@@ -399,7 +423,11 @@ async function createFixture(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-cli-adversarial-'));
   const configPath = join(directory, 'tileflow.config.ts');
   const manifestPath = join(directory, 'manifest.json');
-  await writeFile(configPath, `export default {maps: {madrid: {name: 'Madrid'}}};\n`, 'utf8');
+  await writeFile(
+    configPath,
+    `export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 1, variant: 'light'}, name: 'Madrid'}}};\n`,
+    'utf8',
+  );
   t.after(() => rm(directory, {force: true, recursive: true}));
 
   return {configPath, directory, manifestPath};
@@ -421,7 +449,14 @@ async function createIconFixture(t: TestContext) {
     fixture.configPath,
     `export default {
   icons: {brand: {mapping: {restaurant: 'cafe'}, source: './icons'}},
-  maps: {madrid: {icons: 'brand', name: 'Madrid'}}
+  maps: {
+    madrid: {
+      basemap: {type: 'streets', basemapVersion: 1, variant: 'light'},
+      icons: 'brand',
+      modules: {poi: {type: 'poi', icons: 'essential'}},
+      name: 'Madrid'
+    }
+  }
 };\n`,
   );
   return fixture;

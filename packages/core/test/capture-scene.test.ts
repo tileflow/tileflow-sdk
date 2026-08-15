@@ -6,6 +6,7 @@ import {
   defineTileflow,
   normalizeTileflowCaptureScene,
   parseTileflowProject,
+  streets,
   tileflowCaptureSceneLimits,
   tileflowCaptureSceneSchemaVersion,
   validateConfig,
@@ -14,7 +15,7 @@ import {
 const project = defineTileflow({
   maps: {
     madrid: {
-      renderer: 'generated',
+      basemap: streets(),
       theme: {colors: {water: '#8ED6E8'}},
     },
   },
@@ -131,7 +132,7 @@ test('rejects invalid scene references, dimensions, cameras, targets, and unknow
     },
     {
       input: sceneProject({unknown: true}),
-      path: 'scenes.proof',
+      path: 'scenes.proof.unknown',
     },
   ];
 
@@ -151,19 +152,19 @@ test('does not resolve missing scene maps through Object.prototype', () => {
   }
 
   assert.throws(
-    () => createStyleFromProject({maps: {madrid: {}}}, 'constructor' as never),
+    () => createStyleFromProject({maps: {madrid: {basemap: streets()}}}, 'constructor' as never),
     /Unknown Tileflow map: constructor/,
   );
 
   const inheritedIconSet = validateConfig({
-    maps: {madrid: {icons: {extends: 'constructor'}}},
+    maps: {madrid: {basemap: streets(), icons: {extends: 'constructor'}}},
   });
   assert.equal(inheritedIconSet.valid, false);
   assert.equal(inheritedIconSet.messages[0]?.path, 'maps.madrid.icons.extends');
 
   assert.equal(
     validateConfig({
-      maps: {constructor: {}},
+      maps: {constructor: {basemap: streets()}},
       scenes: {proof: sceneProject({map: 'constructor'}).scenes.proof},
     }).valid,
     true,
@@ -172,7 +173,7 @@ test('does not resolve missing scene maps through Object.prototype', () => {
 
 test('rejects prototype-mutating record keys instead of silently dropping them', () => {
   const input = JSON.parse(`{
-    "maps": {"madrid": {}},
+    "maps": {"madrid": {"basemap": {"type": "streets", "basemapVersion": 1, "variant": "light"}}},
     "scenes": {
       "__proto__": {
         "map": "madrid",
@@ -186,7 +187,7 @@ test('rejects prototype-mutating record keys instead of silently dropping them',
   assert.equal(validation.valid, false);
   assert.equal(validation.messages[0]?.path, 'scenes.__proto__');
 
-  const inheritedProject = Object.create({maps: {madrid: {}}});
+  const inheritedProject = Object.create({maps: {madrid: {basemap: streets()}}});
   const inheritedValidation = validateConfig(inheritedProject);
   assert.equal(inheritedValidation.valid, false);
   assert.throws(() => parseTileflowProject(inheritedProject), /inherited properties/);
@@ -194,7 +195,7 @@ test('rejects prototype-mutating record keys instead of silently dropping them',
 
 test('rejects scene names that cannot map portably to managed artifact files', () => {
   const duplicateByCase = validateConfig({
-    maps: {madrid: {}},
+    maps: {madrid: {basemap: streets()}},
     scenes: {
       proof: sceneProject({}).scenes.proof,
       PROOF: sceneProject({}).scenes.proof,
@@ -205,7 +206,7 @@ test('rejects scene names that cannot map portably to managed artifact files', (
 
   for (const name of ['CON', 'x'.repeat(65)]) {
     const validation = validateConfig({
-      maps: {madrid: {}},
+      maps: {madrid: {basemap: streets()}},
       scenes: {[name]: sceneProject({}).scenes.proof},
     });
     assert.equal(validation.valid, false, name);
@@ -215,7 +216,7 @@ test('rejects scene names that cannot map portably to managed artifact files', (
 
 function sceneProject(overrides: Record<string, unknown>) {
   return {
-    maps: {madrid: {}},
+    maps: {madrid: {basemap: streets()}},
     scenes: {
       proof: {
         map: 'madrid',

@@ -3,6 +3,7 @@ import type {TileflowLayerContribution, TileflowLayerSlot} from '../../cartograp
 import {applyFillStyle, applyLineStyle} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {zoom} from '../../cartography/values';
+import {textFont} from '../../themes';
 import type {
   TileflowRoadClass,
   TileflowRoadClassStyle,
@@ -57,7 +58,6 @@ export function compileRoads(
   if (request?.enabled === false) return [];
   const semantics = resolveRoads(request);
   const visible = new Set<TileflowRoadClass>(visibleRoadClasses(semantics));
-  if (visible.size === 0) return [];
   const metrics = roadStyleMetrics(semantics);
 
   const defaults = defaultClassStyles(context, metrics, semantics);
@@ -111,6 +111,12 @@ export function compileRoads(
   const areaStyles = mergeTileflowDesign(
     {
       road: {color: context.colors.road, minZoom: 13, opacity: 0.9},
+      pedestrian: {
+        color: context.colors.road,
+        minZoom: 13,
+        opacity: 1,
+        outlineColor: context.colors.roads.casing,
+      },
       pier: {color: context.colors.land, minZoom: 12, opacity: 1},
       pierLine: {color: context.colors.roads.casing, minZoom: 12, width: 1},
     },
@@ -138,6 +144,27 @@ export function compileRoads(
       kind: 'layer',
       layer: applyFillStyle(
         {
+          id: 'streets-road-pedestrian-area',
+          type: 'fill',
+          source,
+          'source-layer': schema.layers.road,
+          filter: [
+            'all',
+            ['==', ['geometry-type'], 'Polygon'],
+            tileflowRoadClassFilter(schema.fields, 'pedestrian'),
+          ],
+        },
+        areaStyles.pedestrian,
+      ),
+      localOrder: 901,
+      owner: 'roads',
+      slot: 'transport-surface-fill',
+      target: 'roads.areas.pedestrian',
+    },
+    {
+      kind: 'layer',
+      layer: applyFillStyle(
+        {
           id: 'streets-road-pier-area',
           type: 'fill',
           source,
@@ -146,7 +173,7 @@ export function compileRoads(
         },
         areaStyles.pier,
       ),
-      localOrder: 901,
+      localOrder: 902,
       owner: 'roads',
       slot: 'transport-surface-fill',
       target: 'roads.areas.pier',
@@ -163,7 +190,7 @@ export function compileRoads(
         },
         areaStyles.pierLine,
       ),
-      localOrder: 902,
+      localOrder: 903,
       owner: 'roads',
       slot: 'transport-surface-fill',
       target: 'roads.areas.pierLine',
@@ -184,6 +211,7 @@ export function compileRoads(
           'symbol-placement': 'line',
           'symbol-spacing': 120,
           'text-field': ['case', ['==', ['get', schema.fields.oneway], -1], '‹', '›'],
+          'text-font': textFont(context.typography, 'roads'),
           'text-size': 12,
         },
         paint: {'text-color': context.colors.labels.road},

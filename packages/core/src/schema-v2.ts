@@ -385,6 +385,7 @@ const roadsModuleSchema = z
     type: z.literal('roads'),
     areas: z
       .object({
+        pedestrian: fillStyleSchema.optional(),
         pier: fillStyleSchema.optional(),
         pierLine: lineStyleSchema.optional(),
         road: fillStyleSchema.optional(),

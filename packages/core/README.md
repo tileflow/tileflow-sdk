@@ -94,6 +94,9 @@ The road module distinguishes the path family semantically:
 ```ts
 roads({
   extras: {paths: true},
+  areas: {
+    pedestrian: {color: '#F1F3F5', outlineColor: '#D5DCE3'},
+  },
   classes: {
     pedestrian: {surface: {fill: {color: '#F5F6F7', width: 6}}},
     footway: {surface: {fill: {color: '#D9DEE3', width: 1.2}}},
@@ -108,6 +111,10 @@ These targets are non-overlapping translations of the OpenMapTiles road class an
 same names are available under `labels().roadClasses` and `labels().styles.roads`. Surface, tunnel,
 and bridge phases can be controlled independently for each target; no raw source filter or
 generated layer ID is needed.
+
+`classes.pedestrian` styles line-like pedestrian ways. Polygon pedestrian plazas are a distinct
+geometry and use `areas.pedestrian`, including optional fill opacity, outline color, or sprite
+pattern. This prevents plazas from degrading into a thin polygon outline.
 
 POI `density`, `labels`, and `icons` are independent policies. Density bounds eligible feature
 ranks, label detail controls text ranks, icon detail controls icon ranks, and

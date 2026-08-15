@@ -159,6 +159,16 @@ test('applies road hierarchy, weight, and per-class width scales to generated wi
   );
 });
 
+test('one-way markers use the resolved road font instead of MapLibre glyph defaults', () => {
+  const marker = compileRoads(roads({oneWayMarkers: true}), context).find(
+    (entry) => entry.layer.id === 'streets-road-oneway',
+  );
+
+  assert.deepEqual((marker?.layer.layout as Record<string, unknown>)['text-font'], [
+    'Noto Sans Regular',
+  ]);
+});
+
 test('compiles disjoint semantic path families across structures and remapped fields', () => {
   const data = resolveTileflowData({
     type: 'vector-tiles',
@@ -232,6 +242,45 @@ test('an explicit semantic path class has an effect without enabling the whole p
   assert.equal(
     labelsForCycleway.some((entry) => entry.layer.id === 'streets-label-road-cycleway'),
     true,
+  );
+});
+
+test('compiles pedestrian polygons as a semantic road area even without line classes', () => {
+  const data = resolveTileflowData({
+    type: 'vector-tiles',
+    attribution: '© Test',
+    schema: openMapTiles({fields: {class: 'kind', subclass: 'kind_detail'}}),
+    url: '/tiles.json',
+  });
+  const contributions = compileRoads(
+    roads({
+      areas: {pedestrian: {color: '#F1F3F5', outlineColor: '#D5DCE3'}},
+      detail: 'none',
+    }),
+    {...context, data},
+  );
+  const pedestrianArea = contributions.find(
+    (entry) => entry.layer.id === 'streets-road-pedestrian-area',
+  );
+
+  assert.ok(pedestrianArea);
+  assert.deepEqual(pedestrianArea.layer.filter, [
+    'all',
+    ['==', ['geometry-type'], 'Polygon'],
+    [
+      'all',
+      ['==', ['get', 'kind'], 'path'],
+      ['match', ['get', 'kind_detail'], ['pedestrian'], true, false],
+    ],
+  ]);
+  assert.deepEqual(pedestrianArea.layer.paint, {
+    'fill-color': '#F1F3F5',
+    'fill-opacity': 1,
+    'fill-outline-color': '#D5DCE3',
+  });
+  assert.equal(
+    contributions.some((entry) => entry.layer.id.includes('surface-pedestrian')),
+    false,
   );
 });
 

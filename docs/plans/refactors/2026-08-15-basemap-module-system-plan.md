@@ -120,6 +120,18 @@ part of the primary vector-data API.
       `class`/`subclass` expressions; validate the output and review the close-street scene. Focused
       core tests pass 67/67, the lab config validates, its tests pass 3/3, the Atocha zoom-17 preview
       was reviewed, and the complete workspace/build/public-smoke/alpha-dry-run gates pass.
+- [x] (2026-08-15) Inspected the Atocha source features after comparing the close-street map with a
+      reference and found that a prominent pedestrian plaza is a `Polygon`, not a missing line.
+      Added `roads.areas.pedestrian` as a remapping-aware semantic fill target, kept
+      `classes.pedestrian` for line-like ways, strengthened the lab's path hierarchy, and covered
+      area compilation when no line class is enabled. Removed MapLibre's unavailable default
+      Open Sans glyph fallback from one-way markers by binding them to resolved road typography.
+      Focused tests, full Style JSON validation, and two reviewed close-street captures pass. The
+      nine-scene diff still reports the previously documented user palette drift against older
+      baselines, so those baselines were not implicitly replaced; the local watch preview remains
+      blocked in this worktree by the host `EMFILE` limit. Final evidence: 69/69 core tests and 3/3
+      lab tests pass, followed by `pnpm check`, `pnpm build`, packaged public smoke, and the alpha
+      publication dry-run without publishing.
 
 ## Surprises & Discoveries
 
@@ -168,6 +180,12 @@ part of the primary vector-data API.
 - Observation: the branch already has a user-owned palette diff in
   `examples/cartography-lab/tileflow.config.ts`. Do not overwrite or misattribute it.
   Evidence: `git diff -- examples/cartography-lab/tileflow.config.ts` on `basemap-system`.
+
+- Observation: OpenMapTiles can encode a pedestrian plaza as a `Polygon` in `transportation` with
+  `class=path` and `subclass=pedestrian`. A line-only semantic target renders merely its ring and
+  cannot give the surface its own fill hierarchy.
+  Evidence: `tileflow inspect features` at the Atocha close-street camera returned polygon feature
+  `487614492`; the new `streets-road-pedestrian-area` layer targets that geometry explicitly.
 
 - Observation: the repository records the official OSM Bright repository and license but not the
   upstream commit/tag used by the initial import. The local vendored style is therefore the only
@@ -366,7 +384,7 @@ part of the primary vector-data API.
 ## Outcomes & Retrospective
 
 The initial SDK implementation completed the Streets-first cutover. `streets()` now compiles a
-104-layer default map directly from nine keyed module domains and one resolved OpenMapTiles data
+105-layer default map directly from nine keyed module domains and one resolved OpenMapTiles data
 contract. There is no runtime template, fallback renderer, layer translator, or hidden data
 precedence. The lab's explicit Editorial City overlays compile 111 layers and have nine reviewed
 schema-2 baselines spanning urban, road, rail, airport, coast, rural, and mobile views.
@@ -399,8 +417,9 @@ That follow-up is now complete. The lab no longer reads OpenMapTiles `subclass` 
 paths: it styles the five public road targets directly. Geometry and road-label compilers share one
 selector implementation, exact class requests participate in label eligibility, disabled classes
 are removed from both domains, and remapped `class`/`subclass` field names are covered by tests. The
-current Editorial City recipe emits 141 layers because each enabled path semantic owns its complete
-structure phases rather than sharing one overlapping `path` layer.
+current Editorial City recipe emits 150 layers because each enabled path semantic owns its complete
+structure phases rather than sharing one overlapping `path` layer, the lab gives path casings their
+own layers, and pedestrian polygons have a dedicated semantic fill.
 
 ## Context and Orientation
 
@@ -854,7 +873,7 @@ Scenes: madrid-overview, madrid-neighborhood, madrid-close-street, madrid-motorw
 User-owned diff: editorial palette adjustments in lab config
 Baseline core: build passes; 46 tests pass via node --import tsx --test before ledger test
 Ledger checkpoint: 47 core tests pass after adding the frozen ownership test
-Direct Streets: 104 default layers; current Editorial City: 141 layers; no inherited IDs or default
+Direct Streets: 105 default layers; current Editorial City: 150 layers; no inherited IDs or default
   sprite
 Workspace verify: 194 pass, 13 intentional integration skips
 Visual checkpoint: nine reviewed schema-2 baselines with resolved Tileflow World data identity
@@ -865,6 +884,9 @@ Final gates: pnpm check PASS; pnpm build PASS; pnpm run smoke:capture-public PAS
   pnpm run publish:alpha:dry-run PASS (no publication)
 Path semantics checkpoint: 67 core tests PASS; 3 Cartography Lab tests PASS; config validation PASS;
   zoom-17 Atocha preview reviewed; packaged public smoke and alpha dry-run PASS
+Pedestrian-area checkpoint: 69 core tests PASS; 3 Cartography Lab tests PASS; close-street and
+  zoom-18 Atocha captures reviewed; full Style JSON validation, workspace check/build, packaged
+  public smoke, and alpha dry-run PASS; older visual baselines intentionally unchanged
 Formatting: all changed files pass Prettier and git diff --check; the repository-wide command still
   reports the two unchanged reconcile-release files that also fail on the clean base
 ```

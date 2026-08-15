@@ -208,6 +208,7 @@ export type TileflowRoadClassStyle = Partial<
   Record<TileflowRoadStructure, TileflowRoadLayerStyle>
 > & {enabled?: boolean};
 export type TileflowRoadAreaStyle = {
+  pedestrian?: TileflowFillStyle;
   pier?: TileflowFillStyle;
   pierLine?: TileflowLineStyle;
   road?: TileflowFillStyle;

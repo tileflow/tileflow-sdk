@@ -264,6 +264,15 @@ export default defineTileflow({
           extras: {
             paths: true, // true | false.
           },
+          areas: {
+            // Polygon pedestrian plazas; line-like pedestrian ways use classes.pedestrian.
+            pedestrian: {
+              color: '#F1F3F5',
+              minZoom: 14,
+              opacity: 1,
+              outlineColor: '#D5DCE3',
+            },
+          },
           classes: {
             // Optional semantic targets: motorway, trunk, primary, secondary,
             // tertiary, minor, service, track, pathway, footway, cycleway,
@@ -335,43 +344,55 @@ export default defineTileflow({
               [19, 7],
               [22, 22],
             ]),
-            pathway: pathRoadStyle('#F2F4F6', [
-              [14, 0.4],
-              [17, 0.8],
-              [19, 1.3],
-              [22, 3],
-            ]),
-            footway: pathRoadStyle('#F4F6F8', [
-              [14, 0.45],
-              [17, 0.85],
-              [19, 1.35],
-              [22, 3],
-            ]),
-            cycleway: pathRoadStyle('#BDE4D8', [
-              [14, 0.55],
-              [17, 1.1],
-              [19, 1.8],
-              [22, 4],
-            ]),
+            pathway: pathRoadStyle(
+              '#F7F8F9',
+              [
+                [14, 0.4],
+                [17, 1.2],
+                [19, 2],
+                [22, 4],
+              ],
+              {casingColor: '#DDE2E7'},
+            ),
+            footway: pathRoadStyle(
+              '#FAFBFC',
+              [
+                [14, 0.45],
+                [17, 1.4],
+                [19, 2.3],
+                [22, 5],
+              ],
+              {casingColor: '#D8DEE5'},
+            ),
+            cycleway: pathRoadStyle(
+              '#BDE4D8',
+              [
+                [14, 0.55],
+                [17, 1.5],
+                [19, 2.5],
+                [22, 5],
+              ],
+              {casingColor: '#96CFBE'},
+            ),
             steps: pathRoadStyle(
               '#D8DEE5',
               [
                 [15, 0.55],
-                [17, 1.2],
-                [19, 2.2],
-                [22, 5],
+                [17, 1.6],
+                [19, 2.8],
+                [22, 6],
               ],
-              {dash: [1, 0.75]},
+              {casingColor: '#C9D0D7', dash: [1, 0.75]},
             ),
             pedestrian: pathRoadStyle(
               '#F3F5F7',
               [
                 [14, 1.2],
-                [17, 8],
-                [19, 18],
-                [22, 48],
+                [17, 9],
+                [19, 20],
+                [22, 52],
               ],
-              {casingColor: '#DDE2E7'},
+              {casingColor: '#D5DCE3'},
             ),
           },
         }),

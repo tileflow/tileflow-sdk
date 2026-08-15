@@ -60,6 +60,10 @@ class explicitly also enables that class without enabling its siblings. Every cl
 the same class names and selectors, so authors do not write OpenMapTiles `class`/`subclass` filters.
 The selectors remain valid when those field names are remapped by the data contract and are
 pairwise disjoint, preventing the same path from being painted by multiple semantic targets.
+Line-like pedestrian ways use `roads.classes.pedestrian`; polygon plazas use the separate
+`roads.areas.pedestrian` fill target. Both share the same semantic selector, while the geometry
+constraint prevents overlap and lets authors style plaza fill, outline, opacity, or pattern without
+raw MapLibre filters.
 
 ## Data contract
 

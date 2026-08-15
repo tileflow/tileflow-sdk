@@ -69,6 +69,7 @@ test('accepts semantic path road targets and rejects the old overlapping path ta
       modules: {
         labels: labels({roadClasses: ['pedestrian', 'footway', 'cycleway', 'steps', 'pathway']}),
         roads: roads({
+          areas: {pedestrian: {color: '#F1F3F5', outlineColor: '#D5DCE3'}},
           classes: {pedestrian: {}, footway: {}, cycleway: {}, steps: {}, pathway: {}},
         }),
       },

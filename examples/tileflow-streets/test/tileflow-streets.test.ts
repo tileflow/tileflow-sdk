@@ -28,12 +28,14 @@ test('covers the canonical cartographic review surfaces with standalone scenes',
   assert.deepEqual(Object.keys(project.scenes).sort(), [
     'barcelona-waterfront',
     'madrid-airport',
+    'madrid-center',
     'madrid-close-street',
     'madrid-mobile',
     'madrid-motorway',
     'madrid-neighborhood',
     'madrid-overview',
     'madrid-rural-edge',
+    'madrid-sol-close',
     'madrid-transit',
   ]);
   assert.equal(

@@ -2,7 +2,11 @@ import type {TileflowDomainCompileContext} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applyCircleStyle, applySymbolStyle} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
-import type {TileflowSymbolStyle, TileflowTextStyle} from '../../cartography/styles';
+import type {
+  TileflowCircleStyle,
+  TileflowSymbolStyle,
+  TileflowTextStyle,
+} from '../../cartography/styles';
 import {expression, zoom} from '../../cartography/values';
 import type {TileflowPoiModuleConfig} from '../../types';
 import {type ResolvedPoiModuleOptions, resolvePoi} from './index';
@@ -51,7 +55,6 @@ export function compilePoi(
           ['get', schema.fields.name],
           ['get', schema.fields.nameEnglish],
         ]),
-        minZoom: semantics.minZoom,
         padding: semantics.placement.textPadding,
         size: zoom.linear([
           [semantics.minZoom, 10],
@@ -65,13 +68,14 @@ export function compilePoi(
         text: NonNullable<TileflowSymbolStyle['text']>;
       }
     >(defaults, request?.styles?.[category]);
+    const markerStyle = style.marker ? resolveMarkerStyle(style) : undefined;
     const showText = semantics.labels !== 'none' && style.text.visible !== false;
     const showIcon = Boolean(semantics.icons) && style.icon.visible !== false;
     const densityRank = densityRankLimit(semantics.density);
     const textRank = showText ? labelRankLimit(semantics.labels) : 0;
     const iconRank = showIcon ? iconRankLimit(semantics.icons) : 0;
 
-    if (style.marker && style.marker.visible !== false) {
+    if (markerStyle && markerStyle.visible !== false) {
       const base = createPoiLayer({
         classes,
         classField: schema.fields.class,
@@ -89,7 +93,7 @@ export function compilePoi(
           type: 'circle',
           layout: {'circle-sort-key': ['coalesce', ['get', schema.fields.rank], 999]},
         },
-        style.marker,
+        markerStyle,
       );
       result.push(poiContribution(`${category}.marker`, index * 4, markerLayer));
     }
@@ -149,6 +153,17 @@ export function compilePoi(
   }
 
   return result;
+}
+
+function resolveMarkerStyle(style: TileflowSymbolStyle): TileflowCircleStyle {
+  return mergeTileflowDesign(
+    {
+      ...(style.maxZoom === undefined ? {} : {maxZoom: style.maxZoom}),
+      ...(style.minZoom === undefined ? {} : {minZoom: style.minZoom}),
+      ...(style.visible === undefined ? {} : {visible: style.visible}),
+    },
+    style.marker,
+  );
 }
 
 function createPoiLayer(options: {

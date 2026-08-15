@@ -19,9 +19,12 @@ function scaleStops(widths: WidthStops, scale: number): WidthStops {
   return widths.map(([level, width]) => [level, width * scale] as const);
 }
 
-function roadWidth(widths: WidthStops, oneWayScale: number, casingAddition = 0) {
+function roadWidth(widths: WidthStops, oneWayScale: number, casing = false) {
+  const renderedWidth = (width: number, scale: number) =>
+    width * scale + (casing ? Math.max(2, width * 0.14) : 0);
+
   if (oneWayScale === 1) {
-    return zoom.linear(widths.map(([level, width]) => [level, width + casingAddition] as const));
+    return zoom.linear(widths.map(([level, width]) => [level, renderedWidth(width, 1)] as const));
   }
 
   return expression<number>([
@@ -34,8 +37,8 @@ function roadWidth(widths: WidthStops, oneWayScale: number, casingAddition = 0) 
         'match',
         ['get', 'oneway'],
         [1, -1],
-        width * oneWayScale + casingAddition,
-        width + casingAddition,
+        renderedWidth(width, oneWayScale),
+        renderedWidth(width, 1),
       ],
     ]),
   ]);
@@ -61,8 +64,8 @@ function cityRoadStyle(
     cap: 'round' as const,
     color: casingColor,
     join: 'round' as const,
-    opacity: 0.96,
-    width: roadWidth(widths, oneWayScale, 2),
+    opacity: 1,
+    width: roadWidth(widths, oneWayScale, true),
   };
 
   return {
@@ -73,7 +76,7 @@ function cityRoadStyle(
         ...casing,
         dash: [3, 2],
         opacity: 0.86,
-        width: roadWidth(tunnelWidths, oneWayScale, 2),
+        width: roadWidth(tunnelWidths, oneWayScale, true),
       },
       fill: {
         ...fill,
@@ -120,7 +123,8 @@ function pathRoadStyle(
 function roadLabelStyle(major: boolean): TileflowSymbolStyle {
   return {
     placement: 'line',
-    spacing: major ? 190 : 230,
+    priority: major ? 90 : 50,
+    spacing: major ? 175 : 215,
     text: {
       color: major ? '#FFFFFF' : '#5E6B78',
       font: 'Noto Sans',
@@ -129,10 +133,10 @@ function roadLabelStyle(major: boolean): TileflowSymbolStyle {
       haloWidth: major ? 1.2 : 2,
       padding: 2,
       size: zoom.linear([
-        [13, 10.5],
-        [16, 13],
-        [18, major ? 16 : 15],
-        [20, major ? 18 : 17],
+        [12, major ? 10.5 : 10],
+        [15, major ? 13 : 12],
+        [17, major ? 16 : 14.5],
+        [19, major ? 18 : 16.5],
       ]),
       weight: major ? 'bold' : 'regular',
     },
@@ -149,14 +153,14 @@ export default defineTileflow({
       colors: {
         // Optional keys: background, land, water, park, building, road, roadMajor,
         // roadCasing, boundary, text, textMuted, and textHalo.
-        background: '#F6F7F5', // Hex: #RGB | #RGBA | #RRGGBB | #RRGGBBAA.
-        land: '#F7F7F5', // Hex color.
+        background: '#F6F7F7', // Hex: #RGB | #RGBA | #RRGGBB | #RRGGBBAA.
+        land: '#F7F8F7', // Hex color.
         water: '#83D8EA', // Hex color.
-        park: '#AFEAC5', // Hex color.
-        building: '#FFF8EC', // Hex color.
-        road: '#F8F9FB', // Hex color.
-        roadMajor: '#B4C2D0', // Hex color.
-        roadCasing: '#D5DCE3', // Hex color.
+        park: '#B9EACB', // Hex color.
+        building: '#FFF9EE', // Hex color.
+        road: '#D9E2E9', // Hex color.
+        roadMajor: '#A9BACB', // Hex color.
+        roadCasing: '#FFFFFF', // Hex color.
         boundary: '#C5CCD4', // Hex color.
         text: '#3F4B57', // Hex color.
         textMuted: '#687786', // Hex color.
@@ -181,9 +185,9 @@ export default defineTileflow({
         },
         landcover: {
           // Optional keys: grass, ice, park, protected, sand, wood.
-          grass: '#AFEAC5', // Hex color.
-          park: '#AFEAC5', // Hex color.
-          protected: '#AFEAC5', // Hex color.
+          grass: '#B9EACB', // Hex color.
+          park: '#B9EACB', // Hex color.
+          protected: '#B9EACB', // Hex color.
           sand: '#F1E8D0', // Hex color.
           wood: '#B7DFC5', // Hex color.
         },
@@ -209,14 +213,14 @@ export default defineTileflow({
           // Optional keys: bridge, casing, ferry, minor, motorway, path, primary,
           // rail, secondary, trunk, tunnel.
           bridge: '#A9B8C8', // Hex color.
-          casing: '#D5DCE3', // Hex color.
-          minor: '#F8F9FB', // Hex color.
-          motorway: '#AAB9C9', // Hex color.
+          casing: '#FFFFFF', // Hex color.
+          minor: '#D9E2E9', // Hex color.
+          motorway: '#9FB2C4', // Hex color.
           path: '#E5EAEE', // Hex color.
-          primary: '#AEBCCA', // Hex color.
+          primary: '#AABCCD', // Hex color.
           rail: '#A6AFB8', // Hex color.
-          secondary: '#D4DCE4', // Hex color.
-          trunk: '#AFBECD', // Hex color.
+          secondary: '#BBC9D5', // Hex color.
+          trunk: '#A5B7C8', // Hex color.
           tunnel: '#BCC8D4', // Hex color.
         },
       },
@@ -241,13 +245,13 @@ export default defineTileflow({
         // Optional keys: land, water, roads, transit, aeroways, buildings,
         // boundaries, labels, poi. Object order never controls layer order.
         land: land({
-          background: {color: '#F7F7F5', opacity: 1},
+          background: {color: '#F7F8F7', opacity: 1},
           landcover: {
             farmland: {fill: {color: '#DCE9CF', opacity: 1}},
-            grass: {fill: {color: '#AFEAC5', opacity: 1}},
+            grass: {fill: {color: '#B9EACB', opacity: 1}},
             ice: {fill: {color: '#F4FAFC', opacity: 1}},
-            park: {fill: {color: '#AFEAC5', opacity: 1}},
-            protected: {fill: {color: '#AFEAC5', opacity: 1}},
+            park: {fill: {color: '#B9EACB', opacity: 1}},
+            protected: {fill: {color: '#B9EACB', opacity: 1}},
             sand: {fill: {color: '#F1E8D0', opacity: 1}},
             scrub: {fill: {color: '#CEE7CD', opacity: 1}},
             wood: {fill: {color: '#B7DFC5', opacity: 1}},
@@ -258,7 +262,7 @@ export default defineTileflow({
             commercial: {fill: {color: '#FFF8EC', opacity: 1}},
             industrial: {fill: {color: '#F1F2F3', opacity: 1}},
             railway: {fill: {color: '#F3F3F2', opacity: 1}},
-            residential: {fill: {color: '#F7F7F5', opacity: 1}},
+            residential: {fill: {color: '#F7F8F7', opacity: 1}},
           },
         }),
         roads: roads({
@@ -326,69 +330,69 @@ export default defineTileflow({
           areas: {
             // Polygon pedestrian plazas; line-like pedestrian ways use classes.pedestrian.
             pedestrian: {
-              fill: {color: '#F1F3F5', minZoom: 14, opacity: 1},
-              outline: {color: '#D5DCE3', minZoom: 14, opacity: 1, width: 1},
+              fill: {color: '#FBFCFD', minZoom: 13, opacity: 1},
+              outline: {color: '#CDD7E0', minZoom: 13, opacity: 1, width: 1},
             },
           },
           classes: {
             // Optional semantic targets: motorway, trunk, primary, secondary,
             // tertiary, minor, service, track, pathway, footway, cycleway,
             // steps, pedestrian. Each accepts surface, tunnel, bridge, enabled.
-            motorway: cityRoadStyle('#AAB9C9', '#F8FAFC', [
-              [10, 2],
-              [14, 8],
+            motorway: cityRoadStyle('#9FB2C4', '#FFFFFF', [
+              [10, 2.8],
+              [12, 5],
+              [14, 10],
               [16, 18],
               [17, 31],
               [19, 72],
               [22, 220],
             ]),
-            trunk: cityRoadStyle('#AFBECD', '#F8FAFC', [
-              [10, 1.8],
-              [14, 7],
-              [16, 15],
-              [17, 24],
-              [19, 56],
+            trunk: cityRoadStyle('#A5B7C8', '#FFFFFF', [
+              [10, 2.4],
+              [12, 4.5],
+              [14, 9],
+              [16, 16],
+              [17, 25],
+              [19, 58],
               [22, 170],
             ]),
-            primary: cityRoadStyle(
-              '#AEBCCA',
-              '#F8FAFC',
-              [
-                [10, 1.5],
-                [14, 6],
-                [16, 13],
-                [17, 20],
-                [19, 46],
-                [22, 140],
-              ],
-              0.58,
-            ),
-            secondary: cityRoadStyle('#D4DCE4', '#FAFBFC', [
-              [11, 1.2],
-              [14, 4.5],
-              [16, 9],
-              [17, 15],
-              [19, 34],
+            primary: cityRoadStyle('#AABCCD', '#FFFFFF', [
+              [10, 1.8],
+              [12, 4],
+              [14, 8],
+              [16, 14],
+              [17, 22],
+              [19, 48],
+              [22, 140],
+            ]),
+            secondary: cityRoadStyle('#BBC9D5', '#FFFFFF', [
+              [11, 1.6],
+              [13, 4.5],
+              [14, 6],
+              [16, 10],
+              [17, 16],
+              [19, 36],
               [22, 105],
             ]),
-            tertiary: cityRoadStyle('#E1E6EB', '#FAFBFC', [
-              [12, 1],
-              [14, 3.5],
-              [16, 7.5],
+            tertiary: cityRoadStyle('#CAD4DD', '#FFFFFF', [
+              [12, 1.4],
+              [14, 4.5],
+              [16, 8],
               [17, 12],
               [19, 26],
               [22, 82],
             ]),
-            minor: cityRoadStyle('#F8F9FB', '#FFFFFF', [
-              [13, 1],
-              [15, 4],
-              [16, 6],
-              [17, 8],
-              [19, 20],
+            minor: cityRoadStyle('#D9E2E9', '#FFFFFF', [
+              [12.5, 0.8],
+              [14, 2.5],
+              [15, 4.5],
+              [16, 6.5],
+              [17, 9],
+              [19, 21],
               [22, 60],
             ]),
-            service: cityRoadStyle('#F8F9FB', '#FFFFFF', [
-              [14, 0.7],
+            service: cityRoadStyle('#E7ECF0', '#FFFFFF', [
+              [14, 1],
               [16, 3.5],
               [17, 5.5],
               [19, 13],
@@ -442,14 +446,14 @@ export default defineTileflow({
               {casingColor: '#C9D0D7', dash: [1, 0.75]},
             ),
             pedestrian: pathRoadStyle(
-              '#F3F5F7',
+              '#F7F9FA',
               [
                 [14, 1.2],
-                [17, 9],
+                [17, 7],
                 [19, 20],
                 [22, 52],
               ],
-              {casingColor: '#D5DCE3'},
+              {casingColor: '#CDD7E0'},
             ),
           },
         }),
@@ -529,8 +533,8 @@ export default defineTileflow({
         buildings: buildings({
           mode: 'flat', // 'flat' | '3d'.
           flat: {
-            fill: {color: '#FFF8EC', minZoom: 13, opacity: 1},
-            outline: {color: '#E7D8BC', minZoom: 14, opacity: 1, width: 0.8},
+            fill: {color: '#FFF9EE', minZoom: 13, opacity: 1},
+            outline: {color: '#E5DED2', minZoom: 14, opacity: 0.82, width: 0.55},
           },
         }),
         labels: labels({
@@ -541,6 +545,34 @@ export default defineTileflow({
           junctions: true, // true | false.
           water: 'all', // 'none' | 'major' | 'all'.
           styles: {
+            places: {
+              // Broad place names hand over to streets and POIs as the user zooms in.
+              continent: {maxZoom: 5},
+              country: {maxZoom: 8},
+              state: {maxZoom: 11},
+              city: {
+                maxZoom: 14,
+                priority: 100,
+                text: {
+                  color: '#3F4B57',
+                  haloColor: '#FFFFFF',
+                  haloWidth: 2,
+                  size: zoom.linear([
+                    [7, 12],
+                    [12, 18],
+                  ]),
+                  weight: 'bold',
+                },
+              },
+              town: {maxZoom: 15},
+              village: {maxZoom: 16},
+              neighborhood: {
+                maxZoom: 16.5,
+                priority: 65,
+                text: {haloColor: '#FFFFFF', haloWidth: 1.8, padding: 8},
+              },
+              other: {maxZoom: 16},
+            },
             junctions: {
               // Exit references are useful at street scale but overwhelm city overviews.
               minZoom: 15,
@@ -586,6 +618,13 @@ export default defineTileflow({
               },
               // Optional `networks` record applies exact overrides by data-network value.
             },
+            water: {
+              // Small urban fountains share the generic water-name bucket in this
+              // dataset, so their labels yield to roads and landmarks at city zooms.
+              other: {maxZoom: 13},
+              line: {minZoom: 13},
+              waterway: {minZoom: 14},
+            },
           },
         }),
         poi: poi({
@@ -595,22 +634,138 @@ export default defineTileflow({
             'food',
             'coffee',
             'culture',
-            'transit',
+            'major-transit',
             'shopping',
             'lodging',
             'health',
             'education',
             'services',
           ],
+          classMapping: {
+            // Avoid treating every tram and bus stop as a city-scale landmark.
+            'major-transit': ['railway', 'station', 'subway'],
+          },
           color: 'category', // 'uniform' | 'category'.
-          density: 'dense', // 'sparse' | 'balanced' | 'dense'.
+          density: 'balanced', // 'sparse' | 'balanced' | 'dense'.
           icons: false, // false | true | 'essential' | 'full'; non-false needs an icon set/sprite.
-          labels: 'full', // 'none' | 'minimal' | 'balanced' | 'full'.
-          minZoom: 15, // Number from 0 through 24.
+          labels: 'balanced', // 'none' | 'minimal' | 'balanced' | 'full'.
+          minZoom: 12.5, // Number from 0 through 24.
           placement: {
-            coupleIconAndLabel: true, // true | false.
+            coupleIconAndLabel: false, // true | false.
             iconPadding: 3, // Finite number >= 0, in pixels.
-            textPadding: 5, // Finite number >= 0, in pixels.
+            textPadding: 8, // Finite number >= 0, in pixels.
+          },
+          styles: {
+            // Important orientation landmarks arrive first; everyday businesses wait
+            // until street zooms. Rank filtering keeps dense centres readable.
+            culture: {
+              minZoom: 12.5,
+              priority: 95,
+              marker: {
+                color: '#7656A5',
+                radius: zoom.linear([
+                  [12.5, 3],
+                  [17, 5],
+                ]),
+                strokeColor: '#FFFFFF',
+                strokeWidth: 1.5,
+              },
+              text: {
+                color: '#7656A5',
+                haloColor: '#FFFFFF',
+                haloWidth: 1.6,
+                size: zoom.linear([
+                  [12.5, 10],
+                  [17, 12],
+                ]),
+                weight: 'bold',
+              },
+            },
+            'major-transit': {
+              minZoom: 12.5,
+              priority: 100,
+              marker: {
+                color: '#466F97',
+                radius: zoom.linear([
+                  [12.5, 3],
+                  [17, 5],
+                ]),
+                strokeColor: '#FFFFFF',
+                strokeWidth: 1.5,
+              },
+              text: {
+                color: '#466F97',
+                haloColor: '#FFFFFF',
+                haloWidth: 1.7,
+                size: zoom.linear([
+                  [12.5, 10],
+                  [17, 12.5],
+                ]),
+                weight: 'bold',
+              },
+            },
+            lodging: {
+              minZoom: 14,
+              priority: 75,
+              marker: {
+                color: '#C54D9B',
+                radius: zoom.linear([
+                  [14, 2.5],
+                  [17, 4.5],
+                ]),
+                strokeColor: '#FFFFFF',
+                strokeWidth: 1.5,
+              },
+              text: {color: '#738B9A', haloColor: '#FFFFFF', haloWidth: 1.5},
+            },
+            education: {
+              minZoom: 14.5,
+              priority: 65,
+              text: {color: '#6D8493', haloColor: '#FFFFFF', haloWidth: 1.5},
+            },
+            health: {
+              minZoom: 15,
+              priority: 70,
+              text: {color: '#8C7387', haloColor: '#FFFFFF', haloWidth: 1.5},
+            },
+            shopping: {
+              minZoom: 15,
+              priority: 55,
+              marker: {
+                color: '#2B79D0',
+                radius: zoom.linear([
+                  [15, 2.5],
+                  [17, 4],
+                ]),
+                strokeColor: '#FFFFFF',
+                strokeWidth: 1.25,
+              },
+              text: {color: '#2B79D0', haloColor: '#FFFFFF', haloWidth: 1.4},
+            },
+            services: {
+              minZoom: 15.5,
+              priority: 55,
+              text: {color: '#607887', haloColor: '#FFFFFF', haloWidth: 1.4},
+            },
+            food: {
+              minZoom: 15.5,
+              priority: 50,
+              marker: {
+                color: '#D46B2C',
+                radius: zoom.linear([
+                  [15.5, 2.5],
+                  [17, 4],
+                ]),
+                strokeColor: '#FFFFFF',
+                strokeWidth: 1.25,
+              },
+              text: {color: '#B45C25', haloColor: '#FFFFFF', haloWidth: 1.4},
+            },
+            coffee: {
+              minZoom: 17,
+              priority: 40,
+              text: {color: '#A8612D', haloColor: '#FFFFFF', haloWidth: 1.4},
+            },
           },
         }),
       },
@@ -634,6 +789,32 @@ export default defineTileflow({
         width: 1440, // Integer from 64 through 4096 CSS pixels.
         height: 900, // Integer from 64 through 4096 CSS pixels.
         dpr: 1, // 1 | 2; total physical pixels must not exceed 16,777,216.
+      },
+    },
+    'madrid-center': {
+      map: 'editorial-city',
+      camera: {
+        type: 'center',
+        center: [-3.7038, 40.4168],
+        zoom: 14.25,
+      },
+      viewport: {
+        width: 1440,
+        height: 900,
+        dpr: 1,
+      },
+    },
+    'madrid-sol-close': {
+      map: 'editorial-city',
+      camera: {
+        type: 'center',
+        center: [-3.70379, 40.41695],
+        zoom: 16.5,
+      },
+      viewport: {
+        width: 1440,
+        height: 900,
+        dpr: 1,
       },
     },
     'madrid-neighborhood': {

@@ -652,3 +652,34 @@ test('POI density, label detail, icon detail, and coupling change emitted layers
   );
   assert.match(JSON.stringify(coupled[0]?.layer.filter), /14/);
 });
+
+test('POI categories can introduce their labels at different zoom levels', () => {
+  const contributions = compilePoi(
+    poi({
+      categories: ['culture', 'food'],
+      icons: false,
+      labels: 'balanced',
+      minZoom: 12.5,
+      styles: {
+        culture: {marker: {radius: 3}, minZoom: 12.5},
+        food: {marker: {radius: 3}, minZoom: 15.5},
+      },
+    }),
+    context,
+  );
+  const culture = contributions.find(
+    (entry) => entry.layer.id === 'streets-poi-culture-label',
+  )?.layer;
+  const food = contributions.find((entry) => entry.layer.id === 'streets-poi-food-label')?.layer;
+  const cultureMarker = contributions.find(
+    (entry) => entry.layer.id === 'streets-poi-culture-marker',
+  )?.layer;
+  const foodMarker = contributions.find(
+    (entry) => entry.layer.id === 'streets-poi-food-marker',
+  )?.layer;
+
+  assert.equal(culture?.minzoom, 12.5);
+  assert.equal(food?.minzoom, 15.5);
+  assert.equal(cultureMarker?.minzoom, 12.5);
+  assert.equal(foodMarker?.minzoom, 15.5);
+});

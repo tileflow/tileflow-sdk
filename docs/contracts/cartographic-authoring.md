@@ -46,6 +46,10 @@ Every default Streets map is complete even when `modules` is omitted. A requeste
 partial overlay on the Streets recipe. Unspecified fields preserve recipe defaults; arrays replace;
 expressions and zoom values are atomic. Use `enabled: false` for deliberate removal.
 
+Shared symbol ranges govern text and icon together and are inherited by an optional marker. A
+marker can refine that range because it compiles to a separate circle layer; incompatible text and
+icon ranges fail because those parts share one MapLibre symbol layer.
+
 The compiler creates every `streets-*` layer from a domain compiler. It resolves domain conflicts
 before graph assembly—for example, roads determine eligible road-label classes, aeroways own
 runway geometry while labels own aerodrome text, and transit owns rail/ferry/cableway geometry

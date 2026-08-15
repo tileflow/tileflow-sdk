@@ -108,6 +108,10 @@ Compounds express common cartographic structures: `AreaStyle` has `fill` and `ou
 optional `text`, `icon`, and `marker`. Geographic selection remains owned by semantic modules;
 ordinary visual styles intentionally do not accept raw source filters.
 
+A `SymbolStyle` root zoom range governs its text/icon layer and is inherited by its marker layer.
+Because a marker is materialized as a separate circle layer, an explicit marker range may refine
+that inherited default. Text and icon ranges must agree because MapLibre renders them together.
+
 The road module distinguishes the path family semantically:
 
 ```ts

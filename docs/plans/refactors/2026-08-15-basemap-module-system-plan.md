@@ -164,6 +164,13 @@ part of the primary vector-data API.
       deliberately; later comparisons retain only the documented remote-resource nondeterminism.
       Re-ran `pnpm check`, `pnpm build`, packaged public capture smoke, and the alpha publication
       dry-run successfully with both examples in the workspace.
+- [x] (2026-08-15) Retuned Tileflow Streets against close and intermediate Puerta del Sol
+      references: strengthened the road hierarchy and casing, limited place labels by scale,
+      replaced dense/full POI output with category/rank-aware landmarks, refined pedestrian plazas,
+      and added `madrid-sol-close` plus `madrid-center` review scenes. Fixed POI category ranges so
+      one semantic `minZoom` governs both label and marker layers, documented the compound range
+      contract, reviewed and regenerated all eleven Streets baselines, and passed 77/77 core tests,
+      3/3 Streets tests, `pnpm check`, and `pnpm build`.
 
 ## Surprises & Discoveries
 
@@ -236,6 +243,13 @@ part of the primary vector-data API.
   output, and service rail rendered on top of every main rail.
   Evidence: the nine lab captures. POI now compiles independent/coupled rank policies and transit
   filters main/service rail through the versioned `service` field binding.
+
+- Observation: a category-level POI zoom range originally conflicted with the text default and did
+  not reach a separately materialized circle marker. That made later-zoom food and shopping markers
+  appear across the intermediate city view. The category range is now the symbol-layer range and
+  the inherited default for its marker; a marker-specific range may still refine it.
+  Evidence: the Puerta del Sol visual pass and the per-category label/marker range regression in
+  `packages/core/test/domain-compilers.test.ts`.
 
 - Observation: the packaged public smoke was the final executable consumer of the removed legacy
   authoring shape. It correctly failed schema validation until its fixture used `streets()`, keyed

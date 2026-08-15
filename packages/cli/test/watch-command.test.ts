@@ -15,7 +15,7 @@ test('dev emits valid/invalid/recovered/stopped NDJSON and serves last-good loca
   const cwd = await createFixture('tileflow-dev-watch-');
   await writeWatchFixture(cwd, '#112233');
   const port = await reservePort();
-  const running = startCli(cwd, ['dev', '--json', '--port', String(port)]);
+  const running = startCli(cwd, ['dev', '--json', '--map', 'main', '--port', String(port)]);
   t.after(async () => {
     await running.stop();
     await rm(cwd, {force: true, recursive: true});

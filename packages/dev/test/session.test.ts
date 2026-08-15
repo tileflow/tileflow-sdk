@@ -7,6 +7,7 @@ import {
   createTileflowArtifactDiagnostics,
   createTileflowArtifactSession,
   createTileflowDevRequestHandler,
+  resolveTileflowPreview,
   type TileflowArtifactSession,
   type TileflowArtifactSessionState,
 } from '../src/index';
@@ -218,6 +219,95 @@ test('serves pinned local preview assets and a cancellable session event stream'
   await reader.cancel();
 });
 
+test('selects map and scene previews with their configured cameras and viewport', async (t) => {
+  const cwd = await createFixture(t);
+  await writeFile(join(cwd, 'tileflow.config.ts'), previewConfig, 'utf8');
+  t.after(async () => rm(cwd, {force: true, recursive: true}));
+
+  const project = {
+    maps: {
+      first: {},
+      second: {view: {bearing: 12, center: [2, 3] as [number, number], zoom: 9}},
+    },
+    scenes: {
+      bounds: {
+        map: 'second',
+        camera: {
+          type: 'bounds' as const,
+          bounds: [1, 2, 3, 4] as [number, number, number, number],
+          padding: 24,
+        },
+        viewport: {width: 800, height: 600},
+      },
+      mobile: {
+        map: 'second',
+        camera: {type: 'center' as const, center: [2.5, 3.5] as [number, number], zoom: 14},
+        viewport: {width: 390, height: 844, dpr: 2 as const},
+      },
+      product: {
+        map: 'second',
+        camera: {type: 'center' as const, center: [2, 3] as [number, number], zoom: 9},
+        viewport: {width: 800, height: 600},
+        target: {kind: 'application' as const, path: '/maps'},
+      },
+    },
+  };
+
+  assert.deepEqual(resolveTileflowPreview(project, {map: 'second'}), {
+    camera: {type: 'center', center: [2, 3], zoom: 9, bearing: 12, pitch: 0},
+    label: 'second',
+    mapName: 'second',
+  });
+  assert.deepEqual(resolveTileflowPreview(project, {scene: 'bounds'}), {
+    camera: {
+      type: 'bounds',
+      bounds: [1, 2, 3, 4],
+      padding: 24,
+      bearing: 0,
+      pitch: 0,
+    },
+    label: 'second / bounds · 800×600',
+    mapName: 'second',
+    viewport: {width: 800, height: 600, dpr: 1},
+  });
+  assert.throws(() => resolveTileflowPreview(project, {map: 'first', scene: 'mobile'}), /either/);
+  assert.throws(() => resolveTileflowPreview(project, {map: 'missing'}), /Unknown Tileflow map/);
+  assert.throws(
+    () => resolveTileflowPreview(project, {scene: 'product'}),
+    /targets an application/,
+  );
+
+  const mapResponse = await createTileflowDevRequestHandler({cwd, map: 'second'})(
+    new Request('http://localhost/'),
+  );
+  const mapHtml = await mapResponse.text();
+  assert.equal(mapResponse.status, 200);
+  assert.match(mapHtml, /\/styles\/second\.json/);
+  assert.match(mapHtml, /"center":\[2,3\]/);
+  assert.match(mapHtml, /"zoom":9/);
+  assert.doesNotMatch(mapHtml, /-3\.7038/);
+
+  const sceneResponse = await createTileflowDevRequestHandler({cwd, scene: 'mobile'})(
+    new Request('http://localhost/'),
+  );
+  const sceneHtml = await sceneResponse.text();
+  assert.equal(sceneResponse.status, 200);
+  assert.match(sceneHtml, /width: 390px/);
+  assert.match(sceneHtml, /height: 844px/);
+  assert.match(sceneHtml, /second \/ mobile/);
+
+  const boundsResponse = await createTileflowDevRequestHandler({cwd, scene: 'bounds'})(
+    new Request('http://localhost/'),
+  );
+  assert.match(await boundsResponse.text(), /"bounds":\[\[1,2\],\[3,4\]\]/);
+
+  const missingResponse = await createTileflowDevRequestHandler({cwd, map: 'missing'})(
+    new Request('http://localhost/'),
+  );
+  assert.equal(missingResponse.status, 400);
+  assert.deepEqual(await missingResponse.json(), {error: 'Unknown Tileflow map: missing'});
+});
+
 test('watches added, changed, removed, and newly effective local icon directories', async (t) => {
   const cwd = await createFixture(t);
   await mkdir(join(cwd, 'icons-a'));
@@ -327,6 +417,25 @@ export default {
 };
 `;
 const invalidConfig = `export default {maps: {main: {unsupported: true}}};\n`;
+const previewConfig = `export default {
+  maps: {
+    first: {renderer: 'generated'},
+    second: {renderer: 'generated', view: {bearing: 12, center: [2, 3], zoom: 9}}
+  },
+  scenes: {
+    bounds: {
+      map: 'second',
+      camera: {type: 'bounds', bounds: [1, 2, 3, 4], padding: 24},
+      viewport: {width: 800, height: 600}
+    },
+    mobile: {
+      map: 'second',
+      camera: {type: 'center', center: [2.5, 3.5], zoom: 14},
+      viewport: {width: 390, height: 844, dpr: 2}
+    }
+  }
+};
+`;
 
 async function createFixture(t: test.TestContext): Promise<string> {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-dev-session-'));

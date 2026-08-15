@@ -9,6 +9,8 @@ import {
   createManifest,
   createStyleFromProject,
   type MapLibreStyle,
+  type NormalizedTileflowCaptureScene,
+  normalizeTileflowCaptureScene,
   type TileflowConfig,
   type TileflowManifest,
   type TileflowProjectConfig,
@@ -105,11 +107,34 @@ export type TileflowDevRequestHandlerOptions = {
   basePath?: string;
   config?: string;
   cwd?: string;
+  map?: string;
   onError?: (error: unknown) => void;
+  scene?: string;
   session?: TileflowArtifactSession;
   styleBaseUrl?: string;
   tileBaseUrl?: string;
 };
+
+export type TileflowPreviewSelection = {
+  map?: string;
+  scene?: string;
+};
+
+export type ResolvedTileflowPreview = {
+  camera: NormalizedTileflowCaptureScene['camera'];
+  label: string;
+  mapName: string;
+  viewport?: NormalizedTileflowCaptureScene['viewport'];
+};
+
+export class TileflowPreviewSelectionError extends Error {
+  readonly code = 'PREVIEW_SELECTION_INVALID' as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'TileflowPreviewSelectionError';
+  }
+}
 
 export type TileflowBuildArtifactsOptions = {
   assetBaseUrl?: string;
@@ -221,6 +246,67 @@ export function getFirstTileflowMapName(project: TileflowProjectConfig): string 
   }
 
   return mapName;
+}
+
+export function resolveTileflowPreview(
+  project: TileflowProjectConfig,
+  selection: TileflowPreviewSelection = {},
+): ResolvedTileflowPreview {
+  if (selection.map !== undefined && selection.scene !== undefined) {
+    throw new TileflowPreviewSelectionError(
+      'Choose either a Tileflow preview map or scene, not both.',
+    );
+  }
+
+  if (selection.scene !== undefined) {
+    const scene = Object.hasOwn(project.scenes ?? {}, selection.scene)
+      ? project.scenes?.[selection.scene]
+      : undefined;
+
+    if (!scene) {
+      throw new TileflowPreviewSelectionError(`Unknown Tileflow scene: ${selection.scene}`);
+    }
+
+    const normalized = normalizeTileflowCaptureScene(scene);
+
+    if (normalized.target.kind === 'application') {
+      throw new TileflowPreviewSelectionError(
+        `Tileflow scene "${selection.scene}" targets an application. Preview it through the application's development server.`,
+      );
+    }
+
+    if (!Object.hasOwn(project.maps, normalized.map)) {
+      throw new TileflowPreviewSelectionError(
+        `Tileflow scene "${selection.scene}" references an unknown map: ${normalized.map}`,
+      );
+    }
+
+    return {
+      camera: normalized.camera,
+      label: `${normalized.map} / ${selection.scene} · ${normalized.viewport.width}×${normalized.viewport.height}`,
+      mapName: normalized.map,
+      viewport: normalized.viewport,
+    };
+  }
+
+  const mapName = selection.map ?? getFirstTileflowMapName(project);
+  const map = Object.hasOwn(project.maps, mapName) ? project.maps[mapName] : undefined;
+
+  if (!map) {
+    throw new TileflowPreviewSelectionError(`Unknown Tileflow map: ${mapName}`);
+  }
+
+  return {
+    camera: {
+      type: 'center',
+      center: map.view?.center ? [map.view.center[0], map.view.center[1]] : [0, 0],
+      zoom: map.view?.zoom ?? 0,
+      bearing: map.view?.bearing ?? 0,
+      pitch: 0,
+    },
+    label: mapName,
+    mapName,
+  };
 }
 
 export function getTileflowStyleMapName(path: string): string {
@@ -478,8 +564,10 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
       }
 
       if (path === '/' || path === '') {
-        const mapName = artifacts ? getFirstTileflowMapName(artifacts.project) : undefined;
-        return htmlResponse(previewHtml(mapName, basePath, state));
+        const preview = artifacts
+          ? resolveTileflowPreview(artifacts.project, {map: options.map, scene: options.scene})
+          : undefined;
+        return htmlResponse(previewHtml(preview, basePath, state));
       }
 
       if (!artifacts) return unavailableArtifactsResponse(state);
@@ -607,6 +695,10 @@ function stripTileflowBasePath(pathname: string, basePath: string) {
 }
 
 function tileflowErrorResponse(error: unknown) {
+  if (error instanceof TileflowPreviewSelectionError) {
+    return jsonResponse({error: error.message}, 400);
+  }
+
   if (error instanceof TileflowStyleValidationError) {
     return jsonResponse(
       {
@@ -687,12 +779,28 @@ function isRelativePublicUrl(value: string): boolean {
 }
 
 function previewHtml(
-  mapName: string | undefined,
+  preview: ResolvedTileflowPreview | undefined,
   basePath: string,
   state: TileflowArtifactSessionState,
 ): string {
-  const styleUrl = mapName ? `${basePath}/styles/${mapName}.json` : undefined;
+  const styleUrl = preview ? `${basePath}/styles/${preview.mapName}.json` : undefined;
   const initialStatus = createTileflowArtifactStatus(state);
+  const mapOptions = preview ? previewMapOptions(preview) : undefined;
+  const viewportCss = preview?.viewport
+    ? `
+      html, body { min-height: 100%; margin: 0; }
+      body {
+        display: grid;
+        place-items: center;
+        overflow: auto;
+        background: #E8E5DE;
+      }
+      #map {
+        width: ${preview.viewport.width}px;
+        height: ${preview.viewport.height}px;
+        box-shadow: 0 24px 80px rgba(37, 34, 29, 0.18);
+      }`
+    : 'html, body, #map { height: 100%; margin: 0; }';
 
   return `<!doctype html>
 <html lang="en">
@@ -702,7 +810,7 @@ function previewHtml(
     <title>Tileflow Preview</title>
     <link rel="stylesheet" href="${basePath}/__runtime/maplibre-gl.css" />
     <style>
-      html, body, #map { height: 100%; margin: 0; }
+      ${viewportCss}
       body { font-family: ui-sans-serif, system-ui, sans-serif; }
       .badge {
         position: fixed;
@@ -743,20 +851,21 @@ function previewHtml(
       const initialGeneration = initialStatus.generation;
       const badge = document.getElementById("badge");
       const status = document.getElementById("status");
+      const previewLabel = ${JSON.stringify(preview?.label)};
       const styleUrl = ${JSON.stringify(styleUrl)};
+      const previewMapOptions = ${JSON.stringify(mapOptions)};
 
       if (styleUrl) {
         const map = new maplibregl.Map({
           container: "map",
           style: styleUrl,
-          center: [-3.7038, 40.4168],
-          zoom: 12
+          ...previewMapOptions
         });
         map.addControl(new maplibregl.NavigationControl(), "top-right");
       }
 
       function applyStatus(next) {
-        badge.textContent = "Tileflow preview · " + next.status;
+        badge.textContent = ["Tileflow preview", previewLabel, next.status].filter(Boolean).join(" · ");
         if (next.status === "invalid") {
           const diagnostics = next.diagnostics || [];
           status.textContent = diagnostics.map((item) =>
@@ -779,6 +888,29 @@ function previewHtml(
     </script>
   </body>
 </html>`;
+}
+
+function previewMapOptions(preview: ResolvedTileflowPreview): Record<string, unknown> {
+  if (preview.camera.type === 'center') {
+    return {
+      bearing: preview.camera.bearing,
+      center: preview.camera.center,
+      pitch: preview.camera.pitch,
+      zoom: preview.camera.zoom,
+    };
+  }
+
+  const [west, south, east, north] = preview.camera.bounds;
+
+  return {
+    bearing: preview.camera.bearing,
+    bounds: [
+      [west, south],
+      [east, north],
+    ],
+    fitBoundsOptions: {padding: preview.camera.padding},
+    pitch: preview.camera.pitch,
+  };
 }
 
 const localRequire = createRequire(import.meta.url);

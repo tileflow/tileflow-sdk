@@ -45,6 +45,22 @@ edits retain the last good snapshot, and caller-supplied output directories can 
 feedback loops. `tileflow dev`, `capture --watch`, and framework adapters use this shared status
 vocabulary.
 
+Custom preview servers can select the same map or standalone scene semantics as the CLI:
+
+```ts
+import {createTileflowDevRequestHandler} from '@tileflow/dev';
+
+const fetch = createTileflowDevRequestHandler({
+  session,
+  scene: 'madrid-mobile',
+});
+```
+
+`map` and `scene` are mutually exclusive. Map preview uses the configured `view`; scene preview
+uses its committed camera and CSS viewport. `resolveTileflowPreview()` exposes the validated
+selection for custom integrations. Application-target scenes remain the responsibility of the
+application's development server.
+
 If a map uses `icons: './icons/brand'`, build artifacts include the generated
 MapLibre `sprite.json`, `sprite.png`, `sprite@2x.json`, and `sprite@2x.png`
 assets alongside the styles.

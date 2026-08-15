@@ -2,6 +2,7 @@ node_modules
 .turbo
 dist
 coverage
+examples/**/test/visual-baselines/*.receipt.json
 pnpm-lock.yaml
 package-lock.json
 

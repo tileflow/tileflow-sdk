@@ -60,6 +60,16 @@ npm run dev
 See the [Tileflow documentation](https://tileflow.dev/docs) and each package README for framework,
 capture, visual-testing, icon, static-map, and hosted deployment workflows.
 
+## Cartography lab
+
+The workspace-backed [`examples/cartography-lab`](examples/cartography-lab) is the shared map-design
+workbench. It composes the OSM basemap, an editorial theme, and semantic modules into one example
+map exercised by committed desktop, waterfront, and mobile scenes. Run `pnpm dev:cartography` for
+the live preview and `pnpm visual:cartography` for the approved-baseline check.
+
+Use the SDK lab to discover and implement cartographic primitives atomically. The separate
+`tileflow-demos` repository remains a consumer of exact packages already published to npm.
+
 ## Development
 
 This repository uses Node.js 22 or newer and pnpm 11.13.1.

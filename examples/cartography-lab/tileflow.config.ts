@@ -2,6 +2,7 @@ import {
   buildings,
   defineTileflow,
   labels,
+  land,
   poi,
   roads,
   streets,
@@ -19,7 +20,12 @@ function casingStops(widths: WidthStops): WidthStops {
   );
 }
 
+function scaleStops(widths: WidthStops, scale: number): WidthStops {
+  return widths.map(([level, width]) => [level, width * scale] as const);
+}
+
 function cityRoadStyle(color: string, widths: WidthStops): TileflowRoadClassStyle {
+  const tunnelWidths = scaleStops(widths, 0.18);
   const fill = {
     cap: 'round' as const,
     color,
@@ -42,8 +48,16 @@ function cityRoadStyle(color: string, widths: WidthStops): TileflowRoadClassStyl
       fill: {...fill, color: '#A9B8C8'},
     },
     tunnel: {
-      casing: {...casing, opacity: 0.72},
-      fill: {...fill, color: '#BCC8D4', opacity: 0.82},
+      casing: {
+        ...casing,
+        opacity: 1,
+        width: zoom.linear(casingStops(tunnelWidths)),
+      },
+      fill: {
+        ...fill,
+        opacity: 1,
+        width: zoom.linear(tunnelWidths),
+      },
     },
   };
 }
@@ -79,8 +93,8 @@ export default defineTileflow({
         background: '#F6F7F5', // Hex: #RGB | #RGBA | #RRGGBB | #RRGGBBAA.
         land: '#F7F7F5', // Hex color.
         water: '#83D8EA', // Hex color.
-        park: '#BDEBCF', // Hex color.
-        building: '#EEF1F5', // Hex color.
+        park: '#B9EDCB', // Hex color.
+        building: '#FFF8EC', // Hex color.
         road: '#F8F9FB', // Hex color.
         roadMajor: '#B4C2D0', // Hex color.
         roadCasing: '#FFFFFF', // Hex color.
@@ -108,11 +122,11 @@ export default defineTileflow({
         },
         landcover: {
           // Optional keys: grass, ice, park, protected, sand, wood.
-          grass: '#CBEBD5', // Hex color.
-          park: '#BDEBCF', // Hex color.
-          protected: '#C5E8D1', // Hex color.
+          grass: '#C5ECD2', // Hex color.
+          park: '#B9EDCB', // Hex color.
+          protected: '#C1E9CF', // Hex color.
           sand: '#F1E8D0', // Hex color.
-          wood: '#B9DFC7', // Hex color.
+          wood: '#B7DFC5', // Hex color.
         },
         landuse: {
           // Optional keys: cemetery, civic, commercial, industrial, residential.
@@ -140,7 +154,7 @@ export default defineTileflow({
           minor: '#F8F9FB', // Hex color.
           motorway: '#AAB9C9', // Hex color.
           path: '#E5EAEE', // Hex color.
-          primary: '#B4C2D0', // Hex color.
+          primary: '#AEBCCA', // Hex color.
           rail: '#A6AFB8', // Hex color.
           secondary: '#D4DCE4', // Hex color.
           trunk: '#AFBECD', // Hex color.
@@ -167,6 +181,27 @@ export default defineTileflow({
       modules: {
         // Optional keys: land, water, roads, transit, aeroways, buildings,
         // boundaries, labels, poi. Object order never controls layer order.
+        land: land({
+          background: {color: '#F7F7F5', opacity: 1},
+          landcover: {
+            farmland: {color: '#DCE9CF', opacity: 1},
+            grass: {color: '#C5ECD2', opacity: 1},
+            ice: {color: '#F4FAFC', opacity: 1},
+            park: {color: '#B9EDCB', opacity: 1},
+            protected: {color: '#C1E9CF', opacity: 1},
+            sand: {color: '#F1E8D0', opacity: 1},
+            scrub: {color: '#CEE7CD', opacity: 1},
+            wood: {color: '#B7DFC5', opacity: 1},
+          },
+          landuse: {
+            cemetery: {color: '#D4E8D9', opacity: 1},
+            civic: {color: '#F3F5F7', opacity: 1},
+            commercial: {color: '#FFF8EC', opacity: 1},
+            industrial: {color: '#F1F2F3', opacity: 1},
+            railway: {color: '#F3F3F2', opacity: 1},
+            residential: {color: '#F7F7F5', opacity: 1},
+          },
+        }),
         roads: roads({
           detail: 'all', // 'none' | 'highways' | 'major' | 'streets' | 'all'.
           hierarchy: 'clear', // 'subtle' | 'clear' | 'strong'.
@@ -193,7 +228,7 @@ export default defineTileflow({
               [19, 68],
               [22, 205],
             ]),
-            primary: cityRoadStyle('#B4C2D0', [
+            primary: cityRoadStyle('#AEBCCA', [
               [10, 1.5],
               [14, 7],
               [16, 16],
@@ -283,8 +318,8 @@ export default defineTileflow({
         }),
         buildings: buildings({
           mode: 'flat', // 'flat' | '3d'.
-          fill: {color: '#EEF1F5', minZoom: 13, opacity: 0.92},
-          outline: {color: '#D6DCE3', minZoom: 14, opacity: 0.9, width: 0.8},
+          fill: {color: '#FFF8EC', minZoom: 13, opacity: 1},
+          outline: {color: '#E7D8BC', minZoom: 14, opacity: 1, width: 0.8},
         }),
         labels: labels({
           language: 'local', // 'auto' | 'local' | 'en' | another language field suffix.

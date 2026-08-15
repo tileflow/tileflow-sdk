@@ -1,6 +1,7 @@
 import {
   buildings,
   defineTileflow,
+  expression,
   filter,
   labels,
   land,
@@ -63,23 +64,53 @@ function cityRoadStyle(color: string, widths: WidthStops): TileflowRoadClassStyl
   };
 }
 
-function pedestrianPathStyle(): TileflowRoadClassStyle {
+function contextualPathWidth(pedestrian: number, footway: number) {
+  return expression<number>(['match', ['get', 'subclass'], ['pedestrian'], pedestrian, footway]);
+}
+
+function contextualPathStyle(): TileflowRoadClassStyle {
   const fill = {
     cap: 'round' as const,
-    color: '#78CDB2',
+    color: expression<string>(['match', ['get', 'subclass'], ['pedestrian'], '#F3F5F7', '#78CDB2']),
     join: 'round' as const,
-    opacity: 0.9,
-    width: zoom.linear([
-      [14, 0.45],
-      [17, 0.85],
-      [19, 1.35],
-      [22, 3],
+    opacity: 1,
+    width: expression<number>([
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      14,
+      contextualPathWidth(1.2, 0.45).value,
+      17,
+      contextualPathWidth(8, 0.85).value,
+      19,
+      contextualPathWidth(18, 1.35).value,
+      22,
+      contextualPathWidth(48, 3).value,
+    ]),
+  };
+  const casing = {
+    cap: 'round' as const,
+    color: '#FFFFFF',
+    join: 'round' as const,
+    opacity: expression<number>(['match', ['get', 'subclass'], ['pedestrian'], 1, 0]),
+    width: expression<number>([
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      14,
+      contextualPathWidth(2.5, 0.45).value,
+      17,
+      contextualPathWidth(10, 0.85).value,
+      19,
+      contextualPathWidth(21, 1.35).value,
+      22,
+      contextualPathWidth(54, 3).value,
     ]),
   };
 
   return {
-    surface: {casing: {visible: false}, fill},
-    bridge: {casing: {visible: false}, fill},
+    surface: {casing, fill},
+    bridge: {casing, fill},
     tunnel: {
       casing: {visible: false},
       fill: {...fill, dash: [2, 2], opacity: 0.55},
@@ -299,7 +330,7 @@ export default defineTileflow({
               [19, 12],
               [22, 36],
             ]),
-            path: pedestrianPathStyle(),
+            path: contextualPathStyle(),
           },
         }),
         transit: transit({
@@ -373,7 +404,16 @@ export default defineTileflow({
               minor: roadLabelStyle(false),
               service: roadLabelStyle(false),
               track: {...roadLabelStyle(false), visible: false},
-              path: {...roadLabelStyle(false), visible: false},
+              path: {
+                ...roadLabelStyle(false),
+                filter: filter([
+                  'all',
+                  ['has', 'name'],
+                  ['==', ['get', 'class'], 'path'],
+                  ['==', ['get', 'subclass'], 'pedestrian'],
+                ]),
+                minZoom: 15,
+              },
             },
           },
         }),

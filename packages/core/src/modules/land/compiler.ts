@@ -81,6 +81,44 @@ export function compileLand(
     });
   }
 
+  contributions.push({
+    kind: 'layer',
+    layer: {
+      id: 'streets-global-landcover',
+      type: 'fill',
+      source,
+      'source-layer': schema.layers.globalLandcover ?? 'globallandcover',
+      minzoom: 0,
+      maxzoom: 8,
+      paint: {
+        'fill-color': [
+          'match',
+          ['get', classField],
+          'barren',
+          colors.landcover.sand,
+          'crop',
+          colors.roadMajor,
+          'grass',
+          colors.landcover.grass,
+          'shrub',
+          colors.landcover.protected,
+          'snow',
+          colors.landcover.ice,
+          'trees',
+          colors.landcover.wood,
+          'urban',
+          colors.building,
+          'rgba(0, 0, 0, 0)',
+        ],
+        'fill-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.88, 6, 0.82, 7, 0.68, 8, 0],
+      },
+    },
+    localOrder: 10,
+    owner: 'land',
+    slot: 'land',
+    target: 'land.globalLandcover',
+  });
+
   let localOrder = 100;
   for (const [name, classes] of Object.entries(landuseClasses) as Array<
     [TileflowLanduseClass, readonly string[]]

@@ -103,7 +103,7 @@ export function createStreetsStyle(
       [data.sourceId]: {
         type: 'vector',
         url: data.url,
-        attribution: data.attribution,
+        ...(data.attribution ? {attribution: data.attribution} : {}),
       },
       ...(terrain ? {[terrain.sourceId]: terrain.source} : {}),
     },

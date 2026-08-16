@@ -1,7 +1,16 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createStreetsStyle, labels, patchLayer, roads, streets, water} from '../src';
+import {
+  createStreetsStyle,
+  labels,
+  patchLayer,
+  roads,
+  streets,
+  tileflowWorld,
+  tileflowWorldRevision,
+  water,
+} from '../src';
 
 test('compiles a complete deterministic Streets map from omitted data and modules', () => {
   const first = createStreetsStyle({basemap: streets()});
@@ -48,6 +57,33 @@ test('module key order does not change Streets output', () => {
   });
 
   assert.deepEqual(left, right);
+});
+
+test('keeps legacy attribution inline and delegates versioned attribution to TileJSON', () => {
+  const legacy = createStreetsStyle({
+    basemap: streets(),
+    data: tileflowWorld({revision: tileflowWorldRevision}),
+  });
+  const balanced = createStreetsStyle({
+    basemap: streets(),
+    data: tileflowWorld({revision: 'balanced_candidate_1'}),
+  });
+  const legacySource = legacy.sources.tileflow as Record<string, unknown>;
+  const balancedSource = balanced.sources.tileflow as Record<string, unknown>;
+
+  assert.equal(
+    legacySource.attribution,
+    '© OpenFreeMap, © OpenMapTiles, © OpenStreetMap contributors',
+  );
+  assert.equal(Object.hasOwn(balancedSource, 'attribution'), false);
+  assert.equal(
+    balancedSource.url,
+    'https://api.tileflow.dev/tiles/world/tiles.json?archiveVersion=balanced_candidate_1',
+  );
+  assert.deepEqual(
+    validateStyleMin(balanced as never).map((error) => error.message),
+    [],
+  );
 });
 
 test('raw overrides run last and fail closed', () => {

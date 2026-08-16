@@ -31,7 +31,19 @@ test('resolves omitted data to a deterministic Tileflow World revision', () => {
 });
 
 test('resolves explicit official and external vector data without network access', () => {
-  assert.equal(resolveTileflowData(tileflowWorld({revision: 'archive_42'})).revision, 'archive_42');
+  const versionedOfficial = resolveTileflowData(tileflowWorld({revision: 'archive_42'}));
+  assert.equal(versionedOfficial.revision, 'archive_42');
+  assert.equal(versionedOfficial.attribution, undefined);
+  assert.equal(
+    versionedOfficial.url,
+    'https://api.tileflow.dev/tiles/world/tiles.json?archiveVersion=archive_42',
+  );
+
+  const explicitLegacy = resolveTileflowData(tileflowWorld({revision: tileflowWorldRevision}));
+  assert.equal(
+    explicitLegacy.attribution,
+    '© OpenFreeMap, © OpenMapTiles, © OpenStreetMap contributors',
+  );
 
   const external = resolveTileflowData(
     vectorTiles({
@@ -51,7 +63,7 @@ test('resolves explicit official and external vector data without network access
 test('supports explicit schema bindings and identifies canonical OpenMapTiles', () => {
   const canonical = openMapTiles();
   const remapped = openMapTiles({
-    layers: {road: 'roads_v2'},
+    layers: {globalLandcover: 'worldcover_lowzoom', road: 'roads_v2'},
     fields: {
       access: 'permission',
       class: 'kind',
@@ -64,6 +76,8 @@ test('supports explicit schema bindings and identifies canonical OpenMapTiles', 
 
   assert.equal(isCanonicalOpenMapTilesSchema(canonical), true);
   assert.equal(isCanonicalOpenMapTilesSchema(remapped), false);
+  assert.equal(canonical.layers.globalLandcover, 'globallandcover');
+  assert.equal(remapped.layers.globalLandcover, 'worldcover_lowzoom');
   assert.equal(remapped.layers.road, 'roads_v2');
   assert.equal(remapped.fields.class, 'kind');
   assert.equal(remapped.fields.access, 'permission');
@@ -72,6 +86,22 @@ test('supports explicit schema bindings and identifies canonical OpenMapTiles', 
   assert.equal(canonical.fields.bicycle, 'bicycle');
   assert.equal(canonical.fields.mtbScale, 'mtb_scale');
   assert.equal(canonical.fields.toll, 'toll');
+});
+
+test('normalizes schemas created before the optional global land-cover binding', () => {
+  const legacySchema = openMapTiles();
+  delete legacySchema.layers.globalLandcover;
+
+  assert.equal(isCanonicalOpenMapTilesSchema(legacySchema), true);
+
+  const resolved = resolveTileflowData(
+    vectorTiles({
+      attribution: '© Example',
+      schema: legacySchema,
+      url: '/tiles.json',
+    }),
+  );
+  assert.equal(resolved.schema.layers.globalLandcover, 'globallandcover');
 });
 
 test('rejects private URL credentials, invalid revisions, and missing attribution', () => {

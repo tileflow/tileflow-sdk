@@ -65,8 +65,11 @@ Road targets are cartographic semantics rather than raw source values. Motor-roa
 family is split into `pedestrian`, `footway`, `cycleway`, `steps`, and residual `pathway`. Enabling
 `roads({extras: {paths: true}})` draws the complete family with independent stable layers; naming a
 class explicitly also enables that class without enabling its siblings. Every class can style
-`surface`, `tunnel`, and `bridge`, each with `shadow`, `casing`, and `fill`. The labels module uses
-the same class names and selectors, so authors do not write OpenMapTiles `class`/`subclass` filters.
+`surface`, `tunnel`, and `bridge`, each with `shadow`, `casing`, `fill`, and an optional repeated
+diagonal `hatch`. Hatch appearance is semantic road detail rather than a sprite or raw layer patch;
+it accepts color, opacity, spacing, size, angle, and zoom bounds, inherits the resolved fill width
+when size is omitted, and does not reserve collision space. The labels module uses the same class
+names and selectors, so authors do not write OpenMapTiles `class`/`subclass` filters.
 The selectors remain valid when those field names are remapped by the data contract and are
 pairwise disjoint, preventing the same path from being painted by multiple semantic targets.
 Line-like pedestrian ways use `roads.classes.pedestrian`; polygon plazas use the separate
@@ -108,7 +111,7 @@ data binding rather than a basemap-specific translator.
 Compiler output records exact durable identity:
 
 - `tileflow:basemap = streets`
-- `tileflow:basemapVersion = 2`
+- `tileflow:basemapVersion = 3`
 - `tileflow:variant = light | dark`
 - `tileflow:data = {kind, revision?, schema, schemaVersion, sourceId}`
 

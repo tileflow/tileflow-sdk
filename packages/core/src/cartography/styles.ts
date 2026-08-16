@@ -59,6 +59,15 @@ export type TileflowLineLayout = {
 };
 export type TileflowLineStyle = TileflowLayerRange & TileflowLinePaint & TileflowLineLayout;
 
+/** Repeated diagonal marks placed along a stroked geographic feature. */
+export type TileflowLineHatchStyle = TileflowLayerRange & {
+  angle?: TileflowStyleValue<number>;
+  color?: TileflowStyleValue<string>;
+  opacity?: TileflowStyleValue<number>;
+  size?: TileflowStyleValue<number>;
+  spacing?: TileflowStyleValue<number>;
+};
+
 export type TileflowTextPaint = {
   color?: TileflowStyleValue<string>;
   haloBlur?: TileflowStyleValue<number>;

@@ -188,6 +188,16 @@ part of the primary vector-data API.
       the remote-dependent Barcelona scene. Final evidence is 79/79 core tests, 3/3 Streets tests,
       `pnpm check`, `pnpm build`, `pnpm run smoke:capture-public`, and
       `pnpm run publish:alpha:dry-run` without publishing.
+- [x] (2026-08-16) Replaced the low-contrast tunnel stack with a semantic hatch phase: an opaque
+      pale deck, thin casing, and optional repeated diagonal marks that inherit the resolved road
+      width without entering MapLibre collision placement. Added the reusable `LineHatchStyle`
+      vocabulary to road structures, updated Streets and Uber receipts/baselines, and raised the
+      durable Streets contract to version 3 because the generated hatch layer adds a stable public
+      layer ID and ordering phase. The direct default now emits 119 layers and Editorial City emits 164. The accepted Streets recipe uses `0.2` tunnel fill opacity, `0.32` casing opacity, and
+      `0.18` hatch opacity. All twelve Streets baselines and both Uber baselines were regenerated
+      and reviewed; the final Streets comparison kept the tunnel scene exact and reported only two
+      exact, zero-perceptual remote pixels in each of three other scenes. Final `pnpm check`,
+      `pnpm build`, packaged public smoke, and alpha publication dry-run all pass without publishing.
 
 ## Surprises & Discoveries
 
@@ -201,6 +211,13 @@ part of the primary vector-data API.
 - Observation: module array semantics are inconsistent. `.find()` makes the first roads/labels/POI
   duplicate win while `styleOverride` modules are ordered.
   Evidence: module collection at the beginning of `createStyle()`.
+
+- Observation: removing the old tunnel dash did not by itself produce a readable tunnel. At dense
+  interchanges, similarly colored surface roads crossed the translucent tunnel deck and made the
+  remaining segments read as alternating rounded blocks.
+  Evidence: the Plaza de Castilla `madrid-tunnels` baseline before the semantic hatch phase. An
+  opaque pale fill separated the levels; a thin casing plus diagonal hatch then communicated the
+  tunnel without changing the underlying line geometry.
 
 - Observation: existing roads, labels, and POI code contains useful semantic knowledge but is split
   between generated factories and OSM Bright control passes. Preserve the knowledge, not two
@@ -432,7 +449,7 @@ part of the primary vector-data API.
   Date/Author: 2026-08-15, owner and Codex.
 
 - Decision: Emit durable Streets identity as `tileflow:basemap = 'streets'`,
-  `tileflow:basemapVersion = 2`, `tileflow:variant = 'light'`, and the separate `tileflow:data`
+  `tileflow:basemapVersion = 3`, `tileflow:variant = 'light'`, and the separate `tileflow:data`
   object. Any breaking generated-layer ID or structural-order change increments basemap version.
   Rationale: raw overrides make generated IDs and placement observable even though semantic modules
   are canonical. No internal migration metadata appears in a Streets artifact.
@@ -523,10 +540,10 @@ part of the primary vector-data API.
 ## Outcomes & Retrospective
 
 The initial SDK implementation completed the Streets-first cutover. `streets()` now compiles a
-105-layer default map directly from nine keyed module domains and one resolved OpenMapTiles data
+119-layer default map directly from nine keyed module domains and one resolved OpenMapTiles data
 contract. There is no runtime template, fallback renderer, layer translator, or hidden data
 precedence. After the disjoint path-family and pedestrian-area work, the lab's explicit Editorial
-City overlays compile 155 layers and have nine reviewed schema-2 baselines spanning urban, road,
+City overlays compile 164 layers and have twelve reviewed schema-2 baselines spanning urban, road,
 rail, airport, coast, rural, and mobile views.
 
 The visual loop materially improved the design language: it exposed POI modes that were type-level
@@ -558,9 +575,10 @@ That follow-up is now complete. The lab no longer reads OpenMapTiles `subclass` 
 paths: it styles the five public road targets directly. Geometry and road-label compilers share one
 selector implementation, exact class requests participate in label eligibility, disabled classes
 are removed from both domains, and remapped `class`/`subclass` field names are covered by tests. The
-current Editorial City recipe emits 155 layers because each enabled path semantic owns its complete
+current Editorial City recipe emits 164 layers because each enabled path semantic owns its complete
 structure phases rather than sharing one overlapping `path` layer, the lab gives path casings their
-own layers, and pedestrian polygons have a dedicated semantic fill.
+own layers, pedestrian polygons have a dedicated semantic fill, and enabled road structures may own
+a separate semantic hatch phase.
 
 The road-intelligence pass then made orthogonal source properties part of the same road language
 rather than adding parallel domains. Streets now has data-driven defaults for ramps, unpaved and
@@ -1099,7 +1117,7 @@ The first Streets style is complete and generated only by the nine direct domain
 Bright layer, ID, source remapping bridge, or `internalMigration` state may enter compilation. The
 reference ledger instead drives coverage tests and later visual comparisons. Switch the lab to
 `streets()` immediately. Emit durable metadata `tileflow:basemap = 'streets'`,
-`tileflow:basemapVersion = 2`, `tileflow:variant`, and the resolved `tileflow:data` identity.
+`tileflow:basemapVersion = 3`, `tileflow:variant`, and the resolved `tileflow:data` identity.
 
 ### Milestone 4: complete land and water
 
@@ -1337,7 +1355,7 @@ Scenes: madrid-overview, madrid-neighborhood, madrid-close-street, madrid-motorw
 User-owned diff: editorial palette adjustments in lab config
 Baseline core: build passes; 46 tests pass via node --import tsx --test before ledger test
 Ledger checkpoint: 47 core tests pass after adding the frozen ownership test
-Direct Streets: 105 default layers; current Editorial City: 155 layers; no inherited IDs or default
+Direct Streets: 119 default layers; current Editorial City: 164 layers; no inherited IDs or default
   sprite
 Workspace verify: 194 pass, 13 intentional integration skips
 Visual checkpoint: nine reviewed schema-2 baselines with resolved Tileflow World data identity
@@ -1358,6 +1376,11 @@ Shared-primitives and final Roads checkpoint: 76 core tests PASS; 3 Streets test
   54 CLI tests PASS with 6 intentional skips; all nine scenes reviewed and baselines regenerated;
   junction labels adjusted to zoom 15 after visual review; Editorial City compiles 155 valid layers
   on Streets basemap version 2
+Tunnel-hatch checkpoint: Streets basemap version 3; 79 core tests PASS; 3 Streets tests PASS;
+  all twelve Streets scenes and both Uber application scenes regenerated and reviewed; exact
+  comparison preserved the accepted tunnel result and reported two exact, zero-perceptual remote
+  pixels in each of three other scenes; workspace check/build, packaged public smoke, and alpha
+  dry-run PASS without publishing
 Examples checkpoint: `@tileflow/example-streets` 3/3 PASS; `@tileflow/example-uber` 3/3 PASS;
   Streets nine-scene comparison completes; Uber LA/NYC baselines reviewed and regenerated with
   Streets v2 receipts; follow-up comparison preserves only remote-resource warnings

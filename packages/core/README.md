@@ -97,6 +97,8 @@ having to learn different spellings for the same MapLibre behavior:
 - `BackgroundStyle`: color, opacity, pattern, visibility, and zoom range.
 - `FillStyle`: color, opacity, pattern, antialiasing, visibility, and zoom range.
 - `LineStyle`: color, width, opacity, dash, blur, gap, offset, pattern, caps, joins, and zoom range.
+- `LineHatchStyle`: repeated diagonal detail with color, opacity, spacing, size, angle, and zoom
+  range for a road structure.
 - `TextStyle`: field, font, weight, fallbacks, size, color, halo, spacing metrics, transform,
   collision policy, rotation, fixed/variable anchoring, line constraints, and zoom range.
 - `IconStyle`: image, size, color, halo, rotation/alignment, collision policy, and zoom range.
@@ -124,6 +126,13 @@ roads({
     },
   },
   classes: {
+    primary: {
+      tunnel: {
+        casing: {color: '#8EA3B8', width: 10},
+        fill: {color: '#F5F8FA', width: 8},
+        hatch: {color: '#8EA3B8', opacity: 0.25, spacing: 10},
+      },
+    },
     pedestrian: {surface: {fill: {color: '#F5F6F7', width: 6}}},
     footway: {surface: {fill: {color: '#D9DEE3', width: 1.2}}},
     cycleway: {surface: {fill: {color: '#9ED8C5', width: 1.5}}},
@@ -150,8 +159,10 @@ roads({
 
 These targets are non-overlapping translations of the OpenMapTiles road class and subclass. The
 same names are available under `labels().roadClasses` and `labels().styles.roads`. Surface, tunnel,
-and bridge phases can be controlled independently for each target; no raw source filter or
-generated layer ID is needed.
+and bridge phases can be controlled independently for each target; each structure has
+`shadow`/`casing`/`fill` and an optional `hatch`. Hatch marks inherit the resolved fill width when
+`size` is omitted and never participate in label collision. No raw source filter or generated layer
+ID is needed.
 
 `classes.pedestrian` styles line-like pedestrian ways. Polygon pedestrian plazas are a distinct
 geometry and use `areas.pedestrian`, including optional fill opacity, outline color, or sprite

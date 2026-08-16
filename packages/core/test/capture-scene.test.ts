@@ -173,7 +173,7 @@ test('does not resolve missing scene maps through Object.prototype', () => {
 
 test('rejects prototype-mutating record keys instead of silently dropping them', () => {
   const input = JSON.parse(`{
-    "maps": {"madrid": {"basemap": {"type": "streets", "basemapVersion": 2, "variant": "light"}}},
+    "maps": {"madrid": {"basemap": {"type": "streets", "basemapVersion": 3, "variant": "light"}}},
     "scenes": {
       "__proto__": {
         "map": "madrid",

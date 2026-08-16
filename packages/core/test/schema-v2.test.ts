@@ -95,6 +95,18 @@ test('accepts semantic path road targets and rejects the old overlapping path ta
             },
           },
           classes: {pedestrian: {}, footway: {}, cycleway: {}, steps: {}, pathway: {}},
+          structures: {
+            tunnel: {
+              hatch: {
+                angle: 4,
+                color: '#8EA3B8',
+                minZoom: 15,
+                opacity: 0.25,
+                size: 12,
+                spacing: 10,
+              },
+            },
+          },
           modifiers: {
             construction: {surface: {fill: {dash: [2, 1], opacity: 0.7}}},
             expressway: {widthScale: 1.1},

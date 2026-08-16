@@ -2,6 +2,7 @@ import type {TileflowDomainCompileContext} from '../../cartography/context';
 import type {TileflowLayerContribution, TileflowLayerSlot} from '../../cartography/contributions';
 import {applyLineStyle, createAreaLayers} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
+import type {TileflowLineStyle} from '../../cartography/styles';
 import {expression, toMapLibreStyleValue, zoom} from '../../cartography/values';
 import {textFont} from '../../themes';
 import type {
@@ -112,6 +113,11 @@ export function compileRoads(
     for (const structure of ['tunnel', 'surface', 'bridge'] as const) {
       const structureConfig = classConfig[structure];
       if (!structureConfig) continue;
+      const filter = [
+        'all',
+        tileflowRoadClassFilter(schema.fields, roadClass),
+        structureFilter(schema.fields.brunnel, structure),
+      ];
       for (const [phaseIndex, phase] of (['shadow', 'casing', 'fill'] as const).entries()) {
         const style = structureConfig[phase];
         if (!style || style.visible === false) continue;
@@ -124,11 +130,7 @@ export function compileRoads(
               type: 'line',
               source,
               'source-layer': schema.layers.road,
-              filter: [
-                'all',
-                tileflowRoadClassFilter(schema.fields, roadClass),
-                structureFilter(schema.fields.brunnel, structure),
-              ],
+              filter,
               layout: {
                 'line-sort-key': [
                   'coalesce',
@@ -144,6 +146,57 @@ export function compileRoads(
           owner: 'roads',
           slot: structureSlots[structure][phase],
           target: `roads.classes.${roadClass}.${structure}.${phase}`,
+        });
+      }
+
+      const hatch = structureConfig.hatch;
+      const fill = structureConfig.fill;
+      if (hatch && hatch.visible !== false && fill && fill.visible !== false) {
+        const treatedFill = applyRoadTreatments(fill, treatments, structure, 'fill');
+        const size =
+          hatch.size === undefined
+            ? scaleStyleValue(treatedFill.width ?? 1, 0.68)
+            : toMapLibreStyleValue(hatch.size as never);
+        const minZoom = hatch.minZoom ?? treatedFill.minZoom;
+        const maxZoom = hatch.maxZoom ?? treatedFill.maxZoom;
+
+        contributions.push({
+          kind: 'layer',
+          layer: {
+            id: `streets-road-${structure}-${roadClass}-hatch`,
+            type: 'symbol',
+            source,
+            'source-layer': schema.layers.road,
+            filter,
+            ...(minZoom === undefined ? {} : {minzoom: minZoom}),
+            ...(maxZoom === undefined ? {} : {maxzoom: maxZoom}),
+            layout: {
+              'symbol-placement': 'line',
+              'symbol-spacing': toMapLibreStyleValue((hatch.spacing ?? 16) as never),
+              'text-allow-overlap': true,
+              'text-field': '╱',
+              'text-font': textFont(context.typography, 'roads'),
+              'text-ignore-placement': true,
+              'text-keep-upright': false,
+              'text-padding': 0,
+              'text-pitch-alignment': 'map',
+              'text-rotation-alignment': 'map',
+              'text-size': size,
+              ...(hatch.angle === undefined
+                ? {}
+                : {'text-rotate': toMapLibreStyleValue(hatch.angle as never)}),
+            },
+            paint: {
+              'text-color': toMapLibreStyleValue(
+                (hatch.color ?? context.colors.roads.tunnel) as never,
+              ),
+              'text-opacity': toMapLibreStyleValue((hatch.opacity ?? 0.24) as never),
+            },
+          },
+          localOrder: classIndex * 10 + 3,
+          owner: 'roads',
+          slot: structureSlots[structure].fill,
+          target: `roads.classes.${roadClass}.${structure}.hatch`,
         });
       }
     }
@@ -286,7 +339,7 @@ function resolveRoadTreatments(
 }
 
 function applyRoadTreatments(
-  base: TileflowRoadLayerStyle[keyof TileflowRoadLayerStyle] & object,
+  base: TileflowLineStyle & object,
   treatments: readonly RoadTreatmentEntry[],
   structure: TileflowRoadStructure,
   phase: 'casing' | 'fill' | 'shadow',
@@ -333,6 +386,14 @@ function applyRoadTreatments(
   }
 
   return result as typeof base;
+}
+
+function scaleStyleValue(value: unknown, scale: number): readonly unknown[] {
+  return rewriteZoomOutputs(toMapLibreStyleValue(value as never), (output) => [
+    '*',
+    expressionOutput(output),
+    scale,
+  ]);
 }
 
 function conditionalStyleValue(
@@ -435,9 +496,15 @@ function defaultClassStyles(
             casing: {
               cap: 'butt',
               color: context.colors.roads.tunnel,
-              opacity: 0.4,
+              opacity: 0.9,
             },
-            fill: {cap: 'butt', opacity: opacity * 0.6},
+            fill: {cap: 'butt', color: context.colors.background, opacity: 1},
+            hatch: {
+              color: context.colors.roads.tunnel,
+              minZoom: 15,
+              opacity: 0.24,
+              spacing: 16,
+            },
           }),
           bridge: mergeTileflowDesign(base, {
             casing: {opacity: Math.max(outlineOpacity, 0.35)},

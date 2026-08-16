@@ -324,6 +324,19 @@ const lineStackStyleSchema = z
     shadow: lineStyleSchema.optional(),
   })
   .strict();
+const lineHatchStyleSchema = z
+  .object({
+    ...rangeShape,
+    angle: numberValueSchema.optional(),
+    color: stringValueSchema.optional(),
+    opacity: numberValueSchema.optional(),
+    size: numberValueSchema.optional(),
+    spacing: numberValueSchema.optional(),
+  })
+  .strict();
+const roadLayerStyleSchema = lineStackStyleSchema
+  .extend({hatch: lineHatchStyleSchema.optional()})
+  .strict();
 const symbolStyleSchema = z
   .object({
     ...symbolPlacementShape,
@@ -354,16 +367,16 @@ const roadClassSchema = z.enum([
 const roadClassStyleSchema = z
   .object({
     enabled: z.boolean().optional(),
-    bridge: lineStackStyleSchema.optional(),
-    surface: lineStackStyleSchema.optional(),
-    tunnel: lineStackStyleSchema.optional(),
+    bridge: roadLayerStyleSchema.optional(),
+    surface: roadLayerStyleSchema.optional(),
+    tunnel: roadLayerStyleSchema.optional(),
   })
   .strict();
 const roadStructureMapSchema = z
   .object({
-    bridge: lineStackStyleSchema.optional(),
-    surface: lineStackStyleSchema.optional(),
-    tunnel: lineStackStyleSchema.optional(),
+    bridge: roadLayerStyleSchema.optional(),
+    surface: roadLayerStyleSchema.optional(),
+    tunnel: roadLayerStyleSchema.optional(),
   })
   .strict();
 const roadTreatmentLayerStyleSchema = z

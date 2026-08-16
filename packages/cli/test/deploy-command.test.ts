@@ -19,7 +19,7 @@ test('deploy sends CI provenance but keeps it and the bearer key out of the mani
     fixture.configPath,
     `import {writeFileSync} from 'node:fs';
 writeFileSync(${JSON.stringify(observedSecretPath)}, process.env.TILEFLOW_API_KEY ?? 'missing');
-export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 2, variant: 'light'}, name: 'Madrid'}}};
+export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, name: 'Madrid'}}};
 `,
     'utf8',
   );
@@ -152,7 +152,7 @@ test('plain validation now reports missing local icon sources', async (t) => {
   const fixture = await createFixture(t);
   await writeFile(
     fixture.configPath,
-    `export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 2, variant: 'light'}, icons: {source: './missing-icons'}}}};\n`,
+    `export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, icons: {source: './missing-icons'}}}};\n`,
   );
   const result = await runCli(
     fixture.directory,
@@ -169,7 +169,7 @@ test('validation rejects invalid MapLibre semantics with a stable layer path', a
   const fixture = await createFixture(t);
   await writeFile(
     fixture.configPath,
-    `export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 2, variant: 'light'}, overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]}}};\n`,
+    `export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]}}};\n`,
   );
   const result = await runCli(
     fixture.directory,
@@ -197,7 +197,7 @@ test('deploy rejects invalid MapLibre semantics before any remote write', async 
   icons: {brand: {mapping: {restaurant: 'cafe'}, source: './icons'}},
   maps: {
     madrid: {
-      basemap: {type: 'streets', basemapVersion: 2, variant: 'light'},
+      basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
       icons: 'brand',
       overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]
     }
@@ -377,7 +377,7 @@ test('CI deploy fails closed instead of reusing a credential saved by local logi
     fixture.configPath,
     `import {writeFileSync} from 'node:fs';
 writeFileSync(${JSON.stringify(configMarkerPath)}, 'imported');
-export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 2, variant: 'light'}, name: 'Madrid'}}};
+export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, name: 'Madrid'}}};
 `,
     'utf8',
   );
@@ -425,7 +425,7 @@ async function createFixture(t: TestContext) {
   const manifestPath = join(directory, 'manifest.json');
   await writeFile(
     configPath,
-    `export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 2, variant: 'light'}, name: 'Madrid'}}};\n`,
+    `export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, name: 'Madrid'}}};\n`,
     'utf8',
   );
   t.after(() => rm(directory, {force: true, recursive: true}));
@@ -451,7 +451,7 @@ async function createIconFixture(t: TestContext) {
   icons: {brand: {mapping: {restaurant: 'cafe'}, source: './icons'}},
   maps: {
     madrid: {
-      basemap: {type: 'streets', basemapVersion: 2, variant: 'light'},
+      basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
       icons: 'brand',
       modules: {poi: {type: 'poi', icons: 'essential'}},
       name: 'Madrid'

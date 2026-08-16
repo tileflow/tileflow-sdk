@@ -124,6 +124,15 @@ test('compiles road classes, structures, phases, and exact semantic overrides', 
               ]),
             },
           },
+          tunnel: {
+            hatch: {
+              angle: 5,
+              color: '#8EA3B8',
+              opacity: 0.3,
+              size: 14,
+              spacing: 9,
+            },
+          },
         },
       },
     }),
@@ -139,6 +148,9 @@ test('compiles road classes, structures, phases, and exact semantic overrides', 
   const tunnelFill = contributions.find(
     (entry) => entry.layer.id === 'streets-road-tunnel-primary-fill',
   )!;
+  const tunnelHatch = contributions.find(
+    (entry) => entry.layer.id === 'streets-road-tunnel-primary-hatch',
+  )!;
 
   assert.ok(ids.includes('streets-road-tunnel-motorway-fill'));
   assert.ok(ids.includes('streets-road-bridge-primary-casing'));
@@ -146,6 +158,14 @@ test('compiles road classes, structures, phases, and exact semantic overrides', 
   assert.equal((tunnelFill.layer.layout as Record<string, unknown>)['line-cap'], 'butt');
   assert.equal((tunnelCasing.layer.paint as Record<string, unknown>)['line-dasharray'], undefined);
   assert.equal((tunnelFill.layer.paint as Record<string, unknown>)['line-dasharray'], undefined);
+  assert.equal(tunnelHatch.layer.type, 'symbol');
+  assert.equal((tunnelHatch.layer.layout as Record<string, unknown>)['symbol-placement'], 'line');
+  assert.equal((tunnelHatch.layer.layout as Record<string, unknown>)['symbol-spacing'], 9);
+  assert.equal((tunnelHatch.layer.layout as Record<string, unknown>)['text-field'], '╱');
+  assert.equal((tunnelHatch.layer.layout as Record<string, unknown>)['text-rotate'], 5);
+  assert.equal((tunnelHatch.layer.layout as Record<string, unknown>)['text-size'], 14);
+  assert.equal((tunnelHatch.layer.paint as Record<string, unknown>)['text-color'], '#8EA3B8');
+  assert.equal((tunnelHatch.layer.paint as Record<string, unknown>)['text-opacity'], 0.3);
   assert.equal(
     ids.some((id) => id.includes('-minor-')),
     false,

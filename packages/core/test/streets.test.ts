@@ -9,7 +9,7 @@ test('compiles a complete deterministic Streets map from omitted data and module
 
   assert.deepEqual(first, second);
   assert.equal(first.metadata?.['tileflow:basemap'], 'streets');
-  assert.equal(first.metadata?.['tileflow:basemapVersion'], 2);
+  assert.equal(first.metadata?.['tileflow:basemapVersion'], 3);
   assert.equal(first.metadata?.['tileflow:variant'], 'light');
   assert.equal(first.metadata?.['tileflow:internalMigration'], undefined);
   assert.equal(first.sprite, undefined);

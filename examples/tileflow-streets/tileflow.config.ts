@@ -51,7 +51,7 @@ function cityRoadStyle(
   oneWayScale = 1,
 ): TileflowRoadClassStyle {
   // Tunnels keep most of the road hierarchy instead of collapsing into hairlines.
-  // A continuous square-ended stack avoids capsule-shaped source segments and stripes.
+  // A pale translucent deck, thin border, and diagonal hatch distinguish the underground segment.
   const tunnelWidths = scaleStops(widths, 0.82);
   const fill = {
     cap: 'round' as const,
@@ -75,15 +75,22 @@ function cityRoadStyle(
       casing: {
         ...casing,
         cap: 'butt',
-        color: '#B7C4D0',
-        opacity: 0.5,
+        color: '#93A8BC',
+        opacity: 0.32,
         width: roadWidth(tunnelWidths, oneWayScale, true),
       },
       fill: {
         ...fill,
         cap: 'butt',
-        opacity: 0.72,
+        color: '#F5F8FA',
+        opacity: 0.2,
         width: roadWidth(tunnelWidths, oneWayScale),
+      },
+      hatch: {
+        color: '#91A6BA',
+        minZoom: 15,
+        opacity: 0.18,
+        spacing: 15,
       },
     },
   };
@@ -117,7 +124,8 @@ function pathRoadStyle(
     bridge: {casing: casing ?? {visible: false}, fill},
     tunnel: {
       casing: {visible: false},
-      fill: {...fill, cap: 'butt', dash: [1, 1], opacity: 0.5},
+      fill: {...fill, cap: 'butt', color: '#F5F8FA', opacity: 0.2},
+      hatch: {visible: false},
     },
   };
 }
@@ -344,7 +352,8 @@ export default defineTileflow({
           classes: {
             // Optional semantic targets: motorway, trunk, primary, secondary,
             // tertiary, minor, service, track, pathway, footway, cycleway,
-            // steps, pedestrian. Each accepts surface, tunnel, bridge, enabled.
+            // steps, pedestrian. Each accepts surface, tunnel, bridge, enabled;
+            // a structure accepts shadow, casing, fill, and diagonal hatch.
             motorway: cityRoadStyle('#9FB2C4', '#FFFFFF', [
               [10, 2.8],
               [12, 5],

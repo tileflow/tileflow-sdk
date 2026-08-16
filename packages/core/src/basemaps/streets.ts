@@ -14,7 +14,7 @@ import type {
   TileflowRoadsModuleConfig,
 } from '../types';
 
-export const tileflowStreetsBasemapVersion = 2;
+export const tileflowStreetsBasemapVersion = 3;
 
 export type TileflowStreetsVariant = 'dark' | 'light';
 

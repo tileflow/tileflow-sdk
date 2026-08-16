@@ -1,6 +1,7 @@
 import type {
   TileflowAreaStyle,
   TileflowFontWeight,
+  TileflowLineHatchStyle,
   TileflowLinePaint,
   TileflowLineStackStyle,
   TileflowSymbolStyle,
@@ -201,7 +202,9 @@ export type TileflowRoadWeight = 'thin' | 'regular' | 'bold';
 export type TileflowRoadOutline = 'none' | 'subtle' | 'strong';
 export type TileflowRoadStructure = 'bridge' | 'surface' | 'tunnel';
 export type TileflowRoadExtras = {paths?: boolean};
-export type TileflowRoadLayerStyle = TileflowLineStackStyle;
+export type TileflowRoadLayerStyle = TileflowLineStackStyle & {
+  hatch?: TileflowLineHatchStyle;
+};
 export type TileflowRoadTreatmentLineStyle = Pick<
   TileflowLinePaint,
   'blur' | 'color' | 'dash' | 'gapWidth' | 'offset' | 'opacity' | 'width'

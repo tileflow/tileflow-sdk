@@ -13,7 +13,7 @@ test('builds a valid Uber-inspired map from the Streets contract', () => {
   const style = createStyleFromProject(project, 'uber');
   assert.equal(style.name, 'Tileflow Uber-inspired Streets');
   assert.equal(style.metadata?.['tileflow:basemap'], 'streets');
-  assert.equal(style.metadata?.['tileflow:basemapVersion'], 2);
+  assert.equal(style.metadata?.['tileflow:basemapVersion'], 3);
   assert.equal(style.metadata?.['tileflow:theme'], 'uber');
   assert.equal(style.layers.length > 90, true);
   assert.equal(

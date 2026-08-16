@@ -11,7 +11,7 @@ test('keeps the editorial city recipe on the versioned Streets contract', () => 
 
   const style = createStyleFromProject(project, 'editorial-city');
   assert.equal(style.metadata?.['tileflow:basemap'], 'streets');
-  assert.equal(style.metadata?.['tileflow:basemapVersion'], 2);
+  assert.equal(style.metadata?.['tileflow:basemapVersion'], 3);
   assert.deepEqual(style.metadata?.['tileflow:data'], {
     kind: 'tileflow-world',
     revision: '2026-06-07',

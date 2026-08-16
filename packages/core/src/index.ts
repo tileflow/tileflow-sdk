@@ -200,6 +200,7 @@ export type {
   TileflowIconStyle,
   TileflowLayerRange,
   TileflowLineCap,
+  TileflowLineHatchStyle,
   TileflowLineJoin,
   TileflowLineLayout,
   TileflowLinePaint,

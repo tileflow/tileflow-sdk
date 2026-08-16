@@ -97,8 +97,9 @@ document.head.append(sheet);
 createRoot(document.getElementById('root')).render(<App />);
 `;
 
-const applicationConfig = `export default {
-  maps: {main: {}},
+const applicationConfig = `import {streets} from '@tileflow/core';
+export default {
+  maps: {main: {basemap: streets()}},
   scenes: {
     desktop: {
       map: 'main',

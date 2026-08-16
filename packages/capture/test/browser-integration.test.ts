@@ -116,14 +116,18 @@ test(
   }
 };\n`,
       );
-      const artifacts = await createTileflowBuildArtifacts({apiBaseUrl: origin, cwd});
+      const artifacts = await createTileflowBuildArtifacts({
+        apiBaseUrl: origin,
+        assetBaseUrl: tileflowSyntheticAssetOrigin,
+        cwd,
+      });
       const generatedStyle = artifacts.styles.proof;
       assert.ok(generatedStyle);
       assert.ok(
-        generatedStyle.layers.some((layer) => layer.id === 'streets-road-primary-surface-casing'),
+        generatedStyle.layers.some((layer) => layer.id === 'streets-road-surface-primary-casing'),
       );
       assert.ok(
-        generatedStyle.layers.some((layer) => layer.id === 'streets-road-primary-bridge-fill'),
+        generatedStyle.layers.some((layer) => layer.id === 'streets-road-bridge-primary-fill'),
       );
       browser = await launchTileflowCaptureBrowser({allowInstall: false});
       const first = await captureStandaloneTileflowScene({

@@ -34,10 +34,6 @@ const auditDirectory = join(temporaryRoot, 'audit');
 const npmCacheDirectory = join(temporaryRoot, 'npm-cache');
 const expectedRepository = 'git+https://github.com/tileflow/tileflow-sdk.git';
 const expectedBugs = 'https://github.com/tileflow/tileflow-sdk/issues';
-const transparentPng = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWP4WSz2H4QZYAwAWswKBc9NlmIAAAAASUVORK5CYII=',
-  'base64',
-);
 let server;
 
 try {
@@ -180,16 +176,6 @@ if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
       response.end(Buffer.alloc(0));
       return;
     }
-    if (path.endsWith('/sprite.json') || path.endsWith('/sprite@2x.json')) {
-      response.writeHead(200, {'content-type': 'application/json'});
-      response.end('{}');
-      return;
-    }
-    if (path.endsWith('/sprite.png') || path.endsWith('/sprite@2x.png')) {
-      response.writeHead(200, {'content-type': 'image/png'});
-      response.end(transparentPng);
-      return;
-    }
     if (path !== '/') {
       response.writeHead(404).end();
       return;
@@ -202,20 +188,36 @@ if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
   const origin = await listenLoopback(server);
   await writeFile(
     join(consumerDirectory, 'tileflow.config.ts'),
-    `export default {
+    `import {
+  buildings,
+  defineTileflow,
+  labels,
+  openMapTiles,
+  poi,
+  roads,
+  streets,
+  vectorTiles,
+} from '@tileflow/core';
+
+export default defineTileflow({
   maps: {
     proof: {
-      renderer: 'generated',
-      labels: 'none',
-      poi: 'none',
-      buildings: 'hidden',
+      basemap: streets(),
+      data: vectorTiles({
+        attribution: '© OpenStreetMap contributors',
+        schema: openMapTiles(),
+        url: ${JSON.stringify(`${origin}/tiles/world/tiles.json`)},
+      }),
       glyphs: ${JSON.stringify(`${origin}/fonts/{fontstack}/{range}.pbf`)},
-      sprite: ${JSON.stringify(`${origin}/sprites/osm-bright/sprite`)},
-      tiles: {url: ${JSON.stringify(`${origin}/tiles/world/tiles.json`)}},
-      modules: [{
-        type: 'roads', detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
-        extras: {ferry: false, paths: true, rail: true}
-      }]
+      modules: {
+        buildings: buildings({enabled: false}),
+        labels: labels({places: 'none', roads: 'none', water: 'none'}),
+        poi: poi({preset: 'none', icons: false, labels: 'none'}),
+        roads: roads({
+          detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
+          extras: {paths: true},
+        }),
+      },
     },
   },
   scenes: {
@@ -231,7 +233,7 @@ if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
       target: {kind: 'application', path: '/', captureId: 'proof'},
     },
   },
-};
+});
 `,
   );
 
@@ -284,7 +286,13 @@ if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
   assert.equal(standaloneReceipt.image.physicalWidth, 192);
   assert.equal(standaloneReceipt.image.physicalHeight, 128);
   assert.equal(standaloneReceipt.networkDependent, false);
-  assert.deepEqual(standaloneReceipt.source, {tilesetVersion: null});
+  assert.equal(standaloneReceipt.schemaVersion, 2);
+  assert.deepEqual(standaloneReceipt.data, {
+    kind: 'vector-tiles',
+    schema: 'openmaptiles',
+    schemaVersion: 1,
+    sourceId: 'tileflow',
+  });
   assert.equal(standaloneReceipt.renderer.playwright, '1.60.0');
   assert.equal(standaloneReceipt.renderer.chromiumRevision, '1223');
 
@@ -359,12 +367,17 @@ if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
   const sha256 = createHash('sha256').update(png).digest('hex');
   assert.equal(entry.sha256, sha256);
   const receipt = JSON.parse(await readFile(join(consumerDirectory, entry.receiptPath), 'utf8'));
-  assert.equal(receipt.schemaVersion, 1);
+  assert.equal(receipt.schemaVersion, 2);
   assert.equal(receipt.image.sha256, sha256);
   assert.equal(receipt.image.physicalWidth, 192);
   assert.equal(receipt.image.physicalHeight, 128);
   assert.equal(receipt.networkDependent, false);
-  assert.deepEqual(receipt.source, {tilesetVersion: null});
+  assert.deepEqual(receipt.data, {
+    kind: 'vector-tiles',
+    schema: 'openmaptiles',
+    schemaVersion: 1,
+    sourceId: 'tileflow',
+  });
   assert.equal(receipt.renderer.playwright, '1.60.0');
   assert.equal(receipt.renderer.chromiumRevision, '1223');
   assert.equal(

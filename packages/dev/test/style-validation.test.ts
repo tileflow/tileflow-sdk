@@ -3,7 +3,7 @@ import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {defineTileflow, osm, roads} from '@tileflow/core';
+import {defineTileflow, patchLayer, roads, streets} from '@tileflow/core';
 import {
   createTileflowBuildArtifacts,
   createTileflowStyle,
@@ -26,7 +26,7 @@ test('direct style creation reports a stable layer/property diagnostic', () => {
         {
           map: 'madrid',
           message: 'color expected, number found',
-          path: 'maps.madrid.style.layers.background.paint.background-color',
+          path: 'maps.madrid.style.layers.streets-background.paint.background-color',
         },
       ]);
       return true;
@@ -94,8 +94,8 @@ test('artifact construction shares validation and aggregates invalid config maps
     join(cwd, 'tileflow.config.ts'),
     `export default {
   maps: {
-    zeta: {layers: {background: {paint: {'background-color': 42}}}},
-    alpha: {layers: {background: {paint: {'background-color': 42}}}}
+    zeta: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]},
+    alpha: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]}
   }
 };\n`,
   );
@@ -107,8 +107,8 @@ test('artifact construction shares validation and aggregates invalid config maps
       assert.deepEqual(
         error.issues.map((issue) => issue.path),
         [
-          'maps.alpha.style.layers.background.paint.background-color',
-          'maps.zeta.style.layers.background.paint.background-color',
+          'maps.alpha.style.layers.streets-background.paint.background-color',
+          'maps.zeta.style.layers.streets-background.paint.background-color',
         ],
       );
       return true;
@@ -116,22 +116,21 @@ test('artifact construction shares validation and aggregates invalid config maps
   );
 });
 
-test('corrected generated roads validate and written artifacts equal in-memory styles', async (t) => {
+test('direct Streets roads validate and written artifacts equal in-memory styles', async (t) => {
   const direct = createTileflowStyle(
     defineTileflow({
       maps: {
         madrid: {
-          basemap: osm(),
-          modules: [
-            roads({
+          basemap: streets(),
+          modules: {
+            roads: roads({
               detail: 'all',
-              extras: {ferry: false, paths: true, rail: true},
+              extras: {paths: true},
               hierarchy: 'clear',
               outline: 'strong',
               weight: 'regular',
             }),
-          ],
-          renderer: 'generated',
+          },
         },
       },
     }),
@@ -145,11 +144,12 @@ test('corrected generated roads validate and written artifacts equal in-memory s
     `export default {
   maps: {
     madrid: {
-      renderer: 'generated',
-      modules: [{
-        type: 'roads', detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
-        extras: {ferry: false, paths: true, rail: true}
-      }]
+      basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
+      modules: {roads: {
+        type: 'roads',
+        detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
+        extras: {paths: true}
+      }}
     }
   }
 };\n`,
@@ -168,9 +168,8 @@ function invalidProject(map: string) {
   return defineTileflow({
     maps: {
       [map]: {
-        layers: {
-          background: {paint: {'background-color': 42}},
-        },
+        basemap: streets(),
+        overrides: [patchLayer('streets-background', {paint: {'background-color': 42}})],
       },
     },
   });

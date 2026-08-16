@@ -10,19 +10,19 @@ this repository.
 
 ## Packages
 
-| Package                                 | Purpose                                                                                    |
-| --------------------------------------- | ------------------------------------------------------------------------------------------ |
-| [`@tileflow/core`](packages/core)       | Typed configuration, semantic modules, validation, and MapLibre style compilation          |
-| [`@tileflow/static`](packages/static)   | Static-map scene schemas, overlays, and request helpers                                    |
-| [`@tileflow/dev`](packages/dev)         | Node integration utilities, watched artifacts, icons, and feature inspection               |
-| [`@tileflow/capture`](packages/capture) | Pinned headless capture, receipts, visual analysis, and baseline comparison                |
-| [`@tileflow/vite`](packages/vite)       | Vite development and build integration                                                     |
-| [`@tileflow/next`](packages/next)       | Next.js development and build integration                                                  |
-| [`@tileflow/webpack`](packages/webpack) | Webpack development and build integration                                                  |
-| [`@tileflow/react`](packages/react)     | React map and static-image components                                                      |
-| [`@tileflow/vue`](packages/vue)         | Vue map component                                                                          |
-| [`@tileflow/svelte`](packages/svelte)   | Svelte map component                                                                       |
-| [`@tileflow/cli`](packages/cli)         | `tileflow` init, validate, dev, capture, visual, icon, tileset, build, and deploy commands |
+| Package                                 | Purpose                                                                           |
+| --------------------------------------- | --------------------------------------------------------------------------------- |
+| [`@tileflow/core`](packages/core)       | Typed configuration, semantic modules, validation, and MapLibre style compilation |
+| [`@tileflow/static`](packages/static)   | Static-map scene schemas, overlays, and request helpers                           |
+| [`@tileflow/dev`](packages/dev)         | Node integration utilities, watched artifacts, icons, and feature inspection      |
+| [`@tileflow/capture`](packages/capture) | Pinned headless capture, receipts, visual analysis, and baseline comparison       |
+| [`@tileflow/vite`](packages/vite)       | Vite development and build integration                                            |
+| [`@tileflow/next`](packages/next)       | Next.js development and build integration                                         |
+| [`@tileflow/webpack`](packages/webpack) | Webpack development and build integration                                         |
+| [`@tileflow/react`](packages/react)     | React map and static-image components                                             |
+| [`@tileflow/vue`](packages/vue)         | Vue map component                                                                 |
+| [`@tileflow/svelte`](packages/svelte)   | Svelte map component                                                              |
+| [`@tileflow/cli`](packages/cli)         | `tileflow` init, validate, dev, capture, visual, icon, build, and deploy commands |
 
 ## Quick start
 
@@ -37,14 +37,18 @@ npm install --save-dev --save-exact @tileflow/cli@alpha
 Create `tileflow.config.ts`:
 
 ```ts
-import {defineTileflow, labels, osm, poi} from '@tileflow/core';
+import {defineTileflow, labels, poi, roads, streets} from '@tileflow/core';
 
 export default defineTileflow({
   maps: {
     madrid: {
-      basemap: osm(),
+      basemap: streets(),
       theme: 'light',
-      modules: [labels({roads: 'major'}), poi({categories: ['food', 'culture']})],
+      modules: {
+        roads: roads({detail: 'streets', hierarchy: 'clear'}),
+        labels: labels({roads: 'major'}),
+        poi: poi({categories: ['food', 'culture']}),
+      },
     },
   },
 });
@@ -60,12 +64,14 @@ npm run dev
 See the [Tileflow documentation](https://tileflow.dev/docs) and each package README for framework,
 capture, visual-testing, icon, static-map, and hosted deployment workflows.
 
-## Cartography lab
+## Tileflow Streets example
 
-The workspace-backed [`examples/cartography-lab`](examples/cartography-lab) is the shared map-design
-workbench. It composes the OSM basemap, an editorial theme, and semantic modules into one example
-map exercised by committed desktop, waterfront, and mobile scenes. Run `pnpm dev:cartography` for
-the live preview and `pnpm visual:cartography` for the approved-baseline check.
+The workspace-backed [`examples/tileflow-streets`](examples/tileflow-streets) is the shared map-design
+workbench. It compiles Tileflow Streets directly from an editorial theme and semantic modules into one example
+map exercised by committed desktop, waterfront, and mobile scenes. Run `pnpm dev:streets` for the
+live preview and `pnpm visual:streets` for the approved-baseline check. The
+[`examples/uber`](examples/uber) application demonstrates the same Streets contract inside React
+with application-owned route and vehicle overlays.
 
 Use the SDK lab to discover and implement cartographic primitives atomically. The separate
 `tileflow-demos` repository remains a consumer of exact packages already published to npm.

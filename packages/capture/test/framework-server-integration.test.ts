@@ -157,8 +157,9 @@ document.body.style.margin = '0';
 const frame = React.createElement('div', {style: {width: 222}}, React.createElement(Map, {captureId: 'proof', height: 100, imageUrl: '${imageUrl}', map: 'main', mode: 'image'}));
 createRoot(document.getElementById('root')).render(frame);
 `;
-const tileflowConfig = `export default {
-  maps: {main: {}},
+const tileflowConfig = `import {streets} from '@tileflow/core';
+export default {
+  maps: {main: {basemap: streets()}},
   scenes: {proof: {map: 'main', camera: {type: 'center', center: [0, 0], zoom: 1}, viewport: {width: 320, height: 480}, target: {kind: 'application', path: '/', captureId: 'proof'}}}
 };
 `;

@@ -1,11 +1,6 @@
-import type {
-  TileflowIconSet,
-  TileflowIconSetConfig,
-  TileflowProjectConfig,
-  TileflowStyleLayerOverride,
-  TileflowThemeConfig,
-} from './compiler';
 import {compareCodeUnits, type TileflowIconPackageManifest} from './icon-package';
+import type {TileflowProjectConfig} from './project';
+import type {TileflowIconSet} from './types';
 
 export type TileflowIconManifestDiff = {
   added: string[];
@@ -131,42 +126,23 @@ export function inspectTileflowIconReferences(
     }
   }
 
-  const layers: Array<{layers: Record<string, TileflowStyleLayerOverride>; path: string}> = [];
-  collectThemeLayers(project, mapName, map.theme, layers);
-
-  if (map.layers) {
-    layers.push({layers: map.layers, path: `maps.${mapName}.layers`});
-  }
-
-  for (const [index, moduleConfig] of (map.modules ?? []).entries()) {
-    if (moduleConfig.type === 'styleOverride' && moduleConfig.layers) {
-      layers.push({
-        layers: moduleConfig.layers,
-        path: `maps.${mapName}.modules.${index}.layers`,
-      });
+  for (const [index, override] of (map.overrides ?? []).entries()) {
+    const layout =
+      override.kind === 'patch'
+        ? (override.patch.layout as Record<string, unknown> | undefined)
+        : override.kind === 'add'
+          ? (override.layer.layout as Record<string, unknown> | undefined)
+          : undefined;
+    if (!layout || !Object.hasOwn(layout, 'icon-image')) continue;
+    const path = `maps.${mapName}.overrides.${index}.${override.kind === 'add' ? 'layer' : 'patch'}.layout.icon-image`;
+    const inspection = inspectIconImageValue(layout['icon-image']);
+    for (const iconName of inspection.managedIconNames) {
+      if (!available.has(iconName)) {
+        dangling.push({iconName, kind: 'style-override-literal', path});
+      }
     }
-  }
-
-  for (const layerGroup of layers) {
-    for (const [layerName, layer] of Object.entries(layerGroup.layers).sort(([left], [right]) =>
-      compareCodeUnits(left, right),
-    )) {
-      if (!layer.layout || !Object.prototype.hasOwnProperty.call(layer.layout, 'icon-image')) {
-        continue;
-      }
-
-      const path = `${layerGroup.path}.${layerName}.layout.icon-image`;
-      const inspection = inspectIconImageValue(layer.layout['icon-image']);
-
-      for (const iconName of inspection.managedIconNames) {
-        if (!available.has(iconName)) {
-          dangling.push({iconName, kind: 'style-override-literal', path});
-        }
-      }
-
-      if (!inspection.complete) {
-        unanalyzable.push({kind: 'style-override-expression', path});
-      }
+    if (!inspection.complete) {
+      unanalyzable.push({kind: 'style-override-expression', path});
     }
   }
 
@@ -252,50 +228,6 @@ function resolveMappingReferences(
 
   apply(icons, `maps.${mapName}.icons`, []);
   return result;
-}
-
-function collectThemeLayers(
-  project: TileflowProjectConfig,
-  mapName: string,
-  theme: TileflowProjectConfig['maps'][string]['theme'],
-  result: Array<{layers: Record<string, TileflowStyleLayerOverride>; path: string}>,
-): void {
-  function apply(
-    value: string | TileflowThemeConfig | undefined,
-    path: string,
-    rootPath: readonly string[],
-  ): void {
-    if (!value) {
-      return;
-    }
-
-    if (typeof value === 'string') {
-      const custom = Object.hasOwn(project.themes ?? {}, value)
-        ? project.themes?.[value]
-        : undefined;
-
-      if (!custom) {
-        return;
-      }
-
-      if (rootPath.includes(value)) {
-        throw new Error(`Circular Tileflow theme extends: ${[...rootPath, value].join(' -> ')}`);
-      }
-
-      apply(custom, `themes.${value}`, [...rootPath, value]);
-      return;
-    }
-
-    if (value.extends) {
-      apply(value.extends, path, rootPath);
-    }
-
-    if (value.layers) {
-      result.push({layers: value.layers, path: `${path}.layers`});
-    }
-  }
-
-  apply(theme, `maps.${mapName}.theme`, []);
 }
 
 function inspectIconImageValue(value: unknown): {

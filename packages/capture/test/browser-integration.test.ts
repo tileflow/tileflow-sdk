@@ -107,23 +107,28 @@ test(
         `export default {
   maps: {
     proof: {
-      renderer: 'generated',
-      labels: 'none',
-      poi: 'none',
-      buildings: 'hidden',
-      modules: [{
+      basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
+      modules: {roads: {
         type: 'roads', detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
-        extras: {ferry: false, paths: true, rail: true}
-      }]
+        extras: {paths: true}
+      }}
     }
   }
 };\n`,
       );
-      const artifacts = await createTileflowBuildArtifacts({cwd, tileBaseUrl: origin});
+      const artifacts = await createTileflowBuildArtifacts({
+        apiBaseUrl: origin,
+        assetBaseUrl: tileflowSyntheticAssetOrigin,
+        cwd,
+      });
       const generatedStyle = artifacts.styles.proof;
       assert.ok(generatedStyle);
-      assert.ok(generatedStyle.layers.some((layer) => layer.id === 'roads-casing'));
-      assert.ok(generatedStyle.layers.some((layer) => layer.id === 'roads-bridges'));
+      assert.ok(
+        generatedStyle.layers.some((layer) => layer.id === 'streets-road-surface-primary-casing'),
+      );
+      assert.ok(
+        generatedStyle.layers.some((layer) => layer.id === 'streets-road-bridge-primary-fill'),
+      );
       browser = await launchTileflowCaptureBrowser({allowInstall: false});
       const first = await captureStandaloneTileflowScene({
         assets: artifacts.assets,

@@ -68,7 +68,7 @@ test('absent proposed packages and unavailable historical mappings remain explic
   const baselinePackage = await createBaselinePackage(fixture.directory);
   await writeFile(
     fixture.configPath,
-    `export default {maps: {production: {name: 'Production'}}};\n`,
+    `export default {maps: {production: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, modules: {poi: {type: 'poi', icons: false}}, name: 'Production'}}};\n`,
   );
   const requests: Array<{authorization?: string; method?: string; url?: string}> = [];
   const api = await createIconDiffApi(t, baselinePackage, requests, {mappingAvailable: false});
@@ -125,7 +125,7 @@ test('a mapping-only revision changes policy output without inventing pixel chan
   const baselinePackage = await createBaselinePackage(fixture.directory);
   await writeFile(
     fixture.configPath,
-    `export default {maps: {production: {icons: {mapping: {health: 'clinic'}, source: './baseline-icons'}}}};\n`,
+    `export default {maps: {production: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, icons: {mapping: {health: 'clinic'}, source: './baseline-icons'}}}};\n`,
   );
   const requests: Array<{authorization?: string; method?: string; url?: string}> = [];
   const api = await createIconDiffApi(t, baselinePackage, requests);
@@ -434,6 +434,7 @@ async function createLocalFixture(t: TestContext) {
     `export default {
   maps: {
     production: {
+      basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
       icons: {mapping: {health: 'hospital'}, source: './icons'},
       name: 'Production'
     }
@@ -451,7 +452,14 @@ async function createBaselinePackage(directory: string): Promise<CompiledTileflo
   await writeSvg(join(source, 'cafe.svg'), '#ef8354');
   await writeSvg(join(source, 'hospital.svg'), '#2563eb');
   const compiled = await compileTileflowIconPackages(
-    {maps: {production: {icons: {source: './baseline-icons'}}}},
+    {
+      maps: {
+        production: {
+          basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
+          icons: {source: './baseline-icons'},
+        },
+      },
+    },
     {cwd: directory, target: 'hosted'},
   );
   const iconPackage = compiled.packages[0];

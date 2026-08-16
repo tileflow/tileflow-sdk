@@ -51,7 +51,7 @@ camera, and viewport:
 
 ```ts
 export default {
-  maps: {madrid: {}},
+  maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}}},
   scenes: {
     'madrid-desktop': {
       map: 'madrid',
@@ -219,7 +219,7 @@ Inspect account and project context explicitly:
 npm exec --no -- tileflow whoami --json
 npm exec --no -- tileflow projects list --json
 npm exec --no -- tileflow deploy --project @acme/web
-npm exec --no -- tileflow tileset upload data.pmtiles --id madrid --project @acme/web
+npm exec --no -- tileflow status --project @acme/web
 npm exec --no -- tileflow projects archive @acme/legacy --json
 npm exec --no -- tileflow logout
 ```
@@ -239,7 +239,7 @@ it is combined with `--project`, the selector is an assertion: the CLI checks
 `/v1/me` and rejects any mismatch before loading executable config or writing.
 
 The CI key grants only `styles:write` and `status:read`. It cannot upload
-tilesets or render images. Give it an expiration, rotate the repository secret
+datasets or render images. Give it an expiration, rotate the repository secret
 before it expires, and avoid non-expiring CI keys.
 
 Detected CI never falls back to the credential saved by `tileflow login`: if
@@ -282,8 +282,19 @@ after deploy when the app deliberately packages
 the manifest as an explicit artifact between jobs. A retry of the same compiled
 style and delivery policy reuses its deployment version and prints
 `Unchanged`; changed desired state prints `Published` with a new version. The
-fingerprint binds resource references, not the changing bytes behind external
-URLs. Named maps still publish one at a time and may partially succeed.
+fingerprint binds resource references, not the changing bytes behind referenced
+glyph or sprite URLs. Named maps still publish one at a time and may partially succeed.
+
+Deploy treats the locally compiled MapLibre Style JSON as the cartographic
+artifact. The request contains that style, its canonical SHA-256 receipt, and
+only bounded hosting policy that does not belong in MapLibre itself, such as
+`allowedOrigins` and the managed icon mapping. It does not serialize the
+module configuration, send a public `tileset` selector, or ask the hosted API
+to compile the map again. Hosted publication currently requires Tileflow World;
+`vectorTiles()` remains available for local builds and previews but fails deploy
+before any remote write. The API binds recognized Tileflow-owned world and
+terrain URLs to its generated map ID. A successful deploy writes manifest schema
+2 with stable hosted style URLs rather than duplicating dataset configuration.
 
 For an icon set with `source: './icons'`, hosted validation compiles the local
 SVG/PNG/JPEG/WebP files without a key. Deploy uploads the four generated sprite

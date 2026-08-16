@@ -1,4 +1,4 @@
-import type {TileflowProjectConfig} from './compiler';
+import type {TileflowProjectConfig} from './project';
 
 export function defineTileflow<const TConfig extends TileflowProjectConfig>(
   config: TConfig,

@@ -58,7 +58,6 @@
   export let styleBaseUrl: string | undefined = undefined;
   export let styleUrl: string | undefined = undefined;
   export let themes: TileflowProjectThemes | undefined = undefined;
-  export let tileBaseUrl: string | undefined = undefined;
   export let zoom: number | undefined = undefined;
 
   let container: HTMLDivElement;
@@ -110,7 +109,6 @@
         styleBaseUrl,
         styleUrl,
         themes,
-        tileBaseUrl,
       });
   $: resolvedAnalytics = mergeTileflowAnalytics(analytics, runtimeStyle?.analytics);
   $: runtimeImageUrl =
@@ -138,7 +136,6 @@
     styleBaseUrl;
     styleUrl;
     themes;
-    tileBaseUrl;
     void refresh();
   }
 

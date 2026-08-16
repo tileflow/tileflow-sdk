@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {once} from 'node:events';
 import {createServer} from 'node:http';
 import test from 'node:test';
-import {defineTileflow} from '@tileflow/core';
+import {defineTileflow, openMapTiles, streets, vectorTiles} from '@tileflow/core';
 import {inspectTileflowFeatures} from '../src/feature-inspection';
 
 const tile = Buffer.from(
@@ -44,8 +44,12 @@ test('inspects bounded features deterministically and projects only requested pr
   const project = defineTileflow({
     maps: {
       fixture: {
-        renderer: 'generated',
-        tiles: {url: `http://127.0.0.1:${port}/tiles.json?key=HIDDEN`},
+        basemap: streets(),
+        data: vectorTiles({
+          attribution: 'Fixture data',
+          schema: openMapTiles(),
+          url: `http://127.0.0.1:${port}/tiles.json?key=HIDDEN`,
+        }),
       },
     },
   });
@@ -103,8 +107,13 @@ test('rejects unbounded and non-HTTP inspection inputs before fetching', async (
   const project = defineTileflow({
     maps: {
       fixture: {
-        renderer: 'generated',
-        tiles: {url: 'file:///tmp/tiles.json'},
+        basemap: streets(),
+        data: {
+          type: 'vector-tiles',
+          attribution: 'Fixture data',
+          schema: openMapTiles(),
+          url: 'file:///tmp/tiles.json',
+        },
       },
     },
   });
@@ -134,7 +143,7 @@ test('rejects unbounded and non-HTTP inspection inputs before fetching', async (
         sourceLayers: ['poi'],
         zoom: 5,
       }),
-    /must use HTTP or HTTPS/,
+    /must not use the file protocol/,
   );
   assert.equal(fetched, false);
 });

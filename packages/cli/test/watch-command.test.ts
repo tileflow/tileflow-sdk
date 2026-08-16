@@ -148,11 +148,13 @@ const validConfig = `import tokens from './tokens.json';
 export default {
   maps: {
     main: {
-      renderer: 'generated',
-      labels: 'none',
-      poi: 'none',
-      roads: 'hidden',
-      buildings: 'hidden',
+      basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
+      modules: {
+        buildings: {type: 'buildings', enabled: false},
+        labels: {type: 'labels', enabled: false},
+        poi: {type: 'poi', enabled: false},
+        roads: {type: 'roads', enabled: false}
+      },
       theme: {colors: {background: tokens.background}}
     }
   },

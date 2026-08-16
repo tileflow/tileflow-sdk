@@ -1,5 +1,6 @@
 # Tileflow SDK documentation
 
+- [Active execution plans](plans/README.md)
 - [Local visual capture contract](contracts/local-visual-capture.md)
 - [Cartographic authoring contract](contracts/cartographic-authoring.md)
 - [Framework browser runtime contract](contracts/framework-browser-runtime.md)

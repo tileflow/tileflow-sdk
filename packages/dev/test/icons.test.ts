@@ -4,12 +4,57 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import test from 'node:test';
 import sharp from 'sharp';
-import {diffTileflowIconPackageManifests, type TileflowProjectConfig} from '@tileflow/core';
+import {
+  createStyleFromProject,
+  diffTileflowIconPackageManifests,
+  streets,
+  type TileflowProjectConfig,
+  tileflowStreetsPoiIconMapping,
+} from '@tileflow/core';
 import {
   compileTileflowIconPackages,
   prepareTileflowProjectIcons,
   TileflowIconCompilationError,
 } from '../src/index';
+
+test('supplies the built-in Streets POI sprite for local and hosted artifacts', async () => {
+  await withFixture(async (cwd) => {
+    const project: TileflowProjectConfig = {maps: {main: {basemap: streets()}}};
+    const compiled = await compileTileflowIconPackages(project, {cwd, target: 'hosted'});
+
+    assert.deepEqual(compiled.watchPaths, []);
+    assert.deepEqual(compiled.packages[0]?.manifest.iconNames, [
+      'cafe',
+      'hospital',
+      'hotel',
+      'museum',
+      'restaurant',
+      'school',
+      'services',
+      'shopping',
+      'train',
+    ]);
+    assert.deepEqual(compiled.bindings, [
+      {
+        label: 'tileflow-streets',
+        mapName: 'main',
+        mapping: tileflowStreetsPoiIconMapping,
+        packageHash: compiled.packages[0]?.contentHash,
+      },
+    ]);
+
+    const prepared = await prepareTileflowProjectIcons(project, {assetBaseUrl: '/tileflow', cwd});
+    assert.equal(prepared.assets.length, 4);
+    assert.deepEqual(prepared.project.maps.main?.icons, {
+      mapping: tileflowStreetsPoiIconMapping,
+      sprite: '/tileflow/icons/main/sprite',
+    });
+
+    const style = createStyleFromProject(prepared.project, 'main');
+    assert.equal(style.sprite, '/tileflow/icons/main/sprite');
+    assert.ok(style.layers.some((layer) => layer.id === 'streets-poi-food-icon'));
+  });
+});
 
 test('compiles exact deterministic packages, deduplicates shared sources, and preserves local paths', async () => {
   await withFixture(async (cwd) => {

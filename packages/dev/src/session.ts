@@ -102,11 +102,11 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
     this.#ignoredPaths = (options.ignoredPaths ?? []).map((path) => resolve(this.#cwd, path));
     this.#buildArtifacts = buildArtifacts;
     this.#buildOptions = {
+      apiBaseUrl: options.apiBaseUrl,
       assetBaseUrl: options.assetBaseUrl,
       config: options.config,
       cwd: this.#cwd,
       styleBaseUrl: options.styleBaseUrl,
-      tileBaseUrl: options.tileBaseUrl,
     };
   }
 

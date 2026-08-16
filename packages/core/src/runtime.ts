@@ -1,9 +1,5 @@
-import {
-  createStyle,
-  type MapLibreStyle,
-  type TileflowConfig,
-  type TileflowProjectThemes,
-} from './compiler';
+import {createStyle, type TileflowConfig} from './project';
+import {type MapLibreStyle, type TileflowProjectThemes} from './types';
 
 export const defaultTileflowManifestUrl = '/tileflow/manifest.json';
 export const defaultTileflowStyleBaseUrl = 'http://localhost:3333';
@@ -86,7 +82,6 @@ export type TileflowRuntimeManifestMapEntry =
       mapId?: string;
       styleId?: string;
       styleUrl?: string;
-      tilesetId?: string;
       url?: string;
     };
 
@@ -94,8 +89,7 @@ export type TileflowRuntimeManifest = {
   apiUrl?: string;
   maps?: Record<string, TileflowRuntimeManifestMapEntry>;
   styles?: Record<string, string>;
-  tileBaseUrl?: string;
-  version?: number;
+  version?: 2;
 };
 
 export type TileflowRuntimeManifestMap = {
@@ -119,7 +113,6 @@ export type TileflowRuntimeStyleOptions = {
   styleBaseUrl?: string;
   styleUrl?: string;
   themes?: TileflowProjectThemes;
-  tileBaseUrl?: string;
 };
 
 export type TileflowManifestLoadOptions = {
@@ -185,10 +178,11 @@ export function resolveTileflowRuntimeStyle(
     return null;
   }
 
+  if (!options.config) return null;
+
   return {
     style: createStyle(options.config, {
       themes: options.themes,
-      tileBaseUrl: options.tileBaseUrl,
     }),
   };
 }

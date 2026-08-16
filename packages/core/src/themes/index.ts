@@ -4,19 +4,14 @@ import type {
   TileflowBoundaryColorConfig,
   TileflowBuildingColorConfig,
   TileflowColorConfig,
-  TileflowConfig,
   TileflowFontWeight,
   TileflowHydroColorConfig,
   TileflowLabelColorConfig,
-  TileflowLabels,
   TileflowLandcoverColorConfig,
   TileflowLanduseColorConfig,
-  TileflowPoi,
   TileflowPoiColorConfig,
   TileflowProjectThemes,
   TileflowRoadColorConfig,
-  TileflowRoads,
-  TileflowStyleLayerOverride,
   TileflowTheme,
   TileflowThemeConfig,
   TileflowThemeMode,
@@ -24,7 +19,7 @@ import type {
   TileflowTypography,
   TileflowTypographyDomain,
   TileflowTypographyStyle,
-} from '../compiler';
+} from '../types';
 
 type ResolvedColorGroup<TConfig> = {
   [TKey in keyof Required<TConfig>]: string;
@@ -40,11 +35,6 @@ export type TileflowResolvedBuildingColors = ResolvedColorGroup<TileflowBuilding
 export type TileflowResolvedBoundaryColors = ResolvedColorGroup<TileflowBoundaryColorConfig>;
 
 export type TileflowResolvedColors = {[TKey in keyof TileflowBaseColors]: string} & {
-  canvas: string;
-  greenspace: string;
-  nature: string;
-  roadCasing: string;
-  roadMinor: string;
   boundaries: TileflowResolvedBoundaryColors;
   buildings: TileflowResolvedBuildingColors;
   hydro: TileflowResolvedHydroColors;
@@ -57,34 +47,21 @@ export type TileflowResolvedColors = {[TKey in keyof TileflowBaseColors]: string
 
 export type TileflowThemePreset = {
   colors: TileflowColorConfig;
-  density: TileflowConfig['density'];
-  labels: TileflowLabels;
-  poi: TileflowPoi;
-  roads: TileflowRoads;
 };
 
 export type ResolvedTileflowTheme = {
-  colorOverrides: TileflowColorConfig;
   colors: TileflowColorConfig;
-  custom: boolean;
-  layerOverrides: Record<string, TileflowStyleLayerOverride>;
   mode: TileflowThemeMode;
-  moduleOverrides: TileflowThemeModulesConfig;
   modules: TileflowThemeModulesConfig;
   name: string;
-  preset: TileflowThemePreset;
   typography: ResolvedTileflowTypography;
-  typographyOverridden: boolean;
 };
 
 const defaultColors = {
   background: '#F6F7F3',
-  canvas: '#F6F7F3',
   land: '#F1F3ED',
   water: '#A9D3F5',
   park: '#CDE8B5',
-  greenspace: '#CDE8B5',
-  nature: '#CDE8B5',
   building: '#E6E3DA',
   road: '#FFFFFF',
   roadMajor: '#F4C95D',
@@ -97,10 +74,6 @@ const defaultColors = {
 const themePresets = {
   standard: {
     colors: defaultColors,
-    density: 'balanced',
-    labels: 'balanced',
-    poi: 'minimal',
-    roads: 'standard',
   },
   light: {
     colors: {
@@ -108,7 +81,6 @@ const themePresets = {
       land: '#F6F7F3',
       water: '#C5E1F5',
       park: '#DDEED2',
-      greenspace: '#DDEED2',
       building: '#ECEAE4',
       road: '#FFFFFF',
       roadMajor: '#F7D58A',
@@ -117,10 +89,6 @@ const themePresets = {
       textMuted: '#87909A',
       textHalo: '#FFFFFF',
     },
-    density: 'clean',
-    labels: 'essential',
-    poi: 'minimal',
-    roads: 'standard',
   },
   dark: {
     colors: {
@@ -128,7 +96,6 @@ const themePresets = {
       land: '#232B32',
       water: '#18384D',
       park: '#274230',
-      greenspace: '#274230',
       building: '#2F363D',
       road: '#39434D',
       roadMajor: '#6E7580',
@@ -137,10 +104,6 @@ const themePresets = {
       textMuted: '#A3AFBA',
       textHalo: '#1C2228',
     },
-    density: 'balanced',
-    labels: 'balanced',
-    poi: 'minimal',
-    roads: 'standard',
   },
   minimal: {
     colors: {
@@ -148,7 +111,6 @@ const themePresets = {
       land: '#F7F7F2',
       water: '#D6EAF6',
       park: '#E5EEDB',
-      greenspace: '#E5EEDB',
       building: '#F0EEE8',
       road: '#FFFFFF',
       roadMajor: '#E5E0D7',
@@ -157,41 +119,16 @@ const themePresets = {
       textMuted: '#8E969F',
       textHalo: '#FFFFFF',
     },
-    density: 'clean',
-    labels: 'essential',
-    poi: 'none',
-    roads: 'soft',
-  },
-  'osm-bright-2': {
-    colors: {
-      background: '#EBE9E4',
-      land: '#F5F4F1',
-      water: '#AADAFF',
-      park: '#C7E6A8',
-      greenspace: '#C7E6A8',
-      building: '#EFEDE7',
-      road: '#FFFFFF',
-      roadMajor: '#F9C97C',
-      boundary: '#B8C0CA',
-      text: '#5F6368',
-      textMuted: '#87909A',
-      textHalo: '#FFFFFF',
-    },
-    density: 'balanced',
-    labels: 'balanced',
-    poi: 'balanced',
-    roads: 'detailed',
   },
 } as const satisfies Record<TileflowTheme, TileflowThemePreset>;
 
 const defaultTypography = {
   font: 'Noto Sans',
-  fontFamily: 'Noto Sans',
   weight: 'regular',
-  places: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular'},
-  roads: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular'},
-  water: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular'},
-  poi: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular'},
+  places: {font: 'Noto Sans', weight: 'regular'},
+  roads: {font: 'Noto Sans', weight: 'regular'},
+  water: {font: 'Noto Sans', weight: 'regular'},
+  poi: {font: 'Noto Sans', weight: 'regular'},
 } satisfies ResolvedTileflowTypography;
 
 const fontWeightLabels = {
@@ -201,16 +138,12 @@ const fontWeightLabels = {
   bold: 'Bold',
 } satisfies Record<TileflowFontWeight, string>;
 
-export function getDefaultColors(): TileflowBaseColors & {
-  canvas: string;
-  greenspace: string;
-  nature: string;
-} {
+export function getDefaultColors(): TileflowBaseColors {
   return {...defaultColors};
 }
 
 export function resolveTheme(
-  theme: TileflowConfig['theme'],
+  theme: TileflowTheme | string | TileflowThemeConfig | undefined,
   projectThemes: TileflowProjectThemes | undefined,
 ): ResolvedTileflowTheme {
   if (!theme) {
@@ -238,10 +171,10 @@ export function resolveColors(
   moduleOverrides: TileflowThemeModulesConfig = {},
   moduleDefaults: TileflowThemeModulesConfig = {},
 ): TileflowResolvedColors {
-  const defaultInput = normalizeColorAliases(defaults);
-  const overrideInput = normalizeColorAliases(overrides);
-  const defaultModules = mergeThemeModules(extractLegacyModuleColors(defaults), moduleDefaults);
-  const overrideModules = mergeThemeModules(extractLegacyModuleColors(overrides), moduleOverrides);
+  const defaultInput = defaults;
+  const overrideInput = overrides;
+  const defaultModules = moduleDefaults;
+  const overrideModules = moduleOverrides;
   const base = resolveBaseColors(overrideInput, defaultInput);
   const baseRoadCasing =
     overrideInput.roadCasing ?? defaultInput.roadCasing ?? mix(base.road, base.text, 0.2);
@@ -249,11 +182,6 @@ export function resolveColors(
     overrideModules.roads?.casing ?? defaultModules.roads?.casing ?? baseRoadCasing;
   const baseResolved = {
     ...base,
-    canvas: base.background,
-    greenspace: base.park,
-    nature: base.park,
-    roadCasing,
-    roadMinor: base.road,
   };
   const roadDefaults = {
     bridge: base.roadMajor,
@@ -380,11 +308,8 @@ function resolveTypographyStyle(
   overrides: TileflowTypographyStyle | undefined,
   defaults: Required<TileflowTypographyStyle>,
 ): Required<TileflowTypographyStyle> {
-  const font = overrides?.font ?? overrides?.fontFamily ?? defaults.font;
-
   return {
-    font,
-    fontFamily: font,
+    font: overrides?.font ?? defaults.font,
     weight: overrides?.weight ?? defaults.weight,
   };
 }
@@ -395,15 +320,12 @@ function resolveTypographyDomain(
   defaults: Required<TileflowTypographyStyle>,
   resolvedGlobal: Required<TileflowTypographyStyle>,
 ): Required<TileflowTypographyStyle> {
-  const globalFontOverridden = Boolean(globalOverrides.font || globalOverrides.fontFamily);
+  const globalFontOverridden = Boolean(globalOverrides.font);
   const font =
-    domainOverrides?.font ??
-    domainOverrides?.fontFamily ??
-    (globalFontOverridden ? resolvedGlobal.font : defaults.font);
+    domainOverrides?.font ?? (globalFontOverridden ? resolvedGlobal.font : defaults.font);
 
   return {
     font,
-    fontFamily: font,
     weight: domainOverrides?.weight ?? globalOverrides.weight ?? defaults.weight,
   };
 }
@@ -413,17 +335,11 @@ function resolveLegacyTheme(theme: TileflowTheme): ResolvedTileflowTheme {
   const mode = theme === 'dark' ? 'dark' : 'light';
 
   return {
-    colorOverrides: theme === 'light' ? {} : preset.colors,
     colors: preset.colors,
-    custom: false,
-    layerOverrides: {},
     mode,
-    moduleOverrides: {},
     modules: {},
     name: theme,
-    preset,
     typography: defaultTypography,
-    typographyOverridden: false,
   };
 }
 
@@ -444,7 +360,7 @@ function resolveProjectTheme(
 
   const base = resolveThemeBase(theme, name, projectThemes, [...seen, name]);
 
-  return resolveThemeConfig(name, theme, base, true);
+  return resolveThemeConfig(name, theme, base);
 }
 
 function resolveInlineTheme(
@@ -453,7 +369,7 @@ function resolveInlineTheme(
 ): ResolvedTileflowTheme {
   const base = resolveThemeBase(theme, 'inline', projectThemes, ['inline']);
 
-  return resolveThemeConfig('inline', theme, base, true);
+  return resolveThemeConfig('inline', theme, base);
 }
 
 function resolveThemeBase(
@@ -485,35 +401,19 @@ function resolveThemeConfig(
   name: string,
   theme: TileflowThemeConfig,
   base: ResolvedTileflowTheme,
-  custom: boolean,
 ): ResolvedTileflowTheme {
-  const themeColorOverrides = normalizeColorAliases(theme.colors);
-  const themeModuleOverrides = mergeThemeModules(
-    extractLegacyModuleColors(theme.colors),
-    theme.modules,
-  );
-  const colorOverrides = mergeColorConfigs(base.colorOverrides, themeColorOverrides);
+  const themeColorOverrides = theme.colors ?? {};
+  const themeModuleOverrides = theme.modules ?? {};
   const colors = mergeColorConfigs(base.colors, themeColorOverrides);
-  const moduleOverrides = mergeThemeModules(base.moduleOverrides, themeModuleOverrides);
   const modules = mergeThemeModules(base.modules, themeModuleOverrides);
   const mode = theme.mode ?? base.mode;
-  const preset = {
-    ...base.preset,
-    colors,
-  };
 
   return {
-    colorOverrides,
     colors,
-    custom,
-    layerOverrides: mergeStyleLayerOverrides(base.layerOverrides, theme.layers),
     mode,
-    moduleOverrides,
     modules,
     name,
-    preset,
     typography: resolveTypography(resolveThemeTypography(theme), base.typography),
-    typographyOverridden: base.typographyOverridden || hasTypographyConfig(theme),
   };
 }
 
@@ -522,11 +422,7 @@ function isLegacyTheme(value: string): value is TileflowTheme {
 }
 
 function resolveThemeTypography(theme: TileflowThemeConfig): TileflowTypography {
-  const font =
-    theme.typography?.font ??
-    theme.typography?.fontFamily ??
-    theme.fonts?.labels ??
-    theme.fonts?.body;
+  const font = theme.typography?.font;
 
   return {
     ...(theme.typography?.places ? {places: theme.typography.places} : {}),
@@ -538,49 +434,14 @@ function resolveThemeTypography(theme: TileflowThemeConfig): TileflowTypography 
   };
 }
 
-function hasTypographyConfig(theme: TileflowThemeConfig): boolean {
-  return Boolean(
-    theme.typography?.font ||
-    theme.typography?.fontFamily ||
-    theme.typography?.weight ||
-    theme.typography?.places ||
-    theme.typography?.poi ||
-    theme.typography?.roads ||
-    theme.typography?.water ||
-    theme.fonts?.labels ||
-    theme.fonts?.body,
-  );
-}
-
-function normalizeColorAliases(colors: TileflowColorConfig | undefined): TileflowColorConfig {
-  if (!colors) {
-    return {};
-  }
-
-  return {
-    ...colors,
-    background: colors.background ?? colors.canvas,
-    park: colors.park ?? colors.greenspace ?? colors.nature,
-    greenspace: colors.greenspace ?? colors.park ?? colors.nature,
-  };
-}
-
 function resolveBaseColors(
   overrides: TileflowColorConfig,
   defaults: TileflowColorConfig,
 ): TileflowBaseColors {
-  const background =
-    overrides.background ?? defaults.background ?? defaults.canvas ?? defaultColors.background;
+  const background = overrides.background ?? defaults.background ?? defaultColors.background;
   const land = overrides.land ?? defaults.land ?? defaultColors.land;
   const water = overrides.water ?? defaults.water ?? defaultColors.water;
-  const park =
-    overrides.park ??
-    overrides.greenspace ??
-    overrides.nature ??
-    defaults.park ??
-    defaults.greenspace ??
-    defaults.nature ??
-    defaultColors.park;
+  const park = overrides.park ?? defaults.park ?? defaultColors.park;
   const road = overrides.road ?? defaults.road ?? defaultColors.road;
   const text = overrides.text ?? defaults.text ?? defaultColors.text;
   const textMuted = overrides.textMuted ?? defaults.textMuted ?? mix(text, background, 0.42);
@@ -606,43 +467,8 @@ function mergeColorConfigs(
   overrides: TileflowColorConfig = {},
 ): TileflowColorConfig {
   return {
-    ...stripLegacyModuleColors(defaults),
-    ...stripLegacyModuleColors(overrides),
-  };
-}
-
-function stripLegacyModuleColors(colors: TileflowColorConfig): TileflowColorConfig {
-  const {
-    boundaries: _boundaries,
-    buildings: _buildings,
-    hydro: _hydro,
-    labels: _labels,
-    landcover: _landcover,
-    landuse: _landuse,
-    poi: _poi,
-    roads: _roads,
-    ...baseColors
-  } = colors;
-
-  return baseColors;
-}
-
-function extractLegacyModuleColors(
-  colors: TileflowColorConfig | undefined,
-): TileflowThemeModulesConfig {
-  if (!colors) {
-    return {};
-  }
-
-  return {
-    ...(colors.boundaries ? {boundaries: colors.boundaries} : {}),
-    ...(colors.buildings ? {buildings: colors.buildings} : {}),
-    ...(colors.hydro ? {hydro: colors.hydro} : {}),
-    ...(colors.labels ? {labels: colors.labels} : {}),
-    ...(colors.landcover ? {landcover: colors.landcover} : {}),
-    ...(colors.landuse ? {landuse: colors.landuse} : {}),
-    ...(colors.poi ? {poi: colors.poi} : {}),
-    ...(colors.roads ? {roads: colors.roads} : {}),
+    ...defaults,
+    ...overrides,
   };
 }
 
@@ -673,16 +499,6 @@ function mergeThemeModuleGroup<TKey extends keyof TileflowThemeModulesConfig>(
   };
 
   return Object.keys(value).length > 0 ? {[key]: value} : {};
-}
-
-function mergeStyleLayerOverrides(
-  defaults: Record<string, TileflowStyleLayerOverride> = {},
-  overrides: Record<string, TileflowStyleLayerOverride> = {},
-): Record<string, TileflowStyleLayerOverride> {
-  return {
-    ...defaults,
-    ...overrides,
-  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

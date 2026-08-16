@@ -32,7 +32,6 @@ export type TileflowMapProps = {
   styleBaseUrl?: string;
   styleUrl?: string;
   themes?: TileflowProjectThemes;
-  tileBaseUrl?: string;
   zoom?: number;
 };
 

@@ -188,8 +188,8 @@ part of the primary vector-data API.
       the remote-dependent Barcelona scene. Final evidence is 79/79 core tests, 3/3 Streets tests,
       `pnpm check`, `pnpm build`, `pnpm run smoke:capture-public`, and
       `pnpm run publish:alpha:dry-run` without publishing.
-- [x] (2026-08-16) Replaced the low-contrast tunnel stack with a semantic hatch phase: an opaque
-      pale deck, thin casing, and optional repeated diagonal marks that inherit the resolved road
+- [x] (2026-08-16) Replaced the low-contrast tunnel stack with a semantic hatch phase: a
+      translucent pale deck, thin casing, and optional repeated diagonal marks that inherit the resolved road
       width without entering MapLibre collision placement. Added the reusable `LineHatchStyle`
       vocabulary to road structures, updated Streets and Uber receipts/baselines, and raised the
       durable Streets contract to version 3 because the generated hatch layer adds a stable public
@@ -198,6 +198,12 @@ part of the primary vector-data API.
       and reviewed; the final Streets comparison kept the tunnel scene exact and reported only two
       exact, zero-perceptual remote pixels in each of three other scenes. Final `pnpm check`,
       `pnpm build`, packaged public smoke, and alpha publication dry-run all pass without publishing.
+- [x] (2026-08-16) Moved the complete tunnel stack below buildings, pedestrian areas, surface and
+      bridge transport, and shared symbols so underground roads cannot cover monument geometry or
+      POIs. Added an explicit graph-order invariant; the focused cartography and Streets tests pass
+      8/8, and all twelve reviewed Streets visual scenes compare unchanged after accepting the new
+      baselines, including the Plaza de Castilla tunnel scene. Final `pnpm check`, `pnpm build`,
+      packaged public smoke, and alpha publication dry-run pass without publishing.
 
 ## Surprises & Discoveries
 

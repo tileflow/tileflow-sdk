@@ -133,9 +133,19 @@ test('compiles road classes, structures, phases, and exact semantic overrides', 
   const primary = contributions.find(
     (entry) => entry.layer.id === 'streets-road-surface-primary-fill',
   )!;
+  const tunnelCasing = contributions.find(
+    (entry) => entry.layer.id === 'streets-road-tunnel-primary-casing',
+  )!;
+  const tunnelFill = contributions.find(
+    (entry) => entry.layer.id === 'streets-road-tunnel-primary-fill',
+  )!;
 
   assert.ok(ids.includes('streets-road-tunnel-motorway-fill'));
   assert.ok(ids.includes('streets-road-bridge-primary-casing'));
+  assert.equal((tunnelCasing.layer.layout as Record<string, unknown>)['line-cap'], 'butt');
+  assert.equal((tunnelFill.layer.layout as Record<string, unknown>)['line-cap'], 'butt');
+  assert.equal((tunnelCasing.layer.paint as Record<string, unknown>)['line-dasharray'], undefined);
+  assert.equal((tunnelFill.layer.paint as Record<string, unknown>)['line-dasharray'], undefined);
   assert.equal(
     ids.some((id) => id.includes('-minor-')),
     false,

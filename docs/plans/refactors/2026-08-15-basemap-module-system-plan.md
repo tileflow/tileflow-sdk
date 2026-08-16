@@ -180,6 +180,14 @@ part of the primary vector-data API.
       pass; regenerated and reviewed all eleven Streets baselines; and passed 79/79 core tests, 3/3
       Streets tests, `pnpm check`, `pnpm build`, `pnpm run smoke:capture-public`, and
       `pnpm run publish:alpha:dry-run`.
+- [x] (2026-08-16) Replaced capsule-shaped tunnel segments with continuous, square-ended road
+      stacks. Removed the broad dash pattern from the default and Streets recipe, kept tunnels
+      legible through width, tint, and opacity, and added a dedicated Plaza de Castilla tunnel
+      scene so the failure remains part of the reviewed visual suite. Regenerated and reviewed all
+      twelve Streets baselines; the exact recheck passed apart from seven non-perceptual pixels in
+      the remote-dependent Barcelona scene. Final evidence is 79/79 core tests, 3/3 Streets tests,
+      `pnpm check`, `pnpm build`, `pnpm run smoke:capture-public`, and
+      `pnpm run publish:alpha:dry-run` without publishing.
 
 ## Surprises & Discoveries
 
@@ -1324,7 +1332,8 @@ Initial world revision: 2026-06-07
 Lab: examples/tileflow-streets/tileflow.config.ts
 Application example: examples/uber/tileflow.config.ts with LA and NYC application scenes
 Scenes: madrid-overview, madrid-neighborhood, madrid-close-street, madrid-motorway,
-  madrid-airport, madrid-transit, madrid-rural-edge, barcelona-waterfront, madrid-mobile
+  madrid-airport, madrid-transit, madrid-tunnels, madrid-rural-edge, barcelona-waterfront,
+  madrid-mobile
 User-owned diff: editorial palette adjustments in lab config
 Baseline core: build passes; 46 tests pass via node --import tsx --test before ledger test
 Ledger checkpoint: 47 core tests pass after adding the frozen ownership test

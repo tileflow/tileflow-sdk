@@ -432,8 +432,12 @@ function defaultClassStyles(
         {
           surface: base,
           tunnel: mergeTileflowDesign(base, {
-            casing: {color: context.colors.roads.tunnel, dash: [2, 1], opacity: 0.45},
-            fill: {dash: [2, 1], opacity: opacity * 0.45},
+            casing: {
+              cap: 'butt',
+              color: context.colors.roads.tunnel,
+              opacity: 0.4,
+            },
+            fill: {cap: 'butt', opacity: opacity * 0.6},
           }),
           bridge: mergeTileflowDesign(base, {
             casing: {opacity: Math.max(outlineOpacity, 0.35)},

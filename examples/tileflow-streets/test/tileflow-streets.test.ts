@@ -37,6 +37,7 @@ test('covers the canonical cartographic review surfaces with standalone scenes',
     'madrid-rural-edge',
     'madrid-sol-close',
     'madrid-transit',
+    'madrid-tunnels',
   ]);
   assert.equal(
     Object.values(project.scenes).every(

@@ -51,8 +51,8 @@ function cityRoadStyle(
   oneWayScale = 1,
 ): TileflowRoadClassStyle {
   // Tunnels keep most of the road hierarchy instead of collapsing into hairlines.
-  // A dashed casing distinguishes the underground segment without hiding its geometry.
-  const tunnelWidths = scaleStops(widths, 0.72);
+  // A continuous square-ended stack avoids capsule-shaped source segments and stripes.
+  const tunnelWidths = scaleStops(widths, 0.82);
   const fill = {
     cap: 'round' as const,
     color,
@@ -74,13 +74,15 @@ function cityRoadStyle(
     tunnel: {
       casing: {
         ...casing,
-        dash: [3, 2],
-        opacity: 0.86,
+        cap: 'butt',
+        color: '#B7C4D0',
+        opacity: 0.5,
         width: roadWidth(tunnelWidths, oneWayScale, true),
       },
       fill: {
         ...fill,
-        opacity: 0.74,
+        cap: 'butt',
+        opacity: 0.72,
         width: roadWidth(tunnelWidths, oneWayScale),
       },
     },
@@ -93,7 +95,7 @@ function pathRoadStyle(
   options: {casingColor?: string; dash?: readonly number[]} = {},
 ): TileflowRoadClassStyle {
   const fill = {
-    cap: 'round' as const,
+    cap: options.dash ? ('butt' as const) : ('round' as const),
     color,
     ...(options.dash ? {dash: [...options.dash]} : {}),
     join: 'round' as const,
@@ -115,7 +117,7 @@ function pathRoadStyle(
     bridge: {casing: casing ?? {visible: false}, fill},
     tunnel: {
       casing: {visible: false},
-      fill: {...fill, dash: [2, 2], opacity: 0.55},
+      fill: {...fill, cap: 'butt', dash: [1, 1], opacity: 0.5},
     },
   };
 }
@@ -307,9 +309,10 @@ export default defineTileflow({
             // Optional keys: access, bicycle, foot, horse, toll. A key styles explicit
             // restrictions for that mode without exposing OpenMapTiles field names.
             access: {
+              widthScale: 0.82,
               surface: {
-                casing: {color: '#B7A5AA', dash: [1, 1], opacity: 0.72},
-                fill: {color: '#E3D7DA', dash: [1, 1], opacity: 0.8},
+                casing: {color: '#B8C4CE', opacity: 0.52},
+                fill: {color: '#E0E6EA', opacity: 0.72},
               },
             },
             toll: {
@@ -866,6 +869,19 @@ export default defineTileflow({
         width: 1280, // Integer from 64 through 4096 CSS pixels.
         height: 800, // Integer from 64 through 4096 CSS pixels.
         dpr: 1, // 1 | 2; total physical pixels must not exceed 16,777,216.
+      },
+    },
+    'madrid-tunnels': {
+      map: 'editorial-city',
+      camera: {
+        type: 'center',
+        center: [-3.6892, 40.4668],
+        zoom: 17,
+      },
+      viewport: {
+        width: 720,
+        height: 1000,
+        dpr: 1,
       },
     },
     'madrid-rural-edge': {

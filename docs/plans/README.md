@@ -7,7 +7,7 @@ is complete.
 
 ## Active plans
 
-- [Build Tileflow Streets from universal cartographic modules](refactors/2026-08-15-basemap-module-system-plan.md)
+None.
 
 ## Deferred post-launch plans
 

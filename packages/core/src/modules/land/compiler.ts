@@ -6,22 +6,43 @@ import type {TileflowLandcoverClass, TileflowLandModuleConfig, TileflowLanduseCl
 
 const landuseClasses: Record<TileflowLanduseClass, readonly string[]> = {
   cemetery: ['cemetery'],
-  civic: ['school', 'university', 'hospital', 'civic'],
+  civic: [
+    'school',
+    'university',
+    'hospital',
+    'civic',
+    'college',
+    'kindergarten',
+    'education',
+    'library',
+  ],
   commercial: ['commercial', 'retail'],
   industrial: ['industrial'],
+  military: ['military'],
   railway: ['railway'],
+  recreation: ['pitch', 'track', 'playground', 'zoo'],
   residential: ['residential'],
 };
 
-const landcoverClasses: Record<TileflowLandcoverClass, readonly string[]> = {
-  farmland: ['farmland'],
-  grass: ['grass'],
-  ice: ['ice', 'glacier'],
-  park: ['park'],
-  protected: ['protected_area'],
-  sand: ['sand', 'beach'],
-  scrub: ['scrub'],
-  wood: ['wood', 'forest'],
+type TileflowLandcoverClassMatch = {
+  class: readonly string[];
+  subclass?: readonly string[];
+};
+
+// `scrub` has no dedicated top-level `class` value in the source data — it
+// only ever appears as `class: 'grass', subclass: 'scrub'` — so it needs a
+// subclass filter on top of the class filter to separate it from plain grass.
+const landcoverClasses: Record<TileflowLandcoverClass, TileflowLandcoverClassMatch> = {
+  farmland: {class: ['farmland']},
+  grass: {class: ['grass']},
+  ice: {class: ['ice', 'glacier']},
+  park: {class: ['park']},
+  protected: {class: ['protected_area']},
+  rock: {class: ['rock']},
+  sand: {class: ['sand', 'beach']},
+  scrub: {class: ['grass'], subclass: ['scrub']},
+  wetland: {class: ['wetland']},
+  wood: {class: ['wood', 'forest']},
 };
 
 export function compileLand(
@@ -39,7 +60,9 @@ export function compileLand(
         civic: {fill: {color: colors.landuse.civic, opacity: 0.62}},
         commercial: {fill: {color: colors.landuse.commercial, opacity: 0.62}},
         industrial: {fill: {color: colors.landuse.industrial, opacity: 0.62}},
+        military: {fill: {color: colors.landuse.military, opacity: 0.5}},
         railway: {fill: {color: colors.landuse.industrial, opacity: 0.62}},
+        recreation: {fill: {color: colors.landuse.recreation, opacity: 0.62}},
         residential: {fill: {color: colors.landuse.residential, opacity: 0.62}},
       },
       landcover: {
@@ -48,8 +71,10 @@ export function compileLand(
         ice: {fill: {color: colors.landcover.ice, opacity: 0.88}},
         park: {fill: {color: colors.landcover.park, opacity: 0.78}},
         protected: {fill: {color: colors.landcover.protected, opacity: 0.88}},
+        rock: {fill: {color: colors.landcover.rock, opacity: 0.85}},
         sand: {fill: {color: colors.landcover.sand, opacity: 0.88}},
         scrub: {fill: {color: colors.landcover.protected, opacity: 0.88}},
+        wetland: {fill: {color: colors.landcover.wetland, opacity: 0.82}},
         wood: {fill: {color: colors.landcover.wood, opacity: 0.88}},
       },
     },
@@ -61,6 +86,7 @@ export function compileLand(
   const source = context.data.sourceId;
   const schema = context.data.schema;
   const classField = schema.fields.class;
+  const subclassField = schema.fields.subclass;
   const contributions: TileflowLayerContribution[] = [];
 
   if (config.background?.visible !== false) {
@@ -95,7 +121,7 @@ export function compileLand(
           'match',
           ['get', classField],
           'barren',
-          colors.landcover.sand,
+          colors.landcover.rock,
           'crop',
           colors.roadMajor,
           'grass',
@@ -146,8 +172,8 @@ export function compileLand(
     }
   }
 
-  for (const [name, classes] of Object.entries(landcoverClasses) as Array<
-    [TileflowLandcoverClass, readonly string[]]
+  for (const [name, match] of Object.entries(landcoverClasses) as Array<
+    [TileflowLandcoverClass, TileflowLandcoverClassMatch]
   >) {
     const style = config.landcover?.[name];
     if (!style) continue;
@@ -158,7 +184,7 @@ export function compileLand(
         type: 'fill',
         source,
         'source-layer': sourceLayer,
-        ...(name === 'park' ? {} : {filter: classFilter(classField, classes)}),
+        ...(name === 'park' ? {} : {filter: landcoverFilter(classField, subclassField, match)}),
       },
       style,
     )) {
@@ -178,4 +204,14 @@ export function compileLand(
 
 function classFilter(field: string, classes: readonly string[]): unknown[] {
   return ['match', ['get', field], classes, true, false];
+}
+
+function landcoverFilter(
+  classField: string,
+  subclassField: string,
+  match: TileflowLandcoverClassMatch,
+): unknown[] {
+  const filter = classFilter(classField, match.class);
+  if (!match.subclass) return filter;
+  return ['all', filter, classFilter(subclassField, match.subclass)];
 }

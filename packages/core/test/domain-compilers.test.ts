@@ -71,7 +71,7 @@ test('renders the seven global land-cover classes below OSM and fades them out a
     'match',
     ['get', 'class'],
     'barren',
-    context.colors.landcover.sand,
+    context.colors.landcover.rock,
     'crop',
     context.colors.roadMajor,
     'grass',

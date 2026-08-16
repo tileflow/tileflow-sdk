@@ -7,6 +7,8 @@ export type OpenMapTilesLayerBindings = {
   aeroway: string;
   boundary: string;
   building: string;
+  /** Optional low-zoom global land-cover extension. Defaults to `globallandcover`. */
+  globalLandcover?: string;
   landcover: string;
   landuse: string;
   park: string;
@@ -90,7 +92,8 @@ export type TileflowDataIdentity = {
 };
 
 export type ResolvedTileflowData = {
-  attribution: string;
+  /** Omitted when the versioned TileJSON is the authoritative attribution source. */
+  attribution?: string;
   identity: TileflowDataIdentity;
   kind: TileflowDataConfig['type'];
   revision?: string;
@@ -104,6 +107,7 @@ const canonicalLayers = {
   aeroway: 'aeroway',
   boundary: 'boundary',
   building: 'building',
+  globalLandcover: 'globallandcover',
   landcover: 'landcover',
   landuse: 'landuse',
   park: 'park',
@@ -158,7 +162,11 @@ export function openMapTiles(options: OpenMapTilesSchemaOptions = {}): OpenMapTi
     type: 'openmaptiles',
     contractVersion: openMapTilesContractVersion,
     fields: {...canonicalFields, ...options.fields},
-    layers: {...canonicalLayers, ...options.layers},
+    layers: {
+      ...canonicalLayers,
+      ...options.layers,
+      globalLandcover: options.layers?.globalLandcover ?? canonicalLayers.globalLandcover,
+    },
   };
 }
 
@@ -202,7 +210,7 @@ export function resolveTileflowData(
     const schema = openMapTiles();
 
     return {
-      attribution: defaultAttribution,
+      ...(revision === tileflowWorldRevision ? {attribution: defaultAttribution} : {}),
       identity: dataIdentity(descriptor.type, schema, revision),
       kind: descriptor.type,
       revision,
@@ -228,7 +236,9 @@ export function resolveTileflowData(
 export function isCanonicalOpenMapTilesSchema(schema: OpenMapTilesSchema): boolean {
   return (
     Object.entries(canonicalLayers).every(
-      ([key, value]) => schema.layers[key as keyof typeof canonicalLayers] === value,
+      ([key, value]) =>
+        (schema.layers[key as keyof typeof canonicalLayers] ??
+          (key === 'globalLandcover' ? canonicalLayers.globalLandcover : undefined)) === value,
     ) &&
     Object.entries(canonicalFields).every(
       ([key, value]) => schema.fields[key as keyof typeof canonicalFields] === value,
@@ -310,7 +320,10 @@ function validateOpenMapTilesSchema(schema: OpenMapTilesSchema): OpenMapTilesSch
   return {
     ...schema,
     fields: {...schema.fields},
-    layers: {...schema.layers},
+    layers: {
+      ...schema.layers,
+      globalLandcover: schema.layers.globalLandcover ?? canonicalLayers.globalLandcover,
+    },
   };
 }
 

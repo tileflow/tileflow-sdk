@@ -44,12 +44,95 @@ test('compiles complete land and water domains into stable direct layers', () =>
   const ids = layers.map((layer) => layer.id);
 
   assert.equal(ids[0], 'streets-background');
+  assert.ok(ids.includes('streets-global-landcover'));
   assert.ok(ids.includes('streets-landuse-commercial'));
   assert.ok(ids.includes('streets-landcover-wood'));
   assert.ok(ids.includes('streets-water'));
   assert.ok(ids.includes('streets-waterway-river-intermittent'));
   assert.equal(new Set(ids).size, ids.length);
   assert.ok(layers.every((layer) => !String(layer.id).startsWith('landuse-')));
+});
+
+test('renders the seven global land-cover classes below OSM and fades them out at zoom 8', () => {
+  const contributions = compileLand(undefined, context);
+  const globalLandcover = contributions.find(
+    (entry) => entry.layer.id === 'streets-global-landcover',
+  )!;
+  const osmLanduse = contributions.find(
+    (entry) => entry.layer.id === 'streets-landuse-residential',
+  )!;
+  const osmLandcover = contributions.find((entry) => entry.layer.id === 'streets-landcover-wood')!;
+  const paint = globalLandcover.layer.paint as Record<string, unknown>;
+
+  assert.equal(globalLandcover.layer['source-layer'], 'globallandcover');
+  assert.equal(globalLandcover.layer.minzoom, 0);
+  assert.equal(globalLandcover.layer.maxzoom, 8);
+  assert.deepEqual(paint['fill-color'], [
+    'match',
+    ['get', 'class'],
+    'barren',
+    context.colors.landcover.rock,
+    'crop',
+    context.colors.roadMajor,
+    'grass',
+    context.colors.landcover.grass,
+    'shrub',
+    context.colors.landcover.protected,
+    'snow',
+    context.colors.landcover.ice,
+    'trees',
+    context.colors.landcover.wood,
+    'urban',
+    context.colors.building,
+    'rgba(0, 0, 0, 0)',
+  ]);
+  assert.deepEqual(paint['fill-opacity'], [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    0,
+    0.88,
+    6,
+    0.82,
+    7,
+    0.68,
+    8,
+    0,
+  ]);
+  assert.ok(globalLandcover.localOrder < osmLanduse.localOrder);
+  assert.ok(globalLandcover.localOrder < osmLandcover.localOrder);
+
+  const ordered = assembleTileflowLayers(contributions).map((layer) => layer.id);
+  assert.ok(
+    ordered.indexOf('streets-global-landcover') < ordered.indexOf('streets-landuse-residential'),
+  );
+  assert.ok(
+    ordered.indexOf('streets-global-landcover') < ordered.indexOf('streets-landcover-wood'),
+  );
+});
+
+test('remaps the global land-cover source-layer and class field', () => {
+  const data = resolveTileflowData({
+    type: 'vector-tiles',
+    attribution: '© Test',
+    schema: openMapTiles({
+      fields: {class: 'kind'},
+      layers: {globalLandcover: 'worldcover_lowzoom'},
+    }),
+    url: '/tiles.json',
+  });
+  const globalLandcover = compileLand(undefined, {...context, data}).find(
+    (entry) => entry.layer.id === 'streets-global-landcover',
+  )!;
+
+  assert.equal(globalLandcover.layer['source-layer'], 'worldcover_lowzoom');
+  assert.deepEqual(
+    ((globalLandcover.layer.paint as Record<string, unknown>)['fill-color'] as unknown[]).slice(
+      0,
+      2,
+    ),
+    ['match', ['get', 'kind']],
+  );
 });
 
 test('applies exact water overrides without mutating defaults', () => {

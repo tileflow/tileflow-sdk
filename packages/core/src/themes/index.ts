@@ -226,6 +226,8 @@ export function resolveColors(
     civic: mix(base.land, base.textMuted, 0.08),
     commercial: mix(base.land, base.textMuted, 0.05),
     industrial: mix(base.land, base.text, 0.04),
+    military: mix(base.land, base.textMuted, 0.16),
+    recreation: mix(base.park, base.land, 0.15),
     residential: mix(base.land, base.background, 0.35),
   } satisfies TileflowResolvedLanduseColors;
   const landcoverDefaults = {
@@ -233,7 +235,9 @@ export function resolveColors(
     ice: mix(base.water, base.background, 0.65),
     park: base.park,
     protected: mix(base.park, base.textMuted, 0.08),
+    rock: mix(base.land, base.text, 0.12),
     sand: mix(base.land, base.roadMajor, 0.1),
+    wetland: mix(base.water, base.park, 0.35),
     wood: mix(base.park, base.text, 0.08),
   } satisfies TileflowResolvedLandcoverColors;
   const hydroDefaults = {

@@ -247,6 +247,18 @@ source-layers or properties while preserving the versioned semantic contract. Ex
 credentials do not belong in public Style JSON; supply them through the framework's
 `transformRequest` integration.
 
+Tileflow's OpenMapTiles contract also recognizes the optional `globallandcover` extension. The
+default Streets style maps its `barren`, `crop`, `grass`, `shrub`, `snow`, `trees`, and `urban`
+classes beneath the OSM land layers at zooms 0–7, fading to transparent at zoom 8. Sources with a
+different layer name can use `openMapTiles({layers: {globalLandcover: 'my_landcover'}})`; archives
+without the extension remain compatible and simply render no features for that style layer.
+
+The pinned legacy Tileflow World revision keeps its historical attribution inline in the generated
+style. Every other explicitly pinned official revision delegates attribution to its versioned
+TileJSON, so MapLibre displays the exact text bound to that archive's release receipt. The SDK does
+not guess a legal string or fall back to the legacy attribution for a new product; publishing must
+fail before selection when that immutable TileJSON has no receipt-backed attribution.
+
 ## Capture scenes
 
 Commit named scenes beside maps. Scenes affect visual evidence, not style or manifest identity.

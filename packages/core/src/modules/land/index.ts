@@ -5,7 +5,9 @@ export type TileflowLanduseClass =
   | 'civic'
   | 'commercial'
   | 'industrial'
+  | 'military'
   | 'railway'
+  | 'recreation'
   | 'residential';
 export type TileflowLandcoverClass =
   | 'farmland'
@@ -13,8 +15,10 @@ export type TileflowLandcoverClass =
   | 'ice'
   | 'park'
   | 'protected'
+  | 'rock'
   | 'sand'
   | 'scrub'
+  | 'wetland'
   | 'wood';
 
 export type TileflowLandModuleOptions = {

@@ -42,6 +42,27 @@ test('accepts the canonical Streets project shape', () => {
   assert.throws(() => parseTileflowMap({basemap: streets(), view: {pitch: 86}}), /view\.pitch/);
 });
 
+test('accepts a schema-v2 remap for the optional global land-cover extension', () => {
+  const map = parseTileflowMap({
+    basemap: streets(),
+    data: {
+      type: 'vector-tiles',
+      attribution: '© Example',
+      schema: {
+        type: 'openmaptiles',
+        contractVersion: 1,
+        layers: {globalLandcover: 'worldcover_lowzoom'},
+      },
+      url: '/tiles.json',
+    },
+  });
+
+  assert.equal(map.data?.type, 'vector-tiles');
+  if (map.data?.type !== 'vector-tiles') return;
+  assert.equal(map.data.schema.layers.globalLandcover, 'worldcover_lowzoom');
+  assert.equal(map.data.schema.layers.landcover, 'landcover');
+});
+
 test('rejects every removed renderer and data path with its exact location', () => {
   const removed = [
     [{renderer: 'generated'}, 'renderer'],

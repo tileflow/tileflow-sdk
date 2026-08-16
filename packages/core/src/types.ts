@@ -72,6 +72,8 @@ export type TileflowLanduseColorConfig = {
   civic?: TileflowColor;
   commercial?: TileflowColor;
   industrial?: TileflowColor;
+  military?: TileflowColor;
+  recreation?: TileflowColor;
   residential?: TileflowColor;
 };
 
@@ -80,7 +82,9 @@ export type TileflowLandcoverColorConfig = {
   ice?: TileflowColor;
   park?: TileflowColor;
   protected?: TileflowColor;
+  rock?: TileflowColor;
   sand?: TileflowColor;
+  wetland?: TileflowColor;
   wood?: TileflowColor;
 };
 

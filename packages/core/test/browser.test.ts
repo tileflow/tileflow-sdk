@@ -205,6 +205,24 @@ test('load resolves the latest handler and starts each session key and style onc
   );
 });
 
+test('session starter follows a rotated commercial session identity', () => {
+  const sends: string[] = [];
+  let sessionId = 'ses_first';
+  const starter = createTileflowSessionStarter({
+    getSessionId: () => sessionId,
+    sessionId,
+    source: 'react',
+    startSession: (_analytics, input) => sends.push(input.sessionId),
+  });
+  const analytics = {mapId: 'map_1'};
+
+  assert.equal(starter.start(analytics, 'style_1'), true);
+  assert.equal(starter.start(analytics, 'style_1'), false);
+  sessionId = 'ses_second';
+  assert.equal(starter.start(analytics, 'style_1'), true);
+  assert.deepEqual(sends, ['ses_first', 'ses_second']);
+});
+
 test('transform request preserves sync user fields and applies analytics to the user URL', () => {
   let resourceType: string | undefined;
   const transform = createTileflowTransformRequest({
@@ -258,6 +276,39 @@ test('transform request preserves request-time and resolution-time async analyti
 
   assert.equal(new URL((await requestResult)!.url!).searchParams.get('map'), 'map_before');
   assert.equal(new URL((await resolutionResult)!.url!).searchParams.get('map'), 'map_after');
+});
+
+test('transform request composes the user rewrite with commercial authorization', async () => {
+  let authorizedUrl = '';
+  const sessionController = {
+    sessionId: 'ses_commercial',
+    async resolveRequestUrl(
+      url: string,
+      analytics: {enabled?: boolean; mapId?: string} | undefined,
+    ) {
+      authorizedUrl = url;
+      assert.equal(analytics?.enabled, false);
+      assert.equal(analytics?.mapId, 'map_1');
+      const nextUrl = new URL(url);
+      nextUrl.searchParams.set('grant', 'grant_test');
+      return nextUrl.toString();
+    },
+  };
+  const transform = createTileflowTransformRequest({
+    getAnalytics: () => ({enabled: false, mapId: 'map_1'}),
+    sessionController,
+    sessionId: sessionController.sessionId,
+    transformRequest: () => ({
+      headers: {'x-user': 'preserved'},
+      url: 'https://api.example.com/tiles/rewrite/0/0/0.pbf',
+    }),
+  });
+
+  assert.ok(transform);
+  const request = await transform('https://api.example.com/tiles/original/0/0/0.pbf', 'Tile');
+  assert.equal(authorizedUrl, 'https://api.example.com/tiles/rewrite/0/0/0.pbf');
+  assert.deepEqual(request?.headers, {'x-user': 'preserved'});
+  assert.equal(new URL(request!.url).searchParams.get('grant'), 'grant_test');
 });
 
 test('transform request can be omitted, remains a no-op when forced, and propagates rejection', async () => {

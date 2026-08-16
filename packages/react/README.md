@@ -38,7 +38,7 @@ manifest:
 Or bypass the manifest and load a hosted style directly:
 
 ```tsx
-<Map styleUrl="https://api.tileflow.dev/v1/styles/acme/madrid.json" />
+<Map styleUrl="https://api.tileflow.dev/maps/map_1234567890abcdef/style.json" />
 ```
 
 For simple hosted static images, use image mode:
@@ -54,6 +54,35 @@ the production image behavior locally.
 
 For full static scenes with bounds, overlays, and server-side precache, use
 `StaticMap` from `@tileflow/react/static` or helpers from `@tileflow/static`.
+
+```tsx
+import {StaticMap} from '@tileflow/react/static';
+import {useState} from 'react';
+import {createStaticMapIdempotencyKey} from '@tileflow/static';
+
+export function Preview() {
+  const [idempotencyKey] = useState(createStaticMapIdempotencyKey);
+
+  return (
+    <StaticMap
+      map="madrid"
+      camera={{type: 'center', center: [-3.7038, 40.4168], zoom: 12}}
+      size={{width: 1200, height: 800}}
+      createUrl="/api/static-maps"
+      idempotencyKey={idempotencyKey}
+    />
+  );
+}
+```
+
+`idempotencyKey` is required in create mode. Keep one key for one intentional create action and
+reuse it across retries and remounts. Concurrent React consumers share work only when URL,
+normalized scene, and idempotency key all identify the same operation; unmounting the final
+consumer aborts its in-flight request.
+
+Hosted interactive maps automatically preflight a short-lived commercial session grant before
+eligible resources. Setting `analytics={{enabled: false}}` disables the optional beacon only; it
+does not remove hosted authorization or override a user `mapOptions.transformRequest` callback.
 
 ## Headless capture readiness
 

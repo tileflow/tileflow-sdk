@@ -253,6 +253,7 @@ export type {
 } from './icon-diff';
 export {
   createTileflowSessionId,
+  createTileflowSessionController,
   defaultTileflowManifestUrl,
   defaultTileflowStyleBaseUrl,
   getDefaultTileflowStyleBaseUrl,
@@ -283,4 +284,6 @@ export type {
   TileflowRuntimeManifestMapEntry,
   TileflowRuntimeStyle,
   TileflowRuntimeStyleOptions,
+  TileflowSessionController,
+  TileflowSessionGrantResponse,
 } from './runtime';

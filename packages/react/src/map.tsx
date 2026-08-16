@@ -16,7 +16,7 @@ import maplibregl, {
   type StyleSpecification,
 } from 'maplibre-gl';
 import {
-  createTileflowSessionId,
+  createTileflowSessionController,
   defaultTileflowManifestUrl,
   loadTileflowManifest,
   type MapLibreStyle,
@@ -112,11 +112,6 @@ export function Map({
   const mapNameRef = useRef(mapName);
   const resolvedAnalyticsRef = useRef<TileflowAnalytics | undefined>(undefined);
   const readinessRunRef = useRef(0);
-  const sessionId = useMemo(() => createTileflowSessionId(), []);
-  const sessionStarter = useMemo(
-    () => createTileflowSessionStarter({sessionId, source: 'react'}),
-    [sessionId],
-  );
   const markerController = useMemo(
     () =>
       createTileflowMarkerController<MapLibreMap, MapMarker, maplibregl.Marker>({
@@ -251,18 +246,6 @@ export function Map({
         : undefined),
     [imageSize, imageUrl, isImageMode, manifestMap, resolvedZoom, staticImageCenter],
   );
-  const transformRequest = useMemo(
-    () =>
-      createTileflowTransformRequest({
-        always: true,
-        asyncAnalyticsTiming: 'resolution',
-        getAnalytics: () => resolvedAnalyticsRef.current,
-        sessionId,
-        transformRequest: stableMapOptions?.transformRequest ?? undefined,
-      }),
-    [sessionId, stableMapOptions?.transformRequest],
-  );
-
   useEffect(() => {
     if (!isImageMode || imageUrl || !containerRef.current) {
       setImageSize(null);
@@ -299,6 +282,21 @@ export function Map({
 
     readinessRunRef.current += 1;
     setCaptureState('loading');
+
+    const session = createTileflowSessionController({source: 'react'});
+    const sessionStarter = createTileflowSessionStarter({
+      getSessionId: () => session.sessionId,
+      sessionId: session.sessionId,
+      source: 'react',
+    });
+    const transformRequest = createTileflowTransformRequest({
+      always: true,
+      asyncAnalyticsTiming: 'resolution',
+      getAnalytics: () => resolvedAnalyticsRef.current,
+      sessionController: session,
+      sessionId: session.sessionId,
+      transformRequest: stableMapOptions?.transformRequest ?? undefined,
+    });
 
     const map = new maplibregl.Map({
       ...stableMapOptions,
@@ -371,14 +369,7 @@ export function Map({
         }
       }
     };
-  }, [
-    markerController,
-    resolvedInteractive,
-    runtimeStyle,
-    sessionStarter,
-    stableMapOptions,
-    transformRequest,
-  ]);
+  }, [markerController, resolvedInteractive, runtimeStyle, stableMapOptions]);
 
   useLayoutEffect(() => {
     if (!isImageMode) return;

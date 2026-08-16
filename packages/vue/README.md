@@ -28,6 +28,10 @@ Tileflow resolves from the map name, manifest, or explicit style props. Direct
 Tileflow props such as `center`, `zoom`, and `interactive` take priority when
 provided.
 
+Hosted maps automatically preflight a short-lived commercial session grant before eligible
+resources. Setting `analytics` with `enabled: false` disables the optional beacon only; it does not
+remove hosted authorization or override a user `mapOptions.transformRequest` callback.
+
 ## Headless capture readiness
 
 Pass `capture-id` when a page contains multiple copies of the same named map:

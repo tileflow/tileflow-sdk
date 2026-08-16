@@ -76,9 +76,9 @@ diagonal `hatch`. Hatch appearance is semantic road detail rather than a sprite 
 it accepts color, opacity, spacing, size, angle, and zoom bounds, inherits the resolved fill width
 when size is omitted, and does not reserve collision space. The labels module uses the same class
 names and selectors, so authors do not write OpenMapTiles `class`/`subclass` filters.
-All tunnel phases are ordered below buildings, pedestrian areas, surface and bridge transport, and
-the shared symbol phase. Underground geometry therefore cannot cover monument/building geometry or
-POI labels merely because a tunnel style is wide, opaque, or hatched.
+All tunnel phases are ordered below surface hydrography, buildings, pedestrian areas, surface and
+bridge transport, and the shared symbol phase. Underground geometry therefore cannot cover water,
+monument/building geometry, or POI labels merely because a tunnel style is wide, opaque, or hatched.
 The selectors remain valid when those field names are remapped by the data contract and are
 pairwise disjoint, preventing the same path from being painted by multiple semantic targets.
 Line-like pedestrian ways use `roads.classes.pedestrian`; polygon plazas use the separate

@@ -199,12 +199,13 @@ part of the primary vector-data API.
       and reviewed; the final Streets comparison kept the tunnel scene exact and reported only two
       exact, zero-perceptual remote pixels in each of three other scenes. Final `pnpm check`,
       `pnpm build`, packaged public smoke, and alpha publication dry-run all pass without publishing.
-- [x] (2026-08-16) Moved the complete tunnel stack below buildings, pedestrian areas, surface and
-      bridge transport, and shared symbols so underground roads cannot cover monument geometry or
-      POIs. Added an explicit graph-order invariant; the focused cartography and Streets tests pass
-      8/8, and all twelve reviewed Streets visual scenes compare unchanged after accepting the new
-      baselines, including the Plaza de Castilla tunnel scene. Final `pnpm check`, `pnpm build`,
-      packaged public smoke, and alpha publication dry-run pass without publishing.
+- [x] (2026-08-16) Moved the complete tunnel stack below surface hydrography, buildings, pedestrian
+      areas, surface and bridge transport, and shared symbols so underground roads cannot cover
+      water, monument/building geometry, or POIs. A follow-up Tileflow World feature inspection
+      identified the Calvo Sotelo monument basin as `water.class=lake`, not `building`; the graph
+      invariant now covers `hydro` explicitly. The focused cartography and Streets tests pass 8/8,
+      and the corrected `madrid-tunnels` render changes exactly the 339 basin pixels previously
+      blended with the tunnel.
 - [x] (2026-08-16) Added the attributed built-in Tileflow Streets POI catalog: nine Google
       Places-derived glyphs composed in category-colored circular markers with a white rim and
       shadow. Asset-aware preview, build, capture, and deploy flows now generate or upload the

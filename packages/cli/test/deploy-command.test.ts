@@ -20,7 +20,7 @@ test('deploy sends CI provenance but keeps it and the bearer key out of the mani
     fixture.configPath,
     `import {writeFileSync} from 'node:fs';
 writeFileSync(${JSON.stringify(observedSecretPath)}, process.env.TILEFLOW_API_KEY ?? 'missing');
-export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, name: 'Madrid'}}};
+export default {maps: {madrid: {allowedOrigins: ['https://maps.example.test'], basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, name: 'Madrid'}}};
 `,
     'utf8',
   );
@@ -71,6 +71,9 @@ export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, va
     (requestBody as {iconPackage?: {label?: unknown}}).iconPackage?.label,
     'tileflow-streets',
   );
+  assert.deepEqual((requestBody as {policy?: unknown}).policy, {
+    allowedOrigins: ['https://maps.example.test'],
+  });
   assert.equal(
     (requestBody as {artifact?: {style?: {sprite?: unknown}}}).artifact?.style?.sprite,
     'https://api.example.test/sprites/tileflow-streets/sprite',
@@ -243,6 +246,47 @@ test('deploy rejects invalid MapLibre semantics before any remote write', async 
   assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
 });
 
+test('deploy rejects external vector data before any remote write', async (t) => {
+  const fixture = await createFixture(t);
+  const originalManifest = '{"sentinel":"external-data"}\n';
+  await writeFile(fixture.manifestPath, originalManifest);
+  await writeFile(
+    fixture.configPath,
+    `export default {maps: {madrid: {
+  basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
+  data: {
+    type: 'vector-tiles',
+    attribution: '© Example © OpenStreetMap contributors',
+    schema: {type: 'openmaptiles', contractVersion: 1},
+    url: 'https://vector.example.test/tiles.json'
+  }
+}}};\n`,
+  );
+  let requests = 0;
+  const api = await createFakeApi(t, async () => {
+    requests += 1;
+  });
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      api.url,
+    ],
+    {TILEFLOW_API_KEY: fakeApiKey},
+  );
+
+  assert.equal(result.code, 1);
+  assert.equal(requests, 0);
+  assert.match(result.stdout, /Hosted deploy supports only Tileflow World data/);
+  assert.match(result.stdout, /Map madrid uses an external vector dataset/);
+  assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
+});
+
 test('deploy uploads generated icon files before posting sanitized style JSON', async (t) => {
   const fixture = await createIconFixture(t);
   const requests: Array<{body: string; method?: string; url?: string}> = [];
@@ -292,6 +336,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     assert.deepEqual(parsed.iconPackage, {
       contentHash: requests[0]?.url?.split('/').pop(),
       label: 'brand',
+      mapping: {restaurant: 'cafe'},
     });
     assert.doesNotMatch(JSON.stringify(artifact), /\.\/icons|source-secret/);
     return {

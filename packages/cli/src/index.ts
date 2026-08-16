@@ -541,7 +541,23 @@ program
       // Validate the complete local style before the first remote write. Hosted
       // sprite URLs are substituted after upload, but they do not change layer
       // semantics.
-      createTileflowStyles(project, {apiBaseUrl: api.apiUrl});
+      const preflightStyles = createTileflowStyles(project, {apiBaseUrl: api.apiUrl});
+
+      for (const mapName of mapNames) {
+        const data = preflightStyles[mapName]?.metadata?.['tileflow:data'];
+        if (
+          !data ||
+          typeof data !== 'object' ||
+          Array.isArray(data) ||
+          (data as {kind?: unknown}).kind !== 'tileflow-world'
+        ) {
+          logError(
+            `Hosted deploy supports only Tileflow World data. Map ${mapName} uses an external vector dataset; keep it local or switch to tileflowWorld().`,
+          );
+          process.exitCode = 1;
+          return;
+        }
+      }
 
       if (!validateHostedMapCount(mapNames)) {
         return;
@@ -598,14 +614,20 @@ program
       const deployments = mapNames.map((mapName) => {
         const iconBinding = bindingsByMap.get(mapName);
         const iconPackage = iconBinding ? packagesByHash.get(iconBinding.packageHash) : undefined;
-        return {iconBinding, iconPackage, mapName, style: styles[mapName]!};
+        return {
+          allowedOrigins: project.maps[mapName]?.allowedOrigins,
+          iconBinding,
+          iconPackage,
+          mapName,
+          style: styles[mapName]!,
+        };
       });
 
       const deployedMaps: Record<string, DeployedManifestMap> = {};
       const deployedStyles: Record<string, string> = {};
 
       for (const deployment of deployments) {
-        const {iconBinding, iconPackage, mapName, style} = deployment;
+        const {allowedOrigins, iconBinding, iconPackage, mapName, style} = deployment;
         const serializedStyle = serializeCanonicalJson(style);
         const styleHash = createHash('sha256').update(serializedStyle).digest('hex');
         logInfo(`Deploying compiled map ${pc.bold(mapName)}.`);
@@ -631,11 +653,13 @@ program
               },
             },
             environment: mapName,
+            ...(allowedOrigins ? {policy: {allowedOrigins}} : {}),
             ...(iconBinding && iconPackage
               ? {
                   iconPackage: {
                     contentHash: iconPackage.contentHash,
                     label: iconBinding.label,
+                    ...(iconBinding.mapping ? {mapping: iconBinding.mapping} : {}),
                   },
                 }
               : {}),

@@ -282,8 +282,19 @@ after deploy when the app deliberately packages
 the manifest as an explicit artifact between jobs. A retry of the same compiled
 style and delivery policy reuses its deployment version and prints
 `Unchanged`; changed desired state prints `Published` with a new version. The
-fingerprint binds resource references, not the changing bytes behind external
-URLs. Named maps still publish one at a time and may partially succeed.
+fingerprint binds resource references, not the changing bytes behind referenced
+glyph or sprite URLs. Named maps still publish one at a time and may partially succeed.
+
+Deploy treats the locally compiled MapLibre Style JSON as the cartographic
+artifact. The request contains that style, its canonical SHA-256 receipt, and
+only bounded hosting policy that does not belong in MapLibre itself, such as
+`allowedOrigins` and the managed icon mapping. It does not serialize the
+module configuration, send a public `tileset` selector, or ask the hosted API
+to compile the map again. Hosted publication currently requires Tileflow World;
+`vectorTiles()` remains available for local builds and previews but fails deploy
+before any remote write. The API binds recognized Tileflow-owned world and
+terrain URLs to its generated map ID. A successful deploy writes manifest schema
+2 with stable hosted style URLs rather than duplicating dataset configuration.
 
 For an icon set with `source: './icons'`, hosted validation compiles the local
 SVG/PNG/JPEG/WebP files without a key. Deploy uploads the four generated sprite

@@ -702,6 +702,7 @@ const layerBindingsSchema = z
     aeroway: z.string().trim().min(1),
     boundary: z.string().trim().min(1),
     building: z.string().trim().min(1),
+    globalLandcover: z.string().trim().min(1),
     landcover: z.string().trim().min(1),
     landuse: z.string().trim().min(1),
     park: z.string().trim().min(1),

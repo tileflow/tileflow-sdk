@@ -219,7 +219,7 @@ Inspect account and project context explicitly:
 npm exec --no -- tileflow whoami --json
 npm exec --no -- tileflow projects list --json
 npm exec --no -- tileflow deploy --project @acme/web
-npm exec --no -- tileflow tileset upload data.pmtiles --id madrid --project @acme/web
+npm exec --no -- tileflow status --project @acme/web
 npm exec --no -- tileflow projects archive @acme/legacy --json
 npm exec --no -- tileflow logout
 ```

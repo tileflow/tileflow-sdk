@@ -497,7 +497,7 @@ test('one account session exchanges a visible target for a brief deploy capabili
     fixture.configPath,
     `import {writeFileSync} from 'node:fs';
 writeFileSync(${JSON.stringify(observedSecretPath)}, process.env.TILEFLOW_API_KEY ?? 'missing');
-export default {maps: {madrid: {name: 'Madrid'}}};
+export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, modules: {poi: {type: 'poi', icons: false}}, name: 'Madrid'}}};
 `,
   );
   const capability = `tf_cap_${'c'.repeat(96)}`;

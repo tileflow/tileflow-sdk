@@ -3,11 +3,11 @@ import type {TileflowLayerDomain} from './domains';
 export const tileflowLayerSlots = [
   'background',
   'land',
-  'hydro',
   'terrain',
   'transport-tunnel-shadow',
   'transport-tunnel-casing',
   'transport-tunnel-fill',
+  'hydro',
   'buildings',
   'transport-areas',
   'aeroways',

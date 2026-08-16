@@ -23,7 +23,9 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "assets",
+    "dist",
+    "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean --platform node --external sharp",

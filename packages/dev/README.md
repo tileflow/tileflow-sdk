@@ -104,8 +104,14 @@ const result = await compileTileflowIconPackages(project, {
 });
 ```
 
+When a Streets map does not select a local or external icon set, the pipeline compiles the built-in
+`tileflow-streets` POI catalog and merges any mapping-only overrides on top of its semantic mapping.
+`modules.poi.icons: false`, a disabled POI module, or the `none` POI preset suppresses that implicit
+package. An explicit local source or hosted sprite always replaces it.
+
 The hosted target enforces repository containment, portable icon IDs, safe SVG
-references, deterministic ordering, and the public package limits. It returns
+references, deterministic ordering, and the public package limits. The package-owned Streets
+catalog is trusted input and is the only source exempt from project-root containment. It returns
 deduplicated generated files plus a canonical manifest/content hash. Upload only
 those generated files: source icons and absolute paths remain local. External
 sprite URLs are preserved as references and are not downloaded.

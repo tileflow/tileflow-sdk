@@ -16,6 +16,18 @@ import type {
 
 export const tileflowStreetsBasemapVersion = 3;
 
+export const tileflowStreetsPoiIconMapping = Object.freeze({
+  coffee: 'cafe',
+  culture: 'museum',
+  education: 'school',
+  food: 'restaurant',
+  health: 'hospital',
+  lodging: 'hotel',
+  services: 'services',
+  shopping: 'shopping',
+  transit: 'train',
+});
+
 export type TileflowStreetsVariant = 'dark' | 'light';
 
 export type TileflowStreetsBasemapConfig = {
@@ -49,7 +61,7 @@ export const tileflowStreetsRecipe = Object.freeze({
     buildings: buildings(),
     labels: labels(),
     land: land(),
-    poi: poi({icons: false}),
+    poi: poi({icons: 'essential'}),
     roads: roads({
       modifiers: {
         construction: {

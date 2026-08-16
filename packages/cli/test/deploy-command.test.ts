@@ -27,6 +27,10 @@ export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, va
   let authorization: string | undefined;
   const api = await createFakeApi(t, async (request) => {
     authorization = request.headers.authorization;
+    if (request.method === 'PUT') {
+      await readRequestBody(request);
+      return {spriteUrl: 'https://api.example.test/sprites/tileflow-streets/sprite'};
+    }
     requestBody = JSON.parse(await readRequestBody(request));
   });
   const result = await runCli(
@@ -62,6 +66,14 @@ export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, va
     runId: '42',
     runUrl: 'https://github.example.test/tileflow/maps/actions/runs/42',
   });
+  assert.equal(
+    (requestBody as {iconPackage?: {label?: unknown}}).iconPackage?.label,
+    'tileflow-streets',
+  );
+  assert.equal(
+    (requestBody as {artifact?: {style?: {sprite?: unknown}}}).artifact?.style?.sprite,
+    'https://api.example.test/sprites/tileflow-streets/sprite',
+  );
 
   const manifest = await readFile(fixture.manifestPath, 'utf8');
   assert.equal(await readFile(observedSecretPath, 'utf8'), 'missing');
@@ -425,7 +437,7 @@ async function createFixture(t: TestContext) {
   const manifestPath = join(directory, 'manifest.json');
   await writeFile(
     configPath,
-    `export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, name: 'Madrid'}}};\n`,
+    `export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, modules: {poi: {type: 'poi', icons: false}}, name: 'Madrid'}}};\n`,
     'utf8',
   );
   t.after(() => rm(directory, {force: true, recursive: true}));

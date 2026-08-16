@@ -55,6 +55,12 @@ placement. Because importance ranks are not distributed equally across categorie
 set an inclusive `maxRank`; that explicit semantic ceiling replaces the preset ceiling for the
 category's marker, icon, and label without exposing a raw source-layer filter.
 
+Asset-aware Streets flows provide the versioned `tileflow-streets` POI catalog by default. It maps
+the semantic food, coffee, culture, transit, shopping, lodging, health, education, and services
+categories to attributed Google Places glyphs composed inside circular category markers with a
+white rim and shadow. An explicit local or external icon set replaces the catalog; a mapping-only
+map override extends its semantic mapping. Disabling POI icons suppresses the implicit package.
+
 The compiler creates every `streets-*` layer from a domain compiler. It resolves domain conflicts
 before graph assembly—for example, roads determine eligible road-label classes, aeroways own
 runway geometry while labels own aerodrome text, and transit owns rail/ferry/cableway geometry

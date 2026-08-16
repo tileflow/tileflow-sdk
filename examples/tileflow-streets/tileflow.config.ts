@@ -254,6 +254,7 @@ export default defineTileflow({
       // Any safe map ID: letters, numbers, underscores, or hyphens.
       name: 'Tileflow Editorial City', // Any non-empty display name.
       basemap: streets(), // streets({variant: 'light' | 'dark'}).
+      icons: {mapping: {'major-transit': 'train'}},
       theme: 'editorial', // 'standard' | 'light' | 'dark' | 'minimal' | project theme name.
       modules: {
         // Optional keys: land, water, roads, transit, aeroways, buildings,
@@ -672,7 +673,7 @@ export default defineTileflow({
           // Balanced keeps a broad candidate set; MapLibre collision placement makes
           // the final viewport-aware selection from the overscaled z14 source tile.
           density: 'balanced', // 'sparse' | 'balanced' | 'dense'.
-          icons: false, // false | true | 'essential' | 'full'; non-false needs an icon set/sprite.
+          icons: 'full', // false | true | 'essential' | 'full'. Streets supplies the default sprite.
           labels: 'balanced', // 'none' | 'minimal' | 'balanced' | 'full'.
           minZoom: 12.5, // Number from 0 through 24.
           placement: {

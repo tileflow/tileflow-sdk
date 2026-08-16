@@ -65,6 +65,10 @@ export function createStreetsStyle(
   const icons = resolveIconSet(config.icons, options.iconSets);
   const context = {colors, data, ...(icons ? {icons} : {}), typography};
   const modules = resolveStreetsModules(config.modules);
+  const poiModule =
+    !config.icons && !config.sprite && config.modules?.poi?.icons === undefined
+      ? {...modules.poi, icons: false as const}
+      : modules.poi;
   const contributions: TileflowLayerContribution[] = [
     ...compileLand(modules.land, context),
     ...compileWater(modules.water, context),
@@ -74,7 +78,7 @@ export function createStreetsStyle(
     ...compileAeroways(modules.aeroways, context),
     ...compileBoundaries(modules.boundaries, context),
     ...compileLabels(modules.labels, modules.roads, context),
-    ...compilePoi(modules.poi, context),
+    ...compilePoi(poiModule, context),
   ];
   const terrain = resolveTerrain(config.terrain, apiBaseUrl);
   if (terrain?.sourceId === data.sourceId) {

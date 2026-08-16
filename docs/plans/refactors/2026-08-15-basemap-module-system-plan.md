@@ -31,8 +31,9 @@ intents; it does not search for or patch layers from an external style. Shared s
 and a common layer graph assemble every domain deterministically into the final Style JSON.
 
 Streets starts as a Tileflow-owned root style assembled entirely from resolved modules. It does not
-inherit, bundle, or ship another style, reference inventory, notice, or default sprite. External
-reference images may inform human review, but they are not compiler or package inputs.
+inherit, bundle, or ship another style or reference inventory. Its only built-in third-party visual
+input is the attributed Google Places-derived POI glyph catalog; Tileflow owns the surrounding
+circle, rim, shadow, semantic mapping, sprite generation, and cartographic behavior.
 
 The normal config does not declare data. Omitted `data` resolves offline and deterministically to a
 revision of Tileflow's official world dataset pinned by the installed SDK. Advanced authors may
@@ -204,6 +205,14 @@ part of the primary vector-data API.
       8/8, and all twelve reviewed Streets visual scenes compare unchanged after accepting the new
       baselines, including the Plaza de Castilla tunnel scene. Final `pnpm check`, `pnpm build`,
       packaged public smoke, and alpha publication dry-run pass without publishing.
+- [x] (2026-08-16) Added the attributed built-in Tileflow Streets POI catalog: nine Google
+      Places-derived glyphs composed in category-colored circular markers with a white rim and
+      shadow. Asset-aware preview, build, capture, and deploy flows now generate or upload the
+      sprite by default; explicit icon sets replace it and POI disablement suppresses it. Reviewed
+      all twelve Streets scenes and accepted the expected marker/collision changes in nine, while
+      three remained pixel-identical. Final evidence is 80/80 core tests, 27/27 dev tests, 54 CLI
+      tests with 6 intentional skips, 3/3 Streets tests, `pnpm check`, `pnpm build`, packaged public
+      smoke, and the alpha publication dry-run without publishing.
 
 ## Surprises & Discoveries
 
@@ -426,9 +435,10 @@ part of the primary vector-data API.
   performed without bundling another style in the SDK.
   Date/Author: 2026-08-15, owner and Codex.
 
-- Decision: Use Google Maps only as a human reference for clarity, road hierarchy, density,
-  legibility, and zoom behavior.
-  Rationale: do not copy its exact design, screenshots, branding, or assets.
+- Superseded decision: Use Google Maps only as a human reference for clarity, road hierarchy,
+  density, legibility, and zoom behavior.
+  Rationale for supersession: the owner explicitly selected the documented Google Places glyphs
+  for POIs. Streets uses only those attributed glyph paths, not a Google map style or screenshot.
   Date/Author: 2026-08-15, owner and Codex.
 
 - Superseded decision: Retain the prior notice and provenance while the inherited default sprite
@@ -436,6 +446,22 @@ part of the primary vector-data API.
   Rationale for supersession: the sprite and every vendored reference file were removed. Streets
   ships no default sprite; icon rendering is explicit through Tileflow's icon-package pipeline.
   Date/Author: 2026-08-15, owner and Codex.
+
+- Decision: Supply an implicit `tileflow-streets` POI package in asset-aware local, build, capture,
+  and deploy flows. Compose Google Places glyphs with Google's category colors inside a Tileflow
+  white-rimmed circle and shadow; keep source attribution with `@tileflow/dev`. Explicit local or
+  external icon sets replace it, mapping-only overrides extend it, and POI icon disablement removes
+  it.
+  Rationale: the default basemap should render useful POI symbols without project boilerplate while
+  preserving the existing deterministic icon-package and hosted-upload contracts.
+  Date/Author: 2026-08-16, owner and Codex.
+
+- Decision: Include the default POI package and generated icon layers in the still-unreleased
+  Streets version 3 structural cutover already opened by tunnel hatching.
+  Rationale: default packaged artifacts now have an observable sprite and additional stable layer
+  IDs. They belong in the same pending version-3 contract; a second version increment is unnecessary
+  before that contract ships.
+  Date/Author: 2026-08-16, Codex.
 
 - Decision: Omitted `data` means `tileflowWorld()` with initial SDK revision `2026-06-07`, unless
   verification proves that archive unavailable.
@@ -556,6 +582,12 @@ The visual loop materially improved the design language: it exposed POI modes th
 choices but did not yet change pixels, and it exposed a duplicated rail filter that structural
 validity could not catch. Both are now deterministic module behavior with focused tests. This is why
 the lab and receipt contract are part of the compiler change rather than follow-up demo work.
+
+Tileflow Streets now also owns an attributed nine-category POI glyph catalog. Asset-aware SDK flows
+compose and prepare the Google Places-derived artwork as circular, shadowed markers without adding
+project configuration; pure core compilation remains text-only when no sprite can be prepared. The
+twelve-scene review changed nine baselines through the intended markers and their collision effects,
+while airport, overview, and rural-edge scenes stayed pixel-identical.
 
 The Tileflow Streets config is also a readable control surface: its active properties name their
 accepted values inline. The dev preview writes its live camera to the URL without adding browser
@@ -1189,10 +1221,10 @@ Delete vendored reference fixtures, notices, and provenance after the direct com
 scene coverage replace their temporary audit purpose; prove the package contains none of them.
 
 Audit root style, filters, expressions, source assumptions, glyphs, sprites, icon names, metrics,
-notices, and provenance. Streets ships without a default sprite. The default POI recipe emits text
-and disables icons; an explicit local or hosted icon set supplies Tileflow-generated sprite assets.
-Final Streets is recipe + modules + data contract + compilers + graph + explicit assets + root
-builder, with no inherited ID lookups or patches.
+notices, and provenance. Asset-aware Streets flows ship the attributed `tileflow-streets` POI
+catalog by default; explicit local or hosted icon sets replace its generated sprite assets. Final
+Streets is recipe + modules + data contract + compilers + graph + explicit assets + root builder,
+with no inherited ID lookups or patches.
 
 ### Milestone 10: migrate tooling, deploy, evidence, and docs
 
@@ -1306,8 +1338,9 @@ at each stopping point.
 ### Migration and visual quality
 
 - Streets contains zero inherited IDs or bundled upstream style/reference files.
-- The public/runtime import graph has no reference/template-control/legacy-renderer branch, and the
-  packed package has no inherited notice or default sprite.
+- The public/runtime import graph has no reference/template-control/legacy-renderer branch. The
+  packed default sprite is generated only from the attributed Streets POI catalog, not inherited
+  from an upstream style.
 - Reviewed scenes cover overview, dense urban, close street, motorway, bridge/tunnel, coast, rural,
   buildings, boundaries, airport, transit, POI/icons, multilingual labels, and mobile/high-DPR.
 - OSM Bright is coverage reference, not pixel target; Google is manual inspiration only; Streets is

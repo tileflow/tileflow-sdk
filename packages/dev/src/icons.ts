@@ -1,5 +1,6 @@
 import {readdir, readFile, realpath, stat} from 'node:fs/promises';
 import {basename, extname, isAbsolute, relative, resolve, sep} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {SaxesParser} from 'saxes';
 import {
   compareCodeUnits,
@@ -16,6 +17,7 @@ import {
   type TileflowIconSet,
   type TileflowIconSetConfig,
   type TileflowProjectConfig,
+  tileflowStreetsPoiIconMapping,
 } from '@tileflow/core';
 
 export type TileflowBuildAsset = {
@@ -162,6 +164,7 @@ export class TileflowIconCompilationError extends Error {
 }
 
 type LocalIconRequest = {
+  builtIn?: boolean;
   kind: 'local';
   label: string;
   mapName: string;
@@ -241,6 +244,7 @@ type SpriteIndex = Record<
 
 const iconFileExtensions = new Set(['.svg', '.png', '.jpg', '.jpeg', '.webp']);
 const iconSpriteSize = 24;
+const streetsPoiIconSourceDir = fileURLToPath(new URL('../assets/streets-poi', import.meta.url));
 
 export async function compileTileflowIconPackages(
   project: TileflowProjectConfig,
@@ -276,7 +280,13 @@ export async function compileTileflowIconPackages(
     packages: [...packagesByHash.values()].sort((left, right) =>
       compareCodeUnits(left.contentHash, right.contentHash),
     ),
-    watchPaths: [...result.compiledBySource.keys()].sort(compareCodeUnits),
+    watchPaths: [
+      ...new Set(
+        result.resolvedRequests
+          .filter((request) => !request.builtIn)
+          .map((request) => request.realSourceDir),
+      ),
+    ].sort(compareCodeUnits),
   };
 }
 
@@ -434,7 +444,12 @@ async function compileIconSources(
     try {
       const realSourceDir = await realpath(request.sourceDir);
 
-      if (options.target === 'hosted' && realCwd && !isPathInside(realCwd, realSourceDir)) {
+      if (
+        options.target === 'hosted' &&
+        realCwd &&
+        !request.builtIn &&
+        !isPathInside(realCwd, realSourceDir)
+      ) {
         issues.push({
           message: 'Hosted icon sources must remain inside the selected working tree',
           path: sourcePath(request.mapName),
@@ -568,9 +583,11 @@ export async function prepareTileflowProjectIcons(
 }
 
 export function getTileflowIconWatchPaths(project: TileflowProjectConfig, cwd: string): string[] {
-  return uniqueStrings(getLocalIconRequests(project, cwd).map((request) => request.sourceDir)).sort(
-    compareCodeUnits,
-  );
+  return uniqueStrings(
+    getLocalIconRequests(project, cwd)
+      .filter((request) => !request.builtIn)
+      .map((request) => request.sourceDir),
+  ).sort(compareCodeUnits);
 }
 
 function getLocalIconRequests(project: TileflowProjectConfig, cwd: string): LocalIconRequest[] {
@@ -596,6 +613,21 @@ function getMapIconRequests(
     }
 
     const iconSet = resolveIconSet(mapConfig.icons, project.icons);
+
+    if (!iconSet?.source && !iconSet?.sprite && usesBuiltInStreetsPoiIcons(mapConfig)) {
+      const mapping = sortMapping({...tileflowStreetsPoiIconMapping, ...iconSet?.mapping});
+
+      return {
+        builtIn: true,
+        kind: 'local',
+        label: 'tileflow-streets',
+        mapName,
+        ...(mapping ? {mapping} : {}),
+        source: '@tileflow/dev/assets/streets-poi',
+        sourceDir: streetsPoiIconSourceDir,
+      };
+    }
+
     const mapping = sortMapping(iconSet?.mapping);
 
     if (iconSet?.source) {
@@ -615,6 +647,16 @@ function getMapIconRequests(
       ...(mapping ? {mapping} : {}),
     };
   });
+}
+
+function usesBuiltInStreetsPoiIcons(mapConfig: TileflowProjectConfig['maps'][string]): boolean {
+  const poi = mapConfig.modules?.poi;
+  return (
+    mapConfig.basemap?.type === 'streets' &&
+    poi?.enabled !== false &&
+    poi?.preset !== 'none' &&
+    poi?.icons !== false
+  );
 }
 
 function resolveIconSet(

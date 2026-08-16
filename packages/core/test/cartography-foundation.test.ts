@@ -82,10 +82,11 @@ test('rejects cyclic slot constraints', () => {
   );
 });
 
-test('keeps tunnels below buildings and every surface transport phase', () => {
+test('keeps tunnels below hydro, buildings, and every surface transport phase', () => {
   const order = resolveSlotOrder();
   const position = (slot: (typeof order)[number]) => order.indexOf(slot);
 
+  assert.ok(position('transport-tunnel-fill') < position('hydro'));
   assert.ok(position('transport-tunnel-fill') < position('buildings'));
   assert.ok(position('transport-tunnel-fill') < position('transport-areas'));
   assert.ok(position('transport-tunnel-fill') < position('transport-surface-shadow'));

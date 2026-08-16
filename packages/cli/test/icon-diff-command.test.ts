@@ -68,7 +68,7 @@ test('absent proposed packages and unavailable historical mappings remain explic
   const baselinePackage = await createBaselinePackage(fixture.directory);
   await writeFile(
     fixture.configPath,
-    `export default {maps: {production: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, name: 'Production'}}};\n`,
+    `export default {maps: {production: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, modules: {poi: {type: 'poi', icons: false}}, name: 'Production'}}};\n`,
   );
   const requests: Array<{authorization?: string; method?: string; url?: string}> = [];
   const api = await createIconDiffApi(t, baselinePackage, requests, {mappingAvailable: false});

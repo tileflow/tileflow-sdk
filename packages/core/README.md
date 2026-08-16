@@ -292,6 +292,9 @@ runtime dependency, and reads no browser global during module evaluation. See th
 
 Other source subpaths are private implementation details.
 
-Streets has no default sprite dependency. Its default POI recipe emits text and leaves icons off.
-Provide a project-local icon source or an explicit hosted sprite to enable POI icons; build and
-deploy replace local sources with generated sprite URLs without exposing source paths.
+Streets build, preview, capture, and deploy flows supply a built-in POI sprite with Google Places
+glyphs inside Tileflow circular markers. The markers use Google's category colors, a white rim, and
+a compact shadow. A project-local icon source or explicit hosted sprite replaces that catalog;
+build and deploy replace local sources with generated sprite URLs without exposing source paths.
+Calling the pure core style compiler without asset preparation remains text-only unless the map
+provides `icons` or `sprite` explicitly.

@@ -122,7 +122,7 @@ export {
   validateTileflowConfig,
 } from './schema-v2';
 export {defineTileflow} from './config';
-export {streets, tileflowStreetsBasemapVersion} from './basemaps';
+export {streets, tileflowStreetsBasemapVersion, tileflowStreetsPoiIconMapping} from './basemaps';
 export type {
   TileflowStreetsBasemapConfig,
   TileflowStreetsModules,

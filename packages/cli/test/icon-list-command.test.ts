@@ -215,7 +215,7 @@ test('succeeds with an empty catalog array for external and absent map icons', a
     join(directory, 'tileflow.config.ts'),
     `export default {maps: {
       external: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, icons: {mapping: {poi: 'pin'}, sprite: 'https://example.invalid/${remoteMarker}'}},
-      none: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}}
+      none: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, modules: {poi: {type: 'poi', icons: false}}}
     }};\n`,
   );
   const result = await runCli(directory, ['icons', 'list', '--json'], {});
@@ -247,7 +247,7 @@ export default {
     }
   },
   maps: {
-    none: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}},
+    none: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, modules: {poi: {type: 'poi', icons: false}}},
     external: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, icons: 'remote'},
     beta: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, icons: {extends: 'base', mapping: {food: 'photo'}}},
     alpha: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, icons: 'base'}

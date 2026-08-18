@@ -4,13 +4,18 @@ Status: dated inventory input. This document is not a license grant, not qualifi
 not approval to label any package Apache-2.0. It records the observed licensing state of this
 repository so that the intended public release can be reviewed before it is published.
 
-Observed by: Codex, 2026-08-17. Repository revision: `4223da576c23a8bd08f6c83114edb25720e4ec9f`
+Current-branch follow-up: see
+[`2026-08-18-public-sdk-generation-boundary.md`](2026-08-18-public-sdk-generation-boundary.md) for
+the replacement POI artwork, retained optional `sharp`/libvips boundary, stateless World generation
+flow, publication interlock, and remaining owner/reviewer decisions. The observations below remain
+an immutable description of revision `4223da5`; they have not been rewritten as if they described
+the later branch.
+
+Observed: 2026-08-17. Repository revision: `4223da576c23a8bd08f6c83114edb25720e4ec9f`
 (`main`, clean working tree). Dependency facts were read from the installed `node_modules` at that
 revision, not from a registry query.
 
-The intended public release is owned by the platform launch plan
-`docs/plans/features/agent-first-public-launch/2026-08-17-public-world-stateless-launch-plan.md` in
-the `tileflow/tileflow` repository. That plan's approved intent is:
+The intended public release scope is:
 
 - Apache-2.0 for the CLI, core, and public SDK packages;
 - a proprietary hosted cloud service, which this repository does not contain; and

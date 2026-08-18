@@ -133,11 +133,14 @@ export {
   isCanonicalOpenMapTilesSchema,
   openMapTiles,
   openMapTilesContractVersion,
+  parseWorldGenerationDescriptor,
   resolveTileflowData,
   tileflowPrimarySourceId,
   tileflowWorld,
-  tileflowWorldRevision,
+  tileflowWorldGeneration,
+  tileflowWorldTileUrl,
   vectorTiles,
+  worldGenerationDescriptorSchema,
 } from './data';
 export {expression, filter, zoom} from './cartography/values';
 export type {
@@ -161,6 +164,8 @@ export type {
   TileflowDataIdentity,
   TileflowWorldData,
   VectorTilesData,
+  WorldDataDescriptor,
+  WorldGenerationDescriptor,
 } from './data';
 export {aeroways, boundaries, buildings, labels, land, poi, roads, transit, water} from './modules';
 export type {

@@ -1,5 +1,11 @@
+import {
+  parseWorldGenerationDescriptor,
+  tileflowWorldGeneration,
+  tileflowWorldTileUrl,
+  type WorldGenerationDescriptor,
+} from './world-generation';
+
 export const tileflowPrimarySourceId = 'tileflow';
-export const tileflowWorldRevision = '2026-06-07';
 export const openMapTilesContractVersion = 1;
 
 export type OpenMapTilesLayerBindings = {
@@ -69,22 +75,41 @@ export type OpenMapTilesSchema = {
 };
 
 export type TileflowWorldData = {
+  generation: typeof tileflowWorldGeneration;
   type: 'tileflow-world';
-  revision?: string;
 };
 
-export type VectorTilesData = {
+type VectorTilesDataCommon = {
   type: 'vector-tiles';
   attribution: string;
   revision?: string;
   schema: OpenMapTilesSchema;
-  url: string;
 };
+
+export type VectorTilesData = VectorTilesDataCommon &
+  (
+    | {
+        bounds?: never;
+        maxzoom?: never;
+        minzoom?: never;
+        tiles?: never;
+        url: string;
+      }
+    | {
+        bounds?: [number, number, number, number];
+        maxzoom?: number;
+        minzoom?: number;
+        tiles: [string, ...string[]];
+        url?: never;
+      }
+  );
 
 export type TileflowDataConfig = TileflowWorldData | VectorTilesData;
 
 export type TileflowDataIdentity = {
+  generation?: typeof tileflowWorldGeneration;
   kind: TileflowDataConfig['type'];
+  /** External fixture identity, or a legacy World diagnostic retained for receipt compatibility. */
   revision?: string;
   schema: OpenMapTilesSchema['type'];
   schemaVersion: number;
@@ -92,14 +117,19 @@ export type TileflowDataIdentity = {
 };
 
 export type ResolvedTileflowData = {
-  /** Omitted when the versioned TileJSON is the authoritative attribution source. */
-  attribution?: string;
+  assetSet?: WorldGenerationDescriptor['assetSet'];
+  attribution: string;
+  bounds?: WorldGenerationDescriptor['bounds'];
+  generation?: typeof tileflowWorldGeneration;
   identity: TileflowDataIdentity;
   kind: TileflowDataConfig['type'];
+  maxzoom?: number;
+  minzoom?: number;
   revision?: string;
   schema: OpenMapTilesSchema;
   sourceId: typeof tileflowPrimarySourceId;
-  url: string;
+  tiles?: string[];
+  url?: string;
 };
 
 const canonicalLayers = {
@@ -170,53 +200,85 @@ export function openMapTiles(options: OpenMapTilesSchemaOptions = {}): OpenMapTi
   };
 }
 
-export function tileflowWorld(options: {revision?: string} = {}): TileflowWorldData {
+export function tileflowWorld(): TileflowWorldData {
   return {
+    generation: tileflowWorldGeneration,
     type: 'tileflow-world',
-    ...(options.revision ? {revision: validateRevision(options.revision)} : {}),
   };
 }
 
 export function vectorTiles(options: {
   attribution: string;
+  bounds?: [number, number, number, number];
+  maxzoom?: number;
+  minzoom?: number;
   revision?: string;
   schema: OpenMapTilesSchema;
-  url: string;
+  tiles?: readonly [string, ...string[]];
+  url?: string;
 }): VectorTilesData {
   const attribution = options.attribution.trim();
   if (!attribution) {
     throw new Error('Tileflow vector tile attribution must not be empty.');
   }
+  if ((options.url === undefined) === (options.tiles === undefined)) {
+    throw new Error('Tileflow vector data requires exactly one TileJSON URL or tiles array.');
+  }
+  if (options.tiles && (options.tiles.length < 1 || options.tiles.length > 8)) {
+    throw new Error('Tileflow vector data requires from one to eight direct tile URLs.');
+  }
 
-  return {
+  const zooms = validateZoomRange(options.minzoom, options.maxzoom);
+  const bounds = options.bounds ? validateBounds(options.bounds) : undefined;
+
+  const common: VectorTilesDataCommon = {
     type: 'vector-tiles',
     attribution,
     ...(options.revision ? {revision: validateRevision(options.revision)} : {}),
     schema: validateOpenMapTilesSchema(options.schema),
-    url: validatePublicVectorUrl(options.url),
+  };
+
+  if (options.url !== undefined) {
+    return {...common, url: validatePublicVectorUrl(options.url)};
+  }
+
+  return {
+    ...common,
+    ...(bounds ? {bounds} : {}),
+    ...zooms,
+    tiles: options.tiles!.map(validatePublicVectorUrl) as [string, ...string[]],
   };
 }
 
 export function resolveTileflowData(
   data: TileflowDataConfig | undefined,
-  options: {apiBaseUrl?: string} = {},
+  options: {worldGeneration?: WorldGenerationDescriptor} = {},
 ): ResolvedTileflowData {
   const descriptor = data ?? tileflowWorld();
 
   if (descriptor.type === 'tileflow-world') {
-    const revision = descriptor.revision ?? tileflowWorldRevision;
-    const url = new URL('/tiles/world/tiles.json', normalizeApiBaseUrl(options.apiBaseUrl));
-    url.searchParams.set('archiveVersion', revision);
+    if (descriptor.generation !== tileflowWorldGeneration) {
+      throw new Error(`Tileflow World generation must be ${tileflowWorldGeneration}.`);
+    }
     const schema = openMapTiles();
+    const generationDescriptor = options.worldGeneration
+      ? parseWorldGenerationDescriptor(options.worldGeneration)
+      : undefined;
 
     return {
-      ...(revision === tileflowWorldRevision ? {attribution: defaultAttribution} : {}),
-      identity: dataIdentity(descriptor.type, schema, revision),
+      ...(generationDescriptor ? {assetSet: generationDescriptor.assetSet} : {}),
+      attribution: generationDescriptor?.attribution ?? defaultAttribution,
+      ...(generationDescriptor ? {bounds: generationDescriptor.bounds} : {}),
+      generation: descriptor.generation,
+      identity: dataIdentity(descriptor.type, schema, {
+        generation: descriptor.generation,
+      }),
       kind: descriptor.type,
-      revision,
+      ...(generationDescriptor ? {maxzoom: generationDescriptor.maxzoom} : {}),
+      ...(generationDescriptor ? {minzoom: generationDescriptor.minzoom} : {}),
       schema,
       sourceId: tileflowPrimarySourceId,
-      url: url.toString(),
+      tiles: [generationDescriptor?.tileUrl ?? tileflowWorldTileUrl],
     };
   }
 
@@ -224,12 +286,17 @@ export function resolveTileflowData(
 
   return {
     attribution: descriptor.attribution,
-    identity: dataIdentity(descriptor.type, schema, descriptor.revision),
+    ...(descriptor.bounds ? {bounds: descriptor.bounds} : {}),
+    identity: dataIdentity(descriptor.type, schema, {revision: descriptor.revision}),
     kind: descriptor.type,
+    ...(descriptor.maxzoom === undefined ? {} : {maxzoom: descriptor.maxzoom}),
+    ...(descriptor.minzoom === undefined ? {} : {minzoom: descriptor.minzoom}),
     ...(descriptor.revision ? {revision: descriptor.revision} : {}),
     schema,
     sourceId: tileflowPrimarySourceId,
-    url: validatePublicVectorUrl(descriptor.url),
+    ...(descriptor.url !== undefined
+      ? {url: validatePublicVectorUrl(descriptor.url)}
+      : {tiles: descriptor.tiles!.map(validatePublicVectorUrl)}),
   };
 }
 
@@ -249,23 +316,16 @@ export function isCanonicalOpenMapTilesSchema(schema: OpenMapTilesSchema): boole
 function dataIdentity(
   kind: TileflowDataConfig['type'],
   schema: OpenMapTilesSchema,
-  revision: string | undefined,
+  version: {generation?: typeof tileflowWorldGeneration; revision?: string},
 ): TileflowDataIdentity {
   return {
+    ...(version.generation ? {generation: version.generation} : {}),
     kind,
-    ...(revision ? {revision} : {}),
+    ...(version.revision ? {revision: version.revision} : {}),
     schema: schema.type,
     schemaVersion: schema.contractVersion,
     sourceId: tileflowPrimarySourceId,
   };
-}
-
-function normalizeApiBaseUrl(value: string | undefined): string {
-  const url = new URL(value ?? 'https://api.tileflow.dev');
-  if (url.username || url.password) {
-    throw new Error('Tileflow API base URL must not contain user information.');
-  }
-  return url.toString();
 }
 
 function validatePublicVectorUrl(value: string): string {
@@ -333,3 +393,48 @@ function validateRevision(value: string): string {
   }
   return value;
 }
+
+function validateZoomRange(
+  minzoom: number | undefined,
+  maxzoom: number | undefined,
+): {maxzoom?: number; minzoom?: number} {
+  for (const [name, value] of [
+    ['minzoom', minzoom],
+    ['maxzoom', maxzoom],
+  ] as const) {
+    if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > 30)) {
+      throw new Error(`Tileflow vector ${name} must be an integer from 0 to 30.`);
+    }
+  }
+  if (minzoom !== undefined && maxzoom !== undefined && minzoom > maxzoom) {
+    throw new Error('Tileflow vector minzoom must not exceed maxzoom.');
+  }
+  return {
+    ...(maxzoom === undefined ? {} : {maxzoom}),
+    ...(minzoom === undefined ? {} : {minzoom}),
+  };
+}
+
+function validateBounds(value: [number, number, number, number]): [number, number, number, number] {
+  const [west, south, east, north] = value;
+  if (
+    !value.every(Number.isFinite) ||
+    west < -180 ||
+    east > 180 ||
+    south < -90 ||
+    north > 90 ||
+    west >= east ||
+    south >= north
+  ) {
+    throw new Error('Tileflow vector bounds must be increasing longitude/latitude axes.');
+  }
+  return [...value];
+}
+
+export {
+  parseWorldGenerationDescriptor,
+  tileflowWorldGeneration,
+  tileflowWorldTileUrl,
+  worldGenerationDescriptorSchema,
+} from './world-generation';
+export type {WorldDataDescriptor, WorldGenerationDescriptor} from './world-generation';

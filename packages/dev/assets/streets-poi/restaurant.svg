@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
   <title>Restaurant</title>
-  <circle cx="12" cy="13" r="10.5" fill="#44515E" opacity=".08"/>
-  <circle cx="12" cy="12.5" r="10" fill="#44515E" opacity=".22"/>
-  <circle cx="12" cy="11" r="10" fill="#FFFFFF"/>
-  <circle cx="12" cy="11" r="8.25" fill="#FF9E67"/>
-  <svg x="8.5" y="6" width="7" height="9.625" viewBox="0 0 8 11" fill="#FFFFFF">
-    <path transform="translate(-6 -6)" fill-rule="evenodd" d="M12.4864865,12.0540541 L12.4864865,16.1621622 L14,16.1621622 L14,6.21621622 L12.4864865,6.21621622 L11.6216216,7.94594595 L11.6216216,10.7567568 L12.4864865,12.0540541 Z M9.02702703,10.7567568 L9.02702703,11.1891892 L10.7567568,10.3243243 L10.7567568,9.89189189 L10.7567568,7.08108108 L9.67567568,6.21621622 L9.67567568,9.45945946 L9.13513514,9.45945946 L8.81081081,9.45945946 L8.81081081,6 L7.94594595,6 L7.94594595,9.45945946 L7.62162162,9.45945946 L7.08108108,9.45945946 L7.08108108,6.21621622 L6,7.08108108 L6,9.89189189 L6,10.3243243 L7.72972973,11.1891892 L7.72972973,10.7567568 L7.72972973,16.1621622 L9.02702703,16.1621622 Z"/>
-  </svg>
+  <desc>Original Tileflow restaurant pictogram.</desc>
+  <rect x="2.25" y="3.25" width="19.5" height="19.5" rx="6.25" fill="#44515E" opacity=".14"/>
+  <rect x="2.25" y="2.25" width="19.5" height="19.5" rx="6.25" fill="#FFFFFF"/>
+  <rect x="4" y="4" width="16" height="16" rx="4.75" fill="#FF9E67"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8.25 6.75v3.6a1.75 1.75 0 0 0 3.5 0v-3.6M10 6.75v10.5M15.8 17.25V6.75c-1.65.65-2.45 2.25-2.45 4.45h2.45"/>
+  </g>
 </svg>

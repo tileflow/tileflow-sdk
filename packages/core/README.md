@@ -303,10 +303,12 @@ Framework adapters import the browser-only lifecycle kernel explicitly:
 
 ```ts
 import {
+  attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
   createTileflowMarkerController,
   createTileflowSessionStarter,
   createTileflowTransformRequest,
+  registerTileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
 ```
 
@@ -327,6 +329,14 @@ can set `grantTimeoutMs` from 1 to 120,000 milliseconds.
 `analytics.enabled: false` disables only the optional analytics beacon. It does not disable this
 server-owned commercial authorization. User `transformRequest` callbacks still run first; Tileflow
 then decorates only the resulting eligible URL and preserves the other request options.
+
+For direct Tileflow World tiles, framework adapters also use the browser request bridge to observe
+the response's safe fair-use state without adding identity, query parameters, credentials, or user
+headers to the public World URL. Early `GRACE` stays silent; signed late `GRACE` creates a compact
+accessible owner-action pill, and `CLAIM_REQUIRED` creates a stronger in-map banner. A missing
+header, absent tile, MapLibre error, or failed response cannot erase an existing claim action; a
+later successful `OPEN` response can clear it. Shaped empty tiles remain render-safe while the owner
+action stays available.
 
 Other subpaths under `src/`, `themes/`, `templates/`, and `modules/` are internal implementation
 details and can change during alpha releases.

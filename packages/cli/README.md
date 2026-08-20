@@ -224,6 +224,22 @@ npm exec --no -- tileflow projects archive @acme/legacy --json
 npm exec --no -- tileflow logout
 ```
 
+When Tileflow gives an agent a continuation command for a verified World conversion, keep the
+promotion reference in that exact deploy action:
+
+```sh
+npm exec --no -- tileflow deploy \
+  --project @acme/web \
+  --world-promotion wpr_example1234
+```
+
+The promotion reference is neither a map ID nor a credential. If the config contains one map, the
+CLI selects it automatically. If it contains several, add the exact generated `--map <name>`; an
+ambiguous command stops and lists the map names before authentication or network work. A successful
+server-confirmed continuation keeps unrelated manifest entries and records only the managed map's
+stable `mapId`, hosted style URL, World `v1` generation, and fixed session usage mode. Do not add an
+API key or payment authority to a copied prompt.
+
 If the account has exactly one accessible active project, a hosted command may
 resolve it automatically. With more than one, project writes fail before config
 execution or network mutation, print deterministically sorted

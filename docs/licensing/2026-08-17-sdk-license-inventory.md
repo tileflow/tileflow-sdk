@@ -58,8 +58,8 @@ before accepting it as a release input.
 | License gate in `PUBLISHING.md`                 | Absent; the procedure contains no license, notice, or attribution step                                   |
 | Copyright or SPDX headers in first-party source | None; 0 of 85 files under `packages/*/src` carry one                                                     |
 
-The Apache-2.0 label has not been started. That matches the launch plan, which forbids adding it
-before this inventory is accepted. Adding the label is Milestone 4 work in that plan and must not be
+The Apache-2.0 label has not been started and must not be added before this inventory is accepted.
+Adding the label is release-qualification work and must not be
 treated as a metadata-only change: it also requires the notice, dependency, generated-output, and
 asset facts below.
 
@@ -107,8 +107,9 @@ Notes that affect a license label:
 - `examples/*` are `private: true` and are not published. `scripts/*` are repository tooling and are
   not published, but they are part of the repository and would fall under a root license file.
 - The copyright owner to be named in a root `LICENSE`/`NOTICE` and in each `license` field has not
-  been recorded anywhere in this repository. The platform launch plan and the prepared legal drafts
-  both still carry an unresolved legal-entity question. That identity is an input to Milestone 4, not
+  been recorded anywhere in this repository. The prepared legal drafts still carry an unresolved
+  legal-entity question. That identity is an input to release
+  qualification, not
   something this inventory can supply.
 
 ## 3. Bundled non-source assets
@@ -143,8 +144,7 @@ Two facts matter for the intended generated-output grant:
 1. **No notice or attribution file is emitted.** The only attribution that reaches the output is the
    `attribution` string carried by the data-source descriptor and copied into the style. There is no
    NOTICE, license, or third-party-attribution artifact in generated output, and no test requires
-   one. The launch plan's requirement that "NOTICE/license emission preserves third-party
-   requirements" is unimplemented.
+   one. Preserving third-party requirements through NOTICE/license emission remains unimplemented.
 2. **The generated sprite can contain third-party artwork.** By default it contains the
    Google-derived POI glyphs above. Tileflow cannot grant broader redistribution rights over that
    artwork than it holds itself, and the CC BY attribution and modification-indication obligations
@@ -153,7 +153,7 @@ Two facts matter for the intended generated-output grant:
 The current default data attribution constant in `packages/core/src/data/index.ts` is
 `© OpenFreeMap, © OpenMapTiles, © OpenStreetMap contributors`. For the public World launch this
 string must come from the audited release descriptor in `tileflow.lock` rather than a library
-default; that replacement is Milestone 4 work in the platform plan. Recording it here only notes
+default; that replacement is release-qualification work. Recording it here only notes
 that today's default names three upstream parties whose obligations the platform-side audit owns.
 
 ## 5. Runtime dependency licenses
@@ -268,11 +268,11 @@ Why it blocks:
 
 Recorded remediation (product-owner decision, 2026-08-17): keep the blocker recorded here and
 replace the nine icons with Tileflow-original artwork or a public-domain set before the Apache-2.0
-label and the generated-output grant are published. The replacement is Milestone 4 work in the
-platform launch plan. This inventory does not select the replacement artwork and does not weaken the
+label and the generated-output grant are published. The replacement is release-qualification work.
+This inventory does not select the replacement artwork and does not weaken the
 product decision that the default `streets` basemap ships useful POI iconography.
 
-Until the replacement lands, Milestone 4 must not: add a `license` field or `LICENSE` file that
+Until the replacement lands, release qualification must not add a `license` field or `LICENSE` file that
 covers `packages/dev/assets/streets-poi/*` under Apache-2.0, or publish a generated-output grant
 that would extend to that artwork.
 
@@ -308,5 +308,4 @@ These are inputs for review, not conclusions:
 
 It does not grant a license, label a package, approve a notice file, resolve the legal entity,
 approve the generated-output wording, or clear B1. It records the observed state at
-`4223da576c23a8bd08f6c83114edb25720e4ec9f` so that a reviewer and the platform launch plan can act
-on facts.
+`4223da576c23a8bd08f6c83114edb25720e4ec9f` so that release reviewers can act on facts.

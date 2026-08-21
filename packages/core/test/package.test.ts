@@ -70,7 +70,7 @@ test('packages only the direct Streets authoring surface and compiler', async ()
     const entry = await import('@tileflow/core');
     for (const name of [
       'streets', 'land', 'water', 'roads', 'transit', 'aeroways',
-      'buildings', 'boundaries', 'labels', 'poi', 'createStyle',
+      'buildings', 'boundaries', 'labels', 'poi', 'vegetation', 'createStyle',
     ]) {
       if (typeof entry[name] !== 'function') process.exit(2);
     }

@@ -33,8 +33,10 @@ import {
   captureReceiptPath,
   writeAtomicFileSet,
 } from './capture-output';
+import {withTileflowConfigSecretsHidden} from './config-execution';
 
 type VisualDiffOptions = {
+  all?: boolean;
   appOrigin?: string;
   baselineDir: string;
   browserInstall: boolean;
@@ -45,6 +47,7 @@ type VisualDiffOptions = {
 };
 
 type VisualUpdateOptions = {
+  all?: boolean;
   appOrigin?: string;
   baselineDir: string;
   browserInstall: boolean;
@@ -162,6 +165,7 @@ export function registerVisualCommands(
     .command('diff')
     .description('Compare fresh scene renders with approved baselines without changing them')
     .argument('[scenes...]', 'named committed capture scenes')
+    .option('--all', 'compare every configured committed scene')
     .requiredOption('--baseline-dir <path>', 'directory containing approved baseline pairs')
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)
     .option(
@@ -186,6 +190,7 @@ export function registerVisualCommands(
     .command('update')
     .description('Save fresh scene renders as approved visual baselines')
     .argument('[scenes...]', 'named committed capture scenes')
+    .option('--all', 'update every configured committed scene')
     .requiredOption('--baseline-dir <path>', 'directory for approved baseline pairs')
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)
     .option('--app-origin <origin>', 'loopback origin for committed application scenes')
@@ -250,7 +255,6 @@ export function serializeTileflowVisualCommandJson(
 
 async function runVisualAnalyze(scene: string, options: VisualAnalyzeOptions): Promise<void> {
   validateVisualSelection([scene]);
-  delete process.env.TILEFLOW_API_KEY;
   const cwd = process.cwd();
   const referencePath = resolve(cwd, options.reference);
   const referencePng = await readVisualReference(referencePath);
@@ -271,7 +275,9 @@ async function runVisualAnalyze(scene: string, options: VisualAnalyzeOptions): P
   });
 
   try {
-    const result = await session.capture([scene], controller.signal);
+    const result = await withTileflowConfigSecretsHidden(() =>
+      session.capture([scene], controller.signal),
+    );
     const capture = result.captures[0];
     if (!capture || result.captures.length !== 1) {
       throw new Error('Visual analysis requires exactly one captured scene.');
@@ -311,11 +317,10 @@ async function runVisualAnalyze(scene: string, options: VisualAnalyzeOptions): P
 }
 
 async function runVisualDiff(scenes: string[], options: VisualDiffOptions): Promise<void> {
-  validateVisualSelection(scenes);
+  validateVisualSelection(scenes, options.all);
   if (options.failOn !== undefined && options.failOn !== 'changed') {
     throw new Error('--fail-on expects changed.');
   }
-  delete process.env.TILEFLOW_API_KEY;
   const cwd = process.cwd();
   const baselineDirectory = await resolveVisualDirectory(cwd, options.baselineDir, 'baseline');
   const outputDirectory = await resolveVisualDirectory(cwd, options.outputDir, 'output');
@@ -333,7 +338,11 @@ async function runVisualDiff(scenes: string[], options: VisualDiffOptions): Prom
   });
 
   try {
-    const result = await session.capture(scenes, controller.signal);
+    const result = await withTileflowConfigSecretsHidden(() =>
+      options.all
+        ? session.captureAll(controller.signal)
+        : session.capture(scenes, controller.signal),
+    );
     const prepared: Array<{
       capture: TileflowCapture;
       comparison: TileflowVisualComparison;
@@ -413,8 +422,7 @@ async function runVisualDiff(scenes: string[], options: VisualDiffOptions): Prom
 }
 
 async function runVisualUpdate(scenes: string[], options: VisualUpdateOptions): Promise<void> {
-  validateVisualSelection(scenes);
-  delete process.env.TILEFLOW_API_KEY;
+  validateVisualSelection(scenes, options.all);
   const cwd = process.cwd();
   const baselineDirectory = await resolveVisualDirectory(cwd, options.baselineDir, 'baseline');
   const controller = installSignalAbortController();
@@ -428,7 +436,11 @@ async function runVisualUpdate(scenes: string[], options: VisualUpdateOptions): 
   });
 
   try {
-    const result = await session.capture(scenes, controller.signal);
+    const result = await withTileflowConfigSecretsHidden(() =>
+      options.all
+        ? session.captureAll(controller.signal)
+        : session.capture(scenes, controller.signal),
+    );
     const updates: TileflowVisualUpdateJsonEntry[] = [];
     const outputFiles: Array<{path: string; source: string | Uint8Array}> = [];
 
@@ -633,8 +645,11 @@ async function resolveVisualDirectory(
   return {boundary, path};
 }
 
-function validateVisualSelection(scenes: readonly string[]): void {
-  if (scenes.length === 0) throw new Error('Select at least one committed visual scene.');
+function validateVisualSelection(scenes: readonly string[], all = false): void {
+  if (all && scenes.length > 0) throw new Error('Use either named scenes or --all, not both.');
+  if (!all && scenes.length === 0) {
+    throw new Error('Select at least one committed visual scene or use --all.');
+  }
 }
 
 function pathsOverlap(left: string, right: string): boolean {

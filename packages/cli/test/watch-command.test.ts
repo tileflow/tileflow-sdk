@@ -15,7 +15,9 @@ test('dev emits valid/invalid/recovered/stopped NDJSON and serves last-good loca
   const cwd = await createFixture('tileflow-dev-watch-');
   await writeWatchFixture(cwd, '#112233');
   const port = await reservePort();
-  const running = startCli(cwd, ['dev', '--json', '--map', 'main', '--port', String(port)]);
+  const running = startCli(cwd, ['dev', '--json', '--map', 'main', '--port', String(port)], {
+    TILEFLOW_API_KEY: 'watch-secret',
+  });
   t.after(async () => {
     await running.stop();
     await rm(cwd, {force: true, recursive: true});
@@ -23,9 +25,9 @@ test('dev emits valid/invalid/recovered/stopped NDJSON and serves last-good loca
 
   const ready = await running.waitFor((event) => event.event === 'ready');
   assert.equal(ready.generation, 1);
-  const status = await fetchEventually(`http://localhost:${port}/__status`);
+  const status = await fetchEventually(`http://127.0.0.1:${port}/__status`);
   assert.equal(status.status, 'ready');
-  const preview = await (await fetch(`http://localhost:${port}/`)).text();
+  const preview = await (await fetch(`http://127.0.0.1:${port}/`)).text();
   assert.doesNotMatch(preview, /unpkg|fonts\.googleapis|fonts\.gstatic/);
 
   await writeFile(join(cwd, 'tileflow.config.ts'), invalidConfig, 'utf8');
@@ -40,11 +42,11 @@ test('dev emits valid/invalid/recovered/stopped NDJSON and serves last-good loca
     'config-validation',
   );
   const invalidStatus = await fetchEventually(
-    `http://localhost:${port}/__status`,
+    `http://127.0.0.1:${port}/__status`,
     (body) => body.status === 'invalid',
   );
   assert.equal(invalidStatus.lastGoodGeneration, 1);
-  assert.equal((await fetch(`http://localhost:${port}/styles/main.json`)).status, 200);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/styles/main.json`)).status, 200);
 
   await writeFile(join(cwd, 'tileflow.config.ts'), validConfig, 'utf8');
   const recovered = await running.waitFor((event) => event.event === 'recovered');
@@ -65,6 +67,7 @@ test('dev emits valid/invalid/recovered/stopped NDJSON and serves last-good loca
   const completion = await running.completion;
   assert.equal(completion.code, 0, completion.stderr);
   assert.equal(JSON.stringify(running.events).includes(cwd), false);
+  assert.doesNotMatch(`${JSON.stringify(running.events)}\n${completion.stderr}`, /watch-secret/);
 });
 
 test(
@@ -145,6 +148,7 @@ test('capture watch exits nonzero when stopped with no valid capture and an inva
 });
 
 const validConfig = `import tokens from './tokens.json';
+if (process.env.TILEFLOW_API_KEY) throw new Error('ambient API key reached watched config');
 export default {
   maps: {
     main: {

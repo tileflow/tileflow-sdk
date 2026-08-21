@@ -29,6 +29,7 @@ import {
   TileflowValidationError,
 } from '@tileflow/dev';
 import {captureReceiptPath, writeCapturePair} from './capture-output';
+import {withTileflowConfigSecretsHidden} from './config-execution';
 
 export type CaptureCommandOptions = {
   all?: boolean;
@@ -255,78 +256,83 @@ async function runCaptureCommand(
   options: CaptureCommandOptions,
 ): Promise<void> {
   validateSelectionOptions(positionalScenes, options);
-  delete process.env.TILEFLOW_API_KEY;
-
-  if (options.watch) {
-    await runCaptureWatchCommand(positionalScenes, options);
-    return;
-  }
-
-  const cwd = process.cwd();
-  const controller = installSignalAbortController();
-  const session = createTileflowCaptureSession({
-    allowBrowserInstall: options.browserInstall,
-    appOrigin: options.url ? undefined : (options.appOrigin ?? process.env.TILEFLOW_APP_ORIGIN),
-    appUrl: options.url,
-    config: options.config,
-    cwd,
-    onBrowserInstallProgress: options.json ? undefined : printInstallProgress,
-    frame: options.frame,
-    selector: options.selector,
-    signal: controller.signal,
-  });
-
-  try {
-    const exploratoryDefinition = options.map ? createExploratoryScene(options) : undefined;
-    const result = exploratoryDefinition
-      ? await session.captureDefinitions({[options.map!]: exploratoryDefinition}, controller.signal)
-      : options.all
-        ? await session.captureAll(controller.signal)
-        : await session.capture(positionalScenes, controller.signal);
-    const targets = resolveOutputTargets(result.captures, options, cwd);
-    const written: Array<{
-      capture: TileflowCapture;
-      definition?: NormalizedTileflowCaptureScene;
-      outputPath: string;
-      receiptPath: string;
-    }> = [];
-
-    for (const target of targets) {
-      await writeCapturePair({
-        boundaryPath: target.boundaryPath,
-        force: Boolean(options.force),
-        managed: target.managed,
-        outputPath: target.outputPath,
-        png: target.capture.png,
-        receipt: serializeTileflowCaptureReceipt(target.capture.receipt),
-        receiptPath: target.receiptPath,
-      });
-      written.push({
-        ...target,
-        ...(exploratoryDefinition ? {definition: exploratoryDefinition} : {}),
-      });
-    }
-
-    if (targets.some((target) => target.managed)) {
-      await warnIfManagedCapturesAreNotIgnored(cwd);
-    }
-
-    const document = createTileflowCaptureJson(written, cwd);
-    if (options.json) {
-      process.stdout.write(serializeTileflowCaptureJson(document));
+  await withTileflowConfigSecretsHidden(async () => {
+    if (options.watch) {
+      await runCaptureWatchCommand(positionalScenes, options);
       return;
     }
 
-    for (const entry of document.captures) {
-      console.log(`Captured ${entry.scene} -> ${entry.outputPath} (${entry.sha256.slice(0, 12)}).`);
-      if (entry.networkDependent) {
-        console.error(`Capture ${entry.scene} used remote map resources.`);
+    const cwd = process.cwd();
+    const controller = installSignalAbortController();
+    const session = createTileflowCaptureSession({
+      allowBrowserInstall: options.browserInstall,
+      appOrigin: options.url ? undefined : (options.appOrigin ?? process.env.TILEFLOW_APP_ORIGIN),
+      appUrl: options.url,
+      config: options.config,
+      cwd,
+      onBrowserInstallProgress: options.json ? undefined : printInstallProgress,
+      frame: options.frame,
+      selector: options.selector,
+      signal: controller.signal,
+    });
+
+    try {
+      const exploratoryDefinition = options.map ? createExploratoryScene(options) : undefined;
+      const result = exploratoryDefinition
+        ? await session.captureDefinitions(
+            {[options.map!]: exploratoryDefinition},
+            controller.signal,
+          )
+        : options.all
+          ? await session.captureAll(controller.signal)
+          : await session.capture(positionalScenes, controller.signal);
+      const targets = resolveOutputTargets(result.captures, options, cwd);
+      const written: Array<{
+        capture: TileflowCapture;
+        definition?: NormalizedTileflowCaptureScene;
+        outputPath: string;
+        receiptPath: string;
+      }> = [];
+
+      for (const target of targets) {
+        await writeCapturePair({
+          boundaryPath: target.boundaryPath,
+          force: Boolean(options.force),
+          managed: target.managed,
+          outputPath: target.outputPath,
+          png: target.capture.png,
+          receipt: serializeTileflowCaptureReceipt(target.capture.receipt),
+          receiptPath: target.receiptPath,
+        });
+        written.push({
+          ...target,
+          ...(exploratoryDefinition ? {definition: exploratoryDefinition} : {}),
+        });
       }
+
+      if (targets.some((target) => target.managed)) {
+        await warnIfManagedCapturesAreNotIgnored(cwd);
+      }
+
+      const document = createTileflowCaptureJson(written, cwd);
+      if (options.json) {
+        process.stdout.write(serializeTileflowCaptureJson(document));
+        return;
+      }
+
+      for (const entry of document.captures) {
+        console.log(
+          `Captured ${entry.scene} -> ${entry.outputPath} (${entry.sha256.slice(0, 12)}).`,
+        );
+        if (entry.networkDependent) {
+          console.error(`Capture ${entry.scene} used remote map resources.`);
+        }
+      }
+    } finally {
+      await session.close();
+      controller.close();
     }
-  } finally {
-    await session.close();
-    controller.close();
-  }
+  });
 }
 
 async function runCaptureWatchCommand(

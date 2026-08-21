@@ -30,6 +30,53 @@ test('visual help explains reference matching and reviewed baselines', async (t)
   assert.match(updateHelp.stdout, /Save fresh scene renders as approved visual baselines/i);
 });
 
+test('visual diff and update require named scenes or explicit --all, never both', async (t) => {
+  const directory = await createDirectoryFixture(t, 'tileflow-visual-selection-');
+  const missing = await runCli(directory, [
+    'visual',
+    'diff',
+    '--baseline-dir',
+    'visual-baselines',
+    '--json',
+    '--no-browser-install',
+  ]);
+  assert.equal(missing.code, 1);
+  assert.equal(missing.stdout, '');
+  assert.match(missing.stderr, /at least one committed visual scene or use --all/);
+
+  const ambiguous = await runCli(directory, [
+    'visual',
+    'update',
+    'proof',
+    '--all',
+    '--baseline-dir',
+    'visual-baselines',
+    '--json',
+    '--no-browser-install',
+  ]);
+  assert.equal(ambiguous.code, 1);
+  assert.equal(ambiguous.stdout, '');
+  assert.match(ambiguous.stderr, /either named scenes or --all/);
+
+  await writeFile(
+    join(directory, 'tileflow.config.ts'),
+    `export default {maps: {main: {unsupported: true}}};\n`,
+  );
+  const all = await runCli(directory, [
+    'visual',
+    'update',
+    '--all',
+    '--baseline-dir',
+    'visual-baselines',
+    '--json',
+    '--no-browser-install',
+  ]);
+  assert.equal(all.code, 1);
+  assert.equal(all.stdout, '');
+  assert.doesNotMatch(all.stderr, /Select at least|either named scenes/);
+  assert.match(all.stderr, /config|unsupported/i);
+});
+
 test(
   'diffs, fails by explicit policy, and atomically updates controlled visual baselines',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},

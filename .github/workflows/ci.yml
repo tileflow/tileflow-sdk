@@ -101,8 +101,10 @@ jobs:
         if: runner.os == 'Linux'
         run: bash scripts/configure-linux-chromium-sandbox.sh
 
-      - name: Run cross-platform capture and browser suite
-        run: pnpm --filter @tileflow/capture run smoke:browser
+      - name: Run cross-platform capture and CLI browser suites
+        run: |
+          pnpm --filter @tileflow/capture run smoke:browser
+          pnpm --filter @tileflow/cli run test
         env:
           TILEFLOW_RUN_BROWSER_TESTS: '1'
 

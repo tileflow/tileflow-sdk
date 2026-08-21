@@ -118,7 +118,10 @@ Standalone capture applies the committed camera itself. Application capture deli
 reach into an arbitrary framework component to rewrite its camera: the selected application route
 and props must render the committed camera. The camera remains part of scene identity, so changing
 it invalidates baseline compatibility even when an application accidentally renders the same
-pixels.
+pixels. The same trust boundary applies to the configured style and data: standalone receipts mark
+both as `rendered`, while application receipts mark both as `expected-unverified`. An application
+receipt identifies the configuration expected by the scene, but does not claim that Tileflow
+inspected the running application's MapLibre style or data source.
 
 ## DOM readiness protocol
 
@@ -171,12 +174,27 @@ server.
 
 Receipts are canonical schema-version-2 JSON and contain only scene/map/target identity, normalized
 scene and style hashes, PNG hash and CSS/physical dimensions, Tileflow/MapLibre/Playwright/Chromium
-identity, OS/architecture class, DPR, required resolved `data` identity, and `networkDependent`.
-`data` records the provider kind, optional explicit revision, OpenMapTiles schema/version, and the
-stable primary source ID. It participates in scene compatibility. Receipts omit time, user, origin,
-repository, absolute path, environment, credentials, source pixels, and config source. Receipt
-parsing is canonical-JSON, exact-key, UTF-8, size, portable-identifier, hash, dimension, and
-pixel-budget validated; parser-dependent duplicate keys are rejected.
+identity, OS/architecture class, DPR, required resolved `data` identity, explicit `verification`,
+and `networkDependent`. The durable receipt data type is owned and versioned by `@tileflow/capture`;
+it is not an alias of the evolving core authoring type.
+
+`data` records the provider kind, optional explicit revision, OpenMapTiles schema/version, stable
+primary source ID, optional schema bindings/capabilities, and an optional safe source fingerprint.
+The fingerprint contains only a source class plus SHA-256. Its input removes query and fragment;
+loopback sources also discard host and port. A raw URL, origin, path, query, signed token, or
+credential is never written by a new receipt. This identity participates in scene compatibility.
+Receipts also omit time, user, repository, absolute filesystem path, environment, source pixels,
+and config source.
+
+Schema-v2 receipts written before source fingerprints, `verification`, or the bathymetry capability
+remain readable. Parsing first validates their exact canonical legacy representation, then
+normalizes a legacy URL to the safe fingerprint and infers verification from the target. A
+three-capability baseline remains compatible when a fresh receipt adds bathymetry or new binding
+keys, provided every identity value recorded by the baseline still agrees. Conflicting recorded
+values remain a scene mismatch. Serializing a parsed legacy receipt writes only the normalized safe
+shape; it never reproduces its raw URL. Receipt parsing remains exact-key, UTF-8, size,
+portable-identifier, hash, dimension, and pixel-budget validated; parser-dependent duplicate keys
+are rejected.
 
 ## Visual comparison and baselines
 
@@ -242,7 +260,8 @@ phase, diagnostics, and safe resource metadata; raw nested causes are not a CLI 
 exploratory reference path to Node callers. `createTileflowVisualReferenceAnalysisDocument` removes
 diff bytes before JSON projection.
 
-Schema version 1 is a compatibility boundary. Removing or renaming a field, changing an enum's
-meaning, weakening readiness, changing exact-pixel classification, or silently selecting another
+Capture-result, visual-comparison, and visual-analysis schema version 1, plus receipt schema version
+2, are compatibility boundaries. Removing or renaming a field, changing an enum's meaning,
+weakening readiness, changing exact-pixel classification, or silently selecting another
 browser/runtime requires an explicit contract revision. New optional metadata must remain bounded,
-deterministic, non-secret, and covered by parser and CLI serialization tests.
+deterministic, non-secret, backward-readable, and covered by parser and CLI serialization tests.

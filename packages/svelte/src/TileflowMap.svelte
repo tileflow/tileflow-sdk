@@ -1,8 +1,9 @@
 <script lang="ts">
-  import maplibregl, {
+  import * as maplibreglModule from 'maplibre-gl';
+  import {
     type LngLatLike,
     type Map as MapLibreMap,
-    type MapOptions as MapLibreMapOptions,
+    type Marker as MapLibreMarker,
     type StyleSpecification,
   } from 'maplibre-gl';
   import {createEventDispatcher, onMount, tick} from 'svelte';
@@ -18,11 +19,7 @@
     resolveTileflowRuntimeStyle,
     resolveTileflowStaticImageUrl,
     shouldLoadTileflowManifest,
-    type MapLibreStyle,
-    type TileflowAnalytics,
-    type TileflowConfig,
     type TileflowMapMarker,
-    type TileflowProjectThemes,
     type TileflowRuntimeManifestMap,
   } from '@tileflow/core';
   import {
@@ -32,33 +29,37 @@
     createTileflowTransformRequest,
     type TileflowMapLifecycleAttachment,
   } from '@tileflow/core/browser';
+  import type {TileflowMapOptions, TileflowMapProps} from './index.js';
+  import {assertTileflowMapStyleInputs} from './style-source.js';
 
-  export let alt = '';
-  export let analytics: TileflowAnalytics | undefined = undefined;
-  type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
+  export let alt: NonNullable<TileflowMapProps['alt']> = '';
+  export let analytics: TileflowMapProps['analytics'] = undefined;
 
   const defaultCenter: [number, number] = [0, 20];
   const defaultZoom = 2;
+  const maplibregl = (
+    'default' in maplibreglModule ? maplibreglModule.default : maplibreglModule
+  ) as typeof import('maplibre-gl');
 
-  export let center: [number, number] | undefined = undefined;
-  export let captureId: string | undefined = undefined;
-  export let className = '';
-  export let config: TileflowConfig | undefined = undefined;
-  export let height: number | string = 420;
-  export let imageLoading: HTMLImageElement['loading'] = 'eager';
-  export let imageUrl: string | undefined = undefined;
-  export let interactive: boolean | undefined = undefined;
-  export let manifestUrl = defaultTileflowManifestUrl;
-  export let map: string | undefined = undefined;
-  export let mapOptions: TileflowMapOptions | undefined = undefined;
-  export let mapStyle: MapLibreStyle | undefined = undefined;
-  export let markers: TileflowMapMarker[] = [];
-  export let mode: 'interactive' | 'image' = 'interactive';
-  export let preferLocalDev = true;
-  export let styleBaseUrl: string | undefined = undefined;
-  export let styleUrl: string | undefined = undefined;
-  export let themes: TileflowProjectThemes | undefined = undefined;
-  export let zoom: number | undefined = undefined;
+  export let center: TileflowMapProps['center'] = undefined;
+  export let captureId: TileflowMapProps['captureId'] = undefined;
+  export let className: NonNullable<TileflowMapProps['className']> = '';
+  export let config: TileflowMapProps['config'] = undefined;
+  export let height: NonNullable<TileflowMapProps['height']> = 420;
+  export let imageLoading: NonNullable<TileflowMapProps['imageLoading']> = 'eager';
+  export let imageUrl: TileflowMapProps['imageUrl'] = undefined;
+  export let interactive: TileflowMapProps['interactive'] = undefined;
+  export let manifestUrl: NonNullable<TileflowMapProps['manifestUrl']> = defaultTileflowManifestUrl;
+  export let map: TileflowMapProps['map'] = undefined;
+  export let mapOptions: TileflowMapProps['mapOptions'] = undefined;
+  export let mapStyle: TileflowMapProps['mapStyle'] = undefined;
+  export let markers: NonNullable<TileflowMapProps['markers']> = [];
+  export let mode: NonNullable<TileflowMapProps['mode']> = 'interactive';
+  export let preferLocalDev: NonNullable<TileflowMapProps['preferLocalDev']> = true;
+  export let styleBaseUrl: TileflowMapProps['styleBaseUrl'] = undefined;
+  export let styleUrl: TileflowMapProps['styleUrl'] = undefined;
+  export let themes: TileflowMapProps['themes'] = undefined;
+  export let zoom: TileflowMapProps['zoom'] = undefined;
 
   let container: HTMLDivElement;
   let captureState: 'error' | 'idle' | 'loading' = 'loading';
@@ -77,7 +78,7 @@
   const markerController = createTileflowMarkerController<
     MapLibreMap,
     TileflowMapMarker,
-    maplibregl.Marker
+    MapLibreMarker
   >({
     attach(markerInstance, targetMap, definition) {
       markerInstance.setLngLat(definition.coordinates).addTo(targetMap);
@@ -91,6 +92,7 @@
   });
 
   $: resolvedMode = resolveTileflowMapMode({imageUrl, mode, preferLocalDev});
+  $: assertTileflowMapStyleInputs({config, map, mapStyle, styleBaseUrl, styleUrl, themes});
   $: resolvedCaptureId = normalizeTileflowCaptureId(captureId);
   $: isImageMode = resolvedMode === 'image';
   $: imageCenter = center ?? defaultCenter;

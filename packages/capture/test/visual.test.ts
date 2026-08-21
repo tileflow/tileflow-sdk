@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {deflateSync} from 'node:zlib';
 import {PNG} from 'pngjs';
-import {sha256Hex, type TileflowDataIdentity} from '@tileflow/core';
+import {sha256Hex} from '@tileflow/core';
 import {
   analyzeTileflowCaptureReference,
   compareTileflowCaptureToBaseline,
@@ -14,10 +14,11 @@ import {
   serializeTileflowCaptureReceipt,
   serializeTileflowVisualComparison,
   type TileflowCapture,
+  type TileflowCaptureDataInput,
   type TileflowCaptureReceipt,
 } from '../src/index';
 
-const dataIdentity: TileflowDataIdentity = {
+const dataIdentity: TileflowCaptureDataInput = {
   kind: 'tileflow-world',
   revision: '2026-06-07',
   schema: 'openmaptiles',
@@ -213,6 +214,65 @@ test('classifies missing, dimension, scene, and runtime mismatches before pixel 
   });
   assert.equal(sourceMismatch.status, 'scene-mismatch');
   assert.equal(sourceMismatch.sceneMatch, false);
+});
+
+test('keeps schema-v2 baselines compatible with additive bindings and capabilities', async () => {
+  const png = createPng(2, 2, [20, 40, 60, 255]);
+  const common = {
+    dpr: 1 as const,
+    height: 2,
+    map: 'main',
+    networkDependent: false,
+    pngSha256: await sha256Hex(png),
+    renderer: createTileflowCaptureRendererIdentity(),
+    scene: 'proof',
+    sceneSha256: 'a'.repeat(64),
+    styleSha256: 'b'.repeat(64),
+    target: 'map' as const,
+    width: 2,
+  };
+  const baselineReceipt = createTileflowCaptureReceipt({
+    ...common,
+    data: {
+      bindings: {fields: {class: 'class'}, layers: {road: 'transportation'}},
+      capabilities: {businessCorridor: true, globalLandcover: true, tree: true},
+      kind: 'vector-tiles',
+      revision: 'archive-1',
+      schema: 'openmaptiles',
+      schemaVersion: 1,
+      sourceId: 'tileflow',
+      url: 'http://127.0.0.1:8080/tiles.json?token=legacy',
+    },
+  });
+  const actualReceipt = createTileflowCaptureReceipt({
+    ...common,
+    data: {
+      bindings: {
+        fields: {bathymetryMinDepth: 'min_depth', class: 'class'},
+        layers: {bathymetry: 'bathymetry', road: 'transportation'},
+      },
+      capabilities: {
+        businessCorridor: true,
+        bathymetry: true,
+        globalLandcover: true,
+        tree: true,
+      },
+      kind: 'vector-tiles',
+      revision: 'archive-1',
+      schema: 'openmaptiles',
+      schemaVersion: 1,
+      sourceId: 'tileflow',
+      url: 'http://localhost:43123/tiles.json?token=rotated',
+    },
+  });
+  const actual = {...(await createCapture(png, 2, 2)), receipt: actualReceipt};
+  const comparison = await compareTileflowCaptureToBaseline(actual, {
+    png,
+    receipt: baselineReceipt,
+  });
+
+  assert.equal(comparison.status, 'unchanged');
+  assert.equal(comparison.sceneMatch, true);
 });
 
 test('rejects corrupt PNGs, inconsistent hashes, and executable or additive receipt shapes', async () => {

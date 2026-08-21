@@ -28,6 +28,11 @@ Tileflow resolves from the map name, manifest, or explicit style props. Direct
 Tileflow props such as `center`, `zoom`, and `interactive` take priority when
 provided.
 
+Choose one style source: `config`, `style`, `styleUrl`, or a named `map`. A map name may accompany
+`style` or `styleUrl` as the stable map/capture identity, and `styleBaseUrl` requires `map`.
+`config` cannot be combined with those other sources; invalid combinations throw instead of being
+silently ignored. `themes` is only meaningful with `config`.
+
 To reuse one published map across multiple repos, point every app at the same
 manifest:
 
@@ -41,19 +46,21 @@ Or bypass the manifest and load a hosted style directly:
 <Map styleUrl="https://api.tileflow.dev/maps/map_1234567890abcdef/style.json" />
 ```
 
-For simple hosted static images, use image mode:
+For a lightweight display of an already hosted static image, use image mode:
 
 ```tsx
 <Map map="madrid" mode="image" center={[-3.7038, 40.4168]} zoom={12} />
 ```
 
-When `mode="image"` does not include an explicit `imageUrl`, local development
-hosts render the interactive map while `preferLocalDev` is enabled. Production
-hosts render the deployed static image. Set `preferLocalDev={false}` to preview
-the production image behavior locally.
+`Map mode="image"` only resolves an existing image URL (explicitly or from the published map
+manifest) and renders an `<img>`; it does not submit a render scene, create an operation, poll, or
+apply `StaticMap` overlays. When it does not include an explicit `imageUrl`, local development hosts
+render the interactive map while `preferLocalDev` is enabled. Production hosts render the deployed
+static image. Set `preferLocalDev={false}` to preview the production image behavior locally.
 
-For full static scenes with bounds, overlays, and server-side precache, use
-`StaticMap` from `@tileflow/react/static` or helpers from `@tileflow/static`.
+For a new, fully specified render with exact size, center/bounds camera, overlays, idempotency, and
+asynchronous create/poll behavior, use `StaticMap` from `@tileflow/react/static` or helpers from
+`@tileflow/static`.
 
 ```tsx
 import {StaticMap} from '@tileflow/react/static';

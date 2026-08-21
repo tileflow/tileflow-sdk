@@ -28,9 +28,9 @@
   "scripts": {
     "build": "svelte-check --tsconfig ./tsconfig.json",
     "test": "node --test test/*.test.js",
-    "verify": "pnpm run build && pnpm run test",
-    "typecheck": "svelte-check --tsconfig ./tsconfig.json",
-    "lint": "svelte-check --tsconfig ./tsconfig.json"
+    "verify": "pnpm run typecheck && pnpm run test",
+    "typecheck": "svelte-check --tsconfig ./tsconfig.json && tsc -p tsconfig.contract.json",
+    "lint": "pnpm run typecheck"
   },
   "exports": {
     ".": {
@@ -40,7 +40,7 @@
       "default": "./src/index.js"
     },
     "./TileflowMap.svelte": {
-      "types": "./src/TileflowMap.svelte.d.ts",
+      "types": "./src/index.d.ts",
       "svelte": "./src/TileflowMap.svelte",
       "default": "./src/TileflowMap.svelte"
     }
@@ -52,7 +52,7 @@
     "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0"
   },
   "peerDependencies": {
-    "maplibre-gl": ">=5",
+    "maplibre-gl": ">=5 <7",
     "svelte": ">=5"
   },
   "devDependencies": {

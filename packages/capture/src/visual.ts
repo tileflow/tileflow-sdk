@@ -10,6 +10,7 @@ import type {TileflowCapture} from './capture';
 import {TileflowCaptureError} from './errors';
 import {
   parseTileflowCaptureReceipt,
+  type TileflowCaptureDataIdentityV2,
   type TileflowCaptureReceipt,
   validateTileflowCaptureReceipt,
 } from './receipt';
@@ -560,8 +561,54 @@ function sameSceneIdentity(
     baseline.scene.map === actual.scene.map &&
     baseline.scene.target === actual.scene.target &&
     baseline.scene.sha256 === actual.scene.sha256 &&
-    serializeCanonicalJson(baseline.data) === serializeCanonicalJson(actual.data)
+    sameDataIdentity(baseline.data, actual.data)
   );
+}
+
+function sameDataIdentity(
+  baseline: TileflowCaptureDataIdentityV2,
+  actual: TileflowCaptureDataIdentityV2,
+): boolean {
+  if (
+    baseline.kind !== actual.kind ||
+    baseline.revision !== actual.revision ||
+    baseline.schema !== actual.schema ||
+    baseline.schemaVersion !== actual.schemaVersion ||
+    baseline.sourceId !== actual.sourceId
+  ) {
+    return false;
+  }
+  if (
+    baseline.source &&
+    (!actual.source ||
+      baseline.source.kind !== actual.source.kind ||
+      baseline.source.sha256 !== actual.source.sha256)
+  ) {
+    return false;
+  }
+  if (
+    baseline.capabilities &&
+    (!actual.capabilities || !isRecordSubset(baseline.capabilities, actual.capabilities))
+  ) {
+    return false;
+  }
+  if (baseline.bindings) {
+    if (!actual.bindings) return false;
+    if (
+      !isRecordSubset(baseline.bindings.fields, actual.bindings.fields) ||
+      !isRecordSubset(baseline.bindings.layers, actual.bindings.layers)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isRecordSubset(
+  baseline: Readonly<Record<string, unknown>>,
+  actual: Readonly<Record<string, unknown>>,
+): boolean {
+  return Object.entries(baseline).every(([key, value]) => actual[key] === value);
 }
 
 function sameRuntimeIdentity(

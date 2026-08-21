@@ -1,15 +1,30 @@
 import type {TileflowCaptureScene} from './capture-scene';
 import {
-  createStreetsStyle,
+  compileStreetsStyle,
   type TileflowStreetsCompileOptions,
   type TileflowStreetsMapConfig,
 } from './cartography/streets';
+import {tileflowStreetsBasemapDefinition} from './basemaps';
 import {parseTileflowMap, parseTileflowProject} from './schema-v2';
 import type {MapLibreStyle, TileflowProjectIconSets, TileflowProjectThemes} from './types';
 
 export type TileflowConfig = TileflowStreetsMapConfig;
 export type TileflowMapConfig = TileflowStreetsMapConfig;
 export type TileflowStyleOptions = TileflowStreetsCompileOptions;
+
+const tileflowBasemapCompilers = Object.freeze({
+  streets: Object.freeze({
+    ...tileflowStreetsBasemapDefinition,
+    compile: compileStreetsStyle,
+  }),
+} as const satisfies Record<
+  TileflowMapConfig['basemap']['type'],
+  {
+    type: TileflowMapConfig['basemap']['type'];
+    version: TileflowMapConfig['basemap']['basemapVersion'];
+    compile: typeof compileStreetsStyle;
+  }
+>);
 
 export type TileflowProjectConfig = {
   icons?: TileflowProjectIconSets;
@@ -28,7 +43,10 @@ export function createStyle(
   config: TileflowConfig,
   options: TileflowStyleOptions = {},
 ): MapLibreStyle {
-  return createStreetsStyle(parseTileflowMap(config), options);
+  return compileTileflowMap(
+    parseTileflowMap(config, {icons: options.iconSets, themes: options.themes}),
+    options,
+  );
 }
 
 export function createStyleFromProject<
@@ -45,11 +63,28 @@ export function createStyleFromProject(
   const map = Object.hasOwn(parsedProject.maps, mapName) ? parsedProject.maps[mapName] : undefined;
   if (!map) throw new Error(`Unknown Tileflow map: ${mapName}`);
 
-  return createStreetsStyle(map, {
+  return compileTileflowMap(map, {
     ...options,
     iconSets: parsedProject.icons,
     themes: parsedProject.themes,
   });
+}
+
+function compileTileflowMap(
+  config: TileflowMapConfig,
+  options: TileflowStyleOptions,
+): MapLibreStyle {
+  switch (config.basemap.type) {
+    case 'streets': {
+      const compiler = tileflowBasemapCompilers.streets;
+      if (config.basemap.basemapVersion !== compiler.version) {
+        throw new Error(
+          `Unsupported Tileflow ${compiler.type} basemap version: ${String(config.basemap.basemapVersion)}`,
+        );
+      }
+      return compiler.compile(config, options);
+    }
+  }
 }
 
 export function createManifest(

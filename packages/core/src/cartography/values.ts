@@ -1,3 +1,5 @@
+import {isMapLibreExpressionOperator} from './expression-operators';
+
 const expressionBrand = Symbol('TileflowExpression');
 const filterBrand = Symbol('TileflowFilter');
 const zoomBrand = Symbol('TileflowZoom');
@@ -124,6 +126,9 @@ function createZoomValue<T>(
 function validateExpressionArray(value: readonly unknown[], name: string): void {
   if (value.length === 0 || typeof value[0] !== 'string') {
     throw new Error(`Tileflow ${name} must be a non-empty MapLibre expression array.`);
+  }
+  if (!isMapLibreExpressionOperator(value[0])) {
+    throw new Error(`Unknown MapLibre expression operator: ${value[0]}`);
   }
   cloneJson(value);
 }

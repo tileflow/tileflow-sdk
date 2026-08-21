@@ -22,8 +22,8 @@ flowchart TD
   C --> F["Resolved cartographic design"]
   D --> F
   E --> F
-  F --> G["Land / water / roads / buildings"]
-  F --> H["Boundaries / labels / POI / transit / aeroways"]
+  F --> G["Land / water / roads / buildings / vegetation"]
+  F --> H["Boundaries / labels / POI / transit / aeroways / addresses / landforms"]
   G --> I["Shared layer-order graph"]
   H --> I
   I --> J["Final ordered raw overrides"]
@@ -63,8 +63,18 @@ map override extends its semantic mapping. Disabling POI icons suppresses the im
 
 The compiler creates every `streets-*` layer from a domain compiler. It resolves domain conflicts
 before graph assembly—for example, roads determine eligible road-label classes, aeroways own
-runway geometry while labels own aerodrome text, and transit owns rail/ferry/cableway geometry
+runway geometry and runway references while labels own aerodrome text/codes, and transit owns
+rail/ferry/cableway geometry
 while POI owns stations and stops.
+
+The shared graph also preserves a physical pitched-scene stack. Ground areas and pedestrian
+surfaces sit below road and aeroway geometry; transport markings sit above their carriageways but
+below buildings; road names, shields, and junction references share that transport phase; buildings
+sit below vegetation; and geographic, water, aerodrome, runway, address, landform, and POI labels
+remain the final annotation
+phase.
+Overview business-corridor areas use a separate background slot, so moving building volumes above
+roads cannot make a thematic wash cover the transport network.
 
 Road targets are cartographic semantics rather than raw source values. Motor-road targets are
 `motorway`, `trunk`, `primary`, `secondary`, `tertiary`, `minor`, `service`, and `track`. The path
@@ -72,13 +82,20 @@ family is split into `pedestrian`, `footway`, `cycleway`, `steps`, and residual 
 `roads({extras: {paths: true}})` draws the complete family with independent stable layers; naming a
 class explicitly also enables that class without enabling its siblings. Every class can style
 `surface`, `tunnel`, and `bridge`, each with `shadow`, `casing`, `fill`, and an optional repeated
-diagonal `hatch`. Hatch appearance is semantic road detail rather than a sprite or raw layer patch;
-it accepts color, opacity, spacing, size, angle, and zoom bounds, inherits the resolved fill width
-when size is omitted, and does not reserve collision space. The labels module uses the same class
-names and selectors, so authors do not write OpenMapTiles `class`/`subclass` filters.
-All tunnel phases are ordered below surface hydrography, buildings, pedestrian areas, surface and
-bridge transport, and the shared symbol phase. Underground geometry therefore cannot cover water,
-monument/building geometry, or POI labels merely because a tunnel style is wide, opaque, or hatched.
+diagonal `hatch`. Hatch appearance is semantic road detail rather than a raw layer patch. It accepts
+color, opacity, spacing, size, angle, zoom bounds, and an optional sprite pattern. Without a pattern,
+marks inherit the resolved fill width when size is omitted and do not reserve collision space. With
+a pattern, the compiler emits a repeated line texture clipped to the resolved fill width, so no
+pattern pixel can protrude beyond the road deck. When `patternWidths` accompanies a literal pattern
+prefix, Tileflow evaluates the fully treated fill width and selects the closest intrinsic-height
+sprite. Geometrically spaced variants bound transverse scaling and keep thin marks visually stable
+across road classes and zoom interpolation. The labels module uses the same class names and selectors,
+so authors do not write OpenMapTiles `class`/`subclass` filters.
+Tunnel phases are ordered above base hydrography and ground areas so a navigation map can preserve
+road continuity through parks or beneath water. Their lighter fill and optional hatch carry the
+underground meaning instead of transparency or a broken line. Tunnels remain below aeroways,
+surface and bridge transport, buildings, vegetation, and the shared symbol phase, so surface-level
+geometry and annotations retain their physical priority.
 The selectors remain valid when those field names are remapped by the data contract and are
 pairwise disjoint, preventing the same path from being painted by multiple semantic targets.
 Line-like pedestrian ways use `roads.classes.pedestrian`; polygon plazas use the separate
@@ -117,6 +134,10 @@ custom vector source must declare a versioned schema contract and attribution. A
 source-layer and field names through `openMapTiles({layers, fields})`; module compilers read that
 data binding rather than a basemap-specific translator.
 
+The standard contract includes `housenumber` and `mountain_peak`, plus remappable `capital`,
+elevation, runway-reference, IATA, and ICAO fields. Semantic modules consume those values directly;
+they do not require raw source-layer overrides.
+
 Compiler output records exact durable identity:
 
 - `tileflow:basemap = streets`
@@ -124,9 +145,15 @@ Compiler output records exact durable identity:
 - `tileflow:variant = light | dark`
 - `tileflow:data = {kind, revision?, schema, schemaVersion, sourceId}`
 
-Generated layer IDs and structural ordering are part of the alpha Streets contract because raw
-overrides can address them. A deliberate incompatible change requires a basemap-version bump or a
-documented breaking SDK release.
+Raw overrides address compiler layer IDs and are applied before the final physical-layer optimizer.
+The optimizer may split an ID at a zoom handoff or combine several IDs into a data-driven cohort;
+this does not change the semantic override target. For this single-consumer alpha workflow the
+performance materialization remains on basemap version 3. A future multi-consumer compatibility
+promise must version the physical output separately or restore a basemap-version bump policy.
+
+The optimizer must preserve the resolved paint, layout, filters, zoom range, and drawing order. Its
+z0–z22 structural sweep is a required regression gate, alongside MapLibre style validation and
+browser capture.
 
 ## Evidence-first loop
 
@@ -150,8 +177,13 @@ request to expose a reference style's layer ID.
 Reference-style inventories can reveal missing concepts, but they are not Tileflow APIs. Tileflow
 World already supplies the fields used by road treatments, road references, networks, and motorway
 junctions. Traffic signals, zebra crossings, per-lane widths, sidewalk geometry, and barriers are
-absent from its current TileJSON contract. Do not emulate missing concepts with copied layer IDs or
-silently claim support when the selected dataset does not expose the required feature.
+absent from its current public TileJSON contract. The Spain development preview used by the Streets
+workbench additionally carries marked crossings in a raw `street_furniture` extension and explicit
+OSM pedestrian-area polygons in a raw `sidewalk` extension. The example may exercise that preview
+data through explicit overrides, but neither extension is a stable Streets API. Sidewalk coverage is
+source-backed and incomplete; never infer missing polygons by buffering road centerlines.
+Do not emulate missing concepts with copied layer IDs or silently claim support when the selected
+dataset does not expose the required feature.
 
 ## Preview, baselines, and promotion
 

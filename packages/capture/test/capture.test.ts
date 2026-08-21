@@ -1,17 +1,19 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
-import {streets, type TileflowDataIdentity, type TileflowProjectConfig} from '@tileflow/core';
+import {serializeCanonicalJson, streets, type TileflowProjectConfig} from '@tileflow/core';
 import {selectTileflowCaptureSceneNames} from '../src/capture';
 import {
   createTileflowCaptureBrowserEnvironment,
   createTileflowCaptureReceipt,
   createTileflowCaptureRendererIdentity,
   createTileflowCaptureSession,
+  parseTileflowCaptureReceipt,
   resolveTileflowApplicationUrl,
   serializeTileflowCaptureReceipt,
+  type TileflowCaptureDataInput,
   TileflowCaptureError,
   tileflowCaptureRuntime,
 } from '../src/index';
@@ -33,7 +35,7 @@ const project: TileflowProjectConfig = {
   },
 };
 
-const dataIdentity: TileflowDataIdentity = {
+const dataIdentity: TileflowCaptureDataInput = {
   kind: 'tileflow-world',
   revision: '2026-06-07',
   schema: 'openmaptiles',
@@ -141,6 +143,133 @@ test('serializes deterministic, path-free capture receipts', () => {
   assert.equal(receipt.image.physicalHeight, 400);
   assert.equal(renderer.playwright, '1.60.0');
   assert.equal(tileflowCaptureRuntime.chromiumRevision, '1223');
+});
+
+test('capture receipts preserve expanded vector source identity', () => {
+  const expanded: TileflowCaptureDataInput = {
+    ...dataIdentity,
+    kind: 'vector-tiles',
+    url: '/tiles.json',
+    capabilities: {
+      businessCorridor: true,
+      bathymetry: true,
+      globalLandcover: false,
+      tree: false,
+    },
+    bindings: {fields: {class: 'kind/value'}, layers: {road: 'roads-世界'}},
+  };
+  const receipt = createTileflowCaptureReceipt({
+    data: expanded,
+    dpr: 1,
+    height: 64,
+    map: 'madrid',
+    networkDependent: true,
+    pngSha256: 'a'.repeat(64),
+    renderer: createTileflowCaptureRendererIdentity(),
+    scene: 'expanded',
+    sceneSha256: 'b'.repeat(64),
+    styleSha256: 'c'.repeat(64),
+    target: 'map',
+    width: 64,
+  });
+
+  assert.deepEqual(receipt.data.bindings, expanded.bindings);
+  assert.deepEqual(receipt.data.capabilities, expanded.capabilities);
+  assert.equal(receipt.data.source?.kind, 'root-relative');
+  assert.match(receipt.data.source?.sha256 ?? '', /^[a-f0-9]{64}$/);
+  assert.equal('url' in receipt.data, false);
+  assert.deepEqual(receipt.verification, {data: 'rendered', style: 'rendered'});
+});
+
+test('receipt source identity strips origins and rotating URL secrets', () => {
+  const common = {
+    dpr: 1 as const,
+    height: 64,
+    map: 'madrid',
+    networkDependent: true,
+    pngSha256: 'a'.repeat(64),
+    renderer: createTileflowCaptureRendererIdentity(),
+    scene: 'remote',
+    sceneSha256: 'b'.repeat(64),
+    styleSha256: 'c'.repeat(64),
+    target: 'map' as const,
+    width: 64,
+  };
+  const first = createTileflowCaptureReceipt({
+    ...common,
+    data: {
+      ...dataIdentity,
+      kind: 'vector-tiles',
+      url: 'https://tiles.example/private.json?token=first#secret',
+    },
+  });
+  const second = createTileflowCaptureReceipt({
+    ...common,
+    data: {
+      ...dataIdentity,
+      kind: 'vector-tiles',
+      url: 'https://tiles.example/private.json?token=second#other',
+    },
+  });
+  const serialized = serializeTileflowCaptureReceipt(first);
+
+  assert.deepEqual(first.data.source, second.data.source);
+  assert.equal(serialized.includes('tiles.example'), false);
+  assert.equal(serialized.includes('private.json'), false);
+  assert.equal(serialized.includes('first'), false);
+  assert.equal(serialized.includes('secret'), false);
+});
+
+test('application receipts label configured style and data as expected but unverified', () => {
+  const receipt = createTileflowCaptureReceipt({
+    data: dataIdentity,
+    dpr: 1,
+    height: 64,
+    map: 'madrid',
+    networkDependent: false,
+    pngSha256: 'a'.repeat(64),
+    renderer: createTileflowCaptureRendererIdentity(),
+    scene: 'application',
+    sceneSha256: 'b'.repeat(64),
+    styleSha256: 'c'.repeat(64),
+    target: 'application',
+    width: 64,
+  });
+
+  assert.deepEqual(receipt.verification, {
+    data: 'expected-unverified',
+    style: 'expected-unverified',
+  });
+
+  const legacy = structuredClone(receipt) as typeof receipt & {
+    data: typeof receipt.data & {url?: string};
+    verification?: typeof receipt.verification;
+  };
+  delete legacy.verification;
+  delete legacy.data.source;
+  legacy.data.url = 'http://127.0.0.1:8080/tiles.json?token=legacy-secret';
+  const parsedLegacy = parseTileflowCaptureReceipt(serializeCanonicalJson(legacy));
+  assert.deepEqual(parsedLegacy.verification, receipt.verification);
+  assert.equal(parsedLegacy.data.source?.kind, 'loopback');
+  assert.equal(serializeTileflowCaptureReceipt(parsedLegacy).includes('legacy-secret'), false);
+});
+
+test('parses every committed Streets schema-v2 receipt', async () => {
+  const directory = new URL(
+    '../../../examples/tileflow-streets/test/visual-baselines/',
+    import.meta.url,
+  );
+  const files = (await readdir(directory)).filter((name) => name.endsWith('.receipt.json')).sort();
+  assert.equal(files.length, 12);
+
+  for (const file of files) {
+    const receipt = parseTileflowCaptureReceipt(await readFile(new URL(file, directory), 'utf8'));
+    assert.deepEqual(receipt.verification, {data: 'rendered', style: 'rendered'}, file);
+    assert.equal('url' in receipt.data, false, file);
+    assert.equal(receipt.data.source?.kind, 'loopback', file);
+    assert.match(receipt.data.source?.sha256 ?? '', /^[a-f0-9]{64}$/, file);
+    assert.equal(JSON.stringify(receipt).includes('127.0.0.1'), false, file);
+  }
 });
 
 test('emits one exact receipt shape with explicit data identity', () => {

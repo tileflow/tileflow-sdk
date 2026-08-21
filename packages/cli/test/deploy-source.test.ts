@@ -4,9 +4,9 @@ import {allowsStoredDeployCredential, resolveDeploySource} from '../src/deploy-s
 
 test('local deploys contain only the CLI source kind', () => {
   assert.deepEqual(resolveDeploySource({}), {kind: 'cli'});
-  assert.deepEqual(resolveDeploySource({TILEFLOW_DEPLOY_REPOSITORY: 'equipo/mapa-🗺️'}), {
+  assert.deepEqual(resolveDeploySource({TILEFLOW_DEPLOY_REPOSITORY: 'team/map-🗺️'}), {
     kind: 'cli',
-    repository: 'equipo/mapa-🗺️',
+    repository: 'team/map-🗺️',
   });
 });
 

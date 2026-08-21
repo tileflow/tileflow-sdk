@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {tileflowStreetsBasemapVersion} from './basemaps';
+import {tileflowStreetsBasemapDefinition} from './basemaps';
 import {tileflowCaptureSceneNameSchema, tileflowCaptureSceneSchema} from './capture-scene';
 import {openMapTiles, openMapTilesContractVersion} from './data';
 import type {TileflowConfig, TileflowProjectConfig} from './project';
@@ -32,6 +32,11 @@ const numberArrayValueSchema = z.union([
   expressionSchema,
   zoomValueSchema,
 ]);
+const lineCapValueSchema = z.union([
+  z.enum(['butt', 'round', 'square']),
+  expressionSchema,
+  zoomValueSchema,
+]);
 
 const hexColorSchema = z
   .string()
@@ -54,13 +59,22 @@ const themeModulesSchema = z
   .object({
     boundaries: colorGroupSchema(['admin', 'disputed', 'major', 'maritime']).optional(),
     buildings: colorGroupSchema([
+      'active',
+      'businessCorridor',
+      'businessCorridorOutline',
+      'civic',
+      'commercial',
+      'destination',
       'extrusion',
       'fill',
+      'generic',
       'highRise',
       'highRiseOutline',
+      'industrial',
       'lowRise',
       'lowRiseOutline',
       'outline',
+      'residential',
     ]).optional(),
     hydro: colorGroupSchema(['ferry', 'label', 'water', 'waterway']).optional(),
     labels: colorGroupSchema([
@@ -74,12 +88,28 @@ const themeModulesSchema = z
       'settlement',
       'water',
     ]).optional(),
-    landcover: colorGroupSchema(['grass', 'ice', 'park', 'protected', 'sand', 'wood']).optional(),
+    landcover: colorGroupSchema([
+      'farmland',
+      'grass',
+      'ice',
+      'park',
+      'protected',
+      'rock',
+      'sand',
+      'wetland',
+      'wood',
+    ]).optional(),
     landuse: colorGroupSchema([
       'cemetery',
       'civic',
       'commercial',
+      'education',
+      'government',
       'industrial',
+      'medical',
+      'military',
+      'parking',
+      'recreation',
       'residential',
     ]).optional(),
     poi: colorGroupSchema([
@@ -176,7 +206,7 @@ const lineStyleSchema = z
   .object({
     ...rangeShape,
     blur: numberValueSchema.optional(),
-    cap: z.enum(['butt', 'round', 'square']).optional(),
+    cap: lineCapValueSchema.optional(),
     color: stringValueSchema.optional(),
     dash: numberArrayValueSchema.optional(),
     gapWidth: numberValueSchema.optional(),
@@ -330,10 +360,31 @@ const lineHatchStyleSchema = z
     angle: numberValueSchema.optional(),
     color: stringValueSchema.optional(),
     opacity: numberValueSchema.optional(),
+    pattern: stringValueSchema.optional(),
+    patternWidths: z.array(z.number().int().positive().max(1024)).min(2).optional(),
     size: numberValueSchema.optional(),
     spacing: numberValueSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.patternWidths === undefined) return;
+    if (typeof value.pattern !== 'string') {
+      context.addIssue({
+        code: 'custom',
+        message: 'patternWidths requires pattern to be a literal sprite-name prefix',
+        path: ['pattern'],
+      });
+    }
+    for (let index = 1; index < value.patternWidths.length; index += 1) {
+      if (value.patternWidths[index]! <= value.patternWidths[index - 1]!) {
+        context.addIssue({
+          code: 'custom',
+          message: 'patternWidths must be strictly increasing',
+          path: ['patternWidths', index],
+        });
+      }
+    }
+  });
 const roadLayerStyleSchema = lineStackStyleSchema
   .extend({hatch: lineHatchStyleSchema.optional()})
   .strict();
@@ -438,8 +489,10 @@ const landModuleSchema = z
         ice: areaStyleSchema.optional(),
         park: areaStyleSchema.optional(),
         protected: areaStyleSchema.optional(),
+        rock: areaStyleSchema.optional(),
         sand: areaStyleSchema.optional(),
         scrub: areaStyleSchema.optional(),
+        wetland: areaStyleSchema.optional(),
         wood: areaStyleSchema.optional(),
       })
       .strict()
@@ -449,8 +502,14 @@ const landModuleSchema = z
         cemetery: areaStyleSchema.optional(),
         civic: areaStyleSchema.optional(),
         commercial: areaStyleSchema.optional(),
+        education: areaStyleSchema.optional(),
+        government: areaStyleSchema.optional(),
         industrial: areaStyleSchema.optional(),
+        medical: areaStyleSchema.optional(),
+        military: areaStyleSchema.optional(),
+        parking: areaStyleSchema.optional(),
         railway: areaStyleSchema.optional(),
+        recreation: areaStyleSchema.optional(),
         residential: areaStyleSchema.optional(),
       })
       .strict()
@@ -480,10 +539,27 @@ const waterModuleSchema = z
 const buildingsModuleSchema = z
   .object({
     type: z.literal('buildings'),
+    businessCorridor: areaStyleSchema.optional(),
     enabled: z.boolean().optional(),
     extrusion: extrusionStyleSchema.optional(),
     flat: areaStyleSchema.optional(),
     mode: z.enum(['3d', 'flat']).optional(),
+  })
+  .strict();
+const addressesModuleSchema = z
+  .object({
+    type: z.literal('addresses'),
+    enabled: z.boolean().optional(),
+    labels: symbolStyleSchema.optional(),
+  })
+  .strict();
+const landformClassSchema = z.enum(['peak', 'volcano', 'saddle', 'ridge', 'cliff', 'arete']);
+const landformsModuleSchema = z
+  .object({
+    type: z.literal('landforms'),
+    classes: z.partialRecord(landformClassSchema, symbolStyleSchema).optional(),
+    elevation: z.boolean().optional(),
+    enabled: z.boolean().optional(),
   })
   .strict();
 const boundariesModuleSchema = z
@@ -502,6 +578,7 @@ const aerowaysModuleSchema = z
     area: areaStyleSchema.optional(),
     enabled: z.boolean().optional(),
     runway: lineStackStyleSchema.optional(),
+    runwayRef: symbolStyleSchema.optional(),
     taxiway: lineStackStyleSchema.optional(),
   })
   .strict();
@@ -631,6 +708,7 @@ const waterLabelStylesSchema = z
 const labelsModuleSchema = z
   .object({
     type: z.literal('labels'),
+    aerodromeCodes: z.enum(['none', 'iata', 'all']).optional(),
     enabled: z.boolean().optional(),
     junctions: z.boolean().optional(),
     language: z.string().trim().min(1).optional(),
@@ -684,14 +762,25 @@ const poiModuleSchema = z
 
 const modulesSchema = z
   .object({
+    addresses: addressesModuleSchema.optional(),
     aeroways: aerowaysModuleSchema.optional(),
     boundaries: boundariesModuleSchema.optional(),
     buildings: buildingsModuleSchema.optional(),
     labels: labelsModuleSchema.optional(),
     land: landModuleSchema.optional(),
+    landforms: landformsModuleSchema.optional(),
     poi: poiModuleSchema.optional(),
     roads: roadsModuleSchema.optional(),
     transit: transitModuleSchema.optional(),
+    vegetation: z
+      .object({
+        type: z.literal('vegetation'),
+        enabled: z.boolean().optional(),
+        minZoom: zoomNumberSchema.optional(),
+        mode: z.enum(['3d', 'flat']).optional(),
+      })
+      .strict()
+      .optional(),
     water: waterModuleSchema.optional(),
   })
   .strict();
@@ -702,14 +791,19 @@ const layerBindingsSchema = z
     aeroway: z.string().trim().min(1),
     boundary: z.string().trim().min(1),
     building: z.string().trim().min(1),
-    globalLandcover: z.string().trim().min(1),
+    bathymetry: z.string().trim().min(1).optional(),
+    businessCorridor: z.string().trim().min(1).optional(),
+    globalLandcover: z.string().trim().min(1).optional(),
+    houseNumber: z.string().trim().min(1),
     landcover: z.string().trim().min(1),
     landuse: z.string().trim().min(1),
+    mountainPeak: z.string().trim().min(1),
     park: z.string().trim().min(1),
     place: z.string().trim().min(1),
     poi: z.string().trim().min(1),
     road: z.string().trim().min(1),
     roadName: z.string().trim().min(1),
+    tree: z.string().trim().min(1).optional(),
     water: z.string().trim().min(1),
     waterName: z.string().trim().min(1),
     waterway: z.string().trim().min(1),
@@ -718,21 +812,42 @@ const layerBindingsSchema = z
 const fieldBindingsSchema = z
   .object({
     access: z.string().trim().min(1),
+    activityScore: z.string().trim().min(1),
     adminLevel: z.string().trim().min(1),
     bicycle: z.string().trim().min(1),
+    bathymetryMinDepth: z.string().trim().min(1).optional(),
+    bathymetrySortKey: z.string().trim().min(1).optional(),
     brunnel: z.string().trim().min(1),
+    buildingKind: z.string().trim().min(1),
+    buildingTone: z.string().trim().min(1),
+    capital: z.string().trim().min(1),
     class: z.string().trim().min(1),
+    classificationConfidence: z.string().trim().min(1),
+    confidence: z.string().trim().min(1),
+    circumference: z.string().trim().min(1),
+    diameterCrown: z.string().trim().min(1),
     disputed: z.string().trim().min(1),
+    elevation: z.string().trim().min(1),
+    elevationFeet: z.string().trim().min(1),
     expressway: z.string().trim().min(1),
     foot: z.string().trim().min(1),
     height: z.string().trim().min(1),
+    hasBusiness: z.string().trim().min(1),
     hide3d: z.string().trim().min(1),
     horse: z.string().trim().min(1),
+    houseNumber: z.string().trim().min(1),
+    iata: z.string().trim().min(1),
+    icao: z.string().trim().min(1),
     indoor: z.string().trim().min(1),
     intermittent: z.string().trim().min(1),
+    genus: z.string().trim().min(1),
     layer: z.string().trim().min(1),
+    leafCycle: z.string().trim().min(1),
+    leafType: z.string().trim().min(1),
     level: z.string().trim().min(1),
+    maritime: z.string().trim().min(1),
     minHeight: z.string().trim().min(1),
+    minZoom: z.string().trim().min(1),
     mtbScale: z.string().trim().min(1),
     name: z.string().trim().min(1),
     nameEnglish: z.string().trim().min(1),
@@ -743,9 +858,13 @@ const fieldBindingsSchema = z
     ramp: z.string().trim().min(1),
     rank: z.string().trim().min(1),
     ref: z.string().trim().min(1),
+    refLength: z.string().trim().min(1),
     renderHeight: z.string().trim().min(1),
+    renderMinZoom: z.string().trim().min(1),
     renderMinHeight: z.string().trim().min(1),
     service: z.string().trim().min(1),
+    species: z.string().trim().min(1),
+    speciesWikidata: z.string().trim().min(1),
     subclass: z.string().trim().min(1),
     surface: z.string().trim().min(1),
     toll: z.string().trim().min(1),
@@ -759,7 +878,21 @@ const openMapTilesSchema = z
     layers: layerBindingsSchema.partial().optional(),
   })
   .strict()
-  .transform((schema) => openMapTiles({fields: schema.fields, layers: schema.layers}));
+  .transform((schema) =>
+    openMapTiles({
+      capabilities:
+        schema.layers === undefined
+          ? undefined
+          : {
+              businessCorridor: schema.layers.businessCorridor !== undefined,
+              bathymetry: schema.layers.bathymetry !== undefined,
+              globalLandcover: schema.layers.globalLandcover !== undefined,
+              tree: schema.layers.tree !== undefined,
+            },
+      fields: schema.fields,
+      layers: schema.layers,
+    }),
+  );
 const dataSchema = z.discriminatedUnion('type', [
   z.object({type: z.literal('tileflow-world'), revision: revisionSchema.optional()}).strict(),
   z
@@ -774,8 +907,8 @@ const dataSchema = z.discriminatedUnion('type', [
 ]);
 const basemapSchema = z
   .object({
-    type: z.literal('streets'),
-    basemapVersion: z.literal(tileflowStreetsBasemapVersion),
+    type: z.literal(tileflowStreetsBasemapDefinition.type),
+    basemapVersion: z.literal(tileflowStreetsBasemapDefinition.version),
     variant: z.enum(['dark', 'light']),
   })
   .strict();
@@ -840,6 +973,20 @@ const viewSchema = z
   })
   .strict();
 const streetsThemeSchema = tileflowThemeSchema;
+const lightSchema = z
+  .object({
+    anchor: z.enum(['map', 'viewport']).optional(),
+    color: hexColorSchema.optional(),
+    intensity: z.number().finite().min(0).max(1).optional(),
+    position: z
+      .tuple([
+        z.number().finite().min(0),
+        z.number().finite().min(0).max(360),
+        z.number().finite().min(0).max(180),
+      ])
+      .optional(),
+  })
+  .strict();
 
 export const tileflowMapSchema: z.ZodType<TileflowConfig> = z
   .object({
@@ -848,15 +995,18 @@ export const tileflowMapSchema: z.ZodType<TileflowConfig> = z
     data: dataSchema.optional(),
     glyphs: z.string().trim().min(1).optional(),
     icons: iconSetSchema.optional(),
+    light: lightSchema.optional(),
     modules: modulesSchema.optional(),
     name: z.string().trim().min(1).optional(),
     overrides: z.array(rawOverrideSchema).optional(),
+    projection: z.enum(['globe', 'mercator']).optional(),
     sprite: z.string().trim().min(1).optional(),
     terrain: terrainSchema.optional(),
     theme: z.union([z.string().trim().min(1), streetsThemeSchema]).optional(),
     view: viewSchema.optional(),
   })
-  .strict() as z.ZodType<TileflowConfig>;
+  .strict()
+  .superRefine((map, context) => validateZoomRanges(map, context)) as z.ZodType<TileflowConfig>;
 export const configSchema: z.ZodType<TileflowConfig> = tileflowMapSchema;
 
 const scenesSchema = z
@@ -886,9 +1036,15 @@ export const tileflowProjectSchema: z.ZodType<TileflowProjectConfig> = z
   })
   .strict() as z.ZodType<TileflowProjectConfig>;
 
-export function parseTileflowMap(input: unknown): TileflowConfig {
+export function parseTileflowMap(
+  input: unknown,
+  references: Pick<TileflowProjectConfig, 'icons' | 'themes'> = {},
+): TileflowConfig {
   const map = parseOrThrow(tileflowMapSchema, input, 'config') as TileflowConfig;
-  const messages = validateMapReferences(map, undefined, 'theme');
+  const messages = [
+    ...validateMapReferences(map, new Set(Object.keys(references.themes ?? {})), 'theme'),
+    ...validateMapIconReference(map, references.icons ?? {}, 'icons'),
+  ];
   if (messages.length)
     throw new Error(messages.map((item) => `${item.path}: ${item.message}`).join('; '));
   return map;
@@ -931,7 +1087,12 @@ export function validateConfig(input: unknown): ValidationResult {
     const messages = validateReferences(result.data as TileflowProjectConfig);
     return {valid: messages.length === 0, messages};
   }
-  return {valid: true, messages: []};
+  const map = result.data as TileflowConfig;
+  const messages = [
+    ...validateMapReferences(map, new Set(), 'theme'),
+    ...validateMapIconReference(map, {}, 'icons'),
+  ];
+  return {valid: messages.length === 0, messages};
 }
 
 export const validateTileflowConfig = validateConfig;
@@ -1041,7 +1202,7 @@ function validateIconReferences(project: TileflowProjectConfig): ValidationMessa
         : undefined;
   for (const [name, iconSet] of Object.entries(iconSets)) {
     const extended = reference(iconSet);
-    if (extended && !Object.hasOwn(iconSets, extended)) {
+    if (extended && !isUrlReference(extended) && !Object.hasOwn(iconSets, extended)) {
       messages.push({
         level: 'error',
         path: typeof iconSet === 'string' ? `icons.${name}` : `icons.${name}.extends`,
@@ -1058,17 +1219,55 @@ function validateIconReferences(project: TileflowProjectConfig): ValidationMessa
     }
   }
   for (const [mapName, map] of Object.entries(project.maps)) {
-    if (!map.icons || typeof map.icons === 'string') continue;
-    const extended = map.icons.extends;
-    if (extended && !Object.hasOwn(iconSets, extended)) {
-      messages.push({
-        level: 'error',
-        path: `maps.${mapName}.icons.extends`,
-        message: `Unknown Tileflow icon set "${extended}"`,
+    messages.push(...validateMapIconReference(map, iconSets, `maps.${mapName}.icons`));
+  }
+  return messages;
+}
+
+function validateMapIconReference(
+  map: TileflowConfig,
+  iconSets: NonNullable<TileflowProjectConfig['icons']>,
+  path: string,
+): ValidationMessage[] {
+  if (!map.icons) return [];
+  const reference = typeof map.icons === 'string' ? map.icons : map.icons.extends;
+  if (!reference || isUrlReference(reference) || Object.hasOwn(iconSets, reference)) return [];
+  return [
+    {
+      level: 'error',
+      path: typeof map.icons === 'string' ? path : `${path}.extends`,
+      message: `Unknown Tileflow icon set "${reference}"`,
+    },
+  ];
+}
+
+function isUrlReference(value: string): boolean {
+  return value.startsWith('/') || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value);
+}
+
+function validateZoomRanges(
+  value: unknown,
+  context: z.RefinementCtx,
+  path: PropertyKey[] = [],
+): void {
+  if (!value || typeof value !== 'object') return;
+  if (!Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    if (
+      typeof record.minZoom === 'number' &&
+      typeof record.maxZoom === 'number' &&
+      record.minZoom > record.maxZoom
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: [...path, 'maxZoom'],
+        message: 'Expected maxZoom to be greater than or equal to minZoom',
       });
     }
   }
-  return messages;
+  for (const [key, child] of Object.entries(value)) {
+    validateZoomRanges(child, context, [...path, key]);
+  }
 }
 
 function findReferenceCycle<T>(

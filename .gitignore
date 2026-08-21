@@ -13,6 +13,7 @@ packages/*/.tileflow-test-*
 .tileflow/captures/
 .tileflow/diffs/
 .tileflow/analysis/
+/examples/*/visual-baselines/
 
 pnpm-debug.log*
 npm-debug.log*

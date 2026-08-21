@@ -6,14 +6,30 @@ import {
   parseTileflowProject,
   roads,
   streets,
+  tileflowWorldV1Schema,
   validateConfig,
 } from '../src';
 
 test('accepts the canonical Streets project shape', () => {
   const project = {
+    themes: {
+      pastoral: {
+        colors: {},
+        mode: 'light',
+        modules: {
+          landcover: {
+            farmland: '#DCECCB',
+            rock: '#F7F4F0',
+            wetland: '#BFE2CF',
+          },
+        },
+      },
+    },
     maps: {
       madrid: {
         basemap: streets(),
+        projection: 'globe' as const,
+        theme: 'pastoral',
         modules: {
           labels: labels({
             styles: {
@@ -40,6 +56,14 @@ test('accepts the canonical Streets project shape', () => {
   assert.deepEqual(parseTileflowProject(project), project);
   assert.deepEqual(validateConfig(project), {valid: true, messages: []});
   assert.throws(() => parseTileflowMap({basemap: streets(), view: {pitch: 86}}), /view\.pitch/);
+  assert.throws(
+    () => parseTileflowMap({basemap: streets(), projection: 'sphere'} as never),
+    /projection/,
+  );
+  assert.throws(
+    () => parseTileflowMap({basemap: streets(), light: {intensity: 1.1}}),
+    /light\.intensity/,
+  );
 });
 
 test('accepts a schema-v2 remap for the optional global land-cover extension', () => {
@@ -61,6 +85,24 @@ test('accepts a schema-v2 remap for the optional global land-cover extension', (
   if (map.data?.type !== 'vector-tiles') return;
   assert.equal(map.data.schema.layers.globalLandcover, 'worldcover_lowzoom');
   assert.equal(map.data.schema.layers.landcover, 'landcover');
+});
+
+test('accepts the typed Tileflow World V1 bathymetry extension at runtime', () => {
+  const map = parseTileflowMap({
+    basemap: streets(),
+    data: {
+      type: 'vector-tiles',
+      attribution: '© Example',
+      schema: tileflowWorldV1Schema(),
+      url: '/tiles.json',
+    },
+  });
+
+  assert.equal(map.data?.type, 'vector-tiles');
+  if (map.data?.type !== 'vector-tiles') return;
+  assert.equal(map.data.schema.layers.bathymetry, 'bathymetry');
+  assert.equal(map.data.schema.fields.bathymetryMinDepth, 'min_depth');
+  assert.equal(map.data.schema.fields.bathymetrySortKey, 'sort_key');
 });
 
 test('rejects every removed renderer and data path with its exact location', () => {

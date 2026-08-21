@@ -337,11 +337,7 @@ export function validateReleasePlan(plan) {
   return plan;
 }
 
-export async function validateFinalRelease({
-  plan,
-  registryState,
-  finalTarballs,
-}) {
+export async function validateFinalRelease({plan, registryState, finalTarballs}) {
   validateReleasePlan(plan);
   await validateRegistryState(registryState);
   assert.deepEqual(

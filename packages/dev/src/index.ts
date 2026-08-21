@@ -3,7 +3,7 @@ import {existsSync, readFileSync, realpathSync} from 'node:fs';
 import {mkdir, writeFile} from 'node:fs/promises';
 import type {IncomingMessage, ServerResponse} from 'node:http';
 import {createRequire} from 'node:module';
-import {dirname, isAbsolute, join, relative, resolve, sep} from 'node:path';
+import {dirname, isAbsolute, join, resolve, sep} from 'node:path';
 import {
   compareCodeUnits,
   createManifest,
@@ -23,6 +23,8 @@ import {
   prepareTileflowProjectIcons,
   type TileflowBuildAsset,
 } from './icons';
+import {isPathWithin} from './path-safety';
+import {renderTileflowPreviewHtml} from './preview-html';
 import {
   createTileflowArtifactSessionWithBuilder,
   type TileflowArtifactSession,
@@ -525,6 +527,21 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
         return textAssetResponse(getLocalMapLibreAsset('css'), 'text/css; charset=utf-8');
       }
 
+      if (path === '/__runtime/three.module.js') {
+        return textAssetResponse(getLocalThreeAsset('module'), 'text/javascript; charset=utf-8');
+      }
+
+      if (path === '/__runtime/three.core.min.js') {
+        return textAssetResponse(getLocalThreeAsset('core'), 'text/javascript; charset=utf-8');
+      }
+
+      if (path.startsWith('/__runtime/three-addons/')) {
+        return textAssetResponse(
+          getLocalThreeAddonAsset(path.slice('/__runtime/three-addons/'.length)),
+          'text/javascript; charset=utf-8',
+        );
+      }
+
       let artifacts: TileflowBuildArtifacts | undefined;
       let state: TileflowArtifactSessionState;
       if (options.session) {
@@ -554,7 +571,18 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
         const preview = artifacts
           ? resolveTileflowPreview(artifacts.project, {map: options.map, scene: options.scene})
           : undefined;
-        return htmlResponse(previewHtml(preview, basePath, state));
+        const isStreetsPreview =
+          preview !== undefined &&
+          state.status === 'ready' &&
+          state.artifacts.styles[preview.mapName]?.metadata?.['tileflow:basemap'] === 'streets';
+        return htmlResponse(
+          renderTileflowPreviewHtml(
+            preview,
+            basePath,
+            createTileflowArtifactStatus(state),
+            isStreetsPreview,
+          ),
+        );
       }
 
       if (!artifacts) return unavailableArtifactsResponse(state);
@@ -564,7 +592,7 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
       }
 
       if (path === '/style.json') {
-        return jsonResponse(artifacts.styles[getFirstTileflowMapName(artifacts.project)]);
+        return compactJsonResponse(artifacts.styles[getFirstTileflowMapName(artifacts.project)]);
       }
 
       if (path.startsWith('/styles/')) {
@@ -574,7 +602,7 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
           return jsonResponse({error: `Unknown map: ${mapName}`}, 404);
         }
 
-        return jsonResponse(artifacts.styles[mapName]);
+        return compactJsonResponse(artifacts.styles[mapName]);
       }
 
       if (path.startsWith('/icons/')) {
@@ -721,6 +749,17 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+function compactJsonResponse(body: unknown, status = 200) {
+  return new Response(`${JSON.stringify(body)}\n`, {
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-store',
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    status,
+  });
+}
+
 function htmlResponse(body: string, status = 200) {
   return new Response(body, {
     headers: {
@@ -765,208 +804,11 @@ function isRelativePublicUrl(value: string): boolean {
   );
 }
 
-function previewHtml(
-  preview: ResolvedTileflowPreview | undefined,
-  basePath: string,
-  state: TileflowArtifactSessionState,
-): string {
-  const styleUrl = preview ? `${basePath}/styles/${preview.mapName}.json` : undefined;
-  const initialStatus = createTileflowArtifactStatus(state);
-  const mapOptions = preview ? previewMapOptions(preview) : undefined;
-  const viewportCss = preview?.viewport
-    ? `
-      html, body { min-height: 100%; margin: 0; }
-      body {
-        display: grid;
-        place-items: center;
-        overflow: auto;
-        background: #E8E5DE;
-      }
-      #map {
-        width: ${preview.viewport.width}px;
-        height: ${preview.viewport.height}px;
-        box-shadow: 0 24px 80px rgba(37, 34, 29, 0.18);
-      }`
-    : 'html, body, #map { height: 100%; margin: 0; }';
-
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Tileflow Preview</title>
-    <link rel="stylesheet" href="${basePath}/__runtime/maplibre-gl.css" />
-    <style>
-      ${viewportCss}
-      body { font-family: ui-sans-serif, system-ui, sans-serif; }
-      .badge {
-        position: fixed;
-        left: 16px;
-        top: 16px;
-        z-index: 1;
-        border-radius: 8px;
-        background: rgba(246, 247, 243, 0.92);
-        border: 1px solid rgba(60, 64, 67, 0.12);
-        color: #3C4043;
-        padding: 10px 12px;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
-      }
-      .status {
-        position: fixed;
-        left: 16px;
-        right: 16px;
-        bottom: 16px;
-        z-index: 2;
-        display: none;
-        max-width: 720px;
-        border: 1px solid rgba(160, 46, 46, 0.35);
-        border-radius: 8px;
-        background: rgba(255, 244, 244, 0.96);
-        color: #702020;
-        padding: 12px;
-        white-space: pre-wrap;
-      }
-    </style>
-  </head>
-  <body>
-    <div class="badge" id="badge">Tileflow preview</div>
-    <div class="status" id="status" role="status"></div>
-    <div id="map"></div>
-    <script src="${basePath}/__runtime/maplibre-gl.js"></script>
-    <script>
-      const initialStatus = ${JSON.stringify(initialStatus)};
-      const initialGeneration = initialStatus.generation;
-      const badge = document.getElementById("badge");
-      const status = document.getElementById("status");
-      const previewLabel = ${JSON.stringify(preview?.label)};
-      const styleUrl = ${JSON.stringify(styleUrl)};
-      const previewMapOptions = ${JSON.stringify(mapOptions)};
-
-      const cameraRanges = {
-        bearing: [-180, 180],
-        lat: [-90, 90],
-        lng: [-180, 180],
-        pitch: [0, 85],
-        zoom: [0, 24]
-      };
-
-      function readCameraFromUrl() {
-        const params = new URL(location.href).searchParams;
-        const camera = {};
-
-        for (const [name, range] of Object.entries(cameraRanges)) {
-          const values = params.getAll(name);
-          if (values.length !== 1 || values[0].trim() === "") return undefined;
-          const value = Number(values[0]);
-          if (!Number.isFinite(value) || value < range[0] || value > range[1]) return undefined;
-          camera[name] = value;
-        }
-
-        return {
-          bearing: camera.bearing,
-          center: [camera.lng, camera.lat],
-          pitch: camera.pitch,
-          zoom: camera.zoom
-        };
-      }
-
-      function resolveInitialMapOptions(options) {
-        const camera = readCameraFromUrl();
-        if (!camera) return options;
-        const resolved = {...options};
-        delete resolved.bounds;
-        delete resolved.fitBoundsOptions;
-        return {...resolved, ...camera};
-      }
-
-      function formatCameraNumber(value) {
-        return String(Number(value.toFixed(6)));
-      }
-
-      function wrapLongitude(value) {
-        return ((value + 180) % 360 + 360) % 360 - 180;
-      }
-
-      function writeCameraToUrl(map) {
-        const center = map.getCenter();
-        const url = new URL(location.href);
-        const camera = {
-          bearing: map.getBearing(),
-          lat: center.lat,
-          lng: wrapLongitude(center.lng),
-          pitch: map.getPitch(),
-          zoom: map.getZoom()
-        };
-
-        for (const [name, value] of Object.entries(camera)) {
-          url.searchParams.set(name, formatCameraNumber(value));
-        }
-        history.replaceState(history.state, "", url.href);
-      }
-
-      if (styleUrl) {
-        const map = new maplibregl.Map({
-          container: "map",
-          style: styleUrl,
-          ...resolveInitialMapOptions(previewMapOptions)
-        });
-        map.addControl(new maplibregl.NavigationControl(), "top-right");
-        map.on("load", () => writeCameraToUrl(map));
-        map.on("moveend", () => writeCameraToUrl(map));
-      }
-
-      function applyStatus(next) {
-        badge.textContent = ["Tileflow preview", previewLabel, next.status].filter(Boolean).join(" · ");
-        if (next.status === "invalid") {
-          const diagnostics = next.diagnostics || [];
-          status.textContent = diagnostics.map((item) =>
-            (item.path ? item.path + ": " : "") + item.message
-          ).join("\\n") || "Tileflow config is invalid.";
-          status.style.display = "block";
-          return;
-        }
-        status.style.display = "none";
-        if (next.status === "ready" && next.generation > initialGeneration) {
-          location.reload();
-        }
-      }
-
-      applyStatus(initialStatus);
-      const events = new EventSource(${JSON.stringify(`${basePath}/__events`)});
-      for (const eventName of ["building", "ready", "invalid"]) {
-        events.addEventListener(eventName, (event) => applyStatus(JSON.parse(event.data)));
-      }
-    </script>
-  </body>
-</html>`;
-}
-
-function previewMapOptions(preview: ResolvedTileflowPreview): Record<string, unknown> {
-  if (preview.camera.type === 'center') {
-    return {
-      bearing: preview.camera.bearing,
-      center: preview.camera.center,
-      pitch: preview.camera.pitch,
-      zoom: preview.camera.zoom,
-    };
-  }
-
-  const [west, south, east, north] = preview.camera.bounds;
-
-  return {
-    bearing: preview.camera.bearing,
-    bounds: [
-      [west, south],
-      [east, north],
-    ],
-    fitBoundsOptions: {padding: preview.camera.padding},
-    pitch: preview.camera.pitch,
-  };
-}
-
 const localRequire = createRequire(import.meta.url);
 let localMapLibreJavaScript: string | undefined;
 let localMapLibreStylesheet: string | undefined;
+let localThreeCoreJavaScript: string | undefined;
+let localThreeModuleJavaScript: string | undefined;
 
 function getLocalMapLibreAsset(kind: 'css' | 'js'): string {
   if (kind === 'js' && localMapLibreJavaScript !== undefined) return localMapLibreJavaScript;
@@ -980,6 +822,34 @@ function getLocalMapLibreAsset(kind: 'css' | 'js'): string {
   if (kind === 'js') localMapLibreJavaScript = source;
   else localMapLibreStylesheet = source;
   return source;
+}
+
+function getLocalThreeAsset(kind: 'core' | 'module'): string {
+  if (kind === 'core' && localThreeCoreJavaScript !== undefined) {
+    return localThreeCoreJavaScript;
+  }
+  if (kind === 'module' && localThreeModuleJavaScript !== undefined) {
+    return localThreeModuleJavaScript;
+  }
+  const commonJsPath = localRequire.resolve('three');
+  const source = readFileSync(
+    join(dirname(commonJsPath), kind === 'core' ? 'three.core.min.js' : 'three.module.min.js'),
+    'utf8',
+  );
+  if (kind === 'core') localThreeCoreJavaScript = source;
+  else localThreeModuleJavaScript = source;
+  return source;
+}
+
+function getLocalThreeAddonAsset(relativePath: string): string {
+  if (!/^[A-Za-z0-9_./-]+\.js$/.test(relativePath) || relativePath.includes('..')) {
+    throw new Error('Invalid Three.js addon path.');
+  }
+  const commonJsPath = localRequire.resolve('three');
+  const addonRoot = join(dirname(dirname(commonJsPath)), 'examples', 'jsm');
+  const assetPath = join(addonRoot, relativePath);
+  if (!isPathWithin(addonRoot, assetPath)) throw new Error('Invalid Three.js addon path.');
+  return readFileSync(assetPath, 'utf8');
 }
 
 function textAssetResponse(body: string, contentType: string): Response {
@@ -1009,9 +879,4 @@ function canonicalPath(path: string): string {
   } catch {
     return resolve(path);
   }
-}
-
-function isPathWithin(root: string, candidate: string): boolean {
-  const path = relative(resolve(root), resolve(candidate));
-  return path === '' || (!isAbsolute(path) && path !== '..' && !path.startsWith(`..${sep}`));
 }

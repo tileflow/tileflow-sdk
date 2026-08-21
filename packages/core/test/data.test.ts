@@ -7,6 +7,8 @@ import {
   streets,
   tileflowWorld,
   tileflowWorldRevision,
+  tileflowWorldV1Schema,
+  validateTileflowWorldV1Tilejson,
   vectorTiles,
 } from '../src';
 
@@ -20,6 +22,9 @@ test('resolves omitted data to a deterministic Tileflow World revision', () => {
     `https://api.example.test/tiles/world/tiles.json?archiveVersion=${tileflowWorldRevision}`,
   );
   assert.equal(resolved.sourceId, 'tileflow');
+  assert.equal(resolved.schema.layers.bathymetry, 'bathymetry');
+  assert.equal(resolved.schema.fields.bathymetryMinDepth, 'min_depth');
+  assert.equal(resolved.schema.fields.bathymetrySortKey, 'sort_key');
   assert.equal(resolved.attribution, '© OpenFreeMap, © OpenMapTiles, © OpenStreetMap contributors');
   assert.deepEqual(resolved.identity, {
     kind: 'tileflow-world',
@@ -77,6 +82,8 @@ test('supports explicit schema bindings and identifies canonical OpenMapTiles', 
   assert.equal(isCanonicalOpenMapTilesSchema(canonical), true);
   assert.equal(isCanonicalOpenMapTilesSchema(remapped), false);
   assert.equal(canonical.layers.globalLandcover, 'globallandcover');
+  assert.equal(canonical.layers.businessCorridor, 'business_corridor');
+  assert.equal(canonical.layers.tree, 'tree');
   assert.equal(remapped.layers.globalLandcover, 'worldcover_lowzoom');
   assert.equal(remapped.layers.road, 'roads_v2');
   assert.equal(remapped.fields.class, 'kind');
@@ -88,20 +95,54 @@ test('supports explicit schema bindings and identifies canonical OpenMapTiles', 
   assert.equal(canonical.fields.toll, 'toll');
 });
 
-test('normalizes schemas created before the optional global land-cover binding', () => {
-  const legacySchema = openMapTiles();
-  delete legacySchema.layers.globalLandcover;
+test('preserves explicitly absent optional source-layer capabilities', () => {
+  const schema = openMapTiles({
+    capabilities: {businessCorridor: false, globalLandcover: false, tree: false},
+  });
 
-  assert.equal(isCanonicalOpenMapTilesSchema(legacySchema), true);
+  assert.equal(isCanonicalOpenMapTilesSchema(schema), false);
 
   const resolved = resolveTileflowData(
     vectorTiles({
       attribution: '© Example',
-      schema: legacySchema,
+      schema,
       url: '/tiles.json',
     }),
   );
-  assert.equal(resolved.schema.layers.globalLandcover, 'globallandcover');
+  assert.equal(resolved.schema.layers.globalLandcover, undefined);
+  assert.equal(resolved.schema.layers.businessCorridor, undefined);
+  assert.equal(resolved.schema.layers.tree, undefined);
+  assert.equal(resolved.identity.capabilities?.globalLandcover, false);
+  assert.equal(resolved.identity.capabilities?.businessCorridor, false);
+  assert.equal(resolved.identity.capabilities?.bathymetry, false);
+  assert.equal(resolved.identity.capabilities?.tree, false);
+});
+
+test('defines and validates the required Tileflow World V1 bathymetry extension', () => {
+  const generic = openMapTiles();
+  const worldV1 = tileflowWorldV1Schema();
+
+  assert.equal(generic.layers.bathymetry, undefined);
+  assert.equal(generic.fields.bathymetryMinDepth, undefined);
+  assert.equal(worldV1.layers.bathymetry, 'bathymetry');
+  assert.equal(worldV1.fields.bathymetryMinDepth, 'min_depth');
+  assert.equal(worldV1.fields.bathymetrySortKey, 'sort_key');
+  assert.deepEqual(
+    validateTileflowWorldV1Tilejson({
+      vector_layers: [
+        {
+          id: 'bathymetry',
+          minzoom: 0,
+          maxzoom: 9,
+          fields: {min_depth: 'Number', sort_key: 'Number'},
+        },
+      ],
+    }),
+    [],
+  );
+  assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: []}), [
+    'Tileflow World V1 requires bathymetry.',
+  ]);
 });
 
 test('rejects private URL credentials, invalid revisions, and missing attribution', () => {

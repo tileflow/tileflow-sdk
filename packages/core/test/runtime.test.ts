@@ -1,12 +1,55 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  assertValidTileflowRuntimeStyleInputs,
   createTileflowSessionController,
   inferTileflowAnalyticsFromStyleUrl,
   mergeTileflowAnalytics,
   resolveTileflowMapMode,
+  resolveTileflowRuntimeStyle,
   startTileflowSession,
+  validateTileflowRuntimeStyleInputs,
 } from '../src/index';
+
+test('validates one shared runtime style-source contract', () => {
+  const style = {layers: [], sources: {}, version: 8 as const};
+  for (const input of [
+    {},
+    {config: {}},
+    {config: {}, themes: {}},
+    {map: 'main'},
+    {map: 'main', style},
+    {map: 'main', styleBaseUrl: '/generated'},
+    {map: 'main', styleUrl: '/styles/main.json'},
+    {style},
+    {styleUrl: '/styles/main.json'},
+  ]) {
+    assert.deepEqual(validateTileflowRuntimeStyleInputs(input), {ok: true});
+  }
+
+  for (const input of [
+    {config: {}, map: 'main'},
+    {config: {}, style},
+    {style, styleUrl: '/styles/main.json'},
+    {styleBaseUrl: '/generated'},
+    {themes: {}},
+  ]) {
+    assert.equal(validateTileflowRuntimeStyleInputs(input).ok, false);
+    assert.throws(() => assertValidTileflowRuntimeStyleInputs(input), TypeError);
+  }
+});
+
+test('runtime style resolution rejects ambiguous sources instead of applying precedence', () => {
+  assert.throws(
+    () =>
+      resolveTileflowRuntimeStyle({
+        map: 'main',
+        style: {layers: [], sources: {}, version: 8},
+        styleUrl: '/styles/main.json',
+      }),
+    /mutually exclusive style sources/u,
+  );
+});
 
 test('uses the interactive map for implicit image mode on local development hosts', () => {
   for (const hostname of ['localhost', '127.0.0.1', '::1']) {

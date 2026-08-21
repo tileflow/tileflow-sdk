@@ -6,6 +6,7 @@ import {
   type TileflowFeatureInspection,
   TileflowValidationError,
 } from '@tileflow/dev';
+import {withTileflowConfigSecretsHidden} from './config-execution';
 
 type FeatureInspectCommandOptions = {
   center: string;
@@ -67,8 +68,9 @@ async function runFeatureInspect(options: FeatureInspectCommandOptions): Promise
   const sourceLayers = parseCsv(options.layers, 'layers');
   const properties = parseCsv(options.properties, 'properties', true);
 
-  delete process.env.TILEFLOW_API_KEY;
-  const project = await loadValidTileflowConfig(options.config);
+  const project = await withTileflowConfigSecretsHidden(() =>
+    loadValidTileflowConfig(options.config),
+  );
   const mapName = options.map ?? getFirstTileflowMapName(project);
   const inspection = await inspectTileflowFeatures(project, mapName, {
     center,

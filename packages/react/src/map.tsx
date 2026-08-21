@@ -9,17 +9,18 @@ import {
   useRef,
   useState,
 } from 'react';
-import maplibregl, {
+import * as maplibreglModule from 'maplibre-gl';
+import {
   type LngLatLike,
   type Map as MapLibreMap,
   type MapOptions as MapLibreMapOptions,
+  type Marker as MapLibreMarker,
   type StyleSpecification,
 } from 'maplibre-gl';
 import {
   createTileflowSessionController,
   defaultTileflowManifestUrl,
   loadTileflowManifest,
-  type MapLibreStyle,
   mergeTileflowAnalytics,
   normalizeTileflowCaptureId,
   normalizeTileflowStaticImageSize,
@@ -29,9 +30,7 @@ import {
   resolveTileflowStaticImageUrl,
   shouldLoadTileflowManifest,
   type TileflowAnalytics,
-  type TileflowConfig,
   type TileflowMapMarker,
-  type TileflowProjectThemes,
   type TileflowRuntimeManifestMap,
 } from '@tileflow/core';
 import {
@@ -40,20 +39,15 @@ import {
   createTileflowSessionStarter,
   createTileflowTransformRequest,
 } from '@tileflow/core/browser';
+import {assertTileflowMapStyleInputs, type TileflowMapStyleSourceProps} from './map-style-inputs';
 
 export type MapMarker = TileflowMapMarker;
 export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
 
-export type MapProps = {
+type MapBaseProps = {
   captureId?: string;
-  map?: string;
   mode?: 'interactive' | 'image';
-  config?: TileflowConfig;
-  style?: MapLibreStyle;
-  styleUrl?: string;
   imageUrl?: string;
-  styleBaseUrl?: string;
-  themes?: TileflowProjectThemes;
   manifestUrl?: string;
   preferLocalDev?: boolean;
   alt?: string;
@@ -69,33 +63,41 @@ export type MapProps = {
   onLoad?: (map: MapLibreMap) => void;
 };
 
+export type MapProps = MapBaseProps & TileflowMapStyleSourceProps;
+
 const defaultCenter: [number, number] = [0, 20];
 const defaultMarkers: MapMarker[] = [];
+const maplibregl = (
+  'default' in maplibreglModule ? maplibreglModule.default : maplibreglModule
+) as typeof import('maplibre-gl');
 
-export function Map({
-  captureId,
-  map: mapName,
-  mode = 'interactive',
-  config,
-  style,
-  styleUrl,
-  imageUrl,
-  styleBaseUrl,
-  themes,
-  manifestUrl = defaultTileflowManifestUrl,
-  preferLocalDev = true,
-  alt = '',
-  center,
-  zoom,
-  className,
-  height = 420,
-  imageLoading = 'eager',
-  interactive,
-  mapOptions,
-  markers = defaultMarkers,
-  analytics,
-  onLoad,
-}: MapProps) {
+export function Map(props: MapProps) {
+  assertTileflowMapStyleInputs(props);
+
+  const {
+    captureId,
+    map: mapName,
+    mode = 'interactive',
+    config,
+    style,
+    styleUrl,
+    imageUrl,
+    styleBaseUrl,
+    themes,
+    manifestUrl = defaultTileflowManifestUrl,
+    preferLocalDev = true,
+    alt = '',
+    center,
+    zoom,
+    className,
+    height = 420,
+    imageLoading = 'eager',
+    interactive,
+    mapOptions,
+    markers = defaultMarkers,
+    analytics,
+    onLoad,
+  } = props;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -114,7 +116,7 @@ export function Map({
   const readinessRunRef = useRef(0);
   const markerController = useMemo(
     () =>
-      createTileflowMarkerController<MapLibreMap, MapMarker, maplibregl.Marker>({
+      createTileflowMarkerController<MapLibreMap, MapMarker, MapLibreMarker>({
         attach(markerInstance, map, marker) {
           markerInstance.setLngLat(marker.coordinates).addTo(map);
           markerInstance.getElement().title = marker.label ?? marker.id;

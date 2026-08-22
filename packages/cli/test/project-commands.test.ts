@@ -135,6 +135,25 @@ test('whoami reports an account session with no project identity', async (t) => 
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(accountToken));
 });
 
+test('whoami --json keeps authentication failures as parseable stdout JSON', async (t) => {
+  const fixture = await createFixture(t);
+  const result = await runCli(
+    fixture.projectDirectory,
+    ['whoami', '--json', '--api-url', 'https://api.example.test'],
+    fixture.directory,
+  );
+
+  assert.equal(result.code, 1);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    schemaVersion: 1,
+    ok: false,
+    error: {code: 'authentication_failed'},
+  });
+  assert.match(result.stderr, /Not logged in/);
+  assert.doesNotMatch(result.stdout, /Not logged in|Next steps/);
+  assert.equal(result.stdout.includes('\u001b['), false);
+});
+
 test('legacy project login requires fresh account authorization and remains byte-for-byte intact', async (t) => {
   const fixture = await createFixture(t);
   const legacy = `${JSON.stringify({

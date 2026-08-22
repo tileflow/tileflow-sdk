@@ -1,0 +1,493 @@
+{
+  "$about": {
+    "purpose": "Readable map of the complete public modules API in Tileflow SDK",
+    "executable": false,
+    "notation": [
+      "Arrays list every closed-set alternative.",
+      "<...> denotes an open value or a user-defined key.",
+      "Every property is optional except type in JSON; the TypeScript helpers add type."
+    ]
+  },
+  "$enums": {
+    "alignment": ["auto", "map", "viewport"],
+    "anchor": [
+      "bottom",
+      "bottom-left",
+      "bottom-right",
+      "center",
+      "left",
+      "right",
+      "top",
+      "top-left",
+      "top-right"
+    ],
+    "fontWeight": ["regular", "medium", "semibold", "bold"],
+    "roadClass": [
+      "motorway",
+      "trunk",
+      "primary",
+      "secondary",
+      "tertiary",
+      "minor",
+      "service",
+      "track",
+      "pathway",
+      "footway",
+      "cycleway",
+      "steps",
+      "pedestrian"
+    ],
+    "roadStructure": ["bridge", "surface", "tunnel"],
+    "roadModifier": ["construction", "expressway", "indoor", "official", "ramp", "unpaved"],
+    "roadRestriction": ["access", "bicycle", "foot", "horse", "toll"],
+    "roadServiceType": ["alley", "crossover", "driveway", "parkingAisle", "yard"],
+    "mountainBikeScale": ["0", "0+", "1", "1+", "2", "2+", "3", "3+", "4", "5", "6"],
+    "landformClass": ["peak", "volcano", "saddle", "ridge", "cliff", "arete"],
+    "poiCategory": [
+      "food",
+      "coffee",
+      "culture",
+      "transit",
+      "shopping",
+      "lodging",
+      "health",
+      "education",
+      "services",
+      "<custom-id>"
+    ]
+  },
+  "$shared": {
+    "StyleValue<T>": [
+      "<literal T>",
+      {
+        "kind": "expression",
+        "value": ["<MapLibre expression>"]
+      },
+      {
+        "kind": "zoom",
+        "interpolation": ["linear", "exponential", "step"],
+        "base": "<positive number; exponential only>",
+        "stops": [
+          [0, "<T>"],
+          [24, "<T>"]
+        ]
+      }
+    ],
+    "LayerRange": {
+      "minZoom": "<number 0..24>",
+      "maxZoom": "<number 0..24>",
+      "visible": "<boolean>"
+    },
+    "BackgroundStyle": {
+      "$includes": "LayerRange",
+      "color": "StyleValue<string>",
+      "opacity": "StyleValue<number>",
+      "pattern": "StyleValue<string>"
+    },
+    "FillStyle": {
+      "$includes": "LayerRange",
+      "antialias": "<boolean>",
+      "color": "StyleValue<string>",
+      "opacity": "StyleValue<number>",
+      "pattern": "StyleValue<string>"
+    },
+    "LineStyle": {
+      "$includes": "LayerRange",
+      "blur": "StyleValue<number>",
+      "cap": "StyleValue<butt | round | square>",
+      "color": "StyleValue<string>",
+      "dash": "StyleValue<number[]>",
+      "gapWidth": "StyleValue<number>",
+      "join": ["bevel", "miter", "round"],
+      "miterLimit": "<number >= 0>",
+      "offset": "StyleValue<number>",
+      "opacity": "StyleValue<number>",
+      "pattern": "StyleValue<string>",
+      "roundLimit": "<number >= 0>",
+      "width": "StyleValue<number>"
+    },
+    "AreaStyle": {
+      "fill": "FillStyle",
+      "outline": "LineStyle"
+    },
+    "LineStackStyle": {
+      "shadow": "LineStyle",
+      "casing": "LineStyle",
+      "fill": "LineStyle"
+    },
+    "LineHatchStyle": {
+      "$includes": "LayerRange",
+      "angle": "StyleValue<number>",
+      "color": "StyleValue<string>",
+      "opacity": "StyleValue<number>",
+      "pattern": "StyleValue<string>",
+      "patternWidths": "<2+ ascending positive integers <= 1024>",
+      "size": "StyleValue<number>",
+      "spacing": "StyleValue<number>"
+    },
+    "RoadLayerStyle": {
+      "$includes": "LineStackStyle",
+      "hatch": "LineHatchStyle"
+    },
+    "RoadTreatmentLineStyle": {
+      "blur": "StyleValue<number>",
+      "color": "StyleValue<string>",
+      "dash": "StyleValue<number[]>",
+      "gapWidth": "StyleValue<number>",
+      "offset": "StyleValue<number>",
+      "opacity": "StyleValue<number>",
+      "width": "StyleValue<number>"
+    },
+    "RoadTreatmentLayerStyle": {
+      "shadow": "RoadTreatmentLineStyle",
+      "casing": "RoadTreatmentLineStyle",
+      "fill": "RoadTreatmentLineStyle"
+    },
+    "RoadTreatmentStyle": {
+      "enabled": "<boolean>",
+      "widthScale": "<number > 0>",
+      "bridge": "RoadTreatmentLayerStyle",
+      "surface": "RoadTreatmentLayerStyle",
+      "tunnel": "RoadTreatmentLayerStyle"
+    },
+    "ExtrusionStyle": {
+      "$includes": "LayerRange",
+      "base": "StyleValue<number>",
+      "color": "StyleValue<string>",
+      "height": "StyleValue<number>",
+      "opacity": "StyleValue<number>",
+      "pattern": "StyleValue<string>",
+      "verticalGradient": "<boolean>"
+    },
+    "CircleStyle": {
+      "$includes": "LayerRange",
+      "blur": "StyleValue<number>",
+      "color": "StyleValue<string>",
+      "opacity": "StyleValue<number>",
+      "pitchAlignment": ["map", "viewport"],
+      "pitchScale": ["map", "viewport"],
+      "radius": "StyleValue<number>",
+      "strokeColor": "StyleValue<string>",
+      "strokeOpacity": "StyleValue<number>",
+      "strokeWidth": "StyleValue<number>"
+    },
+    "TextStyle": {
+      "$includes": "LayerRange",
+      "allowOverlap": "<boolean>",
+      "anchor": "$enums.anchor",
+      "color": "StyleValue<string>",
+      "fallbacks": "<string[]>",
+      "field": "StyleValue<string>",
+      "font": "<string>",
+      "haloBlur": "StyleValue<number>",
+      "haloColor": "StyleValue<string>",
+      "haloWidth": "StyleValue<number>",
+      "ignorePlacement": "<boolean>",
+      "justify": ["auto", "center", "left", "right"],
+      "keepUpright": "<boolean>",
+      "letterSpacing": "StyleValue<number>",
+      "lineHeight": "StyleValue<number>",
+      "maxAngle": "<number 0..180>",
+      "maxWidth": "StyleValue<number>",
+      "offset": ["<number>", "<number>"],
+      "opacity": "StyleValue<number>",
+      "optional": "<boolean>",
+      "padding": "StyleValue<number>",
+      "radialOffset": "StyleValue<number>",
+      "rotate": "StyleValue<number>",
+      "size": "StyleValue<number>",
+      "transform": ["lowercase", "none", "uppercase"],
+      "variableAnchors": "$enums.anchor[]",
+      "weight": "$enums.fontWeight"
+    },
+    "IconStyle": {
+      "$includes": "LayerRange",
+      "allowOverlap": "<boolean>",
+      "anchor": "$enums.anchor",
+      "color": "StyleValue<string>",
+      "haloBlur": "StyleValue<number>",
+      "haloColor": "StyleValue<string>",
+      "haloWidth": "StyleValue<number>",
+      "ignorePlacement": "<boolean>",
+      "image": "StyleValue<string>",
+      "keepUpright": "<boolean>",
+      "offset": ["<number>", "<number>"],
+      "opacity": "StyleValue<number>",
+      "optional": "<boolean>",
+      "padding": "StyleValue<number>",
+      "pitchAlignment": "$enums.alignment",
+      "rotate": "StyleValue<number>",
+      "rotationAlignment": "$enums.alignment",
+      "size": "StyleValue<number>"
+    },
+    "SymbolStyle": {
+      "$includes": "LayerRange",
+      "placement": ["line", "line-center", "point"],
+      "priority": "StyleValue<number>",
+      "spacing": "StyleValue<number>",
+      "zOrder": ["auto", "source", "viewport-y"],
+      "icon": "IconStyle",
+      "marker": "CircleStyle",
+      "text": "TextStyle"
+    }
+  },
+  "modules": {
+    "land": {
+      "type": "land",
+      "enabled": {"type": "boolean", "default": true},
+      "background": "BackgroundStyle",
+      "landcover": {
+        "farmland": "AreaStyle",
+        "grass": "AreaStyle",
+        "ice": "AreaStyle",
+        "park": "AreaStyle",
+        "protected": "AreaStyle",
+        "rock": "AreaStyle",
+        "sand": "AreaStyle",
+        "scrub": "AreaStyle",
+        "wetland": "AreaStyle",
+        "wood": "AreaStyle"
+      },
+      "landuse": {
+        "cemetery": "AreaStyle",
+        "civic": "AreaStyle",
+        "commercial": "AreaStyle",
+        "education": "AreaStyle",
+        "government": "AreaStyle",
+        "industrial": "AreaStyle",
+        "medical": "AreaStyle",
+        "military": "AreaStyle",
+        "parking": "AreaStyle",
+        "railway": "AreaStyle",
+        "recreation": "AreaStyle",
+        "residential": "AreaStyle"
+      }
+    },
+    "water": {
+      "type": "water",
+      "enabled": {"type": "boolean", "default": true},
+      "bodies": "AreaStyle",
+      "intermittent": {
+        "bodies": "AreaStyle",
+        "waterways": "LineStyle"
+      },
+      "waterways": {
+        "canal": "LineStyle",
+        "other": "LineStyle",
+        "river": "LineStyle",
+        "stream": "LineStyle"
+      }
+    },
+    "vegetation": {
+      "type": "vegetation",
+      "enabled": {"type": "boolean", "default": true},
+      "minZoom": {"type": "number 0..24", "default": 16},
+      "mode": {"values": ["3d", "flat"], "default": "3d"}
+    },
+    "buildings": {
+      "type": "buildings",
+      "enabled": {"type": "boolean", "default": true},
+      "mode": {"values": ["3d", "flat"], "default": "flat"},
+      "businessCorridor": "AreaStyle",
+      "flat": "AreaStyle",
+      "extrusion": "ExtrusionStyle"
+    },
+    "landforms": {
+      "type": "landforms",
+      "enabled": {"type": "boolean", "default": true},
+      "elevation": {"type": "boolean", "default": true},
+      "classes": {
+        "peak": "SymbolStyle",
+        "volcano": "SymbolStyle",
+        "saddle": "SymbolStyle",
+        "ridge": "SymbolStyle",
+        "cliff": "SymbolStyle",
+        "arete": "SymbolStyle"
+      }
+    },
+    "boundaries": {
+      "type": "boundaries",
+      "enabled": {"type": "boolean", "default": true},
+      "admin2": "LineStyle",
+      "admin4": "LineStyle",
+      "disputed": "LineStyle",
+      "maritime": "LineStyle"
+    },
+    "roads": {
+      "type": "roads",
+      "enabled": {"type": "boolean", "default": true},
+      "detail": {
+        "values": ["none", "highways", "major", "streets", "all"],
+        "default": "streets"
+      },
+      "hierarchy": {"values": ["subtle", "clear", "strong"], "default": "clear"},
+      "weight": {"values": ["thin", "regular", "bold"], "default": "regular"},
+      "outline": {"values": ["none", "subtle", "strong"], "default": "subtle"},
+      "oneWayMarkers": {"type": "boolean", "default": false},
+      "extras": {
+        "paths": {"type": "boolean", "default": false}
+      },
+      "areas": {
+        "road": "AreaStyle",
+        "pedestrian": "AreaStyle",
+        "pier": "AreaStyle"
+      },
+      "classes": {
+        "keys": "$enums.roadClass",
+        "value": {
+          "enabled": "<boolean>",
+          "bridge": "RoadLayerStyle",
+          "surface": "RoadLayerStyle",
+          "tunnel": "RoadLayerStyle"
+        }
+      },
+      "structures": {
+        "bridge": "RoadLayerStyle",
+        "surface": "RoadLayerStyle",
+        "tunnel": "RoadLayerStyle"
+      },
+      "widthScale": {
+        "keys": "$enums.roadClass",
+        "value": "<number > 0>"
+      },
+      "modifiers": {
+        "keys": "$enums.roadModifier",
+        "value": "RoadTreatmentStyle"
+      },
+      "restrictions": {
+        "keys": "$enums.roadRestriction",
+        "value": "RoadTreatmentStyle"
+      },
+      "serviceTypes": {
+        "keys": "$enums.roadServiceType",
+        "value": "RoadTreatmentStyle"
+      },
+      "mountainBike": {
+        "keys": "$enums.mountainBikeScale",
+        "value": "RoadTreatmentStyle"
+      }
+    },
+    "transit": {
+      "type": "transit",
+      "enabled": {"type": "boolean", "default": true},
+      "cableway": "LineStyle",
+      "ferry": "LineStyle",
+      "rail": {
+        "bridge": "LineStyle",
+        "surface": "LineStyle",
+        "tunnel": "LineStyle"
+      },
+      "railHatching": {
+        "bridge": "LineStyle",
+        "surface": "LineStyle",
+        "tunnel": "LineStyle"
+      },
+      "serviceRail": {
+        "bridge": "LineStyle",
+        "surface": "LineStyle",
+        "tunnel": "LineStyle"
+      }
+    },
+    "aeroways": {
+      "type": "aeroways",
+      "enabled": {"type": "boolean", "default": true},
+      "area": "AreaStyle",
+      "runway": "LineStackStyle",
+      "taxiway": "LineStackStyle",
+      "runwayRef": "SymbolStyle"
+    },
+    "addresses": {
+      "type": "addresses",
+      "enabled": {"type": "boolean", "default": true},
+      "labels": "SymbolStyle"
+    },
+    "labels": {
+      "type": "labels",
+      "enabled": {"type": "boolean", "default": true},
+      "aerodromeCodes": {"values": ["none", "iata", "all"], "default": "iata"},
+      "junctions": {"type": "boolean", "default": true},
+      "language": {
+        "values": ["auto", "local", "en", "<non-empty language code>"],
+        "default": "auto"
+      },
+      "places": {"values": ["none", "major", "all"], "default": "major"},
+      "roads": {
+        "values": ["none", "highways", "major", "streets", "all"],
+        "default": "major"
+      },
+      "shields": {"values": ["none", "major", "all"], "default": "major"},
+      "water": {"values": ["none", "major", "all"], "default": "major"},
+      "roadClasses": {
+        "type": "$enums.roadClass[]",
+        "minimumItems": 1
+      },
+      "styles": {
+        "aerodrome": "SymbolStyle",
+        "junctions": "SymbolStyle",
+        "places": {
+          "city": "SymbolStyle",
+          "continent": "SymbolStyle",
+          "country": "SymbolStyle",
+          "neighborhood": "SymbolStyle",
+          "other": "SymbolStyle",
+          "state": "SymbolStyle",
+          "town": "SymbolStyle",
+          "village": "SymbolStyle"
+        },
+        "roads": {
+          "keys": "$enums.roadClass",
+          "value": "SymbolStyle"
+        },
+        "shields": {
+          "default": "SymbolStyle",
+          "networks": {
+            "<network-id>": "SymbolStyle"
+          }
+        },
+        "water": {
+          "line": "SymbolStyle",
+          "ocean": "SymbolStyle",
+          "other": "SymbolStyle",
+          "waterway": "SymbolStyle"
+        }
+      }
+    },
+    "poi": {
+      "type": "poi",
+      "enabled": {"type": "boolean", "default": true},
+      "preset": {"values": ["none", "minimal", "balanced", "full"], "default": "minimal"},
+      "categories": "$enums.poiCategory[]",
+      "classMapping": {
+        "<category-id>": ["<OMT class or subclass id>"]
+      },
+      "color": {"values": ["uniform", "category"], "default": "uniform"},
+      "density": {"values": ["sparse", "balanced", "dense"], "default": "from preset"},
+      "icons": {
+        "values": [false, true, "essential", "full"],
+        "default": "essential"
+      },
+      "labels": {
+        "values": ["none", "minimal", "balanced", "full"],
+        "default": "from preset"
+      },
+      "minZoom": {"type": "number 0..24", "default": "from preset"},
+      "placement": {
+        "coupleIconAndLabel": {"type": "boolean", "default": false},
+        "iconPadding": {"type": "number >= 0", "default": 2},
+        "textPadding": {"type": "number >= 0", "default": 2}
+      },
+      "styles": {
+        "<category-id>": {
+          "$includes": "SymbolStyle",
+          "maxRank": "<integer >= 1>"
+        }
+      }
+    }
+  },
+  "$apiReviewNotes": [
+    "water.bathymetry and land.globalLandcover are automatic when the data schema provides them; neither has its own public style yet.",
+    "vegetation currently exposes only enabled, minZoom, and mode; its appearance is derived from the theme.",
+    "In labels, addresses, landforms, POI, and aeroways.runwayRef, the compiler reserves text.field for semantic data.",
+    "marker is currently materialized in POI; other modules accept SymbolStyle but do not create a separate marker layer."
+  ]
+}

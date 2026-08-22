@@ -1,27 +1,13 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
-import {dirname, join} from 'node:path';
 import test from 'node:test';
-import {fileURLToPath, pathToFileURL} from 'node:url';
-import {compile} from 'svelte/compiler';
 import {render} from 'svelte/server';
+import {compileTileflowMap} from './component.js';
 
 test('compiles and renders the bounded framework-neutral loading contract', async () => {
-  const packageRoot = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
-  const directory = await mkdtemp(join(tmpdir(), 'tileflow-svelte-readiness-'));
+  const compiled = await compileTileflowMap('readiness');
 
   try {
-    const source = await readFile(new URL('../src/TileflowMap.svelte', import.meta.url), 'utf8');
-    const compiled = compile(source, {
-      filename: 'TileflowMap.svelte',
-      generate: 'server',
-    });
-    await symlink(join(packageRoot, 'node_modules'), join(directory, 'node_modules'), 'dir');
-    const modulePath = join(directory, 'TileflowMap.mjs');
-    await writeFile(modulePath, compiled.js.code, 'utf8');
-    const component = (await import(`${pathToFileURL(modulePath).href}?test=1`)).default;
-    const result = render(component, {
+    const result = render(compiled.component, {
       props: {
         captureId: 'proof-map',
         imageUrl: 'data:image/png;base64,iVBORw0KGgo=',
@@ -33,11 +19,11 @@ test('compiles and renders the bounded framework-neutral loading contract', asyn
     assert.match(result.body, /data-tileflow-capture-id="proof-map"/);
     assert.match(result.body, /data-tileflow-map="main"/);
     assert.match(result.body, /data-tileflow-state="loading"/);
-    assert.match(compiled.js.code, /captureState = 'idle'/);
-    assert.match(compiled.js.code, /captureState = 'error'/);
-    assert.match(compiled.js.code, /registerTileflowWorldRequestBridge/);
-    assert.match(compiled.js.code, /attachTileflowFairUseNotice/);
+    assert.match(compiled.code, /captureState = 'idle'/);
+    assert.match(compiled.code, /captureState = 'error'/);
+    assert.match(compiled.code, /registerTileflowWorldRequestBridge/);
+    assert.match(compiled.code, /attachTileflowFairUseNotice/);
   } finally {
-    await rm(directory, {force: true, recursive: true});
+    await compiled.cleanup();
   }
 });

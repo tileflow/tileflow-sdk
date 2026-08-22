@@ -118,6 +118,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
         followSymlinks: false,
         ignoreInitial: true,
         ignored: (path, stats) => this.#ignoreWatchPath(path, stats?.isDirectory()),
+        usePolling: process.platform === 'win32',
       });
       const watcherReady = new Promise<void>((resolveReady, rejectReady) => {
         const watcher = this.#watcher!;

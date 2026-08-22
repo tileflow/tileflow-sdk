@@ -52,7 +52,7 @@ export type TileflowLinePaint = {
   width?: TileflowStyleValue<number>;
 };
 export type TileflowLineLayout = {
-  cap?: TileflowLineCap;
+  cap?: TileflowStyleValue<TileflowLineCap>;
   join?: TileflowLineJoin;
   miterLimit?: number;
   roundLimit?: number;
@@ -64,6 +64,15 @@ export type TileflowLineHatchStyle = TileflowLayerRange & {
   angle?: TileflowStyleValue<number>;
   color?: TileflowStyleValue<string>;
   opacity?: TileflowStyleValue<number>;
+  /** Sprite pattern clipped to the line deck; when set, it replaces glyph hatching. */
+  pattern?: TileflowStyleValue<string>;
+  /**
+   * Intrinsic pixel heights available as `${pattern}-${width}` sprites. Tileflow
+   * selects the closest height to the rendered line width so marks retain a
+   * nearly fixed screen-pixel thickness instead of stretching with the road.
+   * Requires `pattern` to be a literal sprite-name prefix.
+   */
+  patternWidths?: readonly number[];
   size?: TileflowStyleValue<number>;
   spacing?: TileflowStyleValue<number>;
 };

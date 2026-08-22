@@ -6,19 +6,14 @@ import type {TileflowLandcoverClass, TileflowLandModuleConfig, TileflowLanduseCl
 
 const landuseClasses: Record<TileflowLanduseClass, readonly string[]> = {
   cemetery: ['cemetery'],
-  civic: [
-    'school',
-    'university',
-    'hospital',
-    'civic',
-    'college',
-    'kindergarten',
-    'education',
-    'library',
-  ],
+  civic: ['community_centre', 'place_of_worship', 'social_facility'],
   commercial: ['commercial', 'retail'],
+  education: ['school', 'university', 'college', 'kindergarten', 'education', 'library'],
+  government: ['civic', 'government', 'public', 'townhall'],
   industrial: ['industrial'],
+  medical: ['hospital', 'clinic', 'doctors', 'medical'],
   military: ['military'],
+  parking: ['parking'],
   railway: ['railway'],
   recreation: ['pitch', 'track', 'playground', 'zoo'],
   residential: ['residential'],
@@ -26,6 +21,7 @@ const landuseClasses: Record<TileflowLanduseClass, readonly string[]> = {
 
 type TileflowLandcoverClassMatch = {
   class: readonly string[];
+  excludeSubclass?: readonly string[];
   subclass?: readonly string[];
 };
 
@@ -34,7 +30,7 @@ type TileflowLandcoverClassMatch = {
 // subclass filter on top of the class filter to separate it from plain grass.
 const landcoverClasses: Record<TileflowLandcoverClass, TileflowLandcoverClassMatch> = {
   farmland: {class: ['farmland']},
-  grass: {class: ['grass']},
+  grass: {class: ['grass'], excludeSubclass: ['scrub']},
   ice: {class: ['ice', 'glacier']},
   park: {class: ['park']},
   protected: {class: ['protected_area']},
@@ -56,26 +52,30 @@ export function compileLand(
       enabled: true,
       background: {color: colors.background},
       landuse: {
-        cemetery: {fill: {color: colors.landuse.cemetery, opacity: 0.62}},
-        civic: {fill: {color: colors.landuse.civic, opacity: 0.62}},
-        commercial: {fill: {color: colors.landuse.commercial, opacity: 0.62}},
-        industrial: {fill: {color: colors.landuse.industrial, opacity: 0.62}},
-        military: {fill: {color: colors.landuse.military, opacity: 0.5}},
-        railway: {fill: {color: colors.landuse.industrial, opacity: 0.62}},
-        recreation: {fill: {color: colors.landuse.recreation, opacity: 0.62}},
-        residential: {fill: {color: colors.landuse.residential, opacity: 0.62}},
+        cemetery: {fill: {color: colors.landuse.cemetery, minZoom: 8, opacity: 0.62}},
+        civic: {fill: {color: colors.landuse.civic, minZoom: 8, opacity: 0.62}},
+        commercial: {fill: {color: colors.landuse.commercial, minZoom: 8, opacity: 0.62}},
+        education: {fill: {color: colors.landuse.education, minZoom: 8, opacity: 0.62}},
+        government: {fill: {color: colors.landuse.government, minZoom: 8, opacity: 0.62}},
+        industrial: {fill: {color: colors.landuse.industrial, minZoom: 8, opacity: 0.62}},
+        medical: {fill: {color: colors.landuse.medical, minZoom: 8, opacity: 0.62}},
+        military: {fill: {color: colors.landuse.military, minZoom: 8, opacity: 0.5}},
+        parking: {fill: {color: colors.landuse.parking, minZoom: 8, opacity: 0.62}},
+        railway: {fill: {color: colors.landuse.industrial, minZoom: 8, opacity: 0.62}},
+        recreation: {fill: {color: colors.landuse.recreation, minZoom: 8, opacity: 0.62}},
+        residential: {fill: {color: colors.landuse.residential, minZoom: 8, opacity: 0.62}},
       },
       landcover: {
-        farmland: {fill: {color: colors.landcover.protected, opacity: 0.88}},
-        grass: {fill: {color: colors.landcover.grass, opacity: 0.88}},
-        ice: {fill: {color: colors.landcover.ice, opacity: 0.88}},
-        park: {fill: {color: colors.landcover.park, opacity: 0.78}},
-        protected: {fill: {color: colors.landcover.protected, opacity: 0.88}},
-        rock: {fill: {color: colors.landcover.rock, opacity: 0.85}},
-        sand: {fill: {color: colors.landcover.sand, opacity: 0.88}},
-        scrub: {fill: {color: colors.landcover.protected, opacity: 0.88}},
-        wetland: {fill: {color: colors.landcover.wetland, opacity: 0.82}},
-        wood: {fill: {color: colors.landcover.wood, opacity: 0.88}},
+        farmland: {fill: {color: colors.landcover.farmland, minZoom: 8, opacity: 0.88}},
+        grass: {fill: {color: colors.landcover.grass, minZoom: 8, opacity: 0.88}},
+        ice: {fill: {color: colors.landcover.ice, minZoom: 8, opacity: 0.88}},
+        park: {fill: {color: colors.landcover.park, minZoom: 8, opacity: 0.78}},
+        protected: {fill: {color: colors.landcover.protected, minZoom: 8, opacity: 0.88}},
+        rock: {fill: {color: colors.landcover.rock, minZoom: 8, opacity: 0.85}},
+        sand: {fill: {color: colors.landcover.sand, minZoom: 8, opacity: 0.88}},
+        scrub: {fill: {color: colors.landcover.protected, minZoom: 8, opacity: 0.88}},
+        wetland: {fill: {color: colors.landcover.wetland, minZoom: 8, opacity: 0.82}},
+        wood: {fill: {color: colors.landcover.wood, minZoom: 8, opacity: 0.88}},
       },
     },
     request,
@@ -107,43 +107,45 @@ export function compileLand(
     });
   }
 
-  contributions.push({
-    kind: 'layer',
-    layer: {
-      id: 'streets-global-landcover',
-      type: 'fill',
-      source,
-      'source-layer': schema.layers.globalLandcover ?? 'globallandcover',
-      minzoom: 0,
-      maxzoom: 8,
-      paint: {
-        'fill-color': [
-          'match',
-          ['get', classField],
-          'barren',
-          colors.landcover.rock,
-          'crop',
-          colors.roadMajor,
-          'grass',
-          colors.landcover.grass,
-          'shrub',
-          colors.landcover.protected,
-          'snow',
-          colors.landcover.ice,
-          'trees',
-          colors.landcover.wood,
-          'urban',
-          colors.building,
-          'rgba(0, 0, 0, 0)',
-        ],
-        'fill-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.88, 6, 0.82, 7, 0.68, 8, 0],
+  if (schema.layers.globalLandcover) {
+    contributions.push({
+      kind: 'layer',
+      layer: {
+        id: 'streets-global-landcover',
+        type: 'fill',
+        source,
+        'source-layer': schema.layers.globalLandcover,
+        minzoom: 0,
+        maxzoom: 8,
+        paint: {
+          'fill-color': [
+            'match',
+            ['get', classField],
+            'barren',
+            colors.landcover.rock,
+            'crop',
+            colors.landcover.farmland,
+            'grass',
+            colors.landcover.grass,
+            'shrub',
+            colors.landcover.protected,
+            'snow',
+            colors.landcover.ice,
+            'trees',
+            colors.landcover.wood,
+            'urban',
+            colors.buildings.active,
+            'rgba(0, 0, 0, 0)',
+          ],
+          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.88, 6, 0.82, 7, 0.68, 8, 0],
+        },
       },
-    },
-    localOrder: 10,
-    owner: 'land',
-    slot: 'land',
-    target: 'land.globalLandcover',
-  });
+      localOrder: 10,
+      owner: 'land',
+      slot: 'land',
+      target: 'land.globalLandcover',
+    });
+  }
 
   let localOrder = 100;
   for (const [name, classes] of Object.entries(landuseClasses) as Array<
@@ -177,14 +179,21 @@ export function compileLand(
   >) {
     const style = config.landcover?.[name];
     if (!style) continue;
-    const sourceLayer = name === 'park' ? schema.layers.park : schema.layers.landcover;
+    // OpenMapTiles keeps both ordinary parks and protected areas in the `park`
+    // source layer.  Most other land-cover classes live in `landcover`.
+    const parkSource = name === 'park' || name === 'protected';
+    const sourceLayer = parkSource ? schema.layers.park : schema.layers.landcover;
+    const filter =
+      name === 'park'
+        ? ['!', classFilter(classField, landcoverClasses.protected.class)]
+        : landcoverFilter(classField, subclassField, match);
     for (const area of createAreaLayers(
       {
         id: `streets-landcover-${name}`,
         type: 'fill',
         source,
         'source-layer': sourceLayer,
-        ...(name === 'park' ? {} : {filter: landcoverFilter(classField, subclassField, match)}),
+        filter,
       },
       style,
     )) {
@@ -212,6 +221,9 @@ function landcoverFilter(
   match: TileflowLandcoverClassMatch,
 ): unknown[] {
   const filter = classFilter(classField, match.class);
-  if (!match.subclass) return filter;
-  return ['all', filter, classFilter(subclassField, match.subclass)];
+  if (match.subclass) return ['all', filter, classFilter(subclassField, match.subclass)];
+  if (match.excludeSubclass) {
+    return ['all', filter, ['!', classFilter(subclassField, match.excludeSubclass)]];
+  }
+  return filter;
 }

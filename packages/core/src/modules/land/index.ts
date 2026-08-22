@@ -4,8 +4,12 @@ export type TileflowLanduseClass =
   | 'cemetery'
   | 'civic'
   | 'commercial'
+  | 'education'
+  | 'government'
   | 'industrial'
+  | 'medical'
   | 'military'
+  | 'parking'
   | 'railway'
   | 'recreation'
   | 'residential';

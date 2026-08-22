@@ -20,6 +20,7 @@ import {
   getTileflowMapNames,
   loadTileflowConfig,
 } from '@tileflow/dev';
+import {withTileflowConfigSecretsHidden} from './config-execution';
 import {writeIconDiffReport} from './icon-diff-report';
 
 const environmentSchema = z
@@ -260,8 +261,7 @@ async function runIconDiff(
     throw new Error('Missing Tileflow API key. Run tileflow login or set TILEFLOW_API_KEY.');
   }
 
-  delete process.env.TILEFLOW_API_KEY;
-  const project = await loadTileflowConfig(options.config);
+  const project = await withTileflowConfigSecretsHidden(() => loadTileflowConfig(options.config));
   const validation = validateConfig(project);
 
   if (!validation.valid) {

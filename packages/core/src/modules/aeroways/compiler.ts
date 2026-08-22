@@ -1,8 +1,8 @@
 import type {TileflowDomainCompileContext} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
-import {applyLineStyle, createAreaLayers} from '../../cartography/layer-style';
+import {applyLineStyle, applySymbolStyle, createAreaLayers} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
-import {zoom} from '../../cartography/values';
+import {expression, zoom} from '../../cartography/values';
 import type {TileflowAerowaysModuleConfig} from './index';
 
 export function compileAeroways(
@@ -30,6 +30,26 @@ export function compileAeroways(
             [8, 1],
             [16, 16],
           ]),
+        },
+      },
+      runwayRef: {
+        minZoom: 14,
+        placement: 'line-center',
+        priority: 70,
+        text: {
+          allowOverlap: false,
+          color: context.colors.labels.road,
+          font: context.typography.roads.font,
+          haloColor: context.colors.labels.halo,
+          haloWidth: 1.5,
+          keepUpright: true,
+          optional: true,
+          padding: 6,
+          size: zoom.linear([
+            [14, 10],
+            [18, 13],
+          ]),
+          weight: context.typography.roads.weight,
         },
       },
       taxiway: {
@@ -97,7 +117,11 @@ export function compileAeroways(
             type: 'line',
             source,
             'source-layer': schema.layers.aeroway,
-            filter: ['==', ['get', schema.fields.class], name],
+            filter: [
+              'all',
+              ['==', ['geometry-type'], 'LineString'],
+              ['==', ['get', schema.fields.class], name],
+            ],
           },
           style,
         ),
@@ -107,6 +131,34 @@ export function compileAeroways(
         target: `aeroways.${name}.${phase}`,
       });
     }
+  }
+
+  const runwayRef = config.runwayRef;
+  if (runwayRef && runwayRef.visible !== false && runwayRef.text?.visible !== false) {
+    contributions.push({
+      kind: 'layer',
+      layer: applySymbolStyle(
+        {
+          id: 'streets-aeroway-runway-ref',
+          type: 'symbol',
+          source,
+          'source-layer': schema.layers.aeroway,
+          filter: [
+            'all',
+            ['==', ['geometry-type'], 'LineString'],
+            ['==', ['get', schema.fields.class], 'runway'],
+            ['has', schema.fields.ref],
+          ],
+        },
+        mergeTileflowDesign(runwayRef, {
+          text: {field: expression<string>(['to-string', ['get', schema.fields.ref]])},
+        }),
+      ),
+      localOrder: 650,
+      owner: 'aeroways',
+      slot: 'symbols',
+      target: 'aeroways.runwayRef',
+    });
   }
   return contributions;
 }

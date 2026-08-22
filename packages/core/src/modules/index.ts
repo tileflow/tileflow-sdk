@@ -1,3 +1,5 @@
+export {addresses} from './addresses';
+export type {TileflowAddressesModuleConfig, TileflowAddressesModuleOptions} from './addresses';
 export {aeroways} from './aeroways';
 export type {TileflowAerowaysModuleConfig, TileflowAerowaysModuleOptions} from './aeroways';
 export {boundaries} from './boundaries';
@@ -16,6 +18,12 @@ export type {
   TileflowLandModuleOptions,
   TileflowLanduseClass,
 } from './land';
+export {landforms, tileflowLandformClasses} from './landforms';
+export type {
+  TileflowLandformClass,
+  TileflowLandformsModuleConfig,
+  TileflowLandformsModuleOptions,
+} from './landforms';
 export {poi} from './poi';
 export {roads} from './roads';
 export {transit} from './transit';
@@ -24,6 +32,12 @@ export type {
   TileflowTransitModuleOptions,
   TileflowTransitRailStyle,
 } from './transit';
+export {vegetation} from './vegetation';
+export type {
+  TileflowVegetationMode,
+  TileflowVegetationModuleConfig,
+  TileflowVegetationModuleOptions,
+} from './vegetation';
 export {water} from './water';
 export type {
   TileflowWaterModuleConfig,

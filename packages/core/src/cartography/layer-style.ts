@@ -58,7 +58,7 @@ export function applyLineStyle<TLayer extends Layer>(
   setPaint(paint, 'line-opacity', style.opacity);
   setPaint(paint, 'line-pattern', style.pattern);
   setPaint(paint, 'line-width', style.width);
-  if (style.cap !== undefined) layout['line-cap'] = style.cap;
+  setLayout(layout, 'line-cap', style.cap);
   if (style.join !== undefined) layout['line-join'] = style.join;
   if (style.miterLimit !== undefined) layout['line-miter-limit'] = style.miterLimit;
   if (style.roundLimit !== undefined) layout['line-round-limit'] = style.roundLimit;

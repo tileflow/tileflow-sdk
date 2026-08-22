@@ -1,7 +1,9 @@
-import maplibregl, {
+import * as maplibreglModule from 'maplibre-gl';
+import {
   type LngLatLike,
   type Map as MapLibreMap,
   type MapOptions as MapLibreMapOptions,
+  type Marker as MapLibreMarker,
   type RequestParameters,
   type RequestTransformFunction,
   type StyleSpecification,
@@ -18,6 +20,7 @@ import {
   ref,
   shallowRef,
   watch,
+  watchEffect,
 } from 'vue';
 import {
   createTileflowSessionController,
@@ -49,6 +52,7 @@ import {
   type TileflowMapLifecycleAttachment,
   type TileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
+import {assertTileflowMapStyleInputs, type TileflowMapStyleSourceProps} from './style-source.js';
 
 export type TileflowMapMode = 'interactive' | 'image';
 export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
@@ -59,28 +63,25 @@ export type TileflowMapProps = {
   center?: [number, number];
   captureId?: string;
   className?: string;
-  config?: TileflowConfig;
   height?: number | string;
   imageLoading?: HTMLImageElement['loading'];
   imageUrl?: string;
   interactive?: boolean;
   manifestUrl?: string;
-  map?: string;
   mapOptions?: TileflowMapOptions;
-  mapStyle?: MapLibreStyle;
   markers?: TileflowMapMarker[];
   mode?: TileflowMapMode;
   preferLocalDev?: boolean;
-  styleBaseUrl?: string;
-  styleUrl?: string;
-  themes?: TileflowProjectThemes;
   zoom?: number;
-};
+} & TileflowMapStyleSourceProps;
 
 const defaultCenter: [number, number] = [0, 20];
 const defaultZoom = 2;
+const maplibregl = (
+  'default' in maplibreglModule ? maplibreglModule.default : maplibreglModule
+) as typeof import('maplibre-gl');
 
-export const TileflowMap = defineComponent({
+export const TileflowMap = defineComponent<TileflowMapProps>({
   name: 'TileflowMap',
   inheritAttrs: false,
   props: {
@@ -142,7 +143,7 @@ export const TileflowMap = defineComponent({
     const markerController = createTileflowMarkerController<
       MapLibreMap,
       TileflowMapMarker,
-      maplibregl.Marker
+      MapLibreMarker
     >({
       attach(markerInstance, map, marker) {
         markerInstance.setLngLat(marker.coordinates).addTo(map);
@@ -209,13 +210,24 @@ export const TileflowMap = defineComponent({
           : undefined),
     );
     const frameStyle = computed<CSSProperties>(() => ({
-      height: formatHeight(props.height),
+      height: formatHeight(props.height ?? 420),
       minHeight: '240px',
       overflow: 'hidden',
       position: 'relative',
       width: '100%',
     }));
     const resolvedCaptureId = computed(() => normalizeTileflowCaptureId(props.captureId));
+
+    watchEffect(() => {
+      assertTileflowMapStyleInputs({
+        config: props.config,
+        map: props.map,
+        mapStyle: props.mapStyle,
+        styleBaseUrl: props.styleBaseUrl,
+        styleUrl: props.styleUrl,
+        themes: props.themes,
+      });
+    });
 
     const refreshManifest = async () => {
       const shouldLoad = shouldLoadTileflowManifest({
@@ -237,7 +249,9 @@ export const TileflowMap = defineComponent({
       manifestMap.value = null;
 
       try {
-        const manifest = await loadTileflowManifest(props.manifestUrl);
+        const manifest = await loadTileflowManifest(
+          props.manifestUrl ?? defaultTileflowManifestUrl,
+        );
 
         if (loadId === manifestLoadId) {
           manifestMap.value =
@@ -412,7 +426,7 @@ export const TileflowMap = defineComponent({
         return;
       }
 
-      markerController.replace(map, props.markers);
+      markerController.replace(map, props.markers ?? []);
     };
 
     const markImageReady = async (image: HTMLImageElement) => {

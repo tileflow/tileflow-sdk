@@ -70,12 +70,12 @@ test('packages only the direct Streets authoring surface and compiler', async ()
     const entry = await import('@tileflow/core');
     for (const name of [
       'streets', 'land', 'water', 'roads', 'transit', 'aeroways',
-      'buildings', 'boundaries', 'labels', 'poi', 'createStyle',
+      'buildings', 'boundaries', 'labels', 'poi', 'vegetation', 'createStyle',
       'tileflowWorld', 'parseWorldGenerationDescriptor',
     ]) {
       if (typeof entry[name] !== 'function') process.exit(2);
     }
-    for (const removed of ['osm', 'styleOverride', 'tileflowWorldRevision']) {
+    for (const removed of ['osm', 'styleOverride']) {
       if (removed in entry) process.exit(3);
     }
     const style = entry.createStyle({basemap: entry.streets()});

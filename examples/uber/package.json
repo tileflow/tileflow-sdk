@@ -6,7 +6,7 @@
   "scripts": {
     "build": "vite build",
     "capture": "tileflow capture --all --config tileflow.config.ts --app-origin http://127.0.0.1:5173",
-    "dev": "vite --host 127.0.0.1",
+    "dev": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "test": "node --import tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "verify": "pnpm run typecheck && pnpm run test",

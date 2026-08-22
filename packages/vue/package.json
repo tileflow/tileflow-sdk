@@ -28,9 +28,9 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean --external vue --external maplibre-gl",
     "test": "tsx --test test/*.test.ts",
-    "verify": "pnpm run build && pnpm run test",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "tsc -p tsconfig.json --noEmit"
+    "verify": "pnpm run typecheck && pnpm run build && pnpm run test",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.contract.json",
+    "lint": "pnpm run typecheck"
   },
   "exports": {
     ".": {
@@ -46,7 +46,7 @@
     "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0"
   },
   "peerDependencies": {
-    "maplibre-gl": ">=5",
+    "maplibre-gl": ">=5 <7",
     "vue": ">=3.3"
   },
   "devDependencies": {

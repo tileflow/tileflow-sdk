@@ -54,32 +54,42 @@ export function compileTransit(
   if (config.enabled === false) return [];
 
   const {sourceId: source, schema} = context.data;
-  const railFilter = [
+  const ferryFilter = modalFilter(schema.fields.class, schema.fields.subclass, ['ferry']);
+  const cablewayFilter = [
     'all',
-    ['match', ['get', schema.fields.class], ['rail', 'transit'], true, false],
-    ['!', ['has', schema.fields.service]],
-  ];
-  const lineTargets = [
-    [
-      'ferry',
-      config.ferry,
-      ['==', ['get', schema.fields.class], 'ferry'],
-      'transport-surface-fill',
-      1000,
-    ],
-    [
+    modalFilter(schema.fields.class, schema.fields.subclass, [
+      'aerialway',
+      'cable_car',
       'cableway',
-      config.cableway,
-      [
-        'match',
-        ['get', schema.fields.subclass],
-        ['cable_car', 'gondola', 'chair_lift', 'drag_lift', 'funicular'],
-        true,
-        false,
-      ],
-      'transport-surface-fill',
-      1030,
-    ],
+      'chair_lift',
+      'drag_lift',
+      'gondola',
+    ]),
+    ['!', ferryFilter],
+  ];
+  // OpenMapTiles may expose a mode through either `class` or `subclass`.
+  // Funiculars are railways rather than aerial cableways; keeping them here
+  // also prevents a feature classified as `transit/funicular` from being
+  // painted by two modal layers.
+  const railModeFilter = [
+    'all',
+    modalFilter(schema.fields.class, schema.fields.subclass, [
+      'funicular',
+      'light_rail',
+      'monorail',
+      'narrow_gauge',
+      'rail',
+      'subway',
+      'tram',
+      'transit',
+    ]),
+    ['!', ferryFilter],
+    ['!', cablewayFilter],
+  ];
+  const railFilter = ['all', railModeFilter, ['!', ['has', schema.fields.service]]];
+  const lineTargets = [
+    ['ferry', config.ferry, ferryFilter, 'transport-surface-fill', 1000],
+    ['cableway', config.cableway, cablewayFilter, 'transport-surface-fill', 1030],
   ] as const satisfies readonly (readonly [
     string,
     typeof config.ferry,
@@ -119,7 +129,7 @@ export function compileTransit(
     [
       'service-rail',
       config.serviceRail,
-      ['all', ['==', ['get', schema.fields.class], 'rail'], ['has', schema.fields.service]],
+      ['all', railModeFilter, ['has', schema.fields.service]],
       1020,
     ],
   ] as const;
@@ -194,4 +204,16 @@ function structureFilter(field: string, structure: 'bridge' | 'surface' | 'tunne
   return structure === 'surface'
     ? ['match', ['get', field], ['tunnel', 'bridge'], false, true]
     : ['==', ['get', field], structure];
+}
+
+function modalFilter(
+  classField: string,
+  subclassField: string,
+  modes: readonly string[],
+): unknown[] {
+  return [
+    'any',
+    ['match', ['get', classField], modes, true, false],
+    ['match', ['get', subclassField], modes, true, false],
+  ];
 }

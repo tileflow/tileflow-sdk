@@ -52,7 +52,8 @@
     "jiti": "^2.7.0",
     "maplibre-gl": "5.24.0",
     "pbf": "4.0.2",
-    "saxes": "6.0.0"
+    "saxes": "6.0.0",
+    "three": "0.180.0"
   },
   "optionalDependencies": {
     "sharp": "0.35.3"

@@ -9,6 +9,7 @@ import type {
 } from '../../cartography/styles';
 import {expression, zoom} from '../../cartography/values';
 import type {
+  TileflowAerodromeCodeDetail,
   TileflowLabelLanguage,
   TileflowLabelsModuleConfig,
   TileflowPlaceLabelClass,
@@ -19,17 +20,32 @@ import type {
 import {resolveRoads} from '../roads';
 import {tileflowRoadClasses, tileflowRoadClassFilter} from '../roads/semantics';
 import {resolveLabels, visibleRoadLabelClasses} from './index';
+import {labelField, labelFieldExpression} from './language';
 
 const placeClasses: Record<TileflowPlaceLabelClass, readonly string[]> = {
   continent: ['continent'],
   country: ['country'],
-  state: ['state', 'province'],
+  state: ['state', 'province', 'aboriginal_lands'],
   city: ['city'],
   town: ['town'],
   village: ['village'],
-  neighborhood: ['suburb', 'neighbourhood', 'quarter'],
-  other: ['hamlet', 'isolated_dwelling'],
+  neighborhood: ['suburb', 'neighbourhood', 'quarter', 'borough'],
+  other: ['hamlet', 'isolated_dwelling', 'island', 'strait'],
 };
+
+// Mapbox-style collision priority: detailed settlements are offered first in
+// the layer stack, while cities, regions, countries, and continents are drawn
+// later so the broad orientation labels win when candidates overlap.
+const placeLabelOrder: readonly TileflowPlaceLabelClass[] = [
+  'other',
+  'neighborhood',
+  'village',
+  'town',
+  'city',
+  'state',
+  'country',
+  'continent',
+];
 
 export function compileLabels(
   request: TileflowLabelsModuleConfig | undefined,
@@ -40,10 +56,14 @@ export function compileLabels(
   const semantics = resolveLabels(request);
   const roads = resolveRoads(roadRequest);
   const {colors} = context;
+  const rankField = context.data.schema.fields.rank;
+  const capitalField = context.data.schema.fields.capital;
   const defaults = {
     places: {
       continent: symbolStyle(context, 'places', {
         minZoom: 0,
+        maxZoom: 3,
+        priority: 100,
         size: zoom.linear([
           [0, 11],
           [4, 15],
@@ -51,51 +71,66 @@ export function compileLabels(
       }),
       country: symbolStyle(context, 'places', {
         minZoom: 1,
+        maxZoom: 10,
+        priority: placePriority(rankField, 95),
         size: zoom.linear([
           [1, 10],
           [6, 16],
         ]),
       }),
       state: symbolStyle(context, 'places', {
-        minZoom: 3,
+        minZoom: 4,
+        maxZoom: 10,
+        priority: placePriority(rankField, 85),
         size: zoom.linear([
           [3, 10],
           [8, 14],
         ]),
       }),
       city: symbolStyle(context, 'places', {
-        minZoom: 4,
+        minZoom: 2,
+        maxZoom: 15,
+        priority: placePriority(rankField, 100, true, capitalField),
         size: zoom.linear([
-          [4, 11],
+          [2, 10],
+          [4, 12],
           [12, 18],
         ]),
       }),
       town: symbolStyle(context, 'places', {
         minZoom: 7,
+        maxZoom: 14,
+        priority: placePriority(rankField, 80),
         size: zoom.linear([
           [7, 10],
           [14, 16],
         ]),
       }),
       village: symbolStyle(context, 'places', {
-        minZoom: 10,
+        minZoom: 9,
+        maxZoom: 15,
+        priority: placePriority(rankField, 65),
         size: zoom.linear([
-          [10, 10],
+          [9, 10],
           [16, 14],
         ]),
       }),
       neighborhood: symbolStyle(context, 'places', {
         color: colors.labels.neighborhood,
-        minZoom: 12,
+        minZoom: 10,
+        maxZoom: 16,
+        priority: placePriority(rankField, 55),
         size: zoom.linear([
-          [12, 10],
+          [10, 10],
           [17, 13],
         ]),
       }),
       other: symbolStyle(context, 'places', {
-        minZoom: 12,
+        minZoom: 6,
+        maxZoom: 16,
+        priority: placePriority(rankField, 40),
         size: zoom.linear([
-          [12, 9],
+          [6, 9],
           [17, 12],
         ]),
       }),
@@ -126,13 +161,21 @@ export function compileLabels(
         placement: 'line',
         size: 10,
         spacing: 240,
+        padding: 8,
+        haloWidth: 1.8,
+        weight: 'semibold',
       }),
     },
     junctions: symbolStyle(context, 'roads', {
       color: colors.labels.road,
-      minZoom: 14,
+      minZoom: 13,
+      maxZoom: 18,
       placement: 'point',
+      priority: 90,
       size: 10,
+      padding: 6,
+      haloWidth: 1.8,
+      weight: 'medium',
     }),
     water: {
       ocean: symbolStyle(context, 'water', {
@@ -177,14 +220,19 @@ export function compileLabels(
   const result: TileflowLayerContribution[] = [];
   const {sourceId: source, schema} = context.data;
   const field = labelField(semantics.language, context);
+  const aerodromeField = expression<string>(
+    aerodromeLabelExpression(semantics.aerodromeCodes, semantics.language, context),
+  );
   let order = 0;
 
   const visiblePlaceClasses =
     semantics.places === 'none'
       ? []
       : semantics.places === 'major'
-        ? (['continent', 'country', 'state', 'city', 'town'] as const)
-        : (Object.keys(placeClasses) as TileflowPlaceLabelClass[]);
+        ? placeLabelOrder.filter((placeClass) =>
+            ['continent', 'country', 'state', 'city', 'town'].includes(placeClass),
+          )
+        : placeLabelOrder;
   for (const placeClass of visiblePlaceClasses) {
     const style = styles.places?.[placeClass];
     if (!style || style.visible === false || style.text?.visible === false) continue;
@@ -192,7 +240,7 @@ export function compileLabels(
     result.push(
       symbolContribution(
         `labels.places.${placeClass}`,
-        order++,
+        800 + order++,
         applySymbolStyle(
           {
             id,
@@ -202,7 +250,12 @@ export function compileLabels(
             filter: [
               'all',
               ['has', schema.fields.name],
-              classFilter(schema.fields.class, placeClasses[placeClass]),
+              placeFilter(
+                placeClass,
+                schema.fields.class,
+                schema.fields.rank,
+                schema.fields.capital,
+              ),
             ],
           },
           mergeTileflowDesign(style, {text: {field}}),
@@ -234,18 +287,21 @@ export function compileLabels(
           },
           mergeTileflowDesign(style, {text: {field}}),
         ),
+        'transport-symbols',
       ),
     );
   }
 
+  // Shield visibility is independent from road-name visibility. A map may
+  // deliberately suppress road names while retaining route references.
   const shieldRoads =
     semantics.shields === 'none'
       ? []
-      : semantics.shields === 'major'
-        ? visibleRoads.filter((roadClass) =>
-            ['motorway', 'trunk', 'primary', 'secondary'].includes(roadClass),
-          )
-        : visibleRoads;
+      : visibleRoadLabelClasses(
+          semantics.shields === 'major' ? 'major' : 'all',
+          roads,
+          semantics.roadClasses,
+        );
   const shieldDefaults = styles.shields?.default;
   const shieldNetworks = Object.entries(styles.shields?.networks ?? {}).sort(([left], [right]) =>
     left.localeCompare(right),
@@ -254,6 +310,7 @@ export function compileLabels(
     const baseFilter = [
       'all',
       ['has', schema.fields.ref],
+      ['==', ['geometry-type'], 'LineString'],
       roadClassesFilter(schema.fields, shieldRoads as TileflowRoadClass[]),
     ];
     const overriddenNetworks = shieldNetworks.map(([network]) => network);
@@ -280,9 +337,10 @@ export function compileLabels(
                   ],
           },
           mergeTileflowDesign(shieldDefaults, {
-            text: {field: expression<string>(['get', schema.fields.ref])},
+            text: {field: expression<string>(['to-string', ['get', schema.fields.ref]])},
           }),
         ),
+        'transport-symbols',
       ),
     );
 
@@ -301,9 +359,10 @@ export function compileLabels(
               filter: ['all', baseFilter, ['==', ['get', schema.fields.network], network]],
             },
             mergeTileflowDesign(shieldDefaults, networkStyle, {
-              text: {field: expression<string>(['get', schema.fields.ref])},
+              text: {field: expression<string>(['to-string', ['get', schema.fields.ref]])},
             }),
           ),
+          'transport-symbols',
         ),
       );
     }
@@ -329,6 +388,7 @@ export function compileLabels(
             'source-layer': schema.layers.roadName,
             filter: [
               'all',
+              ['==', ['geometry-type'], 'Point'],
               [
                 'any',
                 ['==', ['get', schema.fields.class], 'motorway_junction'],
@@ -340,13 +400,15 @@ export function compileLabels(
           mergeTileflowDesign(styles.junctions, {
             text: {
               field: expression<string>([
-                'coalesce',
-                ['get', schema.fields.ref],
-                ['get', schema.fields.name],
+                'case',
+                ['has', schema.fields.ref],
+                ['to-string', ['get', schema.fields.ref]],
+                labelFieldExpression(semantics.language, context),
               ]),
             },
           }),
         ),
+        'transport-symbols',
       ),
     );
   }
@@ -360,22 +422,37 @@ export function compileLabels(
       {
         name: 'ocean',
         sourceLayer: schema.layers.waterName,
-        filter: classFilter(schema.fields.class, ['ocean', 'sea']),
+        filter: [
+          'all',
+          ['has', schema.fields.name],
+          classFilter(schema.fields.class, ['ocean', 'sea']),
+          ['==', ['geometry-type'], 'Point'],
+        ],
       },
       {
         name: 'other',
         sourceLayer: schema.layers.waterName,
-        filter: classFilter(schema.fields.class, ['lake', 'reservoir', 'bay']),
+        filter: [
+          'all',
+          ['has', schema.fields.name],
+          classFilter(schema.fields.class, ['lake', 'reservoir', 'bay']),
+          ['==', ['geometry-type'], 'Point'],
+        ],
       },
       {
         name: 'line',
         sourceLayer: schema.layers.waterName,
-        filter: ['==', ['geometry-type'], 'LineString'],
+        filter: [
+          'all',
+          ['has', schema.fields.name],
+          classFilter(schema.fields.class, ['ocean', 'sea', 'lake', 'reservoir', 'bay']),
+          ['==', ['geometry-type'], 'LineString'],
+        ],
       },
       {
         name: 'waterway',
         sourceLayer: schema.layers.waterway,
-        filter: ['has', schema.fields.name],
+        filter: ['all', ['has', schema.fields.name], ['==', ['geometry-type'], 'LineString']],
       },
     ];
     const visibleTargets =
@@ -421,7 +498,7 @@ export function compileLabels(
             'source-layer': schema.layers.aerodromeLabel,
             filter: ['has', schema.fields.name],
           },
-          mergeTileflowDesign(styles.aerodrome, {text: {field}}),
+          mergeTileflowDesign(styles.aerodrome, {text: {field: aerodromeField}}),
         ),
       ),
     );
@@ -461,34 +538,144 @@ function symbolStyle(
   };
 }
 
-function labelField(language: TileflowLabelLanguage, context: TileflowDomainCompileContext) {
-  const fields = context.data.schema.fields;
-  if (language === 'local') {
-    return expression<string>([
-      'coalesce',
-      ['get', fields.name],
-      ['get', fields.nameLatin],
-      ['get', fields.nameEnglish],
-    ]);
-  }
-  if (language === 'auto') {
-    return expression<string>([
-      'coalesce',
-      ['get', fields.nameLatin],
-      ['get', fields.name],
-      ['get', fields.nameEnglish],
-    ]);
-  }
-  return expression<string>([
-    'coalesce',
-    ['get', `name:${language}`],
-    ['get', fields.nameLatin],
-    ['get', fields.name],
-  ]);
-}
-
 function classFilter(field: string, classes: readonly string[]): unknown[] {
   return ['match', ['get', field], classes, true, false];
+}
+
+function aerodromeLabelExpression(
+  detail: TileflowAerodromeCodeDetail,
+  language: TileflowLabelLanguage,
+  context: TileflowDomainCompileContext,
+): readonly unknown[] {
+  const name = labelFieldExpression(language, context);
+  if (detail === 'none') return name;
+
+  const fields = context.data.schema.fields;
+  const code =
+    detail === 'all'
+      ? ['coalesce', ['get', fields.iata], ['get', fields.icao], '']
+      : ['coalesce', ['get', fields.iata], ''];
+  return [
+    'case',
+    ['!=', ['to-string', code], ''],
+    ['concat', name, ' · ', ['to-string', code]],
+    name,
+  ];
+}
+
+function placeFilter(
+  placeClass: TileflowPlaceLabelClass,
+  classField: string,
+  rankField: string,
+  capitalField: string,
+): unknown[] {
+  if (placeClass === 'other') {
+    return [
+      'any',
+      [
+        'all',
+        classFilter(classField, ['island', 'strait']),
+        zoomRankFilter(rankField, [
+          [0, 4],
+          [8, 8],
+          [10, true],
+        ]),
+      ],
+      [
+        'all',
+        classFilter(classField, ['hamlet', 'isolated_dwelling']),
+        zoomRankFilter(rankField, [
+          [0, false],
+          [11, 8],
+          [13, 12],
+          [15, true],
+        ]),
+      ],
+    ];
+  }
+
+  const hierarchy =
+    placeClass === 'country'
+      ? zoomRankFilter(rankField, [
+          [0, 2],
+          [2, 4],
+          [4, true],
+        ])
+      : placeClass === 'state'
+        ? zoomRankFilter(rankField, [
+            [0, 4],
+            [5, 8],
+            [7, true],
+          ])
+        : placeClass === 'city'
+          ? [
+              'any',
+              capitalFilter(capitalField),
+              zoomRankFilter(rankField, [
+                [0, 2],
+                [3, 3],
+                [4, 4],
+                [6, 5],
+                [8, true],
+              ]),
+            ]
+          : placeClass === 'town'
+            ? zoomRankFilter(rankField, [
+                [0, 7],
+                [8, 10],
+                [10, 15],
+                [12, true],
+              ])
+            : placeClass === 'village'
+              ? zoomRankFilter(rankField, [
+                  [0, 8],
+                  [11, 12],
+                  [13, true],
+                ])
+              : placeClass === 'neighborhood'
+                ? zoomRankFilter(rankField, [
+                    [0, 8],
+                    [12, 12],
+                    [14, true],
+                  ])
+                : undefined;
+
+  const classes = classFilter(classField, placeClasses[placeClass]);
+  return hierarchy === undefined ? classes : ['all', classes, hierarchy];
+}
+
+function zoomRankFilter(
+  rankField: string,
+  stops: readonly (readonly [number, number | true | false])[],
+): unknown[] {
+  const [[, first], ...rest] = stops;
+  const rank = ['to-number', ['get', rankField], 99];
+  const output = (limit: number | true | false): unknown =>
+    typeof limit === 'number' ? ['<=', rank, limit] : limit;
+  return [
+    'step',
+    ['zoom'],
+    output(first!),
+    ...rest.flatMap(([stop, limit]) => [stop, output(limit)]),
+  ];
+}
+
+function placePriority(
+  rankField: string,
+  base: number,
+  capitals = false,
+  capitalField = 'capital',
+) {
+  const rankedPriority = ['-', base, ['to-number', ['get', rankField], 99]];
+  return expression<number>(
+    capitals
+      ? ['+', ['case', capitalFilter(capitalField), 100, 0], rankedPriority]
+      : rankedPriority,
+  );
+}
+
+function capitalFilter(capitalField: string): unknown[] {
+  return ['>', ['to-number', ['get', capitalField], 0], 0];
 }
 
 function roadClassesFilter(
@@ -504,6 +691,7 @@ function symbolContribution(
   target: string,
   localOrder: number,
   layer: Record<string, unknown> & {id: string; type: string},
+  slot: TileflowLayerContribution['slot'] = 'symbols',
 ): TileflowLayerContribution {
-  return {kind: 'layer', layer, localOrder, owner: 'labels', slot: 'symbols', target};
+  return {kind: 'layer', layer, localOrder, owner: 'labels', slot, target};
 }

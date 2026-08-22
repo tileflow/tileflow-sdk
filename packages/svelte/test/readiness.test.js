@@ -35,6 +35,8 @@ test('compiles and renders the bounded framework-neutral loading contract', asyn
     assert.match(result.body, /data-tileflow-state="loading"/);
     assert.match(compiled.js.code, /captureState = 'idle'/);
     assert.match(compiled.js.code, /captureState = 'error'/);
+    assert.match(compiled.js.code, /registerTileflowWorldRequestBridge/);
+    assert.match(compiled.js.code, /attachTileflowFairUseNotice/);
   } finally {
     await rm(directory, {force: true, recursive: true});
   }

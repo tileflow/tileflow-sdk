@@ -1,9 +1,12 @@
+import type {TileflowWorldRequestBridge} from './fair-use-browser';
 import {
   resolveTileflowAnalyticsRequestUrl,
   startTileflowSession,
   type TileflowAnalytics,
   type TileflowSessionController,
 } from './runtime';
+
+export * from './fair-use-browser';
 
 export type TileflowMapReadinessState = 'error' | 'idle' | 'loading';
 
@@ -253,6 +256,7 @@ export function createTileflowTransformRequest<
   sessionController?: TileflowSessionController;
   sessionId: string;
   transformRequest?: TileflowUserTransformRequest<TRequest, TResourceType>;
+  worldRequestBridge?: TileflowWorldRequestBridge;
 }): TileflowTransformRequest<TRequest, TResourceType>;
 export function createTileflowTransformRequest<
   TRequest extends TileflowTransformRequestParameters = TileflowTransformRequestParameters,
@@ -264,6 +268,7 @@ export function createTileflowTransformRequest<
   sessionController?: TileflowSessionController;
   sessionId: string;
   transformRequest?: TileflowUserTransformRequest<TRequest, TResourceType>;
+  worldRequestBridge?: TileflowWorldRequestBridge;
 }): TileflowTransformRequest<TRequest, TResourceType> | undefined;
 export function createTileflowTransformRequest<
   TRequest extends TileflowTransformRequestParameters = TileflowTransformRequestParameters,
@@ -275,8 +280,9 @@ export function createTileflowTransformRequest<
   sessionController?: TileflowSessionController;
   sessionId: string;
   transformRequest?: TileflowUserTransformRequest<TRequest, TResourceType>;
+  worldRequestBridge?: TileflowWorldRequestBridge;
 }): TileflowTransformRequest<TRequest, TResourceType> | undefined {
-  if (!options.always && !options.transformRequest) {
+  if (!options.always && !options.transformRequest && !options.worldRequestBridge) {
     const analytics = options.getAnalytics();
     const requiresCommercialSession = Boolean(options.sessionController && analytics?.mapId);
 
@@ -301,6 +307,7 @@ export function createTileflowTransformRequest<
             asyncAnalyticsTiming === 'resolution' ? options.getAnalytics() : analyticsAtRequest,
             options.sessionId,
             options.sessionController,
+            options.worldRequestBridge,
           ) ?? resolvedRequest,
       );
     }
@@ -311,6 +318,7 @@ export function createTileflowTransformRequest<
       asyncAnalyticsTiming === 'resolution' ? options.getAnalytics() : analyticsAtRequest,
       options.sessionId,
       options.sessionController,
+      options.worldRequestBridge,
     );
   };
 }
@@ -361,6 +369,7 @@ function applyTileflowRequest<TRequest extends TileflowTransformRequestParameter
   analytics: TileflowAnalytics | undefined,
   sessionId: string,
   sessionController: TileflowSessionController | undefined,
+  worldRequestBridge: TileflowWorldRequestBridge | undefined,
 ): Promise<TileflowComposedRequest<TRequest>> | TileflowComposedRequest<TRequest> | undefined {
   const requestUrl = request?.url ?? url;
 
@@ -369,17 +378,32 @@ function applyTileflowRequest<TRequest extends TileflowTransformRequestParameter
       .resolveRequestUrl(requestUrl, analytics)
       .then(
         (nextUrl) =>
-          composeTileflowRequest(url, request, nextUrl, true) ??
-          ({url} as TileflowComposedRequest<TRequest>),
+          applyWorldRequestBridge(
+            composeTileflowRequest(url, request, nextUrl, true) ??
+              ({url} as TileflowComposedRequest<TRequest>),
+            worldRequestBridge,
+          ) ?? ({url} as TileflowComposedRequest<TRequest>),
       );
   }
 
-  return composeTileflowRequest(
-    url,
-    request,
-    resolveTileflowAnalyticsRequestUrl(requestUrl, analytics, sessionId),
-    false,
+  return applyWorldRequestBridge(
+    composeTileflowRequest(
+      url,
+      request,
+      resolveTileflowAnalyticsRequestUrl(requestUrl, analytics, sessionId),
+      Boolean(worldRequestBridge),
+    ),
+    worldRequestBridge,
   );
+}
+
+function applyWorldRequestBridge<TRequest extends TileflowTransformRequestParameters>(
+  request: TileflowComposedRequest<TRequest> | undefined,
+  bridge: TileflowWorldRequestBridge | undefined,
+): TileflowComposedRequest<TRequest> | undefined {
+  if (!request || !bridge) return request;
+  const url = bridge.rewriteUrl(request.url);
+  return url === request.url ? request : ({...request, url} as TileflowComposedRequest<TRequest>);
 }
 
 function composeTileflowRequest<TRequest extends TileflowTransformRequestParameters>(

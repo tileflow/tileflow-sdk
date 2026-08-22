@@ -7,6 +7,8 @@ test('telemetry opt-out cannot remove the hosted commercial transform', async ()
 
   assert.match(source, /createTileflowSessionController/u);
   assert.match(source, /createTileflowTransformRequest/u);
+  assert.match(source, /registerTileflowWorldRequestBridge/u);
+  assert.match(source, /attachTileflowFairUseNotice/u);
   assert.match(source, /sessionController: session/u);
   assert.doesNotMatch(source, /analytics\.enabled === false/u);
 });

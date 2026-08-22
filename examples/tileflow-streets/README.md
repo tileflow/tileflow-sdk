@@ -7,9 +7,9 @@ runtime preset.
 ![Editorial City in central Madrid](test/visual-baselines/madrid-neighborhood.png)
 
 The nine committed scenes exercise one style across city overview, neighborhood, close-street,
-motorway, airport, transit, rural-edge, waterfront, and mobile views. The SDK pins the default
-Tileflow World revision, and capture receipts record the resolved dataset plus the hosted Noto Sans
-and browser runtime identity.
+motorway, airport, transit, rural-edge, waterfront, and mobile views. The SDK targets the stable
+Tileflow World `v1` generation, and capture receipts record that compatibility identity plus the
+hosted Noto Sans and browser runtime identity.
 
 ## Work on the map
 

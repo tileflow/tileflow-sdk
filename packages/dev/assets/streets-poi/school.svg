@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
   <title>School</title>
-  <circle cx="12" cy="13" r="10.5" fill="#44515E" opacity=".08"/>
-  <circle cx="12" cy="12.5" r="10" fill="#44515E" opacity=".22"/>
-  <circle cx="12" cy="11" r="10" fill="#FFFFFF"/>
-  <circle cx="12" cy="11" r="8.25" fill="#7B9EB0"/>
-  <svg x="6.75" y="6.5" width="10.5" height="8.9" viewBox="0 0 13 11" fill="#FFFFFF">
-    <path transform="translate(-4 -5)" fill-rule="evenodd" d="M14.0097657,12.019911 L14.0097657,13.8695475 C13.1038778,15.4241579 10.6537375,15.3674047 10.5024279,15.3623802 C10.3511182,15.3674047 7.90097798,15.4241579 6.99509006,13.8695475 L6.99509006,12.019911 C6.99509006,12.019911 9.60423929,13.5859459 10.5024279,13.6268096 C11.4006164,13.5859459 14.0097657,12.019911 14.0097657,12.019911 Z M10.5,5 L17,8.25037977 L17,9.23855252 L16,9.738 L16,14.7579754 L15,14.7579754 L15,10.238 L10.5,12.4889323 L4,9.23855252 L4,8.25037977 L10.5,5 Z"/>
-  </svg>
+  <desc>Original Tileflow school pictogram.</desc>
+  <rect x="2.25" y="3.25" width="19.5" height="19.5" rx="6.25" fill="#44515E" opacity=".14"/>
+  <rect x="2.25" y="2.25" width="19.5" height="19.5" rx="6.25" fill="#FFFFFF"/>
+  <rect x="4" y="4" width="16" height="16" rx="4.75" fill="#7B9EB0"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.75 8.15c2.05-.25 3.8.3 5.25 1.65 1.45-1.35 3.2-1.9 5.25-1.65v7.45c-2.05-.25-3.8.3-5.25 1.65-1.45-1.35-3.2-1.9-5.25-1.65zM12 9.8v7.45"/>
+  </g>
 </svg>

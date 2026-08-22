@@ -535,10 +535,14 @@ export async function prepareTileflowProjectIcons(
   options: {
     assetBaseUrl: string;
     cwd: string;
+    defaultSprite?: string;
   },
 ): Promise<PreparedTileflowProject> {
-  const nextProject = cloneProject(project);
-  const compiled = await compileTileflowIconPackages(project, {
+  const sourceProject = options.defaultSprite
+    ? applyDefaultSprite(project, options.cwd, options.defaultSprite)
+    : project;
+  const nextProject = cloneProject(sourceProject);
+  const compiled = await compileTileflowIconPackages(sourceProject, {
     cwd: options.cwd,
     target: 'local',
   });
@@ -1493,6 +1497,26 @@ function describeFileSystemError(error: unknown, fallback: string): string {
 
 function cloneProject(project: TileflowProjectConfig): TileflowProjectConfig {
   return JSON.parse(JSON.stringify(project)) as TileflowProjectConfig;
+}
+
+function applyDefaultSprite(
+  project: TileflowProjectConfig,
+  cwd: string,
+  sprite: string,
+): TileflowProjectConfig {
+  const nextProject = cloneProject(project);
+
+  for (const request of getMapIconRequests(project, cwd)) {
+    if (request.kind !== 'local' || !request.builtIn) continue;
+    const map = nextProject.maps[request.mapName];
+    if (!map) continue;
+    map.icons = {
+      ...(request.mapping ? {mapping: request.mapping} : {}),
+      sprite,
+    };
+  }
+
+  return nextProject;
 }
 
 function isRemoteSpriteReference(value: string): boolean {

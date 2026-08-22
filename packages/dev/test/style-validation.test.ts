@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {defineTileflow, patchLayer, roads, streets} from '@tileflow/core';
+import {
+  defineTileflow,
+  patchLayer,
+  roads,
+  streets,
+  type WorldGenerationDescriptor,
+} from '@tileflow/core';
 import {
   createTileflowBuildArtifacts,
   createTileflowStyle,
@@ -163,6 +169,57 @@ test('direct Streets roads validate and written artifacts equal in-memory styles
   assert.deepEqual(artifacts.styles.madrid, written.styles.madrid);
   assert.deepEqual(diskStyle, artifacts.styles.madrid);
 });
+
+test('builds World directly from one compiler descriptor without discovery or repository state', async (t) => {
+  const cwd = await createFixture(t, 'tileflow-dev-world-generation-');
+  await writeFile(
+    join(cwd, 'tileflow.config.ts'),
+    `export default {
+  maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}}}
+};\n`,
+  );
+  const before = await readdir(cwd);
+  const first = await createTileflowBuildArtifacts({
+    apiBaseUrl: 'https://api-one.example.test',
+    cwd,
+    worldGeneration: worldGenerationFixture,
+  });
+  const second = await createTileflowBuildArtifacts({
+    apiBaseUrl: 'https://api-two.example.test',
+    cwd,
+    worldGeneration: worldGenerationFixture,
+  });
+  const style = first.styles.madrid!;
+  const source = style.sources.tileflow as Record<string, unknown>;
+  const serialized = JSON.stringify(style);
+
+  assert.deepEqual(first, second);
+  assert.equal(JSON.stringify(first), JSON.stringify(second));
+  assert.deepEqual(await readdir(cwd), before);
+  assert.deepEqual(source.tiles, [worldGenerationFixture.tileUrl]);
+  assert.equal(Object.hasOwn(source, 'url'), false);
+  assert.equal(style.glyphs, worldGenerationFixture.assetSet.glyphs);
+  assert.equal(style.sprite, worldGenerationFixture.assetSet.spriteBase);
+  assert.equal(first.assets.length, 0);
+  assert.doesNotMatch(serialized, /TileJSON|archiveVersion|tiles\/world\/tiles\.json/);
+});
+
+const worldGenerationFixture: WorldGenerationDescriptor = {
+  schemaVersion: 1,
+  generation: 'v1',
+  tileUrl: 'https://world.tileflow.dev/world/v1/{z}/{x}/{y}.pbf',
+  vectorSchema: {id: 'tileflow-world-v1-test', sha256: 'a'.repeat(64)},
+  tileEncoding: {format: 'mvt', compression: 'gzip', scheme: 'xyz', extent: 4096},
+  minzoom: 0,
+  maxzoom: 15,
+  bounds: [-180, -85.0511288, 180, 85.0511288],
+  attribution: '© OpenStreetMap contributors · Tileflow test fixture',
+  assetSet: {
+    id: 'a1-0123456789abcdef',
+    glyphs: 'https://assets.tileflow.dev/base/a1-0123456789abcdef/glyphs/{fontstack}/{range}.pbf',
+    spriteBase: 'https://assets.tileflow.dev/base/a1-0123456789abcdef/sprites/base',
+  },
+};
 
 function invalidProject(map: string) {
   return defineTileflow({

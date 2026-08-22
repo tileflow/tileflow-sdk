@@ -136,13 +136,17 @@ export {
   isCanonicalOpenMapTilesSchema,
   openMapTiles,
   openMapTilesContractVersion,
+  parseWorldGenerationDescriptor,
   resolveTileflowData,
   tileflowPrimarySourceId,
   tileflowWorld,
   tileflowWorldRevision,
   tileflowWorldV1Schema,
   validateTileflowWorldV1Tilejson,
+  tileflowWorldGeneration,
+  tileflowWorldTileUrl,
   vectorTiles,
+  worldGenerationDescriptorSchema,
 } from './data';
 export {expression, filter, zoom} from './cartography/values';
 export {analyzeTileflowStylePerformance} from './cartography/performance';
@@ -169,6 +173,8 @@ export type {
   TileflowWorldData,
   TileflowWorldV1Schema,
   VectorTilesData,
+  WorldDataDescriptor,
+  WorldGenerationDescriptor,
 } from './data';
 export {
   addresses,

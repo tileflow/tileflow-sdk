@@ -105,6 +105,47 @@ test('accepts the typed Tileflow World V1 bathymetry extension at runtime', () =
   assert.equal(map.data.schema.fields.bathymetrySortKey, 'sort_key');
 });
 
+test('accepts direct fixture tile templates without a TileJSON lookup', () => {
+  const map = parseTileflowMap({
+    basemap: streets(),
+    data: {
+      type: 'vector-tiles',
+      attribution: '© Fixture',
+      revision: 'fixture_1',
+      schema: {type: 'openmaptiles', contractVersion: 1},
+      tiles: ['pmtiles://./test/fixtures/world.pmtiles'],
+      minzoom: 0,
+      maxzoom: 14,
+      bounds: [-180, -85, 180, 85],
+    },
+  });
+
+  assert.equal(map.data?.type, 'vector-tiles');
+  if (map.data?.type !== 'vector-tiles') return;
+  assert.deepEqual(map.data.tiles, ['pmtiles://./test/fixtures/world.pmtiles']);
+  assert.equal(map.data.url, undefined);
+});
+
+test('accepts the World generation identity and legacy revision selectors', () => {
+  const map = parseTileflowMap({
+    basemap: streets(),
+    data: {type: 'tileflow-world', generation: 'v1'},
+  });
+
+  assert.deepEqual(map.data, {type: 'tileflow-world', generation: 'v1'});
+  assert.deepEqual(
+    parseTileflowMap({
+      basemap: streets(),
+      data: {type: 'tileflow-world', generation: 'v1', revision: 'archive_42'},
+    }).data,
+    {type: 'tileflow-world', generation: 'v1', revision: 'archive_42'},
+  );
+  assert.throws(
+    () => parseTileflowMap({basemap: streets(), data: {type: 'tileflow-world'}}),
+    /data/,
+  );
+});
+
 test('rejects every removed renderer and data path with its exact location', () => {
   const removed = [
     [{renderer: 'generated'}, 'renderer'],

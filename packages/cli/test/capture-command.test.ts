@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
-import {mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join, win32} from 'node:path';
@@ -382,6 +382,11 @@ test('init creates a default scene and only creates a missing ignore file', asyn
     await readFile(join(fresh, '.gitignore'), 'utf8'),
     '# Tileflow generated visual evidence\n.tileflow/captures/\n.tileflow/diffs/\n',
   );
+  assert.deepEqual((await readdir(fresh)).sort(), ['.gitignore', 'tileflow.config.ts']);
+  assert.doesNotMatch(
+    await readFile(join(fresh, 'tileflow.config.ts'), 'utf8'),
+    /archiveVersion|revision|world-lock|world update/i,
+  );
 
   const existing = await createDirectoryFixture(t, 'tileflow-capture-init-existing-ignore-');
   await writeFile(join(existing, '.gitignore'), 'owned-by-user\n');
@@ -533,10 +538,21 @@ test(
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1'},
   async (t) => {
     const directory = await createDirectoryFixture(t, 'tileflow-capture-real-');
+    const fixture = await createVectorFixtureServer(t);
     await writeFile(
       join(directory, 'tileflow.config.ts'),
       `export default {maps: {proof: {
   basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
+  data: {
+    type: 'vector-tiles',
+    tiles: [${JSON.stringify(`${fixture.origin}/tiles/world/{z}/{x}/{y}.pbf`)}],
+    minzoom: 0,
+    maxzoom: 14,
+    bounds: [-180, -85, 180, 85],
+    revision: 'fixture_1',
+    attribution: 'Fixture data',
+    schema: {type: 'openmaptiles', contractVersion: 1}
+  },
   modules: {
     buildings: {type: 'buildings', enabled: false},
     labels: {type: 'labels', enabled: false},
@@ -587,7 +603,11 @@ test(
       sprite: ${JSON.stringify(`${fixture.origin}/sprites/streets/v1/sprite`)},
       data: {
         type: 'vector-tiles',
-        url: ${JSON.stringify(`${fixture.origin}/tiles/world/tiles.json`)},
+        tiles: [${JSON.stringify(`${fixture.origin}/tiles/world/{z}/{x}/{y}.pbf`)}],
+        minzoom: 0,
+        maxzoom: 14,
+        bounds: [-180, -85, 180, 85],
+        revision: 'fixture_1',
         attribution: 'Fixture data',
         schema: {type: 'openmaptiles', contractVersion: 1}
       },
@@ -597,7 +617,7 @@ test(
         poi: {type: 'poi', enabled: false},
         roads: {
           type: 'roads', detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
-          extras: {ferry: false, paths: true, rail: true}
+          extras: {paths: true}
         }
       }
     }
@@ -669,7 +689,7 @@ test(
       viewport: {width: 128, height: 128, dpr: 1},
       target: {kind: 'map'},
     });
-    assert.equal(fixture.requests.has('/tiles/world/tiles.json'), true);
+    assert.equal(fixture.requests.has('/tiles/world/tiles.json'), false);
     assert.equal(
       [...fixture.requests].some((path) => path.endsWith('.pbf')),
       true,
@@ -684,7 +704,7 @@ test(
     const directory = await createDirectoryFixture(t, 'tileflow-capture-application-');
     await writeFile(
       join(directory, 'tileflow.config.ts'),
-      `export default {maps: {proof: {}}, scenes: {application: {map: 'proof', camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 320, height: 240}, target: {kind: 'application', path: '/proof?fixture=1', captureId: 'proof'}}}};\n`,
+      `export default {maps: {proof: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}}}, scenes: {application: {map: 'proof', camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 320, height: 240}, target: {kind: 'application', path: '/proof?fixture=1', captureId: 'proof'}}}};\n`,
     );
     let requests = 0;
     const server = createServer((_request, response) => {
@@ -787,8 +807,8 @@ function createCapture(scene: string): TileflowCapture {
   const renderer = createTileflowCaptureRendererIdentity();
   const receipt = createTileflowCaptureReceipt({
     data: {
+      generation: 'v1',
       kind: 'tileflow-world',
-      revision: '2026-06-07',
       schema: 'openmaptiles',
       schemaVersion: 1,
       sourceId: 'tileflow',
@@ -838,18 +858,6 @@ async function createVectorFixtureServer(
     const path = request.url?.split('?')[0] ?? '/';
     requests.add(path);
     response.setHeader('Access-Control-Allow-Origin', '*');
-    if (path === '/tiles/world/tiles.json') {
-      response.writeHead(200, {'Content-Type': 'application/json'});
-      response.end(
-        JSON.stringify({
-          tilejson: '3.0.0',
-          minzoom: 0,
-          maxzoom: 14,
-          tiles: [`${origin}/tiles/world/{z}/{x}/{y}.pbf`],
-        }),
-      );
-      return;
-    }
     if (path.endsWith('.pbf')) {
       response.writeHead(200, {'Content-Type': 'application/x-protobuf'});
       response.end(Buffer.alloc(0));

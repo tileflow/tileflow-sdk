@@ -17,6 +17,7 @@ import {
   type TileflowStyleOptions,
   validateConfig,
   type ValidationMessage,
+  type WorldGenerationDescriptor,
 } from '@tileflow/core';
 import {
   getTileflowIconWatchPaths,
@@ -113,6 +114,7 @@ export type TileflowDevRequestHandlerOptions = {
   scene?: string;
   session?: TileflowArtifactSession;
   styleBaseUrl?: string;
+  worldGeneration?: WorldGenerationDescriptor;
 };
 
 export type TileflowPreviewSelection = {
@@ -142,6 +144,8 @@ export type TileflowBuildArtifactsOptions = {
   config?: string;
   cwd?: string;
   styleBaseUrl?: string;
+  /** Compiler-owned release descriptor. It is never loaded from project config or the network. */
+  worldGeneration?: WorldGenerationDescriptor;
 };
 
 export type TileflowBuildArtifacts = {
@@ -351,8 +355,14 @@ export async function createTileflowBuildArtifacts(
   const prepared = await prepareTileflowProjectIcons(project, {
     assetBaseUrl: resolveAssetBaseUrl(options),
     cwd: options.cwd ?? process.cwd(),
+    ...(options.worldGeneration
+      ? {defaultSprite: options.worldGeneration.assetSet.spriteBase}
+      : {}),
   });
-  const styleOptions = {apiBaseUrl: options.apiBaseUrl};
+  const styleOptions = {
+    apiBaseUrl: options.apiBaseUrl,
+    worldGeneration: options.worldGeneration,
+  };
   const styles = createTileflowStyles(prepared.project, styleOptions);
 
   return {
@@ -554,6 +564,7 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
           cwd,
           styleBaseUrl: options.styleBaseUrl ?? `${url.origin}${basePath}`,
           apiBaseUrl,
+          worldGeneration: options.worldGeneration,
         });
         state = {
           artifacts,

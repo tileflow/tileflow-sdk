@@ -5,7 +5,7 @@ import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import test from 'node:test';
+import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 
 const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
@@ -48,7 +48,7 @@ test('dev emits valid/invalid/recovered/stopped NDJSON and serves last-good loca
   assert.equal(invalidStatus.lastGoodGeneration, 1);
   assert.equal((await fetch(`http://127.0.0.1:${port}/styles/main.json`)).status, 200);
 
-  await writeFile(join(cwd, 'tileflow.config.ts'), validConfig, 'utf8');
+  await writeFile(join(cwd, 'tileflow.config.ts'), createValidConfig(), 'utf8');
   const recovered = await running.waitFor((event) => event.event === 'recovered');
   assert.equal(recovered.generation, 3);
   assert.equal(
@@ -75,7 +75,8 @@ test(
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 90_000},
   async (t) => {
     const cwd = await createFixture('tileflow-capture-watch-');
-    await writeWatchFixture(cwd, '#112233');
+    const fixture = await createVectorFixtureServer(t);
+    await writeWatchFixture(cwd, '#112233', fixture.origin);
     const running = startCli(
       cwd,
       ['capture', 'proof', '--watch', '--json', '--no-browser-install'],
@@ -112,7 +113,7 @@ test(
     const preserved = await readFile(outputPath);
     assert.equal(preserved.length > 24, true);
 
-    await writeFile(join(cwd, 'tileflow.config.ts'), validConfig, 'utf8');
+    await writeFile(join(cwd, 'tileflow.config.ts'), createValidConfig(fixture.origin), 'utf8');
     const recovered = await running.waitFor(
       (event) =>
         event.event === 'recovered' && Number(event.generation) > Number(invalid.generation),
@@ -147,13 +148,28 @@ test('capture watch exits nonzero when stopped with no valid capture and an inva
   assert.equal(completion.code, 1, completion.stderr);
 });
 
-const validConfig = `import tokens from './tokens.json';
+function createValidConfig(tileOrigin?: string): string {
+  const data =
+    tileOrigin === undefined
+      ? ''
+      : `      data: {
+        type: 'vector-tiles',
+        tiles: [${JSON.stringify(`${tileOrigin}/tiles/world/{z}/{x}/{y}.pbf`)}],
+        minzoom: 0,
+        maxzoom: 14,
+        bounds: [-180, -85, 180, 85],
+        revision: 'fixture_1',
+        attribution: 'Fixture data',
+        schema: {type: 'openmaptiles', contractVersion: 1}
+      },
+`;
+  return `import tokens from './tokens.json';
 if (process.env.TILEFLOW_API_KEY) throw new Error('ambient API key reached watched config');
 export default {
   maps: {
     main: {
       basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
-      modules: {
+${data}      modules: {
         buildings: {type: 'buildings', enabled: false},
         labels: {type: 'labels', enabled: false},
         poi: {type: 'poi', enabled: false},
@@ -171,15 +187,38 @@ export default {
   }
 };
 `;
+}
 const invalidConfig = `export default {maps: {main: {unsupported: true}}};\n`;
 
-async function writeWatchFixture(cwd: string, background: string): Promise<void> {
+async function writeWatchFixture(
+  cwd: string,
+  background: string,
+  tileOrigin?: string,
+): Promise<void> {
   await writeFile(join(cwd, 'tokens.json'), `${JSON.stringify({background})}\n`, 'utf8');
-  await writeFile(join(cwd, 'tileflow.config.ts'), validConfig, 'utf8');
+  await writeFile(join(cwd, 'tileflow.config.ts'), createValidConfig(tileOrigin), 'utf8');
 }
 
 async function createFixture(prefix: string): Promise<string> {
   return mkdtemp(join(tmpdir(), prefix));
+}
+
+async function createVectorFixtureServer(t: TestContext): Promise<{origin: string}> {
+  const server = createServer((request, response) => {
+    response.setHeader('Access-Control-Allow-Origin', '*');
+    if ((request.url?.split('?')[0] ?? '/').endsWith('.pbf')) {
+      response.writeHead(200, {'Content-Type': 'application/x-protobuf'});
+      response.end(Buffer.alloc(0));
+      return;
+    }
+    response.writeHead(404).end();
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  t.after(() => new Promise<void>((resolveClose) => server.close(() => resolveClose())));
+  return {origin: `http://127.0.0.1:${address.port}`};
 }
 
 function startCli(cwd: string, arguments_: string[], overrides: NodeJS.ProcessEnv = {}) {

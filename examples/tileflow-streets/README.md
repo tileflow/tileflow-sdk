@@ -10,6 +10,8 @@ The committed scenes exercise one style across city overview, neighborhood, clos
 airport, transit, rural-edge, waterfront, and mobile views. The workbench pins the local Spain
 V8.11 procedural-building revision, and capture receipts record the resolved dataset plus the hosted
 Metropolis and browser runtime identity.
+The SDK default targets the stable Tileflow World `v1` generation; this workbench intentionally uses
+the richer pinned local dataset while exercising authoring-only extensions.
 
 ## Work on the map
 

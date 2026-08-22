@@ -71,6 +71,7 @@ test('packages only the direct Streets authoring surface and compiler', async ()
     for (const name of [
       'streets', 'land', 'water', 'roads', 'transit', 'aeroways',
       'buildings', 'boundaries', 'labels', 'poi', 'vegetation', 'createStyle',
+      'tileflowWorld', 'parseWorldGenerationDescriptor',
     ]) {
       if (typeof entry[name] !== 'function') process.exit(2);
     }

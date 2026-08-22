@@ -82,7 +82,9 @@ export type TileflowRuntimeManifestMapEntry =
       mapId?: string;
       styleId?: string;
       styleUrl?: string;
+      usageMode?: 'session';
       url?: string;
+      worldGeneration?: 'v1';
     };
 
 export type TileflowRuntimeManifest = {
@@ -97,6 +99,8 @@ export type TileflowRuntimeManifestMap = {
   mapId?: string;
   styleId?: string;
   styleUrl?: string;
+  usageMode?: 'session';
+  worldGeneration?: 'v1';
 };
 
 export type TileflowRuntimeStyle = {
@@ -813,6 +817,8 @@ export function resolveTileflowManifestMap(
     mapId: entry.mapId ?? analytics?.mapId,
     styleId: entry.styleId ?? analytics?.styleId,
     styleUrl,
+    usageMode: entry.usageMode,
+    worldGeneration: entry.worldGeneration,
   };
 }
 

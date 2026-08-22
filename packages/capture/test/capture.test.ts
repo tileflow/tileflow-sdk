@@ -36,8 +36,15 @@ const project: TileflowProjectConfig = {
 };
 
 const dataIdentity: TileflowCaptureDataInput = {
+  generation: 'v1',
   kind: 'tileflow-world',
-  revision: '2026-06-07',
+  schema: 'openmaptiles',
+  schemaVersion: 1,
+  sourceId: 'tileflow',
+};
+
+const vectorDataIdentity: TileflowCaptureDataInput = {
+  kind: 'vector-tiles',
   schema: 'openmaptiles',
   schemaVersion: 1,
   sourceId: 'tileflow',
@@ -147,8 +154,7 @@ test('serializes deterministic, path-free capture receipts', () => {
 
 test('capture receipts preserve expanded vector source identity', () => {
   const expanded: TileflowCaptureDataInput = {
-    ...dataIdentity,
-    kind: 'vector-tiles',
+    ...vectorDataIdentity,
     url: '/tiles.json',
     capabilities: {
       businessCorridor: true,
@@ -198,16 +204,14 @@ test('receipt source identity strips origins and rotating URL secrets', () => {
   const first = createTileflowCaptureReceipt({
     ...common,
     data: {
-      ...dataIdentity,
-      kind: 'vector-tiles',
+      ...vectorDataIdentity,
       url: 'https://tiles.example/private.json?token=first#secret',
     },
   });
   const second = createTileflowCaptureReceipt({
     ...common,
     data: {
-      ...dataIdentity,
-      kind: 'vector-tiles',
+      ...vectorDataIdentity,
       url: 'https://tiles.example/private.json?token=second#other',
     },
   });
@@ -313,10 +317,34 @@ test('emits one exact receipt shape with explicit data identity', () => {
     () =>
       createTileflowCaptureReceipt({
         ...common,
-        data: {...dataIdentity, revision: 'unsafe/version'},
+        data: {
+          kind: 'tileflow-world',
+          revision: 'unsafe/version',
+          schema: 'openmaptiles',
+          schemaVersion: 1,
+          sourceId: 'tileflow',
+        },
       }),
     /data\.revision/,
   );
+
+  const legacyWorld = createTileflowCaptureReceipt({
+    ...common,
+    data: {
+      kind: 'tileflow-world',
+      revision: '2026-06-07',
+      schema: 'openmaptiles',
+      schemaVersion: 1,
+      sourceId: 'tileflow',
+    },
+  });
+  assert.deepEqual(legacyWorld.data, {
+    kind: 'tileflow-world',
+    revision: '2026-06-07',
+    schema: 'openmaptiles',
+    schemaVersion: 1,
+    sourceId: 'tileflow',
+  });
 });
 
 test('reads PNG dimensions and rejects non-PNG bytes', () => {

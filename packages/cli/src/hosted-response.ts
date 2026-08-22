@@ -31,6 +31,7 @@ export const hostedStyleDeploymentResponseSchema = z.object({
   mapUrl: publicHttpUrlSchema,
   styleId: safeIdentifierSchema.optional(),
   version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+  worldPromotionId: safeIdentifierSchema.optional(),
 });
 
 export const hostedIconPackageResponseSchema = z.object({

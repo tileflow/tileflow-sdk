@@ -186,18 +186,6 @@ for (const [name, symbol] of Object.entries(expectations)) {
   server = createServer((request, response) => {
     const path = request.url?.split('?')[0] ?? '/';
     response.setHeader('Access-Control-Allow-Origin', '*');
-    if (path === '/tiles/world/tiles.json') {
-      response.writeHead(200, {'content-type': 'application/json'});
-      response.end(
-        JSON.stringify({
-          tilejson: '3.0.0',
-          minzoom: 0,
-          maxzoom: 14,
-          tiles: [`${origin}/tiles/world/{z}/{x}/{y}.pbf`],
-        }),
-      );
-      return;
-    }
     if (path.endsWith('.pbf')) {
       response.writeHead(200, {'content-type': 'application/x-protobuf'});
       response.end(Buffer.alloc(0));
@@ -232,8 +220,12 @@ export default defineTileflow({
       basemap: streets(),
       data: vectorTiles({
         attribution: '© OpenStreetMap contributors',
+        bounds: [-180, -85, 180, 85],
+        maxzoom: 14,
+        minzoom: 0,
+        revision: 'packed-fixture-1',
         schema: openMapTiles(),
-        url: ${JSON.stringify(`${origin}/tiles/world/tiles.json`)},
+        tiles: [${JSON.stringify(`${origin}/tiles/world/{z}/{x}/{y}.pbf`)}],
       }),
       glyphs: ${JSON.stringify(`${origin}/fonts/{fontstack}/{range}.pbf`)},
       modules: {
@@ -503,8 +495,15 @@ async function auditPublicTarball(packageName, tarball, packedVersions, releaseC
   const manifest = JSON.parse(await readTarballFile(tarball, 'package/package.json'));
   const forbiddenPath =
     /(?:^|\/)(?:test|tests|fixtures?|captures?|\.tileflow|ms-playwright|chromium)(?:\/|$)|\.png$|\.receipt\.json$|\.map$/iu;
+  const forbiddenNativeDependency =
+    /(?:^|\/)node_modules(?:\/|$)|\.(?:node|dylib|dll)$|\.so(?:\.\d+)*$/iu;
   for (const entry of entries) {
     assert.equal(forbiddenPath.test(entry), false, `Unexpected packed path: ${entry}`);
+    assert.equal(
+      forbiddenNativeDependency.test(entry),
+      false,
+      `Tileflow tarball must not contain an installed native dependency: ${entry}`,
+    );
   }
   const entryPoints = manifestEntryPoints(manifest);
   assert.ok(entryPoints.size > 0, `${packageName} does not declare a public entry point.`);
@@ -520,6 +519,14 @@ async function auditPublicTarball(packageName, tarball, packedVersions, releaseC
       entries.includes('package/THIRD_PARTY_NOTICES.md'),
       'Capture tarball is missing third-party notices.',
     );
+  }
+  if (packageName === '@tileflow/dev') {
+    assert.ok(
+      entries.includes('package/THIRD_PARTY_NOTICES.md'),
+      'Dev tarball is missing sharp/libvips notices.',
+    );
+    assert.equal(manifest.optionalDependencies?.sharp, '0.35.3');
+    assert.ok(entries.includes('package/assets/streets-poi/README.md'));
   }
 
   assert.equal(manifest.name, packageName);

@@ -34,7 +34,7 @@ flowchart TD
 The public API is deliberately agent-friendly:
 
 - `basemap: streets()` selects one explicit, versioned design recipe.
-- Omitting `data` selects the SDK-pinned Tileflow World revision.
+- Omitting `data` selects the compiler-owned Tileflow World `v1` generation.
 - `data` changes the compatible dataset, never the drawing system.
 - `modules` is an object keyed by domain; key order never controls z-order and duplicates are
   impossible.
@@ -57,9 +57,9 @@ category's marker, icon, and label without exposing a raw source-layer filter.
 
 Asset-aware Streets flows provide the versioned `tileflow-streets` POI catalog by default. It maps
 the semantic food, coffee, culture, transit, shopping, lodging, health, education, and services
-categories to attributed Google Places glyphs composed inside circular category markers with a
-white rim and shadow. An explicit local or external icon set replaces the catalog; a mapping-only
-map override extends its semantic mapping. Disabling POI icons suppresses the implicit package.
+categories to nine original Tileflow SVG pictograms. An explicit local or external icon set replaces
+the catalog; a mapping-only map override extends its semantic mapping. Disabling POI icons
+suppresses the implicit package.
 
 The compiler creates every `streets-*` layer from a domain compiler. It resolves domain conflicts
 before graph assembly—for example, roads determine eligible road-label classes, aeroways own
@@ -129,8 +129,11 @@ to compose with the roads module rather than creating a parallel construction do
 
 ## Data contract
 
-Tileflow World is an OpenMapTiles-compatible default resolved offline from the SDK version. A
-custom vector source must declare a versioned schema contract and attribution. A source can remap
+Tileflow World is an OpenMapTiles-compatible default resolved offline from the compiler's generation
+descriptor. The generated source contains the direct stable `v1` tile template and never a TileJSON,
+catalog, data-revision, or archive selector. A custom vector source must declare a versioned schema
+contract and attribution. It can use one TileJSON URL or a direct tile-template list, including a
+repository-owned PMTiles fixture. A source can remap
 source-layer and field names through `openMapTiles({layers, fields})`; module compilers read that
 data binding rather than a basemap-specific translator.
 
@@ -143,7 +146,11 @@ Compiler output records exact durable identity:
 - `tileflow:basemap = streets`
 - `tileflow:basemapVersion = 3`
 - `tileflow:variant = light | dark`
-- `tileflow:data = {kind, revision?, schema, schemaVersion, sourceId}`
+- `tileflow:data = {kind, generation?, revision?, schema, schemaVersion, sourceId}`
+
+World output uses `generation: "v1"` and never `revision`. Only external fixture/source identity may
+use `revision`. The full public descriptor also binds immutable glyph/sprite URLs and upstream
+attribution; the separate `Map by Tileflow` product credit does not replace that attribution.
 
 Raw overrides address compiler layer IDs and are applied before the final physical-layer optimizer.
 The optimizer may split an ID at a zoom handoff or combine several IDs into a data-driven cohort;

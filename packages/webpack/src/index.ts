@@ -12,6 +12,7 @@ import {
   joinTileflowPublicUrl,
   normalizeTileflowBasePath,
   type TileflowArtifactSession,
+  type TileflowBuildArtifactsOptions,
   writeTileflowNodeResponse,
 } from '@tileflow/dev';
 
@@ -21,6 +22,7 @@ export type TileflowWebpackPluginOptions = {
   config?: string;
   emitBuildArtifacts?: boolean;
   publicPath?: string;
+  worldGeneration?: TileflowBuildArtifactsOptions['worldGeneration'];
 };
 
 type WebpackCompiler = {
@@ -170,6 +172,7 @@ export class TileflowWebpackPlugin {
         cwd: input.cwd,
         styleBaseUrl: input.basePath,
         apiBaseUrl: this.options.apiBaseUrl,
+        worldGeneration: this.options.worldGeneration,
         watch: false,
       });
       const handlerPromise = this.devSession.then((session) =>
@@ -183,6 +186,7 @@ export class TileflowWebpackPlugin {
           },
           session,
           apiBaseUrl: this.options.apiBaseUrl,
+          worldGeneration: this.options.worldGeneration,
         }),
       );
       const devBasePaths = getDevBasePaths(input.basePath, input.publicBase);
@@ -277,6 +281,7 @@ export class TileflowWebpackPlugin {
       cwd: input.cwd,
       styleBaseUrl: publicBaseUrl,
       apiBaseUrl: this.options.apiBaseUrl,
+      worldGeneration: this.options.worldGeneration,
     });
     const RawSource = compiler.webpack.sources.RawSource;
 

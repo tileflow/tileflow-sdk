@@ -42,11 +42,15 @@ import {
   type TileflowRuntimeManifestMap,
 } from '@tileflow/core';
 import {
+  attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
   createTileflowMarkerController,
   createTileflowSessionStarter,
   createTileflowTransformRequest,
+  registerTileflowWorldRequestBridge,
+  type TileflowFairUseNoticeController,
   type TileflowMapLifecycleAttachment,
+  type TileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
 import {assertTileflowMapStyleInputs, type TileflowMapStyleSourceProps} from './style-source.js';
 
@@ -152,8 +156,10 @@ export const TileflowMap = defineComponent<TileflowMapProps>({
       remove: (marker) => marker.remove(),
     });
     let imageResizeObserver: ResizeObserver | null = null;
+    let mapFairUseNotice: TileflowFairUseNoticeController | null = null;
     let mapLifecycle: TileflowMapLifecycleAttachment | null = null;
     let mapResizeObserver: ResizeObserver | null = null;
+    let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
     let manifestLoadId = 0;
     let readinessRunId = 0;
 
@@ -289,22 +295,34 @@ export const TileflowMap = defineComponent<TileflowMapProps>({
     const destroyMap = () => {
       readinessRunId += 1;
       const lifecycle = mapLifecycle;
+      const fairUseNotice = mapFairUseNotice;
       const resizeObserver = mapResizeObserver;
       const map = mapRef.value;
+      const worldRequestBridge = mapWorldRequestBridge;
+      mapFairUseNotice = null;
       mapLifecycle = null;
       mapResizeObserver = null;
       mapRef.value = null;
+      mapWorldRequestBridge = null;
 
       try {
-        lifecycle?.dispose();
+        worldRequestBridge?.dispose();
       } finally {
         try {
-          resizeObserver?.disconnect();
+          fairUseNotice?.dispose();
         } finally {
           try {
-            markerController.clear();
+            lifecycle?.dispose();
           } finally {
-            map?.remove();
+            try {
+              resizeObserver?.disconnect();
+            } finally {
+              try {
+                markerController.clear();
+              } finally {
+                map?.remove();
+              }
+            }
           }
         }
       }
@@ -326,6 +344,11 @@ export const TileflowMap = defineComponent<TileflowMapProps>({
         sessionId: session.sessionId,
         source: 'vue',
       });
+      mapFairUseNotice = attachTileflowFairUseNotice(containerRef.value);
+      mapWorldRequestBridge = registerTileflowWorldRequestBridge({
+        addProtocol: maplibregl.addProtocol,
+        onNotice: mapFairUseNotice.update,
+      });
       const map = new maplibregl.Map({
         ...props.mapOptions,
         attributionControl: props.mapOptions?.attributionControl ?? {compact: true},
@@ -341,6 +364,7 @@ export const TileflowMap = defineComponent<TileflowMapProps>({
           sessionController: session,
           sessionId: session.sessionId,
           transformRequest: props.mapOptions?.transformRequest ?? undefined,
+          worldRequestBridge: mapWorldRequestBridge,
         }),
         zoom: resolvedZoom.value,
       });

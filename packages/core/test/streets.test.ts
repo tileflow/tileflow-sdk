@@ -8,9 +8,26 @@ import {
   roads,
   streets,
   tileflowWorld,
-  tileflowWorldRevision,
   water,
+  type WorldGenerationDescriptor,
 } from '../src';
+
+const worldGenerationFixture: WorldGenerationDescriptor = {
+  schemaVersion: 1,
+  generation: 'v1',
+  tileUrl: 'https://world.tileflow.dev/world/v1/{z}/{x}/{y}.pbf',
+  vectorSchema: {id: 'tileflow-world-v1-test', sha256: 'a'.repeat(64)},
+  tileEncoding: {format: 'mvt', compression: 'gzip', scheme: 'xyz', extent: 4096},
+  minzoom: 0,
+  maxzoom: 15,
+  bounds: [-180, -85.0511288, 180, 85.0511288],
+  attribution: '© OpenStreetMap contributors · Tileflow test fixture',
+  assetSet: {
+    id: 'a1-0123456789abcdef',
+    glyphs: 'https://assets.tileflow.dev/base/a1-0123456789abcdef/glyphs/{fontstack}/{range}.pbf',
+    spriteBase: 'https://assets.tileflow.dev/base/a1-0123456789abcdef/sprites/base',
+  },
+};
 
 test('compiles a complete deterministic Streets map from omitted data and modules', () => {
   const first = createStreetsStyle({basemap: streets()});
@@ -107,29 +124,36 @@ test('module key order does not change Streets output', () => {
   assert.deepEqual(left, right);
 });
 
-test('keeps legacy attribution inline and delegates versioned attribution to TileJSON', () => {
-  const legacy = createStreetsStyle({
-    basemap: streets(),
-    data: tileflowWorld({revision: tileflowWorldRevision}),
-  });
-  const balanced = createStreetsStyle({
-    basemap: streets(),
-    data: tileflowWorld({revision: 'balanced_candidate_1'}),
-  });
-  const legacySource = legacy.sources.tileflow as Record<string, unknown>;
-  const balancedSource = balanced.sources.tileflow as Record<string, unknown>;
+test('compiles a complete World generation to direct immutable asset URLs', () => {
+  const first = createStreetsStyle(
+    {basemap: streets(), data: tileflowWorld()},
+    {apiBaseUrl: 'https://api-one.example.test', worldGeneration: worldGenerationFixture},
+  );
+  const second = createStreetsStyle(
+    {basemap: streets(), data: tileflowWorld()},
+    {apiBaseUrl: 'https://api-two.example.test', worldGeneration: worldGenerationFixture},
+  );
+  const source = first.sources.tileflow as Record<string, unknown>;
 
-  assert.equal(
-    legacySource.attribution,
-    '© OpenFreeMap, © OpenMapTiles, © OpenStreetMap contributors',
-  );
-  assert.equal(Object.hasOwn(balancedSource, 'attribution'), false);
-  assert.equal(
-    balancedSource.url,
-    'https://api.tileflow.dev/tiles/world/tiles.json?archiveVersion=balanced_candidate_1',
-  );
+  assert.deepEqual(first, second);
+  assert.equal(Object.hasOwn(source, 'url'), false);
+  assert.deepEqual(source.tiles, [worldGenerationFixture.tileUrl]);
+  assert.deepEqual(source.bounds, worldGenerationFixture.bounds);
+  assert.equal(source.minzoom, worldGenerationFixture.minzoom);
+  assert.equal(source.maxzoom, worldGenerationFixture.maxzoom);
+  assert.equal(source.attribution, worldGenerationFixture.attribution);
+  assert.equal(first.glyphs, worldGenerationFixture.assetSet.glyphs);
+  assert.equal(first.sprite, worldGenerationFixture.assetSet.spriteBase);
+  assert.ok(first.layers.some((layer) => layer.id === 'streets-poi-food-icon'));
+  assert.deepEqual(first.metadata?.['tileflow:data'], {
+    generation: 'v1',
+    kind: 'tileflow-world',
+    schema: 'openmaptiles',
+    schemaVersion: 1,
+    sourceId: 'tileflow',
+  });
   assert.deepEqual(
-    validateStyleMin(balanced as never).map((error) => error.message),
+    validateStyleMin(first as never).map((error) => error.message),
     [],
   );
 });

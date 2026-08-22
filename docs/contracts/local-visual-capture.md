@@ -90,7 +90,7 @@ Browser with a fresh context per scene. No Node listener, user profile, visible 
 CDN runtime is created.
 
 Non-loopback HTTP(S) resources make a receipt network-dependent and produce sorted origin-only
-warnings. Loopback TileJSON, tile, sprite, and glyph fixtures remain local dependencies and do not
+warnings. Loopback direct-tile, TileJSON, sprite, and glyph fixtures remain local dependencies and do not
 set `networkDependent`; this keeps repository-owned browser tests and release smoke deterministic
 without weakening warnings for public or private remote origins.
 
@@ -195,6 +195,10 @@ values remain a scene mismatch. Serializing a parsed legacy receipt writes only 
 shape; it never reproduces its raw URL. Receipt parsing remains exact-key, UTF-8, size,
 portable-identifier, hash, dimension, and pixel-budget validated; parser-dependent duplicate keys
 are rejected.
+
+New stateless World receipts use `generation: "v1"`. Explicit legacy World revision selectors remain
+readable and serializable for compatibility, but the default World contract does not retain the
+mutable revision served behind that generation.
 
 ## Visual comparison and baselines
 

@@ -13,6 +13,149 @@ const tsxLoader = import.meta.resolve('tsx');
 const fakeApiKey = `tf_live_${'a'.repeat(48)}`;
 const accountSessionToken = `tf_session_${'b'.repeat(64)}`;
 
+test('World promotion auto-selects one map, fixes session mode, and writes a managed manifest', async (t) => {
+  const fixture = await createFixture(t);
+  let requestBody: Record<string, unknown> | null = null;
+  const api = await createFakeApi(t, async (request) => {
+    requestBody = JSON.parse(await readRequestBody(request)) as Record<string, unknown>;
+    return {
+      changed: true,
+      deploymentId: 'dep_managed',
+      mapId: 'map_managed',
+      mapUrl: 'https://api.example.test/maps/map_managed/style.json',
+      styleId: 'sty_managed',
+      version: 1,
+      worldPromotionId: 'wpr_12345678',
+    };
+  });
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      api.url,
+      '--world-promotion',
+      'wpr_12345678',
+    ],
+    {TILEFLOW_API_KEY: fakeApiKey},
+  );
+
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+  assert.equal(requestBody?.worldPromotionId, 'wpr_12345678');
+  assert.equal(requestBody?.usageMode, 'session');
+  const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
+    maps: {madrid: Record<string, unknown>};
+  };
+  assert.equal(manifest.maps.madrid.mapId, 'map_managed');
+  assert.equal(manifest.maps.madrid.usageMode, 'session');
+  assert.equal(manifest.maps.madrid.worldGeneration, 'v1');
+  assert.equal('worldPromotionId' in manifest.maps.madrid, false);
+  assert.doesNotMatch(await readFile(fixture.manifestPath, 'utf8'), /wpr_12345678/u);
+});
+
+test('World promotion requires --map before network work for a multi-map config', async (t) => {
+  const fixture = await createFixture(t);
+  await writeFile(
+    fixture.configPath,
+    `export default {maps: {
+      madrid: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, modules: {poi: {type: 'poi', icons: false}}},
+      lisbon: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, modules: {poi: {type: 'poi', icons: false}}}
+    }};\n`,
+  );
+  let requests = 0;
+  const api = await createFakeApi(t, async () => {
+    requests += 1;
+  });
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      api.url,
+      '--world-promotion',
+      'wpr_12345678',
+    ],
+    {TILEFLOW_API_KEY: fakeApiKey},
+  );
+
+  assert.equal(result.code, 1);
+  assert.equal(requests, 0);
+  assert.match(result.stdout, /requires an explicit map/u);
+  assert.match(result.stdout, /lisbon, madrid|madrid, lisbon/u);
+  await assert.rejects(() => readFile(fixture.manifestPath, 'utf8'), {code: 'ENOENT'});
+});
+
+test('World promotion deploys only the selected map and preserves unrelated manifest entries', async (t) => {
+  const fixture = await createFixture(t);
+  await writeFile(
+    fixture.configPath,
+    `export default {maps: {
+      madrid: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, modules: {poi: {type: 'poi', icons: false}}},
+      lisbon: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, modules: {poi: {type: 'poi', icons: false}}}
+    }};\n`,
+  );
+  const requests: Record<string, unknown>[] = [];
+  const api = await createFakeApi(t, async (request) => {
+    const body = JSON.parse(await readRequestBody(request)) as Record<string, unknown>;
+    requests.push(body);
+    return {
+      mapId: 'map_lisbon',
+      mapUrl: 'https://api.example.test/maps/map_lisbon/style.json',
+      styleId: 'sty_lisbon',
+      worldPromotionId: 'wpr_12345678',
+    };
+  });
+  await writeFile(
+    fixture.manifestPath,
+    `${JSON.stringify({
+      apiUrl: api.url,
+      maps: {
+        madrid: {
+          environment: 'madrid',
+          mapId: 'map_existing',
+          styleUrl: 'https://api.example.test/maps/map_existing/style.json',
+        },
+      },
+      styles: {madrid: 'https://api.example.test/maps/map_existing/style.json'},
+      version: 2,
+    })}\n`,
+  );
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      api.url,
+      '--world-promotion',
+      'wpr_12345678',
+      '--map',
+      'lisbon',
+    ],
+    {TILEFLOW_API_KEY: fakeApiKey},
+  );
+
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.environment, 'lisbon');
+  const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
+    maps: Record<string, {mapId: string}>;
+  };
+  assert.equal(manifest.maps.madrid?.mapId, 'map_existing');
+  assert.equal(manifest.maps.lisbon?.mapId, 'map_lisbon');
+});
+
 test('deploy sends CI provenance but keeps it and the bearer key out of the manifest', async (t) => {
   const fixture = await createFixture(t);
   const observedSecretPath = join(fixture.directory, 'config-observed-secret.txt');

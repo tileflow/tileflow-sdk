@@ -19,8 +19,8 @@ import {
 } from '../src/index';
 
 const dataIdentity: TileflowCaptureDataInput = {
+  generation: 'v1',
   kind: 'tileflow-world',
-  revision: '2026-06-07',
   schema: 'openmaptiles',
   schemaVersion: 1,
   sourceId: 'tileflow',
@@ -180,7 +180,13 @@ test('classifies missing, dimension, scene, and runtime mismatches before pixel 
   assert.equal(runtime.rendererMatch, false);
 
   const pinnedActualReceipt = createTileflowCaptureReceipt({
-    data: {...dataIdentity, revision: 'archive-a'},
+    data: {
+      kind: 'vector-tiles',
+      revision: 'archive-a',
+      schema: 'openmaptiles',
+      schemaVersion: 1,
+      sourceId: 'tileflow',
+    },
     dpr: actual.dpr,
     height: actual.height,
     map: actual.map,
@@ -195,7 +201,13 @@ test('classifies missing, dimension, scene, and runtime mismatches before pixel 
   });
   const pinnedActual = {...actual, receipt: pinnedActualReceipt};
   const pinnedBaseline = createTileflowCaptureReceipt({
-    data: {...dataIdentity, revision: 'archive-b'},
+    data: {
+      kind: 'vector-tiles',
+      revision: 'archive-b',
+      schema: 'openmaptiles',
+      schemaVersion: 1,
+      sourceId: 'tileflow',
+    },
     dpr: actual.dpr,
     height: actual.height,
     map: actual.map,

@@ -1,12 +1,196 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
   createTileflowMarkerController,
   createTileflowSessionStarter,
   createTileflowTransformRequest,
+  registerTileflowWorldRequestBridge,
+  type TileflowFairUseNotice,
   type TileflowMapLifecycleEvent,
+  type TileflowWorldProtocolHandler,
 } from '../src/browser';
+
+test('World bridge follows signed notice activation and shapes an empty tile', async () => {
+  let protocolHandler: TileflowWorldProtocolHandler | null = null;
+  const notices: Array<TileflowFairUseNotice | null> = [];
+  const requests: Array<{credentials: RequestCredentials | undefined; url: string}> = [];
+  let response = new Response(new Uint8Array([1, 2, 3]), {
+    headers: {'Tileflow-Fair-Use': 'grace'},
+  });
+  const bridge = registerTileflowWorldRequestBridge({
+    addProtocol(name, handler) {
+      assert.equal(name, 'tileflow-world');
+      protocolHandler = handler;
+    },
+    async fetch(input, init) {
+      requests.push({
+        credentials: init?.credentials,
+        url: input instanceof Request ? input.url : String(input),
+      });
+      return response;
+    },
+    onNotice: (notice) => notices.push(notice),
+  });
+  const transform = createTileflowTransformRequest({
+    always: true,
+    getAnalytics: () => undefined,
+    sessionId: 'ses_stateless',
+    transformRequest: () => ({
+      headers: {'X-Private': 'must-not-reach-world'},
+      url: 'https://world.tileflow.dev/world/v1/0/0/0.pbf',
+    }),
+    worldRequestBridge: bridge,
+  });
+  const transformed = transform('https://world.tileflow.dev/world/v1/0/0/0.pbf', 'Tile');
+  assert.ok(transformed && !(transformed instanceof Promise));
+  assert.match(transformed.url, /^tileflow-world:\/\/request\//u);
+  assert.equal(
+    bridge.rewriteUrl('https://world.tileflow.dev/world/v1/0/0/0.pbf?site=secret'),
+    'https://world.tileflow.dev/world/v1/0/0/0.pbf?site=secret',
+  );
+  assert.ok(protocolHandler);
+  const earlyGrace = await protocolHandler(transformed, new AbortController());
+  assert.equal(earlyGrace.data.byteLength, 3);
+  assert.equal(notices.at(-1), null, 'early GRACE remains silent');
+  assert.equal(requests[0]?.credentials, 'omit');
+  assert.equal(requests[0]?.url, 'https://world.tileflow.dev/world/v1/0/0/0.pbf');
+
+  response = new Response(new Uint8Array([1, 2, 3]), {
+    headers: {
+      Link: '<https://tileflow.dev/world/claim>; rel="help"',
+      'Tileflow-Fair-Use': 'grace',
+      'Tileflow-Fair-Use-Notice': 'owner',
+    },
+  });
+  await protocolHandler(transformed, new AbortController());
+  assert.equal(notices.at(-1)?.state, 'GRACE');
+
+  response = new Response(new Uint8Array([1, 2, 3]), {
+    headers: {'Tileflow-Fair-Use': 'grace'},
+  });
+  await protocolHandler(transformed, new AbortController());
+  assert.equal(notices.at(-1), null, 'early GRACE clears a visible GRACE notice');
+
+  response = new Response(null, {
+    status: 429,
+    headers: {'Tileflow-Fair-Use': 'grace'},
+  });
+  const shapedGrace = await protocolHandler(transformed, new AbortController());
+  assert.equal(shapedGrace.data.byteLength, 0);
+  assert.equal(
+    notices.at(-1)?.state,
+    'GRACE',
+    'a shaped response remains self-explanatory without the notice header',
+  );
+
+  response = new Response(null, {
+    status: 429,
+    headers: {
+      Link: '<https://tileflow.dev/world/claim>; rel="help"',
+      'Tileflow-Fair-Use': 'claim-required',
+      'Tileflow-Fair-Use-Notice': 'owner',
+    },
+  });
+  const shapedClaimRequired = await protocolHandler(transformed, new AbortController());
+  assert.equal(shapedClaimRequired.data.byteLength, 0);
+  assert.equal(shapedClaimRequired.cacheControl, 'private, no-store');
+  assert.equal(notices.at(-1)?.state, 'CLAIM_REQUIRED');
+  assert.match(notices.at(-1)?.message ?? '', /temporarily limited/u);
+  assert.match(notices.at(-1)?.action ?? '', /manage this map with Tileflow/u);
+
+  response = new Response(new Uint8Array([1, 2, 3]), {
+    headers: {
+      Link: '<https://tileflow.dev/world/claim>; rel="help"',
+      'Tileflow-Fair-Use': 'grace',
+      'Tileflow-Fair-Use-Notice': 'owner',
+    },
+  });
+  await protocolHandler(transformed, new AbortController());
+  assert.equal(
+    notices.at(-1)?.state,
+    'CLAIM_REQUIRED',
+    'CLAIM_REQUIRED cannot regress to GRACE in one bridge',
+  );
+
+  const noticeCountBeforeError = notices.length;
+  response = new Response(null, {status: 503});
+  await assert.rejects(protocolHandler(transformed, new AbortController()), /failed: 503/u);
+  assert.equal(notices.length, noticeCountBeforeError);
+  assert.equal(notices.at(-1)?.state, 'CLAIM_REQUIRED');
+
+  response = new Response(new Uint8Array([1, 2, 3]), {
+    headers: {'Cache-Control': 'public, max-age=300', 'Tileflow-Fair-Use': 'open'},
+  });
+  const open = await protocolHandler(transformed, new AbortController());
+  assert.equal(open.data.byteLength, 3);
+  assert.equal(notices.at(-1), null, 'an observed OPEN response clears a previous notice');
+  bridge.dispose();
+});
+
+test('fair-use notice renders the approved compact GRACE pill and strong CLAIM_REQUIRED banner', () => {
+  const document = new FakeDocument();
+  const container = new FakeElement(document);
+  const notice = attachTileflowFairUseNotice(container as unknown as HTMLElement);
+
+  notice.update({
+    action: 'Site owner: manage this map with Tileflow.',
+    helpUrl: 'https://tileflow.dev/world/claim',
+    message: 'Map usage is approaching its temporary limit.',
+    state: 'GRACE',
+  });
+
+  const grace = container.children[0]!;
+  const graceIndicator = grace.children[0]!;
+  const graceCopy = grace.children[1]!;
+  const graceLink = graceCopy.children[0]!;
+  assert.equal(grace.attributes.get('role'), 'status');
+  assert.equal(grace.attributes.get('aria-live'), 'polite');
+  assert.equal(grace.attributes.get('aria-atomic'), 'true');
+  assert.equal(grace.dataset.tileflowFairUseNotice, 'grace');
+  assert.equal(grace.style.bottom, '24px');
+  assert.equal(grace.style.borderRadius, '999px');
+  assert.equal(grace.style.background, 'rgba(252, 250, 244, 0.96)');
+  assert.equal(grace.style.width, 'max-content');
+  assert.equal(graceIndicator.attributes.get('aria-hidden'), 'true');
+  assert.equal(graceIndicator.style.background, '#c58c28');
+  assert.equal(graceLink.href, 'https://tileflow.dev/world/claim');
+  assert.equal(graceLink.rel, 'noopener noreferrer');
+  assert.equal(graceLink.target, '_blank');
+  assert.equal(graceCopy.textContent, 'Map usage is approaching its temporary limit. ');
+  assert.equal(graceLink.textContent, 'Site owner: manage this map with Tileflow.');
+
+  notice.update({
+    action: 'Site owner: manage this map with Tileflow.',
+    helpUrl: 'https://tileflow.dev/world/claim',
+    message: 'Map usage is temporarily limited.',
+    state: 'CLAIM_REQUIRED',
+  });
+  const claimRequired = container.children[0]!;
+  assert.notEqual(claimRequired, grace);
+  assert.equal(claimRequired.dataset.tileflowFairUseNotice, 'claim-required');
+  assert.equal(claimRequired.style.top, '14px');
+  assert.equal(claimRequired.style.background, 'rgba(25, 34, 29, 0.96)');
+  assert.equal(claimRequired.children[0]!.textContent, '!');
+  assert.match(claimRequired.children[1]!.textContent, /temporarily limited/u);
+  assert.equal(
+    claimRequired.children[1]!.children[0]!.textContent,
+    'Site owner: manage this map with Tileflow.',
+  );
+
+  notice.update({
+    action: 'Site owner: manage this map with Tileflow.',
+    helpUrl: 'https://tileflow.dev/world/claim',
+    message: 'Map usage is approaching its temporary limit.',
+    state: 'GRACE',
+  });
+  assert.equal(container.children[0], claimRequired);
+  assert.match(claimRequired.children[1]!.textContent, /temporarily limited/u);
+
+  notice.dispose();
+  assert.equal(container.children.length, 0);
+});
 
 test('map readiness waits two frames and invalidating events cancel stale idle work', () => {
   const map = new FakeMap();
@@ -467,6 +651,47 @@ class FakeFrameScheduler {
     const [frame, callback] = entry;
     this.#callbacks.delete(frame);
     callback();
+  }
+}
+
+class FakeDocument {
+  createElement(): FakeElement {
+    return new FakeElement(this);
+  }
+}
+
+class FakeElement {
+  readonly attributes = new Map<string, string>();
+  readonly children: FakeElement[] = [];
+  readonly dataset: Record<string, string> = {};
+  readonly style: Record<string, string> = {};
+  href = '';
+  parent: FakeElement | null = null;
+  rel = '';
+  target = '';
+  textContent = '';
+
+  constructor(readonly ownerDocument: FakeDocument) {}
+
+  append(child: FakeElement): void {
+    child.parent = this;
+    this.children.push(child);
+  }
+
+  remove(): void {
+    const index = this.parent?.children.indexOf(this) ?? -1;
+    if (index >= 0) this.parent?.children.splice(index, 1);
+    this.parent = null;
+  }
+
+  replaceChildren(...children: FakeElement[]): void {
+    for (const child of this.children) child.parent = null;
+    this.children.length = 0;
+    for (const child of children) this.append(child);
+  }
+
+  setAttribute(name: string, value: string): void {
+    this.attributes.set(name, value);
   }
 }
 

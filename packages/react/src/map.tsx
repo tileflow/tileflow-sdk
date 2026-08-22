@@ -34,10 +34,12 @@ import {
   type TileflowRuntimeManifestMap,
 } from '@tileflow/core';
 import {
+  attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
   createTileflowMarkerController,
   createTileflowSessionStarter,
   createTileflowTransformRequest,
+  registerTileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
 import {assertTileflowMapStyleInputs, type TileflowMapStyleSourceProps} from './map-style-inputs';
 
@@ -291,6 +293,11 @@ export function Map(props: MapProps) {
       sessionId: session.sessionId,
       source: 'react',
     });
+    const fairUseNotice = attachTileflowFairUseNotice(containerRef.current);
+    const worldRequestBridge = registerTileflowWorldRequestBridge({
+      addProtocol: maplibregl.addProtocol,
+      onNotice: fairUseNotice.update,
+    });
     const transformRequest = createTileflowTransformRequest({
       always: true,
       asyncAnalyticsTiming: 'resolution',
@@ -298,6 +305,7 @@ export function Map(props: MapProps) {
       sessionController: session,
       sessionId: session.sessionId,
       transformRequest: stableMapOptions?.transformRequest ?? undefined,
+      worldRequestBridge,
     });
 
     const map = new maplibregl.Map({
@@ -354,18 +362,26 @@ export function Map(props: MapProps) {
     return () => {
       readinessRunRef.current += 1;
       try {
-        lifecycle.dispose();
+        worldRequestBridge.dispose();
       } finally {
         try {
-          resizeObserver.disconnect();
+          fairUseNotice.dispose();
         } finally {
           try {
-            markerController.clear();
+            lifecycle.dispose();
           } finally {
             try {
-              map.remove();
+              resizeObserver.disconnect();
             } finally {
-              if (mapRef.current === map) mapRef.current = null;
+              try {
+                markerController.clear();
+              } finally {
+                try {
+                  map.remove();
+                } finally {
+                  if (mapRef.current === map) mapRef.current = null;
+                }
+              }
             }
           }
         }

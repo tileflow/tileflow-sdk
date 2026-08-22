@@ -71,13 +71,18 @@ export type TileflowLanduseColorConfig = {
   cemetery?: TileflowColor;
   civic?: TileflowColor;
   commercial?: TileflowColor;
+  education?: TileflowColor;
+  government?: TileflowColor;
   industrial?: TileflowColor;
+  medical?: TileflowColor;
   military?: TileflowColor;
+  parking?: TileflowColor;
   recreation?: TileflowColor;
   residential?: TileflowColor;
 };
 
 export type TileflowLandcoverColorConfig = {
+  farmland?: TileflowColor;
   grass?: TileflowColor;
   ice?: TileflowColor;
   park?: TileflowColor;
@@ -96,13 +101,22 @@ export type TileflowHydroColorConfig = {
 };
 
 export type TileflowBuildingColorConfig = {
+  active?: TileflowColor;
+  businessCorridor?: TileflowColor;
+  businessCorridorOutline?: TileflowColor;
+  civic?: TileflowColor;
+  commercial?: TileflowColor;
+  destination?: TileflowColor;
   extrusion?: TileflowColor;
   fill?: TileflowColor;
+  generic?: TileflowColor;
   highRise?: TileflowColor;
   highRiseOutline?: TileflowColor;
+  industrial?: TileflowColor;
   lowRise?: TileflowColor;
   lowRiseOutline?: TileflowColor;
   outline?: TileflowColor;
+  residential?: TileflowColor;
 };
 
 export type TileflowBoundaryColorConfig = {
@@ -274,6 +288,7 @@ export type TileflowRoadsModuleConfig = {
 export type TileflowRoadsModuleOptions = Omit<TileflowRoadsModuleConfig, 'type'>;
 
 export type TileflowLabelDetail = 'none' | 'major' | 'all';
+export type TileflowAerodromeCodeDetail = 'none' | 'iata' | 'all';
 export type TileflowRoadLabelDetail = TileflowRoadDetail;
 export type TileflowLabelLanguage = 'auto' | 'local' | 'en' | (string & {});
 export type TileflowPlaceLabelClass =
@@ -301,6 +316,7 @@ export type TileflowLabelStyles = {
 };
 export type TileflowLabelsModuleConfig = {
   type: 'labels';
+  aerodromeCodes?: TileflowAerodromeCodeDetail;
   enabled?: boolean;
   junctions?: boolean;
   language?: TileflowLabelLanguage;
@@ -355,10 +371,19 @@ export type TileflowPoiModuleConfig = {
 export type TileflowPoiModuleOptions = Omit<TileflowPoiModuleConfig, 'type'>;
 
 export type MapLibreSprite = string | Array<{id: string; url: string}>;
+export type TileflowProjection = 'globe' | 'mercator';
+export type TileflowLight = {
+  anchor?: 'map' | 'viewport';
+  color?: TileflowColor;
+  intensity?: number;
+  position?: readonly [number, number, number];
+};
 export type MapLibreStyle = {
   version: 8;
   name: string;
   glyphs?: string;
+  light?: TileflowLight;
+  projection?: {type: TileflowProjection};
   sprite?: MapLibreSprite;
   sources: Record<string, Record<string, unknown>>;
   layers: Array<Record<string, unknown>>;

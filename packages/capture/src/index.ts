@@ -36,7 +36,16 @@ export {
   tileflowCaptureReceiptSchemaVersion,
   validateTileflowCaptureReceipt,
 } from './receipt';
-export type {TileflowCaptureReceipt} from './receipt';
+export type {
+  CreateTileflowCaptureReceiptInput,
+  TileflowCaptureDataBindingsV2,
+  TileflowCaptureDataCapabilitiesV2,
+  TileflowCaptureDataIdentityV2,
+  TileflowCaptureDataInput,
+  TileflowCaptureDataSourceV2,
+  TileflowCaptureReceipt,
+  TileflowCaptureVerificationV2,
+} from './receipt';
 export {tileflowSyntheticAssetOrigin} from './standalone';
 export {resolveTileflowApplicationUrl} from './application';
 export {

@@ -10,6 +10,10 @@ const mapOptions = {
   fadeDuration: 0,
   maxPitch: 0,
   pitch: 0,
+  transformRequest(url: string) {
+    const hostname = new URL(url, window.location.href).hostname;
+    return hostname === 'dev-tiles.tileflow.dev' ? {credentials: 'include', url} : {url};
+  },
 } satisfies TileflowMapOptions;
 
 export function App() {

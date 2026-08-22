@@ -82,6 +82,12 @@ type ConditionalBranch = {
   condition: unknown[];
   resolve: (baseOutput: unknown) => unknown;
 };
+type WidthScaleEntry = {
+  condition: unknown[];
+  scale: number;
+};
+
+const fixedRoadBorderVariable = '__tileflow_fixed_road_border';
 
 export function compileRoads(
   request: TileflowRoadsModuleConfig | undefined,
@@ -115,13 +121,18 @@ export function compileRoads(
       if (!structureConfig) continue;
       const filter = [
         'all',
+        ['==', ['geometry-type'], 'LineString'],
         tileflowRoadClassFilter(schema.fields, roadClass),
         structureFilter(schema.fields.brunnel, structure),
       ];
       for (const [phaseIndex, phase] of (['shadow', 'casing', 'fill'] as const).entries()) {
         const style = structureConfig[phase];
-        if (!style || style.visible === false) continue;
-        const treatedStyle = applyRoadTreatments(style, treatments, structure, phase);
+        if (style?.visible === false) continue;
+        const materializingConditions = style
+          ? []
+          : roadTreatmentPhaseConditions(treatments, structure, phase);
+        if (!style && materializingConditions.length === 0) continue;
+        const treatedStyle = applyRoadTreatments(style ?? {}, treatments, structure, phase);
         contributions.push({
           kind: 'layer',
           layer: applyLineStyle(
@@ -130,7 +141,15 @@ export function compileRoads(
               type: 'line',
               source,
               'source-layer': schema.layers.road,
-              filter,
+              filter:
+                materializingConditions.length === 0
+                  ? filter
+                  : [
+                      ...filter,
+                      materializingConditions.length === 1
+                        ? materializingConditions[0]
+                        : ['any', ...materializingConditions],
+                    ],
               layout: {
                 'line-sort-key': [
                   'coalesce',
@@ -160,6 +179,55 @@ export function compileRoads(
         const minZoom = hatch.minZoom ?? treatedFill.minZoom;
         const maxZoom = hatch.maxZoom ?? treatedFill.maxZoom;
 
+        if (hatch.pattern !== undefined) {
+          const pattern =
+            hatch.patternWidths === undefined
+              ? hatch.pattern
+              : widthMatchedHatchPattern(
+                  hatch.pattern,
+                  hatch.patternWidths,
+                  treatedFill.width ?? 1,
+                  minZoom,
+                  maxZoom,
+                );
+          contributions.push({
+            kind: 'layer',
+            layer: applyLineStyle(
+              {
+                id: `streets-road-${structure}-${roadClass}-hatch`,
+                type: 'line',
+                source,
+                'source-layer': schema.layers.road,
+                filter,
+                layout: {
+                  'line-sort-key': [
+                    'coalesce',
+                    ['get', schema.fields.layer],
+                    ['get', schema.fields.level],
+                    0,
+                  ],
+                },
+              },
+              {
+                cap: 'butt',
+                join: 'round',
+                ...(minZoom === undefined ? {} : {minZoom}),
+                ...(maxZoom === undefined ? {} : {maxZoom}),
+                opacity: hatch.opacity ?? 1,
+                pattern,
+                // A line pattern is clipped by this width, so it can never
+                // protrude beyond the underlying tunnel fill.
+                width: treatedFill.width ?? 1,
+              },
+            ),
+            localOrder: roadClassOrder.length * 10 + classIndex,
+            owner: 'roads',
+            slot: structureSlots[structure].fill,
+            target: `roads.classes.${roadClass}.${structure}.hatch`,
+          });
+          continue;
+        }
+
         contributions.push({
           kind: 'layer',
           layer: {
@@ -172,9 +240,18 @@ export function compileRoads(
             ...(maxZoom === undefined ? {} : {maxzoom: maxZoom}),
             layout: {
               'symbol-placement': 'line',
+              'symbol-sort-key': [
+                'coalesce',
+                ['get', schema.fields.layer],
+                ['get', schema.fields.level],
+                0,
+              ],
               'symbol-spacing': toMapLibreStyleValue((hatch.spacing ?? 16) as never),
               'text-allow-overlap': true,
-              'text-field': '╱',
+              // Rotate an ASCII vertical stroke rather than relying on the
+              // box-drawing diagonal U+2571, which many glyph endpoints omit.
+              // The symmetric stroke also stays centered inside the road deck.
+              'text-field': '|',
               'text-font': textFont(context.typography, 'roads'),
               'text-ignore-placement': true,
               'text-keep-upright': false,
@@ -183,7 +260,7 @@ export function compileRoads(
               'text-rotation-alignment': 'map',
               'text-size': size,
               ...(hatch.angle === undefined
-                ? {}
+                ? {'text-rotate': 45}
                 : {'text-rotate': toMapLibreStyleValue(hatch.angle as never)}),
             },
             paint: {
@@ -193,7 +270,11 @@ export function compileRoads(
               'text-opacity': toMapLibreStyleValue((hatch.opacity ?? 0.24) as never),
             },
           },
-          localOrder: classIndex * 10 + 3,
+          // Keep every hatch above every road fill. Besides making the visual
+          // stacking deterministic at class crossings, this makes equivalent
+          // hatch layers contiguous so the style optimizer can safely cohort
+          // them without moving across a fill pass.
+          localOrder: roadClassOrder.length * 10 + classIndex,
           owner: 'roads',
           slot: structureSlots[structure].fill,
           target: `roads.classes.${roadClass}.${structure}.hatch`,
@@ -235,7 +316,11 @@ export function compileRoads(
     },
     {
       id: 'streets-road-pier-area',
-      filter: ['==', ['get', schema.fields.class], 'pier'],
+      filter: [
+        'all',
+        ['==', ['geometry-type'], 'Polygon'],
+        ['==', ['get', schema.fields.class], 'pier'],
+      ],
       name: 'pier',
       style: areaStyles.pier,
     },
@@ -264,7 +349,7 @@ export function compileRoads(
     }
   }
 
-  if (semantics.oneWayMarkers) {
+  if (semantics.oneWayMarkers && visible.size > 0) {
     contributions.push({
       kind: 'layer',
       layer: {
@@ -273,24 +358,132 @@ export function compileRoads(
         source,
         'source-layer': schema.layers.road,
         minzoom: 15,
-        filter: ['match', ['get', schema.fields.oneway], [1, -1], true, false],
+        filter: [
+          'all',
+          ['==', ['geometry-type'], 'LineString'],
+          ['match', ['get', schema.fields.oneway], [1, -1], true, false],
+          [
+            'any',
+            ...roadClassOrder
+              .filter((roadClass) => visible.has(roadClass))
+              .map((roadClass) => tileflowRoadClassFilter(schema.fields, roadClass)),
+          ],
+        ],
         layout: {
           'symbol-placement': 'line',
           'symbol-spacing': 120,
           'text-field': ['case', ['==', ['get', schema.fields.oneway], -1], '‹', '›'],
           'text-font': textFont(context.typography, 'roads'),
+          // Directional glyphs must follow the encoded line direction. The
+          // MapLibre default keeps line text upright by rotating it 180°, which
+          // is correct for words but can reverse an arrow's meaning.
+          'text-keep-upright': false,
+          'text-pitch-alignment': 'map',
+          'text-rotation-alignment': 'map',
           'text-size': 12,
         },
         paint: {'text-color': context.colors.labels.road},
       },
       localOrder: 100,
       owner: 'roads',
-      slot: 'symbols',
+      slot: 'transport-symbols',
       target: 'roads.oneWayMarkers',
     });
   }
 
   return contributions;
+}
+
+function widthMatchedHatchPattern(
+  pattern: unknown,
+  widths: readonly number[],
+  renderedWidth: unknown,
+  minZoom: number | undefined,
+  maxZoom: number | undefined,
+) {
+  if (typeof pattern !== 'string') {
+    throw new Error('Road hatch patternWidths requires a literal pattern prefix');
+  }
+
+  const startZoom = Math.max(0, Math.floor(minZoom ?? 0));
+  const endZoom = Math.min(24, Math.ceil(maxZoom ?? 24));
+  const resolvedWidth = toMapLibreStyleValue(renderedWidth as never);
+  const outputAtZoom = (level: number) =>
+    widthMatchedHatchOutput(pattern, widths, evaluateWidthAtZoom(resolvedWidth, level));
+  const initialOutput = outputAtZoom(startZoom);
+  const stops: unknown[] = [];
+  let previousOutput = initialOutput;
+  for (let level = startZoom + 1; level <= endZoom; level += 1) {
+    const output = outputAtZoom(level);
+    if (JSON.stringify(output) === JSON.stringify(previousOutput)) continue;
+    stops.push(level, output);
+    previousOutput = output;
+  }
+
+  return expression<string>(['step', ['zoom'], initialOutput, ...stops]);
+}
+
+function widthMatchedHatchOutput(
+  pattern: string,
+  widths: readonly number[],
+  renderedWidth: unknown,
+) {
+  const widthVariable = '__tileflow_hatch_width';
+  const stops = widths.slice(0, -1).flatMap((width, index) => {
+    const next = widths[index + 1]!;
+    // A geometric midpoint bounds multiplicative scaling error equally on
+    // both sides. With sqrt(2)-spaced assets the mark remains within about
+    // 19% of its authored pixel thickness before MapLibre cross-fading.
+    const boundary = Math.sqrt(width * next);
+    return [boundary, `${pattern}-${next}`];
+  });
+
+  return [
+    'let',
+    widthVariable,
+    expressionOutput(renderedWidth),
+    ['step', ['var', widthVariable], `${pattern}-${widths[0]}`, ...stops],
+  ];
+}
+
+function evaluateWidthAtZoom(value: unknown, level: number): unknown {
+  if (
+    Array.isArray(value) &&
+    value[0] === 'interpolate' &&
+    Array.isArray(value[2]) &&
+    value[2].length === 1 &&
+    value[2][0] === 'zoom'
+  ) {
+    const stops: Array<{level: number; output: unknown}> = [];
+    for (let index = 3; index < value.length - 1; index += 2) {
+      if (typeof value[index] === 'number') {
+        stops.push({level: value[index] as number, output: value[index + 1]});
+      }
+    }
+    const exact = stops.find((stop) => stop.level === level);
+    if (exact) return exact.output;
+    const lower = [...stops].reverse().find((stop) => stop.level < level);
+    const upper = stops.find((stop) => stop.level > level);
+    if (!lower) return upper?.output ?? 1;
+    if (!upper) return lower.output;
+    return [
+      'interpolate',
+      value[1],
+      level,
+      lower.level,
+      expressionOutput(lower.output),
+      upper.level,
+      expressionOutput(upper.output),
+    ];
+  }
+  return substituteZoom(value, level);
+}
+
+function substituteZoom(value: unknown, level: number): unknown {
+  if (!Array.isArray(value)) return value;
+  if (value[0] === 'literal') return value;
+  if (value.length === 1 && value[0] === 'zoom') return level;
+  return value.map((entry) => substituteZoom(entry, level));
 }
 
 function resolveRoadTreatments(
@@ -371,21 +564,30 @@ function applyRoadTreatments(
     }
   }
 
-  const widthBranches = treatments.flatMap(({condition, style}) =>
+  const widthScales = treatments.flatMap(({condition, style}) =>
     style.widthScale === undefined
       ? []
-      : [
-          {
-            condition,
-            resolve: (baseOutput: unknown) => ['*', expressionOutput(baseOutput), style.widthScale],
-          } satisfies ConditionalBranch,
-        ],
+      : [{condition, scale: style.widthScale} satisfies WidthScaleEntry],
   );
-  if (widthBranches.length > 0) {
-    result.width = conditionalStyleValue(result.width, widthBranches, treatmentPaintDefaults.width);
+  if (widthScales.length > 0) {
+    result.width = conditionalWidthScaleValue(
+      result.width,
+      widthScales,
+      treatmentPaintDefaults.width,
+    );
   }
 
   return result as typeof base;
+}
+
+function roadTreatmentPhaseConditions(
+  treatments: readonly RoadTreatmentEntry[],
+  structure: TileflowRoadStructure,
+  phase: 'casing' | 'fill' | 'shadow',
+): unknown[][] {
+  return treatments.flatMap(({condition, style}) =>
+    style[structure]?.[phase] === undefined ? [] : [condition],
+  );
 }
 
 function scaleStyleValue(value: unknown, scale: number): readonly unknown[] {
@@ -403,12 +605,93 @@ function conditionalStyleValue(
 ) {
   const resolvedBase = toMapLibreStyleValue((base ?? fallback) as never);
   return expression(
-    rewriteZoomOutputs(resolvedBase, (baseOutput) => [
+    rewriteZoomOutputs(resolvedBase, (baseOutput) => conditionalOutput(baseOutput, branches)),
+  );
+}
+
+function conditionalWidthScaleValue(
+  base: unknown,
+  entries: readonly WidthScaleEntry[],
+  fallback: number,
+) {
+  const resolvedBase = toMapLibreStyleValue((base ?? fallback) as never);
+  return expression(
+    rewriteZoomOutputs(resolvedBase, (baseOutput) => {
+      const fixedBorder = fixedRoadBorderParts(baseOutput);
+      if (!fixedBorder) {
+        return conditionalOutput(
+          baseOutput,
+          entries.map(({condition, scale}) => ({
+            condition,
+            resolve: (output: unknown) => ['*', expressionOutput(output), scale],
+          })),
+        );
+      }
+
+      const baseVariable = '__tileflow_road_base';
+      return [
+        'let',
+        baseVariable,
+        expressionOutput(fixedBorder.width),
+        [
+          '+',
+          [
+            'case',
+            ...entries.flatMap(({condition, scale}) => [
+              condition,
+              ['*', ['var', baseVariable], scale],
+            ]),
+            ['var', baseVariable],
+          ],
+          fixedBorder.border,
+        ],
+      ];
+    }),
+  );
+}
+
+function fixedRoadBorderParts(value: unknown): {border: unknown; width: unknown} | undefined {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 4 ||
+    value[0] !== 'let' ||
+    value[1] !== fixedRoadBorderVariable ||
+    !Array.isArray(value[3]) ||
+    value[3].length !== 3 ||
+    value[3][0] !== '+' ||
+    !Array.isArray(value[3][2]) ||
+    value[3][2][0] !== 'var' ||
+    value[3][2][1] !== fixedRoadBorderVariable
+  ) {
+    return undefined;
+  }
+  return {border: value[2], width: value[3][1]};
+}
+
+function conditionalOutput(baseOutput: unknown, branches: readonly ConditionalBranch[]) {
+  if (!isExpressionOutput(baseOutput)) {
+    return [
       'case',
       ...branches.flatMap(({condition, resolve}) => [condition, resolve(baseOutput)]),
       expressionOutput(baseOutput),
-    ]),
-  );
+    ];
+  }
+
+  const baseVariable = '__tileflow_road_base';
+  return [
+    'let',
+    baseVariable,
+    baseOutput,
+    [
+      'case',
+      ...branches.flatMap(({condition, resolve}) => [condition, resolve(['var', baseVariable])]),
+      ['var', baseVariable],
+    ],
+  ];
+}
+
+function isExpressionOutput(value: unknown): value is unknown[] {
+  return Array.isArray(value) && typeof value[0] === 'string';
 }
 
 function rewriteZoomOutputs(
@@ -496,13 +779,13 @@ function defaultClassStyles(
             casing: {
               cap: 'butt',
               color: context.colors.roads.tunnel,
-              opacity: 0.9,
+              opacity: 1,
             },
             fill: {cap: 'butt', color: context.colors.background, opacity: 1},
             hatch: {
               color: context.colors.roads.tunnel,
-              minZoom: 15,
-              opacity: 0.24,
+              minZoom: 17,
+              opacity: 0.3,
               spacing: 16,
             },
           }),

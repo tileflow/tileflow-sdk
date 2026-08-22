@@ -176,6 +176,18 @@ test('maps every reusable visual primitive to its MapLibre paint and layout cont
   assert.equal((extrusion.paint as Record<string, unknown>)['fill-extrusion-pattern'], 'facade');
 });
 
+test('preserves data-driven line-cap expressions for lateral-only widening', () => {
+  const cap = expression<'butt' | 'round'>([
+    'case',
+    ['all', ['>=', ['zoom'], 17], ['>', ['get', 'clearance_extra_px_z15'], 0]],
+    'butt',
+    'round',
+  ]);
+  const line = applyLineStyle({id: 'clearance-line', type: 'line'}, {cap, width: 8});
+
+  assert.deepEqual((line.layout as Record<string, unknown>)['line-cap'], cap.value);
+});
+
 test('area and symbol compounds have deterministic phases and fail on impossible shared ranges', () => {
   const area = createAreaLayers(
     {id: 'park', type: 'fill', source: 'tileflow', 'source-layer': 'park'},

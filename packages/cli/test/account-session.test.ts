@@ -27,8 +27,10 @@ test('account auth state writes atomically with one project-free session per API
   if (state.kind !== 'v2') return;
   assert.equal(Object.keys(state.config.sessions).length, 1);
   assert.equal(state.config.sessions[first.apiOrigin].accountSession, replacement.accountSession);
-  assert.equal((await stat(fixture.authPath)).mode & 0o777, 0o600);
-  assert.equal((await stat(fixture.authDirectory)).mode & 0o777, 0o700);
+  if (process.platform !== 'win32') {
+    assert.equal((await stat(fixture.authPath)).mode & 0o777, 0o600);
+    assert.equal((await stat(fixture.authDirectory)).mode & 0o777, 0o700);
+  }
   assert.deepEqual(
     (await readdir(fixture.authDirectory)).filter((entry) => entry.includes('.tmp-')),
     [],

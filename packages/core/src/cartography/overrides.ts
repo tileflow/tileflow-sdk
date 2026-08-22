@@ -10,6 +10,9 @@ export type TileflowRawOverride =
 
 export type TileflowLayerPlacement = {after: string} | {before: string};
 
+/** Internal provenance marker removed from the compiled public style. */
+export const tileflowRawOverrideMetadataKey = 'tileflow:rawOverride';
+
 export function patchLayer(id: string, patch: Record<string, unknown>): TileflowRawOverride {
   return {kind: 'patch', id: requireId(id), patch: cloneJson(patch)};
 }
@@ -40,7 +43,11 @@ export function applyTileflowRawOverrides(
       if (findLayerIndex(layers, override.layer.id) >= 0) {
         throw new Error(`Tileflow raw add targets existing layer: ${override.layer.id}`);
       }
-      layers = insertAtPlacement(layers, cloneJson(override.layer), override.placement);
+      layers = insertAtPlacement(
+        layers,
+        markRawOverride(cloneJson(override.layer), 'add'),
+        override.placement,
+      );
       continue;
     }
 
@@ -71,15 +78,28 @@ export function applyTileflowRawOverrides(
           : {}),
       };
       layers = [...layers];
-      layers[index] = next;
+      layers[index] = markRawOverride(next, 'patch');
       continue;
     }
 
     const [layer] = layers.splice(index, 1);
-    layers = insertAtPlacement(layers, layer!, override.placement);
+    layers = insertAtPlacement(layers, markRawOverride(layer!, 'move'), override.placement);
   }
 
   return layers;
+}
+
+function markRawOverride(
+  layer: Record<string, unknown>,
+  kind: 'add' | 'move' | 'patch',
+): Record<string, unknown> {
+  return {
+    ...layer,
+    metadata: {
+      ...(isRecord(layer.metadata) ? layer.metadata : {}),
+      [tileflowRawOverrideMetadataKey]: kind,
+    },
+  };
 }
 
 function insertAtPlacement(

@@ -141,6 +141,17 @@ jobs:
           corepack enable
           corepack prepare pnpm@11.13.1 --activate
 
+      - name: Enforce public SDK release interlock
+        if: steps.head.outputs.current == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f PUBLIC_RELEASE_BLOCKERS.md ]]
+          then
+            echo '::error title=Public SDK release blocked::Resolve and remove PUBLIC_RELEASE_BLOCKERS.md before npm reconciliation.'
+            exit 1
+          fi
+
       - name: Install
         if: steps.head.outputs.current == 'true'
         run: pnpm install --frozen-lockfile

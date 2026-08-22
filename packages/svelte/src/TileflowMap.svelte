@@ -26,11 +26,15 @@
     type TileflowRuntimeManifestMap,
   } from '@tileflow/core';
   import {
+    attachTileflowFairUseNotice,
     attachTileflowMapLifecycle,
     createTileflowMarkerController,
     createTileflowSessionStarter,
     createTileflowTransformRequest,
+    registerTileflowWorldRequestBridge,
+    type TileflowFairUseNoticeController,
     type TileflowMapLifecycleAttachment,
+    type TileflowWorldRequestBridge,
   } from '@tileflow/core/browser';
 
   export let alt = '';
@@ -65,8 +69,10 @@
   let imageSize: {height: number; width: number} | null = null;
   let imageResizeObserver: ResizeObserver | null = null;
   let mapInstance: MapLibreMap | null = null;
+  let mapFairUseNotice: TileflowFairUseNoticeController | null = null;
   let mapLifecycleAttachment: TileflowMapLifecycleAttachment | null = null;
   let mapResizeObserver: ResizeObserver | null = null;
+  let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
   let manifestMap: TileflowRuntimeManifestMap | null = null;
   let manifestLoadId = 0;
   let mounted = false;
@@ -239,19 +245,31 @@
   function destroyMap() {
     readinessRunId += 1;
     const lifecycleAttachment = mapLifecycleAttachment;
+    const fairUseNotice = mapFairUseNotice;
     const currentMap = mapInstance;
+    const worldRequestBridge = mapWorldRequestBridge;
+    mapFairUseNotice = null;
     mapLifecycleAttachment = null;
     mapInstance = null;
+    mapWorldRequestBridge = null;
     mapResizeObserver?.disconnect();
     mapResizeObserver = null;
 
     try {
-      lifecycleAttachment?.dispose();
+      worldRequestBridge?.dispose();
     } finally {
       try {
-        markerController.dispose();
+        fairUseNotice?.dispose();
       } finally {
-        currentMap?.remove();
+        try {
+          lifecycleAttachment?.dispose();
+        } finally {
+          try {
+            markerController.dispose();
+          } finally {
+            currentMap?.remove();
+          }
+        }
       }
     }
   }
@@ -271,6 +289,11 @@
       sessionId: session.sessionId,
       source: 'svelte',
     });
+    mapFairUseNotice = attachTileflowFairUseNotice(container);
+    mapWorldRequestBridge = registerTileflowWorldRequestBridge({
+      addProtocol: maplibregl.addProtocol,
+      onNotice: mapFairUseNotice.update,
+    });
     const maplibreMap = new maplibregl.Map({
       ...mapOptions,
       attributionControl: mapOptions?.attributionControl ?? {compact: true},
@@ -285,6 +308,7 @@
         sessionController: session,
         sessionId: session.sessionId,
         transformRequest: mapOptions?.transformRequest ?? undefined,
+        worldRequestBridge: mapWorldRequestBridge,
       }),
       zoom: resolvedZoom,
     });

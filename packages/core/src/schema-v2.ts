@@ -1,7 +1,7 @@
 import {z} from 'zod';
 import {tileflowStreetsBasemapVersion} from './basemaps';
 import {tileflowCaptureSceneNameSchema, tileflowCaptureSceneSchema} from './capture-scene';
-import {openMapTiles, openMapTilesContractVersion} from './data';
+import {openMapTiles, openMapTilesContractVersion, tileflowWorldGeneration} from './data';
 import type {TileflowConfig, TileflowProjectConfig} from './project';
 import type {ValidationMessage, ValidationResult} from './types';
 
@@ -760,17 +760,48 @@ const openMapTilesSchema = z
   })
   .strict()
   .transform((schema) => openMapTiles({fields: schema.fields, layers: schema.layers}));
-const dataSchema = z.discriminatedUnion('type', [
-  z.object({type: z.literal('tileflow-world'), revision: revisionSchema.optional()}).strict(),
+const vectorDataShape = {
+  type: z.literal('vector-tiles'),
+  attribution: z.string().trim().min(1),
+  revision: revisionSchema.optional(),
+  schema: openMapTilesSchema,
+};
+const directVectorDataSchema = z
+  .object({
+    ...vectorDataShape,
+    bounds: z
+      .tuple([
+        z.number().finite().min(-180).max(180),
+        z.number().finite().min(-90).max(90),
+        z.number().finite().min(-180).max(180),
+        z.number().finite().min(-90).max(90),
+      ])
+      .optional(),
+    maxzoom: z.number().int().min(0).max(30).optional(),
+    minzoom: z.number().int().min(0).max(30).optional(),
+    tiles: z.array(z.string().trim().min(1)).min(1).max(8),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.minzoom === undefined || value.maxzoom === undefined || value.minzoom <= value.maxzoom,
+    {message: 'minzoom must not exceed maxzoom', path: ['minzoom']},
+  )
+  .refine(
+    (value) =>
+      value.bounds === undefined ||
+      (value.bounds[0] < value.bounds[2] && value.bounds[1] < value.bounds[3]),
+    {message: 'bounds must have increasing axes', path: ['bounds']},
+  );
+const dataSchema = z.union([
   z
     .object({
-      type: z.literal('vector-tiles'),
-      attribution: z.string().trim().min(1),
-      revision: revisionSchema.optional(),
-      schema: openMapTilesSchema,
-      url: z.string().trim().min(1),
+      type: z.literal('tileflow-world'),
+      generation: z.literal(tileflowWorldGeneration),
     })
     .strict(),
+  z.object({...vectorDataShape, url: z.string().trim().min(1)}).strict(),
+  directVectorDataSchema,
 ]);
 const basemapSchema = z
   .object({

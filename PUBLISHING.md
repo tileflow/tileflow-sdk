@@ -113,16 +113,17 @@ must prove all of the following before reading or publishing package state:
 Reconciliation runs are serialized. A stale run exits without publication and the newest `main`
 run reconciles the registry. The workflow then:
 
-1. validates the development manifests and internal dependency topology;
-2. downloads and validates all eleven current npm `alpha` tarballs;
-3. builds and packs all eleven packages at those registry versions;
-4. selects only materially different artifacts and assigns each its next independent alpha;
-5. rebuilds and runs `pnpm check` at the target versions;
-6. packs and audits all packages, verifies selected and unselected artifact invariants, and runs the
+1. fails before npm reconciliation when the reviewed `PUBLIC_RELEASE_BLOCKERS.md` interlock exists;
+2. validates the development manifests and internal dependency topology;
+3. downloads and validates all eleven current npm `alpha` tarballs;
+4. builds and packs all eleven packages at those registry versions;
+5. selects only materially different artifacts and assigns each its next independent alpha;
+6. rebuilds and runs `pnpm check` at the target versions;
+7. packs and audits all packages, verifies selected and unselected artifact invariants, and runs the
    clean packed capture consumer;
-7. rechecks that `main` has not advanced;
-8. preflights npm immediately before publication; and
-9. publishes selected packages in dependency-safe repository order with OIDC and provenance.
+8. rechecks that `main` has not advanced;
+9. preflights npm immediately before publication; and
+10. publishes selected packages in dependency-safe repository order with OIDC and provenance.
 
 If no artifact differs, the run succeeds without invoking `npm publish`.
 

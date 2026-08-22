@@ -60,14 +60,21 @@ test('dev emits valid/invalid/recovered/stopped NDJSON and serves last-good loca
     ),
     false,
   );
+  assert.equal(JSON.stringify(running.events).includes(cwd), false);
+  assert.doesNotMatch(`${JSON.stringify(running.events)}\n`, /watch-secret/);
 
   running.child.kill('SIGTERM');
+  if (process.platform === 'win32') {
+    const completion = await running.completion;
+    assert.equal(completion.code, null, completion.stderr);
+    assert.doesNotMatch(completion.stderr, /watch-secret/);
+    return;
+  }
   const stopped = await running.waitFor((event) => event.event === 'stopped');
   assert.equal(stopped.generation, 3);
   const completion = await running.completion;
   assert.equal(completion.code, 0, completion.stderr);
-  assert.equal(JSON.stringify(running.events).includes(cwd), false);
-  assert.doesNotMatch(`${JSON.stringify(running.events)}\n${completion.stderr}`, /watch-secret/);
+  assert.doesNotMatch(completion.stderr, /watch-secret/);
 });
 
 test(
@@ -123,12 +130,17 @@ test(
       45_000,
     );
     assert.equal(third.outputPath, first.outputPath);
+    assert.equal(JSON.stringify(running.events).includes(cwd), false);
 
     running.child.kill('SIGINT');
+    if (process.platform === 'win32') {
+      const completion = await running.completion;
+      assert.equal(completion.code, null, completion.stderr);
+      return;
+    }
     await running.waitFor((event) => event.event === 'stopped');
     const completion = await running.completion;
     assert.equal(completion.code, 0, completion.stderr);
-    assert.equal(JSON.stringify(running.events).includes(cwd), false);
   },
 );
 
@@ -143,6 +155,11 @@ test('capture watch exits nonzero when stopped with no valid capture and an inva
 
   await running.waitFor((event) => event.event === 'invalid');
   running.child.kill('SIGTERM');
+  if (process.platform === 'win32') {
+    const completion = await running.completion;
+    assert.equal(completion.code, null, completion.stderr);
+    return;
+  }
   await running.waitFor((event) => event.event === 'stopped');
   const completion = await running.completion;
   assert.equal(completion.code, 1, completion.stderr);

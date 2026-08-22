@@ -1,5 +1,5 @@
 import {VectorTile} from '@mapbox/vector-tile';
-import Pbf from 'pbf';
+import {PbfReader} from 'pbf';
 import {
   compareCodeUnits,
   createStyleFromProject,
@@ -132,7 +132,12 @@ export async function inspectTileflowFeatures(
       );
     }
 
-    const tile = new VectorTile(new Pbf(bytes.body));
+    // @mapbox/vector-tile still types its reader against pbf v4's combined
+    // reader/writer class, while its runtime only consumes the reader API.
+    const reader = new PbfReader(bytes.body) as unknown as ConstructorParameters<
+      typeof VectorTile
+    >[0];
+    const tile = new VectorTile(reader);
     for (const sourceLayer of options.sourceLayers) {
       const layer = tile.layers[sourceLayer];
       if (!layer) continue;

@@ -4,13 +4,13 @@
 package distributions contain the complete license texts and notices; this file keeps the relevant
 attribution and browser-provisioning boundary visible in the Tileflow package itself.
 
-## Playwright 1.60.0
+## Playwright 1.62.1
 
 Copyright (c) Microsoft Corporation. Licensed under the Apache License, Version 2.0. Playwright
 contains code derived from Puppeteer, also available under Apache-2.0. The installed `playwright`
 and `playwright-core` packages include `LICENSE`, `NOTICE`, and `ThirdPartyNotices.txt` files.
 
-## Chromium headless shell revision 1223
+## Chromium headless shell revision 1234
 
 Chromium is licensed under the BSD license and includes third-party software under additional open
 source licenses. It is not contained in the `@tileflow/capture` npm tarball. Playwright provisions

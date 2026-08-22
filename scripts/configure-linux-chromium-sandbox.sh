@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-expected_root="$HOME/.cache/ms-playwright/chromium_headless_shell-1223"
+expected_root="$HOME/.cache/ms-playwright/chromium_headless_shell-1234"
 chromium_path="$expected_root/chrome-headless-shell-linux64/chrome-headless-shell"
 
 if [[ "$(uname -m)" != x86_64 ]]

@@ -669,12 +669,21 @@ export default {maps: {madrid: {name: 'Madrid'}}};
   assert.equal(result.code, 1);
   assert.equal(requests, 1);
   assert.match(result.stdout, /Project target is ambiguous: @acme\/web, @acme\/worker/);
-  assert.ok(
-    result.stdout.includes(
-      `tileflow deploy --config ${fixture.configPath} --manifest ${fixture.manifestPath} --api-url ${api.url} --project @acme/web`,
-    ),
-    result.stdout,
-  );
+  const expectedRetry = [
+    'tileflow',
+    'deploy',
+    '--config',
+    fixture.configPath,
+    '--manifest',
+    fixture.manifestPath,
+    '--api-url',
+    api.url,
+    '--project',
+    '@acme/web',
+  ]
+    .map(quoteExpectedCliArgument)
+    .join(' ');
+  assert.ok(result.stdout.includes(expectedRetry), result.stdout);
   await assert.rejects(() => readFile(configMarkerPath, 'utf8'), {code: 'ENOENT'});
 });
 
@@ -951,6 +960,10 @@ function accountProjectTarget(organizationSlug: string, projectSlug: string) {
     },
     reference: `@${organizationSlug}/${projectSlug}`,
   };
+}
+
+function quoteExpectedCliArgument(value: string) {
+  return /^[A-Za-z0-9_./:@%+=,-]+$/u.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 async function writeAccountSession(home: string, apiUrl: string) {

@@ -105,6 +105,7 @@ test('disabled domains are deliberately absent rather than silently replaced', (
     modules: {
       buildings: buildings({enabled: false}),
       poi: poi({enabled: false}),
+      roads: roads({enabled: false}),
       transit: transit({enabled: false}),
     },
   });
@@ -118,8 +119,41 @@ test('disabled domains are deliberately absent rather than silently replaced', (
     false,
   );
   assert.equal(
+    style.layers.some(
+      (layer) => layer.id.startsWith('streets-road-') || layer.id.startsWith('streets-label-road-'),
+    ),
+    false,
+  );
+  assert.equal(
+    style.layers.some((layer) => layer.id.startsWith('streets-label-place-')),
+    true,
+  );
+  assert.equal(
     style.layers.some((layer) => layer.id.startsWith('streets-transit-')),
     false,
   );
   assert.deepEqual(validateStyleMin(style), []);
+});
+
+test('binds individual trees for the runtime 3d vegetation renderer', () => {
+  const style = createStyle({basemap: streets()});
+  const trees = style.layers.find((layer) => layer.id === 'streets-vegetation-trees');
+  const treeIndex = style.layers.findIndex((layer) => layer.id === 'streets-vegetation-trees');
+  const buildingIndex = style.layers.findIndex((layer) => layer.id === 'streets-buildings-fill');
+  const roadIndex = style.layers.findIndex((layer) => layer.id === 'streets-road-oneway');
+  const roadLabelIndex = style.layers.findIndex((layer) =>
+    layer.id.startsWith('streets-label-road-'),
+  );
+  const labelIndex = style.layers.findIndex((layer) => layer.id.startsWith('streets-label-place-'));
+
+  assert.equal(trees?.type, 'circle');
+  assert.equal(trees?.['source-layer'], 'tree');
+  assert.equal(trees?.minzoom, 16);
+  assert.equal(trees?.metadata?.['tileflow:vegetation-mode'], '3d');
+  assert.equal(trees?.metadata?.['tileflow:tree-species-field'], 'species');
+  assert.equal(trees?.metadata?.['tileflow:tree-leaf-type-field'], 'leaf_type');
+  assert.ok(roadIndex < buildingIndex);
+  assert.ok(roadLabelIndex < buildingIndex);
+  assert.ok(buildingIndex < treeIndex);
+  assert.ok(treeIndex < labelIndex);
 });

@@ -38,6 +38,7 @@ test('compiles a complete deterministic Streets map from omitted data and module
   assert.equal(first.metadata?.['tileflow:basemapVersion'], 3);
   assert.equal(first.metadata?.['tileflow:variant'], 'light');
   assert.equal(first.metadata?.['tileflow:internalMigration'], undefined);
+  assert.equal(first.projection, undefined);
   assert.equal(first.sprite, undefined);
   assert.equal(
     first.layers.some(
@@ -53,6 +54,53 @@ test('compiles a complete deterministic Streets map from omitted data and module
     validateStyleMin(first as never).map((error) => error.message),
     [],
   );
+});
+
+test('validates the public Streets compiler before emitting versioned metadata', () => {
+  assert.throws(
+    () =>
+      createStreetsStyle({
+        basemap: {type: 'streets', basemapVersion: 999, variant: 'light'},
+      } as never),
+    /basemapVersion/,
+  );
+  assert.throws(
+    () =>
+      createStreetsStyle({
+        basemap: streets(),
+        modules: {roads: {...roads(), unknownControl: true}},
+      } as never),
+    /modules\.roads\.unknownControl/,
+  );
+});
+
+test('emits an explicit adaptive globe projection', () => {
+  const globe = createStreetsStyle({basemap: streets(), projection: 'globe'});
+  const mercator = createStreetsStyle({basemap: streets(), projection: 'mercator'});
+
+  assert.deepEqual(globe.projection, {type: 'globe'});
+  assert.deepEqual(mercator.projection, {type: 'mercator'});
+  assert.deepEqual(validateStyleMin(globe as never), []);
+});
+
+test('emits bounded root lighting for low-contrast 3d faces', () => {
+  const style = createStreetsStyle({
+    basemap: streets(),
+    light: {
+      anchor: 'viewport',
+      color: '#FFF8E8',
+      intensity: 0.18,
+      position: [1.15, 210, 30],
+    },
+  });
+
+  assert.deepEqual(style.light, {
+    anchor: 'viewport',
+    color: '#FFF8E8',
+    intensity: 0.18,
+    position: [1.15, 210, 30],
+  });
+  assert.deepEqual(validateStyleMin(style as never), []);
 });
 
 test('module key order does not change Streets output', () => {

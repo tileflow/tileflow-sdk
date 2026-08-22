@@ -119,6 +119,23 @@ export type TileflowRuntimeStyleOptions = {
   themes?: TileflowProjectThemes;
 };
 
+export type TileflowRuntimeStyleInputs = {
+  config?: unknown;
+  map?: string;
+  style?: unknown;
+  styleBaseUrl?: string;
+  styleUrl?: string;
+  themes?: unknown;
+};
+
+export type TileflowRuntimeStyleInputsValidation =
+  | {ok: true}
+  | {
+      code: 'config-conflict' | 'missing-config' | 'missing-map' | 'multiple-style-sources';
+      error: string;
+      ok: false;
+    };
+
 export type TileflowManifestLoadOptions = {
   config?: unknown;
   imageMode?: boolean;
@@ -143,9 +160,58 @@ export function shouldLoadTileflowManifest(options: TileflowManifestLoadOptions)
   );
 }
 
+export function validateTileflowRuntimeStyleInputs(
+  input: TileflowRuntimeStyleInputs,
+): TileflowRuntimeStyleInputsValidation {
+  const hasConfig = input.config !== undefined;
+  const hasMap = input.map !== undefined;
+  const explicitSources = [
+    input.style !== undefined ? 'style' : null,
+    input.styleUrl !== undefined ? 'styleUrl' : null,
+    input.styleBaseUrl !== undefined ? 'styleBaseUrl' : null,
+  ].filter((name): name is string => name !== null);
+
+  if (hasConfig) {
+    const conflicts = [hasMap ? 'map' : null, ...explicitSources].filter(
+      (name): name is string => name !== null,
+    );
+    if (conflicts.length > 0) {
+      return {
+        code: 'config-conflict',
+        error: `config cannot be combined with ${formatPropertyList(conflicts)}; choose one style source`,
+        ok: false,
+      };
+    }
+  }
+
+  if (explicitSources.length > 1) {
+    return {
+      code: 'multiple-style-sources',
+      error: `${formatPropertyList(explicitSources)} are mutually exclusive style sources`,
+      ok: false,
+    };
+  }
+  if (input.styleBaseUrl !== undefined && !hasMap) {
+    return {code: 'missing-map', error: 'styleBaseUrl requires map', ok: false};
+  }
+  if (input.themes !== undefined && !hasConfig) {
+    return {code: 'missing-config', error: 'themes requires config', ok: false};
+  }
+  return {ok: true};
+}
+
+export function assertValidTileflowRuntimeStyleInputs(input: TileflowRuntimeStyleInputs): void {
+  const validation = validateTileflowRuntimeStyleInputs(input);
+  if (!validation.ok) {
+    throw new TypeError(`Invalid Tileflow runtime style inputs: ${validation.error}`);
+  }
+}
+
 export function resolveTileflowRuntimeStyle(
   options: TileflowRuntimeStyleOptions,
 ): TileflowRuntimeStyle | null {
+  assertValidTileflowRuntimeStyleInputs(options);
+
   if (options.style) {
     return {style: options.style};
   }
@@ -189,6 +255,12 @@ export function resolveTileflowRuntimeStyle(
       themes: options.themes,
     }),
   };
+}
+
+function formatPropertyList(values: readonly string[]): string {
+  if (values.length < 2) return values[0] ?? '';
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`;
 }
 
 export function resolveTileflowStyleUrl(mapName: string, styleBaseUrl?: string): string {

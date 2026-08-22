@@ -1,4 +1,5 @@
 import type {
+  TileflowAerodromeCodeDetail,
   TileflowLabelDetail,
   TileflowLabelLanguage,
   TileflowLabelsModuleConfig,
@@ -11,6 +12,7 @@ import {type ResolvedRoadsModuleOptions, roadClassesWithPaths, visibleRoadClasse
 import {tileflowRoadClasses} from '../roads/semantics';
 
 export type ResolvedLabelsModuleOptions = {
+  aerodromeCodes: TileflowAerodromeCodeDetail;
   language: TileflowLabelLanguage;
   junctions: boolean;
   places: TileflowLabelDetail;
@@ -21,6 +23,7 @@ export type ResolvedLabelsModuleOptions = {
 };
 
 const defaults = {
+  aerodromeCodes: 'iata',
   language: 'auto',
   junctions: true,
   places: 'major',
@@ -37,6 +40,7 @@ export function resolveLabels(
   request: TileflowLabelsModuleConfig | undefined,
 ): ResolvedLabelsModuleOptions {
   return {
+    aerodromeCodes: request?.aerodromeCodes ?? defaults.aerodromeCodes,
     language: request?.language ?? defaults.language,
     junctions: request?.junctions ?? defaults.junctions,
     places: request?.places ?? defaults.places,

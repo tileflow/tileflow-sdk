@@ -2,8 +2,13 @@ import {
   resolveStreetsModules,
   type TileflowStreetsBasemapConfig,
   type TileflowStreetsModules,
+  tileflowStreetsPoiIconMapping,
 } from '../basemaps';
-import {resolveTileflowData, type TileflowDataConfig} from '../data';
+import {
+  resolveTileflowData,
+  type TileflowDataConfig,
+  type WorldGenerationDescriptor,
+} from '../data';
 import {compileAeroways} from '../modules/aeroways/compiler';
 import {compileBoundaries} from '../modules/boundaries/compiler';
 import {compileBuildings} from '../modules/buildings/compiler';
@@ -48,6 +53,8 @@ export type TileflowStreetsCompileOptions = {
   apiBaseUrl?: string;
   iconSets?: TileflowProjectIconSets;
   themes?: TileflowProjectThemes;
+  /** Compiler-owned release descriptor. It is deliberately not part of project config. */
+  worldGeneration?: WorldGenerationDescriptor;
 };
 
 export function createStreetsStyle(
@@ -58,15 +65,19 @@ export function createStreetsStyle(
     throw new Error('Tileflow Streets compiler requires basemap: streets().');
   }
   const apiBaseUrl = normalizeBaseUrl(options.apiBaseUrl);
-  const data = resolveTileflowData(config.data, {apiBaseUrl});
+  const data = resolveTileflowData(config.data, {worldGeneration: options.worldGeneration});
   const theme = resolveTheme(config.theme ?? config.basemap.variant, options.themes);
   const colors = resolveColors({}, theme.colors, {}, theme.modules);
   const typography = resolveTypography({}, theme.typography);
-  const icons = resolveIconSet(config.icons, options.iconSets);
+  const icons =
+    resolveIconSet(config.icons, options.iconSets) ??
+    (data.assetSet
+      ? {mapping: tileflowStreetsPoiIconMapping, sprite: data.assetSet.spriteBase}
+      : undefined);
   const context = {colors, data, ...(icons ? {icons} : {}), typography};
   const modules = resolveStreetsModules(config.modules);
   const poiModule =
-    !config.icons && !config.sprite && config.modules?.poi?.icons === undefined
+    !icons && !config.sprite && config.modules?.poi?.icons === undefined
       ? {...modules.poi, icons: false as const}
       : modules.poi;
   const contributions: TileflowLayerContribution[] = [
@@ -91,8 +102,18 @@ export function createStreetsStyle(
     assembleTileflowLayers(contributions),
     config.overrides ?? [],
   );
-  const glyphs = config.glyphs ?? `${apiBaseUrl}/fonts/{fontstack}/{range}.pbf`;
+  const glyphs =
+    config.glyphs ?? data.assetSet?.glyphs ?? `${apiBaseUrl}/fonts/{fontstack}/{range}.pbf`;
   const sprite = config.sprite ?? icons?.sprite;
+
+  const primarySource: Record<string, unknown> = {
+    type: 'vector',
+    ...(data.url !== undefined ? {url: data.url} : {tiles: data.tiles}),
+    attribution: data.attribution,
+    ...(data.bounds ? {bounds: data.bounds} : {}),
+    ...(data.maxzoom === undefined ? {} : {maxzoom: data.maxzoom}),
+    ...(data.minzoom === undefined ? {} : {minzoom: data.minzoom}),
+  };
 
   return {
     version: 8,
@@ -100,11 +121,7 @@ export function createStreetsStyle(
     glyphs,
     ...(sprite ? {sprite} : {}),
     sources: {
-      [data.sourceId]: {
-        type: 'vector',
-        url: data.url,
-        ...(data.attribution ? {attribution: data.attribution} : {}),
-      },
+      [data.sourceId]: primarySource,
       ...(terrain ? {[terrain.sourceId]: terrain.source} : {}),
     },
     layers,

@@ -90,7 +90,7 @@ Browser with a fresh context per scene. No Node listener, user profile, visible 
 CDN runtime is created.
 
 Non-loopback HTTP(S) resources make a receipt network-dependent and produce sorted origin-only
-warnings. Loopback TileJSON, tile, sprite, and glyph fixtures remain local dependencies and do not
+warnings. Loopback direct-tile, TileJSON, sprite, and glyph fixtures remain local dependencies and do not
 set `networkDependent`; this keeps repository-owned browser tests and release smoke deterministic
 without weakening warnings for public or private remote origins.
 
@@ -172,8 +172,11 @@ server.
 Receipts are canonical schema-version-2 JSON and contain only scene/map/target identity, normalized
 scene and style hashes, PNG hash and CSS/physical dimensions, Tileflow/MapLibre/Playwright/Chromium
 identity, OS/architecture class, DPR, required resolved `data` identity, and `networkDependent`.
-`data` records the provider kind, optional explicit revision, OpenMapTiles schema/version, and the
-stable primary source ID. It participates in scene compatibility. Receipts omit time, user, origin,
+`data` records the provider kind, World generation or external explicit revision, OpenMapTiles
+schema/version, and the stable primary source ID. It participates in scene compatibility. New World
+receipts use `generation: "v1"`; they do not select or retain the mutable data revision served behind
+that generation. The parser continues to accept one legacy World revision field so existing receipts
+remain readable. Receipts omit time, user, origin,
 repository, absolute path, environment, credentials, source pixels, and config source. Receipt
 parsing is canonical-JSON, exact-key, UTF-8, size, portable-identifier, hash, dimension, and
 pixel-budget validated; parser-dependent duplicate keys are rejected.

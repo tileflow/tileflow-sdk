@@ -84,6 +84,25 @@ The controller authorizes only reviewed Tileflow resource URLs. `analytics.enabl
 an optional telemetry choice and cannot remove the commercial transform when a hosted map id is
 present.
 
+Direct canonical Tileflow World tile URLs additionally pass through one MapLibre custom protocol
+bridge. The bridge fetches only the original query-free HTTPS URL with omitted credentials and no
+caller headers, then exposes bytes and bounded cache metadata back to MapLibre. It interprets only
+the exact `Tileflow-Fair-Use: open | grace | claim-required` response, the exact optional
+`Tileflow-Fair-Use-Notice: owner` activation signal, and a validated Tileflow-owned
+`Link: ...; rel="help"`. Early `GRACE` remains silent. Late `GRACE` appears only with the signed
+activation signal, except that a shaped `429` is a defensive activation fallback. `CLAIM_REQUIRED`
+always appears. Unknown or failed responses cannot clear a prior owner notice. Concurrent responses
+apply notice state in request order; successful `open` clears any notice, while silent `GRACE` clears
+only an existing `GRACE` notice.
+
+`attachTileflowFairUseNotice` owns one DOM status inside the map container. It uses `role="status"`,
+`aria-live="polite"`, `aria-atomic="true"`, a visible HTTPS owner-action link, and no viewer or site
+identity. `GRACE` renders as a compact bottom pill with a subtle yellow surface;
+`CLAIM_REQUIRED` renders as a high-contrast top banner. The status sentence remains plain text and
+only the owner action is the underlined link. `CLAIM_REQUIRED` cannot regress to `GRACE` within the
+same controller. Disposal removes the protocol registration and notice; ordinary MapLibre errors and
+shaped empty tiles do not.
+
 Two policies are explicit compatibility inputs:
 
 - `always: true` returns a transform even when analytics and a user transform are absent. React and
@@ -132,7 +151,8 @@ allowing module-evaluation access to browser globals is a compatibility change t
 explicit contract update.
 
 Core fake tests cover frame ordering, every invalidating event, detach/dispose, latest handlers,
-session deduplication, request policies and timing, and marker rollback. Package tests import the
+session deduplication, request policies and timing, the accessible fair-use owner action, shaped
+empty tiles, error retention, and marker rollback. Package tests import the
 built subpath in Node with throwing browser-global getters. The public tarball smoke resolves the
 installed `@tileflow/core/browser` export from a clean consumer before capture tests run.
 

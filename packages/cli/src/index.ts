@@ -5,7 +5,7 @@ import {Command} from 'commander';
 import {spawn} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
 import {existsSync, readFileSync} from 'node:fs';
-import {mkdir, writeFile} from 'node:fs/promises';
+import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {hostname, platform} from 'node:os';
 import {dirname, resolve} from 'node:path';
 import {createInterface} from 'node:readline/promises';
@@ -101,6 +101,8 @@ type DeployedManifestMap = {
   mapId: string;
   styleId?: string;
   styleUrl: string;
+  usageMode?: 'session';
+  worldGeneration?: 'v1';
 };
 
 type DeployedManifest = {
@@ -492,6 +494,8 @@ program
   .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
   .option('--project <target>', 'target @organization/project')
+  .option('--world-promotion <id>', 'continue one verified Tileflow World promotion')
+  .option('--map <name>', 'map to connect when a promotion config contains multiple maps')
   .action(
     async (options: {
       config: string;
@@ -499,24 +503,30 @@ program
       apiUrl?: string;
       apiKey?: string;
       project?: string;
+      map?: string;
+      worldPromotion?: string;
     }) => {
       const source = resolveDeploySource(process.env);
-      const api = await requireApiOptions(options, {
-        allowStoredCredential: allowsStoredDeployCredential(source),
-        capabilityScopes: ['styles:write'],
-        retryCommand: cliInvocation([
-          'tileflow',
-          'deploy',
-          '--config',
-          options.config,
-          '--manifest',
-          options.manifest,
-          '--api-url',
-          options.apiUrl ?? defaultApiUrl,
-        ]),
-      });
-      if (!api) return;
-
+      const resolveApi = (selectedMap?: string) =>
+        requireApiOptions(options, {
+          allowStoredCredential: allowsStoredDeployCredential(source),
+          capabilityScopes: ['styles:write'],
+          retryCommand: cliInvocation([
+            'tileflow',
+            'deploy',
+            '--config',
+            options.config,
+            '--manifest',
+            options.manifest,
+            '--api-url',
+            options.apiUrl ?? defaultApiUrl,
+            ...(options.worldPromotion && selectedMap
+              ? ['--world-promotion', options.worldPromotion, '--map', selectedMap]
+              : []),
+          ]),
+        });
+      let api = options.worldPromotion ? null : await resolveApi();
+      if (!options.worldPromotion && !api) return;
       // The config is executable repository code. Keep the captured bearer
       // credential for the HTTP request, but do not expose it while Jiti
       // imports tileflow.config.ts or anything that file imports.
@@ -532,8 +542,36 @@ program
         return;
       }
 
-      const mapNames = getTileflowMapNames(project);
-      const compiledIcons = await compileTileflowIconPackages(project, {
+      const configuredMapNames = getTileflowMapNames(project);
+      const mapNames = selectWorldPromotionMaps(configuredMapNames, options);
+      if (!mapNames) return;
+      const deploymentProject: TileflowProjectConfig =
+        mapNames.length === configuredMapNames.length
+          ? project
+          : {
+              ...project,
+              maps: Object.fromEntries(
+                mapNames.map((mapName) => [mapName, project.maps[mapName]!]),
+              ),
+            };
+      let existingManifest: DeployedManifest | null = null;
+      if (options.worldPromotion) {
+        try {
+          existingManifest = await loadExistingDeployManifest(options.manifest);
+        } catch (error) {
+          logError(error instanceof Error ? error.message : 'Existing manifest is invalid.');
+          process.exitCode = 1;
+          return;
+        }
+      }
+      api ??= await resolveApi(mapNames[0]);
+      if (!api) return;
+      if (existingManifest && normalizeUrl(existingManifest.apiUrl) !== api.apiUrl) {
+        logError('Existing manifest belongs to a different Tileflow API origin.');
+        process.exitCode = 1;
+        return;
+      }
+      const compiledIcons = await compileTileflowIconPackages(deploymentProject, {
         cwd: process.cwd(),
         target: 'hosted',
       });
@@ -541,7 +579,7 @@ program
       // Validate the complete local style before the first remote write. Hosted
       // sprite URLs are substituted after upload, but they do not change layer
       // semantics.
-      const preflightStyles = createTileflowStyles(project, {apiBaseUrl: api.apiUrl});
+      const preflightStyles = createTileflowStyles(deploymentProject, {apiBaseUrl: api.apiUrl});
 
       for (const mapName of mapNames) {
         const data = preflightStyles[mapName]?.metadata?.['tileflow:data'];
@@ -586,9 +624,9 @@ program
       }
 
       const hostedProject: TileflowProjectConfig = {
-        ...project,
+        ...deploymentProject,
         maps: Object.fromEntries(
-          Object.entries(project.maps).map(([mapName, map]) => {
+          Object.entries(deploymentProject.maps).map(([mapName, map]) => {
             const binding = bindingsByMap.get(mapName);
             if (!binding) return [mapName, map];
 
@@ -615,7 +653,7 @@ program
         const iconBinding = bindingsByMap.get(mapName);
         const iconPackage = iconBinding ? packagesByHash.get(iconBinding.packageHash) : undefined;
         return {
-          allowedOrigins: project.maps[mapName]?.allowedOrigins,
+          allowedOrigins: deploymentProject.maps[mapName]?.allowedOrigins,
           iconBinding,
           iconPackage,
           mapName,
@@ -653,6 +691,9 @@ program
               },
             },
             environment: mapName,
+            ...(options.worldPromotion
+              ? {usageMode: 'session', worldPromotionId: options.worldPromotion}
+              : {}),
             ...(allowedOrigins ? {policy: {allowedOrigins}} : {}),
             ...(iconBinding && iconPackage
               ? {
@@ -681,13 +722,22 @@ program
           mapUrl: string;
           styleId?: string;
           version?: number;
+          worldPromotionId?: string;
         };
+        if (options.worldPromotion && body.worldPromotionId !== options.worldPromotion) {
+          logError(`Deploy response did not confirm the World promotion for ${mapName}.`);
+          process.exitCode = 1;
+          return;
+        }
         const styleUrl = body.mapUrl;
         deployedMaps[mapName] = {
           environment: mapName,
           mapId: body.mapId,
           styleId: body.styleId,
           styleUrl,
+          ...(options.worldPromotion
+            ? {usageMode: 'session' as const, worldGeneration: 'v1' as const}
+            : {}),
         };
         deployedStyles[mapName] = styleUrl;
         const versionLabel = Number.isInteger(body.version) ? ` (v${body.version})` : '';
@@ -701,8 +751,8 @@ program
 
       const manifestPath = await writeDeployManifest(options.manifest, {
         apiUrl: api.apiUrl,
-        maps: deployedMaps,
-        styles: deployedStyles,
+        maps: {...(existingManifest?.maps ?? {}), ...deployedMaps},
+        styles: {...(existingManifest?.styles ?? {}), ...deployedStyles},
         version: 2,
       });
 
@@ -1169,6 +1219,114 @@ async function writeDeployManifest(manifestPath: string, manifest: DeployedManif
   await writeFile(outputPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
 
   return manifestPath;
+}
+
+function selectWorldPromotionMaps(
+  mapNames: string[],
+  options: {map?: string; worldPromotion?: string},
+): string[] | null {
+  if (options.map && !options.worldPromotion) {
+    logError('--map is reserved for continuing a verified World promotion.');
+    process.exitCode = 1;
+    return null;
+  }
+  if (!options.worldPromotion) return mapNames;
+  if (!/^wpr_[A-Za-z0-9_-]{8,80}$/u.test(options.worldPromotion)) {
+    logError('World promotion reference is invalid.');
+    process.exitCode = 1;
+    return null;
+  }
+  if (options.map) {
+    if (!mapNames.includes(options.map)) {
+      logError(`Unknown Tileflow map for World promotion: ${options.map}.`);
+      printKeyValue('Maps', mapNames.join(', '));
+      process.exitCode = 1;
+      return null;
+    }
+    return [options.map];
+  }
+  if (mapNames.length === 1) return [mapNames[0]!];
+  logError('World promotion requires an explicit map because this config contains multiple maps.');
+  printKeyValue('Maps', mapNames.join(', '));
+  printNextSteps([
+    `Retry with ${command(`tileflow deploy --world-promotion ${options.worldPromotion} --map ${mapNames[0]}`)}.`,
+  ]);
+  process.exitCode = 1;
+  return null;
+}
+
+async function loadExistingDeployManifest(manifestPath: string): Promise<DeployedManifest | null> {
+  let source: string;
+  try {
+    source = await readFile(resolve(process.cwd(), manifestPath), 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw new Error('Existing Tileflow manifest could not be read.');
+  }
+  if (source.length > 1024 * 1024) throw new Error('Existing Tileflow manifest is too large.');
+  let value: unknown;
+  try {
+    value = JSON.parse(source) as unknown;
+  } catch {
+    throw new Error('Existing Tileflow manifest is not valid JSON.');
+  }
+  const record = asRecord(value);
+  if (
+    record.version !== 2 ||
+    typeof record.apiUrl !== 'string' ||
+    !safeApiOrigin(record.apiUrl) ||
+    !record.maps ||
+    typeof record.maps !== 'object' ||
+    Array.isArray(record.maps) ||
+    !record.styles ||
+    typeof record.styles !== 'object' ||
+    Array.isArray(record.styles)
+  ) {
+    throw new Error('Existing Tileflow manifest does not match version 2.');
+  }
+  const maps: Record<string, DeployedManifestMap> = {};
+  const styles: Record<string, string> = {};
+  for (const [name, entryValue] of Object.entries(record.maps as Record<string, unknown>)) {
+    const entry = asRecord(entryValue);
+    if (
+      !boundedManifestValue(name) ||
+      !boundedManifestValue(entry.environment) ||
+      !boundedManifestValue(entry.mapId) ||
+      !boundedManifestValue(entry.styleUrl) ||
+      (entry.styleId !== undefined && !boundedManifestValue(entry.styleId)) ||
+      (entry.usageMode !== undefined && entry.usageMode !== 'session') ||
+      (entry.worldGeneration !== undefined && entry.worldGeneration !== 'v1') ||
+      (entry.usageMode === undefined) !== (entry.worldGeneration === undefined)
+    ) {
+      throw new Error('Existing Tileflow manifest contains an invalid map entry.');
+    }
+    maps[name] = {
+      environment: entry.environment,
+      mapId: entry.mapId,
+      ...(typeof entry.styleId === 'string' ? {styleId: entry.styleId} : {}),
+      styleUrl: entry.styleUrl,
+      ...(entry.usageMode === 'session' ? {usageMode: 'session', worldGeneration: 'v1'} : {}),
+    };
+  }
+  for (const [name, styleUrl] of Object.entries(record.styles as Record<string, unknown>)) {
+    if (!boundedManifestValue(name) || !boundedManifestValue(styleUrl)) {
+      throw new Error('Existing Tileflow manifest contains an invalid style entry.');
+    }
+    styles[name] = styleUrl;
+  }
+  if (Object.keys(maps).length > 1_000 || Object.keys(styles).length > 1_000) {
+    throw new Error('Existing Tileflow manifest contains too many entries.');
+  }
+  return {apiUrl: record.apiUrl, maps, styles, version: 2};
+}
+
+function boundedManifestValue(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length >= 1 &&
+    value.length <= 2_048 &&
+    !/\p{Cc}/u.test(value)
+  );
 }
 
 async function requireApiOptions(

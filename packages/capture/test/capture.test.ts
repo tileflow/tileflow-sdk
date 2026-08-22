@@ -34,8 +34,8 @@ const project: TileflowProjectConfig = {
 };
 
 const dataIdentity: TileflowDataIdentity = {
+  generation: 'v1',
   kind: 'tileflow-world',
-  revision: '2026-06-07',
   schema: 'openmaptiles',
   schemaVersion: 1,
   sourceId: 'tileflow',
@@ -184,10 +184,34 @@ test('emits one exact receipt shape with explicit data identity', () => {
     () =>
       createTileflowCaptureReceipt({
         ...common,
-        data: {...dataIdentity, revision: 'unsafe/version'},
+        data: {
+          kind: 'tileflow-world',
+          revision: 'unsafe/version',
+          schema: 'openmaptiles',
+          schemaVersion: 1,
+          sourceId: 'tileflow',
+        },
       }),
     /data\.revision/,
   );
+
+  const legacyWorld = createTileflowCaptureReceipt({
+    ...common,
+    data: {
+      kind: 'tileflow-world',
+      revision: '2026-06-07',
+      schema: 'openmaptiles',
+      schemaVersion: 1,
+      sourceId: 'tileflow',
+    },
+  });
+  assert.deepEqual(legacyWorld.data, {
+    kind: 'tileflow-world',
+    revision: '2026-06-07',
+    schema: 'openmaptiles',
+    schemaVersion: 1,
+    sourceId: 'tileflow',
+  });
 });
 
 test('reads PNG dimensions and rejects non-PNG bytes', () => {

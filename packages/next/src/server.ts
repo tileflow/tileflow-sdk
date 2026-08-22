@@ -3,6 +3,7 @@ import {
   createTileflowDevRequestHandler,
   defaultTileflowConfigPath,
   normalizeTileflowBasePath,
+  type TileflowBuildArtifactsOptions,
 } from '@tileflow/dev';
 
 export type TileflowNextRouteHandlerOptions = {
@@ -13,6 +14,7 @@ export type TileflowNextRouteHandlerOptions = {
   onError?: (error: unknown) => void;
   routeBase?: string;
   styleBaseUrl?: string;
+  worldGeneration?: TileflowBuildArtifactsOptions['worldGeneration'];
 };
 
 export type TileflowNextRouteHandlers = {
@@ -31,6 +33,7 @@ export function createTileflowRouteHandlers(
     cwd: options.cwd,
     styleBaseUrl: options.styleBaseUrl ?? basePath,
     apiBaseUrl: options.apiBaseUrl,
+    worldGeneration: options.worldGeneration,
     watch: false,
   });
   const handlerPromise = sessionPromise.then((session) =>
@@ -42,6 +45,7 @@ export function createTileflowRouteHandlers(
       session,
       styleBaseUrl: options.styleBaseUrl,
       apiBaseUrl: options.apiBaseUrl,
+      worldGeneration: options.worldGeneration,
     }),
   );
   let refreshChain = Promise.resolve();

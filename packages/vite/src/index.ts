@@ -11,6 +11,7 @@ import {
   isTileflowRequestUrl,
   joinTileflowPublicUrl,
   normalizeTileflowBasePath,
+  type TileflowBuildArtifactsOptions,
   writeTileflowNodeResponse,
 } from '@tileflow/dev';
 
@@ -19,6 +20,7 @@ export type TileflowVitePluginOptions = {
   base?: string;
   config?: string;
   emitBuildArtifacts?: boolean;
+  worldGeneration?: TileflowBuildArtifactsOptions['worldGeneration'];
 };
 
 export function tileflow(options: TileflowVitePluginOptions = {}): Plugin {
@@ -43,6 +45,7 @@ export function tileflow(options: TileflowVitePluginOptions = {}): Plugin {
         cwd: root,
         styleBaseUrl: basePath,
         apiBaseUrl: options.apiBaseUrl,
+        worldGeneration: options.worldGeneration,
         watch: false,
       });
       const handlerPromise = sessionPromise.then((session) => {
@@ -61,6 +64,7 @@ export function tileflow(options: TileflowVitePluginOptions = {}): Plugin {
           },
           session,
           apiBaseUrl: options.apiBaseUrl,
+          worldGeneration: options.worldGeneration,
         });
       });
       const refreshWatchedIconPaths = async () => {
@@ -129,6 +133,7 @@ export function tileflow(options: TileflowVitePluginOptions = {}): Plugin {
         cwd: config.root,
         styleBaseUrl: joinTileflowPublicUrl(config.base, basePath),
         apiBaseUrl: options.apiBaseUrl,
+        worldGeneration: options.worldGeneration,
       });
       const assetBase = getTileflowAssetBasePath(basePath);
 

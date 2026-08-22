@@ -13,8 +13,8 @@ test('keeps the editorial city recipe on the versioned Streets contract', () => 
   assert.equal(style.metadata?.['tileflow:basemap'], 'streets');
   assert.equal(style.metadata?.['tileflow:basemapVersion'], 3);
   assert.deepEqual(style.metadata?.['tileflow:data'], {
+    generation: 'v1',
     kind: 'tileflow-world',
-    revision: '2026-06-07',
     schema: 'openmaptiles',
     schemaVersion: 1,
     sourceId: 'tileflow',

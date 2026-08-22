@@ -86,9 +86,16 @@ cost in advance or verify prepared CI, not as a prerequisite for normal capture.
 `createTileflowCaptureReceipt`, `parseTileflowCaptureReceipt`,
 `validateTileflowCaptureReceipt`, and `serializeTileflowCaptureReceipt` implement the strict,
 bounded schema-version-2 receipt contract. A receipt contains image/scene/style hashes, dimensions,
-renderer/platform identity, the required resolved `data` identity, and
-remote-dependency state; it contains no time, user, origin,
-repository, absolute path, config source, environment, or credential.
+renderer/platform identity, the required resolved `data` identity, explicit style/data verification,
+and remote-dependency state. Standalone map receipts mark configured style and data as `rendered`;
+application receipts mark them as `expected-unverified` because capture cannot inspect an arbitrary
+application's live MapLibre instance. Vector endpoints are represented by a query-free SHA-256
+fingerprint rather than a raw URL. Receipts contain no time, user, origin, path, query, signed token,
+repository, absolute filesystem path, config source, environment, or credential. Existing canonical
+schema-v2 receipts remain readable and normalize to this safe representation.
+
+Receipt-only tooling can import these contracts from `@tileflow/capture/receipt` without loading the
+Playwright capture runtime.
 
 ```ts
 import {compareTileflowCaptureToBaseline} from '@tileflow/capture';

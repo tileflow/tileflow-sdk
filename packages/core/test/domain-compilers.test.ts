@@ -46,6 +46,10 @@ test('compiles complete land and water domains into stable direct layers', () =>
   assert.equal(ids[0], 'streets-background');
   assert.ok(ids.includes('streets-global-landcover'));
   assert.ok(ids.includes('streets-landuse-commercial'));
+  assert.ok(ids.includes('streets-landuse-education'));
+  assert.ok(ids.includes('streets-landuse-government'));
+  assert.ok(ids.includes('streets-landuse-medical'));
+  assert.ok(ids.includes('streets-landuse-parking'));
   assert.ok(ids.includes('streets-landcover-wood'));
   assert.ok(ids.includes('streets-water'));
   assert.ok(ids.includes('streets-waterway-river-intermittent'));
@@ -73,7 +77,7 @@ test('renders the seven global land-cover classes below OSM and fades them out a
     'barren',
     context.colors.landcover.rock,
     'crop',
-    context.colors.roadMajor,
+    context.colors.landcover.farmland,
     'grass',
     context.colors.landcover.grass,
     'shrub',
@@ -83,7 +87,7 @@ test('renders the seven global land-cover classes below OSM and fades them out a
     'trees',
     context.colors.landcover.wood,
     'urban',
-    context.colors.building,
+    context.colors.buildings.active,
     'rgba(0, 0, 0, 0)',
   ]);
   assert.deepEqual(paint['fill-opacity'], [
@@ -185,10 +189,39 @@ test('compiles buildings, boundaries, aeroways, and transit without shared layer
   const ids = layers.map((layer) => layer.id);
 
   assert.ok(ids.includes('streets-buildings-fill'));
+  assert.ok(ids.includes('streets-business-corridor'));
   assert.ok(ids.includes('streets-boundary-admin2'));
   assert.ok(ids.includes('streets-aeroway-runway-fill'));
   assert.ok(ids.includes('streets-transit-rail-surface'));
   assert.equal(new Set(ids).size, ids.length);
+});
+
+test('colors building tones without making geometry visibility semantic', () => {
+  const contributions = compileBuildings(undefined, context);
+  const corridor = contributions.find((entry) => entry.layer.id === 'streets-business-corridor')!;
+  const buildings = contributions.find((entry) => entry.layer.id === 'streets-buildings-fill')!;
+  const paint = buildings.layer.paint as Record<string, unknown>;
+
+  assert.equal(corridor.layer['source-layer'], 'business_corridor');
+  assert.deepEqual(buildings.layer.filter, ['>=', ['zoom'], 15]);
+  assert.deepEqual(paint['fill-color'], [
+    'case',
+    ['==', ['coalesce', ['get', 'building_tone'], ''], 'active'],
+    context.colors.buildings.active,
+    ['==', ['coalesce', ['get', 'building_tone'], ''], 'destination'],
+    context.colors.buildings.destination,
+    ['==', ['coalesce', ['get', 'building_tone'], ''], 'commercial'],
+    context.colors.buildings.commercial,
+    [
+      'any',
+      ['==', ['get', 'has_business'], true],
+      ['==', ['get', 'has_business'], 1],
+      ['==', ['get', 'has_business'], '1'],
+      ['==', ['coalesce', ['get', 'building_kind'], 'generic'], 'commercial'],
+    ],
+    context.colors.buildings.commercial,
+    context.colors.buildings.generic,
+  ]);
 });
 
 test('compiles road classes, structures, phases, and exact semantic overrides', () => {
@@ -244,7 +277,7 @@ test('compiles road classes, structures, phases, and exact semantic overrides', 
   assert.equal(tunnelHatch.layer.type, 'symbol');
   assert.equal((tunnelHatch.layer.layout as Record<string, unknown>)['symbol-placement'], 'line');
   assert.equal((tunnelHatch.layer.layout as Record<string, unknown>)['symbol-spacing'], 9);
-  assert.equal((tunnelHatch.layer.layout as Record<string, unknown>)['text-field'], '╱');
+  assert.equal((tunnelHatch.layer.layout as Record<string, unknown>)['text-field'], '|');
   assert.equal((tunnelHatch.layer.layout as Record<string, unknown>)['text-rotate'], 5);
   assert.equal((tunnelHatch.layer.layout as Record<string, unknown>)['text-size'], 14);
   assert.equal((tunnelHatch.layer.paint as Record<string, unknown>)['text-color'], '#8EA3B8');
@@ -263,6 +296,43 @@ test('compiles road classes, structures, phases, and exact semantic overrides', 
     16,
     8,
   ]);
+});
+
+test('matches intrinsic hatch patterns to the fully rendered road width', () => {
+  const contributions = compileRoads(
+    roads({
+      detail: 'major',
+      classes: {
+        primary: {
+          tunnel: {
+            fill: {
+              width: zoom.linear([
+                [17, 10],
+                [19, 20],
+              ]),
+            },
+            hatch: {
+              minZoom: 17,
+              pattern: 'tunnel-hatch',
+              patternWidths: [8, 16, 32],
+            },
+          },
+        },
+      },
+    }),
+    context,
+  );
+  const hatch = contributions.find(
+    (entry) => entry.layer.id === 'streets-road-tunnel-primary-hatch',
+  )!;
+  const paint = hatch.layer.paint as Record<string, unknown>;
+
+  assert.equal(hatch.layer.type, 'line');
+  assert.equal(hatch.layer.minzoom, 17);
+  assert.match(JSON.stringify(paint['line-pattern']), /__tileflow_hatch_width/);
+  assert.match(JSON.stringify(paint['line-pattern']), /tunnel-hatch-8/);
+  assert.match(JSON.stringify(paint['line-pattern']), /tunnel-hatch-32/);
+  assert.deepEqual(paint['line-width'], ['interpolate', ['linear'], ['zoom'], 17, 10, 19, 20]);
 });
 
 test('applies road hierarchy, weight, and per-class width scales to generated widths', () => {
@@ -285,10 +355,12 @@ test('one-way markers use the resolved road font instead of MapLibre glyph defau
   const marker = compileRoads(roads({oneWayMarkers: true}), context).find(
     (entry) => entry.layer.id === 'streets-road-oneway',
   );
+  const layout = marker?.layer.layout as Record<string, unknown>;
 
-  assert.deepEqual((marker?.layer.layout as Record<string, unknown>)['text-font'], [
-    'Noto Sans Regular',
-  ]);
+  assert.deepEqual(layout['text-font'], ['Noto Sans Regular']);
+  assert.equal(layout['text-keep-upright'], false);
+  assert.equal(layout['text-pitch-alignment'], 'map');
+  assert.equal(layout['text-rotation-alignment'], 'map');
 });
 
 test('compiles disjoint semantic path families across structures and remapped fields', () => {
@@ -319,6 +391,7 @@ test('compiles disjoint semantic path families across structures and remapped fi
       assert.ok(layer, `${roadClass} ${structure} fill must exist`);
       assert.deepEqual(layer.filter, [
         'all',
+        ['==', ['geometry-type'], 'LineString'],
         [
           'all',
           ['match', ['get', 'kind'], ['path', 'path_construction'], true, false],
@@ -449,6 +522,8 @@ test('keeps zoom interpolation at the expression root when treatments refine wid
   assert.deepEqual(width.slice(0, 4), ['interpolate', ['linear'], ['zoom'], 10]);
   assert.match(JSON.stringify(width), /"ramp"/);
   assert.match(JSON.stringify(width), /"oneway"/);
+  assert.equal(JSON.stringify(width).match(/"oneway"/g)?.length, 1);
+  assert.match(JSON.stringify(width), /"let","__tileflow_road_base"/);
 });
 
 test('an explicit semantic path class has an effect without enabling the whole path family', () => {
@@ -590,6 +665,28 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
   );
   assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /14/);
   assert.match(JSON.stringify(poiContributions[1]?.layer.filter), /80/);
+});
+
+test('partitions point and line water labels without duplicate candidates', () => {
+  const contributions = compileLabels(labels({water: 'all'}), roads({detail: 'major'}), context);
+  const ocean = contributions.find(
+    (entry) => entry.layer.id === 'streets-label-water-ocean',
+  )?.layer;
+  const other = contributions.find(
+    (entry) => entry.layer.id === 'streets-label-water-other',
+  )?.layer;
+  const line = contributions.find((entry) => entry.layer.id === 'streets-label-water-line')?.layer;
+  const waterway = contributions.find(
+    (entry) => entry.layer.id === 'streets-label-water-waterway',
+  )?.layer;
+
+  assert.match(JSON.stringify(ocean?.filter), /Point/);
+  assert.match(JSON.stringify(other?.filter), /Point/);
+  assert.doesNotMatch(JSON.stringify(ocean?.filter), /LineString/);
+  assert.match(JSON.stringify(line?.filter), /LineString/);
+  assert.match(JSON.stringify(line?.filter), /ocean/);
+  assert.match(JSON.stringify(line?.filter), /reservoir/);
+  assert.match(JSON.stringify(waterway?.filter), /LineString/);
 });
 
 test('compiles a semantic POI marker through the shared circle primitive', () => {

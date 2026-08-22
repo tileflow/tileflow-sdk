@@ -11,29 +11,84 @@ import type {
 export type TileflowMapMode = 'interactive' | 'image';
 export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
 
-export type TileflowMapProps = {
+type TileflowMapBaseProps = {
   alt?: string;
   analytics?: TileflowAnalytics;
   center?: [number, number];
   captureId?: string;
   className?: string;
-  config?: TileflowConfig;
   height?: number | string;
   imageLoading?: HTMLImageElement['loading'];
   imageUrl?: string;
   interactive?: boolean;
   manifestUrl?: string;
-  map?: string;
   mapOptions?: TileflowMapOptions;
-  mapStyle?: MapLibreStyle;
   markers?: TileflowMapMarker[];
   mode?: TileflowMapMode;
   preferLocalDev?: boolean;
+  zoom?: number;
+};
+
+type TileflowMapStyleInput = {
+  config?: TileflowConfig;
+  map?: string;
+  mapStyle?: MapLibreStyle;
   styleBaseUrl?: string;
   styleUrl?: string;
   themes?: TileflowProjectThemes;
-  zoom?: number;
 };
+
+type TileflowMapStyleSourceProps =
+  | {
+      config: TileflowConfig;
+      map?: never;
+      mapStyle?: never;
+      styleBaseUrl?: never;
+      styleUrl?: never;
+      themes?: TileflowProjectThemes;
+    }
+  | {
+      config?: never;
+      map?: string;
+      mapStyle: MapLibreStyle;
+      styleBaseUrl?: never;
+      styleUrl?: never;
+      themes?: never;
+    }
+  | {
+      config?: never;
+      map?: string;
+      mapStyle?: never;
+      styleBaseUrl?: never;
+      styleUrl: string;
+      themes?: never;
+    }
+  | {
+      config?: never;
+      map: string;
+      mapStyle?: never;
+      styleBaseUrl: string;
+      styleUrl?: never;
+      themes?: never;
+    }
+  | {
+      config?: never;
+      map: string;
+      mapStyle?: never;
+      styleBaseUrl?: never;
+      styleUrl?: never;
+      themes?: never;
+    }
+  | {
+      config?: never;
+      map?: never;
+      mapStyle?: never;
+      styleBaseUrl?: never;
+      styleUrl?: never;
+      themes?: never;
+    };
+
+export type TileflowMapProps = TileflowMapBaseProps & TileflowMapStyleSourceProps;
 
 export default class TileflowMap extends SvelteComponentTyped<
   TileflowMapProps,

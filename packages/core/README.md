@@ -29,6 +29,7 @@ export default defineTileflow({
   maps: {
     madrid: {
       basemap: streets(),
+      projection: 'globe',
       theme: 'editorial',
       modules: {
         water: water({bodies: {fill: {opacity: 0.95}}}),
@@ -65,11 +66,19 @@ export default defineTileflow({
 });
 ```
 
+Set `projection: 'globe'` for MapLibre's adaptive globe preset. Global zooms render as a sphere,
+then transition to Mercator between zoom 10 and 12 so detailed streets remain planar. Omit the
+property, or set it to `'mercator'`, for a consistently flat map.
+
 ## Authoring model
 
 `streets()` is the only built-in basemap. It identifies a versioned cartographic recipe and does
 not inherit or patch another style. The compiler resolves the complete Streets design and asks
 each domain module to create its own MapLibre layers. A shared graph then determines layer order.
+`createStyle(...)` dispatches through the basemap compiler catalog; today that catalog contains only
+Streets, while keeping basemap type/version ownership explicit for future recipes. The public
+`createStreetsStyle(...)` entry validates the same strict map schema before compilation, including
+for JavaScript callers, so it cannot emit metadata for an unsupported recipe version.
 
 ```mermaid
 flowchart LR
@@ -82,12 +91,41 @@ flowchart LR
 Modules are keyed by domain, so object order never controls rendering and a domain can appear only
 once. Omit a module to keep the complete Streets default. Use `enabled: false` to remove a domain
 deliberately. The public domains are `land`, `water`, `roads`, `buildings`, `boundaries`, `labels`,
-`poi`, `aeroways`, and `transit`.
+`poi`, `aeroways`, `transit`, `vegetation`, `addresses`, and `landforms`.
+The typed default recipe is exhaustive over that domain set, and a schema contract test verifies
+that every recipe entry keeps its key, type tag, validator, compiler orchestration, and root export
+in lockstep. Disabling `roads` also removes dependent road names, shields, and junction references;
+independent place, water, aerodrome, and POI labels remain under the labels module.
 
 Every styling module supports semantic shortcuts and exact semantic targets. Style values accept
 constants, raw MapLibre expressions through `expression(...)`, and zoom functions through
 `zoom.step(...)`, `zoom.linear(...)`, or `zoom.exponential(...)`. Exact controls address stable
 concepts such as `roads.classes.primary.surface.fill`, not renderer layer IDs.
+
+The `land` module exposes stable land-use targets for `cemetery`, `civic`, `commercial`,
+`industrial`, `military`, `parking`, `railway`, `recreation`, and `residential`. Parking areas are
+polygons from the configured land-use source; parking access aisles remain road features under
+`roads.serviceTypes.parkingAisle`.
+
+`addresses` renders the standard OpenMapTiles `housenumber` points at detailed zooms and exposes a
+single semantic `labels` style. `landforms` renders the standard `mountain_peak` classes (`peak`,
+`volcano`, `saddle`, `ridge`, `cliff`, and `arete`) with rank-aware collision priority and optional
+metric elevation. Both source-layer and field names remain remappable through `openMapTiles(...)`;
+landform names share the language selected by `labels({language: ...})`.
+
+`aeroways.runwayRef` owns high-zoom runway designators from the remappable OpenMapTiles `ref`
+field. Aerodrome names stay under `labels.styles.aerodrome`; `labels.aerodromeCodes` controls whether
+they append no code, IATA only, or IATA with an ICAO fallback (`'none' | 'iata' | 'all'`).
+
+The `vegetation` module binds individual-tree points from the optional OpenMapTiles `tree`
+extension. Its default `mode: '3d'` emits a portable circle fallback plus metadata for runtimes
+that can upgrade the points to instanced 3D trees. `mode: 'flat'` keeps the MapLibre circles, and
+`minZoom` controls when either representation starts. The binding includes height, crown diameter,
+genus, leaf type, and species fields so compatible runtimes can preserve source measurements and
+botanical form without hard-coding raw property names. The pitched-scene stack follows physical
+height: pedestrian and transport surfaces, transport markings and road names, buildings, then
+vegetation. Place, water, aerodrome, and POI annotations remain last so geographic names stay
+readable without making street paint or text float over 3D geometry.
 
 ## Shared visual primitives
 
@@ -109,6 +147,27 @@ Compounds express common cartographic structures: `AreaStyle` has `fill` and `ou
 `LineStackStyle` has `shadow`, `casing`, and `fill`, and `SymbolStyle` combines placement with
 optional `text`, `icon`, and `marker`. Geographic selection remains owned by semantic modules;
 ordinary visual styles intentionally do not accept raw source filters.
+
+## Compiled-style performance
+
+The Streets compiler resolves semantic modules and raw overrides first, then compacts equivalent
+physical MapLibre layers. At high-detail zooms, road classes become a small set of data-driven
+cohorts; equivalent road labels and tunnel hatches share compatible buckets; and land-cover,
+land-use, and waterway classes share compatible buckets. Overrides still target the familiar
+semantic compiler IDs because they run before this final materialization step.
+
+Use the exported structural sweep to enforce budgets without loading tiles or a browser:
+
+```ts
+import {analyzeTileflowStylePerformance, createStyleFromProject} from '@tileflow/core';
+
+const report = analyzeTileflowStylePerformance(createStyleFromProject(project, 'madrid'));
+console.log(report.zooms[16]);
+```
+
+The report covers z0–z22 by default and includes active layers, conservative bucket estimates,
+symbols, and active layers per source-layer. It is intended for regression gates; browser traces
+remain the source of truth for decode, upload, placement, and frame time.
 
 A `SymbolStyle` root zoom range governs its text/icon layer and is inherited by its marker layer.
 Because a marker is materialized as a separate circle layer, an explicit marker range may refine
@@ -160,9 +219,12 @@ roads({
 These targets are non-overlapping translations of the OpenMapTiles road class and subclass. The
 same names are available under `labels().roadClasses` and `labels().styles.roads`. Surface, tunnel,
 and bridge phases can be controlled independently for each target; each structure has
-`shadow`/`casing`/`fill` and an optional `hatch`. Hatch marks inherit the resolved fill width when
-`size` is omitted and never participate in label collision. No raw source filter or generated layer
-ID is needed.
+`shadow`/`casing`/`fill` and an optional `hatch`. Glyph hatch marks inherit the resolved fill width
+when `size` is omitted and never participate in label collision. Setting `hatch.pattern` instead
+emits a repeated sprite texture clipped to the resolved fill width. No raw source filter or generated
+layer ID is needed. `hatch.patternWidths` can list intrinsic sprite heights named
+`${pattern}-${width}`; the compiler selects the nearest height from the resolved road width so the
+texture's marks remain approximately constant in screen pixels across classes, ramps, and zooms.
 
 `classes.pedestrian` styles line-like pedestrian ways. Polygon pedestrian plazas are a distinct
 geometry and use `areas.pedestrian`, including optional fill opacity, outline color, or sprite
@@ -261,6 +323,27 @@ default Streets style maps its `barren`, `crop`, `grass`, `shrub`, `snow`, `tree
 classes beneath the OSM land layers at zooms 0–7, fading to transparent at zoom 8. Sources with a
 different layer name can use `openMapTiles({layers: {globalLandcover: 'my_landcover'}})`; archives
 without the extension remain compatible and simply render no features for that style layer.
+`crop` shares the theme's semantic `landcover.farmland` color with detailed farmland, while
+`barren` uses `landcover.rock`; neither class borrows a road color.
+
+Tileflow World V1 makes the low-zoom `bathymetry` extension mandatory. Use
+`tileflowWorldV1Schema()` for that product instead of making raw layer names part of a style; it
+binds `bathymetry`, `min_depth`, and `sort_key` as typed schema fields. Publication tooling can call
+`validateTileflowWorldV1Tilejson(...)` to reject an archive that does not declare the layer at
+z0–z9 with both numeric fields. Generic OpenMapTiles sources keep this capability absent unless it
+is enabled explicitly. Resolving omitted data or `tileflowWorld(...)` uses this V1 schema directly,
+so raw overrides and future semantic modules see the same required bindings as publication checks.
+
+The optional `business_corridor` extension contains activity-selected source footprints below
+buildings. Its `activity_score`, `rank`, `min_zoom`, and `confidence` fields control a quiet local
+warm tint without drawing POI-radius circles. Current building footprints may carry sparse
+`building_tone=commercial|destination|active`; absence means the neutral base building. The three
+values preserve why the warm tone was selected even when a theme maps them to the same color.
+Building visibility is fixed by the layer zoom contract and never by optional semantics. Immutable
+V8.9 archives carrying `building_kind` or `has_business` remain readable as a defensive
+compatibility path, but new candidates do not emit those fields. The land module also exposes
+`medical`, `education`, and `government` independently instead of collapsing their already distinct
+source classes into one civic color.
 
 A public compiler release binds one validated `WorldGenerationDescriptor` containing the frozen
 vector-schema hash, encoding, zooms, bounds, upstream attribution, direct World URL, and one

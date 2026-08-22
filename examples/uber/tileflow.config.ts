@@ -4,14 +4,20 @@ import {
   defineTileflow,
   labels,
   land,
+  openMapTiles,
   poi,
   roads,
   streets,
   type TileflowSymbolStyle,
   transit,
+  vectorTiles,
   water,
   zoom,
 } from '@tileflow/core';
+
+const developmentTilesRevision = 'dev-spain-v8-20260818';
+const developmentTilesAttribution =
+  '© OpenMapTiles, © OpenStreetMap contributors, © ESA WorldCover, © Overture Maps Foundation';
 
 const roadLabel = {
   placement: 'line',
@@ -110,6 +116,12 @@ export default defineTileflow({
     uber: {
       name: 'Tileflow Uber-inspired Streets',
       basemap: streets({variant: 'light'}),
+      data: vectorTiles({
+        attribution: developmentTilesAttribution,
+        revision: developmentTilesRevision,
+        schema: openMapTiles(),
+        url: `https://dev-tiles.tileflow.dev/tiles/dev/tiles.json?archiveVersion=${developmentTilesRevision}`,
+      }),
       theme: 'uber',
       modules: {
         boundaries: boundaries({enabled: false}),

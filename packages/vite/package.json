@@ -27,8 +27,10 @@
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean --external vite --platform node",
+    "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "lint": "tsc -p tsconfig.json --noEmit"
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "verify": "pnpm run typecheck && pnpm run test"
   },
   "exports": {
     ".": {

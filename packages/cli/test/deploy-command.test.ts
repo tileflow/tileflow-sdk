@@ -563,8 +563,8 @@ test('a style failure after icon upload also preserves the previous manifest', a
   );
 
   assert.equal(result.code, 1);
-  assert.deepEqual(methods, ['PUT', 'POST']);
   assert.match(result.stdout, /Deploy failed for madrid: 503/);
+  assert.deepEqual(methods, ['PUT', 'POST']);
   assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
 });
 
@@ -669,12 +669,21 @@ export default {maps: {madrid: {name: 'Madrid'}}};
   assert.equal(result.code, 1);
   assert.equal(requests, 1);
   assert.match(result.stdout, /Project target is ambiguous: @acme\/web, @acme\/worker/);
-  assert.ok(
-    result.stdout.includes(
-      `tileflow deploy --config ${fixture.configPath} --manifest ${fixture.manifestPath} --api-url ${api.url} --project @acme/web`,
-    ),
-    result.stdout,
-  );
+  const expectedRetry = [
+    'tileflow',
+    'deploy',
+    '--config',
+    fixture.configPath,
+    '--manifest',
+    fixture.manifestPath,
+    '--api-url',
+    api.url,
+    '--project',
+    '@acme/web',
+  ]
+    .map(quoteExpectedCliArgument)
+    .join(' ');
+  assert.ok(result.stdout.includes(expectedRetry), result.stdout);
   await assert.rejects(() => readFile(configMarkerPath, 'utf8'), {code: 'ENOENT'});
 });
 
@@ -810,6 +819,130 @@ test('/v1/me validation returns one canonical project property', async () => {
   assert.equal(validator.match(/project: body\.project/gu)?.length, 1);
 });
 
+test('validate --target hosted shares deploy rejection of external vector data', async (t) => {
+  const fixture = await createFixture(t);
+  await writeFile(
+    fixture.configPath,
+    `export default {maps: {madrid: {
+  basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
+  data: {
+    type: 'vector-tiles',
+    attribution: '© Example © OpenStreetMap contributors',
+    schema: {type: 'openmaptiles', contractVersion: 1},
+    url: 'https://vector.example.test/tiles.json'
+  }
+}}};\n`,
+  );
+
+  const result = await runCli(
+    fixture.directory,
+    ['validate', '--target', 'hosted', '--config', fixture.configPath],
+    {TILEFLOW_API_URL: 'http://127.0.0.1:1'},
+  );
+
+  assert.equal(result.code, 1);
+  assert.match(result.stdout, /Hosted deploy supports only Tileflow World data/);
+  assert.match(result.stdout, /Map madrid uses an external vector dataset/);
+  assert.doesNotMatch(result.stdout, /Config is valid|Hosted compatibility/);
+});
+
+test('executable config cannot read ambient or argv API keys and the diagnostic stays secret-free', async (t) => {
+  const fixture = await createFixture(t);
+  const observedPath = join(fixture.directory, 'observed-config-process.json');
+  const ambientSecret = `tf_live_${'e'.repeat(48)}`;
+  const argumentSecret = `tf_live_${'f'.repeat(48)}`;
+  await writeFile(
+    fixture.configPath,
+    `import {writeFileSync} from 'node:fs';
+writeFileSync(${JSON.stringify(observedPath)}, JSON.stringify({
+  apiKey: process.env.TILEFLOW_API_KEY ?? null,
+  argv: process.argv
+}));
+throw new Error('config stopped after observing its process');
+`,
+  );
+
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      'http://127.0.0.1:1',
+      '--api-key',
+      argumentSecret,
+    ],
+    {TILEFLOW_API_KEY: ambientSecret},
+  );
+
+  assert.equal(result.code, 1);
+  const observed = JSON.parse(await readFile(observedPath, 'utf8')) as {
+    apiKey: string | null;
+    argv: string[];
+  };
+  assert.equal(observed.apiKey, null);
+  assert.equal(observed.argv.includes('--api-key'), false);
+  assert.equal(
+    observed.argv.some((argument) => argument.includes(argumentSecret)),
+    false,
+  );
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(ambientSecret));
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(argumentSecret));
+});
+
+test('invalid hosted deploy and status responses fail closed and preserve the manifest', async (t) => {
+  const fixture = await createFixture(t);
+  const originalManifest = '{"sentinel":"runtime-validation"}\n';
+  await writeFile(fixture.manifestPath, originalManifest);
+  const deployApi = await createFakeApi(t, async () => undefined, {
+    mapId: 'map_test',
+    mapUrl: 'javascript:alert(1)',
+  });
+  const deploy = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      deployApi.url,
+    ],
+    {TILEFLOW_API_KEY: fakeApiKey},
+  );
+
+  assert.equal(deploy.code, 1);
+  assert.match(deploy.stdout, /Deploy response for madrid returned an invalid response/);
+  assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
+
+  const statusApi = await createFakeApi(t, async () => undefined, {
+    projectId: 'prj_test',
+    styles: 'invalid',
+  });
+  const status = await runCli(
+    fixture.directory,
+    ['status', '--json', '--api-url', statusApi.url, '--api-key', fakeApiKey],
+    {},
+  );
+  assert.equal(status.code, 1);
+  assert.equal(status.stdout, '');
+  assert.match(status.stderr, /Status response returned an invalid response/);
+  assert.doesNotMatch(`${status.stdout}\n${status.stderr}`, new RegExp(fakeApiKey));
+
+  const unauthenticatedStatus = await runCli(
+    fixture.directory,
+    ['status', '--json', '--api-url', 'https://api.example.test'],
+    {HOME: fixture.directory, USERPROFILE: fixture.directory},
+  );
+  assert.equal(unauthenticatedStatus.code, 1);
+  assert.equal(unauthenticatedStatus.stdout, '');
+  assert.match(unauthenticatedStatus.stderr, /^Status authentication failed\.\n$/u);
+});
+
 function accountProjectTarget(organizationSlug: string, projectSlug: string) {
   return {
     organization: {
@@ -827,6 +960,10 @@ function accountProjectTarget(organizationSlug: string, projectSlug: string) {
     },
     reference: `@${organizationSlug}/${projectSlug}`,
   };
+}
+
+function quoteExpectedCliArgument(value: string) {
+  return /^[A-Za-z0-9_./:@%+=,-]+$/u.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 async function writeAccountSession(home: string, apiUrl: string) {

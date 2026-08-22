@@ -36,7 +36,9 @@ const require = createRequire(import.meta.url);
 const maplibreJsPath = require.resolve('maplibre-gl/dist/maplibre-gl.js');
 const maplibreCssPath = require.resolve('maplibre-gl/dist/maplibre-gl.css');
 
-type PagePhaseResult = {status: 'ok'} | {reason: 'error' | 'timeout'; status: 'failed'};
+type PagePhaseResult =
+  | {status: 'ok'}
+  | {message?: string; reason: 'error' | 'timeout'; status: 'failed'};
 
 export async function captureStandaloneTileflowScene(
   input: StandaloneTileflowCaptureInput,
@@ -304,7 +306,11 @@ function assertPhaseSucceeded(
     });
   }
   if (result.status === 'failed' || pageFailed) {
-    throw new TileflowCaptureError('MAP_LOAD_FAILED', mapFailureMessage(phase), {
+    const message =
+      result.status === 'failed' && result.message
+        ? `${mapFailureMessage(phase)} ${safeMapError(result.message)}`
+        : mapFailureMessage(phase);
+    throw new TileflowCaptureError('MAP_LOAD_FAILED', message, {
       details: {phase},
     });
   }
@@ -432,6 +438,14 @@ function mapFailureMessage(phase: 'map-load' | 'map-idle'): string {
     : 'MapLibre failed while waiting for the committed camera to become idle.';
 }
 
+function safeMapError(value: string): string {
+  return value
+    .replace(/[A-Za-z][A-Za-z0-9+.-]*:\/\/\S+/g, 'resource')
+    .replace(/[^A-Za-z0-9 _.,:'"@+()[\]/=-]/g, '')
+    .trim()
+    .slice(0, 200);
+}
+
 function safeAssetName(value: string): string {
   return value.replace(/[^A-Za-z0-9._/-]/g, '').slice(0, 200) || 'unknown';
 }
@@ -503,6 +517,9 @@ function renderHtml(viewport: {height: number; width: number}): string {
 const renderMapInPageScript = String.raw`
 window.__tileflowCaptureLoad = async function(input) {
   try {
+    window.__tileflowCaptureLoopbackSourceIds = Object.entries(input.style.sources || {})
+      .filter(([, source]) => isLoopbackSourceUrl(source?.url))
+      .map(([sourceId]) => sourceId);
     const map = new window.maplibregl.Map({
       attributionControl: false,
       container: "map",
@@ -512,8 +529,8 @@ window.__tileflowCaptureLoad = async function(input) {
     });
     window.__tileflowMap = map;
     return await waitForMapEvent(map, "load", input.mapEventTimeoutMs);
-  } catch {
-    return {status: "failed", reason: "error"};
+  } catch (error) {
+    return {status: "failed", reason: "error", message: String(error?.message || error || "")};
   }
 };
 
@@ -568,9 +585,29 @@ function waitForMapEvent(mapInstance, event, timeoutMs) {
       cleanup();
       resolve({status: "ok"});
     };
-    const onError = () => {
+    const onError = (errorEvent) => {
+      const message = String(errorEvent?.error?.message || errorEvent?.message || "");
+      const missingSourceLayer = message.match(
+        /^Source layer "(.+)" does not exist on source "(.+)" as specified by style layer ".+"\.$/
+      );
+      if (missingSourceLayer) {
+        const [, sourceLayer, sourceId] = missingSourceLayer;
+        const liveSource = mapInstance.getSource(sourceId);
+        const advertisedSourceLayers = liveSource?.vectorLayerIds;
+        const loopbackSource = window.__tileflowCaptureLoopbackSourceIds?.includes(sourceId);
+        // A layer advertised by TileJSON may legitimately be absent from one
+        // MVT. Local PMTiles development archives may also carry stale TileJSON
+        // metadata while their tile payload already contains the layer. Keep
+        // remote contracts strict, but let local visual captures verify pixels.
+        if (
+          loopbackSource ||
+          (Array.isArray(advertisedSourceLayers) && advertisedSourceLayers.includes(sourceLayer))
+        ) {
+          return;
+        }
+      }
       cleanup();
-      resolve({status: "failed", reason: "error"});
+      resolve({status: "failed", reason: "error", message});
     };
     const cleanup = () => {
       window.clearTimeout(timeout);
@@ -579,8 +616,22 @@ function waitForMapEvent(mapInstance, event, timeoutMs) {
     };
 
     mapInstance.once(event, onSuccess);
-    mapInstance.once("error", onError);
+    mapInstance.on("error", onError);
   });
+}
+
+function isLoopbackSourceUrl(value) {
+  if (typeof value !== "string") return false;
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return (
+      hostname === "localhost" ||
+      hostname === "[::1]" ||
+      /^127(?:\.\d{1,3}){3}$/.test(hostname)
+    );
+  } catch {
+    return false;
+  }
 }
 
 function nextFrame() {

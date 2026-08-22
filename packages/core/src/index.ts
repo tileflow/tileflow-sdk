@@ -30,6 +30,7 @@ export type {
 } from './capture-scene';
 export type {
   MapLibreStyle,
+  TileflowAerodromeCodeDetail,
   TileflowBaseColors,
   TileflowBoundaryColorConfig,
   TileflowBuildingColorConfig,
@@ -48,6 +49,7 @@ export type {
   TileflowLabelsModuleOptions,
   TileflowLandcoverColorConfig,
   TileflowLanduseColorConfig,
+  TileflowLight,
   TileflowPoi,
   TileflowPoiCategory,
   TileflowPoiCategoryStyle,
@@ -59,6 +61,7 @@ export type {
   TileflowPoiLabels,
   TileflowPoiModuleConfig,
   TileflowPoiModuleOptions,
+  TileflowProjection,
   TileflowProjectIconSets,
   TileflowProjectThemes,
   TileflowPlaceLabelClass,
@@ -137,12 +140,17 @@ export {
   resolveTileflowData,
   tileflowPrimarySourceId,
   tileflowWorld,
+  tileflowWorldRevision,
+  tileflowWorldV1Schema,
+  validateTileflowWorldV1Tilejson,
   tileflowWorldGeneration,
   tileflowWorldTileUrl,
   vectorTiles,
   worldGenerationDescriptorSchema,
 } from './data';
 export {expression, filter, zoom} from './cartography/values';
+export {analyzeTileflowStylePerformance} from './cartography/performance';
+export type {TileflowStylePerformance, TileflowZoomPerformance} from './cartography/performance';
 export type {
   TileflowExpression,
   TileflowFilterExpression,
@@ -163,12 +171,29 @@ export type {
   TileflowDataConfig,
   TileflowDataIdentity,
   TileflowWorldData,
+  TileflowWorldV1Schema,
   VectorTilesData,
   WorldDataDescriptor,
   WorldGenerationDescriptor,
 } from './data';
-export {aeroways, boundaries, buildings, labels, land, poi, roads, transit, water} from './modules';
+export {
+  addresses,
+  aeroways,
+  boundaries,
+  buildings,
+  labels,
+  land,
+  landforms,
+  poi,
+  roads,
+  tileflowLandformClasses,
+  transit,
+  vegetation,
+  water,
+} from './modules';
 export type {
+  TileflowAddressesModuleConfig,
+  TileflowAddressesModuleOptions,
   TileflowAerowaysModuleConfig,
   TileflowAerowaysModuleOptions,
   TileflowBoundariesModuleConfig,
@@ -177,12 +202,18 @@ export type {
   TileflowBuildingsModuleConfig,
   TileflowBuildingsModuleOptions,
   TileflowLandcoverClass,
+  TileflowLandformClass,
+  TileflowLandformsModuleConfig,
+  TileflowLandformsModuleOptions,
   TileflowLandModuleConfig,
   TileflowLandModuleOptions,
   TileflowLanduseClass,
   TileflowTransitModuleConfig,
   TileflowTransitModuleOptions,
   TileflowTransitRailStyle,
+  TileflowVegetationMode,
+  TileflowVegetationModuleConfig,
+  TileflowVegetationModuleOptions,
   TileflowWaterModuleConfig,
   TileflowWaterModuleOptions,
   TileflowWaterwayClass,
@@ -257,6 +288,7 @@ export type {
   TileflowIconReferenceAnalysis,
 } from './icon-diff';
 export {
+  assertValidTileflowRuntimeStyleInputs,
   createTileflowSessionId,
   createTileflowSessionController,
   defaultTileflowManifestUrl,
@@ -277,6 +309,7 @@ export {
   resolveTileflowStyleUrl,
   shouldLoadTileflowManifest,
   startTileflowSession,
+  validateTileflowRuntimeStyleInputs,
 } from './runtime';
 export type {
   TileflowAnalytics,
@@ -288,6 +321,8 @@ export type {
   TileflowRuntimeManifestMap,
   TileflowRuntimeManifestMapEntry,
   TileflowRuntimeStyle,
+  TileflowRuntimeStyleInputs,
+  TileflowRuntimeStyleInputsValidation,
   TileflowRuntimeStyleOptions,
   TileflowSessionController,
   TileflowSessionGrantResponse,

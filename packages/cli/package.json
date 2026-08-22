@@ -1,7 +1,7 @@
 {
   "name": "@tileflow/cli",
   "version": "0.0.0-development",
-  "description": "Command-line tools for Tileflow config, capture, visual testing, and deploy.",
+  "description": "CLI-only tools for Tileflow config, capture, visual testing, and deploy.",
   "type": "module",
   "homepage": "https://tileflow.dev",
   "repository": {
@@ -19,17 +19,8 @@
     "maplibre",
     "tiles"
   ],
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
-    }
-  },
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22"
   },
   "files": [
     "dist"
@@ -38,7 +29,7 @@
     "tileflow": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean --no-splitting --platform node",
+    "build": "tsup src/index.ts --format esm --clean --no-splitting --platform node",
     "cli": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",

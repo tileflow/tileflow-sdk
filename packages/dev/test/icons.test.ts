@@ -217,6 +217,62 @@ test('accepts every documented source format', async () => {
   });
 });
 
+test('keeps intrinsic dimensions for pattern-marked sprite sources', async () => {
+  await withFixture(async (cwd) => {
+    await mkdir(join(cwd, 'icons'), {recursive: true});
+    await writeFile(
+      join(cwd, 'icons', 'tunnel-32.pattern.svg'),
+      '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="32"><path d="M0 8 8 0" stroke="#94A3B8"/></svg>',
+    );
+    const result = await compileTileflowIconPackages(localProject('./icons'), {
+      cwd,
+      target: 'hosted',
+    });
+    const compiled = result.packages[0]!;
+    const oneX = JSON.parse(
+      new TextDecoder().decode(
+        compiled.files.find((file) => file.fileName === 'sprite.json')!.source,
+      ),
+    ) as Record<string, {height: number; pixelRatio: number; width: number}>;
+    const twoX = JSON.parse(
+      new TextDecoder().decode(
+        compiled.files.find((file) => file.fileName === 'sprite@2x.json')!.source,
+      ),
+    ) as Record<string, {height: number; pixelRatio: number; width: number}>;
+
+    assert.deepEqual(compiled.manifest.iconNames, ['tunnel-32']);
+    assert.deepEqual(oneX['tunnel-32'], {
+      height: 32,
+      pixelRatio: 1,
+      width: 8,
+      x: 0,
+      y: 0,
+    });
+    assert.deepEqual(twoX['tunnel-32'], {
+      height: 64,
+      pixelRatio: 2,
+      width: 16,
+      x: 0,
+      y: 0,
+    });
+  });
+});
+
+test('rejects non-seamless intrinsic line-pattern widths', async () => {
+  await withFixture(async (cwd) => {
+    await mkdir(join(cwd, 'icons'), {recursive: true});
+    await writeFile(
+      join(cwd, 'icons', 'broken.pattern.svg'),
+      '<svg xmlns="http://www.w3.org/2000/svg" width="6" height="32"/>',
+    );
+
+    await assert.rejects(
+      compileTileflowIconPackages(localProject('./icons'), {cwd, target: 'hosted'}),
+      /pattern width must be a power of two from 2 through 512 pixels/,
+    );
+  });
+});
+
 test('reports missing, empty, duplicate, malformed, and unsafe hosted sources structurally', async () => {
   await withFixture(async (cwd) => {
     await assertIconIssue(

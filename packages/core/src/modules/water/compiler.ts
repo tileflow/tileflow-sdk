@@ -3,6 +3,7 @@ import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applyLineStyle, createAreaLayers} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {zoom} from '../../cartography/values';
+import {mix} from '../../themes';
 import type {TileflowWaterModuleConfig, TileflowWaterwayClass} from './index';
 
 const waterwayClasses: Record<TileflowWaterwayClass, readonly string[]> = {
@@ -28,6 +29,7 @@ export function compileWater(
       waterways: {
         canal: {
           color: context.colors.hydro.waterway,
+          minZoom: 8,
           width: zoom.linear([
             [8, 0.3],
             [16, 2.2],
@@ -35,6 +37,7 @@ export function compileWater(
         },
         other: {
           color: context.colors.hydro.waterway,
+          minZoom: 12,
           width: zoom.linear([
             [12, 0.25],
             [16, 1.2],
@@ -42,6 +45,7 @@ export function compileWater(
         },
         river: {
           color: context.colors.hydro.waterway,
+          minZoom: 6,
           width: zoom.linear([
             [6, 0.4],
             [16, 3.2],
@@ -49,6 +53,7 @@ export function compileWater(
         },
         stream: {
           color: context.colors.hydro.waterway,
+          minZoom: 10,
           width: zoom.linear([
             [10, 0.25],
             [16, 1.8],
@@ -99,12 +104,67 @@ export function compileWater(
       contributions.push({
         kind: 'layer',
         layer: area.layer,
-        localOrder: area.phase === 'fill' ? 2 : 3,
+        localOrder: area.phase === 'fill' ? 3 : 4,
         owner: 'water',
         slot: 'hydro',
         target: `water.intermittent.bodies.${area.phase}`,
       });
     }
+  }
+
+  const bathymetryLayer = layers.bathymetry;
+  const bathymetryDepthField = fields.bathymetryMinDepth;
+  const bathymetrySortField = fields.bathymetrySortKey;
+  if (
+    bathymetryLayer &&
+    bathymetryDepthField &&
+    bathymetrySortField &&
+    config.bodies?.fill?.visible !== false
+  ) {
+    const waterColor =
+      typeof config.bodies?.fill?.color === 'string'
+        ? config.bodies.fill.color
+        : context.colors.hydro.water;
+    const deepWater = mix(waterColor, '#000000', 0.18);
+    contributions.push({
+      kind: 'layer',
+      layer: {
+        id: 'streets-bathymetry',
+        type: 'fill',
+        source,
+        'source-layer': bathymetryLayer,
+        minzoom: 0,
+        maxzoom: 10,
+        layout: {
+          'fill-sort-key': ['to-number', ['get', bathymetrySortField], 0],
+        },
+        paint: {
+          'fill-antialias': false,
+          'fill-color': [
+            'match',
+            ['to-number', ['get', bathymetryDepthField], 0],
+            0,
+            waterColor,
+            -200,
+            mix(waterColor, deepWater, 0.2),
+            -1000,
+            mix(waterColor, deepWater, 0.4),
+            -2000,
+            mix(waterColor, deepWater, 0.6),
+            -4000,
+            mix(waterColor, deepWater, 0.8),
+            -6000,
+            deepWater,
+            waterColor,
+          ],
+          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.84, 7, 0.76, 9, 0.56, 10, 0],
+        },
+      },
+      localOrder: 2,
+      owner: 'water',
+      slot: 'hydro',
+      target: 'water.bathymetry',
+    });
   }
 
   let localOrder = 10;

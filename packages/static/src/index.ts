@@ -182,7 +182,16 @@ export type StaticMapCreateOptions = {
   signal?: AbortSignal;
 };
 
+export type StaticMapEndpointRequestOptions = Omit<StaticMapCreateOptions, 'apiUrl'> & {
+  createUrl: string;
+};
+
+export type PreparedStaticMapRequest = Readonly<{
+  sceneKey: string;
+}>;
+
 const staticMapIdempotencyKeyPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
+const preparedStaticMapRequestBodies = new WeakMap<PreparedStaticMapRequest, string>();
 
 export const staticMapReadyResultSchema = z
   .object({
@@ -268,7 +277,7 @@ export function validateStaticScene(
     };
   }
 
-  return {ok: true, scene: normalizeStaticScene(parsed.data)};
+  return {ok: true, scene: normalizeParsedStaticScene(parsed.data)};
 }
 
 export function validateStaticRenderManifest(
@@ -301,8 +310,10 @@ export function validateStaticRenderManifest(
 }
 
 export function normalizeStaticScene(scene: StaticSceneInput): StaticScene {
-  const parsed = staticSceneSchema.parse(scene);
+  return normalizeParsedStaticScene(staticSceneSchema.parse(scene));
+}
 
+function normalizeParsedStaticScene(parsed: StaticScene): StaticScene {
   return stripUndefined({
     camera:
       parsed.camera.type === 'center'
@@ -372,6 +383,21 @@ export async function hashStaticSceneRequest(scene: StaticSceneInput) {
   const validation = validateStaticScene(scene);
   if (!validation.ok) throw new Error(`Invalid Tileflow static scene: ${validation.error}`);
   return hashStableValue(validation.scene);
+}
+
+export function prepareStaticMapRequest(scene: StaticSceneInput): PreparedStaticMapRequest {
+  const validation = validateStaticScene(scene);
+
+  if (!validation.ok) {
+    throw new Error(`Invalid Tileflow static scene: ${validation.error}`);
+  }
+
+  const prepared = Object.freeze({
+    sceneKey: stableStringify(validation.scene),
+  });
+
+  preparedStaticMapRequestBodies.set(prepared, JSON.stringify(validation.scene));
+  return prepared;
 }
 
 export function compileStaticOverlays(overlays: StaticOverlay[]) {
@@ -471,10 +497,22 @@ async function requestStaticMap(
   options: StaticMapCreateOptions,
   path: '/v1/static/maps' | '/v1/static/maps/precache',
 ): Promise<StaticMapResult> {
-  const validation = validateStaticScene(scene);
+  const preparedRequest = prepareStaticMapRequest(scene);
+  const {apiUrl = 'https://api.tileflow.dev', ...requestOptions} = options;
 
-  if (!validation.ok) {
-    throw new Error(`Invalid Tileflow static scene: ${validation.error}`);
+  return requestStaticMapUntilReady(preparedRequest, {
+    ...requestOptions,
+    createUrl: `${normalizeUrl(apiUrl)}${path}`,
+  });
+}
+
+export async function requestStaticMapUntilReady(
+  request: PreparedStaticMapRequest,
+  options: StaticMapEndpointRequestOptions,
+): Promise<StaticMapResult> {
+  const body = preparedStaticMapRequestBodies.get(request);
+  if (body === undefined) {
+    throw new Error('Tileflow static map request must be created with prepareStaticMapRequest');
   }
 
   const idempotency = validateStaticMapIdempotencyKey(options.idempotencyKey);
@@ -491,7 +529,6 @@ async function requestStaticMap(
     'pollIntervalMs',
   );
   const fetcher = options.fetch ?? fetch;
-  const apiUrl = normalizeUrl(options.apiUrl ?? 'https://api.tileflow.dev');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Idempotency-Key': idempotency.key,
@@ -502,11 +539,10 @@ async function requestStaticMap(
   }
 
   return runWithinStaticMapBudget(maxWaitMs, options.signal, async (signal) => {
-    const body = JSON.stringify(validation.scene);
     let operationId: string | null = null;
 
     while (true) {
-      const response = await fetcher(`${apiUrl}${path}`, {
+      const response = await fetcher(options.createUrl, {
         body,
         headers,
         method: 'POST',

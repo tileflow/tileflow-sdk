@@ -28,6 +28,12 @@ Tileflow resolves from the map name, manifest, or explicit style props. Direct
 Tileflow props such as `center`, `zoom`, and `interactive` take priority when
 provided.
 
+Choose a single style source. `config` may only be combined with `themes`. A named `map` may be
+used alone or with exactly one of `mapStyle`, `styleUrl`, or `styleBaseUrl`; keeping `map` alongside
+an explicit style preserves map identity for capture and analytics. `styleBaseUrl` requires a named
+map, and `themes` has no effect without `config`, so invalid combinations throw a `TypeError` rather
+than being resolved by silent precedence.
+
 Hosted maps automatically preflight a short-lived commercial session grant before eligible
 resources. Setting `analytics` with `enabled: false` disables the optional beacon only; it does not
 remove hosted authorization or override a user `mapOptions.transformRequest` callback.

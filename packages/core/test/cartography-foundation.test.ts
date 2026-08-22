@@ -46,6 +46,13 @@ test('converts validated zoom values and expressions to MapLibre values', () => 
   );
 });
 
+test('rejects unknown expression operators before style compilation', () => {
+  assert.throws(
+    () => expression<number>(['totally-invalid-op', 1]),
+    /Unknown MapLibre expression operator/,
+  );
+});
+
 test('assembles layer contributions deterministically and rejects ambiguity', () => {
   const layers = assembleTileflowLayers([
     contribution('road', 'roads', 'transport-surface-fill', 200),
@@ -82,15 +89,33 @@ test('rejects cyclic slot constraints', () => {
   );
 });
 
-test('keeps tunnels below hydro, buildings, and every surface transport phase', () => {
+test('keeps navigation-visible tunnels above base areas but below surface transport and buildings', () => {
   const order = resolveSlotOrder();
   const position = (slot: (typeof order)[number]) => order.indexOf(slot);
 
-  assert.ok(position('transport-tunnel-fill') < position('hydro'));
+  assert.ok(position('hydro') < position('transport-tunnel-shadow'));
+  assert.ok(position('building-areas') < position('transport-tunnel-shadow'));
+  assert.ok(position('transport-areas') < position('transport-tunnel-shadow'));
+  assert.ok(position('transport-tunnel-shadow') < position('transport-tunnel-casing'));
+  assert.ok(position('transport-tunnel-casing') < position('transport-tunnel-fill'));
   assert.ok(position('transport-tunnel-fill') < position('buildings'));
-  assert.ok(position('transport-tunnel-fill') < position('transport-areas'));
+  assert.ok(position('transport-tunnel-fill') < position('aeroways'));
   assert.ok(position('transport-tunnel-fill') < position('transport-surface-shadow'));
   assert.ok(position('transport-tunnel-fill') < position('symbols'));
+});
+
+test('keeps pitched-scene geometry in physical order below annotations', () => {
+  const order = resolveSlotOrder();
+  const position = (slot: (typeof order)[number]) => order.indexOf(slot);
+
+  assert.ok(position('building-areas') < position('transport-areas'));
+  assert.ok(position('building-areas') < position('transport-surface-fill'));
+  assert.ok(position('transport-areas') < position('transport-surface-fill'));
+  assert.ok(position('transport-surface-fill') < position('transport-symbols'));
+  assert.ok(position('transport-bridge-fill') < position('transport-symbols'));
+  assert.ok(position('transport-symbols') < position('buildings'));
+  assert.ok(position('buildings') < position('vegetation'));
+  assert.ok(position('vegetation') < position('symbols'));
 });
 
 function contribution(

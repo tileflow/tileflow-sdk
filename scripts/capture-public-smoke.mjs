@@ -49,8 +49,8 @@ try {
   const tarballs = suppliedPackDirectory
     ? await discoverTarballs(packDirectory)
     : await packRequiredPackages(packDirectory);
-  const requiredNames = ['@tileflow/core', '@tileflow/dev', '@tileflow/capture', '@tileflow/cli'];
   const expectedNames = publicPackageNames;
+  const requiredNames = expectedNames;
   assert.equal(tarballs.size, expectedNames.length, 'Unexpected number of packed packages.');
   for (const name of expectedNames) {
     assert.ok(tarballs.has(name), `Packed smoke is missing ${name}.`);
@@ -127,6 +127,33 @@ if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
   await run(process.execPath, [coreBrowserImport], {
     cwd: consumerDirectory,
     label: 'packed core browser import without DOM',
+  });
+
+  const publicImports = join(consumerDirectory, 'import-public-packages.mjs');
+  await writeFile(
+    publicImports,
+    `const expectations = ${JSON.stringify({
+      '@tileflow/capture': 'createTileflowCaptureSession',
+      '@tileflow/capture/receipt': 'parseTileflowCaptureReceipt',
+      '@tileflow/dev': 'createTileflowBuildArtifacts',
+      '@tileflow/next': 'withTileflow',
+      '@tileflow/react': 'Map',
+      '@tileflow/static': 'normalizeStaticScene',
+      '@tileflow/vite': 'tileflow',
+      '@tileflow/vue': 'TileflowMap',
+      '@tileflow/webpack': 'TileflowWebpackPlugin',
+    })};
+for (const [name, symbol] of Object.entries(expectations)) {
+  const entry = await import(name);
+  if (typeof entry[symbol] !== 'function' && typeof entry[symbol] !== 'object') {
+    throw new Error(name + ' does not export ' + symbol + ' from its packed entry point');
+  }
+}
+`,
+  );
+  await run(process.execPath, [publicImports], {
+    cwd: consumerDirectory,
+    label: 'packed public package entry imports',
   });
 
   const packedCli = JSON.parse(
@@ -279,13 +306,14 @@ export default defineTileflow({
   assert.equal(standaloneReceipt.image.physicalHeight, 128);
   assert.equal(standaloneReceipt.networkDependent, false);
   assert.equal(standaloneReceipt.schemaVersion, 2);
-  assert.deepEqual(standaloneReceipt.data, {
-    kind: 'vector-tiles',
-    revision: 'packed-fixture-1',
-    schema: 'openmaptiles',
-    schemaVersion: 1,
-    sourceId: 'tileflow',
-  });
+  assert.equal(standaloneReceipt.data.kind, 'vector-tiles');
+  assert.equal(standaloneReceipt.data.schema, 'openmaptiles');
+  assert.equal(standaloneReceipt.data.schemaVersion, 1);
+  assert.equal(standaloneReceipt.data.sourceId, 'tileflow');
+  assert.equal(standaloneReceipt.data.source?.kind, 'loopback');
+  assert.match(standaloneReceipt.data.source?.sha256 ?? '', /^[a-f0-9]{64}$/u);
+  assert.equal('url' in standaloneReceipt.data, false);
+  assert.deepEqual(standaloneReceipt.verification, {data: 'rendered', style: 'rendered'});
   assert.equal(standaloneReceipt.renderer.playwright, '1.60.0');
   assert.equal(standaloneReceipt.renderer.chromiumRevision, '1223');
 
@@ -365,12 +393,16 @@ export default defineTileflow({
   assert.equal(receipt.image.physicalWidth, 192);
   assert.equal(receipt.image.physicalHeight, 128);
   assert.equal(receipt.networkDependent, false);
-  assert.deepEqual(receipt.data, {
-    kind: 'vector-tiles',
-    revision: 'packed-fixture-1',
-    schema: 'openmaptiles',
-    schemaVersion: 1,
-    sourceId: 'tileflow',
+  assert.equal(receipt.data.kind, 'vector-tiles');
+  assert.equal(receipt.data.schema, 'openmaptiles');
+  assert.equal(receipt.data.schemaVersion, 1);
+  assert.equal(receipt.data.sourceId, 'tileflow');
+  assert.equal(receipt.data.source?.kind, 'loopback');
+  assert.match(receipt.data.source?.sha256 ?? '', /^[a-f0-9]{64}$/u);
+  assert.equal('url' in receipt.data, false);
+  assert.deepEqual(receipt.verification, {
+    data: 'expected-unverified',
+    style: 'expected-unverified',
   });
   assert.equal(receipt.renderer.playwright, '1.60.0');
   assert.equal(receipt.renderer.chromiumRevision, '1223');
@@ -581,6 +613,7 @@ function manifestEntryPoints(manifest) {
     if (!value || typeof value !== 'object') return;
     for (const child of Object.values(value)) visit(child);
   };
+  visit(manifest.bin);
   visit(manifest.exports);
   visit(manifest.main);
   visit(manifest.module);

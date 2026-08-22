@@ -12,6 +12,7 @@ import {tileflowPathRoadClasses} from './semantics';
 export type ResolvedRoadsModuleOptions = {
   detail: TileflowRoadDetail;
   disabledClasses: readonly TileflowRoadClass[];
+  enabled: boolean;
   explicitClasses: readonly TileflowRoadClass[];
   extras: {paths: boolean};
   hierarchy: TileflowRoadHierarchy;
@@ -33,6 +34,7 @@ export type RoadStyleMetrics = {
 const defaults = {
   detail: 'streets',
   disabledClasses: [],
+  enabled: true,
   explicitClasses: [],
   extras: {paths: false},
   hierarchy: 'clear',
@@ -60,8 +62,8 @@ const defaultRoadWidthScale = {
 const highwayRoadClasses = ['motorway', 'trunk'] as const;
 const arterialRoadClasses = ['primary', 'secondary', 'tertiary'] as const;
 const majorRoadClasses = [...highwayRoadClasses, ...arterialRoadClasses] as const;
-const streetRoadClasses = ['minor'] as const;
-const serviceRoadClasses = ['service', 'track'] as const;
+const streetRoadClasses = ['minor', 'service'] as const;
+const serviceRoadClasses = ['track'] as const;
 const majorRoadClassSet = new Set<string>(majorRoadClasses);
 
 export function roadClassesForDetail(detail: TileflowRoadDetail): TileflowRoadClass[] {
@@ -81,6 +83,7 @@ export function roadClassesWithPaths(
 }
 
 export function visibleRoadClasses(options: ResolvedRoadsModuleOptions): TileflowRoadClass[] {
+  if (!options.enabled) return [];
   const disabled = new Set(options.disabledClasses);
   return [
     ...new Set([
@@ -106,6 +109,7 @@ export function resolveRoads(
     disabledClasses: Object.entries(request?.classes ?? {})
       .filter(([, style]) => style?.enabled === false)
       .map(([roadClass]) => roadClass as TileflowRoadClass),
+    enabled: request?.enabled ?? defaults.enabled,
     explicitClasses: Object.entries(request?.classes ?? {})
       .filter(([, style]) => style?.enabled !== false)
       .map(([roadClass]) => roadClass as TileflowRoadClass),

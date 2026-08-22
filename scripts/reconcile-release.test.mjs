@@ -288,9 +288,13 @@ test('accepts final tarballs after applying workspace ranges and preserves unsel
         manifest: {dependencies: {'@tileflow/core': '0.1.0-alpha.16'}},
       },
     });
-    await sourceManifestTree(root, {}, {
-      '@tileflow/dev': {dependencies: {'@tileflow/core': internalWorkspaceRuntimeRange}},
-    });
+    await sourceManifestTree(
+      root,
+      {},
+      {
+        '@tileflow/dev': {dependencies: {'@tileflow/core': internalWorkspaceRuntimeRange}},
+      },
+    );
     await applyReleaseVersions(plan, root);
 
     const appliedDev = JSON.parse(
@@ -367,9 +371,13 @@ test('validates selected dependents after applying workspace release ranges', as
         manifest: {dependencies: {'@tileflow/core': finalRange}},
       },
     });
-    await sourceManifestTree(root, {}, {
-      '@tileflow/dev': {dependencies: {'@tileflow/core': internalWorkspaceRuntimeRange}},
-    });
+    await sourceManifestTree(
+      root,
+      {},
+      {
+        '@tileflow/dev': {dependencies: {'@tileflow/core': internalWorkspaceRuntimeRange}},
+      },
+    );
     await applyReleaseVersions(plan, root);
 
     const appliedDev = JSON.parse(

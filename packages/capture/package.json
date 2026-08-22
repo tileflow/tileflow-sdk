@@ -27,18 +27,23 @@
     "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean --platform node",
+    "build": "tsup src/index.ts src/receipt.ts --format esm --dts --clean --platform node",
     "test": "tsx --test --test-concurrency=1 test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "smoke:browser": "pnpm run test",
-    "verify": "pnpm run typecheck && pnpm run test"
+    "verify": "pnpm run typecheck && pnpm run build && pnpm run test"
   },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./receipt": {
+      "types": "./dist/receipt.d.ts",
+      "import": "./dist/receipt.js",
+      "default": "./dist/receipt.js"
     }
   },
   "publishConfig": {

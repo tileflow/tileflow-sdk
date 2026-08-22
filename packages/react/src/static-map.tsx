@@ -11,11 +11,14 @@ import {
 } from 'react';
 import {normalizeTileflowCaptureId} from '@tileflow/core';
 import {
+  prepareStaticMapRequest,
+  stableStringify,
+  type PreparedStaticMapRequest,
   type StaticMapResult,
   type StaticSceneInput,
   validateStaticMapIdempotencyKey,
 } from '@tileflow/static';
-import {createStaticMapRequestKey, resolveStaticMap, stableStringify} from './static-map-request';
+import {resolveStaticMap} from './static-map-request';
 
 type StaticMapBaseProps = StaticSceneInput & {
   alt?: string;
@@ -73,10 +76,13 @@ export function StaticMap({
   const resolvedCaptureId = normalizeTileflowCaptureId(captureId);
   const onErrorRef = useRef(onError);
   const onReadyRef = useRef(onReady);
-  const sceneKey = useMemo(
-    () => stableStringify({camera, map, overlays, size}),
+  const sceneInputKey = stableStringify({camera, map, overlays, size});
+  const preparedSceneCandidate = useMemo(
+    () => prepareSceneRequest({camera, map, overlays, size}),
     [camera, map, overlays, size],
   );
+  const preparedScene = useStablePreparedSceneRequest(preparedSceneCandidate);
+  const sceneKey = preparedScene.ok ? preparedScene.request.sceneKey : `invalid:${sceneInputKey}`;
   const intentKey = imageUrl
     ? `image:${imageUrl}`
     : `create:${createUrl}:${idempotencyKey ?? ''}:${sceneKey}`;
@@ -136,6 +142,15 @@ export function StaticMap({
       return;
     }
 
+    if (!preparedScene.ok) {
+      if (!keepPreviousImage) setResult(null);
+      setError(preparedScene.error);
+      imageLoadRunRef.current += 1;
+      setCaptureState('error');
+      onErrorRef.current?.(preparedScene.error);
+      return;
+    }
+
     if (!keepPreviousImage) {
       setResult(null);
     }
@@ -146,12 +161,7 @@ export function StaticMap({
     resolveStaticMap({
       createUrl,
       idempotencyKey: validation.key,
-      requestKey: createStaticMapRequestKey({
-        createUrl,
-        idempotencyKey: validation.key,
-        sceneKey,
-      }),
-      scene: JSON.parse(sceneKey) as StaticSceneInput,
+      request: preparedScene.request,
       signal: requestController.signal,
     })
       .then((nextResult) => {
@@ -185,7 +195,7 @@ export function StaticMap({
       cancelled = true;
       requestController.abort();
     };
-  }, [createUrl, idempotencyKey, imageUrl, intentKey, keepPreviousImage, sceneKey]);
+  }, [createUrl, idempotencyKey, imageUrl, keepPreviousImage, preparedScene]);
 
   return (
     <div
@@ -231,6 +241,37 @@ export function StaticMap({
       ) : null}
     </div>
   );
+}
+
+type PreparedSceneRequest =
+  | {error: Error; ok: false}
+  | {ok: true; request: PreparedStaticMapRequest};
+
+function prepareSceneRequest(scene: StaticSceneInput): PreparedSceneRequest {
+  try {
+    return {ok: true, request: prepareStaticMapRequest(scene)};
+  } catch (error: unknown) {
+    return {
+      error: error instanceof Error ? error : new Error('Invalid Tileflow static scene'),
+      ok: false,
+    };
+  }
+}
+
+function useStablePreparedSceneRequest(value: PreparedSceneRequest): PreparedSceneRequest {
+  const valueRef = useRef(value);
+  const current = valueRef.current;
+  const equivalent =
+    current.ok === value.ok &&
+    (current.ok && value.ok
+      ? current.request.sceneKey === value.request.sceneKey
+      : !current.ok && !value.ok && current.error.message === value.error.message);
+
+  if (!equivalent) {
+    valueRef.current = value;
+  }
+
+  return valueRef.current;
 }
 
 function imageResult(imageUrl: string): StaticMapResult {

@@ -58,7 +58,7 @@ export function resolvePoi(request: TileflowPoiModuleConfig | undefined): Resolv
   const mode = request?.preset ?? 'minimal';
   const density = request?.density ?? defaultDensity[mode];
   return {
-    ...(request?.categories ? {categories: [...request.categories]} : {}),
+    ...(request?.categories ? {categories: [...new Set(request.categories)]} : {}),
     classMapping: resolveClassMapping(request?.classMapping),
     color: request?.color ?? 'uniform',
     density,

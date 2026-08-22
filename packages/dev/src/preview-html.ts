@@ -2490,6 +2490,22 @@ export function renderTileflowPreviewHtml(
 
       applyStatus(initialStatus);
       const events = new EventSource(${JSON.stringify(`${basePath}/__events`)});
+      // Generations are monotonic only within one dev-server process. A source-code watcher can
+      // restart that process at generation 1, so reconnecting after a live connection was lost
+      // must refresh the document even when the numeric generation did not increase.
+      let eventsConnected = false;
+      let eventsDisconnected = false;
+      events.addEventListener("open", () => {
+        if (eventsConnected && eventsDisconnected) {
+          location.reload();
+          return;
+        }
+        eventsConnected = true;
+        eventsDisconnected = false;
+      });
+      events.addEventListener("error", () => {
+        if (eventsConnected) eventsDisconnected = true;
+      });
       for (const eventName of ["building", "ready", "invalid"]) {
         events.addEventListener(eventName, (event) => applyStatus(JSON.parse(event.data)));
       }

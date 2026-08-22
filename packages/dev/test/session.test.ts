@@ -604,6 +604,13 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.equal(restoredToggles.buildingVisibility(), 'visible');
   assert.equal(restoredToggles.treeVisibility(), 'none');
 
+  const restartedServer = runPreviewScript(boundsHtml, persistedUrl.href);
+  restartedServer.emitServerEvent('open');
+  assert.equal(restartedServer.reloads(), 0);
+  restartedServer.emitServerEvent('error');
+  restartedServer.emitServerEvent('open');
+  assert.equal(restartedServer.reloads(), 1);
+
   const invalidCamera = runPreviewScript(
     mapHtml,
     'http://localhost/?lng=-3.7038&lat=40.4168&zoom=99&bearing=0&pitch=0',
@@ -793,8 +800,10 @@ function runPreviewScript(
   buildingVisibility(): string;
   currentUrl(): string;
   emit(eventName: string): void;
+  emitServerEvent(eventName: string, data?: unknown): void;
   mapOptions: Record<string, unknown> | undefined;
   pitch(): number;
+  reloads(): number;
   threeDimensionalLabel(): string | undefined;
   treeLabel(): string | undefined;
   treeVisibility(): string;
@@ -810,8 +819,10 @@ function runPreviewScript(
   let buildingVisibility = 'none';
   let treeVisibility = 'visible';
   let currentPitch = 0;
+  let reloadCount = 0;
   let styleReady = false;
   const controlButtons: FakeElement[] = [];
+  const eventSourceListeners = new Map<string, Set<(event: {data: string}) => void>>();
   let currentUrl = href;
   const listeners = new Map<string, Set<() => void>>();
   const elements = new Map<string, FakeElement>();
@@ -953,7 +964,11 @@ function runPreviewScript(
   }
 
   class FakeEventSource {
-    addEventListener(): void {}
+    addEventListener(name: string, listener: (event: {data: string}) => void): void {
+      const eventListeners = eventSourceListeners.get(name) ?? new Set();
+      eventListeners.add(listener);
+      eventSourceListeners.set(name, eventListeners);
+    }
   }
 
   runInNewContext(script, {
@@ -977,7 +992,12 @@ function runPreviewScript(
       },
       state: null,
     },
-    location: {href, reload() {}},
+    location: {
+      href,
+      reload() {
+        reloadCount += 1;
+      },
+    },
     maplibregl: {Map: FakeMap, NavigationControl: class {}},
   });
 
@@ -988,8 +1008,13 @@ function runPreviewScript(
       if (eventName === 'load' || eventName === 'styledata') styleReady = true;
       for (const listener of listeners.get(eventName) ?? []) listener();
     },
+    emitServerEvent(eventName, data) {
+      const event = {data: JSON.stringify(data)};
+      for (const listener of eventSourceListeners.get(eventName) ?? []) listener(event);
+    },
     mapOptions,
     pitch: () => currentPitch,
+    reloads: () => reloadCount,
     threeDimensionalLabel: () =>
       controlButtons.find((button) => button.className === 'tileflow-3d-toggle')?.textContent,
     treeLabel: () =>

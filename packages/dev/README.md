@@ -43,7 +43,8 @@ The bounded watcher follows the config, transitive local TypeScript/JavaScript/J
 effective icon inputs. Generations are monotonic, overlapping refreshes are latest-wins, invalid
 edits retain the last good snapshot, and caller-supplied output directories can be ignored to avoid
 feedback loops. `tileflow dev`, `capture --watch`, and framework adapters use this shared status
-vocabulary.
+vocabulary. The built-in preview reloads after its live event stream reconnects following a server
+restart, even when the replacement process begins again at generation 1.
 
 Custom preview servers can select the same map or standalone scene semantics as the CLI:
 

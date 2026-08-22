@@ -18,3 +18,10 @@ for (const entry of ['index.js', 'static.js']) {
     assert.match(output, /error/);
   });
 }
+
+test('interactive React build installs the World notice bridge', async () => {
+  const output = await readFile(new URL('../dist/index.js', import.meta.url), 'utf8');
+  assert.match(output, /registerTileflowWorldRequestBridge/);
+  assert.match(output, /attachTileflowFairUseNotice/);
+  assert.match(output, /worldRequestBridge/);
+});

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {
   assertSuccessfulRequiredJob,
@@ -8,6 +9,25 @@ import {
 
 const repository = 'tileflow/tileflow-sdk';
 const releaseSha = 'a'.repeat(40);
+
+test('checks the public release interlock before npm reconciliation', async () => {
+  const workflow = await readFile(
+    new URL('../.github/workflows/publish.yml', import.meta.url),
+    'utf8',
+  );
+  const blockers = await readFile(
+    new URL('../PUBLIC_RELEASE_BLOCKERS.md', import.meta.url),
+    'utf8',
+  );
+  const interlock = workflow.indexOf('Enforce public SDK release interlock');
+  const registryRead = workflow.indexOf('Download current npm alpha baselines');
+
+  assert.ok(interlock >= 0);
+  assert.ok(registryRead > interlock);
+  assert.match(workflow, /\[\[ -f PUBLIC_RELEASE_BLOCKERS\.md \]\]/u);
+  assert.match(blockers, /legal copyright owner/u);
+  assert.match(blockers, /asset-set\s+ID/u);
+});
 
 test('accepts only a successful push CI run from tileflow-sdk main at the exact SHA', () => {
   const workflowRun = trustedRun();

@@ -393,7 +393,7 @@ test(
     assert.equal(document.command, 'visual.analyze');
     assert.equal(document.dimensionsMatch, false);
     assert.equal(document.diffPath, null);
-    assert.deepEqual(await readFile(join(directory, 'reference.png')), reference);
+    assert.equal((await readFile(join(directory, 'reference.png'))).equals(reference), true);
     assert.deepEqual(
       [...(await readFile(join(directory, document.actualPath))).subarray(0, 8)],
       [137, 80, 78, 71, 13, 10, 26, 10],
@@ -407,7 +407,7 @@ test(
 );
 
 const applicationConfig = `export default {
-  maps: {proof: {}},
+  maps: {proof: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}}},
   scenes: {proof: {map: 'proof', camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 128, height: 128}, target: {kind: 'application', path: '/', captureId: 'proof'}}}
 };\n`;
 

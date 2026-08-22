@@ -174,6 +174,7 @@ export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureR
   const data = requireRecord(receipt.data, 'data');
   requireExactKeys(data, [
     'kind',
+    ...(data.generation === undefined ? [] : ['generation']),
     ...(data.revision === undefined ? [] : ['revision']),
     'schema',
     'schemaVersion',
@@ -184,6 +185,17 @@ export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureR
   }
   if (data.schema !== 'openmaptiles' || data.sourceId !== 'tileflow') {
     throw invalidReceipt('The baseline receipt has an unsupported data contract.');
+  }
+  if (data.kind === 'tileflow-world') {
+    const hasGeneration = data.generation !== undefined;
+    const hasLegacyRevision = data.revision !== undefined;
+    if (hasGeneration === hasLegacyRevision) {
+      throw invalidReceipt(
+        'The baseline receipt must identify World by one generation or one legacy revision.',
+      );
+    }
+  } else if (data.generation !== undefined) {
+    throw invalidReceipt('The baseline receipt has an invalid data.generation.');
   }
 
   return {
@@ -218,6 +230,9 @@ export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureR
       architecture: requireBoundedString(platform.architecture, 'platform.architecture'),
     },
     data: {
+      ...(data.generation === undefined
+        ? {}
+        : {generation: requireWorldGeneration(data.generation)}),
       kind: data.kind,
       ...(data.revision === undefined ? {} : {revision: requireSourceRevision(data.revision)}),
       schema: data.schema,
@@ -291,6 +306,13 @@ function requireBoundedString(value: unknown, field: string): string {
 function requireSourceRevision(value: unknown): string {
   if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) {
     throw invalidReceipt('The baseline receipt has an invalid data.revision.');
+  }
+  return value;
+}
+
+function requireWorldGeneration(value: unknown): 'v1' {
+  if (value !== 'v1') {
+    throw invalidReceipt('The baseline receipt has an invalid data.generation.');
   }
   return value;
 }

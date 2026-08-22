@@ -220,7 +220,7 @@ anchor does not exist. They should be used for one-off MapLibre behavior, not or
 
 ## Data is separate from design
 
-Omitting `data` selects Tileflow World at the revision pinned by this SDK version:
+Omitting `data` selects the compiler-owned Tileflow World `v1` compatibility generation:
 
 ```ts
 {
@@ -228,24 +228,33 @@ Omitting `data` selects Tileflow World at the revision pinned by this SDK versio
 }
 ```
 
-Pin the official data deliberately, or use another OpenMapTiles-compatible vector source:
+Name the official generation deliberately, or use another OpenMapTiles-compatible vector source:
 
 ```ts
 import {openMapTiles, tileflowWorld, vectorTiles} from '@tileflow/core';
 
-const official = tileflowWorld({revision: '2026-06-07'});
+const official = tileflowWorld();
 const external = vectorTiles({
-  url: 'https://tiles.example.com/tiles.json',
+  tiles: ['pmtiles://./test/fixtures/world.pmtiles'],
+  revision: 'fixture-1',
   attribution: '© Example © OpenStreetMap contributors',
   schema: openMapTiles(),
 });
 ```
 
 The basemap controls how data is drawn; `data` controls where compatible features come from. The
-compiler performs no network request. `openMapTiles({layers, fields})` can bind renamed
+compiler emits `https://world.tileflow.dev/world/v1/{z}/{x}/{y}.pbf` directly and performs no
+metadata, catalog, or TileJSON request. World data revisions can change behind that path when they
+remain compatible; they are neither configuration nor replay selectors. `openMapTiles({layers,
+fields})` can bind renamed
 source-layers or properties while preserving the versioned semantic contract. External browser
 credentials do not belong in public Style JSON; supply them through the framework's
 `transformRequest` integration.
+
+External exact-test sources may use one TileJSON `url` or a bounded direct `tiles` list with optional
+`bounds`, `minzoom`, and `maxzoom`. `pmtiles://` is supported for a checked-in or bring-your-own
+archive. An external `revision` participates in capture identity, so changing fixture bytes cannot
+silently reuse a baseline.
 
 Tileflow's OpenMapTiles contract also recognizes the optional `globallandcover` extension. The
 default Streets style maps its `barren`, `crop`, `grass`, `shrub`, `snow`, `trees`, and `urban`
@@ -253,11 +262,14 @@ classes beneath the OSM land layers at zooms 0–7, fading to transparent at zoo
 different layer name can use `openMapTiles({layers: {globalLandcover: 'my_landcover'}})`; archives
 without the extension remain compatible and simply render no features for that style layer.
 
-The pinned legacy Tileflow World revision keeps its historical attribution inline in the generated
-style. Every other explicitly pinned official revision delegates attribution to its versioned
-TileJSON, so MapLibre displays the exact text bound to that archive's release receipt. The SDK does
-not guess a legal string or fall back to the legacy attribution for a new product; publishing must
-fail before selection when that immutable TileJSON has no receipt-backed attribution.
+A public compiler release binds one validated `WorldGenerationDescriptor` containing the frozen
+vector-schema hash, encoding, zooms, bounds, upstream attribution, direct World URL, and one
+content-identified glyph/sprite set. Project config cannot override that descriptor. The current
+prepublication branch intentionally contains no production asset-set ID or placeholder default;
+release remains blocked until the complete descriptor is approved and bundled.
+
+Upstream data attribution remains in the MapLibre source. `Map by Tileflow` is a separate product
+credit/trademark surface and must not replace, obscure, or be presented as upstream attribution.
 
 ## Capture scenes
 
@@ -278,7 +290,8 @@ export default defineTileflow({
 
 Use `tileflow dev --scene madrid-desktop` for live review and `tileflow capture madrid-desktop`
 for exact pixels and a schema-version-2 receipt containing the Streets, data, style, renderer, and
-image identities.
+image identities. World receipts identify `generation: "v1"`; external fixtures may identify their
+explicit revision.
 
 ## Public API and browser subpath
 
@@ -290,10 +303,12 @@ Framework adapters import the browser-only lifecycle kernel explicitly:
 
 ```ts
 import {
+  attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
   createTileflowMarkerController,
   createTileflowSessionStarter,
   createTileflowTransformRequest,
+  registerTileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
 ```
 
@@ -315,12 +330,20 @@ can set `grantTimeoutMs` from 1 to 120,000 milliseconds.
 server-owned commercial authorization. User `transformRequest` callbacks still run first; Tileflow
 then decorates only the resulting eligible URL and preserves the other request options.
 
+For direct Tileflow World tiles, framework adapters also use the browser request bridge to observe
+the response's safe fair-use state without adding identity, query parameters, credentials, or user
+headers to the public World URL. Early `GRACE` stays silent; signed late `GRACE` creates a compact
+accessible owner-action pill, and `CLAIM_REQUIRED` creates a stronger in-map banner. A missing
+header, absent tile, MapLibre error, or failed response cannot erase an existing claim action; a
+later successful `OPEN` response can clear it. Shaped empty tiles remain render-safe while the owner
+action stays available.
+
 Other subpaths under `src/`, `themes/`, `templates/`, and `modules/` are internal implementation
 details and can change during alpha releases.
 
-Streets build, preview, capture, and deploy flows supply a built-in POI sprite with Google Places
-glyphs inside Tileflow circular markers. The markers use Google's category colors, a white rim, and
-a compact shadow. A project-local icon source or explicit hosted sprite replaces that catalog;
-build and deploy replace local sources with generated sprite URLs without exposing source paths.
-Calling the pure core style compiler without asset preparation remains text-only unless the map
-provides `icons` or `sprite` explicitly.
+Streets build, preview, capture, and deploy flows supply nine original Tileflow POI pictograms. A
+complete public generation descriptor points at their content-identified base sprite; local tooling
+can compile the same first-party SVG sources for exact offline work. A project-local icon source or
+explicit hosted sprite replaces that catalog without exposing source paths. Calling the pure core
+style compiler without asset preparation or a complete generation descriptor remains text-only
+unless the map provides `icons` or `sprite` explicitly.

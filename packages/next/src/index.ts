@@ -5,6 +5,7 @@ import {
   getTileflowAssetBasePath,
   joinTileflowPublicUrl,
   normalizeTileflowBasePath,
+  type TileflowBuildArtifactsOptions,
   writeTileflowBuildArtifacts,
 } from '@tileflow/dev';
 
@@ -16,6 +17,7 @@ export type TileflowNextPluginOptions = {
   emitBuildArtifacts?: boolean;
   publicDir?: string;
   routeBase?: string | false;
+  worldGeneration?: TileflowBuildArtifactsOptions['worldGeneration'];
 };
 
 type NextRewritesConfig = Awaited<ReturnType<NonNullable<NextConfig['rewrites']>>>;
@@ -77,6 +79,7 @@ async function emitTileflowBuildArtifacts(
     outDir,
     styleBaseUrl: publicBaseUrl,
     apiBaseUrl: options.apiBaseUrl,
+    worldGeneration: options.worldGeneration,
   });
 }
 

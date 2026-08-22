@@ -65,18 +65,6 @@ test(
       const path = request.url?.split('?')[0] ?? '/';
       requests.add(path);
       response.setHeader('Access-Control-Allow-Origin', '*');
-      if (path === '/tiles/world/tiles.json') {
-        response.writeHead(200, {'Content-Type': 'application/json'});
-        response.end(
-          JSON.stringify({
-            tilejson: '3.0.0',
-            minzoom: 0,
-            maxzoom: 14,
-            tiles: [`${origin}/tiles/world/{z}/{x}/{y}.pbf`],
-          }),
-        );
-        return;
-      }
       if (path.endsWith('.pbf')) {
         response.writeHead(200, {'Content-Type': 'application/x-protobuf'});
         response.end(Buffer.alloc(0));
@@ -108,6 +96,16 @@ test(
   maps: {
     proof: {
       basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
+      data: {
+        type: 'vector-tiles',
+        attribution: 'Tileflow exact fixture',
+        revision: 'fixture_1',
+        schema: {type: 'openmaptiles', contractVersion: 1},
+        tiles: [${JSON.stringify(`${origin}/tiles/world/{z}/{x}/{y}.pbf`)}],
+        minzoom: 0,
+        maxzoom: 14,
+        bounds: [-180, -85, 180, 85]
+      },
       modules: {roads: {
         type: 'roads', detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
         extras: {paths: true}
@@ -148,7 +146,7 @@ test(
       assert.deepEqual(readPngDimensions(first.png), {height: 256, width: 256});
       assert.equal(first.networkDependent, false);
       assert.deepEqual(first.warnings, []);
-      assert.equal(requests.has('/tiles/world/tiles.json'), true);
+      assert.equal(requests.has('/tiles/world/tiles.json'), false);
       assert.equal(
         [...requests].some((path) => path.endsWith('.pbf')),
         true,

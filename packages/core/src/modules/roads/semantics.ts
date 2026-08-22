@@ -36,12 +36,20 @@ const constructionClasses: Record<TileflowRoadClass, readonly string[]> = {
   tertiary: ['tertiary_construction'],
   minor: ['minor_construction'],
   service: ['service_construction'],
-  track: ['track_construction'],
+  track: ['track_construction', 'raceway_construction'],
   pathway: ['path_construction'],
   footway: ['path_construction'],
   cycleway: ['path_construction'],
   steps: ['path_construction'],
   pedestrian: ['path_construction'],
+};
+
+// OpenMapTiles exposes these road-like classes separately, while Tileflow's
+// public road vocabulary intentionally stays smaller. Keep the mapping here so
+// geometry and labels share one disjoint semantic selector.
+const compatibleRoadClasses: Partial<Record<TileflowRoadClass, readonly string[]>> = {
+  service: ['busway', 'bus_guideway'],
+  track: ['raceway'],
 };
 
 export const tileflowRoadConstructionClasses = [
@@ -68,9 +76,23 @@ export function tileflowRoadClassFilter(
 
   const classes =
     roadClass === 'minor'
-      ? ['minor', 'residential', 'unclassified', ...constructionClasses[roadClass]]
+      ? [
+          'minor',
+          'residential',
+          'unclassified',
+          ...(compatibleRoadClasses[roadClass] ?? []),
+          ...constructionClasses[roadClass],
+        ]
       : roadClass === 'service'
-        ? ['service', ...constructionClasses[roadClass]]
-        : [roadClass, ...constructionClasses[roadClass]];
+        ? [
+            'service',
+            ...(compatibleRoadClasses[roadClass] ?? []),
+            ...constructionClasses[roadClass],
+          ]
+        : [
+            roadClass,
+            ...(compatibleRoadClasses[roadClass] ?? []),
+            ...constructionClasses[roadClass],
+          ];
   return ['match', ['get', fields.class], classes, true, false];
 }

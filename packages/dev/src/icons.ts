@@ -194,6 +194,7 @@ type ResolvedIconRequest = LocalIconRequest & {
 type IconInput = {
   fileName: string;
   format: TileflowIconCatalogSourceFormat;
+  kind: 'icon' | 'pattern';
   name: string;
   path: string;
   source: Uint8Array;
@@ -756,6 +757,7 @@ async function inspectIconSource(
   const candidates: Array<{
     fileName: string;
     format: TileflowIconCatalogSourceFormat;
+    kind: 'icon' | 'pattern';
     name: string;
     path: string;
     size: number;
@@ -815,7 +817,12 @@ async function inspectIconSource(
       continue;
     }
 
-    const name = entry.name.slice(0, -extname(entry.name).length);
+    const sourceName = entry.name.slice(0, -extname(entry.name).length);
+    // `.pattern` assets retain their intrinsic pixel dimensions in the
+    // generated PNG sprite. Their runtime ID omits the marker, so
+    // `tunnel-32.pattern.svg` is referenced as `tunnel-32`.
+    const kind = sourceName.endsWith('.pattern') ? 'pattern' : 'icon';
+    const name = kind === 'pattern' ? sourceName.slice(0, -'.pattern'.length) : sourceName;
 
     if (names.has(name)) {
       issues.push({
@@ -844,6 +851,7 @@ async function inspectIconSource(
     candidates.push({
       fileName: entry.name,
       format: iconSourceFormat(extension),
+      kind,
       name,
       path: realEntryPath,
       size: entryStat.size,
@@ -899,6 +907,7 @@ async function inspectIconSource(
       icons.push({
         fileName: candidate.fileName,
         format: candidate.format,
+        kind: candidate.kind,
         name: candidate.name,
         path: candidate.path,
         source,
@@ -921,15 +930,23 @@ async function inspectIconSource(
 async function compileInspectedIconSource(
   inspected: InspectedIconSource,
 ): Promise<CompiledIconSource> {
-  const layoutOneX = createSpriteLayout(inspected.icons, 1);
-  const layoutTwoX = createSpriteLayout(inspected.icons, 2);
   const rendered = await mapWithConcurrency(
     inspected.icons,
     tileflowIconPackageLimits.decodeConcurrency,
     async (icon) => {
       const dimensions = await validateDecodedDimensions(icon);
-      const oneX = await renderIcon(icon, 1);
-      const twoX = await renderIcon(icon, 2);
+      if (
+        icon.kind === 'pattern' &&
+        (dimensions.width < 2 ||
+          dimensions.width > 512 ||
+          (dimensions.width & (dimensions.width - 1)) !== 0)
+      ) {
+        throw new Error(
+          `${icon.fileName} pattern width must be a power of two from 2 through 512 pixels`,
+        );
+      }
+      const oneX = await renderIcon(icon, dimensions, 1);
+      const twoX = await renderIcon(icon, dimensions, 2);
       return {
         dimensions,
         input: icon,
@@ -952,13 +969,21 @@ async function compileInspectedIconSource(
       };
     },
   );
+  const layoutOneX = createSpriteLayout(
+    rendered.map(({input, oneX}) => ({...oneX, name: input.name})),
+    1,
+  );
+  const layoutTwoX = createSpriteLayout(
+    rendered.map(({input, twoX}) => ({...twoX, name: input.name})),
+    2,
+  );
   const [oneXImage, twoXImage] = await Promise.all([
     createSpriteImage(
-      rendered.map((item) => item.oneX),
+      rendered.map(({input, oneX}) => ({...oneX, name: input.name})),
       layoutOneX,
     ),
     createSpriteImage(
-      rendered.map((item) => item.twoX),
+      rendered.map(({input, twoX}) => ({...twoX, name: input.name})),
       layoutTwoX,
     ),
   ]);
@@ -1009,12 +1034,36 @@ async function compileInspectedIconSource(
   };
 }
 
-function createSpriteLayout(icons: IconInput[], pixelRatio: 1 | 2) {
-  const cellSize = iconSpriteSize * pixelRatio;
+function createSpriteLayout(
+  icons: Array<{height: number; name: string; width: number}>,
+  pixelRatio: 1 | 2,
+) {
   const columns = Math.ceil(Math.sqrt(icons.length));
-  const rows = Math.ceil(icons.length / columns);
-  const width = columns * cellSize;
-  const height = rows * cellSize;
+  const widest = Math.max(...icons.map((icon) => icon.width));
+  const targetWidth = Math.min(tileflowIconPackageLimits.maxAtlasDimension, columns * widest);
+  const placements: Array<{left: number; top: number}> = [];
+  let left = 0;
+  let rowHeight = 0;
+  let top = 0;
+
+  for (const icon of icons) {
+    if (icon.width > tileflowIconPackageLimits.maxAtlasDimension) {
+      throw new Error(
+        `Generated sprite exceeds ${tileflowIconPackageLimits.maxAtlasDimension} pixels per dimension`,
+      );
+    }
+    if (left > 0 && left + icon.width > targetWidth) {
+      top += rowHeight;
+      left = 0;
+      rowHeight = 0;
+    }
+    placements.push({left, top});
+    left += icon.width;
+    rowHeight = Math.max(rowHeight, icon.height);
+  }
+
+  const width = targetWidth;
+  const height = top + rowHeight;
 
   if (
     width > tileflowIconPackageLimits.maxAtlasDimension ||
@@ -1027,23 +1076,22 @@ function createSpriteLayout(icons: IconInput[], pixelRatio: 1 | 2) {
 
   const index: SpriteIndex = Object.fromEntries(
     icons.map((icon, indexNumber) => {
-      const column = indexNumber % columns;
-      const row = Math.floor(indexNumber / columns);
+      const placement = placements[indexNumber]!;
 
       return [
         icon.name,
         {
-          height: cellSize,
+          height: icon.height,
           pixelRatio,
-          width: cellSize,
-          x: column * cellSize,
-          y: row * cellSize,
+          width: icon.width,
+          x: placement.left,
+          y: placement.top,
         },
       ];
     }),
   );
 
-  return {cellSize, columns, height, index, width};
+  return {height, index, width};
 }
 
 async function validateDecodedDimensions(icon: IconInput): Promise<DecodedIconDimensions> {
@@ -1071,16 +1119,18 @@ async function validateDecodedDimensions(icon: IconInput): Promise<DecodedIconDi
 
 async function renderIcon(
   icon: IconInput,
+  dimensions: DecodedIconDimensions,
   pixelRatio: 1 | 2,
 ): Promise<{height: number; png: Uint8Array; rgba: Uint8Array; width: number}> {
   const sharp = await loadSharp();
-  const cellSize = iconSpriteSize * pixelRatio;
+  const targetWidth = (icon.kind === 'pattern' ? dimensions.width : iconSpriteSize) * pixelRatio;
+  const targetHeight = (icon.kind === 'pattern' ? dimensions.height : iconSpriteSize) * pixelRatio;
   const {data, info} = await sharp(icon.source, {
     density: 72 * pixelRatio,
     failOn: 'error',
     limitInputPixels: tileflowIconPackageLimits.maxDecodedPixelsPerIcon,
   })
-    .resize(cellSize, cellSize, {
+    .resize(targetWidth, targetHeight, {
       background: {alpha: 0, b: 0, g: 0, r: 0},
       fit: 'contain',
     })
@@ -1088,7 +1138,7 @@ async function renderIcon(
     .raw()
     .toBuffer({resolveWithObject: true});
 
-  if (info.channels !== 4 || info.width !== cellSize || info.height !== cellSize) {
+  if (info.channels !== 4 || info.width !== targetWidth || info.height !== targetHeight) {
     throw new Error(`Rendered icon ${icon.fileName} did not produce canonical RGBA pixels`);
   }
 
@@ -1103,24 +1153,23 @@ async function renderIcon(
 }
 
 async function createSpriteImage(
-  icons: Array<{height: number; rgba: Uint8Array; width: number}>,
+  icons: Array<{height: number; name: string; rgba: Uint8Array; width: number}>,
   layout: ReturnType<typeof createSpriteLayout>,
 ): Promise<Uint8Array> {
   const sharp = await loadSharp();
   const atlas = new Uint8Array(layout.width * layout.height * 4);
 
-  for (const [indexNumber, icon] of icons.entries()) {
-    if (icon.width !== layout.cellSize || icon.height !== layout.cellSize) {
+  for (const icon of icons) {
+    const placement = layout.index[icon.name];
+    if (!placement || icon.width !== placement.width || icon.height !== placement.height) {
       throw new Error('Rendered icon dimensions do not match the sprite layout');
     }
 
-    const left = (indexNumber % layout.columns) * layout.cellSize;
-    const top = Math.floor(indexNumber / layout.columns) * layout.cellSize;
     const rowBytes = icon.width * 4;
 
     for (let row = 0; row < icon.height; row += 1) {
       const sourceStart = row * rowBytes;
-      const targetStart = ((top + row) * layout.width + left) * 4;
+      const targetStart = ((placement.y + row) * layout.width + placement.x) * 4;
       atlas.set(icon.rgba.subarray(sourceStart, sourceStart + rowBytes), targetStart);
     }
   }

@@ -2,8 +2,10 @@ import {
   type TileflowLayerContribution,
   type TileflowLayerSlot,
   tileflowLayerSlots,
+  tileflowLayerTargetPattern,
   type TileflowSlotConstraint,
 } from './contributions';
+import {tileflowLayerDomains} from './domains';
 
 export function assembleTileflowLayers(
   contributions: readonly TileflowLayerContribution[],
@@ -15,12 +17,43 @@ export function assembleTileflowLayers(
   const positions = new Set<string>();
 
   for (const contribution of contributions) {
+    if (!contribution || typeof contribution !== 'object') {
+      throw new Error('Tileflow contributions must be objects.');
+    }
+    if (contribution.kind !== 'layer') {
+      throw new Error('Tileflow contributions must have kind "layer".');
+    }
+    if (
+      !contribution.layer ||
+      typeof contribution.layer !== 'object' ||
+      Array.isArray(contribution.layer)
+    ) {
+      throw new Error('Tileflow layer contribution requires a layer object.');
+    }
     const id = contribution.layer.id;
+    if (typeof id !== 'string' || !id.trim()) {
+      throw new Error('Tileflow layer ID must not be empty.');
+    }
+    if (typeof contribution.layer.type !== 'string' || !contribution.layer.type.trim()) {
+      throw new Error(`Tileflow layer ${id} requires a non-empty type.`);
+    }
     if (ids.has(id)) {
       throw new Error(`Duplicate Tileflow layer ID: ${id}`);
     }
     ids.add(id);
 
+    if (!tileflowLayerSlots.includes(contribution.slot)) {
+      throw new Error(`Unknown Tileflow layer slot: ${String(contribution.slot)}`);
+    }
+    if (!tileflowLayerDomains.includes(contribution.owner)) {
+      throw new Error(`Unknown Tileflow layer owner for ${id}: ${String(contribution.owner)}`);
+    }
+    if (
+      typeof contribution.target !== 'string' ||
+      !tileflowLayerTargetPattern.test(contribution.target)
+    ) {
+      throw new Error(`Tileflow layer ${id} requires a portable semantic target.`);
+    }
     if (!Number.isSafeInteger(contribution.localOrder)) {
       throw new Error(`Tileflow layer ${id} requires an integer localOrder.`);
     }

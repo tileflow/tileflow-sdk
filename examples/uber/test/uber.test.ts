@@ -14,6 +14,15 @@ test('builds a valid Uber-inspired map from the Streets contract', () => {
   assert.equal(style.name, 'Tileflow Uber-inspired Streets');
   assert.equal(style.metadata?.['tileflow:basemap'], 'streets');
   assert.equal(style.metadata?.['tileflow:basemapVersion'], 3);
+  assert.partialDeepStrictEqual(style.metadata?.['tileflow:data'], {
+    kind: 'vector-tiles',
+    revision: 'dev-spain-v8-20260818',
+    schema: 'openmaptiles',
+    schemaVersion: 1,
+    sourceId: 'tileflow',
+    capabilities: {businessCorridor: true, globalLandcover: true, tree: true},
+    url: 'https://dev-tiles.tileflow.dev/tiles/dev/tiles.json?archiveVersion=dev-spain-v8-20260818',
+  });
   assert.equal(style.metadata?.['tileflow:theme'], 'uber');
   assert.equal(style.layers.length > 90, true);
   assert.equal(

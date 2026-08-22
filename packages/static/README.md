@@ -2,6 +2,10 @@
 
 Static map schemas, overlay helpers, and request utilities for Tileflow static map rendering.
 
+This package describes and submits a render scene, then follows its asynchronous operation until an
+immutable image is ready. It is distinct from React's `<Map mode="image">`, which only displays an
+existing hosted image and does not create or poll a Static Maps operation.
+
 ```ts
 import {
   createStaticMapIdempotencyKey,
@@ -32,6 +36,11 @@ equal-hash render may return `202`; the helper polls with the same body/key with
 delays; `signal` cancels the same complete operation. The helper aborts in-flight work when either
 boundary is reached. It rejects malformed responses, non-HTTP(S) image URLs, and any change of
 durable operation ID while polling.
+
+Framework adapters can call `prepareStaticMapRequest(scene)` once and pass its result to
+`requestStaticMapUntilReady(request, {createUrl, idempotencyKey, ...})`. The prepared request uses
+the same normalized scene for its `sceneKey` and HTTP body, so equivalent omitted/explicit defaults
+deduplicate consistently without duplicating the polling implementation.
 
 Free cannot initiate Static Maps work. Starter consumes 15 shared API units for each successful
 logical operation, including a distinct-key cache reuse. Downloading the immutable PNG consumes

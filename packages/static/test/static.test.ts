@@ -5,6 +5,8 @@ import {
   createStaticMap,
   createStaticMapIdempotencyKey,
   hashStaticSceneRequest,
+  prepareStaticMapRequest,
+  requestStaticMapUntilReady,
   validateStaticMapIdempotencyKey,
   validateStaticScene,
 } from '../src/index';
@@ -267,4 +269,49 @@ test('hashes the normalized request body rather than input spelling', async () =
 
   assert.equal(left, right);
   assert.match(left, /^[A-Za-z0-9_-]{43}$/);
+});
+
+test('prepares one normalized scene for both the request body and dedupe key', async () => {
+  const implicitDefaults = prepareStaticMapRequest(baseScene);
+  const explicitDefaults = prepareStaticMapRequest({
+    ...baseScene,
+    camera: {...baseScene.camera, bearing: 0},
+    overlays: [],
+    size: {...baseScene.size, dpr: 1 as const},
+  });
+  const bodies: string[] = [];
+  const fetcher = (async (_url, init) => {
+    bodies.push(String(init?.body));
+    return Response.json({
+      cached: false,
+      hash: 'a'.repeat(43),
+      imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
+      operationId: 'smo_12345678901234567890',
+      remainingUnits: 499_985,
+      status: 'ready',
+      unitCost: 15,
+    });
+  }) as typeof fetch;
+
+  assert.equal(implicitDefaults.sceneKey, explicitDefaults.sceneKey);
+
+  await requestStaticMapUntilReady(implicitDefaults, {
+    createUrl: 'https://api.example.test/v1/static/maps',
+    fetch: fetcher,
+    idempotencyKey: 'static_implicit_123',
+  });
+  await requestStaticMapUntilReady(explicitDefaults, {
+    createUrl: 'https://api.example.test/v1/static/maps',
+    fetch: fetcher,
+    idempotencyKey: 'static_explicit_123',
+  });
+
+  assert.equal(bodies.length, 2);
+  assert.equal(bodies[0], bodies[1]);
+  assert.deepEqual(JSON.parse(bodies[0] ?? '{}'), {
+    camera: {bearing: 0, center: [0, 0], type: 'center', zoom: 2},
+    map: 'main',
+    overlays: [],
+    size: {dpr: 1, height: 480, width: 640},
+  });
 });

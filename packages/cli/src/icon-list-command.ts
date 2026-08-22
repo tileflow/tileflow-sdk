@@ -11,6 +11,7 @@ import {
   TileflowIconCompilationError,
   TileflowValidationError,
 } from '@tileflow/dev';
+import {withTileflowConfigSecretsHidden} from './config-execution';
 
 export type TileflowIconListJsonV1 = {
   schemaVersion: 1;
@@ -151,8 +152,9 @@ export function serializeTileflowIconListJson(value: TileflowIconListJsonV1): st
 }
 
 async function runIconList(options: IconListOptions): Promise<void> {
-  delete process.env.TILEFLOW_API_KEY;
-  const project = await loadValidTileflowConfig(options.config);
+  const project = await withTileflowConfigSecretsHidden(() =>
+    loadValidTileflowConfig(options.config),
+  );
   const mapNames = getTileflowMapNames(project).sort(compareCodeUnits);
 
   if (options.map && !Object.hasOwn(project.maps, options.map)) {

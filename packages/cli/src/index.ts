@@ -10,12 +10,7 @@ import {hostname, platform} from 'node:os';
 import {dirname, resolve} from 'node:path';
 import {createInterface} from 'node:readline/promises';
 import pc from 'picocolors';
-import {
-  serializeCanonicalJson,
-  tileflowHostedAlphaCompatibility,
-  type TileflowProjectConfig,
-  validateConfig,
-} from '@tileflow/core';
+import {serializeCanonicalJson, type TileflowProjectConfig, validateConfig} from '@tileflow/core';
 import {
   type CompiledTileflowIconPackage,
   compileTileflowIconPackages,
@@ -27,7 +22,6 @@ import {
   defaultTileflowManifestPath,
   getTileflowMapNames,
   loadTileflowConfig,
-  loadValidTileflowConfig,
   resolveTileflowPreview,
   type TileflowArtifactSessionState,
   TileflowIconCompilationError,
@@ -51,8 +45,20 @@ import {
   writeAuthFileAtomic,
 } from './account-session';
 import {registerCaptureCommands} from './capture-command';
+import {writeAtomicFileSet} from './capture-output';
+import {withTileflowConfigSecretsHidden} from './config-execution';
 import {allowsStoredDeployCredential, resolveDeploySource} from './deploy-source';
+import {defaultTileflowDevHost, parseTileflowDevHost, tileflowDevOrigin} from './dev-host';
 import {registerFeatureInspectCommand} from './feature-inspect-command';
+import {inspectTileflowHostedCompatibility} from './hosted-preflight';
+import {
+  hostedIconPackageResponseSchema,
+  type HostedProjectStatus,
+  hostedProjectStatusSchema,
+  hostedStyleDeploymentResponseSchema,
+  readHostedError,
+  readHostedJson,
+} from './hosted-response';
 import {registerIconDiffCommand} from './icon-diff-command';
 import {registerIconListCommand} from './icon-list-command';
 import {registerProjectCommands, resolveAccountProjectTarget} from './project-commands';
@@ -110,19 +116,6 @@ type DeployedManifest = {
   apiUrl: string;
   maps: Record<string, DeployedManifestMap>;
   styles: Record<string, string>;
-};
-
-type StatusStyle = {
-  environment: string;
-  key: string;
-  mapId: string;
-  size: number;
-  uploaded: string;
-};
-
-type ProjectStatus = {
-  projectId: string;
-  styles: StatusStyle[];
 };
 
 program
@@ -244,7 +237,15 @@ program
     const selected = resolveAccountSession(config, options.apiUrl ?? defaultApiUrl);
 
     if (selected.kind !== 'selected') {
-      logError('Not logged in.');
+      const message =
+        selected.kind === 'expired'
+          ? 'The Tileflow account session has expired.'
+          : 'Not logged in.';
+      if (options.json) {
+        logAuthCommandError(true, message);
+        return;
+      }
+      logError(message);
       printNextSteps([`Run ${command('tileflow login')} to authorize this machine.`]);
       process.exitCode = 1;
       return;
@@ -254,7 +255,6 @@ program
 
     if (!profile.ok) {
       logAuthCommandError(options.json, profile.error);
-      process.exitCode = 1;
       return;
     }
 
@@ -295,7 +295,7 @@ program
     }
 
     logInfo(`Validating ${pathLabel(options.config)}.`);
-    const project = await loadTileflowConfig(options.config);
+    const project = await withTileflowConfigSecretsHidden(() => loadTileflowConfig(options.config));
     const result = validateConfig(project);
 
     if (!result.valid) {
@@ -310,11 +310,13 @@ program
       target: options.target,
     });
 
-    if (options.target === 'hosted' && !validateHostedMapCount(mapNames)) {
+    const styles = createTileflowStyles(project, {apiBaseUrl: options.apiBaseUrl});
+    if (
+      options.target === 'hosted' &&
+      !printHostedCompatibilityIssues(inspectTileflowHostedCompatibility(mapNames, styles))
+    ) {
       return;
     }
-
-    createTileflowStyles(project, {apiBaseUrl: options.apiBaseUrl});
 
     logSuccess(`Config is valid (${plural(mapNames.length, 'map')}).`);
     printChecks([
@@ -338,12 +340,14 @@ program
   )
   .action(async (options: {apiBaseUrl: string; config: string; out: string}) => {
     logInfo(`Building ${pathLabel(options.config)}.`);
-    await writeTileflowBuildArtifacts({
-      config: options.config,
-      outDir: options.out,
-      styleBaseUrl: '.',
-      apiBaseUrl: options.apiBaseUrl,
-    });
+    await withTileflowConfigSecretsHidden(() =>
+      writeTileflowBuildArtifacts({
+        config: options.config,
+        outDir: options.out,
+        styleBaseUrl: '.',
+        apiBaseUrl: options.apiBaseUrl,
+      }),
+    );
 
     logSuccess('Built Tileflow artifacts.');
     printKeyValue('Output', pathLabel(resolve(process.cwd(), options.out)));
@@ -353,6 +357,7 @@ program
   .command('dev')
   .description('Run a local map preview')
   .option('-c, --config <path>', 'config path', defaultConfigPath)
+  .option('--host <host>', 'bind host: an explicit IP address or localhost', defaultTileflowDevHost)
   .option('--map <name>', 'preview one configured map')
   .option('-p, --port <port>', 'preview port', '3333')
   .option('--scene <name>', 'preview one committed standalone map scene')
@@ -366,6 +371,7 @@ program
     async (options: {
       apiBaseUrl: string;
       config: string;
+      host: string;
       json?: boolean;
       map?: string;
       port: string;
@@ -384,105 +390,113 @@ program
         return;
       }
 
-      delete process.env.TILEFLOW_API_KEY;
-      const origin = `http://localhost:${port}`;
-      const session = await createTileflowArtifactSession({
-        assetBaseUrl: origin,
-        apiBaseUrl: options.apiBaseUrl,
-        config: options.config,
-        styleBaseUrl: origin,
-        watch: true,
-      });
-      const initialArtifacts = session.getLastGoodArtifacts();
-
-      try {
-        if (initialArtifacts) {
-          resolveTileflowPreview(initialArtifacts.project, {
-            map: options.map,
-            scene: options.scene,
-          });
-        }
-      } catch (error) {
-        await session.close();
-        logError(error instanceof Error ? error.message : 'Invalid Tileflow preview selection.');
+      const host = parseTileflowDevHost(options.host);
+      if (!host) {
+        logError('--host expects an IP address or localhost.');
         process.exitCode = 1;
         return;
       }
 
-      const fetch = createTileflowDevRequestHandler({
-        config: options.config,
-        apiBaseUrl: options.apiBaseUrl,
-        map: options.map,
-        onError: printTileflowPreviewError,
-        scene: options.scene,
-        session,
-      });
-      let invalidSinceLastReady = false;
-      const emitState = (state: TileflowArtifactSessionState) => {
-        const recovered = invalidSinceLastReady && state.status === 'ready';
-        if (state.status === 'invalid') invalidSinceLastReady = true;
-        if (state.status === 'ready') invalidSinceLastReady = false;
-        if (options.json) {
-          const firstDiagnostic = state.status === 'invalid' ? state.diagnostics[0] : undefined;
-          process.stdout.write(
-            `${JSON.stringify({
-              schemaVersion: 1,
-              command: 'dev',
-              event: recovered ? 'recovered' : state.status,
-              generation: state.generation,
-              ...('lastGoodGeneration' in state && state.lastGoodGeneration !== undefined
-                ? {lastGoodGeneration: state.lastGoodGeneration}
-                : {}),
-              ...(firstDiagnostic?.code ? {code: firstDiagnostic.code} : {}),
-              ...(firstDiagnostic?.phase ? {phase: firstDiagnostic.phase} : {}),
-              ...(state.status === 'invalid' ? {diagnostics: state.diagnostics} : {}),
-            })}\n`,
-          );
+      await withTileflowConfigSecretsHidden(async () => {
+        const origin = tileflowDevOrigin(host, port);
+        const session = await createTileflowArtifactSession({
+          assetBaseUrl: origin,
+          apiBaseUrl: options.apiBaseUrl,
+          config: options.config,
+          styleBaseUrl: origin,
+          watch: true,
+        });
+        const initialArtifacts = session.getLastGoodArtifacts();
+
+        try {
+          if (initialArtifacts) {
+            resolveTileflowPreview(initialArtifacts.project, {
+              map: options.map,
+              scene: options.scene,
+            });
+          }
+        } catch (error) {
+          await session.close();
+          logError(error instanceof Error ? error.message : 'Invalid Tileflow preview selection.');
+          process.exitCode = 1;
           return;
         }
-        if (state.status === 'invalid') {
-          console.error(
-            [
-              `Tileflow generation ${state.generation} is invalid; preserving the last valid preview.`,
-              ...state.diagnostics.map(
-                (diagnostic) => `- ${diagnostic.path || '(root)'}: ${diagnostic.message}`,
-              ),
-            ].join('\n'),
-          );
-        } else if (recovered) {
-          logSuccess(`Tileflow preview recovered at generation ${state.generation}.`);
-        }
-      };
-      emitState(session.getState());
-      const unsubscribe = session.subscribe(emitState);
-      let server: ReturnType<typeof serve> | undefined;
 
-      try {
-        await new Promise<void>((resolveListening, rejectListening) => {
-          const createdServer = serve({fetch, port}, () => resolveListening());
-          createdServer.once('error', rejectListening);
-          server = createdServer;
+        const fetch = createTileflowDevRequestHandler({
+          config: options.config,
+          apiBaseUrl: options.apiBaseUrl,
+          map: options.map,
+          onError: printTileflowPreviewError,
+          scene: options.scene,
+          session,
         });
-        if (!options.json) {
-          logSuccess('Tileflow preview is running and watching for changes.');
-          printKeyValue('Local', link(origin));
-          printKeyValue('Config', pathLabel(options.config));
-          if (options.map) printKeyValue('Map', options.map);
-          if (options.scene) printKeyValue('Scene', options.scene);
-          logMuted('Press Ctrl+C to stop.');
+        let invalidSinceLastReady = false;
+        const emitState = (state: TileflowArtifactSessionState) => {
+          const recovered = invalidSinceLastReady && state.status === 'ready';
+          if (state.status === 'invalid') invalidSinceLastReady = true;
+          if (state.status === 'ready') invalidSinceLastReady = false;
+          if (options.json) {
+            const firstDiagnostic = state.status === 'invalid' ? state.diagnostics[0] : undefined;
+            process.stdout.write(
+              `${JSON.stringify({
+                schemaVersion: 1,
+                command: 'dev',
+                event: recovered ? 'recovered' : state.status,
+                generation: state.generation,
+                ...('lastGoodGeneration' in state && state.lastGoodGeneration !== undefined
+                  ? {lastGoodGeneration: state.lastGoodGeneration}
+                  : {}),
+                ...(firstDiagnostic?.code ? {code: firstDiagnostic.code} : {}),
+                ...(firstDiagnostic?.phase ? {phase: firstDiagnostic.phase} : {}),
+                ...(state.status === 'invalid' ? {diagnostics: state.diagnostics} : {}),
+              })}\n`,
+            );
+            return;
+          }
+          if (state.status === 'invalid') {
+            console.error(
+              [
+                `Tileflow generation ${state.generation} is invalid; preserving the last valid preview.`,
+                ...state.diagnostics.map(
+                  (diagnostic) => `- ${diagnostic.path || '(root)'}: ${diagnostic.message}`,
+                ),
+              ].join('\n'),
+            );
+          } else if (recovered) {
+            logSuccess(`Tileflow preview recovered at generation ${state.generation}.`);
+          }
+        };
+        emitState(session.getState());
+        const unsubscribe = session.subscribe(emitState);
+        let server: ReturnType<typeof serve> | undefined;
+
+        try {
+          await new Promise<void>((resolveListening, rejectListening) => {
+            const createdServer = serve({fetch, hostname: host, port}, () => resolveListening());
+            createdServer.once('error', rejectListening);
+            server = createdServer;
+          });
+          if (!options.json) {
+            logSuccess('Tileflow preview is running and watching for changes.');
+            printKeyValue('Local', link(origin));
+            printKeyValue('Config', pathLabel(options.config));
+            if (options.map) printKeyValue('Map', options.map);
+            if (options.scene) printKeyValue('Scene', options.scene);
+            logMuted('Press Ctrl+C to stop.');
+          }
+          await waitForTerminationSignal(server!);
+        } finally {
+          unsubscribe();
+          await closeNodeServer(server);
+          const generation = session.getState().generation;
+          await session.close();
+          if (options.json) {
+            process.stdout.write(
+              `${JSON.stringify({schemaVersion: 1, command: 'dev', event: 'stopped', generation})}\n`,
+            );
+          }
         }
-        await waitForTerminationSignal(server!);
-      } finally {
-        unsubscribe();
-        await closeNodeServer(server);
-        const generation = session.getState().generation;
-        await session.close();
-        if (options.json) {
-          process.stdout.write(
-            `${JSON.stringify({schemaVersion: 1, command: 'dev', event: 'stopped', generation})}\n`,
-          );
-        }
-      }
+      });
     },
   );
 
@@ -533,7 +547,9 @@ program
       delete process.env.TILEFLOW_API_KEY;
 
       logInfo(`Deploying ${pathLabel(options.config)}.`);
-      const project = await loadTileflowConfig(options.config);
+      const project = await withTileflowConfigSecretsHidden(() =>
+        loadTileflowConfig(options.config),
+      );
       const validation = validateConfig(project);
 
       if (!validation.valid) {
@@ -581,23 +597,11 @@ program
       // semantics.
       const preflightStyles = createTileflowStyles(deploymentProject, {apiBaseUrl: api.apiUrl});
 
-      for (const mapName of mapNames) {
-        const data = preflightStyles[mapName]?.metadata?.['tileflow:data'];
-        if (
-          !data ||
-          typeof data !== 'object' ||
-          Array.isArray(data) ||
-          (data as {kind?: unknown}).kind !== 'tileflow-world'
-        ) {
-          logError(
-            `Hosted deploy supports only Tileflow World data. Map ${mapName} uses an external vector dataset; keep it local or switch to tileflowWorld().`,
-          );
-          process.exitCode = 1;
-          return;
-        }
-      }
-
-      if (!validateHostedMapCount(mapNames)) {
+      if (
+        !printHostedCompatibilityIssues(
+          inspectTileflowHostedCompatibility(mapNames, preflightStyles),
+        )
+      ) {
         return;
       }
 
@@ -709,21 +713,16 @@ program
         });
 
         if (!response.ok) {
-          const body = await response.text();
-          logError(`Deploy failed for ${mapName}: ${response.status} ${body}`);
+          logError(await readHostedError(response, `Deploy failed for ${mapName}`));
           process.exitCode = 1;
           return;
         }
 
-        const body = (await response.json()) as {
-          changed?: boolean;
-          deploymentId?: string;
-          mapId: string;
-          mapUrl: string;
-          styleId?: string;
-          version?: number;
-          worldPromotionId?: string;
-        };
+        const body = await readHostedJson(
+          response,
+          hostedStyleDeploymentResponseSchema,
+          `Deploy response for ${mapName}`,
+        );
         if (options.worldPromotion && body.worldPromotionId !== options.worldPromotion) {
           logError(`Deploy response did not confirm the World promotion for ${mapName}.`);
           process.exitCode = 1;
@@ -771,32 +770,49 @@ program
   .option('--project <target>', 'target @organization/project')
   .option('--json', 'print raw JSON')
   .action(async (options: {apiUrl?: string; apiKey?: string; json?: boolean; project?: string}) => {
-    const api = await requireApiOptions(options, {
-      capabilityScopes: ['status:read'],
-      retryCommand: cliInvocation([
-        'tileflow',
-        'status',
-        '--api-url',
-        options.apiUrl ?? defaultApiUrl,
-        ...(options.json ? ['--json'] : []),
-      ]),
-    });
-    if (!api) return;
-
-    const response = await fetch(`${api.apiUrl}/v1/status`, {
-      headers: {
-        Authorization: `Bearer ${api.apiKey}`,
-      },
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      logError(`Status failed: ${response.status} ${body}`);
-      process.exitCode = 1;
+    let api: {apiKey: string; apiUrl: string} | null;
+    try {
+      api = await requireApiOptions(options, {
+        capabilityScopes: ['status:read'],
+        retryCommand: cliInvocation([
+          'tileflow',
+          'status',
+          '--api-url',
+          options.apiUrl ?? defaultApiUrl,
+          ...(options.json ? ['--json'] : []),
+        ]),
+        silent: options.json,
+      });
+    } catch (error) {
+      if (options.json) {
+        console.error(safeStatusError(error));
+        process.exitCode = 1;
+        return;
+      }
+      throw error;
+    }
+    if (!api) {
+      if (options.json) console.error('Status authentication failed.');
       return;
     }
 
-    const status = (await response.json()) as ProjectStatus;
+    let status: HostedProjectStatus;
+    try {
+      const response = await fetch(`${api.apiUrl}/v1/status`, {
+        headers: {
+          Authorization: `Bearer ${api.apiKey}`,
+        },
+      });
+
+      if (!response.ok) throw new Error(await readHostedError(response, 'Status failed'));
+      status = await readHostedJson(response, hostedProjectStatusSchema, 'Status response');
+    } catch (error) {
+      const message = safeStatusError(error);
+      if (options.json) console.error(message);
+      else logError(message);
+      process.exitCode = 1;
+      return;
+    }
 
     if (options.json) {
       console.log(JSON.stringify(status, null, 2));
@@ -1215,8 +1231,13 @@ function openBrowser(url: string, errorsToStderr = false) {
 async function writeDeployManifest(manifestPath: string, manifest: DeployedManifest) {
   const outputPath = resolve(process.cwd(), manifestPath);
 
-  await mkdir(dirname(outputPath), {recursive: true});
-  await writeFile(outputPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+  await writeAtomicFileSet({
+    boundaryPath: dirname(outputPath),
+    files: [{path: outputPath, source: `${JSON.stringify(manifest, null, 2)}\n`}],
+    force: true,
+    label: 'Deploy manifest',
+    managed: true,
+  });
 
   return manifestPath;
 }
@@ -1622,6 +1643,13 @@ function safeAuthError(error: unknown) {
   return message && message.length <= 300 ? message : 'Tileflow auth state is unavailable.';
 }
 
+function safeStatusError(error: unknown) {
+  const message = error instanceof Error ? error.message.split('\n')[0] : '';
+  return message && message.length <= 300 && /^(?:Status failed|Status response)/u.test(message)
+    ? message
+    : 'Status failed.';
+}
+
 function printDeployedMaps(maps: Record<string, DeployedManifestMap>) {
   const entries = Object.entries(maps);
   if (entries.length === 0) return;
@@ -1746,15 +1774,12 @@ export default defineTileflow({
 `;
 }
 
-function validateHostedMapCount(mapNames: string[]): boolean {
-  if (mapNames.length <= tileflowHostedAlphaCompatibility.maxMapsPerDeploy) {
-    return true;
-  }
+function printHostedCompatibilityIssues(
+  issues: ReturnType<typeof inspectTileflowHostedCompatibility>,
+): boolean {
+  if (issues.length === 0) return true;
 
-  logError(
-    `Hosted alpha validation accepts ${plural(tileflowHostedAlphaCompatibility.maxMapsPerDeploy, 'map')} per deploy.`,
-  );
-  printKeyValue('Maps', mapNames.join(', '));
+  for (const issue of issues) logError(issue.message);
   process.exitCode = 1;
   return false;
 }
@@ -1791,15 +1816,15 @@ async function uploadHostedIconPackage(
   });
 
   if (!response.ok) {
-    logError(`Icon package upload failed: ${response.status} ${await response.text()}`);
+    logError(await readHostedError(response, 'Icon package upload failed'));
     return undefined;
   }
 
-  const body = (await response.json()) as {changed?: boolean; spriteUrl?: unknown};
-  if (typeof body.spriteUrl !== 'string' || body.spriteUrl.trim().length === 0) {
-    logError('Icon package upload failed: the API response did not include a spriteUrl.');
-    return undefined;
-  }
+  const body = await readHostedJson(
+    response,
+    hostedIconPackageResponseSchema,
+    'Icon package upload response',
+  );
   const totalBytes = iconPackage.manifest.files.reduce((total, file) => total + file.byteLength, 0);
   const action = body.changed === false ? 'Reused' : 'Uploaded';
   logSuccess(
@@ -1808,7 +1833,7 @@ async function uploadHostedIconPackage(
   return {spriteUrl: body.spriteUrl};
 }
 
-function printProjectStatus(status: ProjectStatus, apiUrl: string) {
+function printProjectStatus(status: HostedProjectStatus, apiUrl: string) {
   printTitle('Tileflow status');
   printKeyValue('Project', pc.bold(status.projectId));
 

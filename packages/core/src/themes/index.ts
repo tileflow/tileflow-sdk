@@ -225,12 +225,17 @@ export function resolveColors(
     cemetery: mix(base.park, base.land, 0.35),
     civic: mix(base.land, base.textMuted, 0.08),
     commercial: mix(base.land, base.textMuted, 0.05),
+    education: mix(base.park, base.land, 0.18),
+    government: mix(base.land, base.boundary, 0.12),
     industrial: mix(base.land, base.text, 0.04),
+    medical: mix(base.land, base.water, 0.12),
     military: mix(base.land, base.textMuted, 0.16),
+    parking: mix(base.land, base.textMuted, 0.1),
     recreation: mix(base.park, base.land, 0.15),
     residential: mix(base.land, base.background, 0.35),
   } satisfies TileflowResolvedLanduseColors;
   const landcoverDefaults = {
+    farmland: mix(base.park, base.land, 0.55),
     grass: mix(base.park, base.land, 0.25),
     ice: mix(base.water, base.background, 0.65),
     park: base.park,
@@ -247,13 +252,22 @@ export function resolveColors(
     waterway: mix(base.water, base.text, 0.08),
   } satisfies TileflowResolvedHydroColors;
   const buildingDefaults = {
+    active: mix(base.building, base.roadMajor, 0.22),
+    businessCorridor: mix(base.building, base.roadMajor, 0.28),
+    businessCorridorOutline: mix(base.building, base.roadMajor, 0.42),
+    civic: mix(base.building, base.boundary, 0.28),
+    commercial: mix(base.building, base.roadMajor, 0.22),
+    destination: mix(base.building, base.roadMajor, 0.22),
     extrusion: mix(base.building, base.text, 0.08),
     fill: base.building,
+    generic: base.building,
     highRise: base.building,
     highRiseOutline: mix(base.building, base.text, 0.2),
+    industrial: mix(base.building, base.textMuted, 0.2),
     lowRise: mix(base.building, base.land, 0.55),
     lowRiseOutline: mix(base.building, base.land, 0.2),
     outline: mix(base.building, base.text, 0.2),
+    residential: mix(base.building, base.land, 0.18),
   } satisfies TileflowResolvedBuildingColors;
   const boundaryDefaults = {
     admin: base.boundary,

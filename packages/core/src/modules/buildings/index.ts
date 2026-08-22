@@ -3,6 +3,7 @@ import type {TileflowAreaStyle, TileflowExtrusionStyle} from '../../cartography/
 export type TileflowBuildingMode = '3d' | 'flat';
 
 export type TileflowBuildingsModuleOptions = {
+  businessCorridor?: TileflowAreaStyle;
   enabled?: boolean;
   extrusion?: TileflowExtrusionStyle;
   flat?: TileflowAreaStyle;

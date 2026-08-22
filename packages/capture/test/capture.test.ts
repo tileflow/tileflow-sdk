@@ -148,8 +148,8 @@ test('serializes deterministic, path-free capture receipts', () => {
   assert.equal(serialized.includes('timestamp'), false);
   assert.equal(receipt.image.physicalWidth, 640);
   assert.equal(receipt.image.physicalHeight, 400);
-  assert.equal(renderer.playwright, '1.60.0');
-  assert.equal(tileflowCaptureRuntime.chromiumRevision, '1223');
+  assert.equal(renderer.playwright, '1.62.1');
+  assert.equal(tileflowCaptureRuntime.chromiumRevision, '1234');
 });
 
 test('capture receipts preserve expanded vector source identity', () => {

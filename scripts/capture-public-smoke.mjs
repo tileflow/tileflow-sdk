@@ -314,8 +314,8 @@ export default defineTileflow({
   assert.match(standaloneReceipt.data.source?.sha256 ?? '', /^[a-f0-9]{64}$/u);
   assert.equal('url' in standaloneReceipt.data, false);
   assert.deepEqual(standaloneReceipt.verification, {data: 'rendered', style: 'rendered'});
-  assert.equal(standaloneReceipt.renderer.playwright, '1.60.0');
-  assert.equal(standaloneReceipt.renderer.chromiumRevision, '1223');
+  assert.equal(standaloneReceipt.renderer.playwright, '1.62.1');
+  assert.equal(standaloneReceipt.renderer.chromiumRevision, '1234');
 
   const setup = await run(
     process.execPath,
@@ -337,8 +337,8 @@ export default defineTileflow({
     },
     {
       command: 'setup.capture',
-      chromiumRevision: '1223',
-      playwright: '1.60.0',
+      chromiumRevision: '1234',
+      playwright: '1.62.1',
       schemaVersion: 1,
       status: 'ready',
     },
@@ -404,8 +404,8 @@ export default defineTileflow({
     data: 'expected-unverified',
     style: 'expected-unverified',
   });
-  assert.equal(receipt.renderer.playwright, '1.60.0');
-  assert.equal(receipt.renderer.chromiumRevision, '1223');
+  assert.equal(receipt.renderer.playwright, '1.62.1');
+  assert.equal(receipt.renderer.chromiumRevision, '1234');
   assert.equal(
     existsSync(systemBrowserSentinel),
     false,

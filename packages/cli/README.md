@@ -52,17 +52,19 @@ World data through the same compatibility check.
 
 ## Command families
 
-| Family            | Commands                                                                                      |
-| ----------------- | --------------------------------------------------------------------------------------------- |
-| Project authoring | `init`, `validate`, `build`, `dev`                                                            |
-| Local evidence    | `setup capture`, `capture`, `visual analyze`, `visual diff`, `visual update`                  |
-| Data and assets   | `inspect features`, `icons list --json`, `icons diff`                                         |
-| Account           | `login`, `logout`, `whoami`                                                                   |
-| Organizations     | `projects list`, `projects create`, `projects show`, `projects archive`, `projects unarchive` |
-| Hosted delivery   | `deploy`, `status`                                                                            |
+| Family          | Commands                                                                     |
+| --------------- | ---------------------------------------------------------------------------- |
+| Map authoring   | `init`, `validate`, `build`, `dev`                                           |
+| Local evidence  | `setup capture`, `capture`, `visual analyze`, `visual diff`, `visual update` |
+| Data and assets | `inspect features`, `icons list --json`, `icons diff`                        |
+| Account         | `login`, `logout`, `whoami`                                                  |
+| Hosted delivery | `deploy`, `status`                                                           |
 
 Run `tileflow <command> --help` (or the family help, such as `tileflow icons --help`) for the exact
 arguments and bounded JSON modes.
+
+The CLI retains the hidden `projects` command family as a compatibility and support surface for the
+internal application boundary. It is not part of the ordinary workflow or the product catalog.
 
 ## Local visual feedback
 
@@ -248,26 +250,24 @@ effects and removes `TILEFLOW_API_KEY` before loading config.
 Hosted writes have two independent authorization paths:
 
 - Personal developer session: run `npm exec --no -- tileflow login` once for a
-  Tileflow API origin. Login authenticates the account and selects no project.
+  Tileflow API origin. Login authenticates the account and selects no managed destination.
   The CLI exchanges that account session for a brief, narrow capability only
-  after resolving an exact project target.
-- CI/project key: create a dashboard `CI deploy` key, store it as
+  after resolving the application internally.
+- CI key: create a dashboard `CI deploy` key, store it as
   `TILEFLOW_API_KEY`, and let the repository workflow deploy without a local
-  login. The server binds that key to exactly one project.
+  login. The server binds that key to exactly one internal application boundary.
 
-Inspect account and project context explicitly:
+Inspect the account and use the automatically resolved destination:
 
 ```sh
 npm exec --no -- tileflow whoami --json
-npm exec --no -- tileflow projects list --json
-npm exec --no -- tileflow deploy --project @acme/web
-npm exec --no -- tileflow status --project @acme/web
-npm exec --no -- tileflow projects archive @acme/legacy --json
+npm exec --no -- tileflow deploy
+npm exec --no -- tileflow status
 npm exec --no -- tileflow logout
 ```
 
-When Tileflow gives an agent a continuation command for a verified World conversion, keep the
-promotion reference in that exact deploy action:
+When Tileflow gives an agent a continuation command for a verified World conversion, keep its
+opaque technical destination and promotion reference in that exact deploy action:
 
 ```sh
 npm exec --no -- tileflow deploy \
@@ -282,15 +282,12 @@ server-confirmed continuation keeps unrelated manifest entries and records only 
 stable `mapId`, hosted style URL, World `v1` generation, and fixed session usage mode. Do not add an
 API key or payment authority to a copied prompt.
 
-If the account has exactly one accessible active project, a hosted command may
-resolve it automatically. With more than one, project writes fail before config
-execution or network mutation, print deterministically sorted
-`@organization/project` choices, and give an exact retry containing
-`--project`. There is no first/default project, `projects use`, per-directory
-selection, or `login --project`. Commands such as `projects show`, `archive`,
-and `unarchive` already carry an exact positional target. `projects create`
-requires `--organization @organization` only when the account can manage more
-than one organization.
+If the account has exactly one accessible managed destination, a hosted command resolves it
+automatically. With more than one, writes fail before config execution or network mutation, print
+deterministically sorted application choices with their technical `@organization/project`
+references, and give an exact retry containing `--project`. There is no persistent selection,
+per-directory profile, or `login --project`. The hidden `projects` compatibility family remains
+callable when support or explicit multi-application administration requires it.
 
 An explicit key or `TILEFLOW_API_KEY` never uses the saved account session. If
 it is combined with `--project`, the selector is an assertion: the CLI checks

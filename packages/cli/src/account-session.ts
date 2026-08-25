@@ -135,7 +135,7 @@ export async function loadAuthConfig(path = authConfigPath()): Promise<AuthConfi
   if (state.kind === 'v2') return state.config;
   if (state.kind === 'legacy_project_login' || state.kind === 'superseded_profiles') {
     throw new Error(
-      'The saved login uses the retired project-credential model. Run `tileflow login` to authorize your Tileflow account.',
+      'The saved login uses the retired destination-credential model. Run `tileflow login` to authorize your Tileflow account.',
     );
   }
   throw new Error('Tileflow auth state is invalid; no changes were made.');

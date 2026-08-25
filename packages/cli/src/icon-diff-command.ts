@@ -209,7 +209,7 @@ export function registerIconDiffCommand(
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)
     .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
     .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
-    .option('--project <target>', 'target @organization/project')
+    .option('--project <target>', 'technical destination @organization/project')
     .option('--json', 'print deterministic schema-version-1 JSON')
     .option('--report <path>', 'write a self-contained HTML visual report')
     .option('--open', 'open an explicitly requested report')

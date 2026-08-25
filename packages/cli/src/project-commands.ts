@@ -30,13 +30,15 @@ export function registerProjectCommands(
     loadAuthConfig: () => Promise<AuthConfigV2>;
   },
 ) {
-  const projects = program.command('projects').description('Manage organization projects');
+  const projects = program
+    .command('projects', {hidden: true})
+    .description('Manage internal application destinations');
 
   projects
     .command('list')
-    .description('List projects accessible to the authenticated Tileflow account')
+    .description('List application destinations accessible to the authenticated Tileflow account')
     .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
-    .option('--include-archived', 'include archived projects')
+    .option('--include-archived', 'include archived application destinations')
     .option('--json', 'print deterministic schema-version-1 JSON')
     .action(async (options: ProjectCommandOptions & {includeArchived?: boolean}) => {
       const session = await requireCommandSession(options, dependencies);
@@ -52,7 +54,7 @@ export function registerProjectCommands(
 
       if (options.json) return emitJson(document);
       if (!result.items.length) {
-        console.log(pc.gray('No projects found.'));
+        console.log(pc.gray('No managed destinations found.'));
         return;
       }
       for (const target of result.items) {
@@ -64,8 +66,8 @@ export function registerProjectCommands(
 
   projects
     .command('create <slug>')
-    .description('Create an empty project')
-    .requiredOption('--name <name>', 'project display name')
+    .description('Create an isolated application destination')
+    .requiredOption('--name <name>', 'application display name')
     .option('--organization <organization>', 'target organization as @organization')
     .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
     .option('--json', 'print deterministic schema-version-1 JSON')
@@ -78,7 +80,7 @@ export function registerProjectCommands(
           return emitLocalFailure(
             options.json,
             'invalid_project',
-            'Project slug or name is invalid.',
+            'Application slug or name is invalid.',
           );
         }
         const session = await requireCommandSession(options, dependencies);
@@ -131,14 +133,14 @@ export function registerProjectCommands(
           ...asRecord(result.body),
         };
         if (options.json) return emitJson(document);
-        console.log(`${pc.green('✓')} Project ${pc.bold(options.name.trim())} is ready.`);
-        console.log(pc.gray(`Target it with --project @${organization.slug}/${slug}.`));
+        console.log(`${pc.green('✓')} Application ${pc.bold(options.name.trim())} is ready.`);
+        console.log(pc.gray(`Its technical selector is --project @${organization.slug}/${slug}.`));
       },
     );
 
   projects
     .command('show <target>')
-    .description('Show one organization project')
+    .description('Show one application destination')
     .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
     .option('--json', 'print deterministic schema-version-1 JSON')
     .action(async (target: string, options: ProjectCommandOptions) => {
@@ -158,7 +160,7 @@ export function registerProjectCommands(
       if (options.json) return emitJson(document);
       const project = asRecord(result.body).project;
       if (!isProjectItem(project)) {
-        return emitLocalFailure(false, 'invalid_response', 'Project response was invalid.');
+        return emitLocalFailure(false, 'invalid_response', 'Destination response was invalid.');
       }
       console.log(`${pc.bold(project.name)} ${pc.gray(target)}`);
       console.log(project.archivedAt ? pc.yellow('Archived') : pc.green('Active'));
@@ -168,7 +170,7 @@ export function registerProjectCommands(
     const verb = archived ? 'archive' : 'unarchive';
     projects
       .command(`${verb} <target>`)
-      .description(`${archived ? 'Archive' : 'Unarchive'} an organization project`)
+      .description(`${archived ? 'Archive' : 'Unarchive'} an application destination`)
       .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
       .option('--json', 'print deterministic schema-version-1 JSON')
       .action(async (target: string, options: ProjectCommandOptions) => {
@@ -194,7 +196,7 @@ export function registerProjectCommands(
           ...asRecord(result.body),
         };
         if (options.json) return emitJson(document);
-        console.log(`${pc.green('✓')} Project ${archived ? 'archived' : 'unarchived'}.`);
+        console.log(`${pc.green('✓')} Application ${archived ? 'archived' : 'unarchived'}.`);
       });
   }
 }
@@ -216,14 +218,14 @@ export async function fetchAccountProjects(
     if (!result.ok) return result;
     const body = asRecord(result.body);
     if (!Array.isArray(body.items) || !body.items.every(isAccountProjectTarget)) {
-      return {error: 'Project discovery returned an invalid response.', ok: false, status: 502};
+      return {error: 'Destination discovery returned an invalid response.', ok: false, status: 502};
     }
     items.push(...body.items);
     cursor = typeof body.nextCursor === 'string' ? body.nextCursor : null;
     if (!cursor) return validateTargetOrder(items);
   }
 
-  return {error: 'Project discovery exceeded its safe page limit.', ok: false, status: 502};
+  return {error: 'Destination discovery exceeded its safe page limit.', ok: false, status: 502};
 }
 
 export async function resolveAccountProjectTarget(
@@ -314,7 +316,7 @@ function validateTargetOrder(items: AccountProjectTarget[]) {
     references.some((reference, index) => index > 0 && references[index - 1] >= reference)
   ) {
     return {
-      error: 'Project discovery returned unstable ordering.',
+      error: 'Destination discovery returned unstable ordering.',
       ok: false as const,
       status: 502,
     };

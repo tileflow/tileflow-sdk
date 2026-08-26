@@ -819,11 +819,29 @@ function captureFailurePhase(error: unknown, code: string): string {
 export function installSignalAbortController(): AbortController & {close(): void} {
   const controller = new AbortController() as AbortController & {close(): void};
   const onSignal = () => controller.abort();
+  const onMessage = (message: unknown) => {
+    if (
+      typeof message === 'object' &&
+      message !== null &&
+      'type' in message &&
+      message.type === 'tileflow:stop'
+    ) {
+      controller.abort();
+    }
+  };
   process.once('SIGINT', onSignal);
   process.once('SIGTERM', onSignal);
+  if (process.connected) {
+    process.on('message', onMessage);
+    process.once('disconnect', onSignal);
+    process.channel?.unref();
+  }
   controller.close = () => {
     process.removeListener('SIGINT', onSignal);
     process.removeListener('SIGTERM', onSignal);
+    process.removeListener('message', onMessage);
+    process.removeListener('disconnect', onSignal);
+    if (process.connected) process.disconnect?.();
   };
   return controller;
 }

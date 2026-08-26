@@ -153,8 +153,8 @@ removed:
 - `main` is protected by a ruleset requiring pull requests, resolved conversations, the exact
   `CI / Required` check, linear history, and no force pushes or deletion. The ruleset deliberately
   requires zero approving reviews so an operator or Codex can merge after self-review and green CI;
-- this zero-review merge policy does not remove the independent approval gate configured on the
-  `npm-publish` environment for public release bundles;
+- this zero-review policy applies only to merging code. It does not remove the independent approval
+  gate configured on the `npm-publish` environment for public release bundles;
 - organization members use 2FA, Actions are limited to reviewed actions, and every third-party
   action in this repository remains pinned by full commit SHA;
 - workflow `GITHUB_TOKEN` permissions default to read-only;

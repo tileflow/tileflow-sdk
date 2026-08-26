@@ -1,14 +1,11 @@
+import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
+import {resolveTileflowData, type TileflowDataConfig} from '../data';
 import {
-  resolveStreetsModules,
-  type TileflowStreetsBasemapConfig,
-  type TileflowStreetsModules,
-  tileflowStreetsPoiIconMapping,
-} from '../basemaps';
-import {
-  resolveTileflowData,
-  type TileflowDataConfig,
-  type WorldGenerationDescriptor,
-} from '../data';
+  type ResolvedTileflowMap,
+  resolveMap,
+  type TileflowMap,
+  type TileflowMapRoot,
+} from '../maps';
 import {compileAddresses} from '../modules/addresses/compiler';
 import {compileAeroways} from '../modules/aeroways/compiler';
 import {compileBoundaries} from '../modules/boundaries/compiler';
@@ -22,60 +19,53 @@ import {compileRoads} from '../modules/roads/compiler';
 import {compileTransit} from '../modules/transit/compiler';
 import {compileVegetation} from '../modules/vegetation/compiler';
 import {compileWater} from '../modules/water/compiler';
-import {parseTileflowMap} from '../schema-v2';
-import {resolveTerrain} from '../terrain';
+import {parseResolvedTileflowMap} from '../resolved-map-schema';
+import {compileTerrainContribution, resolveTerrain} from '../terrain';
 import {resolveColors, resolveTheme, resolveTypography} from '../themes';
-import type {
-  MapLibreStyle,
-  TileflowIconSet,
-  TileflowLight,
-  TileflowProjectIconSets,
-  TileflowProjection,
-  TileflowProjectThemes,
-  TileflowTerrain,
-  TileflowTheme,
-  TileflowThemeConfig,
-  TileflowViewConfig,
-} from '../types';
-import type {TileflowLayerContribution} from './contributions';
+import type {MapLibreStyle} from '../types';
+import {tileflowCompilerMetadataKeys, type TileflowLayerContribution} from './contributions';
 import {assembleTileflowLayers} from './graph';
+import {
+  applyTileflowModuleEffects,
+  bindSemanticReferences,
+  getResolvedModuleEffects,
+  tileflowModuleEffectMetadataKey,
+} from './module-effects';
 import {optimizeTileflowLayers} from './optimizer';
 import {
-  applyTileflowRawOverrides,
-  type TileflowRawOverride,
-  tileflowRawOverrideMetadataKey,
-} from './overrides';
+  assertTileflowInteractionManifestLayers,
+  createTileflowInteractionManifest,
+  tileflowInteractionManifestMetadataKey,
+} from './interaction-manifest';
+import {resolveStreetsModules, type TileflowStreetsModules} from './streets-recipe';
 
-export type TileflowStreetsMapConfig = {
-  allowedOrigins?: string[];
-  basemap: TileflowStreetsBasemapConfig;
-  data?: TileflowDataConfig;
-  glyphs?: string;
-  icons?: TileflowIconSet;
-  light?: TileflowLight;
-  modules?: TileflowStreetsModules;
-  name?: string;
-  overrides?: readonly TileflowRawOverride[];
-  projection?: TileflowProjection;
-  sprite?: string;
-  terrain?: TileflowTerrain;
-  theme?: TileflowTheme | string | TileflowThemeConfig;
-  view?: TileflowViewConfig;
+export type TileflowStreetsMapConfig = ResolvedTileflowMap;
+
+export type TileflowPreparedMapAssets = {
+  icons?: {
+    ids: readonly string[];
+    sprite: string;
+  };
 };
 
 export type TileflowStreetsCompileOptions = {
   apiBaseUrl?: string;
-  iconSets?: TileflowProjectIconSets;
-  themes?: TileflowProjectThemes;
-  /** Compiler-owned release descriptor. It is deliberately not part of project config. */
-  worldGeneration?: WorldGenerationDescriptor;
+  /** Resolved authoring identity. Internal build orchestration supplies this. */
+  map?: {
+    id: string;
+    lineage?: readonly string[];
+    root: TileflowMapRoot;
+    version: number;
+  };
+  /** Build-owned assets prepared from the authoring directories. */
+  preparedAssets?: TileflowPreparedMapAssets;
 };
 
 export function createStreetsStyle(
-  config: TileflowStreetsMapConfig,
+  config: TileflowMap,
   options: TileflowStreetsCompileOptions = {},
 ): MapLibreStyle {
-  const parsed = parseTileflowMap(config, {icons: options.iconSets, themes: options.themes});
+  const parsed = parseResolvedTileflowMap(resolveMap(config));
   return compileStreetsStyle(parsed, options);
 }
 
@@ -84,58 +74,66 @@ export function compileStreetsStyle(
   config: TileflowStreetsMapConfig,
   options: TileflowStreetsCompileOptions = {},
 ): MapLibreStyle {
-  if (config.basemap.type !== 'streets') {
-    throw new Error('Tileflow Streets compiler requires basemap: streets().');
-  }
   const apiBaseUrl = normalizeBaseUrl(options.apiBaseUrl);
-  const data = resolveTileflowData(config.data, {
-    apiBaseUrl,
-    worldGeneration: options.worldGeneration,
-  });
-  const theme = resolveTheme(config.theme ?? config.basemap.variant, options.themes);
+  const data = resolveTileflowData(config.data, {apiBaseUrl});
+  const theme = resolveTheme(config.theme);
   const colors = resolveColors({}, theme.colors, {}, theme.modules);
   const typography = resolveTypography({}, theme.typography);
-  const icons =
-    resolveIconSet(config.icons, options.iconSets) ??
-    (data.assetSet
-      ? {mapping: tileflowStreetsPoiIconMapping, sprite: data.assetSet.spriteBase}
-      : undefined);
-  const context = {colors, data, ...(icons ? {icons} : {}), typography};
+  const context = {colors, data, typography};
   const modules = resolveStreetsModules(config.modules);
   const labelLanguage = resolveLabels(modules.labels).language;
-  const poiModule =
-    !icons && !config.sprite && config.modules?.poi?.icons === undefined
-      ? {...modules.poi, icons: false as const}
-      : modules.poi;
-  const contributions: TileflowLayerContribution[] = [
-    ...compileLand(modules.land, context),
-    ...compileWater(modules.water, context),
-    ...compileBuildings(modules.buildings, context),
-    ...compileVegetation(modules.vegetation, context),
-    ...compileRoads(modules.roads, context),
-    ...compileTransit(modules.transit, context),
-    ...compileAeroways(modules.aeroways, context),
-    ...compileBoundaries(modules.boundaries, context),
-    ...compileLabels(modules.labels, modules.roads, context),
-    ...compileLandforms(modules.landforms, labelLanguage, context),
-    ...compileAddresses(modules.addresses, context),
-    ...compilePoi(poiModule, context, labelLanguage),
-  ];
+  // Bind semantic data references only after each domain compiler has omitted
+  // branches whose optional source capabilities are absent. Binding the raw
+  // authoring modules eagerly would reject a valid generic OpenMapTiles source
+  // merely because an unused optional recipe (for example bathymetry) names a
+  // field that the source deliberately does not provide.
+  const contributions = bindSemanticReferences<TileflowLayerContribution[]>(
+    [
+      ...compileLand(modules.land, context),
+      ...compileWater(modules.water, context),
+      ...compileBuildings(modules.buildings, context),
+      ...compileVegetation(modules.vegetation, context),
+      ...compileRoads(modules.roads, context),
+      ...compileTransit(modules.transit, context),
+      ...compileAeroways(modules.aeroways, context),
+      ...compileBoundaries(modules.boundaries, context),
+      ...compileLabels(modules.labels, modules.roads, context),
+      ...compileLandforms(modules.landforms, labelLanguage, context),
+      ...compileAddresses(modules.addresses, context),
+      ...compilePoi(modules.poi, context, labelLanguage),
+    ],
+    data,
+  );
   const terrain = resolveTerrain(config.terrain, apiBaseUrl);
   if (terrain?.sourceId === data.sourceId) {
     throw new Error(
       `Terrain source ID "${terrain.sourceId}" conflicts with the primary vector source.`,
     );
   }
-  if (terrain) contributions.push(terrainContribution(terrain));
-  const layers = finalizeTileflowLayers(
-    optimizeTileflowLayers(
-      applyTileflowRawOverrides(assembleTileflowLayers(contributions), config.overrides ?? []),
-    ),
+  if (terrain) contributions.push(compileTerrainContribution(terrain));
+  const activeOwners = new Set(
+    Object.entries(modules)
+      .filter(([, module]) => !isRecord(module) || module.enabled !== false)
+      .map(([owner]) => owner),
   );
-  const glyphs =
-    config.glyphs ?? data.assetSet?.glyphs ?? `${apiBaseUrl}/fonts/{fontstack}/{range}.pbf`;
-  const sprite = config.sprite ?? icons?.sprite;
+  const moduleEffects = getResolvedModuleEffects(config).filter(
+    (effect) =>
+      activeOwners.has(effect.owner) &&
+      (effect.requires ?? []).every((owner) => activeOwners.has(owner)),
+  );
+  const optimizedLayers = optimizeTileflowLayers(
+    applyTileflowModuleEffects(assembleTileflowLayers(contributions), moduleEffects, data),
+  );
+  const interactionManifest = createTileflowInteractionManifest(optimizedLayers, {
+    class: data.schema.fields.class,
+    name: data.schema.fields.name,
+    rank: data.schema.fields.rank,
+    subclass: data.schema.fields.subclass,
+  });
+  const layers = finalizeTileflowLayers(optimizedLayers);
+  assertTileflowInteractionManifestLayers(interactionManifest, layers);
+  const glyphs = resolveGlyphs(config);
+  const sprite = options.preparedAssets?.icons?.sprite;
 
   const primarySource: Record<string, unknown> = {
     type: 'vector',
@@ -146,10 +144,16 @@ export function compileStreetsStyle(
     ...(data.minzoom === undefined ? {} : {minzoom: data.minzoom}),
   };
 
-  return {
+  const mapMetadata = options.map ?? {
+    id: config.id,
+    root: config.root,
+    version: config.version,
+  };
+
+  const style: MapLibreStyle = {
     version: 8,
-    name: config.name ?? 'Tileflow Streets',
-    glyphs,
+    name: config.name ?? 'Streets',
+    ...(glyphs ? {glyphs} : {}),
     ...(config.light ? {light: config.light} : {}),
     ...(config.projection ? {projection: {type: config.projection}} : {}),
     ...(sprite ? {sprite} : {}),
@@ -162,11 +166,22 @@ export function compileStreetsStyle(
       ? {terrain: {exaggeration: terrain.exaggeration, source: terrain.sourceId}}
       : {}),
     metadata: {
-      'tileflow:basemap': 'streets',
-      'tileflow:basemapVersion': config.basemap.basemapVersion,
+      ...(mapMetadata
+        ? {
+            'tileflow:map': mapMetadata.id,
+            'tileflow:mapVersion': mapMetadata.version,
+            'tileflow:root': mapMetadata.root.compiler,
+            'tileflow:rootCompilerVersion': mapMetadata.root.compilerVersion,
+            ...(mapMetadata.lineage && mapMetadata.lineage.length > 1
+              ? {'tileflow:extends': mapMetadata.lineage.slice(1)}
+              : {}),
+          }
+        : {}),
       'tileflow:variant': theme.mode,
-      'tileflow:theme': theme.name,
       'tileflow:data': data.identity,
+      ...(interactionManifest
+        ? {[tileflowInteractionManifestMetadataKey]: interactionManifest}
+        : {}),
       'tileflow:modules': Object.entries(modules)
         .filter(([, module]) => !isRecord(module) || module.enabled !== false)
         .map(([name]) => name)
@@ -174,6 +189,11 @@ export function compileStreetsStyle(
       ...(config.view ? {'tileflow:view': config.view} : {}),
     },
   };
+  assertPreparedIconReferences(style, config, options.preparedAssets);
+  assertTextAssets(style, config);
+  assertGlyphFontStacks(style, config);
+  assertMapLibreStyle(style, config.id);
+  return style;
 }
 
 function finalizeTileflowLayers(
@@ -203,7 +223,10 @@ function finalizeTileflowLayers(
       }
 
       const metadata = isRecord(layer.metadata) ? {...layer.metadata} : undefined;
-      if (metadata) delete metadata[tileflowRawOverrideMetadataKey];
+      if (metadata) {
+        delete metadata[tileflowModuleEffectMetadataKey];
+        for (const key of Object.values(tileflowCompilerMetadataKeys)) delete metadata[key];
+      }
       return {
         ...layer,
         ...(metadata && Object.keys(metadata).length > 0 ? {metadata} : {}),
@@ -217,59 +240,176 @@ function finalizeTileflowLayers(
     });
 }
 
+function assertMapLibreStyle(style: MapLibreStyle, mapId: string): void {
+  const errors = validateStyleMin(style as never);
+  if (errors.length === 0) return;
+  const details = errors
+    .slice(0, 8)
+    .map((error) => error.message)
+    .join('; ');
+  const remaining = errors.length > 8 ? `; ${errors.length - 8} more` : '';
+  throw new Error(`Compiled Tileflow map "${mapId}" is not MapLibre-valid: ${details}${remaining}`);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-function resolveIconSet(
-  request: TileflowIconSet | undefined,
-  iconSets: TileflowProjectIconSets | undefined,
-  seen: readonly string[] = [],
-): {mapping?: Record<string, string>; sprite?: string} | undefined {
-  if (!request) return undefined;
-  if (typeof request === 'string') {
-    const referenced = iconSets?.[request];
-    if (!referenced) return isUrlReference(request) ? {sprite: request} : undefined;
-    if (seen.includes(request)) {
-      throw new Error(`Circular Tileflow icon set extends: ${[...seen, request].join(' -> ')}`);
+function resolveGlyphs(config: ResolvedTileflowMap): string | undefined {
+  if (config.fonts !== undefined) return undefined;
+  return config.glyphs?.url;
+}
+
+function assertPreparedIconReferences(
+  style: MapLibreStyle,
+  config: ResolvedTileflowMap,
+  prepared: TileflowPreparedMapAssets | undefined,
+): void {
+  const references = collectStyleImageReferences(style);
+  if (references.size === 0) return;
+  const available = new Set(prepared?.icons?.ids ?? []);
+  const missing = [...references].filter((id) => !available.has(id)).sort();
+  if (missing.length === 0 && prepared?.icons?.sprite) return;
+  const authoring = config.icons?.length
+    ? 'Run the Node build so map.icons directories are prepared.'
+    : 'Declare map.icons with directories containing those canonical filenames.';
+  throw new Error(
+    `Tileflow map "${config.id}" references missing images: ${missing.join(', ') || '<sprite>'}. ${authoring}`,
+  );
+}
+
+function collectStyleImageReferences(style: MapLibreStyle): Set<string> {
+  const result = new Set<string>();
+  for (const layer of style.layers) {
+    const layout = isRecord(layer.layout) ? layer.layout : {};
+    const paint = isRecord(layer.paint) ? layer.paint : {};
+    const layerId = typeof layer.id === 'string' ? layer.id : '<unknown>';
+    for (const [property, value] of [
+      ['icon-image', layout['icon-image']],
+      ['background-pattern', paint['background-pattern']],
+      ['fill-pattern', paint['fill-pattern']],
+      ['line-pattern', paint['line-pattern']],
+      ['fill-extrusion-pattern', paint['fill-extrusion-pattern']],
+    ] as const) {
+      if (value !== undefined) collectStaticImageOutputs(value, result, `${layerId}.${property}`);
     }
-    return resolveIconSet(referenced, iconSets, [...seen, request]);
   }
-  const inherited = request.extends ? resolveIconSet(request.extends, iconSets, seen) : undefined;
-  return {
-    ...inherited,
-    ...(request.sprite ? {sprite: request.sprite} : {}),
-    ...(inherited?.mapping || request.mapping
-      ? {mapping: {...inherited?.mapping, ...request.mapping}}
-      : {}),
-  };
+  return result;
 }
 
-function isUrlReference(value: string): boolean {
-  return value.startsWith('/') || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value);
+function collectStaticImageOutputs(value: unknown, result: Set<string>, path: string): void {
+  if (typeof value === 'string') {
+    result.add(value);
+    return;
+  }
+  if (!Array.isArray(value) || typeof value[0] !== 'string') {
+    throw new Error(`Tileflow image reference ${path} must resolve to enumerable sprite IDs.`);
+  }
+
+  const operator = value[0];
+  switch (operator) {
+    case 'image': {
+      if (value.length !== 2 || typeof value[1] !== 'string') {
+        throw dynamicImageExpression(path, operator);
+      }
+      result.add(value[1]);
+      return;
+    }
+    case 'coalesce': {
+      for (const output of value.slice(1)) collectStaticImageOutputs(output, result, path);
+      return;
+    }
+    case 'case': {
+      for (let index = 2; index < value.length - 1; index += 2) {
+        collectStaticImageOutputs(value[index], result, path);
+      }
+      collectStaticImageOutputs(value.at(-1), result, path);
+      return;
+    }
+    case 'match': {
+      for (let index = 3; index < value.length - 1; index += 2) {
+        collectStaticImageOutputs(value[index], result, path);
+      }
+      collectStaticImageOutputs(value.at(-1), result, path);
+      return;
+    }
+    case 'step': {
+      collectStaticImageOutputs(value[2], result, path);
+      for (let index = 4; index < value.length; index += 2) {
+        collectStaticImageOutputs(value[index], result, path);
+      }
+      return;
+    }
+    case 'interpolate': {
+      for (let index = 4; index < value.length; index += 2) {
+        collectStaticImageOutputs(value[index], result, path);
+      }
+      return;
+    }
+    case 'literal': {
+      if (value.length !== 2 || typeof value[1] !== 'string') {
+        throw dynamicImageExpression(path, operator);
+      }
+      result.add(value[1]);
+      return;
+    }
+    default:
+      throw dynamicImageExpression(path, operator);
+  }
 }
 
-function terrainContribution(
-  terrain: NonNullable<ReturnType<typeof resolveTerrain>>,
-): TileflowLayerContribution {
-  return {
-    kind: 'layer',
-    layer: {
-      id: 'streets-terrain-hillshade',
-      type: 'hillshade',
-      source: terrain.sourceId,
-      paint: {
-        'hillshade-accent-color': 'rgba(255, 255, 255, 0.18)',
-        'hillshade-exaggeration': terrain.mode === '3d' ? 0.24 : 0.42,
-        'hillshade-highlight-color': 'rgba(255, 255, 255, 0.28)',
-        'hillshade-shadow-color': 'rgba(38, 44, 50, 0.34)',
-      },
-    },
-    localOrder: 0,
-    owner: 'land',
-    slot: 'terrain',
-    target: 'terrain.hillshade',
-  };
+function dynamicImageExpression(path: string, operator: string): Error {
+  return new Error(
+    `Tileflow image reference ${path} uses dynamic ${JSON.stringify(operator)} output; every possible sprite ID must be statically enumerable with literal, image, case, match, step, interpolate, or coalesce outputs.`,
+  );
+}
+
+function assertGlyphFontStacks(style: MapLibreStyle, config: ResolvedTileflowMap): void {
+  if (!config.glyphs) return;
+  const declared = new Set(config.glyphs.fontStacks);
+  const missing = new Set<string>();
+  for (const layer of style.layers) {
+    const layout = isRecord(layer.layout) ? layer.layout : undefined;
+    const font = layout?.['text-font'];
+    if (!Array.isArray(font) || !font.every((entry) => typeof entry === 'string')) continue;
+    const stack = font.join(',');
+    if (stack && !declared.has(stack)) missing.add(stack);
+  }
+  if (missing.size > 0) {
+    throw new Error(
+      `Tileflow map "${config.id}" uses undeclared glyph font stacks: ${[...missing].sort().join(', ')}.`,
+    );
+  }
+}
+
+function assertTextAssets(style: MapLibreStyle, config: ResolvedTileflowMap): void {
+  const textLayers: string[] = [];
+  for (const layer of style.layers) {
+    const layout = isRecord(layer.layout) ? layer.layout : undefined;
+    if (layout?.['text-field'] === undefined) continue;
+    textLayers.push(typeof layer.id === 'string' ? layer.id : '<unknown>');
+    const font = layout['text-font'];
+    if (
+      !Array.isArray(font) ||
+      font.length === 0 ||
+      font.some((entry) => typeof entry !== 'string' || entry.length === 0)
+    ) {
+      throw new Error(
+        `Tileflow map "${config.id}" text layer "${typeof layer.id === 'string' ? layer.id : '<unknown>'}" requires a static non-empty text-font array of exact face names.`,
+      );
+    }
+  }
+  if (textLayers.length === 0) return;
+  if (config.fonts !== undefined) {
+    if (config.fonts.length > 0) return;
+    throw new Error(
+      `Tileflow map "${config.id}" contains text but declares an empty fonts directory array.`,
+    );
+  }
+  if (config.glyphs !== undefined && style.glyphs) return;
+  throw new Error(
+    `Tileflow map "${config.id}" contains text but declares neither fonts nor glyphs.`,
+  );
 }
 
 function normalizeBaseUrl(value: string | undefined): string {

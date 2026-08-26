@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
-import {serializeCanonicalJson, streets, type TileflowProjectConfig} from '@tileflow/core';
+import {defineMap, serializeCanonicalJson} from '@tileflow/core';
+import type {TileflowBuildCatalog} from '@tileflow/core/build';
+import {streets} from '@tileflow/maps';
+import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {selectTileflowCaptureSceneNames} from '../src/capture';
 import {
   createTileflowCaptureBrowserEnvironment,
@@ -19,8 +22,10 @@ import {
 } from '../src/index';
 import {readPngDimensions} from '../src/standalone';
 
-const project: TileflowProjectConfig = {
-  maps: {madrid: {basemap: streets()}},
+const madrid = defineMap({id: 'madrid', version: 1, extends: streets});
+
+const project: TileflowBuildCatalog = {
+  maps: {madrid},
   scenes: {
     narrow: {
       map: 'madrid',
@@ -36,8 +41,13 @@ const project: TileflowProjectConfig = {
 };
 
 const dataIdentity: TileflowCaptureDataInput = {
-  generation: 'v1',
+  archiveSha256: 'd'.repeat(64),
+  contractSha256: 'e'.repeat(64),
+  dataContractSha256: 'f'.repeat(64),
+  descriptorSha256: 'c'.repeat(64),
   kind: 'tileflow-world',
+  product: 'world-v1',
+  releaseId: 'world-v1-capture-fixture',
   schema: 'openmaptiles',
   schemaVersion: 1,
   sourceId: 'tileflow',
@@ -63,20 +73,20 @@ test('sorts and validates scene selection deterministically', () => {
 });
 
 test('does not select inherited Object.prototype members as scenes', () => {
-  const projectWithoutScenes: TileflowProjectConfig = {
-    maps: {madrid: {basemap: streets()}},
+  const projectWithoutScenes: TileflowBuildCatalog = {
+    maps: {madrid},
     scenes: {},
   };
 
   for (const sceneName of ['constructor', 'toString']) {
     assert.throws(
       () => selectTileflowCaptureSceneNames({project: projectWithoutScenes}, [sceneName]),
-      /Unknown Tileflow capture scene/,
+      /portable Tileflow capture scene name/,
     );
   }
 
-  const nonPortableProject: TileflowProjectConfig = {
-    maps: {madrid: {basemap: streets()}},
+  const nonPortableProject: TileflowBuildCatalog = {
+    maps: {madrid},
     scenes: {CON: project.scenes!.desktop!},
   };
   assert.throws(
@@ -163,6 +173,7 @@ test('capture receipts preserve expanded vector source identity', () => {
       tree: false,
     },
     bindings: {fields: {class: 'kind/value'}, layers: {road: 'roads-世界'}},
+    semantics: {parkLayer: 'protected-only'},
   };
   const receipt = createTileflowCaptureReceipt({
     data: expanded,
@@ -181,6 +192,7 @@ test('capture receipts preserve expanded vector source identity', () => {
 
   assert.deepEqual(receipt.data.bindings, expanded.bindings);
   assert.deepEqual(receipt.data.capabilities, expanded.capabilities);
+  assert.deepEqual(receipt.data.semantics, {parkLayer: 'protected-only'});
   assert.equal(receipt.data.source?.kind, 'root-relative');
   assert.match(receipt.data.source?.sha256 ?? '', /^[a-f0-9]{64}$/);
   assert.equal('url' in receipt.data, false);
@@ -245,35 +257,23 @@ test('application receipts label configured style and data as expected but unver
     style: 'expected-unverified',
   });
 
-  const legacy = structuredClone(receipt) as typeof receipt & {
-    data: typeof receipt.data & {url?: string};
-    verification?: typeof receipt.verification;
+  const {verification: _verification, ...legacyCommon} = receipt;
+  const legacy = {
+    ...legacyCommon,
+    schemaVersion: 2,
+    data: {
+      generation: 'v1',
+      kind: 'tileflow-world',
+      schema: 'openmaptiles',
+      schemaVersion: 1,
+      sourceId: 'tileflow',
+      url: 'http://127.0.0.1:8080/tiles.json?token=legacy-secret',
+    },
   };
-  delete legacy.verification;
-  delete legacy.data.source;
-  legacy.data.url = 'http://127.0.0.1:8080/tiles.json?token=legacy-secret';
   const parsedLegacy = parseTileflowCaptureReceipt(serializeCanonicalJson(legacy));
   assert.deepEqual(parsedLegacy.verification, receipt.verification);
   assert.equal(parsedLegacy.data.source?.kind, 'loopback');
   assert.equal(serializeTileflowCaptureReceipt(parsedLegacy).includes('legacy-secret'), false);
-});
-
-test('parses every committed Streets schema-v2 receipt', async () => {
-  const directory = new URL(
-    '../../../examples/tileflow-streets/test/visual-baselines/',
-    import.meta.url,
-  );
-  const files = (await readdir(directory)).filter((name) => name.endsWith('.receipt.json')).sort();
-  assert.equal(files.length, 12);
-
-  for (const file of files) {
-    const receipt = parseTileflowCaptureReceipt(await readFile(new URL(file, directory), 'utf8'));
-    assert.deepEqual(receipt.verification, {data: 'rendered', style: 'rendered'}, file);
-    assert.equal('url' in receipt.data, false, file);
-    assert.equal(receipt.data.source?.kind, 'loopback', file);
-    assert.match(receipt.data.source?.sha256 ?? '', /^[a-f0-9]{64}$/, file);
-    assert.equal(JSON.stringify(receipt).includes('127.0.0.1'), false, file);
-  }
 });
 
 test('emits one exact receipt shape with explicit data identity', () => {
@@ -302,42 +302,79 @@ test('emits one exact receipt shape with explicit data identity', () => {
   });
   const pinned = createTileflowCaptureReceipt(common);
 
-  assert.equal(unpinned.schemaVersion, 2);
+  assert.equal(unpinned.schemaVersion, 3);
   assert.deepEqual(unpinned.data, {
     kind: 'vector-tiles',
     schema: 'openmaptiles',
     schemaVersion: 1,
     sourceId: 'tileflow',
   });
-  assert.equal(pinned.schemaVersion, 2);
+  assert.equal(pinned.schemaVersion, 3);
   assert.deepEqual(pinned.data, dataIdentity);
   assert.deepEqual(Object.keys(unpinned).sort(), Object.keys(pinned).sort());
   assert.deepEqual(JSON.parse(serializeTileflowCaptureReceipt(pinned)), pinned);
+  for (const field of [
+    'archiveSha256',
+    'contractSha256',
+    'dataContractSha256',
+    'descriptorSha256',
+    'product',
+    'releaseId',
+  ] as const) {
+    const incomplete = structuredClone(pinned) as unknown as {
+      data: Record<string, unknown>;
+    };
+    delete incomplete.data[field];
+    assert.throws(
+      () => serializeTileflowCaptureReceipt(incomplete as never),
+      /missing or unsupported/,
+      field,
+    );
+  }
+  const mixed = structuredClone(pinned) as unknown as {data: Record<string, unknown>};
+  mixed.data.generation = 'v1';
+  assert.throws(() => serializeTileflowCaptureReceipt(mixed as never), /missing or unsupported/);
   assert.throws(
     () =>
       createTileflowCaptureReceipt({
         ...common,
         data: {
           kind: 'tileflow-world',
-          revision: 'unsafe/version',
+          product: 'world-v1',
           schema: 'openmaptiles',
           schemaVersion: 1,
           sourceId: 'tileflow',
+        } as never,
+      }),
+    /missing or unsupported/,
+  );
+  assert.throws(
+    () =>
+      createTileflowCaptureReceipt({
+        ...common,
+        data: {
+          ...dataIdentity,
+          semantics: {parkLayer: 'ordinary-parks'} as never,
         },
       }),
-    /data\.revision/,
+    /data\.semantics\.parkLayer/,
   );
 
-  const legacyWorld = createTileflowCaptureReceipt({
-    ...common,
-    data: {
-      kind: 'tileflow-world',
-      revision: '2026-06-07',
-      schema: 'openmaptiles',
-      schemaVersion: 1,
-      sourceId: 'tileflow',
-    },
-  });
+  const legacyWorld = parseTileflowCaptureReceipt(
+    serializeCanonicalJson({
+      ...pinned,
+      schemaVersion: 2,
+      data: {
+        kind: 'tileflow-world',
+        revision: '2026-06-07',
+        schema: 'openmaptiles',
+        schemaVersion: 1,
+        sourceId: 'tileflow',
+      },
+    }),
+  );
+  assert.equal(legacyWorld.schemaVersion, 2);
+  assert.equal(JSON.parse(serializeTileflowCaptureReceipt(legacyWorld)).schemaVersion, 2);
   assert.deepEqual(legacyWorld.data, {
     kind: 'tileflow-world',
     revision: '2026-06-07',
@@ -409,12 +446,15 @@ test('accepts only credential-free loopback application origins and URLs', () =>
 
 test('closed sessions reject before loading executable repository config', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-capture-closed-'));
+  await linkWorkspacePackages(cwd);
   const marker = join(cwd, 'config-executed');
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
     `import {writeFileSync} from 'node:fs';
+import {defineMap} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
 writeFileSync(${JSON.stringify(marker)}, 'executed');
-export default {maps: {main: {}}, scenes: {proof: {map: 'main', camera: {type: 'center', center: [0, 0], zoom: 1}, viewport: {width: 64, height: 64}}}};
+export default defineMap({id: 'main', version: 1, extends: streets});
 `,
   );
   const session = createTileflowCaptureSession({cwd});

@@ -1,7 +1,11 @@
 {
   "name": "@tileflow/capture",
   "version": "0.0.0-development",
+  "license": "Apache-2.0",
   "description": "Deterministic local visual capture and comparison for Tileflow maps.",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "sideEffects": false,
   "homepage": "https://tileflow.dev",
@@ -24,7 +28,11 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "LICENSE",
+    "NOTICE",
+    "GENERATED_OUTPUT_LICENSE.md",
+    "TRADEMARKS.md"
   ],
   "scripts": {
     "build": "tsup src/index.ts src/receipt.ts --format esm --dts --clean --platform node",
@@ -58,13 +66,23 @@
     "pngjs": "7.0.0"
   },
   "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.0",
+    "@tileflow/maps": "workspace:*",
+    "@tileflow/next": "workspace:*",
     "@tileflow/react": "workspace:*",
+    "@tileflow/svelte": "workspace:*",
+    "@tileflow/vite": "workspace:*",
+    "@tileflow/vue": "workspace:*",
+    "@tileflow/webpack": "workspace:*",
     "@types/node": "^25.9.2",
     "@types/pngjs": "6.0.5",
+    "@vitejs/plugin-vue": "^6.0.8",
     "next": "16.3.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "svelte": "^5.56.4",
     "vite": "^8.0.16",
+    "vue": "^3.5.39",
     "webpack": "5.108.3"
   }
 }

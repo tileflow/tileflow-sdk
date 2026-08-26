@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {access, readFile} from 'node:fs/promises';
 import test from 'node:test';
+import {loadTileflowMapLibre} from '../src/maplibre.js';
 
 test('publishes resolvable Svelte and declaration entry points', async () => {
   const packageJson = JSON.parse(
@@ -8,7 +9,13 @@ test('publishes resolvable Svelte and declaration entry points', async () => {
   );
   const entrySource = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
 
-  assert.deepEqual(packageJson.files, ['src']);
+  assert.deepEqual(packageJson.files, [
+    'src',
+    'LICENSE',
+    'NOTICE',
+    'GENERATED_OUTPUT_LICENSE.md',
+    'TRADEMARKS.md',
+  ]);
   assert.equal(packageJson.types, packageJson.exports['.'].types);
   assert.equal(packageJson.svelte, packageJson.exports['.'].svelte);
   assert.equal(packageJson.exports['.'].default, packageJson.exports['.'].import);
@@ -22,6 +29,42 @@ test('publishes resolvable Svelte and declaration entry points', async () => {
   }
 });
 
+test('keeps MapLibre behind the interactive runtime boundary', async () => {
+  const component = await readFile(new URL('../src/TileflowMap.svelte', import.meta.url), 'utf8');
+  const loader = await readFile(new URL('../src/maplibre.js', import.meta.url), 'utf8');
+
+  assert.match(component, /loadTileflowMapLibre\(\)/u);
+  assert.match(component, /loadTileflowStyleFonts\(runtime\.style/u);
+  assert.ok(component.indexOf('loadTileflowStyleFonts') < component.indexOf('new maplibregl.Map'));
+  assert.match(component, /new maplibregl\.Map/u);
+  assert.doesNotMatch(component, /import \* as maplibreglModule/u);
+  assert.match(loader, /import\(["']maplibre-gl["']\)/u);
+  assert.doesNotMatch(loader, /^import .*?["']maplibre-gl["'];?$/mu);
+});
+
+test('imports delivery helpers from responsibility-specific subpaths', async () => {
+  const component = await readFile(new URL('../src/TileflowMap.svelte', import.meta.url), 'utf8');
+  const declaration = await readFile(new URL('../src/index.d.ts', import.meta.url), 'utf8');
+  const styleSource = await readFile(new URL('../src/style-source.js', import.meta.url), 'utf8');
+
+  assert.match(component, /from ["']@tileflow\/core\/runtime["']/u);
+  assert.match(component, /from ["']@tileflow\/core\/capture["']/u);
+  assert.doesNotMatch(component, /createStyle|TileflowConfig|TileflowThemeRegistry/u);
+  assert.match(declaration, /from ["']@tileflow\/core\/runtime["']/u);
+  assert.match(styleSource, /from ["']@tileflow\/core\/runtime["']/u);
+});
+
+test('interactive runtime resolves and reuses the MapLibre renderer', async () => {
+  const firstLoad = loadTileflowMapLibre();
+  const secondLoad = loadTileflowMapLibre();
+  assert.equal(firstLoad, secondLoad);
+
+  const maplibregl = await firstLoad;
+  assert.equal(typeof maplibregl.Map, 'function');
+  assert.equal(typeof maplibregl.Marker, 'function');
+  assert.equal(typeof maplibregl.addProtocol, 'function');
+});
+
 test('keeps component exports aligned with the public props declaration', async () => {
   const implementation = await readFile(
     new URL('../src/TileflowMap.svelte', import.meta.url),
@@ -33,7 +76,19 @@ test('keeps component exports aligned with the public props declaration', async 
   );
   const declaredProps = [
     ...extractPropertyNames(declaration, 'TileflowMapBaseProps'),
-    ...extractPropertyNames(declaration, 'TileflowMapStyleInput'),
+    ...extractPropertyNames(declaration, 'TileflowMapStyleSourceProps'),
+    'annotations',
+    'defaultInteractionState',
+    'interactions',
+    'interactionState',
+    'marker',
+    'markers',
+    'mode',
+    'onInteractionDiagnostic',
+    'onInteractionEvent',
+    'onInteractionStateChange',
+    'popup',
+    'tooltip',
   ];
 
   assert.deepEqual(implementationProps.toSorted(), declaredProps.toSorted());
@@ -47,9 +102,10 @@ test('keeps component exports aligned with the public props declaration', async 
 });
 
 function extractPropertyNames(source, alias) {
-  const body = new RegExp(`(?:export )?type ${alias} = \\{([\\s\\S]*?)\\n\\};`, 'u').exec(
-    source,
-  )?.[1];
+  const body = new RegExp(
+    `(?:export )?type ${alias}(?:<[^;]*?>)? = \\{([\\s\\S]*?)\\n\\};`,
+    'u',
+  ).exec(source)?.[1];
   assert.ok(body, `Missing ${alias} declaration`);
 
   return [...body.matchAll(/^\s{2}(\w+)\??:/gmu)].map(([, name]) => name);

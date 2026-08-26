@@ -98,12 +98,18 @@ export const tileflowCaptureViewportSchema = z
   .strict()
   .superRefine((viewport, context) => {
     const dpr = viewport.dpr ?? 1;
+    const physicalWidth = viewport.width * dpr;
+    const physicalHeight = viewport.height * dpr;
     const physicalPixels = viewport.width * viewport.height * dpr * dpr;
 
-    if (physicalPixels > tileflowCaptureSceneLimits.maximumPhysicalPixels) {
+    if (
+      physicalWidth > tileflowCaptureSceneLimits.viewport.maximum ||
+      physicalHeight > tileflowCaptureSceneLimits.viewport.maximum ||
+      physicalPixels > tileflowCaptureSceneLimits.maximumPhysicalPixels
+    ) {
       context.addIssue({
         code: 'custom',
-        message: `Expected at most ${tileflowCaptureSceneLimits.maximumPhysicalPixels} physical pixels`,
+        message: `Expected physical width and height at most ${tileflowCaptureSceneLimits.viewport.maximum} pixels`,
         path: ['dpr'],
       });
     }
@@ -111,7 +117,6 @@ export const tileflowCaptureViewportSchema = z
 
 export const tileflowCaptureIdSchema = z
   .string()
-  .trim()
   .min(1)
   .max(tileflowCaptureSceneLimits.captureIdLength)
   .regex(/^[A-Za-z0-9_-]+$/, {
@@ -121,10 +126,22 @@ export const tileflowCaptureIdSchema = z
     message: 'Expected an identifier that cannot mutate an object prototype',
   });
 
-export const tileflowCaptureSceneNameSchema = tileflowCaptureIdSchema.refine(
-  (name) => !/^(?:AUX|CON|NUL|PRN|COM[1-9]|LPT[1-9])$/i.test(name),
-  'Expected a portable scene name that is not a reserved filename or prototype key',
-);
+/** Canonical identity for authoring maps and their leaf-owned scene names. */
+export const tileflowPortableIdSchema = z
+  .string()
+  .min(1)
+  .max(tileflowCaptureSceneLimits.captureIdLength)
+  .regex(/^[a-z][a-z0-9-]{0,63}$/u, {
+    message: 'Expected lowercase kebab-case beginning with a letter',
+  })
+  .refine(
+    (name) =>
+      !['constructor', 'prototype'].includes(name) &&
+      !/^(?:AUX|CON|NUL|PRN|COM[1-9]|LPT[1-9])$/i.test(name),
+    'Expected a portable identifier that is not a reserved filename or prototype key',
+  );
+
+export const tileflowCaptureSceneNameSchema = tileflowPortableIdSchema;
 
 const applicationPathSchema = z
   .string()
@@ -163,7 +180,7 @@ export const tileflowCaptureTargetSchema = z.discriminatedUnion('kind', [
 
 export const tileflowCaptureSceneSchema = z
   .object({
-    map: tileflowCaptureIdSchema,
+    map: tileflowPortableIdSchema,
     camera: tileflowCaptureCameraSchema,
     viewport: tileflowCaptureViewportSchema,
     target: tileflowCaptureTargetSchema.optional(),

@@ -8,6 +8,7 @@ import type {
   TileflowPoiLabels,
   TileflowPoiModuleConfig,
   TileflowPoiModuleOptions,
+  TileflowPoiRankLimit,
 } from '../../types';
 
 export type ResolvedPoiModuleOptions = {
@@ -17,6 +18,7 @@ export type ResolvedPoiModuleOptions = {
   density: TileflowPoiDensity;
   icons: TileflowPoiIcons;
   labels: TileflowPoiLabels;
+  maxRank?: TileflowPoiRankLimit;
   minZoom: number;
   mode: TileflowPoi;
   placement: {
@@ -47,7 +49,7 @@ const defaultClassMapping: Record<string, readonly string[]> = {
   lodging: ['guest_house', 'hostel', 'hotel', 'motel'],
   services: ['bank', 'library', 'police', 'post_office', 'town_hall'],
   shopping: ['department_store', 'mall', 'shop', 'supermarket'],
-  transit: ['bus_station', 'railway', 'station', 'subway', 'tram_stop'],
+  'major-transit': ['bus_station', 'railway', 'station', 'subway', 'tram_stop'],
 };
 
 export function poi(options: TileflowPoiModuleOptions = {}): TileflowPoiModuleConfig {
@@ -64,6 +66,7 @@ export function resolvePoi(request: TileflowPoiModuleConfig | undefined): Resolv
     density,
     icons: request?.icons ?? (mode === 'none' ? false : 'essential'),
     labels: request?.labels ?? mode,
+    ...(request?.maxRank === undefined ? {} : {maxRank: cloneJson(request.maxRank)}),
     minZoom: request?.minZoom ?? defaultPoiMinZoom[mode] + densityZoomOffset(density),
     mode,
     placement: {

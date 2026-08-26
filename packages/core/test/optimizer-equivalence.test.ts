@@ -5,6 +5,7 @@ import {
 } from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {tileflowCompilerMetadataKeys} from '../src/cartography/contributions';
 import {optimizeTileflowLayers} from '../src/cartography/optimizer';
 
 type Layer = Record<string, unknown> & {id: string; type: string};
@@ -96,6 +97,24 @@ test('merges compatible linear road cohorts without changing evaluated widths', 
   }
 });
 
+test('selects optimizer cohorts by semantic target rather than compiler layer ID', () => {
+  const semanticRoad = (roadClass: 'motorway' | 'trunk', id: string, width: number): Layer => ({
+    ...roadLayer(roadClass, width, {minzoom: 5}),
+    id,
+    metadata: {
+      [tileflowCompilerMetadataKeys.owner]: 'roads',
+      [tileflowCompilerMetadataKeys.slot]: 'transport-surface-fill',
+      [tileflowCompilerMetadataKeys.target]: `roads.classes.${roadClass}.surface.fill`,
+    },
+  });
+  const optimized = optimizeTileflowLayers([
+    semanticRoad('motorway', 'physical-layer-a', 8),
+    semanticRoad('trunk', 'physical-layer-b', 6),
+  ]);
+
+  assert.ok(optimized.some((layer) => layer.id === 'streets-road-surface-highzoom-major-fill'));
+});
+
 test('class-match compaction honors remapped schema fields', () => {
   const input = [
     roadLayer('motorway', 8, {
@@ -113,15 +132,45 @@ test('class-match compaction honors remapped schema fields', () => {
   assert.doesNotMatch(JSON.stringify(merged), /"get","class"/);
 });
 
-test('bails out rather than nesting step or exponential zoom expressions', () => {
-  for (const unsupported of [
-    ['step', ['zoom'], 1, 18, 4],
-    ['interpolate', ['exponential', 1.5], ['zoom'], 16, 1, 20, 4],
-  ]) {
-    const input = [roadLayer('motorway', unsupported), roadLayer('trunk', 2)];
-    const optimized = optimizeTileflowLayers(input);
-    assert.deepEqual(optimized, input);
-    assert.deepEqual(styleErrors(optimized), []);
+test('bails out rather than nesting step zoom expressions', () => {
+  const input = [roadLayer('motorway', ['step', ['zoom'], 1, 18, 4]), roadLayer('trunk', 2)];
+  const optimized = optimizeTileflowLayers(input);
+  assert.deepEqual(optimized, input);
+  assert.deepEqual(styleErrors(optimized), []);
+});
+
+test('merges exponential road cohorts without changing evaluated widths', () => {
+  const motorwayWidth = ['interpolate', ['exponential', 1.5], ['zoom'], 12, 3.2, 18, 30, 22, 300];
+  const trunkWidth = ['interpolate', ['exponential', 1.5], ['zoom'], 12, 3, 18, 28, 22, 280];
+  const optimized = optimizeTileflowLayers([
+    roadLayer('motorway', motorwayWidth),
+    roadLayer('trunk', trunkWidth),
+  ]);
+  const merged = optimized.find((layer) => layer.id === 'streets-road-surface-highzoom-major-fill');
+
+  assert.ok(merged);
+  assert.deepEqual(styleErrors(optimized), []);
+  const mergedWidth = (merged.paint as Record<string, unknown>)['line-width'];
+  for (const [roadClass, original] of [
+    ['motorway', motorwayWidth],
+    ['trunk', trunkWidth],
+  ] as const) {
+    for (const zoom of [15, 16, 18, 20, 22]) {
+      assert.equal(
+        evaluateProperty(
+          mergedWidth,
+          mapLibreStyleSpec.paint_line['line-width'] as Record<string, unknown>,
+          zoom,
+          {class: roadClass},
+        ),
+        evaluateProperty(
+          original,
+          mapLibreStyleSpec.paint_line['line-width'] as Record<string, unknown>,
+          zoom,
+          {class: roadClass},
+        ),
+      );
+    }
   }
 });
 
@@ -140,15 +189,15 @@ test('preserves distinct road zoom ranges instead of widening them', () => {
   }
 });
 
-test('does not merge a cohort across an intervening raw layer', () => {
+test('does not merge a cohort across an intervening contribution', () => {
   const custom: Layer = {id: 'custom-divider', type: 'background'};
   const input = [roadLayer('motorway', 3), custom, roadLayer('trunk', 2)];
   assert.deepEqual(optimizeTileflowLayers(input), input);
 });
 
-test('raw override metadata disables the whole affected cohort', () => {
+test('an added semantic effect disables the whole affected cohort', () => {
   const input = [
-    roadLayer('motorway', 3, {metadata: {'tileflow:rawOverride': true}}),
+    roadLayer('motorway', 3, {metadata: {'tileflow:compiler-effect': 'add'}}),
     roadLayer('trunk', 2),
   ];
   assert.deepEqual(optimizeTileflowLayers(input), input);
@@ -157,7 +206,7 @@ test('raw override metadata disables the whole affected cohort', () => {
 test('a typed paint patch may consolidate when every equivalence guard succeeds', () => {
   const input = [
     roadLayer('motorway', 3, {
-      metadata: {'tileflow:rawOverride': 'patch'},
+      metadata: {'tileflow:compiler-effect': 'patch'},
       paint: {'line-color': 'red', 'line-width': 3},
     }),
     roadLayer('trunk', 2),
@@ -168,10 +217,10 @@ test('a typed paint patch may consolidate when every equivalence guard succeeds'
     optimized.some(({id}) => id === 'streets-road-surface-highzoom-major-fill'),
     true,
   );
-  assert.equal(optimized.find(({id}) => id === 'streets-road-surface-motorway-fill')?.maxzoom, 16);
+  assert.equal(optimized.find(({id}) => id === 'streets-road-surface-motorway-fill')?.maxzoom, 15);
 });
 
-test('generated IDs never collide with raw layers', () => {
+test('generated IDs never collide with independent contributions', () => {
   const input: Layer[] = [
     {
       id: 'streets-landcover-grass',
@@ -202,6 +251,79 @@ test('generated IDs never collide with raw layers', () => {
     optimized.map((layer) => layer.id),
     input.map((layer) => layer.id),
   );
+  assert.deepEqual(styleErrors(optimized), []);
+});
+
+test('typed green classes consolidate while the legacy park branch stays separate', () => {
+  const greenFill = (
+    name: 'meadow' | 'urbanPark',
+    subclass: string,
+    color: string,
+    opacity: number,
+  ): Layer => ({
+    id: `physical-${name}`,
+    type: 'fill',
+    source,
+    'source-layer': 'landcover',
+    filter: ['==', ['get', 'subclass'], subclass],
+    metadata: {
+      [tileflowCompilerMetadataKeys.owner]: 'land',
+      [tileflowCompilerMetadataKeys.slot]: 'land',
+      [tileflowCompilerMetadataKeys.target]: `land.landcover.${name}.fill`,
+    },
+    paint: {'fill-color': color, 'fill-opacity': opacity},
+  });
+  const legacy: Layer = {
+    id: 'streets-landcover-legacy-park',
+    type: 'fill',
+    source,
+    'source-layer': 'park',
+    filter: ['!=', ['get', 'class'], 'protected_area'],
+    metadata: {
+      [tileflowCompilerMetadataKeys.owner]: 'land',
+      [tileflowCompilerMetadataKeys.slot]: 'land',
+      [tileflowCompilerMetadataKeys.target]: 'land.compatibility.legacyPark.fill',
+    },
+    paint: {'fill-color': '#b3ebad', 'fill-opacity': 0.8},
+  };
+  const optimized = optimizeTileflowLayers([
+    greenFill('meadow', 'meadow', '#e3f4d2', 0.85),
+    greenFill('urbanPark', 'park', '#b3ebad', 1),
+    legacy,
+  ]);
+
+  assert.equal(optimized.length, 2);
+  assert.equal(
+    optimized.some(({id}) => id === legacy.id),
+    true,
+  );
+  const merged = optimized.find(({id}) => id === 'streets-landcover');
+  assert.ok(merged);
+  for (const [subclass, color, opacity] of [
+    ['meadow', 'rgba(227,244,210,1)', 0.85],
+    ['park', 'rgba(179,235,173,1)', 1],
+  ] as const) {
+    assert.equal(
+      String(
+        evaluateProperty(
+          (merged.paint as Record<string, unknown>)['fill-color'],
+          mapLibreStyleSpec.paint_fill['fill-color'] as Record<string, unknown>,
+          10,
+          {subclass},
+        ),
+      ),
+      color,
+    );
+    assert.equal(
+      evaluateProperty(
+        (merged.paint as Record<string, unknown>)['fill-opacity'],
+        mapLibreStyleSpec.paint_fill['fill-opacity'] as Record<string, unknown>,
+        10,
+        {subclass},
+      ),
+      opacity,
+    );
+  }
   assert.deepEqual(styleErrors(optimized), []);
 });
 

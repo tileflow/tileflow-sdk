@@ -1,4 +1,4 @@
-import type {TileflowDomainCompileContext} from '../../cartography/context';
+import {type TileflowDomainCompileContext, typographyTextStyle} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applyLineStyle, applySymbolStyle, createAreaLayers} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
@@ -39,7 +39,7 @@ export function compileAeroways(
         text: {
           allowOverlap: false,
           color: context.colors.labels.road,
-          font: context.typography.roads.font,
+          ...typographyTextStyle(context.typography.roads),
           haloColor: context.colors.labels.halo,
           haloWidth: 1.5,
           keepUpright: true,
@@ -49,7 +49,6 @@ export function compileAeroways(
             [14, 10],
             [18, 13],
           ]),
-          weight: context.typography.roads.weight,
         },
       },
       taxiway: {

@@ -12,7 +12,7 @@ import {TileflowMap} from '@tileflow/vue';
 
 <template>
   <TileflowMap
-    map="madrid"
+    :source="{kind: 'tileflow', map: 'madrid'}"
     :center="[-3.7038, 40.4168]"
     :zoom="12"
     :map-options="{
@@ -24,15 +24,141 @@ import {TileflowMap} from '@tileflow/vue';
 ```
 
 `mapOptions` accepts native MapLibre options except `container` and `style`, which
-Tileflow resolves from the map name, manifest, or explicit style props. Direct
+Tileflow resolves from `source`. Direct
 Tileflow props such as `center`, `zoom`, and `interactive` take priority when
-provided.
+provided. Camera resolution is the same in interactive and image modes: direct props, then
+`mapOptions`, then the published manifest view, then Tileflow's shared runtime defaults.
 
-Choose a single style source. `config` may only be combined with `themes`. A named `map` may be
-used alone or with exactly one of `mapStyle`, `styleUrl`, or `styleBaseUrl`; keeping `map` alongside
-an explicit style preserves map identity for capture and analytics. `styleBaseUrl` requires a named
-map, and `themes` has no effect without `config`, so invalid combinations throw a `TypeError` rather
-than being resolved by silent precedence.
+Every map has exactly one discriminated `source`. Use `kind: 'tileflow'` with `map` and an optional
+`manifestUrl` for published delivery, or `kind: 'maplibre'` with a direct MapLibre style object or
+URL. Browser components do not compile `tileflow.config.ts`.
+
+Without `manifestUrl`, the exact default is `/tileflow/manifest.json`. If a bundler, framework base
+path, reverse proxy, or Tileflow plugin publishes it elsewhere, set the final public URL explicitly;
+the component does not guess it. Manifest 404s, unknown map IDs, unresolved styles, and unresolved
+image URLs enter `data-tileflow-state="error"`.
+
+```vue
+<TileflowMap
+  :source="{
+    kind: 'tileflow',
+    map: 'madrid',
+    manifestUrl: 'https://cdn.example.com/tileflow/manifest.json',
+  }"
+/>
+
+<TileflowMap
+  :source="{
+    kind: 'maplibre',
+    style: 'https://api.tileflow.dev/maps/map_1234567890abcdef/style.json',
+  }"
+/>
+```
+
+`mode="image"` resolves an explicit or published image URL and renders an `<img>` without loading
+or evaluating MapLibre. All environments follow the same published manifest contract.
+
+## Annotations, semantic POIs, and native Vue views
+
+Use `annotations` for small, application-owned DOM markers. The portable annotation data and
+interaction state remain JSON-safe. Use `interactions` to bind tooltip or popup behavior to
+manifest-declared semantic POIs already rendered by the map style; this avoids creating one DOM
+marker per feature. Scoped slots render native Vue UI into hosts owned by the shared interaction
+runtime.
+
+```vue
+<script setup lang="ts">
+import {ref} from 'vue';
+import type {
+  TileflowAnnotation,
+  TileflowInteractionBinding,
+  TileflowInteractionState,
+} from '@tileflow/interactions';
+import {TileflowMap} from '@tileflow/vue';
+
+type Property = {address: string; price: number};
+
+const annotations = [
+  {
+    kind: 'marker',
+    id: 'property-42',
+    coordinate: [-3.7, 40.4],
+    ariaLabel: 'Apartment in Madrid',
+    data: {address: 'Calle Mayor', price: 320_000},
+    tooltip: {content: {kind: 'field', field: 'address'}},
+    popup: {content: {kind: 'view', name: 'property-card'}},
+  },
+] satisfies readonly TileflowAnnotation<Property>[];
+
+const interactions = [
+  {
+    id: 'restaurant-details',
+    target: {kind: 'semantic-feature', domain: 'poi', categories: ['food']},
+    tooltip: {content: {kind: 'field', field: 'name', fallback: 'Restaurant'}},
+    popup: {content: {kind: 'view', name: 'poi-card'}},
+  },
+] satisfies readonly TileflowInteractionBinding[];
+
+const interactionState = ref<TileflowInteractionState>({popup: null});
+</script>
+
+<template>
+  <TileflowMap
+    v-model:interaction-state="interactionState"
+    :source="{kind: 'tileflow', map: 'madrid'}"
+    :annotations="annotations"
+    :interactions="interactions"
+    @interaction-event="(event) => console.log(event.type, event.target)"
+    @interaction-diagnostic="(diagnostic) => console.warn(diagnostic.code)"
+  >
+    <template #marker="{annotation}">
+      <span class="price-marker">{{ annotation.data.price.toLocaleString() }}</span>
+    </template>
+
+    <template #tooltip="{target}">
+      <span v-if="target.kind === 'annotation'">{{ target.annotation.data.address }}</span>
+      <span v-else-if="target.kind === 'semantic-feature'">
+        {{ target.feature.properties.name }}
+      </span>
+    </template>
+
+    <template #popup="{target, close}">
+      <article v-if="target.kind === 'annotation'">
+        <strong>{{ target.annotation.data.address }}</strong>
+        <button type="button" @click="close">Close</button>
+      </article>
+      <article v-else-if="target.kind === 'semantic-feature'">
+        <strong>{{ target.feature.properties.name }}</strong>
+        <button type="button" @click="close">Close</button>
+      </article>
+    </template>
+  </TileflowMap>
+</template>
+```
+
+Omit `interactionState` and use `default-interaction-state` for uncontrolled state. Do not provide
+both or switch ownership modes during a component instance's lifetime. Likewise, the legacy
+`markers` prop and `annotations` are mutually exclusive. Legacy markers
+are normalized into annotations and retain their exact `title = label ?? id` behavior while the
+new API uses singular `coordinate` and required `ariaLabel`.
+
+The `marker` slot is annotation-only and preserves the annotation's generic `data` type.
+`tooltip` and `popup` receive the general `TileflowInteractionViewContext`; narrow
+`target.kind` to access either `target.annotation` or the resolved semantic feature. Semantic POI
+bindings require a compatible `tileflow:interaction-manifest` in the active style. Bindings are
+validated before reaching MapLibre, POI hit tests are coalesced with `requestAnimationFrame`, and
+annotation plus semantic runtimes share one controlled or uncontrolled popup state.
+Values in `target.categories` use Tileflow's semantic taxonomy (for example `food` or `coffee`),
+not raw OpenMapTiles classes.
+
+Text content is inserted as text, `field` is a bounded declarative lookup, and `view` is only a
+dispatch name for the corresponding application-owned scoped slot. No interaction path evaluates
+HTML. Passing annotations, semantic interactions, or interaction state to `mode="image"` emits an `UNSUPPORTED_MODE`
+diagnostic, marks capture readiness as `error`, and still does not load or evaluate MapLibre.
+
+Changing annotations, semantic bindings, slots, state listeners, or diagnostic listeners
+reconciles the existing runtimes; it does not recreate the map. The semantic runtime is initialized
+lazily, and the component and its interaction imports remain SSR-safe.
 
 Hosted maps automatically preflight a short-lived commercial session grant before eligible
 resources. Setting `analytics` with `enabled: false` disables the optional beacon only; it does not
@@ -46,12 +172,21 @@ MapLibre failures do not remove that recovery path.
 Pass `capture-id` when a page contains multiple copies of the same named map:
 
 ```vue
-<TileflowMap map="madrid" capture-id="checkout-map" />
+<TileflowMap :source="{kind: 'tileflow', map: 'madrid'}" capture-id="checkout-map" />
 ```
 
 The root exposes `data-tileflow-map`, optional `data-tileflow-capture-id`, and
 `data-tileflow-state="loading|idle|error"`. It becomes idle only after MapLibre idle plus two
-animation frames (or image decode/load in image mode), returns to loading for new style/data work,
-and marks terminal load errors. Application capture selects exactly one ready target.
+animation frames (or image decode/load in image mode). A change to custom tooltip/popup/marker
+render-target keys independently returns interaction readiness to loading until Vue commits the
+Teleports and two current animation frames pass. Map and interaction errors are combined;
+application capture selects exactly one ready target.
+
+## Compatibility
+
+The supported peer window is Vue 3.3-3.x and MapLibre GL JS 5-6. Compatibility smoke tests install
+Vue 3.3.0 with the first release of both MapLibre majors from packed Tileflow tarballs, typecheck a
+consumer, and render the image/SSR path while rejecting any MapLibre import. Vue 4 stays outside the
+peer range until that matrix passes.
 
 Docs: https://tileflow.dev/docs

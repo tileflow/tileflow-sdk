@@ -11,24 +11,43 @@ function nextAlphaVersion(value) {
   return `${match[1]}.${match[2]}.${match[3]}-alpha.${BigInt(match[4]) + 1n}`;
 }
 
-export function classifyPublicationState({currentTag, from, targetState, to}) {
-  assert.equal(to, nextAlphaVersion(from), `Expected ${nextAlphaVersion(from)} after ${from}.`);
+export function classifyPublicationState({baselineState, currentTag, from, targetState, to}) {
+  assert.ok(
+    baselineState === 'published' || baselineState === 'unpublished',
+    'Invalid baseline state.',
+  );
+  if (baselineState === 'published') {
+    assert.equal(to, nextAlphaVersion(from), `Expected ${nextAlphaVersion(from)} after ${from}.`);
+  } else {
+    assert.equal(from, 'unpublished', 'An unpublished package must have no registry origin.');
+    nextAlphaVersion(to);
+  }
   assert.ok(['missing', 'identical', 'different'].includes(targetState), 'Invalid target state.');
   if (targetState === 'identical' && currentTag === to) return 'published';
-  if (targetState === 'missing' && currentTag === from) return 'publish';
+  if (
+    targetState === 'missing' &&
+    ((baselineState === 'published' && currentTag === from) ||
+      (baselineState === 'unpublished' && currentTag === 'unpublished'))
+  ) {
+    return 'publish';
+  }
   if (targetState === 'different') {
     assert.fail(`${to} already exists with different package contents.`);
   }
   if (targetState === 'identical') {
     assert.fail(`${to} exists, but alpha points to ${currentTag}; OIDC cannot repair dist-tags.`);
   }
-  assert.fail(`Expected alpha to point to ${from}, found ${currentTag}.`);
+  assert.fail(
+    baselineState === 'unpublished'
+      ? `Expected the package to remain unpublished, found alpha at ${currentTag}.`
+      : `Expected alpha to point to ${from}, found ${currentTag}.`,
+  );
 }
 
 async function main() {
-  const [from, to, currentTag, targetState, ...rest] = process.argv.slice(2);
+  const [from, to, currentTag, targetState, baselineState, ...rest] = process.argv.slice(2);
   assert.equal(rest.length, 0, 'Unexpected publication-decision arguments.');
-  console.log(classifyPublicationState({currentTag, from, targetState, to}));
+  console.log(classifyPublicationState({baselineState, currentTag, from, targetState, to}));
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await main();

@@ -8,28 +8,36 @@ headless capture, and hosted deployment tooling in one versioned workspace. The 
 API implementation, dashboard, database, and infrastructure live separately and are not part of
 this repository.
 
+These workflows share one public authoring unit: a map. Every `tileflow.config.ts` exports one map,
+usually by importing an existing map and extending it. Map inheritance and semantic modules resolve
+to MapLibre Style JSON, MapLibre renders that style, local tooling prepares and serves assets, and
+Hosted deployment publishes the prepared result. The durable ownership rules and terminology live
+in the [SDK responsibility and delivery contract](docs/contracts/sdk-responsibilities.md).
+
 ## Packages
 
-| Package                                 | Purpose                                                                           |
-| --------------------------------------- | --------------------------------------------------------------------------------- |
-| [`@tileflow/core`](packages/core)       | Typed configuration, semantic modules, validation, and MapLibre style compilation |
-| [`@tileflow/static`](packages/static)   | Static-map scene schemas, overlays, and request helpers                           |
-| [`@tileflow/dev`](packages/dev)         | Node integration utilities, watched artifacts, icons, and feature inspection      |
-| [`@tileflow/capture`](packages/capture) | Pinned headless capture, receipts, visual analysis, and baseline comparison       |
-| [`@tileflow/vite`](packages/vite)       | Vite development and build integration                                            |
-| [`@tileflow/next`](packages/next)       | Next.js development and build integration                                         |
-| [`@tileflow/webpack`](packages/webpack) | Webpack development and build integration                                         |
-| [`@tileflow/react`](packages/react)     | React map and static-image components                                             |
-| [`@tileflow/vue`](packages/vue)         | Vue map component                                                                 |
-| [`@tileflow/svelte`](packages/svelte)   | Svelte map component                                                              |
-| [`@tileflow/cli`](packages/cli)         | `tileflow` init, validate, dev, capture, visual, icon, build, and deploy commands |
+| Package                                           | Purpose                                                                                              |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| [`@tileflow/core`](packages/core)                 | Typed map language, semantic modules, validation, and MapLibre style compilation                     |
+| [`@tileflow/maps`](packages/maps)                 | Official Streets, Ferraris, Streets Dark, Cyberpunk, and Verdant maps with their assets              |
+| [`@tileflow/interactions`](packages/interactions) | Portable annotations, tooltips, popups, state, and MapLibre interaction lifecycle                    |
+| [`@tileflow/static`](packages/static)             | Hosted Static Maps scene schemas, overlays, and bounded request client                               |
+| [`@tileflow/dev`](packages/dev)                   | Node integration utilities, watched artifacts, icons, fonts, and feature inspection                  |
+| [`@tileflow/capture`](packages/capture)           | Pinned headless capture, receipts, visual analysis, and baseline comparison                          |
+| [`@tileflow/vite`](packages/vite)                 | Vite development and build integration                                                               |
+| [`@tileflow/next`](packages/next)                 | Next.js development and build integration                                                            |
+| [`@tileflow/webpack`](packages/webpack)           | Webpack development and build integration                                                            |
+| [`@tileflow/react`](packages/react)               | React map and static-image components                                                                |
+| [`@tileflow/vue`](packages/vue)                   | Vue map component                                                                                    |
+| [`@tileflow/svelte`](packages/svelte)             | Svelte map component                                                                                 |
+| [`@tileflow/cli`](packages/cli)                   | `tileflow` init, validate, preview (`dev` alias), capture, visual, icons, build, and deploy commands |
 
 ## Quick start
 
 Install the alpha packages explicitly while the public API is still evolving:
 
 ```sh
-npm install @tileflow/core@alpha @tileflow/react@alpha maplibre-gl
+npm install @tileflow/core@alpha @tileflow/maps@alpha @tileflow/react@alpha maplibre-gl
 npm install --save-dev @tileflow/vite@alpha
 npm install --save-dev --save-exact @tileflow/cli@alpha
 ```
@@ -37,22 +45,35 @@ npm install --save-dev --save-exact @tileflow/cli@alpha
 Create `tileflow.config.ts`:
 
 ```ts
-import {defineTileflow, labels, poi, roads, streets} from '@tileflow/core';
+import {defineMap, labels, poi, roads} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
 
-export default defineTileflow({
-  maps: {
-    madrid: {
-      basemap: streets(),
-      theme: 'light',
-      modules: {
-        roads: roads({detail: 'streets', hierarchy: 'clear'}),
-        labels: labels({roads: 'major'}),
-        poi: poi({categories: ['food', 'culture']}),
-      },
-    },
+export default defineMap({
+  id: 'madrid',
+  name: 'Madrid',
+  version: 1,
+  extends: streets,
+  modules: {
+    roads: roads({detail: 'streets', hierarchy: 'clear'}),
+    labels: labels({roads: 'major'}),
+    poi: poi({categories: ['food', 'culture']}),
   },
 });
 ```
+
+`@tileflow/maps` also exports `ferraris`, `streetsDark`, `cyberpunk`, and `verdant`. Streets and
+Ferraris are complete first-party roots. They share Core's semantic Streets compiler, but Ferraris
+defines its design directly: it does not import or extend Streets and declares only its own
+`ferrarisIcons` directory of nine original SVG patterns. Streets Dark, Cyberpunk, and Verdant are
+ordinary maps that extend Streets. For the complete dark Streets map, import `streetsDark` and use it as
+the `extends` value; `theme: {mode: 'dark'}` changes defaults for omitted styles but does not recolor
+exact styles in an inherited curated map. The package-owned icons, patterns, and Cyberpunk font
+files ship under `assets/`. Streets and Ferraris each declare the canonical Tileflow glyph URL with
+the exact `Noto Sans Regular` and `Noto Sans Bold` stacks. Verdant inherits that provider from
+Streets, while Cyberpunk replaces it with the exact local faces `Oxanium Medium` and
+`Oxanium SemiBold`. The package also exports reusable `streetsIcons`, `streetsDarkIcons`, and
+`ferrarisIcons` descriptors; Streets Dark composes its two directories in that order so its dark
+`sidewalk-dot` replaces the base icon without duplicating the rest of the catalog.
 
 Then validate and run the application through its normal dev server:
 
@@ -64,17 +85,11 @@ npm run dev
 See the [Tileflow documentation](https://tileflow.dev/docs) and each package README for framework,
 capture, visual-testing, icon, static-map, and hosted deployment workflows.
 
-## Tileflow Streets example
+## Map playground
 
-The workspace-backed [`examples/tileflow-streets`](examples/tileflow-streets) is the shared map-design
-workbench. It compiles Tileflow Streets directly from an editorial theme and semantic modules into one example
-map exercised by committed desktop, waterfront, and mobile scenes. Run `pnpm dev:streets` for the
-live preview and `pnpm visual:streets` for the approved-baseline check. The
-[`examples/uber`](examples/uber) application demonstrates the same Streets contract inside React
-with application-owned route and vehicle overlays.
-
-Use the SDK lab to discover and implement cartographic primitives atomically. The separate
-`tileflow-demos` repository remains a consumer of exact packages already published to npm.
+The SDK owns the reusable map definitions and packaged assets. The Tileflow Tiles repository owns
+the local playground, development data wiring, scenes, and visual baselines that exercise those
+maps. This keeps published SDK packages independent from repository-only example applications.
 
 ## Development
 
@@ -88,20 +103,29 @@ pnpm build
 pnpm run smoke:capture-public
 ```
 
-The packed-consumer smoke installs the same `core`, `dev`, `capture`, and `cli` tarballs users
+The packed-consumer smoke installs the same `core`, `maps`, `dev`, `capture`, and `cli` tarballs users
 receive, audits their contents, and renders a deterministic local capture with the exact Playwright
 Chromium headless shell.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Every package source manifest
 uses `0.0.0-development`; after a normal pull request reaches `main` and its complete CI succeeds,
-the protected publishing workflow compares packed artifacts with npm and releases only material
-changes at their next independent alpha. There are no changesets, release tags, or Release PRs.
+it is a release candidate but nothing is published automatically. A deliberate, parameter-free
+dispatch of the protected workflow compares packed artifacts with npm, prepares one exact bundle,
+and waits for a single `npm-publish` environment approval before releasing only material changes at
+their next independent alpha. There are no changesets, release tags, or Release PRs.
 The exact operational and recovery contract lives in [PUBLISHING.md](PUBLISHING.md). The durable
 local capture and visual-testing behavior is recorded in
 [`docs/contracts/local-visual-capture.md`](docs/contracts/local-visual-capture.md).
 
 ## Licensing
 
-No project-level source license is included in this snapshot. Third-party license and notice files
-remain beside the code and artifacts they cover. Public visibility does not by itself grant rights
-beyond applicable law and those third-party terms.
+The Tileflow SDK and Tileflow-owned official map artwork are licensed under the
+[Apache License, Version 2.0](LICENSE). Every public npm package carries the same `LICENSE`,
+[`NOTICE`](NOTICE), [generated-output grant](GENERATED_OUTPUT_LICENSE.md), and
+[trademark boundary](TRADEMARKS.md).
+
+The generated-output grant explicitly permits personal and commercial use, modification,
+deployment, and redistribution of Tileflow-owned compiled styles and artifacts. It does not
+relicense third-party software, fonts, map data, imagery, or other inputs. Preserve the license,
+notice, and attribution requirements recorded beside those materials and in package-specific
+`THIRD_PARTY_NOTICES.md` files.

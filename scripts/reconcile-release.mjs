@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
-import {mkdir, readFile, writeFile} from 'node:fs/promises';
+import {mkdir, readdir, readFile, writeFile} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
@@ -8,12 +8,15 @@ import semver from 'semver';
 import {comparePackageTarballs} from './compare-package-tarballs.mjs';
 import {
   automaticInternalRuntimeRange,
+  initialVersionByPackageName,
   nextAlphaVersion,
   packageDirectories,
+  publicPackageCatalog,
   publicPackageNames,
   publicPackageNameSet,
   runtimeDependencyGroups,
   runtimeDependencySnapshot,
+  validatePublicManifest,
   validatePublicManifests,
   validateRuntimeDependencySnapshot,
 } from './release-config.mjs';
@@ -24,6 +27,21 @@ const commitPattern = /^[0-9a-f]{40}$/u;
 const repositoryRoot = resolve(
   process.env.TILEFLOW_RELEASE_ROOT ?? fileURLToPath(new URL('..', import.meta.url)),
 );
+
+function effectiveBaselineVersion(entry) {
+  return entry.published ? entry.version : entry.initialVersion;
+}
+
+function releaseBaselineSnapshot(entry) {
+  const common = {
+    name: entry.name,
+    published: entry.published,
+    runtimeDependencies: entry.runtimeDependencies,
+  };
+  return entry.published
+    ? {...common, version: entry.version}
+    : {...common, initialVersion: entry.initialVersion};
+}
 
 export async function readPublicManifests(root = repositoryRoot) {
   return new Map(
@@ -38,37 +56,104 @@ export async function readPublicManifests(root = repositoryRoot) {
 }
 
 export async function validateSourceManifests(root = repositoryRoot) {
+  await validatePublicCatalogCoverage(root);
   const manifests = await readPublicManifests(root);
   validatePublicManifests(manifests, {source: true});
   return manifests;
 }
 
-export async function createRegistryState(tsvContents) {
-  const packages = await Promise.all(
-    tsvContents
-      .split('\n')
-      .filter(Boolean)
-      .map(async (line) => {
-        const fields = line.split('\t');
-        assert.equal(fields.length, 3, `Invalid registry-state line: ${line}.`);
-        const [name, version, tarball] = fields;
-        const resolvedTarball = resolve(tarball);
-        const manifest = await readTarballManifest(resolvedTarball);
-        return {
-          name,
-          runtimeDependencies: runtimeDependencySnapshot(manifest),
-          tarball: resolvedTarball,
-          version,
-        };
-      }),
+/** Ensure a publishable workspace package cannot exist outside the one release catalog. */
+export async function validatePublicCatalogCoverage(root = repositoryRoot) {
+  const packagesRoot = join(root, 'packages');
+  const discovered = [];
+  for (const entry of (await readdir(packagesRoot, {withFileTypes: true})).sort((left, right) =>
+    left.name.localeCompare(right.name),
+  )) {
+    if (!entry.isDirectory()) continue;
+    let manifest;
+    try {
+      manifest = JSON.parse(await readFile(join(packagesRoot, entry.name, 'package.json'), 'utf8'));
+    } catch (error) {
+      if (error?.code === 'ENOENT') continue;
+      throw error;
+    }
+    if (manifest.private === true) continue;
+    discovered.push({directory: entry.name, name: manifest.name});
+  }
+
+  assert.deepEqual(
+    discovered,
+    publicPackageCatalog
+      .map(({directory, name}) => ({directory, name}))
+      .sort((left, right) => left.directory.localeCompare(right.directory)),
+    'Every publishable packages/* workspace must appear exactly once in the public release catalog.',
   );
-  const state = {schemaVersion: 2, packages};
+  return discovered;
+}
+
+export async function createRegistryState(tsvContents, root = repositoryRoot) {
+  const rows = tsvContents
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const fields = line.split('\t');
+      assert.equal(fields.length, 4, `Invalid registry-state line: ${line}.`);
+      const [name, version, tarball, publicationState] = fields;
+      assert.ok(
+        publicationState === 'published' || publicationState === 'unpublished',
+        `Invalid publication state for ${name}: ${publicationState}.`,
+      );
+      return {name, publicationState, tarball, version};
+    });
+  assert.deepEqual(
+    rows.map(({name}) => name),
+    publicPackageNames,
+    'Registry state must contain every public package in dependency-safe order.',
+  );
+  const versions = new Map(rows.map(({name, version}) => [name, version]));
+  const sourceManifests = await readPublicManifests(root);
+  const packages = await Promise.all(
+    rows.map(async ({name, publicationState, tarball, version}) => {
+      if (publicationState === 'unpublished') {
+        assert.equal(tarball, '-', `${name} unpublished registry entry must not name a tarball.`);
+        assert.equal(
+          version,
+          initialVersionByPackageName.get(name),
+          `${name} unpublished registry entry must use its configured initial version.`,
+        );
+        const sourceManifest = sourceManifests.get(name)?.manifest;
+        validatePublicManifest(name, sourceManifest, {source: true});
+        return {
+          initialVersion: version,
+          name,
+          published: false,
+          runtimeDependencies: targetRuntimeDependencySnapshot(
+            name,
+            runtimeDependencySnapshot(sourceManifest),
+            versions,
+          ),
+        };
+      }
+
+      assert.notEqual(tarball, '-', `${name} published registry entry must name a tarball.`);
+      const resolvedTarball = resolve(tarball);
+      const manifest = await readTarballManifest(resolvedTarball);
+      return {
+        name,
+        published: true,
+        runtimeDependencies: runtimeDependencySnapshot(manifest),
+        tarball: resolvedTarball,
+        version,
+      };
+    }),
+  );
+  const state = {schemaVersion: 4, packages};
   await validateRegistryState(state);
   return state;
 }
 
 export async function validateRegistryState(state) {
-  assert.equal(state?.schemaVersion, 2, 'Unsupported registry-state schema.');
+  assert.equal(state?.schemaVersion, 4, 'Unsupported registry-state schema.');
   assert.ok(Array.isArray(state.packages), 'Registry-state packages must be an array.');
   assert.deepEqual(
     state.packages.map(({name}) => name),
@@ -76,11 +161,29 @@ export async function validateRegistryState(state) {
     'Registry state must contain every public package in dependency-safe order.',
   );
 
-  const manifests = new Map();
   for (const entry of state.packages) {
-    assert.ok(entry.tarball, `Registry state is missing a tarball for ${entry.name}.`);
+    assert.equal(typeof entry.published, 'boolean', `${entry.name} publication state is missing.`);
+    validateRuntimeDependencySnapshot(entry.name, entry.runtimeDependencies);
+    if (!entry.published) {
+      assert.equal(entry.tarball, undefined, `${entry.name} unpublished baseline has a tarball.`);
+      assert.equal(entry.version, undefined, `${entry.name} unpublished baseline has a version.`);
+      assert.equal(
+        entry.initialVersion,
+        initialVersionByPackageName.get(entry.name),
+        `${entry.name} unpublished baseline must use its configured initial version.`,
+      );
+      nextAlphaVersion(entry.initialVersion);
+      continue;
+    }
+
+    assert.equal(
+      entry.initialVersion,
+      undefined,
+      `${entry.name} published baseline has an initial version.`,
+    );
     assert.ok(semver.valid(entry.version), `Invalid registry version for ${entry.name}.`);
     nextAlphaVersion(entry.version);
+    assert.ok(entry.tarball, `Registry state is missing a tarball for ${entry.name}.`);
     const manifest = await readTarballManifest(entry.tarball);
     assert.equal(manifest.name, entry.name, `Registry tarball name mismatch for ${entry.name}.`);
     assert.equal(
@@ -88,15 +191,13 @@ export async function validateRegistryState(state) {
       entry.version,
       `Registry tarball version mismatch for ${entry.name}.`,
     );
-    validateRuntimeDependencySnapshot(entry.name, entry.runtimeDependencies);
     assert.deepEqual(
       entry.runtimeDependencies,
       runtimeDependencySnapshot(manifest),
       `Registry runtime dependency snapshot mismatch for ${entry.name}.`,
     );
-    manifests.set(entry.name, {manifest});
+    validatePublicManifest(entry.name, manifest, {licenseRequired: false});
   }
-  validatePublicManifests(manifests);
   return state;
 }
 
@@ -237,11 +338,21 @@ export async function createReleasePlan({sourceSha, registryState, candidateTarb
 
   for (const name of publicPackageNames) {
     const baseline = registryByName.get(name);
+    const baselineVersion = effectiveBaselineVersion(baseline);
     assert.equal(
       candidates.get(name).manifest.version,
-      baseline.version,
+      baselineVersion,
       `${name} candidate version does not match its registry baseline.`,
     );
+    if (!baseline.published) {
+      packages.push({
+        name,
+        from: null,
+        to: baseline.initialVersion,
+        differences: ['package-unpublished'],
+      });
+      continue;
+    }
     const comparison = await comparePackageTarballs(
       candidates.get(name).tarball,
       baseline.tarball,
@@ -257,7 +368,7 @@ export async function createReleasePlan({sourceSha, registryState, candidateTarb
   }
 
   const effectiveVersions = new Map(
-    registryState.packages.map(({name, version}) => [name, version]),
+    registryState.packages.map((entry) => [entry.name, effectiveBaselineVersion(entry)]),
   );
   for (const release of packages) effectiveVersions.set(release.name, release.to);
   for (const release of packages) {
@@ -269,14 +380,10 @@ export async function createReleasePlan({sourceSha, registryState, candidateTarb
   }
 
   const plan = {
-    schemaVersion: 2,
+    schemaVersion: 4,
     channel: 'alpha',
     sourceSha,
-    baselines: registryState.packages.map(({name, runtimeDependencies, version}) => ({
-      name,
-      runtimeDependencies,
-      version,
-    })),
+    baselines: registryState.packages.map(releaseBaselineSnapshot),
     packages,
   };
   validateReleasePlan(plan);
@@ -284,8 +391,8 @@ export async function createReleasePlan({sourceSha, registryState, candidateTarb
 }
 
 export function validateReleasePlan(plan) {
-  assert.equal(plan?.schemaVersion, 2, 'Unsupported automatic-release plan schema.');
-  assert.equal(plan.channel, 'alpha', 'Automatic releases must use the alpha channel.');
+  assert.equal(plan?.schemaVersion, 4, 'Unsupported alpha release-plan schema.');
+  assert.equal(plan.channel, 'alpha', 'This reconciler only supports the alpha channel.');
   assert.match(plan.sourceSha ?? '', commitPattern, 'Release plan has an invalid source SHA.');
   assert.deepEqual(
     plan.baselines?.map(({name}) => name),
@@ -299,9 +406,33 @@ export function validateReleasePlan(plan) {
       false,
       `Duplicate release baseline: ${baseline.name}.`,
     );
-    nextAlphaVersion(baseline.version);
+    assert.equal(
+      typeof baseline.published,
+      'boolean',
+      `${baseline.name} baseline publication state is missing.`,
+    );
+    if (baseline.published) {
+      assert.equal(
+        baseline.initialVersion,
+        undefined,
+        `${baseline.name} published baseline has an initial version.`,
+      );
+      nextAlphaVersion(baseline.version);
+    } else {
+      assert.equal(
+        baseline.version,
+        undefined,
+        `${baseline.name} unpublished baseline has a version.`,
+      );
+      assert.equal(
+        baseline.initialVersion,
+        initialVersionByPackageName.get(baseline.name),
+        `${baseline.name} unpublished baseline must use its configured initial version.`,
+      );
+      nextAlphaVersion(baseline.initialVersion);
+    }
     validateRuntimeDependencySnapshot(baseline.name, baseline.runtimeDependencies);
-    baselineByName.set(baseline.name, baseline.version);
+    baselineByName.set(baseline.name, baseline);
   }
 
   assert.ok(Array.isArray(plan.packages), 'Release plan packages must be an array.');
@@ -312,16 +443,26 @@ export function validateReleasePlan(plan) {
   );
   for (const entry of plan.packages) {
     assert.ok(publicPackageNameSet.has(entry.name), `Unknown release package: ${entry.name}.`);
-    assert.equal(
-      entry.from,
-      baselineByName.get(entry.name),
-      `${entry.name} previous version does not match its registry baseline.`,
-    );
-    assert.equal(
-      entry.to,
-      nextAlphaVersion(entry.from),
-      `${entry.name} must advance to its next numeric alpha.`,
-    );
+    const baseline = baselineByName.get(entry.name);
+    if (baseline.published) {
+      assert.equal(
+        entry.from,
+        baseline.version,
+        `${entry.name} previous version does not match its registry baseline.`,
+      );
+      assert.equal(
+        entry.to,
+        nextAlphaVersion(entry.from),
+        `${entry.name} must advance to its next numeric alpha.`,
+      );
+    } else {
+      assert.equal(entry.from, null, `${entry.name} unpublished release must have a null origin.`);
+      assert.equal(
+        entry.to,
+        baseline.initialVersion,
+        `${entry.name} first release must use its configured initial version.`,
+      );
+    }
     assert.ok(
       Array.isArray(entry.differences) &&
         entry.differences.length > 0 &&
@@ -329,7 +470,18 @@ export function validateReleasePlan(plan) {
       `${entry.name} must record its material artifact differences.`,
     );
   }
-  const effectiveVersions = new Map(plan.baselines.map(({name, version}) => [name, version]));
+  for (const baseline of plan.baselines) {
+    if (baseline.published) continue;
+    const release = plan.packages.find(({name}) => name === baseline.name);
+    assert.ok(release, `${baseline.name} is unpublished and must be selected.`);
+    assert.ok(
+      release.differences.includes('package-unpublished'),
+      `${baseline.name} first release must record package-unpublished.`,
+    );
+  }
+  const effectiveVersions = new Map(
+    plan.baselines.map((baseline) => [baseline.name, effectiveBaselineVersion(baseline)]),
+  );
   for (const entry of plan.packages) effectiveVersions.set(entry.name, entry.to);
   for (const entry of plan.packages) {
     assertSelectedRuntimeDependencies(entry.name, entry.runtimeDependencies, effectiveVersions);
@@ -342,11 +494,7 @@ export async function validateFinalRelease({plan, registryState, finalTarballs})
   await validateRegistryState(registryState);
   assert.deepEqual(
     plan.baselines,
-    registryState.packages.map(({name, runtimeDependencies, version}) => ({
-      name,
-      runtimeDependencies,
-      version,
-    })),
+    registryState.packages.map(releaseBaselineSnapshot),
     'Release plan registry baselines changed before final validation.',
   );
   const finalByName = await readTarballsByName(finalTarballs);
@@ -360,18 +508,21 @@ export async function validateFinalRelease({plan, registryState, finalTarballs})
   for (const name of publicPackageNames) {
     const final = finalByName.get(name);
     assert.equal(final.manifest.version, versions.get(name), `${name} final version mismatch.`);
-    const comparison = await comparePackageTarballs(
-      final.tarball,
-      registryByName.get(name).tarball,
-      {mode: 'material'},
-    );
-    assert.equal(
-      comparison.equal,
-      !selected.has(name),
-      selected.has(name)
-        ? `${name} was selected without a material artifact change.`
-        : `${name} changed materially without being selected: ${comparison.differences.join(', ')}.`,
-    );
+    const registry = registryByName.get(name);
+    if (registry.published) {
+      const comparison = await comparePackageTarballs(final.tarball, registry.tarball, {
+        mode: 'material',
+      });
+      assert.equal(
+        comparison.equal,
+        !selected.has(name),
+        selected.has(name)
+          ? `${name} was selected without a material artifact change.`
+          : `${name} changed materially without being selected: ${comparison.differences.join(', ')}.`,
+      );
+    } else {
+      assert.ok(selected.has(name), `${name} is unpublished and must be selected.`);
+    }
 
     const finalRuntimeDependencies = runtimeDependencySnapshot(final.manifest);
     if (selected.has(name)) {
@@ -424,7 +575,7 @@ function targetRuntimeDependencySnapshot(name, snapshot, versions) {
 
 export function renderReleaseSummary(plan) {
   validateReleasePlan(plan);
-  const lines = ['## npm alpha reconciliation', '', `Source: \`${plan.sourceSha}\``, ''];
+  const lines = ['## npm alpha release bundle', '', `Source: \`${plan.sourceSha}\``, ''];
   if (plan.packages.length === 0) {
     lines.push('All public package artifacts already match npm.');
   } else {
@@ -432,7 +583,7 @@ export function renderReleaseSummary(plan) {
     for (const release of plan.packages) {
       const differences = release.differences.map((value) => `\`${value}\``).join(', ');
       lines.push(
-        `| \`${release.name}\` | \`${release.from}\` | \`${release.to}\` | ${differences} |`,
+        `| \`${release.name}\` | ${release.from === null ? 'unpublished' : `\`${release.from}\``} | \`${release.to}\` | ${differences} |`,
       );
     }
   }
@@ -468,20 +619,22 @@ async function readTarballManifest(tarball) {
 }
 
 function versionMapFromDocument(document) {
-  if (document?.schemaVersion === 2 && document.channel === 'alpha') {
+  if (document?.schemaVersion === 4 && document.channel === 'alpha') {
     validateReleasePlan(document);
-    const versions = new Map(document.baselines.map(({name, version}) => [name, version]));
+    const versions = new Map(
+      document.baselines.map((baseline) => [baseline.name, effectiveBaselineVersion(baseline)]),
+    );
     for (const release of document.packages) versions.set(release.name, release.to);
     return versions;
   }
 
-  assert.equal(document?.schemaVersion, 2, 'Unsupported registry-state schema.');
+  assert.equal(document?.schemaVersion, 4, 'Unsupported registry-state schema.');
   assert.deepEqual(
     document.packages?.map(({name}) => name),
     publicPackageNames,
     'Registry state must contain every public package in repository order.',
   );
-  return new Map(document.packages.map(({name, version}) => [name, version]));
+  return new Map(document.packages.map((entry) => [entry.name, effectiveBaselineVersion(entry)]));
 }
 
 function nonEmptyLines(value) {
@@ -490,6 +643,13 @@ function nonEmptyLines(value) {
 
 async function main() {
   const [command, ...args] = process.argv.slice(2);
+  if (command === 'catalog') {
+    assert.equal(args.length, 0, 'catalog accepts no arguments.');
+    for (const {initialVersion, name} of publicPackageCatalog) {
+      process.stdout.write(`${name}\t${initialVersion}\n`);
+    }
+    return;
+  }
   if (command === 'validate-source') {
     assert.equal(args.length, 0, 'validate-source accepts no arguments.');
     await validateSourceManifests();
@@ -538,7 +698,7 @@ async function main() {
       registryState: JSON.parse(await readFile(resolve(args[1]), 'utf8')),
       finalTarballs: nonEmptyLines(await readFile(resolve(args[2]), 'utf8')),
     });
-    console.log(`Validated ${plan.packages.length} automatic release package(s).`);
+    console.log(`Validated ${plan.packages.length} alpha release package(s).`);
     return;
   }
   if (command === 'summary') {

@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, rm, unlink, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, rm, unlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {runInNewContext} from 'node:vm';
+import {defaultTileflowRuntimeView, defineRootMap} from '@tileflow/core';
+import type {TileflowBuildCatalog} from '@tileflow/core/build';
+import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   createTileflowArtifactDiagnostics,
   createTileflowArtifactSession,
@@ -49,6 +52,7 @@ test('refreshes transitive JSON imports and preserves last-good artifacts across
   if (invalid.status === 'invalid') {
     assert.equal(invalid.diagnostics[0]?.code, 'CONFIG_INVALID');
     assert.equal(invalid.diagnostics[0]?.phase, 'config-validation');
+    assert.match(invalid.diagnostics[0]?.message ?? '', /unrecognized key "unsupported"/);
   }
 
   const handler = createTileflowDevRequestHandler({session});
@@ -111,12 +115,21 @@ test('publishes only the newest overlapping refresh generation', async () => {
   const session = await createTileflowArtifactSessionWithBuilder({}, async () => {
     build += 1;
     const current = build;
+    const mapId = `generation-${current}`;
     if (current === 2) await new Promise((resolveWait) => setTimeout(resolveWait, 80));
     if (current === 3) await new Promise((resolveWait) => setTimeout(resolveWait, 5));
     return {
       assets: [],
       manifest: {version: 1, maps: {}, styles: {}},
-      project: {maps: {[`generation-${current}`]: {}}},
+      project: {
+        maps: {
+          [mapId]: defineRootMap({
+            id: mapId,
+            version: 1,
+            root: {compiler: 'streets', compilerVersion: 1},
+          }),
+        },
+      },
       styles: {},
       watchPaths: [],
     };
@@ -204,21 +217,84 @@ test('serves pinned local preview assets and a cancellable session event stream'
   });
   const handler = createTileflowDevRequestHandler({session});
 
+  const manifestResponse = await handler(new Request('http://localhost/manifest.json'));
+  assert.equal(manifestResponse.status, 200);
+  const manifest = (await manifestResponse.json()) as {styles: {main: string}};
+  const buildManifestResponse = await handler(new Request('http://localhost/build-manifest.json'));
+  assert.equal(buildManifestResponse.status, 200);
+  assert.match(
+    ((await buildManifestResponse.json()) as {maps: {main: {mapRevisionSha256: string}}}).maps.main
+      .mapRevisionSha256,
+    /^[a-f0-9]{64}$/u,
+  );
+  const immutableStyleResponse = await handler(
+    new Request(new URL(manifest.styles.main, 'http://localhost')),
+  );
+  assert.equal(immutableStyleResponse.status, 200);
+  assert.match(immutableStyleResponse.headers.get('content-type') ?? '', /application\/json/);
+  assert.equal(((await immutableStyleResponse.json()) as {version?: number}).version, 8);
+
   const preview = await (await handler(new Request('http://localhost/'))).text();
   assert.doesNotMatch(preview, /unpkg|fonts\.googleapis|fonts\.gstatic/);
   assert.match(preview, /__runtime\/maplibre-gl\.js/);
+  assert.match(preview, /__runtime\/tileflow-browser\.js/);
+  assert.match(preview, /import \{loadTileflowStyleFonts\}/);
+  assert.match(
+    preview,
+    /await loadTileflowStyleFonts\(styleUrl, \{fontFaces: previewFontFaces\}\)/,
+  );
+  assert.doesNotMatch(preview, /Oxanium|__runtime\/fonts\//);
   assert.match(preview, /__runtime\/three\.module\.js/);
   assert.match(preview, /three-addons\/loaders\/GLTFLoader\.js/);
   assert.match(preview, /three-addons\/libs\/meshopt_decoder\.module\.js/);
   assert.doesNotMatch(preview, /^\s*import \* as THREE/m);
   assert.match(preview, /function loadThreeCoreRuntime\(\)/);
+  assert.match(preview, /function loadBuildingWireframeRuntime\(\)/);
+  assert.match(preview, /three-addons\/lines\/LineMaterial\.js/);
+  assert.match(preview, /three-addons\/lines\/LineSegments2\.js/);
+  assert.match(preview, /three-addons\/lines\/LineSegmentsGeometry\.js/);
   assert.match(preview, /function loadLandmarkRuntime\(\)/);
+  assert.match(preview, /function loadLandmarkManifestCandidate\(manifestUrl, signal\)/);
+  assert.match(preview, /function loadLandmarkPrerequisites\(manifestUrl, signal\)/);
+  assert.match(
+    preview,
+    /Promise\.all\(\[\s*loadLandmarkRuntime\(\),\s*loadLandmarkManifestCandidate\(manifestUrl, signal\)/,
+  );
   assert.match(preview, /import\("\/__runtime\/three\.module\.js"\)/);
   assert.match(preview, /const landmarkConfigLayer = currentStyleLayers\.find/);
   assert.match(preview, /landmarkConfigLayer &&[\s\S]*?threeDimensionalEnabled/);
-  assert.match(preview, /needsLandmarks[\s\S]*?loadLandmarkRuntime\(\)/);
-  assert.match(preview, /if \(shouldAddLandmarks\) \{[\s\S]*?await loadLandmarkRuntime\(\)/);
+  assert.match(
+    preview,
+    /shouldPreloadLandmarks[\s\S]*?loadLandmarkPrerequisites\(landmarkManifestUrl\)/,
+  );
+  assert.match(preview, /if \(shouldAddLandmarks\) \{[\s\S]*?await loadLandmarkPrerequisites\(/);
   assert.match(preview, /tileflow-vegetation-trees-3d/);
+  assert.match(preview, /function createBuildingWireframeLayer\(map, styleLayer\)/);
+  assert.match(preview, /function addBuildingWireframeLayerIfConfigured\(map, styleLayers\)/);
+  assert.match(preview, /const maximumBuildings = 10000/);
+  assert.match(preview, /const maximumSegments = 300000/);
+  assert.match(preview, /function geometryPolygons\(candidate\)/);
+  assert.match(preview, /function ringIntersectsViewport\(ring, viewportWidth, viewportHeight\)/);
+  assert.match(
+    preview,
+    /const viewportWidth = canvas\.clientWidth \|\| canvas\.width;[\s\S]*?let features;\s+try \{/,
+  );
+  assert.match(preview, /for \(const rings of polygons\)/);
+  assert.match(preview, /buildingWireframeMetrics\.truncated = truncated/);
+  assert.match(preview, /appendSegment\(positions, lower\[index\], lower\[next\]\)/);
+  assert.match(preview, /appendSegment\(positions, upper\[index\], upper\[next\]\)/);
+  assert.match(preview, /appendSegment\(positions, lower\[index\], upper\[index\]\)/);
+  assert.match(preview, /geometrySignature !== lastGeometrySignature \|\| !geometry/);
+  assert.match(preview, /event\.isSourceLoaded !== true/);
+  assert.equal(preview.match(/depthTest: false/g)?.length, 2);
+  assert.match(preview, /const needsBuildingWireframe =/);
+  assert.match(preview, /await loadBuildingWireframeRuntime\(\)/);
+  assert.match(
+    preview,
+    /map\.addLayer\(createBuildingWireframeLayer\(map, styleLayer\), layerAboveBuildings\)/,
+  );
+  assert.match(preview, /tileflow:visible-layer-groups/);
+  assert.match(preview, /threeDimensionalToggle === "building"[\s\S]*?threeDimensionalEnabled/);
   assert.match(
     preview,
     /const styleLayerIndex = styleLayers\.findIndex\(\(layer\) => layer\.id === styleLayer\.id\);[\s\S]*?map\.addLayer\(createTreeLayer\(map, styleLayer\), layerAboveTrees\)/,
@@ -235,44 +311,87 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /function createTerrainSampler\(trees, fallbackElevation\)/);
   assert.match(preview, /const gridSize = 5/);
   assert.match(preview, /terrainElevationAt\(lng, lat\)/);
-  assert.match(preview, /function createBroadleafTreeGeometry\(variant, simple\)/);
+  assert.match(preview, /function createBroadleafTreeGeometry\(variant, geometryVariant, simple\)/);
   assert.match(preview, /function addTaperedBranchPart\(/);
+  assert.match(
+    preview,
+    /if \(!geometry\.getAttribute\("normal"\)\) geometry\.computeVertexNormals\(\)/,
+  );
   assert.match(preview, /geometry\.index \? geometry\.toNonIndexed\(\) : geometry/);
-  assert.match(preview, /facetedGeometry\.computeVertexNormals\(\)/);
+  assert.doesNotMatch(preview, /facetedGeometry\.computeVertexNormals\(\)/);
   assert.match(
     preview,
-    /addTaperedBranchPart\(\s*parts,\s*\[0, 0, 0\],\s*trunkTop,\s*0\.09 \+ variant \* 0\.004,\s*0\.052 \+ variant \* 0\.002,\s*6\s*\)/,
+    /addTaperedBranchPart\(\s*parts,\s*\[0, 0, 0\],\s*trunkTop,\s*0\.04 \+ variant \* 0\.001,\s*0\.022/,
   );
-  assert.match(preview, /const branchCount = branchTargets\.length/);
+  assert.match(
+    preview,
+    /new THREE\.CylinderGeometry\(tipRadius, baseRadius, 1, radialSegments, 1, true\)/,
+  );
+  assert.match(preview, /const branchCount = simple \? Math\.min\(4, branchTargets\.length\)/);
   assert.match(preview, /for \(let branch = 0; branch < branchCount; branch \+= 1\)/);
-  const openCrownLayout =
-    /const openCrownLayout = \[([\s\S]*?)\];\s*const clusteredCrownLayout/.exec(preview)?.[1];
-  const clusteredCrownLayout =
-    /const clusteredCrownLayout = \[([\s\S]*?)\];\s*const crownLayout/.exec(preview)?.[1];
-  assert.equal(openCrownLayout?.match(/\{position:/g)?.length, 10);
-  assert.equal(clusteredCrownLayout?.match(/\{position:/g)?.length, 6);
+  assert.match(preview, /const shelteredBranchTarget = \[/);
+  assert.match(preview, /branchTarget\[1\] - 0\.07/);
+  const roundCrownLayout = /const roundCrownLayout = \[([\s\S]*?)\];\s*const openCrownLayout/.exec(
+    preview,
+  )?.[1];
+  const openCrownLayout = /const openCrownLayout = \[([\s\S]*?)\];\s*const tallCrownLayout/.exec(
+    preview,
+  )?.[1];
+  const tallCrownLayout = /const tallCrownLayout = \[([\s\S]*?)\];\s*const crownLayouts/.exec(
+    preview,
+  )?.[1];
+  assert.equal(roundCrownLayout?.match(/\{position:/g)?.length, 5);
+  assert.equal(openCrownLayout?.match(/\{position:/g)?.length, 6);
+  assert.equal(tallCrownLayout?.match(/\{position:/g)?.length, 5);
   assert.match(
     preview,
-    /const lobeCount = simple \? \(variant === 0 \? 9 : 5\) : crownLayout\.length/,
+    /const lobeCount = simple \? Math\.max\(4, crownLayout\.length - 1\) : crownLayout\.length/,
   );
-  assert.match(preview, /new THREE\.SphereGeometry\(0\.5, 8, 3\)/);
-  assert.match(preview, /new THREE\.IcosahedronGeometry\(0\.5, simple \? 0 : 1\)/);
-  assert.match(preview, /function createConiferTreeGeometry\(variant, simple\)/);
-  assert.match(preview, /const tierCount = simple \? 2 : 3/);
-  assert.match(preview, /new THREE\.ConeGeometry\(0\.5, 1, simple \? 6 : 9\)/);
+  assert.match(preview, /function createOrganicCrownGeometry\(seed, simple\)/);
+  assert.match(preview, /new THREE\.SphereGeometry\(/);
+  assert.match(preview, /function createConiferTreeGeometry\(variant, geometryVariant, simple\)/);
+  assert.match(preview, /const columnar = variant === 1/);
+  assert.match(preview, /const tierCount = simple \? 3 : 5/);
+  assert.match(preview, /function createScallopedConeGeometry\(seed, simple\)/);
+  assert.match(preview, /function createPalmTreeGeometry\(geometryVariant, simple\)/);
+  assert.match(preview, /function createCurvedPalmFrondGeometry\(seed, simple, fan\)/);
+  assert.match(preview, /const frondCount = simple \? \(fan \? 8 : 7\) : \(fan \? 12 : 11\)/);
+  assert.match(preview, /createBroadleafTreeGeometry\(2, 1, simple\)/);
+  assert.match(preview, /createPalmTreeGeometry\(1, simple\)/);
   assert.match(preview, /function mergeGeometryParts\(parts\)/);
   assert.match(preview, /new THREE\.MeshLambertMaterial\(\{/);
+  assert.match(preview, /flatShading: false/);
   assert.match(preview, /vertexColors: true/);
   assert.doesNotMatch(preview, /new THREE\.CircleGeometry/);
   assert.doesNotMatch(preview, /branches = new THREE\.InstancedMesh/);
-  assert.doesNotMatch(preview, /shadows = new THREE\.InstancedMesh/);
-  assert.match(preview, /const barkColor = new THREE\.Color\(0x929b7b\)/);
+  assert.match(preview, /treeShadowMesh = new THREE\.InstancedMesh/);
+  assert.match(preview, /function createRawTreeShadowProgram\(gl\)/);
+  assert.match(preview, /rawGl\.drawArraysInstanced\(/);
+  assert.match(preview, /tileflow:tree-bark-color/);
+  assert.match(preview, /tileflow:tree-broadleaf-colors/);
+  assert.match(preview, /tileflow:tree-conifer-colors/);
+  assert.match(preview, /tileflow:tree-height-scale/);
+  assert.match(preview, /tileflow:tree-crown-scale/);
+  assert.match(preview, /const barkColor = new THREE\.Color\(/);
+  assert.match(preview, /const palmPalette = \[/);
+  assert.match(preview, /\["#87BA8C", "#98C89A", "#AAD4A7", "#B8DDB1"\]/);
+  assert.match(preview, /const crownColorPatterns = \[/);
+  assert.match(preview, /crownColorPattern\[lobe\] \+ geometryVariant \* 2/);
+  assert.match(preview, /const crownCapShapes = \[/);
+  assert.match(preview, /createOrganicCrownGeometry\(149 \+ variant \* 17/);
+  assert.match(preview, /colorGain: 0\.94 \+ stableUnit\(key, 13\) \* 0\.12/);
+  assert.equal(preview.match(/smoothstep\(0\.90, 1\.0, radiusSquared\)/g)?.length, 2);
+  assert.doesNotMatch(preview, /falloff \* falloff/);
+  assert.match(preview, /function resolveTreeForm\(properties, key\)/);
+  assert.match(preview, /function treeVariantIndex\(form, key\)/);
+  assert.match(preview, /palm: 8/);
+  assert.match(preview, /const treeFormDimensions = \{/);
+  assert.match(preview, /dimensions\.crownMinimum/);
   assert.match(
     preview,
-    /new THREE\.Color\(0x7fa97b\)[\s\S]*?new THREE\.Color\(0x8bb08c\)[\s\S]*?new THREE\.Color\(0xa9c995\)[\s\S]*?new THREE\.Color\(0xb0d1aa\)/,
+    /crownDiameter:\s*baseCrownDiameter \* crownScale \* \(0\.94 \+ stableUnit\(key, 5\) \* 0\.12\)/,
   );
-  assert.match(preview, /\? \[3, 2, 1, 0, 2, 0, 1, 1, 2, 3\]\s*: \[1, 2, 0, 1, 3, 2\]/);
-  assert.match(preview, /height \* \(0\.62 \+ stableUnit\(key, 2\) \* 0\.18\)/);
+  assert.match(preview, /height: baseHeight \* heightScale/);
   assert.match(preview, /function stableTreeKey\(feature, lng, lat\)/);
   assert.match(preview, /Math\.imul\(hash, 16777619\)/);
   assert.match(preview, /combinedMatrix\.copy\(mapMatrix\)\.multiply\(sceneMatrix\)/);
@@ -322,17 +441,22 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /map\.on\("sourcedata", handleSourceData\)/);
   assert.match(preview, /if \(!treesEnabled \|\| event\.sourceId !== sourceId\) return/);
   assert.match(preview, /map\.setProjection\(\{type: "mercator"\}\)/);
-  assert.match(preview, /const projection = map\.getProjection\(\)\.type/);
+  assert.match(
+    preview,
+    /const projection = map\.getProjection\?\.\(\)\?\.type \?\? map\.getStyle\?\.\(\)\?\.projection\?\.type/,
+  );
   assert.doesNotMatch(preview, /const projection = map\.getStyle/);
   assert.match(preview, /class ThreeDimensionalControl/);
   assert.match(preview, /class TreeControl/);
-  assert.match(preview, /this\.enabled = !this\.enabled/);
+  assert.match(preview, /setEnabled\(enabled\)/);
+  assert.match(preview, /this\.setEnabled\(!this\.enabled\)/);
   assert.match(preview, /this\.enabled \? "3D ON" : "3D OFF"/);
   assert.match(preview, /this\.enabled \? "TREES ON" : "TREES OFF"/);
   assert.match(preview, /readToggleFromUrl\("buildings3d", false\)/);
   assert.match(preview, /readToggleFromUrl\("trees3d", true\)/);
   assert.match(preview, /map\.fire\("tileflow:trees-toggle"/);
-  assert.match(preview, /map\.addControl\(new TreeControl\(\), "top-right"\)/);
+  assert.match(preview, /treeControl = new TreeControl\(\)/);
+  assert.match(preview, /map\.addControl\(treeControl, "top-right"\)/);
   assert.doesNotMatch(preview, /this\.map\.easeTo/);
   assert.doesNotMatch(preview, /map\.on\("pitch", this\.update\)/);
   assert.match(preview, /toggle !== "building" && toggle !== "landmark"/);
@@ -345,6 +469,18 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /map\.on\("moveend", \(\) => writeCameraToUrl\(map\)\)/);
   assert.match(preview, /map\.on\("styledata", ensureThreeDimensionalLayers\)/);
   assert.match(preview, /map\.on\("zoomend", ensureThreeDimensionalLayers\)/);
+  assert.match(preview, /tileflow:set-map-state/);
+  assert.match(preview, /const previewLayerGroupIds = \[/);
+  assert.match(preview, /function previewLayerGroups\(layer\)/);
+  assert.match(preview, /const isLanduseLayer = \[/);
+  assert.match(preview, /!isLanduseLayer &&[\s\S]*?groups\.push\("pois"\)/);
+  assert.match(preview, /function applyVisibleLayerGroups\(map\)/);
+  assert.match(preview, /dataset\.visibleLayerGroups/);
+  assert.match(preview, /globalThis\.__tileflowPreviewMap = map/);
+  assert.match(preview, /setVisibleLayerGroups\(map, nextVisibleLayerGroups\)/);
+  assert.match(preview, /event\.source !== window\.parent/);
+  assert.match(preview, /event\.origin !== location\.origin/);
+  assert.match(preview, /map\.jumpTo\(\{/);
   assert.match(preview, /const treeRuntimeMinimumZoom = 16/);
   assert.doesNotMatch(preview, /landmarkRuntimeMinimumZoom/);
   assert.match(preview, /function styleLayerZoomRange\(layer\)/);
@@ -357,7 +493,7 @@ test('serves pinned local preview assets and a cancellable session event stream'
     preview.match(/styleLayerIsVisibleAtZoom\(landmarkConfigLayer, map\.getZoom\(\)\)/g)?.length,
     2,
   );
-  assert.match(preview, /function createLandmarkLayer\(map, configLayer\)/);
+  assert.match(preview, /function createLandmarkLayer\(map, configLayer, fallbackLayers = \[\]\)/);
   assert.match(preview, /minzoom: landmarkMinimumZoom/);
   assert.match(preview, /\? \{maxzoom: landmarkMaximumZoom\}/);
   assert.match(preview, /!styleLayerIsVisibleAtZoom\(configLayer, map\.getZoom\(\)\)/);
@@ -367,7 +503,7 @@ test('serves pinned local preview assets and a cancellable session event stream'
   );
   assert.match(
     preview,
-    /const treeLayer = map\.getLayer\("tileflow-vegetation-trees-3d"\)[\s\S]*?map\.getLayer\("streets-vegetation-trees"\)[\s\S]*?map\.addLayer\(createLandmarkLayer\(map, configLayer\), treeLayer\)/,
+    /const treeLayer = map\.getLayer\("tileflow-vegetation-trees-3d"\)[\s\S]*?map\.getLayer\("streets-vegetation-trees"\)[\s\S]*?map\.addLayer\(createLandmarkLayer\(map, configLayer, fallbackLayers\), treeLayer\)/,
   );
   assert.match(preview, /loader\.setMeshoptDecoder\(MeshoptDecoder\)/);
   assert.match(preview, /credentials: "include"/);
@@ -375,6 +511,30 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /manifest\.maximumCachedModels/);
   assert.match(preview, /right\.priority - left\.priority/);
   assert.match(preview, /function landmarkModelAtZoom\(landmark, zoom\)/);
+  assert.match(preview, /const nextModel = cached \? requestedModel : landmark\.models\[0\]/);
+  assert.match(preview, /new PMTiles\(/);
+  assert.match(preview, /new FetchSource\(archive\.url, new Headers\(\), "include"\)/);
+  assert.match(preview, /archiveReader\(modelDefinition\.archive\)\.getZxy/);
+  assert.match(preview, /crypto\.subtle\.digest\("SHA-256", bytes\)/);
+  assert.match(preview, /loader\.parse\(/);
+  assert.match(preview, /loader\.setDRACOLoader\(landmarkDracoLoader\)/);
+  assert.match(preview, /function normalizeLandmarkAxes\(sourceModel, axisConvention\)/);
+  assert.match(preview, /sourceModel\.rotateX\(-Math\.PI \/ 2\)/);
+  assert.match(preview, /normalizedModel\.scale\.z = -1/);
+  assert.match(preview, /fallbackSignature = undefined;\s*refresh\(\)/);
+  assert.match(preview, /tileflow:landmark-fallback/);
+  assert.match(preview, /function updateLandmarkFallbackFilters\(\)/);
+  assert.match(preview, /activeLandmarkIds[\s\S]*?\.filter\(\(id\) => loaded\.has\(id\)\)/);
+  assert.match(preview, /map\.setFilter\(/);
+  assert.match(preview, /const signature = JSON\.stringify\(readyIds\)/);
+  assert.match(
+    preview,
+    /const nearbyCacheSlots = Math\.max\(\s*0,\s*manifest\.maximumCachedModels - visible\.length\s*\);[\s\S]*?const nearby = manifest\.landmarks[\s\S]*?\.slice\(0, nearbyCacheSlots\)/,
+  );
+  assert.doesNotMatch(
+    preview,
+    /const nearby = manifest\.landmarks[\s\S]*?\.slice\(0, manifest\.maximumCachedModels\)/,
+  );
   assert.match(preview, /function enforceCacheLimit\(\)/);
   assert.match(preview, /function harmonizeLandmarkModel\(model\)/);
   assert.match(preview, /new THREE\.MeshStandardMaterial\(\{/);
@@ -449,13 +609,38 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /maplibregl\.setWorkerCount\?\.\(mapWorkerCount\)/);
   assert.match(preview, /const mapWorkerCount = mapWorkerCountOverride \?\? 1/);
 
-  const [javascript, stylesheet, three, threeCore, gltfLoader, meshoptDecoder] = await Promise.all([
+  const [
+    javascript,
+    stylesheet,
+    three,
+    threeCore,
+    gltfLoader,
+    dracoLoader,
+    dracoWasm,
+    meshoptDecoder,
+    lineMaterial,
+    lineSegments,
+    lineSegmentsGeometry,
+    pmtiles,
+    fflate,
+    tileflowBrowser,
+  ] = await Promise.all([
     handler(new Request('http://localhost/__runtime/maplibre-gl.js')),
     handler(new Request('http://localhost/__runtime/maplibre-gl.css')),
     handler(new Request('http://localhost/__runtime/three.module.js')),
     handler(new Request('http://localhost/__runtime/three.core.min.js')),
     handler(new Request('http://localhost/__runtime/three-addons/loaders/GLTFLoader.js')),
+    handler(new Request('http://localhost/__runtime/three-addons/loaders/DRACOLoader.js')),
+    handler(
+      new Request('http://localhost/__runtime/three-addons/libs/draco/gltf/draco_decoder.wasm'),
+    ),
     handler(new Request('http://localhost/__runtime/three-addons/libs/meshopt_decoder.module.js')),
+    handler(new Request('http://localhost/__runtime/three-addons/lines/LineMaterial.js')),
+    handler(new Request('http://localhost/__runtime/three-addons/lines/LineSegments2.js')),
+    handler(new Request('http://localhost/__runtime/three-addons/lines/LineSegmentsGeometry.js')),
+    handler(new Request('http://localhost/__runtime/pmtiles.js')),
+    handler(new Request('http://localhost/__runtime/fflate.js')),
+    handler(new Request('http://localhost/__runtime/tileflow-browser.js')),
   ]);
   assert.match(javascript.headers.get('content-type') ?? '', /javascript/);
   assert.ok((await javascript.text()).length > 1_000_000);
@@ -466,8 +651,24 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.ok((await threeCore.text()).length > 100_000);
   assert.match(gltfLoader.headers.get('content-type') ?? '', /javascript/);
   assert.match(await gltfLoader.text(), /class GLTFLoader/);
+  assert.match(dracoLoader.headers.get('content-type') ?? '', /javascript/);
+  assert.match(await dracoLoader.text(), /class DRACOLoader/);
+  assert.match(dracoWasm.headers.get('content-type') ?? '', /application\/wasm/);
+  assert.ok((await dracoWasm.arrayBuffer()).byteLength > 100_000);
+  assert.match(tileflowBrowser.headers.get('content-type') ?? '', /javascript/);
+  assert.match(await tileflowBrowser.text(), /loadTileflowStyleFonts/);
   assert.match(meshoptDecoder.headers.get('content-type') ?? '', /javascript/);
   assert.match(await meshoptDecoder.text(), /MeshoptDecoder/);
+  assert.match(lineMaterial.headers.get('content-type') ?? '', /javascript/);
+  assert.match(await lineMaterial.text(), /class LineMaterial/);
+  assert.match(lineSegments.headers.get('content-type') ?? '', /javascript/);
+  assert.match(await lineSegments.text(), /class LineSegments2/);
+  assert.match(lineSegmentsGeometry.headers.get('content-type') ?? '', /javascript/);
+  assert.match(await lineSegmentsGeometry.text(), /class LineSegmentsGeometry/);
+  assert.match(pmtiles.headers.get('content-type') ?? '', /javascript/);
+  assert.match(await pmtiles.text(), /PMTiles/);
+  assert.match(fflate.headers.get('content-type') ?? '', /javascript/);
+  assert.match(await fflate.text(), /decompressSync/);
 
   const events = await handler(new Request('http://localhost/__events'));
   const reader = events.body!.getReader();
@@ -478,13 +679,22 @@ test('serves pinned local preview assets and a cancellable session event stream'
 
 test('selects map and scene previews with their configured cameras and viewport', async (t) => {
   const cwd = await createFixture(t);
-  await writeFile(join(cwd, 'tileflow.config.ts'), previewConfig, 'utf8');
+  await writeFile(join(cwd, 'tileflow.workspace.ts'), previewConfig, 'utf8');
   t.after(async () => rm(cwd, {force: true, recursive: true}));
 
-  const project = {
+  const project: TileflowBuildCatalog = {
     maps: {
-      first: {},
-      second: {view: {bearing: 12, center: [2, 3] as [number, number], pitch: 35, zoom: 9}},
+      first: defineRootMap({
+        id: 'first',
+        version: 1,
+        root: {compiler: 'streets', compilerVersion: 1},
+      }),
+      second: defineRootMap({
+        id: 'second',
+        version: 1,
+        root: {compiler: 'streets', compilerVersion: 1},
+        view: {bearing: 12, center: [2, 3], pitch: 35, zoom: 9},
+      }),
     },
     scenes: {
       bounds: {
@@ -515,6 +725,13 @@ test('selects map and scene previews with their configured cameras and viewport'
     label: 'second',
     mapName: 'second',
   });
+  assert.deepEqual(resolveTileflowPreview(project, {map: 'first'}).camera, {
+    type: 'center',
+    bearing: defaultTileflowRuntimeView.bearing,
+    center: [...defaultTileflowRuntimeView.center],
+    pitch: defaultTileflowRuntimeView.pitch,
+    zoom: defaultTileflowRuntimeView.zoom,
+  });
   assert.deepEqual(resolveTileflowPreview(project, {scene: 'bounds'}), {
     camera: {
       type: 'bounds',
@@ -534,9 +751,11 @@ test('selects map and scene previews with their configured cameras and viewport'
     /targets an application/,
   );
 
-  const mapResponse = await createTileflowDevRequestHandler({cwd, map: 'second'})(
-    new Request('http://localhost/'),
-  );
+  const mapResponse = await createTileflowDevRequestHandler({
+    config: 'tileflow.workspace.ts',
+    cwd,
+    map: 'second',
+  })(new Request('http://localhost/'));
   const mapHtml = await mapResponse.text();
   assert.equal(mapResponse.status, 200);
   assert.match(mapHtml, /\/styles\/second\.json/);
@@ -548,18 +767,52 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.match(mapHtml, /cameraRanges/);
   assert.match(mapHtml, /getAll\(name\)/);
 
-  const sceneResponse = await createTileflowDevRequestHandler({cwd, scene: 'mobile'})(
-    new Request('http://localhost/'),
-  );
+  const queryMapResponse = await createTileflowDevRequestHandler({
+    config: 'tileflow.workspace.ts',
+    cwd,
+    map: 'second',
+  })(new Request('http://localhost/?map=first'));
+  const queryMapHtml = await queryMapResponse.text();
+  assert.equal(queryMapResponse.status, 200);
+  assert.match(queryMapHtml, /\/styles\/first\.json/);
+  assert.doesNotMatch(queryMapHtml, /\/styles\/second\.json/);
+
+  const missingQueryMapResponse = await createTileflowDevRequestHandler({
+    config: 'tileflow.workspace.ts',
+    cwd,
+    map: 'second',
+  })(new Request('http://localhost/?map=missing'));
+  assert.equal(missingQueryMapResponse.status, 400);
+  assert.deepEqual(await missingQueryMapResponse.json(), {
+    error: 'Unknown Tileflow map: missing',
+  });
+
+  const duplicateQueryMapResponse = await createTileflowDevRequestHandler({
+    config: 'tileflow.workspace.ts',
+    cwd,
+    map: 'second',
+  })(new Request('http://localhost/?map=first&map=second'));
+  assert.equal(duplicateQueryMapResponse.status, 400);
+  assert.deepEqual(await duplicateQueryMapResponse.json(), {
+    error: 'Tileflow map query must appear at most once.',
+  });
+
+  const sceneResponse = await createTileflowDevRequestHandler({
+    config: 'tileflow.workspace.ts',
+    cwd,
+    scene: 'mobile',
+  })(new Request('http://localhost/'));
   const sceneHtml = await sceneResponse.text();
   assert.equal(sceneResponse.status, 200);
   assert.match(sceneHtml, /width: 390px/);
   assert.match(sceneHtml, /height: 844px/);
   assert.match(sceneHtml, /second \/ mobile/);
 
-  const boundsResponse = await createTileflowDevRequestHandler({cwd, scene: 'bounds'})(
-    new Request('http://localhost/'),
-  );
+  const boundsResponse = await createTileflowDevRequestHandler({
+    config: 'tileflow.workspace.ts',
+    cwd,
+    scene: 'bounds',
+  })(new Request('http://localhost/'));
   const boundsHtml = await boundsResponse.text();
   assert.match(boundsHtml, /"bounds":\[\[1,2\],\[3,4\]\]/);
 
@@ -583,6 +836,8 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.equal(persisted.pitch(), 0);
   assert.equal(persisted.threeDimensionalLabel(), '3D ON');
   assert.equal(persisted.buildingVisibility(), 'visible');
+  persisted.emit('styledata');
+  assert.equal(persisted.buildingVisibility(), 'visible');
   persisted.toggleTrees();
   assert.equal(persisted.treeLabel(), 'TREES OFF');
   assert.equal(persisted.treeVisibility(), 'none');
@@ -604,6 +859,45 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.equal(restoredToggles.buildingVisibility(), 'visible');
   assert.equal(restoredToggles.treeVisibility(), 'none');
 
+  restoredToggles.applyParentMapState({
+    type: 'tileflow:set-map-state',
+    schemaVersion: 1,
+    state: {
+      bearing: -24,
+      buildings3d: false,
+      center: [-3.688344, 40.453053],
+      pitch: 58,
+      trees3d: true,
+      visibleLayerGroups: ['roads', 'transit', 'buildings', 'landuse', 'water'],
+      zoom: 17.75,
+    },
+  });
+  assert.deepEqual(restoredToggles.center(), [-3.688344, 40.453053]);
+  assert.equal(restoredToggles.bearing(), -24);
+  assert.equal(restoredToggles.pitch(), 58);
+  assert.equal(restoredToggles.zoom(), 17.75);
+  assert.equal(restoredToggles.threeDimensionalLabel(), '3D OFF');
+  assert.equal(restoredToggles.treeLabel(), 'TREES ON');
+  assert.equal(restoredToggles.businessAreaVisibility(), 'visible');
+  const controlledUrl = new URL(restoredToggles.currentUrl());
+  assert.equal(controlledUrl.searchParams.get('buildings3d'), 'off');
+  assert.equal(controlledUrl.searchParams.get('trees3d'), 'on');
+
+  const cameraBeforeInvalidCommand = restoredToggles.center();
+  restoredToggles.applyParentMapState({
+    type: 'tileflow:set-map-state',
+    schemaVersion: 1,
+    state: {
+      bearing: 0,
+      buildings3d: true,
+      center: [200, 40],
+      pitch: 0,
+      trees3d: false,
+      zoom: 10,
+    },
+  });
+  assert.deepEqual(restoredToggles.center(), cameraBeforeInvalidCommand);
+
   const restartedServer = runPreviewScript(boundsHtml, persistedUrl.href);
   restartedServer.emitServerEvent('open');
   assert.equal(restartedServer.reloads(), 0);
@@ -618,9 +912,11 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.equal(JSON.stringify(invalidCamera.mapOptions?.center), '[2,3]');
   assert.equal(invalidCamera.mapOptions?.zoom, 9);
 
-  const missingResponse = await createTileflowDevRequestHandler({cwd, map: 'missing'})(
-    new Request('http://localhost/'),
-  );
+  const missingResponse = await createTileflowDevRequestHandler({
+    config: 'tileflow.workspace.ts',
+    cwd,
+    map: 'missing',
+  })(new Request('http://localhost/'));
   assert.equal(missingResponse.status, 400);
   assert.deepEqual(await missingResponse.json(), {error: 'Unknown Tileflow map: missing'});
 });
@@ -673,17 +969,61 @@ test('watches added, changed, removed, and newly effective local icon directorie
   assert.notEqual(assetFingerprint(session), switched);
 });
 
-test('adds and unwatches icon directories outside the config tree', async (t) => {
+test('recovers from an initially invalid local font through fallback watch paths', async (t) => {
+  const cwd = await createFixture(t);
+  await mkdir(join(cwd, 'fonts'));
+  await writeFile(join(cwd, 'fonts', 'LICENSE.txt'), 'Fixture font license\n');
+  await writeFile(join(cwd, 'fonts', 'medium.ttf'), 'invalid font');
+  await writeFile(join(cwd, 'fonts', 'semibold.ttf'), 'invalid font');
+  await writeFile(
+    join(cwd, 'tileflow.config.ts'),
+    `import {defineMap} from '@tileflow/core';
+import {cyberpunk} from '@tileflow/maps';
+export default defineMap({id:'main',version:1,extends:cyberpunk,fonts:['./fonts']});\n`,
+  );
+
+  const session = await createTileflowArtifactSession({cwd, debounceMs: 10, watch: true});
+  t.after(async () => {
+    await session.close();
+    await rm(cwd, {force: true, recursive: true});
+  });
+  assert.equal(session.getState().status, 'invalid');
+  const invalidGeneration = session.getState().generation;
+
+  await writeFile(
+    join(cwd, 'fonts', 'medium.ttf'),
+    await readFile(
+      new URL('../../maps/assets/cyberpunk/fonts/Oxanium-Medium.ttf', import.meta.url),
+    ),
+  );
+  await writeFile(
+    join(cwd, 'fonts', 'semibold.ttf'),
+    await readFile(
+      new URL('../../maps/assets/cyberpunk/fonts/Oxanium-SemiBold.ttf', import.meta.url),
+    ),
+  );
+
+  const ready = await waitForState(
+    session,
+    (state) => state.status === 'ready' && state.generation > invalidGeneration,
+  );
+  assert.equal(ready.status, 'ready');
+  assert.ok(
+    session
+      .getLastGoodArtifacts()
+      ?.assets.some((asset) => asset.fileName.startsWith('fonts/oxanium-medium-')),
+  );
+});
+
+test('rejects and never watches icon directories outside the working tree', async (t) => {
   const parent = await mkdtemp(join(tmpdir(), 'tileflow-dev-external-watch-'));
   const cwd = join(parent, 'project');
-  const iconsA = join(parent, 'icons-a');
-  const iconsB = join(parent, 'icons-b');
+  const externalIcons = join(parent, 'icons-external');
   await mkdir(cwd);
-  await mkdir(iconsA);
-  await mkdir(iconsB);
-  await writeFile(join(iconsA, 'pin.svg'), svg('#111111'));
-  await writeFile(join(iconsB, 'pin.svg'), svg('#222222'));
-  await writeFile(join(cwd, 'tileflow.config.ts'), iconConfig('../icons-a'));
+  await linkWorkspacePackages(cwd);
+  await mkdir(externalIcons);
+  await writeFile(join(externalIcons, 'pin.svg'), svg('#111111'));
+  await writeFile(join(cwd, 'tileflow.config.ts'), iconConfig('../icons-external'));
 
   const session = await createTileflowArtifactSession({cwd, debounceMs: 10, watch: true});
   t.after(async () => {
@@ -691,67 +1031,75 @@ test('adds and unwatches icon directories outside the config tree', async (t) =>
     await rm(parent, {force: true, recursive: true});
   });
 
-  await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+  assert.equal(session.getState().status, 'invalid');
   const initialGeneration = session.getState().generation;
-  await writeFile(join(iconsA, 'pin.svg'), svg('#333333'));
-  const changed = await waitForState(
+  await writeFile(join(externalIcons, 'pin.svg'), svg('#222222'));
+  await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+  assert.equal(session.getState().generation, initialGeneration);
+
+  await mkdir(join(cwd, 'icons'));
+  await writeFile(join(cwd, 'icons', 'pin.svg'), svg('#333333'));
+  await writeFile(join(cwd, 'tileflow.config.ts'), iconConfig('./icons'));
+  await waitForState(
     session,
     (state) => state.status === 'ready' && state.generation > initialGeneration,
   );
-
-  await writeFile(join(cwd, 'tileflow.config.ts'), iconConfig('../icons-b'));
-  await waitForState(
-    session,
-    (state) => state.status === 'ready' && state.generation > changed.generation,
-  );
   await new Promise((resolveWait) => setTimeout(resolveWait, 250));
-  const switchedGeneration = session.getState().generation;
-
-  await writeFile(join(iconsA, 'pin.svg'), svg('#444444'));
+  const recoveredGeneration = session.getState().generation;
+  await writeFile(join(externalIcons, 'pin.svg'), svg('#444444'));
   await new Promise((resolveWait) => setTimeout(resolveWait, 250));
-  assert.equal(session.getState().generation, switchedGeneration);
-
-  await writeFile(join(iconsB, 'pin.svg'), svg('#555555'));
-  await waitForState(
-    session,
-    (state) => state.status === 'ready' && state.generation > switchedGeneration,
-  );
+  assert.equal(session.getState().generation, recoveredGeneration);
 });
 
 const tokenModule = `import tokens from './tokens.json';\nexport default tokens;\n`;
-const validConfig = `import tokens from './tokens.ts';
+const fixtureGlyphsSource = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold']}`;
+const validConfig = `import {defineMap} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+import tokens from './tokens.ts';
+export default defineMap({
+  id: 'main',
+  version: 1,
+  extends: streets,
+  icons: [],
+  glyphs: ${fixtureGlyphsSource},
+  modules: {poi: {type: 'poi', icons: false}, roads: {type: 'roads', enabled: false}},
+  name: tokens.water
+});
+`;
+const invalidConfig = `import {defineMap} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+export default defineMap({id: 'main', version: 1, extends: streets, unsupported: true});\n`;
+const previewConfig = `import {defineMap} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
 export default {
   maps: {
-    main: {
-      basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
-      theme: {colors: {water: tokens.water}}
-    }
-  }
-};
-`;
-const invalidConfig = `export default {maps: {main: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, unsupported: true}}};\n`;
-const previewConfig = `export default {
-  maps: {
-    first: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}},
-    second: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, view: {bearing: 12, center: [2, 3], pitch: 35, zoom: 9}}
-  },
-  scenes: {
-    bounds: {
-      map: 'second',
-      camera: {type: 'bounds', bounds: [1, 2, 3, 4], padding: 24},
-      viewport: {width: 800, height: 600}
-    },
-    mobile: {
-      map: 'second',
-      camera: {type: 'center', center: [2.5, 3.5], zoom: 14},
-      viewport: {width: 390, height: 844, dpr: 2}
-    }
+    first: defineMap({id: 'first', version: 1, extends: streets, icons: [], glyphs: ${fixtureGlyphsSource}, modules: {poi: {type: 'poi', icons: false}, roads: {type: 'roads', enabled: false}}}),
+    second: defineMap({
+      id: 'second',
+      version: 1,
+      extends: streets,
+      icons: [],
+      glyphs: ${fixtureGlyphsSource},
+      modules: {poi: {type: 'poi', icons: false}, roads: {type: 'roads', enabled: false}},
+      view: {bearing: 12, center: [2, 3], pitch: 35, zoom: 9},
+      scenes: {
+        bounds: {
+          camera: {type: 'bounds', bounds: [1, 2, 3, 4], padding: 24},
+          viewport: {width: 800, height: 600}
+        },
+        mobile: {
+          camera: {type: 'center', center: [2.5, 3.5], zoom: 14},
+          viewport: {width: 390, height: 844, dpr: 2}
+        }
+      }
+    })
   }
 };
 `;
 
 async function createFixture(t: test.TestContext): Promise<string> {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-dev-session-'));
+  await linkWorkspacePackages(cwd);
   return cwd;
 }
 
@@ -762,9 +1110,7 @@ function waterColor(
 }
 
 function waterColorFromStyle(style: unknown): unknown {
-  const layers = (style as {layers?: Array<{id?: string; paint?: Record<string, unknown>}>})
-    ?.layers;
-  return layers?.find((layer) => layer.id === 'streets-water')?.paint?.['fill-color'];
+  return (style as {name?: unknown} | undefined)?.name;
 }
 
 function waitForState(
@@ -790,14 +1136,20 @@ function waitForState(
 }
 
 function iconConfig(source: string): string {
-  return `export default {icons: {local: {source: '${source}'}}, maps: {main: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, icons: 'local'}}};\n`;
+  return `import {defineMap} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+export default defineMap({id: 'main', version: 1, extends: streets, icons: [...streets.icons, '${source}'], glyphs: ${fixtureGlyphsSource}});\n`;
 }
 
 function runPreviewScript(
   html: string,
   href: string,
 ): {
+  applyParentMapState(data: unknown): void;
+  bearing(): number;
+  businessAreaVisibility(): string;
   buildingVisibility(): string;
+  center(): [number, number];
   currentUrl(): string;
   emit(eventName: string): void;
   emitServerEvent(eventName: string, data?: unknown): void;
@@ -809,22 +1161,29 @@ function runPreviewScript(
   treeVisibility(): string;
   toggleThreeDimensional(): void;
   toggleTrees(): void;
+  zoom(): number;
 } {
   const script = /<script type="module">\s*([\s\S]*?)<\/script>\s*<\/body>/
     .exec(html)?.[1]
-    ?.replace(/^[ \t]*import [^\n]+;[ \t]*$/gm, '');
+    ?.replace(/^[ \t]*import [^\n]+;[ \t]*$/gm, '')
+    .replace(/^[ \t]*await loadTileflowStyleFonts\([^\n]+;[ \t]*$/gm, '');
   assert.ok(script, 'expected an inline preview script');
 
   let mapOptions: Record<string, unknown> | undefined;
+  let businessAreaVisibility = 'visible';
   let buildingVisibility = 'none';
   let treeVisibility = 'visible';
   let currentPitch = 0;
   let reloadCount = 0;
   let styleReady = false;
+  let activeCamera:
+    | {bearing: number; center: [number, number]; pitch: number; zoom: number}
+    | undefined;
   const controlButtons: FakeElement[] = [];
   const eventSourceListeners = new Map<string, Set<(event: {data: string}) => void>>();
   let currentUrl = href;
   const listeners = new Map<string, Set<() => void>>();
+  const windowListeners = new Map<string, Set<(event: any) => void>>();
   const elements = new Map<string, FakeElement>();
 
   class FakeElement {
@@ -869,6 +1228,7 @@ function runPreviewScript(
         pitch: Number(options.pitch ?? 0),
         zoom: Number(options.zoom ?? 0),
       };
+      activeCamera = this.camera;
     }
 
     addControl(control: {onAdd?(map: FakeMap): FakeElement}): void {
@@ -881,6 +1241,23 @@ function runPreviewScript(
         currentPitch = options.pitch;
       }
       for (const listener of listeners.get('pitch') ?? []) listener();
+      for (const listener of listeners.get('moveend') ?? []) listener();
+    }
+
+    jumpTo(options: {
+      bearing?: number;
+      center?: [number, number];
+      pitch?: number;
+      zoom?: number;
+    }): void {
+      if (options.bearing !== undefined) this.camera.bearing = options.bearing;
+      if (options.center !== undefined) this.camera.center = options.center;
+      if (options.pitch !== undefined) {
+        this.camera.pitch = options.pitch;
+        currentPitch = options.pitch;
+      }
+      if (options.zoom !== undefined) this.camera.zoom = options.zoom;
+      for (const listener of listeners.get('zoomend') ?? []) listener();
       for (const listener of listeners.get('moveend') ?? []) listener();
     }
 
@@ -901,12 +1278,23 @@ function runPreviewScript(
     }
 
     getStyle(): {
-      layers?: Array<{id: string; metadata: Record<string, string>; type: string}>;
+      layers?: Array<{
+        id: string;
+        metadata: Record<string, string>;
+        'source-layer'?: string;
+        type: string;
+      }>;
       metadata?: Record<string, string>;
     } {
       if (!styleReady) return {};
       return {
         layers: [
+          {
+            id: 'streets-landuse-business-area',
+            metadata: {},
+            'source-layer': 'landuse',
+            type: 'fill',
+          },
           {
             id: 'streets-buildings-3d',
             metadata: {'tileflow:3d-toggle': 'building'},
@@ -918,12 +1306,13 @@ function runPreviewScript(
             type: 'circle',
           },
         ],
-        metadata: {'tileflow:basemap': 'streets'},
+        metadata: {'tileflow:root': 'streets'},
       };
     }
 
     getLayoutProperty(layerId: string, property: string): string | undefined {
       if (property !== 'visibility') return undefined;
+      if (layerId === 'streets-landuse-business-area') return businessAreaVisibility;
       if (layerId === 'streets-buildings-3d') return buildingVisibility;
       if (layerId === 'streets-vegetation-trees') return treeVisibility;
       return undefined;
@@ -952,6 +1341,9 @@ function runPreviewScript(
     }
 
     setLayoutProperty(layerId: string, property: string, value: string): void {
+      if (layerId === 'streets-landuse-business-area' && property === 'visibility') {
+        businessAreaVisibility = value;
+      }
       if (layerId === 'streets-buildings-3d' && property === 'visibility') {
         buildingVisibility = value;
       }
@@ -971,9 +1363,15 @@ function runPreviewScript(
     }
   }
 
-  runInNewContext(script, {
+  const parentWindow = {};
+  const sandbox: Record<string, any> = {
     EventSource: FakeEventSource,
     URL,
+    addEventListener(name: string, listener: (event: any) => void) {
+      const eventListeners = windowListeners.get(name) ?? new Set();
+      eventListeners.add(listener);
+      windowListeners.set(name, eventListeners);
+    },
     document: {
       createElement(tagName: string) {
         const element = new FakeElement();
@@ -994,15 +1392,28 @@ function runPreviewScript(
     },
     location: {
       href,
+      origin: new URL(href).origin,
       reload() {
         reloadCount += 1;
       },
     },
     maplibregl: {Map: FakeMap, NavigationControl: class {}},
-  });
+    parent: parentWindow,
+    setTimeout,
+    clearTimeout,
+  };
+  sandbox.window = sandbox;
+  runInNewContext(script, sandbox);
 
   return {
+    applyParentMapState(data) {
+      const event = {data, origin: new URL(href).origin, source: parentWindow};
+      for (const listener of windowListeners.get('message') ?? []) listener(event);
+    },
+    bearing: () => activeCamera?.bearing ?? 0,
+    businessAreaVisibility: () => businessAreaVisibility,
     buildingVisibility: () => buildingVisibility,
+    center: () => activeCamera?.center ?? [0, 0],
     currentUrl: () => currentUrl,
     emit(eventName) {
       if (eventName === 'load' || eventName === 'styledata') styleReady = true;
@@ -1024,6 +1435,7 @@ function runPreviewScript(
       controlButtons.find((button) => button.className === 'tileflow-3d-toggle')?.click(),
     toggleTrees: () =>
       controlButtons.find((button) => button.className === 'tileflow-tree-toggle')?.click(),
+    zoom: () => activeCamera?.zoom ?? 0,
   };
 }
 

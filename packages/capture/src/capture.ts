@@ -9,12 +9,11 @@ import {
   tileflowCaptureSceneNameSchema,
 } from '@tileflow/core';
 import {
-  assertValidTileflowStyle,
   createTileflowBuildArtifacts,
   defaultTileflowConfigPath,
   type TileflowBuildArtifacts,
-  TileflowStyleValidationError,
-} from '@tileflow/dev';
+} from '@tileflow/dev/artifacts';
+import {assertValidTileflowStyle, TileflowStyleValidationError} from '@tileflow/dev/validation';
 import {captureApplicationTileflowScene, resolveTileflowApplicationUrl} from './application';
 import {type TileflowBrowserInstallProgress, TileflowCaptureBrowserManager} from './browser';
 import {TileflowCaptureError} from './errors';
@@ -22,12 +21,9 @@ import {
   createTileflowCaptureRendererIdentity,
   type TileflowCaptureRendererIdentity,
 } from './metadata';
-import {
-  createTileflowCaptureReceipt,
-  type TileflowCaptureDataInput,
-  type TileflowCaptureReceipt,
-} from './receipt';
+import {createTileflowCaptureReceipt, type TileflowCaptureReceipt} from './receipt';
 import {captureStandaloneTileflowScene, tileflowSyntheticAssetOrigin} from './standalone';
+import {type PreparedTileflowCaptureStyle, TileflowCaptureWorldSession} from './world';
 
 export const tileflowCaptureResultSchemaVersion = 1 as const;
 
@@ -105,6 +101,7 @@ export function createTileflowCaptureSession(
 export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
   readonly #options: CreateTileflowCaptureSessionOptions;
   readonly #browserManager: TileflowCaptureBrowserManager;
+  readonly #worldSession: TileflowCaptureWorldSession;
   #closed = false;
 
   constructor(options: CreateTileflowCaptureSessionOptions = {}) {
@@ -114,6 +111,7 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
       onInstallProgress: options.onBrowserInstallProgress,
       signal: options.signal,
     });
+    this.#worldSession = new TileflowCaptureWorldSession();
   }
 
   async capture(scenes: string[], signal?: AbortSignal): Promise<TileflowCaptureResult> {
@@ -159,6 +157,7 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
     this.#assertOpen();
     const sceneNames = selectTileflowCaptureSceneNames(artifacts, requestedScenes);
     const validatedMaps = new Set<string>();
+    const preparedMaps = new Map<string, PreparedTileflowCaptureStyle>();
 
     for (const sceneName of sceneNames) {
       const scene = this.#resolveScene(artifacts, sceneName);
@@ -182,11 +181,13 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
         );
       }
       if (!validatedMaps.has(scene.map)) {
+        const prepared = await this.#worldSession.prepare(style, signal);
         try {
-          assertValidTileflowStyle(style, scene.map);
+          assertValidTileflowStyle(prepared.style, scene.map);
         } catch (error) {
           throwCaptureStyleValidationError(error);
         }
+        preparedMaps.set(scene.map, prepared);
         validatedMaps.add(scene.map);
       }
     }
@@ -199,11 +200,10 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
     for (const sceneName of sceneNames) {
       throwIfAborted(signal);
       const scene = this.#resolveScene(artifacts, sceneName);
-      const style = Object.hasOwn(artifacts.styles, scene.map)
-        ? artifacts.styles[scene.map]
-        : undefined;
+      const prepared = preparedMaps.get(scene.map);
+      const style = prepared?.style;
 
-      if (!style) {
+      if (!style || !prepared) {
         throw new TileflowCaptureError(
           'SCENE_NOT_FOUND',
           `Scene "${sceneName}" references unavailable map "${scene.map}".`,
@@ -235,7 +235,7 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
       ]);
       const target = scene.target.kind;
       const receipt = createTileflowCaptureReceipt({
-        data: style.metadata?.['tileflow:data'] as TileflowCaptureDataInput,
+        data: prepared.data,
         dpr: scene.viewport.dpr,
         height: rendered.height,
         map: scene.map,

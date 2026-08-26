@@ -1,100 +1,54 @@
 import type {Command} from 'commander';
-import {compareCodeUnits, type TileflowIconPackageFileName} from '@tileflow/core';
+import {dirname} from 'node:path';
+import {compareCodeUnits} from '@tileflow/core';
 import {
   getTileflowMapNames,
+  loadValidTileflowConfigWithInputs,
+  TileflowValidationError,
+} from '@tileflow/dev/config';
+import {
   inspectTileflowIconCatalogs,
-  loadValidTileflowConfig,
   type TileflowIconCatalog,
   type TileflowIconCatalogInspection,
   type TileflowIconCatalogMap,
-  type TileflowIconCatalogMapping,
   TileflowIconCompilationError,
-  TileflowValidationError,
-} from '@tileflow/dev';
+} from '@tileflow/dev/icons';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 
-export type TileflowIconListJsonV1 = {
-  schemaVersion: 1;
+export type TileflowIconListJsonV2 = {
+  schemaVersion: 2;
   pathBase: 'cwd';
-  catalogs: TileflowIconCatalogJson[];
   maps: TileflowIconMapJson[];
 };
 
-export type TileflowIconCatalogJson = {
-  sourcePath: string;
-  insideWorkingTree: boolean;
-  packageHash: string;
-  iconCount: number;
-  generatedByteLength: number;
-  atlas: {
-    oneX: TileflowIconAtlasJson;
-    twoX: TileflowIconAtlasJson;
-  };
-  icons: TileflowIconJson[];
-};
-
-export type TileflowIconAtlasJson = {
-  pixelRatio: 1 | 2;
-  width: number;
-  height: number;
-  index: TileflowIconGeneratedFileJson;
-  image: TileflowIconGeneratedFileJson;
-};
-
-export type TileflowIconGeneratedFileJson = {
-  fileName: string;
-  byteLength: number;
-  sha256: string;
-};
-
-export type TileflowIconJson = {
+export type TileflowIconSourceJson = {
   id: string;
-  source: {
-    path: string;
-    format: 'jpeg' | 'png' | 'svg' | 'webp';
-    byteLength: number;
-    dimensions: {width: number; height: number} | null;
-  };
-  rendered: {
-    oneX: TileflowRenderedIconJson;
-    twoX: TileflowRenderedIconJson;
-  };
-  mappedFrom: Array<{map: string; semantic: string}>;
+  path: string;
+  format: 'jpeg' | 'png' | 'svg' | 'webp';
+  byteLength: number;
+  dimensions: {width: number; height: number} | null;
 };
 
-export type TileflowRenderedIconJson = {
-  pixelRatio: 1 | 2;
-  width: number;
-  height: number;
-  pixelSha256: string;
-  atlas: {x: number; y: number; width: number; height: number};
-};
-
-export type TileflowIconMappingJson = {
-  semantic: string;
-  iconId: string;
-  targetStatus: 'missing' | 'present' | 'unknown';
+export type TileflowIconReplacementJson = {
+  id: string;
+  replaced: string;
+  winner: string;
 };
 
 export type TileflowIconMapJson = {
-  name: string;
+  id: string;
   icons:
     | {
-        kind: 'local';
-        label: string;
-        catalogSourcePath: string;
+        kind: 'directories';
+        directories: string[];
+        finalIds: string[];
+        insideWorkingTree: boolean;
+        replacements: TileflowIconReplacementJson[];
         packageHash: string;
-        mappings: TileflowIconMappingJson[];
-      }
-    | {
-        kind: 'external';
-        inspectable: false;
-        mappings: TileflowIconMappingJson[];
+        sources: TileflowIconSourceJson[];
       }
     | {
         kind: 'none';
-        inspectable: false;
-        mappings: TileflowIconMappingJson[];
       };
 };
 
@@ -110,10 +64,10 @@ export function registerIconListCommand(
 ): void {
   icons
     .command('list')
-    .description('List local icon catalogs as deterministic agent JSON')
+    .description('List each map icon directory composition as deterministic agent JSON')
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)
-    .option('--map <name>', 'inspect one exact configured map')
-    .option('--json', 'print deterministic schema-version-1 JSON')
+    .option('--map <id>', 'inspect one exact configured map')
+    .option('--json', 'print deterministic schema-version-2 JSON')
     .action(async (options: IconListOptions) => {
       if (!options.json) {
         console.error(
@@ -134,171 +88,89 @@ export function registerIconListCommand(
 
 export function createTileflowIconListJson(
   inspection: TileflowIconCatalogInspection,
-): TileflowIconListJsonV1 {
+): TileflowIconListJsonV2 {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     pathBase: 'cwd',
-    catalogs: [...inspection.catalogs]
-      .sort((left, right) => compareCodeUnits(left.sourcePath, right.sourcePath))
-      .map(createCatalogJson),
     maps: [...inspection.maps]
       .sort((left, right) => compareCodeUnits(left.name, right.name))
-      .map(createMapJson),
+      .map((map) => createMapJson(map, inspection.catalogs)),
   };
 }
 
-export function serializeTileflowIconListJson(value: TileflowIconListJsonV1): string {
+export function serializeTileflowIconListJson(value: TileflowIconListJsonV2): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 async function runIconList(options: IconListOptions): Promise<void> {
-  const project = await withTileflowConfigSecretsHidden(() =>
-    loadValidTileflowConfig(options.config),
+  const loaded = await withTileflowConfigSecretsHidden(() =>
+    loadValidTileflowConfigWithInputs(options.config),
   );
-  const mapNames = getTileflowMapNames(project).sort(compareCodeUnits);
+  const project = loaded.project;
+  const mapIds = getTileflowMapNames(project).sort(compareCodeUnits);
 
   if (options.map && !Object.hasOwn(project.maps, options.map)) {
     throw new Error(
-      `Unknown map "${options.map}". Available maps: ${mapNames.join(', ') || '(none)'}`,
+      `Unknown map "${options.map}". Available maps: ${mapIds.join(', ') || '(none)'}`,
     );
   }
 
   const inspection = await inspectTileflowIconCatalogs(project, {
+    baseDirectory: dirname(loaded.configFile),
     cwd: process.cwd(),
     ...(options.map ? {mapNames: [options.map]} : {}),
   });
-  const document = createTileflowIconListJson(inspection);
-
-  process.stdout.write(serializeTileflowIconListJson(document));
+  process.stdout.write(serializeTileflowIconListJson(createTileflowIconListJson(inspection)));
 }
 
-function createCatalogJson(catalog: TileflowIconCatalog): TileflowIconCatalogJson {
-  const manifest = catalog.compiledPackage.manifest;
+function createMapJson(
+  map: TileflowIconCatalogMap,
+  catalogs: readonly TileflowIconCatalog[],
+): TileflowIconMapJson {
+  if (map.icons.kind === 'none') {
+    return {id: map.name, icons: {kind: 'none'}};
+  }
+  const mapIcons = map.icons;
+
+  const catalog = catalogs.find(
+    (candidate) =>
+      candidate.compiledPackage.contentHash === mapIcons.packageHash &&
+      sameStrings(candidate.directories, mapIcons.directories),
+  );
+  if (!catalog) {
+    throw new Error(`Missing inspected icon catalog for map ${map.name}`);
+  }
 
   return {
-    sourcePath: catalog.sourcePath,
-    insideWorkingTree: catalog.insideWorkingTree,
-    packageHash: catalog.compiledPackage.contentHash,
-    iconCount: catalog.icons.length,
-    generatedByteLength: manifest.files.reduce((total, file) => total + file.byteLength, 0),
-    atlas: {
-      oneX: {
-        pixelRatio: 1,
-        width: manifest.sprites.oneX.width,
-        height: manifest.sprites.oneX.height,
-        index: createGeneratedFileJson(catalog, 'sprite.json'),
-        image: createGeneratedFileJson(catalog, 'sprite.png'),
-      },
-      twoX: {
-        pixelRatio: 2,
-        width: manifest.sprites.twoX.width,
-        height: manifest.sprites.twoX.height,
-        index: createGeneratedFileJson(catalog, 'sprite@2x.json'),
-        image: createGeneratedFileJson(catalog, 'sprite@2x.png'),
-      },
-    },
-    icons: [...catalog.icons]
-      .sort((left, right) => compareCodeUnits(left.id, right.id))
-      .map((icon) => ({
-        id: icon.id,
-        source: {
+    id: map.name,
+    icons: {
+      kind: 'directories',
+      directories: [...mapIcons.directories],
+      finalIds: [...mapIcons.iconIds],
+      insideWorkingTree: catalog.insideWorkingTree,
+      replacements: catalog.replacements.map((replacement) => ({
+        id: replacement.id,
+        replaced: replacement.replaced,
+        winner: replacement.winner,
+      })),
+      packageHash: mapIcons.packageHash,
+      sources: [...catalog.icons]
+        .sort((left, right) => compareCodeUnits(left.id, right.id))
+        .map((icon) => ({
+          id: icon.id,
           path: icon.source.path,
           format: icon.source.format,
           byteLength: icon.source.byteLength,
           dimensions: icon.source.dimensions
             ? {width: icon.source.dimensions.width, height: icon.source.dimensions.height}
             : null,
-        },
-        rendered: {
-          oneX: {
-            pixelRatio: 1,
-            width: icon.rendered.oneX.width,
-            height: icon.rendered.oneX.height,
-            pixelSha256: icon.rendered.oneX.pixelSha256,
-            atlas: createAtlasRectangleJson(icon.rendered.oneX.atlas),
-          },
-          twoX: {
-            pixelRatio: 2,
-            width: icon.rendered.twoX.width,
-            height: icon.rendered.twoX.height,
-            pixelSha256: icon.rendered.twoX.pixelSha256,
-            atlas: createAtlasRectangleJson(icon.rendered.twoX.atlas),
-          },
-        },
-        mappedFrom: [...icon.mappedFrom]
-          .sort(
-            (left, right) =>
-              compareCodeUnits(left.map, right.map) ||
-              compareCodeUnits(left.semantic, right.semantic),
-          )
-          .map((reference) => ({map: reference.map, semantic: reference.semantic})),
-      })),
-  };
-}
-
-function createAtlasRectangleJson(rectangle: {
-  height: number;
-  width: number;
-  x: number;
-  y: number;
-}): {x: number; y: number; width: number; height: number} {
-  return {
-    x: rectangle.x,
-    y: rectangle.y,
-    width: rectangle.width,
-    height: rectangle.height,
-  };
-}
-
-function createGeneratedFileJson(
-  catalog: TileflowIconCatalog,
-  fileName: TileflowIconPackageFileName,
-): TileflowIconGeneratedFileJson {
-  const file = catalog.compiledPackage.manifest.files.find(
-    (candidate) => candidate.name === fileName,
-  );
-
-  if (!file) {
-    throw new Error(`Missing generated icon file metadata for ${fileName}`);
-  }
-
-  return {fileName: file.name, byteLength: file.byteLength, sha256: file.sha256};
-}
-
-function createMapJson(map: TileflowIconCatalogMap): TileflowIconMapJson {
-  if (map.icons.kind === 'local') {
-    return {
-      name: map.name,
-      icons: {
-        kind: 'local',
-        label: map.icons.label,
-        catalogSourcePath: map.icons.catalogSourcePath,
-        packageHash: map.icons.packageHash,
-        mappings: createMappingsJson(map.icons.mappings),
-      },
-    };
-  }
-
-  return {
-    name: map.name,
-    icons: {
-      kind: map.icons.kind,
-      inspectable: false,
-      mappings: createMappingsJson(map.icons.mappings),
+        })),
     },
   };
 }
 
-function createMappingsJson(
-  mappings: readonly TileflowIconCatalogMapping[],
-): TileflowIconMappingJson[] {
-  return [...mappings]
-    .sort((left, right) => compareCodeUnits(left.semantic, right.semantic))
-    .map((mapping) => ({
-      semantic: mapping.semantic,
-      iconId: mapping.iconId,
-      targetStatus: mapping.targetStatus,
-    }));
+function sameStrings(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function printIconListError(error: unknown): void {

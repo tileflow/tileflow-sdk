@@ -1,98 +1,99 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  assertValidTileflowRuntimeStyleInputs,
+  assertValidTileflowRuntimeSource,
   createTileflowSessionController,
   inferTileflowAnalyticsFromStyleUrl,
   mergeTileflowAnalytics,
   resolveTileflowMapMode,
   resolveTileflowRuntimeStyle,
+  shouldLoadTileflowManifest,
   startTileflowSession,
-  validateTileflowRuntimeStyleInputs,
-} from '../src/index';
+  validateTileflowRuntimeSource,
+} from '../src/runtime';
 
-test('validates one shared runtime style-source contract', () => {
-  const style = {layers: [], sources: {}, version: 8 as const};
-  for (const input of [
-    {},
-    {config: {}},
-    {config: {}, themes: {}},
-    {map: 'main'},
-    {map: 'main', style},
-    {map: 'main', styleBaseUrl: '/generated'},
-    {map: 'main', styleUrl: '/styles/main.json'},
-    {style},
-    {styleUrl: '/styles/main.json'},
+test('validates the discriminated runtime source contract', () => {
+  const style = {layers: [], name: 'Direct', sources: {}, version: 8 as const};
+  for (const source of [
+    {kind: 'tileflow', map: 'main'},
+    {kind: 'tileflow', manifestUrl: '/custom/manifest.json', map: 'main'},
+    {kind: 'maplibre', style},
+    {kind: 'maplibre', style: '/styles/main.json'},
   ]) {
-    assert.deepEqual(validateTileflowRuntimeStyleInputs(input), {ok: true});
+    assert.deepEqual(validateTileflowRuntimeSource(source), {ok: true});
   }
 
-  for (const input of [
-    {config: {}, map: 'main'},
-    {config: {}, style},
-    {style, styleUrl: '/styles/main.json'},
-    {styleBaseUrl: '/generated'},
-    {themes: {}},
+  for (const source of [
+    undefined,
+    null,
+    {},
+    {kind: 'config', config: {}},
+    {kind: 'tileflow', map: ''},
+    {kind: 'tileflow', map: ' main'},
+    {kind: 'tileflow', manifestUrl: '', map: 'main'},
+    {kind: 'maplibre', style: ''},
   ]) {
-    assert.equal(validateTileflowRuntimeStyleInputs(input).ok, false);
-    assert.throws(() => assertValidTileflowRuntimeStyleInputs(input), TypeError);
+    assert.equal(validateTileflowRuntimeSource(source).ok, false);
+    assert.throws(() => assertValidTileflowRuntimeSource(source), TypeError);
   }
 });
 
-test('runtime style resolution rejects ambiguous sources instead of applying precedence', () => {
-  assert.throws(
-    () =>
-      resolveTileflowRuntimeStyle({
-        map: 'main',
-        style: {layers: [], sources: {}, version: 8},
-        styleUrl: '/styles/main.json',
-      }),
-    /mutually exclusive style sources/u,
+test('resolves direct MapLibre sources without a compiler path', () => {
+  const style = {layers: [], name: 'Direct', sources: {}, version: 8 as const};
+  assert.deepEqual(resolveTileflowRuntimeStyle({source: {kind: 'maplibre', style}}), {
+    fontFaces: [],
+    style,
+  });
+  assert.deepEqual(
+    resolveTileflowRuntimeStyle({
+      source: {kind: 'maplibre', style: 'https://cdn.example.test/style.json'},
+    }),
+    {analytics: undefined, style: 'https://cdn.example.test/style.json'},
   );
 });
 
-test('uses the interactive map for implicit image mode on local development hosts', () => {
-  for (const hostname of ['localhost', '127.0.0.1', '::1']) {
-    withWindowHostname(hostname, () => {
-      assert.equal(
-        resolveTileflowMapMode({
-          mode: 'image',
-          preferLocalDev: true,
-        }),
-        'interactive',
-      );
-    });
-  }
+test('resolves Tileflow styles only from a loaded manifest entry', () => {
+  const source = {kind: 'tileflow', map: 'main'} as const;
+  assert.equal(resolveTileflowRuntimeStyle({source}), null);
+  assert.deepEqual(
+    resolveTileflowRuntimeStyle({
+      manifestMap: {
+        apiUrl: 'https://api.tileflow.dev',
+        fontFaces: [],
+        mapId: 'map_1',
+        styleId: 'style_1',
+        styleUrl: 'https://cdn.tileflow.dev/style.json',
+      },
+      source,
+    }),
+    {
+      analytics: {
+        apiUrl: 'https://api.tileflow.dev',
+        mapId: 'map_1',
+        styleId: 'style_1',
+      },
+      fontFaces: [],
+      style: 'https://cdn.tileflow.dev/style.json',
+    },
+  );
 });
 
-test('keeps image mode outside the local development fallback', () => {
-  assert.equal(resolveTileflowMapMode({mode: 'image'}), 'image');
-
-  withWindowHostname('example.com', () => {
-    assert.equal(resolveTileflowMapMode({mode: 'image'}), 'image');
-  });
-
-  withWindowHostname('localhost', () => {
-    assert.equal(
-      resolveTileflowMapMode({
-        mode: 'image',
-        preferLocalDev: false,
-      }),
-      'image',
-    );
-    assert.equal(
-      resolveTileflowMapMode({
-        imageUrl: '/map.png',
-        mode: 'image',
-      }),
-      'image',
-    );
-  });
+test('loads manifests only for Tileflow sources that need published delivery data', () => {
+  const tileflow = {kind: 'tileflow', map: 'main'} as const;
+  const maplibre = {kind: 'maplibre', style: '/style.json'} as const;
+  assert.equal(shouldLoadTileflowManifest({source: tileflow}), true);
+  assert.equal(shouldLoadTileflowManifest({imageMode: true, source: tileflow}), true);
+  assert.equal(
+    shouldLoadTileflowManifest({imageMode: true, imageUrl: '/map.png', source: tileflow}),
+    false,
+  );
+  assert.equal(shouldLoadTileflowManifest({source: maplibre}), false);
 });
 
-test('defaults to interactive mode', () => {
+test('map mode has no environment-dependent local fallback', () => {
   assert.equal(resolveTileflowMapMode({}), 'interactive');
   assert.equal(resolveTileflowMapMode({mode: 'interactive'}), 'interactive');
+  assert.equal(resolveTileflowMapMode({mode: 'image'}), 'image');
 });
 
 test('commercial grant preflight is shared, scoped, and attached before hosted delivery', async () => {
@@ -528,6 +529,36 @@ test('rejects malformed or wrong-mode grant responses at runtime', async () => {
   }
 });
 
+test('commercial preflight bounds chunked grant responses before JSON parsing', async () => {
+  let cancelled = false;
+  const controller = createTileflowSessionController({
+    fetch: (async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          cancel() {
+            cancelled = true;
+          },
+          start(stream) {
+            stream.enqueue(new Uint8Array(40_000));
+            stream.enqueue(new Uint8Array(30_000));
+          },
+        }),
+        {status: 201},
+      )) as typeof fetch,
+    sessionIdFactory: () => 'ses_oversized',
+    source: 'test',
+  });
+
+  await assert.rejects(
+    controller.resolveRequestUrl('https://api.tileflow.dev/maps/map_1/style.json', {
+      apiUrl: 'https://api.tileflow.dev',
+      mapId: 'map_1',
+    }),
+    /session grant response was too large/u,
+  );
+  assert.equal(cancelled, true);
+});
+
 test('never preflights or decorates a resource URL containing credentials', async () => {
   let calls = 0;
   const controller = createTileflowSessionController({
@@ -624,25 +655,6 @@ test('analytics fallback absorbs a rejected keepalive request', async () => {
     restoreGlobal('fetch', fetchDescriptor);
   }
 });
-
-function withWindowHostname(hostname: string, run: () => void): void {
-  const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
-
-  Object.defineProperty(globalThis, 'window', {
-    configurable: true,
-    value: {location: {hostname}},
-  });
-
-  try {
-    run();
-  } finally {
-    if (windowDescriptor) {
-      Object.defineProperty(globalThis, 'window', windowDescriptor);
-    } else {
-      Reflect.deleteProperty(globalThis, 'window');
-    }
-  }
-}
 
 function restoreGlobal(key: 'fetch' | 'navigator', descriptor: PropertyDescriptor | undefined) {
   if (descriptor) Object.defineProperty(globalThis, key, descriptor);

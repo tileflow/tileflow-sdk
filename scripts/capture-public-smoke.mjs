@@ -4,12 +4,14 @@ import {existsSync} from 'node:fs';
 import {chmod, cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {homedir, tmpdir} from 'node:os';
-import {basename, delimiter, join, resolve} from 'node:path';
+import {basename, delimiter, join, relative, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import semver from 'semver';
 import {assertSelectedRuntimeDependencies, validateReleasePlan} from './reconcile-release.mjs';
 import {
   internalRuntimeRange,
+  packageLegalFileNames,
+  publicLicenseIdentifier,
   publicPackageNames,
   publicPackageNameSet,
   runtimeDependencyGroups,
@@ -34,6 +36,14 @@ const auditDirectory = join(temporaryRoot, 'audit');
 const npmCacheDirectory = join(temporaryRoot, 'npm-cache');
 const expectedRepository = 'git+https://github.com/tileflow/tileflow-sdk.git';
 const expectedBugs = 'https://github.com/tileflow/tileflow-sdk/issues';
+const canonicalLegalFiles = new Map(
+  await Promise.all(
+    packageLegalFileNames.map(async (name) => [
+      name,
+      await readFile(join(repositoryRoot, name), 'utf8'),
+    ]),
+  ),
+);
 let server;
 
 try {
@@ -136,9 +146,18 @@ if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
       '@tileflow/capture': 'createTileflowCaptureSession',
       '@tileflow/capture/receipt': 'parseTileflowCaptureReceipt',
       '@tileflow/dev': 'createTileflowBuildArtifacts',
+      '@tileflow/interactions': 'validateTileflowAnnotations',
+      '@tileflow/interactions/maplibre': 'createTileflowAnnotationRegistry',
+      '@tileflow/maps': 'streets',
       '@tileflow/next': 'withTileflow',
+      '@tileflow/next/server': 'createTileflowRouteHandlers',
       '@tileflow/react': 'Map',
+      '@tileflow/react/static': 'StaticMap',
       '@tileflow/static': 'normalizeStaticScene',
+      '@tileflow/static/client': 'createStaticMap',
+      '@tileflow/static/manifest': 'createRenderManifest',
+      '@tileflow/static/overlays': 'compileStaticOverlays',
+      '@tileflow/static/scene': 'validateStaticScene',
       '@tileflow/vite': 'tileflow',
       '@tileflow/vue': 'TileflowMap',
       '@tileflow/webpack': 'TileflowWebpackPlugin',
@@ -154,6 +173,26 @@ for (const [name, symbol] of Object.entries(expectations)) {
   await run(process.execPath, [publicImports], {
     cwd: consumerDirectory,
     label: 'packed public package entry imports',
+  });
+
+  const svelteCompile = join(consumerDirectory, 'compile-public-svelte.mjs');
+  await writeFile(
+    svelteCompile,
+    `import {readFile} from 'node:fs/promises';
+import {fileURLToPath} from 'node:url';
+import {compile} from 'svelte/compiler';
+
+const componentUrl = import.meta.resolve('@tileflow/svelte/TileflowMap.svelte');
+const source = await readFile(fileURLToPath(componentUrl), 'utf8');
+const result = compile(source, {filename: 'TileflowMap.svelte', generate: 'server'});
+if (!result.js?.code.includes('TileflowMap')) {
+  throw new Error('@tileflow/svelte did not compile to a server component');
+}
+`,
+  );
+  await run(process.execPath, [svelteCompile], {
+    cwd: consumerDirectory,
+    label: 'packed Svelte component compilation',
   });
 
   const packedCli = JSON.parse(
@@ -205,19 +244,18 @@ for (const [name, symbol] of Object.entries(expectations)) {
     join(consumerDirectory, 'tileflow.config.ts'),
     `import {
   buildings,
-  defineTileflow,
   labels,
   openMapTiles,
   poi,
   roads,
-  streets,
   vectorTiles,
+  defineRootMap,
 } from '@tileflow/core';
 
-export default defineTileflow({
-  maps: {
-    proof: {
-      basemap: streets(),
+export default defineRootMap({
+      id: 'proof',
+      version: 1,
+      root: {compiler: 'streets', compilerVersion: 1},
       data: vectorTiles({
         attribution: '© OpenStreetMap contributors',
         bounds: [-180, -85, 180, 85],
@@ -227,7 +265,11 @@ export default defineTileflow({
         schema: openMapTiles(),
         tiles: [${JSON.stringify(`${origin}/tiles/world/{z}/{x}/{y}.pbf`)}],
       }),
-      glyphs: ${JSON.stringify(`${origin}/fonts/{fontstack}/{range}.pbf`)},
+      glyphs: {
+        kind: 'url',
+        url: ${JSON.stringify(`${origin}/fonts/{fontstack}/{range}.pbf`)},
+        fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
+      },
       modules: {
         buildings: buildings({enabled: false}),
         labels: labels({places: 'none', roads: 'none', water: 'none'}),
@@ -237,28 +279,33 @@ export default defineTileflow({
           extras: {paths: true},
         }),
       },
-    },
-  },
-  scenes: {
-    generated: {
-      map: 'proof',
-      camera: {type: 'center', center: [0, 0], zoom: 1},
-      viewport: {width: 192, height: 128, dpr: 1},
-    },
-    application: {
-      map: 'proof',
-      camera: {type: 'center', center: [0, 0], zoom: 1},
-      viewport: {width: 192, height: 128, dpr: 1},
-      target: {kind: 'application', path: '/', captureId: 'proof'},
-    },
-  },
+      scenes: {
+        generated: {
+          camera: {type: 'center', center: [0, 0], zoom: 1},
+          viewport: {width: 192, height: 128, dpr: 1},
+        },
+        application: {
+          camera: {type: 'center', center: [0, 0], zoom: 1},
+          viewport: {width: 192, height: 128, dpr: 1},
+          target: {kind: 'application', path: '/', captureId: 'proof'},
+        },
+      },
 });
+`,
+  );
+  await writeFile(
+    join(consumerDirectory, 'tileflow.workspace.ts'),
+    `import proof from './tileflow.config';
+
+export default {
+  maps: {proof},
+};
 `,
   );
 
   const standaloneCapture = await run(
     process.execPath,
-    [cliEntry, 'capture', 'generated', '--json'],
+    [cliEntry, 'capture', 'generated', '--config', 'tileflow.workspace.ts', '--json'],
     {
       cwd: consumerDirectory,
       env: isolatedEnvironment,
@@ -305,7 +352,7 @@ export default defineTileflow({
   assert.equal(standaloneReceipt.image.physicalWidth, 192);
   assert.equal(standaloneReceipt.image.physicalHeight, 128);
   assert.equal(standaloneReceipt.networkDependent, false);
-  assert.equal(standaloneReceipt.schemaVersion, 2);
+  assert.equal(standaloneReceipt.schemaVersion, 3);
   assert.equal(standaloneReceipt.data.kind, 'vector-tiles');
   assert.equal(standaloneReceipt.data.schema, 'openmaptiles');
   assert.equal(standaloneReceipt.data.schemaVersion, 1);
@@ -346,7 +393,17 @@ export default defineTileflow({
 
   const applicationCapture = await run(
     process.execPath,
-    [cliEntry, 'capture', 'application', '--app-origin', origin, '--json', '--no-browser-install'],
+    [
+      cliEntry,
+      'capture',
+      'application',
+      '--config',
+      'tileflow.workspace.ts',
+      '--app-origin',
+      origin,
+      '--json',
+      '--no-browser-install',
+    ],
     {
       cwd: consumerDirectory,
       env: isolatedEnvironment,
@@ -388,7 +445,7 @@ export default defineTileflow({
   const sha256 = createHash('sha256').update(png).digest('hex');
   assert.equal(entry.sha256, sha256);
   const receipt = JSON.parse(await readFile(join(consumerDirectory, entry.receiptPath), 'utf8'));
-  assert.equal(receipt.schemaVersion, 2);
+  assert.equal(receipt.schemaVersion, 3);
   assert.equal(receipt.image.sha256, sha256);
   assert.equal(receipt.image.physicalWidth, 192);
   assert.equal(receipt.image.physicalHeight, 128);
@@ -514,10 +571,37 @@ async function auditPublicTarball(packageName, tarball, packedVersions, releaseC
     );
   }
   assert.ok(entries.includes('package/README.md'));
+  assert.equal(manifest.license, publicLicenseIdentifier);
+  for (const fileName of packageLegalFileNames) {
+    assert.ok(entries.includes(`package/${fileName}`), `${packageName} is missing ${fileName}.`);
+    assert.equal(
+      await readTarballFile(tarball, `package/${fileName}`),
+      canonicalLegalFiles.get(fileName),
+      `${packageName} ${fileName} differs from the repository copy.`,
+    );
+  }
   if (packageName === '@tileflow/capture') {
     assert.ok(
       entries.includes('package/THIRD_PARTY_NOTICES.md'),
       'Capture tarball is missing third-party notices.',
+    );
+  }
+  if (packageName === '@tileflow/maps') {
+    assert.ok(
+      entries.includes('package/THIRD_PARTY_NOTICES.md'),
+      'Maps tarball is missing official-map notices.',
+    );
+    const sourceAssetRoot = join(repositoryRoot, 'packages', 'maps', 'assets');
+    const expectedAssetEntries = (await listFiles(sourceAssetRoot))
+      .map((path) => `package/assets/${relative(sourceAssetRoot, path).replaceAll('\\', '/')}`)
+      .sort();
+    const packedAssetEntries = entries
+      .filter((entry) => entry.startsWith('package/assets/') && !entry.endsWith('/'))
+      .sort();
+    assert.deepEqual(
+      packedAssetEntries,
+      expectedAssetEntries,
+      'Maps tarball assets differ from the complete official source inventory.',
     );
   }
   if (packageName === '@tileflow/dev') {
@@ -526,7 +610,6 @@ async function auditPublicTarball(packageName, tarball, packedVersions, releaseC
       'Dev tarball is missing sharp/libvips notices.',
     );
     assert.equal(manifest.optionalDependencies?.sharp, '0.35.3');
-    assert.ok(entries.includes('package/assets/streets-poi/README.md'));
   }
 
   assert.equal(manifest.name, packageName);

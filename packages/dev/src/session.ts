@@ -1,8 +1,8 @@
 import {type FSWatcher, watch} from 'chokidar';
 import {realpathSync} from 'node:fs';
 import {dirname, extname, isAbsolute, relative, resolve, sep, win32} from 'node:path';
+import type {TileflowBuildArtifacts, TileflowBuildArtifactsOptions} from './artifacts';
 import {sanitizeDiagnosticSecrets} from './diagnostic-sanitization';
-import type {TileflowBuildArtifacts, TileflowBuildArtifactsOptions} from './index';
 
 export const tileflowArtifactSessionSchemaVersion = 1 as const;
 
@@ -47,9 +47,11 @@ export type TileflowArtifactSession = {
 };
 
 type BuildArtifacts = (options: TileflowBuildArtifactsOptions) => Promise<TileflowBuildArtifacts>;
+type DiscoverWatchPaths = () => Promise<string[]>;
 
 const configExtensions = new Set(['.cjs', '.cts', '.js', '.json', '.mjs', '.mts', '.ts', '.tsx']);
 const iconExtensions = new Set(['.jpeg', '.jpg', '.png', '.svg', '.webp']);
+const fontExtensions = new Set(['.otf', '.ttf', '.woff2']);
 const excludedDirectories = new Set([
   '.cache',
   '.git',
@@ -69,8 +71,9 @@ const excludedDirectories = new Set([
 export async function createTileflowArtifactSessionWithBuilder(
   options: TileflowArtifactSessionOptions,
   buildArtifacts: BuildArtifacts,
+  discoverWatchPaths?: DiscoverWatchPaths,
 ): Promise<TileflowArtifactSession> {
-  const session = new TileflowArtifactSessionImpl(options, buildArtifacts);
+  const session = new TileflowArtifactSessionImpl(options, buildArtifacts, discoverWatchPaths);
   await session.start();
   return session;
 }
@@ -81,6 +84,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
   readonly #configPath: string;
   readonly #cwd: string;
   readonly #debounceMs: number;
+  readonly #discoverWatchPaths: DiscoverWatchPaths | undefined;
   readonly #listeners = new Set<(state: TileflowArtifactSessionState) => void>();
   readonly #ignoredPaths: string[];
   readonly #watchEnabled: boolean;
@@ -94,20 +98,24 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
   #watcher: FSWatcher | undefined;
   #watchedArtifactPaths = new Set<string>();
 
-  constructor(options: TileflowArtifactSessionOptions, buildArtifacts: BuildArtifacts) {
+  constructor(
+    options: TileflowArtifactSessionOptions,
+    buildArtifacts: BuildArtifacts,
+    discoverWatchPaths?: DiscoverWatchPaths,
+  ) {
     this.#cwd = resolve(options.cwd ?? process.cwd());
     this.#configPath = resolve(this.#cwd, options.config ?? 'tileflow.config.ts');
     this.#debounceMs = Math.max(0, Math.min(options.debounceMs ?? 75, 1_000));
     this.#watchEnabled = options.watch ?? false;
     this.#ignoredPaths = (options.ignoredPaths ?? []).map((path) => resolve(this.#cwd, path));
     this.#buildArtifacts = buildArtifacts;
+    this.#discoverWatchPaths = discoverWatchPaths;
     this.#buildOptions = {
       apiBaseUrl: options.apiBaseUrl,
       assetBaseUrl: options.assetBaseUrl,
       config: options.config,
       cwd: this.#cwd,
       styleBaseUrl: options.styleBaseUrl,
-      worldGeneration: options.worldGeneration,
     };
   }
 
@@ -195,6 +203,15 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
       });
     } catch (error) {
       if (this.#closed || token !== this.#refreshToken) return;
+      if (this.#watcher && this.#discoverWatchPaths) {
+        try {
+          const watchPaths = await this.#discoverWatchPaths();
+          if (this.#closed || token !== this.#refreshToken) return;
+          this.#updateArtifactWatchPaths(watchPaths);
+        } catch {
+          // The config tree remains watched and can recover directory/schema errors.
+        }
+      }
       this.#publishInvalid(generation, error);
     }
   }
@@ -221,13 +238,14 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
 
     const extension = extname(resolvedPath).toLowerCase();
     if (configExtensions.has(extension)) return false;
-    if (iconExtensions.has(extension)) return false;
+    if (iconExtensions.has(extension) || fontExtensions.has(extension)) return false;
     return true;
   }
 
   #shouldRefreshForWatchEvent(path: string): boolean {
     const resolvedPath = resolve(path);
-    if (!iconExtensions.has(extname(resolvedPath).toLowerCase())) return true;
+    const extension = extname(resolvedPath).toLowerCase();
+    if (!iconExtensions.has(extension) && !fontExtensions.has(extension)) return true;
     return [...this.#watchedArtifactPaths].some((path) => isSameOrInside(path, resolvedPath));
   }
 

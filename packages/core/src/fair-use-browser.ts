@@ -1,3 +1,5 @@
+import {isTileflowWorldReleaseId} from './data/world-release-id-values';
+
 export type TileflowFairUseNoticeState = 'GRACE' | 'CLAIM_REQUIRED';
 
 export type TileflowFairUseNotice = Readonly<{
@@ -37,6 +39,9 @@ export type TileflowFairUseNoticeController = Readonly<{
 const protocol = 'tileflow-world';
 const defaultHelpUrl = 'https://tileflow.dev/world/claim';
 const ownerAction = 'Site owner: manage this map with Tileflow.';
+const maximumWorldTileBytes = 16 * 1024 * 1024;
+const oversizedWorldTileMessage = 'Tileflow World tile exceeds the maximum response size';
+const unreadableWorldTileMessage = 'Tileflow World tile response could not be read';
 const registrations = new Map<
   string,
   {
@@ -217,22 +222,116 @@ async function loadTileflowWorldRequest(
     response.status === 404 ||
     (response.status === 429 && (fairUse === 'GRACE' || fairUse === 'CLAIM_REQUIRED'))
   ) {
+    await cancelResponseBody(response.body);
     return Object.freeze({
       cacheControl: 'private, no-store',
       data: new ArrayBuffer(0),
     });
   }
   if (!response.ok) {
+    await cancelResponseBody(response.body);
     throw new Error(`Tileflow World request failed: ${response.status}`);
   }
   return Object.freeze({
     ...(response.headers.get('Cache-Control')
       ? {cacheControl: response.headers.get('Cache-Control')!}
       : {}),
-    data: await response.arrayBuffer(),
+    data: await readWorldTileBody(response, abortController.signal),
     ...(response.headers.get('ETag') ? {etag: response.headers.get('ETag')!} : {}),
     ...(response.headers.get('Expires') ? {expires: response.headers.get('Expires')!} : {}),
   });
+}
+
+async function readWorldTileBody(response: Response, signal: AbortSignal): Promise<ArrayBuffer> {
+  if (signal.aborted) {
+    await cancelResponseBody(response.body);
+    throw abortReason(signal);
+  }
+  const declaredLength = parseContentLength(response.headers.get('Content-Length'));
+  if (declaredLength !== null && declaredLength > maximumWorldTileBytes) {
+    await cancelResponseBody(response.body);
+    throw new Error(oversizedWorldTileMessage);
+  }
+  if (!response.body) return new ArrayBuffer(0);
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  let abortCancellation: Promise<void> | null = null;
+  const cancelForAbort = () => {
+    abortCancellation ??= cancelReader(reader, signal.reason);
+  };
+  signal.addEventListener('abort', cancelForAbort, {once: true});
+
+  try {
+    while (true) {
+      const {done, value} = await reader.read();
+      throwIfWorldRequestAborted(signal);
+      if (done) break;
+      if (value.byteLength > maximumWorldTileBytes - byteLength) {
+        await cancelReader(reader);
+        throw new Error(oversizedWorldTileMessage);
+      }
+      byteLength += value.byteLength;
+      chunks.push(Uint8Array.from(value));
+    }
+  } catch (error) {
+    if (signal.aborted) {
+      await (abortCancellation ?? cancelReader(reader, signal.reason));
+      throw abortReason(signal);
+    }
+    await cancelReader(reader);
+    if (error instanceof Error && error.message === oversizedWorldTileMessage) throw error;
+    throw new Error(unreadableWorldTileMessage);
+  } finally {
+    signal.removeEventListener('abort', cancelForAbort);
+    reader.releaseLock();
+  }
+
+  const data = new ArrayBuffer(byteLength);
+  const output = new Uint8Array(data);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return data;
+}
+
+function parseContentLength(value: string | null): number | null {
+  const normalized = value?.trim();
+  if (!normalized || !/^\d+$/u.test(normalized)) return null;
+  const length = Number(normalized);
+  return Number.isSafeInteger(length) ? length : maximumWorldTileBytes + 1;
+}
+
+async function cancelResponseBody(body: ReadableStream<Uint8Array> | null): Promise<void> {
+  if (!body) return;
+  try {
+    await body.cancel();
+  } catch {
+    // The response outcome must not be replaced by a secondary cancellation failure.
+  }
+}
+
+async function cancelReader(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  reason?: unknown,
+): Promise<void> {
+  try {
+    await reader.cancel(reason);
+  } catch {
+    // The bounded-read or abort outcome takes precedence over stream cleanup failures.
+  }
+}
+
+function throwIfWorldRequestAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw abortReason(signal);
+}
+
+function abortReason(signal: AbortSignal): unknown {
+  if (signal.reason !== undefined) return signal.reason;
+  return new DOMException('The Tileflow World request was aborted', 'AbortError');
 }
 
 function parseFairUseState(value: string | null): TileflowFairUseNoticeState | 'OPEN' | null {
@@ -333,16 +432,34 @@ function parseHelpUrl(value: string | null): string {
 function isCanonicalWorldTileUrl(value: string): boolean {
   try {
     const url = new URL(value);
-    return (
-      url.protocol === 'https:' &&
-      url.hostname === 'world.tileflow.dev' &&
-      !url.port &&
-      !url.username &&
-      !url.password &&
-      !url.search &&
-      !url.hash &&
-      /^\/world\/v1\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\.pbf$/u.test(url.pathname)
+    const exactPath = url.pathname.match(
+      /^\/tiles\/world\/([^/]+)\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\/(?:0|[1-9]\d*)\.pbf$/u,
     );
+    if (
+      url.protocol !== 'https:' ||
+      (url.hostname !== 'tileflow.dev' && !url.hostname.endsWith('.tileflow.dev')) ||
+      url.port ||
+      url.username ||
+      url.password ||
+      url.hash ||
+      !exactPath ||
+      !isTileflowWorldReleaseId(exactPath[1])
+    ) {
+      return false;
+    }
+
+    const allowedQueryKeys = new Set([
+      'grant',
+      'map',
+      'renderExpires',
+      'renderSignature',
+      'session',
+      'styleId',
+      'worldDescriptorSha256',
+    ]);
+    if ([...url.searchParams.keys()].some((key) => !allowedQueryKeys.has(key))) return false;
+    const descriptorDigests = url.searchParams.getAll('worldDescriptorSha256');
+    return descriptorDigests.length === 1 && /^[0-9a-f]{64}$/u.test(descriptorDigests[0] ?? '');
   } catch {
     return false;
   }

@@ -12,13 +12,11 @@ const context = {
   colors: resolveColors(),
   data: resolveTileflowData(undefined),
   typography: {
-    font: 'Noto Sans',
-    fontFamily: 'Noto Sans',
-    weight: 'regular' as const,
-    places: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'bold' as const},
-    roads: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular' as const},
-    water: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular' as const},
-    poi: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular' as const},
+    font: 'Noto Sans Regular',
+    places: {font: 'Noto Sans Bold'},
+    roads: {font: 'Noto Sans Regular'},
+    water: {font: 'Noto Sans Regular'},
+    poi: {font: 'Noto Sans Regular'},
   },
 };
 

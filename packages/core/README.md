@@ -1,70 +1,53 @@
 # @tileflow/core
 
-Typed Tileflow authoring primitives and the deterministic Tileflow Streets compiler.
+Typed Tileflow map contracts, semantic modules, and deterministic MapLibre style compilation.
+
+Every public `tileflow.config.ts` exports one map. Most maps import an existing map and override only
+the design fields they own:
 
 ```ts
-import {defineTileflow, labels, poi, roads, streets, water, zoom} from '@tileflow/core';
+import {defineMap, labels, poi, roads, water, zoom} from '@tileflow/core';
+import {streetsDark} from '@tileflow/maps';
 
-export default defineTileflow({
-  themes: {
-    editorial: {
-      extends: 'light',
-      colors: {
-        background: '#E4DFD4',
-        land: '#F5F2EB',
-        water: '#A7CED7',
-        park: '#C6D8B7',
-        building: '#D6CFC3',
-        road: '#FCFBF8',
-        roadMajor: '#EBCB8F',
-        roadCasing: '#BBB1A1',
-        boundary: '#999184',
-        text: '#252B2D',
-        textMuted: '#626866',
-        textHalo: '#FBF9F4',
-      },
-      typography: {font: 'Noto Sans', places: {weight: 'bold'}},
-    },
-  },
-  maps: {
-    madrid: {
-      basemap: streets(),
-      projection: 'globe',
-      theme: 'editorial',
-      modules: {
-        water: water({bodies: {fill: {opacity: 0.95}}}),
-        roads: roads({
-          detail: 'streets',
-          hierarchy: 'strong',
-          classes: {
-            primary: {
-              surface: {
-                fill: {
-                  color: '#E4A85B',
-                  width: zoom.linear([
-                    [7, 0.6],
-                    [16, 8],
-                  ]),
-                },
-              },
+export default defineMap({
+  id: 'madrid',
+  name: 'Madrid',
+  version: 1,
+  extends: streetsDark,
+  projection: 'globe',
+  modules: {
+    water: water({bodies: {fill: {opacity: 0.95}}}),
+    roads: roads({
+      detail: 'streets',
+      hierarchy: 'strong',
+      classes: {
+        primary: {
+          surface: {
+            fill: {
+              color: '#E4A85B',
+              width: zoom.linear([
+                [7, 0.6],
+                [16, 8],
+              ]),
             },
           },
-        }),
-        labels: labels({
-          language: 'local',
-          places: 'all',
-          roads: 'streets',
-          styles: {
-            places: {city: {text: {size: 18, haloWidth: 1.5}}},
-          },
-        }),
-        poi: poi({categories: ['food', 'culture', 'transit'], color: 'category'}),
+        },
       },
-      view: {center: [-3.7038, 40.4168], pitch: 35, zoom: 12},
-    },
+    }),
+    labels: labels({
+      language: 'local',
+      places: 'all',
+      roads: 'streets',
+      styles: {places: {city: {text: {size: 18, haloWidth: 1.5}}}},
+    }),
+    poi: poi({categories: ['food', 'culture', 'major-transit'], color: 'category'}),
   },
+  view: {center: [-3.7038, 40.4168], pitch: 35, zoom: 12},
 });
 ```
+
+Map identity, scenes, and delivery policy belong to the leaf and do not inherit. Hosting policy such
+as allowed browser origins is delivery metadata because it does not change cartographic output.
 
 Set `projection: 'globe'` for MapLibre's adaptive globe preset. Global zooms render as a sphere,
 then transition to Mercator between zoom 10 and 12 so detailed streets remain planar. Omit the
@@ -72,25 +55,78 @@ property, or set it to `'mercator'`, for a consistently flat map.
 
 ## Authoring model
 
-`streets()` is the only built-in basemap. It identifies a versioned cartographic recipe and does
-not inherit or patch another style. The compiler resolves the complete Streets design and asks
-each domain module to create its own MapLibre layers. A shared graph then determines layer order.
-`createStyle(...)` dispatches through the basemap compiler catalog; today that catalog contains only
-Streets, while keeping basemap type/version ownership explicit for future recipes. The public
-`createStreetsStyle(...)` entry validates the same strict map schema before compilation, including
-for JavaScript callers, so it cannot emit metadata for an unsupported recipe version.
+Tileflow exposes one authoring concept: a map. `defineRootMap()` creates a complete compiler root;
+`defineMap()` creates an ordinary map whose `extends` value is another imported map object. Streets
+and Ferraris (the `streets` and `ferraris` exports from `@tileflow/maps`) are the first-party roots.
+Both use the semantic Streets compiler, but Ferraris defines its complete design directly and does
+not import or extend Streets. Streets Dark, Cyberpunk, and Verdant are ordinary maps that extend
+Streets through exactly the same API available to applications. There is no separate public recipe
+selector or compatibility alias.
+
+The serialized root literal `compiler: 'streets'` is the current compiler-family ABI identifier,
+retained for compatibility. It selects Core's semantic map engine; it does not select or import the
+official `streets` map, and it does not supply that map's modules, icons, fonts, or other assets.
+`compilerVersion` versions this ABI independently from map and package versions.
+
+Resolution happens before validation, asset preparation, compilation, capture, build, or deploy.
+Only `theme`, `light`, and `view` deep-merge (their nested arrays and expressions still replace).
+`modules` merges by domain name: an omitted domain remains inherited, while declaring `roads(...)`
+or another domain replaces that inherited module request and every compiler-owned contribution
+attached to it as a unit. `data`, `projection`, `terrain`, `icons`, and the text provider are atomic;
+identity and tooling metadata are leaf-owned. `enabled: false` removes the domain and all of its
+inherited effects. The resolved result is a standalone map with no runtime dependency on TypeScript
+imports.
+
+`icons` is an intentional exception to implicit array composition: omission inherits the exact
+parent array, any declaration replaces it atomically, and `[]` disables map icons. Compose with a
+spread when the child should keep a parent's directories. `fonts` and `glyphs` are mutually
+exclusive text providers; declaring either atomically replaces an inherited provider of either
+kind. Unknown keys and former compatibility shapes are rejected.
+
+Most authors should extend an existing root. `defineRootMap()` is reserved for defining a complete
+compiler-owned lineage:
+
+```ts
+import {defineMap, defineRootMap, tileflowStreetsCompilerVersion} from '@tileflow/core';
+import {streetsIcons} from '@tileflow/maps';
+
+const companyRoot = defineRootMap({
+  id: 'company-root',
+  name: 'Company root',
+  version: 1,
+  root: {compiler: 'streets', compilerVersion: tileflowStreetsCompilerVersion},
+  glyphs: {
+    kind: 'url',
+    url: 'https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf',
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
+  },
+  icons: [streetsIcons],
+});
+
+export default defineMap({
+  id: 'company-navigation',
+  version: 1,
+  extends: companyRoot,
+  projection: 'globe',
+});
+```
+
+The root above is complete as written. A map always owns its complete glyph URL provider; Core does
+not obtain fonts or sprites from World and never invents a fallback URL. The first-party `streets`
+and `ferraris` roots likewise declare their providers directly, so ordinary imports and derived
+maps compile without out-of-band release metadata.
 
 ```mermaid
 flowchart LR
-  A["Human or agent edits config"] --> B["Streets defaults + theme + keyed modules"]
-  B --> C["Domain compilers"]
+  A["tileflow.config.ts exports one map"] --> B["Resolve imported map lineage"]
+  B --> C["Complete design + domain compilers"]
   C --> D["Ordered Streets layers"]
-  D --> E["Validated MapLibre Style JSON"]
+  D --> E["MapLibre Style JSON"]
 ```
 
 Modules are keyed by domain, so object order never controls rendering and a domain can appear only
-once. Omit a module to keep the complete Streets default. Use `enabled: false` to remove a domain
-deliberately. The public domains are `land`, `water`, `roads`, `buildings`, `boundaries`, `labels`,
+once. A map extending Streets inherits its complete module set. Use `enabled: false` to replace and
+remove a domain deliberately. The public domains are `land`, `water`, `roads`, `buildings`, `boundaries`, `labels`,
 `poi`, `aeroways`, `transit`, `vegetation`, `addresses`, and `landforms`.
 The typed default recipe is exhaustive over that domain set, and a schema contract test verifies
 that every recipe entry keeps its key, type tag, validator, compiler orchestration, and root export
@@ -103,9 +139,17 @@ constants, raw MapLibre expressions through `expression(...)`, and zoom function
 concepts such as `roads.classes.primary.surface.fill`, not renderer layer IDs.
 
 The `land` module exposes stable land-use targets for `cemetery`, `civic`, `commercial`,
-`industrial`, `military`, `parking`, `railway`, `recreation`, and `residential`. Parking areas are
-polygons from the configured land-use source; parking access aisles remain road features under
-`roads.serviceTypes.parkingAisle`.
+`education`, `government`, `industrial`, `medical`, `military`, `parking`, `railway`,
+`recreation`, and `residential`. Its land-cover taxonomy distinguishes physical cover from authored
+urban green: `farmland`, `flowerbed`, `grass`, `ice`, `meadow`, `protected`,
+`recreationGround`, `rock`, `sand`, `scrub`, `urbanPark`, `villageGreen`, `wetland`, and
+`wood`. The plain `grass` branch excludes every typed grass subclass, so one source feature cannot
+receive two opaque green fills. Parking areas are polygons from the configured land-use source;
+parking access aisles remain road features under `roads.serviceTypes.parkingAisle`. The
+`commercial` target recognizes ordinary `commercial` and `retail` values plus Tileflow's derived
+`business_area` ground class. Its `globalLandcover` fill styles the optional low-zoom global
+land-cover extension without a raw layer patch. The `water.bathymetry` fill does the same for the
+typed Tileflow World V1 depth bands.
 
 `addresses` renders the standard OpenMapTiles `housenumber` points at detailed zooms and exposes a
 single semantic `labels` style. `landforms` renders the standard `mountain_peak` classes (`peak`,
@@ -120,12 +164,14 @@ they append no code, IATA only, or IATA with an ICAO fallback (`'none' | 'iata' 
 The `vegetation` module binds individual-tree points from the optional OpenMapTiles `tree`
 extension. Its default `mode: '3d'` emits a portable circle fallback plus metadata for runtimes
 that can upgrade the points to instanced 3D trees. `mode: 'flat'` keeps the MapLibre circles, and
-`minZoom` controls when either representation starts. The binding includes height, crown diameter,
-genus, leaf type, and species fields so compatible runtimes can preserve source measurements and
-botanical form without hard-coding raw property names. The pitched-scene stack follows physical
-height: pedestrian and transport surfaces, transport markings and road names, buildings, then
-vegetation. Place, water, aerodrome, and POI annotations remain last so geographic names stay
-readable without making street paint or text float over 3D geometry.
+`flat` exposes the complete `CircleStyle` fallback. `threeDimensional` controls bark color,
+broadleaf and conifer palettes, and independent height and crown scales. The legacy `minZoom`
+shortcut remains available; `flat.minZoom` takes precedence when both are present. The binding
+includes height, crown diameter, genus, leaf type, and species fields so compatible runtimes can
+preserve source measurements and botanical form without hard-coding raw property names. The
+pitched-scene stack follows physical height: pedestrian and transport surfaces, transport markings
+and road names, buildings, then vegetation. Place, water, aerodrome, and POI annotations remain
+last so geographic names stay readable without making street paint or text float over 3D geometry.
 
 ## Shared visual primitives
 
@@ -137,7 +183,7 @@ having to learn different spellings for the same MapLibre behavior:
 - `LineStyle`: color, width, opacity, dash, blur, gap, offset, pattern, caps, joins, and zoom range.
 - `LineHatchStyle`: repeated diagonal detail with color, opacity, spacing, size, angle, and zoom
   range for a road structure.
-- `TextStyle`: field, font, weight, fallbacks, size, color, halo, spacing metrics, transform,
+- `TextStyle`: field, exact font face, exact fallback faces, size, color, halo, spacing metrics, transform,
   collision policy, rotation, fixed/variable anchoring, line constraints, and zoom range.
 - `IconStyle`: image, size, color, halo, rotation/alignment, collision policy, and zoom range.
 - `CircleStyle`: radius, fill/stroke appearance, blur, opacity, pitch behavior, and zoom range.
@@ -150,18 +196,25 @@ ordinary visual styles intentionally do not accept raw source filters.
 
 ## Compiled-style performance
 
-The Streets compiler resolves semantic modules and raw overrides first, then compacts equivalent
+The Streets compiler resolves semantic modules and their owned contributions first, then compacts equivalent
 physical MapLibre layers. At high-detail zooms, road classes become a small set of data-driven
 cohorts; equivalent road labels and tunnel hatches share compatible buckets; and land-cover,
-land-use, and waterway classes share compatible buckets. Overrides still target the familiar
-semantic compiler IDs because they run before this final materialization step.
+land-use, and waterway classes share compatible buckets. Compaction selects
+cohorts from compiler-owned semantic targets, not by parsing physical IDs; its temporary
+owner/slot/target provenance is stripped from the public Style JSON.
+
+After optimization, Core embeds a bounded private `tileflow:interaction-manifest` lookup for the
+final POI representations. `@tileflow/interactions/maplibre` validates and consumes that metadata
+so applications can bind to `domain: 'poi'` without depending on physical layer IDs. The lookup is
+paired atomically with the exact style it describes; it is not a public style-authoring API.
 
 Use the exported structural sweep to enforce budgets without loading tiles or a browser:
 
 ```ts
-import {analyzeTileflowStylePerformance, createStyleFromProject} from '@tileflow/core';
+import {analyzeTileflowStylePerformance, createStyle} from '@tileflow/core';
+import map from './tileflow.config';
 
-const report = analyzeTileflowStylePerformance(createStyleFromProject(project, 'madrid'));
+const report = analyzeTileflowStylePerformance(createStyle(map));
 console.log(report.zooms[16]);
 ```
 
@@ -178,6 +231,15 @@ The road module distinguishes the path family semantically:
 ```ts
 roads({
   extras: {paths: true},
+  crossings: {image: 'crosswalk'},
+  sidewalks: {
+    surface: {color: '#F5F6F7', minZoom: 17},
+    pattern: {pattern: 'sidewalk-dot', minZoom: 17, opacity: 0.6},
+  },
+  roundabouts: {
+    casing: {strokeColor: '#FFFFFF'},
+    fill: {strokeColor: '#B3BDCC'},
+  },
   areas: {
     pedestrian: {
       fill: {color: '#F1F3F5'},
@@ -248,7 +310,14 @@ labels({
   junctions: true,
   styles: {
     shields: {
-      default: {text: {color: '#405264', haloColor: '#fff', haloWidth: 2, weight: 'bold'}},
+      default: {
+        text: {
+          color: '#405264',
+          font: 'Noto Sans Bold',
+          haloColor: '#fff',
+          haloWidth: 2,
+        },
+      },
       networks: {
         'network-value': {text: {color: '#B43A35'}},
       },
@@ -264,31 +333,112 @@ ranks, label detail controls text ranks, icon detail controls icon ranks, and
 coupling, icon and label layers collide normally but can be styled and zoomed independently.
 The `balanced` policy keeps a practical cross-category candidate set from an overscaled
 OpenMapTiles source tile; MapLibre collision placement still decides which candidates fit the
-current viewport. Use a category style's inclusive `maxRank` when different feature families need
-different candidate ceilings; the explicit category value replaces the density/label/icon preset
-ceiling for that category without exposing a raw layer ID or filter.
+current viewport. An inclusive `maxRank` replaces the density/label/icon preset ceiling; it may be
+a positive integer or a `zoom.step(...)`, `zoom.linear(...)`, or `zoom.exponential(...)` value that
+reveals progressively lower-priority candidates. A category style's `maxRank` overrides the shared
+module value when different feature families need different curves, without exposing a raw layer ID
+or filter. Lower ranks are more important, and the ceiling is a candidate bound rather than a count
+of labels that must appear. MapLibre evaluates zoom-dependent filters at integer zoom levels, so
+`linear` and `exponential` ceilings still admit candidates in discrete zoom bands.
 
-Theme tokens provide shared color and typography defaults. A module-level exact style wins over a
-theme token for that target. Precedence is deterministic:
+```ts
+poi({
+  minZoom: 14,
+  maxRank: zoom.step([
+    [14, 14], // z14–16.99: rank <= 14
+    [17, 80], // z17–18.99: rank <= 80
+    [19, 500], // z19+: rank <= 500
+  ]),
+});
+```
+
+Cyberpunk uses this policy for both its regular POI layers and its destination HUD. It keeps the
+z15–16 candidate set tight, admits the principal attraction ranks at z17, and expands further at
+z18–21. HUD brackets participate in normal collision placement, while `artwork` is treated as a
+low-priority destination and is deferred to close zooms.
+
+Theme tokens provide shared color and typography defaults. `theme` is always an object; it has no
+name, registry, or nested `extends`. A derived map inherits and deep-merges those tokens only because
+the map itself uses `extends`. A module-level exact style wins over a theme token for that target.
+Precedence is deterministic:
 
 1. Streets recipe defaults.
-2. Selected theme and inherited named theme.
+2. Resolved map theme.
 3. Explicit keyed module fields.
-4. Ordered raw overrides.
 
-Raw `addLayer`, `patchLayer`, `moveLayer`, and `removeLayer` operations are the final MapLibre escape
-hatch. They are ordered, target generated `streets-*` IDs explicitly, and fail when a target or
-anchor does not exist. They should be used for one-off MapLibre behavior, not ordinary design.
+`theme.mode` selects the compiler defaults and variant metadata used by style fields that remain
+unspecified. It does not walk an inherited map and recolor exact values already authored in its
+modules or compiler-owned contributions. Themes are therefore semantic defaults, not complete map
+skins. For a coordinated dark Streets design, extend the official dark map:
+
+```ts
+import {defineMap} from '@tileflow/core';
+import {streetsDark} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'company-dark',
+  version: 1,
+  extends: streetsDark,
+});
+```
+
+Extending the current official `streets` map with only `theme: {mode: 'dark'}` is not a visual dark
+mode: Streets already specifies its coordinated appearance explicitly. It is not equivalent to
+`streetsDark`.
+
+There is no public physical-layer override surface. New cartographic behavior belongs to a typed
+control in its owning module. Official maps may add compiler-private semantic contributions, but
+each has exactly one module owner and is discarded atomically when that module is replaced or
+disabled. `createStyle()` validates the final optimized Style JSON with the MapLibre style spec and
+never returns an invalid style.
 
 ## Data is separate from design
 
 Omitting `data` selects the compiler-owned Tileflow World `v1` compatibility generation:
 
 ```ts
-{
-  basemap: streets();
-}
+import {streets} from '@tileflow/maps';
+
+export default streets;
 ```
+
+Theme typography can also set `fallbacks`, `letterSpacing`, and `transform` globally or per label
+domain. Text delivery is explicit and atomic: a map may declare either ordered `fonts` directories
+for browser font files or a `glyphs` provider for PBF glyphs, never both. Omitting both inherits the
+parent's provider; declaring either replaces an inherited provider of either kind. After resolution,
+a map that emits text must have exactly one provider. A text-free root may omit both. On a derived
+map, omission inherits the parent provider while `fonts: []` explicitly removes it; that empty array
+is valid only when the resolved map emits no text.
+
+```ts
+export default defineMap({
+  id: 'brand-map',
+  version: 1,
+  extends: streets,
+  fonts: ['./fonts'],
+  theme: {typography: {font: 'Brand Sans Regular'}},
+});
+```
+
+Node preparation reads TTF, OTF, and WOFF2 files, uses each OpenType full name as its exact
+`text-font` ID, and requires `LICENSE.txt` in every contributing directory. Directories apply left
+to right; a later exact name replaces an earlier face and case-only collisions fail. Only primary
+faces used by the final style become content-addressed assets and strict `tileflow:fontFaces`
+metadata. `font` names an exact OpenType full name or glyph face; local `fallbacks` name exact faces
+or explicit CSS generic families. Tileflow never appends a weight suffix or derives one face from
+another. Browser adapters load local faces before MapLibre. Native releases use a locked PBF
+`glyphs` URL provider instead, which enumerates the exact comma-joined MapLibre request keys in
+`fontStacks`.
+
+Streets and Ferraris each declare `https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf` with the
+exact `Noto Sans Regular` and `Noto Sans Bold` stacks; Verdant inherits that complete provider from
+Streets. That compatibility URL is canonical but not content-addressed; responses revalidate and
+do not make a resolved map byte-reproducible. Exact official glyph identity belongs to the
+separately published `/base/<assetSetSha256>/glyphs/...` global base-asset contract. In that URL,
+`assetSetSha256` identifies the standalone glyph collection; it is not the same-domain value as the
+per-map `assetSetSha256` in `build-manifest.json`.
+Cyberpunk replaces the URL provider with its packaged Oxanium directory and references the exact
+local faces `Oxanium Medium` and `Oxanium SemiBold`.
 
 Name the official generation deliberately, or use another OpenMapTiles-compatible vector source:
 
@@ -304,35 +454,58 @@ const external = vectorTiles({
 });
 ```
 
-The basemap controls how data is drawn; `data` controls where compatible features come from. The
-compiler emits `https://world.tileflow.dev/world/v1/{z}/{x}/{y}.pbf` directly and performs no
-metadata, catalog, or TileJSON request. World data revisions can change behind that path when they
-remain compatible; they are neither configuration nor replay selectors. `openMapTiles({layers,
-fields})` can bind renamed
+The resolved map controls how data is drawn; `data` controls where compatible features come from.
+For Tileflow World, the compiler emits the selector TileJSON URL
+`https://api.tileflow.dev/tiles/world/tiles.json`. Omitted data or `tileflowWorld()` selects
+`world-v1/current`; `tileflowWorld({release: {releaseId, descriptorSha256}})` binds an exact release
+through query parameters. Runtime and capture resolve `current` once per session or job and then
+use the immutable release described by that response. `openMapTiles({layers, fields})` can bind renamed
 source-layers or properties while preserving the versioned semantic contract. External browser
 credentials do not belong in public Style JSON; supply them through the framework's
 `transformRequest` integration.
 
 External exact-test sources may use one TileJSON `url` or a bounded direct `tiles` list with optional
 `bounds`, `minzoom`, and `maxzoom`. `pmtiles://` is supported for a checked-in or bring-your-own
-archive. An external `revision` participates in capture identity, so changing fixture bytes cannot
-silently reuse a baseline.
+archive. Public vector URLs are HTTPS, root-relative, or HTTP only on loopback development hosts.
+A PMTiles URL names one `.pmtiles` archive through an HTTPS, loopback HTTP, root-relative, or safe
+repository-relative target; credentials, fragments, traversal, and other protocols are rejected at
+both authoring validation and compilation. An external `revision` participates in capture identity,
+so changing fixture bytes cannot silently reuse a baseline.
 
 Tileflow's OpenMapTiles contract also recognizes the optional `globallandcover` extension. The
-default Streets style maps its `barren`, `crop`, `grass`, `shrub`, `snow`, `trees`, and `urban`
-classes beneath the OSM land layers at zooms 0–7, fading to transparent at zoom 8. Sources with a
+official Streets map maps its `barren`, `crop`, `grass`, `shrub`, `snow`, `trees`, and
+`urban` classes beneath the OSM land layers. Tileflow World V1 supplies native generalized
+geometry through z10; Streets fades it progressively while detailed `landcover`/`landuse` gains
+opacity and removes it at z11. This is a macro bridge, not local semantic detail. Sources with a
 different layer name can use `openMapTiles({layers: {globalLandcover: 'my_landcover'}})`; archives
-without the extension remain compatible and simply render no features for that style layer.
-`crop` shares the theme's semantic `landcover.farmland` color with detailed farmland, while
-`barren` uses `landcover.rock`; neither class borrows a road color.
+without the extension remain compatible and simply render no features for that style layer. Use
+`land({globalLandcover: {...}})` to customize its fill, opacity, visibility, and zoom range. `crop`
+shares the theme's semantic `landcover.farmland` color with detailed farmland, while `barren` uses
+`landcover.rock`; neither class borrows a road color.
 
-Tileflow World V1 makes the low-zoom `bathymetry` extension mandatory. Use
-`tileflowWorldV1Schema()` for that product instead of making raw layer names part of a style; it
-binds `bathymetry`, `min_depth`, and `sort_key` as typed schema fields. Publication tooling can call
-`validateTileflowWorldV1Tilejson(...)` to reject an archive that does not declare the layer at
-z0–z9 with both numeric fields. Generic OpenMapTiles sources keep this capability absent unless it
-is enabled explicitly. Resolving omitted data or `tileflowWorld(...)` uses this V1 schema directly,
-so raw overrides and future semantic modules see the same required bindings as publication checks.
+The normalized schema also records the meaning of the OpenMapTiles `park` layer. Generic
+`openMapTiles()` defaults to `semantics.parkLayer: 'mixed'` and compiles a private compatibility
+branch for ordinary legacy parks. `tileflowWorldV1Schema()` fixes it to `'protected-only'`: that
+layer is a protection tint, while urban parks and gardens come from
+`landcover.class=grass/subclass=park|garden`. The ambiguous legacy `park` class is therefore not
+a public land-cover target.
+
+Tileflow World V1 makes `bathymetry`, `globallandcover`, `circular_feature`, `sidewalk`, and
+`street_furniture` mandatory. Use `tileflowWorldV1Schema()` for that product instead of making raw
+layer names part of a style. Publication tooling calls `validateTileflowWorldV1Tilejson(...)` and
+fails closed unless each layer occurs exactly once, declares its contracted native zooms, and
+advertises the typed fields consumed by the maps. This includes bathymetry z0–z9, global land cover
+z0–z10, and the three detailed-city layers at native z15. Generic OpenMapTiles sources keep these
+extensions optional and the compiler omits unsupported detail. Resolving omitted data or
+`tileflowWorld(...)` uses the strict V1 schema directly, and `water({bathymetry: {...}})` styles the
+emitted depth bands without raw layer IDs.
+
+Detailed city datasets can bind `sidewalk`, `streetFurniture`, and `circularFeature` source layers
+through `openMapTiles({layers, fields})`. When present, `roads.sidewalks` owns source-backed
+pedestrian polygons, `roads.crossings` owns oriented crossing icons, and `roads.roundabouts` owns
+metric circular road rings. These bindings are optional: a generic OpenMapTiles source remains
+valid and the compiler omits unsupported detail instead of inventing geometry. Crossing icons are
+explicit because the data contract cannot assume a sprite name.
 
 The optional `business_corridor` extension contains activity-selected source footprints below
 buildings. Its `activity_score`, `rank`, `min_zoom`, and `confidence` fields control a quiet local
@@ -345,25 +518,35 @@ compatibility path, but new candidates do not emit those fields. The land module
 `medical`, `education`, and `government` independently instead of collapsing their already distinct
 source classes into one civic color.
 
-A public compiler release binds one validated `WorldGenerationDescriptor` containing the frozen
-vector-schema hash, encoding, zooms, bounds, upstream attribution, direct World URL, and one
-content-identified glyph/sprite set. Project config cannot override that descriptor. The current
-prepublication branch intentionally contains no production asset-set ID or placeholder default;
-release remains blocked until the complete descriptor is approved and bundled.
+World and text assets are independent contracts. `tileflowWorld()` selects `world-v1/current` or an
+exact `releaseId + descriptorSha256`; a `glyphs` declaration contains its own complete URL. Ordinary
+imports of Streets, Ferraris, Streets Dark, Verdant, and Cyberpunk remain usable because each
+official map owns a URL or packaged-font provider. URL-backed maps become exact-byte reproducible
+when the immutable global base-asset set is published and their explicit URL is updated to its
+`assetSetSha256` path; no World or compiler fallback participates in that rollout. The global
+base-asset manifest's hash and a map build manifest's identically named `assetSetSha256` use
+different contracts and must never be substituted for one another.
 
 Upstream data attribution remains in the MapLibre source. `Map by Tileflow` is a separate product
 credit/trademark surface and must not replace, obscure, or be presented as upstream attribution.
 
 ## Capture scenes
 
-Commit named scenes beside maps. Scenes affect visual evidence, not style or manifest identity.
+Commit named `scenes` on the singular exported map. A scene implicitly targets that map, so it does
+not repeat a `map` selector. Scene metadata does not inherit and is removed before cartographic
+compilation; it affects visual evidence, not style or manifest identity.
 
 ```ts
-export default defineTileflow({
-  maps: {madrid: {basemap: streets()}},
+import {defineMap} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'madrid',
+  name: 'Madrid',
+  version: 1,
+  extends: streets,
   scenes: {
     'madrid-desktop': {
-      map: 'madrid',
       camera: {type: 'center', center: [-3.7038, 40.4168], zoom: 12},
       viewport: {width: 1280, height: 800, dpr: 1},
     },
@@ -371,16 +554,58 @@ export default defineTileflow({
 });
 ```
 
-Use `tileflow dev --scene madrid-desktop` for live review and `tileflow capture madrid-desktop`
-for exact pixels and a schema-version-2 receipt containing the Streets, data, style, renderer, and
-image identities. World receipts identify `generation: "v1"`; external fixtures may identify their
-explicit revision.
+Use `tileflow preview --scene madrid-desktop` (`tileflow dev` remains an alias) for live review and
+`tileflow capture madrid-desktop` for exact pixels and a schema-version-3 receipt containing the
+Streets, data, style, renderer, and image identities. World capture resolves the selected TileJSON
+once and records the exact `world-v1` release plus descriptor/archive/data-contract hashes;
+external fixtures may identify their explicit revision.
+
+Every exact World V1 release ID is already canonical at the producer boundary: 12–128 characters
+matching `^world-v1-[a-z0-9][a-z0-9._-]*[a-z0-9]$`. Core validates the literal value and never trims,
+lowercases, or upgrades it to another World generation.
 
 ## Public API and browser subpath
 
-Config, data, modules, compilation, validation, runtime resolution, and capture-scene APIs come
-from the package root. Legacy basemap factories, `renderer`, top-level `tiles`/`tileset`, module
+Config, data, modules, compilation, validation, runtime resolution, and capture-scene APIs remain
+available from the package root. Capture scenes, manifests, and browser-runtime surfaces also have
+explicit `@tileflow/core/capture`, `@tileflow/core/manifest`, and `@tileflow/core/runtime`
+subpaths. Node build integrations import the small deterministic map-identity contract from
+`@tileflow/core/build`: `collectTileflowMapBuildLineage`, `createTileflowMapBuildManifest`,
+`hashTileflowMapRevision`, `hashTileflowAssetSet`, and `hashTileflowAssetSetIdentities`. The latter
+reproduces the same asset-set v1 hash from exact per-file identities after another system has
+independently confirmed the immutable bytes; package or bundle hashes are not substitutes. The
+previous aggregate-wrapper and recipe-selector APIs, `renderer`, top-level `tiles`/`tileset`, module
 arrays, and raw `layers` are not part of this API.
+
+`@tileflow/core/recipe` is nevertheless a real exported ABI used by `@tileflow/maps` to declare
+owner-scoped semantic effects for first-party recipes. It is a low-level compiler integration
+surface, not a recipe selector and not the ordinary application authoring API; application maps
+should use typed modules from the package root. Because Maps imports this subpath from its installed
+Core peer, incompatible changes to it participate in Core SemVer and package compatibility checks.
+
+`mapRevisionSha256` hashes only resolved cartography: the effective design after `extends`, the
+compiler family, compiler-owned effective contributions, and exact source icon/font identities.
+Leaf `id`, `name`, editorial `mapVersion`, default `view`, capture `scenes`, and `delivery` policy do
+not change that content identity. They remain explicit on the map, manifest, Style, capture receipt,
+or Hosted deployment fingerprint that owns them. Compiler ABI, package versions, generated assets,
+and the concrete release selected by World `current` likewise have separate identities.
+
+Runtime manifest version 3 is discriminated as `kind: 'self-hosted'` or `kind: 'hosted'`.
+`parseTileflowRuntimeManifest()` accepts only that canonical shape; version-2 manifests and old
+aliases are rejected rather than normalized. The strict bounded schema uses the same portable map
+IDs as authoring, requires an exact `maps`/`styles` closure, rejects duplicate font identities and
+unsafe owner-relative URLs, prototype-bearing input, unknown fields, and JSON larger than 1 MiB.
+Runtime fetches share a successful result for 30 seconds, never cache failures, use
+`cache: 'no-store'`, enforce a 10-second timeout (configurable up to 60 seconds), compose an
+external abort signal, and can be invalidated with `clearTileflowManifestCache()`.
+
+Named map `view` values travel in the manifest. `resolveTileflowRuntimeView()` defines the shared
+precedence as explicit runtime values, then the manifest view, then the single exported
+`defaultTileflowRuntimeView` (`[0, 20]`, zoom 2, bearing/pitch 0). Browser delivery is one
+discriminated `TileflowRuntimeSource`: `kind: 'tileflow'` resolves a named map only through its
+published manifest, while `kind: 'maplibre'` accepts a direct style object or URL. The runtime
+subpath does not import the config compiler, invent a localhost style URL, or change image mode by
+environment.
 
 Framework adapters import the browser-only lifecycle kernel explicitly:
 
@@ -398,7 +623,9 @@ import {
 The browser entry is not re-exported from the root. It is SSR-safe to import, has no MapLibre
 runtime dependency, and reads no browser global during module evaluation. See the
 [framework browser runtime contract](../../docs/contracts/framework-browser-runtime.md) and the
-[cartographic authoring contract](../../docs/contracts/cartographic-authoring.md).
+[cartographic authoring contract](../../docs/contracts/cartographic-authoring.md). Exact field
+resolution and asset rules live in the
+[map inheritance contract](../../docs/contracts/map-inheritance.md).
 
 ## Hosted session authorization
 
@@ -413,20 +640,70 @@ can set `grantTimeoutMs` from 1 to 120,000 milliseconds.
 server-owned commercial authorization. User `transformRequest` callbacks still run first; Tileflow
 then decorates only the resulting eligible URL and preserves the other request options.
 
-For direct Tileflow World tiles, framework adapters also use the browser request bridge to observe
-the response's safe fair-use state without adding identity, query parameters, credentials, or user
-headers to the public World URL. Early `GRACE` stays silent; signed late `GRACE` creates a compact
+For exact Tileflow World release tiles, framework adapters also use the browser request bridge to
+observe the response's safe fair-use state without adding identity, query parameters, credentials,
+or user headers to the public World URL. The bridge requires the immutable release path and exactly
+one lowercase descriptor digest; the retired mutable World template is never intercepted. Early
+`GRACE` stays silent; signed late `GRACE` creates a compact
 accessible owner-action pill, and `CLAIM_REQUIRED` creates a stronger in-map banner. A missing
 header, absent tile, MapLibre error, or failed response cannot erase an existing claim action; a
 later successful `OPEN` response can clear it. Shaped empty tiles remain render-safe while the owner
-action stays available.
+action stays available. Successful World tile bodies are streamed with a 16 MiB maximum: an
+oversized `Content-Length` is rejected before reading, and chunked responses are cancelled as soon
+as their accumulated bytes cross the same bound. Abort signals cancel an active reader; errors do
+not include the remote response body.
 
 Other subpaths under `src/`, `themes/`, `templates/`, and `modules/` are internal implementation
 details and can change during alpha releases.
 
-Streets build, preview, capture, and deploy flows supply nine original Tileflow POI pictograms. A
-complete public generation descriptor points at their content-identified base sprite; local tooling
-can compile the same first-party SVG sources for exact offline work. A project-local icon source or
-explicit hosted sprite replaces that catalog without exposing source paths. Calling the pure core
-style compiler without asset preparation or a complete generation descriptor remains text-only
-unless the map provides `icons` or `sprite` explicitly.
+Official map definitions and the source assets they own ship together in `@tileflow/maps`, not in
+Core. That package exports the maps and their reusable directory descriptors:
+
+```ts
+import {
+  cyberpunk,
+  cyberpunkFonts,
+  cyberpunkIcons,
+  ferraris,
+  ferrarisIcons,
+  streets,
+  streetsDark,
+  streetsDarkIcons,
+  streetsIcons,
+  verdant,
+  verdantIcons,
+} from '@tileflow/maps';
+```
+
+`streets` and `ferraris` are complete compiler roots. Both select the semantic Streets compiler,
+but Ferraris neither imports nor extends Streets. It declares only `[ferrarisIcons]`, whose nine SVG
+patterns are original Tileflow artwork. `streetsDark`, `cyberpunk`, and `verdant` are normal maps
+that extend Streets. Streets Dark preserves the root's content and hierarchy while owning its
+complete night palette and lighting. Streets declares `[streetsIcons]`; Streets Dark declares
+`[streetsIcons, streetsDarkIcons]` so its later dark `sidewalk-dot` overrides the shared source.
+Cyberpunk and Verdant likewise compose their additions after Streets. The same operation is
+available to applications:
+
+```ts
+export default defineMap({
+  id: 'brand-map',
+  version: 1,
+  extends: streets,
+  icons: [...streets.icons, './icons'],
+});
+```
+
+`icons` is a `readonly TileflowIconDirectory[]`. Omission inherits the parent's exact array,
+declaration replaces it atomically, and `[]` means no icons. Directories apply left to right.
+`<id>.<ext>` publishes an icon as `<id>`; `<id>.pattern.<ext>` publishes an intrinsic-size pattern
+as `<id>`. The published ID must already be canonical lower-kebab; a later exact ID wins and a
+case-only collision fails. There is no built-in selector, source object, external
+sprite selector, icon mapping, icon-specific inheritance, additive command, or compatibility alias.
+
+`@tileflow/dev` resolves local and package directory descriptors, verifies real-path containment,
+and prepares ordinary public artifacts without serializing installation paths. It compiles one
+deterministic sprite from the final icon composition and validates every literal `icon-image`,
+`fill-pattern`, and `line-pattern` in the final style against it. It also prepares any declared font
+directories generically; `cyberpunkFonts` is an ordinary package descriptor rather than a pipeline
+special case. Calling the pure compiler for a map whose style needs unprepared assets fails instead
+of emitting broken runtime references.

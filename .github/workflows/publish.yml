@@ -1,16 +1,7 @@
 name: Publish
-run-name: Reconcile npm alpha from ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+run-name: Prepare npm alpha bundle from main at ${{ github.sha }}
 
 on:
-  workflow_run:
-    workflows:
-      - CI
-    types:
-      - completed
-    branches:
-      - main
-  schedule:
-    - cron: '17 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -23,18 +14,8 @@ concurrency:
 
 jobs:
   reconcile:
-    name: Reconcile changed packages
-    if: >-
-      ${{
-        (github.event_name == 'workflow_run' &&
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_branch == 'main' &&
-          github.event.workflow_run.head_repository.full_name == github.repository &&
-          github.event.workflow_run.head_sha == github.sha) ||
-        ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-          github.ref == 'refs/heads/main')
-      }}
+    name: Prepare exact release bundle
+    if: github.repository == 'tileflow/tileflow-sdk' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
@@ -50,7 +31,7 @@ jobs:
       NPM_TAG: alpha
       # Ephemeral manifest versions intentionally differ from pnpm's installed workspace snapshot.
       pnpm_config_verify_deps_before_run: warn
-      RELEASE_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      RELEASE_SHA: ${{ github.sha }}
     steps:
       - name: Checkout proposed main commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -69,45 +50,44 @@ jobs:
           script: |
             const {
               assertSuccessfulRequiredJob,
-              assertTrustedMainCiRun,
               findSuccessfulMainCiRun,
             } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release-workflow.mjs`);
             const repository = `${context.repo.owner}/${context.repo.repo}`;
-            let run = null;
+            const {data} = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'ci.yml',
+              branch: 'main',
+              event: 'push',
+              status: 'completed',
+              head_sha: process.env.RELEASE_SHA,
+              per_page: 100,
+            });
+            const run = findSuccessfulMainCiRun(
+              data.workflow_runs,
+              repository,
+              process.env.RELEASE_SHA,
+            );
 
-            if (context.eventName === 'workflow_run') {
-              run = context.payload.workflow_run;
-              assertTrustedMainCiRun(run, repository, process.env.RELEASE_SHA);
-            } else {
-              const {data} = await github.rest.actions.listWorkflowRuns({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'ci.yml',
-                branch: 'main',
-                event: 'push',
-                status: 'completed',
-                head_sha: process.env.RELEASE_SHA,
-                per_page: 100,
-              });
-              run = findSuccessfulMainCiRun(data.workflow_runs, repository, process.env.RELEASE_SHA);
+            if (!run) {
+              core.setOutput('eligible', 'false');
+              core.setFailed(
+                `No successful push CI exists for ${process.env.RELEASE_SHA}; release preparation is denied.`,
+              );
+              return;
             }
 
-            if (run) {
-              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                run_id: run.id,
-                filter: 'latest',
-                per_page: 100,
-              });
-              assertSuccessfulRequiredJob(jobs);
-            }
-
-            core.setOutput('eligible', run ? 'true' : 'false');
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: run.id,
+              filter: 'latest',
+              per_page: 100,
+            });
+            assertSuccessfulRequiredJob(jobs);
+            core.setOutput('eligible', 'true');
             core.notice(
-              run
-                ? `Release reconciliation is bound to successful CI run ${run.id} for ${process.env.RELEASE_SHA}.`
-                : `No successful push CI exists for ${process.env.RELEASE_SHA}; reconciliation is skipped.`,
+              `Release preparation is bound to successful CI run ${run.id} for ${process.env.RELEASE_SHA}.`,
             );
 
       - name: Require current main head
@@ -119,13 +99,8 @@ jobs:
           test "$GITHUB_SHA" = "$RELEASE_SHA"
           test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
           git fetch --no-tags origin main
-          if [[ "$(git rev-parse origin/main)" = "$RELEASE_SHA" ]]
-          then
-            echo 'current=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'current=false' >> "$GITHUB_OUTPUT"
-            echo 'main advanced after this run started; the newer commit will reconcile npm.'
-          fi
+          test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
+          echo 'current=true' >> "$GITHUB_OUTPUT"
 
       - name: Setup Node
         if: steps.head.outputs.current == 'true'
@@ -143,14 +118,7 @@ jobs:
 
       - name: Enforce public SDK release interlock
         if: steps.head.outputs.current == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -f PUBLIC_RELEASE_BLOCKERS.md ]]
-          then
-            echo '::error title=Public SDK release blocked::Resolve and remove PUBLIC_RELEASE_BLOCKERS.md before npm reconciliation.'
-            exit 1
-          fi
+        run: node scripts/public-release-interlock.mjs
 
       - name: Install
         if: steps.head.outputs.current == 'true'
@@ -169,34 +137,43 @@ jobs:
           registry_dir="$release_root/registry"
           mkdir -p "$registry_dir"
           : > "$release_root/registry.tsv"
-
-          for package_name in \
-            @tileflow/core \
-            @tileflow/static \
-            @tileflow/dev \
-            @tileflow/capture \
-            @tileflow/vite \
-            @tileflow/next \
-            @tileflow/webpack \
-            @tileflow/react \
-            @tileflow/vue \
-            @tileflow/svelte \
-            @tileflow/cli
+          while IFS=$'\t' read -r package_name initial_version
           do
-            current_version="$(npm view "$package_name" "dist-tags.$NPM_TAG" --prefer-online)"
-            filename="$(
-              npx --yes npm@11.19.0 pack "$package_name@$current_version" \
-                --pack-destination "$registry_dir" \
-                --json \
-                | node -e "let data = ''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => { const result = JSON.parse(data); if (!Array.isArray(result) || result.length !== 1 || typeof result[0]?.filename !== 'string') throw new Error('Unexpected npm pack JSON.'); console.log(result[0].filename); });"
-            )"
-            if [[ "$filename" != /* ]]
+            if current_version="$(npm view "$package_name" "dist-tags.$NPM_TAG" --prefer-online 2>&1)" && \
+              [[ "$current_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]]
             then
-              filename="$registry_dir/$filename"
+              filename="$(
+                npx --yes npm@11.19.0 pack "$package_name@$current_version" \
+                  --pack-destination "$registry_dir" \
+                  --json \
+                  | node -e "let data = ''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => { const result = JSON.parse(data); if (!Array.isArray(result) || result.length !== 1 || typeof result[0]?.filename !== 'string') throw new Error('Unexpected npm pack JSON.'); console.log(result[0].filename); });"
+              )"
+              if [[ "$filename" != /* ]]
+              then
+                filename="$registry_dir/$filename"
+              fi
+              printf '%s\t%s\t%s\tpublished\n' "$package_name" "$current_version" "$filename" \
+                >> "$release_root/registry.tsv"
+            elif [[ -z "$current_version" || "$current_version" = *E404* ]]
+            then
+              if package_identity="$(npm view "$package_name" name --prefer-online 2>&1)"
+              then
+                test "$package_identity" = "$package_name"
+              elif [[ "$package_identity" != *E404* ]]
+              then
+                echo "$package_identity"
+                echo "Unable to determine package existence for $package_name."
+                exit 1
+              fi
+              printf '%s\t%s\t-\tunpublished\n' "$package_name" "$initial_version" \
+                >> "$release_root/registry.tsv"
+              echo "$package_name has no alpha release; planning its configured first release $initial_version."
+            else
+              echo "$current_version"
+              echo "Unable to determine registry baseline for $package_name."
+              exit 1
             fi
-            printf '%s\t%s\t%s\n' "$package_name" "$current_version" "$filename" \
-              >> "$release_root/registry.tsv"
-          done
+          done < <(node scripts/reconcile-release.mjs catalog)
 
           node scripts/reconcile-release.mjs \
             registry \
@@ -286,13 +263,8 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --no-tags origin main
-          if [[ "$(git rev-parse origin/main)" = "$RELEASE_SHA" ]]
-          then
-            echo 'current=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'current=false' >> "$GITHUB_OUTPUT"
-            echo 'main advanced during release validation; no release bundle will be created from the stale commit.'
-          fi
+          test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
+          echo 'current=true' >> "$GITHUB_OUTPUT"
 
       - name: Create immutable release bundle
         if: steps.publish-head.outputs.current == 'true'
@@ -317,6 +289,13 @@ jobs:
             selected
           bundle_digest="$(shasum -a 256 "$release_root/release-bundle.tar" | cut -d ' ' -f 1)"
           echo "bundle_digest=$bundle_digest" >> "$GITHUB_OUTPUT"
+          {
+            echo '## Approval boundary'
+            echo
+            echo "Bundle SHA-256: \`$bundle_digest\`"
+            echo
+            echo 'The `npm-publish` environment approval publishes only the tarballs in this bundle.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload immutable release bundle
         if: steps.publish-head.outputs.current == 'true'
@@ -325,10 +304,10 @@ jobs:
           name: npm-release-${{ env.RELEASE_SHA }}
           path: ${{ runner.temp }}/tileflow-release/release-bundle.tar
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 30
 
   publish:
-    name: Publish changed packages
+    name: Approve and publish exact bundle
     needs: reconcile
     if: >-
       ${{
@@ -339,7 +318,7 @@ jobs:
       }}
     environment: npm-publish
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       actions: read
       contents: read
@@ -401,11 +380,24 @@ jobs:
             package_json="$(tar -xOf "$tarball" package/package.json)"
             package_name="$(PACKAGE_JSON="$package_json" node -e "console.log(JSON.parse(process.env.PACKAGE_JSON).name);")"
             package_version="$(PACKAGE_JSON="$package_json" node -e "console.log(JSON.parse(process.env.PACKAGE_JSON).version);")"
-            previous_version="$(PLAN_PATH="$release_root/plan.json" PACKAGE_NAME="$package_name" node -e "const release = require(process.env.PLAN_PATH).packages.find(({name}) => name === process.env.PACKAGE_NAME); if (!release) throw new Error('Package is absent from release plan.'); console.log(release.from);")"
+            previous_version="$(PLAN_PATH="$release_root/plan.json" PACKAGE_NAME="$package_name" node -e "const release = require(process.env.PLAN_PATH).packages.find(({name}) => name === process.env.PACKAGE_NAME); if (!release) throw new Error('Package is absent from release plan.'); console.log(release.from ?? 'unpublished');")"
             planned_version="$(PLAN_PATH="$release_root/plan.json" PACKAGE_NAME="$package_name" node -e "const release = require(process.env.PLAN_PATH).packages.find(({name}) => name === process.env.PACKAGE_NAME); if (!release) throw new Error('Package is absent from release plan.'); console.log(release.to);")"
+            baseline_state="$(PLAN_PATH="$release_root/plan.json" PACKAGE_NAME="$package_name" node -e "const baseline = require(process.env.PLAN_PATH).baselines.find(({name}) => name === process.env.PACKAGE_NAME); if (!baseline || typeof baseline.published !== 'boolean') throw new Error('Package baseline is absent from release plan.'); console.log(baseline.published ? 'published' : 'unpublished');")"
             test "$package_version" = "$planned_version"
 
-            current_tag="$(npm view "$package_name" "dist-tags.$NPM_TAG" --prefer-online)"
+            if current_tag="$(npm view "$package_name" "dist-tags.$NPM_TAG" --prefer-online 2>&1)" && \
+              [[ -n "$current_tag" ]]
+            then
+              :
+            elif [[ "$baseline_state" = unpublished && \
+              ( -z "$current_tag" || "$current_tag" = *E404* ) ]]
+            then
+              current_tag=unpublished
+            else
+              echo "$current_tag"
+              echo "Unable to determine current alpha tag for $package_name."
+              exit 1
+            fi
             if view_output="$(npm view "$package_name@$package_version" version --prefer-online 2>&1)"
             then
               test "$view_output" = "$package_version"
@@ -440,12 +432,16 @@ jobs:
                 "$previous_version" \
                 "$package_version" \
                 "$current_tag" \
-                "$target_state"
+                "$target_state" \
+                "$baseline_state"
             )"
             if [[ "$decision" = publish ]]
             then
-              previous_output="$(npm view "$package_name@$previous_version" version --prefer-online)"
-              test "$previous_output" = "$previous_version"
+              if [[ "$baseline_state" = published ]]
+              then
+                previous_output="$(npm view "$package_name@$previous_version" version --prefer-online)"
+                test "$previous_output" = "$previous_version"
+              fi
               echo "$tarball" >> "$release_root/publish.txt"
             elif [[ "$decision" = published ]]
             then
@@ -487,3 +483,62 @@ jobs:
               --provenance \
               --loglevel verbose
           done < "$RUNNER_TEMP/tileflow-release/publish.txt"
+
+      - name: Verify exact published artifacts and create receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_root="$RUNNER_TEMP/tileflow-release"
+          verified_dir="$release_root/verified"
+          mkdir -p "$verified_dir"
+
+          while IFS= read -r relative_tarball
+          do
+            [[ -n "$relative_tarball" ]] || continue
+            tarball="$release_root/$relative_tarball"
+            package_json="$(tar -xOf "$tarball" package/package.json)"
+            package_name="$(PACKAGE_JSON="$package_json" node -e "console.log(JSON.parse(process.env.PACKAGE_JSON).name);")"
+            package_version="$(PACKAGE_JSON="$package_json" node -e "console.log(JSON.parse(process.env.PACKAGE_JSON).version);")"
+
+            current_tag=''
+            for attempt in 1 2 3 4 5
+            do
+              if current_tag="$(npm view "$package_name" "dist-tags.$NPM_TAG" --prefer-online 2>/dev/null)" && \
+                [[ "$current_tag" = "$package_version" ]]
+              then
+                break
+              fi
+              sleep "$((attempt * 2))"
+            done
+            test "$current_tag" = "$package_version"
+
+            local_integrity="$(TARBALL="$tarball" node -e "const {createHash} = require('node:crypto'); const {readFileSync} = require('node:fs'); process.stdout.write('sha512-' + createHash('sha512').update(readFileSync(process.env.TARBALL)).digest('base64'));")"
+            registry_integrity="$(npm view "$package_name@$package_version" dist.integrity --prefer-online)"
+            test "$registry_integrity" = "$local_integrity"
+
+            published_tarball="$(
+              npx --yes npm@11.19.0 pack "$package_name@$package_version" \
+                --pack-destination "$verified_dir" \
+                --json \
+                | node -e "let data = ''; process.stdin.on('data', chunk => data += chunk); process.stdin.on('end', () => { const result = JSON.parse(data); if (!Array.isArray(result) || result.length !== 1 || typeof result[0]?.filename !== 'string') throw new Error('Unexpected npm pack JSON.'); console.log(result[0].filename); });"
+            )"
+            if [[ "$published_tarball" != /* ]]
+            then
+              published_tarball="$verified_dir/$published_tarball"
+            fi
+            node scripts/compare-package-tarballs.mjs "$tarball" "$published_tarball"
+          done < "$release_root/selected-relative.txt"
+
+          node scripts/create-release-receipt.mjs \
+            "$release_root/plan.json" \
+            "$release_root/selected-relative.txt" \
+            "$BUNDLE_DIGEST" \
+            "$release_root/release-receipt.json"
+
+      - name: Upload final release receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm-release-receipt-${{ env.RELEASE_SHA }}
+          path: ${{ runner.temp }}/tileflow-release/release-receipt.json
+          if-no-files-found: error
+          retention-days: 90

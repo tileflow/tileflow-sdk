@@ -1,10 +1,10 @@
 import {
   createTileflowArtifactSession,
-  createTileflowDevRequestHandler,
   defaultTileflowConfigPath,
   normalizeTileflowBasePath,
-  type TileflowBuildArtifactsOptions,
-} from '@tileflow/dev';
+  refreshTileflowArtifactSession,
+} from '@tileflow/dev/artifacts';
+import {createTileflowDevRequestHandler} from '@tileflow/dev/server';
 
 export type TileflowNextRouteHandlerOptions = {
   apiBaseUrl?: string;
@@ -14,7 +14,6 @@ export type TileflowNextRouteHandlerOptions = {
   onError?: (error: unknown) => void;
   routeBase?: string;
   styleBaseUrl?: string;
-  worldGeneration?: TileflowBuildArtifactsOptions['worldGeneration'];
 };
 
 export type TileflowNextRouteHandlers = {
@@ -33,7 +32,6 @@ export function createTileflowRouteHandlers(
     cwd: options.cwd,
     styleBaseUrl: options.styleBaseUrl ?? basePath,
     apiBaseUrl: options.apiBaseUrl,
-    worldGeneration: options.worldGeneration,
     watch: false,
   });
   const handlerPromise = sessionPromise.then((session) =>
@@ -45,7 +43,6 @@ export function createTileflowRouteHandlers(
       session,
       styleBaseUrl: options.styleBaseUrl,
       apiBaseUrl: options.apiBaseUrl,
-      worldGeneration: options.worldGeneration,
     }),
   );
   let refreshChain = Promise.resolve();
@@ -55,7 +52,7 @@ export function createTileflowRouteHandlers(
     if (firstRequest) firstRequest = false;
     else {
       refreshChain = refreshChain.then(async () => {
-        await (await sessionPromise).refresh('next request');
+        await refreshTileflowArtifactSession(await sessionPromise, {reason: 'next request'});
       });
       await refreshChain;
     }

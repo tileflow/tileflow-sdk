@@ -11,6 +11,21 @@ flow, publication interlock, and remaining owner/reviewer decisions. The observa
 an immutable description of revision `4223da5`; they have not been rewritten as if they described
 the later branch.
 
+Resolution recorded 2026-08-26: the project owner approved `Tileflow.dev contributors` as the
+public copyright-holder label, Apache-2.0 for the public SDK and official Tileflow map artwork, an
+explicit generated-output grant, and an explicit trademark boundary. The owner also confirmed that
+the current SDK does not use or derive from OSM Bright. The root legal files and package tarballs,
+not this historical inventory, are the operative grants.
+
+Current-branch asset location (2026-08-25): the replacement first-party Streets artwork and the
+official Cyberpunk/Verdant icon and pattern sources now ship from
+`packages/maps/assets/<id>/icons/`. Cyberpunk's Oxanium files and OFL license ship from
+`packages/maps/assets/cyberpunk/fonts/`. `@tileflow/dev` no longer publishes an `assets/`
+directory; it resolves and prepares the sources owned by `@tileflow/maps`. Historical `packages/dev/assets/...`
+paths below are retained only because this dated inventory records revision `4223da5`. The active
+authoring contract treats every config as a map and uses `extends`; any `basemap` wording below is
+also historical and does not describe a current authoring key or package surface.
+
 Observed: 2026-08-17. Repository revision: `4223da576c23a8bd08f6c83114edb25720e4ec9f`
 (`main`, clean working tree). Dependency facts were read from the installed `node_modules` at that
 revision, not from a registry query.

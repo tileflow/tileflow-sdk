@@ -1,12 +1,5 @@
-import type {TileflowMapProps} from './index.js';
-
 type TileflowMapStyleInput = {
-  config?: TileflowMapProps['config'];
-  map?: TileflowMapProps['map'];
-  mapStyle?: TileflowMapProps['mapStyle'];
-  styleBaseUrl?: TileflowMapProps['styleBaseUrl'];
-  styleUrl?: TileflowMapProps['styleUrl'];
-  themes?: TileflowMapProps['themes'];
+  source?: unknown;
 };
 
 type TileflowMapStyleInputValidation =

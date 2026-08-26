@@ -7,6 +7,7 @@ import {tmpdir} from 'node:os';
 import {join, win32} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   createTileflowCaptureReceipt,
   createTileflowCaptureRendererIdentity,
@@ -21,7 +22,13 @@ import {
   serializeTileflowCaptureFailureJson,
   serializeTileflowCaptureJson,
 } from '../src/capture-command';
-import {captureReceiptPath, writeAtomicFileSet, writeCapturePair} from '../src/capture-output';
+import {
+  captureReceiptPath,
+  writeAtomicFile,
+  writeAtomicFileSet,
+  writeCapturePair,
+} from '../src/capture-output';
+import {tileflowMapFixture} from './map-fixture';
 
 const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const tsxLoader = import.meta.resolve('tsx');
@@ -373,20 +380,86 @@ test('writes and removes a visual artifact set as one idempotent transaction', a
   assert.deepEqual(new Uint8Array(await readFile(actualPath)), new Uint8Array([1, 2, 3]));
 });
 
-test('init creates a default scene and only creates a missing ignore file', async (t) => {
+test('atomically replaces one managed manifest without a target-to-backup gap', async (t) => {
+  const directory = await createDirectoryFixture(t, 'tileflow-single-atomic-output-');
+  const manifestPath = join(directory, 'manifest.json');
+  await writeFile(manifestPath, '{"version":1}\n');
+
+  assert.equal(
+    await writeAtomicFile({
+      boundaryPath: directory,
+      force: true,
+      label: 'Deploy manifest',
+      managed: true,
+      path: manifestPath,
+      source: '{"version":2}\n',
+    }),
+    true,
+  );
+  assert.equal(await readFile(manifestPath, 'utf8'), '{"version":2}\n');
+  assert.deepEqual(await readdir(directory), ['manifest.json', 'node_modules']);
+  assert.equal(
+    await writeAtomicFile({
+      boundaryPath: directory,
+      force: false,
+      label: 'Deploy manifest',
+      managed: false,
+      path: manifestPath,
+      source: '{"version":2}\n',
+    }),
+    false,
+  );
+  await assert.rejects(
+    () =>
+      writeAtomicFile({
+        boundaryPath: directory,
+        force: false,
+        label: 'Deploy manifest',
+        managed: false,
+        path: manifestPath,
+        source: '{"version":3}\n',
+      }),
+    /Use --force/u,
+  );
+});
+
+test('init creates a singular map and only creates a missing ignore file', async (t) => {
   const fresh = await createDirectoryFixture(t, 'tileflow-capture-init-');
   const initialized = await runCli(fresh, ['init'], {});
   assert.equal(initialized.code, 0, initialized.stderr);
-  assert.match(await readFile(join(fresh, 'tileflow.config.ts'), 'utf8'), /madrid-desktop/);
+  const config = await readFile(join(fresh, 'tileflow.config.ts'), 'utf8');
+  assert.match(config, /defineMap/);
+  assert.match(config, /id: "madrid"/);
+  assert.match(config, /extends: streets/);
+  assert.doesNotMatch(config, /\bglyphs\s*:/);
+  assert.doesNotMatch(config, /\bmaps\s*:|\bbasemap(?:Version)?\s*:/);
   assert.equal(
     await readFile(join(fresh, '.gitignore'), 'utf8'),
     '# Tileflow generated visual evidence\n.tileflow/captures/\n.tileflow/diffs/\n',
   );
-  assert.deepEqual((await readdir(fresh)).sort(), ['.gitignore', 'tileflow.config.ts']);
+  assert.deepEqual((await readdir(fresh)).sort(), [
+    '.gitignore',
+    'node_modules',
+    'tileflow.config.ts',
+  ]);
   assert.doesNotMatch(
     await readFile(join(fresh, 'tileflow.config.ts'), 'utf8'),
     /archiveVersion|revision|world-lock|world update/i,
   );
+
+  const validation = await runCli(fresh, ['validate', '--json'], {});
+  assert.equal(validation.code, 0, validation.stderr);
+  assert.equal(validation.stderr, '');
+  const validationDocument = JSON.parse(validation.stdout) as {maps?: string[]; ok?: boolean};
+  assert.equal(validationDocument.ok, true);
+  assert.deepEqual(validationDocument.maps, ['madrid']);
+
+  const built = await runCli(fresh, ['build', '--out', 'dist/tileflow'], {});
+  assert.equal(built.code, 0, `${built.stdout}\n${built.stderr}`);
+  const style = JSON.parse(
+    await readFile(join(fresh, 'dist/tileflow/styles/madrid.json'), 'utf8'),
+  ) as {glyphs?: string};
+  assert.equal(style.glyphs, 'https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf');
 
   const existing = await createDirectoryFixture(t, 'tileflow-capture-init-existing-ignore-');
   await writeFile(join(existing, '.gitignore'), 'owned-by-user\n');
@@ -451,9 +524,12 @@ test('keeps selection and config failures on stderr with empty JSON stdout', asy
 
   await writeFile(
     join(directory, 'tileflow.config.ts'),
-    `if (process.env.TILEFLOW_API_KEY) throw new Error('ambient key reached config');
-export default {maps: {proof: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}}}, scenes: {proof: {map: 'proof', camera: {type: 'center', center: [0, 0], zoom: 1}, viewport: {width: 32, height: 32}}}};
-`,
+    tileflowMapFixture({
+      id: 'proof',
+      setup: `if (process.env.TILEFLOW_API_KEY) throw new Error('ambient key reached config');`,
+      fields: `modules: {poi: {type: 'poi', unsupported: true}},
+  scenes: {proof: {camera: {type: 'center', center: [0, 0], zoom: 1}, viewport: {width: 64, height: 64}}}`,
+    }),
   );
   const invalid = await runCli(directory, ['capture', 'proof', '--json'], {
     TILEFLOW_API_KEY: `tf_live_${'s'.repeat(40)}`,
@@ -463,28 +539,25 @@ export default {maps: {proof: {basemap: {type: 'streets', basemapVersion: 3, var
   const invalidDocument = parseFailureDocument(invalid.stderr);
   assert.equal(invalidDocument.code, 'CONFIG_INVALID');
   assert.equal(invalidDocument.phase, 'config-validation');
-  assert.match(invalidDocument.diagnostics[0]?.path ?? '', /viewport/);
+  assert.equal(invalidDocument.diagnostics[0]?.path, 'modules.poi.unsupported');
   assert.doesNotMatch(invalid.stderr, /ambient key reached config/);
   assert.equal(invalid.stderr.includes(directory), false);
 });
 
-test('style-invalid JSON is phase-aware and preserves an existing output pair', async (t) => {
+test('removed raw style overrides fail at the config boundary and preserve output', async (t) => {
   const directory = await createDirectoryFixture(t, 'tileflow-capture-style-invalid-');
   const outputPath = join(directory, 'proof.png');
   const receiptPath = captureReceiptPath(outputPath);
   await writeFile(
     join(directory, 'tileflow.config.ts'),
-    `export default {
-  maps: {proof: {
-    basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
-    overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]
-  }},
+    tileflowMapFixture({
+      id: 'proof',
+      fields: `overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}],
   scenes: {proof: {
-    map: 'proof',
     camera: {type: 'center', center: [0, 0], zoom: 1},
     viewport: {width: 64, height: 64}
-  }}
-};\n`,
+  }}`,
+    }),
   );
   await writeFile(outputPath, 'preserved-png');
   await writeFile(receiptPath, 'preserved-receipt');
@@ -498,14 +571,12 @@ test('style-invalid JSON is phase-aware and preserves an existing output pair', 
 
   assert.equal(result.code, 1);
   assert.equal(result.stdout, '');
-  assert.equal(document.code, 'STYLE_INVALID');
-  assert.equal(document.phase, 'style-validation');
-  assert.deepEqual(document.diagnostics[0], {
-    code: 'STYLE_INVALID',
-    message: 'color expected, number found',
-    path: 'maps.proof.style.layers.streets-background.paint.background-color',
-    phase: 'style-validation',
-  });
+  assert.equal(document.code, 'CONFIG_INVALID');
+  assert.equal(document.phase, 'config-validation');
+  assert.equal(document.diagnostics[0]?.code, 'CONFIG_INVALID');
+  assert.match(document.diagnostics[0]?.message ?? '', /unrecognized key "overrides"/u);
+  assert.equal(document.diagnostics[0]?.path, 'map');
+  assert.equal(document.diagnostics[0]?.phase, 'config-validation');
   assert.equal(await readFile(outputPath, 'utf8'), 'preserved-png');
   assert.equal(await readFile(receiptPath, 'utf8'), 'preserved-receipt');
   assert.equal(result.stderr.includes(directory), false);
@@ -541,9 +612,9 @@ test(
     const fixture = await createVectorFixtureServer(t);
     await writeFile(
       join(directory, 'tileflow.config.ts'),
-      `export default {maps: {proof: {
-  basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
-  data: {
+      tileflowMapFixture({
+        id: 'proof',
+        fields: `data: {
     type: 'vector-tiles',
     tiles: [${JSON.stringify(`${fixture.origin}/tiles/world/{z}/{x}/{y}.pbf`)}],
     minzoom: 0,
@@ -553,14 +624,8 @@ test(
     attribution: 'Fixture data',
     schema: {type: 'openmaptiles', contractVersion: 1}
   },
-  modules: {
-    buildings: {type: 'buildings', enabled: false},
-    labels: {type: 'labels', enabled: false},
-    poi: {type: 'poi', enabled: false},
-    roads: {type: 'roads', enabled: false}
-  }
-}}, scenes: {proof: {map: 'proof', camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 256, height: 256}}}};
-`,
+  scenes: {proof: {camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 256, height: 256}}}`,
+      }),
     );
     const result = await runCli(directory, ['capture', 'proof', '--json', '--no-browser-install'], {
       ...(process.env.HOME ? {HOME: process.env.HOME} : {}),
@@ -595,12 +660,10 @@ test(
     const fixture = await createVectorFixtureServer(t);
     await writeFile(
       join(directory, 'tileflow.config.ts'),
-      `export default {
-  maps: {
-    proof: {
-      basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
-      glyphs: ${JSON.stringify(`${fixture.origin}/fonts/{fontstack}/{range}.pbf`)},
-      sprite: ${JSON.stringify(`${fixture.origin}/sprites/streets/v1/sprite`)},
+      tileflowMapFixture({
+        id: 'proof',
+        icons: 'official',
+        fields: `glyphs: {kind: 'url', url: ${JSON.stringify(`${fixture.origin}/fonts/{fontstack}/{range}.pbf`)}, fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']},
       data: {
         type: 'vector-tiles',
         tiles: [${JSON.stringify(`${fixture.origin}/tiles/world/{z}/{x}/{y}.pbf`)}],
@@ -612,21 +675,16 @@ test(
         schema: {type: 'openmaptiles', contractVersion: 1}
       },
       modules: {
-        buildings: {type: 'buildings', enabled: false},
-        labels: {type: 'labels', enabled: false},
-        poi: {type: 'poi', enabled: false},
         roads: {
           type: 'roads', detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
           extras: {paths: true}
         }
-      }
-    }
-  },
+      },
   scenes: {proof: {
-    map: 'proof', camera: {type: 'center', center: [0, 0], zoom: 1},
+    camera: {type: 'center', center: [0, 0], zoom: 1},
     viewport: {width: 256, height: 256}
-  }}
-};\n`,
+  }}`,
+      }),
     );
     const environment = {
       ...(process.env.HOME ? {HOME: process.env.HOME} : {}),
@@ -704,7 +762,10 @@ test(
     const directory = await createDirectoryFixture(t, 'tileflow-capture-application-');
     await writeFile(
       join(directory, 'tileflow.config.ts'),
-      `export default {maps: {proof: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}}}, scenes: {application: {map: 'proof', camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 320, height: 240}, target: {kind: 'application', path: '/proof?fixture=1', captureId: 'proof'}}}};\n`,
+      tileflowMapFixture({
+        id: 'proof',
+        fields: `scenes: {application: {camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 320, height: 240}, target: {kind: 'application', path: '/proof?fixture=1', captureId: 'proof'}}}`,
+      }),
     );
     let requests = 0;
     const server = createServer((_request, response) => {
@@ -807,8 +868,13 @@ function createCapture(scene: string): TileflowCapture {
   const renderer = createTileflowCaptureRendererIdentity();
   const receipt = createTileflowCaptureReceipt({
     data: {
-      generation: 'v1',
+      archiveSha256: 'd'.repeat(64),
+      contractSha256: 'e'.repeat(64),
+      dataContractSha256: 'f'.repeat(64),
+      descriptorSha256: 'c'.repeat(64),
       kind: 'tileflow-world',
+      product: 'world-v1',
+      releaseId: 'world-v1-cli-fixture',
       schema: 'openmaptiles',
       schemaVersion: 1,
       sourceId: 'tileflow',
@@ -845,6 +911,7 @@ function createCapture(scene: string): TileflowCapture {
 
 async function createDirectoryFixture(t: TestContext, prefix: string): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), prefix));
+  await linkWorkspacePackages(directory);
   t.after(() => rm(directory, {force: true, recursive: true}));
   return directory;
 }

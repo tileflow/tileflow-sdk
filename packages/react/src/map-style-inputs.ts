@@ -1,59 +1,11 @@
-import {
-  type MapLibreStyle,
-  validateTileflowRuntimeStyleInputs,
-  type TileflowConfig,
-  type TileflowProjectThemes,
-} from '@tileflow/core';
+import {type TileflowRuntimeSource, validateTileflowRuntimeSource} from '@tileflow/core/runtime';
 
-export type TileflowMapStyleSourceProps =
-  | {
-      config: TileflowConfig;
-      map?: never;
-      style?: never;
-      styleBaseUrl?: never;
-      styleUrl?: never;
-      themes?: TileflowProjectThemes;
-    }
-  | {
-      config?: never;
-      map?: string;
-      style: MapLibreStyle;
-      styleBaseUrl?: never;
-      styleUrl?: never;
-      themes?: never;
-    }
-  | {
-      config?: never;
-      map?: string;
-      style?: never;
-      styleBaseUrl?: never;
-      styleUrl: string;
-      themes?: never;
-    }
-  | {
-      config?: never;
-      map: string;
-      style?: never;
-      styleBaseUrl: string;
-      styleUrl?: never;
-      themes?: never;
-    }
-  | {
-      config?: never;
-      map?: string;
-      style?: never;
-      styleBaseUrl?: never;
-      styleUrl?: never;
-      themes?: never;
-    };
+export type TileflowMapStyleSourceProps = {
+  source: TileflowRuntimeSource;
+};
 
 export type TileflowMapStyleInputs = {
-  config?: unknown;
-  map?: string;
-  style?: unknown;
-  styleBaseUrl?: string;
-  styleUrl?: string;
-  themes?: unknown;
+  source?: unknown;
 };
 
 export type TileflowMapStyleInputsValidation = {error: string; ok: false} | {ok: true};
@@ -61,13 +13,13 @@ export type TileflowMapStyleInputsValidation = {error: string; ok: false} | {ok:
 export function validateTileflowMapStyleInputs(
   input: TileflowMapStyleInputs,
 ): TileflowMapStyleInputsValidation {
-  return validateTileflowRuntimeStyleInputs(input);
+  return validateTileflowRuntimeSource(input.source);
 }
 
 export function assertTileflowMapStyleInputs(input: TileflowMapStyleInputs): void {
   const validation = validateTileflowMapStyleInputs(input);
 
   if (!validation.ok) {
-    throw new TypeError(`Invalid Tileflow <Map> style inputs: ${validation.error}`);
+    throw new TypeError(`Invalid Tileflow <Map> source: ${validation.error}`);
   }
 }

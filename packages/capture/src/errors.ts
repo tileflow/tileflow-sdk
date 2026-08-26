@@ -18,7 +18,8 @@ export type TileflowCaptureErrorCode =
   | 'SCENE_NOT_FOUND'
   | 'SCREENSHOT_FAILED'
   | 'STYLE_INVALID'
-  | 'SYNTHETIC_ASSET_NOT_FOUND';
+  | 'SYNTHETIC_ASSET_NOT_FOUND'
+  | 'WORLD_RESOLUTION_FAILED';
 
 export type TileflowCapturePhase =
   | 'style-validation'

@@ -1,15 +1,34 @@
 import type {Map as MapLibreMap, MapOptions as MapLibreMapOptions} from 'maplibre-gl';
-import type {SvelteComponentTyped} from 'svelte';
+import type {Snippet, SvelteComponentTyped} from 'svelte';
 import type {
-  MapLibreStyle,
   TileflowAnalytics,
-  TileflowConfig,
   TileflowMapMarker,
-  TileflowProjectThemes,
-} from '@tileflow/core';
+  TileflowRuntimeSource,
+} from '@tileflow/core/runtime';
+import type {
+  TileflowAnnotation,
+  TileflowAnnotationViewContext,
+  TileflowInteractionBinding,
+  TileflowInteractionDiagnostic,
+  TileflowInteractionEvent,
+  TileflowInteractionState,
+  TileflowInteractionViewContext,
+} from '@tileflow/interactions';
 
 export type TileflowMapMode = 'interactive' | 'image';
 export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
+export type TileflowMapSource = TileflowRuntimeSource;
+
+export type TileflowMapMarkerSnippet<TAnnotation extends TileflowAnnotation = TileflowAnnotation> =
+  Snippet<[context: TileflowAnnotationViewContext<TAnnotation>]>;
+
+export type TileflowMapAnnotationSnippet<
+  TAnnotation extends TileflowAnnotation = TileflowAnnotation,
+> = TileflowMapMarkerSnippet<TAnnotation>;
+
+export type TileflowMapInteractionSnippet<
+  TAnnotation extends TileflowAnnotation = TileflowAnnotation,
+> = Snippet<[context: TileflowInteractionViewContext<TAnnotation>]>;
 
 type TileflowMapBaseProps = {
   alt?: string;
@@ -21,78 +40,71 @@ type TileflowMapBaseProps = {
   imageLoading?: HTMLImageElement['loading'];
   imageUrl?: string;
   interactive?: boolean;
-  manifestUrl?: string;
   mapOptions?: TileflowMapOptions;
-  markers?: TileflowMapMarker[];
-  mode?: TileflowMapMode;
-  preferLocalDev?: boolean;
   zoom?: number;
 };
 
-type TileflowMapStyleInput = {
-  config?: TileflowConfig;
-  map?: string;
-  mapStyle?: MapLibreStyle;
-  styleBaseUrl?: string;
-  styleUrl?: string;
-  themes?: TileflowProjectThemes;
-};
-
-type TileflowMapStyleSourceProps =
+export type TileflowMapAnnotationProps<
+  TAnnotation extends TileflowAnnotation = TileflowAnnotation,
+> =
   | {
-      config: TileflowConfig;
-      map?: never;
-      mapStyle?: never;
-      styleBaseUrl?: never;
-      styleUrl?: never;
-      themes?: TileflowProjectThemes;
+      annotations?: readonly TAnnotation[];
+      markers?: never;
     }
   | {
-      config?: never;
-      map?: string;
-      mapStyle: MapLibreStyle;
-      styleBaseUrl?: never;
-      styleUrl?: never;
-      themes?: never;
-    }
-  | {
-      config?: never;
-      map?: string;
-      mapStyle?: never;
-      styleBaseUrl?: never;
-      styleUrl: string;
-      themes?: never;
-    }
-  | {
-      config?: never;
-      map: string;
-      mapStyle?: never;
-      styleBaseUrl: string;
-      styleUrl?: never;
-      themes?: never;
-    }
-  | {
-      config?: never;
-      map: string;
-      mapStyle?: never;
-      styleBaseUrl?: never;
-      styleUrl?: never;
-      themes?: never;
-    }
-  | {
-      config?: never;
-      map?: never;
-      mapStyle?: never;
-      styleBaseUrl?: never;
-      styleUrl?: never;
-      themes?: never;
+      annotations?: never;
+      markers?: readonly TileflowMapMarker[];
     };
 
-export type TileflowMapProps = TileflowMapBaseProps & TileflowMapStyleSourceProps;
+export type TileflowMapInteractionStateProps =
+  | {
+      defaultInteractionState?: TileflowInteractionState;
+      interactionState?: never;
+    }
+  | {
+      defaultInteractionState?: never;
+      interactionState?: TileflowInteractionState;
+    };
 
-export default class TileflowMap extends SvelteComponentTyped<
-  TileflowMapProps,
-  {load: CustomEvent<MapLibreMap>}
-> {}
+type TileflowMapStyleSourceProps = {
+  source: TileflowRuntimeSource;
+};
+
+type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> =
+  TileflowMapAnnotationProps<TAnnotation> &
+    TileflowMapInteractionStateProps & {
+      interactions?: readonly TileflowInteractionBinding[];
+      marker?: TileflowMapMarkerSnippet<TAnnotation>;
+      mode?: 'interactive';
+      onInteractionDiagnostic?: (diagnostic: TileflowInteractionDiagnostic) => void;
+      onInteractionEvent?: (event: TileflowInteractionEvent<TAnnotation>) => void;
+      onInteractionStateChange?: (state: TileflowInteractionState) => void;
+      popup?: TileflowMapInteractionSnippet<TAnnotation>;
+      tooltip?: TileflowMapInteractionSnippet<TAnnotation>;
+    };
+
+type TileflowMapImageProps = {
+  annotations?: never;
+  defaultInteractionState?: never;
+  interactions?: never;
+  interactionState?: never;
+  marker?: never;
+  markers?: never;
+  mode: 'image';
+  onInteractionDiagnostic?: never;
+  onInteractionEvent?: never;
+  onInteractionStateChange?: never;
+  popup?: never;
+  tooltip?: never;
+};
+
+export type TileflowMapProps<TAnnotation extends TileflowAnnotation = TileflowAnnotation> =
+  TileflowMapBaseProps &
+    TileflowMapStyleSourceProps &
+    (TileflowMapInteractiveProps<TAnnotation> | TileflowMapImageProps);
+
+export default class TileflowMap<
+  TAnnotation extends TileflowAnnotation = TileflowAnnotation,
+> extends SvelteComponentTyped<TileflowMapProps<TAnnotation>, {load: CustomEvent<MapLibreMap>}> {}
 
 export {TileflowMap};

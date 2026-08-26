@@ -24,10 +24,10 @@ import {
   type TileflowArtifactDiagnostic,
   type TileflowArtifactSessionState,
   type TileflowBuildArtifacts,
-  TileflowIconCompilationError,
-  TileflowStyleValidationError,
-  TileflowValidationError,
-} from '@tileflow/dev';
+} from '@tileflow/dev/artifacts';
+import {TileflowValidationError} from '@tileflow/dev/config';
+import {TileflowIconCompilationError} from '@tileflow/dev/icons';
+import {TileflowStyleValidationError} from '@tileflow/dev/validation';
 import {captureReceiptPath, writeCapturePair} from './capture-output';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 
@@ -802,7 +802,11 @@ function captureFailurePhase(error: unknown, code: string): string {
   if (error instanceof TileflowValidationError) return 'config-validation';
   if (error instanceof TileflowIconCompilationError) return 'icon-compilation';
   if (code.startsWith('BROWSER_')) return 'browser-start';
-  if (code === 'RESOURCE_FAILED' || code === 'SYNTHETIC_ASSET_NOT_FOUND') {
+  if (
+    code === 'RESOURCE_FAILED' ||
+    code === 'SYNTHETIC_ASSET_NOT_FOUND' ||
+    code === 'WORLD_RESOLUTION_FAILED'
+  ) {
     return 'resource-load';
   }
   if (code === 'MAP_LOAD_FAILED') return 'map-load';

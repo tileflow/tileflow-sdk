@@ -1,7 +1,14 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {aeroways, openMapTiles, resolveTileflowData, vectorTiles, vegetation} from '../src';
+import {
+  aeroways,
+  openMapTiles,
+  resolveTileflowData,
+  tileflowWorldV1Schema,
+  vectorTiles,
+  vegetation,
+} from '../src';
 import type {TileflowLayerContribution} from '../src/cartography/contributions';
 import {assembleTileflowLayers} from '../src/cartography/graph';
 import {compileAeroways} from '../src/modules/aeroways/compiler';
@@ -17,35 +24,80 @@ const context = {
   colors: resolveColors(),
   data: resolveTileflowData(undefined),
   typography: {
-    font: 'Noto Sans',
-    fontFamily: 'Noto Sans',
-    weight: 'regular' as const,
-    places: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'bold' as const},
-    roads: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular' as const},
-    water: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular' as const},
-    poi: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular' as const},
+    font: 'Noto Sans Regular',
+    places: {font: 'Noto Sans Bold'},
+    roads: {font: 'Noto Sans Regular'},
+    water: {font: 'Noto Sans Regular'},
+    poi: {font: 'Noto Sans Regular'},
   },
 };
 
-test('parks and protected areas share the bound OMT park layer without overlap', () => {
-  const data = resolveTileflowData(
+test('park source semantics keep protected areas and urban parks disjoint', () => {
+  const mixedData = resolveTileflowData(
     vectorTiles({
       attribution: '© Test',
       schema: openMapTiles({fields: {class: 'kind'}, layers: {park: 'protected_and_parks'}}),
       url: '/tiles.json',
     }),
   );
-  const contributions = compileLand(undefined, {...context, data});
-  const park = contribution(contributions, 'streets-landcover-park');
-  const protectedArea = contribution(contributions, 'streets-landcover-protected');
+  const mixed = compileLand(undefined, {...context, data: mixedData});
+  const legacyPark = contribution(mixed, 'streets-landcover-legacy-park');
+  const mixedProtected = contribution(mixed, 'streets-landcover-protected');
+  const urbanPark = contribution(mixed, 'streets-landcover-urbanPark');
 
-  assert.equal(park.layer['source-layer'], 'protected_and_parks');
-  assert.equal(protectedArea.layer['source-layer'], 'protected_and_parks');
-  assert.equal(matches(park.layer.filter, {kind: 'protected_area'}), false);
-  assert.equal(matches(protectedArea.layer.filter, {kind: 'protected_area'}), true);
-  assert.equal(matches(park.layer.filter, {kind: 'park'}), true);
-  assert.equal(matches(protectedArea.layer.filter, {kind: 'park'}), false);
-  assertValid(contributions);
+  assert.equal(legacyPark.layer['source-layer'], 'protected_and_parks');
+  assert.equal(mixedProtected.layer['source-layer'], 'protected_and_parks');
+  assert.equal(urbanPark.layer['source-layer'], 'landcover');
+  assert.equal(matches(legacyPark.layer.filter, {kind: 'protected_area'}), false);
+  assert.equal(matches(mixedProtected.layer.filter, {kind: 'protected_area'}), true);
+  assert.equal(matches(legacyPark.layer.filter, {kind: 'park'}), true);
+  assert.equal(matches(urbanPark.layer.filter, {kind: 'grass', subclass: 'park'}), true);
+  assertValid(mixed);
+
+  const protectedOnlyData = resolveTileflowData(
+    vectorTiles({
+      attribution: '© Tileflow fixture',
+      schema: tileflowWorldV1Schema({layers: {park: 'protected_only'}}),
+      url: '/world-v1.json',
+    }),
+  );
+  const protectedOnly = compileLand(undefined, {...context, data: protectedOnlyData});
+  const protectedArea = contribution(protectedOnly, 'streets-landcover-protected');
+  assert.equal(protectedArea.layer['source-layer'], 'protected_only');
+  assert.equal(protectedArea.layer.filter, undefined);
+  assert.equal(
+    protectedOnly.some(({layer}) => layer.id === 'streets-landcover-legacy-park'),
+    false,
+  );
+  assertValid(protectedOnly);
+});
+
+test('every typed grass subclass selects exactly one landcover fill', () => {
+  const contributions = compileLand(undefined, context);
+  const ids = [
+    'streets-landcover-grass',
+    'streets-landcover-scrub',
+    'streets-landcover-meadow',
+    'streets-landcover-urbanPark',
+    'streets-landcover-recreationGround',
+    'streets-landcover-villageGreen',
+    'streets-landcover-flowerbed',
+  ];
+  const layers = ids.map((id) => contribution(contributions, id).layer);
+  for (const subclass of [
+    undefined,
+    'scrub',
+    'meadow',
+    'park',
+    'garden',
+    'recreation_ground',
+    'village_green',
+    'flowerbed',
+  ]) {
+    const properties = {class: 'grass', ...(subclass ? {subclass} : {})};
+    const selected = layers.filter(({filter}) => matches(filter, properties));
+    assert.equal(selected.length, 1, `${subclass ?? 'plain grass'} must select exactly one fill`);
+  }
 });
 
 test('transit modes are disjoint and funiculars remain rail', () => {
@@ -53,6 +105,7 @@ test('transit modes are disjoint and funiculars remain rail', () => {
   const ferry = contribution(contributions, 'streets-transit-ferry');
   const cableway = contribution(contributions, 'streets-transit-cableway');
   const rail = contribution(contributions, 'streets-transit-rail-surface');
+  const railHatching = contribution(contributions, 'streets-transit-rail-hatching-surface');
   const serviceRail = contribution(contributions, 'streets-transit-service-rail-surface');
 
   const funicular = {class: 'transit', subclass: 'funicular'};
@@ -72,6 +125,8 @@ test('transit modes are disjoint and funiculars remain rail', () => {
   const tramService = {class: 'transit', service: 'yard', subclass: 'tram'};
   assert.equal(matches(rail.layer.filter, tramService), false);
   assert.equal(matches(serviceRail.layer.filter, tramService), true);
+  assert.equal(matches(railHatching.layer.filter, tramService), true);
+  assert.ok(serviceRail.localOrder < railHatching.localOrder);
   assertValid(contributions);
 });
 
@@ -127,7 +182,7 @@ test('water consumes remapped bathymetry capability and omits it when absent', (
   );
 });
 
-test('portable vegetation reports its flat fallback instead of promising 3D', () => {
+test('3D vegetation keeps a portable styled fallback and exposes runtime parameters', () => {
   const data = resolveTileflowData(
     vectorTiles({
       attribution: '© Test',
@@ -136,7 +191,20 @@ test('portable vegetation reports its flat fallback instead of promising 3D', ()
     }),
   );
   const portable = contribution(
-    compileVegetation(vegetation({mode: '3d'}), {...context, data}),
+    compileVegetation(
+      vegetation({
+        flat: {color: '#123456', opacity: 0.74},
+        mode: '3d',
+        threeDimensional: {
+          barkColor: '#654321',
+          broadleafColors: ['#112233'],
+          coniferColors: ['#334455'],
+          crownScale: 1.2,
+          heightScale: 1.4,
+        },
+      }),
+      {...context, data},
+    ),
     'streets-vegetation-trees',
   );
   const hosted = contribution(
@@ -144,11 +212,17 @@ test('portable vegetation reports its flat fallback instead of promising 3D', ()
     'streets-vegetation-trees',
   );
 
-  assert.equal(portable.layer.metadata?.['tileflow:vegetation-mode'], 'flat');
-  assert.equal(portable.layer.metadata?.['tileflow:vegetation-fallback'], 'portable-flat');
-  assert.equal((portable.layer.paint as Record<string, unknown>)['circle-opacity'], 0.9);
+  assert.equal(portable.layer.metadata?.['tileflow:vegetation-mode'], '3d');
+  assert.equal(portable.layer.metadata?.['tileflow:vegetation-fallback'], 'flat-circle');
+  assert.equal(portable.layer.metadata?.['tileflow:tree-bark-color'], '#654321');
+  assert.deepEqual(portable.layer.metadata?.['tileflow:tree-broadleaf-colors'], ['#112233']);
+  assert.deepEqual(portable.layer.metadata?.['tileflow:tree-conifer-colors'], ['#334455']);
+  assert.equal(portable.layer.metadata?.['tileflow:tree-crown-scale'], 1.2);
+  assert.equal(portable.layer.metadata?.['tileflow:tree-height-scale'], 1.4);
+  assert.equal((portable.layer.paint as Record<string, unknown>)['circle-color'], '#123456');
+  assert.equal((portable.layer.paint as Record<string, unknown>)['circle-opacity'], 0.74);
   assert.equal(hosted.layer.metadata?.['tileflow:vegetation-mode'], '3d');
-  assert.equal(hosted.layer.metadata?.['tileflow:vegetation-fallback'], undefined);
+  assert.equal(hosted.layer.metadata?.['tileflow:vegetation-fallback'], 'flat-circle');
   assertValid([portable]);
   assertValid([hosted]);
 });

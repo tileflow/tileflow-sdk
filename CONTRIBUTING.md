@@ -52,3 +52,11 @@ merging the SDK client change.
 
 Do not commit generated `dist` files, browser binaries, captures, credentials, `.env` files,
 machine-specific paths, or temporary registry/release plans.
+
+## License
+
+The repository is licensed under the [Apache License, Version 2.0](LICENSE). Unless you state
+otherwise in writing when submitting it, an intentional contribution is provided under the same
+license as described by Apache-2.0 section 5. Third-party material must retain its own license and
+notice files and must not be added unless its redistribution and generated-output boundary are
+documented.

@@ -1,15 +1,17 @@
 import type {
   TileflowAreaStyle,
-  TileflowFontWeight,
+  TileflowCircleStyle,
+  TileflowFillStyle,
+  TileflowIconStyle,
   TileflowLineHatchStyle,
   TileflowLinePaint,
   TileflowLineStackStyle,
+  TileflowLineStyle,
   TileflowSymbolStyle,
 } from './cartography/styles';
+import type {TileflowStyleValue, TileflowZoomValue} from './cartography/values';
 
 export type TileflowColor = `#${string}`;
-export type TileflowTheme = 'standard' | 'light' | 'dark' | 'minimal';
-export type TileflowThemeName = string;
 export type TileflowThemeMode = 'light' | 'dark';
 
 export type TileflowBaseColors = {
@@ -83,12 +85,17 @@ export type TileflowLanduseColorConfig = {
 
 export type TileflowLandcoverColorConfig = {
   farmland?: TileflowColor;
+  flowerbed?: TileflowColor;
   grass?: TileflowColor;
   ice?: TileflowColor;
-  park?: TileflowColor;
+  meadow?: TileflowColor;
   protected?: TileflowColor;
+  recreationGround?: TileflowColor;
   rock?: TileflowColor;
   sand?: TileflowColor;
+  scrub?: TileflowColor;
+  urbanPark?: TileflowColor;
+  villageGreen?: TileflowColor;
   wetland?: TileflowColor;
   wood?: TileflowColor;
 };
@@ -140,13 +147,14 @@ export type TileflowThemeModulesConfig = {
 export type TileflowColorConfig = Partial<TileflowBaseColors> & {roadCasing?: TileflowColor};
 
 export type TileflowColors = {[K in keyof TileflowBaseColors]: string};
-export type {TileflowFontWeight} from './cartography/styles';
-export const tileflowHostedNotoSansWeights = ['regular', 'bold'] as const;
-export type TileflowHostedNotoSansWeight = (typeof tileflowHostedNotoSansWeights)[number];
 
 export type TileflowTypographyStyle = {
+  /** Ordered exact fallback face names; CSS generic families are allowed for local fonts. */
+  fallbacks?: readonly string[];
+  /** Exact OpenType full name or exact remote glyph face name. */
   font?: string;
-  weight?: TileflowFontWeight;
+  letterSpacing?: number;
+  transform?: 'lowercase' | 'none' | 'uppercase';
 };
 
 export type TileflowTypographyDomain = 'places' | 'roads' | 'water' | 'poi';
@@ -156,30 +164,21 @@ export type TileflowTypography = TileflowTypographyStyle & {
   water?: TileflowTypographyStyle;
   poi?: TileflowTypographyStyle;
 };
-export type ResolvedTileflowTypography = Required<TileflowTypographyStyle> & {
-  places: Required<TileflowTypographyStyle>;
-  roads: Required<TileflowTypographyStyle>;
-  water: Required<TileflowTypographyStyle>;
-  poi: Required<TileflowTypographyStyle>;
+export type ResolvedTileflowTypographyStyle = Required<Pick<TileflowTypographyStyle, 'font'>> &
+  Omit<TileflowTypographyStyle, 'font'>;
+export type ResolvedTileflowTypography = ResolvedTileflowTypographyStyle & {
+  places: ResolvedTileflowTypographyStyle;
+  roads: ResolvedTileflowTypographyStyle;
+  water: ResolvedTileflowTypographyStyle;
+  poi: ResolvedTileflowTypographyStyle;
 };
 
 export type TileflowThemeConfig = {
   colors?: TileflowColorConfig;
-  extends?: string;
   mode?: TileflowThemeMode;
   modules?: TileflowThemeModulesConfig;
   typography?: TileflowTypography;
 };
-export type TileflowProjectThemes = Record<TileflowThemeName, TileflowThemeConfig>;
-
-export type TileflowIconSetConfig = {
-  extends?: string;
-  mapping?: Record<string, string>;
-  source?: string;
-  sprite?: string;
-};
-export type TileflowIconSet = string | TileflowIconSetConfig;
-export type TileflowProjectIconSets = Record<string, TileflowIconSet>;
 
 export type TileflowTerrainMode = 'none' | 'hillshade' | '3d';
 export type TileflowTerrainEncoding = 'mapbox' | 'terrarium';
@@ -267,10 +266,23 @@ export type TileflowRoadAreaStyle = {
   pier?: TileflowAreaStyle;
   road?: TileflowAreaStyle;
 };
+export type TileflowRoadCrossingStyle = Omit<TileflowIconStyle, 'image'> & {
+  image: TileflowStyleValue<string>;
+};
+export type TileflowRoadRoundaboutStyle = {
+  casing?: TileflowCircleStyle;
+  fill?: TileflowCircleStyle;
+};
+export type TileflowRoadSidewalkStyle = {
+  outline?: TileflowLineStyle;
+  pattern?: TileflowFillStyle;
+  surface?: TileflowFillStyle;
+};
 export type TileflowRoadsModuleConfig = {
   type: 'roads';
   areas?: TileflowRoadAreaStyle;
   classes?: Partial<Record<TileflowRoadClass, TileflowRoadClassStyle>>;
+  crossings?: TileflowRoadCrossingStyle;
   detail?: TileflowRoadDetail;
   enabled?: boolean;
   extras?: TileflowRoadExtras;
@@ -280,7 +292,9 @@ export type TileflowRoadsModuleConfig = {
   oneWayMarkers?: boolean;
   outline?: TileflowRoadOutline;
   restrictions?: Partial<Record<TileflowRoadRestriction, TileflowRoadTreatmentStyle>>;
+  roundabouts?: TileflowRoadRoundaboutStyle;
   serviceTypes?: Partial<Record<TileflowRoadServiceType, TileflowRoadTreatmentStyle>>;
+  sidewalks?: TileflowRoadSidewalkStyle;
   structures?: Partial<Record<TileflowRoadStructure, TileflowRoadLayerStyle>>;
   weight?: TileflowRoadWeight;
   widthScale?: Partial<Record<TileflowRoadClass, number>>;
@@ -334,7 +348,7 @@ export type TileflowPoiCategory =
   | 'food'
   | 'coffee'
   | 'culture'
-  | 'transit'
+  | 'major-transit'
   | 'shopping'
   | 'lodging'
   | 'health'
@@ -346,9 +360,10 @@ export type TileflowPoiLabels = 'none' | 'minimal' | 'balanced' | 'full';
 export type TileflowPoiDensity = 'sparse' | 'balanced' | 'dense';
 export type TileflowPoiColorMode = 'uniform' | 'category';
 export type TileflowPoiClassMapping = Record<string, readonly string[]>;
+export type TileflowPoiRankLimit = number | TileflowZoomValue<number>;
 export type TileflowPoiCategoryStyle = TileflowSymbolStyle & {
-  /** Inclusive OpenMapTiles importance-rank ceiling for this semantic category. */
-  maxRank?: number;
+  /** Inclusive OpenMapTiles importance-rank ceiling, optionally progressive by zoom. */
+  maxRank?: TileflowPoiRankLimit;
 };
 export type TileflowPoiModuleConfig = {
   type: 'poi';
@@ -359,6 +374,8 @@ export type TileflowPoiModuleConfig = {
   enabled?: boolean;
   icons?: TileflowPoiIcons;
   labels?: TileflowPoiLabels;
+  /** Inclusive rank ceiling shared by every category unless that category overrides it. */
+  maxRank?: TileflowPoiRankLimit;
   minZoom?: number;
   placement?: {
     coupleIconAndLabel?: boolean;

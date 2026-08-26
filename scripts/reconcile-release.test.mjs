@@ -11,7 +11,9 @@ import {
   createReleasePlan,
   renderReleaseSummary,
   validateFinalRelease,
+  validatePublicCatalogCoverage,
   validateReleasePlan,
+  validateSourceManifests,
 } from './reconcile-release.mjs';
 import {
   automaticInternalRuntimeRange,
@@ -24,6 +26,35 @@ import {
 
 const execFileAsync = promisify(execFile);
 const sourceSha = 'a'.repeat(40);
+
+test('the release catalog covers every publishable workspace package and ignores private tooling', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tileflow-release-catalog-test-'));
+  try {
+    await sourceManifestTree(root);
+    await validateSourceManifests(root);
+
+    const privateRoot = join(root, 'packages', 'private-tooling');
+    await mkdir(privateRoot, {recursive: true});
+    await writeFile(
+      join(privateRoot, 'package.json'),
+      `${JSON.stringify({name: '@tileflow/private-tooling', private: true})}\n`,
+    );
+    await validatePublicCatalogCoverage(root);
+
+    const omittedRoot = join(root, 'packages', 'omitted-public');
+    await mkdir(omittedRoot, {recursive: true});
+    await writeFile(
+      join(omittedRoot, 'package.json'),
+      `${JSON.stringify({name: '@tileflow/omitted-public', version: developmentVersion})}\n`,
+    );
+    await assert.rejects(
+      validatePublicCatalogCoverage(root),
+      /Every publishable packages\/\* workspace must appear exactly once/u,
+    );
+  } finally {
+    await rm(root, {force: true, recursive: true});
+  }
+});
 
 test('selects only materially changed artifacts and advances independent alpha counters', async () => {
   const root = await mkdtemp(join(tmpdir(), 'tileflow-reconcile-test-'));
@@ -96,6 +127,52 @@ test('produces an empty plan when npm already contains the current public artifa
       candidateTarballs: candidates.paths,
     });
     assert.deepEqual(plan.packages, []);
+  } finally {
+    await rm(root, {force: true, recursive: true});
+  }
+});
+
+test('plans an unpublished package without inventing a registry tarball', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tileflow-reconcile-unpublished-test-'));
+  try {
+    const versions = Object.fromEntries(publicPackageNames.map((name) => [name, '0.1.0-alpha.20']));
+    const unpublished = '@tileflow/interactions';
+    versions[unpublished] = '0.1.0-alpha.0';
+    await sourceManifestTree(root);
+    const registry = await tarballSet(root, 'registry', versions);
+    const candidates = await tarballSet(root, 'candidate', versions);
+    const tsv = publicPackageNames
+      .map((name) =>
+        name === unpublished
+          ? `${name}\t${versions[name]}\t-\tunpublished`
+          : `${name}\t${versions[name]}\t${registry.byName.get(name)}\tpublished`,
+      )
+      .join('\n');
+    const state = await createRegistryState(`${tsv}\n`, root);
+    const baseline = state.packages.find(({name}) => name === unpublished);
+    assert.deepEqual(baseline, {
+      initialVersion: '0.1.0-alpha.0',
+      name: unpublished,
+      published: false,
+      runtimeDependencies: {},
+    });
+
+    const plan = await createReleasePlan({
+      sourceSha,
+      registryState: state,
+      candidateTarballs: candidates.paths,
+    });
+    assert.deepEqual(
+      plan.packages.map(({name, from, to, differences}) => ({name, from, to, differences})),
+      [
+        {
+          name: unpublished,
+          from: null,
+          to: '0.1.0-alpha.0',
+          differences: ['package-unpublished'],
+        },
+      ],
+    );
   } finally {
     await rm(root, {force: true, recursive: true});
   }
@@ -479,7 +556,7 @@ test('renders a deterministic human-readable reconciliation summary', () => {
 
 async function registryState(set, versions) {
   const tsv = publicPackageNames
-    .map((name) => `${name}\t${versions[name]}\t${set.byName.get(name)}`)
+    .map((name) => `${name}\t${versions[name]}\t${set.byName.get(name)}\tpublished`)
     .join('\n');
   return createRegistryState(`${tsv}\n`);
 }
@@ -488,11 +565,12 @@ function releasePlan(packages, runtimeDependencies = {}) {
   const effectiveVersions = new Map(publicPackageNames.map((name) => [name, '0.1.0-alpha.16']));
   for (const release of packages) effectiveVersions.set(release.name, release.to);
   return validateReleasePlan({
-    schemaVersion: 2,
+    schemaVersion: 4,
     channel: 'alpha',
     sourceSha,
     baselines: publicPackageNames.map((name) => ({
       name,
+      published: true,
       runtimeDependencies: runtimeDependencies[name] ?? {},
       version: '0.1.0-alpha.16',
     })),
@@ -575,6 +653,8 @@ function manifest(name, version, override = {}) {
   return {
     name,
     version,
+    license: 'Apache-2.0',
+    files: ['LICENSE', 'NOTICE', 'GENERATED_OUTPUT_LICENSE.md', 'TRADEMARKS.md'],
     repository: {type: 'git', url: 'git+https://github.com/tileflow/tileflow-sdk.git'},
     bugs: {url: 'https://github.com/tileflow/tileflow-sdk/issues'},
     publishConfig: {access: 'public'},

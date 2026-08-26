@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>Coffee</title>
+  <desc>Original Tileflow cafe pictogram.</desc>
+  <rect x="2.25" y="3.25" width="19.5" height="19.5" rx="6.25" fill="#44515E" opacity=".14"/>
+  <rect x="2.25" y="2.25" width="19.5" height="19.5" rx="6.25" fill="#FFFFFF"/>
+  <rect x="4" y="4" width="16" height="16" rx="4.75" fill="#FF9E67"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M7.25 10.25h7.5v2.8a2.95 2.95 0 0 1-2.95 2.95h-1.6a2.95 2.95 0 0 1-2.95-2.95z"/>
+    <path d="M14.75 11h.8a1.55 1.55 0 0 1 0 3.1h-.95M7 17h8.8M9.25 8.6c-.7-.7.7-1.05 0-1.75M12.25 8.6c-.7-.7.7-1.05 0-1.75"/>
+  </g>
+</svg>

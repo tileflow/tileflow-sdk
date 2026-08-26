@@ -1,6 +1,12 @@
 import type {TileflowDomainCompileContext} from '../../cartography/context';
 import type {TileflowLayerContribution, TileflowLayerSlot} from '../../cartography/contributions';
-import {applyLineStyle, createAreaLayers} from '../../cartography/layer-style';
+import {
+  applyCircleStyle,
+  applyFillStyle,
+  applyIconStyle,
+  applyLineStyle,
+  createAreaLayers,
+} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import type {TileflowLineStyle} from '../../cartography/styles';
 import {expression, toMapLibreStyleValue, zoom} from '../../cartography/values';
@@ -9,7 +15,10 @@ import type {
   TileflowRoadAreaStyle,
   TileflowRoadClass,
   TileflowRoadClassStyle,
+  TileflowRoadCrossingStyle,
   TileflowRoadLayerStyle,
+  TileflowRoadRoundaboutStyle,
+  TileflowRoadSidewalkStyle,
   TileflowRoadsModuleConfig,
   TileflowRoadStructure,
   TileflowRoadTreatmentLineStyle,
@@ -349,6 +358,10 @@ export function compileRoads(
     }
   }
 
+  compileSidewalks(request?.sidewalks, context, contributions);
+  compileRoundabouts(request?.roundabouts, context, contributions);
+  compileCrossings(request?.crossings, context, contributions);
+
   if (semantics.oneWayMarkers && visible.size > 0) {
     contributions.push({
       kind: 'layer',
@@ -392,6 +405,326 @@ export function compileRoads(
   }
 
   return contributions;
+}
+
+function compileSidewalks(
+  request: TileflowRoadSidewalkStyle | undefined,
+  context: TileflowDomainCompileContext,
+  contributions: TileflowLayerContribution[],
+): void {
+  const {fields, layers} = context.data.schema;
+  if (!layers.sidewalk) return;
+
+  const config = mergeTileflowDesign<TileflowRoadSidewalkStyle>(
+    {
+      surface: {
+        color: context.colors.roads.casing,
+        minZoom: 17,
+        opacity: 0.96,
+      },
+    },
+    request,
+  );
+  const base = {
+    type: 'fill',
+    source: context.data.sourceId,
+    'source-layer': layers.sidewalk,
+    filter: [
+      'all',
+      ['==', ['geometry-type'], 'Polygon'],
+      ['match', ['get', fields.class], ['sidewalk', 'pedestrian'], true, false],
+    ],
+  } as const;
+
+  if (config.surface?.visible !== false) {
+    contributions.push({
+      kind: 'layer',
+      layer: applyFillStyle({...base, id: 'streets-sidewalk-surface'}, config.surface ?? {}),
+      localOrder: 0,
+      owner: 'roads',
+      slot: 'transport-pedestrian-areas',
+      target: 'roads.sidewalks.surface',
+    });
+  }
+  if (config.pattern && config.pattern.visible !== false) {
+    contributions.push({
+      kind: 'layer',
+      layer: applyFillStyle({...base, id: 'streets-sidewalk-pattern'}, config.pattern),
+      localOrder: 1,
+      owner: 'roads',
+      slot: 'transport-pedestrian-areas',
+      target: 'roads.sidewalks.pattern',
+    });
+  }
+  if (config.outline && config.outline.visible !== false) {
+    contributions.push({
+      kind: 'layer',
+      layer: applyLineStyle(
+        {...base, id: 'streets-sidewalk-outline', type: 'line'},
+        config.outline,
+      ),
+      localOrder: 2,
+      owner: 'roads',
+      slot: 'transport-pedestrian-areas',
+      target: 'roads.sidewalks.outline',
+    });
+  }
+}
+
+function compileRoundabouts(
+  request: TileflowRoadRoundaboutStyle | undefined,
+  context: TileflowDomainCompileContext,
+  contributions: TileflowLayerContribution[],
+): void {
+  const {fields, layers} = context.data.schema;
+  if (
+    !layers.circularFeature ||
+    !fields.circularKind ||
+    !fields.circularRadiusAtZoom15 ||
+    !fields.circularRadiusMeters ||
+    !fields.circularOuterRadiusMeters ||
+    !fields.circularInnerRadiusMeters
+  ) {
+    return;
+  }
+
+  const circularFields: CircularRoadFields = {
+    circularInnerRadiusMeters: fields.circularInnerRadiusMeters,
+    circularOuterRadiusMeters: fields.circularOuterRadiusMeters,
+    circularRadiusAtZoom15: fields.circularRadiusAtZoom15,
+    circularRadiusMeters: fields.circularRadiusMeters,
+    class: fields.class,
+  };
+  const radius = expression<number>(circularRoadInnerRadius(circularFields, false));
+  const casingRadius = expression<number>(circularRoadInnerRadius(circularFields, true));
+  const config = mergeTileflowDesign<TileflowRoadRoundaboutStyle>(
+    {
+      casing: {
+        color: 'rgba(0, 0, 0, 0)',
+        minZoom: 15,
+        pitchAlignment: 'map',
+        pitchScale: 'map',
+        radius: casingRadius,
+        strokeColor: context.colors.roads.casing,
+        strokeWidth: expression<number>(circularRoadStrokeWidth(circularFields, true)),
+      },
+      fill: {
+        color: 'rgba(0, 0, 0, 0)',
+        minZoom: 15,
+        pitchAlignment: 'map',
+        pitchScale: 'map',
+        radius,
+        strokeColor: expression<string>([
+          'match',
+          ['coalesce', ['get', fields.class], 'minor'],
+          'motorway',
+          context.colors.roads.motorway,
+          'trunk',
+          context.colors.roads.trunk,
+          'primary',
+          context.colors.roads.primary,
+          ['secondary', 'tertiary'],
+          context.colors.roads.secondary,
+          context.colors.roads.minor,
+        ]),
+        strokeWidth: expression<number>(circularRoadStrokeWidth(circularFields, false)),
+      },
+    },
+    request,
+  );
+  const base = {
+    type: 'circle',
+    source: context.data.sourceId,
+    'source-layer': layers.circularFeature,
+    filter: ['==', ['get', fields.circularKind], 'road_ring'],
+  } as const;
+
+  if (config.casing && config.casing.visible !== false) {
+    contributions.push({
+      kind: 'layer',
+      layer: applyCircleStyle({...base, id: 'streets-road-circular-casing'}, config.casing),
+      localOrder: 10,
+      owner: 'roads',
+      slot: 'transport-symbols',
+      target: 'roads.roundabouts.casing',
+    });
+  }
+  if (config.fill && config.fill.visible !== false) {
+    contributions.push({
+      kind: 'layer',
+      layer: applyCircleStyle({...base, id: 'streets-road-circular-fill'}, config.fill),
+      localOrder: 20,
+      owner: 'roads',
+      slot: 'transport-symbols',
+      target: 'roads.roundabouts.fill',
+    });
+  }
+}
+
+function compileCrossings(
+  request: TileflowRoadCrossingStyle | undefined,
+  context: TileflowDomainCompileContext,
+  contributions: TileflowLayerContribution[],
+): void {
+  const {fields, layers} = context.data.schema;
+  if (!request || !layers.streetFurniture || !fields.direction) return;
+
+  const config = mergeTileflowDesign<TileflowRoadCrossingStyle>(
+    {
+      allowOverlap: true,
+      ignorePlacement: true,
+      image: request.image,
+      minZoom: 15,
+      opacity: zoom.linear([
+        [15, 0],
+        [15.5, 1],
+      ]),
+      padding: 0,
+      pitchAlignment: 'map',
+      rotate: expression<number>(['+', ['to-number', ['get', fields.direction], 0], 90]),
+      rotationAlignment: 'map',
+      size: zoom.linear([
+        [15, 0.22],
+        [16, 0.3],
+        [17, 0.5],
+        [18, 0.75],
+        [19, 1.05],
+        [20, 2],
+        [21, 3.5],
+        [22, 5.5],
+      ]),
+    },
+    request,
+  );
+  if (config.visible === false) return;
+
+  contributions.push({
+    kind: 'layer',
+    layer: applyIconStyle(
+      {
+        id: 'streets-road-crossing',
+        type: 'symbol',
+        source: context.data.sourceId,
+        'source-layer': layers.streetFurniture,
+        filter: [
+          'all',
+          ['==', ['geometry-type'], 'Point'],
+          ['==', ['get', fields.subclass], 'crossing'],
+        ],
+      },
+      config,
+    ),
+    localOrder: 200,
+    owner: 'roads',
+    slot: 'transport-symbols',
+    target: 'roads.crossings',
+  });
+}
+
+type CircularRoadFields = {
+  circularRadiusAtZoom15: string;
+  circularRadiusMeters: string;
+  circularInnerRadiusMeters: string;
+  circularOuterRadiusMeters: string;
+  class: string;
+};
+
+const circularRoadBorderTotalWidth = 1;
+
+function circularRoadInnerRadius(fields: CircularRoadFields, casing: boolean): readonly unknown[] {
+  const values = circularRoadValues(fields);
+  const stops: unknown[] = [];
+  for (let level = 15; level <= 22; level += 1) {
+    const centerlineRadius =
+      level === 15 ? values.radiusAtZoom15 : ['*', values.radiusAtZoom15, 2 ** (level - 15)];
+    const physicalInnerRadius = [
+      '*',
+      centerlineRadius,
+      ['/', values.innerRadiusMeters, values.radiusMeters],
+    ];
+    const baseWidth = circularRoadBaseWidth(fields.class);
+    const fallbackWidth =
+      level === 15 ? baseWidth : ['*', baseWidth, circularRoadLegacyScale(level)];
+    const fallbackInnerRadius = ['-', centerlineRadius, ['/', fallbackWidth, 2]];
+    const innerRadius = ['case', values.hasPhysicalRadii, physicalInnerRadius, fallbackInnerRadius];
+    stops.push(level, [
+      'max',
+      0,
+      casing ? ['-', innerRadius, circularRoadBorderTotalWidth / 2] : innerRadius,
+    ]);
+  }
+  return ['interpolate', ['linear'], ['zoom'], ...stops];
+}
+
+function circularRoadStrokeWidth(fields: CircularRoadFields, casing: boolean): readonly unknown[] {
+  const values = circularRoadValues(fields);
+  const baseWidth = circularRoadBaseWidth(fields.class);
+  const stops: unknown[] = [];
+  for (let level = 15; level <= 22; level += 1) {
+    const centerlineRadius =
+      level === 15 ? values.radiusAtZoom15 : ['*', values.radiusAtZoom15, 2 ** (level - 15)];
+    const physicalWidth = [
+      '*',
+      centerlineRadius,
+      ['/', ['-', values.outerRadiusMeters, values.innerRadiusMeters], values.radiusMeters],
+    ];
+    const fallbackWidth =
+      level === 15 ? baseWidth : ['*', baseWidth, circularRoadLegacyScale(level)];
+    stops.push(level, [
+      'case',
+      values.hasPhysicalRadii,
+      casing ? ['+', physicalWidth, circularRoadBorderTotalWidth] : physicalWidth,
+      casing ? ['+', fallbackWidth, circularRoadBorderTotalWidth] : fallbackWidth,
+    ]);
+  }
+  return ['interpolate', ['linear'], ['zoom'], ...stops];
+}
+
+function circularRoadBaseWidth(classField: string): readonly unknown[] {
+  return [
+    'match',
+    ['coalesce', ['get', classField], 'minor'],
+    'motorway',
+    6,
+    'trunk',
+    5.5,
+    'primary',
+    5,
+    'secondary',
+    4.5,
+    'tertiary',
+    4,
+    'service',
+    2.5,
+    'track',
+    2,
+    3,
+  ];
+}
+
+function circularRoadValues(fields: CircularRoadFields) {
+  const radiusAtZoom15 = ['to-number', ['get', fields.circularRadiusAtZoom15], 0];
+  const radiusMeters = ['to-number', ['get', fields.circularRadiusMeters], 0];
+  const outerRadiusMeters = ['to-number', ['get', fields.circularOuterRadiusMeters], 0];
+  const innerRadiusMeters = ['to-number', ['get', fields.circularInnerRadiusMeters], 0];
+  return {
+    hasPhysicalRadii: [
+      'all',
+      ['>', radiusMeters, 0],
+      ['>', outerRadiusMeters, innerRadiusMeters],
+      ['>=', innerRadiusMeters, 0],
+    ],
+    innerRadiusMeters,
+    outerRadiusMeters,
+    radiusAtZoom15,
+    radiusMeters,
+  };
+}
+
+function circularRoadLegacyScale(level: number): number {
+  const interpolationBase = 1.35;
+  const progress = (interpolationBase ** (level - 15) - 1) / (interpolationBase ** (22 - 15) - 1);
+  return 1 + progress * 1.2;
 }
 
 function widthMatchedHatchPattern(

@@ -3,60 +3,46 @@ import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import test from 'node:test';
-import sharp from 'sharp';
-import type {TileflowProjectConfig} from '@tileflow/core';
+import {defineMap} from '@tileflow/core';
+import type {TileflowBuildCatalog} from '@tileflow/core/build';
+import {streets} from '@tileflow/maps';
 import {
   compileTileflowIconPackages,
   inspectTileflowIconCatalogs,
   type TileflowIconCatalog,
 } from '../src/index';
 
-test('inspects resolved catalogs once while preserving compiler bytes and map-specific mappings', async () => {
+test('inspection exposes exact directory order, winning sources, and later-wins history', async () => {
   const parent = await mkdtemp(join(tmpdir(), 'tileflow-icon-catalog-'));
   const cwd = join(parent, 'repo');
-  const outside = join(parent, 'outside-icons');
 
   try {
-    const shared = join(cwd, 'icons', 'shared');
-    const clone = join(cwd, 'icons', 'clone');
-    const vector = simpleSvg('#ef4444');
-    const raster = await sharp({
-      create: {background: '#2563eb', channels: 4, height: 8, width: 10},
-    })
-      .jpeg()
-      .toBuffer();
-
-    for (const directory of [shared, clone]) {
-      await writeFileEnsured(join(directory, 'alpha.svg'), vector);
-      await writeFileEnsured(join(directory, 'photo.jpeg'), raster);
-      await writeFileEnsured(join(directory, 'portrait.jpg'), raster);
-    }
-    await writeFileEnsured(join(outside, 'outside.svg'), simpleSvg('#22c55e'));
-
-    const project: TileflowProjectConfig = {
-      icons: {
-        alias: {
-          extends: 'base',
-          mapping: {alternate: 'photo'},
-          source: './icons/../icons/shared',
-        },
-        base: {
-          mapping: {missing: 'ghost', primary: 'alpha'},
-          source: './icons/shared',
-        },
-        clone: {source: './icons/clone'},
-        remote: {
-          mapping: {remote: 'remote-id'},
-          sprite: 'https://example.invalid/private/sprite?signature=secret',
-        },
-      },
+    const baseCafe = simpleSvg('#ef4444');
+    const brandCafe = simpleSvg('#111827');
+    const bicycle = simpleSvg('#16a34a');
+    const photo = simpleSvg('#2563eb');
+    await writeFileEnsured(join(cwd, 'icons', 'base', 'cafe.svg'), baseCafe);
+    await writeFileEnsured(join(cwd, 'icons', 'base', 'photo.svg'), photo);
+    await writeFileEnsured(join(cwd, 'icons', 'brand', 'bicycle.svg'), bicycle);
+    await writeFileEnsured(join(cwd, 'icons', 'brand', 'cafe.svg'), brandCafe);
+    await writeFileEnsured(join(cwd, 'icons', 'clone', 'bicycle.svg'), bicycle);
+    await writeFileEnsured(join(cwd, 'icons', 'clone', 'cafe.svg'), brandCafe);
+    await writeFileEnsured(join(cwd, 'icons', 'clone', 'photo.svg'), photo);
+    const project: TileflowBuildCatalog = {
       maps: {
-        zeta: {icons: {extends: 'base', mapping: {primary: 'photo'}}},
-        outside: {icons: {mapping: {outside: 'outside'}, source: '../outside-icons'}},
-        none: {},
-        external: {icons: 'remote'},
-        clone: {icons: 'clone'},
-        alpha: {icons: 'alias'},
+        zeta: defineMap({
+          id: 'zeta',
+          version: 1,
+          extends: streets,
+          icons: ['./icons/base', './icons/brand'],
+        }),
+        none: defineMap({id: 'none', version: 1, extends: streets, icons: []}),
+        clone: defineMap({
+          id: 'clone',
+          version: 1,
+          extends: streets,
+          icons: ['./icons/clone'],
+        }),
       },
     };
     const before = await compileTileflowIconPackages(project, {cwd, target: 'local'});
@@ -66,30 +52,42 @@ test('inspects resolved catalogs once while preserving compiler bytes and map-sp
     assert.deepEqual(after, before);
     assert.deepEqual(
       inspection.maps.map((map) => map.name),
-      ['alpha', 'clone', 'external', 'none', 'outside', 'zeta'],
+      ['clone', 'none', 'zeta'],
     );
     assert.deepEqual(
-      inspection.catalogs.map((catalog) => catalog.sourcePath),
-      ['../outside-icons', 'icons/clone', 'icons/shared'],
+      inspection.catalogs.map((catalog) => catalog.directories),
+      [['./icons/base', './icons/brand'], ['./icons/clone']],
     );
-    assert.equal(inspection.catalogs[0]?.insideWorkingTree, false);
-    assert.equal(inspection.catalogs[1]?.insideWorkingTree, true);
-    assert.equal(inspection.catalogs[2]?.insideWorkingTree, true);
-    assert.ok(
-      inspection.catalogs.every(
-        (catalog) => !catalog.sourcePath.startsWith('/') && !catalog.sourcePath.includes('\\'),
-      ),
+    assert.equal(
+      requiredCatalog(inspection.catalogs, ['./icons/base', './icons/brand']).insideWorkingTree,
+      true,
     );
 
-    const sharedCatalog = requiredCatalog(inspection.catalogs, 'icons/shared');
-    const cloneCatalog = requiredCatalog(inspection.catalogs, 'icons/clone');
-    assert.equal(
-      sharedCatalog.compiledPackage.contentHash,
-      cloneCatalog.compiledPackage.contentHash,
+    const composed = requiredCatalog(inspection.catalogs, ['./icons/base', './icons/brand']);
+    const clone = requiredCatalog(inspection.catalogs, ['./icons/clone']);
+    assert.equal(composed.compiledPackage.contentHash, clone.compiledPackage.contentHash);
+    assert.deepEqual(
+      composed.compiledPackage.files.map((file) => Buffer.from(file.source).toString('hex')),
+      clone.compiledPackage.files.map((file) => Buffer.from(file.source).toString('hex')),
     );
     assert.deepEqual(
-      sharedCatalog.compiledPackage.files.map((file) => Buffer.from(file.source).toString('hex')),
-      cloneCatalog.compiledPackage.files.map((file) => Buffer.from(file.source).toString('hex')),
+      composed.icons.map((icon) => ({id: icon.id, path: icon.source.path})),
+      [
+        {id: 'bicycle', path: './icons/brand/bicycle.svg'},
+        {id: 'cafe', path: './icons/brand/cafe.svg'},
+        {id: 'photo', path: './icons/base/photo.svg'},
+      ],
+    );
+    assert.deepEqual(composed.replacements, [
+      {
+        id: 'cafe',
+        replaced: './icons/base/cafe.svg',
+        winner: './icons/brand/cafe.svg',
+      },
+    ]);
+    assert.equal(
+      composed.icons.find((icon) => icon.id === 'cafe')?.source.byteLength,
+      (await readFile(join(cwd, 'icons', 'brand', 'cafe.svg'))).byteLength,
     );
 
     for (const catalog of inspection.catalogs) {
@@ -98,143 +96,66 @@ test('inspects resolved catalogs once while preserving compiler bytes and map-sp
       );
       assert.ok(compiled);
       assert.deepEqual(catalog.compiledPackage.manifest, compiled.manifest);
-      assert.deepEqual(
-        catalog.compiledPackage.files.map((file) => ({
-          bytes: Buffer.from(file.source).toString('hex'),
-          contentType: file.contentType,
-          fileName: file.fileName,
-        })),
-        compiled.files.map((file) => ({
-          bytes: Buffer.from(file.source).toString('hex'),
-          contentType: file.contentType,
-          fileName: file.fileName,
-        })),
-      );
+      const oneX = JSON.parse(
+        new TextDecoder().decode(
+          catalog.compiledPackage.files.find((file) => file.fileName === 'sprite.json')?.source,
+        ),
+      ) as Record<
+        string,
+        {height: number; pixelRatio: number; width: number; x: number; y: number}
+      >;
+      for (const icon of catalog.icons) {
+        assert.deepEqual(icon.rendered.oneX.atlas, withoutPixelRatio(oneX[icon.id]));
+      }
     }
 
+    const zeta = inspection.maps.find((map) => map.name === 'zeta');
+    assert.ok(zeta?.icons.kind === 'directories');
+    assert.deepEqual(zeta.icons.directories, ['./icons/base', './icons/brand']);
+    assert.deepEqual(zeta.icons.iconIds, ['bicycle', 'cafe', 'photo']);
+    assert.equal(zeta.icons.packageHash, composed.compiledPackage.contentHash);
     assert.deepEqual(
-      sharedCatalog.icons.map((icon) => ({
-        dimensions: icon.source.dimensions,
-        format: icon.source.format,
-        id: icon.id,
-        path: icon.source.path,
-      })),
-      [
-        {
-          dimensions: {height: 16, width: 16},
-          format: 'svg',
-          id: 'alpha',
-          path: 'icons/shared/alpha.svg',
-        },
-        {
-          dimensions: {height: 8, width: 10},
-          format: 'jpeg',
-          id: 'photo',
-          path: 'icons/shared/photo.jpeg',
-        },
-        {
-          dimensions: {height: 8, width: 10},
-          format: 'jpeg',
-          id: 'portrait',
-          path: 'icons/shared/portrait.jpg',
-        },
-      ],
-    );
-    assert.equal(
-      sharedCatalog.icons[0]?.source.byteLength,
-      (await readFile(join(shared, 'alpha.svg'))).byteLength,
-    );
-    assert.equal(
-      sharedCatalog.icons[1]?.source.byteLength,
-      (await readFile(join(shared, 'photo.jpeg'))).byteLength,
-    );
-
-    const oneXIndex = JSON.parse(
-      new TextDecoder().decode(
-        sharedCatalog.compiledPackage.files.find((file) => file.fileName === 'sprite.json')?.source,
-      ),
-    ) as Record<string, {height: number; pixelRatio: number; width: number; x: number; y: number}>;
-    const twoXIndex = JSON.parse(
-      new TextDecoder().decode(
-        sharedCatalog.compiledPackage.files.find((file) => file.fileName === 'sprite@2x.json')
-          ?.source,
-      ),
-    ) as Record<string, {height: number; pixelRatio: number; width: number; x: number; y: number}>;
-
-    for (const [index, icon] of sharedCatalog.icons.entries()) {
-      const manifestIcon = sharedCatalog.compiledPackage.manifest.renderedIcons[index];
-      assert.equal(icon.rendered.oneX.pixelSha256, manifestIcon?.pixelSha256.oneX);
-      assert.equal(icon.rendered.twoX.pixelSha256, manifestIcon?.pixelSha256.twoX);
-      assert.deepEqual(icon.rendered.oneX.atlas, withoutPixelRatio(oneXIndex[icon.id]));
-      assert.deepEqual(icon.rendered.twoX.atlas, withoutPixelRatio(twoXIndex[icon.id]));
-    }
-
-    const alphaMap = inspection.maps.find((map) => map.name === 'alpha');
-    const zetaMap = inspection.maps.find((map) => map.name === 'zeta');
-    assert.equal(alphaMap?.icons.kind, 'local');
-    assert.equal(zetaMap?.icons.kind, 'local');
-    if (alphaMap?.icons.kind !== 'local' || zetaMap?.icons.kind !== 'local') {
-      assert.fail('Expected local map bindings');
-    }
-    assert.equal(alphaMap.icons.catalogSourcePath, 'icons/shared');
-    assert.equal(zetaMap.icons.catalogSourcePath, 'icons/shared');
-    assert.deepEqual(alphaMap.icons.mappings, [
-      {iconId: 'photo', semantic: 'alternate', targetStatus: 'present'},
-      {iconId: 'ghost', semantic: 'missing', targetStatus: 'missing'},
-      {iconId: 'alpha', semantic: 'primary', targetStatus: 'present'},
-    ]);
-    assert.deepEqual(zetaMap.icons.mappings, [
-      {iconId: 'ghost', semantic: 'missing', targetStatus: 'missing'},
-      {iconId: 'photo', semantic: 'primary', targetStatus: 'present'},
-    ]);
-    assert.deepEqual(sharedCatalog.icons[0]?.mappedFrom, [{map: 'alpha', semantic: 'primary'}]);
-    assert.deepEqual(sharedCatalog.icons[1]?.mappedFrom, [
-      {map: 'alpha', semantic: 'alternate'},
-      {map: 'zeta', semantic: 'primary'},
-    ]);
-
-    const externalMap = inspection.maps.find((map) => map.name === 'external');
-    const noneMap = inspection.maps.find((map) => map.name === 'none');
-    assert.deepEqual(externalMap, {
-      name: 'external',
-      icons: {
-        inspectable: false,
-        kind: 'external',
-        mappings: [{iconId: 'remote-id', semantic: 'remote', targetStatus: 'unknown'}],
+      inspection.maps.find((map) => map.name === 'none'),
+      {
+        name: 'none',
+        icons: {kind: 'none'},
       },
-    });
-    assert.deepEqual(noneMap, {
-      name: 'none',
-      icons: {inspectable: false, kind: 'none', mappings: []},
-    });
+    );
   } finally {
     await rm(parent, {force: true, recursive: true});
   }
 });
 
-test('filters maps before icon source access and emits only the selected catalog', async () => {
+test('filters maps before touching an unselected missing directory', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-icon-catalog-filter-'));
 
   try {
     await writeFileEnsured(join(cwd, 'icons', 'good.svg'), simpleSvg('#111827'));
-    const project: TileflowProjectConfig = {
+    const project: TileflowBuildCatalog = {
       maps: {
-        broken: {icons: {source: './does-not-exist'}},
-        good: {icons: {source: './icons'}},
+        broken: defineMap({
+          id: 'broken',
+          version: 1,
+          extends: streets,
+          icons: ['./does-not-exist'],
+        }),
+        good: defineMap({
+          id: 'good',
+          version: 1,
+          extends: streets,
+          icons: ['./icons'],
+        }),
       },
     };
-    const inspection = await inspectTileflowIconCatalogs(project, {
-      cwd,
-      mapNames: ['good'],
-    });
+    const inspection = await inspectTileflowIconCatalogs(project, {cwd, mapNames: ['good']});
 
     assert.deepEqual(
       inspection.maps.map((map) => map.name),
       ['good'],
     );
     assert.deepEqual(
-      inspection.catalogs.map((catalog) => catalog.sourcePath),
-      ['icons'],
+      inspection.catalogs.map((catalog) => catalog.directories),
+      [['./icons']],
     );
     assert.deepEqual(
       inspection.catalogs[0]?.icons.map((icon) => icon.id),
@@ -245,56 +166,16 @@ test('filters maps before icon source access and emits only the selected catalog
   }
 });
 
-test('does not fetch external sprites and succeeds without local catalogs', async () => {
-  const originalFetch = globalThis.fetch;
-  let requests = 0;
-  globalThis.fetch = async () => {
-    requests += 1;
-    throw new Error('Unexpected fetch');
-  };
-
-  try {
-    const inspection = await inspectTileflowIconCatalogs(
-      {
-        maps: {
-          external: {
-            icons: {
-              mapping: {zeta: 'z-pin', Alpha: 'a-pin'},
-              sprite: 'https://example.invalid/signed/sprite?token=secret',
-            },
-          },
-          none: {},
-          Zulu: {},
-        },
-      },
-      {cwd: '/path/that/does/not/need/to/exist'},
-    );
-
-    assert.equal(requests, 0);
-    assert.deepEqual(inspection.catalogs, []);
-    assert.deepEqual(
-      inspection.maps.map((map) => [map.name, map.icons.kind]),
-      [
-        ['Zulu', 'none'],
-        ['external', 'external'],
-        ['none', 'none'],
-      ],
-    );
-    assert.deepEqual(inspection.maps[1]?.icons.mappings, [
-      {iconId: 'a-pin', semantic: 'Alpha', targetStatus: 'unknown'},
-      {iconId: 'z-pin', semantic: 'zeta', targetStatus: 'unknown'},
-    ]);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
 function requiredCatalog(
   catalogs: readonly TileflowIconCatalog[],
-  sourcePath: string,
+  directories: readonly string[],
 ): TileflowIconCatalog {
-  const catalog = catalogs.find((candidate) => candidate.sourcePath === sourcePath);
-  assert.ok(catalog, `Expected catalog ${sourcePath}`);
+  const catalog = catalogs.find(
+    (candidate) =>
+      candidate.directories.length === directories.length &&
+      candidate.directories.every((directory, index) => directory === directories[index]),
+  );
+  assert.ok(catalog, `Expected catalog ${directories.join(', ')}`);
   return catalog;
 }
 

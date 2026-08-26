@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {withTileflowConfigSecretsHidden} from '../src/config-execution';
 import {defaultTileflowDevHost, parseTileflowDevHost, tileflowDevOrigin} from '../src/dev-host';
 import {inspectTileflowHostedCompatibility} from '../src/hosted-preflight';
@@ -13,6 +14,7 @@ import {
   hostedStyleDeploymentResponseSchema,
   readHostedJson,
 } from '../src/hosted-response';
+import {tileflowMapFixture} from './map-fixture';
 
 const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const tsxLoader = import.meta.resolve('tsx');
@@ -83,6 +85,15 @@ test('dev host defaults to IPv4 loopback and accepts only explicit host literals
 });
 
 test('one hosted preflight rejects external data for validation and deploy callers', () => {
+  const project = {
+    maps: {
+      main: {
+        id: 'main',
+        version: 1,
+        root: {compiler: 'streets', compilerVersion: 1},
+      },
+    },
+  } as const;
   const compatible = {
     version: 8 as const,
     sources: {},
@@ -96,8 +107,8 @@ test('one hosted preflight rejects external data for validation and deploy calle
     metadata: {'tileflow:data': {kind: 'vector-tiles'}},
   };
 
-  assert.deepEqual(inspectTileflowHostedCompatibility(['main'], {main: compatible}), []);
-  assert.deepEqual(inspectTileflowHostedCompatibility(['main'], {main: external}), [
+  assert.deepEqual(inspectTileflowHostedCompatibility(project, {main: compatible}), []);
+  assert.deepEqual(inspectTileflowHostedCompatibility(project, {main: external}), [
     {
       map: 'main',
       message:
@@ -196,20 +207,19 @@ test('published package is CLI-only instead of executing a binary as an importab
 
 test('validate and build hide ambient API keys from executable config', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-config-secrets-'));
+  await linkWorkspacePackages(directory);
   t.after(() => rm(directory, {force: true, recursive: true}));
   await writeFile(
     join(directory, 'tileflow.config.ts'),
-    `import {writeFileSync} from 'node:fs';
-const command = process.argv.includes('build') ? 'build' : 'validate';
+    tileflowMapFixture({
+      id: 'main',
+      imports: `import {writeFileSync} from 'node:fs';`,
+      setup: `const command = process.argv.includes('build') ? 'build' : 'validate';
 writeFileSync(command + '.observed.json', JSON.stringify({
   apiKey: process.env.TILEFLOW_API_KEY ?? null,
   argv: process.argv
-}));
-export default {maps: {main: {
-  basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
-  modules: {poi: {type: 'poi', icons: false}}
-}}};
-`,
+}));`,
+    }),
   );
   const secret = `tf_live_${'9'.repeat(48)}`;
 

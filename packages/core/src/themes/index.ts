@@ -1,18 +1,16 @@
 import type {
   ResolvedTileflowTypography,
+  ResolvedTileflowTypographyStyle,
   TileflowBaseColors,
   TileflowBoundaryColorConfig,
   TileflowBuildingColorConfig,
   TileflowColorConfig,
-  TileflowFontWeight,
   TileflowHydroColorConfig,
   TileflowLabelColorConfig,
   TileflowLandcoverColorConfig,
   TileflowLanduseColorConfig,
   TileflowPoiColorConfig,
-  TileflowProjectThemes,
   TileflowRoadColorConfig,
-  TileflowTheme,
   TileflowThemeConfig,
   TileflowThemeMode,
   TileflowThemeModulesConfig,
@@ -45,15 +43,10 @@ export type TileflowResolvedColors = {[TKey in keyof TileflowBaseColors]: string
   roads: TileflowResolvedRoadColors;
 };
 
-export type TileflowThemePreset = {
-  colors: TileflowColorConfig;
-};
-
 export type ResolvedTileflowTheme = {
   colors: TileflowColorConfig;
   mode: TileflowThemeMode;
   modules: TileflowThemeModulesConfig;
-  name: string;
   typography: ResolvedTileflowTypography;
 };
 
@@ -71,98 +64,51 @@ const defaultColors = {
   textHalo: '#FFFFFF',
 } as const;
 
-const themePresets = {
-  standard: {
-    colors: defaultColors,
-  },
-  light: {
-    colors: {
-      background: '#F9FAF8',
-      land: '#F6F7F3',
-      water: '#C5E1F5',
-      park: '#DDEED2',
-      building: '#ECEAE4',
-      road: '#FFFFFF',
-      roadMajor: '#F7D58A',
-      boundary: '#C9D1D9',
-      text: '#5F6368',
-      textMuted: '#87909A',
-      textHalo: '#FFFFFF',
-    },
-  },
-  dark: {
-    colors: {
-      background: '#1C2228',
-      land: '#232B32',
-      water: '#18384D',
-      park: '#274230',
-      building: '#2F363D',
-      road: '#39434D',
-      roadMajor: '#6E7580',
-      boundary: '#53606B',
-      text: '#D7DEE6',
-      textMuted: '#A3AFBA',
-      textHalo: '#1C2228',
-    },
-  },
-  minimal: {
-    colors: {
-      background: '#FAFAF8',
-      land: '#F7F7F2',
-      water: '#D6EAF6',
-      park: '#E5EEDB',
-      building: '#F0EEE8',
-      road: '#FFFFFF',
-      roadMajor: '#E5E0D7',
-      boundary: '#D4D9DD',
-      text: '#697079',
-      textMuted: '#8E969F',
-      textHalo: '#FFFFFF',
-    },
-  },
-} as const satisfies Record<TileflowTheme, TileflowThemePreset>;
+const lightThemeColors = {
+  background: '#F9FAF8',
+  land: '#F6F7F3',
+  water: '#C5E1F5',
+  park: '#DDEED2',
+  building: '#ECEAE4',
+  road: '#FFFFFF',
+  roadMajor: '#F7D58A',
+  boundary: '#C9D1D9',
+  text: '#5F6368',
+  textMuted: '#87909A',
+  textHalo: '#FFFFFF',
+} as const satisfies TileflowColorConfig;
+
+const darkThemeColors = {
+  background: '#1C2228',
+  land: '#232B32',
+  water: '#18384D',
+  park: '#274230',
+  building: '#2F363D',
+  road: '#39434D',
+  roadMajor: '#6E7580',
+  boundary: '#53606B',
+  text: '#D7DEE6',
+  textMuted: '#A3AFBA',
+  textHalo: '#1C2228',
+} as const satisfies TileflowColorConfig;
 
 const defaultTypography = {
-  font: 'Noto Sans',
-  weight: 'regular',
-  places: {font: 'Noto Sans', weight: 'regular'},
-  roads: {font: 'Noto Sans', weight: 'regular'},
-  water: {font: 'Noto Sans', weight: 'regular'},
-  poi: {font: 'Noto Sans', weight: 'regular'},
+  font: 'Noto Sans Regular',
+  places: {font: 'Noto Sans Regular'},
+  roads: {font: 'Noto Sans Regular'},
+  water: {font: 'Noto Sans Regular'},
+  poi: {font: 'Noto Sans Regular'},
 } satisfies ResolvedTileflowTypography;
 
-const fontWeightLabels = {
-  regular: 'Regular',
-  medium: 'Medium',
-  semibold: 'Semibold',
-  bold: 'Bold',
-} satisfies Record<TileflowFontWeight, string>;
-
-export function getDefaultColors(): TileflowBaseColors {
-  return {...defaultColors};
-}
-
-export function resolveTheme(
-  theme: TileflowTheme | string | TileflowThemeConfig | undefined,
-  projectThemes: TileflowProjectThemes | undefined,
-): ResolvedTileflowTheme {
-  if (!theme) {
-    return resolveLegacyTheme('light');
-  }
-
-  if (typeof theme === 'string') {
-    if (projectThemes?.[theme]) {
-      return resolveProjectTheme(theme, projectThemes);
-    }
-
-    if (isLegacyTheme(theme)) {
-      return resolveLegacyTheme(theme);
-    }
-
-    throw new Error(`Unknown Tileflow theme: ${theme}`);
-  }
-
-  return resolveInlineTheme(theme, projectThemes);
+export function resolveTheme(theme: TileflowThemeConfig | undefined): ResolvedTileflowTheme {
+  const mode = theme?.mode ?? 'light';
+  const baseColors = mode === 'dark' ? darkThemeColors : lightThemeColors;
+  return {
+    colors: mergeColorConfigs(baseColors, theme?.colors),
+    mode,
+    modules: mergeThemeModules({}, theme?.modules),
+    typography: resolveTypography(resolveThemeTypography(theme), defaultTypography),
+  };
 }
 
 export function resolveColors(
@@ -236,12 +182,17 @@ export function resolveColors(
   } satisfies TileflowResolvedLanduseColors;
   const landcoverDefaults = {
     farmland: mix(base.park, base.land, 0.55),
+    flowerbed: mix(base.park, base.land, 0.08),
     grass: mix(base.park, base.land, 0.25),
     ice: mix(base.water, base.background, 0.65),
-    park: base.park,
+    meadow: mix(base.park, base.land, 0.4),
     protected: mix(base.park, base.textMuted, 0.08),
+    recreationGround: mix(base.park, base.land, 0.18),
     rock: mix(base.land, base.text, 0.12),
     sand: mix(base.land, base.roadMajor, 0.1),
+    scrub: mix(base.park, base.land, 0.62),
+    urbanPark: base.park,
+    villageGreen: mix(base.park, base.land, 0.12),
     wetland: mix(base.water, base.park, 0.35),
     wood: mix(base.park, base.text, 0.08),
   } satisfies TileflowResolvedLandcoverColors;
@@ -319,136 +270,61 @@ export function textFont(
   domain?: TileflowTypographyDomain,
 ): string[] {
   const style = domain ? typography[domain] : typography;
-  return [`${style.font} ${fontWeightLabels[style.weight]}`];
+  return [style.font, ...(style.fallbacks ?? [])];
 }
 
 function resolveTypographyStyle(
   overrides: TileflowTypographyStyle | undefined,
-  defaults: Required<TileflowTypographyStyle>,
-): Required<TileflowTypographyStyle> {
+  defaults: ResolvedTileflowTypographyStyle,
+): ResolvedTileflowTypographyStyle {
   return {
     font: overrides?.font ?? defaults.font,
-    weight: overrides?.weight ?? defaults.weight,
+    ...resolveOptionalTypography(overrides, defaults),
   };
 }
 
 function resolveTypographyDomain(
   domainOverrides: TileflowTypographyStyle | undefined,
   globalOverrides: TileflowTypographyStyle,
-  defaults: Required<TileflowTypographyStyle>,
-  resolvedGlobal: Required<TileflowTypographyStyle>,
-): Required<TileflowTypographyStyle> {
+  defaults: ResolvedTileflowTypographyStyle,
+  resolvedGlobal: ResolvedTileflowTypographyStyle,
+): ResolvedTileflowTypographyStyle {
   const globalFontOverridden = Boolean(globalOverrides.font);
   const font =
     domainOverrides?.font ?? (globalFontOverridden ? resolvedGlobal.font : defaults.font);
 
   return {
     font,
-    weight: domainOverrides?.weight ?? globalOverrides.weight ?? defaults.weight,
+    ...resolveOptionalTypography(domainOverrides, globalOverrides, defaults, resolvedGlobal),
   };
 }
 
-function resolveLegacyTheme(theme: TileflowTheme): ResolvedTileflowTheme {
-  const preset = themePresets[theme];
-  const mode = theme === 'dark' ? 'dark' : 'light';
-
+function resolveOptionalTypography(
+  ...styles: Array<TileflowTypographyStyle | ResolvedTileflowTypographyStyle | undefined>
+): Omit<TileflowTypographyStyle, 'font'> {
+  const first = <TKey extends 'fallbacks' | 'letterSpacing' | 'transform'>(key: TKey) =>
+    styles.find((style) => style?.[key] !== undefined)?.[key];
+  const fallbacks = first('fallbacks');
+  const letterSpacing = first('letterSpacing');
+  const transform = first('transform');
   return {
-    colors: preset.colors,
-    mode,
-    modules: {},
-    name: theme,
-    typography: defaultTypography,
+    ...(fallbacks ? {fallbacks: [...fallbacks]} : {}),
+    ...(letterSpacing === undefined ? {} : {letterSpacing}),
+    ...(transform === undefined ? {} : {transform}),
   };
 }
 
-function resolveProjectTheme(
-  name: string,
-  projectThemes: TileflowProjectThemes,
-  seen: readonly string[] = [],
-): ResolvedTileflowTheme {
-  if (seen.includes(name)) {
-    throw new Error(`Circular Tileflow theme extends: ${[...seen, name].join(' -> ')}`);
-  }
-
-  const theme = projectThemes[name];
-
-  if (!theme) {
-    throw new Error(`Unknown Tileflow theme: ${name}`);
-  }
-
-  const base = resolveThemeBase(theme, name, projectThemes, [...seen, name]);
-
-  return resolveThemeConfig(name, theme, base);
-}
-
-function resolveInlineTheme(
-  theme: TileflowThemeConfig,
-  projectThemes: TileflowProjectThemes | undefined,
-): ResolvedTileflowTheme {
-  const base = resolveThemeBase(theme, 'inline', projectThemes, ['inline']);
-
-  return resolveThemeConfig('inline', theme, base);
-}
-
-function resolveThemeBase(
-  theme: TileflowThemeConfig,
-  name: string,
-  projectThemes: TileflowProjectThemes | undefined,
-  seen: readonly string[],
-): ResolvedTileflowTheme {
-  if (theme.extends) {
-    if (projectThemes?.[theme.extends]) {
-      return resolveProjectTheme(theme.extends, projectThemes, seen);
-    }
-
-    if (isLegacyTheme(theme.extends)) {
-      return resolveLegacyTheme(theme.extends);
-    }
-
-    throw new Error(`Unknown Tileflow theme: ${theme.extends}`);
-  }
-
-  if (theme.mode === 'dark' || name === 'dark') {
-    return resolveLegacyTheme('dark');
-  }
-
-  return resolveLegacyTheme('light');
-}
-
-function resolveThemeConfig(
-  name: string,
-  theme: TileflowThemeConfig,
-  base: ResolvedTileflowTheme,
-): ResolvedTileflowTheme {
-  const themeColorOverrides = theme.colors ?? {};
-  const themeModuleOverrides = theme.modules ?? {};
-  const colors = mergeColorConfigs(base.colors, themeColorOverrides);
-  const modules = mergeThemeModules(base.modules, themeModuleOverrides);
-  const mode = theme.mode ?? base.mode;
+function resolveThemeTypography(theme: TileflowThemeConfig | undefined): TileflowTypography {
+  const typography = theme?.typography;
+  if (!typography) return {};
 
   return {
-    colors,
-    mode,
-    modules,
-    name,
-    typography: resolveTypography(resolveThemeTypography(theme), base.typography),
-  };
-}
-
-function isLegacyTheme(value: string): value is TileflowTheme {
-  return value in themePresets;
-}
-
-function resolveThemeTypography(theme: TileflowThemeConfig): TileflowTypography {
-  const font = theme.typography?.font;
-
-  return {
-    ...(theme.typography?.places ? {places: theme.typography.places} : {}),
-    ...(theme.typography?.poi ? {poi: theme.typography.poi} : {}),
-    ...(theme.typography?.roads ? {roads: theme.typography.roads} : {}),
-    ...(theme.typography?.water ? {water: theme.typography.water} : {}),
-    ...(theme.typography?.weight ? {weight: theme.typography.weight} : {}),
-    ...(font ? {font} : {}),
+    ...typography,
+    ...(typography.fallbacks ? {fallbacks: [...typography.fallbacks]} : {}),
+    ...(typography.places ? {places: {...typography.places}} : {}),
+    ...(typography.poi ? {poi: {...typography.poi}} : {}),
+    ...(typography.roads ? {roads: {...typography.roads}} : {}),
+    ...(typography.water ? {water: {...typography.water}} : {}),
   };
 }
 

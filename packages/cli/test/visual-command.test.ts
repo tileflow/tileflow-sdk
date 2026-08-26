@@ -8,6 +8,8 @@ import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {PNG} from 'pngjs';
+import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
+import {tileflowMapFixture} from './map-fixture';
 
 const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const tsxLoader = import.meta.resolve('tsx');
@@ -60,7 +62,10 @@ test('visual diff and update require named scenes or explicit --all, never both'
 
   await writeFile(
     join(directory, 'tileflow.config.ts'),
-    `export default {maps: {main: {unsupported: true}}};\n`,
+    tileflowMapFixture({
+      id: 'main',
+      fields: `modules: {poi: {type: 'poi', unsupported: true}}`,
+    }),
   );
   const all = await runCli(directory, [
     'visual',
@@ -453,10 +458,10 @@ test(
   },
 );
 
-const applicationConfig = `export default {
-  maps: {proof: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}}},
-  scenes: {proof: {map: 'proof', camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 128, height: 128}, target: {kind: 'application', path: '/', captureId: 'proof'}}}
-};\n`;
+const applicationConfig = tileflowMapFixture({
+  id: 'proof',
+  fields: `scenes: {proof: {camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 128, height: 128}, target: {kind: 'application', path: '/', captureId: 'proof'}}}`,
+});
 
 type DiffDocument = {
   comparisons: Array<{
@@ -491,6 +496,7 @@ function createPng(
 
 async function createDirectoryFixture(t: TestContext, prefix: string): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), prefix));
+  await linkWorkspacePackages(directory);
   t.after(() => rm(directory, {force: true, recursive: true}));
   return directory;
 }

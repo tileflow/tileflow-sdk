@@ -4,55 +4,142 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import test from 'node:test';
 import sharp from 'sharp';
-import {
-  createStyleFromProject,
-  diffTileflowIconPackageManifests,
-  streets,
-  type TileflowProjectConfig,
-  tileflowStreetsPoiIconMapping,
-} from '@tileflow/core';
+import {defineMap, diffTileflowIconPackageManifests} from '@tileflow/core';
+import {createStyleFromCatalog, type TileflowBuildCatalog} from '@tileflow/core/build';
+import {cyberpunk, ferraris, streets, verdant} from '@tileflow/maps';
 import {
   compileTileflowIconPackages,
-  prepareTileflowProjectIcons,
+  prepareTileflowCatalogIcons,
   TileflowIconCompilationError,
 } from '../src/index';
 
-test('supplies the built-in Streets POI sprite for local and hosted artifacts', async () => {
+const streetsIconIds = [
+  'coffee',
+  'crosswalk',
+  'culture',
+  'education',
+  'food',
+  'health',
+  'lodging',
+  'major-transit',
+  'oneway',
+  'services',
+  'shopping',
+  'sidewalk-dot',
+] as const;
+
+test('prepares inherited Streets directories without mutating the authored map', async () => {
   await withFixture(async (cwd) => {
-    const project: TileflowProjectConfig = {maps: {main: {basemap: streets()}}};
+    const project: TileflowBuildCatalog = {
+      maps: {
+        main: defineMap({
+          id: 'main',
+          version: 1,
+          extends: streets,
+        }),
+      },
+    };
     const compiled = await compileTileflowIconPackages(project, {cwd, target: 'hosted'});
 
     assert.deepEqual(compiled.watchPaths, []);
-    assert.deepEqual(compiled.packages[0]?.manifest.iconNames, [
-      'cafe',
-      'hospital',
-      'hotel',
-      'museum',
-      'restaurant',
-      'school',
-      'services',
-      'shopping',
-      'train',
-    ]);
+    assert.deepEqual(compiled.packages[0]?.manifest.iconNames, streetsIconIds);
     assert.deepEqual(compiled.bindings, [
       {
-        label: 'tileflow-streets',
+        iconIds: streetsIconIds,
+        label: 'main',
         mapName: 'main',
-        mapping: tileflowStreetsPoiIconMapping,
         packageHash: compiled.packages[0]?.contentHash,
       },
     ]);
 
-    const prepared = await prepareTileflowProjectIcons(project, {assetBaseUrl: '/tileflow', cwd});
+    const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
     assert.equal(prepared.assets.length, 4);
-    assert.deepEqual(prepared.project.maps.main?.icons, {
-      mapping: tileflowStreetsPoiIconMapping,
-      sprite: '/tileflow/icons/main/sprite',
+    assert.equal(prepared.project, project);
+    assert.deepEqual(prepared.mapAssets.main, {
+      icons: {ids: streetsIconIds, sprite: '/tileflow/icons/main/sprite'},
     });
 
-    const style = createStyleFromProject(prepared.project, 'main');
+    const style = createStyleFromCatalog(prepared.project, 'main', {
+      preparedAssets: prepared.mapAssets.main,
+    });
     assert.equal(style.sprite, '/tileflow/icons/main/sprite');
-    assert.ok(style.layers.some((layer) => layer.id === 'streets-poi-food-icon'));
+    assert.ok(style.layers.some((layer) => layer.id === 'streets-road-oneway'));
+  });
+});
+
+test('composes every official map from package-owned ordered directories', async () => {
+  await withFixture(async (cwd) => {
+    const project: TileflowBuildCatalog = {maps: {cyberpunk, ferraris, streets, verdant}};
+    const compiled = await compileTileflowIconPackages(project, {cwd, target: 'hosted'});
+    const packagesByHash = new Map(
+      compiled.packages.map((iconPackage) => [iconPackage.contentHash, iconPackage]),
+    );
+    const expectedNames = {
+      cyberpunk: [
+        ...streetsIconIds,
+        'cyber-circuit',
+        'cyber-data-grid',
+        'cyber-target-brackets',
+      ].sort(),
+      ferraris: [
+        'ferraris-crop-hatch',
+        'ferraris-heath',
+        'ferraris-orchard',
+        'ferraris-paper-grain',
+        'ferraris-residential',
+        'ferraris-sand',
+        'ferraris-water-ripples',
+        'ferraris-wetland',
+        'ferraris-woodland',
+      ],
+      streets: streetsIconIds,
+      verdant: [
+        ...streetsIconIds,
+        'verdant-crop-rows',
+        'verdant-sidewalk',
+        'verdant-wetland-ripples',
+        'verdant-wood-stipple',
+        'verdant-xylem',
+      ].sort(),
+    } as const;
+
+    assert.deepEqual(compiled.watchPaths, []);
+    assert.equal(compiled.packages.length, 4);
+    for (const binding of compiled.bindings) {
+      assert.deepEqual(
+        packagesByHash.get(binding.packageHash)?.manifest.iconNames,
+        expectedNames[binding.mapName as keyof typeof expectedNames],
+      );
+    }
+
+    const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
+    assert.equal(prepared.assets.length, 16);
+    for (const binding of compiled.bindings) {
+      assert.deepEqual(prepared.mapAssets[binding.mapName]?.icons?.ids, binding.iconIds);
+    }
+  });
+});
+
+test('later directories replace exact canonical IDs and empty arrays disable icons', async () => {
+  await withFixture(async (cwd) => {
+    await writeSvg(join(cwd, 'base', 'pin.svg'), '#ef4444');
+    await writeSvg(join(cwd, 'brand', 'pin.svg'), '#22c55e');
+    await writeSvg(join(cwd, 'brand', 'new.svg'), '#3b82f6');
+    const project: TileflowBuildCatalog = {
+      maps: {
+        main: defineMap({
+          id: 'main',
+          version: 1,
+          extends: streets,
+          icons: ['./base', './brand'],
+        }),
+        none: defineMap({id: 'none', version: 1, extends: streets, icons: []}),
+      },
+    };
+    const compiled = await compileTileflowIconPackages(project, {cwd, target: 'hosted'});
+    assert.equal(compiled.bindings.length, 1);
+    assert.deepEqual(compiled.bindings[0]?.iconIds, ['new', 'pin']);
+    assert.equal(compiled.packages[0]?.manifest.iconNames.includes('pin'), true);
   });
 });
 
@@ -60,16 +147,10 @@ test('compiles exact deterministic packages, deduplicates shared sources, and pr
   await withFixture(async (cwd) => {
     await writeSvg(join(cwd, 'icons', 'cafe.svg'), '#ef8354');
     await writeSvg(join(cwd, 'icons', 'airport.svg'), '#4f5d75');
-    const project: TileflowProjectConfig = {
-      icons: {
-        brand: {
-          mapping: {restaurant: 'cafe'},
-          source: './icons',
-        },
-      },
+    const project: TileflowBuildCatalog = {
       maps: {
-        alpha: {icons: 'brand'},
-        beta: {icons: {extends: 'brand', mapping: {flight: 'airport'}}},
+        alpha: defineMap({id: 'alpha', version: 1, extends: streets, icons: ['./icons']}),
+        beta: defineMap({id: 'beta', version: 1, extends: streets, icons: ['./icons']}),
       },
     };
 
@@ -101,14 +182,13 @@ test('compiles exact deterministic packages, deduplicates shared sources, and pr
       second.packages[0]?.files.map((file) => Buffer.from(file.source).toString('hex')),
     );
     assert.deepEqual(first.bindings[0], {
-      label: 'brand',
+      iconIds: ['airport', 'cafe'],
+      label: 'alpha',
       mapName: 'alpha',
-      mapping: {restaurant: 'cafe'},
       packageHash: first.packages[0]?.contentHash,
     });
-    assert.deepEqual(first.bindings[1]?.mapping, {flight: 'airport', restaurant: 'cafe'});
 
-    const prepared = await prepareTileflowProjectIcons(project, {assetBaseUrl: '/tileflow', cwd});
+    const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
     assert.deepEqual(
       prepared.assets.map((asset) => asset.fileName),
       [
@@ -122,10 +202,7 @@ test('compiles exact deterministic packages, deduplicates shared sources, and pr
         'icons/beta/sprite@2x.png',
       ],
     );
-    assert.deepEqual(prepared.project.maps.alpha?.icons, {
-      mapping: {restaurant: 'cafe'},
-      sprite: '/tileflow/icons/alpha/sprite',
-    });
+    assert.equal(prepared.mapAssets.alpha?.icons?.sprite, '/tileflow/icons/alpha/sprite');
   });
 });
 
@@ -277,14 +354,14 @@ test('reports missing, empty, duplicate, malformed, and unsafe hosted sources st
   await withFixture(async (cwd) => {
     await assertIconIssue(
       () => compileTileflowIconPackages(localProject('./missing'), {cwd, target: 'local'}),
-      'maps.main.icons.source',
+      'maps.main.icons.0',
       'not found',
     );
 
     await mkdir(join(cwd, 'empty'));
     await assertIconIssue(
       () => compileTileflowIconPackages(localProject('./empty'), {cwd, target: 'local'}),
-      'maps.main.icons.source',
+      'maps.main.icons.0',
       'No supported',
     );
 
@@ -292,7 +369,7 @@ test('reports missing, empty, duplicate, malformed, and unsafe hosted sources st
     await writeRaster(join(cwd, 'duplicates', 'pin.png'), 'png');
     await assertIconIssue(
       () => compileTileflowIconPackages(localProject('./duplicates'), {cwd, target: 'hosted'}),
-      'maps.main.icons.source/pin.svg',
+      'maps.main.icons.0/pin.svg',
       'Duplicate icon basename',
     );
 
@@ -300,13 +377,13 @@ test('reports missing, empty, duplicate, malformed, and unsafe hosted sources st
     await writeFile(join(cwd, 'malformed', 'broken.png'), 'not an image');
     await assertIconIssue(
       () => compileTileflowIconPackages(localProject('./malformed'), {cwd, target: 'local'}),
-      'maps.main.icons.source',
+      'maps.main.icons',
       'unsupported image format',
     );
   });
 });
 
-test('keeps broad local names but enforces hosted identifiers and repository containment', async () => {
+test('enforces canonical filenames and working-tree containment for every target', async () => {
   const parent = await mkdtemp(join(tmpdir(), 'tileflow-icons-parent-'));
   const cwd = join(parent, 'repo');
   const outside = join(parent, 'outside');
@@ -315,20 +392,17 @@ test('keeps broad local names but enforces hosted identifiers and repository con
     await mkdir(cwd);
     await writeSvg(join(outside, 'coffee shop.svg'), '#ef4444');
     const project = localProject('../outside');
-    const local = await compileTileflowIconPackages(project, {cwd, target: 'local'});
-
-    assert.deepEqual(local.packages[0]?.manifest.iconNames, ['coffee shop']);
     await assertIconIssue(
-      () => compileTileflowIconPackages(project, {cwd, target: 'hosted'}),
-      'maps.main.icons.source',
-      'inside the selected working tree',
+      () => compileTileflowIconPackages(project, {cwd, target: 'local'}),
+      'maps.main.icons.0',
+      'escapes the selected working tree',
     );
 
     await writeSvg(join(cwd, 'unsafe', 'coffee shop.svg'), '#ef4444');
     await assertIconIssue(
       () => compileTileflowIconPackages(localProject('./unsafe'), {cwd, target: 'hosted'}),
-      'maps.main.icons.source/coffee shop.svg',
-      'Hosted icon IDs',
+      'maps.main.icons.0/coffee shop.svg',
+      'lower-kebab',
     );
   } finally {
     await rm(parent, {force: true, recursive: true});
@@ -346,7 +420,7 @@ test('rejects symlink escapes, nested directories, unsafe SVG content, and sourc
     await symlink(outside, join(cwd, 'icons', 'escaped.svg'));
     await assertIconIssue(
       () => compileTileflowIconPackages(localProject('./icons'), {cwd, target: 'hosted'}),
-      'maps.main.icons.source/escaped.svg',
+      'maps.main.icons.0/escaped.svg',
       'symlink escapes',
     );
 
@@ -355,7 +429,7 @@ test('rejects symlink escapes, nested directories, unsafe SVG content, and sourc
     await mkdir(join(cwd, 'icons', 'nested'));
     await assertIconIssue(
       () => compileTileflowIconPackages(localProject('./icons'), {cwd, target: 'hosted'}),
-      'maps.main.icons.source/nested',
+      'maps.main.icons.0/nested',
       'Nested directories',
     );
 
@@ -381,7 +455,7 @@ test('rejects symlink escapes, nested directories, unsafe SVG content, and sourc
       await writeFile(join(directory, 'icon.svg'), svg);
       await assertIconIssue(
         () => compileTileflowIconPackages(localProject(`./${name}`), {cwd, target: 'hosted'}),
-        'maps.main.icons.source/icon.svg',
+        `./${name}/icon.svg`,
         expected,
       );
     }
@@ -398,7 +472,7 @@ test('rejects symlink escapes, nested directories, unsafe SVG content, and sourc
     );
     await assertIconIssue(
       () => compileTileflowIconPackages(localProject('./many'), {cwd, target: 'hosted'}),
-      'maps.main.icons.source',
+      'maps.main.icons',
       'more than 256 icons',
     );
 
@@ -407,7 +481,7 @@ test('rejects symlink escapes, nested directories, unsafe SVG content, and sourc
     await writeFile(join(largeDirectory, 'large.svg'), ' '.repeat(1024 * 1024 + 1));
     await assertIconIssue(
       () => compileTileflowIconPackages(localProject('./large'), {cwd, target: 'hosted'}),
-      'maps.main.icons.source/large.svg',
+      'maps.main.icons.0/large.svg',
       'exceeds 1048576 bytes',
     );
   } finally {
@@ -424,18 +498,21 @@ test('rejects images over the decoded pixel limit before atlas creation', async 
 
     await assertIconIssue(
       () => compileTileflowIconPackages(localProject('./icons'), {cwd, target: 'hosted'}),
-      'maps.main.icons.source',
+      'maps.main.icons',
       'pixel limit',
     );
   });
 });
 
-function localProject(source: string): TileflowProjectConfig {
+function localProject(source: `./${string}` | `../${string}`): TileflowBuildCatalog {
   return {
     maps: {
-      main: {
-        icons: {source},
-      },
+      main: defineMap({
+        id: 'main',
+        version: 1,
+        extends: streets,
+        icons: [source],
+      }),
     },
   };
 }

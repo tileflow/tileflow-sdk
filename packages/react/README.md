@@ -11,7 +11,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 export function App() {
   return (
     <Map
-      map="madrid"
+      source={{kind: 'tileflow', map: 'madrid'}}
       center={[-3.7038, 40.4168]}
       zoom={12}
       mapOptions={{
@@ -23,40 +23,190 @@ export function App() {
 }
 ```
 
-`mapOptions` accepts native MapLibre options except `container` and `style`, which
-Tileflow resolves from the map name, manifest, or explicit style props. Direct
-Tileflow props such as `center`, `zoom`, and `interactive` take priority when
-provided.
+## Annotations, tooltips, and popups
 
-Choose one style source: `config`, `style`, `styleUrl`, or a named `map`. A map name may accompany
-`style` or `styleUrl` as the stable map/capture identity, and `styleBaseUrl` requires `map`.
-`config` cannot be combined with those other sources; invalid combinations throw instead of being
-silently ignored. `themes` is only meaningful with `config`.
+Use `annotations` for small application-owned marker sets. Annotation data is serializable, while
+`renderMarker`, `renderTooltip`, and `renderPopup` render native React UI through portals into the
+MapLibre-owned marker and overlay hosts.
+
+```tsx
+import {Map} from '@tileflow/react';
+import {useState} from 'react';
+import type {TileflowAnnotation, TileflowInteractionState} from '@tileflow/interactions';
+
+type Property = {
+  price: number;
+  title: string;
+};
+
+const annotations = [
+  {
+    ariaLabel: 'Apartment in Madrid',
+    coordinate: [-3.7038, 40.4168],
+    data: {price: 320_000, title: 'Apartment in Madrid'},
+    id: 'property-42',
+    kind: 'marker',
+    marker: {content: {kind: 'field', field: 'price'}},
+    tooltip: {content: {kind: 'field', field: 'title'}},
+    popup: {content: {kind: 'view', name: 'property-card'}},
+  },
+] satisfies readonly TileflowAnnotation<Property>[];
+
+export function PropertyMap() {
+  const [interactionState, setInteractionState] = useState<TileflowInteractionState>({popup: null});
+
+  return (
+    <Map
+      source={{kind: 'tileflow', map: 'madrid'}}
+      annotations={annotations}
+      interactionState={interactionState}
+      onInteractionStateChange={setInteractionState}
+      onInteractionDiagnostic={(diagnostic) => console.error(diagnostic)}
+      onInteractionEvent={(event) => console.log(event.type, event.target)}
+      renderMarker={({annotation}) => <strong>EUR {annotation.data.price.toLocaleString()}</strong>}
+      renderPopup={({annotation, close}) => (
+        <article>
+          <h2>{annotation.data.title}</h2>
+          <p>EUR {annotation.data.price.toLocaleString()}</p>
+          <button type="button" onClick={close}>
+            Close
+          </button>
+        </article>
+      )}
+    />
+  );
+}
+```
+
+Omit `interactionState` and use `defaultInteractionState` for uncontrolled popup state. Callback and
+renderer identity changes, annotation updates, and popup state changes do not recreate the MapLibre
+map. Updating an annotation with the same ID preserves its compatible Marker instance and portal
+host.
+
+`renderMarker` is always annotation-only. Without `interactions`, `renderTooltip` and `renderPopup`
+also infer the annotation-specific context, including typed `annotation.data`. When `interactions`
+is present, they receive the common `TileflowInteractionViewContext`; narrow `context.target.kind`
+(or check `annotation in context`) when one renderer serves both annotation and semantic targets.
+
+## Semantic POI interactions
+
+Use `interactions` to attach tooltip or popup behavior to POIs already rendered by a finalized
+Tileflow style. Application code names the `poi` domain, never compiler-generated MapLibre layer
+IDs. The runtime queries only manifest-declared layers and mounts DOM only for the active overlay.
+
+```tsx
+import {Map} from '@tileflow/react';
+import type {TileflowInteractionBinding} from '@tileflow/interactions';
+
+const interactions = [
+  {
+    id: 'poi-details',
+    target: {kind: 'semantic-feature', domain: 'poi', categories: ['food', 'coffee']},
+    tooltip: {content: {kind: 'field', field: 'name', fallback: 'Point of interest'}},
+    popup: {content: {kind: 'view', name: 'poi-card'}},
+  },
+] satisfies readonly TileflowInteractionBinding[];
+
+export function PoiMap() {
+  return (
+    <Map
+      source={{kind: 'tileflow', map: 'madrid'}}
+      interactions={interactions}
+      renderPopup={(context) =>
+        context.target.kind === 'semantic-feature' ? (
+          <article>
+            <h2>{String(context.target.feature.properties.name ?? 'Point of interest')}</h2>
+            <button type="button" onClick={context.close}>
+              Close
+            </button>
+          </article>
+        ) : null
+      }
+    />
+  );
+}
+```
+
+Bindings and popup state are validated before reconciliation. An invalid replacement leaves the
+last valid runtime state active and reports structured diagnostics. `interactionState` and
+`defaultInteractionState` are mutually exclusive. Annotation and semantic overlays share one popup
+state, so replacing either target closes the previous popup before opening the next.
+
+`MapProps` also rejects `annotations` together with legacy `markers`, and rejects controlled and
+default interaction state together. Its `mode="image"` branch excludes annotations, markers,
+semantic bindings, interaction state, renderers, and interaction callbacks. JavaScript callers and
+widened inputs still receive the corresponding runtime diagnostics.
+
+`onInteractionDiagnostic` receives each newly reported structured runtime diagnostic. Changing any
+callback identity does not resubscribe the runtime or recreate MapLibre.
+
+Custom portal targets move capture readiness to `loading` until React commits the target and two
+current animation frames complete. Removing or replacing a target invalidates pending frames.
+
+When no render prop is present, text and safe field descriptors use the shared unbranded DOM
+defaults. A `view` descriptor is a dispatch name for an application renderer; it is not HTML or a
+serialized component tree. Tooltip content remains non-interactive, while popup content may contain
+normal React controls.
+
+The legacy `markers` prop remains available during the alpha migration and is normalized through the
+same keyed runtime. Its `label` keeps the existing marker `title`; do not pass `markers` and
+`annotations` together. `mode="image"` cannot render interaction configuration and shows an
+explicit `UNSUPPORTED_MODE` diagnostic without loading MapLibre.
+
+`mapOptions` accepts native MapLibre options except `container` and `style`, which
+Tileflow resolves from `source`. Direct
+Tileflow props such as `center`, `zoom`, and `interactive` take priority when
+provided. Camera resolution is the same in interactive and image modes: direct props, then
+`mapOptions`, then the published manifest view, then Tileflow's shared runtime defaults.
+
+Every map has exactly one discriminated `source`. Use `kind: 'tileflow'` for a map published in a
+Tileflow manifest, or `kind: 'maplibre'` for a direct MapLibre style object or URL. Browser
+components do not compile `tileflow.config.ts`.
+
+Without `manifestUrl`, the exact default is `/tileflow/manifest.json`. If Vite, Webpack, Next, a
+reverse proxy, or the Tileflow plugin publishes it anywhere else, set the final public URL
+explicitly; the component does not attempt runtime base-path discovery. Manifest 404s, unknown map
+IDs, unresolved styles, and unresolved image URLs enter `data-tileflow-state="error"`.
 
 To reuse one published map across multiple repos, point every app at the same
 manifest:
 
 ```tsx
-<Map map="madrid" manifestUrl="https://cdn.example.com/tileflow/manifest.json" />
+<Map
+  source={{
+    kind: 'tileflow',
+    map: 'madrid',
+    manifestUrl: 'https://cdn.example.com/tileflow/manifest.json',
+  }}
+/>
 ```
 
 Or bypass the manifest and load a hosted style directly:
 
 ```tsx
-<Map styleUrl="https://api.tileflow.dev/maps/map_1234567890abcdef/style.json" />
+<Map
+  source={{
+    kind: 'maplibre',
+    style: 'https://api.tileflow.dev/maps/map_1234567890abcdef/style.json',
+  }}
+/>
 ```
 
 For a lightweight display of an already hosted static image, use image mode:
 
 ```tsx
-<Map map="madrid" mode="image" center={[-3.7038, 40.4168]} zoom={12} />
+<Map
+  source={{kind: 'tileflow', map: 'madrid'}}
+  mode="image"
+  center={[-3.7038, 40.4168]}
+  zoom={12}
+/>
 ```
 
 `Map mode="image"` only resolves an existing image URL (explicitly or from the published map
 manifest) and renders an `<img>`; it does not submit a render scene, create an operation, poll, or
-apply `StaticMap` overlays. When it does not include an explicit `imageUrl`, local development hosts
-render the interactive map while `preferLocalDev` is enabled. Production hosts render the deployed
-static image. Set `preferLocalDev={false}` to preview the production image behavior locally.
+apply `StaticMap` overlays. This path does not load or evaluate MapLibre. Without an explicit
+`imageUrl`, all environments use the image URL published for the Tileflow source.
 
 For a new, fully specified render with exact size, center/bounds camera, overlays, idempotency, and
 asynchronous create/poll behavior, use `StaticMap` from `@tileflow/react/static` or helpers from
@@ -99,7 +249,7 @@ MapLibre failures do not remove that recovery path.
 Use `captureId` to disambiguate multiple maps with the same configured name:
 
 ```tsx
-<Map map="madrid" captureId="checkout-map" />
+<Map source={{kind: 'tileflow', map: 'madrid'}} captureId="checkout-map" />
 ```
 
 The root element exposes `data-tileflow-map`, optional `data-tileflow-capture-id`, and
@@ -107,5 +257,12 @@ The root element exposes `data-tileflow-map`, optional `data-tileflow-capture-id
 and two animation frames; style/data work returns it to loading. Image mode waits for decode or a
 successful load fallback, including cached hydration. `tileflow capture` uses these markers for
 application scenes and requires exactly one target.
+
+## Compatibility
+
+The supported peer window is React 18-19 and MapLibre GL JS 5-6. Compatibility smoke tests install
+the exact lower bound and the first release of every accepted major from packed Tileflow tarballs,
+typecheck a consumer, and render the image/SSR path while rejecting any MapLibre import. Future
+majors stay outside the peer range until that matrix passes.
 
 Docs: https://tileflow.dev/docs

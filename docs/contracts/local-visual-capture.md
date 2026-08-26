@@ -29,13 +29,13 @@ config in capture and visual CLI workflows.
 
 ## Versioned scenes
 
-`TileflowProjectConfig.scenes` is an optional record. Existing configs without scenes compile
-unchanged, and scenes do not alter generated style or manifest identity. A committed scene has this
-version-1 shape:
+`TileflowMap.scenes` is optional tooling metadata on the singular map exported by
+`tileflow.config.ts`. It does not inherit and is removed before cartographic compilation. Existing
+maps without scenes compile unchanged, and scenes do not alter generated style or manifest identity.
+A committed scene has this version-1 shape:
 
 ```ts
 type TileflowCaptureScene = {
-  map: string;
   camera:
     | {
         type: 'center';
@@ -64,9 +64,28 @@ type TileflowCaptureScene = {
 };
 ```
 
-Names and map references are strict own properties rather than JavaScript prototype lookups.
-Scene names are bounded ASCII artifact names, must be distinct under case folding, and cannot be a
-Windows device filename or `__proto__`; config records must be plain objects. Viewport sides are
+For example:
+
+```ts
+import {defineMap} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'madrid',
+  version: 1,
+  extends: streets,
+  scenes: {
+    'madrid-desktop': {
+      camera: {type: 'center', center: [-3.7038, 40.4168], zoom: 12},
+      viewport: {width: 1280, height: 800, dpr: 1},
+    },
+  },
+});
+```
+
+The owning map is implicit; Node tooling supplies its ID when it normalizes the scene internally.
+Scene names are strict own properties and bounded ASCII artifact names, must be distinct under case
+folding, and cannot be a Windows device filename or `__proto__`; config records must be plain objects. Viewport sides are
 64–4096 CSS pixels, DPR is 1 or 2, and the physical image budget is 16,777,216 pixels. Center,
 bounds, zoom, bearing, pitch, padding, application path, and selector values are bounded and
 validated at their config path. Application paths are root-relative and cannot carry an origin,
@@ -75,14 +94,14 @@ exclusive. Defaults are DPR 1, zero bearing, zero pitch, zero bounds padding, ma
 framing.
 
 Committed scenes are the reproducible surface for capture, watch, and visual baselines. One-off
-`--map` plus camera/viewport options are exploratory and do not create a scene or baseline. A
+camera/viewport options are exploratory and do not create a scene or baseline. A
 successful exploratory `--json` entry adds `definition`, the exact normalized scene containing only
-`map`, `camera`, `viewport`, and the default `{kind: "map"}` target. An agent may copy that value
+`camera`, `viewport`, and the default `{kind: "map"}` target. An agent may copy that value
 under a chosen `scenes.<name>` key. Tileflow does not rewrite executable TypeScript config.
 
 ## Standalone and application modes
 
-A standalone map scene compiles one artifact snapshot through `@tileflow/dev`, injects the
+A standalone scene compiles the owning map into one artifact snapshot through `@tileflow/dev`, injects the
 installed MapLibre JS and CSS into a fresh browser context, fulfills generated local sprite assets
 from memory under a closed synthetic origin, applies the camera, waits for MapLibre `load` and
 `idle`, waits two animation frames, and captures the map. Multiple scenes and warm watch use one
@@ -97,7 +116,8 @@ without weakening warnings for public or private remote origins.
 An application scene composes its committed path with an explicit loopback
 `--app-origin`/`TILEFLOW_APP_ORIGIN`. `--url` is a one-off full loopback URL override. Origins and
 URLs must use HTTP(S), resolve to localhost or a loopback address, omit credentials and fragments,
-and remain bounded. Tileflow does not start the application, scan ports, or start `tileflow dev`.
+and remain bounded. Tileflow does not start the application, scan ports, or start
+`tileflow preview`.
 The application's normal Vite, Next.js, Webpack, or custom server is therefore the only server:
 
 ```sh
@@ -107,7 +127,7 @@ TILEFLOW_APP_ORIGIN=http://127.0.0.1:3000 npm exec --no -- tileflow capture app-
 
 Each navigation uses a fresh context with no reused cookies, local storage, user profile, or
 service workers. Tileflow selects exactly one target by `captureId`, then an explicit selector, or
-the configured map name. A `map` frame captures the selected element; `viewport` captures the page
+the exported map ID. A `map` frame captures the selected element; `viewport` captures the page
 viewport. Zero or multiple matches, navigation failure, application console/page errors, an error
 readiness marker, and timeout fail closed without echoing DOM contents or URL queries. Main-frame
 redirects must remain on the exact approved origin, and the bounded credential/fragment-free URL
@@ -128,7 +148,7 @@ inspected the running application's MapLibre style or data source.
 The React `Map`, Vue `TileflowMap`, and Svelte `TileflowMap` roots expose equivalent attributes:
 
 ```txt
-data-tileflow-map="<configured map name when known>"
+data-tileflow-map="<exported map id when known>"
 data-tileflow-capture-id="<optional explicit captureId>"
 data-tileflow-state="loading|idle|error"
 ```
@@ -172,14 +192,15 @@ diagnostic levels; failed resource events may add the same safe `resources` arra
 SIGINT/SIGTERM closes the watcher, contexts, browser, and any explicitly started standalone preview
 server.
 
-Receipts are canonical schema-version-2 JSON and contain only scene/map/target identity, normalized
+New receipts are canonical schema-version-3 JSON and contain only scene/map/target identity, normalized
 scene and style hashes, PNG hash and CSS/physical dimensions, Tileflow/MapLibre/Playwright/Chromium
 identity, OS/architecture class, DPR, required resolved `data` identity, explicit `verification`,
 and `networkDependent`. The durable receipt data type is owned and versioned by `@tileflow/capture`;
 it is not an alias of the evolving core authoring type.
 
-`data` records the provider kind, optional explicit revision, OpenMapTiles schema/version, stable
-primary source ID, optional schema bindings/capabilities, and an optional safe source fingerprint.
+For external vector tiles, `data` records the provider kind, optional explicit revision, OpenMapTiles
+schema/version, stable primary source ID, optional schema bindings/capabilities, and an optional safe
+source fingerprint.
 The fingerprint contains only a source class plus SHA-256. Its input removes query and fragment;
 loopback sources also discard host and port. A raw URL, origin, path, query, signed token, or
 credential is never written by a new receipt. This identity participates in scene compatibility.
@@ -196,9 +217,14 @@ shape; it never reproduces its raw URL. Receipt parsing remains exact-key, UTF-8
 portable-identifier, hash, dimension, and pixel-budget validated; parser-dependent duplicate keys
 are rejected.
 
-New stateless World receipts use `generation: "v1"`. Explicit legacy World revision selectors remain
-readable and serializable for compatibility, but the default World contract does not retain the
-mutable revision served behind that generation.
+Schema-v3 World data is always exact. Capture resolves a logical current or exact TileJSON selector
+once for the lifetime of its session. The TileJSON must return one immutable tile template and the
+strict `tileflow.world` identity: `product: "world-v1"`, `releaseId`, `descriptorSha256`,
+`archiveSha256`, `dataContractSha256`, and `contractSha256`. Capture cross-checks the release and
+descriptor against the tile template, rewrites every standalone scene to that exact template, and
+reuses the same result for retries. It never derives these identifiers from a mutable URL. A second
+selector or a missing/conflicting identity fails closed. Schema-v2 `generation` and `revision`
+remain legacy baseline fields only and are not confused with the v3 contract.
 
 ## Visual comparison and baselines
 

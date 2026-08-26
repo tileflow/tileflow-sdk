@@ -11,7 +11,6 @@ import type {
   TileflowSymbolStyle,
   TileflowTextStyle,
 } from './styles';
-import {tileflowFontStack} from './styles';
 import {toMapLibreStyleValue} from './values';
 
 type Layer = Record<string, unknown> & {id: string; type: string};
@@ -59,7 +58,7 @@ export function applyLineStyle<TLayer extends Layer>(
   setPaint(paint, 'line-pattern', style.pattern);
   setPaint(paint, 'line-width', style.width);
   setLayout(layout, 'line-cap', style.cap);
-  if (style.join !== undefined) layout['line-join'] = style.join;
+  setLayout(layout, 'line-join', style.join);
   if (style.miterLimit !== undefined) layout['line-miter-limit'] = style.miterLimit;
   if (style.roundLimit !== undefined) layout['line-round-limit'] = style.roundLimit;
   return applyLayerRange(withLayerParts(layer, layout, paint), style);
@@ -73,7 +72,7 @@ export function applyTextStyle<TLayer extends Layer>(
   const layout = {...asRecord(layer.layout)};
   setLayout(layout, 'text-field', style.field);
   if (style.font !== undefined) {
-    layout['text-font'] = tileflowFontStack(style.font, style.weight, style.fallbacks);
+    layout['text-font'] = [style.font, ...(style.fallbacks ?? [])];
   }
   setLayout(layout, 'text-size', style.size);
   setLayout(layout, 'text-letter-spacing', style.letterSpacing);

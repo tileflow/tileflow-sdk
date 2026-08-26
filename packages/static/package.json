@@ -1,6 +1,7 @@
 {
   "name": "@tileflow/static",
   "version": "0.0.0-development",
+  "license": "Apache-2.0",
   "description": "Static map request schemas and helpers for Tileflow.",
   "type": "module",
   "sideEffects": false,
@@ -23,10 +24,14 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "GENERATED_OUTPUT_LICENSE.md",
+    "TRADEMARKS.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup src/index.ts src/scene.ts src/overlays.ts src/manifest.ts src/client.ts --format esm --dts --clean --splitting",
     "verify": "tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
@@ -36,6 +41,26 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js",
+      "default": "./dist/client.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest.d.ts",
+      "import": "./dist/manifest.js",
+      "default": "./dist/manifest.js"
+    },
+    "./overlays": {
+      "types": "./dist/overlays.d.ts",
+      "import": "./dist/overlays.js",
+      "default": "./dist/overlays.js"
+    },
+    "./scene": {
+      "types": "./dist/scene.d.ts",
+      "import": "./dist/scene.js",
+      "default": "./dist/scene.js"
     }
   },
   "publishConfig": {

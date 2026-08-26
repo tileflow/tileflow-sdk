@@ -204,6 +204,24 @@ export async function captureApplicationTileflowScene(
       );
     }
     if (targetCount === 0) {
+      try {
+        await locator.first().waitFor({
+          state: 'attached',
+          timeout: Math.min(timeoutMs, 2_000),
+        });
+        targetCount = await locator.count();
+      } catch {
+        // Client-rendered framework targets may attach after DOMContentLoaded. The bounded grace
+        // period closes that race while preserving the stable not-found diagnostic below.
+      }
+    }
+    if (targetCount === 0) {
+      if (applicationFailure || applicationOriginEscape) {
+        throw new TileflowCaptureError(
+          'APPLICATION_ERROR',
+          'The application reported an error before its capture target became ready.',
+        );
+      }
       throw new TileflowCaptureError(
         'APPLICATION_TARGET_NOT_FOUND',
         'The application page did not contain the requested Tileflow capture target.',

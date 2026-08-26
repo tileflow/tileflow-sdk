@@ -5,10 +5,10 @@ import {z} from 'zod';
 import {
   compareCodeUnits,
   sha256Hex,
-  tileflowHostedIconIdSchema,
+  tileflowIconIdSchema,
   tileflowIconPackageLimits,
 } from '@tileflow/core';
-import type {CompiledTileflowIconPackage} from '@tileflow/dev';
+import type {CompiledTileflowIconPackage} from '@tileflow/dev/icons';
 import type {IconPackageBaselineResponse, TileflowIconDiffDocument} from './icon-diff-command';
 
 const spriteEntrySchema = z
@@ -20,7 +20,7 @@ const spriteEntrySchema = z
     y: z.number().int().nonnegative().max(tileflowIconPackageLimits.maxAtlasDimension),
   })
   .strict();
-const spriteIndexSchema = z.record(tileflowHostedIconIdSchema, spriteEntrySchema);
+const spriteIndexSchema = z.record(tileflowIconIdSchema, spriteEntrySchema);
 type SpriteIndex = z.infer<typeof spriteIndexSchema>;
 
 type ReportSprite = {
@@ -202,16 +202,6 @@ function renderReport(
     {id: 'modified', label: 'Modified', names: [...document.icons.modified].sort(compareCodeUnits)},
     {id: 'removed', label: 'Removed', names: [...document.icons.removed].sort(compareCodeUnits)},
   ];
-  const mappingRows = [
-    ...document.mapping.added.map((change) => ['Added', change.key, '—', change.after ?? '—']),
-    ...document.mapping.changed.map((change) => [
-      'Changed',
-      change.key,
-      change.before ?? '—',
-      change.after ?? '—',
-    ]),
-    ...document.mapping.removed.map((change) => ['Removed', change.key, change.before ?? '—', '—']),
-  ];
   const changedCount = changeGroups.reduce((total, group) => total + group.names.length, 0);
   const beforeIconCount =
     document.icons.unchangedCount + document.icons.modified.length + document.icons.removed.length;
@@ -242,7 +232,6 @@ function renderReport(
       --danger: #b42318;
       --danger-soft: #fee4e2;
       --warning: #92400e;
-      --warning-soft: #fef3c7;
       --checker-light: #f8f9fb;
       --checker-dark: #e7eaf0;
       --shadow: 0 1px 2px rgb(16 24 40 / 5%);
@@ -262,7 +251,6 @@ function renderReport(
         --danger: #fda29b;
         --danger-soft: #4a211f;
         --warning: #fcd34d;
-        --warning-soft: #493512;
         --checker-light: #20242b;
         --checker-dark: #292e37;
         --shadow: none;
@@ -314,7 +302,7 @@ function renderReport(
     }
     .details-content { padding: 0 16px 16px; overflow-x: auto; }
     .details-context { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
-    .details-table, .mapping-table { width: 100%; border-collapse: collapse; }
+    .details-table { width: 100%; border-collapse: collapse; }
     th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
     th { color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: .02em; }
     tbody tr:last-child td { border-bottom: 0; }
@@ -404,14 +392,6 @@ function renderReport(
     .icon-missing { border-style: dashed; background: transparent; }
     .icon-sample figcaption { display: grid; justify-items: center; gap: 1px; margin-top: 9px; color: var(--text); font-size: 13px; font-weight: 650; text-align: center; }
     .change-arrow { align-self: center; margin-top: 46px; color: var(--muted); text-align: center; }
-    .secondary-section { margin-top: 44px; }
-    .secondary-copy { color: var(--muted); }
-    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
-    .mapping-table code { white-space: nowrap; }
-    .usage-list { margin: 12px 0 0; padding-left: 22px; }
-    .usage-list li + li { margin-top: 8px; }
-    .review-note { margin-top: 16px; padding: 12px 14px; border-left: 3px solid var(--warning); border-radius: 6px; background: var(--warning-soft); color: var(--text); }
-    .review-note strong { display: block; margin-bottom: 2px; }
     .empty-state { padding: 28px; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); text-align: center; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     @media (max-width: 600px) {
@@ -459,16 +439,6 @@ function renderReport(
       <div class="change-groups">
         ${changedCount ? changeGroups.map((group) => iconChangeGroup(group, before, after)).join('\n') : '<p class="empty-state">Before and next icons are visually identical.</p>'}
       </div>
-    </section>
-    <section class="secondary-section" aria-labelledby="mapping-title">
-      <h2 id="mapping-title">Mapping changes</h2>
-      <p class="section-description">Mappings connect semantic keys in your configuration to the icon names they use.</p>
-      ${mappingSection(document, mappingRows)}
-    </section>
-    <section class="secondary-section" aria-labelledby="usage-title">
-      <h2 id="usage-title">Icon usage checks</h2>
-      <p class="section-description">Checks whether removed icons are still referenced and identifies dynamic names Tileflow cannot verify.</p>
-      ${referenceSection(document)}
     </section>
   </main>
 </body>
@@ -622,44 +592,6 @@ function iconPreview(
   if (!entry) return '';
 
   return `<svg class="icon-preview preview-${density}" role="img" aria-label="${escapeHtml(`${label} ${name} at ${density}`)}" viewBox="0 0 ${entry.width} ${entry.height}" overflow="hidden" preserveAspectRatio="xMidYMid meet"><use href="#${definitionId}" x="${-entry.x}" y="${-entry.y}"></use></svg>`;
-}
-
-function mappingSection(
-  document: TileflowIconDiffDocument,
-  rows: Array<Array<string | undefined>>,
-): string {
-  if (!document.mapping.comparisonAvailable) {
-    return '<p class="secondary-copy">A historical mapping is not available for comparison.</p>';
-  }
-  if (rows.length === 0) return '<p class="secondary-copy">No mapping changes.</p>';
-
-  return `<div class="table-wrap"><table class="mapping-table"><thead><tr><th>Change</th><th>Semantic key</th><th>Before</th><th>Next</th></tr></thead><tbody>${rows
-    .map(
-      ([kind, key, previous, proposed]) =>
-        `<tr><td>${escapeHtml(kind ?? '')}</td><td><code>${escapeHtml(key ?? '')}</code></td><td><code>${escapeHtml(previous ?? '')}</code></td><td><code>${escapeHtml(proposed ?? '')}</code></td></tr>`,
-    )
-    .join('')}</tbody></table></div>`;
-}
-
-function referenceSection(document: TileflowIconDiffDocument): string {
-  const items = [
-    ...document.references.dangling.map(
-      (item) =>
-        `<li><code>${escapeHtml(item.iconName)}</code> is still used at <code>${escapeHtml(item.path)}</code>.</li>`,
-    ),
-    ...document.references.unanalyzable.map(
-      (item) =>
-        `<li>At <code>${escapeHtml(item.path)}</code>, check every icon name this dynamic expression can produce against Next.</li>`,
-    ),
-  ];
-  const results = items.length
-    ? `<ul class="usage-list">${items.join('')}</ul>`
-    : '<p class="secondary-copy">No removed icons are still referenced.</p>';
-  const reviewNote = document.references.analysisComplete
-    ? ''
-    : '<aside class="review-note" role="note"><strong>Action required before deploying</strong>Open each dynamic reference listed above and confirm that every icon name it can produce exists in Next. Fix or remove any missing name; Tileflow cannot evaluate values that depend on runtime map data.</aside>';
-
-  return `${results}${reviewNote}`;
 }
 
 function formatBytes(bytes: number): string {

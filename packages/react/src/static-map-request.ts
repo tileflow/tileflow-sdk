@@ -3,7 +3,7 @@ import {
   stableStringify,
   type PreparedStaticMapRequest,
   type StaticMapResult,
-} from '@tileflow/static';
+} from '@tileflow/static/client';
 
 type InFlightStaticMapRequest = {
   controller: AbortController;

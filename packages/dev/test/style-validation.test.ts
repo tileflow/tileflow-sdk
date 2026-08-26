@@ -3,27 +3,59 @@ import {mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
+import {defineRootMap, roads} from '@tileflow/core';
+import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
-  defineTileflow,
-  patchLayer,
-  roads,
-  streets,
-  type WorldGenerationDescriptor,
-} from '@tileflow/core';
-import {
+  assertValidTileflowStyle,
   createTileflowBuildArtifacts,
   createTileflowStyle,
-  createTileflowStyles,
   TileflowStyleValidationError,
+  TileflowValidationError,
   validateTileflowStyle,
   writeTileflowBuildArtifacts,
 } from '../src/index';
 
+const fixtureGlyphs = {
+  kind: 'url',
+  url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
+  fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
+} as const;
+
+const streetsPreparedAssets = {
+  icons: {
+    ids: [
+      'coffee',
+      'crosswalk',
+      'culture',
+      'education',
+      'food',
+      'health',
+      'lodging',
+      'major-transit',
+      'oneway',
+      'services',
+      'shopping',
+      'sidewalk-dot',
+    ],
+    sprite: '/tileflow/test/streets/sprite',
+  },
+} as const;
+
 test('direct style creation reports a stable layer/property diagnostic', () => {
-  const project = invalidProject('madrid');
+  const style = {
+    version: 8,
+    sources: {},
+    layers: [
+      {
+        id: 'streets-background',
+        type: 'background',
+        paint: {'background-color': 42},
+      },
+    ],
+  } as never;
 
   assert.throws(
-    () => createTileflowStyle(project, 'madrid'),
+    () => assertValidTileflowStyle(style, 'madrid'),
     (error: unknown) => {
       assert.ok(error instanceof TileflowStyleValidationError);
       assert.equal(error.code, 'STYLE_INVALID');
@@ -40,31 +72,30 @@ test('direct style creation reports a stable layer/property diagnostic', () => {
   );
 });
 
-test('multi-map style construction aggregates, sorts, and bounds semantic issues', () => {
-  const project = defineTileflow({
-    maps: Object.fromEntries(
-      Array.from({length: 40}, (_, index) => {
-        const map = `map-${String(39 - index).padStart(2, '0')}`;
-        return [map, invalidProject(map).maps[map]!];
-      }),
-    ),
-  });
+test('style validation sorts and bounds semantic issues', () => {
+  const style = {
+    version: 8,
+    sources: {},
+    layers: Array.from({length: 40}, (_, index) => ({
+      id: `background-${String(39 - index).padStart(2, '0')}`,
+      type: 'background',
+      paint: {'background-color': 42},
+    })),
+  } as never;
+  const issues = validateTileflowStyle(style, 'many');
 
-  assert.throws(
-    () => createTileflowStyles(project),
-    (error: unknown) => {
-      assert.ok(error instanceof TileflowStyleValidationError);
-      assert.equal(error.issues.length, 32);
-      assert.equal(error.issues[0]?.map, 'map-00');
-      assert.equal(error.issues.at(-1)?.map, 'map-31');
-      assert.deepEqual(
-        [...error.issues].sort((left, right) =>
-          left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
-        ),
-        error.issues,
-      );
-      return true;
-    },
+  assert.equal(issues.length, 32);
+  assert.deepEqual(
+    [...issues].sort((left, right) =>
+      left.path < right.path ? -1 : left.path > right.path ? 1 : 0,
+    ),
+    issues,
+  );
+  assert.ok(
+    issues.every(
+      (issue) =>
+        issue.map === 'many' && issue.path.startsWith('maps.many.style.layers.background-'),
+    ),
   );
 });
 
@@ -94,40 +125,36 @@ test('semantic diagnostics sanitize programmatic map and layer identifiers', () 
   assert.doesNotMatch(JSON.stringify(issues), /\/Users|\.secret|\.\.\/private/);
 });
 
-test('artifact construction shares validation and aggregates invalid config maps', async (t) => {
-  const cwd = await createFixture(t, 'tileflow-dev-invalid-style-');
+test('artifact construction rejects removed physical overrides before writing', async (t) => {
+  const cwd = await createFixture(t, 'tileflow-dev-removed-overrides-');
   await writeFile(
-    join(cwd, 'tileflow.config.ts'),
-    `export default {
-  maps: {
-    zeta: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]},
-    alpha: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]}
-  }
-};\n`,
+    join(cwd, 'tileflow.workspace.ts'),
+    `import {defineRootMap} from '@tileflow/core';
+export default defineRootMap({
+  id: 'madrid',
+  version: 1,
+  root: {compiler: 'streets', compilerVersion: 1},
+  overrides: []
+});\n`,
   );
 
   await assert.rejects(
-    () => createTileflowBuildArtifacts({cwd}),
-    (error: unknown) => {
-      assert.ok(error instanceof TileflowStyleValidationError);
-      assert.deepEqual(
-        error.issues.map((issue) => issue.path),
-        [
-          'maps.alpha.style.layers.streets-background.paint.background-color',
-          'maps.zeta.style.layers.streets-background.paint.background-color',
-        ],
-      );
-      return true;
-    },
+    () => createTileflowBuildArtifacts({config: 'tileflow.workspace.ts', cwd}),
+    (error: unknown) =>
+      error instanceof TileflowValidationError &&
+      error.messages.some((message) => /unrecognized key "overrides"/iu.test(message.message)),
   );
 });
 
 test('direct Streets roads validate and written artifacts equal in-memory styles', async (t) => {
   const direct = createTileflowStyle(
-    defineTileflow({
+    {
       maps: {
-        madrid: {
-          basemap: streets(),
+        madrid: defineRootMap({
+          id: 'madrid',
+          version: 1,
+          root: {compiler: 'streets', compilerVersion: 1},
+          glyphs: fixtureGlyphs,
           modules: {
             roads: roads({
               detail: 'all',
@@ -137,28 +164,31 @@ test('direct Streets roads validate and written artifacts equal in-memory styles
               weight: 'regular',
             }),
           },
-        },
+        }),
       },
-    }),
+    },
     'madrid',
+    {preparedAssets: streetsPreparedAssets},
   );
   assert.deepEqual(JSON.parse(JSON.stringify(direct)), direct);
 
   const cwd = await createFixture(t, 'tileflow-dev-valid-style-');
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `export default {
-  maps: {
-    madrid: {
-      basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
-      modules: {roads: {
+    `import {defineRootMap} from '@tileflow/core';
+import {streetsIcons} from '@tileflow/maps';
+export default defineRootMap({
+  id: 'madrid',
+  version: 1,
+  root: {compiler: 'streets', compilerVersion: 1},
+  glyphs: {kind: 'url', url: 'https://fonts.example.test/{fontstack}/{range}.pbf', fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']},
+  icons: [streetsIcons],
+  modules: {roads: {
         type: 'roads',
         detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
         extras: {paths: true}
       }}
-    }
-  }
-};\n`,
+});\n`,
   );
   const artifacts = await createTileflowBuildArtifacts({cwd});
   const written = await writeTileflowBuildArtifacts({cwd, outDir: 'dist/tileflow'});
@@ -170,70 +200,51 @@ test('direct Streets roads validate and written artifacts equal in-memory styles
   assert.deepEqual(diskStyle, artifacts.styles.madrid);
 });
 
-test('builds World directly from one compiler descriptor without discovery or repository state', async (t) => {
-  const cwd = await createFixture(t, 'tileflow-dev-world-generation-');
+test('builds World and glyph selectors independently without repository state', async (t) => {
+  const cwd = await createFixture(t, 'tileflow-dev-world-selection-');
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `export default {
-  maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}}}
-};\n`,
+    `import {defineRootMap} from '@tileflow/core';
+export default defineRootMap({
+  id: 'madrid',
+  version: 1,
+  root: {compiler: 'streets', compilerVersion: 1},
+  glyphs: {
+    kind: 'url',
+    url: 'https://assets.example.test/base/exact/glyphs/{fontstack}/{range}.pbf',
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']
+  },
+  icons: [],
+  modules: {roads: {type: 'roads', enabled: false}, poi: {type: 'poi', enabled: false}}
+});\n`,
   );
   const before = await readdir(cwd);
   const first = await createTileflowBuildArtifacts({
     apiBaseUrl: 'https://api-one.example.test',
     cwd,
-    worldGeneration: worldGenerationFixture,
   });
   const second = await createTileflowBuildArtifacts({
     apiBaseUrl: 'https://api-two.example.test',
     cwd,
-    worldGeneration: worldGenerationFixture,
   });
   const style = first.styles.madrid!;
   const source = style.sources.tileflow as Record<string, unknown>;
-  const serialized = JSON.stringify(style);
 
-  assert.deepEqual(first, second);
-  assert.equal(JSON.stringify(first), JSON.stringify(second));
+  assert.notDeepEqual(first, second);
   assert.deepEqual(await readdir(cwd), before);
-  assert.deepEqual(source.tiles, [worldGenerationFixture.tileUrl]);
-  assert.equal(Object.hasOwn(source, 'url'), false);
-  assert.equal(style.glyphs, worldGenerationFixture.assetSet.glyphs);
-  assert.equal(style.sprite, worldGenerationFixture.assetSet.spriteBase);
+  assert.equal(source.url, 'https://api-one.example.test/tiles/world/tiles.json');
+  assert.equal(Object.hasOwn(source, 'tiles'), false);
+  assert.equal(
+    style.glyphs,
+    'https://assets.example.test/base/exact/glyphs/{fontstack}/{range}.pbf',
+  );
+  assert.equal(style.sprite, undefined);
   assert.equal(first.assets.length, 0);
-  assert.doesNotMatch(serialized, /TileJSON|archiveVersion|tiles\/world\/tiles\.json/);
 });
-
-const worldGenerationFixture: WorldGenerationDescriptor = {
-  schemaVersion: 1,
-  generation: 'v1',
-  tileUrl: 'https://world.tileflow.dev/world/v1/{z}/{x}/{y}.pbf',
-  vectorSchema: {id: 'tileflow-world-v1-test', sha256: 'a'.repeat(64)},
-  tileEncoding: {format: 'mvt', compression: 'gzip', scheme: 'xyz', extent: 4096},
-  minzoom: 0,
-  maxzoom: 15,
-  bounds: [-180, -85.0511288, 180, 85.0511288],
-  attribution: '© OpenStreetMap contributors · Tileflow test fixture',
-  assetSet: {
-    id: 'a1-0123456789abcdef',
-    glyphs: 'https://assets.tileflow.dev/base/a1-0123456789abcdef/glyphs/{fontstack}/{range}.pbf',
-    spriteBase: 'https://assets.tileflow.dev/base/a1-0123456789abcdef/sprites/base',
-  },
-};
-
-function invalidProject(map: string) {
-  return defineTileflow({
-    maps: {
-      [map]: {
-        basemap: streets(),
-        overrides: [patchLayer('streets-background', {paint: {'background-color': 42}})],
-      },
-    },
-  });
-}
 
 async function createFixture(t: TestContext, prefix: string): Promise<string> {
   const cwd = await mkdtemp(join(tmpdir(), prefix));
+  await linkWorkspacePackages(cwd);
   t.after(() => rm(cwd, {force: true, recursive: true}));
   return cwd;
 }

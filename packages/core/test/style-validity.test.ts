@@ -10,11 +10,34 @@ import {
   land,
   poi,
   roads,
-  streets,
   transit,
   water,
   zoom,
 } from '../src/index';
+import {extendStreets} from './map-fixture';
+
+const streetsPreparedAssets = {
+  icons: {
+    ids: [
+      'coffee',
+      'crosswalk',
+      'culture',
+      'education',
+      'food',
+      'health',
+      'lodging',
+      'major-transit',
+      'oneway',
+      'services',
+      'shopping',
+      'sidewalk-dot',
+    ],
+    sprite: '/tileflow/test/streets/sprite',
+  },
+} as const;
+
+const compileTestMap = (design: Parameters<typeof extendStreets>[0] = {}) =>
+  createStyle(extendStreets(design), {preparedAssets: streetsPreparedAssets});
 
 const variants = [
   {name: 'defaults', modules: undefined},
@@ -29,6 +52,11 @@ const variants = [
       poi: poi({
         icons: 'full',
         labels: 'full',
+        maxRank: zoom.step([
+          [12, 14],
+          [16, 80],
+          [19, 500],
+        ]),
         preset: 'full',
         styles: {
           food: {
@@ -44,7 +72,7 @@ const variants = [
   },
   {
     name: 'exact dark',
-    theme: 'dark',
+    theme: {mode: 'dark' as const},
     modules: {
       roads: roads({
         classes: {
@@ -89,8 +117,7 @@ const variants = [
 
 for (const variant of variants) {
   test(`emits a MapLibre-valid Streets style: ${variant.name}`, () => {
-    const style = createStyle({
-      basemap: streets(),
+    const style = compileTestMap({
       ...(variant.theme ? {theme: variant.theme} : {}),
       ...(variant.modules ? {modules: variant.modules} : {}),
     });
@@ -100,8 +127,7 @@ for (const variant of variants) {
 }
 
 test('disabled domains are deliberately absent rather than silently replaced', () => {
-  const style = createStyle({
-    basemap: streets(),
+  const style = compileTestMap({
     modules: {
       buildings: buildings({enabled: false}),
       poi: poi({enabled: false}),
@@ -136,7 +162,7 @@ test('disabled domains are deliberately absent rather than silently replaced', (
 });
 
 test('binds individual trees for the runtime 3d vegetation renderer', () => {
-  const style = createStyle({basemap: streets()});
+  const style = compileTestMap();
   const trees = style.layers.find((layer) => layer.id === 'streets-vegetation-trees');
   const treeIndex = style.layers.findIndex((layer) => layer.id === 'streets-vegetation-trees');
   const buildingIndex = style.layers.findIndex((layer) => layer.id === 'streets-buildings-fill');

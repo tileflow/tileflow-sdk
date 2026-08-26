@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {prepareStaticMapRequest} from '@tileflow/static';
+import {prepareStaticMapRequest} from '@tileflow/static/client';
 import {createStaticMapRequestKey, resolveStaticMap} from '../src/static-map-request';
 
 const createUrl = 'https://api.example.test/v1/static/maps';

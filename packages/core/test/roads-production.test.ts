@@ -7,6 +7,7 @@ import {
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {openMapTiles, resolveTileflowData, roads} from '../src';
+import {assembleTileflowLayers} from '../src/cartography/graph';
 import {optimizeTileflowLayers} from '../src/cartography/optimizer';
 import {roadClassesForDetail} from '../src/modules/roads';
 import {compileRoads} from '../src/modules/roads/compiler';
@@ -21,13 +22,11 @@ const context = {
   colors: resolveColors(),
   data: resolveTileflowData(undefined),
   typography: {
-    font: 'Noto Sans',
-    fontFamily: 'Noto Sans',
-    weight: 'regular' as const,
-    places: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'bold' as const},
-    roads: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular' as const},
-    water: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular' as const},
-    poi: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular' as const},
+    font: 'Noto Sans Regular',
+    places: {font: 'Noto Sans Bold'},
+    roads: {font: 'Noto Sans Regular'},
+    water: {font: 'Noto Sans Regular'},
+    poi: {font: 'Noto Sans Regular'},
   },
 };
 
@@ -203,6 +202,97 @@ test('official OpenMapTiles road values map to disjoint existing semantics and f
   assert.ok(serviceTunnel);
   assert.equal(matchesFilter(serviceSurface.filter, {crossing_kind: 'ford', kind: 'busway'}), true);
   assert.equal(matchesFilter(serviceTunnel.filter, {crossing_kind: 'ford', kind: 'busway'}), false);
+});
+
+test('detailed road extensions compile through remappable semantic contracts', () => {
+  const data = resolveTileflowData({
+    type: 'vector-tiles',
+    attribution: 'Test',
+    schema: openMapTiles({
+      fields: {
+        circularInnerRadiusMeters: 'ring_inner_m',
+        circularKind: 'ring_kind',
+        circularOuterRadiusMeters: 'ring_outer_m',
+        circularRadiusAtZoom15: 'ring_radius_z15',
+        circularRadiusMeters: 'ring_radius_m',
+        class: 'kind',
+        direction: 'bearing',
+        subclass: 'detail',
+      },
+      layers: {
+        circularFeature: 'road_circles',
+        sidewalk: 'pedestrian_surfaces',
+        streetFurniture: 'road_furniture',
+      },
+    }),
+    url: '/tiles.json',
+  });
+  const contributions = compileRoads(
+    roads({
+      crossings: {image: 'crosswalk'},
+      detail: 'none',
+      roundabouts: {fill: {strokeColor: '#123456'}},
+      sidewalks: {
+        outline: {color: '#345678', width: 1},
+        pattern: {pattern: 'sidewalk-dot'},
+        surface: {color: '#234567'},
+      },
+    }),
+    {...context, data},
+  );
+  const byId = (id: string) => contributions.find(({layer}) => layer.id === id)!;
+  const sidewalkSurface = byId('streets-sidewalk-surface');
+  const sidewalkPattern = byId('streets-sidewalk-pattern');
+  const sidewalkOutline = byId('streets-sidewalk-outline');
+  const roundaboutCasing = byId('streets-road-circular-casing');
+  const roundaboutFill = byId('streets-road-circular-fill');
+  const crossing = byId('streets-road-crossing');
+
+  assert.equal(sidewalkSurface.layer['source-layer'], 'pedestrian_surfaces');
+  assert.equal(sidewalkSurface.slot, 'transport-pedestrian-areas');
+  assert.match(JSON.stringify(sidewalkSurface.layer.filter), /kind/);
+  assert.equal((sidewalkSurface.layer.paint as Record<string, unknown>)['fill-color'], '#234567');
+  assert.equal(
+    (sidewalkPattern.layer.paint as Record<string, unknown>)['fill-pattern'],
+    'sidewalk-dot',
+  );
+  assert.equal((sidewalkOutline.layer.paint as Record<string, unknown>)['line-color'], '#345678');
+  assert.equal(roundaboutCasing.layer['source-layer'], 'road_circles');
+  assert.match(JSON.stringify(roundaboutCasing.layer), /ring_radius_z15/);
+  assert.match(JSON.stringify(roundaboutCasing.layer), /ring_inner_m/);
+  assert.equal(
+    (roundaboutFill.layer.paint as Record<string, unknown>)['circle-stroke-color'],
+    '#123456',
+  );
+  assert.equal(crossing.layer['source-layer'], 'road_furniture');
+  assert.equal(crossing.layer.minzoom, 15);
+  assert.match(JSON.stringify(crossing.layer.filter), /detail/);
+  assert.match(JSON.stringify(crossing.layer.layout), /bearing/);
+  assert.equal((crossing.layer.layout as Record<string, unknown>)['icon-image'], 'crosswalk');
+  assert.deepEqual((crossing.layer.paint as Record<string, unknown>)['icon-opacity'], [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    15,
+    0,
+    15.5,
+    1,
+  ]);
+  assert.deepEqual(styleErrors(assembleTileflowLayers(contributions)), []);
+
+  const portableData = resolveTileflowData({
+    type: 'vector-tiles',
+    attribution: 'Test',
+    schema: openMapTiles(),
+    url: '/tiles.json',
+  });
+  const portableIds = compileRoads(roads({crossings: {image: 'crosswalk'}, detail: 'none'}), {
+    ...context,
+    data: portableData,
+  }).map(({layer}) => layer.id);
+  assert.equal(portableIds.includes('streets-sidewalk-surface'), false);
+  assert.equal(portableIds.includes('streets-road-circular-fill'), false);
+  assert.equal(portableIds.includes('streets-road-crossing'), false);
 });
 
 test('hatch consolidation encodes original class crossing priority in valid sort keys', () => {

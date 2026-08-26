@@ -1,8 +1,8 @@
 import type {TileflowDomainCompileContext} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
-import {applyLineStyle, createAreaLayers} from '../../cartography/layer-style';
+import {applyFillStyle, applyLineStyle, createAreaLayers} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
-import {zoom} from '../../cartography/values';
+import {expression, zoom} from '../../cartography/values';
 import {mix} from '../../themes';
 import type {TileflowWaterModuleConfig, TileflowWaterwayClass} from './index';
 
@@ -115,56 +115,65 @@ export function compileWater(
   const bathymetryLayer = layers.bathymetry;
   const bathymetryDepthField = fields.bathymetryMinDepth;
   const bathymetrySortField = fields.bathymetrySortKey;
-  if (
-    bathymetryLayer &&
-    bathymetryDepthField &&
-    bathymetrySortField &&
-    config.bodies?.fill?.visible !== false
-  ) {
+  if (bathymetryLayer && bathymetryDepthField && bathymetrySortField) {
     const waterColor =
       typeof config.bodies?.fill?.color === 'string'
         ? config.bodies.fill.color
         : context.colors.hydro.water;
     const deepWater = mix(waterColor, '#000000', 0.18);
-    contributions.push({
-      kind: 'layer',
-      layer: {
-        id: 'streets-bathymetry',
-        type: 'fill',
-        source,
-        'source-layer': bathymetryLayer,
-        minzoom: 0,
-        maxzoom: 10,
-        layout: {
-          'fill-sort-key': ['to-number', ['get', bathymetrySortField], 0],
-        },
-        paint: {
-          'fill-antialias': false,
-          'fill-color': [
-            'match',
-            ['to-number', ['get', bathymetryDepthField], 0],
-            0,
-            waterColor,
-            -200,
-            mix(waterColor, deepWater, 0.2),
-            -1000,
-            mix(waterColor, deepWater, 0.4),
-            -2000,
-            mix(waterColor, deepWater, 0.6),
-            -4000,
-            mix(waterColor, deepWater, 0.8),
-            -6000,
-            deepWater,
-            waterColor,
-          ],
-          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 0, 0.84, 7, 0.76, 9, 0.56, 10, 0],
-        },
+    const bathymetry = mergeTileflowDesign(
+      {
+        antialias: false,
+        color: expression<string>([
+          'match',
+          ['to-number', ['get', bathymetryDepthField], 0],
+          0,
+          waterColor,
+          -200,
+          mix(waterColor, deepWater, 0.2),
+          -1000,
+          mix(waterColor, deepWater, 0.4),
+          -2000,
+          mix(waterColor, deepWater, 0.6),
+          -4000,
+          mix(waterColor, deepWater, 0.8),
+          -6000,
+          deepWater,
+          waterColor,
+        ]),
+        maxZoom: 10,
+        minZoom: 0,
+        opacity: zoom.linear([
+          [0, 0.84],
+          [7, 0.76],
+          [9, 0.56],
+          [10, 0],
+        ]),
+        visible: config.bodies?.fill?.visible !== false,
       },
-      localOrder: 2,
-      owner: 'water',
-      slot: 'hydro',
-      target: 'water.bathymetry',
-    });
+      config.bathymetry,
+    );
+    if (bathymetry.visible !== false) {
+      contributions.push({
+        kind: 'layer',
+        layer: applyFillStyle(
+          {
+            id: 'streets-bathymetry',
+            type: 'fill',
+            source,
+            'source-layer': bathymetryLayer,
+            layout: {
+              'fill-sort-key': ['to-number', ['get', bathymetrySortField], 0],
+            },
+          },
+          bathymetry,
+        ),
+        localOrder: 2,
+        owner: 'water',
+        slot: 'hydro',
+        target: 'water.bathymetry',
+      });
+    }
   }
 
   let localOrder = 10;

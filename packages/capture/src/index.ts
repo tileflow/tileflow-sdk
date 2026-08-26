@@ -41,11 +41,23 @@ export type {
   TileflowCaptureDataBindingsV2,
   TileflowCaptureDataCapabilitiesV2,
   TileflowCaptureDataIdentityV2,
+  TileflowCaptureDataIdentityV3,
   TileflowCaptureDataInput,
+  TileflowCaptureDataSemanticsV2,
   TileflowCaptureDataSourceV2,
   TileflowCaptureReceipt,
+  TileflowCaptureReceiptV2,
+  TileflowCaptureReceiptV3,
   TileflowCaptureVerificationV2,
+  TileflowCaptureVectorIdentityV3,
+  TileflowCaptureWorldIdentityV3,
 } from './receipt';
+export {
+  resolveTileflowCaptureWorldTileJson,
+  tileflowWorldCurrentTileJsonUrl,
+  TileflowCaptureWorldSession,
+} from './world';
+export type {PreparedTileflowCaptureStyle, TileflowCaptureResolvedWorldV1} from './world';
 export {tileflowSyntheticAssetOrigin} from './standalone';
 export {resolveTileflowApplicationUrl} from './application';
 export {

@@ -1,19 +1,25 @@
-import type {TileflowDomainCompileContext} from '../../cartography/context';
+import {type TileflowDomainCompileContext, typographyTextStyle} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applyCircleStyle, applySymbolStyle} from '../../cartography/layer-style';
+import {labelField} from '../../cartography/localization';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import type {
   TileflowCircleStyle,
   TileflowSymbolStyle,
   TileflowTextStyle,
 } from '../../cartography/styles';
-import {expression, zoom} from '../../cartography/values';
+import {
+  expression,
+  isTileflowZoomValue,
+  toMapLibreStyleValue,
+  zoom,
+} from '../../cartography/values';
 import type {
   TileflowLabelLanguage,
   TileflowPoiCategoryStyle,
   TileflowPoiModuleConfig,
+  TileflowPoiRankLimit,
 } from '../../types';
-import {labelField} from '../labels/language';
 import {type ResolvedPoiModuleOptions, resolvePoi} from './index';
 
 export function compilePoi(
@@ -35,9 +41,6 @@ export function compilePoi(
     const classes = mappedClasses.filter((value) => !claimedClasses.has(value));
     for (const value of mappedClasses) claimedClasses.add(value);
     if (classes.length === 0) continue;
-    const defaultSemanticIcon = semanticIcon(category);
-    const mappedIcon =
-      context.icons?.mapping?.[category] ?? context.icons?.mapping?.[defaultSemanticIcon];
     const categoryColor =
       semantics.color === 'category'
         ? (context.colors.poi[category as keyof typeof context.colors.poi] ??
@@ -45,12 +48,7 @@ export function compilePoi(
         : context.colors.poi.label;
     const defaults = {
       icon: {
-        image: expression<string>([
-          'coalesce',
-          ...(mappedIcon ? [['image', mappedIcon]] : []),
-          ['image', `${defaultSemanticIcon}_11`],
-          ['image', 'marker_11'],
-        ]),
+        image: category,
         optional: !semantics.placement.coupleIconAndLabel,
         padding: semantics.placement.iconPadding,
         size:
@@ -84,9 +82,10 @@ export function compilePoi(
     const showText = semantics.labels !== 'none' && style.text.visible !== false;
     const showIcon = Boolean(semantics.icons) && style.icon.visible !== false;
     style = withPoiTextClearance(style, showText && showIcon);
-    const densityRank = style.maxRank ?? densityRankLimit(semantics.density);
-    const textRank = showText ? (style.maxRank ?? labelRankLimit(semantics.labels)) : 0;
-    const iconRank = showIcon ? (style.maxRank ?? iconRankLimit(semantics.icons)) : 0;
+    const configuredRank = style.maxRank ?? semantics.maxRank;
+    const densityRank = densityRankLimit(semantics.density);
+    const textRank = showText ? labelRankLimit(semantics.labels) : 0;
+    const iconRank = showIcon ? iconRankLimit(semantics.icons) : 0;
 
     if (markerStyle && markerStyle.visible !== false) {
       const base = createPoiLayer({
@@ -96,7 +95,7 @@ export function compilePoi(
         id: `streets-poi-${category}-marker`,
         minZoom: semantics.minZoom,
         rankField: schema.fields.rank,
-        rankLimit: densityRank,
+        rankLimit: configuredRank ?? densityRank,
         source,
         sourceLayer: schema.layers.poi,
         subclassField: schema.fields.subclass,
@@ -120,7 +119,7 @@ export function compilePoi(
         id: `streets-poi-${category}`,
         minZoom: semantics.minZoom,
         rankField: schema.fields.rank,
-        rankLimit: minimumRankLimit(densityRank, textRank, iconRank),
+        rankLimit: configuredRank ?? minimumRankLimit(densityRank, textRank, iconRank),
         source,
         sourceLayer: schema.layers.poi,
         subclassField: schema.fields.subclass,
@@ -139,7 +138,7 @@ export function compilePoi(
           id: `streets-poi-${category}-icon`,
           minZoom: semantics.minZoom,
           rankField: schema.fields.rank,
-          rankLimit: minimumRankLimit(densityRank, iconRank),
+          rankLimit: configuredRank ?? minimumRankLimit(densityRank, iconRank),
           source,
           sourceLayer: schema.layers.poi,
           subclassField: schema.fields.subclass,
@@ -158,7 +157,7 @@ export function compilePoi(
           id: `streets-poi-${category}-label`,
           minZoom: semantics.minZoom,
           rankField: schema.fields.rank,
-          rankLimit: minimumRankLimit(densityRank, textRank),
+          rankLimit: configuredRank ?? minimumRankLimit(densityRank, textRank),
           source,
           sourceLayer: schema.layers.poi,
           subclassField: schema.fields.subclass,
@@ -190,7 +189,7 @@ function createPoiLayer(options: {
   id: string;
   minZoom: number;
   rankField: string;
-  rankLimit: number | undefined;
+  rankLimit: TileflowPoiRankLimit | undefined;
   source: string;
   sourceLayer: string;
   subclassField: string;
@@ -225,9 +224,17 @@ function createPoiLayer(options: {
     filter:
       options.rankLimit === undefined
         ? categoryFilter
-        : ['all', categoryFilter, ['<=', rankSortKeyExpression, options.rankLimit]],
+        : [
+            'all',
+            categoryFilter,
+            ['<=', rankSortKeyExpression, resolveRankLimit(options.rankLimit)],
+          ],
     layout: {'symbol-sort-key': rankSortKeyExpression},
   };
+}
+
+function resolveRankLimit(limit: TileflowPoiRankLimit): number | unknown[] {
+  return isTileflowZoomValue(limit) ? (toMapLibreStyleValue(limit) as unknown[]) : limit;
 }
 
 function rankSortKey(field: string): unknown[] {
@@ -278,11 +285,10 @@ function poiTextStyle(
     {
       allowOverlap: false,
       color: context.colors.poi.label,
-      font: context.typography.poi.font,
+      ...typographyTextStyle(context.typography.poi),
       haloColor: context.colors.poi.halo,
       haloWidth: 1,
       optional: true,
-      weight: context.typography.poi.weight,
     },
     overrides,
   );
@@ -308,19 +314,4 @@ function withPoiTextClearance<
       variableAnchors: ['top', 'bottom', 'right', 'left'],
     },
   };
-}
-
-function semanticIcon(category: string): string {
-  return (
-    {
-      coffee: 'cafe',
-      culture: 'museum',
-      education: 'school',
-      food: 'restaurant',
-      health: 'hospital',
-      lodging: 'lodging',
-      shopping: 'shop',
-      transit: 'railway',
-    }[category] ?? 'marker'
-  );
 }

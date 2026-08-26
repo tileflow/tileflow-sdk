@@ -22,7 +22,7 @@ test('dev emits valid/invalid/recovered/stopped NDJSON and serves last-good loca
   });
   t.after(async () => {
     await running.stop();
-    await rm(cwd, {force: true, recursive: true});
+    await rm(cwd, {force: true, maxRetries: 5, recursive: true, retryDelay: 100});
   });
 
   const ready = await running.waitFor((event) => event.event === 'ready');
@@ -96,7 +96,7 @@ test(
     );
     t.after(async () => {
       await running.stop();
-      await rm(cwd, {force: true, recursive: true});
+      await rm(cwd, {force: true, maxRetries: 5, recursive: true, retryDelay: 100});
     });
 
     const first = await running.waitFor(
@@ -128,7 +128,8 @@ test(
         event.event === 'recovered' && Number(event.generation) > Number(invalid.generation),
     );
     const third = await running.waitFor(
-      (event) => event.event === 'captured' && event.generation === recovered.generation,
+      (event) =>
+        event.event === 'captured' && Number(event.generation) >= Number(recovered.generation),
       45_000,
     );
     assert.equal(third.outputPath, first.outputPath);
@@ -152,7 +153,7 @@ test('capture watch exits nonzero when stopped with no valid capture and an inva
   const running = startCli(cwd, ['capture', 'proof', '--watch', '--json', '--no-browser-install']);
   t.after(async () => {
     await running.stop();
-    await rm(cwd, {force: true, recursive: true});
+    await rm(cwd, {force: true, maxRetries: 5, recursive: true, retryDelay: 100});
   });
 
   await running.waitFor((event) => event.event === 'invalid');

@@ -13,6 +13,22 @@ const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const tsxLoader = import.meta.resolve('tsx');
 const accountToken = `tf_session_${'a'.repeat(64)}`;
 
+test('project lifecycle stays callable but is hidden from primary help', async (t) => {
+  const fixture = await createFixture(t);
+  const primary = await runCli(fixture.projectDirectory, ['--help'], fixture.directory);
+  const compatibility = await runCli(
+    fixture.projectDirectory,
+    ['projects', '--help'],
+    fixture.directory,
+  );
+
+  assert.equal(primary.code, 0, primary.stderr);
+  assert.doesNotMatch(primary.stdout, /^\s+projects\b/mu);
+  assert.equal(compatibility.code, 0, compatibility.stderr);
+  assert.match(compatibility.stdout, /list/u);
+  assert.match(compatibility.stdout, /create/u);
+});
+
 test('projects list uses the account session and emits deterministic secret-free targets', async (t) => {
   const fixture = await createFixture(t);
   let authorization = '';
@@ -170,7 +186,7 @@ test('legacy project login requires fresh account authorization and remains byte
   );
 
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /retired project-credential model/);
+  assert.match(result.stderr, /retired destination-credential model/);
   const {readFile} = await import('node:fs/promises');
   assert.equal(await readFile(fixture.authPath, 'utf8'), legacy);
 });

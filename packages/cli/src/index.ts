@@ -507,7 +507,7 @@ program
   .option('--manifest <path>', 'manifest path written for frontend bundlers', defaultManifestPath)
   .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
-  .option('--project <target>', 'target @organization/project')
+  .option('--project <target>', 'technical destination @organization/project')
   .option('--world-promotion <id>', 'continue one verified Tileflow World promotion')
   .option('--map <name>', 'map to connect when a promotion config contains multiple maps')
   .action(
@@ -767,7 +767,7 @@ program
   .description('Show deployed compiled styles')
   .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
-  .option('--project <target>', 'target @organization/project')
+  .option('--project <target>', 'technical destination @organization/project')
   .option('--json', 'print raw JSON')
   .action(async (options: {apiUrl?: string; apiKey?: string; json?: boolean; project?: string}) => {
     let api: {apiKey: string; apiUrl: string} | null;
@@ -1367,7 +1367,7 @@ async function requireApiOptions(
   const requested = options.project ? parseProjectReference(options.project) : null;
 
   if (options.project && !requested) {
-    if (!behavior.silent) logError('Project must use @organization/project syntax.');
+    if (!behavior.silent) logError('Managed destination must use @organization/project syntax.');
     process.exitCode = 1;
     return null;
   }
@@ -1398,7 +1398,7 @@ async function requireApiOptions(
     allowsStoredDeployCredential(resolveDeploySource(process.env));
   if (!allowStoredCredential) {
     if (!behavior.silent) {
-      logError('CI requires an explicit project-bound Tileflow API key.');
+      logError('CI requires an explicit application-scoped Tileflow API key.');
       printNextSteps([
         `Set ${pc.cyan('TILEFLOW_API_KEY')} from the CI secret store.`,
         'The saved personal account session is never used in CI.',
@@ -1441,15 +1441,15 @@ async function requireApiOptions(
       const references = target.targets.map((candidate) => candidate.reference);
       if (target.kind === 'ambiguous') {
         const retry = `${behavior.retryCommand ?? 'tileflow <command>'} --project ${references[0]}`;
-        logError(`Project target is ambiguous: ${references.join(', ')}.`);
+        logError(`Managed destination is ambiguous: ${references.join(', ')}.`);
         printNextSteps([`Retry exactly with ${command(retry)}.`]);
       } else if (target.kind === 'invalid') {
-        logError('Project must use @organization/project syntax.');
+        logError('Managed destination must use @organization/project syntax.');
       } else {
         logError(
           options.project
-            ? `Project ${options.project} is not accessible to this account.`
-            : 'No active project is accessible to this account.',
+            ? `Destination ${options.project} is not accessible to this account.`
+            : 'No active managed destination is accessible to this account.',
         );
       }
     }
@@ -1512,7 +1512,7 @@ async function requestProjectCapability(
     !Array.isArray(body.scopes) ||
     body.scopes.join('\0') !== [...scopes].sort().join('\0')
   ) {
-    return {error: 'Project capability response was invalid.', ok: false};
+    return {error: 'Destination capability response was invalid.', ok: false};
   }
   return {capability: body.capability, ok: true};
 }
@@ -1835,7 +1835,7 @@ async function uploadHostedIconPackage(
 
 function printProjectStatus(status: HostedProjectStatus, apiUrl: string) {
   printTitle('Tileflow status');
-  printKeyValue('Project', pc.bold(status.projectId));
+  printKeyValue('Application', pc.bold(status.projectId));
 
   console.log(`\n${pc.bold('Styles')}`);
   if (status.styles.length === 0) {

@@ -622,7 +622,10 @@ export default {maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, va
   );
 
   assert.equal(result.code, 1);
-  assert.match(`${result.stdout}\n${result.stderr}`, /explicit project-bound Tileflow API key/);
+  assert.match(
+    `${result.stdout}\n${result.stderr}`,
+    /explicit application-scoped Tileflow API key/,
+  );
   assert.match(`${result.stdout}\n${result.stderr}`, /TILEFLOW_API_KEY/);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /tileflow login/);
   assert.equal(requests, 0);
@@ -668,7 +671,7 @@ export default {maps: {madrid: {name: 'Madrid'}}};
 
   assert.equal(result.code, 1);
   assert.equal(requests, 1);
-  assert.match(result.stdout, /Project target is ambiguous: @acme\/web, @acme\/worker/);
+  assert.match(result.stdout, /Managed destination is ambiguous: @acme\/web, @acme\/worker/);
   const expectedRetry = [
     'tileflow',
     'deploy',

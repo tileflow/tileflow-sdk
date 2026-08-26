@@ -1,7 +1,6 @@
 import type {Map as MapLibreMap} from 'maplibre-gl';
 import assert from 'node:assert/strict';
 import {mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
@@ -30,7 +29,7 @@ test(
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
   async () => {
     const capturePackageRoot = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
-    const cwd = await mkdtemp(join(tmpdir(), 'tileflow-test-react-semantic-vite-'));
+    const cwd = await mkdtemp(join(capturePackageRoot, '.tileflow-test-react-semantic-vite-'));
     const reactSource = fileURLToPath(new URL('../../react/src/index.ts', import.meta.url));
     let browser: Awaited<ReturnType<typeof launchTileflowCaptureBrowser>> | undefined;
     let vite: Awaited<ReturnType<typeof createViteServer>> | undefined;

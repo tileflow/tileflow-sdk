@@ -1,5 +1,4 @@
 import type {TileflowWorldRequestBridge} from './fair-use-browser';
-import type {MapLibreStyle} from './types';
 import {
   getTileflowStyleFontFaces,
   resolveTileflowAnalyticsRequestUrl,
@@ -8,8 +7,18 @@ import {
   type TileflowSessionController,
   type TileflowStyleFontFace,
 } from './runtime';
+import type {MapLibreStyle} from './types';
 
 export * from './fair-use-browser';
+export {
+  registerTileflowContourProtocol,
+  tileflowMaplibreContourVersion,
+  type TileflowContourProtocolHandler,
+  type TileflowContourProtocolRegistrationOptions,
+  type TileflowContourProtocolRegistry,
+  type TileflowContourProtocolRequest,
+  type TileflowContourProtocolResponse,
+} from './contour-browser';
 
 export type TileflowMapReadinessState = 'error' | 'idle' | 'loading';
 

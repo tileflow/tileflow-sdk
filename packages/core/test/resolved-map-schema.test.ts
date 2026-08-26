@@ -254,7 +254,29 @@ test('accepts detailed cartographic module styles and their optional data bindin
           heightScale: 1.4,
         },
       }),
-      water: water({bathymetry: {color: '#789ABC'}}),
+      water: water({
+        bathymetry: {color: '#789ABC'},
+        bathymetryContours: {
+          color: '#56789A',
+          dash: [2, 1],
+          maxZoom: 10,
+          minZoom: 3,
+          width: 0.75,
+        },
+        bathymetryLabels: {
+          maxZoom: 9,
+          minZoom: 4,
+          priority: 12,
+          spacing: 96,
+          text: {
+            color: '#6789AB',
+            field: 'depth-floor',
+            font: 'Noto Sans Bold',
+            size: 11,
+          },
+          zOrder: 'source',
+        },
+      }),
     },
   });
 
@@ -262,6 +284,26 @@ test('accepts detailed cartographic module styles and their optional data bindin
   assert.equal(map.modules?.roads?.crossings?.image, 'crosswalk');
   assert.equal(map.modules?.vegetation?.threeDimensional?.heightScale, 1.4);
   assert.equal(map.modules?.water?.bathymetry?.color, '#789ABC');
+  assert.deepEqual(map.modules?.water?.bathymetryContours, {
+    color: '#56789A',
+    dash: [2, 1],
+    maxZoom: 10,
+    minZoom: 3,
+    width: 0.75,
+  });
+  assert.deepEqual(map.modules?.water?.bathymetryLabels, {
+    maxZoom: 9,
+    minZoom: 4,
+    priority: 12,
+    spacing: 96,
+    text: {
+      color: '#6789AB',
+      field: 'depth-floor',
+      font: 'Noto Sans Bold',
+      size: 11,
+    },
+    zOrder: 'source',
+  });
   if (map.data?.type !== 'vector-tiles') return;
   assert.equal(map.data.schema.layers.circularFeature, 'circular_feature');
   assert.equal(map.data.schema.fields.direction, 'direction');

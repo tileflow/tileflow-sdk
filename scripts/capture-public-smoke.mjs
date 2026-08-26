@@ -586,6 +586,12 @@ async function auditPublicTarball(packageName, tarball, packedVersions, releaseC
       'Capture tarball is missing third-party notices.',
     );
   }
+  if (packageName === '@tileflow/core') {
+    assert.ok(
+      entries.includes('package/THIRD_PARTY_NOTICES.md'),
+      'Core tarball is missing embedded browser dependency notices.',
+    );
+  }
   if (packageName === '@tileflow/maps') {
     assert.ok(
       entries.includes('package/THIRD_PARTY_NOTICES.md'),

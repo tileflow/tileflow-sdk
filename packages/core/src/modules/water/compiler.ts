@@ -1,7 +1,13 @@
-import type {TileflowDomainCompileContext} from '../../cartography/context';
+import {type TileflowDomainCompileContext, typographyTextStyle} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
-import {applyFillStyle, applyLineStyle, createAreaLayers} from '../../cartography/layer-style';
+import {
+  applyFillStyle,
+  applyLineStyle,
+  applySymbolStyle,
+  createAreaLayers,
+} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
+import type {TileflowLineStyle, TileflowSymbolStyle} from '../../cartography/styles';
 import {expression, zoom} from '../../cartography/values';
 import {mix} from '../../themes';
 import type {TileflowWaterModuleConfig, TileflowWaterwayClass} from './index';
@@ -172,6 +178,93 @@ export function compileWater(
         owner: 'water',
         slot: 'hydro',
         target: 'water.bathymetry',
+      });
+    }
+  }
+
+  if (request?.bathymetryContours !== undefined && bathymetryLayer && bathymetryDepthField) {
+    const bathymetryContours = mergeTileflowDesign<TileflowLineStyle>(
+      {
+        color: context.colors.hydro.label,
+        join: 'round',
+        maxZoom: 10,
+        minZoom: 3,
+        opacity: 0.34,
+        width: zoom.linear([
+          [3, 0.3],
+          [9, 0.7],
+        ]),
+      },
+      request.bathymetryContours,
+    );
+    if (bathymetryContours.visible !== false) {
+      contributions.push({
+        kind: 'layer',
+        layer: applyLineStyle(
+          {
+            id: 'streets-bathymetry-contours',
+            type: 'line',
+            source,
+            'source-layer': bathymetryLayer,
+            filter: [
+              'all',
+              ['==', ['geometry-type'], 'Polygon'],
+              ['has', bathymetryDepthField],
+              ['<', ['to-number', ['get', bathymetryDepthField], 0], 0],
+            ],
+          },
+          bathymetryContours,
+        ),
+        localOrder: 5,
+        owner: 'water',
+        slot: 'hydro',
+        target: 'water.bathymetryContours',
+      });
+    }
+  }
+
+  if (request?.bathymetryLabels !== undefined && bathymetryLayer && bathymetryDepthField) {
+    const bathymetryLabels = mergeTileflowDesign<TileflowSymbolStyle>(
+      {
+        maxZoom: 10,
+        minZoom: 3,
+        placement: 'point',
+        priority: 5,
+        text: {
+          allowOverlap: false,
+          color: context.colors.hydro.label,
+          field: expression<string>([
+            'to-string',
+            ['abs', ['to-number', ['get', bathymetryDepthField], 0]],
+          ]),
+          ...typographyTextStyle(context.typography.water),
+          haloColor: context.colors.hydro.water,
+          haloWidth: 1,
+          opacity: 0.72,
+          optional: true,
+          padding: 18,
+          size: 9,
+        },
+      },
+      request.bathymetryLabels,
+    );
+    if (bathymetryLabels.visible !== false && bathymetryLabels.text?.visible !== false) {
+      contributions.push({
+        kind: 'layer',
+        layer: applySymbolStyle(
+          {
+            id: 'streets-bathymetry-labels',
+            type: 'symbol',
+            source,
+            'source-layer': bathymetryLayer,
+            filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['has', bathymetryDepthField]],
+          },
+          bathymetryLabels,
+        ),
+        localOrder: 480,
+        owner: 'water',
+        slot: 'symbols',
+        target: 'water.bathymetryLabels',
       });
     }
   }

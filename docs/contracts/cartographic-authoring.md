@@ -7,13 +7,15 @@ and visual evidence must change atomically. The canonical workbench is
 the official maps under `packages/maps/src/official/`. The Tileflow Tiles playground consumes
 exact npm packages after publication; it is not the place to invent SDK controls.
 
-Streets and Ferraris are Tileflow's first-party root maps, declared with `defineRootMap()` and
-compiled directly from Tileflow-owned semantic modules. They both select the semantic Streets
-compiler, but Ferraris defines its full design independently and neither imports nor extends the
-Streets map. Streets Dark, Cyberpunk, and Verdant are ordinary maps declared with `defineMap()` and
-`extends: streets`; applications customize maps through the same inheritance contract. None of
-these maps clones, bundles, or patches an upstream style. Coverage and design comparisons use
-external visual references rather than a template stored in the compiler package.
+Streets, Ferraris, Härad, Siegfried, Soundings, and Verdant are Tileflow's first-party root maps,
+declared with `defineRootMap()` and compiled directly from Tileflow-owned semantic modules. They
+select the semantic Streets compiler ABI, but Ferraris, Härad, Siegfried, Soundings, and Verdant
+define their full designs independently and none imports, extends, or reuses assets from the Streets
+map. Streets Dark and Cyberpunk are ordinary maps declared with `defineMap()` and
+`extends: streets`; Matrix is an ordinary map that extends Cyberpunk. Applications customize maps
+through the same inheritance contract. None of these maps clones, bundles, or patches an upstream
+style. Coverage and design comparisons use external visual references rather than a template stored
+in the compiler package.
 
 ## How authoring becomes a map
 
@@ -39,7 +41,8 @@ The public API is deliberately agent-friendly:
 
 - Every `tileflow.config.ts` exports one map.
 - `defineMap({extends: parent})` creates a versioned map from another imported map object.
-- `defineRootMap()` is reserved for a complete compiler-owned root such as Streets or Ferraris.
+- `defineRootMap()` is reserved for a complete compiler-owned root such as Streets, Ferraris,
+  Härad, Siegfried, Soundings, or Verdant.
 - Omitting `data` selects the compiler-owned Tileflow World `v1` generation.
 - `data` changes the compatible dataset, never the drawing system.
 - `modules` is an object keyed by domain; key order never controls z-order and duplicates are
@@ -67,11 +70,17 @@ symbols; collision placement remains authoritative. MapLibre evaluates zoom-depe
 integer zoom levels, including `linear` and `exponential` rank ceilings.
 
 Official maps own their source assets in `@tileflow/maps/assets/<id>/`. Streets declares
-`icons: [streetsIcons]`. Cyberpunk and Verdant are ordinary derived maps and compose their additions
-explicitly as `[...streets.icons, cyberpunkIcons]` and `[...streets.icons, verdantIcons]`.
-Ferraris is an independent root and declares only `[ferrarisIcons]`, which contains nine original
-SVG patterns; it does not compose Streets assets. Applications use the same rule with a
-config-relative directory, for example `icons: [...streets.icons, './icons']`.
+`icons: [streetsIcons]`, and Cyberpunk composes its additions explicitly as
+`[...streets.icons, cyberpunkIcons]`. Matrix replaces that asset list with
+`[streetsIcons, matrixIcons]` so its green-screen HUD artwork owns the referenced IDs. Ferraris,
+Härad, Siegfried, Soundings, and Verdant are independent roots and declare only
+`[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`, `[soundingsIcons]`, and `[verdantIcons]`,
+respectively; none composes Streets assets. Härad's directory contains nine original Tileflow SVG
+patterns inspired by Lantmäteriet's CC0 Häradsekonomiska kartan series (1859–1934) and official legend.
+The package redistributes no Lantmäteriet scan, source pixel, legend artwork, font, or map data.
+Soundings owns ten original nautical symbols and patterns; its GEBCO-derived depth bands and labels
+provide broad visual context and are not navigation-grade survey soundings. Applications use the
+same rule with a config-relative directory, for example `icons: [...streets.icons, './icons']`.
 
 `icons` is only an ordered directory array. Omission inherits the parent's exact array, declaration
 replaces it atomically, and `[]` means no icons. `<id>.<ext>` publishes an icon as `<id>`, while
@@ -90,16 +99,18 @@ names as IDs, requires a
 `LICENSE.txt` in each contributing directory, applies later exact-name replacements, and emits only
 faces used by the final style. `font` contains an exact face ID; local `fallbacks` contain exact face
 names or explicit CSS generic families. There is no weight field or family-plus-weight synthesis.
-After inheritance resolves, a map that emits text has exactly one provider. Streets and Ferraris
-each declare the canonical Tileflow URL with exact `Noto Sans Regular` and `Noto Sans Bold` stacks,
-Verdant inherits it from Streets, and Cyberpunk uses packaged `Oxanium Medium` and
-`Oxanium SemiBold` faces. The glyph URL is canonical rather than content-addressed; the service
-uses revalidating cache semantics and does not claim an exact-byte receipt. A reproducible official
-PBF provider uses an explicit `/base/<assetSetSha256>/glyphs/...` URL backed by a validated immutable
-global base-asset manifest. In that URL, `assetSetSha256` is the identity defined by the global
-base-asset contract; it is not the same-domain value as the per-map `assetSetSha256` recorded in
-`build-manifest.json` for generated sprite/font outputs. The pipeline has no map-name or font-family
-special case and never invents a fallback URL.
+After inheritance resolves, a map that emits text has exactly one provider. Streets, Ferraris,
+Härad, Soundings, and Verdant each declare the canonical Tileflow URL with exact `Noto Sans Regular`
+and `Noto Sans Bold` stacks. Cyberpunk and Matrix use packaged `Oxanium Medium` and
+`Oxanium SemiBold` faces; Siegfried uses packaged `Cormorant Garamond Regular`,
+`Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic` faces. The glyph URL is canonical
+rather than content-addressed; the service uses revalidating cache semantics and does not claim an
+exact-byte receipt. A reproducible official PBF provider uses an explicit
+`/base/<assetSetSha256>/glyphs/...` URL backed by a validated immutable global base-asset manifest.
+In that URL, `assetSetSha256` is the identity defined by the global base-asset contract; it is not
+the same-domain value as the per-map `assetSetSha256` recorded in `build-manifest.json` for generated
+sprite/font outputs. The pipeline has no map-name or font-family special case and never invents a
+fallback URL.
 
 The compiler creates every `streets-*` layer from a domain compiler. It resolves domain conflicts
 before graph assembly—for example, roads determine eligible road-label classes, aeroways own
@@ -196,7 +207,7 @@ Compiler output records exact durable identity:
 
 - `tileflow:map = <resolved map id>`
 - `tileflow:mapVersion = <resolved map version>`
-- `tileflow:root = streets` (the selected compiler lineage; both first-party roots use it)
+- `tileflow:root = streets` (the selected compiler lineage; all six first-party roots use it)
 - `tileflow:rootCompilerVersion = 1`
 - `tileflow:extends = [<parent ids>]` when the map is derived
 - `tileflow:variant = light | dark`

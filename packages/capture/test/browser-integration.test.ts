@@ -7,10 +7,11 @@ import {createServer, Server} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
+import {PNG} from 'pngjs';
 import type {MapLibreStyle, NormalizedTileflowCaptureScene} from '@tileflow/core';
 import {createTileflowBuildArtifacts, type TileflowBuildAsset} from '@tileflow/dev/artifacts';
-import {launchTileflowCaptureBrowser} from '../src/browser';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
+import {launchTileflowCaptureBrowser} from '../src/browser';
 import {
   captureStandaloneTileflowScene,
   readPngDimensions,
@@ -171,6 +172,127 @@ export default defineRootMap({
   },
 );
 
+test(
+  'renders compiler-generated contours twice through the packaged browser protocol',
+  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
+  async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'tileflow-contour-browser-'));
+    await linkWorkspacePackages(cwd);
+    const requests = new Set<string>();
+    const server = createServer((request, response) => {
+      const path = request.url?.split('?')[0] ?? '/';
+      requests.add(path);
+      response.setHeader('Access-Control-Allow-Origin', '*');
+      if (path.startsWith('/dem/') && path.endsWith('.png')) {
+        response.writeHead(200, {'Content-Type': 'image/png'});
+        response.end(flatTerrariumPng);
+        return;
+      }
+      if (path.endsWith('.pbf')) {
+        response.writeHead(200, {'Content-Type': 'application/x-protobuf'});
+        response.end(Buffer.alloc(0));
+        return;
+      }
+      if (path.endsWith('/sprite.json') || path.endsWith('/sprite@2x.json')) {
+        response.writeHead(200, {'Content-Type': 'application/json'});
+        response.end('{}');
+        return;
+      }
+      if (path.endsWith('/sprite.png') || path.endsWith('/sprite@2x.png')) {
+        response.writeHead(200, {'Content-Type': 'image/png'});
+        response.end(transparentPng);
+        return;
+      }
+      response.writeHead(404).end();
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const origin = `http://127.0.0.1:${address.port}`;
+    let browser: Awaited<ReturnType<typeof launchTileflowCaptureBrowser>> | undefined;
+
+    try {
+      await writeFile(
+        join(cwd, 'tileflow.config.ts'),
+        `import {defineRootMap} from '@tileflow/core';
+import {streetsIcons} from '@tileflow/maps';
+
+export default defineRootMap({
+  id: 'proof',
+  version: 1,
+  root: {compiler: 'streets', compilerVersion: 1},
+  icons: [streetsIcons],
+  glyphs: {
+    kind: 'url',
+    url: ${JSON.stringify(`${origin}/glyphs/{fontstack}/{range}.pbf`)},
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']
+  },
+  data: {
+    type: 'vector-tiles',
+    attribution: 'Tileflow exact fixture',
+    revision: 'fixture_1',
+    schema: {type: 'openmaptiles', contractVersion: 1},
+    tiles: [${JSON.stringify(`${origin}/tiles/world/{z}/{x}/{y}.pbf`)}],
+    minzoom: 0,
+    maxzoom: 14,
+    bounds: [-180, -85, 180, 85]
+  },
+  terrain: {
+    mode: 'none',
+    encoding: 'terrarium',
+    contours: {
+      demMaxZoom: 1,
+      demUrl: ${JSON.stringify(`${origin}/dem/{z}/{x}/{y}.png`)},
+      maxZoom: 1,
+      minZoom: 0,
+      thresholds: {0: [250, 500], 1: [250, 500]}
+    }
+  }
+});\n`,
+      );
+      const artifacts = await createTileflowBuildArtifacts({
+        apiBaseUrl: origin,
+        assetBaseUrl: tileflowSyntheticAssetOrigin,
+        cwd,
+      });
+      const generatedStyle = artifacts.styles.proof;
+      assert.ok(generatedStyle);
+      assert.equal(generatedStyle.sources['tileflow-contours']?.type, 'vector');
+      assert.ok(
+        generatedStyle.layers.some((layer) => layer.id === 'streets-terrain-contour-minor'),
+      );
+      browser = await launchTileflowCaptureBrowser({allowInstall: false});
+      const first = await captureStandaloneTileflowScene({
+        assets: artifacts.assets,
+        browser,
+        scene: generatedScene,
+        style: generatedStyle,
+      });
+      const second = await captureStandaloneTileflowScene({
+        assets: artifacts.assets,
+        browser,
+        scene: generatedScene,
+        style: generatedStyle,
+      });
+      const hash = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+
+      assert.equal(hash(first.png), hash(second.png));
+      assert.deepEqual(readPngDimensions(first.png), {height: 256, width: 256});
+      assert.equal(first.networkDependent, false);
+      assert.deepEqual(first.warnings, []);
+      assert.equal(
+        [...requests].some((path) => path.startsWith('/dem/') && path.endsWith('.png')),
+        true,
+      );
+    } finally {
+      await browser?.close();
+      await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
+      await rm(cwd, {force: true, recursive: true});
+    }
+  },
+);
+
 const scene: NormalizedTileflowCaptureScene = {
   map: 'proof',
   camera: {
@@ -269,3 +391,16 @@ const transparentPng = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWP4WSz2H4QZYAwAWswKBc9NlmIAAAAASUVORK5CYII=',
   'base64',
 );
+
+const flatTerrariumImage = new PNG({height: 256, width: 256});
+for (let offset = 0; offset < flatTerrariumImage.data.length; offset += 4) {
+  flatTerrariumImage.data[offset] = 128;
+  flatTerrariumImage.data[offset + 1] = 0;
+  flatTerrariumImage.data[offset + 2] = 0;
+  flatTerrariumImage.data[offset + 3] = 255;
+}
+const flatTerrariumPng = PNG.sync.write(flatTerrariumImage, {
+  colorType: 6,
+  filterType: 4,
+  inputColorType: 6,
+});

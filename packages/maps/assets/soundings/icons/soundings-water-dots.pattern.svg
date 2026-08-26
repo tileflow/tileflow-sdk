@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <title>Nautical water stipple</title>
+  <desc>Original Tileflow transparent dot-and-dash water texture.</desc>
+  <g fill="#466F73" opacity=".2">
+    <circle cx="6" cy="10" r=".55"/>
+    <circle cx="24" cy="6" r=".42"/>
+    <circle cx="45" cy="13" r=".5"/>
+    <circle cx="59" cy="5" r=".38"/>
+    <circle cx="14" cy="28" r=".4"/>
+    <circle cx="35" cy="24" r=".58"/>
+    <circle cx="55" cy="33" r=".44"/>
+    <circle cx="5" cy="48" r=".46"/>
+    <circle cx="27" cy="55" r=".52"/>
+    <circle cx="48" cy="49" r=".4"/>
+    <circle cx="61" cy="61" r=".5"/>
+  </g>
+  <g fill="none" stroke="#466F73" stroke-linecap="round" stroke-width=".65" opacity=".16">
+    <path d="M12 17h3m16-5h2.5M51 23h4M3 37h3m16 3h2.5m15-3h3M14 57h3m36-1h3"/>
+  </g>
+</svg>

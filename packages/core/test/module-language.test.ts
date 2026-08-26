@@ -294,6 +294,57 @@ test('publishes AI-reference constraints that match exact assets and capture aut
   assert(poiRank);
   assert.equal((poiRank.allOf as JsonSchemaObject[]).length, 2);
 
+  const terrainContours = collectJsonSchemaObjects(reference).find(
+    (schema) => schema.properties?.demMaxZoom && schema.properties?.thresholds,
+  );
+  assert(terrainContours);
+  const terrainRefinements = terrainContours['x-tileflow-refinements'];
+  assert(Array.isArray(terrainRefinements));
+  assert.deepEqual(terrainRefinements, [
+    {
+      path: 'demUrl',
+      rule: 'Must pass the exact safe HTTP(S) DEM-template parser described on the property.',
+    },
+    {path: 'maxZoom', rule: 'When present, must include the greatest threshold zoom.'},
+    {
+      path: 'minZoom',
+      rule: 'When present, must not precede the smallest threshold zoom and must not exceed the effective maxZoom.',
+    },
+    {
+      path: 'overzoom',
+      rule: 'Must not exceed the smallest threshold zoom, so generated DEM zooms cannot become negative.',
+    },
+    {
+      path: '{minor,index,labels}.{minZoom,maxZoom}',
+      rule: 'Each layer minZoom must not precede the effective contour-source minZoom, and each layer maxZoom must include its effective minZoom.',
+    },
+  ]);
+  const terrainDemUrl = dereferenceJsonSchema(
+    reference,
+    asJsonSchema(terrainContours.properties?.demUrl),
+  );
+  assert.match(String(terrainDemUrl.description), /exactly once/u);
+  assert.match(String(terrainDemUrl.description), /plain HTTP/u);
+  assert.match(String(terrainDemUrl.description), /credentials/u);
+  assert.match(String(terrainDemUrl.description), /fragments/u);
+  assert.match(String(terrainDemUrl['x-tileflow-refinement']), /WHATWG URL/u);
+  const terrainThresholds = dereferenceJsonSchema(
+    reference,
+    asJsonSchema(terrainContours.properties?.thresholds),
+  );
+  assert.equal(terrainThresholds.minProperties, 1);
+  assert.equal(terrainThresholds.maxProperties, 25);
+  assert.deepEqual(terrainThresholds['x-tileflow-refinements'], [
+    {
+      path: '*',
+      rule: 'The index interval must be greater than or equal to, and a whole multiple of, the minor interval.',
+    },
+    {
+      path: '*[0]',
+      rule: 'The minor interval must satisfy the zoom- and multiplier-dependent main-thread contour density budget.',
+    },
+  ]);
+
   const refinements = definitions.ResolvedTileflowMap?.['x-tileflow-refinements'];
   assert(Array.isArray(refinements));
   const refinementPaths = new Set(
@@ -308,6 +359,11 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     'delivery.hosted.allowedOrigins[]',
     '**.hatch.patternWidths[]',
     'modules.poi.{maxRank,styles.*.maxRank}.stops',
+    'terrain.contours.demUrl',
+    'terrain.contours.thresholds.*',
+    'terrain.contours.{thresholds,multiplier}',
+    'terrain.contours.{thresholds,minZoom,maxZoom,overzoom}',
+    'terrain.contours.{minor,index,labels}.{minZoom,maxZoom}',
   ]) {
     assert.equal(refinementPaths.has(path), true, `missing refinement ${path}`);
   }

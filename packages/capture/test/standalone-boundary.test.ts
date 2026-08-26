@@ -60,6 +60,27 @@ test('classifies MapLibre load errors separately from load and idle timeouts', a
   );
 });
 
+test('installs the contour protocol runtime before the standalone map is created', async () => {
+  const scripts: Array<{content?: string; path?: string; type?: string}> = [];
+  await captureStandaloneTileflowScene({
+    assets: [],
+    browser: createBrowser({onScriptTag: (options) => scripts.push(options)}),
+    scene,
+    style,
+  });
+
+  assert.equal(scripts.length, 3);
+  assert.match(scripts[0]?.path ?? '', /maplibre-gl\.js$/u);
+  assert.equal(scripts[1]?.type, 'module');
+  assert.match(scripts[1]?.content ?? '', /registerTileflowContourProtocol/u);
+  assert.match(scripts[1]?.content ?? '', /__tileflowRegisterContourProtocol/u);
+  const pageRuntime = scripts[2]?.content ?? '';
+  assert.ok(
+    pageRuntime.indexOf('__tileflowRegisterContourProtocol') <
+      pageRuntime.indexOf('new window.maplibregl.Map'),
+  );
+});
+
 test('prefers a sanitized glyph 404 over a generic MapLibre load error', async () => {
   const browser = createBrowser({
     load: {reason: 'error', status: 'failed'},
@@ -137,6 +158,7 @@ function createBrowser(options: {
   idle?: PhaseResult;
   load?: PhaseResult;
   onEvaluate?: (call: number, handlers: Map<string, (...args: unknown[]) => void>) => void;
+  onScriptTag?: (options: {content?: string; path?: string; type?: string}) => void;
   screenshot?: (handlers: Map<string, (...args: unknown[]) => void>) => Promise<Buffer>;
 }): Browser {
   const handlers = new Map<string, (...args: unknown[]) => void>();
@@ -145,7 +167,9 @@ function createBrowser(options: {
     screenshot: async () => options.screenshot?.(handlers) ?? Buffer.from(pngHeader(64, 64)),
   } as unknown as Locator;
   const page = {
-    addScriptTag: async () => undefined,
+    addScriptTag: async (scriptOptions: {content?: string; path?: string; type?: string}) => {
+      options.onScriptTag?.(scriptOptions);
+    },
     addStyleTag: async () => undefined,
     evaluate: async () => {
       evaluateCalls += 1;

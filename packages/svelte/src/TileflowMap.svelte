@@ -32,6 +32,7 @@
     createTileflowSessionStarter,
     createTileflowTransformRequest,
     loadTileflowStyleFonts,
+    registerTileflowContourProtocol,
     registerTileflowWorldRequestBridge,
     type TileflowFairUseNoticeController,
     type TileflowMapLifecycleAttachment,
@@ -534,6 +535,7 @@
       source: 'svelte',
     });
     mapFairUseNotice = attachTileflowFairUseNotice(targetContainer);
+    registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
     mapWorldRequestBridge = registerTileflowWorldRequestBridge({
       addProtocol: maplibregl.addProtocol,
       onNotice: mapFairUseNotice.update,

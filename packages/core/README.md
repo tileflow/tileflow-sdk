@@ -53,14 +53,60 @@ Set `projection: 'globe'` for MapLibre's adaptive globe preset. Global zooms ren
 then transition to Mercator between zoom 10 and 12 so detailed streets remain planar. Omit the
 property, or set it to `'mercator'`, for a consistently flat map.
 
+Terrain keeps the original `'none' | 'hillshade' | '3d'` shorthand. The object form can style every
+MapLibre hillshade paint control, or generate vector contours in the browser from an explicit DEM
+tile template. Contours require `demUrl`, `demMaxZoom`, and zoom-indexed `[minor, index]`
+`thresholds`; the raster `url` remains the separate TileJSON endpoint. Set `mode: 'none'` to compile
+contours without adding a raster source, hillshade, or 3D terrain:
+
+```ts
+terrain: {
+  mode: 'none',
+  encoding: 'terrarium',
+  contours: {
+    demUrl: 'https://terrain.example.test/{z}/{x}/{y}.webp',
+    demMaxZoom: 13,
+    maxZoom: 15,
+    overzoom: 2,
+    thresholds: {
+      9: [100, 500],
+      11: [50, 250],
+      13: [20, 100],
+      15: [10, 50],
+    },
+    minor: {color: '#91683A', width: 0.55},
+    index: {color: '#734F2A', width: 1.2},
+    labels: {color: '#734F2A', haloColor: '#F7F0DE'},
+  },
+}
+```
+
+The compiled source is ordinary MapLibre vector data with source layer `contours`; its tile URL
+contains the safely encoded DEM template and complete generation parameters. Register the generic
+protocol before MapLibre reads the style. It lazily initializes the pinned, locally bundled
+`maplibre-contour@0.1.0` browser module on the first contour tile; no public CDN runtime is needed.
+`overzoom` may not exceed the lowest threshold zoom, so generated DEM requests never use a negative
+zoom. Every index interval must be a whole multiple of its minor interval. Contour labels emit the
+scaled numeric elevation without assuming a display unit. Source and layer visibility cannot begin
+before the first configured threshold zoom. To bound main-thread work, effective minor intervals
+must be at least 250 units at z0–4, 100 at z5–7, 50 at z8–10, 20 at z11–12, and 10 from z13 onward.
+Use a trusted, size-bounded DEM tile service; the protocol intentionally accepts author-supplied
+HTTP(S) templates rather than proxying or republishing terrain data.
+
+```ts
+import {registerTileflowContourProtocol} from '@tileflow/core/browser';
+
+registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
+```
+
 ## Authoring model
 
 Tileflow exposes one authoring concept: a map. `defineRootMap()` creates a complete compiler root;
-`defineMap()` creates an ordinary map whose `extends` value is another imported map object. Streets
-and Ferraris (the `streets` and `ferraris` exports from `@tileflow/maps`) are the first-party roots.
-Both use the semantic Streets compiler, but Ferraris defines its complete design directly and does
-not import or extend Streets. Streets Dark, Cyberpunk, and Verdant are ordinary maps that extend
-Streets through exactly the same API available to applications. There is no separate public recipe
+`defineMap()` creates an ordinary map whose `extends` value is another imported map object. Streets,
+Ferraris, Härad, Siegfried, Soundings, and Verdant are the first-party roots. All use the semantic
+Streets compiler, but the five roots after Streets define their complete designs directly and do
+not import or extend Streets. Streets Dark and Cyberpunk extend Streets through exactly the same API
+available to applications, and Matrix extends Cyberpunk. There is no separate public recipe
 selector or compatibility alias.
 
 The serialized root literal `compiler: 'streets'` is the current compiler-family ABI identifier,
@@ -111,10 +157,11 @@ export default defineMap({
 });
 ```
 
-The root above is complete as written. A map always owns its complete glyph URL provider; Core does
-not obtain fonts or sprites from World and never invents a fallback URL. The first-party `streets`
-and `ferraris` roots likewise declare their providers directly, so ordinary imports and derived
-maps compile without out-of-band release metadata.
+The root above is complete as written. A map always owns its complete text provider; Core does not
+obtain fonts or sprites from World and never invents a fallback URL. The URL-backed first-party
+`streets`, `ferraris`, `harad`, `soundings`, and `verdant` roots declare their glyph providers
+directly, while `siegfried` declares packaged fonts, so ordinary imports and derived maps compile
+without out-of-band release metadata.
 
 ```mermaid
 flowchart LR
@@ -149,7 +196,12 @@ parking access aisles remain road features under `roads.serviceTypes.parkingAisl
 `commercial` target recognizes ordinary `commercial` and `retail` values plus Tileflow's derived
 `business_area` ground class. Its `globalLandcover` fill styles the optional low-zoom global
 land-cover extension without a raw layer patch. The `water.bathymetry` fill does the same for the
-typed Tileflow World V1 depth bands.
+typed Tileflow World V1 depth bands. An explicit `water({bathymetryContours: {}})` traces the
+submerged edges between those discrete polygon bands; it is an approximate visual contour, not a
+surveyed isoline. `water({bathymetryLabels: {}})` separately opts into numeric metre values derived
+from each polygon's absolute minimum band depth. Existing maps gain neither detail by default, and
+sources without bathymetry bindings omit both requested layers. These labels describe coarse band
+floors, not measured survey soundings, and must not be presented as hydrographic sounding data.
 
 `addresses` renders the standard OpenMapTiles `housenumber` points at detailed zooms and exposes a
 single semantic `labels` style. `landforms` renders the standard `mountain_peak` classes (`peak`,
@@ -430,15 +482,16 @@ another. Browser adapters load local faces before MapLibre. Native releases use 
 `glyphs` URL provider instead, which enumerates the exact comma-joined MapLibre request keys in
 `fontStacks`.
 
-Streets and Ferraris each declare `https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf` with the
-exact `Noto Sans Regular` and `Noto Sans Bold` stacks; Verdant inherits that complete provider from
-Streets. That compatibility URL is canonical but not content-addressed; responses revalidate and
+Streets, Ferraris, Härad, Soundings, and Verdant each declare
+`https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf` with the exact `Noto Sans Regular` and
+`Noto Sans Bold` stacks. That compatibility URL is canonical but not content-addressed; responses revalidate and
 do not make a resolved map byte-reproducible. Exact official glyph identity belongs to the
 separately published `/base/<assetSetSha256>/glyphs/...` global base-asset contract. In that URL,
 `assetSetSha256` identifies the standalone glyph collection; it is not the same-domain value as the
 per-map `assetSetSha256` in `build-manifest.json`.
 Cyberpunk replaces the URL provider with its packaged Oxanium directory and references the exact
-local faces `Oxanium Medium` and `Oxanium SemiBold`.
+local faces `Oxanium Medium` and `Oxanium SemiBold`; Matrix reuses that provider. Siegfried owns its
+packaged Cormorant Garamond Regular, SemiBold, and Italic faces.
 
 Name the official generation deliberately, or use another OpenMapTiles-compatible vector source:
 
@@ -498,7 +551,13 @@ advertises the typed fields consumed by the maps. This includes bathymetry z0–
 z0–z10, and the three detailed-city layers at native z15. Generic OpenMapTiles sources keep these
 extensions optional and the compiler omits unsupported detail. Resolving omitted data or
 `tileflowWorld(...)` uses the strict V1 schema directly, and `water({bathymetry: {...}})` styles the
-emitted depth bands without raw layer IDs.
+emitted depth bands without raw layer IDs. Use `water({bathymetryContours: {...}})` to customize the
+opt-in companion line layer; an empty style selects subtle defaults, and the zero-depth band is
+excluded so the ordinary coastline remains authoritative. The lines follow discrete band polygon
+edges and are therefore approximate rather than surveyed depth contours. Use
+`water({bathymetryLabels: {...}})` to customize the separate opt-in symbol layer; an empty style
+selects the defaults, whose text is the absolute band-minimum number in metres with no unit suffix.
+It remains a band-floor annotation, not a survey sounding.
 
 Detailed city datasets can bind `sidewalk`, `streetFurniture`, and `circularFeature` source layers
 through `openMapTiles({layers, fields})`. When present, `roads.sidewalks` owns source-backed
@@ -520,8 +579,9 @@ source classes into one civic color.
 
 World and text assets are independent contracts. `tileflowWorld()` selects `world-v1/current` or an
 exact `releaseId + descriptorSha256`; a `glyphs` declaration contains its own complete URL. Ordinary
-imports of Streets, Ferraris, Streets Dark, Verdant, and Cyberpunk remain usable because each
-official map owns a URL or packaged-font provider. URL-backed maps become exact-byte reproducible
+imports of Streets, Ferraris, Härad, Siegfried, Soundings, Streets Dark, Cyberpunk, Matrix, and
+Verdant remain usable because each official map owns or inherits a URL or packaged-font provider.
+URL-backed maps become exact-byte reproducible
 when the immutable global base-asset set is published and their explicit URL is updated to its
 `assetSetSha256` path; no World or compiler fallback participates in that rollout. The global
 base-asset manifest's hash and a map build manifest's identically named `assetSetSha256` use
@@ -666,6 +726,15 @@ import {
   cyberpunkIcons,
   ferraris,
   ferrarisIcons,
+  harad,
+  haradIcons,
+  matrix,
+  matrixIcons,
+  siegfried,
+  siegfriedFonts,
+  siegfriedIcons,
+  soundings,
+  soundingsIcons,
   streets,
   streetsDark,
   streetsDarkIcons,
@@ -675,14 +744,14 @@ import {
 } from '@tileflow/maps';
 ```
 
-`streets` and `ferraris` are complete compiler roots. Both select the semantic Streets compiler,
-but Ferraris neither imports nor extends Streets. It declares only `[ferrarisIcons]`, whose nine SVG
-patterns are original Tileflow artwork. `streetsDark`, `cyberpunk`, and `verdant` are normal maps
-that extend Streets. Streets Dark preserves the root's content and hierarchy while owning its
-complete night palette and lighting. Streets declares `[streetsIcons]`; Streets Dark declares
-`[streetsIcons, streetsDarkIcons]` so its later dark `sidewalk-dot` overrides the shared source.
-Cyberpunk and Verdant likewise compose their additions after Streets. The same operation is
-available to applications:
+`streets`, `ferraris`, `harad`, `siegfried`, `soundings`, and `verdant` are complete compiler roots.
+All select the semantic Streets compiler, but the five roots after Streets neither import nor extend
+Streets; each declares its own icon directory, and Siegfried also declares `siegfriedFonts`.
+`streetsDark` and `cyberpunk` extend Streets. Streets Dark preserves the root's content and hierarchy
+while owning its complete night palette and lighting. Streets declares `[streetsIcons]`; Streets Dark
+declares `[streetsIcons, streetsDarkIcons]` so its later dark `sidewalk-dot` overrides the shared
+source. Matrix extends Cyberpunk, replaces the inherited icons with `[streetsIcons, matrixIcons]`,
+and reuses `cyberpunkFonts`. The same operation is available to applications:
 
 ```ts
 export default defineMap({
@@ -704,6 +773,6 @@ sprite selector, icon mapping, icon-specific inheritance, additive command, or c
 and prepares ordinary public artifacts without serializing installation paths. It compiles one
 deterministic sprite from the final icon composition and validates every literal `icon-image`,
 `fill-pattern`, and `line-pattern` in the final style against it. It also prepares any declared font
-directories generically; `cyberpunkFonts` is an ordinary package descriptor rather than a pipeline
-special case. Calling the pure compiler for a map whose style needs unprepared assets fails instead
-of emitting broken runtime references.
+directories generically; `cyberpunkFonts` and `siegfriedFonts` are ordinary package descriptors
+rather than pipeline special cases. Calling the pure compiler for a map whose style needs unprepared
+assets fails instead of emitting broken runtime references.

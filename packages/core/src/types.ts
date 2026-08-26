@@ -182,10 +182,55 @@ export type TileflowThemeConfig = {
 
 export type TileflowTerrainMode = 'none' | 'hillshade' | '3d';
 export type TileflowTerrainEncoding = 'mapbox' | 'terrarium';
+export type TileflowTerrainLayerRange = {
+  maxZoom?: number;
+  minZoom?: number;
+  visible?: boolean;
+};
+export type TileflowTerrainHillshadeStyle = TileflowTerrainLayerRange & {
+  accentColor?: TileflowColor;
+  exaggeration?: number;
+  highlightColor?: TileflowColor;
+  illuminationAnchor?: 'map' | 'viewport';
+  illuminationDirection?: number;
+  shadowColor?: TileflowColor;
+};
+export type TileflowTerrainContourLineStyle = TileflowTerrainLayerRange & {
+  color?: TileflowColor;
+  opacity?: number;
+  width?: number;
+};
+export type TileflowTerrainContourLabelStyle = TileflowTerrainLayerRange & {
+  color?: TileflowColor;
+  font?: string;
+  haloColor?: TileflowColor;
+  haloWidth?: number;
+  opacity?: number;
+  size?: number;
+  spacing?: number;
+};
+export type TileflowTerrainContoursConfig = {
+  /** Maximum native zoom exposed by the DEM tile template. */
+  demMaxZoom: number;
+  /** Explicit HTTP(S) DEM template containing {z}, {x}, and {y}. */
+  demUrl: string;
+  index?: TileflowTerrainContourLineStyle;
+  labels?: TileflowTerrainContourLabelStyle;
+  maxZoom?: number;
+  minZoom?: number;
+  minor?: TileflowTerrainContourLineStyle;
+  multiplier?: number;
+  overzoom?: number;
+  sourceId?: string;
+  /** Zoom-indexed [minor, index] elevation intervals. */
+  thresholds: Readonly<Record<number, readonly [number, number]>>;
+};
 export type TileflowTerrainConfig = {
   attribution?: string;
+  contours?: TileflowTerrainContoursConfig;
   encoding?: TileflowTerrainEncoding;
   exaggeration?: number;
+  hillshade?: TileflowTerrainHillshadeStyle;
   mode?: TileflowTerrainMode;
   sourceId?: string;
   url?: string;

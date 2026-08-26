@@ -26,7 +26,11 @@ test('interactive React build installs the World notice bridge', async () => {
   assert.match(output, /attachTileflowFairUseNotice/);
   assert.match(output, /worldRequestBridge/);
   assert.match(output, /loadTileflowStyleFonts/);
+  assert.match(output, /registerTileflowContourProtocol/);
   assert.ok(output.indexOf('loadTileflowStyleFonts') < output.indexOf('new maplibregl.Map'));
+  assert.ok(
+    output.indexOf('registerTileflowContourProtocol') < output.indexOf('new maplibregl.Map'),
+  );
 });
 
 test('interactive React build uses the shared MapLibre DOM runtime and React portals', async () => {

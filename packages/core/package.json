@@ -27,6 +27,7 @@
     "dist",
     "LICENSE",
     "NOTICE",
+    "THIRD_PARTY_NOTICES.md",
     "GENERATED_OUTPUT_LICENSE.md",
     "TRADEMARKS.md"
   ],
@@ -83,5 +84,7 @@
     "@maplibre/maplibre-gl-style-spec": "24.8.5",
     "zod": "^4.4.3"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "maplibre-contour": "0.1.0"
+  }
 }

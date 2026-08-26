@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <title>Lighthouse</title>
+  <desc>Original Tileflow lighthouse silhouette.</desc>
+  <g fill="#000000">
+    <path d="m8.8 8.2 7.2-6 7.2 6H8.8Zm2 1.8h10.4v4.8H10.8V10Zm1.6 6.5h7.2l2.2 11H10.2l2.2-11Z"/>
+    <rect x="7.7" y="27" width="16.6" height="2.8" rx="1.4"/>
+  </g>
+</svg>

@@ -2,12 +2,17 @@ import type {
   TileflowAreaStyle,
   TileflowFillStyle,
   TileflowLineStyle,
+  TileflowSymbolStyle,
 } from '../../cartography/styles';
 
 export type TileflowWaterwayClass = 'canal' | 'other' | 'river' | 'stream';
 
 export type TileflowWaterModuleOptions = {
   bathymetry?: TileflowFillStyle;
+  /** Opt-in approximate contours traced from discrete bathymetry polygon band edges. */
+  bathymetryContours?: TileflowLineStyle;
+  /** Opt-in labels for bathymetry polygon band floors, not measured survey soundings. */
+  bathymetryLabels?: TileflowSymbolStyle;
   bodies?: TileflowAreaStyle;
   enabled?: boolean;
   intermittent?: {

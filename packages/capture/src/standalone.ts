@@ -1,4 +1,6 @@
+import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
+import {dirname, join} from 'node:path';
 import type {Browser, BrowserContext} from 'playwright';
 import type {MapLibreStyle, NormalizedTileflowCaptureScene} from '@tileflow/core';
 import {getTileflowStyleFontFaces} from '@tileflow/core/runtime';
@@ -33,6 +35,11 @@ export type StandaloneTileflowCaptureOutput = {
 const require = createRequire(import.meta.url);
 const maplibreJsPath = require.resolve('maplibre-gl/dist/maplibre-gl.js');
 const maplibreCssPath = require.resolve('maplibre-gl/dist/maplibre-gl.css');
+const tileflowCorePackagePath = require.resolve('@tileflow/core/package.json');
+const tileflowBrowserModule = `${readFileSync(
+  join(dirname(tileflowCorePackagePath), 'dist', 'browser.js'),
+  'utf8',
+)}\nglobalThis.__tileflowRegisterContourProtocol = registerTileflowContourProtocol;`;
 
 type PagePhaseResult =
   | {status: 'ok'}
@@ -172,6 +179,7 @@ export async function captureStandaloneTileflowScene(
     await page.setContent(renderHtml(input.scene.viewport), {waitUntil: 'domcontentloaded'});
     await page.addStyleTag({path: maplibreCssPath});
     await page.addScriptTag({path: maplibreJsPath});
+    await page.addScriptTag({content: tileflowBrowserModule, type: 'module'});
     await page.addScriptTag({content: renderMapInPageScript});
 
     phase = 'map-load';
@@ -519,6 +527,7 @@ const renderMapInPageScript = String.raw`
 window.__tileflowCaptureLoad = async function(input) {
   try {
     await loadTileflowFontFaces(input.fontFaces || []);
+    window.__tileflowRegisterContourProtocol?.({addProtocol: window.maplibregl.addProtocol});
     window.__tileflowCaptureLoopbackSourceIds = Object.entries(input.style.sources || {})
       .filter(([, source]) => isLoopbackSourceUrl(source?.url))
       .map(([sourceId]) => sourceId);

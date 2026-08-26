@@ -8,9 +8,10 @@ public API; this contract records the relationships between those APIs.
 
 - A **map** is the only public cartographic authoring unit. It has its own identity and version and
   is either a compiler root or extends another imported map.
-- A **root map** owns a compiler lineage. Streets and Ferraris are the first-party roots; Streets
-  Dark, Cyberpunk, and Verdant are ordinary maps that extend Streets. Ferraris uses the same
-  semantic Streets compiler without importing or extending the Streets map.
+- A **root map** owns a compiler lineage. Streets, Ferraris, Härad, Siegfried, Soundings, and Verdant
+  are the first-party roots; Streets Dark and Cyberpunk are ordinary maps that extend Streets, and
+  Matrix extends Cyberpunk. Ferraris, Härad, Siegfried, Soundings, and Verdant use the same semantic
+  Streets compiler ABI without importing, extending, or reusing assets from the Streets map.
 - A **module** is a semantic authoring input owned by a map domain, such as roads, buildings,
   water, or labels. Modules compile to MapLibre style contributions; they do not draw pixels.
 - A **data source** supplies vector, raster, terrain, or other map data. Tileflow World is a data
@@ -93,12 +94,18 @@ PMTiles contract.
 
 ### `@tileflow/maps`
 
-Owns the official Streets, Ferraris, Streets Dark, Cyberpunk, and Verdant map objects, their
-package-directory descriptors, and the icon, pattern, font, and notice files those maps require.
-Streets and Ferraris are complete root maps. Ferraris declares only its own `ferrarisIcons`
-directory of nine original SVG patterns; it uses the semantic Streets compiler but does not import,
-extend, or inherit assets from Streets. Streets Dark, Cyberpunk, and Verdant are ordinary maps that
-extend Streets through Core's public inheritance contract.
+Owns the official Streets, Ferraris, Härad, Siegfried, Soundings, Streets Dark, Cyberpunk, Matrix,
+and Verdant map objects, their package-directory descriptors, and the icon, pattern, font, and
+notice files those maps require. Streets, Ferraris, Härad, Siegfried, Soundings, and Verdant are
+complete root maps. Ferraris, Härad, Siegfried, Soundings, and Verdant declare only their own
+`ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, and `verdantIcons` directories.
+Härad's directory contains nine original Tileflow SVG patterns inspired by Lantmäteriet's CC0
+Häradsekonomiska kartan series (1859–1934) and official legend; no Lantmäteriet scan, pixel, legend
+artwork, font, or map data is redistributed. Soundings owns ten original nautical symbols and
+patterns and exposes broad GEBCO-derived bathymetric context, not navigation-grade survey
+soundings. These roots use the semantic Streets compiler ABI but do not import, extend, or inherit
+assets from Streets. Streets Dark and Cyberpunk extend Streets through Core's public inheritance
+contract. Matrix extends Cyberpunk, owns `matrixIcons`, and reuses `cyberpunkFonts`.
 
 Maps has a peer dependency on Core because its exports are authored with Core's map language. Core
 never depends on or re-exports Maps. A consumer that wants an official map installs both packages;

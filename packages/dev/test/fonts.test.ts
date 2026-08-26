@@ -5,12 +5,14 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {
+  createStyle,
   getTileflowStyleFontFaces,
   type MapLibreStyle,
+  resolveMap,
   type TileflowFontDirectory,
 } from '@tileflow/core';
 import type {TileflowBuildCatalog} from '@tileflow/core/build';
-import {cyberpunkFonts} from '@tileflow/maps';
+import {cyberpunkFonts, siegfried, siegfriedFonts} from '@tileflow/maps';
 import {
   bindTileflowStyleFontBundle,
   getTileflowFontWatchPaths,
@@ -116,6 +118,45 @@ test('later directories replace exact canonical faces', async (t) => {
     getTileflowStyleFontFaces(prepared.styles.main!)[0]?.source,
     `../fonts/oxanium-medium-${expectedDigest}.ttf`,
   );
+});
+
+test('prepares all three packaged Siegfried faces with one OFL license', async (t) => {
+  const cwd = await fixture(t);
+  const icons = [
+    'siegfried-forest',
+    'siegfried-glacier',
+    'siegfried-gravel',
+    'siegfried-orchard',
+    'siegfried-paper-grain',
+    'siegfried-rock',
+    'siegfried-scree',
+    'siegfried-water-lines',
+    'siegfried-wetland',
+  ];
+  const style = createStyle(siegfried, {
+    preparedAssets: {icons: {ids: icons, sprite: '/assets/icons/siegfried/sprite'}},
+  });
+  const prepared = await prepareTileflowStyleFonts(
+    {maps: {siegfried}},
+    {siegfried: style},
+    {assetBaseUrl: '/assets', cwd, target: 'local'},
+  );
+
+  assert.deepEqual(prepared.watchPaths, []);
+  assert.equal(prepared.assets.filter((asset) => asset.contentType === 'font/ttf').length, 3);
+  assert.equal(prepared.assets.filter((asset) => asset.fileName.includes('/licenses/')).length, 1);
+  assert.deepEqual(
+    getTileflowStyleFontFaces(prepared.styles.siegfried!).map(
+      ({family, style: fontStyle, weight}) => ({family, style: fontStyle, weight}),
+    ),
+    [
+      {family: 'Cormorant Garamond Italic', style: 'italic', weight: '400'},
+      {family: 'Cormorant Garamond Regular', style: 'normal', weight: '400'},
+      {family: 'Cormorant Garamond SemiBold', style: 'normal', weight: '600'},
+    ],
+  );
+  assert.deepEqual(await getTileflowFontWatchPaths({maps: {siegfried}}, cwd), []);
+  assert.deepEqual(resolveMap(siegfried).fonts, [siegfriedFonts]);
 });
 
 test('font extension, MIME, and OpenType signature must agree', async (t) => {
@@ -287,7 +328,9 @@ test('preview loads generic style metadata through the shared browser runtime', 
       },
     ],
   );
-  assert.match(html, /import \{loadTileflowStyleFonts\} from "\/__runtime\/tileflow-browser\.js"/u);
+  assert.match(html, /import \{loadTileflowStyleFonts\}/u);
+  assert.match(html, /registerTileflowContourProtocol/u);
+  assert.match(html, /from "\/__runtime\/tileflow-browser\.js"/u);
   assert.match(html, /await loadTileflowStyleFonts\(styleUrl, \{fontFaces: previewFontFaces\}\)/u);
   assert.match(html, /Generic \\u003c\/script\\u003e Regular/u);
   assert.doesNotMatch(html, /Oxanium|__runtime\/fonts\//u);

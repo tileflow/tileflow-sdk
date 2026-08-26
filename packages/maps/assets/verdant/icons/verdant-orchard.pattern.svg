@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <title>Verdant orchard pattern</title>
+  <g fill="#476653" opacity=".52">
+    <g transform="translate(16 14)"><ellipse cy="-2.5" rx="1.5" ry="2.6"/><ellipse cy="2.5" rx="1.5" ry="2.6"/><ellipse cx="-2.5" rx="2.6" ry="1.5"/><ellipse cx="2.5" rx="2.6" ry="1.5"/></g>
+    <g transform="translate(48 14)"><ellipse cy="-2.5" rx="1.5" ry="2.6"/><ellipse cy="2.5" rx="1.5" ry="2.6"/><ellipse cx="-2.5" rx="2.6" ry="1.5"/><ellipse cx="2.5" rx="2.6" ry="1.5"/></g>
+    <g transform="translate(0 46)"><ellipse cy="-2.5" rx="1.5" ry="2.6"/><ellipse cy="2.5" rx="1.5" ry="2.6"/><ellipse cx="-2.5" rx="2.6" ry="1.5"/><ellipse cx="2.5" rx="2.6" ry="1.5"/></g>
+    <g transform="translate(32 46)"><ellipse cy="-2.5" rx="1.5" ry="2.6"/><ellipse cy="2.5" rx="1.5" ry="2.6"/><ellipse cx="-2.5" rx="2.6" ry="1.5"/><ellipse cx="2.5" rx="2.6" ry="1.5"/></g>
+    <g transform="translate(64 46)"><ellipse cy="-2.5" rx="1.5" ry="2.6"/><ellipse cy="2.5" rx="1.5" ry="2.6"/><ellipse cx="-2.5" rx="2.6" ry="1.5"/><ellipse cx="2.5" rx="2.6" ry="1.5"/></g>
+  </g>
+  <g fill="#28332F" opacity=".42"><circle cx="16" cy="14" r=".8"/><circle cx="48" cy="14" r=".8"/><circle cx="0" cy="46" r=".8"/><circle cx="32" cy="46" r=".8"/><circle cx="64" cy="46" r=".8"/></g>
+</svg>

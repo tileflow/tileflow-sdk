@@ -33,6 +33,7 @@ import {
   createTileflowSessionStarter,
   createTileflowTransformRequest,
   loadTileflowStyleFonts,
+  registerTileflowContourProtocol,
   registerTileflowWorldRequestBridge,
   type TileflowFairUseNoticeController,
   type TileflowMapLifecycleAttachment,
@@ -818,6 +819,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         source: 'vue',
       });
       mapFairUseNotice = attachTileflowFairUseNotice(container);
+      registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
       mapWorldRequestBridge = registerTileflowWorldRequestBridge({
         addProtocol: maplibregl.addProtocol,
         onNotice: mapFairUseNotice.update,

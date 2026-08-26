@@ -65,7 +65,7 @@ import {
   resolveAccountSession,
   writeAuthFileAtomic,
 } from './account-session';
-import {registerCaptureCommands} from './capture-command';
+import {installSignalAbortController, registerCaptureCommands} from './capture-command';
 import {writeAtomicFile} from './capture-output';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 import {registerConfigInspectCommand} from './config-inspect-command';
@@ -1034,12 +1034,13 @@ type TileflowDevServer = ReturnType<typeof serve>;
 
 function waitForTerminationSignal(server: TileflowDevServer): Promise<void> {
   return new Promise((resolveStop, rejectStop) => {
+    const controller = installSignalAbortController();
     const cleanup = () => {
-      process.removeListener('SIGINT', onSignal);
-      process.removeListener('SIGTERM', onSignal);
+      controller.signal.removeEventListener('abort', onAbort);
       server.removeListener('error', onError);
+      controller.close();
     };
-    const onSignal = () => {
+    const onAbort = () => {
       cleanup();
       resolveStop();
     };
@@ -1047,8 +1048,7 @@ function waitForTerminationSignal(server: TileflowDevServer): Promise<void> {
       cleanup();
       rejectStop(error);
     };
-    process.once('SIGINT', onSignal);
-    process.once('SIGTERM', onSignal);
+    controller.signal.addEventListener('abort', onAbort, {once: true});
     server.once('error', onError);
   });
 }

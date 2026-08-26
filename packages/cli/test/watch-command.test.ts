@@ -65,13 +65,7 @@ test('dev emits valid/invalid/recovered/stopped NDJSON and serves last-good loca
   assert.equal(JSON.stringify(running.events).includes(cwd), false);
   assert.doesNotMatch(`${JSON.stringify(running.events)}\n`, /watch-secret/);
 
-  running.child.kill('SIGTERM');
-  if (process.platform === 'win32') {
-    const completion = await running.completion;
-    assert.equal(completion.code, null, completion.stderr);
-    assert.doesNotMatch(completion.stderr, /watch-secret/);
-    return;
-  }
+  running.requestStop();
   const stopped = await running.waitFor((event) => event.event === 'stopped');
   assert.equal(stopped.generation, 3);
   const completion = await running.completion;
@@ -135,12 +129,7 @@ test(
     assert.equal(third.outputPath, first.outputPath);
     assert.equal(JSON.stringify(running.events).includes(cwd), false);
 
-    running.child.kill('SIGINT');
-    if (process.platform === 'win32') {
-      const completion = await running.completion;
-      assert.equal(completion.code, null, completion.stderr);
-      return;
-    }
+    running.requestStop();
     await running.waitFor((event) => event.event === 'stopped');
     const completion = await running.completion;
     assert.equal(completion.code, 0, completion.stderr);
@@ -157,12 +146,7 @@ test('capture watch exits nonzero when stopped with no valid capture and an inva
   });
 
   await running.waitFor((event) => event.event === 'invalid');
-  running.child.kill('SIGTERM');
-  if (process.platform === 'win32') {
-    const completion = await running.completion;
-    assert.equal(completion.code, null, completion.stderr);
-    return;
-  }
+  running.requestStop();
   await running.waitFor((event) => event.event === 'stopped');
   const completion = await running.completion;
   assert.equal(completion.code, 1, completion.stderr);
@@ -243,7 +227,7 @@ function startCli(cwd: string, arguments_: string[], overrides: NodeJS.ProcessEn
   const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
     cwd,
     env: environment,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
   const events: Array<Record<string, unknown>> = [];
   const waiters = new Set<{
@@ -292,13 +276,29 @@ function startCli(cwd: string, arguments_: string[], overrides: NodeJS.ProcessEn
       });
     },
   );
+  const requestStop = () => {
+    if (exited) return;
+    if (child.connected) {
+      try {
+        child.send({type: 'tileflow:stop'}, (error) => {
+          if (error && !exited) child.kill('SIGTERM');
+        });
+        return;
+      } catch {
+        child.kill('SIGTERM');
+        return;
+      }
+    }
+    child.kill('SIGTERM');
+  };
 
   return {
     child,
     completion,
     events,
+    requestStop,
     stop: async () => {
-      if (!exited) child.kill('SIGTERM');
+      requestStop();
       await completion.catch(() => undefined);
     },
     waitFor: (

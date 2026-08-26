@@ -178,6 +178,125 @@ test('applies public global land-cover and bathymetry styles without raw patches
   );
 });
 
+test('applies semantic bathymetry label overrides while retaining band-depth defaults', () => {
+  const defaults = compileWater(water({bathymetryLabels: {}}), context).find(
+    (entry) => entry.layer.id === 'streets-bathymetry-labels',
+  )!;
+  const customized = compileWater(
+    water({
+      bathymetryLabels: {
+        maxZoom: 9,
+        minZoom: 5,
+        priority: 42,
+        spacing: 160,
+        text: {
+          color: '#123456',
+          field: 'custom-depth',
+          font: 'Noto Sans Bold',
+          haloColor: '#ABCDEF',
+          haloWidth: 2,
+          opacity: 0.9,
+          size: 12,
+        },
+        zOrder: 'source',
+      },
+    }),
+    context,
+  ).find((entry) => entry.layer.id === 'streets-bathymetry-labels')!;
+  const defaultLayout = defaults.layer.layout as Record<string, unknown>;
+  const layout = customized.layer.layout as Record<string, unknown>;
+  const paint = customized.layer.paint as Record<string, unknown>;
+
+  assert.deepEqual(defaultLayout['text-field'], [
+    'to-string',
+    ['abs', ['to-number', ['get', 'min_depth'], 0]],
+  ]);
+  assert.equal(defaults.layer.minzoom, 3);
+  assert.equal(defaults.layer.maxzoom, 10);
+  assert.equal(customized.layer.minzoom, 5);
+  assert.equal(customized.layer.maxzoom, 9);
+  assert.equal(layout['symbol-sort-key'], -42);
+  assert.equal(layout['symbol-spacing'], 160);
+  assert.equal(layout['symbol-z-order'], 'source');
+  assert.equal(layout['text-field'], 'custom-depth');
+  assert.deepEqual(layout['text-font'], ['Noto Sans Bold']);
+  assert.equal(layout['text-size'], 12);
+  assert.equal(paint['text-color'], '#123456');
+  assert.equal(paint['text-halo-color'], '#ABCDEF');
+  assert.equal(paint['text-halo-width'], 2);
+  assert.equal(paint['text-opacity'], 0.9);
+  assert.equal(customized.target, 'water.bathymetryLabels');
+  assert.equal(
+    compileWater(undefined, context).some(
+      (entry) => entry.layer.id === 'streets-bathymetry-labels',
+    ),
+    false,
+  );
+
+  assert.equal(
+    compileWater(water({bathymetryLabels: {visible: false}}), context).some(
+      (entry) => entry.layer.id === 'streets-bathymetry-labels',
+    ),
+    false,
+  );
+});
+
+test('applies opt-in bathymetry contour overrides to discrete depth-band edges', () => {
+  const defaults = compileWater(water({bathymetryContours: {}}), context).find(
+    (entry) => entry.layer.id === 'streets-bathymetry-contours',
+  )!;
+  const customized = compileWater(
+    water({
+      bathymetryContours: {
+        cap: 'round',
+        color: '#123456',
+        dash: [3, 2],
+        join: 'bevel',
+        maxZoom: 9,
+        minZoom: 5,
+        opacity: 0.8,
+        width: 1.25,
+      },
+    }),
+    context,
+  ).find((entry) => entry.layer.id === 'streets-bathymetry-contours')!;
+  const defaultPaint = defaults.layer.paint as Record<string, unknown>;
+  const layout = customized.layer.layout as Record<string, unknown>;
+  const paint = customized.layer.paint as Record<string, unknown>;
+
+  assert.equal(defaults.layer.minzoom, 3);
+  assert.equal(defaults.layer.maxzoom, 10);
+  assert.equal(defaultPaint['line-color'], context.colors.hydro.label);
+  assert.deepEqual(defaults.layer.filter, [
+    'all',
+    ['==', ['geometry-type'], 'Polygon'],
+    ['has', 'min_depth'],
+    ['<', ['to-number', ['get', 'min_depth'], 0], 0],
+  ]);
+  assert.equal(customized.layer.minzoom, 5);
+  assert.equal(customized.layer.maxzoom, 9);
+  assert.equal(layout['line-cap'], 'round');
+  assert.equal(layout['line-join'], 'bevel');
+  assert.equal(paint['line-color'], '#123456');
+  assert.deepEqual(paint['line-dasharray'], [3, 2]);
+  assert.equal(paint['line-opacity'], 0.8);
+  assert.equal(paint['line-width'], 1.25);
+  assert.equal(customized.slot, 'hydro');
+  assert.equal(customized.target, 'water.bathymetryContours');
+  assert.equal(
+    compileWater(undefined, context).some(
+      (entry) => entry.layer.id === 'streets-bathymetry-contours',
+    ),
+    false,
+  );
+  assert.equal(
+    compileWater(water({bathymetryContours: {visible: false}}), context).some(
+      (entry) => entry.layer.id === 'streets-bathymetry-contours',
+    ),
+    false,
+  );
+});
+
 test('applies exact water overrides without mutating defaults', () => {
   const first = compileWater(
     water({

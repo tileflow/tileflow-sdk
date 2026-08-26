@@ -17,6 +17,10 @@ import {
   tileflowMapIdSchema,
   tileflowStreetsCompilerVersion,
 } from './maps/types';
+import {
+  isSafeTileflowDemUrlTemplate,
+  isTileflowContourDensityWithinBudget,
+} from './terrain/contour-protocol';
 import type {ValidationMessage} from './types';
 
 /** Structured schema failure preserved for CLI/editor diagnostics. */
@@ -640,6 +644,8 @@ const waterModuleSchema = z
   .object({
     type: z.literal('water'),
     bathymetry: fillStyleSchema.optional(),
+    bathymetryContours: lineStyleSchema.optional(),
+    bathymetryLabels: symbolStyleSchema.optional(),
     bodies: areaStyleSchema.optional(),
     enabled: z.boolean().optional(),
     intermittent: z
@@ -1203,13 +1209,166 @@ const glyphsSchema = z
       .refine(isSafeGlyphUrl, 'Expected an HTTP(S), root-relative, or path-relative glyph URL'),
   })
   .strict();
+const terrainLayerRangeShape = {
+  maxZoom: zoomNumberSchema.optional(),
+  minZoom: zoomNumberSchema.optional(),
+  visible: z.boolean().optional(),
+};
+const terrainHillshadeSchema = z
+  .object({
+    ...terrainLayerRangeShape,
+    accentColor: hexColorSchema.optional(),
+    exaggeration: z.number().finite().min(0).max(1).optional(),
+    highlightColor: hexColorSchema.optional(),
+    illuminationAnchor: z.enum(['map', 'viewport']).optional(),
+    illuminationDirection: z.number().finite().min(0).max(359).optional(),
+    shadowColor: hexColorSchema.optional(),
+  })
+  .strict();
+const terrainContourLineSchema = z
+  .object({
+    ...terrainLayerRangeShape,
+    color: hexColorSchema.optional(),
+    opacity: z.number().finite().min(0).max(1).optional(),
+    width: z.number().finite().min(0).max(32).optional(),
+  })
+  .strict();
+const terrainContourLabelSchema = z
+  .object({
+    ...terrainLayerRangeShape,
+    color: hexColorSchema.optional(),
+    font: exactFontFaceSchema.optional(),
+    haloColor: hexColorSchema.optional(),
+    haloWidth: z.number().finite().min(0).max(16).optional(),
+    opacity: z.number().finite().min(0).max(1).optional(),
+    size: z.number().finite().min(1).max(64).optional(),
+    spacing: z.number().finite().min(1).max(1000).optional(),
+  })
+  .strict();
+const terrainContourThresholdPairSchema = z
+  .tuple([z.number().finite().min(0.001).max(100_000), z.number().finite().min(0.001).max(100_000)])
+  .refine(([minor, index]) => minor <= index, {
+    message:
+      'Expected the index contour interval to be greater than or equal to the minor interval',
+  })
+  .refine(([minor, index]) => isWholeContourMultiple(index, minor), {
+    message: 'Expected the index contour interval to be a whole multiple of the minor interval',
+  });
+
+function isWholeContourMultiple(value: number, interval: number): boolean {
+  const ratio = value / interval;
+  return Math.abs(ratio - Math.round(ratio)) <= Number.EPSILON * Math.max(1, ratio) * 8;
+}
+
+const terrainContourThresholdsSchema = z
+  .record(z.string().regex(/^(?:0|[1-9]|1\d|2[0-4])$/u), terrainContourThresholdPairSchema)
+  .superRefine((thresholds, context) => {
+    const count = Object.keys(thresholds).length;
+    if (count === 0 || count > 25) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Expected between 1 and 25 contour threshold zoom entries',
+      });
+    }
+  });
+const terrainContoursSchema = z
+  .object({
+    demMaxZoom: z.number().int().min(0).max(24),
+    demUrl: z
+      .string()
+      .min(1)
+      .max(2048)
+      .refine(
+        isSafeTileflowDemUrlTemplate,
+        'Expected a safe HTTP(S) DEM URL template containing {z}, {x}, and {y}',
+      ),
+    index: terrainContourLineSchema.optional(),
+    labels: terrainContourLabelSchema.optional(),
+    maxZoom: z.number().int().min(0).max(24).optional(),
+    minZoom: zoomNumberSchema.optional(),
+    minor: terrainContourLineSchema.optional(),
+    multiplier: z.number().finite().min(0.001).max(100).optional(),
+    overzoom: z.number().int().min(0).max(8).optional(),
+    sourceId: identifierSchema.optional(),
+    thresholds: terrainContourThresholdsSchema,
+  })
+  .strict()
+  .superRefine((contours, context) => {
+    const thresholdZooms = Object.keys(contours.thresholds).map(Number);
+    const minimumThresholdZoom = Math.min(...thresholdZooms);
+    const maximumThresholdZoom = Math.max(...thresholdZooms);
+    const multiplier = contours.multiplier ?? 1;
+    for (const [zoom, [minor]] of Object.entries(contours.thresholds)) {
+      if (!isTileflowContourDensityWithinBudget(minor, multiplier, Number(zoom))) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Expected a contour interval within the supported density budget',
+          path: ['thresholds', zoom, 0],
+        });
+      }
+    }
+    if (contours.maxZoom !== undefined && contours.maxZoom < maximumThresholdZoom) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Expected maxZoom to include every contour threshold zoom',
+        path: ['maxZoom'],
+      });
+    }
+    if (contours.minZoom !== undefined && contours.minZoom < minimumThresholdZoom) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Expected minZoom not to precede the first contour threshold zoom',
+        path: ['minZoom'],
+      });
+    }
+    if (
+      contours.minZoom !== undefined &&
+      contours.minZoom > (contours.maxZoom ?? maximumThresholdZoom)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Expected maxZoom to be greater than or equal to minZoom',
+        path: ['maxZoom'],
+      });
+    }
+    if (contours.overzoom !== undefined && contours.overzoom > minimumThresholdZoom) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Expected overzoom not to produce a negative DEM zoom',
+        path: ['overzoom'],
+      });
+    }
+    const effectiveMinimumZoom = contours.minZoom ?? minimumThresholdZoom;
+    for (const layerName of ['minor', 'index', 'labels'] as const) {
+      const layer = contours[layerName];
+      if (layer?.minZoom !== undefined && layer.minZoom < effectiveMinimumZoom) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Expected minZoom not to precede the contour source minZoom',
+          path: [layerName, 'minZoom'],
+        });
+      }
+      if (
+        layer?.maxZoom !== undefined &&
+        Math.max(layer.minZoom ?? effectiveMinimumZoom, effectiveMinimumZoom) > layer.maxZoom
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Expected maxZoom to be greater than or equal to the effective minZoom',
+          path: [layerName, 'maxZoom'],
+        });
+      }
+    }
+  });
 const terrainSchema = z.union([
   z.enum(['none', 'hillshade', '3d']),
   z
     .object({
       attribution: z.string().optional(),
+      contours: terrainContoursSchema.optional(),
       encoding: z.enum(['mapbox', 'terrarium']).optional(),
       exaggeration: z.number().finite().min(0).max(10).optional(),
+      hillshade: terrainHillshadeSchema.optional(),
       mode: z.enum(['none', 'hillshade', '3d']).optional(),
       sourceId: z.string().trim().min(1).optional(),
       url: z.string().trim().min(1).optional(),

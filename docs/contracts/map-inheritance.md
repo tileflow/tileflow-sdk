@@ -5,10 +5,11 @@ map, and a map is either a compiler root or an ordinary map that imports another
 `extends`. Root and derived maps use the same design fields. Inheritance is resolved completely
 before validation, asset preparation, compilation, capture, build, or deploy.
 
-`streets` and `ferraris` are the two first-party root maps. `streetsDark`, `cyberpunk`, and
-`verdant` are ordinary maps that extend Streets. Ferraris selects the same semantic Streets
-compiler as its root contract but defines its complete design directly: it does not import or
-extend the Streets map. They are exported from `@tileflow/maps`; there is no public basemap,
+`streets`, `ferraris`, `harad`, `siegfried`, `soundings`, and `verdant` are first-party root maps.
+`streetsDark` and `cyberpunk` are ordinary maps that extend Streets, and `matrix` extends Cyberpunk.
+Ferraris, Härad, Siegfried, Soundings, and Verdant select the same semantic Streets compiler ABI as
+their root contract but define their complete designs directly: none imports, extends, or reuses
+assets from the Streets map. They are exported from `@tileflow/maps`; there is no public basemap,
 map-preset, map-catalog, `streets()` constructor, `editorial-city` alias, or compatibility
 normalization.
 
@@ -60,9 +61,15 @@ Directories are read from left to right. `<id>.<ext>` publishes an ordinary icon
 `<id>.pattern.<ext>` publishes an intrinsic-size line/fill pattern as `<id>`. That published ID must
 already be canonical lower-kebab-case. A later directory replaces an earlier file only when the ID
 matches exactly; case-only collisions fail. The official directory descriptors `streetsIcons`,
-`ferrarisIcons`, `cyberpunkIcons`, and `verdantIcons` let maps reuse package assets without exposing
-installation paths. Ferraris declares only `[ferrarisIcons]`; its nine original SVG patterns do not
-compose with Streets assets. There is no `builtin`, `source`, `sprite`, icon-level `extends`,
+`streetsDarkIcons`, `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`,
+`cyberpunkIcons`, `matrixIcons`, and `verdantIcons` let maps reuse package assets without exposing
+installation paths. Ferraris, Härad, Siegfried, Soundings, and Verdant declare only
+`[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`, `[soundingsIcons]`, and `[verdantIcons]`,
+respectively; none of these roots composes with Streets assets. Härad's nine original Tileflow SVG
+patterns are inspired by Lantmäteriet's CC0 Häradsekonomiska kartan series (1859–1934) and official
+legend, without redistributing source scans, pixels, legend artwork, fonts, or map data. Soundings
+owns ten original nautical symbols and patterns; GEBCO-derived depth bands are broad visual context,
+not navigation-grade soundings. There is no `builtin`, `source`, `sprite`, icon-level `extends`,
 `mapping`, or additive operator.
 
 A local directory resolves from the directory containing the selected `tileflow.config.ts`. Its
@@ -104,15 +111,18 @@ Browser font files and native/PBF glyphs are different delivery mechanisms, so a
 combine them or fall back silently between them. After inheritance resolves, every map that emits
 text has exactly one provider; only a text-free map may have neither.
 
-Streets and Ferraris each declare the canonical
+Streets, Ferraris, Härad, Soundings, and Verdant each declare the canonical
 `https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf` URL with `Noto Sans Regular` and
-`Noto Sans Bold`, and Verdant inherits it from Streets. The URL is canonical rather than
-content-addressed; responses revalidate and the URL is not an exact-byte identity. It is stated
-directly in each root, not synthesized as a fallback. The reproducible replacement is an explicit
+`Noto Sans Bold`. The URL is canonical rather than content-addressed; responses revalidate and the
+URL is not an exact-byte identity. It is stated directly in each root, not synthesized as a
+fallback. The reproducible replacement is an explicit
 `/base/<assetSetSha256>/glyphs/...` URL backed by one validated immutable global base-asset
 manifest.
+Siegfried instead declares `[siegfriedFonts]` and uses the packaged exact faces
+`Cormorant Garamond Regular`, `Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic`.
 Cyberpunk instead replaces the provider with its packaged font directory and uses the exact local
 names `Oxanium Medium` and `Oxanium SemiBold`.
+Matrix reuses that exact packaged provider while replacing Cyberpunk's colors and HUD artwork.
 
 ## Build and runtime
 

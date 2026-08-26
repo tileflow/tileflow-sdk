@@ -20,11 +20,16 @@ import {compileTransit} from '../modules/transit/compiler';
 import {compileVegetation} from '../modules/vegetation/compiler';
 import {compileWater} from '../modules/water/compiler';
 import {parseResolvedTileflowMap} from '../resolved-map-schema';
-import {compileTerrainContribution, resolveTerrain} from '../terrain';
+import {compileTerrainContributions, resolveTerrain} from '../terrain';
 import {resolveColors, resolveTheme, resolveTypography} from '../themes';
 import type {MapLibreStyle} from '../types';
 import {tileflowCompilerMetadataKeys, type TileflowLayerContribution} from './contributions';
 import {assembleTileflowLayers} from './graph';
+import {
+  assertTileflowInteractionManifestLayers,
+  createTileflowInteractionManifest,
+  tileflowInteractionManifestMetadataKey,
+} from './interaction-manifest';
 import {
   applyTileflowModuleEffects,
   bindSemanticReferences,
@@ -32,11 +37,6 @@ import {
   tileflowModuleEffectMetadataKey,
 } from './module-effects';
 import {optimizeTileflowLayers} from './optimizer';
-import {
-  assertTileflowInteractionManifestLayers,
-  createTileflowInteractionManifest,
-  tileflowInteractionManifestMetadataKey,
-} from './interaction-manifest';
 import {resolveStreetsModules, type TileflowStreetsModules} from './streets-recipe';
 
 export type TileflowStreetsMapConfig = ResolvedTileflowMap;
@@ -105,12 +105,24 @@ export function compileStreetsStyle(
     data,
   );
   const terrain = resolveTerrain(config.terrain, apiBaseUrl);
-  if (terrain?.sourceId === data.sourceId) {
-    throw new Error(
-      `Terrain source ID "${terrain.sourceId}" conflicts with the primary vector source.`,
-    );
+  const terrainSources = [terrain?.raster, terrain?.contours].filter(
+    (source): source is NonNullable<typeof source> => source !== undefined,
+  );
+  const terrainSourceIds = new Set<string>();
+  for (const source of terrainSources) {
+    if (source.sourceId === data.sourceId) {
+      throw new Error(
+        `Terrain source ID "${source.sourceId}" conflicts with the primary vector source.`,
+      );
+    }
+    if (terrainSourceIds.has(source.sourceId)) {
+      throw new Error(
+        `Terrain source ID "${source.sourceId}" conflicts with another terrain source.`,
+      );
+    }
+    terrainSourceIds.add(source.sourceId);
   }
-  if (terrain) contributions.push(compileTerrainContribution(terrain));
+  if (terrain) contributions.push(...compileTerrainContributions(terrain, context));
   const activeOwners = new Set(
     Object.entries(modules)
       .filter(([, module]) => !isRecord(module) || module.enabled !== false)
@@ -159,11 +171,12 @@ export function compileStreetsStyle(
     ...(sprite ? {sprite} : {}),
     sources: {
       [data.sourceId]: primarySource,
-      ...(terrain ? {[terrain.sourceId]: terrain.source} : {}),
+      ...(terrain?.raster ? {[terrain.raster.sourceId]: terrain.raster.source} : {}),
+      ...(terrain?.contours ? {[terrain.contours.sourceId]: terrain.contours.source} : {}),
     },
     layers,
-    ...(terrain?.mode === '3d'
-      ? {terrain: {exaggeration: terrain.exaggeration, source: terrain.sourceId}}
+    ...(terrain?.mode === '3d' && terrain.raster
+      ? {terrain: {exaggeration: terrain.exaggeration, source: terrain.raster.sourceId}}
       : {}),
     metadata: {
       ...(mapMetadata

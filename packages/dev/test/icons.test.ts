@@ -6,7 +6,17 @@ import test from 'node:test';
 import sharp from 'sharp';
 import {defineMap, diffTileflowIconPackageManifests} from '@tileflow/core';
 import {createStyleFromCatalog, type TileflowBuildCatalog} from '@tileflow/core/build';
-import {cyberpunk, ferraris, streets, verdant} from '@tileflow/maps';
+import {
+  cyberpunk,
+  ferraris,
+  harad,
+  matrix,
+  siegfried,
+  soundings,
+  streets,
+  streetsDark,
+  verdant,
+} from '@tileflow/maps';
 import {
   compileTileflowIconPackages,
   prepareTileflowCatalogIcons,
@@ -69,7 +79,19 @@ test('prepares inherited Streets directories without mutating the authored map',
 
 test('composes every official map from package-owned ordered directories', async () => {
   await withFixture(async (cwd) => {
-    const project: TileflowBuildCatalog = {maps: {cyberpunk, ferraris, streets, verdant}};
+    const project: TileflowBuildCatalog = {
+      maps: {
+        cyberpunk,
+        ferraris,
+        harad,
+        matrix,
+        siegfried,
+        soundings,
+        streets,
+        streetsDark,
+        verdant,
+      },
+    };
     const compiled = await compileTileflowIconPackages(project, {cwd, target: 'hosted'});
     const packagesByHash = new Map(
       compiled.packages.map((iconPackage) => [iconPackage.contentHash, iconPackage]),
@@ -92,19 +114,74 @@ test('composes every official map from package-owned ordered directories', async
         'ferraris-wetland',
         'ferraris-woodland',
       ],
-      streets: streetsIconIds,
-      verdant: [
+      harad: [
+        'harad-arable',
+        'harad-conifer',
+        'harad-deciduous',
+        'harad-orchard',
+        'harad-paper-grain',
+        'harad-sand',
+        'harad-settlement',
+        'harad-water-lines',
+        'harad-wetland',
+      ],
+      matrix: [
         ...streetsIconIds,
-        'verdant-crop-rows',
-        'verdant-sidewalk',
-        'verdant-wetland-ripples',
-        'verdant-wood-stipple',
-        'verdant-xylem',
+        'matrix-crt-scanlines',
+        'matrix-data-grid',
+        'matrix-poi-node',
       ].sort(),
+      siegfried: [
+        'siegfried-forest',
+        'siegfried-glacier',
+        'siegfried-gravel',
+        'siegfried-orchard',
+        'siegfried-paper-grain',
+        'siegfried-rock',
+        'siegfried-scree',
+        'siegfried-water-lines',
+        'siegfried-wetland',
+      ],
+      soundings: [
+        'soundings-buoy-cardinal',
+        'soundings-buoy-port',
+        'soundings-buoy-starboard',
+        'soundings-harbor',
+        'soundings-light-flare',
+        'soundings-lighthouse',
+        'soundings-paper-grain',
+        'soundings-rock-awash',
+        'soundings-water-dots',
+        'soundings-wreck',
+      ],
+      streets: streetsIconIds,
+      streetsDark: streetsIconIds,
+      verdant: [
+        'coffee',
+        'crosswalk',
+        'culture',
+        'education',
+        'food',
+        'health',
+        'lodging',
+        'major-transit',
+        'services',
+        'shopping',
+        'verdant-field-hatch',
+        'verdant-forest-canopy',
+        'verdant-heath-tufts',
+        'verdant-meadow-tufts',
+        'verdant-orchard',
+        'verdant-paper-fiber',
+        'verdant-residential-hatch',
+        'verdant-scree',
+        'verdant-water-lines',
+        'verdant-wetland-reeds',
+      ],
     } as const;
 
     assert.deepEqual(compiled.watchPaths, []);
-    assert.equal(compiled.packages.length, 4);
+    assert.equal(compiled.packages.length, 9);
     for (const binding of compiled.bindings) {
       assert.deepEqual(
         packagesByHash.get(binding.packageHash)?.manifest.iconNames,
@@ -113,7 +190,7 @@ test('composes every official map from package-owned ordered directories', async
     }
 
     const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
-    assert.equal(prepared.assets.length, 16);
+    assert.equal(prepared.assets.length, 36);
     for (const binding of compiled.bindings) {
       assert.deepEqual(prepared.mapAssets[binding.mapName]?.icons?.ids, binding.iconIds);
     }

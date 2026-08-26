@@ -16,21 +16,21 @@ in the [SDK responsibility and delivery contract](docs/contracts/sdk-responsibil
 
 ## Packages
 
-| Package                                           | Purpose                                                                                              |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| [`@tileflow/core`](packages/core)                 | Typed map language, semantic modules, validation, and MapLibre style compilation                     |
-| [`@tileflow/maps`](packages/maps)                 | Official Streets, Ferraris, Streets Dark, Cyberpunk, and Verdant maps with their assets              |
-| [`@tileflow/interactions`](packages/interactions) | Portable annotations, tooltips, popups, state, and MapLibre interaction lifecycle                    |
-| [`@tileflow/static`](packages/static)             | Hosted Static Maps scene schemas, overlays, and bounded request client                               |
-| [`@tileflow/dev`](packages/dev)                   | Node integration utilities, watched artifacts, icons, fonts, and feature inspection                  |
-| [`@tileflow/capture`](packages/capture)           | Pinned headless capture, receipts, visual analysis, and baseline comparison                          |
-| [`@tileflow/vite`](packages/vite)                 | Vite development and build integration                                                               |
-| [`@tileflow/next`](packages/next)                 | Next.js development and build integration                                                            |
-| [`@tileflow/webpack`](packages/webpack)           | Webpack development and build integration                                                            |
-| [`@tileflow/react`](packages/react)               | React map and static-image components                                                                |
-| [`@tileflow/vue`](packages/vue)                   | Vue map component                                                                                    |
-| [`@tileflow/svelte`](packages/svelte)             | Svelte map component                                                                                 |
-| [`@tileflow/cli`](packages/cli)                   | `tileflow` init, validate, preview (`dev` alias), capture, visual, icons, build, and deploy commands |
+| Package                                           | Purpose                                                                                                    |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| [`@tileflow/core`](packages/core)                 | Typed map language, semantic modules, validation, and MapLibre style compilation                           |
+| [`@tileflow/maps`](packages/maps)                 | Official Streets, Ferraris, Härad, Siegfried, Soundings, Streets Dark, Cyberpunk, Matrix, and Verdant maps |
+| [`@tileflow/interactions`](packages/interactions) | Portable annotations, tooltips, popups, state, and MapLibre interaction lifecycle                          |
+| [`@tileflow/static`](packages/static)             | Hosted Static Maps scene schemas, overlays, and bounded request client                                     |
+| [`@tileflow/dev`](packages/dev)                   | Node integration utilities, watched artifacts, icons, fonts, and feature inspection                        |
+| [`@tileflow/capture`](packages/capture)           | Pinned headless capture, receipts, visual analysis, and baseline comparison                                |
+| [`@tileflow/vite`](packages/vite)                 | Vite development and build integration                                                                     |
+| [`@tileflow/next`](packages/next)                 | Next.js development and build integration                                                                  |
+| [`@tileflow/webpack`](packages/webpack)           | Webpack development and build integration                                                                  |
+| [`@tileflow/react`](packages/react)               | React map and static-image components                                                                      |
+| [`@tileflow/vue`](packages/vue)                   | Vue map component                                                                                          |
+| [`@tileflow/svelte`](packages/svelte)             | Svelte map component                                                                                       |
+| [`@tileflow/cli`](packages/cli)                   | `tileflow` init, validate, preview (`dev` alias), capture, visual, icons, build, and deploy commands       |
 
 ## Quick start
 
@@ -61,19 +61,23 @@ export default defineMap({
 });
 ```
 
-`@tileflow/maps` also exports `ferraris`, `streetsDark`, `cyberpunk`, and `verdant`. Streets and
-Ferraris are complete first-party roots. They share Core's semantic Streets compiler, but Ferraris
-defines its design directly: it does not import or extend Streets and declares only its own
-`ferrarisIcons` directory of nine original SVG patterns. Streets Dark, Cyberpunk, and Verdant are
-ordinary maps that extend Streets. For the complete dark Streets map, import `streetsDark` and use it as
-the `extends` value; `theme: {mode: 'dark'}` changes defaults for omitted styles but does not recolor
-exact styles in an inherited curated map. The package-owned icons, patterns, and Cyberpunk font
-files ship under `assets/`. Streets and Ferraris each declare the canonical Tileflow glyph URL with
-the exact `Noto Sans Regular` and `Noto Sans Bold` stacks. Verdant inherits that provider from
-Streets, while Cyberpunk replaces it with the exact local faces `Oxanium Medium` and
-`Oxanium SemiBold`. The package also exports reusable `streetsIcons`, `streetsDarkIcons`, and
-`ferrarisIcons` descriptors; Streets Dark composes its two directories in that order so its dark
-`sidewalk-dot` replaces the base icon without duplicating the rest of the catalog.
+`@tileflow/maps` also exports `ferraris`, `harad`, `siegfried`, `soundings`, `streetsDark`,
+`cyberpunk`, `matrix`, and `verdant`. Streets, Ferraris, Härad, Siegfried, Soundings, and Verdant are complete
+first-party roots. They share Core's semantic Streets compiler, but each defines its design
+directly without importing or extending another official map. Siegfried adds browser-derived
+contours, three-ink terrain engraving patterns, and locally packaged Cormorant Garamond faces;
+Ferraris, Härad, Soundings, and Verdant likewise declare only their own package-owned assets.
+Streets Dark and Cyberpunk are ordinary maps that extend Streets; Matrix extends Cyberpunk with a
+monochrome phosphor-green palette and its own terminal-style symbols.
+For the complete dark Streets map, import `streetsDark` and use it as the `extends` value;
+`theme: {mode: 'dark'}` changes defaults for omitted styles but does not recolor exact styles in an
+inherited curated map. The package-owned icons, patterns, and Cyberpunk font files ship under
+`assets/`. Streets, Ferraris, Härad, Soundings, and Verdant each declare the canonical Tileflow glyph
+URL with the exact `Noto Sans Regular` and `Noto Sans Bold` stacks. Cyberpunk selects the local
+`Oxanium Medium` and `Oxanium SemiBold` faces; Siegfried selects local Cormorant Garamond Regular,
+SemiBold, and Italic faces. The package exports each map's reusable icon and font directory
+descriptors; Streets Dark composes its two directories in order so its dark `sidewalk-dot` replaces
+the base icon without duplicating the rest of the catalog.
 
 Then validate and run the application through its normal dev server:
 

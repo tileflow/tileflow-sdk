@@ -55,8 +55,9 @@ list.
 
 Official PBF glyphs are a Hosted base asset, not part of a project `fontBundleId` and not a mutable
 World release field. Before Maps can publish, Hosted must publish and verify the full-SHA asset set
-named by `official-glyph-base-asset`; Streets and Ferraris must then reference that exact immutable
-URL. The compatibility `/fonts/...` endpoint is not sufficient release evidence.
+named by `official-glyph-base-asset`; every official root using Noto Sans—currently Streets,
+Ferraris, Härad, Soundings, and Verdant—must then reference that exact immutable URL. The
+compatibility `/fonts/...` endpoint is not sufficient release evidence.
 
 Stable SemVer is intentionally not automated yet. Before a stable channel exists, each public
 change will need a reviewed intent in its source PR. Codex may propose `patch`, `minor`, or `major`;
@@ -150,9 +151,11 @@ dependency range that drifts fails closed.
 Repository settings must enforce all of the following before `PUBLIC_RELEASE_BLOCKERS.json` is
 removed:
 
-- `main` is protected by a ruleset requiring pull requests, one approval, resolved conversations,
-  dismissal of stale approvals, approval of the latest push by someone other than its author, the
-  exact `CI / Required` check, linear history, and no force pushes or deletion;
+- `main` is protected by a ruleset requiring pull requests, resolved conversations, the exact
+  `CI / Required` check, linear history, and no force pushes or deletion. The ruleset deliberately
+  requires zero approving reviews so an operator or Codex can merge after self-review and green CI;
+- this zero-review policy applies only to merging code. It does not remove the independent approval
+  gate configured on the `npm-publish` environment for public release bundles;
 - organization members use 2FA, Actions are limited to reviewed actions, and every third-party
   action in this repository remains pinned by full commit SHA;
 - workflow `GITHUB_TOKEN` permissions default to read-only;

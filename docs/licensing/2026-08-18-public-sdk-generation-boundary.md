@@ -7,12 +7,15 @@ npm publication interlock for the unrelated open release requirements.
 
 ## Implemented technical boundary
 
-- The official Streets, Ferraris, Cyberpunk, and Verdant SVG icon/pattern sources are package-owned map assets
-  under `packages/maps/assets/<id>/icons/`. The Streets POI files are first-party geometric
-  drawings. Their source directory and `packages/maps/THIRD_PARTY_NOTICES.md` record provenance
-  alongside the repository's generated-output grant.
+- The official Streets, Ferraris, Härad, Siegfried, Soundings, Streets Dark, Cyberpunk, Matrix, and
+  Verdant SVG icon/pattern sources are package-owned map assets under
+  `packages/maps/assets/<id>/icons/`. The Streets POI files and the nautical Soundings symbols are
+  first-party geometric drawings. Their source directories and
+  `packages/maps/THIRD_PARTY_NOTICES.md` record provenance alongside the repository's
+  generated-output grant.
 - Cyberpunk's unmodified Oxanium fonts and OFL license live under
-  `packages/maps/assets/cyberpunk/fonts/` beside the map that selects them.
+  `packages/maps/assets/cyberpunk/fonts/`; Matrix reuses that directory. Siegfried's unmodified
+  Cormorant Garamond fonts and OFL license live under `packages/maps/assets/siegfried/fonts/`.
 - `@tileflow/dev` no longer records or bundles map artwork or fonts. It resolves the fixed Maps
   assets during preparation and still carries notices for the separate tooling dependencies it
   executes.
@@ -30,8 +33,8 @@ npm publication interlock for the unrelated open release requirements.
   Direct external tile lists and `pmtiles://` sources retain an optional fixture revision for exact
   visual evidence.
 - The map contract makes ordinary official-map imports complete: Streets and the independent
-  Ferraris root each declare the canonical
-  Tileflow glyph URL directly, Verdant inherits it from Streets, and Cyberpunk owns packaged fonts.
+  Ferraris, Härad, Soundings, and Verdant roots each declare the canonical Tileflow glyph URL
+  directly; Cyberpunk and Siegfried own packaged fonts, and Matrix reuses Cyberpunk's provider.
   That URL is canonical rather than content-addressed; responses revalidate and do not provide an
   exact-byte identity. The immutable replacement is the separate
   `/base/<assetSetSha256>/glyphs/...` contract. No compiler fallback manufactures the URL.

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="32" viewBox="0 0 64 32">
+  <title>Verdant water lines pattern</title>
+  <g fill="none" stroke="#4D8392" stroke-width="1.1" stroke-linecap="round" opacity=".78">
+    <path d="M4 6h12M24 6h7M42 6h15M10 16h9M28 16h16M52 16h8M3 26h7M19 26h14M43 26h12"/>
+  </g>
+  <g fill="none" stroke="#B8DDE7" stroke-width="1.6" stroke-linecap="round" opacity=".5"><path d="M18 10h5M47 11h8M6 21h6M34 22h7M57 27h4"/></g>
+</svg>

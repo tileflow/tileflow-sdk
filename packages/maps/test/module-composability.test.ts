@@ -23,7 +23,17 @@ import {
   water,
 } from '@tileflow/core';
 import {getResolvedModuleEffects} from '@tileflow/core/recipe';
-import {cyberpunk, ferraris, streets, streetsDark, verdant} from '../src';
+import {
+  cyberpunk,
+  ferraris,
+  harad,
+  matrix,
+  siegfried,
+  soundings,
+  streets,
+  streetsDark,
+  verdant,
+} from '../src';
 
 const moduleFactories = {
   addresses,
@@ -52,20 +62,29 @@ const officialEffectIds: Partial<Record<Domain, readonly string[]>> = {
     'cyberpunk-buildings-ghost-aura',
     'cyberpunk-buildings-ghost-glow',
     'cyberpunk-buildings-signal-trace',
+    'matrix-buildings-ghost-aura',
+    'matrix-buildings-ghost-glow',
+    'matrix-buildings-signal-trace',
     'ferraris-building-print-shadow',
+    'verdant-building-print-shadow',
   ],
-  labels: ['streets-label-place-settlement-marker', 'verdant-landscape-label'],
+  labels: ['streets-label-place-settlement-marker', 'matrix-crt-mask', 'verdant-landscape-label'],
   land: [
     'streets-landuse-business-area',
     'cyberpunk-landuse-business-grid',
     'cyberpunk-landuse-sector-trace',
     'cyberpunk-urban-park-circuit-trace',
-    'verdant-green-space-fill',
-    'verdant-green-space-xylem',
-    'verdant-green-space-seed-edge',
+    'matrix-landuse-business-grid',
+    'matrix-landuse-sector-trace',
+    'matrix-urban-park-circuit-trace',
     'verdant-landcover-farmland-pattern',
+    'verdant-landcover-scrub-pattern',
+    'verdant-landcover-meadow-pattern',
+    'verdant-landcover-orchard-pattern',
+    'verdant-landcover-rock-pattern',
     'verdant-landcover-wetland-pattern',
     'verdant-landcover-wood-pattern',
+    'verdant-landuse-residential-pattern',
     'ferraris-landcover-farmland-pattern',
     'ferraris-landcover-heath-pattern',
     'ferraris-landcover-orchard-pattern',
@@ -73,6 +92,20 @@ const officialEffectIds: Partial<Record<Domain, readonly string[]>> = {
     'ferraris-landcover-wetland-pattern',
     'ferraris-landcover-wood-pattern',
     'ferraris-landuse-residential-pattern',
+    'harad-landcover-arable-pattern',
+    'harad-landcover-conifer-pattern',
+    'harad-landcover-deciduous-pattern',
+    'harad-landcover-orchard-pattern',
+    'harad-landcover-sand-pattern',
+    'harad-landcover-wetland-pattern',
+    'harad-landuse-settlement-pattern',
+    'harad-field-boundaries',
+    'siegfried-landcover-forest-pattern',
+    'siegfried-landcover-gravel-pattern',
+    'siegfried-landcover-orchard-pattern',
+    'siegfried-landcover-rock-pattern',
+    'siegfried-landcover-scree-pattern',
+    'siegfried-landcover-wetland-pattern',
   ],
   poi: [
     'streets-parking-symbol-disc',
@@ -80,19 +113,36 @@ const officialEffectIds: Partial<Record<Domain, readonly string[]>> = {
     'cyberpunk-destination-scan-ring',
     'cyberpunk-destination-beacon-core',
     'cyberpunk-destination-target-brackets',
+    'matrix-destination-scan-ring',
+    'matrix-destination-beacon-core',
+    'matrix-destination-poi-node',
   ],
   roads: [
     'cyberpunk-road-principal-neon-aura',
     'cyberpunk-road-principal-neon-glow',
     'cyberpunk-road-principal-neon-core',
-    'verdant-ordinary-track-stroke',
-    'verdant-active-network-stroke',
+    'matrix-road-principal-neon-aura',
+    'matrix-road-principal-neon-glow',
+    'verdant-trail-emphasis',
   ],
   water: [
     'cyberpunk-water-shore-aura',
     'cyberpunk-water-shore-core',
+    'matrix-water-shore-aura',
+    'matrix-water-shore-core',
     'ferraris-water-ripples-pattern',
     'ferraris-water-intermittent-ripples-pattern',
+    'harad-water-lines-pattern',
+    'harad-water-intermittent-lines-pattern',
+    'siegfried-glacier-mask',
+    'siegfried-landcover-glacier-pattern',
+    'siegfried-glacier-outline',
+    'soundings-water-dots-pattern',
+    'soundings-water-intermittent-dots-pattern',
+    'siegfried-water-lines-pattern',
+    'siegfried-water-intermittent-lines-pattern',
+    'verdant-water-lines-pattern',
+    'verdant-water-intermittent-lines-pattern',
   ],
 };
 
@@ -101,6 +151,10 @@ const officialMaps = {
   'streets-dark': streetsDark,
   cyberpunk,
   ferraris,
+  harad,
+  matrix,
+  siegfried,
+  soundings,
   verdant,
 };
 
@@ -125,18 +179,54 @@ const preparedOfficialAssets = {
         'ferraris-wetland',
         'ferraris-woodland',
         'food',
+        'harad-arable',
+        'harad-conifer',
+        'harad-deciduous',
+        'harad-orchard',
+        'harad-paper-grain',
+        'harad-sand',
+        'harad-settlement',
+        'harad-water-lines',
+        'harad-wetland',
         'health',
         'lodging',
         'major-transit',
+        'matrix-crt-scanlines',
+        'matrix-data-grid',
+        'matrix-poi-node',
         'oneway',
         'services',
         'shopping',
         'sidewalk-dot',
-        'verdant-crop-rows',
-        'verdant-sidewalk',
-        'verdant-wetland-ripples',
-        'verdant-wood-stipple',
-        'verdant-xylem',
+        'siegfried-forest',
+        'siegfried-glacier',
+        'siegfried-gravel',
+        'siegfried-orchard',
+        'siegfried-paper-grain',
+        'siegfried-rock',
+        'siegfried-scree',
+        'siegfried-water-lines',
+        'siegfried-wetland',
+        'soundings-buoy-cardinal',
+        'soundings-buoy-port',
+        'soundings-buoy-starboard',
+        'soundings-harbor',
+        'soundings-light-flare',
+        'soundings-lighthouse',
+        'soundings-paper-grain',
+        'soundings-rock-awash',
+        'soundings-water-dots',
+        'soundings-wreck',
+        'verdant-field-hatch',
+        'verdant-forest-canopy',
+        'verdant-heath-tufts',
+        'verdant-meadow-tufts',
+        'verdant-orchard',
+        'verdant-paper-fiber',
+        'verdant-residential-hatch',
+        'verdant-scree',
+        'verdant-water-lines',
+        'verdant-wetland-reeds',
       ],
       sprite: '/tileflow/test/official/sprite',
     },
@@ -239,14 +329,16 @@ for (const [mapName, parent] of Object.entries(officialMaps)) {
     const expectedFields = new Set(Object.values(schema.fields));
 
     for (const layer of style.layers) {
-      if (typeof layer['source-layer'] === 'string') {
-        assert.ok(
-          expectedLayers.has(layer['source-layer']),
-          `${layer.id} retained source-layer ${layer['source-layer']}`,
-        );
-      }
-      for (const field of collectExpressionFields(layer)) {
-        assert.ok(expectedFields.has(field), `${layer.id} retained physical field ${field}`);
+      if (layer.source === publicCore.tileflowPrimarySourceId) {
+        if (typeof layer['source-layer'] === 'string') {
+          assert.ok(
+            expectedLayers.has(layer['source-layer']),
+            `${layer.id} retained source-layer ${layer['source-layer']}`,
+          );
+        }
+        for (const field of collectExpressionFields(layer)) {
+          assert.ok(expectedFields.has(field), `${layer.id} retained physical field ${field}`);
+        }
       }
     }
   });

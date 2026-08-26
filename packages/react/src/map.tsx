@@ -27,6 +27,7 @@ import {
   createTileflowSessionStarter,
   createTileflowTransformRequest,
   loadTileflowStyleFonts,
+  registerTileflowContourProtocol,
   registerTileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
@@ -727,6 +728,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         });
         const fairUseNotice = attachTileflowFairUseNotice(container);
         registerCleanup(() => fairUseNotice.dispose());
+        registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
         const worldRequestBridge = registerTileflowWorldRequestBridge({
           addProtocol: maplibregl.addProtocol,
           onNotice: fairUseNotice.update,

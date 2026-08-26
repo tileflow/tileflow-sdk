@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {
   attachTileflowFairUseNotice,
@@ -7,11 +8,23 @@ import {
   createTileflowSessionStarter,
   createTileflowTransformRequest,
   loadTileflowStyleFonts,
+  registerTileflowContourProtocol,
   registerTileflowWorldRequestBridge,
+  type TileflowContourProtocolHandler,
   type TileflowFairUseNotice,
+  tileflowMaplibreContourVersion,
   type TileflowMapLifecycleEvent,
   type TileflowWorldProtocolHandler,
 } from '../src/browser';
+import {createTileflowContourProtocolUrl} from '../src/terrain/contour-protocol';
+
+test('ships the pinned contour generator inside the browser entry without a CDN runtime', async () => {
+  const browserEntry = await readFile(new URL('../dist/browser.js', import.meta.url), 'utf8');
+
+  assert.match(browserEntry, /maplibre-contour@0\.1\.0/u);
+  assert.doesNotMatch(browserEntry, /unpkg\.com/u);
+  assert.doesNotMatch(browserEntry, /import\(["']maplibre-contour["']\)/u);
+});
 
 test('loads validated content-addressed font faces before a browser map starts', async (t) => {
   const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
@@ -100,6 +113,129 @@ test('explicit empty manifest font metadata avoids an extra style request', asyn
     }) as typeof fetch,
   });
   assert.equal(fetched, false);
+});
+
+test('contour protocol loads the pinned generator lazily and serves self-contained DEM requests', async () => {
+  let handler: TileflowContourProtocolHandler | undefined;
+  let registrations = 0;
+  let moduleLoads = 0;
+  const sourceOptions: Array<Record<string, unknown>> = [];
+  const contourOptions: Array<Record<string, unknown>> = [];
+  const forwarded: Array<{abortController: AbortController; url: string}> = [];
+
+  class FakeDemSource {
+    constructor(options: Record<string, unknown>) {
+      sourceOptions.push(options);
+    }
+
+    contourProtocolUrl(options: Record<string, unknown>) {
+      contourOptions.push(options);
+      return 'fake-contour://{z}/{x}/{y}?thresholds=fake';
+    }
+
+    async contourProtocolV4(request: {url: string}, abortController: AbortController) {
+      forwarded.push({abortController, url: request.url});
+      return {data: new Uint8Array([7, 8, 9]).buffer};
+    }
+  }
+
+  const registry = {
+    addProtocol(name: string, installed: TileflowContourProtocolHandler) {
+      registrations += 1;
+      assert.equal(name, 'tileflow-contour');
+      handler = installed;
+    },
+  };
+  const registrationOptions = {
+    async loadMaplibreContour() {
+      moduleLoads += 1;
+      return {default: {DemSource: FakeDemSource}};
+    },
+  };
+  registerTileflowContourProtocol(registry, registrationOptions);
+  registerTileflowContourProtocol({addProtocol: registry.addProtocol}, registrationOptions);
+
+  assert.equal(tileflowMaplibreContourVersion, '0.1.0');
+  assert.equal(registrations, 1);
+  assert.equal(moduleLoads, 0);
+  assert.ok(handler);
+  const protocolTemplate = createTileflowContourProtocolUrl({
+    demMaxzoom: 13,
+    demUrl: 'https://terrain.example.test/{z}/{x}/{y}.webp?token=a%2Bb',
+    encoding: 'terrarium',
+    maxzoom: 15,
+    multiplier: 1,
+    overzoom: 2,
+    thresholds: {9: [100, 500], 12: [20, 100]},
+  });
+  const requestUrl = protocolTemplate
+    .replace('{z}', '12')
+    .replace('{x}', '2134')
+    .replace('{y}', '1456');
+  const abortController = new AbortController();
+  const response = await handler({url: requestUrl}, abortController);
+
+  assert.deepEqual([...new Uint8Array(response.data)], [7, 8, 9]);
+  assert.equal(moduleLoads, 1);
+  assert.deepEqual(sourceOptions, [
+    {
+      encoding: 'terrarium',
+      maxzoom: 13,
+      url: 'https://terrain.example.test/{z}/{x}/{y}.webp?token=a%2Bb',
+      worker: false,
+    },
+  ]);
+  assert.deepEqual(contourOptions, [
+    {
+      contourLayer: 'contours',
+      elevationKey: 'ele',
+      levelKey: 'level',
+      multiplier: 1,
+      overzoom: 2,
+      thresholds: {9: [100, 500], 12: [20, 100]},
+    },
+  ]);
+  assert.equal(forwarded[0]?.abortController, abortController);
+  assert.equal(forwarded[0]?.url, 'fake-contour://12/2134/1456?thresholds=fake');
+
+  const floatingBoundaryUrl = new URL(requestUrl);
+  floatingBoundaryUrl.pathname = '/13/2134/1456.pbf';
+  floatingBoundaryUrl.searchParams.set('multiplier', '0.07');
+  floatingBoundaryUrl.searchParams.set('thresholds', '13:0.7,3.5');
+  await handler({url: String(floatingBoundaryUrl)}, new AbortController());
+
+  await assert.rejects(
+    handler(
+      {url: `${requestUrl}&demUrl=https%3A%2F%2Fevil.example%2F%7Bz%7D`},
+      new AbortController(),
+    ),
+    /parameters/u,
+  );
+  const negativeDemZoomUrl = new URL(requestUrl);
+  negativeDemZoomUrl.searchParams.set('thresholds', '1:250,500');
+  await assert.rejects(
+    handler({url: String(negativeDemZoomUrl)}, new AbortController()),
+    /negative DEM zoom/u,
+  );
+  const nonIntegralIndexUrl = new URL(requestUrl);
+  nonIntegralIndexUrl.searchParams.set('thresholds', '9:60,100');
+  await assert.rejects(
+    handler({url: String(nonIntegralIndexUrl)}, new AbortController()),
+    /whole multiple/u,
+  );
+  const excessiveDensityUrl = new URL(requestUrl);
+  excessiveDensityUrl.searchParams.set('thresholds', '9:10,50');
+  await assert.rejects(
+    handler({url: String(excessiveDensityUrl)}, new AbortController()),
+    /density budget/u,
+  );
+  const beforeFirstThresholdUrl = new URL(requestUrl);
+  beforeFirstThresholdUrl.pathname = '/8/128/128.pbf';
+  await assert.rejects(
+    handler({url: String(beforeFirstThresholdUrl)}, new AbortController()),
+    /tile coordinates/u,
+  );
+  assert.equal(moduleLoads, 1);
 });
 
 test('rejects duplicate font identities even when their source URLs differ', async () => {

@@ -1166,7 +1166,8 @@ function runPreviewScript(
   const script = /<script type="module">\s*([\s\S]*?)<\/script>\s*<\/body>/
     .exec(html)?.[1]
     ?.replace(/^[ \t]*import [^\n]+;[ \t]*$/gm, '')
-    .replace(/^[ \t]*await loadTileflowStyleFonts\([^\n]+;[ \t]*$/gm, '');
+    .replace(/^[ \t]*await loadTileflowStyleFonts\([^\n]+;[ \t]*$/gm, '')
+    .replace(/^[ \t]*registerTileflowContourProtocol\([^\n]+;[ \t]*$/gm, '');
   assert.ok(script, 'expected an inline preview script');
 
   let mapOptions: Record<string, unknown> | undefined;

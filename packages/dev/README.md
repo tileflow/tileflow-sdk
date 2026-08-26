@@ -316,11 +316,13 @@ export default defineMap({
 Directories apply left to right. `<id>.<ext>` publishes an icon as `<id>`;
 `<id>.pattern.<ext>` publishes the intrinsic-size pattern as `<id>`. The published ID must already
 be canonical lower-kebab-case. A later file replaces an earlier file only for the same exact ID;
-case-only collisions fail. Package maps export `streetsIcons`, `ferrarisIcons`, `cyberpunkIcons`,
-and `verdantIcons` directory descriptors from `@tileflow/maps`. Preparation resolves package
-descriptors inside their owning package, checks real-path containment, and compiles them through the
-same pipeline as a config-relative directory. There are no built-in/source/sprite selectors,
-mappings, icon-specific inheritance, or compatibility aliases.
+case-only collisions fail. Package maps export `streetsIcons`, `streetsDarkIcons`, `ferrarisIcons`,
+`haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`, and `verdantIcons`
+directory descriptors from `@tileflow/maps`. Cyberpunk and Siegfried also export
+`cyberpunkFonts` and `siegfriedFonts`. Preparation resolves package descriptors inside their owning
+package, checks real-path containment, and compiles them through the same pipeline as a
+config-relative directory. There are no built-in/source/sprite selectors, mappings, icon-specific
+inheritance, or compatibility aliases.
 
 Local directories resolve from the directory containing the selected `tileflow.config.ts`, while
 the workspace `cwd` remains their containment boundary. Canonical local syntax starts with `./` or
@@ -396,11 +398,16 @@ const result = await compileTileflowIconPackages(internalCatalog, {
 });
 ```
 
-Streets declares `[streetsIcons]`; Cyberpunk and Verdant extend Streets and append their respective
-directory descriptors. Ferraris is a separate first-party root that declares only
-`[ferrarisIcons]`, containing nine original SVG patterns; it does not compose Streets assets even
-though both roots use the semantic Streets compiler. An application map may inherit a root's exact
-array, replace it, clear it with `[]`, or compose it explicitly with a spread.
+Streets declares `[streetsIcons]`; Streets Dark composes `[streetsIcons, streetsDarkIcons]`;
+Cyberpunk extends Streets and appends `cyberpunkIcons`; Matrix replaces Cyberpunk's icons with
+`[streetsIcons, matrixIcons]`. Ferraris, Härad, Siegfried, Soundings, and Verdant are separate
+first-party roots that declare only `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
+`[soundingsIcons]`, and `[verdantIcons]`, respectively; none composes Streets assets even though all
+roots use the semantic Streets compiler ABI. Härad's directory contains nine original Tileflow
+patterns inspired by Lantmäteriet's CC0 Häradsekonomiska kartan series from 1859–1934. Soundings owns ten
+original nautical symbols and patterns. None of the five independent roots imports or extends
+Streets. An application map may inherit a root's exact array, replace it, clear it with `[]`, or
+compose it explicitly with a spread.
 `modules.poi.icons: false`, a disabled POI module, or the internal POI `none` preset suppresses POI
 icon layers without moving asset ownership into dev. Module presets remain semantic module options;
 they are not maps or asset-provider presets.

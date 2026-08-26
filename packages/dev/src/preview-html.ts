@@ -1,9 +1,9 @@
+import type {TileflowStyleFontFace} from '@tileflow/core';
 import {
   normalizeTileflowLandmarkManifest,
   readBoundedTileflowJsonResponse,
   readBoundedTileflowResponse,
 } from './landmarks';
-import type {TileflowStyleFontFace} from '@tileflow/core';
 import type {ResolvedTileflowPreview} from './preview';
 
 export function renderTileflowPreviewHtml(
@@ -135,6 +135,7 @@ export function renderTileflowPreviewHtml(
     <script type="importmap">{"imports":{"fflate":"${basePath}/__runtime/fflate.js","three":"${basePath}/__runtime/three.module.js"}}</script>
     <script type="module">
       import {loadTileflowStyleFonts} from "${basePath}/__runtime/tileflow-browser.js";
+      import {registerTileflowContourProtocol} from "${basePath}/__runtime/tileflow-browser.js";
 
       const initialStatus = ${JSON.stringify(initialStatus)};
       const normalizeTileflowLandmarkManifest = ${normalizeTileflowLandmarkManifest.toString()};
@@ -3691,6 +3692,7 @@ export function renderTileflowPreviewHtml(
         const mapWorkerCount = mapWorkerCountOverride ?? 1;
         maplibregl.setWorkerCount?.(mapWorkerCount);
         await loadTileflowStyleFonts(styleUrl, {fontFaces: previewFontFaces});
+        registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
         const map = new maplibregl.Map({
           collectResourceTiming: mapBenchmarkEnabled,
           container: "map",

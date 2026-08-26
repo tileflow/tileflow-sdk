@@ -8,6 +8,7 @@ import {
   tileflowWorldV1Schema,
   vectorTiles,
   vegetation,
+  water,
 } from '../src';
 import type {TileflowLayerContribution} from '../src/cartography/contributions';
 import {assembleTileflowLayers} from '../src/cartography/graph';
@@ -158,14 +159,52 @@ test('water consumes remapped bathymetry capability and omits it when absent', (
       url: '/tiles.json',
     }),
   );
-  const contributions = compileWater(undefined, {...context, data});
+  const contributions = compileWater(water({bathymetryContours: {}, bathymetryLabels: {}}), {
+    ...context,
+    data,
+  });
   const bathymetry = contribution(contributions, 'streets-bathymetry');
+  const bathymetryContours = contribution(contributions, 'streets-bathymetry-contours');
+  const bathymetryLabels = contribution(contributions, 'streets-bathymetry-labels');
 
   assert.equal(bathymetry.layer['source-layer'], 'depth_bands');
   assert.equal(bathymetry.layer.maxzoom, 10);
   assert.match(JSON.stringify(bathymetry.layer.layout), /depth_order/);
   assert.match(JSON.stringify(bathymetry.layer.paint), /depth_floor/);
+  assert.equal(bathymetryContours.layer['source-layer'], 'depth_bands');
+  assert.match(JSON.stringify(bathymetryContours.layer.filter), /depth_floor/);
+  assert.equal(
+    (bathymetryContours.layer.paint as Record<string, unknown>)['line-color'],
+    context.colors.hydro.label,
+  );
+  assert.equal(bathymetryContours.slot, 'hydro');
+  assert.equal(bathymetryContours.target, 'water.bathymetryContours');
+  assert.equal(bathymetryLabels.layer['source-layer'], 'depth_bands');
+  assert.equal(bathymetryLabels.layer.minzoom, 3);
+  assert.equal(bathymetryLabels.layer.maxzoom, 10);
+  assert.deepEqual((bathymetryLabels.layer.layout as Record<string, unknown>)['text-field'], [
+    'to-string',
+    ['abs', ['to-number', ['get', 'depth_floor'], 0]],
+  ]);
+  assert.equal(
+    (bathymetryLabels.layer.paint as Record<string, unknown>)['text-color'],
+    context.colors.hydro.label,
+  );
+  assert.equal(bathymetryLabels.slot, 'symbols');
+  assert.equal(bathymetryLabels.target, 'water.bathymetryLabels');
   assertValid(contributions);
+  assert.equal(
+    compileWater(undefined, {...context, data}).some(
+      ({layer}) => layer.id === 'streets-bathymetry-labels',
+    ),
+    false,
+  );
+  assert.equal(
+    compileWater(undefined, {...context, data}).some(
+      ({layer}) => layer.id === 'streets-bathymetry-contours',
+    ),
+    false,
+  );
 
   const portableData = resolveTileflowData(
     vectorTiles({
@@ -174,10 +213,20 @@ test('water consumes remapped bathymetry capability and omits it when absent', (
       url: '/tiles.json',
     }),
   );
+  const portable = compileWater(water({bathymetryContours: {}, bathymetryLabels: {}}), {
+    ...context,
+    data: portableData,
+  });
   assert.equal(
-    compileWater(undefined, {...context, data: portableData}).some(
-      ({layer}) => layer.id === 'streets-bathymetry',
-    ),
+    portable.some(({layer}) => layer.id === 'streets-bathymetry'),
+    false,
+  );
+  assert.equal(
+    portable.some(({layer}) => layer.id === 'streets-bathymetry-labels'),
+    false,
+  );
+  assert.equal(
+    portable.some(({layer}) => layer.id === 'streets-bathymetry-contours'),
     false,
   );
 });

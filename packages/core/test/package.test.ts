@@ -46,6 +46,7 @@ test('declares the browser entry without exposing it from the package root', asy
     'dist',
     'LICENSE',
     'NOTICE',
+    'THIRD_PARTY_NOTICES.md',
     'GENERATED_OUTPUT_LICENSE.md',
     'TRADEMARKS.md',
   ]);
@@ -73,6 +74,21 @@ test('keeps config compilation out of runtime and browser bundles', async () => 
   for (const entry of ['runtime.js', 'browser.js']) {
     const output = await readFile(new URL(`../dist/${entry}`, import.meta.url), 'utf8');
     assert.doesNotMatch(output, /createStyle|createStyleFromCatalog|compilerVersion/u);
+  }
+});
+
+test('ships notices for every third-party component embedded in the browser entry', async () => {
+  const notices = await readFile(new URL('../THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8');
+  for (const requiredNotice of [
+    'maplibre-contour 0.1.0',
+    'd3-contour',
+    'vt-pbf',
+    'pbf 4.0.1',
+    'node-buffer-more-ints',
+    'buffer <https://github.com/feross/buffer>',
+    'TypeScript helper code',
+  ]) {
+    assert.equal(notices.includes(requiredNotice), true, `missing notice for ${requiredNotice}`);
   }
 });
 

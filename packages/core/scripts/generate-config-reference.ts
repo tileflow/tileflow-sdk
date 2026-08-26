@@ -221,6 +221,7 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
   enrichLineHatchConstraints(schema);
   enrichPoiRankConstraints(schema);
   enrichDirectDataConstraints(schema);
+  enrichTerrainContourConstraints(schema);
   const icons = asRecord(properties.icons, 'icons property');
   const fonts = asRecord(properties.fonts, 'fonts property');
   const glyphs = asRecord(properties.glyphs, 'glyphs property');
@@ -238,7 +239,7 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
     [{kind: 'package-directory', package: '@tileflow/maps', path: 'assets/streets/icons'}],
     [
       {kind: 'package-directory', package: '@tileflow/maps', path: 'assets/streets/icons'},
-      {kind: 'package-directory', package: '@tileflow/maps', path: 'assets/verdant/icons'},
+      {kind: 'package-directory', package: '@tileflow/maps', path: 'assets/cyberpunk/icons'},
     ],
   ];
   const fontArray = dereferenceSchema(schema, fonts, 'fonts array');
@@ -355,6 +356,26 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
     {
       path: 'modules.poi.{maxRank,styles.*.maxRank}.stops',
       rule: 'Zooms must be strictly increasing and rank limits must not decrease.',
+    },
+    {
+      path: 'terrain.contours.demUrl',
+      rule: 'Must be a safe WHATWG HTTP(S) DEM template containing each of {z}, {x}, and {y} exactly once.',
+    },
+    {
+      path: 'terrain.contours.thresholds.*',
+      rule: 'The index interval must be greater than or equal to, and a whole multiple of, the minor interval.',
+    },
+    {
+      path: 'terrain.contours.{thresholds,multiplier}',
+      rule: 'Every minor interval must satisfy the zoom- and multiplier-dependent main-thread contour density budget.',
+    },
+    {
+      path: 'terrain.contours.{thresholds,minZoom,maxZoom,overzoom}',
+      rule: 'The source range must cover its threshold zooms, minZoom must not exceed maxZoom, and overzoom must not produce a negative DEM zoom.',
+    },
+    {
+      path: 'terrain.contours.{minor,index,labels}.{minZoom,maxZoom}',
+      rule: 'Each layer range must begin at or after the effective contour-source minZoom and include its own effective minZoom.',
     },
   ];
 }
@@ -532,6 +553,83 @@ function enrichDirectDataConstraints(schema: JsonSchema): void {
       {path: 'bounds', rule: 'West < east and south < north when bounds is present.'},
     ];
   });
+}
+
+function enrichTerrainContourConstraints(schema: JsonSchema): void {
+  let matches = 0;
+  visitJsonSchema(schema, (node) => {
+    if (!node.properties || typeof node.properties !== 'object' || Array.isArray(node.properties)) {
+      return;
+    }
+    const properties = node.properties as Record<string, unknown>;
+    if (
+      !properties.demMaxZoom ||
+      !properties.demUrl ||
+      !properties.maxZoom ||
+      !properties.minZoom ||
+      !properties.overzoom ||
+      !properties.thresholds
+    ) {
+      return;
+    }
+    matches += 1;
+
+    const demUrl = dereferenceSchema(
+      schema,
+      asRecord(properties.demUrl, 'contour DEM URL'),
+      'contour DEM URL',
+    );
+    demUrl.description =
+      'Safe HTTP(S) DEM tile template containing each of {z}, {x}, and {y} exactly once; credentials, fragments, protocol-relative URLs, backslashes, controls, and non-loopback plain HTTP are forbidden.';
+    demUrl['x-tileflow-refinement'] =
+      'Must pass the exact Core DEM-template parser, including WHATWG URL and loopback checks.';
+
+    const thresholds = dereferenceSchema(
+      schema,
+      asRecord(properties.thresholds, 'contour thresholds'),
+      'contour thresholds',
+    );
+    thresholds.minProperties = 1;
+    thresholds.maxProperties = 25;
+    thresholds.description =
+      'One to 25 zoom-indexed [minor, index] elevation intervals; zoom keys are integers from 0 through 24.';
+    thresholds['x-tileflow-refinements'] = [
+      {
+        path: '*',
+        rule: 'The index interval must be greater than or equal to, and a whole multiple of, the minor interval.',
+      },
+      {
+        path: '*[0]',
+        rule: 'The minor interval must satisfy the zoom- and multiplier-dependent main-thread contour density budget.',
+      },
+    ];
+
+    node['x-tileflow-refinements'] = [
+      {
+        path: 'demUrl',
+        rule: 'Must pass the exact safe HTTP(S) DEM-template parser described on the property.',
+      },
+      {
+        path: 'maxZoom',
+        rule: 'When present, must include the greatest threshold zoom.',
+      },
+      {
+        path: 'minZoom',
+        rule: 'When present, must not precede the smallest threshold zoom and must not exceed the effective maxZoom.',
+      },
+      {
+        path: 'overzoom',
+        rule: 'Must not exceed the smallest threshold zoom, so generated DEM zooms cannot become negative.',
+      },
+      {
+        path: '{minor,index,labels}.{minZoom,maxZoom}',
+        rule: 'Each layer minZoom must not precede the effective contour-source minZoom, and each layer maxZoom must include its effective minZoom.',
+      },
+    ];
+  });
+  if (matches !== 1) {
+    throw new Error(`Expected exactly one terrain contour schema; found ${matches}.`);
+  }
 }
 
 function appendAllOf(schema: JsonSchema, ...rules: JsonSchema[]): void {

@@ -24,7 +24,7 @@
     },
     {
       "id": "official-glyph-base-asset",
-      "summary": "Merge and deploy Hosted's canonical create-only base-asset publisher and verified /base/<assetSetSha256>/glyph delivery; provision its scoped R2 credentials; publish and read back official set 33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3 including licenses; then change Streets and Ferraris from the mutable /fonts URL to that exact URL and rerun visual and packed-package validation."
+      "summary": "Merge and deploy Hosted's canonical create-only base-asset publisher and verified /base/<assetSetSha256>/glyph delivery; provision its scoped R2 credentials; publish and read back official set 33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3 including licenses; then change every URL-backed official root—Streets, Ferraris, Härad, Soundings, and Verdant—from the mutable /fonts URL to that exact URL and rerun visual and packed-package validation."
     },
     {
       "id": "maps-and-interactions-bootstrap",

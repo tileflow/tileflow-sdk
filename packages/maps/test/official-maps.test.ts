@@ -8,6 +8,15 @@ import {
   cyberpunkIcons,
   ferraris,
   ferrarisIcons,
+  harad,
+  haradIcons,
+  matrix,
+  matrixIcons,
+  siegfried,
+  siegfriedFonts,
+  siegfriedIcons,
+  soundings,
+  soundingsIcons,
   streets,
   streetsDark,
   streetsDarkIcons,
@@ -34,18 +43,54 @@ const officialIconIds = [
   'ferraris-wetland',
   'ferraris-woodland',
   'food',
+  'harad-arable',
+  'harad-conifer',
+  'harad-deciduous',
+  'harad-orchard',
+  'harad-paper-grain',
+  'harad-sand',
+  'harad-settlement',
+  'harad-water-lines',
+  'harad-wetland',
   'health',
   'lodging',
   'major-transit',
+  'matrix-crt-scanlines',
+  'matrix-data-grid',
+  'matrix-poi-node',
   'oneway',
   'services',
   'shopping',
   'sidewalk-dot',
-  'verdant-crop-rows',
-  'verdant-sidewalk',
-  'verdant-wetland-ripples',
-  'verdant-wood-stipple',
-  'verdant-xylem',
+  'siegfried-forest',
+  'siegfried-glacier',
+  'siegfried-gravel',
+  'siegfried-orchard',
+  'siegfried-paper-grain',
+  'siegfried-rock',
+  'siegfried-scree',
+  'siegfried-water-lines',
+  'siegfried-wetland',
+  'soundings-buoy-cardinal',
+  'soundings-buoy-port',
+  'soundings-buoy-starboard',
+  'soundings-harbor',
+  'soundings-light-flare',
+  'soundings-lighthouse',
+  'soundings-paper-grain',
+  'soundings-rock-awash',
+  'soundings-water-dots',
+  'soundings-wreck',
+  'verdant-field-hatch',
+  'verdant-forest-canopy',
+  'verdant-heath-tufts',
+  'verdant-meadow-tufts',
+  'verdant-orchard',
+  'verdant-paper-fiber',
+  'verdant-residential-hatch',
+  'verdant-scree',
+  'verdant-water-lines',
+  'verdant-wetland-reeds',
 ] as const;
 const ferrarisPatternIds = [
   'ferraris-crop-hatch',
@@ -57,6 +102,74 @@ const ferrarisPatternIds = [
   'ferraris-water-ripples',
   'ferraris-wetland',
   'ferraris-woodland',
+] as const;
+const haradPatternIds = [
+  'harad-arable',
+  'harad-conifer',
+  'harad-deciduous',
+  'harad-orchard',
+  'harad-paper-grain',
+  'harad-sand',
+  'harad-settlement',
+  'harad-water-lines',
+  'harad-wetland',
+] as const;
+const soundingsIconIds = [
+  'soundings-buoy-cardinal',
+  'soundings-buoy-port',
+  'soundings-buoy-starboard',
+  'soundings-harbor',
+  'soundings-light-flare',
+  'soundings-lighthouse',
+  'soundings-paper-grain',
+  'soundings-rock-awash',
+  'soundings-water-dots',
+  'soundings-wreck',
+] as const;
+const siegfriedPatternIds = [
+  'siegfried-forest',
+  'siegfried-glacier',
+  'siegfried-gravel',
+  'siegfried-orchard',
+  'siegfried-paper-grain',
+  'siegfried-rock',
+  'siegfried-scree',
+  'siegfried-water-lines',
+  'siegfried-wetland',
+] as const;
+const verdantIconIds = [
+  'coffee',
+  'crosswalk',
+  'culture',
+  'education',
+  'food',
+  'health',
+  'lodging',
+  'major-transit',
+  'services',
+  'shopping',
+  'verdant-field-hatch',
+  'verdant-forest-canopy',
+  'verdant-heath-tufts',
+  'verdant-meadow-tufts',
+  'verdant-orchard',
+  'verdant-paper-fiber',
+  'verdant-residential-hatch',
+  'verdant-scree',
+  'verdant-water-lines',
+  'verdant-wetland-reeds',
+] as const;
+const verdantPatternIds = [
+  'verdant-field-hatch',
+  'verdant-forest-canopy',
+  'verdant-heath-tufts',
+  'verdant-meadow-tufts',
+  'verdant-orchard',
+  'verdant-paper-fiber',
+  'verdant-residential-hatch',
+  'verdant-scree',
+  'verdant-water-lines',
+  'verdant-wetland-reeds',
 ] as const;
 const officialGlyphsUrl = 'https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf';
 
@@ -73,14 +186,26 @@ function compileOfficialMap(map: Parameters<typeof resolveMap>[0]) {
 test('exports independent roots and ordinary Streets-derived variants', () => {
   assert.deepEqual(streets.root, {compiler: 'streets', compilerVersion: 1});
   assert.deepEqual(ferraris.root, {compiler: 'streets', compilerVersion: 1});
+  assert.deepEqual(harad.root, {compiler: 'streets', compilerVersion: 1});
+  assert.deepEqual(siegfried.root, {compiler: 'streets', compilerVersion: 1});
+  assert.deepEqual(soundings.root, {compiler: 'streets', compilerVersion: 1});
+  assert.deepEqual(verdant.root, {compiler: 'streets', compilerVersion: 1});
   assert.equal('extends' in ferraris, false);
+  assert.equal('extends' in harad, false);
+  assert.equal('extends' in siegfried, false);
+  assert.equal('extends' in soundings, false);
+  assert.equal('extends' in verdant, false);
   assert.equal(cyberpunk.extends, streets);
+  assert.equal(matrix.extends, cyberpunk);
   assert.equal(streetsDark.extends, streets);
-  assert.equal(verdant.extends, streets);
 
   for (const [id, map] of Object.entries({
     cyberpunk,
     ferraris,
+    harad,
+    matrix,
+    siegfried,
+    soundings,
     streets,
     'streets-dark': streetsDark,
     verdant,
@@ -95,7 +220,17 @@ test('exports independent roots and ordinary Streets-derived variants', () => {
 });
 
 test('deep-freezes only the exported official map singletons', () => {
-  for (const map of [streets, ferraris, streetsDark, cyberpunk, verdant]) {
+  for (const map of [
+    streets,
+    ferraris,
+    harad,
+    siegfried,
+    soundings,
+    streetsDark,
+    cyberpunk,
+    matrix,
+    verdant,
+  ]) {
     assertDeepFrozen(map);
   }
 
@@ -135,15 +270,27 @@ test('official maps declare their expected icon and typography providers', () =>
   const resolvedStreetsDark = resolveMap(streetsDark);
   const resolvedCyberpunk = resolveMap(cyberpunk);
   const resolvedFerraris = resolveMap(ferraris);
+  const resolvedHarad = resolveMap(harad);
+  const resolvedMatrix = resolveMap(matrix);
+  const resolvedSiegfried = resolveMap(siegfried);
+  const resolvedSoundings = resolveMap(soundings);
   const resolvedVerdant = resolveMap(verdant);
 
   assert.deepEqual(resolvedStreets.icons, [streetsIcons]);
   assert.deepEqual(resolvedStreetsDark.icons, [streetsIcons, streetsDarkIcons]);
   assert.deepEqual(resolvedCyberpunk.icons, [streetsIcons, cyberpunkIcons]);
   assert.deepEqual(resolvedFerraris.icons, [ferrarisIcons]);
-  assert.deepEqual(resolvedVerdant.icons, [streetsIcons, verdantIcons]);
+  assert.deepEqual(resolvedHarad.icons, [haradIcons]);
+  assert.deepEqual(resolvedMatrix.icons, [streetsIcons, matrixIcons]);
+  assert.deepEqual(resolvedSiegfried.icons, [siegfriedIcons]);
+  assert.deepEqual(resolvedSoundings.icons, [soundingsIcons]);
+  assert.deepEqual(resolvedVerdant.icons, [verdantIcons]);
   assert.deepEqual(resolvedCyberpunk.fonts, [cyberpunkFonts]);
+  assert.deepEqual(resolvedMatrix.fonts, [cyberpunkFonts]);
+  assert.deepEqual(resolvedSiegfried.fonts, [siegfriedFonts]);
   assert.equal(resolvedCyberpunk.glyphs, undefined);
+  assert.equal(resolvedMatrix.glyphs, undefined);
+  assert.equal(resolvedSiegfried.glyphs, undefined);
   assert.deepEqual(resolvedStreets.glyphs, {
     fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
     kind: 'url',
@@ -151,6 +298,9 @@ test('official maps declare their expected icon and typography providers', () =>
   });
   assert.deepEqual(resolvedStreetsDark.glyphs, resolvedStreets.glyphs);
   assert.deepEqual(resolvedFerraris.glyphs, resolvedStreets.glyphs);
+  assert.deepEqual(resolvedHarad.glyphs, resolvedStreets.glyphs);
+  assert.deepEqual(resolvedSoundings.glyphs, resolvedStreets.glyphs);
+  assert.deepEqual(verdant.glyphs, resolvedStreets.glyphs);
   assert.deepEqual(resolvedVerdant.glyphs, resolvedStreets.glyphs);
   assert.equal(
     typeof resolvedCyberpunk.theme === 'object'
@@ -161,6 +311,26 @@ test('official maps declare their expected icon and typography providers', () =>
   assert.equal(
     typeof resolvedFerraris.theme === 'object'
       ? resolvedFerraris.theme.typography?.font
+      : undefined,
+    'Noto Sans Regular',
+  );
+  assert.equal(
+    typeof resolvedMatrix.theme === 'object' ? resolvedMatrix.theme.typography?.font : undefined,
+    'Oxanium Medium',
+  );
+  assert.equal(
+    typeof resolvedHarad.theme === 'object' ? resolvedHarad.theme.typography?.font : undefined,
+    'Noto Sans Regular',
+  );
+  assert.equal(
+    typeof resolvedSiegfried.theme === 'object'
+      ? resolvedSiegfried.theme.typography?.font
+      : undefined,
+    'Cormorant Garamond Regular',
+  );
+  assert.equal(
+    typeof resolvedSoundings.theme === 'object'
+      ? resolvedSoundings.theme.typography?.font
       : undefined,
     'Noto Sans Regular',
   );
@@ -214,10 +384,120 @@ test('Ferraris is self-contained and references exactly its package-owned patter
   }
 });
 
+test('Härad is self-contained and references exactly its package-owned patterns', () => {
+  const resolved = resolveMap(harad);
+  assert.equal('extends' in harad, false);
+  assert.equal(resolved.root.compiler, 'streets');
+  assert.deepEqual(resolved.icons, [haradIcons]);
+
+  const style = createStyle(harad, {
+    preparedAssets: {
+      icons: {ids: haradPatternIds, sprite: '/tileflow/icons/harad/sprite'},
+    },
+  });
+  assert.equal(style.metadata?.['tileflow:extends'], undefined);
+  const patternIds = new Set(
+    style.layers.flatMap((layer) =>
+      Object.entries((layer.paint ?? {}) as Record<string, unknown>).flatMap(([property, value]) =>
+        property.endsWith('-pattern') && typeof value === 'string' ? [value] : [],
+      ),
+    ),
+  );
+  assert.deepEqual([...patternIds].sort(), [...haradPatternIds]);
+
+  const layerIds = new Set(style.layers.map((layer) => layer.id));
+  for (const id of [
+    'harad-landcover-arable-pattern',
+    'harad-landcover-conifer-pattern',
+    'harad-landcover-deciduous-pattern',
+    'harad-landcover-orchard-pattern',
+    'harad-landcover-sand-pattern',
+    'harad-landcover-wetland-pattern',
+    'harad-landuse-settlement-pattern',
+    'harad-field-boundaries',
+    'harad-water-lines-pattern',
+    'harad-water-intermittent-lines-pattern',
+  ]) {
+    assert.equal(layerIds.has(id), true, `Missing Härad effect layer ${id}`);
+  }
+  assert.equal(layerIds.has('harad-building-ink-shadow'), false);
+});
+
+test('Soundings is self-contained and references its package-owned nautical symbols', () => {
+  const resolved = resolveMap(soundings);
+  assert.equal('extends' in soundings, false);
+  assert.deepEqual(soundings.root, {compiler: 'streets', compilerVersion: 1});
+  assert.deepEqual(resolved.icons, [soundingsIcons]);
+
+  const style = createStyle(soundings, {
+    preparedAssets: {
+      icons: {ids: soundingsIconIds, sprite: '/tileflow/icons/soundings/sprite'},
+    },
+  });
+  assert.equal(style.metadata?.['tileflow:map'], 'soundings');
+  assert.equal(style.metadata?.['tileflow:extends'], undefined);
+  assert.equal(style.metadata?.['tileflow:root'], 'streets');
+  assert.equal(style.sprite, '/tileflow/icons/soundings/sprite');
+  assert.deepEqual(validateStyleMin(style as never), []);
+
+  const serialized = JSON.stringify(style);
+  for (const id of soundingsIconIds) {
+    assert.match(serialized, new RegExp(`"${id}"`, 'u'), `Soundings does not reference ${id}`);
+  }
+});
+
+test('Verdant is self-contained and references exactly its package-owned patterns', () => {
+  const resolved = resolveMap(verdant);
+  assert.equal('extends' in verdant, false);
+  assert.deepEqual(verdant.root, {compiler: 'streets', compilerVersion: 1});
+  assert.deepEqual(resolved.icons, [verdantIcons]);
+
+  const style = createStyle(verdant, {
+    preparedAssets: {
+      icons: {ids: verdantIconIds, sprite: '/tileflow/icons/verdant/sprite'},
+    },
+  });
+  assert.equal(style.metadata?.['tileflow:extends'], undefined);
+  assert.equal(style.metadata?.['tileflow:root'], 'streets');
+  assert.deepEqual(validateStyleMin(style as never), []);
+
+  const patternIds = new Set(
+    style.layers.flatMap((layer) =>
+      Object.entries((layer.paint ?? {}) as Record<string, unknown>).flatMap(([property, value]) =>
+        property.endsWith('-pattern') && typeof value === 'string' ? [value] : [],
+      ),
+    ),
+  );
+  assert.deepEqual([...patternIds].sort(), [...verdantPatternIds]);
+
+  const layerIds = new Set(style.layers.map((layer) => layer.id));
+  for (const id of [
+    'verdant-landcover-farmland-pattern',
+    'verdant-landcover-scrub-pattern',
+    'verdant-landcover-meadow-pattern',
+    'verdant-landcover-orchard-pattern',
+    'verdant-landcover-rock-pattern',
+    'verdant-landcover-wetland-pattern',
+    'verdant-landcover-wood-pattern',
+    'verdant-landuse-residential-pattern',
+    'verdant-water-lines-pattern',
+    'verdant-water-intermittent-lines-pattern',
+    'verdant-building-print-shadow',
+    'verdant-trail-emphasis',
+    'verdant-landscape-label',
+  ]) {
+    assert.equal(layerIds.has(id), true, `Missing Verdant effect layer ${id}`);
+  }
+});
+
 test('all official maps compile directly after their packaged sprite is prepared', () => {
   for (const [id, map] of Object.entries({
     cyberpunk,
     ferraris,
+    harad,
+    matrix,
+    siegfried,
+    soundings,
     streets,
     'streets-dark': streetsDark,
     verdant,
@@ -226,8 +506,14 @@ test('all official maps compile directly after their packaged sprite is prepared
     assert.equal(style.metadata?.['tileflow:map'], id);
     assert.equal(style.metadata?.['tileflow:root'], 'streets');
     assert.equal(style.sprite, `/tileflow/icons/${id}/sprite`);
-    assert.equal(style.glyphs, id === 'cyberpunk' ? undefined : officialGlyphsUrl);
-    assert.ok(style.layers.length > 100);
+    assert.equal(
+      style.glyphs,
+      id === 'cyberpunk' || id === 'matrix' || id === 'siegfried' ? undefined : officialGlyphsUrl,
+    );
+    assert.ok(
+      style.layers.length > (id === 'soundings' ? 50 : 100),
+      `${id} compiled an unexpectedly incomplete layer stack`,
+    );
   }
 });
 
@@ -248,6 +534,10 @@ test('official maps compile against generic OpenMapTiles without optional capabi
   for (const [id, map] of Object.entries({
     cyberpunk,
     ferraris,
+    harad,
+    matrix,
+    siegfried,
+    soundings,
     streets,
     'streets-dark': streetsDark,
     verdant,
@@ -266,6 +556,14 @@ test('official maps emit only exact declared font-face stacks', () => {
   const expected = {
     cyberpunk: new Set([JSON.stringify(['Oxanium Medium']), JSON.stringify(['Oxanium SemiBold'])]),
     ferraris: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
+    harad: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
+    matrix: new Set([JSON.stringify(['Oxanium Medium']), JSON.stringify(['Oxanium SemiBold'])]),
+    siegfried: new Set([
+      JSON.stringify(['Cormorant Garamond Italic']),
+      JSON.stringify(['Cormorant Garamond Regular']),
+      JSON.stringify(['Cormorant Garamond SemiBold']),
+    ]),
+    soundings: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
     streets: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
     'streets-dark': new Set([
       JSON.stringify(['Noto Sans Regular']),
@@ -277,6 +575,10 @@ test('official maps emit only exact declared font-face stacks', () => {
   for (const [id, map] of Object.entries({
     cyberpunk,
     ferraris,
+    harad,
+    matrix,
+    siegfried,
+    soundings,
     streets,
     'streets-dark': streetsDark,
     verdant,
@@ -352,14 +654,17 @@ test('Streets green surfaces are typed and contain no legacy raw detail layers',
   ]);
 });
 
-test('derived official maps do not inherit Streets surface colors', () => {
+test('non-Streets official maps do not use Streets surface colors', () => {
   const compile = compileOfficialMap;
   const streetsSurfaceSignatures = ['#99DDFF', '#B3EBAD', '#C2EFBE', '#CCE2CA', '#D3F1C6'];
 
   for (const [id, map, ownSignatures] of [
     ['cyberpunk', cyberpunk, ['#071E31', '#0D2828']],
+    ['harad', harad, ['#C4DED5', '#E1B23B']],
+    ['matrix', matrix, ['#010704', '#63F77B']],
+    ['siegfried', siegfried, ['#F0EBE0', '#A96C4D']],
     ['streets-dark', streetsDark, ['#151E2D', '#10324B']],
-    ['verdant', verdant, ['#B2E1DC', '#C4E8B2']],
+    ['verdant', verdant, ['#B8DDE7', '#C8DCC4']],
   ] as const) {
     const serialized = JSON.stringify(compile(map)).toUpperCase();
     for (const signature of ownSignatures) {

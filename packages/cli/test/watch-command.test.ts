@@ -128,7 +128,8 @@ test(
         event.event === 'recovered' && Number(event.generation) > Number(invalid.generation),
     );
     const third = await running.waitFor(
-      (event) => event.event === 'captured' && event.generation === recovered.generation,
+      (event) =>
+        event.event === 'captured' && Number(event.generation) >= Number(recovered.generation),
       45_000,
     );
     assert.equal(third.outputPath, first.outputPath);

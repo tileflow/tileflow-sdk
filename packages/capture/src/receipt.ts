@@ -1,5 +1,6 @@
 import {createHash} from 'node:crypto';
 import {
+  isTileflowWorldReleaseId,
   serializeCanonicalJson,
   tileflowCaptureIdSchema,
   tileflowCaptureSceneLimits,
@@ -8,7 +9,7 @@ import {
 import {TileflowCaptureError} from './errors';
 import type {TileflowCaptureRendererIdentity} from './metadata';
 
-export const tileflowCaptureReceiptSchemaVersion = 2 as const;
+export const tileflowCaptureReceiptSchemaVersion = 3 as const;
 export const tileflowCaptureReceiptLimits = Object.freeze({maximumBytes: 64 * 1024});
 
 export type TileflowCaptureDataBindingsV2 = {
@@ -30,20 +31,40 @@ export type TileflowCaptureDataSourceV2 = {
   sha256: string;
 };
 
+export type TileflowCaptureDataSemanticsV2 = {
+  parkLayer: 'mixed' | 'protected-only';
+};
+
 /** Durable schema-v2 data identity owned by capture rather than the live core authoring API. */
 export type TileflowCaptureDataIdentityV2 = {
   bindings?: TileflowCaptureDataBindingsV2;
   capabilities?: TileflowCaptureDataCapabilitiesV2;
+  generation?: 'v1';
   kind: 'tileflow-world' | 'vector-tiles';
   revision?: string;
   schema: 'openmaptiles';
   schemaVersion: number;
+  /** Optional because earlier schema-v2 receipts predate explicit park semantics. */
+  semantics?: TileflowCaptureDataSemanticsV2;
   sourceId: 'tileflow';
   source?: TileflowCaptureDataSourceV2;
 };
 
-/** Structural input accepted from a compiler without making it the durable receipt type. */
-export type TileflowCaptureDataInput = {
+export type TileflowCaptureWorldIdentityV3 = {
+  archiveSha256: string;
+  contractSha256: string;
+  dataContractSha256: string;
+  descriptorSha256: string;
+  kind: 'tileflow-world';
+  product: 'world-v1';
+  releaseId: string;
+  schema: 'openmaptiles';
+  schemaVersion: number;
+  semantics?: TileflowCaptureDataSemanticsV2;
+  sourceId: 'tileflow';
+};
+
+export type TileflowCaptureVectorIdentityV3 = {
   bindings?: {
     fields: Readonly<Record<string, string>>;
     layers: Readonly<Record<string, string>>;
@@ -54,22 +75,31 @@ export type TileflowCaptureDataInput = {
     globalLandcover: boolean;
     tree: boolean;
   };
-  kind: 'tileflow-world' | 'vector-tiles';
+  kind: 'vector-tiles';
   revision?: string;
   schema: 'openmaptiles';
   schemaVersion: number;
+  semantics?: TileflowCaptureDataSemanticsV2;
   sourceId: 'tileflow';
   /** Accepted only as transient input and converted to `source`; never returned or serialized. */
   url?: string;
 };
+
+/** Exact structural input for every newly written schema-v3 receipt. */
+export type TileflowCaptureDataInput =
+  | TileflowCaptureVectorIdentityV3
+  | TileflowCaptureWorldIdentityV3;
+
+export type TileflowCaptureDataIdentityV3 =
+  | (Omit<TileflowCaptureVectorIdentityV3, 'url'> & {source?: TileflowCaptureDataSourceV2})
+  | TileflowCaptureWorldIdentityV3;
 
 export type TileflowCaptureVerificationV2 = {
   data: 'expected-unverified' | 'rendered';
   style: 'expected-unverified' | 'rendered';
 };
 
-export type TileflowCaptureReceipt = {
-  schemaVersion: 2;
+type TileflowCaptureReceiptCommon = {
   scene: {
     name: string;
     map: string;
@@ -87,10 +117,21 @@ export type TileflowCaptureReceipt = {
   };
   renderer: TileflowCaptureRendererIdentity;
   platform: {os: string; architecture: string};
-  data: TileflowCaptureDataIdentityV2;
   verification: TileflowCaptureVerificationV2;
   networkDependent: boolean;
 };
+
+export type TileflowCaptureReceiptV2 = TileflowCaptureReceiptCommon & {
+  schemaVersion: 2;
+  data: TileflowCaptureDataIdentityV2;
+};
+
+export type TileflowCaptureReceiptV3 = TileflowCaptureReceiptCommon & {
+  schemaVersion: 3;
+  data: TileflowCaptureDataIdentityV3;
+};
+
+export type TileflowCaptureReceipt = TileflowCaptureReceiptV2 | TileflowCaptureReceiptV3;
 
 export type CreateTileflowCaptureReceiptInput = {
   dpr: 1 | 2;
@@ -109,7 +150,7 @@ export type CreateTileflowCaptureReceiptInput = {
 
 export function createTileflowCaptureReceipt(
   input: CreateTileflowCaptureReceiptInput,
-): TileflowCaptureReceipt {
+): TileflowCaptureReceiptV3 {
   return validateTileflowCaptureReceipt({
     schemaVersion: tileflowCaptureReceiptSchemaVersion,
     scene: {
@@ -129,10 +170,10 @@ export function createTileflowCaptureReceipt(
     },
     renderer: input.renderer,
     platform: {os: process.platform, architecture: process.arch},
-    data: input.data,
+    data: normalizeCaptureDataInput(input.data),
     verification: verificationForTarget(input.target),
     networkDependent: input.networkDependent,
-  });
+  }) as TileflowCaptureReceiptV3;
 }
 
 export function serializeTileflowCaptureReceipt(receipt: TileflowCaptureReceipt): string {
@@ -168,6 +209,10 @@ export function parseTileflowCaptureReceipt(source: string | Uint8Array): Tilefl
 
 export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureReceipt {
   const receipt = requireRecord(value, 'receipt');
+  const schemaVersion = receipt.schemaVersion;
+  if (schemaVersion !== 2 && schemaVersion !== tileflowCaptureReceiptSchemaVersion) {
+    throw invalidReceipt('The baseline receipt schema version is unsupported.');
+  }
   const commonKeys = [
     'schemaVersion',
     'scene',
@@ -176,12 +221,9 @@ export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureR
     'renderer',
     'platform',
     'data',
-    ...(receipt.verification === undefined ? [] : ['verification']),
+    ...(schemaVersion === 2 && receipt.verification === undefined ? [] : ['verification']),
     'networkDependent',
   ];
-  if (receipt.schemaVersion !== tileflowCaptureReceiptSchemaVersion) {
-    throw invalidReceipt('The baseline receipt schema version is unsupported.');
-  }
   requireExactKeys(receipt, commonKeys);
 
   const scene = requireRecord(receipt.scene, 'scene');
@@ -236,7 +278,50 @@ export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureR
     throw invalidReceipt('The baseline receipt has an invalid network dependency flag.');
   }
 
-  const data = requireRecord(receipt.data, 'data');
+  const data =
+    schemaVersion === 2
+      ? validateDataIdentityV2(receipt.data)
+      : validateDataIdentityV3(receipt.data);
+
+  return {
+    schemaVersion,
+    scene: {
+      name,
+      map,
+      target: scene.target,
+      sha256: requireHash(scene.sha256, 'scene.sha256'),
+    },
+    style: {sha256: requireHash(style.sha256, 'style.sha256')},
+    image: {
+      sha256: requireHash(image.sha256, 'image.sha256'),
+      cssWidth,
+      cssHeight,
+      physicalWidth,
+      physicalHeight,
+      dpr: image.dpr,
+    },
+    renderer: {
+      tileflow: requireBoundedString(renderer.tileflow, 'renderer.tileflow'),
+      maplibre: requireBoundedString(renderer.maplibre, 'renderer.maplibre'),
+      playwright: requireBoundedString(renderer.playwright, 'renderer.playwright'),
+      chromiumRevision: requireBoundedString(
+        renderer.chromiumRevision,
+        'renderer.chromiumRevision',
+      ),
+      chromiumVersion: requireBoundedString(renderer.chromiumVersion, 'renderer.chromiumVersion'),
+    },
+    platform: {
+      os: requireBoundedString(platform.os, 'platform.os'),
+      architecture: requireBoundedString(platform.architecture, 'platform.architecture'),
+    },
+    data,
+    verification,
+    networkDependent: receipt.networkDependent,
+  } as TileflowCaptureReceipt;
+}
+
+function validateDataIdentityV2(value: unknown): TileflowCaptureDataIdentityV2 {
+  const data = requireRecord(value, 'data');
   if (data.url !== undefined && data.source !== undefined) {
     throw invalidReceipt(
       'The baseline receipt data identity must not mix legacy and safe sources.',
@@ -250,6 +335,7 @@ export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureR
     ...(data.revision === undefined ? [] : ['revision']),
     'schema',
     'schemaVersion',
+    ...(data.semantics === undefined ? [] : ['semantics']),
     'sourceId',
     ...(data.source === undefined ? [] : ['source']),
     ...(data.url === undefined ? [] : ['url']),
@@ -284,54 +370,122 @@ export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureR
         ? undefined
         : fingerprintLegacyDataUrl(data.url)
       : validateDataSource(data.source, 'data.source');
+  const semantics =
+    data.semantics === undefined
+      ? undefined
+      : validateDataSemantics(data.semantics, 'data.semantics');
 
   return {
-    schemaVersion: tileflowCaptureReceiptSchemaVersion,
-    scene: {
-      name,
-      map,
-      target: scene.target,
-      sha256: requireHash(scene.sha256, 'scene.sha256'),
-    },
-    style: {sha256: requireHash(style.sha256, 'style.sha256')},
-    image: {
-      sha256: requireHash(image.sha256, 'image.sha256'),
-      cssWidth,
-      cssHeight,
-      physicalWidth,
-      physicalHeight,
-      dpr: image.dpr,
-    },
-    renderer: {
-      tileflow: requireBoundedString(renderer.tileflow, 'renderer.tileflow'),
-      maplibre: requireBoundedString(renderer.maplibre, 'renderer.maplibre'),
-      playwright: requireBoundedString(renderer.playwright, 'renderer.playwright'),
-      chromiumRevision: requireBoundedString(
-        renderer.chromiumRevision,
-        'renderer.chromiumRevision',
-      ),
-      chromiumVersion: requireBoundedString(renderer.chromiumVersion, 'renderer.chromiumVersion'),
-    },
-    platform: {
-      os: requireBoundedString(platform.os, 'platform.os'),
-      architecture: requireBoundedString(platform.architecture, 'platform.architecture'),
-    },
-    data: {
-      ...(bindings ? {bindings} : {}),
-      ...(capabilities ? {capabilities} : {}),
-      ...(data.generation === undefined
-        ? {}
-        : {generation: requireWorldGeneration(data.generation)}),
-      kind: data.kind,
-      ...(data.revision === undefined ? {} : {revision: requireSourceRevision(data.revision)}),
-      schema: data.schema,
-      schemaVersion: requirePositiveInteger(data.schemaVersion, 'data.schemaVersion'),
-      sourceId: data.sourceId,
-      ...(source ? {source} : {}),
-    },
-    verification,
-    networkDependent: receipt.networkDependent,
+    ...(bindings ? {bindings} : {}),
+    ...(capabilities ? {capabilities} : {}),
+    ...(data.generation === undefined ? {} : {generation: requireWorldGeneration(data.generation)}),
+    kind: data.kind,
+    ...(data.revision === undefined ? {} : {revision: requireSourceRevision(data.revision)}),
+    schema: data.schema,
+    schemaVersion: requirePositiveInteger(data.schemaVersion, 'data.schemaVersion'),
+    ...(semantics ? {semantics} : {}),
+    sourceId: data.sourceId,
+    ...(source ? {source} : {}),
   };
+}
+
+function validateDataIdentityV3(value: unknown): TileflowCaptureDataIdentityV3 {
+  const data = requireRecord(value, 'data');
+  if (data.kind === 'tileflow-world') {
+    requireExactKeys(data, [
+      'archiveSha256',
+      'contractSha256',
+      'dataContractSha256',
+      'descriptorSha256',
+      'kind',
+      'product',
+      'releaseId',
+      'schema',
+      'schemaVersion',
+      ...(data.semantics === undefined ? [] : ['semantics']),
+      'sourceId',
+    ]);
+    if (
+      data.product !== 'world-v1' ||
+      data.schema !== 'openmaptiles' ||
+      data.sourceId !== 'tileflow'
+    ) {
+      throw invalidReceipt('The baseline receipt has an unsupported World data contract.');
+    }
+    const semantics =
+      data.semantics === undefined
+        ? undefined
+        : validateDataSemantics(data.semantics, 'data.semantics');
+    return {
+      archiveSha256: requireHash(data.archiveSha256, 'data.archiveSha256'),
+      contractSha256: requireHash(data.contractSha256, 'data.contractSha256'),
+      dataContractSha256: requireHash(data.dataContractSha256, 'data.dataContractSha256'),
+      descriptorSha256: requireHash(data.descriptorSha256, 'data.descriptorSha256'),
+      kind: 'tileflow-world',
+      product: 'world-v1',
+      releaseId: requireWorldReleaseId(data.releaseId),
+      schema: 'openmaptiles',
+      schemaVersion: requirePositiveInteger(data.schemaVersion, 'data.schemaVersion'),
+      ...(semantics ? {semantics} : {}),
+      sourceId: 'tileflow',
+    };
+  }
+  if (data.kind !== 'vector-tiles') {
+    throw invalidReceipt('The baseline receipt has an invalid data.kind.');
+  }
+  requireExactKeys(data, [
+    ...(data.bindings === undefined ? [] : ['bindings']),
+    ...(data.capabilities === undefined ? [] : ['capabilities']),
+    'kind',
+    ...(data.revision === undefined ? [] : ['revision']),
+    'schema',
+    'schemaVersion',
+    ...(data.semantics === undefined ? [] : ['semantics']),
+    'sourceId',
+    ...(data.source === undefined ? [] : ['source']),
+  ]);
+  if (data.schema !== 'openmaptiles' || data.sourceId !== 'tileflow') {
+    throw invalidReceipt('The baseline receipt has an unsupported data contract.');
+  }
+  const bindings =
+    data.bindings === undefined ? undefined : validateDataBindings(data.bindings, 'data.bindings');
+  const capabilities =
+    data.capabilities === undefined
+      ? undefined
+      : validateDataCapabilities(data.capabilities, 'data.capabilities');
+  const semantics =
+    data.semantics === undefined
+      ? undefined
+      : validateDataSemantics(data.semantics, 'data.semantics');
+  return {
+    ...(bindings ? {bindings} : {}),
+    ...(capabilities ? {capabilities} : {}),
+    kind: 'vector-tiles',
+    ...(data.revision === undefined ? {} : {revision: requireSourceRevision(data.revision)}),
+    schema: 'openmaptiles',
+    schemaVersion: requirePositiveInteger(data.schemaVersion, 'data.schemaVersion'),
+    ...(semantics ? {semantics} : {}),
+    sourceId: 'tileflow',
+    ...(data.source === undefined ? {} : {source: validateDataSource(data.source, 'data.source')}),
+  };
+}
+
+function normalizeCaptureDataInput(input: TileflowCaptureDataInput): TileflowCaptureDataIdentityV3 {
+  if (input.kind === 'tileflow-world') return input;
+  const {url, ...identity} = input;
+  return {
+    ...identity,
+    ...(url === undefined ? {} : {source: fingerprintLegacyDataUrl(url)}),
+  };
+}
+
+function validateDataSemantics(value: unknown, field: string): TileflowCaptureDataSemanticsV2 {
+  const semantics = requireRecord(value, field);
+  requireExactKeys(semantics, ['parkLayer']);
+  if (semantics.parkLayer !== 'mixed' && semantics.parkLayer !== 'protected-only') {
+    throw invalidReceipt(`The baseline receipt has an invalid ${field}.parkLayer.`);
+  }
+  return {parkLayer: semantics.parkLayer};
 }
 
 function validateDataBindings(value: unknown, field: string): TileflowCaptureDataBindingsV2 {
@@ -544,6 +698,13 @@ function isLoopbackHostname(value: string): boolean {
 function requireWorldGeneration(value: unknown): 'v1' {
   if (value !== 'v1') {
     throw invalidReceipt('The baseline receipt has an invalid data.generation.');
+  }
+  return value;
+}
+
+function requireWorldReleaseId(value: unknown): string {
+  if (!isTileflowWorldReleaseId(value)) {
+    throw invalidReceipt('The baseline receipt has an invalid data.releaseId.');
   }
   return value;
 }

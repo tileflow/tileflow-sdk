@@ -2,24 +2,45 @@ import assert from 'node:assert/strict';
 import semver from 'semver';
 
 export const developmentVersion = '0.0.0-development';
+export const publicLicenseIdentifier = 'Apache-2.0';
+export const packageLegalFileNames = [
+  'LICENSE',
+  'NOTICE',
+  'GENERATED_OUTPUT_LICENSE.md',
+  'TRADEMARKS.md',
+];
 export const internalRuntimeRange = '>=0.1.0-alpha.16 <0.1.0-beta.0';
 export const internalWorkspaceRuntimeRange = `workspace:${internalRuntimeRange}`;
 export const internalRuntimeUpperBound = '0.1.0-beta.0';
-export const packageDirectories = [
-  'core',
-  'static',
-  'dev',
-  'capture',
-  'vite',
-  'next',
-  'webpack',
-  'react',
-  'vue',
-  'svelte',
-  'cli',
-];
-export const publicPackageNames = packageDirectories.map((directory) => `@tileflow/${directory}`);
+export const publicPackageCatalog = Object.freeze(
+  [
+    {directory: 'core', initialVersion: '0.1.0-alpha.0'},
+    {directory: 'maps', initialVersion: '0.1.0-alpha.0'},
+    {directory: 'interactions', initialVersion: '0.1.0-alpha.0'},
+    {directory: 'static', initialVersion: '0.1.0-alpha.0'},
+    {directory: 'dev', initialVersion: '0.1.0-alpha.0'},
+    {directory: 'capture', initialVersion: '0.1.0-alpha.0'},
+    {directory: 'vite', initialVersion: '0.1.0-alpha.0'},
+    {directory: 'next', initialVersion: '0.1.0-alpha.0'},
+    {directory: 'webpack', initialVersion: '0.1.0-alpha.0'},
+    {directory: 'react', initialVersion: '0.1.0-alpha.0'},
+    {directory: 'vue', initialVersion: '0.1.0-alpha.0'},
+    {directory: 'svelte', initialVersion: '0.1.0-alpha.0'},
+    {directory: 'cli', initialVersion: '0.1.0-alpha.0'},
+  ].map(({directory, initialVersion}) =>
+    Object.freeze({
+      directory,
+      initialVersion,
+      name: `@tileflow/${directory}`,
+    }),
+  ),
+);
+export const packageDirectories = publicPackageCatalog.map(({directory}) => directory);
+export const publicPackageNames = publicPackageCatalog.map(({name}) => name);
 export const publicPackageNameSet = new Set(publicPackageNames);
+export const initialVersionByPackageName = new Map(
+  publicPackageCatalog.map(({initialVersion, name}) => [name, initialVersion]),
+);
 export const runtimeDependencyGroups = ['dependencies', 'optionalDependencies', 'peerDependencies'];
 
 const numericAlphaPattern =
@@ -128,9 +149,9 @@ export function validateRuntimeDependencySnapshot(name, snapshot) {
 }
 
 export function packageNameForDirectory(directory) {
-  const index = packageDirectories.indexOf(directory);
-  assert.notEqual(index, -1, `Unknown public package directory: ${directory}.`);
-  return publicPackageNames[index];
+  const entry = publicPackageCatalog.find((candidate) => candidate.directory === directory);
+  assert.ok(entry, `Unknown public package directory: ${directory}.`);
+  return entry.name;
 }
 
 export function validatePublicManifests(manifests, {source = false} = {}) {
@@ -142,60 +163,80 @@ export function validatePublicManifests(manifests, {source = false} = {}) {
   );
 
   for (const [name, entry] of manifests) {
-    const manifest = entry.manifest ?? entry;
-    assert.equal(manifest.name, name, `${name} manifest name mismatch.`);
-    if (source) {
-      assert.equal(
-        manifest.version,
-        developmentVersion,
-        `${name} source version must be ${developmentVersion}.`,
-      );
-    } else {
-      parseNumericAlpha(manifest.version);
-    }
+    validatePublicManifest(name, entry.manifest ?? entry, {source});
+  }
+}
 
-    assert.equal(manifest.private, undefined, `${name} must remain publishable.`);
-    assert.equal(manifest.publishConfig?.access, 'public', `${name} must publish publicly.`);
+export function validatePublicManifest(
+  name,
+  manifest,
+  {licenseRequired = true, source = false} = {},
+) {
+  assert.ok(publicPackageNameSet.has(name), `Unknown public package: ${name}.`);
+  assert.equal(manifest.name, name, `${name} manifest name mismatch.`);
+  if (source) {
     assert.equal(
-      manifest.repository?.url,
-      'git+https://github.com/tileflow/tileflow-sdk.git',
-      `${name} repository mismatch.`,
+      manifest.version,
+      developmentVersion,
+      `${name} source version must be ${developmentVersion}.`,
     );
+  } else {
+    parseNumericAlpha(manifest.version);
+  }
+
+  assert.equal(manifest.private, undefined, `${name} must remain publishable.`);
+  assert.equal(manifest.publishConfig?.access, 'public', `${name} must publish publicly.`);
+  if (licenseRequired) {
     assert.equal(
-      manifest.bugs?.url,
-      'https://github.com/tileflow/tileflow-sdk/issues',
-      `${name} issue tracker mismatch.`,
+      manifest.license,
+      publicLicenseIdentifier,
+      `${name} must declare ${publicLicenseIdentifier}.`,
     );
-
-    for (const group of runtimeDependencyGroups) {
-      for (const [dependency, range] of Object.entries(manifest[group] ?? {})) {
-        if (!publicPackageNameSet.has(dependency)) continue;
-        if (source) {
-          assert.equal(
-            range,
-            internalWorkspaceRuntimeRange,
-            `${name} must use ${internalWorkspaceRuntimeRange} for runtime dependency ${dependency}.`,
-          );
-        } else {
-          validatePublishedInternalRuntimeRange(range);
-        }
-        assert.ok(
-          publicPackageNames.indexOf(dependency) < publicPackageNames.indexOf(name),
-          `${dependency} must precede its dependent ${name} in publication order.`,
-        );
-      }
-    }
-
-    for (const [dependency, range] of Object.entries(manifest.devDependencies ?? {})) {
-      if (!publicPackageNameSet.has(dependency)) continue;
-      if (source) {
-        assert.ok(
-          range === 'workspace:*' || range === internalWorkspaceRuntimeRange,
-          `${name} has unsupported development-only range ${range} for ${dependency}.`,
-        );
-      }
+    assert.ok(Array.isArray(manifest.files), `${name} must declare packaged files.`);
+    for (const file of packageLegalFileNames) {
+      assert.ok(manifest.files.includes(file), `${name} must pack ${file}.`);
     }
   }
+  assert.equal(
+    manifest.repository?.url,
+    'git+https://github.com/tileflow/tileflow-sdk.git',
+    `${name} repository mismatch.`,
+  );
+  assert.equal(
+    manifest.bugs?.url,
+    'https://github.com/tileflow/tileflow-sdk/issues',
+    `${name} issue tracker mismatch.`,
+  );
+
+  for (const group of runtimeDependencyGroups) {
+    for (const [dependency, range] of Object.entries(manifest[group] ?? {})) {
+      if (!publicPackageNameSet.has(dependency)) continue;
+      if (source) {
+        assert.equal(
+          range,
+          internalWorkspaceRuntimeRange,
+          `${name} must use ${internalWorkspaceRuntimeRange} for runtime dependency ${dependency}.`,
+        );
+      } else {
+        validatePublishedInternalRuntimeRange(range);
+      }
+      assert.ok(
+        publicPackageNames.indexOf(dependency) < publicPackageNames.indexOf(name),
+        `${dependency} must precede its dependent ${name} in publication order.`,
+      );
+    }
+  }
+
+  for (const [dependency, range] of Object.entries(manifest.devDependencies ?? {})) {
+    if (!publicPackageNameSet.has(dependency)) continue;
+    if (source) {
+      assert.ok(
+        range === 'workspace:*' || range === internalWorkspaceRuntimeRange,
+        `${name} has unsupported development-only range ${range} for ${dependency}.`,
+      );
+    }
+  }
+  return manifest;
 }
 
 export function orderPublicPackages(names) {

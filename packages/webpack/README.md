@@ -10,9 +10,37 @@ export default {
 };
 ```
 
+Omitting a component's `manifestUrl` is valid only for exactly
+`/tileflow/manifest.json`. When `output.publicPath`, the plugin `publicPath`, or the plugin `base`
+changes the public location, pass the final URL explicitly:
+
+```js
+export default {
+  output: {publicPath: '/app/'},
+  plugins: [new TileflowWebpackPlugin({base: '/maps'})],
+};
+
+const source = {
+  kind: 'tileflow',
+  map: 'main',
+  manifestUrl: '/app/maps/manifest.json',
+};
+```
+
+The browser runtime does not inspect Webpack configuration at runtime.
+
 When used with `webpack-dev-server`, the plugin serves `/tileflow/manifest.json`
-and `/tileflow/styles/:mapName.json` from `tileflow.config.ts`. Production builds
-emit the same files as assets.
+and `/tileflow/styles/:mapName.json` from `tileflow.config.ts`. Production builds emit those files
+plus the same prepared sprites and package-owned, content-addressed fonts as assets.
+
+Before every artifact emission, including watch rebuilds, the plugin refuses to replace an
+existing Hosted delivery manifest under `output.path`. Prefer `emitBuildArtifacts: false` or a
+separate output path when the application deliberately packages a deploy manifest. The explicit
+`overwriteHostedManifest: true` option is a migration escape hatch and defaults to `false`:
+
+```js
+new TileflowWebpackPlugin({overwriteHostedManifest: true});
+```
 
 Webpack Dev Server is the only server needed for application capture. Keep it running and point the
 short-lived headless command at the same loopback origin; do not run `tileflow dev` beside it:
@@ -21,5 +49,13 @@ short-lived headless command at the same loopback origin; do not run `tileflow d
 npm run dev
 TILEFLOW_APP_ORIGIN=http://127.0.0.1:8080 npm exec --no -- tileflow capture app-desktop
 ```
+
+## Compatibility
+
+The supported peer window is Webpack 5.61 or newer within major 5, on Node.js 22 or newer. Older
+Webpack 5 releases depend on OpenSSL's disabled MD4 implementation and cannot complete this
+package's minimum-Node build without a legacy-provider workaround. CI installs Webpack 5.61.0 with
+packed Tileflow tarballs and runs a production compiler using the real plugin. Webpack 6 stays
+outside the peer range until that smoke passes.
 
 Docs: https://tileflow.dev/docs

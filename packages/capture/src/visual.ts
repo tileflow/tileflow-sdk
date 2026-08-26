@@ -11,6 +11,7 @@ import {TileflowCaptureError} from './errors';
 import {
   parseTileflowCaptureReceipt,
   type TileflowCaptureDataIdentityV2,
+  type TileflowCaptureDataIdentityV3,
   type TileflowCaptureReceipt,
   validateTileflowCaptureReceipt,
 } from './receipt';
@@ -566,42 +567,80 @@ function sameSceneIdentity(
 }
 
 function sameDataIdentity(
-  baseline: TileflowCaptureDataIdentityV2,
-  actual: TileflowCaptureDataIdentityV2,
+  baseline: TileflowCaptureDataIdentityV2 | TileflowCaptureDataIdentityV3,
+  actual: TileflowCaptureDataIdentityV2 | TileflowCaptureDataIdentityV3,
 ): boolean {
   if (
     baseline.kind !== actual.kind ||
-    baseline.revision !== actual.revision ||
     baseline.schema !== actual.schema ||
     baseline.schemaVersion !== actual.schemaVersion ||
     baseline.sourceId !== actual.sourceId
   ) {
     return false;
   }
+  const baselineExactWorld = exactWorldIdentity(baseline);
+  const actualExactWorld = exactWorldIdentity(actual);
+  if (baselineExactWorld || actualExactWorld) {
+    if (!baselineExactWorld || !actualExactWorld) return false;
+    return (
+      baselineExactWorld.product === actualExactWorld.product &&
+      baselineExactWorld.releaseId === actualExactWorld.releaseId &&
+      baselineExactWorld.descriptorSha256 === actualExactWorld.descriptorSha256 &&
+      baselineExactWorld.archiveSha256 === actualExactWorld.archiveSha256 &&
+      baselineExactWorld.dataContractSha256 === actualExactWorld.dataContractSha256 &&
+      baselineExactWorld.contractSha256 === actualExactWorld.contractSha256 &&
+      sameOptionalSemantics(baselineExactWorld.semantics, actualExactWorld.semantics)
+    );
+  }
+  const baselineLegacy = baseline as TileflowCaptureDataIdentityV2;
+  const actualLegacy = actual as TileflowCaptureDataIdentityV2;
   if (
-    baseline.source &&
-    (!actual.source ||
-      baseline.source.kind !== actual.source.kind ||
-      baseline.source.sha256 !== actual.source.sha256)
+    baselineLegacy.generation !== actualLegacy.generation ||
+    baselineLegacy.revision !== actualLegacy.revision ||
+    !sameOptionalSemantics(baselineLegacy.semantics, actualLegacy.semantics)
   ) {
     return false;
   }
   if (
-    baseline.capabilities &&
-    (!actual.capabilities || !isRecordSubset(baseline.capabilities, actual.capabilities))
+    baselineLegacy.source &&
+    (!actualLegacy.source ||
+      baselineLegacy.source.kind !== actualLegacy.source.kind ||
+      baselineLegacy.source.sha256 !== actualLegacy.source.sha256)
   ) {
     return false;
   }
-  if (baseline.bindings) {
-    if (!actual.bindings) return false;
+  if (
+    baselineLegacy.capabilities &&
+    (!actualLegacy.capabilities ||
+      !isRecordSubset(baselineLegacy.capabilities, actualLegacy.capabilities))
+  ) {
+    return false;
+  }
+  if (baselineLegacy.bindings) {
+    if (!actualLegacy.bindings) return false;
     if (
-      !isRecordSubset(baseline.bindings.fields, actual.bindings.fields) ||
-      !isRecordSubset(baseline.bindings.layers, actual.bindings.layers)
+      !isRecordSubset(baselineLegacy.bindings.fields, actualLegacy.bindings.fields) ||
+      !isRecordSubset(baselineLegacy.bindings.layers, actualLegacy.bindings.layers)
     ) {
       return false;
     }
   }
   return true;
+}
+
+function exactWorldIdentity(
+  value: TileflowCaptureDataIdentityV2 | TileflowCaptureDataIdentityV3,
+): Extract<TileflowCaptureDataIdentityV3, {kind: 'tileflow-world'}> | undefined {
+  return value.kind === 'tileflow-world' && 'product' in value
+    ? (value as Extract<TileflowCaptureDataIdentityV3, {kind: 'tileflow-world'}>)
+    : undefined;
+}
+
+function sameOptionalSemantics(
+  baseline: {parkLayer: string} | undefined,
+  actual: {parkLayer: string} | undefined,
+): boolean {
+  return baseline === undefined || baseline.parkLayer === actual?.parkLayer;
 }
 
 function isRecordSubset(

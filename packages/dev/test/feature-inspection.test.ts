@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import {once} from 'node:events';
 import {createServer} from 'node:http';
 import test from 'node:test';
-import {defineTileflow, openMapTiles, streets, vectorTiles} from '@tileflow/core';
+import {defineRootMap, openMapTiles, vectorTiles} from '@tileflow/core';
+import type {TileflowBuildCatalog} from '@tileflow/core/build';
 import {inspectTileflowFeatures} from '../src/feature-inspection';
 
 const tile = Buffer.from(
@@ -41,23 +42,46 @@ test('inspects bounded features deterministically and projects only requested pr
   assert.ok(address && typeof address === 'object');
   port = address.port;
 
-  const project = defineTileflow({
+  const project: TileflowBuildCatalog = {
     maps: {
-      fixture: {
-        basemap: streets(),
+      fixture: defineRootMap({
+        id: 'fixture',
+        version: 1,
+        root: {compiler: 'streets', compilerVersion: 1},
+        glyphs: {
+          kind: 'url',
+          url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
+          fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
+        },
         data: vectorTiles({
           attribution: 'Fixture data',
           schema: openMapTiles(),
           url: `http://127.0.0.1:${port}/tiles.json?key=HIDDEN`,
         }),
-      },
+      }),
     },
-  });
+  };
   const options = {
     center: [0, 0] as const,
     height: 64,
     limit: 10,
     properties: ['rank', 'name', 'missing'],
+    preparedAssets: {
+      icons: {
+        ids: [
+          'coffee',
+          'culture',
+          'education',
+          'food',
+          'health',
+          'lodging',
+          'major-transit',
+          'services',
+          'shopping',
+        ],
+        sprite: '/tileflow/icons/fixture/sprite',
+      },
+    },
     sourceLayers: ['poi'],
     width: 64,
     zoom: 0,
@@ -104,19 +128,21 @@ test('inspects bounded features deterministically and projects only requested pr
 });
 
 test('rejects unbounded and non-HTTP inspection inputs before fetching', async () => {
-  const project = defineTileflow({
+  const project: TileflowBuildCatalog = {
     maps: {
-      fixture: {
-        basemap: streets(),
+      fixture: defineRootMap({
+        id: 'fixture',
+        version: 1,
+        root: {compiler: 'streets', compilerVersion: 1},
         data: {
           type: 'vector-tiles',
           attribution: 'Fixture data',
           schema: openMapTiles(),
           url: 'file:///tmp/tiles.json',
         },
-      },
+      }),
     },
-  });
+  };
   let fetched = false;
   const fetchImplementation: typeof fetch = async () => {
     fetched = true;

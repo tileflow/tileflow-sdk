@@ -1,10 +1,17 @@
-import type {ResolvedTileflowPreview} from './index';
+import {
+  normalizeTileflowLandmarkManifest,
+  readBoundedTileflowJsonResponse,
+  readBoundedTileflowResponse,
+} from './landmarks';
+import type {TileflowStyleFontFace} from '@tileflow/core';
+import type {ResolvedTileflowPreview} from './preview';
 
 export function renderTileflowPreviewHtml(
   preview: ResolvedTileflowPreview | undefined,
   basePath: string,
   initialStatus: unknown,
   isStreetsPreview: boolean,
+  fontFaces: readonly TileflowStyleFontFace[] = [],
 ): string {
   const styleUrl = preview ? `${basePath}/styles/${preview.mapName}.json` : undefined;
   const mapOptions = preview ? previewMapOptions(preview) : undefined;
@@ -125,9 +132,14 @@ export function renderTileflowPreviewHtml(
     <div class="status" id="status" role="status"></div>
     <div id="map"></div>
     <script src="${basePath}/__runtime/maplibre-gl.js"></script>
-    <script type="importmap">{"imports":{"three":"${basePath}/__runtime/three.module.js"}}</script>
+    <script type="importmap">{"imports":{"fflate":"${basePath}/__runtime/fflate.js","three":"${basePath}/__runtime/three.module.js"}}</script>
     <script type="module">
+      import {loadTileflowStyleFonts} from "${basePath}/__runtime/tileflow-browser.js";
+
       const initialStatus = ${JSON.stringify(initialStatus)};
+      const normalizeTileflowLandmarkManifest = ${normalizeTileflowLandmarkManifest.toString()};
+      const readBoundedTileflowResponse = ${readBoundedTileflowResponse.toString()};
+      const readBoundedTileflowJsonResponse = ${readBoundedTileflowJsonResponse.toString()};
       const initialGeneration = initialStatus.generation;
       const badge = document.getElementById("badge");
       const status = document.getElementById("status");
@@ -135,6 +147,7 @@ export function renderTileflowPreviewHtml(
       const styleUrl = ${JSON.stringify(styleUrl)};
       const previewMapOptions = ${JSON.stringify(mapOptions)};
       const isStreetsPreview = ${JSON.stringify(isStreetsPreview)};
+      const previewFontFaces = ${serializeInlineJson(fontFaces)};
       const treeSearchParameters = new URL(location.href).searchParams;
       const requestedTreeRenderer = treeSearchParameters.get("treeRenderer");
       const treeRendererMode = ["circle", "simple", "complex"].includes(
@@ -205,11 +218,29 @@ export function renderTileflowPreviewHtml(
         errors: []
       };
       globalThis.__tileflowLandmarkState = landmarkState;
+      const buildingWireframeMetrics = {
+        buildingCount: 0,
+        refreshMilliseconds: undefined,
+        segmentCount: 0,
+        truncated: false
+      };
+      globalThis.__tileflowBuildingWireframeMetrics = buildingWireframeMetrics;
       let THREE;
       let GLTFLoader;
+      let DRACOLoader;
       let MeshoptDecoder;
+      let LineMaterial;
+      let LineSegments2;
+      let LineSegmentsGeometry;
+      let PMTiles;
+      let FetchSource;
+      let landmarkDracoLoader;
       let threeCoreRuntimePromise;
+      let buildingWireframeRuntimePromise;
       let landmarkRuntimePromise;
+      const landmarkManifestPromises = new Map();
+      const landmarkManifestMaximumBytes = 1024 * 1024;
+      const landmarkManifestTimeoutMs = 10000;
 
       function loadThreeCoreRuntime() {
         if (!threeCoreRuntimePromise) {
@@ -222,18 +253,92 @@ export function renderTileflowPreviewHtml(
         return threeCoreRuntimePromise;
       }
 
+      function loadBuildingWireframeRuntime() {
+        if (!buildingWireframeRuntimePromise) {
+          buildingWireframeRuntimePromise = Promise.all([
+            loadThreeCoreRuntime(),
+            import("${basePath}/__runtime/three-addons/lines/LineMaterial.js"),
+            import("${basePath}/__runtime/three-addons/lines/LineSegments2.js"),
+            import("${basePath}/__runtime/three-addons/lines/LineSegmentsGeometry.js")
+          ]).then(([, lineMaterialModule, lineSegmentsModule, lineGeometryModule]) => {
+            LineMaterial = lineMaterialModule.LineMaterial;
+            LineSegments2 = lineSegmentsModule.LineSegments2;
+            LineSegmentsGeometry = lineGeometryModule.LineSegmentsGeometry;
+          });
+        }
+        return buildingWireframeRuntimePromise;
+      }
+
       function loadLandmarkRuntime() {
         if (!landmarkRuntimePromise) {
           landmarkRuntimePromise = Promise.all([
             loadThreeCoreRuntime(),
             import("${basePath}/__runtime/three-addons/loaders/GLTFLoader.js"),
-            import("${basePath}/__runtime/three-addons/libs/meshopt_decoder.module.js")
-          ]).then(([, gltfLoaderModule, meshoptDecoderModule]) => {
+            import("${basePath}/__runtime/three-addons/loaders/DRACOLoader.js"),
+            import("${basePath}/__runtime/three-addons/libs/meshopt_decoder.module.js"),
+            import("${basePath}/__runtime/pmtiles.js")
+          ]).then(([, gltfLoaderModule, dracoLoaderModule, meshoptDecoderModule, pmtilesModule]) => {
             GLTFLoader = gltfLoaderModule.GLTFLoader;
+            DRACOLoader = dracoLoaderModule.DRACOLoader;
             MeshoptDecoder = meshoptDecoderModule.MeshoptDecoder;
+            PMTiles = pmtilesModule.PMTiles;
+            FetchSource = pmtilesModule.FetchSource;
+            landmarkDracoLoader = new DRACOLoader()
+              .setDecoderPath("${basePath}/__runtime/three-addons/libs/draco/gltf/")
+              .setDecoderConfig({type: "wasm"});
+            landmarkDracoLoader.preload();
           });
         }
         return landmarkRuntimePromise;
+      }
+
+      function waitForLandmarkManifest(promise, signal) {
+        if (!signal) return promise;
+        if (signal.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
+        return new Promise((resolve, reject) => {
+          const abort = () => reject(new DOMException("Aborted", "AbortError"));
+          signal.addEventListener("abort", abort, {once: true});
+          promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+        });
+      }
+
+      function loadLandmarkManifestCandidate(manifestUrl, signal) {
+        const existing = landmarkManifestPromises.get(manifestUrl);
+        if (existing) return waitForLandmarkManifest(existing, signal);
+        const resolvedUrl = new URL(manifestUrl, location.href);
+        if (
+          !["http:", "https:"].includes(resolvedUrl.protocol) ||
+          resolvedUrl.username ||
+          resolvedUrl.password
+        ) throw new Error("invalid landmark manifest URL");
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), landmarkManifestTimeoutMs);
+        const pending = (async () => {
+          try {
+            const response = await fetch(resolvedUrl, {
+              credentials: "include",
+              signal: controller.signal
+            });
+            if (!response.ok) throw new Error("HTTP " + response.status);
+            return readBoundedTileflowJsonResponse(response, landmarkManifestMaximumBytes);
+          } finally {
+            clearTimeout(timeout);
+          }
+        })();
+        landmarkManifestPromises.set(manifestUrl, pending);
+        pending.catch(() => {
+          if (landmarkManifestPromises.get(manifestUrl) === pending) {
+            landmarkManifestPromises.delete(manifestUrl);
+          }
+        });
+        return waitForLandmarkManifest(pending, signal);
+      }
+
+      function loadLandmarkPrerequisites(manifestUrl, signal) {
+        return Promise.all([
+          loadLandmarkRuntime(),
+          loadLandmarkManifestCandidate(manifestUrl, signal)
+        ]);
       }
 
       function percentile(values, percentileValue) {
@@ -493,6 +598,7 @@ export function renderTileflowPreviewHtml(
         }
 
         async function fetchComparableTile(url, credentials) {
+          const comparisonTileMaximumBytes = 16 * 1024 * 1024;
           const startedAt = performance.now();
           const response = await fetch(url, {cache: "no-store", credentials});
           if (!response.ok) throw new Error("Tile comparison request failed (" + response.status + "): " + url);
@@ -502,7 +608,10 @@ export function renderTileflowPreviewHtml(
           const encodedHeader = encodedHeaderValue === null
             ? undefined
             : Number(encodedHeaderValue);
-          const bytes = await response.arrayBuffer();
+          const bytes = await readBoundedTileflowResponse(
+            response,
+            comparisonTileMaximumBytes
+          );
           const contentEncoding = response.headers.get("content-encoding");
           return {
             archive: response.headers.get("x-tileflow-archive") || undefined,
@@ -530,7 +639,7 @@ export function renderTileflowPreviewHtml(
           const comparisonUrl = new URL("/comparison.json", localTileJsonUrl);
           const contractResponse = await fetch(comparisonUrl, {cache: "no-store"});
           if (!contractResponse.ok) throw new Error("The local comparison contract is unavailable.");
-          const contract = await contractResponse.json();
+          const contract = await readBoundedTileflowJsonResponse(contractResponse, 64 * 1024);
           const remoteTileJsonUrl = options.remoteTileJson || contract.remoteTileJson;
           if (!remoteTileJsonUrl) throw new Error("No remote TileJSON comparison target is configured.");
           const remoteTileJsonResponse = await fetch(remoteTileJsonUrl, {
@@ -540,7 +649,10 @@ export function renderTileflowPreviewHtml(
           if (!remoteTileJsonResponse.ok) {
             throw new Error("Remote TileJSON request failed (" + remoteTileJsonResponse.status + ").");
           }
-          const remoteTileJson = await remoteTileJsonResponse.json();
+          const remoteTileJson = await readBoundedTileflowJsonResponse(
+            remoteTileJsonResponse,
+            256 * 1024
+          );
           const remoteTemplate = remoteTileJson.tiles?.[0];
           if (!remoteTemplate) throw new Error("Remote TileJSON has no tile template.");
           const coordinates = inspectRenderBuckets().visibleTileCoordinates.slice(0, limit);
@@ -716,9 +828,9 @@ export function renderTileflowPreviewHtml(
       }
 
       function updateGlobeBackdrop(map) {
-        const projection = map.getProjection().type;
+        const projection = map.getProjection?.()?.type ?? map.getStyle?.()?.projection?.type;
         const container = map.getContainer?.();
-        if (!container) return;
+        if (!container || !projection) return;
         if (projection !== "globe") {
           container.classList.remove("tileflow-globe");
           return;
@@ -732,6 +844,446 @@ export function renderTileflowPreviewHtml(
         );
         container.classList.add("tileflow-globe");
         container.style.setProperty("--tileflow-globe-radius", radius.toFixed(2) + "px");
+      }
+
+      function createBuildingWireframeLayer(map, styleLayer) {
+        const maximumBuildings = 10000;
+        const maximumSegments = 300000;
+        const viewportBufferPixels = 96;
+        const sourceId = styleLayer.source;
+        const metadata = styleLayer.metadata ?? {};
+        const heightField = metadata["tileflow:building-wireframe-height-field"] ??
+          "render_height";
+        const baseField = metadata["tileflow:building-wireframe-base-field"] ??
+          "render_min_height";
+        const configuredHeightScale = Number(
+          metadata["tileflow:building-wireframe-height-scale"] ?? 1
+        );
+        const heightScale = Number.isFinite(configuredHeightScale) && configuredHeightScale > 0
+          ? configuredHeightScale
+          : 1;
+        const color = metadata["tileflow:building-wireframe-color"] ?? "#43E4FF";
+        const glowColor = metadata["tileflow:building-wireframe-glow-color"] ?? "#147DFF";
+        const configuredOpacity = Number(
+          metadata["tileflow:building-wireframe-opacity"] ?? 0.76
+        );
+        const opacity = Number.isFinite(configuredOpacity)
+          ? Math.max(0, Math.min(1, configuredOpacity))
+          : 0.76;
+        const configuredWidth = Number(
+          metadata["tileflow:building-wireframe-width"] ?? 1.15
+        );
+        const width = Number.isFinite(configuredWidth) && configuredWidth > 0
+          ? configuredWidth
+          : 1.15;
+        const configuredGlowOpacity = Number(
+          metadata["tileflow:building-wireframe-glow-opacity"] ?? 0.11
+        );
+        const glowOpacity = Number.isFinite(configuredGlowOpacity)
+          ? Math.max(0, Math.min(1, configuredGlowOpacity))
+          : 0.11;
+        const configuredGlowWidth = Number(
+          metadata["tileflow:building-wireframe-glow-width"] ?? 3.5
+        );
+        const glowWidth = Number.isFinite(configuredGlowWidth) && configuredGlowWidth > width
+          ? configuredGlowWidth
+          : Math.max(3.5, width * 3);
+        let camera;
+        let renderer;
+        let scene;
+        let group;
+        let geometry;
+        let glowLines;
+        let coreLines;
+        let glowMaterial;
+        let coreMaterial;
+        let sceneOriginMercator;
+        let refreshTimer;
+        let emptyRefreshAttempts = 0;
+        let lastGeometrySignature;
+        const mapMatrix = new THREE.Matrix4();
+        const sceneMatrix = new THREE.Matrix4();
+
+        function geometryPolygons(candidate) {
+          if (candidate?.type === "Polygon") return [candidate.coordinates];
+          if (candidate?.type === "MultiPolygon") return candidate.coordinates;
+          return [];
+        }
+
+        function ringIntersectsViewport(ring, viewportWidth, viewportHeight) {
+          if (!Array.isArray(ring) || ring.length < 3) return false;
+          let minimumX = Infinity;
+          let minimumY = Infinity;
+          let maximumX = -Infinity;
+          let maximumY = -Infinity;
+          for (const coordinate of ring) {
+            const longitude = Number(coordinate?.[0]);
+            const latitude = Number(coordinate?.[1]);
+            if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return false;
+            const point = map.project([longitude, latitude]);
+            if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return false;
+            minimumX = Math.min(minimumX, point.x);
+            minimumY = Math.min(minimumY, point.y);
+            maximumX = Math.max(maximumX, point.x);
+            maximumY = Math.max(maximumY, point.y);
+          }
+          return (
+            maximumX >= -viewportBufferPixels &&
+            minimumX <= viewportWidth + viewportBufferPixels &&
+            maximumY >= -viewportBufferPixels &&
+            minimumY <= viewportHeight + viewportBufferPixels
+          );
+        }
+
+        function ringVertexCount(ring) {
+          if (!Array.isArray(ring) || ring.length < 3) return 0;
+          const first = ring[0];
+          const last = ring.at(-1);
+          const closes =
+            Number(first?.[0]) === Number(last?.[0]) &&
+            Number(first?.[1]) === Number(last?.[1]);
+          return closes ? ring.length - 1 : ring.length;
+        }
+
+        function buildingKey(feature, rings, height, base) {
+          let pointCount = 0;
+          let minimumLongitude = Infinity;
+          let minimumLatitude = Infinity;
+          let maximumLongitude = -Infinity;
+          let maximumLatitude = -Infinity;
+          for (const ring of rings) {
+            for (const coordinate of ring) {
+              const longitude = Number(coordinate?.[0]);
+              const latitude = Number(coordinate?.[1]);
+              if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) continue;
+              pointCount += 1;
+              minimumLongitude = Math.min(minimumLongitude, longitude);
+              minimumLatitude = Math.min(minimumLatitude, latitude);
+              maximumLongitude = Math.max(maximumLongitude, longitude);
+              maximumLatitude = Math.max(maximumLatitude, latitude);
+            }
+          }
+          const properties = feature.properties ?? {};
+          const sourceFeatureId =
+            feature.id ?? properties.osm_id ?? properties.osmId ?? properties.id ?? "geometry";
+          return [
+            sourceFeatureId,
+            pointCount,
+            minimumLongitude.toFixed(6),
+            minimumLatitude.toFixed(6),
+            maximumLongitude.toFixed(6),
+            maximumLatitude.toFixed(6),
+            height.toFixed(2),
+            base.toFixed(2)
+          ].join(":");
+        }
+
+        function appendSegment(positions, left, right) {
+          positions.push(left[0], left[1], left[2], right[0], right[1], right[2]);
+        }
+
+        function appendRing(positions, ring, base, height, mercatorPerMeter) {
+          if (!Array.isArray(ring) || ring.length < 3) return 0;
+          const first = ring[0];
+          const last = ring.at(-1);
+          const closes =
+            Number(first?.[0]) === Number(last?.[0]) &&
+            Number(first?.[1]) === Number(last?.[1]);
+          const vertexCount = closes ? ring.length - 1 : ring.length;
+          if (vertexCount < 3) return 0;
+          if (positions.length / 6 + vertexCount * 3 > maximumSegments) return 0;
+          const lower = [];
+          const upper = [];
+          for (let index = 0; index < vertexCount; index += 1) {
+            const longitude = Number(ring[index]?.[0]);
+            const latitude = Number(ring[index]?.[1]);
+            if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return 0;
+            const mercator = maplibregl.MercatorCoordinate.fromLngLat([longitude, latitude]);
+            const x = (mercator.x - sceneOriginMercator.x) / mercatorPerMeter;
+            const y = (mercator.y - sceneOriginMercator.y) / mercatorPerMeter;
+            lower.push([x, y, base]);
+            upper.push([x, y, height]);
+          }
+          for (let index = 0; index < vertexCount; index += 1) {
+            const next = (index + 1) % vertexCount;
+            appendSegment(positions, lower[index], lower[next]);
+            appendSegment(positions, upper[index], upper[next]);
+            appendSegment(positions, lower[index], upper[index]);
+          }
+          return vertexCount * 3;
+        }
+
+        function replaceGeometry(positions) {
+          const nextGeometry = new LineSegmentsGeometry();
+          nextGeometry.setPositions(new Float32Array(positions));
+          nextGeometry.computeBoundingSphere();
+          if (!glowLines) {
+            glowLines = new LineSegments2(nextGeometry, glowMaterial);
+            coreLines = new LineSegments2(nextGeometry, coreMaterial);
+            glowLines.frustumCulled = false;
+            coreLines.frustumCulled = false;
+            group.add(glowLines, coreLines);
+          } else {
+            glowLines.geometry = nextGeometry;
+            coreLines.geometry = nextGeometry;
+            geometry?.dispose();
+          }
+          geometry = nextGeometry;
+        }
+
+        function wireframeShouldBeVisible() {
+          return (
+            threeDimensionalEnabled &&
+            visibleLayerGroups.has("buildings") &&
+            styleLayerIsVisibleAtZoom(styleLayer, map.getZoom()) &&
+            map.getLayoutProperty(styleLayer.id, "visibility") !== "none"
+          );
+        }
+
+        function hideWireframe() {
+          if (group) group.visible = false;
+          buildingWireframeMetrics.buildingCount = 0;
+          buildingWireframeMetrics.refreshMilliseconds = undefined;
+          buildingWireframeMetrics.segmentCount = 0;
+          buildingWireframeMetrics.truncated = false;
+        }
+
+        function refresh() {
+          const startedAt = performance.now();
+          refreshTimer = undefined;
+          if (!wireframeShouldBeVisible() || map.isMoving()) {
+            hideWireframe();
+            return;
+          }
+          const canvas = map.getCanvas();
+          const viewportWidth = canvas.clientWidth || canvas.width;
+          const viewportHeight = canvas.clientHeight || canvas.height;
+          let features;
+          try {
+            features = map.queryRenderedFeatures(
+              [
+                [-viewportBufferPixels, -viewportBufferPixels],
+                [
+                  viewportWidth + viewportBufferPixels,
+                  viewportHeight + viewportBufferPixels
+                ]
+              ],
+              {layers: [styleLayer.id]}
+            );
+          } catch (error) {
+            console.warn("Tileflow building wireframe could not read visible buildings", error);
+            return;
+          }
+          if (features.length === 0) {
+            hideWireframe();
+            if (emptyRefreshAttempts < 12) {
+              emptyRefreshAttempts += 1;
+              queueRefresh(160);
+            }
+            return;
+          }
+          emptyRefreshAttempts = 0;
+          sceneOriginMercator = maplibregl.MercatorCoordinate.fromLngLat(map.getCenter(), 0);
+          const mercatorPerMeter = sceneOriginMercator.meterInMercatorCoordinateUnits();
+          const positions = [];
+          const seen = new Set();
+          let buildingCount = 0;
+          let segmentCount = 0;
+          let truncated = false;
+          featureLoop: for (const feature of features) {
+            const polygons = geometryPolygons(feature.geometry);
+            if (polygons.length === 0) continue;
+            const properties = feature.properties ?? {};
+            const parsedHeight = Number(properties[heightField]);
+            const sourceHeight = Math.max(0, Number.isFinite(parsedHeight) ? parsedHeight : 5);
+            const parsedBase = Number(properties[baseField]);
+            const sourceBase = Math.max(
+              0,
+              Math.min(Number.isFinite(parsedBase) ? parsedBase : 0, sourceHeight)
+            );
+            const height = sourceHeight * heightScale;
+            const base = sourceBase * heightScale;
+            if (height <= base) continue;
+            for (const rings of polygons) {
+              if (buildingCount >= maximumBuildings) {
+                truncated = true;
+                break featureLoop;
+              }
+              const outerRing = rings?.[0];
+              if (!ringIntersectsViewport(outerRing, viewportWidth, viewportHeight)) continue;
+              const key = buildingKey(feature, rings, height, base);
+              if (seen.has(key)) continue;
+              const requiredSegments = rings.reduce(
+                (total, ring) => total + ringVertexCount(ring) * 3,
+                0
+              );
+              if (segmentCount + requiredSegments > maximumSegments) {
+                truncated = true;
+                break featureLoop;
+              }
+              seen.add(key);
+              const segmentCountBefore = segmentCount;
+              for (const ring of rings) {
+                segmentCount += appendRing(positions, ring, base, height, mercatorPerMeter);
+              }
+              if (segmentCount > segmentCountBefore) buildingCount += 1;
+            }
+          }
+          if (positions.length === 0) {
+            hideWireframe();
+            return;
+          }
+          const geometrySignature = [
+            sceneOriginMercator.x.toFixed(9),
+            sceneOriginMercator.y.toFixed(9),
+            buildingCount,
+            segmentCount,
+            ...[...seen].sort()
+          ].join("|");
+          if (geometrySignature !== lastGeometrySignature || !geometry) {
+            replaceGeometry(positions);
+            lastGeometrySignature = geometrySignature;
+          }
+          group.visible = true;
+          buildingWireframeMetrics.buildingCount = buildingCount;
+          buildingWireframeMetrics.segmentCount = segmentCount;
+          buildingWireframeMetrics.refreshMilliseconds = performance.now() - startedAt;
+          buildingWireframeMetrics.truncated = truncated;
+          map.triggerRepaint();
+        }
+
+        function queueRefresh(delay = 80) {
+          if (refreshTimer !== undefined) return;
+          refreshTimer = setTimeout(refresh, delay);
+        }
+
+        function handleMoveEnd() {
+          emptyRefreshAttempts = 0;
+          queueRefresh(0);
+        }
+
+        function handleSourceData(event) {
+          if (event.sourceId !== sourceId || event.isSourceLoaded !== true || map.isMoving()) {
+            return;
+          }
+          queueRefresh();
+        }
+
+        function handleThreeDimensionalToggle() {
+          if (!threeDimensionalEnabled) {
+            if (refreshTimer !== undefined) clearTimeout(refreshTimer);
+            refreshTimer = undefined;
+            hideWireframe();
+            map.triggerRepaint();
+            return;
+          }
+          emptyRefreshAttempts = 0;
+          queueRefresh(0);
+        }
+
+        function handleVisibleLayerGroups() {
+          if (!visibleLayerGroups.has("buildings")) {
+            hideWireframe();
+            map.triggerRepaint();
+            return;
+          }
+          emptyRefreshAttempts = 0;
+          queueRefresh(0);
+        }
+
+        return {
+          id: "tileflow-buildings-wireframe-3d",
+          type: "custom",
+          renderingMode: "3d",
+          onAdd(_map, gl) {
+            camera = new THREE.Camera();
+            scene = new THREE.Scene();
+            group = new THREE.Group();
+            group.visible = false;
+            scene.add(group);
+            glowMaterial = new LineMaterial({
+              blending: THREE.AdditiveBlending,
+              color: glowColor,
+              depthTest: false,
+              depthWrite: false,
+              linewidth: glowWidth,
+              opacity: glowOpacity,
+              toneMapped: false,
+              transparent: true,
+              worldUnits: false
+            });
+            coreMaterial = new LineMaterial({
+              blending: THREE.NormalBlending,
+              color,
+              depthTest: false,
+              depthWrite: false,
+              linewidth: width,
+              opacity,
+              toneMapped: false,
+              transparent: true,
+              worldUnits: false
+            });
+            renderer = new THREE.WebGLRenderer({
+              canvas: map.getCanvas(),
+              context: gl
+            });
+            renderer.autoClear = false;
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            map.on("moveend", handleMoveEnd);
+            map.on("sourcedata", handleSourceData);
+            map.on("tileflow:3d-toggle", handleThreeDimensionalToggle);
+            map.on("tileflow:visible-layer-groups", handleVisibleLayerGroups);
+            queueRefresh(0);
+          },
+          render(_gl, options) {
+            if (!wireframeShouldBeVisible() || !sceneOriginMercator || !group?.visible) return;
+            const canvas = map.getCanvas();
+            const pixelRatio = map.getPixelRatio?.() ?? globalThis.devicePixelRatio ?? 1;
+            glowMaterial.linewidth = glowWidth * pixelRatio;
+            coreMaterial.linewidth = width * pixelRatio;
+            glowMaterial.resolution.set(canvas.width, canvas.height);
+            coreMaterial.resolution.set(canvas.width, canvas.height);
+            const meter = sceneOriginMercator.meterInMercatorCoordinateUnits();
+            mapMatrix.fromArray(options.defaultProjectionData.mainMatrix);
+            sceneMatrix
+              .makeTranslation(
+                sceneOriginMercator.x,
+                sceneOriginMercator.y,
+                sceneOriginMercator.z
+              )
+              .scale(new THREE.Vector3(meter, meter, meter));
+            camera.projectionMatrix.copy(mapMatrix).multiply(sceneMatrix);
+            renderer.resetState();
+            renderer.setViewport(0, 0, canvas.width, canvas.height);
+            renderer.render(scene, camera);
+          },
+          onRemove() {
+            if (refreshTimer !== undefined) clearTimeout(refreshTimer);
+            map.off("moveend", handleMoveEnd);
+            map.off("sourcedata", handleSourceData);
+            map.off("tileflow:3d-toggle", handleThreeDimensionalToggle);
+            map.off("tileflow:visible-layer-groups", handleVisibleLayerGroups);
+            geometry?.dispose();
+            glowMaterial?.dispose();
+            coreMaterial?.dispose();
+            renderer?.dispose();
+            hideWireframe();
+          }
+        };
+      }
+
+      function addBuildingWireframeLayerIfConfigured(map, styleLayers) {
+        const styleLayer = styleLayers.find(
+          (layer) => layer.metadata?.["tileflow:building-wireframe"] === true
+        );
+        if (!styleLayer || map.getLayer("tileflow-buildings-wireframe-3d")) return;
+        if (map.getProjection().type !== "mercator") {
+          map.setProjection({type: "mercator"});
+        }
+        if (map.getLayer("tileflow-buildings-wireframe-3d")) return;
+        const styleLayerIndex = styleLayers.findIndex((layer) => layer.id === styleLayer.id);
+        const layerAboveBuildings = styleLayers[styleLayerIndex + 1]?.id;
+        map.addLayer(createBuildingWireframeLayer(map, styleLayer), layerAboveBuildings);
       }
 
       function createTreeLayer(map, styleLayer) {
@@ -765,6 +1317,18 @@ export function renderTileflowPreviewHtml(
         const genusField = styleLayer.metadata?.["tileflow:tree-genus-field"] ?? "genus";
         const leafTypeField = styleLayer.metadata?.["tileflow:tree-leaf-type-field"] ?? "leaf_type";
         const speciesField = styleLayer.metadata?.["tileflow:tree-species-field"] ?? "species";
+        const heightScaleValue = Number(
+          styleLayer.metadata?.["tileflow:tree-height-scale"] ?? 1
+        );
+        const crownScaleValue = Number(
+          styleLayer.metadata?.["tileflow:tree-crown-scale"] ?? 1
+        );
+        const heightScale = Number.isFinite(heightScaleValue) && heightScaleValue > 0
+          ? heightScaleValue
+          : 1;
+        const crownScale = Number.isFinite(crownScaleValue) && crownScaleValue > 0
+          ? crownScaleValue
+          : 1;
         let scene;
         let sceneElevation;
         let sceneOriginMercator;
@@ -773,11 +1337,17 @@ export function renderTileflowPreviewHtml(
         let treeGroup;
         let treeMaterial;
         let treeMeshes = [];
+        let treeShadowMesh;
+        let treeShadowMaterial;
         let activeTreeBackend = treeBackendMode;
         let rawGl;
         let rawProgram;
         let rawMatrixUniform;
         let rawTreeResources = [];
+        let rawShadowProgram;
+        let rawShadowMatrixUniform;
+        let rawShadowOpacityUniform;
+        let rawShadowResource;
         let rawTreesVisible = false;
         const fallbackCircleOpacity = styleLayer.paint?.["circle-opacity"] ?? 0.82;
         const fallbackCircleStrokeOpacity =
@@ -800,18 +1370,32 @@ export function renderTileflowPreviewHtml(
         const scale = new THREE.Vector3();
         const crownRotation = new THREE.Quaternion();
         const yAxis = new THREE.Vector3(0, 1, 0);
-        const barkColor = new THREE.Color(0x929b7b);
-        const broadleafPalette = [
-          new THREE.Color(0x7fa97b),
-          new THREE.Color(0x8bb08c),
-          new THREE.Color(0xa9c995),
-          new THREE.Color(0xb0d1aa)
-        ];
-        const coniferPalette = [
-          new THREE.Color(0x5d966b),
-          new THREE.Color(0x76aa7d),
-          new THREE.Color(0x91bd94)
-        ];
+        const instanceTint = new THREE.Color();
+        const shadowMatrix = new THREE.Matrix4();
+        const shadowPosition = new THREE.Vector3();
+        const shadowScale = new THREE.Vector3();
+        const shadowRotation = new THREE.Quaternion();
+        const treeShadowLiftMeters = 0.04;
+        const treeShadowOpacity = 0.17;
+        const barkColor = new THREE.Color(
+          styleLayer.metadata?.["tileflow:tree-bark-color"] ?? "#8F8E79"
+        );
+        const broadleafColorValues =
+          styleLayer.metadata?.["tileflow:tree-broadleaf-colors"];
+        const broadleafPalette = (
+          Array.isArray(broadleafColorValues) && broadleafColorValues.length > 0
+            ? broadleafColorValues
+            : ["#87BA8C", "#98C89A", "#AAD4A7", "#B8DDB1"]
+        ).map((color) => new THREE.Color(color));
+        const coniferColorValues = styleLayer.metadata?.["tileflow:tree-conifer-colors"];
+        const coniferPalette = (
+          Array.isArray(coniferColorValues) && coniferColorValues.length > 0
+            ? coniferColorValues
+            : ["#77A77E", "#87B58A", "#98C399"]
+        ).map((color) => new THREE.Color(color));
+        const palmPalette = ["#82B77C", "#91C487", "#A0D093"].map(
+          (color) => new THREE.Color(color)
+        );
 
         function addGeometryPart(parts, geometry, partPosition, partScale, rotation, color) {
           const partMatrix = new THREE.Matrix4().compose(
@@ -820,10 +1404,10 @@ export function renderTileflowPreviewHtml(
             new THREE.Vector3(...partScale)
           );
           geometry.applyMatrix4(partMatrix);
-          const facetedGeometry = geometry.index ? geometry.toNonIndexed() : geometry;
-          facetedGeometry.computeVertexNormals();
-          const positions = facetedGeometry.getAttribute("position").array;
-          const normals = facetedGeometry.getAttribute("normal").array;
+          if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
+          const renderGeometry = geometry.index ? geometry.toNonIndexed() : geometry;
+          const positions = renderGeometry.getAttribute("position").array;
+          const normals = renderGeometry.getAttribute("normal").array;
           const colors = new Float32Array((positions.length / 3) * 3);
           const indices = Uint32Array.from(
             {length: positions.length / 3},
@@ -840,7 +1424,7 @@ export function renderTileflowPreviewHtml(
             normals: new Float32Array(normals),
             positions: new Float32Array(positions)
           });
-          if (facetedGeometry !== geometry) facetedGeometry.dispose();
+          if (renderGeometry !== geometry) renderGeometry.dispose();
           geometry.dispose();
         }
 
@@ -862,12 +1446,165 @@ export function renderTileflowPreviewHtml(
           const center = startPoint.clone().add(endPoint).multiplyScalar(0.5);
           addGeometryPart(
             parts,
-            new THREE.CylinderGeometry(tipRadius, baseRadius, 1, radialSegments),
+            new THREE.CylinderGeometry(tipRadius, baseRadius, 1, radialSegments, 1, true),
             [center.x, center.y, center.z],
             [1, direction.length(), 1],
             branchRotation,
             barkColor
           );
+        }
+
+        function createOrganicCrownGeometry(seed, simple) {
+          const geometry = new THREE.SphereGeometry(
+            0.5,
+            simple ? 8 : 12,
+            simple ? 5 : 7
+          );
+          const positions = geometry.getAttribute("position");
+          for (let index = 0; index < positions.count; index += 1) {
+            const x = positions.getX(index);
+            const y = positions.getY(index);
+            const z = positions.getZ(index);
+            const angle = Math.atan2(z, x);
+            const normalizedHeight = Math.max(-1, Math.min(1, y * 2));
+            const latitudeWeight = 1 - normalizedHeight * normalizedHeight;
+            const ripple =
+              1 +
+              Math.sin(angle * 3 + seed * 1.73) * 0.065 * latitudeWeight +
+              Math.sin(angle * 5 - seed * 0.91) * 0.035 * latitudeWeight +
+              Math.sin(y * Math.PI * 4 + seed * 0.63) * 0.025;
+            positions.setXYZ(
+              index,
+              x * ripple,
+              y * (1 + Math.cos(angle * 2 + seed) * 0.035),
+              z * ripple
+            );
+          }
+          positions.needsUpdate = true;
+          geometry.deleteAttribute("normal");
+          geometry.computeVertexNormals();
+          return geometry;
+        }
+
+        function createScallopedConeGeometry(seed, simple) {
+          const geometry = new THREE.ConeGeometry(
+            0.5,
+            1,
+            simple ? 8 : 12,
+            simple ? 2 : 3
+          );
+          const positions = geometry.getAttribute("position");
+          for (let index = 0; index < positions.count; index += 1) {
+            const x = positions.getX(index);
+            const y = positions.getY(index);
+            const z = positions.getZ(index);
+            const angle = Math.atan2(z, x);
+            const progress = Math.max(0, Math.min(1, y + 0.5));
+            const ripple =
+              1 +
+              Math.sin(angle * 3 + seed * 1.31) * 0.08 +
+              Math.sin(angle * 5 - seed * 0.77) * 0.045 +
+              Math.sin(progress * Math.PI * 3 + seed) * 0.035;
+            positions.setXYZ(
+              index,
+              x * ripple,
+              y + Math.sin(angle * 2 + seed) * (1 - progress) * 0.018,
+              z * ripple
+            );
+          }
+          positions.needsUpdate = true;
+          geometry.deleteAttribute("normal");
+          geometry.computeVertexNormals();
+          return geometry;
+        }
+
+        function createCurvedPalmFrondGeometry(seed, simple, fan) {
+          const segments = simple ? 5 : 8;
+          const length = fan ? 0.49 + (seed % 3) * 0.025 : 0.58 + (seed % 3) * 0.03;
+          const droop = fan ? 0.16 + (seed % 2) * 0.025 : 0.25 + (seed % 3) * 0.025;
+          const sway = (((seed * 37) % 7) - 3) * 0.008;
+          const widthScale = fan ? 0.17 : 0.024;
+          const centerAt = (progress) => [
+            length * progress,
+            Math.sin(Math.PI * progress) * (fan ? 0.08 : 0.11) -
+              droop * Math.pow(progress, 1.7),
+            sway * Math.sin(Math.PI * progress)
+          ];
+          const points = [];
+          for (let step = 0; step <= segments; step += 1) {
+            const progress = step / segments;
+            const envelope = Math.pow(Math.sin(Math.PI * progress), 0.7) * (1 - 0.25 * progress);
+            const width = Math.max(0.008, widthScale * envelope);
+            const [centerX, centerY, centerZ] = centerAt(progress);
+            points.push(
+              [centerX, centerY, centerZ - width],
+              [centerX, centerY, centerZ + width]
+            );
+          }
+          const trianglePositions = [];
+          const appendTriangle = (first, second, third) => {
+            trianglePositions.push(...first, ...second, ...third);
+          };
+          const appendDoubleSidedQuad = (leftStart, rightStart, leftEnd, rightEnd) => {
+            appendTriangle(leftStart, rightStart, leftEnd);
+            appendTriangle(rightStart, rightEnd, leftEnd);
+            appendTriangle(leftEnd, rightStart, leftStart);
+            appendTriangle(leftEnd, rightEnd, rightStart);
+          };
+          for (let segment = 0; segment < segments; segment += 1) {
+            const leftStart = points[segment * 2];
+            const rightStart = points[segment * 2 + 1];
+            const leftEnd = points[(segment + 1) * 2];
+            const rightEnd = points[(segment + 1) * 2 + 1];
+            appendDoubleSidedQuad(leftStart, rightStart, leftEnd, rightEnd);
+          }
+          if (!fan) {
+            const leafletCount = simple ? 4 : 7;
+            for (let leaflet = 0; leaflet < leafletCount; leaflet += 1) {
+              const progress = 0.17 + (leaflet / (leafletCount - 1)) * 0.66;
+              const [centerX, centerY, centerZ] = centerAt(progress);
+              const leafletLength =
+                (0.075 + Math.sin(Math.PI * progress) * 0.095) *
+                (0.94 + ((leaflet + seed) % 3) * 0.035);
+              const leafletWidth = 0.018 + Math.sin(Math.PI * progress) * 0.012;
+              const leafletBack = 0.018 + ((leaflet + seed) % 2) * 0.012;
+              const leafletDrop = 0.022 + progress * 0.045;
+              for (const side of [-1, 1]) {
+                const base = [centerX - 0.014, centerY, centerZ + side * 0.007];
+                const midCenter = [
+                  centerX + 0.012,
+                  centerY - leafletDrop * 0.35,
+                  centerZ + side * leafletLength * 0.58
+                ];
+                const midLeft = [
+                  midCenter[0] - leafletWidth,
+                  midCenter[1],
+                  midCenter[2] - side * leafletWidth * 0.14
+                ];
+                const midRight = [
+                  midCenter[0] + leafletWidth,
+                  midCenter[1],
+                  midCenter[2] + side * leafletWidth * 0.14
+                ];
+                const tip = [
+                  centerX - leafletBack,
+                  centerY - leafletDrop,
+                  centerZ + side * leafletLength
+                ];
+                appendTriangle(base, midRight, midLeft);
+                appendTriangle(midLeft, midRight, tip);
+                appendTriangle(midLeft, midRight, base);
+                appendTriangle(tip, midRight, midLeft);
+              }
+            }
+          }
+          const geometry = new THREE.BufferGeometry();
+          geometry.setAttribute(
+            "position",
+            new THREE.Float32BufferAttribute(trianglePositions, 3)
+          );
+          geometry.computeVertexNormals();
+          return geometry;
         }
 
         function mergeGeometryParts(parts) {
@@ -901,113 +1638,241 @@ export function renderTileflowPreviewHtml(
           return geometry;
         }
 
-        function createBroadleafTreeGeometry(variant, simple) {
+        function createBroadleafTreeGeometry(variant, geometryVariant, simple) {
           const parts = [];
-          const trunkTop = variant === 0 ? [0.012, 0.5, -0.004] : [-0.014, 0.49, 0.01];
+          const trunkTops = [
+            [0.008, 0.56, -0.004],
+            [-0.012, 0.51, 0.008],
+            [0.006, 0.62, 0.004]
+          ];
+          const trunkTopBase = trunkTops[variant] ?? trunkTops[0];
+          const trunkTop = [
+            trunkTopBase[0] + (geometryVariant === 0 ? -0.008 : 0.012),
+            trunkTopBase[1] + (geometryVariant === 0 ? -0.012 : 0.016),
+            trunkTopBase[2] + (geometryVariant === 0 ? 0.006 : -0.01)
+          ];
           addTaperedBranchPart(
             parts,
             [0, 0, 0],
             trunkTop,
-            0.09 + variant * 0.004,
-            0.052 + variant * 0.002,
-            6
+            0.04 + variant * 0.001,
+            0.022,
+            simple ? 6 : 8
           );
 
-          const branchTargets = variant === 0
-            ? [
-                [-0.22, 0.72, 0.02],
-                [0, 0.79, -0.025],
-                [0.22, 0.71, -0.015],
-                [0.015, 0.69, 0.17]
-              ]
-            : [
-                [-0.2, 0.71, 0.015],
-                [0.06, 0.68, 0.08],
-                [0.27, 0.72, -0.025],
-                [0.05, 0.78, -0.08]
-              ];
-          const branchCount = branchTargets.length;
+          const branchTargetLayouts = [
+            [
+              [-0.2, 0.72, 0.03],
+              [0.01, 0.79, -0.04],
+              [0.21, 0.72, -0.02],
+              [-0.03, 0.7, 0.18],
+              [0.06, 0.73, -0.17]
+            ],
+            [
+              [-0.27, 0.68, 0.02],
+              [-0.09, 0.76, -0.08],
+              [0.25, 0.69, -0.03],
+              [0.06, 0.72, 0.2],
+              [0.13, 0.79, -0.13]
+            ],
+            [
+              [-0.15, 0.75, 0.02],
+              [0.04, 0.86, -0.04],
+              [0.16, 0.77, 0.01],
+              [0.02, 0.8, 0.15]
+            ]
+          ];
+          const branchTargets = branchTargetLayouts[variant] ?? branchTargetLayouts[0];
+          const branchCount = simple ? Math.min(4, branchTargets.length) : branchTargets.length;
           for (let branch = 0; branch < branchCount; branch += 1) {
+            const branchTarget = branchTargets[branch];
+            const shelteredBranchTarget = [
+              branchTarget[0] * 0.86,
+              branchTarget[1] - 0.07,
+              branchTarget[2] * 0.86
+            ];
             addTaperedBranchPart(
               parts,
-              [trunkTop[0] * 0.55, 0.35 + branch * 0.025, trunkTop[2] * 0.55],
-              branchTargets[branch],
-              0.05 - branch * 0.004,
-              0.026 - branch * 0.002,
-              6
+              [trunkTop[0] * 0.55, 0.38 + branch * 0.018, trunkTop[2] * 0.55],
+              shelteredBranchTarget,
+              0.022 - branch * 0.0015,
+              0.0095 - branch * 0.00065,
+              simple ? 5 : 7
             );
           }
 
+          const roundCrownLayout = [
+            {position: [0, 0.8, 0.01], scale: [0.72, 0.39, 0.66]},
+            {position: [-0.27, 0.73, 0.05], scale: [0.45, 0.26, 0.42]},
+            {position: [0.27, 0.75, -0.06], scale: [0.44, 0.25, 0.41]},
+            {position: [-0.08, 0.7, 0.24], scale: [0.4, 0.23, 0.37]},
+            {position: [0.1, 0.72, -0.24], scale: [0.41, 0.24, 0.38]}
+          ];
           const openCrownLayout = [
-            {position: [-0.02, 0.86, -0.04], scale: [0.46, 0.16, 0.39]},
-            {position: [-0.22, 0.8, 0.04], scale: [0.44, 0.16, 0.37]},
-            {position: [0.22, 0.79, -0.05], scale: [0.47, 0.17, 0.39]},
-            {position: [-0.29, 0.69, 0.03], scale: [0.42, 0.18, 0.36]},
-            {position: [0.01, 0.69, 0.18], scale: [0.52, 0.2, 0.42]},
-            {position: [0.28, 0.68, 0.01], scale: [0.44, 0.18, 0.37]},
-            {position: [0, 0.76, -0.21], scale: [0.48, 0.17, 0.39]},
-            {position: [-0.15, 0.64, 0.14], scale: [0.4, 0.16, 0.34]},
-            {position: [0.16, 0.64, 0.12], scale: [0.41, 0.16, 0.35]},
-            {position: [0.08, 0.88, 0.13], scale: [0.4, 0.15, 0.34]}
+            {position: [-0.29, 0.72, 0.03], scale: [0.47, 0.22, 0.39]},
+            {position: [-0.08, 0.83, -0.1], scale: [0.44, 0.24, 0.36]},
+            {position: [0.22, 0.79, -0.04], scale: [0.49, 0.22, 0.4]},
+            {position: [0.31, 0.67, 0.09], scale: [0.4, 0.19, 0.34]},
+            {position: [0.04, 0.68, 0.22], scale: [0.45, 0.21, 0.38]},
+            {position: [-0.19, 0.65, 0.18], scale: [0.38, 0.18, 0.32]}
           ];
-          const clusteredCrownLayout = [
-            {position: [-0.24, 0.78, 0.02], scale: [0.52, 0.42, 0.47]},
-            {position: [0, 0.72, 0.12], scale: [0.32, 0.27, 0.32]},
-            {position: [0.1, 0.59, -0.08], scale: [0.46, 0.36, 0.42]},
-            {position: [0.29, 0.76, -0.01], scale: [0.43, 0.34, 0.4]},
-            {position: [0.01, 0.84, -0.05], scale: [0.4, 0.32, 0.38]},
-            {position: [0.19, 0.74, 0.18], scale: [0.35, 0.3, 0.34]}
+          const tallCrownLayout = [
+            {position: [0, 0.79, 0.01], scale: [0.53, 0.58, 0.48]},
+            {position: [-0.19, 0.76, 0.05], scale: [0.34, 0.4, 0.32]},
+            {position: [0.18, 0.8, -0.05], scale: [0.34, 0.42, 0.31]},
+            {position: [-0.05, 0.94, -0.08], scale: [0.32, 0.34, 0.3]},
+            {position: [0.06, 0.69, 0.15], scale: [0.32, 0.35, 0.3]}
           ];
-          const crownLayout = variant === 0 ? openCrownLayout : clusteredCrownLayout;
-          const lobeCount = simple ? (variant === 0 ? 9 : 5) : crownLayout.length;
-          const crownColorPattern = variant === 0
-            ? [3, 2, 1, 0, 2, 0, 1, 1, 2, 3]
-            : [1, 2, 0, 1, 3, 2];
+          const crownLayouts = [roundCrownLayout, openCrownLayout, tallCrownLayout];
+          const crownLayout = crownLayouts[variant] ?? crownLayouts[0];
+          const lobeCount = simple ? Math.max(4, crownLayout.length - 1) : crownLayout.length;
+          const crownColorPatterns = [
+            [2, 1, 3, 0, 1],
+            [1, 2, 0, 3, 1, 2],
+            [2, 1, 3, 1, 2]
+          ];
+          const crownColorPattern = crownColorPatterns[variant] ?? crownColorPatterns[0];
           for (let lobe = 0; lobe < lobeCount; lobe += 1) {
             const lobeShape = crownLayout[lobe];
-            const foliageGeometry = variant === 0
-              ? new THREE.SphereGeometry(0.5, 8, 3)
-              : new THREE.IcosahedronGeometry(0.5, simple ? 0 : 1);
+            const lobeSeed = variant * 23 + geometryVariant * 11 + lobe * 3;
+            const lobePosition = [
+              lobeShape.position[0] + Math.sin(lobeSeed * 1.7) * 0.018,
+              lobeShape.position[1] + Math.cos(lobeSeed * 1.1) * 0.012,
+              lobeShape.position[2] + Math.cos(lobeSeed * 1.9) * 0.018
+            ];
             addGeometryPart(
               parts,
-              foliageGeometry,
-              lobeShape.position,
+              createOrganicCrownGeometry(lobeSeed, simple),
+              lobePosition,
               lobeShape.scale,
               new THREE.Quaternion().setFromEuler(
                 new THREE.Euler(
-                  ((lobe % 3) - 1) * 0.07,
-                  variant * 0.41 + lobe * 0.37,
-                  (((lobe + variant) % 3) - 1) * 0.09
+                  ((lobe % 3) - 1) * 0.09,
+                  variant * 0.41 + geometryVariant * 0.27 + lobe * 0.37,
+                  (((lobe + variant + geometryVariant) % 3) - 1) * 0.11
                 )
               ),
-              broadleafPalette[crownColorPattern[lobe]]
+              broadleafPalette[
+                (crownColorPattern[lobe] + geometryVariant * 2) % broadleafPalette.length
+              ]
+            );
+          }
+          const crownCapShapes = [
+            {position: [0.01, 0.9, 0], scale: [0.3, 0.18, 0.28]},
+            {position: [0, 0.84, 0.01], scale: [0.29, 0.17, 0.27]},
+            {position: [0, 0.96, 0], scale: [0.24, 0.22, 0.23]}
+          ];
+          const crownCapShape = crownCapShapes[variant] ?? crownCapShapes[0];
+          addGeometryPart(
+            parts,
+            createOrganicCrownGeometry(149 + variant * 17 + geometryVariant * 7, simple),
+            crownCapShape.position,
+            crownCapShape.scale,
+            new THREE.Quaternion().setFromAxisAngle(
+              yAxis,
+              variant * 0.31 + geometryVariant * 0.43
+            ),
+            broadleafPalette[(1 + variant + geometryVariant * 2) % broadleafPalette.length]
+          );
+          return mergeGeometryParts(parts);
+        }
+
+        function createConiferTreeGeometry(variant, geometryVariant, simple) {
+          const parts = [];
+          const columnar = variant === 1;
+          addTaperedBranchPart(
+            parts,
+            [0, 0, 0],
+            [variant === 0 ? 0.006 : -0.006, columnar ? 0.54 : 0.43, 0],
+            0.035,
+            0.018,
+            simple ? 6 : 8
+          );
+          if (columnar) {
+            const columnarCrownLayout = [
+              {position: [-0.01, 0.5, 0.01], scale: [0.38, 0.48, 0.36]},
+              {position: [0.01, 0.66, -0.01], scale: [0.42, 0.5, 0.39]},
+              {position: [-0.015, 0.8, 0.01], scale: [0.34, 0.42, 0.32]},
+              {position: [0.008, 0.91, 0], scale: [0.22, 0.28, 0.21]}
+            ];
+            const massCount = simple ? 3 : columnarCrownLayout.length;
+            for (let mass = 0; mass < massCount; mass += 1) {
+              const crownMass = columnarCrownLayout[mass];
+              addGeometryPart(
+                parts,
+                createOrganicCrownGeometry(71 + geometryVariant * 13 + mass * 5, simple),
+                crownMass.position,
+                crownMass.scale,
+                new THREE.Quaternion().setFromAxisAngle(yAxis, mass * 0.43),
+                coniferPalette[(mass + 1) % coniferPalette.length]
+              );
+            }
+            return mergeGeometryParts(parts);
+          }
+          const tierCount = simple ? 3 : 5;
+          for (let tier = 0; tier < tierCount; tier += 1) {
+            const progress = tier / (tierCount - 1);
+            const tierDiameter = 0.94 - progress * 0.5;
+            const tierHeight = 0.35 - progress * 0.075;
+            addGeometryPart(
+              parts,
+              createScallopedConeGeometry(geometryVariant * 19 + tier * 7, simple),
+              [
+                Math.sin(tier * 2.1 + geometryVariant) * 0.012,
+                0.45 + progress * 0.44,
+                Math.cos(tier * 1.7 + geometryVariant) * 0.012
+              ],
+              [tierDiameter, tierHeight, tierDiameter],
+              new THREE.Quaternion().setFromAxisAngle(
+                yAxis,
+                variant * 0.6 + geometryVariant * 0.29 + tier * 0.31
+              ),
+              coniferPalette[(variant + tier) % coniferPalette.length]
             );
           }
           return mergeGeometryParts(parts);
         }
 
-        function createConiferTreeGeometry(variant, simple) {
+        function createPalmTreeGeometry(geometryVariant, simple) {
           const parts = [];
+          const fan = geometryVariant === 1;
+          const lowerTrunkTop = [fan ? -0.014 : 0.012, 0.42, fan ? 0.006 : -0.004];
+          const upperTrunkTop = [fan ? 0.014 : -0.012, fan ? 0.73 : 0.78, fan ? -0.008 : 0.012];
+          addTaperedBranchPart(parts, [0, 0, 0], lowerTrunkTop, 0.032, 0.026, simple ? 7 : 9);
           addTaperedBranchPart(
             parts,
-            [0, 0, 0],
-            [variant === 0 ? 0.006 : -0.006, 0.4, 0],
-            0.075,
-            0.04,
-            6
+            lowerTrunkTop,
+            upperTrunkTop,
+            0.026,
+            0.016,
+            simple ? 7 : 9
           );
-          const tierCount = simple ? 2 : 3;
-          for (let tier = 0; tier < tierCount; tier += 1) {
-            const progress = tier / (tierCount - 1);
-            const tierDiameter = simple ? 0.92 - progress * 0.25 : 0.96 - progress * 0.34;
-            const tierHeight = simple ? 0.55 - progress * 0.1 : 0.48 - progress * 0.12;
+          addGeometryPart(
+            parts,
+            createOrganicCrownGeometry(113 + geometryVariant * 17, simple),
+            [upperTrunkTop[0], upperTrunkTop[1] + 0.018, upperTrunkTop[2]],
+            [fan ? 0.19 : 0.16, 0.1, fan ? 0.19 : 0.16],
+            new THREE.Quaternion(),
+            palmPalette[1]
+          );
+          const frondCount = simple ? (fan ? 8 : 7) : (fan ? 12 : 11);
+          for (let frond = 0; frond < frondCount; frond += 1) {
+            const angle =
+              (frond / frondCount) * Math.PI * 2 +
+              (((frond * 5 + geometryVariant) % 3) - 1) * 0.045;
             addGeometryPart(
               parts,
-              new THREE.ConeGeometry(0.5, 1, simple ? 6 : 9),
-              [0, simple ? 0.5 + progress * 0.25 : 0.5 + progress * 0.27, 0],
-              [tierDiameter, tierHeight, tierDiameter],
-              new THREE.Quaternion().setFromAxisAngle(yAxis, variant * 0.6 + tier * 0.24),
-              coniferPalette[(variant + tier) % coniferPalette.length]
+              createCurvedPalmFrondGeometry(frond + geometryVariant * 17, simple, fan),
+              [upperTrunkTop[0], upperTrunkTop[1] + 0.018, upperTrunkTop[2]],
+              [0.94 + (frond % 3) * 0.035, 0.96 + (frond % 2) * 0.035, 1],
+              new THREE.Quaternion().setFromEuler(
+                new THREE.Euler(
+                  (((frond * 7 + geometryVariant) % 3) - 1) * 0.045,
+                  -angle,
+                  (((frond * 5 + geometryVariant) % 5) - 2) * 0.022
+                )
+              ),
+              palmPalette[(frond + geometryVariant) % palmPalette.length]
             );
           }
           return mergeGeometryParts(parts);
@@ -1016,10 +1881,16 @@ export function renderTileflowPreviewHtml(
         function createTreeGeometries() {
           const simple = treeRendererMode === "simple";
           return [
-            createBroadleafTreeGeometry(0, simple),
-            createBroadleafTreeGeometry(1, simple),
-            createConiferTreeGeometry(0, simple),
-            createConiferTreeGeometry(1, simple)
+            createBroadleafTreeGeometry(0, 0, simple),
+            createBroadleafTreeGeometry(0, 1, simple),
+            createBroadleafTreeGeometry(1, 0, simple),
+            createBroadleafTreeGeometry(1, 1, simple),
+            createBroadleafTreeGeometry(2, 0, simple),
+            createBroadleafTreeGeometry(2, 1, simple),
+            createConiferTreeGeometry(0, 0, simple),
+            createConiferTreeGeometry(1, 0, simple),
+            createPalmTreeGeometry(0, simple),
+            createPalmTreeGeometry(1, simple)
           ];
         }
 
@@ -1046,23 +1917,28 @@ export function renderTileflowPreviewHtml(
               "layout(location=1) in vec3 a_normal;\\n" +
               "layout(location=2) in vec3 a_color;\\n" +
               "layout(location=3) in vec3 a_instance_position;\\n" +
-              "layout(location=4) in vec2 a_instance_scale;\\n" +
+              "layout(location=4) in vec3 a_instance_scale;\\n" +
               "layout(location=5) in vec2 a_instance_rotation;\\n" +
+              "layout(location=6) in float a_instance_tint;\\n" +
               "uniform mat4 u_matrix;\\n" +
               "out vec3 v_color;\\n" +
               "void main() {\\n" +
-              "  vec2 horizontal = a_position.xz * a_instance_scale.x;\\n" +
+              "  vec2 horizontal = a_position.xz * a_instance_scale.xz;\\n" +
               "  vec2 rotated = vec2(\\n" +
               "    horizontal.x * a_instance_rotation.x - horizontal.y * a_instance_rotation.y,\\n" +
               "    horizontal.x * a_instance_rotation.y + horizontal.y * a_instance_rotation.x\\n" +
               "  );\\n" +
+              "  vec3 scaledNormal = normalize(a_normal / max(a_instance_scale, vec3(0.001)));\\n" +
               "  vec2 normalHorizontal = vec2(\\n" +
-              "    a_normal.x * a_instance_rotation.x - a_normal.z * a_instance_rotation.y,\\n" +
-              "    a_normal.x * a_instance_rotation.y + a_normal.z * a_instance_rotation.x\\n" +
+              "    scaledNormal.x * a_instance_rotation.x - scaledNormal.z * a_instance_rotation.y,\\n" +
+              "    scaledNormal.x * a_instance_rotation.y + scaledNormal.z * a_instance_rotation.x\\n" +
               "  );\\n" +
-              "  vec3 mapNormal = normalize(vec3(normalHorizontal.x, normalHorizontal.y, a_normal.y));\\n" +
-              "  float light = 0.68 + max(dot(mapNormal, normalize(vec3(-0.35, -0.5, 0.78))), 0.0) * 0.42;\\n" +
-              "  v_color = a_color * light;\\n" +
+              "  vec3 mapNormal = normalize(vec3(normalHorizontal.x, normalHorizontal.y, scaledNormal.y));\\n" +
+              "  float sky = mapNormal.z * 0.5 + 0.5;\\n" +
+              "  float key = max(dot(mapNormal, normalize(vec3(-0.35, -0.5, 0.78))), 0.0);\\n" +
+              "  float heightOcclusion = mix(0.84, 1.0, smoothstep(0.16, 0.88, a_position.y));\\n" +
+              "  float light = (0.67 + sky * 0.18 + key * 0.23) * heightOcclusion;\\n" +
+              "  v_color = a_color * light * a_instance_tint;\\n" +
               "  vec3 mapPosition = vec3(\\n" +
               "    a_instance_position.x + rotated.x,\\n" +
               "    a_instance_position.z + rotated.y,\\n" +
@@ -1100,6 +1976,84 @@ export function renderTileflowPreviewHtml(
           return program;
         }
 
+        function createRawTreeShadowProgram(gl) {
+          const vertexShader = compileRawShader(
+            gl,
+            gl.VERTEX_SHADER,
+            "#version 300 es\\n" +
+              "precision highp float;\\n" +
+              "layout(location=0) in vec2 a_corner;\\n" +
+              "layout(location=1) in vec4 a_instance;\\n" +
+              "uniform mat4 u_matrix;\\n" +
+              "out vec2 v_shadow_coordinate;\\n" +
+              "void main() {\\n" +
+              "  v_shadow_coordinate = a_corner;\\n" +
+              "  vec2 shadowOffset = vec2(-0.28, 0.34) * a_instance.w;\\n" +
+              "  vec2 shadowPosition = a_corner * vec2(1.0, 0.76) * a_instance.w + shadowOffset;\\n" +
+              "  vec3 mapPosition = vec3(\\n" +
+              "    a_instance.x + shadowPosition.x,\\n" +
+              "    a_instance.z + shadowPosition.y,\\n" +
+              "    a_instance.y + 0.04\\n" +
+              "  );\\n" +
+              "  gl_Position = u_matrix * vec4(mapPosition, 1.0);\\n" +
+              "}\\n"
+          );
+          const fragmentShader = compileRawShader(
+            gl,
+            gl.FRAGMENT_SHADER,
+            "#version 300 es\\n" +
+              "precision mediump float;\\n" +
+              "in vec2 v_shadow_coordinate;\\n" +
+              "uniform float u_opacity;\\n" +
+              "out vec4 out_color;\\n" +
+              "void main() {\\n" +
+              "  float radiusSquared = dot(v_shadow_coordinate, v_shadow_coordinate);\\n" +
+              "  if (radiusSquared >= 1.0) discard;\\n" +
+              "  float coverage = 1.0 - smoothstep(0.90, 1.0, radiusSquared);\\n" +
+              "  float alpha = u_opacity * coverage;\\n" +
+              "  out_color = vec4(0.18, 0.21, 0.17, alpha);\\n" +
+              "}\\n"
+          );
+          const program = gl.createProgram();
+          if (!program) throw new Error("Unable to create tree shadow program");
+          gl.attachShader(program, vertexShader);
+          gl.attachShader(program, fragmentShader);
+          gl.linkProgram(program);
+          gl.deleteShader(vertexShader);
+          gl.deleteShader(fragmentShader);
+          if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            const message = gl.getProgramInfoLog(program) || "unknown tree shadow program error";
+            gl.deleteProgram(program);
+            throw new Error(message);
+          }
+          return program;
+        }
+
+        function createRawTreeShadowResource(gl) {
+          const vertexArray = gl.createVertexArray();
+          const cornerBuffer = gl.createBuffer();
+          const instanceBuffer = gl.createBuffer();
+          if (!vertexArray || !cornerBuffer || !instanceBuffer) {
+            throw new Error("Unable to allocate tree shadow buffers");
+          }
+          gl.bindVertexArray(vertexArray);
+          gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuffer);
+          gl.bufferData(
+            gl.ARRAY_BUFFER,
+            new Float32Array([-1, -1, 1, -1, 1, 1, -1, 1]),
+            gl.STATIC_DRAW
+          );
+          gl.enableVertexAttribArray(0);
+          gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW);
+          gl.enableVertexAttribArray(1);
+          gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 16, 0);
+          gl.vertexAttribDivisor(1, 1);
+          gl.bindVertexArray(null);
+          return {cornerBuffer, count: 0, instanceBuffer, vertexArray};
+        }
+
         function createRawTreeResource(gl, geometry) {
           const vertexArray = gl.createVertexArray();
           const positionBuffer = gl.createBuffer();
@@ -1134,14 +2088,17 @@ export function renderTileflowPreviewHtml(
           gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
           gl.bufferData(gl.ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW);
           gl.enableVertexAttribArray(3);
-          gl.vertexAttribPointer(3, 3, gl.FLOAT, false, 28, 0);
+          gl.vertexAttribPointer(3, 3, gl.FLOAT, false, 36, 0);
           gl.vertexAttribDivisor(3, 1);
           gl.enableVertexAttribArray(4);
-          gl.vertexAttribPointer(4, 2, gl.FLOAT, false, 28, 12);
+          gl.vertexAttribPointer(4, 3, gl.FLOAT, false, 36, 12);
           gl.vertexAttribDivisor(4, 1);
           gl.enableVertexAttribArray(5);
-          gl.vertexAttribPointer(5, 2, gl.FLOAT, false, 28, 20);
+          gl.vertexAttribPointer(5, 2, gl.FLOAT, false, 36, 24);
           gl.vertexAttribDivisor(5, 1);
+          gl.enableVertexAttribArray(6);
+          gl.vertexAttribPointer(6, 1, gl.FLOAT, false, 36, 32);
+          gl.vertexAttribDivisor(6, 1);
           gl.bindVertexArray(null);
           return {
             colorBuffer,
@@ -1167,8 +2124,18 @@ export function renderTileflowPreviewHtml(
           }
           rawTreeResources = [];
           if (rawProgram) rawGl.deleteProgram(rawProgram);
+          if (rawShadowResource) {
+            rawGl.deleteBuffer(rawShadowResource.cornerBuffer);
+            rawGl.deleteBuffer(rawShadowResource.instanceBuffer);
+            rawGl.deleteVertexArray(rawShadowResource.vertexArray);
+          }
+          if (rawShadowProgram) rawGl.deleteProgram(rawShadowProgram);
           rawProgram = undefined;
           rawMatrixUniform = undefined;
+          rawShadowProgram = undefined;
+          rawShadowMatrixUniform = undefined;
+          rawShadowOpacityUniform = undefined;
+          rawShadowResource = undefined;
         }
 
         function numberProperty(properties, name) {
@@ -1289,26 +2256,45 @@ export function renderTileflowPreviewHtml(
           return state;
         }
 
+        const treeFormDimensions = {
+          round: {crownMaximum: 0.9, crownMinimum: 0.66, heightMaximum: 12, heightMinimum: 6},
+          open: {crownMaximum: 1.05, crownMinimum: 0.8, heightMaximum: 10, heightMinimum: 5},
+          tall: {crownMaximum: 0.68, crownMinimum: 0.48, heightMaximum: 17, heightMinimum: 9},
+          conifer: {crownMaximum: 0.66, crownMinimum: 0.46, heightMaximum: 16, heightMinimum: 7},
+          columnar: {crownMaximum: 0.36, crownMinimum: 0.22, heightMaximum: 18, heightMinimum: 9},
+          palm: {crownMaximum: 0.5, crownMinimum: 0.34, heightMaximum: 16, heightMinimum: 8}
+        };
+
         function resolveTreeState(feature, key, lng, lat, treeElevation) {
           const cached = treeStateCache.get(key);
           if (cached) return cached;
           const variation = stableUnit(key, 1);
-          const height = Math.min(
+          const form = resolveTreeForm(feature.properties, key);
+          const dimensions = treeFormDimensions[form] ?? treeFormDimensions.round;
+          const baseHeight = Math.min(
             32,
-            numberProperty(feature.properties, heightField) ?? 6 + variation * 7
+            numberProperty(feature.properties, heightField) ??
+              dimensions.heightMinimum +
+                variation * (dimensions.heightMaximum - dimensions.heightMinimum)
           );
-          const crownDiameter = Math.min(
+          const baseCrownDiameter = Math.min(
             20,
             numberProperty(feature.properties, crownField) ??
-              height * (0.62 + stableUnit(key, 2) * 0.18)
+              baseHeight *
+                (dimensions.crownMinimum +
+                  stableUnit(key, 2) * (dimensions.crownMaximum - dimensions.crownMinimum))
           );
           return rememberTreeState(key, {
-            conifer: isConifer(feature.properties),
-            crownDiameter,
-            height,
+            colorGain: 0.94 + stableUnit(key, 13) * 0.12,
+            crownAspect: 0.92 + stableUnit(key, 11) * 0.16,
+            crownDiameter:
+              baseCrownDiameter * crownScale * (0.94 + stableUnit(key, 5) * 0.12),
+            form,
+            height: baseHeight * heightScale,
             lat,
             lng,
-            treeElevation
+            treeElevation,
+            variantIndex: treeVariantIndex(form, key)
           });
         }
 
@@ -1374,16 +2360,47 @@ export function renderTileflowPreviewHtml(
           };
         }
 
-        function isConifer(properties) {
-          const leafType = String(properties?.[leafTypeField] ?? "").toLowerCase();
-          if (leafType.includes("needle")) return true;
-          const botanicalName = [properties?.[genusField], properties?.[speciesField]]
+        function botanicalName(properties) {
+          return [properties?.[genusField], properties?.[speciesField]]
             .filter(Boolean)
             .join(" ")
             .toLowerCase();
-          return /(?:^| )(?:abies|cedrus|cupressus|juniperus|picea|pinus|taxus)(?: |$)/.test(
-            botanicalName
-          );
+        }
+
+        function resolveTreeForm(properties, key) {
+          const leafType = String(properties?.[leafTypeField] ?? "").toLowerCase();
+          const botanical = botanicalName(properties);
+          if (
+            leafType.includes("palm") ||
+            /(?:^| )(?:archontophoenix|arecaceae|butia|chamaerops|cocos|howea|livistona|phoenix|sabal|syagrus|trachycarpus|washingtonia)(?: |$)/.test(
+              botanical
+            )
+          ) return "palm";
+          if (/(?:^| )(?:cupressus|cypress)(?: |$)/.test(botanical)) return "columnar";
+          if (
+            leafType.includes("needle") ||
+            /(?:^| )(?:abies|cedrus|juniperus|picea|pinus|taxodium|taxus)(?: |$)/.test(botanical)
+          ) return "conifer";
+          if (
+            /(?:^| )(?:arbutus|olea|quercus|tamarix)(?: |$)/.test(botanical)
+          ) return "open";
+          if (
+            /(?:^| )(?:celtis|ginkgo|platanus|populus|ulmus)(?: |$)/.test(botanical)
+          ) return "tall";
+          return ["round", "open", "tall"][Math.floor(stableUnit(key, 67) * 3)];
+        }
+
+        function treeVariantIndex(form, key) {
+          const alternate = Math.floor(stableUnit(key, 101) * 2);
+          const base = {
+            round: 0,
+            open: 2,
+            tall: 4,
+            conifer: 6,
+            columnar: 7,
+            palm: 8
+          }[form] ?? 0;
+          return base + (["round", "open", "tall", "palm"].includes(form) ? alternate : 0);
         }
 
         function refresh() {
@@ -1404,6 +2421,8 @@ export function renderTileflowPreviewHtml(
           if (map.getZoom() < 15.5) {
             for (const treeMesh of treeMeshes) treeMesh.count = 0;
             for (const resource of rawTreeResources) resource.count = 0;
+            if (treeShadowMesh) treeShadowMesh.count = 0;
+            if (rawShadowResource) rawShadowResource.count = 0;
             if (treeGroup) treeGroup.visible = false;
             rawTreesVisible = false;
             renderedTreeCount = 0;
@@ -1486,6 +2505,7 @@ export function renderTileflowPreviewHtml(
             : rawTreeResources.length;
           const variantCounts = Array.from({length: variantCount}, () => 0);
           const rawInstanceValues = Array.from({length: variantCount}, () => []);
+          const rawShadowInstanceValues = [];
           for (const {feature, key, lat, lng} of visibleTrees) {
             const treeState = resolveTreeState(
               feature,
@@ -1495,31 +2515,53 @@ export function renderTileflowPreviewHtml(
               terrainElevationAt(lng, lat)
             );
             const {
-              conifer,
+              colorGain,
+              crownAspect,
               crownDiameter,
               height,
               lat: treeLat,
               lng: treeLng,
-              treeElevation
+              treeElevation,
+              variantIndex
             } = treeState;
             const treePosition = localTreePosition(treeLng, treeLat, treeElevation);
             const rotation = stableUnit(key, 3) * Math.PI * 2;
-            const variantIndex = (conifer ? 2 : 0) + Math.floor(stableUnit(key, 101) * 2);
+            const crownWidth = crownDiameter * crownAspect;
+            const crownDepth = crownDiameter / crownAspect;
+            const shadowRadius = Math.max(0.75, Math.min(5.5, crownDiameter * 0.42));
             if (activeTreeBackend === "three") {
               crownRotation.setFromAxisAngle(yAxis, rotation);
               position.copy(treePosition);
-              scale.set(crownDiameter, height, crownDiameter);
+              scale.set(crownWidth, height, crownDepth);
               matrix.compose(position, crownRotation, scale);
-              treeMeshes[variantIndex].setMatrixAt(variantCounts[variantIndex], matrix);
+              const treeMesh = treeMeshes[variantIndex];
+              treeMesh.setMatrixAt(variantCounts[variantIndex], matrix);
+              instanceTint.setRGB(colorGain, colorGain, colorGain);
+              treeMesh.setColorAt(variantCounts[variantIndex], instanceTint);
+              shadowPosition.copy(treePosition);
+              shadowPosition.x -= shadowRadius * 0.28;
+              shadowPosition.y += treeShadowLiftMeters;
+              shadowPosition.z += shadowRadius * 0.34;
+              shadowScale.set(shadowRadius, 1, shadowRadius * 0.76);
+              shadowMatrix.compose(shadowPosition, shadowRotation, shadowScale);
+              treeShadowMesh.setMatrixAt(count, shadowMatrix);
             } else {
               rawInstanceValues[variantIndex].push(
                 treePosition.x,
                 treePosition.y,
                 treePosition.z,
-                crownDiameter,
+                crownWidth,
                 height,
+                crownDepth,
                 Math.cos(rotation),
-                Math.sin(rotation)
+                Math.sin(rotation),
+                colorGain
+              );
+              rawShadowInstanceValues.push(
+                treePosition.x,
+                treePosition.y,
+                treePosition.z,
+                shadowRadius
               );
             }
             variantCounts[variantIndex] += 1;
@@ -1530,7 +2572,10 @@ export function renderTileflowPreviewHtml(
               const treeMesh = treeMeshes[variantIndex];
               treeMesh.count = variantCounts[variantIndex];
               treeMesh.instanceMatrix.needsUpdate = true;
+              if (treeMesh.instanceColor) treeMesh.instanceColor.needsUpdate = true;
             }
+            treeShadowMesh.count = count;
+            treeShadowMesh.instanceMatrix.needsUpdate = true;
           } else {
             for (let variantIndex = 0; variantIndex < rawTreeResources.length; variantIndex += 1) {
               const resource = rawTreeResources[variantIndex];
@@ -1542,6 +2587,13 @@ export function renderTileflowPreviewHtml(
                 rawGl.DYNAMIC_DRAW
               );
             }
+            rawShadowResource.count = count;
+            rawGl.bindBuffer(rawGl.ARRAY_BUFFER, rawShadowResource.instanceBuffer);
+            rawGl.bufferData(
+              rawGl.ARRAY_BUFFER,
+              new Float32Array(rawShadowInstanceValues),
+              rawGl.DYNAMIC_DRAW
+            );
             rawGl.bindBuffer(rawGl.ARRAY_BUFFER, null);
           }
           treeMetrics.buildMilliseconds = performance.now() - buildStartedAt;
@@ -1658,6 +2710,10 @@ export function renderTileflowPreviewHtml(
               rawGl = gl;
               rawProgram = createRawTreeProgram(gl);
               rawMatrixUniform = gl.getUniformLocation(rawProgram, "u_matrix");
+              rawShadowProgram = createRawTreeShadowProgram(gl);
+              rawShadowMatrixUniform = gl.getUniformLocation(rawShadowProgram, "u_matrix");
+              rawShadowOpacityUniform = gl.getUniformLocation(rawShadowProgram, "u_opacity");
+              rawShadowResource = createRawTreeShadowResource(gl);
               rawTreeResources = geometries.map((geometry) =>
                 createRawTreeResource(gl, geometry)
               );
@@ -1669,13 +2725,13 @@ export function renderTileflowPreviewHtml(
               scene = new THREE.Scene();
               scene.rotateX(Math.PI / 2);
               scene.scale.multiply(new THREE.Vector3(1, 1, -1));
-              scene.add(new THREE.HemisphereLight(0xf2fff0, 0x7c806d, 2.5));
-              const sunlight = new THREE.DirectionalLight(0xfff7df, 1.15);
+              scene.add(new THREE.HemisphereLight(0xf4fff1, 0x808878, 1.35));
+              const sunlight = new THREE.DirectionalLight(0xfff3d8, 0.88);
               sunlight.position.set(-2, -3, 6);
               scene.add(sunlight);
               treeGroup = new THREE.Group();
               treeMaterial = new THREE.MeshLambertMaterial({
-                flatShading: true,
+                flatShading: false,
                 vertexColors: true
               });
               treeMeshes = geometries.map((geometry) => {
@@ -1688,8 +2744,42 @@ export function renderTileflowPreviewHtml(
                 treeMesh.frustumCulled = false;
                 return treeMesh;
               });
+              const shadowGeometry = new THREE.PlaneGeometry(2, 2);
+              shadowGeometry.rotateX(-Math.PI / 2);
+              treeShadowMaterial = new THREE.ShaderMaterial({
+                depthTest: true,
+                depthWrite: false,
+                fragmentShader:
+                  "varying vec2 v_shadow_coordinate;\\n" +
+                  "uniform float u_opacity;\\n" +
+                  "void main() {\\n" +
+                  "  float radiusSquared = dot(v_shadow_coordinate, v_shadow_coordinate);\\n" +
+                  "  if (radiusSquared >= 1.0) discard;\\n" +
+                  "  float coverage = 1.0 - smoothstep(0.90, 1.0, radiusSquared);\\n" +
+                  "  gl_FragColor = vec4(0.18, 0.21, 0.17, u_opacity * coverage);\\n" +
+                  "}\\n",
+                side: THREE.DoubleSide,
+                toneMapped: false,
+                transparent: true,
+                uniforms: {u_opacity: {value: treeShadowOpacity}},
+                vertexShader:
+                  "varying vec2 v_shadow_coordinate;\\n" +
+                  "void main() {\\n" +
+                  "  v_shadow_coordinate = uv * 2.0 - 1.0;\\n" +
+                  "  vec4 instancePosition = instanceMatrix * vec4(position, 1.0);\\n" +
+                  "  gl_Position = projectionMatrix * modelViewMatrix * instancePosition;\\n" +
+                  "}\\n"
+              });
+              treeShadowMesh = new THREE.InstancedMesh(
+                shadowGeometry,
+                treeShadowMaterial,
+                maximumTrees
+              );
+              treeShadowMesh.count = 0;
+              treeShadowMesh.frustumCulled = false;
+              treeShadowMesh.renderOrder = 1;
               treeGroup.visible = false;
-              treeGroup.add(...treeMeshes);
+              treeGroup.add(...treeMeshes, treeShadowMesh);
               scene.add(treeGroup);
               renderer = new THREE.WebGLRenderer({
                 canvas: map.getCanvas(),
@@ -1755,6 +2845,38 @@ export function renderTileflowPreviewHtml(
                 renderedTriangles += (resource.indexCount / 3) * resource.count;
               }
               rawGl.bindVertexArray(null);
+              if (rawShadowResource.count > 0) {
+                rawGl.useProgram(rawShadowProgram);
+                rawGl.uniformMatrix4fv(
+                  rawShadowMatrixUniform,
+                  false,
+                  combinedMatrix.elements
+                );
+                rawGl.uniform1f(rawShadowOpacityUniform, treeShadowOpacity);
+                rawGl.depthMask(false);
+                rawGl.disable(rawGl.CULL_FACE);
+                rawGl.enable(rawGl.BLEND);
+                rawGl.blendEquation(rawGl.FUNC_ADD);
+                rawGl.blendFuncSeparate(
+                  rawGl.SRC_ALPHA,
+                  rawGl.ONE_MINUS_SRC_ALPHA,
+                  rawGl.ONE,
+                  rawGl.ONE_MINUS_SRC_ALPHA
+                );
+                rawGl.bindVertexArray(rawShadowResource.vertexArray);
+                rawGl.drawArraysInstanced(
+                  rawGl.TRIANGLE_FAN,
+                  0,
+                  4,
+                  rawShadowResource.count
+                );
+                rawGl.bindVertexArray(null);
+                rawGl.depthMask(true);
+                rawGl.disable(rawGl.BLEND);
+                rawGl.enable(rawGl.CULL_FACE);
+                renderCalls += 1;
+                renderedTriangles += rawShadowResource.count * 2;
+              }
               treeMetrics.renderCalls = renderCalls;
               treeMetrics.renderedTriangles = renderedTriangles;
             }
@@ -1782,6 +2904,10 @@ export function renderTileflowPreviewHtml(
             }
             for (const treeMesh of treeMeshes) treeMesh.geometry.dispose();
             treeMeshes = [];
+            treeShadowMesh?.geometry.dispose();
+            treeShadowMesh = undefined;
+            treeShadowMaterial?.dispose();
+            treeShadowMaterial = undefined;
             treeMaterial?.dispose();
             renderer?.dispose();
             disposeRawTreeResources();
@@ -1832,13 +2958,14 @@ export function renderTileflowPreviewHtml(
         return zoom >= minzoom && zoom < maxzoom;
       }
 
-      function createLandmarkLayer(map, configLayer) {
+      function createLandmarkLayer(map, configLayer, fallbackLayers = []) {
         const manifestUrl = configLayer.metadata?.["tileflow:landmark-manifest-url"];
         const {minzoom: landmarkMinimumZoom, maxzoom: landmarkMaximumZoom} =
           styleLayerZoomRange(configLayer);
         const abortController = new AbortController();
         const loaded = new Map();
         const loading = new Map();
+        const archiveReaders = new Map();
         const activeLandmarkIds = new Set();
         let cacheClock = 0;
         let camera;
@@ -1848,17 +2975,67 @@ export function renderTileflowPreviewHtml(
         let sceneOriginMercator;
         let sceneElevation = 0;
         let manifest;
+        let fallbackSignature;
+        let queuedRefresh;
         const mapMatrix = new THREE.Matrix4();
         const sceneMatrix = new THREE.Matrix4();
 
-        function overlapsViewport(bounds) {
+        function overlapsViewport(bounds, paddingRatio = 0) {
           const viewport = map.getBounds();
+          const longitudePadding = Math.abs(viewport.getEast() - viewport.getWest()) * paddingRatio;
+          const latitudePadding = Math.abs(viewport.getNorth() - viewport.getSouth()) * paddingRatio;
           return !(
-            bounds[2] < viewport.getWest() ||
-            bounds[0] > viewport.getEast() ||
-            bounds[3] < viewport.getSouth() ||
-            bounds[1] > viewport.getNorth()
+            bounds[2] < viewport.getWest() - longitudePadding ||
+            bounds[0] > viewport.getEast() + longitudePadding ||
+            bounds[3] < viewport.getSouth() - latitudePadding ||
+            bounds[1] > viewport.getNorth() + latitudePadding
           );
+        }
+
+        function updateLandmarkFallbackFilters() {
+          const readyIds = [...activeLandmarkIds]
+            .filter((id) => loaded.has(id))
+            .sort();
+          const signature = JSON.stringify(readyIds);
+          if (signature === fallbackSignature) return;
+          fallbackSignature = signature;
+          for (const fallback of fallbackLayers) {
+            if (!map.getLayer(fallback.id)) continue;
+            const spatialExclusions = (fallback.spatialFallbacks ?? [])
+              .filter((entry) => readyIds.includes(entry.id))
+              .map((entry) => ["!", ["within", {
+                type: "Polygon",
+                coordinates: [[
+                  [entry.bounds[0], entry.bounds[1]],
+                  [entry.bounds[2], entry.bounds[1]],
+                  [entry.bounds[2], entry.bounds[3]],
+                  [entry.bounds[0], entry.bounds[3]],
+                  [entry.bounds[0], entry.bounds[1]]
+                ]]
+              }]]);
+            map.setFilter(
+              fallback.id,
+              readyIds.length === 0 && spatialExclusions.length === 0
+                ? (fallback.filter ?? null)
+                : [
+                    "all",
+                    ...(fallback.filter ? [fallback.filter] : []),
+                    [
+                      "!",
+                      ["in", ["get", "landmark_id"], ["literal", readyIds]]
+                    ],
+                    ...spatialExclusions
+                  ]
+            );
+          }
+        }
+
+        function queueRefresh() {
+          if (queuedRefresh !== undefined) return;
+          queuedRefresh = setTimeout(() => {
+            queuedRefresh = undefined;
+            refresh();
+          }, 100);
         }
 
         function ensureSceneOrigin(elevation) {
@@ -1948,12 +3125,24 @@ export function renderTileflowPreviewHtml(
           model.userData.tileflowDetachedMaterials = [...detachedMaterials];
         }
 
+        function normalizeLandmarkAxes(sourceModel, axisConvention) {
+          if (axisConvention === "EUN_Y_UP") return sourceModel;
+          if (axisConvention === "ENU_Z_UP") {
+            sourceModel.rotateX(-Math.PI / 2);
+          }
+          const normalizedModel = new THREE.Group();
+          normalizedModel.scale.z = -1;
+          normalizedModel.add(sourceModel);
+          return normalizedModel;
+        }
+
         function unloadLandmark(id) {
           const entry = loaded.get(id);
           if (!entry) return;
           disposeModel(entry.model);
           loaded.delete(id);
           landmarkState.loaded = [...loaded.keys()];
+          fallbackSignature = undefined;
         }
 
         function enforceCacheLimit() {
@@ -1978,12 +3167,48 @@ export function renderTileflowPreviewHtml(
             if (candidate.minzoom > zoom) break;
             selected = candidate;
           }
-          return selected.model;
+          return selected;
         }
 
-        function loadLandmark(landmark, modelUrl) {
+        async function sha256Hex(bytes) {
+          const digest = await crypto.subtle.digest("SHA-256", bytes);
+          return [...new Uint8Array(digest)]
+            .map((value) => value.toString(16).padStart(2, "0"))
+            .join("");
+        }
+
+        function archiveReader(archive) {
+          let reader = archiveReaders.get(archive.url);
+          if (!reader) {
+            reader = new PMTiles(
+              new FetchSource(archive.url, new Headers(), "include")
+            );
+            archiveReaders.set(archive.url, reader);
+          }
+          return reader;
+        }
+
+        async function loadLandmarkBytes(modelDefinition) {
+          const tile = await archiveReader(modelDefinition.archive).getZxy(
+            modelDefinition.z,
+            modelDefinition.x,
+            modelDefinition.y,
+            abortController.signal
+          );
+          if (!tile) throw new Error("landmark entry is missing from PMTiles");
+          if (tile.data.byteLength !== modelDefinition.bytes) {
+            throw new Error("landmark entry has an unexpected byte length");
+          }
+          if ((await sha256Hex(tile.data)) !== modelDefinition.sha256) {
+            throw new Error("landmark entry has an unexpected SHA-256");
+          }
+          return tile.data;
+        }
+
+        function loadLandmark(landmark, requestedModel) {
           const cached = loaded.get(landmark.id);
-          if (cached?.modelUrl === modelUrl) {
+          const nextModel = cached ? requestedModel : landmark.models[0];
+          if (cached?.modelKey === nextModel.key) {
             cached.lastUsed = ++cacheClock;
             cached.model.visible = activeLandmarkIds.has(landmark.id);
             return;
@@ -1993,16 +3218,30 @@ export function renderTileflowPreviewHtml(
             cached.lastUsed = ++cacheClock;
             cached.model.visible = activeLandmarkIds.has(landmark.id);
           }
-          if (loading.get(landmark.id) === modelUrl) return;
-          loading.set(landmark.id, modelUrl);
+          if (loading.has(landmark.id)) return;
+          loading.set(landmark.id, nextModel.key);
           landmarkState.loading = [...loading.keys()];
           const loader = new GLTFLoader();
           loader.setMeshoptDecoder(MeshoptDecoder);
+          loader.setDRACOLoader(landmarkDracoLoader);
           loader.setWithCredentials(true);
-          loader.load(
-            modelUrl,
+          const fail = (error) => {
+            if (loading.get(landmark.id) !== nextModel.key) return;
+            loading.delete(landmark.id);
+            landmarkState.loading = [...loading.keys()];
+            landmarkState.errors = [
+              ...landmarkState.errors.filter((item) => item.id !== landmark.id),
+              {id: landmark.id, message: String(error)}
+            ];
+            console.warn("Tileflow landmark failed to load", landmark.id, error);
+          };
+          void loadLandmarkBytes(nextModel).then((bytes) => {
+            if (loading.get(landmark.id) !== nextModel.key) return;
+            loader.parse(
+              bytes,
+              new URL(".", nextModel.archive.url).toString(),
             (gltf) => {
-              if (loading.get(landmark.id) !== modelUrl) {
+              if (loading.get(landmark.id) !== nextModel.key) {
                 disposeModel(gltf.scene);
                 return;
               }
@@ -2014,7 +3253,10 @@ export function renderTileflowPreviewHtml(
               }
               const elevation = map.queryTerrainElevation(landmark.center) ?? 0;
               ensureSceneOrigin(elevation);
-              const model = gltf.scene;
+              const model = normalizeLandmarkAxes(
+                gltf.scene,
+                nextModel.axisConvention
+              );
               model.name = "tileflow-landmark-" + landmark.id;
               harmonizeLandmarkModel(model);
               model.position.copy(
@@ -2031,7 +3273,7 @@ export function renderTileflowPreviewHtml(
               loaded.set(landmark.id, {
                 lastUsed: ++cacheClock,
                 model,
-                modelUrl
+                modelKey: nextModel.key
               });
               landmarkState.errors = landmarkState.errors.filter(
                 (item) => item.id !== landmark.id
@@ -2039,20 +3281,12 @@ export function renderTileflowPreviewHtml(
               landmarkState.loaded = [...loaded.keys()];
               group.add(model);
               enforceCacheLimit();
-              map.triggerRepaint();
+              fallbackSignature = undefined;
+              refresh();
             },
-            undefined,
-            (error) => {
-              if (loading.get(landmark.id) !== modelUrl) return;
-              loading.delete(landmark.id);
-              landmarkState.loading = [...loading.keys()];
-              landmarkState.errors = [
-                ...landmarkState.errors.filter((item) => item.id !== landmark.id),
-                {id: landmark.id, message: String(error)}
-              ];
-              console.warn("Tileflow landmark failed to load", landmark.id, error);
-            }
-          );
+              fail
+            );
+          }).catch(fail);
         }
 
         function refresh() {
@@ -2064,6 +3298,7 @@ export function renderTileflowPreviewHtml(
             activeLandmarkIds.clear();
             landmarkState.active = [];
             for (const entry of loaded.values()) entry.model.visible = false;
+            updateLandmarkFallbackFilters();
             return;
           }
           const zoom = map.getZoom();
@@ -2083,99 +3318,40 @@ export function renderTileflowPreviewHtml(
           for (const landmark of visible) {
             loadLandmark(landmark, landmarkModelAtZoom(landmark, zoom));
           }
+          const nearbyCacheSlots = Math.max(
+            0,
+            manifest.maximumCachedModels - visible.length
+          );
+          const nearby = manifest.landmarks
+            .filter(
+              (landmark) =>
+                !activeLandmarkIds.has(landmark.id) &&
+                overlapsViewport(landmark.bounds, 0.35)
+            )
+            .sort(
+              (left, right) =>
+                right.priority - left.priority || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
+            )
+            .slice(0, nearbyCacheSlots);
+          for (const landmark of nearby) {
+            loadLandmark(landmark, landmark.models[0]);
+          }
           enforceCacheLimit();
+          updateLandmarkFallbackFilters();
           map.triggerRepaint();
         }
 
         function normalizeManifest(candidate) {
-          if (
-            candidate?.schemaVersion !== 1 ||
-            typeof candidate.id !== "string" ||
-            !candidate.id ||
-            !Array.isArray(candidate.landmarks) ||
-            !Number.isFinite(candidate.minzoom) ||
-            candidate.minzoom < 0 ||
-            candidate.minzoom > 24 ||
-            !Number.isInteger(candidate.maximumVisibleModels) ||
-            candidate.maximumVisibleModels < 1 ||
-            candidate.maximumVisibleModels > 64
-          ) throw new Error("invalid landmark manifest");
-          const maximumCachedModels = candidate.maximumCachedModels === undefined
-            ? Math.min(128, Math.max(candidate.maximumVisibleModels, candidate.maximumVisibleModels * 2))
-            : candidate.maximumCachedModels;
-          if (
-            !Number.isInteger(maximumCachedModels) ||
-            maximumCachedModels < candidate.maximumVisibleModels ||
-            maximumCachedModels > 128
-          ) throw new Error("invalid landmark cache limit");
-          const ids = new Set();
-          const landmarks = candidate.landmarks.map((landmark) => {
-            if (
-              typeof landmark?.id !== "string" ||
-              !landmark.id ||
-              ids.has(landmark.id) ||
-              !Array.isArray(landmark.center) ||
-              landmark.center.length !== 2 ||
-              !landmark.center.every(Number.isFinite) ||
-              !Array.isArray(landmark.bounds) ||
-              landmark.bounds.length !== 4 ||
-              !landmark.bounds.every(Number.isFinite) ||
-              (landmark.priority !== undefined && !Number.isFinite(landmark.priority))
-            ) throw new Error("invalid landmark entry");
-            ids.add(landmark.id);
-            const models = [];
-            if (typeof landmark.model === "string" && landmark.model) {
-              models.push({
-                minzoom: candidate.minzoom,
-                model: new URL(landmark.model, manifestUrl).toString()
-              });
-            }
-            if (landmark.lods !== undefined && !Array.isArray(landmark.lods)) {
-              throw new Error("invalid landmark LODs");
-            }
-            for (const lod of landmark.lods ?? []) {
-              if (
-                !Number.isFinite(lod?.minzoom) ||
-                lod.minzoom < candidate.minzoom ||
-                lod.minzoom > 24 ||
-                typeof lod.model !== "string" ||
-                !lod.model
-              ) throw new Error("invalid landmark LOD");
-              models.push({
-                minzoom: lod.minzoom,
-                model: new URL(lod.model, manifestUrl).toString()
-              });
-            }
-            models.sort(
-              (left, right) =>
-                left.minzoom - right.minzoom ||
-                (left.model < right.model ? -1 : left.model > right.model ? 1 : 0)
-            );
-            if (new Set(models.map((model) => model.minzoom)).size !== models.length) {
-              throw new Error("duplicate landmark LOD zoom");
-            }
-            if (models.length === 0 || models[0].minzoom > candidate.minzoom) {
-              throw new Error("landmark requires a base model");
-            }
-            return {
-              bounds: landmark.bounds,
-              center: landmark.center,
-              id: landmark.id,
-              models,
-              priority: landmark.priority ?? 0
-            };
-          });
-          return {...candidate, landmarks, maximumCachedModels};
+          return normalizeTileflowLandmarkManifest(candidate, manifestUrl);
         }
 
         async function loadManifest() {
           try {
-            const response = await fetch(manifestUrl, {
-              credentials: "include",
-              signal: abortController.signal
-            });
-            if (!response.ok) throw new Error("HTTP " + response.status);
-            const candidate = await response.json();
+            const candidate = await loadLandmarkManifestCandidate(
+              manifestUrl,
+              abortController.signal
+            );
+            if (abortController.signal.aborted) return;
             manifest = normalizeManifest(candidate);
             landmarkState.manifestId = candidate.id;
             landmarkState.cacheLimit = manifest.maximumCachedModels;
@@ -2214,6 +3390,7 @@ export function renderTileflowPreviewHtml(
             });
             renderer.autoClear = false;
             renderer.outputColorSpace = THREE.SRGBColorSpace;
+            map.on("move", queueRefresh);
             map.on("moveend", refresh);
             map.on("tileflow:3d-toggle", refresh);
             void loadManifest();
@@ -2239,10 +3416,17 @@ export function renderTileflowPreviewHtml(
           },
           onRemove() {
             abortController.abort();
+            if (queuedRefresh !== undefined) clearTimeout(queuedRefresh);
+            map.off("move", queueRefresh);
             map.off("moveend", refresh);
             map.off("tileflow:3d-toggle", refresh);
             for (const entry of loaded.values()) disposeModel(entry.model);
             loaded.clear();
+            for (const fallback of fallbackLayers) {
+              if (map.getLayer(fallback.id)) {
+                map.setFilter(fallback.id, fallback.filter ?? null);
+              }
+            }
             renderer?.dispose();
           }
         };
@@ -2253,6 +3437,14 @@ export function renderTileflowPreviewHtml(
           (layer) => layer.metadata?.["tileflow:landmark-manifest-url"]
         );
         if (!configLayer || map.getLayer("tileflow-landmarks-3d")) return;
+        const fallbackLayers = styleLayers
+          .filter((layer) => layer.metadata?.["tileflow:landmark-fallback"] === true)
+          .map((layer) => ({
+            filter: layer.filter,
+            id: layer.id,
+            spatialFallbacks:
+              layer.metadata?.["tileflow:landmark-spatial-fallbacks"] ?? []
+          }));
         // Landmark custom layers use Mercator world coordinates. Switch here
         // instead of relying on the optional detailed-tree renderer to do it.
         if (map.getProjection().type !== "mercator") {
@@ -2269,7 +3461,7 @@ export function renderTileflowPreviewHtml(
           : map.getLayer("streets-vegetation-trees")
             ? "streets-vegetation-trees"
             : firstForegroundLabel;
-        map.addLayer(createLandmarkLayer(map, configLayer), treeLayer);
+        map.addLayer(createLandmarkLayer(map, configLayer, fallbackLayers), treeLayer);
       }
 
       class ThreeDimensionalControl {
@@ -2296,7 +3488,12 @@ export function renderTileflowPreviewHtml(
         }
 
         handleClick() {
-          this.enabled = !this.enabled;
+          this.setEnabled(!this.enabled);
+        }
+
+        setEnabled(enabled) {
+          if (typeof enabled !== "boolean" || enabled === this.enabled) return;
+          this.enabled = enabled;
           threeDimensionalEnabled = this.enabled;
           landmarkState.enabled = this.enabled;
           this.update();
@@ -2350,7 +3547,12 @@ export function renderTileflowPreviewHtml(
         }
 
         handleClick() {
-          this.enabled = !this.enabled;
+          this.setEnabled(!this.enabled);
+        }
+
+        setEnabled(enabled) {
+          if (typeof enabled !== "boolean" || enabled === this.enabled) return;
+          this.enabled = enabled;
           treesEnabled = this.enabled;
           this.update();
           writeToggleStateToUrl();
@@ -2381,12 +3583,114 @@ export function renderTileflowPreviewHtml(
         }
       }
 
+      const previewLayerGroupIds = [
+        "labels", "pois", "roads", "transit", "buildings", "landuse", "water"
+      ];
+      let visibleLayerGroups = new Set(previewLayerGroupIds);
+      const defaultLayerVisibility = new Map();
+      const defaultLayerTextField = new Map();
+
+      function previewLayoutValuesEqual(left, right) {
+        return JSON.stringify(left) === JSON.stringify(right);
+      }
+
+      function previewLayerGroups(layer) {
+        const id = layer.id.toLowerCase();
+        const sourceLayer = layer["source-layer"] || "";
+        const groups = [];
+        const isLanduseLayer = [
+          "landuse", "landcover", "park", "business_corridor"
+        ].includes(sourceLayer);
+        if (
+          !isLanduseLayer &&
+          /poi|parking|business|amenity/u.test(id + " " + sourceLayer)
+        ) groups.push("pois");
+        if (/transit|rail|ferry|aeroway|aerodrome/u.test(id + " " + sourceLayer)) {
+          groups.push("transit");
+        } else if (
+          [
+            "transportation",
+            "transportation_name",
+            "circular_feature",
+            "sidewalk",
+            "street_furniture"
+          ].includes(sourceLayer)
+        ) {
+          groups.push("roads");
+        }
+        if (sourceLayer === "building" || id.includes("building")) {
+          groups.push("buildings");
+        }
+        if (isLanduseLayer) {
+          groups.push("landuse");
+        }
+        if (["water", "waterway", "water_name", "bathymetry"].includes(sourceLayer)) {
+          groups.push("water");
+        }
+        return groups;
+      }
+
+      function applyVisibleLayerGroups(map) {
+        if (document.documentElement) {
+          document.documentElement.dataset.visibleLayerGroups = [
+            ...visibleLayerGroups,
+          ].join(",");
+        }
+        for (const layer of map.getStyle()?.layers || []) {
+          if (!defaultLayerVisibility.has(layer.id)) {
+            defaultLayerVisibility.set(
+              layer.id,
+              map.getLayoutProperty(layer.id, "visibility") || "visible"
+            );
+          }
+          if (layer.type === "symbol" && layer.layout?.["text-field"] !== undefined) {
+            if (!defaultLayerTextField.has(layer.id)) {
+              defaultLayerTextField.set(
+                layer.id,
+                map.getLayoutProperty(layer.id, "text-field")
+              );
+            }
+            const textField = visibleLayerGroups.has("labels")
+              ? defaultLayerTextField.get(layer.id)
+              : "";
+            if (
+              !previewLayoutValuesEqual(
+                map.getLayoutProperty(layer.id, "text-field"),
+                textField
+              )
+            ) {
+              map.setLayoutProperty(layer.id, "text-field", textField);
+            }
+          }
+          const groups = previewLayerGroups(layer);
+          const threeDimensionalToggle = layer.metadata?.["tileflow:3d-toggle"];
+          const authoredVisibility = defaultLayerVisibility.get(layer.id);
+          const toggleVisibility =
+            threeDimensionalToggle === "building" || threeDimensionalToggle === "landmark"
+              ? (threeDimensionalEnabled ? "visible" : "none")
+              : authoredVisibility;
+          const visibility = groups.some((group) => !visibleLayerGroups.has(group))
+            ? "none"
+            : toggleVisibility;
+          if (map.getLayoutProperty(layer.id, "visibility") !== visibility) {
+            map.setLayoutProperty(layer.id, "visibility", visibility);
+          }
+        }
+      }
+
+      function setVisibleLayerGroups(map, groups) {
+        visibleLayerGroups = new Set(groups);
+        applyVisibleLayerGroups(map);
+        map.fire("tileflow:visible-layer-groups", {groups: [...visibleLayerGroups]});
+      }
+
       if (styleUrl) {
         // Dense vector tiles finish in bursts with multiple workers, causing several
         // bucket uploads in one frame. One worker keeps navigation smooth; benchmarks
         // can still compare up to three workers through the explicit URL override.
         const mapWorkerCount = mapWorkerCountOverride ?? 1;
         maplibregl.setWorkerCount?.(mapWorkerCount);
+        await loadTileflowStyleFonts(styleUrl, {fontFaces: previewFontFaces});
         const map = new maplibregl.Map({
           collectResourceTiming: mapBenchmarkEnabled,
           container: "map",
@@ -2402,11 +3706,16 @@ export function renderTileflowPreviewHtml(
           },
           ...resolveInitialMapOptions(previewMapOptions)
         });
+        globalThis.__tileflowPreviewMap = map;
         installMapBenchmark(map);
         map.addControl(new maplibregl.NavigationControl(), "top-right");
+        let threeDimensionalControl;
+        let treeControl;
         if (isStreetsPreview) {
-          map.addControl(new ThreeDimensionalControl(), "top-right");
-          map.addControl(new TreeControl(), "top-right");
+          threeDimensionalControl = new ThreeDimensionalControl();
+          treeControl = new TreeControl();
+          map.addControl(threeDimensionalControl, "top-right");
+          map.addControl(treeControl, "top-right");
         }
         let ensuringThreeDimensionalLayers;
         const treeRuntimeMinimumZoom = 16;
@@ -2416,6 +3725,18 @@ export function renderTileflowPreviewHtml(
           const landmarkConfigLayer = currentStyleLayers.find(
             (layer) => layer.metadata?.["tileflow:landmark-manifest-url"]
           );
+          const buildingWireframeConfigLayer = currentStyleLayers.find(
+            (layer) => layer.metadata?.["tileflow:building-wireframe"] === true
+          );
+          const landmarkManifestUrl =
+            landmarkConfigLayer?.metadata?.["tileflow:landmark-manifest-url"];
+          const landmarkPreloadZoom = landmarkConfigLayer
+            ? Math.max(0, styleLayerZoomRange(landmarkConfigLayer).minzoom - 1)
+            : Infinity;
+          const shouldPreloadLandmarks =
+            landmarkManifestUrl &&
+            threeDimensionalEnabled &&
+            map.getZoom() >= landmarkPreloadZoom;
           const needsTrees =
             treesEnabled &&
             treeRendererMode !== "circle" &&
@@ -2426,12 +3747,39 @@ export function renderTileflowPreviewHtml(
             threeDimensionalEnabled &&
             styleLayerIsVisibleAtZoom(landmarkConfigLayer, map.getZoom()) &&
             !map.getLayer("tileflow-landmarks-3d");
-          if (!needsTrees && !needsLandmarks) return;
-          ensuringThreeDimensionalLayers = (needsLandmarks
-            ? loadLandmarkRuntime()
-            : loadThreeCoreRuntime())
+          const needsBuildingWireframe =
+            buildingWireframeConfigLayer &&
+            threeDimensionalEnabled &&
+            styleLayerIsVisibleAtZoom(buildingWireframeConfigLayer, map.getZoom()) &&
+            !map.getLayer("tileflow-buildings-wireframe-3d");
+          if (
+            !needsTrees &&
+            !needsLandmarks &&
+            !needsBuildingWireframe &&
+            !shouldPreloadLandmarks
+          ) return;
+          const runtimePrerequisites = [
+            shouldPreloadLandmarks
+              ? loadLandmarkPrerequisites(landmarkManifestUrl)
+              : loadThreeCoreRuntime(),
+            ...(needsBuildingWireframe ? [loadBuildingWireframeRuntime()] : [])
+          ];
+          ensuringThreeDimensionalLayers = Promise.all(runtimePrerequisites)
             .then(async () => {
               const styleLayers = map.getStyle()?.layers || [];
+              const buildingWireframeConfigLayer = styleLayers.find(
+                (layer) => layer.metadata?.["tileflow:building-wireframe"] === true
+              );
+              if (
+                buildingWireframeConfigLayer &&
+                threeDimensionalEnabled &&
+                styleLayerIsVisibleAtZoom(buildingWireframeConfigLayer, map.getZoom())
+              ) {
+                // A tree-only load may already be in flight when buildings are
+                // enabled. Reassert the line runtime before mounting the layer.
+                await loadBuildingWireframeRuntime();
+                addBuildingWireframeLayerIfConfigured(map, styleLayers);
+              }
               if (
                 treesEnabled &&
                 treeRendererMode !== "circle" &&
@@ -2449,7 +3797,9 @@ export function renderTileflowPreviewHtml(
                 // The tree-only path may already be in flight when landmarks
                 // are enabled. Reassert the richer runtime here so a shared
                 // core promise can never expose an undefined GLTF loader.
-                await loadLandmarkRuntime();
+                await loadLandmarkPrerequisites(
+                  landmarkConfigLayer.metadata["tileflow:landmark-manifest-url"]
+                );
                 addLandmarkLayerIfConfigured(map, styleLayers);
               }
             })
@@ -2460,6 +3810,7 @@ export function renderTileflowPreviewHtml(
           return ensuringThreeDimensionalLayers;
         };
         map.on("styledata", ensureThreeDimensionalLayers);
+        map.on("styledata", () => applyVisibleLayerGroups(map));
         map.on("zoomend", ensureThreeDimensionalLayers);
         map.on("tileflow:3d-toggle", ensureThreeDimensionalLayers);
         map.on("tileflow:trees-toggle", ensureThreeDimensionalLayers);
@@ -2470,6 +3821,57 @@ export function renderTileflowPreviewHtml(
         });
         map.on("move", () => updateGlobeBackdrop(map));
         map.on("moveend", () => writeCameraToUrl(map));
+        addEventListener("message", (event) => {
+          if (
+            window.parent === window ||
+            event.source !== window.parent ||
+            event.origin !== location.origin ||
+            event.data?.type !== "tileflow:set-map-state" ||
+            event.data?.schemaVersion !== 1 ||
+            !threeDimensionalControl ||
+            !treeControl
+          ) return;
+          const state = event.data.state;
+          const nextVisibleLayerGroups = state?.visibleLayerGroups;
+          const center = state?.center;
+          const numericValues = {
+            bearing: state?.bearing,
+            lat: center?.[1],
+            lng: center?.[0],
+            pitch: state?.pitch,
+            zoom: state?.zoom
+          };
+          if (
+            !Array.isArray(center) ||
+            center.length !== 2 ||
+            Object.entries(numericValues).some(
+              ([name, value]) =>
+                !Number.isFinite(value) ||
+                value < cameraRanges[name][0] ||
+                value > cameraRanges[name][1]
+            ) ||
+            typeof state?.buildings3d !== "boolean" ||
+            typeof state?.trees3d !== "boolean" ||
+            (nextVisibleLayerGroups !== undefined &&
+              (!Array.isArray(nextVisibleLayerGroups) ||
+                new Set(nextVisibleLayerGroups).size !== nextVisibleLayerGroups.length ||
+                nextVisibleLayerGroups.some(
+                  (group) => !previewLayerGroupIds.includes(group)
+                )))
+          ) return;
+          threeDimensionalControl.setEnabled(state.buildings3d);
+          treeControl.setEnabled(state.trees3d);
+          if (nextVisibleLayerGroups) {
+            setVisibleLayerGroups(map, nextVisibleLayerGroups);
+          }
+          map.jumpTo({
+            bearing: numericValues.bearing,
+            center,
+            pitch: numericValues.pitch,
+            zoom: numericValues.zoom
+          });
+          writeCameraToUrl(map);
+        });
       }
 
       function applyStatus(next) {
@@ -2535,4 +3937,11 @@ function previewMapOptions(preview: ResolvedTileflowPreview): Record<string, unk
     fitBoundsOptions: {padding: preview.camera.padding},
     pitch: preview.camera.pitch,
   };
+}
+
+function serializeInlineJson(value: unknown): string {
+  return JSON.stringify(value).replace(
+    /[<>&\u2028\u2029]/gu,
+    (character) => `\\u${character.codePointAt(0)!.toString(16).padStart(4, '0')}`,
+  );
 }

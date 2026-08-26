@@ -1,11 +1,11 @@
 import {VectorTile} from '@mapbox/vector-tile';
 import {PbfReader} from 'pbf';
+import {compareCodeUnits, type MapLibreStyle} from '@tileflow/core';
 import {
-  compareCodeUnits,
-  createStyleFromProject,
-  type MapLibreStyle,
-  type TileflowProjectConfig,
-} from '@tileflow/core';
+  createStyleFromCatalog,
+  type TileflowBuildCatalog,
+  type TileflowPreparedMapAssets,
+} from '@tileflow/core/build';
 import {assertValidTileflowStyle} from './style-validation';
 
 const mercatorLatitudeLimit = 85.0511287798066;
@@ -23,6 +23,8 @@ export type TileflowFeatureInspectionOptions = {
   height?: number;
   limit?: number;
   properties?: readonly string[];
+  /** Build-owned assets required to compile the selected map exactly. */
+  preparedAssets?: TileflowPreparedMapAssets;
   signal?: AbortSignal;
   sourceLayers: readonly string[];
   timeoutMs?: number;
@@ -77,7 +79,7 @@ type TileJson = {
 };
 
 export async function inspectTileflowFeatures(
-  project: TileflowProjectConfig,
+  project: TileflowBuildCatalog,
   mapName: string,
   input: TileflowFeatureInspectionOptions,
 ): Promise<TileflowFeatureInspection> {
@@ -89,7 +91,10 @@ export async function inspectTileflowFeatures(
     );
   }
 
-  const style = createStyleFromProject(project, mapName, {apiBaseUrl: options.apiBaseUrl});
+  const style = createStyleFromCatalog(project, mapName, {
+    apiBaseUrl: options.apiBaseUrl,
+    preparedAssets: options.preparedAssets,
+  });
   assertValidTileflowStyle(style, mapName);
   const source = resolveVectorSource(style, options.sourceLayers);
   const fetchImplementation = options.fetch ?? globalThis.fetch;

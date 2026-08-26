@@ -11,16 +11,28 @@ test('compiles and renders the bounded framework-neutral loading contract', asyn
       props: {
         captureId: 'proof-map',
         imageUrl: 'data:image/png;base64,iVBORw0KGgo=',
-        map: 'main',
         mode: 'image',
+        source: {kind: 'tileflow', map: 'main'},
       },
     });
 
     assert.match(result.body, /data-tileflow-capture-id="proof-map"/);
     assert.match(result.body, /data-tileflow-map="main"/);
     assert.match(result.body, /data-tileflow-state="loading"/);
-    assert.match(compiled.code, /captureState = 'idle'/);
-    assert.match(compiled.code, /captureState = 'error'/);
+    assert.match(compiled.code, /mapCaptureState = 'idle'/);
+    assert.match(compiled.code, /mapCaptureState = 'error'/);
+    assert.match(
+      compiled.code,
+      /hasInteractionErrors = interactionDiagnostics\.some\(\(\{ level \}\) => level === 'error'\)/,
+    );
+    assert.match(
+      compiled.code,
+      /effectiveInteractionCaptureState = hasInteractionErrors \? 'error' : interactionCaptureState/,
+    );
+    assert.match(
+      compiled.code,
+      /await nextAnimationFrame\(\);[\s\S]*await nextAnimationFrame\(\);/,
+    );
     assert.match(compiled.code, /registerTileflowWorldRequestBridge/);
     assert.match(compiled.code, /attachTileflowFairUseNotice/);
   } finally {

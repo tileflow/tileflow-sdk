@@ -9,7 +9,8 @@ export const tileflowIconPackageFileNames = [
 
 export type TileflowIconPackageFileName = (typeof tileflowIconPackageFileNames)[number];
 
-export const tileflowHostedIconIdPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+/** Canonical sprite ID shared by authoring, generated manifests, diffs, and runtime indexes. */
+export const tileflowIconIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
 export const tileflowIconPackageLimits = {
   decodeConcurrency: 4,
@@ -31,18 +32,18 @@ export const tileflowHostedAlphaCompatibility = {
     maxGeneratedBytesPerProject: 64 * 1024 * 1024,
     maxRetainedPerProject: 24,
   },
-  maxMapsPerDeploy: 1,
+  maxMapsPerDeploy: 20,
 } as const;
 
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 
 export const tileflowIconPackageContentHashSchema = sha256Schema;
 
-export const tileflowHostedIconIdSchema = z.string().regex(tileflowHostedIconIdPattern);
+export const tileflowIconIdSchema = z.string().max(64).regex(tileflowIconIdPattern);
 
 export const tileflowRenderedIconManifestEntrySchema = z
   .object({
-    name: z.string().min(1).max(256),
+    name: tileflowIconIdSchema,
     pixelSha256: z
       .object({
         oneX: sha256Schema,
@@ -110,10 +111,7 @@ export const tileflowIconPackageManifestSchema = z
       iconPackageFileSchema('sprite@2x.png', 'image/png'),
     ]),
     format: z.literal('tileflow-icon-package-v1'),
-    iconNames: z
-      .array(z.string().min(1).max(256))
-      .min(1)
-      .max(tileflowIconPackageLimits.maxIconCount),
+    iconNames: z.array(tileflowIconIdSchema).min(1).max(tileflowIconPackageLimits.maxIconCount),
     renderedIcons: z
       .array(tileflowRenderedIconManifestEntrySchema)
       .min(1)

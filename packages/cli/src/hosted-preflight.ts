@@ -3,6 +3,7 @@ import {
   type MapLibreStyle,
   tileflowHostedAlphaCompatibility,
 } from '@tileflow/core';
+import type {TileflowBuildCatalog} from '@tileflow/core/build';
 
 export type TileflowHostedCompatibilityIssue = {
   map?: string;
@@ -11,10 +12,11 @@ export type TileflowHostedCompatibilityIssue = {
 };
 
 export function inspectTileflowHostedCompatibility(
-  mapNames: readonly string[],
+  project: TileflowBuildCatalog,
   styles: Readonly<Record<string, MapLibreStyle>>,
 ): TileflowHostedCompatibilityIssue[] {
   const issues: TileflowHostedCompatibilityIssue[] = [];
+  const mapNames = Object.keys(project.maps).sort(compareCodeUnits);
 
   if (mapNames.length > tileflowHostedAlphaCompatibility.maxMapsPerDeploy) {
     issues.push({
@@ -24,7 +26,8 @@ export function inspectTileflowHostedCompatibility(
   }
 
   for (const mapName of [...mapNames].sort(compareCodeUnits)) {
-    const data = styles[mapName]?.metadata?.['tileflow:data'];
+    const style = styles[mapName];
+    const data = style?.metadata?.['tileflow:data'];
 
     if (
       !data ||

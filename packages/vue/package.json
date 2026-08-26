@@ -1,6 +1,7 @@
 {
   "name": "@tileflow/vue",
   "version": "0.0.0-development",
+  "license": "Apache-2.0",
   "description": "Vue component for rendering Tileflow maps with MapLibre.",
   "type": "module",
   "sideEffects": false,
@@ -23,7 +24,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "GENERATED_OUTPUT_LICENSE.md",
+    "TRADEMARKS.md"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean --external vue --external maplibre-gl",
@@ -43,11 +48,12 @@
     "access": "public"
   },
   "dependencies": {
-    "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0"
+    "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
+    "@tileflow/interactions": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0"
   },
   "peerDependencies": {
     "maplibre-gl": ">=5 <7",
-    "vue": ">=3.3"
+    "vue": ">=3.3 <4"
   },
   "devDependencies": {
     "@vue/server-renderer": "3.5.39",

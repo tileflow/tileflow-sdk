@@ -1,14 +1,16 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {once} from 'node:events';
+import {readFileSync} from 'node:fs';
 import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {createServer, Server} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import type {MapLibreStyle, NormalizedTileflowCaptureScene} from '@tileflow/core';
-import {createTileflowBuildArtifacts, type TileflowBuildAsset} from '@tileflow/dev';
+import {createTileflowBuildArtifacts, type TileflowBuildAsset} from '@tileflow/dev/artifacts';
 import {launchTileflowCaptureBrowser} from '../src/browser';
+import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   captureStandaloneTileflowScene,
   readPngDimensions,
@@ -16,9 +18,10 @@ import {
 } from '../src/standalone';
 
 test(
-  'renders local sprite pixels through one headless Browser without a listener',
+  'renders local sprite and package-font pixels through one headless Browser without a listener',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1'},
   async () => {
+    fontSourceReads = 0;
     const originalListen = Server.prototype.listen;
     let listenAttempts = 0;
     Server.prototype.listen = function forbiddenListen() {
@@ -46,6 +49,7 @@ test(
       assert.equal(first.networkDependent, false);
       assert.deepEqual(first.warnings, []);
       assert.equal(listenAttempts, 0);
+      assert.equal(fontSourceReads, 2, 'each capture routes the synthetic TTF before map creation');
       assert.deepEqual([...first.png.slice(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
     } finally {
       Server.prototype.listen = originalListen;
@@ -59,6 +63,7 @@ test(
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 30_000},
   async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'tileflow-generated-browser-'));
+    await linkWorkspacePackages(cwd);
     let origin = '';
     const requests = new Set<string>();
     const server = createServer((request, response) => {
@@ -92,10 +97,19 @@ test(
     try {
       await writeFile(
         join(cwd, 'tileflow.config.ts'),
-        `export default {
-  maps: {
-    proof: {
-      basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
+        `import {defineRootMap} from '@tileflow/core';
+import {streetsIcons} from '@tileflow/maps';
+
+export default defineRootMap({
+      id: 'proof',
+      version: 1,
+      root: {compiler: 'streets', compilerVersion: 1},
+      icons: [streetsIcons],
+      glyphs: {
+        kind: 'url',
+        url: ${JSON.stringify(`${origin}/glyphs/{fontstack}/{range}.pbf`)},
+        fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']
+      },
       data: {
         type: 'vector-tiles',
         attribution: 'Tileflow exact fixture',
@@ -110,9 +124,7 @@ test(
         type: 'roads', detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
         extras: {paths: true}
       }}
-    }
-  }
-};\n`,
+});\n`,
       );
       const artifacts = await createTileflowBuildArtifacts({
         apiBaseUrl: origin,
@@ -182,6 +194,15 @@ const generatedScene: NormalizedTileflowCaptureScene = {
 const style: MapLibreStyle = {
   version: 8,
   name: 'Capture integration fixture',
+  metadata: {
+    'tileflow:fontFaces': [
+      {
+        family: 'Oxanium Medium',
+        source: `${tileflowSyntheticAssetOrigin}/fonts/oxanium/oxanium-medium.ttf`,
+        weight: '500',
+      },
+    ],
+  },
   sprite: `${tileflowSyntheticAssetOrigin}/icons/proof/sprite`,
   sources: {
     marker: {
@@ -191,7 +212,7 @@ const style: MapLibreStyle = {
         features: [
           {
             type: 'Feature',
-            properties: {},
+            properties: {label: 'Tileflow'},
             geometry: {type: 'Point', coordinates: [0, 0]},
           },
         ],
@@ -204,12 +225,31 @@ const style: MapLibreStyle = {
       id: 'marker',
       type: 'symbol',
       source: 'marker',
-      layout: {'icon-allow-overlap': true, 'icon-image': 'marker'},
+      layout: {
+        'icon-allow-overlap': true,
+        'icon-image': 'marker',
+        'text-field': ['get', 'label'],
+        'text-font': ['Oxanium Medium'],
+        'text-offset': [0, 1.5],
+      },
     },
   ],
 };
 
+let fontSourceReads = 0;
+const oxaniumMedium = readFileSync(
+  new URL('../../maps/assets/cyberpunk/fonts/Oxanium-Medium.ttf', import.meta.url),
+);
+
 const assets: TileflowBuildAsset[] = [
+  {
+    contentType: 'font/ttf',
+    fileName: 'fonts/oxanium/oxanium-medium.ttf',
+    get source() {
+      fontSourceReads += 1;
+      return oxaniumMedium;
+    },
+  },
   {
     contentType: 'application/json; charset=utf-8',
     fileName: 'icons/proof/sprite.json',

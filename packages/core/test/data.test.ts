@@ -3,45 +3,23 @@ import test from 'node:test';
 import {
   isCanonicalOpenMapTilesSchema,
   openMapTiles,
-  parseWorldGenerationDescriptor,
   resolveTileflowData,
-  streets,
   tileflowWorld,
-  tileflowWorldRevision,
+  tileflowWorldGeneration,
+  tileflowWorldTileJsonUrl,
   tileflowWorldV1Schema,
   validateTileflowWorldV1Tilejson,
-  tileflowWorldGeneration,
-  tileflowWorldTileUrl,
   vectorTiles,
-  type WorldGenerationDescriptor,
 } from '../src';
 
-const worldGenerationFixture: WorldGenerationDescriptor = {
-  schemaVersion: 1,
-  generation: 'v1',
-  tileUrl: 'https://world.tileflow.dev/world/v1/{z}/{x}/{y}.pbf',
-  vectorSchema: {id: 'tileflow-world-v1-test', sha256: 'a'.repeat(64)},
-  tileEncoding: {format: 'mvt', compression: 'gzip', scheme: 'xyz', extent: 4096},
-  minzoom: 0,
-  maxzoom: 15,
-  bounds: [-180, -85.0511288, 180, 85.0511288],
-  attribution: '© OpenStreetMap contributors · Tileflow test fixture',
-  assetSet: {
-    id: 'a1-0123456789abcdef',
-    glyphs: 'https://assets.tileflow.dev/base/a1-0123456789abcdef/glyphs/{fontstack}/{range}.pbf',
-    spriteBase: 'https://assets.tileflow.dev/base/a1-0123456789abcdef/sprites/base',
-  },
-};
-
-test('resolves omitted data to the stable Tileflow World generation without discovery', () => {
+test('resolves omitted data to the World current TileJSON discovery selector', () => {
   const resolved = resolveTileflowData(undefined);
 
   assert.equal(resolved.kind, 'tileflow-world');
   assert.equal(resolved.generation, tileflowWorldGeneration);
-  assert.deepEqual(resolved.tiles, [tileflowWorldTileUrl]);
-  assert.equal(resolved.url, undefined);
+  assert.equal(resolved.tiles, undefined);
+  assert.equal(resolved.url, tileflowWorldTileJsonUrl);
   assert.equal(resolved.revision, undefined);
-  assert.equal(resolved.assetSet, undefined);
   assert.equal(resolved.sourceId, 'tileflow');
   assert.equal(resolved.schema.layers.bathymetry, 'bathymetry');
   assert.equal(resolved.schema.fields.bathymetryMinDepth, 'min_depth');
@@ -52,37 +30,31 @@ test('resolves omitted data to the stable Tileflow World generation without disc
     kind: 'tileflow-world',
     schema: 'openmaptiles',
     schemaVersion: 1,
+    worldSelection: {kind: 'current', product: 'world-v1'},
+    semantics: {parkLayer: 'protected-only'},
     sourceId: 'tileflow',
+    url: tileflowWorldTileJsonUrl,
   });
 });
 
-test('retains an explicit legacy World revision selector', () => {
-  const resolved = resolveTileflowData(tileflowWorld({revision: tileflowWorldRevision}), {
+test('resolves an exact World selection with both immutable identity fields', () => {
+  const releaseId = 'world-v1-release-test';
+  const descriptorSha256 = 'b'.repeat(64);
+  const resolved = resolveTileflowData(tileflowWorld({release: {descriptorSha256, releaseId}}), {
     apiBaseUrl: 'https://api.example.test/base',
   });
 
   assert.equal(resolved.generation, tileflowWorldGeneration);
-  assert.equal(resolved.revision, tileflowWorldRevision);
   assert.equal(
     resolved.url,
-    `https://api.example.test/tiles/world/tiles.json?archiveVersion=${tileflowWorldRevision}`,
+    `https://api.example.test/tiles/world/tiles.json?worldReleaseId=${releaseId}&worldDescriptorSha256=${descriptorSha256}`,
   );
   assert.equal(resolved.tiles, undefined);
-  assert.equal(resolved.identity.revision, tileflowWorldRevision);
-});
-
-test('validates and resolves a complete compiler-owned World descriptor', () => {
-  assert.deepEqual(parseWorldGenerationDescriptor(worldGenerationFixture), worldGenerationFixture);
-
-  const resolved = resolveTileflowData(tileflowWorld(), {
-    worldGeneration: worldGenerationFixture,
+  assert.deepEqual(resolved.identity.worldSelection, {
+    kind: 'release',
+    product: 'world-v1',
+    release: {descriptorSha256, releaseId},
   });
-  assert.deepEqual(resolved.tiles, [worldGenerationFixture.tileUrl]);
-  assert.deepEqual(resolved.assetSet, worldGenerationFixture.assetSet);
-  assert.deepEqual(resolved.bounds, worldGenerationFixture.bounds);
-  assert.equal(resolved.minzoom, 0);
-  assert.equal(resolved.maxzoom, 15);
-  assert.equal(resolved.attribution, worldGenerationFixture.attribution);
 });
 
 test('resolves external vector data without network access', () => {
@@ -119,6 +91,66 @@ test('resolves external vector data without network access', () => {
   assert.equal(direct.maxzoom, 12);
 });
 
+test('accepts only public HTTPS, loopback development, root-relative, or safe PMTiles URLs', () => {
+  const accepted = [
+    'https://tiles.example.test/tiles.json',
+    'http://localhost:4173/tiles.json',
+    'http://maps.localhost:4173/tiles.json',
+    'http://127.42.3.4:4173/{z}/{x}/{y}.pbf',
+    'http://[::1]:4173/tiles.json',
+    '/tiles/world/tiles.json?release=exact',
+    'pmtiles://https://cdn.example.test/world.pmtiles?version=1',
+    'pmtiles://http://127.0.0.1:4173/world.pmtiles',
+    'pmtiles:///fixtures/world.pmtiles',
+    'pmtiles://./test/fixtures/world.pmtiles',
+    'pmtiles://catalog/world.pmtiles?public=value',
+  ];
+
+  for (const url of accepted) {
+    assert.equal(
+      vectorTiles({attribution: '© Example', schema: openMapTiles(), url}).url,
+      url,
+      url,
+    );
+  }
+});
+
+test('rejects unsafe vector and PMTiles URL protocols, authority, and paths', () => {
+  const rejected = [
+    'http://tiles.example.test/tiles.json',
+    'http://localhost.evil.test/tiles.json',
+    'javascript:alert(1)',
+    'data:application/json,{}',
+    'ftp://tiles.example.test/world.pmtiles',
+    'file:///tmp/world.pmtiles',
+    '//tiles.example.test/tiles.json',
+    'relative/tiles.json',
+    'https://tiles.example.test/tiles.json#private',
+    ' https://tiles.example.test/tiles.json',
+    'https://tiles.example.test\\@evil.test/tiles.json',
+    'pmtiles://http://tiles.example.test/world.pmtiles',
+    'pmtiles://https://user:secret@tiles.example.test/world.pmtiles',
+    'pmtiles://javascript:alert(1)',
+    'pmtiles://data:application/octet-stream,bytes',
+    'pmtiles://ftp://tiles.example.test/world.pmtiles',
+    'pmtiles://file:///tmp/world.pmtiles',
+    'pmtiles:////tiles.example.test/world.pmtiles',
+    'pmtiles://../world.pmtiles',
+    'pmtiles://./../world.pmtiles',
+    'pmtiles:///fixtures/%2e%2e/world.pmtiles',
+    'pmtiles://catalog/world.zip',
+    'pmtiles://https://tiles.example.test/world.pmtiles#private',
+  ];
+
+  for (const url of rejected) {
+    assert.throws(
+      () => vectorTiles({attribution: '© Example', schema: openMapTiles(), url}),
+      /Tileflow/u,
+      url,
+    );
+  }
+});
+
 test('supports explicit schema bindings and identifies canonical OpenMapTiles', () => {
   const canonical = openMapTiles();
   const remapped = openMapTiles({
@@ -134,6 +166,7 @@ test('supports explicit schema bindings and identifies canonical OpenMapTiles', 
   });
 
   assert.equal(isCanonicalOpenMapTilesSchema(canonical), true);
+  assert.deepEqual(canonical.semantics, {parkLayer: 'mixed'});
   assert.equal(isCanonicalOpenMapTilesSchema(remapped), false);
   assert.equal(canonical.layers.globalLandcover, 'globallandcover');
   assert.equal(canonical.layers.businessCorridor, 'business_corridor');
@@ -147,6 +180,31 @@ test('supports explicit schema bindings and identifies canonical OpenMapTiles', 
   assert.equal(canonical.fields.bicycle, 'bicycle');
   assert.equal(canonical.fields.mtbScale, 'mtb_scale');
   assert.equal(canonical.fields.toll, 'toll');
+});
+
+test('makes park-layer semantics explicit while normalizing legacy schemas', () => {
+  const world = tileflowWorldV1Schema();
+  const protectedOnly = openMapTiles({semantics: {parkLayer: 'protected-only'}});
+  const legacy = openMapTiles();
+
+  assert.equal(world.semantics.parkLayer, 'protected-only');
+  assert.equal(protectedOnly.semantics.parkLayer, 'protected-only');
+  assert.equal(isCanonicalOpenMapTilesSchema(protectedOnly), false);
+  assert.equal(legacy.semantics.parkLayer, 'mixed');
+
+  const legacyWithoutMarker = {
+    ...legacy,
+    semantics: undefined,
+  } as unknown as typeof legacy;
+  const resolvedLegacy = resolveTileflowData(
+    vectorTiles({
+      attribution: '© Legacy fixture',
+      schema: legacyWithoutMarker,
+      url: '/legacy.json',
+    }),
+  );
+  assert.deepEqual(resolvedLegacy.schema.semantics, {parkLayer: 'mixed'});
+  assert.deepEqual(resolvedLegacy.identity.semantics, {parkLayer: 'mixed'});
 });
 
 test('preserves explicitly absent optional source-layer capabilities', () => {
@@ -172,30 +230,84 @@ test('preserves explicitly absent optional source-layer capabilities', () => {
   assert.equal(resolved.identity.capabilities?.tree, false);
 });
 
-test('defines and validates the required Tileflow World V1 bathymetry extension', () => {
+test('defines and validates the required Tileflow World V1 surface extensions', () => {
   const generic = openMapTiles();
   const worldV1 = tileflowWorldV1Schema();
 
   assert.equal(generic.layers.bathymetry, undefined);
   assert.equal(generic.fields.bathymetryMinDepth, undefined);
   assert.equal(worldV1.layers.bathymetry, 'bathymetry');
+  assert.equal(worldV1.layers.circularFeature, 'circular_feature');
+  assert.equal(worldV1.layers.globalLandcover, 'globallandcover');
+  assert.equal(worldV1.layers.sidewalk, 'sidewalk');
+  assert.equal(worldV1.layers.streetFurniture, 'street_furniture');
   assert.equal(worldV1.fields.bathymetryMinDepth, 'min_depth');
   assert.equal(worldV1.fields.bathymetrySortKey, 'sort_key');
+  assert.equal(worldV1.fields.importanceTier, 'importance_tier');
   assert.deepEqual(
     validateTileflowWorldV1Tilejson({
-      vector_layers: [
-        {
-          id: 'bathymetry',
-          minzoom: 0,
-          maxzoom: 9,
-          fields: {min_depth: 'Number', sort_key: 'Number'},
-        },
-      ],
+      vector_layers: validWorldV1VectorLayers(),
     }),
     [],
   );
   assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: []}), [
     'Tileflow World V1 requires bathymetry.',
+    'Tileflow World V1 requires globallandcover.',
+    'Tileflow World V1 requires circular_feature.',
+    'Tileflow World V1 requires sidewalk.',
+    'Tileflow World V1 requires street_furniture.',
+  ]);
+  assert.equal(
+    tileflowWorldV1Schema({capabilities: {globalLandcover: false}}).layers.globalLandcover,
+    'globallandcover',
+  );
+  const invalidLandcover = validWorldV1VectorLayers();
+  invalidLandcover[1] = {
+    id: 'globallandcover',
+    minzoom: 0,
+    maxzoom: 8,
+    fields: {class: 'Number'},
+  };
+  assert.deepEqual(
+    validateTileflowWorldV1Tilejson({
+      vector_layers: invalidLandcover,
+    }),
+    [
+      'Tileflow World V1 globallandcover must declare z0-z10.',
+      'Tileflow World V1 requires String class on globallandcover.',
+    ],
+  );
+});
+
+test('fails closed on malformed or duplicate Tileflow World V1 detail capabilities', () => {
+  const malformed = validWorldV1VectorLayers();
+  malformed[2] = {
+    ...malformed[2],
+    maxzoom: 14,
+    fields: {...malformed[2]!.fields, radius_m: 'String'},
+  };
+  malformed[3] = {
+    ...malformed[3],
+    minzoom: 14,
+    fields: {...malformed[3]!.fields, class: 'Number'},
+  };
+  malformed[4] = {
+    ...malformed[4],
+    fields: {...malformed[4]!.fields, direction: 'Boolean'},
+  };
+
+  assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: malformed}), [
+    'Tileflow World V1 circular_feature must declare native z15.',
+    'Tileflow World V1 requires Number radius_m on circular_feature.',
+    'Tileflow World V1 sidewalk must declare native z15.',
+    'Tileflow World V1 requires String class on sidewalk.',
+    'Tileflow World V1 requires Number or String direction on street_furniture.',
+  ]);
+
+  const duplicate = validWorldV1VectorLayers();
+  duplicate.push({...duplicate[2]!});
+  assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: duplicate}), [
+    'Tileflow World V1 requires exactly one circular_feature layer.',
   ]);
 });
 
@@ -214,22 +326,6 @@ test('rejects private URL credentials, invalid descriptors, and missing attribut
     /must not be empty/,
   );
   assert.throws(
-    () =>
-      parseWorldGenerationDescriptor({
-        ...worldGenerationFixture,
-        assetSet: {...worldGenerationFixture.assetSet, id: 'latest'},
-      }),
-    /invalid|a1-|assetSet/i,
-  );
-  assert.throws(
-    () =>
-      parseWorldGenerationDescriptor({
-        ...worldGenerationFixture,
-        tileUrl: 'https://world.tileflow.dev/world/latest/{z}/{x}/{y}.pbf',
-      }),
-    /v1|tileUrl/i,
-  );
-  assert.throws(
     () => vectorTiles({attribution: '© Example', schema: openMapTiles(), url: 'file:///tmp/a'}),
     /file protocol/,
   );
@@ -245,6 +341,50 @@ test('rejects private URL credentials, invalid descriptors, and missing attribut
   );
 });
 
-test('defines Streets as a versioned light recipe identity', () => {
-  assert.deepEqual(streets(), {type: 'streets', basemapVersion: 3, variant: 'light'});
-});
+function validWorldV1VectorLayers(): Array<{
+  fields: Record<string, string>;
+  id: string;
+  maxzoom: number;
+  minzoom: number;
+}> {
+  return [
+    {
+      id: 'bathymetry',
+      minzoom: 0,
+      maxzoom: 9,
+      fields: {min_depth: 'Number', sort_key: 'Number'},
+    },
+    {
+      id: 'globallandcover',
+      minzoom: 0,
+      maxzoom: 10,
+      fields: {class: 'String'},
+    },
+    {
+      id: 'circular_feature',
+      minzoom: 15,
+      maxzoom: 15,
+      fields: {
+        circle_kind: 'String',
+        class: 'String',
+        clearance_extra_px_z15: 'Number',
+        inner_radius_m: 'Number',
+        outer_radius_m: 'Number',
+        radius_m: 'Number',
+        radius_px_z15: 'Number',
+      },
+    },
+    {
+      id: 'sidewalk',
+      minzoom: 15,
+      maxzoom: 15,
+      fields: {class: 'String', subclass: 'String'},
+    },
+    {
+      id: 'street_furniture',
+      minzoom: 15,
+      maxzoom: 15,
+      fields: {class: 'String', direction: 'Number', subclass: 'String'},
+    },
+  ];
+}

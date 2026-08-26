@@ -1,7 +1,11 @@
 {
   "name": "@tileflow/webpack",
   "version": "0.0.0-development",
+  "license": "Apache-2.0",
   "description": "Webpack plugin for Tileflow map style development and static artifacts.",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "sideEffects": false,
   "homepage": "https://tileflow.dev",
@@ -23,7 +27,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "GENERATED_OUTPUT_LICENSE.md",
+    "TRADEMARKS.md"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean --platform node",
@@ -45,7 +53,10 @@
   "dependencies": {
     "@tileflow/dev": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0"
   },
+  "devDependencies": {
+    "@tileflow/maps": "workspace:*"
+  },
   "peerDependencies": {
-    "webpack": ">=5"
+    "webpack": ">=5.61 <6"
   }
 }

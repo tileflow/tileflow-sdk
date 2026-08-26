@@ -19,6 +19,11 @@ export async function compileTileflowMap(testId) {
     join(directory, 'style-source.js'),
     'file',
   );
+  await symlink(
+    fileURLToPath(new URL('../src/maplibre.js', import.meta.url)),
+    join(directory, 'maplibre.js'),
+    'file',
+  );
 
   const modulePath = join(directory, 'TileflowMap.mjs');
   await writeFile(modulePath, compiled.js.code, 'utf8');

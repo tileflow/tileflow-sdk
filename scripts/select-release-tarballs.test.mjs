@@ -111,7 +111,10 @@ test('rejects missing, duplicate, empty-plan, and version-mismatched tarballs', 
     await writePlan(fixture, ['@tileflow/core']);
     const paths = nonEmptyLines(await readFile(fixture.listPath, 'utf8'));
     await writeFile(fixture.listPath, `${paths.slice(1).join('\n')}\n`);
-    await assert.rejects(runSelector(fixture), /Expected 11 packed public packages/u);
+    await assert.rejects(
+      runSelector(fixture),
+      new RegExp(`Expected ${publicPackageNames.length} packed public packages`, 'u'),
+    );
 
     await writeFile(fixture.listPath, `${paths.slice(0, -1).join('\n')}\n${paths[0]}\n`);
     await assert.rejects(runSelector(fixture), /Duplicate tarball for @tileflow\/core/u);
@@ -167,6 +170,7 @@ async function writePlan(fixture, names) {
   const selected = new Set(names);
   const baselines = publicPackageNames.map((name) => ({
     name,
+    published: true,
     runtimeDependencies: selected.has(name) ? {} : fixture.runtimeDependencies[name],
     version: '0.1.0-alpha.16',
   }));
@@ -179,7 +183,7 @@ async function writePlan(fixture, names) {
   }));
   await writeFile(
     fixture.planPath,
-    `${JSON.stringify({schemaVersion: 2, channel: 'alpha', sourceSha: 'a'.repeat(40), baselines, packages}, null, 2)}\n`,
+    `${JSON.stringify({schemaVersion: 4, channel: 'alpha', sourceSha: 'a'.repeat(40), baselines, packages}, null, 2)}\n`,
   );
 }
 

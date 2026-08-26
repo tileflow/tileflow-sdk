@@ -1,4 +1,8 @@
-import type {TileflowAreaStyle, TileflowBackgroundStyle} from '../../cartography/styles';
+import type {
+  TileflowAreaStyle,
+  TileflowBackgroundStyle,
+  TileflowFillStyle,
+} from '../../cartography/styles';
 
 export type TileflowLanduseClass =
   | 'cemetery'
@@ -15,19 +19,24 @@ export type TileflowLanduseClass =
   | 'residential';
 export type TileflowLandcoverClass =
   | 'farmland'
+  | 'flowerbed'
   | 'grass'
   | 'ice'
-  | 'park'
+  | 'meadow'
   | 'protected'
+  | 'recreationGround'
   | 'rock'
   | 'sand'
   | 'scrub'
+  | 'urbanPark'
+  | 'villageGreen'
   | 'wetland'
   | 'wood';
 
 export type TileflowLandModuleOptions = {
   background?: TileflowBackgroundStyle;
   enabled?: boolean;
+  globalLandcover?: TileflowFillStyle;
   landcover?: Partial<Record<TileflowLandcoverClass, TileflowAreaStyle>>;
   landuse?: Partial<Record<TileflowLanduseClass, TileflowAreaStyle>>;
 };

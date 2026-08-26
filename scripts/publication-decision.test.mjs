@@ -14,27 +14,68 @@ const scriptsRoot = dirname(fileURLToPath(import.meta.url));
 test('classifies idempotent registry retries and rejects tag or byte drift', () => {
   const release = {from: '0.1.0-alpha.16', to: '0.1.0-alpha.17'};
   assert.equal(
-    classifyPublicationState({...release, currentTag: release.from, targetState: 'missing'}),
+    classifyPublicationState({
+      ...release,
+      baselineState: 'published',
+      currentTag: release.from,
+      targetState: 'missing',
+    }),
     'publish',
   );
   assert.equal(
-    classifyPublicationState({...release, currentTag: release.to, targetState: 'identical'}),
+    classifyPublicationState({
+      ...release,
+      baselineState: 'published',
+      currentTag: release.to,
+      targetState: 'identical',
+    }),
+    'published',
+  );
+  assert.equal(
+    classifyPublicationState({
+      baselineState: 'unpublished',
+      currentTag: 'unpublished',
+      from: 'unpublished',
+      targetState: 'missing',
+      to: '0.1.0-alpha.0',
+    }),
+    'publish',
+  );
+  assert.equal(
+    classifyPublicationState({
+      baselineState: 'unpublished',
+      currentTag: '0.1.0-alpha.0',
+      from: 'unpublished',
+      targetState: 'identical',
+      to: '0.1.0-alpha.0',
+    }),
     'published',
   );
   assert.throws(
     () =>
-      classifyPublicationState({...release, currentTag: release.from, targetState: 'different'}),
+      classifyPublicationState({
+        ...release,
+        baselineState: 'published',
+        currentTag: release.from,
+        targetState: 'different',
+      }),
     /different package contents/u,
   );
   assert.throws(
     () =>
-      classifyPublicationState({...release, currentTag: release.from, targetState: 'identical'}),
+      classifyPublicationState({
+        ...release,
+        baselineState: 'published',
+        currentTag: release.from,
+        targetState: 'identical',
+      }),
     /cannot repair dist-tags/u,
   );
   assert.throws(
     () =>
       classifyPublicationState({
         ...release,
+        baselineState: 'published',
         currentTag: '0.1.0-alpha.15',
         targetState: 'missing',
       }),
@@ -64,6 +105,7 @@ test('runs the publish preflight decision without installed workspace dependenci
       '0.1.0-alpha.17',
       '0.1.0-alpha.16',
       'missing',
+      'published',
     );
     assert.equal(publish.stderr, '');
     assert.equal(publish.stdout, 'publish\n');
@@ -73,12 +115,23 @@ test('runs the publish preflight decision without installed workspace dependenci
       '0.1.0-alpha.17',
       '0.1.0-alpha.17',
       'identical',
+      'published',
     );
     assert.equal(published.stderr, '');
     assert.equal(published.stdout, 'published\n');
 
+    const initial = await runDecision(
+      'unpublished',
+      '0.1.0-alpha.0',
+      'unpublished',
+      'missing',
+      'unpublished',
+    );
+    assert.equal(initial.stderr, '');
+    assert.equal(initial.stdout, 'publish\n');
+
     await assert.rejects(
-      runDecision('0.1.0-alpha.16', '0.1.0-alpha.17', '0.1.0-alpha.16', 'different'),
+      runDecision('0.1.0-alpha.16', '0.1.0-alpha.17', '0.1.0-alpha.16', 'different', 'published'),
       /different package contents/u,
     );
   } finally {

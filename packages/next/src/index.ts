@@ -3,11 +3,10 @@ import {resolve} from 'node:path';
 import {
   defaultTileflowConfigPath,
   getTileflowAssetBasePath,
-  joinTileflowPublicUrl,
   normalizeTileflowBasePath,
-  type TileflowBuildArtifactsOptions,
+  resolveTileflowArtifactPublicUrls,
   writeTileflowBuildArtifacts,
-} from '@tileflow/dev';
+} from '@tileflow/dev/artifacts';
 
 export type TileflowNextPluginOptions = {
   apiBaseUrl?: string;
@@ -15,9 +14,9 @@ export type TileflowNextPluginOptions = {
   config?: string;
   cwd?: string;
   emitBuildArtifacts?: boolean;
+  overwriteHostedManifest?: boolean;
   publicDir?: string;
   routeBase?: string | false;
-  worldGeneration?: TileflowBuildArtifactsOptions['worldGeneration'];
 };
 
 type NextRewritesConfig = Awaited<ReturnType<NonNullable<NextConfig['rewrites']>>>;
@@ -66,20 +65,20 @@ async function emitTileflowBuildArtifacts(
   options: TileflowNextPluginOptions,
 ): Promise<void> {
   const basePath = normalizeTileflowBasePath(options.base ?? '/tileflow');
-  const nextBasePath = nextConfig.basePath ?? '';
+  const nextBasePath = normalizeTileflowBasePath(nextConfig.basePath ?? '');
   const cwd = options.cwd ?? process.cwd();
   const assetBasePath = getTileflowAssetBasePath(basePath);
-  const publicBaseUrl = joinTileflowPublicUrl(nextBasePath, basePath);
+  const publicUrls = resolveTileflowArtifactPublicUrls(nextBasePath, basePath);
   const outDir = resolve(cwd, options.publicDir ?? 'public', assetBasePath);
 
   await writeTileflowBuildArtifacts({
-    assetBaseUrl: publicBaseUrl,
+    assetBaseUrl: publicUrls.assetBaseUrl,
     config: options.config ?? defaultTileflowConfigPath,
     cwd,
     outDir,
-    styleBaseUrl: publicBaseUrl,
+    overwriteHostedManifest: options.overwriteHostedManifest,
+    styleBaseUrl: publicUrls.styleBaseUrl,
     apiBaseUrl: options.apiBaseUrl,
-    worldGeneration: options.worldGeneration,
   });
 }
 

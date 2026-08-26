@@ -3,9 +3,11 @@
 .env.*
 
 node_modules
+.pnpm-store/
 .turbo
 dist
 coverage
+output/
 packages/*/dist
 packages/*/.turbo
 packages/*/.tileflow-test-*
@@ -13,7 +15,6 @@ packages/*/.tileflow-test-*
 .tileflow/captures/
 .tileflow/diffs/
 .tileflow/analysis/
-/examples/*/visual-baselines/
 
 pnpm-debug.log*
 npm-debug.log*

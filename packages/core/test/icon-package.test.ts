@@ -1,18 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  diffTileflowIconMappings,
   diffTileflowIconPackageManifests,
   hashTileflowIconPackageManifest,
   hashTileflowRenderedIconPixels,
-  inspectTileflowIconReferences,
-  resolveTileflowIconMapping,
   serializeCanonicalJson,
   serializeTileflowIconPackageManifest,
   sha256Hex,
-  streets,
   tileflowHostedAlphaCompatibility,
-  tileflowHostedIconIdSchema,
+  tileflowIconIdSchema,
   tileflowIconPackageFileNames,
   tileflowIconPackageLabelSchema,
   tileflowIconPackageLimits,
@@ -69,7 +65,7 @@ test('defines the exact four-file package protocol and alpha limits', () => {
   assert.equal(tileflowIconPackageLimits.maxIconCount, 256);
   assert.equal(tileflowIconPackageLimits.decodeConcurrency, 4);
   assert.equal(tileflowIconPackageLimits.maxGeneratedPackageBytes, 8 * 1024 * 1024);
-  assert.equal(tileflowHostedAlphaCompatibility.maxMapsPerDeploy, 1);
+  assert.equal(tileflowHostedAlphaCompatibility.maxMapsPerDeploy, 20);
   assert.equal(tileflowHostedAlphaCompatibility.iconPackages.maxRetainedPerProject, 24);
 });
 
@@ -132,8 +128,18 @@ test('hashes a versioned RGBA frame and normalizes invisible RGB', async () => {
 });
 
 test('rejects unordered or unsafe icon names and inconsistent dimensions', () => {
-  assert.equal(tileflowHostedIconIdSchema.safeParse('cafe-24').success, true);
-  assert.equal(tileflowHostedIconIdSchema.safeParse('../cafe').success, false);
+  assert.equal(tileflowIconIdSchema.safeParse('cafe-24').success, true);
+  for (const invalid of ['../cafe', 'Cafe', 'cafe_icon', 'a'.repeat(65)]) {
+    assert.equal(tileflowIconIdSchema.safeParse(invalid).success, false);
+    assert.equal(
+      tileflowIconPackageManifestSchema.safeParse({
+        ...manifest,
+        iconNames: ['airport', invalid],
+        renderedIcons: [manifest.renderedIcons[0], {...manifest.renderedIcons[1], name: invalid}],
+      }).success,
+      false,
+    );
+  }
   assert.equal(
     tileflowIconPackageManifestSchema.safeParse({...manifest, iconNames: ['cafe', 'airport']})
       .success,
@@ -211,113 +217,6 @@ test('diffs icons by per-name pixels independently of atlas layout', () => {
     removed: ['airport', 'cafe'],
     unchangedCount: 0,
   });
-});
-
-test('diffs mappings with stable add, remove, and retarget ordering', () => {
-  assert.deepEqual(
-    diffTileflowIconMappings(
-      {food: 'cafe', health: 'hospital', transit: 'bus'},
-      {culture: 'museum', health: 'clinic', transit: 'bus'},
-    ),
-    {
-      added: [{after: 'museum', key: 'culture'}],
-      changed: [{after: 'clinic', before: 'hospital', key: 'health'}],
-      removed: [{before: 'cafe', key: 'food'}],
-    },
-  );
-  assert.deepEqual(diffTileflowIconMappings(null, null), {added: [], changed: [], removed: []});
-});
-
-test('inspects inherited mappings plus literal and dynamic raw override references', () => {
-  assert.deepEqual(
-    resolveTileflowIconMapping(
-      {
-        icons: {
-          base: {mapping: {food: 'cafe', health: 'hospital'}},
-          brand: {extends: 'base', mapping: {health: 'clinic'}},
-        },
-        maps: {
-          production: {
-            basemap: streets(),
-            icons: {extends: 'brand', mapping: {food: 'restaurant'}},
-          },
-        },
-      },
-      'production',
-    ),
-    {food: 'restaurant', health: 'clinic'},
-  );
-
-  const analysis = inspectTileflowIconReferences(
-    {
-      icons: {
-        base: {mapping: {food: 'cafe', health: 'hospital'}, source: './icons'},
-        brand: {extends: 'base', mapping: {health: 'clinic'}},
-      },
-      maps: {
-        production: {
-          basemap: streets(),
-          icons: {extends: 'brand', mapping: {health: 'hospital'}},
-          overrides: [
-            {
-              kind: 'patch',
-              id: 'streets-poi-food',
-              patch: {layout: {'icon-image': 'tileflow:missing-literal'}},
-            },
-            {
-              kind: 'patch',
-              id: 'streets-poi-culture',
-              patch: {layout: {'icon-image': ['concat', 'tileflow:', ['get', 'kind']]}},
-            },
-            {
-              kind: 'patch',
-              id: 'streets-poi-transit',
-              patch: {layout: {'icon-image': ['image', 'tileflow:missing-module']}},
-            },
-          ],
-        },
-      },
-    },
-    'production',
-    ['cafe'],
-  );
-
-  assert.equal(analysis.analysisComplete, false);
-  assert.deepEqual(analysis.dangling, [
-    {
-      iconName: 'hospital',
-      kind: 'mapping',
-      path: 'maps.production.icons.mapping.health',
-    },
-    {
-      iconName: 'missing-literal',
-      kind: 'style-override-literal',
-      path: 'maps.production.overrides.0.patch.layout.icon-image',
-    },
-    {
-      iconName: 'missing-module',
-      kind: 'style-override-literal',
-      path: 'maps.production.overrides.2.patch.layout.icon-image',
-    },
-  ]);
-  assert.deepEqual(analysis.unanalyzable, [
-    {
-      kind: 'style-override-expression',
-      path: 'maps.production.overrides.1.patch.layout.icon-image',
-    },
-  ]);
-
-  const inherited = inspectTileflowIconReferences(
-    {
-      icons: {base: {mapping: {health: 'hospital'}, source: './icons'}},
-      maps: {production: {basemap: streets(), icons: 'base'}},
-    },
-    'production',
-    [],
-  );
-  assert.deepEqual(inherited.dangling, [
-    {iconName: 'hospital', kind: 'mapping', path: 'icons.base.mapping.health'},
-  ]);
 });
 
 test('accepts printable Unicode labels and rejects controls or excessive length', () => {

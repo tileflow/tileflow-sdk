@@ -10,6 +10,6 @@ export default defineConfig({
     index: 'src/index.ts',
     static: 'src/static.ts',
   },
-  external: ['maplibre-gl', 'react'],
+  external: ['maplibre-gl', 'react', 'react-dom'],
   format: ['esm'],
 });

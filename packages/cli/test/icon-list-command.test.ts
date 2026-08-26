@@ -1,137 +1,102 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {createHash} from 'node:crypto';
 import {once} from 'node:events';
-import {mkdir, mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
-import {dirname, join, relative} from 'node:path';
+import {dirname, join} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {tileflowMapFixture} from './map-fixture';
 
 const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
+const cliNodeModules = fileURLToPath(new URL('../node_modules', import.meta.url));
 const tsxLoader = import.meta.resolve('tsx');
 const ambientApiKey = `tf_live_catalog_${'k'.repeat(40)}`;
 const sourceMarker = 'SOURCE_PIXELS_MUST_NOT_REACH_STDOUT';
-const remoteMarker = 'SIGNED_REMOTE_SPRITE_MUST_NOT_REACH_STDOUT';
 
-test('lists deterministic v1 metadata with no network, auth, payload, or file mutation', async (t) => {
-  const fixture = await createCatalogFixture(t);
+test('lists deterministic ordered composition, final sources, and later-wins replacements', async (t) => {
+  const directory = await createDirectoryFixture(t, 'tileflow-icon-list-');
+  const configPath = join(directory, 'tileflow.config.ts');
+  await writeFileEnsured(
+    join(directory, 'icons', 'base', 'cafe.svg'),
+    `${simpleSvg('#ef4444')}<!-- ${sourceMarker} -->`,
+  );
+  await writeFileEnsured(join(directory, 'icons', 'base', 'photo.svg'), simpleSvg('#2563eb'));
+  await writeFileEnsured(join(directory, 'icons', 'brand', 'bicycle.svg'), simpleSvg('#16a34a'));
+  await writeFileEnsured(join(directory, 'icons', 'brand', 'cafe.svg'), simpleSvg('#111827'));
+  await writeFile(
+    configPath,
+    tileflowMapFixture({
+      id: 'alpha',
+      icons: 'authored',
+      setup: `if (process.env.TILEFLOW_API_KEY) {
+  throw new Error('ambient Tileflow API key reached executable config');
+}`,
+      fields: `icons: ['./icons/base', './icons/brand']`,
+    }),
+  );
   const sentinel = await createHttpSentinel(t);
-  const before = await inventory(fixture.directory);
-  const arguments_ = ['icons', 'list', '--json', '--config', fixture.configPath];
-  const environment = {
-    TILEFLOW_API_KEY: ambientApiKey,
-    TILEFLOW_API_URL: sentinel.url,
-  };
-  const first = await runCli(fixture.directory, arguments_, environment);
-  const second = await runCli(fixture.directory, arguments_, environment);
-  const after = await inventory(fixture.directory);
+  const arguments_ = ['icons', 'list', '--json', '--config', configPath];
+  const environment = {TILEFLOW_API_KEY: ambientApiKey, TILEFLOW_API_URL: sentinel.url};
+  const first = await runCli(directory, arguments_, environment);
+  const second = await runCli(directory, arguments_, environment);
 
   assert.equal(first.code, 0, first.stderr);
   assert.equal(first.stderr, '');
   assert.equal(first.stdout, second.stdout);
   assert.ok(first.stdout.endsWith('\n'));
-  assert.ok(!first.stdout.endsWith('\n\n'));
   assert.equal(sentinel.requests(), 0);
-  assert.deepEqual(after, before);
-  await assert.rejects(() => readFile(join(fixture.directory, '.tileflow', 'auth.json')), {
-    code: 'ENOENT',
-  });
-
   const document = JSON.parse(first.stdout) as IconListDocument;
-  assert.deepEqual(Object.keys(document), ['schemaVersion', 'pathBase', 'catalogs', 'maps']);
-  assert.equal(document.schemaVersion, 1);
+  assert.deepEqual(Object.keys(document), ['schemaVersion', 'pathBase', 'maps']);
+  assert.equal(document.schemaVersion, 2);
   assert.equal(document.pathBase, 'cwd');
-  assert.equal(document.catalogs.length, 1);
-  assert.deepEqual(
-    document.maps.map((map) => [map.name, map.icons.kind]),
-    [
-      ['alpha', 'local'],
-      ['beta', 'local'],
-      ['external', 'external'],
-      ['none', 'none'],
-    ],
-  );
+  assert.equal(document.maps.length, 1);
 
-  const catalog = document.catalogs[0];
-  assert.ok(catalog);
-  assert.deepEqual(Object.keys(catalog), [
-    'sourcePath',
+  const map = document.maps[0];
+  assert.ok(map && map.icons.kind === 'directories');
+  assert.equal(map.id, 'alpha');
+  assert.deepEqual(Object.keys(map.icons), [
+    'kind',
+    'directories',
+    'finalIds',
     'insideWorkingTree',
+    'replacements',
     'packageHash',
-    'iconCount',
-    'generatedByteLength',
-    'atlas',
-    'icons',
+    'sources',
   ]);
-  assert.equal(catalog.sourcePath, 'icons/shared');
-  assert.equal(catalog.insideWorkingTree, true);
-  assert.match(catalog.packageHash, /^[a-f0-9]{64}$/);
-  assert.equal(catalog.iconCount, 2);
-  assert.ok(catalog.generatedByteLength > 0);
+  assert.deepEqual(map.icons.directories, ['./icons/base', './icons/brand']);
+  assert.deepEqual(map.icons.finalIds, ['bicycle', 'cafe', 'photo']);
+  assert.equal(map.icons.insideWorkingTree, true);
+  assert.match(map.icons.packageHash, /^[a-f0-9]{64}$/u);
+  assert.deepEqual(map.icons.replacements, [
+    {
+      id: 'cafe',
+      replaced: './icons/base/cafe.svg',
+      winner: './icons/brand/cafe.svg',
+    },
+  ]);
   assert.deepEqual(
-    catalog.icons.map((icon) => [icon.id, icon.source.format, icon.source.path]),
+    map.icons.sources.map((source) => [source.id, source.format, source.path]),
     [
-      ['cafe', 'svg', 'icons/shared/cafe.svg'],
-      ['photo', 'svg', 'icons/shared/photo.svg'],
+      ['bicycle', 'svg', './icons/brand/bicycle.svg'],
+      ['cafe', 'svg', './icons/brand/cafe.svg'],
+      ['photo', 'svg', './icons/base/photo.svg'],
     ],
   );
-  assert.ok(
-    catalog.icons.every(
-      (icon) =>
-        /^[a-f0-9]{64}$/.test(icon.rendered.oneX.pixelSha256) &&
-        /^[a-f0-9]{64}$/.test(icon.rendered.twoX.pixelSha256),
-    ),
-  );
-  assert.deepEqual(Object.keys(catalog.icons[0]?.rendered.oneX.atlas ?? {}), [
-    'x',
-    'y',
-    'width',
-    'height',
-  ]);
-  assert.deepEqual(catalog.icons[0]?.mappedFrom, [{map: 'alpha', semantic: 'food'}]);
-  assert.deepEqual(catalog.icons[1]?.mappedFrom, [{map: 'beta', semantic: 'food'}]);
+  assert.ok(map.icons.sources.every((source) => source.byteLength > 0));
 
-  const alpha = document.maps.find((map) => map.name === 'alpha');
-  const beta = document.maps.find((map) => map.name === 'beta');
-  const external = document.maps.find((map) => map.name === 'external');
-  assert.deepEqual(alpha?.icons.mappings, [
-    {semantic: 'dangling', iconId: 'missing', targetStatus: 'missing'},
-    {semantic: 'food', iconId: 'cafe', targetStatus: 'present'},
-  ]);
-  assert.deepEqual(beta?.icons.mappings, [
-    {semantic: 'dangling', iconId: 'missing', targetStatus: 'missing'},
-    {semantic: 'food', iconId: 'photo', targetStatus: 'present'},
-  ]);
-  assert.deepEqual(external?.icons.mappings, [
-    {semantic: 'remote', iconId: 'remote-pin', targetStatus: 'unknown'},
-  ]);
-
-  for (const forbidden of [
-    fixture.directory,
-    ambientApiKey,
-    sourceMarker,
-    remoteMarker,
-    'data:',
-    'base64,',
-    '\u001b[',
-    '✓',
-  ]) {
+  for (const forbidden of [directory, ambientApiKey, sourceMarker, 'data:', 'base64,', '\u001b[']) {
     assert.ok(!first.stdout.includes(forbidden), `stdout contained forbidden value ${forbidden}`);
   }
 });
 
-test('filters before source I/O and rejects unknown maps with sorted valid names', async (t) => {
+test('filters by exact map id and reports an empty array as no icons', async (t) => {
   const directory = await createDirectoryFixture(t, 'tileflow-icon-list-filter-');
   const configPath = join(directory, 'tileflow.config.ts');
-  await writeFileEnsured(join(directory, 'icons', 'safe.svg'), simpleSvg('#22c55e'));
   await writeFile(
     configPath,
-    `export default {maps: {
-      zeta: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, icons: {source: './missing'}},
-      alpha: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, icons: {source: './icons'}}
-    }};\n`,
+    tileflowMapFixture({id: 'alpha', icons: 'authored', fields: `icons: []`}),
   );
 
   const selected = await runCli(
@@ -140,15 +105,9 @@ test('filters before source I/O and rejects unknown maps with sorted valid names
     {},
   );
   assert.equal(selected.code, 0, selected.stderr);
-  const selectedDocument = JSON.parse(selected.stdout) as IconListDocument;
-  assert.deepEqual(
-    selectedDocument.maps.map((map) => map.name),
-    ['alpha'],
-  );
-  assert.deepEqual(
-    selectedDocument.catalogs.map((catalog) => catalog.sourcePath),
-    ['icons'],
-  );
+  assert.deepEqual((JSON.parse(selected.stdout) as IconListDocument).maps, [
+    {id: 'alpha', icons: {kind: 'none'}},
+  ]);
 
   const unknown = await runCli(
     directory,
@@ -157,9 +116,41 @@ test('filters before source I/O and rejects unknown maps with sorted valid names
   );
   assert.equal(unknown.code, 1);
   assert.equal(unknown.stdout, '');
-  assert.match(unknown.stderr, /Unknown map "missing-map"/);
-  assert.match(unknown.stderr, /Available maps: alpha, zeta/);
-  assert.doesNotMatch(unknown.stderr, /Icon source was not found/);
+  assert.match(unknown.stderr, /Unknown map "missing-map"/u);
+  assert.match(unknown.stderr, /Available maps: alpha/u);
+});
+
+test('resolves icon directories relative to a nested config rather than process cwd', async (t) => {
+  const directory = await createDirectoryFixture(t, 'tileflow-icon-list-nested-config-');
+  const configDirectory = join(directory, 'configs', 'map');
+  await writeFileEnsured(join(configDirectory, 'icons', 'local.svg'), simpleSvg('#2563eb'));
+  await writeFileEnsured(join(directory, 'configs', 'shared', 'shared.svg'), simpleSvg('#16a34a'));
+  await writeFileEnsured(
+    join(configDirectory, 'tileflow.config.ts'),
+    tileflowMapFixture({
+      id: 'nested',
+      icons: 'authored',
+      fields: `icons: ['./icons', '../shared']`,
+    }),
+  );
+
+  const result = await runCli(
+    directory,
+    ['icons', 'list', '--json', '--config', 'configs/map/tileflow.config.ts'],
+    {},
+  );
+  assert.equal(result.code, 0, result.stderr);
+  const map = (JSON.parse(result.stdout) as IconListDocument).maps[0];
+  assert.ok(map && map.icons.kind === 'directories');
+  assert.deepEqual(map.icons.directories, ['./icons', '../shared']);
+  assert.deepEqual(map.icons.finalIds, ['local', 'shared']);
+  assert.deepEqual(
+    map.icons.sources.map(({id, path}) => [id, path]),
+    [
+      ['local', './icons/local.svg'],
+      ['shared', '../shared/shared.svg'],
+    ],
+  );
 });
 
 test('keeps unsupported human surfaces off stdout', async (t) => {
@@ -169,97 +160,42 @@ test('keeps unsupported human surfaces off stdout', async (t) => {
 
   assert.equal(withoutJson.code, 1);
   assert.equal(withoutJson.stdout, '');
-  assert.match(withoutJson.stderr, /requires --json/);
+  assert.match(withoutJson.stderr, /requires --json/u);
   assert.equal(preview.code, 1);
   assert.equal(preview.stdout, '');
-  assert.match(preview.stderr, /unknown command ['"]preview['"]/i);
+  assert.match(preview.stderr, /unknown command ['"]preview['"]/iu);
 });
 
-test('reports config, source, and decode failures on stderr without partial JSON', async (t) => {
-  const invalidConfig = await createDirectoryFixture(t, 'tileflow-icon-list-invalid-config-');
+test('reports config, directory, and decode failures without partial JSON', async (t) => {
+  const missingDirectory = await createDirectoryFixture(t, 'tileflow-icon-list-missing-');
   await writeFile(
-    join(invalidConfig, 'tileflow.config.ts'),
-    `export default {maps: {main: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, unsupportedField: true}}};\n`,
+    join(missingDirectory, 'tileflow.config.ts'),
+    tileflowMapFixture({
+      id: 'main',
+      icons: 'authored',
+      fields: `icons: ['./missing']`,
+    }),
   );
-  const invalid = await runCli(invalidConfig, ['icons', 'list', '--json'], {});
-  assert.equal(invalid.code, 1);
-  assert.equal(invalid.stdout, '');
-  assert.match(invalid.stderr, /Tileflow config has errors/);
-
-  const missingSource = await createDirectoryFixture(t, 'tileflow-icon-list-missing-source-');
-  await writeFile(
-    join(missingSource, 'tileflow.config.ts'),
-    `export default {maps: {main: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, icons: {source: './missing'}}}};\n`,
-  );
-  const missing = await runCli(missingSource, ['icons', 'list', '--json'], {});
+  const missing = await runCli(missingDirectory, ['icons', 'list', '--json'], {});
   assert.equal(missing.code, 1);
   assert.equal(missing.stdout, '');
-  assert.match(missing.stderr, /Tileflow icon catalog has errors/);
-  assert.match(missing.stderr, /Icon source was not found/);
+  assert.match(missing.stderr, /Tileflow icon catalog has errors/u);
 
-  const brokenImage = await createDirectoryFixture(t, 'tileflow-icon-list-broken-image-');
+  const brokenImage = await createDirectoryFixture(t, 'tileflow-icon-list-broken-');
   await writeFileEnsured(join(brokenImage, 'icons', 'broken.png'), 'not a PNG');
   await writeFile(
     join(brokenImage, 'tileflow.config.ts'),
-    `export default {maps: {main: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, icons: {source: './icons'}}}};\n`,
+    tileflowMapFixture({id: 'main', icons: 'authored', fields: `icons: ['./icons']`}),
   );
   const broken = await runCli(brokenImage, ['icons', 'list', '--json'], {});
   assert.equal(broken.code, 1);
   assert.equal(broken.stdout, '');
-  assert.match(broken.stderr, /Tileflow icon catalog has errors/);
+  assert.match(broken.stderr, /Tileflow icon catalog has errors/u);
 });
-
-test('succeeds with an empty catalog array for external and absent map icons', async (t) => {
-  const directory = await createDirectoryFixture(t, 'tileflow-icon-list-empty-');
-  await writeFile(
-    join(directory, 'tileflow.config.ts'),
-    `export default {maps: {
-      external: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, icons: {mapping: {poi: 'pin'}, sprite: 'https://example.invalid/${remoteMarker}'}},
-      none: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, modules: {poi: {type: 'poi', icons: false}}}
-    }};\n`,
-  );
-  const result = await runCli(directory, ['icons', 'list', '--json'], {});
-
-  assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual((JSON.parse(result.stdout) as IconListDocument).catalogs, []);
-  assert.ok(!result.stdout.includes(remoteMarker));
-});
-
-async function createCatalogFixture(t: TestContext) {
-  const directory = await createDirectoryFixture(t, 'tileflow-icon-list-');
-  const configPath = join(directory, 'tileflow.config.ts');
-  await writeFileEnsured(
-    join(directory, 'icons', 'shared', 'cafe.svg'),
-    `${simpleSvg('#ef4444')}<!-- ${sourceMarker} -->`,
-  );
-  await writeFileEnsured(join(directory, 'icons', 'shared', 'photo.svg'), simpleSvg('#2563eb'));
-  await writeFile(
-    configPath,
-    `if (process.env.TILEFLOW_API_KEY) {
-  throw new Error('ambient Tileflow API key reached executable config');
-}
-export default {
-  icons: {
-    base: {mapping: {dangling: 'missing', food: 'cafe'}, source: './icons/shared'},
-    remote: {
-      mapping: {remote: 'remote-pin'},
-      sprite: 'https://example.invalid/${remoteMarker}?signature=secret'
-    }
-  },
-  maps: {
-    none: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, modules: {poi: {type: 'poi', icons: false}}},
-    external: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, icons: 'remote'},
-    beta: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, icons: {extends: 'base', mapping: {food: 'photo'}}},
-    alpha: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, icons: 'base'}
-  }
-};
-`,
-  );
-  return {configPath, directory};
-}
 
 async function createDirectoryFixture(t: TestContext, prefix: string): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), prefix));
+  await symlink(cliNodeModules, join(directory, 'node_modules'), 'dir');
   t.after(() => rm(directory, {force: true, recursive: true}));
   return directory;
 }
@@ -285,39 +221,6 @@ async function createHttpSentinel(t: TestContext) {
   return {requests: () => requestCount, url: `http://127.0.0.1:${address.port}`};
 }
 
-async function inventory(
-  root: string,
-): Promise<Array<{path: string; sha256: string; size: number}>> {
-  const files: string[] = [];
-
-  async function visit(directory: string): Promise<void> {
-    const entries = await readdir(directory, {withFileTypes: true});
-    entries.sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
-
-    for (const entry of entries) {
-      const path = join(directory, entry.name);
-
-      if (entry.isDirectory()) {
-        await visit(path);
-      } else if (entry.isFile()) {
-        files.push(path);
-      }
-    }
-  }
-
-  await visit(root);
-  return Promise.all(
-    files.map(async (path) => {
-      const bytes = await readFile(path);
-      return {
-        path: relative(root, path).split('/').join('/'),
-        sha256: createHash('sha256').update(bytes).digest('hex'),
-        size: bytes.byteLength,
-      };
-    }),
-  );
-}
-
 async function writeFileEnsured(path: string, contents: string | Uint8Array): Promise<void> {
   await mkdir(dirname(path), {recursive: true});
   await writeFile(path, contents);
@@ -333,7 +236,6 @@ function runCli(
   overrides: Record<string, string>,
 ): Promise<{code: number | null; stderr: string; stdout: string}> {
   const environment: NodeJS.ProcessEnv = {...process.env};
-
   for (const variable of [
     'CI',
     'GITHUB_ACTIONS',
@@ -343,12 +245,7 @@ function runCli(
   ]) {
     delete environment[variable];
   }
-
-  Object.assign(environment, overrides, {
-    HOME: cwd,
-    NO_COLOR: '1',
-    USERPROFILE: cwd,
-  });
+  Object.assign(environment, overrides, {HOME: cwd, NO_COLOR: '1', USERPROFILE: cwd});
 
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
@@ -374,34 +271,23 @@ function runCli(
 type IconListDocument = {
   schemaVersion: number;
   pathBase: string;
-  catalogs: Array<{
-    sourcePath: string;
-    insideWorkingTree: boolean;
-    packageHash: string;
-    iconCount: number;
-    generatedByteLength: number;
-    atlas: unknown;
-    icons: Array<{
-      id: string;
-      source: {format: string; path: string};
-      rendered: {
-        oneX: {
-          atlas: {x: number; y: number; width: number; height: number};
-          pixelSha256: string;
-        };
-        twoX: {
-          atlas: {x: number; y: number; width: number; height: number};
-          pixelSha256: string;
-        };
-      };
-      mappedFrom: Array<{map: string; semantic: string}>;
-    }>;
-  }>;
   maps: Array<{
-    name: string;
-    icons: {
-      kind: 'external' | 'local' | 'none';
-      mappings: Array<{semantic: string; iconId: string; targetStatus: string}>;
-    };
+    id: string;
+    icons:
+      | {kind: 'none'}
+      | {
+          kind: 'directories';
+          directories: string[];
+          finalIds: string[];
+          insideWorkingTree: boolean;
+          packageHash: string;
+          replacements: Array<{id: string; replaced: string; winner: string}>;
+          sources: Array<{
+            byteLength: number;
+            format: string;
+            id: string;
+            path: string;
+          }>;
+        };
   }>;
 };

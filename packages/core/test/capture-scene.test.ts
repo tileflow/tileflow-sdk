@@ -1,32 +1,37 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  createManifest,
-  createStyleFromProject,
-  defineTileflow,
+  defineMap,
+  defineRootMap,
   normalizeTileflowCaptureScene,
-  parseTileflowProject,
-  streets,
+  parseTileflowMap,
   tileflowCaptureSceneLimits,
   tileflowCaptureSceneSchemaVersion,
-  validateConfig,
+  validateTileflowMap,
 } from '../src/index';
 
-const project = defineTileflow({
-  maps: {
-    madrid: {
-      basemap: streets(),
-      theme: {colors: {water: '#8ED6E8'}},
-    },
+const captureRoot = defineRootMap({
+  id: 'capture-root',
+  version: 1,
+  root: {compiler: 'streets', compilerVersion: 1},
+  glyphs: {
+    kind: 'url',
+    url: 'https://fixtures.tileflow.test/fonts/{fontstack}/{range}.pbf',
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
   },
+});
+
+const map = defineMap({
+  id: 'madrid',
+  name: 'Madrid',
+  version: 1,
+  extends: captureRoot,
   scenes: {
     desktop: {
-      map: 'madrid',
       camera: {type: 'center', center: [-3.7038, 40.4168], zoom: 12},
       viewport: {width: 1_200, height: 800, dpr: 2},
     },
     application: {
-      map: 'madrid',
       camera: {
         type: 'bounds',
         bounds: [-3.8, 40.3, -3.6, 40.5],
@@ -44,14 +49,16 @@ const project = defineTileflow({
   },
 });
 
-test('validates, parses, and normalizes portable capture scenes', () => {
+test('singular maps own portable capture scenes without repeating their map id', () => {
   assert.equal(tileflowCaptureSceneSchemaVersion, 1);
   assert.equal(tileflowCaptureSceneLimits.maximumPhysicalPixels, 16_777_216);
-  assert.deepEqual(validateConfig(project), {valid: true, messages: []});
+  assert.deepEqual(validateTileflowMap(map), {valid: true, messages: []});
 
-  const parsed = parseTileflowProject(project);
-  assert.equal(parsed.scenes?.desktop?.map, 'madrid');
-  assert.deepEqual(normalizeTileflowCaptureScene(parsed.scenes!.desktop!), {
+  const resolved = parseTileflowMap(map);
+  assert.equal(resolved.id, 'madrid');
+  assert.equal('scenes' in resolved, false);
+
+  assert.deepEqual(normalizeTileflowCaptureScene({...map.scenes.desktop, map: map.id}), {
     map: 'madrid',
     camera: {
       type: 'center',
@@ -63,7 +70,7 @@ test('validates, parses, and normalizes portable capture scenes', () => {
     viewport: {width: 1_200, height: 800, dpr: 2},
     target: {kind: 'map'},
   });
-  assert.deepEqual(normalizeTileflowCaptureScene(parsed.scenes!.application!), {
+  assert.deepEqual(normalizeTileflowCaptureScene({...map.scenes.application, map: map.id}), {
     map: 'madrid',
     camera: {
       type: 'bounds',
@@ -82,148 +89,90 @@ test('validates, parses, and normalizes portable capture scenes', () => {
   });
 });
 
-test('keeps scenes out of manifest and style identity', () => {
-  const withoutScenes = defineTileflow({maps: project.maps});
-
-  assert.deepEqual(createManifest(project), createManifest(withoutScenes));
-  assert.deepEqual(
-    createStyleFromProject(project, 'madrid'),
-    createStyleFromProject(withoutScenes, 'madrid'),
-  );
-  assert.deepEqual(validateConfig(withoutScenes), {valid: true, messages: []});
+test('scene metadata is leaf-only and never inherited into a derived map', () => {
+  const child = defineMap({id: 'child', version: 1, extends: map});
+  assert.equal(parseTileflowMap(child).id, 'child');
+  assert.equal('scenes' in parseTileflowMap(child), false);
 });
 
-test('rejects invalid scene references, dimensions, cameras, targets, and unknown fields', () => {
-  const cases: Array<{input: unknown; path: string}> = [
+test('rejects invalid scene geometry, targets, names, and cross-map references', () => {
+  const cases: unknown[] = [
     {
-      input: sceneProject({map: 'missing'}),
-      path: 'scenes.proof.map',
-    },
-    {
-      input: sceneProject({viewport: {width: 4_096, height: 4_096, dpr: 2}}),
-      path: 'scenes.proof.viewport.dpr',
-    },
-    {
-      input: sceneProject({camera: {type: 'center', center: [0, 91], zoom: 1}}),
-      path: 'scenes.proof.camera.center.1',
-    },
-    {
-      input: sceneProject({
-        camera: {type: 'bounds', bounds: [0, 10, 20, 5], padding: 0},
-      }),
-      path: 'scenes.proof.camera.bounds',
-    },
-    {
-      input: sceneProject({
-        target: {kind: 'application', path: 'https://example.com/maps'},
-      }),
-      path: 'scenes.proof.target.path',
-    },
-    {
-      input: sceneProject({
-        target: {
-          kind: 'application',
-          path: '/maps',
-          captureId: 'map',
-          selector: '#map',
+      ...map,
+      scenes: {
+        proof: {
+          camera: {type: 'center', center: [0, 91], zoom: 1},
+          viewport: {width: 320, height: 200},
         },
-      }),
-      path: 'scenes.proof.target.selector',
+      },
     },
     {
-      input: sceneProject({unknown: true}),
-      path: 'scenes.proof.unknown',
+      ...map,
+      scenes: {
+        proof: {
+          camera: {type: 'center', center: [0, 0], zoom: 1},
+          viewport: {width: 4_096, height: 4_096, dpr: 2},
+        },
+      },
+    },
+    {
+      ...map,
+      scenes: {
+        proof: {
+          camera: {type: 'center', center: [0, 0], zoom: 1},
+          viewport: {width: 320, height: 200},
+          target: {kind: 'application', path: 'https://example.com'},
+        },
+      },
+    },
+    {
+      ...map,
+      scenes: {
+        CON: {
+          camera: {type: 'center', center: [0, 0], zoom: 1},
+          viewport: {width: 320, height: 200},
+        },
+      },
+    },
+    {
+      ...map,
+      scenes: {
+        proof: {
+          map: 'madrid',
+          camera: {type: 'center', center: [0, 0], zoom: 1},
+          viewport: {width: 320, height: 200},
+        },
+      },
+    },
+    {
+      ...map,
+      scenes: {
+        proof: {
+          map: 'another-map',
+          camera: {type: 'center', center: [0, 0], zoom: 1},
+          viewport: {width: 320, height: 200},
+        },
+      },
     },
   ];
 
-  for (const inputCase of cases) {
-    const validation = validateConfig(inputCase.input);
-    assert.equal(validation.valid, false, inputCase.path);
-    assert.equal(validation.messages[0]?.path, inputCase.path);
+  for (const input of cases) {
+    assert.equal(validateTileflowMap(input).valid, false);
+    assert.throws(() => parseTileflowMap(input as never), /scenes/);
   }
 });
 
-test('does not resolve missing scene maps through Object.prototype', () => {
-  for (const map of ['constructor', 'toString']) {
-    const validation = validateConfig(sceneProject({map}));
-
-    assert.equal(validation.valid, false, map);
-    assert.equal(validation.messages[0]?.path, 'scenes.proof.map');
-  }
-
-  assert.throws(
-    () => createStyleFromProject({maps: {madrid: {basemap: streets()}}}, 'constructor' as never),
-    /Unknown Tileflow map: constructor/,
-  );
-
-  const inheritedIconSet = validateConfig({
-    maps: {madrid: {basemap: streets(), icons: {extends: 'constructor'}}},
-  });
-  assert.equal(inheritedIconSet.valid, false);
-  assert.equal(inheritedIconSet.messages[0]?.path, 'maps.madrid.icons.extends');
-
-  assert.equal(
-    validateConfig({
-      maps: {constructor: {basemap: streets()}},
-      scenes: {proof: sceneProject({map: 'constructor'}).scenes.proof},
-    }).valid,
-    true,
-  );
-});
-
-test('rejects prototype-mutating record keys instead of silently dropping them', () => {
-  const input = JSON.parse(`{
-    "maps": {"madrid": {"basemap": {"type": "streets", "basemapVersion": 3, "variant": "light"}}},
-    "scenes": {
-      "__proto__": {
-        "map": "madrid",
-        "camera": {"type": "center", "center": [0, 0], "zoom": 1},
-        "viewport": {"width": 320, "height": 200}
-      }
-    }
-  }`);
-  const validation = validateConfig(input);
-
-  assert.equal(validation.valid, false);
-  assert.equal(validation.messages[0]?.path, 'scenes.__proto__');
-
-  const inheritedProject = Object.create({maps: {madrid: {basemap: streets()}}});
-  const inheritedValidation = validateConfig(inheritedProject);
-  assert.equal(inheritedValidation.valid, false);
-  assert.throws(() => parseTileflowProject(inheritedProject), /inherited properties/);
-});
-
-test('rejects scene names that cannot map portably to managed artifact files', () => {
-  const duplicateByCase = validateConfig({
-    maps: {madrid: {basemap: streets()}},
-    scenes: {
-      proof: sceneProject({}).scenes.proof,
-      PROOF: sceneProject({}).scenes.proof,
-    },
-  });
-  assert.equal(duplicateByCase.valid, false);
-  assert.match(duplicateByCase.messages[0]?.path ?? '', /^scenes\./);
-
-  for (const name of ['CON', 'x'.repeat(65)]) {
-    const validation = validateConfig({
-      maps: {madrid: {basemap: streets()}},
-      scenes: {[name]: sceneProject({}).scenes.proof},
-    });
-    assert.equal(validation.valid, false, name);
-    assert.equal(validation.messages[0]?.path, `scenes.${name}`);
-  }
-});
-
-function sceneProject(overrides: Record<string, unknown>) {
-  return {
-    maps: {madrid: {basemap: streets()}},
-    scenes: {
-      proof: {
-        map: 'madrid',
-        camera: {type: 'center', center: [0, 0], zoom: 1},
-        viewport: {width: 320, height: 200},
-        ...overrides,
-      },
-    },
+test('rejects non-canonical scene ids and non-plain scene records', () => {
+  const scene = {
+    camera: {type: 'center' as const, center: [0, 0] as [number, number], zoom: 1},
+    viewport: {width: 320, height: 200},
   };
-}
+  assert.throws(
+    () => parseTileflowMap({...map, scenes: {proof: scene, ' proof ': scene}}),
+    /lowercase kebab-case/,
+  );
+  assert.throws(
+    () => parseTileflowMap({...map, scenes: Object.create({proof: scene})}),
+    /plain object/,
+  );
+});

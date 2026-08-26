@@ -1,0 +1,65 @@
+{
+  "name": "@tileflow/interactions",
+  "version": "0.0.0-development",
+  "license": "Apache-2.0",
+  "description": "Portable annotation and interaction contracts for Tileflow maps.",
+  "type": "module",
+  "sideEffects": false,
+  "homepage": "https://tileflow.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tileflow/tileflow-sdk.git",
+    "directory": "packages/interactions"
+  },
+  "bugs": {
+    "url": "https://github.com/tileflow/tileflow-sdk/issues"
+  },
+  "keywords": [
+    "tileflow",
+    "maps",
+    "annotations",
+    "interactions"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "GENERATED_OUTPUT_LICENSE.md",
+    "TRADEMARKS.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts src/maplibre-entry.ts --format esm --dts --clean --no-splitting",
+    "verify": "pnpm run build && tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./maplibre": {
+      "types": "./dist/maplibre-entry.d.ts",
+      "import": "./dist/maplibre-entry.js",
+      "default": "./dist/maplibre-entry.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "maplibre-gl": ">=5 <7"
+  },
+  "peerDependenciesMeta": {
+    "maplibre-gl": {
+      "optional": true
+    }
+  }
+}

@@ -1,11 +1,9 @@
 import {createRequire} from 'node:module';
 import type {Browser, BrowserContext} from 'playwright';
 import type {MapLibreStyle, NormalizedTileflowCaptureScene} from '@tileflow/core';
-import {
-  assertValidTileflowStyle,
-  type TileflowBuildAsset,
-  TileflowStyleValidationError,
-} from '@tileflow/dev';
+import {getTileflowStyleFontFaces} from '@tileflow/core/runtime';
+import type {TileflowBuildAsset} from '@tileflow/dev/artifacts';
+import {assertValidTileflowStyle, TileflowStyleValidationError} from '@tileflow/dev/validation';
 import {
   TileflowCaptureError,
   type TileflowCapturePhase,
@@ -107,6 +105,7 @@ export async function captureStandaloneTileflowScene(
     timeout.unref?.();
 
     const assets = new Map(input.assets.map((asset) => [asset.fileName, asset]));
+    const fontFaces = getTileflowStyleFontFaces(input.style);
     const remoteOrigins = new Set<string>();
     let syntheticAssetFailure: string | undefined;
     const resourceFailures: TileflowCaptureResourceDiagnostic[] = [];
@@ -133,8 +132,9 @@ export async function captureStandaloneTileflowScene(
           return;
         }
 
+        const source = asset.source;
         await route.fulfill({
-          body: typeof asset.source === 'string' ? asset.source : Buffer.from(asset.source),
+          body: typeof source === 'string' ? source : Buffer.from(source),
           contentType: asset.contentType,
           status: 200,
         });
@@ -183,6 +183,7 @@ export async function captureStandaloneTileflowScene(
         return renderWindow.__tileflowCaptureLoad(renderInput);
       },
       {
+        fontFaces,
         mapEventTimeoutMs: Math.max(1, timeoutMs - 1_000),
         style: input.style,
       },
@@ -517,6 +518,7 @@ function renderHtml(viewport: {height: number; width: number}): string {
 const renderMapInPageScript = String.raw`
 window.__tileflowCaptureLoad = async function(input) {
   try {
+    await loadTileflowFontFaces(input.fontFaces || []);
     window.__tileflowCaptureLoopbackSourceIds = Object.entries(input.style.sources || {})
       .filter(([, source]) => isLoopbackSourceUrl(source?.url))
       .map(([sourceId]) => sourceId);
@@ -533,6 +535,54 @@ window.__tileflowCaptureLoad = async function(input) {
     return {status: "failed", reason: "error", message: String(error?.message || error || "")};
   }
 };
+
+async function loadTileflowFontFaces(definitions) {
+  const maximumFontBytes = 1024 * 1024;
+  await Promise.all(definitions.map(async (definition) => {
+    const response = await fetch(definition.source, {
+      cache: "force-cache",
+      credentials: "same-origin",
+      redirect: "error"
+    });
+    if (!response.ok) throw new Error("Tileflow font failed: " + response.status);
+    const declaredLength = response.headers.get("content-length");
+    if (declaredLength && /^\d+$/.test(declaredLength) && Number(declaredLength) > maximumFontBytes) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error("Tileflow font exceeds the maximum response size.");
+    }
+    if (!response.body) throw new Error("Tileflow font response is empty.");
+    const reader = response.body.getReader();
+    const chunks = [];
+    let byteLength = 0;
+    try {
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        byteLength += value.byteLength;
+        if (byteLength > maximumFontBytes) {
+          await reader.cancel().catch(() => undefined);
+          throw new Error("Tileflow font exceeds the maximum response size.");
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const bytes = new Uint8Array(byteLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const face = new FontFace(definition.family, bytes.buffer, {
+      ...(definition.style ? {style: definition.style} : {}),
+      ...(definition.weight ? {weight: definition.weight} : {})
+    });
+    await face.load();
+    document.fonts.add(face);
+  }));
+}
 
 window.__tileflowCaptureIdle = async function(input) {
   const map = window.__tileflowMap;

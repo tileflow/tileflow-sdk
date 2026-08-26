@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <g fill="none" shape-rendering="geometricPrecision">
+    <path d="M-4 16 16-4M0 20 20 0" stroke="#FF3FBF" stroke-width="0.7" opacity="0.3"/>
+    <path d="M0 8h4V4h4M8 16v-4h4V8h4" stroke="#FFD1F1" stroke-width="0.55" opacity="0.5"/>
+  </g>
+  <g fill="#FFF4FB" opacity="0.72">
+    <rect x="3.5" y="3.5" width="1" height="1"/>
+    <rect x="11.5" y="7.5" width="1" height="1"/>
+  </g>
+</svg>

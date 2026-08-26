@@ -87,6 +87,7 @@ export function compileTransit(
     ['!', cablewayFilter],
   ];
   const railFilter = ['all', railModeFilter, ['!', ['has', schema.fields.service]]];
+  const serviceRailFilter = ['all', railModeFilter, ['has', schema.fields.service]];
   const lineTargets = [
     ['ferry', config.ferry, ferryFilter, 'transport-surface-fill', 1000],
     ['cableway', config.cableway, cablewayFilter, 'transport-surface-fill', 1030],
@@ -125,13 +126,10 @@ export function compileTransit(
 
   const structuredTargets = [
     ['rail', config.rail, railFilter, 1010],
-    ['rail-hatching', config.railHatching, railFilter, 1011],
-    [
-      'service-rail',
-      config.serviceRail,
-      ['all', railModeFilter, ['has', schema.fields.service]],
-      1020,
-    ],
+    ['service-rail', config.serviceRail, serviceRailFilter, 1020],
+    // Mapbox's sleeper pass spans main and service tracks. Keep it above both
+    // longitudinal strokes so yards do not degrade to plain single lines.
+    ['rail-hatching', config.railHatching, railModeFilter, 1030],
   ] as const;
   for (const [name, styles, semanticFilter, baseOrder] of structuredTargets) {
     if (!styles) continue;

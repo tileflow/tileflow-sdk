@@ -3,10 +3,10 @@ import pc from 'picocolors';
 import {
   type AuthConfigV2,
   type CliAccountSessionV2,
-  normalizeApiOrigin,
   parseProjectReference,
   resolveAccountSession,
 } from './account-session';
+import {requestHostedJson} from './hosted-client';
 
 type Identity = {id: string; name: string; slug: string};
 type ProjectItem = Identity & {
@@ -277,33 +277,36 @@ async function requireCommandSession(
 }
 
 async function accountRequest(session: CliAccountSessionV2, path: string, init: RequestInit) {
-  const response = await fetch(`${normalizeApiOrigin(session.apiOrigin)}${path}`, {
-    ...init,
-    headers: {...init.headers, Authorization: `Bearer ${session.accountSession}`},
-  });
-  const source = await response.text();
-  if (source.length > 1024 * 1024) {
+  let response;
+  try {
+    response = await requestHostedJson(session.apiOrigin, path, {
+      ...init,
+      headers: {...init.headers, Authorization: `Bearer ${session.accountSession}`},
+    });
+  } catch (error) {
     return {
       body: null,
-      error: 'Response exceeded the safe size limit.',
+      error:
+        error instanceof Error && /safe size limit|timed out/u.test(error.message)
+          ? error.message
+          : 'Hosted request failed.',
       ok: false as const,
       status: 502,
     };
   }
-  let body: unknown = null;
-  try {
-    body = source ? (JSON.parse(source) as unknown) : null;
-  } catch {
-    // The stable failure below intentionally does not echo an untrusted response body.
+  if (response.ok && !response.json) {
+    return {
+      body: null,
+      error: 'Hosted response returned invalid JSON.',
+      ok: false as const,
+      status: 502,
+    };
   }
   return response.ok
-    ? {body, ok: true as const, status: response.status}
+    ? {body: response.body, ok: true as const, status: response.status}
     : {
-        body,
-        error:
-          typeof asRecord(body).error === 'string'
-            ? (asRecord(body).error as string)
-            : `Request failed (${response.status}).`,
+        body: response.body,
+        error: `Request failed (${response.status}).`,
         ok: false as const,
         status: response.status,
       };

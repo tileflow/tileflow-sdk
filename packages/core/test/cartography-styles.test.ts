@@ -46,7 +46,10 @@ test('maps every reusable visual primitive to its MapLibre paint and layout cont
       color: '#123456',
       dash: [2, 1],
       gapWidth: 3,
-      join: 'miter',
+      join: zoom.step<'miter' | 'round'>([
+        [3, 'miter'],
+        [14, 'round'],
+      ]),
       miterLimit: 4,
       offset: 1,
       opacity: 0.8,
@@ -60,7 +63,7 @@ test('maps every reusable visual primitive to its MapLibre paint and layout cont
   );
   assert.deepEqual(line.layout, {
     'line-cap': 'round',
-    'line-join': 'miter',
+    'line-join': ['step', ['zoom'], 'miter', 14, 'round'],
     'line-miter-limit': 4,
     'line-round-limit': 1.2,
   });
@@ -76,7 +79,7 @@ test('maps every reusable visual primitive to its MapLibre paint and layout cont
       color: '#222222',
       fallbacks: ['Fallback Regular'],
       field: expression(['get', 'name']),
-      font: 'Noto Sans',
+      font: 'Noto Sans Bold',
       haloBlur: 0.3,
       haloColor: '#FFFFFF',
       haloWidth: 1.5,
@@ -96,7 +99,6 @@ test('maps every reusable visual primitive to its MapLibre paint and layout cont
       size: 14,
       transform: 'uppercase',
       variableAnchors: ['top', 'bottom'],
-      weight: 'bold',
     },
   );
   assert.deepEqual((text.layout as Record<string, unknown>)['text-font'], [
@@ -213,7 +215,7 @@ test('area and symbol compounds have deterministic phases and fail on impossible
       spacing: 120,
       zOrder: 'source',
       icon: {image: 'museum'},
-      text: {field: 'Museum', font: 'Noto Sans', weight: 'semibold'},
+      text: {field: 'Museum', font: 'Noto Sans Bold'},
     },
   );
   assert.equal(symbol.minzoom, 12);

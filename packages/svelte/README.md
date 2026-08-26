@@ -11,7 +11,7 @@ Install `maplibre-gl` alongside the package and import its CSS once in your app.
 </script>
 
 <TileflowMap
-  map="madrid"
+  source={{kind: 'tileflow', map: 'madrid'}}
   center={[-3.7038, 40.4168]}
   zoom={12}
   mapOptions={{
@@ -22,15 +22,39 @@ Install `maplibre-gl` alongside the package and import its CSS once in your app.
 ```
 
 `mapOptions` accepts native MapLibre options except `container` and `style`, which
-Tileflow resolves from the map name, manifest, or explicit style props. Direct
+Tileflow resolves from `source`. Direct
 Tileflow props such as `center`, `zoom`, and `interactive` take priority when
-provided.
+provided. Camera resolution is the same in interactive and image modes: direct props, then
+`mapOptions`, then the published manifest view, then Tileflow's shared runtime defaults.
 
-Choose a single style source. `config` may only be combined with `themes`. A named `map` may be
-used alone or with exactly one of `mapStyle`, `styleUrl`, or `styleBaseUrl`; keeping `map` alongside
-an explicit style preserves map identity for capture and analytics. `styleBaseUrl` requires a named
-map, and `themes` has no effect without `config`, so invalid combinations throw a `TypeError` rather
-than being resolved by silent precedence.
+Every map has exactly one discriminated `source`. Use `kind: 'tileflow'` with `map` and an optional
+`manifestUrl` for published delivery, or `kind: 'maplibre'` with a direct MapLibre style object or
+URL. Browser components do not compile `tileflow.config.ts`.
+
+Without `manifestUrl`, the exact default is `/tileflow/manifest.json`. If a bundler, framework base
+path, reverse proxy, or Tileflow plugin publishes it elsewhere, set the final public URL explicitly;
+the component does not guess it. Manifest 404s, unknown map IDs, unresolved styles, and unresolved
+image URLs enter `data-tileflow-state="error"`.
+
+```svelte
+<TileflowMap
+  source={{
+    kind: 'tileflow',
+    map: 'madrid',
+    manifestUrl: 'https://cdn.example.com/tileflow/manifest.json',
+  }}
+/>
+
+<TileflowMap
+  source={{
+    kind: 'maplibre',
+    style: 'https://api.tileflow.dev/maps/map_1234567890abcdef/style.json',
+  }}
+/>
+```
+
+`mode="image"` resolves an explicit or published image URL and renders an `<img>` without loading
+or evaluating MapLibre. All environments follow the same published manifest contract.
 
 Hosted maps automatically preflight a short-lived commercial session grant before eligible
 resources. Setting `analytics={{enabled: false}}` disables the optional beacon only; it does not
@@ -39,17 +63,123 @@ Direct Tileflow World maps keep early `GRACE` silent, show a compact accessible 
 when late `GRACE` is activated, and show a stronger banner in `CLAIM_REQUIRED`. Missing tiles and
 MapLibre failures do not remove that recovery path.
 
+## Annotations and overlays
+
+Use `annotations` for keyed markers with optional tooltips and popups. Tileflow supplies accessible,
+text-only defaults; Svelte snippets can replace any surface and are mounted into the DOM containers
+owned by the shared MapLibre interaction runtime.
+
+```svelte
+<script lang="ts">
+  import {TileflowMap} from '@tileflow/svelte';
+  import type {
+    TileflowAnnotation,
+    TileflowInteractionBinding,
+    TileflowInteractionState,
+  } from '@tileflow/interactions';
+
+  const annotations: TileflowAnnotation[] = [
+    {
+      ariaLabel: 'Madrid',
+      coordinate: [-3.7038, 40.4168],
+      id: 'madrid',
+      kind: 'marker',
+      marker: {content: {kind: 'text', text: 'Madrid'}},
+      popup: {content: {kind: 'view', name: 'city-card'}},
+      tooltip: {content: {kind: 'text', text: 'Open Madrid'}},
+    },
+  ];
+
+  const interactions: TileflowInteractionBinding[] = [
+    {
+      id: 'poi-details',
+      popup: {content: {kind: 'view', name: 'poi-card'}},
+      target: {categories: ['food'], domain: 'poi', kind: 'semantic-feature'},
+      tooltip: {content: {field: 'name', fallback: 'Restaurant', kind: 'field'}},
+    },
+  ];
+
+  let interactionState: TileflowInteractionState = {popup: null};
+</script>
+
+{#snippet marker(context)}
+  <span>{context.annotation.ariaLabel}</span>
+{/snippet}
+
+{#snippet tooltip(context)}
+  {#if context.target.kind === 'annotation'}
+    <span>{context.target.annotation.ariaLabel}</span>
+  {:else}
+    <span>Point of interest</span>
+  {/if}
+{/snippet}
+
+{#snippet popup(context)}
+  <article>
+    {#if context.target.kind === 'annotation'}
+      <h2>{context.target.annotation.ariaLabel}</h2>
+    {:else if context.target.kind === 'semantic-feature'}
+      <h2>POI details</h2>
+    {/if}
+    <button type="button" onclick={context.close}>Close</button>
+  </article>
+{/snippet}
+
+<TileflowMap
+  source={{kind: 'tileflow', map: 'madrid'}}
+  {annotations}
+  {interactions}
+  {interactionState}
+  onInteractionStateChange={(next) => (interactionState = next)}
+  onInteractionEvent={(event) => console.log(event.type)}
+  onInteractionDiagnostic={(diagnostic) => console.error(diagnostic)}
+  {marker}
+  {tooltip}
+  {popup}
+/>
+```
+
+`annotations` and the legacy `markers` prop are mutually exclusive. So are controlled
+`interactionState` and uncontrolled `defaultInteractionState`. `interactions` binds tooltips and
+popups to semantic POIs exposed by the compiled style metadata; applications select the stable
+`poi` domain and optional categories rather than physical style-layer IDs.
+
+Snippet callbacks are read at the time an interaction occurs, and adding or removing a snippet
+switches between custom and default rendering without recreating the map or its keyed markers.
+`marker` receives the annotation-only context. `tooltip` and `popup` receive the general interaction
+context and therefore handle both annotation and semantic-feature targets. Each context includes
+resolved content, the target, optional view name, and `close()`.
+
+Both runtimes are controlled by one interaction-state coordinator. Replacing an annotation popup
+with a POI popup (or the reverse) closes the previous owner before opening the next one, so event
+order remains `popup:close` followed by `popup:open`.
+
+Annotations and semantic interactions are interactive-only. The TypeScript API excludes
+annotations, legacy markers, interactions, interaction state, snippets, and interaction callbacks
+from the `mode="image"` branch. Untyped JavaScript that supplies them still receives an
+`UNSUPPORTED_MODE` diagnostic and capture readiness `error`, rather than pretending the static image
+contains live overlays.
+
 ## Headless capture readiness
 
 Use `captureId` to disambiguate repeated named maps:
 
 ```svelte
-<TileflowMap map="madrid" captureId="checkout-map" />
+<TileflowMap source={{kind: 'tileflow', map: 'madrid'}} captureId="checkout-map" />
 ```
 
 The root exposes `data-tileflow-map`, optional `data-tileflow-capture-id`, and
 `data-tileflow-state="loading|idle|error"`. It becomes idle only after MapLibre idle plus two
-animation frames (or image decode/load in image mode), returns to loading for new style/data work,
-and marks terminal load errors. Application capture selects exactly one ready target.
+animation frames and, for custom interaction snippets, the Svelte DOM commit plus two current
+animation frames. It returns to loading when either surface changes and marks map or interaction
+errors. In image mode, readiness follows image decode/load when no interaction configuration is
+present. Application capture selects exactly one ready target.
+
+## Compatibility
+
+The supported peer window is Svelte 5.x and MapLibre GL JS 5-6. Compatibility smoke tests install
+Svelte 5.0.0 with the first release of both MapLibre majors from packed Tileflow tarballs, typecheck
+the public declarations, and compile real Svelte consumers. Future Svelte majors stay outside the
+peer range until that matrix passes.
 
 Docs: https://tileflow.dev/docs

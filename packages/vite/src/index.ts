@@ -1,26 +1,29 @@
 import {resolve} from 'node:path';
 import type {Plugin, ResolvedConfig} from 'vite';
 import {
+  assertTileflowSelfHostedManifestTarget,
   createTileflowArtifactSession,
   createTileflowBuildArtifacts,
-  createTileflowDevRequestHandler,
-  createTileflowNodeRequest,
   defaultTileflowConfigPath,
   getTileflowAssetBasePath,
   getTileflowAssetFileName,
-  isTileflowRequestUrl,
-  joinTileflowPublicUrl,
   normalizeTileflowBasePath,
-  type TileflowBuildArtifactsOptions,
+  refreshTileflowArtifactSession,
+  resolveTileflowArtifactPublicUrls,
+} from '@tileflow/dev/artifacts';
+import {
+  createTileflowDevRequestHandler,
+  createTileflowNodeRequest,
+  isTileflowRequestUrl,
   writeTileflowNodeResponse,
-} from '@tileflow/dev';
+} from '@tileflow/dev/server';
 
 export type TileflowVitePluginOptions = {
   apiBaseUrl?: string;
   base?: string;
   config?: string;
   emitBuildArtifacts?: boolean;
-  worldGeneration?: TileflowBuildArtifactsOptions['worldGeneration'];
+  overwriteHostedManifest?: boolean;
 };
 
 export function tileflow(options: TileflowVitePluginOptions = {}): Plugin {
@@ -38,61 +41,78 @@ export function tileflow(options: TileflowVitePluginOptions = {}): Plugin {
     configureServer(server) {
       const root = server.config.root;
       const configFile = resolve(root, configPath);
-      const watchedIconPaths = new Set<string>();
+      const devBasePaths = getViteDevBasePaths(server.config.base ?? '/', basePath);
+      const artifactBasePath = devBasePaths[devBasePaths.length - 1] ?? basePath;
+      const watchedInputPaths = new Set<string>();
       const sessionPromise = createTileflowArtifactSession({
-        assetBaseUrl: basePath,
+        assetBaseUrl: artifactBasePath,
         config: configPath,
         cwd: root,
-        styleBaseUrl: basePath,
+        styleBaseUrl: artifactBasePath,
         apiBaseUrl: options.apiBaseUrl,
-        worldGeneration: options.worldGeneration,
         watch: false,
       });
-      const handlerPromise = sessionPromise.then((session) => {
+      const handlersPromise = sessionPromise.then((session) => {
         session.subscribe((state) => {
           if (state.status === 'ready' && state.generation > 1) {
             server.ws.send({type: 'full-reload'});
           }
         });
-        return createTileflowDevRequestHandler({
-          basePath,
-          config: configPath,
-          cwd: root,
-          onError(error) {
-            const message = error instanceof Error ? error.message : 'Unknown Tileflow error';
-            server.config.logger.error(`[tileflow] ${message}`);
-          },
-          session,
-          apiBaseUrl: options.apiBaseUrl,
-          worldGeneration: options.worldGeneration,
-        });
+        return new Map(
+          devBasePaths.map((devBasePath) => [
+            devBasePath,
+            createTileflowDevRequestHandler({
+              basePath: devBasePath,
+              config: configPath,
+              cwd: root,
+              onError(error) {
+                const message = error instanceof Error ? error.message : 'Unknown Tileflow error';
+                server.config.logger.error(`[tileflow] ${message}`);
+              },
+              session,
+              apiBaseUrl: options.apiBaseUrl,
+            }),
+          ]),
+        );
       });
-      const refreshWatchedIconPaths = async () => {
+      const refreshWatchedInputPaths = async () => {
         try {
           const session = await sessionPromise;
           const watchPaths = session.getLastGoodArtifacts()?.watchPaths ?? [];
+          const nextWatchPaths = new Set(watchPaths);
+
+          const staleWatchPaths = [...watchedInputPaths].filter(
+            (watchPath) => !nextWatchPaths.has(watchPath),
+          );
+          if (staleWatchPaths.length > 0) {
+            await server.watcher.unwatch(staleWatchPaths);
+            for (const watchPath of staleWatchPaths) watchedInputPaths.delete(watchPath);
+          }
 
           for (const watchPath of watchPaths) {
-            if (!watchedIconPaths.has(watchPath)) {
+            if (!watchedInputPaths.has(watchPath)) {
               server.watcher.add(watchPath);
-              watchedIconPaths.add(watchPath);
+              watchedInputPaths.add(watchPath);
             }
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unknown Tileflow error';
-          server.config.logger.warn(`[tileflow] Unable to watch icon paths: ${message}`);
+          server.config.logger.warn(`[tileflow] Unable to watch input paths: ${message}`);
         }
       };
       const reloadIfTileflowInput = (file: string) => {
-        if (!isTileflowInputPath(file, root, configFile, watchedIconPaths)) return;
+        if (file !== configFile && !isWatchedInputPath(file, watchedInputPaths)) return;
         void sessionPromise.then(async (session) => {
-          await session.refresh('vite watcher');
-          await refreshWatchedIconPaths();
+          await refreshTileflowArtifactSession(session, {
+            inputPath: file,
+            reason: 'vite watcher',
+          });
+          await refreshWatchedInputPaths();
         });
       };
 
       server.watcher.add(configFile);
-      void refreshWatchedIconPaths();
+      void refreshWatchedInputPaths();
       server.watcher.on('add', reloadIfTileflowInput);
       server.watcher.on('change', reloadIfTileflowInput);
       server.watcher.on('unlink', reloadIfTileflowInput);
@@ -101,14 +121,20 @@ export function tileflow(options: TileflowVitePluginOptions = {}): Plugin {
       });
 
       server.middlewares.use(async (request, response, next) => {
-        if (!isTileflowRequestUrl(request.url, basePath)) {
+        const requestBasePath = devBasePaths.find((candidate) =>
+          isTileflowRequestUrl(request.url, candidate),
+        );
+        if (requestBasePath === undefined) {
           next();
           return;
         }
 
         try {
           const tileflowRequest = createTileflowNodeRequest(request);
-          const tileflowResponse = await (await handlerPromise)(tileflowRequest);
+          const handler = (await handlersPromise).get(requestBasePath);
+          if (!handler)
+            throw new Error(`Missing Tileflow Vite handler for ${requestBasePath || '/'}`);
+          const tileflowResponse = await handler(tileflowRequest);
           await writeTileflowNodeResponse(response, tileflowResponse);
         } catch (error) {
           next(error);
@@ -127,31 +153,21 @@ export function tileflow(options: TileflowVitePluginOptions = {}): Plugin {
         return;
       }
 
+      const publicUrls = resolveTileflowArtifactPublicUrls(config.base, basePath);
       const artifacts = await createTileflowBuildArtifacts({
-        assetBaseUrl: joinTileflowPublicUrl(config.base, basePath),
+        assetBaseUrl: publicUrls.assetBaseUrl,
         config: configPath,
         cwd: config.root,
-        styleBaseUrl: joinTileflowPublicUrl(config.base, basePath),
+        styleBaseUrl: publicUrls.styleBaseUrl,
         apiBaseUrl: options.apiBaseUrl,
-        worldGeneration: options.worldGeneration,
       });
       const assetBase = getTileflowAssetBasePath(basePath);
+      await assertTileflowSelfHostedManifestTarget(
+        resolve(config.publicDir, assetBase, 'manifest.json'),
+        {overwriteHostedManifest: options.overwriteHostedManifest},
+      );
 
-      this.emitFile({
-        fileName: getTileflowAssetFileName(assetBase, 'manifest.json'),
-        source: `${JSON.stringify(artifacts.manifest, null, 2)}\n`,
-        type: 'asset',
-      });
-
-      for (const [mapName, style] of Object.entries(artifacts.styles)) {
-        this.emitFile({
-          fileName: getTileflowAssetFileName(assetBase, `styles/${mapName}.json`),
-          source: `${JSON.stringify(style, null, 2)}\n`,
-          type: 'asset',
-        });
-      }
-
-      for (const asset of artifacts.assets) {
+      for (const asset of artifacts.files) {
         this.emitFile({
           fileName: getTileflowAssetFileName(assetBase, asset.fileName),
           source: asset.source,
@@ -164,10 +180,10 @@ export function tileflow(options: TileflowVitePluginOptions = {}): Plugin {
 
 export default tileflow;
 
-function isWatchedIconPath(file: string, watchedIconPaths: Set<string>): boolean {
+function isWatchedInputPath(file: string, watchedInputPaths: Set<string>): boolean {
   const normalizedFile = normalizePath(file);
 
-  for (const watchPath of watchedIconPaths) {
+  for (const watchPath of watchedInputPaths) {
     const normalizedWatchPath = normalizePath(watchPath);
 
     if (
@@ -181,26 +197,14 @@ function isWatchedIconPath(file: string, watchedIconPaths: Set<string>): boolean
   return false;
 }
 
-function isTileflowInputPath(
-  file: string,
-  root: string,
-  configFile: string,
-  watchedIconPaths: Set<string>,
-): boolean {
-  if (file === configFile || isWatchedIconPath(file, watchedIconPaths)) return true;
-  const normalizedFile = normalizePath(file);
-  const normalizedRoot = normalizePath(root).replace(/\/+$/, '');
-  if (!normalizedFile.startsWith(`${normalizedRoot}/`)) return false;
-  if (
-    /\/(?:node_modules|\.git|\.tileflow|dist|build|coverage|\.next|\.cache|\.turbo)\//.test(
-      normalizedFile,
-    )
-  ) {
-    return false;
-  }
-  return /\.(?:cjs|cts|js|json|mjs|mts|ts|tsx)$/.test(normalizedFile);
-}
-
 function normalizePath(value: string): string {
   return value.replace(/\\/g, '/');
+}
+
+function getViteDevBasePaths(publicBase: string, basePath: string): string[] {
+  const publicBaseUrl = resolveTileflowArtifactPublicUrls(publicBase, basePath).publicBaseUrl;
+  const publicPath = publicBaseUrl.startsWith('/')
+    ? normalizeTileflowBasePath(publicBaseUrl)
+    : basePath;
+  return [...new Set([basePath, publicPath])];
 }

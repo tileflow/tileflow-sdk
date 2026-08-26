@@ -85,14 +85,24 @@ cost in advance or verify prepared CI, not as a prerequisite for normal capture.
 
 `createTileflowCaptureReceipt`, `parseTileflowCaptureReceipt`,
 `validateTileflowCaptureReceipt`, and `serializeTileflowCaptureReceipt` implement the strict,
-bounded schema-version-2 receipt contract. A receipt contains image/scene/style hashes, dimensions,
+bounded schema-version-3 receipt contract. A receipt contains image/scene/style hashes, dimensions,
 renderer/platform identity, the required resolved `data` identity, explicit style/data verification,
 and remote-dependency state. Standalone map receipts mark configured style and data as `rendered`;
 application receipts mark them as `expected-unverified` because capture cannot inspect an arbitrary
 application's live MapLibre instance. Vector endpoints are represented by a query-free SHA-256
 fingerprint rather than a raw URL. Receipts contain no time, user, origin, path, query, signed token,
-repository, absolute filesystem path, config source, environment, or credential. Existing canonical
-schema-v2 receipts remain readable and normalize to this safe representation.
+repository, absolute filesystem path, config source, environment, or credential.
+
+For Tileflow World, Capture resolves the map's TileJSON selector once per session, requires
+`tileflow.world` to identify `world-v1` with exact release, descriptor, archive, data-contract, and
+product-contract SHA-256 values, and renders every standalone scene from the returned immutable tile
+template. Repeated scenes and retries reuse that one resolution; another selector in the same
+session fails instead of mixing releases. Existing canonical schema-v2 receipts remain readable as
+legacy evidence and are never reclassified as schema v3.
+
+Capture reuses Core's exact World V1 release-ID contract: 12–128 characters matching
+`^world-v1-[a-z0-9][a-z0-9._-]*[a-z0-9]$`. Selector responses and durable receipts reject rather
+than normalize uppercase, whitespace, another generation, or an incomplete boundary value.
 
 Receipt-only tooling can import these contracts from `@tileflow/capture/receipt` without loading the
 Playwright capture runtime.

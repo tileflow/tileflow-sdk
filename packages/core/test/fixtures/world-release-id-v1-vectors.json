@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "pattern": "^world-v1-[a-z0-9][a-z0-9._-]*[a-z0-9]$",
+  "minimumLength": 12,
+  "maximumLength": 128,
+  "valid": ["world-v1-abc", "world-v1-release-20260826", "world-v1-a.b_c-9"],
+  "invalid": [
+    "world-v1-ab",
+    "world-v1-Abc",
+    "world-V1-abc",
+    "world-v2-abc",
+    "world-v1--abc",
+    "world-v1-abc-",
+    "world-v1-a:bc",
+    "world-v1-a/b",
+    " world-v1-abc",
+    "world-v1-abc "
+  ]
+}

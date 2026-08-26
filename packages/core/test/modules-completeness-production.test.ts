@@ -1,18 +1,34 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  addresses,
-  createStyle,
-  labels,
-  landforms,
-  openMapTiles,
-  streets,
-  vectorTiles,
-} from '../src';
+import {addresses, createStyle, labels, landforms, openMapTiles, vectorTiles} from '../src';
+import {extendStreets} from './map-fixture';
+
+const streetsPreparedAssets = {
+  icons: {
+    ids: [
+      'coffee',
+      'crosswalk',
+      'culture',
+      'education',
+      'food',
+      'health',
+      'lodging',
+      'major-transit',
+      'oneway',
+      'services',
+      'shopping',
+      'sidewalk-dot',
+    ],
+    sprite: '/tileflow/test/streets/sprite',
+  },
+} as const;
+
+const compileTestMap = (design: Parameters<typeof extendStreets>[0] = {}) =>
+  createStyle(extendStreets(design), {preparedAssets: streetsPreparedAssets});
 
 test('default Streets recipe renders standard house numbers and named landforms', () => {
-  const style = createStyle({basemap: streets()});
+  const style = compileTestMap();
   const address = style.layers.find(({id}) => id === 'streets-addresses-labels');
   const peak = style.layers.find(({id}) => id === 'streets-landforms');
   const modules = style.metadata?.['tileflow:modules'] as string[];
@@ -25,8 +41,7 @@ test('default Streets recipe renders standard house numbers and named landforms'
 });
 
 test('address, landform, language, capital, and elevation bindings are remappable', () => {
-  const style = createStyle({
-    basemap: streets(),
+  const style = compileTestMap({
     data: vectorTiles({
       attribution: '© Test',
       schema: openMapTiles({
@@ -65,8 +80,7 @@ test('address, landform, language, capital, and elevation bindings are remappabl
 });
 
 test('new semantic modules can be styled or disabled without raw layer IDs', () => {
-  const style = createStyle({
-    basemap: streets(),
+  const style = compileTestMap({
     modules: {
       addresses: addresses({labels: {minZoom: 18, text: {color: '#334455'}}}),
       landforms: landforms({

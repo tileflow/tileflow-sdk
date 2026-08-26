@@ -8,39 +8,52 @@ Local config, validation, build, preview, and hosted-compatibility checks requir
 no Tileflow account or API key:
 
 ```sh
+npm install @tileflow/core@alpha @tileflow/maps@alpha
 npm install --save-dev --save-exact @tileflow/cli@alpha
 npm exec --no -- tileflow init
 npm exec --no -- tileflow validate
 npm exec --no -- tileflow validate --target hosted
 npm exec --no -- tileflow build
-npm exec --no -- tileflow dev
+npm exec --no -- tileflow preview
 ```
+
+The generated config imports `streets`, extends it, and declares only the starter's modules and
+view. Streets already owns its complete icon and glyph providers, so the leaf does not repeat font
+stacks or know a delivery URL.
 
 `npm exec --no --` runs the project-local CLI and fails instead of downloading
 a missing package. Other package managers work; use the equivalent command for
 the lockfile already owned by the project.
 
-`tileflow dev` previews the first map by default and uses that map's configured `view`. Select a
-different map or a committed standalone scene explicitly:
+`tileflow preview` previews the map exported by `tileflow.config.ts` and uses its configured `view`.
+Select one of that map's committed standalone scenes explicitly:
 
 ```sh
-npm exec --no -- tileflow dev --map madrid
-npm exec --no -- tileflow dev --scene madrid-mobile
+npm exec --no -- tileflow preview --scene madrid-mobile
 ```
+
+To work on another map, point `--config` at another singular config. Multi-map catalogs are internal
+orchestration used by this repository's workbench and are not a second public config shape.
+
+`tileflow dev` remains a compatibility alias. The `preview` name distinguishes this SDK preview
+server from an application's own `npm run dev` process.
 
 The preview binds only `127.0.0.1` by default. Network exposure is never implicit. To bind another
 interface, pass one explicit IP literal (or `localhost`) with `--host`, for example
-`tileflow dev --host 192.0.2.10`. URL-, path-, and hostname-shaped values are rejected.
+`tileflow preview --host 192.0.2.10`. URL-, path-, and hostname-shaped values are rejected.
 
 A scene preview applies its committed camera and CSS viewport dimensions. Capture remains the
-authority for exact DPR and pixels. `--map` and `--scene` are mutually exclusive, and scenes whose
-target is an application must be viewed through that application's normal development server.
+authority for exact DPR and pixels. Scenes whose target is an application must be viewed through
+that application's normal development server.
 
 ## Build artifacts
 
-`tileflow build` validates executable config and MapLibre semantics, compiles local icons, and
-writes `manifest.json`, named Style JSON files, and generated sprite assets. The default output is
-`dist/tileflow`; choose another directory explicitly with `--out`:
+`tileflow build` resolves the exported map lineage, validates executable config and MapLibre
+semantics, compiles its ordered package/local icon directories and selected text provider, and
+writes `manifest.json`, the map's named Style JSON file, and every referenced sprite/font asset. A
+map with text has exactly one provider: local/package `fonts` directories or a `glyphs` descriptor
+whose `fontStacks` are explicit. The default output is `dist/tileflow`; choose another directory
+explicitly with `--out`:
 
 ```sh
 npm exec --no -- tileflow build --out public/tileflow
@@ -50,11 +63,35 @@ Build is local and credential-free. Hosted compatibility is a separate
 `tileflow validate --target hosted` preflight; both that command and `deploy` reject non-Tileflow
 World data through the same compatibility check.
 
+## Deterministic agent diagnostics
+
+Use JSON mode when an agent or CI job needs to validate or reason about the resolved config:
+
+```sh
+npm exec --no -- tileflow validate --json
+npm exec --no -- tileflow inspect --json
+npm exec --no -- tileflow inspect --map madrid --json
+```
+
+Success writes exactly one schema-version-1 document to stdout. Failure leaves stdout empty and
+writes one document to stderr. Both summaries and every failure diagnostic always contain
+`phase`, `code`, `path`, `severity`, `message`, and a bounded safe `suggestion`; diagnostics are
+sorted and deduplicated deterministically.
+
+Config inspection returns the resolved map, root-to-leaf lineage, declared paths, and leaf-level
+merge provenance. It omits the executable input-file graph and sanitizes credentials, URL queries,
+secret-shaped values, data URLs, and absolute filesystem paths. The generated
+[`modules-api-reference.json`](../../docs/modules-api-reference.json) is the machine-readable
+map/module schema; its default `authoring` entrypoint tells an agent how to write the singular
+config with `extends` and `scenes`, while its named `resolved` entrypoint matches inspection and
+compiler input. Both are produced from executable core schemas rather than a handwritten parallel
+API list.
+
 ## Command families
 
 | Family          | Commands                                                                     |
 | --------------- | ---------------------------------------------------------------------------- |
-| Map authoring   | `init`, `validate`, `build`, `dev`                                           |
+| Map authoring   | `init`, `validate`, `inspect`, `build`, `preview` (`dev` alias)              |
 | Local evidence  | `setup capture`, `capture`, `visual analyze`, `visual diff`, `visual update` |
 | Data and assets | `inspect features`, `icons list --json`, `icons diff`                        |
 | Account         | `login`, `logout`, `whoami`                                                  |
@@ -73,7 +110,6 @@ shell into its versioned per-user cache:
 
 ```sh
 npm exec --no -- tileflow capture \
-  --map madrid \
   --center=-3.69201,40.40871 \
   --zoom=16.15 \
   --width=1200 \
@@ -81,22 +117,26 @@ npm exec --no -- tileflow capture \
   --json
 ```
 
-The successful entry includes a normalized `definition` with only `map`, `camera`, `viewport`, and
-the default map `target`. Copy it under a chosen `scenes.<name>` key; the CLI never rewrites
+The successful entry includes a normalized `definition` with only `camera`, `viewport`, and the
+default map `target`. Copy it under a chosen `scenes.<name>` key; the CLI never rewrites
 executable TypeScript config. Then commit the bounded scene so agents and CI render the same map,
 camera, and viewport:
 
 ```ts
-export default {
-  maps: {madrid: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}}},
+import {defineMap} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'madrid',
+  name: 'Madrid',
+  version: 1,
+  extends: streets,
   scenes: {
     'madrid-desktop': {
-      map: 'madrid',
       camera: {type: 'center', center: [-3.7038, 40.4168], zoom: 12},
       viewport: {width: 1280, height: 800, dpr: 1},
     },
     'madrid-product': {
-      map: 'madrid',
       camera: {type: 'center', center: [-3.7038, 40.4168], zoom: 12},
       viewport: {width: 390, height: 844, dpr: 2},
       target: {
@@ -106,8 +146,11 @@ export default {
       },
     },
   },
-};
+});
 ```
+
+`scenes` is tooling metadata owned by this map. It is not inherited and does not enter the
+cartographic compiler; tooling supplies the exported map ID when it normalizes a scene internally.
 
 Render one checkpoint, or recapture after every edit:
 
@@ -121,8 +164,8 @@ Use the first command when you want a single image and the last command while re
 mode stays open, follows changes to the config, its local imports, and its icons, and writes a new
 PNG after each valid edit. Keeping the browser ready makes repeated renders faster. If an edit is
 invalid, the last good image remains in place and capture resumes automatically after the fix. Stop
-watch mode with `Ctrl+C`. It accepts named committed scenes or `--all`, not an exploratory `--map`
-capture.
+watch mode with `Ctrl+C`. It accepts named committed scenes or `--all`, not exploratory camera
+options.
 
 Standalone scenes need no app server, account, API key, MCP service, system Chrome, or visible
 window. The first command—or the first capture—may provision Playwright's pinned Chromium headless
@@ -144,11 +187,16 @@ origin, absolute path, user, or timestamp. Managed output is an atomic pair unde
 and `.tileflow/diffs` when creating a new `.gitignore`. Explicit output replacement requires
 `--force`; symlinks and path escapes fail closed.
 
+Each written receipt uses capture schema v3. A Tileflow World capture resolves its TileJSON once for
+the whole capture session and records the exact `world-v1` release plus descriptor, archive, data
+contract, and product-contract hashes. All selected scenes and retries therefore use one immutable
+World release even if `current` moves while the command is running.
+
 One-shot `--json` failures leave stdout empty and write exactly one deterministic failure document
 to stderr with `code`, `phase`, bounded diagnostics, and optional origin-only resource metadata.
 
 Watch JSON is NDJSON with monotonic `building`, `invalid`, `recovered`, `captured`, `failed`, and
-`stopped` generation events. It watches config, transitive local imports, and effective icon files,
+`stopped` generation events. It watches config, transitive local imports, and effective icon/font files,
 preserves the last good capture through invalid edits, cancels stale work, and reuses one headless
 Browser. An orderly stop exits 0 only after a successful capture with no unresolved terminal
 failure.
@@ -156,7 +204,8 @@ failure.
 ### Capture through the real application
 
 Application scenes use the app's existing Vite, Next.js, Webpack, or custom loopback server. Start
-only that normal server; Tileflow does not run a package script, scan ports, or start `tileflow dev`:
+only that normal server; Tileflow does not run a package script, scan ports, or start
+`tileflow preview`:
 
 ```sh
 npm run dev
@@ -231,12 +280,12 @@ Changed pixels exit 0 by default so a person or agent can inspect the working fi
 
 ## Inspect vector features
 
-See which bounded source features the selected map sees near a camera before tuning taxonomy,
-rank, or labels:
+See which bounded source features the exported map sees near a camera before tuning taxonomy, rank,
+or labels:
 
 ```sh
 npm exec --no -- tileflow inspect features \
-  --map madrid --center=-3.6927512,40.4086555 --zoom=16 \
+  --center=-3.6927512,40.4086555 --zoom=16 \
   --layers=poi --properties=name,class,subclass,rank --json
 ```
 
@@ -247,6 +296,8 @@ source revision or `null`; credentials, URL queries, hidden properties, response
 absolute paths are omitted. It is read-only apart from executable config's own possible side
 effects and removes `TILEFLOW_API_KEY` before loading config.
 
+## Hosted authentication and deploy
+
 Hosted writes have two independent authorization paths:
 
 - Personal developer session: run `npm exec --no -- tileflow login` once for a
@@ -256,6 +307,10 @@ Hosted writes have two independent authorization paths:
 - CI key: create a dashboard `CI deploy` key, store it as
   `TILEFLOW_API_KEY`, and let the repository workflow deploy without a local
   login. The server binds that key to exactly one internal application boundary.
+
+Hosted control-plane requests stay pinned to the configured HTTP(S) origin, apply a hard bounded
+timeout, and stream at most 1 MiB of response data. CLI diagnostics never echo an untrusted remote
+response body or bearer credential.
 
 Inspect the account and use the automatically resolved destination:
 
@@ -275,12 +330,10 @@ npm exec --no -- tileflow deploy \
   --world-promotion wpr_example1234
 ```
 
-The promotion reference is neither a map ID nor a credential. If the config contains one map, the
-CLI selects it automatically. If it contains several, add the exact generated `--map <name>`; an
-ambiguous command stops and lists the map names before authentication or network work. A successful
-server-confirmed continuation keeps unrelated manifest entries and records only the managed map's
-stable `mapId`, hosted style URL, World `v1` generation, and fixed session usage mode. Do not add an
-API key or payment authority to a copied prompt.
+The promotion reference is neither a map ID nor a credential. The CLI uses the map exported by the
+selected config. A successful server-confirmed continuation keeps unrelated manifest entries and
+records only that map's stable `mapId`, hosted style URL, World `v1` generation, and fixed session
+usage mode. Do not add an API key or payment authority to a copied prompt.
 
 If the account has exactly one accessible managed destination, a hosted command resolves it
 automatically. With more than one, writes fail before config execution or network mutation, print
@@ -331,72 +384,101 @@ Invalid explicit values fail before a network write. Provider metadata that is
 missing, malformed, or too long is omitted. Secrets and the complete
 environment are never logged.
 
-Application build is absent from the minimal workflows. Framework adapters emit
-self-hosted assets by default and can overwrite the hosted manifest. Only build
-after deploy when the app deliberately packages
-`public/tileflow/manifest.json`; first set `emitBuildArtifacts: false`, or pass
-the manifest as an explicit artifact between jobs. A retry of the same compiled
+Application build is absent from the minimal workflows. Framework adapters emit a discriminated
+`kind: "self-hosted"` manifest, while deploy emits `kind: "hosted"`. Filesystem build writers now
+refuse to replace a valid Hosted manifest by default, and deploy refuses to replace a self-hosted
+manifest. Prefer `emitBuildArtifacts: false` or separate output paths when the app deliberately
+packages a deploy manifest. The explicit `overwriteHostedManifest: true` build option and
+`tileflow deploy --overwrite-self-hosted-manifest` CLI flag are migration escape hatches, not
+recommended CI defaults. A retry of the same compiled
 style and delivery policy reuses its deployment version and prints
 `Unchanged`; changed desired state prints `Published` with a new version. The
 fingerprint binds resource references, not the changing bytes behind referenced
-glyph or sprite URLs. Named maps still publish one at a time and may partially succeed.
+glyph or sprite URLs. Each singular map publishes independently; repository-internal orchestration
+of several configs can therefore partially succeed.
 
-Deploy treats the locally compiled MapLibre Style JSON as the cartographic
-artifact. The request contains that style, its canonical SHA-256 receipt, and
-only bounded hosting policy that does not belong in MapLibre itself, such as
-`allowedOrigins` and the managed icon mapping. It does not serialize the
-module configuration, send a public `tileset` selector, or ask the hosted API
-to compile the map again. Hosted publication currently requires Tileflow World;
-`vectorTiles()` remains available for local builds and previews but fails deploy
-before any remote write. The API binds recognized Tileflow-owned world and
-terrain URLs to its generated map ID. A successful deploy writes manifest schema
-2 with stable hosted style URLs rather than duplicating dataset configuration.
+All config, style, icon, and compatibility preflight happens before the first style write. After
+that boundary the current Hosted API has no batch commit across repository-internal orchestration:
+one singular config can publish before a later config fails. The orchestrator then leaves the
+previous local manifest untouched, reports which publications succeeded, and tells the operator to
+retry; idempotent publication converges on that retry. The local manifest
+writer uses a durable same-directory temporary followed by direct rename and directory sync, so
+readers see either the previous or next complete manifest. Multi-file artifact writers remain
+rollback-capable sets. Neither mechanism is a remote transaction or can make several API writes
+all-or-none.
 
-For an icon set with `source: './icons'`, hosted validation compiles the local
-SVG/PNG/JPEG/WebP files without a key. Deploy uploads the four generated sprite
-files before its first style write and reuses byte-identical packages by content
-hash. Source icons and absolute paths remain local; generated atlas bytes and
-sorted icon names are public. External `sprite` URLs remain references and are
-not snapshotted. Each hosted package is limited to 256 icons and 8 MiB generated
-bytes as a processing envelope. There is no package-count quota; physically
-retained generated packages share the organization's 5/10-GB hosted-storage
-pool with retained PMTiles, remain protected by deployment/library references,
-and otherwise enter the technical orphan grace before deletion.
+Deploy treats the locally compiled MapLibre Style JSON as the cartographic artifact. The request
+contains that style, its canonical SHA-256 receipt, only bounded hosting policy that does not belong
+in MapLibre itself, and the exact managed icon-package identity when the style has one. Delivery
+policy is not inherited with cartographic fields. Deploy does not serialize the module
+configuration, send a public `tileset` selector, or ask the hosted API to compile the map again.
+Hosted publication currently requires Tileflow World; `vectorTiles()` remains available for local
+builds and previews but fails deploy before any remote write. The API binds recognized
+Tileflow-owned world and terrain URLs to its generated map ID. A successful deploy writes strict
+runtime manifest version 3 with `kind: "hosted"`, an exact `maps`/`styles` closure, and stable hosted
+style URLs rather than duplicating dataset configuration. No older manifest is normalized.
 
-## Agent icon catalog
+For a map with `icons: ['./icons']`, hosted validation compiles the local SVG/PNG/JPEG/WebP files
+without a key. Ordered directories apply left to right and later exact IDs replace earlier files.
+Deploy uploads the four generated sprite files before its first style write and reuses
+byte-identical packages by content hash. Source icons and absolute paths remain local; generated
+atlas bytes and sorted icon names are public. Each hosted package is limited to 256 icons and 8 MiB
+generated bytes as a processing envelope. There is no package-count quota; physically retained
+generated packages share the organization's 5/10-GB hosted-storage pool with retained PMTiles,
+remain protected by deployment/library references, and otherwise enter the technical orphan grace
+before deletion. Upload success must confirm the submitted `contentHash`, exact icon count, exact
+generated byte total, one opaque `icp_<id>`, and the corresponding query-free
+`/sprites/<id>/sprite` URL. The CLI rejects any missing or divergent field before using that URL.
 
-List every effective local catalog used by configured maps, or select one exact map:
+For a map with local or package-owned `fonts`, deploy selects only faces used by the final Style and
+requires the contributing `LICENSE.txt` bytes. It uploads one bounded canonical font bundle to
+`PUT /v1/font-bundles/:contentHash` before the dependent Style. Hosted confirms the exact file set,
+hashes, MIME/signature agreement, licenses, and immutable public base URL; the CLI then binds
+`tileflow:fontFaces` to the returned `.../font-bundles/fnb_<id>/fonts/<content-addressed-file>` and
+sends only `fontBundle: {contentHash}` with the Style. Upload success must carry that exact opaque ID
+and base URL; clients never derive a storage URL from the hash. The build manifest records the effective font-byte
+digests, so a claimed hash or a different public URL cannot substitute for the uploaded bytes.
+Hosted's matching rollout candidate persists project ownership, organization quota, deployment
+references, grace-based cleanup, and deletion receipts. This repository contract does not by itself
+establish that the matching Hosted migration and API are already deployed in production.
+
+For both managed resource kinds, `assetSetSha256` remains a separate per-map output identity. It
+hashes each generated file's exact portable name, media type, byte count, and SHA-256 using Core's
+asset-set v1 contract; it does not hash only the icon-package or font-bundle manifest. Hosted must
+confirm the immutable resource bytes, reconstruct those same per-file identities (including the
+`icons/<mapId>/` prefix), and reject the Style when the submitted build-manifest hash diverges.
+
+## Agent icon composition
+
+List the effective local catalog used by the exported map:
 
 ```sh
 npm exec --no -- tileflow icons list --json
-npm exec --no -- tileflow icons list --json --map madrid
 ```
 
 The successful stdout contract is one deterministic JSON document followed by exactly one newline.
-Its top-level fields, in order, are `schemaVersion: 1`, `pathBase: "cwd"`, `catalogs`, and `maps`.
-Schema version 1 is a compatibility boundary: removing or renaming a field or changing an enum's
+Its top-level fields, in order, are `schemaVersion: 2`, `pathBase: "cwd"`, and `maps`.
+Schema version 2 is a compatibility boundary: removing or renaming a field or changing an enum's
 meaning requires a new schema version. Additive optional fields require corresponding documentation
 and tests.
 
-Each catalog is identified by its resolved source directory rather than its package hash. It has
-`sourcePath`, `insideWorkingTree`, `packageHash`, `iconCount`, `generatedByteLength`, `atlas`, and
-`icons`. Both `atlas.oneX` and `atlas.twoX` contain the density, dimensions, and `fileName`,
-`byteLength`, and SHA-256 metadata for their generated index/image files. Every sorted icon record
-contains:
+Each sorted map entry has one `id` and an `icons` value. `icons.kind` is `none` for `icons: []`, or
+`directories` for a prepared ordered composition. A directory entry contains:
 
-- `id`;
-- `source` with a cwd-relative forward-slash `path`, normalized `format`, byte length, and intrinsic
-  dimensions;
-- `rendered.oneX` and `rendered.twoX` with dimensions, the shared rendered-pixel digest, and exact
-  atlas rectangle; and
-- sorted `mappedFrom` map/semantic references.
+- `directories`, in the exact left-to-right authoring order, using config-relative paths or safe
+  `npm:<package>/<path>` descriptors;
+- `finalIds`, the sorted canonical lower-kebab IDs in the resulting sprite;
+- `replacements`, with the replaced path and winning path for every later exact-ID replacement;
+- `sources`, with the winning ID, cwd-relative path, format, byte length, and intrinsic dimensions;
+- `insideWorkingTree`; and
+- the deterministic generated `packageHash`.
 
-Each sorted map has an `icons.kind` of `local`, `external`, or `none`. Local maps include their
-label, catalog path, package hash, and fully resolved mappings. Mapping targets are `present` or
-`missing` for a local catalog and `unknown` when no local inventory can prove the answer. External
-sprite URLs are never emitted or fetched. Two maps can bind one catalog with different mappings;
-two distinct source directories remain distinct catalogs even when they compile to the same
-package hash.
+There is deliberately no parallel catalog registry, provider kind, semantic mapping, external
+sprite branch, or arbitrary source-to-runtime renaming. `<id>.<ext>` publishes `<id>` and the
+reserved pattern form `<id>.pattern.<ext>` also publishes `<id>`. This lets an
+agent answer “which directory wins this icon?” directly from one map record without reconstructing
+hidden provider state. Use `--map <id>` to select one exact map when internal orchestration supplies
+more than one.
 
 All reported paths are relative to the invocation working directory. A source outside that tree
 uses `../` and `insideWorkingTree: false`; no absolute path is emitted. Listing follows local
@@ -408,15 +490,15 @@ write. It removes an ambient `TILEFLOW_API_KEY` before importing config. As with
 command, loading `tileflow.config.ts` executes repository code and is not a sandbox; side effects in
 that code remain the repository's responsibility. Success emits no ANSI or progress prose. Usage,
 config, source, decode, and render failures exit 1, write diagnostics to stderr, and leave stdout
-empty. A missing local mapping target is successful metadata rather than an operational failure.
+empty.
 
-The output contains no source contents or source hash, image/base64 payload, remote sprite URL,
-credential, timestamp, random value, or absolute path. Open a reported local source path with
-normal repository tools only when the pixels themselves are needed.
+The output contains no source contents or source hash, rendered cells, atlas coordinates,
+image/base64 payload, credential, timestamp, random value, or absolute path. Open a reported local
+source path with normal repository tools only when the pixels themselves are needed.
 
 ## Read-only icon comparison
 
-Compare one named local map with its active hosted revision before deciding whether to deploy:
+Compare the exported map with its active hosted revision before deciding whether to deploy:
 
 ```sh
 npm exec --no -- tileflow icons diff --against production
@@ -424,7 +506,7 @@ npm exec --no -- tileflow icons diff --against production --json
 npm exec --no -- tileflow icons diff --against production --report ./icon-diff.html
 ```
 
-The command compiles only the selected map, performs one authenticated baseline `GET`, and never
+The command compiles only the exported map, performs one authenticated baseline `GET`, and never
 uploads a package, creates a deployment, or writes the frontend manifest. Plain and JSON modes
 create no files. A requested HTML report adds reads of the baseline's four public sprite files and
 embeds verified old/new images in one self-contained file. The report groups exact-cell icon
@@ -432,10 +514,10 @@ previews under `Added`, `Modified`, and `Removed`. Added and removed cards show 
 icon; modified cards compare `Before` with `Next`. A script-free 1x/2x selector defaults to 2x,
 switches the embedded density, and renders 1x at half the 2x preview size inside a stable frame so
 the selected state is immediately visible. Package hashes, generated sizes, and icon counts stay in
-collapsed `Details`. Dynamic icon references include an explicit pre-deploy action. A map badge is
-shown only for a map-scoped report. It exposes no atlas implementation UI and contains no API key,
-remote runtime dependency, original icon source, or local source path. Use `--force` to replace
-different existing report bytes and `--open` only together with `--report`.
+collapsed `Details`. A map badge is shown only for a map-scoped report. It exposes no atlas
+implementation UI and contains no API key, remote runtime dependency, original icon source, or
+local source path. Use `--force` to replace different existing report bytes and `--open` only
+together with `--report`.
 
 Visual modification means that normalized rendered RGBA pixels changed at 1x or 2x. Fully
 transparent RGB is ignored. The manifest also hashes the four encoded artifacts, so an artifact can
@@ -452,23 +534,19 @@ stable top-level fields, in order, are:
   "baseline": {"deploymentId": "dep_...", "package": null, "version": 7},
   "proposed": {"package": null},
   "icons": {"added": [], "removed": [], "modified": [], "unchangedCount": 0},
-  "mapping": {"comparisonAvailable": true, "added": [], "removed": [], "changed": []},
   "generatedBytes": {"before": 0, "after": 0, "delta": 0},
-  "references": {"analysisComplete": true, "dangling": [], "unanalyzable": []},
   "artifacts": {"report": null},
   "hasChanges": false
 }
 ```
 
 Package summaries, when present, contain `contentHash`, `iconCount`, `label`, and `totalBytes`.
-Mapping changes contain `key` and the applicable `before`/`after` values. If historical mapping
-metadata is unavailable, `comparisonAvailable` is false and the change arrays remain empty; this is
-not equality. A missing hosted baseline is an initial comparison against an empty package/mapping.
+A missing hosted baseline is an initial comparison against an empty package. The command compares
+only delivered icon pixels, canonical package manifests, and generated bytes; config-directory
+provenance and style-reference analysis belong to `icons list` and final style validation.
 
-Normal differences and warnings exit 0. Config, compilation, credential, network, response, and
-report errors exit 1. Only `--fail-on dangling` changes a successful result to exit 2 when a
-definite mapping or literal managed-icon reference is missing; dynamic expressions are reported as
-unanalyzable and do not trigger that policy.
+Normal differences exit 0. Config, compilation, credential, network, response, and report errors
+exit 1.
 
 This workflow does not provide OIDC, automatic secret installation, an official
 GitHub Action, an atomic multi-map deploy set, or a Tileflow-hosted remote

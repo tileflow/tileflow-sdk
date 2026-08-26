@@ -1,6 +1,7 @@
 import {
   type TileflowLayerContribution,
   type TileflowLayerSlot,
+  tileflowCompilerMetadataKeys,
   tileflowLayerSlots,
   tileflowLayerTargetPattern,
   type TileflowSlotConstraint,
@@ -69,7 +70,17 @@ export function assembleTileflowLayers(
       const slotDifference = orderBySlot.get(left.slot)! - orderBySlot.get(right.slot)!;
       return slotDifference || left.localOrder - right.localOrder;
     })
-    .map((contribution) => cloneJson(contribution.layer));
+    .map((contribution) =>
+      cloneJson({
+        ...contribution.layer,
+        metadata: {
+          ...(isRecord(contribution.layer.metadata) ? contribution.layer.metadata : {}),
+          [tileflowCompilerMetadataKeys.owner]: contribution.owner,
+          [tileflowCompilerMetadataKeys.slot]: contribution.slot,
+          [tileflowCompilerMetadataKeys.target]: contribution.target,
+        },
+      }),
+    );
 }
 
 export function resolveSlotOrder(
@@ -122,4 +133,8 @@ export function resolveSlotOrder(
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }

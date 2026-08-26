@@ -1,24 +1,29 @@
 import {readdir, readFile, realpath, stat} from 'node:fs/promises';
-import {basename, extname, isAbsolute, relative, resolve, sep} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {extname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {SaxesParser} from 'saxes';
 import {
   compareCodeUnits,
   hashTileflowIconPackageManifest,
   hashTileflowRenderedIconPixels,
+  parseTileflowMap,
   serializeCanonicalJson,
   sha256Hex,
-  tileflowHostedIconIdPattern,
+  tileflowIconIdPattern,
   type TileflowIconPackageFileName,
-  tileflowIconPackageLabelSchema,
   tileflowIconPackageLimits,
   type TileflowIconPackageManifest,
   tileflowIconPackageManifestSchema,
-  type TileflowIconSet,
-  type TileflowIconSetConfig,
-  type TileflowProjectConfig,
-  tileflowStreetsPoiIconMapping,
 } from '@tileflow/core';
+import type {
+  TileflowBuildCatalog,
+  TileflowEffectiveIconSourceIdentity,
+  TileflowPreparedMapAssets,
+} from '@tileflow/core/build';
+import {
+  type ResolvedTileflowAssetDirectory,
+  resolveTileflowAssetDirectories,
+  TileflowAssetDirectoryError,
+} from './asset-directories';
 
 export type TileflowBuildAsset = {
   contentType: string;
@@ -26,9 +31,24 @@ export type TileflowBuildAsset = {
   source: string | Uint8Array;
 };
 
-export type PreparedTileflowProject = {
+/** Executable authoring input before local sources have been resolved into runtime URLs. */
+export type TileflowSourceCatalog = TileflowBuildCatalog;
+
+declare const preparedTileflowBuildCatalog: unique symbol;
+
+/** A validated catalog paired with build-owned portable assets. */
+export type PreparedTileflowBuildCatalog = TileflowBuildCatalog & {
+  readonly [preparedTileflowBuildCatalog]: true;
+};
+
+export type PreparedTileflowCatalog = {
   assets: TileflowBuildAsset[];
-  project: TileflowProjectConfig;
+  baseDirectory: string;
+  cwd: string;
+  mapAssets: Record<string, TileflowPreparedMapAssets>;
+  mapIconSources: Record<string, readonly TileflowEffectiveIconSourceIdentity[]>;
+  project: PreparedTileflowBuildCatalog;
+  sourceProject: TileflowSourceCatalog;
   watchPaths: string[];
 };
 
@@ -52,35 +72,26 @@ export type CompiledTileflowIconPackage = {
 };
 
 export type TileflowMapIconPackageBinding = {
+  iconIds: readonly string[];
   label: string;
   mapName: string;
-  mapping?: Record<string, string>;
   packageHash: string;
 };
 
 export type CompileTileflowIconPackagesResult = {
   bindings: TileflowMapIconPackageBinding[];
   packages: CompiledTileflowIconPackage[];
+  sourceIdentities: Record<string, readonly TileflowEffectiveIconSourceIdentity[]>;
   watchPaths: string[];
 };
 
 export type InspectTileflowIconCatalogsOptions = {
+  baseDirectory?: string;
   cwd: string;
   mapNames?: readonly string[];
 };
 
 export type TileflowIconCatalogSourceFormat = 'jpeg' | 'png' | 'svg' | 'webp';
-
-export type TileflowIconCatalogMapping = {
-  iconId: string;
-  semantic: string;
-  targetStatus: 'missing' | 'present' | 'unknown';
-};
-
-export type TileflowIconCatalogMappedFrom = {
-  map: string;
-  semantic: string;
-};
 
 export type TileflowIconCatalogAtlasRectangle = {
   height: number;
@@ -99,7 +110,6 @@ export type TileflowIconCatalogRenderedDensity = {
 
 export type TileflowIconCatalogIcon = {
   id: string;
-  mappedFrom: TileflowIconCatalogMappedFrom[];
   rendered: {
     oneX: TileflowIconCatalogRenderedDensity;
     twoX: TileflowIconCatalogRenderedDensity;
@@ -114,30 +124,30 @@ export type TileflowIconCatalogIcon = {
 
 export type TileflowIconCatalog = {
   compiledPackage: CompiledTileflowIconPackage;
+  directories: string[];
   icons: TileflowIconCatalogIcon[];
   insideWorkingTree: boolean;
-  sourcePath: string;
+  replacements: TileflowIconReplacement[];
+};
+
+export type TileflowIconReplacement = {
+  id: string;
+  replaced: string;
+  winner: string;
 };
 
 export type TileflowIconCatalogMap = {
   name: string;
   icons:
     | {
-        catalogSourcePath: string;
-        kind: 'local';
+        directories: string[];
+        iconIds: string[];
+        kind: 'directories';
         label: string;
-        mappings: TileflowIconCatalogMapping[];
         packageHash: string;
       }
     | {
-        inspectable: false;
-        kind: 'external';
-        mappings: TileflowIconCatalogMapping[];
-      }
-    | {
-        inspectable: false;
         kind: 'none';
-        mappings: TileflowIconCatalogMapping[];
       };
 };
 
@@ -163,35 +173,14 @@ export class TileflowIconCompilationError extends Error {
   }
 }
 
-type LocalIconRequest = {
-  builtIn?: boolean;
-  kind: 'local';
-  label: string;
+type MapIconRequest = {
+  directories: ResolvedTileflowAssetDirectory[];
   mapName: string;
-  mapping?: Record<string, string>;
-  source: string;
-  sourceDir: string;
-};
-
-type ExternalIconRequest = {
-  kind: 'external';
-  mapName: string;
-  mapping?: Record<string, string>;
-};
-
-type EmptyIconRequest = {
-  kind: 'none';
-  mapName: string;
-  mapping?: Record<string, string>;
-};
-
-type MapIconRequest = EmptyIconRequest | ExternalIconRequest | LocalIconRequest;
-
-type ResolvedIconRequest = LocalIconRequest & {
-  realSourceDir: string;
+  sequenceKey: string;
 };
 
 type IconInput = {
+  displayPath: string;
   fileName: string;
   format: TileflowIconCatalogSourceFormat;
   kind: 'icon' | 'pattern';
@@ -202,7 +191,7 @@ type IconInput = {
 
 type InspectedIconSource = {
   icons: IconInput[];
-  realSourceDir: string;
+  replacements?: TileflowIconReplacement[];
 };
 
 type DecodedIconDimensions = {
@@ -215,6 +204,7 @@ type CompiledIcon = {
   input: IconInput;
   oneX: Awaited<ReturnType<typeof renderIcon>>;
   pixelSha256: {oneX: string; twoX: string};
+  sourceSha256: string;
   twoX: Awaited<ReturnType<typeof renderIcon>>;
 };
 
@@ -223,13 +213,12 @@ type CompiledIconSource = {
   layoutOneX: ReturnType<typeof createSpriteLayout>;
   layoutTwoX: ReturnType<typeof createSpriteLayout>;
   package: CompiledTileflowIconPackage;
+  sourceReplacements: TileflowIconReplacement[];
 };
 
 type CompileIconSourcesResult = {
-  compiledBySource: Map<string, CompiledIconSource>;
+  compiledBySequence: Map<string, CompiledIconSource>;
   mapRequests: MapIconRequest[];
-  realCwd: string | null;
-  resolvedRequests: ResolvedIconRequest[];
 };
 
 type SpriteIndex = Record<
@@ -245,11 +234,11 @@ type SpriteIndex = Record<
 
 const iconFileExtensions = new Set(['.svg', '.png', '.jpg', '.jpeg', '.webp']);
 const iconSpriteSize = 24;
-const streetsPoiIconSourceDir = fileURLToPath(new URL('../assets/streets-poi', import.meta.url));
 
 export async function compileTileflowIconPackages(
-  project: TileflowProjectConfig,
+  project: TileflowBuildCatalog,
   options: {
+    baseDirectory?: string;
     cwd: string;
     target: TileflowIconCompilationTarget;
   },
@@ -257,23 +246,38 @@ export async function compileTileflowIconPackages(
   const result = await compileIconSources(project, options);
   const packagesByHash = new Map<string, CompiledTileflowIconPackage>();
 
-  for (const compiled of result.compiledBySource.values()) {
+  for (const compiled of result.compiledBySequence.values()) {
     packagesByHash.set(compiled.package.contentHash, compiled.package);
   }
 
-  const bindings = result.resolvedRequests.map((request) => {
-    const compiled = result.compiledBySource.get(request.realSourceDir);
+  const sourceIdentities: Record<string, readonly TileflowEffectiveIconSourceIdentity[]> = {};
+  for (const request of result.mapRequests) {
+    const compiled = result.compiledBySequence.get(request.sequenceKey);
+    sourceIdentities[request.mapName] =
+      compiled?.icons.map((icon) => ({
+        format: icon.input.format,
+        id: icon.input.name,
+        kind: icon.input.kind,
+        sha256: icon.sourceSha256,
+      })) ?? [];
+  }
+
+  const bindings = result.mapRequests.flatMap((request): TileflowMapIconPackageBinding[] => {
+    if (request.directories.length === 0) return [];
+    const compiled = result.compiledBySequence.get(request.sequenceKey);
 
     if (!compiled) {
       throw new Error(`Missing compiled icon package for map ${request.mapName}`);
     }
 
-    return {
-      label: request.label,
-      mapName: request.mapName,
-      ...(request.mapping ? {mapping: request.mapping} : {}),
-      packageHash: compiled.package.contentHash,
-    };
+    return [
+      {
+        iconIds: compiled.package.manifest.iconNames,
+        label: request.mapName,
+        mapName: request.mapName,
+        packageHash: compiled.package.contentHash,
+      },
+    ];
   });
 
   return {
@@ -281,95 +285,56 @@ export async function compileTileflowIconPackages(
     packages: [...packagesByHash.values()].sort((left, right) =>
       compareCodeUnits(left.contentHash, right.contentHash),
     ),
-    watchPaths: [
-      ...new Set(
-        result.resolvedRequests
-          .filter((request) => !request.builtIn)
-          .map((request) => request.realSourceDir),
+    sourceIdentities,
+    watchPaths: uniqueStrings(
+      result.mapRequests.flatMap((request) =>
+        request.directories
+          .filter((directory) => directory.watch)
+          .map((directory) => directory.realPath),
       ),
-    ].sort(compareCodeUnits),
+    ).sort(compareCodeUnits),
   };
 }
 
 export async function inspectTileflowIconCatalogs(
-  project: TileflowProjectConfig,
+  project: TileflowBuildCatalog,
   options: InspectTileflowIconCatalogsOptions,
 ): Promise<TileflowIconCatalogInspection> {
   const result = await compileIconSources(project, {
+    baseDirectory: options.baseDirectory,
     cwd: options.cwd,
     mapNames: options.mapNames,
     target: 'local',
   });
-  const resolvedByMap = new Map(
-    result.resolvedRequests.map((request) => [request.mapName, request]),
-  );
-  const mappedFromBySource = new Map<string, Map<string, TileflowIconCatalogMappedFrom[]>>();
   const maps: TileflowIconCatalogMap[] = result.mapRequests.map((request) => {
-    if (request.kind !== 'local') {
-      return {
-        name: request.mapName,
-        icons: {
-          inspectable: false,
-          kind: request.kind,
-          mappings: createCatalogMappings(request.mapping, 'unknown'),
-        },
-      };
-    }
-
-    const resolved = resolvedByMap.get(request.mapName);
-
-    if (!resolved || !result.realCwd) {
-      throw new Error(`Missing resolved icon source for map ${request.mapName}`);
-    }
-
-    const compiled = result.compiledBySource.get(resolved.realSourceDir);
-
-    if (!compiled) {
-      throw new Error(`Missing compiled icon catalog for map ${request.mapName}`);
-    }
-
-    const iconNames = new Set(compiled.package.manifest.iconNames);
-    const mappings = createCatalogMappings(request.mapping, (iconId) =>
-      iconNames.has(iconId) ? 'present' : 'missing',
-    );
-    const mappedFromByIcon = mappedFromBySource.get(resolved.realSourceDir) ?? new Map();
-
-    for (const mapping of mappings) {
-      if (mapping.targetStatus !== 'present') {
-        continue;
-      }
-
-      const mappedFrom = mappedFromByIcon.get(mapping.iconId) ?? [];
-      mappedFrom.push({map: request.mapName, semantic: mapping.semantic});
-      mappedFromByIcon.set(mapping.iconId, mappedFrom);
-    }
-
-    mappedFromBySource.set(resolved.realSourceDir, mappedFromByIcon);
-
+    if (request.directories.length === 0) return {name: request.mapName, icons: {kind: 'none'}};
+    const compiled = result.compiledBySequence.get(request.sequenceKey);
+    if (!compiled) throw new Error(`Missing compiled icon catalog for map ${request.mapName}`);
     return {
       name: request.mapName,
       icons: {
-        catalogSourcePath: relativePortablePath(result.realCwd, resolved.realSourceDir),
-        kind: 'local',
-        label: request.label,
-        mappings,
+        directories: request.directories.map(describeAssetDirectory),
+        iconIds: [...compiled.package.manifest.iconNames],
+        kind: 'directories',
+        label: request.mapName,
         packageHash: compiled.package.contentHash,
       },
     };
   });
 
-  if (!result.realCwd) {
-    return {catalogs: [], maps};
-  }
-
-  const realCwd = result.realCwd;
-  const catalogs = [...result.compiledBySource.entries()]
-    .map(([realSourceDir, compiled]): TileflowIconCatalog => {
-      const sourcePath = relativePortablePath(realCwd, realSourceDir);
-      const mappedFromByIcon = mappedFromBySource.get(realSourceDir) ?? new Map();
-
+  const requestBySequence = new Map(
+    result.mapRequests
+      .filter((request) => request.directories.length > 0)
+      .map((request) => [request.sequenceKey, request]),
+  );
+  const realCwd = await realpath(options.cwd);
+  const catalogs = [...result.compiledBySequence.entries()]
+    .map(([sequenceKey, compiled]): TileflowIconCatalog => {
+      const request = requestBySequence.get(sequenceKey);
+      if (!request) throw new Error(`Missing icon directory sequence ${sequenceKey}`);
       return {
         compiledPackage: compiled.package,
+        directories: request.directories.map(describeAssetDirectory),
         icons: compiled.icons.map((icon, index): TileflowIconCatalogIcon => {
           const manifestIcon = compiled.package.manifest.renderedIcons[index];
           const oneXAtlas = compiled.layoutOneX.index[icon.input.name];
@@ -381,7 +346,6 @@ export async function inspectTileflowIconCatalogs(
 
           return {
             id: icon.input.name,
-            mappedFrom: [...(mappedFromByIcon.get(icon.input.name) ?? [])].sort(compareMappedFrom),
             rendered: {
               oneX: {
                 atlas: atlasRectangle(oneXAtlas),
@@ -402,147 +366,74 @@ export async function inspectTileflowIconCatalogs(
               byteLength: icon.input.source.byteLength,
               dimensions: {...icon.dimensions},
               format: icon.input.format,
-              path: relativePortablePath(realCwd, icon.input.path),
+              path: icon.input.displayPath,
             },
           };
         }),
-        insideWorkingTree: isPathInside(realCwd, realSourceDir),
-        sourcePath,
+        insideWorkingTree: request.directories.every((directory) =>
+          isPathInside(realCwd, directory.realPath),
+        ),
+        replacements: [...compiled.sourceReplacements],
       };
     })
-    .sort((left, right) => compareCodeUnits(left.sourcePath, right.sourcePath));
+    .sort((left, right) =>
+      compareCodeUnits(left.directories.join('\0'), right.directories.join('\0')),
+    );
 
   return {catalogs, maps};
 }
 
 async function compileIconSources(
-  project: TileflowProjectConfig,
+  project: TileflowBuildCatalog,
   options: {
+    baseDirectory?: string;
     cwd: string;
     mapNames?: readonly string[];
     target: TileflowIconCompilationTarget;
   },
 ): Promise<CompileIconSourcesResult> {
-  const mapRequests = getMapIconRequests(project, options.cwd, options.mapNames);
-  const requests = mapRequests.filter(
-    (request): request is LocalIconRequest => request.kind === 'local',
+  const mapRequests = await getMapIconRequests(
+    project,
+    options.cwd,
+    options.baseDirectory ?? options.cwd,
+    options.target,
+    options.mapNames,
   );
-
-  if (requests.length === 0) {
-    return {
-      compiledBySource: new Map(),
-      mapRequests,
-      realCwd: null,
-      resolvedRequests: [],
-    };
-  }
-
   const issues: TileflowIconCompilationIssue[] = [];
-  const realCwd = await resolveWorkingDirectory(options.cwd, issues);
-  const resolvedRequests: ResolvedIconRequest[] = [];
-
-  for (const request of requests) {
-    try {
-      const realSourceDir = await realpath(request.sourceDir);
-
-      if (
-        options.target === 'hosted' &&
-        realCwd &&
-        !request.builtIn &&
-        !isPathInside(realCwd, realSourceDir)
-      ) {
-        issues.push({
-          message: 'Hosted icon sources must remain inside the selected working tree',
-          path: sourcePath(request.mapName),
-        });
-        continue;
-      }
-
-      const sourceStat = await stat(realSourceDir);
-
-      if (!sourceStat.isDirectory()) {
-        issues.push({
-          message: 'Icon source must be a directory',
-          path: sourcePath(request.mapName),
-        });
-        continue;
-      }
-
-      resolvedRequests.push({...request, realSourceDir});
-    } catch (error) {
-      issues.push({
-        message: describeFileSystemError(error, 'Icon source was not found'),
-        path: sourcePath(request.mapName),
-      });
-    }
-  }
-
   const inspectedBySource = new Map<string, InspectedIconSource>();
-  const requestsBySource = groupRequestsBySource(resolvedRequests);
-
-  for (const [realSourceDir, sourceRequests] of requestsBySource) {
-    const representative = sourceRequests[0];
-
-    if (!representative) {
-      continue;
-    }
-
-    const inspected = await inspectIconSource(
-      representative,
-      realSourceDir,
-      realCwd,
-      options.target,
-      issues,
-    );
-
-    if (inspected) {
-      inspectedBySource.set(realSourceDir, inspected);
-    }
+  for (const directory of uniqueDirectories(mapRequests)) {
+    const inspected = await inspectIconSource(directory, options.target, issues);
+    if (inspected) inspectedBySource.set(directory.realPath, inspected);
   }
+  if (issues.length > 0) throw new TileflowIconCompilationError(issues);
 
-  if (issues.length > 0) {
-    throw new TileflowIconCompilationError(issues);
-  }
-
-  const compiledBySource = new Map<string, CompiledIconSource>();
-
-  for (const [realSourceDir, inspected] of inspectedBySource) {
-    const representative = requestsBySource.get(realSourceDir)?.[0];
-
-    if (!representative) {
-      continue;
-    }
-
+  const compiledBySequence = new Map<string, CompiledIconSource>();
+  for (const request of uniqueSequences(mapRequests)) {
+    if (request.directories.length === 0) continue;
     try {
-      compiledBySource.set(realSourceDir, await compileInspectedIconSource(inspected));
+      const composed = composeIconDirectories(request, inspectedBySource);
+      compiledBySequence.set(request.sequenceKey, await compileInspectedIconSource(composed));
     } catch (error) {
       issues.push({
         message: error instanceof Error ? error.message : 'Icon compilation failed',
-        path: sourcePath(representative.mapName),
+        path: `maps.${request.mapName}.icons`,
       });
     }
   }
-
-  if (issues.length > 0) {
-    throw new TileflowIconCompilationError(issues);
-  }
-
-  return {compiledBySource, mapRequests, realCwd, resolvedRequests};
+  if (issues.length > 0) throw new TileflowIconCompilationError(issues);
+  return {compiledBySequence, mapRequests};
 }
 
-export async function prepareTileflowProjectIcons(
-  project: TileflowProjectConfig,
+export async function prepareTileflowCatalogIcons(
+  project: TileflowBuildCatalog,
   options: {
     assetBaseUrl: string;
+    baseDirectory?: string;
     cwd: string;
-    defaultSprite?: string;
   },
-): Promise<PreparedTileflowProject> {
-  const sourceProject = options.defaultSprite
-    ? applyDefaultSprite(project, options.cwd, options.defaultSprite)
-    : project;
-  const nextProject = cloneProject(sourceProject);
-  const compiled = await compileTileflowIconPackages(sourceProject, {
+): Promise<PreparedTileflowCatalog> {
+  const compiled = await compileTileflowIconPackages(project, {
+    baseDirectory: options.baseDirectory,
     cwd: options.cwd,
     target: 'local',
   });
@@ -550,20 +441,18 @@ export async function prepareTileflowProjectIcons(
     compiled.packages.map((iconPackage) => [iconPackage.contentHash, iconPackage]),
   );
   const assets: TileflowBuildAsset[] = [];
+  const mapAssets: Record<string, TileflowPreparedMapAssets> = {};
+  const mapIconSources: Record<string, readonly TileflowEffectiveIconSourceIdentity[]> = {};
+
+  for (const mapName of Object.keys(project.maps)) mapIconSources[mapName] = [];
 
   for (const binding of compiled.bindings) {
-    const mapConfig = nextProject.maps[binding.mapName];
     const iconPackage = packagesByHash.get(binding.packageHash);
-
-    if (!mapConfig || !iconPackage) {
-      continue;
-    }
+    if (!iconPackage) throw new Error(`Missing compiled icon package for map ${binding.mapName}`);
 
     const spriteUrl = joinUrl(options.assetBaseUrl, `icons/${binding.mapName}/sprite`);
-    mapConfig.icons = {
-      ...(binding.mapping ? {mapping: binding.mapping} : {}),
-      sprite: spriteUrl,
-    };
+    mapAssets[binding.mapName] = {icons: {ids: binding.iconIds, sprite: spriteUrl}};
+    mapIconSources[binding.mapName] = compiled.sourceIdentities[binding.mapName] ?? [];
 
     for (const file of iconPackage.files) {
       assets.push({
@@ -582,179 +471,163 @@ export async function prepareTileflowProjectIcons(
 
   return {
     assets,
-    project: nextProject,
+    baseDirectory: await realpath(options.baseDirectory ?? options.cwd),
+    cwd: await realpath(options.cwd),
+    mapAssets,
+    mapIconSources,
+    project: project as PreparedTileflowBuildCatalog,
+    sourceProject: project,
     watchPaths: compiled.watchPaths,
   };
 }
 
-export function getTileflowIconWatchPaths(project: TileflowProjectConfig, cwd: string): string[] {
+export async function getTileflowIconWatchPaths(
+  project: TileflowBuildCatalog,
+  cwd: string,
+  baseDirectory = cwd,
+): Promise<string[]> {
+  const requests = await getMapIconRequests(project, cwd, baseDirectory, 'local');
   return uniqueStrings(
-    getLocalIconRequests(project, cwd)
-      .filter((request) => !request.builtIn)
-      .map((request) => request.sourceDir),
+    requests.flatMap((request) =>
+      request.directories
+        .filter((directory) => directory.watch)
+        .map((directory) => directory.realPath),
+    ),
   ).sort(compareCodeUnits);
 }
 
-function getLocalIconRequests(project: TileflowProjectConfig, cwd: string): LocalIconRequest[] {
-  return getMapIconRequests(project, cwd).filter(
-    (request): request is LocalIconRequest => request.kind === 'local',
-  );
-}
-
-function getMapIconRequests(
-  project: TileflowProjectConfig,
+async function getMapIconRequests(
+  project: TileflowBuildCatalog,
   cwd: string,
+  baseDirectory: string,
+  target: TileflowIconCompilationTarget,
   mapNames?: readonly string[],
-): MapIconRequest[] {
+): Promise<MapIconRequest[]> {
   const selectedNames = (
     mapNames === undefined ? Object.keys(project.maps) : [...new Set(mapNames)]
   ).sort(compareCodeUnits);
-
-  return selectedNames.map((mapName): MapIconRequest => {
+  const requests: MapIconRequest[] = [];
+  for (const mapName of selectedNames) {
     const mapConfig = project.maps[mapName];
-
-    if (!mapConfig) {
-      throw new Error(`Unknown Tileflow map: ${mapName}`);
-    }
-
-    const iconSet = resolveIconSet(mapConfig.icons, project.icons);
-
-    if (!iconSet?.source && !iconSet?.sprite && usesBuiltInStreetsPoiIcons(mapConfig)) {
-      const mapping = sortMapping({...tileflowStreetsPoiIconMapping, ...iconSet?.mapping});
-
-      return {
-        builtIn: true,
-        kind: 'local',
-        label: 'tileflow-streets',
+    if (!mapConfig) throw new Error(`Unknown Tileflow map: ${mapName}`);
+    const resolvedMap = parseTileflowMap(mapConfig);
+    try {
+      const directories = await resolveTileflowAssetDirectories(resolvedMap.icons ?? [], {
+        baseDirectory,
+        configPath: `maps.${mapName}.icons`,
+        cwd,
+        kind: 'icons',
+        target,
+      });
+      requests.push({
+        directories,
         mapName,
-        ...(mapping ? {mapping} : {}),
-        source: '@tileflow/dev/assets/streets-poi',
-        sourceDir: streetsPoiIconSourceDir,
-      };
+        sequenceKey: directories.map((directory) => directory.realPath).join('\0'),
+      });
+    } catch (error) {
+      if (error instanceof TileflowAssetDirectoryError) {
+        throw new TileflowIconCompilationError([...error.issues]);
+      }
+      throw error;
     }
-
-    const mapping = sortMapping(iconSet?.mapping);
-
-    if (iconSet?.source) {
-      return {
-        kind: 'local',
-        label: resolvePackageLabel(mapConfig.icons, iconSet.source, project.icons, mapName),
-        mapName,
-        ...(mapping ? {mapping} : {}),
-        source: iconSet.source,
-        sourceDir: resolve(cwd, iconSet.source),
-      };
-    }
-
-    return {
-      kind: iconSet?.sprite ? 'external' : 'none',
-      mapName,
-      ...(mapping ? {mapping} : {}),
-    };
-  });
+  }
+  return requests;
 }
 
-function usesBuiltInStreetsPoiIcons(mapConfig: TileflowProjectConfig['maps'][string]): boolean {
-  const poi = mapConfig.modules?.poi;
-  return (
-    mapConfig.basemap?.type === 'streets' &&
-    poi?.enabled !== false &&
-    poi?.preset !== 'none' &&
-    poi?.icons !== false
+function uniqueDirectories(requests: readonly MapIconRequest[]): ResolvedTileflowAssetDirectory[] {
+  return [
+    ...new Map(
+      requests.flatMap((request) =>
+        request.directories.map((directory) => [directory.realPath, directory] as const),
+      ),
+    ).values(),
+  ].sort((left, right) => compareCodeUnits(left.realPath, right.realPath));
+}
+
+function uniqueSequences(requests: readonly MapIconRequest[]): MapIconRequest[] {
+  return [...new Map(requests.map((request) => [request.sequenceKey, request])).values()].sort(
+    (left, right) => compareCodeUnits(left.sequenceKey, right.sequenceKey),
   );
 }
 
-function resolveIconSet(
-  icons: TileflowIconSet | undefined,
-  iconSets: TileflowProjectConfig['icons'] | undefined,
-  path: string[] = [],
-): TileflowIconSetConfig | undefined {
-  if (!icons) {
-    return undefined;
-  }
-
-  if (typeof icons === 'string') {
-    const referenced = iconSets?.[icons];
-
-    if (referenced) {
-      if (path.includes(icons)) {
-        throw new Error(`Circular Tileflow icon set extends: ${[...path, icons].join(' -> ')}`);
+function composeIconDirectories(
+  request: MapIconRequest,
+  inspectedBySource: ReadonlyMap<string, InspectedIconSource>,
+): InspectedIconSource {
+  const iconsById = new Map<string, IconInput>();
+  const idsByCaseFold = new Map<string, string>();
+  const replacements: TileflowIconReplacement[] = [];
+  for (const directory of request.directories) {
+    const inspected = inspectedBySource.get(directory.realPath);
+    if (!inspected)
+      throw new Error(`Missing inspected icon directory ${describeAssetDirectory(directory)}`);
+    for (const icon of inspected.icons) {
+      const folded = icon.name.toLocaleLowerCase('en-US');
+      const existing = idsByCaseFold.get(folded);
+      if (existing !== undefined && existing !== icon.name) {
+        throw new Error(`Icon ID "${icon.name}" collides case-insensitively with "${existing}".`);
       }
-
-      return resolveIconSet(referenced, iconSets, [...path, icons]);
+      idsByCaseFold.set(folded, icon.name);
+      // Directories are applied left-to-right. A later canonical filename replaces an earlier one.
+      const replaced = iconsById.get(icon.name);
+      if (replaced) {
+        replacements.push({
+          id: icon.name,
+          replaced: replaced.displayPath,
+          winner: icon.displayPath,
+        });
+      }
+      iconsById.set(icon.name, icon);
     }
-
-    return isRemoteSpriteReference(icons) ? {sprite: icons} : {source: icons};
   }
-
-  const extended = icons.extends ? resolveIconSet(icons.extends, iconSets, path) : undefined;
-
-  return {
-    ...extended,
-    ...icons,
-    mapping: {
-      ...extended?.mapping,
-      ...icons.mapping,
-    },
-  };
+  const icons = [...iconsById.values()].sort((left, right) =>
+    compareCodeUnits(left.name, right.name),
+  );
+  const aggregateBytes = icons.reduce((total, icon) => total + icon.source.byteLength, 0);
+  if (icons.length > tileflowIconPackageLimits.maxIconCount) {
+    throw new Error(
+      `Composed icon set contains more than ${tileflowIconPackageLimits.maxIconCount} icons`,
+    );
+  }
+  if (aggregateBytes > tileflowIconPackageLimits.maxSourceBytes) {
+    throw new Error(
+      `Composed icon set exceeds ${tileflowIconPackageLimits.maxSourceBytes} aggregate bytes`,
+    );
+  }
+  return {icons, replacements};
 }
 
-async function resolveWorkingDirectory(
-  cwd: string,
-  issues: TileflowIconCompilationIssue[],
-): Promise<string | null> {
-  try {
-    const resolved = await realpath(cwd);
-
-    if (!(await stat(resolved)).isDirectory()) {
-      throw new Error('Working tree is not a directory');
-    }
-
-    return resolved;
-  } catch (error) {
-    issues.push({
-      message: describeFileSystemError(error, 'Selected working tree was not found'),
-      path: 'cwd',
-    });
-    return null;
-  }
+function describeAssetDirectory(directory: ResolvedTileflowAssetDirectory): string {
+  return typeof directory.authoring === 'string'
+    ? directory.authoring
+    : `npm:${directory.authoring.package}/${directory.authoring.path}`;
 }
 
-function groupRequestsBySource(
-  requests: ResolvedIconRequest[],
-): Map<string, ResolvedIconRequest[]> {
-  const result = new Map<string, ResolvedIconRequest[]>();
-
-  for (const request of requests) {
-    const existing = result.get(request.realSourceDir) ?? [];
-    existing.push(request);
-    result.set(request.realSourceDir, existing);
-  }
-
-  return result;
+function describeAssetFile(directory: ResolvedTileflowAssetDirectory, fileName: string): string {
+  return `${describeAssetDirectory(directory).replace(/\/+$/u, '')}/${fileName}`;
 }
 
 async function inspectIconSource(
-  request: ResolvedIconRequest,
-  realSourceDir: string,
-  realCwd: string | null,
+  directory: ResolvedTileflowAssetDirectory,
   target: TileflowIconCompilationTarget,
   issues: TileflowIconCompilationIssue[],
 ): Promise<InspectedIconSource | null> {
   let entries;
+  const issueCount = issues.length;
 
   try {
-    entries = await readdir(realSourceDir, {withFileTypes: true});
+    entries = await readdir(directory.realPath, {withFileTypes: true});
   } catch (error) {
     issues.push({
       message: describeFileSystemError(error, 'Icon source could not be read'),
-      path: sourcePath(request.mapName),
+      path: directory.configPath,
     });
     return null;
   }
 
   entries.sort((left, right) => compareCodeUnits(left.name, right.name));
   const candidates: Array<{
+    displayPath: string;
     fileName: string;
     format: TileflowIconCatalogSourceFormat;
     kind: 'icon' | 'pattern';
@@ -763,16 +636,13 @@ async function inspectIconSource(
     size: number;
   }> = [];
   const names = new Set<string>();
-  let aggregateBytes = 0;
 
   for (const entry of entries) {
-    const entryPath = resolve(realSourceDir, entry.name);
-    const path = iconPath(request.mapName, entry.name);
+    const entryPath = resolve(directory.realPath, entry.name);
+    const path = `${directory.configPath}/${entry.name}`;
 
     if (entry.isDirectory()) {
-      if (target === 'hosted') {
-        issues.push({message: 'Nested directories are not supported', path});
-      }
+      issues.push({message: 'Nested directories are not supported', path});
       continue;
     }
 
@@ -781,33 +651,22 @@ async function inspectIconSource(
 
     try {
       if (entry.isSymbolicLink()) {
-        if (target === 'local') {
-          continue;
-        }
-
         realEntryPath = await realpath(entryPath);
 
-        if (!realCwd || !isPathInside(realCwd, realEntryPath)) {
-          issues.push({message: 'Icon symlink escapes the selected working tree', path});
+        if (!isPathInside(directory.containmentRoot, realEntryPath)) {
+          issues.push({message: 'Icon symlink escapes its owning directory boundary', path});
           continue;
         }
       }
 
       entryStat = await stat(realEntryPath);
     } catch (error) {
-      if (target === 'hosted') {
-        issues.push({
-          message: describeFileSystemError(error, 'Icon entry could not be read'),
-          path,
-        });
-      }
+      issues.push({message: describeFileSystemError(error, 'Icon entry could not be read'), path});
       continue;
     }
 
     if (!entryStat.isFile()) {
-      if (target === 'hosted') {
-        issues.push({message: 'Icon entries must be regular files', path});
-      }
+      issues.push({message: 'Icon entries must be regular files', path});
       continue;
     }
 
@@ -833,9 +692,9 @@ async function inspectIconSource(
     }
     names.add(name);
 
-    if (target === 'hosted' && !tileflowHostedIconIdPattern.test(name)) {
+    if (!tileflowIconIdPattern.test(name) || name.length > 64) {
       issues.push({
-        message: 'Hosted icon IDs must match ^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$',
+        message: 'Icon filenames must produce a lower-kebab ID of at most 64 characters',
         path,
       });
     }
@@ -847,8 +706,8 @@ async function inspectIconSource(
       });
     }
 
-    aggregateBytes += entryStat.size;
     candidates.push({
+      displayPath: describeAssetFile(directory, entry.name),
       fileName: entry.name,
       format: iconSourceFormat(extension),
       kind,
@@ -863,32 +722,18 @@ async function inspectIconSource(
   if (candidates.length === 0) {
     issues.push({
       message: 'No supported .svg, .png, .jpg, .jpeg, or .webp icon files were found',
-      path: sourcePath(request.mapName),
+      path: directory.configPath,
     });
   }
 
-  if (candidates.length > tileflowIconPackageLimits.maxIconCount) {
-    issues.push({
-      message: `Icon source contains more than ${tileflowIconPackageLimits.maxIconCount} icons`,
-      path: sourcePath(request.mapName),
-    });
-  }
-
-  if (aggregateBytes > tileflowIconPackageLimits.maxSourceBytes) {
-    issues.push({
-      message: `Icon source exceeds ${tileflowIconPackageLimits.maxSourceBytes} aggregate bytes`,
-      path: sourcePath(request.mapName),
-    });
-  }
-
-  if (issues.length > 0) {
+  if (issues.length > issueCount) {
     return null;
   }
 
   const icons: IconInput[] = [];
 
   for (const candidate of candidates) {
-    const displayPath = iconPath(request.mapName, candidate.fileName);
+    const displayPath = candidate.displayPath;
 
     try {
       const source = await readFile(candidate.path);
@@ -905,6 +750,7 @@ async function inspectIconSource(
       }
 
       icons.push({
+        displayPath,
         fileName: candidate.fileName,
         format: candidate.format,
         kind: candidate.kind,
@@ -920,11 +766,11 @@ async function inspectIconSource(
     }
   }
 
-  if (issues.length > 0) {
+  if (issues.length > issueCount) {
     return null;
   }
 
-  return {icons, realSourceDir};
+  return {icons};
 }
 
 async function compileInspectedIconSource(
@@ -965,6 +811,7 @@ async function compileInspectedIconSource(
             width: twoX.width,
           }),
         },
+        sourceSha256: await sha256Hex(icon.source),
         twoX,
       };
     },
@@ -1031,6 +878,7 @@ async function compileInspectedIconSource(
       files,
       manifest,
     },
+    sourceReplacements: inspected.replacements ?? [],
   };
 }
 
@@ -1366,85 +1214,8 @@ async function loadSharp(): Promise<(typeof import('sharp'))['default']> {
   }
 }
 
-function resolvePackageLabel(
-  icons: TileflowIconSet | undefined,
-  source: string,
-  iconSets: TileflowProjectConfig['icons'] | undefined,
-  mapName: string,
-): string {
-  let candidate: string | undefined;
-
-  if (typeof icons === 'string' && iconSets?.[icons]) {
-    candidate = icons;
-  } else if (icons && typeof icons === 'object' && icons.extends && iconSets?.[icons.extends]) {
-    candidate = icons.extends;
-  }
-
-  candidate ??= basename(source.replace(/[\\/]+$/u, '')) || mapName || 'Icons';
-  const printable = Array.from(candidate.normalize('NFC'))
-    .map((character) => {
-      const codePoint = character.codePointAt(0) ?? 0;
-      return codePoint < 0x20 || (codePoint >= 0x7f && codePoint <= 0x9f) ? '' : character;
-    })
-    .join('')
-    .trim();
-  const bounded = Array.from(printable || 'Icons')
-    .slice(0, 64)
-    .join('');
-
-  return tileflowIconPackageLabelSchema.parse(bounded);
-}
-
-function sortMapping(
-  mapping: Record<string, string> | undefined,
-): Record<string, string> | undefined {
-  if (!mapping) {
-    return undefined;
-  }
-
-  return Object.fromEntries(
-    Object.entries(mapping).sort(([left], [right]) => compareCodeUnits(left, right)),
-  );
-}
-
-function createCatalogMappings(
-  mapping: Record<string, string> | undefined,
-  targetStatus:
-    | TileflowIconCatalogMapping['targetStatus']
-    | ((iconId: string) => TileflowIconCatalogMapping['targetStatus']),
-): TileflowIconCatalogMapping[] {
-  return Object.entries(mapping ?? {})
-    .sort(([left], [right]) => compareCodeUnits(left, right))
-    .map(([semantic, iconId]) => ({
-      iconId,
-      semantic,
-      targetStatus: typeof targetStatus === 'function' ? targetStatus(iconId) : targetStatus,
-    }));
-}
-
-function compareMappedFrom(
-  left: TileflowIconCatalogMappedFrom,
-  right: TileflowIconCatalogMappedFrom,
-): number {
-  return compareCodeUnits(left.map, right.map) || compareCodeUnits(left.semantic, right.semantic);
-}
-
 function atlasRectangle(entry: SpriteIndex[string]): TileflowIconCatalogAtlasRectangle {
   return {height: entry.height, width: entry.width, x: entry.x, y: entry.y};
-}
-
-function relativePortablePath(root: string, candidate: string): string {
-  const pathFromRoot = relative(root, candidate);
-
-  if (pathFromRoot === '') {
-    return '.';
-  }
-
-  if (isAbsolute(pathFromRoot)) {
-    throw new Error('Icon catalog path cannot be represented relative to the working tree');
-  }
-
-  return pathFromRoot.split(sep).join('/');
 }
 
 function iconSourceFormat(extension: string): TileflowIconCatalogSourceFormat {
@@ -1461,14 +1232,6 @@ function iconSourceFormat(extension: string): TileflowIconCatalogSourceFormat {
     default:
       throw new Error(`Unsupported icon source format: ${extension}`);
   }
-}
-
-function sourcePath(mapName: string): string {
-  return `maps.${mapName}.icons.source`;
-}
-
-function iconPath(mapName: string, fileName: string): string {
-  return `${sourcePath(mapName)}/${fileName}`;
 }
 
 function isPathInside(root: string, candidate: string): boolean {
@@ -1493,39 +1256,6 @@ function describeFileSystemError(error: unknown, fallback: string): string {
   }
 
   return error instanceof Error && error.message ? error.message : fallback;
-}
-
-function cloneProject(project: TileflowProjectConfig): TileflowProjectConfig {
-  return JSON.parse(JSON.stringify(project)) as TileflowProjectConfig;
-}
-
-function applyDefaultSprite(
-  project: TileflowProjectConfig,
-  cwd: string,
-  sprite: string,
-): TileflowProjectConfig {
-  const nextProject = cloneProject(project);
-
-  for (const request of getMapIconRequests(project, cwd)) {
-    if (request.kind !== 'local' || !request.builtIn) continue;
-    const map = nextProject.maps[request.mapName];
-    if (!map) continue;
-    map.icons = {
-      ...(request.mapping ? {mapping: request.mapping} : {}),
-      sprite,
-    };
-  }
-
-  return nextProject;
-}
-
-function isRemoteSpriteReference(value: string): boolean {
-  return (
-    value.startsWith('http://') ||
-    value.startsWith('https://') ||
-    value.startsWith('/') ||
-    value.startsWith('data:')
-  );
 }
 
 function joinUrl(base: string, path: string) {

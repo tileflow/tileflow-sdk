@@ -1,4 +1,4 @@
-import type {TileflowDomainCompileContext} from '../../cartography/context';
+import {type TileflowDomainCompileContext, typographyTextStyle} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applySymbolStyle} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
@@ -21,13 +21,12 @@ export function compileAddresses(
       text: {
         allowOverlap: false,
         color: context.colors.labels.muted,
-        font: typography.font,
+        ...typographyTextStyle(typography),
         haloColor: context.colors.labels.halo,
         haloWidth: 1,
         optional: true,
         padding: 2,
         size: 10,
-        weight: typography.weight,
       },
     },
     request?.labels,

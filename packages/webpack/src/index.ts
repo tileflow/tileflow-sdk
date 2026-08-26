@@ -1,28 +1,33 @@
+import {stat} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {
+  assertTileflowSelfHostedManifestTarget,
   createTileflowArtifactSession,
   createTileflowBuildArtifacts,
-  createTileflowDevRequestHandler,
-  createTileflowNodeRequest,
   defaultTileflowConfigPath,
   getTileflowAssetBasePath,
   getTileflowAssetFileName,
   getTileflowWatchPaths,
-  isTileflowRequestUrl,
   joinTileflowPublicUrl,
   normalizeTileflowBasePath,
+  refreshTileflowArtifactSession,
+  resolveTileflowArtifactPublicUrls,
   type TileflowArtifactSession,
-  type TileflowBuildArtifactsOptions,
+} from '@tileflow/dev/artifacts';
+import {
+  createTileflowDevRequestHandler,
+  createTileflowNodeRequest,
+  isTileflowRequestUrl,
   writeTileflowNodeResponse,
-} from '@tileflow/dev';
+} from '@tileflow/dev/server';
 
 export type TileflowWebpackPluginOptions = {
   apiBaseUrl?: string;
   base?: string;
   config?: string;
   emitBuildArtifacts?: boolean;
+  overwriteHostedManifest?: boolean;
   publicPath?: string;
-  worldGeneration?: TileflowBuildArtifactsOptions['worldGeneration'];
 };
 
 type WebpackCompiler = {
@@ -45,7 +50,8 @@ type WebpackCompiler = {
   };
   options: {
     devServer?: WebpackDevServerOptions;
-    output?: {
+    output: {
+      path: string;
       publicPath?: string | ((...args: unknown[]) => string);
     };
   };
@@ -111,13 +117,15 @@ export class TileflowWebpackPlugin {
     });
 
     compiler.hooks.afterCompile.tapPromise(this.name, async (compilation) => {
+      if (this.devSession) {
+        await refreshTileflowArtifactSession(await this.devSession, {
+          reason: 'webpack compilation',
+        });
+      }
       await this.addWatchDependencies(compilation, {
         configPath,
         cwd,
       });
-      if (this.devSession) {
-        await (await this.devSession).refresh('webpack compilation');
-      }
     });
 
     compiler.hooks.watchClose?.tap(this.name, () => {
@@ -172,7 +180,6 @@ export class TileflowWebpackPlugin {
         cwd: input.cwd,
         styleBaseUrl: input.basePath,
         apiBaseUrl: this.options.apiBaseUrl,
-        worldGeneration: this.options.worldGeneration,
         watch: false,
       });
       const handlerPromise = this.devSession.then((session) =>
@@ -186,7 +193,6 @@ export class TileflowWebpackPlugin {
           },
           session,
           apiBaseUrl: this.options.apiBaseUrl,
-          worldGeneration: this.options.worldGeneration,
         }),
       );
       const devBasePaths = getDevBasePaths(input.basePath, input.publicBase);
@@ -195,7 +201,7 @@ export class TileflowWebpackPlugin {
         middleware: async (request, response, next) => {
           const matchingBasePath = getMatchingBasePath(request.url, devBasePaths);
 
-          if (!matchingBasePath) {
+          if (matchingBasePath === null) {
             next();
             return;
           }
@@ -231,12 +237,20 @@ export class TileflowWebpackPlugin {
 
     try {
       const session = this.devSession ? await this.devSession : undefined;
-      const watchPaths = session
-        ? (session.getLastGoodArtifacts()?.watchPaths ?? [])
-        : await getTileflowWatchPaths({config: input.configPath, cwd: input.cwd});
+      const watchPaths =
+        session?.getLastGoodArtifacts()?.watchPaths ??
+        (await getTileflowWatchPaths({config: input.configPath, cwd: input.cwd}));
 
       for (const watchPath of watchPaths) {
-        compilation.contextDependencies?.add(watchPath);
+        try {
+          if ((await stat(watchPath)).isDirectory()) {
+            compilation.contextDependencies?.add(watchPath);
+          } else {
+            compilation.fileDependencies?.add(watchPath);
+          }
+        } catch {
+          compilation.fileDependencies?.add(watchPath);
+        }
       }
     } catch {
       // Config errors are surfaced by the dev handler/build emit path.
@@ -273,31 +287,22 @@ export class TileflowWebpackPlugin {
     },
   ) {
     const publicBase = this.resolvePublicBase(compiler);
-    const publicBaseUrl = joinTileflowPublicUrl(publicBase, input.basePath);
+    const publicUrls = resolveTileflowArtifactPublicUrls(publicBase, input.basePath);
     const assetBase = getTileflowAssetBasePath(input.basePath);
     const artifacts = await createTileflowBuildArtifacts({
-      assetBaseUrl: isAbsoluteOrRootedPublicUrl(publicBaseUrl) ? publicBaseUrl : undefined,
+      assetBaseUrl: publicUrls.assetBaseUrl,
       config: input.configPath,
       cwd: input.cwd,
-      styleBaseUrl: publicBaseUrl,
+      styleBaseUrl: publicUrls.styleBaseUrl,
       apiBaseUrl: this.options.apiBaseUrl,
-      worldGeneration: this.options.worldGeneration,
     });
+    await assertTileflowSelfHostedManifestTarget(
+      resolve(compiler.options.output.path, assetBase, 'manifest.json'),
+      {overwriteHostedManifest: this.options.overwriteHostedManifest},
+    );
     const RawSource = compiler.webpack.sources.RawSource;
 
-    compilation.emitAsset(
-      getTileflowAssetFileName(assetBase, 'manifest.json'),
-      new RawSource(`${JSON.stringify(artifacts.manifest, null, 2)}\n`),
-    );
-
-    for (const [mapName, style] of Object.entries(artifacts.styles)) {
-      compilation.emitAsset(
-        getTileflowAssetFileName(assetBase, `styles/${mapName}.json`),
-        new RawSource(`${JSON.stringify(style, null, 2)}\n`),
-      );
-    }
-
-    for (const asset of artifacts.assets) {
+    for (const asset of artifacts.files) {
       compilation.emitAsset(
         getTileflowAssetFileName(assetBase, asset.fileName),
         new RawSource(toRawSourceValue(asset.source)),
@@ -314,7 +319,7 @@ export class TileflowWebpackPlugin {
       return this.options.publicPath;
     }
 
-    const publicPath = compiler.options.output?.publicPath;
+    const publicPath = compiler.options.output.publicPath;
 
     if (typeof publicPath === 'string' && publicPath !== 'auto') {
       return publicPath;
@@ -340,15 +345,6 @@ export default TileflowWebpackPlugin;
 
 function toRawSourceValue(source: string | Uint8Array): string | Buffer {
   return typeof source === 'string' || Buffer.isBuffer(source) ? source : Buffer.from(source);
-}
-
-function isAbsoluteOrRootedPublicUrl(value: string): boolean {
-  return (
-    value.startsWith('http://') ||
-    value.startsWith('https://') ||
-    value.startsWith('/') ||
-    value.startsWith('data:')
-  );
 }
 
 function getDevBasePaths(basePath: string, publicBase: string): string[] {

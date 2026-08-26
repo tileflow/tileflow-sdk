@@ -1,8 +1,44 @@
 # Third-party notices
 
-This file records the optional native image-toolchain boundary used while compiling local icon
-sprites. These dependencies are installed as separate npm packages; their code and native binaries
-are not copied into the `@tileflow/dev` package.
+This file records third-party components used by Node preparation and preview. Official map artwork
+and fonts are owned and published by `@tileflow/maps`; `@tileflow/dev` does not carry an `assets/`
+directory. Runtime dependencies are installed as separate npm packages, and their code and native
+binaries are not copied into the dev package.
+
+## Package-owned map fonts
+
+The generic font preparation pipeline reads map-owned TTF, OTF, and WOFF2 directories; it does not
+embed fonts in `@tileflow/dev`. Each source directory must carry its own `LICENSE.txt`, which is
+copied into the deterministic build artifacts whenever that directory contributes a selected face.
+
+The Cyberpunk map in `@tileflow/maps` currently owns unmodified Oxanium Medium and SemiBold TTFs.
+Oxanium is copyright 2019 The Oxanium Project Authors and is distributed under the SIL Open Font
+License 1.1. The source and binaries are pinned to upstream commit
+`a8f39e0c71186190027a093e9001459410192d1e`; the complete license accompanies the files at
+`@tileflow/maps/assets/cyberpunk/fonts/LICENSE.txt`.
+
+- Source: <https://github.com/sevmeyer/oxanium/tree/a8f39e0c71186190027a093e9001459410192d1e>
+- Google Fonts specimen: <https://fonts.google.com/specimen/Oxanium>
+- License: <https://github.com/sevmeyer/oxanium/blob/a8f39e0c71186190027a093e9001459410192d1e/OFL.txt>
+
+## fontkit 2.0.4
+
+Font metadata for TTF, OTF, and WOFF2 inputs is read with the separately installed `fontkit`
+package. fontkit is copyright Devon Govett and contributors and is distributed under the MIT
+License.
+
+- Source: <https://github.com/foliojs/fontkit/tree/v2.0.4>
+- License: <https://github.com/foliojs/fontkit/blob/v2.0.4/LICENSE>
+
+## PMTiles JavaScript 4.5.0
+
+The local Streets preview loads the separately installed `pmtiles` browser decoder to retrieve
+individual landmark GLB entries with HTTP byte ranges. PMTiles is copyright Protomaps and
+contributors and is distributed under the BSD 3-Clause License. Its `fflate` dependency is
+copyright 2020 Arjun Barrett and is distributed under the MIT License.
+
+- PMTiles source and license: <https://github.com/protomaps/PMTiles/tree/v4.5.0/js>
+- fflate source and license: <https://github.com/101arrowz/fflate/tree/v0.8.2>
 
 ## sharp 0.35.3
 

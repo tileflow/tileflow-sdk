@@ -1,65 +1,58 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  createStyle,
   openMapTiles,
-  parseTileflowProject,
+  parseTileflowMap,
   resolveTileflowData,
-  streets,
-  validateConfig,
+  validateTileflowMap,
   vectorTiles,
 } from '../src';
 import {assembleTileflowLayers} from '../src/cartography/graph';
+import {extendStreets} from './map-fixture';
 
-test('resolves createStyle theme registries while standalone validation fails unknown names', () => {
-  const style = createStyle(
-    {basemap: streets(), theme: 'midnight'},
-    {themes: {midnight: {extends: 'dark', mode: 'dark'}}},
+test('accepts map-owned theme objects and rejects strings or nested inheritance', () => {
+  const parsed = parseTileflowMap(
+    extendStreets({theme: {colors: {water: '#001122'}, mode: 'dark'}}),
   );
-  assert.equal(style.metadata?.['tileflow:theme'], 'midnight');
+  assert.deepEqual(parsed.theme, {colors: {water: '#001122'}, mode: 'dark'});
 
-  const result = validateConfig({basemap: streets(), theme: 'missing'});
-  assert.equal(result.valid, false);
-  assert.deepEqual(result.messages, [
-    {level: 'error', path: 'theme', message: 'Unknown Tileflow theme "missing"'},
-  ]);
+  for (const theme of ['dark', {extends: 'dark'}]) {
+    const result = validateTileflowMap(extendStreets({theme} as never));
+    assert.equal(result.valid, false);
+    assert.match(result.messages[0]?.message ?? '', /theme|object|Unrecognized key/i);
+  }
 });
 
-test('validates named map icon references and permits registered or URL references', () => {
+test('rejects every legacy icon registry and sprite authoring shape', () => {
+  assert.throws(() => parseTileflowMap(extendStreets({icons: 'missing'})), /icons|array/i);
   assert.throws(
-    () => parseTileflowProject({maps: {main: {basemap: streets(), icons: 'missing'}}}),
-    /maps\.main\.icons: Unknown Tileflow icon set "missing"/,
+    () => parseTileflowMap(extendStreets({icons: {sprite: '/sprites/base'}})),
+    /icons|array/i,
   );
-  assert.doesNotThrow(() =>
-    parseTileflowProject({
-      icons: {base: {sprite: '/sprites/base'}},
-      maps: {main: {basemap: streets(), icons: 'base'}},
-    }),
-  );
-  assert.doesNotThrow(() =>
-    parseTileflowProject({maps: {main: {basemap: streets(), icons: '/sprites/direct'}}}),
-  );
+  assert.doesNotThrow(() => parseTileflowMap(extendStreets({icons: ['./icons']})));
 });
 
 test('rejects inverted semantic zoom ranges and permits an empty equal range', () => {
-  const inverted = validateConfig({
-    basemap: streets(),
-    modules: {
-      water: {
-        type: 'water',
-        waterways: {river: {minZoom: 12, maxZoom: 8}},
+  const inverted = validateTileflowMap(
+    extendStreets({
+      modules: {
+        water: {
+          type: 'water',
+          waterways: {river: {minZoom: 12, maxZoom: 8}},
+        },
       },
-    },
-  });
+    }),
+  );
   assert.equal(inverted.valid, false);
-  assert.match(inverted.messages[0]?.path ?? '', /waterways\.river\.maxZoom$/);
-  assert.match(inverted.messages[0]?.message ?? '', /greater than or equal/);
+  assert.equal(inverted.messages[0]?.path, 'modules.water.waterways.river.maxZoom');
+  assert.match(inverted.messages[0]?.message ?? '', /maxZoom.*greater than or equal/);
 
   assert.equal(
-    validateConfig({
-      basemap: streets(),
-      modules: {water: {type: 'water', waterways: {river: {minZoom: 8, maxZoom: 8}}}},
-    }).valid,
+    validateTileflowMap(
+      extendStreets({
+        modules: {water: {type: 'water', waterways: {river: {minZoom: 8, maxZoom: 8}}}},
+      }),
+    ).valid,
     true,
   );
 });

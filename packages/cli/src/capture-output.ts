@@ -23,6 +23,15 @@ export type WriteAtomicFileSetInput = {
   removePaths?: string[];
 };
 
+export type WriteAtomicFileInput = {
+  boundaryPath: string;
+  force: boolean;
+  label: string;
+  managed: boolean;
+  path: string;
+  source: string | Uint8Array;
+};
+
 export async function writeCapturePair(input: WriteCapturePairInput): Promise<boolean> {
   const outputPath = resolve(input.outputPath);
   const receiptPath = resolve(input.receiptPath);
@@ -160,6 +169,40 @@ export async function writeAtomicFileSet(input: WriteAtomicFileSetInput): Promis
       ...temporaries.map((file) => removeOptional(file.temporary)),
       ...states.filter((state) => !state.backedUp).map((state) => removeOptional(state.backup)),
     ]);
+  }
+}
+
+/** Atomically replaces one file for readers using a same-directory temp + rename. */
+export async function writeAtomicFile(input: WriteAtomicFileInput): Promise<boolean> {
+  const boundaryPath = resolve(input.boundaryPath);
+  const path = resolve(input.path);
+  const source =
+    typeof input.source === 'string'
+      ? new TextEncoder().encode(input.source)
+      : new Uint8Array(input.source);
+
+  await assertNoSymlinkComponents(dirname(path), boundaryPath);
+  await assertNotSymlink(path);
+  const existing = await readOptional(path);
+  if (existing !== undefined && Buffer.from(existing).equals(Buffer.from(source))) return false;
+  if (existing !== undefined && !input.managed && !input.force) {
+    throw new Error(
+      `${input.label} already exists with different contents. Use --force to replace it.`,
+    );
+  }
+
+  await mkdir(dirname(path), {recursive: true});
+  await assertNoSymlinkComponents(dirname(path), boundaryPath);
+  await assertNotSymlink(path);
+  const temporary = temporarySibling(path, `${process.pid}.${randomUUID()}`, 'new');
+
+  try {
+    await writeSyncedExclusive(temporary, source);
+    await rename(temporary, path);
+    await syncDirectory(dirname(path));
+    return true;
+  } finally {
+    await removeOptional(temporary);
   }
 }
 

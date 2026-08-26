@@ -19,8 +19,13 @@ import {
 } from '../src/index';
 
 const dataIdentity: TileflowCaptureDataInput = {
-  generation: 'v1',
+  archiveSha256: 'd'.repeat(64),
+  contractSha256: 'e'.repeat(64),
+  dataContractSha256: 'f'.repeat(64),
+  descriptorSha256: 'c'.repeat(64),
   kind: 'tileflow-world',
+  product: 'world-v1',
+  releaseId: 'world-v1-visual-fixture',
   schema: 'openmaptiles',
   schemaVersion: 1,
   sourceId: 'tileflow',
@@ -287,6 +292,25 @@ test('keeps schema-v2 baselines compatible with additive bindings and capabiliti
   assert.equal(comparison.sceneMatch, true);
 });
 
+test('treats a different exact World release as a scene identity mismatch', async () => {
+  const png = createPng(2, 2, [20, 40, 60, 255]);
+  const actual = await createCapture(png, 2, 2);
+  const baseline = structuredClone(actual.receipt);
+  assert.equal(baseline.data.kind, 'tileflow-world');
+  if (baseline.data.kind !== 'tileflow-world' || !('releaseId' in baseline.data)) {
+    throw new Error('Expected a schema-v3 World receipt fixture.');
+  }
+  baseline.data.releaseId = 'world-v1-different-release';
+  baseline.data.descriptorSha256 = '9'.repeat(64);
+
+  const comparison = await compareTileflowCaptureToBaseline(actual, {
+    png,
+    receipt: baseline,
+  });
+  assert.equal(comparison.status, 'scene-mismatch');
+  assert.equal(comparison.sceneMatch, false);
+});
+
 test('rejects corrupt PNGs, inconsistent hashes, and executable or additive receipt shapes', async () => {
   const png = createPng(1, 1, [1, 2, 3, 255]);
   const actual = await createCapture(png, 1, 1);
@@ -362,7 +386,7 @@ test('rejects duplicate-key receipt JSON instead of accepting parser-dependent i
   const png = createPng(1, 1, [1, 2, 3, 255]);
   const receipt = await createReceipt(png, 1, 1);
   const canonical = serializeTileflowCaptureReceipt(receipt);
-  const ambiguous = canonical.replace('"schemaVersion":2', '"schemaVersion":0,"schemaVersion":2');
+  const ambiguous = canonical.replace('"schemaVersion":3', '"schemaVersion":0,"schemaVersion":3');
 
   assert.throws(() => parseTileflowCaptureReceipt(ambiguous), /canonical|unsupported|duplicate/i);
 });

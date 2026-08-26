@@ -1,11 +1,12 @@
 import type {Command} from 'commander';
+import {dirname} from 'node:path';
 import {
   getFirstTileflowMapName,
-  inspectTileflowFeatures,
-  loadValidTileflowConfig,
-  type TileflowFeatureInspection,
+  loadValidTileflowConfigWithInputs,
   TileflowValidationError,
-} from '@tileflow/dev';
+} from '@tileflow/dev/config';
+import {prepareTileflowCatalogIcons} from '@tileflow/dev/icons';
+import {inspectTileflowFeatures, type TileflowFeatureInspection} from '@tileflow/dev/inspect';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 
 type FeatureInspectCommandOptions = {
@@ -44,7 +45,12 @@ export function registerFeatureInspectCommand(
     .option('--limit <count>', 'maximum returned features from 1 to 500', '200')
     .option('--timeout <milliseconds>', 'per-request timeout from 100 to 60000', '10000')
     .option('--json', 'print deterministic schema-version-1 JSON')
-    .action(async (options: FeatureInspectCommandOptions) => {
+    .action(async (_options: FeatureInspectCommandOptions, command: Command) => {
+      // `inspect` owns the same machine-facing selection flags for its default
+      // config inspection action. Commander stores a flag supplied after the
+      // nested command on that parent when the names overlap, so read the full
+      // command chain instead of silently falling back to the child defaults.
+      const options = command.optsWithGlobals<FeatureInspectCommandOptions>();
       try {
         await runFeatureInspect(options);
       } catch (error) {
@@ -68,15 +74,22 @@ async function runFeatureInspect(options: FeatureInspectCommandOptions): Promise
   const sourceLayers = parseCsv(options.layers, 'layers');
   const properties = parseCsv(options.properties, 'properties', true);
 
-  const project = await withTileflowConfigSecretsHidden(() =>
-    loadValidTileflowConfig(options.config),
+  const loaded = await withTileflowConfigSecretsHidden(() =>
+    loadValidTileflowConfigWithInputs(options.config),
   );
+  const project = loaded.project;
   const mapName = options.map ?? getFirstTileflowMapName(project);
+  const prepared = await prepareTileflowCatalogIcons(project, {
+    assetBaseUrl: '/tileflow',
+    baseDirectory: dirname(loaded.configFile),
+    cwd: process.cwd(),
+  });
   const inspection = await inspectTileflowFeatures(project, mapName, {
     center,
     height,
     limit,
     properties,
+    preparedAssets: prepared.mapAssets[mapName],
     sourceLayers,
     timeoutMs,
     width,

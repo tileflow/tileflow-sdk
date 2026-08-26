@@ -1,11 +1,11 @@
-import type {TileflowDomainCompileContext} from '../../cartography/context';
+import {type TileflowDomainCompileContext, typographyTextStyle} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applySymbolStyle} from '../../cartography/layer-style';
+import {labelFieldExpression} from '../../cartography/localization';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import type {TileflowSymbolStyle} from '../../cartography/styles';
 import {expression} from '../../cartography/values';
 import type {TileflowLabelLanguage} from '../../types';
-import {labelFieldExpression} from '../labels/language';
 import {
   type TileflowLandformClass,
   tileflowLandformClasses,
@@ -53,14 +53,13 @@ export function compileLandforms(
         text: {
           allowOverlap: false,
           color: context.colors.labels.muted,
-          font: typography.font,
+          ...typographyTextStyle(typography),
           haloColor: context.colors.labels.halo,
           haloWidth: 1.2,
           maxWidth: 9,
           optional: true,
           padding: 4,
           size,
-          weight: typography.weight,
         },
       },
       override,

@@ -97,6 +97,63 @@ test('requires a bounded idempotency key before making a request', async () => {
   assert.equal(validateStaticMapIdempotencyKey(createStaticMapIdempotencyKey()).ok, true);
 });
 
+test('rejects unsafe API and endpoint URLs before making a request', async () => {
+  let calls = 0;
+  const fetch = async () => {
+    calls += 1;
+    return new Response();
+  };
+
+  await assert.rejects(
+    createStaticMap(baseScene, {
+      apiUrl: 'https://user:secret@example.test',
+      fetch,
+      idempotencyKey: 'static_12345678',
+    }),
+    /apiUrl must be HTTP\(S\)/,
+  );
+  await assert.rejects(
+    requestStaticMapUntilReady(prepareStaticMapRequest(baseScene), {
+      createUrl: 'javascript:alert(1)',
+      fetch,
+      idempotencyKey: 'static_12345678',
+    }),
+    /createUrl must be HTTP\(S\)/,
+  );
+  assert.equal(calls, 0);
+});
+
+test('accepts a strict root-relative create URL for same-origin proxies', async () => {
+  const urls: string[] = [];
+  const result = await requestStaticMapUntilReady(prepareStaticMapRequest(baseScene), {
+    createUrl: '/api/static-maps',
+    fetch: (async (url) => {
+      urls.push(String(url));
+      return readyResponse();
+    }) as typeof fetch,
+    idempotencyKey: 'static_12345678',
+  });
+
+  assert.deepEqual(urls, ['/api/static-maps']);
+  assert.equal(result.status, 'ready');
+
+  for (const createUrl of [
+    '//example.test/static-maps',
+    '/\\example.test/static-maps',
+    '/api/static-maps?secret=value',
+    '/api/static-maps#fragment',
+  ]) {
+    await assert.rejects(
+      requestStaticMapUntilReady(prepareStaticMapRequest(baseScene), {
+        createUrl,
+        fetch: (async () => readyResponse()) as typeof fetch,
+        idempotencyKey: 'static_12345678',
+      }),
+      /safe root-relative path/,
+    );
+  }
+});
+
 test('retries a processing operation with the same key and validates the ready response', async () => {
   const headers: string[] = [];
   let calls = 0;
@@ -145,6 +202,32 @@ test('rejects malformed success responses instead of casting them', async () => 
       idempotencyKey: 'static_12345678',
     }),
     /invalid response/i,
+  );
+});
+
+test('rejects oversized response documents without echoing their contents', async () => {
+  const secret = 'sensitive-response-body';
+  await assert.rejects(
+    createStaticMap(baseScene, {
+      fetch: async () => new Response(JSON.stringify({padding: 'x'.repeat(70_000), secret})),
+      idempotencyKey: 'static_12345678',
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /exceeded 64 KiB/);
+      assert.doesNotMatch(error.message, new RegExp(secret));
+      return true;
+    },
+  );
+});
+
+test('rejects response JSON that is not strict UTF-8', async () => {
+  await assert.rejects(
+    createStaticMap(baseScene, {
+      fetch: async () => new Response(Uint8Array.of(0xc3, 0x28)),
+      idempotencyKey: 'static_12345678',
+    }),
+    /expected UTF-8 JSON/,
   );
 });
 
@@ -315,3 +398,15 @@ test('prepares one normalized scene for both the request body and dedupe key', a
     size: {dpr: 1, height: 480, width: 640},
   });
 });
+
+function readyResponse(): Response {
+  return Response.json({
+    cached: false,
+    hash: 'a'.repeat(43),
+    imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
+    operationId: 'smo_12345678901234567890',
+    remainingUnits: 499_985,
+    status: 'ready',
+    unitCost: 15,
+  });
+}

@@ -1,8 +1,20 @@
-import {createStyle, type TileflowConfig} from './project';
-import {type MapLibreStyle, type TileflowProjectThemes} from './types';
+import type {TileflowRuntimeManifest} from './manifest';
+import {type MapLibreStyle, type TileflowViewConfig} from './types';
+
+export type {
+  TileflowHostedManifest,
+  TileflowHostedManifestMap,
+  TileflowRuntimeManifest,
+  TileflowSelfHostedManifest,
+} from './manifest';
 
 export const defaultTileflowManifestUrl = '/tileflow/manifest.json';
-export const defaultTileflowStyleBaseUrl = 'http://localhost:3333';
+export const defaultTileflowRuntimeView = Object.freeze({
+  bearing: 0,
+  center: [0, 20] as readonly [number, number],
+  pitch: 0,
+  zoom: 2,
+}) satisfies Required<TileflowViewConfig>;
 
 export type TileflowAnalytics = {
   apiUrl?: string;
@@ -69,210 +81,245 @@ export type TileflowMapMarker = {
 export type TileflowMapMode = 'interactive' | 'image';
 
 export type TileflowMapModeOptions = {
-  imageUrl?: string;
   mode?: TileflowMapMode;
-  preferLocalDev?: boolean;
-};
-
-export type TileflowRuntimeManifestMapEntry =
-  | string
-  | {
-      apiUrl?: string;
-      environment?: string;
-      mapId?: string;
-      styleId?: string;
-      styleUrl?: string;
-      usageMode?: 'session';
-      url?: string;
-      worldGeneration?: 'v1';
-    };
-
-export type TileflowRuntimeManifest = {
-  apiUrl?: string;
-  maps?: Record<string, TileflowRuntimeManifestMapEntry>;
-  styles?: Record<string, string>;
-  version?: 2;
 };
 
 export type TileflowRuntimeManifestMap = {
   apiUrl?: string;
+  fontFaces?: TileflowStyleFontFace[];
   mapId?: string;
   styleId?: string;
   styleUrl?: string;
   usageMode?: 'session';
+  view?: TileflowViewConfig;
   worldGeneration?: 'v1';
 };
 
 export type TileflowRuntimeStyle = {
   analytics?: TileflowAnalytics;
+  /** An explicit empty array means the manifest declares that no web fonts are required. */
+  fontFaces?: TileflowStyleFontFace[];
   style: MapLibreStyle | string;
 };
 
+export const tileflowStyleFontFacesMetadataKey = 'tileflow:fontFaces' as const;
+export const tileflowStyleFontFaceLimits = Object.freeze({
+  maximumCount: 16,
+  maximumSourceLength: 2_048,
+});
+
+export type TileflowStyleFontFace = {
+  family: string;
+  source: string;
+  style?: 'italic' | 'normal' | 'oblique';
+  weight?: '100' | '200' | '300' | '400' | '500' | '600' | '700' | '800' | '900';
+};
+
+/** Browser input is either one published Tileflow map or one direct MapLibre style. */
+export type TileflowRuntimeSource =
+  | {
+      kind: 'tileflow';
+      manifestUrl?: string;
+      map: string;
+    }
+  | {
+      kind: 'maplibre';
+      style: MapLibreStyle | string;
+    };
+
 export type TileflowRuntimeStyleOptions = {
-  config?: TileflowConfig;
   manifestMap?: TileflowRuntimeManifestMap | null;
-  map?: string;
-  preferLocalDev?: boolean;
-  style?: MapLibreStyle;
-  styleBaseUrl?: string;
-  styleUrl?: string;
-  themes?: TileflowProjectThemes;
+  source: TileflowRuntimeSource;
 };
 
-export type TileflowRuntimeStyleInputs = {
-  config?: unknown;
-  map?: string;
-  style?: unknown;
-  styleBaseUrl?: string;
-  styleUrl?: string;
-  themes?: unknown;
-};
-
-export type TileflowRuntimeStyleInputsValidation =
+export type TileflowRuntimeSourceValidation =
   | {ok: true}
   | {
-      code: 'config-conflict' | 'missing-config' | 'missing-map' | 'multiple-style-sources';
+      code: 'invalid-source' | 'missing-source';
       error: string;
       ok: false;
     };
 
 export type TileflowManifestLoadOptions = {
-  config?: unknown;
   imageMode?: boolean;
   imageUrl?: string;
-  map?: string;
-  style?: unknown;
-  styleBaseUrl?: string;
-  styleUrl?: string;
+  source: TileflowRuntimeSource;
 };
+
+export type TileflowManifestFetchOptions = {
+  /** Successful manifests are shared for this duration. Set to 0 to bypass the cache. */
+  cacheTtlMs?: number;
+  fetch?: typeof globalThis.fetch;
+  signal?: AbortSignal;
+  /** Hard request timeout in milliseconds. Defaults to 10 seconds and is capped at 60 seconds. */
+  timeoutMs?: number;
+};
+
+export type TileflowRuntimeViewOptions = TileflowViewConfig & {
+  fallback?: TileflowViewConfig;
+  manifestMap?: TileflowRuntimeManifestMap | null;
+};
+
+export type TileflowRuntimeCenterLike =
+  | readonly [number, number]
+  | {lat: number; lng: number}
+  | {lat: number; lon: number};
 
 const maxStaticImageDimension = 1280;
 const maxStaticImagePixels = 1280 * 1280;
-const manifestCache = new globalThis.Map<string, Promise<TileflowRuntimeManifest | null>>();
+const defaultManifestCacheTtlMs = 30_000;
+const maximumManifestBytes = 1024 * 1024;
+const maximumSessionGrantBytes = 64 * 1024;
+const manifestCache = new globalThis.Map<
+  string,
+  {expiresAt: number; promise: Promise<TileflowRuntimeManifest | null>}
+>();
 const missingStaticMapIdWarnings = new Set<string>();
 
 export function shouldLoadTileflowManifest(options: TileflowManifestLoadOptions): boolean {
-  return Boolean(
-    options.map &&
-    !options.config &&
-    ((options.imageMode && !options.imageUrl) ||
-      (!options.imageMode && !options.style && !options.styleUrl && !options.styleBaseUrl)),
-  );
+  return options.source.kind === 'tileflow' && (!options.imageMode || !options.imageUrl);
 }
 
-export function validateTileflowRuntimeStyleInputs(
-  input: TileflowRuntimeStyleInputs,
-): TileflowRuntimeStyleInputsValidation {
-  const hasConfig = input.config !== undefined;
-  const hasMap = input.map !== undefined;
-  const explicitSources = [
-    input.style !== undefined ? 'style' : null,
-    input.styleUrl !== undefined ? 'styleUrl' : null,
-    input.styleBaseUrl !== undefined ? 'styleBaseUrl' : null,
-  ].filter((name): name is string => name !== null);
+export function validateTileflowRuntimeSource(source: unknown): TileflowRuntimeSourceValidation {
+  if (source === undefined) {
+    return {code: 'missing-source', error: 'source is required', ok: false};
+  }
+  if (!isPlainRuntimeRecord(source)) {
+    return {code: 'invalid-source', error: 'source must be an object', ok: false};
+  }
 
-  if (hasConfig) {
-    const conflicts = [hasMap ? 'map' : null, ...explicitSources].filter(
-      (name): name is string => name !== null,
-    );
-    if (conflicts.length > 0) {
+  if (source.kind === 'tileflow') {
+    if (
+      typeof source.map !== 'string' ||
+      source.map.length === 0 ||
+      source.map !== source.map.trim() ||
+      (source.manifestUrl !== undefined &&
+        (typeof source.manifestUrl !== 'string' || source.manifestUrl.length === 0))
+    ) {
       return {
-        code: 'config-conflict',
-        error: `config cannot be combined with ${formatPropertyList(conflicts)}; choose one style source`,
+        code: 'invalid-source',
+        error: 'a tileflow source requires a non-empty map and an optional non-empty manifestUrl',
         ok: false,
       };
     }
+    return {ok: true};
   }
 
-  if (explicitSources.length > 1) {
-    return {
-      code: 'multiple-style-sources',
-      error: `${formatPropertyList(explicitSources)} are mutually exclusive style sources`,
-      ok: false,
-    };
+  if (source.kind === 'maplibre') {
+    const style = source.style;
+    if (
+      (typeof style !== 'string' || style.length === 0) &&
+      (!style || typeof style !== 'object' || Array.isArray(style))
+    ) {
+      return {
+        code: 'invalid-source',
+        error: 'a maplibre source requires a style object or non-empty style URL',
+        ok: false,
+      };
+    }
+    return {ok: true};
   }
-  if (input.styleBaseUrl !== undefined && !hasMap) {
-    return {code: 'missing-map', error: 'styleBaseUrl requires map', ok: false};
-  }
-  if (input.themes !== undefined && !hasConfig) {
-    return {code: 'missing-config', error: 'themes requires config', ok: false};
-  }
-  return {ok: true};
+
+  return {
+    code: 'invalid-source',
+    error: "source.kind must be 'tileflow' or 'maplibre'",
+    ok: false,
+  };
 }
 
-export function assertValidTileflowRuntimeStyleInputs(input: TileflowRuntimeStyleInputs): void {
-  const validation = validateTileflowRuntimeStyleInputs(input);
+export function assertValidTileflowRuntimeSource(
+  source: unknown,
+): asserts source is TileflowRuntimeSource {
+  const validation = validateTileflowRuntimeSource(source);
   if (!validation.ok) {
-    throw new TypeError(`Invalid Tileflow runtime style inputs: ${validation.error}`);
+    throw new TypeError(`Invalid Tileflow runtime source: ${validation.error}`);
   }
 }
 
 export function resolveTileflowRuntimeStyle(
   options: TileflowRuntimeStyleOptions,
 ): TileflowRuntimeStyle | null {
-  assertValidTileflowRuntimeStyleInputs(options);
+  assertValidTileflowRuntimeSource(options.source);
 
-  if (options.style) {
-    return {style: options.style};
-  }
-
-  if (options.styleUrl) {
-    return {
-      analytics: inferTileflowAnalyticsFromStyleUrl(options.styleUrl),
-      style: options.styleUrl,
-    };
-  }
-
-  if (options.map && options.styleBaseUrl && !options.config) {
-    return {
-      style: resolveTileflowStyleUrl(options.map, options.styleBaseUrl),
-    };
-  }
-
-  if (options.map) {
-    if (options.manifestMap?.styleUrl) {
+  if (options.source.kind === 'maplibre') {
+    if (typeof options.source.style !== 'string') {
       return {
-        analytics: {
-          apiUrl: options.manifestMap.apiUrl,
-          mapId: options.manifestMap.mapId,
-          styleId: options.manifestMap.styleId,
-        },
-        style: options.manifestMap.styleUrl,
+        fontFaces: getTileflowStyleFontFaces(options.source.style),
+        style: options.source.style,
       };
     }
-
-    if (options.preferLocalDev !== false && isTileflowLocalDevHost()) {
-      return {style: resolveTileflowStyleUrl(options.map)};
-    }
-
-    return null;
+    return {
+      analytics: inferTileflowAnalyticsFromStyleUrl(options.source.style),
+      style: options.source.style,
+    };
   }
 
-  if (!options.config) return null;
+  if (options.manifestMap?.styleUrl) {
+    return {
+      analytics: {
+        apiUrl: options.manifestMap.apiUrl,
+        mapId: options.manifestMap.mapId,
+        styleId: options.manifestMap.styleId,
+      },
+      fontFaces: options.manifestMap.fontFaces ?? [],
+      style: options.manifestMap.styleUrl,
+    };
+  }
 
-  return {
-    style: createStyle(options.config, {
-      themes: options.themes,
-    }),
-  };
+  return null;
 }
 
-function formatPropertyList(values: readonly string[]): string {
-  if (values.length < 2) return values[0] ?? '';
-  if (values.length === 2) return `${values[0]} and ${values[1]}`;
-  return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`;
-}
+/** Strictly reads Tileflow-owned web-font metadata from a compiled MapLibre style. */
+export function getTileflowStyleFontFaces(
+  style: Pick<MapLibreStyle, 'metadata'>,
+): TileflowStyleFontFace[] {
+  const input = style.metadata?.[tileflowStyleFontFacesMetadataKey];
+  if (input === undefined) return [];
+  if (!Array.isArray(input) || input.length > tileflowStyleFontFaceLimits.maximumCount) {
+    throw new TypeError('Invalid Tileflow style fontFaces metadata.');
+  }
 
-export function resolveTileflowStyleUrl(mapName: string, styleBaseUrl?: string): string {
-  const baseUrl = normalizeTileflowUrl(styleBaseUrl ?? getDefaultTileflowStyleBaseUrl());
-  return `${baseUrl}/styles/${mapName}.json`;
-}
-
-export function getDefaultTileflowStyleBaseUrl(): string {
-  const globalValue = (globalThis as {__TILEFLOW_STYLE_BASE_URL__?: string})
-    .__TILEFLOW_STYLE_BASE_URL__;
-
-  return globalValue ?? defaultTileflowStyleBaseUrl;
+  const seen = new Set<string>();
+  return input.map((value) => {
+    if (!isPlainRuntimeRecord(value)) {
+      throw new TypeError('Invalid Tileflow style fontFaces metadata.');
+    }
+    const keys = Object.keys(value);
+    if (keys.some((key) => !['family', 'source', 'style', 'weight'].includes(key))) {
+      throw new TypeError('Invalid Tileflow style fontFaces metadata.');
+    }
+    const family = value.family;
+    const source = value.source;
+    const fontStyle = value.style;
+    const weight = value.weight;
+    if (
+      typeof family !== 'string' ||
+      family.length === 0 ||
+      family.length > 100 ||
+      family !== family.trim() ||
+      /[\p{Cc}\\]/u.test(family) ||
+      typeof source !== 'string' ||
+      source.length === 0 ||
+      source.length > tileflowStyleFontFaceLimits.maximumSourceLength ||
+      source !== source.trim() ||
+      /[\p{Cc}\\]/u.test(source) ||
+      !isTileflowPublicFontUrl(source) ||
+      (fontStyle !== undefined && !['italic', 'normal', 'oblique'].includes(String(fontStyle))) ||
+      (weight !== undefined && !/^[1-9]00$/u.test(String(weight)))
+    ) {
+      throw new TypeError('Invalid Tileflow style fontFaces metadata.');
+    }
+    const face = {
+      family,
+      source,
+      ...(fontStyle === undefined ? {} : {style: fontStyle as TileflowStyleFontFace['style']}),
+      ...(weight === undefined ? {} : {weight: weight as TileflowStyleFontFace['weight']}),
+    } satisfies TileflowStyleFontFace;
+    const key = `${face.family}\0${face.style ?? 'normal'}\0${face.weight ?? '400'}`;
+    if (seen.has(key)) throw new TypeError('Invalid duplicate Tileflow style fontFace metadata.');
+    seen.add(key);
+    return face;
+  });
 }
 
 export function normalizeTileflowUrl(value: string): string {
@@ -441,7 +488,17 @@ async function requestSessionGrant(input: {
       signal,
     });
     throwIfSessionGrantAborted(signal);
-    const body = (await response.json().catch(() => null)) as unknown;
+    let body: unknown = null;
+    try {
+      const source = await readBoundedUtf8Response(response, maximumSessionGrantBytes, {
+        invalidUtf8: 'Tileflow session grant response was not valid UTF-8.',
+        tooLarge: 'Tileflow session grant response was too large.',
+      });
+      body = JSON.parse(source) as unknown;
+    } catch (error) {
+      if (error instanceof SyntaxError) body = null;
+      else throw error;
+    }
     throwIfSessionGrantAborted(signal);
     if (
       response.status === 409 &&
@@ -580,6 +637,28 @@ function parseSessionGrantResponse(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function isPlainRuntimeRecord(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isTileflowPublicFontUrl(value: string): boolean {
+  if (value.startsWith('//')) return false;
+  if (value.startsWith('/') || value.startsWith('./') || value.startsWith('../')) return true;
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      !url.username &&
+      !url.password &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
 }
 
 class TileflowSessionRestartError extends Error {
@@ -736,88 +815,209 @@ export function mergeTileflowAnalytics(
   };
 }
 
-export function isTileflowLocalDevHost(): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
-}
-
 export function resolveTileflowMapMode(options: TileflowMapModeOptions): TileflowMapMode {
-  if (
-    options.mode === 'image' &&
-    !options.imageUrl &&
-    options.preferLocalDev !== false &&
-    isTileflowLocalDevHost()
-  ) {
-    return 'interactive';
-  }
-
   return options.mode ?? 'interactive';
 }
 
-export function loadTileflowManifest(url: string): Promise<TileflowRuntimeManifest | null> {
-  if (!manifestCache.has(url)) {
-    const promise = fetch(url, {cache: 'no-store'})
-      .then(async (response) => {
-        if (response.status === 404) {
-          manifestCache.delete(url);
-          return null;
-        }
+export function resolveTileflowRuntimeView(
+  options: TileflowRuntimeViewOptions,
+): TileflowViewConfig {
+  const manifestView = options.manifestMap?.view;
+  return {
+    ...(options.fallback ?? defaultTileflowRuntimeView),
+    ...(manifestView ?? {}),
+    ...(options.bearing !== undefined ? {bearing: options.bearing} : {}),
+    ...(options.center !== undefined ? {center: options.center} : {}),
+    ...(options.pitch !== undefined ? {pitch: options.pitch} : {}),
+    ...(options.zoom !== undefined ? {zoom: options.zoom} : {}),
+  };
+}
 
-        if (!response.ok) {
-          throw new Error(`Tileflow manifest failed: ${response.status}`);
-        }
+export function normalizeTileflowRuntimeCenter(
+  center: TileflowRuntimeCenterLike | undefined,
+  fallback: readonly [number, number] = defaultTileflowRuntimeView.center,
+): [number, number] {
+  if (!center) return [fallback[0], fallback[1]];
+  let longitude: number;
+  let latitude: number;
+  if (Array.isArray(center)) {
+    [longitude, latitude] = center as readonly [number, number];
+  } else {
+    const objectCenter = center as {lat: number; lng?: number; lon?: number};
+    longitude = objectCenter.lng ?? objectCenter.lon!;
+    latitude = objectCenter.lat;
+  }
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) {
+    return [fallback[0], fallback[1]];
+  }
+  return [longitude, latitude];
+}
 
-        return (await response.json()) as TileflowRuntimeManifest;
-      })
-      .catch((error: unknown) => {
+export function loadTileflowManifest(
+  url: string,
+  options: TileflowManifestFetchOptions = {},
+): Promise<TileflowRuntimeManifest | null> {
+  assertSafeManifestRequestUrl(url);
+  const ttl = normalizeManifestCacheTtl(options.cacheTtlMs);
+  const timeoutMs = normalizeManifestTimeout(options.timeoutMs);
+  const cacheable = ttl > 0 && !options.fetch && !options.signal;
+  const now = Date.now();
+  const cached = cacheable ? manifestCache.get(url) : undefined;
+  if (cached && cached.expiresAt > now) return cached.promise;
+  if (cached) manifestCache.delete(url);
+
+  const fetchManifest = options.fetch ?? globalThis.fetch;
+  const requestSignal = createManifestRequestSignal(options.signal, timeoutMs);
+  const promise = Promise.resolve()
+    .then(() => fetchManifest(url, {cache: 'no-store', signal: requestSignal.signal}))
+    .then(async (response) => {
+      if (response.status === 404) {
         manifestCache.delete(url);
-        throw error;
-      });
+        return null;
+      }
+      if (!response.ok) throw new Error(`Tileflow manifest failed: ${response.status}`);
 
-    manifestCache.set(url, promise);
+      const source = await readBoundedManifestResponse(response);
+      let input: unknown;
+      try {
+        input = JSON.parse(source) as unknown;
+      } catch {
+        throw new Error('Tileflow manifest is not valid JSON.');
+      }
+      try {
+        const {parseTileflowRuntimeManifest} = await import('./manifest');
+        return resolveLoadedTileflowManifestUrls(
+          parseTileflowRuntimeManifest(input),
+          response.url || resolveTileflowLoadedResourceUrl(url, getTileflowLocationBaseUrl()),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'schema validation failed';
+        throw new Error(`Invalid Tileflow manifest: ${message}`);
+      }
+    })
+    .catch((error: unknown) => {
+      manifestCache.delete(url);
+      throw error;
+    })
+    .finally(requestSignal.cleanup);
+
+  if (cacheable) manifestCache.set(url, {expiresAt: now + ttl, promise});
+  return promise;
+}
+
+function resolveLoadedTileflowManifestUrls(
+  manifest: TileflowRuntimeManifest,
+  manifestUrl: string,
+): TileflowRuntimeManifest {
+  if (manifest.kind === 'self-hosted') {
+    const maps = Object.fromEntries(
+      Object.entries(manifest.maps).map(([mapName, styleUrl]) => [
+        mapName,
+        resolveTileflowLoadedResourceUrl(styleUrl, manifestUrl),
+      ]),
+    );
+    const styles = Object.fromEntries(
+      Object.entries(manifest.styles).map(([mapName, styleUrl]) => [
+        mapName,
+        resolveTileflowLoadedResourceUrl(styleUrl, manifestUrl),
+      ]),
+    );
+    const fontFaces = manifest.fontFaces
+      ? Object.fromEntries(
+          Object.entries(manifest.fontFaces).map(([mapName, definitions]) => [
+            mapName,
+            definitions.map((definition) => ({
+              ...definition,
+              source: resolveTileflowLoadedResourceUrl(
+                definition.source,
+                styles[mapName] ?? manifestUrl,
+              ),
+            })),
+          ]),
+        )
+      : undefined;
+    return {...manifest, ...(fontFaces ? {fontFaces} : {}), maps, styles};
   }
 
-  return manifestCache.get(url)!;
+  return {
+    ...manifest,
+    maps: Object.fromEntries(
+      Object.entries(manifest.maps).map(([mapName, entry]) => [
+        mapName,
+        {
+          ...entry,
+          ...(entry.fontFaces
+            ? {
+                fontFaces: entry.fontFaces.map((definition) => ({
+                  ...definition,
+                  source: resolveTileflowLoadedResourceUrl(definition.source, entry.styleUrl),
+                })),
+              }
+            : {}),
+        },
+      ]),
+    ),
+  };
+}
+
+function resolveTileflowLoadedResourceUrl(value: string, baseUrl: string): string {
+  let url: URL;
+  try {
+    url = new URL(value, baseUrl);
+  } catch {
+    throw new TypeError('Tileflow manifest resource URL is invalid.');
+  }
+  if (
+    (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+    url.username ||
+    url.password ||
+    url.hash ||
+    /%(?:2f|5c)/iu.test(value)
+  ) {
+    throw new TypeError('Tileflow manifest resource URL is invalid.');
+  }
+  return url.toString();
+}
+
+export function clearTileflowManifestCache(url?: string): void {
+  if (url === undefined) manifestCache.clear();
+  else manifestCache.delete(url);
 }
 
 export function resolveTileflowManifestMap(
   manifest: TileflowRuntimeManifest,
   mapName: string,
 ): TileflowRuntimeManifestMap | null {
-  const entry = manifest.maps?.[mapName] ?? manifest.styles?.[mapName];
-
-  if (!entry) {
-    return null;
-  }
-
-  if (typeof entry === 'string') {
+  if (manifest.kind === 'self-hosted') {
+    if (!Object.hasOwn(manifest.maps, mapName)) return null;
+    const entry = manifest.maps[mapName]!;
     const analytics = inferTileflowAnalyticsFromStyleUrl(entry);
 
     return {
-      apiUrl: analytics?.apiUrl ?? manifest.apiUrl,
+      apiUrl: analytics?.apiUrl,
+      fontFaces: manifest.fontFaces?.[mapName] ?? [],
       mapId: analytics?.mapId,
       styleId: analytics?.styleId,
       styleUrl: entry,
+      view: manifest.views?.[mapName],
     };
   }
 
-  const styleUrl = entry.styleUrl ?? entry.url;
+  if (!Object.hasOwn(manifest.maps, mapName)) return null;
+  const entry = manifest.maps[mapName]!;
 
-  if (!styleUrl && !entry.mapId) {
-    return null;
-  }
+  const styleUrl = entry.styleUrl;
 
   const analytics = styleUrl ? inferTileflowAnalyticsFromStyleUrl(styleUrl) : undefined;
 
   return {
     apiUrl: entry.apiUrl ?? manifest.apiUrl ?? analytics?.apiUrl,
+    fontFaces: entry.fontFaces ?? [],
     mapId: entry.mapId ?? analytics?.mapId,
     styleId: entry.styleId ?? analytics?.styleId,
     styleUrl,
     usageMode: entry.usageMode,
+    view: entry.view,
     worldGeneration: entry.worldGeneration,
   };
 }
@@ -838,7 +1038,8 @@ export function resolveTileflowStaticImageUrl(input: {
   }
 
   const apiUrl = normalizeTileflowUrl(input.manifestMap.apiUrl ?? 'https://api.tileflow.dev');
-  const url = new URL(`/maps/${input.manifestMap.mapId}/static.png`, apiUrl);
+  const mapId = encodeURIComponent(input.manifestMap.mapId);
+  const url = new URL(`/maps/${mapId}/static.png`, apiUrl);
 
   url.searchParams.set('center', input.center.join(','));
   url.searchParams.set('zoom', String(input.zoom));
@@ -874,6 +1075,115 @@ export function normalizeTileflowStaticImageSize(input: {height: number; width: 
   }
 
   return {height, width};
+}
+
+async function readBoundedManifestResponse(response: Response): Promise<string> {
+  return readBoundedUtf8Response(response, maximumManifestBytes, {
+    invalidUtf8: 'Tileflow manifest is not valid UTF-8.',
+    tooLarge: 'Tileflow manifest is too large.',
+  });
+}
+
+async function readBoundedUtf8Response(
+  response: Response,
+  maximumBytes: number,
+  errors: {invalidUtf8: string; tooLarge: string},
+): Promise<string> {
+  const contentLength = response.headers.get('content-length');
+  if (contentLength !== null) {
+    const declaredBytes = Number(contentLength);
+    if (Number.isFinite(declaredBytes) && declaredBytes > maximumBytes) {
+      throw new Error(errors.tooLarge);
+    }
+  }
+
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+
+  while (true) {
+    const next = await reader.read();
+    if (next.done) break;
+    byteLength += next.value.byteLength;
+    if (byteLength > maximumBytes) {
+      await reader.cancel();
+      throw new Error(errors.tooLarge);
+    }
+    chunks.push(next.value);
+  }
+
+  const bytes = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return new TextDecoder('utf-8', {fatal: true}).decode(bytes);
+  } catch {
+    throw new Error(errors.invalidUtf8);
+  }
+}
+
+function normalizeManifestCacheTtl(value: number | undefined): number {
+  if (value === undefined) return defaultManifestCacheTtlMs;
+  if (!Number.isFinite(value) || value < 0 || value > 5 * 60_000) {
+    throw new TypeError('cacheTtlMs must be between 0 and 300000 milliseconds.');
+  }
+  return value;
+}
+
+function normalizeManifestTimeout(value: number | undefined): number {
+  if (value === undefined) return 10_000;
+  if (!Number.isFinite(value) || value < 1 || value > 60_000) {
+    throw new TypeError('timeoutMs must be between 1 and 60000 milliseconds.');
+  }
+  return value;
+}
+
+function createManifestRequestSignal(external: AbortSignal | undefined, timeoutMs: number) {
+  const controller = new AbortController();
+  const abortFromExternal = () => controller.abort(external?.reason);
+  if (external?.aborted) abortFromExternal();
+  else external?.addEventListener('abort', abortFromExternal, {once: true});
+  const timeout = setTimeout(
+    () => controller.abort(new DOMException('Timed out', 'TimeoutError')),
+    timeoutMs,
+  );
+
+  return {
+    cleanup() {
+      clearTimeout(timeout);
+      external?.removeEventListener('abort', abortFromExternal);
+    },
+    signal: controller.signal,
+  };
+}
+
+function assertSafeManifestRequestUrl(value: string): void {
+  if (
+    value.length < 1 ||
+    value.length > 2_048 ||
+    /[\p{Cc}\\]/u.test(value) ||
+    value.startsWith('//') ||
+    /%(?:2f|5c)/iu.test(value)
+  ) {
+    throw new TypeError('Tileflow manifest URL must be a safe HTTP(S) or relative URL.');
+  }
+  try {
+    const url = new URL(value, getTileflowLocationOrigin());
+    if (
+      (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+      url.username ||
+      url.password ||
+      url.hash
+    ) {
+      throw new Error('unsafe');
+    }
+  } catch {
+    throw new TypeError('Tileflow manifest URL must be a safe HTTP(S) or relative URL.');
+  }
 }
 
 export function inferTileflowAnalyticsFromStyleUrl(
@@ -926,4 +1236,10 @@ function getTileflowLocationOrigin(): string {
   }
 
   return window.location.origin;
+}
+
+function getTileflowLocationBaseUrl(): string {
+  if (typeof document !== 'undefined' && document.baseURI) return document.baseURI;
+  if (typeof window !== 'undefined' && window.location.href) return window.location.href;
+  return `${getTileflowLocationOrigin().replace(/\/+$/u, '')}/`;
 }

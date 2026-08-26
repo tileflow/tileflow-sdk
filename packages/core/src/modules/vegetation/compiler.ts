@@ -1,62 +1,82 @@
 import type {TileflowDomainCompileContext} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
+import {applyCircleStyle} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
-import type {TileflowVegetationModuleConfig} from './index';
+import {zoom} from '../../cartography/values';
+import type {
+  TileflowVegetationModuleConfig,
+  TileflowVegetationThreeDimensionalStyle,
+} from './index';
 
 export function compileVegetation(
   request: TileflowVegetationModuleConfig | undefined,
   context: TileflowDomainCompileContext,
 ): TileflowLayerContribution[] {
+  const minZoom = request?.flat?.minZoom ?? request?.minZoom ?? 16;
+  const mode = request?.mode ?? '3d';
   const config = mergeTileflowDesign<TileflowVegetationModuleConfig>(
-    {type: 'vegetation', enabled: true, minZoom: 16, mode: '3d'},
+    {
+      type: 'vegetation',
+      enabled: true,
+      flat: {
+        color: context.colors.landcover.wood,
+        minZoom,
+        opacity: mode === '3d' ? 0.82 : 0.9,
+        pitchAlignment: 'map',
+        pitchScale: 'map',
+        radius:
+          minZoom < 24
+            ? zoom.linear([
+                [minZoom, 2.2],
+                [minZoom < 20 ? 20 : 24, 8],
+              ])
+            : 2.2,
+        strokeColor: context.colors.park,
+        strokeOpacity: 0.55,
+        strokeWidth: 0.8,
+      },
+      minZoom,
+      mode,
+      threeDimensional: {
+        barkColor: '#929B7B',
+        broadleafColors: ['#7FA97B', '#8BB08C', '#A9C995', '#B0D1AA'],
+        coniferColors: ['#5D966B', '#76AA7D', '#91BD94'],
+        crownScale: 1,
+        heightScale: 1,
+      },
+    },
     request,
   );
   if (config.enabled === false || !context.data.schema.layers.tree) return [];
 
-  const minZoom = config.minZoom ?? 16;
-  const requestedMode = config.mode ?? 'flat';
-  // A generic vector-tile binding guarantees tree attributes, not the
-  // Tileflow runtime that upgrades the portable circle layer to custom 3D.
-  // Keep the emitted style truthful until the data/runtime contract exposes
-  // an explicit renderer capability.
-  const portableFallback = context.data.kind === 'vector-tiles' && requestedMode === '3d';
-  const mode = portableFallback ? 'flat' : requestedMode;
-  const color = context.colors.landcover.wood;
-  const radius =
-    minZoom < 20
-      ? ['interpolate', ['linear'], ['zoom'], minZoom, 2.2, 20, 8]
-      : minZoom < 24
-        ? ['interpolate', ['linear'], ['zoom'], minZoom, 2.2, 24, 8]
-        : 2.2;
+  const resolvedMode = config.mode ?? '3d';
+  const threeDimensional = config.threeDimensional as TileflowVegetationThreeDimensionalStyle;
   return [
     {
       kind: 'layer',
-      layer: {
-        id: 'streets-vegetation-trees',
-        type: 'circle',
-        source: context.data.sourceId,
-        'source-layer': context.data.schema.layers.tree,
-        minzoom: minZoom,
-        paint: {
-          'circle-color': color,
-          'circle-opacity': mode === '3d' ? 0.82 : 0.9,
-          'circle-pitch-alignment': 'map',
-          'circle-pitch-scale': 'map',
-          'circle-radius': radius,
-          'circle-stroke-color': context.colors.park,
-          'circle-stroke-opacity': 0.55,
-          'circle-stroke-width': 0.8,
+      layer: applyCircleStyle(
+        {
+          id: 'streets-vegetation-trees',
+          type: 'circle',
+          source: context.data.sourceId,
+          'source-layer': context.data.schema.layers.tree,
+          metadata: {
+            'tileflow:vegetation-mode': resolvedMode,
+            ...(resolvedMode === '3d' ? {'tileflow:vegetation-fallback': 'flat-circle'} : {}),
+            'tileflow:tree-bark-color': threeDimensional.barkColor,
+            'tileflow:tree-broadleaf-colors': threeDimensional.broadleafColors,
+            'tileflow:tree-conifer-colors': threeDimensional.coniferColors,
+            'tileflow:tree-crown-field': context.data.schema.fields.diameterCrown,
+            'tileflow:tree-crown-scale': threeDimensional.crownScale,
+            'tileflow:tree-genus-field': context.data.schema.fields.genus,
+            'tileflow:tree-height-field': context.data.schema.fields.height,
+            'tileflow:tree-height-scale': threeDimensional.heightScale,
+            'tileflow:tree-leaf-type-field': context.data.schema.fields.leafType,
+            'tileflow:tree-species-field': context.data.schema.fields.species,
+          },
         },
-        metadata: {
-          'tileflow:vegetation-mode': mode,
-          ...(portableFallback ? {'tileflow:vegetation-fallback': 'portable-flat'} : {}),
-          'tileflow:tree-height-field': context.data.schema.fields.height,
-          'tileflow:tree-crown-field': context.data.schema.fields.diameterCrown,
-          'tileflow:tree-genus-field': context.data.schema.fields.genus,
-          'tileflow:tree-leaf-type-field': context.data.schema.fields.leafType,
-          'tileflow:tree-species-field': context.data.schema.fields.species,
-        },
-      },
+        config.flat ?? {},
+      ),
       localOrder: 1,
       owner: 'vegetation',
       slot: 'vegetation',

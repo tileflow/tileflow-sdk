@@ -7,6 +7,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
+import {tileflowMapFixture} from './map-fixture';
 
 const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const tsxLoader = import.meta.resolve('tsx');
@@ -41,17 +43,16 @@ test('prints deterministic bounded feature JSON without credentials or hidden pr
   port = address.port;
   await writeFile(
     join(directory, 'tileflow.config.ts'),
-    `if (process.env.TILEFLOW_API_KEY) throw new Error('ambient API key reached config');
-export default {maps: {fixture: {
-  basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
-  data: {
+    tileflowMapFixture({
+      id: 'fixture',
+      setup: `if (process.env.TILEFLOW_API_KEY) throw new Error('ambient API key reached config');`,
+      fields: `data: {
     type: 'vector-tiles',
     url: 'http://127.0.0.1:${port}/tiles.json?key=PRIVATE',
     attribution: 'Fixture data',
     schema: {type: 'openmaptiles', contractVersion: 1}
-  }
-}}};
-`,
+  }`,
+    }),
   );
   const arguments_ = [
     'inspect',
@@ -121,6 +122,7 @@ test('validates command values before config loading', async (t) => {
 
 async function createDirectoryFixture(t: TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-feature-inspect-'));
+  await linkWorkspacePackages(directory);
   t.after(() => rm(directory, {force: true, recursive: true}));
   return directory;
 }

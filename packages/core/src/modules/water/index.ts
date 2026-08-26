@@ -1,8 +1,13 @@
-import type {TileflowAreaStyle, TileflowLineStyle} from '../../cartography/styles';
+import type {
+  TileflowAreaStyle,
+  TileflowFillStyle,
+  TileflowLineStyle,
+} from '../../cartography/styles';
 
 export type TileflowWaterwayClass = 'canal' | 'other' | 'river' | 'stream';
 
 export type TileflowWaterModuleOptions = {
+  bathymetry?: TileflowFillStyle;
   bodies?: TileflowAreaStyle;
   enabled?: boolean;
   intermittent?: {

@@ -1,36 +1,26 @@
 import type {Command} from 'commander';
-import {resolve} from 'node:path';
+import {dirname, resolve} from 'node:path';
 import {z} from 'zod';
 import {
-  diffTileflowIconMappings,
   diffTileflowIconPackageManifests,
   hashTileflowIconPackageManifest,
-  inspectTileflowIconReferences,
-  resolveTileflowIconMapping,
-  tileflowHostedIconIdSchema,
   tileflowIconPackageContentHashSchema,
   tileflowIconPackageLabelSchema,
   tileflowIconPackageLimits,
   tileflowIconPackageManifestSchema,
-  validateConfig,
+  tileflowMapIdSchema,
 } from '@tileflow/core';
 import {
-  type CompiledTileflowIconPackage,
-  compileTileflowIconPackages,
+  assertValidTileflowConfig,
   getTileflowMapNames,
-  loadTileflowConfig,
-} from '@tileflow/dev';
+  loadTileflowConfigWithInputs,
+} from '@tileflow/dev/config';
+import {type CompiledTileflowIconPackage, compileTileflowIconPackages} from '@tileflow/dev/icons';
 import {withTileflowConfigSecretsHidden} from './config-execution';
+import {requestHostedJson} from './hosted-client';
 import {writeIconDiffReport} from './icon-diff-report';
 
-const environmentSchema = z
-  .string()
-  .min(1)
-  .max(64)
-  .regex(/^[A-Za-z0-9](?:[A-Za-z0-9_-]{0,62}[A-Za-z0-9])?$/);
-const mappingSchema = z
-  .record(z.string().min(1).max(256), tileflowHostedIconIdSchema)
-  .refine((mapping) => Object.keys(mapping).length <= tileflowIconPackageLimits.maxIconCount);
+const environmentSchema = tileflowMapIdSchema;
 const publicHttpUrlSchema = z
   .url()
   .max(2048)
@@ -47,8 +37,6 @@ export const iconPackageBaselineResponseSchema = z
       .object({
         deployedAt: z.iso.datetime({offset: true}),
         deploymentId: z.string().min(1).max(128),
-        mapping: mappingSchema.nullable(),
-        mappingAvailable: z.boolean(),
         package: z
           .object({
             contentHash: tileflowIconPackageContentHashSchema,
@@ -70,19 +58,7 @@ export const iconPackageBaselineResponseSchema = z
     environment: environmentSchema,
     schemaVersion: z.literal(1),
   })
-  .strict()
-  .superRefine((response, context) => {
-    if (
-      response.baseline &&
-      response.baseline.mappingAvailable !== (response.baseline.mapping !== null)
-    ) {
-      context.addIssue({
-        code: 'custom',
-        message: 'mapping state is inconsistent',
-        path: ['baseline', 'mapping'],
-      });
-    }
-  });
+  .strict();
 
 const packageSummarySchema = z
   .object({
@@ -96,14 +72,6 @@ const packageSummarySchema = z
       .max(tileflowIconPackageLimits.maxGeneratedPackageBytes),
   })
   .strict();
-const mappingChangeSchema = z
-  .object({
-    after: z.string().optional(),
-    before: z.string().optional(),
-    key: z.string(),
-  })
-  .strict();
-
 export const tileflowIconDiffDocumentSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -129,41 +97,11 @@ export const tileflowIconDiffDocumentSchema = z
         unchangedCount: z.number().int().nonnegative(),
       })
       .strict(),
-    mapping: z
-      .object({
-        comparisonAvailable: z.boolean(),
-        added: z.array(mappingChangeSchema),
-        removed: z.array(mappingChangeSchema),
-        changed: z.array(mappingChangeSchema),
-      })
-      .strict(),
     generatedBytes: z
       .object({
         before: z.number().int().nonnegative(),
         after: z.number().int().nonnegative(),
         delta: z.number().int(),
-      })
-      .strict(),
-    references: z
-      .object({
-        analysisComplete: z.boolean(),
-        dangling: z.array(
-          z
-            .object({
-              iconName: z.string(),
-              kind: z.enum(['mapping', 'style-override-literal']),
-              path: z.string(),
-            })
-            .strict(),
-        ),
-        unanalyzable: z.array(
-          z
-            .object({
-              kind: z.literal('style-override-expression'),
-              path: z.string(),
-            })
-            .strict(),
-        ),
       })
       .strict(),
     artifacts: z.object({report: z.string().nullable()}).strict(),
@@ -179,7 +117,6 @@ type IconDiffOptions = {
   apiKey?: string;
   apiUrl?: string;
   config: string;
-  failOn?: string;
   force?: boolean;
   json?: boolean;
   open?: boolean;
@@ -214,7 +151,6 @@ export function registerIconDiffCommand(
     .option('--report <path>', 'write a self-contained HTML visual report')
     .option('--open', 'open an explicitly requested report')
     .option('--force', 'replace a different explicitly requested report')
-    .option('--fail-on <policy>', 'policy failure: dangling')
     .action(async (options: IconDiffOptions) => {
       try {
         await runIconDiff(options, dependencies);
@@ -250,10 +186,6 @@ async function runIconDiff(
     throw new Error('--force requires --report <path>');
   }
 
-  if (options.failOn && options.failOn !== 'dangling') {
-    throw new Error('--fail-on accepts only "dangling"');
-  }
-
   const environment = environmentSchema.parse(options.against);
   const api = await dependencies.resolveApi(options);
 
@@ -261,14 +193,11 @@ async function runIconDiff(
     throw new Error('Missing Tileflow API key. Run tileflow login or set TILEFLOW_API_KEY.');
   }
 
-  const project = await withTileflowConfigSecretsHidden(() => loadTileflowConfig(options.config));
-  const validation = validateConfig(project);
-
-  if (!validation.valid) {
-    throw new Error(
-      `Tileflow config is invalid: ${validation.messages.map((message) => `${message.path}: ${message.message}`).join('; ')}`,
-    );
-  }
+  const loaded = await withTileflowConfigSecretsHidden(() =>
+    loadTileflowConfigWithInputs(options.config),
+  );
+  const project = loaded.project;
+  assertValidTileflowConfig(project);
 
   const mapNames = getTileflowMapNames(project);
 
@@ -280,6 +209,7 @@ async function runIconDiff(
 
   const selectedProject = {...project, maps: {[environment]: project.maps[environment]}};
   const compiled = await compileTileflowIconPackages(selectedProject, {
+    baseDirectory: dirname(loaded.configFile),
     cwd: process.cwd(),
     target: 'hosted',
   });
@@ -287,30 +217,14 @@ async function runIconDiff(
   const proposedPackage = binding
     ? (compiled.packages.find((candidate) => candidate.contentHash === binding.packageHash) ?? null)
     : null;
-  const proposedMapping = resolveTileflowIconMapping(selectedProject, environment);
-  const references = inspectTileflowIconReferences(
-    selectedProject,
-    environment,
-    proposedPackage?.manifest.iconNames ?? [],
-  );
   const baseline = await readBaseline(api, environment);
   const beforeManifest = baseline.baseline?.package?.manifest ?? null;
   const iconDiff = diffTileflowIconPackageManifests(
     beforeManifest,
     proposedPackage?.manifest ?? null,
   );
-  const mappingAvailable = baseline.baseline === null || baseline.baseline.mappingAvailable;
-  const beforeMapping = baseline.baseline === null ? {} : baseline.baseline.mapping;
-  const mappingDiff = mappingAvailable
-    ? diffTileflowIconMappings(beforeMapping ?? {}, proposedMapping)
-    : {added: [], changed: [], removed: []};
   const packageChanged =
     (baseline.baseline?.package?.contentHash ?? null) !== (proposedPackage?.contentHash ?? null);
-  const mappingChanged =
-    mappingAvailable &&
-    (mappingDiff.added.length > 0 ||
-      mappingDiff.changed.length > 0 ||
-      mappingDiff.removed.length > 0);
   const reportPath = options.report ? resolve(process.cwd(), options.report) : null;
   const document = tileflowIconDiffDocumentSchema.parse({
     schemaVersion: 1,
@@ -333,20 +247,13 @@ async function runIconDiff(
       modified: iconDiff.modified,
       unchangedCount: iconDiff.unchangedCount,
     },
-    mapping: {
-      comparisonAvailable: mappingAvailable,
-      added: mappingDiff.added,
-      removed: mappingDiff.removed,
-      changed: mappingDiff.changed,
-    },
     generatedBytes: {
       before: iconDiff.beforeBytes,
       after: iconDiff.afterBytes,
       delta: iconDiff.afterBytes - iconDiff.beforeBytes,
     },
-    references,
     artifacts: {report: reportPath},
-    hasChanges: packageChanged || mappingChanged,
+    hasChanges: packageChanged,
   });
 
   if (reportPath) {
@@ -369,34 +276,27 @@ async function runIconDiff(
   } else {
     printHumanDiff(document);
   }
-
-  process.exitCode =
-    options.failOn === 'dangling' && document.references.dangling.length > 0 ? 2 : 0;
+  process.exitCode = 0;
 }
 
 async function readBaseline(
   api: {apiKey: string; apiUrl: string},
   environment: string,
 ): Promise<IconPackageBaselineResponse> {
-  const response = await fetch(
-    `${api.apiUrl}/v1/icon-packages/baseline/${encodeURIComponent(environment)}`,
+  const response = await requestHostedJson(
+    api.apiUrl,
+    `/v1/icon-packages/baseline/${encodeURIComponent(environment)}`,
     {headers: {Authorization: `Bearer ${api.apiKey}`}},
   );
 
   if (!response.ok) {
-    const body = (await response.text()).slice(0, 2_000);
-    throw new Error(`Icon diff baseline failed: ${response.status} ${body}`);
+    throw new Error(`Icon diff baseline failed: ${response.status}.`);
   }
-
-  let value: unknown;
-
-  try {
-    value = await response.json();
-  } catch {
+  if (!response.json) {
     throw new Error('Icon diff baseline returned invalid JSON');
   }
 
-  const parsed = iconPackageBaselineResponseSchema.safeParse(value);
+  const parsed = iconPackageBaselineResponseSchema.safeParse(response.body);
 
   if (!parsed.success || parsed.data.environment !== environment) {
     throw new Error('Icon diff baseline response does not match the required schema');
@@ -458,39 +358,11 @@ function printHumanDiff(document: TileflowIconDiffDocument): void {
     console.log('  No visual icon changes');
   }
 
-  console.log('\nMapping');
-  if (!document.mapping.comparisonAvailable) {
-    console.log('  Comparison unavailable');
-  } else {
-    for (const change of document.mapping.added) {
-      console.log(`+ ${change.key}: ${change.after}`);
-    }
-    for (const change of document.mapping.changed) {
-      console.log(`~ ${change.key}: ${change.before} -> ${change.after}`);
-    }
-    for (const change of document.mapping.removed) {
-      console.log(`- ${change.key}: ${change.before}`);
-    }
-    if (
-      document.mapping.added.length === 0 &&
-      document.mapping.changed.length === 0 &&
-      document.mapping.removed.length === 0
-    ) {
-      console.log('  No mapping changes');
-    }
-  }
-
   console.log(
     `\nGenerated size: ${formatBytes(document.generatedBytes.before)} -> ${formatBytes(document.generatedBytes.after)} (${formatSignedBytes(document.generatedBytes.delta)})`,
   );
-  for (const warning of document.references.dangling) {
-    console.log(`Warning: "${warning.iconName}" is still referenced by ${warning.path}`);
-  }
-  for (const warning of document.references.unanalyzable) {
-    console.log(`Warning: dynamic icon expression could not be analyzed at ${warning.path}`);
-  }
   if (!document.hasChanges) {
-    console.log('\nNo managed icon-package or mapping differences.');
+    console.log('\nNo icon-package differences.');
   }
   if (document.artifacts.report) {
     console.log(`\nReport: ${document.artifacts.report}`);

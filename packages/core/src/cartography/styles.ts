@@ -1,6 +1,5 @@
 import type {TileflowStyleValue} from './values';
 
-export type TileflowFontWeight = 'regular' | 'medium' | 'semibold' | 'bold';
 export type TileflowLineCap = 'butt' | 'round' | 'square';
 export type TileflowLineJoin = 'bevel' | 'miter' | 'round';
 export type TileflowSymbolPlacement = 'line' | 'line-center' | 'point';
@@ -53,7 +52,7 @@ export type TileflowLinePaint = {
 };
 export type TileflowLineLayout = {
   cap?: TileflowStyleValue<TileflowLineCap>;
-  join?: TileflowLineJoin;
+  join?: TileflowStyleValue<TileflowLineJoin>;
   miterLimit?: number;
   roundLimit?: number;
 };
@@ -105,7 +104,6 @@ export type TileflowTextLayout = {
   size?: TileflowStyleValue<number>;
   transform?: 'lowercase' | 'none' | 'uppercase';
   variableAnchors?: readonly TileflowTextAnchor[];
-  weight?: TileflowFontWeight;
 };
 export type TileflowTextStyle = TileflowLayerRange & TileflowTextPaint & TileflowTextLayout;
 
@@ -181,17 +179,3 @@ export type TileflowSymbolStyle = TileflowSymbolPlacementStyle & {
   marker?: TileflowCircleStyle;
   text?: TileflowTextStyle;
 };
-
-export function tileflowFontStack(
-  font: string,
-  weight: TileflowFontWeight = 'regular',
-  fallbacks: readonly string[] = [],
-): string[] {
-  const labels: Record<TileflowFontWeight, string> = {
-    regular: 'Regular',
-    medium: 'Medium',
-    semibold: 'SemiBold',
-    bold: 'Bold',
-  };
-  return [`${font} ${labels[weight]}`, ...fallbacks];
-}

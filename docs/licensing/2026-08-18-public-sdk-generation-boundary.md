@@ -1,14 +1,21 @@
 # Public SDK generation and licensing boundary — 2026-08-18
 
-Status: implementation evidence on branch `public-world-stateless-sdk`. This document is not a
-license grant, legal advice, or release approval. `PUBLIC_RELEASE_BLOCKERS.md` is the operative npm
-publication interlock until the owner and qualified reviewers close the remaining decisions.
+Status: implementation evidence on branch `public-world-stateless-sdk`, updated 2026-08-26 after
+the owner approved the public SDK license boundary. This document is not legal advice or release
+approval. The root legal files are the operative grants; `PUBLIC_RELEASE_BLOCKERS.json` remains the
+npm publication interlock for the unrelated open release requirements.
 
 ## Implemented technical boundary
 
-- The nine default Streets POI files are new first-party geometric SVG drawings. Their source
-  directory records provenance without attempting to create the still-pending output grant.
-- `@tileflow/dev` no longer records or bundles Google Places-derived artwork.
+- The official Streets, Ferraris, Cyberpunk, and Verdant SVG icon/pattern sources are package-owned map assets
+  under `packages/maps/assets/<id>/icons/`. The Streets POI files are first-party geometric
+  drawings. Their source directory and `packages/maps/THIRD_PARTY_NOTICES.md` record provenance
+  alongside the repository's generated-output grant.
+- Cyberpunk's unmodified Oxanium fonts and OFL license live under
+  `packages/maps/assets/cyberpunk/fonts/` beside the map that selects them.
+- `@tileflow/dev` no longer records or bundles map artwork or fonts. It resolves the fixed Maps
+  assets during preparation and still carries notices for the separate tooling dependencies it
+  executes.
 - `sharp` remains an exact optional dependency, is loaded dynamically, and is externalized by the
   `@tileflow/dev` build. It can be installed, updated, removed, or replaced separately.
 - `packages/dev/THIRD_PARTY_NOTICES.md` records `sharp` 0.35.3, the platform-specific
@@ -17,30 +24,38 @@ publication interlock until the owner and qualified reviewers close the remainin
 - Package smoke rejects `node_modules`, `.node`, `.dylib`, `.dll`, and versioned or unversioned
   `.so` paths in every Tileflow tarball, requires the dev notice/provenance files, and checks that
   `sharp` remains an optional dependency.
-- The public World path is now generation-based and direct. World config and generated identity use
-  `generation: "v1"`; no World revision, TileJSON, catalog, archive selector, or repository lock is
-  created. Direct external tile lists and `pmtiles://` sources retain an optional fixture revision
-  for exact visual evidence.
-- A strict `WorldGenerationDescriptor` parser enforces the v1 URL, encoding, hash/ID grammars,
-  bounds, zooms, bounded non-markup attribution, and content-identified glyph/sprite URL shapes.
-  Tests exercise a development descriptor only; no development asset ID is a production default.
-- The automatic npm workflow now fails before registry reconciliation while
-  `PUBLIC_RELEASE_BLOCKERS.md` exists. Local source/test validation remains available on the branch.
-- The branch working tree passed root check/build, all 121 enabled capture/CLI browser and framework
-  tests, the 11-tarball clean-consumer smoke, and `pnpm publish:alpha:dry-run` without publication.
-  These results are implementation evidence, not a substitute for rerunning the exact final commit.
+- World config names `world-v1/current` for live discovery or an exact `releaseId` plus descriptor
+  SHA-256 for reproducible work. Both use the public TileJSON resolver, which binds one immutable
+  release per session or job; Core has no second compiler-owned World descriptor or asset set.
+  Direct external tile lists and `pmtiles://` sources retain an optional fixture revision for exact
+  visual evidence.
+- The map contract makes ordinary official-map imports complete: Streets and the independent
+  Ferraris root each declare the canonical
+  Tileflow glyph URL directly, Verdant inherits it from Streets, and Cyberpunk owns packaged fonts.
+  That URL is canonical rather than content-addressed; responses revalidate and do not provide an
+  exact-byte identity. The immutable replacement is the separate
+  `/base/<assetSetSha256>/glyphs/...` contract. No compiler fallback manufactures the URL.
+- The deliberately dispatched npm workflow fails before registry reconciliation while
+  `PUBLIC_RELEASE_BLOCKERS.json` exists. Local source/test validation remains available on the branch.
+- The repository and all thirteen public package manifests now declare Apache-2.0. Byte-identical
+  `LICENSE`, `NOTICE`, `GENERATED_OUTPUT_LICENSE.md`, and `TRADEMARKS.md` files ship in every npm
+  tarball, and permanent source and packed-artifact assertions enforce that boundary.
+- The project owner approved `Tileflow.dev contributors` as the public copyright-holder label and
+  confirmed on 2026-08-26 that the current SDK does not use or derive from OSM Bright.
+- At this dated checkpoint, before `@tileflow/interactions` joined the public release set, the branch
+  working tree passed root check/build, all 121 enabled capture/CLI browser and framework tests, the
+  then-complete 11-tarball clean-consumer smoke, and `pnpm publish:alpha:dry-run` without
+  publication. These historical results are implementation evidence, not a substitute for rerunning
+  the current thirteen-package set on the exact final commit.
 
 ## Deliberately unresolved
 
-- Legal owner identity, root/package `LICENSE` and `NOTICE`, package `license` fields, the generated
-  output grant, and trademark boundary remain absent pending owner decision and qualified review.
-- The production World data descriptor is incomplete until its frozen schema hash, bounds, zooms,
-  encoding, and complete upstream attribution are approved.
-- The final content-identified asset-set ID and glyph/sprite URLs are not known. No placeholder is
-  bundled as the public compiler default.
-- The source author's factual confirmation that the current compiler is not derived from the
-  removed OSM Bright style remains open. Repository-history and source searches are supporting
-  evidence only and are not a substitute for that confirmation.
+- The production World candidate remains blocked until its observed schema, bounds, zooms,
+  encoding, complete upstream attribution, QA evidence and immutable handoff all pass their gates.
+- The official glyph source is locked and produces asset set
+  `33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3`; publishing and probing
+  that exact set must complete before official maps replace the compatibility URL with its explicit
+  immutable URL. World descriptors do not carry this identity.
 - The `sharp`/libvips notice and separability implementation still requires qualified review before
   the release interlock may be removed.
 

@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {tileflowIconPackageLimits} from '@tileflow/core';
 
 const maximumHostedResponseBytes = 1024 * 1024;
 const safeTextSchema = z
@@ -36,7 +37,20 @@ export const hostedStyleDeploymentResponseSchema = z.object({
 
 export const hostedIconPackageResponseSchema = z.object({
   changed: z.boolean().optional(),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/u),
+  iconCount: z.number().int().positive().max(tileflowIconPackageLimits.maxIconCount),
+  id: z.string().regex(/^icp_[A-Za-z0-9_-]{16,64}$/u),
   spriteUrl: publicHttpUrlSchema,
+  totalBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
+
+export const hostedFontBundleResponseSchema = z.object({
+  baseUrl: publicHttpUrlSchema,
+  changed: z.boolean().optional(),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/u),
+  fontFaceCount: z.number().int().positive().max(16),
+  id: z.string().regex(/^fnb_[A-Za-z0-9_-]{16,64}$/u),
+  totalBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
 });
 
 const hostedStatusStyleSchema = z.object({
@@ -74,29 +88,16 @@ export async function readHostedJson<T>(
 }
 
 export async function readHostedError(response: Response, label: string): Promise<string> {
-  let source: string;
-
   try {
-    source = await readBoundedResponseText(response, label);
+    // Drain and bound the body, but never reflect remote response text into CLI output.
+    await readBoundedResponseText(response, label);
   } catch {
     return `${label}: ${response.status}.`;
   }
-
-  try {
-    const body = JSON.parse(source) as unknown;
-    const error =
-      body && typeof body === 'object' && !Array.isArray(body)
-        ? safeTextSchema.safeParse((body as {error?: unknown}).error)
-        : null;
-    if (error?.success) return `${label}: ${response.status} ${error.data}`;
-  } catch {
-    // Use the stable status-only message below; never echo an untrusted body.
-  }
-
   return `${label}: ${response.status}.`;
 }
 
-async function readBoundedResponseText(response: Response, label: string): Promise<string> {
+export async function readBoundedResponseText(response: Response, label: string): Promise<string> {
   const contentLength = response.headers.get('content-length');
   if (
     contentLength &&

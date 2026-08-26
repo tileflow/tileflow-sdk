@@ -7,6 +7,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
+import {tileflowMapFixture} from './map-fixture';
 
 const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const tsxLoader = import.meta.resolve('tsx');
@@ -169,7 +171,7 @@ function createValidConfig(tileOrigin?: string): string {
   const data =
     tileOrigin === undefined
       ? ''
-      : `      data: {
+      : `data: {
         type: 'vector-tiles',
         tiles: [${JSON.stringify(`${tileOrigin}/tiles/world/{z}/{x}/{y}.pbf`)}],
         minzoom: 0,
@@ -180,32 +182,23 @@ function createValidConfig(tileOrigin?: string): string {
         schema: {type: 'openmaptiles', contractVersion: 1}
       },
 `;
-  return `import tokens from './tokens.json';
-if (process.env.TILEFLOW_API_KEY) throw new Error('ambient API key reached watched config');
-export default {
-  maps: {
-    main: {
-      basemap: {type: 'streets', basemapVersion: 3, variant: 'light'},
-${data}      modules: {
-        buildings: {type: 'buildings', enabled: false},
-        labels: {type: 'labels', enabled: false},
-        poi: {type: 'poi', enabled: false},
-        roads: {type: 'roads', enabled: false}
-      },
-      theme: {colors: {background: tokens.background}}
-    }
-  },
-  scenes: {
+  return tileflowMapFixture({
+    id: 'main',
+    imports: `import tokens from './tokens.json';`,
+    setup: `if (process.env.TILEFLOW_API_KEY) throw new Error('ambient API key reached watched config');`,
+    fields: `${data}theme: {colors: {background: tokens.background}},
+      scenes: {
     proof: {
-      map: 'main',
       camera: {type: 'center', center: [0, 0], zoom: 0},
       viewport: {width: 128, height: 128}
     }
-  }
-};
-`;
+  }`,
+  });
 }
-const invalidConfig = `export default {maps: {main: {unsupported: true}}};\n`;
+const invalidConfig = tileflowMapFixture({
+  id: 'main',
+  fields: `modules: {poi: {type: 'poi', unsupported: true}}`,
+});
 
 async function writeWatchFixture(
   cwd: string,
@@ -217,7 +210,9 @@ async function writeWatchFixture(
 }
 
 async function createFixture(prefix: string): Promise<string> {
-  return mkdtemp(join(tmpdir(), prefix));
+  const directory = await mkdtemp(join(tmpdir(), prefix));
+  await linkWorkspacePackages(directory);
+  return directory;
 }
 
 async function createVectorFixtureServer(t: TestContext): Promise<{origin: string}> {

@@ -9,6 +9,7 @@ import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import webpack from 'webpack';
+import {TileflowWebpackPlugin} from '@tileflow/webpack';
 import {createTileflowCaptureSession} from '../src/index';
 
 const execFileAsync = promisify(execFile);
@@ -56,13 +57,19 @@ test(
     const outputDirectory = join(fixture.cwd, 'dist');
     await mkdir(outputDirectory);
     const compiler = webpack({
+      context: fixture.cwd,
       devtool: false,
       entry: join(fixture.cwd, 'main.js'),
       mode: 'development',
       output: {filename: 'bundle.js', path: outputDirectory},
+      plugins: [new TileflowWebpackPlugin()],
       target: 'web',
     });
     await runWebpack(compiler);
+    assert.equal(
+      JSON.parse(await readFile(join(outputDirectory, 'tileflow/manifest.json'), 'utf8')).version,
+      3,
+    );
     const server = createServer(async (request, response) => {
       if (request.url === '/bundle.js') {
         response.writeHead(200, {'Content-Type': 'text/javascript; charset=utf-8'});
@@ -133,6 +140,11 @@ async function createFrameworkFixture(kind: 'next' | 'webpack') {
   if (kind === 'next') {
     await mkdir(join(cwd, 'pages'));
     await writeFile(join(cwd, 'pages', 'index.js'), applicationSource, 'utf8');
+    await writeFile(
+      join(cwd, 'next.config.mjs'),
+      "import {withTileflow} from '@tileflow/next'; export default withTileflow({});\n",
+      'utf8',
+    );
     await writeFile(join(cwd, 'package.json'), '{"type":"module"}\n', 'utf8');
   } else {
     await writeFile(join(cwd, 'main.js'), browserApplicationSource, 'utf8');
@@ -146,7 +158,7 @@ const imageUrl =
 const applicationSource = `import React from 'react';
 import {Map} from '@tileflow/react';
 export default function Page() {
-  return React.createElement('div', {style: {width: 222}}, React.createElement(Map, {captureId: 'proof', height: 100, imageUrl: '${imageUrl}', map: 'main', mode: 'image'}));
+  return React.createElement('div', {style: {width: 222}}, React.createElement(Map, {captureId: 'proof', height: 100, imageUrl: '${imageUrl}', mode: 'image', source: {kind: 'tileflow', map: 'main'}}));
 }
 `;
 const browserApplicationSource = `import React from 'react';
@@ -154,14 +166,34 @@ import {createRoot} from 'react-dom/client';
 import {Map} from '@tileflow/react';
 document.documentElement.style.margin = '0';
 document.body.style.margin = '0';
-const frame = React.createElement('div', {style: {width: 222}}, React.createElement(Map, {captureId: 'proof', height: 100, imageUrl: '${imageUrl}', map: 'main', mode: 'image'}));
+const frame = React.createElement('div', {style: {width: 222}}, React.createElement(Map, {captureId: 'proof', height: 100, imageUrl: '${imageUrl}', mode: 'image', source: {kind: 'tileflow', map: 'main'}}));
 createRoot(document.getElementById('root')).render(frame);
 `;
-const tileflowConfig = `import {streets} from '@tileflow/core';
-export default {
-  maps: {main: {basemap: streets()}},
-  scenes: {proof: {map: 'main', camera: {type: 'center', center: [0, 0], zoom: 1}, viewport: {width: 320, height: 480}, target: {kind: 'application', path: '/', captureId: 'proof'}}}
-};
+const tileflowConfig = `import {defineMap, openMapTiles, vectorTiles} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+export default defineMap({
+  id: 'main',
+  version: 1,
+  extends: streets,
+  data: vectorTiles({
+    attribution: '© Tileflow capture fixture',
+    revision: 'capture-fixture-v1',
+    schema: openMapTiles(),
+    tiles: ['https://tiles.example.invalid/{z}/{x}/{y}.pbf']
+  }),
+  scenes: {
+    proof: {
+      camera: {type: 'center', center: [0, 0], zoom: 1},
+      viewport: {width: 320, height: 480},
+      target: {kind: 'application', path: '/', captureId: 'proof'}
+    }
+  },
+  glyphs: {
+    kind: 'url',
+    url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']
+  }
+});
 `;
 
 function runWebpack(compiler: webpack.Compiler): Promise<void> {
@@ -187,6 +219,10 @@ async function buildNextFixture(cwd: string): Promise<void> {
     env: {...process.env, NEXT_TELEMETRY_DISABLED: '1'},
     maxBuffer: 10 * 1024 * 1024,
   });
+  assert.equal(
+    JSON.parse(await readFile(join(cwd, 'public/tileflow/manifest.json'), 'utf8')).version,
+    3,
+  );
 }
 
 async function reservePort(): Promise<number> {

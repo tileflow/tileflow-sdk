@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   expression,
   labels,
+  land,
   openMapTiles,
   poi,
   resolveTileflowData,
@@ -26,13 +27,11 @@ const context = {
   colors: resolveColors(),
   data: resolveTileflowData(undefined),
   typography: {
-    font: 'Noto Sans',
-    fontFamily: 'Noto Sans',
-    weight: 'regular' as const,
-    places: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'bold' as const},
-    roads: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular' as const},
-    water: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular' as const},
-    poi: {font: 'Noto Sans', fontFamily: 'Noto Sans', weight: 'regular' as const},
+    font: 'Noto Sans Regular',
+    places: {font: 'Noto Sans Bold'},
+    roads: {font: 'Noto Sans Regular'},
+    water: {font: 'Noto Sans Regular'},
+    poi: {font: 'Noto Sans Regular'},
   },
 };
 
@@ -55,6 +54,15 @@ test('compiles complete land and water domains into stable direct layers', () =>
   assert.ok(ids.includes('streets-waterway-river-intermittent'));
   assert.equal(new Set(ids).size, ids.length);
   assert.ok(layers.every((layer) => !String(layer.id).startsWith('landuse-')));
+
+  const commercial = layers.find((layer) => layer.id === 'streets-landuse-commercial');
+  assert.deepEqual(commercial?.filter, [
+    'match',
+    ['get', 'class'],
+    ['commercial', 'retail', 'business_area'],
+    true,
+    false,
+  ]);
 });
 
 test('renders the seven global land-cover classes below OSM and fades them out at zoom 8', () => {
@@ -136,6 +144,37 @@ test('remaps the global land-cover source-layer and class field', () => {
       2,
     ),
     ['match', ['get', 'kind']],
+  );
+});
+
+test('applies public global land-cover and bathymetry styles without raw patches', () => {
+  const globalLandcover = compileLand(
+    land({globalLandcover: {color: '#123456', maxZoom: 7, opacity: 0.45}}),
+    context,
+  ).find((entry) => entry.layer.id === 'streets-global-landcover')!;
+  const bathymetry = compileWater(
+    water({bathymetry: {color: '#234567', maxZoom: 9, opacity: 0.52}}),
+    context,
+  ).find((entry) => entry.layer.id === 'streets-bathymetry')!;
+
+  assert.equal(globalLandcover.layer.maxzoom, 7);
+  assert.equal((globalLandcover.layer.paint as Record<string, unknown>)['fill-color'], '#123456');
+  assert.equal((globalLandcover.layer.paint as Record<string, unknown>)['fill-opacity'], 0.45);
+  assert.equal(bathymetry.layer.maxzoom, 9);
+  assert.equal((bathymetry.layer.paint as Record<string, unknown>)['fill-color'], '#234567');
+  assert.equal((bathymetry.layer.paint as Record<string, unknown>)['fill-opacity'], 0.52);
+
+  assert.equal(
+    compileLand(land({globalLandcover: {visible: false}}), context).some(
+      (entry) => entry.layer.id === 'streets-global-landcover',
+    ),
+    false,
+  );
+  assert.equal(
+    compileWater(water({bathymetry: {visible: false}}), context).some(
+      (entry) => entry.layer.id === 'streets-bathymetry',
+    ),
+    false,
   );
 });
 
@@ -950,4 +989,78 @@ test('POI categories can replace global rank presets with exact semantic ceiling
   assert.match(JSON.stringify(culture?.filter), /120/);
   assert.match(JSON.stringify(lodgingLabel?.filter), /360/);
   assert.match(JSON.stringify(lodgingMarker?.filter), /360/);
+});
+
+test('POI rank ceilings can reveal candidates progressively by zoom', () => {
+  const globalLimit = zoom.step([
+    [14, 14],
+    [17, 80],
+    [19, 500],
+  ]);
+  const cultureLimit = zoom.step([
+    [14, 8],
+    [17, 40],
+    [19, 120],
+  ]);
+  const contributions = compilePoi(
+    poi({
+      categories: ['culture', 'lodging'],
+      icons: 'full',
+      labels: 'full',
+      maxRank: globalLimit,
+      styles: {
+        culture: {maxRank: cultureLimit},
+        lodging: {marker: {radius: 3}},
+      },
+    }),
+    context,
+  );
+  const culture = contributions.find(
+    (entry) => entry.layer.id === 'streets-poi-culture-label',
+  )?.layer;
+  const lodging = contributions.find(
+    (entry) => entry.layer.id === 'streets-poi-lodging-label',
+  )?.layer;
+
+  assert.deepEqual((culture?.filter as unknown[])?.at(-1), [
+    '<=',
+    ['to-number', ['get', 'rank'], 999],
+    ['step', ['zoom'], 8, 17, 40, 19, 120],
+  ]);
+  assert.deepEqual((lodging?.filter as unknown[])?.at(-1), [
+    '<=',
+    ['to-number', ['get', 'rank'], 999],
+    ['step', ['zoom'], 14, 17, 80, 19, 500],
+  ]);
+
+  for (const id of [
+    'streets-poi-culture-icon',
+    'streets-poi-lodging-marker',
+    'streets-poi-lodging-icon',
+  ]) {
+    const layer = contributions.find((entry) => entry.layer.id === id)?.layer;
+    assert.deepEqual((layer?.filter as unknown[])?.at(-1), [
+      '<=',
+      ['to-number', ['get', 'rank'], 999],
+      id.includes('culture')
+        ? ['step', ['zoom'], 8, 17, 40, 19, 120]
+        : ['step', ['zoom'], 14, 17, 80, 19, 500],
+    ]);
+  }
+
+  const coupled = compilePoi(
+    poi({
+      categories: ['food'],
+      icons: 'full',
+      labels: 'full',
+      maxRank: globalLimit,
+      placement: {coupleIconAndLabel: true},
+    }),
+    context,
+  );
+  assert.deepEqual((coupled[0]?.layer.filter as unknown[])?.at(-1), [
+    '<=',
+    ['to-number', ['get', 'rank'], 999],
+    ['step', ['zoom'], 14, 17, 80, 19, 500],
+  ]);
 });

@@ -6,24 +6,140 @@ import {
   createTileflowMarkerController,
   createTileflowSessionStarter,
   createTileflowTransformRequest,
+  loadTileflowStyleFonts,
   registerTileflowWorldRequestBridge,
   type TileflowFairUseNotice,
   type TileflowMapLifecycleEvent,
   type TileflowWorldProtocolHandler,
 } from '../src/browser';
 
+test('loads validated content-addressed font faces before a browser map starts', async (t) => {
+  const documentDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const fontFaceDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'FontFace');
+  const added: FakeFontFace[] = [];
+  const constructed: FakeFontFace[] = [];
+  class FakeFontFace {
+    constructor(
+      readonly family: string,
+      readonly source: ArrayBuffer,
+      readonly descriptors: {style?: string; weight?: string} = {},
+    ) {
+      constructed.push(this);
+    }
+    async load() {
+      return this;
+    }
+  }
+  Object.defineProperty(globalThis, 'document', {
+    configurable: true,
+    value: {
+      baseURI: 'https://app.example.test/maps/',
+      fonts: {add: (fontFace: FakeFontFace) => added.push(fontFace)},
+    },
+  });
+  Object.defineProperty(globalThis, 'FontFace', {configurable: true, value: FakeFontFace});
+  t.after(() => {
+    if (documentDescriptor) Object.defineProperty(globalThis, 'document', documentDescriptor);
+    else Reflect.deleteProperty(globalThis, 'document');
+    if (fontFaceDescriptor) Object.defineProperty(globalThis, 'FontFace', fontFaceDescriptor);
+    else Reflect.deleteProperty(globalThis, 'FontFace');
+  });
+
+  const requested: string[] = [];
+  await loadTileflowStyleFonts(
+    {
+      layers: [],
+      metadata: {
+        'tileflow:fontFaces': [
+          {
+            family: 'Oxanium Medium',
+            source: '../fonts/oxanium-medium-a1.ttf',
+            style: 'normal',
+            weight: '500',
+          },
+          {
+            family: 'Oxanium SemiBold',
+            source: '../fonts/oxanium-semibold-b2.ttf',
+            weight: '600',
+          },
+        ],
+      },
+      sources: {},
+      version: 8,
+    },
+    {
+      fetch: (async (input) => {
+        requested.push(String(input));
+        return new Response(new Uint8Array([1, 2, 3]), {
+          headers: {'content-length': '3', 'content-type': 'font/ttf'},
+        });
+      }) as typeof fetch,
+    },
+  );
+
+  assert.deepEqual(requested, [
+    'https://app.example.test/fonts/oxanium-medium-a1.ttf',
+    'https://app.example.test/fonts/oxanium-semibold-b2.ttf',
+  ]);
+  assert.equal(constructed.length, 2);
+  assert.equal(constructed[0]?.source.byteLength, 3);
+  assert.deepEqual(
+    constructed.map((face) => face.descriptors.weight),
+    ['500', '600'],
+  );
+  assert.deepEqual(added, constructed);
+});
+
+test('explicit empty manifest font metadata avoids an extra style request', async () => {
+  let fetched = false;
+  await loadTileflowStyleFonts('/tileflow/styles/main.json', {
+    fontFaces: [],
+    fetch: (async () => {
+      fetched = true;
+      throw new Error('must not fetch');
+    }) as typeof fetch,
+  });
+  assert.equal(fetched, false);
+});
+
+test('rejects duplicate font identities even when their source URLs differ', async () => {
+  await assert.rejects(
+    loadTileflowStyleFonts(
+      {
+        layers: [],
+        metadata: {
+          'tileflow:fontFaces': [
+            {family: 'Duplicate', source: './fonts/one.woff2'},
+            {
+              family: 'Duplicate',
+              source: './fonts/two.woff2',
+              style: 'normal',
+              weight: '400',
+            },
+          ],
+        },
+        sources: {},
+        version: 8,
+      },
+      {fetch: (() => Promise.reject(new Error('must not fetch'))) as typeof fetch},
+    ),
+    /duplicate Tileflow style fontFace/u,
+  );
+});
+
+let installedWorldProtocolHandler: TileflowWorldProtocolHandler | null = null;
+const exactBrowserWorldUrl =
+  `https://cdn.tileflow.dev/tiles/world/world-v1-release-browser/0/0/0.pbf?` +
+  `worldDescriptorSha256=${'a'.repeat(64)}&map=map_public`;
+const retiredMutableWorldUrl = 'https://world.tileflow.dev/world/v1/0/0/0.pbf';
+
 test('World bridge follows signed notice activation and shapes an empty tile', async () => {
-  let protocolHandler: TileflowWorldProtocolHandler | null = null;
   const notices: Array<TileflowFairUseNotice | null> = [];
   const requests: Array<{credentials: RequestCredentials | undefined; url: string}> = [];
   let response = new Response(new Uint8Array([1, 2, 3]), {
     headers: {'Tileflow-Fair-Use': 'grace'},
   });
-  const bridge = registerTileflowWorldRequestBridge({
-    addProtocol(name, handler) {
-      assert.equal(name, 'tileflow-world');
-      protocolHandler = handler;
-    },
+  const {bridge, protocolHandler} = registerTestWorldBridge({
     async fetch(input, init) {
       requests.push({
         credentials: init?.credentials,
@@ -39,23 +155,25 @@ test('World bridge follows signed notice activation and shapes an empty tile', a
     sessionId: 'ses_stateless',
     transformRequest: () => ({
       headers: {'X-Private': 'must-not-reach-world'},
-      url: 'https://world.tileflow.dev/world/v1/0/0/0.pbf',
+      url: exactBrowserWorldUrl,
     }),
     worldRequestBridge: bridge,
   });
-  const transformed = transform('https://world.tileflow.dev/world/v1/0/0/0.pbf', 'Tile');
+  const transformed = transform(exactBrowserWorldUrl, 'Tile');
   assert.ok(transformed && !(transformed instanceof Promise));
   assert.match(transformed.url, /^tileflow-world:\/\/request\//u);
+  assert.equal(bridge.rewriteUrl(retiredMutableWorldUrl), retiredMutableWorldUrl);
+  assert.match(bridge.rewriteUrl(exactBrowserWorldUrl), /^tileflow-world:\/\/request\//u);
   assert.equal(
-    bridge.rewriteUrl('https://world.tileflow.dev/world/v1/0/0/0.pbf?site=secret'),
-    'https://world.tileflow.dev/world/v1/0/0/0.pbf?site=secret',
+    bridge.rewriteUrl(`${exactBrowserWorldUrl}&private=secret`),
+    `${exactBrowserWorldUrl}&private=secret`,
   );
   assert.ok(protocolHandler);
   const earlyGrace = await protocolHandler(transformed, new AbortController());
   assert.equal(earlyGrace.data.byteLength, 3);
   assert.equal(notices.at(-1), null, 'early GRACE remains silent');
   assert.equal(requests[0]?.credentials, 'omit');
-  assert.equal(requests[0]?.url, 'https://world.tileflow.dev/world/v1/0/0/0.pbf');
+  assert.equal(requests[0]?.url, exactBrowserWorldUrl);
 
   response = new Response(new Uint8Array([1, 2, 3]), {
     headers: {
@@ -126,6 +244,137 @@ test('World bridge follows signed notice activation and shapes an empty tile', a
   const open = await protocolHandler(transformed, new AbortController());
   assert.equal(open.data.byteLength, 3);
   assert.equal(notices.at(-1), null, 'an observed OPEN response clears a previous notice');
+  bridge.dispose();
+});
+
+test('World bridge bounds declared and chunked bodies and cancels oversized streams', async () => {
+  const maximumWorldTileBytes = 16 * 1024 * 1024;
+  const oversizedMessage = 'Tileflow World tile exceeds the maximum response size';
+  let response: Response;
+  const {bridge, protocolHandler} = registerTestWorldBridge({
+    async fetch() {
+      return response;
+    },
+  });
+  const request = {
+    url: bridge.rewriteUrl(exactBrowserWorldUrl),
+  };
+
+  let declaredBodyCancelled = false;
+  response = new Response(
+    new ReadableStream<Uint8Array>({
+      cancel() {
+        declaredBodyCancelled = true;
+      },
+    }),
+    {
+      headers: {
+        'Content-Length': String(maximumWorldTileBytes + 1),
+        'X-Body-Secret': 'must-not-appear-in-errors',
+      },
+    },
+  );
+  await assert.rejects(protocolHandler(request, new AbortController()), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.equal(error.message, oversizedMessage);
+    assert.doesNotMatch(error.message, /secret|16777217/u);
+    return true;
+  });
+  assert.equal(declaredBodyCancelled, true);
+
+  response = new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2]));
+        controller.enqueue(new Uint8Array([3, 4]));
+        controller.close();
+      },
+    }),
+    {
+      headers: {
+        'Cache-Control': 'public, max-age=300',
+        ETag: '"world-etag"',
+        Expires: 'Wed, 21 Oct 2037 07:28:00 GMT',
+      },
+    },
+  );
+  const chunked = await protocolHandler(request, new AbortController());
+  assert.deepEqual([...new Uint8Array(chunked.data)], [1, 2, 3, 4]);
+  assert.equal(chunked.cacheControl, 'public, max-age=300');
+  assert.equal(chunked.etag, '"world-etag"');
+  assert.equal(chunked.expires, 'Wed, 21 Oct 2037 07:28:00 GMT');
+
+  let chunkedBodyCancelled = false;
+  response = new Response(
+    new ReadableStream<Uint8Array>({
+      cancel() {
+        chunkedBodyCancelled = true;
+      },
+      start(controller) {
+        controller.enqueue(new Uint8Array(maximumWorldTileBytes));
+        controller.enqueue(new Uint8Array([5]));
+      },
+    }),
+  );
+  await assert.rejects(
+    protocolHandler(request, new AbortController()),
+    (error: unknown) => error instanceof Error && error.message === oversizedMessage,
+  );
+  assert.equal(chunkedBodyCancelled, true);
+
+  let missingBodyCancelled = false;
+  response = new Response(
+    new ReadableStream<Uint8Array>({
+      cancel() {
+        missingBodyCancelled = true;
+      },
+      start(controller) {
+        controller.enqueue(new Uint8Array([9, 9, 9]));
+      },
+    }),
+    {status: 404},
+  );
+  const missing = await protocolHandler(request, new AbortController());
+  assert.equal(missing.data.byteLength, 0);
+  assert.equal(missing.cacheControl, 'private, no-store');
+  assert.equal(missingBodyCancelled, true);
+  bridge.dispose();
+});
+
+test('World bridge propagates abort and cancels a pending streamed tile', async () => {
+  let streamCancelReason: unknown;
+  let fetchStartedResolve!: () => void;
+  const fetchStarted = new Promise<void>((resolve) => {
+    fetchStartedResolve = resolve;
+  });
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      cancel(reason) {
+        streamCancelReason = reason;
+      },
+    }),
+  );
+  const {bridge, protocolHandler} = registerTestWorldBridge({
+    async fetch() {
+      fetchStartedResolve();
+      return response;
+    },
+  });
+  const request = {
+    url: bridge.rewriteUrl(exactBrowserWorldUrl),
+  };
+  const abortController = new AbortController();
+  const pending = protocolHandler(request, abortController);
+  await fetchStarted;
+  await Promise.resolve();
+  abortController.abort();
+
+  await assert.rejects(
+    pending,
+    (error: unknown) => error instanceof DOMException && error.name === 'AbortError',
+  );
+  assert.ok(streamCancelReason instanceof DOMException);
+  assert.equal(streamCancelReason.name, 'AbortError');
   bridge.dispose();
 });
 
@@ -576,6 +825,26 @@ test('marker replacement cleans previous and partially attached batches and rema
   assert.equal(created.at(-1)?.removed, 1);
   assert.deepEqual(attached, ['old', 'partial', 'broken', 'recovered']);
 });
+
+function registerTestWorldBridge(input: {
+  fetch: typeof fetch;
+  onNotice?: (notice: TileflowFairUseNotice | null) => void;
+}): {
+  bridge: ReturnType<typeof registerTileflowWorldRequestBridge>;
+  protocolHandler: TileflowWorldProtocolHandler;
+} {
+  const bridge = registerTileflowWorldRequestBridge({
+    addProtocol(name, handler) {
+      assert.equal(name, 'tileflow-world');
+      installedWorldProtocolHandler = handler;
+    },
+    fetch: input.fetch,
+    onNotice: input.onNotice ?? (() => {}),
+  });
+  const protocolHandler = installedWorldProtocolHandler;
+  assert.ok(protocolHandler);
+  return {bridge, protocolHandler};
+}
 
 const lifecycleEvents: TileflowMapLifecycleEvent[] = [
   'load',

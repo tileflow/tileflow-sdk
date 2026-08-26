@@ -7,57 +7,32 @@ import {
 
 const style = {layers: [], sources: {}, version: 8};
 
-test('accepts every documented Map style source shape', () => {
-  for (const input of [
-    {},
-    {map: 'madrid'},
-    {map: 'madrid', style},
-    {map: 'madrid', styleUrl: 'https://api.example.test/style.json'},
-    {map: 'madrid', styleBaseUrl: '/tileflow'},
-    {style},
-    {styleUrl: 'https://api.example.test/style.json'},
-    {config: {}},
-    {config: {}, themes: {}},
+test('accepts both documented discriminated sources', () => {
+  for (const source of [
+    {kind: 'tileflow', map: 'madrid'},
+    {kind: 'tileflow', manifestUrl: '/custom/manifest.json', map: 'madrid'},
+    {kind: 'maplibre', style},
+    {kind: 'maplibre', style: 'https://api.example.test/style.json'},
   ]) {
-    assert.deepEqual(validateTileflowMapStyleInputs(input), {ok: true});
+    assert.deepEqual(validateTileflowMapStyleInputs({source}), {ok: true});
   }
 });
 
-test('rejects config combinations that the runtime used to ignore', () => {
-  for (const [input, conflict] of [
-    [{config: {}, map: 'madrid'}, 'map'],
-    [{config: {}, style}, 'style'],
-    [{config: {}, styleUrl: 'https://api.example.test/style.json'}, 'styleUrl'],
-    [{config: {}, styleBaseUrl: '/tileflow'}, 'styleBaseUrl'],
-  ] as const) {
-    const validation = validateTileflowMapStyleInputs(input);
+test('rejects missing and malformed sources for JavaScript callers', () => {
+  for (const source of [
+    undefined,
+    {},
+    {kind: 'tileflow'},
+    {kind: 'maplibre'},
+    {kind: 'config', config: {}},
+  ]) {
+    const validation = validateTileflowMapStyleInputs({source});
     assert.equal(validation.ok, false);
-    if (!validation.ok) {
-      assert.match(validation.error, /config cannot be combined/);
-      assert.match(validation.error, new RegExp(conflict));
-    }
   }
-});
 
-test('rejects ambiguous explicit sources and dependent options without their owner', () => {
-  const cases = [
-    [{style, styleUrl: 'https://api.example.test/style.json'}, /mutually exclusive/],
-    [{map: 'madrid', style, styleBaseUrl: '/tileflow'}, /mutually exclusive/],
-    [{styleBaseUrl: '/tileflow'}, /requires map/],
-    [{themes: {}}, /requires config/],
-  ] as const;
-
-  for (const [input, expected] of cases) {
-    const validation = validateTileflowMapStyleInputs(input);
-    assert.equal(validation.ok, false);
-    if (!validation.ok) assert.match(validation.error, expected);
-  }
-});
-
-test('the runtime assertion throws TypeError for JavaScript and any callers', () => {
   assert.throws(
-    () => assertTileflowMapStyleInputs({config: {}, map: 'madrid'}),
+    () => assertTileflowMapStyleInputs({}),
     (error: unknown) =>
-      error instanceof TypeError && /Invalid Tileflow <Map> style inputs/.test(error.message),
+      error instanceof TypeError && /Invalid Tileflow <Map> source/.test(error.message),
   );
 });

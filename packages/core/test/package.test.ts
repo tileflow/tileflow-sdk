@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
-import {readFile} from 'node:fs/promises';
+import {readdir, readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {promisify} from 'node:util';
 
@@ -19,8 +19,66 @@ test('declares the browser entry without exposing it from the package root', asy
     import: './dist/browser.js',
     default: './dist/browser.js',
   });
+  assert.deepEqual(manifest.exports['./manifest'], {
+    types: './dist/manifest.d.ts',
+    import: './dist/manifest.js',
+    default: './dist/manifest.js',
+  });
+  assert.deepEqual(manifest.exports['./capture'], {
+    types: './dist/capture.d.ts',
+    import: './dist/capture.js',
+    default: './dist/capture.js',
+  });
+  assert.deepEqual(manifest.exports['./runtime'], {
+    types: './dist/runtime.d.ts',
+    import: './dist/runtime.js',
+    default: './dist/runtime.js',
+  });
+  assert.deepEqual(manifest.exports['./recipe'], {
+    types: './dist/recipe.d.ts',
+    import: './dist/recipe.js',
+    default: './dist/recipe.js',
+  });
+  assert.equal(manifest.exports['./package.json'], './package.json');
+  assert.equal(manifest.exports['./maps'], undefined);
   assert.equal(Object.hasOwn(manifest.exports['.'] as object, 'browser'), false);
-  assert.deepEqual(manifest.files, ['dist']);
+  assert.deepEqual(manifest.files, [
+    'dist',
+    'LICENSE',
+    'NOTICE',
+    'GENERATED_OUTPUT_LICENSE.md',
+    'TRADEMARKS.md',
+  ]);
+});
+
+test('imports the packaged manifest and runtime boundaries without browser globals', async () => {
+  const script = `
+    const capture = await import('@tileflow/core/capture');
+    const manifest = await import('@tileflow/core/manifest');
+    const runtime = await import('@tileflow/core/runtime');
+    if (typeof capture.normalizeTileflowCaptureId !== 'function') process.exit(1);
+    if (typeof manifest.parseTileflowRuntimeManifest !== 'function') process.exit(2);
+    if (typeof runtime.resolveTileflowRuntimeView !== 'function') process.exit(3);
+  `;
+  const {stderr, stdout} = await execFileAsync(
+    process.execPath,
+    ['--input-type=module', '--eval', script],
+    {cwd: new URL('..', import.meta.url)},
+  );
+  assert.equal(stdout, '');
+  assert.equal(stderr, '');
+});
+
+test('keeps config compilation out of runtime and browser bundles', async () => {
+  for (const entry of ['runtime.js', 'browser.js']) {
+    const output = await readFile(new URL(`../dist/${entry}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(output, /createStyle|createStyleFromCatalog|compilerVersion/u);
+  }
+});
+
+test('keeps the native browser entry free of bare package imports', async () => {
+  const output = await readFile(new URL('../dist/browser.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(output, /(?:from\s+|import\s*)["'][^./]/u);
 });
 
 test('imports the packaged browser entry without reading browser globals', async () => {
@@ -65,22 +123,63 @@ test('does not re-export the browser kernel from the packaged root', async () =>
   assert.equal(stderr, '');
 });
 
-test('packages only the direct Streets authoring surface and compiler', async () => {
+test('packages the singular map engine without official maps or legacy authoring exports', async () => {
   const script = `
     const entry = await import('@tileflow/core');
+    const recipe = await import('@tileflow/core/recipe');
     for (const name of [
-      'streets', 'land', 'water', 'roads', 'transit', 'aeroways',
+      'defineMap', 'defineRootMap', 'land', 'water', 'roads', 'transit', 'aeroways',
       'buildings', 'boundaries', 'labels', 'poi', 'vegetation', 'createStyle',
-      'tileflowWorld', 'parseWorldGenerationDescriptor',
+      'tileflowWorld',
     ]) {
       if (typeof entry[name] !== 'function') process.exit(2);
     }
-    for (const removed of ['osm', 'styleOverride']) {
+    for (const removed of [
+      'basemap', 'createStyleFromProject', 'cyberpunk', 'defineTileflow', 'osm', 'streets',
+      'styleOverride', 'verdant', 'WorldGenerationDescriptor', 'parseWorldGenerationDescriptor',
+      'tileflowWorldTileUrl',
+    ]) {
       if (removed in entry) process.exit(3);
     }
-    const style = entry.createStyle({basemap: entry.streets()});
-    if (style.metadata['tileflow:basemap'] !== 'streets') process.exit(4);
+    let rejectedDataGlyphs = false;
+    try {
+      const removedDataGlyphMap = entry.defineRootMap({
+        id: 'removed-data-glyphs',
+        version: 1,
+        root: {compiler: 'streets', compilerVersion: 1},
+        glyphs: {kind: 'data', fontStacks: ['Noto Sans Regular']},
+      });
+      entry.parseTileflowMap(removedDataGlyphMap);
+    } catch {
+      rejectedDataGlyphs = true;
+    }
+    if (!rejectedDataGlyphs) process.exit(6);
+    if (typeof recipe.defineModuleEffects !== 'function') process.exit(3);
+    const map = entry.defineRootMap({
+      id: 'smoke',
+      version: 1,
+      root: {compiler: 'streets', compilerVersion: 1},
+      glyphs: {
+        kind: 'url',
+        url: 'https://fixtures.tileflow.test/fonts/{fontstack}/{range}.pbf',
+        fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
+      },
+    });
+    const style = entry.createStyle(map, {
+      preparedAssets: {
+        icons: {
+          ids: [
+            'coffee', 'crosswalk', 'culture', 'education', 'food', 'health',
+            'lodging', 'major-transit', 'oneway', 'services', 'shopping', 'sidewalk-dot',
+          ],
+          sprite: '/tileflow/test/streets/sprite',
+        },
+      },
+    });
+    if (style.metadata['tileflow:map'] !== 'smoke') process.exit(4);
+    if (style.metadata['tileflow:root'] !== 'streets') process.exit(4);
     if (!style.layers.every((layer) => layer.id.startsWith('streets-'))) process.exit(5);
+
   `;
 
   const {stderr, stdout} = await execFileAsync(
@@ -93,4 +192,25 @@ test('packages only the direct Streets authoring surface and compiler', async ()
 
   const bundle = await readFile(new URL('../dist/index.js', import.meta.url), 'utf8');
   assert.doesNotMatch(bundle, /highway-primary|rendererPreference/i);
+});
+
+test('keeps removed World descriptors and data glyph providers out of public declarations', async () => {
+  const declarationDirectory = new URL('../dist/', import.meta.url);
+  const declarationFiles = (await readdir(declarationDirectory)).filter((fileName) =>
+    fileName.endsWith('.d.ts'),
+  );
+  const declarations = (
+    await Promise.all(
+      declarationFiles.map((fileName) => readFile(new URL(fileName, declarationDirectory), 'utf8')),
+    )
+  ).join('\n');
+  for (const removed of [
+    'WorldGenerationDescriptor',
+    'parseWorldGenerationDescriptor',
+    'tileflowWorldTileUrl',
+    'worldGenerationDescriptorSchema',
+  ]) {
+    assert.equal(declarations.includes(removed), false, `found removed declaration ${removed}`);
+  }
+  assert.doesNotMatch(declarations, /kind:\s*(?:'data'|"data")/u);
 });

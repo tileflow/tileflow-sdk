@@ -37,6 +37,7 @@ export type {
   TileflowVegetationMode,
   TileflowVegetationModuleConfig,
   TileflowVegetationModuleOptions,
+  TileflowVegetationThreeDimensionalStyle,
 } from './vegetation';
 export {water} from './water';
 export type {

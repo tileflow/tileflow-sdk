@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>Culture</title>
+  <desc>Original Tileflow museum pictogram.</desc>
+  <rect x="2.25" y="3.25" width="19.5" height="19.5" rx="6.25" fill="#44515E" opacity=".14"/>
+  <rect x="2.25" y="2.25" width="19.5" height="19.5" rx="6.25" fill="#FFFFFF"/>
+  <rect x="4" y="4" width="16" height="16" rx="4.75" fill="#13B5C7"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m6.75 10 5.25-3.2 5.25 3.2zM7.25 17.1h9.5M8 11.25v4.35M10.65 11.25v4.35M13.35 11.25v4.35M16 11.25v4.35"/>
+  </g>
+</svg>

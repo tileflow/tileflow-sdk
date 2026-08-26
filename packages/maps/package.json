@@ -1,0 +1,60 @@
+{
+  "name": "@tileflow/maps",
+  "version": "0.0.0-development",
+  "license": "Apache-2.0",
+  "description": "Official Streets, Ferraris, Streets Dark, Cyberpunk, and Verdant maps for Tileflow.",
+  "type": "module",
+  "sideEffects": false,
+  "homepage": "https://tileflow.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tileflow/tileflow-sdk.git",
+    "directory": "packages/maps"
+  },
+  "bugs": {
+    "url": "https://github.com/tileflow/tileflow-sdk/issues"
+  },
+  "keywords": [
+    "tileflow",
+    "maps",
+    "maplibre",
+    "streets",
+    "ferraris",
+    "styles"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "assets",
+    "dist",
+    "THIRD_PARTY_NOTICES.md",
+    "LICENSE",
+    "NOTICE",
+    "GENERATED_OUTPUT_LICENSE.md",
+    "TRADEMARKS.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean --no-splitting",
+    "verify": "pnpm run build && tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0"
+  },
+  "devDependencies": {
+    "@maplibre/maplibre-gl-style-spec": "24.8.5",
+    "@tileflow/core": "workspace:*"
+  }
+}

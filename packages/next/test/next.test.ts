@@ -3,23 +3,20 @@ import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
-import type {TileflowBuildArtifactsOptions} from '@tileflow/dev';
+import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {withTileflow} from '../src/index';
 import {createTileflowRouteHandlers} from '../src/server';
 
 test('emits production artifacts without adding a webpack config', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-'));
+  await linkWorkspacePackages(cwd);
   const previousNodeEnv = process.env.NODE_ENV;
 
   try {
-    await writeFile(
-      join(cwd, 'tileflow.config.ts'),
-      "export default { maps: { main: { basemap: {type: 'streets', basemapVersion: 3, variant: 'light'} } } };\n",
-      'utf8',
-    );
+    await writeFile(join(cwd, 'tileflow.config.ts'), rootConfig(), 'utf8');
     process.env.NODE_ENV = 'production';
 
-    const config = withTileflow({}, {cwd, worldGeneration});
+    const config = withTileflow({}, {cwd});
     assert.equal(config.webpack, undefined);
     assert.equal(typeof config.rewrites, 'function');
 
@@ -29,23 +26,102 @@ test('emits production artifacts without adding a webpack config', async () => {
     const manifest = JSON.parse(
       await readFile(join(cwd, 'public/tileflow/manifest.json'), 'utf8'),
     ) as {styles?: Record<string, string>};
-    assert.equal(manifest.styles?.main, '/tileflow/styles/main.json');
+    assert.match(
+      manifest.styles?.main ?? '',
+      /^\/tileflow\/generations\/[a-f0-9]{64}\/styles\/main\.json$/,
+    );
     const style = JSON.parse(
       await readFile(join(cwd, 'public/tileflow/styles/main.json'), 'utf8'),
     ) as {
       glyphs?: string;
-      sources?: {tileflow?: {tiles?: string[]}};
+      sources?: {tileflow?: {url?: string}};
       sprite?: string;
       version?: number;
     };
     assert.equal(style.version, 8);
-    assert.deepEqual(style.sources?.tileflow?.tiles, [worldGeneration.tileUrl]);
-    assert.equal(style.glyphs, worldGeneration.assetSet.glyphs);
-    assert.equal(style.sprite, worldGeneration.assetSet.spriteBase);
+    assert.equal(style.sources?.tileflow?.url, 'https://api.tileflow.dev/tiles/world/tiles.json');
+    assert.equal(style.glyphs, glyphUrl);
+    assert.equal(style.sprite, '/tileflow/icons/main/sprite');
   } finally {
     process.env.NODE_ENV = previousNodeEnv;
     await rm(cwd, {force: true, recursive: true});
   }
+});
+
+test('combines valid Next and Tileflow base paths without changing URL kind', async (t) => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  t.after(() => {
+    process.env.NODE_ENV = previousNodeEnv;
+  });
+  const cases = [
+    [
+      '',
+      '/maps',
+      'public/maps/manifest.json',
+      /^\/maps\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u,
+    ],
+    [
+      '/app',
+      '/maps',
+      'public/maps/manifest.json',
+      /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u,
+    ],
+    ['/app', '', 'public/manifest.json', /^\/app\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u],
+  ] as const;
+
+  for (const [nextBasePath, tileflowBase, manifestPath, expectedStyleUrl] of cases) {
+    await t.test(`${nextBasePath || '<root>'}:${tileflowBase || '<root>'}`, async (subtest) => {
+      const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-base-'));
+      await linkWorkspacePackages(cwd);
+      subtest.after(() => rm(cwd, {force: true, recursive: true}));
+      await writeFile(join(cwd, 'tileflow.config.ts'), rootConfig());
+      const config = withTileflow(
+        {...(nextBasePath ? {basePath: nextBasePath} : {})},
+        {base: tileflowBase, cwd},
+      );
+      await config.rewrites!();
+      const manifest = JSON.parse(await readFile(join(cwd, manifestPath), 'utf8')) as {
+        styles: {main: string};
+      };
+      assert.match(manifest.styles.main, expectedStyleUrl);
+    });
+  }
+});
+
+test('rejects route traversal and publicDir escape before writing Next artifacts', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-containment-'));
+  await linkWorkspacePackages(cwd);
+  const outside = await mkdtemp(join(tmpdir(), 'tileflow-next-outside-'));
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  t.after(async () => {
+    process.env.NODE_ENV = previousNodeEnv;
+    await Promise.all([
+      rm(cwd, {force: true, recursive: true}),
+      rm(outside, {force: true, recursive: true}),
+    ]);
+  });
+  await writeFile(join(cwd, 'tileflow.config.ts'), rootConfig());
+  await writeFile(join(outside, 'sentinel.txt'), 'untouched\n');
+
+  for (const [nextConfig, options] of [
+    [{basePath: '../app'}, {cwd}],
+    [{}, {base: '../maps', cwd}],
+  ] as const) {
+    const config = withTileflow(nextConfig, options);
+    await assert.rejects(() => config.rewrites!(), /Invalid Tileflow base path/u);
+  }
+
+  const escaping = withTileflow({}, {cwd, publicDir: outside});
+  await assert.rejects(
+    () => escaping.rewrites!(),
+    /artifact output escapes its working directory/u,
+  );
+  assert.equal(await readFile(join(outside, 'sentinel.txt'), 'utf8'), 'untouched\n');
+  await assert.rejects(() => readFile(join(outside, 'tileflow', 'manifest.json')), {
+    code: 'ENOENT',
+  });
 });
 
 test('prepends Tileflow development rewrites without replacing user rewrites', async () => {
@@ -71,15 +147,16 @@ test('prepends Tileflow development rewrites without replacing user rewrites', a
 
 test('refreshes direct style requests after a config edit without requiring a manifest request', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-server-'));
+  await linkWorkspacePackages(cwd);
   const configPath = join(cwd, 'tileflow.config.ts');
   try {
     await writeFile(configPath, configWithBackground('#112233'));
-    const handlers = createTileflowRouteHandlers({cwd, worldGeneration});
+    const handlers = createTileflowRouteHandlers({cwd});
     const request = new Request('http://localhost/tileflow/styles/main.json');
     const first = await handlers.GET(request);
     const firstStyle = await first.json();
     assert.equal(backgroundColor(firstStyle), '#112233');
-    assert.deepEqual(vectorTiles(firstStyle), [worldGeneration.tileUrl]);
+    assert.equal(vectorUrl(firstStyle), 'https://api.tileflow.dev/tiles/world/tiles.json');
 
     await writeFile(configPath, configWithBackground('#445566'));
     const second = await handlers.GET(request);
@@ -90,7 +167,11 @@ test('refreshes direct style requests after a config edit without requiring a ma
 });
 
 function configWithBackground(background: string): string {
-  return `export default {maps: {main: {basemap: {type: 'streets', basemapVersion: 3, variant: 'light'}, theme: {colors: {background: '${background}'}}}}};\n`;
+  return rootConfig(`theme: {colors: {background: '${background}'}}`);
+}
+
+function rootConfig(extra?: string): string {
+  return `import {defineRootMap} from '@tileflow/core'; import {streetsIcons} from '@tileflow/maps'; export default defineRootMap({id: 'main', version: 1, root: {compiler: 'streets', compilerVersion: 1}, icons: [streetsIcons], glyphs: {kind: 'url', url: '${glyphUrl}', fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']}${extra ? `, ${extra}` : ''}});\n`;
 }
 
 function backgroundColor(style: unknown): unknown {
@@ -98,23 +179,8 @@ function backgroundColor(style: unknown): unknown {
   return layers?.find((layer) => layer.id === 'streets-background')?.paint?.['background-color'];
 }
 
-function vectorTiles(style: unknown): unknown {
-  return (style as {sources?: {tileflow?: {tiles?: unknown}}}).sources?.tileflow?.tiles;
+function vectorUrl(style: unknown): unknown {
+  return (style as {sources?: {tileflow?: {url?: unknown}}}).sources?.tileflow?.url;
 }
 
-const worldGeneration: NonNullable<TileflowBuildArtifactsOptions['worldGeneration']> = {
-  generation: 'v1',
-  tileUrl: 'https://world.tileflow.dev/world/v1/{z}/{x}/{y}.pbf',
-  schemaVersion: 1,
-  vectorSchema: {id: 'openmaptiles-v1', sha256: 'a'.repeat(64)},
-  tileEncoding: {format: 'mvt', compression: 'gzip', scheme: 'xyz', extent: 4096},
-  minzoom: 0,
-  maxzoom: 14,
-  bounds: [-180, -85, 180, 85],
-  attribution: 'Fixture data',
-  assetSet: {
-    id: 'a1-0123456789abcdef',
-    glyphs: 'https://assets.tileflow.dev/base/a1-0123456789abcdef/glyphs/{fontstack}/{range}.pbf',
-    spriteBase: 'https://assets.tileflow.dev/base/a1-0123456789abcdef/sprites/base',
-  },
-};
+const glyphUrl = 'https://assets.example.test/base/exact/glyphs/{fontstack}/{range}.pbf';

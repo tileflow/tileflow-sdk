@@ -9,15 +9,15 @@ import {
   useRef,
   useState,
 } from 'react';
-import {normalizeTileflowCaptureId} from '@tileflow/core';
+import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
 import {
   prepareStaticMapRequest,
   stableStringify,
   type PreparedStaticMapRequest,
   type StaticMapResult,
-  type StaticSceneInput,
   validateStaticMapIdempotencyKey,
-} from '@tileflow/static';
+} from '@tileflow/static/client';
+import type {StaticSceneInput} from '@tileflow/static/scene';
 import {resolveStaticMap} from './static-map-request';
 
 type StaticMapBaseProps = StaticSceneInput & {

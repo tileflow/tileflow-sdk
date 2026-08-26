@@ -1,6 +1,7 @@
-import type {TileflowDomainCompileContext} from '../../cartography/context';
+import {type TileflowDomainCompileContext, typographyTextStyle} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applySymbolStyle} from '../../cartography/layer-style';
+import {labelField, labelFieldExpression} from '../../cartography/localization';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import type {
   TileflowSymbolPlacementStyle,
@@ -20,7 +21,6 @@ import type {
 import {resolveRoads} from '../roads';
 import {tileflowRoadClasses, tileflowRoadClassFilter} from '../roads/semantics';
 import {resolveLabels, visibleRoadLabelClasses} from './index';
-import {labelField, labelFieldExpression} from './language';
 
 const placeClasses: Record<TileflowPlaceLabelClass, readonly string[]> = {
   continent: ['continent'],
@@ -163,7 +163,6 @@ export function compileLabels(
         spacing: 240,
         padding: 8,
         haloWidth: 1.8,
-        weight: 'semibold',
       }),
     },
     junctions: symbolStyle(context, 'roads', {
@@ -175,7 +174,6 @@ export function compileLabels(
       size: 10,
       padding: 6,
       haloWidth: 1.8,
-      weight: 'medium',
     }),
     water: {
       ocean: symbolStyle(context, 'water', {
@@ -526,12 +524,11 @@ function symbolStyle(
       {
         allowOverlap: false,
         color: domain === 'water' ? context.colors.labels.water : context.colors.labels.primary,
-        font: typography.font,
+        ...typographyTextStyle(typography),
         haloColor: context.colors.labels.halo,
         haloWidth: 1.2,
         optional: true,
         padding: 4,
-        weight: typography.weight,
       },
       text,
     ),

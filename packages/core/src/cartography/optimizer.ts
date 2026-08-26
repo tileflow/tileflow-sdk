@@ -1,4 +1,6 @@
+import {tileflowCompilerMetadataKeys} from './contributions';
 import {isMapLibreExpressionOperator} from './expression-operators';
+import {tileflowModuleEffectMetadataKey} from './module-effects';
 
 type StyleLayer = Record<string, unknown> & {id: string; type: string};
 
@@ -9,7 +11,7 @@ type ConditionalValue = {
 
 type CombinedValue = {ok: true; value: unknown} | {ok: false};
 
-const roadHighZoom = 16;
+const roadHighZoom = 15;
 
 const roadClasses = new Set([
   'motorway',
@@ -27,30 +29,37 @@ const roadClasses = new Set([
   'pedestrian',
 ]);
 
-const roadLabelClasses = new Set(roadClasses);
+const landcoverTargets = new Set([
+  'farmland',
+  'flowerbed',
+  'grass',
+  'ice',
+  'meadow',
+  'protected',
+  'recreationGround',
+  'rock',
+  'sand',
+  'scrub',
+  'urbanPark',
+  'villageGreen',
+  'wetland',
+  'wood',
+]);
 
-const landcoverLayerIds = new Set(
-  ['farmland', 'grass', 'ice', 'protected', 'rock', 'sand', 'scrub', 'wetland', 'wood'].map(
-    (name) => `streets-landcover-${name}`,
-  ),
-);
-
-const landuseLayerIds = new Set(
-  [
-    'cemetery',
-    'civic',
-    'commercial',
-    'education',
-    'government',
-    'industrial',
-    'medical',
-    'military',
-    'parking',
-    'railway',
-    'recreation',
-    'residential',
-  ].map((name) => `streets-landuse-${name}`),
-);
+const landuseTargets = new Set([
+  'cemetery',
+  'civic',
+  'commercial',
+  'education',
+  'government',
+  'industrial',
+  'medical',
+  'military',
+  'parking',
+  'railway',
+  'recreation',
+  'residential',
+]);
 
 const linePaintDefaults: Record<string, unknown> = {
   'line-blur': 0,
@@ -70,7 +79,7 @@ const lineLayoutDefaults: Record<string, unknown> = {
 };
 
 /**
- * Reduces physical MapLibre buckets after raw overrides have been resolved.
+ * Reduces physical MapLibre buckets after semantic module effects have been resolved.
  * Logical compiler IDs remain available below the high-detail handoff while
  * equivalent high-zoom layers are represented by data-driven cohorts.
  */
@@ -79,21 +88,30 @@ export function optimizeTileflowLayers(input: readonly Record<string, unknown>[]
   layers = consolidateRoadLines(layers);
   layers = consolidateRoadHatches(layers);
   layers = consolidateRoadLabels(layers);
-  layers = consolidateFillFamily(layers, landcoverLayerIds, 'streets-landcover');
-  layers = consolidateFillFamily(layers, landuseLayerIds, 'streets-landuse');
+  layers = consolidateFillFamily(
+    layers,
+    (target) => isFillTarget(target, 'land.landcover', landcoverTargets),
+    'streets-landcover',
+  );
+  layers = consolidateFillFamily(
+    layers,
+    (target) => isFillTarget(target, 'land.landuse', landuseTargets),
+    'streets-landuse',
+  );
   layers = consolidateWaterways(layers);
   return layers;
 }
 
 function consolidateRoadLines(layers: StyleLayer[]): StyleLayer[] {
-  const pattern = /^streets-road-(tunnel|surface|bridge)-(.+)-(shadow|casing|fill)$/;
   const groups = new Map<string, Array<{index: number; layer: StyleLayer}>>();
 
   for (const [index, layer] of layers.entries()) {
     if (layer.type !== 'line') continue;
-    const match = pattern.exec(layer.id);
-    if (!match || !roadClasses.has(match[2]!)) continue;
-    const key = `${match[1]}:${match[3]}:${roadCohort(match[2]!)}`;
+    const match = /^roads\.classes\.([^.]+)\.(tunnel|surface|bridge)\.(shadow|casing|fill)$/u.exec(
+      semanticTarget(layer) ?? '',
+    );
+    if (!match || !roadClasses.has(match[1]!)) continue;
+    const key = `${match[2]}:${match[3]}:${roadCohort(match[1]!)}`;
     const group = groups.get(key) ?? [];
     group.push({index, layer});
     groups.set(key, group);
@@ -157,7 +175,7 @@ function canMergeRoadLines(layers: StyleLayer[]): boolean {
       Object.keys(asRecord(layer.layout)).every((key) => supportedLayout.has(key)) &&
       asRecord(layer.paint)['line-pattern'] === undefined &&
       asRecord(layer.layout).visibility !== 'none' &&
-      !isRawOverride(layer) &&
+      !isModuleEffect(layer) &&
       sameTopLevelProperties(layer, common, ['minzoom']),
   );
 }
@@ -219,15 +237,16 @@ function mergeRoadLineGroup(id: string, layers: StyleLayer[]): StyleLayer | unde
 }
 
 function consolidateRoadHatches(layers: StyleLayer[]): StyleLayer[] {
-  const pattern = /^streets-road-(tunnel|surface|bridge)-(.+)-hatch$/;
   const groups = new Map<string, Array<{index: number; layer: StyleLayer}>>();
   for (const [index, layer] of layers.entries()) {
     if (layer.type !== 'symbol' && layer.type !== 'line') continue;
-    const match = pattern.exec(layer.id);
-    if (!match || !roadClasses.has(match[2]!)) continue;
-    const group = groups.get(match[1]!) ?? [];
+    const match = /^roads\.classes\.([^.]+)\.(tunnel|surface|bridge)\.hatch$/u.exec(
+      semanticTarget(layer) ?? '',
+    );
+    if (!match || !roadClasses.has(match[1]!)) continue;
+    const group = groups.get(match[2]!) ?? [];
     group.push({index, layer});
-    groups.set(match[1]!, group);
+    groups.set(match[2]!, group);
   }
 
   const replacements = new Map<number, StyleLayer[]>();
@@ -235,7 +254,7 @@ function consolidateRoadHatches(layers: StyleLayer[]): StyleLayer[] {
     if (
       entries.length < 2 ||
       !areContiguous(entries) ||
-      entries.some(({layer}) => isRawOverride(layer))
+      entries.some(({layer}) => isModuleEffect(layer))
     ) {
       continue;
     }
@@ -375,15 +394,19 @@ function consolidateRoadHatches(layers: StyleLayer[]): StyleLayer[] {
 
 function consolidateRoadLabels(layers: StyleLayer[]): StyleLayer[] {
   const candidates = layers
-    .map((layer, index) => ({index, layer}))
+    .map((layer, index) => ({
+      index,
+      layer,
+      roadClass: /^labels\.roads\.([^.]+)$/u.exec(semanticTarget(layer) ?? '')?.[1],
+    }))
     .filter(
-      ({layer}) =>
+      ({layer, roadClass}) =>
         layer.type === 'symbol' &&
-        /^streets-label-road-(?!shield|junction)/.test(layer.id) &&
-        roadLabelClasses.has(layer.id.slice('streets-label-road-'.length)) &&
+        roadClass !== undefined &&
+        roadClasses.has(roadClass) &&
         typeof layer['source-layer'] === 'string',
     );
-  if (candidates.some(({layer}) => isRawOverride(layer))) return layers;
+  if (candidates.some(({layer}) => isModuleEffect(layer))) return layers;
   const groups = new Map<string, typeof candidates>();
   for (const candidate of candidates) {
     const {layer} = candidate;
@@ -407,9 +430,9 @@ function consolidateRoadLabels(layers: StyleLayer[]): StyleLayer[] {
     const first = group[0]!.layer;
     if (!group.every(({layer}) => sameTopLevelProperties(layer, first))) continue;
     const conditions = group.map(({layer}) => asFilter(layer.filter));
-    const id = group.some(({layer}) => layer.id.endsWith('-motorway'))
+    const id = group.some(({roadClass}) => roadClass === 'motorway')
       ? 'streets-label-road-major'
-      : group.some(({layer}) => layer.id.endsWith('-service'))
+      : group.some(({roadClass}) => roadClass === 'service')
         ? 'streets-label-road-local'
         : `streets-label-road-cohort-${groupNumber++}`;
     if (hasGeneratedIdCollision(layers, id, group)) continue;
@@ -439,13 +462,13 @@ function consolidateRoadLabels(layers: StyleLayer[]): StyleLayer[] {
 
 function consolidateFillFamily(
   layers: StyleLayer[],
-  allowedIds: ReadonlySet<string>,
+  acceptsTarget: (target: string | undefined) => boolean,
   mergedId: string,
 ): StyleLayer[] {
   const candidates = layers
     .map((layer, index) => ({index, layer}))
-    .filter(({layer}) => layer.type === 'fill' && allowedIds.has(layer.id));
-  if (candidates.some(({layer}) => isRawOverride(layer))) return layers;
+    .filter(({layer}) => layer.type === 'fill' && acceptsTarget(semanticTarget(layer)));
+  if (candidates.some(({layer}) => isModuleEffect(layer))) return layers;
   const groups = new Map<string, typeof candidates>();
   for (const candidate of candidates) {
     const {layer} = candidate;
@@ -537,17 +560,19 @@ function consolidateFillFamily(
 function consolidateWaterways(layers: StyleLayer[]): StyleLayer[] {
   const replacements = new Map<number, StyleLayer[]>();
   for (const name of ['river', 'canal', 'stream', 'other']) {
-    const regularIndex = layers.findIndex((layer) => layer.id === `streets-waterway-${name}`);
+    const regularIndex = layers.findIndex(
+      (layer) => semanticTarget(layer) === `water.waterways.${name}`,
+    );
     const intermittentIndex = layers.findIndex(
-      (layer) => layer.id === `streets-waterway-${name}-intermittent`,
+      (layer) => semanticTarget(layer) === `water.intermittent.waterways.${name}`,
     );
     if (regularIndex < 0 || intermittentIndex < 0) continue;
     const regular = layers[regularIndex]!;
     const intermittent = layers[intermittentIndex]!;
     if (
       !sameLayerSource(regular, intermittent) ||
-      isRawOverride(regular) ||
-      isRawOverride(intermittent) ||
+      isModuleEffect(regular) ||
+      isModuleEffect(intermittent) ||
       intermittentIndex !== regularIndex + 1 ||
       minimumZoom(regular) !== minimumZoom(intermittent) ||
       maximumZoom(regular) !== maximumZoom(intermittent) ||
@@ -623,6 +648,43 @@ function combineConditionalValues(
   if (allEqual(entries.map(({value}) => value))) {
     return {ok: true, value: entries[0]?.value};
   }
+  const letValues = entries.map(({value}) =>
+    Array.isArray(value) && value.length === 4 && value[0] === 'let' ? value : undefined,
+  );
+  if (
+    letValues.every((value) => value !== undefined) &&
+    allEqual(letValues.map((value) => value?.[1])) &&
+    allEqual(letValues.map((value) => value?.[3]))
+  ) {
+    const combined = combineConditionalValues(
+      entries.map(({condition}, index) => ({
+        condition,
+        value: letValues[index]![2],
+      })),
+      letValues[0]![2],
+      minimumRelevantZoom,
+    );
+    if (!combined.ok) return combined;
+    return {ok: true, value: ['let', letValues[0]![1], combined.value, letValues[0]![3]]};
+  }
+  const additiveValues = entries.map(({value}) =>
+    Array.isArray(value) && value.length === 3 && value[0] === '+' ? value : undefined,
+  );
+  if (
+    additiveValues.every((value) => value !== undefined) &&
+    allEqual(additiveValues.map((value) => value?.[2]))
+  ) {
+    const combined = combineConditionalValues(
+      entries.map(({condition}, index) => ({
+        condition,
+        value: additiveValues[index]![1],
+      })),
+      additiveValues[0]![1],
+      minimumRelevantZoom,
+    );
+    if (!combined.ok) return combined;
+    return {ok: true, value: ['+', combined.value, additiveValues[0]![2]]};
+  }
   if (
     entries.some(({value}) => containsZoom(value) && !isZoomInterpolation(value)) ||
     (containsZoom(fallback) && !isZoomInterpolation(fallback))
@@ -645,11 +707,13 @@ function combineConditionalValues(
   }
   if (stops.size === 1) stops.add(24);
   const orderedStops = [...stops].sort((left, right) => left - right);
+  const interpolationMethods = zoomExpressions.map((value) => value[1]);
+  const interpolationMethod = allEqual(interpolationMethods) ? interpolationMethods[0] : ['linear'];
   return {
     ok: true,
     value: [
       'interpolate',
-      ['linear'],
+      interpolationMethod,
       ['zoom'],
       ...orderedStops.flatMap((stop) => [
         stop,
@@ -840,7 +904,8 @@ function isZoomInterpolation(value: unknown): boolean {
     Array.isArray(value) &&
     value[0] === 'interpolate' &&
     Array.isArray(value[1]) &&
-    value[1][0] === 'linear' &&
+    (value[1][0] === 'linear' ||
+      (value[1][0] === 'exponential' && typeof value[1][1] === 'number')) &&
     Array.isArray(value[2]) &&
     value[2].length === 1 &&
     value[2][0] === 'zoom'
@@ -906,18 +971,53 @@ function sameTopLevelProperties(
   return allEqual([select(left), select(right)]);
 }
 
-function isRawOverride(layer: StyleLayer): boolean {
-  const marker = asRecord(layer.metadata)['tileflow:rawOverride'];
-  // Adds and moves are physical ordering contracts and must never be folded.
-  // Legacy boolean markers remain fail-closed. Patches may be consolidated
-  // only when the normal typed/range/equivalence guards prove it safe.
-  return marker === true || marker === 'add' || marker === 'move';
+function isModuleEffect(layer: StyleLayer): boolean {
+  const marker = asRecord(layer.metadata)[tileflowModuleEffectMetadataKey];
+  // Added semantic contributions carry an explicit ordering contract and must
+  // never be folded. Patches may be consolidated when the normal typed/range/
+  // equivalence guards prove it safe.
+  return marker === 'add';
 }
 
 function publicMetadata(value: unknown): Record<string, unknown> | undefined {
   const metadata = {...asRecord(value)};
-  delete metadata['tileflow:rawOverride'];
+  delete metadata[tileflowModuleEffectMetadataKey];
+  for (const key of Object.values(tileflowCompilerMetadataKeys)) delete metadata[key];
   return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
+function isFillTarget(
+  target: string | undefined,
+  prefix: string,
+  allowedNames: ReadonlySet<string>,
+): boolean {
+  if (!target?.startsWith(`${prefix}.`) || !target.endsWith('.fill')) return false;
+  const name = target.slice(prefix.length + 1, -'.fill'.length);
+  return !name.includes('.') && allowedNames.has(name);
+}
+
+function semanticTarget(layer: StyleLayer): string | undefined {
+  const target = asRecord(layer.metadata)[tileflowCompilerMetadataKeys.target];
+  return typeof target === 'string' ? target : legacySemanticTarget(layer.id);
+}
+
+/** Compatibility for direct optimizer callers created before compiler provenance was attached. */
+function legacySemanticTarget(id: string): string | undefined {
+  let match = /^streets-road-(tunnel|surface|bridge)-(.+)-(shadow|casing|fill)$/u.exec(id);
+  if (match) return `roads.classes.${match[2]}.${match[1]}.${match[3]}`;
+  match = /^streets-road-(tunnel|surface|bridge)-(.+)-hatch$/u.exec(id);
+  if (match) return `roads.classes.${match[2]}.${match[1]}.hatch`;
+  match = /^streets-label-road-(.+)$/u.exec(id);
+  if (match) return `labels.roads.${match[1]}`;
+  match = /^streets-landcover-(.+)$/u.exec(id);
+  if (match) return `land.landcover.${match[1]}.fill`;
+  match = /^streets-landuse-(.+)$/u.exec(id);
+  if (match) return `land.landuse.${match[1]}.fill`;
+  match = /^streets-waterway-(river|canal|stream|other)(-intermittent)?$/u.exec(id);
+  if (match) {
+    return match[2] ? `water.intermittent.waterways.${match[1]}` : `water.waterways.${match[1]}`;
+  }
+  return undefined;
 }
 
 function areContiguous(entries: readonly {index: number}[]): boolean {

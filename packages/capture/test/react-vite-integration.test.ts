@@ -36,7 +36,11 @@ test(
       plugins: [tileflow()],
       resolve: {alias: {'@tileflow/react': reactSource}},
       root: cwd,
-      server: {host: '127.0.0.1', port: 0},
+      server: {
+        host: '127.0.0.1',
+        port: 0,
+        watch: {usePolling: process.platform === 'win32'},
+      },
     });
     await vite.listen();
     const address = vite.httpServer?.address();
@@ -141,12 +145,18 @@ document.head.append(sheet);
 createRoot(document.getElementById('root')).render(<App />);
 `;
 
-const applicationConfig = `import {defineMap} from '@tileflow/core';
+const applicationConfig = `import {defineMap, openMapTiles, vectorTiles} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 export default defineMap({
   id: 'main',
   version: 1,
   extends: streets,
+  data: vectorTiles({
+    attribution: '© Tileflow capture fixture',
+    revision: 'capture-fixture-v1',
+    schema: openMapTiles(),
+    tiles: ['https://tiles.example.invalid/{z}/{x}/{y}.pbf']
+  }),
   scenes: {
     desktop: {
       camera: {type: 'center', center: [0, 0], zoom: 1},

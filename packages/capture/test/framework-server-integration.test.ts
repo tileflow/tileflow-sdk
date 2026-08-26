@@ -169,12 +169,18 @@ document.body.style.margin = '0';
 const frame = React.createElement('div', {style: {width: 222}}, React.createElement(Map, {captureId: 'proof', height: 100, imageUrl: '${imageUrl}', mode: 'image', source: {kind: 'tileflow', map: 'main'}}));
 createRoot(document.getElementById('root')).render(frame);
 `;
-const tileflowConfig = `import {defineMap} from '@tileflow/core';
+const tileflowConfig = `import {defineMap, openMapTiles, vectorTiles} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 export default defineMap({
   id: 'main',
   version: 1,
   extends: streets,
+  data: vectorTiles({
+    attribution: '© Tileflow capture fixture',
+    revision: 'capture-fixture-v1',
+    schema: openMapTiles(),
+    tiles: ['https://tiles.example.invalid/{z}/{x}/{y}.pbf']
+  }),
   scenes: {
     proof: {
       camera: {type: 'center', center: [0, 0], zoom: 1},

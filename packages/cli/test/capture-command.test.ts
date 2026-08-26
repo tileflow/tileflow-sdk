@@ -7,13 +7,13 @@ import {tmpdir} from 'node:os';
 import {join, win32} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
-import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   createTileflowCaptureReceipt,
   createTileflowCaptureRendererIdentity,
   type TileflowCapture,
   TileflowCaptureError,
 } from '@tileflow/capture';
+import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   createExploratoryScene,
   createTileflowCaptureFailureJson,
@@ -763,6 +763,7 @@ test(
     await writeFile(
       join(directory, 'tileflow.config.ts'),
       tileflowMapFixture({
+        data: 'fixture',
         id: 'proof',
         fields: `scenes: {application: {camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 320, height: 240}, target: {kind: 'application', path: '/proof?fixture=1', captureId: 'proof'}}}`,
       }),

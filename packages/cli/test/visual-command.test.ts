@@ -459,6 +459,7 @@ test(
 );
 
 const applicationConfig = tileflowMapFixture({
+  data: 'fixture',
   id: 'proof',
   fields: `scenes: {proof: {camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 128, height: 128}, target: {kind: 'application', path: '/', captureId: 'proof'}}}`,
 });

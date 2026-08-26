@@ -142,12 +142,18 @@ export function assertPngContainsProbeColor(
   );
 }
 
-const applicationConfig = `import {defineMap} from '@tileflow/core';
+const applicationConfig = `import {defineMap, openMapTiles, vectorTiles} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 export default defineMap({
   id: 'main',
   version: 1,
   extends: streets,
+  data: vectorTiles({
+    attribution: '© Tileflow capture fixture',
+    revision: 'capture-fixture-v1',
+    schema: openMapTiles(),
+    tiles: ['https://tiles.example.invalid/{z}/{x}/{y}.pbf']
+  }),
   scenes: {
     cleanup: {
       camera: {type: 'center', center: [0, 0], zoom: 1},

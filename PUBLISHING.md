@@ -150,9 +150,9 @@ dependency range that drifts fails closed.
 Repository settings must enforce all of the following before `PUBLIC_RELEASE_BLOCKERS.json` is
 removed:
 
-- `main` is protected by a ruleset requiring pull requests, one approval, resolved conversations,
-  dismissal of stale approvals, approval of the latest push by someone other than its author, the
-  exact `CI / Required` check, linear history, and no force pushes or deletion;
+- `main` is protected by a ruleset requiring pull requests, resolved conversations, the exact
+  `CI / Required` check, linear history, and no force pushes or deletion. The ruleset deliberately
+  requires zero approving reviews so an operator or Codex can merge after self-review and green CI;
 - organization members use 2FA, Actions are limited to reviewed actions, and every third-party
   action in this repository remains pinned by full commit SHA;
 - workflow `GITHUB_TOKEN` permissions default to read-only;

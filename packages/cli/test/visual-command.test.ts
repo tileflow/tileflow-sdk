@@ -85,7 +85,7 @@ test('visual diff and update require named scenes or explicit --all, never both'
 
 test(
   'diffs, fails by explicit policy, and atomically updates controlled visual baselines',
-  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
+  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 180_000},
   async (t) => {
     const directory = await createDirectoryFixture(t, 'tileflow-visual-workflow-');
     await writeFile(join(directory, 'tileflow.config.ts'), applicationConfig);

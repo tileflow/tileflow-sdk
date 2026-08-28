@@ -1,30 +1,25 @@
 import {
-  addresses,
-  aeroways,
   boundaries,
   buildings,
-  defineRootMap,
-  expression,
+  defineMap,
+  disable,
+  expr,
+  field,
   labels,
   land,
   landforms,
-  poi,
+  refineRenderTarget,
+  renderPass,
   roads,
+  type TileflowRenderSelector,
   type TileflowRoadClassStyle,
   type TileflowSymbolStyle,
   type TileflowThemeImageValue,
   transit,
-  vegetation,
   water,
+  withRenderStack,
   zoom,
 } from '@tileflow/core';
-import {
-  addModuleLayer,
-  defineModuleEffects,
-  patchModuleLayer,
-  semanticField,
-  semanticLayer,
-} from '@tileflow/core/recipe';
 import {siegfriedFonts, siegfriedIcons} from '../assets';
 import {siegfriedThemes, siegfriedVisual} from './siegfried-themes';
 import {bindOfficialMapTheme} from './theme-helpers';
@@ -149,22 +144,25 @@ const terrainLabel = {
   },
 } satisfies TileflowSymbolStyle;
 
-const landcoverClass = ['get', semanticField('class')];
-const landcoverSubclass = ['get', semanticField('subclass')];
-const landformName = ['coalesce', ['get', semanticField('name')], ''];
-const landformElevation = ['get', semanticField('elevation')];
-const landformLabelWithoutUnit = [
-  'case',
-  ['has', semanticField('elevation')],
-  ['concat', landformName, '\n', ['to-string', landformElevation]],
+const landformName = expr.coalesce(expr.get(field('name')), '');
+const landformElevation = expr.get(field('elevation'));
+const landformLabelWithoutUnit = expr.case(
+  [
+    {
+      value: expr.concat(landformName, '\n', expr.toString(landformElevation)),
+      when: expr.has(field('elevation')),
+    },
+  ],
   landformName,
-];
+);
 
 function omitLandformElevationUnit(
   landformClass: 'arete' | 'cliff' | 'peak' | 'ridge' | 'saddle' | 'volcano',
 ) {
-  return patchModuleLayer('landforms', `landforms.classes.${landformClass}`, {
-    layout: {'text-field': landformLabelWithoutUnit},
+  return refineRenderTarget({
+    renderer: 'symbol',
+    style: {text: {field: landformLabelWithoutUnit}},
+    target: `landforms.classes.${landformClass}`,
   });
 }
 
@@ -174,20 +172,28 @@ function landcoverFilter(
     excludeSubclasses?: readonly string[];
     subclasses?: readonly string[];
   } = {},
-) {
-  const classFilter = ['match', landcoverClass, classes, true, false];
-  const filters: unknown[] = [classFilter];
+): TileflowRenderSelector {
+  const classSelector = {
+    field: 'class',
+    kind: 'in',
+    values: classes,
+  } as const satisfies TileflowRenderSelector;
+  const selectors: TileflowRenderSelector[] = [classSelector];
   if (options.subclasses) {
-    filters.push(['match', landcoverSubclass, options.subclasses, true, false]);
+    selectors.push({field: 'subclass', kind: 'in', values: options.subclasses});
   }
   if (options.excludeSubclasses) {
-    filters.push(['match', landcoverSubclass, options.excludeSubclasses, false, true]);
+    selectors.push({
+      branches: [{result: false, values: options.excludeSubclasses}],
+      field: 'subclass',
+      kind: 'match',
+      otherwise: true,
+    });
   }
-  return filters.length === 1 ? classFilter : ['all', ...filters];
+  return selectors.length === 1 ? classSelector : {kind: 'all', selectors};
 }
 
 function landcoverPattern(
-  id: string,
   target: string,
   pattern: TileflowThemeImageValue,
   classes: readonly string[],
@@ -198,33 +204,22 @@ function landcoverPattern(
     subclasses?: readonly string[];
   } = {},
 ) {
-  const filter = landcoverFilter(classes, options);
-
-  return addModuleLayer(
-    'land',
-    `land.effects.pattern.${id}`,
-    {
-      id: `siegfried-landcover-${id}-pattern`,
-      type: 'fill',
-      source: 'tileflow',
-      'source-layer': semanticLayer('landcover'),
-      minzoom: options.minZoom ?? 9,
-      filter,
-      paint: {
-        'fill-opacity': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          options.minZoom ?? 9,
-          0,
-          (options.minZoom ?? 9) + 2,
-          options.opacity ?? 0.74,
-        ],
-        'fill-pattern': pattern,
-      },
+  const minZoom = options.minZoom ?? 9;
+  return renderPass({
+    attachTo: target,
+    feature: 'landcover',
+    phase: 'overlay',
+    renderer: 'fill',
+    selector: landcoverFilter(classes, options),
+    style: {
+      minZoom,
+      opacity: zoom.linear([
+        [minZoom, 0],
+        [minZoom + 2, options.opacity ?? 0.74],
+      ]),
+      pattern,
     },
-    {after: target},
-  );
+  });
 }
 
 /**
@@ -232,7 +227,6 @@ function landcoverPattern(
  * through areas that the historical atlas engraved in key black.
  */
 function postContourLandcoverPattern(
-  id: 'rock' | 'scree',
   target: string,
   pattern: TileflowThemeImageValue,
   classes: readonly string[],
@@ -243,32 +237,22 @@ function postContourLandcoverPattern(
     subclasses?: readonly string[];
   },
 ) {
-  return addModuleLayer(
-    'water',
-    `water.effects.${id}Pattern`,
-    {
-      id: `siegfried-landcover-${id}-pattern`,
-      type: 'fill',
-      source: 'tileflow',
-      'source-layer': semanticLayer('landcover'),
-      minzoom: options.minZoom,
-      filter: landcoverFilter(classes, options),
-      paint: {
-        'fill-opacity': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          options.minZoom,
-          0,
-          options.minZoom + 2,
-          options.opacity,
-        ],
-        'fill-pattern': pattern,
-      },
+  return renderPass({
+    attachTo: target,
+    feature: 'landcover',
+    phase: 'postRelief',
+    renderer: 'fill',
+    requirements: ['land'],
+    selector: landcoverFilter(classes, options),
+    style: {
+      minZoom: options.minZoom,
+      opacity: zoom.linear([
+        [options.minZoom, 0],
+        [options.minZoom + 2, options.opacity],
+      ]),
+      pattern,
     },
-    {after: target},
-    {requires: ['land']},
-  );
+  });
 }
 
 /**
@@ -277,11 +261,10 @@ function postContourLandcoverPattern(
  * any Streets assets. Elevation is expressed by contours rather than hillshade.
  */
 export const siegfried = bindOfficialMapTheme(
-  defineRootMap({
+  defineMap({
     id: 'siegfried',
     version: 1,
     name: 'Siegfried',
-    root: {compiler: 'streets', compilerVersion: 1},
     data: {
       generation: 'v1',
       selection: {kind: 'current', product: 'world-v1'},
@@ -335,8 +318,8 @@ export const siegfried = bindOfficialMapTheme(
       mode: 'none',
     },
     modules: {
-      addresses: addresses({enabled: false}),
-      aeroways: aeroways({enabled: false}),
+      addresses: disable(),
+      aeroways: disable(),
       boundaries: boundaries({
         admin2: {
           color: siegfriedPalette.ink,
@@ -617,93 +600,124 @@ export const siegfried = bindOfficialMapTheme(
         },
         water: 'all',
       }),
-      land: land({
-        background: {opacity: 1, pattern: siegfriedVisual.pattern['paper-grain']},
-        globalLandcover: {visible: false},
-        landcover: {
-          farmland: {
-            fill: {color: siegfriedPalette.paper, minZoom: 8, opacity: 0.12},
-            outline: {color: siegfriedPalette.brown, minZoom: 13, opacity: 0.26, width: 0.38},
-          },
-          flowerbed: {fill: {color: siegfriedPalette.paper, minZoom: 13, opacity: 0.1}},
-          grass: {fill: {color: siegfriedPalette.paper, minZoom: 8, opacity: 0.08}},
-          ice: {
-            fill: {color: siegfriedPalette.paper, minZoom: 7, opacity: 0.98},
-            outline: {color: siegfriedPalette.blue, minZoom: 9, opacity: 0.62, width: 0.65},
-          },
-          meadow: {fill: {color: siegfriedPalette.paper, minZoom: 8, opacity: 0.08}},
-          protected: {fill: {visible: false}},
-          recreationGround: {fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.08}},
-          rock: {
-            fill: {color: siegfriedPalette.paper, minZoom: 8, opacity: 0.96},
-            outline: {color: siegfriedPalette.ink, minZoom: 10, opacity: 0.62, width: 0.48},
-          },
-          sand: {fill: {color: siegfriedPalette.paper, minZoom: 8, opacity: 0.94}},
-          scrub: {fill: {color: siegfriedPalette.paper, minZoom: 9, opacity: 0.1}},
-          urbanPark: {fill: {color: siegfriedPalette.paper, minZoom: 10, opacity: 0.08}},
-          villageGreen: {fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.08}},
-          wetland: {fill: {color: siegfriedPalette.paper, minZoom: 8, opacity: 0.96}},
-          wood: {
-            fill: {color: siegfriedPalette.paper, minZoom: 7, opacity: 0.98},
-            outline: {color: siegfriedPalette.ink, minZoom: 10, opacity: 0.55, width: 0.52},
-          },
-        },
-        landuse: {
-          cemetery: {
-            fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.12},
-            outline: {color: siegfriedPalette.ink, minZoom: 13, opacity: 0.42, width: 0.42},
-          },
-          civic: {fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.1}},
-          commercial: {fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.08}},
-          education: {fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.1}},
-          government: {fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.1}},
-          industrial: {
-            fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.1},
-            outline: {color: siegfriedPalette.ink, minZoom: 14, opacity: 0.3, width: 0.38},
-          },
-          medical: {fill: {color: siegfriedPalette.paper, minZoom: 12, opacity: 0.1}},
-          military: {fill: {visible: false}},
-          parking: {fill: {visible: false}, outline: {visible: false}},
-          railway: {fill: {color: siegfriedPalette.paper, minZoom: 12, opacity: 0.12}},
-          recreation: {fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.08}},
-          residential: {fill: {color: siegfriedPalette.paper, minZoom: 10, opacity: 0.06}},
-        },
-      }),
-      landforms: landforms({
-        classes: {
-          arete: terrainLabel,
-          cliff: {...terrainLabel, minZoom: 13},
-          peak: {
-            ...terrainLabel,
-            minZoom: 9,
-            priority: 64,
-            text: {
-              ...terrainLabel.text,
-              font: semiboldFont,
-              haloWidth: 0.6,
-              letterSpacing: 0.1,
-              size: expression<number>([
-                'interpolate',
-                ['linear'],
-                ['to-number', landformElevation, 0],
-                0,
-                10,
-                2_500,
-                11.5,
-                4_000,
-                15,
-                4_500,
-                16.5,
-              ]),
+      land: withRenderStack(
+        land({
+          background: {opacity: 1, pattern: siegfriedVisual.pattern['paper-grain']},
+          globalLandcover: {visible: false},
+          landcover: {
+            farmland: {
+              fill: {color: siegfriedPalette.paper, minZoom: 8, opacity: 0.12},
+              outline: {color: siegfriedPalette.brown, minZoom: 13, opacity: 0.26, width: 0.38},
+            },
+            flowerbed: {fill: {color: siegfriedPalette.paper, minZoom: 13, opacity: 0.1}},
+            grass: {fill: {color: siegfriedPalette.paper, minZoom: 8, opacity: 0.08}},
+            ice: {
+              fill: {color: siegfriedPalette.paper, minZoom: 7, opacity: 0.98},
+              outline: {color: siegfriedPalette.blue, minZoom: 9, opacity: 0.62, width: 0.65},
+            },
+            meadow: {fill: {color: siegfriedPalette.paper, minZoom: 8, opacity: 0.08}},
+            protected: {fill: {visible: false}},
+            recreationGround: {fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.08}},
+            rock: {
+              fill: {color: siegfriedPalette.paper, minZoom: 8, opacity: 0.96},
+              outline: {color: siegfriedPalette.ink, minZoom: 10, opacity: 0.62, width: 0.48},
+            },
+            sand: {fill: {color: siegfriedPalette.paper, minZoom: 8, opacity: 0.94}},
+            scrub: {fill: {color: siegfriedPalette.paper, minZoom: 9, opacity: 0.1}},
+            urbanPark: {fill: {color: siegfriedPalette.paper, minZoom: 10, opacity: 0.08}},
+            villageGreen: {fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.08}},
+            wetland: {fill: {color: siegfriedPalette.paper, minZoom: 8, opacity: 0.96}},
+            wood: {
+              fill: {color: siegfriedPalette.paper, minZoom: 7, opacity: 0.98},
+              outline: {color: siegfriedPalette.ink, minZoom: 10, opacity: 0.55, width: 0.52},
             },
           },
-          ridge: terrainLabel,
-          saddle: {...terrainLabel, minZoom: 11},
-          volcano: {...terrainLabel, minZoom: 8, priority: 62},
+          landuse: {
+            cemetery: {
+              fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.12},
+              outline: {color: siegfriedPalette.ink, minZoom: 13, opacity: 0.42, width: 0.42},
+            },
+            civic: {fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.1}},
+            commercial: {fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.08}},
+            education: {fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.1}},
+            government: {fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.1}},
+            industrial: {
+              fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.1},
+              outline: {color: siegfriedPalette.ink, minZoom: 14, opacity: 0.3, width: 0.38},
+            },
+            medical: {fill: {color: siegfriedPalette.paper, minZoom: 12, opacity: 0.1}},
+            military: {fill: {visible: false}},
+            parking: {fill: {visible: false}, outline: {visible: false}},
+            railway: {fill: {color: siegfriedPalette.paper, minZoom: 12, opacity: 0.12}},
+            recreation: {fill: {color: siegfriedPalette.paper, minZoom: 11, opacity: 0.08}},
+            residential: {fill: {color: siegfriedPalette.paper, minZoom: 10, opacity: 0.06}},
+          },
+        }),
+        {
+          forestPattern: landcoverPattern(
+            'land.landcover.wood.outline',
+            siegfriedVisual.pattern.forest,
+            ['wood', 'forest'],
+            {minZoom: 8, opacity: 0.84},
+          ),
+          gravelPattern: landcoverPattern(
+            'land.landcover.sand.fill',
+            siegfriedVisual.pattern.gravel,
+            ['sand', 'beach'],
+            {minZoom: 10, opacity: 0.64},
+          ),
+          orchardPattern: landcoverPattern(
+            'land.landcover.urbanPark.fill',
+            siegfriedVisual.pattern.orchard,
+            ['grass'],
+            {minZoom: 12, opacity: 0.62, subclasses: ['garden', 'orchard']},
+          ),
+          wetlandPattern: landcoverPattern(
+            'land.landcover.wetland.fill',
+            siegfriedVisual.pattern.wetland,
+            ['wetland'],
+            {minZoom: 9, opacity: 0.8},
+          ),
         },
-        elevation: true,
-      }),
-      poi: poi({enabled: false}),
+      ),
+      landforms: withRenderStack(
+        landforms({
+          classes: {
+            arete: terrainLabel,
+            cliff: {...terrainLabel, minZoom: 13},
+            peak: {
+              ...terrainLabel,
+              minZoom: 9,
+              priority: 64,
+              text: {
+                ...terrainLabel.text,
+                font: semiboldFont,
+                haloWidth: 0.6,
+                letterSpacing: 0.1,
+                size: expr.interpolate({kind: 'linear'}, expr.toNumber(landformElevation, 0), [
+                  [0, 10],
+                  [2_500, 11.5],
+                  [4_000, 15],
+                  [4_500, 16.5],
+                ]),
+              },
+            },
+            ridge: terrainLabel,
+            saddle: {...terrainLabel, minZoom: 11},
+            volcano: {...terrainLabel, minZoom: 8, priority: 62},
+          },
+          elevation: true,
+        }),
+        {
+          areteLabel: omitLandformElevationUnit('arete'),
+          cliffLabel: omitLandformElevationUnit('cliff'),
+          peakLabel: omitLandformElevationUnit('peak'),
+          ridgeLabel: omitLandformElevationUnit('ridge'),
+          saddleLabel: omitLandformElevationUnit('saddle'),
+          volcanoLabel: omitLandformElevationUnit('volcano'),
+        },
+      ),
+      poi: disable(),
       roads: roads({
         areas: {
           pedestrian: {
@@ -829,245 +843,191 @@ export const siegfried = bindOfficialMapTheme(
           },
         },
       }),
-      vegetation: vegetation({enabled: false}),
-      water: water({
-        bathymetry: {visible: false},
-        bodies: {
-          fill: {color: siegfriedPalette.blue, opacity: 0.19},
-          outline: {
-            color: siegfriedPalette.blue,
-            minZoom: 5,
-            opacity: 0.9,
-            width: zoom.linear([
-              [5, 0.4],
-              [14, 0.8],
-              [18, 1.15],
-            ]),
+      vegetation: disable(),
+      water: withRenderStack(
+        water({
+          bathymetry: {visible: false},
+          bodies: {
+            fill: {color: siegfriedPalette.blue, opacity: 0.19},
+            outline: {
+              color: siegfriedPalette.blue,
+              minZoom: 5,
+              opacity: 0.9,
+              width: zoom.linear([
+                [5, 0.4],
+                [14, 0.8],
+                [18, 1.15],
+              ]),
+            },
           },
-        },
-        intermittent: {
-          bodies: {fill: {color: siegfriedPalette.blue, opacity: 0.1}},
+          intermittent: {
+            bodies: {fill: {color: siegfriedPalette.blue, opacity: 0.1}},
+            waterways: {
+              color: siegfriedPalette.blue,
+              dash: [2.5, 2],
+              opacity: 0.58,
+            },
+          },
           waterways: {
-            color: siegfriedPalette.blue,
-            dash: [2.5, 2],
-            opacity: 0.58,
+            canal: {
+              color: siegfriedPalette.blue,
+              minZoom: 8,
+              opacity: 0.9,
+              width: zoom.linear([
+                [8, 0.35],
+                [16, 1.6],
+              ]),
+            },
+            other: {
+              color: siegfriedPalette.blue,
+              minZoom: 12,
+              opacity: 0.72,
+              width: zoom.linear([
+                [12, 0.25],
+                [17, 0.85],
+              ]),
+            },
+            river: {
+              color: siegfriedPalette.blue,
+              minZoom: 6,
+              opacity: 0.96,
+              width: zoom.linear([
+                [6, 0.42],
+                [16, 2.1],
+              ]),
+            },
+            stream: {
+              color: siegfriedPalette.blue,
+              minZoom: 10,
+              opacity: 0.88,
+              width: zoom.linear([
+                [10, 0.3],
+                [16, 1.15],
+              ]),
+            },
           },
+        }),
+        {
+          rockMask: renderPass({
+            attachTo: 'water.bodies.fill',
+            feature: 'landcover',
+            phase: 'underlay',
+            renderer: 'fill',
+            requirements: ['land'],
+            selector: {field: 'class', kind: 'in', values: ['rock']},
+            style: {
+              color: siegfriedPalette.paper,
+              minZoom: 9,
+              opacity: siegfriedVisual.number.rockMaskOpacity,
+            },
+          }),
+          rockPattern: postContourLandcoverPattern(
+            'water.render.rockMask',
+            siegfriedVisual.pattern.rock,
+            ['rock'],
+            {
+              excludeSubclasses: ['scree', 'talus'],
+              minZoom: 9,
+              opacity: 0.9,
+            },
+          ),
+          screePattern: postContourLandcoverPattern(
+            'water.render.rockPattern',
+            siegfriedVisual.pattern.scree,
+            ['rock'],
+            {
+              minZoom: 10,
+              opacity: 0.82,
+              subclasses: ['scree', 'talus'],
+            },
+          ),
+          glacierMask: renderPass({
+            attachTo: 'water.bodies.fill',
+            feature: 'landcover',
+            phase: 'underlay',
+            renderer: 'fill',
+            requirements: ['land'],
+            selector: {field: 'class', kind: 'in', values: ['ice', 'glacier']},
+            style: {color: siegfriedPalette.paper, minZoom: 7, opacity: 0.98},
+          }),
+          glacierPattern: renderPass({
+            attachTo: 'water.render.glacierMask',
+            feature: 'landcover',
+            phase: 'postRelief',
+            renderer: 'fill',
+            requirements: ['land'],
+            selector: {field: 'class', kind: 'in', values: ['ice', 'glacier']},
+            style: {
+              minZoom: 8,
+              opacity: zoom.linear([
+                [8, 0],
+                [10, 0.74],
+                [15, 0.66],
+              ]),
+              pattern: siegfriedVisual.pattern.glacier,
+            },
+          }),
+          glacierOutline: renderPass({
+            attachTo: 'water.render.glacierPattern',
+            feature: 'landcover',
+            phase: 'postRelief',
+            renderer: 'line',
+            requirements: ['land'],
+            selector: {field: 'class', kind: 'in', values: ['ice', 'glacier']},
+            style: {
+              cap: 'round',
+              color: siegfriedPalette.blue,
+              join: 'round',
+              minZoom: 9,
+              opacity: 0.48,
+              width: 0.5,
+            },
+          }),
+          waterLines: renderPass({
+            attachTo: 'water.bodies.outline',
+            feature: 'water',
+            phase: 'overlay',
+            renderer: 'fill',
+            selector: {
+              coerce: 'number',
+              fallback: 0,
+              field: 'intermittent',
+              kind: 'compare',
+              operator: 'ne',
+              value: 1,
+            },
+            style: {
+              minZoom: 7,
+              opacity: zoom.linear([
+                [7, 0],
+                [9, 0.48],
+                [16, 0.32],
+              ]),
+              pattern: siegfriedVisual.pattern['water-lines'],
+            },
+          }),
+          intermittentWaterLines: renderPass({
+            attachTo: 'water.intermittent.bodies.fill',
+            feature: 'water',
+            phase: 'overlay',
+            renderer: 'fill',
+            selector: {
+              coerce: 'number',
+              fallback: 0,
+              field: 'intermittent',
+              kind: 'compare',
+              operator: 'eq',
+              value: 1,
+            },
+            style: {
+              minZoom: 9,
+              opacity: 0.22,
+              pattern: siegfriedVisual.pattern['water-lines'],
+            },
+          }),
         },
-        waterways: {
-          canal: {
-            color: siegfriedPalette.blue,
-            minZoom: 8,
-            opacity: 0.9,
-            width: zoom.linear([
-              [8, 0.35],
-              [16, 1.6],
-            ]),
-          },
-          other: {
-            color: siegfriedPalette.blue,
-            minZoom: 12,
-            opacity: 0.72,
-            width: zoom.linear([
-              [12, 0.25],
-              [17, 0.85],
-            ]),
-          },
-          river: {
-            color: siegfriedPalette.blue,
-            minZoom: 6,
-            opacity: 0.96,
-            width: zoom.linear([
-              [6, 0.42],
-              [16, 2.1],
-            ]),
-          },
-          stream: {
-            color: siegfriedPalette.blue,
-            minZoom: 10,
-            opacity: 0.88,
-            width: zoom.linear([
-              [10, 0.3],
-              [16, 1.15],
-            ]),
-          },
-        },
-      }),
+      ),
     },
-    ...defineModuleEffects([
-      omitLandformElevationUnit('arete'),
-      omitLandformElevationUnit('cliff'),
-      omitLandformElevationUnit('peak'),
-      omitLandformElevationUnit('ridge'),
-      omitLandformElevationUnit('saddle'),
-      omitLandformElevationUnit('volcano'),
-      landcoverPattern(
-        'forest',
-        'land.landcover.wood.outline',
-        siegfriedVisual.pattern.forest,
-        ['wood', 'forest'],
-        {minZoom: 8, opacity: 0.84},
-      ),
-      landcoverPattern(
-        'gravel',
-        'land.landcover.sand.fill',
-        siegfriedVisual.pattern.gravel,
-        ['sand', 'beach'],
-        {
-          minZoom: 10,
-          opacity: 0.64,
-        },
-      ),
-      landcoverPattern(
-        'orchard',
-        'land.landcover.urbanPark.fill',
-        siegfriedVisual.pattern.orchard,
-        ['grass'],
-        {
-          minZoom: 12,
-          opacity: 0.62,
-          subclasses: ['garden', 'orchard'],
-        },
-      ),
-      landcoverPattern(
-        'wetland',
-        'land.landcover.wetland.fill',
-        siegfriedVisual.pattern.wetland,
-        ['wetland'],
-        {
-          minZoom: 9,
-          opacity: 0.8,
-        },
-      ),
-      addModuleLayer(
-        'water',
-        'water.effects.rockMask',
-        {
-          id: 'siegfried-rock-contour-mask',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('landcover'),
-          minzoom: 9,
-          filter: ['match', landcoverClass, ['rock'], true, false],
-          // Retain a muted trace of quantitative relief while the key-ink
-          // hachure takes visual ownership of exposed rock.
-          paint: {
-            'fill-color': siegfriedPalette.paper,
-            'fill-opacity': siegfriedVisual.number.rockMaskOpacity,
-          },
-        },
-        {before: 'water.bodies.fill'},
-        {requires: ['land']},
-      ),
-      postContourLandcoverPattern(
-        'rock',
-        'water.effects.rockMask',
-        siegfriedVisual.pattern.rock,
-        ['rock'],
-        {
-          excludeSubclasses: ['scree', 'talus'],
-          minZoom: 9,
-          opacity: 0.9,
-        },
-      ),
-      postContourLandcoverPattern(
-        'scree',
-        'water.effects.rockPattern',
-        siegfriedVisual.pattern.scree,
-        ['rock'],
-        {
-          minZoom: 10,
-          opacity: 0.82,
-          subclasses: ['scree', 'talus'],
-        },
-      ),
-      addModuleLayer(
-        'water',
-        'water.effects.glacierMask',
-        {
-          id: 'siegfried-glacier-mask',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('landcover'),
-          minzoom: 7,
-          filter: ['match', landcoverClass, ['ice', 'glacier'], true, false],
-          paint: {'fill-color': siegfriedPalette.paper, 'fill-opacity': 0.98},
-        },
-        {before: 'water.bodies.fill'},
-        {requires: ['land']},
-      ),
-      addModuleLayer(
-        'water',
-        'water.effects.glacierPattern',
-        {
-          id: 'siegfried-landcover-glacier-pattern',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('landcover'),
-          minzoom: 8,
-          filter: ['match', landcoverClass, ['ice', 'glacier'], true, false],
-          paint: {
-            'fill-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0, 10, 0.74, 15, 0.66],
-            'fill-pattern': siegfriedVisual.pattern.glacier,
-          },
-        },
-        {after: 'water.effects.glacierMask'},
-        {requires: ['land']},
-      ),
-      addModuleLayer(
-        'water',
-        'water.effects.glacierOutline',
-        {
-          id: 'siegfried-glacier-outline',
-          type: 'line',
-          source: 'tileflow',
-          'source-layer': semanticLayer('landcover'),
-          minzoom: 9,
-          filter: ['match', landcoverClass, ['ice', 'glacier'], true, false],
-          layout: {'line-cap': 'round', 'line-join': 'round'},
-          paint: {
-            'line-color': siegfriedPalette.blue,
-            'line-opacity': 0.48,
-            'line-width': 0.5,
-          },
-        },
-        {after: 'water.effects.glacierPattern'},
-        {requires: ['land']},
-      ),
-      addModuleLayer(
-        'water',
-        'water.effects.lines',
-        {
-          id: 'siegfried-water-lines-pattern',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('water'),
-          minzoom: 7,
-          filter: ['!=', ['to-number', ['get', semanticField('intermittent')], 0], 1],
-          paint: {
-            'fill-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0, 9, 0.48, 16, 0.32],
-            'fill-pattern': siegfriedVisual.pattern['water-lines'],
-          },
-        },
-        {after: 'water.bodies.outline'},
-      ),
-      addModuleLayer(
-        'water',
-        'water.effects.intermittentLines',
-        {
-          id: 'siegfried-water-intermittent-lines-pattern',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('water'),
-          minzoom: 9,
-          filter: ['==', ['to-number', ['get', semanticField('intermittent')], 0], 1],
-          paint: {
-            'fill-opacity': 0.22,
-            'fill-pattern': siegfriedVisual.pattern['water-lines'],
-          },
-        },
-        {after: 'water.intermittent.bodies.fill'},
-      ),
-    ]),
     view: {
       bearing: 0,
       center: [7.6586, 45.9763],

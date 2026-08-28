@@ -3,20 +3,34 @@ import test from 'node:test';
 import {
   color,
   defineTheme,
-  expression,
+  expr,
+  field,
   fixed,
   labels,
   land,
+  landforms,
   parseTileflowMap as parseMap,
   poi,
+  renderPass,
   roads,
+  tileflowLandformClasses,
+  tileflowRenderSelectorComparisons,
+  tileflowRenderSelectorGeometries,
+  tileflowRenderStackLimits,
+  tileflowRenderStackPhases,
+  tileflowRenderStackRenderers,
+  tileflowRoadClasses,
+  tileflowThemeLimits,
+  tileflowThemeTokenCategories,
   tileflowWorldV1Schema,
   token,
   validateTileflowMap,
   vegetation,
   water,
+  withRenderStack,
   zoom,
 } from '../src';
+import {tileflowLayerDomains} from '../src/cartography/domains';
 import {extendStreets, testLightTheme} from './map-fixture';
 
 function parseDesign(input: unknown) {
@@ -62,6 +76,31 @@ test('requires concrete portable theme names in every map selector', () => {
       name,
     );
   }
+});
+
+test('keeps the canonical theme vocabulary and collection limit aligned with validation', () => {
+  assert.deepEqual(
+    Object.keys(testLightTheme.tokens).sort(),
+    [...tileflowThemeTokenCategories].sort(),
+  );
+
+  const themes = Object.fromEntries(
+    Array.from({length: tileflowThemeLimits.maxThemes}, (_, index) => {
+      const name = `theme-${index}`;
+      return [name, {...testLightTheme, id: name}];
+    }),
+  );
+  assert.equal(validateDesign({defaultTheme: 'theme-0', themes}).valid, true);
+  assert.equal(
+    validateDesign({
+      defaultTheme: 'theme-0',
+      themes: {
+        ...themes,
+        overflow: {...testLightTheme, id: 'overflow'},
+      },
+    }).valid,
+    false,
+  );
 });
 
 test('accepts the canonical singular map design and validates bounded controls', () => {
@@ -380,22 +419,17 @@ test('accepts category-safe theme values, expressions, and zoom ramps in style s
           ]),
         },
         globalLandcover: {
-          color: expression<string>([
-            'case',
-            ['boolean', ['feature-state', 'active'], false],
-            token.color('surface.active'),
+          color: expr.case(
+            [
+              {
+                when: expr.toBoolean(expr.featureState('active'), false),
+                value: token.color('surface.active'),
+              },
+            ],
             color.alpha(token.color('surface.land'), 0.9),
-          ]),
-          opacity: expression<number>([
-            'coalesce',
-            ['get', 'opacity'],
-            token.number('style.opacity.high'),
-          ]),
-          pattern: expression<string>([
-            'coalesce',
-            ['get', 'pattern'],
-            token.image('surface.pattern.small'),
-          ]),
+          ),
+          opacity: expr.coalesce(expr.get(field('confidence')), token.number('style.opacity.high')),
+          pattern: expr.coalesce(expr.get(field('surface')), token.image('surface.pattern.small')),
         },
       }),
       roads: roads({crossings: {image: token.image('roads.crossing')}}),
@@ -469,6 +503,354 @@ test('accepts category-safe theme values, expressions, and zoom ramps in style s
       [10, 'depth-long'],
     ]),
   );
+});
+
+test('serialized zoom ramps require ordered finite stops and interpolation-specific bases', () => {
+  const validateRamp = (value: unknown) =>
+    validateDesign({
+      modules: {land: {type: 'land', background: {opacity: value}}},
+    }).valid;
+  const stops = [
+    [0, 0.25],
+    [12, 0.75],
+  ];
+
+  assert.equal(validateRamp({kind: 'zoom', interpolation: 'exponential', base: 1.5, stops}), true);
+  assert.equal(validateRamp({kind: 'zoom', interpolation: 'linear', stops}), true);
+  assert.equal(validateRamp({kind: 'zoom', interpolation: 'step', stops}), true);
+
+  for (const invalid of [
+    {kind: 'zoom', interpolation: 'exponential', stops},
+    {kind: 'zoom', interpolation: 'exponential', base: 0, stops},
+    {kind: 'zoom', interpolation: 'linear', base: 1.5, stops},
+    {kind: 'zoom', interpolation: 'step', base: 1.5, stops},
+    {
+      kind: 'zoom',
+      interpolation: 'linear',
+      stops: [
+        [8, 0.25],
+        [8, 0.75],
+      ],
+    },
+    {
+      kind: 'zoom',
+      interpolation: 'linear',
+      stops: [
+        [12, 0.25],
+        [8, 0.75],
+      ],
+    },
+    {kind: 'zoom', interpolation: 'linear', stops: [[Number.POSITIVE_INFINITY, 0.5]]},
+  ]) {
+    assert.equal(validateRamp(invalid), false, JSON.stringify(invalid));
+  }
+});
+
+test('closes render-stack feature and selector fields over the semantic data vocabulary', () => {
+  const validPass = renderPass({
+    attachTo: 'water.bodies.fill',
+    feature: 'water',
+    phase: 'overlay',
+    renderer: 'fill',
+    selector: {field: 'class', kind: 'compare', operator: 'eq', value: 'lake'},
+    style: {opacity: 0.5},
+  });
+  assert.equal(
+    validateDesign({modules: {water: withRenderStack(water(), {lakeOverlay: validPass})}}).valid,
+    true,
+  );
+
+  for (const operation of [
+    {...validPass, feature: 'physical_source_layer'},
+    {
+      ...validPass,
+      selector: {field: 'physical_column', kind: 'compare', operator: 'eq', value: 'lake'},
+    },
+  ]) {
+    assert.equal(
+      validateDesign({
+        modules: {
+          water: {
+            ...water(),
+            renderStack: {lakeOverlay: operation},
+          },
+        },
+      }).valid,
+      false,
+    );
+  }
+});
+
+test('uses the V1 semantic-target and single-segment render-stack name grammar', () => {
+  const pass = renderPass({
+    attachTo: 'water.bodies.fill',
+    phase: 'overlay',
+    renderer: 'fill',
+    style: {opacity: 0.5},
+  });
+  const validatesTarget = (target: string) =>
+    validateDesign({
+      modules: {water: {...water(), renderStack: {lakeOverlay: {...pass, attachTo: target}}}},
+    }).valid;
+  const validatesName = (name: string) =>
+    validateDesign({
+      modules: {water: {...water(), renderStack: {[name]: pass}}},
+    }).valid;
+
+  for (const target of [
+    'water',
+    'water.bodies.fill',
+    'water.render.lakeOverlay',
+    'water.2d',
+    'water._underlay',
+  ]) {
+    assert.equal(validatesTarget(target), true, target);
+  }
+  for (const target of [
+    'Water.bodies.fill',
+    '1water.bodies.fill',
+    'water..fill',
+    '.water.fill',
+    'water body.fill',
+  ]) {
+    assert.equal(validatesTarget(target), false, target);
+  }
+
+  for (const name of ['lakeOverlay', 'lake-overlay', 'lake_overlay', 'lake2']) {
+    assert.equal(validatesName(name), true, name);
+  }
+  for (const name of ['LakeOverlay', '2lake', '_lake', 'lake.overlay', 'lake overlay']) {
+    assert.equal(validatesName(name), false, name);
+  }
+});
+
+test('accepts every value from the canonical render, roads, and landforms vocabularies', () => {
+  const validatesOperation = (operation: unknown) =>
+    validateDesign({
+      modules: {water: {...water(), renderStack: {canonical: operation}}},
+    }).valid;
+  const pass = {
+    attachTo: 'water.bodies.fill',
+    kind: 'render-pass',
+    phase: 'overlay',
+    renderer: 'fill',
+    style: {},
+  };
+
+  for (const geometry of tileflowRenderSelectorGeometries) {
+    assert.equal(
+      validatesOperation({...pass, selector: {geometry, kind: 'geometry'}}),
+      true,
+      geometry,
+    );
+  }
+  for (const operator of tileflowRenderSelectorComparisons) {
+    assert.equal(
+      validatesOperation({
+        ...pass,
+        selector: {field: 'class', kind: 'compare', operator, value: 'water'},
+      }),
+      true,
+      operator,
+    );
+  }
+  for (const phase of tileflowRenderStackPhases) {
+    assert.equal(validatesOperation({...pass, phase}), true, phase);
+  }
+  for (const renderer of tileflowRenderStackRenderers) {
+    assert.equal(validatesOperation({...pass, renderer}), true, renderer);
+  }
+
+  assert.equal(
+    validateDesign({
+      modules: {
+        roads: roads({classes: Object.fromEntries(tileflowRoadClasses.map((name) => [name, {}]))}),
+      },
+    }).valid,
+    true,
+  );
+  assert.equal(
+    validateDesign({
+      modules: {
+        landforms: landforms({
+          classes: Object.fromEntries(tileflowLandformClasses.map((name) => [name, {}])),
+        }),
+      },
+    }).valid,
+    true,
+  );
+});
+
+test('keeps serialized render-stack limits identical to builder and runtime limits', () => {
+  const literal = () => ({kind: 'literal' as const, value: true});
+  const nestedSelector = (nodes: number): unknown => {
+    let selector: unknown = literal();
+    for (let index = 1; index < nodes; index += 1) {
+      selector = {kind: 'not', selector};
+    }
+    return selector;
+  };
+  const pass = renderPass({
+    attachTo: 'water.bodies.fill',
+    phase: 'overlay',
+    renderer: 'fill',
+    style: {opacity: 0.5},
+  });
+  const validatesSelector = (selector: unknown) =>
+    validateDesign({
+      modules: {
+        water: {...water(), renderStack: {limited: {...pass, selector}}},
+      },
+    }).valid;
+  const validatesRequirements = (requirements: readonly string[]) =>
+    validateDesign({
+      modules: {
+        water: {...water(), renderStack: {limited: {...pass, requirements}}},
+      },
+    }).valid;
+
+  assert.equal(
+    validatesSelector({
+      kind: 'all',
+      selectors: Array.from({length: tileflowRenderStackLimits.maxSelectorChildren}, literal),
+    }),
+    true,
+  );
+  assert.equal(
+    validatesSelector({
+      kind: 'all',
+      selectors: Array.from({length: tileflowRenderStackLimits.maxSelectorChildren + 1}, literal),
+    }),
+    false,
+  );
+
+  const scalarValues = Array.from(
+    {length: tileflowRenderStackLimits.maxScalarValues},
+    (_, index) => `value-${index}`,
+  );
+  assert.equal(validatesSelector({field: 'class', kind: 'in', values: scalarValues}), true);
+  assert.equal(
+    validatesSelector({field: 'class', kind: 'in', values: [...scalarValues, 'overflow']}),
+    false,
+  );
+  assert.equal(
+    validatesSelector({
+      branches: [{result: true, values: scalarValues}],
+      field: 'class',
+      kind: 'match',
+      otherwise: false,
+    }),
+    true,
+  );
+  assert.equal(
+    validatesSelector({
+      branches: [{result: true, values: [...scalarValues, 'overflow']}],
+      field: 'class',
+      kind: 'match',
+      otherwise: false,
+    }),
+    false,
+  );
+  const branches = Array.from({length: tileflowRenderStackLimits.maxMatchBranches}, (_, index) => ({
+    result: index % 2 === 0,
+    values: [`branch-${index}`],
+  }));
+  assert.equal(
+    validatesSelector({branches, field: 'class', kind: 'match', otherwise: false}),
+    true,
+  );
+  assert.equal(
+    validatesSelector({
+      branches: [...branches, {result: true, values: ['overflow']}],
+      field: 'class',
+      kind: 'match',
+      otherwise: false,
+    }),
+    false,
+  );
+
+  const stops = Array.from({length: tileflowRenderStackLimits.maxStepStops}, (_, zoom) => ({
+    selector: literal(),
+    zoom,
+  }));
+  assert.equal(validatesSelector({fallback: literal(), kind: 'step', stops}), true);
+  for (const invalidStops of [
+    [...stops, {selector: literal(), zoom: stops.length}],
+    [
+      {selector: literal(), zoom: 2},
+      {selector: literal(), zoom: 2},
+    ],
+    [
+      {selector: literal(), zoom: 3},
+      {selector: literal(), zoom: 2},
+    ],
+    [{selector: literal(), zoom: Number.POSITIVE_INFINITY}],
+  ]) {
+    assert.equal(
+      validatesSelector({fallback: literal(), kind: 'step', stops: invalidStops}),
+      false,
+    );
+  }
+
+  assert.equal(validatesSelector(nestedSelector(tileflowRenderStackLimits.maxSelectorDepth)), true);
+  assert.equal(
+    validatesSelector(nestedSelector(tileflowRenderStackLimits.maxSelectorDepth + 1)),
+    false,
+  );
+  const exactNodeBudget = {
+    kind: 'all',
+    selectors: [...Array.from({length: 15}, () => nestedSelector(16)), nestedSelector(15)],
+  };
+  const overflowingNodeBudget = {
+    kind: 'all',
+    selectors: Array.from({length: 16}, () => nestedSelector(16)),
+  };
+  assert.equal(validatesSelector(exactNodeBudget), true);
+  assert.equal(validatesSelector(overflowingNodeBudget), false);
+
+  assert.equal(validatesRequirements(tileflowLayerDomains), true);
+  assert.equal(validatesRequirements(['roads', 'roads']), false);
+  assert.equal(validatesRequirements([...tileflowLayerDomains, 'water']), false);
+
+  const operations = Object.fromEntries(
+    Array.from({length: tileflowRenderStackLimits.maxOperations}, (_, index) => [
+      `operation${index}`,
+      pass,
+    ]),
+  );
+  assert.equal(
+    validateDesign({modules: {water: {...water(), renderStack: operations}}}).valid,
+    true,
+  );
+  assert.equal(
+    validateDesign({
+      modules: {
+        water: {...water(), renderStack: {...operations, operationOverflow: pass}},
+      },
+    }).valid,
+    false,
+  );
+});
+
+test('rejects forged expression arrays and physical data bindings', () => {
+  for (const value of [
+    {kind: 'expression', value: ['get', 'class']},
+    {
+      kind: 'expression',
+      value: ['get', {kind: 'tileflow-data-field', name: 'physical_column'}],
+    },
+    {kind: 'expression', value: ['paint-the-map', '#ff00ff']},
+  ]) {
+    assert.throws(
+      () =>
+        parseDesign({
+          modules: {
+            land: land({globalLandcover: {color: value as never}}),
+          },
+        }),
+      /closed Tileflow expression|registered semantic field|semantic field|unsupported Tileflow/iu,
+    );
+  }
 });
 
 test('rejects wrong theme-token categories in direct and zoom-dependent style values', () => {
@@ -579,7 +961,7 @@ test('rejects wrong theme-token categories in direct and zoom-dependent style va
         land: {
           type: 'land',
           globalLandcover: {
-            color: expression<string>(['coalesce', ['get', 'color'], token.image('wrong')]),
+            color: expr.coalesce(expr.get(field('buildingTone')), token.image('wrong')) as never,
           },
         },
       },
@@ -591,7 +973,7 @@ test('rejects wrong theme-token categories in direct and zoom-dependent style va
         land: {
           type: 'land',
           globalLandcover: {
-            pattern: expression<string>(['coalesce', ['get', 'pattern'], token.color('wrong')]),
+            pattern: expr.coalesce(expr.get(field('surface')), token.color('wrong')) as never,
           },
         },
       },
@@ -603,7 +985,7 @@ test('rejects wrong theme-token categories in direct and zoom-dependent style va
         land: {
           type: 'land',
           globalLandcover: {
-            opacity: expression<number>(['coalesce', ['get', 'opacity'], token.color('wrong')]),
+            opacity: expr.coalesce(expr.get(field('confidence')), token.color('wrong')) as never,
           },
         },
       },
@@ -616,7 +998,7 @@ test('rejects wrong theme-token categories in direct and zoom-dependent style va
           type: 'water',
           bathymetryLabels: {
             text: {
-              field: expression<string>(['coalesce', ['get', 'name'], token.color('wrong')]),
+              field: expr.coalesce(expr.get(field('name')), token.color('wrong')) as never,
             },
           },
         },

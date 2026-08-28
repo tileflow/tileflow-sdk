@@ -1,17 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  expression,
-  labels,
-  land,
-  openMapTiles,
-  poi,
-  resolveTileflowData,
-  roads,
-  water,
-  zoom,
-} from '../src';
-import {assembleTileflowLayers} from '../src/cartography/graph';
+import {labels, land, openMapTiles, poi, resolveTileflowData, roads, water, zoom} from '../src';
+import {expression} from '../src/cartography/values';
 import {compileAeroways} from '../src/modules/aeroways/compiler';
 import {compileBoundaries} from '../src/modules/boundaries/compiler';
 import {compileBuildings} from '../src/modules/buildings/compiler';
@@ -22,6 +12,7 @@ import {compileRoads} from '../src/modules/roads/compiler';
 import {compileTransit} from '../src/modules/transit/compiler';
 import {compileWater} from '../src/modules/water/compiler';
 import {resolveColors} from '../src/themes';
+import {assembleTileflowLayers} from './layer-ir-fixture';
 
 const context = {
   colors: resolveColors(),
@@ -43,20 +34,20 @@ test('compiles complete land and water domains into stable direct layers', () =>
   ]);
   const ids = layers.map((layer) => layer.id);
 
-  assert.equal(ids[0], 'streets-background');
-  assert.ok(ids.includes('streets-global-landcover'));
-  assert.ok(ids.includes('streets-landuse-commercial'));
-  assert.ok(ids.includes('streets-landuse-education'));
-  assert.ok(ids.includes('streets-landuse-government'));
-  assert.ok(ids.includes('streets-landuse-medical'));
-  assert.ok(ids.includes('streets-landuse-parking'));
-  assert.ok(ids.includes('streets-landcover-wood'));
-  assert.ok(ids.includes('streets-water'));
-  assert.ok(ids.includes('streets-waterway-river-intermittent'));
+  assert.equal(ids[0], 'tileflow-background');
+  assert.ok(ids.includes('tileflow-global-landcover'));
+  assert.ok(ids.includes('tileflow-landuse-commercial'));
+  assert.ok(ids.includes('tileflow-landuse-education'));
+  assert.ok(ids.includes('tileflow-landuse-government'));
+  assert.ok(ids.includes('tileflow-landuse-medical'));
+  assert.ok(ids.includes('tileflow-landuse-parking'));
+  assert.ok(ids.includes('tileflow-landcover-wood'));
+  assert.ok(ids.includes('tileflow-water'));
+  assert.ok(ids.includes('tileflow-waterway-river-intermittent'));
   assert.equal(new Set(ids).size, ids.length);
   assert.ok(layers.every((layer) => !String(layer.id).startsWith('landuse-')));
 
-  const commercial = layers.find((layer) => layer.id === 'streets-landuse-commercial');
+  const commercial = layers.find((layer) => layer.id === 'tileflow-landuse-commercial');
   assert.deepEqual(commercial?.filter, [
     'match',
     ['get', 'class'],
@@ -69,12 +60,12 @@ test('compiles complete land and water domains into stable direct layers', () =>
 test('renders the seven global land-cover classes below OSM and fades them out at zoom 8', () => {
   const contributions = compileLand(undefined, context);
   const globalLandcover = contributions.find(
-    (entry) => entry.layer.id === 'streets-global-landcover',
+    (entry) => entry.layer.id === 'tileflow-global-landcover',
   )!;
   const osmLanduse = contributions.find(
-    (entry) => entry.layer.id === 'streets-landuse-residential',
+    (entry) => entry.layer.id === 'tileflow-landuse-residential',
   )!;
-  const osmLandcover = contributions.find((entry) => entry.layer.id === 'streets-landcover-wood')!;
+  const osmLandcover = contributions.find((entry) => entry.layer.id === 'tileflow-landcover-wood')!;
   const paint = globalLandcover.layer.paint as Record<string, unknown>;
 
   assert.equal(globalLandcover.layer['source-layer'], 'globallandcover');
@@ -117,10 +108,10 @@ test('renders the seven global land-cover classes below OSM and fades them out a
 
   const ordered = assembleTileflowLayers(contributions).map((layer) => layer.id);
   assert.ok(
-    ordered.indexOf('streets-global-landcover') < ordered.indexOf('streets-landuse-residential'),
+    ordered.indexOf('tileflow-global-landcover') < ordered.indexOf('tileflow-landuse-residential'),
   );
   assert.ok(
-    ordered.indexOf('streets-global-landcover') < ordered.indexOf('streets-landcover-wood'),
+    ordered.indexOf('tileflow-global-landcover') < ordered.indexOf('tileflow-landcover-wood'),
   );
 });
 
@@ -135,7 +126,7 @@ test('remaps the global land-cover source-layer and class field', () => {
     url: '/tiles.json',
   });
   const globalLandcover = compileLand(undefined, {...context, data}).find(
-    (entry) => entry.layer.id === 'streets-global-landcover',
+    (entry) => entry.layer.id === 'tileflow-global-landcover',
   )!;
 
   assert.equal(globalLandcover.layer['source-layer'], 'worldcover_lowzoom');
@@ -152,11 +143,11 @@ test('applies public global land-cover and bathymetry styles without raw patches
   const globalLandcover = compileLand(
     land({globalLandcover: {color: '#123456', maxZoom: 7, opacity: 0.45}}),
     context,
-  ).find((entry) => entry.layer.id === 'streets-global-landcover')!;
+  ).find((entry) => entry.layer.id === 'tileflow-global-landcover')!;
   const bathymetry = compileWater(
     water({bathymetry: {color: '#234567', maxZoom: 9, opacity: 0.52}}),
     context,
-  ).find((entry) => entry.layer.id === 'streets-bathymetry')!;
+  ).find((entry) => entry.layer.id === 'tileflow-bathymetry')!;
 
   assert.equal(globalLandcover.layer.maxzoom, 7);
   assert.equal((globalLandcover.layer.paint as Record<string, unknown>)['fill-color'], '#123456');
@@ -167,13 +158,13 @@ test('applies public global land-cover and bathymetry styles without raw patches
 
   assert.equal(
     compileLand(land({globalLandcover: {visible: false}}), context).some(
-      (entry) => entry.layer.id === 'streets-global-landcover',
+      (entry) => entry.layer.id === 'tileflow-global-landcover',
     ),
     false,
   );
   assert.equal(
     compileWater(water({bathymetry: {visible: false}}), context).some(
-      (entry) => entry.layer.id === 'streets-bathymetry',
+      (entry) => entry.layer.id === 'tileflow-bathymetry',
     ),
     false,
   );
@@ -181,7 +172,7 @@ test('applies public global land-cover and bathymetry styles without raw patches
 
 test('applies semantic bathymetry label overrides while retaining band-depth defaults', () => {
   const defaults = compileWater(water({bathymetryLabels: {}}), context).find(
-    (entry) => entry.layer.id === 'streets-bathymetry-labels',
+    (entry) => entry.layer.id === 'tileflow-bathymetry-labels',
   )!;
   const customized = compileWater(
     water({
@@ -203,7 +194,7 @@ test('applies semantic bathymetry label overrides while retaining band-depth def
       },
     }),
     context,
-  ).find((entry) => entry.layer.id === 'streets-bathymetry-labels')!;
+  ).find((entry) => entry.layer.id === 'tileflow-bathymetry-labels')!;
   const defaultLayout = defaults.layer.layout as Record<string, unknown>;
   const layout = customized.layer.layout as Record<string, unknown>;
   const paint = customized.layer.paint as Record<string, unknown>;
@@ -229,14 +220,14 @@ test('applies semantic bathymetry label overrides while retaining band-depth def
   assert.equal(customized.target, 'water.bathymetryLabels');
   assert.equal(
     compileWater(undefined, context).some(
-      (entry) => entry.layer.id === 'streets-bathymetry-labels',
+      (entry) => entry.layer.id === 'tileflow-bathymetry-labels',
     ),
     false,
   );
 
   assert.equal(
     compileWater(water({bathymetryLabels: {visible: false}}), context).some(
-      (entry) => entry.layer.id === 'streets-bathymetry-labels',
+      (entry) => entry.layer.id === 'tileflow-bathymetry-labels',
     ),
     false,
   );
@@ -244,7 +235,7 @@ test('applies semantic bathymetry label overrides while retaining band-depth def
 
 test('applies opt-in bathymetry contour overrides to discrete depth-band edges', () => {
   const defaults = compileWater(water({bathymetryContours: {}}), context).find(
-    (entry) => entry.layer.id === 'streets-bathymetry-contours',
+    (entry) => entry.layer.id === 'tileflow-bathymetry-contours',
   )!;
   const customized = compileWater(
     water({
@@ -260,7 +251,7 @@ test('applies opt-in bathymetry contour overrides to discrete depth-band edges',
       },
     }),
     context,
-  ).find((entry) => entry.layer.id === 'streets-bathymetry-contours')!;
+  ).find((entry) => entry.layer.id === 'tileflow-bathymetry-contours')!;
   const defaultPaint = defaults.layer.paint as Record<string, unknown>;
   const layout = customized.layer.layout as Record<string, unknown>;
   const paint = customized.layer.paint as Record<string, unknown>;
@@ -286,13 +277,13 @@ test('applies opt-in bathymetry contour overrides to discrete depth-band edges',
   assert.equal(customized.target, 'water.bathymetryContours');
   assert.equal(
     compileWater(undefined, context).some(
-      (entry) => entry.layer.id === 'streets-bathymetry-contours',
+      (entry) => entry.layer.id === 'tileflow-bathymetry-contours',
     ),
     false,
   );
   assert.equal(
     compileWater(water({bathymetryContours: {visible: false}}), context).some(
-      (entry) => entry.layer.id === 'streets-bathymetry-contours',
+      (entry) => entry.layer.id === 'tileflow-bathymetry-contours',
     ),
     false,
   );
@@ -307,8 +298,8 @@ test('applies exact water overrides without mutating defaults', () => {
     context,
   );
   const second = compileWater(undefined, context);
-  const river = first.find((entry) => entry.layer.id === 'streets-waterway-river')!;
-  const defaultRiver = second.find((entry) => entry.layer.id === 'streets-waterway-river')!;
+  const river = first.find((entry) => entry.layer.id === 'tileflow-waterway-river')!;
+  const defaultRiver = second.find((entry) => entry.layer.id === 'tileflow-waterway-river')!;
 
   assert.equal((river.layer.paint as Record<string, unknown>)['line-color'], '#123456');
   assert.equal((river.layer.paint as Record<string, unknown>)['line-width'], 9);
@@ -327,7 +318,7 @@ test('compilers honor remapped OpenMapTiles layers and fields', () => {
     url: '/tiles.json',
   });
   const river = compileWater(undefined, {...context, data}).find(
-    (entry) => entry.layer.id === 'streets-waterway-river',
+    (entry) => entry.layer.id === 'tileflow-waterway-river',
   )!;
 
   assert.equal(river.layer['source-layer'], 'hydro_lines');
@@ -347,18 +338,18 @@ test('compiles buildings, boundaries, aeroways, and transit without shared layer
   ]);
   const ids = layers.map((layer) => layer.id);
 
-  assert.ok(ids.includes('streets-buildings-fill'));
-  assert.ok(ids.includes('streets-business-corridor'));
-  assert.ok(ids.includes('streets-boundary-admin2'));
-  assert.ok(ids.includes('streets-aeroway-runway-fill'));
-  assert.ok(ids.includes('streets-transit-rail-surface'));
+  assert.ok(ids.includes('tileflow-buildings-fill'));
+  assert.ok(ids.includes('tileflow-business-corridor'));
+  assert.ok(ids.includes('tileflow-boundary-admin2'));
+  assert.ok(ids.includes('tileflow-aeroway-runway-fill'));
+  assert.ok(ids.includes('tileflow-transit-rail-surface'));
   assert.equal(new Set(ids).size, ids.length);
 });
 
 test('colors building tones without making geometry visibility semantic', () => {
   const contributions = compileBuildings(undefined, context);
-  const corridor = contributions.find((entry) => entry.layer.id === 'streets-business-corridor')!;
-  const buildings = contributions.find((entry) => entry.layer.id === 'streets-buildings-fill')!;
+  const corridor = contributions.find((entry) => entry.layer.id === 'tileflow-business-corridor')!;
+  const buildings = contributions.find((entry) => entry.layer.id === 'tileflow-buildings-fill')!;
   const paint = buildings.layer.paint as Record<string, unknown>;
 
   assert.equal(corridor.layer['source-layer'], 'business_corridor');
@@ -415,20 +406,20 @@ test('compiles road classes, structures, phases, and exact semantic overrides', 
   );
   const ids = contributions.map((entry) => entry.layer.id);
   const primary = contributions.find(
-    (entry) => entry.layer.id === 'streets-road-surface-primary-fill',
+    (entry) => entry.layer.id === 'tileflow-road-surface-primary-fill',
   )!;
   const tunnelCasing = contributions.find(
-    (entry) => entry.layer.id === 'streets-road-tunnel-primary-casing',
+    (entry) => entry.layer.id === 'tileflow-road-tunnel-primary-casing',
   )!;
   const tunnelFill = contributions.find(
-    (entry) => entry.layer.id === 'streets-road-tunnel-primary-fill',
+    (entry) => entry.layer.id === 'tileflow-road-tunnel-primary-fill',
   )!;
   const tunnelHatch = contributions.find(
-    (entry) => entry.layer.id === 'streets-road-tunnel-primary-hatch',
+    (entry) => entry.layer.id === 'tileflow-road-tunnel-primary-hatch',
   )!;
 
-  assert.ok(ids.includes('streets-road-tunnel-motorway-fill'));
-  assert.ok(ids.includes('streets-road-bridge-primary-casing'));
+  assert.ok(ids.includes('tileflow-road-tunnel-motorway-fill'));
+  assert.ok(ids.includes('tileflow-road-bridge-primary-casing'));
   assert.equal((tunnelCasing.layer.layout as Record<string, unknown>)['line-cap'], 'butt');
   assert.equal((tunnelFill.layer.layout as Record<string, unknown>)['line-cap'], 'butt');
   assert.equal((tunnelCasing.layer.paint as Record<string, unknown>)['line-dasharray'], undefined);
@@ -482,7 +473,7 @@ test('matches intrinsic hatch patterns to the fully rendered road width', () => 
     context,
   );
   const hatch = contributions.find(
-    (entry) => entry.layer.id === 'streets-road-tunnel-primary-hatch',
+    (entry) => entry.layer.id === 'tileflow-road-tunnel-primary-hatch',
   )!;
   const paint = hatch.layer.paint as Record<string, unknown>;
 
@@ -496,12 +487,12 @@ test('matches intrinsic hatch patterns to the fully rendered road width', () => 
 
 test('applies road hierarchy, weight, and per-class width scales to generated widths', () => {
   const defaultPrimary = compileRoads(roads({detail: 'major'}), context).find(
-    (entry) => entry.layer.id === 'streets-road-surface-primary-fill',
+    (entry) => entry.layer.id === 'tileflow-road-surface-primary-fill',
   )!;
   const emphasizedPrimary = compileRoads(
     roads({detail: 'major', hierarchy: 'strong', weight: 'bold', widthScale: {primary: 1.5}}),
     context,
-  ).find((entry) => entry.layer.id === 'streets-road-surface-primary-fill')!;
+  ).find((entry) => entry.layer.id === 'tileflow-road-surface-primary-fill')!;
 
   assert.notDeepEqual(
     emphasizedPrimary.layer.paint,
@@ -512,7 +503,7 @@ test('applies road hierarchy, weight, and per-class width scales to generated wi
 
 test('one-way markers use the resolved road font instead of MapLibre glyph defaults', () => {
   const marker = compileRoads(roads({oneWayMarkers: true}), context).find(
-    (entry) => entry.layer.id === 'streets-road-oneway',
+    (entry) => entry.layer.id === 'tileflow-road-oneway',
   );
   const layout = marker?.layer.layout as Record<string, unknown>;
 
@@ -545,7 +536,7 @@ test('compiles disjoint semantic path families across structures and remapped fi
   for (const [roadClass, subclasses] of Object.entries(expectedSubclasses)) {
     for (const structure of ['surface', 'tunnel', 'bridge']) {
       const layer = contributions.find(
-        (entry) => entry.layer.id === `streets-road-${structure}-${roadClass}-fill`,
+        (entry) => entry.layer.id === `tileflow-road-${structure}-${roadClass}-fill`,
       )?.layer;
       assert.ok(layer, `${roadClass} ${structure} fill must exist`);
       assert.deepEqual(layer.filter, [
@@ -610,10 +601,10 @@ test('composes remapping-aware road treatments without multiplying generated lay
     {...context, data},
   );
   const primary = contributions.find(
-    (entry) => entry.layer.id === 'streets-road-surface-primary-fill',
+    (entry) => entry.layer.id === 'tileflow-road-surface-primary-fill',
   )!;
   const service = contributions.find(
-    (entry) => entry.layer.id === 'streets-road-surface-service-fill',
+    (entry) => entry.layer.id === 'tileflow-road-surface-service-fill',
   )!;
   const primaryPaint = primary.layer.paint as Record<string, unknown>;
   const serializedPrimary = JSON.stringify(primary.layer);
@@ -674,7 +665,7 @@ test('keeps zoom interpolation at the expression root when treatments refine wid
       modifiers: {ramp: {widthScale: 0.7}},
     }),
     context,
-  ).find((entry) => entry.layer.id === 'streets-road-surface-primary-fill')!;
+  ).find((entry) => entry.layer.id === 'tileflow-road-surface-primary-fill')!;
   const width = (primary.layer.paint as Record<string, unknown>)['line-width'] as unknown[];
 
   assert.equal(width[0], 'interpolate');
@@ -695,11 +686,11 @@ test('an explicit semantic path class has an effect without enabling the whole p
   );
 
   const cycleway = contributions.find(
-    (entry) => entry.layer.id === 'streets-road-surface-cycleway-fill',
+    (entry) => entry.layer.id === 'tileflow-road-surface-cycleway-fill',
   );
   assert.equal((cycleway?.layer.paint as Record<string, unknown>)['line-color'], '#123456');
   assert.equal(
-    contributions.some((entry) => entry.layer.id === 'streets-road-surface-footway-fill'),
+    contributions.some((entry) => entry.layer.id === 'tileflow-road-surface-footway-fill'),
     false,
   );
 
@@ -709,7 +700,7 @@ test('an explicit semantic path class has an effect without enabling the whole p
     context,
   );
   assert.equal(
-    labelsForCycleway.some((entry) => entry.layer.id === 'streets-label-road-cycleway'),
+    labelsForCycleway.some((entry) => entry.layer.id === 'tileflow-label-road-cycleway'),
     true,
   );
 });
@@ -734,7 +725,7 @@ test('compiles pedestrian polygons as a semantic road area even without line cla
     {...context, data},
   );
   const pedestrianArea = contributions.find(
-    (entry) => entry.layer.id === 'streets-road-pedestrian-area',
+    (entry) => entry.layer.id === 'tileflow-road-pedestrian-area',
   );
 
   assert.ok(pedestrianArea);
@@ -752,7 +743,7 @@ test('compiles pedestrian polygons as a semantic road area even without line cla
     'fill-opacity': 1,
   });
   const pedestrianOutline = contributions.find(
-    (entry) => entry.layer.id === 'streets-road-pedestrian-area-outline',
+    (entry) => entry.layer.id === 'tileflow-road-pedestrian-area-outline',
   );
   assert.equal(
     (pedestrianOutline?.layer.paint as Record<string, unknown>)['line-color'],
@@ -778,12 +769,12 @@ test('orders road areas below every generated road line stack', () => {
   ).map((layer) => layer.id);
 
   assert.ok(
-    ids.indexOf('streets-road-pedestrian-area') <
-      ids.indexOf('streets-road-surface-pedestrian-casing'),
+    ids.indexOf('tileflow-road-pedestrian-area') <
+      ids.indexOf('tileflow-road-surface-pedestrian-casing'),
   );
   assert.ok(
-    ids.indexOf('streets-road-pedestrian-area') <
-      ids.indexOf('streets-road-surface-pedestrian-fill'),
+    ids.indexOf('tileflow-road-pedestrian-area') <
+      ids.indexOf('tileflow-road-surface-pedestrian-fill'),
   );
 });
 
@@ -805,7 +796,7 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
     context,
   );
   const primary = labelContributions.find(
-    (entry) => entry.layer.id === 'streets-label-road-primary',
+    (entry) => entry.layer.id === 'tileflow-label-road-primary',
   )!;
 
   assert.equal(
@@ -816,10 +807,10 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
   assert.deepEqual(
     poiContributions.map((entry) => entry.layer.id),
     [
-      'streets-poi-food-drink-icon',
-      'streets-poi-food-drink-label',
-      'streets-poi-transport-icon',
-      'streets-poi-transport-label',
+      'tileflow-poi-food-drink-icon',
+      'tileflow-poi-food-drink-label',
+      'tileflow-poi-transport-icon',
+      'tileflow-poi-transport-label',
     ],
   );
   assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /filter_rank/);
@@ -829,14 +820,14 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
 test('partitions point and line water labels without duplicate candidates', () => {
   const contributions = compileLabels(labels({water: 'all'}), roads({detail: 'major'}), context);
   const ocean = contributions.find(
-    (entry) => entry.layer.id === 'streets-label-water-ocean',
+    (entry) => entry.layer.id === 'tileflow-label-water-ocean',
   )?.layer;
   const other = contributions.find(
-    (entry) => entry.layer.id === 'streets-label-water-other',
+    (entry) => entry.layer.id === 'tileflow-label-water-other',
   )?.layer;
-  const line = contributions.find((entry) => entry.layer.id === 'streets-label-water-line')?.layer;
+  const line = contributions.find((entry) => entry.layer.id === 'tileflow-label-water-line')?.layer;
   const waterway = contributions.find(
-    (entry) => entry.layer.id === 'streets-label-water-waterway',
+    (entry) => entry.layer.id === 'tileflow-label-water-waterway',
   )?.layer;
 
   assert.match(JSON.stringify(ocean?.filter), /Point/);
@@ -868,7 +859,7 @@ test('compiles a semantic POI marker through the shared circle primitive', () =>
     context,
   );
   const marker = contributions.find(
-    (entry) => entry.layer.id === 'streets-poi-arts-entertainment-marker',
+    (entry) => entry.layer.id === 'tileflow-poi-arts-entertainment-marker',
   )?.layer;
 
   assert.equal(marker?.type, 'circle');
@@ -890,7 +881,7 @@ test('road labels use the same semantic path selectors as road geometry', () => 
   const subclasses = new Set<string>();
   for (const roadClass of ['pedestrian', 'footway', 'cycleway', 'steps', 'pathway']) {
     const layer = labelContributions.find(
-      (entry) => entry.layer.id === `streets-label-road-${roadClass}`,
+      (entry) => entry.layer.id === `tileflow-label-road-${roadClass}`,
     )?.layer;
     assert.ok(layer, `${roadClass} label must exist`);
     const serialized = JSON.stringify(layer.filter);
@@ -945,13 +936,13 @@ test('composes expressway, toll, indoor, official, and mountain-bike intelligenc
     {...context, data},
   );
   const primary = JSON.stringify(
-    contributions.find((entry) => entry.layer.id === 'streets-road-surface-primary-fill')?.layer,
+    contributions.find((entry) => entry.layer.id === 'tileflow-road-surface-primary-fill')?.layer,
   );
   const pathway = JSON.stringify(
-    contributions.find((entry) => entry.layer.id === 'streets-road-surface-pathway-fill')?.layer,
+    contributions.find((entry) => entry.layer.id === 'tileflow-road-surface-pathway-fill')?.layer,
   );
   const pathwayCasing = JSON.stringify(
-    contributions.find((entry) => entry.layer.id === 'streets-road-surface-pathway-casing')?.layer,
+    contributions.find((entry) => entry.layer.id === 'tileflow-road-surface-pathway-casing')?.layer,
   );
 
   assert.match(primary, /fast_flag/);
@@ -961,7 +952,7 @@ test('composes expressway, toll, indoor, official, and mountain-bike intelligenc
   assert.match(pathway, /3\+/);
   assert.match(pathwayCasing, /official_flag/);
   assert.equal(
-    contributions.filter((entry) => entry.layer.id === 'streets-road-surface-primary-fill').length,
+    contributions.filter((entry) => entry.layer.id === 'tileflow-road-surface-primary-fill').length,
     1,
   );
 });
@@ -1015,13 +1006,13 @@ test('compiles global road-shield phases and allowlisted visuals without raw IDs
     {...context, data},
   );
   const overview = contributions.find(
-    (entry) => entry.layer.id === 'streets-label-road-shield-overview',
+    (entry) => entry.layer.id === 'tileflow-label-road-shield-overview',
   )?.layer;
   const detail = contributions.find(
-    (entry) => entry.layer.id === 'streets-label-road-shield-detail',
+    (entry) => entry.layer.id === 'tileflow-label-road-shield-detail',
   )?.layer;
   const junction = contributions.find(
-    (entry) => entry.layer.id === 'streets-label-road-junction',
+    (entry) => entry.layer.id === 'tileflow-label-road-junction',
   )?.layer;
 
   assert.equal(overview?.['source-layer'], 'road_shields');
@@ -1094,7 +1085,7 @@ test('generic OpenMapTiles degrades road shields to one neutral detail layer', (
   const shields = contributions.filter((entry) => entry.layer.id.includes('road-shield'));
 
   assert.equal(shields.length, 1);
-  assert.equal(shields[0]?.layer.id, 'streets-label-road-shield-detail');
+  assert.equal(shields[0]?.layer.id, 'tileflow-label-road-shield-detail');
   assert.equal(shields[0]?.layer['source-layer'], 'transportation_name');
   assert.equal(shields[0]?.layer.layout?.['icon-image'], 'shield-neutral');
   assert.equal(shields[0]?.layer.paint?.['text-color'], '#223344');
@@ -1119,13 +1110,13 @@ test('POI numeric density and coupling change emitted layers', () => {
 
   assert.deepEqual(
     uncoupled.map((entry) => entry.layer.id),
-    ['streets-poi-food-drink-icon', 'streets-poi-food-drink-label'],
+    ['tileflow-poi-food-drink-icon', 'tileflow-poi-food-drink-label'],
   );
   assert.match(JSON.stringify(uncoupled[0]?.layer.filter), /filter_rank/);
   assert.match(JSON.stringify(uncoupled[0]?.layer.filter), /,5\]/);
   assert.deepEqual(
     coupled.map((entry) => entry.layer.id),
-    ['streets-poi-food-drink'],
+    ['tileflow-poi-food-drink'],
   );
   assert.match(JSON.stringify(coupled[0]?.layer.filter), /,3\]/);
 
@@ -1135,7 +1126,7 @@ test('POI numeric density and coupling change emitted layers', () => {
   );
   assert.deepEqual(
     labelsOnly.map((entry) => entry.layer.id),
-    ['streets-poi-food-drink-label'],
+    ['tileflow-poi-food-drink-label'],
   );
   assert.match(JSON.stringify(labelsOnly[0]?.layer.filter), /,1\]/);
 });
@@ -1155,16 +1146,16 @@ test('POI categories can introduce their labels at different zoom levels', () =>
     context,
   );
   const culture = contributions.find(
-    (entry) => entry.layer.id === 'streets-poi-arts-entertainment-label',
+    (entry) => entry.layer.id === 'tileflow-poi-arts-entertainment-label',
   )?.layer;
   const food = contributions.find(
-    (entry) => entry.layer.id === 'streets-poi-food-drink-label',
+    (entry) => entry.layer.id === 'tileflow-poi-food-drink-label',
   )?.layer;
   const cultureMarker = contributions.find(
-    (entry) => entry.layer.id === 'streets-poi-arts-entertainment-marker',
+    (entry) => entry.layer.id === 'tileflow-poi-arts-entertainment-marker',
   )?.layer;
   const foodMarker = contributions.find(
-    (entry) => entry.layer.id === 'streets-poi-food-drink-marker',
+    (entry) => entry.layer.id === 'tileflow-poi-food-drink-marker',
   )?.layer;
 
   assert.equal(culture?.minzoom, 12.5);

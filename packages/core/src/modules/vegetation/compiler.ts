@@ -3,18 +3,19 @@ import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applyCircleStyle} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {zoom} from '../../cartography/values';
+import type {TileflowResolvedModuleConfig} from '../resolved';
 import type {
   TileflowVegetationModuleConfig,
   TileflowVegetationThreeDimensionalStyle,
 } from './index';
 
 export function compileVegetation(
-  request: TileflowVegetationModuleConfig | undefined,
+  request: TileflowResolvedModuleConfig<TileflowVegetationModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
 ): TileflowLayerContribution[] {
   const minZoom = request?.flat?.minZoom ?? request?.minZoom ?? 16;
   const mode = request?.mode ?? '3d';
-  const config = mergeTileflowDesign<TileflowVegetationModuleConfig>(
+  const config = mergeTileflowDesign<TileflowResolvedModuleConfig<TileflowVegetationModuleConfig>>(
     {
       type: 'vegetation',
       enabled: true,
@@ -56,7 +57,7 @@ export function compileVegetation(
       kind: 'layer',
       layer: applyCircleStyle(
         {
-          id: 'streets-vegetation-trees',
+          id: 'tileflow-vegetation-trees',
           type: 'circle',
           source: context.data.sourceId,
           'source-layer': context.data.schema.layers.tree,

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readdir, readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {createStyle, openMapTiles, resolveMap, vectorTiles} from '@tileflow/core';
+import {createStyleWithInspection} from '@tileflow/core/build';
 import {harad, haradIcons} from '../src';
 
 const haradPatternIds = [
@@ -21,10 +22,10 @@ const preparedAssets = {
   icons: {ids: haradPatternIds, sprite: '/tileflow/icons/harad/sprite'},
 } as const;
 
-test('Härad is a deeply frozen root with no Streets map dependency', async () => {
+test('Härad is a deeply frozen map with no Streets map dependency', async () => {
   assert.equal(harad.id, 'harad');
   assert.equal(harad.name, 'Härad');
-  assert.deepEqual(harad.root, {compiler: 'streets', compilerVersion: 1});
+  assert.equal('root' in harad, false);
   assert.equal('extends' in harad, false);
   assertDeepFrozen(harad);
 
@@ -32,6 +33,10 @@ test('Härad is a deeply frozen root with no Streets map dependency', async () =
   assert.doesNotMatch(source, /from\s+['"]\.\/streets['"]/u);
   assert.doesNotMatch(source, /\bextends\s*:/u);
   assert.doesNotMatch(source, /\bstreets\.icons\b/u);
+  assert.doesNotMatch(
+    source,
+    /@tileflow\/core\/recipe|defineModuleEffects|semanticField|semanticLayer/u,
+  );
 
   const resolved = resolveMap(harad);
   assert.deepEqual(resolved.icons, [haradIcons]);
@@ -46,10 +51,11 @@ test('Härad is a deeply frozen root with no Streets map dependency', async () =
   });
 });
 
-test('Härad compiles only against its own patterns and keeps its historical effects', () => {
-  const style = createStyle(harad, {preparedAssets});
+test('Härad compiles only against its own patterns and keeps its semantic render stack', () => {
+  const compiled = createStyleWithInspection(harad, {preparedAssets});
+  const {style} = compiled;
   assert.equal(style.metadata?.['tileflow:map'], 'harad');
-  assert.equal(style.metadata?.['tileflow:root'], 'streets');
+  assert.equal(style.metadata?.['tileflow:compiler'], 'tileflow-semantic');
   assert.equal(style.metadata?.['tileflow:extends'], undefined);
   assert.deepEqual(validateStyleMin(style as never), []);
 
@@ -62,27 +68,39 @@ test('Härad compiles only against its own patterns and keeps its historical eff
   );
   assert.deepEqual([...patternIds].sort(), [...haradPatternIds]);
 
-  const layerIds = new Set(style.layers.map((layer) => layer.id));
-  for (const id of [
-    'harad-landcover-arable-pattern',
-    'harad-landcover-conifer-pattern',
-    'harad-landcover-deciduous-pattern',
-    'harad-landcover-orchard-pattern',
-    'harad-landcover-sand-pattern',
-    'harad-landcover-wetland-pattern',
-    'harad-landuse-settlement-pattern',
-    'harad-field-boundaries',
-    'harad-water-lines-pattern',
-    'harad-water-intermittent-lines-pattern',
+  const targets = compiledTargets(compiled);
+  for (const target of [
+    'land.render.arableTexture',
+    'land.render.coniferTexture',
+    'land.render.deciduousTexture',
+    'land.render.orchardTexture',
+    'land.render.sandTexture',
+    'land.render.wetlandTexture',
+    'land.render.settlementTexture',
+    'land.render.fieldBoundaries',
+    'water.render.printLines',
+    'water.render.intermittentPrintLines',
   ]) {
-    assert.equal(layerIds.has(id), true, `Missing Härad effect layer ${id}`);
+    assert.equal(targets.has(target), true, `Missing Härad render target ${target}`);
   }
+  const targetOrder = compiled.inspection.layers.flatMap((layer) =>
+    layer.contributions.map((contribution) => contribution.target),
+  );
+  assert.equal(
+    targetOrder.indexOf('land.render.fieldBoundaries') + 1,
+    targetOrder.indexOf('land.render.arableTexture'),
+  );
+  assert.equal(
+    targetOrder.indexOf('land.render.orchardTexture') + 1,
+    targetOrder.indexOf('land.render.deciduousTexture'),
+  );
 
+  const layerIds = new Set(style.layers.map((layer) => layer.id));
   assert.equal(layerIds.has('harad-building-ink-shadow'), false);
-  assert.equal(layerIds.has('streets-road-surface-cycleway-fill'), false);
-  assert.equal(layerIds.has('streets-road-surface-steps-fill'), false);
+  assert.equal(layerIds.has('tileflow-road-surface-cycleway-fill'), false);
+  assert.equal(layerIds.has('tileflow-road-surface-steps-fill'), false);
 
-  const buildingFill = style.layers.find((layer) => layer.id === 'streets-buildings-fill');
+  const buildingFill = style.layers.find((layer) => layer.id === 'tileflow-buildings-fill');
   assert.equal(buildingFill?.paint?.['fill-color'], '#B64B35');
   assert.deepEqual(buildingFill?.paint?.['fill-opacity'], [
     'interpolate',
@@ -96,7 +114,7 @@ test('Härad compiles only against its own patterns and keeps its historical eff
     0.9,
   ]);
 
-  const settlement = style.layers.find((layer) => layer.id === 'harad-landuse-settlement-pattern');
+  const settlement = compiledLayer(compiled, 'land.render.settlementTexture');
   assert.equal(settlement?.maxzoom, 16);
   assert.deepEqual(settlement?.paint?.['fill-opacity'], [
     'interpolate',
@@ -113,17 +131,17 @@ test('Härad compiles only against its own patterns and keeps its historical eff
   ]);
 
   const primaryRoad = style.layers.find(
-    (layer) => layer.id === 'streets-road-surface-primary-fill',
+    (layer) => layer.id === 'tileflow-road-surface-primary-fill',
   );
   assert.equal(primaryRoad?.paint?.['line-color'], '#F7EED9');
 
   for (const id of [
-    'streets-addresses',
-    'streets-aeroway-area',
-    'streets-aeroway-runway',
-    'streets-road-oneway',
-    'streets-road-surface-cycleway-fill',
-    'streets-road-surface-steps-fill',
+    'tileflow-addresses',
+    'tileflow-aeroway-area',
+    'tileflow-aeroway-runway',
+    'tileflow-road-oneway',
+    'tileflow-road-surface-cycleway-fill',
+    'tileflow-road-surface-steps-fill',
   ]) {
     assert.equal(layerIds.has(id), false, `Härad emitted modern detail layer ${id}`);
   }
@@ -158,8 +176,8 @@ test('Härad stays valid against generic OpenMapTiles without optional capabilit
   const style = createStyle({...harad, data}, {preparedAssets});
   const layerIds = new Set(style.layers.map((layer) => layer.id));
 
-  assert.equal(layerIds.has('streets-bathymetry'), false);
-  assert.equal(layerIds.has('streets-global-landcover'), false);
+  assert.equal(layerIds.has('tileflow-bathymetry'), false);
+  assert.equal(layerIds.has('tileflow-global-landcover'), false);
   assert.deepEqual(validateStyleMin(style as never), []);
 });
 
@@ -171,4 +189,19 @@ function assertDeepFrozen(value: unknown, visited = new WeakSet<object>()): void
     const descriptor = Object.getOwnPropertyDescriptor(value, key);
     if (descriptor && 'value' in descriptor) assertDeepFrozen(descriptor.value, visited);
   }
+}
+
+function compiledTargets(compiled: ReturnType<typeof createStyleWithInspection>): Set<string> {
+  return new Set(
+    compiled.inspection.layers.flatMap((layer) =>
+      layer.contributions.map((contribution) => contribution.target),
+    ),
+  );
+}
+
+function compiledLayer(compiled: ReturnType<typeof createStyleWithInspection>, target: string) {
+  const layerId = compiled.inspection.layers.find((layer) =>
+    layer.contributions.some((contribution) => contribution.target === target),
+  )?.id;
+  return compiled.style.layers.find((layer) => layer.id === layerId);
 }

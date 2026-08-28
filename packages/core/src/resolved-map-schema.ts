@@ -1,5 +1,23 @@
 import {z} from 'zod';
-import {copyResolvedModuleEffects} from './cartography/module-effects';
+import {
+  tileflowRenderStackOperationNamePattern,
+  tileflowSemanticTargetPattern,
+} from './cartography/contributions';
+import {validateTileflowDataExpression} from './cartography/data-expression';
+import {tileflowLayerDomains} from './cartography/domains';
+import {
+  tileflowRenderSelectorComparisons,
+  tileflowRenderSelectorGeometries,
+  tileflowRenderStackLimits,
+  tileflowRenderStackPhases,
+  tileflowRenderStackRenderers,
+  validateTileflowRenderSelectorConstraints,
+} from './cartography/render-stack';
+import {
+  tileflowSemanticFieldNames,
+  tileflowSemanticLayerNames,
+} from './cartography/semantic-bindings';
+import {tileflowThemeTokenCategories} from './cartography/values';
 import {
   openMapTiles,
   openMapTilesContractVersion,
@@ -15,14 +33,15 @@ import {
 import {
   type ResolvedTileflowMap as TileflowCompilerConfig,
   tileflowMapIdSchema,
-  tileflowStreetsCompilerVersion,
 } from './maps/types';
+import {tileflowLandformClasses} from './modules/landforms';
+import {tileflowRoadClasses} from './modules/roads/semantics';
 import {tileflowThemeNameSchema} from './portable-identity';
 import {
   isSafeTileflowDemUrlTemplate,
   isTileflowContourDensityWithinBudget,
 } from './terrain/contour-protocol';
-import {resolveTileflowTheme, type TileflowTheme} from './themes';
+import {resolveTileflowTheme, type TileflowTheme, tileflowThemeLimits} from './themes';
 import {tileflowPoiCategories, type ValidationMessage} from './types';
 
 /** Structured schema failure preserved for CLI/editor diagnostics. */
@@ -51,22 +70,45 @@ const revisionSchema = z
   .string()
   .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/, 'Expected a portable data revision');
 const zoomNumberSchema = z.number().finite().min(0).max(24);
-const expressionSchema = z
-  .object({kind: z.literal('expression'), value: z.array(z.unknown()).min(1)})
-  .strict();
-const zoomValueSchema = z
-  .object({
-    kind: z.literal('zoom'),
-    interpolation: z.enum(['linear', 'exponential', 'step']),
-    base: z.number().finite().positive().optional(),
-    stops: z.array(z.tuple([zoomNumberSchema, z.unknown()])).min(1),
-  })
-  .strict();
-
 function zoomValueSchemaFor(valueSchema: z.ZodType) {
-  return zoomValueSchema.extend({
-    stops: z.array(z.tuple([zoomNumberSchema, valueSchema])).min(1),
-  });
+  const stops = z
+    .array(z.tuple([zoomNumberSchema, valueSchema]))
+    .min(1)
+    .superRefine((entries, context) => {
+      for (let index = 1; index < entries.length; index += 1) {
+        if (entries[index]![0] <= entries[index - 1]![0]) {
+          context.addIssue({
+            code: 'custom',
+            message: 'Zoom stops must be strictly increasing',
+            path: [index, 0],
+          });
+        }
+      }
+    });
+  return z.discriminatedUnion('interpolation', [
+    z
+      .object({
+        base: z.number().finite().positive(),
+        interpolation: z.literal('exponential'),
+        kind: z.literal('zoom'),
+        stops,
+      })
+      .strict(),
+    z
+      .object({
+        interpolation: z.literal('linear'),
+        kind: z.literal('zoom'),
+        stops,
+      })
+      .strict(),
+    z
+      .object({
+        interpolation: z.literal('step'),
+        kind: z.literal('zoom'),
+        stops,
+      })
+      .strict(),
+  ]);
 }
 
 const themeTokenNameSchema = z
@@ -77,7 +119,7 @@ const themeTokenNameSchema = z
   );
 const themeTokenReferenceSchema = z
   .object({
-    category: z.enum(['color', 'font', 'image', 'number']),
+    category: z.enum(tileflowThemeTokenCategories),
     kind: z.literal('theme-token'),
     token: themeTokenNameSchema,
   })
@@ -167,9 +209,52 @@ const themeImageValueSchema = z.union([
 type ExpressionThemeCategory = 'color' | 'image' | 'number' | undefined;
 
 function expressionSchemaFor(expectedCategory: ExpressionThemeCategory) {
-  return expressionSchema.superRefine((expression, context) => {
-    validateExpressionThemeValues(expression.value, expectedCategory, context, ['value']);
-  });
+  const category = expectedCategory ?? 'structural';
+  return z
+    .object({kind: z.literal('expression'), value: z.array(z.unknown()).min(1)})
+    .strict()
+    .superRefine((expression, context) => {
+      for (const issue of validateTileflowDataExpression(expression.value)) {
+        context.addIssue({
+          code: 'custom',
+          message: issue.message,
+          path: ['value', ...issue.path],
+        });
+      }
+      validateExpressionFieldNames(expression.value, context, ['value']);
+      validateExpressionThemeValues(expression.value, expectedCategory, context, ['value']);
+    })
+    .describe(`tileflow-data-expression:${category}`);
+}
+
+function validateExpressionFieldNames(
+  value: unknown,
+  context: z.RefinementCtx,
+  path: PropertyKey[],
+): void {
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) {
+      validateExpressionFieldNames(entry, context, [...path, index]);
+    }
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  const candidate = value as Record<string, unknown>;
+  if (
+    candidate.kind === 'tileflow-data-field' &&
+    (typeof candidate.name !== 'string' ||
+      !Object.hasOwn(fieldBindingsSchema.shape, candidate.name))
+  ) {
+    context.addIssue({
+      code: 'custom',
+      message: 'Expected a registered semantic field name.',
+      path: [...path, 'name'],
+    });
+    return;
+  }
+  for (const [key, entry] of Object.entries(candidate)) {
+    validateExpressionFieldNames(entry, context, [...path, key]);
+  }
 }
 
 function validateExpressionThemeValues(
@@ -423,6 +508,8 @@ const fillStyleSchema = z
     color: colorValueSchema.optional(),
     opacity: numberValueSchema.optional(),
     pattern: imageValueSchema.optional(),
+    translate: numberOffsetValueSchema.optional(),
+    translateAnchor: z.enum(['map', 'viewport']).optional(),
   })
   .strict();
 const lineStyleSchema = z
@@ -439,6 +526,8 @@ const lineStyleSchema = z
     opacity: numberValueSchema.optional(),
     pattern: imageValueSchema.optional(),
     roundLimit: numberValueSchema.optional(),
+    translate: numberOffsetValueSchema.optional(),
+    translateAnchor: z.enum(['map', 'viewport']).optional(),
     width: numberValueSchema.optional(),
   })
   .strict();
@@ -542,6 +631,7 @@ const symbolPlacementShape = {
   ...rangeShape,
   placement: z.enum(['line', 'line-center', 'point']).optional(),
   priority: structuralNumberValueSchema.optional(),
+  priorityOrder: z.enum(['higher-first', 'lower-first']).optional(),
   spacing: numberValueSchema.optional(),
   zOrder: z.enum(['auto', 'source', 'viewport-y']).optional(),
 };
@@ -553,10 +643,14 @@ const circleStyleSchema = z
     opacity: numberValueSchema.optional(),
     pitchAlignment: z.enum(['map', 'viewport']).optional(),
     pitchScale: z.enum(['map', 'viewport']).optional(),
+    priority: structuralNumberValueSchema.optional(),
+    priorityOrder: z.enum(['higher-first', 'lower-first']).optional(),
     radius: numberValueSchema.optional(),
     strokeColor: colorValueSchema.optional(),
     strokeOpacity: numberValueSchema.optional(),
     strokeWidth: numberValueSchema.optional(),
+    translate: numberOffsetValueSchema.optional(),
+    translateAnchor: z.enum(['map', 'viewport']).optional(),
   })
   .strict();
 const extrusionStyleSchema = z
@@ -652,27 +746,191 @@ const symbolStyleSchema = z
   .object({
     ...symbolPlacementShape,
     icon: iconStyleSchema.optional(),
-    marker: circleStyleSchema.optional(),
     text: textStyleSchema.optional(),
   })
   .strict();
-const poiCategoryStyleSchema = symbolStyleSchema.omit({priority: true}).strict();
+const markerSymbolStyleSchema = symbolStyleSchema
+  .extend({marker: circleStyleSchema.optional()})
+  .strict();
+const poiCategoryStyleSchema = markerSymbolStyleSchema
+  .omit({priority: true, priorityOrder: true})
+  .strict();
 
-const roadClassSchema = z.enum([
-  'motorway',
-  'trunk',
-  'primary',
-  'secondary',
-  'tertiary',
-  'minor',
-  'service',
-  'track',
-  'pathway',
-  'footway',
-  'cycleway',
-  'steps',
-  'pedestrian',
+const renderScalarSchema = z.union([z.boolean(), z.number().finite(), z.string()]);
+const renderTargetSchema = z
+  .string()
+  .regex(tileflowSemanticTargetPattern, 'Expected a semantic target');
+const renderStackOperationNameSchema = z
+  .string()
+  .regex(
+    tileflowRenderStackOperationNamePattern,
+    'Expected a lowercase-initial portable render-stack operation name without dots',
+  );
+const renderFieldNormalizationShape = {
+  coerce: z.literal('number').optional(),
+  fallback: renderScalarSchema.optional(),
+  field: z.enum(tileflowSemanticFieldNames),
+};
+const renderSelectorNodeSchema: z.ZodType = z.lazy(() =>
+  z.discriminatedUnion('kind', [
+    z.object({kind: z.literal('literal'), value: z.boolean()}).strict(),
+    z
+      .object({kind: z.literal('geometry'), geometry: z.enum(tileflowRenderSelectorGeometries)})
+      .strict(),
+    z.object({kind: z.literal('has'), field: z.enum(tileflowSemanticFieldNames)}).strict(),
+    z
+      .object({
+        ...renderFieldNormalizationShape,
+        kind: z.literal('compare'),
+        operator: z.enum(tileflowRenderSelectorComparisons),
+        value: renderScalarSchema,
+      })
+      .strict(),
+    z
+      .object({
+        ...renderFieldNormalizationShape,
+        kind: z.literal('in'),
+        values: z.array(renderScalarSchema).min(1).max(tileflowRenderStackLimits.maxScalarValues),
+      })
+      .strict(),
+    z
+      .object({
+        ...renderFieldNormalizationShape,
+        branches: z
+          .array(
+            z
+              .object({
+                result: z.boolean(),
+                values: z
+                  .array(renderScalarSchema)
+                  .min(1)
+                  .max(tileflowRenderStackLimits.maxScalarValues),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(tileflowRenderStackLimits.maxMatchBranches),
+        kind: z.literal('match'),
+        otherwise: z.boolean(),
+      })
+      .strict(),
+    z.object({kind: z.literal('not'), selector: renderSelectorNodeSchema}).strict(),
+    z
+      .object({
+        kind: z.enum(['all', 'any']),
+        selectors: z
+          .array(renderSelectorNodeSchema)
+          .min(1)
+          .max(tileflowRenderStackLimits.maxSelectorChildren),
+      })
+      .strict(),
+    z
+      .object({
+        fallback: renderSelectorNodeSchema,
+        kind: z.literal('step'),
+        stops: z
+          .array(z.object({selector: renderSelectorNodeSchema, zoom: zoomNumberSchema}).strict())
+          .min(1)
+          .max(tileflowRenderStackLimits.maxStepStops),
+      })
+      .strict(),
+  ]),
+);
+const renderSelectorSchema: z.ZodType = renderSelectorNodeSchema.superRefine(
+  (selector, context) => {
+    for (const issue of validateTileflowRenderSelectorConstraints(selector)) {
+      context.addIssue({code: 'custom', message: issue.message, path: [...issue.path]});
+    }
+  },
+);
+const renderVisibilitySchema = z.object({visibilityGroup: z.literal('building').optional()});
+const renderStyleSchemas = {
+  background: backgroundStyleSchema.extend(renderVisibilitySchema.shape).strict(),
+  circle: circleStyleSchema.extend(renderVisibilitySchema.shape).strict(),
+  extrusion: extrusionStyleSchema.extend(renderVisibilitySchema.shape).strict(),
+  fill: fillStyleSchema.extend(renderVisibilitySchema.shape).strict(),
+  line: lineStyleSchema.extend(renderVisibilitySchema.shape).strict(),
+  symbol: symbolStyleSchema.extend(renderVisibilitySchema.shape).strict(),
+};
+const renderRequirementsSchema = z
+  .array(z.enum(tileflowLayerDomains))
+  .min(1)
+  .max(tileflowRenderStackLimits.maxRequirements)
+  .superRefine((requirements, context) => {
+    const seen = new Set<string>();
+    for (const [index, requirement] of requirements.entries()) {
+      if (seen.has(requirement)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Duplicate render-stack requirement ${requirement}`,
+          path: [index],
+        });
+      }
+      seen.add(requirement);
+    }
+  });
+const vectorRenderPassSchemas = tileflowRenderStackRenderers
+  .filter((renderer) => renderer !== 'background')
+  .map((renderer) =>
+    z
+      .object({
+        attachTo: renderTargetSchema,
+        feature: z.enum(tileflowSemanticLayerNames).optional(),
+        kind: z.literal('render-pass'),
+        phase: z.enum(tileflowRenderStackPhases),
+        renderer: z.literal(renderer),
+        requirements: renderRequirementsSchema.optional(),
+        selector: renderSelectorSchema.optional(),
+        style: renderStyleSchemas[renderer],
+      })
+      .strict(),
+  );
+const renderPassSchema = z.discriminatedUnion('renderer', [
+  z
+    .object({
+      attachTo: renderTargetSchema,
+      kind: z.literal('render-pass'),
+      phase: z.enum(tileflowRenderStackPhases),
+      renderer: z.literal('background'),
+      requirements: renderRequirementsSchema.optional(),
+      style: renderStyleSchemas.background,
+    })
+    .strict(),
+  ...vectorRenderPassSchemas,
 ]);
+const renderRefinementSchemas = tileflowRenderStackRenderers.map((renderer) =>
+  z
+    .object({
+      kind: z.literal('refine-render-target'),
+      requirements: renderRequirementsSchema.optional(),
+      renderer: z.literal(renderer),
+      ...(renderer === 'background' ? {} : {selector: renderSelectorSchema.optional()}),
+      style: renderStyleSchemas[renderer],
+      target: renderTargetSchema,
+    })
+    .strict(),
+);
+const renderStackOperationSchema = z.union([renderPassSchema, ...renderRefinementSchemas]);
+const renderStackSchema = z
+  .record(renderStackOperationNameSchema, renderStackOperationSchema)
+  .superRefine((stack, context) => {
+    const size = Object.keys(stack).length;
+    if (size === 0) {
+      context.addIssue({
+        code: 'custom',
+        message: 'A render stack requires at least one named operation',
+      });
+    }
+    if (size > tileflowRenderStackLimits.maxOperations) {
+      context.addIssue({
+        code: 'custom',
+        message: `A render stack may contain at most ${tileflowRenderStackLimits.maxOperations} named operations`,
+      });
+    }
+  })
+  .describe('tileflow-render-stack');
+
+const roadClassSchema = z.enum(tileflowRoadClasses);
 const roadClassStyleSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -777,6 +1035,7 @@ const landModuleSchema = z
       })
       .strict()
       .optional(),
+    renderStack: renderStackSchema.optional(),
   })
   .strict();
 const waterModuleSchema = z
@@ -791,6 +1050,7 @@ const waterModuleSchema = z
       .object({bodies: areaStyleSchema.optional(), waterways: lineStyleSchema.optional()})
       .strict()
       .optional(),
+    renderStack: renderStackSchema.optional(),
     waterways: z
       .object({
         canal: lineStyleSchema.optional(),
@@ -810,6 +1070,7 @@ const buildingsModuleSchema = z
     extrusion: extrusionStyleSchema.optional(),
     flat: areaStyleSchema.optional(),
     mode: z.enum(['3d', 'flat']).optional(),
+    renderStack: renderStackSchema.optional(),
   })
   .strict();
 const addressesModuleSchema = z
@@ -817,15 +1078,17 @@ const addressesModuleSchema = z
     type: z.literal('addresses'),
     enabled: z.boolean().optional(),
     labels: symbolStyleSchema.optional(),
+    renderStack: renderStackSchema.optional(),
   })
   .strict();
-const landformClassSchema = z.enum(['peak', 'volcano', 'saddle', 'ridge', 'cliff', 'arete']);
+const landformClassSchema = z.enum(tileflowLandformClasses);
 const landformsModuleSchema = z
   .object({
     type: z.literal('landforms'),
     classes: z.partialRecord(landformClassSchema, symbolStyleSchema).optional(),
     elevation: z.boolean().optional(),
     enabled: z.boolean().optional(),
+    renderStack: renderStackSchema.optional(),
   })
   .strict();
 const boundariesModuleSchema = z
@@ -836,6 +1099,7 @@ const boundariesModuleSchema = z
     disputed: lineStyleSchema.optional(),
     enabled: z.boolean().optional(),
     maritime: lineStyleSchema.optional(),
+    renderStack: renderStackSchema.optional(),
   })
   .strict();
 const aerowaysModuleSchema = z
@@ -845,6 +1109,7 @@ const aerowaysModuleSchema = z
     enabled: z.boolean().optional(),
     runway: lineStackStyleSchema.optional(),
     runwayRef: symbolStyleSchema.optional(),
+    renderStack: renderStackSchema.optional(),
     taxiway: lineStackStyleSchema.optional(),
   })
   .strict();
@@ -878,6 +1143,7 @@ const transitModuleSchema = z
       })
       .strict()
       .optional(),
+    renderStack: renderStackSchema.optional(),
   })
   .strict();
 const roadsModuleSchema = z
@@ -936,6 +1202,7 @@ const roadsModuleSchema = z
       })
       .strict()
       .optional(),
+    renderStack: renderStackSchema.optional(),
     roundabouts: z
       .object({casing: circleStyleSchema.optional(), fill: circleStyleSchema.optional()})
       .strict()
@@ -993,6 +1260,7 @@ const labelsModuleSchema = z
     language: z.string().trim().min(1).optional(),
     places: z.enum(['none', 'major', 'all']).optional(),
     roadClasses: z.array(roadClassSchema).min(1).optional(),
+    renderStack: renderStackSchema.optional(),
     roads: z.enum(['none', 'highways', 'major', 'streets', 'all']).optional(),
     styles: z
       .object({
@@ -1042,17 +1310,18 @@ const poiModuleSchema = z
       })
       .strict()
       .optional(),
+    renderStack: renderStackSchema.optional(),
     styles: z.partialRecord(z.enum(tileflowPoiCategories), poiCategoryStyleSchema).optional(),
   })
   .strict();
 const nauticalModuleSchema = z
   .object({
     type: z.literal('nautical'),
-    aids: symbolStyleSchema.optional(),
+    aids: markerSymbolStyleSchema.optional(),
     coverage: areaStyleSchema.optional(),
     enabled: z.boolean().optional(),
     hazardAreas: areaStyleSchema.optional(),
-    hazards: symbolStyleSchema.optional(),
+    hazards: markerSymbolStyleSchema.optional(),
     labels: z
       .object({
         coverage: symbolStyleSchema.optional(),
@@ -1063,13 +1332,14 @@ const nauticalModuleSchema = z
       })
       .strict()
       .optional(),
-    lighthouses: symbolStyleSchema.optional(),
-    lights: symbolStyleSchema.optional(),
+    lighthouses: markerSymbolStyleSchema.optional(),
+    lights: markerSymbolStyleSchema.optional(),
     navigationAreas: areaStyleSchema.optional(),
     reefs: areaStyleSchema.optional(),
-    soundings: symbolStyleSchema.optional(),
+    renderStack: renderStackSchema.optional(),
+    soundings: markerSymbolStyleSchema.optional(),
     wreckAreas: areaStyleSchema.optional(),
-    wrecks: symbolStyleSchema.optional(),
+    wrecks: markerSymbolStyleSchema.optional(),
   })
   .strict();
 
@@ -1093,6 +1363,7 @@ const modulesSchema = z
         flat: circleStyleSchema.optional(),
         minZoom: zoomNumberSchema.optional(),
         mode: z.enum(['3d', 'flat']).optional(),
+        renderStack: renderStackSchema.optional(),
         threeDimensional: z
           .object({
             barkColor: themeColorValueSchema.optional(),
@@ -1279,16 +1550,21 @@ const vectorDataShape = {
   revision: revisionSchema.optional(),
   schema: openMapTilesSchema,
 };
-const publicVectorUrlSchema = z.string().superRefine((value, context) => {
-  try {
-    validatePublicVectorUrl(value);
-  } catch (error) {
-    context.addIssue({
-      code: 'custom',
-      message: error instanceof Error ? error.message : 'Invalid Tileflow vector tile URL.',
-    });
-  }
-});
+const publicVectorUrlSchema = z
+  .string()
+  .min(1)
+  .max(4_096)
+  .superRefine((value, context) => {
+    try {
+      validatePublicVectorUrl(value);
+    } catch (error) {
+      context.addIssue({
+        code: 'custom',
+        message: error instanceof Error ? error.message : 'Invalid Tileflow vector tile URL.',
+      });
+    }
+  })
+  .describe('tileflow-public-vector-url');
 const marineSourceSchema = z
   .object({
     attribution: z
@@ -1301,10 +1577,12 @@ const marineSourceSchema = z
     url: publicVectorUrlSchema.optional(),
   })
   .strict();
-const bathymetryDemUrlSchema = publicVectorUrlSchema.refine(
-  (value) => !value.startsWith('pmtiles://'),
-  'Expected an HTTPS, loopback HTTP, or root-relative DEM TileJSON URL',
-);
+const bathymetryDemUrlSchema = publicVectorUrlSchema
+  .refine(
+    (value) => !value.startsWith('pmtiles://'),
+    'Expected an HTTPS, loopback HTTP, or root-relative DEM TileJSON URL',
+  )
+  .describe('tileflow-public-dem-url');
 const bathymetryReliefSchema = z
   .object({
     accentColor: terrainColorValueSchema.optional(),
@@ -1418,12 +1696,6 @@ const dataSchema = z.union([
   z.object({...vectorDataShape, url: publicVectorUrlSchema}).strict(),
   directVectorDataSchema,
 ]);
-const mapRootSchema = z
-  .object({
-    compiler: z.literal('streets'),
-    compilerVersion: z.literal(tileflowStreetsCompilerVersion),
-  })
-  .strict();
 const localAssetDirectorySchema = z
   .string()
   .min(3)
@@ -1696,8 +1968,12 @@ const themesSchema = z
     if (names.length === 0) {
       context.addIssue({code: 'custom', message: 'Expected at least one named theme'});
     }
-    if (names.length > 64) {
-      context.addIssue({code: 'too_big', maximum: 64, origin: 'object'});
+    if (names.length > tileflowThemeLimits.maxThemes) {
+      context.addIssue({
+        code: 'too_big',
+        maximum: tileflowThemeLimits.maxThemes,
+        origin: 'object',
+      });
     }
     for (const [name, theme] of Object.entries(themes)) {
       try {
@@ -1710,7 +1986,8 @@ const themesSchema = z
         });
       }
     }
-  });
+  })
+  .describe('tileflow-themes');
 const systemThemesSchema = z
   .object({dark: tileflowThemeNameSchema, light: tileflowThemeNameSchema})
   .strict();
@@ -1728,7 +2005,6 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
     modules: modulesSchema.optional(),
     name: z.string().trim().min(1),
     projection: z.enum(['globe', 'mercator']).optional(),
-    root: mapRootSchema,
     systemThemes: systemThemesSchema.optional(),
     terrain: terrainSchema.optional(),
     themes: themesSchema,
@@ -1757,7 +2033,7 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
     const baseline = themeEntries[0];
     if (baseline) {
       for (const [name, theme] of themeEntries.slice(1)) {
-        for (const category of ['color', 'font', 'image', 'number'] as const) {
+        for (const category of tileflowThemeTokenCategories) {
           const expected = Object.keys(baseline[1].tokens[category]).sort();
           const actual = Object.keys(theme.tokens[category]).sort();
           if (expected.join('\0') !== actual.join('\0')) {
@@ -1795,13 +2071,7 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
   }) as z.ZodType<TileflowCompilerConfig>;
 
 export function parseResolvedTileflowMap(input: unknown): TileflowCompilerConfig {
-  const map = parseOrThrow(
-    resolvedTileflowMapSchema,
-    input,
-    'resolved map',
-  ) as TileflowCompilerConfig;
-  copyResolvedModuleEffects(input, map);
-  return map;
+  return parseOrThrow(resolvedTileflowMapSchema, input, 'resolved map') as TileflowCompilerConfig;
 }
 
 function parseOrThrow(schema: z.ZodType, input: unknown, name: string): unknown {

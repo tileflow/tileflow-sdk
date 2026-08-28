@@ -7,6 +7,7 @@ import {
 } from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {expression, zoom} from '../../cartography/values';
+import type {TileflowResolvedModuleConfig} from '../resolved';
 import type {TileflowLandcoverClass, TileflowLandModuleConfig, TileflowLanduseClass} from './index';
 
 const landuseClasses: Record<TileflowLanduseClass, readonly string[]> = {
@@ -66,12 +67,12 @@ const landcoverClasses = [
 ] as const satisfies readonly (readonly [TileflowLandcoverClass, TileflowLandcoverClassMatch])[];
 
 export function compileLand(
-  request: TileflowLandModuleConfig | undefined,
+  request: TileflowResolvedModuleConfig<TileflowLandModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
 ): TileflowLayerContribution[] {
   const colors = context.colors;
   const schema = context.data.schema;
-  const config = mergeTileflowDesign<TileflowLandModuleConfig>(
+  const config = mergeTileflowDesign<TileflowResolvedModuleConfig<TileflowLandModuleConfig>>(
     {
       type: 'land',
       enabled: true,
@@ -156,7 +157,7 @@ export function compileLand(
       kind: 'layer',
       layer: applyBackgroundStyle(
         {
-          id: 'streets-background',
+          id: 'tileflow-background',
           type: 'background',
         },
         background,
@@ -173,7 +174,7 @@ export function compileLand(
       kind: 'layer',
       layer: applyFillStyle(
         {
-          id: 'streets-global-landcover',
+          id: 'tileflow-global-landcover',
           type: 'fill',
           source,
           'source-layer': schema.layers.globalLandcover,
@@ -193,7 +194,7 @@ export function compileLand(
     if (!style) return;
     for (const area of createAreaLayers(
       {
-        id: `streets-landuse-${name}`,
+        id: `tileflow-landuse-${name}`,
         type: 'fill',
         source,
         'source-layer': schema.layers.landuse,
@@ -202,6 +203,16 @@ export function compileLand(
       style,
     )) {
       contributions.push({
+        ...(area.phase === 'fill'
+          ? {
+              family: {
+                group: 'land.landuse',
+                kind: 'fill' as const,
+                member: name,
+                outputKey: 'land.cohorts.landuse',
+              },
+            }
+          : {}),
         kind: 'layer',
         layer: area.layer,
         localOrder: localOrder++,
@@ -230,7 +241,7 @@ export function compileLand(
         : landcoverFilter(classField, subclassField, match);
     for (const area of createAreaLayers(
       {
-        id: `streets-landcover-${name}`,
+        id: `tileflow-landcover-${name}`,
         type: 'fill',
         source,
         'source-layer': sourceLayer,
@@ -239,6 +250,16 @@ export function compileLand(
       style,
     )) {
       contributions.push({
+        ...(area.phase === 'fill'
+          ? {
+              family: {
+                group: 'land.landcover',
+                kind: 'fill' as const,
+                member: name,
+                outputKey: 'land.cohorts.landcover',
+              },
+            }
+          : {}),
         kind: 'layer',
         layer: area.layer,
         localOrder: localOrder++,
@@ -255,7 +276,7 @@ export function compileLand(
   if (schema.semantics.parkLayer === 'mixed' && config.landcover?.urbanPark) {
     for (const area of createAreaLayers(
       {
-        id: 'streets-landcover-legacy-park',
+        id: 'tileflow-landcover-legacy-park',
         type: 'fill',
         source,
         'source-layer': schema.layers.park,

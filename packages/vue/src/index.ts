@@ -61,7 +61,6 @@ import {
   resolveTileflowStaticImageUrl,
   shouldLoadTileflowManifest,
   type TileflowAnalytics,
-  type TileflowMapMarker,
   type TileflowRuntimeManifestMap,
   type TileflowRuntimeSource,
 } from '@tileflow/core/runtime';
@@ -126,17 +125,13 @@ type TileflowMapSharedProps = {
   zoom?: number;
 };
 
-type TileflowMapAnnotationInput<TAnnotation extends TileflowAnnotation> =
-  | {annotations?: readonly TAnnotation[]; markers?: never}
-  | {annotations?: never; markers?: readonly TileflowMapMarker[]};
-
 type TileflowMapStateInput =
   | {defaultInteractionState?: never; interactionState?: TileflowInteractionState}
   | {defaultInteractionState?: TileflowInteractionState; interactionState?: never};
 
 type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> = TileflowMapSharedProps &
-  TileflowMapAnnotationInput<TAnnotation> &
   TileflowMapStateInput & {
+    annotations?: readonly TAnnotation[];
     interactions?: readonly TileflowInteractionBinding[];
     interactive?: boolean;
     mode?: 'interactive';
@@ -148,7 +143,6 @@ type TileflowMapImageProps = TileflowMapSharedProps & {
   interactionState?: never;
   interactions?: never;
   interactive?: never;
-  markers?: never;
   mode: 'image';
 };
 
@@ -166,7 +160,6 @@ type RuntimeTileflowMapProps = TileflowMapSharedProps &
     interactionState?: TileflowInteractionState;
     interactions?: readonly TileflowInteractionBinding[];
     interactive?: boolean;
-    markers?: readonly TileflowMapMarker[];
     mode?: TileflowMapMode;
   };
 
@@ -222,7 +215,6 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     interactions: Array as unknown as PropType<readonly TileflowInteractionBinding[]>,
     interactionState: Object as PropType<TileflowInteractionState>,
     mapOptions: Object as PropType<TileflowMapOptions>,
-    markers: Array as unknown as PropType<readonly TileflowMapMarker[]>,
     mode: {
       default: 'interactive',
       type: String as PropType<TileflowMapMode>,
@@ -276,7 +268,6 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     let activeSemanticDiagnosticKeys = new Set<string>();
     let annotationRuntimeDiagnostics: readonly TileflowInteractionDiagnostic[] = [];
     let semanticRuntimeDiagnostics: readonly TileflowInteractionDiagnostic[] = [];
-    let legacyTitles = new Map<string, string>();
     let imageResizeObserver: ResizeObserver | null = null;
     let mapFairUseNotice: TileflowFairUseNoticeController | null = null;
     let mapLifecycle: TileflowMapLifecycleAttachment | null = null;
@@ -297,7 +288,6 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     const annotationResolution = computed(() =>
       resolveTileflowVueAnnotations({
         annotations: props.annotations,
-        markers: props.markers,
       }),
     );
     const interactionBindingResolution = computed(() =>
@@ -323,7 +313,6 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     const hasInteractionConfiguration = computed(
       () =>
         props.annotations !== undefined ||
-        props.markers !== undefined ||
         props.interactions !== undefined ||
         props.interactionState !== undefined ||
         props.defaultInteractionState !== undefined ||
@@ -767,7 +756,6 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
 
     const syncAnnotationRuntime = () => {
       const resolution = annotationResolution.value;
-      legacyTitles = new Map(resolution.legacyTitles);
 
       if (!annotationRuntime) return;
 
@@ -914,7 +902,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
           RuntimeTileflowAnnotation
         >({
           createMarker({annotation, element}) {
-            element.title = legacyTitles.get(annotation.id) ?? annotation.ariaLabel;
+            element.title = annotation.ariaLabel;
             return new maplibregl.Marker({element});
           },
           customMarker: slots.marker !== undefined,
@@ -934,7 +922,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
           map,
           onInteractionStateChange: interactionCoordinator.requestInteractionState,
           updateMarker(_marker, {annotation, element}) {
-            element.title = legacyTitles.get(annotation.id) ?? annotation.ariaLabel;
+            element.title = annotation.ariaLabel;
           },
         });
 
@@ -1198,7 +1186,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       {flush: 'post'},
     );
     watch(
-      () => [props.annotations, props.markers],
+      () => props.annotations,
       () => syncAnnotationRuntime(),
       {deep: true, flush: 'post'},
     );

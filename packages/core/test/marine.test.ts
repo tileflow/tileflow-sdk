@@ -120,11 +120,11 @@ test('loads only the physical Bathymetry sources required by each display', () =
   assert.equal(bands.sources[tileflowBathymetrySourceId]?.type, 'vector');
   assert.equal(bands.sources[tileflowBathymetryDemSourceId], undefined);
   assert.equal(
-    bands.layers.some(({id}) => id === 'streets-bathymetry-color-relief'),
+    bands.layers.some(({id}) => id === 'tileflow-bathymetry-color-relief'),
     false,
   );
   assert.equal(
-    bands.layers.some(({id}) => id === 'streets-bathymetry-relief'),
+    bands.layers.some(({id}) => id === 'tileflow-bathymetry-relief'),
     false,
   );
 
@@ -142,7 +142,7 @@ test('loads only the physical Bathymetry sources required by each display', () =
     url: 'http://127.0.0.1:4888/tiles/bathymetry/dem/tiles.json',
   });
   assert.equal(
-    relief.layers.some(({id}) => id === 'streets-bathymetry'),
+    relief.layers.some(({id}) => id === 'tileflow-bathymetry'),
     false,
   );
 
@@ -165,8 +165,8 @@ test('loads only the physical Bathymetry sources required by each display', () =
   assert.equal(hybrid.sources[tileflowBathymetryDemSourceId]?.type, 'raster-dem');
 
   const byId = new Map(hybrid.layers.map((layer) => [layer.id, layer]));
-  const colorRelief = byId.get('streets-bathymetry-color-relief');
-  const hillshade = byId.get('streets-bathymetry-relief');
+  const colorRelief = byId.get('tileflow-bathymetry-color-relief');
+  const hillshade = byId.get('tileflow-bathymetry-relief');
   assert.equal(colorRelief?.type, 'color-relief');
   assert.equal(colorRelief?.source, tileflowBathymetryDemSourceId);
   assert.match(JSON.stringify(colorRelief?.paint?.['color-relief-color']), /elevation/u);
@@ -179,7 +179,7 @@ test('loads only the physical Bathymetry sources required by each display', () =
   assert.deepEqual(hillshade?.paint?.['hillshade-illumination-altitude'], [45, 45, 45, 45]);
   assert.deepEqual(validateStyleMin(hybrid as never), []);
 
-  const vectorColor = byId.get('streets-bathymetry')?.paint?.['fill-color'] as unknown[];
+  const vectorColor = byId.get('tileflow-bathymetry')?.paint?.['fill-color'] as unknown[];
   assert.deepEqual(
     vectorColor.slice(3).filter((_, index) => index % 2 === 0),
     [-11_000, -8_000, -6_000, -4_000, -2_000, -1_000, -500, -200, -100, -50, -20, -10, 0],
@@ -256,30 +256,30 @@ test('supports advanced source overrides while preserving independent selection'
   assert.equal(style.sources['fixture-depth']?.url, 'https://depth.example.test/tiles.json');
   assert.equal(style.sources['fixture-depth']?.attribution, 'Bathymetry fixture');
   assert.equal(style.sources[tileflowNauticalSourceId], undefined);
-  assert.equal(style.layers.find(({id}) => id === 'streets-bathymetry')?.source, 'fixture-depth');
+  assert.equal(style.layers.find(({id}) => id === 'tileflow-bathymetry')?.source, 'fixture-depth');
   assert.equal(
-    style.layers.some(({id}) => String(id).startsWith('streets-nautical-')),
+    style.layers.some(({id}) => String(id).startsWith('tileflow-nautical-')),
     false,
   );
 });
 
 test('prefers bathymetry sidecar, preserves the implicit World fallback, and honors none', () => {
   const fallback = createStyle(extendStreets(), {preparedAssets});
-  assert.equal(fallback.layers.find(({id}) => id === 'streets-bathymetry')?.source, 'tileflow');
+  assert.equal(fallback.layers.find(({id}) => id === 'tileflow-bathymetry')?.source, 'tileflow');
 
   const sidecar = createStyle(extendStreets({marine: 'bathymetry'}), {preparedAssets});
   assert.equal(
-    sidecar.layers.find(({id}) => id === 'streets-bathymetry')?.source,
+    sidecar.layers.find(({id}) => id === 'tileflow-bathymetry')?.source,
     tileflowBathymetrySourceId,
   );
 
   const disabled = createStyle(extendStreets({marine: 'none'}), {preparedAssets});
   assert.equal(
-    disabled.layers.some(({id}) => id === 'streets-bathymetry'),
+    disabled.layers.some(({id}) => id === 'tileflow-bathymetry'),
     false,
   );
   assert.equal(
-    disabled.layers.some(({id}) => id === 'streets-water'),
+    disabled.layers.some(({id}) => id === 'tileflow-water'),
     true,
   );
 });
@@ -289,60 +289,60 @@ test('chart composes all nautical semantics and publishes per-source metadata', 
   const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
 
   for (const [id, sourceLayer] of [
-    ['streets-nautical-soundings', 'sounding'],
-    ['streets-nautical-aids-marker', 'aid'],
-    ['streets-nautical-aids', 'aid'],
-    ['streets-nautical-lighthouses-marker', 'aid'],
-    ['streets-nautical-lighthouses', 'aid'],
-    ['streets-nautical-lights-marker', 'light'],
-    ['streets-nautical-lights', 'light'],
-    ['streets-nautical-hazards', 'hazard'],
-    ['streets-nautical-wrecks', 'wreck'],
-    ['streets-nautical-hazard-areas', 'hazard'],
-    ['streets-nautical-hazard-areas-outline', 'hazard'],
-    ['streets-nautical-wreck-areas', 'wreck'],
-    ['streets-nautical-wreck-areas-outline', 'wreck'],
-    ['streets-nautical-coverage-labels', 'coverage'],
-    ['streets-nautical-navigation-area-labels', 'navigation_area'],
-    ['streets-nautical-reef-labels', 'reef'],
-    ['streets-nautical-hazard-area-labels', 'hazard'],
-    ['streets-nautical-wreck-area-labels', 'wreck'],
-    ['streets-nautical-coverage-outline', 'coverage'],
-    ['streets-nautical-navigation-areas', 'navigation_area'],
-    ['streets-nautical-navigation-areas-outline', 'navigation_area'],
-    ['streets-nautical-reefs', 'reef'],
-    ['streets-nautical-reefs-outline', 'reef'],
+    ['tileflow-nautical-soundings', 'sounding'],
+    ['tileflow-nautical-aids-marker', 'aid'],
+    ['tileflow-nautical-aids', 'aid'],
+    ['tileflow-nautical-lighthouses-marker', 'aid'],
+    ['tileflow-nautical-lighthouses', 'aid'],
+    ['tileflow-nautical-lights-marker', 'light'],
+    ['tileflow-nautical-lights', 'light'],
+    ['tileflow-nautical-hazards', 'hazard'],
+    ['tileflow-nautical-wrecks', 'wreck'],
+    ['tileflow-nautical-hazard-areas', 'hazard'],
+    ['tileflow-nautical-hazard-areas-outline', 'hazard'],
+    ['tileflow-nautical-wreck-areas', 'wreck'],
+    ['tileflow-nautical-wreck-areas-outline', 'wreck'],
+    ['tileflow-nautical-coverage-labels', 'coverage'],
+    ['tileflow-nautical-navigation-area-labels', 'navigation_area'],
+    ['tileflow-nautical-reef-labels', 'reef'],
+    ['tileflow-nautical-hazard-area-labels', 'hazard'],
+    ['tileflow-nautical-wreck-area-labels', 'wreck'],
+    ['tileflow-nautical-coverage-outline', 'coverage'],
+    ['tileflow-nautical-navigation-areas', 'navigation_area'],
+    ['tileflow-nautical-navigation-areas-outline', 'navigation_area'],
+    ['tileflow-nautical-reefs', 'reef'],
+    ['tileflow-nautical-reefs-outline', 'reef'],
   ] as const) {
     assert.equal(byId.get(id)?.source, tileflowNauticalSourceId, `${id} source`);
     assert.equal(byId.get(id)?.['source-layer'], sourceLayer, `${id} source-layer`);
   }
-  assert.match(JSON.stringify(byId.get('streets-nautical-soundings')?.layout), /depth/u);
-  assert.match(JSON.stringify(byId.get('streets-nautical-aids')?.layout), /subclass/u);
-  assert.match(JSON.stringify(byId.get('streets-nautical-aids')?.layout), /class/u);
-  assert.match(JSON.stringify(byId.get('streets-nautical-aids')?.filter), /lighthouse/u);
-  assert.match(JSON.stringify(byId.get('streets-nautical-lighthouses')?.filter), /lighthouse/u);
-  assert.match(JSON.stringify(byId.get('streets-nautical-lights')?.layout), /character/u);
-  assert.match(JSON.stringify(byId.get('streets-nautical-lights')?.layout), /range_nm/u);
-  assert.match(JSON.stringify(byId.get('streets-nautical-lights')?.layout), /direction/u);
-  assert.match(JSON.stringify(byId.get('streets-nautical-lights')?.layout), /name/u);
-  assert.match(JSON.stringify(byId.get('streets-nautical-hazards')?.layout), /name/u);
-  assert.match(JSON.stringify(byId.get('streets-nautical-hazards')?.layout), /depth/u);
-  assert.match(JSON.stringify(byId.get('streets-nautical-wrecks')?.layout), /name/u);
-  assert.match(JSON.stringify(byId.get('streets-nautical-wrecks')?.layout), /depth/u);
-  assert.match(JSON.stringify(byId.get('streets-nautical-coverage-labels')?.layout), /provider/u);
-  assert.match(JSON.stringify(byId.get('streets-nautical-coverage-labels')?.filter), /provider/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-soundings')?.layout), /depth/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-aids')?.layout), /subclass/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-aids')?.layout), /class/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-aids')?.filter), /lighthouse/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-lighthouses')?.filter), /lighthouse/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-lights')?.layout), /character/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-lights')?.layout), /range_nm/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-lights')?.layout), /direction/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-lights')?.layout), /name/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-hazards')?.layout), /name/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-hazards')?.layout), /depth/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-wrecks')?.layout), /name/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-wrecks')?.layout), /depth/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-coverage-labels')?.layout), /provider/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-coverage-labels')?.filter), /provider/u);
   assert.match(
-    JSON.stringify(byId.get('streets-nautical-navigation-area-labels')?.layout),
+    JSON.stringify(byId.get('tileflow-nautical-navigation-area-labels')?.layout),
     /name/u,
   );
   assert.match(
-    JSON.stringify(byId.get('streets-nautical-navigation-area-labels')?.filter),
+    JSON.stringify(byId.get('tileflow-nautical-navigation-area-labels')?.filter),
     /class/u,
   );
-  for (const id of ['streets-nautical-hazards', 'streets-nautical-wrecks']) {
+  for (const id of ['tileflow-nautical-hazards', 'tileflow-nautical-wrecks']) {
     assert.match(JSON.stringify(byId.get(id)?.filter), /Point/u, `${id} point geometry`);
   }
-  for (const id of ['streets-nautical-hazard-areas', 'streets-nautical-wreck-areas']) {
+  for (const id of ['tileflow-nautical-hazard-areas', 'tileflow-nautical-wreck-areas']) {
     assert.match(JSON.stringify(byId.get(id)?.filter), /Polygon/u, `${id} polygon geometry`);
   }
   assert.deepEqual(validateStyleMin(style as never), []);

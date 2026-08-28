@@ -30,18 +30,18 @@ export function tileflowMapFixture(options: TileflowMapFixtureOptions): string {
       : '',
     options.icons === undefined || options.icons === 'none' ? `icons: []` : '',
     `modules: {
-  addresses: {type: 'addresses', enabled: false},
-  aeroways: {type: 'aeroways', enabled: false},
-  boundaries: {type: 'boundaries', enabled: false},
-  buildings: {type: 'buildings', enabled: false},
-  labels: {type: 'labels', enabled: false},
-  land: {type: 'land', enabled: false},
-  landforms: {type: 'landforms', enabled: false},
-  poi: {type: 'poi', enabled: false},
-  roads: {type: 'roads', enabled: false},
-  transit: {type: 'transit', enabled: false},
-  vegetation: {type: 'vegetation', enabled: false},
-  water: {type: 'water', enabled: false}
+  addresses: disable(),
+  aeroways: disable(),
+  boundaries: disable(),
+  buildings: disable(),
+  labels: disable(),
+  land: disable(),
+  landforms: disable(),
+  poi: disable(),
+  roads: disable(),
+  transit: disable(),
+  vegetation: disable(),
+  water: disable()
 }`,
     `glyphs: {
   kind: 'url',
@@ -53,7 +53,9 @@ export function tileflowMapFixture(options: TileflowMapFixtureOptions): string {
     .filter(Boolean)
     .join(',\n');
   const coreImports =
-    options.data === 'fixture' ? 'defineMap, openMapTiles, vectorTiles' : 'defineMap';
+    options.data === 'fixture'
+      ? 'defineMap, disable, openMapTiles, vectorTiles'
+      : 'defineMap, disable';
   return `${normalizeSection(options.imports)}import {${coreImports}} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 

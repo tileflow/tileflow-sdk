@@ -7,6 +7,7 @@ import {
   buildings,
   createStyle,
   defineTheme,
+  disable,
   fixed,
   labels,
   land,
@@ -147,33 +148,34 @@ for (const variant of variants) {
 test('disabled domains are deliberately absent rather than silently replaced', () => {
   const style = compileTestMap({
     modules: {
-      buildings: buildings({enabled: false}),
-      poi: poi({enabled: false}),
-      roads: roads({enabled: false}),
-      transit: transit({enabled: false}),
+      buildings: disable(),
+      poi: disable(),
+      roads: disable(),
+      transit: disable(),
     },
   });
 
   assert.equal(
-    style.layers.some((layer) => layer.id.startsWith('streets-buildings-')),
+    style.layers.some((layer) => layer.id.startsWith('tileflow-buildings-')),
     false,
   );
   assert.equal(
-    style.layers.some((layer) => layer.id.startsWith('streets-poi-')),
+    style.layers.some((layer) => layer.id.startsWith('tileflow-poi-')),
     false,
   );
   assert.equal(
     style.layers.some(
-      (layer) => layer.id.startsWith('streets-road-') || layer.id.startsWith('streets-label-road-'),
+      (layer) =>
+        layer.id.startsWith('tileflow-road-') || layer.id.startsWith('tileflow-label-road-'),
     ),
     false,
   );
   assert.equal(
-    style.layers.some((layer) => layer.id.startsWith('streets-label-place-')),
+    style.layers.some((layer) => layer.id.startsWith('tileflow-label-place-')),
     true,
   );
   assert.equal(
-    style.layers.some((layer) => layer.id.startsWith('streets-transit-')),
+    style.layers.some((layer) => layer.id.startsWith('tileflow-transit-')),
     false,
   );
   assert.deepEqual(validateStyleMin(style), []);
@@ -181,14 +183,16 @@ test('disabled domains are deliberately absent rather than silently replaced', (
 
 test('binds individual trees for the runtime 3d vegetation renderer', () => {
   const style = compileTestMap();
-  const trees = style.layers.find((layer) => layer.id === 'streets-vegetation-trees');
-  const treeIndex = style.layers.findIndex((layer) => layer.id === 'streets-vegetation-trees');
-  const buildingIndex = style.layers.findIndex((layer) => layer.id === 'streets-buildings-fill');
-  const roadIndex = style.layers.findIndex((layer) => layer.id === 'streets-road-oneway');
+  const trees = style.layers.find((layer) => layer.id === 'tileflow-vegetation-trees');
+  const treeIndex = style.layers.findIndex((layer) => layer.id === 'tileflow-vegetation-trees');
+  const buildingIndex = style.layers.findIndex((layer) => layer.id === 'tileflow-buildings-fill');
+  const roadIndex = style.layers.findIndex((layer) => layer.id === 'tileflow-road-oneway');
   const roadLabelIndex = style.layers.findIndex((layer) =>
-    layer.id.startsWith('streets-label-road-'),
+    layer.id.startsWith('tileflow-label-road-'),
   );
-  const labelIndex = style.layers.findIndex((layer) => layer.id.startsWith('streets-label-place-'));
+  const labelIndex = style.layers.findIndex((layer) =>
+    layer.id.startsWith('tileflow-label-place-'),
+  );
 
   assert.equal(trees?.type, 'circle');
   assert.equal(trees?.['source-layer'], 'tree');

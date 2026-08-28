@@ -7,8 +7,7 @@ import {
   getTileflowStyleFontFaces,
   hashTileflowFontBundleManifest,
   type MapLibreStyle,
-  parseTileflowMap,
-  resolveMap,
+  parseResolvedTileflowMap,
   type TileflowFontBundleManifest,
   tileflowMapIdSchema,
   type TileflowStyleFontFace,
@@ -89,9 +88,9 @@ export async function getTileflowFontWatchPaths(
   const issues: TileflowFontCompilationIssue[] = [];
 
   for (const mapName of Object.keys(project.maps).sort(compareCodeUnits)) {
-    const authoredMap = project.maps[mapName];
-    if (!authoredMap) continue;
-    const fonts = resolveMap(authoredMap).fonts;
+    const resolvedMap = project.maps[mapName];
+    if (!resolvedMap) continue;
+    const fonts = parseResolvedTileflowMap(resolvedMap).fonts;
     if (fonts === undefined) continue;
     try {
       const directories = await resolveTileflowAssetDirectories(fonts, {
@@ -199,7 +198,9 @@ export async function prepareTileflowStyleFonts(
   if (issues.length > 0) throw new TileflowFontCompilationError(issues);
 
   const parsedMaps = new Map(
-    projectMapNames.map((mapName) => [mapName, parseTileflowMap(project.maps[mapName]!)] as const),
+    projectMapNames.map(
+      (mapName) => [mapName, parseResolvedTileflowMap(project.maps[mapName]!)] as const,
+    ),
   );
   if (
     projectMapNames.length !== styleMapNames.length ||

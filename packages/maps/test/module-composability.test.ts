@@ -9,6 +9,7 @@ import {
   buildings,
   createStyle,
   defineMap,
+  disable,
   labels,
   land,
   landforms,
@@ -16,14 +17,14 @@ import {
   poi,
   resolveMap,
   roads,
-  type TileflowStreetsModules,
+  type TileflowAuthoringModules,
   tileflowWorldV1Schema,
   transit,
   vectorTiles,
   vegetation,
   water,
 } from '@tileflow/core';
-import {getResolvedModuleEffects} from '@tileflow/core/recipe';
+import {createStyleWithInspection} from '@tileflow/core/build';
 import {cyberpunk, ferraris, harad, matrix, siegfried, soundings, streets, verdant} from '../src';
 
 const moduleFactories = {
@@ -43,99 +44,6 @@ const moduleFactories = {
 } as const;
 
 type Domain = keyof typeof moduleFactories;
-
-const officialEffectIds: Partial<Record<Domain, readonly string[]>> = {
-  boundaries: ['streets-boundary-admin2-background'],
-  buildings: [
-    'streets-buildings-3d-shadow-soft',
-    'streets-buildings-3d-shadow-core',
-    'streets-buildings-3d',
-    'cyberpunk-buildings-circuit-fill',
-    'cyberpunk-buildings-ghost-aura',
-    'cyberpunk-buildings-ghost-glow',
-    'cyberpunk-buildings-signal-trace',
-    'matrix-buildings-ghost-aura',
-    'matrix-buildings-ghost-glow',
-    'matrix-buildings-signal-trace',
-    'ferraris-building-print-shadow',
-    'verdant-building-print-shadow',
-  ],
-  labels: ['streets-label-place-settlement-marker', 'matrix-crt-mask', 'verdant-landscape-label'],
-  land: [
-    'streets-landuse-business-area',
-    'cyberpunk-landuse-business-grid',
-    'cyberpunk-landuse-sector-trace',
-    'cyberpunk-urban-park-circuit-trace',
-    'matrix-landuse-business-grid',
-    'matrix-landuse-sector-trace',
-    'matrix-urban-park-circuit-trace',
-    'verdant-landcover-farmland-pattern',
-    'verdant-landcover-scrub-pattern',
-    'verdant-landcover-meadow-pattern',
-    'verdant-landcover-orchard-pattern',
-    'verdant-landcover-rock-pattern',
-    'verdant-landcover-wetland-pattern',
-    'verdant-landcover-wood-pattern',
-    'verdant-landuse-residential-pattern',
-    'ferraris-landcover-farmland-pattern',
-    'ferraris-landcover-heath-pattern',
-    'ferraris-landcover-orchard-pattern',
-    'ferraris-landcover-sand-pattern',
-    'ferraris-landcover-wetland-pattern',
-    'ferraris-landcover-wood-pattern',
-    'ferraris-landuse-residential-pattern',
-    'harad-landcover-arable-pattern',
-    'harad-landcover-conifer-pattern',
-    'harad-landcover-deciduous-pattern',
-    'harad-landcover-orchard-pattern',
-    'harad-landcover-sand-pattern',
-    'harad-landcover-wetland-pattern',
-    'harad-landuse-settlement-pattern',
-    'harad-field-boundaries',
-    'siegfried-landcover-forest-pattern',
-    'siegfried-landcover-gravel-pattern',
-    'siegfried-landcover-orchard-pattern',
-    'siegfried-landcover-wetland-pattern',
-  ],
-  poi: [
-    'cyberpunk-destination-scan-ring',
-    'cyberpunk-destination-beacon-core',
-    'cyberpunk-destination-target-brackets',
-    'matrix-destination-scan-ring',
-    'matrix-destination-beacon-core',
-    'matrix-destination-poi-node',
-  ],
-  roads: [
-    'cyberpunk-road-principal-neon-aura',
-    'cyberpunk-road-principal-neon-glow',
-    'cyberpunk-road-principal-neon-core',
-    'matrix-road-principal-neon-aura',
-    'matrix-road-principal-neon-glow',
-    'verdant-trail-emphasis',
-  ],
-  water: [
-    'cyberpunk-water-shore-aura',
-    'cyberpunk-water-shore-core',
-    'matrix-water-shore-aura',
-    'matrix-water-shore-core',
-    'ferraris-water-ripples-pattern',
-    'ferraris-water-intermittent-ripples-pattern',
-    'harad-water-lines-pattern',
-    'harad-water-intermittent-lines-pattern',
-    'siegfried-rock-contour-mask',
-    'siegfried-landcover-rock-pattern',
-    'siegfried-landcover-scree-pattern',
-    'siegfried-glacier-mask',
-    'siegfried-landcover-glacier-pattern',
-    'siegfried-glacier-outline',
-    'soundings-water-dots-pattern',
-    'soundings-water-intermittent-dots-pattern',
-    'siegfried-water-lines-pattern',
-    'siegfried-water-intermittent-lines-pattern',
-    'verdant-water-lines-pattern',
-    'verdant-water-intermittent-lines-pattern',
-  ],
-};
 
 const officialMaps = {
   streets,
@@ -239,6 +147,53 @@ const preparedOfficialAssets = {
     },
   },
 } as const;
+const compiledOfficialMaps = new Map<string, ReturnType<typeof createStyleWithInspection>>();
+
+function compileOfficialMap(
+  mapName: string,
+  map: (typeof officialMaps)[keyof typeof officialMaps],
+) {
+  const cached = compiledOfficialMaps.get(mapName);
+  if (cached) return cached;
+  const compiled = createStyleWithInspection(map, preparedOfficialAssets);
+  compiledOfficialMaps.set(mapName, compiled);
+  return compiled;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function resolvedRenderTargets(resolved: ReturnType<typeof resolveMap>, domain: Domain): string[] {
+  const modules = resolved.modules as Readonly<Record<string, unknown>> | undefined;
+  const module = modules?.[domain];
+  if (!isRecord(module) || !isRecord(module.renderStack)) return [];
+
+  return Object.entries(module.renderStack)
+    .map(([name, operation]) => {
+      assert.ok(isRecord(operation), `${domain}.renderStack.${name} is not an operation`);
+      if (operation.kind === 'render-pass') return `${domain}.render.${name}`;
+      assert.equal(operation.kind, 'refine-render-target');
+      assert.equal(typeof operation.target, 'string');
+      return operation.target as string;
+    })
+    .sort();
+}
+
+function compiledRenderTargets(
+  compiled: ReturnType<typeof createStyleWithInspection>,
+  domain: Domain,
+): string[] {
+  return compiled.inspection.layers
+    .flatMap((layer) =>
+      layer.contributions.flatMap((contribution) =>
+        contribution.operations
+          .filter((operation) => operation.owner === domain)
+          .map((operation) => operation.target),
+      ),
+    )
+    .sort();
+}
 
 test('raw layer overrides are absent from the public authoring surface', () => {
   for (const name of ['addLayer', 'moveLayer', 'patchLayer', 'removeLayer']) {
@@ -248,15 +203,15 @@ test('raw layer overrides are absent from the public authoring surface', () => {
 
 for (const [mapName, parent] of Object.entries(officialMaps)) {
   for (const domain of Object.keys(moduleFactories) as Domain[]) {
-    for (const mode of ['omitted', 'explicit-undefined', 'exact', 'custom', 'disabled'] as const) {
+    for (const mode of ['omitted', 'exact', 'custom', 'disabled'] as const) {
       test(`${mapName}: ${mode} ${domain} is owner-atomic`, () => {
         const replacement =
           mode === 'exact'
             ? (moduleFactories[domain] as () => unknown)()
             : mode === 'custom'
-              ? {type: domain, enabled: true}
+              ? {type: domain}
               : mode === 'disabled'
-                ? {type: domain, enabled: false}
+                ? disable()
                 : undefined;
         const child = defineMap({
           id: `${mapName}-${domain}-${mode}`,
@@ -264,41 +219,46 @@ for (const [mapName, parent] of Object.entries(officialMaps)) {
           extends: parent,
           ...(mode === 'omitted'
             ? {}
-            : {modules: {[domain]: replacement} as TileflowStreetsModules}),
+            : {modules: {[domain]: replacement} as TileflowAuthoringModules}),
         });
         const resolved = resolveMap(child);
         const parentResolved = resolveMap(parent);
-        const ownedEffects = getResolvedModuleEffects(resolved).filter(
-          (effect) => effect.owner === domain,
-        );
-        const parentOwnedEffects = getResolvedModuleEffects(parentResolved).filter(
-          (effect) => effect.owner === domain,
-        );
+        const renderTargets = resolvedRenderTargets(resolved, domain);
+        const parentRenderTargets = resolvedRenderTargets(parentResolved, domain);
 
-        const inherits = mode === 'omitted' || mode === 'explicit-undefined';
+        const inherits = mode === 'omitted';
         if (inherits) {
           assert.deepEqual(resolved.modules?.[domain], parentResolved.modules?.[domain]);
-          assert.deepEqual(ownedEffects, parentOwnedEffects);
+          assert.deepEqual(renderTargets, parentRenderTargets);
         } else {
           assert.deepEqual(
-            ownedEffects,
+            renderTargets,
             [],
-            `${mapName}.${domain} retained inherited compiler effects`,
+            `${mapName}.${domain} retained its inherited public render stack`,
           );
         }
-        const style = createStyle(child, preparedOfficialAssets);
-        assert.deepEqual(validateStyleMin(style as never), []);
-
-        if (!inherits) {
-          const ids = new Set(style.layers.map((layer) => layer.id));
-          for (const id of officialEffectIds[domain] ?? []) {
-            assert.equal(ids.has(id), false, `${mapName}.${domain} leaked owned effect ${id}`);
-          }
-        }
-        const compiledModules = style.metadata?.['tileflow:modules'] as readonly string[];
+        const compiled = createStyleWithInspection(child, preparedOfficialAssets);
+        assert.deepEqual(validateStyleMin(compiled.style as never), []);
+        const compiledTargets = compiledRenderTargets(compiled, domain);
+        let parentCompiled: ReturnType<typeof createStyleWithInspection> | undefined;
         if (inherits) {
-          const parentStyle = createStyle(parent, preparedOfficialAssets);
-          const parentModules = parentStyle.metadata?.['tileflow:modules'] as readonly string[];
+          parentCompiled = compileOfficialMap(mapName, parent);
+          const parentCompiledTargets = compiledRenderTargets(parentCompiled, domain);
+          assert.deepEqual(parentCompiledTargets, parentRenderTargets);
+          assert.deepEqual(compiledTargets, parentCompiledTargets);
+        } else {
+          assert.deepEqual(
+            compiledTargets,
+            [],
+            `${mapName}.${domain} compiled an inherited semantic render operation`,
+          );
+        }
+        const compiledModules = compiled.style.metadata?.['tileflow:modules'] as readonly string[];
+        if (inherits) {
+          assert.ok(parentCompiled);
+          const parentModules = parentCompiled.style.metadata?.[
+            'tileflow:modules'
+          ] as readonly string[];
           assert.equal(compiledModules.includes(domain), parentModules.includes(domain));
         } else {
           assert.equal(compiledModules.includes(domain), mode !== 'disabled');

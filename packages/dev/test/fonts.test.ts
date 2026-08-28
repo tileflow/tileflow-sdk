@@ -6,8 +6,10 @@ import {join} from 'node:path';
 import test from 'node:test';
 import {
   createStyle,
+  defineMap,
   getTileflowStyleFontFaces,
   type MapLibreStyle,
+  parseTileflowMap,
   resolveMap,
   type TileflowFontDirectory,
 } from '@tileflow/core';
@@ -152,7 +154,7 @@ test('prepares all three packaged Siegfried faces with one OFL license', async (
     theme: 'dark',
   });
   const prepared = await prepareTileflowStyleFonts(
-    {maps: {siegfried}},
+    {maps: {siegfried: parseTileflowMap(siegfried)}},
     {siegfried: {dark, light}},
     {assetBaseUrl: '/assets', cwd, target: 'local'},
   );
@@ -180,7 +182,10 @@ test('prepares all three packaged Siegfried faces with one OFL license', async (
       {family: 'Cormorant Garamond SemiBold', style: 'normal', weight: '600'},
     ],
   );
-  assert.deepEqual(await getTileflowFontWatchPaths({maps: {siegfried}}, cwd), []);
+  assert.deepEqual(
+    await getTileflowFontWatchPaths({maps: {siegfried: parseTileflowMap(siegfried)}}, cwd),
+    [],
+  );
   assert.deepEqual(resolveMap(siegfried).fonts, [siegfriedFonts]);
 });
 
@@ -380,7 +385,7 @@ test('rejects non-portable map and concrete theme keys at the preparation bounda
   );
 });
 
-test('watch-path discovery remains tolerant of an invalid compiled theme identity', async (t) => {
+test('watch-path discovery rejects an invalid resolved theme identity', async (t) => {
   const cwd = await fixture(t);
   await mkdir(join(cwd, 'fonts'));
   const map = fontProject(['./fonts']).maps.main!;
@@ -394,9 +399,10 @@ test('watch-path discovery remains tolerant of an invalid compiled theme identit
     },
   } as unknown as TileflowBuildCatalog;
 
-  assert.deepEqual(await getTileflowFontWatchPaths(invalidProject, cwd), [
-    await realpath(join(cwd, 'fonts')),
-  ]);
+  await assert.rejects(
+    getTileflowFontWatchPaths(invalidProject, cwd),
+    /concrete theme name|system is browser-only/u,
+  );
   await assert.rejects(
     prepareTileflowStyleFonts(
       invalidProject,
@@ -454,13 +460,14 @@ test('preview loads generic style metadata through the shared browser runtime', 
 function fontProject(fonts: readonly TileflowFontDirectory[] | undefined): TileflowBuildCatalog {
   return {
     maps: {
-      main: {
-        id: 'main',
-        version: 1,
-        root: {compiler: 'streets', compilerVersion: 1},
-        ...fixtureThemeFields,
-        ...(fonts === undefined ? {} : {fonts}),
-      },
+      main: parseTileflowMap(
+        defineMap({
+          id: 'main',
+          version: 1,
+          ...fixtureThemeFields,
+          ...(fonts === undefined ? {} : {fonts}),
+        }),
+      ),
     },
   };
 }

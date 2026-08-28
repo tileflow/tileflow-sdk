@@ -1,20 +1,21 @@
 import {tileflowCaptureSceneNameSchema, tileflowCaptureSceneSchema} from './capture-scene';
 import {
-  compileStreetsStyle,
-  type TileflowStreetsCompileOptions,
-  type TileflowStreetsMapConfig,
-} from './cartography/streets';
+  createTileflowCompilationFailure,
+  type TileflowCompilationResult,
+} from './cartography/compilation-report';
 import {
-  type ResolvedTileflowMap,
-  resolveMap,
-  type TileflowMap,
-  tileflowMapIdSchema,
-  tileflowStreetsCompilerVersion,
-} from './maps';
+  compileSemanticStyle,
+  compileSemanticStyleResult,
+  type TileflowSemanticCompilationOptions,
+  type TileflowSemanticCompileOptions,
+  type TileflowSemanticMapConfig,
+} from './cartography/streets';
+import {type ResolvedTileflowMap, resolveMap, type TileflowMap, tileflowMapIdSchema} from './maps';
 import {parseResolvedTileflowMap, TileflowResolvedMapValidationError} from './resolved-map-schema';
 import type {MapLibreStyle, ValidationResult} from './types';
 
-export type TileflowStyleOptions = TileflowStreetsCompileOptions;
+export type TileflowStyleOptions = TileflowSemanticCompileOptions;
+export type TileflowCompilationOptions = TileflowSemanticCompilationOptions;
 
 export function createStyle(
   config: TileflowMap,
@@ -28,26 +29,43 @@ export function createStyle(
       ({
         id: compiled.id,
         lineage: collectMapLineage(config),
-        root: compiled.root,
         version: compiled.version,
       } satisfies NonNullable<TileflowStyleOptions['map']>),
   });
 }
 
+/** Resolve and compile one map without throwing, returning deterministic compiler diagnostics. */
+export function createStyleResult(
+  config: TileflowMap,
+  options: TileflowCompilationOptions = {},
+): TileflowCompilationResult {
+  try {
+    const compiled = parseTileflowMap(config);
+    return compileSemanticStyleResult(compiled, {
+      ...options,
+      map:
+        options.map ??
+        ({
+          id: compiled.id,
+          lineage: collectMapLineage(config),
+          version: compiled.version,
+        } satisfies NonNullable<TileflowStyleOptions['map']>),
+    });
+  } catch (error) {
+    return createTileflowCompilationFailure({
+      error,
+      map: typeof config.id === 'string' ? config.id : '<unresolved>',
+      phase: 'input',
+      theme: options.theme,
+    });
+  }
+}
+
 function compileTileflowMap(
-  config: TileflowStreetsMapConfig,
+  config: TileflowSemanticMapConfig,
   options: TileflowStyleOptions,
 ): MapLibreStyle {
-  switch (config.root.compiler) {
-    case 'streets': {
-      if (config.root.compilerVersion !== tileflowStreetsCompilerVersion) {
-        throw new Error(
-          `Unsupported Streets compiler version: ${String(config.root.compilerVersion)}`,
-        );
-      }
-      return compileStreetsStyle(config, options);
-    }
-  }
+  return compileSemanticStyle(config, options);
 }
 
 export function collectMapLineage(map: TileflowMap): string[] {

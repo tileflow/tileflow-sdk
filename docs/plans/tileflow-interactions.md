@@ -94,16 +94,16 @@ work.
 
 The current interaction baseline is deliberately small:
 
-- `TileflowMapMarker` contains `id`, `coordinates`, optional `color`, and optional `label`.
-- `createTileflowMarkerController` removes and recreates the complete marker set on replacement.
-- React, Vue, and Svelte each construct MapLibre Marker instances and map the legacy label to the
-  marker element title.
+- `TileflowAnnotation` is the single application-owned marker input across React, Vue, and Svelte.
+- The shared interaction runtime reconciles MapLibre Marker instances by annotation ID.
+- React, Vue, and Svelte construct MapLibre Marker instances and use the required annotation
+  `ariaLabel` for accessible marker titles.
 - The browser runtime contract explicitly lists entities, selection, feature state, clustering,
   popups, business events, framework-independent DOM, and a new runtime package as non-goals
   pending a separate product decision.
 - Interactive MapLibre loading is already dynamic and SSR-safe.
 - Image rendering is a separate path and does not provide interactive overlays.
-- Core's optimizer is free to combine or split physical style layers; those IDs are not a stable
+- Core's physical planner is free to combine or split physical style layers; those IDs are not a stable
   public semantic interface.
 
 The first implementation phase must update the relevant contracts before any new public runtime
@@ -124,7 +124,7 @@ surface is treated as supported.
 - keyed annotation reconciliation;
 - capture readiness for DOM interaction views;
 - semantic feature bindings;
-- post-optimizer semantic target metadata;
+- post-planning semantic target metadata;
 - POI hit testing, normalization, prioritization, anchoring, and deduplication;
 - explicit diagnostics for incompatible image/static use.
 
@@ -162,7 +162,7 @@ surface is treated as supported.
 
 ```text
 @tileflow/core
-  semantic authoring + compiler + optimizer
+  semantic authoring + compiler + physical planner
                     |
                     | semantic interaction manifest
                     v
@@ -184,7 +184,7 @@ surface is treated as supported.
 
 | Owner                             | Responsibilities                                                                      |
 | --------------------------------- | ------------------------------------------------------------------------------------- |
-| `@tileflow/core`                  | Semantic domain ownership and post-optimizer interaction metadata.                    |
+| `@tileflow/core`                  | Semantic domain ownership and post-planning interaction metadata.                     |
 | `@tileflow/interactions`          | JSON-safe types, schemas, target refs, reducer, events, and diagnostics.              |
 | `@tileflow/interactions/maplibre` | Projection, hit testing, DOM overlay lifecycle, anchors, and keyed registry.          |
 | Framework adapters                | Mount native custom views and forward state/events without duplicating runtime logic. |
@@ -617,20 +617,17 @@ Exit condition: public names and ownership are reviewable without framework or M
 
 Exit condition: the complete serializable model and reducer pass in Node without DOM or MapLibre.
 
-### Phase 3: keyed annotation runtime and marker migration
+### Phase 3: keyed annotation runtime
 
 - Implement the shared MapLibre annotation registry.
 - Reconcile create, update, remove, and reorder by stable ID.
 - Preserve focus, open popup identity, and compatible Marker instances across updates.
 - Roll back partial construction and make clear/dispose idempotent.
-- Normalize the existing `markers` prop into annotations as an alpha compatibility layer.
-- Preserve legacy `label` title behavior during migration while separating new `ariaLabel` and
-  tooltip content.
-- Introduce singular `coordinate` in the new model; retire legacy `coordinates` only at an
-  explicit alpha cutover.
+- Expose only `annotations`, with singular `coordinate`, required `ariaLabel`, and separate tooltip
+  content.
 
-Exit condition: existing marker consumers behave compatibly and keyed updates no longer replace
-unchanged instances.
+Exit condition: keyed updates no longer replace unchanged instances and every framework exposes the
+same annotation-only input.
 
 ### Phase 4: tooltip, popup, and framework views
 
@@ -656,15 +653,15 @@ frameworks with equivalent behavior.
 Exit condition: the annotation MVP satisfies its release gates and can be evaluated independently
 of semantic POI work.
 
-### Phase 6: post-optimizer semantic manifest
+### Phase 6: post-planning semantic manifest
 
 - Extend the compiler's finalized manifest with versioned interaction metadata.
 - Define normalized POI properties and categories.
 - Establish stable POI identity and deduplication rules.
-- Validate every semantic-to-physical reference after optimization.
+- Validate every semantic-to-physical reference after physical planning.
 - Keep physical IDs private to the runtime artifact.
 
-Exit condition: fixtures can resolve POI semantic targets across optimizer layer splitting,
+Exit condition: fixtures can resolve POI semantic targets across physical-planner layer splitting,
 combining, reordering, and style inheritance without application-visible layer IDs.
 
 ### Phase 7: semantic POI interactions
@@ -769,12 +766,12 @@ interaction package into a complete MapLibre wrapper.
 ### Semantic POI
 
 - Application code uses no physical Tileflow layer ID.
-- The post-optimizer manifest has no dangling layer, source, field, or identity reference.
+- The post-planning manifest has no dangling layer, source, field, or identity reference.
 - POI properties and identity behavior are documented and typed.
 - Multiple render representations deduplicate deterministically.
 - Transient behavior without a stable ID and durable behavior with one are explicitly separated.
 - Large POI sets do not produce one DOM node per feature.
-- Real browser, optimizer-equivalence, performance, capture, and framework parity tests pass.
+- Real browser, physical-planner equivalence, performance, capture, and framework parity tests pass.
 - `pnpm check` and `pnpm build` pass.
 
 Publication work additionally runs `pnpm run smoke:capture-public` and the public dry-run required
@@ -798,7 +795,7 @@ by `PUBLISHING.md`.
 | ---------------------------------- | ------------------------------------------------------------------------------- |
 | Becoming a full MapLibre wrapper   | Limit the package to targets, views, state, events, and lifecycle.              |
 | Duplicating framework logic        | Contract-test one shared MapLibre runtime and keep adapters view-only.          |
-| Leaking optimizer details          | Emit a private, validated post-optimizer semantic manifest.                     |
+| Leaking planner details            | Emit a private, validated post-planning semantic manifest.                      |
 | DOM performance regression         | Keep large feature sets in WebGL and mount only active overlays.                |
 | Unstable POI identity              | Gate controlled popup, selection, and deep links on explicit stable IDs.        |
 | Unsafe rich content                | Support text and application-owned nodes; omit raw HTML APIs.                   |

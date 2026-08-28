@@ -24,7 +24,6 @@ import {
   tileflowThemeNameSchema,
 } from '@tileflow/core';
 import {
-  collectTileflowMapBuildLineage,
   createManifest,
   createStyleFromCatalog,
   createStylesFromCatalog,
@@ -304,9 +303,9 @@ export async function createTileflowArtifactPlan(
                 assets,
                 preparedFonts.bundles[mapName]?.files ?? [],
               ),
-              lineage:
-                prepared.project.mapMetadata?.[mapName]?.lineage ??
-                collectTileflowMapBuildLineage(map),
+              lineage: prepared.project.mapMetadata?.[mapName]?.lineage ?? [
+                {id: map.id, mapVersion: map.version},
+              ],
               map,
               sourceAssets: {
                 fonts: preparedFonts.sourceIdentities[mapName] ?? [],

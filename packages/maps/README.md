@@ -17,8 +17,8 @@ export default defineMap({
 This still inherits both Streets themes; it changes only which concrete theme is selected by
 default.
 
-Every export is an ordinary Tileflow map and a complete first-party compiler root. No official map
-imports or extends another official map; each declares its data, modules, effects, themes, and asset
+Every export is an ordinary, complete first-party Tileflow map. No official map imports or extends
+another official map; each declares its data, modules, render stacks, themes, and asset
 providers directly. Applications can still use the public `extends` contract to derive their own
 maps from any official root. Streets and Siegfried each contain structurally identical `light` and
 `dark` appearances.
@@ -54,14 +54,14 @@ import {
 } from '@tileflow/maps';
 ```
 
-`ferraris` is a self-contained printed-atlas design. It uses Core's semantic Streets compiler, but
+`ferraris` is a self-contained printed-atlas design. It uses Core's semantic compiler, but
 it does not import or extend the `streets` map and it does not inherit Streets assets. It declares
 only `[ferrarisIcons]`, which contains nine original seamless SVG patterns for paper, cultivated
 land, vegetation, settlements, sand, wetlands, and water. Applications can import it directly or
 extend it like any other root.
 
 `harad` is a self-contained historical green-map design named “Härad”. It uses Core's semantic
-Streets compiler ABI without importing or extending the `streets` map or reusing any Streets asset.
+compiler ABI without importing or extending the `streets` map or reusing any Streets asset.
 It declares only `[haradIcons]`, whose nine original Tileflow SVG patterns describe arable land,
 coniferous and deciduous woodland, orchards, paper grain, sand, settlements, water lines, and
 wetlands. The visual grammar is inspired by Lantmäteriet's CC0 Häradsekonomiska kartan series
@@ -105,11 +105,11 @@ declares its own Noto Sans glyph provider, and owns its complete icon and patter
 `[verdantIcons]`.
 
 `cyberpunk` is a self-contained dark HUD root. Its road hierarchy, building signals, destination
-beacons, planar effects, semantic theme, World data selection, `[cyberpunkIcons]`, and
+beacons, semantic render passes, theme, World data selection, `[cyberpunkIcons]`, and
 `[cyberpunkFonts]` are all declared directly; it does not import or extend `streets`.
 
 `matrix` is a self-contained monochrome green-screen root. It explicitly owns its sparse HUD
-geometry, reviewed phosphor-green ramp, modules, effects, theme, and Matrix-prefixed layer IDs. It
+geometry, reviewed phosphor-green ramp, modules, semantic render passes, and theme. It
 omits a bright road centerline and building circuit texture, and uses compact square destination
 nodes through `[matrixIcons]`. A translucent scanline and dot pattern masks the cartographic
 linework so bright strokes break into the phosphor rows of an old CRT without baking that texture
@@ -117,7 +117,7 @@ into the map data; text layers render afterwards and stay crisp. `[matrixFonts]`
 packaged Oxanium faces for uppercase labels, independently of Cyberpunk's font provider.
 
 `streetsThemes.light` and `streetsThemes.dark` are complete appearance documents consumed by the
-same Streets module recipe. Selecting `dark` changes colors, typography roles, image roles, and
+same semantic module structure. Selecting `dark` changes colors, typography roles, image roles, and
 lighting without changing a source, filter, layer order, zoom gate, collision rule, or module. Both
 sidewalk patterns live in the shared `[streetsIcons]` atlas and the selected theme resolves the
 semantic `roads.sidewalkPattern` image token to the correct asset.

@@ -14,7 +14,6 @@ import {
   water,
 } from '../src';
 import type {TileflowLayerContribution} from '../src/cartography/contributions';
-import {assembleTileflowLayers} from '../src/cartography/graph';
 import {compileAeroways} from '../src/modules/aeroways/compiler';
 import {compileBoundaries} from '../src/modules/boundaries/compiler';
 import {compileBuildings} from '../src/modules/buildings/compiler';
@@ -24,6 +23,7 @@ import {compileTransit} from '../src/modules/transit/compiler';
 import {compileVegetation} from '../src/modules/vegetation/compiler';
 import {compileWater} from '../src/modules/water/compiler';
 import {resolveColors, resolveThemeColors, resolveThemeImages} from '../src/themes';
+import {assembleTileflowLayers} from './layer-ir-fixture';
 import {testLightTheme} from './map-fixture';
 
 const context = {
@@ -59,7 +59,7 @@ test('semantic hydro and land roles flow exactly from the selected theme', () =>
   const colors = resolveThemeColors(themed);
   const themedContext = {...context, colors};
   const land = compileLand(undefined, themedContext);
-  const bathymetry = contribution(compileWater(undefined, themedContext), 'streets-bathymetry');
+  const bathymetry = contribution(compileWater(undefined, themedContext), 'tileflow-bathymetry');
   const depthExpression = (bathymetry.layer.paint as Record<string, unknown>)[
     'fill-color'
   ] as unknown[];
@@ -70,13 +70,13 @@ test('semantic hydro and land roles flow exactly from the selected theme', () =>
 
   assert.equal(colors.poi.medical, '#708090');
   assert.equal(
-    (contribution(land, 'streets-landuse-military').layer.paint as Record<string, unknown>)[
+    (contribution(land, 'tileflow-landuse-military').layer.paint as Record<string, unknown>)[
       'fill-color'
     ],
     '#506070',
   );
   assert.equal(
-    (contribution(land, 'streets-landuse-railway').layer.paint as Record<string, unknown>)[
+    (contribution(land, 'tileflow-landuse-railway').layer.paint as Record<string, unknown>)[
       'fill-color'
     ],
     '#607080',
@@ -107,7 +107,7 @@ test('POI image roles are theme-selectable with an explicit built-in fallback co
         ...context,
         images,
       }),
-      'streets-poi-food-drink-icon',
+      'tileflow-poi-food-drink-icon',
     );
     return (layer.layer.layout as Record<string, unknown>)['icon-image'];
   };
@@ -131,9 +131,9 @@ test('park source semantics keep protected areas and urban parks disjoint', () =
     }),
   );
   const mixed = compileLand(undefined, {...context, data: mixedData});
-  const legacyPark = contribution(mixed, 'streets-landcover-legacy-park');
-  const mixedProtected = contribution(mixed, 'streets-landcover-protected');
-  const urbanPark = contribution(mixed, 'streets-landcover-urbanPark');
+  const legacyPark = contribution(mixed, 'tileflow-landcover-legacy-park');
+  const mixedProtected = contribution(mixed, 'tileflow-landcover-protected');
+  const urbanPark = contribution(mixed, 'tileflow-landcover-urbanPark');
 
   assert.equal(legacyPark.layer['source-layer'], 'protected_and_parks');
   assert.equal(mixedProtected.layer['source-layer'], 'protected_and_parks');
@@ -152,11 +152,11 @@ test('park source semantics keep protected areas and urban parks disjoint', () =
     }),
   );
   const protectedOnly = compileLand(undefined, {...context, data: protectedOnlyData});
-  const protectedArea = contribution(protectedOnly, 'streets-landcover-protected');
+  const protectedArea = contribution(protectedOnly, 'tileflow-landcover-protected');
   assert.equal(protectedArea.layer['source-layer'], 'protected_only');
   assert.equal(protectedArea.layer.filter, undefined);
   assert.equal(
-    protectedOnly.some(({layer}) => layer.id === 'streets-landcover-legacy-park'),
+    protectedOnly.some(({layer}) => layer.id === 'tileflow-landcover-legacy-park'),
     false,
   );
   assertValid(protectedOnly);
@@ -165,13 +165,13 @@ test('park source semantics keep protected areas and urban parks disjoint', () =
 test('every typed grass subclass selects exactly one landcover fill', () => {
   const contributions = compileLand(undefined, context);
   const ids = [
-    'streets-landcover-grass',
-    'streets-landcover-scrub',
-    'streets-landcover-meadow',
-    'streets-landcover-urbanPark',
-    'streets-landcover-recreationGround',
-    'streets-landcover-villageGreen',
-    'streets-landcover-flowerbed',
+    'tileflow-landcover-grass',
+    'tileflow-landcover-scrub',
+    'tileflow-landcover-meadow',
+    'tileflow-landcover-urbanPark',
+    'tileflow-landcover-recreationGround',
+    'tileflow-landcover-villageGreen',
+    'tileflow-landcover-flowerbed',
   ];
   const layers = ids.map((id) => contribution(contributions, id).layer);
   for (const subclass of [
@@ -192,11 +192,11 @@ test('every typed grass subclass selects exactly one landcover fill', () => {
 
 test('transit modes are disjoint and funiculars remain rail', () => {
   const contributions = compileTransit(undefined, context);
-  const ferry = contribution(contributions, 'streets-transit-ferry');
-  const cableway = contribution(contributions, 'streets-transit-cableway');
-  const rail = contribution(contributions, 'streets-transit-rail-surface');
-  const railHatching = contribution(contributions, 'streets-transit-rail-hatching-surface');
-  const serviceRail = contribution(contributions, 'streets-transit-service-rail-surface');
+  const ferry = contribution(contributions, 'tileflow-transit-ferry');
+  const cableway = contribution(contributions, 'tileflow-transit-cableway');
+  const rail = contribution(contributions, 'tileflow-transit-rail-surface');
+  const railHatching = contribution(contributions, 'tileflow-transit-rail-hatching-surface');
+  const serviceRail = contribution(contributions, 'tileflow-transit-service-rail-surface');
 
   const funicular = {class: 'transit', subclass: 'funicular'};
   assert.equal(matches(ferry.layer.filter, funicular), false);
@@ -222,9 +222,9 @@ test('transit modes are disjoint and funiculars remain rail', () => {
 
 test('disputed maritime boundaries retain both strokes with disputed priority', () => {
   const contributions = compileBoundaries(undefined, context);
-  const maritime = contribution(contributions, 'streets-boundary-maritime');
-  const disputed = contribution(contributions, 'streets-boundary-disputed');
-  const combined = contribution(contributions, 'streets-boundary-disputed-maritime');
+  const maritime = contribution(contributions, 'tileflow-boundary-maritime');
+  const disputed = contribution(contributions, 'tileflow-boundary-disputed');
+  const combined = contribution(contributions, 'tileflow-boundary-disputed-maritime');
   const both = {admin_level: 2, disputed: 1, maritime: 1};
 
   assert.equal(matches(maritime.layer.filter, both), true);
@@ -252,9 +252,9 @@ test('water consumes remapped bathymetry capability and omits it when absent', (
     ...context,
     data,
   });
-  const bathymetry = contribution(contributions, 'streets-bathymetry');
-  const bathymetryContours = contribution(contributions, 'streets-bathymetry-contours');
-  const bathymetryLabels = contribution(contributions, 'streets-bathymetry-labels');
+  const bathymetry = contribution(contributions, 'tileflow-bathymetry');
+  const bathymetryContours = contribution(contributions, 'tileflow-bathymetry-contours');
+  const bathymetryLabels = contribution(contributions, 'tileflow-bathymetry-labels');
 
   assert.equal(bathymetry.layer['source-layer'], 'depth_bands');
   assert.equal(bathymetry.layer.maxzoom, 10);
@@ -284,13 +284,13 @@ test('water consumes remapped bathymetry capability and omits it when absent', (
   assertValid(contributions);
   assert.equal(
     compileWater(undefined, {...context, data}).some(
-      ({layer}) => layer.id === 'streets-bathymetry-labels',
+      ({layer}) => layer.id === 'tileflow-bathymetry-labels',
     ),
     false,
   );
   assert.equal(
     compileWater(undefined, {...context, data}).some(
-      ({layer}) => layer.id === 'streets-bathymetry-contours',
+      ({layer}) => layer.id === 'tileflow-bathymetry-contours',
     ),
     false,
   );
@@ -307,15 +307,15 @@ test('water consumes remapped bathymetry capability and omits it when absent', (
     data: portableData,
   });
   assert.equal(
-    portable.some(({layer}) => layer.id === 'streets-bathymetry'),
+    portable.some(({layer}) => layer.id === 'tileflow-bathymetry'),
     false,
   );
   assert.equal(
-    portable.some(({layer}) => layer.id === 'streets-bathymetry-labels'),
+    portable.some(({layer}) => layer.id === 'tileflow-bathymetry-labels'),
     false,
   );
   assert.equal(
-    portable.some(({layer}) => layer.id === 'streets-bathymetry-contours'),
+    portable.some(({layer}) => layer.id === 'tileflow-bathymetry-contours'),
     false,
   );
 });
@@ -343,11 +343,11 @@ test('3D vegetation keeps a portable styled fallback and exposes runtime paramet
       }),
       {...context, data},
     ),
-    'streets-vegetation-trees',
+    'tileflow-vegetation-trees',
   );
   const hosted = contribution(
     compileVegetation(vegetation({mode: '3d'}), context),
-    'streets-vegetation-trees',
+    'tileflow-vegetation-trees',
   );
 
   assert.equal(portable.layer.metadata?.['tileflow:vegetation-mode'], '3d');
@@ -403,7 +403,7 @@ test('default 3D vegetation preserves exact dark semantic tree tokens', () => {
   const darkContext = {...context, colors: resolveThemeColors(darkTheme)};
   const trees = contribution(
     compileVegetation(vegetation({mode: '3d'}), darkContext),
-    'streets-vegetation-trees',
+    'tileflow-vegetation-trees',
   );
 
   assert.deepEqual(darkContext.colors.vegetation.tree, tree);
@@ -429,7 +429,7 @@ test('current building tones use bound fields and the available semantic theme c
   );
   const buildings = contribution(
     compileBuildings(undefined, {...context, data}),
-    'streets-buildings-fill',
+    'tileflow-buildings-fill',
   );
   const color = JSON.stringify((buildings.layer.paint as Record<string, unknown>)['fill-color']);
 
@@ -455,7 +455,7 @@ test('aeroways render bound runway references as high-zoom shared-typography sym
     ...context,
     data,
   });
-  const runwayRef = contribution(contributions, 'streets-aeroway-runway-ref');
+  const runwayRef = contribution(contributions, 'tileflow-aeroway-runway-ref');
   const layout = runwayRef.layer.layout as Record<string, unknown>;
 
   assert.equal(runwayRef.layer['source-layer'], 'airport_geometry');

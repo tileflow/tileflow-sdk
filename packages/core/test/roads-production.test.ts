@@ -7,12 +7,12 @@ import {
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {openMapTiles, resolveTileflowData, roads} from '../src';
-import {assembleTileflowLayers} from '../src/cartography/graph';
-import {optimizeTileflowLayers} from '../src/cartography/optimizer';
+import {tileflowCompilerMetadataKeys} from '../src/cartography/contributions';
 import {roadClassesForDetail} from '../src/modules/roads';
 import {compileRoads} from '../src/modules/roads/compiler';
 import {tileflowRoadClassFilter} from '../src/modules/roads/semantics';
 import {resolveColors} from '../src/themes';
+import {assembleTileflowLayers, planTileflowLayers} from './layer-ir-fixture';
 
 type Layer = Record<string, unknown> & {id: string; type: string};
 
@@ -93,8 +93,8 @@ test('the streets detail preset includes service roads without enabling tracks',
   ]);
 
   const ids = compileRoads(roads(), context).map(({layer}) => layer.id);
-  assert.ok(ids.includes('streets-road-surface-service-fill'));
-  assert.equal(ids.includes('streets-road-surface-track-fill'), false);
+  assert.ok(ids.includes('tileflow-road-surface-service-fill'));
+  assert.equal(ids.includes('tileflow-road-surface-track-fill'), false);
 });
 
 test('road treatments materialize absent phases with theme-derived semantic paint defaults', () => {
@@ -116,10 +116,10 @@ test('road treatments materialize absent phases with theme-derived semantic pain
     context,
   );
   const casing = contributions.find(
-    ({layer}) => layer.id === 'streets-road-surface-service-casing',
+    ({layer}) => layer.id === 'tileflow-road-surface-service-casing',
   )?.layer;
   const shadow = contributions.find(
-    ({layer}) => layer.id === 'streets-road-surface-service-shadow',
+    ({layer}) => layer.id === 'tileflow-road-surface-service-shadow',
   )?.layer;
 
   assert.ok(casing, 'a treatment must be able to create a casing when outline is none');
@@ -165,8 +165,8 @@ test('visible false remains authoritative when a treatment targets the same road
   );
   const ids = contributions.map(({layer}) => layer.id);
 
-  assert.equal(ids.includes('streets-road-surface-service-fill'), false);
-  assert.equal(ids.includes('streets-road-surface-service-shadow'), false);
+  assert.equal(ids.includes('tileflow-road-surface-service-fill'), false);
+  assert.equal(ids.includes('tileflow-road-surface-service-shadow'), false);
 });
 
 test('official OpenMapTiles road values map to disjoint existing semantics and ford stays surface', () => {
@@ -194,10 +194,10 @@ test('official OpenMapTiles road values map to disjoint existing semantics and f
     data,
   });
   const serviceSurface = contributions.find(
-    ({layer}) => layer.id === 'streets-road-surface-service-fill',
+    ({layer}) => layer.id === 'tileflow-road-surface-service-fill',
   )?.layer;
   const serviceTunnel = contributions.find(
-    ({layer}) => layer.id === 'streets-road-tunnel-service-fill',
+    ({layer}) => layer.id === 'tileflow-road-tunnel-service-fill',
   )?.layer;
 
   assert.ok(serviceSurface);
@@ -245,12 +245,12 @@ test('detailed road extensions compile through remappable semantic contracts', (
     {...context, data},
   );
   const byId = (id: string) => contributions.find(({layer}) => layer.id === id)!;
-  const sidewalkSurface = byId('streets-sidewalk-surface');
-  const sidewalkPattern = byId('streets-sidewalk-pattern');
-  const sidewalkOutline = byId('streets-sidewalk-outline');
-  const roundaboutCasing = byId('streets-road-circular-casing');
-  const roundaboutFill = byId('streets-road-circular-fill');
-  const crossing = byId('streets-road-crossing');
+  const sidewalkSurface = byId('tileflow-sidewalk-surface');
+  const sidewalkPattern = byId('tileflow-sidewalk-pattern');
+  const sidewalkOutline = byId('tileflow-sidewalk-outline');
+  const roundaboutCasing = byId('tileflow-road-circular-casing');
+  const roundaboutFill = byId('tileflow-road-circular-fill');
+  const crossing = byId('tileflow-road-crossing');
 
   assert.equal(sidewalkSurface.layer['source-layer'], 'pedestrian_surfaces');
   assert.equal(sidewalkSurface.slot, 'transport-pedestrian-areas');
@@ -324,20 +324,25 @@ test('detailed road extensions compile through remappable semantic contracts', (
     ...context,
     data: portableData,
   }).map(({layer}) => layer.id);
-  assert.equal(portableIds.includes('streets-sidewalk-surface'), false);
-  assert.equal(portableIds.includes('streets-road-circular-fill'), false);
-  assert.equal(portableIds.includes('streets-road-crossing'), false);
+  assert.equal(portableIds.includes('tileflow-sidewalk-surface'), false);
+  assert.equal(portableIds.includes('tileflow-road-circular-fill'), false);
+  assert.equal(portableIds.includes('tileflow-road-crossing'), false);
 });
 
 test('hatch consolidation encodes original class crossing priority in valid sort keys', () => {
   for (const type of ['line', 'symbol'] as const) {
     const sortKeyProperty = type === 'line' ? 'line-sort-key' : 'symbol-sort-key';
     const hatch = (roadClass: 'track' | 'service'): Layer => ({
-      id: `streets-road-surface-${roadClass}-hatch`,
+      id: `tileflow-road-surface-${roadClass}-hatch`,
       type,
       source,
       'source-layer': sourceLayer,
       filter: ['==', ['get', 'class'], roadClass],
+      metadata: {
+        [tileflowCompilerMetadataKeys.owner]: 'roads',
+        [tileflowCompilerMetadataKeys.slot]: 'transport-surface-fill',
+        [tileflowCompilerMetadataKeys.target]: `roads.classes.${roadClass}.surface.hatch`,
+      },
       layout:
         type === 'line'
           ? {
@@ -356,7 +361,7 @@ test('hatch consolidation encodes original class crossing priority in valid sort
       paint:
         type === 'line' ? {'line-color': '#123456', 'line-width': 2} : {'text-color': '#123456'},
     });
-    const optimized = optimizeTileflowLayers([hatch('track'), hatch('service')]);
+    const optimized = planTileflowLayers([hatch('track'), hatch('service')]);
 
     assert.equal(optimized.length, 1);
     assert.deepEqual(styleErrors(optimized), []);

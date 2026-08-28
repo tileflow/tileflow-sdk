@@ -38,7 +38,7 @@ and `icons/` paths remain available, but generation-consistent consumers
 resolve maps through `manifest.json`.
 
 Every plan also emits canonical `build-manifest.json` (schema version 1). For each map it records
-the leaf `mapVersion`, resolved lineage, effective icon/font source identities, Recipe ABI, and
+the leaf `mapVersion`, resolved lineage, effective icon/font source identities, semantic compiler ABI, and
 one entry per concrete theme with `colorScheme`, identity, inferred legacy `dataRequirements`,
 multi-source `sourceRequirements`, and `styleSha256`. The multi-source contract records each
 referenced vector source independently and records raster DEM source ID, encoding, and tile size;
@@ -46,12 +46,12 @@ it therefore distinguishes Bathymetry vector bands from optional relief without 
 fields. `mapRevisionSha256` identifies the effective cartographic definition after `extends`;
 `assetSetSha256` for that map's generated runtime resources. Data requirements are derived from the
 final Style layers and fields rather than copied from a manually maintained allowlist, so disabled
-or overridden modules do not claim data they no longer use. The Recipe ABI remains a separate
-`recipe: {compiler, compilerVersion}` compatibility axis.
+or overridden modules do not claim data they no longer use. Maps use the single implicit semantic
+compiler; its ABI remains a separate `semanticCompiler: {name, version}` build-manifest axis.
 
 The map revision is versioned and domain-separated. It contains the resolved cartographic design,
-the compiler family, private effective module contributions, and effective icon/font source
-identities. Map `id`, `name`, editorial `mapVersion`, default `view`, capture `scenes`, delivery
+semantic language version, effective public module/render-stack design, and effective icon/font
+source identities. Map `id`, `name`, editorial `mapVersion`, default `view`, capture `scenes`, delivery
 policy, package SemVer, compiler ABI, local paths, timestamps, generated sprite/font output, and a
 concrete resolution of a floating World selector are deliberately outside it. Changing a shadowed
 ancestor does not change the revision; changing an effective cartographic override or source asset
@@ -401,9 +401,9 @@ try {
 The inspection resolves one config load into sorted maps, root-to-leaf lineage, declared paths, and
 leaf-level merge provenance. Its `themeContract` exposes the default/system mapping, shared token
 schema, concrete resolved token values, typography and lighting, differences from the default, and
-stable `THEME_IMPLICIT_FIXED` diagnostics across modules, terrain, and compiler-owned effects. Each
-diagnostic carries a semantic scope and, for compiler effects, its owner, target, and effect kind,
-plus machine-readable severity and remediation. Colors, fonts, and images are followed through
+stable `THEME_IMPLICIT_FIXED` diagnostics across modules, render stacks, and terrain. Each
+diagnostic carries a semantic scope and, for module values, its owner, plus machine-readable
+severity and remediation. Colors, fonts, and images are followed through
 expression outputs; numeric diagnostics intentionally cover only direct visual scalars, excluding
 expression operands, zoom stops, tuples, placement, priority, and other structural numbers.
 Agents can therefore edit semantic roles without
@@ -455,7 +455,7 @@ Streets declares `[streetsIcons]` and keeps light/dark image-token targets in th
 Cyberpunk and Matrix independently declare `[cyberpunkIcons]` and `[matrixIcons]`. Ferraris, Härad,
 Siegfried, Soundings, and Verdant declare only `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
 `[soundingsIcons]`, and `[verdantIcons]`, respectively. No official root composes another map's
-assets even though all use the semantic Streets compiler ABI. Härad's directory contains nine original Tileflow
+assets even though all use the semantic compiler ABI. Härad's directory contains nine original Tileflow
 patterns inspired by Lantmäteriet's CC0 Häradsekonomiska kartan series from 1859–1934. Soundings owns ten
 original nautical symbols and patterns. An application map may inherit a root's exact array,
 replace it, clear it with `[]`, or

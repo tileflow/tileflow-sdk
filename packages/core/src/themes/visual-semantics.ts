@@ -1,7 +1,7 @@
 export type TileflowVisualValueCategory = 'color' | 'font' | 'image' | 'number';
 
 /**
- * Numeric appearance properties accepted by Tileflow authoring or compiler-owned MapLibre effects.
+ * Numeric appearance properties accepted by Tileflow authoring and semantic render stacks.
  * Structural numbers such as zoom bounds, ranks, filters, sort keys, and contour thresholds are
  * deliberately absent.
  */

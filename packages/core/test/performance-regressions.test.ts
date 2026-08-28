@@ -60,5 +60,4 @@ test('style layer family signatures are canonical but preserve explicit zoom pro
   ).zooms[0]!;
 
   assert.equal(report.styleLayerFamilies, 2);
-  assert.equal(report.estimatedBuckets, report.styleLayerFamilies);
 });

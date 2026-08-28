@@ -1,5 +1,4 @@
 import {isMapLibreExpressionOperator} from '../cartography/expression-operators';
-import {getResolvedModuleEffects} from '../cartography/module-effects';
 import type {
   TileflowFixedValue,
   TileflowThemeColorOperation,
@@ -14,6 +13,7 @@ import {
   isTileflowFixedValue,
   isTileflowThemeColorOperation,
   isTileflowThemeTokenReference,
+  tileflowThemeTokenCategories,
 } from '../cartography/values';
 import {isTileflowThemeName} from '../portable-identity-rules';
 import type {ResolvedTileflowTypography, TileflowLight, TileflowTypographyStyle} from '../types';
@@ -21,6 +21,7 @@ import {classifyTileflowVisualProperty, type TileflowVisualValueCategory} from '
 
 export type TileflowThemeColorScheme = 'dark' | 'light';
 export type TileflowThemeName = string;
+export const tileflowThemeLimits = Object.freeze({maxThemes: 64} as const);
 
 export type TileflowThemeTokens = {
   color: Readonly<Record<string, TileflowThemeColorValue>>;
@@ -93,11 +94,9 @@ export type TileflowResolvedThemeSelection = {
   theme: TileflowTheme;
 };
 
-export type TileflowThemeAuditScope = 'compiler-effect' | 'module' | 'terrain' | 'value';
-export type TileflowThemeAuditEffectKind = 'add' | 'patch';
+export type TileflowThemeAuditScope = 'module' | 'terrain' | 'value';
 
 export type TileflowThemeAuditContext = {
-  effectKind?: TileflowThemeAuditEffectKind;
   owner?: string;
   scope: TileflowThemeAuditScope;
   target?: string;
@@ -106,7 +105,6 @@ export type TileflowThemeAuditContext = {
 export type TileflowThemeAuditDiagnostic = {
   category: TileflowVisualValueCategory;
   code: 'THEME_IMPLICIT_FIXED';
-  effectKind?: TileflowThemeAuditEffectKind;
   message: string;
   owner?: string;
   path: string;
@@ -141,7 +139,6 @@ const defaultTypography = {
   font: 'Noto Sans Regular',
 } as const satisfies TileflowThemeTypography;
 
-const themeTokenCategories = ['color', 'font', 'image', 'number'] as const;
 const themeDocumentKeys = [
   'colorScheme',
   'id',
@@ -217,7 +214,7 @@ export function resolveTileflowTheme(theme: TileflowTheme): ResolvedTileflowThem
   };
 }
 
-/** Resolve every theme node in modules, effects, zoom values and expression arrays. */
+/** Resolve every theme node in modules, terrain, zoom values and expression arrays. */
 export function resolveThemeValues<T>(value: T, theme: TileflowTheme, path = 'value'): T {
   const resolver = new ThemeValueResolver(theme);
   // Validate the complete graph, including tokens not reached by this particular value tree.
@@ -271,7 +268,7 @@ export function auditTileflowThemeValues(
   return diagnostics.sort(compareAuditDiagnostics);
 }
 
-/** Audit every appearance-bearing branch of a resolved map, including compiler-private effects. */
+/** Audit every appearance-bearing branch of a resolved map. */
 export function auditTileflowMapThemeValues(map: {
   modules?: unknown;
   terrain?: unknown;
@@ -287,23 +284,9 @@ export function auditTileflowMapThemeValues(map: {
           }),
         )
     : [];
-  const compilerDiagnostics = getResolvedModuleEffects(map).flatMap((effect) => {
-    if (effect.kind === 'remove') return [];
-    return auditTileflowThemeValues(
-      effect.kind === 'add' ? effect.layer : effect.patch,
-      `compilerEffects.${effect.target}.${effect.kind}`,
-      {
-        effectKind: effect.kind,
-        owner: effect.owner,
-        scope: 'compiler-effect',
-        target: effect.target,
-      },
-    );
-  });
   return [
     ...moduleDiagnostics,
     ...auditTileflowThemeValues(map.terrain, 'terrain', {scope: 'terrain'}),
-    ...compilerDiagnostics,
   ].sort(compareAuditDiagnostics);
 }
 
@@ -405,7 +388,6 @@ function addThemeNodeDiagnostic(
   state.diagnostics.push({
     category,
     code: 'THEME_IMPLICIT_FIXED',
-    ...(state.context.effectKind ? {effectKind: state.context.effectKind} : {}),
     message,
     ...(state.context.owner ? {owner: state.context.owner} : {}),
     path,
@@ -661,7 +643,6 @@ function addAuditDiagnostic(
   state.diagnostics.push({
     category,
     code: 'THEME_IMPLICIT_FIXED',
-    ...(state.context.effectKind ? {effectKind: state.context.effectKind} : {}),
     message:
       `Visual ${category} literal is implicitly fixed; use token.${category}(...) or ` +
       'fixed(value, {reason}).',
@@ -689,7 +670,6 @@ function addDynamicExpressionDiagnostic(
   state.diagnostics.push({
     category,
     code: 'THEME_IMPLICIT_FIXED',
-    ...(state.context.effectKind ? {effectKind: state.context.effectKind} : {}),
     message:
       `Visual ${category} expression has a dynamic output from ${operator}; every possible output ` +
       `must be token.${category}(...), fixed(value, {reason}), or a valid theme color operation.`,
@@ -778,9 +758,6 @@ function inferAuditContext(path: string): TileflowThemeAuditContext {
     const owner = path.match(/^modules\.([^.[]+)/u)?.[1];
     return {scope: 'module', ...(owner ? {owner} : {})};
   }
-  if (path === 'compilerEffects' || path.startsWith('compilerEffects.')) {
-    return {scope: 'compiler-effect'};
-  }
   return {scope: 'value'};
 }
 
@@ -792,7 +769,6 @@ function compareAuditDiagnostics(
     left.scope,
     left.owner ?? '',
     left.target ?? '',
-    left.effectKind ?? '',
     left.path,
     left.category,
     typeof left.value,
@@ -802,7 +778,6 @@ function compareAuditDiagnostics(
     right.scope,
     right.owner ?? '',
     right.target ?? '',
-    right.effectKind ?? '',
     right.path,
     right.category,
     typeof right.value,
@@ -832,7 +807,7 @@ class ThemeValueResolver {
   }
 
   resolveAllTokens(): void {
-    for (const category of ['color', 'font', 'image', 'number'] as const) {
+    for (const category of tileflowThemeTokenCategories) {
       this.resolveCategory(category);
     }
   }
@@ -1091,9 +1066,9 @@ function assertThemeDocument(theme: TileflowTheme): void {
 
 function assertThemeTokens(value: unknown, path: string, complete: boolean): void {
   const tokens = assertPlainThemeRecord(value, path);
-  assertExactThemeKeys(tokens, path, themeTokenCategories);
-  if (complete) assertRequiredThemeKeys(tokens, path, themeTokenCategories);
-  for (const category of themeTokenCategories) {
+  assertExactThemeKeys(tokens, path, tileflowThemeTokenCategories);
+  if (complete) assertRequiredThemeKeys(tokens, path, tileflowThemeTokenCategories);
+  for (const category of tileflowThemeTokenCategories) {
     if (!Object.hasOwn(tokens, category)) continue;
     const values = assertPlainThemeRecord(tokens[category], `${path}.${category}`);
     for (const name of Reflect.ownKeys(values)) {
@@ -1297,7 +1272,7 @@ function assertRequiredThemeKeys(
 }
 
 function isThemeTokenCategory(value: unknown): value is TileflowThemeTokenCategory {
-  return themeTokenCategories.includes(value as TileflowThemeTokenCategory);
+  return tileflowThemeTokenCategories.includes(value as TileflowThemeTokenCategory);
 }
 
 function assertTokenPrimitive(
@@ -1420,17 +1395,14 @@ function isThemeStructuralPath(path: string): boolean {
     return true;
   }
   const terrainIndex = segments.indexOf('terrain');
-  const effectKindIndex = Math.max(segments.lastIndexOf('add'), segments.lastIndexOf('patch'));
   const firstPropertyIndex =
-    effectKindIndex >= 0
-      ? effectKindIndex + 1
-      : modulesIndex >= 0
-        ? modulesIndex + 2
-        : terrainIndex >= 0
-          ? terrainIndex + 1
-          : segments[0] === 'map'
-            ? 2
-            : 0;
+    modulesIndex >= 0
+      ? modulesIndex + 2
+      : terrainIndex >= 0
+        ? terrainIndex + 1
+        : segments[0] === 'map'
+          ? 2
+          : 0;
   return segments
     .slice(firstPropertyIndex)
     .some((segment) => themeStructuralPathSegments.has(segment));

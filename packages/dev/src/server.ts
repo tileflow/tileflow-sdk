@@ -215,15 +215,16 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
         const previewStyle = preview
           ? artifacts?.styles[preview.mapName]?.[preview.themeName]
           : undefined;
-        const isStreetsPreview =
-          preview !== undefined && previewStyle?.metadata?.['tileflow:root'] === 'streets';
+        const isSemanticPreview =
+          preview !== undefined &&
+          previewStyle?.metadata?.['tileflow:compiler'] === 'tileflow-semantic';
         const fontFaces = previewStyle ? getTileflowStyleFontFaces(previewStyle) : [];
         return htmlResponse(
           renderTileflowPreviewHtml(
             preview,
             basePath,
             createTileflowArtifactStatus(state),
-            isStreetsPreview,
+            isSemanticPreview,
             fontFaces,
           ),
         );

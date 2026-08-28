@@ -52,7 +52,6 @@ import {
   resolveTileflowStaticImageUrl,
   shouldLoadTileflowManifest,
   type TileflowAnalytics,
-  type TileflowMapMarker,
   type TileflowRuntimeManifestMap,
   type TileflowRuntimeSource,
 } from '@tileflow/core/runtime';
@@ -82,7 +81,6 @@ import {prepareTileflowReactInteractionState} from './interaction-state-input';
 import {assertTileflowMapStyleInputs, type TileflowMapStyleSourceProps} from './map-style-inputs';
 import {loadTileflowMapLibre} from './maplibre';
 
-export type MapMarker = TileflowMapMarker;
 export type TileflowMapSource = TileflowRuntimeSource;
 export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
 
@@ -116,16 +114,6 @@ type MapSharedProps = {
   onThemeChange?: (transition: TileflowThemeTransition) => void;
 };
 
-type TileflowAnnotationInputProps<TAnnotation extends TileflowAnnotation> =
-  | Readonly<{
-      annotations?: readonly TAnnotation[];
-      markers?: never;
-    }>
-  | Readonly<{
-      annotations?: never;
-      markers?: readonly MapMarker[];
-    }>;
-
 type TileflowInteractionStateInputProps =
   | Readonly<{
       defaultInteractionState?: never;
@@ -149,9 +137,9 @@ type TileflowInteractionRendererProps<TAnnotation extends TileflowAnnotation> =
     }>;
 
 type MapInteractiveProps<TAnnotation extends TileflowAnnotation> = MapSharedProps &
-  TileflowAnnotationInputProps<TAnnotation> &
   TileflowInteractionStateInputProps &
   TileflowInteractionRendererProps<TAnnotation> & {
+    annotations?: readonly TAnnotation[];
     mode?: 'interactive';
     onInteractionDiagnostic?: (diagnostic: TileflowInteractionDiagnostic) => void;
     onInteractionEvent?: (event: TileflowInteractionEvent<TAnnotation>) => void;
@@ -164,7 +152,6 @@ type MapImageProps = MapSharedProps & {
   defaultInteractionState?: never;
   interactionState?: never;
   interactions?: never;
-  markers?: never;
   mode: 'image';
   onInteractionDiagnostic?: never;
   onInteractionEvent?: never;
@@ -202,7 +189,6 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     imageLoading = 'eager',
     interactive,
     mapOptions,
-    markers,
     analytics,
     theme,
     interactionState,
@@ -236,8 +222,8 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       ? (runtimeSource.manifestUrl ?? defaultTileflowManifestUrl)
       : defaultTileflowManifestUrl;
   const preparedAnnotations = useMemo(
-    () => prepareTileflowReactAnnotations(annotations, markers),
-    [annotations, markers],
+    () => prepareTileflowReactAnnotations(annotations),
+    [annotations],
   );
   const preparedInteractions = useMemo(
     () => prepareTileflowReactInteractionBindings(interactions),
@@ -379,7 +365,6 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     annotations !== undefined ||
     defaultInteractionState !== undefined ||
     interactionState !== undefined ||
-    markers !== undefined ||
     onInteractionDiagnostic !== undefined ||
     onInteractionEvent !== undefined ||
     onInteractionStateChange !== undefined ||

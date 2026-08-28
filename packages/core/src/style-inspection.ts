@@ -1,23 +1,24 @@
 import type {TileflowInspectedStyle} from './cartography/compiler-inspection';
 import {
-  compileStreetsStyleWithInspection,
-  type TileflowStreetsMapConfig,
+  compileSemanticStyleWithInspection,
+  type TileflowSemanticMapConfig,
 } from './cartography/streets';
 import {collectMapLineage, parseTileflowMap, type TileflowStyleOptions} from './map';
-import {type TileflowMap, tileflowStreetsCompilerVersion} from './maps';
+import type {TileflowMap} from './maps';
 
 export {
   tileflowStyleInspectionSchemaVersion,
   type TileflowInspectedStyle,
   type TileflowStyleInspection,
   type TileflowStyleInspectionContribution,
-  type TileflowStyleInspectionEffect,
+  type TileflowStyleInspectionRenderOperation,
   type TileflowStyleInspectionLayer,
 } from './cartography/compiler-inspection';
 
 /**
- * Compile the ordinary MapLibre Style and a separate build-only inspection sidecar.
- * The sidecar never enters the Style object or runtime manifest.
+ * Compile the ordinary MapLibre Style and a separate read-only physical-output sidecar.
+ * Its physical IDs are diagnostic observations, never authoring targets. The sidecar never enters
+ * the Style object or runtime manifest.
  */
 export function createStyleWithInspection(
   config: TileflowMap,
@@ -31,7 +32,6 @@ export function createStyleWithInspection(
       ({
         id: compiled.id,
         lineage: collectMapLineage(config),
-        root: compiled.root,
         version: compiled.version,
       } satisfies NonNullable<TileflowStyleOptions['map']>),
   };
@@ -39,17 +39,8 @@ export function createStyleWithInspection(
 }
 
 function compileTileflowMapWithInspection(
-  config: TileflowStreetsMapConfig,
+  config: TileflowSemanticMapConfig,
   options: TileflowStyleOptions,
 ): TileflowInspectedStyle {
-  switch (config.root.compiler) {
-    case 'streets': {
-      if (config.root.compilerVersion !== tileflowStreetsCompilerVersion) {
-        throw new Error(
-          `Unsupported Streets compiler version: ${String(config.root.compilerVersion)}`,
-        );
-      }
-      return compileStreetsStyleWithInspection(config, options);
-    }
-  }
+  return compileSemanticStyleWithInspection(config, options);
 }

@@ -19,12 +19,12 @@ test('compiler inspection is opt-in, memory-only, and served from its bounded ro
   await linkWorkspacePackages(cwd, ['core', 'maps']);
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `import {defineMap} from '@tileflow/core';
+    `import {defineMap, disable} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 export default defineMap({
   id:'main', version:1, extends:streets, icons:[],
   glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold']},
-  modules:{poi:{type:'poi',enabled:false},roads:{type:'roads',enabled:false}}
+  modules:{poi:disable(),roads:disable()}
 });
 `,
   );
@@ -70,12 +70,12 @@ test('artifact sessions preserve the inspection option through their build bound
   await linkWorkspacePackages(cwd, ['core', 'maps']);
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `import {defineMap} from '@tileflow/core';
+    `import {defineMap, disable} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 export default defineMap({
   id:'main', version:1, extends:streets, icons:[],
   glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold']},
-  modules:{poi:{type:'poi',enabled:false},roads:{type:'roads',enabled:false}}
+  modules:{poi:disable(),roads:disable()}
 });
 `,
   );

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {auditTileflowMapThemeValues, resolveMap, resolveTileflowTheme} from '@tileflow/core';
-import {getResolvedModuleEffects} from '@tileflow/core/recipe';
 import {
   cyberpunk,
   ferraris,
@@ -58,7 +57,6 @@ test('Streets appearance is exhaustively tokenized or explicitly fixed', () => {
   const references: Array<{owner?: string; path: string; reference: TokenReference}> = [];
   const rawColors: Array<{path: string; value: string}> = [];
   inspectThemeValues(streets.modules, 'streets.modules', references, rawColors);
-  inspectThemeValues(getResolvedModuleEffects(streets), 'streets.effects', references, rawColors);
 
   assert.deepEqual(rawColors, [], `Unclassified Streets colors: ${JSON.stringify(rawColors)}`);
   assert.ok(references.length > 150, `Only ${references.length} semantic references were found`);
@@ -81,7 +79,6 @@ test('Streets routes independently configurable Standard roles through dedicated
   const references: Array<{owner?: string; path: string; reference: TokenReference}> = [];
   const rawColors: Array<{path: string; value: string}> = [];
   inspectThemeValues(streets.modules, 'streets.modules', references, rawColors);
-  inspectThemeValues(getResolvedModuleEffects(streets), 'streets.effects', references, rawColors);
   const activeColorTokens = new Set(
     references
       .filter(({reference}) => reference.category === 'color')
@@ -116,7 +113,7 @@ test('Streets routes independently configurable Standard roles through dedicated
   }
 });
 
-test('every official module, effect, and terrain value has a valid semantic owner', () => {
+test('every official module, render stack, and terrain value has a valid semantic owner', () => {
   const allowedColorGroups: Readonly<Record<string, readonly string[]>> = {
     addresses: ['addresses', 'labels'],
     aeroways: ['aeroways', 'roads', 'surface'],
@@ -144,7 +141,6 @@ test('every official module, effect, and terrain value has a valid semantic owne
     for (const [owner, module] of Object.entries(map.modules ?? {})) {
       inspectThemeValues(module, `${map.id}.modules.${owner}`, references, rawColors, owner);
     }
-    inspectThemeValues(getResolvedModuleEffects(map), `${map.id}.effects`, references, rawColors);
     inspectThemeValues(map.terrain, `${map.id}.terrain`, references, rawColors, 'terrain');
 
     assert.deepEqual(

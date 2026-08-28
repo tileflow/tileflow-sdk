@@ -43,7 +43,7 @@ export type TileflowInteractionManifest = {
 };
 
 /**
- * Builds the private runtime lookup only after optimizer decisions are final.
+ * Builds the private runtime lookup only after physical-planner decisions are final.
  * Applications target `poi`; only the runtime consumes the physical layer IDs.
  */
 export function createTileflowInteractionManifest(

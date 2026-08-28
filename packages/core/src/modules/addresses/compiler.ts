@@ -4,10 +4,11 @@ import {applySymbolStyle} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import type {TileflowSymbolStyle} from '../../cartography/styles';
 import {expression} from '../../cartography/values';
+import type {TileflowResolvedModuleConfig} from '../resolved';
 import type {TileflowAddressesModuleConfig} from './index';
 
 export function compileAddresses(
-  request: TileflowAddressesModuleConfig | undefined,
+  request: TileflowResolvedModuleConfig<TileflowAddressesModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
 ): TileflowLayerContribution[] {
   if (request?.enabled === false) return [];
@@ -44,7 +45,7 @@ export function compileAddresses(
       kind: 'layer',
       layer: applySymbolStyle(
         {
-          id: 'streets-addresses-labels',
+          id: 'tileflow-addresses-labels',
           type: 'symbol',
           source,
           'source-layer': schema.layers.houseNumber,

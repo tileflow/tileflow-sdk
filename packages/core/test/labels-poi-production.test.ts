@@ -2,11 +2,11 @@ import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {TileflowLayerContribution} from '../src/cartography/contributions';
-import {assembleTileflowLayers} from '../src/cartography/graph';
 import {labels, openMapTiles, poi, resolveTileflowData, roads, vectorTiles} from '../src/index';
 import {compileLabels} from '../src/modules/labels/compiler';
 import {compilePoi} from '../src/modules/poi/compiler';
 import {resolveColors} from '../src/themes';
+import {assembleTileflowLayers} from './layer-ir-fixture';
 
 const context = {
   colors: resolveColors(),
@@ -42,14 +42,16 @@ test('POI labels clear their own icons while preserving normal collision and cou
     }),
     context,
   );
-  const icon = uncoupled.find((entry) => entry.layer.id === 'streets-poi-food-drink-icon')?.layer;
-  const label = uncoupled.find((entry) => entry.layer.id === 'streets-poi-food-drink-label')?.layer;
+  const icon = uncoupled.find((entry) => entry.layer.id === 'tileflow-poi-food-drink-icon')?.layer;
+  const label = uncoupled.find(
+    (entry) => entry.layer.id === 'tileflow-poi-food-drink-label',
+  )?.layer;
   const iconLayout = icon?.layout as Record<string, unknown>;
   const labelLayout = label?.layout as Record<string, unknown>;
 
   assert.deepEqual(
     uncoupled.map((entry) => entry.layer.id),
-    ['streets-poi-food-drink-icon', 'streets-poi-food-drink-label'],
+    ['tileflow-poi-food-drink-icon', 'tileflow-poi-food-drink-label'],
   );
   assert.equal(iconLayout['icon-allow-overlap'], undefined);
   assert.equal(iconLayout['icon-ignore-placement'], undefined);
@@ -73,7 +75,7 @@ test('POI labels clear their own icons while preserving normal collision and cou
 
   assert.deepEqual(
     coupled.map((entry) => entry.layer.id),
-    ['streets-poi-food-drink'],
+    ['tileflow-poi-food-drink'],
   );
   assert.ok(coupledLayout['icon-image']);
   assert.ok(coupledLayout['text-field']);
@@ -90,7 +92,7 @@ test('POI labels clear their own icons while preserving normal collision and cou
     context,
   );
   const explicitLabel = explicitlyPlaced.find(
-    (entry) => entry.layer.id === 'streets-poi-food-drink-label',
+    (entry) => entry.layer.id === 'tileflow-poi-food-drink-label',
   )?.layer.layout as Record<string, unknown>;
   assert.deepEqual(explicitLabel['text-offset'], [0, 2]);
   assert.equal(explicitLabel['text-radial-offset'], undefined);
@@ -127,7 +129,7 @@ test('POI and geographic labels share the requested language and bound English f
     'fr',
   );
   const cityField = (
-    geographic.find((entry) => entry.layer.id === 'streets-label-place-city')?.layer
+    geographic.find((entry) => entry.layer.id === 'tileflow-label-place-city')?.layer
       .layout as Record<string, unknown>
   )['text-field'];
   const poiField = (points[0]?.layer.layout as Record<string, unknown>)['text-field'];
@@ -164,11 +166,11 @@ test('place labels apply ranked zoom hierarchy, capital priority, and extended s
     context,
   );
   const layer = (id: string) => contributions.find((entry) => entry.layer.id === id)?.layer;
-  const city = layer('streets-label-place-city');
-  const town = layer('streets-label-place-town');
-  const state = layer('streets-label-place-state');
-  const neighborhood = layer('streets-label-place-neighborhood');
-  const other = layer('streets-label-place-other');
+  const city = layer('tileflow-label-place-city');
+  const town = layer('tileflow-label-place-town');
+  const state = layer('tileflow-label-place-state');
+  const neighborhood = layer('tileflow-label-place-neighborhood');
+  const other = layer('tileflow-label-place-other');
 
   assert.equal(city?.minzoom, 2);
   assert.equal(city?.maxzoom, 15);
@@ -223,13 +225,13 @@ test('shields and junctions use geometry-safe filters and localized junction nam
     {...context, data},
   );
   const overview = contributions.find(
-    (entry) => entry.layer.id === 'streets-label-road-shield-overview',
+    (entry) => entry.layer.id === 'tileflow-label-road-shield-overview',
   )?.layer;
   const detail = contributions.find(
-    (entry) => entry.layer.id === 'streets-label-road-shield-detail',
+    (entry) => entry.layer.id === 'tileflow-label-road-shield-detail',
   )?.layer;
   const junction = contributions.find(
-    (entry) => entry.layer.id === 'streets-label-road-junction',
+    (entry) => entry.layer.id === 'tileflow-label-road-junction',
   )?.layer;
 
   assert.match(JSON.stringify(overview?.filter), /Point/);

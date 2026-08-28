@@ -7,7 +7,10 @@ import type {
   TileflowRoadsModuleOptions,
   TileflowRoadWeight,
 } from '../../types';
+import type {TileflowResolvedModuleConfig} from '../resolved';
 import {tileflowPathRoadClasses} from './semantics';
+
+export {tileflowRoadClasses} from './semantics';
 
 export type ResolvedRoadsModuleOptions = {
   detail: TileflowRoadDetail;
@@ -102,7 +105,7 @@ export function roads(options: TileflowRoadsModuleOptions = {}): TileflowRoadsMo
 }
 
 export function resolveRoads(
-  request: TileflowRoadsModuleConfig | undefined,
+  request: TileflowResolvedModuleConfig<TileflowRoadsModuleConfig> | undefined,
 ): ResolvedRoadsModuleOptions {
   return {
     detail: request?.detail ?? defaults.detail,

@@ -1,10 +1,8 @@
-import type {TileflowMapMarker} from '@tileflow/core/runtime';
 import {
   type TileflowAnnotation,
   type TileflowInteractionDiagnostic,
   validateTileflowAnnotations,
 } from '@tileflow/interactions';
-import {normalizeTileflowLegacyMarkers} from '@tileflow/interactions/maplibre';
 
 export type TileflowPreparedReactAnnotations<TAnnotation extends TileflowAnnotation> = Readonly<{
   annotations: readonly TAnnotation[];
@@ -15,30 +13,9 @@ export type TileflowPreparedReactAnnotations<TAnnotation extends TileflowAnnotat
 
 export function prepareTileflowReactAnnotations<TAnnotation extends TileflowAnnotation>(
   annotations: readonly TAnnotation[] | undefined,
-  markers: readonly TileflowMapMarker[] | undefined,
 ): TileflowPreparedReactAnnotations<TAnnotation> {
-  if (annotations !== undefined && markers !== undefined) {
-    return {
-      annotations: [],
-      diagnostics: [
-        {
-          code: 'INVALID_DOCUMENT',
-          level: 'error',
-          message: 'Tileflow Map accepts annotations or legacy markers, not both.',
-          path: '',
-        },
-      ],
-      ok: false,
-      titles: new Map(),
-    };
-  }
-
-  const normalized = normalizeTileflowLegacyMarkers(markers ?? []);
-  const candidates = annotations ?? (normalized.annotations as readonly TAnnotation[]);
-  const titles =
-    annotations === undefined
-      ? normalized.titles
-      : new Map(annotations.map((annotation) => [annotation.id, annotation.ariaLabel]));
+  const candidates = annotations ?? [];
+  const titles = new Map(candidates.map((annotation) => [annotation.id, annotation.ariaLabel]));
   const validation = validateTileflowAnnotations(candidates);
 
   if (!validation.ok) {

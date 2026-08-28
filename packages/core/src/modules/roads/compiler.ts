@@ -1,5 +1,9 @@
 import type {TileflowDomainCompileContext} from '../../cartography/context';
-import type {TileflowLayerContribution, TileflowLayerSlot} from '../../cartography/contributions';
+import type {
+  TileflowLayerContribution,
+  TileflowLayerSlot,
+  TileflowPhysicalFamilyDeclaration,
+} from '../../cartography/contributions';
 import {
   applyCircleStyle,
   applyFillStyle,
@@ -24,6 +28,7 @@ import type {
   TileflowRoadTreatmentLineStyle,
   TileflowRoadTreatmentStyle,
 } from '../../types';
+import type {TileflowResolvedModuleConfig} from '../resolved';
 import {resolveRoads, roadStyleMetrics, visibleRoadClasses} from './index';
 import {
   isTileflowPathRoadClass,
@@ -99,7 +104,7 @@ type WidthScaleEntry = {
 const fixedRoadBorderVariable = '__tileflow_fixed_road_border';
 
 export function compileRoads(
-  request: TileflowRoadsModuleConfig | undefined,
+  request: TileflowResolvedModuleConfig<TileflowRoadsModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
 ): TileflowLayerContribution[] {
   if (request?.enabled === false) return [];
@@ -150,10 +155,11 @@ export function compileRoads(
           phaseDefaults.color as string,
         );
         contributions.push({
+          family: roadLinePhysicalFamily(roadClass, structure, phase),
           kind: 'layer',
           layer: applyLineStyle(
             {
-              id: `streets-road-${structure}-${roadClass}-${phase}`,
+              id: `tileflow-road-${structure}-${roadClass}-${phase}`,
               type: 'line',
               source,
               'source-layer': schema.layers.road,
@@ -213,10 +219,11 @@ export function compileRoads(
                   maxZoom,
                 );
           contributions.push({
+            family: roadHatchPhysicalFamily(roadClass, structure),
             kind: 'layer',
             layer: applyLineStyle(
               {
-                id: `streets-road-${structure}-${roadClass}-hatch`,
+                id: `tileflow-road-${structure}-${roadClass}-hatch`,
                 type: 'line',
                 source,
                 'source-layer': schema.layers.road,
@@ -251,9 +258,10 @@ export function compileRoads(
         }
 
         contributions.push({
+          family: roadHatchPhysicalFamily(roadClass, structure),
           kind: 'layer',
           layer: {
-            id: `streets-road-${structure}-${roadClass}-hatch`,
+            id: `tileflow-road-${structure}-${roadClass}-hatch`,
             type: 'symbol',
             source,
             'source-layer': schema.layers.road,
@@ -294,7 +302,7 @@ export function compileRoads(
           },
           // Keep every hatch above every road fill. Besides making the visual
           // stacking deterministic at class crossings, this makes equivalent
-          // hatch layers contiguous so the style optimizer can safely cohort
+          // hatch layers contiguous so the physical planner can safely cohort
           // them without moving across a fill pass.
           localOrder: roadClassOrder.length * 10 + classIndex,
           owner: 'roads',
@@ -321,13 +329,13 @@ export function compileRoads(
   );
   const areaTargets = [
     {
-      id: 'streets-road-area',
+      id: 'tileflow-road-area',
       filter: ['==', ['geometry-type'], 'Polygon'],
       name: 'road',
       style: areaStyles.road,
     },
     {
-      id: 'streets-road-pedestrian-area',
+      id: 'tileflow-road-pedestrian-area',
       filter: [
         'all',
         ['==', ['geometry-type'], 'Polygon'],
@@ -337,7 +345,7 @@ export function compileRoads(
       style: areaStyles.pedestrian,
     },
     {
-      id: 'streets-road-pier-area',
+      id: 'tileflow-road-pier-area',
       filter: [
         'all',
         ['==', ['geometry-type'], 'Polygon'],
@@ -379,7 +387,7 @@ export function compileRoads(
     contributions.push({
       kind: 'layer',
       layer: {
-        id: 'streets-road-oneway',
+        id: 'tileflow-road-oneway',
         type: 'symbol',
         source,
         'source-layer': schema.layers.road,
@@ -420,6 +428,41 @@ export function compileRoads(
   return contributions;
 }
 
+function roadLinePhysicalFamily(
+  roadClass: TileflowRoadClass,
+  structure: TileflowRoadStructure,
+  phase: 'casing' | 'fill' | 'shadow',
+): TileflowPhysicalFamilyDeclaration {
+  const cohort = roadPhysicalCohort(roadClass);
+  return {
+    group: `${structure}:${phase}:${cohort}`,
+    kind: 'road-line',
+    member: roadClass,
+    outputKey: `roads.cohorts.${structure}.${cohort}.${phase}`,
+  };
+}
+
+function roadHatchPhysicalFamily(
+  roadClass: TileflowRoadClass,
+  structure: TileflowRoadStructure,
+): TileflowPhysicalFamilyDeclaration {
+  return {
+    group: structure,
+    kind: 'road-hatch',
+    member: roadClass,
+    outputKey: `roads.cohorts.${structure}.hatch`,
+  };
+}
+
+function roadPhysicalCohort(roadClass: string): string {
+  if (roadClass === 'motorway' || roadClass === 'trunk') return 'major';
+  if (roadClass === 'primary' || roadClass === 'secondary' || roadClass === 'tertiary') {
+    return 'arterial';
+  }
+  if (roadClass === 'minor' || roadClass === 'service' || roadClass === 'track') return 'local';
+  return 'path';
+}
+
 function compileSidewalks(
   request: TileflowRoadSidewalkStyle | undefined,
   context: TileflowDomainCompileContext,
@@ -452,7 +495,7 @@ function compileSidewalks(
   if (config.surface?.visible !== false) {
     contributions.push({
       kind: 'layer',
-      layer: applyFillStyle({...base, id: 'streets-sidewalk-surface'}, config.surface ?? {}),
+      layer: applyFillStyle({...base, id: 'tileflow-sidewalk-surface'}, config.surface ?? {}),
       localOrder: 0,
       owner: 'roads',
       slot: 'transport-pedestrian-areas',
@@ -462,7 +505,7 @@ function compileSidewalks(
   if (config.pattern && config.pattern.visible !== false) {
     contributions.push({
       kind: 'layer',
-      layer: applyFillStyle({...base, id: 'streets-sidewalk-pattern'}, config.pattern),
+      layer: applyFillStyle({...base, id: 'tileflow-sidewalk-pattern'}, config.pattern),
       localOrder: 1,
       owner: 'roads',
       slot: 'transport-pedestrian-areas',
@@ -473,7 +516,7 @@ function compileSidewalks(
     contributions.push({
       kind: 'layer',
       layer: applyLineStyle(
-        {...base, id: 'streets-sidewalk-outline', type: 'line'},
+        {...base, id: 'tileflow-sidewalk-outline', type: 'line'},
         config.outline,
       ),
       localOrder: 2,
@@ -555,7 +598,7 @@ function compileRoundabouts(
   if (config.casing && config.casing.visible !== false) {
     contributions.push({
       kind: 'layer',
-      layer: applyCircleStyle({...base, id: 'streets-road-circular-casing'}, config.casing),
+      layer: applyCircleStyle({...base, id: 'tileflow-road-circular-casing'}, config.casing),
       localOrder: 10,
       owner: 'roads',
       slot: 'transport-symbols',
@@ -565,7 +608,7 @@ function compileRoundabouts(
   if (config.fill && config.fill.visible !== false) {
     contributions.push({
       kind: 'layer',
-      layer: applyCircleStyle({...base, id: 'streets-road-circular-fill'}, config.fill),
+      layer: applyCircleStyle({...base, id: 'tileflow-road-circular-fill'}, config.fill),
       localOrder: 20,
       owner: 'roads',
       slot: 'transport-symbols',
@@ -615,7 +658,7 @@ function compileCrossings(
     kind: 'layer',
     layer: applyIconStyle(
       {
-        id: 'streets-road-crossing',
+        id: 'tileflow-road-crossing',
         type: 'symbol',
         source: context.data.sourceId,
         'source-layer': layers.streetFurniture,

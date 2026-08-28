@@ -1,31 +1,21 @@
 import type {TileflowCaptureScene} from '../capture-scene';
-import type {TileflowStreetsModules} from '../cartography/streets-recipe';
+import type {TileflowResolvedSemanticModuleOverrides} from '../cartography/domain-registry';
 import type {TileflowDataConfig} from '../data';
 import type {TileflowMarine} from '../marine';
 import {tileflowPortableIdSchema} from '../portable-identity';
 import type {TileflowTheme, TileflowThemeName} from '../themes';
 import type {TileflowProjection, TileflowTerrain, TileflowViewConfig} from '../types';
 import type {TileflowFontDirectory, TileflowGlyphs, TileflowIconDirectory} from './assets';
-
-/** Version of the internal Streets compiler contract understood by map roots. */
-export const tileflowStreetsCompilerVersion = 1 as const;
+import type {TileflowAuthoringModules} from './operations';
 
 /** Portable, filesystem-safe identity shared by maps and their leaf-owned scenes. */
 export const tileflowMapIdSchema = tileflowPortableIdSchema;
-
-export type TileflowStreetsMapRoot = {
-  compiler: 'streets';
-  compilerVersion: typeof tileflowStreetsCompilerVersion;
-};
-
-/** Compiler root inherited by a complete map lineage. */
-export type TileflowMapRoot = TileflowStreetsMapRoot;
 
 /** Identity is always owned by the map being resolved and never inherited. */
 export type TileflowMapIdentity = {
   id: string;
   name?: string;
-  /** Editorial version of this map, independent from its compiler version. */
+  /** Editorial version of this map. */
   version: number;
 };
 
@@ -51,7 +41,7 @@ type TileflowMapTextAssets =
   | {fonts: readonly TileflowFontDirectory[]; glyphs?: never}
   | {fonts?: never; glyphs: TileflowGlyphs};
 
-/** Cartographic fields supported by the current Streets compiler. */
+/** Cartographic fields supported by the V1 semantic compiler. */
 export type TileflowMapDesign = TileflowMapTextAssets & {
   data?: TileflowDataConfig;
   /** Name used whenever a concrete theme is not explicitly requested. */
@@ -60,7 +50,8 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
   icons?: readonly TileflowIconDirectory[];
   /** Independent Bathymetry and Nautical products composed by the compiler. */
   marine?: TileflowMarine;
-  modules?: TileflowStreetsModules;
+  /** Semantic domains, expressed directly or with explicit refine/disable operations. */
+  modules?: TileflowAuthoringModules;
   projection?: TileflowProjection;
   /** Browser color-scheme mapping. Runtime resolves "system" to one of these concrete names. */
   systemThemes?: {
@@ -73,12 +64,12 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
   view?: TileflowViewConfig;
 };
 
-export type TileflowRootMap = TileflowMapIdentity &
+/** Complete semantic map at the base of a lineage. The compiler is implicit. */
+export type TileflowStandaloneMap = TileflowMapIdentity &
   TileflowMapTooling &
   TileflowMapDesign & {
     defaultTheme: TileflowThemeName;
     extends?: never;
-    root: TileflowMapRoot;
     themes: Readonly<Record<TileflowThemeName, TileflowTheme>>;
   };
 
@@ -86,14 +77,13 @@ export type TileflowDerivedMap = TileflowMapIdentity &
   TileflowMapTooling &
   TileflowMapDesign & {
     extends: TileflowMap;
-    root?: never;
   };
 
-/** Executable authoring definition: exactly one of `root` or `extends`. */
-export type TileflowMap = TileflowRootMap | TileflowDerivedMap;
+/** Executable authoring definition using the one implicit semantic compiler. */
+export type TileflowMap = TileflowDerivedMap | TileflowStandaloneMap;
 
 type ResolvedTileflowMapDesign<TDesign extends TileflowMapDesign = TileflowMapDesign> =
-  TDesign extends TileflowMapDesign ? Omit<TDesign, 'defaultTheme' | 'themes'> : never;
+  TDesign extends TileflowMapDesign ? Omit<TDesign, 'defaultTheme' | 'modules' | 'themes'> : never;
 
 /** A standalone map definition with inheritance removed. */
 export type ResolvedTileflowMap = Omit<TileflowMapIdentity, 'name'> &
@@ -101,12 +91,12 @@ export type ResolvedTileflowMap = Omit<TileflowMapIdentity, 'name'> &
   ResolvedTileflowMapDesign & {
     defaultTheme: TileflowThemeName;
     extends?: never;
+    modules?: TileflowResolvedSemanticModuleOverrides;
     name: string;
-    root: TileflowMapRoot;
     themes: Readonly<Record<TileflowThemeName, TileflowTheme>>;
   };
 
 export type ResolveMapOptions = {
-  /** Maximum number of map definitions in a lineage, including the root. */
+  /** Maximum number of map definitions in a lineage, including its standalone base. */
   maxDepth?: number;
 };

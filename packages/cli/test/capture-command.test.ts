@@ -575,7 +575,7 @@ test('removed raw style overrides fail at the config boundary and preserve outpu
     join(directory, 'tileflow.config.ts'),
     tileflowMapFixture({
       id: 'proof',
-      fields: `overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}],
+      fields: `overrides: [{kind: 'patch', id: 'tileflow-background', patch: {paint: {'background-color': 42}}}],
   scenes: {proof: {
     theme: 'light',
     camera: {type: 'center', center: [0, 0], zoom: 1},

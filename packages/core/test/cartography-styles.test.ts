@@ -249,6 +249,12 @@ test('area and symbol compounds have deterministic phases and fail on impossible
     -10,
   ]);
 
+  const lowerFirst = applySymbolStyle(
+    {id: 'lower-first', type: 'symbol'},
+    {priority: 3, priorityOrder: 'lower-first'},
+  );
+  assert.equal((lowerFirst.layout as Record<string, unknown>)['symbol-sort-key'], 3);
+
   assert.throws(
     () =>
       applySymbolStyle(

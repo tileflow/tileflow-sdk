@@ -147,20 +147,62 @@ registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
 
 ## Authoring model
 
-Tileflow exposes one authoring concept: a map. `defineRootMap()` creates a complete compiler root;
-`defineMap()` creates an ordinary map whose `extends` value is another imported map object. All
-eight first-party maps are independent roots. They use the semantic Streets compiler while defining
+Tileflow exposes one authoring concept and one constructor: `defineMap()`. A complete map omits
+`extends`; an inherited map sets `extends` to another imported map object. All eight first-party
+maps are independent standalone maps. They use the sole semantic compiler while defining
 their complete designs and asset providers directly; no official map imports or extends another
-official map. Applications can extend any of those roots through the same public API. Streets
+official map. Applications can extend any of those maps through the same public API. Streets
 itself owns coordinated light and dark themes.
-There is no separate public recipe selector or compatibility alias.
+There is no public compiler selector or alternate compiler. The authoring contract has no recipe or
+cartographic compatibility alias.
 
-The serialized root literal `compiler: 'streets'` is the current compiler-family ABI identifier,
-retained for compatibility. It selects Core's semantic map engine; it does not select or import the
-official `streets` map, and it does not supply that map's modules, icons, fonts, or other assets.
-`compilerVersion` versions this ABI independently from map and package versions.
+### Machine-readable V1 surface
 
-Custom build tooling can opt into a separate compiler-inspection sidecar from the build-only
+`tileflowAuthoringManifest` is the deterministic, deeply frozen description of the public semantic
+language. Its schema version is `tileflowAuthoringManifestSchemaVersion`. The manifest's `domains`
+array is generated from the compiler's closed registry and records exact compile order, module and
+service dependencies, and provided services. `operations` lists only integrated public operations:
+defining/extending a map, directly replacing, refining, disabling, or resetting a keyed domain,
+and adding owner-local render passes or target refinements. Direct declaration is the sole
+replacement syntax; there is no redundant `set()` helper.
+
+Agents and other tools can discover this contract without importing executable configuration:
+`tileflow language manifest --json` emits the manifest and `tileflow language schema --json` emits
+the packaged generated authoring/resolved JSON Schema. Both commands are deterministic, read-only,
+and network-free. The manifest links every domain to its authoring, options, patch, and resolved
+schema definitions, and enumerates the closed expression and render-selector vocabulary with its
+finite limits.
+
+The manifest also describes the exact structured compiler contract. A successful
+`createStyleResult()` has `{ok: true, diagnostics, report, style}`; a failure has
+`{ok: false, diagnostics, report}` and forbids `style`. Report schema version 1 requires
+`domains`, `map`, `planner`, `schemaVersion`, and sorted semantic `targets`; `theme`, source
+`requirements`, and physical `provenance` are optional. Pass `{inspection: true}` only when the
+read-only physical-output provenance sidecar is needed. Its IDs and indexes are diagnostic
+observations, never stable or addressable authoring targets.
+
+`diffTileflowMaps(before, after)` resolves both inputs before comparing them and returns semantic
+diff schema version 1:
+
+```ts
+{
+  schemaVersion: 1,
+  from: {id, version},
+  to: {id, version},
+  summary: {add, remove, change, total},
+  changes: [
+    {kind: 'add', path: '/projection', after: 'globe'},
+    {kind: 'remove', path: '/modules/water', before: {/* ... */}},
+    {kind: 'change', path: '/view/zoom', before: 12, after: 13},
+  ],
+}
+```
+
+Paths are RFC 6901 JSON Pointers. Object keys compare recursively in code-unit order; arrays compare
+atomically because map inheritance replaces arrays. Leaf identity (`id`, `name`, `version`) and
+delivery metadata identify the endpoints but are not cartographic changes.
+
+Custom build tooling can opt into a separate, read-only diagnostic sidecar from the explicit build
 entrypoint:
 
 ```ts
@@ -170,9 +212,9 @@ const {style, inspection} = createStyleWithInspection(map);
 ```
 
 `inspection.layers` stays aligned with the final Style layer order and records the semantic
-`owner`, `slot`, `target`, and ordered add/patch effects that contributed to each layer, including
-layers merged by the optimizer. `createStyleFromCatalogWithInspection` and
-`createStylesFromCatalogWithInspection` provide the corresponding internal catalog forms. The
+`owner`, `slot`, `target`, and ordered render passes/refinements represented by each layer, including
+layers merged by the physical planner. `createStyleFromCatalogWithInspection` and
+`createStylesFromCatalogWithInspection` provide the corresponding catalog-oriented forms. The
 ordinary Style bytes are identical to compilation without inspection; private compiler metadata is
 stripped before finalization, and the sidecar never enters a Style, runtime manifest, or production
 artifact unless a caller deliberately stores it.
@@ -186,8 +228,8 @@ a theme in the final collection.
 `modules` merges by domain name: an omitted domain remains inherited, while declaring `roads(...)`
 or another domain replaces that inherited module request and every compiler-owned contribution
 attached to it as a unit. `data`, `projection`, `terrain`, `marine`, `icons`, and the text provider
-are atomic; identity and tooling metadata are leaf-owned. `enabled: false` removes the domain and
-all of its inherited effects. The resolved result is a standalone map with no runtime dependency on
+are atomic; identity and tooling metadata are leaf-owned. `disable()` removes the domain and
+its complete inherited render stack. The resolved result is a standalone map with no runtime dependency on
 TypeScript imports.
 
 `icons` is an intentional exception to implicit array composition: omission inherits the exact
@@ -196,18 +238,17 @@ spread when the child should keep a parent's directories. `fonts` and `glyphs` a
 exclusive text providers; declaring either atomically replaces an inherited provider of either
 kind. Unknown keys and former compatibility shapes are rejected.
 
-Most authors should extend an existing root. `defineRootMap()` is reserved for defining a complete
-compiler-owned lineage:
+Most authors should extend an existing official or application map. A complete standalone map uses
+the same `defineMap()` call without `extends`:
 
 ```ts
-import {defineMap, defineRootMap, tileflowStreetsCompilerVersion} from '@tileflow/core';
+import {defineMap} from '@tileflow/core';
 import {streetsIcons, streetsThemes} from '@tileflow/maps';
 
-const companyRoot = defineRootMap({
-  id: 'company-root',
-  name: 'Company root',
+const companyBase = defineMap({
+  id: 'company-base',
+  name: 'Company base',
   version: 1,
-  root: {compiler: 'streets', compilerVersion: tileflowStreetsCompilerVersion},
   glyphs: {
     kind: 'url',
     url: 'https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf',
@@ -222,38 +263,41 @@ const companyRoot = defineRootMap({
 export default defineMap({
   id: 'company-navigation',
   version: 1,
-  extends: companyRoot,
+  extends: companyBase,
   projection: 'globe',
 });
 ```
 
-The root above is complete as written. A map always owns its complete text provider; Core does not
+The standalone map above is complete as written. A map always owns its complete text provider; Core does not
 obtain fonts or sprites from World and never invents a fallback URL. The URL-backed first-party
-`streets`, `ferraris`, `harad`, `soundings`, and `verdant` roots declare their glyph providers
+`streets`, `ferraris`, `harad`, `soundings`, and `verdant` maps declare their glyph providers
 directly, while `siegfried` declares packaged fonts, so ordinary imports and derived maps compile
 without out-of-band release metadata.
 
 ```mermaid
 flowchart LR
   A["tileflow.config.ts exports one map"] --> B["Resolve imported map lineage"]
-  B --> C["Complete design + domain compilers"]
-  C --> D["Ordered Streets layers"]
-  D --> E["MapLibre Style JSON"]
+  B --> C["Complete semantic design + closed domain registry"]
+  C --> D["Domain IR + assembly + render stacks"]
+  D --> E["Physical planner"]
+  E --> F["Single MapLibre lowering"]
+  F --> G["Validated Style JSON + compilation report"]
 ```
 
 Modules are keyed by domain, so object order never controls rendering and a domain can appear only
-once. A map extending Streets inherits its complete module set. Use `enabled: false` to replace and
-remove a domain deliberately. The public domains are `land`, `water`, `roads`, `buildings`, `boundaries`, `labels`,
-`poi`, `aeroways`, `transit`, `vegetation`, `addresses`, and `landforms`.
-The typed default recipe is exhaustive over that domain set, and a schema contract test verifies
-that every recipe entry keeps its key, type tag, validator, compiler orchestration, and root export
-in lockstep. Disabling `roads` also removes dependent road names, shields, and junction references;
+once. A map extending Streets inherits its complete module set. Use `disable()` to remove a domain
+deliberately. The public domains are `land`, `water`, `nautical`, `roads`, `buildings`, `boundaries`,
+`labels`, `poi`, `aeroways`, `transit`, `vegetation`, `addresses`, and `landforms`.
+The closed domain registry is exhaustive over that domain set and owns defaults, dependency order,
+services, and compiler orchestration. Contract tests keep its keys and type tags in lockstep with
+the strict resolved schema, generated authoring/options/patch/resolved schema aliases, and public
+exports. Disabling `roads` also removes dependent road names, shields, and junction references;
 independent place, water, aerodrome, and POI labels remain under the labels module.
 
 Every styling module supports semantic shortcuts and exact semantic targets. Visual style values
-accept typed token refs, documented `fixed(value, {reason})` values, raw MapLibre expressions through
-`expression(...)`, and zoom functions through `zoom.step(...)`, `zoom.linear(...)`, or
-`zoom.exponential(...)`. Refs and fixed leaves also work inside expressions and zoom stops.
+accept typed token refs, documented `fixed(value, {reason})` values, closed data expressions through
+`expr.*` plus `field(...)`, and zoom functions through `zoom.step(...)`, `zoom.linear(...)`, or
+`zoom.exponential(...)`. Refs and fixed leaves also work inside typed expressions and zoom stops.
 Structural controls such as presets, visibility, and zoom gates remain ordinary literals. Exact
 controls address stable concepts such as `roads.classes.primary.surface.fill`, not renderer layer
 IDs.
@@ -321,14 +365,14 @@ ordinary visual styles intentionally do not accept raw source filters.
 
 ## Compiled-style performance
 
-The Streets compiler resolves semantic modules and their owned contributions first, then compacts equivalent
+The semantic compiler resolves semantic modules and their owned contributions first, then compacts equivalent
 physical MapLibre layers. At high-detail zooms, road classes become a small set of data-driven
 cohorts; equivalent road labels and tunnel hatches share compatible buckets; and land-cover,
 land-use, and waterway classes share compatible buckets. Compaction selects
 cohorts from compiler-owned semantic targets, not by parsing physical IDs; its temporary
 owner/slot/target provenance is stripped from the public Style JSON.
 
-After optimization, Core embeds a bounded private `tileflow:interaction-manifest` lookup for the
+After physical planning, Core embeds a bounded private `tileflow:interaction-manifest` lookup for the
 final POI representations. `@tileflow/interactions/maplibre` validates and consumes that metadata
 so applications can bind to `domain: 'poi'` without depending on physical layer IDs. The lookup is
 paired atomically with the exact style it describes; it is not a public style-authoring API.
@@ -647,7 +691,7 @@ export default defineMap({
 });
 ```
 
-Module recipes own structure and semantic behavior; visual fields accept typed token references.
+Semantic modules own structure and behavior; visual fields accept typed token references.
 Use a visual literal only inside a theme. If a module value intentionally must not vary, wrap it in
 `fixed(value, {reason})`. `tileflow inspect --json` reports stable `THEME_IMPLICIT_FIXED`
 diagnostics: implicit color, font, and image literals block Style compilation, while direct visual
@@ -657,11 +701,11 @@ deterministic OKLCH `color.mix()` keep derived palette logic inspectable. Unknow
 cross-category refs, token-schema drift, and unresolved visual nodes fail before Style JSON is
 emitted.
 
-There is no public physical-layer override surface. New cartographic behavior belongs to a typed
-control in its owning module. Official maps may add compiler-private semantic contributions, but
-each has exactly one module owner and is discarded atomically when that module is replaced or
-disabled. `createStyle()` validates the final optimized Style JSON with the MapLibre style spec and
-never returns an invalid style.
+There is no physical-layer override or separate official-map authoring surface. New cartographic
+behavior belongs to a typed control or owner-local render stack in its owning public module. Every
+official and application map therefore follows the same schema, inheritance rules, diagnostics,
+and lowering path. `createStyle()` validates the final planned Style JSON with the MapLibre style
+spec and never returns an invalid style.
 
 ## Data is separate from design
 
@@ -678,7 +722,7 @@ domain, while the font token catalog gives module styles a stable semantic targe
 explicit and atomic: a map may declare either ordered `fonts` directories
 for browser font files or a `glyphs` provider for PBF glyphs, never both. Omitting both inherits the
 parent's provider; declaring either replaces an inherited provider of either kind. After resolution,
-a map that emits text must have exactly one provider. A text-free root may omit both. On a derived
+a map that emits text must have exactly one provider. A text-free standalone map may omit both. On a derived
 map, omission inherits the parent provider while `fonts: []` explicitly removes it; that empty array
 is valid only when the resolved map emits no text.
 
@@ -991,14 +1035,14 @@ independently confirmed the immutable bytes; package or bundle hashes are not su
 previous aggregate-wrapper and recipe-selector APIs, `renderer`, top-level `tiles`/`tileset`, module
 arrays, and raw `layers` are not part of this API.
 
-`@tileflow/core/recipe` is nevertheless a real exported ABI used by `@tileflow/maps` to declare
-owner-scoped semantic effects for first-party recipes. It is a low-level compiler integration
-surface, not a recipe selector and not the ordinary application authoring API; application maps
-should use typed modules from the package root. Because Maps imports this subpath from its installed
-Core peer, incompatible changes to it participate in Core SemVer and package compatibility checks.
+Advanced cartography remains in the same public language: `withRenderStack()`, `renderPass()`, and
+`refineRenderTarget()` address owner-local semantic targets without exposing physical layer IDs,
+sources, source layers, raw filters, or before/after anchors. Typed `field()` references and
+`expr.*` builders stay semantic until the compiler's single lowering boundary. There is no recipe
+subpath or alternate compiler integration API.
 
 `mapRevisionSha256` hashes only resolved cartography: the effective design after `extends`, the
-compiler family, compiler-owned effective contributions, and exact source icon/font identities.
+semantic language, compiler-owned effective contributions, and exact source icon/font identities.
 Leaf `id`, `name`, editorial `mapVersion`, default `view`, capture `scenes`, and `delivery` policy do
 not change that content identity. They remain explicit on the map, manifest, Style, capture receipt,
 or Hosted deployment fingerprint that owns them. Compiler ABI, package versions, generated assets,
@@ -1049,7 +1093,6 @@ Framework adapters import the browser-only lifecycle kernel explicitly:
 import {
   attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
-  createTileflowMarkerController,
   createTileflowSessionStarter,
   createTileflowTransformRequest,
   registerTileflowWorldRequestBridge,
@@ -1120,8 +1163,8 @@ import {
 } from '@tileflow/maps';
 ```
 
-All eight official maps are complete compiler roots. Each selects the semantic Streets compiler
-without importing or extending another official map and declares its own icon directory.
+All eight official maps are complete standalone maps. The sole semantic compiler is implicit; none
+imports or extends another official map, and each declares its own icon directory.
 Streets declares `[streetsIcons]` and exposes its complete coordinated appearances as
 `streetsThemes.light` and `streetsThemes.dark`; image tokens select the matching sidewalk pattern
 without changing the asset collection. Cyberpunk declares `[cyberpunkIcons]` and

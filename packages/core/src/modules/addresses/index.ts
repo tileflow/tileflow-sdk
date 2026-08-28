@@ -1,7 +1,6 @@
 import type {TileflowSymbolStyle} from '../../cartography/styles';
 
 export type TileflowAddressesModuleOptions = {
-  enabled?: boolean;
   /** Styling for OpenMapTiles point house-number labels. */
   labels?: TileflowSymbolStyle;
 };

@@ -1,13 +1,14 @@
 # Map inheritance contract
 
 Tileflow exposes one public cartographic unit: a map. Every `tileflow.config.ts` exports exactly one
-map, and a map is either a compiler root or an ordinary map that imports another map object through
-`extends`. Root and derived maps use the same design fields. Inheritance is resolved completely
+map. A map is either standalone or imports another map object through `extends`; both forms use the
+single `defineMap()` constructor and the same design fields. The semantic compiler is implicit.
+Inheritance is resolved completely
 before validation, asset preparation, compilation, capture, build, or deploy.
 
 `streets`, `cyberpunk`, `ferraris`, `harad`, `matrix`, `siegfried`, `soundings`, and `verdant` are
-first-party root maps. Streets and Siegfried own coordinated light and dark themes. Every official root selects
-the semantic Streets compiler ABI but defines its complete design directly: none imports or extends
+first-party standalone maps. Streets and Siegfried own coordinated light and dark themes. Every
+official map defines its complete design directly: none imports or extends
 another official map, and each declares only its own asset providers. They are exported from
 `@tileflow/maps`; there is no public basemap,
 map-preset, map-catalog, `streets()` constructor, `editorial-city` alias, or compatibility
@@ -28,23 +29,23 @@ Each public field has one explicit merge rule:
 - `data`, `projection`, and `terrain` replace atomically when declared.
 - `modules` merges by domain name. Declaring `roads(...)`, for example, replaces that inherited
   module request and every compiler-owned contribution belonging to roads. Omitted domains remain
-  inherited; `enabled: false` removes a domain and all of its effects.
+  inherited; `disable()` removes a domain and its complete owner-local render stack.
 - `icons`, `fonts`, and `glyphs` follow the asset rules below.
 
 Arrays inside ordinary design objects replace; MapLibre expressions and Tileflow zoom values are
-atomic. Map identity remains the leaf identity, every lineage must terminate at one supported root,
+atomic. Map identity remains the leaf identity, every lineage must terminate at one standalone map,
 and circular, malformed, or over-deep inheritance fails closed. There is no public physical-layer
 override key.
 
 ## Themes
 
-Every root has at least one named `TileflowTheme` and one `defaultTheme`. A theme is a complete,
+Every standalone map has at least one named `TileflowTheme` and one `defaultTheme`. A theme is a complete,
 inheritance-free visual document with identity, `colorScheme`, typography, lighting, and flat
 `color`, `font`, `image`, and `number` token catalogs. All themes in one resolved map must expose
 the same category/key schema. The reserved name `system` is a browser selector, never a stored or
 compiled theme.
 
-Module recipes and compiler-owned effects retain map structure and refer to visual roles through
+Domain modules and owner-local render stacks retain map structure and refer to visual roles through
 `token.color()`, `token.font()`, `token.image()`, or `token.number()`. `fixed(value, {reason})`
 marks a deliberately invariant visual module value. Theme refs resolve recursively through module
 objects, zoom stops, supported color operations, terrain, typography, lighting, and expressions
@@ -88,7 +89,7 @@ matches exactly; case-only collisions fail. The official directory descriptors `
 `cyberpunkIcons`, `matrixIcons`, and `verdantIcons` let maps reuse package assets without exposing
 installation paths. Ferraris, Härad, Siegfried, Soundings, and Verdant declare only
 `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`, `[soundingsIcons]`, and `[verdantIcons]`,
-respectively; none of these roots composes with Streets assets. Härad's nine original Tileflow SVG
+respectively; none of these standalone maps composes with Streets assets. Härad's nine original Tileflow SVG
 patterns are inspired by Lantmäteriet's CC0 Häradsekonomiska kartan series (1859–1934) and official
 legend, without redistributing source scans, pixels, legend artwork, fonts, or map data. Siegfried
 owns nine light/dark engraving-motif pairs in one directory; both themes select the same semantic
@@ -139,7 +140,7 @@ text has exactly one provider; only a text-free map may have neither.
 Streets, Ferraris, Härad, Soundings, and Verdant each declare the canonical
 `https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf` URL with `Noto Sans Regular` and
 `Noto Sans Bold`. The URL is canonical rather than content-addressed; responses revalidate and the
-URL is not an exact-byte identity. It is stated directly in each root, not synthesized as a
+URL is not an exact-byte identity. It is stated directly in each standalone map, not synthesized as a
 fallback. The reproducible replacement is an explicit
 `/base/<assetSetSha256>/glyphs/...` URL backed by one validated immutable global base-asset
 manifest.
@@ -155,8 +156,8 @@ the exact prepared sprite and font assets the family references. Final style val
 missing `icon-image`, `fill-pattern`, or `line-pattern` IDs and missing primary local font faces.
 
 The build manifest's `mapRevisionSha256` is a content identity for resolved cartography, not a
-second editorial version. It hashes the effective design, compiler family, compiler-owned effective
-contributions, and source icon/font identities. Leaf `id`, `name`, `version`, `view`, `scenes`, and
+second editorial version. It hashes the effective resolved semantic design, semantic language,
+public module/render-stack design, and source icon/font identities. Leaf `id`, `name`, `version`, `view`, `scenes`, and
 `delivery` remain on their owning manifest, Style, capture, or deployment contracts and do not
 change the cartographic revision. Each theme has its own `styleSha256`; the per-map
 `assetSetSha256` identifies that build's generated runtime resources. The latter uses the

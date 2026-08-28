@@ -557,7 +557,7 @@ test('validation rejects removed raw style overrides at the config boundary', as
     fixture.configPath,
     tileflowMapFixture({
       id: 'madrid',
-      fields: `overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]`,
+      fields: `overrides: [{kind: 'patch', id: 'tileflow-background', patch: {paint: {'background-color': 42}}}]`,
     }),
   );
   const result = await runCli(
@@ -583,8 +583,8 @@ test('deploy rejects removed raw style overrides before any remote write', async
       id: 'madrid',
       icons: 'authored',
       fields: `icons: ['./icons'],
-modules: {poi: {type: 'poi', density: 3, icons: true, categories: ['food-drink']}, roads: {type: 'roads', enabled: false}},
-overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]`,
+modules: {poi: {type: 'poi', density: 3, icons: true, categories: ['food-drink']}, roads: disable()},
+overrides: [{kind: 'patch', id: 'tileflow-background', patch: {paint: {'background-color': 42}}}]`,
     }),
   );
   let requests = 0;
@@ -804,7 +804,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
           {
             lineage?: Array<{id: string; mapVersion: number}>;
             mapVersion?: number;
-            recipe?: {compiler?: string; compilerVersion?: number};
+            semanticCompiler?: {name?: string; version?: number};
             themes?: Record<string, {styleSha256?: string}>;
           }
         >;
@@ -823,8 +823,8 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     assert.equal(artifact.schemaVersion, 3);
     assert.equal(artifact.buildManifest?.schemaVersion, 1);
     assert.equal(mapEntry?.mapVersion, 1);
-    assert.equal(mapEntry?.recipe?.compiler, 'streets');
-    assert.equal(mapEntry?.recipe?.compilerVersion, 1);
+    assert.equal(mapEntry?.semanticCompiler?.name, 'tileflow-semantic');
+    assert.equal(mapEntry?.semanticCompiler?.version, 1);
     assert.deepEqual(
       mapEntry?.lineage?.map((node) => node.id),
       ['madrid', 'streets'],
@@ -839,7 +839,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
         `${api.url}/sprites/icp_12345678-1234-1234-1234-123456789abc/sprite`,
       );
       const foodPoiLayer = style.layers?.find(
-        (layer) => layer.id === 'streets-poi-food-drink-icon',
+        (layer) => layer.id === 'tileflow-poi-food-drink-icon',
       );
       const iconImage = JSON.stringify(foodPoiLayer?.layout?.['icon-image']);
       assert.match(iconImage, /"get","icon"/u);
@@ -1445,7 +1445,7 @@ async function createIconFixture(t: TestContext) {
       id: 'madrid',
       icons: 'authored',
       fields: `icons: ['./icons'],
-modules: {poi: {type: 'poi', density: 3, icons: true, categories: ['food-drink']}, roads: {type: 'roads', enabled: false}},
+modules: {poi: {type: 'poi', density: 3, icons: true, categories: ['food-drink']}, roads: disable()},
 name: 'Madrid'`,
     }),
   );

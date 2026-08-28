@@ -3,7 +3,6 @@ import type {Snippet, SvelteComponentTyped} from 'svelte';
 import type {TileflowThemeTransition} from '@tileflow/core/browser';
 import type {
   TileflowAnalytics,
-  TileflowMapMarker,
   TileflowRuntimeSource,
   TileflowThemeSelection,
 } from '@tileflow/core/runtime';
@@ -21,12 +20,9 @@ export type TileflowMapMode = 'interactive' | 'image';
 export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
 export type TileflowMapSource = TileflowRuntimeSource;
 
-export type TileflowMapMarkerSnippet<TAnnotation extends TileflowAnnotation = TileflowAnnotation> =
-  Snippet<[context: TileflowAnnotationViewContext<TAnnotation>]>;
-
 export type TileflowMapAnnotationSnippet<
   TAnnotation extends TileflowAnnotation = TileflowAnnotation,
-> = TileflowMapMarkerSnippet<TAnnotation>;
+> = Snippet<[context: TileflowAnnotationViewContext<TAnnotation>]>;
 
 export type TileflowMapInteractionSnippet<
   TAnnotation extends TileflowAnnotation = TileflowAnnotation,
@@ -50,15 +46,9 @@ type TileflowMapBaseProps = {
 
 export type TileflowMapAnnotationProps<
   TAnnotation extends TileflowAnnotation = TileflowAnnotation,
-> =
-  | {
-      annotations?: readonly TAnnotation[];
-      markers?: never;
-    }
-  | {
-      annotations?: never;
-      markers?: readonly TileflowMapMarker[];
-    };
+> = {
+  annotations?: readonly TAnnotation[];
+};
 
 export type TileflowMapInteractionStateProps =
   | {
@@ -78,7 +68,7 @@ type TileflowMapInteractiveProps<TAnnotation extends TileflowAnnotation> =
   TileflowMapAnnotationProps<TAnnotation> &
     TileflowMapInteractionStateProps & {
       interactions?: readonly TileflowInteractionBinding[];
-      marker?: TileflowMapMarkerSnippet<TAnnotation>;
+      marker?: TileflowMapAnnotationSnippet<TAnnotation>;
       mode?: 'interactive';
       onInteractionDiagnostic?: (diagnostic: TileflowInteractionDiagnostic) => void;
       onInteractionEvent?: (event: TileflowInteractionEvent<TAnnotation>) => void;
@@ -93,7 +83,6 @@ type TileflowMapImageProps = {
   interactions?: never;
   interactionState?: never;
   marker?: never;
-  markers?: never;
   mode: 'image';
   onInteractionDiagnostic?: never;
   onInteractionEvent?: never;

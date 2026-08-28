@@ -3,6 +3,7 @@ import {
   compareCodeUnits,
   type NormalizedTileflowCaptureScene,
   normalizeTileflowCaptureScene,
+  parseResolvedTileflowMap,
   parseTileflowMap,
   resolveThemeSelection,
   serializeCanonicalJson,
@@ -214,7 +215,7 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
       }
 
       const colorScheme = resolveThemeSelection(
-        parseTileflowMap(artifacts.project.maps[scene.map]!),
+        parseResolvedTileflowMap(artifacts.project.maps[scene.map]!),
         scene.theme,
       ).theme.colorScheme;
 
@@ -397,14 +398,14 @@ function normalizeScene(
   }
 
   const normalized = normalizeTileflowCaptureScene(scene);
-  const authoredMap = artifacts.project.maps[normalized.map];
-  if (!authoredMap) {
+  const resolvedMap = artifacts.project.maps[normalized.map];
+  if (!resolvedMap) {
     throw new TileflowCaptureError(
       'SCENE_NOT_FOUND',
       `Scene "${sceneName}" references unavailable map "${normalized.map}".`,
     );
   }
-  const map = parseTileflowMap(authoredMap);
+  const map = parseResolvedTileflowMap(resolvedMap);
   let theme: string;
   try {
     theme = resolveThemeSelection(map, normalized.theme).name;

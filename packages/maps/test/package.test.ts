@@ -229,32 +229,32 @@ test('publishes every official icon and font directory with provenance', async (
   }
 });
 
-test('keeps the Härad root source independent from Streets', async () => {
+test('keeps the Härad standalone source independent from Streets', async () => {
   const source = await readFile(new URL('../src/official/harad.ts', import.meta.url), 'utf8');
-  assert.match(source, /\bdefineRootMap\s*\(/u);
+  assert.match(source, /\bdefineMap\s*\(/u);
   assert.doesNotMatch(source, /from\s+['"]\.\/streets['"]/u);
   assert.doesNotMatch(source, /\bextends\s*:\s*streets\b/u);
   assert.doesNotMatch(source, /\bstreets\.icons\b/u);
 });
 
-test('keeps the Verdant root source independent from Streets', async () => {
+test('keeps the Verdant standalone source independent from Streets', async () => {
   const source = await readFile(new URL('../src/official/verdant.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /from\s+['"]\.\/streets['"]/u);
   assert.doesNotMatch(source, /\bextends\s*:\s*streets\b/u);
   assert.doesNotMatch(source, /\bstreets\.icons\b/u);
 });
 
-test('keeps the Soundings root source independent from Streets', async () => {
+test('keeps the Soundings standalone source independent from Streets', async () => {
   const source = await readFile(new URL('../src/official/soundings.ts', import.meta.url), 'utf8');
-  assert.match(source, /\bdefineRootMap\s*\(/u);
+  assert.match(source, /\bdefineMap\s*\(/u);
   assert.doesNotMatch(source, /from\s+['"]\.\/streets['"]/u);
   assert.doesNotMatch(source, /\bextends\s*:\s*streets\b/u);
   assert.doesNotMatch(source, /\bstreets\.icons\b/u);
 });
 
-test('keeps the Siegfried root source independent from Streets', async () => {
+test('keeps the Siegfried standalone source independent from Streets', async () => {
   const source = await readFile(new URL('../src/official/siegfried.ts', import.meta.url), 'utf8');
-  assert.match(source, /\bdefineRootMap\s*\(/u);
+  assert.match(source, /\bdefineMap\s*\(/u);
   assert.doesNotMatch(source, /from\s+['"]\.\/streets['"]/u);
   assert.doesNotMatch(source, /from\s+['"]\.\/streets-themes['"]/u);
   assert.doesNotMatch(source, /\bextends\s*:\s*streets\b/u);
@@ -274,7 +274,7 @@ test('keeps Cyberpunk and Matrix independent from other official maps', async ()
   ]);
   for (const id of ['cyberpunk', 'matrix']) {
     const source = await readFile(new URL(`../src/official/${id}.ts`, import.meta.url), 'utf8');
-    assert.match(source, /\bdefineRootMap\s*\(/u);
+    assert.match(source, /\bdefineMap\s*\(/u);
     for (const match of source.matchAll(/\bfrom\s+['"]\.\/([^'"]+)['"]/gu)) {
       assert.equal(officialMapIds.has(match[1]!), false, `${id} imports ${match[1]}`);
     }
@@ -339,9 +339,9 @@ test('imports and compiles all packaged official maps against public Core APIs',
       if (style.metadata['tileflow:map'] !== id) process.exit(3);
       if (!style.layers.length) process.exit(4);
     }
-    if ('extends' in maps.cyberpunk || maps.cyberpunk.root?.compiler !== 'streets') process.exit(5);
-    if ('extends' in maps.matrix || maps.matrix.root?.compiler !== 'streets') process.exit(27);
-    if ('extends' in maps.verdant || maps.verdant.root?.compiler !== 'streets') process.exit(6);
+    if ('extends' in maps.cyberpunk || 'root' in maps.cyberpunk) process.exit(5);
+    if ('extends' in maps.matrix || 'root' in maps.matrix) process.exit(27);
+    if ('extends' in maps.verdant || 'root' in maps.verdant) process.exit(6);
     if (!maps.streetsThemes?.light || !maps.streetsThemes?.dark) process.exit(7);
     if (maps.streets.defaultTheme !== 'light') process.exit(11);
     if (!maps.siegfriedThemes?.light || !maps.siegfriedThemes?.dark) process.exit(12);
@@ -350,10 +350,10 @@ test('imports and compiles all packaged official maps against public Core APIs',
       maps.siegfried.systemThemes?.light !== 'light' ||
       maps.siegfried.systemThemes?.dark !== 'dark'
     ) process.exit(13);
-    if ('extends' in maps.ferraris || maps.ferraris.root?.compiler !== 'streets') process.exit(8);
-    if ('extends' in maps.harad || maps.harad.root?.compiler !== 'streets') process.exit(20);
-    if ('extends' in maps.siegfried || maps.siegfried.root?.compiler !== 'streets') process.exit(25);
-    if ('extends' in maps.soundings || maps.soundings.root?.compiler !== 'streets') process.exit(22);
+    if ('extends' in maps.ferraris || 'root' in maps.ferraris) process.exit(8);
+    if ('extends' in maps.harad || 'root' in maps.harad) process.exit(20);
+    if ('extends' in maps.siegfried || 'root' in maps.siegfried) process.exit(25);
+    if ('extends' in maps.soundings || 'root' in maps.soundings) process.exit(22);
     const resolvedFerraris = core.resolveMap(maps.ferraris);
     if (
       resolvedFerraris.icons?.length !== 1 ||

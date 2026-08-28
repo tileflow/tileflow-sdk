@@ -143,10 +143,8 @@ const interactionState = ref<TileflowInteractionState>({popup: null});
 ```
 
 Omit `interactionState` and use `default-interaction-state` for uncontrolled state. Do not provide
-both or switch ownership modes during a component instance's lifetime. Likewise, the legacy
-`markers` prop and `annotations` are mutually exclusive. Legacy markers
-are normalized into annotations and retain their exact `title = label ?? id` behavior while the
-new API uses singular `coordinate` and required `ariaLabel`.
+both or switch ownership modes during a component instance's lifetime. `annotations` is the only
+application-owned marker input and uses singular `coordinate` plus required `ariaLabel`.
 
 The `marker` slot is annotation-only and preserves the annotation's generic `data` type.
 `tooltip` and `popup` receive the general `TileflowInteractionViewContext`; narrow

@@ -3,7 +3,7 @@ import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import test from 'node:test';
-import {defineMap} from '@tileflow/core';
+import {defineMap, parseTileflowMap, type TileflowMap} from '@tileflow/core';
 import type {TileflowBuildCatalog} from '@tileflow/core/build';
 import {streets} from '@tileflow/maps';
 import {
@@ -11,6 +11,10 @@ import {
   inspectTileflowIconCatalogs,
   type TileflowIconCatalog,
 } from '../src/index';
+
+function defineResolvedMap(input: TileflowMap) {
+  return parseTileflowMap(defineMap(input));
+}
 
 test('inspection exposes exact directory order, winning sources, and later-wins history', async () => {
   const parent = await mkdtemp(join(tmpdir(), 'tileflow-icon-catalog-'));
@@ -30,14 +34,14 @@ test('inspection exposes exact directory order, winning sources, and later-wins 
     await writeFileEnsured(join(cwd, 'icons', 'clone', 'photo.svg'), photo);
     const project: TileflowBuildCatalog = {
       maps: {
-        zeta: defineMap({
+        zeta: defineResolvedMap({
           id: 'zeta',
           version: 1,
           extends: streets,
           icons: ['./icons/base', './icons/brand'],
         }),
-        none: defineMap({id: 'none', version: 1, extends: streets, icons: []}),
-        clone: defineMap({
+        none: defineResolvedMap({id: 'none', version: 1, extends: streets, icons: []}),
+        clone: defineResolvedMap({
           id: 'clone',
           version: 1,
           extends: streets,
@@ -133,13 +137,13 @@ test('filters maps before touching an unselected missing directory', async () =>
     await writeFileEnsured(join(cwd, 'icons', 'good.svg'), simpleSvg('#111827'));
     const project: TileflowBuildCatalog = {
       maps: {
-        broken: defineMap({
+        broken: defineResolvedMap({
           id: 'broken',
           version: 1,
           extends: streets,
           icons: ['./does-not-exist'],
         }),
-        good: defineMap({
+        good: defineResolvedMap({
           id: 'good',
           version: 1,
           extends: streets,

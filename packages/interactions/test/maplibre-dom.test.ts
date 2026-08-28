@@ -3,7 +3,6 @@ import test from 'node:test';
 import type {TileflowAnnotation, TileflowInteractionState} from '../src/contracts';
 import {
   createTileflowMapLibreDomRuntime,
-  normalizeTileflowLegacyMarkers,
   type TileflowMapLibreDomRuntimeOptions,
 } from '../src/maplibre-dom';
 
@@ -302,36 +301,6 @@ test('module evaluation is SSR-safe and does not read browser globals', async ()
       else delete (globalThis as Record<string, unknown>)[name];
     }
   }
-});
-
-test('normalizes legacy markers once while preserving their exact legacy titles', () => {
-  const normalized = normalizeTileflowLegacyMarkers([
-    {color: '#123456', coordinates: [-3.7, 40.4], id: 'madrid', label: 'Madrid'},
-    {coordinates: [0, 0], id: 'empty', label: ''},
-    {coordinates: [1, 2], id: 'fallback'},
-  ]);
-
-  assert.deepEqual(
-    normalized.annotations.map(({ariaLabel, coordinate, id, marker}) => ({
-      ariaLabel,
-      coordinate,
-      id,
-      marker,
-    })),
-    [
-      {
-        ariaLabel: 'Madrid',
-        coordinate: [-3.7, 40.4],
-        id: 'madrid',
-        marker: {color: '#123456'},
-      },
-      {ariaLabel: 'empty', coordinate: [0, 0], id: 'empty', marker: undefined},
-      {ariaLabel: 'fallback', coordinate: [1, 2], id: 'fallback', marker: undefined},
-    ],
-  );
-  assert.equal(normalized.titles.get('madrid'), 'Madrid');
-  assert.equal(normalized.titles.get('empty'), '');
-  assert.equal(normalized.titles.get('fallback'), 'fallback');
 });
 
 test('renders secure accessible defaults through textContent and stable DOM surfaces', () => {

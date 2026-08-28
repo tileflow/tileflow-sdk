@@ -1,95 +1,66 @@
 import {
-  createTileflowCompilerProvenance,
-  tileflowCompilerProvenanceMetadataKey,
-} from './compiler-inspection';
-import {
-  tileflowCompilerMetadataKeys,
-  type TileflowLayerContribution,
   type TileflowLayerSlot,
   tileflowLayerSlots,
-  tileflowLayerTargetPattern,
+  tileflowSemanticTargetPattern,
   type TileflowSlotConstraint,
 } from './contributions';
+import type {TileflowLayerFamilyIR} from './domain-ir';
 import {tileflowLayerDomains} from './domains';
 
-export function assembleTileflowLayers(
-  contributions: readonly TileflowLayerContribution[],
+export function assembleTileflowLayerFamilies(
+  families: readonly TileflowLayerFamilyIR[],
   extraConstraints: readonly TileflowSlotConstraint[] = [],
-): Array<Record<string, unknown>> {
+): TileflowLayerFamilyIR[] {
   const slotOrder = resolveSlotOrder(extraConstraints);
   const orderBySlot = new Map(slotOrder.map((slot, index) => [slot, index]));
   const ids = new Set<string>();
   const positions = new Set<string>();
 
-  for (const contribution of contributions) {
-    if (!contribution || typeof contribution !== 'object') {
-      throw new Error('Tileflow contributions must be objects.');
+  for (const family of families) {
+    if (!family || typeof family !== 'object') {
+      throw new Error('Tileflow layer families must be objects.');
     }
-    if (contribution.kind !== 'layer') {
-      throw new Error('Tileflow contributions must have kind "layer".');
+    if (family.kind !== 'tileflow-layer-family') {
+      throw new Error('Tileflow layer families must have kind "tileflow-layer-family".');
     }
-    if (
-      !contribution.layer ||
-      typeof contribution.layer !== 'object' ||
-      Array.isArray(contribution.layer)
-    ) {
-      throw new Error('Tileflow layer contribution requires a layer object.');
+    const key = family.key;
+    if (typeof key !== 'string' || !key.trim()) {
+      throw new Error('Tileflow layer-family key must not be empty.');
     }
-    const id = contribution.layer.id;
-    if (typeof id !== 'string' || !id.trim()) {
-      throw new Error('Tileflow layer ID must not be empty.');
+    if (typeof family.renderer !== 'string' || !family.renderer.trim()) {
+      throw new Error(`Tileflow layer family ${key} requires a non-empty renderer.`);
     }
-    if (typeof contribution.layer.type !== 'string' || !contribution.layer.type.trim()) {
-      throw new Error(`Tileflow layer ${id} requires a non-empty type.`);
+    if (ids.has(key)) {
+      throw new Error(`Duplicate Tileflow layer-family key: ${key}`);
     }
-    if (ids.has(id)) {
-      throw new Error(`Duplicate Tileflow layer ID: ${id}`);
-    }
-    ids.add(id);
+    ids.add(key);
 
-    if (!tileflowLayerSlots.includes(contribution.slot)) {
-      throw new Error(`Unknown Tileflow layer slot: ${String(contribution.slot)}`);
+    if (!tileflowLayerSlots.includes(family.slot)) {
+      throw new Error(`Unknown Tileflow layer slot: ${String(family.slot)}`);
     }
-    if (!tileflowLayerDomains.includes(contribution.owner)) {
-      throw new Error(`Unknown Tileflow layer owner for ${id}: ${String(contribution.owner)}`);
+    if (!tileflowLayerDomains.includes(family.owner)) {
+      throw new Error(`Unknown Tileflow layer owner for ${key}: ${String(family.owner)}`);
     }
-    if (
-      typeof contribution.target !== 'string' ||
-      !tileflowLayerTargetPattern.test(contribution.target)
-    ) {
-      throw new Error(`Tileflow layer ${id} requires a portable semantic target.`);
+    if (typeof family.target !== 'string' || !tileflowSemanticTargetPattern.test(family.target)) {
+      throw new Error(`Tileflow layer family ${key} requires a portable semantic target.`);
     }
-    if (!Number.isSafeInteger(contribution.localOrder)) {
-      throw new Error(`Tileflow layer ${id} requires an integer localOrder.`);
+    const localOrder = family.order;
+    if (!Number.isSafeInteger(localOrder)) {
+      throw new Error(`Tileflow layer family ${key} requires an integer order.`);
     }
-    const position = `${contribution.slot}:${contribution.localOrder}`;
+    const position = `${family.slot}:${localOrder}`;
     if (positions.has(position)) {
       throw new Error(`Conflicting Tileflow layer order at ${position}.`);
     }
     positions.add(position);
   }
 
-  return [...contributions]
+  return [...families]
     .sort((left, right) => {
       const slotDifference = orderBySlot.get(left.slot)! - orderBySlot.get(right.slot)!;
-      return slotDifference || left.localOrder - right.localOrder;
+      return slotDifference || left.order - right.order;
     })
-    .map((contribution) =>
-      cloneJson({
-        ...contribution.layer,
-        metadata: {
-          ...(isRecord(contribution.layer.metadata) ? contribution.layer.metadata : {}),
-          [tileflowCompilerMetadataKeys.owner]: contribution.owner,
-          [tileflowCompilerMetadataKeys.slot]: contribution.slot,
-          [tileflowCompilerMetadataKeys.target]: contribution.target,
-          [tileflowCompilerProvenanceMetadataKey]: createTileflowCompilerProvenance(
-            contribution.owner,
-            contribution.slot,
-            contribution.target,
-          ),
-        },
-      }),
-    );
+    .map(cloneJson);
 }
 
 export function resolveSlotOrder(
@@ -142,8 +113,4 @@ export function resolveSlotOrder(
 
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }

@@ -10,7 +10,7 @@ export function renderTileflowPreviewHtml(
   preview: ResolvedTileflowPreview | undefined,
   basePath: string,
   initialStatus: unknown,
-  isStreetsPreview: boolean,
+  isSemanticPreview: boolean,
   fontFaces: readonly TileflowStyleFontFace[] = [],
 ): string {
   const styleUrl = preview
@@ -149,7 +149,7 @@ export function renderTileflowPreviewHtml(
       const previewLabel = ${JSON.stringify(preview?.label)};
       const styleUrl = ${JSON.stringify(styleUrl)};
       const previewMapOptions = ${JSON.stringify(mapOptions)};
-      const isStreetsPreview = ${JSON.stringify(isStreetsPreview)};
+      const isSemanticPreview = ${JSON.stringify(isSemanticPreview)};
       const previewFontFaces = ${serializeInlineJson(fontFaces)};
       const treeSearchParameters = new URL(location.href).searchParams;
       const requestedTreeRenderer = treeSearchParameters.get("treeRenderer");
@@ -2973,7 +2973,7 @@ export function renderTileflowPreviewHtml(
 
       function addTreeLayerIfConfigured(map, styleLayers) {
         const styleLayer = styleLayers.find(
-          (layer) => layer.id === "streets-vegetation-trees"
+          (layer) => layer.id === "tileflow-vegetation-trees"
         );
         if (
           !styleLayer ||
@@ -3508,14 +3508,14 @@ export function renderTileflowPreviewHtml(
         }
         const firstForegroundLabel = styleLayers.find(
           (layer) =>
-            (layer.id.startsWith("streets-label-") &&
-              !layer.id.startsWith("streets-label-road-")) ||
-            layer.id.startsWith("streets-poi-")
+            (layer.id.startsWith("tileflow-label-") &&
+              !layer.id.startsWith("tileflow-label-road-")) ||
+            layer.id.startsWith("tileflow-poi-")
         )?.id;
         const treeLayer = map.getLayer("tileflow-vegetation-trees-3d")
           ? "tileflow-vegetation-trees-3d"
-          : map.getLayer("streets-vegetation-trees")
-            ? "streets-vegetation-trees"
+          : map.getLayer("tileflow-vegetation-trees")
+            ? "tileflow-vegetation-trees"
             : firstForegroundLabel;
         map.addLayer(createLandmarkLayer(map, configLayer, fallbackLayers), treeLayer);
       }
@@ -3618,7 +3618,7 @@ export function renderTileflowPreviewHtml(
 
         update() {
           const treeLayer = this.map.getStyle()?.layers?.find(
-            (layer) => layer.id === "streets-vegetation-trees"
+            (layer) => layer.id === "tileflow-vegetation-trees"
           );
           if (treeLayer) {
             const visibility = this.enabled ? "visible" : "none";
@@ -3768,7 +3768,7 @@ export function renderTileflowPreviewHtml(
         map.addControl(new maplibregl.NavigationControl(), "top-right");
         let threeDimensionalControl;
         let treeControl;
-        if (isStreetsPreview) {
+        if (isSemanticPreview) {
           threeDimensionalControl = new ThreeDimensionalControl();
           treeControl = new TreeControl();
           map.addControl(threeDimensionalControl, "top-right");

@@ -3,6 +3,8 @@ import {isAbsolute, relative, resolve, sep, win32} from 'node:path';
 import {compareCodeUnits} from '@tileflow/core';
 import {sanitizeDiagnosticSecrets} from './diagnostic-sanitization';
 
+export {sanitizeDiagnosticSecrets} from './diagnostic-sanitization';
+
 export {
   assertValidTileflowStyle,
   TileflowStyleValidationError,
@@ -18,7 +20,11 @@ export type TileflowDiagnosticSeverity = 'error' | 'info' | 'warning';
 export type TileflowStructuredDiagnostic = {
   phase: string;
   code: string;
+  /** Semantic compiler domain. Legacy `owner` inputs are normalized to this field. */
+  domain?: string;
   path: string;
+  /** Semantic compiler target, when the diagnostic applies to one render contribution. */
+  target?: string;
   severity: TileflowDiagnosticSeverity;
   message: string;
   suggestion: string;
@@ -43,12 +49,15 @@ type TileflowDiagnosticDefaults = {
 
 type RawDiagnostic = {
   code?: string;
+  domain?: string;
   level?: string;
   message: string;
+  owner?: string;
   path?: string;
   phase?: string;
   severity?: string;
   suggestion?: string;
+  target?: string;
 };
 
 export function createTileflowCommandSummary(input: {
@@ -81,28 +90,51 @@ export function createTileflowStructuredDiagnostics(
   defaults: TileflowDiagnosticDefaults,
 ): TileflowStructuredDiagnostic[] {
   const inheritedCode = optionalField(error, 'code');
+  const inheritedDomain =
+    optionalField(error, 'domain') ??
+    optionalField(error, 'owner') ??
+    optionalNestedField(error, 'domain') ??
+    optionalNestedField(error, 'owner');
+  const inheritedLevel = optionalField(error, 'level') ?? optionalNestedField(error, 'level');
+  const inheritedMessage = optionalField(error, 'message') ?? optionalNestedField(error, 'message');
+  const inheritedPath = optionalField(error, 'path') ?? optionalNestedField(error, 'path');
   const inheritedPhase = optionalField(error, 'phase') ?? optionalNestedField(error, 'phase');
+  const inheritedSeverity =
+    optionalField(error, 'severity') ?? optionalNestedField(error, 'severity');
+  const inheritedSuggestion =
+    optionalField(error, 'suggestion') ?? optionalNestedField(error, 'suggestion');
+  const inheritedTarget = optionalField(error, 'target') ?? optionalNestedField(error, 'target');
   const issues = getIssues(error);
   const candidates = issues.length
     ? issues
     : [
         {
-          message: error instanceof Error ? error.message : 'The Tileflow command failed.',
-          path: '',
+          message:
+            inheritedMessage ??
+            (error instanceof Error ? error.message : 'The Tileflow command failed.'),
+          path: inheritedPath ?? '',
         },
       ];
   const diagnostics = candidates.map((issue) => {
     const phase = normalizePhase(issue.phase ?? inheritedPhase, defaults.phase);
     const code = normalizeCode(issue.code ?? inheritedCode, defaults.code);
-    const severity = normalizeSeverity(issue.severity ?? issue.level, defaults.severity ?? 'error');
+    const severity = normalizeSeverity(
+      issue.severity ?? issue.level ?? inheritedSeverity ?? inheritedLevel,
+      defaults.severity ?? 'error',
+    );
+    const domain = sanitizeDiagnosticContext(issue.domain ?? issue.owner ?? inheritedDomain, cwd);
+    const target = sanitizeDiagnosticContext(issue.target ?? inheritedTarget, cwd);
+    const suggestion = issue.suggestion ?? inheritedSuggestion;
     return {
       phase,
       code,
-      path: boundText(sanitizePath(issue.path ?? '', cwd), 300),
+      ...(domain ? {domain} : {}),
+      path: boundText(sanitizePath(issue.path ?? inheritedPath ?? '', cwd), 300),
+      ...(target ? {target} : {}),
       severity,
       message: boundText(sanitizeMessage(issue.message, cwd), 300),
-      suggestion: issue.suggestion
-        ? boundText(sanitizeMessage(issue.suggestion, cwd), 300)
+      suggestion: suggestion
+        ? boundText(sanitizeMessage(suggestion, cwd), 300)
         : suggestionForDiagnostic(code, phase),
     } satisfies TileflowStructuredDiagnostic;
   });
@@ -137,7 +169,9 @@ export function createTileflowCommandFailureDocument(
     ok: false,
     phase: primary.phase,
     code: primary.code,
+    ...(primary.domain ? {domain: primary.domain} : {}),
     path: primary.path,
+    ...(primary.target ? {target: primary.target} : {}),
     severity: primary.severity,
     message: primary.message,
     suggestion: primary.suggestion,
@@ -170,12 +204,15 @@ function getIssues(error: unknown): RawDiagnostic[] {
       return [
         {
           ...(typeof candidate.code === 'string' ? {code: candidate.code} : {}),
+          ...(typeof candidate.domain === 'string' ? {domain: candidate.domain} : {}),
           ...(typeof candidate.level === 'string' ? {level: candidate.level} : {}),
           message: candidate.message,
+          ...(typeof candidate.owner === 'string' ? {owner: candidate.owner} : {}),
           ...(typeof candidate.path === 'string' ? {path: candidate.path} : {}),
           ...(typeof candidate.phase === 'string' ? {phase: candidate.phase} : {}),
           ...(typeof candidate.severity === 'string' ? {severity: candidate.severity} : {}),
           ...(typeof candidate.suggestion === 'string' ? {suggestion: candidate.suggestion} : {}),
+          ...(typeof candidate.target === 'string' ? {target: candidate.target} : {}),
         },
       ];
     }),
@@ -205,6 +242,12 @@ function sanitizePath(value: string, cwd: string): string {
   if (!isAbsolute(value)) return sanitizeDiagnosticSecrets(value.replaceAll('\\', '/'));
   const local = relative(canonicalPath(cwd), canonicalPath(value)).replaceAll(sep, '/');
   return local.startsWith('../') || local === '..' ? '(external)' : local || '.';
+}
+
+function sanitizeDiagnosticContext(value: string | undefined, cwd: string): string | undefined {
+  if (!value) return undefined;
+  const sanitized = boundText(sanitizeMessage(value, cwd), 300);
+  return sanitized || undefined;
 }
 
 function localPathAliases(path: string): string[] {
@@ -256,6 +299,8 @@ function compareDiagnostics(
   return (
     diagnosticSeverityRank(left.severity) - diagnosticSeverityRank(right.severity) ||
     compareCodeUnits(left.path, right.path) ||
+    compareCodeUnits(left.domain ?? '', right.domain ?? '') ||
+    compareCodeUnits(left.target ?? '', right.target ?? '') ||
     compareCodeUnits(left.phase, right.phase) ||
     compareCodeUnits(left.code, right.code) ||
     compareCodeUnits(left.message, right.message) ||
@@ -299,13 +344,13 @@ function normalizeCommandField(value: string, fallback: string): string {
   return normalized || fallback;
 }
 
-function optionalField(value: unknown, key: 'code' | 'phase'): string | undefined {
+function optionalField(value: unknown, key: keyof RawDiagnostic): string | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const field = (value as Record<string, unknown>)[key];
   return typeof field === 'string' && field.trim() ? field : undefined;
 }
 
-function optionalNestedField(value: unknown, key: 'code' | 'phase'): string | undefined {
+function optionalNestedField(value: unknown, key: keyof RawDiagnostic): string | undefined {
   if (!value || typeof value !== 'object') return undefined;
   return optionalField((value as Record<string, unknown>).details, key);
 }

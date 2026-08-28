@@ -9,11 +9,10 @@ test('loads exact singular identity, leaf delivery, and map-owned scene ids', as
   const cwd = await fixture(t);
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `import {defineRootMap, defineTheme} from '@tileflow/core';
-export default defineRootMap({
+    `import {defineMap, defineTheme} from '@tileflow/core';
+export default defineMap({
   id: 'main',
   version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   defaultTheme: 'light',
   themes: {light: defineTheme({id: 'fixture-light', version: 1, colorScheme: 'light'})},
   delivery: {hosted: {allowedOrigins: ['https://maps.example.test']}},
@@ -39,16 +38,33 @@ export default defineRootMap({
   assert.deepEqual(project.mapMetadata?.main?.lineage, [{id: 'main', mapVersion: 1}]);
 });
 
+test('validates compiler-owned disabled state without resolving the catalog as authoring again', async (t) => {
+  const cwd = await fixture(t);
+  await writeFile(
+    join(cwd, 'tileflow.config.ts'),
+    `import {defineMap, defineTheme, disable} from '@tileflow/core';
+export default defineMap({
+  id: 'disabled', version: 1,
+  defaultTheme: 'light',
+  themes: {light: defineTheme({id: 'fixture-light', version: 1, colorScheme: 'light'})},
+  modules: {water: disable()}
+});
+`,
+  );
+
+  const project = await loadValidTileflowConfig(undefined, {cwd});
+  assert.deepEqual(project.maps.disabled?.modules?.water, {enabled: false, type: 'water'});
+});
+
 test('rejects scene map repetition and removed hosting/workspace wrappers', async (t) => {
   const cwd = await fixture(t);
   const configPath = join(cwd, 'tileflow.config.ts');
 
   await writeFile(
     configPath,
-    `import {defineRootMap, defineTheme} from '@tileflow/core';
-export default defineRootMap({
+    `import {defineMap, defineTheme} from '@tileflow/core';
+export default defineMap({
   id: 'main', version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   defaultTheme: 'light',
   themes: {light: defineTheme({id: 'fixture-light', version: 1, colorScheme: 'light'})},
   scenes: {proof: {
@@ -67,10 +83,9 @@ export default defineRootMap({
 
   await writeFile(
     configPath,
-    `import {defineRootMap, defineTheme} from '@tileflow/core';
-export default defineRootMap({
+    `import {defineMap, defineTheme} from '@tileflow/core';
+export default defineMap({
   id: 'main', version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   defaultTheme: 'light',
   themes: {light: defineTheme({id: 'fixture-light', version: 1, colorScheme: 'light'})},
   allowedOrigins: ['https://maps.example.test']
@@ -84,9 +99,9 @@ export default defineRootMap({
 
   await writeFile(
     join(cwd, 'tileflow.workspace.ts'),
-    `import {defineRootMap, defineTheme} from '@tileflow/core';
+    `import {defineMap, defineTheme} from '@tileflow/core';
 export default {
-  maps: {main: defineRootMap({id: 'main', version: 1, root: {compiler: 'streets', compilerVersion: 1}, defaultTheme: 'light', themes: {light: defineTheme({id: 'fixture-light', version: 1, colorScheme: 'light'})}})},
+  maps: {main: defineMap({id: 'main', version: 1, defaultTheme: 'light', themes: {light: defineTheme({id: 'fixture-light', version: 1, colorScheme: 'light'})}})},
   scenes: {}
 };
 `,
@@ -98,9 +113,9 @@ export default {
 
   await writeFile(
     join(cwd, 'tileflow.workspace.ts'),
-    `import {defineRootMap, defineTheme} from '@tileflow/core';
+    `import {defineMap, defineTheme} from '@tileflow/core';
 export default {
-  maps: {main: defineRootMap({id: 'main', version: 1, root: {compiler: 'streets', compilerVersion: 1}, defaultTheme: 'light', themes: {light: defineTheme({id: 'fixture-light', version: 1, colorScheme: 'light'})}})},
+  maps: {main: defineMap({id: 'main', version: 1, defaultTheme: 'light', themes: {light: defineTheme({id: 'fixture-light', version: 1, colorScheme: 'light'})}})},
   icons: {}
 };
 `,
@@ -112,9 +127,9 @@ export default {
 
   await writeFile(
     join(cwd, 'tileflow.workspace.ts'),
-    `import {defineRootMap, defineTheme} from '@tileflow/core';
+    `import {defineMap, defineTheme} from '@tileflow/core';
 export default {
-  maps: {main: defineRootMap({id: 'main', version: 1, root: {compiler: 'streets', compilerVersion: 1}, defaultTheme: 'light', themes: {light: defineTheme({id: 'fixture-light', version: 1, colorScheme: 'light'})}})},
+  maps: {main: defineMap({id: 'main', version: 1, defaultTheme: 'light', themes: {light: defineTheme({id: 'fixture-light', version: 1, colorScheme: 'light'})}})},
   themes: {dark: {mode: 'dark'}}
 };
 `,
@@ -129,10 +144,9 @@ test('reports editable schema paths for singular maps and prefixes only workspac
   const cwd = await fixture(t);
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `import {defineRootMap, defineTheme} from '@tileflow/core';
-export default defineRootMap({
+    `import {defineMap, defineTheme} from '@tileflow/core';
+export default defineMap({
   id: 'main', version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   defaultTheme: 'light',
   themes: {light: defineTheme({id: 'fixture-light', version: 1, colorScheme: 'light'})},
   view: {pitch: 99}
@@ -148,10 +162,9 @@ export default defineRootMap({
 
   await writeFile(
     join(cwd, 'tileflow.workspace.ts'),
-    `import {defineRootMap, defineTheme} from '@tileflow/core';
-export default {maps: {main: defineRootMap({
+    `import {defineMap, defineTheme} from '@tileflow/core';
+export default {maps: {main: defineMap({
   id: 'main', version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   defaultTheme: 'light',
   themes: {light: defineTheme({id: 'fixture-light', version: 1, colorScheme: 'light'})},
   view: {pitch: 99}

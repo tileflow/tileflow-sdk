@@ -77,14 +77,14 @@ export default defineMap({
 });
 ```
 
-The theme collection is a complete visual contract. Module recipes refer to semantic tokens, so the
+The theme collection is a complete visual contract. Semantic modules refer to theme tokens, so the
 same map structure compiles into one independent Style JSON per named theme. `system` is only a
 browser selection policy; builds, captures, URLs, and receipts always use `light`, `dark`, or
 another concrete name.
 
 `@tileflow/maps` also exports `ferraris`, `harad`, `siegfried`, `soundings`, `cyberpunk`, `matrix`,
-and `verdant`. All eight official maps are complete first-party roots. They share Core's semantic
-Streets compiler, but each defines its design directly without importing or extending another
+and `verdant`. All eight official maps are complete first-party roots. They share Core's single
+semantic compiler, but each defines its design directly without importing or extending another
 official map. Siegfried adds browser-derived contours, coordinated light/dark three-ink terrain
 engraving patterns, system-theme selection, and locally packaged Cormorant Garamond faces;
 Ferraris, Härad, Soundings, and Verdant likewise declare only their own package-owned assets.

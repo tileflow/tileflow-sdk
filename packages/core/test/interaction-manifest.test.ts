@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createStyle, poi} from '../src';
+import {createStyle, disable, poi} from '../src';
 import {
   assertTileflowInteractionManifestLayers,
-  tileflowInteractionManifestMetadataKey,
   type TileflowInteractionManifest,
+  tileflowInteractionManifestMetadataKey,
 } from '../src/cartography/interaction-manifest';
 import {extendStreets} from './map-fixture';
 
@@ -15,7 +15,7 @@ const preparedAssets = {
   },
 } as const;
 
-test('emits a versioned post-optimizer POI interaction lookup without public semantic IDs', () => {
+test('emits a versioned post-planning POI interaction lookup without public physical IDs', () => {
   const style = createStyle(
     extendStreets({
       modules: {
@@ -60,12 +60,12 @@ test('emits a versioned post-optimizer POI interaction lookup without public sem
     [
       {
         category: 'food-drink',
-        layerId: 'streets-poi-food-drink-icon',
+        layerId: 'tileflow-poi-food-drink-icon',
         representation: 'icon',
       },
       {
         category: 'food-drink',
-        layerId: 'streets-poi-food-drink-label',
+        layerId: 'tileflow-poi-food-drink-label',
         representation: 'label',
       },
     ],
@@ -86,7 +86,7 @@ test('emits a versioned post-optimizer POI interaction lookup without public sem
 });
 
 test('omits interaction metadata when POIs are disabled', () => {
-  const style = createStyle(extendStreets({modules: {poi: poi({enabled: false})}}), {
+  const style = createStyle(extendStreets({modules: {poi: disable()}}), {
     preparedAssets: {icons: {ids: [], sprite: '/tileflow/test/empty/sprite'}},
   });
 
@@ -121,12 +121,12 @@ test('tracks optimized combined and marker POI representations by semantic categ
     [
       {
         category: 'food-drink',
-        layerId: 'streets-poi-food-drink-marker',
+        layerId: 'tileflow-poi-food-drink-marker',
         representation: 'marker',
       },
       {
         category: 'food-drink',
-        layerId: 'streets-poi-food-drink',
+        layerId: 'tileflow-poi-food-drink',
         representation: 'combined',
       },
     ],

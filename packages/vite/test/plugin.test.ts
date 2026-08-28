@@ -74,7 +74,7 @@ test('preserves Vite public URL kinds while keeping relative manifests owner-rel
   t.after(() => rm(cwd, {force: true, recursive: true}));
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `import {defineRootMap} from '@tileflow/core'; import {streetsIcons, streetsThemes} from '@tileflow/maps'; export default defineRootMap({id:'main',version:1,root:{compiler:'streets',compilerVersion:1},defaultTheme:'light',systemThemes:{dark:'dark',light:'light'},themes:streetsThemes,icons:[streetsIcons],glyphs:${externalGlyphProvider}});\n`,
+    `import {defineMap} from '@tileflow/core'; import {streetsIcons, streetsThemes} from '@tileflow/maps'; export default defineMap({id:'main',version:1,defaultTheme:'light',systemThemes:{dark:'dark',light:'light'},themes:streetsThemes,icons:[streetsIcons],glyphs:${externalGlyphProvider}});\n`,
   );
 
   const cases = [
@@ -327,7 +327,7 @@ const icon =
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="#000" d="M2 20h20L12 2z"/></svg>';
 
 function watchedConfig(source: string): string {
-  return `import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; import {mapName} from './tokens'; export default defineMap({id:'main',name:mapName,version:1,extends:streets,glyphs:${externalGlyphProvider},icons:[${JSON.stringify(source)}],modules:{poi:{type:'poi',enabled:false},roads:{type:'roads',enabled:false}}});\n`;
+  return `import {defineMap,disable} from '@tileflow/core'; import {streets} from '@tileflow/maps'; import {mapName} from './tokens'; export default defineMap({id:'main',name:mapName,version:1,extends:streets,glyphs:${externalGlyphProvider},icons:[${JSON.stringify(source)}],modules:{poi:disable(),roads:disable()}});\n`;
 }
 
 function streetsConfig(): string {

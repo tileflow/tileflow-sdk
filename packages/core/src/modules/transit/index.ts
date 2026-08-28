@@ -2,7 +2,6 @@ import type {TileflowLineStyle} from '../../cartography/styles';
 
 export type TileflowTransitModuleOptions = {
   cableway?: TileflowLineStyle;
-  enabled?: boolean;
   ferry?: TileflowLineStyle;
   rail?: TileflowTransitRailStyle;
   railHatching?: TileflowTransitRailStyle;

@@ -1,12 +1,7 @@
-import {
-  tileflowCompilerProvenanceMetadataKey,
-  withMergedTileflowCompilerProvenance,
-} from './compiler-inspection';
-import {tileflowCompilerMetadataKeys} from './contributions';
+import type {TileflowLayerFamilyIR} from './domain-ir';
 import {isMapLibreExpressionOperator} from './expression-operators';
-import {tileflowModuleEffectMetadataKey} from './module-effects';
 
-type StyleLayer = Record<string, unknown> & {id: string; type: string};
+type LayerFamily = TileflowLayerFamilyIR;
 
 type ConditionalValue = {
   condition: unknown[];
@@ -16,54 +11,6 @@ type ConditionalValue = {
 type CombinedValue = {ok: true; value: unknown} | {ok: false};
 
 const roadHighZoom = 15;
-
-const roadClasses = new Set([
-  'motorway',
-  'trunk',
-  'primary',
-  'secondary',
-  'tertiary',
-  'minor',
-  'service',
-  'track',
-  'pathway',
-  'footway',
-  'cycleway',
-  'steps',
-  'pedestrian',
-]);
-
-const landcoverTargets = new Set([
-  'farmland',
-  'flowerbed',
-  'grass',
-  'ice',
-  'meadow',
-  'protected',
-  'recreationGround',
-  'rock',
-  'sand',
-  'scrub',
-  'urbanPark',
-  'villageGreen',
-  'wetland',
-  'wood',
-]);
-
-const landuseTargets = new Set([
-  'cemetery',
-  'civic',
-  'commercial',
-  'education',
-  'government',
-  'industrial',
-  'medical',
-  'military',
-  'parking',
-  'railway',
-  'recreation',
-  'residential',
-]);
 
 const linePaintDefaults: Record<string, unknown> = {
   'line-blur': 0,
@@ -83,46 +30,36 @@ const lineLayoutDefaults: Record<string, unknown> = {
 };
 
 /**
- * Reduces physical MapLibre buckets after semantic module effects have been resolved.
- * Logical compiler IDs remain available below the high-detail handoff while
- * equivalent high-zoom layers are represented by data-driven cohorts.
+ * Plans physical MapLibre buckets after semantic render operations have been resolved.
+ * Stable semantic keys remain available below the high-detail handoff while
+ * equivalent high-zoom families are represented by data-driven cohorts.
  */
-export function optimizeTileflowLayers(input: readonly Record<string, unknown>[]): StyleLayer[] {
-  let layers = input.map((layer) => layer as StyleLayer);
+export function planTileflowLayerFamilies(
+  input: readonly TileflowLayerFamilyIR[],
+): TileflowLayerFamilyIR[] {
+  let layers = input.map(cloneJson);
   layers = consolidateRoadLines(layers);
   layers = consolidateRoadHatches(layers);
   layers = consolidateRoadLabels(layers);
-  layers = consolidateFillFamily(
-    layers,
-    (target) => isFillTarget(target, 'land.landcover', landcoverTargets),
-    'streets-landcover',
-  );
-  layers = consolidateFillFamily(
-    layers,
-    (target) => isFillTarget(target, 'land.landuse', landuseTargets),
-    'streets-landuse',
-  );
+  layers = consolidateFillFamily(layers, 'land.landcover', 'land.cohorts.landcover');
+  layers = consolidateFillFamily(layers, 'land.landuse', 'land.cohorts.landuse');
   layers = consolidateWaterways(layers);
   return layers;
 }
 
-function consolidateRoadLines(layers: StyleLayer[]): StyleLayer[] {
-  const groups = new Map<string, Array<{index: number; layer: StyleLayer}>>();
+function consolidateRoadLines(layers: LayerFamily[]): LayerFamily[] {
+  const groups = new Map<string, Array<{index: number; layer: LayerFamily}>>();
 
   for (const [index, layer] of layers.entries()) {
-    if (layer.type !== 'line') continue;
-    const match = /^roads\.classes\.([^.]+)\.(tunnel|surface|bridge)\.(shadow|casing|fill)$/u.exec(
-      semanticTarget(layer) ?? '',
-    );
-    if (!match || !roadClasses.has(match[1]!)) continue;
-    const key = `${match[2]}:${match[3]}:${roadCohort(match[1]!)}`;
+    if (layer.renderer !== 'line' || layer.family?.kind !== 'road-line') continue;
+    const key = layer.family.group;
     const group = groups.get(key) ?? [];
     group.push({index, layer});
     groups.set(key, group);
   }
 
-  const replacements = new Map<number, StyleLayer[]>();
-  for (const [key, entries] of groups) {
+  const replacements = new Map<number, LayerFamily[]>();
+  for (const entries of groups.values()) {
     if (entries.length < 2 || !canMergeRoadLines(entries.map(({layer}) => layer))) continue;
     const eligible = entries.filter(({layer}) => maximumZoom(layer) > roadHighZoom);
     if (
@@ -133,9 +70,8 @@ function consolidateRoadLines(layers: StyleLayer[]): StyleLayer[] {
     ) {
       continue;
     }
-    const [structure, phase, cohort] = key.split(':');
-    const mergedId = `streets-road-${structure}-highzoom-${cohort}-${phase}`;
-    if (hasGeneratedIdCollision(layers, mergedId, eligible)) continue;
+    const mergedId = eligible[0]!.layer.family!.outputKey!;
+    if (hasGeneratedKeyCollision(layers, mergedId, eligible)) continue;
     const merged = mergeRoadLineGroup(
       mergedId,
       eligible.map(({layer}) => layer),
@@ -155,14 +91,7 @@ function consolidateRoadLines(layers: StyleLayer[]): StyleLayer[] {
   return applyReplacements(layers, replacements);
 }
 
-function roadCohort(roadClass: string): string {
-  if (['motorway', 'trunk'].includes(roadClass)) return 'major';
-  if (['primary', 'secondary', 'tertiary'].includes(roadClass)) return 'arterial';
-  if (['minor', 'service', 'track'].includes(roadClass)) return 'local';
-  return 'path';
-}
-
-function canMergeRoadLines(layers: StyleLayer[]): boolean {
+function canMergeRoadLines(layers: LayerFamily[]): boolean {
   const common = layers[0];
   if (!common) return false;
   const supportedPaint = new Set([...Object.keys(linePaintDefaults), 'line-pattern']);
@@ -173,24 +102,23 @@ function canMergeRoadLines(layers: StyleLayer[]): boolean {
   ]);
   return layers.every(
     (layer) =>
-      layer.source === common.source &&
-      layer['source-layer'] === common['source-layer'] &&
-      Object.keys(asRecord(layer.paint)).every((key) => supportedPaint.has(key)) &&
-      Object.keys(asRecord(layer.layout)).every((key) => supportedLayout.has(key)) &&
-      asRecord(layer.paint)['line-pattern'] === undefined &&
-      asRecord(layer.layout).visibility !== 'none' &&
-      !isModuleEffect(layer) &&
-      sameTopLevelProperties(layer, common, ['minzoom']),
+      sameLayerSource(layer, common) &&
+      Object.keys(layer.style.appearance ?? {}).every((key) => supportedPaint.has(key)) &&
+      Object.keys(layer.style.placement ?? {}).every((key) => supportedLayout.has(key)) &&
+      layer.style.appearance?.['line-pattern'] === undefined &&
+      layer.style.placement?.visibility !== 'none' &&
+      !isOrderedRenderPass(layer) &&
+      sameTopLevelProperties(layer, common, ['minZoom']),
   );
 }
 
-function mergeRoadLineGroup(id: string, layers: StyleLayer[]): StyleLayer | undefined {
+function mergeRoadLineGroup(key: string, layers: LayerFamily[]): LayerFamily | undefined {
   const first = layers[0]!;
-  const conditions = layers.map((layer) => asFilter(layer.filter));
+  const conditions = layers.map((layer) => asFilter(layer.selector));
   const paint: Record<string, unknown> = {};
-  const paintKeys = new Set(layers.flatMap((layer) => Object.keys(asRecord(layer.paint))));
+  const paintKeys = new Set(layers.flatMap((layer) => Object.keys(layer.style.appearance ?? {})));
   for (const key of paintKeys) {
-    const values = layers.map((layer) => asRecord(layer.paint)[key]);
+    const values = layers.map((layer) => layer.style.appearance?.[key]);
     const combined = combineConditionalValues(
       values.map((value, index) => ({
         condition: conditions[index]!,
@@ -207,7 +135,7 @@ function mergeRoadLineGroup(id: string, layers: StyleLayer[]): StyleLayer | unde
   for (const key of Object.keys(lineLayoutDefaults)) {
     const values = layers.map((layer, index) => ({
       condition: conditions[index]!,
-      value: asRecord(layer.layout)[key] ?? lineLayoutDefaults[key],
+      value: layer.style.placement?.[key] ?? lineLayoutDefaults[key],
     }));
     if (!allEqual(values.map(({value}) => value))) {
       const combined = combineConditionalValues(values, lineLayoutDefaults[key], roadHighZoom);
@@ -220,7 +148,7 @@ function mergeRoadLineGroup(id: string, layers: StyleLayer[]): StyleLayer | unde
   const sortKey = combineConditionalValues(
     layers.map((layer, index) => ({
       condition: conditions[index]!,
-      value: rankedSortKey(asRecord(layer.layout)['line-sort-key'] ?? 0, index),
+      value: rankedSortKey(layer.style.placement?.['line-sort-key'] ?? 0, index),
     })),
     0,
     roadHighZoom,
@@ -228,40 +156,42 @@ function mergeRoadLineGroup(id: string, layers: StyleLayer[]): StyleLayer | unde
   if (!sortKey.ok) return undefined;
   layout['line-sort-key'] = sortKey.value;
 
-  return withMergedTileflowCompilerProvenance(
+  return withMergedOrigins(
     {
       ...first,
-      id,
-      type: 'line',
-      filter: unionFilters(conditions),
-      minzoom: roadHighZoom,
-      ...(finiteMaximumZoom(layers) ? {maxzoom: finiteMaximumZoom(layers)} : {}),
-      layout,
-      paint,
+      key,
+      renderer: 'line',
+      selector: unionFilters(conditions),
+      range: {
+        minZoom: roadHighZoom,
+        ...(finiteMaximumZoom(layers) === undefined ? {} : {maxZoom: finiteMaximumZoom(layers)}),
+      },
+      style: {appearance: paint, placement: layout},
     },
     layers,
   );
 }
 
-function consolidateRoadHatches(layers: StyleLayer[]): StyleLayer[] {
-  const groups = new Map<string, Array<{index: number; layer: StyleLayer}>>();
+function consolidateRoadHatches(layers: LayerFamily[]): LayerFamily[] {
+  const groups = new Map<string, Array<{index: number; layer: LayerFamily}>>();
   for (const [index, layer] of layers.entries()) {
-    if (layer.type !== 'symbol' && layer.type !== 'line') continue;
-    const match = /^roads\.classes\.([^.]+)\.(tunnel|surface|bridge)\.hatch$/u.exec(
-      semanticTarget(layer) ?? '',
-    );
-    if (!match || !roadClasses.has(match[1]!)) continue;
-    const group = groups.get(match[2]!) ?? [];
+    if (
+      (layer.renderer !== 'symbol' && layer.renderer !== 'line') ||
+      layer.family?.kind !== 'road-hatch'
+    ) {
+      continue;
+    }
+    const group = groups.get(layer.family.group) ?? [];
     group.push({index, layer});
-    groups.set(match[2]!, group);
+    groups.set(layer.family.group, group);
   }
 
-  const replacements = new Map<number, StyleLayer[]>();
-  for (const [structure, entries] of groups) {
+  const replacements = new Map<number, LayerFamily[]>();
+  for (const entries of groups.values()) {
     if (
       entries.length < 2 ||
       !areContiguous(entries) ||
-      entries.some(({layer}) => isModuleEffect(layer))
+      entries.some(({layer}) => isOrderedRenderPass(layer))
     ) {
       continue;
     }
@@ -269,7 +199,7 @@ function consolidateRoadHatches(layers: StyleLayer[]): StyleLayer[] {
     if (
       !entries.every(
         ({layer}) =>
-          layer.type === first.type &&
+          layer.renderer === first.renderer &&
           sameLayerSource(layer, first) &&
           minimumZoom(layer) === minimumZoom(first) &&
           maximumZoom(layer) === maximumZoom(first) &&
@@ -278,26 +208,28 @@ function consolidateRoadHatches(layers: StyleLayer[]): StyleLayer[] {
     ) {
       continue;
     }
-    const mergedId = `streets-road-${structure}-hatch`;
-    if (hasGeneratedIdCollision(layers, mergedId, entries)) continue;
-    const conditions = entries.map(({layer}) => asFilter(layer.filter));
-    const sortKeyProperty = first.type === 'line' ? 'line-sort-key' : 'symbol-sort-key';
+    const mergedId = first.family!.outputKey!;
+    if (hasGeneratedKeyCollision(layers, mergedId, entries)) continue;
+    const conditions = entries.map(({layer}) => asFilter(layer.selector));
+    const sortKeyProperty = first.renderer === 'line' ? 'line-sort-key' : 'symbol-sort-key';
     const layoutKeys = new Set(
       entries.flatMap(({layer}) =>
-        Object.keys(asRecord(layer.layout)).filter((key) => key !== sortKeyProperty),
+        Object.keys(layer.style.placement ?? {}).filter((key) => key !== sortKeyProperty),
       ),
     );
-    const paintKeys = new Set(entries.flatMap(({layer}) => Object.keys(asRecord(layer.paint))));
+    const paintKeys = new Set(
+      entries.flatMap(({layer}) => Object.keys(layer.style.appearance ?? {})),
+    );
     const layout: Record<string, unknown> = {};
     let safe = true;
     for (const key of layoutKeys) {
-      const rawValues = entries.map(({layer}) => asRecord(layer.layout)[key]);
+      const rawValues = entries.map(({layer}) => layer.style.placement?.[key]);
       if (allEqual(rawValues)) {
         layout[key] = rawValues[0];
         continue;
       }
       const fallback =
-        first.type === 'line'
+        first.renderer === 'line'
           ? lineLayoutDefaults[key]
           : key === 'text-size'
             ? 16
@@ -326,7 +258,7 @@ function consolidateRoadHatches(layers: StyleLayer[]): StyleLayer[] {
     const sortKey = combineConditionalValues(
       entries.map(({layer}, index) => ({
         condition: conditions[index]!,
-        value: rankedSortKey(asRecord(layer.layout)[sortKeyProperty] ?? 0, index),
+        value: rankedSortKey(layer.style.placement?.[sortKeyProperty] ?? 0, index),
       })),
       0,
       minimumZoom(first),
@@ -335,12 +267,12 @@ function consolidateRoadHatches(layers: StyleLayer[]): StyleLayer[] {
     layout[sortKeyProperty] = sortKey.value;
     const paint: Record<string, unknown> = {};
     for (const key of paintKeys) {
-      const rawValues = entries.map(({layer}) => asRecord(layer.paint)[key]);
+      const rawValues = entries.map(({layer}) => layer.style.appearance?.[key]);
       if (allEqual(rawValues)) {
         paint[key] = rawValues[0];
         continue;
       }
-      if (first.type === 'line' && key === 'line-pattern') {
+      if (first.renderer === 'line' && key === 'line-pattern') {
         if (rawValues.some((value) => value === undefined)) {
           safe = false;
           break;
@@ -357,7 +289,7 @@ function consolidateRoadHatches(layers: StyleLayer[]): StyleLayer[] {
         continue;
       }
       const fallback =
-        first.type === 'line'
+        first.renderer === 'line'
           ? linePaintDefaults[key]
           : key === 'text-color'
             ? '#000000'
@@ -383,16 +315,13 @@ function consolidateRoadHatches(layers: StyleLayer[]): StyleLayer[] {
       paint[key] = combined.value;
     }
     if (!safe) continue;
-    const merged = withMergedTileflowCompilerProvenance<StyleLayer>(
+    const merged = withMergedOrigins(
       {
         ...first,
-        id: mergedId,
-        type: first.type,
-        filter: unionFilters(conditions),
-        ...(first.minzoom === undefined ? {} : {minzoom: first.minzoom}),
-        ...(first.maxzoom === undefined ? {} : {maxzoom: first.maxzoom}),
-        layout,
-        paint,
+        key: mergedId,
+        renderer: first.renderer,
+        selector: unionFilters(conditions),
+        style: {appearance: paint, placement: layout},
       },
       entries.map(({layer}) => layer),
     );
@@ -402,53 +331,50 @@ function consolidateRoadHatches(layers: StyleLayer[]): StyleLayer[] {
   return applyReplacements(layers, replacements);
 }
 
-function consolidateRoadLabels(layers: StyleLayer[]): StyleLayer[] {
+function consolidateRoadLabels(layers: LayerFamily[]): LayerFamily[] {
   const candidates = layers
     .map((layer, index) => ({
       index,
       layer,
-      roadClass: /^labels\.roads\.([^.]+)$/u.exec(semanticTarget(layer) ?? '')?.[1],
+      roadClass: layer.family?.kind === 'road-label' ? layer.family.member : undefined,
     }))
     .filter(
       ({layer, roadClass}) =>
-        layer.type === 'symbol' &&
+        layer.renderer === 'symbol' &&
         roadClass !== undefined &&
-        roadClasses.has(roadClass) &&
-        typeof layer['source-layer'] === 'string',
+        layer.feature?.dataLayer !== undefined,
     );
-  if (candidates.some(({layer}) => isModuleEffect(layer))) return layers;
+  if (candidates.some(({layer}) => isOrderedRenderPass(layer))) return layers;
   const groups = new Map<string, typeof candidates>();
   for (const candidate of candidates) {
     const {layer} = candidate;
     const key = JSON.stringify({
-      source: layer.source,
-      sourceLayer: layer['source-layer'],
-      minzoom: layer.minzoom,
-      maxzoom: layer.maxzoom,
-      layout: asRecord(layer.layout),
-      paint: asRecord(layer.paint),
+      feature: layer.feature,
+      range: layer.range,
+      layout: layer.style.placement ?? {},
+      paint: layer.style.appearance ?? {},
     });
     const group = groups.get(key) ?? [];
     group.push(candidate);
     groups.set(key, group);
   }
 
-  const replacements = new Map<number, StyleLayer[]>();
+  const replacements = new Map<number, LayerFamily[]>();
   let groupNumber = 0;
   for (const group of groups.values()) {
     if (group.length < 2 || !areContiguous(group)) continue;
     const first = group[0]!.layer;
     if (!group.every(({layer}) => sameTopLevelProperties(layer, first))) continue;
-    const conditions = group.map(({layer}) => asFilter(layer.filter));
-    const id = group.some(({roadClass}) => roadClass === 'motorway')
-      ? 'streets-label-road-major'
+    const conditions = group.map(({layer}) => asFilter(layer.selector));
+    const key = group.some(({roadClass}) => roadClass === 'motorway')
+      ? 'labels.cohorts.roads.major'
       : group.some(({roadClass}) => roadClass === 'service')
-        ? 'streets-label-road-local'
-        : `streets-label-road-cohort-${groupNumber++}`;
-    if (hasGeneratedIdCollision(layers, id, group)) continue;
-    const layout = {...asRecord(first.layout)};
+        ? 'labels.cohorts.roads.local'
+        : `labels.cohorts.roads.cohort${groupNumber++}`;
+    if (hasGeneratedKeyCollision(layers, key, group)) continue;
+    const layout = {...(first.style.placement ?? {})};
     const sortKeyValues = group.map(({layer}, index) => {
-      const original = asRecord(layer.layout)['symbol-sort-key'] ?? 0;
+      const original = layer.style.placement?.['symbol-sort-key'] ?? 0;
       return {
         condition: conditions[index]!,
         value: rankedSortKey(original, index),
@@ -458,12 +384,12 @@ function consolidateRoadLabels(layers: StyleLayer[]): StyleLayer[] {
     const sortKey = combineConditionalValues(sortKeyValues, group.length, minimumZoom(first));
     if (!sortKey.ok) continue;
     layout['symbol-sort-key'] = sortKey.value;
-    const merged = withMergedTileflowCompilerProvenance<StyleLayer>(
+    const merged = withMergedOrigins(
       {
         ...first,
-        id,
-        filter: unionFilters(conditions),
-        layout,
+        key,
+        selector: unionFilters(conditions),
+        style: {...first.style, placement: layout},
       },
       group.map(({layer}) => layer),
     );
@@ -474,26 +400,27 @@ function consolidateRoadLabels(layers: StyleLayer[]): StyleLayer[] {
 }
 
 function consolidateFillFamily(
-  layers: StyleLayer[],
-  acceptsTarget: (target: string | undefined) => boolean,
+  layers: LayerFamily[],
+  group: string,
   mergedId: string,
-): StyleLayer[] {
+): LayerFamily[] {
   const candidates = layers
     .map((layer, index) => ({index, layer}))
-    .filter(({layer}) => layer.type === 'fill' && acceptsTarget(semanticTarget(layer)));
-  if (candidates.some(({layer}) => isModuleEffect(layer))) return layers;
+    .filter(
+      ({layer}) =>
+        layer.renderer === 'fill' && layer.family?.kind === 'fill' && layer.family.group === group,
+    );
+  if (candidates.some(({layer}) => isOrderedRenderPass(layer))) return layers;
   const groups = new Map<string, typeof candidates>();
   for (const candidate of candidates) {
     const {layer} = candidate;
-    const layout = {...asRecord(layer.layout)};
+    const layout = {...(layer.style.placement ?? {})};
     delete layout['fill-sort-key'];
-    const paint = asRecord(layer.paint);
+    const paint = layer.style.appearance ?? {};
     if (paint['fill-pattern'] !== undefined) continue;
     const key = JSON.stringify({
-      source: layer.source,
-      sourceLayer: layer['source-layer'],
-      minzoom: layer.minzoom,
-      maxzoom: layer.maxzoom,
+      feature: layer.feature,
+      range: layer.range,
       layout,
       antialias: paint['fill-antialias'],
     });
@@ -502,21 +429,23 @@ function consolidateFillFamily(
     groups.set(key, group);
   }
 
-  const replacements = new Map<number, StyleLayer[]>();
+  const replacements = new Map<number, LayerFamily[]>();
   let suffix = 0;
   for (const grouped of groups.values()) {
     for (const group of contiguousRuns(grouped)) {
       if (group.length < 2) continue;
       const first = group[0]!.layer;
       if (!group.every(({layer}) => sameTopLevelProperties(layer, first))) continue;
-      const conditions = group.map(({layer}) => asFilter(layer.filter));
+      const conditions = group.map(({layer}) => asFilter(layer.selector));
       const reversed = [...group].reverse();
       const reversedConditions = [...conditions].reverse();
-      const paintKeys = new Set(group.flatMap(({layer}) => Object.keys(asRecord(layer.paint))));
+      const paintKeys = new Set(
+        group.flatMap(({layer}) => Object.keys(layer.style.appearance ?? {})),
+      );
       const paint: Record<string, unknown> = {};
       let safe = true;
       for (const key of paintKeys) {
-        const values = group.map(({layer}) => asRecord(layer.paint)[key]);
+        const values = group.map(({layer}) => layer.style.appearance?.[key]);
         if (!['fill-color', 'fill-opacity'].includes(key)) {
           if (!allEqual(values)) {
             safe = false;
@@ -529,7 +458,7 @@ function consolidateFillFamily(
         const combined = combineConditionalValues(
           reversed.map(({layer}, index) => ({
             condition: reversedConditions[index]!,
-            value: asRecord(layer.paint)[key] ?? fallback,
+            value: layer.style.appearance?.[key] ?? fallback,
           })),
           fallback,
           minimumZoom(first),
@@ -541,11 +470,11 @@ function consolidateFillFamily(
         paint[key] = combined.value;
       }
       if (!safe) continue;
-      const layout = {...asRecord(first.layout)};
+      const layout = {...(first.style.placement ?? {})};
       const sortValues = reversed.map(({layer}, index) => ({
         condition: reversedConditions[index]!,
         value: rankedSortKey(
-          asRecord(layer.layout)['fill-sort-key'] ?? 0,
+          layer.style.placement?.['fill-sort-key'] ?? 0,
           group.length - index - 1,
         ),
       }));
@@ -553,15 +482,14 @@ function consolidateFillFamily(
       const sortKey = combineConditionalValues(sortValues, 0, minimumZoom(first));
       if (!sortKey.ok) continue;
       layout['fill-sort-key'] = sortKey.value;
-      const id = suffix === 0 ? mergedId : `${mergedId}-${suffix}`;
-      if (hasGeneratedIdCollision(layers, id, group)) continue;
-      const merged = withMergedTileflowCompilerProvenance<StyleLayer>(
+      const key = suffix === 0 ? mergedId : `${mergedId}.cohort${suffix}`;
+      if (hasGeneratedKeyCollision(layers, key, group)) continue;
+      const merged = withMergedOrigins(
         {
           ...first,
-          id,
-          filter: unionFilters(conditions),
-          layout,
-          paint,
+          key,
+          selector: unionFilters(conditions),
+          style: {appearance: paint, placement: layout},
         },
         group.map(({layer}) => layer),
       );
@@ -573,40 +501,46 @@ function consolidateFillFamily(
   return applyReplacements(layers, replacements);
 }
 
-function consolidateWaterways(layers: StyleLayer[]): StyleLayer[] {
-  const replacements = new Map<number, StyleLayer[]>();
+function consolidateWaterways(layers: LayerFamily[]): LayerFamily[] {
+  const replacements = new Map<number, LayerFamily[]>();
   for (const name of ['river', 'canal', 'stream', 'other']) {
     const regularIndex = layers.findIndex(
-      (layer) => semanticTarget(layer) === `water.waterways.${name}`,
+      (layer) =>
+        layer.family?.kind === 'waterway' &&
+        layer.family.group === name &&
+        layer.family.variant === 'regular',
     );
     const intermittentIndex = layers.findIndex(
-      (layer) => semanticTarget(layer) === `water.intermittent.waterways.${name}`,
+      (layer) =>
+        layer.family?.kind === 'waterway' &&
+        layer.family.group === name &&
+        layer.family.variant === 'intermittent',
     );
     if (regularIndex < 0 || intermittentIndex < 0) continue;
     const regular = layers[regularIndex]!;
     const intermittent = layers[intermittentIndex]!;
     if (
       !sameLayerSource(regular, intermittent) ||
-      isModuleEffect(regular) ||
-      isModuleEffect(intermittent) ||
+      isOrderedRenderPass(regular) ||
+      isOrderedRenderPass(intermittent) ||
       intermittentIndex !== regularIndex + 1 ||
       minimumZoom(regular) !== minimumZoom(intermittent) ||
       maximumZoom(regular) !== maximumZoom(intermittent) ||
-      !allEqual([asRecord(regular.layout), asRecord(intermittent.layout)]) ||
+      !allEqual([regular.style.placement ?? {}, intermittent.style.placement ?? {}]) ||
       !sameTopLevelProperties(regular, intermittent)
     ) {
       continue;
     }
-    const conditions = [asFilter(intermittent.filter), asFilter(regular.filter)];
+    const conditions = [asFilter(intermittent.selector), asFilter(regular.selector)];
     const paintKeys = new Set([
-      ...Object.keys(asRecord(regular.paint)),
-      ...Object.keys(asRecord(intermittent.paint)),
+      ...Object.keys(regular.style.appearance ?? {}),
+      ...Object.keys(intermittent.style.appearance ?? {}),
     ]);
     const paint: Record<string, unknown> = {};
     let safe = true;
     for (const key of paintKeys) {
-      const intermittentValue = asRecord(intermittent.paint)[key];
-      const regularValue = asRecord(regular.paint)[key];
+      const intermittentValue = intermittent.style.appearance?.[key];
+      const regularValue = regular.style.appearance?.[key];
       if (!Object.hasOwn(linePaintDefaults, key) && key !== 'line-pattern') {
         if (!allEqual([intermittentValue, regularValue])) {
           safe = false;
@@ -644,11 +578,11 @@ function consolidateWaterways(layers: StyleLayer[]): StyleLayer[] {
       paint[key] = combined.value;
     }
     if (!safe) continue;
-    const merged = withMergedTileflowCompilerProvenance<StyleLayer>(
+    const merged = withMergedOrigins(
       {
         ...regular,
-        filter: unionFilters(conditions),
-        paint,
+        selector: unionFilters(conditions),
+        style: {...regular.style, appearance: paint},
       },
       [regular, intermittent],
     );
@@ -710,9 +644,10 @@ function combineConditionalValues(
   ) {
     return {ok: false};
   }
-  const zoomExpressions = entries.flatMap(({value}) =>
-    isZoomInterpolation(value) ? [value as unknown[]] : [],
-  );
+  const zoomExpressions = [
+    ...entries.flatMap(({value}) => (isZoomInterpolation(value) ? [value as unknown[]] : [])),
+    ...(isZoomInterpolation(fallback) ? [fallback as unknown[]] : []),
+  ];
   if (zoomExpressions.length === 0) {
     return {ok: true, value: conditionalExpression(entries, fallback)};
   }
@@ -727,7 +662,8 @@ function combineConditionalValues(
   if (stops.size === 1) stops.add(24);
   const orderedStops = [...stops].sort((left, right) => left - right);
   const interpolationMethods = zoomExpressions.map((value) => value[1]);
-  const interpolationMethod = allEqual(interpolationMethods) ? interpolationMethods[0] : ['linear'];
+  if (!allEqual(interpolationMethods)) return {ok: false};
+  const interpolationMethod = interpolationMethods[0];
   return {
     ok: true,
     value: [
@@ -865,7 +801,7 @@ function classMatchLabelsAreDisjoint(labels: unknown[]): boolean {
 
 function splitClassMatch(
   condition: unknown[],
-): {field: string; labels: unknown; remainder: unknown[]} | undefined {
+): {field: unknown; labels: unknown; remainder: unknown[]} | undefined {
   const parts = condition[0] === 'all' ? condition.slice(1) : [condition];
   const matchIndex = parts.findIndex(
     (part) =>
@@ -874,7 +810,7 @@ function splitClassMatch(
       part[0] === 'match' &&
       Array.isArray(part[1]) &&
       part[1][0] === 'get' &&
-      typeof part[1][1] === 'string' &&
+      part[1][1] !== undefined &&
       part.at(-2) === true &&
       part.at(-1) === false,
   );
@@ -882,7 +818,7 @@ function splitClassMatch(
   const classMatch = parts[matchIndex] as unknown[];
   const remainderParts = parts.filter((_, index) => index !== matchIndex);
   return {
-    field: (classMatch[1] as unknown[])[1] as string,
+    field: (classMatch[1] as unknown[])[1],
     labels: classMatch[2],
     remainder:
       remainderParts.length === 0
@@ -961,83 +897,42 @@ function asFilter(value: unknown): unknown[] {
 }
 
 function applyReplacements(
-  layers: StyleLayer[],
-  replacements: ReadonlyMap<number, StyleLayer[]>,
-): StyleLayer[] {
+  layers: LayerFamily[],
+  replacements: ReadonlyMap<number, LayerFamily[]>,
+): LayerFamily[] {
   return layers.flatMap((layer, index) => replacements.get(index) ?? [layer]);
 }
 
-function sameLayerSource(left: StyleLayer, right: StyleLayer): boolean {
-  return left.source === right.source && left['source-layer'] === right['source-layer'];
+function sameLayerSource(left: LayerFamily, right: LayerFamily): boolean {
+  return allEqual([left.feature, right.feature]);
 }
 
 function sameTopLevelProperties(
-  left: StyleLayer,
-  right: StyleLayer,
+  left: LayerFamily,
+  right: LayerFamily,
   additionallyIgnored: readonly string[] = [],
 ): boolean {
-  const ignored = new Set(['id', 'filter', 'layout', 'paint', ...additionallyIgnored]);
-  const select = (layer: StyleLayer) =>
-    Object.fromEntries(
-      Object.entries(layer)
-        .filter(([key]) => !ignored.has(key))
-        .flatMap(([key, value]) => {
-          if (key !== 'metadata') return [[key, value]];
-          const metadata = publicMetadata(value);
-          return metadata ? [[key, metadata]] : [];
-        }),
-    );
+  const ignored = new Set(additionallyIgnored);
+  const select = (layer: LayerFamily) => ({
+    annotations: layer.annotations,
+    feature: layer.feature,
+    properties: layer.properties,
+    range: Object.fromEntries(
+      Object.entries(layer.range ?? {}).filter(([key]) => !ignored.has(key)),
+    ),
+    renderer: layer.renderer,
+  });
   return allEqual([select(left), select(right)]);
 }
 
-function isModuleEffect(layer: StyleLayer): boolean {
-  const marker = asRecord(layer.metadata)[tileflowModuleEffectMetadataKey];
-  // Added semantic contributions carry an explicit ordering contract and must
-  // never be folded. Patches may be consolidated when the normal typed/range/
-  // equivalence guards prove it safe.
-  return marker === 'add';
+function isOrderedRenderPass(layer: LayerFamily): boolean {
+  // Owner-local passes carry an explicit ordering contract and must never be folded.
+  // Refinements may be consolidated when the normal equivalence guards prove it safe.
+  return layer.origins.some(({operations}) => operations.some(({kind}) => kind === 'pass'));
 }
 
-function publicMetadata(value: unknown): Record<string, unknown> | undefined {
-  const metadata = {...asRecord(value)};
-  delete metadata[tileflowModuleEffectMetadataKey];
-  delete metadata[tileflowCompilerProvenanceMetadataKey];
-  for (const key of Object.values(tileflowCompilerMetadataKeys)) delete metadata[key];
-  return Object.keys(metadata).length > 0 ? metadata : undefined;
-}
-
-function isFillTarget(
-  target: string | undefined,
-  prefix: string,
-  allowedNames: ReadonlySet<string>,
-): boolean {
-  if (!target?.startsWith(`${prefix}.`) || !target.endsWith('.fill')) return false;
-  const name = target.slice(prefix.length + 1, -'.fill'.length);
-  return !name.includes('.') && allowedNames.has(name);
-}
-
-function semanticTarget(layer: StyleLayer): string | undefined {
-  const target = asRecord(layer.metadata)[tileflowCompilerMetadataKeys.target];
-  return typeof target === 'string' ? target : legacySemanticTarget(layer.id);
-}
-
-/** Compatibility for direct optimizer callers created before compiler provenance was attached. */
-function legacySemanticTarget(id: string): string | undefined {
-  let match = /^streets-road-(tunnel|surface|bridge)-(.+)-(shadow|casing|fill)$/u.exec(id);
-  if (match) return `roads.classes.${match[2]}.${match[1]}.${match[3]}`;
-  match = /^streets-road-(tunnel|surface|bridge)-(.+)-hatch$/u.exec(id);
-  if (match) return `roads.classes.${match[2]}.${match[1]}.hatch`;
-  match = /^streets-label-road-(.+)$/u.exec(id);
-  if (match) return `labels.roads.${match[1]}`;
-  match = /^streets-landcover-(.+)$/u.exec(id);
-  if (match) return `land.landcover.${match[1]}.fill`;
-  match = /^streets-landuse-(.+)$/u.exec(id);
-  if (match) return `land.landuse.${match[1]}.fill`;
-  match = /^streets-waterway-(river|canal|stream|other)(-intermittent)?$/u.exec(id);
-  if (match) {
-    return match[2] ? `water.intermittent.waterways.${match[1]}` : `water.waterways.${match[1]}`;
-  }
-  return undefined;
+function withMergedOrigins(layer: LayerFamily, members: readonly LayerFamily[]): LayerFamily {
+  return {...layer, origins: members.flatMap(({origins}) => origins.map(cloneJson))};
 }
 
 function areContiguous(entries: readonly {index: number}[]): boolean {
@@ -1056,28 +951,31 @@ function contiguousRuns<T extends {index: number}>(entries: readonly T[]): T[][]
   return runs;
 }
 
-function hasGeneratedIdCollision(
-  layers: readonly StyleLayer[],
-  id: string,
-  entries: readonly {layer: StyleLayer}[],
+function hasGeneratedKeyCollision(
+  layers: readonly LayerFamily[],
+  key: string,
+  entries: readonly {layer: LayerFamily}[],
 ): boolean {
   const members = new Set(entries.map(({layer}) => layer));
-  return layers.some((layer) => layer.id === id && !members.has(layer));
+  return layers.some((layer) => layer.key === key && !members.has(layer));
 }
 
-function withMaximumZoom(layer: StyleLayer, maxzoom: number): StyleLayer {
-  return {...layer, maxzoom: Math.min(maximumZoom(layer), maxzoom)};
+function withMaximumZoom(layer: LayerFamily, maxzoom: number): LayerFamily {
+  return {
+    ...layer,
+    range: {...(layer.range ?? {}), maxZoom: Math.min(maximumZoom(layer), maxzoom)},
+  };
 }
 
-function minimumZoom(layer: StyleLayer): number {
-  return typeof layer.minzoom === 'number' ? layer.minzoom : 0;
+function minimumZoom(layer: LayerFamily): number {
+  return typeof layer.range?.minZoom === 'number' ? layer.range.minZoom : 0;
 }
 
-function maximumZoom(layer: StyleLayer): number {
-  return typeof layer.maxzoom === 'number' ? layer.maxzoom : Infinity;
+function maximumZoom(layer: LayerFamily): number {
+  return typeof layer.range?.maxZoom === 'number' ? layer.range.maxZoom : Infinity;
 }
 
-function finiteMaximumZoom(layers: StyleLayer[]): number | undefined {
+function finiteMaximumZoom(layers: LayerFamily[]): number | undefined {
   const maximum = Math.max(...layers.map(maximumZoom));
   return Number.isFinite(maximum) ? maximum : undefined;
 }
@@ -1086,6 +984,10 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
 }
 
 function allEqual(values: unknown[]): boolean {

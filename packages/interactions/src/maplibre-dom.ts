@@ -70,39 +70,6 @@ export type TileflowMapLibreDomCustomRenderers = Readonly<{
   tooltip: boolean;
 }>;
 
-export type TileflowLegacyMarker = Readonly<{
-  color?: string;
-  coordinates: readonly [longitude: number, latitude: number];
-  id: string;
-  label?: string;
-}>;
-
-export type TileflowNormalizedLegacyMarkers = Readonly<{
-  annotations: readonly TileflowAnnotation[];
-  /** Exact legacy element titles, including an explicitly empty label. */
-  titles: ReadonlyMap<string, string>;
-}>;
-
-/** Normalizes the deprecated plural-coordinate marker shape once for all framework adapters. */
-export function normalizeTileflowLegacyMarkers(
-  markers: readonly TileflowLegacyMarker[],
-): TileflowNormalizedLegacyMarkers {
-  const titles = new Map<string, string>();
-  const annotations = markers.map((marker): TileflowAnnotation => {
-    const title = marker.label ?? marker.id;
-    titles.set(marker.id, title);
-    return {
-      ariaLabel: title.trim().length > 0 ? title : marker.id,
-      coordinate: marker.coordinates,
-      id: marker.id,
-      kind: 'marker',
-      ...(marker.color === undefined ? {} : {marker: {color: marker.color}}),
-    };
-  });
-
-  return Object.freeze({annotations: Object.freeze(annotations), titles});
-}
-
 export type TileflowMapLibreDomRuntimeOptions<
   TMap,
   TMarker extends TileflowMapLibrePositioned<TMap>,

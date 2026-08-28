@@ -1,4 +1,8 @@
-import type {TileflowAreaStyle, TileflowSymbolStyle} from '../../cartography/styles';
+import type {
+  TileflowAreaStyle,
+  TileflowMarkerSymbolStyle,
+  TileflowSymbolStyle,
+} from '../../cartography/styles';
 
 /** Labels anchored inside polygon features; point-feature labels remain on their feature style. */
 export type TileflowNauticalAreaLabelStyles = {
@@ -10,19 +14,18 @@ export type TileflowNauticalAreaLabelStyles = {
 };
 
 export type TileflowNauticalModuleOptions = {
-  aids?: TileflowSymbolStyle;
+  aids?: TileflowMarkerSymbolStyle;
   coverage?: TileflowAreaStyle;
-  enabled?: boolean;
   hazardAreas?: TileflowAreaStyle;
-  hazards?: TileflowSymbolStyle;
+  hazards?: TileflowMarkerSymbolStyle;
   labels?: TileflowNauticalAreaLabelStyles;
-  lighthouses?: TileflowSymbolStyle;
-  lights?: TileflowSymbolStyle;
+  lighthouses?: TileflowMarkerSymbolStyle;
+  lights?: TileflowMarkerSymbolStyle;
   navigationAreas?: TileflowAreaStyle;
   reefs?: TileflowAreaStyle;
-  soundings?: TileflowSymbolStyle;
+  soundings?: TileflowMarkerSymbolStyle;
   wreckAreas?: TileflowAreaStyle;
-  wrecks?: TileflowSymbolStyle;
+  wrecks?: TileflowMarkerSymbolStyle;
 };
 
 export type TileflowNauticalModuleConfig = TileflowNauticalModuleOptions & {type: 'nautical'};

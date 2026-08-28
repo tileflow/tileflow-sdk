@@ -70,7 +70,7 @@ export function compileTerrainContributions(
         0,
         applyLayerRange(
           {
-            id: 'streets-terrain-hillshade',
+            id: 'tileflow-terrain-hillshade',
             type: 'hillshade',
             source: sourceId,
             paint: {
@@ -104,7 +104,7 @@ export function compileTerrainContributions(
         10,
         applyLayerRange(
           {
-            id: 'streets-terrain-contour-minor',
+            id: 'tileflow-terrain-contour-minor',
             type: 'line',
             source: sourceId,
             'source-layer': tileflowContourSourceLayer,
@@ -124,7 +124,7 @@ export function compileTerrainContributions(
         20,
         applyLayerRange(
           {
-            id: 'streets-terrain-contour-index',
+            id: 'tileflow-terrain-contour-index',
             type: 'line',
             source: sourceId,
             'source-layer': tileflowContourSourceLayer,
@@ -144,7 +144,7 @@ export function compileTerrainContributions(
         30,
         applyLayerRange(
           {
-            id: 'streets-terrain-contour-labels',
+            id: 'tileflow-terrain-contour-labels',
             type: 'symbol',
             source: sourceId,
             'source-layer': tileflowContourSourceLayer,

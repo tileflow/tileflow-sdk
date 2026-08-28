@@ -202,20 +202,6 @@ when the promise settles; React uses this behavior. Vue passes a getter over the
 captured for that map instance, so either phase resolves the same snapshot. Synchronous transforms
 read analytics after invoking the user transform.
 
-## Marker ownership and failure recovery
-
-This section records the legacy `markers` compatibility behavior before the interaction package
-migration ships.
-
-`createTileflowMarkerController` owns only the set of live marker instances. The adapter still
-creates the MapLibre marker, assigns coordinates and title, and attaches it to its current map.
-
-Replacement removes the entire previous set before constructing the next set, matching existing
-adapter ordering. Each new marker is recorded immediately after construction and before attachment.
-If construction or attachment fails, every recorded marker in that partial batch is removed and
-the original error is rethrown. The controller is left empty and can be reused. `clear` and
-`dispose` remove all tracked markers and are idempotent.
-
 ## Interaction composition boundary
 
 The approved `@tileflow/interactions/maplibre` adapter does not replace this kernel or widen
@@ -236,9 +222,9 @@ contributor errors, `idle` only when both are idle, and otherwise `loading`. A c
 view becomes idle after framework commit and two current animation frames; invalidation or removal
 cancels pending frames. This does not infer readiness of application-owned asynchronous work.
 
-After the interaction migration ships, image mode never attaches the interaction adapter.
-Interactive annotations, bindings, or legacy markers in image mode produce the structured
-incompatibility behavior in the interaction contract without evaluating MapLibre.
+Image mode never attaches the interaction adapter. Interactive annotations or bindings in image
+mode produce the structured incompatibility behavior in the interaction contract without
+evaluating MapLibre.
 
 ## Adapter-owned compatibility
 
@@ -256,8 +242,8 @@ All three resolve camera values in the same order: direct props, native `mapOpti
 manifest view, then `defaultTileflowRuntimeView`. Image mode applies the same center/zoom order and
 normalizes every MapLibre center shape without loading MapLibre. They retain the compact
 attribution default, navigation controls only for interactive maps, ResizeObserver-driven map
-resize, and their existing manifest/style/image behavior. Identity-driven whole-set replacement
-remains the legacy marker behavior until the keyed migration in the interaction contract ships.
+resize, and their existing manifest/style/image behavior. Annotation marker instances are reconciled
+by stable ID through the interaction runtime.
 
 ## Compatibility and verification
 

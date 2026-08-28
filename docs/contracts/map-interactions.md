@@ -2,13 +2,12 @@
 
 Status: approved implementation contract for a forthcoming public alpha surface as of 2026-08-25.
 The package and framework APIs described here are not available until their owning packages publish
-them. Existing `markers` behavior remains governed by
-[`framework-browser-runtime.md`](framework-browser-runtime.md) until that migration ships.
+them.
 
-This document owns the durable product and package boundary for application annotations, markers,
-tooltips, popups, normalized interaction state and events, and semantic feature targeting. Package
-READMEs own framework syntax and examples once the packages implement this contract. The browser
-map lifecycle remains governed by
+This document owns the durable product and package boundary for application annotations, their DOM
+marker views, tooltips, popups, normalized interaction state and events, and semantic feature
+targeting. Package READMEs own framework syntax and examples once the packages implement this
+contract. The browser map lifecycle remains governed by
 [`framework-browser-runtime.md`](framework-browser-runtime.md), and capture target attributes remain
 governed by [`local-visual-capture.md`](local-visual-capture.md).
 
@@ -29,7 +28,7 @@ governed by [`local-visual-capture.md`](local-visual-capture.md).
   content.
 
 This contract approves the annotation model, the common interaction vocabulary, and semantic POI
-tooltip/popup support backed by the post-optimization artifact defined below. Other semantic
+tooltip/popup support backed by the post-planning artifact defined below. Other semantic
 domains, selection, clustering, feature-state ownership, collision layout, persistent multi-callout
 UI, and canvas keyboard navigation require separate contract changes.
 
@@ -262,7 +261,7 @@ Diagnostics never echo raw input values, HTML, URLs with credentials, native eve
 nodes. Invalid collection replacement is atomic: the previous valid set remains active unless mode
 teardown requires it to be cleared.
 
-## Marker reconciliation and migration
+## Marker reconciliation
 
 Annotations are reconciled by `id`. Add, update, remove, reorder, clear, and dispose are
 deterministic. Reordering alone does not recreate a MapLibre Marker. A compatible update preserves
@@ -274,17 +273,10 @@ DOM markers are for small application-owned sets. The runtime does not silently 
 WebGL layer or encode an unstable hard item limit. High-volume or data-owned features remain
 MapLibre sources and layers, with only the active tooltip or popup mounted in DOM.
 
-During the alpha migration, each framework adapter normalizes its legacy `markers` prop through an
-internal compatibility record. A legacy marker keeps `coordinates`, `color`, and `label`; a
-non-empty label retains its current element-title behavior and is not silently reinterpreted as
-tooltip content. An unlabeled legacy marker retains the existing `title = id` fallback and remains
-non-interactive; the fallback is not invented as tooltip or popup content. Passing both `markers`
-and `annotations` is invalid. The new public model uses singular `coordinate`. Removing the legacy
-prop or plural field requires a separately announced alpha cutover.
-
-The compatibility layer intentionally changes one formerly silent case: legacy markers or new
-interactions passed to image mode produce an unsupported-mode diagnostic and error readiness. They
-still do not load MapLibre or an interaction runtime.
+`annotations` is the only framework input for application-owned marker data. It uses singular
+`coordinate` and requires `ariaLabel`; marker color and content belong to the annotation's `marker`
+descriptor. Annotations or interactions passed to image mode produce an unsupported-mode diagnostic
+and error readiness without loading MapLibre or an interaction runtime.
 
 ## Tooltip, popup, and accessibility behavior
 
@@ -362,7 +354,7 @@ scene-contract decision.
 ## Semantic interaction artifact
 
 Semantic targets never bind application code to Tileflow compiler-generated layer IDs. Core owns a
-versioned, bounded, post-optimization interaction artifact containing final layer and source
+versioned, bounded, post-planning interaction artifact containing final layer and source
 references, source-layer identity, semantic categories, representation kind, normalized property
 mapping, stable identity strategy, hit-test and overlap priority, anchor hints, and deduplication
 identity. A final Core validation pass rejects every dangling layer, source, source-layer, field, or

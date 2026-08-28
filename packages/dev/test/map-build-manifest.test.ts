@@ -130,11 +130,10 @@ test('changing the World delivery base changes Style identity, not map revision'
   const cwd = await fixture(t, 'tileflow-map-revision-world-');
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `import {defineRootMap} from '@tileflow/core';
+    `import {defineMap} from '@tileflow/core';
 import {streetsThemes} from '@tileflow/maps';
-export default defineRootMap({
+export default defineMap({
   id: 'main', version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   defaultTheme: 'light',
   themes: {light: streetsThemes.light},
   data: {
@@ -168,11 +167,10 @@ export default defineRootMap({
 
 test('data requirements come only from effective compiled modules and fields', async (t) => {
   const cwd = await fixture(t, 'tileflow-map-requirements-effective-');
-  const config = (poiOverride: string) => `import {defineMap, defineRootMap} from '@tileflow/core';
+  const config = (poiOverride: string) => `import {defineMap, disable} from '@tileflow/core';
 import {streetsThemes} from '@tileflow/maps';
-const base = defineRootMap({
+const base = defineMap({
   id: 'base', version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   defaultTheme: 'light',
   themes: {light: streetsThemes.light},
   glyphs: {kind: 'url', url: 'https://fonts.example.test/{fontstack}/{range}.pbf', fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']},
@@ -185,10 +183,7 @@ export default defineMap({
 `;
   await writeFile(join(cwd, 'tileflow.config.ts'), config("{type: 'poi', icons: false}"));
   const enabled = await createTileflowBuildArtifacts({cwd});
-  await writeFile(
-    join(cwd, 'tileflow.config.ts'),
-    config("{type: 'poi', enabled: false, icons: false}"),
-  );
+  await writeFile(join(cwd, 'tileflow.config.ts'), config('disable()'));
   const disabled = await createTileflowBuildArtifacts({cwd});
 
   const enabledLayers =
@@ -217,11 +212,10 @@ async function iconFixture(t: test.TestContext, prefix: string): Promise<string>
   await writeFile(join(cwd, 'brand-icons', 'cafe.svg'), svg('#ffffff'));
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `import {defineRootMap} from '@tileflow/core';
+    `import {defineMap} from '@tileflow/core';
 import {streetsThemes} from '@tileflow/maps';
-export default defineRootMap({
+export default defineMap({
   id: 'main', version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   defaultTheme: 'light',
   themes: {light: streetsThemes.light},
   glyphs: {kind: 'url', url: 'https://fonts.example.test/{fontstack}/{range}.pbf', fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']},

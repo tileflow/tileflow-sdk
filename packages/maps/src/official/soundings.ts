@@ -1,28 +1,20 @@
 import {
-  addresses,
-  aeroways,
   bathymetry,
   boundaries,
-  buildings,
-  defineRootMap,
-  expression,
+  defineMap,
+  disable,
+  expr,
+  field,
   fixed,
   labels,
   land,
   landforms,
-  poi,
-  roads,
+  renderPass,
   transit,
-  vegetation,
   water,
+  withRenderStack,
   zoom,
 } from '@tileflow/core';
-import {
-  addModuleLayer,
-  defineModuleEffects,
-  semanticField,
-  semanticLayer,
-} from '@tileflow/core/recipe';
 import {soundingsIcons} from '../assets';
 import {bindOfficialMapTheme, defineOfficialTheme} from './theme-helpers';
 
@@ -161,11 +153,10 @@ export const soundingsTheme = defineOfficialTheme({
  * are contextual, and this map must not be used for navigation.
  */
 export const soundings = bindOfficialMapTheme(
-  defineRootMap({
+  defineMap({
     id: 'soundings',
     version: 1,
     name: 'Soundings',
-    root: {compiler: 'streets', compilerVersion: 1},
     data: {
       generation: 'v1',
       selection: {kind: 'current', product: 'world-v1'},
@@ -197,8 +188,8 @@ export const soundings = bindOfficialMapTheme(
     },
     terrain: 'none',
     modules: {
-      addresses: addresses({enabled: false}),
-      aeroways: aeroways({enabled: false}),
+      addresses: disable(),
+      aeroways: disable(),
       boundaries: boundaries({
         admin2: {
           color: soundingsPalette.inkMuted,
@@ -235,7 +226,7 @@ export const soundings = bindOfficialMapTheme(
           ]),
         },
       }),
-      buildings: buildings({enabled: false}),
+      buildings: disable(),
       labels: labels({
         aerodromeCodes: 'none',
         junctions: false,
@@ -396,25 +387,19 @@ export const soundings = bindOfficialMapTheme(
       land: land({
         background: {opacity: 1, pattern: 'soundings-paper-grain'},
         globalLandcover: {
-          color: expression<string>([
-            'match',
-            ['get', semanticField('class')],
-            'barren',
-            soundingsPalette.landMuted,
-            'crop',
-            soundingsPalette.landDetail,
-            'grass',
-            soundingsPalette.landDetail,
-            'shrub',
-            soundingsPalette.landMuted,
-            'snow',
-            '#F1F2E8',
-            'trees',
-            soundingsPalette.landMuted,
-            'urban',
-            soundingsPalette.landDetail,
+          color: expr.match(
+            expr.get(field('class')),
+            [
+              {labels: 'barren', value: soundingsPalette.landMuted},
+              {labels: 'crop', value: soundingsPalette.landDetail},
+              {labels: 'grass', value: soundingsPalette.landDetail},
+              {labels: 'shrub', value: soundingsPalette.landMuted},
+              {labels: 'snow', value: '#F1F2E8'},
+              {labels: 'trees', value: soundingsPalette.landMuted},
+              {labels: 'urban', value: soundingsPalette.landDetail},
+            ],
             'rgba(0, 0, 0, 0)',
-          ]),
+          ),
           maxZoom: 9,
           minZoom: 0,
           opacity: zoom.linear([
@@ -474,301 +459,315 @@ export const soundings = bindOfficialMapTheme(
       // A broad transport category also contains airports, bus terminals and rail stations.
       // Painting all of them with a harbor glyph would be semantically false; Soundings waits
       // for its dedicated nautical harbor layer instead of reinterpreting the World POI contract.
-      poi: poi({enabled: false}),
-      roads: roads({enabled: false}),
-      transit: transit({
-        cableway: {visible: false},
-        ferry: {
-          color: soundingsPalette.waterInk,
-          dash: [7, 2, 1, 2],
-          minZoom: 5,
-          opacity: 0.62,
-          width: zoom.linear([
-            [5, 0.45],
-            [15, 1.35],
-          ]),
-        },
-        rail: hiddenTransitRail,
-        railHatching: hiddenTransitRail,
-        serviceRail: hiddenTransitRail,
-      }),
-      vegetation: vegetation({enabled: false}),
-      water: water({
-        bathymetry: {
-          antialias: true,
-          color: expression<string>([
-            'interpolate',
-            ['linear'],
-            ['to-number', ['get', semanticField('bathymetryMinDepth')], 0],
-            -11_000,
-            soundingsPalette.waterDeep,
-            -8_000,
-            '#F7F9F4',
-            -6_000,
-            '#F5F8F3',
-            -4_000,
-            '#F3F7F2',
-            -2_000,
-            '#EDF4EF',
-            -1_000,
-            '#E4EFEB',
-            -500,
-            '#DBEBE8',
-            -200,
-            soundingsPalette.waterMid,
-            -100,
-            '#C9E4E2',
-            -50,
-            '#C2E1E0',
-            -20,
-            '#BFDFDE',
-            -10,
-            '#BDDEDD',
-            0,
-            soundingsPalette.waterShallow,
-          ]),
-          maxZoom: 10,
-          minZoom: 0,
-          opacity: zoom.linear([
-            [0, 0.98],
-            [8, 0.92],
-            [9, 0.68],
-            [10, 0],
-          ]),
-        },
-        // GEBCO polygons are broad bands: the dashed stroke is an approximate
-        // band edge, never a vessel-specific safety contour or surveyed isobath.
-        bathymetryContours: {
-          color: soundingsPalette.waterInk,
-          dash: [4, 2],
-          join: 'round',
-          maxZoom: 9.75,
-          minZoom: 3,
-          opacity: zoom.linear([
-            [3, 0.2],
-            [7, 0.46],
-            [9.75, 0.72],
-          ]),
-          width: zoom.linear([
-            [3, 0.3],
-            [9.75, 0.75],
-          ]),
-        },
-        bathymetryLabels: {
-          maxZoom: 9.5,
-          minZoom: 4.5,
-          placement: 'line',
-          spacing: 320,
-          text: {
-            allowOverlap: false,
+      poi: disable(),
+      roads: disable(),
+      transit: withRenderStack(
+        transit({
+          cableway: {visible: false},
+          ferry: {
             color: soundingsPalette.waterInk,
-            // A band minimum is not enough to infer its next boundary across product revisions.
-            // Label the actual value so both the six-band canary and thirteen-stop target stay true.
-            field: expression<string>([
-              'concat',
-              [
-                'to-string',
-                ['abs', ['to-number', ['get', semanticField('bathymetryMinDepth')], 0]],
+            dash: [7, 2, 1, 2],
+            minZoom: 5,
+            opacity: 0.62,
+            width: zoom.linear([
+              [5, 0.45],
+              [15, 1.35],
+            ]),
+          },
+          rail: hiddenTransitRail,
+          railHatching: hiddenTransitRail,
+          serviceRail: hiddenTransitRail,
+        }),
+        {
+          // Ferry names are operational context, not a recommended track.
+          ferryLabels: renderPass({
+            attachTo: 'transit.ferry',
+            feature: 'roadName',
+            phase: 'overlay',
+            renderer: 'symbol',
+            selector: {
+              kind: 'all',
+              selectors: [
+                {geometry: 'line', kind: 'geometry'},
+                {field: 'name', kind: 'has'},
+                {
+                  kind: 'any',
+                  selectors: [
+                    {field: 'class', kind: 'compare', operator: 'eq', value: 'ferry'},
+                    {field: 'subclass', kind: 'compare', operator: 'eq', value: 'ferry'},
+                  ],
+                },
               ],
-              ' m',
-            ]),
-            font: 'Noto Sans Regular',
-            haloColor: soundingsPalette.water,
-            haloWidth: 0.75,
-            keepUpright: true,
-            maxAngle: 20,
+            },
+            style: {
+              minZoom: 9.5,
+              placement: 'line',
+              spacing: 480,
+              text: {
+                color: soundingsPalette.waterInk,
+                field: expr.get(field('name')),
+                font: 'Noto Sans Regular',
+                haloColor: soundingsPalette.water,
+                haloWidth: 1.15,
+                keepUpright: true,
+                letterSpacing: 0.12,
+                maxAngle: 25,
+                opacity: zoom.linear([
+                  [9.5, 0],
+                  [10, 0.68],
+                  [14, 0.88],
+                ]),
+                optional: true,
+                padding: 12,
+                size: zoom.linear([
+                  [9.5, 8.5],
+                  [14, 10.5],
+                ]),
+                transform: 'uppercase',
+              },
+            },
+          }),
+        },
+      ),
+      vegetation: disable(),
+      water: withRenderStack(
+        water({
+          bathymetry: {
+            antialias: true,
+            color: expr.interpolate(
+              {kind: 'linear'},
+              expr.toNumber(expr.get(field('bathymetryMinDepth')), 0),
+              [
+                [-11_000, soundingsPalette.waterDeep],
+                [-8_000, '#F7F9F4'],
+                [-6_000, '#F5F8F3'],
+                [-4_000, '#F3F7F2'],
+                [-2_000, '#EDF4EF'],
+                [-1_000, '#E4EFEB'],
+                [-500, '#DBEBE8'],
+                [-200, soundingsPalette.waterMid],
+                [-100, '#C9E4E2'],
+                [-50, '#C2E1E0'],
+                [-20, '#BFDFDE'],
+                [-10, '#BDDEDD'],
+                [0, soundingsPalette.waterShallow],
+              ],
+            ),
+            maxZoom: 10,
+            minZoom: 0,
             opacity: zoom.linear([
-              [4.5, 0.38],
-              [7, 0.68],
-              [9.5, 0.82],
-            ]),
-            padding: 18,
-            size: zoom.linear([
-              [4.5, 8],
-              [9.5, 10],
+              [0, 0.98],
+              [8, 0.92],
+              [9, 0.68],
+              [10, 0],
             ]),
           },
-        },
-        bodies: {
-          fill: {color: soundingsPalette.water, opacity: 0.98},
-          outline: {
-            color: soundingsPalette.ink,
-            minZoom: 4,
-            opacity: 0.72,
-            width: zoom.linear([
-              [4, 0.35],
-              [12, 0.75],
-              [18, 1.1],
-            ]),
-          },
-        },
-        intermittent: {
-          bodies: {fill: {color: soundingsPalette.waterShallow, opacity: 0.54}},
-          waterways: {color: soundingsPalette.waterInk, dash: [3, 2], opacity: 0.48},
-        },
-        waterways: {
-          canal: {
+          // GEBCO polygons are broad bands: the dashed stroke is an approximate
+          // band edge, never a vessel-specific safety contour or surveyed isobath.
+          bathymetryContours: {
             color: soundingsPalette.waterInk,
-            minZoom: 8,
-            opacity: 0.78,
+            dash: [4, 2],
+            join: 'round',
+            maxZoom: 9.75,
+            minZoom: 3,
+            opacity: zoom.linear([
+              [3, 0.2],
+              [7, 0.46],
+              [9.75, 0.72],
+            ]),
             width: zoom.linear([
-              [8, 0.35],
-              [16, 1.65],
+              [3, 0.3],
+              [9.75, 0.75],
             ]),
           },
-          other: {
-            color: soundingsPalette.waterInk,
-            minZoom: 12,
-            opacity: 0.58,
-            width: zoom.linear([
-              [12, 0.25],
-              [17, 0.9],
-            ]),
+          bathymetryLabels: {
+            maxZoom: 9.5,
+            minZoom: 4.5,
+            placement: 'line',
+            spacing: 320,
+            text: {
+              allowOverlap: false,
+              color: soundingsPalette.waterInk,
+              // A band minimum is not enough to infer its next boundary across product revisions.
+              // Label the actual value so both the six-band canary and thirteen-stop target stay true.
+              field: expr.concat(
+                expr.toString(expr.abs(expr.toNumber(expr.get(field('bathymetryMinDepth')), 0))),
+                ' m',
+              ),
+              font: 'Noto Sans Regular',
+              haloColor: soundingsPalette.water,
+              haloWidth: 0.75,
+              keepUpright: true,
+              maxAngle: 20,
+              opacity: zoom.linear([
+                [4.5, 0.38],
+                [7, 0.68],
+                [9.5, 0.82],
+              ]),
+              padding: 18,
+              size: zoom.linear([
+                [4.5, 8],
+                [9.5, 10],
+              ]),
+            },
           },
-          river: {
-            color: soundingsPalette.waterInk,
-            minZoom: 6,
-            opacity: 0.82,
-            width: zoom.linear([
-              [6, 0.4],
-              [16, 2.1],
-            ]),
+          bodies: {
+            fill: {color: soundingsPalette.water, opacity: 0.98},
+            outline: {
+              color: soundingsPalette.ink,
+              minZoom: 4,
+              opacity: 0.72,
+              width: zoom.linear([
+                [4, 0.35],
+                [12, 0.75],
+                [18, 1.1],
+              ]),
+            },
           },
-          stream: {
-            color: soundingsPalette.waterInk,
-            minZoom: 10,
-            opacity: 0.68,
-            width: zoom.linear([
-              [10, 0.28],
-              [16, 1.1],
-            ]),
+          intermittent: {
+            bodies: {fill: {color: soundingsPalette.waterShallow, opacity: 0.54}},
+            waterways: {color: soundingsPalette.waterInk, dash: [3, 2], opacity: 0.48},
           },
+          waterways: {
+            canal: {
+              color: soundingsPalette.waterInk,
+              minZoom: 8,
+              opacity: 0.78,
+              width: zoom.linear([
+                [8, 0.35],
+                [16, 1.65],
+              ]),
+            },
+            other: {
+              color: soundingsPalette.waterInk,
+              minZoom: 12,
+              opacity: 0.58,
+              width: zoom.linear([
+                [12, 0.25],
+                [17, 0.9],
+              ]),
+            },
+            river: {
+              color: soundingsPalette.waterInk,
+              minZoom: 6,
+              opacity: 0.82,
+              width: zoom.linear([
+                [6, 0.4],
+                [16, 2.1],
+              ]),
+            },
+            stream: {
+              color: soundingsPalette.waterInk,
+              minZoom: 10,
+              opacity: 0.68,
+              width: zoom.linear([
+                [10, 0.28],
+                [16, 1.1],
+              ]),
+            },
+          },
+        }),
+        {
+          // Piers remain visible even though the terrestrial road family is disabled.
+          // A dark outer stroke and ivory deck read as charted shoreline structures.
+          pierOutline: renderPass({
+            attachTo: 'water.bodies.outline',
+            feature: 'road',
+            phase: 'overlay',
+            renderer: 'line',
+            selector: {
+              kind: 'any',
+              selectors: [
+                {field: 'class', kind: 'compare', operator: 'eq', value: 'pier'},
+                {field: 'subclass', kind: 'compare', operator: 'eq', value: 'pier'},
+              ],
+            },
+            style: {
+              cap: 'round',
+              color: soundingsPalette.ink,
+              join: 'round',
+              minZoom: 12.5,
+              opacity: zoom.linear([
+                [12.5, 0],
+                [13, 0.82],
+                [17, 0.96],
+              ]),
+              width: zoom.linear([
+                [12.5, 1.2],
+                [15, 2.5],
+                [18, 5.2],
+              ]),
+            },
+          }),
+          pierDeck: renderPass({
+            attachTo: 'water.render.pierOutline',
+            feature: 'road',
+            phase: 'overlay',
+            renderer: 'line',
+            selector: {
+              kind: 'any',
+              selectors: [
+                {field: 'class', kind: 'compare', operator: 'eq', value: 'pier'},
+                {field: 'subclass', kind: 'compare', operator: 'eq', value: 'pier'},
+              ],
+            },
+            style: {
+              cap: 'round',
+              color: soundingsPalette.land,
+              join: 'round',
+              minZoom: 12.5,
+              opacity: zoom.linear([
+                [12.5, 0],
+                [13, 1],
+              ]),
+              width: zoom.linear([
+                [12.5, 0.35],
+                [15, 1.25],
+                [18, 3.4],
+              ]),
+            },
+          }),
+          chartDots: renderPass({
+            attachTo: 'water.bodies.fill',
+            feature: 'water',
+            phase: 'overlay',
+            renderer: 'fill',
+            selector: {
+              coerce: 'number',
+              fallback: 0,
+              field: 'intermittent',
+              kind: 'compare',
+              operator: 'ne',
+              value: 1,
+            },
+            style: {
+              minZoom: 7,
+              opacity: zoom.linear([
+                [7, 0.08],
+                [13, 0.14],
+                [18, 0.08],
+              ]),
+              pattern: 'soundings-water-dots',
+            },
+          }),
+          intermittentChartDots: renderPass({
+            attachTo: 'water.intermittent.bodies.fill',
+            feature: 'water',
+            phase: 'overlay',
+            renderer: 'fill',
+            selector: {
+              coerce: 'number',
+              fallback: 0,
+              field: 'intermittent',
+              kind: 'compare',
+              operator: 'eq',
+              value: 1,
+            },
+            style: {minZoom: 9, opacity: 0.16, pattern: 'soundings-water-dots'},
+          }),
         },
-      }),
+      ),
     },
-    ...defineModuleEffects([
-      // Piers remain visible even though the terrestrial road family is disabled.
-      // A dark outer stroke and ivory deck read as charted shoreline structures.
-      addModuleLayer(
-        'water',
-        'water.effects.pierOutline',
-        {
-          id: 'soundings-pier-outline',
-          type: 'line',
-          source: 'tileflow',
-          'source-layer': semanticLayer('road'),
-          minzoom: 12.5,
-          filter: [
-            'any',
-            ['==', ['get', semanticField('class')], 'pier'],
-            ['==', ['get', semanticField('subclass')], 'pier'],
-          ],
-          layout: {'line-cap': 'round', 'line-join': 'round'},
-          paint: {
-            'line-color': soundingsPalette.ink,
-            'line-opacity': ['interpolate', ['linear'], ['zoom'], 12.5, 0, 13, 0.82, 17, 0.96],
-            'line-width': ['interpolate', ['linear'], ['zoom'], 12.5, 1.2, 15, 2.5, 18, 5.2],
-          },
-        },
-        {after: 'water.bodies.outline'},
-      ),
-      addModuleLayer(
-        'water',
-        'water.effects.pierDeck',
-        {
-          id: 'soundings-pier-deck',
-          type: 'line',
-          source: 'tileflow',
-          'source-layer': semanticLayer('road'),
-          minzoom: 12.5,
-          filter: [
-            'any',
-            ['==', ['get', semanticField('class')], 'pier'],
-            ['==', ['get', semanticField('subclass')], 'pier'],
-          ],
-          layout: {'line-cap': 'round', 'line-join': 'round'},
-          paint: {
-            'line-color': soundingsPalette.land,
-            'line-opacity': ['interpolate', ['linear'], ['zoom'], 12.5, 0, 13, 1],
-            'line-width': ['interpolate', ['linear'], ['zoom'], 12.5, 0.35, 15, 1.25, 18, 3.4],
-          },
-        },
-        {after: 'water.effects.pierOutline'},
-      ),
-      addModuleLayer(
-        'water',
-        'water.effects.chartDots',
-        {
-          id: 'soundings-water-dots-pattern',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('water'),
-          minzoom: 7,
-          filter: ['!=', ['to-number', ['get', semanticField('intermittent')], 0], 1],
-          paint: {
-            'fill-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0.08, 13, 0.14, 18, 0.08],
-            'fill-pattern': 'soundings-water-dots',
-          },
-        },
-        {after: 'water.bodies.fill'},
-      ),
-      addModuleLayer(
-        'water',
-        'water.effects.intermittentChartDots',
-        {
-          id: 'soundings-water-intermittent-dots-pattern',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('water'),
-          minzoom: 9,
-          filter: ['==', ['to-number', ['get', semanticField('intermittent')], 0], 1],
-          paint: {'fill-opacity': 0.16, 'fill-pattern': 'soundings-water-dots'},
-        },
-        {after: 'water.intermittent.bodies.fill'},
-      ),
-      // Ferry names are operational context, not a recommended track.
-      addModuleLayer(
-        'transit',
-        'transit.effects.ferryLabels',
-        {
-          id: 'soundings-ferry-route-labels',
-          type: 'symbol',
-          source: 'tileflow',
-          'source-layer': semanticLayer('roadName'),
-          minzoom: 9.5,
-          filter: [
-            'all',
-            ['==', ['geometry-type'], 'LineString'],
-            ['has', semanticField('name')],
-            [
-              'any',
-              ['==', ['get', semanticField('class')], 'ferry'],
-              ['==', ['get', semanticField('subclass')], 'ferry'],
-            ],
-          ],
-          layout: {
-            'symbol-placement': 'line',
-            'symbol-spacing': 480,
-            'text-field': ['get', semanticField('name')],
-            'text-font': ['Noto Sans Regular'],
-            'text-keep-upright': true,
-            'text-letter-spacing': 0.12,
-            'text-max-angle': 25,
-            'text-optional': true,
-            'text-padding': 12,
-            'text-size': ['interpolate', ['linear'], ['zoom'], 9.5, 8.5, 14, 10.5],
-            'text-transform': 'uppercase',
-          },
-          paint: {
-            'text-color': soundingsPalette.waterInk,
-            'text-halo-color': soundingsPalette.water,
-            'text-halo-width': 1.15,
-            'text-opacity': ['interpolate', ['linear'], ['zoom'], 9.5, 0, 10, 0.68, 14, 0.88],
-          },
-        },
-        {after: 'transit.ferry'},
-      ),
-    ]),
     view: {
       center: [-5.6, 36.05],
       pitch: 0,

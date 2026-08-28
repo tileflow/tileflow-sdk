@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {type ChildProcess, spawn} from 'node:child_process';
 import {once} from 'node:events';
-import {mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -10,8 +10,8 @@ import {fileURLToPath} from 'node:url';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   assertTileflowVisualRegionFits,
-  parseTileflowVisualRegion,
   parseTileflowVisualCompareZooms,
+  parseTileflowVisualRegion,
   type TileflowVisualCompareJsonV1,
 } from '../src/visual-compare-command';
 import {tileflowMapFixture} from './map-fixture';
@@ -680,18 +680,18 @@ function compareConfig(
     imports: `import {defineTheme} from '@tileflow/core';
 import {streetsThemes} from '@tileflow/maps';`,
     fields: `modules: {
-  addresses: {type: 'addresses', enabled: false},
-  aeroways: {type: 'aeroways', enabled: false},
-  boundaries: {type: 'boundaries', enabled: false},
-  buildings: {type: 'buildings', enabled: false},
-  labels: {type: 'labels', enabled: false},
-  land: {type: 'land', enabled: true},
-  landforms: {type: 'landforms', enabled: false},
-  poi: {type: 'poi', enabled: false},
-  roads: {type: 'roads', enabled: false},
-  transit: {type: 'transit', enabled: false},
-  vegetation: {type: 'vegetation', enabled: false},
-  water: {type: 'water', enabled: false}
+  addresses: disable(),
+  aeroways: disable(),
+  boundaries: disable(),
+  buildings: disable(),
+  labels: disable(),
+  land: {type: 'land'},
+  landforms: disable(),
+  poi: disable(),
+  roads: disable(),
+  transit: disable(),
+  vegetation: disable(),
+  water: disable()
 },
 defaultTheme: 'light',
 themes: {light: defineTheme(streetsThemes.light, {

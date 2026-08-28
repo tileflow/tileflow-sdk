@@ -221,7 +221,7 @@ function rootConfig(background?: string): string {
   const tokens = background
     ? `, tokens: {color: {'surface.background': ${JSON.stringify(background)}}}`
     : '';
-  return `import {defineRootMap, defineTheme} from '@tileflow/core'; import {streetsIcons, streetsThemes} from '@tileflow/maps'; export default defineRootMap({id: 'main', version: 1, root: {compiler: 'streets', compilerVersion: 1}, defaultTheme: 'light', systemThemes: {dark: 'dark', light: 'light'}, themes: {dark: streetsThemes.dark, light: defineTheme(streetsThemes.light, {id: 'fixture-light', version: 1, colorScheme: 'light'${tokens}})}, icons: [streetsIcons], glyphs: {kind: 'url', url: '${glyphUrl}', fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']}});\n`;
+  return `import {defineMap, defineTheme} from '@tileflow/core'; import {streetsIcons, streetsThemes} from '@tileflow/maps'; export default defineMap({id: 'main', version: 1, defaultTheme: 'light', systemThemes: {dark: 'dark', light: 'light'}, themes: {dark: streetsThemes.dark, light: defineTheme(streetsThemes.light, {id: 'fixture-light', version: 1, colorScheme: 'light'${tokens}})}, icons: [streetsIcons], glyphs: {kind: 'url', url: '${glyphUrl}', fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']}});\n`;
 }
 
 function createHostedManifest(): RuntimeManifest {
@@ -263,7 +263,7 @@ function assertLocalManifest(manifest: RuntimeManifest): void {
 
 function backgroundColor(style: unknown): unknown {
   const layers = (style as {layers?: Array<{id?: string; paint?: Record<string, unknown>}>}).layers;
-  return layers?.find((layer) => layer.id === 'streets-background')?.paint?.['background-color'];
+  return layers?.find((layer) => layer.id === 'tileflow-background')?.paint?.['background-color'];
 }
 
 function vectorUrl(style: unknown): unknown {

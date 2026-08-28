@@ -116,13 +116,6 @@ const semanticRequiresGeneralContext = {
   source: {kind: 'maplibre' as const, style: mapStyle},
 } satisfies MapProps<(typeof propertyAnnotations)[number]>;
 
-// @ts-expect-error annotations and legacy markers are mutually exclusive.
-const mixedAnnotationInputs: MapProps = {
-  annotations: propertyAnnotations,
-  markers: [{coordinates: [-3.7, 40.4] as [number, number], id: 'legacy-madrid'}],
-  source: {kind: 'maplibre', style: mapStyle},
-};
-
 // @ts-expect-error controlled and uncontrolled interaction state are mutually exclusive.
 const mixedInteractionStateInputs: MapProps = {
   defaultInteractionState: interactionState,
@@ -161,7 +154,6 @@ void [
   legacyConfig,
   mixedSource,
   component,
-  mixedAnnotationInputs,
   mixedInteractionStateInputs,
   imageAnnotations,
   imageInteractions,

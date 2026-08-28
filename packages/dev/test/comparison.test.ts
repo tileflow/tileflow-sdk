@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {Script} from 'node:vm';
-import {defineRootMap, parseTileflowMap, type TileflowMapScene} from '@tileflow/core';
+import {defineMap, parseTileflowMap, type TileflowMapScene} from '@tileflow/core';
 import {
   createTileflowComparisonRequestHandler,
   tileflowComparisonSchemaVersion,
@@ -229,9 +229,9 @@ test('emits semantic attribution from the selected compiler-sidecar layer', asyn
           contributions: [
             {
               authoringPaths: [token.authoringPath],
-              effects: [
+              operations: [
                 {
-                  kind: 'patch',
+                  kind: 'refinement',
                   owner: 'land',
                   target: 'land.landcover.urbanPark.fill',
                 },
@@ -242,7 +242,7 @@ test('emits semantic attribution from the selected compiler-sidecar layer', asyn
               themeTokens: [token],
             },
             {
-              effects: [],
+              operations: [],
               owner: 'land',
               slot: 'land',
               target: 'land.landcover.grass.fill',
@@ -278,7 +278,7 @@ test('emits semantic attribution from the selected compiler-sidecar layer', asyn
       authoringPaths: [
         'modules.land',
         'themes.dark.tokens.color.landcover.urbanPark',
-        'compilerEffects.land.landcover.urbanPark.fill.patch',
+        'modules.land.renderStack',
       ],
       themeTokens: [token],
     },
@@ -316,10 +316,9 @@ test('copies a complete scene and exploratory command from the real map viewport
   assert.equal(Object.hasOwn(sceneDefinition, 'map'), false);
   assert.doesNotThrow(() =>
     parseTileflowMap(
-      defineRootMap({
+      defineMap({
         id: 'map',
         version: 1,
-        root: {compiler: 'streets', compilerVersion: 1},
         defaultTheme: 'theme',
         themes: {theme: fixtureLightTheme},
         scenes: {[sceneMatch[1]!]: sceneDefinition},

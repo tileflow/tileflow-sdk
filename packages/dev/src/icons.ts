@@ -5,7 +5,7 @@ import {
   compareCodeUnits,
   hashTileflowIconPackageManifest,
   hashTileflowRenderedIconPixels,
-  parseTileflowMap,
+  parseResolvedTileflowMap,
   serializeCanonicalJson,
   sha256Hex,
   tileflowIconIdPattern,
@@ -510,7 +510,7 @@ async function getMapIconRequests(
   for (const mapName of selectedNames) {
     const mapConfig = project.maps[mapName];
     if (!mapConfig) throw new Error(`Unknown Tileflow map: ${mapName}`);
-    const resolvedMap = parseTileflowMap(mapConfig);
+    const resolvedMap = parseResolvedTileflowMap(mapConfig);
     try {
       const directories = await resolveTileflowAssetDirectories(resolvedMap.icons ?? [], {
         baseDirectory,

@@ -145,8 +145,8 @@ owned by the shared MapLibre interaction runtime.
 />
 ```
 
-`annotations` and the legacy `markers` prop are mutually exclusive. So are controlled
-`interactionState` and uncontrolled `defaultInteractionState`. `interactions` binds tooltips and
+`annotations` is the only application-owned marker input. Controlled `interactionState` and
+uncontrolled `defaultInteractionState` are mutually exclusive. `interactions` binds tooltips and
 popups to semantic POIs exposed by the compiled style metadata; applications select the stable
 `poi` domain and optional categories rather than physical style-layer IDs.
 
@@ -161,8 +161,8 @@ with a POI popup (or the reverse) closes the previous owner before opening the n
 order remains `popup:close` followed by `popup:open`.
 
 Annotations and semantic interactions are interactive-only. The TypeScript API excludes
-annotations, legacy markers, interactions, interaction state, snippets, and interaction callbacks
-from the `mode="image"` branch. Untyped JavaScript that supplies them still receives an
+annotations, interactions, interaction state, snippets, and interaction callbacks from the
+`mode="image"` branch. Untyped JavaScript that supplies them still receives an
 `UNSUPPORTED_MODE` diagnostic and capture readiness `error`, rather than pretending the static image
 contains live overlays.
 

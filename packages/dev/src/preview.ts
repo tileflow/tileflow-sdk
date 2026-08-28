@@ -2,7 +2,7 @@ import {
   defaultTileflowRuntimeView,
   type NormalizedTileflowCaptureScene,
   normalizeTileflowCaptureScene,
-  parseTileflowMap,
+  parseResolvedTileflowMap,
   resolveThemeSelection,
 } from '@tileflow/core';
 import type {TileflowBuildCatalog} from '@tileflow/core/build';
@@ -83,7 +83,7 @@ export function resolveTileflowPreview(
       );
     }
 
-    const map = parseTileflowMap(project.maps[normalized.map]!);
+    const map = parseResolvedTileflowMap(project.maps[normalized.map]!);
     const selectedTheme = resolvePreviewTheme(map, normalized.theme);
     return {
       camera: normalized.camera,
@@ -101,7 +101,7 @@ export function resolveTileflowPreview(
     throw new TileflowPreviewSelectionError(`Unknown Tileflow map: ${mapName}`);
   }
 
-  const resolvedMap = parseTileflowMap(map);
+  const resolvedMap = parseResolvedTileflowMap(map);
   const selectedTheme = resolvePreviewTheme(resolvedMap, selection.theme);
   return {
     camera: {
@@ -120,7 +120,7 @@ export function resolveTileflowPreview(
 }
 
 function resolvePreviewTheme(
-  map: ReturnType<typeof parseTileflowMap>,
+  map: ReturnType<typeof parseResolvedTileflowMap>,
   requested: string | undefined,
 ): ReturnType<typeof resolveThemeSelection> {
   try {

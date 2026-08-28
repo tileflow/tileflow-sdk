@@ -3,6 +3,7 @@ import {existsSync, realpathSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import {dirname, resolve, sep} from 'node:path';
 import {
+  parseResolvedTileflowMap,
   parseTileflowMap,
   tileflowCaptureSceneNameSchema,
   type TileflowMap,
@@ -104,7 +105,7 @@ export function assertValidTileflowConfig(project: TileflowBuildCatalog): void {
   const messages: ValidationMessage[] = [];
   for (const [mapId, map] of Object.entries(project.maps)) {
     try {
-      parseTileflowMap(map);
+      parseResolvedTileflowMap(map);
     } catch (error) {
       messages.push({
         level: 'error',
@@ -181,10 +182,7 @@ function asTileflowBuildCatalog(
     }
     return {
       mapMetadata: Object.fromEntries(
-        entries.map(([id, map, lineage]) => [
-          id,
-          {id, lineage, root: map.root, version: map.version},
-        ]),
+        entries.map(([id, map, lineage]) => [id, {id, lineage, version: map.version}]),
       ),
       maps: Object.fromEntries(entries.map(([id, map]) => [id, map])),
       ...(scenes.size > 0 ? {scenes: Object.fromEntries(scenes)} : {}),
@@ -204,7 +202,6 @@ function asTileflowBuildCatalog(
       [resolved.id]: {
         id: resolved.id,
         lineage: collectTileflowMapBuildLineage(map),
-        root: resolved.root,
         version: resolved.version,
       },
     },

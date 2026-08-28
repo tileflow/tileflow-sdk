@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import test from 'node:test';
-import {defineMap, defineRootMap, defineTheme, parseTileflowMap, token} from '@tileflow/core';
-import {defineModuleEffects, patchModuleLayer} from '@tileflow/core/recipe';
+import {
+  defineMap,
+  defineTheme,
+  land,
+  parseTileflowMap,
+  refineRenderTarget,
+  token,
+  withRenderStack,
+} from '@tileflow/core';
 import {inspectLoadedTileflowConfig} from '../src/inspect';
 
 test('inspects resolved lineage and merge provenance without source paths or secrets', () => {
@@ -22,11 +29,10 @@ test('inspects resolved lineage and merge provenance without source paths or sec
     typography: {font: `/opt/private/${secret}`},
     version: 2,
   });
-  const root = defineRootMap({
+  const root = defineMap({
     id: 'root',
     name: 'Root',
     version: 1,
-    root: {compiler: 'streets', compilerVersion: 1},
     data: {
       type: 'vector-tiles',
       attribution: 'Fixture',
@@ -34,18 +40,23 @@ test('inspects resolved lineage and merge provenance without source paths or sec
       url: `https://example.test/data.json?token=${secret}`,
     },
     modules: {
-      land: {
-        type: 'land',
-        background: {
-          color: token.color('land'),
+      land: withRenderStack(
+        land({
+          background: {
+            color: token.color('land'),
+          },
+        }),
+        {
+          rootOpacity: refineRenderTarget({
+            renderer: 'background',
+            style: {opacity: 0.75},
+            target: 'land.background',
+          }),
         },
-      },
+      ),
     },
     defaultTheme: 'light',
     themes: {light: rootTheme},
-    ...defineModuleEffects([
-      patchModuleLayer('land', 'land.background', {paint: {'fill-opacity': 0.75}}),
-    ]),
   });
   const child = defineMap({
     id: 'child',
@@ -78,7 +89,6 @@ test('inspects resolved lineage and merge provenance without source paths or sec
             {id: 'child', mapVersion: 2},
             {id: 'root', mapVersion: 1},
           ],
-          root: resolved.root,
           version: 2,
         },
       },
@@ -136,17 +146,15 @@ test('inspects resolved lineage and merge provenance without source paths or sec
     {
       category: 'number',
       code: 'THEME_IMPLICIT_FIXED',
-      effectKind: 'patch',
       message:
         'Visual number literal is implicitly fixed; use token.number(...) or fixed(value, {reason}).',
       owner: 'land',
-      path: 'compilerEffects.land.background.patch.paint.fill-opacity',
+      path: 'modules.land.renderStack.rootOpacity.style.opacity',
       phase: 'theme-audit',
-      scope: 'compiler-effect',
+      scope: 'module',
       severity: 'warning',
       suggestion:
         'Replace the literal with token.number(...) or document the invariant with fixed(value, {reason}).',
-      target: 'land.background',
       value: 0.75,
     },
     {
@@ -182,10 +190,9 @@ test('inspects resolved lineage and merge provenance without source paths or sec
 });
 
 test('provenance depth disambiguates a wrapper with the same id as its parent', () => {
-  const root = defineRootMap({
+  const root = defineMap({
     id: 'streets',
     version: 1,
-    root: {compiler: 'streets', compilerVersion: 1},
     defaultTheme: 'light',
     themes: {
       light: defineTheme({
@@ -235,10 +242,9 @@ test('provenance depth disambiguates a wrapper with the same id as its parent', 
 });
 
 test('rejects unknown map selection with a structured inspection error', () => {
-  const root = defineRootMap({
+  const root = defineMap({
     id: 'main',
     version: 1,
-    root: {compiler: 'streets', compilerVersion: 1},
     defaultTheme: 'light',
     themes: {
       light: defineTheme({colorScheme: 'light', id: 'light', version: 1}),

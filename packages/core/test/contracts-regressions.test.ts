@@ -11,7 +11,7 @@ import {
   validateTileflowMap,
   vectorTiles,
 } from '../src';
-import {assembleTileflowLayers} from '../src/cartography/graph';
+import {assembleTileflowLayers} from './layer-ir-fixture';
 import {extendStreets, testLightTheme} from './map-fixture';
 
 test('keeps the import-free theme example valid, explicit, and compilable', async () => {

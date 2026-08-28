@@ -8,7 +8,6 @@ import {
   type TileflowThemeDefinition,
   token,
 } from '@tileflow/core';
-import {isMapLibreExpressionOperator} from '@tileflow/core/recipe';
 
 type ThemeTypography = NonNullable<TileflowThemeDefinition['typography']>;
 type ThemeLighting = NonNullable<TileflowThemeDefinition['lighting']>;
@@ -106,6 +105,47 @@ const ownerTokenGroups: Readonly<Record<string, readonly string[]>> = {
 
 const colorLiteralPattern = /^(?:#[\da-f]+|hsla?\(|rgba?\()/iu;
 
+// Official maps are authored only with Core's closed `expr.*` vocabulary. Keep this
+// package-private classifier local so Core does not expose MapLibre's raw operator registry.
+const tileflowDataExpressionOperators = new Set([
+  '!',
+  '!=',
+  '*',
+  '+',
+  '-',
+  '/',
+  '<',
+  '<=',
+  '==',
+  '>',
+  '>=',
+  'abs',
+  'all',
+  'any',
+  'boolean',
+  'case',
+  'coalesce',
+  'concat',
+  'feature-state',
+  'get',
+  'has',
+  'interpolate',
+  'let',
+  'literal',
+  'match',
+  'max',
+  'min',
+  'step',
+  'to-number',
+  'to-string',
+  'var',
+  'zoom',
+]);
+
+function isTileflowDataExpressionOperator(value: unknown): value is string {
+  return typeof value === 'string' && tileflowDataExpressionOperators.has(value);
+}
+
 /**
  * Classify every authored visual literal in an official map before it becomes
  * public. Existing role tokens are reused only inside the owning semantic
@@ -136,7 +176,7 @@ export function bindOfficialMapTheme<TMap extends TileflowMap>(map: TMap): TMap 
   const bindNumericOutput = (value: unknown, path: string, semanticPath: string): unknown => {
     if (typeof value === 'number') return fixedMetric(value, semanticPath);
     if (Array.isArray(value)) {
-      if (isMapLibreExpressionOperator(value[0])) {
+      if (isTileflowDataExpressionOperator(value[0])) {
         return bindNumericExpression(value, path, semanticPath);
       }
       if (value.every((entry) => typeof entry === 'number' && Number.isFinite(entry))) {
@@ -234,7 +274,7 @@ export function bindOfficialMapTheme<TMap extends TileflowMap>(map: TMap): TMap 
         );
         return token.color(generatedToken);
       }
-      if (/font/iu.test(path)) {
+      if (/(?:^|\.)font$/iu.test(path)) {
         const tokenName = chooseToken(fontTokens.get(value), path, owner);
         if (tokenName) return token.font(tokenName);
         if (!insideExpression) {
@@ -243,7 +283,7 @@ export function bindOfficialMapTheme<TMap extends TileflowMap>(map: TMap): TMap 
           );
         }
       }
-      if (/(?:image|pattern)/iu.test(path)) {
+      if (/(?:^|\.)(?:image|pattern)$/iu.test(path)) {
         const tokenName = chooseToken(imageTokens.get(value), path, owner);
         if (tokenName) return token.image(tokenName);
         if (!insideExpression) {
@@ -255,7 +295,7 @@ export function bindOfficialMapTheme<TMap extends TileflowMap>(map: TMap): TMap 
       return value;
     }
     if (Array.isArray(value)) {
-      const nextInsideExpression = insideExpression || isMapLibreExpressionOperator(value[0]);
+      const nextInsideExpression = insideExpression || isTileflowDataExpressionOperator(value[0]);
       return value.map((entry, index) =>
         bind(
           entry,
@@ -312,16 +352,6 @@ export function bindOfficialMapTheme<TMap extends TileflowMap>(map: TMap): TMap 
   }
   if (map.terrain && typeof map.terrain === 'object') {
     result.terrain = bind(map.terrain, `${map.id}.terrain`, 'terrain', 'terrain');
-  }
-  for (const key of Reflect.ownKeys(map)) {
-    if (typeof key === 'symbol') {
-      result[key] = bind(
-        (map as unknown as Record<PropertyKey, unknown>)[key],
-        `${map.id}.${String(key)}`,
-        undefined,
-        'effects',
-      );
-    }
   }
   if (
     Object.keys(generatedColors).length > 0 ||
@@ -410,7 +440,6 @@ function createSemanticToken(
 
 function normalizeSemanticSegment(segment: string): string {
   const normalized = segment
-    .replace(/^Symbol\(.+\)$/u, 'effects')
     .replace(/[-_]+([A-Za-z0-9])/gu, (_, character: string) => character.toUpperCase())
     .replace(/[^A-Za-z0-9_-]/gu, '');
   if (!normalized) return 'value';

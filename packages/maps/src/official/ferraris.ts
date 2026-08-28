@@ -3,26 +3,24 @@ import {
   aeroways,
   boundaries,
   buildings,
-  defineRootMap,
-  expression,
+  defineMap,
+  disable,
+  expr,
+  field,
   labels,
   land,
   landforms,
-  poi,
+  renderPass,
   roads,
-  transit,
+  type TileflowRenderSelector,
   type TileflowRoadClassStyle,
   type TileflowSymbolStyle,
+  transit,
   vegetation,
   water,
+  withRenderStack,
   zoom,
 } from '@tileflow/core';
-import {
-  addModuleLayer,
-  defineModuleEffects,
-  semanticField,
-  semanticLayer,
-} from '@tileflow/core/recipe';
 import {ferrarisIcons} from '../assets';
 import {bindOfficialMapTheme, defineOfficialTheme} from './theme-helpers';
 
@@ -152,11 +150,7 @@ const ferrarisPathLabel = {
   },
 } satisfies TileflowSymbolStyle;
 
-const landcoverClass = ['get', semanticField('class')];
-const landcoverSubclass = ['get', semanticField('subclass')];
-
 function landcoverPattern(
-  id: string,
   target: string,
   pattern: string,
   classes: readonly string[],
@@ -166,63 +160,58 @@ function landcoverPattern(
     subclasses?: readonly string[];
   } = {},
 ) {
-  const classFilter = ['match', landcoverClass, classes, true, false];
-  const filter = options.subclasses
-    ? ['all', classFilter, ['match', landcoverSubclass, options.subclasses, true, false]]
-    : classFilter;
+  const classSelector = {
+    field: 'class',
+    kind: 'in',
+    values: classes,
+  } as const satisfies TileflowRenderSelector;
+  const selector: TileflowRenderSelector = options.subclasses
+    ? {
+        kind: 'all',
+        selectors: [classSelector, {field: 'subclass', kind: 'in', values: options.subclasses}],
+      }
+    : classSelector;
+  const minZoom = options.minZoom ?? 9;
 
-  return addModuleLayer(
-    'land',
-    `land.effects.pattern.${id}`,
-    {
-      id: `ferraris-landcover-${id}-pattern`,
-      type: 'fill',
-      source: 'tileflow',
-      'source-layer': semanticLayer('landcover'),
-      minzoom: options.minZoom ?? 9,
-      filter,
-      paint: {
-        'fill-opacity': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          options.minZoom ?? 9,
-          0,
-          (options.minZoom ?? 9) + 1,
-          options.opacity ?? 0.72,
-        ],
-        'fill-pattern': pattern,
-      },
+  return renderPass({
+    attachTo: target,
+    feature: 'landcover',
+    phase: 'overlay',
+    renderer: 'fill',
+    selector,
+    style: {
+      minZoom,
+      opacity: zoom.linear([
+        [minZoom, 0],
+        [minZoom + 1, options.opacity ?? 0.72],
+      ]),
+      pattern,
     },
-    {after: target},
-  );
+  });
 }
 
 function landusePattern(
-  id: string,
   target: string,
   pattern: string,
   classes: readonly string[],
   minZoom: number,
   opacity: number,
 ) {
-  return addModuleLayer(
-    'land',
-    `land.effects.pattern.${id}`,
-    {
-      id: `ferraris-landuse-${id}-pattern`,
-      type: 'fill',
-      source: 'tileflow',
-      'source-layer': semanticLayer('landuse'),
-      minzoom: minZoom,
-      filter: ['match', ['get', semanticField('class')], classes, true, false],
-      paint: {
-        'fill-opacity': ['interpolate', ['linear'], ['zoom'], minZoom, 0, minZoom + 1, opacity],
-        'fill-pattern': pattern,
-      },
+  return renderPass({
+    attachTo: target,
+    feature: 'landuse',
+    phase: 'overlay',
+    renderer: 'fill',
+    selector: {field: 'class', kind: 'in', values: classes},
+    style: {
+      minZoom,
+      opacity: zoom.linear([
+        [minZoom, 0],
+        [minZoom + 1, opacity],
+      ]),
+      pattern,
     },
-    {after: target},
-  );
+  });
 }
 
 export const ferrarisTheme = defineOfficialTheme({
@@ -365,14 +354,13 @@ export const ferrarisTheme = defineOfficialTheme({
 
 /**
  * A self-contained historical-atlas map. It shares only Tileflow's public
- * Streets compiler contract; it neither imports nor extends the Streets map.
+ * semantic compiler contract; it neither imports nor extends the Streets map.
  */
 export const ferraris = bindOfficialMapTheme(
-  defineRootMap({
+  defineMap({
     id: 'ferraris',
     version: 1,
     name: 'Ferraris',
-    root: {compiler: 'streets', compilerVersion: 1},
     data: {
       generation: 'v1',
       selection: {kind: 'current', product: 'world-v1'},
@@ -452,33 +440,54 @@ export const ferraris = bindOfficialMapTheme(
           width: 0.8,
         },
       }),
-      buildings: buildings({
-        businessCorridor: {
-          fill: {visible: false},
-          outline: {visible: false},
-        },
-        flat: {
-          fill: {
-            color: ferrarisPalette.building,
-            minZoom: 13,
-            opacity: zoom.linear([
-              [13, 0],
-              [14, 0.72],
-              [16, 0.9],
-            ]),
+      buildings: withRenderStack(
+        buildings({
+          businessCorridor: {
+            fill: {visible: false},
+            outline: {visible: false},
           },
-          outline: {
-            color: ferrarisPalette.buildingOutline,
-            minZoom: 14,
-            opacity: 0.82,
-            width: zoom.linear([
-              [14, 0.35],
-              [18, 0.8],
-            ]),
+          flat: {
+            fill: {
+              color: ferrarisPalette.building,
+              minZoom: 13,
+              opacity: zoom.linear([
+                [13, 0],
+                [14, 0.72],
+                [16, 0.9],
+              ]),
+            },
+            outline: {
+              color: ferrarisPalette.buildingOutline,
+              minZoom: 14,
+              opacity: 0.82,
+              width: zoom.linear([
+                [14, 0.35],
+                [18, 0.8],
+              ]),
+            },
           },
+          mode: 'flat',
+        }),
+        {
+          printShadow: renderPass({
+            attachTo: 'buildings.flat.fill',
+            feature: 'building',
+            phase: 'underlay',
+            renderer: 'fill',
+            style: {
+              color: ferrarisPalette.ink,
+              minZoom: 14,
+              opacity: zoom.linear([
+                [14, 0],
+                [15, 0.16],
+                [19, 0.22],
+              ]),
+              translate: [1.25, 1.5],
+              translateAnchor: 'viewport',
+            },
+          }),
         },
-        mode: 'flat',
-      }),
+      ),
       labels: labels({
         aerodromeCodes: 'none',
         junctions: false,
@@ -636,83 +645,123 @@ export const ferraris = bindOfficialMapTheme(
         },
         water: 'all',
       }),
-      land: land({
-        background: {opacity: 1, pattern: 'ferraris-paper-grain'},
-        globalLandcover: {
-          color: expression<string>([
-            'match',
-            ['get', semanticField('class')],
-            'barren',
-            '#B9AD97',
-            'crop',
-            ferrarisPalette.farmland,
-            'grass',
-            ferrarisPalette.grass,
-            'shrub',
-            ferrarisPalette.heath,
-            'snow',
-            ferrarisPalette.ice,
-            'trees',
-            ferrarisPalette.wood,
-            'urban',
-            '#D2C5AE',
-            'rgba(0, 0, 0, 0)',
-          ]),
-          maxZoom: 10,
-          minZoom: 0,
-          opacity: zoom.linear([
-            [0, 0.88],
-            [7, 0.78],
-            [9, 0.3],
-            [10, 0],
-          ]),
+      land: withRenderStack(
+        land({
+          background: {opacity: 1, pattern: 'ferraris-paper-grain'},
+          globalLandcover: {
+            color: expr.match(
+              expr.get(field('class')),
+              [
+                {labels: 'barren', value: '#B9AD97'},
+                {labels: 'crop', value: ferrarisPalette.farmland},
+                {labels: 'grass', value: ferrarisPalette.grass},
+                {labels: 'shrub', value: ferrarisPalette.heath},
+                {labels: 'snow', value: ferrarisPalette.ice},
+                {labels: 'trees', value: ferrarisPalette.wood},
+                {labels: 'urban', value: '#D2C5AE'},
+              ],
+              'rgba(0, 0, 0, 0)',
+            ),
+            maxZoom: 10,
+            minZoom: 0,
+            opacity: zoom.linear([
+              [0, 0.88],
+              [7, 0.78],
+              [9, 0.3],
+              [10, 0],
+            ]),
+          },
+          landcover: {
+            farmland: {
+              fill: {color: ferrarisPalette.farmland, minZoom: 7, opacity: 0.74},
+            },
+            flowerbed: {
+              fill: {color: '#B8A87C', minZoom: 12, opacity: 0.72},
+            },
+            grass: {fill: {color: ferrarisPalette.grass, minZoom: 7, opacity: 0.68}},
+            ice: {fill: {color: ferrarisPalette.ice, minZoom: 7, opacity: 0.72}},
+            meadow: {fill: {color: ferrarisPalette.meadow, minZoom: 7, opacity: 0.68}},
+            protected: {fill: {color: '#A3AA7D', minZoom: 7, opacity: 0.42}},
+            recreationGround: {
+              fill: {color: ferrarisPalette.recreation, minZoom: 9, opacity: 0.62},
+            },
+            rock: {fill: {color: '#B9AD97', minZoom: 7, opacity: 0.58}},
+            sand: {fill: {color: ferrarisPalette.sand, minZoom: 7, opacity: 0.72}},
+            scrub: {fill: {color: ferrarisPalette.heath, minZoom: 7, opacity: 0.7}},
+            urbanPark: {fill: {color: '#A2A97A', minZoom: 9, opacity: 0.7}},
+            villageGreen: {fill: {color: '#A9AE80', minZoom: 10, opacity: 0.68}},
+            wetland: {fill: {color: ferrarisPalette.wetland, minZoom: 7, opacity: 0.72}},
+            wood: {fill: {color: ferrarisPalette.wood, minZoom: 7, opacity: 0.76}},
+          },
+          landuse: {
+            cemetery: {
+              fill: {color: '#A3AA7C', minZoom: 10, opacity: 0.7},
+              outline: {color: '#737A58', minZoom: 12, opacity: 0.55, width: 0.6},
+            },
+            civic: {fill: {color: '#D0BBA8', minZoom: 10, opacity: 0.48}},
+            commercial: {fill: {color: '#CDAE9D', minZoom: 10, opacity: 0.42}},
+            education: {fill: {color: '#C6BA98', minZoom: 10, opacity: 0.52}},
+            government: {fill: {color: '#CFB8A7', minZoom: 10, opacity: 0.48}},
+            industrial: {fill: {color: '#BCA99A', minZoom: 10, opacity: 0.5}},
+            medical: {fill: {color: '#CEB5A8', minZoom: 11, opacity: 0.48}},
+            military: {fill: {color: ferrarisPalette.military, minZoom: 8, opacity: 0.42}},
+            parking: {
+              fill: {color: ferrarisPalette.parking, minZoom: 15, opacity: 0.55},
+              outline: {color: '#9A8D79', minZoom: 16, opacity: 0.5, width: 0.5},
+            },
+            railway: {fill: {color: '#B8AD9C', minZoom: 11, opacity: 0.42}},
+            recreation: {
+              fill: {color: ferrarisPalette.recreation, minZoom: 9, opacity: 0.58},
+              outline: {color: '#737A58', minZoom: 13, opacity: 0.45, width: 0.6},
+            },
+            residential: {fill: {color: '#D2C5AE', minZoom: 9, opacity: 0.62}},
+          },
+        }),
+        {
+          farmlandTexture: landcoverPattern(
+            'land.landcover.farmland.fill',
+            'ferraris-crop-hatch',
+            ['farmland'],
+            {minZoom: 8, opacity: 0.82},
+          ),
+          heathTexture: landcoverPattern('land.landcover.scrub.fill', 'ferraris-heath', ['grass'], {
+            minZoom: 9,
+            opacity: 0.72,
+            subclasses: ['scrub'],
+          }),
+          orchardTexture: landcoverPattern(
+            'land.landcover.urbanPark.fill',
+            'ferraris-orchard',
+            ['grass'],
+            {minZoom: 11, opacity: 0.64, subclasses: ['park', 'garden']},
+          ),
+          sandTexture: landcoverPattern(
+            'land.landcover.sand.fill',
+            'ferraris-sand',
+            ['sand', 'beach'],
+            {minZoom: 9, opacity: 0.72},
+          ),
+          wetlandTexture: landcoverPattern(
+            'land.landcover.wetland.fill',
+            'ferraris-wetland',
+            ['wetland'],
+            {minZoom: 9, opacity: 0.78},
+          ),
+          woodTexture: landcoverPattern(
+            'land.landcover.wood.fill',
+            'ferraris-woodland',
+            ['wood', 'forest'],
+            {minZoom: 8, opacity: 0.82},
+          ),
+          residentialTexture: landusePattern(
+            'land.landuse.residential.fill',
+            'ferraris-residential',
+            ['residential'],
+            11,
+            0.5,
+          ),
         },
-        landcover: {
-          farmland: {
-            fill: {color: ferrarisPalette.farmland, minZoom: 7, opacity: 0.74},
-          },
-          flowerbed: {
-            fill: {color: '#B8A87C', minZoom: 12, opacity: 0.72},
-          },
-          grass: {fill: {color: ferrarisPalette.grass, minZoom: 7, opacity: 0.68}},
-          ice: {fill: {color: ferrarisPalette.ice, minZoom: 7, opacity: 0.72}},
-          meadow: {fill: {color: ferrarisPalette.meadow, minZoom: 7, opacity: 0.68}},
-          protected: {fill: {color: '#A3AA7D', minZoom: 7, opacity: 0.42}},
-          recreationGround: {
-            fill: {color: ferrarisPalette.recreation, minZoom: 9, opacity: 0.62},
-          },
-          rock: {fill: {color: '#B9AD97', minZoom: 7, opacity: 0.58}},
-          sand: {fill: {color: ferrarisPalette.sand, minZoom: 7, opacity: 0.72}},
-          scrub: {fill: {color: ferrarisPalette.heath, minZoom: 7, opacity: 0.7}},
-          urbanPark: {fill: {color: '#A2A97A', minZoom: 9, opacity: 0.7}},
-          villageGreen: {fill: {color: '#A9AE80', minZoom: 10, opacity: 0.68}},
-          wetland: {fill: {color: ferrarisPalette.wetland, minZoom: 7, opacity: 0.72}},
-          wood: {fill: {color: ferrarisPalette.wood, minZoom: 7, opacity: 0.76}},
-        },
-        landuse: {
-          cemetery: {
-            fill: {color: '#A3AA7C', minZoom: 10, opacity: 0.7},
-            outline: {color: '#737A58', minZoom: 12, opacity: 0.55, width: 0.6},
-          },
-          civic: {fill: {color: '#D0BBA8', minZoom: 10, opacity: 0.48}},
-          commercial: {fill: {color: '#CDAE9D', minZoom: 10, opacity: 0.42}},
-          education: {fill: {color: '#C6BA98', minZoom: 10, opacity: 0.52}},
-          government: {fill: {color: '#CFB8A7', minZoom: 10, opacity: 0.48}},
-          industrial: {fill: {color: '#BCA99A', minZoom: 10, opacity: 0.5}},
-          medical: {fill: {color: '#CEB5A8', minZoom: 11, opacity: 0.48}},
-          military: {fill: {color: ferrarisPalette.military, minZoom: 8, opacity: 0.42}},
-          parking: {
-            fill: {color: ferrarisPalette.parking, minZoom: 15, opacity: 0.55},
-            outline: {color: '#9A8D79', minZoom: 16, opacity: 0.5, width: 0.5},
-          },
-          railway: {fill: {color: '#B8AD9C', minZoom: 11, opacity: 0.42}},
-          recreation: {
-            fill: {color: ferrarisPalette.recreation, minZoom: 9, opacity: 0.58},
-            outline: {color: '#737A58', minZoom: 13, opacity: 0.45, width: 0.6},
-          },
-          residential: {fill: {color: '#D2C5AE', minZoom: 9, opacity: 0.62}},
-        },
-      }),
+      ),
       landforms: landforms({
         elevation: true,
         classes: {
@@ -751,7 +800,7 @@ export const ferraris = bindOfficialMapTheme(
           },
         },
       }),
-      poi: poi({enabled: false}),
+      poi: disable(),
       roads: roads({
         areas: {
           pedestrian: {
@@ -898,15 +947,14 @@ export const ferraris = bindOfficialMapTheme(
       }),
       vegetation: vegetation({
         flat: {
-          color: expression<string>([
-            'match',
-            ['coalesce', ['get', semanticField('leafType')], ''],
-            ['needleleaved', 'needleleaf'],
-            '#737B55',
-            ['broadleaved', 'broadleaf'],
-            '#879064',
+          color: expr.match(
+            expr.coalesce(expr.get(field('leafType')), ''),
+            [
+              {labels: ['needleleaved', 'needleleaf'], value: '#737B55'},
+              {labels: ['broadleaved', 'broadleaf'], value: '#879064'},
+            ],
             ferrarisPalette.wood,
-          ]),
+          ),
           minZoom: 15,
           opacity: 0.76,
           radius: zoom.linear([
@@ -920,191 +968,135 @@ export const ferraris = bindOfficialMapTheme(
         minZoom: 15,
         mode: 'flat',
       }),
-      water: water({
-        bathymetry: {
-          color: expression<string>([
-            'match',
-            ['to-number', ['get', semanticField('bathymetryMinDepth')], 0],
-            0,
-            ferrarisPalette.water,
-            -200,
-            '#99AAA0',
-            -1000,
-            '#8E9F97',
-            -2000,
-            '#83938D',
-            -4000,
-            '#778782',
-            -6000,
-            '#6E7D79',
-            ferrarisPalette.water,
-          ]),
-          maxZoom: 9,
-          minZoom: 0,
-          opacity: zoom.linear([
-            [0, 0.72],
-            [7, 0.55],
-            [9, 0],
-          ]),
-        },
-        bodies: {
-          fill: {color: ferrarisPalette.water, opacity: 0.94},
-          outline: {
-            color: ferrarisPalette.waterInk,
-            minZoom: 5,
-            opacity: 0.68,
-            width: zoom.linear([
-              [5, 0.35],
-              [14, 0.8],
-              [18, 1.2],
+      water: withRenderStack(
+        water({
+          bathymetry: {
+            color: expr.match(
+              expr.toNumber(expr.get(field('bathymetryMinDepth')), 0),
+              [
+                {labels: 0, value: ferrarisPalette.water},
+                {labels: -200, value: '#99AAA0'},
+                {labels: -1000, value: '#8E9F97'},
+                {labels: -2000, value: '#83938D'},
+                {labels: -4000, value: '#778782'},
+                {labels: -6000, value: '#6E7D79'},
+              ],
+              ferrarisPalette.water,
+            ),
+            maxZoom: 9,
+            minZoom: 0,
+            opacity: zoom.linear([
+              [0, 0.72],
+              [7, 0.55],
+              [9, 0],
             ]),
           },
-        },
-        intermittent: {
-          bodies: {fill: {color: ferrarisPalette.water, opacity: 0.52}},
+          bodies: {
+            fill: {color: ferrarisPalette.water, opacity: 0.94},
+            outline: {
+              color: ferrarisPalette.waterInk,
+              minZoom: 5,
+              opacity: 0.68,
+              width: zoom.linear([
+                [5, 0.35],
+                [14, 0.8],
+                [18, 1.2],
+              ]),
+            },
+          },
+          intermittent: {
+            bodies: {fill: {color: ferrarisPalette.water, opacity: 0.52}},
+            waterways: {
+              color: ferrarisPalette.waterInk,
+              dash: [3, 2],
+              opacity: 0.48,
+            },
+          },
           waterways: {
-            color: ferrarisPalette.waterInk,
-            dash: [3, 2],
-            opacity: 0.48,
+            canal: {
+              color: ferrarisPalette.waterInk,
+              minZoom: 8,
+              opacity: 0.9,
+              width: zoom.linear([
+                [8, 0.35],
+                [16, 1.8],
+              ]),
+            },
+            other: {
+              color: ferrarisPalette.waterInk,
+              minZoom: 12,
+              opacity: 0.7,
+              width: zoom.linear([
+                [12, 0.25],
+                [17, 1],
+              ]),
+            },
+            river: {
+              color: ferrarisPalette.waterInk,
+              minZoom: 6,
+              opacity: 0.94,
+              width: zoom.linear([
+                [6, 0.4],
+                [16, 2.2],
+              ]),
+            },
+            stream: {
+              color: ferrarisPalette.waterInk,
+              minZoom: 10,
+              opacity: 0.82,
+              width: zoom.linear([
+                [10, 0.28],
+                [16, 1.2],
+              ]),
+            },
           },
+        }),
+        {
+          ripples: renderPass({
+            attachTo: 'water.bodies.fill',
+            feature: 'water',
+            phase: 'overlay',
+            renderer: 'fill',
+            selector: {
+              coerce: 'number',
+              fallback: 0,
+              field: 'intermittent',
+              kind: 'compare',
+              operator: 'ne',
+              value: 1,
+            },
+            style: {
+              minZoom: 7,
+              opacity: zoom.linear([
+                [7, 0],
+                [9, 0.44],
+                [16, 0.3],
+              ]),
+              pattern: 'ferraris-water-ripples',
+            },
+          }),
+          intermittentRipples: renderPass({
+            attachTo: 'water.intermittent.bodies.fill',
+            feature: 'water',
+            phase: 'overlay',
+            renderer: 'fill',
+            selector: {
+              coerce: 'number',
+              fallback: 0,
+              field: 'intermittent',
+              kind: 'compare',
+              operator: 'eq',
+              value: 1,
+            },
+            style: {
+              minZoom: 9,
+              opacity: 0.2,
+              pattern: 'ferraris-water-ripples',
+            },
+          }),
         },
-        waterways: {
-          canal: {
-            color: ferrarisPalette.waterInk,
-            minZoom: 8,
-            opacity: 0.9,
-            width: zoom.linear([
-              [8, 0.35],
-              [16, 1.8],
-            ]),
-          },
-          other: {
-            color: ferrarisPalette.waterInk,
-            minZoom: 12,
-            opacity: 0.7,
-            width: zoom.linear([
-              [12, 0.25],
-              [17, 1],
-            ]),
-          },
-          river: {
-            color: ferrarisPalette.waterInk,
-            minZoom: 6,
-            opacity: 0.94,
-            width: zoom.linear([
-              [6, 0.4],
-              [16, 2.2],
-            ]),
-          },
-          stream: {
-            color: ferrarisPalette.waterInk,
-            minZoom: 10,
-            opacity: 0.82,
-            width: zoom.linear([
-              [10, 0.28],
-              [16, 1.2],
-            ]),
-          },
-        },
-      }),
+      ),
     },
-    ...defineModuleEffects([
-      landcoverPattern(
-        'farmland',
-        'land.landcover.farmland.fill',
-        'ferraris-crop-hatch',
-        ['farmland'],
-        {minZoom: 8, opacity: 0.82},
-      ),
-      landcoverPattern('heath', 'land.landcover.scrub.fill', 'ferraris-heath', ['grass'], {
-        minZoom: 9,
-        opacity: 0.72,
-        subclasses: ['scrub'],
-      }),
-      landcoverPattern('orchard', 'land.landcover.urbanPark.fill', 'ferraris-orchard', ['grass'], {
-        minZoom: 11,
-        opacity: 0.64,
-        subclasses: ['park', 'garden'],
-      }),
-      landcoverPattern('sand', 'land.landcover.sand.fill', 'ferraris-sand', ['sand', 'beach'], {
-        minZoom: 9,
-        opacity: 0.72,
-      }),
-      landcoverPattern('wetland', 'land.landcover.wetland.fill', 'ferraris-wetland', ['wetland'], {
-        minZoom: 9,
-        opacity: 0.78,
-      }),
-      landcoverPattern(
-        'wood',
-        'land.landcover.wood.fill',
-        'ferraris-woodland',
-        ['wood', 'forest'],
-        {
-          minZoom: 8,
-          opacity: 0.82,
-        },
-      ),
-      landusePattern(
-        'residential',
-        'land.landuse.residential.fill',
-        'ferraris-residential',
-        ['residential'],
-        11,
-        0.5,
-      ),
-      addModuleLayer(
-        'water',
-        'water.effects.ripples',
-        {
-          id: 'ferraris-water-ripples-pattern',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('water'),
-          minzoom: 7,
-          filter: ['!=', ['to-number', ['get', semanticField('intermittent')], 0], 1],
-          paint: {
-            'fill-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0, 9, 0.44, 16, 0.3],
-            'fill-pattern': 'ferraris-water-ripples',
-          },
-        },
-        {after: 'water.bodies.fill'},
-      ),
-      addModuleLayer(
-        'water',
-        'water.effects.intermittentRipples',
-        {
-          id: 'ferraris-water-intermittent-ripples-pattern',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('water'),
-          minzoom: 9,
-          filter: ['==', ['to-number', ['get', semanticField('intermittent')], 0], 1],
-          paint: {
-            'fill-opacity': 0.2,
-            'fill-pattern': 'ferraris-water-ripples',
-          },
-        },
-        {after: 'water.intermittent.bodies.fill'},
-      ),
-      addModuleLayer(
-        'buildings',
-        'buildings.effects.printShadow',
-        {
-          id: 'ferraris-building-print-shadow',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('building'),
-          minzoom: 14,
-          paint: {
-            'fill-color': ferrarisPalette.ink,
-            'fill-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0, 15, 0.16, 19, 0.22],
-            'fill-translate': [1.25, 1.5],
-            'fill-translate-anchor': 'viewport',
-          },
-        },
-        {before: 'buildings.flat.fill'},
-      ),
-    ]),
     view: {
       center: [4.3517, 50.8503],
       pitch: 0,

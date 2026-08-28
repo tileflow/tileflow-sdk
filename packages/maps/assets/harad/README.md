@@ -27,5 +27,5 @@ artwork, font, geospatial data, or map data. Härad is not a digitization or fac
 sheet.
 
 The map refers to this directory through the exported `haradIcons` package descriptor and declares
-only `[haradIcons]`. Härad uses Core's semantic `compiler: 'streets'` ABI, but it does not import or
-extend the Streets map and does not reuse Streets assets.
+only `[haradIcons]`. Härad is a standalone map authored through Core's sole semantic language; it
+does not import or extend the Streets map and does not reuse Streets assets.

@@ -13,7 +13,6 @@ export type TileflowLandformClass = (typeof tileflowLandformClasses)[number];
 
 export type TileflowLandformsModuleOptions = {
   classes?: Partial<Record<TileflowLandformClass, TileflowSymbolStyle>>;
-  enabled?: boolean;
   /** Append source elevation in metres when the feature provides it. */
   elevation?: boolean;
 };

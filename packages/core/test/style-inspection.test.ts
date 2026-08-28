@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createStyle, fixed, land, poi, roads} from '../src';
+import {
+  createStyle,
+  disable,
+  fixed,
+  land,
+  parseTileflowMap,
+  refineRenderTarget,
+  renderPass,
+  roads,
+  withRenderStack,
+} from '../src';
 import {
   createManifest,
   createStyleFromCatalogWithInspection,
@@ -10,44 +20,46 @@ import {
 } from '../src/build';
 import {tileflowCompilerProvenanceMetadataKey} from '../src/cartography/compiler-inspection';
 import {tileflowCompilerMetadataKeys} from '../src/cartography/contributions';
-import {
-  addModuleLayer,
-  internalModuleEffects,
-  patchModuleLayer,
-  semanticLayer,
-  tileflowModuleEffectMetadataKey,
-} from '../src/cartography/module-effects';
 import {extendStreets} from './map-fixture';
 
 function inspectionMap() {
-  const target = 'land.inspection.added';
+  const target = 'land.render.inspectionAdded';
   const roadTarget = 'roads.classes.motorway.surface.fill';
   return extendStreets({
     id: 'sidecar-map',
-    modules: {land: land({}), poi: poi({enabled: false}), roads: roads({})},
-    ...internalModuleEffects([
-      addModuleLayer(
-        'land',
-        target,
-        {
-          id: 'inspection-added-layer',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('landuse'),
-          paint: {
-            'fill-color': fixed('#008000', {reason: 'Inspection add-effect fixture.'}),
+    modules: {
+      land: withRenderStack(land({}), {
+        inspectionAdded: renderPass({
+          attachTo: 'land.background',
+          feature: 'landuse',
+          phase: 'overlay',
+          renderer: 'fill',
+          style: {
+            color: fixed('#008000', {reason: 'Inspection render-pass fixture.'}),
           },
-        },
-        {after: 'land.background'},
-      ),
-      patchModuleLayer('land', target, {
-        paint: {
-          'fill-color': fixed('#006400', {reason: 'Inspection patch-effect fixture.'}),
-        },
+        }),
+        inspectionRecolor: refineRenderTarget({
+          renderer: 'fill',
+          style: {
+            color: fixed('#006400', {reason: 'Inspection refinement fixture.'}),
+          },
+          target,
+        }),
+        inspectionOpacity: refineRenderTarget({
+          renderer: 'fill',
+          style: {opacity: 0.75},
+          target,
+        }),
       }),
-      patchModuleLayer('land', target, {paint: {'fill-opacity': 0.75}}),
-      patchModuleLayer('roads', roadTarget, {paint: {'line-opacity': 0.9}}),
-    ]),
+      poi: disable(),
+      roads: withRenderStack(roads({}), {
+        motorwayOpacity: refineRenderTarget({
+          renderer: 'line',
+          style: {opacity: 0.9},
+          target: roadTarget,
+        }),
+      }),
+    },
   });
 }
 
@@ -70,7 +82,6 @@ test('emits a separate complete provenance sidecar without changing Style bytes'
   const privateKeys = [
     ...Object.values(tileflowCompilerMetadataKeys),
     tileflowCompilerProvenanceMetadataKey,
-    tileflowModuleEffectMetadataKey,
   ];
   for (const layer of style.layers) {
     const metadata = (layer.metadata ?? {}) as Record<string, unknown>;
@@ -78,25 +89,25 @@ test('emits a separate complete provenance sidecar without changing Style bytes'
   }
 });
 
-test('retains optimizer cohorts and the ordered add/patch chain', () => {
+test('retains physical-planner cohorts and the ordered render-operation chain', () => {
   const {inspection} = createStyleWithInspection(inspectionMap());
-  const added = inspection.layers.find(({id}) => id === 'inspection-added-layer');
+  const added = inspection.layers.find(({id}) => id === 'tileflow-land-render-inspectionAdded');
 
   assert.deepEqual(added?.contributions, [
     {
       owner: 'land',
       slot: 'background',
-      target: 'land.inspection.added',
-      effects: [
-        {kind: 'add', owner: 'land', target: 'land.inspection.added'},
-        {kind: 'patch', owner: 'land', target: 'land.inspection.added'},
-        {kind: 'patch', owner: 'land', target: 'land.inspection.added'},
+      target: 'land.render.inspectionAdded',
+      operations: [
+        {kind: 'pass', owner: 'land', target: 'land.render.inspectionAdded'},
+        {kind: 'refinement', owner: 'land', target: 'land.render.inspectionAdded'},
+        {kind: 'refinement', owner: 'land', target: 'land.render.inspectionAdded'},
       ],
     },
   ]);
 
   const cohort = inspection.layers.find(
-    ({id}) => id === 'streets-road-surface-highzoom-major-fill',
+    ({id}) => id === 'tileflow-road-surface-highzoom-major-fill',
   );
   assert.ok(cohort);
   assert.ok(cohort.contributions.length > 1);
@@ -114,10 +125,10 @@ test('retains optimizer cohorts and the ordered add/patch chain', () => {
   );
   assert.deepEqual(
     cohort.contributions.find(({target}) => target === 'roads.classes.motorway.surface.fill')
-      ?.effects,
+      ?.operations,
     [
       {
-        kind: 'patch',
+        kind: 'refinement',
         owner: 'roads',
         target: 'roads.classes.motorway.surface.fill',
       },
@@ -127,7 +138,7 @@ test('retains optimizer cohorts and the ordered add/patch chain', () => {
 
 test('catalog inspection APIs preserve theme addressing and runtime manifest bytes', () => {
   const map = inspectionMap();
-  const catalog = {maps: {'sidecar-map': map}};
+  const catalog = {maps: {'sidecar-map': parseTileflowMap(map)}};
   const manifestBytes = JSON.stringify(createManifest(catalog));
   const single = createStyleFromCatalogWithInspection(catalog, 'sidecar-map');
   const family = createStylesFromCatalogWithInspection(catalog);

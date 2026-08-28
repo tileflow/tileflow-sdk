@@ -98,9 +98,9 @@ test('compiles contour-only terrain into one standard vector source and three or
     '9:100,500;11:50,250;13:20,100;15:10,50',
   );
 
-  const minor = style.layers.find((layer) => layer.id === 'streets-terrain-contour-minor')!;
-  const index = style.layers.find((layer) => layer.id === 'streets-terrain-contour-index')!;
-  const labels = style.layers.find((layer) => layer.id === 'streets-terrain-contour-labels')!;
+  const minor = style.layers.find((layer) => layer.id === 'tileflow-terrain-contour-minor')!;
+  const index = style.layers.find((layer) => layer.id === 'tileflow-terrain-contour-index')!;
+  const labels = style.layers.find((layer) => layer.id === 'tileflow-terrain-contour-labels')!;
   assert.equal(minor['source-layer'], 'contours');
   assert.equal(index['source-layer'], 'contours');
   assert.equal(labels['source-layer'], 'contours');
@@ -117,8 +117,8 @@ test('compiles contour-only terrain into one standard vector source and three or
   ]);
 
   const layerIds = style.layers.map((layer) => layer.id);
-  assert.ok(layerIds.indexOf('streets-background') < layerIds.indexOf(String(minor.id)));
-  assert.ok(layerIds.indexOf(String(labels.id)) < layerIds.indexOf('streets-water'));
+  assert.ok(layerIds.indexOf('tileflow-background') < layerIds.indexOf(String(minor.id)));
+  assert.ok(layerIds.indexOf(String(labels.id)) < layerIds.indexOf('tileflow-water'));
   assert.deepEqual(
     validateStyleMin(style as never).map((error) => error.message),
     [],
@@ -146,7 +146,7 @@ test('keeps raster terrain compatible while exposing bounded hillshade paint', (
     }),
     {preparedAssets},
   );
-  const layer = style.layers.find((candidate) => candidate.id === 'streets-terrain-hillshade')!;
+  const layer = style.layers.find((candidate) => candidate.id === 'tileflow-terrain-hillshade')!;
   const paint = layer.paint as Record<string, unknown>;
 
   assert.equal(style.sources['tileflow-terrain']?.type, 'raster-dem');
@@ -214,10 +214,10 @@ test('dark terrain defaults derive from semantic roles and exact terrain tokens 
     {preparedAssets},
   );
   const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
-  const hillshade = byId.get('streets-terrain-hillshade')!;
-  const minor = byId.get('streets-terrain-contour-minor')!;
-  const index = byId.get('streets-terrain-contour-index')!;
-  const labels = byId.get('streets-terrain-contour-labels')!;
+  const hillshade = byId.get('tileflow-terrain-hillshade')!;
+  const minor = byId.get('tileflow-terrain-contour-minor')!;
+  const index = byId.get('tileflow-terrain-contour-index')!;
+  const labels = byId.get('tileflow-terrain-contour-labels')!;
 
   assert.equal(
     (hillshade.paint as Record<string, unknown>)['hillshade-accent-color'],
@@ -339,10 +339,10 @@ test('resolves theme values throughout contour and hillshade appearance', () => 
     {preparedAssets},
   );
   const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
-  const hillshade = byId.get('streets-terrain-hillshade')!;
-  const minor = byId.get('streets-terrain-contour-minor')!;
-  const index = byId.get('streets-terrain-contour-index')!;
-  const labels = byId.get('streets-terrain-contour-labels')!;
+  const hillshade = byId.get('tileflow-terrain-hillshade')!;
+  const minor = byId.get('tileflow-terrain-contour-minor')!;
+  const index = byId.get('tileflow-terrain-contour-index')!;
+  const labels = byId.get('tileflow-terrain-contour-labels')!;
 
   assert.equal((hillshade.paint as Record<string, unknown>)['hillshade-accent-color'], '#102030');
   assert.equal((hillshade.paint as Record<string, unknown>)['hillshade-exaggeration'], 0.22);

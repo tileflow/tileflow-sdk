@@ -1,16 +1,21 @@
 import type {TileflowCaptureScene} from './capture-scene';
-import type {TileflowPreparedMapAssets} from './cartography/streets';
+import {
+  compileSemanticStyle,
+  compileSemanticStyleWithInspection,
+  type TileflowPreparedMapAssets,
+} from './cartography/streets';
 import {
   parseTileflowRuntimeManifest,
   type TileflowRuntimeManifest,
   tileflowRuntimeManifestVersion,
 } from './manifest';
-import {collectMapLineage, createStyle, parseTileflowMap, type TileflowStyleOptions} from './map';
+import {collectMapLineage, type TileflowStyleOptions} from './map';
 import {
   collectTileflowMapBuildLineage,
   type TileflowMapBuildLineageEntry,
 } from './map-build-manifest';
 import {type ResolvedTileflowMap, type TileflowMap, tileflowMapIdSchema} from './maps';
+import {parseResolvedTileflowMap} from './resolved-map-schema';
 import {createStyleWithInspection, type TileflowInspectedStyle} from './style-inspection';
 import type {MapLibreStyle} from './types';
 
@@ -61,17 +66,18 @@ export type {
   TileflowInspectedStyle,
   TileflowStyleInspection,
   TileflowStyleInspectionContribution,
-  TileflowStyleInspectionEffect,
+  TileflowStyleInspectionRenderOperation,
   TileflowStyleInspectionLayer,
 } from './style-inspection';
 
-export type TileflowCompiledMapMetadata = Pick<ResolvedTileflowMap, 'id' | 'root' | 'version'> & {
+export type TileflowCompiledMapMetadata = Pick<ResolvedTileflowMap, 'id' | 'version'> & {
   lineage: readonly TileflowMapBuildLineageEntry[];
 };
 
 /** Multi-map intermediate representation owned by Node build tooling. */
 export type TileflowBuildCatalog = {
-  maps: Record<string, TileflowMap>;
+  /** Validated, inheritance-free compiler inputs. Authoring definitions live outside the catalog. */
+  maps: Record<string, ResolvedTileflowMap>;
   mapMetadata?: Record<string, TileflowCompiledMapMetadata>;
   scenes?: Record<string, TileflowCaptureScene>;
 };
@@ -79,7 +85,7 @@ export type TileflowBuildCatalog = {
 /** Complete compiled style family, addressed first by logical map and then by theme name. */
 export type TileflowBuildStyles = Record<string, Record<string, MapLibreStyle>>;
 
-/** Build-only Style and inspection family with the same map/theme addressing. */
+/** Style family plus opt-in, read-only, non-addressable physical-output diagnostics. */
 export type TileflowBuildInspectedStyles = Record<string, Record<string, TileflowInspectedStyle>>;
 
 export function createStyleFromCatalog<
@@ -95,15 +101,14 @@ export function createStyleFromCatalog(
   const map = Object.hasOwn(catalog.maps, mapName) ? catalog.maps[mapName] : undefined;
   if (!map) throw new Error(`Unknown Tileflow map: ${mapName}`);
 
-  const resolved = parseTileflowMap(map);
+  const resolved = parseResolvedTileflowMap(map);
   assertCatalogMapIdentity(mapName, resolved.id);
   const metadata = catalog.mapMetadata?.[mapName] ?? {
     id: resolved.id,
-    lineage: collectTileflowMapBuildLineage(map),
-    root: resolved.root,
+    lineage: [{id: resolved.id, mapVersion: resolved.version}],
     version: resolved.version,
   };
-  return createStyle(map, {
+  return compileSemanticStyle(resolved, {
     ...options,
     map: {...metadata, lineage: metadata.lineage.map(({id}) => id)},
   });
@@ -122,15 +127,14 @@ export function createStyleFromCatalogWithInspection(
   const map = Object.hasOwn(catalog.maps, mapName) ? catalog.maps[mapName] : undefined;
   if (!map) throw new Error(`Unknown Tileflow map: ${mapName}`);
 
-  const resolved = parseTileflowMap(map);
+  const resolved = parseResolvedTileflowMap(map);
   assertCatalogMapIdentity(mapName, resolved.id);
   const metadata = catalog.mapMetadata?.[mapName] ?? {
     id: resolved.id,
-    lineage: collectTileflowMapBuildLineage(map),
-    root: resolved.root,
+    lineage: [{id: resolved.id, mapVersion: resolved.version}],
     version: resolved.version,
   };
-  return createStyleWithInspection(map, {
+  return compileSemanticStyleWithInspection(resolved, {
     ...options,
     map: {...metadata, lineage: metadata.lineage.map(({id}) => id)},
   });
@@ -149,7 +153,7 @@ export function createStylesFromCatalog(
       .sort(compareCodeUnits)
       .map((mapName) => {
         const map = catalog.maps[mapName]!;
-        const resolved = parseTileflowMap(map);
+        const resolved = parseResolvedTileflowMap(map);
         assertCatalogMapIdentity(mapName, resolved.id);
         return [
           mapName,
@@ -170,7 +174,7 @@ export function createStylesFromCatalog(
   );
 }
 
-/** Compile every declared theme with a separate inspection sidecar. */
+/** Compile every declared theme with a separate read-only physical-output diagnostic sidecar. */
 export function createStylesFromCatalogWithInspection(
   catalog: TileflowBuildCatalog,
   options: Omit<TileflowStyleOptions, 'preparedAssets' | 'theme'> & {
@@ -183,7 +187,7 @@ export function createStylesFromCatalogWithInspection(
       .sort(compareCodeUnits)
       .map((mapName) => {
         const map = catalog.maps[mapName]!;
-        const resolved = parseTileflowMap(map);
+        const resolved = parseResolvedTileflowMap(map);
         assertCatalogMapIdentity(mapName, resolved.id);
         return [
           mapName,
@@ -214,7 +218,7 @@ export function createManifest(
       .sort(compareCodeUnits)
       .map((mapName) => {
         const map = catalog.maps[mapName]!;
-        const resolved = parseTileflowMap(map);
+        const resolved = parseResolvedTileflowMap(map);
         assertCatalogMapIdentity(mapName, resolved.id);
         const themes = Object.fromEntries(
           Object.entries(resolved.themes)

@@ -3,17 +3,18 @@ import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applyExtrusionStyle, createAreaLayers} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {expression} from '../../cartography/values';
+import type {TileflowResolvedModuleConfig} from '../resolved';
 import type {TileflowBuildingsModuleConfig} from './index';
 
 export function compileBuildings(
-  request: TileflowBuildingsModuleConfig | undefined,
+  request: TileflowResolvedModuleConfig<TileflowBuildingsModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
 ): TileflowLayerContribution[] {
   const {colors} = context;
   const heightOutput = buildingHeightExpression(context);
   const baseOutput = buildingBaseExpression(context, heightOutput);
   const semanticColor = expression<string>(buildingColorExpression(context));
-  const config = mergeTileflowDesign<TileflowBuildingsModuleConfig>(
+  const config = mergeTileflowDesign<TileflowResolvedModuleConfig<TileflowBuildingsModuleConfig>>(
     {
       type: 'buildings',
       enabled: true,
@@ -64,7 +65,7 @@ export function compileBuildings(
   if (corridorLayer && config.businessCorridor) {
     for (const area of createAreaLayers(
       {
-        id: 'streets-business-corridor',
+        id: 'tileflow-business-corridor',
         type: 'fill',
         source,
         'source-layer': corridorLayer,
@@ -89,7 +90,7 @@ export function compileBuildings(
       kind: 'layer',
       layer: applyExtrusionStyle(
         {
-          id: 'streets-buildings-3d',
+          id: 'tileflow-buildings-3d',
           type: 'fill-extrusion',
           source,
           'source-layer': sourceLayer,
@@ -113,7 +114,7 @@ export function compileBuildings(
 
   for (const area of createAreaLayers(
     {
-      id: 'streets-buildings-fill',
+      id: 'tileflow-buildings-fill',
       type: 'fill',
       source,
       'source-layer': sourceLayer,

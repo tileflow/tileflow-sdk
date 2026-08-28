@@ -10,13 +10,14 @@ import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {createInterface} from 'node:readline/promises';
 import pc from 'picocolors';
 import {
+  auditTileflowMapThemeValues,
   getTileflowStyleFontFaces,
+  parseResolvedTileflowMap,
   parseTileflowMap,
   serializeCanonicalJson,
   tileflowMapIdSchema,
 } from '@tileflow/core';
 import {
-  collectTileflowMapBuildLineage,
   createTileflowMapBuildManifest,
   type TileflowBuildCatalog,
   type TileflowPreparedMapAssets,
@@ -57,6 +58,7 @@ import {
 import {
   createTileflowCommandFailureDocument,
   createTileflowCommandSummary,
+  createTileflowStructuredDiagnostics,
   serializeTileflowCommandDocument,
   TileflowStyleValidationError,
 } from '@tileflow/dev/validation';
@@ -73,6 +75,7 @@ import {
   resolveAccountSession,
   writeAuthFileAtomic,
 } from './account-session';
+import {registerAiCommands} from './ai-commands';
 import {installSignalAbortController, registerCaptureCommands} from './capture-command';
 import {writeAtomicFile} from './capture-output';
 import {withTileflowConfigSecretsHidden} from './config-execution';
@@ -96,6 +99,7 @@ import {inspectTileflowHostedCompatibility} from './hosted-preflight';
 import type {HostedProjectStatus} from './hosted-response';
 import {registerIconDiffCommand} from './icon-diff-command';
 import {registerIconListCommand} from './icon-list-command';
+import {registerLanguageCommand} from './language-command';
 import {openTileflowExternal} from './open-external';
 import {registerProjectCommands, resolveAccountProjectTarget} from './project-commands';
 import {registerVisualCommands} from './visual-command';
@@ -116,6 +120,8 @@ program
   .version(packageJson.version)
   .showHelpAfterError(pc.gray('\nRun tileflow <command> --help for usage.'))
   .showSuggestionAfterError();
+
+registerLanguageCommand(program);
 
 program
   .command('init')
@@ -360,6 +366,18 @@ program
         });
       }
 
+      const diagnostics = createTileflowStructuredDiagnostics(
+        {
+          diagnostics: mapNames.flatMap((mapName) =>
+            auditTileflowMapThemeValues(project.maps[mapName]!).filter(
+              ({severity}) => severity === 'warning',
+            ),
+          ),
+        },
+        process.cwd(),
+        {code: 'VALIDATION_WARNING', phase: 'theme-audit'},
+      );
+
       const checks = [
         'Config schema',
         'Icon asset closure',
@@ -385,7 +403,7 @@ program
             target: options.target,
             maps: mapNames,
             checks,
-            diagnostics: [],
+            diagnostics,
           }),
         );
         return;
@@ -393,6 +411,9 @@ program
 
       logSuccess(`Config is valid (${plural(mapNames.length, 'map')}).`);
       printChecks(checks);
+      for (const diagnostic of diagnostics) {
+        logWarning(`${diagnostic.path || '(root)'}: ${diagnostic.message}`);
+      }
     } catch (error) {
       if (!options.json) throw error;
       const failure = createTileflowCommandFailureDocument(
@@ -879,9 +900,9 @@ program
                   })),
                   ...(hostedFonts.bundles[mapName]?.files ?? []),
                 ],
-                lineage:
-                  deploymentProject.mapMetadata?.[mapName]?.lineage ??
-                  collectTileflowMapBuildLineage(map),
+                lineage: deploymentProject.mapMetadata?.[mapName]?.lineage ?? [
+                  {id: map.id, mapVersion: map.version},
+                ],
                 map,
                 sourceAssets: {
                   fonts: hostedFonts.sourceIdentities[mapName] ?? [],
@@ -984,7 +1005,7 @@ program
           process.exitCode = 1;
           return;
         }
-        const resolvedMap = parseTileflowMap(deploymentProject.maps[mapName]!);
+        const resolvedMap = parseResolvedTileflowMap(deploymentProject.maps[mapName]!);
         const mapBuild = buildManifest.maps[mapName]!;
         deployedMaps[mapName] = {
           defaultTheme: resolvedMap.defaultTheme,
@@ -1116,6 +1137,7 @@ registerIconDiffCommand(iconsCommand, {
 const inspectCommand = program.command('inspect').description('Inspect map data for authoring');
 registerConfigInspectCommand(inspectCommand, {defaultConfigPath});
 registerFeatureInspectCommand(inspectCommand, {defaultConfigPath});
+registerAiCommands(program, {defaultApiUrl, defaultConfigPath});
 registerCaptureCommands(program, {defaultConfigPath});
 registerVisualCommands(program, {
   defaultConfigPath,
@@ -1938,7 +1960,7 @@ export default defineMap({
   systemThemes: { light: "light", dark: "dark" },
   modules: {
     labels: labels({ roads: "major" }),
-    poi: poi({ enabled: true, density: 3, icons: true })
+    poi: poi({ density: 3, icons: true })
   },
   view: {
     center: [-3.7038, 40.4168],

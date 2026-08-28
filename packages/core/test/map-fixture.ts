@@ -1,11 +1,4 @@
-import {
-  defineMap,
-  defineRootMap,
-  defineTheme,
-  token,
-  type TileflowMapDesign,
-  type TileflowMapScene,
-} from '../src';
+import {defineMap, defineTheme, token, type TileflowMapDesign, type TileflowMapScene} from '../src';
 
 export const testLightTheme = defineTheme({
   id: 'test-light',
@@ -38,11 +31,10 @@ type TestMapOptions = TileflowMapDesign & {
   version?: number;
 };
 
-const testStreetsRoot = defineRootMap({
+const testStreetsRoot = defineMap({
   id: 'test-streets-root',
   name: 'Test Streets root',
   version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   defaultTheme: 'light',
   glyphs: {
     kind: 'url',

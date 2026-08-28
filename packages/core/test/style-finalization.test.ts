@@ -1,20 +1,25 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createStyle, expression, fixed, land, poi, water} from '../src';
-import {tileflowCompilerMetadataKeys} from '../src/cartography/contributions';
 import {
-  addModuleLayer,
-  internalModuleEffects,
-  semanticLayer,
-} from '../src/cartography/module-effects';
+  createStyle,
+  disable,
+  expr,
+  field,
+  fixed,
+  land,
+  renderPass,
+  water,
+  withRenderStack,
+} from '../src';
+import {tileflowCompilerMetadataKeys} from '../src/cartography/contributions';
 import {extendStreets} from './map-fixture';
 
 const compileTestMap = (design: Parameters<typeof extendStreets>[0] = {}) =>
   createStyle(
     extendStreets({
       ...design,
-      modules: {poi: poi({enabled: false}), ...design.modules},
+      modules: {poi: disable(), ...design.modules},
     }),
   );
 
@@ -29,7 +34,7 @@ test('final styles are valid and free of compiler provenance metadata', () => {
   assert.deepEqual(validateStyleMin(style as never), []);
 });
 
-test('optimizer-generated IDs remain unique in the final style', () => {
+test('physical-planner IDs remain unique in the final style', () => {
   const style = compileTestMap();
   assert.equal(new Set(style.layers.map(({id}) => id)).size, style.layers.length);
   assert.deepEqual(validateStyleMin(style as never), []);
@@ -40,7 +45,7 @@ test('createStyle rejects an unthemed dynamic color expression before finalizati
     () =>
       compileTestMap({
         modules: {
-          water: water({bodies: {fill: {color: expression<string>(['get'])}}}),
+          water: water({bodies: {fill: {color: expr.get(field('name'))}}}),
         },
       }),
     /theme audit failed/u,
@@ -49,7 +54,7 @@ test('createStyle rejects an unthemed dynamic color expression before finalizati
 
 test('style metadata lists only enabled modules', () => {
   const style = compileTestMap({
-    modules: {water: water({enabled: false})},
+    modules: {water: disable()},
   });
 
   assert.equal((style.metadata?.['tileflow:modules'] as string[]).includes('water'), false);
@@ -68,34 +73,32 @@ function compileImageReferenceLayer(input: {
     | 'line-pattern';
   value: unknown;
 }) {
-  const layout = input.property === 'icon-image' ? {[input.property]: input.value} : undefined;
-  const paint = input.property === 'icon-image' ? undefined : {[input.property]: input.value};
-  const type =
+  const renderer =
     input.property === 'icon-image'
       ? 'symbol'
       : input.property === 'background-pattern'
         ? 'background'
         : input.property === 'fill-extrusion-pattern'
-          ? 'fill-extrusion'
+          ? 'extrusion'
           : input.property === 'line-pattern'
             ? 'line'
             : 'fill';
-  const layer = {
-    id: `image-reference-${input.property}`,
-    type,
-    ...(type === 'background'
-      ? {}
-      : {source: 'tileflow', 'source-layer': semanticLayer('landuse')}),
-    ...(layout ? {layout} : {}),
-    ...(paint ? {paint} : {}),
-  };
+  const style =
+    input.property === 'icon-image' ? {icon: {image: input.value}} : {pattern: input.value};
 
   return createStyle(
     extendStreets({
-      modules: {land: land({})},
-      ...internalModuleEffects([
-        addModuleLayer('land', `land.effects.${input.property}`, layer, {after: 'land.background'}),
-      ]),
+      modules: {
+        land: withRenderStack(land({}), {
+          imageReference: renderPass({
+            attachTo: 'land.background',
+            ...(renderer === 'background' ? {} : {feature: 'landuse'}),
+            phase: 'overlay',
+            renderer,
+            style: style as never,
+          }),
+        }),
+      },
     }),
     {preparedAssets: preparedImageFixture},
   );
@@ -124,52 +127,48 @@ test('enumerates every static branch of image expressions and rejects unthemed d
   for (const [operator, value] of [
     [
       'match',
-      [
-        'match',
-        ['get', 'kind'],
-        'a',
-        fixed('known', {reason: 'Static image-expression fixture.'}),
+      expr.match(
+        expr.get(field('class')),
+        [
+          {
+            labels: 'a',
+            value: fixed('known', {reason: 'Static image-expression fixture.'}),
+          },
+        ],
         fixed('missing-match', {reason: 'Static image-expression fixture.'}),
-      ],
+      ),
     ],
     [
       'case',
-      [
-        'case',
-        ['boolean', ['get', 'active'], false],
-        fixed('missing-case', {reason: 'Static image-expression fixture.'}),
+      expr.case(
+        [
+          {
+            value: fixed('missing-case', {reason: 'Static image-expression fixture.'}),
+            when: expr.toBoolean(expr.get(field('hasBusiness')), false),
+          },
+        ],
         fixed('known', {reason: 'Static image-expression fixture.'}),
-      ],
+      ),
     ],
     [
       'step',
-      [
-        'step',
-        ['zoom'],
-        fixed('known', {reason: 'Static image-expression fixture.'}),
-        10,
-        fixed('missing-step', {reason: 'Static image-expression fixture.'}),
-      ],
+      expr.step(expr.zoom(), fixed('known', {reason: 'Static image-expression fixture.'}), [
+        [10, fixed('missing-step', {reason: 'Static image-expression fixture.'})],
+      ]),
     ],
     [
       'interpolate',
-      [
-        'interpolate',
-        ['linear'],
-        ['zoom'],
-        0,
-        fixed('known', {reason: 'Static image-expression fixture.'}),
-        10,
-        fixed('missing-interpolate', {reason: 'Static image-expression fixture.'}),
-      ],
+      expr.interpolate({kind: 'linear'}, expr.zoom(), [
+        [0, fixed('known', {reason: 'Static image-expression fixture.'})],
+        [10, fixed('missing-interpolate', {reason: 'Static image-expression fixture.'})],
+      ]),
     ],
     [
       'image',
-      [
-        'coalesce',
-        ['image', fixed('known', {reason: 'Static image-expression fixture.'})],
-        ['image', fixed('missing-image', {reason: 'Static image-expression fixture.'})],
-      ],
+      expr.coalesce(
+        fixed('known', {reason: 'Static image-expression fixture.'}),
+        fixed('missing-image', {reason: 'Static image-expression fixture.'}),
+      ),
     ],
   ] as const) {
     assert.throws(
@@ -182,11 +181,10 @@ test('enumerates every static branch of image expressions and rejects unthemed d
     () =>
       compileImageReferenceLayer({
         property: 'icon-image',
-        value: [
-          'concat',
+        value: expr.concat(
           fixed('icon-', {reason: 'Dynamic image-expression validation fixture.'}),
-          ['get', 'kind'],
-        ],
+          expr.toString(expr.get(field('class'))),
+        ),
       }),
     /theme audit failed/u,
   );

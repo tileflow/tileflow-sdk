@@ -3,13 +3,14 @@ import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applyLineStyle} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {zoom} from '../../cartography/values';
+import type {TileflowResolvedModuleConfig} from '../resolved';
 import type {TileflowBoundariesModuleConfig} from './index';
 
 export function compileBoundaries(
-  request: TileflowBoundariesModuleConfig | undefined,
+  request: TileflowResolvedModuleConfig<TileflowBoundariesModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
 ): TileflowLayerContribution[] {
-  const config = mergeTileflowDesign<TileflowBoundariesModuleConfig>(
+  const config = mergeTileflowDesign<TileflowResolvedModuleConfig<TileflowBoundariesModuleConfig>>(
     {
       type: 'boundaries',
       enabled: true,
@@ -102,7 +103,7 @@ export function compileBoundaries(
         kind: 'layer' as const,
         layer: applyLineStyle(
           {
-            id: `streets-boundary-${name}`,
+            id: `tileflow-boundary-${name}`,
             type: 'line',
             source,
             'source-layer': schema.layers.boundary,

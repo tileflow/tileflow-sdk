@@ -7,10 +7,11 @@ public API; this contract records the relationships between those APIs.
 ## Terms
 
 - A **map** is the only public cartographic authoring unit. It has its own identity and version and
-  is either a compiler root or extends another imported map.
-- A **root map** owns a compiler lineage. Streets, Cyberpunk, Ferraris, Härad, Matrix, Siegfried,
-  Soundings, and Verdant are the first-party roots. They use the same semantic Streets compiler ABI
-  without importing or extending another official map, and each declares its own asset providers.
+  is either standalone or extends another imported map.
+- A **standalone map** terminates an inheritance lineage. Streets, Cyberpunk, Ferraris, Härad,
+  Matrix, Siegfried, Soundings, and Verdant are the first-party standalone maps. The sole semantic
+  compiler is implicit; none imports or extends another official map, and each declares its own
+  asset providers.
 - A **theme** is one complete named visual appearance for a map. Every theme in a map shares one
   typed semantic-token schema; `system` is only a browser selector for concrete themes.
 - A **module** is a semantic authoring input owned by a map domain, such as roads, buildings,
@@ -22,7 +23,7 @@ public API; this contract records the relationships between those APIs.
 - A **renderer** turns a style into pixels. The interactive SDK renderer is MapLibre GL JS.
 - An **interaction** associates application or semantic map targets with normalized events,
   tooltips, popups, or application-owned framework views. It does not alter cartographic output.
-- A **semantic interaction artifact** is bounded post-optimization runtime metadata that maps a
+- A **semantic interaction artifact** is bounded post-planning runtime metadata that maps a
   stable semantic domain to final renderer details. It is not a public style-authoring surface.
 - A **self-hosted build** writes styles and prepared assets for an application to serve itself.
 - A **Hosted deploy** publishes prepared styles and policy through the Tileflow Hosted API.
@@ -62,24 +63,25 @@ services preserve these boundaries.
 
 ### `@tileflow/core`
 
-Owns serializable map contracts, `defineMap()`/`defineRootMap()`, semantic modules, pure config
+Owns serializable map contracts, the single `defineMap()` constructor, semantic modules, pure config
 validation, and pure compilation to MapLibre Style JSON. Physical layer overrides are not public;
-Core binds semantic contributions to one module owner and validates the final optimized output with
+Core binds semantic contributions to one module owner and validates the final planned output with
 the MapLibre style spec. Browser-only runtime helpers are exposed through explicit browser/runtime
 subpaths so authoring consumers do not implicitly opt into delivery behavior.
 
 Core does not instantiate MapLibre, load executable config files, watch the filesystem, prepare
 local icon directories, publish to Hosted, or implement the Hosted API.
 
-Core also owns generation and final validation of a semantic interaction artifact after optimizer
+Core also owns generation and final validation of a semantic interaction artifact after physical-planner
 output is final. It may record physical renderer IDs in that opaque artifact, but does not expose
 those IDs as stable application targets or own the DOM runtime that consumes them.
+An explicit compiler inspection may report the same opaque physical output as read-only diagnostic
+provenance. Inspection does not make a physical ID stable or acceptable to any authoring operation.
 
-The exported `@tileflow/core/recipe` subpath is Core's low-level semantic-effect ABI for packages
-such as `@tileflow/maps`. It is public in the npm/export-map sense and therefore covered by Core's
-compatibility policy, but it is not the normal `tileflow.config.ts` authoring surface and does not
-select an official map. The serialized root value `compiler: 'streets'` likewise identifies the
-current semantic compiler family; it does not import the Streets map or its assets.
+Core exposes one closed authoring language from the package root: domain constructors, inheritance
+operations, semantic render stacks, theme values, and typed `expr.*` builders. There is no recipe
+subpath, private map side channel, physical-layer override, or compiler selector. Compiler identity
+and version are generated metadata, never authoring selectors.
 
 Core owns the serializable ordered icon and font directory contracts. Dev tooling owns filesystem
 resolution and preparation. Icon files publish their canonical ID directly (`<id>.<ext>` or the
@@ -97,7 +99,7 @@ PMTiles contract.
 
 Owns the official Streets, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix,
 and Verdant map objects, their package-directory descriptors, and the icon, pattern, font, and
-notice files those maps require. All eight official maps are complete roots. Ferraris, Härad,
+notice files those maps require. All eight official maps are complete standalone maps. Ferraris, Härad,
 Siegfried, Soundings, and Verdant declare only their own `ferrarisIcons`, `haradIcons`,
 `siegfriedIcons`, `soundingsIcons`, and `verdantIcons` directories.
 Härad's directory contains nine original Tileflow SVG patterns inspired by Lantmäteriet's CC0
@@ -105,15 +107,15 @@ Häradsekonomiska kartan series (1859–1934) and official legend; no Lantmäter
 artwork, font, or map data is redistributed. Soundings retains ten original chart symbols and
 patterns in its asset closure, while its official style selects only the harbor and paper/water
 assets and excludes the experimental Nautical objects. It exposes broad GEBCO-derived bathymetric
-context, not navigation-grade survey soundings. Every root uses the semantic Streets compiler ABI
-but does not import, extend, or inherit
+context, not navigation-grade survey soundings. Every standalone map uses the implicit semantic
+compiler but does not import, extend, or inherit
 assets from another official map. Streets owns light and dark theme documents over one map
 structure. Cyberpunk owns `cyberpunkIcons` and `cyberpunkFonts`; Matrix independently owns
 `matrixIcons` and `matrixFonts`.
 
 Maps has a peer dependency on Core because its exports are authored with Core's map language. Core
 never depends on or re-exports Maps. A consumer that wants an official map installs both packages;
-a consumer defining only its own root map may install Core alone.
+a consumer defining only its own standalone map may install Core alone.
 
 ### `@tileflow/dev`
 

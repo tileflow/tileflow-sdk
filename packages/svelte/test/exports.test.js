@@ -94,7 +94,6 @@ test('keeps component exports aligned with the public props declaration', async 
     'interactions',
     'interactionState',
     'marker',
-    'markers',
     'mode',
     'onInteractionDiagnostic',
     'onInteractionEvent',

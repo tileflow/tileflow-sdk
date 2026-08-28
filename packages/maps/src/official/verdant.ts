@@ -3,26 +3,24 @@ import {
   aeroways,
   boundaries,
   buildings,
-  defineRootMap,
-  expression,
+  defineMap,
+  expr,
+  field,
   labels,
   land,
   landforms,
   poi,
+  renderPass,
   roads,
+  type TileflowRenderSelector,
   type TileflowRoadClassStyle,
   type TileflowSymbolStyle,
   transit,
   vegetation,
   water,
+  withRenderStack,
   zoom,
 } from '@tileflow/core';
-import {
-  addModuleLayer,
-  defineModuleEffects,
-  semanticField,
-  semanticLayer,
-} from '@tileflow/core/recipe';
 import {verdantIcons} from '../assets';
 import {bindOfficialMapTheme, defineOfficialTheme} from './theme-helpers';
 
@@ -171,11 +169,7 @@ const verdantTrailLabel = {
   },
 } satisfies TileflowSymbolStyle;
 
-const verdantFeatureClass = ['coalesce', ['get', semanticField('class')], ''];
-const verdantFeatureSubclass = ['coalesce', ['get', semanticField('subclass')], ''];
-
 function landcoverPattern(
-  id: string,
   target: string,
   pattern: string,
   classes: readonly string[],
@@ -186,63 +180,66 @@ function landcoverPattern(
   } = {},
 ) {
   const minimumZoom = options.minZoom ?? 8;
-  const classFilter = ['match', verdantFeatureClass, classes, true, false];
-  const filter = options.subclasses
-    ? ['all', classFilter, ['match', verdantFeatureSubclass, options.subclasses, true, false]]
-    : classFilter;
-
-  return addModuleLayer(
-    'land',
-    'land.effects.pattern.' + id,
-    {
-      id: 'verdant-landcover-' + id + '-pattern',
-      type: 'fill',
-      source: 'tileflow',
-      'source-layer': semanticLayer('landcover'),
-      minzoom: minimumZoom,
-      filter,
-      paint: {
-        'fill-opacity': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          minimumZoom,
-          0,
-          minimumZoom + 1,
-          options.opacity ?? 0.74,
+  const classSelector = {
+    fallback: '',
+    field: 'class',
+    kind: 'in',
+    values: classes,
+  } as const satisfies TileflowRenderSelector;
+  const selector: TileflowRenderSelector = options.subclasses
+    ? {
+        kind: 'all',
+        selectors: [
+          classSelector,
+          {
+            fallback: '',
+            field: 'subclass',
+            kind: 'in',
+            values: options.subclasses,
+          },
         ],
-        'fill-pattern': pattern,
-      },
+      }
+    : classSelector;
+
+  return renderPass({
+    attachTo: target,
+    feature: 'landcover',
+    phase: 'overlay',
+    renderer: 'fill',
+    selector,
+    style: {
+      minZoom: minimumZoom,
+      opacity: zoom.linear([
+        [minimumZoom, 0],
+        [minimumZoom + 1, options.opacity ?? 0.74],
+      ]),
+      pattern,
     },
-    {after: target},
-  );
+  });
 }
 
 function landusePattern(
-  id: string,
   target: string,
   pattern: string,
   classes: readonly string[],
   minZoom: number,
   opacity: number,
 ) {
-  return addModuleLayer(
-    'land',
-    'land.effects.pattern.' + id,
-    {
-      id: 'verdant-landuse-' + id + '-pattern',
-      type: 'fill',
-      source: 'tileflow',
-      'source-layer': semanticLayer('landuse'),
-      minzoom: minZoom,
-      filter: ['match', verdantFeatureClass, classes, true, false],
-      paint: {
-        'fill-opacity': ['interpolate', ['linear'], ['zoom'], minZoom, 0, minZoom + 1, opacity],
-        'fill-pattern': pattern,
-      },
+  return renderPass({
+    attachTo: target,
+    feature: 'landuse',
+    phase: 'overlay',
+    renderer: 'fill',
+    selector: {fallback: '', field: 'class', kind: 'in', values: classes},
+    style: {
+      minZoom,
+      opacity: zoom.linear([
+        [minZoom, 0],
+        [minZoom + 1, opacity],
+      ]),
+      pattern,
     },
-    {after: target},
-  );
+  });
 }
 
 export const verdantTheme = defineOfficialTheme({
@@ -387,11 +384,10 @@ export const verdantTheme = defineOfficialTheme({
  * compiler contract directly and owns its complete design and asset set.
  */
 export const verdant = bindOfficialMapTheme(
-  defineRootMap({
+  defineMap({
     id: 'verdant',
     version: 1,
     name: 'Verdant',
-    root: {compiler: 'streets', compilerVersion: 1},
     data: {
       generation: 'v1',
       selection: {kind: 'current', product: 'world-v1'},
@@ -471,358 +467,478 @@ export const verdant = bindOfficialMapTheme(
           width: 0.7,
         },
       }),
-      buildings: buildings({
-        businessCorridor: {
-          fill: {visible: false},
-          outline: {visible: false},
-        },
-        flat: {
-          fill: {
-            color: verdantPalette.building,
-            minZoom: 13.5,
-            opacity: zoom.linear([
-              [13.5, 0],
-              [14.5, 0.72],
-              [16, 0.86],
-            ]),
+      buildings: withRenderStack(
+        buildings({
+          businessCorridor: {
+            fill: {visible: false},
+            outline: {visible: false},
           },
-          outline: {
-            color: verdantPalette.buildingOutline,
-            minZoom: 14.5,
-            opacity: 0.72,
-            width: zoom.linear([
-              [14.5, 0.3],
-              [18, 0.78],
-            ]),
-          },
-        },
-        mode: 'flat',
-      }),
-      labels: labels({
-        aerodromeCodes: 'none',
-        junctions: false,
-        language: 'local',
-        places: 'all',
-        roads: 'all',
-        shields: 'none',
-        styles: {
-          aerodrome: {
-            minZoom: 10,
-            text: {
-              color: verdantPalette.inkMuted,
-              font: 'Noto Sans Regular',
-              haloColor: verdantPalette.halo,
-              haloWidth: 1,
-              size: 10,
+          flat: {
+            fill: {
+              color: verdantPalette.building,
+              minZoom: 13.5,
+              opacity: zoom.linear([
+                [13.5, 0],
+                [14.5, 0.72],
+                [16, 0.86],
+              ]),
+            },
+            outline: {
+              color: verdantPalette.buildingOutline,
+              minZoom: 14.5,
+              opacity: 0.72,
+              width: zoom.linear([
+                [14.5, 0.3],
+                [18, 0.78],
+              ]),
             },
           },
-          places: {
-            continent: {
-              maxZoom: 3.5,
-              minZoom: 0,
+          mode: 'flat',
+        }),
+        {
+          printShadow: renderPass({
+            attachTo: 'buildings.flat.fill',
+            feature: 'building',
+            phase: 'underlay',
+            renderer: 'fill',
+            style: {
+              minZoom: 14,
+              opacity: zoom.linear([
+                [14, 0],
+                [14.5, 0.012],
+                [18, 0.022],
+              ]),
+              pattern: 'verdant-paper-fiber',
+              translate: [0.45, 0.55],
+              translateAnchor: 'viewport',
+            },
+          }),
+        },
+      ),
+      labels: withRenderStack(
+        labels({
+          aerodromeCodes: 'none',
+          junctions: false,
+          language: 'local',
+          places: 'all',
+          roads: 'all',
+          shields: 'none',
+          styles: {
+            aerodrome: {
+              minZoom: 10,
               text: {
                 color: verdantPalette.inkMuted,
-                font: 'Noto Sans Bold',
+                font: 'Noto Sans Regular',
                 haloColor: verdantPalette.halo,
-                haloWidth: 1.5,
-                letterSpacing: 0.04,
-                size: zoom.linear([
-                  [0, 10],
-                  [3, 14],
-                ]),
+                haloWidth: 1,
+                size: 10,
               },
             },
-            country: {
-              minZoom: 1,
+            places: {
+              continent: {
+                maxZoom: 3.5,
+                minZoom: 0,
+                text: {
+                  color: verdantPalette.inkMuted,
+                  font: 'Noto Sans Bold',
+                  haloColor: verdantPalette.halo,
+                  haloWidth: 1.5,
+                  letterSpacing: 0.04,
+                  size: zoom.linear([
+                    [0, 10],
+                    [3, 14],
+                  ]),
+                },
+              },
+              country: {
+                minZoom: 1,
+                text: {
+                  color: verdantPalette.ink,
+                  font: 'Noto Sans Bold',
+                  haloColor: verdantPalette.halo,
+                  haloWidth: 1.6,
+                  letterSpacing: 0.04,
+                  size: zoom.linear([
+                    [1, 10],
+                    [7, 17],
+                  ]),
+                  transform: 'uppercase',
+                },
+              },
+              state: {
+                minZoom: 4,
+                text: {
+                  color: verdantPalette.inkMuted,
+                  font: 'Noto Sans Regular',
+                  haloColor: verdantPalette.halo,
+                  haloWidth: 1.5,
+                  letterSpacing: 0.025,
+                  size: zoom.linear([
+                    [4, 10],
+                    [9, 14],
+                  ]),
+                },
+              },
+              city: {
+                minZoom: 4,
+                text: {
+                  color: verdantPalette.ink,
+                  font: 'Noto Sans Bold',
+                  haloBlur: 0.35,
+                  haloColor: verdantPalette.halo,
+                  haloWidth: 1.65,
+                  letterSpacing: 0.02,
+                  size: zoom.linear([
+                    [4, 12],
+                    [13, 20],
+                  ]),
+                },
+              },
+              town: {
+                minZoom: 7,
+                text: {
+                  color: verdantPalette.ink,
+                  font: 'Noto Sans Bold',
+                  haloColor: verdantPalette.halo,
+                  haloWidth: 1.55,
+                  letterSpacing: 0.018,
+                  size: zoom.linear([
+                    [7, 10],
+                    [14, 16],
+                  ]),
+                },
+              },
+              village: {
+                minZoom: 9,
+                text: {
+                  color: verdantPalette.ink,
+                  font: 'Noto Sans Regular',
+                  haloColor: verdantPalette.halo,
+                  haloWidth: 1.5,
+                  letterSpacing: 0.012,
+                  size: zoom.linear([
+                    [9, 9],
+                    [15, 13],
+                  ]),
+                },
+              },
+              neighborhood: {
+                minZoom: 12,
+                text: {
+                  color: verdantPalette.inkMuted,
+                  font: 'Noto Sans Regular',
+                  haloColor: verdantPalette.halo,
+                  haloWidth: 1.45,
+                  letterSpacing: 0.015,
+                  size: zoom.linear([
+                    [12, 9],
+                    [16, 12],
+                  ]),
+                },
+              },
+              other: {
+                minZoom: 12,
+                text: {
+                  color: verdantPalette.inkMuted,
+                  font: 'Noto Sans Regular',
+                  haloColor: verdantPalette.halo,
+                  haloWidth: 1.45,
+                  size: 9,
+                },
+              },
+            },
+            roads: {
+              cycleway: {
+                ...verdantTrailLabel,
+                priority: 48,
+                text: {
+                  ...verdantTrailLabel.text,
+                  color: verdantPalette.woodDark,
+                  font: 'Noto Sans Regular',
+                },
+              },
+              footway: {
+                ...verdantTrailLabel,
+                priority: 38,
+                text: {
+                  ...verdantTrailLabel.text,
+                  color: verdantPalette.inkMuted,
+                  font: 'Noto Sans Regular',
+                },
+              },
+              minor: {...verdantRoadLabel, minZoom: 14},
+              motorway: {...verdantRoadLabel, minZoom: 8},
+              pathway: verdantTrailLabel,
+              pedestrian: {
+                ...verdantTrailLabel,
+                priority: 36,
+                text: {
+                  ...verdantTrailLabel.text,
+                  color: verdantPalette.inkMuted,
+                  font: 'Noto Sans Regular',
+                },
+              },
+              primary: {...verdantRoadLabel, minZoom: 10},
+              secondary: {...verdantRoadLabel, minZoom: 11},
+              service: {...verdantRoadLabel, minZoom: 16},
+              steps: {
+                ...verdantTrailLabel,
+                priority: 34,
+                text: {
+                  ...verdantTrailLabel.text,
+                  color: verdantPalette.inkMuted,
+                  font: 'Noto Sans Regular',
+                },
+              },
+              tertiary: {...verdantRoadLabel, minZoom: 12},
+              track: {
+                ...verdantTrailLabel,
+                text: {...verdantTrailLabel.text, color: verdantPalette.trailMuted},
+              },
+              trunk: {...verdantRoadLabel, minZoom: 9},
+            },
+            water: {
+              line: {
+                text: {
+                  color: verdantPalette.waterInk,
+                  font: 'Noto Sans Regular',
+                  haloColor: verdantPalette.halo,
+                  haloWidth: 1.4,
+                  letterSpacing: 0.03,
+                  size: 12,
+                },
+              },
+              ocean: {
+                text: {
+                  color: verdantPalette.waterInk,
+                  font: 'Noto Sans Regular',
+                  haloColor: verdantPalette.halo,
+                  haloWidth: 1.45,
+                  letterSpacing: 0.04,
+                  size: zoom.linear([
+                    [1, 11],
+                    [8, 17],
+                  ]),
+                },
+              },
+              other: {
+                text: {
+                  color: verdantPalette.waterInk,
+                  font: 'Noto Sans Regular',
+                  haloColor: verdantPalette.halo,
+                  haloWidth: 1.4,
+                  letterSpacing: 0.025,
+                },
+              },
+              waterway: {
+                minZoom: 12,
+                text: {
+                  color: verdantPalette.waterInk,
+                  font: 'Noto Sans Regular',
+                  haloColor: verdantPalette.halo,
+                  haloWidth: 1.35,
+                  letterSpacing: 0.02,
+                },
+              },
+            },
+          },
+          water: 'all',
+        }),
+        {
+          landscape: renderPass({
+            attachTo: 'labels.places.town',
+            feature: 'park',
+            phase: 'underlay',
+            renderer: 'symbol',
+            requirements: ['land'],
+            selector: {
+              kind: 'all',
+              selectors: [
+                {geometry: 'point', kind: 'geometry'},
+                {field: 'name', kind: 'has'},
+                {
+                  coerce: 'number',
+                  fallback: 999,
+                  field: 'rank',
+                  kind: 'compare',
+                  operator: 'lte',
+                  value: 4,
+                },
+              ],
+            },
+            style: {
+              maxZoom: 18,
+              minZoom: 10,
+              priority: expr.toNumber(expr.get(field('rank')), 999),
+              priorityOrder: 'lower-first',
               text: {
-                color: verdantPalette.ink,
-                font: 'Noto Sans Bold',
+                color: verdantPalette.woodDark,
+                field: expr.get(field('name')),
+                font: 'Noto Sans Regular',
                 haloColor: verdantPalette.halo,
                 haloWidth: 1.6,
                 letterSpacing: 0.04,
+                maxWidth: 10,
+                opacity: zoom.linear([
+                  [10, 0],
+                  [11, 0.7],
+                  [14, 0.9],
+                ]),
+                optional: true,
+                padding: 7,
                 size: zoom.linear([
-                  [1, 10],
-                  [7, 17],
+                  [10, 10],
+                  [14, 13],
+                  [17, 16],
                 ]),
                 transform: 'uppercase',
               },
             },
-            state: {
-              minZoom: 4,
-              text: {
-                color: verdantPalette.inkMuted,
-                font: 'Noto Sans Regular',
-                haloColor: verdantPalette.halo,
-                haloWidth: 1.5,
-                letterSpacing: 0.025,
-                size: zoom.linear([
-                  [4, 10],
-                  [9, 14],
-                ]),
-              },
-            },
-            city: {
-              minZoom: 4,
-              text: {
-                color: verdantPalette.ink,
-                font: 'Noto Sans Bold',
-                haloBlur: 0.35,
-                haloColor: verdantPalette.halo,
-                haloWidth: 1.65,
-                letterSpacing: 0.02,
-                size: zoom.linear([
-                  [4, 12],
-                  [13, 20],
-                ]),
-              },
-            },
-            town: {
-              minZoom: 7,
-              text: {
-                color: verdantPalette.ink,
-                font: 'Noto Sans Bold',
-                haloColor: verdantPalette.halo,
-                haloWidth: 1.55,
-                letterSpacing: 0.018,
-                size: zoom.linear([
-                  [7, 10],
-                  [14, 16],
-                ]),
-              },
-            },
-            village: {
-              minZoom: 9,
-              text: {
-                color: verdantPalette.ink,
-                font: 'Noto Sans Regular',
-                haloColor: verdantPalette.halo,
-                haloWidth: 1.5,
-                letterSpacing: 0.012,
-                size: zoom.linear([
-                  [9, 9],
-                  [15, 13],
-                ]),
-              },
-            },
-            neighborhood: {
-              minZoom: 12,
-              text: {
-                color: verdantPalette.inkMuted,
-                font: 'Noto Sans Regular',
-                haloColor: verdantPalette.halo,
-                haloWidth: 1.45,
-                letterSpacing: 0.015,
-                size: zoom.linear([
-                  [12, 9],
-                  [16, 12],
-                ]),
-              },
-            },
-            other: {
-              minZoom: 12,
-              text: {
-                color: verdantPalette.inkMuted,
-                font: 'Noto Sans Regular',
-                haloColor: verdantPalette.halo,
-                haloWidth: 1.45,
-                size: 9,
-              },
-            },
-          },
-          roads: {
-            cycleway: {
-              ...verdantTrailLabel,
-              priority: 48,
-              text: {
-                ...verdantTrailLabel.text,
-                color: verdantPalette.woodDark,
-                font: 'Noto Sans Regular',
-              },
-            },
-            footway: {
-              ...verdantTrailLabel,
-              priority: 38,
-              text: {
-                ...verdantTrailLabel.text,
-                color: verdantPalette.inkMuted,
-                font: 'Noto Sans Regular',
-              },
-            },
-            minor: {...verdantRoadLabel, minZoom: 14},
-            motorway: {...verdantRoadLabel, minZoom: 8},
-            pathway: verdantTrailLabel,
-            pedestrian: {
-              ...verdantTrailLabel,
-              priority: 36,
-              text: {
-                ...verdantTrailLabel.text,
-                color: verdantPalette.inkMuted,
-                font: 'Noto Sans Regular',
-              },
-            },
-            primary: {...verdantRoadLabel, minZoom: 10},
-            secondary: {...verdantRoadLabel, minZoom: 11},
-            service: {...verdantRoadLabel, minZoom: 16},
-            steps: {
-              ...verdantTrailLabel,
-              priority: 34,
-              text: {
-                ...verdantTrailLabel.text,
-                color: verdantPalette.inkMuted,
-                font: 'Noto Sans Regular',
-              },
-            },
-            tertiary: {...verdantRoadLabel, minZoom: 12},
-            track: {
-              ...verdantTrailLabel,
-              text: {...verdantTrailLabel.text, color: verdantPalette.trailMuted},
-            },
-            trunk: {...verdantRoadLabel, minZoom: 9},
-          },
-          water: {
-            line: {
-              text: {
-                color: verdantPalette.waterInk,
-                font: 'Noto Sans Regular',
-                haloColor: verdantPalette.halo,
-                haloWidth: 1.4,
-                letterSpacing: 0.03,
-                size: 12,
-              },
-            },
-            ocean: {
-              text: {
-                color: verdantPalette.waterInk,
-                font: 'Noto Sans Regular',
-                haloColor: verdantPalette.halo,
-                haloWidth: 1.45,
-                letterSpacing: 0.04,
-                size: zoom.linear([
-                  [1, 11],
-                  [8, 17],
-                ]),
-              },
-            },
-            other: {
-              text: {
-                color: verdantPalette.waterInk,
-                font: 'Noto Sans Regular',
-                haloColor: verdantPalette.halo,
-                haloWidth: 1.4,
-                letterSpacing: 0.025,
-              },
-            },
-            waterway: {
-              minZoom: 12,
-              text: {
-                color: verdantPalette.waterInk,
-                font: 'Noto Sans Regular',
-                haloColor: verdantPalette.halo,
-                haloWidth: 1.35,
-                letterSpacing: 0.02,
-              },
-            },
-          },
+          }),
         },
-        water: 'all',
-      }),
-      land: land({
-        background: {
-          color: verdantPalette.paper,
-          opacity: 1,
-        },
-        globalLandcover: {
-          color: expression<string>([
-            'match',
-            ['get', semanticField('class')],
-            'barren',
-            verdantPalette.rock,
-            'crop',
-            'rgba(0, 0, 0, 0)',
-            'grass',
-            'rgba(0, 0, 0, 0)',
-            'shrub',
-            verdantPalette.scrub,
-            'snow',
-            verdantPalette.ice,
-            'trees',
-            verdantPalette.wood,
-            'urban',
-            'rgba(0, 0, 0, 0)',
-            'rgba(0, 0, 0, 0)',
-          ]),
-          maxZoom: 8,
-          minZoom: 0,
-          opacity: zoom.linear([
-            [0, 0.18],
-            [5, 0.14],
-            [8, 0],
-          ]),
-        },
-        landcover: {
-          farmland: {fill: {color: verdantPalette.crop, minZoom: 8, opacity: 0.58}},
-          flowerbed: {fill: {color: '#E1E9D4', minZoom: 12, opacity: 0.7}},
-          grass: {fill: {color: verdantPalette.grass, minZoom: 8, opacity: 0.58}},
-          ice: {fill: {color: verdantPalette.ice, minZoom: 7, opacity: 0.82}},
-          meadow: {fill: {color: verdantPalette.meadow, minZoom: 8, opacity: 0.68}},
-          protected: {
-            fill: {color: verdantPalette.protected, minZoom: 7, opacity: 0.82},
-            outline: {
-              color: verdantPalette.protectedOutline,
-              minZoom: 8,
-              opacity: 0.58,
-              width: 0.75,
+      ),
+      land: withRenderStack(
+        land({
+          background: {
+            color: verdantPalette.paper,
+            opacity: 1,
+          },
+          globalLandcover: {
+            color: expr.match(
+              expr.get(field('class')),
+              [
+                {labels: 'barren', value: verdantPalette.rock},
+                {labels: 'crop', value: 'rgba(0, 0, 0, 0)'},
+                {labels: 'grass', value: 'rgba(0, 0, 0, 0)'},
+                {labels: 'shrub', value: verdantPalette.scrub},
+                {labels: 'snow', value: verdantPalette.ice},
+                {labels: 'trees', value: verdantPalette.wood},
+                {labels: 'urban', value: 'rgba(0, 0, 0, 0)'},
+              ],
+              'rgba(0, 0, 0, 0)',
+            ),
+            maxZoom: 8,
+            minZoom: 0,
+            opacity: zoom.linear([
+              [0, 0.18],
+              [5, 0.14],
+              [8, 0],
+            ]),
+          },
+          landcover: {
+            farmland: {fill: {color: verdantPalette.crop, minZoom: 8, opacity: 0.58}},
+            flowerbed: {fill: {color: '#E1E9D4', minZoom: 12, opacity: 0.7}},
+            grass: {fill: {color: verdantPalette.grass, minZoom: 8, opacity: 0.58}},
+            ice: {fill: {color: verdantPalette.ice, minZoom: 7, opacity: 0.82}},
+            meadow: {fill: {color: verdantPalette.meadow, minZoom: 8, opacity: 0.68}},
+            protected: {
+              fill: {color: verdantPalette.protected, minZoom: 7, opacity: 0.82},
+              outline: {
+                color: verdantPalette.protectedOutline,
+                minZoom: 8,
+                opacity: 0.58,
+                width: 0.75,
+              },
+            },
+            recreationGround: {fill: {color: '#DDE9D4', minZoom: 9, opacity: 0.72}},
+            rock: {fill: {color: verdantPalette.rock, minZoom: 8, opacity: 0.72}},
+            sand: {fill: {color: verdantPalette.sand, minZoom: 8, opacity: 0.82}},
+            scrub: {fill: {color: verdantPalette.scrub, minZoom: 8, opacity: 0.7}},
+            urbanPark: {
+              fill: {color: verdantPalette.protected, minZoom: 8, opacity: 0.82},
+              outline: {
+                color: verdantPalette.protectedOutline,
+                minZoom: 10,
+                opacity: 0.52,
+                width: 0.65,
+              },
+            },
+            villageGreen: {fill: {color: '#DCE9D4', minZoom: 10, opacity: 0.76}},
+            wetland: {fill: {color: verdantPalette.wetland, minZoom: 8, opacity: 0.78}},
+            wood: {
+              fill: {color: verdantPalette.wood, minZoom: 8, opacity: 0.76},
+              outline: {color: verdantPalette.woodDark, minZoom: 12, opacity: 0.32, width: 0.5},
             },
           },
-          recreationGround: {fill: {color: '#DDE9D4', minZoom: 9, opacity: 0.72}},
-          rock: {fill: {color: verdantPalette.rock, minZoom: 8, opacity: 0.72}},
-          sand: {fill: {color: verdantPalette.sand, minZoom: 8, opacity: 0.82}},
-          scrub: {fill: {color: verdantPalette.scrub, minZoom: 8, opacity: 0.7}},
-          urbanPark: {
-            fill: {color: verdantPalette.protected, minZoom: 8, opacity: 0.82},
-            outline: {
-              color: verdantPalette.protectedOutline,
-              minZoom: 10,
-              opacity: 0.52,
-              width: 0.65,
+          landuse: {
+            cemetery: {
+              fill: {color: '#DCE7D6', minZoom: 10, opacity: 0.68},
+              outline: {color: verdantPalette.woodDark, minZoom: 12, opacity: 0.4, width: 0.55},
             },
-          },
-          villageGreen: {fill: {color: '#DCE9D4', minZoom: 10, opacity: 0.76}},
-          wetland: {fill: {color: verdantPalette.wetland, minZoom: 8, opacity: 0.78}},
-          wood: {
-            fill: {color: verdantPalette.wood, minZoom: 8, opacity: 0.76},
-            outline: {color: verdantPalette.woodDark, minZoom: 12, opacity: 0.32, width: 0.5},
-          },
-        },
-        landuse: {
-          cemetery: {
-            fill: {color: '#DCE7D6', minZoom: 10, opacity: 0.68},
-            outline: {color: verdantPalette.woodDark, minZoom: 12, opacity: 0.4, width: 0.55},
-          },
-          civic: {fill: {color: '#ECEEEA', minZoom: 10, opacity: 0.62}},
-          commercial: {fill: {color: '#EEEDEA', minZoom: 10, opacity: 0.58}},
-          education: {fill: {color: '#E8EEE5', minZoom: 10, opacity: 0.64}},
-          government: {fill: {color: '#ECEEEA', minZoom: 10, opacity: 0.6}},
-          industrial: {fill: {color: '#E5E7E3', minZoom: 10, opacity: 0.62}},
-          medical: {fill: {color: '#EEEAE8', minZoom: 11, opacity: 0.62}},
-          military: {fill: {color: '#E8E4E0', minZoom: 9, opacity: 0.54}},
-          parking: {
-            fill: {color: '#E8EAE7', minZoom: 16, opacity: 0.7},
-            outline: {color: verdantPalette.roadCasing, minZoom: 17, opacity: 0.32, width: 0.45},
-          },
-          railway: {fill: {color: '#E4E7E4', minZoom: 11, opacity: 0.58}},
-          recreation: {
-            fill: {color: '#DCE9D4', minZoom: 9, opacity: 0.72},
-            outline: {
-              color: verdantPalette.protectedOutline,
-              minZoom: 13,
-              opacity: 0.38,
-              width: 0.55,
+            civic: {fill: {color: '#ECEEEA', minZoom: 10, opacity: 0.62}},
+            commercial: {fill: {color: '#EEEDEA', minZoom: 10, opacity: 0.58}},
+            education: {fill: {color: '#E8EEE5', minZoom: 10, opacity: 0.64}},
+            government: {fill: {color: '#ECEEEA', minZoom: 10, opacity: 0.6}},
+            industrial: {fill: {color: '#E5E7E3', minZoom: 10, opacity: 0.62}},
+            medical: {fill: {color: '#EEEAE8', minZoom: 11, opacity: 0.62}},
+            military: {fill: {color: '#E8E4E0', minZoom: 9, opacity: 0.54}},
+            parking: {
+              fill: {color: '#E8EAE7', minZoom: 16, opacity: 0.7},
+              outline: {color: verdantPalette.roadCasing, minZoom: 17, opacity: 0.32, width: 0.45},
             },
+            railway: {fill: {color: '#E4E7E4', minZoom: 11, opacity: 0.58}},
+            recreation: {
+              fill: {color: '#DCE9D4', minZoom: 9, opacity: 0.72},
+              outline: {
+                color: verdantPalette.protectedOutline,
+                minZoom: 13,
+                opacity: 0.38,
+                width: 0.55,
+              },
+            },
+            residential: {fill: {color: '#E9ECE8', minZoom: 9, opacity: 0.66}},
           },
-          residential: {fill: {color: '#E9ECE8', minZoom: 9, opacity: 0.66}},
+        }),
+        {
+          farmlandTexture: landcoverPattern(
+            'land.landcover.farmland.fill',
+            'verdant-field-hatch',
+            ['farmland'],
+            {minZoom: 13, opacity: 0.3},
+          ),
+          scrubTexture: landcoverPattern(
+            'land.landcover.scrub.fill',
+            'verdant-heath-tufts',
+            ['grass'],
+            {minZoom: 14, opacity: 0.24, subclasses: ['scrub']},
+          ),
+          meadowTexture: landcoverPattern(
+            'land.landcover.meadow.fill',
+            'verdant-meadow-tufts',
+            ['grass'],
+            {minZoom: 14, opacity: 0.22, subclasses: ['meadow']},
+          ),
+          orchardTexture: landcoverPattern(
+            'land.landcover.urbanPark.fill',
+            'verdant-orchard',
+            ['grass'],
+            {minZoom: 15, opacity: 0.28, subclasses: ['garden']},
+          ),
+          rockTexture: landcoverPattern('land.landcover.rock.fill', 'verdant-scree', ['rock'], {
+            minZoom: 14,
+            opacity: 0.24,
+          }),
+          wetlandTexture: landcoverPattern(
+            'land.landcover.wetland.fill',
+            'verdant-wetland-reeds',
+            ['wetland'],
+            {minZoom: 13, opacity: 0.32},
+          ),
+          woodTexture: landcoverPattern(
+            'land.landcover.wood.fill',
+            'verdant-forest-canopy',
+            ['wood', 'forest'],
+            {minZoom: 13, opacity: 0.28},
+          ),
+          residentialTexture: landusePattern(
+            'land.landuse.residential.fill',
+            'verdant-residential-hatch',
+            ['residential'],
+            14,
+            0.18,
+          ),
         },
-      }),
+      ),
       landforms: landforms({
         elevation: true,
         classes: {
@@ -916,113 +1032,206 @@ export const verdant = bindOfficialMapTheme(
           textPadding: 8,
         },
       }),
-      roads: roads({
-        areas: {
-          pedestrian: {
-            fill: {color: '#F0F1ED', minZoom: 13, opacity: 0.9},
-            outline: {color: verdantPalette.roadCasing, minZoom: 14, opacity: 0.3, width: 0.6},
+      roads: withRenderStack(
+        roads({
+          areas: {
+            pedestrian: {
+              fill: {color: '#F0F1ED', minZoom: 13, opacity: 0.9},
+              outline: {color: verdantPalette.roadCasing, minZoom: 14, opacity: 0.3, width: 0.6},
+            },
+            pier: {
+              fill: {color: verdantPalette.paperBright, minZoom: 12, opacity: 0.96},
+              outline: {color: verdantPalette.waterInk, minZoom: 12, opacity: 0.42, width: 0.65},
+            },
+            road: {fill: {color: verdantPalette.road, minZoom: 13, opacity: 0.94}},
           },
-          pier: {
-            fill: {color: verdantPalette.paperBright, minZoom: 12, opacity: 0.96},
-            outline: {color: verdantPalette.waterInk, minZoom: 12, opacity: 0.42, width: 0.65},
+          classes: {
+            cycleway: verdantPathStyle(verdantPalette.woodDark, 13, [3, 1.5]),
+            footway: verdantPathStyle('#7E8983', 14, [1.4, 1.3]),
+            minor: verdantRoadStyle(verdantPalette.road, verdantPalette.roadCasing, 12, {
+              casingOpacity: 0.42,
+              fillOpacity: 0.98,
+            }),
+            motorway: verdantRoadStyle(verdantPalette.roadMajor, '#8C5B35', 5, {
+              casingOpacity: 0.72,
+            }),
+            pathway: verdantPathStyle(verdantPalette.trailMuted, 13, [3, 1.5]),
+            pedestrian: verdantPathStyle('#7E8983', 13, [1, 1.4]),
+            primary: verdantRoadStyle(verdantPalette.roadPrimary, verdantPalette.roadCasing, 7, {
+              casingOpacity: 0.62,
+            }),
+            secondary: verdantRoadStyle(
+              verdantPalette.roadSecondary,
+              verdantPalette.roadCasing,
+              9,
+              {
+                casingOpacity: 0.5,
+              },
+            ),
+            service: verdantRoadStyle(verdantPalette.road, verdantPalette.roadCasing, 14, {
+              casingOpacity: 0.28,
+              fillOpacity: 0.96,
+            }),
+            steps: verdantPathStyle('#7E8983', 15, [0.3, 0.25]),
+            tertiary: verdantRoadStyle(verdantPalette.road, verdantPalette.roadCasing, 10, {
+              casingOpacity: 0.46,
+              fillOpacity: 0.98,
+            }),
+            track: verdantPathStyle(verdantPalette.trailMuted, 13, [4, 2]),
+            trunk: verdantRoadStyle('#EDAA57', '#A46A3E', 6, {
+              casingOpacity: 0.68,
+            }),
           },
-          road: {fill: {color: verdantPalette.road, minZoom: 13, opacity: 0.94}},
-        },
-        classes: {
-          cycleway: verdantPathStyle(verdantPalette.woodDark, 13, [3, 1.5]),
-          footway: verdantPathStyle('#7E8983', 14, [1.4, 1.3]),
-          minor: verdantRoadStyle(verdantPalette.road, verdantPalette.roadCasing, 12, {
-            casingOpacity: 0.42,
-            fillOpacity: 0.98,
-          }),
-          motorway: verdantRoadStyle(verdantPalette.roadMajor, '#8C5B35', 5, {
-            casingOpacity: 0.72,
-          }),
-          pathway: verdantPathStyle(verdantPalette.trailMuted, 13, [3, 1.5]),
-          pedestrian: verdantPathStyle('#7E8983', 13, [1, 1.4]),
-          primary: verdantRoadStyle(verdantPalette.roadPrimary, verdantPalette.roadCasing, 7, {
-            casingOpacity: 0.62,
-          }),
-          secondary: verdantRoadStyle(verdantPalette.roadSecondary, verdantPalette.roadCasing, 9, {
-            casingOpacity: 0.5,
-          }),
-          service: verdantRoadStyle(verdantPalette.road, verdantPalette.roadCasing, 14, {
-            casingOpacity: 0.28,
-            fillOpacity: 0.96,
-          }),
-          steps: verdantPathStyle('#7E8983', 15, [0.3, 0.25]),
-          tertiary: verdantRoadStyle(verdantPalette.road, verdantPalette.roadCasing, 10, {
-            casingOpacity: 0.46,
-            fillOpacity: 0.98,
-          }),
-          track: verdantPathStyle(verdantPalette.trailMuted, 13, [4, 2]),
-          trunk: verdantRoadStyle('#EDAA57', '#A46A3E', 6, {
-            casingOpacity: 0.68,
-          }),
-        },
-        crossings: {
-          image: 'crosswalk',
-          minZoom: 18,
-          opacity: zoom.linear([
-            [18, 0],
-            [18.5, 0.62],
-            [20, 0.78],
-          ]),
-        },
-        detail: 'all',
-        extras: {paths: true},
-        hierarchy: 'clear',
-        modifiers: {
-          construction: {
-            surface: {
-              casing: {dash: [2, 1], opacity: 0.36},
-              fill: {dash: [2, 1], opacity: 0.52},
+          crossings: {
+            image: 'crosswalk',
+            minZoom: 18,
+            opacity: zoom.linear([
+              [18, 0],
+              [18.5, 0.62],
+              [20, 0.78],
+            ]),
+          },
+          detail: 'all',
+          extras: {paths: true},
+          hierarchy: 'clear',
+          modifiers: {
+            construction: {
+              surface: {
+                casing: {dash: [2, 1], opacity: 0.36},
+                fill: {dash: [2, 1], opacity: 0.52},
+              },
+            },
+            indoor: {
+              surface: {
+                casing: {opacity: 0.16},
+                fill: {dash: [1, 1], opacity: 0.26},
+              },
+            },
+            unpaved: {
+              surface: {
+                casing: {dash: [3, 1], opacity: 0.42},
+                fill: {dash: [3, 1], opacity: 0.62},
+              },
             },
           },
-          indoor: {
-            surface: {
-              casing: {opacity: 0.16},
-              fill: {dash: [1, 1], opacity: 0.26},
+          oneWayMarkers: false,
+          outline: 'strong',
+          restrictions: {
+            access: {
+              surface: {
+                casing: {dash: [1, 1], opacity: 0.3},
+                fill: {dash: [1, 1], opacity: 0.4},
+              },
             },
           },
-          unpaved: {
-            surface: {
-              casing: {dash: [3, 1], opacity: 0.42},
-              fill: {dash: [3, 1], opacity: 0.62},
-            },
+          sidewalks: {
+            outline: {color: verdantPalette.roadCasing, minZoom: 17, opacity: 0.22, width: 0.5},
+            surface: {color: '#E7EAE6', minZoom: 17, opacity: 0.7},
           },
-        },
-        oneWayMarkers: false,
-        outline: 'strong',
-        restrictions: {
-          access: {
-            surface: {
-              casing: {dash: [1, 1], opacity: 0.3},
-              fill: {dash: [1, 1], opacity: 0.4},
-            },
+          weight: 'thin',
+          widthScale: {
+            cycleway: 0.82,
+            footway: 0.74,
+            minor: 0.8,
+            motorway: 0.9,
+            pathway: 0.72,
+            pedestrian: 0.76,
+            primary: 0.9,
+            secondary: 0.86,
+            service: 0.7,
+            steps: 0.64,
+            tertiary: 0.82,
+            track: 0.7,
+            trunk: 0.9,
           },
+        }),
+        {
+          trailEmphasis: renderPass({
+            attachTo: 'roads.classes.pedestrian.surface.fill',
+            feature: 'road',
+            phase: 'overlay',
+            renderer: 'line',
+            selector: {
+              kind: 'all',
+              selectors: [
+                {geometry: 'line', kind: 'geometry'},
+                {
+                  kind: 'any',
+                  selectors: [
+                    {
+                      kind: 'all',
+                      selectors: [
+                        {field: 'class', kind: 'compare', operator: 'eq', value: 'path'},
+                        {field: 'subclass', kind: 'in', values: ['path', 'bridleway']},
+                      ],
+                    },
+                    {
+                      kind: 'all',
+                      selectors: [
+                        {field: 'class', kind: 'compare', operator: 'eq', value: 'track'},
+                        {
+                          kind: 'any',
+                          selectors: [
+                            {
+                              field: 'foot',
+                              kind: 'in',
+                              values: ['yes', 'designated', 'official'],
+                            },
+                            {
+                              field: 'bicycle',
+                              kind: 'in',
+                              values: ['yes', 'designated', 'official'],
+                            },
+                            {field: 'mtbScale', kind: 'has'},
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  coerce: 'number',
+                  fallback: 0,
+                  field: 'indoor',
+                  kind: 'compare',
+                  operator: 'ne',
+                  value: 1,
+                },
+                {
+                  branches: [{result: false, values: ['bridge', 'tunnel']}],
+                  field: 'brunnel',
+                  kind: 'match',
+                  otherwise: true,
+                },
+                {
+                  branches: [{result: false, values: ['no', 'private']}],
+                  fallback: 'unknown',
+                  field: 'access',
+                  kind: 'match',
+                  otherwise: true,
+                },
+              ],
+            },
+            style: {
+              cap: 'round',
+              color: verdantPalette.trail,
+              dash: [3, 1.5],
+              join: 'round',
+              minZoom: 12.5,
+              opacity: zoom.linear([
+                [12.5, 0],
+                [13, 0.78],
+                [15, 0.96],
+              ]),
+              width: zoom.linear([
+                [12.5, 0.4],
+                [15, 1.5],
+                [18, 2.9],
+              ]),
+            },
+          }),
         },
-        sidewalks: {
-          outline: {color: verdantPalette.roadCasing, minZoom: 17, opacity: 0.22, width: 0.5},
-          surface: {color: '#E7EAE6', minZoom: 17, opacity: 0.7},
-        },
-        weight: 'thin',
-        widthScale: {
-          cycleway: 0.82,
-          footway: 0.74,
-          minor: 0.8,
-          motorway: 0.9,
-          pathway: 0.72,
-          pedestrian: 0.76,
-          primary: 0.9,
-          secondary: 0.86,
-          service: 0.7,
-          steps: 0.64,
-          tertiary: 0.82,
-          track: 0.7,
-          trunk: 0.9,
-        },
-      }),
+      ),
       transit: transit({
         cableway: {
           color: verdantPalette.inkMuted,
@@ -1071,15 +1280,14 @@ export const verdant = bindOfficialMapTheme(
       }),
       vegetation: vegetation({
         flat: {
-          color: expression<string>([
-            'match',
-            ['coalesce', ['get', semanticField('leafType')], ''],
-            ['needleleaved', 'needleleaf'],
-            verdantPalette.woodDark,
-            ['broadleaved', 'broadleaf'],
-            '#607650',
+          color: expr.match(
+            expr.coalesce(expr.get(field('leafType')), ''),
+            [
+              {labels: ['needleleaved', 'needleleaf'], value: verdantPalette.woodDark},
+              {labels: ['broadleaved', 'broadleaf'], value: '#607650'},
+            ],
             verdantPalette.wood,
-          ]),
+          ),
           minZoom: 15,
           opacity: 0.82,
           radius: zoom.linear([
@@ -1093,275 +1301,116 @@ export const verdant = bindOfficialMapTheme(
         minZoom: 15,
         mode: 'flat',
       }),
-      water: water({
-        bathymetry: {
-          color: verdantPalette.water,
-          maxZoom: 9,
-          minZoom: 0,
-          opacity: 0,
-        },
-        bodies: {
-          fill: {color: verdantPalette.water, opacity: 1},
-          outline: {
-            color: verdantPalette.waterInk,
-            minZoom: 9,
-            opacity: 0.45,
-            width: zoom.linear([
-              [9, 0.3],
-              [14, 0.7],
-              [18, 1.05],
-            ]),
+      water: withRenderStack(
+        water({
+          bathymetry: {
+            color: verdantPalette.water,
+            maxZoom: 9,
+            minZoom: 0,
+            opacity: 0,
           },
-        },
-        intermittent: {
-          bodies: {fill: {color: verdantPalette.water, opacity: 0.62}},
+          bodies: {
+            fill: {color: verdantPalette.water, opacity: 1},
+            outline: {
+              color: verdantPalette.waterInk,
+              minZoom: 9,
+              opacity: 0.45,
+              width: zoom.linear([
+                [9, 0.3],
+                [14, 0.7],
+                [18, 1.05],
+              ]),
+            },
+          },
+          intermittent: {
+            bodies: {fill: {color: verdantPalette.water, opacity: 0.62}},
+            waterways: {
+              color: verdantPalette.waterInk,
+              dash: [3, 2],
+              opacity: 0.46,
+            },
+          },
           waterways: {
-            color: verdantPalette.waterInk,
-            dash: [3, 2],
-            opacity: 0.46,
+            canal: {
+              color: verdantPalette.waterInk,
+              minZoom: 8,
+              opacity: 0.88,
+              width: zoom.linear([
+                [8, 0.35],
+                [16, 1.8],
+              ]),
+            },
+            other: {
+              color: verdantPalette.waterInk,
+              minZoom: 12,
+              opacity: 0.68,
+              width: zoom.linear([
+                [12, 0.25],
+                [17, 1],
+              ]),
+            },
+            river: {
+              color: verdantPalette.waterInk,
+              minZoom: 6,
+              opacity: 0.92,
+              width: zoom.linear([
+                [6, 0.4],
+                [16, 2.2],
+              ]),
+            },
+            stream: {
+              color: verdantPalette.waterInk,
+              minZoom: 10,
+              opacity: 0.8,
+              width: zoom.linear([
+                [10, 0.28],
+                [16, 1.2],
+              ]),
+            },
           },
+        }),
+        {
+          printLines: renderPass({
+            attachTo: 'water.bodies.fill',
+            feature: 'water',
+            phase: 'overlay',
+            renderer: 'fill',
+            selector: {
+              coerce: 'number',
+              fallback: 0,
+              field: 'intermittent',
+              kind: 'compare',
+              operator: 'ne',
+              value: 1,
+            },
+            style: {
+              minZoom: 15,
+              opacity: zoom.linear([
+                [15, 0],
+                [16, 0.12],
+                [19, 0.16],
+              ]),
+              pattern: 'verdant-water-lines',
+            },
+          }),
+          intermittentPrintLines: renderPass({
+            attachTo: 'water.intermittent.bodies.fill',
+            feature: 'water',
+            phase: 'overlay',
+            renderer: 'fill',
+            selector: {
+              coerce: 'number',
+              fallback: 0,
+              field: 'intermittent',
+              kind: 'compare',
+              operator: 'eq',
+              value: 1,
+            },
+            style: {minZoom: 15, opacity: 0.12, pattern: 'verdant-water-lines'},
+          }),
         },
-        waterways: {
-          canal: {
-            color: verdantPalette.waterInk,
-            minZoom: 8,
-            opacity: 0.88,
-            width: zoom.linear([
-              [8, 0.35],
-              [16, 1.8],
-            ]),
-          },
-          other: {
-            color: verdantPalette.waterInk,
-            minZoom: 12,
-            opacity: 0.68,
-            width: zoom.linear([
-              [12, 0.25],
-              [17, 1],
-            ]),
-          },
-          river: {
-            color: verdantPalette.waterInk,
-            minZoom: 6,
-            opacity: 0.92,
-            width: zoom.linear([
-              [6, 0.4],
-              [16, 2.2],
-            ]),
-          },
-          stream: {
-            color: verdantPalette.waterInk,
-            minZoom: 10,
-            opacity: 0.8,
-            width: zoom.linear([
-              [10, 0.28],
-              [16, 1.2],
-            ]),
-          },
-        },
-      }),
+      ),
     },
-    ...defineModuleEffects([
-      landcoverPattern(
-        'farmland',
-        'land.landcover.farmland.fill',
-        'verdant-field-hatch',
-        ['farmland'],
-        {minZoom: 13, opacity: 0.3},
-      ),
-      landcoverPattern('scrub', 'land.landcover.scrub.fill', 'verdant-heath-tufts', ['grass'], {
-        minZoom: 14,
-        opacity: 0.24,
-        subclasses: ['scrub'],
-      }),
-      landcoverPattern('meadow', 'land.landcover.meadow.fill', 'verdant-meadow-tufts', ['grass'], {
-        minZoom: 14,
-        opacity: 0.22,
-        subclasses: ['meadow'],
-      }),
-      landcoverPattern('orchard', 'land.landcover.urbanPark.fill', 'verdant-orchard', ['grass'], {
-        minZoom: 15,
-        opacity: 0.28,
-        subclasses: ['garden'],
-      }),
-      landcoverPattern('rock', 'land.landcover.rock.fill', 'verdant-scree', ['rock'], {
-        minZoom: 14,
-        opacity: 0.24,
-      }),
-      landcoverPattern(
-        'wetland',
-        'land.landcover.wetland.fill',
-        'verdant-wetland-reeds',
-        ['wetland'],
-        {minZoom: 13, opacity: 0.32},
-      ),
-      landcoverPattern(
-        'wood',
-        'land.landcover.wood.fill',
-        'verdant-forest-canopy',
-        ['wood', 'forest'],
-        {minZoom: 13, opacity: 0.28},
-      ),
-      landusePattern(
-        'residential',
-        'land.landuse.residential.fill',
-        'verdant-residential-hatch',
-        ['residential'],
-        14,
-        0.18,
-      ),
-      addModuleLayer(
-        'water',
-        'water.effects.printLines',
-        {
-          id: 'verdant-water-lines-pattern',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('water'),
-          minzoom: 15,
-          filter: ['!=', ['to-number', ['get', semanticField('intermittent')], 0], 1],
-          paint: {
-            'fill-opacity': ['interpolate', ['linear'], ['zoom'], 15, 0, 16, 0.12, 19, 0.16],
-            'fill-pattern': 'verdant-water-lines',
-          },
-        },
-        {after: 'water.bodies.fill'},
-      ),
-      addModuleLayer(
-        'water',
-        'water.effects.intermittentPrintLines',
-        {
-          id: 'verdant-water-intermittent-lines-pattern',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('water'),
-          minzoom: 15,
-          filter: ['==', ['to-number', ['get', semanticField('intermittent')], 0], 1],
-          paint: {
-            'fill-opacity': 0.12,
-            'fill-pattern': 'verdant-water-lines',
-          },
-        },
-        {after: 'water.intermittent.bodies.fill'},
-      ),
-      addModuleLayer(
-        'buildings',
-        'buildings.effects.printShadow',
-        {
-          id: 'verdant-building-print-shadow',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('building'),
-          minzoom: 14,
-          paint: {
-            'fill-pattern': 'verdant-paper-fiber',
-            'fill-opacity': ['interpolate', ['linear'], ['zoom'], 14, 0, 14.5, 0.012, 18, 0.022],
-            'fill-translate': [0.45, 0.55],
-            'fill-translate-anchor': 'viewport',
-          },
-        },
-        {before: 'buildings.flat.fill'},
-      ),
-      addModuleLayer(
-        'roads',
-        'roads.effects.trailEmphasis',
-        {
-          id: 'verdant-trail-emphasis',
-          type: 'line',
-          source: 'tileflow',
-          'source-layer': semanticLayer('road'),
-          minzoom: 12.5,
-          filter: [
-            'all',
-            ['==', ['geometry-type'], 'LineString'],
-            [
-              'any',
-              [
-                'all',
-                ['==', ['get', semanticField('class')], 'path'],
-                ['match', ['get', semanticField('subclass')], ['path', 'bridleway'], true, false],
-              ],
-              [
-                'all',
-                ['==', ['get', semanticField('class')], 'track'],
-                [
-                  'any',
-                  [
-                    'match',
-                    ['get', semanticField('foot')],
-                    ['yes', 'designated', 'official'],
-                    true,
-                    false,
-                  ],
-                  [
-                    'match',
-                    ['get', semanticField('bicycle')],
-                    ['yes', 'designated', 'official'],
-                    true,
-                    false,
-                  ],
-                  ['has', semanticField('mtbScale')],
-                ],
-              ],
-            ],
-            ['!=', ['to-number', ['get', semanticField('indoor')], 0], 1],
-            ['match', ['get', semanticField('brunnel')], ['bridge', 'tunnel'], false, true],
-            [
-              'match',
-              ['coalesce', ['get', semanticField('access')], 'unknown'],
-              ['no', 'private'],
-              false,
-              true,
-            ],
-          ],
-          layout: {'line-cap': 'round', 'line-join': 'round'},
-          paint: {
-            'line-color': verdantPalette.trail,
-            'line-dasharray': [3, 1.5],
-            'line-opacity': ['interpolate', ['linear'], ['zoom'], 12.5, 0, 13, 0.78, 15, 0.96],
-            'line-width': ['interpolate', ['linear'], ['zoom'], 12.5, 0.4, 15, 1.5, 18, 2.9],
-          },
-        },
-        {after: 'roads.classes.pedestrian.surface.fill'},
-      ),
-      addModuleLayer(
-        'labels',
-        'labels.landscape',
-        {
-          id: 'verdant-landscape-label',
-          type: 'symbol',
-          source: 'tileflow',
-          'source-layer': semanticLayer('park'),
-          minzoom: 10,
-          maxzoom: 18,
-          filter: [
-            'all',
-            ['==', ['geometry-type'], 'Point'],
-            ['has', semanticField('name')],
-            ['<=', ['to-number', ['get', semanticField('rank')], 999], 4],
-          ],
-          layout: {
-            'symbol-sort-key': ['to-number', ['get', semanticField('rank')], 999],
-            'text-field': ['get', semanticField('name')],
-            'text-font': ['Noto Sans Regular'],
-            'text-letter-spacing': 0.04,
-            'text-max-width': 10,
-            'text-optional': true,
-            'text-padding': 7,
-            'text-size': ['interpolate', ['linear'], ['zoom'], 10, 10, 14, 13, 17, 16],
-            'text-transform': 'uppercase',
-          },
-          paint: {
-            'text-color': verdantPalette.woodDark,
-            'text-halo-color': verdantPalette.halo,
-            'text-halo-width': 1.6,
-            'text-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0, 11, 0.7, 14, 0.9],
-          },
-        },
-        {before: 'labels.places.town'},
-        {requires: ['land']},
-      ),
-    ]),
     view: {
       center: [-3.69275, 40.40866],
       pitch: 0,

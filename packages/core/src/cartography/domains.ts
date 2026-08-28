@@ -1,18 +1,9 @@
-export const tileflowLayerDomains = [
-  'addresses',
-  'land',
-  'terrain',
-  'landforms',
-  'water',
-  'nautical',
-  'roads',
-  'transit',
-  'aeroways',
-  'buildings',
-  'vegetation',
-  'boundaries',
-  'labels',
-  'poi',
-] as const;
+import {type TileflowSemanticModuleName, tileflowSemanticModuleNames} from './domain-registry';
 
-export type TileflowLayerDomain = (typeof tileflowLayerDomains)[number];
+export type TileflowLayerDomain = TileflowSemanticModuleName | 'terrain';
+
+/** The module portion is derived from the closed registry; terrain remains a compiler-owned domain. */
+export const tileflowLayerDomains: readonly TileflowLayerDomain[] = Object.freeze([
+  ...tileflowSemanticModuleNames,
+  'terrain',
+]);

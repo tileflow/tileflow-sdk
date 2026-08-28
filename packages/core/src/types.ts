@@ -7,6 +7,7 @@ import type {
   TileflowLinePaint,
   TileflowLineStackStyle,
   TileflowLineStyle,
+  TileflowMarkerSymbolStyle,
   TileflowSymbolStyle,
 } from './cartography/styles';
 import type {
@@ -319,7 +320,6 @@ export type TileflowRoadsModuleConfig = {
   classes?: Partial<Record<TileflowRoadClass, TileflowRoadClassStyle>>;
   crossings?: TileflowRoadCrossingStyle;
   detail?: TileflowRoadDetail;
-  enabled?: boolean;
   extras?: TileflowRoadExtras;
   hierarchy?: TileflowRoadHierarchy;
   modifiers?: Partial<Record<TileflowRoadModifier, TileflowRoadTreatmentStyle>>;
@@ -369,7 +369,6 @@ export type TileflowLabelStyles = {
 export type TileflowLabelsModuleConfig = {
   type: 'labels';
   aerodromeCodes?: TileflowAerodromeCodeDetail;
-  enabled?: boolean;
   junctions?: boolean;
   language?: TileflowLabelLanguage;
   places?: TileflowLabelDetail;
@@ -400,13 +399,12 @@ export const tileflowPoiCategories = [
 export type TileflowPoiCategory = (typeof tileflowPoiCategories)[number];
 export type TileflowPoiDensity = 1 | 2 | 3 | 4 | 5;
 export type TileflowPoiColorMode = 'uniform' | 'category';
-export type TileflowPoiCategoryStyle = Omit<TileflowSymbolStyle, 'priority'>;
+export type TileflowPoiCategoryStyle = Omit<TileflowMarkerSymbolStyle, 'priority'>;
 export type TileflowPoiModuleConfig = {
   type: 'poi';
   categories?: readonly TileflowPoiCategory[];
   color?: TileflowPoiColorMode;
   density?: TileflowPoiDensity;
-  enabled?: boolean;
   icons?: boolean;
   labels?: boolean;
   minZoom?: number;

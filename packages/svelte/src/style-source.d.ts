@@ -1,5 +1,6 @@
 type TileflowMapStyleInput = {
   source?: unknown;
+  theme?: unknown;
 };
 
 type TileflowMapStyleInputValidation =

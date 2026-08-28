@@ -11,9 +11,9 @@ import {
 } from 'react';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
 import {
+  type PreparedStaticMapRequest,
   prepareStaticMapRequest,
   stableStringify,
-  type PreparedStaticMapRequest,
   type StaticMapResult,
   validateStaticMapIdempotencyKey,
 } from '@tileflow/static/client';
@@ -65,6 +65,7 @@ export function StaticMap({
   overlays,
   size,
   style,
+  theme,
 }: StaticMapProps) {
   const [result, setResult] = useState<StaticMapResult | null>(
     imageUrl ? imageResult(imageUrl) : null,
@@ -76,16 +77,19 @@ export function StaticMap({
   const resolvedCaptureId = normalizeTileflowCaptureId(captureId);
   const onErrorRef = useRef(onError);
   const onReadyRef = useRef(onReady);
-  const sceneInputKey = stableStringify({camera, map, overlays, size});
+  const sceneInputKey = stableStringify({camera, map, overlays, size, theme});
   const preparedSceneCandidate = useMemo(
-    () => prepareSceneRequest({camera, map, overlays, size}),
-    [camera, map, overlays, size],
+    () => prepareSceneRequest({camera, map, overlays, size, theme}),
+    [camera, map, overlays, size, theme],
   );
   const preparedScene = useStablePreparedSceneRequest(preparedSceneCandidate);
   const sceneKey = preparedScene.ok ? preparedScene.request.sceneKey : `invalid:${sceneInputKey}`;
   const intentKey = imageUrl
-    ? `image:${imageUrl}`
+    ? `image:${imageUrl}:${sceneKey}`
     : `create:${createUrl}:${idempotencyKey ?? ''}:${sceneKey}`;
+  const visibleResult = preparedScene.ok ? result : null;
+  const visibleError = preparedScene.ok ? error : preparedScene.error;
+  const effectiveCaptureState = preparedScene.ok ? captureState : 'error';
 
   useLayoutEffect(() => {
     imageLoadRunRef.current += 1;
@@ -116,6 +120,17 @@ export function StaticMap({
   }, [onError, onReady]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    if (!preparedScene.ok) {
+      if (!keepPreviousImage) setResult(null);
+      setError(preparedScene.error);
+      imageLoadRunRef.current += 1;
+      setCaptureState('error');
+      onErrorRef.current?.(preparedScene.error);
+      return;
+    }
+
     if (imageUrl) {
       const nextResult = imageResult(imageUrl);
 
@@ -124,8 +139,6 @@ export function StaticMap({
       onReadyRef.current?.(nextResult);
       return;
     }
-
-    let cancelled = false;
 
     if (!createUrl) {
       return;
@@ -139,15 +152,6 @@ export function StaticMap({
       imageLoadRunRef.current += 1;
       setCaptureState('error');
       onErrorRef.current?.(keyError);
-      return;
-    }
-
-    if (!preparedScene.ok) {
-      if (!keepPreviousImage) setResult(null);
-      setError(preparedScene.error);
-      imageLoadRunRef.current += 1;
-      setCaptureState('error');
-      onErrorRef.current?.(preparedScene.error);
       return;
     }
 
@@ -199,11 +203,12 @@ export function StaticMap({
 
   return (
     <div
-      aria-busy={!result && !error}
+      aria-busy={!visibleResult && !visibleError}
       className={className}
       data-tileflow-capture-id={resolvedCaptureId}
       data-tileflow-map={map}
-      data-tileflow-state={captureState}
+      data-tileflow-theme={preparedScene.ok ? theme : undefined}
+      data-tileflow-state={effectiveCaptureState}
       style={{
         aspectRatio: `${size.width} / ${size.height}`,
         background: '#f4f4f2',
@@ -212,7 +217,7 @@ export function StaticMap({
         ...style,
       }}
     >
-      {result ? (
+      {visibleResult ? (
         <img
           alt={alt}
           decoding="async"
@@ -229,7 +234,7 @@ export function StaticMap({
             void markImageReady(event.currentTarget);
           }}
           ref={imageRef}
-          src={result.imageUrl}
+          src={visibleResult.imageUrl}
           style={{
             display: 'block',
             height: '100%',

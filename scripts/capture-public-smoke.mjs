@@ -143,30 +143,48 @@ if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
   await writeFile(
     publicImports,
     `const expectations = ${JSON.stringify({
-      '@tileflow/capture': 'createTileflowCaptureSession',
-      '@tileflow/capture/receipt': 'parseTileflowCaptureReceipt',
-      '@tileflow/dev': 'createTileflowBuildArtifacts',
-      '@tileflow/interactions': 'validateTileflowAnnotations',
-      '@tileflow/interactions/maplibre': 'createTileflowAnnotationRegistry',
-      '@tileflow/maps': 'streets',
-      '@tileflow/next': 'withTileflow',
-      '@tileflow/next/server': 'createTileflowRouteHandlers',
-      '@tileflow/react': 'Map',
-      '@tileflow/react/static': 'StaticMap',
-      '@tileflow/static': 'normalizeStaticScene',
-      '@tileflow/static/client': 'createStaticMap',
-      '@tileflow/static/manifest': 'createRenderManifest',
-      '@tileflow/static/overlays': 'compileStaticOverlays',
-      '@tileflow/static/scene': 'validateStaticScene',
-      '@tileflow/vite': 'tileflow',
-      '@tileflow/vue': 'TileflowMap',
-      '@tileflow/webpack': 'TileflowWebpackPlugin',
+      '@tileflow/capture': [
+        'createTileflowCaptureSession',
+        'compareTileflowCapturesForReview',
+        'createTileflowVisualReviewDocument',
+        'tileflowVisualReviewLimits',
+        'TileflowVisualReviewError',
+      ],
+      '@tileflow/capture/receipt': ['parseTileflowCaptureReceipt'],
+      '@tileflow/dev': ['createTileflowBuildArtifacts'],
+      '@tileflow/interactions': ['validateTileflowAnnotations'],
+      '@tileflow/interactions/maplibre': ['createTileflowAnnotationRegistry'],
+      '@tileflow/maps': ['streets'],
+      '@tileflow/next': ['withTileflow'],
+      '@tileflow/next/server': ['createTileflowRouteHandlers'],
+      '@tileflow/react': ['Map'],
+      '@tileflow/react/static': ['StaticMap'],
+      '@tileflow/static': ['normalizeStaticScene'],
+      '@tileflow/static/client': ['createStaticMap'],
+      '@tileflow/static/manifest': ['createRenderManifest'],
+      '@tileflow/static/overlays': ['compileStaticOverlays'],
+      '@tileflow/static/scene': ['validateStaticScene'],
+      '@tileflow/vite': ['tileflow'],
+      '@tileflow/vue': ['TileflowMap'],
+      '@tileflow/webpack': ['TileflowWebpackPlugin'],
     })};
-for (const [name, symbol] of Object.entries(expectations)) {
+for (const [name, symbols] of Object.entries(expectations)) {
   const entry = await import(name);
-  if (typeof entry[symbol] !== 'function' && typeof entry[symbol] !== 'object') {
-    throw new Error(name + ' does not export ' + symbol + ' from its packed entry point');
+  for (const symbol of symbols) {
+    if (typeof entry[symbol] !== 'function' && typeof entry[symbol] !== 'object') {
+      throw new Error(name + ' does not export ' + symbol + ' from its packed entry point');
+    }
   }
+}
+const capture = await import('@tileflow/capture');
+if (capture.tileflowVisualReviewSchemaVersion !== 1) {
+  throw new Error('@tileflow/capture does not export the visual review schema version');
+}
+if (capture.tileflowVisualReviewLimits.maximumAggregatePngBytes !== 256 * 1024 * 1024) {
+  throw new Error('@tileflow/capture does not export the visual review aggregate PNG limit');
+}
+if (new capture.TileflowVisualReviewError('packed proof').code !== 'VISUAL_REVIEW_INVALID') {
+  throw new Error('@tileflow/capture does not export the stable visual review error code');
 }
 `,
   );
@@ -174,6 +192,76 @@ for (const [name, symbol] of Object.entries(expectations)) {
     cwd: consumerDirectory,
     label: 'packed public package entry imports',
   });
+
+  const captureReviewTypes = join(consumerDirectory, 'consume-capture-review-types.ts');
+  await writeFile(
+    captureReviewTypes,
+    `import {
+  compareTileflowCapturesForReview,
+  createTileflowVisualReviewDocument,
+  tileflowVisualReviewLimits,
+  tileflowVisualReviewSchemaVersion,
+  TileflowVisualReviewError,
+  type TileflowVisualReviewCapture,
+  type TileflowVisualReviewComparison,
+  type TileflowVisualReviewDefinition,
+  type TileflowVisualReviewDocument,
+  type TileflowVisualReviewFrameIdentity,
+  type TileflowVisualReviewOptions,
+  type TileflowVisualReviewSide,
+  type TileflowVisualReviewStatus,
+} from '@tileflow/capture';
+
+async function consumePackedReview(
+  left: TileflowVisualReviewCapture,
+  right: TileflowVisualReviewCapture,
+): Promise<TileflowVisualReviewDocument> {
+  const options: TileflowVisualReviewOptions = {includeDiff: true};
+  const comparison: TileflowVisualReviewComparison =
+    await compareTileflowCapturesForReview(left, right, options);
+  const definition: TileflowVisualReviewDefinition = left.definition;
+  const frame: TileflowVisualReviewFrameIdentity = comparison.left.frame;
+  const side: TileflowVisualReviewSide = comparison.right;
+  const status: TileflowVisualReviewStatus = comparison.status;
+  void definition;
+  void frame;
+  void side;
+  void status;
+  return createTileflowVisualReviewDocument(comparison);
+}
+
+const schemaVersion: 1 = tileflowVisualReviewSchemaVersion;
+const aggregateLimit: number = tileflowVisualReviewLimits.maximumAggregatePngBytes;
+const reviewError: TileflowVisualReviewError = new TileflowVisualReviewError('type proof');
+void schemaVersion;
+void aggregateLimit;
+void reviewError;
+void consumePackedReview;
+`,
+  );
+  await run(
+    process.execPath,
+    [
+      fileURLToPath(import.meta.resolve('typescript/bin/tsc')),
+      '--noEmit',
+      '--strict',
+      '--module',
+      'NodeNext',
+      '--moduleResolution',
+      'NodeNext',
+      '--target',
+      'ES2022',
+      '--types',
+      'node',
+      '--typeRoots',
+      join(repositoryRoot, 'node_modules/@types'),
+      captureReviewTypes,
+    ],
+    {
+      cwd: consumerDirectory,
+      label: 'packed capture visual-review TypeScript consumer',
+    },
+  );
 
   const svelteCompile = join(consumerDirectory, 'compile-public-svelte.mjs');
   await writeFile(
@@ -236,7 +324,7 @@ if (!result.js?.code.includes('TileflowMap')) {
     }
     response.writeHead(200, {'content-type': 'text/html; charset=utf-8'});
     response.end(
-      '<!doctype html><style>html,body{margin:0}.proof{width:192px;height:128px;background:#2468ac}</style><div class="proof" data-tileflow-map="proof" data-tileflow-capture-id="proof" data-tileflow-state="idle"></div>',
+      '<!doctype html><style>html,body{margin:0}.proof{width:192px;height:128px;background:#2468ac}</style><div class="proof" data-tileflow-map="proof" data-tileflow-theme="light" data-tileflow-capture-id="proof" data-tileflow-state="idle"></div>',
     );
   });
   const origin = await listenLoopback(server);
@@ -251,11 +339,14 @@ if (!result.js?.code.includes('TileflowMap')) {
   vectorTiles,
   defineRootMap,
 } from '@tileflow/core';
+import {streetsThemes} from '@tileflow/maps';
 
 export default defineRootMap({
       id: 'proof',
       version: 1,
       root: {compiler: 'streets', compilerVersion: 1},
+      defaultTheme: 'light',
+      themes: {light: streetsThemes.light},
       data: vectorTiles({
         attribution: '© OpenStreetMap contributors',
         bounds: [-180, -85, 180, 85],
@@ -273,7 +364,7 @@ export default defineRootMap({
       modules: {
         buildings: buildings({enabled: false}),
         labels: labels({places: 'none', roads: 'none', water: 'none'}),
-        poi: poi({preset: 'none', icons: false, labels: 'none'}),
+        poi: poi({enabled: false}),
         roads: roads({
           detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
           extras: {paths: true},
@@ -281,10 +372,12 @@ export default defineRootMap({
       },
       scenes: {
         generated: {
+          theme: 'light',
           camera: {type: 'center', center: [0, 0], zoom: 1},
           viewport: {width: 192, height: 128, dpr: 1},
         },
         application: {
+          theme: 'light',
           camera: {type: 'center', center: [0, 0], zoom: 1},
           viewport: {width: 192, height: 128, dpr: 1},
           target: {kind: 'application', path: '/', captureId: 'proof'},
@@ -326,6 +419,7 @@ export default {
       scene: standaloneEntry.scene,
       status: standaloneEntry.status,
       target: standaloneEntry.target,
+      theme: standaloneEntry.theme,
       width: standaloneEntry.width,
       warnings: standaloneEntry.warnings,
     },
@@ -337,6 +431,7 @@ export default {
       scene: 'generated',
       status: 'captured',
       target: 'map',
+      theme: 'light',
       width: 192,
       warnings: [],
     },
@@ -352,7 +447,8 @@ export default {
   assert.equal(standaloneReceipt.image.physicalWidth, 192);
   assert.equal(standaloneReceipt.image.physicalHeight, 128);
   assert.equal(standaloneReceipt.networkDependent, false);
-  assert.equal(standaloneReceipt.schemaVersion, 3);
+  assert.equal(standaloneReceipt.schemaVersion, 4);
+  assert.equal(standaloneReceipt.scene.theme, 'light');
   assert.equal(standaloneReceipt.data.kind, 'vector-tiles');
   assert.equal(standaloneReceipt.data.schema, 'openmaptiles');
   assert.equal(standaloneReceipt.data.schemaVersion, 1);
@@ -424,6 +520,7 @@ export default {
       scene: entry.scene,
       status: entry.status,
       target: entry.target,
+      theme: entry.theme,
       width: entry.width,
     },
     {
@@ -434,6 +531,7 @@ export default {
       scene: 'application',
       status: 'captured',
       target: 'application',
+      theme: 'light',
       width: 192,
     },
   );
@@ -445,7 +543,8 @@ export default {
   const sha256 = createHash('sha256').update(png).digest('hex');
   assert.equal(entry.sha256, sha256);
   const receipt = JSON.parse(await readFile(join(consumerDirectory, entry.receiptPath), 'utf8'));
-  assert.equal(receipt.schemaVersion, 3);
+  assert.equal(receipt.schemaVersion, 4);
+  assert.equal(receipt.scene.theme, 'light');
   assert.equal(receipt.image.sha256, sha256);
   assert.equal(receipt.image.physicalWidth, 192);
   assert.equal(receipt.image.physicalHeight, 128);
@@ -463,6 +562,112 @@ export default {
   });
   assert.equal(receipt.renderer.playwright, '1.62.1');
   assert.equal(receipt.renderer.chromiumRevision, '1234');
+
+  const packedReviewInput = join(consumerDirectory, 'packed-review-input.json');
+  await writeFile(
+    packedReviewInput,
+    `${JSON.stringify({application: entry, standalone: standaloneEntry}, null, 2)}\n`,
+  );
+  const packedReviewRuntime = join(consumerDirectory, 'run-packed-capture-review.mjs');
+  await writeFile(
+    packedReviewRuntime,
+    `import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {join} from 'node:path';
+import {
+  compareTileflowCapturesForReview,
+  createTileflowVisualReviewDocument,
+  parseTileflowCaptureReceipt,
+} from '@tileflow/capture';
+import {normalizeTileflowCaptureScene} from '@tileflow/core';
+
+const input = JSON.parse(await readFile(new URL('./packed-review-input.json', import.meta.url), 'utf8'));
+
+async function loadCapture(entry) {
+  const [png, receiptSource] = await Promise.all([
+    readFile(join(process.cwd(), entry.outputPath)),
+    readFile(join(process.cwd(), entry.receiptPath), 'utf8'),
+  ]);
+  const receipt = parseTileflowCaptureReceipt(receiptSource);
+  assert.equal(receipt.schemaVersion, 4);
+  return {
+    scene: entry.scene,
+    map: entry.map,
+    theme: entry.theme,
+    target: entry.target,
+    png,
+    sha256: entry.sha256,
+    sceneSha256: receipt.scene.sha256,
+    styleSha256: receipt.style.sha256,
+    width: entry.width,
+    height: entry.height,
+    dpr: entry.dpr,
+    networkDependent: entry.networkDependent,
+    renderer: entry.renderer,
+    receipt,
+    warnings: entry.warnings,
+  };
+}
+
+const standalone = await loadCapture(input.standalone);
+const application = await loadCapture(input.application);
+const standaloneDefinition = normalizeTileflowCaptureScene({
+  map: 'proof',
+  theme: 'light',
+  camera: {type: 'center', center: [0, 0], zoom: 1},
+  viewport: {width: 192, height: 128, dpr: 1},
+  target: {kind: 'map'},
+});
+const applicationDefinition = normalizeTileflowCaptureScene({
+  map: 'proof',
+  theme: 'light',
+  camera: {type: 'center', center: [0, 0], zoom: 1},
+  viewport: {width: 192, height: 128, dpr: 1},
+  target: {kind: 'application', path: '/', captureId: 'proof'},
+});
+
+const comparable = await compareTileflowCapturesForReview(
+  {capture: standalone, definition: standaloneDefinition},
+  {capture: standalone, definition: standaloneDefinition},
+  {includeDiff: true},
+);
+assert.equal(comparable.schemaVersion, 1);
+assert.equal(comparable.kind, 'style-review');
+assert.equal(comparable.status, 'comparable');
+assert.equal(comparable.exact?.changedPixels, 0);
+assert.equal(comparable.perceptual?.changedPixels, 0);
+assert.equal(comparable.meanAbsoluteChannelDifference, 0);
+assert.ok(comparable.diffPng instanceof Uint8Array);
+const document = createTileflowVisualReviewDocument(comparable);
+assert.equal(Object.hasOwn(document, 'diffPng'), false);
+
+const frameMismatch = await compareTileflowCapturesForReview(
+  {capture: standalone, definition: standaloneDefinition},
+  {capture: application, definition: applicationDefinition},
+  {includeDiff: true},
+);
+assert.equal(frameMismatch.status, 'frame-mismatch');
+assert.equal(frameMismatch.exact, null);
+assert.equal(Object.hasOwn(frameMismatch, 'diffPng'), false);
+
+process.stdout.write(JSON.stringify({
+  schemaVersion: comparable.schemaVersion,
+  status: comparable.status,
+  incompatibleStatus: frameMismatch.status,
+}) + '\\n');
+`,
+  );
+  const packedReview = await run(process.execPath, [packedReviewRuntime], {
+    cwd: consumerDirectory,
+    env: isolatedEnvironment,
+    label: 'packed capture visual-review execution',
+  });
+  const packedReviewDocument = JSON.parse(packedReview.stdout);
+  assert.deepEqual(packedReviewDocument, {
+    schemaVersion: 1,
+    status: 'comparable',
+    incompatibleStatus: 'frame-mismatch',
+  });
   assert.equal(
     existsSync(systemBrowserSentinel),
     false,
@@ -484,6 +689,7 @@ export default {
           height: standaloneEntry.height,
           networkDependent: standaloneEntry.networkDependent,
         },
+        review: packedReviewDocument,
         tarballs: audit,
       },
       null,

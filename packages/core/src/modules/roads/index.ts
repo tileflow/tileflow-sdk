@@ -118,7 +118,14 @@ export function resolveRoads(
     oneWayMarkers: request?.oneWayMarkers ?? defaults.oneWayMarkers,
     outline: request?.outline ?? defaults.outline,
     weight: request?.weight ?? defaults.weight,
-    ...(request?.widthScale ? {widthScale: {...defaultRoadWidthScale, ...request.widthScale}} : {}),
+    ...(request?.widthScale
+      ? {
+          widthScale: {
+            ...defaultRoadWidthScale,
+            ...request.widthScale,
+          } as Record<TileflowRoadClass, number>,
+        }
+      : {}),
   };
 }
 

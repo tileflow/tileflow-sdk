@@ -1,9 +1,12 @@
 import type {TileflowWorldRequestBridge} from './fair-use-browser';
+import {isTileflowThemeName} from './portable-identity-rules';
 import {
   getTileflowStyleFontFaces,
   resolveTileflowAnalyticsRequestUrl,
   startTileflowSession,
   type TileflowAnalytics,
+  type TileflowRuntimeColorScheme,
+  type TileflowRuntimeStyle,
   type TileflowSessionController,
   type TileflowStyleFontFace,
 } from './runtime';
@@ -21,6 +24,321 @@ export {
 } from './contour-browser';
 
 export type TileflowMapReadinessState = 'error' | 'idle' | 'loading';
+
+type TileflowColorSchemeMediaQuery = {
+  addEventListener?: (event: 'change', listener: () => void) => void;
+  addListener?: (listener: () => void) => void;
+  matches: boolean;
+  removeEventListener?: (event: 'change', listener: () => void) => void;
+  removeListener?: (listener: () => void) => void;
+};
+
+const systemColorSchemeListeners = new Set<(scheme: TileflowRuntimeColorScheme) => void>();
+let systemColorSchemeQuery: TileflowColorSchemeMediaQuery | undefined;
+let systemColorScheme: TileflowRuntimeColorScheme = 'light';
+
+/** Read the browser preference without persisting or mutating user state. */
+export function getTileflowSystemColorScheme(): TileflowRuntimeColorScheme {
+  ensureSystemColorSchemeQuery();
+  return systemColorScheme;
+}
+
+/**
+ * Subscribe through one process-wide `matchMedia` listener, regardless of adapter or map count.
+ */
+export function subscribeTileflowSystemColorScheme(
+  listener: (scheme: TileflowRuntimeColorScheme) => void,
+): () => void {
+  ensureSystemColorSchemeQuery();
+  systemColorSchemeListeners.add(listener);
+  return () => {
+    systemColorSchemeListeners.delete(listener);
+    if (systemColorSchemeListeners.size === 0 && systemColorSchemeQuery) {
+      systemColorSchemeQuery.removeEventListener?.('change', handleSystemColorSchemeChange);
+      systemColorSchemeQuery.removeListener?.(handleSystemColorSchemeChange);
+      systemColorSchemeQuery = undefined;
+    }
+  };
+}
+
+function ensureSystemColorSchemeQuery(): void {
+  if (systemColorSchemeQuery) return;
+  const browser = globalThis as typeof globalThis & {
+    matchMedia?: (query: string) => TileflowColorSchemeMediaQuery;
+  };
+  if (!browser.matchMedia) {
+    systemColorScheme = 'light';
+    return;
+  }
+  systemColorSchemeQuery = browser.matchMedia('(prefers-color-scheme: dark)');
+  systemColorScheme = systemColorSchemeQuery.matches ? 'dark' : 'light';
+  systemColorSchemeQuery.addEventListener?.('change', handleSystemColorSchemeChange);
+  if (!systemColorSchemeQuery.addEventListener) {
+    systemColorSchemeQuery.addListener?.(handleSystemColorSchemeChange);
+  }
+}
+
+function handleSystemColorSchemeChange(): void {
+  if (!systemColorSchemeQuery) return;
+  const next = systemColorSchemeQuery.matches ? 'dark' : 'light';
+  if (next === systemColorScheme) return;
+  systemColorScheme = next;
+  for (const listener of systemColorSchemeListeners) listener(next);
+}
+
+export type TileflowThemeTransitionPhase = 'applying' | 'error' | 'preloading' | 'ready';
+
+export type TileflowThemeTransition = Readonly<{
+  currentTheme?: string;
+  error?: Error;
+  phase: TileflowThemeTransitionPhase;
+  targetTheme?: string;
+}>;
+
+export type TileflowThemeTransitionResult = Readonly<{
+  error?: Error;
+  status: 'applied' | 'failed' | 'superseded';
+  theme?: string;
+}>;
+
+export type TileflowStyleSwitchMap = {
+  off(event: 'error' | 'style.load', listener: (event?: unknown) => void): unknown;
+  on(event: 'error' | 'style.load', listener: (event?: unknown) => void): unknown;
+  setStyle: unknown;
+};
+
+export type TileflowThemeController = {
+  dispose(): void;
+  getCurrent(): TileflowRuntimeStyle;
+  setTheme(style: TileflowRuntimeStyle): Promise<TileflowThemeTransitionResult>;
+};
+
+/**
+ * Transactionally changes a MapLibre style while preserving the map instance and camera.
+ * Independent font preloads start immediately; style application is serialized and last request wins.
+ */
+export function createTileflowThemeController(options: {
+  initial: TileflowRuntimeStyle;
+  loadFonts?: (style: TileflowRuntimeStyle) => Promise<void>;
+  map: TileflowStyleSwitchMap;
+  onTransition?: (transition: TileflowThemeTransition) => void;
+  timeoutMs?: number;
+}): TileflowThemeController {
+  assertConcreteRuntimeTheme(options.initial, 'initial');
+  const loadFonts =
+    options.loadFonts ??
+    ((runtimeStyle: TileflowRuntimeStyle) =>
+      loadTileflowStyleFonts(runtimeStyle.style, {fontFaces: runtimeStyle.fontFaces}));
+  const timeoutMs = normalizeThemeTransitionTimeout(options.timeoutMs);
+  let current = options.initial;
+  let disposed = false;
+  let requestId = 0;
+  let applyQueue: Promise<void> = Promise.resolve();
+
+  return {
+    dispose() {
+      disposed = true;
+      requestId += 1;
+    },
+    getCurrent() {
+      return current;
+    },
+    setTheme(style) {
+      const invalidTheme = validateConcreteRuntimeTheme(style, 'target');
+      if (invalidTheme) {
+        return Promise.resolve({error: invalidTheme, status: 'failed', theme: style.theme});
+      }
+      if (disposed) {
+        return Promise.resolve({
+          error: new Error('Tileflow theme controller is disposed.'),
+          status: 'failed',
+          theme: style.theme,
+        });
+      }
+      const runId = ++requestId;
+      options.onTransition?.({
+        currentTheme: current.theme,
+        phase: 'preloading',
+        targetTheme: style.theme,
+      });
+      let preloaded: Promise<void>;
+      try {
+        preloaded = loadFonts(style);
+      } catch (error) {
+        return Promise.resolve(handlePreloadFailure(runId, style, error));
+      }
+      return preloaded.then(
+        () => enqueueTheme(runId, style),
+        (error: unknown) => handlePreloadFailure(runId, style, error),
+      );
+    },
+  };
+
+  function enqueueTheme(
+    runId: number,
+    style: TileflowRuntimeStyle,
+  ): Promise<TileflowThemeTransitionResult> {
+    const operation = applyQueue.then(
+      () => applyTheme(runId, style),
+      () => applyTheme(runId, style),
+    );
+    applyQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
+  async function applyTheme(
+    runId: number,
+    style: TileflowRuntimeStyle,
+  ): Promise<TileflowThemeTransitionResult> {
+    if (disposed || runId !== requestId) return {status: 'superseded', theme: style.theme};
+    const previous = current;
+    options.onTransition?.({
+      currentTheme: previous.theme,
+      phase: 'applying',
+      targetTheme: style.theme,
+    });
+
+    try {
+      await applyMapStyle(options.map, style.style, timeoutMs);
+      if (disposed) return {status: 'superseded', theme: style.theme};
+      if (runId !== requestId) {
+        // MapLibre cannot cancel an in-flight setStyle(). A newer request can therefore supersede
+        // this operation after the style has already reached `style.load`. Restore the last
+        // committed style before releasing the serialized queue; otherwise a newer request whose
+        // preload fails would leave this superseded style visible and make `current` lie.
+        try {
+          await applyMapStyle(options.map, current.style, timeoutMs);
+        } catch {
+          // A queued newer operation remains authoritative. If none exists, its own preload error
+          // already owns the public transition state and MapLibre owns the restoration diagnostic.
+        }
+        return {status: 'superseded', theme: style.theme};
+      }
+      current = style;
+      options.onTransition?.({
+        currentTheme: style.theme,
+        phase: 'ready',
+        targetTheme: style.theme,
+      });
+      return {status: 'applied', theme: style.theme};
+    } catch (error) {
+      const normalized = normalizeThemeTransitionError(error, 'Tileflow theme change failed.');
+      try {
+        await applyMapStyle(options.map, previous.style, timeoutMs);
+        current = previous;
+      } catch {
+        // The original failure remains authoritative; the map owns any MapLibre diagnostics.
+      }
+      if (disposed || runId !== requestId) return {status: 'superseded', theme: style.theme};
+      options.onTransition?.({
+        currentTheme: current.theme,
+        error: normalized,
+        phase: 'error',
+        targetTheme: style.theme,
+      });
+      return {error: normalized, status: 'failed', theme: style.theme};
+    }
+  }
+
+  function handlePreloadFailure(
+    runId: number,
+    style: TileflowRuntimeStyle,
+    error: unknown,
+  ): TileflowThemeTransitionResult {
+    if (disposed || runId !== requestId) return {status: 'superseded', theme: style.theme};
+    const normalized = normalizeThemeTransitionError(error, 'Tileflow theme preload failed.');
+    options.onTransition?.({
+      currentTheme: current.theme,
+      error: normalized,
+      phase: 'error',
+      targetTheme: style.theme,
+    });
+    return {error: normalized, status: 'failed', theme: style.theme};
+  }
+}
+
+function assertConcreteRuntimeTheme(style: TileflowRuntimeStyle, role: 'initial' | 'target'): void {
+  const error = validateConcreteRuntimeTheme(style, role);
+  if (error) throw error;
+}
+
+function validateConcreteRuntimeTheme(
+  style: TileflowRuntimeStyle,
+  role: 'initial' | 'target',
+): TypeError | undefined {
+  if (isTileflowThemeName(style.theme)) return undefined;
+  return new TypeError(
+    `Tileflow theme controller ${role} style requires a concrete portable theme name; received ${JSON.stringify(style.theme)}.`,
+  );
+}
+
+function applyMapStyle(
+  map: TileflowStyleSwitchMap,
+  style: MapLibreStyle | string,
+  timeoutMs: number,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const cleanup = () => {
+      clearTimeout(timeout);
+      map.off('style.load', handleLoad);
+      map.off('error', handleError);
+    };
+    const settle = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) reject(error);
+      else resolve();
+    };
+    const handleLoad = () => settle();
+    const handleError = (event?: unknown) =>
+      settle(
+        normalizeThemeTransitionError(
+          isRecordWithError(event) ? event.error : event,
+          'MapLibre rejected the Tileflow theme.',
+        ),
+      );
+    const timeout = setTimeout(
+      () => settle(new Error(`Tileflow theme change timed out after ${timeoutMs}ms.`)),
+      timeoutMs,
+    );
+
+    map.on('style.load', handleLoad);
+    map.on('error', handleError);
+    try {
+      if (typeof map.setStyle !== 'function') {
+        throw new TypeError('Tileflow theme changes require MapLibre setStyle().');
+      }
+      const setStyle = map.setStyle as (
+        style: MapLibreStyle | string,
+        options?: {diff?: boolean},
+      ) => unknown;
+      setStyle.call(map, style, {diff: true});
+    } catch (error) {
+      settle(normalizeThemeTransitionError(error, 'MapLibre rejected the Tileflow theme.'));
+    }
+  });
+}
+
+function normalizeThemeTransitionTimeout(value: number | undefined): number {
+  const resolved = value ?? 15_000;
+  if (!Number.isSafeInteger(resolved) || resolved < 100 || resolved > 60_000) {
+    throw new TypeError('Tileflow theme transition timeout must be an integer from 100 to 60000.');
+  }
+  return resolved;
+}
+
+function normalizeThemeTransitionError(error: unknown, fallback: string): Error {
+  return error instanceof Error ? error : new Error(fallback);
+}
+
+function isRecordWithError(value: unknown): value is {error: unknown} {
+  return Boolean(value && typeof value === 'object' && 'error' in value);
+}
 
 export type TileflowMapLifecycleEvent =
   | 'dataloading'

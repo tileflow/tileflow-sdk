@@ -68,30 +68,42 @@ test('registers watch inputs and emits deterministic Webpack assets', async (t) 
       'maps/icons/main/sprite@2x.json',
       'maps/icons/main/sprite@2x.png',
       'maps/manifest.json',
-      'maps/styles/main.json',
+      'maps/styles/main/dark.json',
+      'maps/styles/main/light.json',
     ],
   );
   const generated = names.filter((name) => name.includes('/generations/'));
-  assert.equal(generated.length, 5);
+  assert.equal(generated.length, 6);
   assert.ok(generated.every((name) => /^maps\/generations\/[a-f0-9]{64}\//.test(name)));
-  const manifest = emitted.get('maps/manifest.json') as RawSource;
+  const manifestAsset = emitted.get('maps/manifest.json') as RawSource;
+  const manifest = JSON.parse(String(manifestAsset.value)) as RuntimeManifest;
+  assert.equal(manifest.version, 1);
+  assert.equal(Object.hasOwn(manifest, 'kind'), false);
+  assert.equal(Object.hasOwn(manifest, 'styles'), false);
+  assert.equal(manifest.maps.main?.defaultTheme, 'light');
+  assert.deepEqual(manifest.maps.main?.systemThemes, {dark: 'dark', light: 'light'});
+  assert.deepEqual(Object.keys(manifest.maps.main?.themes ?? {}).sort(), ['dark', 'light']);
   assert.match(
-    String(manifest.value),
-    /"main": "\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\.json"/,
+    manifest.maps.main?.themes.light?.styleUrl ?? '',
+    /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u,
+  );
+  assert.match(
+    manifest.maps.main?.themes.dark?.styleUrl ?? '',
+    /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/dark\.json$/u,
   );
 });
 
 test('preserves Webpack publicPath kinds while keeping relative manifests owner-relative', async (t) => {
   const cwd = await createFixture(t, 'tileflow-webpack-public-path-');
   const cases = [
-    ['/app/', /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u],
+    ['/app/', /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u],
     [
       'https://cdn.example.test/app/',
-      /^https:\/\/cdn\.example\.test\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u,
+      /^https:\/\/cdn\.example\.test\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u,
     ],
-    ['./', /^\.\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u],
-    ['assets/', /^\.\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u],
-    ['../assets/', /^\.\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u],
+    ['./', /^\.\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u],
+    ['assets/', /^\.\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u],
+    ['../assets/', /^\.\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u],
   ] as const;
 
   for (const [publicPath, expectedStyleUrl] of cases) {
@@ -103,8 +115,8 @@ test('preserves Webpack publicPath kinds while keeping relative manifests owner-
       harness.runThisCompilation(compilation.compilation);
       await compilation.runProcessAssets();
       const manifest = compilation.emitted.get('maps/manifest.json') as TestRawSource;
-      const parsed = JSON.parse(String(manifest.value)) as {styles: {main: string}};
-      assert.match(parsed.styles.main, expectedStyleUrl);
+      const parsed = JSON.parse(String(manifest.value)) as RuntimeManifest;
+      assert.match(parsed.maps.main?.themes.light?.styleUrl ?? '', expectedStyleUrl);
     });
   }
 });
@@ -172,7 +184,7 @@ test('allows an explicit Webpack opt-in to replace a Hosted manifest', async (t)
   harness.runThisCompilation(compilation.compilation);
   await compilation.runProcessAssets();
   const manifest = compilation.emitted.get('maps/manifest.json') as TestRawSource;
-  assert.equal(JSON.parse(String(manifest.value)).kind, 'self-hosted');
+  assertLocalManifest(JSON.parse(String(manifest.value)) as RuntimeManifest, '/app/maps');
 });
 
 type TestRawSource = {value: unknown};
@@ -196,18 +208,38 @@ const streetsConfig = `import {defineMap} from '@tileflow/core'; import {streets
 function createHostedManifest() {
   return {
     apiUrl: 'https://api.example.test',
-    kind: 'hosted',
     maps: {
       main: {
+        defaultTheme: 'light',
         environment: 'production',
         mapId: 'map_main',
-        styleId: 'style_main',
-        styleUrl: 'https://styles.example.test/main.json',
+        themes: {
+          light: {
+            colorScheme: 'light',
+            styleId: 'style_main',
+            styleUrl: 'https://styles.example.test/main/light.json',
+          },
+        },
       },
     },
-    styles: {main: 'https://styles.example.test/main.json'},
-    version: 3,
-  };
+    version: 1,
+  } satisfies RuntimeManifest;
+}
+
+function assertLocalManifest(manifest: RuntimeManifest, base: string): void {
+  assert.equal(manifest.version, 1);
+  assert.equal(manifest.apiUrl, undefined);
+  assert.equal(Object.hasOwn(manifest, 'kind'), false);
+  assert.equal(Object.hasOwn(manifest, 'styles'), false);
+  const map = manifest.maps.main;
+  assert.ok(map);
+  assert.equal(map.environment, undefined);
+  assert.equal(map.mapId, undefined);
+  assert.equal(map.themes.light?.styleId, undefined);
+  assert.match(
+    map.themes.light?.styleUrl ?? '',
+    new RegExp(`^${base}/generations/[a-f0-9]{64}/styles/main/light\\.json$`, 'u'),
+  );
 }
 
 function createWebpackHarness(cwd: string, outputPath: string, publicPath = '/app/') {
@@ -262,3 +294,25 @@ function createWebpackHarness(cwd: string, outputPath: string, publicPath = '/ap
     },
   };
 }
+
+type RuntimeManifest = {
+  apiUrl?: string;
+  maps: Record<
+    string,
+    {
+      defaultTheme: string;
+      environment?: string;
+      mapId?: string;
+      systemThemes?: {dark: string; light: string};
+      themes: Record<
+        string,
+        {
+          colorScheme: 'dark' | 'light';
+          styleId?: string;
+          styleUrl: string;
+        }
+      >;
+    }
+  >;
+  version: 1;
+};

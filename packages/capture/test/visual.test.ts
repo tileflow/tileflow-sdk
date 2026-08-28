@@ -13,6 +13,7 @@ import {
   parseTileflowCaptureReceipt,
   serializeTileflowCaptureReceipt,
   serializeTileflowVisualComparison,
+  tileflowVisualEdgeThreshold,
   type TileflowCapture,
   type TileflowCaptureDataInput,
   type TileflowCaptureReceipt,
@@ -44,6 +45,7 @@ test('analyzes a bounded reference without treating it as a baseline', async () 
   );
 
   assert.equal(analysis.dimensionsMatch, true);
+  assert.equal(analysis.theme, 'light');
   assert.deepEqual(analysis.exact, {changedPixels: 1, totalPixels: 4, ratio: 0.25});
   assert.equal(analysis.perceptual?.changedPixels, 1);
   assert.equal(analysis.meanAbsoluteChannelDifference, 40.3125);
@@ -54,6 +56,7 @@ test('analyzes a bounded reference without treating it as a baseline', async () 
   assert.deepEqual(analysis.actual.palette, [{color: '#112244', count: 4, ratio: 1}]);
   assert.deepEqual(analysis.diffPng, repeated.diffPng);
   assert.equal('diffPng' in createTileflowVisualReferenceAnalysisDocument(analysis), false);
+  assert.equal(createTileflowVisualReferenceAnalysisDocument(analysis).theme, 'light');
 });
 
 test('analyzes different dimensions without inventing pixel metrics', async () => {
@@ -68,8 +71,91 @@ test('analyzes different dimensions without inventing pixel metrics', async () =
   assert.equal(analysis.exact, null);
   assert.equal(analysis.perceptual, null);
   assert.equal(analysis.meanAbsoluteChannelDifference, null);
+  assert.equal(analysis.appearance, null);
   assert.equal(analysis.diffPng, undefined);
   assert.match(analysis.warnings[0] ?? '', /dimensions differ/);
+});
+
+test('reports compact signed appearance metrics for a bounded physical region', async () => {
+  const referencePng = createPng(3, 1, [0, 0, 0, 255]);
+  const actualPng = createPng(
+    3,
+    1,
+    [0, 0, 0, 255],
+    [
+      [0, 0, 255, 255, 255, 255],
+      [2, 0, 255, 255, 255, 255],
+    ],
+  );
+  const capture = await createCapture(actualPng, 3, 1);
+  const full = await analyzeTileflowCaptureReference(capture, referencePng);
+  const region = await analyzeTileflowCaptureReference(capture, referencePng, {
+    region: {x: 1, y: 0, width: 1, height: 1},
+  });
+
+  assert.equal(tileflowVisualEdgeThreshold, 0.05);
+  assert.deepEqual(full.appearance?.region, {x: 0, y: 0, width: 3, height: 1});
+  assert.deepEqual(full.appearance?.actual.linearLuminance, {
+    mean: 0.666667,
+    percentiles: {p10: 0.2, p50: 1, p90: 1},
+  });
+  assert.deepEqual(full.appearance?.actual.oklabLightness, {
+    mean: 0.666667,
+    percentiles: {p10: 0.2, p50: 1, p90: 1},
+  });
+  assert.deepEqual(full.appearance?.actual.oklabChroma, {
+    mean: 0,
+    percentiles: {p10: 0, p50: 0, p90: 0},
+  });
+  assert.equal(full.appearance?.actual.edgeDensity, 1);
+  assert.equal(full.appearance?.actual.localContrast, 1);
+  assert.equal(full.appearance?.actualMinusReference.linearLuminance.mean, 0.666667);
+  assert.equal(full.appearance?.actualMinusReference.edgeDensity, 1);
+  assert.deepEqual(region.appearance?.region, {x: 1, y: 0, width: 1, height: 1});
+  assert.equal(region.appearance?.actualMinusReference.linearLuminance.mean, 0);
+  assert.equal(region.appearance?.actualMinusReference.edgeDensity, 0);
+  assert.equal(region.appearance?.actualMinusReference.localContrast, 0);
+});
+
+test('rejects malformed or out-of-bounds physical appearance regions', async () => {
+  const png = createPng(2, 2, [0, 0, 0, 255]);
+  const capture = await createCapture(png, 2, 2);
+  let regionReads = 0;
+  const executableOptions = {};
+  Object.defineProperty(executableOptions, 'region', {
+    enumerable: true,
+    get() {
+      regionReads += 1;
+      return {x: 0, y: 0, width: 1, height: 1};
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      analyzeTileflowCaptureReference(capture, png, {
+        region: {x: 1, y: 0, width: 2, height: 1},
+      }),
+    /positive integer rectangle.*physical PNG bounds/i,
+  );
+  await assert.rejects(
+    () =>
+      analyzeTileflowCaptureReference(capture, png, {
+        region: {x: 0.5, y: 0, width: 1, height: 1},
+      }),
+    /positive integer rectangle/i,
+  );
+  await assert.rejects(
+    () =>
+      analyzeTileflowCaptureReference(capture, png, {
+        region: {x: 0, y: 0, width: 1, height: 1, extra: 1},
+      } as never),
+    /exactly x, y, width, and height/i,
+  );
+  await assert.rejects(
+    () => analyzeTileflowCaptureReference(capture, png, executableOptions),
+    /accessors or hidden fields/i,
+  );
+  assert.equal(regionReads, 0);
 });
 
 test('reports exact and perceptual equality with a transparent deterministic diff', async () => {
@@ -195,6 +281,7 @@ test('classifies missing, dimension, scene, and runtime mismatches before pixel 
     dpr: actual.dpr,
     height: actual.height,
     map: actual.map,
+    theme: actual.theme,
     networkDependent: actual.networkDependent,
     pngSha256: actual.sha256,
     renderer: actual.renderer,
@@ -216,6 +303,7 @@ test('classifies missing, dimension, scene, and runtime mismatches before pixel 
     dpr: actual.dpr,
     height: actual.height,
     map: actual.map,
+    theme: actual.theme,
     networkDependent: actual.networkDependent,
     pngSha256: actual.sha256,
     renderer: actual.renderer,
@@ -233,12 +321,13 @@ test('classifies missing, dimension, scene, and runtime mismatches before pixel 
   assert.equal(sourceMismatch.sceneMatch, false);
 });
 
-test('keeps schema-v2 baselines compatible with additive bindings and capabilities', async () => {
+test('keeps compatible data identity stable across additive bindings and capabilities', async () => {
   const png = createPng(2, 2, [20, 40, 60, 255]);
   const common = {
     dpr: 1 as const,
     height: 2,
     map: 'main',
+    theme: 'light',
     networkDependent: false,
     pngSha256: await sha256Hex(png),
     renderer: createTileflowCaptureRendererIdentity(),
@@ -298,7 +387,7 @@ test('treats a different exact World release as a scene identity mismatch', asyn
   const baseline = structuredClone(actual.receipt);
   assert.equal(baseline.data.kind, 'tileflow-world');
   if (baseline.data.kind !== 'tileflow-world' || !('releaseId' in baseline.data)) {
-    throw new Error('Expected a schema-v3 World receipt fixture.');
+    throw new Error('Expected an exact World receipt fixture.');
   }
   baseline.data.releaseId = 'world-v1-different-release';
   baseline.data.descriptorSha256 = '9'.repeat(64);
@@ -386,7 +475,7 @@ test('rejects duplicate-key receipt JSON instead of accepting parser-dependent i
   const png = createPng(1, 1, [1, 2, 3, 255]);
   const receipt = await createReceipt(png, 1, 1);
   const canonical = serializeTileflowCaptureReceipt(receipt);
-  const ambiguous = canonical.replace('"schemaVersion":3', '"schemaVersion":0,"schemaVersion":3');
+  const ambiguous = canonical.replace('"schemaVersion":4', '"schemaVersion":0,"schemaVersion":4');
 
   assert.throws(() => parseTileflowCaptureReceipt(ambiguous), /canonical|unsupported|duplicate/i);
 });
@@ -400,6 +489,7 @@ async function createCapture(
   return {
     scene: receipt.scene.name,
     map: receipt.scene.map,
+    theme: receipt.scene.theme,
     target: receipt.scene.target,
     png,
     sha256: receipt.image.sha256,
@@ -428,6 +518,7 @@ async function createReceipt(
     dpr: 1,
     height: physicalHeight,
     map: 'main',
+    theme: 'light',
     networkDependent: false,
     pngSha256: await sha256Hex(png),
     renderer,

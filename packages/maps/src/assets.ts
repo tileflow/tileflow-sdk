@@ -7,10 +7,7 @@ function packageDirectory(path: string): TileflowPackageDirectory {
 /** Package-owned Streets icons. Filename stems are the canonical runtime IDs. */
 export const streetsIcons = packageDirectory('assets/streets/icons');
 
-/** Package-owned Streets Dark overrides. Compose after streetsIcons to override by ID. */
-export const streetsDarkIcons = packageDirectory('assets/streets-dark/icons');
-
-/** Package-owned Cyberpunk additions. Compose after streetsIcons to override by ID. */
+/** Package-owned Cyberpunk icons and patterns. */
 export const cyberpunkIcons = packageDirectory('assets/cyberpunk/icons');
 
 /** Package-owned Matrix phosphor patterns and symbols. */
@@ -33,6 +30,9 @@ export const siegfriedIcons = packageDirectory('assets/siegfried/icons');
 
 /** Package-owned Cyberpunk web fonts and their license. */
 export const cyberpunkFonts = packageDirectory('assets/cyberpunk/fonts');
+
+/** Package-owned Matrix web fonts and their license. */
+export const matrixFonts = packageDirectory('assets/matrix/fonts');
 
 /** Package-owned Siegfried web fonts and their license. */
 export const siegfriedFonts = packageDirectory('assets/siegfried/fonts');

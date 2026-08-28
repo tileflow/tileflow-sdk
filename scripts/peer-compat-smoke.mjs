@@ -333,7 +333,7 @@ import {StaticMap} from '@tileflow/react/static';
 
 export const interactive = <Map source={{kind: 'maplibre', style: 'https://example.com/style.json'}} center={[0, 0]} zoom={2} />;
 export const image = <Map source={{kind: 'maplibre', style: 'https://example.com/style.json'}} mode="image" imageUrl="https://example.com/map.png" />;
-export const staticMap = <StaticMap map="main" camera={{type: 'center', center: [0, 0], zoom: 2}} size={{width: 256, height: 256}} imageUrl="https://example.com/static.png" />;
+export const staticMap = <StaticMap map="main" theme="light" camera={{type: 'center', center: [0, 0], zoom: 2}} size={{width: 256, height: 256}} imageUrl="https://example.com/static.png" />;
 `,
   );
   await runTypeScript(directory);
@@ -346,7 +346,7 @@ import {Map} from '@tileflow/react';
 import {StaticMap} from '@tileflow/react/static';
 
 const image = renderToString(createElement(Map, {source: {kind: 'maplibre', style: 'https://example.com/style.json'}, mode: 'image', imageUrl: 'https://example.com/map.png'}));
-const staticImage = renderToString(createElement(StaticMap, {map: 'main', camera: {type: 'center', center: [0, 0], zoom: 2}, size: {width: 256, height: 256}, imageUrl: 'https://example.com/static.png'}));
+const staticImage = renderToString(createElement(StaticMap, {map: 'main', theme: 'light', camera: {type: 'center', center: [0, 0], zoom: 2}, size: {width: 256, height: 256}, imageUrl: 'https://example.com/static.png'}));
 if (!image.includes('<img') || !staticImage.includes('<img')) throw new Error('React image SSR did not render an image');
 `,
   );

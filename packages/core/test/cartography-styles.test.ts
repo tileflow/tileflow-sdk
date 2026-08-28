@@ -94,8 +94,10 @@ test('maps every reusable visual primitive to its MapLibre paint and layout cont
       opacity: 0.95,
       optional: true,
       padding: 4,
+      pitchAlignment: 'map',
       radialOffset: 1.25,
       rotate: 5,
+      rotationAlignment: 'viewport',
       size: 14,
       transform: 'uppercase',
       variableAnchors: ['top', 'bottom'],
@@ -108,6 +110,8 @@ test('maps every reusable visual primitive to its MapLibre paint and layout cont
   assert.equal((text.layout as Record<string, unknown>)['text-justify'], 'left');
   assert.equal((text.layout as Record<string, unknown>)['text-keep-upright'], true);
   assert.equal((text.layout as Record<string, unknown>)['text-max-angle'], 35);
+  assert.equal((text.layout as Record<string, unknown>)['text-pitch-alignment'], 'map');
+  assert.equal((text.layout as Record<string, unknown>)['text-rotation-alignment'], 'viewport');
   assert.deepEqual((text.layout as Record<string, unknown>)['text-variable-anchor'], [
     'top',
     'bottom',
@@ -134,10 +138,14 @@ test('maps every reusable visual primitive to its MapLibre paint and layout cont
       rotate: 15,
       rotationAlignment: 'viewport',
       size: 1.2,
+      textFit: 'width',
+      textFitPadding: [0, 5, 0, 5],
     },
   );
   assert.equal((icon.layout as Record<string, unknown>)['icon-anchor'], 'bottom');
   assert.equal((icon.layout as Record<string, unknown>)['icon-keep-upright'], false);
+  assert.equal((icon.layout as Record<string, unknown>)['icon-text-fit'], 'width');
+  assert.deepEqual((icon.layout as Record<string, unknown>)['icon-text-fit-padding'], [0, 5, 0, 5]);
   assert.equal((icon.paint as Record<string, unknown>)['icon-color'], '#336699');
   assert.equal((icon.paint as Record<string, unknown>)['icon-halo-width'], 1);
 

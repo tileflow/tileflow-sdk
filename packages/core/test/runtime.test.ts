@@ -30,6 +30,8 @@ test('validates the discriminated runtime source contract', () => {
     {kind: 'config', config: {}},
     {kind: 'tileflow', map: ''},
     {kind: 'tileflow', map: ' main'},
+    {kind: 'tileflow', map: 'Main'},
+    {kind: 'tileflow', map: 'con'},
     {kind: 'tileflow', manifestUrl: '', map: 'main'},
     {kind: 'maplibre', style: ''},
   ]) {
@@ -59,10 +61,18 @@ test('resolves Tileflow styles only from a loaded manifest entry', () => {
     resolveTileflowRuntimeStyle({
       manifestMap: {
         apiUrl: 'https://api.tileflow.dev',
-        fontFaces: [],
+        defaultTheme: 'light',
         mapId: 'map_1',
-        styleId: 'style_1',
-        styleUrl: 'https://cdn.tileflow.dev/style.json',
+        name: 'main',
+        themes: {
+          light: {
+            colorScheme: 'light',
+            fontFaces: [],
+            revision: 'rev-1',
+            styleId: 'style_1',
+            styleUrl: 'https://cdn.tileflow.dev/style.json',
+          },
+        },
       },
       source,
     }),
@@ -72,9 +82,69 @@ test('resolves Tileflow styles only from a loaded manifest entry', () => {
         mapId: 'map_1',
         styleId: 'style_1',
       },
+      colorScheme: 'light',
       fontFaces: [],
+      revision: 'rev-1',
       style: 'https://cdn.tileflow.dev/style.json',
+      theme: 'light',
     },
+  );
+});
+
+test('system theme selection is explicit and unknown themes fail with available names', () => {
+  const source = {kind: 'tileflow', map: 'main'} as const;
+  const manifestMap = {
+    defaultTheme: 'light',
+    name: 'main',
+    systemThemes: {dark: 'night', light: 'light'},
+    themes: {
+      light: {colorScheme: 'light' as const, styleUrl: '/light.json'},
+      night: {colorScheme: 'dark' as const, styleUrl: '/night.json'},
+    },
+  };
+  assert.equal(
+    resolveTileflowRuntimeStyle({colorScheme: 'dark', manifestMap, source, theme: 'system'})?.theme,
+    'night',
+  );
+  assert.equal(
+    resolveTileflowRuntimeStyle({colorScheme: 'dark', manifestMap, source, theme: 'system'})
+      ?.fontFaces,
+    undefined,
+    'an omitted manifest font closure must fall back to style metadata loading',
+  );
+  assert.throws(
+    () => resolveTileflowRuntimeStyle({manifestMap, source, theme: 'missing'}),
+    /Available themes: light, night/u,
+  );
+  assert.throws(
+    () => resolveTileflowRuntimeStyle({manifestMap, source, theme: 'Dark'}),
+    /concrete portable theme name/u,
+  );
+  assert.throws(
+    () =>
+      resolveTileflowRuntimeStyle({
+        manifestMap: {...manifestMap, defaultTheme: 'system'},
+        source,
+      }),
+    /concrete portable theme name/u,
+  );
+  assert.throws(
+    () =>
+      resolveTileflowRuntimeStyle({
+        colorScheme: 'dark',
+        manifestMap: {...manifestMap, systemThemes: {dark: 'con', light: 'light'}},
+        source,
+        theme: 'system',
+      }),
+    /concrete portable theme name/u,
+  );
+  assert.throws(
+    () =>
+      resolveTileflowRuntimeStyle({
+        source: {kind: 'maplibre', style: '/style.json'},
+        theme: 'dark',
+      }),
+    /only valid for a Tileflow/u,
   );
 });
 
@@ -82,11 +152,6 @@ test('loads manifests only for Tileflow sources that need published delivery dat
   const tileflow = {kind: 'tileflow', map: 'main'} as const;
   const maplibre = {kind: 'maplibre', style: '/style.json'} as const;
   assert.equal(shouldLoadTileflowManifest({source: tileflow}), true);
-  assert.equal(shouldLoadTileflowManifest({imageMode: true, source: tileflow}), true);
-  assert.equal(
-    shouldLoadTileflowManifest({imageMode: true, imageUrl: '/map.png', source: tileflow}),
-    false,
-  );
   assert.equal(shouldLoadTileflowManifest({source: maplibre}), false);
 });
 

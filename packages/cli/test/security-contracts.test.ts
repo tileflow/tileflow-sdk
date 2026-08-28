@@ -107,27 +107,34 @@ test('one hosted preflight rejects external data for validation and deploy calle
     metadata: {'tileflow:data': {kind: 'vector-tiles'}},
   };
 
-  assert.deepEqual(inspectTileflowHostedCompatibility(project, {main: compatible}), []);
-  assert.deepEqual(inspectTileflowHostedCompatibility(project, {main: external}), [
+  assert.deepEqual(inspectTileflowHostedCompatibility(project, {main: {light: compatible}}), []);
+  assert.deepEqual(inspectTileflowHostedCompatibility(project, {main: {light: external}}), [
     {
       map: 'main',
       message:
-        'Hosted deploy supports only Tileflow World data. Map main uses an external vector dataset; keep it local or switch to tileflowWorld().',
-      path: 'maps.main.data',
+        'Hosted deploy supports only Tileflow World data. Map main theme light uses an external vector dataset; keep it local or switch to tileflowWorld().',
+      path: 'maps.main.themes.light.data',
     },
   ]);
 });
 
-test('hosted success responses are bounded and runtime validated while allowing additions', async () => {
+test('hosted success responses validate exact atomic theme families and bounded bodies', async () => {
   const deployment = await readHostedJson(
     new Response(
       JSON.stringify({
         changed: true,
         mapId: 'map_test',
-        mapUrl: 'https://api.example.test/maps/map_test/style.json',
-        styleId: 'sty_test',
+        themes: {
+          dark: {
+            styleId: 'sty_test_dark',
+            styleUrl: 'https://api.example.test/maps/map_test/dark.json',
+          },
+          light: {
+            styleId: 'sty_test_light',
+            styleUrl: 'https://api.example.test/maps/map_test/light.json',
+          },
+        },
         version: 2,
-        additive: true,
       }),
       {headers: {'Content-Type': 'application/json'}},
     ),
@@ -135,7 +142,22 @@ test('hosted success responses are bounded and runtime validated while allowing 
     'Deploy response',
   );
   assert.equal(deployment.mapId, 'map_test');
-  assert.equal(Object.hasOwn(deployment, 'additive'), false);
+  assert.deepEqual(Object.keys(deployment.themes), ['dark', 'light']);
+
+  await assert.rejects(
+    () =>
+      readHostedJson(
+        new Response(
+          JSON.stringify({
+            ...deployment,
+            additive: true,
+          }),
+        ),
+        hostedStyleDeploymentResponseSchema,
+        'Deploy response',
+      ),
+    /invalid response/,
+  );
 
   const status = await readHostedJson(
     new Response(
@@ -163,7 +185,12 @@ test('hosted success responses are bounded and runtime validated while allowing 
   await assert.rejects(
     () =>
       readHostedJson(
-        new Response(JSON.stringify({mapId: 'map_test', mapUrl: 'javascript:alert(1)'})),
+        new Response(
+          JSON.stringify({
+            mapId: 'map_test',
+            themes: {light: {styleUrl: 'javascript:alert(1)'}},
+          }),
+        ),
         hostedStyleDeploymentResponseSchema,
         'Deploy response',
       ),

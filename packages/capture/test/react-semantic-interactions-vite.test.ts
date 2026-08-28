@@ -175,7 +175,7 @@ test(
           },
           {
             bindingId: 'semantic-poi-popup',
-            category: 'food',
+            category: 'food-drink',
             domain: 'poi',
             featureId: 42,
             hasPhysicalLayerId: false,
@@ -218,12 +218,19 @@ const style = {
             identity: ['source', 'source-layer', 'feature-id'],
             representationPriority: ['marker', 'icon', 'combined', 'label']
           },
-          fields: {class: 'class', name: 'name', rank: 'rank', subclass: 'subclass'},
+          fields: {
+            category: 'category',
+            filterRank: 'filter_rank',
+            icon: 'icon',
+            name: 'name',
+            sizeRank: 'size_rank',
+            type: 'type',
+          },
           hitTesting: {frequency: 'animation-frame', order: 'rendered-topmost'},
           identity: 'maplibre-feature-id-if-present',
           layers: [{
             anchor: 'pointer-coordinate',
-            category: 'food',
+            category: 'food-drink',
             layerId: 'semantic-poi-layer',
             priority: 10,
             representation: 'marker',
@@ -231,7 +238,7 @@ const style = {
           }]
         }
       },
-      version: 1
+      version: 2
     }
   },
   sources: {
@@ -242,7 +249,14 @@ const style = {
         features: [{
           type: 'Feature',
           id: 42,
-          properties: {class: 'restaurant', name: 'Café Browser', rank: 1, subclass: 'cafe'},
+          properties: {
+            category: 'food-drink',
+            filter_rank: 1,
+            icon: 'restaurant',
+            name: 'Café Browser',
+            size_rank: 16,
+            type: 'restaurant'
+          },
           geometry: {type: 'Point', coordinates: [0, 0]}
         }]
       }
@@ -256,7 +270,7 @@ const style = {
 const interactions = [{
   id: 'semantic-poi-popup',
   popup: {content: {kind: 'view', name: 'semantic-poi-card'}},
-  target: {categories: ['food'], domain: 'poi', kind: 'semantic-feature'}
+  target: {categories: ['food-drink'], domain: 'poi', kind: 'semantic-feature'}
 }];
 
 function SemanticPopup({context}) {

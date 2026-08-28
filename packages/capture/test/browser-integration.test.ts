@@ -99,12 +99,14 @@ test(
       await writeFile(
         join(cwd, 'tileflow.config.ts'),
         `import {defineRootMap} from '@tileflow/core';
-import {streetsIcons} from '@tileflow/maps';
+import {streetsIcons, streetsThemes} from '@tileflow/maps';
 
 export default defineRootMap({
       id: 'proof',
       version: 1,
       root: {compiler: 'streets', compilerVersion: 1},
+      defaultTheme: 'light',
+      themes: streetsThemes,
       icons: [streetsIcons],
       glyphs: {
         kind: 'url',
@@ -132,7 +134,7 @@ export default defineRootMap({
         assetBaseUrl: tileflowSyntheticAssetOrigin,
         cwd,
       });
-      const generatedStyle = artifacts.styles.proof;
+      const generatedStyle = artifacts.styles.proof?.light;
       assert.ok(generatedStyle);
       assert.ok(
         generatedStyle.layers.some((layer) => layer.id === 'streets-road-surface-primary-casing'),
@@ -216,12 +218,14 @@ test(
       await writeFile(
         join(cwd, 'tileflow.config.ts'),
         `import {defineRootMap} from '@tileflow/core';
-import {streetsIcons} from '@tileflow/maps';
+import {streetsIcons, streetsThemes} from '@tileflow/maps';
 
 export default defineRootMap({
   id: 'proof',
   version: 1,
   root: {compiler: 'streets', compilerVersion: 1},
+  defaultTheme: 'light',
+  themes: streetsThemes,
   icons: [streetsIcons],
   glyphs: {
     kind: 'url',
@@ -256,7 +260,7 @@ export default defineRootMap({
         assetBaseUrl: tileflowSyntheticAssetOrigin,
         cwd,
       });
-      const generatedStyle = artifacts.styles.proof;
+      const generatedStyle = artifacts.styles.proof?.light;
       assert.ok(generatedStyle);
       assert.equal(generatedStyle.sources['tileflow-contours']?.type, 'vector');
       assert.ok(
@@ -295,6 +299,7 @@ export default defineRootMap({
 
 const scene: NormalizedTileflowCaptureScene = {
   map: 'proof',
+  theme: 'light',
   camera: {
     type: 'center',
     center: [0, 0],
@@ -308,6 +313,7 @@ const scene: NormalizedTileflowCaptureScene = {
 
 const generatedScene: NormalizedTileflowCaptureScene = {
   map: 'proof',
+  theme: 'light',
   camera: {type: 'center', center: [0, 0], zoom: 1, bearing: 0, pitch: 0},
   viewport: {width: 256, height: 256, dpr: 1},
   target: {kind: 'map'},

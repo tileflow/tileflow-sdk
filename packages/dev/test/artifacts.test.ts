@@ -7,6 +7,7 @@ import {streetsIcons} from '@tileflow/maps';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   createTileflowBuildArtifacts,
+  getTileflowArtifactFiles,
   tileflowArtifactInventoryFileName,
   TileflowHostedManifestOverwriteError,
   writeTileflowBuildArtifacts,
@@ -38,8 +39,8 @@ test('models source, prepared and artifact-plan boundaries with a complete input
   assert.deepEqual(sourceIcons, [streetsIcons, './icons']);
   assert.deepEqual(preparedIcons, [streetsIcons, './icons']);
   assert.ok(plan.files.some((file) => file.fileName === 'icons/main/sprite.png'));
-  const styleUrl = plan.manifest.styles.main!;
-  assert.match(styleUrl, /^\/tileflow\/generations\/[a-f0-9]{64}\/styles\/main\.json$/);
+  const styleUrl = plan.manifest.maps.main!.themes.light!.styleUrl;
+  assert.match(styleUrl, /^\/tileflow\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/);
   const immutableStyleFile = plan.files.find(
     (file) => `/${file.fileName}` === styleUrl.replace('/tileflow', ''),
   );
@@ -58,6 +59,26 @@ test('models source, prepared and artifact-plan boundaries with a complete input
   assert.ok(plan.inputs.files.includes(join(realCwd, 'tokens.ts')));
   assert.deepEqual(plan.inputs.directories, [join(realCwd, 'icons')]);
   assert.deepEqual(plan.watchPaths, [...plan.inputs.files, ...plan.inputs.directories].sort());
+
+  const {files: _files, ...stableArtifacts} = plan;
+  const style = plan.styles.main?.light;
+  assert.ok(style);
+  for (const [mapName, themeName] of [
+    ['con', 'light'],
+    ['constructor', 'light'],
+    ['main', 'system'],
+    ['main', 'con'],
+  ] as const) {
+    assert.throws(
+      () =>
+        getTileflowArtifactFiles({
+          ...stableArtifacts,
+          styles: {[mapName]: {[themeName]: style}},
+        }),
+      /Unexpected Tileflow managed artifact file name/u,
+      `${mapName}/${themeName}`,
+    );
+  }
 });
 
 test('resolves and watches local assets from a nested config directory within cwd', async (t) => {
@@ -113,7 +134,7 @@ test('materializes package-owned Cyberpunk fonts and retargets immutable runtime
     stableFontAssets[0]?.fileName ?? '',
     /^fonts\/licenses\/license-[a-f0-9]{64}\.txt$/u,
   );
-  const stableFaces = plan.styles.night?.metadata?.['tileflow:fontFaces'] as Array<{
+  const stableFaces = plan.styles.night?.dark?.metadata?.['tileflow:fontFaces'] as Array<{
     family: string;
     source: string;
     weight: string;
@@ -136,7 +157,8 @@ test('materializes package-owned Cyberpunk fonts and retargets immutable runtime
     ),
   );
 
-  const immutableStyleUrl = plan.manifest.styles.night!;
+  const immutableTheme = plan.manifest.maps.night!.themes.dark!;
+  const immutableStyleUrl = immutableTheme.styleUrl;
   const immutableStyleFile = plan.files.find(
     (file) => `/${file.fileName}` === immutableStyleUrl.replace('/tileflow', ''),
   );
@@ -150,11 +172,30 @@ test('materializes package-owned Cyberpunk fonts and retargets immutable runtime
       /^\/tileflow\/generations\/[a-f0-9]{64}\/fonts\/oxanium-/u.test(face.source),
     ),
   );
-  assert.deepEqual(plan.manifest.fontFaces?.night, immutableFaces);
+  assert.deepEqual(immutableTheme.fontFaces, immutableFaces);
   for (const face of immutableFaces) {
     assert.ok(
       plan.files.some((file) => `/${file.fileName}` === face.source.replace('/tileflow', '')),
     );
+  }
+
+  const relativePlan = await createTileflowBuildArtifacts({cwd, styleBaseUrl: '.'});
+  const relativeTheme = relativePlan.manifest.maps.night!.themes.dark!;
+  const relativeStyleFile = relativePlan.files.find(
+    (file) => file.fileName === relativeTheme.styleUrl.replace(/^\.\//u, ''),
+  );
+  assert.ok(relativeStyleFile && typeof relativeStyleFile.source === 'string');
+  const relativeStyle = JSON.parse(relativeStyleFile.source) as {
+    metadata?: {'tileflow:fontFaces'?: Array<{source: string}>};
+  };
+  const relativeFaces = relativeStyle.metadata?.['tileflow:fontFaces'] ?? [];
+  assert.ok(relativeFaces.every((face) => /^\.\.\/\.\.\/fonts\//u.test(face.source)));
+  const publicManifestUrl = new URL('https://example.test/tileflow/manifest.json');
+  const publicStyleUrl = new URL(relativeTheme.styleUrl, publicManifestUrl);
+  for (const face of relativeFaces) {
+    const publicFontUrl = new URL(face.source, publicStyleUrl);
+    const fontFileName = publicFontUrl.pathname.replace(/^\/tileflow\//u, '');
+    assert.ok(relativePlan.files.some((file) => file.fileName === fontFileName));
   }
 
   await writeFile(
@@ -166,8 +207,8 @@ test('materializes package-owned Cyberpunk fonts and retargets immutable runtime
     remoteGlyphPlan.assets.some((asset) => asset.fileName.startsWith('fonts/')),
     false,
   );
-  assert.equal(remoteGlyphPlan.manifest.fontFaces, undefined);
-  assert.equal(remoteGlyphPlan.styles.night?.metadata?.['tileflow:fontFaces'], undefined);
+  assert.deepEqual(remoteGlyphPlan.manifest.maps.night?.themes.dark?.fontFaces, []);
+  assert.equal(remoteGlyphPlan.styles.night?.dark?.metadata?.['tileflow:fontFaces'], undefined);
 });
 
 test('keeps relative sprites valid inside the default content-addressed build layout', async (t) => {
@@ -178,14 +219,14 @@ test('keeps relative sprites valid inside the default content-addressed build la
   );
 
   const plan = await createTileflowBuildArtifacts({cwd, styleBaseUrl: '.'});
-  const styleReference = plan.manifest.styles.main!;
-  assert.match(styleReference, /^\.\/generations\/[a-f0-9]{64}\/styles\/main\.json$/);
+  const styleReference = plan.manifest.maps.main!.themes.light!.styleUrl;
+  assert.match(styleReference, /^\.\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/);
   const immutableStyleFile = plan.files.find(
     (file) => file.fileName === styleReference.replace(/^\.\//, ''),
   );
   assert.ok(immutableStyleFile && typeof immutableStyleFile.source === 'string');
   const immutableStyle = JSON.parse(immutableStyleFile.source) as {sprite?: string};
-  assert.equal(immutableStyle.sprite, '../icons/main/sprite');
+  assert.equal(immutableStyle.sprite, '../../icons/main/sprite');
 
   const publicManifestUrl = new URL('https://example.test/tileflow/manifest.json');
   const publicStyleUrl = new URL(styleReference, publicManifestUrl);
@@ -193,14 +234,17 @@ test('keeps relative sprites valid inside the default content-addressed build la
   assert.equal(
     publicSpriteUrl.pathname,
     immutableStyleFile.fileName
-      .replace(/\/styles\/main\.json$/, '/icons/main/sprite.png')
+      .replace(/\/styles\/main\/light\.json$/, '/icons/main/sprite.png')
       .replace(/^/, '/tileflow/'),
   );
   assert.ok(
     plan.files.some(
       (file) =>
         file.fileName ===
-        immutableStyleFile.fileName.replace(/\/styles\/main\.json$/, '/icons/main/sprite.png'),
+        immutableStyleFile.fileName.replace(
+          /\/styles\/main\/light\.json$/,
+          '/icons/main/sprite.png',
+        ),
     ),
   );
 });
@@ -217,7 +261,9 @@ test('replaces a managed generation, removes only inventoried stale files and pr
   await writeFile(join(cwd, 'tileflow.workspace.ts'), config(['alpha']));
   await writeTileflowBuildArtifacts({config: 'tileflow.workspace.ts', cwd, outDir});
 
-  await assert.rejects(() => readFile(join(outDir, 'styles', 'zeta.json')), {code: 'ENOENT'});
+  await assert.rejects(() => readFile(join(outDir, 'styles', 'zeta', 'light.json')), {
+    code: 'ENOENT',
+  });
   assert.equal(await readFile(join(outDir, 'user-note.txt'), 'utf8'), 'keep me\n');
   const secondInventory = await readInventory(outDir);
   const secondGenerationFiles = generationFiles(secondInventory);
@@ -225,9 +271,10 @@ test('replaces a managed generation, removes only inventoried stale files and pr
   assert.equal(secondInventory.schemaVersion, 1);
   assert.match(secondInventory.generation, /^[a-f0-9]{64}$/);
   assert.ok(secondInventory.files.includes('manifest.json'));
-  assert.ok(secondInventory.files.includes('styles/alpha.json'));
+  assert.ok(secondInventory.files.includes('styles/alpha/light.json'));
+  assert.ok(secondInventory.files.includes('styles/alpha/dark.json'));
   assert.equal(
-    secondInventory.files.some((file) => file === 'styles/zeta.json'),
+    secondInventory.files.some((file) => file.startsWith('styles/zeta/')),
     false,
   );
   for (const fileName of firstGenerationFiles) {
@@ -235,8 +282,9 @@ test('replaces a managed generation, removes only inventoried stale files and pr
     await readFile(join(outDir, fileName));
   }
   assert.equal(
-    secondGenerationFiles.filter((file) => /\/styles\/alpha\.json$/.test(file)).length,
-    1,
+    secondGenerationFiles.filter((file) => /\/styles\/alpha\/(?:dark|light)\.json$/.test(file))
+      .length,
+    2,
   );
 
   await writeTileflowBuildArtifacts({config: 'tileflow.workspace.ts', cwd, outDir});
@@ -267,17 +315,21 @@ test('refuses to replace a Hosted manifest unless the caller opts in explicitly'
   await writeFile(join(cwd, 'tileflow.workspace.ts'), config(['main']));
   const hosted = {
     apiUrl: 'https://api.example.test',
-    kind: 'hosted',
     maps: {
       main: {
+        defaultTheme: 'light',
         environment: 'production',
         mapId: 'map_main',
-        styleId: 'style_main',
-        styleUrl: 'https://styles.example.test/main.json',
+        themes: {
+          light: {
+            colorScheme: 'light',
+            styleId: 'style_main',
+            styleUrl: 'https://styles.example.test/main.json',
+          },
+        },
       },
     },
-    styles: {main: 'https://styles.example.test/main.json'},
-    version: 3,
+    version: 1,
   };
   await writeFile(join(outDir, 'manifest.json'), `${JSON.stringify(hosted)}\n`);
 
@@ -294,9 +346,16 @@ test('refuses to replace a Hosted manifest unless the caller opts in explicitly'
     overwriteHostedManifest: true,
   });
   const replacement = JSON.parse(await readFile(join(outDir, 'manifest.json'), 'utf8')) as {
-    kind?: string;
+    apiUrl?: string;
+    maps?: {main?: {themes?: {light?: {styleUrl?: string}}}};
+    version?: number;
   };
-  assert.equal(replacement.kind, 'self-hosted');
+  assert.equal(replacement.apiUrl, undefined);
+  assert.equal(replacement.version, 1);
+  assert.match(
+    replacement.maps?.main?.themes?.light?.styleUrl ?? '',
+    /styles\/main\/light\.json$/u,
+  );
 });
 
 test('rejects a forged inventory instead of deleting an unmanaged file', async (t) => {
@@ -311,6 +370,16 @@ test('rejects a forged inventory instead of deleting an unmanaged file', async (
     `${JSON.stringify({...inventory, files: [...inventory.files, 'user-note.txt']})}\n`,
   );
 
+  await assert.rejects(
+    () => writeTileflowBuildArtifacts({config: 'tileflow.workspace.ts', cwd, outDir}),
+    /Invalid Tileflow artifact inventory/,
+  );
+  assert.equal(await readFile(join(outDir, 'user-note.txt'), 'utf8'), 'keep me\n');
+
+  await writeFile(
+    join(outDir, tileflowArtifactInventoryFileName),
+    `${JSON.stringify({...inventory, files: [...inventory.files, 'styles/main/../dark.json']})}\n`,
+  );
   await assert.rejects(
     () => writeTileflowBuildArtifacts({config: 'tileflow.workspace.ts', cwd, outDir}),
     /Invalid Tileflow artifact inventory/,

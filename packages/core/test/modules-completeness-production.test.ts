@@ -1,7 +1,7 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {addresses, createStyle, labels, landforms, openMapTiles, vectorTiles} from '../src';
+import {addresses, createStyle, fixed, labels, landforms, openMapTiles, vectorTiles} from '../src';
 import {extendStreets} from './map-fixture';
 
 const streetsPreparedAssets = {
@@ -82,9 +82,17 @@ test('address, landform, language, capital, and elevation bindings are remappabl
 test('new semantic modules can be styled or disabled without raw layer IDs', () => {
   const style = compileTestMap({
     modules: {
-      addresses: addresses({labels: {minZoom: 18, text: {color: '#334455'}}}),
+      addresses: addresses({
+        labels: {
+          minZoom: 18,
+          text: {color: fixed('#334455', {reason: 'Exact fixture override.'})},
+        },
+      }),
       landforms: landforms({
-        classes: {cliff: {visible: false}, peak: {text: {color: '#553311'}}},
+        classes: {
+          cliff: {visible: false},
+          peak: {text: {color: fixed('#553311', {reason: 'Exact fixture override.'})}},
+        },
         elevation: false,
       }),
     },

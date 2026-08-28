@@ -4,6 +4,7 @@ export const tileflowLayerDomains = [
   'terrain',
   'landforms',
   'water',
+  'nautical',
   'roads',
   'transit',
   'aeroways',

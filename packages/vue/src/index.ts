@@ -31,12 +31,17 @@ import {
   attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
   createTileflowSessionStarter,
+  createTileflowThemeController,
   createTileflowTransformRequest,
+  getTileflowSystemColorScheme,
   loadTileflowStyleFonts,
   registerTileflowContourProtocol,
   registerTileflowWorldRequestBridge,
+  subscribeTileflowSystemColorScheme,
   type TileflowFairUseNoticeController,
   type TileflowMapLifecycleAttachment,
+  type TileflowThemeController,
+  type TileflowThemeTransition,
   type TileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
@@ -51,6 +56,7 @@ import {
   resolveTileflowManifestMap,
   resolveTileflowMapMode,
   resolveTileflowRuntimeStyle,
+  resolveTileflowRuntimeTheme,
   resolveTileflowRuntimeView,
   resolveTileflowStaticImageUrl,
   shouldLoadTileflowManifest,
@@ -177,6 +183,7 @@ type PublicTileflowMapComponent = PublicTileflowMapStatics & {
       (event: 'interactionDiagnostic', diagnostic: TileflowInteractionDiagnostic): void;
       (event: 'interactionEvent', interactionEvent: TileflowInteractionEvent<TAnnotation>): void;
       (event: 'load', map: MapLibreMap): void;
+      (event: 'themeChange', transition: TileflowThemeTransition): void;
       (event: 'update:interactionState', state: TileflowInteractionState): void;
     };
     $props: TileflowMapProps<TAnnotation>;
@@ -224,12 +231,14 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       required: true,
       type: Object as PropType<TileflowRuntimeSource>,
     },
+    theme: String,
     zoom: Number,
   },
   emits: {
     interactionDiagnostic: (_diagnostic: TileflowInteractionDiagnostic) => true,
     interactionEvent: (_event: TileflowInteractionEvent<RuntimeTileflowAnnotation>) => true,
     load: (_map: MapLibreMap) => true,
+    themeChange: (_transition: TileflowThemeTransition) => true,
     'update:interactionState': (_state: TileflowInteractionState) => true,
   },
   setup(props, {attrs, emit, slots}) {
@@ -239,7 +248,9 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     const manifestResolutionState = ref<'error' | 'loading' | 'not-needed' | 'ready'>('loading');
     const imageSize = shallowRef<{height: number; width: number} | null>(null);
     const mapRef = shallowRef<MapLibreMap | null>(null);
+    const systemColorScheme = ref<'dark' | 'light'>('light');
     const mapCaptureState = ref<'error' | 'idle' | 'loading'>('loading');
+    const themeTransitionState = ref<'error' | 'idle' | 'loading'>('idle');
     const activeRuntimeResource = shallowRef<unknown>(undefined);
     const interactionCaptureState = ref<'error' | 'idle' | 'loading'>('idle');
     const annotationRenderTargets = shallowRef<
@@ -271,6 +282,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     let mapLifecycle: TileflowMapLifecycleAttachment | null = null;
     let mapResizeObserver: ResizeObserver | null = null;
     let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
+    let themeController: TileflowThemeController | null = null;
+    let unsubscribeSystemColorScheme: (() => void) | null = null;
     let mapLoadId = 0;
     let manifestLoadId = 0;
     let readinessRunId = 0;
@@ -362,8 +375,6 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     );
     const shouldLoadManifest = computed(() =>
       shouldLoadTileflowManifest({
-        imageMode: isImageMode.value,
-        imageUrl: props.imageUrl,
         source: props.source,
       }),
     );
@@ -383,6 +394,28 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         ? loadedManifestMap.value
         : null,
     );
+    const themeResolution = computed(() => {
+      if (!manifestMap.value || props.source.kind !== 'tileflow') {
+        return {
+          error: false,
+          name:
+            props.source.kind === 'tileflow' && props.theme && props.theme !== 'system'
+              ? props.theme
+              : undefined,
+        } as const;
+      }
+
+      try {
+        return {
+          error: false,
+          name: resolveTileflowRuntimeTheme(manifestMap.value, props.theme, systemColorScheme.value)
+            .name,
+        } as const;
+      } catch {
+        return {error: true, name: undefined} as const;
+      }
+    });
+    const resolvedThemeName = computed(() => themeResolution.value.name);
     const manifestView = computed(() =>
       resolveTileflowRuntimeView({manifestMap: manifestMap.value}),
     );
@@ -418,11 +451,13 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       () => props.interactive ?? props.mapOptions?.interactive ?? true,
     );
     const runtimeStyle = computed(() =>
-      isImageMode.value
+      isImageMode.value || themeResolution.value.error
         ? null
         : resolveTileflowRuntimeStyle({
+            colorScheme: systemColorScheme.value,
             manifestMap: manifestMap.value,
             source: props.source,
+            theme: themeResolution.value.name,
           }),
     );
     const resolvedAnalytics = computed(() =>
@@ -431,11 +466,13 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     const runtimeImageUrl = computed(
       () =>
         props.imageUrl ??
-        (isImageMode.value
+        (isImageMode.value && !themeResolution.value.error
           ? resolveTileflowStaticImageUrl({
               center: imageCenter.value,
+              colorScheme: systemColorScheme.value,
               imageSize: imageSize.value,
               manifestMap: manifestMap.value,
+              theme: themeResolution.value.name,
               zoom: imageZoom.value,
             })
           : undefined),
@@ -444,6 +481,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       if (shouldLoadManifest.value && currentManifestResolutionState.value !== 'ready') {
         return currentManifestResolutionState.value === 'error' ? 'error' : 'loading';
       }
+      if (themeResolution.value.error) return 'error';
       if (isImageMode.value) {
         if (runtimeImageUrl.value) return 'idle';
         return props.imageUrl === undefined && imageSize.value === null ? 'loading' : 'error';
@@ -460,14 +498,16 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       if (
         currentMapCaptureState.value === 'error' ||
         interactionCaptureState.value === 'error' ||
-        runtimeResolutionState.value === 'error'
+        runtimeResolutionState.value === 'error' ||
+        themeTransitionState.value === 'error'
       ) {
         return 'error';
       }
       if (
         currentMapCaptureState.value === 'loading' ||
         interactionCaptureState.value === 'loading' ||
-        runtimeResolutionState.value === 'loading'
+        runtimeResolutionState.value === 'loading' ||
+        themeTransitionState.value === 'loading'
       ) {
         return 'loading';
       }
@@ -579,7 +619,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     };
 
     watchEffect(() => {
-      assertTileflowMapStyleInputs({source: props.source});
+      assertTileflowMapStyleInputs({source: props.source, theme: props.theme});
     });
 
     watchEffect(() => {
@@ -662,6 +702,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       const fairUseNotice = mapFairUseNotice;
       const resizeObserver = mapResizeObserver;
       const map = mapRef.value;
+      const controller = themeController;
       const annotationInteractionsForMap = annotationRuntime;
       const semanticInteractionsForMap = semanticRuntime;
       const worldRequestBridge = mapWorldRequestBridge;
@@ -679,6 +720,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         () => worldRequestBridge?.dispose(),
         () => fairUseNotice?.dispose(),
         () => lifecycle?.dispose(),
+        () => controller?.dispose(),
         () => resizeObserver?.disconnect(),
         () => map?.remove(),
       ];
@@ -705,6 +747,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       mapResizeObserver = null;
       mapRef.value = null;
       mapWorldRequestBridge = null;
+      themeController = null;
 
       interactionRuntimesDisposing = true;
       let teardownError: unknown;
@@ -772,8 +815,10 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       interactionOverlayFailed = false;
       settleInteractionReadiness();
       mapCaptureState.value = 'loading';
+      themeTransitionState.value = 'idle';
 
       if (isImageMode.value) {
+        await resetImageReadiness();
         return;
       }
 
@@ -785,7 +830,6 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       const loadId = mapLoadId;
       const container = containerRef.value;
       const runtime = runtimeStyle.value;
-      const analyticsForMap = resolvedAnalytics.value;
       let maplibregl: Awaited<ReturnType<typeof loadTileflowMapLibre>>;
 
       try {
@@ -803,12 +847,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         return;
       }
 
-      if (
-        loadId !== mapLoadId ||
-        containerRef.value !== container ||
-        runtimeStyle.value !== runtime ||
-        isImageMode.value
-      ) {
+      if (loadId !== mapLoadId || containerRef.value !== container || isImageMode.value) {
         return;
       }
 
@@ -839,7 +878,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
           RequestParameters,
           Parameters<RequestTransformFunction>[1]
         >({
-          getAnalytics: () => analyticsForMap,
+          getAnalytics: () => resolvedAnalytics.value,
           sessionController: session,
           sessionId: session.sessionId,
           transformRequest: props.mapOptions?.transformRequest ?? undefined,
@@ -849,6 +888,23 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       });
 
       mapRef.value = map;
+      themeController =
+        runtime.theme === undefined
+          ? null
+          : createTileflowThemeController({
+              initial: runtime,
+              map,
+              onTransition(transition) {
+                emit('themeChange', transition);
+                if (transition.phase === 'preloading' || transition.phase === 'applying') {
+                  themeTransitionState.value = 'loading';
+                } else if (transition.phase === 'error') {
+                  themeTransitionState.value = 'error';
+                } else {
+                  themeTransitionState.value = 'idle';
+                }
+              },
+            });
 
       try {
         const mapInteractions = createTileflowMapLibreDomRuntime<
@@ -994,6 +1050,36 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
           return () => subscription.unsubscribe();
         },
       });
+      if (themeController && runtimeStyle.value && runtimeStyle.value !== runtime) {
+        activeRuntimeResource.value = runtimeStyle.value;
+        void themeController.setTheme(runtimeStyle.value);
+      }
+    };
+
+    const switchTheme = () => {
+      if (!themeController) return;
+      if (themeResolution.value.error) {
+        void themeController.setTheme(themeController.getCurrent());
+        return;
+      }
+      const next = runtimeStyle.value;
+      if (!next) return;
+      activeRuntimeResource.value = next;
+      void themeController.setTheme(next).then((result) => {
+        if (result.status === 'failed') {
+          console.error('Failed to change the Tileflow map theme', result.error);
+        }
+      });
+    };
+
+    const syncSystemColorSchemeSubscription = () => {
+      unsubscribeSystemColorScheme?.();
+      unsubscribeSystemColorScheme = null;
+      if (props.theme !== 'system') return;
+      systemColorScheme.value = getTileflowSystemColorScheme();
+      unsubscribeSystemColorScheme = subscribeTileflowSystemColorScheme((scheme) => {
+        systemColorScheme.value = scheme;
+      });
     };
 
     const syncView = () => {
@@ -1041,6 +1127,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     };
 
     onMounted(() => {
+      syncSystemColorSchemeSubscription();
       void refreshManifest();
       updateImageResizeObserver();
       void recreateMap();
@@ -1048,6 +1135,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     });
 
     onBeforeUnmount(() => {
+      unsubscribeSystemColorScheme?.();
       imageResizeObserver?.disconnect();
       destroyMap();
       interactionCoordinator.dispose();
@@ -1062,6 +1150,15 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       () => {
         void refreshManifest();
       },
+    );
+    watch(
+      () => props.theme,
+      () => syncSystemColorSchemeSubscription(),
+    );
+    watch(
+      () => runtimeStyle.value,
+      () => switchTheme(),
+      {flush: 'post'},
     );
     watch(
       () => [hasInteractionConfiguration.value, isImageMode.value, runtimeImageUrl.value],
@@ -1204,6 +1301,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
           class: classValue,
           'data-tileflow-capture-id': resolvedCaptureId.value,
           'data-tileflow-map': mapName.value,
+          'data-tileflow-theme': resolvedThemeName.value,
           'data-tileflow-state': captureState.value,
           ref: containerRef,
           style: styleValue,

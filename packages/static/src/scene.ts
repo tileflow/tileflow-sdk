@@ -66,5 +66,6 @@ function normalizeParsedStaticScene(parsed: StaticScene): StaticScene {
       height: parsed.size.height,
       width: parsed.size.width,
     },
+    theme: parsed.theme,
   }) as StaticScene;
 }

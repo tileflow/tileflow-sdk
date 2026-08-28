@@ -1,9 +1,13 @@
 import {isAbsolute, relative, resolve, win32} from 'node:path';
 import {
+  auditTileflowMapThemeValues,
   compareCodeUnits,
   parseTileflowMap,
   type ResolvedTileflowMap,
+  resolveTileflowTheme,
   type TileflowMap,
+  type TileflowThemeAuditDiagnostic,
+  type TileflowThemeColorScheme,
 } from '@tileflow/core';
 import {
   defaultTileflowConfigPath,
@@ -53,6 +57,44 @@ export type TileflowResolvedMapInspection = {
   lineage: TileflowMapLineageInspection[];
   provenance: TileflowMapMergeProvenance[];
   resolved: Record<string, unknown>;
+  themeContract: TileflowThemeContractInspection;
+};
+
+export type TileflowThemeDifferenceInspection = {
+  from: unknown;
+  path: string;
+  to: unknown;
+};
+
+export type TileflowThemeInspection = {
+  colorScheme: TileflowThemeColorScheme;
+  differencesFromDefault: TileflowThemeDifferenceInspection[];
+  id: string;
+  isDefault: boolean;
+  lighting: Record<string, unknown>;
+  name: string;
+  systemFor: TileflowThemeColorScheme[];
+  tokens: {
+    color: Record<string, string>;
+    font: Record<string, string>;
+    image: Record<string, string>;
+    number: Record<string, number>;
+  };
+  typography: Record<string, unknown>;
+  version: number;
+};
+
+export type TileflowThemeContractInspection = {
+  audit: TileflowThemeAuditDiagnostic[];
+  defaultTheme: string;
+  systemThemes?: {dark: string; light: string};
+  themes: Record<string, TileflowThemeInspection>;
+  tokenSchema: {
+    color: string[];
+    font: string[];
+    image: string[];
+    number: string[];
+  };
 };
 
 export type TileflowConfigInspection = TileflowCommandSummary & {
@@ -161,7 +203,117 @@ function inspectResolvedMap(
       cwd,
     ),
     resolved,
+    themeContract: inspectThemeContract(resolvedMap as ResolvedTileflowMap, cwd),
   };
+}
+
+function inspectThemeContract(
+  map: ResolvedTileflowMap,
+  cwd: string,
+): TileflowThemeContractInspection {
+  const names = Object.keys(map.themes).sort(compareCodeUnits);
+  const defaultResolved = resolveTileflowTheme(map.themes[map.defaultTheme]!);
+  const comparableDefault = {
+    colorScheme: defaultResolved.colorScheme,
+    lighting: defaultResolved.lighting,
+    tokens: defaultResolved.tokens,
+    typography: defaultResolved.typography,
+  };
+  const themes = Object.fromEntries(
+    names.map((name) => {
+      const resolved = resolveTileflowTheme(map.themes[name]!);
+      const comparable = {
+        colorScheme: resolved.colorScheme,
+        lighting: resolved.lighting,
+        tokens: resolved.tokens,
+        typography: resolved.typography,
+      };
+      return [
+        name,
+        {
+          colorScheme: resolved.colorScheme,
+          differencesFromDefault:
+            name === map.defaultTheme ? [] : compareThemeValues(comparableDefault, comparable, cwd),
+          id: sanitizeDiagnosticSecrets(resolved.id),
+          isDefault: name === map.defaultTheme,
+          lighting: sanitizeInspectableRecord(resolved.lighting, cwd),
+          name,
+          systemFor: (['dark', 'light'] as const).filter(
+            (scheme) => map.systemThemes?.[scheme] === name,
+          ),
+          tokens: sanitizeInspectValue(resolved.tokens, cwd) as TileflowThemeInspection['tokens'],
+          typography: sanitizeInspectableRecord(resolved.typography, cwd),
+          version: resolved.version,
+        } satisfies TileflowThemeInspection,
+      ];
+    }),
+  );
+  const tokenSchema = {
+    color: Object.keys(defaultResolved.tokens.color).sort(compareCodeUnits),
+    font: Object.keys(defaultResolved.tokens.font).sort(compareCodeUnits),
+    image: Object.keys(defaultResolved.tokens.image).sort(compareCodeUnits),
+    number: Object.keys(defaultResolved.tokens.number).sort(compareCodeUnits),
+  };
+  const audit = auditTileflowMapThemeValues(map).map((diagnostic) => {
+    const value = sanitizeInspectValue(diagnostic.value, cwd);
+    return {
+      ...diagnostic,
+      message: sanitizeDiagnosticSecrets(diagnostic.message),
+      ...(diagnostic.owner === undefined
+        ? {}
+        : {owner: sanitizeDiagnosticSecrets(diagnostic.owner)}),
+      path: sanitizeDiagnosticSecrets(diagnostic.path),
+      suggestion: sanitizeDiagnosticSecrets(diagnostic.suggestion),
+      ...(diagnostic.target === undefined
+        ? {}
+        : {target: sanitizeDiagnosticSecrets(diagnostic.target)}),
+      value: typeof value === 'number' ? value : String(value),
+    };
+  });
+
+  return {
+    audit,
+    defaultTheme: map.defaultTheme,
+    ...(map.systemThemes ? {systemThemes: map.systemThemes} : {}),
+    themes,
+    tokenSchema,
+  };
+}
+
+function compareThemeValues(
+  from: unknown,
+  to: unknown,
+  cwd: string,
+): TileflowThemeDifferenceInspection[] {
+  const differences: TileflowThemeDifferenceInspection[] = [];
+  const visit = (left: unknown, right: unknown, segments: string[]) => {
+    if (isRecord(left) || isRecord(right)) {
+      const keys = new Set([
+        ...Object.keys(isRecord(left) ? left : {}),
+        ...Object.keys(isRecord(right) ? right : {}),
+      ]);
+      for (const key of [...keys].sort(compareCodeUnits)) {
+        visit(isRecord(left) ? left[key] : undefined, isRecord(right) ? right[key] : undefined, [
+          ...segments,
+          key,
+        ]);
+      }
+      return;
+    }
+    if (equalInspectableValues(left, right)) return;
+    differences.push({
+      from: sanitizeInspectValue(left, cwd),
+      path: formatConfigPath(segments, cwd),
+      to: sanitizeInspectValue(right, cwd),
+    });
+  };
+  visit(from, to, []);
+  return differences.sort((left, right) => compareCodeUnits(left.path, right.path));
+}
+
+function sanitizeInspectableRecord(value: object, cwd: string): Record<string, unknown> {
+  const sanitized = sanitizeInspectValue(value, cwd);
+  return isRecord(sanitized) ? sanitized : {};
 }
 
 function collectAuthoringLineage(map: TileflowMap): TileflowMap[] {

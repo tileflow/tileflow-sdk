@@ -20,9 +20,9 @@ test('emits a versioned post-optimizer POI interaction lookup without public sem
     extendStreets({
       modules: {
         poi: poi({
-          categories: ['food'],
-          icons: 'full',
-          labels: 'balanced',
+          categories: ['food-drink'],
+          icons: true,
+          labels: true,
           placement: {coupleIconAndLabel: false},
         }),
       },
@@ -33,7 +33,7 @@ test('emits a versioned post-optimizer POI interaction lookup without public sem
     tileflowInteractionManifestMetadataKey
   ] as TileflowInteractionManifest;
 
-  assert.equal(manifest.version, 1);
+  assert.equal(manifest.version, 2);
   assert.equal(manifest.domains.poi?.identity, 'maplibre-feature-id-if-present');
   assert.deepEqual(manifest.domains.poi?.deduplication, {
     identity: ['source', 'source-layer', 'feature-id'],
@@ -44,10 +44,12 @@ test('emits a versioned post-optimizer POI interaction lookup without public sem
     order: 'rendered-topmost',
   });
   assert.deepEqual(manifest.domains.poi?.fields, {
-    class: 'class',
+    category: 'category',
+    filterRank: 'filter_rank',
+    icon: 'icon',
     name: 'name',
-    rank: 'rank',
-    subclass: 'subclass',
+    sizeRank: 'size_rank',
+    type: 'type',
   });
   assert.deepEqual(
     manifest.domains.poi?.layers.map(({category, layerId, representation}) => ({
@@ -56,8 +58,16 @@ test('emits a versioned post-optimizer POI interaction lookup without public sem
       representation,
     })),
     [
-      {category: 'food', layerId: 'streets-poi-food-icon', representation: 'icon'},
-      {category: 'food', layerId: 'streets-poi-food-label', representation: 'label'},
+      {
+        category: 'food-drink',
+        layerId: 'streets-poi-food-drink-icon',
+        representation: 'icon',
+      },
+      {
+        category: 'food-drink',
+        layerId: 'streets-poi-food-drink-label',
+        representation: 'label',
+      },
     ],
   );
   assert.ok(
@@ -76,7 +86,7 @@ test('emits a versioned post-optimizer POI interaction lookup without public sem
 });
 
 test('omits interaction metadata when POIs are disabled', () => {
-  const style = createStyle(extendStreets({modules: {poi: poi({preset: 'none'})}}), {
+  const style = createStyle(extendStreets({modules: {poi: poi({enabled: false})}}), {
     preparedAssets: {icons: {ids: [], sprite: '/tileflow/test/empty/sprite'}},
   });
 
@@ -88,11 +98,11 @@ test('tracks optimized combined and marker POI representations by semantic categ
     extendStreets({
       modules: {
         poi: poi({
-          categories: ['food'],
-          icons: 'full',
-          labels: 'balanced',
+          categories: ['food-drink'],
+          icons: true,
+          labels: true,
           placement: {coupleIconAndLabel: true},
-          styles: {food: {marker: {radius: 3}}},
+          styles: {'food-drink': {marker: {radius: 3}}},
         }),
       },
     }),
@@ -109,8 +119,16 @@ test('tracks optimized combined and marker POI representations by semantic categ
       representation,
     })),
     [
-      {category: 'food', layerId: 'streets-poi-food-marker', representation: 'marker'},
-      {category: 'food', layerId: 'streets-poi-food', representation: 'combined'},
+      {
+        category: 'food-drink',
+        layerId: 'streets-poi-food-drink-marker',
+        representation: 'marker',
+      },
+      {
+        category: 'food-drink',
+        layerId: 'streets-poi-food-drink',
+        representation: 'combined',
+      },
     ],
   );
 });
@@ -123,14 +141,21 @@ test('rejects semantic metadata that drifts from its finalized physical layer', 
           identity: ['source', 'source-layer', 'feature-id'],
           representationPriority: ['marker', 'icon', 'combined', 'label'],
         },
-        fields: {class: 'class', name: 'name', rank: 'rank', subclass: 'subclass'},
+        fields: {
+          category: 'category',
+          filterRank: 'filter_rank',
+          icon: 'icon',
+          name: 'name',
+          sizeRank: 'size_rank',
+          type: 'type',
+        },
         hitTesting: {frequency: 'animation-frame', order: 'rendered-topmost'},
         identity: 'maplibre-feature-id-if-present',
         layers: [
           {
             anchor: 'pointer-coordinate',
-            category: 'food',
-            layerId: 'poi-food',
+            category: 'food-drink',
+            layerId: 'poi-food-drink',
             priority: 1,
             representation: 'icon',
             source: 'expected-source',
@@ -139,13 +164,13 @@ test('rejects semantic metadata that drifts from its finalized physical layer', 
         ],
       },
     },
-    version: 1,
+    version: 2,
   };
 
   assert.throws(
     () =>
       assertTileflowInteractionManifestLayers(manifest, [
-        {id: 'poi-food', source: 'different-source', 'source-layer': 'poi'},
+        {id: 'poi-food-drink', source: 'different-source', 'source-layer': 'poi'},
       ]),
     /does not match finalized layer/u,
   );
@@ -159,14 +184,21 @@ test('rejects multiple physical POI namespaces that would collide in public feat
           identity: ['source', 'source-layer', 'feature-id'],
           representationPriority: ['marker', 'icon', 'combined', 'label'],
         },
-        fields: {class: 'class', name: 'name', rank: 'rank', subclass: 'subclass'},
+        fields: {
+          category: 'category',
+          filterRank: 'filter_rank',
+          icon: 'icon',
+          name: 'name',
+          sizeRank: 'size_rank',
+          type: 'type',
+        },
         hitTesting: {frequency: 'animation-frame', order: 'rendered-topmost'},
         identity: 'maplibre-feature-id-if-present',
         layers: [
           {
             anchor: 'pointer-coordinate',
-            category: 'food',
-            layerId: 'poi-food',
+            category: 'food-drink',
+            layerId: 'poi-food-drink',
             priority: 1,
             representation: 'icon',
             source: 'source-a',
@@ -174,8 +206,8 @@ test('rejects multiple physical POI namespaces that would collide in public feat
           },
           {
             anchor: 'pointer-coordinate',
-            category: 'coffee',
-            layerId: 'poi-coffee',
+            category: 'retail',
+            layerId: 'poi-retail',
             priority: 2,
             representation: 'label',
             source: 'source-b',
@@ -184,14 +216,14 @@ test('rejects multiple physical POI namespaces that would collide in public feat
         ],
       },
     },
-    version: 1,
+    version: 2,
   };
 
   assert.throws(
     () =>
       assertTileflowInteractionManifestLayers(manifest, [
-        {id: 'poi-food', source: 'source-a', 'source-layer': 'poi'},
-        {id: 'poi-coffee', source: 'source-b', 'source-layer': 'poi'},
+        {id: 'poi-food-drink', source: 'source-a', 'source-layer': 'poi'},
+        {id: 'poi-retail', source: 'source-b', 'source-layer': 'poi'},
       ]),
     /one source and source-layer namespace/u,
   );

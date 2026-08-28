@@ -87,7 +87,7 @@ test('validates semantic interaction bindings without replacing caller identitie
   const binding = {
     id: 'poi-details',
     popup: {content: {kind: 'view', name: 'poi-card'}},
-    target: {categories: ['food'], domain: 'poi', kind: 'semantic-feature'},
+    target: {categories: ['food-drink'], domain: 'poi', kind: 'semantic-feature'},
     tooltip: {content: {fallback: 'Point of interest', field: 'name', kind: 'field'}},
   } as const;
   const result = resolveTileflowVueInteractionBindings([binding]);

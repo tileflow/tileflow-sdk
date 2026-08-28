@@ -6,10 +6,13 @@ import {
   attachTileflowMapLifecycle,
   createTileflowMarkerController,
   createTileflowSessionStarter,
+  createTileflowThemeController,
   createTileflowTransformRequest,
+  getTileflowSystemColorScheme,
   loadTileflowStyleFonts,
   registerTileflowContourProtocol,
   registerTileflowWorldRequestBridge,
+  subscribeTileflowSystemColorScheme,
   type TileflowContourProtocolHandler,
   type TileflowFairUseNotice,
   tileflowMaplibreContourVersion,
@@ -17,6 +20,242 @@ import {
   type TileflowWorldProtocolHandler,
 } from '../src/browser';
 import {createTileflowContourProtocolUrl} from '../src/terrain/contour-protocol';
+
+test('shares one browser color-scheme observer across every adapter subscriber', (t) => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia');
+  let listener: (() => void) | undefined;
+  let adds = 0;
+  let removes = 0;
+  const query = {
+    matches: true,
+    addEventListener(_event: 'change', next: () => void) {
+      adds += 1;
+      listener = next;
+    },
+    removeEventListener(_event: 'change', next: () => void) {
+      removes += 1;
+      if (listener === next) listener = undefined;
+    },
+  };
+  Object.defineProperty(globalThis, 'matchMedia', {
+    configurable: true,
+    value: () => query,
+  });
+  t.after(() => {
+    if (descriptor) Object.defineProperty(globalThis, 'matchMedia', descriptor);
+    else Reflect.deleteProperty(globalThis, 'matchMedia');
+  });
+
+  const observed: string[] = [];
+  const first = subscribeTileflowSystemColorScheme((scheme) => observed.push(`a:${scheme}`));
+  const second = subscribeTileflowSystemColorScheme((scheme) => observed.push(`b:${scheme}`));
+  assert.equal(getTileflowSystemColorScheme(), 'dark');
+  assert.equal(adds, 1);
+  query.matches = false;
+  listener?.();
+  assert.deepEqual(observed, ['a:light', 'b:light']);
+  first();
+  assert.equal(removes, 0);
+  second();
+  assert.equal(removes, 1);
+});
+
+test('theme controller preloads in parallel and applies only the latest request', async () => {
+  const map = new FakeStyleSwitchMap();
+  let releaseDark!: () => void;
+  const darkPreload = new Promise<void>((resolve) => {
+    releaseDark = resolve;
+  });
+  const controller = createTileflowThemeController({
+    initial: {style: '/light.json', theme: 'light'},
+    loadFonts: (style) => (style.theme === 'dark' ? darkPreload : Promise.resolve()),
+    map,
+  });
+
+  const dark = controller.setTheme({style: '/dark.json', theme: 'dark'});
+  const contrast = controller.setTheme({style: '/contrast.json', theme: 'contrast'});
+  assert.deepEqual(await contrast, {status: 'applied', theme: 'contrast'});
+  releaseDark();
+  assert.deepEqual(await dark, {status: 'superseded', theme: 'dark'});
+  assert.deepEqual(map.styles, ['/contrast.json']);
+  assert.equal(controller.getCurrent().theme, 'contrast');
+});
+
+test('requesting the current theme supersedes an older pending theme', async () => {
+  const map = new FakeStyleSwitchMap();
+  let releaseDark!: () => void;
+  const darkPreload = new Promise<void>((resolve) => {
+    releaseDark = resolve;
+  });
+  const controller = createTileflowThemeController({
+    initial: {style: '/light.json', theme: 'light'},
+    loadFonts: (style) => (style.theme === 'dark' ? darkPreload : Promise.resolve()),
+    map,
+  });
+
+  const dark = controller.setTheme({style: '/dark.json', theme: 'dark'});
+  const light = controller.setTheme({style: '/light.json', theme: 'light'});
+  assert.deepEqual(await light, {status: 'applied', theme: 'light'});
+  releaseDark();
+  assert.deepEqual(await dark, {status: 'superseded', theme: 'dark'});
+  assert.deepEqual(map.styles, ['/light.json']);
+});
+
+test('a newer preload failure restores an older style that finished applying in flight', async () => {
+  const map = new DelayedStyleSwitchMap('/dark.json');
+  const preloadError = new Error('contrast font failed');
+  const controller = createTileflowThemeController({
+    initial: {style: '/light.json', theme: 'light'},
+    loadFonts: (style) =>
+      style.theme === 'contrast' ? Promise.reject(preloadError) : Promise.resolve(),
+    map,
+  });
+
+  const dark = controller.setTheme({style: '/dark.json', theme: 'dark'});
+  await map.delayedStyleStarted;
+  const contrast = controller.setTheme({style: '/contrast.json', theme: 'contrast'});
+  assert.deepEqual(await contrast, {
+    error: preloadError,
+    status: 'failed',
+    theme: 'contrast',
+  });
+
+  map.releaseDelayedStyle();
+  assert.deepEqual(await dark, {status: 'superseded', theme: 'dark'});
+  assert.deepEqual(map.styles, ['/dark.json', '/light.json']);
+  assert.equal(controller.getCurrent().theme, 'light');
+});
+
+test('theme controller rolls back a failed style without replacing the map instance', async () => {
+  const map = new FakeStyleSwitchMap('/broken.json');
+  const transitions: string[] = [];
+  const controller = createTileflowThemeController({
+    initial: {style: '/light.json', theme: 'light'},
+    loadFonts: async () => undefined,
+    map,
+    onTransition: ({phase}) => transitions.push(phase),
+  });
+
+  const result = await controller.setTheme({style: '/broken.json', theme: 'dark'});
+  assert.equal(result.status, 'failed');
+  assert.equal(controller.getCurrent().theme, 'light');
+  assert.deepEqual(map.styles, ['/broken.json', '/light.json']);
+  assert.deepEqual(transitions, ['preloading', 'applying', 'error']);
+});
+
+test('theme controller turns synchronous font preload errors into failed transitions', async () => {
+  const map = new FakeStyleSwitchMap();
+  const transitions: string[] = [];
+  const expected = new Error('font setup failed');
+  const controller = createTileflowThemeController({
+    initial: {style: '/light.json', theme: 'light'},
+    loadFonts: () => {
+      throw expected;
+    },
+    map,
+    onTransition: ({phase}) => transitions.push(phase),
+  });
+
+  const result = await controller.setTheme({style: '/dark.json', theme: 'dark'});
+  assert.deepEqual(result, {error: expected, status: 'failed', theme: 'dark'});
+  assert.deepEqual(map.styles, []);
+  assert.deepEqual(transitions, ['preloading', 'error']);
+});
+
+test('theme controller accepts only already-resolved concrete portable themes', async () => {
+  const map = new FakeStyleSwitchMap();
+  assert.throws(
+    () => createTileflowThemeController({initial: {style: '/system.json', theme: 'system'}, map}),
+    /initial style requires a concrete portable theme name/u,
+  );
+  assert.throws(
+    () => createTileflowThemeController({initial: {style: '/missing.json'}, map}),
+    /initial style requires a concrete portable theme name/u,
+  );
+
+  const controller = createTileflowThemeController({
+    initial: {style: '/light.json', theme: 'light'},
+    map,
+  });
+  for (const theme of ['system', 'CON', undefined]) {
+    const result = await controller.setTheme({style: '/invalid.json', theme});
+    assert.equal(result.status, 'failed');
+    assert.match(
+      result.error?.message ?? '',
+      /target style requires a concrete portable theme name/u,
+    );
+  }
+  assert.deepEqual(map.styles, []);
+});
+
+class FakeStyleSwitchMap {
+  readonly styles: string[] = [];
+  readonly #listeners = new Map<string, Set<(event?: unknown) => void>>();
+
+  constructor(private readonly rejectedStyle?: string) {}
+
+  on(event: 'error' | 'style.load', listener: (event?: unknown) => void) {
+    const listeners = this.#listeners.get(event) ?? new Set();
+    listeners.add(listener);
+    this.#listeners.set(event, listeners);
+  }
+
+  off(event: 'error' | 'style.load', listener: (event?: unknown) => void) {
+    this.#listeners.get(event)?.delete(listener);
+  }
+
+  setStyle(style: string) {
+    this.styles.push(style);
+    queueMicrotask(() => {
+      const event = style === this.rejectedStyle ? 'error' : 'style.load';
+      for (const listener of this.#listeners.get(event) ?? []) {
+        listener(event === 'error' ? {error: new Error('broken style')} : undefined);
+      }
+    });
+  }
+}
+
+class DelayedStyleSwitchMap {
+  readonly styles: string[] = [];
+  readonly delayedStyleStarted: Promise<void>;
+  readonly #delayedStyle: string;
+  readonly #listeners = new Map<string, Set<(event?: unknown) => void>>();
+  #releaseDelayedStyle!: () => void;
+
+  constructor(delayedStyle: string) {
+    this.#delayedStyle = delayedStyle;
+    this.delayedStyleStarted = new Promise<void>((resolve) => {
+      this.#releaseDelayedStyle = resolve;
+    });
+  }
+
+  on(event: 'error' | 'style.load', listener: (event?: unknown) => void) {
+    const listeners = this.#listeners.get(event) ?? new Set();
+    listeners.add(listener);
+    this.#listeners.set(event, listeners);
+  }
+
+  off(event: 'error' | 'style.load', listener: (event?: unknown) => void) {
+    this.#listeners.get(event)?.delete(listener);
+  }
+
+  setStyle(style: string) {
+    this.styles.push(style);
+    if (style === this.#delayedStyle) {
+      this.#releaseDelayedStyle();
+      return;
+    }
+    queueMicrotask(() => this.#emitStyleLoad());
+  }
+
+  releaseDelayedStyle() {
+    this.#emitStyleLoad();
+  }
+
+  #emitStyleLoad() {
+    for (const listener of this.#listeners.get('style.load') ?? []) listener();
+  }
+}
 
 test('ships the pinned contour generator inside the browser entry without a CDN runtime', async () => {
   const browserEntry = await readFile(new URL('../dist/browser.js', import.meta.url), 'utf8');

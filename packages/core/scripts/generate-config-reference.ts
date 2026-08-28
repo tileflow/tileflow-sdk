@@ -1,6 +1,6 @@
 import {readFile, writeFile} from 'node:fs/promises';
 import {fileURLToPath, pathToFileURL} from 'node:url';
-import {format} from 'prettier';
+import {format, resolveConfig} from 'prettier';
 import {z} from 'zod';
 import {tileflowCaptureSceneSchema} from '../src/capture-scene';
 import {tileflowMapMergeStrategies} from '../src/maps/resolve';
@@ -87,7 +87,7 @@ export function createTileflowConfigReference(): JsonSchema {
       'Compiler-owned root passed to defineRootMap(). It declares root and cannot declare extends.',
     type: 'object',
     properties: {...authoringProperties, root: rootSchema},
-    required: ['id', 'root', 'version'],
+    required: ['defaultTheme', 'id', 'root', 'themes', 'version'],
     additionalProperties: false,
     ...exclusiveTextProviders,
   };
@@ -116,6 +116,7 @@ export function createTileflowConfigReference(): JsonSchema {
     'x-tileflow-refinement-contract':
       'Standard JSON Schema keywords encode every representable constraint. x-tileflow-refinements records the remaining relational checks enforced by the same Core parser and tileflow validate.',
     'x-tileflow-inheritance': createInheritanceReference(),
+    'x-tileflow-theme-contract': createThemeContractReference(),
     entrypoints: {
       authoring: {
         role: 'tileflow.config.ts default export',
@@ -156,6 +157,71 @@ export function createTileflowConfigReference(): JsonSchema {
   };
 }
 
+function createThemeContractReference(): JsonSchema {
+  return {
+    authority:
+      '@tileflow/core defineTheme, resolvedTileflowMapSchema, category-safe style schemas, and theme audit',
+    identity: {
+      selector:
+        'Each themes object key is the concrete runtime selector used in manifests, URLs, builds, captures, and receipts.',
+      document:
+        'theme.id and theme.version are editorial/provenance identity and may differ from the selector key.',
+      system:
+        'system is reserved for browser selection policy and is never a concrete theme name or compiled artifact key.',
+    },
+    relationalRules: [
+      {
+        path: 'defaultTheme',
+        enforcement: 'config-validation',
+        rule: 'Must name an own entry of themes.',
+      },
+      {
+        path: 'themes.*.tokens.{color,font,image,number}',
+        enforcement: 'config-validation',
+        rule: 'Every theme on one map must expose exactly the same token keys in every category.',
+      },
+      {
+        path: 'systemThemes.{light,dark}',
+        enforcement: 'config-validation',
+        rule: 'Each declared selector must exist in themes and its theme.colorScheme must match the system key.',
+      },
+      {
+        path: 'themes.*',
+        enforcement: 'theme-resolution',
+        rule: 'Unknown, cyclic, and cross-category token references are rejected before style compilation.',
+      },
+      {
+        path: 'modules|terrain|compilerEffects',
+        enforcement: 'schema-and-theme-audit',
+        rule: 'Token categories must match their visual slot directly, in zoom stops, and in expression outputs.',
+      },
+    ],
+    visualIntent: {
+      explicitNodes: {
+        semantic: 'token.color/font/image/number(name)',
+        invariant: 'fixed(value, {reason}) with a non-empty reason',
+        derivedColor: 'color.alpha(...) or color.mix(..., {space: "oklch"})',
+      },
+      implicitLiterals: [
+        {
+          categories: ['color', 'font', 'image'],
+          code: 'THEME_IMPLICIT_FIXED',
+          severity: 'error',
+          effect:
+            'inspect reports the exact semantic path; createStyle, validate, preview, build, and capture fail closed.',
+        },
+        {
+          categories: ['number'],
+          code: 'THEME_IMPLICIT_FIXED',
+          severity: 'warning',
+          effect:
+            'inspect reports the exact semantic path; compilation remains valid because ordinary numeric styling is common.',
+        },
+      ],
+    },
+  };
+}
+
 function createInheritanceReference(): JsonSchema {
   return {
     authority: '@tileflow/core tileflowMapMergeStrategies',
@@ -181,7 +247,11 @@ function createInheritanceReference(): JsonSchema {
 }
 
 export async function serializeTileflowConfigReference(): Promise<string> {
-  return format(JSON.stringify(createTileflowConfigReference(), null, 2), {parser: 'json'});
+  const repositoryFormat = await resolveConfig(referencePath);
+  return format(JSON.stringify(createTileflowConfigReference(), null, 2), {
+    ...repositoryFormat,
+    parser: 'json',
+  });
 }
 
 async function main(): Promise<void> {
@@ -352,10 +422,6 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
     {
       path: '**.hatch.patternWidths[]',
       rule: 'Literal pattern widths must be strictly increasing.',
-    },
-    {
-      path: 'modules.poi.{maxRank,styles.*.maxRank}.stops',
-      rule: 'Zooms must be strictly increasing and rank limits must not decrease.',
     },
     {
       path: 'terrain.contours.demUrl',

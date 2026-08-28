@@ -1,6 +1,6 @@
 # Local visual capture contract
 
-Status: public alpha contract as of 2026-08-13.
+Status: public alpha contract as of 2026-08-27.
 
 This document owns Tileflow's repository-local scene, headless-browser, capture receipt, application
 readiness, watch, and visual-baseline behavior. The CLI is the recommended user and agent surface;
@@ -35,7 +35,8 @@ maps without scenes compile unchanged, and scenes do not alter generated style o
 A committed scene has this version-1 shape:
 
 ```ts
-type TileflowCaptureScene = {
+type TileflowMapScene = {
+  theme: string; // concrete; never "system"
   camera:
     | {
         type: 'center';
@@ -76,6 +77,7 @@ export default defineMap({
   extends: streets,
   scenes: {
     'madrid-desktop': {
+      theme: 'dark',
       camera: {type: 'center', center: [-3.7038, 40.4168], zoom: 12},
       viewport: {width: 1280, height: 800, dpr: 1},
     },
@@ -84,6 +86,8 @@ export default defineMap({
 ```
 
 The owning map is implicit; Node tooling supplies its ID when it normalizes the scene internally.
+The theme is mandatory and concrete. A committed visual cannot depend on an ambient browser
+preference or a future change to the map's default; `system` and an omitted theme are rejected.
 Scene names are strict own properties and bounded ASCII artifact names, must be distinct under case
 folding, and cannot be a Windows device filename or `__proto__`; config records must be plain objects. Viewport sides are
 64–4096 CSS pixels, DPR is 1 or 2, and the physical image budget is 16,777,216 pixels. Center,
@@ -94,9 +98,10 @@ exclusive. Defaults are DPR 1, zero bearing, zero pitch, zero bounds padding, ma
 framing.
 
 Committed scenes are the reproducible surface for capture, watch, and visual baselines. One-off
-camera/viewport options are exploratory and do not create a scene or baseline. A
+camera/viewport options are exploratory and do not create a scene or baseline; exploratory
+`--map` capture requires `--theme <concrete-name>`. A
 successful exploratory `--json` entry adds `definition`, the exact normalized scene containing only
-`camera`, `viewport`, and the default `{kind: "map"}` target. An agent may copy that value
+`theme`, `camera`, `viewport`, and the default `{kind: "map"}` target. An agent may copy that value
 under a chosen `scenes.<name>` key. Tileflow does not rewrite executable TypeScript config.
 
 ## Standalone and application modes
@@ -149,6 +154,7 @@ The React `Map`, Vue `TileflowMap`, and Svelte `TileflowMap` roots expose equiva
 
 ```txt
 data-tileflow-map="<exported map id when known>"
+data-tileflow-theme="<resolved concrete theme>"
 data-tileflow-capture-id="<optional explicit captureId>"
 data-tileflow-state="loading|idle|error"
 ```
@@ -182,17 +188,18 @@ and invalid PNG bytes/dimensions retain `INVALID_PNG` with the screenshot phase.
 codes remain accepted for compatibility.
 
 `tileflow capture --watch` keeps one warm Browser and a shared watched artifact session. It watches
-the config, transitive local TypeScript/JavaScript/JSON imports, and effective icon sources. Its
-NDJSON stream uses `building`, `invalid`, `recovered`, `captured`, `failed`, and `stopped` events
-with monotonic generations. Invalid edits retain the last good artifact and capture; a repaired
-generation recovers and captures. The initial session is not exposed until its watcher is ready;
+the config, transitive local TypeScript/JavaScript/JSON imports, and effective icon and font sources.
+Its NDJSON stream uses `building`, `invalid`, `recovered`, `captured`, `failed`, and `stopped`
+events with monotonic generations. Invalid edits retain the last good artifact and capture; a
+repaired generation recovers and captures. The initial session is not exposed until its watcher is ready;
 new generations abort stale capture work, and only the latest ready generation may replace managed
 output. `invalid` and `failed` events add bounded optional `code` and `phase` fields at the event and
 diagnostic levels; failed resource events may add the same safe `resources` array as one-shot JSON.
 SIGINT/SIGTERM closes the watcher, contexts, browser, and any explicitly started standalone preview
 server.
 
-New receipts are canonical schema-version-3 JSON and contain only scene/map/target identity, normalized
+New receipts are canonical schema-version-4 JSON and contain only concrete theme plus
+scene/map/target identity, normalized
 scene and style hashes, PNG hash and CSS/physical dimensions, Tileflow/MapLibre/Playwright/Chromium
 identity, OS/architecture class, DPR, required resolved `data` identity, explicit `verification`,
 and `networkDependent`. The durable receipt data type is owned and versioned by `@tileflow/capture`;
@@ -207,17 +214,19 @@ credential is never written by a new receipt. This identity participates in scen
 Receipts also omit time, user, repository, absolute filesystem path, environment, source pixels,
 and config source.
 
-Schema-v2 receipts written before source fingerprints, `verification`, or the bathymetry capability
-remain readable. Parsing first validates their exact canonical legacy representation, then
-normalizes a legacy URL to the safe fingerprint and infers verification from the target. A
+Canonical schema-v2 and schema-v3 receipts remain readable as historical evidence and are never
+reclassified as schema v4. Schema-v2 receipts predate source fingerprints, `verification`, and the
+bathymetry capability; parsing first validates their exact canonical legacy representation, then
+normalizes a legacy URL to the safe fingerprint and infers verification from the target. Schema-v3
+receipts already carry the safe data identity but predate the mandatory concrete scene theme. A
 three-capability baseline remains compatible when a fresh receipt adds bathymetry or new binding
 keys, provided every identity value recorded by the baseline still agrees. Conflicting recorded
 values remain a scene mismatch. Serializing a parsed legacy receipt writes only the normalized safe
-shape; it never reproduces its raw URL. Receipt parsing remains exact-key, UTF-8, size,
+shape; it never reproduces a v2 raw URL. Receipt parsing remains exact-key, UTF-8, size,
 portable-identifier, hash, dimension, and pixel-budget validated; parser-dependent duplicate keys
 are rejected.
 
-Schema-v3 World data is always exact. Capture resolves a logical current or exact TileJSON selector
+Schema-v4 World data is always exact. Capture resolves a logical current or exact TileJSON selector
 once for the lifetime of its session. The TileJSON must return one immutable tile template and the
 strict `tileflow.world` identity: `product: "world-v1"`, `releaseId`, `descriptorSha256`,
 `archiveSha256`, `dataContractSha256`, and `contractSha256`. Capture cross-checks the release and
@@ -228,11 +237,69 @@ remain legacy baseline fields only and are not confused with the v3 contract.
 
 ## Visual comparison and baselines
 
+Two deliberate Tileflow renders can be compared without pretending either one is an approved
+baseline. The live authoring surface is `tileflow preview` with any `--against-*` selection. It
+mounts two same-origin preview handlers with independent watched sessions, synchronizes their
+camera, persists workbench state in the URL, and provides side-by-side, split, opacity-overlay, and
+blink views. An invalid edit retains that side's last valid artifacts and exposes only bounded
+diagnostics until it recovers. The opt-in compiler sidecar, rendered-feature inspector, zoom-curve
+samples, compiled sprite atlas, and scene/capture-command copy helpers are local diagnostics; the
+sidecar is never a build artifact or runtime manifest field.
+
+Durable review evidence uses an exact headless capture matrix:
+
+```sh
+npm exec --no -- tileflow visual compare \
+  --config ./candidate.config.ts --map candidate --theme light \
+  --against-config ./reference.config.ts --against-map reference --against-theme light \
+  --center=-3.7038,40.4168 --zooms=12,14,16 \
+  --region=0,0,1200,760 --diff --json
+```
+
+The command accepts one to 16 unique sorted zooms. Both sides share center, bearing, pitch,
+viewport, DPR, pinned browser session, and one resolved data snapshot per capture session. Each side
+has a concrete theme and produces a schema-v4 receipt. The default rollback-capable transaction
+writes an offline, CSP-restricted HTML report, deterministic sibling JSON, PNG/receipt pairs, and
+optional contextual diffs below `.tileflow/comparisons`. The report embeds its images and performs
+no network request. Watch mode observes both config graphs, aborts stale work, preserves the last
+complete report through invalid edits, and emits schema-version-1 NDJSON lifecycle events.
+
+An optional `--region=x,y,width,height` selects one shared bounded rectangle in physical pixels,
+relative to the top-left. Comparable Review rows then include linear luminance, OKLab
+lightness/chroma, edge density, and local contrast for each side plus explicit signed
+`rightMinusLeft` deltas. The region never crops the captures, exact/perceptual metrics, or diff.
+
+Stdout and the sibling JSON are one schema-version-1 `visual.compare` document containing concrete
+left/right selections, shared camera and viewport, zoom-sorted Review v1 rows with relative artifact
+paths, report/document paths, and sorted warnings. The sibling asset directory also contains the
+bounded 64 KiB schema-version-1 `.tileflow-visual-compare.json` inventory. Each entry owns one exact
+generated sibling by relative name and SHA-256. A later successful transaction removes only stale
+assets named by that valid inventory, preserves unrelated files, and refuses an inventoried asset
+that was modified, replaced by a symbolic link/non-file, or exceeds its byte bound. `--force` does
+not weaken these ownership checks. Report, JSON, inventory, PNG/receipt pairs, optional diffs, and
+stale removal commit or roll back together.
+
+Watch NDJSON events are `watching`, `building`, `invalid`, `recovered`, `generation-complete`,
+`failed`, and `stopped`, with monotonic comparison generations and source-side generations where
+applicable. Invalid edits and incompatible generations preserve the last complete report. Without
+`--allow-data-mismatch`, a data mismatch is an unresolved `failed` generation and no new output is
+installed; with it, the generation completes with exit-compatible evidence but no invented pixel
+metrics. On an orderly stop, watch exits 0 only after at least one complete generation and no
+unresolved invalid or failed state; otherwise it exits 1.
+
+The receipt-authenticated review primitive allows map, theme, scene, and style identities to differ.
+It reports `comparable`, `frame-mismatch`, `dimensions-mismatch`, `runtime-mismatch`, or
+`data-mismatch`; exact/perceptual metrics and a diff exist only when frame, physical dimensions,
+renderer/platform, and exact resolved data identity agree. Visual pixel differences are evidence
+and exit 0. Incompatibility exits 1; `--allow-data-mismatch` can keep that particular report
+inspectable with exit 0 but never manufactures pixel metrics. Review never reads, mutates, or
+approves a baseline.
+
 An external screenshot is exploratory evidence, not a Tileflow baseline. Analyze it separately:
 
 ```sh
 npm exec --no -- tileflow visual analyze app-desktop \
-  --reference ./design-reference.png --json
+  --reference ./design-reference.png --region=0,0,1200,760 --json
 ```
 
 The command validates one regular, non-symlinked, bounded, non-interlaced PNG before browser launch,
@@ -240,9 +307,12 @@ captures exactly one committed scene, and leaves the reference and every baselin
 unchanged. It writes `.actual.png`, `.analysis.json`, and—when physical dimensions match—a
 transparent high-contrast `.diff.png` under `.tileflow/analysis` by default. The report contains
 only hashes, dimensions, up to 16 quantized palette buckets, exact/perceptual pixel metrics, mean
-absolute RGBA-channel difference, relative artifact paths, and warnings. Dimension mismatches have
-no invented pixel metric or diff. It does not accept or manufacture a receipt for the reference,
-claim scene/runtime compatibility, or define a pass/fail similarity threshold.
+absolute RGBA-channel difference, relative artifact paths, warnings, and an `appearance` profile.
+Its explicit `actualMinusReference` direction covers luminance, OKLab lightness/chroma, edge density,
+and local contrast. The optional physical-pixel region affects only that profile. Dimension
+mismatches have no invented pixel metric, appearance profile, or diff. It does not accept or
+manufacture a receipt for the reference, claim scene/runtime compatibility, or define a pass/fail
+similarity threshold.
 
 Generated captures and diffs are disposable evidence. A baseline directory is an explicit,
 user-owned test artifact and is never inferred from `.tileflow`; teams decide whether to version
@@ -262,8 +332,8 @@ and ratio plus Pixelmatch's informational fixed 0.1 perceptual metric. Exact RGB
 the perceptual metric—determines `changed`.
 
 PNG input is byte- and pixel-bounded and must begin with a canonical, non-interlaced IHDR before
-the decoder runs. Baseline/output overlap is rejected using a conservative normalized,
-case-insensitive path identity, and stable JSON refuses cross-volume paths rather than emitting an
+the decoder runs. Baseline/output overlap is rejected using a conservative, platform-aware
+normalized path identity, and stable JSON refuses cross-volume paths rather than emitting an
 absolute path.
 
 Ordinary changed pixels exit 0 so agents inspect the document. `--fail-on changed` opts into exit 2. Missing or incompatible baselines and operational failures exit 1. Remote resource use is
@@ -279,10 +349,11 @@ links, and ambiguous paths. It never stages, commits, pushes, or otherwise chang
 ## Programmatic surface and compatibility
 
 `@tileflow/capture` exports `captureTileflowScenes`, `createTileflowCaptureSession`, explicit browser
-setup/launch helpers, strict receipt APIs, and `compareTileflowCaptureToBaseline`. Capture results
-include PNG bytes for Node callers; CLI JSON projects only hashes, dimensions, warnings, renderer
-identity, and relative artifact paths. A session can capture named scenes, all committed scenes,
-caller-provided definitions, or an existing `TileflowBuildArtifacts` snapshot, and must be closed.
+setup/launch helpers, strict receipt APIs, `compareTileflowCaptureToBaseline`, and
+`compareTileflowCapturesForReview`. Capture results include PNG bytes for Node callers; CLI JSON
+projects only scene, map, concrete theme, target, hashes, dimensions, warnings, renderer identity,
+and relative artifact paths. A session can capture named scenes, all committed scenes, caller-provided
+definitions, or an existing `TileflowBuildArtifacts` snapshot, and must be closed.
 `TileflowCaptureError` exposes a stable additive code plus optional bounded details containing the
 phase, diagnostics, and safe resource metadata; raw nested causes are not a CLI contract.
 
@@ -290,8 +361,11 @@ phase, diagnostics, and safe resource metadata; raw nested causes are not a CLI 
 exploratory reference path to Node callers. `createTileflowVisualReferenceAnalysisDocument` removes
 diff bytes before JSON projection.
 
-Capture-result, visual-comparison, and visual-analysis schema version 1, plus receipt schema version
-2, are compatibility boundaries. Removing or renaming a field, changing an enum's meaning,
+Capture-result, baseline visual-comparison, visual-analysis, receipt-authenticated Review, and
+`visual.compare` command/watch documents use schema version 1; capture receipts use schema version 4. These are compatibility boundaries. Removing or renaming a field, changing an enum's meaning,
 weakening readiness, changing exact-pixel classification, or silently selecting another
-browser/runtime requires an explicit contract revision. New optional metadata must remain bounded,
+browser/runtime requires an explicit contract revision. Review exposes its version through
+`tileflowVisualReviewSchemaVersion`, its 256 MiB aggregate PNG-input cap through
+`tileflowVisualReviewLimits.maximumAggregatePngBytes`, and invalid input through
+`TileflowVisualReviewError`/`VISUAL_REVIEW_INVALID`. New optional metadata must remain bounded,
 deterministic, non-secret, backward-readable, and covered by parser and CLI serialization tests.

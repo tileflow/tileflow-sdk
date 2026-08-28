@@ -24,7 +24,13 @@ export type {
   TileflowLandformsModuleConfig,
   TileflowLandformsModuleOptions,
 } from './landforms';
-export {poi} from './poi';
+export {nautical} from './nautical';
+export type {
+  TileflowNauticalAreaLabelStyles,
+  TileflowNauticalModuleConfig,
+  TileflowNauticalModuleOptions,
+} from './nautical';
+export {poi, tileflowPoiImageRoles} from './poi';
 export {roads} from './roads';
 export {transit} from './transit';
 export type {

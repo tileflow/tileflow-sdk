@@ -7,13 +7,20 @@ import {
   getTileflowStyleFontFaces,
   hashTileflowFontBundleManifest,
   type MapLibreStyle,
+  parseTileflowMap,
+  resolveMap,
   type TileflowFontBundleManifest,
+  tileflowMapIdSchema,
   type TileflowStyleFontFace,
   tileflowStyleFontFaceLimits,
   tileflowStyleFontFacesMetadataKey,
-  resolveMap,
+  tileflowThemeNameSchema,
 } from '@tileflow/core';
-import type {TileflowBuildCatalog, TileflowEffectiveFontSourceIdentity} from '@tileflow/core/build';
+import type {
+  TileflowBuildCatalog,
+  TileflowBuildStyles,
+  TileflowEffectiveFontSourceIdentity,
+} from '@tileflow/core/build';
 import {
   type ResolvedTileflowAssetDirectory,
   resolveTileflowAssetDirectories,
@@ -55,7 +62,7 @@ export type PreparedTileflowStyleFonts = {
   assets: TileflowBuildAsset[];
   bundles: Record<string, CompiledTileflowFontBundle>;
   sourceIdentities: Record<string, TileflowEffectiveFontSourceIdentity[]>;
-  styles: Record<string, MapLibreStyle>;
+  styles: TileflowBuildStyles;
   watchPaths: string[];
 };
 
@@ -164,33 +171,70 @@ const expressionOperators = new Set([
  */
 export async function prepareTileflowStyleFonts(
   project: TileflowBuildCatalog,
-  inputStyles: Readonly<Record<string, MapLibreStyle>>,
+  inputStyles: Readonly<Record<string, Readonly<Record<string, MapLibreStyle>>>>,
   options: PrepareTileflowStyleFontsOptions,
 ): Promise<PreparedTileflowStyleFonts> {
   const projectMapNames = Object.keys(project.maps).sort(compareCodeUnits);
   const styleMapNames = Object.keys(inputStyles).sort(compareCodeUnits);
+  const issues: TileflowFontCompilationIssue[] = [];
+
+  for (const mapName of projectMapNames) {
+    if (!tileflowMapIdSchema.safeParse(mapName).success) {
+      issues.push({message: 'Expected a portable map key', path: `maps.${mapName}`});
+    }
+  }
+  for (const mapName of styleMapNames) {
+    if (!tileflowMapIdSchema.safeParse(mapName).success) {
+      issues.push({message: 'Expected a portable map key', path: `styles.${mapName}`});
+    }
+    for (const themeName of Object.keys(inputStyles[mapName]!).sort(compareCodeUnits)) {
+      if (!tileflowThemeNameSchema.safeParse(themeName).success) {
+        issues.push({
+          message: 'Expected a concrete portable theme key; "system" is browser-only',
+          path: `styles.${mapName}.${themeName}`,
+        });
+      }
+    }
+  }
+  if (issues.length > 0) throw new TileflowFontCompilationError(issues);
+
+  const parsedMaps = new Map(
+    projectMapNames.map((mapName) => [mapName, parseTileflowMap(project.maps[mapName]!)] as const),
+  );
   if (
     projectMapNames.length !== styleMapNames.length ||
     projectMapNames.some((mapName, index) => mapName !== styleMapNames[index])
   ) {
     throw new TileflowFontCompilationError([
-      {message: 'Expected exactly one compiled style for every project map', path: 'styles'},
+      {message: 'Expected one compiled theme family for every project map', path: 'styles'},
     ]);
   }
 
   const assets = new Map<string, TileflowBuildAsset>();
   const bundles: Record<string, CompiledTileflowFontBundle> = {};
   const sourceIdentities: Record<string, TileflowEffectiveFontSourceIdentity[]> = {};
-  const issues: TileflowFontCompilationIssue[] = [];
-  const styles: Record<string, MapLibreStyle> = {...inputStyles};
+  const styles: TileflowBuildStyles = Object.fromEntries(
+    Object.entries(inputStyles).map(([mapName, themes]) => [mapName, {...themes}]),
+  );
   const watchPaths = new Set<string>();
 
   for (const mapName of projectMapNames) {
-    const authoredMap = project.maps[mapName];
-    const style = inputStyles[mapName];
-    if (!authoredMap || !style) continue;
+    const map = parsedMaps.get(mapName);
+    const themeStyles = inputStyles[mapName];
+    if (!map || !themeStyles) continue;
 
-    const map = resolveMap(authoredMap);
+    const declaredThemeNames = Object.keys(map.themes).sort(compareCodeUnits);
+    const compiledThemeNames = Object.keys(themeStyles).sort(compareCodeUnits);
+    if (
+      declaredThemeNames.length !== compiledThemeNames.length ||
+      declaredThemeNames.some((themeName, index) => themeName !== compiledThemeNames[index])
+    ) {
+      issues.push({
+        message: "Compiled styles must exactly match the map's declared themes",
+        path: `styles.${mapName}`,
+      });
+      continue;
+    }
     if (map.fonts === undefined) continue;
 
     const configPath = `maps.${mapName}.fonts`;
@@ -231,7 +275,14 @@ export async function prepareTileflowStyleFonts(
       }
     }
 
-    const requiredNames = collectPrimaryTextFonts(style, mapName, issues);
+    const requiredNamesByTheme = new Map<string, Set<string>>();
+    const requiredNames = new Set<string>();
+    for (const themeName of compiledThemeNames) {
+      const style = themeStyles[themeName]!;
+      const themeRequiredNames = collectPrimaryTextFonts(style, `${mapName}.${themeName}`, issues);
+      requiredNamesByTheme.set(themeName, themeRequiredNames);
+      for (const name of themeRequiredNames) requiredNames.add(name);
+    }
     const requiredFaces: PreparedFontInput[] = [];
     for (const canonicalName of [...requiredNames].sort(compareCodeUnits)) {
       const face = selectedFaces.get(canonicalName);
@@ -247,14 +298,14 @@ export async function prepareTileflowStyleFonts(
           : `No declared font directory provides canonical face "${canonicalName}"${
               available.length > 0 ? `. Available: ${available.join(', ')}` : ''
             }`,
-        path: `styles.${mapName}.text-font`,
+        path: `styles.${mapName}.*.text-font`,
       });
     }
 
     if (requiredFaces.length > tileflowStyleFontFaceLimits.maximumCount) {
       issues.push({
         message: `At most ${tileflowStyleFontFaceLimits.maximumCount} local font faces may be used by one map`,
-        path: `styles.${mapName}.text-font`,
+        path: `styles.${mapName}.*.text-font`,
       });
       continue;
     }
@@ -295,24 +346,37 @@ export async function prepareTileflowStyleFonts(
       });
     }
 
-    const existingFontFaces = getTileflowStyleFontFaces(style);
-    if (existingFontFaces.length > 0) {
-      issues.push({
-        message: `Compiled styles may not predeclare ${tileflowStyleFontFacesMetadataKey}; the font pipeline owns it`,
-        path: `styles.${mapName}.metadata.${tileflowStyleFontFacesMetadataKey}`,
-      });
-    }
     const sortedBundleFaces = [...bundleFaces].sort((left, right) =>
       compareCodeUnits(fontFaceIdentity(left), fontFaceIdentity(right)),
     );
     const fontFaceByIdentity = new Map(
       fontFaces.map((face) => [fontFaceIdentity(face), face] as const),
     );
-    const sortedFontFaces = sortedBundleFaces.map(
-      (face) => fontFaceByIdentity.get(fontFaceIdentity(face))!,
+    const sourceFaceByFamily = new Map(
+      requiredFaces.map((face) => [face.canonicalName, face.fontFace] as const),
     );
-    const preparedStyle = withFontFaces(style, sortedFontFaces);
-    styles[mapName] = preparedStyle;
+    const preparedThemes: Record<string, MapLibreStyle> = {};
+    for (const themeName of compiledThemeNames) {
+      const style = themeStyles[themeName]!;
+      const existingFontFaces = getTileflowStyleFontFaces(style);
+      if (existingFontFaces.length > 0) {
+        issues.push({
+          message: `Compiled styles may not predeclare ${tileflowStyleFontFacesMetadataKey}; the font pipeline owns it`,
+          path: `styles.${mapName}.${themeName}.metadata.${tileflowStyleFontFacesMetadataKey}`,
+        });
+      }
+      const themeFontIdentities = new Set(
+        [...(requiredNamesByTheme.get(themeName) ?? [])].map((family) => {
+          const face = sourceFaceByFamily.get(family);
+          return face ? fontFaceIdentity(face) : '';
+        }),
+      );
+      const themeFontFaces = sortedBundleFaces
+        .filter((face) => themeFontIdentities.has(fontFaceIdentity(face)))
+        .map((face) => fontFaceByIdentity.get(fontFaceIdentity(face))!);
+      preparedThemes[themeName] = withFontFaces(style, themeFontFaces);
+    }
+    styles[mapName] = preparedThemes;
     sourceIdentities[mapName] = sortedBundleFaces.map((face) => ({
       family: face.family,
       sha256: sha256(toBytes(mapAssets.get(face.file)!.source)),
@@ -362,31 +426,25 @@ export function bindTileflowStyleFontBundle(
   publicBaseUrl: string,
 ): MapLibreStyle {
   const current = getTileflowStyleFontFaces(style);
-  const expected = bundle.manifest.fontFaces;
-  if (
-    current.length !== expected.length ||
-    current.some((face, index) => {
-      const wanted = expected[index];
-      return (
-        !wanted ||
-        face.family !== wanted.family ||
-        (face.style ?? 'normal') !== wanted.style ||
-        (face.weight ?? '400') !== wanted.weight ||
-        !(face.source === wanted.file || face.source.endsWith(`/${wanted.file}`))
-      );
-    })
-  ) {
+  const bundleFaceByIdentity = new Map(
+    bundle.manifest.fontFaces.map((face) => [fontFaceIdentity(face), face] as const),
+  );
+  const resolved = current.map((face) => {
+    const wanted = bundleFaceByIdentity.get(fontFaceIdentity(face));
+    if (!wanted || !(face.source === wanted.file || face.source.endsWith(`/${wanted.file}`))) {
+      return undefined;
+    }
+    return {
+      family: wanted.family,
+      source: joinTileflowPublicUrl(publicBaseUrl, wanted.file),
+      style: wanted.style,
+      weight: wanted.weight,
+    } satisfies TileflowStyleFontFace;
+  });
+  if (resolved.some((face) => face === undefined)) {
     throw new Error('Compiled style font faces do not match their canonical font bundle.');
   }
-  return withFontFaces(
-    style,
-    expected.map((face) => ({
-      family: face.family,
-      source: joinTileflowPublicUrl(publicBaseUrl, face.file),
-      style: face.style,
-      weight: face.weight,
-    })),
-  );
+  return withFontFaces(style, resolved as TileflowStyleFontFace[]);
 }
 
 export function replaceTileflowStyleFontSources(

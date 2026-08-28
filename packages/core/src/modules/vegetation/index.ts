@@ -1,14 +1,14 @@
 import type {TileflowCircleStyle} from '../../cartography/styles';
-import type {TileflowColor} from '../../types';
+import type {TileflowThemeColorValue, TileflowThemeNumberValue} from '../../cartography/values';
 
 export type TileflowVegetationMode = '3d' | 'flat';
 
 export type TileflowVegetationThreeDimensionalStyle = {
-  barkColor?: TileflowColor;
-  broadleafColors?: readonly TileflowColor[];
-  coniferColors?: readonly TileflowColor[];
-  crownScale?: number;
-  heightScale?: number;
+  barkColor?: TileflowThemeColorValue;
+  broadleafColors?: readonly TileflowThemeColorValue[];
+  coniferColors?: readonly TileflowThemeColorValue[];
+  crownScale?: TileflowThemeNumberValue;
+  heightScale?: TileflowThemeNumberValue;
 };
 
 export type TileflowVegetationModuleOptions = {

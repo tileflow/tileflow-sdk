@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {
+  auditTileflowMapThemeValues,
+  createStyle,
+  defineTheme,
   openMapTiles,
   parseTileflowMap,
   resolveTileflowData,
@@ -8,18 +12,42 @@ import {
   vectorTiles,
 } from '../src';
 import {assembleTileflowLayers} from '../src/cartography/graph';
-import {extendStreets} from './map-fixture';
+import {extendStreets, testLightTheme} from './map-fixture';
 
-test('accepts map-owned theme objects and rejects strings or nested inheritance', () => {
-  const parsed = parseTileflowMap(
-    extendStreets({theme: {colors: {water: '#001122'}, mode: 'dark'}}),
+test('keeps the import-free theme example valid, explicit, and compilable', async () => {
+  const example = JSON.parse(
+    await readFile(new URL('../../../docs/tileflow.config.example.json', import.meta.url), 'utf8'),
   );
-  assert.deepEqual(parsed.theme, {colors: {water: '#001122'}, mode: 'dark'});
+  const validation = validateTileflowMap(example);
+  assert.equal(validation.valid, true, JSON.stringify(validation.messages));
+  const parsed = parseTileflowMap(example);
+  assert.deepEqual(auditTileflowMapThemeValues(parsed), []);
 
-  for (const theme of ['dark', {extends: 'dark'}]) {
-    const result = validateTileflowMap(extendStreets({theme} as never));
+  for (const theme of ['light', 'dark']) {
+    const style = createStyle(example, {theme});
+    assert.equal(style.metadata?.['tileflow:theme'], theme);
+    assert.equal(style.metadata?.['tileflow:colorScheme'], theme);
+    assert.ok(style.layers.length > 100);
+  }
+});
+
+test('accepts complete named themes and rejects every singular or nested theme shape', () => {
+  const dark = defineTheme(testLightTheme, {
+    id: 'test-dark',
+    version: 1,
+    colorScheme: 'dark',
+    tokens: {color: {'surface.water': '#001122'}},
+  });
+  const parsed = parseTileflowMap(
+    extendStreets({defaultTheme: 'dark', themes: {dark, light: testLightTheme}}),
+  );
+  assert.equal(parsed.defaultTheme, 'dark');
+  assert.equal(parsed.themes.dark?.tokens.color['surface.water'], '#001122');
+
+  for (const design of [{theme: 'dark'}, {theme: {extends: 'dark'}}, {themes: 'dark'}]) {
+    const result = validateTileflowMap(extendStreets(design as never));
     assert.equal(result.valid, false);
-    assert.match(result.messages[0]?.message ?? '', /theme|object|Unrecognized key/i);
+    assert.match(result.messages[0]?.message ?? '', /theme|record|Unrecognized key/i);
   }
 });
 

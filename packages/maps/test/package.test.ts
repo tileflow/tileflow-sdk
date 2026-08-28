@@ -68,6 +68,15 @@ test('publishes every official icon and font directory with provenance', async (
       'matrix-poi-node.svg',
     ],
     siegfried: [
+      'siegfried-dark-forest.pattern.svg',
+      'siegfried-dark-glacier.pattern.svg',
+      'siegfried-dark-gravel.pattern.svg',
+      'siegfried-dark-orchard.pattern.svg',
+      'siegfried-dark-paper-grain.pattern.svg',
+      'siegfried-dark-rock.pattern.svg',
+      'siegfried-dark-scree.pattern.svg',
+      'siegfried-dark-water-lines.pattern.svg',
+      'siegfried-dark-wetland.pattern.svg',
       'siegfried-forest.pattern.svg',
       'siegfried-glacier.pattern.svg',
       'siegfried-gravel.pattern.svg',
@@ -100,11 +109,19 @@ test('publishes every official icon and font directory with provenance', async (
       'lodging.svg',
       'major-transit.svg',
       'oneway.svg',
+      'parking.svg',
+      'road-shield-circle-neutral.svg',
+      'road-shield-rectangle-blue.svg',
+      'road-shield-rectangle-green.svg',
+      'road-shield-rectangle-neutral.svg',
+      'road-shield-rectangle-orange.svg',
+      'road-shield-rectangle-red.svg',
+      'road-shield-rectangle-yellow.svg',
       'services.svg',
       'shopping.svg',
+      'sidewalk-dot-dark.svg',
       'sidewalk-dot.svg',
     ],
-    'streets-dark': ['sidewalk-dot.svg'],
     verdant: [
       'coffee.svg',
       'crosswalk.svg',
@@ -141,11 +158,30 @@ test('publishes every official icon and font directory with provenance', async (
     'utf8',
   );
   const darkSidewalkDot = await readFile(
-    new URL('../assets/streets-dark/icons/sidewalk-dot.svg', import.meta.url),
+    new URL('../assets/streets/icons/sidewalk-dot-dark.svg', import.meta.url),
     'utf8',
   );
   assert.notEqual(darkSidewalkDot, lightSidewalkDot);
-  assert.match(darkSidewalkDot, /fill="#536177"/u);
+  assert.match(lightSidewalkDot, /fill="#C1C5D7"/u);
+  assert.match(darkSidewalkDot, /fill="#525664"/u);
+
+  const neutralShield = await readFile(
+    new URL('../assets/streets/icons/road-shield-rectangle-neutral.svg', import.meta.url),
+    'utf8',
+  );
+  const blueShield = await readFile(
+    new URL('../assets/streets/icons/road-shield-rectangle-blue.svg', import.meta.url),
+    'utf8',
+  );
+  for (const shield of [neutralShield, blueShield]) {
+    assert.match(shield, /width="20" height="13" viewBox="0 0 20 13"/u);
+    assert.match(shield, /<rect width="20" height="13"/u);
+    assert.match(shield, /x="1" y="1" width="18" height="11"/u);
+  }
+  assert.match(neutralShield, /fill="#1B1D27"/u);
+  assert.match(neutralShield, /fill="#FFFFFF"/u);
+  assert.match(blueShield, /fill="#475DCD"/u);
+  assert.match(blueShield, /fill="#FFFFFF"/u);
 
   assert.match(
     await readFile(new URL('../THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8'),
@@ -160,6 +196,18 @@ test('publishes every official icon and font directory with provenance', async (
   for (const font of ['Oxanium-Medium.ttf', 'Oxanium-SemiBold.ttf']) {
     assert.ok(
       (await readFile(new URL(`../assets/cyberpunk/fonts/${font}`, import.meta.url))).byteLength >
+        20_000,
+    );
+  }
+  assert.deepEqual((await readdir(new URL('../assets/matrix/fonts/', import.meta.url))).sort(), [
+    'LICENSE.txt',
+    'Oxanium-Medium.ttf',
+    'Oxanium-SemiBold.ttf',
+    'README.md',
+  ]);
+  for (const font of ['Oxanium-Medium.ttf', 'Oxanium-SemiBold.ttf']) {
+    assert.ok(
+      (await readFile(new URL(`../assets/matrix/fonts/${font}`, import.meta.url))).byteLength >
         20_000,
     );
   }
@@ -208,8 +256,29 @@ test('keeps the Siegfried root source independent from Streets', async () => {
   const source = await readFile(new URL('../src/official/siegfried.ts', import.meta.url), 'utf8');
   assert.match(source, /\bdefineRootMap\s*\(/u);
   assert.doesNotMatch(source, /from\s+['"]\.\/streets['"]/u);
+  assert.doesNotMatch(source, /from\s+['"]\.\/streets-themes['"]/u);
   assert.doesNotMatch(source, /\bextends\s*:\s*streets\b/u);
   assert.doesNotMatch(source, /\bstreets\.icons\b/u);
+});
+
+test('keeps Cyberpunk and Matrix independent from other official maps', async () => {
+  const officialMapIds = new Set([
+    'cyberpunk',
+    'ferraris',
+    'harad',
+    'matrix',
+    'siegfried',
+    'soundings',
+    'streets',
+    'verdant',
+  ]);
+  for (const id of ['cyberpunk', 'matrix']) {
+    const source = await readFile(new URL(`../src/official/${id}.ts`, import.meta.url), 'utf8');
+    assert.match(source, /\bdefineRootMap\s*\(/u);
+    for (const match of source.matchAll(/\bfrom\s+['"]\.\/([^'"]+)['"]/gu)) {
+      assert.equal(officialMapIds.has(match[1]!), false, `${id} imports ${match[1]}`);
+    }
+  }
 });
 
 test('imports and compiles all packaged official maps against public Core APIs', async () => {
@@ -218,7 +287,6 @@ test('imports and compiles all packaged official maps against public Core APIs',
     const maps = await import('@tileflow/maps');
     for (const [name, id] of [
       ['streets', 'streets'],
-      ['streetsDark', 'streets-dark'],
       ['cyberpunk', 'cyberpunk'],
       ['ferraris', 'ferraris'],
       ['harad', 'harad'],
@@ -241,7 +309,17 @@ test('imports and compiles all packaged official maps against public Core APIs',
               'harad-paper-grain', 'harad-sand', 'harad-settlement',
               'harad-water-lines', 'harad-wetland',
               'matrix-crt-scanlines', 'matrix-data-grid', 'matrix-poi-node',
-              'major-transit', 'oneway', 'services', 'shopping', 'sidewalk-dot',
+              'major-transit', 'oneway', 'parking', 'road-shield-circle-neutral',
+              'road-shield-rectangle-blue', 'road-shield-rectangle-green',
+              'road-shield-rectangle-neutral', 'road-shield-rectangle-orange',
+              'road-shield-rectangle-red', 'road-shield-rectangle-yellow',
+              'services', 'shopping', 'sidewalk-dot',
+              'sidewalk-dot-dark',
+              'siegfried-dark-forest', 'siegfried-dark-glacier',
+              'siegfried-dark-gravel', 'siegfried-dark-orchard',
+              'siegfried-dark-paper-grain', 'siegfried-dark-rock',
+              'siegfried-dark-scree', 'siegfried-dark-water-lines',
+              'siegfried-dark-wetland',
               'siegfried-forest', 'siegfried-glacier', 'siegfried-gravel',
               'siegfried-orchard', 'siegfried-paper-grain', 'siegfried-rock',
               'siegfried-scree', 'siegfried-water-lines', 'siegfried-wetland',
@@ -261,10 +339,17 @@ test('imports and compiles all packaged official maps against public Core APIs',
       if (style.metadata['tileflow:map'] !== id) process.exit(3);
       if (!style.layers.length) process.exit(4);
     }
-    if (maps.cyberpunk.extends !== maps.streets) process.exit(5);
-    if (maps.matrix.extends !== maps.cyberpunk) process.exit(27);
+    if ('extends' in maps.cyberpunk || maps.cyberpunk.root?.compiler !== 'streets') process.exit(5);
+    if ('extends' in maps.matrix || maps.matrix.root?.compiler !== 'streets') process.exit(27);
     if ('extends' in maps.verdant || maps.verdant.root?.compiler !== 'streets') process.exit(6);
-    if (maps.streetsDark.extends !== maps.streets) process.exit(7);
+    if (!maps.streetsThemes?.light || !maps.streetsThemes?.dark) process.exit(7);
+    if (maps.streets.defaultTheme !== 'light') process.exit(11);
+    if (!maps.siegfriedThemes?.light || !maps.siegfriedThemes?.dark) process.exit(12);
+    if (
+      maps.siegfried.defaultTheme !== 'light' ||
+      maps.siegfried.systemThemes?.light !== 'light' ||
+      maps.siegfried.systemThemes?.dark !== 'dark'
+    ) process.exit(13);
     if ('extends' in maps.ferraris || maps.ferraris.root?.compiler !== 'streets') process.exit(8);
     if ('extends' in maps.harad || maps.harad.root?.compiler !== 'streets') process.exit(20);
     if ('extends' in maps.siegfried || maps.siegfried.root?.compiler !== 'streets') process.exit(25);
@@ -285,12 +370,12 @@ test('imports and compiles all packaged official maps against public Core APIs',
     ) process.exit(21);
     const resolvedMatrix = core.resolveMap(maps.matrix);
     if (
-      resolvedMatrix.icons?.length !== 2 ||
-      resolvedMatrix.icons[1]?.kind !== 'package-directory' ||
-      resolvedMatrix.icons[1]?.package !== '@tileflow/maps' ||
-      resolvedMatrix.icons[1]?.path !== 'assets/matrix/icons' ||
+      resolvedMatrix.icons?.length !== 1 ||
+      resolvedMatrix.icons[0]?.kind !== 'package-directory' ||
+      resolvedMatrix.icons[0]?.package !== '@tileflow/maps' ||
+      resolvedMatrix.icons[0]?.path !== 'assets/matrix/icons' ||
       resolvedMatrix.fonts?.length !== 1 ||
-      resolvedMatrix.fonts[0]?.path !== 'assets/cyberpunk/fonts'
+      resolvedMatrix.fonts[0]?.path !== 'assets/matrix/fonts'
     ) process.exit(28);
     const resolvedSoundings = core.resolveMap(maps.soundings);
     if (
@@ -322,11 +407,6 @@ test('imports and compiles all packaged official maps against public Core APIs',
       resolvedVerdant.icons[0]?.package !== '@tileflow/maps' ||
       resolvedVerdant.icons[0]?.path !== 'assets/verdant/icons'
     ) process.exit(10);
-    if (
-      maps.streetsDarkIcons?.kind !== 'package-directory' ||
-      maps.streetsDarkIcons?.package !== '@tileflow/maps' ||
-      maps.streetsDarkIcons?.path !== 'assets/streets-dark/icons'
-    ) process.exit(11);
   `;
 
   const {stderr, stdout} = await execFileAsync(

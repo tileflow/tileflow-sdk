@@ -1,13 +1,10 @@
-import {type TileflowCaptureScene, tileflowPortableIdSchema} from '../capture-scene';
+import type {TileflowCaptureScene} from '../capture-scene';
 import type {TileflowStreetsModules} from '../cartography/streets-recipe';
 import type {TileflowDataConfig} from '../data';
-import type {
-  TileflowLight,
-  TileflowProjection,
-  TileflowTerrain,
-  TileflowThemeConfig,
-  TileflowViewConfig,
-} from '../types';
+import type {TileflowMarine} from '../marine';
+import {tileflowPortableIdSchema} from '../portable-identity';
+import type {TileflowTheme, TileflowThemeName} from '../themes';
+import type {TileflowProjection, TileflowTerrain, TileflowViewConfig} from '../types';
 import type {TileflowFontDirectory, TileflowGlyphs, TileflowIconDirectory} from './assets';
 
 /** Version of the internal Streets compiler contract understood by map roots. */
@@ -57,22 +54,32 @@ type TileflowMapTextAssets =
 /** Cartographic fields supported by the current Streets compiler. */
 export type TileflowMapDesign = TileflowMapTextAssets & {
   data?: TileflowDataConfig;
+  /** Name used whenever a concrete theme is not explicitly requested. */
+  defaultTheme?: TileflowThemeName;
   /** Ordered icon directories. Omission inherits; declaration replaces; [] means no icons. */
   icons?: readonly TileflowIconDirectory[];
-  light?: TileflowLight;
+  /** Independent Bathymetry and Nautical products composed by the compiler. */
+  marine?: TileflowMarine;
   modules?: TileflowStreetsModules;
   projection?: TileflowProjection;
+  /** Browser color-scheme mapping. Runtime resolves "system" to one of these concrete names. */
+  systemThemes?: {
+    dark: TileflowThemeName;
+    light: TileflowThemeName;
+  };
   terrain?: TileflowTerrain;
-  /** Map-owned design tokens. Inheritance is provided only by map.extends. */
-  theme?: TileflowThemeConfig;
+  /** Complete named appearances. Omission inherits; declaration replaces the collection. */
+  themes?: Readonly<Record<TileflowThemeName, TileflowTheme>>;
   view?: TileflowViewConfig;
 };
 
 export type TileflowRootMap = TileflowMapIdentity &
   TileflowMapTooling &
   TileflowMapDesign & {
+    defaultTheme: TileflowThemeName;
     extends?: never;
     root: TileflowMapRoot;
+    themes: Readonly<Record<TileflowThemeName, TileflowTheme>>;
   };
 
 export type TileflowDerivedMap = TileflowMapIdentity &
@@ -85,13 +92,18 @@ export type TileflowDerivedMap = TileflowMapIdentity &
 /** Executable authoring definition: exactly one of `root` or `extends`. */
 export type TileflowMap = TileflowRootMap | TileflowDerivedMap;
 
+type ResolvedTileflowMapDesign<TDesign extends TileflowMapDesign = TileflowMapDesign> =
+  TDesign extends TileflowMapDesign ? Omit<TDesign, 'defaultTheme' | 'themes'> : never;
+
 /** A standalone map definition with inheritance removed. */
 export type ResolvedTileflowMap = Omit<TileflowMapIdentity, 'name'> &
   Pick<TileflowMapTooling, 'delivery'> &
-  TileflowMapDesign & {
+  ResolvedTileflowMapDesign & {
+    defaultTheme: TileflowThemeName;
     extends?: never;
     name: string;
     root: TileflowMapRoot;
+    themes: Readonly<Record<TileflowThemeName, TileflowTheme>>;
   };
 
 export type ResolveMapOptions = {

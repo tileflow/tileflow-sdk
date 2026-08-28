@@ -2,6 +2,8 @@ import {
   defaultTileflowRuntimeView,
   type NormalizedTileflowCaptureScene,
   normalizeTileflowCaptureScene,
+  parseTileflowMap,
+  resolveThemeSelection,
 } from '@tileflow/core';
 import type {TileflowBuildCatalog} from '@tileflow/core/build';
 import {getFirstTileflowMapName} from './config';
@@ -23,12 +25,14 @@ export type {
 export type TileflowPreviewSelection = {
   map?: string;
   scene?: string;
+  theme?: string;
 };
 
 export type ResolvedTileflowPreview = {
   camera: NormalizedTileflowCaptureScene['camera'];
   label: string;
   mapName: string;
+  themeName: string;
   viewport?: NormalizedTileflowCaptureScene['viewport'];
 };
 
@@ -52,6 +56,11 @@ export function resolveTileflowPreview(
   }
 
   if (selection.scene !== undefined) {
+    if (selection.theme !== undefined) {
+      throw new TileflowPreviewSelectionError(
+        'A committed Tileflow scene owns its concrete theme; do not combine scene and theme selection.',
+      );
+    }
     const scene = Object.hasOwn(project.scenes ?? {}, selection.scene)
       ? project.scenes?.[selection.scene]
       : undefined;
@@ -74,10 +83,13 @@ export function resolveTileflowPreview(
       );
     }
 
+    const map = parseTileflowMap(project.maps[normalized.map]!);
+    const selectedTheme = resolvePreviewTheme(map, normalized.theme);
     return {
       camera: normalized.camera,
-      label: `${normalized.map} / ${selection.scene} · ${normalized.viewport.width}×${normalized.viewport.height}`,
+      label: `${normalized.map} / ${selectedTheme.name} / ${selection.scene} · ${normalized.viewport.width}×${normalized.viewport.height}`,
       mapName: normalized.map,
+      themeName: selectedTheme.name,
       viewport: normalized.viewport,
     };
   }
@@ -89,17 +101,34 @@ export function resolveTileflowPreview(
     throw new TileflowPreviewSelectionError(`Unknown Tileflow map: ${mapName}`);
   }
 
+  const resolvedMap = parseTileflowMap(map);
+  const selectedTheme = resolvePreviewTheme(resolvedMap, selection.theme);
   return {
     camera: {
       type: 'center',
-      center: map.view?.center
-        ? [map.view.center[0], map.view.center[1]]
+      center: resolvedMap.view?.center
+        ? [resolvedMap.view.center[0], resolvedMap.view.center[1]]
         : [defaultTileflowRuntimeView.center[0], defaultTileflowRuntimeView.center[1]],
-      zoom: map.view?.zoom ?? defaultTileflowRuntimeView.zoom,
-      bearing: map.view?.bearing ?? defaultTileflowRuntimeView.bearing,
-      pitch: map.view?.pitch ?? defaultTileflowRuntimeView.pitch,
+      zoom: resolvedMap.view?.zoom ?? defaultTileflowRuntimeView.zoom,
+      bearing: resolvedMap.view?.bearing ?? defaultTileflowRuntimeView.bearing,
+      pitch: resolvedMap.view?.pitch ?? defaultTileflowRuntimeView.pitch,
     },
-    label: mapName,
+    label: `${mapName} / ${selectedTheme.name}`,
     mapName,
+    themeName: selectedTheme.name,
   };
+}
+
+function resolvePreviewTheme(
+  map: ReturnType<typeof parseTileflowMap>,
+  requested: string | undefined,
+): ReturnType<typeof resolveThemeSelection> {
+  try {
+    return resolveThemeSelection(map, requested);
+  } catch {
+    const available = Object.keys(map.themes).sort().join(', ');
+    throw new TileflowPreviewSelectionError(
+      `Tileflow theme selection is invalid or unknown. Choose one of: ${available}.`,
+    );
+  }
 }

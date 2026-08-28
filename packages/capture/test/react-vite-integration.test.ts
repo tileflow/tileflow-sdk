@@ -48,7 +48,7 @@ test(
     const manifestResponse = await fetch(`${appOrigin}/tileflow/manifest.json`);
     const manifestBody = await manifestResponse.text();
     assert.equal(manifestResponse.status, 200, manifestBody);
-    assert.equal((JSON.parse(manifestBody) as {version?: unknown}).version, 3);
+    assert.equal((JSON.parse(manifestBody) as {version?: unknown}).version, 1);
     const originalListen = Server.prototype.listen;
     let additionalListeners = 0;
     Server.prototype.listen = function forbiddenAdditionalListener() {
@@ -158,31 +158,37 @@ export default defineMap({
   }),
   scenes: {
     desktop: {
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 640, height: 360},
-      target: {kind: 'application', path: '/', captureId: 'primary'}
+      target: {kind: 'application', path: '/', selector: '[data-tileflow-capture-id="primary"]'}
     },
     narrow: {
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 320, height: 480},
-      target: {kind: 'application', path: '/', captureId: 'primary'}
+      target: {kind: 'application', path: '/', selector: '[data-tileflow-capture-id="primary"]'}
     },
     image: {
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 320, height: 480},
       target: {kind: 'application', path: '/', captureId: 'image'}
     },
     'missing-map': {
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 320, height: 480},
       target: {kind: 'application', path: '/', captureId: 'missing-map'}
     },
     popup: {
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 320, height: 480},
       target: {kind: 'application', path: '/', selector: '[data-tileflow-popup-probe]'}
     },
     'unresolved-image': {
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 320, height: 480},
       target: {kind: 'application', path: '/', captureId: 'unresolved-image'}

@@ -59,7 +59,7 @@ export function resolveTerrain(
 /** Terrain owns renderer layers; the Streets orchestrator only composes the contributions. */
 export function compileTerrainContributions(
   terrain: ResolvedTerrain,
-  context: Pick<TileflowDomainCompileContext, 'typography'>,
+  context: Pick<TileflowDomainCompileContext, 'colors' | 'typography'>,
 ): TileflowLayerContribution[] {
   const contributions: TileflowLayerContribution[] = [];
   if (terrain.raster) {
@@ -74,17 +74,20 @@ export function compileTerrainContributions(
             type: 'hillshade',
             source: sourceId,
             paint: {
-              'hillshade-accent-color': hillshade.accentColor ?? 'rgba(255, 255, 255, 0.18)',
+              'hillshade-accent-color':
+                hillshade.accentColor ?? context.colors.terrain.hillshade.accent,
               'hillshade-exaggeration':
                 hillshade.exaggeration ?? (terrain.mode === '3d' ? 0.24 : 0.42),
-              'hillshade-highlight-color': hillshade.highlightColor ?? 'rgba(255, 255, 255, 0.28)',
+              'hillshade-highlight-color':
+                hillshade.highlightColor ?? context.colors.terrain.hillshade.highlight,
               ...(hillshade.illuminationAnchor
                 ? {'hillshade-illumination-anchor': hillshade.illuminationAnchor}
                 : {}),
               ...(hillshade.illuminationDirection === undefined
                 ? {}
                 : {'hillshade-illumination-direction': hillshade.illuminationDirection}),
-              'hillshade-shadow-color': hillshade.shadowColor ?? 'rgba(38, 44, 50, 0.34)',
+              'hillshade-shadow-color':
+                hillshade.shadowColor ?? context.colors.terrain.hillshade.shadow,
             },
           },
           hillshade,
@@ -108,7 +111,7 @@ export function compileTerrainContributions(
             filter: ['==', ['get', 'level'], 0],
             layout: {'line-cap': 'round', 'line-join': 'round'},
             paint: {
-              'line-color': minor.color ?? '#6B6259',
+              'line-color': minor.color ?? context.colors.terrain.contour.minor,
               'line-opacity': minor.opacity ?? 0.5,
               'line-width': minor.width ?? 0.55,
             },
@@ -128,7 +131,7 @@ export function compileTerrainContributions(
             filter: ['>', ['get', 'level'], 0],
             layout: {'line-cap': 'round', 'line-join': 'round'},
             paint: {
-              'line-color': index.color ?? '#564C42',
+              'line-color': index.color ?? context.colors.terrain.contour.index,
               'line-opacity': index.opacity ?? 0.72,
               'line-width': index.width ?? 1,
             },
@@ -159,8 +162,8 @@ export function compileTerrainContributions(
               'text-size': labels.size ?? 10,
             },
             paint: {
-              'text-color': labels.color ?? '#564C42',
-              'text-halo-color': labels.haloColor ?? '#F6F1E5',
+              'text-color': labels.color ?? context.colors.terrain.contour.label,
+              'text-halo-color': labels.haloColor ?? context.colors.terrain.contour.halo,
               'text-halo-width': labels.haloWidth ?? 1,
               'text-opacity': labels.opacity ?? 0.82,
             },

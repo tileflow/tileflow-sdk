@@ -6,6 +6,9 @@ This package describes and submits a render scene, then follows its asynchronous
 immutable image is ready. It is distinct from React's `<Map mode="image">`, which only displays an
 existing hosted image and does not create or poll a Static Maps operation.
 
+Every scene names one concrete `theme`. The browser-only `"system"` selector is rejected so hashes,
+cache keys, receipts, and regenerated images remain reproducible.
+
 ```ts
 import {
   createStaticMapIdempotencyKey,
@@ -16,6 +19,7 @@ import {
 
 const scene = validateStaticScene({
   map: 'madrid',
+  theme: 'dark',
   camera: {type: 'center', center: [-3.7038, 40.4168], zoom: 12},
   size: {width: 1200, height: 800},
   overlays: [marker({coordinate: [-3.7038, 40.4168]})],

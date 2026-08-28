@@ -1,393 +1,218 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {defineMap} from '../src';
 import {
   collectTileflowMapBuildLineage,
   createTileflowMapBuildManifest,
   hashTileflowAssetSet,
   hashTileflowAssetSetIdentities,
   hashTileflowMapRevision,
-  tileflowMapBuildManifestSchemaVersion,
-} from '../src/map-build-manifest';
-import {defineMap, defineRootMap} from '../src/maps';
-import {defineModuleEffects, patchModuleLayer} from '../src/recipe';
+  type TileflowEffectiveMapSourceAssets,
+} from '../src/build';
 import type {MapLibreStyle} from '../src/types';
+import {extendStreets, testLightTheme} from './map-fixture';
 
-const noAssets = {fonts: [], icons: []} as const;
+const sourceAssets: TileflowEffectiveMapSourceAssets = {
+  fonts: [],
+  icons: [],
+};
 
-test('verified per-file identities reproduce the exact byte-backed asset-set hash', async () => {
-  const assets = [
+const lightStyle: MapLibreStyle = {
+  layers: [
     {
-      contentType: 'image/png',
-      fileName: 'icons/streets/sprite.png',
-      source: new Uint8Array([0, 1, 2, 255]),
+      id: 'land',
+      paint: {'fill-color': '#ffffff'},
+      'source-layer': 'landcover',
+      source: 'world',
+      type: 'fill',
     },
-    {
-      contentType: 'application/json',
-      fileName: 'icons/streets/sprite.json',
-      source: '{}',
-    },
-  ] as const;
-  const identities = [
-    {
-      byteLength: 4,
-      contentType: 'image/png',
-      fileName: 'icons/streets/sprite.png',
-      sha256: '3d1f57c984978ef98a18378c8166c1cb8ede02c03eeb6aee7e2f121dfeee3e56',
-    },
+  ],
+  sources: {world: {type: 'vector', url: 'https://tiles.example.test/tile.json'}},
+  version: 8,
+};
+
+const darkStyle: MapLibreStyle = {
+  ...lightStyle,
+  layers: [{...lightStyle.layers[0]!, paint: {'fill-color': '#111827'}}],
+};
+
+const assets = [
+  {contentType: 'image/png', fileName: 'icons/main/sprite.png', source: new Uint8Array([1, 2])},
+];
+
+test('verified per-file identities reproduce the byte-backed asset-set hash', async () => {
+  const byteHash = await hashTileflowAssetSet(assets);
+  const identityHash = await hashTileflowAssetSetIdentities([
     {
       byteLength: 2,
-      contentType: 'application/json',
-      fileName: 'icons/streets/sprite.json',
-      sha256: '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+      contentType: 'image/png',
+      fileName: 'icons/main/sprite.png',
+      sha256: 'a12871fee210fb8619291eaea194581cbd2531e4b23759d225f6806923f63222',
     },
-  ] as const;
-
-  assert.equal(
-    await hashTileflowAssetSet(assets),
-    await hashTileflowAssetSetIdentities(identities),
-  );
-  assert.equal(
-    await hashTileflowAssetSetIdentities(identities),
-    '1b157857752c75d36fe7f3d2fad3a94f03f69659cb5e38e3f639a4a49f1990a2',
-  );
-  await assert.rejects(
-    hashTileflowAssetSetIdentities([...identities, identities[0]]),
-    /Duplicate Tileflow map asset/u,
-  );
+  ]);
+  assert.equal(identityHash, byteHash);
 });
 
-test('locks the version-1 domain-separated canonical map revision vector', async () => {
-  const map = defineRootMap({
-    id: 'fixture',
-    version: 1,
-    root: {compiler: 'streets', compilerVersion: 1},
-    glyphs: {
-      fontStacks: ['Noto Sans Regular'],
-      kind: 'url',
-      url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
-    },
-    theme: {colors: {land: '#ffffff'}},
-  });
-
+test('map revision identifies the complete resolved theme document and source closure', async () => {
+  const base = extendStreets({id: 'base'});
+  const sameDesign = defineMap({id: 'renamed', version: 7, extends: base});
   assert.equal(
-    await hashTileflowMapRevision(map, noAssets),
-    'fa2df53da48dc9d15bcfb919e9339ba04dd25b38de15039a0f67ca691446b338',
+    await hashTileflowMapRevision(base, sourceAssets),
+    await hashTileflowMapRevision(sameDesign, sourceAssets),
   );
-});
 
-function root(id: string, land: string, version = 1) {
-  return defineRootMap({
-    id,
-    version,
-    root: {compiler: 'streets', compilerVersion: 1},
-    glyphs: {
-      fontStacks: ['Noto Sans Regular'],
-      kind: 'url',
-      url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
-    },
-    theme: {colors: {land}},
+  const dark = {...testLightTheme, colorScheme: 'dark' as const, id: 'test-dark'};
+  const themed = extendStreets({
+    id: 'themed',
+    defaultTheme: 'dark',
+    themes: {dark, light: testLightTheme},
   });
-}
-
-function style(color: string, tileUrl = 'https://world.example.test/current/{z}/{x}/{y}') {
-  return {
-    glyphs: 'https://fonts.example.test/{fontstack}/{range}.pbf',
-    layers: [{id: 'background', paint: {'background-color': color}, type: 'background'}],
-    sources: {tileflow: {tiles: [tileUrl], type: 'vector'}},
-    version: 8,
-  } as MapLibreStyle;
-}
-
-test('map revision follows effective inheritance while masked ancestry stays out of the hash', async () => {
-  const red = root('root-red', '#ff0000');
-  const blue = root('root-blue', '#0000ff');
-  const inheritedRed = defineMap({id: 'leaf', version: 3, extends: red});
-  const inheritedBlue = defineMap({id: 'leaf', version: 3, extends: blue});
-  const maskedRed = defineMap({
-    id: 'leaf',
-    version: 3,
-    extends: red,
-    theme: {colors: {land: '#111111'}},
-  });
-  const maskedBlue = defineMap({
-    id: 'leaf',
-    version: 3,
-    extends: blue,
-    theme: {colors: {land: '#111111'}},
-  });
-
   assert.notEqual(
-    await hashTileflowMapRevision(inheritedRed, noAssets),
-    await hashTileflowMapRevision(inheritedBlue, noAssets),
+    await hashTileflowMapRevision(base, sourceAssets),
+    await hashTileflowMapRevision(themed, sourceAssets),
   );
-  assert.equal(
-    await hashTileflowMapRevision(maskedRed, noAssets),
-    await hashTileflowMapRevision(maskedBlue, noAssets),
+
+  const changedSources: TileflowEffectiveMapSourceAssets = {
+    fonts: [],
+    icons: [{format: 'svg', id: 'marker', kind: 'icon', sha256: 'b'.repeat(64)}],
+  };
+  assert.notEqual(
+    await hashTileflowMapRevision(base, sourceAssets),
+    await hashTileflowMapRevision(base, changedSources),
   );
-  assert.equal(
-    await hashTileflowMapRevision(
-      defineMap({
-        id: 'leaf',
-        version: 3,
-        extends: root('same-root', '#ff0000', 1),
-        theme: {colors: {land: '#111111'}},
-      }),
-      noAssets,
-    ),
-    await hashTileflowMapRevision(
-      defineMap({
-        id: 'leaf',
-        version: 3,
-        extends: root('same-root', '#0000ff', 99),
-        theme: {colors: {land: '#111111'}},
-      }),
-      noAssets,
-    ),
-  );
-  assert.equal(
-    await hashTileflowMapRevision(maskedRed, noAssets),
-    await hashTileflowMapRevision(
-      defineMap({id: 'leaf', version: 4, extends: red, theme: {colors: {land: '#111111'}}}),
-      noAssets,
-    ),
+});
+
+test('build manifest records every concrete theme on independent style identity axes', async () => {
+  const dark = {...testLightTheme, colorScheme: 'dark' as const, id: 'test-dark', version: 2};
+  const map = extendStreets({
+    id: 'main',
+    defaultTheme: 'dark',
+    systemThemes: {dark: 'dark', light: 'light'},
+    themes: {dark, light: testLightTheme},
+  });
+  const manifest = await createTileflowMapBuildManifest({
+    main: {
+      assets,
+      lineage: collectTileflowMapBuildLineage(map),
+      map,
+      sourceAssets,
+      styles: {dark: darkStyle, light: lightStyle},
+    },
+  });
+
+  const entry = manifest.maps.main!;
+  assert.equal(entry.defaultTheme, 'dark');
+  assert.deepEqual(entry.systemThemes, {dark: 'dark', light: 'light'});
+  assert.deepEqual(Object.keys(entry.themes), ['dark', 'light']);
+  assert.equal(entry.themes.dark?.colorScheme, 'dark');
+  assert.equal(entry.themes.dark?.themeId, 'test-dark');
+  assert.equal(entry.themes.dark?.themeVersion, 2);
+  assert.notEqual(entry.themes.dark?.styleSha256, entry.themes.light?.styleSha256);
+  assert.deepEqual(
+    entry.themes.dark?.dataRequirements,
+    entry.themes.light?.dataRequirements,
+    'palette-only themes retain one structural data contract',
   );
   assert.deepEqual(
-    collectTileflowMapBuildLineage(
-      defineMap({id: 'same-id', version: 2, extends: root('same-id', '#ffffff', 1)}),
-    ),
-    [
-      {id: 'same-id', mapVersion: 2},
-      {id: 'same-id', mapVersion: 1},
+    entry.themes.dark?.sourceRequirements,
+    entry.themes.light?.sourceRequirements,
+    'palette-only themes retain one multi-source contract',
+  );
+});
+
+test('build manifest records raster DEM requirements independently from vector fields', async () => {
+  const map = extendStreets({id: 'main'});
+  const reliefStyle: MapLibreStyle = {
+    ...lightStyle,
+    layers: [
+      ...lightStyle.layers,
+      {
+        id: 'bathymetry-relief',
+        paint: {
+          'color-relief-color': [
+            'interpolate',
+            ['linear'],
+            ['elevation'],
+            -11_000,
+            '#123456',
+            0,
+            '#abcdef',
+          ],
+        },
+        source: 'bathymetry-dem',
+        type: 'color-relief',
+      },
     ],
-  );
-});
-
-test('map revision excludes editorial identity, default view, scenes and delivery policy', async () => {
-  const design = root('shared-root', '#ffffff');
-  const first = defineMap({
-    id: 'first-map',
-    name: 'First editorial name',
-    version: 1,
-    extends: design,
-    delivery: {hosted: {allowedOrigins: ['https://first.example.test']}},
-    scenes: {
-      proof: {
-        camera: {type: 'center', center: [0, 0], zoom: 2},
-        viewport: {height: 640, width: 640},
+    sources: {
+      ...lightStyle.sources,
+      'bathymetry-dem': {
+        encoding: 'terrarium',
+        tileSize: 512,
+        type: 'raster-dem',
+        url: 'https://tiles.example.test/bathymetry-dem.json',
       },
     },
-    view: {center: [0, 0], zoom: 2},
-  });
-  const second = defineMap({
-    id: 'second-map',
-    name: 'Second editorial name',
-    version: 99,
-    extends: design,
-    delivery: {hosted: {allowedOrigins: ['https://second.example.test']}},
-    scenes: {
-      audit: {
-        camera: {type: 'center', center: [40, 20], zoom: 8},
-        viewport: {height: 720, width: 1_280},
-      },
-    },
-    view: {bearing: 30, center: [40, 20], pitch: 45, zoom: 8},
-  });
-
-  assert.equal(
-    await hashTileflowMapRevision(first, noAssets),
-    await hashTileflowMapRevision(second, noAssets),
-  );
-});
-
-test('source identities change map revision independently from compiled outputs', async () => {
-  const map = defineMap({id: 'leaf', version: 1, extends: root('root', '#ffffff')});
-  const firstSources = {
-    fonts: [],
-    icons: [{format: 'svg', id: 'cafe', kind: 'icon', sha256: 'a'.repeat(64)}],
-  } as const;
-  const secondSources = {
-    fonts: [],
-    icons: [{format: 'svg', id: 'cafe', kind: 'icon', sha256: 'b'.repeat(64)}],
-  } as const;
-
-  assert.notEqual(
-    await hashTileflowMapRevision(map, firstSources),
-    await hashTileflowMapRevision(map, secondSources),
-  );
-});
-
-test('compiler-private effective map contributions participate and remain owner-atomic', async () => {
-  const withEffect = (color: string) =>
-    defineRootMap({
-      id: 'effect-root',
-      version: 1,
-      root: {compiler: 'streets', compilerVersion: 1},
-      modules: {land: {type: 'land'}},
-      ...defineModuleEffects([
-        patchModuleLayer('land', 'land.background', {
-          paint: {'background-color': color},
-        }),
-      ]),
-    });
-  const red = withEffect('#ff0000');
-  const blue = withEffect('#0000ff');
-
-  assert.notEqual(
-    await hashTileflowMapRevision(red, noAssets),
-    await hashTileflowMapRevision(blue, noAssets),
-  );
-  assert.equal(
-    await hashTileflowMapRevision(
-      defineMap({id: 'leaf', version: 1, extends: red, modules: {land: {type: 'land'}}}),
-      noAssets,
-    ),
-    await hashTileflowMapRevision(
-      defineMap({id: 'leaf', version: 1, extends: blue, modules: {land: {type: 'land'}}}),
-      noAssets,
-    ),
-  );
-});
-
-test('build manifest keeps lineage, Style and output assets on separate identity axes', async () => {
-  const firstRoot = root('first-root', '#ffffff');
-  const secondRoot = root('second-root', '#ffffff', 7);
-  const firstMap = defineMap({id: 'leaf', version: 1, extends: firstRoot});
-  const secondMap = defineMap({id: 'leaf', version: 1, extends: secondRoot});
-  const first = await createTileflowMapBuildManifest({
-    leaf: {
-      assets: [{contentType: 'image/png', fileName: 'icons/leaf/sprite.png', source: 'one'}],
-      lineage: [
-        {id: 'leaf', mapVersion: 1},
-        {id: 'first-root', mapVersion: 1},
-      ],
-      map: firstMap,
-      sourceAssets: noAssets,
-      style: style('#ffffff', 'https://world.example.test/release-one/{z}/{x}/{y}'),
-    },
-  });
-  const movedWorld = await createTileflowMapBuildManifest({
-    leaf: {
-      assets: [{contentType: 'image/png', fileName: 'icons/leaf/sprite.png', source: 'one'}],
-      lineage: [
-        {id: 'leaf', mapVersion: 1},
-        {id: 'second-root', mapVersion: 7},
-      ],
-      map: secondMap,
-      sourceAssets: noAssets,
-      style: style('#ffffff', 'https://world.example.test/release-two/{z}/{x}/{y}'),
-    },
-  });
-  const changedOutput = await createTileflowMapBuildManifest({
-    leaf: {
-      assets: [{contentType: 'image/png', fileName: 'icons/leaf/sprite.png', source: 'two'}],
-      lineage: [
-        {id: 'leaf', mapVersion: 1},
-        {id: 'first-root', mapVersion: 1},
-      ],
-      map: firstMap,
-      sourceAssets: noAssets,
-      style: style('#000000', 'https://world.example.test/release-one/{z}/{x}/{y}'),
+  };
+  const manifest = await createTileflowMapBuildManifest({
+    main: {
+      assets,
+      lineage: collectTileflowMapBuildLineage(map),
+      map,
+      sourceAssets,
+      styles: {light: reliefStyle},
     },
   });
 
-  assert.equal(first.schemaVersion, tileflowMapBuildManifestSchemaVersion);
-  assert.deepEqual(first.maps.leaf?.lineage, [
-    {id: 'leaf', mapVersion: 1},
-    {id: 'first-root', mapVersion: 1},
-  ]);
-  assert.deepEqual(movedWorld.maps.leaf?.lineage, [
-    {id: 'leaf', mapVersion: 1},
-    {id: 'second-root', mapVersion: 7},
-  ]);
-  assert.equal(first.maps.leaf?.mapRevisionSha256, movedWorld.maps.leaf?.mapRevisionSha256);
-  assert.notEqual(first.maps.leaf?.styleSha256, movedWorld.maps.leaf?.styleSha256);
-  assert.equal(first.maps.leaf?.mapRevisionSha256, changedOutput.maps.leaf?.mapRevisionSha256);
-  assert.notEqual(first.maps.leaf?.styleSha256, changedOutput.maps.leaf?.styleSha256);
-  assert.notEqual(first.maps.leaf?.assetSetSha256, changedOutput.maps.leaf?.assetSetSha256);
-  assert.equal('coreVersion' in first.maps.leaf!, false);
-  assert.deepEqual(first.maps.leaf?.recipe, {compiler: 'streets', compilerVersion: 1});
+  assert.deepEqual(manifest.maps.main?.themes.light?.sourceRequirements.rasterDemSources, {
+    'bathymetry-dem': {
+      encoding: 'terrarium',
+      sourceId: 'bathymetry-dem',
+      tileSize: 512,
+      type: 'raster-dem',
+    },
+  });
+  assert.deepEqual(
+    Object.keys(manifest.maps.main?.themes.light?.sourceRequirements.sources ?? {}),
+    ['world'],
+  );
 });
 
-test('package and lockfile provenance changes without changing map revision', async () => {
-  const map = defineMap({id: 'leaf', version: 1, extends: root('root', '#ffffff')});
-  const build = (coreVersion: string, lockfileSha256: string) =>
+test('build manifest fails closed when compiled and declared theme families drift', async () => {
+  const map = extendStreets({id: 'main'});
+  const input = {
+    assets,
+    lineage: collectTileflowMapBuildLineage(map),
+    map,
+    sourceAssets,
+  };
+  await assert.rejects(
+    createTileflowMapBuildManifest({main: {...input, styles: {}}}),
+    /must exactly match its declared themes/u,
+  );
+  await assert.rejects(
+    createTileflowMapBuildManifest({
+      main: {...input, styles: {extra: darkStyle, light: lightStyle}},
+    }),
+    /must exactly match its declared themes/u,
+  );
+});
+
+test('provenance remains a build axis independent of theme style identities', async () => {
+  const map = extendStreets({id: 'main'});
+  const build = (version: string) =>
     createTileflowMapBuildManifest(
       {
-        leaf: {
-          assets: [],
-          lineage: [
-            {id: 'leaf', mapVersion: 1},
-            {id: 'root', mapVersion: 1},
-          ],
+        main: {
+          assets,
+          lineage: collectTileflowMapBuildLineage(map),
           map,
-          sourceAssets: noAssets,
-          style: style('#ffffff'),
+          sourceAssets,
+          styles: {light: lightStyle},
         },
       },
-      {
-        provenance: {
-          lockfile: {format: 'pnpm', sha256: lockfileSha256},
-          packages: {'@tileflow/core': coreVersion},
-          schemaVersion: 1,
-        },
-      },
+      {provenance: {packages: {'@tileflow/core': version}, schemaVersion: 1}},
     );
-  const first = await build('1.0.0', 'a'.repeat(64));
-  const second = await build('2.0.0', 'b'.repeat(64));
-
-  assert.equal(first.maps.leaf?.mapRevisionSha256, second.maps.leaf?.mapRevisionSha256);
+  const [first, second] = await Promise.all([build('1.0.0'), build('1.0.1')]);
+  assert.deepEqual(first.maps, second.maps);
   assert.notDeepEqual(first.provenance, second.provenance);
-});
-
-test('build manifest infers only effective final Style data requirements outside map revision', async () => {
-  const map = defineMap({id: 'leaf', version: 1, extends: root('root', '#ffffff')});
-  const build = async (includePoi: boolean) =>
-    createTileflowMapBuildManifest({
-      leaf: {
-        assets: [],
-        lineage: [
-          {id: 'leaf', mapVersion: 1},
-          {id: 'root', mapVersion: 1},
-        ],
-        map,
-        sourceAssets: noAssets,
-        style: {
-          layers: [
-            {
-              filter: ['==', ['get', 'class'], 'commercial'],
-              id: 'building',
-              source: 'tileflow',
-              'source-layer': 'building',
-              type: 'fill',
-            },
-            ...(includePoi
-              ? [
-                  {
-                    filter: ['has', 'name'],
-                    id: 'poi',
-                    layout: {'text-field': ['get', 'name']},
-                    source: 'tileflow',
-                    'source-layer': 'poi',
-                    type: 'symbol',
-                  } as const,
-                ]
-              : []),
-          ],
-          sources: {tileflow: {tiles: ['https://world.example.test/{z}/{x}/{y}'], type: 'vector'}},
-          version: 8,
-        } as MapLibreStyle,
-      },
-    });
-  const withoutPoi = await build(false);
-  const withPoi = await build(true);
-
-  assert.deepEqual(withoutPoi.maps.leaf?.dataRequirements.sourceLayers, [
-    {fields: [{name: 'class'}], id: 'building'},
-  ]);
-  assert.deepEqual(withPoi.maps.leaf?.dataRequirements.sourceLayers, [
-    {fields: [{name: 'class'}], id: 'building'},
-    {fields: [{name: 'name'}], id: 'poi'},
-  ]);
-  assert.equal(withoutPoi.maps.leaf?.mapRevisionSha256, withPoi.maps.leaf?.mapRevisionSha256);
-  assert.notEqual(withoutPoi.maps.leaf?.styleSha256, withPoi.maps.leaf?.styleSha256);
 });

@@ -133,7 +133,7 @@ test('rejects unsafe field selectors, non-JSON data, extra keys, and invalid coo
 test('accepts all selector targets and bindings without physical-layer knowledge by default', () => {
   const targets = [
     {id: 'property-42', kind: 'annotation'},
-    {categories: ['restaurant', 'cafe'], domain: 'poi', kind: 'semantic-feature'},
+    {categories: ['food-drink', 'retail'], domain: 'poi', kind: 'semantic-feature'},
     {kind: 'style-layer', layerId: 'application-owned-pois'},
     {kind: 'map'},
   ] satisfies TileflowInteractionTarget[];

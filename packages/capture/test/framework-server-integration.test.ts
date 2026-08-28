@@ -68,12 +68,17 @@ test(
     await runWebpack(compiler);
     assert.equal(
       JSON.parse(await readFile(join(outputDirectory, 'tileflow/manifest.json'), 'utf8')).version,
-      3,
+      1,
     );
     const server = createServer(async (request, response) => {
       if (request.url === '/bundle.js') {
         response.writeHead(200, {'Content-Type': 'text/javascript; charset=utf-8'});
         response.end(await readFile(join(outputDirectory, 'bundle.js')));
+        return;
+      }
+      if (request.url === '/tileflow/manifest.json') {
+        response.writeHead(200, {'Content-Type': 'application/json; charset=utf-8'});
+        response.end(await readFile(join(outputDirectory, 'tileflow/manifest.json')));
         return;
       }
       response.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'});
@@ -183,6 +188,7 @@ export default defineMap({
   }),
   scenes: {
     proof: {
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 320, height: 480},
       target: {kind: 'application', path: '/', captureId: 'proof'}
@@ -221,7 +227,7 @@ async function buildNextFixture(cwd: string): Promise<void> {
   });
   assert.equal(
     JSON.parse(await readFile(join(cwd, 'public/tileflow/manifest.json'), 'utf8')).version,
-    3,
+    1,
   );
 }
 

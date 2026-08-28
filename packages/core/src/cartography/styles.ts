@@ -1,4 +1,77 @@
-import type {TileflowStyleValue} from './values';
+import type {
+  TileflowExpression,
+  TileflowFixedValue,
+  TileflowThemeColorValue,
+  TileflowThemeFontValue,
+  TileflowThemeImageValue,
+  TileflowThemeNumberValue,
+  TileflowZoomValue,
+} from './values';
+
+/** A color literal, semantic color token, color operation, expression, or zoom ramp. */
+export type TileflowColorStyleValue =
+  | TileflowExpression<string>
+  | TileflowThemeColorValue
+  | TileflowZoomValue<TileflowThemeColorValue>;
+
+/** An image name, semantic image token, expression, or zoom ramp. */
+export type TileflowImageStyleValue =
+  | TileflowExpression<string>
+  | TileflowThemeImageValue
+  | TileflowZoomValue<TileflowThemeImageValue>;
+
+/** A number, semantic number token, expression, or zoom ramp. */
+export type TileflowNumberStyleValue =
+  | TileflowExpression<number>
+  | TileflowThemeNumberValue
+  | TileflowZoomValue<TileflowThemeNumberValue>;
+
+/** A visual numeric array whose components may be themed, or whose full shape is fixed. */
+export type TileflowThemeNumberArrayValue =
+  | readonly TileflowThemeNumberValue[]
+  | TileflowFixedValue<readonly number[]>;
+
+/** A visual numeric array, expression, or zoom ramp with explicit theme intent. */
+export type TileflowNumberArrayStyleValue =
+  | TileflowExpression<readonly number[]>
+  | TileflowThemeNumberArrayValue
+  | TileflowZoomValue<TileflowThemeNumberArrayValue>;
+
+/** A two-dimensional visual offset with category-safe numeric components. */
+export type TileflowNumberOffsetStyleValue =
+  | readonly [TileflowThemeNumberValue, TileflowThemeNumberValue]
+  | TileflowFixedValue<readonly number[]>
+  | TileflowExpression<readonly number[]>
+  | TileflowZoomValue<
+      | readonly [TileflowThemeNumberValue, TileflowThemeNumberValue]
+      | TileflowFixedValue<readonly number[]>
+    >;
+
+/** Top, right, bottom, and left visual insets with category-safe numeric components. */
+export type TileflowNumberInsetsStyleValue =
+  | readonly [
+      TileflowThemeNumberValue,
+      TileflowThemeNumberValue,
+      TileflowThemeNumberValue,
+      TileflowThemeNumberValue,
+    ]
+  | TileflowFixedValue<readonly [number, number, number, number]>
+  | TileflowExpression<readonly number[]>
+  | TileflowZoomValue<
+      | readonly [
+          TileflowThemeNumberValue,
+          TileflowThemeNumberValue,
+          TileflowThemeNumberValue,
+          TileflowThemeNumberValue,
+        ]
+      | TileflowFixedValue<readonly [number, number, number, number]>
+    >;
+
+/** A structural value that does not participate in semantic theme-token substitution. */
+export type TileflowStructuralStyleValue<T> = T | TileflowExpression<T> | TileflowZoomValue<T>;
+
+/** Structural text, including expressions and zoom-dependent literal strings. */
+export type TileflowStringStyleValue = TileflowStructuralStyleValue<string>;
 
 export type TileflowLineCap = 'butt' | 'round' | 'square';
 export type TileflowLineJoin = 'bevel' | 'miter' | 'round';
@@ -17,6 +90,7 @@ export type TileflowTextAnchor =
 export type TileflowTextJustify = 'auto' | 'center' | 'left' | 'right';
 export type TileflowIconAnchor = TileflowTextAnchor;
 export type TileflowAlignment = 'auto' | 'map' | 'viewport';
+export type TileflowIconTextFit = 'both' | 'height' | 'none' | 'width';
 
 /** Visibility and zoom bounds shared by every visual primitive. */
 export type TileflowLayerRange = {
@@ -26,136 +100,140 @@ export type TileflowLayerRange = {
 };
 
 export type TileflowBackgroundPaint = {
-  color?: TileflowStyleValue<string>;
-  opacity?: TileflowStyleValue<number>;
-  pattern?: TileflowStyleValue<string>;
+  color?: TileflowColorStyleValue;
+  opacity?: TileflowNumberStyleValue;
+  pattern?: TileflowImageStyleValue;
 };
 export type TileflowBackgroundStyle = TileflowLayerRange & TileflowBackgroundPaint;
 
 export type TileflowFillPaint = {
   antialias?: boolean;
-  color?: TileflowStyleValue<string>;
-  opacity?: TileflowStyleValue<number>;
-  pattern?: TileflowStyleValue<string>;
+  color?: TileflowColorStyleValue;
+  opacity?: TileflowNumberStyleValue;
+  pattern?: TileflowImageStyleValue;
 };
 export type TileflowFillStyle = TileflowLayerRange & TileflowFillPaint;
 
 export type TileflowLinePaint = {
-  blur?: TileflowStyleValue<number>;
-  color?: TileflowStyleValue<string>;
-  dash?: TileflowStyleValue<readonly number[]>;
-  gapWidth?: TileflowStyleValue<number>;
-  offset?: TileflowStyleValue<number>;
-  opacity?: TileflowStyleValue<number>;
-  pattern?: TileflowStyleValue<string>;
-  width?: TileflowStyleValue<number>;
+  blur?: TileflowNumberStyleValue;
+  color?: TileflowColorStyleValue;
+  dash?: TileflowNumberArrayStyleValue;
+  gapWidth?: TileflowNumberStyleValue;
+  offset?: TileflowNumberStyleValue;
+  opacity?: TileflowNumberStyleValue;
+  pattern?: TileflowImageStyleValue;
+  width?: TileflowNumberStyleValue;
 };
 export type TileflowLineLayout = {
-  cap?: TileflowStyleValue<TileflowLineCap>;
-  join?: TileflowStyleValue<TileflowLineJoin>;
-  miterLimit?: number;
-  roundLimit?: number;
+  cap?: TileflowStructuralStyleValue<TileflowLineCap>;
+  join?: TileflowStructuralStyleValue<TileflowLineJoin>;
+  miterLimit?: TileflowNumberStyleValue;
+  roundLimit?: TileflowNumberStyleValue;
 };
 export type TileflowLineStyle = TileflowLayerRange & TileflowLinePaint & TileflowLineLayout;
 
 /** Repeated diagonal marks placed along a stroked geographic feature. */
 export type TileflowLineHatchStyle = TileflowLayerRange & {
-  angle?: TileflowStyleValue<number>;
-  color?: TileflowStyleValue<string>;
-  opacity?: TileflowStyleValue<number>;
+  angle?: TileflowNumberStyleValue;
+  color?: TileflowColorStyleValue;
+  opacity?: TileflowNumberStyleValue;
   /** Sprite pattern clipped to the line deck; when set, it replaces glyph hatching. */
-  pattern?: TileflowStyleValue<string>;
+  pattern?: TileflowImageStyleValue;
   /**
    * Intrinsic pixel heights available as `${pattern}-${width}` sprites. Tileflow
    * selects the closest height to the rendered line width so marks retain a
    * nearly fixed screen-pixel thickness instead of stretching with the road.
    * Requires `pattern` to be a literal sprite-name prefix.
    */
-  patternWidths?: readonly number[];
-  size?: TileflowStyleValue<number>;
-  spacing?: TileflowStyleValue<number>;
+  patternWidths?: TileflowThemeNumberArrayValue;
+  size?: TileflowNumberStyleValue;
+  spacing?: TileflowNumberStyleValue;
 };
 
 export type TileflowTextPaint = {
-  color?: TileflowStyleValue<string>;
-  haloBlur?: TileflowStyleValue<number>;
-  haloColor?: TileflowStyleValue<string>;
-  haloWidth?: TileflowStyleValue<number>;
-  opacity?: TileflowStyleValue<number>;
+  color?: TileflowColorStyleValue;
+  haloBlur?: TileflowNumberStyleValue;
+  haloColor?: TileflowColorStyleValue;
+  haloWidth?: TileflowNumberStyleValue;
+  opacity?: TileflowNumberStyleValue;
 };
 export type TileflowTextLayout = {
   allowOverlap?: boolean;
   anchor?: TileflowTextAnchor;
-  field?: TileflowStyleValue<string>;
-  font?: string;
-  fallbacks?: readonly string[];
+  field?: TileflowStringStyleValue;
+  font?: TileflowThemeFontValue;
+  fallbacks?: readonly TileflowThemeFontValue[];
   ignorePlacement?: boolean;
   justify?: TileflowTextJustify;
   keepUpright?: boolean;
-  letterSpacing?: TileflowStyleValue<number>;
-  lineHeight?: TileflowStyleValue<number>;
-  maxAngle?: number;
-  maxWidth?: TileflowStyleValue<number>;
-  offset?: readonly [number, number];
+  letterSpacing?: TileflowNumberStyleValue;
+  lineHeight?: TileflowNumberStyleValue;
+  maxAngle?: TileflowNumberStyleValue;
+  maxWidth?: TileflowNumberStyleValue;
+  offset?: TileflowNumberOffsetStyleValue;
   optional?: boolean;
-  padding?: TileflowStyleValue<number>;
-  radialOffset?: TileflowStyleValue<number>;
-  rotate?: TileflowStyleValue<number>;
-  size?: TileflowStyleValue<number>;
+  padding?: TileflowNumberStyleValue;
+  pitchAlignment?: TileflowAlignment;
+  radialOffset?: TileflowNumberStyleValue;
+  rotate?: TileflowNumberStyleValue;
+  rotationAlignment?: TileflowAlignment;
+  size?: TileflowNumberStyleValue;
   transform?: 'lowercase' | 'none' | 'uppercase';
   variableAnchors?: readonly TileflowTextAnchor[];
 };
 export type TileflowTextStyle = TileflowLayerRange & TileflowTextPaint & TileflowTextLayout;
 
 export type TileflowIconPaint = {
-  color?: TileflowStyleValue<string>;
-  haloBlur?: TileflowStyleValue<number>;
-  haloColor?: TileflowStyleValue<string>;
-  haloWidth?: TileflowStyleValue<number>;
-  opacity?: TileflowStyleValue<number>;
+  color?: TileflowColorStyleValue;
+  haloBlur?: TileflowNumberStyleValue;
+  haloColor?: TileflowColorStyleValue;
+  haloWidth?: TileflowNumberStyleValue;
+  opacity?: TileflowNumberStyleValue;
 };
 export type TileflowIconLayout = {
   allowOverlap?: boolean;
   anchor?: TileflowIconAnchor;
-  image?: TileflowStyleValue<string>;
+  image?: TileflowImageStyleValue;
   ignorePlacement?: boolean;
   keepUpright?: boolean;
-  offset?: readonly [number, number];
+  offset?: TileflowNumberOffsetStyleValue;
   optional?: boolean;
-  padding?: TileflowStyleValue<number>;
+  padding?: TileflowNumberStyleValue;
   pitchAlignment?: TileflowAlignment;
-  rotate?: TileflowStyleValue<number>;
+  rotate?: TileflowNumberStyleValue;
   rotationAlignment?: TileflowAlignment;
-  size?: TileflowStyleValue<number>;
+  size?: TileflowNumberStyleValue;
+  textFit?: TileflowIconTextFit;
+  textFitPadding?: TileflowNumberInsetsStyleValue;
 };
 export type TileflowIconStyle = TileflowLayerRange & TileflowIconPaint & TileflowIconLayout;
 
 export type TileflowSymbolPlacementStyle = TileflowLayerRange & {
   placement?: TileflowSymbolPlacement;
-  priority?: TileflowStyleValue<number>;
-  spacing?: TileflowStyleValue<number>;
+  priority?: TileflowStructuralStyleValue<number>;
+  spacing?: TileflowNumberStyleValue;
   zOrder?: TileflowSymbolZOrder;
 };
 
 export type TileflowCirclePaint = {
-  blur?: TileflowStyleValue<number>;
-  color?: TileflowStyleValue<string>;
-  opacity?: TileflowStyleValue<number>;
+  blur?: TileflowNumberStyleValue;
+  color?: TileflowColorStyleValue;
+  opacity?: TileflowNumberStyleValue;
   pitchAlignment?: 'map' | 'viewport';
   pitchScale?: 'map' | 'viewport';
-  radius?: TileflowStyleValue<number>;
-  strokeColor?: TileflowStyleValue<string>;
-  strokeOpacity?: TileflowStyleValue<number>;
-  strokeWidth?: TileflowStyleValue<number>;
+  radius?: TileflowNumberStyleValue;
+  strokeColor?: TileflowColorStyleValue;
+  strokeOpacity?: TileflowNumberStyleValue;
+  strokeWidth?: TileflowNumberStyleValue;
 };
 export type TileflowCircleStyle = TileflowLayerRange & TileflowCirclePaint;
 
 export type TileflowExtrusionPaint = {
-  base?: TileflowStyleValue<number>;
-  color?: TileflowStyleValue<string>;
-  height?: TileflowStyleValue<number>;
-  opacity?: TileflowStyleValue<number>;
-  pattern?: TileflowStyleValue<string>;
+  base?: TileflowNumberStyleValue;
+  color?: TileflowColorStyleValue;
+  height?: TileflowNumberStyleValue;
+  opacity?: TileflowNumberStyleValue;
+  pattern?: TileflowImageStyleValue;
   verticalGradient?: boolean;
 };
 export type TileflowExtrusionStyle = TileflowLayerRange & TileflowExtrusionPaint;

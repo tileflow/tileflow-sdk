@@ -5,19 +5,21 @@ import type {
   TileflowBoundaryColorConfig,
   TileflowBuildingColorConfig,
   TileflowColorConfig,
+  TileflowColorGroupsConfig,
   TileflowHydroColorConfig,
   TileflowLabelColorConfig,
   TileflowLandcoverColorConfig,
   TileflowLanduseColorConfig,
   TileflowPoiColorConfig,
   TileflowRoadColorConfig,
-  TileflowThemeConfig,
-  TileflowThemeMode,
-  TileflowThemeModulesConfig,
   TileflowTypography,
   TileflowTypographyDomain,
   TileflowTypographyStyle,
 } from '../types';
+import {resolveTileflowTheme, type TileflowTheme} from './model';
+
+export * from './model';
+export * from './visual-semantics';
 
 type ResolvedColorGroup<TConfig> = {
   [TKey in keyof Required<TConfig>]: string;
@@ -28,9 +30,37 @@ export type TileflowResolvedLabelColors = ResolvedColorGroup<TileflowLabelColorC
 export type TileflowResolvedPoiColors = ResolvedColorGroup<TileflowPoiColorConfig>;
 export type TileflowResolvedLanduseColors = ResolvedColorGroup<TileflowLanduseColorConfig>;
 export type TileflowResolvedLandcoverColors = ResolvedColorGroup<TileflowLandcoverColorConfig>;
-export type TileflowResolvedHydroColors = ResolvedColorGroup<TileflowHydroColorConfig>;
+export type TileflowResolvedHydroColors = ResolvedColorGroup<TileflowHydroColorConfig> & {
+  /** Semantic bathymetry bands; intermediate compiler stops derive only from these theme roles. */
+  depth: {
+    m0: string;
+    m200: string;
+    m2000: string;
+    m7000: string;
+  };
+};
 export type TileflowResolvedBuildingColors = ResolvedColorGroup<TileflowBuildingColorConfig>;
 export type TileflowResolvedBoundaryColors = ResolvedColorGroup<TileflowBoundaryColorConfig>;
+export type TileflowResolvedTerrainColors = {
+  contour: {
+    halo: string;
+    index: string;
+    label: string;
+    minor: string;
+  };
+  hillshade: {
+    accent: string;
+    highlight: string;
+    shadow: string;
+  };
+};
+export type TileflowResolvedVegetationColors = {
+  tree: {
+    bark: string;
+    broadleaf: readonly [string, string, string, string];
+    conifer: readonly [string, string, string];
+  };
+};
 
 export type TileflowResolvedColors = {[TKey in keyof TileflowBaseColors]: string} & {
   boundaries: TileflowResolvedBoundaryColors;
@@ -41,14 +71,12 @@ export type TileflowResolvedColors = {[TKey in keyof TileflowBaseColors]: string
   landuse: TileflowResolvedLanduseColors;
   poi: TileflowResolvedPoiColors;
   roads: TileflowResolvedRoadColors;
+  terrain: TileflowResolvedTerrainColors;
+  vegetation: TileflowResolvedVegetationColors;
 };
 
-export type ResolvedTileflowTheme = {
-  colors: TileflowColorConfig;
-  mode: TileflowThemeMode;
-  modules: TileflowThemeModulesConfig;
-  typography: ResolvedTileflowTypography;
-};
+/** Concrete semantic image-token catalog available to domain compilers. */
+export type TileflowResolvedImages = Readonly<Record<string, string>>;
 
 const defaultColors = {
   background: '#F6F7F3',
@@ -64,34 +92,6 @@ const defaultColors = {
   textHalo: '#FFFFFF',
 } as const;
 
-const lightThemeColors = {
-  background: '#F9FAF8',
-  land: '#F6F7F3',
-  water: '#C5E1F5',
-  park: '#DDEED2',
-  building: '#ECEAE4',
-  road: '#FFFFFF',
-  roadMajor: '#F7D58A',
-  boundary: '#C9D1D9',
-  text: '#5F6368',
-  textMuted: '#87909A',
-  textHalo: '#FFFFFF',
-} as const satisfies TileflowColorConfig;
-
-const darkThemeColors = {
-  background: '#1C2228',
-  land: '#232B32',
-  water: '#18384D',
-  park: '#274230',
-  building: '#2F363D',
-  road: '#39434D',
-  roadMajor: '#6E7580',
-  boundary: '#53606B',
-  text: '#D7DEE6',
-  textMuted: '#A3AFBA',
-  textHalo: '#1C2228',
-} as const satisfies TileflowColorConfig;
-
 const defaultTypography = {
   font: 'Noto Sans Regular',
   places: {font: 'Noto Sans Regular'},
@@ -100,22 +100,11 @@ const defaultTypography = {
   poi: {font: 'Noto Sans Regular'},
 } satisfies ResolvedTileflowTypography;
 
-export function resolveTheme(theme: TileflowThemeConfig | undefined): ResolvedTileflowTheme {
-  const mode = theme?.mode ?? 'light';
-  const baseColors = mode === 'dark' ? darkThemeColors : lightThemeColors;
-  return {
-    colors: mergeColorConfigs(baseColors, theme?.colors),
-    mode,
-    modules: mergeThemeModules({}, theme?.modules),
-    typography: resolveTypography(resolveThemeTypography(theme), defaultTypography),
-  };
-}
-
 export function resolveColors(
   overrides: TileflowColorConfig = {},
   defaults: TileflowColorConfig = defaultColors,
-  moduleOverrides: TileflowThemeModulesConfig = {},
-  moduleDefaults: TileflowThemeModulesConfig = {},
+  moduleOverrides: TileflowColorGroupsConfig = {},
+  moduleDefaults: TileflowColorGroupsConfig = {},
 ): TileflowResolvedColors {
   const defaultInput = defaults;
   const overrideInput = overrides;
@@ -154,18 +143,22 @@ export function resolveColors(
     water: mix(base.water, base.text, 0.42),
   } satisfies TileflowResolvedLabelColors;
   const poiDefaults = {
-    coffee: mix(base.textMuted, base.roadMajor, 0.24),
-    culture: mix(base.textMuted, base.text, 0.18),
+    'arts-entertainment': mix(base.textMuted, base.text, 0.18),
     education: mix(base.textMuted, base.water, 0.18),
-    food: mix(base.textMuted, base.roadMajor, 0.34),
+    'food-drink': mix(base.textMuted, base.roadMajor, 0.34),
     halo: labelDefaults.halo,
-    health: mix(base.textMuted, '#D45E5E', 0.22),
     icon: labelDefaults.poi,
     label: labelDefaults.poi,
+    landmark: mix(base.textMuted, base.text, 0.12),
     lodging: mix(base.textMuted, base.water, 0.24),
-    services: labelDefaults.poi,
-    shopping: mix(base.textMuted, base.park, 0.2),
-    transit: labelDefaults.road,
+    medical: mix(base.textMuted, base.roadMajor, 0.22),
+    'park-nature': mix(base.textMuted, base.park, 0.14),
+    'public-services': labelDefaults.poi,
+    religion: mix(base.textMuted, base.text, 0.18),
+    retail: mix(base.textMuted, base.park, 0.2),
+    'sport-leisure': mix(base.textMuted, base.park, 0.1),
+    transport: labelDefaults.road,
+    'visitor-amenity': labelDefaults.poi,
   } satisfies TileflowResolvedPoiColors;
   const landuseDefaults = {
     cemetery: mix(base.park, base.land, 0.35),
@@ -177,6 +170,7 @@ export function resolveColors(
     medical: mix(base.land, base.water, 0.12),
     military: mix(base.land, base.textMuted, 0.16),
     parking: mix(base.land, base.textMuted, 0.1),
+    railway: mix(base.land, base.textMuted, 0.08),
     recreation: mix(base.park, base.land, 0.15),
     residential: mix(base.land, base.background, 0.35),
   } satisfies TileflowResolvedLanduseColors;
@@ -201,7 +195,7 @@ export function resolveColors(
     label: labelDefaults.water,
     water: base.water,
     waterway: mix(base.water, base.text, 0.08),
-  } satisfies TileflowResolvedHydroColors;
+  } satisfies ResolvedColorGroup<TileflowHydroColorConfig>;
   const buildingDefaults = {
     active: mix(base.building, base.roadMajor, 0.22),
     businessCorridor: mix(base.building, base.roadMajor, 0.28),
@@ -227,7 +221,7 @@ export function resolveColors(
     maritime: mix(base.water, base.text, 0.25),
   } satisfies TileflowResolvedBoundaryColors;
 
-  return {
+  const resolved = {
     ...mapColorRecord(baseResolved),
     boundaries: mapColorRecord(
       resolveGroup(boundaryDefaults, defaultModules.boundaries, overrideModules.boundaries),
@@ -248,6 +242,225 @@ export function resolveColors(
     poi: mapColorRecord(resolveGroup(poiDefaults, defaultModules.poi, overrideModules.poi)),
     roads: mapColorRecord(resolveGroup(roadDefaults, defaultModules.roads, overrideModules.roads)),
   };
+  const [hillshadeInk, hillshadeLight] = orderByLuminance(
+    resolved.labels.primary,
+    resolved.labels.halo,
+  );
+  const depthInk = resolved.labels.primary;
+  const depth = {
+    m0: resolved.hydro.water,
+    m200: mix(resolved.hydro.water, depthInk, 0.04),
+    m2000: mix(resolved.hydro.water, depthInk, 0.11),
+    m7000: mix(resolved.hydro.water, depthInk, 0.18),
+  } satisfies TileflowResolvedHydroColors['depth'];
+
+  return {
+    ...resolved,
+    hydro: {...resolved.hydro, depth},
+    terrain: {
+      contour: {
+        halo: resolved.labels.halo,
+        index: resolved.labels.primary,
+        label: resolved.labels.primary,
+        minor: resolved.labels.muted,
+      },
+      hillshade: {
+        accent: alpha(hillshadeInk, 0.18),
+        highlight: alpha(hillshadeLight, 0.28),
+        shadow: alpha(hillshadeInk, 0.34),
+      },
+    },
+    vegetation: {
+      tree: {
+        bark: resolved.buildings.outline,
+        broadleaf: [
+          resolved.landcover.wood,
+          resolved.landcover.urbanPark,
+          resolved.landcover.grass,
+          resolved.landcover.meadow,
+        ],
+        conifer: [resolved.landcover.protected, resolved.landcover.scrub, resolved.landcover.wood],
+      },
+    },
+  };
+}
+
+/** Build the Streets compiler's concrete color context from semantic theme roles. */
+export function resolveThemeColors(theme: TileflowTheme): TileflowResolvedColors {
+  const tokens = resolveTileflowTheme(theme).tokens.color;
+  const requireColor = (name: string): string => {
+    const value = tokens[name];
+    if (value !== undefined) return value;
+    throw new Error(`Tileflow Streets requires color token "${name}" in theme "${theme.id}".`);
+  };
+  const optionalGroup = <const TKeys extends readonly string[]>(
+    group: string,
+    keys: TKeys,
+  ): Partial<Record<TKeys[number], string>> =>
+    Object.fromEntries(
+      keys.flatMap((key) => {
+        const value = tokens[`${group}.${key}`];
+        return value === undefined ? [] : [[key, value]];
+      }),
+    ) as Partial<Record<TKeys[number], string>>;
+
+  const base = {
+    background: requireColor('surface.background'),
+    boundary: requireColor('boundaries.default'),
+    building: requireColor('surface.building'),
+    land: requireColor('surface.land'),
+    park: requireColor('surface.park'),
+    road: requireColor('roads.default'),
+    roadCasing: requireColor('roads.casing'),
+    roadMajor: requireColor('roads.major'),
+    text: requireColor('labels.primary'),
+    textHalo: requireColor('labels.halo'),
+    textMuted: requireColor('labels.muted'),
+    water: requireColor('surface.water'),
+  } as TileflowColorConfig;
+  const modules = {
+    boundaries: optionalGroup('boundaries', ['admin', 'disputed', 'major', 'maritime']),
+    buildings: optionalGroup('buildings', [
+      'active',
+      'businessCorridor',
+      'businessCorridorOutline',
+      'civic',
+      'commercial',
+      'destination',
+      'extrusion',
+      'fill',
+      'generic',
+      'highRise',
+      'highRiseOutline',
+      'industrial',
+      'lowRise',
+      'lowRiseOutline',
+      'outline',
+      'residential',
+    ]),
+    hydro: optionalGroup('hydro', ['ferry', 'label', 'water', 'waterway']),
+    labels: optionalGroup('labels', [
+      'country',
+      'halo',
+      'muted',
+      'neighborhood',
+      'poi',
+      'primary',
+      'road',
+      'settlement',
+      'water',
+    ]),
+    landcover: optionalGroup('landcover', [
+      'farmland',
+      'flowerbed',
+      'grass',
+      'ice',
+      'meadow',
+      'protected',
+      'recreationGround',
+      'rock',
+      'sand',
+      'scrub',
+      'urbanPark',
+      'villageGreen',
+      'wetland',
+      'wood',
+    ]),
+    landuse: optionalGroup('landuse', [
+      'cemetery',
+      'civic',
+      'commercial',
+      'education',
+      'government',
+      'industrial',
+      'medical',
+      'military',
+      'parking',
+      'railway',
+      'recreation',
+      'residential',
+    ]),
+    poi: optionalGroup('poi', [
+      'arts-entertainment',
+      'education',
+      'food-drink',
+      'halo',
+      'icon',
+      'label',
+      'landmark',
+      'lodging',
+      'medical',
+      'park-nature',
+      'public-services',
+      'religion',
+      'retail',
+      'sport-leisure',
+      'transport',
+      'visitor-amenity',
+    ]),
+    roads: optionalGroup('roads', [
+      'bridge',
+      'casing',
+      'ferry',
+      'minor',
+      'motorway',
+      'path',
+      'primary',
+      'rail',
+      'secondary',
+      'trunk',
+      'tunnel',
+    ]),
+  } as TileflowColorGroupsConfig;
+  const colors = resolveColors({}, base, {}, modules);
+  const optionalColor = (name: string, fallback: string): string =>
+    cssColor(tokens[name] ?? fallback);
+  return {
+    ...colors,
+    hydro: {
+      ...colors.hydro,
+      depth: {
+        m0: optionalColor('hydro.depth.m0', colors.hydro.depth.m0),
+        m200: optionalColor('hydro.depth.m200', colors.hydro.depth.m200),
+        m2000: optionalColor('hydro.depth.m2000', colors.hydro.depth.m2000),
+        m7000: optionalColor('hydro.depth.m7000', colors.hydro.depth.m7000),
+      },
+    },
+    terrain: {
+      contour: {
+        halo: optionalColor('terrain.contour.halo', colors.terrain.contour.halo),
+        index: optionalColor('terrain.contour.index', colors.terrain.contour.index),
+        label: optionalColor('terrain.contour.label', colors.terrain.contour.label),
+        minor: optionalColor('terrain.contour.minor', colors.terrain.contour.minor),
+      },
+      hillshade: {
+        accent: optionalColor('terrain.hillshade.accent', colors.terrain.hillshade.accent),
+        highlight: optionalColor('terrain.hillshade.highlight', colors.terrain.hillshade.highlight),
+        shadow: optionalColor('terrain.hillshade.shadow', colors.terrain.hillshade.shadow),
+      },
+    },
+    vegetation: {
+      tree: {
+        bark: optionalColor('vegetation.tree.bark', colors.vegetation.tree.bark),
+        broadleaf: [
+          optionalColor('vegetation.tree.broadleaf.a', colors.vegetation.tree.broadleaf[0]),
+          optionalColor('vegetation.tree.broadleaf.b', colors.vegetation.tree.broadleaf[1]),
+          optionalColor('vegetation.tree.broadleaf.c', colors.vegetation.tree.broadleaf[2]),
+          optionalColor('vegetation.tree.broadleaf.d', colors.vegetation.tree.broadleaf[3]),
+        ],
+        conifer: [
+          optionalColor('vegetation.tree.conifer.a', colors.vegetation.tree.conifer[0]),
+          optionalColor('vegetation.tree.conifer.b', colors.vegetation.tree.conifer[1]),
+          optionalColor('vegetation.tree.conifer.c', colors.vegetation.tree.conifer[2]),
+        ],
+      },
+    },
+  };
+}
+
+/** Resolve the complete semantic image catalog for one concrete theme. */
+export function resolveThemeImages(theme: TileflowTheme): TileflowResolvedImages {
+  return Object.freeze({...resolveTileflowTheme(theme).tokens.image});
 }
 
 export function resolveTypography(
@@ -314,20 +527,6 @@ function resolveOptionalTypography(
   };
 }
 
-function resolveThemeTypography(theme: TileflowThemeConfig | undefined): TileflowTypography {
-  const typography = theme?.typography;
-  if (!typography) return {};
-
-  return {
-    ...typography,
-    ...(typography.fallbacks ? {fallbacks: [...typography.fallbacks]} : {}),
-    ...(typography.places ? {places: {...typography.places}} : {}),
-    ...(typography.poi ? {poi: {...typography.poi}} : {}),
-    ...(typography.roads ? {roads: {...typography.roads}} : {}),
-    ...(typography.water ? {water: {...typography.water}} : {}),
-  };
-}
-
 function resolveBaseColors(
   overrides: TileflowColorConfig,
   defaults: TileflowColorConfig,
@@ -367,9 +566,9 @@ function mergeColorConfigs(
 }
 
 function mergeThemeModules(
-  defaults: TileflowThemeModulesConfig = {},
-  overrides: TileflowThemeModulesConfig = {},
-): TileflowThemeModulesConfig {
+  defaults: TileflowColorGroupsConfig = {},
+  overrides: TileflowColorGroupsConfig = {},
+): TileflowColorGroupsConfig {
   return {
     ...mergeThemeModuleGroup('boundaries', defaults, overrides),
     ...mergeThemeModuleGroup('buildings', defaults, overrides),
@@ -382,11 +581,11 @@ function mergeThemeModules(
   };
 }
 
-function mergeThemeModuleGroup<TKey extends keyof TileflowThemeModulesConfig>(
+function mergeThemeModuleGroup<TKey extends keyof TileflowColorGroupsConfig>(
   key: TKey,
-  defaults: TileflowThemeModulesConfig,
-  overrides: TileflowThemeModulesConfig,
-): Pick<TileflowThemeModulesConfig, TKey> | {} {
+  defaults: TileflowColorGroupsConfig,
+  overrides: TileflowColorGroupsConfig,
+): Pick<TileflowColorGroupsConfig, TKey> | {} {
   const value = {
     ...(isRecord(defaults[key]) ? defaults[key] : {}),
     ...(isRecord(overrides[key]) ? overrides[key] : {}),
@@ -415,6 +614,19 @@ function mapColorRecord<T extends Record<string, string>>(colors: T): T {
   return Object.fromEntries(
     Object.entries(colors).map(([key, value]) => [key, cssColor(value)]),
   ) as T;
+}
+
+function orderByLuminance(first: string, second: string): readonly [string, string] {
+  return relativeLuminance(first) <= relativeLuminance(second) ? [first, second] : [second, first];
+}
+
+function relativeLuminance(color: string): number {
+  const {b, g, r} = hexToRgba(color);
+  const linear = (channel: number): number => {
+    const normalized = channel / 255;
+    return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
 }
 
 export function alpha(color: string, opacity: number): string {

@@ -1,4 +1,4 @@
-import {isTileflowExpression, isTileflowZoomValue} from './values';
+import {isTileflowExpression, isTileflowThemeValueNode, isTileflowZoomValue} from './values';
 
 export function mergeTileflowDesign<T>(base: T, ...overlays: readonly unknown[]): T {
   let resolved: unknown = cloneJson(base);
@@ -13,6 +13,7 @@ function mergeValue(base: unknown, overlay: unknown): unknown {
   if (
     Array.isArray(overlay) ||
     isTileflowExpression(overlay) ||
+    isTileflowThemeValueNode(overlay) ||
     isTileflowZoomValue(overlay) ||
     !isRecord(overlay)
   ) {

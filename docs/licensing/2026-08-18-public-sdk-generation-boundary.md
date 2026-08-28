@@ -7,15 +7,21 @@ npm publication interlock for the unrelated open release requirements.
 
 ## Implemented technical boundary
 
-- The official Streets, Ferraris, Härad, Siegfried, Soundings, Streets Dark, Cyberpunk, Matrix, and
-  Verdant SVG icon/pattern sources are package-owned map assets under
-  `packages/maps/assets/<id>/icons/`. The Streets POI files and the nautical Soundings symbols are
-  first-party geometric drawings. Their source directories and
+- The official Streets, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, and Verdant SVG
+  icon/pattern sources are package-owned map assets under `packages/maps/assets/<id>/icons/`.
+  Streets and Siegfried own both light and dark pattern variants inside their respective single
+  asset closures; dark is a theme, not another map or asset directory. Siegfried's nocturnal artwork
+  is an original Tileflow interpretation, not a historical swisstopo colourway. The Streets POI
+  files and the chart symbols retained in
+  the Soundings asset directory are first-party geometric drawings; only the harbor and paper/water
+  assets participate in official Soundings, while the remaining symbols support an experimental
+  Nautical canary. Their source directories and
   `packages/maps/THIRD_PARTY_NOTICES.md` record provenance alongside the repository's
   generated-output grant.
-- Cyberpunk's unmodified Oxanium fonts and OFL license live under
-  `packages/maps/assets/cyberpunk/fonts/`; Matrix reuses that directory. Siegfried's unmodified
-  Cormorant Garamond fonts and OFL license live under `packages/maps/assets/siegfried/fonts/`.
+- Cyberpunk's and Matrix's unmodified Oxanium fonts and OFL licenses live under their respective
+  `packages/maps/assets/cyberpunk/fonts/` and `packages/maps/assets/matrix/fonts/` directories.
+  Siegfried's unmodified Cormorant Garamond fonts and OFL license live under
+  `packages/maps/assets/siegfried/fonts/`.
 - `@tileflow/dev` no longer records or bundles map artwork or fonts. It resolves the fixed Maps
   assets during preparation and still carries notices for the separate tooling dependencies it
   executes.
@@ -32,9 +38,9 @@ npm publication interlock for the unrelated open release requirements.
   release per session or job; Core has no second compiler-owned World descriptor or asset set.
   Direct external tile lists and `pmtiles://` sources retain an optional fixture revision for exact
   visual evidence.
-- The map contract makes ordinary official-map imports complete: Streets and the independent
-  Ferraris, Härad, Soundings, and Verdant roots each declare the canonical Tileflow glyph URL
-  directly; Cyberpunk and Siegfried own packaged fonts, and Matrix reuses Cyberpunk's provider.
+- The map contract makes every official map an independent root with explicit providers: Streets,
+  Ferraris, Härad, Soundings, and Verdant declare the canonical Tileflow glyph URL directly;
+  Cyberpunk, Matrix, and Siegfried each own packaged fonts.
   That URL is canonical rather than content-addressed; responses revalidate and do not provide an
   exact-byte identity. The immutable replacement is the separate
   `/base/<assetSetSha256>/glyphs/...` contract. No compiler fallback manufactures the URL.

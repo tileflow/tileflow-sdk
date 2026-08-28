@@ -21,6 +21,7 @@ const sourceLayer = 'transportation';
 const context = {
   colors: resolveColors(),
   data: resolveTileflowData(undefined),
+  images: {},
   typography: {
     font: 'Noto Sans Regular',
     places: {font: 'Noto Sans Bold'},
@@ -33,11 +34,11 @@ const context = {
 function matchesFilter(
   filter: unknown,
   properties: Record<string, unknown>,
-  geometryType: 'LineString' | 'Polygon' = 'LineString',
+  geometryType: 'LineString' | 'Point' | 'Polygon' = 'LineString',
 ): boolean {
   const compiled = featureFilter(filter as never);
   return compiled.filter({zoom: 16}, {
-    type: geometryType === 'LineString' ? 2 : 3,
+    type: geometryType === 'Point' ? 1 : geometryType === 'LineString' ? 2 : 3,
     properties,
   } as never);
 }
@@ -96,7 +97,7 @@ test('the streets detail preset includes service roads without enabling tracks',
   assert.equal(ids.includes('streets-road-surface-track-fill'), false);
 });
 
-test('road treatments materialize absent phases only for matching features with paint defaults', () => {
+test('road treatments materialize absent phases with theme-derived semantic paint defaults', () => {
   const contributions = compileRoads(
     roads({
       classes: {service: {}},
@@ -134,9 +135,10 @@ test('road treatments materialize absent phases only for matching features with 
     'case',
     ['==', ['get', 'official'], 1],
     '#123456',
-    '#000000',
+    context.colors.roads.casing,
   ]);
   assert.deepEqual(paint['line-width'], ['case', ['==', ['get', 'toll'], 1], 4, 1]);
+  assert.equal(paint['line-opacity'], 0.24);
 });
 
 test('visible false remains authoritative when a treatment targets the same road phase', () => {
@@ -216,7 +218,9 @@ test('detailed road extensions compile through remappable semantic contracts', (
         circularRadiusAtZoom15: 'ring_radius_z15',
         circularRadiusMeters: 'ring_radius_m',
         class: 'kind',
+        crossing: 'crossing_status',
         direction: 'bearing',
+        markings: 'crossing_markings',
         subclass: 'detail',
       },
       layers: {
@@ -267,7 +271,37 @@ test('detailed road extensions compile through remappable semantic contracts', (
   assert.equal(crossing.layer['source-layer'], 'road_furniture');
   assert.equal(crossing.layer.minzoom, 15);
   assert.match(JSON.stringify(crossing.layer.filter), /detail/);
+  assert.match(JSON.stringify(crossing.layer.filter), /crossing_status/);
+  assert.match(JSON.stringify(crossing.layer.filter), /crossing_markings/);
   assert.match(JSON.stringify(crossing.layer.layout), /bearing/);
+  assert.equal(
+    matchesFilter(
+      crossing.layer.filter,
+      {
+        crossing_markings: 'zebra',
+        crossing_status: 'uncontrolled',
+        detail: 'crossing',
+      },
+      'Point',
+    ),
+    true,
+  );
+  assert.equal(
+    matchesFilter(
+      crossing.layer.filter,
+      {crossing_markings: 'no', crossing_status: 'no', detail: 'crossing'},
+      'Point',
+    ),
+    false,
+  );
+  assert.equal(
+    matchesFilter(
+      crossing.layer.filter,
+      {crossing_status: 'uncontrolled', detail: 'crossing'},
+      'Point',
+    ),
+    false,
+  );
   assert.equal((crossing.layer.layout as Record<string, unknown>)['icon-image'], 'crosswalk');
   assert.deepEqual((crossing.layer.paint as Record<string, unknown>)['icon-opacity'], [
     'interpolate',

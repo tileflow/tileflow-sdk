@@ -27,6 +27,7 @@ import {resolveColors} from '../src/themes';
 const context = {
   colors: resolveColors(),
   data: resolveTileflowData(undefined),
+  images: {},
   typography: {
     font: 'Noto Sans Regular',
     places: {font: 'Noto Sans Bold'},
@@ -70,7 +71,8 @@ test('route shields remain available when road-name labels are disabled', () => 
     ),
     false,
   );
-  assert.ok(style.layers.some((layer) => layer.id === 'streets-label-road-shield'));
+  assert.ok(style.layers.some((layer) => layer.id === 'streets-label-road-shield-overview'));
+  assert.ok(style.layers.some((layer) => layer.id === 'streets-label-road-shield-detail'));
   assert.deepEqual(validateStyleMin(style), []);
 });
 
@@ -90,18 +92,20 @@ test('English labels honor the remapped nameEnglish binding', () => {
   assert.deepEqual(validateStyleMin(style), []);
 });
 
-test('POI compilation deduplicates categories, resolves overlaps, and supports high minZoom', () => {
+test('POI compilation deduplicates canonical categories and honors remapped fields', () => {
   const data = resolveTileflowData(
     vectorTiles({
       attribution: '© Test',
       schema: openMapTiles({
         fields: {
-          class: 'kind',
           name: 'local_label',
           nameEnglish: 'english_label',
           nameLatin: 'latin_label',
-          rank: 'importance',
-          subclass: 'detail',
+          poiCategory: 'poi_category',
+          poiFilterRank: 'poi_filter_rank',
+          poiIcon: 'poi_icon',
+          poiSizeRank: 'poi_size_rank',
+          poiType: 'poi_type',
         },
       }),
       url: '/tiles.json',
@@ -110,30 +114,29 @@ test('POI compilation deduplicates categories, resolves overlaps, and supports h
   const style = styleFor(
     compilePoi(
       poi({
-        categories: ['alpha', 'alpha', 'beta'],
-        classMapping: {alpha: ['shared', 'alpha'], beta: ['shared', 'beta']},
-        density: 'sparse',
+        categories: ['food-drink', 'food-drink', 'transport'],
+        density: 2,
         icons: false,
-        labels: 'full',
+        labels: true,
         minZoom: 20,
-        preset: 'full',
       }),
       {...context, data},
     ),
   );
   const poiLayers = style.layers.filter((layer) => layer.id.startsWith('streets-poi-'));
-  const beta = poiLayers.find((layer) => layer.id === 'streets-poi-beta-label');
+  const transport = poiLayers.find((layer) => layer.id === 'streets-poi-transport-label');
   const serialized = JSON.stringify(poiLayers);
 
   assert.deepEqual(
     poiLayers.map((layer) => layer.id),
-    ['streets-poi-alpha-label', 'streets-poi-beta-label'],
+    ['streets-poi-food-drink-label', 'streets-poi-transport-label'],
   );
   assert.equal(new Set(poiLayers.map((layer) => layer.id)).size, poiLayers.length);
-  assert.equal(beta?.minzoom, 20);
-  assert.match(JSON.stringify(beta?.filter), /shared/);
-  assert.match(JSON.stringify(beta?.filter), /importance/);
-  assert.match(JSON.stringify(beta?.filter), /to-number/);
+  assert.equal(transport?.minzoom, 20);
+  assert.match(JSON.stringify(transport?.filter), /poi_category/);
+  assert.match(JSON.stringify(transport?.filter), /poi_filter_rank/);
+  assert.match(JSON.stringify(transport?.filter), /poi_size_rank/);
+  assert.match(JSON.stringify(transport?.filter), /to-number/);
   assert.match(serialized, /local_label/);
   assert.match(serialized, /english_label/);
   assert.match(serialized, /latin_label/);

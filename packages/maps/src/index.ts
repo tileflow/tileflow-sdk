@@ -6,7 +6,7 @@ import {matrix as matrixDefinition} from './official/matrix';
 import {siegfried as siegfriedDefinition} from './official/siegfried';
 import {soundings as soundingsDefinition} from './official/soundings';
 import {streets as streetsDefinition} from './official/streets';
-import {streetsDark as streetsDarkDefinition} from './official/streets-dark';
+import {streetsThemes} from './official/streets-themes';
 import {verdant as verdantDefinition} from './official/verdant';
 
 export {
@@ -14,11 +14,11 @@ export {
   cyberpunkIcons,
   ferrarisIcons,
   haradIcons,
+  matrixFonts,
   matrixIcons,
   siegfriedFonts,
   siegfriedIcons,
   soundingsIcons,
-  streetsDarkIcons,
   streetsIcons,
   verdantIcons,
 } from './assets';
@@ -30,6 +30,8 @@ export const harad = freezeOfficialMap(haradDefinition);
 export const matrix = freezeOfficialMap(matrixDefinition);
 export const siegfried = freezeOfficialMap(siegfriedDefinition);
 export const soundings = freezeOfficialMap(soundingsDefinition);
-export const streetsDark = freezeOfficialMap(streetsDarkDefinition);
 export const cyberpunk = freezeOfficialMap(cyberpunkDefinition);
 export const verdant = freezeOfficialMap(verdantDefinition);
+
+export {streetsThemes};
+export {siegfriedThemes} from './official/siegfried-themes';

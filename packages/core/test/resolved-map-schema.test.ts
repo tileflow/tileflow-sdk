@@ -1,18 +1,23 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  color,
+  defineTheme,
+  expression,
+  fixed,
   labels,
   land,
   parseTileflowMap as parseMap,
   poi,
   roads,
   tileflowWorldV1Schema,
+  token,
   validateTileflowMap,
   vegetation,
   water,
   zoom,
 } from '../src';
-import {extendStreets} from './map-fixture';
+import {extendStreets, testLightTheme} from './map-fixture';
 
 function parseDesign(input: unknown) {
   return parseMap(extendStreets(input as Parameters<typeof extendStreets>[0]));
@@ -45,16 +50,37 @@ test('requires exact bounded portable identity and falls back from name to id', 
   }
 });
 
+test('requires concrete portable theme names in every map selector', () => {
+  for (const name of ['system', 'CON', 'Dark', 'dark_mode', 'd'.repeat(65)]) {
+    assert.throws(
+      () =>
+        parseDesign({
+          defaultTheme: name,
+          themes: {[name]: testLightTheme},
+        }),
+      /defaultTheme|themes|concrete theme|lowercase kebab-case|portable/i,
+      name,
+    );
+  }
+});
+
 test('accepts the canonical singular map design and validates bounded controls', () => {
-  const design = {
-    projection: 'globe' as const,
-    theme: {
-      colors: {},
-      mode: 'light' as const,
-      modules: {
-        landcover: {farmland: '#DCECCB', rock: '#F7F4F0', wetland: '#BFE2CF'},
+  const natural = defineTheme(testLightTheme, {
+    id: 'natural',
+    version: 1,
+    colorScheme: 'light',
+    tokens: {
+      color: {
+        'landcover.farmland': '#DCECCB',
+        'landcover.rock': '#F7F4F0',
+        'landcover.wetland': '#BFE2CF',
       },
     },
+  });
+  const design = {
+    projection: 'globe' as const,
+    defaultTheme: 'natural',
+    themes: {natural},
     modules: {
       labels: labels({
         styles: {
@@ -75,11 +101,25 @@ test('accepts the canonical singular map design and validates bounded controls',
     },
     view: {center: [-3.7038, 40.4168] as [number, number], pitch: 45, zoom: 15},
   };
-  assert.deepEqual(parseDesign(design).theme, design.theme);
-  assert.equal(validateTileflowMap(extendStreets({...design, theme: {mode: 'dark'}})).valid, true);
+  assert.deepEqual(parseDesign(design).themes, design.themes);
+  const dark = defineTheme(natural, {
+    id: 'natural-dark',
+    version: 1,
+    colorScheme: 'dark',
+  });
+  assert.equal(
+    validateTileflowMap(extendStreets({...design, defaultTheme: 'dark', themes: {dark}})).valid,
+    true,
+  );
   assert.throws(() => parseDesign({view: {pitch: 86}}), /view\.pitch/);
   assert.throws(() => parseDesign({projection: 'sphere'} as never), /projection/);
-  assert.throws(() => parseDesign({light: {intensity: 1.1}}), /light\.intensity/);
+  assert.throws(
+    () =>
+      parseDesign({
+        themes: {light: {...testLightTheme, lighting: {intensity: 1.1}}},
+      }),
+    /lighting\.intensity/,
+  );
 });
 
 test('accepts ordered icon-directory arrays and rejects provider objects or bare paths', () => {
@@ -155,16 +195,16 @@ test('rejects glyph URL fragments for absolute and relative providers', () => {
 });
 
 test('requires exact unique NFC font faces', () => {
-  assert.equal(
-    validateDesign({
-      theme: {
-        typography: {
-          font: 'Noto Sans Regular',
-          fallbacks: ['Arial Unicode MS', 'sans-serif'],
-        },
+  assert.doesNotThrow(() =>
+    defineTheme(testLightTheme, {
+      id: 'font-theme',
+      version: 1,
+      colorScheme: 'light',
+      typography: {
+        font: 'Noto Sans Regular',
+        fallbacks: ['Arial Unicode MS', 'sans-serif'],
       },
-    }).valid,
-    true,
+    }),
   );
   for (const typography of [
     {font: ' Noto Sans Regular'},
@@ -172,7 +212,14 @@ test('requires exact unique NFC font faces', () => {
     {font: 'Cafe\u0301'},
     {fallbacks: ['sans-serif', 'sans-serif']},
   ]) {
-    assert.equal(validateDesign({theme: {typography}}).valid, false);
+    assert.throws(() =>
+      defineTheme(testLightTheme, {
+        id: 'invalid-font-theme',
+        version: 1,
+        colorScheme: 'light',
+        typography,
+      }),
+    );
   }
 });
 
@@ -317,99 +364,345 @@ test('accepts detailed cartographic module styles and their optional data bindin
   );
 });
 
-test('accepts bounded progressive POI rank ceilings and rejects invalid stops', () => {
-  const progressiveRank = zoom.step([
-    [14, 14],
-    [17, 80],
-    [19, 500],
-  ]);
+test('accepts category-safe theme values, expressions, and zoom ramps in style slots', () => {
   const map = parseDesign({
     modules: {
-      poi: poi({
-        maxRank: progressiveRank,
+      land: land({
+        background: {
+          color: color.alpha(token.color('surface.background'), 0.85),
+          opacity: zoom.linear([
+            [0, token.number('style.opacity.low')],
+            [12, token.number('style.opacity.high')],
+          ]),
+          pattern: zoom.step([
+            [0, token.image('surface.pattern.small')],
+            [12, fixed('surface-pattern-large', {reason: 'Authored sprite identity'})],
+          ]),
+        },
+        globalLandcover: {
+          color: expression<string>([
+            'case',
+            ['boolean', ['feature-state', 'active'], false],
+            token.color('surface.active'),
+            color.alpha(token.color('surface.land'), 0.9),
+          ]),
+          opacity: expression<number>([
+            'coalesce',
+            ['get', 'opacity'],
+            token.number('style.opacity.high'),
+          ]),
+          pattern: expression<string>([
+            'coalesce',
+            ['get', 'pattern'],
+            token.image('surface.pattern.small'),
+          ]),
+        },
+      }),
+      roads: roads({crossings: {image: token.image('roads.crossing')}}),
+      labels: labels({
         styles: {
-          culture: {
-            maxRank: zoom.step([
-              [15, 20],
-              [18, 120],
+          shields: {
+            default: {
+              icon: {
+                image: 'road-shield',
+                textFit: 'width',
+                textFitPadding: [0, token.number('labels.shieldPadding'), 0, 5],
+              },
+              text: {color: token.color('labels.primary')},
+            },
+            detail: {spacing: token.number('labels.shieldSpacing')},
+            kinds: {blue: {image: token.image('roads.shield.blue')}},
+            overview: {priority: 90},
+            textColors: {light: {color: token.color('labels.shieldLight')}},
+          },
+        },
+      }),
+      water: water({
+        bathymetryContours: {
+          cap: zoom.step([
+            [0, 'butt'],
+            [10, 'round'],
+          ]),
+          dash: zoom.linear([
+            [0, fixed([1, 1], {reason: 'Bathymetry dash cadence'})],
+            [10, [2, 1]],
+          ]),
+        },
+        bathymetryLabels: {
+          text: {
+            color: token.color('labels.primary'),
+            field: zoom.step([
+              [0, 'depth-short'],
+              [10, 'depth-long'],
             ]),
+            offset: [token.number('labels.offset.x'), fixed(1, {reason: 'Depth-label baseline'})],
+            size: token.number('labels.size'),
           },
         },
       }),
     },
   });
 
-  assert.deepEqual(map.modules?.poi?.maxRank, progressiveRank);
+  assert.deepEqual(map.modules?.roads?.crossings?.image, token.image('roads.crossing'));
+  assert.deepEqual(map.modules?.labels?.styles?.shields?.default?.icon?.textFitPadding, [
+    0,
+    token.number('labels.shieldPadding'),
+    0,
+    5,
+  ]);
   assert.deepEqual(
-    map.modules?.poi?.styles?.culture?.maxRank,
+    map.modules?.labels?.styles?.shields?.kinds?.blue?.image,
+    token.image('roads.shield.blue'),
+  );
+  assert.deepEqual(
+    map.modules?.labels?.styles?.shields?.textColors?.light?.color,
+    token.color('labels.shieldLight'),
+  );
+  assert.deepEqual(map.modules?.water?.bathymetryLabels?.text?.offset, [
+    token.number('labels.offset.x'),
+    fixed(1, {reason: 'Depth-label baseline'}),
+  ]);
+  assert.deepEqual(
+    map.modules?.water?.bathymetryLabels?.text?.field,
     zoom.step([
-      [15, 20],
-      [18, 120],
+      [0, 'depth-short'],
+      [10, 'depth-long'],
     ]),
   );
+});
 
-  for (const valid of [
-    zoom.linear([
-      [14, 14],
-      [18, 80],
-    ]),
-    zoom.exponential(1.5, [
-      [14, 14],
-      [18, 80],
-    ]),
-  ]) {
-    assert.deepEqual(
-      parseDesign({modules: {poi: poi({maxRank: valid})}}).modules?.poi?.maxRank,
-      valid,
+test('rejects wrong theme-token categories in direct and zoom-dependent style values', () => {
+  const invalidStyles = [
+    {
+      label: 'image token in color',
+      path: 'modules.land.background.color',
+      modules: {land: {type: 'land', background: {color: token.image('wrong')}}},
+    },
+    {
+      label: 'font token in color',
+      path: 'modules.land.background.color',
+      modules: {land: {type: 'land', background: {color: token.font('wrong')}}},
+    },
+    {
+      label: 'number token in color',
+      path: 'modules.land.background.color',
+      modules: {land: {type: 'land', background: {color: token.number('wrong')}}},
+    },
+    {
+      label: 'color token in image',
+      path: 'modules.land.background.pattern',
+      modules: {land: {type: 'land', background: {pattern: token.color('wrong')}}},
+    },
+    {
+      label: 'font token in image',
+      path: 'modules.land.background.pattern',
+      modules: {land: {type: 'land', background: {pattern: token.font('wrong')}}},
+    },
+    {
+      label: 'color operation in image',
+      path: 'modules.land.background.pattern',
+      modules: {
+        land: {type: 'land', background: {pattern: color.alpha('#ffffff', 0.5)}},
+      },
+    },
+    {
+      label: 'color token in number',
+      path: 'modules.land.background.opacity',
+      modules: {land: {type: 'land', background: {opacity: token.color('wrong')}}},
+    },
+    {
+      label: 'image token in text field',
+      path: 'modules.water.bathymetryLabels.text.field',
+      modules: {
+        water: {
+          type: 'water',
+          bathymetryLabels: {text: {field: token.image('wrong')}},
+        },
+      },
+    },
+    {
+      label: 'fixed theme value in structural text field',
+      path: 'modules.water.bathymetryLabels.text.field',
+      modules: {
+        water: {
+          type: 'water',
+          bathymetryLabels: {
+            text: {field: fixed('depth', {reason: 'Not a theme-bearing value'})},
+          },
+        },
+      },
+    },
+    {
+      label: 'image token in color zoom stop',
+      path: 'modules.land.background.color.stops.0.1',
+      modules: {
+        land: {
+          type: 'land',
+          background: {color: zoom.step([[0, token.image('wrong')]])},
+        },
+      },
+    },
+    {
+      label: 'color token in image zoom stop',
+      path: 'modules.land.background.pattern.stops.0.1',
+      modules: {
+        land: {
+          type: 'land',
+          background: {pattern: zoom.step([[0, token.color('wrong')]])},
+        },
+      },
+    },
+    {
+      label: 'color token in number zoom stop',
+      path: 'modules.land.background.opacity.stops.0.1',
+      modules: {
+        land: {
+          type: 'land',
+          background: {opacity: zoom.step([[0, token.color('wrong')]])},
+        },
+      },
+    },
+    {
+      label: 'theme token in structural zoom stop',
+      path: 'modules.water.bathymetryLabels.text.field.stops.0.1',
+      modules: {
+        water: {
+          type: 'water',
+          bathymetryLabels: {text: {field: zoom.step([[0, token.color('wrong')]])}},
+        },
+      },
+    },
+    {
+      label: 'image token in color expression',
+      path: 'modules.land.globalLandcover.color',
+      modules: {
+        land: {
+          type: 'land',
+          globalLandcover: {
+            color: expression<string>(['coalesce', ['get', 'color'], token.image('wrong')]),
+          },
+        },
+      },
+    },
+    {
+      label: 'color token in image expression',
+      path: 'modules.land.globalLandcover.pattern',
+      modules: {
+        land: {
+          type: 'land',
+          globalLandcover: {
+            pattern: expression<string>(['coalesce', ['get', 'pattern'], token.color('wrong')]),
+          },
+        },
+      },
+    },
+    {
+      label: 'color token in number expression',
+      path: 'modules.land.globalLandcover.opacity',
+      modules: {
+        land: {
+          type: 'land',
+          globalLandcover: {
+            opacity: expression<number>(['coalesce', ['get', 'opacity'], token.color('wrong')]),
+          },
+        },
+      },
+    },
+    {
+      label: 'theme token in structural expression',
+      path: 'modules.water.bathymetryLabels.text.field',
+      modules: {
+        water: {
+          type: 'water',
+          bathymetryLabels: {
+            text: {
+              field: expression<string>(['coalesce', ['get', 'name'], token.color('wrong')]),
+            },
+          },
+        },
+      },
+    },
+    {
+      label: 'theme token in line-cap zoom stop',
+      path: 'modules.water.bathymetryContours.cap.stops.0.1',
+      modules: {
+        water: {
+          type: 'water',
+          bathymetryContours: {cap: zoom.step([[0, token.color('wrong')]])},
+        },
+      },
+    },
+    {
+      label: 'scalar in dash zoom stop',
+      path: 'modules.water.bathymetryContours.dash.stops.0.1',
+      modules: {
+        water: {
+          type: 'water',
+          bathymetryContours: {dash: zoom.step([[0, 2]])},
+        },
+      },
+    },
+    {
+      label: 'three-value icon text-fit padding',
+      path: 'modules.labels.styles.shields.default.icon.textFitPadding',
+      modules: {
+        labels: {
+          type: 'labels',
+          styles: {shields: {default: {icon: {textFitPadding: [0, 4, 0]}}}},
+        },
+      },
+    },
+  ] as const;
+
+  for (const {label, modules, path} of invalidStyles) {
+    const result = validateDesign({modules} as never);
+    assert.equal(result.valid, false, label);
+    assert.ok(
+      result.messages.some(
+        (message) =>
+          message.path === path ||
+          path.startsWith(`${message.path}.`) ||
+          message.path.startsWith(`${path}.`),
+      ),
+      `${label}: expected ${path}; received ${JSON.stringify(result.messages)}`,
     );
   }
+});
 
-  for (const invalid of [
-    {kind: 'zoom', interpolation: 'step', stops: [[15, 0]]},
-    {kind: 'zoom', interpolation: 'step', stops: [[15, 14]]},
-    {
-      kind: 'zoom',
-      interpolation: 'step',
-      stops: [
-        [15, 14],
-        [15, 80],
-      ],
+test('accepts the canonical POI contract and rejects legacy ranking controls', () => {
+  const map = parseDesign({
+    modules: {
+      poi: poi({
+        categories: ['arts-entertainment', 'food-drink', 'transport'],
+        density: 3,
+        icons: true,
+        labels: true,
+        styles: {
+          'arts-entertainment': {icon: {size: 0.9}},
+        },
+      }),
     },
-    {
-      kind: 'zoom',
-      interpolation: 'step',
-      stops: [
-        [16, 14],
-        [15, 80],
-      ],
-    },
-    {
-      kind: 'zoom',
-      interpolation: 'step',
-      stops: [
-        [15, 80],
-        [17, 14],
-      ],
-    },
-    {
-      kind: 'zoom',
-      interpolation: 'exponential',
-      stops: [
-        [15, 14],
-        [17, 80],
-      ],
-    },
-    {
-      kind: 'zoom',
-      interpolation: 'linear',
-      base: 1.5,
-      stops: [
-        [15, 14],
-        [17, 80],
-      ],
-    },
+  });
+
+  assert.equal(map.modules?.poi?.density, 3);
+  assert.deepEqual(map.modules?.poi?.categories, ['arts-entertainment', 'food-drink', 'transport']);
+
+  for (const density of [0, 2.5, 6, 'balanced']) {
+    assert.throws(() => parseDesign({modules: {poi: {type: 'poi', density}}} as never), /density/u);
+  }
+  for (const legacy of [
+    {classMapping: {food: ['restaurant']}},
+    {maxRank: 80},
+    {preset: 'balanced'},
+    {icons: 'full'},
+    {labels: 'balanced'},
+    {categories: ['food']},
+    {styles: {'food-drink': {priority: 10}}},
   ]) {
-    assert.throws(() => parseDesign({modules: {poi: {type: 'poi', maxRank: invalid}}}), /maxRank/);
+    assert.throws(
+      () => parseDesign({modules: {poi: {type: 'poi', ...legacy}}} as never),
+      /poi|Unrecognized|Invalid/u,
+    );
   }
 });
 
@@ -611,8 +904,11 @@ test('accepts semantic path road targets and rejects the old overlapping path ta
 });
 
 test('rejects unsafe authoring objects and unresolved map references', () => {
-  assert.throws(() => parseDesign({theme: 'missing'}), /theme.*Expected object/i);
-  assert.throws(() => parseDesign({theme: {extends: 'dark'}}), /theme\.extends.*Unrecognized key/i);
+  assert.throws(() => parseDesign({theme: 'missing'}), /unrecognized key "theme"/i);
+  assert.throws(
+    () => parseDesign({themes: {dark: {extends: 'dark'}}}),
+    /themes\.dark|Unrecognized key/i,
+  );
   assert.throws(
     () => parseMap(Object.create({id: 'madrid', version: 1, extends: extendStreets()})),
     /map object/,

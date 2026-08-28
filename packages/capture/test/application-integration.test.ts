@@ -33,6 +33,7 @@ test(
       const mapCapture = await captureApplicationTileflowScene({
         appOrigin,
         browser,
+        colorScheme: 'light',
         scene: applicationScene({captureId: 'primary', frame: 'map'}),
       });
       assert.deepEqual(readPngDimensions(mapCapture.png), {height: 120, width: 240});
@@ -43,6 +44,7 @@ test(
       const viewportCapture = await captureApplicationTileflowScene({
         appUrl: `${appOrigin}/proof?viewport=narrow`,
         browser,
+        colorScheme: 'light',
         scene: applicationScene({captureId: 'secondary', frame: 'viewport'}),
       });
       assert.deepEqual(readPngDimensions(viewportCapture.png), {height: 240, width: 320});
@@ -50,6 +52,7 @@ test(
       const selectorCapture = await captureApplicationTileflowScene({
         appOrigin,
         browser,
+        colorScheme: 'light',
         scene: {
           ...applicationScene({frame: 'map'}),
           target: {
@@ -68,6 +71,7 @@ test(
           captureApplicationTileflowScene({
             appOrigin,
             browser,
+            colorScheme: 'light',
             scene: applicationScene({frame: 'map'}),
           }),
         (error: unknown) =>
@@ -78,6 +82,7 @@ test(
           captureApplicationTileflowScene({
             appOrigin,
             browser,
+            colorScheme: 'light',
             scene: {
               ...applicationScene({frame: 'map'}),
               target: {
@@ -96,6 +101,8 @@ test(
           captureApplicationTileflowScene({
             appOrigin,
             browser,
+            colorScheme: 'light',
+            timeoutMs: 250,
             scene: {
               ...applicationScene({frame: 'map'}),
               target: {
@@ -107,7 +114,7 @@ test(
             },
           }),
         (error: unknown) =>
-          error instanceof TileflowCaptureError && error.code === 'APPLICATION_TARGET_NOT_FOUND',
+          error instanceof TileflowCaptureError && error.code === 'CAPTURE_TIMEOUT',
       );
     } finally {
       Server.prototype.listen = originalListen;
@@ -124,7 +131,7 @@ test(
     const destination = createServer((_request, response) => {
       response.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'});
       response.end(
-        '<!doctype html><div style="width:120px;height:80px" data-tileflow-map="main" data-tileflow-capture-id="primary" data-tileflow-state="idle"></div>',
+        '<!doctype html><div style="width:120px;height:80px" data-tileflow-map="main" data-tileflow-theme="light" data-tileflow-capture-id="primary" data-tileflow-state="idle"></div>',
       );
     });
     destination.listen(0, '127.0.0.1');
@@ -156,6 +163,7 @@ test(
         captureApplicationTileflowScene({
           appOrigin: `http://127.0.0.1:${sourceAddress.port}`,
           browser,
+          colorScheme: 'light',
           scene: applicationScene({captureId: 'primary', frame: 'map'}),
         }),
       (error: unknown) =>
@@ -177,6 +185,7 @@ function applicationScene(target: {
 } {
   return {
     map: 'main',
+    theme: 'light',
     camera: {type: 'center', center: [0, 0], zoom: 1, bearing: 0, pitch: 0},
     viewport: {width: 320, height: 240, dpr: 1},
     target: {kind: 'application', path: '/proof', ...target},
@@ -187,10 +196,10 @@ const applicationHtml = `<!doctype html>
 <html>
   <head><style>html,body{margin:0;width:100%;height:100%}.map{width:240px;height:120px}.primary{background:#123456}.secondary{background:#abcdef}</style></head>
   <body>
-    <div class="map primary" data-tileflow-map="main" data-tileflow-capture-id="primary" data-tileflow-state="loading"></div>
-    <div class="map secondary" data-tileflow-map="main" data-tileflow-capture-id="secondary" data-tileflow-state="loading"></div>
+    <div class="map primary" data-tileflow-map="main" data-tileflow-theme="light" data-tileflow-capture-id="primary" data-tileflow-state="loading"></div>
+    <div class="map secondary" data-tileflow-map="main" data-tileflow-theme="light" data-tileflow-capture-id="secondary" data-tileflow-state="loading"></div>
     <script>requestAnimationFrame(() => requestAnimationFrame(() => document.querySelectorAll('[data-tileflow-state]').forEach((element) => element.dataset.tileflowState = 'idle')));</script>
   </body>
 </html>`;
 
-const errorHtml = `<!doctype html><div style="width:200px;height:100px" data-tileflow-map="main" data-tileflow-capture-id="broken" data-tileflow-state="error"></div>`;
+const errorHtml = `<!doctype html><div style="width:200px;height:100px" data-tileflow-map="main" data-tileflow-theme="light" data-tileflow-capture-id="broken" data-tileflow-state="error"></div>`;

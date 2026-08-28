@@ -48,6 +48,7 @@ type RawDiagnostic = {
   path?: string;
   phase?: string;
   severity?: string;
+  suggestion?: string;
 };
 
 export function createTileflowCommandSummary(input: {
@@ -100,7 +101,9 @@ export function createTileflowStructuredDiagnostics(
       path: boundText(sanitizePath(issue.path ?? '', cwd), 300),
       severity,
       message: boundText(sanitizeMessage(issue.message, cwd), 300),
-      suggestion: suggestionForDiagnostic(code, phase),
+      suggestion: issue.suggestion
+        ? boundText(sanitizeMessage(issue.suggestion, cwd), 300)
+        : suggestionForDiagnostic(code, phase),
     } satisfies TileflowStructuredDiagnostic;
   });
 
@@ -149,7 +152,7 @@ export function serializeTileflowCommandDocument(value: unknown): string {
 function getIssues(error: unknown): RawDiagnostic[] {
   if (!error || typeof error !== 'object') return [];
   const containers: unknown[][] = [];
-  for (const key of ['messages', 'issues'] as const) {
+  for (const key of ['diagnostics', 'messages', 'issues'] as const) {
     const value = (error as Record<string, unknown>)[key];
     if (Array.isArray(value)) containers.push(value);
   }
@@ -172,6 +175,7 @@ function getIssues(error: unknown): RawDiagnostic[] {
           ...(typeof candidate.path === 'string' ? {path: candidate.path} : {}),
           ...(typeof candidate.phase === 'string' ? {phase: candidate.phase} : {}),
           ...(typeof candidate.severity === 'string' ? {severity: candidate.severity} : {}),
+          ...(typeof candidate.suggestion === 'string' ? {suggestion: candidate.suggestion} : {}),
         },
       ];
     }),

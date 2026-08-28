@@ -6,6 +6,8 @@ import {
   boundaries,
   buildings,
   createStyle,
+  defineTheme,
+  fixed,
   labels,
   land,
   poi,
@@ -14,7 +16,7 @@ import {
   water,
   zoom,
 } from '../src/index';
-import {extendStreets} from './map-fixture';
+import {extendStreets, testLightTheme} from './map-fixture';
 
 const streetsPreparedAssets = {
   icons: {
@@ -39,6 +41,19 @@ const streetsPreparedAssets = {
 const compileTestMap = (design: Parameters<typeof extendStreets>[0] = {}) =>
   createStyle(extendStreets(design), {preparedAssets: streetsPreparedAssets});
 
+const darkTheme = defineTheme(testLightTheme, {
+  id: 'test-dark',
+  version: 1,
+  colorScheme: 'dark',
+  tokens: {
+    color: {
+      'surface.background': '#101820',
+      'surface.land': '#18242E',
+      'surface.water': '#17384D',
+    },
+  },
+});
+
 const variants = [
   {name: 'defaults', modules: undefined},
   {
@@ -50,17 +65,16 @@ const variants = [
       labels: labels({places: 'all', roads: 'all', water: 'all'}),
       land: land(),
       poi: poi({
-        icons: 'full',
-        labels: 'full',
-        maxRank: zoom.step([
-          [12, 14],
-          [16, 80],
-          [19, 500],
-        ]),
-        preset: 'full',
+        density: 5,
+        icons: true,
+        labels: true,
         styles: {
-          food: {
-            icon: {haloColor: '#ffffff', haloWidth: 1, keepUpright: true},
+          'food-drink': {
+            icon: {
+              haloColor: fixed('#ffffff', {reason: 'Exact style-validity fixture.'}),
+              haloWidth: 1,
+              keepUpright: true,
+            },
             marker: {pitchAlignment: 'map', pitchScale: 'viewport', radius: 3},
           },
         },
@@ -72,14 +86,14 @@ const variants = [
   },
   {
     name: 'exact dark',
-    theme: {mode: 'dark' as const},
+    theme: darkTheme,
     modules: {
       roads: roads({
         classes: {
           primary: {
             surface: {
               fill: {
-                color: '#f0b35d',
+                color: fixed('#f0b35d', {reason: 'Exact style-validity fixture.'}),
                 width: zoom.linear([
                   [7, 0.6],
                   [12, 2.4],
@@ -110,7 +124,11 @@ const variants = [
           },
         },
       }),
-      water: water({bodies: {fill: {color: '#17384d'}}}),
+      water: water({
+        bodies: {
+          fill: {color: fixed('#17384d', {reason: 'Exact style-validity fixture.'})},
+        },
+      }),
     },
   },
 ] as const;
@@ -118,7 +136,7 @@ const variants = [
 for (const variant of variants) {
   test(`emits a MapLibre-valid Streets style: ${variant.name}`, () => {
     const style = compileTestMap({
-      ...(variant.theme ? {theme: variant.theme} : {}),
+      ...(variant.theme ? {defaultTheme: 'dark', themes: {dark: variant.theme}} : {}),
       ...(variant.modules ? {modules: variant.modules} : {}),
     });
     assert.deepEqual(validateStyleMin(style), []);

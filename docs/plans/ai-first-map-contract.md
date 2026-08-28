@@ -8,9 +8,9 @@ to the owning contracts and package READMEs when the plan completes.
 
 Make one tileflow.config.ts export one strict TileflowMap whose result is mechanically predictable
 from ordinary object, array, and extends semantics. Remove legacy aliases and hidden provider
-graphs. Streets, Ferraris, Härad, Siegfried, Soundings, and Verdant are independent root maps;
-Streets Dark and Cyberpunk are ordinary maps derived from Streets, and Matrix is derived from
-Cyberpunk.
+graphs. Every official map is an independent root; no official map imports or extends another.
+Streets owns coordinated light and dark themes, while application maps retain ordinary `extends`
+semantics over any imported root.
 
 The public authoring contract must be optimized for agents:
 
@@ -26,7 +26,10 @@ The public authoring contract must be optimized for agents:
 - Modules replace by domain. Replacing or disabling a domain removes every contribution owned by
   that domain.
 - Data, projection, terrain, icons, and the text-asset provider are atomic.
-- Theme, light, and view deep-merge.
+- `themes` replaces atomically as one complete collection, `defaultTheme` selects one concrete
+  member, and `systemThemes` replaces the complete browser light/dark mapping. Only `view`
+  deep-merges. `defineTheme(base, definition)` materializes a complete document and leaves no theme
+  inheritance edge in the resolved map.
 - Scenes and delivery are leaf-only tooling metadata.
 - Raw physical layer overrides leave the public API. Reusable behavior lives in typed modules;
   editorial-only official refinements may remain compiler-private, owner-scoped semantic
@@ -57,9 +60,10 @@ has migrated its tests.
    output, leaf scenes/delivery, exhaustive merge classification, and build-only workspaces.
 3. Introduce semantic contribution ownership, data layer/field references, capability dependencies,
    and mandatory pre/post MapLibre validation.
-4. Migrate the Streets, Ferraris, Härad, Siegfried, Soundings, and Verdant roots, then Streets Dark,
-   Cyberpunk, and Matrix away from public/raw physical overrides and captured data bindings into
-   typed modules or owner-scoped compiler semantic contributions.
+4. Migrate the eight independent Streets, Ferraris, Härad, Siegfried, Soundings, Verdant,
+   Cyberpunk, and Matrix roots away from public/raw physical overrides and captured data bindings
+   into typed modules or owner-scoped compiler semantic contributions. Materialize Streets light and
+   dark as two appearances over its one shared structure.
 5. Replace icon providers with atomic icon-directory arrays and package-owned directory exports.
    Remove builtin/source/sprite/icon-level extends/mapping/registries and validate every final
    image/pattern.
@@ -79,7 +83,7 @@ has migrated its tests.
 ## Required test matrices
 
 - Official parent x 12 domains x omitted/exact/custom/disabled: at least 144 inheritance cases.
-- All nine official maps under canonical, fully remapped, missing-optional, and missing-required
+- All eight official maps under canonical, fully remapped, missing-optional, and missing-required
   data schemas.
 - Icon arrays: inherit, replace, empty, ordered collision, case-fold collision, watch fallback,
   package install, missing reference, aggregate limits, and reproducibility across absolute paths.
@@ -121,14 +125,14 @@ has migrated its tests.
 ## Validation log
 
 - Core build, declaration generation, and complete test suite pass in the current workspace.
-- Maps publication dry-run includes `@tileflow/maps`, all nine official icon directories,
+- Maps publication dry-run includes `@tileflow/maps`, all eight official icon directories,
   Cyberpunk's and Siegfried's exact font files, and their adjacent licenses.
 - Official-map and road semantic regression tests: 12/12 passing.
 - Migrated Core asset/compiler fixtures: 26/26 passing.
 - Machine-readable reference version 2 exposes recursive authoring (`root`/`extends`, leaf scenes)
   and standalone resolved entrypoints from the same generated field/module schemas; its drift and
   local-reference checks pass.
-- The sibling tileflow-tiles playground currently exercises eight of the nine official maps and
+- The sibling tileflow-tiles playground exercises all eight official maps and
   resolves only a local data replacement for each imported map; its local-preview contract suite
   passes when loopback is available.
 - Remaining work: complete Dev/CLI/framework suites, run six independent final audits, close their

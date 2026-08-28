@@ -25,15 +25,26 @@ const publicHttpUrlSchema = z
     );
   });
 
-export const hostedStyleDeploymentResponseSchema = z.object({
-  changed: z.boolean().optional(),
-  deploymentId: safeIdentifierSchema.optional(),
-  mapId: safeIdentifierSchema,
-  mapUrl: publicHttpUrlSchema,
-  styleId: safeIdentifierSchema.optional(),
-  version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
-  worldPromotionId: safeIdentifierSchema.optional(),
-});
+export const hostedStyleDeploymentResponseSchema = z
+  .object({
+    changed: z.boolean().optional(),
+    deploymentId: safeIdentifierSchema.optional(),
+    mapId: safeIdentifierSchema,
+    themes: z
+      .record(
+        safeIdentifierSchema,
+        z
+          .object({
+            styleId: safeIdentifierSchema.optional(),
+            styleUrl: publicHttpUrlSchema,
+          })
+          .strict(),
+      )
+      .refine((themes) => Object.keys(themes).length > 0),
+    version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+    worldPromotionId: safeIdentifierSchema.optional(),
+  })
+  .strict();
 
 export const hostedIconPackageResponseSchema = z.object({
   changed: z.boolean().optional(),

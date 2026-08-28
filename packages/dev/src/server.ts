@@ -1,16 +1,15 @@
 import type {IncomingMessage, ServerResponse} from 'node:http';
-import {getTileflowStyleFontFaces} from '@tileflow/core';
+import {
+  getTileflowStyleFontFaces,
+  tileflowMapIdSchema,
+  tileflowThemeNameSchema,
+} from '@tileflow/core';
 import {
   createTileflowBuildArtifacts,
   type TileflowBuildArtifacts,
   type TileflowBuildArtifactsOptions,
 } from './artifacts';
-import {
-  defaultTileflowApiUrl,
-  defaultTileflowConfigPath,
-  getFirstTileflowMapName,
-  TileflowValidationError,
-} from './config';
+import {defaultTileflowApiUrl, defaultTileflowConfigPath, TileflowValidationError} from './config';
 import type {TileflowBuildAsset} from './icons';
 import {normalizeTileflowBasePath} from './public-paths';
 import {
@@ -21,6 +20,16 @@ import {
 import {TileflowStyleValidationError} from './style-validation';
 
 export {createTileflowArtifactDiagnostics, tileflowArtifactSessionSchemaVersion} from './session';
+export {
+  createTileflowComparisonRequestHandler,
+  tileflowComparisonSchemaVersion,
+} from './comparison';
+export type {
+  TileflowComparisonMode,
+  TileflowComparisonOptions,
+  TileflowComparisonRequestHandler,
+  TileflowComparisonSide,
+} from './comparison';
 export type {
   TileflowArtifactDiagnostic,
   TileflowArtifactSession,
@@ -40,16 +49,39 @@ export type TileflowDevRequestHandlerOptions = {
   basePath?: string;
   config?: string;
   cwd?: string;
+  inspection?: boolean;
   map?: string;
   onError?: (error: unknown) => void;
   scene?: string;
   session?: TileflowArtifactSession;
   styleBaseUrl?: string;
+  theme?: string;
 };
 
-export function getTileflowStyleMapName(path: string): string {
-  const fileName = path.split('/').pop() ?? '';
-  return fileName.replace(/\.json$/, '');
+export function getTileflowStyleSelection(
+  path: string,
+): {mapName: string; themeName: string} | undefined {
+  const match = /^\/styles\/([a-z][a-z0-9-]{0,63})\/([a-z][a-z0-9-]{0,63})\.json$/u.exec(path);
+  return match?.[1] &&
+    match[2] &&
+    tileflowMapIdSchema.safeParse(match[1]).success &&
+    tileflowThemeNameSchema.safeParse(match[2]).success
+    ? {mapName: match[1], themeName: match[2]}
+    : undefined;
+}
+
+export function getTileflowStyleInspectionSelection(
+  path: string,
+): {mapName: string; themeName: string} | undefined {
+  const match = /^\/__inspection\/([a-z][a-z0-9-]{0,63})\/([a-z][a-z0-9-]{0,63})\.json$/u.exec(
+    path,
+  );
+  return match?.[1] &&
+    match[2] &&
+    tileflowMapIdSchema.safeParse(match[1]).success &&
+    tileflowThemeNameSchema.safeParse(match[2]).success
+    ? {mapName: match[1], themeName: match[2]}
+    : undefined;
 }
 
 export function isTileflowRequestUrl(url: string | undefined, basePath: string) {
@@ -145,6 +177,7 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
           assetBaseUrl: `${url.origin}${basePath}`,
           config: configPath,
           cwd,
+          inspection: options.inspection,
           styleBaseUrl: options.styleBaseUrl ?? `${url.origin}${basePath}`,
           apiBaseUrl,
         });
@@ -163,21 +196,28 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
       if (path === '/' || path === '') {
         const {renderTileflowPreviewHtml, resolveTileflowPreview} = await import('./preview');
         const requestedMaps = url.searchParams.getAll('map');
+        const requestedThemes = url.searchParams.getAll('theme');
         if (requestedMaps.length > 1) {
           return jsonResponse({error: 'Tileflow map query must appear at most once.'}, 400);
         }
+        if (requestedThemes.length > 1) {
+          return jsonResponse({error: 'Tileflow theme query must appear at most once.'}, 400);
+        }
         const requestedMap = requestedMaps.length === 1 ? requestedMaps[0] : options.map;
+        const requestedTheme = requestedThemes.length === 1 ? requestedThemes[0] : options.theme;
         const preview = artifacts
-          ? resolveTileflowPreview(artifacts.project, {map: requestedMap, scene: options.scene})
+          ? resolveTileflowPreview(artifacts.project, {
+              map: requestedMap,
+              scene: options.scene,
+              theme: requestedTheme,
+            })
+          : undefined;
+        const previewStyle = preview
+          ? artifacts?.styles[preview.mapName]?.[preview.themeName]
           : undefined;
         const isStreetsPreview =
-          preview !== undefined &&
-          state.status === 'ready' &&
-          state.artifacts.styles[preview.mapName]?.metadata?.['tileflow:root'] === 'streets';
-        const fontFaces =
-          preview !== undefined && state.status === 'ready'
-            ? getTileflowStyleFontFaces(state.artifacts.styles[preview.mapName]!)
-            : [];
+          preview !== undefined && previewStyle?.metadata?.['tileflow:root'] === 'streets';
+        const fontFaces = previewStyle ? getTileflowStyleFontFaces(previewStyle) : [];
         return htmlResponse(
           renderTileflowPreviewHtml(
             preview,
@@ -208,18 +248,26 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
         return jsonResponse(artifacts.buildManifest);
       }
 
-      if (path === '/style.json') {
-        return compactJsonResponse(artifacts.styles[getFirstTileflowMapName(artifacts.project)]);
+      if (path.startsWith('/__inspection/')) {
+        const selection = getTileflowStyleInspectionSelection(path);
+        const inspection = selection
+          ? artifacts.styleInspections?.[selection.mapName]?.[selection.themeName]
+          : undefined;
+        if (!selection || !inspection) {
+          return jsonResponse({error: 'Compiler inspection is unavailable.'}, 404);
+        }
+        return compactJsonResponse(inspection);
       }
 
       if (path.startsWith('/styles/')) {
-        const mapName = getTileflowStyleMapName(path);
-
-        if (!Object.hasOwn(artifacts.styles, mapName)) {
-          return jsonResponse({error: `Unknown map: ${mapName}`}, 404);
+        const selection = getTileflowStyleSelection(path);
+        const style = selection
+          ? artifacts.styles[selection.mapName]?.[selection.themeName]
+          : undefined;
+        if (!selection || !style) {
+          return jsonResponse({error: 'Unknown map theme style.'}, 404);
         }
-
-        return compactJsonResponse(artifacts.styles[mapName]);
+        return compactJsonResponse(style);
       }
 
       if (path.startsWith('/icons/')) {
@@ -344,12 +392,12 @@ function isOwnedTileflowRequestPath(path: string): boolean {
     path === '/' ||
     path === '/build-manifest.json' ||
     path === '/manifest.json' ||
-    path === '/style.json' ||
     path === '/__events' ||
     path === '/__status' ||
+    getTileflowStyleInspectionSelection(path) !== undefined ||
     path.startsWith('/generations/') ||
     path.startsWith('/icons/') ||
-    path.startsWith('/styles/') ||
+    getTileflowStyleSelection(path) !== undefined ||
     path.startsWith('/fonts/') ||
     path.startsWith('/__runtime/')
   );

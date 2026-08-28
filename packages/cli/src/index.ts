@@ -2,15 +2,19 @@
 
 import {serve} from '@hono/node-server';
 import {Command} from 'commander';
-import {spawn} from 'node:child_process';
 import {createHash, randomBytes} from 'node:crypto';
-import {existsSync, readFileSync} from 'node:fs';
+import {existsSync, readFileSync, realpathSync} from 'node:fs';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
-import {hostname, platform} from 'node:os';
-import {dirname, resolve} from 'node:path';
+import {hostname} from 'node:os';
+import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {createInterface} from 'node:readline/promises';
 import pc from 'picocolors';
-import {serializeCanonicalJson} from '@tileflow/core';
+import {
+  getTileflowStyleFontFaces,
+  parseTileflowMap,
+  serializeCanonicalJson,
+  tileflowMapIdSchema,
+} from '@tileflow/core';
 import {
   collectTileflowMapBuildLineage,
   createTileflowMapBuildManifest,
@@ -18,11 +22,12 @@ import {
   type TileflowPreparedMapAssets,
 } from '@tileflow/core/build';
 import {
-  type TileflowHostedManifest as DeployedManifest,
-  type TileflowHostedManifestMap as DeployedManifestMap,
+  type TileflowRuntimeManifest as DeployedManifest,
+  type TileflowRuntimeManifestMapEntry as DeployedManifestMap,
   parseTileflowRuntimeManifest,
 } from '@tileflow/core/manifest';
 import {
+  createTileflowArtifactDiagnostics,
   createTileflowArtifactSession,
   createTileflowBuildProvenance,
   createTileflowStyles,
@@ -45,7 +50,10 @@ import {
 } from '@tileflow/dev/fonts';
 import {compileTileflowIconPackages, TileflowIconCompilationError} from '@tileflow/dev/icons';
 import {resolveTileflowPreview} from '@tileflow/dev/preview';
-import {createTileflowDevRequestHandler} from '@tileflow/dev/server';
+import {
+  createTileflowComparisonRequestHandler,
+  createTileflowDevRequestHandler,
+} from '@tileflow/dev/server';
 import {
   createTileflowCommandFailureDocument,
   createTileflowCommandSummary,
@@ -88,6 +96,7 @@ import {inspectTileflowHostedCompatibility} from './hosted-preflight';
 import type {HostedProjectStatus} from './hosted-response';
 import {registerIconDiffCommand} from './icon-diff-command';
 import {registerIconListCommand} from './icon-list-command';
+import {openTileflowExternal} from './open-external';
 import {registerProjectCommands, resolveAccountProjectTarget} from './project-commands';
 import {registerVisualCommands} from './visual-command';
 
@@ -427,8 +436,13 @@ program
   .alias('dev')
   .description('Run a local map preview')
   .option('-c, --config <path>', 'config path', defaultConfigPath)
+  .option('--against-config <path>', 'second config for the comparison workbench')
+  .option('--against-map <name>', 'map on the right; defaults to --map')
+  .option('--against-scene <name>', 'committed standalone scene on the right')
+  .option('--against-theme <name>', 'concrete theme on the right; defaults to --theme')
   .option('--host <host>', 'bind host: an explicit IP address or localhost', defaultTileflowDevHost)
   .option('--map <name>', 'preview one configured map')
+  .option('--theme <name>', 'preview one concrete theme; defaults to the map default')
   .option('-p, --port <port>', 'preview port', '3333')
   .option('--scene <name>', 'preview one committed standalone map scene')
   .option(
@@ -440,12 +454,17 @@ program
   .action(
     async (options: {
       apiBaseUrl: string;
+      againstConfig?: string;
+      againstMap?: string;
+      againstScene?: string;
+      againstTheme?: string;
       config: string;
       host: string;
       json?: boolean;
       map?: string;
       port: string;
       scene?: string;
+      theme?: string;
     }) => {
       const port = parsePort(options.port);
       if (port === null) {
@@ -459,11 +478,53 @@ program
         process.exitCode = 1;
         return;
       }
+      if (options.scene !== undefined && options.theme !== undefined) {
+        logError('A committed scene owns its theme; do not combine --scene and --theme.');
+        process.exitCode = 1;
+        return;
+      }
+      if (options.theme !== undefined && options.map === undefined) {
+        logError('--theme requires an explicit --map.');
+        process.exitCode = 1;
+        return;
+      }
+
+      if (options.againstMap !== undefined && options.againstScene !== undefined) {
+        logError('Choose either --against-map or --against-scene, not both.');
+        process.exitCode = 1;
+        return;
+      }
+      if (options.againstScene !== undefined && options.againstTheme !== undefined) {
+        logError(
+          'A committed scene owns its theme; do not combine --against-scene and --against-theme.',
+        );
+        process.exitCode = 1;
+        return;
+      }
+      if (
+        options.againstTheme !== undefined &&
+        options.againstMap === undefined &&
+        options.map === undefined
+      ) {
+        logError('--against-theme requires --against-map or --map.');
+        process.exitCode = 1;
+        return;
+      }
 
       const host = parseTileflowDevHost(options.host);
       if (!host) {
         logError('--host expects an IP address or localhost.');
         process.exitCode = 1;
+        return;
+      }
+
+      const comparisonRequested =
+        options.againstConfig !== undefined ||
+        options.againstMap !== undefined ||
+        options.againstScene !== undefined ||
+        options.againstTheme !== undefined;
+      if (comparisonRequested) {
+        await runTileflowComparisonPreview(options, {host, port});
         return;
       }
 
@@ -483,6 +544,7 @@ program
             resolveTileflowPreview(initialArtifacts.project, {
               map: options.map,
               scene: options.scene,
+              theme: options.theme,
             });
           }
         } catch (error) {
@@ -499,6 +561,7 @@ program
           onError: printTileflowPreviewError,
           scene: options.scene,
           session,
+          theme: options.theme,
         });
         let invalidSinceLastReady = false;
         const emitState = (state: TileflowArtifactSessionState) => {
@@ -551,6 +614,7 @@ program
             printKeyValue('Local', link(origin));
             printKeyValue('Config', pathLabel(options.config));
             if (options.map) printKeyValue('Map', options.map);
+            if (options.theme) printKeyValue('Theme', options.theme);
             if (options.scene) printKeyValue('Scene', options.scene);
             logMuted('Press Ctrl+C to stop.');
           }
@@ -694,7 +758,10 @@ program
         process.exitCode = 1;
         return;
       }
-      if (outputManifest && normalizeUrl(outputManifest.apiUrl) !== apiUrl) {
+      const existingApiUrl = outputManifest
+        ? (outputManifest.apiUrl ?? Object.values(outputManifest.maps)[0]?.apiUrl)
+        : undefined;
+      if (existingApiUrl && normalizeUrl(existingApiUrl) !== apiUrl) {
         logError('Existing manifest belongs to a different Tileflow API origin.');
         process.exitCode = 1;
         return;
@@ -777,12 +844,20 @@ program
 
       const styles = Object.fromEntries(
         mapNames.map((mapName) => {
-          const style = hostedFonts.styles[mapName]!;
+          const themeStyles = hostedFonts.styles[mapName]!;
           const bundle = hostedFonts.bundles[mapName];
-          if (!bundle) return [mapName, style];
+          if (!bundle) return [mapName, themeStyles];
           const publicBaseUrl = hostedFontBaseByHash.get(bundle.contentHash);
           if (!publicBaseUrl) throw new Error(`Missing hosted font bundle URL for map ${mapName}.`);
-          return [mapName, bindTileflowStyleFontBundle(style, bundle, publicBaseUrl)];
+          return [
+            mapName,
+            Object.fromEntries(
+              Object.entries(themeStyles).map(([themeName, style]) => [
+                themeName,
+                bindTileflowStyleFontBundle(style, bundle, publicBaseUrl),
+              ]),
+            ),
+          ];
         }),
       );
       const buildManifest = await createTileflowMapBuildManifest(
@@ -812,7 +887,7 @@ program
                   fonts: hostedFonts.sourceIdentities[mapName] ?? [],
                   icons: compiledIcons.sourceIdentities[mapName] ?? [],
                 },
-                style: styles[mapName]!,
+                styles: styles[mapName]!,
               },
             ];
           }),
@@ -834,12 +909,11 @@ program
             ...(buildManifest.provenance ? {provenance: buildManifest.provenance} : {}),
             schemaVersion: buildManifest.schemaVersion,
           },
-          style: styles[mapName]!,
+          styles: styles[mapName]!,
         };
       });
 
       const deployedMaps: Record<string, DeployedManifestMap> = {};
-      const deployedStyles: Record<string, string> = {};
 
       for (const deployment of deployments) {
         const {
@@ -849,17 +923,20 @@ program
           iconBinding,
           iconPackage,
           mapName,
-          style,
+          styles: themeStyles,
         } = deployment;
-        logInfo(`Deploying compiled map ${pc.bold(mapName)}.`);
+        const themeNames = Object.keys(themeStyles).sort();
+        logInfo(
+          `Deploying compiled map ${pc.bold(mapName)} (${plural(themeNames.length, 'theme')}).`,
+        );
         const response = await publishHostedStyle(
           api,
           {
             artifact: {
               buildManifest,
               mapId: mapName,
-              schemaVersion: 2,
-              style,
+              schemaVersion: 3,
+              styles: themeStyles,
             },
             environment: mapName,
             ...(options.worldPromotion
@@ -898,20 +975,43 @@ program
           process.exitCode = 1;
           return;
         }
-        const styleUrl = body.mapUrl;
+        const deployedThemeNames = Object.keys(body.themes).sort();
+        if (
+          themeNames.length !== deployedThemeNames.length ||
+          themeNames.some((themeName, index) => themeName !== deployedThemeNames[index])
+        ) {
+          logError(`Deploy response did not return the exact theme family for ${mapName}.`);
+          process.exitCode = 1;
+          return;
+        }
+        const resolvedMap = parseTileflowMap(deploymentProject.maps[mapName]!);
+        const mapBuild = buildManifest.maps[mapName]!;
         deployedMaps[mapName] = {
+          defaultTheme: resolvedMap.defaultTheme,
           environment: mapName,
           mapId: body.mapId,
-          styleId: body.styleId,
-          styleUrl,
-          ...(deploymentProject.maps[mapName]?.view
-            ? {view: deploymentProject.maps[mapName].view}
-            : {}),
+          ...(resolvedMap.systemThemes ? {systemThemes: resolvedMap.systemThemes} : {}),
+          themes: Object.fromEntries(
+            themeNames.map((themeName) => {
+              const deployedTheme = body.themes[themeName]!;
+              const fontFaces = getTileflowStyleFontFaces(themeStyles[themeName]!);
+              return [
+                themeName,
+                {
+                  colorScheme: resolvedMap.themes[themeName]!.colorScheme,
+                  fontFaces,
+                  revision: mapBuild.themes[themeName]!.styleSha256,
+                  ...(deployedTheme.styleId ? {styleId: deployedTheme.styleId} : {}),
+                  styleUrl: deployedTheme.styleUrl,
+                },
+              ];
+            }),
+          ),
+          ...(resolvedMap.view ? {view: resolvedMap.view} : {}),
           ...(options.worldPromotion
             ? {usageMode: 'session' as const, worldGeneration: 'v1' as const}
             : {}),
         };
-        deployedStyles[mapName] = styleUrl;
         const versionLabel = Number.isInteger(body.version) ? ` (v${body.version})` : '';
 
         if (body.changed === false) {
@@ -923,10 +1023,8 @@ program
 
       const manifestPath = await writeDeployManifest(options.manifest, {
         apiUrl: api.apiUrl,
-        kind: 'hosted',
         maps: {...(existingManifest?.maps ?? {}), ...deployedMaps},
-        styles: {...(existingManifest?.styles ?? {}), ...deployedStyles},
-        version: 3,
+        version: 1,
       });
 
       logSuccess('Deployed Tileflow maps.');
@@ -1019,7 +1117,10 @@ const inspectCommand = program.command('inspect').description('Inspect map data 
 registerConfigInspectCommand(inspectCommand, {defaultConfigPath});
 registerFeatureInspectCommand(inspectCommand, {defaultConfigPath});
 registerCaptureCommands(program, {defaultConfigPath});
-registerVisualCommands(program, {defaultConfigPath});
+registerVisualCommands(program, {
+  defaultConfigPath,
+  openReport: (path) => openBrowser(path, true),
+});
 registerProjectCommands(program, {
   defaultApiUrl,
   loadAuthConfig,
@@ -1031,6 +1132,237 @@ program.parseAsync().catch((error: unknown) => {
 });
 
 type TileflowDevServer = ReturnType<typeof serve>;
+
+type TileflowComparisonPreviewCommandOptions = {
+  apiBaseUrl: string;
+  againstConfig?: string;
+  againstMap?: string;
+  againstScene?: string;
+  againstTheme?: string;
+  config: string;
+  json?: boolean;
+  map?: string;
+  scene?: string;
+  theme?: string;
+};
+
+async function runTileflowComparisonPreview(
+  options: TileflowComparisonPreviewCommandOptions,
+  address: {host: string; port: number},
+): Promise<void> {
+  await withTileflowConfigSecretsHidden(async () => {
+    const origin = tileflowDevOrigin(address.host, address.port);
+    const leftBasePath = '/left';
+    const rightBasePath = '/right';
+    const rightConfig = options.againstConfig ?? options.config;
+    const rightScene =
+      options.againstScene ?? (options.againstMap === undefined ? options.scene : undefined);
+    const rightMap = options.againstMap ?? (rightScene === undefined ? options.map : undefined);
+    const rightTheme =
+      rightScene === undefined ? (options.againstTheme ?? options.theme) : undefined;
+    let leftSession: Awaited<ReturnType<typeof createTileflowArtifactSession>> | undefined;
+    let rightSession: Awaited<ReturnType<typeof createTileflowArtifactSession>> | undefined;
+    let server: TileflowDevServer | undefined;
+    let serverStarted = false;
+    let unsubscribeLeft = () => {};
+    let unsubscribeRight = () => {};
+    const emit = (event: Record<string, unknown>): void => {
+      if (!options.json) return;
+      process.stdout.write(
+        `${JSON.stringify({schemaVersion: 1, command: 'dev.compare', ...event})}\n`,
+      );
+    };
+    const emitState = (side: 'left' | 'right', state: TileflowArtifactSessionState): void => {
+      if (!options.json) {
+        if (state.status === 'invalid') {
+          console.error(
+            `Tileflow ${side} generation ${state.generation} is invalid; preserving its last valid preview.`,
+          );
+        }
+        return;
+      }
+      emit({
+        event: state.status,
+        side,
+        generation: state.generation,
+        ...('lastGoodGeneration' in state && state.lastGoodGeneration !== undefined
+          ? {lastGoodGeneration: state.lastGoodGeneration}
+          : {}),
+        ...(state.status === 'invalid' ? {diagnostics: state.diagnostics} : {}),
+      });
+    };
+
+    try {
+      const leftCaptureConfig = comparisonCaptureConfigArgument(options.config);
+      const rightCaptureConfig = comparisonCaptureConfigArgument(rightConfig);
+      leftSession = await createTileflowArtifactSession({
+        apiBaseUrl: options.apiBaseUrl,
+        assetBaseUrl: `${origin}${leftBasePath}`,
+        config: options.config,
+        inspection: true,
+        styleBaseUrl: `${origin}${leftBasePath}`,
+        watch: true,
+      });
+      rightSession = await createTileflowArtifactSession({
+        apiBaseUrl: options.apiBaseUrl,
+        assetBaseUrl: `${origin}${rightBasePath}`,
+        config: rightConfig,
+        inspection: true,
+        styleBaseUrl: `${origin}${rightBasePath}`,
+        watch: true,
+      });
+
+      emitState('left', leftSession.getState());
+      emitState('right', rightSession.getState());
+      unsubscribeLeft = leftSession.subscribe((state) => emitState('left', state));
+      unsubscribeRight = rightSession.subscribe((state) => emitState('right', state));
+
+      const leftArtifacts = leftSession.getLastGoodArtifacts();
+      const rightArtifacts = rightSession.getLastGoodArtifacts();
+      if (!leftArtifacts || !rightArtifacts) {
+        if (options.json) {
+          const invalidSides = [
+            {side: 'left' as const, state: leftSession.getState()},
+            {side: 'right' as const, state: rightSession.getState()},
+          ].filter(
+            (
+              entry,
+            ): entry is {
+              side: 'left' | 'right';
+              state: Extract<TileflowArtifactSessionState, {status: 'invalid'}>;
+            } => entry.state.status === 'invalid',
+          );
+          emit({
+            event: 'error',
+            code: 'COMPARISON_INITIAL_INVALID',
+            phase: 'initialization',
+            diagnostics: invalidSides.flatMap(({state}) => state.diagnostics),
+            sides: invalidSides.map(({side, state}) => ({
+              side,
+              generation: state.generation,
+              diagnostics: state.diagnostics,
+            })),
+          });
+          process.exitCode = 1;
+          return;
+        }
+        throw new Error('Both comparison sides require one valid artifact generation.');
+      }
+      const leftPreview = resolveTileflowPreview(leftArtifacts.project, {
+        map: options.map,
+        scene: options.scene,
+        theme: options.theme,
+      });
+      const rightPreview = resolveTileflowPreview(rightArtifacts.project, {
+        map: rightMap,
+        scene: rightScene,
+        theme: rightTheme,
+      });
+      const leftHandler = createTileflowDevRequestHandler({
+        apiBaseUrl: options.apiBaseUrl,
+        basePath: leftBasePath,
+        config: options.config,
+        map: options.map,
+        onError: printTileflowPreviewError,
+        scene: options.scene,
+        session: leftSession,
+        theme: options.theme,
+      });
+      const rightHandler = createTileflowDevRequestHandler({
+        apiBaseUrl: options.apiBaseUrl,
+        basePath: rightBasePath,
+        config: rightConfig,
+        map: rightMap,
+        onError: printTileflowPreviewError,
+        scene: rightScene,
+        session: rightSession,
+        theme: rightTheme,
+      });
+      const fetch = createTileflowComparisonRequestHandler({
+        left: {
+          basePath: leftBasePath,
+          ...(leftCaptureConfig ? {captureConfig: leftCaptureConfig} : {}),
+          handler: leftHandler,
+          label: `${leftPreview.label} · ${options.config}`,
+          previewUrl: `${leftBasePath}/`,
+          sidecarUrl: `${leftBasePath}/__inspection/${leftPreview.mapName}/${leftPreview.themeName}.json`,
+        },
+        right: {
+          basePath: rightBasePath,
+          ...(rightCaptureConfig ? {captureConfig: rightCaptureConfig} : {}),
+          handler: rightHandler,
+          label: `${rightPreview.label} · ${rightConfig}`,
+          previewUrl: `${rightBasePath}/`,
+          sidecarUrl: `${rightBasePath}/__inspection/${rightPreview.mapName}/${rightPreview.themeName}.json`,
+        },
+        title: 'Tileflow visual workbench',
+      });
+
+      await new Promise<void>((resolveListening, rejectListening) => {
+        const createdServer = serve({fetch, hostname: address.host, port: address.port}, () =>
+          resolveListening(),
+        );
+        createdServer.once('error', rejectListening);
+        server = createdServer;
+      });
+      serverStarted = true;
+      if (!options.json) {
+        logSuccess('Tileflow visual workbench is running and watching both configs.');
+        printKeyValue('Local', link(origin));
+        printKeyValue('Left', `${leftPreview.label} · ${pathLabel(options.config)}`);
+        printKeyValue('Right', `${rightPreview.label} · ${pathLabel(rightConfig)}`);
+        logMuted('Press Ctrl+C to stop.');
+      }
+      await waitForTerminationSignal(server!);
+    } catch (error) {
+      if (!options.json) throw error;
+      const diagnostics = createTileflowArtifactDiagnostics(error, process.cwd());
+      emit({
+        event: 'error',
+        code: diagnostics[0]?.code ?? 'COMPARISON_PREVIEW_FAILED',
+        phase: diagnostics[0]?.phase ?? 'preview',
+        diagnostics,
+      });
+      process.exitCode = 1;
+    } finally {
+      unsubscribeLeft();
+      unsubscribeRight();
+      await closeNodeServer(server);
+      const generation = {
+        left: leftSession?.getState().generation,
+        right: rightSession?.getState().generation,
+      };
+      await Promise.all([leftSession?.close(), rightSession?.close()]);
+      if (serverStarted) emit({event: 'stopped', generation});
+    }
+  });
+}
+
+function comparisonCaptureConfigArgument(configPath: string): string | undefined {
+  const cwd = realpathSync(process.cwd());
+  const requestedConfigPath = resolve(process.cwd(), configPath);
+  const defaultRequestedPath = resolve(process.cwd(), defaultConfigPath);
+  const absoluteConfigPath = existsSync(requestedConfigPath)
+    ? realpathSync(requestedConfigPath)
+    : requestedConfigPath;
+  const absoluteDefaultPath = existsSync(defaultRequestedPath)
+    ? realpathSync(defaultRequestedPath)
+    : defaultRequestedPath;
+  if (absoluteConfigPath === absoluteDefaultPath) return undefined;
+
+  const relativeConfigPath = relative(cwd, absoluteConfigPath);
+  if (
+    relativeConfigPath === '' ||
+    relativeConfigPath === '..' ||
+    relativeConfigPath.startsWith(`..${sep}`) ||
+    isAbsolute(relativeConfigPath)
+  ) {
+    throw new Error(
+      'Comparison configs must be inside the current working directory so Copy command can remain reproducible.',
+    );
+  }
+  return relativeConfigPath.split(sep).join('/');
+}
 
 function waitForTerminationSignal(server: TileflowDevServer): Promise<void> {
   return new Promise((resolveStop, rejectStop) => {
@@ -1132,22 +1464,15 @@ function randomBase64Url(byteLength: number) {
 }
 
 function openBrowser(url: string, errorsToStderr = false) {
-  const os = platform();
-  const command = os === 'darwin' ? 'open' : os === 'win32' ? 'cmd' : 'xdg-open';
-  const args = os === 'win32' ? ['/c', 'start', '', url] : [url];
-  const child = spawn(command, args, {
-    detached: true,
-    stdio: 'ignore',
+  openTileflowExternal(url, {
+    onError: () => {
+      if (errorsToStderr) {
+        console.error(`Could not open a browser. Visit ${url}`);
+      } else {
+        logWarning(`Could not open a browser. Visit ${url}`);
+      }
+    },
   });
-
-  child.on('error', () => {
-    if (errorsToStderr) {
-      console.error(`Could not open a browser. Visit ${url}`);
-    } else {
-      logWarning(`Could not open a browser. Visit ${url}`);
-    }
-  });
-  child.unref();
 }
 
 async function writeDeployManifest(manifestPath: string, manifest: DeployedManifest) {
@@ -1215,15 +1540,7 @@ function selectWorldPromotionMaps(
 
 function validateDeployManifestMapNames(mapNames: string[]): boolean {
   for (const mapName of mapNames) {
-    const styleUrl = `/styles/${encodeURIComponent(mapName)}.json`;
-    try {
-      parseTileflowRuntimeManifest({
-        kind: 'self-hosted',
-        maps: Object.fromEntries([[mapName, styleUrl]]),
-        styles: Object.fromEntries([[mapName, styleUrl]]),
-        version: 3,
-      });
-    } catch {
+    if (!tileflowMapIdSchema.safeParse(mapName).success) {
       logError('A configured map name cannot be represented safely in a runtime manifest.');
       process.exitCode = 1;
       return false;
@@ -1254,9 +1571,20 @@ async function loadExistingDeployManifest(
   try {
     manifest = parseTileflowRuntimeManifest(value);
   } catch {
-    throw new Error('Existing Tileflow manifest does not match the strict schema-2 contract.');
+    throw new Error(
+      'Existing Tileflow manifest does not match the strict theme manifest contract.',
+    );
   }
-  if (manifest.kind === 'self-hosted') {
+  const hasHostedMetadata =
+    manifest.apiUrl !== undefined ||
+    Object.values(manifest.maps).some(
+      (map) =>
+        map.apiUrl !== undefined ||
+        map.environment !== undefined ||
+        map.mapId !== undefined ||
+        Object.values(map.themes).some((theme) => theme.styleId !== undefined),
+    );
+  if (!hasHostedMetadata) {
     if (options.overwriteSelfHosted) return null;
     throw new Error(
       'Refusing to replace a self-hosted Tileflow manifest with Hosted delivery. ' +
@@ -1539,7 +1867,10 @@ function printDeployedMaps(maps: Record<string, DeployedManifestMap>) {
 
   console.log(`\n${pc.bold('Maps')}`);
   for (const [name, map] of entries) {
-    console.log(`  ${pc.green('✓')} ${name.padEnd(16)} ${link(map.styleUrl)}`);
+    for (const [themeName, theme] of Object.entries(map.themes)) {
+      const label = `${name}/${themeName}`;
+      console.log(`  ${pc.green('✓')} ${label.padEnd(24)} ${link(theme.styleUrl)}`);
+    }
   }
 }
 
@@ -1581,17 +1912,33 @@ function pathLabel(value: string) {
 }
 
 function starterConfig(): string {
-  return `import { defineMap, labels, poi } from "@tileflow/core";
-import { streets } from "@tileflow/maps";
+  return `import { defineMap, defineTheme, labels, poi } from "@tileflow/core";
+import { streets, streetsThemes } from "@tileflow/maps";
+
+const madridDark = defineTheme(streetsThemes.dark, {
+  id: "madrid-dark",
+  version: 1,
+  colorScheme: "dark",
+  tokens: {
+    color: {
+      "surface.background": "#080b12",
+      "surface.land": "#0d1320",
+      "surface.water": "#081e2e"
+    }
+  }
+});
 
 export default defineMap({
   id: "madrid",
   name: "Madrid",
   version: 1,
   extends: streets,
+  themes: { light: streetsThemes.light, dark: madridDark },
+  defaultTheme: "light",
+  systemThemes: { light: "light", dark: "dark" },
   modules: {
     labels: labels({ roads: "major" }),
-    poi: poi({ enabled: true, preset: "minimal", icons: "essential" })
+    poi: poi({ enabled: true, density: 3, icons: true })
   },
   view: {
     center: [-3.7038, 40.4168],

@@ -7,15 +7,14 @@ and visual evidence must change atomically. The canonical workbench is
 the official maps under `packages/maps/src/official/`. The Tileflow Tiles playground consumes
 exact npm packages after publication; it is not the place to invent SDK controls.
 
-Streets, Ferraris, Härad, Siegfried, Soundings, and Verdant are Tileflow's first-party root maps,
-declared with `defineRootMap()` and compiled directly from Tileflow-owned semantic modules. They
-select the semantic Streets compiler ABI, but Ferraris, Härad, Siegfried, Soundings, and Verdant
-define their full designs independently and none imports, extends, or reuses assets from the Streets
-map. Streets Dark and Cyberpunk are ordinary maps declared with `defineMap()` and
-`extends: streets`; Matrix is an ordinary map that extends Cyberpunk. Applications customize maps
-through the same inheritance contract. None of these maps clones, bundles, or patches an upstream
-style. Coverage and design comparisons use external visual references rather than a template stored
-in the compiler package.
+Streets, Cyberpunk, Ferraris, Härad, Matrix, Siegfried, Soundings, and Verdant are Tileflow's
+first-party root maps, declared with `defineRootMap()` and compiled directly from Tileflow-owned
+semantic modules. They select the semantic Streets compiler ABI, but define their full designs
+independently: no official map imports or extends another official map, and each owns its asset
+providers. Streets owns coordinated light and dark appearances. Applications customize maps
+through the inheritance and theme contracts. None of these maps clones, bundles, or patches an
+upstream style. Coverage and design comparisons use external visual references rather than a
+template stored in the compiler package.
 
 ## How authoring becomes a map
 
@@ -23,7 +22,7 @@ in the compiler package.
 flowchart TD
   A["Human request or agent edit"] --> B["tileflow.config.ts"]
   B --> C["Imported parent map"]
-  B --> D["Map-owned theme tokens"]
+  B --> D["Complete named themes"]
   B --> E["Map-owned keyed modules"]
   C --> F["Resolved cartographic design"]
   D --> F
@@ -47,8 +46,9 @@ The public API is deliberately agent-friendly:
 - `data` changes the compatible dataset, never the drawing system.
 - `modules` is an object keyed by domain; key order never controls z-order and duplicates are
   impossible.
-- Module presets describe intent, while exact semantic targets accept constants, zoom functions,
-  and MapLibre expressions.
+- Themes expose one stable, typed semantic-token schema across all named appearances.
+- Module presets describe intent, while visual semantic targets accept token refs, documented
+  `fixed()` values, zoom functions, and MapLibre expressions.
 - Every contribution has one module owner and disappears when that module is replaced or disabled.
 
 A map extending Streets is complete even when `modules` is omitted. Omitted module domains inherit;
@@ -60,27 +60,33 @@ Shared symbol ranges govern text and icon together and are inherited by an optio
 marker can refine that range because it compiles to a separate circle layer; incompatible text and
 icon ranges fail because those parts share one MapLibre symbol layer.
 
-POI density and label/icon detail choose rank-bounded candidate sets before MapLibre collision
-placement. A module-level inclusive `maxRank` may be static or zoom-dependent and replaces those
-preset ceilings for the marker, icon, and label candidate sets. Because importance ranks are not
-distributed equally across categories, a category may set its own static or zoom-dependent
-`maxRank`; that semantic ceiling takes precedence over the module value without exposing a raw
-source-layer filter. Rank ceilings bound candidates rather than guaranteeing a number of visible
-symbols; collision placement remains authoritative. MapLibre evaluates zoom-dependent filters at
-integer zoom levels, including `linear` and `exponential` rank ceilings.
+Tileflow World's canonical POI projection owns classification, editorial zoom eligibility, and
+cross-source ranking. The SDK validates `category`, `type`, `icon`, `min_zoom`, `filter_rank`, and
+`size_rank` on the `poi` layer. It does not reinterpret OpenMapTiles `class`, `subclass`, or
+`rank`. `filter_rank` is bounded to 0–5; the module's numeric `density` is an inclusive 1–5
+threshold and defaults to 3. `size_rank` is bounded to 0–16 and orders eligible candidates before
+MapLibre collision placement, which remains authoritative. The closed category vocabulary is
+`arts-entertainment`, `education`, `food-drink`, `landmark`, `lodging`, `medical`, `park-nature`,
+`public-services`, `religion`, `retail`, `sport-leisure`, `transport`, and `visitor-amenity`.
+Producer `type` and `icon` values are snake_case; an unavailable icon falls back safely to its
+category image. Category styles are presentational and cannot replace producer selection.
 
 Official maps own their source assets in `@tileflow/maps/assets/<id>/`. Streets declares
-`icons: [streetsIcons]`, and Cyberpunk composes its additions explicitly as
-`[...streets.icons, cyberpunkIcons]`. Matrix replaces that asset list with
-`[streetsIcons, matrixIcons]` so its green-screen HUD artwork owns the referenced IDs. Ferraris,
-Härad, Siegfried, Soundings, and Verdant are independent roots and declare only
+`icons: [streetsIcons]`; Cyberpunk and Matrix independently declare `[cyberpunkIcons]` and
+`[matrixIcons]`. Ferraris, Härad, Siegfried, Soundings, and Verdant likewise declare only
 `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`, `[soundingsIcons]`, and `[verdantIcons]`,
-respectively; none composes Streets assets. Härad's directory contains nine original Tileflow SVG
+respectively; none composes another official map's assets. Härad's directory contains nine original Tileflow SVG
 patterns inspired by Lantmäteriet's CC0 Häradsekonomiska kartan series (1859–1934) and official legend.
 The package redistributes no Lantmäteriet scan, source pixel, legend artwork, font, or map data.
-Soundings owns ten original nautical symbols and patterns; its GEBCO-derived depth bands and labels
-provide broad visual context and are not navigation-grade survey soundings. Applications use the
-same rule with a config-relative directory, for example `icons: [...streets.icons, './icons']`.
+Siegfried owns nine semantic engraving motifs with separate light and dark SVG sources in one asset
+directory. Both themes compile the same layer topology; the dark theme changes only semantic ink,
+paper, and image-token values and is documented as an original nocturnal interpretation.
+The Soundings asset directory retains ten original chart symbols and patterns. The official map
+selects only its harbor and paper/water patterns; buoy, light, lighthouse, wreck, and rock symbols
+remain available for the separate experimental Nautical canary and are not part of official
+Soundings. Its GEBCO-derived depth bands and labels provide broad visual context and are not
+navigation-grade survey soundings. Applications use the same rule with a config-relative
+directory, for example `icons: [...streets.icons, './icons']`.
 
 `icons` is only an ordered directory array. Omission inherits the parent's exact array, declaration
 replaces it atomically, and `[]` means no icons. `<id>.<ext>` publishes an icon as `<id>`, while
@@ -137,7 +143,7 @@ diagonal `hatch`. Hatch appearance is semantic road detail rather than a raw lay
 color, opacity, spacing, size, angle, zoom bounds, and an optional sprite pattern. Without a pattern,
 marks inherit the resolved fill width when size is omitted and do not reserve collision space. With
 a pattern, the compiler emits a repeated line texture clipped to the resolved fill width, so no
-pattern pixel can protrude beyond the road deck. When `patternWidths` accompanies a literal pattern
+pattern pixel can protrude beyond the road deck. When `patternWidths` accompanies a resolved pattern
 prefix, Tileflow evaluates the fully treated fill width and selects the closest intrinsic-height
 sprite. Geometrically spaced variants bound transverse scaling and keep thin marks visually stable
 across road classes and zoom interpolation. The labels module uses the same class names and selectors,
@@ -169,7 +175,8 @@ Road conditions are orthogonal to class and structure. `roads.modifiers` support
 `driveway`, `parkingAisle`, and `yard`; and `roads.mountainBike` addresses the exact OpenMapTiles
 scales from `0` through `6`, including the intermediate `0+` through `3+` values. Each treatment
 can be disabled, scale inherited widths, and refine the surface/tunnel/bridge shadow/casing/fill
-paint with constants, zoom functions, or expressions. Fixed per-property precedence is
+paint with typed token refs, documented `fixed()` values, zoom functions, or expressions. Fixed
+per-property precedence is
 construction, modal restrictions, general access, toll, expressway, ramp, unpaved, indoor,
 official, mountain-bike scale, then service subtype. Object key order never changes it. A feature
 matching several conditions can therefore take its ramp width and unpaved dash at the same time,
@@ -177,6 +184,10 @@ while the earlier treatment wins only when both set the same paint property.
 
 `labels.shields` controls road-reference coverage independently from road names, and
 `labels.styles.shields` provides a default symbol plus optional deterministic per-network styles.
+An icon-backed shield uses `icon.textFit` and four-value `icon.textFitPadding`; coupling icon and
+text with `optional: false` makes the badge one collision unit. A worldwide design must retain a
+generic fallback because the canonical OpenMapTiles `network` vocabulary does not distinguish
+every national shield family.
 `labels.junctions` controls motorway-junction references. Both use the same road eligibility and
 remappable data bindings as road geometry; neither requires an author to know a source-layer,
 field name, or generated layer ID.
@@ -207,10 +218,11 @@ Compiler output records exact durable identity:
 
 - `tileflow:map = <resolved map id>`
 - `tileflow:mapVersion = <resolved map version>`
-- `tileflow:root = streets` (the selected compiler lineage; all six first-party roots use it)
+- `tileflow:root = streets` (the selected compiler lineage; all eight first-party roots use it)
 - `tileflow:rootCompilerVersion = 1`
 - `tileflow:extends = [<parent ids>]` when the map is derived
-- `tileflow:variant = light | dark`
+- `tileflow:theme = <concrete theme name>`
+- `tileflow:colorScheme = light | dark`
 - `tileflow:data = {kind, generation?, revision?, schema, schemaVersion, sourceId, worldSelection?}`
 
 World output uses `generation: "v1"`, records its `worldSelection`, and never uses the external

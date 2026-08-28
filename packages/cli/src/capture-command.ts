@@ -10,6 +10,7 @@ import {
   type TileflowCaptureRendererIdentity,
   type TileflowCaptureResourceDiagnostic,
   tileflowSyntheticAssetOrigin,
+  TileflowVisualReviewError,
 } from '@tileflow/capture';
 import {
   compareCodeUnits,
@@ -49,6 +50,7 @@ export type CaptureCommandOptions = {
   outDir?: string;
   pitch?: string;
   selector?: string;
+  theme?: string;
   url?: string;
   width?: string;
   watch?: boolean;
@@ -66,6 +68,7 @@ export type TileflowCaptureJsonV1 = {
 export type TileflowCaptureJsonEntry = {
   scene: string;
   map: string;
+  theme: string;
   target: 'map' | 'application';
   status: 'captured';
   definition?: NormalizedTileflowCaptureScene;
@@ -82,7 +85,7 @@ export type TileflowCaptureJsonEntry = {
 
 export type TileflowCaptureFailureJsonV1 = {
   schemaVersion: 1;
-  command: 'capture' | 'setup.capture';
+  command: 'capture' | 'setup.capture' | 'visual.compare';
   status: 'failed';
   code: string;
   phase: string;
@@ -151,6 +154,7 @@ export function registerCaptureCommands(
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)
     .option('--all', 'capture every configured scene')
     .option('--map <name>', 'capture one map with an uncommitted camera')
+    .option('--theme <name>', 'required concrete theme for exploratory --map capture')
     .option('--center <lng,lat>', 'exploratory center camera')
     .option('--bounds <west,south,east,north>', 'exploratory bounds camera')
     .option('--zoom <number>', 'exploratory center zoom')
@@ -203,6 +207,7 @@ export function createTileflowCaptureJson(
       .map(({capture, definition, outputPath, receiptPath}) => ({
         scene: capture.scene,
         map: capture.map,
+        theme: capture.theme,
         target: capture.target,
         status: 'captured',
         ...(definition ? {definition} : {}),
@@ -555,6 +560,7 @@ function validateSelectionOptions(
     options.width,
     options.height,
     options.dpr,
+    options.theme,
   ];
   const applicationOverrides = [options.url, options.selector, options.frame];
 
@@ -595,6 +601,9 @@ function validateSelectionOptions(
     if (options.all || positionalScenes.length > 0) {
       throw new Error('Use --map only for an uncommitted exploratory capture.');
     }
+    if (options.theme === undefined) {
+      throw new Error('Exploratory --map capture requires one concrete --theme.');
+    }
     if (Boolean(options.center) === Boolean(options.bounds)) {
       throw new Error('Exploratory --map capture requires exactly one of --center or --bounds.');
     }
@@ -608,7 +617,7 @@ function validateSelectionOptions(
   }
 
   if (exploratoryOptions.some((value) => value !== undefined)) {
-    throw new Error('Camera and viewport flags require --map.');
+    throw new Error('Exploratory camera, viewport, and theme flags require --map.');
   }
 
   if (!options.all && positionalScenes.length === 0) {
@@ -638,6 +647,7 @@ export function createExploratoryScene(
       };
   const candidate = {
     map,
+    theme: options.theme!,
     camera,
     viewport: {
       width: parseFiniteNumber(options.width ?? '1200', '--width'),
@@ -787,6 +797,7 @@ export function printCaptureError(
 
 function captureFailureCode(error: unknown): string {
   if (error instanceof TileflowCaptureError) return error.code;
+  if (error instanceof TileflowVisualReviewError) return error.code;
   if (error instanceof TileflowStyleValidationError) return error.code;
   if (error instanceof TileflowValidationError) return 'CONFIG_INVALID';
   if (error instanceof TileflowIconCompilationError) return 'ICON_INVALID';
@@ -799,6 +810,7 @@ function captureFailurePhase(error: unknown, code: string): string {
     return error.details.phase;
   }
   if (error instanceof TileflowStyleValidationError) return error.phase;
+  if (error instanceof TileflowVisualReviewError) return 'visual-review';
   if (error instanceof TileflowValidationError) return 'config-validation';
   if (error instanceof TileflowIconCompilationError) return 'icon-compilation';
   if (code.startsWith('BROWSER_')) return 'browser-start';

@@ -16,6 +16,7 @@ import {
   type TileflowArtifactSessionState,
 } from '../src/index';
 import {createTileflowArtifactSessionWithBuilder} from '../src/session';
+import {fixtureThemeFields} from './theme-fixture';
 
 test('refreshes transitive JSON imports and preserves last-good artifacts across invalid edits', async (t) => {
   const cwd = await createFixture(t);
@@ -64,13 +65,19 @@ test('refreshes transitive JSON imports and preserves last-good artifacts across
     lastGoodGeneration: 2,
     diagnostics: invalid.status === 'invalid' ? invalid.diagnostics : [],
   });
-  const lastGoodStyle = await handler(new Request('http://localhost/styles/main.json'));
+  const lastGoodPreview = await (await handler(new Request('http://localhost/'))).text();
+  assert.match(lastGoodPreview, /const isStreetsPreview = true/);
+  assert.match(lastGoodPreview, /const previewFontFaces = \[/);
+  const lastGoodStyle = await handler(new Request('http://localhost/styles/main/light.json'));
   assert.equal(lastGoodStyle.status, 200);
   assert.equal(waterColorFromStyle(await lastGoodStyle.json()), '#445566');
   const compactStyle = await (
-    await handler(new Request('http://localhost/styles/main.json'))
+    await handler(new Request('http://localhost/styles/main/light.json'))
   ).text();
   assert.equal(compactStyle, `${JSON.stringify(JSON.parse(compactStyle))}\n`);
+  const unknownTheme = await handler(new Request('http://localhost/styles/main/not-declared.json'));
+  assert.equal(unknownTheme.status, 404);
+  assert.deepEqual(await unknownTheme.json(), {error: 'Unknown map theme style.'});
 
   await writeFile(join(cwd, 'tileflow.config.ts'), validConfig, 'utf8');
   await session.refresh('test recovery');
@@ -120,13 +127,14 @@ test('publishes only the newest overlapping refresh generation', async () => {
     if (current === 3) await new Promise((resolveWait) => setTimeout(resolveWait, 5));
     return {
       assets: [],
-      manifest: {version: 1, maps: {}, styles: {}},
+      manifest: {version: 1, maps: {}},
       project: {
         maps: {
           [mapId]: defineRootMap({
             id: mapId,
             version: 1,
             root: {compiler: 'streets', compilerVersion: 1},
+            ...fixtureThemeFields,
           }),
         },
       },
@@ -219,7 +227,9 @@ test('serves pinned local preview assets and a cancellable session event stream'
 
   const manifestResponse = await handler(new Request('http://localhost/manifest.json'));
   assert.equal(manifestResponse.status, 200);
-  const manifest = (await manifestResponse.json()) as {styles: {main: string}};
+  const manifest = (await manifestResponse.json()) as {
+    maps: {main: {themes: {light: {styleUrl: string}}}};
+  };
   const buildManifestResponse = await handler(new Request('http://localhost/build-manifest.json'));
   assert.equal(buildManifestResponse.status, 200);
   assert.match(
@@ -228,7 +238,7 @@ test('serves pinned local preview assets and a cancellable session event stream'
     /^[a-f0-9]{64}$/u,
   );
   const immutableStyleResponse = await handler(
-    new Request(new URL(manifest.styles.main, 'http://localhost')),
+    new Request(new URL(manifest.maps.main.themes.light.styleUrl, 'http://localhost')),
   );
   assert.equal(immutableStyleResponse.status, 200);
   assert.match(immutableStyleResponse.headers.get('content-type') ?? '', /application\/json/);
@@ -302,7 +312,7 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /map\.queryRenderedFeatures\(/);
   assert.match(preview, /\{layers: \[styleLayer\.id\]\}/);
   assert.doesNotMatch(preview, /querySourceFeatures\(sourceId, \{sourceLayer\}\)/);
-  assert.match(preview, /const maximumTrees = 3000/);
+  assert.doesNotMatch(preview, /maximumTrees/);
   assert.equal(preview.match(/queryTerrainElevation/g)?.length, 3);
   assert.match(
     preview,
@@ -406,6 +416,10 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /const treeLods = \[/);
   assert.match(preview, /densityCellPixels: 12/);
   assert.match(preview, /densityCellPixels: 8/);
+  assert.match(preview, /if \(lod\.densityCellPixels === 0\) return candidates/);
+  assert.doesNotMatch(preview, /selected\.length >= lod\.maximumTrees/);
+  assert.match(preview, /function ensureThreeTreeMeshCapacity\(variantIndex, requiredCapacity\)/);
+  assert.match(preview, /function ensureThreeTreeShadowCapacity\(requiredCapacity\)/);
   assert.match(preview, /function selectVisibleTrees\(features, lod\)/);
   assert.match(preview, /const worldSize = 512 \* Math\.pow\(2, map\.getZoom\(\)\)/);
   assert.match(preview, /Math\.floor\(candidate\.worldX \/ lod\.densityCellPixels\)/);
@@ -688,11 +702,13 @@ test('selects map and scene previews with their configured cameras and viewport'
         id: 'first',
         version: 1,
         root: {compiler: 'streets', compilerVersion: 1},
+        ...fixtureThemeFields,
       }),
       second: defineRootMap({
         id: 'second',
         version: 1,
         root: {compiler: 'streets', compilerVersion: 1},
+        ...fixtureThemeFields,
         view: {bearing: 12, center: [2, 3], pitch: 35, zoom: 9},
       }),
     },
@@ -704,16 +720,19 @@ test('selects map and scene previews with their configured cameras and viewport'
           bounds: [1, 2, 3, 4] as [number, number, number, number],
           padding: 24,
         },
+        theme: 'light',
         viewport: {width: 800, height: 600},
       },
       mobile: {
         map: 'second',
         camera: {type: 'center' as const, center: [2.5, 3.5] as [number, number], zoom: 14},
+        theme: 'light',
         viewport: {width: 390, height: 844, dpr: 2 as const},
       },
       product: {
         map: 'second',
         camera: {type: 'center' as const, center: [2, 3] as [number, number], zoom: 9},
+        theme: 'light',
         viewport: {width: 800, height: 600},
         target: {kind: 'application' as const, path: '/maps'},
       },
@@ -722,8 +741,9 @@ test('selects map and scene previews with their configured cameras and viewport'
 
   assert.deepEqual(resolveTileflowPreview(project, {map: 'second'}), {
     camera: {type: 'center', center: [2, 3], zoom: 9, bearing: 12, pitch: 35},
-    label: 'second',
+    label: 'second / light',
     mapName: 'second',
+    themeName: 'light',
   });
   assert.deepEqual(resolveTileflowPreview(project, {map: 'first'}).camera, {
     type: 'center',
@@ -740,8 +760,9 @@ test('selects map and scene previews with their configured cameras and viewport'
       bearing: 0,
       pitch: 0,
     },
-    label: 'second / bounds · 800×600',
+    label: 'second / light / bounds · 800×600',
     mapName: 'second',
+    themeName: 'light',
     viewport: {width: 800, height: 600, dpr: 1},
   });
   assert.throws(() => resolveTileflowPreview(project, {map: 'first', scene: 'mobile'}), /either/);
@@ -749,6 +770,20 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.throws(
     () => resolveTileflowPreview(project, {scene: 'product'}),
     /targets an application/,
+  );
+  assert.throws(
+    () =>
+      resolveTileflowPreview(
+        {
+          ...project,
+          scenes: {
+            ...project.scenes,
+            invalidTheme: {...project.scenes!.mobile!, theme: 'not-declared'},
+          },
+        },
+        {scene: 'invalidTheme'},
+      ),
+    /theme selection is invalid or unknown.*light/u,
   );
 
   const mapResponse = await createTileflowDevRequestHandler({
@@ -758,7 +793,7 @@ test('selects map and scene previews with their configured cameras and viewport'
   })(new Request('http://localhost/'));
   const mapHtml = await mapResponse.text();
   assert.equal(mapResponse.status, 200);
-  assert.match(mapHtml, /\/styles\/second\.json/);
+  assert.match(mapHtml, /\/styles\/second\/light\.json/);
   assert.match(mapHtml, /"center":\[2,3\]/);
   assert.doesNotMatch(mapHtml, /"maxPitch":/);
   assert.match(mapHtml, /"pitch":35/);
@@ -774,8 +809,29 @@ test('selects map and scene previews with their configured cameras and viewport'
   })(new Request('http://localhost/?map=first'));
   const queryMapHtml = await queryMapResponse.text();
   assert.equal(queryMapResponse.status, 200);
-  assert.match(queryMapHtml, /\/styles\/first\.json/);
-  assert.doesNotMatch(queryMapHtml, /\/styles\/second\.json/);
+  assert.match(queryMapHtml, /\/styles\/first\/light\.json/);
+  assert.doesNotMatch(queryMapHtml, /\/styles\/second\/light\.json/);
+
+  const darkThemeResponse = await createTileflowDevRequestHandler({
+    config: 'tileflow.workspace.ts',
+    cwd,
+    map: 'second',
+  })(new Request('http://localhost/?theme=dark'));
+  const darkThemeHtml = await darkThemeResponse.text();
+  assert.equal(darkThemeResponse.status, 200);
+  assert.match(darkThemeHtml, /\/styles\/second\/dark\.json/);
+  assert.match(darkThemeHtml, /second \/ dark/);
+
+  const unknownThemeResponse = await createTileflowDevRequestHandler({
+    config: 'tileflow.workspace.ts',
+    cwd,
+    map: 'second',
+  })(new Request('http://localhost/?theme=not-declared'));
+  assert.equal(unknownThemeResponse.status, 400);
+  assert.match(
+    ((await unknownThemeResponse.json()) as {error: string}).error,
+    /theme selection is invalid or unknown.*dark, light/u,
+  );
 
   const missingQueryMapResponse = await createTileflowDevRequestHandler({
     config: 'tileflow.workspace.ts',
@@ -797,6 +853,16 @@ test('selects map and scene previews with their configured cameras and viewport'
     error: 'Tileflow map query must appear at most once.',
   });
 
+  const duplicateQueryThemeResponse = await createTileflowDevRequestHandler({
+    config: 'tileflow.workspace.ts',
+    cwd,
+    map: 'second',
+  })(new Request('http://localhost/?theme=light&theme=dark'));
+  assert.equal(duplicateQueryThemeResponse.status, 400);
+  assert.deepEqual(await duplicateQueryThemeResponse.json(), {
+    error: 'Tileflow theme query must appear at most once.',
+  });
+
   const sceneResponse = await createTileflowDevRequestHandler({
     config: 'tileflow.workspace.ts',
     cwd,
@@ -806,7 +872,18 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.equal(sceneResponse.status, 200);
   assert.match(sceneHtml, /width: 390px/);
   assert.match(sceneHtml, /height: 844px/);
-  assert.match(sceneHtml, /second \/ mobile/);
+  assert.match(sceneHtml, /second \/ light \/ mobile/);
+
+  const overriddenSceneResponse = await createTileflowDevRequestHandler({
+    config: 'tileflow.workspace.ts',
+    cwd,
+    scene: 'mobile',
+  })(new Request('http://localhost/?theme=dark'));
+  assert.equal(overriddenSceneResponse.status, 400);
+  assert.match(
+    ((await overriddenSceneResponse.json()) as {error: string}).error,
+    /scene owns its concrete theme/u,
+  );
 
   const boundsResponse = await createTileflowDevRequestHandler({
     config: 'tileflow.workspace.ts',
@@ -1013,6 +1090,17 @@ export default defineMap({id:'main',version:1,extends:cyberpunk,fonts:['./fonts'
       .getLastGoodArtifacts()
       ?.assets.some((asset) => asset.fileName.startsWith('fonts/oxanium-medium-')),
   );
+
+  await writeFile(join(cwd, 'tileflow.config.ts'), invalidConfig, 'utf8');
+  await waitForState(
+    session,
+    (state) => state.status === 'invalid' && state.generation > ready.generation,
+  );
+  const lastGoodPreview = await (
+    await createTileflowDevRequestHandler({session})(new Request('http://localhost/'))
+  ).text();
+  assert.match(lastGoodPreview, /const previewFontFaces = \[\{/);
+  assert.match(lastGoodPreview, /fonts\/oxanium-medium-/);
 });
 
 test('rejects and never watches icon directories outside the working tree', async (t) => {
@@ -1085,10 +1173,12 @@ export default {
       scenes: {
         bounds: {
           camera: {type: 'bounds', bounds: [1, 2, 3, 4], padding: 24},
+          theme: 'light',
           viewport: {width: 800, height: 600}
         },
         mobile: {
           camera: {type: 'center', center: [2.5, 3.5], zoom: 14},
+          theme: 'light',
           viewport: {width: 390, height: 844, dpr: 2}
         }
       }
@@ -1099,14 +1189,14 @@ export default {
 
 async function createFixture(t: test.TestContext): Promise<string> {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-dev-session-'));
-  await linkWorkspacePackages(cwd);
+  await linkWorkspacePackages(cwd, ['core', 'maps']);
   return cwd;
 }
 
 function waterColor(
   artifacts: ReturnType<TileflowArtifactSession['getLastGoodArtifacts']>,
 ): unknown {
-  return waterColorFromStyle(artifacts?.styles.main);
+  return waterColorFromStyle(artifacts?.styles.main?.light);
 }
 
 function waterColorFromStyle(style: unknown): unknown {

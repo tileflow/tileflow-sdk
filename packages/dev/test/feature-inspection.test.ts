@@ -5,6 +5,7 @@ import test from 'node:test';
 import {defineRootMap, openMapTiles, vectorTiles} from '@tileflow/core';
 import type {TileflowBuildCatalog} from '@tileflow/core/build';
 import {inspectTileflowFeatures} from '../src/feature-inspection';
+import {fixtureThemeFields} from './theme-fixture';
 
 const tile = Buffer.from(
   'GqkBeAIKA3BvaSiAIBIVCAcSCAAAAQECAgMDGAEiBQmAIIAgEhUICBIIAAQBBQIGAwcYASIFCbA7sDsaBG5hbWUaBWNsYXNzGgRyYW5rGgZzZWNyZXQiDgoMQ2VudHJhbCBjYWZlIgYKBGNhZmUiAigDIg8KDURPX05PVF9FWFBPU0UiCQoHT3V0c2lkZSIGCgRzaG9wIgIoCSIQCg5PVVRTSURFX1NFQ1JFVA==',
@@ -48,6 +49,7 @@ test('inspects bounded features deterministically and projects only requested pr
         id: 'fixture',
         version: 1,
         root: {compiler: 'streets', compilerVersion: 1},
+        ...fixtureThemeFields,
         glyphs: {
           kind: 'url',
           url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
@@ -76,6 +78,7 @@ test('inspects bounded features deterministically and projects only requested pr
           'health',
           'lodging',
           'major-transit',
+          'parking',
           'services',
           'shopping',
         ],
@@ -134,6 +137,7 @@ test('rejects unbounded and non-HTTP inspection inputs before fetching', async (
         id: 'fixture',
         version: 1,
         root: {compiler: 'streets', compilerVersion: 1},
+        ...fixtureThemeFields,
         data: {
           type: 'vector-tiles',
           attribution: 'Fixture data',

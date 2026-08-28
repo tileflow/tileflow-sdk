@@ -23,7 +23,9 @@ leaf-owned `scenes`; `entrypoints.resolved` describes the standalone map after i
 it with `pnpm reference:generate`; `pnpm reference:check` rejects drift instead of maintaining a
 second handwritten field or module list.
 
-[`tileflow.config.example.json`](tileflow.config.example.json) is an import-free root-map schema
-example for tooling. Real authoring normally uses TypeScript: import `streets` from `@tileflow/maps`,
-export one `defineMap({extends: streets, ...})`, and use imported package directory descriptors or
-config-relative directory strings for assets.
+[`tileflow.config.example.json`](tileflow.config.example.json) is the canonical import-free,
+machine-readable representation of one evaluated root map. It serializes the values produced by
+helpers such as `defineTheme()`, `token.*()`, and `fixed()`; it is not an executable alternative to
+`tileflow.config.ts`. Real authoring normally uses TypeScript: import `streets` from
+`@tileflow/maps`, export one `defineMap({extends: streets, ...})`, and use imported package directory
+descriptors or config-relative directory strings for assets.

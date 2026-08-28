@@ -9,6 +9,8 @@ import {
   createStyle,
   defineMap,
   defineRootMap,
+  defineTheme,
+  fixed,
   land,
   landforms,
   labels,
@@ -19,7 +21,7 @@ import {
   vegetation,
   water,
 } from '../src';
-import {extendStreets} from './map-fixture';
+import {extendStreets, testLightTheme} from './map-fixture';
 
 const streetsPreparedAssets = {
   icons: {
@@ -57,7 +59,8 @@ test('compiles a complete deterministic Streets map from omitted data and module
   assert.equal(first.metadata?.['tileflow:mapVersion'], 1);
   assert.equal(first.metadata?.['tileflow:root'], 'streets');
   assert.equal(first.metadata?.['tileflow:rootCompilerVersion'], 1);
-  assert.equal(first.metadata?.['tileflow:variant'], 'light');
+  assert.equal(first.metadata?.['tileflow:theme'], 'light');
+  assert.equal(first.metadata?.['tileflow:colorScheme'], 'light');
   assert.equal(first.metadata?.['tileflow:internalMigration'], undefined);
   assert.equal(first.projection, undefined);
   assert.equal(first.sprite, streetsPreparedAssets.icons.sprite);
@@ -94,6 +97,13 @@ test('validates the public Streets compiler before emitting versioned metadata',
       } as never),
     /modules\.roads\.unknownControl/,
   );
+  assert.throws(
+    () =>
+      compileTestMap({
+        modules: {water: water({bodies: {fill: {color: '#ABCDEF'}}})},
+      }),
+    /theme audit failed.*modules\.water\.bodies\.fill\.color/,
+  );
 });
 
 test('emits an explicit adaptive globe projection', () => {
@@ -106,13 +116,20 @@ test('emits an explicit adaptive globe projection', () => {
 });
 
 test('emits bounded root lighting for low-contrast 3d faces', () => {
-  const style = compileTestMap({
-    light: {
+  const illuminated = defineTheme(testLightTheme, {
+    id: 'illuminated',
+    version: 1,
+    colorScheme: 'light',
+    lighting: {
       anchor: 'viewport',
       color: '#FFF8E8',
       intensity: 0.18,
       position: [1.15, 210, 30],
     },
+  });
+  const style = compileTestMap({
+    defaultTheme: 'illuminated',
+    themes: {illuminated},
   });
 
   assert.deepEqual(style.light, {
@@ -125,17 +142,22 @@ test('emits bounded root lighting for low-contrast 3d faces', () => {
 });
 
 test('can omit the glyph endpoint and propagate theme typography to local-font labels', () => {
+  const branded = defineTheme(testLightTheme, {
+    id: 'branded',
+    version: 1,
+    colorScheme: 'light',
+    typography: {
+      fallbacks: ['Noto Sans Regular', 'Arial Unicode MS', 'sans-serif'],
+      font: 'Oxanium Medium',
+      letterSpacing: 0.04,
+      places: {font: 'Oxanium SemiBold', letterSpacing: 0.08},
+      transform: 'uppercase',
+    },
+  });
   const style = compileTestMap({
     fonts: ['./fonts'],
-    theme: {
-      typography: {
-        fallbacks: ['Noto Sans Regular', 'Arial Unicode MS', 'sans-serif'],
-        font: 'Oxanium Medium',
-        letterSpacing: 0.04,
-        places: {font: 'Oxanium SemiBold', letterSpacing: 0.08},
-        transform: 'uppercase',
-      },
-    },
+    defaultTheme: 'branded',
+    themes: {branded},
   });
   const textLayers = style.layers.filter(
     (layer) =>
@@ -173,7 +195,9 @@ test('rejects a text-bearing root map without a local or remote font provider', 
     id: 'no-font-provider',
     version: 1,
     root: {compiler: 'streets', compilerVersion: 1},
+    defaultTheme: 'light',
     modules: {poi: poi({enabled: false})},
+    themes: {light: testLightTheme},
   });
 
   assert.throws(
@@ -187,11 +211,13 @@ test('treats fonts empty array as an explicit provider removal for text-free map
     id: 'glyph-parent',
     version: 1,
     root: {compiler: 'streets', compilerVersion: 1},
+    defaultTheme: 'light',
     glyphs: {
       kind: 'url',
       url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
       fontStacks: ['Noto Sans Regular'],
     },
+    themes: {light: testLightTheme},
   });
   const textFree = defineMap({
     id: 'text-free',
@@ -241,12 +267,20 @@ test('module key order does not change Streets output', () => {
     modules: {
       roads: roads({detail: 'major'}),
       labels: labels({roads: 'major'}),
-      water: water({bodies: {fill: {color: '#ABCDEF'}}}),
+      water: water({
+        bodies: {
+          fill: {color: fixed('#ABCDEF', {reason: 'Fixture invariant for key-order testing.'})},
+        },
+      }),
     },
   });
   const right = compileTestMap({
     modules: {
-      water: water({bodies: {fill: {color: '#ABCDEF'}}}),
+      water: water({
+        bodies: {
+          fill: {color: fixed('#ABCDEF', {reason: 'Fixture invariant for key-order testing.'})},
+        },
+      }),
       labels: labels({roads: 'major'}),
       roads: roads({detail: 'major'}),
     },
@@ -282,7 +316,7 @@ test('keeps World selection and glyph delivery explicit and independent', () => 
   assert.equal(Object.hasOwn(source, 'tiles'), false);
   assert.equal(first.glyphs, glyphs.url);
   assert.equal(first.sprite, streetsPreparedAssets.icons.sprite);
-  assert.ok(first.layers.some((layer) => layer.id === 'streets-poi-food-icon'));
+  assert.ok(first.layers.some((layer) => layer.id === 'streets-poi-food-drink-icon'));
   assert.deepEqual(first.metadata?.['tileflow:data'], {
     generation: 'v1',
     kind: 'tileflow-world',

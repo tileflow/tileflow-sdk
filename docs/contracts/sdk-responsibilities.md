@@ -8,15 +8,16 @@ public API; this contract records the relationships between those APIs.
 
 - A **map** is the only public cartographic authoring unit. It has its own identity and version and
   is either a compiler root or extends another imported map.
-- A **root map** owns a compiler lineage. Streets, Ferraris, Härad, Siegfried, Soundings, and Verdant
-  are the first-party roots; Streets Dark and Cyberpunk are ordinary maps that extend Streets, and
-  Matrix extends Cyberpunk. Ferraris, Härad, Siegfried, Soundings, and Verdant use the same semantic
-  Streets compiler ABI without importing, extending, or reusing assets from the Streets map.
+- A **root map** owns a compiler lineage. Streets, Cyberpunk, Ferraris, Härad, Matrix, Siegfried,
+  Soundings, and Verdant are the first-party roots. They use the same semantic Streets compiler ABI
+  without importing or extending another official map, and each declares its own asset providers.
+- A **theme** is one complete named visual appearance for a map. Every theme in a map shares one
+  typed semantic-token schema; `system` is only a browser selector for concrete themes.
 - A **module** is a semantic authoring input owned by a map domain, such as roads, buildings,
   water, or labels. Modules compile to MapLibre style contributions; they do not draw pixels.
 - A **data source** supplies vector, raster, terrain, or other map data. Tileflow World is a data
   source, not a map definition.
-- A **style** is the MapLibre Style JSON produced by the cartographic compiler. Node preparation,
+- A **style** is the MapLibre Style JSON produced for one concrete map/theme pair. Node preparation,
   build, capture, and deploy additionally run MapLibre semantic validation before side effects.
 - A **renderer** turns a style into pixels. The interactive SDK renderer is MapLibre GL JS.
 - An **interaction** associates application or semantic map targets with normalized events,
@@ -36,19 +37,19 @@ Source map exported by tileflow.config.ts
   -> Node preparation (config imports, package/local assets, input graph)
   -> Prepared map
   -> pure cartographic compilation
-  -> MapLibre Style JSON + managed ArtifactPlan
+  -> MapLibre Style family + managed ArtifactPlan
        |-> application runtime -> MapLibre -> interactive pixels
        |-> local preview       -> MapLibre -> development pixels
        |-> capture             -> Playwright/MapLibre -> evidence files
-       |-> self-hosted build   -> styles/sprites/fonts + self-hosted runtime manifest
-       `-> Hosted deploy       -> Hosted API + Hosted runtime manifest
+       |-> self-hosted build   -> styles/sprites/fonts + runtime manifest
+       `-> Hosted deploy       -> Hosted API + the same runtime manifest shape
 
 Static Map scene -> Static Maps client -> Hosted renderer -> immutable image
 ```
 
 The semantic interaction artifact is versioned private metadata inside the exact finalized Style
 JSON it describes. It does not make interaction state or framework views compiler inputs, and it
-does not change runtime manifest version 3. The shared MapLibre interaction runtime validates the
+does not change runtime manifest version 1. The shared MapLibre interaction runtime validates the
 metadata against the loaded style before using its opaque physical lookup.
 
 The compiler must not perform network publication or instantiate a renderer. Render adapters must
@@ -94,18 +95,21 @@ PMTiles contract.
 
 ### `@tileflow/maps`
 
-Owns the official Streets, Ferraris, Härad, Siegfried, Soundings, Streets Dark, Cyberpunk, Matrix,
+Owns the official Streets, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix,
 and Verdant map objects, their package-directory descriptors, and the icon, pattern, font, and
-notice files those maps require. Streets, Ferraris, Härad, Siegfried, Soundings, and Verdant are
-complete root maps. Ferraris, Härad, Siegfried, Soundings, and Verdant declare only their own
-`ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, and `verdantIcons` directories.
+notice files those maps require. All eight official maps are complete roots. Ferraris, Härad,
+Siegfried, Soundings, and Verdant declare only their own `ferrarisIcons`, `haradIcons`,
+`siegfriedIcons`, `soundingsIcons`, and `verdantIcons` directories.
 Härad's directory contains nine original Tileflow SVG patterns inspired by Lantmäteriet's CC0
 Häradsekonomiska kartan series (1859–1934) and official legend; no Lantmäteriet scan, pixel, legend
-artwork, font, or map data is redistributed. Soundings owns ten original nautical symbols and
-patterns and exposes broad GEBCO-derived bathymetric context, not navigation-grade survey
-soundings. These roots use the semantic Streets compiler ABI but do not import, extend, or inherit
-assets from Streets. Streets Dark and Cyberpunk extend Streets through Core's public inheritance
-contract. Matrix extends Cyberpunk, owns `matrixIcons`, and reuses `cyberpunkFonts`.
+artwork, font, or map data is redistributed. Soundings retains ten original chart symbols and
+patterns in its asset closure, while its official style selects only the harbor and paper/water
+assets and excludes the experimental Nautical objects. It exposes broad GEBCO-derived bathymetric
+context, not navigation-grade survey soundings. Every root uses the semantic Streets compiler ABI
+but does not import, extend, or inherit
+assets from another official map. Streets owns light and dark theme documents over one map
+structure. Cyberpunk owns `cyberpunkIcons` and `cyberpunkFonts`; Matrix independently owns
+`matrixIcons` and `matrixFonts`.
 
 Maps has a peer dependency on Core because its exports are authored with Core's map language. Core
 never depends on or re-exports Maps. A consumer that wants an official map installs both packages;
@@ -175,30 +179,27 @@ internal services rather than cartographic concerns.
 
 ## Delivery selection
 
-One prepared map selects one final runtime delivery mode for a given output manifest:
+Self-hosted and Hosted output use one strict runtime manifest version 1. Each logical map has
+`defaultTheme`, optional `systemThemes`, and an exact `themes` record; each theme entry owns its
+`colorScheme` and Style URL. Hosted identity and session fields are optional metadata on the same
+map/theme nodes, not a second wire shape or delivery discriminator. Older shapes and compatibility
+aliases are rejected rather than normalized.
 
-- `self-hosted`: the manifest points at application-served style and sprite artifacts;
-- `hosted`: the manifest points at immutable or revisioned Hosted resources.
-
-The two variants have an explicit discriminator and share strict runtime manifest version 3 with an
-exact `maps`/`styles` closure. Older versions and compatibility aliases are rejected rather than
-normalized. A build integration must not silently replace a manifest belonging to the other
-delivery mode.
-
-Runtime manifest version 3 remains unchanged: semantic interaction metadata travels atomically in
-the referenced Style JSON, while annotation input remains application-owned. A future decision to
-split that metadata into its own resource would require an explicit next wire version and
-coordinated validation in self-hosted build, Hosted-client, browser runtime, and capture consumers.
+A build integration must not silently overwrite a manifest containing Hosted metadata unless the
+caller explicitly authorizes that destination change. Semantic interaction metadata travels
+atomically in each referenced Style JSON, while annotation input remains application-owned. A
+future decision to split that metadata into its own resource requires an explicit next wire version
+and coordinated validation in self-hosted build, Hosted-client, browser runtime, and capture.
 
 Hosted policy such as allowed browser origins is delivery metadata. It is not inherited with map
 design because it does not affect cartographic output.
 
 ## Transaction boundary
 
-Local preparation validates the complete intended release before the first Hosted write. Hosted
-publishes are idempotent and retryable, but repository-internal orchestration of several singular
-map configs is not an all-or-nothing transaction. A remote batch/release API is required to provide
-that guarantee. The local runtime manifest is
+Local preparation validates every theme in the complete intended release before the first Hosted
+write. One logical map's theme family is published atomically; a response must return exactly the
+declared concrete theme names. Hosted publishes are idempotent and retryable, but orchestration of
+several logical maps is not an all-or-nothing transaction without a remote batch API. The local runtime manifest is
 committed only after remote publication completes, but local filesystem recovery cannot roll back
 an already accepted remote write.
 

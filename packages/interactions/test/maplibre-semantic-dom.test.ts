@@ -122,7 +122,7 @@ class FakePositioned {
 const textBinding: TileflowInteractionBinding = {
   id: 'poi-card',
   popup: {content: {kind: 'text', text: 'Details'}},
-  target: {categories: ['food'], domain: 'poi', kind: 'semantic-feature'},
+  target: {categories: ['food-drink'], domain: 'poi', kind: 'semantic-feature'},
   tooltip: {content: {field: 'name', kind: 'field'}},
 };
 
@@ -138,7 +138,7 @@ function createHarness(binding: TileflowInteractionBinding = textBinding) {
   const style = {
     layers: [
       {
-        id: 'streets-poi-food-icon',
+        id: 'streets-poi-food-drink-icon',
         source: 'tileflow',
         'source-layer': 'poi',
         type: 'symbol',
@@ -152,14 +152,21 @@ function createHarness(binding: TileflowInteractionBinding = textBinding) {
               identity: ['source', 'source-layer', 'feature-id'],
               representationPriority: ['marker', 'icon', 'combined', 'label'],
             },
-            fields: {class: 'class', name: 'name', rank: 'rank', subclass: 'subclass'},
+            fields: {
+              category: 'category',
+              filterRank: 'filter_rank',
+              icon: 'icon',
+              name: 'name',
+              sizeRank: 'size_rank',
+              type: 'type',
+            },
             hitTesting: {frequency: 'animation-frame', order: 'rendered-topmost'},
             identity: 'maplibre-feature-id-if-present',
             layers: [
               {
                 anchor: 'pointer-coordinate',
-                category: 'food',
-                layerId: 'streets-poi-food-icon',
+                category: 'food-drink',
+                layerId: 'streets-poi-food-drink-icon',
                 priority: 10,
                 representation: 'icon',
                 source: 'tileflow',
@@ -168,14 +175,21 @@ function createHarness(binding: TileflowInteractionBinding = textBinding) {
             ],
           },
         },
-        version: 1,
+        version: 2,
       },
     },
   };
   let feature: TileflowMapLibrePoiFeature = {
     id: 'poi-42',
-    layer: {id: 'streets-poi-food-icon'},
-    properties: {class: 'restaurant', name: 'Café'},
+    layer: {id: 'streets-poi-food-drink-icon'},
+    properties: {
+      category: 'food-drink',
+      filter_rank: 2,
+      icon: 'restaurant',
+      name: 'Café',
+      size_rank: 16,
+      type: 'restaurant',
+    },
     source: 'tileflow',
     sourceLayer: 'poi',
   };
@@ -314,13 +328,20 @@ test('controlled semantic popup waits for committed state', () => {
               identity: ['source', 'source-layer', 'feature-id'],
               representationPriority: ['marker', 'icon', 'combined', 'label'],
             },
-            fields: {class: 'class', name: 'name', rank: 'rank', subclass: 'subclass'},
+            fields: {
+              category: 'category',
+              filterRank: 'filter_rank',
+              icon: 'icon',
+              name: 'name',
+              sizeRank: 'size_rank',
+              type: 'type',
+            },
             hitTesting: {frequency: 'animation-frame', order: 'rendered-topmost'},
             identity: 'maplibre-feature-id-if-present',
             layers: [
               {
                 anchor: 'pointer-coordinate',
-                category: 'food',
+                category: 'food-drink',
                 layerId: 'poi',
                 priority: 1,
                 representation: 'icon',
@@ -330,7 +351,7 @@ test('controlled semantic popup waits for committed state', () => {
             ],
           },
         },
-        version: 1,
+        version: 2,
       },
     },
   };
@@ -460,7 +481,7 @@ test('closes active outlets when a same-ID selector no longer matches the POI ca
   harness.runtime.reconcile([
     {
       ...textBinding,
-      target: {categories: ['coffee'], domain: 'poi', kind: 'semantic-feature'},
+      target: {categories: ['retail'], domain: 'poi', kind: 'semantic-feature'},
     },
   ]);
   assert.equal(popup.removeCalls, 1);
@@ -484,7 +505,7 @@ test('resolves transient query and unstable-identity diagnostics after success o
   assert.deepEqual(harness.runtime.getDiagnostics(), []);
 
   harness.setFeature({
-    layer: {id: 'streets-poi-food-icon'},
+    layer: {id: 'streets-poi-food-drink-icon'},
     properties: {name: 'No stable ID'},
     source: 'tileflow',
     sourceLayer: 'poi',

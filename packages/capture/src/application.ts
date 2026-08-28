@@ -9,6 +9,7 @@ export type ApplicationTileflowCaptureInput = {
   appOrigin?: string;
   appUrl?: string;
   browser: Browser;
+  colorScheme: 'dark' | 'light';
   scene: NormalizedTileflowCaptureScene & {
     target: {
       kind: 'application';
@@ -83,7 +84,7 @@ export async function captureApplicationTileflowScene(
   try {
     context = await input.browser.newContext({
       acceptDownloads: false,
-      colorScheme: 'light',
+      colorScheme: input.colorScheme,
       deviceScaleFactor: input.scene.viewport.dpr,
       ignoreHTTPSErrors: false,
       javaScriptEnabled: true,
@@ -207,7 +208,10 @@ export async function captureApplicationTileflowScene(
       try {
         await locator.first().waitFor({
           state: 'attached',
-          timeout: Math.min(timeoutMs, 2_000),
+          // The implicit map/theme locator starts matching only after the framework has resolved
+          // its manifest and concrete theme. Let the operation-wide timeout remain authoritative;
+          // a separate two-second attachment budget made otherwise healthy cold starts fail early.
+          timeout: timeoutMs,
         });
         targetCount = await locator.count();
       } catch {
@@ -241,6 +245,11 @@ export async function captureApplicationTileflowScene(
       timeoutMs,
       () => applicationFailure || applicationOriginEscape,
     );
+    await assertApplicationTargetTheme(
+      locator,
+      input.scene.theme,
+      input.scene.target.selector !== undefined,
+    );
     if (applicationFailure || applicationOriginEscape) {
       throw new TileflowCaptureError(
         'APPLICATION_ERROR',
@@ -264,6 +273,11 @@ export async function captureApplicationTileflowScene(
         : await locator.screenshot({animations: 'disabled', type: 'png'}),
     );
     await assertApplicationTargetRemainsReady(locator, input.scene.target.selector !== undefined);
+    await assertApplicationTargetTheme(
+      locator,
+      input.scene.theme,
+      input.scene.target.selector !== undefined,
+    );
     if (applicationFailure || applicationOriginEscape) {
       throw new TileflowCaptureError(
         'APPLICATION_ERROR',
@@ -335,6 +349,20 @@ async function assertApplicationTargetRemainsReady(
   );
 }
 
+async function assertApplicationTargetTheme(
+  locator: Locator,
+  expectedTheme: string | undefined,
+  allowUnmarkedSelector: boolean,
+): Promise<void> {
+  if (!expectedTheme) return;
+  const actualTheme = await locator.getAttribute('data-tileflow-theme');
+  if (actualTheme === expectedTheme || (actualTheme === null && allowUnmarkedSelector)) return;
+  throw new TileflowCaptureError(
+    'APPLICATION_ERROR',
+    `The application capture target resolved theme "${actualTheme ?? '(missing)'}" instead of "${expectedTheme}".`,
+  );
+}
+
 function webSocketHttpOrigin(url: URL): string {
   const comparable = new URL(url);
   comparable.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
@@ -374,7 +402,7 @@ function createTargetLocator(
       return page.locator(`[data-tileflow-capture-id="${scene.target.captureId}"]`);
     }
     if (scene.target.selector) return page.locator(scene.target.selector);
-    return page.locator(`[data-tileflow-map="${scene.map}"]`);
+    return page.locator(`[data-tileflow-map="${scene.map}"][data-tileflow-theme="${scene.theme}"]`);
   } catch (error) {
     throw new TileflowCaptureError(
       'APPLICATION_TARGET_NOT_FOUND',

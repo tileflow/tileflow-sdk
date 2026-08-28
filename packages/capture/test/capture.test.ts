@@ -3,7 +3,7 @@ import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
-import {defineMap, serializeCanonicalJson} from '@tileflow/core';
+import {defineMap, serializeCanonicalJson, tileflowWorldV1Schema} from '@tileflow/core';
 import type {TileflowBuildCatalog} from '@tileflow/core/build';
 import {streets} from '@tileflow/maps';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
@@ -19,6 +19,7 @@ import {
   type TileflowCaptureDataInput,
   TileflowCaptureError,
   tileflowCaptureRuntime,
+  validateTileflowCaptureReceipt,
 } from '../src/index';
 import {readPngDimensions} from '../src/standalone';
 
@@ -29,11 +30,13 @@ const project: TileflowBuildCatalog = {
   scenes: {
     narrow: {
       map: 'madrid',
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 320, height: 640},
     },
     desktop: {
       map: 'madrid',
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 1_200, height: 800},
     },
@@ -141,6 +144,7 @@ test('serializes deterministic, path-free capture receipts', () => {
     dpr: 2,
     height: 200,
     map: 'madrid',
+    theme: 'light',
     networkDependent: false,
     pngSha256: 'a'.repeat(64),
     renderer,
@@ -180,6 +184,7 @@ test('capture receipts preserve expanded vector source identity', () => {
     dpr: 1,
     height: 64,
     map: 'madrid',
+    theme: 'light',
     networkDependent: true,
     pngSha256: 'a'.repeat(64),
     renderer: createTileflowCaptureRendererIdentity(),
@@ -199,11 +204,67 @@ test('capture receipts preserve expanded vector source identity', () => {
   assert.deepEqual(receipt.verification, {data: 'rendered', style: 'rendered'});
 });
 
+test('capture receipts accept the complete current Tileflow World binding vocabulary', () => {
+  const schema = tileflowWorldV1Schema();
+  assert.ok(Object.keys(schema.fields).length > 64);
+
+  const receipt = createTileflowCaptureReceipt({
+    data: {
+      ...vectorDataIdentity,
+      bindings: {fields: {...schema.fields}, layers: {...schema.layers}},
+    },
+    dpr: 1,
+    height: 64,
+    map: 'madrid',
+    theme: 'light',
+    networkDependent: false,
+    pngSha256: 'a'.repeat(64),
+    renderer: createTileflowCaptureRendererIdentity(),
+    scene: 'world-vocabulary',
+    sceneSha256: 'b'.repeat(64),
+    styleSha256: 'c'.repeat(64),
+    target: 'map',
+    width: 64,
+  });
+
+  assert.deepEqual(receipt.data.bindings, {
+    fields: Object.fromEntries(Object.entries(schema.fields).sort()),
+    layers: Object.fromEntries(Object.entries(schema.layers).sort()),
+  });
+
+  const tooManyBindings = Object.fromEntries(
+    Array.from({length: 129}, (_, index) => [`field${index}`, 'value']),
+  );
+  assert.throws(
+    () =>
+      createTileflowCaptureReceipt({
+        data: {
+          ...vectorDataIdentity,
+          bindings: {fields: tooManyBindings, layers: {road: 'transportation'}},
+        },
+        dpr: 1,
+        height: 64,
+        map: 'madrid',
+        theme: 'light',
+        networkDependent: false,
+        pngSha256: 'a'.repeat(64),
+        renderer: createTileflowCaptureRendererIdentity(),
+        scene: 'excessive-vocabulary',
+        sceneSha256: 'b'.repeat(64),
+        styleSha256: 'c'.repeat(64),
+        target: 'map',
+        width: 64,
+      }),
+    /invalid data\.bindings\.fields object/u,
+  );
+});
+
 test('receipt source identity strips origins and rotating URL secrets', () => {
   const common = {
     dpr: 1 as const,
     height: 64,
     map: 'madrid',
+    theme: 'light',
     networkDependent: true,
     pngSha256: 'a'.repeat(64),
     renderer: createTileflowCaptureRendererIdentity(),
@@ -236,12 +297,97 @@ test('receipt source identity strips origins and rotating URL secrets', () => {
   assert.equal(serialized.includes('secret'), false);
 });
 
+test('receipt object creation and validation enforce the canonical UTF-8 byte limit', () => {
+  const bindings = Object.fromEntries(
+    Array.from({length: 64}, (_, index) => [`a${index}`, '界'.repeat(256)]),
+  );
+  const input = {
+    data: {
+      bindings: {fields: bindings, layers: bindings},
+      kind: 'vector-tiles' as const,
+      schema: 'openmaptiles' as const,
+      schemaVersion: 1,
+      sourceId: 'tileflow' as const,
+    },
+    dpr: 1 as const,
+    height: 64,
+    map: 'madrid',
+    theme: 'light',
+    networkDependent: false,
+    pngSha256: 'a'.repeat(64),
+    renderer: createTileflowCaptureRendererIdentity(),
+    scene: 'oversized-receipt',
+    sceneSha256: 'b'.repeat(64),
+    styleSha256: 'c'.repeat(64),
+    target: 'map' as const,
+    width: 64,
+  };
+  assert.throws(() => createTileflowCaptureReceipt(input), /byte limit/u);
+
+  const receipt = createTileflowCaptureReceipt({...input, data: vectorDataIdentity});
+  const oversizedObject = {
+    ...receipt,
+    data: input.data,
+  };
+  assert.throws(() => validateTileflowCaptureReceipt(oversizedObject), /byte limit/u);
+});
+
+test('receipt validation rejects accessors, hidden fields, and custom prototypes without executing them', () => {
+  const receipt = createTileflowCaptureReceipt({
+    data: dataIdentity,
+    dpr: 1,
+    height: 64,
+    map: 'madrid',
+    theme: 'light',
+    networkDependent: false,
+    pngSha256: 'a'.repeat(64),
+    renderer: createTileflowCaptureRendererIdentity(),
+    scene: 'plain-receipt',
+    sceneSha256: 'b'.repeat(64),
+    styleSha256: 'c'.repeat(64),
+    target: 'map',
+    width: 64,
+  });
+  let rendererReads = 0;
+  const accessor = {...receipt};
+  Object.defineProperty(accessor, 'renderer', {
+    enumerable: true,
+    get() {
+      rendererReads += 1;
+      return receipt.renderer;
+    },
+  });
+  assert.throws(() => validateTileflowCaptureReceipt(accessor), /accessor/u);
+  assert.equal(rendererReads, 0);
+
+  const hidden = {...receipt};
+  Object.defineProperty(hidden, 'execute', {enumerable: false, value: 'never'});
+  assert.throws(() => validateTileflowCaptureReceipt(hidden), /non-enumerable/u);
+
+  const inherited = Object.assign(Object.create({execute: 'never'}), receipt);
+  assert.throws(() => validateTileflowCaptureReceipt(inherited), /non-plain/u);
+
+  let proxyTraps = 0;
+  const proxied = new Proxy(
+    {...receipt},
+    {
+      getOwnPropertyDescriptor() {
+        proxyTraps += 1;
+        return undefined;
+      },
+    },
+  );
+  assert.throws(() => validateTileflowCaptureReceipt(proxied), /executable proxy/u);
+  assert.equal(proxyTraps, 0);
+});
+
 test('application receipts label configured style and data as expected but unverified', () => {
   const receipt = createTileflowCaptureReceipt({
     data: dataIdentity,
     dpr: 1,
     height: 64,
     map: 'madrid',
+    theme: 'light',
     networkDependent: false,
     pngSha256: 'a'.repeat(64),
     renderer: createTileflowCaptureRendererIdentity(),
@@ -258,8 +404,10 @@ test('application receipts label configured style and data as expected but unver
   });
 
   const {verification: _verification, ...legacyCommon} = receipt;
+  const {theme: _theme, ...legacyScene} = receipt.scene;
   const legacy = {
     ...legacyCommon,
+    scene: legacyScene,
     schemaVersion: 2,
     data: {
       generation: 'v1',
@@ -282,6 +430,7 @@ test('emits one exact receipt shape with explicit data identity', () => {
     data: dataIdentity,
     height: 64,
     map: 'madrid',
+    theme: 'light',
     networkDependent: true,
     pngSha256: 'a'.repeat(64),
     renderer: createTileflowCaptureRendererIdentity(),
@@ -302,14 +451,15 @@ test('emits one exact receipt shape with explicit data identity', () => {
   });
   const pinned = createTileflowCaptureReceipt(common);
 
-  assert.equal(unpinned.schemaVersion, 3);
+  assert.equal(unpinned.schemaVersion, 4);
+  assert.equal(unpinned.scene.theme, 'light');
   assert.deepEqual(unpinned.data, {
     kind: 'vector-tiles',
     schema: 'openmaptiles',
     schemaVersion: 1,
     sourceId: 'tileflow',
   });
-  assert.equal(pinned.schemaVersion, 3);
+  assert.equal(pinned.schemaVersion, 4);
   assert.deepEqual(pinned.data, dataIdentity);
   assert.deepEqual(Object.keys(unpinned).sort(), Object.keys(pinned).sort());
   assert.deepEqual(JSON.parse(serializeTileflowCaptureReceipt(pinned)), pinned);
@@ -360,9 +510,11 @@ test('emits one exact receipt shape with explicit data identity', () => {
     /data\.semantics\.parkLayer/,
   );
 
+  const {theme: _pinnedTheme, ...legacyPinnedScene} = pinned.scene;
   const legacyWorld = parseTileflowCaptureReceipt(
     serializeCanonicalJson({
       ...pinned,
+      scene: legacyPinnedScene,
       schemaVersion: 2,
       data: {
         kind: 'tileflow-world',
@@ -480,6 +632,7 @@ test('receipt creation rejects invalid public input instead of serializing it', 
         dpr: 2,
         height: 1.25,
         map: 'madrid',
+        theme: 'light',
         networkDependent: false,
         pngSha256: 'a'.repeat(64),
         renderer: createTileflowCaptureRendererIdentity(),
@@ -498,6 +651,7 @@ test('receipt creation rejects invalid public input instead of serializing it', 
         dpr: 1,
         height: 64,
         map: 'madrid',
+        theme: 'light',
         networkDependent: false,
         pngSha256: 'a'.repeat(64),
         renderer: createTileflowCaptureRendererIdentity(),
@@ -509,12 +663,40 @@ test('receipt creation rejects invalid public input instead of serializing it', 
       }),
     /scene\.name|receipt/i,
   );
+  for (const [field, value] of [
+    ['map', 'Madrid'],
+    ['theme', 'system'],
+    ['theme', 'CON'],
+  ] as const) {
+    assert.throws(
+      () =>
+        createTileflowCaptureReceipt({
+          data: dataIdentity,
+          dpr: 1,
+          height: 64,
+          map: 'madrid',
+          theme: 'light',
+          [field]: value,
+          networkDependent: false,
+          pngSha256: 'a'.repeat(64),
+          renderer: createTileflowCaptureRendererIdentity(),
+          scene: 'desktop',
+          sceneSha256: 'b'.repeat(64),
+          styleSha256: 'c'.repeat(64),
+          target: 'map',
+          width: 64,
+        }),
+      new RegExp(`scene\\.${field}|receipt`, 'i'),
+      `${field}=${value}`,
+    );
+  }
 
   const valid = createTileflowCaptureReceipt({
     data: dataIdentity,
     dpr: 1,
     height: 64,
     map: 'madrid',
+    theme: 'light',
     networkDependent: false,
     pngSha256: 'a'.repeat(64),
     renderer: createTileflowCaptureRendererIdentity(),

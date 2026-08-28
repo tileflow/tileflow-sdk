@@ -1,11 +1,18 @@
 import {z} from 'zod';
+import {
+  tileflowPortableIdMaximumLength,
+  tileflowPortableIdSchema,
+  tileflowThemeNameSchema,
+} from './portable-identity';
+
+export {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
 
 export const tileflowCaptureSceneSchemaVersion = 1 as const;
 
 export const tileflowCaptureSceneLimits = Object.freeze({
   applicationPathLength: 2_048,
   boundsPadding: {maximum: 1_024, minimum: 0},
-  captureIdLength: 64,
+  captureIdLength: tileflowPortableIdMaximumLength,
   maximumPhysicalPixels: 16_777_216,
   pitch: {maximum: 85, minimum: 0},
   selectorLength: 256,
@@ -126,21 +133,6 @@ export const tileflowCaptureIdSchema = z
     message: 'Expected an identifier that cannot mutate an object prototype',
   });
 
-/** Canonical identity for authoring maps and their leaf-owned scene names. */
-export const tileflowPortableIdSchema = z
-  .string()
-  .min(1)
-  .max(tileflowCaptureSceneLimits.captureIdLength)
-  .regex(/^[a-z][a-z0-9-]{0,63}$/u, {
-    message: 'Expected lowercase kebab-case beginning with a letter',
-  })
-  .refine(
-    (name) =>
-      !['constructor', 'prototype'].includes(name) &&
-      !/^(?:AUX|CON|NUL|PRN|COM[1-9]|LPT[1-9])$/i.test(name),
-    'Expected a portable identifier that is not a reserved filename or prototype key',
-  );
-
 export const tileflowCaptureSceneNameSchema = tileflowPortableIdSchema;
 
 const applicationPathSchema = z
@@ -181,6 +173,7 @@ export const tileflowCaptureTargetSchema = z.discriminatedUnion('kind', [
 export const tileflowCaptureSceneSchema = z
   .object({
     map: tileflowPortableIdSchema,
+    theme: tileflowThemeNameSchema,
     camera: tileflowCaptureCameraSchema,
     viewport: tileflowCaptureViewportSchema,
     target: tileflowCaptureTargetSchema.optional(),
@@ -200,6 +193,7 @@ export type TileflowCaptureScene = z.infer<typeof tileflowCaptureSceneSchema>;
 
 export type NormalizedTileflowCaptureScene = {
   map: string;
+  theme: string;
   camera:
     | {
         type: 'center';
@@ -251,6 +245,7 @@ export function normalizeTileflowCaptureScene(
 
   return {
     map: scene.map,
+    theme: scene.theme,
     camera,
     viewport: {...scene.viewport, dpr: scene.viewport.dpr ?? 1},
     target:

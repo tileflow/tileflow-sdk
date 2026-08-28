@@ -30,8 +30,8 @@ const source = {
 The browser runtime does not inspect Webpack configuration at runtime.
 
 When used with `webpack-dev-server`, the plugin serves `/tileflow/manifest.json`
-and `/tileflow/styles/:mapName.json` from `tileflow.config.ts`. Production builds emit those files
-plus the same prepared sprites and package-owned, content-addressed fonts as assets.
+and `/tileflow/styles/:mapName/:themeName.json` from `tileflow.config.ts`. Production builds emit
+those files plus the same prepared sprites and package-owned, content-addressed fonts as assets.
 
 Before every artifact emission, including watch rebuilds, the plugin refuses to replace an
 existing Hosted delivery manifest under `output.path`. Prefer `emitBuildArtifacts: false` or a

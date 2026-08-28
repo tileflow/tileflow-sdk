@@ -1,7 +1,11 @@
 import {
+  createTileflowCompilerProvenance,
+  tileflowCompilerProvenanceMetadataKey,
+} from './compiler-inspection';
+import {
+  tileflowCompilerMetadataKeys,
   type TileflowLayerContribution,
   type TileflowLayerSlot,
-  tileflowCompilerMetadataKeys,
   tileflowLayerSlots,
   tileflowLayerTargetPattern,
   type TileflowSlotConstraint,
@@ -78,6 +82,11 @@ export function assembleTileflowLayers(
           [tileflowCompilerMetadataKeys.owner]: contribution.owner,
           [tileflowCompilerMetadataKeys.slot]: contribution.slot,
           [tileflowCompilerMetadataKeys.target]: contribution.target,
+          [tileflowCompilerProvenanceMetadataKey]: createTileflowCompilerProvenance(
+            contribution.owner,
+            contribution.slot,
+            contribution.target,
+          ),
         },
       }),
     );

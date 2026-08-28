@@ -1,6 +1,6 @@
 # Framework browser runtime contract
 
-Status: public alpha contract as of 2026-08-25.
+Status: public alpha contract as of 2026-08-27.
 
 This document owns the framework-neutral browser lifecycle shared by Tileflow's React, Vue, and
 Svelte map adapters. The DOM attributes consumed by application capture remain owned by
@@ -35,9 +35,10 @@ MapLibre branch accepts a style object or URL and never loads a Tileflow manifes
 do not accept config/theme compilation, a style-base URL, or a local-development preference; those
 authoring and dev concerns must produce published artifacts before browser rendering.
 
-The Tileflow branch accepts only runtime manifest version 3, discriminated by `kind: 'self-hosted'`
-or `kind: 'hosted'`, with an exact `maps`/`styles` closure. Adapters do not normalize an older
-manifest, follow authoring `extends`, or invent asset URLs from a map name.
+The Tileflow branch accepts only runtime manifest version 1. One shape covers local and Hosted
+delivery: each map declares `defaultTheme`, optional `systemThemes`, and an exact `themes` record of
+concrete Style URLs. Adapters do not normalize an older manifest, follow authoring `extends`, or
+invent asset URLs from a map or theme name.
 
 Omitting `manifestUrl` means exactly `/tileflow/manifest.json` at the current origin. Adapters do
 not infer a deployment prefix from `document.baseURI`, a bundler setting, a script URL, or the
@@ -53,6 +54,24 @@ image mode without a resolvable image URL enters the terminal public readiness s
 Changing `source` immediately invalidates readiness, so an adapter cannot expose the previous
 map's `idle` state while the replacement is being resolved. Application capture translates that
 terminal state to `APPLICATION_ERROR` rather than waiting for its timeout.
+
+## Theme selection and switching
+
+React, Vue, and Svelte expose the same optional `theme` input for Tileflow sources. Omission selects
+the manifest's `defaultTheme`; an explicit concrete name selects exactly that entry; `system`
+requires `systemThemes` and resolves from the browser light/dark preference. Direct MapLibre
+sources reject `theme` because Tileflow does not own their appearance catalog.
+
+The browser color-scheme observer is a shared singleton rather than one media-query listener per
+component. Its value is read only after mount, keeping server rendering deterministic. Every DOM
+capture target exposes the resolved concrete name in `data-tileflow-theme`; `system` never appears
+there, in a Style URL, or in a capture receipt.
+
+Changing only the resolved theme is a transactional Style replacement on the existing MapLibre
+instance. It preserves camera, controls, semantic interactions, annotations, and component
+identity. Font preparation and Style loading complete before the transition becomes current;
+overlapping requests are latest-wins, and an unknown or failed theme enters the public `error`
+state without throwing during framework render. A successful later selection can recover.
 
 ## Renderer loading boundary
 

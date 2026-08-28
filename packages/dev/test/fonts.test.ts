@@ -21,6 +21,7 @@ import {
 } from '../src/fonts';
 import {getTileflowPreviewRuntimeResponse} from '../src/preview-assets';
 import {renderTileflowPreviewHtml} from '../src/preview-html';
+import {fixtureThemeFields} from './theme-fixture';
 
 const oxaniumMedium = new URL(
   '../../maps/assets/cyberpunk/fonts/Oxanium-Medium.ttf',
@@ -35,7 +36,7 @@ test('prepares declared TTF faces, licenses, metadata, and watch inputs determin
   const cwd = await fixture(t);
   await createFontDirectory(cwd, 'fonts', [['MapFont.ttf', await readFile(oxaniumMedium)]]);
   const project = fontProject(['./fonts']);
-  const styles = {main: fontStyle(['Oxanium Medium', 'Noto Sans', 'sans-serif'])};
+  const styles = {main: {light: fontStyle(['Oxanium Medium', 'Noto Sans', 'sans-serif'])}};
 
   const first = await prepareTileflowStyleFonts(project, styles, {
     assetBaseUrl: '/tileflow',
@@ -56,7 +57,7 @@ test('prepares declared TTF faces, licenses, metadata, and watch inputs determin
   assert.match(first.assets[0]!.fileName, /^fonts\/licenses\/license-[a-f0-9]{64}\.txt$/u);
   assert.match(first.assets[1]!.fileName, /^fonts\/oxanium-medium-[a-f0-9]{64}\.ttf$/u);
   assert.deepEqual(first.watchPaths, [await realpath(join(cwd, 'fonts'))]);
-  assert.deepEqual(getTileflowStyleFontFaces(first.styles.main!), [
+  assert.deepEqual(getTileflowStyleFontFaces(first.styles.main!.light!), [
     {
       family: 'Oxanium Medium',
       source: `/tileflow/${first.assets[1]!.fileName}`,
@@ -87,7 +88,7 @@ test('prepares declared TTF faces, licenses, metadata, and watch inputs determin
   assert.equal(
     getTileflowStyleFontFaces(
       bindTileflowStyleFontBundle(
-        first.styles.main!,
+        first.styles.main!.light!,
         bundle,
         `https://assets.example.test/font-bundles/${bundle.contentHash}`,
       ),
@@ -105,7 +106,7 @@ test('later directories replace exact canonical faces', async (t) => {
 
   const prepared = await prepareTileflowStyleFonts(
     fontProject(['./base', './override']),
-    {main: fontStyle(['Oxanium Medium'])},
+    {main: {light: fontStyle(['Oxanium Medium'])}},
     {assetBaseUrl: '..', cwd, target: 'hosted'},
   );
   const expectedDigest = createHash('sha256').update(override).digest('hex');
@@ -115,7 +116,7 @@ test('later directories replace exact canonical faces', async (t) => {
   assert.equal(prepared.assets.filter((asset) => asset.contentType === 'font/ttf').length, 1);
   assert.equal(prepared.assets.filter((asset) => asset.fileName.includes('/licenses/')).length, 1);
   assert.equal(
-    getTileflowStyleFontFaces(prepared.styles.main!)[0]?.source,
+    getTileflowStyleFontFaces(prepared.styles.main!.light!)[0]?.source,
     `../fonts/oxanium-medium-${expectedDigest}.ttf`,
   );
 });
@@ -123,6 +124,15 @@ test('later directories replace exact canonical faces', async (t) => {
 test('prepares all three packaged Siegfried faces with one OFL license', async (t) => {
   const cwd = await fixture(t);
   const icons = [
+    'siegfried-dark-forest',
+    'siegfried-dark-glacier',
+    'siegfried-dark-gravel',
+    'siegfried-dark-orchard',
+    'siegfried-dark-paper-grain',
+    'siegfried-dark-rock',
+    'siegfried-dark-scree',
+    'siegfried-dark-water-lines',
+    'siegfried-dark-wetland',
     'siegfried-forest',
     'siegfried-glacier',
     'siegfried-gravel',
@@ -133,12 +143,17 @@ test('prepares all three packaged Siegfried faces with one OFL license', async (
     'siegfried-water-lines',
     'siegfried-wetland',
   ];
-  const style = createStyle(siegfried, {
+  const light = createStyle(siegfried, {
     preparedAssets: {icons: {ids: icons, sprite: '/assets/icons/siegfried/sprite'}},
+    theme: 'light',
+  });
+  const dark = createStyle(siegfried, {
+    preparedAssets: {icons: {ids: icons, sprite: '/assets/icons/siegfried/sprite'}},
+    theme: 'dark',
   });
   const prepared = await prepareTileflowStyleFonts(
     {maps: {siegfried}},
-    {siegfried: style},
+    {siegfried: {dark, light}},
     {assetBaseUrl: '/assets', cwd, target: 'local'},
   );
 
@@ -146,7 +161,17 @@ test('prepares all three packaged Siegfried faces with one OFL license', async (
   assert.equal(prepared.assets.filter((asset) => asset.contentType === 'font/ttf').length, 3);
   assert.equal(prepared.assets.filter((asset) => asset.fileName.includes('/licenses/')).length, 1);
   assert.deepEqual(
-    getTileflowStyleFontFaces(prepared.styles.siegfried!).map(
+    getTileflowStyleFontFaces(prepared.styles.siegfried!.light!).map(
+      ({family, style: fontStyle, weight}) => ({family, style: fontStyle, weight}),
+    ),
+    [
+      {family: 'Cormorant Garamond Italic', style: 'italic', weight: '400'},
+      {family: 'Cormorant Garamond Regular', style: 'normal', weight: '400'},
+      {family: 'Cormorant Garamond SemiBold', style: 'normal', weight: '600'},
+    ],
+  );
+  assert.deepEqual(
+    getTileflowStyleFontFaces(prepared.styles.siegfried!.dark!).map(
       ({family, style: fontStyle, weight}) => ({family, style: fontStyle, weight}),
     ),
     [
@@ -166,7 +191,7 @@ test('font extension, MIME, and OpenType signature must agree', async (t) => {
   await assert.rejects(
     prepareTileflowStyleFonts(
       fontProject(['./fonts']),
-      {main: fontStyle(['Oxanium Medium'])},
+      {main: {light: fontStyle(['Oxanium Medium'])}},
       {assetBaseUrl: '/assets', cwd, target: 'hosted'},
     ),
     /File bytes do not match the \.otf format/u,
@@ -183,7 +208,7 @@ test('resolves local font directories from the nested config base', async (t) =>
 
   const prepared = await prepareTileflowStyleFonts(
     fontProject(['./fonts']),
-    {main: fontStyle(['Oxanium Medium'])},
+    {main: {light: fontStyle(['Oxanium Medium'])}},
     {assetBaseUrl: '/assets', baseDirectory, cwd, target: 'local'},
   );
 
@@ -207,7 +232,7 @@ test('reads real WOFF2 metadata through the same generic directory contract', as
 
   const prepared = await prepareTileflowStyleFonts(
     fontProject(['./fonts']),
-    {main: fontStyle(['Geist Regular'])},
+    {main: {light: fontStyle(['Geist Regular'])}},
     {assetBaseUrl: '/assets', cwd, target: 'local'},
   );
 
@@ -215,7 +240,7 @@ test('reads real WOFF2 metadata through the same generic directory contract', as
     prepared.assets.some((asset) => asset.contentType === 'font/woff2'),
     true,
   );
-  assert.deepEqual(getTileflowStyleFontFaces(prepared.styles.main!), [
+  assert.deepEqual(getTileflowStyleFontFaces(prepared.styles.main!.light!), [
     {
       family: 'Geist Regular',
       source: `/assets/${prepared.assets.find((asset) => asset.contentType === 'font/woff2')!.fileName}`,
@@ -235,7 +260,7 @@ test('rejects missing licenses, missing primaries, dynamic stacks, and casefold 
     await assert.rejects(
       prepareTileflowStyleFonts(
         fontProject(['./fonts']),
-        {main: fontStyle(['Oxanium Medium'])},
+        {main: {light: fontStyle(['Oxanium Medium'])}},
         {assetBaseUrl: '/assets', cwd, target: 'local'},
       ),
       (error: unknown) =>
@@ -249,7 +274,7 @@ test('rejects missing licenses, missing primaries, dynamic stacks, and casefold 
     await assert.rejects(
       prepareTileflowStyleFonts(
         fontProject(['./fonts']),
-        {main: fontStyle(['Missing Regular'])},
+        {main: {light: fontStyle(['Missing Regular'])}},
         {assetBaseUrl: '/assets', cwd, target: 'local'},
       ),
       /No declared font directory provides canonical face "Missing Regular"/u,
@@ -257,7 +282,7 @@ test('rejects missing licenses, missing primaries, dynamic stacks, and casefold 
     await assert.rejects(
       prepareTileflowStyleFonts(
         fontProject(['./fonts']),
-        {main: fontStyle(['get', 'font'] as never)},
+        {main: {light: fontStyle(['get', 'font'] as never)}},
         {assetBaseUrl: '/assets', cwd, target: 'local'},
       ),
       /static non-empty text-font stack/u,
@@ -273,7 +298,7 @@ test('rejects missing licenses, missing primaries, dynamic stacks, and casefold 
     await assert.rejects(
       prepareTileflowStyleFonts(
         fontProject(['./lower', './upper']),
-        {main: fontStyle(['Oxanium Medium'])},
+        {main: {light: fontStyle(['Oxanium Medium'])}},
         {assetBaseUrl: '/assets', cwd, target: 'local'},
       ),
       /differs from already declared "Oxanium Medium" only by case/u,
@@ -287,16 +312,99 @@ test('maps without a local font provider do not emit or mutate font metadata', a
   const style = fontStyle(['System Regular']);
   const prepared = await prepareTileflowStyleFonts(
     project,
-    {main: style},
+    {main: {light: style}},
     {assetBaseUrl: '/assets', cwd, target: 'local'},
   );
   assert.deepEqual(prepared, {
     assets: [],
     bundles: {},
     sourceIdentities: {},
-    styles: {main: style},
+    styles: {main: {light: style}},
     watchPaths: [],
   });
+});
+
+test('rejects non-portable map and concrete theme keys at the preparation boundary', async () => {
+  const map = fontProject(undefined).maps.main!;
+  const style = fontStyle(['System Regular']);
+  const options = {assetBaseUrl: '/assets', cwd: process.cwd(), target: 'local'} as const;
+
+  for (const mapName of ['Main', 'main_map', 'con', 'constructor']) {
+    await assert.rejects(
+      prepareTileflowStyleFonts({maps: {[mapName]: map}}, {[mapName]: {light: style}}, options),
+      (error: unknown) =>
+        error instanceof TileflowFontCompilationError &&
+        error.issues.some(
+          (issue) => issue.path === `maps.${mapName}` && /portable map key/u.test(issue.message),
+        ),
+      mapName,
+    );
+  }
+
+  for (const themeName of ['Dark', 'dark_mode', 'con', 'constructor', 'system']) {
+    const invalidProject = {
+      maps: {
+        main: {
+          ...map,
+          defaultTheme: themeName,
+          themes: {[themeName]: fixtureThemeFields.themes.light},
+        },
+      },
+    } as unknown as TileflowBuildCatalog;
+
+    await assert.rejects(
+      prepareTileflowStyleFonts(invalidProject, {main: {[themeName]: style}}, options),
+      (error: unknown) =>
+        error instanceof TileflowFontCompilationError &&
+        error.issues.some(
+          (issue) =>
+            issue.path === `styles.main.${themeName}` &&
+            /concrete portable theme key/u.test(issue.message),
+        ),
+      themeName,
+    );
+  }
+
+  const invalidAuthoredProject = {
+    maps: {
+      main: {
+        ...map,
+        defaultTheme: 'system',
+        themes: {system: fixtureThemeFields.themes.light},
+      },
+    },
+  } as unknown as TileflowBuildCatalog;
+  await assert.rejects(
+    prepareTileflowStyleFonts(invalidAuthoredProject, {main: {light: style}}, options),
+    /concrete theme name|system is browser-only/u,
+  );
+});
+
+test('watch-path discovery remains tolerant of an invalid compiled theme identity', async (t) => {
+  const cwd = await fixture(t);
+  await mkdir(join(cwd, 'fonts'));
+  const map = fontProject(['./fonts']).maps.main!;
+  const invalidProject = {
+    maps: {
+      main: {
+        ...map,
+        defaultTheme: 'system',
+        themes: {system: fixtureThemeFields.themes.light},
+      },
+    },
+  } as unknown as TileflowBuildCatalog;
+
+  assert.deepEqual(await getTileflowFontWatchPaths(invalidProject, cwd), [
+    await realpath(join(cwd, 'fonts')),
+  ]);
+  await assert.rejects(
+    prepareTileflowStyleFonts(
+      invalidProject,
+      {main: {system: fontStyle(['System Regular'])}},
+      {assetBaseUrl: '/assets', cwd, target: 'local'},
+    ),
+    /concrete portable theme key/u,
+  );
 });
 
 test('discovers mutable font directories before compilation and excludes package assets', async (t) => {
@@ -315,6 +423,7 @@ test('preview loads generic style metadata through the shared browser runtime', 
       camera: {bearing: 0, center: [0, 0], pitch: 0, type: 'center', zoom: 4},
       label: 'Generic',
       mapName: 'main',
+      themeName: 'light',
     },
     '',
     {generation: 1, status: 'ready'},
@@ -349,6 +458,7 @@ function fontProject(fonts: readonly TileflowFontDirectory[] | undefined): Tilef
         id: 'main',
         version: 1,
         root: {compiler: 'streets', compilerVersion: 1},
+        ...fixtureThemeFields,
         ...(fonts === undefined ? {} : {fonts}),
       },
     },

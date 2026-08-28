@@ -3,6 +3,8 @@ import {
   compareCodeUnits,
   type NormalizedTileflowCaptureScene,
   normalizeTileflowCaptureScene,
+  parseTileflowMap,
+  resolveThemeSelection,
   serializeCanonicalJson,
   sha256Hex,
   type TileflowCaptureScene,
@@ -21,7 +23,7 @@ import {
   createTileflowCaptureRendererIdentity,
   type TileflowCaptureRendererIdentity,
 } from './metadata';
-import {createTileflowCaptureReceipt, type TileflowCaptureReceipt} from './receipt';
+import {createTileflowCaptureReceipt, type TileflowCaptureReceiptV4} from './receipt';
 import {captureStandaloneTileflowScene, tileflowSyntheticAssetOrigin} from './standalone';
 import {type PreparedTileflowCaptureStyle, TileflowCaptureWorldSession} from './world';
 
@@ -46,6 +48,7 @@ export type CreateTileflowCaptureSessionOptions = Omit<TileflowCaptureOptions, '
 export type TileflowCapture = {
   scene: string;
   map: string;
+  theme: string;
   target: 'map' | 'application';
   png: Uint8Array;
   sha256: string;
@@ -56,7 +59,8 @@ export type TileflowCapture = {
   dpr: 1 | 2;
   networkDependent: boolean;
   renderer: TileflowCaptureRendererIdentity;
-  receipt: TileflowCaptureReceipt;
+  /** Newly captured evidence is always the concrete-theme receipt contract. */
+  receipt: TileflowCaptureReceiptV4;
   warnings: string[];
 };
 
@@ -156,8 +160,8 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
   ): Promise<TileflowCaptureResult> {
     this.#assertOpen();
     const sceneNames = selectTileflowCaptureSceneNames(artifacts, requestedScenes);
-    const validatedMaps = new Set<string>();
-    const preparedMaps = new Map<string, PreparedTileflowCaptureStyle>();
+    const validatedStyles = new Set<string>();
+    const preparedStyles = new Map<string, PreparedTileflowCaptureStyle>();
 
     for (const sceneName of sceneNames) {
       const scene = this.#resolveScene(artifacts, sceneName);
@@ -171,24 +175,23 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
           `Scene "${sceneName}" requires --app-origin or TILEFLOW_APP_ORIGIN.`,
         );
       }
-      const style = Object.hasOwn(artifacts.styles, scene.map)
-        ? artifacts.styles[scene.map]
-        : undefined;
+      const style = artifacts.styles[scene.map]?.[scene.theme];
       if (!style) {
         throw new TileflowCaptureError(
           'SCENE_NOT_FOUND',
-          `Scene "${sceneName}" references unavailable map "${scene.map}".`,
+          `Scene "${sceneName}" references unavailable theme "${scene.theme}" on map "${scene.map}".`,
         );
       }
-      if (!validatedMaps.has(scene.map)) {
+      const styleKey = `${scene.map}/${scene.theme}`;
+      if (!validatedStyles.has(styleKey)) {
         const prepared = await this.#worldSession.prepare(style, signal);
         try {
-          assertValidTileflowStyle(prepared.style, scene.map);
+          assertValidTileflowStyle(prepared.style, styleKey);
         } catch (error) {
           throwCaptureStyleValidationError(error);
         }
-        preparedMaps.set(scene.map, prepared);
-        validatedMaps.add(scene.map);
+        preparedStyles.set(styleKey, prepared);
+        validatedStyles.add(styleKey);
       }
     }
 
@@ -200,7 +203,7 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
     for (const sceneName of sceneNames) {
       throwIfAborted(signal);
       const scene = this.#resolveScene(artifacts, sceneName);
-      const prepared = preparedMaps.get(scene.map);
+      const prepared = preparedStyles.get(`${scene.map}/${scene.theme}`);
       const style = prepared?.style;
 
       if (!style || !prepared) {
@@ -210,12 +213,18 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
         );
       }
 
+      const colorScheme = resolveThemeSelection(
+        parseTileflowMap(artifacts.project.maps[scene.map]!),
+        scene.theme,
+      ).theme.colorScheme;
+
       const rendered =
         scene.target.kind === 'application'
           ? await captureApplicationTileflowScene({
               appOrigin: this.#options.appOrigin,
               appUrl: this.#options.appUrl,
               browser,
+              colorScheme,
               scene: {...scene, target: scene.target},
               signal,
               timeoutMs: this.#options.timeoutMs,
@@ -239,6 +248,7 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
         dpr: scene.viewport.dpr,
         height: rendered.height,
         map: scene.map,
+        theme: scene.theme,
         networkDependent: rendered.networkDependent,
         pngSha256: sha256,
         renderer,
@@ -252,6 +262,7 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
       captures.push({
         scene: sceneName,
         map: scene.map,
+        theme: scene.theme,
         target,
         png: rendered.png,
         sha256,
@@ -297,7 +308,7 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
   #resolveScene(
     artifacts: TileflowBuildArtifacts,
     sceneName: string,
-  ): NormalizedTileflowCaptureScene {
+  ): NormalizedTileflowCaptureScene & {theme: string} {
     const scene = normalizeScene(artifacts, sceneName);
     const hasApplicationOverrides =
       this.#options.appUrl !== undefined ||
@@ -376,7 +387,7 @@ export function selectTileflowCaptureSceneNames(
 function normalizeScene(
   artifacts: Pick<TileflowBuildArtifacts, 'project'>,
   sceneName: string,
-): NormalizedTileflowCaptureScene {
+): NormalizedTileflowCaptureScene & {theme: string} {
   const scene = Object.hasOwn(artifacts.project.scenes ?? {}, sceneName)
     ? artifacts.project.scenes?.[sceneName]
     : undefined;
@@ -385,7 +396,26 @@ function normalizeScene(
     throw new TileflowCaptureError('SCENE_NOT_FOUND', `Unknown Tileflow scene "${sceneName}".`);
   }
 
-  return normalizeTileflowCaptureScene(scene);
+  const normalized = normalizeTileflowCaptureScene(scene);
+  const authoredMap = artifacts.project.maps[normalized.map];
+  if (!authoredMap) {
+    throw new TileflowCaptureError(
+      'SCENE_NOT_FOUND',
+      `Scene "${sceneName}" references unavailable map "${normalized.map}".`,
+    );
+  }
+  const map = parseTileflowMap(authoredMap);
+  let theme: string;
+  try {
+    theme = resolveThemeSelection(map, normalized.theme).name;
+  } catch (error) {
+    throw new TileflowCaptureError(
+      'SCENE_NOT_FOUND',
+      `Scene "${sceneName}" has an invalid theme: ${error instanceof Error ? error.message : 'unknown theme'}`,
+      {cause: error},
+    );
+  }
+  return {...normalized, theme};
 }
 
 function throwIfAborted(signal?: AbortSignal): void {

@@ -1,6 +1,6 @@
 import {
   expression,
-  type TileflowStyleValue,
+  type TileflowColorStyleValue,
   type TileflowTransitModuleOptions,
   zoom,
 } from '@tileflow/core';
@@ -15,7 +15,7 @@ type MapboxRailTransitStyle = Pick<
  * gap, followed by a wider zoom-dependent dash layer of perpendicular sleepers.
  * Palette stays map-specific while the physical railway design stays shared.
  */
-export function mapboxRailTransitStyle(color: TileflowStyleValue<string>): MapboxRailTransitStyle {
+export function mapboxRailTransitStyle(color: TileflowColorStyleValue): MapboxRailTransitStyle {
   const rail = () => ({
     cap: 'butt' as const,
     color,

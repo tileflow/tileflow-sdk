@@ -3,8 +3,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   aeroways,
+  defineTheme,
   openMapTiles,
+  poi,
   resolveTileflowData,
+  tileflowPoiImageRoles,
   tileflowWorldV1Schema,
   vectorTiles,
   vegetation,
@@ -16,14 +19,17 @@ import {compileAeroways} from '../src/modules/aeroways/compiler';
 import {compileBoundaries} from '../src/modules/boundaries/compiler';
 import {compileBuildings} from '../src/modules/buildings/compiler';
 import {compileLand} from '../src/modules/land/compiler';
+import {compilePoi} from '../src/modules/poi/compiler';
 import {compileTransit} from '../src/modules/transit/compiler';
 import {compileVegetation} from '../src/modules/vegetation/compiler';
 import {compileWater} from '../src/modules/water/compiler';
-import {resolveColors} from '../src/themes';
+import {resolveColors, resolveThemeColors, resolveThemeImages} from '../src/themes';
+import {testLightTheme} from './map-fixture';
 
 const context = {
   colors: resolveColors(),
   data: resolveTileflowData(undefined),
+  images: {},
   typography: {
     font: 'Noto Sans Regular',
     places: {font: 'Noto Sans Bold'},
@@ -32,6 +38,89 @@ const context = {
     poi: {font: 'Noto Sans Regular'},
   },
 };
+
+test('semantic hydro and land roles flow exactly from the selected theme', () => {
+  const themed = defineTheme(testLightTheme, {
+    colorScheme: 'light',
+    id: 'semantic-role-theme',
+    version: 1,
+    tokens: {
+      color: {
+        'hydro.depth.m0': '#102030',
+        'hydro.depth.m200': '#203040',
+        'hydro.depth.m2000': '#304050',
+        'hydro.depth.m7000': '#405060',
+        'landuse.military': '#506070',
+        'landuse.railway': '#607080',
+        'poi.medical': '#708090',
+      },
+    },
+  });
+  const colors = resolveThemeColors(themed);
+  const themedContext = {...context, colors};
+  const land = compileLand(undefined, themedContext);
+  const bathymetry = contribution(compileWater(undefined, themedContext), 'streets-bathymetry');
+  const depthExpression = (bathymetry.layer.paint as Record<string, unknown>)[
+    'fill-color'
+  ] as unknown[];
+  const depthColors = new Map<number, unknown>();
+  for (let index = 3; index < depthExpression.length; index += 2) {
+    depthColors.set(depthExpression[index] as number, depthExpression[index + 1]);
+  }
+
+  assert.equal(colors.poi.medical, '#708090');
+  assert.equal(
+    (contribution(land, 'streets-landuse-military').layer.paint as Record<string, unknown>)[
+      'fill-color'
+    ],
+    '#506070',
+  );
+  assert.equal(
+    (contribution(land, 'streets-landuse-railway').layer.paint as Record<string, unknown>)[
+      'fill-color'
+    ],
+    '#607080',
+  );
+  assert.equal(depthColors.get(0), '#102030');
+  assert.equal(depthColors.get(-200), '#203040');
+  assert.equal(depthColors.get(-2000), '#304050');
+  assert.equal(depthColors.get(-11_000), '#405060');
+  assert.doesNotMatch(JSON.stringify(depthExpression), /#000(?:000)?\b/iu);
+});
+
+test('POI image roles are theme-selectable with an explicit built-in fallback contract', () => {
+  const day = defineTheme(testLightTheme, {
+    colorScheme: 'light',
+    id: 'poi-images-day',
+    version: 1,
+    tokens: {image: {'poi.food-drink': 'food-day'}},
+  });
+  const night = defineTheme(testLightTheme, {
+    colorScheme: 'dark',
+    id: 'poi-images-night',
+    version: 1,
+    tokens: {image: {'poi.food-drink': 'food-night'}},
+  });
+  const compileFoodImage = (images: Readonly<Record<string, string>>) => {
+    const layer = contribution(
+      compilePoi(poi({categories: ['food-drink'], icons: true, labels: false}), {
+        ...context,
+        images,
+      }),
+      'streets-poi-food-drink-icon',
+    );
+    return (layer.layer.layout as Record<string, unknown>)['icon-image'];
+  };
+
+  assert.deepEqual(tileflowPoiImageRoles['food-drink'], {
+    fallback: 'food',
+    token: 'poi.food-drink',
+  });
+  assert.match(JSON.stringify(compileFoodImage(resolveThemeImages(day))), /food-day/u);
+  assert.match(JSON.stringify(compileFoodImage(resolveThemeImages(night))), /food-night/u);
+  assert.match(JSON.stringify(compileFoodImage({})), /"icon"/u);
+  assert.match(JSON.stringify(compileFoodImage({})), /"food"/u);
+});
 
 test('park source semantics keep protected areas and urban parks disjoint', () => {
   const mixedData = resolveTileflowData(
@@ -272,8 +361,56 @@ test('3D vegetation keeps a portable styled fallback and exposes runtime paramet
   assert.equal((portable.layer.paint as Record<string, unknown>)['circle-opacity'], 0.74);
   assert.equal(hosted.layer.metadata?.['tileflow:vegetation-mode'], '3d');
   assert.equal(hosted.layer.metadata?.['tileflow:vegetation-fallback'], 'flat-circle');
+  assert.equal(
+    hosted.layer.metadata?.['tileflow:tree-bark-color'],
+    context.colors.vegetation.tree.bark,
+  );
+  assert.deepEqual(
+    hosted.layer.metadata?.['tileflow:tree-broadleaf-colors'],
+    context.colors.vegetation.tree.broadleaf,
+  );
+  assert.deepEqual(
+    hosted.layer.metadata?.['tileflow:tree-conifer-colors'],
+    context.colors.vegetation.tree.conifer,
+  );
   assertValid([portable]);
   assertValid([hosted]);
+});
+
+test('default 3D vegetation preserves exact dark semantic tree tokens', () => {
+  const tree = {
+    bark: '#3A3228',
+    broadleaf: ['#284236', '#2F4B3C', '#365441', '#3C5B46'],
+    conifer: ['#203A31', '#294237', '#314A3C'],
+  } as const;
+  const darkTheme = defineTheme(testLightTheme, {
+    colorScheme: 'dark',
+    id: 'vegetation-dark',
+    tokens: {
+      color: {
+        'vegetation.tree.bark': tree.bark,
+        'vegetation.tree.broadleaf.a': tree.broadleaf[0],
+        'vegetation.tree.broadleaf.b': tree.broadleaf[1],
+        'vegetation.tree.broadleaf.c': tree.broadleaf[2],
+        'vegetation.tree.broadleaf.d': tree.broadleaf[3],
+        'vegetation.tree.conifer.a': tree.conifer[0],
+        'vegetation.tree.conifer.b': tree.conifer[1],
+        'vegetation.tree.conifer.c': tree.conifer[2],
+      },
+    },
+    version: 1,
+  });
+  const darkContext = {...context, colors: resolveThemeColors(darkTheme)};
+  const trees = contribution(
+    compileVegetation(vegetation({mode: '3d'}), darkContext),
+    'streets-vegetation-trees',
+  );
+
+  assert.deepEqual(darkContext.colors.vegetation.tree, tree);
+  assert.equal(trees.layer.metadata?.['tileflow:tree-bark-color'], tree.bark);
+  assert.deepEqual(trees.layer.metadata?.['tileflow:tree-broadleaf-colors'], tree.broadleaf);
+  assert.deepEqual(trees.layer.metadata?.['tileflow:tree-conifer-colors'], tree.conifer);
+  assertValid([trees]);
 });
 
 test('current building tones use bound fields and the available semantic theme colors', () => {

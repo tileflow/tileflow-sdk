@@ -1,16 +1,20 @@
 import {createHash} from 'node:crypto';
+import {types as nodeUtilTypes} from 'node:util';
 import {
   isTileflowWorldReleaseId,
   serializeCanonicalJson,
   tileflowCaptureIdSchema,
   tileflowCaptureSceneLimits,
   tileflowCaptureSceneNameSchema,
+  tileflowPortableIdSchema,
+  tileflowThemeNameSchema,
 } from '@tileflow/core';
 import {TileflowCaptureError} from './errors';
 import type {TileflowCaptureRendererIdentity} from './metadata';
 
-export const tileflowCaptureReceiptSchemaVersion = 3 as const;
+export const tileflowCaptureReceiptSchemaVersion = 4 as const;
 export const tileflowCaptureReceiptLimits = Object.freeze({maximumBytes: 64 * 1024});
+const maximumReceiptBindingEntries = 128;
 
 export type TileflowCaptureDataBindingsV2 = {
   fields: Record<string, string>;
@@ -85,7 +89,7 @@ export type TileflowCaptureVectorIdentityV3 = {
   url?: string;
 };
 
-/** Exact structural input for every newly written schema-v3 receipt. */
+/** Exact data-identity input embedded in every newly written schema-v4 receipt. */
 export type TileflowCaptureDataInput =
   | TileflowCaptureVectorIdentityV3
   | TileflowCaptureWorldIdentityV3;
@@ -131,13 +135,23 @@ export type TileflowCaptureReceiptV3 = TileflowCaptureReceiptCommon & {
   data: TileflowCaptureDataIdentityV3;
 };
 
-export type TileflowCaptureReceipt = TileflowCaptureReceiptV2 | TileflowCaptureReceiptV3;
+export type TileflowCaptureReceiptV4 = Omit<TileflowCaptureReceiptCommon, 'scene'> & {
+  schemaVersion: 4;
+  data: TileflowCaptureDataIdentityV3;
+  scene: TileflowCaptureReceiptCommon['scene'] & {theme: string};
+};
+
+export type TileflowCaptureReceipt =
+  | TileflowCaptureReceiptV2
+  | TileflowCaptureReceiptV3
+  | TileflowCaptureReceiptV4;
 
 export type CreateTileflowCaptureReceiptInput = {
   dpr: 1 | 2;
   data: TileflowCaptureDataInput;
   height: number;
   map: string;
+  theme: string;
   networkDependent: boolean;
   pngSha256: string;
   renderer: TileflowCaptureRendererIdentity;
@@ -150,12 +164,13 @@ export type CreateTileflowCaptureReceiptInput = {
 
 export function createTileflowCaptureReceipt(
   input: CreateTileflowCaptureReceiptInput,
-): TileflowCaptureReceiptV3 {
+): TileflowCaptureReceiptV4 {
   return validateTileflowCaptureReceipt({
     schemaVersion: tileflowCaptureReceiptSchemaVersion,
     scene: {
       name: input.scene,
       map: input.map,
+      theme: input.theme,
       target: input.target,
       sha256: input.sceneSha256,
     },
@@ -173,7 +188,7 @@ export function createTileflowCaptureReceipt(
     data: normalizeCaptureDataInput(input.data),
     verification: verificationForTarget(input.target),
     networkDependent: input.networkDependent,
-  }) as TileflowCaptureReceiptV3;
+  }) as TileflowCaptureReceiptV4;
 }
 
 export function serializeTileflowCaptureReceipt(receipt: TileflowCaptureReceipt): string {
@@ -208,9 +223,14 @@ export function parseTileflowCaptureReceipt(source: string | Uint8Array): Tilefl
 }
 
 export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureReceipt {
+  assertPlainReceiptData(value);
   const receipt = requireRecord(value, 'receipt');
   const schemaVersion = receipt.schemaVersion;
-  if (schemaVersion !== 2 && schemaVersion !== tileflowCaptureReceiptSchemaVersion) {
+  if (
+    schemaVersion !== 2 &&
+    schemaVersion !== 3 &&
+    schemaVersion !== tileflowCaptureReceiptSchemaVersion
+  ) {
     throw invalidReceipt('The baseline receipt schema version is unsupported.');
   }
   const commonKeys = [
@@ -227,9 +247,21 @@ export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureR
   requireExactKeys(receipt, commonKeys);
 
   const scene = requireRecord(receipt.scene, 'scene');
-  requireExactKeys(scene, ['name', 'map', 'target', 'sha256']);
+  requireExactKeys(
+    scene,
+    schemaVersion === tileflowCaptureReceiptSchemaVersion
+      ? ['name', 'map', 'theme', 'target', 'sha256']
+      : ['name', 'map', 'target', 'sha256'],
+  );
   const name = requireSceneName(scene.name);
-  const map = requireIdentifier(scene.map, 'scene.map');
+  const map =
+    schemaVersion === tileflowCaptureReceiptSchemaVersion
+      ? requirePortableIdentifier(scene.map, 'scene.map')
+      : requireIdentifier(scene.map, 'scene.map');
+  const theme =
+    schemaVersion === tileflowCaptureReceiptSchemaVersion
+      ? requireConcreteTheme(scene.theme)
+      : undefined;
   if (scene.target !== 'map' && scene.target !== 'application') {
     throw invalidReceipt('The baseline receipt has an invalid scene target.');
   }
@@ -283,11 +315,12 @@ export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureR
       ? validateDataIdentityV2(receipt.data)
       : validateDataIdentityV3(receipt.data);
 
-  return {
+  const normalized = {
     schemaVersion,
     scene: {
       name,
       map,
+      ...(theme === undefined ? {} : {theme}),
       target: scene.target,
       sha256: requireHash(scene.sha256, 'scene.sha256'),
     },
@@ -318,6 +351,8 @@ export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureR
     verification,
     networkDependent: receipt.networkDependent,
   } as TileflowCaptureReceipt;
+  assertCanonicalReceiptByteLimit(normalized);
+  return normalized;
 }
 
 function validateDataIdentityV2(value: unknown): TileflowCaptureDataIdentityV2 {
@@ -500,7 +535,7 @@ function validateDataBindings(value: unknown, field: string): TileflowCaptureDat
 function validateStringBindings(value: unknown, field: string): Record<string, string> {
   const bindings = requireRecord(value, field);
   const entries = Object.entries(bindings);
-  if (entries.length === 0 || entries.length > 64) {
+  if (entries.length === 0 || entries.length > maximumReceiptBindingEntries) {
     throw invalidReceipt(`The baseline receipt has an invalid ${field} object.`);
   }
   return Object.fromEntries(
@@ -589,6 +624,70 @@ function verificationForTarget(target: 'application' | 'map'): TileflowCaptureVe
   return {data: state, style: state};
 }
 
+function assertCanonicalReceiptByteLimit(receipt: TileflowCaptureReceipt): void {
+  const serialized = `${serializeCanonicalJson(receipt)}\n`;
+  if (new TextEncoder().encode(serialized).byteLength > tileflowCaptureReceiptLimits.maximumBytes) {
+    throw invalidReceipt('The capture receipt exceeds the supported byte limit.');
+  }
+}
+
+function assertPlainReceiptData(
+  value: unknown,
+  path = 'receipt',
+  state: {ancestors: WeakSet<object>; nodes: number} = {
+    ancestors: new WeakSet<object>(),
+    nodes: 0,
+  },
+  depth = 0,
+): void {
+  if (
+    value === null ||
+    value === undefined ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  ) {
+    return;
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw invalidReceipt(`The baseline receipt has an executable or non-plain ${path} value.`);
+  }
+  if (nodeUtilTypes.isProxy(value)) {
+    throw invalidReceipt(`The baseline receipt has an executable proxy at ${path}.`);
+  }
+  if (depth > 32 || ++state.nodes > 4_096) {
+    throw invalidReceipt('The baseline receipt exceeds the supported structural limit.');
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw invalidReceipt(`The baseline receipt has a non-plain ${path} object.`);
+  }
+  if (state.ancestors.has(value)) {
+    throw invalidReceipt('The baseline receipt must not contain cyclic data.');
+  }
+  state.ancestors.add(value);
+  try {
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const keys = Reflect.ownKeys(descriptors);
+    state.nodes += keys.length;
+    if (state.nodes > 4_096) {
+      throw invalidReceipt('The baseline receipt exceeds the supported structural limit.');
+    }
+    for (const key of keys) {
+      if (typeof key !== 'string') {
+        throw invalidReceipt('The baseline receipt contains an unsupported symbol field.');
+      }
+      const descriptor = descriptors[key]!;
+      if (!('value' in descriptor) || !descriptor.enumerable) {
+        throw invalidReceipt('The baseline receipt contains an accessor or non-enumerable field.');
+      }
+      assertPlainReceiptData(descriptor.value, `${path}.${key}`, state, depth + 1);
+    }
+  } finally {
+    state.ancestors.delete(value);
+  }
+}
+
 function requireRecord(value: unknown, field: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw invalidReceipt(`The baseline receipt has an invalid ${field} object.`);
@@ -607,6 +706,18 @@ function requireExactKeys(value: Record<string, unknown>, expected: readonly str
 function requireIdentifier(value: unknown, field: string): string {
   const result = tileflowCaptureIdSchema.safeParse(value);
   if (!result.success) throw invalidReceipt(`The baseline receipt has an invalid ${field}.`);
+  return result.data;
+}
+
+function requirePortableIdentifier(value: unknown, field: string): string {
+  const result = tileflowPortableIdSchema.safeParse(value);
+  if (!result.success) throw invalidReceipt(`The baseline receipt has an invalid ${field}.`);
+  return result.data;
+}
+
+function requireConcreteTheme(value: unknown): string {
+  const result = tileflowThemeNameSchema.safeParse(value);
+  if (!result.success) throw invalidReceipt('The baseline receipt has an invalid scene.theme.');
   return result.data;
 }
 

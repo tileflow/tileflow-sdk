@@ -91,3 +91,34 @@ test('creates a stable success summary with the same required fields', () => {
     suggestion: 'No changes are required.',
   });
 });
+
+test('preserves top-level theme-audit diagnostics and their actionable suggestion', () => {
+  const document = createTileflowCommandFailureDocument(
+    'validate',
+    {
+      diagnostics: [
+        {
+          code: 'THEME_IMPLICIT_FIXED',
+          message: 'Visual color literal is implicitly fixed.',
+          path: 'modules.water.bodies.fill.color',
+          phase: 'theme-audit',
+          severity: 'error',
+          suggestion: 'Replace the literal with token.color(...) or fixed(value, {reason}).',
+        },
+      ],
+    },
+    '/tmp/tileflow-theme-audit',
+    {code: 'STYLE_INVALID', phase: 'style-validation'},
+  );
+
+  assert.deepEqual(document.diagnostics, [
+    {
+      phase: 'theme-audit',
+      code: 'THEME_IMPLICIT_FIXED',
+      path: 'modules.water.bodies.fill.color',
+      severity: 'error',
+      message: 'Visual color literal is implicitly fixed.',
+      suggestion: 'Replace the literal with token.color(...) or fixed(value, {reason}).',
+    },
+  ]);
+});

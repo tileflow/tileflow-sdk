@@ -69,6 +69,14 @@ test('interactive runtime resolves and reuses the MapLibre renderer', async () =
   assert.equal(typeof maplibregl.addProtocol, 'function');
 });
 
+test('initial renderer loading converges on a theme selected while it is in flight', async () => {
+  const source = await readFile(new URL('../src/TileflowMap.svelte', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(source, /runtimeStyle\s*!==\s*runtime\s*\|\|/u);
+  assert.match(source, /runtimeStyle\s*&&\s*runtimeStyle\s*!==\s*runtime/u);
+  assert.match(source, /themeController\.setTheme\(runtimeStyle\)/u);
+});
+
 test('keeps component exports aligned with the public props declaration', async () => {
   const implementation = await readFile(
     new URL('../src/TileflowMap.svelte', import.meta.url),

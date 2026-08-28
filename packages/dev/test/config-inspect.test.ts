@@ -1,12 +1,27 @@
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import test from 'node:test';
-import {defineMap, defineRootMap, parseTileflowMap} from '@tileflow/core';
+import {defineMap, defineRootMap, defineTheme, parseTileflowMap, token} from '@tileflow/core';
+import {defineModuleEffects, patchModuleLayer} from '@tileflow/core/recipe';
 import {inspectLoadedTileflowConfig} from '../src/inspect';
 
 test('inspects resolved lineage and merge provenance without source paths or secrets', () => {
   const cwd = resolve('/tmp/tileflow-inspect-fixture');
   const secret = `tf_live_${'b'.repeat(32)}`;
+  const rootTheme = defineTheme({
+    colorScheme: 'light',
+    id: 'root-light',
+    tokens: {color: {land: '#eeeeee', water: '#88bbdd'}},
+    typography: {font: 'Fixture'},
+    version: 1,
+  });
+  const childTheme = defineTheme(rootTheme, {
+    colorScheme: 'light',
+    id: 'child-light',
+    tokens: {color: {water: '#112233'}},
+    typography: {font: `/opt/private/${secret}`},
+    version: 2,
+  });
   const root = defineRootMap({
     id: 'root',
     name: 'Root',
@@ -22,14 +37,15 @@ test('inspects resolved lineage and merge provenance without source paths or sec
       land: {
         type: 'land',
         background: {
-          color: {
-            kind: 'expression',
-            value: ['literal', {[secret]: `${cwd}/private/${secret}`}],
-          },
+          color: token.color('land'),
         },
       },
     },
-    theme: {colors: {land: '#eeeeee'}, mode: 'light'},
+    defaultTheme: 'light',
+    themes: {light: rootTheme},
+    ...defineModuleEffects([
+      patchModuleLayer('land', 'land.background', {paint: {'fill-opacity': 0.75}}),
+    ]),
   });
   const child = defineMap({
     id: 'child',
@@ -42,13 +58,12 @@ test('inspects resolved lineage and merge provenance without source paths or sec
       url: `https://example.test/glyphs/${secret}/{fontstack}/{range}.pbf`,
     },
     terrain: {
+      hillshade: {accentColor: '#123456', exaggeration: 0.42},
       mode: 'hillshade',
       url: `./${secret}/terrain?token=${secret}#${secret}`,
     },
-    theme: {
-      colors: {water: '#112233'},
-      typography: {font: `/opt/private/${secret}`},
-    },
+    defaultTheme: 'light',
+    themes: {light: childTheme},
   });
   const resolved = parseTileflowMap(child);
   const loaded = {
@@ -98,33 +113,69 @@ test('inspects resolved lineage and merge provenance without source paths or sec
     (first.maps[0]?.resolved.terrain as {url?: string} | undefined)?.url,
     './tf_[redacted]/terrain?[redacted]#[redacted]',
   );
-  assert.deepEqual(
-    (
-      first.maps[0]?.resolved.modules as
-        | {land?: {background?: {color?: {value?: unknown[]}}}}
-        | undefined
-    )?.land?.background?.color?.value?.[1],
-    {'tf_[redacted]': './private/tf_[redacted]'},
-  );
   assert.equal(
-    (first.maps[0]?.resolved.theme as {typography?: {font?: string}} | undefined)?.typography?.font,
+    (first.maps[0]?.resolved.themes as {light?: {typography?: {font?: string}}} | undefined)?.light
+      ?.typography?.font,
     '(external path)',
   );
   assert.deepEqual(
-    first.maps[0]?.provenance.find((entry) => entry.path === 'theme.colors.water'),
+    first.maps[0]?.provenance.find((entry) => entry.path === 'themes.light.tokens.color.water'),
     {
       declared: true,
       inherited: false,
-      operation: 'defined',
-      path: 'theme.colors.water',
+      operation: 'overridden',
+      path: 'themes.light.tokens.color.water',
       sourceDepth: 1,
       sourceMap: 'child',
     },
   );
-  assert.equal(
-    first.maps[0]?.provenance.find((entry) => entry.path === 'theme.colors.land')?.sourceMap,
-    'root',
-  );
+  assert.equal(first.maps[0]?.themeContract.defaultTheme, 'light');
+  assert.deepEqual(first.maps[0]?.themeContract.tokenSchema.color, ['land', 'water']);
+  assert.equal(first.maps[0]?.themeContract.themes.light?.tokens.color.water, '#112233');
+  assert.deepEqual(first.maps[0]?.themeContract.audit, [
+    {
+      category: 'number',
+      code: 'THEME_IMPLICIT_FIXED',
+      effectKind: 'patch',
+      message:
+        'Visual number literal is implicitly fixed; use token.number(...) or fixed(value, {reason}).',
+      owner: 'land',
+      path: 'compilerEffects.land.background.patch.paint.fill-opacity',
+      phase: 'theme-audit',
+      scope: 'compiler-effect',
+      severity: 'warning',
+      suggestion:
+        'Replace the literal with token.number(...) or document the invariant with fixed(value, {reason}).',
+      target: 'land.background',
+      value: 0.75,
+    },
+    {
+      category: 'color',
+      code: 'THEME_IMPLICIT_FIXED',
+      message:
+        'Visual color literal is implicitly fixed; use token.color(...) or fixed(value, {reason}).',
+      path: 'terrain.hillshade.accentColor',
+      phase: 'theme-audit',
+      scope: 'terrain',
+      severity: 'error',
+      suggestion:
+        'Replace the literal with token.color(...) or document the invariant with fixed(value, {reason}).',
+      value: '#123456',
+    },
+    {
+      category: 'number',
+      code: 'THEME_IMPLICIT_FIXED',
+      message:
+        'Visual number literal is implicitly fixed; use token.number(...) or fixed(value, {reason}).',
+      path: 'terrain.hillshade.exaggeration',
+      phase: 'theme-audit',
+      scope: 'terrain',
+      severity: 'warning',
+      suggestion:
+        'Replace the literal with token.number(...) or document the invariant with fixed(value, {reason}).',
+      value: 0.42,
+    },
+  ]);
   const serialized = JSON.stringify(first);
   assert.doesNotMatch(serialized, /\/tmp\/tileflow-inspect-fixture|tf_live_|user:password|token=/u);
   assert.equal(serialized.includes('inputFiles'), false);
@@ -135,7 +186,15 @@ test('provenance depth disambiguates a wrapper with the same id as its parent', 
     id: 'streets',
     version: 1,
     root: {compiler: 'streets', compilerVersion: 1},
-    theme: {colors: {land: '#eeeeee'}},
+    defaultTheme: 'light',
+    themes: {
+      light: defineTheme({
+        colorScheme: 'light',
+        id: 'light',
+        tokens: {color: {land: '#eeeeee'}},
+        version: 1,
+      }),
+    },
     view: {zoom: 10},
   });
   const wrapper = defineMap({id: 'streets', version: 2, extends: root, view: {zoom: 12}});
@@ -169,7 +228,8 @@ test('provenance depth disambiguates a wrapper with the same id as its parent', 
     },
   );
   assert.equal(
-    inspection.maps[0]?.provenance.find(({path}) => path === 'theme.colors.land')?.sourceDepth,
+    inspection.maps[0]?.provenance.find(({path}) => path === 'themes.light.tokens.color.land')
+      ?.sourceDepth,
     0,
   );
 });
@@ -179,6 +239,10 @@ test('rejects unknown map selection with a structured inspection error', () => {
     id: 'main',
     version: 1,
     root: {compiler: 'streets', compilerVersion: 1},
+    defaultTheme: 'light',
+    themes: {
+      light: defineTheme({colorScheme: 'light', id: 'light', version: 1}),
+    },
   });
   const resolved = parseTileflowMap(root);
 

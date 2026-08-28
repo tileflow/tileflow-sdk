@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
@@ -25,19 +25,34 @@ test('emits production artifacts without adding a webpack config', async () => {
 
     const manifest = JSON.parse(
       await readFile(join(cwd, 'public/tileflow/manifest.json'), 'utf8'),
-    ) as {styles?: Record<string, string>};
+    ) as RuntimeManifest;
+    assert.equal(manifest.version, 1);
+    assert.equal(Object.hasOwn(manifest, 'kind'), false);
+    assert.equal(Object.hasOwn(manifest, 'styles'), false);
+    const map = manifest.maps.main;
+    assert.ok(map);
+    assert.equal(map.defaultTheme, 'light');
+    assert.deepEqual(map.systemThemes, {dark: 'dark', light: 'light'});
+    assert.deepEqual(Object.keys(map.themes).sort(), ['dark', 'light']);
     assert.match(
-      manifest.styles?.main ?? '',
-      /^\/tileflow\/generations\/[a-f0-9]{64}\/styles\/main\.json$/,
+      map.themes.light?.styleUrl ?? '',
+      /^\/tileflow\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/,
     );
-    const style = JSON.parse(
-      await readFile(join(cwd, 'public/tileflow/styles/main.json'), 'utf8'),
-    ) as {
+    assert.match(
+      map.themes.dark?.styleUrl ?? '',
+      /^\/tileflow\/generations\/[a-f0-9]{64}\/styles\/main\/dark\.json$/,
+    );
+    const [lightStyle, darkStyle] = await Promise.all([
+      readFile(join(cwd, 'public/tileflow/styles/main/light.json'), 'utf8').then(JSON.parse),
+      readFile(join(cwd, 'public/tileflow/styles/main/dark.json'), 'utf8').then(JSON.parse),
+    ]);
+    const style = lightStyle as {
       glyphs?: string;
       sources?: {tileflow?: {url?: string}};
       sprite?: string;
       version?: number;
     };
+    assert.equal((darkStyle as {version?: number}).version, 8);
     assert.equal(style.version, 8);
     assert.equal(style.sources?.tileflow?.url, 'https://api.tileflow.dev/tiles/world/tiles.json');
     assert.equal(style.glyphs, glyphUrl);
@@ -59,15 +74,20 @@ test('combines valid Next and Tileflow base paths without changing URL kind', as
       '',
       '/maps',
       'public/maps/manifest.json',
-      /^\/maps\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u,
+      /^\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u,
     ],
     [
       '/app',
       '/maps',
       'public/maps/manifest.json',
-      /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u,
+      /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u,
     ],
-    ['/app', '', 'public/manifest.json', /^\/app\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u],
+    [
+      '/app',
+      '',
+      'public/manifest.json',
+      /^\/app\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u,
+    ],
   ] as const;
 
   for (const [nextBasePath, tileflowBase, manifestPath, expectedStyleUrl] of cases) {
@@ -81,12 +101,39 @@ test('combines valid Next and Tileflow base paths without changing URL kind', as
         {base: tileflowBase, cwd},
       );
       await config.rewrites!();
-      const manifest = JSON.parse(await readFile(join(cwd, manifestPath), 'utf8')) as {
-        styles: {main: string};
-      };
-      assert.match(manifest.styles.main, expectedStyleUrl);
+      const manifest = JSON.parse(
+        await readFile(join(cwd, manifestPath), 'utf8'),
+      ) as RuntimeManifest;
+      assert.match(manifest.maps.main?.themes.light?.styleUrl ?? '', expectedStyleUrl);
     });
   }
+});
+
+test('preserves a Hosted manifest unless overwrite is explicitly enabled', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-hosted-'));
+  await linkWorkspacePackages(cwd);
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  t.after(async () => {
+    process.env.NODE_ENV = previousNodeEnv;
+    await rm(cwd, {force: true, recursive: true});
+  });
+  await writeFile(join(cwd, 'tileflow.config.ts'), rootConfig());
+  const manifestPath = join(cwd, 'public', 'tileflow', 'manifest.json');
+  await mkdir(join(cwd, 'public', 'tileflow'), {recursive: true});
+  const hosted = createHostedManifest();
+  await writeFile(manifestPath, `${JSON.stringify(hosted)}\n`);
+
+  const guarded = withTileflow({}, {cwd});
+  await assert.rejects(() => guarded.rewrites!(), {
+    code: 'HOSTED_MANIFEST_OVERWRITE_REFUSED',
+  });
+  assert.deepEqual(JSON.parse(await readFile(manifestPath, 'utf8')), hosted);
+
+  const optedIn = withTileflow({}, {cwd, overwriteHostedManifest: true});
+  await optedIn.rewrites!();
+  const replacement = JSON.parse(await readFile(manifestPath, 'utf8')) as RuntimeManifest;
+  assertLocalManifest(replacement);
 });
 
 test('rejects route traversal and publicDir escape before writing Next artifacts', async (t) => {
@@ -152,7 +199,7 @@ test('refreshes direct style requests after a config edit without requiring a ma
   try {
     await writeFile(configPath, configWithBackground('#112233'));
     const handlers = createTileflowRouteHandlers({cwd});
-    const request = new Request('http://localhost/tileflow/styles/main.json');
+    const request = new Request('http://localhost/tileflow/styles/main/light.json');
     const first = await handlers.GET(request);
     const firstStyle = await first.json();
     assert.equal(backgroundColor(firstStyle), '#112233');
@@ -167,11 +214,51 @@ test('refreshes direct style requests after a config edit without requiring a ma
 });
 
 function configWithBackground(background: string): string {
-  return rootConfig(`theme: {colors: {background: '${background}'}}`);
+  return rootConfig(background);
 }
 
-function rootConfig(extra?: string): string {
-  return `import {defineRootMap} from '@tileflow/core'; import {streetsIcons} from '@tileflow/maps'; export default defineRootMap({id: 'main', version: 1, root: {compiler: 'streets', compilerVersion: 1}, icons: [streetsIcons], glyphs: {kind: 'url', url: '${glyphUrl}', fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']}${extra ? `, ${extra}` : ''}});\n`;
+function rootConfig(background?: string): string {
+  const tokens = background
+    ? `, tokens: {color: {'surface.background': ${JSON.stringify(background)}}}`
+    : '';
+  return `import {defineRootMap, defineTheme} from '@tileflow/core'; import {streetsIcons, streetsThemes} from '@tileflow/maps'; export default defineRootMap({id: 'main', version: 1, root: {compiler: 'streets', compilerVersion: 1}, defaultTheme: 'light', systemThemes: {dark: 'dark', light: 'light'}, themes: {dark: streetsThemes.dark, light: defineTheme(streetsThemes.light, {id: 'fixture-light', version: 1, colorScheme: 'light'${tokens}})}, icons: [streetsIcons], glyphs: {kind: 'url', url: '${glyphUrl}', fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']}});\n`;
+}
+
+function createHostedManifest(): RuntimeManifest {
+  return {
+    apiUrl: 'https://api.example.test',
+    maps: {
+      main: {
+        defaultTheme: 'light',
+        environment: 'production',
+        mapId: 'map_main',
+        themes: {
+          light: {
+            colorScheme: 'light',
+            styleId: 'style_main',
+            styleUrl: 'https://styles.example.test/main/light.json',
+          },
+        },
+      },
+    },
+    version: 1,
+  };
+}
+
+function assertLocalManifest(manifest: RuntimeManifest): void {
+  assert.equal(manifest.version, 1);
+  assert.equal(manifest.apiUrl, undefined);
+  assert.equal(Object.hasOwn(manifest, 'kind'), false);
+  assert.equal(Object.hasOwn(manifest, 'styles'), false);
+  const map = manifest.maps.main;
+  assert.ok(map);
+  assert.equal(map.environment, undefined);
+  assert.equal(map.mapId, undefined);
+  assert.equal(map.themes.light?.styleId, undefined);
+  assert.match(
+    map.themes.light?.styleUrl ?? '',
+    /^\/tileflow\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u,
+  );
 }
 
 function backgroundColor(style: unknown): unknown {
@@ -184,3 +271,25 @@ function vectorUrl(style: unknown): unknown {
 }
 
 const glyphUrl = 'https://assets.example.test/base/exact/glyphs/{fontstack}/{range}.pbf';
+
+type RuntimeManifest = {
+  apiUrl?: string;
+  maps: Record<
+    string,
+    {
+      defaultTheme: string;
+      environment?: string;
+      mapId?: string;
+      systemThemes?: {dark: string; light: string};
+      themes: Record<
+        string,
+        {
+          colorScheme: 'dark' | 'light';
+          styleId?: string;
+          styleUrl: string;
+        }
+      >;
+    }
+  >;
+  version: 1;
+};

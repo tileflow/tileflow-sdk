@@ -6,6 +6,7 @@ import {buildings, type TileflowBuildingsModuleConfig} from '../modules/building
 import {labels} from '../modules/labels';
 import {land, type TileflowLandModuleConfig} from '../modules/land';
 import {landforms, type TileflowLandformsModuleConfig} from '../modules/landforms';
+import {nautical, type TileflowNauticalModuleConfig} from '../modules/nautical';
 import {poi} from '../modules/poi';
 import {roads} from '../modules/roads';
 import {type TileflowTransitModuleConfig, transit} from '../modules/transit';
@@ -25,6 +26,7 @@ export type TileflowStreetsModules = {
   labels?: TileflowLabelsModuleConfig;
   land?: TileflowLandModuleConfig;
   landforms?: TileflowLandformsModuleConfig;
+  nautical?: TileflowNauticalModuleConfig;
   poi?: TileflowPoiModuleConfig;
   roads?: TileflowRoadsModuleConfig;
   transit?: TileflowTransitModuleConfig;
@@ -42,7 +44,8 @@ const tileflowStreetsDefaultModules = {
   labels: labels(),
   land: land(),
   landforms: landforms(),
-  poi: poi({icons: 'essential'}),
+  nautical: nautical(),
+  poi: poi({icons: true}),
   roads: roads({
     modifiers: {
       construction: {

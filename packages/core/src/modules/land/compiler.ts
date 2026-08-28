@@ -115,7 +115,7 @@ export function compileLand(
         medical: {fill: {color: colors.landuse.medical, minZoom: 8, opacity: 0.62}},
         military: {fill: {color: colors.landuse.military, minZoom: 8, opacity: 0.5}},
         parking: {fill: {color: colors.landuse.parking, minZoom: 8, opacity: 0.62}},
-        railway: {fill: {color: colors.landuse.industrial, minZoom: 8, opacity: 0.62}},
+        railway: {fill: {color: colors.landuse.railway, minZoom: 8, opacity: 0.62}},
         recreation: {fill: {color: colors.landuse.recreation, minZoom: 8, opacity: 0.62}},
         residential: {fill: {color: colors.landuse.residential, minZoom: 8, opacity: 0.62}},
       },

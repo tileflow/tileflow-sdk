@@ -41,6 +41,7 @@ export async function verifyFrameworkViteCapture(
   ]);
 
   const vite = await createViteServer({
+    cacheDir: join(cwd, '.vite-cache'),
     configFile: false,
     logLevel: 'silent',
     plugins: [tileflow(), ...options.plugins],
@@ -54,7 +55,7 @@ export async function verifyFrameworkViteCapture(
   const manifestResponse = await fetch(`${appOrigin}/tileflow/manifest.json`);
   const manifestBody = await manifestResponse.text();
   assert.equal(manifestResponse.status, 200, manifestBody);
-  assert.equal((JSON.parse(manifestBody) as {version?: unknown}).version, 3);
+  assert.equal((JSON.parse(manifestBody) as {version?: unknown}).version, 1);
 
   const originalListen = Server.prototype.listen;
   let additionalListeners = 0;
@@ -156,31 +157,37 @@ export default defineMap({
   }),
   scenes: {
     cleanup: {
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 320, height: 480},
       target: {kind: 'application', path: '/', selector: '#cleanup-proof'}
     },
     image: {
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 320, height: 480},
       target: {kind: 'application', path: '/', captureId: 'image'}
     },
     'missing-map': {
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 320, height: 480},
       target: {kind: 'application', path: '/', captureId: 'missing-map'}
     },
     interactive: {
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 320, height: 480},
-      target: {kind: 'application', path: '/', captureId: 'interactive'}
+      target: {kind: 'application', path: '/', selector: '[data-tileflow-capture-id="interactive"]'}
     },
     popup: {
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 320, height: 480},
       target: {kind: 'application', path: '/', selector: '[data-tileflow-popup-probe]'}
     },
     'unresolved-image': {
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1},
       viewport: {width: 320, height: 480},
       target: {kind: 'application', path: '/', captureId: 'unresolved-image'}

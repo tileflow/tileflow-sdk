@@ -12,6 +12,7 @@ Install `maplibre-gl` alongside the package and import its CSS once in your app.
 
 <TileflowMap
   source={{kind: 'tileflow', map: 'madrid'}}
+  theme="system"
   center={[-3.7038, 40.4168]}
   zoom={12}
   mapOptions={{
@@ -28,13 +29,18 @@ provided. Camera resolution is the same in interactive and image modes: direct p
 `mapOptions`, then the published manifest view, then Tileflow's shared runtime defaults.
 
 Every map has exactly one discriminated `source`. Use `kind: 'tileflow'` with `map` and an optional
-`manifestUrl` for published delivery, or `kind: 'maplibre'` with a direct MapLibre style object or
-URL. Browser components do not compile `tileflow.config.ts`.
+`manifestUrl` for published delivery. `kind: 'maplibre'` is an unmanaged escape hatch for one direct
+style object or URL; it has no Tileflow theme identity, `system` selection, switching, or manifest
+traceability. Browser components do not compile `tileflow.config.ts`.
 
 Without `manifestUrl`, the exact default is `/tileflow/manifest.json`. If a bundler, framework base
 path, reverse proxy, or Tileflow plugin publishes it elsewhere, set the final public URL explicitly;
 the component does not guess it. Manifest 404s, unknown map IDs, unresolved styles, and unresolved
 image URLs enter `data-tileflow-state="error"`.
+
+`theme` selects a published theme name. Omission uses `defaultTheme`; `"system"` requires the map's
+explicit light/dark mapping. Switching preserves the MapLibre instance, camera, and interactions,
+and rolls back a failed style. `onThemeChange` receives transition state.
 
 ```svelte
 <TileflowMap
@@ -48,7 +54,7 @@ image URLs enter `data-tileflow-state="error"`.
 <TileflowMap
   source={{
     kind: 'maplibre',
-    style: 'https://api.tileflow.dev/maps/map_1234567890abcdef/style.json',
+    style: 'https://cdn.example.com/tileflow/styles/madrid/dark.json',
   }}
 />
 ```
@@ -94,7 +100,7 @@ owned by the shared MapLibre interaction runtime.
     {
       id: 'poi-details',
       popup: {content: {kind: 'view', name: 'poi-card'}},
-      target: {categories: ['food'], domain: 'poi', kind: 'semantic-feature'},
+      target: {categories: ['food-drink'], domain: 'poi', kind: 'semantic-feature'},
       tooltip: {content: {field: 'name', fallback: 'Restaurant', kind: 'field'}},
     },
   ];

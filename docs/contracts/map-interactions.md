@@ -372,16 +372,17 @@ The first POI artifact is embedded under versioned private Tileflow metadata in 
 JSON. That keeps the physical lookup atomic with the exact optimized style, works for direct style
 objects and hosted style URLs, and avoids a second fetch or a race between generations. It is not
 an application-facing style API: the MapLibre controller validates and consumes it internally.
-Runtime manifest version 3 remains strict and unchanged. Moving the artifact to a separate resource
-later would require an explicit manifest-version decision and coordinated self-hosted, Hosted,
-runtime, and capture support.
+Runtime manifest version 2 is strict and binds the canonical POI fields `category`, `type`, `icon`,
+`filter_rank`, `size_rank`, and `name`. It contains no fallback mapping for OpenMapTiles `class`,
+`subclass`, or `rank`. Moving the artifact to a separate resource later would require an explicit
+manifest-version decision and coordinated self-hosted, Hosted, runtime, and capture support.
 
 Physical IDs in the artifact are opaque runtime implementation details. They are necessarily
 inspectable by a browser that downloads the artifact, but applications do not author them, receive
 them in public callbacks, or receive compatibility guarantees for them. Public callbacks expose
 only normalized semantic features.
 
-POIs are the first semantic domain. Its v1 artifact requires one physical source/source-layer
+POIs are the first semantic domain. Its v2 artifact requires one physical source/source-layer
 namespace, so the public `(domain, featureId)` reference cannot collide across sources. The
 identity strategy is `maplibre-feature-id-if-present`: it describes how an observed feature ID is
 used, not a guarantee that every source feature has one. Pointer hit testing is limited to

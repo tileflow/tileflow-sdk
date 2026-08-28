@@ -36,7 +36,7 @@ export function registerFeatureInspectCommand(
     .option(
       '--properties <names>',
       'comma-separated properties to project',
-      'name,class,subclass,rank',
+      'name,category,type,icon,filter_rank,size_rank',
     )
     .option('--map <name>', 'exact configured map; defaults to the first map')
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)

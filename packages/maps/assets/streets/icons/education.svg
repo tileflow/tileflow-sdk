@@ -1,10 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
   <title>Education</title>
-  <desc>Original Tileflow school pictogram.</desc>
-  <rect x="2.25" y="3.25" width="19.5" height="19.5" rx="6.25" fill="#44515E" opacity=".14"/>
-  <rect x="2.25" y="2.25" width="19.5" height="19.5" rx="6.25" fill="#FFFFFF"/>
-  <rect x="4" y="4" width="16" height="16" rx="4.75" fill="#7B9EB0"/>
-  <g fill="none" stroke="#FFFFFF" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M6.75 8.15c2.05-.25 3.8.3 5.25 1.65 1.45-1.35 3.2-1.9 5.25-1.65v7.45c-2.05-.25-3.8.3-5.25 1.65-1.45-1.35-3.2-1.9-5.25-1.65zM12 9.8v7.45"/>
-  </g>
+  <desc>Tileflow POI disc with a Maki school pictogram, CC0-1.0.</desc>
+  <circle cx="12" cy="12.75" r="9.5" fill="#44515E" opacity=".16"/>
+  <circle cx="12" cy="12" r="9.5" fill="#FFFFFF"/>
+  <circle cx="12" cy="12" r="8" fill="#777876"/>
+  <path
+    fill="#FFFFFF"
+    transform="translate(6.375 6.375) scale(.75)"
+    d="m5.542 3.647-2.436-.647.443-1.63a.505.505 0 0 1 .618-.352l1.46.392a.5.5 0 0 1 .355.613l-.44 1.624Zm-4.52 7.356a.496.496 0 0 1-.005-.276l1.819-6.726 2.435.647-1.819 6.726a.499.499 0 0 1-.143.237l-1.457 1.347a.152.152 0 0 1-.247-.066l-.583-1.889ZM10 5c-2.25 0-3-.75-3-3 2.25 0 3 .75 3 3Zm-1.4 7.984c-1.37.21-3.126-1.706-3.52-3.8l.889-3.284a2.1 2.1 0 0 1 1.419-.533 2.71 2.71 0 0 1 1.564.489.964.964 0 0 0 1.089-.01 2.438 2.438 0 0 1 1.46-.479c.77 0 1.643.489 2.05 1.201 1.536 2.696-1.194 6.709-3.144 6.417a.867.867 0 0 1-.255-.093 1.427 1.427 0 0 0-1.302 0 .866.866 0 0 1-.25.092Z"
+  />
 </svg>

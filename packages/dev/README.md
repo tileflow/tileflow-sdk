@@ -27,19 +27,23 @@ prepared, and before the result reaches the core style compiler. The Node layer 
 the map into an internal build catalog, but that catalog is orchestration state rather than another
 public authoring model. The plan exposes its complete files and observed input graph, so build
 adapters emit and watch the same generation instead of reconstructing either list themselves. Production manifests
-point to content-addressed `generations/<sha256>/...` styles and sprites; those immutable files are
-installed before the manifest pointer changes. The disk writer also stages the complete plan,
+point to content-addressed `generations/<sha256>/...` theme styles and sprites; those immutable files are
+installed before the manifest pointer changes. Stable style paths are
+`styles/<map>/<theme>.json`; every manifest lookup resolves a concrete theme. The disk writer also stages the complete plan,
 records a managed-file inventory, rolls back caught filesystem failures, and removes only stale
 files named by its previous valid inventory. It retains the immediately preceding immutable
 generation during each replacement, so a client that already read the old manifest can finish its
 style and sprite requests; the next replacement retires that older generation. Stable `styles/`
-and `icons/` aliases remain for direct URL compatibility, but generation-consistent consumers
+and `icons/` paths remain available, but generation-consistent consumers
 resolve maps through `manifest.json`.
 
 Every plan also emits canonical `build-manifest.json` (schema version 1). For each map it records
-the leaf `mapVersion`, resolved lineage, effective icon/font source identities, inferred
-`dataRequirements`, Recipe ABI, and three separate SHA-256 values: `mapRevisionSha256` for the
-effective cartographic definition after `extends`, `styleSha256` for the compiled Style JSON, and
+the leaf `mapVersion`, resolved lineage, effective icon/font source identities, Recipe ABI, and
+one entry per concrete theme with `colorScheme`, identity, inferred legacy `dataRequirements`,
+multi-source `sourceRequirements`, and `styleSha256`. The multi-source contract records each
+referenced vector source independently and records raster DEM source ID, encoding, and tile size;
+it therefore distinguishes Bathymetry vector bands from optional relief without inventing vector
+fields. `mapRevisionSha256` identifies the effective cartographic definition after `extends`;
 `assetSetSha256` for that map's generated runtime resources. Data requirements are derived from the
 final Style layers and fields rather than copied from a manually maintained allowlist, so disabled
 or overridden modules do not claim data they no longer use. The Recipe ABI remains a separate
@@ -62,6 +66,7 @@ adapters through
 
 `createTileflowStyle`, `createTileflowStyles`, and artifact construction all enforce the same
 recursive JSON-value invariant and MapLibre style-spec semantics without fetching remote resources.
+The family API returns `styles[map][theme]`; it never flattens a default theme into a map alias.
 Invalid output throws `TileflowStyleValidationError` with at most 32 deterministic
 `map`/`path`/`message` issues; layer indexes are projected to stable layer IDs.
 
@@ -104,13 +109,53 @@ const fetch = createTileflowDevRequestHandler({
 });
 ```
 
-Map preview uses the exported map's `view`; scene preview uses committed camera and CSS viewport
-metadata from that same map. A scene does not repeat the map ID because its owner is implicit.
+Map preview uses the exported map's `view` and accepts one concrete `theme`; scene preview uses its
+committed concrete theme, camera, and CSS viewport metadata from that same map. A scene does not
+repeat the map ID because its owner is implicit.
 `resolveTileflowPreview()` exposes the validated selection for custom integrations.
 Application-target scenes remain the responsibility of the application's development server. The
 built-in preview records longitude, latitude, zoom, bearing, and pitch in the current URL, so browser
 refreshes and config-triggered reloads return to the same view. Removing those query parameters
 restores the configured camera.
+
+## Local comparison workbench and compiler inspection
+
+The CLI exposes the complete authoring surface through `tileflow preview --against-map ...` or
+`--against-config ...`. Custom local servers can compose the same shell around two existing dev
+handlers:
+
+```ts
+import {createTileflowComparisonRequestHandler} from '@tileflow/dev/server';
+
+const fetch = createTileflowComparisonRequestHandler({
+  left: {
+    basePath: '/left',
+    handler: leftHandler,
+    label: 'candidate / light',
+    previewUrl: '/left/',
+    sidecarUrl: '/left/__inspection/candidate/light.json',
+  },
+  right: {
+    basePath: '/right',
+    handler: rightHandler,
+    label: 'reference / light',
+    previewUrl: '/right/',
+    sidecarUrl: '/right/__inspection/reference/light.json',
+  },
+});
+```
+
+Each side handler retains ownership of its styles, fonts, sprites, events, diagnostics, and
+last-known-good artifact generation. The comparison router only owns the root HTML and strict
+dispatch to two disjoint same-origin route prefixes. Its synchronized camera, URL state,
+side-by-side/split/overlay/blink modes, rendered-feature inspector, zoom-curve sampling, sprite
+atlas, and scene/capture-command copying require no hosted service.
+
+Set `inspection: true` on `createTileflowBuildArtifacts` or
+`createTileflowArtifactSession` to compute `artifacts.styleInspections[map][theme]`. A dev handler
+serves an available sidecar at `/__inspection/<map>/<theme>.json`; otherwise that route is 404. The
+option is deliberately off by default. Sidecars remain in memory, do not alter Style bytes or
+manifest hashes, and are excluded from `getTileflowArtifactFiles()` and every stable build output.
 
 When a resolved map declares `fonts`, preparation reads its ordered directories and uses OpenType
 full names as the canonical IDs referenced by `text-font`. TTF, OTF, and WOFF2 inputs are supported;
@@ -316,10 +361,10 @@ export default defineMap({
 Directories apply left to right. `<id>.<ext>` publishes an icon as `<id>`;
 `<id>.pattern.<ext>` publishes the intrinsic-size pattern as `<id>`. The published ID must already
 be canonical lower-kebab-case. A later file replaces an earlier file only for the same exact ID;
-case-only collisions fail. Package maps export `streetsIcons`, `streetsDarkIcons`, `ferrarisIcons`,
+case-only collisions fail. Package maps export `streetsIcons`, `ferrarisIcons`,
 `haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`, and `verdantIcons`
-directory descriptors from `@tileflow/maps`. Cyberpunk and Siegfried also export
-`cyberpunkFonts` and `siegfriedFonts`. Preparation resolves package descriptors inside their owning
+directory descriptors from `@tileflow/maps`. Cyberpunk, Matrix, and Siegfried also export
+`cyberpunkFonts`, `matrixFonts`, and `siegfriedFonts`. Preparation resolves package descriptors inside their owning
 package, checks real-path containment, and compiles them through the same pipeline as a
 config-relative directory. There are no built-in/source/sprite selectors, mappings, icon-specific
 inheritance, or compatibility aliases.
@@ -354,7 +399,15 @@ try {
 ```
 
 The inspection resolves one config load into sorted maps, root-to-leaf lineage, declared paths, and
-leaf-level merge provenance. It never returns `inputFiles`, absolute filesystem paths, credentials,
+leaf-level merge provenance. Its `themeContract` exposes the default/system mapping, shared token
+schema, concrete resolved token values, typography and lighting, differences from the default, and
+stable `THEME_IMPLICIT_FIXED` diagnostics across modules, terrain, and compiler-owned effects. Each
+diagnostic carries a semantic scope and, for compiler effects, its owner, target, and effect kind,
+plus machine-readable severity and remediation. Colors, fonts, and images are followed through
+expression outputs; numeric diagnostics intentionally cover only direct visual scalars, excluding
+expression operands, zoom stops, tuples, placement, priority, and other structural numbers.
+Agents can therefore edit semantic roles without
+reverse-engineering compiler layers or parsing prose. It never returns `inputFiles`, absolute filesystem paths, credentials,
 URL queries, data URLs, or recognized secret formats. Structured summaries and diagnostics use the
 same required schema-version-1 fields and bounded safe suggestions so consumers do not need to
 parse human prose.
@@ -372,7 +425,7 @@ const inspection = await inspectTileflowFeatures(internalCatalog, 'madrid', {
   center: [-3.6927512, 40.4086555],
   zoom: 16,
   sourceLayers: ['poi'],
-  properties: ['name', 'class', 'subclass', 'rank'],
+  properties: ['name', 'category', 'type', 'icon', 'filter_rank', 'size_rank'],
   width: 512,
   height: 512,
   limit: 100,
@@ -398,19 +451,18 @@ const result = await compileTileflowIconPackages(internalCatalog, {
 });
 ```
 
-Streets declares `[streetsIcons]`; Streets Dark composes `[streetsIcons, streetsDarkIcons]`;
-Cyberpunk extends Streets and appends `cyberpunkIcons`; Matrix replaces Cyberpunk's icons with
-`[streetsIcons, matrixIcons]`. Ferraris, Härad, Siegfried, Soundings, and Verdant are separate
-first-party roots that declare only `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
-`[soundingsIcons]`, and `[verdantIcons]`, respectively; none composes Streets assets even though all
-roots use the semantic Streets compiler ABI. Härad's directory contains nine original Tileflow
+Streets declares `[streetsIcons]` and keeps light/dark image-token targets in that one closure;
+Cyberpunk and Matrix independently declare `[cyberpunkIcons]` and `[matrixIcons]`. Ferraris, Härad,
+Siegfried, Soundings, and Verdant declare only `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
+`[soundingsIcons]`, and `[verdantIcons]`, respectively. No official root composes another map's
+assets even though all use the semantic Streets compiler ABI. Härad's directory contains nine original Tileflow
 patterns inspired by Lantmäteriet's CC0 Häradsekonomiska kartan series from 1859–1934. Soundings owns ten
-original nautical symbols and patterns. None of the five independent roots imports or extends
-Streets. An application map may inherit a root's exact array, replace it, clear it with `[]`, or
+original nautical symbols and patterns. An application map may inherit a root's exact array,
+replace it, clear it with `[]`, or
 compose it explicitly with a spread.
-`modules.poi.icons: false`, a disabled POI module, or the internal POI `none` preset suppresses POI
-icon layers without moving asset ownership into dev. Module presets remain semantic module options;
-they are not maps or asset-provider presets.
+`modules.poi.icons: false` or a disabled POI module suppresses POI icon layers without moving asset
+ownership into dev. POI density is the numeric producer threshold 1–5; it is not an asset-provider
+preset.
 
 The hosted target enforces repository containment, portable icon IDs, safe SVG
 references, deterministic ordering, and the public package limits. Package-owned directories are

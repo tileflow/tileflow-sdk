@@ -21,12 +21,10 @@ test('World promotion auto-selects one map, fixes session mode, and writes a man
   const api = await createFakeApi(t, async (request) => {
     requestBody = JSON.parse(await readRequestBody(request)) as Record<string, unknown>;
     return {
-      changed: true,
-      deploymentId: 'dep_managed',
-      mapId: 'map_managed',
-      mapUrl: 'https://api.example.test/maps/map_managed/style.json',
-      styleId: 'sty_managed',
-      version: 1,
+      ...hostedDeploymentResponse('map_managed', ['dark', 'light'], {
+        changed: true,
+        version: 1,
+      }),
       worldPromotionId: 'wpr_12345678',
     };
   });
@@ -103,9 +101,7 @@ test('World promotion deploys only the selected map and preserves unrelated mani
     const body = JSON.parse(await readRequestBody(request)) as Record<string, unknown>;
     requests.push(body);
     return {
-      mapId: 'map_lisbon',
-      mapUrl: 'https://api.example.test/maps/map_lisbon/style.json',
-      styleId: 'sty_lisbon',
+      ...hostedDeploymentResponse('map_lisbon'),
       worldPromotionId: 'wpr_12345678',
     };
   });
@@ -113,17 +109,21 @@ test('World promotion deploys only the selected map and preserves unrelated mani
     fixture.manifestPath,
     `${JSON.stringify({
       apiUrl: api.url,
-      kind: 'hosted',
       maps: {
         madrid: {
+          defaultTheme: 'light',
           environment: 'madrid',
           mapId: 'map_existing',
-          styleId: 'style_existing',
-          styleUrl: 'https://api.example.test/maps/map_existing/style.json',
+          themes: {
+            light: {
+              colorScheme: 'light',
+              styleId: 'style_existing_light',
+              styleUrl: 'https://api.example.test/maps/map_existing/light.json',
+            },
+          },
         },
       },
-      styles: {madrid: 'https://api.example.test/maps/map_existing/style.json'},
-      version: 3,
+      version: 1,
     })}\n`,
   );
   const result = await runCli(
@@ -222,13 +222,54 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
   assert.deepEqual((requestBody as {policy?: unknown}).policy, {
     allowedOrigins: ['https://maps.example.test'],
   });
-  assert.equal(
-    (requestBody as {artifact?: {style?: {sprite?: unknown}}}).artifact?.style?.sprite,
-    'https://api.example.test/sprites/icp_1234567890abcdef/sprite',
-  );
+  const deployedStyles = (
+    requestBody as {
+      artifact?: {schemaVersion?: number; styles?: Record<string, {sprite?: unknown}>};
+    }
+  ).artifact;
+  assert.equal(deployedStyles?.schemaVersion, 3);
+  assert.deepEqual(Object.keys(deployedStyles?.styles ?? {}), ['dark', 'light']);
+  for (const style of Object.values(deployedStyles?.styles ?? {})) {
+    assert.equal(style.sprite, 'https://api.example.test/sprites/icp_1234567890abcdef/sprite');
+  }
 
   const manifest = await readFile(fixture.manifestPath, 'utf8');
-  assert.deepEqual((JSON.parse(manifest) as {maps: {madrid: {view?: unknown}}}).maps.madrid.view, {
+  const manifestDocument = JSON.parse(manifest) as {
+    maps: {
+      madrid: {
+        defaultTheme: string;
+        systemThemes?: {dark: string; light: string};
+        themes: Record<
+          string,
+          {
+            colorScheme: string;
+            fontFaces: unknown[];
+            revision?: string;
+            styleId?: string;
+            styleUrl: string;
+          }
+        >;
+        view?: unknown;
+      };
+    };
+    version: number;
+  };
+  assert.equal(manifestDocument.version, 1);
+  assert.equal(manifestDocument.maps.madrid.defaultTheme, 'light');
+  assert.deepEqual(manifestDocument.maps.madrid.systemThemes, {dark: 'dark', light: 'light'});
+  assert.deepEqual(Object.keys(manifestDocument.maps.madrid.themes), ['dark', 'light']);
+  assert.equal(manifestDocument.maps.madrid.themes.dark?.colorScheme, 'dark');
+  assert.equal(manifestDocument.maps.madrid.themes.light?.colorScheme, 'light');
+  for (const theme of Object.values(manifestDocument.maps.madrid.themes)) {
+    assert.deepEqual(theme.fontFaces, []);
+    assert.match(theme.revision ?? '', /^[a-f0-9]{64}$/u);
+    assert.match(theme.styleId ?? '', /^map_test_(?:dark|light)$/u);
+    assert.match(
+      theme.styleUrl,
+      /^https:\/\/api\.example\.test\/maps\/map_test\/(?:dark|light)\.json$/u,
+    );
+  }
+  assert.deepEqual(manifestDocument.maps.madrid.view, {
     center: [-3.7, 40.4],
     zoom: 11,
   });
@@ -240,12 +281,10 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
 test('deploy reports an idempotent hosted no-op without changing the manifest contract', async (t) => {
   const fixture = await createFixture(t);
   const api = await createFakeApi(t, async () => undefined, {
-    changed: false,
-    deploymentId: 'dep_existing',
-    mapId: 'map_test',
-    mapUrl: 'https://api.example.test/maps/map_test/style.json',
-    styleId: 'sty_test',
-    version: 7,
+    ...hostedDeploymentResponse('map_test', ['dark', 'light'], {
+      changed: false,
+      version: 7,
+    }),
   });
   const result = await runCli(
     fixture.directory,
@@ -265,22 +304,23 @@ test('deploy reports an idempotent hosted no-op without changing the manifest co
   assert.match(result.stdout, /Unchanged madrid \(v7\)\./);
   assert.doesNotMatch(result.stdout, /Published madrid/);
   const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
-    maps: {madrid: {styleUrl: string}};
+    maps: {madrid: {themes: {light: {styleUrl: string}}}};
   };
-  assert.equal(manifest.maps.madrid.styleUrl, 'https://api.example.test/maps/map_test/style.json');
+  assert.equal(
+    manifest.maps.madrid.themes.light.styleUrl,
+    'https://api.example.test/maps/map_test/light.json',
+  );
   assert.equal('deploymentId' in manifest.maps.madrid, false);
   assert.equal('version' in manifest.maps.madrid, false);
 });
 
-test('deploy reports a changed hosted version while accepting additive response fields', async (t) => {
+test('deploy reports a changed hosted version for one atomic theme family', async (t) => {
   const fixture = await createFixture(t);
   const api = await createFakeApi(t, async () => undefined, {
-    changed: true,
-    deploymentId: 'dep_new',
-    mapId: 'map_test',
-    mapUrl: 'https://api.example.test/maps/map_test/style.json',
-    styleId: 'sty_test',
-    version: 8,
+    ...hostedDeploymentResponse('map_test', ['dark', 'light'], {
+      changed: true,
+      version: 8,
+    }),
   });
   const result = await runCli(
     fixture.directory,
@@ -326,8 +366,15 @@ test('a failed singular deploy preserves the previous manifest and a retry conve
       JSON.stringify({
         changed,
         mapId: `map_${body.environment}`,
-        mapUrl: `https://cdn.example.test/maps/map_${body.environment}/style.json`,
-        styleId: `style_${body.environment}`,
+        themes: Object.fromEntries(
+          ['dark', 'light'].map((theme) => [
+            theme,
+            {
+              styleId: `style_${body.environment}_${theme}`,
+              styleUrl: `https://cdn.example.test/maps/map_${body.environment}/${theme}.json`,
+            },
+          ]),
+        ),
       }),
     );
   });
@@ -344,16 +391,20 @@ test('a failed singular deploy preserves the previous manifest and a retry conve
   const apiUrl = `http://127.0.0.1:${address.port}`;
   const originalManifest = `${JSON.stringify({
     apiUrl,
-    kind: 'hosted',
     maps: {
       previous: {
+        defaultTheme: 'light',
         environment: 'previous',
         mapId: 'map_previous',
-        styleUrl: 'https://cdn.example.test/maps/map_previous/style.json',
+        themes: {
+          light: {
+            colorScheme: 'light',
+            styleUrl: 'https://cdn.example.test/maps/map_previous/light.json',
+          },
+        },
       },
     },
-    styles: {previous: 'https://cdn.example.test/maps/map_previous/style.json'},
-    version: 3,
+    version: 1,
   })}\n`;
   await writeFile(fixture.manifestPath, originalManifest);
 
@@ -393,10 +444,10 @@ test('a failed singular deploy preserves the previous manifest and a retry conve
   assert.deepEqual(attempts, ['beta', 'beta']);
   assert.match(retry.stdout, /Published beta/u);
   const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
-    kind: string;
     maps: Record<string, {mapId: string}>;
+    version: number;
   };
-  assert.equal(manifest.kind, 'hosted');
+  assert.equal(manifest.version, 1);
   assert.equal(manifest.maps.beta?.mapId, 'map_beta');
   assert.deepEqual(Object.keys(manifest.maps), ['beta']);
 });
@@ -406,10 +457,17 @@ test('deploy refuses a self-hosted manifest unless replacement is explicit', asy
   await writeFile(
     fixture.manifestPath,
     `${JSON.stringify({
-      kind: 'self-hosted',
-      maps: {madrid: '/tileflow/styles/madrid.json'},
-      styles: {madrid: '/tileflow/styles/madrid.json'},
-      version: 3,
+      maps: {
+        madrid: {
+          defaultTheme: 'light',
+          systemThemes: {dark: 'dark', light: 'light'},
+          themes: {
+            dark: {colorScheme: 'dark', styleUrl: '/tileflow/styles/madrid/dark.json'},
+            light: {colorScheme: 'light', styleUrl: '/tileflow/styles/madrid/light.json'},
+          },
+        },
+      },
+      version: 1,
     })}\n`,
   );
   let requests = 0;
@@ -450,8 +508,12 @@ test('deploy refuses a self-hosted manifest unless replacement is explicit', asy
   );
   assert.equal(replaced.code, 0, `${replaced.stdout}\n${replaced.stderr}`);
   assert.equal(requests, 1);
-  const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {kind: string};
-  assert.equal(manifest.kind, 'hosted');
+  const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
+    apiUrl?: string;
+    version: number;
+  };
+  assert.equal(manifest.version, 1);
+  assert.equal(manifest.apiUrl, api.url);
 });
 
 test('hosted validation compiles local icons offline without credentials', async (t) => {
@@ -521,7 +583,7 @@ test('deploy rejects removed raw style overrides before any remote write', async
       id: 'madrid',
       icons: 'authored',
       fields: `icons: ['./icons'],
-modules: {poi: {type: 'poi', icons: 'essential', categories: ['food']}, roads: {type: 'roads', enabled: false}},
+modules: {poi: {type: 'poi', density: 3, icons: true, categories: ['food-drink']}, roads: {type: 'roads', enabled: false}},
 overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}]`,
     }),
   );
@@ -589,7 +651,8 @@ test('deploy rejects external vector data before any remote write', async (t) =>
   assert.equal(result.code, 1);
   assert.equal(requests, 0);
   assert.match(result.stdout, /Hosted deploy supports only Tileflow World data/);
-  assert.match(result.stdout, /Map madrid uses an external vector dataset/);
+  assert.match(result.stdout, /Map madrid theme dark uses an external vector dataset/);
+  assert.match(result.stdout, /Map madrid theme light uses an external vector dataset/);
   assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
 });
 
@@ -640,12 +703,15 @@ test('deploy uploads package-owned Cyberpunk fonts before binding and publishing
       };
       mapId: string;
       schemaVersion: number;
-      style: {metadata?: Record<string, unknown>};
+      styles: Record<string, {metadata?: Record<string, unknown>}>;
     };
     const binding = parsed.fontBundle as {contentHash: string};
-    const faces = artifact.style.metadata?.['tileflow:fontFaces'] as Array<{source: string}>;
-    assert.equal(artifact.schemaVersion, 2);
+    const faces = artifact.styles.dark?.metadata?.['tileflow:fontFaces'] as Array<{
+      source: string;
+    }>;
+    assert.equal(artifact.schemaVersion, 3);
     assert.equal(artifact.mapId, 'night');
+    assert.deepEqual(Object.keys(artifact.styles), ['dark']);
     assert.match(binding.contentHash, /^[a-f0-9]{64}$/u);
     assert.equal(artifact.buildManifest.maps.night?.sourceAssets.fonts.length, 2);
     assert.match(artifact.buildManifest.maps.night?.assetSetSha256 ?? '', /^[a-f0-9]{64}$/u);
@@ -655,11 +721,7 @@ test('deploy uploads package-owned Cyberpunk fonts before binding and publishing
       ),
     );
     return {
-      changed: true,
-      mapId: 'map_night',
-      mapUrl: 'https://api.example.test/maps/map_night/style.json',
-      styleId: 'sty_night',
-      version: 1,
+      ...hostedDeploymentResponse('map_night', ['dark'], {changed: true, version: 1}),
     };
   });
   const result = await runCli(
@@ -681,9 +743,34 @@ test('deploy uploads package-owned Cyberpunk fonts before binding and publishing
   assert.match(result.stdout, /Uploaded font bundle \(2 faces,/u);
   assert.match(result.stdout, /Published night \(v1\)\./u);
   const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
-    maps: {night: {mapId: string}};
+    maps: {
+      night: {
+        mapId: string;
+        themes: {
+          dark: {
+            colorScheme: string;
+            fontFaces?: Array<{source: string}>;
+            revision?: string;
+            styleId?: string;
+            styleUrl: string;
+          };
+        };
+      };
+    };
   };
   assert.equal(manifest.maps.night.mapId, 'map_night');
+  assert.equal(manifest.maps.night.themes.dark.colorScheme, 'dark');
+  assert.match(manifest.maps.night.themes.dark.revision ?? '', /^[a-f0-9]{64}$/u);
+  assert.equal(manifest.maps.night.themes.dark.styleId, 'map_night_dark');
+  assert.equal(
+    manifest.maps.night.themes.dark.styleUrl,
+    'https://api.example.test/maps/map_night/dark.json',
+  );
+  assert.ok(
+    manifest.maps.night.themes.dark.fontFaces?.every((face) =>
+      face.source.startsWith(`${api.url}/font-bundles/fnb_1234567890abcdef/fonts/`),
+    ),
+  );
 });
 
 test('deploy uploads generated icon files before posting sanitized style JSON', async (t) => {
@@ -718,7 +805,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
             lineage?: Array<{id: string; mapVersion: number}>;
             mapVersion?: number;
             recipe?: {compiler?: string; compilerVersion?: number};
-            styleSha256?: string;
+            themes?: Record<string, {styleSha256?: string}>;
           }
         >;
         provenance?: Record<string, unknown>;
@@ -726,11 +813,14 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
       };
       mapId?: string;
       schemaVersion?: number;
-      style?: {layers?: Array<{id?: string; layout?: Record<string, unknown>}>; sprite?: unknown};
+      styles?: Record<
+        string,
+        {layers?: Array<{id?: string; layout?: Record<string, unknown>}>; sprite?: unknown}
+      >;
     };
     const mapEntry = artifact.buildManifest?.maps?.madrid;
     assert.equal(artifact.mapId, 'madrid');
-    assert.equal(artifact.schemaVersion, 2);
+    assert.equal(artifact.schemaVersion, 3);
     assert.equal(artifact.buildManifest?.schemaVersion, 1);
     assert.equal(mapEntry?.mapVersion, 1);
     assert.equal(mapEntry?.recipe?.compiler, 'streets');
@@ -739,27 +829,32 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
       mapEntry?.lineage?.map((node) => node.id),
       ['madrid', 'streets'],
     );
-    assert.equal(typeof mapEntry?.styleSha256, 'string');
+    assert.equal(typeof mapEntry?.themes?.dark?.styleSha256, 'string');
+    assert.equal(typeof mapEntry?.themes?.light?.styleSha256, 'string');
     assert.ok(artifact.buildManifest?.provenance);
-    assert.equal(
-      artifact.style?.sprite,
-      `${api.url}/sprites/icp_12345678-1234-1234-1234-123456789abc/sprite`,
-    );
-    const foodPoiLayer = artifact.style?.layers?.find(
-      (layer) => layer.id === 'streets-poi-food-icon',
-    );
-    assert.equal(foodPoiLayer?.layout?.['icon-image'], 'food');
+    assert.deepEqual(Object.keys(artifact.styles ?? {}), ['dark', 'light']);
+    for (const style of Object.values(artifact.styles ?? {})) {
+      assert.equal(
+        style.sprite,
+        `${api.url}/sprites/icp_12345678-1234-1234-1234-123456789abc/sprite`,
+      );
+      const foodPoiLayer = style.layers?.find(
+        (layer) => layer.id === 'streets-poi-food-drink-icon',
+      );
+      const iconImage = JSON.stringify(foodPoiLayer?.layout?.['icon-image']);
+      assert.match(iconImage, /"get","icon"/u);
+      assert.match(iconImage, /"image","food"/u);
+    }
     assert.deepEqual(parsed.iconPackage, {
       contentHash: requests[0]?.url?.split('/').pop(),
       label: 'madrid',
     });
     assert.doesNotMatch(JSON.stringify(artifact), /\.\/icons|source-secret/);
     return {
-      changed: true,
-      mapId: 'map_test',
-      mapUrl: 'https://api.example.test/maps/map_test/style.json',
-      styleId: 'sty_test',
-      version: 1,
+      ...hostedDeploymentResponse('map_test', ['dark', 'light'], {
+        changed: true,
+        version: 1,
+      }),
     };
   });
   const result = await runCli(
@@ -1007,11 +1102,7 @@ test('one account session exchanges a visible target for a brief deploy capabili
     assert.equal(request.url, '/v1/styles');
     assert.equal(request.headers.authorization, `Bearer ${capability}`);
     await readRequestBody(request);
-    return {
-      mapId: 'map_test',
-      mapUrl: 'https://api.example.test/maps/map_test/style.json',
-      styleId: 'sty_test',
-    };
+    return hostedDeploymentResponse('map_test');
   });
   await writeAccountSession(fixture.directory, api.url);
 
@@ -1125,7 +1216,8 @@ test('validate --target hosted shares deploy rejection of external vector data',
 
   assert.equal(result.code, 1);
   assert.match(result.stdout, /Hosted deploy supports only Tileflow World data/);
-  assert.match(result.stdout, /Map madrid uses an external vector dataset/);
+  assert.match(result.stdout, /Map madrid theme dark uses an external vector dataset/);
+  assert.match(result.stdout, /Map madrid theme light uses an external vector dataset/);
   assert.doesNotMatch(result.stdout, /Config is valid|Hosted compatibility/);
 });
 
@@ -1180,7 +1272,10 @@ test('invalid hosted deploy and status responses fail closed and preserve the ma
   const fixture = await createFixture(t);
   const deployApi = await createFakeApi(t, async () => undefined, {
     mapId: 'map_test',
-    mapUrl: 'javascript:alert(1)',
+    themes: {
+      dark: {styleUrl: 'javascript:alert(1)'},
+      light: {styleUrl: 'https://api.example.test/maps/map_test/light.json'},
+    },
   });
   const originalManifest = existingHostedManifest(deployApi.url);
   await writeFile(fixture.manifestPath, originalManifest);
@@ -1275,13 +1370,43 @@ function existingHostedManifest(apiUrl: string): string {
   const styleUrl = 'https://styles.example.test/existing.json';
   return `${JSON.stringify({
     apiUrl,
-    kind: 'hosted',
     maps: {
-      existing: {environment: 'existing', mapId: 'map_existing', styleUrl},
+      existing: {
+        defaultTheme: 'light',
+        environment: 'existing',
+        mapId: 'map_existing',
+        themes: {
+          light: {
+            colorScheme: 'light',
+            styleId: 'style_existing_light',
+            styleUrl,
+          },
+        },
+      },
     },
-    styles: {existing: styleUrl},
-    version: 3,
+    version: 1,
   })}\n`;
+}
+
+function hostedDeploymentResponse(
+  mapId: string,
+  themeNames: readonly string[] = ['dark', 'light'],
+  options: {changed?: boolean; version?: number} = {},
+): Record<string, unknown> {
+  return {
+    ...(options.changed === undefined ? {} : {changed: options.changed}),
+    mapId,
+    themes: Object.fromEntries(
+      themeNames.map((theme) => [
+        theme,
+        {
+          styleId: `${mapId}_${theme}`,
+          styleUrl: `https://api.example.test/maps/${mapId}/${theme}.json`,
+        },
+      ]),
+    ),
+    ...(options.version === undefined ? {} : {version: options.version}),
+  };
 }
 
 async function createFixture(t: TestContext) {
@@ -1320,7 +1445,7 @@ async function createIconFixture(t: TestContext) {
       id: 'madrid',
       icons: 'authored',
       fields: `icons: ['./icons'],
-modules: {poi: {type: 'poi', icons: 'essential', categories: ['food']}, roads: {type: 'roads', enabled: false}},
+modules: {poi: {type: 'poi', density: 3, icons: true, categories: ['food-drink']}, roads: {type: 'roads', enabled: false}},
 name: 'Madrid'`,
     }),
   );
@@ -1333,9 +1458,7 @@ async function createFakeApi(
     request: import('node:http').IncomingMessage,
   ) => Promise<Record<string, unknown> | void>,
   result: Record<string, unknown> = {
-    mapId: 'map_test',
-    mapUrl: 'https://api.example.test/maps/map_test/style.json',
-    styleId: 'sty_test',
+    ...hostedDeploymentResponse('map_test'),
   },
 ) {
   const server = createServer(async (request, response) => {

@@ -1,6 +1,6 @@
 {
   "id": "complete-example",
-  "name": "Complete Tileflow modules example",
+  "name": "Complete Tileflow theme example",
   "version": 1,
   "root": {"compiler": "streets", "compilerVersion": 1},
   "glyphs": {
@@ -8,35 +8,91 @@
     "url": "https://cdn.example.com/glyphs/v1/{fontstack}/{range}.pbf",
     "fontStacks": ["Noto Sans Regular", "Noto Sans Bold"]
   },
-  "data": {
-    "type": "vector-tiles",
-    "attribution": "© OpenMapTiles © OpenStreetMap contributors",
-    "url": "https://example.com/tiles.json",
-    "schema": {
-      "type": "openmaptiles",
-      "contractVersion": 1,
-      "layers": {
-        "bathymetry": "bathymetry",
-        "businessCorridor": "business_corridor",
-        "circularFeature": "circular_feature",
-        "globalLandcover": "globallandcover",
-        "sidewalk": "sidewalk",
-        "streetFurniture": "street_furniture",
-        "tree": "tree"
+  "icons": [],
+  "themes": {
+    "light": {
+      "id": "complete-example-light",
+      "version": 1,
+      "colorScheme": "light",
+      "tokens": {
+        "color": {
+          "boundaries.default": "#C9D1D9",
+          "labels.halo": "#FFFFFF",
+          "labels.muted": "#727B84",
+          "labels.primary": "#3C4043",
+          "roads.casing": "#CBD1D8",
+          "roads.default": "#FFFFFF",
+          "roads.major": "#F4C95D",
+          "roads.primary": "#F4C95D",
+          "surface.background": "#F6F7F3",
+          "surface.building": "#E6E3DA",
+          "surface.land": "#F1F3ED",
+          "surface.park": "#CDE8B5",
+          "surface.water": "#A9D3F5"
+        },
+        "font": {
+          "default": "Noto Sans Regular",
+          "places": "Noto Sans Bold"
+        },
+        "image": {},
+        "number": {}
       },
-      "fields": {
-        "bathymetryMinDepth": "min_depth",
-        "bathymetrySortKey": "sort_key",
-        "circularInnerRadiusMeters": "inner_radius_m",
-        "circularKind": "circle_kind",
-        "circularOuterRadiusMeters": "outer_radius_m",
-        "circularRadiusAtZoom15": "radius_px_z15",
-        "circularRadiusMeters": "radius_m",
-        "direction": "direction"
+      "typography": {
+        "font": {"kind": "theme-token", "category": "font", "token": "default"},
+        "places": {
+          "font": {"kind": "theme-token", "category": "font", "token": "places"}
+        }
+      },
+      "lighting": {
+        "anchor": "viewport",
+        "color": "#FFFFFF",
+        "intensity": 0.15,
+        "position": [1.15, 210, 30]
+      }
+    },
+    "dark": {
+      "id": "complete-example-dark",
+      "version": 1,
+      "colorScheme": "dark",
+      "tokens": {
+        "color": {
+          "boundaries.default": "#526174",
+          "labels.halo": "#0B1220",
+          "labels.muted": "#9AA9B8",
+          "labels.primary": "#CBD5E1",
+          "roads.casing": "#263449",
+          "roads.default": "#45536A",
+          "roads.major": "#61738E",
+          "roads.primary": "#61738E",
+          "surface.background": "#0B1220",
+          "surface.building": "#202B3A",
+          "surface.land": "#151E2D",
+          "surface.park": "#20382B",
+          "surface.water": "#10324B"
+        },
+        "font": {
+          "default": "Noto Sans Regular",
+          "places": "Noto Sans Bold"
+        },
+        "image": {},
+        "number": {}
+      },
+      "typography": {
+        "font": {"kind": "theme-token", "category": "font", "token": "default"},
+        "places": {
+          "font": {"kind": "theme-token", "category": "font", "token": "places"}
+        }
+      },
+      "lighting": {
+        "anchor": "viewport",
+        "color": "#9FB6D0",
+        "intensity": 0.08,
+        "position": [1.15, 210, 30]
       }
     }
   },
-  "theme": {"mode": "light"},
+  "defaultTheme": "light",
+  "systemThemes": {"light": "light", "dark": "dark"},
   "projection": "globe",
   "terrain": "none",
   "view": {
@@ -47,194 +103,122 @@
   },
   "scenes": {
     "madrid-desktop": {
-      "camera": {"type": "center", "center": [-3.7038, 40.4168], "zoom": 13},
+      "theme": "dark",
+      "camera": {
+        "type": "center",
+        "center": [-3.7038, 40.4168],
+        "zoom": 13,
+        "pitch": 35,
+        "bearing": 0
+      },
       "viewport": {"width": 1280, "height": 800, "dpr": 1}
     }
   },
   "modules": {
-    "addresses": {
-      "type": "addresses",
-      "labels": {
-        "minZoom": 17,
-        "text": {"color": "#455468", "size": 11, "haloColor": "#FFFFFF", "haloWidth": 1}
-      }
-    },
-    "aeroways": {
-      "type": "aeroways",
-      "area": {"fill": {"color": "#E8EBEF"}},
-      "runway": {
-        "casing": {"color": "#CAD0D7", "width": 8},
-        "fill": {"color": "#FFFFFF", "width": 6}
-      },
-      "taxiway": {"fill": {"color": "#D7DDE3", "width": 2}},
-      "runwayRef": {"text": {"color": "#455468", "size": 11}}
-    },
-    "boundaries": {
-      "type": "boundaries",
-      "admin2": {"color": "#98A4AF", "width": 1.2},
-      "admin4": {"color": "#B5BEC7", "width": 0.8},
-      "disputed": {"color": "#C77878", "dash": [3, 2]},
-      "maritime": {"color": "#7FAFC5", "dash": [2, 2]}
-    },
-    "buildings": {
-      "type": "buildings",
-      "mode": "3d",
-      "businessCorridor": {"fill": {"color": "#F3E8D0", "opacity": 0.55}},
-      "flat": {
-        "fill": {"color": "#E2E5E9"},
-        "outline": {"color": "#C8CDD3", "width": 0.6}
-      },
-      "extrusion": {"color": "#D8DCE1", "opacity": 0.9, "verticalGradient": true}
-    },
-    "labels": {
-      "type": "labels",
-      "language": "auto",
-      "places": "all",
-      "roads": "streets",
-      "shields": "major",
-      "water": "all",
-      "aerodromeCodes": "iata",
-      "junctions": true,
-      "styles": {
-        "places": {
-          "city": {
-            "text": {"color": "#344255", "size": 16, "haloColor": "#FFFFFF", "haloWidth": 1.5}
-          }
-        },
-        "roads": {
-          "primary": {"text": {"color": "#566476", "size": 12}}
-        },
-        "water": {
-          "ocean": {"text": {"color": "#397C96", "size": 14}}
-        }
-      }
-    },
     "land": {
       "type": "land",
-      "background": {"color": "#F7F7F5"},
-      "globalLandcover": {"opacity": 0.75, "maxZoom": 8},
-      "landcover": {
-        "grass": {"fill": {"color": "#D8EBD3"}},
-        "sand": {"fill": {"color": "#F1E6C8"}},
-        "wood": {"fill": {"color": "#C8E0C5"}}
-      },
-      "landuse": {
-        "commercial": {"fill": {"color": "#F2E8DD"}},
-        "industrial": {"fill": {"color": "#ECE8E4"}},
-        "residential": {"fill": {"color": "#F1F1EF"}}
-      }
-    },
-    "landforms": {
-      "type": "landforms",
-      "elevation": true,
-      "classes": {
-        "peak": {"text": {"color": "#655849", "size": 12}},
-        "volcano": {"marker": {"color": "#9B665E", "radius": 3}}
-      }
-    },
-    "poi": {
-      "type": "poi",
-      "preset": "balanced",
-      "categories": ["food", "culture", "health", "transit"],
-      "color": "category",
-      "density": "balanced",
-      "icons": false,
-      "labels": "balanced",
-      "maxRank": {
-        "kind": "zoom",
-        "interpolation": "step",
-        "stops": [
-          [13, 14],
-          [16, 80],
-          [19, 500]
-        ]
-      },
-      "placement": {"coupleIconAndLabel": true, "iconPadding": 2, "textPadding": 2},
-      "styles": {
-        "food": {"maxRank": 80, "text": {"color": "#B45E3B"}},
-        "culture": {"maxRank": 60, "marker": {"color": "#7955A8", "radius": 3}}
-      }
-    },
-    "roads": {
-      "type": "roads",
-      "detail": "all",
-      "hierarchy": "clear",
-      "weight": "regular",
-      "outline": "strong",
-      "oneWayMarkers": true,
-      "extras": {"paths": true},
-      "classes": {
-        "primary": {
-          "surface": {
-            "casing": {"color": "#FFFFFF", "width": 10},
-            "fill": {
-              "color": "#AFC0D1",
-              "width": {
-                "kind": "zoom",
-                "interpolation": "linear",
-                "stops": [
-                  [8, 1],
-                  [16, 8]
-                ]
-              }
-            }
-          }
-        },
-        "footway": {"surface": {"fill": {"color": "#D9E1E5", "width": 1.2}}}
-      },
-      "areas": {
-        "pedestrian": {"fill": {"color": "#F2F3F4"}}
-      },
-      "modifiers": {
-        "construction": {"surface": {"fill": {"dash": [2, 1], "opacity": 0.7}}},
-        "unpaved": {"surface": {"fill": {"color": "#DED3C1"}}}
-      },
-      "serviceTypes": {
-        "driveway": {"widthScale": 0.75},
-        "parkingAisle": {"widthScale": 0.6}
-      },
-      "sidewalks": {
-        "surface": {"color": "#F8F8F6", "minZoom": 17}
-      },
-      "roundabouts": {
-        "casing": {"strokeColor": "#FFFFFF"},
-        "fill": {"strokeColor": "#AFC0D1"}
-      }
-    },
-    "transit": {
-      "type": "transit",
-      "ferry": {"color": "#6EAFCB", "dash": [3, 2], "width": 1.5},
-      "rail": {
-        "surface": {"color": "#87929D", "width": 1.2},
-        "tunnel": {"color": "#AEB6BE", "dash": [2, 2]},
-        "bridge": {"color": "#6F7B86", "width": 1.4}
-      }
-    },
-    "vegetation": {
-      "type": "vegetation",
-      "mode": "3d",
-      "flat": {"color": "#6E9E72", "radius": 3, "minZoom": 16},
-      "threeDimensional": {
-        "barkColor": "#8A755F",
-        "broadleafColors": ["#6E9E72", "#82AD7D"],
-        "coniferColors": ["#47785B", "#5D8B68"],
-        "heightScale": 1,
-        "crownScale": 1
+      "background": {
+        "color": {
+          "kind": "theme-token",
+          "category": "color",
+          "token": "surface.background"
+        }
       }
     },
     "water": {
       "type": "water",
-      "bathymetry": {"opacity": 0.7, "maxZoom": 10},
-      "bodies": {"fill": {"color": "#A8D8EF"}},
-      "intermittent": {
-        "bodies": {"fill": {"color": "#A8D8EF", "opacity": 0.65}},
-        "waterways": {"color": "#72BDD8", "dash": [2, 1]}
-      },
-      "waterways": {
-        "canal": {"color": "#72BDD8", "width": 1.2},
-        "river": {"color": "#72BDD8", "width": 2.5},
-        "stream": {"color": "#72BDD8", "width": 1}
+      "bodies": {
+        "fill": {
+          "color": {
+            "kind": "theme-token",
+            "category": "color",
+            "token": "surface.water"
+          },
+          "opacity": {
+            "kind": "theme-fixed",
+            "reason": "Water density remains invariant across this map's themes",
+            "value": 0.96
+          }
+        }
       }
+    },
+    "roads": {
+      "type": "roads",
+      "detail": "streets",
+      "hierarchy": "clear",
+      "classes": {
+        "primary": {
+          "surface": {
+            "casing": {
+              "color": {
+                "kind": "theme-token",
+                "category": "color",
+                "token": "roads.casing"
+              },
+              "width": {
+                "kind": "theme-fixed",
+                "reason": "Primary-road casing hierarchy remains invariant across themes",
+                "value": 8
+              }
+            },
+            "fill": {
+              "color": {
+                "kind": "theme-token",
+                "category": "color",
+                "token": "roads.primary"
+              },
+              "width": {
+                "kind": "theme-fixed",
+                "reason": "Primary-road width remains invariant across themes",
+                "value": 6
+              }
+            }
+          }
+        }
+      }
+    },
+    "labels": {
+      "type": "labels",
+      "places": "all",
+      "roads": "major",
+      "styles": {
+        "places": {
+          "city": {
+            "text": {
+              "color": {
+                "kind": "theme-token",
+                "category": "color",
+                "token": "labels.primary"
+              },
+              "font": {
+                "kind": "theme-token",
+                "category": "font",
+                "token": "places"
+              },
+              "haloColor": {
+                "kind": "theme-token",
+                "category": "color",
+                "token": "labels.halo"
+              },
+              "haloWidth": {
+                "kind": "theme-fixed",
+                "reason": "City-label halo remains invariant across themes",
+                "value": 1.5
+              },
+              "size": {
+                "kind": "theme-fixed",
+                "reason": "City-label hierarchy remains invariant across themes",
+                "value": 16
+              }
+            }
+          }
+        }
+      }
+    },
+    "poi": {
+      "type": "poi",
+      "density": 2,
+      "icons": false
     }
   }
 }

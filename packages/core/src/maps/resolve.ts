@@ -1,13 +1,13 @@
 import {mergeTileflowDesign} from '../cartography/merge';
 import {attachResolvedModuleEffects} from '../cartography/module-effects';
 import {
-  tileflowMapIdSchema,
-  tileflowStreetsCompilerVersion,
   type ResolvedTileflowMap,
   type ResolveMapOptions,
   type TileflowMap,
+  tileflowMapIdSchema,
   type TileflowMapRoot,
   type TileflowRootMap,
+  tileflowStreetsCompilerVersion,
 } from './types';
 
 export const tileflowMapDefaultMaxDepth = 64;
@@ -25,20 +25,22 @@ type MapMergeStrategy =
 /** Every public map key must choose one resolution strategy explicitly. */
 export const tileflowMapMergeStrategies = {
   data: 'atomic',
+  defaultTheme: 'atomic',
   delivery: 'leaf',
   extends: 'lineage',
   fonts: 'text-assets',
   glyphs: 'text-assets',
   icons: 'icons',
   id: 'identity',
-  light: 'deep',
+  marine: 'atomic',
   modules: 'modules',
   name: 'identity',
   projection: 'atomic',
   root: 'lineage',
   scenes: 'leaf',
+  systemThemes: 'atomic',
   terrain: 'atomic',
-  theme: 'deep',
+  themes: 'atomic',
   version: 'identity',
   view: 'deep',
 } as const satisfies Record<keyof TileflowMap, MapMergeStrategy>;
@@ -62,6 +64,10 @@ export function resolveMap(map: TileflowMap, options: ResolveMapOptions = {}): R
   for (let index = lineage.length - 1; index >= 0; index -= 1) {
     const current = lineage[index]!;
     const currentId = current.id;
+
+    // A theme collection and its browser scheme mapping form one semantic family. Replacing the
+    // collection clears an inherited mapping; the same map may declare a new mapping explicitly.
+    if (current.themes !== undefined) delete design.systemThemes;
 
     for (const key of Object.keys(current) as TileflowMapKey[]) {
       const value = current[key];

@@ -2,8 +2,8 @@ import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
-import {createStyle, resolveMap} from '@tileflow/core';
-import {cyberpunk, cyberpunkFonts, matrix, matrixIcons, streetsIcons} from '../src';
+import {createStyle, resolveMap, token} from '@tileflow/core';
+import {matrix, matrixFonts, matrixIcons} from '../src';
 
 const matrixAssetIds = ['matrix-crt-scanlines', 'matrix-data-grid', 'matrix-poi-node'] as const;
 const matrixColors = new Set([
@@ -26,7 +26,7 @@ const matrixColors = new Set([
   'rgba(0, 0, 0, 0)',
 ]);
 
-function compile(map: typeof cyberpunk | typeof matrix, ids: readonly string[]) {
+function compile(map: typeof matrix, ids: readonly string[]) {
   return createStyle(map, {
     preparedAssets: {icons: {ids, sprite: `/tileflow/icons/${map.id}/sprite`}},
   });
@@ -47,33 +47,48 @@ function collectColorLiterals(value: unknown, output = new Set<string>()): Set<s
   return output;
 }
 
-test('Matrix is a frozen Cyberpunk descendant with its own phosphor assets', () => {
+test('Matrix is a frozen self-contained root with only Matrix-owned assets', async () => {
   assert.equal(matrix.id, 'matrix');
   assert.equal(matrix.name, 'Matrix');
   assert.equal(matrix.version, 1);
-  assert.equal(matrix.extends, cyberpunk);
+  assert.equal('extends' in matrix, false);
+  assert.deepEqual(matrix.root, {compiler: 'streets', compilerVersion: 1});
+  assert.deepEqual(matrix.data, {
+    generation: 'v1',
+    selection: {kind: 'current', product: 'world-v1'},
+    type: 'tileflow-world',
+  });
+  assert.equal(matrix.projection, 'mercator');
+  assert.equal(matrix.terrain, 'none');
   assert.equal(Object.isFrozen(matrix), true);
 
   const resolved = resolveMap(matrix);
-  assert.deepEqual(resolved.icons, [streetsIcons, matrixIcons]);
-  assert.deepEqual(resolved.fonts, [cyberpunkFonts]);
+  assert.deepEqual(resolved.icons, [matrixIcons]);
+  assert.deepEqual(resolved.fonts, [matrixFonts]);
   assert.equal(resolved.glyphs, undefined);
-  assert.equal(resolved.theme?.mode, 'dark');
-  assert.equal(resolved.theme?.typography?.font, 'Oxanium Medium');
-  assert.equal(resolved.theme?.typography?.transform, 'uppercase');
+  assert.equal(resolved.defaultTheme, 'dark');
+  assert.equal(resolved.themes.dark.colorScheme, 'dark');
+  assert.equal(resolved.themes.dark.typography?.font, 'Oxanium Medium');
+  assert.equal(resolved.themes.dark.typography?.transform, 'uppercase');
   assert.deepEqual(resolved.view, {
     bearing: 0,
     center: [-3.6942, 40.4146],
     pitch: 0,
     zoom: 15.25,
   });
+
+  const source = await readFile(new URL('../src/official/matrix.ts', import.meta.url), 'utf8');
+  assert.match(source, /\bdefineRootMap\s*\(/u);
+  assert.doesNotMatch(source, /from\s+['"]\.\/(?:cyberpunk|streets|streets-themes)['"]/u);
+  assert.doesNotMatch(source, /\b(?:resolveMap|getResolvedModuleEffects|matrixizeValue)\b/u);
+  assert.doesNotMatch(source, /\bcyberpunk\b|cyber-/iu);
 });
 
 test('Matrix owns a restrained terminal grammar without Cyberpunk signatures', () => {
   const matrixStyle = compile(matrix, matrixAssetIds);
 
   assert.equal(matrixStyle.metadata?.['tileflow:map'], 'matrix');
-  assert.deepEqual(matrixStyle.metadata?.['tileflow:extends'], ['cyberpunk', 'streets']);
+  assert.equal(matrixStyle.metadata?.['tileflow:extends'], undefined);
   assert.equal(matrixStyle.sprite, '/tileflow/icons/matrix/sprite');
   assert.deepEqual(validateStyleMin(matrixStyle as never), []);
 
@@ -120,8 +135,14 @@ test('Matrix owns a restrained terminal grammar without Cyberpunk signatures', (
   );
 
   const resolved = resolveMap(matrix);
-  assert.equal(resolved.modules?.roads?.classes?.primary?.surface?.fill?.color, '#010704');
-  assert.equal(resolved.modules?.roads?.classes?.primary?.surface?.casing?.color, '#43DB60');
+  assert.deepEqual(
+    resolved.modules?.roads?.classes?.primary?.surface?.fill?.color,
+    token.color('roads.city.primary'),
+  );
+  const primaryCasingColor = resolved.modules?.roads?.classes?.primary?.surface?.casing?.color;
+  assert.equal(primaryCasingColor?.kind, 'theme-token');
+  assert.equal(primaryCasingColor?.category, 'color');
+  assert.match(primaryCasingColor?.token ?? '', /^roads\./u);
 });
 
 test('Matrix compiled cartography uses only its reviewed green-screen ramp', () => {

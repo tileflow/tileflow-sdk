@@ -36,3 +36,25 @@ test('rejects missing and malformed sources for JavaScript callers', () => {
       error instanceof TypeError && /Invalid Tileflow <Map> source/.test(error.message),
   );
 });
+
+test('accepts themes only for logical Tileflow sources', () => {
+  assert.deepEqual(
+    validateTileflowMapStyleInputs({source: {kind: 'tileflow', map: 'madrid'}, theme: 'system'}),
+    {ok: true},
+  );
+  assert.equal(
+    validateTileflowMapStyleInputs({source: {kind: 'tileflow', map: 'madrid'}, theme: ''}).ok,
+    false,
+  );
+  for (const theme of ['Dark', 'dark_mode', 'con']) {
+    assert.equal(
+      validateTileflowMapStyleInputs({source: {kind: 'tileflow', map: 'madrid'}, theme}).ok,
+      false,
+      theme,
+    );
+  }
+  assert.equal(
+    validateTileflowMapStyleInputs({source: {kind: 'maplibre', style}, theme: 'dark'}).ok,
+    false,
+  );
+});

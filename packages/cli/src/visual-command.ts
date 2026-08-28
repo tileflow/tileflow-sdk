@@ -18,6 +18,7 @@ import {
   type TileflowVisualComparison,
   type TileflowVisualReferenceAnalysis,
   type TileflowVisualReferenceAnalysisDocument,
+  type TileflowVisualRegion,
   validateTileflowVisualReferencePng,
 } from '@tileflow/capture';
 import {compareCodeUnits} from '@tileflow/core';
@@ -34,6 +35,11 @@ import {
   writeAtomicFileSet,
 } from './capture-output';
 import {withTileflowConfigSecretsHidden} from './config-execution';
+import {
+  assertTileflowVisualRegionFits,
+  parseTileflowVisualRegion,
+  registerVisualCompareCommand,
+} from './visual-compare-command';
 
 type VisualDiffOptions = {
   all?: boolean;
@@ -62,6 +68,7 @@ type VisualAnalyzeOptions = {
   json?: boolean;
   outputDir: string;
   reference: string;
+  region?: string;
 };
 
 export type TileflowVisualDiffJsonV1 = {
@@ -88,6 +95,7 @@ export type TileflowVisualUpdateJsonV1 = {
 export type TileflowVisualUpdateJsonEntry = {
   scene: string;
   map: string;
+  theme: string;
   target: 'map' | 'application';
   status: 'created' | 'updated' | 'repaired' | 'unchanged';
   baselinePath: string;
@@ -99,6 +107,7 @@ export type TileflowVisualUpdateJsonEntry = {
         status: 'valid';
         scene: string;
         map: string;
+        theme: string | null;
         target: 'map' | 'application';
         sha256: string;
         sceneSha256: string;
@@ -132,17 +141,20 @@ type BaselineFiles =
 
 export function registerVisualCommands(
   program: Command,
-  dependencies: {defaultConfigPath: string},
+  dependencies: {defaultConfigPath: string; openReport?: (path: string) => void},
 ): void {
   const visual = program
     .command('visual')
-    .description('Compare current map renders with references or approved baselines');
+    .description('Review deliberate variants, external references or approved baselines');
+
+  registerVisualCompareCommand(visual, dependencies);
 
   visual
     .command('analyze')
     .description('Compare one current scene render with any reference PNG')
     .argument('<scene>', 'one named committed capture scene')
     .requiredOption('--reference <path>', 'reference PNG; it is never modified')
+    .option('--region <x,y,width,height>', 'physical-pixel region for appearance metrics')
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)
     .option(
       '--output-dir <path>',
@@ -255,10 +267,13 @@ export function serializeTileflowVisualCommandJson(
 
 async function runVisualAnalyze(scene: string, options: VisualAnalyzeOptions): Promise<void> {
   validateVisualSelection([scene]);
+  const region =
+    options.region === undefined ? undefined : parseTileflowVisualRegion(options.region);
   const cwd = process.cwd();
   const referencePath = resolve(cwd, options.reference);
   const referencePng = await readVisualReference(referencePath);
-  validateTileflowVisualReferencePng(referencePng);
+  const referenceDimensions = validateTileflowVisualReferencePng(referencePng);
+  if (region) assertTileflowVisualRegionFits(region, referenceDimensions, 'reference PNG');
   const outputDirectory = await resolveVisualDirectory(cwd, options.outputDir, 'output');
   const actualPath = resolve(outputDirectory.path, `${scene}.actual.png`);
   const managedDiffPath = resolve(outputDirectory.path, `${scene}.diff.png`);
@@ -282,7 +297,9 @@ async function runVisualAnalyze(scene: string, options: VisualAnalyzeOptions): P
     if (!capture || result.captures.length !== 1) {
       throw new Error('Visual analysis requires exactly one captured scene.');
     }
-    const analysis = await analyzeTileflowCaptureReference(capture, referencePng);
+    const analysis = await analyzeTileflowCaptureReference(capture, referencePng, {
+      ...(region ? {region} : {}),
+    });
     const diffPath = analysis.diffPng ? managedDiffPath : undefined;
     const document = createTileflowVisualAnalyzeJson(
       analysis,
@@ -470,6 +487,7 @@ async function runVisualUpdate(scenes: string[], options: VisualUpdateOptions): 
       updates.push({
         scene: capture.scene,
         map: capture.map,
+        theme: capture.theme,
         target: capture.target,
         status,
         baselinePath: relativePath(cwd, files.pngPath),
@@ -533,6 +551,7 @@ async function resolvePreviousBaseline(
       status: 'valid',
       scene: receipt.scene.name,
       map: receipt.scene.map,
+      theme: 'theme' in receipt.scene ? receipt.scene.theme : null,
       target: receipt.scene.target,
       sha256: receipt.image.sha256,
       sceneSha256: receipt.scene.sha256,

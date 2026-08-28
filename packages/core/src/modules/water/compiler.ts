@@ -7,9 +7,14 @@ import {
   createAreaLayers,
 } from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
-import type {TileflowLineStyle, TileflowSymbolStyle} from '../../cartography/styles';
+import type {
+  TileflowFillStyle,
+  TileflowLineStyle,
+  TileflowSymbolStyle,
+} from '../../cartography/styles';
 import {expression, zoom} from '../../cartography/values';
-import {mix} from '../../themes';
+import type {ResolvedBathymetryRelief, TileflowBathymetryReliefConfig} from '../../marine';
+import {alpha, mix} from '../../themes';
 import type {TileflowWaterModuleConfig, TileflowWaterwayClass} from './index';
 
 const waterwayClasses: Record<TileflowWaterwayClass, readonly string[]> = {
@@ -110,7 +115,7 @@ export function compileWater(
       contributions.push({
         kind: 'layer',
         layer: area.layer,
-        localOrder: area.phase === 'fill' ? 3 : 4,
+        localOrder: area.phase === 'fill' ? 5 : 6,
         owner: 'water',
         slot: 'hydro',
         target: `water.intermittent.bodies.${area.phase}`,
@@ -118,34 +123,41 @@ export function compileWater(
     }
   }
 
-  const bathymetryLayer = layers.bathymetry;
-  const bathymetryDepthField = fields.bathymetryMinDepth;
-  const bathymetrySortField = fields.bathymetrySortKey;
+  const bathymetryProduct = context.marine?.bathymetry;
+  const sidecarBathymetry = bathymetryProduct?.vector;
+  const usePrimaryBathymetryFallback = context.marine === undefined;
+  const bathymetrySource = sidecarBathymetry?.sourceId ?? source;
+  const bathymetryLayer = sidecarBathymetry
+    ? 'bathymetry'
+    : usePrimaryBathymetryFallback
+      ? layers.bathymetry
+      : undefined;
+  const bathymetryDepthField = sidecarBathymetry
+    ? 'min_depth'
+    : usePrimaryBathymetryFallback
+      ? fields.bathymetryMinDepth
+      : undefined;
+  const bathymetrySortField = sidecarBathymetry
+    ? 'sort_key'
+    : usePrimaryBathymetryFallback
+      ? fields.bathymetrySortKey
+      : undefined;
   if (bathymetryLayer && bathymetryDepthField && bathymetrySortField) {
-    const waterColor =
-      typeof config.bodies?.fill?.color === 'string'
-        ? config.bodies.fill.color
-        : context.colors.hydro.water;
-    const deepWater = mix(waterColor, '#000000', 0.18);
+    const depth = context.colors.hydro.depth;
+    const depthStops = bathymetryDepthStops(depth);
+    const productBands = bathymetryProduct?.bands;
+    const bandOverrides =
+      productBands === false
+        ? ({visible: false} satisfies TileflowFillStyle)
+        : mergeTileflowDesign<TileflowFillStyle>(productBands ?? {}, config.bathymetry);
     const bathymetry = mergeTileflowDesign(
       {
         antialias: false,
         color: expression<string>([
-          'match',
+          'interpolate',
+          ['linear'],
           ['to-number', ['get', bathymetryDepthField], 0],
-          0,
-          waterColor,
-          -200,
-          mix(waterColor, deepWater, 0.2),
-          -1000,
-          mix(waterColor, deepWater, 0.4),
-          -2000,
-          mix(waterColor, deepWater, 0.6),
-          -4000,
-          mix(waterColor, deepWater, 0.8),
-          -6000,
-          deepWater,
-          waterColor,
+          ...depthStops,
         ]),
         maxZoom: 10,
         minZoom: 0,
@@ -157,7 +169,7 @@ export function compileWater(
         ]),
         visible: config.bodies?.fill?.visible !== false,
       },
-      config.bathymetry,
+      bandOverrides,
     );
     if (bathymetry.visible !== false) {
       contributions.push({
@@ -166,7 +178,7 @@ export function compileWater(
           {
             id: 'streets-bathymetry',
             type: 'fill',
-            source,
+            source: bathymetrySource,
             'source-layer': bathymetryLayer,
             layout: {
               'fill-sort-key': ['to-number', ['get', bathymetrySortField], 0],
@@ -182,7 +194,18 @@ export function compileWater(
     }
   }
 
-  if (request?.bathymetryContours !== undefined && bathymetryLayer && bathymetryDepthField) {
+  if (bathymetryProduct?.relief) {
+    appendBathymetryRelief(contributions, bathymetryProduct.relief, context);
+  }
+
+  const productContours = bathymetryProduct?.contours;
+  const contourRequest =
+    productContours === false
+      ? undefined
+      : productContours === undefined
+        ? request?.bathymetryContours
+        : mergeTileflowDesign<TileflowLineStyle>(productContours, request?.bathymetryContours);
+  if (contourRequest !== undefined && bathymetryLayer && bathymetryDepthField) {
     const bathymetryContours = mergeTileflowDesign<TileflowLineStyle>(
       {
         color: context.colors.hydro.label,
@@ -195,7 +218,7 @@ export function compileWater(
           [9, 0.7],
         ]),
       },
-      request.bathymetryContours,
+      contourRequest,
     );
     if (bathymetryContours.visible !== false) {
       contributions.push({
@@ -204,7 +227,7 @@ export function compileWater(
           {
             id: 'streets-bathymetry-contours',
             type: 'line',
-            source,
+            source: bathymetrySource,
             'source-layer': bathymetryLayer,
             filter: [
               'all',
@@ -215,7 +238,7 @@ export function compileWater(
           },
           bathymetryContours,
         ),
-        localOrder: 5,
+        localOrder: 7,
         owner: 'water',
         slot: 'hydro',
         target: 'water.bathymetryContours',
@@ -223,7 +246,14 @@ export function compileWater(
     }
   }
 
-  if (request?.bathymetryLabels !== undefined && bathymetryLayer && bathymetryDepthField) {
+  const productLabels = bathymetryProduct?.labels;
+  const labelRequest =
+    productLabels === false
+      ? undefined
+      : productLabels === undefined
+        ? request?.bathymetryLabels
+        : mergeTileflowDesign<TileflowSymbolStyle>(productLabels, request?.bathymetryLabels);
+  if (labelRequest !== undefined && bathymetryLayer && bathymetryDepthField) {
     const bathymetryLabels = mergeTileflowDesign<TileflowSymbolStyle>(
       {
         maxZoom: 10,
@@ -246,7 +276,7 @@ export function compileWater(
           size: 9,
         },
       },
-      request.bathymetryLabels,
+      labelRequest,
     );
     if (bathymetryLabels.visible !== false && bathymetryLabels.text?.visible !== false) {
       contributions.push({
@@ -255,7 +285,7 @@ export function compileWater(
           {
             id: 'streets-bathymetry-labels',
             type: 'symbol',
-            source,
+            source: bathymetrySource,
             'source-layer': bathymetryLayer,
             filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['has', bathymetryDepthField]],
           },
@@ -323,6 +353,175 @@ export function compileWater(
   }
 
   return contributions;
+}
+
+function appendBathymetryRelief(
+  contributions: TileflowLayerContribution[],
+  relief: ResolvedBathymetryRelief,
+  context: TileflowDomainCompileContext,
+): void {
+  const {sourceId, style} = relief;
+  const opacity = resolvedNumber(style.opacity, 0.22, 'bathymetry relief opacity');
+  if (opacity <= 0 || style.visible === false) return;
+
+  const depth = context.colors.hydro.depth;
+  const depthStops = bathymetryDepthStops(depth);
+  const transparentWater = alpha(context.colors.hydro.water, 0);
+  contributions.push({
+    kind: 'layer',
+    layer: applyReliefRange(
+      {
+        id: 'streets-bathymetry-color-relief',
+        type: 'color-relief',
+        source: sourceId,
+        paint: {
+          'color-relief-color': [
+            'interpolate',
+            ['linear'],
+            ['elevation'],
+            ...depthStops.slice(0, -2),
+            -0.01,
+            depth.m0,
+            0,
+            transparentWater,
+            1,
+            transparentWater,
+          ],
+          'color-relief-opacity': opacity,
+          resampling: 'linear',
+        },
+      },
+      style,
+    ),
+    localOrder: 3,
+    owner: 'water',
+    slot: 'hydro',
+    target: 'water.bathymetryRelief.color',
+  });
+
+  const multidirectional = style.multidirectional === true;
+  const direction = resolvedNumber(
+    style.illuminationDirection,
+    multidirectional ? 270 : 335,
+    'bathymetry relief illumination direction',
+  );
+  const altitude = resolvedNumber(
+    style.illuminationAltitude,
+    45,
+    'bathymetry relief illumination altitude',
+  );
+  const directions = multidirectional
+    ? [direction, direction + 45, direction + 90, direction + 135].map(
+        (value) => ((value % 360) + 360) % 360,
+      )
+    : direction;
+  const altitudes = multidirectional ? [altitude, altitude, altitude, altitude] : altitude;
+  const accent = resolvedColor(
+    style.accentColor,
+    context.colors.hydro.label,
+    'bathymetry relief accent color',
+  );
+  const highlight = resolvedColor(
+    style.highlightColor,
+    context.colors.hydro.water,
+    'bathymetry relief highlight color',
+  );
+  const shadow = resolvedColor(
+    style.shadowColor,
+    context.colors.hydro.label,
+    'bathymetry relief shadow color',
+  );
+  contributions.push({
+    kind: 'layer',
+    layer: applyReliefRange(
+      {
+        id: 'streets-bathymetry-relief',
+        type: 'hillshade',
+        source: sourceId,
+        paint: {
+          'hillshade-accent-color': alpha(accent, opacity),
+          'hillshade-exaggeration': resolvedNumber(
+            style.exaggeration,
+            0.18,
+            'bathymetry relief exaggeration',
+          ),
+          'hillshade-highlight-color': alpha(highlight, opacity),
+          'hillshade-illumination-altitude': altitudes,
+          'hillshade-illumination-anchor': style.illuminationAnchor ?? 'map',
+          'hillshade-illumination-direction': directions,
+          'hillshade-method': multidirectional ? 'multidirectional' : 'igor',
+          'hillshade-shadow-color': alpha(shadow, opacity),
+          resampling: 'linear',
+        },
+      },
+      style,
+    ),
+    localOrder: 4,
+    owner: 'water',
+    slot: 'hydro',
+    target: 'water.bathymetryRelief.hillshade',
+  });
+}
+
+function applyReliefRange<TLayer extends Record<string, unknown> & {id: string; type: string}>(
+  layer: TLayer,
+  style: TileflowBathymetryReliefConfig,
+): TLayer {
+  return {
+    ...layer,
+    ...(style.minZoom === undefined ? {} : {minzoom: style.minZoom}),
+    ...(style.maxZoom === undefined ? {} : {maxzoom: style.maxZoom}),
+  };
+}
+
+function resolvedNumber(value: unknown, fallback: number, label: string): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new TypeError(`Expected resolved numeric ${label}.`);
+  }
+  return value;
+}
+
+function resolvedColor(value: unknown, fallback: string, label: string): string {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'string') throw new TypeError(`Expected resolved ${label}.`);
+  return value;
+}
+
+function bathymetryDepthStops(depth: {
+  m0: string;
+  m200: string;
+  m2000: string;
+  m7000: string;
+}): Array<number | string> {
+  return [
+    -11_000,
+    depth.m7000,
+    -8_000,
+    mix(depth.m2000, depth.m7000, 2 / 3),
+    -6_000,
+    mix(depth.m2000, depth.m7000, 4 / 9),
+    -4_000,
+    mix(depth.m2000, depth.m7000, 2 / 9),
+    -2_000,
+    depth.m2000,
+    -1_000,
+    mix(depth.m200, depth.m2000, 4 / 9),
+    -500,
+    mix(depth.m200, depth.m2000, 1 / 6),
+    -200,
+    depth.m200,
+    -100,
+    mix(depth.m0, depth.m200, 1 / 2),
+    -50,
+    mix(depth.m0, depth.m200, 1 / 4),
+    -20,
+    mix(depth.m0, depth.m200, 1 / 10),
+    -10,
+    mix(depth.m0, depth.m200, 1 / 20),
+    0,
+    depth.m0,
+  ];
 }
 
 function classFilter(field: string, classes: readonly string[]): unknown[] {

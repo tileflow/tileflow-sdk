@@ -67,7 +67,6 @@ test('build manifest records effective package fonts and is emitted as canonical
   assert.deepEqual(entry.lineage, [
     {id: 'night', mapVersion: 1},
     {id: 'cyberpunk', mapVersion: 1},
-    {id: 'streets', mapVersion: 1},
   ]);
   assert.deepEqual(
     entry.sourceAssets.fonts.map(({family, sha256}) => ({family, sha256})),
@@ -128,9 +127,12 @@ test('changing the World delivery base changes Style identity, not map revision'
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
     `import {defineRootMap} from '@tileflow/core';
+import {streetsThemes} from '@tileflow/maps';
 export default defineRootMap({
   id: 'main', version: 1,
   root: {compiler: 'streets', compilerVersion: 1},
+  defaultTheme: 'light',
+  themes: {light: streetsThemes.light},
   data: {
     generation: 'v1',
     selection: {kind: 'current', product: 'world-v1'},
@@ -155,17 +157,20 @@ export default defineRootMap({
     second.buildManifest.maps.main?.mapRevisionSha256,
   );
   assert.notEqual(
-    first.buildManifest.maps.main?.styleSha256,
-    second.buildManifest.maps.main?.styleSha256,
+    first.buildManifest.maps.main?.themes.light?.styleSha256,
+    second.buildManifest.maps.main?.themes.light?.styleSha256,
   );
 });
 
 test('data requirements come only from effective compiled modules and fields', async (t) => {
   const cwd = await fixture(t, 'tileflow-map-requirements-effective-');
   const config = (poiOverride: string) => `import {defineMap, defineRootMap} from '@tileflow/core';
+import {streetsThemes} from '@tileflow/maps';
 const base = defineRootMap({
   id: 'base', version: 1,
   root: {compiler: 'streets', compilerVersion: 1},
+  defaultTheme: 'light',
+  themes: {light: streetsThemes.light},
   glyphs: {kind: 'url', url: 'https://fonts.example.test/{fontstack}/{range}.pbf', fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']},
   modules: {buildings: {type: 'buildings'}, poi: {type: 'poi', icons: false}}
 });
@@ -182,8 +187,10 @@ export default defineMap({
   );
   const disabled = await createTileflowBuildArtifacts({cwd});
 
-  const enabledLayers = enabled.buildManifest.maps.main!.dataRequirements.sourceLayers;
-  const disabledLayers = disabled.buildManifest.maps.main!.dataRequirements.sourceLayers;
+  const enabledLayers =
+    enabled.buildManifest.maps.main!.themes.light!.dataRequirements.sourceLayers;
+  const disabledLayers =
+    disabled.buildManifest.maps.main!.themes.light!.dataRequirements.sourceLayers;
   assert.ok(enabledLayers.some((layer) => layer.id === 'building'));
   assert.ok(enabledLayers.some((layer) => layer.id === 'poi'));
   assert.ok(disabledLayers.some((layer) => layer.id === 'building'));
@@ -191,10 +198,10 @@ export default defineMap({
     disabledLayers.some((layer) => layer.id === 'poi'),
     false,
   );
-  assert.ok(
-    enabledLayers
-      .find((layer) => layer.id === 'poi')
-      ?.fields.some((field) => field.name === 'class'),
+  const poiFields = enabledLayers.find((layer) => layer.id === 'poi')?.fields ?? [];
+  assert.deepEqual(
+    poiFields.map((field) => field.name).sort(),
+    ['category', 'filter_rank', 'name', 'name:en', 'name:latin', 'size_rank'].sort(),
   );
 });
 
@@ -207,9 +214,12 @@ async function iconFixture(t: test.TestContext, prefix: string): Promise<string>
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
     `import {defineRootMap} from '@tileflow/core';
+import {streetsThemes} from '@tileflow/maps';
 export default defineRootMap({
   id: 'main', version: 1,
   root: {compiler: 'streets', compilerVersion: 1},
+  defaultTheme: 'light',
+  themes: {light: streetsThemes.light},
   glyphs: {kind: 'url', url: 'https://fonts.example.test/{fontstack}/{range}.pbf', fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']},
   icons: ['./base-icons', './brand-icons'],
   modules: {poi: {type: 'poi', icons: false}}
@@ -220,7 +230,7 @@ export default defineRootMap({
 
 async function fixture(t: test.TestContext, prefix: string): Promise<string> {
   const cwd = await mkdtemp(join(tmpdir(), prefix));
-  await linkWorkspacePackages(cwd);
+  await linkWorkspacePackages(cwd, ['core', 'maps']);
   t.after(() => rm(cwd, {force: true, recursive: true}));
   return cwd;
 }

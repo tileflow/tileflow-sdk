@@ -30,8 +30,13 @@ test('validate and inspect emit deterministic agent JSON on stdout', async (t) =
   const secret = `tf_live_${'a'.repeat(40)}`;
   await writeFile(
     join(directory, 'tileflow.config.ts'),
-    `import {defineMap, defineRootMap} from '@tileflow/core';
+    `import {defineMap, defineRootMap, defineTheme} from '@tileflow/core';
+import {streetsThemes} from '@tileflow/maps';
 if (process.env.TILEFLOW_API_KEY) throw new Error('ambient API key reached config');
+const rootTheme = defineTheme(streetsThemes.light, {
+  id: 'root-light', version: 1, colorScheme: 'light',
+  tokens: {color: {'surface.land': '#eeeeee', 'surface.water': '#88bbdd'}}
+});
 const root = defineRootMap({
   id: 'root',
   name: 'Root',
@@ -43,14 +48,19 @@ const root = defineRootMap({
     fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']
   },
   modules: {poi: {type: 'poi', icons: false}},
-  theme: {colors: {land: '#eeeeee'}, mode: 'light'}
+  defaultTheme: 'light',
+  themes: {light: rootTheme}
 });
 export default defineMap({
   id: 'child',
   name: ${JSON.stringify(`${directory}/private/${secret}`)},
   version: 2,
   extends: root,
-  theme: {colors: {water: '#112233'}}
+  defaultTheme: 'light',
+  themes: {light: defineTheme(rootTheme, {
+    id: 'child-light', version: 2, colorScheme: 'light',
+    tokens: {color: {'surface.water': '#112233'}}
+  })}
 });
 `,
   );
@@ -81,6 +91,11 @@ export default defineMap({
         sourceDepth: number;
         sourceMap: string;
       }>;
+      themeContract: {
+        defaultTheme: string;
+        themes: Record<string, {tokens: {color: Record<string, string>}}>;
+        tokenSchema: {color: string[]};
+      };
     }>;
   };
   assert.deepEqual(
@@ -91,15 +106,24 @@ export default defineMap({
     ],
   );
   assert.deepEqual(
-    inspection.maps[0]?.provenance.find(({path}) => path === 'theme.colors.water'),
+    inspection.maps[0]?.provenance.find(
+      ({path}) => path === 'themes.light.tokens.color["surface.water"]',
+    ),
     {
       declared: true,
       inherited: false,
-      operation: 'defined',
-      path: 'theme.colors.water',
+      operation: 'overridden',
+      path: 'themes.light.tokens.color["surface.water"]',
       sourceDepth: 1,
       sourceMap: 'child',
     },
+  );
+  assert.equal(inspection.maps[0]?.themeContract.defaultTheme, 'light');
+  assert.ok(inspection.maps[0]?.themeContract.tokenSchema.color.includes('surface.land'));
+  assert.ok(inspection.maps[0]?.themeContract.tokenSchema.color.includes('surface.water'));
+  assert.equal(
+    inspection.maps[0]?.themeContract.themes.light?.tokens.color['surface.water'],
+    '#112233',
   );
 });
 
@@ -120,8 +144,12 @@ test('validate and inspect emit one safe structured failure on stderr', async (t
 
   await writeFile(
     join(directory, 'tileflow.config.ts'),
-    `import {defineRootMap} from '@tileflow/core';
-export default defineRootMap({id: 'main', version: 1, root: {compiler: 'streets', compilerVersion: 1}});
+    `import {defineRootMap, defineTheme} from '@tileflow/core';
+export default defineRootMap({
+  id: 'main', version: 1, root: {compiler: 'streets', compilerVersion: 1},
+  defaultTheme: 'light',
+  themes: {light: defineTheme({id: 'light', version: 1, colorScheme: 'light'})}
+});
 `,
   );
   const inspection = await runCli(directory, ['inspect', '--map', 'missing', '--json'], secret);
@@ -138,10 +166,12 @@ test('validate --json reports the exact editable path in a singular config', asy
   const directory = await createDirectoryFixture(t);
   await writeFile(
     join(directory, 'tileflow.config.ts'),
-    `import {defineRootMap} from '@tileflow/core';
+    `import {defineRootMap, defineTheme} from '@tileflow/core';
 export default defineRootMap({
   id: 'madrid', version: 1,
   root: {compiler: 'streets', compilerVersion: 1},
+  defaultTheme: 'light',
+  themes: {light: defineTheme({id: 'light', version: 1, colorScheme: 'light'})},
   view: {pitch: 99}
 });
 `,
@@ -152,6 +182,41 @@ export default defineRootMap({
   const document = JSON.parse(result.stderr) as CommandDocument;
   assert.equal(document.path, 'view.pitch');
   assert.equal(document.diagnostics[0]?.path, 'view.pitch');
+});
+
+test('validate --json preserves blocking theme-audit diagnostics for agents', async (t) => {
+  const directory = await createDirectoryFixture(t);
+  await writeFile(
+    join(directory, 'tileflow.config.ts'),
+    `import {defineMap, water} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+export default defineMap({
+  id: 'madrid', version: 1, extends: streets,
+  modules: {water: water({bodies: {fill: {color: '#123456'}}})}
+});
+`,
+  );
+
+  const result = await runCli(directory, ['validate', '--json'], 'no-secret');
+  assert.equal(result.code, 1);
+  assert.equal(result.stdout, '');
+  const document = JSON.parse(result.stderr) as CommandDocument;
+  assert.equal(document.phase, 'theme-audit');
+  assert.equal(document.code, 'THEME_IMPLICIT_FIXED');
+  assert.equal(document.path, 'modules.water.bodies.fill.color');
+  assert.match(document.suggestion, /token\.color/u);
+  assert.deepEqual(document.diagnostics, [
+    {
+      phase: 'theme-audit',
+      code: 'THEME_IMPLICIT_FIXED',
+      path: 'modules.water.bodies.fill.color',
+      severity: 'error',
+      message:
+        'Visual color literal is implicitly fixed; use token.color(...) or fixed(value, {reason}).',
+      suggestion:
+        'Replace the literal with token.color(...) or document the invariant with fixed(value, {reason}).',
+    },
+  ]);
 });
 
 function assertCommandContract(document: CommandDocument, command: string): void {

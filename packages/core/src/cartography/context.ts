@@ -1,11 +1,16 @@
 import type {ResolvedTileflowData} from '../data';
-import type {TileflowResolvedColors} from '../themes';
+import type {ResolvedMarine} from '../marine';
+import type {TileflowResolvedColors, TileflowResolvedImages} from '../themes';
 import type {ResolvedTileflowTypography, ResolvedTileflowTypographyStyle} from '../types';
 import type {TileflowTextStyle} from './styles';
 
 export type TileflowDomainCompileContext = {
   colors: TileflowResolvedColors;
   data: ResolvedTileflowData;
+  /** Concrete semantic image-role catalog from the selected theme. */
+  images: TileflowResolvedImages;
+  /** Explicit auxiliary marine selection; undefined preserves the World V1 bathymetry fallback. */
+  marine?: ResolvedMarine;
   typography: ResolvedTileflowTypography;
 };
 

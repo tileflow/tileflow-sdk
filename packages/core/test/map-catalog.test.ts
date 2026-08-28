@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createStyle} from '../src';
-import {createManifest, createStyleFromCatalog} from '../src/build';
+import {createManifest, createStyleFromCatalog, createStylesFromCatalog} from '../src/build';
 import {extendStreets} from './map-fixture';
 
 const main = extendStreets({id: 'main'});
@@ -36,14 +36,25 @@ test('compiles maps through the internal build catalog API', () => {
     style,
   );
   assert.throws(() => createStyleFromCatalog(project, 'constructor' as never), /Unknown/);
+  assert.deepEqual(createStylesFromCatalog(project, {mapAssets: {main: streetsPreparedAssets}}), {
+    main: {light: style},
+  });
 });
 
-test('creates manifest schema 3 without tile data plumbing', () => {
+test('creates the multi-theme manifest without tile data plumbing', () => {
   assert.deepEqual(createManifest(project, {styleBaseUrl: 'https://styles.example/'}), {
-    kind: 'self-hosted',
-    version: 3,
-    maps: {main: 'https://styles.example/styles/main.json'},
-    styles: {main: 'https://styles.example/styles/main.json'},
+    maps: {
+      main: {
+        defaultTheme: 'light',
+        themes: {
+          light: {
+            colorScheme: 'light',
+            styleUrl: 'https://styles.example/styles/main/light.json',
+          },
+        },
+      },
+    },
+    version: 1,
   });
 });
 

@@ -1,12 +1,25 @@
 # Third-party notices
 
-The official Streets, Streets Dark, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, and
-Verdant icon and pattern artwork published under `assets/` is original Tileflow artwork. It does not
-incorporate a third-party icon set.
+Except for the Streets POI pictograms documented below, the official themed Streets, Ferraris,
+Härad, Siegfried, Soundings, Cyberpunk, Matrix, and Verdant icon and pattern artwork published under
+`assets/` is original Tileflow artwork.
 
 This file is shipped with `@tileflow/maps` so future third-party assets have a stable place for
 their required notices. The repository's Apache-2.0 license and generated-output grant are
 authoritative for the original Tileflow artwork.
+
+## Maki POI pictograms
+
+The `coffee.svg`, `culture.svg`, `education.svg`, `food.svg`, `health.svg`, `lodging.svg`,
+`major-transit.svg`, `parking.svg`, `services.svg`, and `shopping.svg` assets under
+`assets/streets/icons/` contain pictograms adapted from the corresponding `cafe`, `museum`,
+`school`, `restaurant`, `hospital`, `lodging`, `rail-metro`, `parking`, `information`, and `shop`
+icons in `@mapbox/maki` 8.2.0, upstream commit
+`6ab50f392294aeb20b3af83e8a10067151876eb9`.
+
+Maki is dedicated to the public domain under CC0-1.0. Tileflow authored the circular containers,
+color system, sizing, composition, and SVG simplifications around those pictograms. The complete
+upstream license is included at `assets/streets/LICENSE-MAKI.txt`.
 
 The `ferraris` map and its nine SVG patterns are original Tileflow code and artwork. This package
 does not include or redistribute any FerrarGIS assets, code, style files, textures, fonts, source
@@ -47,12 +60,13 @@ general-purpose visual map, not a nautical chart for navigation.
 
 ## Siegfried Map reference and terrain data
 
-The `siegfried` map and its nine SVG patterns are original Tileflow code and artwork informed by
+The `siegfried` map and its nine light/dark SVG motif pairs are original Tileflow code and artwork informed by
 swisstopo's history, published examples, and 1873 conventional signs for the Siegfried Map. This
 package does not include or redistribute swisstopo scans, raster pixels, legend artwork, fonts,
 historical geospatial data, or map data. swisstopo is the source of the historical visual reference,
 not of any packaged asset bytes. `siegfried` is an official Tileflow map; it is not affiliated with
-or endorsed by swisstopo.
+or endorsed by swisstopo. Its dark theme is an original nocturnal engraver's-proof interpretation,
+not a reproduced or historically documented swisstopo colourway.
 
 - Historical reference: <https://www.swisstopo.admin.ch/en/siegfried-map>
 - 1873 conventional signs: <https://www.swisstopo.admin.ch/dam/en/sd-web/4OmbRYHBFpcd/Zeichenerklaerung-Siegfriedkarte-EN.pdf>
@@ -77,8 +91,8 @@ reference.
 
 ## Oxanium
 
-Cyberpunk includes unmodified Oxanium Medium and SemiBold font files under
-`assets/cyberpunk/fonts/`. Oxanium is copyright 2019 The Oxanium Project Authors and is
-distributed under the SIL Open Font License 1.1 included beside the font files.
-Matrix reuses that same packaged directory without duplicating the files. The canonical license
-filename consumed by Tileflow's generic font pipeline is `LICENSE.txt`.
+Cyberpunk and Matrix each include unmodified Oxanium Medium and SemiBold font files under their
+respective `assets/cyberpunk/fonts/` and `assets/matrix/fonts/` directories. Oxanium is copyright
+2019 The Oxanium Project Authors and is distributed under the SIL Open Font License 1.1 included
+beside both font copies. The canonical license filename consumed by Tileflow's generic font
+pipeline is `LICENSE.txt`.

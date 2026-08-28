@@ -19,23 +19,26 @@ import {
   getTileflowStyleFontFaces,
   type MapLibreStyle,
   serializeCanonicalJson,
+  tileflowMapIdSchema,
   type TileflowStyleOptions,
+  tileflowThemeNameSchema,
 } from '@tileflow/core';
 import {
   collectTileflowMapBuildLineage,
   createManifest,
   createStyleFromCatalog,
+  createStylesFromCatalog,
+  createStylesFromCatalogWithInspection,
   createTileflowMapBuildManifest,
   type TileflowBuildCatalog,
+  type TileflowBuildStyles,
   tileflowMapBuildManifestFileName,
   type TileflowMapBuildManifestV1,
   type TileflowMapBuildProvenanceV1,
   type TileflowPreparedMapAssets,
+  type TileflowStyleInspection,
 } from '@tileflow/core/build';
-import {
-  parseTileflowRuntimeManifest,
-  type TileflowSelfHostedManifest,
-} from '@tileflow/core/manifest';
+import {parseTileflowRuntimeManifest, type TileflowRuntimeManifest} from '@tileflow/core/manifest';
 import {
   defaultTileflowConfigPath,
   getTileflowMapNames,
@@ -102,16 +105,22 @@ export type TileflowBuildArtifactsOptions = {
   assetBaseUrl?: string;
   config?: string;
   cwd?: string;
+  /** Build a memory-only compiler sidecar for local authoring tools. */
+  inspection?: boolean;
   styleBaseUrl?: string;
 };
+
+export type TileflowBuildStyleInspections = Record<string, Record<string, TileflowStyleInspection>>;
 
 /** Compatibility shape consumed by sessions and capture callers. */
 export type TileflowBuildArtifacts = {
   assets: TileflowBuildAsset[];
   buildManifest: TileflowMapBuildManifestV1;
-  manifest: TileflowSelfHostedManifest;
+  manifest: TileflowRuntimeManifest;
   project: TileflowBuildCatalog;
-  styles: Record<string, MapLibreStyle>;
+  /** Optional local-only provenance. It is never serialized as a build artifact. */
+  styleInspections?: TileflowBuildStyleInspections;
+  styles: TileflowBuildStyles;
   watchPaths: string[];
 };
 
@@ -138,7 +147,7 @@ export type TileflowArtifactPlan = TileflowBuildArtifacts & {
 
 export type CreateTileflowArtifactPlanOptions = Pick<
   TileflowBuildArtifactsOptions,
-  'apiBaseUrl' | 'assetBaseUrl' | 'styleBaseUrl'
+  'apiBaseUrl' | 'assetBaseUrl' | 'inspection' | 'styleBaseUrl'
 > & {
   inputFiles?: readonly string[];
 };
@@ -172,7 +181,7 @@ export class TileflowHostedManifestOverwriteError extends Error {
 export function createTileflowManifest(
   project: TileflowBuildCatalog,
   options: TileflowManifestOptions = {},
-): TileflowSelfHostedManifest {
+): TileflowRuntimeManifest {
   return createManifest(project, options);
 }
 
@@ -188,28 +197,70 @@ export function createTileflowStyle(
 
 export function createTileflowStyles(
   project: TileflowBuildCatalog,
-  options: Omit<TileflowStyleOptions, 'preparedAssets'> & {
+  options: Omit<TileflowStyleOptions, 'preparedAssets' | 'theme'> & {
     mapAssets?: Readonly<Record<string, TileflowPreparedMapAssets>>;
   } = {},
-): Record<string, MapLibreStyle> {
+): TileflowBuildStyles {
   const {mapAssets, ...styleOptions} = options;
-  const styleEntries: Array<[string, MapLibreStyle]> = [];
+  const styles = createStylesFromCatalog(project, {
+    ...styleOptions,
+    mapAssets,
+  });
+  assertValidTileflowStyles(project, styles);
+
+  return styles;
+}
+
+function createTileflowStylesWithInspection(
+  project: TileflowBuildCatalog,
+  options: Omit<TileflowStyleOptions, 'preparedAssets' | 'theme'> & {
+    mapAssets?: Readonly<Record<string, TileflowPreparedMapAssets>>;
+  } = {},
+): {inspections: TileflowBuildStyleInspections; styles: TileflowBuildStyles} {
+  const {mapAssets, ...styleOptions} = options;
+  const inspected = createStylesFromCatalogWithInspection(project, {
+    ...styleOptions,
+    mapAssets,
+  });
+  const styles: TileflowBuildStyles = Object.fromEntries(
+    Object.entries(inspected).map(([mapName, family]) => [
+      mapName,
+      Object.fromEntries(
+        Object.entries(family).map(([themeName, result]) => [themeName, result.style]),
+      ),
+    ]),
+  );
+  const inspections: TileflowBuildStyleInspections = Object.fromEntries(
+    Object.entries(inspected).map(([mapName, family]) => [
+      mapName,
+      Object.fromEntries(
+        Object.entries(family).map(([themeName, result]) => [themeName, result.inspection]),
+      ),
+    ]),
+  );
+  assertValidTileflowStyles(project, styles);
+
+  return {inspections, styles};
+}
+
+function assertValidTileflowStyles(
+  project: TileflowBuildCatalog,
+  styles: TileflowBuildStyles,
+): void {
   const issues: TileflowStyleValidationIssue[] = [];
 
   for (const mapName of getTileflowMapNames(project).sort(compareCodeUnits)) {
-    const style = createStyleFromCatalog(project, mapName, {
-      ...styleOptions,
-      preparedAssets: mapAssets?.[mapName],
-    });
-    styleEntries.push([mapName, style]);
-    issues.push(...validateTileflowStyle(style, mapName));
+    const family = styles[mapName];
+    if (!family) continue;
+    for (const themeName of Object.keys(family).sort(compareCodeUnits)) {
+      const style = family[themeName]!;
+      issues.push(...validateTileflowStyle(style, `${mapName}/${themeName}`));
+    }
   }
 
   if (issues.length > 0) {
     throw new TileflowStyleValidationError(normalizeTileflowStyleValidationIssues(issues));
   }
-
-  return Object.fromEntries(styleEntries);
 }
 
 /** Compiles only a prepared project, keeping local source resolution out of core compilation. */
@@ -217,10 +268,18 @@ export async function createTileflowArtifactPlan(
   prepared: PreparedTileflowCatalog,
   options: CreateTileflowArtifactPlanOptions = {},
 ): Promise<TileflowArtifactPlan> {
-  const compiledStyles = createTileflowStyles(prepared.project, {
-    apiBaseUrl: options.apiBaseUrl,
-    mapAssets: prepared.mapAssets,
-  });
+  const inspected = options.inspection
+    ? createTileflowStylesWithInspection(prepared.project, {
+        apiBaseUrl: options.apiBaseUrl,
+        mapAssets: prepared.mapAssets,
+      })
+    : undefined;
+  const compiledStyles =
+    inspected?.styles ??
+    createTileflowStyles(prepared.project, {
+      apiBaseUrl: options.apiBaseUrl,
+      mapAssets: prepared.mapAssets,
+    });
   const preparedFonts = await prepareTileflowStyleFonts(prepared.project, compiledStyles, {
     assetBaseUrl: resolveAssetBaseUrl(options),
     baseDirectory: prepared.baseDirectory,
@@ -253,7 +312,7 @@ export async function createTileflowArtifactPlan(
                 fonts: preparedFonts.sourceIdentities[mapName] ?? [],
                 icons: prepared.mapIconSources[mapName] ?? [],
               },
-              style,
+              styles: style,
             },
           ];
         }),
@@ -275,6 +334,7 @@ export async function createTileflowArtifactPlan(
     buildManifest,
     manifest: stableManifest,
     project: prepared.project,
+    ...(inspected ? {styleInspections: inspected.inspections} : {}),
     styles,
     watchPaths: uniqueStrings([...inputs.files, ...inputs.directories]),
   };
@@ -332,11 +392,13 @@ function getStableTileflowArtifactFiles(artifacts: TileflowBuildArtifacts): Tile
       fileName: 'manifest.json',
       source: `${JSON.stringify(artifacts.manifest, null, 2)}\n`,
     },
-    ...Object.entries(artifacts.styles).map(([mapName, style]) => ({
-      contentType: 'application/json; charset=utf-8',
-      fileName: `styles/${mapName}.json`,
-      source: `${JSON.stringify(style, null, 2)}\n`,
-    })),
+    ...Object.entries(artifacts.styles).flatMap(([mapName, themes]) =>
+      Object.entries(themes).map(([themeName, style]) => ({
+        contentType: 'application/json; charset=utf-8',
+        fileName: `styles/${mapName}/${themeName}.json`,
+        source: `${JSON.stringify(style, null, 2)}\n`,
+      })),
+    ),
     ...artifacts.assets,
   ];
   return validateArtifactFiles(files);
@@ -360,35 +422,41 @@ function validateArtifactFiles(files: TileflowArtifactFile[]): TileflowArtifactF
 }
 
 function createGenerationManifest(
-  manifest: TileflowSelfHostedManifest,
+  manifest: TileflowRuntimeManifest,
   generation: string,
   assets: TileflowBuildAsset[],
-): TileflowSelfHostedManifest {
-  const retarget = (entries: Record<string, string>) =>
-    Object.fromEntries(
-      Object.entries(entries).map(([mapName, url]) => [
-        mapName,
-        insertGenerationInPublicUrl(url, `styles/${mapName}.json`, generation),
-      ]),
-    );
-
+): TileflowRuntimeManifest {
   return {
     ...manifest,
-    ...(manifest.fontFaces
-      ? {
-          fontFaces: Object.fromEntries(
-            Object.entries(manifest.fontFaces).map(([mapName, fontFaces]) => [
-              mapName,
-              fontFaces.map((fontFace) => ({
-                ...fontFace,
-                source: retargetLocalFontAssetUrl(fontFace.source, assets, generation),
-              })),
+    maps: Object.fromEntries(
+      Object.entries(manifest.maps).map(([mapName, map]) => [
+        mapName,
+        {
+          ...map,
+          themes: Object.fromEntries(
+            Object.entries(map.themes).map(([themeName, theme]) => [
+              themeName,
+              {
+                ...theme,
+                styleUrl: insertGenerationInPublicUrl(
+                  theme.styleUrl,
+                  `styles/${mapName}/${themeName}.json`,
+                  generation,
+                ),
+                ...(theme.fontFaces
+                  ? {
+                      fontFaces: theme.fontFaces.map((fontFace) => ({
+                        ...fontFace,
+                        source: retargetLocalFontAssetUrl(fontFace.source, assets, generation),
+                      })),
+                    }
+                  : {}),
+              },
             ]),
           ),
-        }
-      : {}),
-    maps: retarget(manifest.maps),
-    styles: retarget(manifest.styles),
+        },
+      ]),
+    ),
   };
 }
 
@@ -398,33 +466,32 @@ function createGenerationArtifactFiles(
 ): TileflowArtifactFile[] {
   const prefix = `generations/${generation}`;
   const stableFiles = getStableTileflowArtifactFiles(artifacts);
-  const immutableStyles = Object.entries(artifacts.styles).map(([mapName, style]) => {
-    const hasLocalSprite = artifacts.assets.some((asset) =>
-      asset.fileName.startsWith(`icons/${mapName}/`),
-    );
-    const sprite = (style as {sprite?: unknown}).sprite;
-    const generationStyleWithSprite =
-      hasLocalSprite && typeof sprite === 'string'
-        ? {
-            ...style,
-            // Both the style and its local sprite gain the same immutable
-            // generation prefix. Their relative relationship therefore stays
-            // unchanged; only root-relative and absolute public URLs need the
-            // generation inserted explicitly.
-            sprite: isRelativePublicUrl(sprite)
-              ? sprite
-              : insertGenerationInPublicUrl(sprite, `icons/${mapName}/sprite`, generation),
-          }
-        : style;
-    const generationStyle = replaceTileflowStyleFontSources(generationStyleWithSprite, (source) =>
-      retargetLocalFontAssetUrl(source, artifacts.assets, generation),
-    );
-    return {
-      contentType: 'application/json; charset=utf-8',
-      fileName: `${prefix}/styles/${mapName}.json`,
-      source: `${JSON.stringify(generationStyle, null, 2)}\n`,
-    } satisfies TileflowArtifactFile;
-  });
+  const immutableStyles = Object.entries(artifacts.styles).flatMap(([mapName, themes]) =>
+    Object.entries(themes).map(([themeName, style]) => {
+      const hasLocalSprite = artifacts.assets.some((asset) =>
+        asset.fileName.startsWith(`icons/${mapName}/`),
+      );
+      const sprite = (style as {sprite?: unknown}).sprite;
+      const generationStyleWithSprite =
+        hasLocalSprite && typeof sprite === 'string'
+          ? {
+              ...style,
+              // Every theme in one logical map shares the same immutable sprite closure.
+              sprite: isRelativePublicUrl(sprite)
+                ? sprite
+                : insertGenerationInPublicUrl(sprite, `icons/${mapName}/sprite`, generation),
+            }
+          : style;
+      const generationStyle = replaceTileflowStyleFontSources(generationStyleWithSprite, (source) =>
+        retargetLocalFontAssetUrl(source, artifacts.assets, generation),
+      );
+      return {
+        contentType: 'application/json; charset=utf-8',
+        fileName: `${prefix}/styles/${mapName}/${themeName}.json`,
+        source: `${JSON.stringify(generationStyle, null, 2)}\n`,
+      } satisfies TileflowArtifactFile;
+    }),
+  );
   const immutableAssets = artifacts.assets.map(
     (asset): TileflowArtifactFile => ({...asset, fileName: `${prefix}/${asset.fileName}`}),
   );
@@ -433,18 +500,28 @@ function createGenerationArtifactFiles(
 }
 
 function createFontAwareManifest(
-  manifest: TileflowSelfHostedManifest,
-  styles: Readonly<Record<string, MapLibreStyle>>,
-): TileflowSelfHostedManifest {
-  const fontFaces = Object.fromEntries(
-    Object.entries(styles)
-      .map(([mapName, style]) => [mapName, getTileflowStyleFontFaces(style)] as const)
-      .filter(([, definitions]) => definitions.length > 0),
+  manifest: TileflowRuntimeManifest,
+  styles: Readonly<Record<string, Readonly<Record<string, MapLibreStyle>>>>,
+): TileflowRuntimeManifest {
+  const maps = Object.fromEntries(
+    Object.entries(manifest.maps).map(([mapName, map]) => [
+      mapName,
+      {
+        ...map,
+        themes: Object.fromEntries(
+          Object.entries(map.themes).map(([themeName, theme]) => {
+            const style = styles[mapName]?.[themeName];
+            if (!style) {
+              throw new Error(`Missing compiled Tileflow style for ${mapName}/${themeName}.`);
+            }
+            const definitions = getTileflowStyleFontFaces(style);
+            return [themeName, {...theme, fontFaces: definitions}];
+          }),
+        ),
+      },
+    ]),
   );
-  if (Object.keys(fontFaces).length === 0) return manifest;
-  const parsed = parseTileflowRuntimeManifest({...manifest, fontFaces});
-  if (parsed.kind !== 'self-hosted') throw new Error('Expected a self-hosted Tileflow manifest.');
-  return parsed;
+  return parseTileflowRuntimeManifest({...manifest, maps});
 }
 
 function retargetLocalFontAssetUrl(
@@ -686,7 +763,7 @@ export async function assertTileflowSelfHostedManifestTarget(
 
   try {
     const manifest = parseTileflowRuntimeManifest(JSON.parse(source));
-    if (manifest.kind === 'hosted') {
+    if (isHostedRuntimeManifest(manifest)) {
       throw new TileflowHostedManifestOverwriteError(resolve(manifestPath));
     }
   } catch (error) {
@@ -694,6 +771,21 @@ export async function assertTileflowSelfHostedManifestTarget(
     // An unrelated or malformed file is not treated as Hosted state. The managed writer will
     // preserve it in its rollback backup before replacement.
   }
+}
+
+function isHostedRuntimeManifest(manifest: TileflowRuntimeManifest): boolean {
+  return Boolean(
+    manifest.apiUrl ||
+    Object.values(manifest.maps).some(
+      (map) =>
+        map.apiUrl ||
+        map.environment ||
+        map.mapId ||
+        map.usageMode ||
+        map.worldGeneration ||
+        Object.values(map.themes).some((theme) => theme.styleId),
+    ),
+  );
 }
 
 function assertValidTileflowStyle(style: MapLibreStyle, mapName: string): void {
@@ -1012,11 +1104,15 @@ function assertSafeManagedFileName(fileName: string): void {
 function assertTileflowArtifactFileName(fileName: string): void {
   assertSafeManagedFileName(fileName);
   const logicalName = fileName.replace(/^generations\/[a-f0-9]{64}\//, '');
+  const styleMatch = /^styles\/([^/]+)\/([^/]+)\.json$/u.exec(logicalName);
+  const iconMatch = /^icons\/([^/]+)\/sprite(?:@2x)?\.(?:json|png)$/u.exec(logicalName);
   if (
     fileName === 'manifest.json' ||
     fileName === tileflowMapBuildManifestFileName ||
-    /^styles\/[A-Za-z0-9_-]+\.json$/.test(logicalName) ||
-    /^icons\/[A-Za-z0-9_-]+\/sprite(?:@2x)?\.(?:json|png)$/.test(logicalName) ||
+    (styleMatch &&
+      tileflowMapIdSchema.safeParse(styleMatch[1]).success &&
+      tileflowThemeNameSchema.safeParse(styleMatch[2]).success) ||
+    (iconMatch && tileflowMapIdSchema.safeParse(iconMatch[1]).success) ||
     /^fonts\/[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{64}\.(?:otf|ttf|woff2)$/.test(logicalName) ||
     /^fonts\/licenses\/license-[a-f0-9]{64}\.txt$/.test(logicalName)
   ) {
@@ -1079,7 +1175,9 @@ function resolveAssetBaseUrl(options: TileflowBuildArtifactsOptions): string {
   if (options.styleBaseUrl && !isRelativePublicUrl(options.styleBaseUrl)) {
     return options.styleBaseUrl;
   }
-  return '..';
+  // Theme styles live at styles/<map>/<theme>.json. Their shared sprite and font closure lives
+  // at the artifact root, two owner-directory levels above the style document.
+  return '../..';
 }
 
 function isRelativePublicUrl(value: string): boolean {

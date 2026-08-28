@@ -38,7 +38,7 @@ test('Härad is a deeply frozen root with no Streets map dependency', async () =
   assert.equal(resolved.modules?.addresses?.enabled, false);
   assert.equal(resolved.modules?.aeroways?.enabled, false);
   assert.equal(resolved.modules?.labels?.roads, 'none');
-  assert.equal(resolved.modules?.poi?.preset, 'none');
+  assert.equal(resolved.modules?.poi?.enabled, false);
   assert.equal(resolved.modules?.roads?.oneWayMarkers, false);
   assert.deepEqual(resolved.modules?.roads?.sidewalks, {
     outline: {visible: false},

@@ -2,6 +2,52 @@ import {z} from 'zod/mini';
 
 export const tileflowInteractionSchemaVersion = 1;
 
+/** Closed POI category vocabulary shared with Tileflow World v1. */
+export const tileflowPoiCategories = [
+  'arts-entertainment',
+  'education',
+  'food-drink',
+  'landmark',
+  'lodging',
+  'medical',
+  'park-nature',
+  'public-services',
+  'religion',
+  'retail',
+  'sport-leisure',
+  'transport',
+  'visitor-amenity',
+] as const;
+export type TileflowPoiCategory = (typeof tileflowPoiCategories)[number];
+export type TileflowPoiFilterRank = 0 | 1 | 2 | 3 | 4 | 5;
+export type TileflowPoiSizeRank =
+  | 0
+  | 1
+  | 2
+  | 3
+  | 4
+  | 5
+  | 6
+  | 7
+  | 8
+  | 9
+  | 10
+  | 11
+  | 12
+  | 13
+  | 14
+  | 15
+  | 16;
+export type TileflowPoiProperties = Readonly<Record<string, TileflowInteractionJsonValue>> &
+  Readonly<{
+    category?: TileflowPoiCategory;
+    filter_rank?: TileflowPoiFilterRank;
+    icon?: string;
+    name?: string;
+    size_rank?: TileflowPoiSizeRank;
+    type?: string;
+  }>;
+
 export const tileflowInteractionLimits = {
   maxAnnotations: 1000,
   maxAriaLabelLength: 256,
@@ -306,7 +352,7 @@ export type TileflowAnnotation<
 
 export type TileflowInteractionTarget =
   | {id: string; kind: 'annotation'}
-  | {categories?: readonly string[]; domain: string; kind: 'semantic-feature'}
+  | {categories?: readonly TileflowPoiCategory[]; domain: string; kind: 'semantic-feature'}
   | {kind: 'style-layer'; layerId: string}
   | {kind: 'map'};
 
@@ -348,12 +394,28 @@ export type TileflowResolvedSemanticFeature = {
   properties: Readonly<Record<string, TileflowInteractionJsonValue>>;
 };
 
+export type TileflowResolvedPoiFeature = Omit<
+  TileflowResolvedSemanticFeature,
+  'category' | 'properties'
+> & {
+  category: TileflowPoiCategory;
+  properties: TileflowPoiProperties;
+};
+
 export type TileflowResolvedSemanticFeatureTarget = {
   bindingId?: string;
   coordinate: TileflowInteractionCoordinate;
   domain: string;
   feature: TileflowResolvedSemanticFeature;
   kind: 'semantic-feature';
+};
+
+export type TileflowResolvedPoiFeatureTarget = Omit<
+  TileflowResolvedSemanticFeatureTarget,
+  'domain' | 'feature'
+> & {
+  domain: 'poi';
+  feature: TileflowResolvedPoiFeature;
 };
 
 export type TileflowResolvedStyleFeatureTarget = {
@@ -555,7 +617,7 @@ const annotationTargetSelectorSchema = z.strictObject({
 const semanticFeatureTargetSelectorSchema = z.strictObject({
   categories: z.optional(
     z
-      .array(portableIdSchema)
+      .array(z.enum(tileflowPoiCategories))
       .check(z.minLength(1), z.maxLength(tileflowInteractionLimits.maxCategories)),
   ),
   domain: z

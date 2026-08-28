@@ -8,19 +8,13 @@ import type {
   TileflowSymbolStyle,
   TileflowTextStyle,
 } from '../../cartography/styles';
-import {
-  expression,
-  isTileflowZoomValue,
-  toMapLibreStyleValue,
-  zoom,
-} from '../../cartography/values';
+import {expression, zoom} from '../../cartography/values';
 import type {
   TileflowLabelLanguage,
   TileflowPoiCategoryStyle,
   TileflowPoiModuleConfig,
-  TileflowPoiRankLimit,
 } from '../../types';
-import {type ResolvedPoiModuleOptions, resolvePoi} from './index';
+import {type ResolvedPoiModuleOptions, resolvePoi, tileflowPoiImageRoles} from './index';
 
 export function compilePoi(
   request: TileflowPoiModuleConfig | undefined,
@@ -29,18 +23,10 @@ export function compilePoi(
 ): TileflowLayerContribution[] {
   if (request?.enabled === false) return [];
   const semantics = resolvePoi(request);
-  if (semantics.mode === 'none') return [];
-  const categories = [...new Set(semantics.categories ?? Object.keys(semantics.classMapping))];
   const result: TileflowLayerContribution[] = [];
   const {sourceId: source, schema} = context.data;
-  const claimedClasses = new Set<string>();
 
-  for (const [index, category] of categories.entries()) {
-    const mappedClasses = [...new Set(semantics.classMapping[category] ?? [category])];
-    const excludedClasses = [...claimedClasses];
-    const classes = mappedClasses.filter((value) => !claimedClasses.has(value));
-    for (const value of mappedClasses) claimedClasses.add(value);
-    if (classes.length === 0) continue;
+  for (const [index, category] of semantics.categories.entries()) {
     const categoryColor =
       semantics.color === 'category'
         ? (context.colors.poi[category as keyof typeof context.colors.poi] ??
@@ -48,7 +34,6 @@ export function compilePoi(
         : context.colors.poi.label;
     const defaults = {
       icon: {
-        image: category,
         optional: !semantics.placement.coupleIconAndLabel,
         padding: semantics.placement.iconPadding,
         size:
@@ -79,32 +64,38 @@ export function compilePoi(
       }
     >(defaults, request?.styles?.[category]);
     const markerStyle = style.marker ? resolveMarkerStyle(style) : undefined;
-    const showText = semantics.labels !== 'none' && style.text.visible !== false;
-    const showIcon = Boolean(semantics.icons) && style.icon.visible !== false;
+    const showText = semantics.labels && style.text.visible !== false;
+    const showIcon = semantics.icons && style.icon.visible !== false;
+    if (showIcon && style.icon.image === undefined) {
+      style = {
+        ...style,
+        icon: {
+          ...style.icon,
+          image: resolvePoiImage(category, context, schema.fields.poiIcon),
+        },
+      };
+    }
     style = withPoiTextClearance(style, showText && showIcon);
-    const configuredRank = style.maxRank ?? semantics.maxRank;
-    const densityRank = densityRankLimit(semantics.density);
-    const textRank = showText ? labelRankLimit(semantics.labels) : 0;
-    const iconRank = showIcon ? iconRankLimit(semantics.icons) : 0;
 
     if (markerStyle && markerStyle.visible !== false) {
       const base = createPoiLayer({
-        classes,
-        classField: schema.fields.class,
-        excludedClasses,
+        category,
+        categoryField: schema.fields.poiCategory,
+        density: semantics.density,
+        filterRankField: schema.fields.poiFilterRank,
         id: `streets-poi-${category}-marker`,
         minZoom: semantics.minZoom,
-        rankField: schema.fields.rank,
-        rankLimit: configuredRank ?? densityRank,
+        sizeRankField: schema.fields.poiSizeRank,
         source,
         sourceLayer: schema.layers.poi,
-        subclassField: schema.fields.subclass,
       });
       const markerLayer = applyCircleStyle(
         {
           ...base,
           type: 'circle',
-          layout: {'circle-sort-key': rankSortKey(schema.fields.rank)},
+          layout: {
+            'circle-sort-key': poiSortKey(schema.fields.poiFilterRank, schema.fields.poiSizeRank),
+          },
         },
         markerStyle,
       );
@@ -113,16 +104,15 @@ export function compilePoi(
 
     if (semantics.placement.coupleIconAndLabel && showText && showIcon) {
       let layer = createPoiLayer({
-        classes,
-        classField: schema.fields.class,
-        excludedClasses,
+        category,
+        categoryField: schema.fields.poiCategory,
+        density: semantics.density,
+        filterRankField: schema.fields.poiFilterRank,
         id: `streets-poi-${category}`,
         minZoom: semantics.minZoom,
-        rankField: schema.fields.rank,
-        rankLimit: configuredRank ?? minimumRankLimit(densityRank, textRank, iconRank),
+        sizeRankField: schema.fields.poiSizeRank,
         source,
         sourceLayer: schema.layers.poi,
-        subclassField: schema.fields.subclass,
       });
       layer = applySymbolStyle(layer, style);
       result.push(poiContribution(category, index * 4 + 1, layer));
@@ -132,16 +122,15 @@ export function compilePoi(
     if (showIcon) {
       const layer = applySymbolStyle(
         createPoiLayer({
-          classes,
-          classField: schema.fields.class,
-          excludedClasses,
+          category,
+          categoryField: schema.fields.poiCategory,
+          density: semantics.density,
+          filterRankField: schema.fields.poiFilterRank,
           id: `streets-poi-${category}-icon`,
           minZoom: semantics.minZoom,
-          rankField: schema.fields.rank,
-          rankLimit: configuredRank ?? minimumRankLimit(densityRank, iconRank),
+          sizeRankField: schema.fields.poiSizeRank,
           source,
           sourceLayer: schema.layers.poi,
-          subclassField: schema.fields.subclass,
         }),
         {...style, text: undefined},
       );
@@ -151,16 +140,15 @@ export function compilePoi(
     if (showText) {
       const layer = applySymbolStyle(
         createPoiLayer({
-          classes,
-          classField: schema.fields.class,
-          excludedClasses,
+          category,
+          categoryField: schema.fields.poiCategory,
+          density: semantics.density,
+          filterRankField: schema.fields.poiFilterRank,
           id: `streets-poi-${category}-label`,
           minZoom: semantics.minZoom,
-          rankField: schema.fields.rank,
-          rankLimit: configuredRank ?? minimumRankLimit(densityRank, textRank),
+          sizeRankField: schema.fields.poiSizeRank,
           source,
           sourceLayer: schema.layers.poi,
-          subclassField: schema.fields.subclass,
         }),
         {...style, icon: undefined},
       );
@@ -169,6 +157,22 @@ export function compilePoi(
   }
 
   return result;
+}
+
+function resolvePoiImage(
+  category: keyof typeof tileflowPoiImageRoles,
+  context: TileflowDomainCompileContext,
+  iconField: string,
+) {
+  const role = `poi.${category}`;
+  const themed = context.images[role];
+  const fallback = themed ?? tileflowPoiImageRoles[category].fallback;
+  return expression<string>([
+    'case',
+    ['has', iconField],
+    ['coalesce', ['image', ['get', iconField]], ['image', fallback]],
+    ['image', fallback],
+  ]);
 }
 
 function resolveMarkerStyle(style: TileflowSymbolStyle): TileflowCircleStyle {
@@ -183,62 +187,44 @@ function resolveMarkerStyle(style: TileflowSymbolStyle): TileflowCircleStyle {
 }
 
 function createPoiLayer(options: {
-  classes: readonly string[];
-  classField: string;
-  excludedClasses: readonly string[];
+  category: string;
+  categoryField: string;
+  density: ResolvedPoiModuleOptions['density'];
+  filterRankField: string;
   id: string;
   minZoom: number;
-  rankField: string;
-  rankLimit: TileflowPoiRankLimit | undefined;
+  sizeRankField: string;
   source: string;
   sourceLayer: string;
-  subclassField: string;
 }): Record<string, unknown> & {id: string; type: string} {
-  const includedFilter = [
-    'any',
-    ['match', ['get', options.classField], options.classes, true, false],
-    ['match', ['get', options.subclassField], options.classes, true, false],
-  ];
-  const categoryFilter =
-    options.excludedClasses.length === 0
-      ? includedFilter
-      : [
-          'all',
-          includedFilter,
-          [
-            '!',
-            [
-              'any',
-              ['match', ['get', options.classField], options.excludedClasses, true, false],
-              ['match', ['get', options.subclassField], options.excludedClasses, true, false],
-            ],
-          ],
-        ];
-  const rankSortKeyExpression = rankSortKey(options.rankField);
+  const filterRank = numericPoiField(options.filterRankField, 6);
+  const sizeRank = numericPoiField(options.sizeRankField, 17);
   return {
     id: options.id,
     type: 'symbol',
     source: options.source,
     'source-layer': options.sourceLayer,
     minzoom: options.minZoom,
-    filter:
-      options.rankLimit === undefined
-        ? categoryFilter
-        : [
-            'all',
-            categoryFilter,
-            ['<=', rankSortKeyExpression, resolveRankLimit(options.rankLimit)],
-          ],
-    layout: {'symbol-sort-key': rankSortKeyExpression},
+    filter: [
+      'all',
+      ['==', ['get', options.categoryField], options.category],
+      ['has', options.filterRankField],
+      ['>=', filterRank, 0],
+      ['<=', filterRank, options.density],
+      ['has', options.sizeRankField],
+      ['>=', sizeRank, 0],
+      ['<=', sizeRank, 16],
+    ],
+    layout: {'symbol-sort-key': poiSortKey(options.filterRankField, options.sizeRankField)},
   };
 }
 
-function resolveRankLimit(limit: TileflowPoiRankLimit): number | unknown[] {
-  return isTileflowZoomValue(limit) ? (toMapLibreStyleValue(limit) as unknown[]) : limit;
+function numericPoiField(field: string, fallback: number): unknown[] {
+  return ['to-number', ['get', field], fallback];
 }
 
-function rankSortKey(field: string): unknown[] {
-  return ['to-number', ['get', field], 999];
+function poiSortKey(filterRankField: string, sizeRankField: string): unknown[] {
+  return ['+', ['*', numericPoiField(filterRankField, 6), 17], numericPoiField(sizeRankField, 17)];
 }
 
 function poiContribution(
@@ -254,27 +240,6 @@ function poiContribution(
     slot: 'symbols',
     target: `poi.${target}`,
   };
-}
-
-function densityRankLimit(density: ResolvedPoiModuleOptions['density']): number | undefined {
-  if (density === 'sparse') return 14;
-  if (density === 'balanced') return 80;
-  return undefined;
-}
-
-function labelRankLimit(labels: ResolvedPoiModuleOptions['labels']): number | undefined {
-  if (labels === 'minimal') return 14;
-  if (labels === 'balanced') return 80;
-  return undefined;
-}
-
-function iconRankLimit(icons: ResolvedPoiModuleOptions['icons']): number | undefined {
-  return icons === 'essential' ? 14 : undefined;
-}
-
-function minimumRankLimit(...limits: Array<number | undefined>): number | undefined {
-  const defined = limits.filter((limit): limit is number => limit !== undefined);
-  return defined.length === 0 ? undefined : Math.min(...defined);
 }
 
 function poiTextStyle(

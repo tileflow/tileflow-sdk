@@ -9,10 +9,15 @@ import type {
   TileflowLineStyle,
   TileflowSymbolStyle,
 } from './cartography/styles';
-import type {TileflowStyleValue, TileflowZoomValue} from './cartography/values';
+import type {
+  TileflowThemeColorValue,
+  TileflowThemeFontValue,
+  TileflowThemeImageValue,
+  TileflowThemeNumberValue,
+  TileflowZoomValue,
+} from './cartography/values';
 
 export type TileflowColor = `#${string}`;
-export type TileflowThemeMode = 'light' | 'dark';
 
 export type TileflowBaseColors = {
   background: TileflowColor;
@@ -54,19 +59,10 @@ export type TileflowLabelColorConfig = {
   water?: TileflowColor;
 };
 
-export type TileflowPoiColorConfig = {
-  coffee?: TileflowColor;
-  culture?: TileflowColor;
-  education?: TileflowColor;
-  food?: TileflowColor;
+export type TileflowPoiColorConfig = Partial<Record<TileflowPoiCategory, TileflowColor>> & {
   halo?: TileflowColor;
-  health?: TileflowColor;
   icon?: TileflowColor;
   label?: TileflowColor;
-  lodging?: TileflowColor;
-  services?: TileflowColor;
-  shopping?: TileflowColor;
-  transit?: TileflowColor;
 };
 
 export type TileflowLanduseColorConfig = {
@@ -79,6 +75,7 @@ export type TileflowLanduseColorConfig = {
   medical?: TileflowColor;
   military?: TileflowColor;
   parking?: TileflowColor;
+  railway?: TileflowColor;
   recreation?: TileflowColor;
   residential?: TileflowColor;
 };
@@ -133,7 +130,8 @@ export type TileflowBoundaryColorConfig = {
   maritime?: TileflowColor;
 };
 
-export type TileflowThemeModulesConfig = {
+/** Internal compiler color groups populated from the resolved semantic token catalog. */
+export type TileflowColorGroupsConfig = {
   boundaries?: TileflowBoundaryColorConfig;
   buildings?: TileflowBuildingColorConfig;
   hydro?: TileflowHydroColorConfig;
@@ -173,13 +171,6 @@ export type ResolvedTileflowTypography = ResolvedTileflowTypographyStyle & {
   poi: ResolvedTileflowTypographyStyle;
 };
 
-export type TileflowThemeConfig = {
-  colors?: TileflowColorConfig;
-  mode?: TileflowThemeMode;
-  modules?: TileflowThemeModulesConfig;
-  typography?: TileflowTypography;
-};
-
 export type TileflowTerrainMode = 'none' | 'hillshade' | '3d';
 export type TileflowTerrainEncoding = 'mapbox' | 'terrarium';
 export type TileflowTerrainLayerRange = {
@@ -188,26 +179,26 @@ export type TileflowTerrainLayerRange = {
   visible?: boolean;
 };
 export type TileflowTerrainHillshadeStyle = TileflowTerrainLayerRange & {
-  accentColor?: TileflowColor;
-  exaggeration?: number;
-  highlightColor?: TileflowColor;
+  accentColor?: TileflowThemeColorValue;
+  exaggeration?: TileflowThemeNumberValue;
+  highlightColor?: TileflowThemeColorValue;
   illuminationAnchor?: 'map' | 'viewport';
-  illuminationDirection?: number;
-  shadowColor?: TileflowColor;
+  illuminationDirection?: TileflowThemeNumberValue;
+  shadowColor?: TileflowThemeColorValue;
 };
 export type TileflowTerrainContourLineStyle = TileflowTerrainLayerRange & {
-  color?: TileflowColor;
-  opacity?: number;
-  width?: number;
+  color?: TileflowThemeColorValue;
+  opacity?: TileflowThemeNumberValue;
+  width?: TileflowThemeNumberValue;
 };
 export type TileflowTerrainContourLabelStyle = TileflowTerrainLayerRange & {
-  color?: TileflowColor;
-  font?: string;
-  haloColor?: TileflowColor;
-  haloWidth?: number;
-  opacity?: number;
-  size?: number;
-  spacing?: number;
+  color?: TileflowThemeColorValue;
+  font?: TileflowThemeFontValue;
+  haloColor?: TileflowThemeColorValue;
+  haloWidth?: TileflowThemeNumberValue;
+  opacity?: TileflowThemeNumberValue;
+  size?: TileflowThemeNumberValue;
+  spacing?: TileflowThemeNumberValue;
 };
 export type TileflowTerrainContoursConfig = {
   /** Maximum native zoom exposed by the DEM tile template. */
@@ -280,7 +271,7 @@ export type TileflowRoadTreatmentStyle = Partial<
   Record<TileflowRoadStructure, TileflowRoadTreatmentLayerStyle>
 > & {
   enabled?: boolean;
-  widthScale?: number;
+  widthScale?: TileflowThemeNumberValue;
 };
 export type TileflowRoadModifier =
   | 'construction'
@@ -311,9 +302,8 @@ export type TileflowRoadAreaStyle = {
   pier?: TileflowAreaStyle;
   road?: TileflowAreaStyle;
 };
-export type TileflowRoadCrossingStyle = Omit<TileflowIconStyle, 'image'> & {
-  image: TileflowStyleValue<string>;
-};
+export type TileflowRoadCrossingStyle = Omit<TileflowIconStyle, 'image'> &
+  Required<Pick<TileflowIconStyle, 'image'>>;
 export type TileflowRoadRoundaboutStyle = {
   casing?: TileflowCircleStyle;
   fill?: TileflowCircleStyle;
@@ -342,7 +332,7 @@ export type TileflowRoadsModuleConfig = {
   sidewalks?: TileflowRoadSidewalkStyle;
   structures?: Partial<Record<TileflowRoadStructure, TileflowRoadLayerStyle>>;
   weight?: TileflowRoadWeight;
-  widthScale?: Partial<Record<TileflowRoadClass, number>>;
+  widthScale?: Partial<Record<TileflowRoadClass, TileflowThemeNumberValue>>;
 };
 export type TileflowRoadsModuleOptions = Omit<TileflowRoadsModuleConfig, 'type'>;
 
@@ -363,7 +353,10 @@ export type TileflowWaterLabelClass = 'line' | 'ocean' | 'other' | 'waterway';
 export type TileflowRoadShieldDetail = 'none' | 'major' | 'all';
 export type TileflowRoadShieldStyles = {
   default?: TileflowSymbolStyle;
-  networks?: Record<string, TileflowSymbolStyle>;
+  detail?: TileflowSymbolStyle;
+  kinds?: Record<string, {image: TileflowThemeImageValue}>;
+  overview?: TileflowSymbolStyle;
+  textColors?: Record<string, {color: TileflowThemeColorValue}>;
 };
 export type TileflowLabelStyles = {
   aerodrome?: TileflowSymbolStyle;
@@ -388,47 +381,41 @@ export type TileflowLabelsModuleConfig = {
 };
 export type TileflowLabelsModuleOptions = Omit<TileflowLabelsModuleConfig, 'type'>;
 
-export type TileflowPoi = 'none' | 'minimal' | 'balanced' | 'full';
-export type TileflowPoiCategory =
-  | 'food'
-  | 'coffee'
-  | 'culture'
-  | 'major-transit'
-  | 'shopping'
-  | 'lodging'
-  | 'health'
-  | 'education'
-  | 'services'
-  | (string & {});
-export type TileflowPoiIcons = boolean | 'essential' | 'full';
-export type TileflowPoiLabels = 'none' | 'minimal' | 'balanced' | 'full';
-export type TileflowPoiDensity = 'sparse' | 'balanced' | 'dense';
+/** Closed editorial vocabulary emitted by Tileflow World's canonical POI projection. */
+export const tileflowPoiCategories = [
+  'arts-entertainment',
+  'education',
+  'food-drink',
+  'landmark',
+  'lodging',
+  'medical',
+  'park-nature',
+  'public-services',
+  'religion',
+  'retail',
+  'sport-leisure',
+  'transport',
+  'visitor-amenity',
+] as const;
+export type TileflowPoiCategory = (typeof tileflowPoiCategories)[number];
+export type TileflowPoiDensity = 1 | 2 | 3 | 4 | 5;
 export type TileflowPoiColorMode = 'uniform' | 'category';
-export type TileflowPoiClassMapping = Record<string, readonly string[]>;
-export type TileflowPoiRankLimit = number | TileflowZoomValue<number>;
-export type TileflowPoiCategoryStyle = TileflowSymbolStyle & {
-  /** Inclusive OpenMapTiles importance-rank ceiling, optionally progressive by zoom. */
-  maxRank?: TileflowPoiRankLimit;
-};
+export type TileflowPoiCategoryStyle = Omit<TileflowSymbolStyle, 'priority'>;
 export type TileflowPoiModuleConfig = {
   type: 'poi';
   categories?: readonly TileflowPoiCategory[];
-  classMapping?: TileflowPoiClassMapping;
   color?: TileflowPoiColorMode;
   density?: TileflowPoiDensity;
   enabled?: boolean;
-  icons?: TileflowPoiIcons;
-  labels?: TileflowPoiLabels;
-  /** Inclusive rank ceiling shared by every category unless that category overrides it. */
-  maxRank?: TileflowPoiRankLimit;
+  icons?: boolean;
+  labels?: boolean;
   minZoom?: number;
   placement?: {
     coupleIconAndLabel?: boolean;
     iconPadding?: number;
     textPadding?: number;
   };
-  preset?: TileflowPoi;
-  styles?: Record<string, TileflowPoiCategoryStyle>;
+  styles?: Partial<Record<TileflowPoiCategory, TileflowPoiCategoryStyle>>;
 };
 export type TileflowPoiModuleOptions = Omit<TileflowPoiModuleConfig, 'type'>;
 

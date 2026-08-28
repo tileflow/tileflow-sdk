@@ -17,11 +17,13 @@ import {
   tileflowMapIdSchema,
   tileflowStreetsCompilerVersion,
 } from './maps/types';
+import {tileflowThemeNameSchema} from './portable-identity';
 import {
   isSafeTileflowDemUrlTemplate,
   isTileflowContourDensityWithinBudget,
 } from './terrain/contour-protocol';
-import type {ValidationMessage} from './types';
+import {resolveTileflowTheme, type TileflowTheme} from './themes';
+import {tileflowPoiCategories, type ValidationMessage} from './types';
 
 /** Structured schema failure preserved for CLI/editor diagnostics. */
 export class TileflowResolvedMapValidationError extends Error {
@@ -60,22 +62,246 @@ const zoomValueSchema = z
     stops: z.array(z.tuple([zoomNumberSchema, z.unknown()])).min(1),
   })
   .strict();
-const numberValueSchema = z.union([z.number().finite(), expressionSchema, zoomValueSchema]);
-const stringValueSchema = z.union([z.string(), expressionSchema, zoomValueSchema]);
+
+function zoomValueSchemaFor(valueSchema: z.ZodType) {
+  return zoomValueSchema.extend({
+    stops: z.array(z.tuple([zoomNumberSchema, valueSchema])).min(1),
+  });
+}
+
+const themeTokenNameSchema = z
+  .string()
+  .regex(
+    /^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*)*$/,
+    'Expected a portable dot-separated semantic token name',
+  );
+const themeTokenReferenceSchema = z
+  .object({
+    category: z.enum(['color', 'font', 'image', 'number']),
+    kind: z.literal('theme-token'),
+    token: themeTokenNameSchema,
+  })
+  .strict();
+const themeNumberReferenceSchema = themeTokenReferenceSchema.extend({
+  category: z.literal('number'),
+});
+const fixedNumberSchema = z
+  .object({
+    kind: z.literal('theme-fixed'),
+    reason: z.string().trim().min(1),
+    value: z.number().finite(),
+  })
+  .strict();
+const fixedNumberArraySchema = z
+  .object({
+    kind: z.literal('theme-fixed'),
+    reason: z.string().trim().min(1),
+    value: z.array(z.number().finite()),
+  })
+  .strict();
+const fixedNumberOffsetSchema = z
+  .object({
+    kind: z.literal('theme-fixed'),
+    reason: z.string().trim().min(1),
+    value: z.tuple([z.number().finite(), z.number().finite()]),
+  })
+  .strict();
+const fixedNumberInsetsSchema = z
+  .object({
+    kind: z.literal('theme-fixed'),
+    reason: z.string().trim().min(1),
+    value: z.tuple([
+      z.number().finite(),
+      z.number().finite(),
+      z.number().finite(),
+      z.number().finite(),
+    ]),
+  })
+  .strict();
+const fixedStringSchema = z
+  .object({kind: z.literal('theme-fixed'), reason: z.string().trim().min(1), value: z.string()})
+  .strict();
+const themeColorOperationSchema: z.ZodType = z.lazy(() =>
+  z.discriminatedUnion('operation', [
+    z
+      .object({
+        color: themeColorValueSchema,
+        kind: z.literal('theme-color'),
+        opacity: themeNumberValueSchema,
+        operation: z.literal('alpha'),
+      })
+      .strict(),
+    z
+      .object({
+        amount: themeNumberValueSchema,
+        from: themeColorValueSchema,
+        kind: z.literal('theme-color'),
+        operation: z.literal('mix'),
+        space: z.literal('oklch'),
+        to: themeColorValueSchema,
+      })
+      .strict(),
+  ]),
+);
+const themeNumberValueSchema: z.ZodType = z.lazy(() =>
+  z.union([z.number().finite(), fixedNumberSchema, themeNumberReferenceSchema]),
+);
+const themeColorValueSchema: z.ZodType = z.lazy(() =>
+  z.union([
+    z.string().min(1),
+    fixedStringSchema,
+    themeTokenReferenceSchema.extend({category: z.literal('color')}),
+    themeColorOperationSchema,
+  ]),
+);
+const themeFontValueSchema = z.union([
+  z.string().min(1),
+  fixedStringSchema,
+  themeTokenReferenceSchema.extend({category: z.literal('font')}),
+]);
+const themeImageValueSchema = z.union([
+  z.string().min(1),
+  fixedStringSchema,
+  themeTokenReferenceSchema.extend({category: z.literal('image')}),
+]);
+type ExpressionThemeCategory = 'color' | 'image' | 'number' | undefined;
+
+function expressionSchemaFor(expectedCategory: ExpressionThemeCategory) {
+  return expressionSchema.superRefine((expression, context) => {
+    validateExpressionThemeValues(expression.value, expectedCategory, context, ['value']);
+  });
+}
+
+function validateExpressionThemeValues(
+  value: unknown,
+  expectedCategory: ExpressionThemeCategory,
+  context: z.RefinementCtx,
+  path: PropertyKey[],
+): void {
+  if (Array.isArray(value)) {
+    for (const [index, entry] of value.entries()) {
+      validateExpressionThemeValues(entry, expectedCategory, context, [...path, index]);
+    }
+    return;
+  }
+  if (value === null || typeof value !== 'object') return;
+
+  const candidate = value as Record<string, unknown>;
+  if (candidate.kind === 'theme-token') {
+    const parsed = themeTokenReferenceSchema.safeParse(candidate);
+    if (!parsed.success || parsed.data.category !== expectedCategory) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          expectedCategory === undefined
+            ? 'Structural expressions cannot contain theme-token references'
+            : `Expected a ${expectedCategory} theme-token reference`,
+        path,
+      });
+    }
+    return;
+  }
+  if (candidate.kind === 'theme-fixed') {
+    const parsed =
+      expectedCategory === 'number'
+        ? z.union([fixedNumberSchema, fixedNumberArraySchema]).safeParse(candidate)
+        : expectedCategory === 'color' || expectedCategory === 'image'
+          ? fixedStringSchema.safeParse(candidate)
+          : undefined;
+    if (!parsed?.success) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          expectedCategory === undefined
+            ? 'Structural expressions cannot contain theme-fixed values'
+            : `Expected a fixed ${expectedCategory} value`,
+        path,
+      });
+    }
+    return;
+  }
+  if (candidate.kind === 'theme-color') {
+    if (expectedCategory !== 'color' || !themeColorOperationSchema.safeParse(candidate).success) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Theme color operations are valid only in color expressions',
+        path,
+      });
+    }
+    return;
+  }
+
+  for (const [key, entry] of Object.entries(candidate)) {
+    validateExpressionThemeValues(entry, expectedCategory, context, [...path, key]);
+  }
+}
+
+const numberExpressionSchema = expressionSchemaFor('number');
+const colorExpressionSchema = expressionSchemaFor('color');
+const imageExpressionSchema = expressionSchemaFor('image');
+const structuralExpressionSchema = expressionSchemaFor(undefined);
+const numberZoomValueSchema = zoomValueSchemaFor(themeNumberValueSchema);
+const colorZoomValueSchema = zoomValueSchemaFor(themeColorValueSchema);
+const imageZoomValueSchema = zoomValueSchemaFor(themeImageValueSchema);
+const stringZoomValueSchema = zoomValueSchemaFor(z.string());
+const numberValueSchema = z.union([
+  themeNumberValueSchema,
+  numberExpressionSchema,
+  numberZoomValueSchema,
+]);
+const structuralNumberValueSchema = z.union([
+  z.number().finite(),
+  structuralExpressionSchema,
+  zoomValueSchemaFor(z.number().finite()),
+]);
+const colorValueSchema = z.union([
+  themeColorValueSchema,
+  colorExpressionSchema,
+  colorZoomValueSchema,
+]);
+const imageValueSchema = z.union([
+  themeImageValueSchema,
+  imageExpressionSchema,
+  imageZoomValueSchema,
+]);
+const stringValueSchema = z.union([z.string(), structuralExpressionSchema, stringZoomValueSchema]);
+const themeNumberArraySchema = z.array(themeNumberValueSchema);
+const themeNumberArrayValueSchema = z.union([themeNumberArraySchema, fixedNumberArraySchema]);
 const numberArrayValueSchema = z.union([
-  z.array(z.number().finite()),
-  expressionSchema,
-  zoomValueSchema,
+  themeNumberArrayValueSchema,
+  numberExpressionSchema,
+  zoomValueSchemaFor(themeNumberArrayValueSchema),
 ]);
+const themeNumberOffsetSchema = z.tuple([themeNumberValueSchema, themeNumberValueSchema]);
+const themeNumberOffsetValueSchema = z.union([themeNumberOffsetSchema, fixedNumberOffsetSchema]);
+const numberOffsetValueSchema = z.union([
+  themeNumberOffsetValueSchema,
+  numberExpressionSchema,
+  zoomValueSchemaFor(themeNumberOffsetValueSchema),
+]);
+const themeNumberInsetsSchema = z.tuple([
+  themeNumberValueSchema,
+  themeNumberValueSchema,
+  themeNumberValueSchema,
+  themeNumberValueSchema,
+]);
+const themeNumberInsetsValueSchema = z.union([themeNumberInsetsSchema, fixedNumberInsetsSchema]);
+const numberInsetsValueSchema = z.union([
+  themeNumberInsetsValueSchema,
+  numberExpressionSchema,
+  zoomValueSchemaFor(themeNumberInsetsValueSchema),
+]);
+const lineCapSchema = z.enum(['butt', 'round', 'square']);
 const lineCapValueSchema = z.union([
-  z.enum(['butt', 'round', 'square']),
-  expressionSchema,
-  zoomValueSchema,
+  lineCapSchema,
+  structuralExpressionSchema,
+  zoomValueSchemaFor(lineCapSchema),
 ]);
+const lineJoinSchema = z.enum(['bevel', 'miter', 'round']);
 const lineJoinValueSchema = z.union([
-  z.enum(['bevel', 'miter', 'round']),
-  expressionSchema,
-  zoomValueSchema,
+  lineJoinSchema,
+  structuralExpressionSchema,
+  zoomValueSchemaFor(lineJoinSchema),
 ]);
 const exactFontFaceSchema = z
   .string()
@@ -102,152 +328,78 @@ const fontFallbacksSchema = z
       seen.add(fallback);
     }
   });
+const moduleFontValueSchema = z.union([
+  exactFontFaceSchema,
+  fixedStringSchema,
+  themeTokenReferenceSchema.extend({category: z.literal('font')}),
+]);
+const moduleFontFallbacksSchema = z.array(moduleFontValueSchema).max(8);
 
 const hexColorSchema = z
   .string()
   .regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/, {
     message: 'Expected a hex color like #F6F7F3 or #F6F7F3FF',
   });
+const rgbColorSchema = z.string().refine((value) => {
+  const match = value.match(
+    /^rgba?\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)(?:\s*,\s*(\d+(?:\.\d+)?))?\s*\)$/iu,
+  );
+  if (!match) return false;
+  const channels = match.slice(1, 4).map(Number);
+  const alpha = Number(match[4] ?? 1);
+  return channels.every((channel) => channel >= 0 && channel <= 255) && alpha >= 0 && alpha <= 1;
+}, 'Expected a Tileflow hex, rgb(), or rgba() color');
+const terrainColorLiteralSchema = z.union([hexColorSchema, rgbColorSchema]);
+const terrainColorValueSchema = z.union([
+  terrainColorLiteralSchema,
+  fixedStringSchema.extend({value: terrainColorLiteralSchema}),
+  themeTokenReferenceSchema.extend({category: z.literal('color')}),
+  themeColorOperationSchema,
+]);
 
-function colorGroupSchema<const TKey extends string>(keys: readonly TKey[]) {
-  return z
-    .object(
-      Object.fromEntries(keys.map((key) => [key, hexColorSchema.optional()])) as Record<
-        TKey,
-        z.ZodOptional<typeof hexColorSchema>
-      >,
-    )
-    .strict();
+function terrainNumberValueSchema(schema: z.ZodNumber) {
+  return z.union([schema, fixedNumberSchema.extend({value: schema}), themeNumberReferenceSchema]);
 }
 
-const themeModulesSchema = z
+const themeTypographyStyleSchema = z
   .object({
-    boundaries: colorGroupSchema(['admin', 'disputed', 'major', 'maritime']).optional(),
-    buildings: colorGroupSchema([
-      'active',
-      'businessCorridor',
-      'businessCorridorOutline',
-      'civic',
-      'commercial',
-      'destination',
-      'extrusion',
-      'fill',
-      'generic',
-      'highRise',
-      'highRiseOutline',
-      'industrial',
-      'lowRise',
-      'lowRiseOutline',
-      'outline',
-      'residential',
-    ]).optional(),
-    hydro: colorGroupSchema(['ferry', 'label', 'water', 'waterway']).optional(),
-    labels: colorGroupSchema([
-      'country',
-      'halo',
-      'muted',
-      'neighborhood',
-      'poi',
-      'primary',
-      'road',
-      'settlement',
-      'water',
-    ]).optional(),
-    landcover: colorGroupSchema([
-      'farmland',
-      'flowerbed',
-      'grass',
-      'ice',
-      'meadow',
-      'protected',
-      'recreationGround',
-      'rock',
-      'sand',
-      'scrub',
-      'urbanPark',
-      'villageGreen',
-      'wetland',
-      'wood',
-    ]).optional(),
-    landuse: colorGroupSchema([
-      'cemetery',
-      'civic',
-      'commercial',
-      'education',
-      'government',
-      'industrial',
-      'medical',
-      'military',
-      'parking',
-      'recreation',
-      'residential',
-    ]).optional(),
-    poi: colorGroupSchema([
-      'coffee',
-      'culture',
-      'education',
-      'food',
-      'halo',
-      'health',
-      'icon',
-      'label',
-      'lodging',
-      'services',
-      'shopping',
-      'transit',
-    ]).optional(),
-    roads: colorGroupSchema([
-      'bridge',
-      'casing',
-      'ferry',
-      'minor',
-      'motorway',
-      'path',
-      'primary',
-      'rail',
-      'secondary',
-      'trunk',
-      'tunnel',
-    ]).optional(),
-  })
-  .strict();
-
-const typographyStyleSchema = z
-  .object({
-    fallbacks: fontFallbacksSchema.optional(),
-    font: exactFontFaceSchema.optional(),
-    letterSpacing: z.number().finite().min(-1).max(10).optional(),
+    fallbacks: z.array(themeFontValueSchema).max(8).optional(),
+    font: themeFontValueSchema.optional(),
+    letterSpacing: themeNumberValueSchema.optional(),
     transform: z.enum(['lowercase', 'none', 'uppercase']).optional(),
   })
   .strict();
-const typographySchema = typographyStyleSchema.extend({
-  places: typographyStyleSchema.optional(),
-  poi: typographyStyleSchema.optional(),
-  roads: typographyStyleSchema.optional(),
-  water: typographyStyleSchema.optional(),
+const themeTypographySchema = themeTypographyStyleSchema.extend({
+  places: themeTypographyStyleSchema.optional(),
+  poi: themeTypographyStyleSchema.optional(),
+  roads: themeTypographyStyleSchema.optional(),
+  water: themeTypographyStyleSchema.optional(),
 });
-const themeColorSchema = z
+const themeLightingSchema = z
   .object({
-    background: hexColorSchema.optional(),
-    boundary: hexColorSchema.optional(),
-    building: hexColorSchema.optional(),
-    land: hexColorSchema.optional(),
-    park: hexColorSchema.optional(),
-    road: hexColorSchema.optional(),
-    roadCasing: hexColorSchema.optional(),
-    roadMajor: hexColorSchema.optional(),
-    text: hexColorSchema.optional(),
-    textHalo: hexColorSchema.optional(),
-    textMuted: hexColorSchema.optional(),
-    water: hexColorSchema.optional(),
+    anchor: z.enum(['map', 'viewport']).optional(),
+    color: themeColorValueSchema.optional(),
+    intensity: themeNumberValueSchema.optional(),
+    position: z
+      .tuple([themeNumberValueSchema, themeNumberValueSchema, themeNumberValueSchema])
+      .optional(),
   })
   .strict();
 export const tileflowThemeSchema = z
   .object({
-    colors: themeColorSchema.optional(),
-    mode: z.enum(['light', 'dark']).optional(),
-    modules: themeModulesSchema.optional(),
-    typography: typographySchema.optional(),
+    colorScheme: z.enum(['light', 'dark']),
+    id: tileflowThemeNameSchema,
+    lighting: themeLightingSchema,
+    tokens: z
+      .object({
+        color: z.record(themeTokenNameSchema, themeColorValueSchema),
+        font: z.record(themeTokenNameSchema, themeFontValueSchema),
+        image: z.record(themeTokenNameSchema, themeImageValueSchema),
+        number: z.record(themeTokenNameSchema, themeNumberValueSchema),
+      })
+      .strict(),
+    typography: themeTypographySchema,
+    version: z.number().int().positive(),
   })
   .strict();
 
@@ -259,18 +411,18 @@ const rangeShape = {
 const backgroundStyleSchema = z
   .object({
     ...rangeShape,
-    color: stringValueSchema.optional(),
+    color: colorValueSchema.optional(),
     opacity: numberValueSchema.optional(),
-    pattern: stringValueSchema.optional(),
+    pattern: imageValueSchema.optional(),
   })
   .strict();
 const fillStyleSchema = z
   .object({
     ...rangeShape,
     antialias: z.boolean().optional(),
-    color: stringValueSchema.optional(),
+    color: colorValueSchema.optional(),
     opacity: numberValueSchema.optional(),
-    pattern: stringValueSchema.optional(),
+    pattern: imageValueSchema.optional(),
   })
   .strict();
 const lineStyleSchema = z
@@ -278,15 +430,15 @@ const lineStyleSchema = z
     ...rangeShape,
     blur: numberValueSchema.optional(),
     cap: lineCapValueSchema.optional(),
-    color: stringValueSchema.optional(),
+    color: colorValueSchema.optional(),
     dash: numberArrayValueSchema.optional(),
     gapWidth: numberValueSchema.optional(),
     join: lineJoinValueSchema.optional(),
-    miterLimit: z.number().finite().min(0).optional(),
+    miterLimit: numberValueSchema.optional(),
     offset: numberValueSchema.optional(),
     opacity: numberValueSchema.optional(),
-    pattern: stringValueSchema.optional(),
-    roundLimit: z.number().finite().min(0).optional(),
+    pattern: imageValueSchema.optional(),
+    roundLimit: numberValueSchema.optional(),
     width: numberValueSchema.optional(),
   })
   .strict();
@@ -307,26 +459,28 @@ const textStyleSchema = z
         'top-right',
       ])
       .optional(),
-    color: stringValueSchema.optional(),
-    fallbacks: fontFallbacksSchema.optional(),
+    color: colorValueSchema.optional(),
+    fallbacks: moduleFontFallbacksSchema.optional(),
     field: stringValueSchema.optional(),
-    font: exactFontFaceSchema.optional(),
+    font: moduleFontValueSchema.optional(),
     haloBlur: numberValueSchema.optional(),
-    haloColor: stringValueSchema.optional(),
+    haloColor: colorValueSchema.optional(),
     haloWidth: numberValueSchema.optional(),
     ignorePlacement: z.boolean().optional(),
     justify: z.enum(['auto', 'center', 'left', 'right']).optional(),
     keepUpright: z.boolean().optional(),
     letterSpacing: numberValueSchema.optional(),
     lineHeight: numberValueSchema.optional(),
-    maxAngle: z.number().finite().min(0).max(180).optional(),
+    maxAngle: numberValueSchema.optional(),
     maxWidth: numberValueSchema.optional(),
-    offset: z.tuple([z.number().finite(), z.number().finite()]).optional(),
+    offset: numberOffsetValueSchema.optional(),
     optional: z.boolean().optional(),
     opacity: numberValueSchema.optional(),
     padding: numberValueSchema.optional(),
+    pitchAlignment: z.enum(['auto', 'map', 'viewport']).optional(),
     radialOffset: numberValueSchema.optional(),
     rotate: numberValueSchema.optional(),
+    rotationAlignment: z.enum(['auto', 'map', 'viewport']).optional(),
     size: numberValueSchema.optional(),
     transform: z.enum(['lowercase', 'none', 'uppercase']).optional(),
     variableAnchors: z
@@ -364,13 +518,13 @@ const iconStyleSchema = z
         'top-right',
       ])
       .optional(),
-    color: stringValueSchema.optional(),
+    color: colorValueSchema.optional(),
     haloBlur: numberValueSchema.optional(),
-    haloColor: stringValueSchema.optional(),
+    haloColor: colorValueSchema.optional(),
     haloWidth: numberValueSchema.optional(),
     ignorePlacement: z.boolean().optional(),
-    image: stringValueSchema.optional(),
-    offset: z.tuple([z.number().finite(), z.number().finite()]).optional(),
+    image: imageValueSchema.optional(),
+    offset: numberOffsetValueSchema.optional(),
     opacity: numberValueSchema.optional(),
     keepUpright: z.boolean().optional(),
     optional: z.boolean().optional(),
@@ -379,13 +533,15 @@ const iconStyleSchema = z
     rotate: numberValueSchema.optional(),
     rotationAlignment: z.enum(['auto', 'map', 'viewport']).optional(),
     size: numberValueSchema.optional(),
+    textFit: z.enum(['both', 'height', 'none', 'width']).optional(),
+    textFitPadding: numberInsetsValueSchema.optional(),
   })
   .strict();
 
 const symbolPlacementShape = {
   ...rangeShape,
   placement: z.enum(['line', 'line-center', 'point']).optional(),
-  priority: numberValueSchema.optional(),
+  priority: structuralNumberValueSchema.optional(),
   spacing: numberValueSchema.optional(),
   zOrder: z.enum(['auto', 'source', 'viewport-y']).optional(),
 };
@@ -393,12 +549,12 @@ const circleStyleSchema = z
   .object({
     ...rangeShape,
     blur: numberValueSchema.optional(),
-    color: stringValueSchema.optional(),
+    color: colorValueSchema.optional(),
     opacity: numberValueSchema.optional(),
     pitchAlignment: z.enum(['map', 'viewport']).optional(),
     pitchScale: z.enum(['map', 'viewport']).optional(),
     radius: numberValueSchema.optional(),
-    strokeColor: stringValueSchema.optional(),
+    strokeColor: colorValueSchema.optional(),
     strokeOpacity: numberValueSchema.optional(),
     strokeWidth: numberValueSchema.optional(),
   })
@@ -407,10 +563,10 @@ const extrusionStyleSchema = z
   .object({
     ...rangeShape,
     base: numberValueSchema.optional(),
-    color: stringValueSchema.optional(),
+    color: colorValueSchema.optional(),
     height: numberValueSchema.optional(),
     opacity: numberValueSchema.optional(),
-    pattern: stringValueSchema.optional(),
+    pattern: imageValueSchema.optional(),
     verticalGradient: z.boolean().optional(),
   })
   .strict();
@@ -428,25 +584,59 @@ const lineHatchStyleSchema = z
   .object({
     ...rangeShape,
     angle: numberValueSchema.optional(),
-    color: stringValueSchema.optional(),
+    color: colorValueSchema.optional(),
     opacity: numberValueSchema.optional(),
-    pattern: stringValueSchema.optional(),
-    patternWidths: z.array(z.number().int().positive().max(1024)).min(2).optional(),
+    pattern: imageValueSchema.optional(),
+    patternWidths: themeNumberArrayValueSchema.optional(),
     size: numberValueSchema.optional(),
     spacing: numberValueSchema.optional(),
   })
   .strict()
   .superRefine((value, context) => {
     if (value.patternWidths === undefined) return;
-    if (typeof value.pattern !== 'string') {
+    const patternIsDeferredThemeValue =
+      typeof value.pattern === 'object' &&
+      value.pattern !== null &&
+      ['theme-fixed', 'theme-token'].includes(String(value.pattern.kind));
+    if (typeof value.pattern !== 'string' && !patternIsDeferredThemeValue) {
       context.addIssue({
         code: 'custom',
         message: 'patternWidths requires pattern to be a literal sprite-name prefix',
         path: ['pattern'],
       });
     }
-    for (let index = 1; index < value.patternWidths.length; index += 1) {
-      if (value.patternWidths[index]! <= value.patternWidths[index - 1]!) {
+    const authoredWidths = Array.isArray(value.patternWidths)
+      ? value.patternWidths
+      : value.patternWidths.value;
+    const widths = authoredWidths.map((entry) =>
+      typeof entry === 'object' &&
+      entry !== null &&
+      (entry as Record<string, unknown>).kind === 'theme-fixed'
+        ? (entry as Record<string, unknown>).value
+        : entry,
+    );
+    if (widths.length < 2) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Expected at least two pattern widths',
+        path: ['patternWidths'],
+      });
+    }
+    for (let index = 0; index < widths.length; index += 1) {
+      const width = widths[index];
+      if (typeof width === 'number' && (!Number.isInteger(width) || width <= 0 || width > 1024)) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Expected an integer pattern width between 1 and 1024',
+          path: ['patternWidths', index],
+        });
+      }
+      if (
+        index > 0 &&
+        typeof width === 'number' &&
+        typeof widths[index - 1] === 'number' &&
+        width <= (widths[index - 1] as number)
+      ) {
         context.addIssue({
           code: 'custom',
           message: 'patternWidths must be strictly increasing',
@@ -466,58 +656,7 @@ const symbolStyleSchema = z
     text: textStyleSchema.optional(),
   })
   .strict();
-const poiRankZoomValueSchema = zoomValueSchema
-  .extend({
-    stops: z.array(z.tuple([zoomNumberSchema, z.number().int().min(1)])).min(1),
-  })
-  .superRefine((value, context) => {
-    if (value.interpolation === 'step' && value.stops.length < 2) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Step POI rank interpolation requires at least two stops',
-        path: ['stops'],
-      });
-    }
-    if (value.interpolation === 'exponential' && value.base === undefined) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Exponential POI rank interpolation requires a positive base',
-        path: ['base'],
-      });
-    }
-    if (value.interpolation !== 'exponential' && value.base !== undefined) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Only exponential POI rank interpolation accepts a base',
-        path: ['base'],
-      });
-    }
-
-    let previousZoom = -Infinity;
-    let previousRank = -Infinity;
-    for (const [index, [stopZoom, stopRank]] of value.stops.entries()) {
-      if (stopZoom <= previousZoom) {
-        context.addIssue({
-          code: 'custom',
-          message: 'POI rank zoom stops must be strictly increasing',
-          path: ['stops', index, 0],
-        });
-      }
-      if (stopRank < previousRank) {
-        context.addIssue({
-          code: 'custom',
-          message: 'POI maxRank must not decrease as zoom increases',
-          path: ['stops', index, 1],
-        });
-      }
-      previousZoom = stopZoom;
-      previousRank = stopRank;
-    }
-  });
-const poiRankLimitSchema = z.union([z.number().int().min(1), poiRankZoomValueSchema]);
-const poiCategoryStyleSchema = symbolStyleSchema
-  .extend({maxRank: poiRankLimitSchema.optional()})
-  .strict();
+const poiCategoryStyleSchema = symbolStyleSchema.omit({priority: true}).strict();
 
 const roadClassSchema = z.enum([
   'motorway',
@@ -592,7 +731,7 @@ const roadTreatmentStyleSchema = z
     enabled: z.boolean().optional(),
     surface: roadTreatmentLayerStyleSchema.optional(),
     tunnel: roadTreatmentLayerStyleSchema.optional(),
-    widthScale: z.number().finite().positive().optional(),
+    widthScale: themeNumberValueSchema.optional(),
   })
   .strict();
 
@@ -753,7 +892,7 @@ const roadsModuleSchema = z
       .strict()
       .optional(),
     classes: z.partialRecord(roadClassSchema, roadClassStyleSchema).optional(),
-    crossings: iconStyleSchema.extend({image: stringValueSchema}).strict().optional(),
+    crossings: iconStyleSchema.extend({image: imageValueSchema}).strict().optional(),
     detail: z.enum(['none', 'highways', 'major', 'streets', 'all']).optional(),
     enabled: z.boolean().optional(),
     extras: z.object({paths: z.boolean().optional()}).strict().optional(),
@@ -821,7 +960,7 @@ const roadsModuleSchema = z
       .optional(),
     structures: roadStructureMapSchema.optional(),
     weight: z.enum(['thin', 'regular', 'bold']).optional(),
-    widthScale: z.partialRecord(roadClassSchema, z.number().finite().positive()).optional(),
+    widthScale: z.partialRecord(roadClassSchema, themeNumberValueSchema).optional(),
   })
   .strict();
 
@@ -864,7 +1003,14 @@ const labelsModuleSchema = z
         shields: z
           .object({
             default: symbolStyleSchema.optional(),
-            networks: z.record(identifierSchema, symbolStyleSchema).optional(),
+            detail: symbolStyleSchema.optional(),
+            kinds: z
+              .record(identifierSchema, z.object({image: themeImageValueSchema}).strict())
+              .optional(),
+            overview: symbolStyleSchema.optional(),
+            textColors: z
+              .record(identifierSchema, z.object({color: themeColorValueSchema}).strict())
+              .optional(),
           })
           .strict()
           .optional(),
@@ -879,14 +1025,14 @@ const labelsModuleSchema = z
 const poiModuleSchema = z
   .object({
     type: z.literal('poi'),
-    categories: z.array(identifierSchema).optional(),
-    classMapping: z.record(identifierSchema, z.array(identifierSchema).min(1)).optional(),
+    categories: z.array(z.enum(tileflowPoiCategories)).optional(),
     color: z.enum(['uniform', 'category']).optional(),
-    density: z.enum(['sparse', 'balanced', 'dense']).optional(),
+    density: z
+      .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
+      .optional(),
     enabled: z.boolean().optional(),
-    icons: z.union([z.boolean(), z.enum(['essential', 'full'])]).optional(),
-    labels: z.enum(['none', 'minimal', 'balanced', 'full']).optional(),
-    maxRank: poiRankLimitSchema.optional(),
+    icons: z.boolean().optional(),
+    labels: z.boolean().optional(),
     minZoom: zoomNumberSchema.optional(),
     placement: z
       .object({
@@ -896,8 +1042,34 @@ const poiModuleSchema = z
       })
       .strict()
       .optional(),
-    preset: z.enum(['none', 'minimal', 'balanced', 'full']).optional(),
-    styles: z.record(identifierSchema, poiCategoryStyleSchema).optional(),
+    styles: z.partialRecord(z.enum(tileflowPoiCategories), poiCategoryStyleSchema).optional(),
+  })
+  .strict();
+const nauticalModuleSchema = z
+  .object({
+    type: z.literal('nautical'),
+    aids: symbolStyleSchema.optional(),
+    coverage: areaStyleSchema.optional(),
+    enabled: z.boolean().optional(),
+    hazardAreas: areaStyleSchema.optional(),
+    hazards: symbolStyleSchema.optional(),
+    labels: z
+      .object({
+        coverage: symbolStyleSchema.optional(),
+        hazards: symbolStyleSchema.optional(),
+        navigationAreas: symbolStyleSchema.optional(),
+        reefs: symbolStyleSchema.optional(),
+        wrecks: symbolStyleSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    lighthouses: symbolStyleSchema.optional(),
+    lights: symbolStyleSchema.optional(),
+    navigationAreas: areaStyleSchema.optional(),
+    reefs: areaStyleSchema.optional(),
+    soundings: symbolStyleSchema.optional(),
+    wreckAreas: areaStyleSchema.optional(),
+    wrecks: symbolStyleSchema.optional(),
   })
   .strict();
 
@@ -910,6 +1082,7 @@ const modulesSchema = z
     labels: labelsModuleSchema.optional(),
     land: landModuleSchema.optional(),
     landforms: landformsModuleSchema.optional(),
+    nautical: nauticalModuleSchema.optional(),
     poi: poiModuleSchema.optional(),
     roads: roadsModuleSchema.optional(),
     transit: transitModuleSchema.optional(),
@@ -922,11 +1095,35 @@ const modulesSchema = z
         mode: z.enum(['3d', 'flat']).optional(),
         threeDimensional: z
           .object({
-            barkColor: hexColorSchema.optional(),
-            broadleafColors: z.array(hexColorSchema).min(1).max(8).optional(),
-            coniferColors: z.array(hexColorSchema).min(1).max(8).optional(),
-            crownScale: z.number().finite().positive().max(10).optional(),
-            heightScale: z.number().finite().positive().max(10).optional(),
+            barkColor: themeColorValueSchema.optional(),
+            broadleafColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
+            coniferColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
+            crownScale: z
+              .union([
+                z.number().finite().positive().max(10),
+                themeNumberReferenceSchema,
+                z
+                  .object({
+                    kind: z.literal('theme-fixed'),
+                    reason: z.string().trim().min(1),
+                    value: z.number().finite().positive().max(10),
+                  })
+                  .strict(),
+              ])
+              .optional(),
+            heightScale: z
+              .union([
+                z.number().finite().positive().max(10),
+                themeNumberReferenceSchema,
+                z
+                  .object({
+                    kind: z.literal('theme-fixed'),
+                    reason: z.string().trim().min(1),
+                    value: z.number().finite().positive().max(10),
+                  })
+                  .strict(),
+              ])
+              .optional(),
           })
           .strict()
           .optional(),
@@ -956,6 +1153,7 @@ const layerBindingsSchema = z
     poi: z.string().trim().min(1),
     road: z.string().trim().min(1),
     roadName: z.string().trim().min(1),
+    roadShield: z.string().trim().min(1).optional(),
     sidewalk: z.string().trim().min(1).optional(),
     streetFurniture: z.string().trim().min(1).optional(),
     tree: z.string().trim().min(1).optional(),
@@ -983,6 +1181,7 @@ const fieldBindingsSchema = z
     circularInnerRadiusMeters: z.string().trim().min(1).optional(),
     circularOuterRadiusMeters: z.string().trim().min(1).optional(),
     class: z.string().trim().min(1),
+    crossing: z.string().trim().min(1),
     classificationConfidence: z.string().trim().min(1),
     confidence: z.string().trim().min(1),
     circumference: z.string().trim().min(1),
@@ -1010,6 +1209,7 @@ const fieldBindingsSchema = z
     leafType: z.string().trim().min(1),
     level: z.string().trim().min(1),
     maritime: z.string().trim().min(1),
+    markings: z.string().trim().min(1),
     minHeight: z.string().trim().min(1),
     minZoom: z.string().trim().min(1),
     mtbScale: z.string().trim().min(1),
@@ -1019,6 +1219,11 @@ const fieldBindingsSchema = z
     network: z.string().trim().min(1),
     official: z.string().trim().min(1),
     oneway: z.string().trim().min(1),
+    poiCategory: z.string().trim().min(1),
+    poiFilterRank: z.string().trim().min(1),
+    poiIcon: z.string().trim().min(1),
+    poiSizeRank: z.string().trim().min(1),
+    poiType: z.string().trim().min(1),
     ramp: z.string().trim().min(1),
     rank: z.string().trim().min(1),
     ref: z.string().trim().min(1),
@@ -1026,6 +1231,12 @@ const fieldBindingsSchema = z
     renderHeight: z.string().trim().min(1),
     renderMinZoom: z.string().trim().min(1),
     renderMinHeight: z.string().trim().min(1),
+    shieldKind: z.string().trim().min(1).optional(),
+    shieldLineLengthMeters: z.string().trim().min(1).optional(),
+    shieldNetwork: z.string().trim().min(1).optional(),
+    shieldRank: z.string().trim().min(1).optional(),
+    shieldText: z.string().trim().min(1).optional(),
+    shieldTextColor: z.string().trim().min(1).optional(),
     service: z.string().trim().min(1),
     species: z.string().trim().min(1),
     speciesWikidata: z.string().trim().min(1),
@@ -1078,6 +1289,83 @@ const publicVectorUrlSchema = z.string().superRefine((value, context) => {
     });
   }
 });
+const marineSourceSchema = z
+  .object({
+    attribution: z
+      .string()
+      .min(1)
+      .max(2_048)
+      .refine((value) => value === value.trim())
+      .optional(),
+    sourceId: identifierSchema.optional(),
+    url: publicVectorUrlSchema.optional(),
+  })
+  .strict();
+const bathymetryDemUrlSchema = publicVectorUrlSchema.refine(
+  (value) => !value.startsWith('pmtiles://'),
+  'Expected an HTTPS, loopback HTTP, or root-relative DEM TileJSON URL',
+);
+const bathymetryReliefSchema = z
+  .object({
+    accentColor: terrainColorValueSchema.optional(),
+    attribution: z
+      .string()
+      .min(1)
+      .max(2_048)
+      .refine((value) => value === value.trim())
+      .optional(),
+    encoding: z.enum(['mapbox', 'terrarium']).optional(),
+    exaggeration: terrainNumberValueSchema(z.number().finite().min(0).max(1)).optional(),
+    highlightColor: terrainColorValueSchema.optional(),
+    illuminationAltitude: terrainNumberValueSchema(z.number().finite().min(0).max(90)).optional(),
+    illuminationAnchor: z.enum(['map', 'viewport']).optional(),
+    illuminationDirection: terrainNumberValueSchema(z.number().finite().min(0).max(359)).optional(),
+    maxZoom: zoomNumberSchema.optional(),
+    minZoom: zoomNumberSchema.optional(),
+    multidirectional: z.boolean().optional(),
+    opacity: terrainNumberValueSchema(z.number().finite().min(0).max(1)).optional(),
+    shadowColor: terrainColorValueSchema.optional(),
+    sourceId: identifierSchema.optional(),
+    tileSize: z.union([z.literal(256), z.literal(512)]).optional(),
+    url: bathymetryDemUrlSchema.optional(),
+    visible: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine((relief, context) => {
+    if (
+      relief.minZoom !== undefined &&
+      relief.maxZoom !== undefined &&
+      relief.minZoom > relief.maxZoom
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Expected maxZoom to be greater than or equal to minZoom',
+        path: ['maxZoom'],
+      });
+    }
+  });
+const bathymetryConfigSchema = z
+  .object({
+    ...marineSourceSchema.shape,
+    bands: z.union([z.literal(false), fillStyleSchema]).optional(),
+    contours: z.union([z.literal(false), lineStyleSchema]).optional(),
+    display: z.enum(['bands', 'relief', 'hybrid']).optional(),
+    labels: z.union([z.literal(false), symbolStyleSchema]).optional(),
+    relief: z.union([z.literal(false), bathymetryReliefSchema]).optional(),
+    type: z.literal('bathymetry'),
+  })
+  .strict();
+const marineSchema = z.union([
+  z.enum(['none', 'bathymetry', 'nautical', 'chart']),
+  z
+    .object({
+      bathymetry: z
+        .union([z.literal(false), marineSourceSchema, bathymetryConfigSchema])
+        .optional(),
+      nautical: z.union([z.literal(false), marineSourceSchema]).optional(),
+    })
+    .strict(),
+]);
 const directVectorDataSchema = z
   .object({
     ...vectorDataShape,
@@ -1217,32 +1505,32 @@ const terrainLayerRangeShape = {
 const terrainHillshadeSchema = z
   .object({
     ...terrainLayerRangeShape,
-    accentColor: hexColorSchema.optional(),
-    exaggeration: z.number().finite().min(0).max(1).optional(),
-    highlightColor: hexColorSchema.optional(),
+    accentColor: terrainColorValueSchema.optional(),
+    exaggeration: terrainNumberValueSchema(z.number().finite().min(0).max(1)).optional(),
+    highlightColor: terrainColorValueSchema.optional(),
     illuminationAnchor: z.enum(['map', 'viewport']).optional(),
-    illuminationDirection: z.number().finite().min(0).max(359).optional(),
-    shadowColor: hexColorSchema.optional(),
+    illuminationDirection: terrainNumberValueSchema(z.number().finite().min(0).max(359)).optional(),
+    shadowColor: terrainColorValueSchema.optional(),
   })
   .strict();
 const terrainContourLineSchema = z
   .object({
     ...terrainLayerRangeShape,
-    color: hexColorSchema.optional(),
-    opacity: z.number().finite().min(0).max(1).optional(),
-    width: z.number().finite().min(0).max(32).optional(),
+    color: terrainColorValueSchema.optional(),
+    opacity: terrainNumberValueSchema(z.number().finite().min(0).max(1)).optional(),
+    width: terrainNumberValueSchema(z.number().finite().min(0).max(32)).optional(),
   })
   .strict();
 const terrainContourLabelSchema = z
   .object({
     ...terrainLayerRangeShape,
-    color: hexColorSchema.optional(),
-    font: exactFontFaceSchema.optional(),
-    haloColor: hexColorSchema.optional(),
-    haloWidth: z.number().finite().min(0).max(16).optional(),
-    opacity: z.number().finite().min(0).max(1).optional(),
-    size: z.number().finite().min(1).max(64).optional(),
-    spacing: z.number().finite().min(1).max(1000).optional(),
+    color: terrainColorValueSchema.optional(),
+    font: moduleFontValueSchema.optional(),
+    haloColor: terrainColorValueSchema.optional(),
+    haloWidth: terrainNumberValueSchema(z.number().finite().min(0).max(16)).optional(),
+    opacity: terrainNumberValueSchema(z.number().finite().min(0).max(1)).optional(),
+    size: terrainNumberValueSchema(z.number().finite().min(1).max(64)).optional(),
+    spacing: terrainNumberValueSchema(z.number().finite().min(1).max(1000)).optional(),
   })
   .strict();
 const terrainContourThresholdPairSchema = z
@@ -1401,37 +1689,49 @@ const deliverySchema = z
       .optional(),
   })
   .strict();
-const streetsThemeSchema = tileflowThemeSchema;
-const lightSchema = z
-  .object({
-    anchor: z.enum(['map', 'viewport']).optional(),
-    color: hexColorSchema.optional(),
-    intensity: z.number().finite().min(0).max(1).optional(),
-    position: z
-      .tuple([
-        z.number().finite().min(0),
-        z.number().finite().min(0).max(360),
-        z.number().finite().min(0).max(180),
-      ])
-      .optional(),
-  })
+const themesSchema = z
+  .record(tileflowThemeNameSchema, tileflowThemeSchema)
+  .superRefine((themes, context) => {
+    const names = Object.keys(themes);
+    if (names.length === 0) {
+      context.addIssue({code: 'custom', message: 'Expected at least one named theme'});
+    }
+    if (names.length > 64) {
+      context.addIssue({code: 'too_big', maximum: 64, origin: 'object'});
+    }
+    for (const [name, theme] of Object.entries(themes)) {
+      try {
+        resolveTileflowTheme(theme as TileflowTheme);
+      } catch (error) {
+        context.addIssue({
+          code: 'custom',
+          message: error instanceof Error ? error.message : String(error),
+          path: [name],
+        });
+      }
+    }
+  });
+const systemThemesSchema = z
+  .object({dark: tileflowThemeNameSchema, light: tileflowThemeNameSchema})
   .strict();
 
 export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
   .object({
     data: dataSchema.optional(),
+    defaultTheme: tileflowThemeNameSchema,
     delivery: deliverySchema.optional(),
     fonts: fontDirectoriesSchema.optional(),
     glyphs: glyphsSchema.optional(),
     icons: iconDirectoriesSchema.optional(),
     id: tileflowMapIdSchema,
-    light: lightSchema.optional(),
+    marine: marineSchema.optional(),
     modules: modulesSchema.optional(),
     name: z.string().trim().min(1),
     projection: z.enum(['globe', 'mercator']).optional(),
     root: mapRootSchema,
+    systemThemes: systemThemesSchema.optional(),
     terrain: terrainSchema.optional(),
-    theme: streetsThemeSchema.optional(),
+    themes: themesSchema,
     version: z.number().int().positive(),
     view: viewSchema.optional(),
   })
@@ -1443,6 +1743,53 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
         message: 'Expected either fonts or glyphs, not both',
         path: ['fonts'],
       });
+    }
+    if (!Object.hasOwn(map.themes, map.defaultTheme)) {
+      context.addIssue({
+        code: 'custom',
+        message: `Expected an existing theme name; available themes: ${Object.keys(map.themes).sort().join(', ')}`,
+        path: ['defaultTheme'],
+      });
+    }
+    const themeEntries = Object.entries(map.themes).sort(([left], [right]) =>
+      left < right ? -1 : left > right ? 1 : 0,
+    );
+    const baseline = themeEntries[0];
+    if (baseline) {
+      for (const [name, theme] of themeEntries.slice(1)) {
+        for (const category of ['color', 'font', 'image', 'number'] as const) {
+          const expected = Object.keys(baseline[1].tokens[category]).sort();
+          const actual = Object.keys(theme.tokens[category]).sort();
+          if (expected.join('\0') !== actual.join('\0')) {
+            const missing = expected.filter((token) => !actual.includes(token));
+            const extra = actual.filter((token) => !expected.includes(token));
+            context.addIssue({
+              code: 'custom',
+              message:
+                `Expected the same ${category} token schema as theme "${baseline[0]}"` +
+                `${missing.length ? `; missing: ${missing.join(', ')}` : ''}` +
+                `${extra.length ? `; extra: ${extra.join(', ')}` : ''}`,
+              path: ['themes', name, 'tokens', category],
+            });
+          }
+        }
+      }
+    }
+    for (const scheme of ['light', 'dark'] as const) {
+      const name = map.systemThemes?.[scheme];
+      if (name !== undefined && !Object.hasOwn(map.themes, name)) {
+        context.addIssue({
+          code: 'custom',
+          message: `Expected an existing theme name for ${scheme}`,
+          path: ['systemThemes', scheme],
+        });
+      } else if (name !== undefined && map.themes[name]?.colorScheme !== scheme) {
+        context.addIssue({
+          code: 'custom',
+          message: `Expected ${scheme} theme, received ${map.themes[name]?.colorScheme}`,
+          path: ['systemThemes', scheme],
+        });
+      }
     }
     validateZoomRanges(map, context);
   }) as z.ZodType<TileflowCompilerConfig>;

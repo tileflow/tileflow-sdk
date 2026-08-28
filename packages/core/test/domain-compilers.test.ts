@@ -26,6 +26,7 @@ import {resolveColors} from '../src/themes';
 const context = {
   colors: resolveColors(),
   data: resolveTileflowData(undefined),
+  images: {'poi.transport': 'transit'},
   typography: {
     font: 'Noto Sans Regular',
     places: {font: 'Noto Sans Bold'},
@@ -797,9 +798,9 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
   );
   const poiContributions = compilePoi(
     poi({
-      categories: ['food', 'transit'],
-      preset: 'balanced',
-      styles: {food: {text: {color: '#AA4422'}}},
+      categories: ['food-drink', 'transport'],
+      density: 3,
+      styles: {'food-drink': {text: {color: '#AA4422'}}},
     }),
     context,
   );
@@ -815,14 +816,14 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
   assert.deepEqual(
     poiContributions.map((entry) => entry.layer.id),
     [
-      'streets-poi-food-icon',
-      'streets-poi-food-label',
-      'streets-poi-transit-icon',
-      'streets-poi-transit-label',
+      'streets-poi-food-drink-icon',
+      'streets-poi-food-drink-label',
+      'streets-poi-transport-icon',
+      'streets-poi-transport-label',
     ],
   );
-  assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /14/);
-  assert.match(JSON.stringify(poiContributions[1]?.layer.filter), /80/);
+  assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /filter_rank/);
+  assert.match(JSON.stringify(poiContributions[1]?.layer.filter), /size_rank/);
 });
 
 test('partitions point and line water labels without duplicate candidates', () => {
@@ -850,11 +851,11 @@ test('partitions point and line water labels without duplicate candidates', () =
 test('compiles a semantic POI marker through the shared circle primitive', () => {
   const contributions = compilePoi(
     poi({
-      categories: ['culture'],
+      categories: ['arts-entertainment'],
       icons: false,
-      labels: 'none',
+      labels: false,
       styles: {
-        culture: {
+        'arts-entertainment': {
           marker: {
             color: '#7755AA',
             radius: 5,
@@ -867,7 +868,7 @@ test('compiles a semantic POI marker through the shared circle primitive', () =>
     context,
   );
   const marker = contributions.find(
-    (entry) => entry.layer.id === 'streets-poi-culture-marker',
+    (entry) => entry.layer.id === 'streets-poi-arts-entertainment-marker',
   )?.layer;
 
   assert.equal(marker?.type, 'circle');
@@ -965,7 +966,7 @@ test('composes expressway, toll, indoor, official, and mountain-bike intelligenc
   );
 });
 
-test('compiles network-specific road shields and motorway junction labels without raw IDs', () => {
+test('compiles global road-shield phases and allowlisted visuals without raw IDs', () => {
   const data = resolveTileflowData({
     type: 'vector-tiles',
     attribution: '© Test',
@@ -973,11 +974,16 @@ test('compiles network-specific road shields and motorway junction labels withou
       fields: {
         class: 'kind',
         name: 'label',
-        network: 'route_network',
         ref: 'route_ref',
+        refLength: 'route_ref_length',
+        shieldKind: 'shield_family',
+        shieldLineLengthMeters: 'shield_line_length',
+        shieldRank: 'shield_rank',
+        shieldText: 'shield_text',
+        shieldTextColor: 'shield_ink',
         subclass: 'detail',
       },
-      layers: {roadName: 'road_labels'},
+      layers: {roadName: 'road_labels', roadShield: 'road_shields'},
     }),
     url: '/tiles.json',
   });
@@ -989,44 +995,123 @@ test('compiles network-specific road shields and motorway junction labels withou
       styles: {
         junctions: {text: {color: '#556677'}},
         shields: {
-          default: {text: {color: '#334455'}},
-          networks: {'gb-motorway': {text: {color: '#FFFFFF'}}},
+          default: {
+            icon: {
+              image: 'route-shield',
+              optional: false,
+              textFit: 'width',
+              textFitPadding: [0, 5, 0, 5],
+            },
+            text: {color: '#334455', optional: false},
+          },
+          detail: {spacing: 600},
+          kinds: {'rectangle-blue': {image: 'route-shield-blue'}},
+          overview: {priority: 90},
+          textColors: {light: {color: '#FFFFFF'}},
         },
       },
     }),
     roads({detail: 'all'}),
     {...context, data},
   );
-  const generic = contributions.find(
-    (entry) => entry.layer.id === 'streets-label-road-shield',
+  const overview = contributions.find(
+    (entry) => entry.layer.id === 'streets-label-road-shield-overview',
   )?.layer;
-  const network = contributions.find(
-    (entry) => entry.layer.id === 'streets-label-road-shield-gb-motorway',
+  const detail = contributions.find(
+    (entry) => entry.layer.id === 'streets-label-road-shield-detail',
   )?.layer;
   const junction = contributions.find(
     (entry) => entry.layer.id === 'streets-label-road-junction',
   )?.layer;
 
-  assert.equal(generic?.['source-layer'], 'road_labels');
-  assert.match(JSON.stringify(generic?.filter), /route_network/);
-  assert.match(JSON.stringify(network?.filter), /gb-motorway/);
-  assert.match(JSON.stringify(network?.layout), /route_ref/);
+  assert.equal(overview?.['source-layer'], 'road_shields');
+  assert.equal(detail?.['source-layer'], 'road_labels');
+  assert.equal(overview?.minzoom, 6);
+  assert.equal(overview?.maxzoom, 11);
+  assert.equal(detail?.minzoom, 11);
+  assert.match(JSON.stringify(overview?.filter), /Point/);
+  assert.match(
+    JSON.stringify(overview?.filter),
+    /\[">=",\["to-number",\["get","route_ref_length"\],0\],1\]/u,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(overview?.filter),
+    /\[">=",\["to-number",\["get","route_ref_length"\],0\],2\]/u,
+  );
+  assert.match(JSON.stringify(detail?.filter), /LineString/);
+  assert.match(JSON.stringify(overview?.filter), /shield_family/);
+  assert.match(JSON.stringify(detail?.filter), /route_ref_length/);
+  assert.match(JSON.stringify(detail?.filter), /shield_line_length/);
+  assert.match(JSON.stringify(detail?.layout), /shield_text/);
+  assert.match(JSON.stringify(detail?.layout?.['symbol-sort-key']), /shield_rank/);
+  assert.match(JSON.stringify(detail?.layout?.['icon-image']), /route-shield-blue/);
+  assert.match(JSON.stringify(detail?.layout?.['icon-image']), /shield_family/);
+  assert.match(JSON.stringify(detail?.paint?.['text-color']), /shield_ink/);
+  assert.equal(overview?.layout?.['symbol-placement'], 'point');
+  assert.equal(detail?.layout?.['symbol-placement'], 'line');
+  assert.equal(overview?.layout?.['icon-rotation-alignment'], 'viewport');
+  assert.equal(overview?.layout?.['text-rotation-alignment'], 'viewport');
+  assert.equal(detail?.layout?.['icon-rotation-alignment'], 'viewport');
+  assert.equal(detail?.layout?.['text-rotation-alignment'], 'viewport');
+  assert.equal(detail?.layout?.['symbol-spacing'], 600);
+  assert.equal((overview?.layout as Record<string, unknown>)['icon-text-fit'], 'width');
+  assert.deepEqual(
+    (overview?.layout as Record<string, unknown>)['icon-text-fit-padding'],
+    [0, 5, 0, 5],
+  );
+  assert.equal((overview?.layout as Record<string, unknown>)['icon-optional'], false);
+  assert.equal((overview?.layout as Record<string, unknown>)['text-optional'], false);
   assert.match(JSON.stringify(junction?.filter), /motorway_junction/);
   assert.match(JSON.stringify(junction?.filter), /detail/);
   assert.equal((junction?.paint as Record<string, unknown>)['text-color'], '#556677');
 });
 
-test('POI density, label detail, icon detail, and coupling change emitted layers', () => {
+test('generic OpenMapTiles degrades road shields to one neutral detail layer', () => {
+  const data = resolveTileflowData({
+    type: 'vector-tiles',
+    attribution: '© Test',
+    schema: openMapTiles(),
+    url: '/tiles.json',
+  });
+  const contributions = compileLabels(
+    labels({
+      roads: 'all',
+      shields: 'all',
+      styles: {
+        shields: {
+          default: {
+            icon: {image: 'shield-neutral'},
+            text: {color: '#223344'},
+          },
+          kinds: {'rectangle-blue': {image: 'shield-blue'}},
+          textColors: {light: {color: '#FFFFFF'}},
+        },
+      },
+    }),
+    roads({detail: 'all'}),
+    {...context, data},
+  );
+  const shields = contributions.filter((entry) => entry.layer.id.includes('road-shield'));
+
+  assert.equal(shields.length, 1);
+  assert.equal(shields[0]?.layer.id, 'streets-label-road-shield-detail');
+  assert.equal(shields[0]?.layer['source-layer'], 'transportation_name');
+  assert.equal(shields[0]?.layer.layout?.['icon-image'], 'shield-neutral');
+  assert.equal(shields[0]?.layer.paint?.['text-color'], '#223344');
+  assert.doesNotMatch(JSON.stringify(shields[0]?.layer), /shield_kind|shield_text_color/u);
+});
+
+test('POI numeric density and coupling change emitted layers', () => {
   const uncoupled = compilePoi(
-    poi({categories: ['food'], density: 'dense', icons: 'full', labels: 'full'}),
+    poi({categories: ['food-drink'], density: 5, icons: true, labels: true}),
     context,
   );
   const coupled = compilePoi(
     poi({
-      categories: ['food'],
-      density: 'balanced',
-      icons: 'essential',
-      labels: 'balanced',
+      categories: ['food-drink'],
+      density: 3,
+      icons: true,
+      labels: true,
       placement: {coupleIconAndLabel: true},
     }),
     context,
@@ -1034,45 +1119,52 @@ test('POI density, label detail, icon detail, and coupling change emitted layers
 
   assert.deepEqual(
     uncoupled.map((entry) => entry.layer.id),
-    ['streets-poi-food-icon', 'streets-poi-food-label'],
+    ['streets-poi-food-drink-icon', 'streets-poi-food-drink-label'],
   );
-  assert.doesNotMatch(JSON.stringify(uncoupled[0]?.layer.filter), /rank/);
+  assert.match(JSON.stringify(uncoupled[0]?.layer.filter), /filter_rank/);
+  assert.match(JSON.stringify(uncoupled[0]?.layer.filter), /,5\]/);
   assert.deepEqual(
     coupled.map((entry) => entry.layer.id),
-    ['streets-poi-food'],
+    ['streets-poi-food-drink'],
   );
-  assert.match(JSON.stringify(coupled[0]?.layer.filter), /14/);
+  assert.match(JSON.stringify(coupled[0]?.layer.filter), /,3\]/);
 
-  const balancedLabels = compilePoi(
-    poi({categories: ['food'], density: 'balanced', icons: false, labels: 'balanced'}),
+  const labelsOnly = compilePoi(
+    poi({categories: ['food-drink'], density: 1, icons: false, labels: true}),
     context,
   );
-  assert.match(JSON.stringify(balancedLabels[0]?.layer.filter), /80/);
+  assert.deepEqual(
+    labelsOnly.map((entry) => entry.layer.id),
+    ['streets-poi-food-drink-label'],
+  );
+  assert.match(JSON.stringify(labelsOnly[0]?.layer.filter), /,1\]/);
 });
 
 test('POI categories can introduce their labels at different zoom levels', () => {
   const contributions = compilePoi(
     poi({
-      categories: ['culture', 'food'],
+      categories: ['arts-entertainment', 'food-drink'],
       icons: false,
-      labels: 'balanced',
+      labels: true,
       minZoom: 12.5,
       styles: {
-        culture: {marker: {radius: 3}, minZoom: 12.5},
-        food: {marker: {radius: 3}, minZoom: 15.5},
+        'arts-entertainment': {marker: {radius: 3}, minZoom: 12.5},
+        'food-drink': {marker: {radius: 3}, minZoom: 15.5},
       },
     }),
     context,
   );
   const culture = contributions.find(
-    (entry) => entry.layer.id === 'streets-poi-culture-label',
+    (entry) => entry.layer.id === 'streets-poi-arts-entertainment-label',
   )?.layer;
-  const food = contributions.find((entry) => entry.layer.id === 'streets-poi-food-label')?.layer;
+  const food = contributions.find(
+    (entry) => entry.layer.id === 'streets-poi-food-drink-label',
+  )?.layer;
   const cultureMarker = contributions.find(
-    (entry) => entry.layer.id === 'streets-poi-culture-marker',
+    (entry) => entry.layer.id === 'streets-poi-arts-entertainment-marker',
   )?.layer;
   const foodMarker = contributions.find(
-    (entry) => entry.layer.id === 'streets-poi-food-marker',
+    (entry) => entry.layer.id === 'streets-poi-food-drink-marker',
   )?.layer;
 
   assert.equal(culture?.minzoom, 12.5);
@@ -1081,105 +1173,34 @@ test('POI categories can introduce their labels at different zoom levels', () =>
   assert.equal(foodMarker?.minzoom, 15.5);
 });
 
-test('POI categories can replace global rank presets with exact semantic ceilings', () => {
+test('POI categories are exact and never fall back to class or subclass', () => {
   const contributions = compilePoi(
     poi({
-      categories: ['culture', 'lodging'],
-      density: 'balanced',
+      categories: ['transport'],
+      density: 3,
       icons: false,
-      labels: 'balanced',
-      styles: {
-        culture: {maxRank: 120},
-        lodging: {marker: {radius: 3}, maxRank: 360},
-      },
+      labels: true,
     }),
     context,
   );
-  const culture = contributions.find(
-    (entry) => entry.layer.id === 'streets-poi-culture-label',
-  )?.layer;
-  const lodgingLabel = contributions.find(
-    (entry) => entry.layer.id === 'streets-poi-lodging-label',
-  )?.layer;
-  const lodgingMarker = contributions.find(
-    (entry) => entry.layer.id === 'streets-poi-lodging-marker',
-  )?.layer;
+  const serializedFilter = JSON.stringify(contributions[0]?.layer.filter);
 
-  assert.match(JSON.stringify(culture?.filter), /120/);
-  assert.match(JSON.stringify(lodgingLabel?.filter), /360/);
-  assert.match(JSON.stringify(lodgingMarker?.filter), /360/);
+  assert.match(serializedFilter, /"category"/u);
+  assert.match(serializedFilter, /"transport"/u);
+  assert.doesNotMatch(serializedFilter, /"class"|"subclass"|"rank"/u);
 });
 
-test('POI rank ceilings can reveal candidates progressively by zoom', () => {
-  const globalLimit = zoom.step([
-    [14, 14],
-    [17, 80],
-    [19, 500],
-  ]);
-  const cultureLimit = zoom.step([
-    [14, 8],
-    [17, 40],
-    [19, 120],
-  ]);
-  const contributions = compilePoi(
-    poi({
-      categories: ['culture', 'lodging'],
-      icons: 'full',
-      labels: 'full',
-      maxRank: globalLimit,
-      styles: {
-        culture: {maxRank: cultureLimit},
-        lodging: {marker: {radius: 3}},
-      },
-    }),
+test('POI placement orders by filter rank and then physical size rank', () => {
+  const [layer] = compilePoi(
+    poi({categories: ['landmark'], density: 4, icons: true, labels: false}),
     context,
   );
-  const culture = contributions.find(
-    (entry) => entry.layer.id === 'streets-poi-culture-label',
-  )?.layer;
-  const lodging = contributions.find(
-    (entry) => entry.layer.id === 'streets-poi-lodging-label',
-  )?.layer;
 
-  assert.deepEqual((culture?.filter as unknown[])?.at(-1), [
-    '<=',
-    ['to-number', ['get', 'rank'], 999],
-    ['step', ['zoom'], 8, 17, 40, 19, 120],
+  assert.deepEqual(layer?.layer.layout?.['symbol-sort-key'], [
+    '+',
+    ['*', ['to-number', ['get', 'filter_rank'], 6], 17],
+    ['to-number', ['get', 'size_rank'], 17],
   ]);
-  assert.deepEqual((lodging?.filter as unknown[])?.at(-1), [
-    '<=',
-    ['to-number', ['get', 'rank'], 999],
-    ['step', ['zoom'], 14, 17, 80, 19, 500],
-  ]);
-
-  for (const id of [
-    'streets-poi-culture-icon',
-    'streets-poi-lodging-marker',
-    'streets-poi-lodging-icon',
-  ]) {
-    const layer = contributions.find((entry) => entry.layer.id === id)?.layer;
-    assert.deepEqual((layer?.filter as unknown[])?.at(-1), [
-      '<=',
-      ['to-number', ['get', 'rank'], 999],
-      id.includes('culture')
-        ? ['step', ['zoom'], 8, 17, 40, 19, 120]
-        : ['step', ['zoom'], 14, 17, 80, 19, 500],
-    ]);
-  }
-
-  const coupled = compilePoi(
-    poi({
-      categories: ['food'],
-      icons: 'full',
-      labels: 'full',
-      maxRank: globalLimit,
-      placement: {coupleIconAndLabel: true},
-    }),
-    context,
-  );
-  assert.deepEqual((coupled[0]?.layer.filter as unknown[])?.at(-1), [
-    '<=',
-    ['to-number', ['get', 'rank'], 999],
-    ['step', ['zoom'], 14, 17, 80, 19, 500],
-  ]);
+  assert.match(JSON.stringify(layer?.layer.layout?.['icon-image']), /"icon"/u);
+  assert.match(JSON.stringify(layer?.layer.layout?.['icon-image']), /"culture"/u);
 });

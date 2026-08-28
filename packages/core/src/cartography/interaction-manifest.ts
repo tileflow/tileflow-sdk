@@ -1,11 +1,12 @@
 import {tileflowCompilerMetadataKeys} from './contributions';
+import {tileflowPoiCategories, type TileflowPoiCategory} from '../types';
 
 export const tileflowInteractionManifestMetadataKey = 'tileflow:interaction-manifest' as const;
-export const tileflowInteractionManifestVersion = 1 as const;
+export const tileflowInteractionManifestVersion = 2 as const;
 
 export type TileflowPoiInteractionLayer = {
   anchor: 'pointer-coordinate';
-  category: string;
+  category: TileflowPoiCategory;
   layerId: string;
   priority: number;
   representation: 'combined' | 'icon' | 'label' | 'marker';
@@ -14,10 +15,12 @@ export type TileflowPoiInteractionLayer = {
 };
 
 export type TileflowPoiInteractionFields = {
-  class: string;
+  category: string;
+  filterRank: string;
+  icon: string;
   name: string;
-  rank: string;
-  subclass: string;
+  sizeRank: string;
+  type: string;
 };
 
 export type TileflowInteractionManifest = {
@@ -109,7 +112,7 @@ export function assertTileflowInteractionManifestLayers(
   }
   for (const layer of poiLayers) {
     if (
-      !isSafeArtifactName(layer.category) ||
+      !isTileflowPoiCategory(layer.category) ||
       !isSafeArtifactName(layer.layerId) ||
       !isSafeArtifactName(layer.source) ||
       !isSafeArtifactName(layer.sourceLayer)
@@ -142,13 +145,17 @@ function parsePoiTarget(
   const segments = target.split('.');
   if (segments[0] !== 'poi' || segments.length < 2 || segments.length > 3) return undefined;
   const category = segments[1];
-  if (!category) return undefined;
+  if (!isTileflowPoiCategory(category)) return undefined;
   const suffix = segments[2];
   if (suffix === undefined) return {category, representation: 'combined'};
   if (suffix === 'icon' || suffix === 'label' || suffix === 'marker') {
     return {category, representation: suffix};
   }
   return undefined;
+}
+
+function isTileflowPoiCategory(value: unknown): value is TileflowPoiCategory {
+  return typeof value === 'string' && (tileflowPoiCategories as readonly string[]).includes(value);
 }
 
 function semanticTarget(layer: Record<string, unknown>): string | undefined {

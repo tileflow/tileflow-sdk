@@ -14,6 +14,7 @@ import {
   validateTileflowStyle,
   writeTileflowBuildArtifacts,
 } from '../src/index';
+import {fixtureThemeFields} from './theme-fixture';
 
 const fixtureGlyphs = {
   kind: 'url',
@@ -33,8 +34,17 @@ const streetsPreparedAssets = {
       'lodging',
       'major-transit',
       'oneway',
+      'parking',
+      'road-shield-circle-neutral',
+      'road-shield-rectangle-blue',
+      'road-shield-rectangle-green',
+      'road-shield-rectangle-neutral',
+      'road-shield-rectangle-orange',
+      'road-shield-rectangle-red',
+      'road-shield-rectangle-yellow',
       'services',
       'shopping',
+      'sidewalk-dot-dark',
       'sidewalk-dot',
     ],
     sprite: '/tileflow/test/streets/sprite',
@@ -130,10 +140,13 @@ test('artifact construction rejects removed physical overrides before writing', 
   await writeFile(
     join(cwd, 'tileflow.workspace.ts'),
     `import {defineRootMap} from '@tileflow/core';
+import {streetsThemes} from '@tileflow/maps';
 export default defineRootMap({
   id: 'madrid',
   version: 1,
   root: {compiler: 'streets', compilerVersion: 1},
+  defaultTheme: 'light',
+  themes: {light: streetsThemes.light},
   overrides: []
 });\n`,
   );
@@ -154,6 +167,7 @@ test('direct Streets roads validate and written artifacts equal in-memory styles
           id: 'madrid',
           version: 1,
           root: {compiler: 'streets', compilerVersion: 1},
+          ...fixtureThemeFields,
           glyphs: fixtureGlyphs,
           modules: {
             roads: roads({
@@ -176,11 +190,13 @@ test('direct Streets roads validate and written artifacts equal in-memory styles
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
     `import {defineRootMap} from '@tileflow/core';
-import {streetsIcons} from '@tileflow/maps';
+import {streetsIcons, streetsThemes} from '@tileflow/maps';
 export default defineRootMap({
   id: 'madrid',
   version: 1,
   root: {compiler: 'streets', compilerVersion: 1},
+  defaultTheme: 'light',
+  themes: {light: streetsThemes.light},
   glyphs: {kind: 'url', url: 'https://fonts.example.test/{fontstack}/{range}.pbf', fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']},
   icons: [streetsIcons],
   modules: {roads: {
@@ -193,11 +209,11 @@ export default defineRootMap({
   const artifacts = await createTileflowBuildArtifacts({cwd});
   const written = await writeTileflowBuildArtifacts({cwd, outDir: 'dist/tileflow'});
   const diskStyle = JSON.parse(
-    await readFile(join(cwd, 'dist/tileflow/styles/madrid.json'), 'utf8'),
+    await readFile(join(cwd, 'dist/tileflow/styles/madrid/light.json'), 'utf8'),
   );
 
   assert.deepEqual(artifacts.styles.madrid, written.styles.madrid);
-  assert.deepEqual(diskStyle, artifacts.styles.madrid);
+  assert.deepEqual(diskStyle, artifacts.styles.madrid?.light);
 });
 
 test('builds World and glyph selectors independently without repository state', async (t) => {
@@ -205,10 +221,13 @@ test('builds World and glyph selectors independently without repository state', 
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
     `import {defineRootMap} from '@tileflow/core';
+import {streetsThemes} from '@tileflow/maps';
 export default defineRootMap({
   id: 'madrid',
   version: 1,
   root: {compiler: 'streets', compilerVersion: 1},
+  defaultTheme: 'light',
+  themes: {light: streetsThemes.light},
   glyphs: {
     kind: 'url',
     url: 'https://assets.example.test/base/exact/glyphs/{fontstack}/{range}.pbf',
@@ -227,7 +246,7 @@ export default defineRootMap({
     apiBaseUrl: 'https://api-two.example.test',
     cwd,
   });
-  const style = first.styles.madrid!;
+  const style = first.styles.madrid!.light!;
   const source = style.sources.tileflow as Record<string, unknown>;
 
   assert.notDeepEqual(first, second);
@@ -240,6 +259,59 @@ export default defineRootMap({
   );
   assert.equal(style.sprite, undefined);
   assert.equal(first.assets.length, 0);
+});
+
+test('local Soundings preview resolves World and both Bathymetry components from one API base', async (t) => {
+  const cwd = await createFixture(t, 'tileflow-dev-soundings-marine-');
+  await writeFile(
+    join(cwd, 'tileflow.config.ts'),
+    `import {soundings} from '@tileflow/maps';
+export default soundings;
+`,
+  );
+
+  const artifacts = await createTileflowBuildArtifacts({
+    apiBaseUrl: 'http://127.0.0.1:4888/local-api',
+    assetBaseUrl: 'http://127.0.0.1:3333',
+    cwd,
+    styleBaseUrl: 'http://127.0.0.1:3333',
+  });
+  const style = artifacts.styles.soundings?.light;
+  assert.ok(style);
+  assert.equal(style.sources.tileflow?.url, 'http://127.0.0.1:4888/tiles/world/tiles.json');
+  assert.equal(
+    style.sources['tileflow-bathymetry']?.url,
+    'http://127.0.0.1:4888/tiles/bathymetry/tiles.json',
+  );
+  assert.deepEqual(style.sources['tileflow-bathymetry-dem'], {
+    encoding: 'terrarium',
+    tileSize: 512,
+    type: 'raster-dem',
+    url: 'http://127.0.0.1:4888/tiles/bathymetry/dem/tiles.json',
+  });
+  assert.equal(style.sources['tileflow-nautical'], undefined);
+
+  for (const id of ['streets-bathymetry-color-relief', 'streets-bathymetry-relief']) {
+    assert.equal(
+      style.layers.find((layer) => layer.id === id)?.source,
+      'tileflow-bathymetry-dem',
+      `Missing local Bathymetry DEM layer ${id}`,
+    );
+  }
+
+  assert.equal(
+    style.layers.some((layer) => layer.source === 'tileflow-nautical'),
+    false,
+  );
+  assert.equal(
+    style.layers.some((layer) => layer.id.startsWith('streets-poi-')),
+    false,
+  );
+  assert.equal(
+    style.layers.some((layer) => layer.id.startsWith('streets-nautical-')),
+    false,
+  );
+  assert.match(style.sprite ?? '', /\/icons\/soundings\/sprite$/u);
 });
 
 async function createFixture(t: TestContext, prefix: string): Promise<string> {

@@ -59,8 +59,8 @@ export function applyLineStyle<TLayer extends Layer>(
   setPaint(paint, 'line-width', style.width);
   setLayout(layout, 'line-cap', style.cap);
   setLayout(layout, 'line-join', style.join);
-  if (style.miterLimit !== undefined) layout['line-miter-limit'] = style.miterLimit;
-  if (style.roundLimit !== undefined) layout['line-round-limit'] = style.roundLimit;
+  setLayout(layout, 'line-miter-limit', style.miterLimit);
+  setLayout(layout, 'line-round-limit', style.roundLimit);
   return applyLayerRange(withLayerParts(layer, layout, paint), style);
 }
 
@@ -77,12 +77,18 @@ export function applyTextStyle<TLayer extends Layer>(
   setLayout(layout, 'text-size', style.size);
   setLayout(layout, 'text-letter-spacing', style.letterSpacing);
   setLayout(layout, 'text-line-height', style.lineHeight);
-  if (style.maxAngle !== undefined) layout['text-max-angle'] = style.maxAngle;
+  setLayout(layout, 'text-max-angle', style.maxAngle);
   setLayout(layout, 'text-max-width', style.maxWidth);
-  if (style.offset !== undefined) layout['text-offset'] = [...style.offset];
+  setLayout(layout, 'text-offset', style.offset);
   setLayout(layout, 'text-padding', style.padding);
+  if (style.pitchAlignment !== undefined) {
+    layout['text-pitch-alignment'] = style.pitchAlignment;
+  }
   setLayout(layout, 'text-radial-offset', style.radialOffset);
   setLayout(layout, 'text-rotate', style.rotate);
+  if (style.rotationAlignment !== undefined) {
+    layout['text-rotation-alignment'] = style.rotationAlignment;
+  }
   if (style.transform !== undefined) layout['text-transform'] = style.transform;
   if (style.anchor !== undefined) layout['text-anchor'] = style.anchor;
   if (style.variableAnchors !== undefined) {
@@ -110,8 +116,10 @@ export function applyIconStyle<TLayer extends Layer>(
   setLayout(layout, 'icon-image', style.image);
   setLayout(layout, 'icon-size', style.size);
   setLayout(layout, 'icon-rotate', style.rotate);
+  if (style.textFit !== undefined) layout['icon-text-fit'] = style.textFit;
+  setLayout(layout, 'icon-text-fit-padding', style.textFitPadding);
   if (style.anchor !== undefined) layout['icon-anchor'] = style.anchor;
-  if (style.offset !== undefined) layout['icon-offset'] = [...style.offset];
+  setLayout(layout, 'icon-offset', style.offset);
   setLayout(layout, 'icon-padding', style.padding);
   if (style.pitchAlignment !== undefined) layout['icon-pitch-alignment'] = style.pitchAlignment;
   if (style.rotationAlignment !== undefined) {

@@ -37,6 +37,8 @@ export type OpenMapTilesLayerBindings = {
   poi: string;
   road: string;
   roadName: string;
+  /** Optional generalized low-zoom route-shield points. Required by Tileflow World V1. */
+  roadShield?: string;
   /** Optional detailed pedestrian-surface polygons. */
   sidewalk?: string;
   /** Optional point features such as pedestrian crossings. */
@@ -65,7 +67,7 @@ export type OpenMapTilesFieldBindings = {
   circularKind?: string;
   /** Precomputed roundabout radius in pixels at zoom 15. */
   circularRadiusAtZoom15?: string;
-  /** Extra precomputed clearance around a circular road at zoom 15. */
+  /** Extra precomputed clearance on road approaches to a circular road at zoom 15. */
   circularClearanceExtraAtZoom15?: string;
   /** Roundabout radius in metres. */
   circularRadiusMeters?: string;
@@ -74,6 +76,8 @@ export type OpenMapTilesFieldBindings = {
   /** Roundabout outer radius in metres. */
   circularOuterRadiusMeters?: string;
   class: string;
+  /** Crossing control classification on street-furniture points. */
+  crossing: string;
   circumference: string;
   classificationConfidence: string;
   confidence: string;
@@ -104,6 +108,8 @@ export type OpenMapTilesFieldBindings = {
   leafType: string;
   level: string;
   maritime: string;
+  /** Physical crossing-marking classification on street-furniture points. */
+  markings: string;
   minHeight: string;
   minZoom: string;
   mtbScale: string;
@@ -113,6 +119,16 @@ export type OpenMapTilesFieldBindings = {
   network: string;
   official: string;
   oneway: string;
+  /** Canonical editorial POI category. Never aliases OpenMapTiles `class`. */
+  poiCategory: string;
+  /** Per-zoom POI density tier from 0 (most selective) through 5. */
+  poiFilterRank: string;
+  /** Producer-selected POI icon key. */
+  poiIcon: string;
+  /** Physical-size tier from 0 (largest) through 16 (point-sized). */
+  poiSizeRank: string;
+  /** Canonical specific POI type. Never aliases OpenMapTiles `subclass`. */
+  poiType: string;
   ramp: string;
   rank: string;
   ref: string;
@@ -120,6 +136,18 @@ export type OpenMapTilesFieldBindings = {
   renderHeight: string;
   renderMinZoom: string;
   renderMinHeight: string;
+  /** Optional producer-normalized route-shield family. Required by Tileflow World V1. */
+  shieldKind?: string;
+  /** Optional merged line length used to bound detailed route-shield repetition. */
+  shieldLineLengthMeters?: string;
+  /** Optional producer-normalized route network identifier. */
+  shieldNetwork?: string;
+  /** Optional producer-normalized route-shield collision rank. */
+  shieldRank?: string;
+  /** Optional producer-normalized route-shield text. */
+  shieldText?: string;
+  /** Optional producer-normalized route-shield ink role. Required by Tileflow World V1. */
+  shieldTextColor?: string;
   service: string;
   species: string;
   speciesWikidata: string;
@@ -165,6 +193,12 @@ export type TileflowWorldV1Schema = Omit<OpenMapTilesSchema, 'fields' | 'layers'
     circularRadiusMeters: string;
     direction: string;
     hasParts: string;
+    shieldKind: string;
+    shieldLineLengthMeters: string;
+    shieldNetwork: string;
+    shieldRank: string;
+    shieldText: string;
+    shieldTextColor: string;
   };
   layers: OpenMapTilesLayerBindings & {
     bathymetry: string;
@@ -172,6 +206,7 @@ export type TileflowWorldV1Schema = Omit<OpenMapTilesSchema, 'fields' | 'layers'
     globalLandcover: string;
     sidewalk: string;
     streetFurniture: string;
+    roadShield: string;
   };
 };
 
@@ -297,6 +332,7 @@ const canonicalFields = {
   circularRadiusAtZoom15: 'radius_px_z15',
   circularRadiusMeters: 'radius_m',
   class: 'class',
+  crossing: 'crossing',
   circumference: 'circumference',
   classificationConfidence: 'classification_confidence',
   confidence: 'confidence',
@@ -323,6 +359,7 @@ const canonicalFields = {
   leafType: 'leaf_type',
   level: 'level',
   maritime: 'maritime',
+  markings: 'markings',
   minHeight: 'min_height',
   minZoom: 'min_zoom',
   mtbScale: 'mtb_scale',
@@ -332,6 +369,11 @@ const canonicalFields = {
   network: 'network',
   official: 'official',
   oneway: 'oneway',
+  poiCategory: 'category',
+  poiFilterRank: 'filter_rank',
+  poiIcon: 'icon',
+  poiSizeRank: 'size_rank',
+  poiType: 'type',
   ramp: 'ramp',
   rank: 'rank',
   ref: 'ref',
@@ -391,10 +433,17 @@ export function tileflowWorldV1Schema(
       circularRadiusMeters: 'radius_m',
       direction: 'direction',
       hasParts: 'has_parts',
+      shieldKind: 'shield_kind',
+      shieldLineLengthMeters: 'shield_line_length_m',
+      shieldNetwork: 'shield_network',
+      shieldRank: 'shield_rank',
+      shieldText: 'shield_text',
+      shieldTextColor: 'shield_text_color',
       ...options.fields,
     },
     layers: {
       circularFeature: 'circular_feature',
+      roadShield: 'transportation_shield',
       sidewalk: 'sidewalk',
       streetFurniture: 'street_furniture',
       ...options.layers,
@@ -414,6 +463,10 @@ export function validateTileflowWorldV1Tilejson(
   const circularFeature = requireTilejsonLayer(layers, schema.layers.circularFeature, issues);
   const sidewalk = requireTilejsonLayer(layers, schema.layers.sidewalk, issues);
   const streetFurniture = requireTilejsonLayer(layers, schema.layers.streetFurniture, issues);
+  const poi = requireTilejsonLayer(layers, schema.layers.poi, issues);
+  const road = requireTilejsonLayer(layers, schema.layers.road, issues);
+  const roadName = requireTilejsonLayer(layers, schema.layers.roadName, issues);
+  const roadShield = requireTilejsonLayer(layers, schema.layers.roadShield, issues);
 
   if (bathymetry) {
     if (bathymetry.minzoom !== 0 || bathymetry.maxzoom !== 9) {
@@ -448,6 +501,22 @@ export function validateTileflowWorldV1Tilejson(
     );
   }
 
+  if (poi) {
+    if (poi.minzoom !== 12 || poi.maxzoom !== 15) {
+      issues.push(`Tileflow World V1 ${schema.layers.poi} must declare z12-z15.`);
+    }
+    for (const field of [schema.fields.poiCategory, schema.fields.poiIcon, schema.fields.poiType]) {
+      requireTilejsonField(poi, schema.layers.poi, field, ['String'], issues);
+    }
+    for (const field of [
+      schema.fields.poiFilterRank,
+      schema.fields.minZoom,
+      schema.fields.poiSizeRank,
+    ]) {
+      requireTilejsonField(poi, schema.layers.poi, field, ['Number'], issues);
+    }
+  }
+
   if (circularFeature) {
     requireNativeZoom15(circularFeature, schema.layers.circularFeature, issues);
     requireTilejsonField(
@@ -469,7 +538,6 @@ export function validateTileflowWorldV1Tilejson(
       schema.fields.circularRadiusMeters,
       schema.fields.circularOuterRadiusMeters,
       schema.fields.circularInnerRadiusMeters,
-      schema.fields.circularClearanceExtraAtZoom15,
     ]) {
       requireTilejsonField(
         circularFeature,
@@ -516,6 +584,67 @@ export function validateTileflowWorldV1Tilejson(
       ['Number', 'String'],
       issues,
     );
+    requireTilejsonField(
+      streetFurniture,
+      schema.layers.streetFurniture,
+      schema.fields.crossing,
+      ['String'],
+      issues,
+    );
+    requireTilejsonField(
+      streetFurniture,
+      schema.layers.streetFurniture,
+      schema.fields.markings,
+      ['String'],
+      issues,
+    );
+  }
+
+  if (road) {
+    requireTilejsonField(
+      road,
+      schema.layers.road,
+      schema.fields.circularClearanceExtraAtZoom15,
+      ['Number'],
+      issues,
+    );
+  }
+  if (roadName) {
+    for (const field of [
+      schema.fields.class,
+      schema.fields.ref,
+      schema.fields.shieldKind,
+      schema.fields.shieldNetwork,
+      schema.fields.shieldText,
+      schema.fields.shieldTextColor,
+    ]) {
+      requireTilejsonField(roadName, schema.layers.roadName, field, ['String'], issues);
+    }
+    for (const field of [
+      schema.fields.refLength,
+      schema.fields.shieldLineLengthMeters,
+      schema.fields.shieldRank,
+    ]) {
+      requireTilejsonField(roadName, schema.layers.roadName, field, ['Number'], issues);
+    }
+  }
+  if (roadShield) {
+    if (roadShield.minzoom !== 6 || roadShield.maxzoom !== 10) {
+      issues.push(`Tileflow World V1 ${schema.layers.roadShield} must declare z6-z10.`);
+    }
+    for (const field of [
+      schema.fields.class,
+      schema.fields.ref,
+      schema.fields.shieldKind,
+      schema.fields.shieldNetwork,
+      schema.fields.shieldText,
+      schema.fields.shieldTextColor,
+    ]) {
+      requireTilejsonField(roadShield, schema.layers.roadShield, field, ['String'], issues);
+    }
+    for (const field of [schema.fields.refLength, schema.fields.shieldRank]) {
+      requireTilejsonField(roadShield, schema.layers.roadShield, field, ['Number'], issues);
+    }
   }
   return issues;
 }

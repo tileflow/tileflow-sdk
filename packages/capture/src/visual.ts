@@ -1,4 +1,5 @@
 import pixelmatch from 'pixelmatch';
+import {types as nodeUtilTypes} from 'node:util';
 import {PNG} from 'pngjs';
 import {
   compareCodeUnits,
@@ -13,6 +14,7 @@ import {
   type TileflowCaptureDataIdentityV2,
   type TileflowCaptureDataIdentityV3,
   type TileflowCaptureReceipt,
+  type TileflowCaptureReceiptV4,
   validateTileflowCaptureReceipt,
 } from './receipt';
 import {readPngDimensions} from './standalone';
@@ -20,6 +22,8 @@ import {readPngDimensions} from './standalone';
 export const tileflowVisualComparisonSchemaVersion = 1 as const;
 export const tileflowVisualAnalysisSchemaVersion = 1 as const;
 export const tileflowVisualPerceptualThreshold = 0.1;
+/** Fixed linear-luminance difference used to classify adjacent pixel pairs as edges. */
+export const tileflowVisualEdgeThreshold = 0.05;
 export const tileflowVisualArtifactLimits = Object.freeze({
   maximumPngBytes: 256 * 1024 * 1024,
   maximumPaletteColors: 16,
@@ -81,10 +85,65 @@ export type TileflowVisualPaletteColor = {
   ratio: number;
 };
 
+/** One bounded region in physical PNG pixels, relative to the top-left corner. */
+export type TileflowVisualRegion = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type TileflowVisualAppearanceStatistics = {
+  mean: number;
+  percentiles: {
+    p10: number;
+    p50: number;
+    p90: number;
+  };
+};
+
+export type TileflowVisualAppearanceProfile = {
+  /** WCAG relative luminance after compositing transparent pixels on white, in [0, 1]. */
+  linearLuminance: TileflowVisualAppearanceStatistics;
+  /** Perceptual OKLab L after compositing transparent pixels on white, in [0, 1]. */
+  oklabLightness: TileflowVisualAppearanceStatistics;
+  /** Perceptual OKLab chroma after compositing transparent pixels on white. */
+  oklabChroma: TileflowVisualAppearanceStatistics;
+  /** Ratio of horizontal/vertical neighbor pairs crossing tileflowVisualEdgeThreshold. */
+  edgeDensity: number;
+  /** Mean absolute linear-luminance difference across horizontal/vertical neighbor pairs. */
+  localContrast: number;
+};
+
+/** Signed, field-for-field subtraction between two reported appearance profiles. */
+export type TileflowVisualAppearanceDelta = TileflowVisualAppearanceProfile;
+
+export type TileflowVisualReferenceAppearance = {
+  region: TileflowVisualRegion;
+  reference: TileflowVisualAppearanceProfile;
+  actual: TileflowVisualAppearanceProfile;
+  /** Every value is actual minus reference; negative values mean the actual is lower. */
+  actualMinusReference: TileflowVisualAppearanceDelta;
+};
+
+export type TileflowVisualReviewAppearance = {
+  region: TileflowVisualRegion;
+  left: TileflowVisualAppearanceProfile;
+  right: TileflowVisualAppearanceProfile;
+  /** Every value is right minus left; negative values mean the right side is lower. */
+  rightMinusLeft: TileflowVisualAppearanceDelta;
+};
+
+export type TileflowVisualReferenceAnalysisOptions = {
+  /** Restrict appearance metrics to one bounded rectangle in physical PNG pixels. */
+  region?: TileflowVisualRegion;
+};
+
 export type TileflowVisualReferenceAnalysis = {
   schemaVersion: 1;
   scene: string;
   map: string;
+  theme: string;
   target: 'map' | 'application';
   dimensionsMatch: boolean;
   reference: {
@@ -102,6 +161,7 @@ export type TileflowVisualReferenceAnalysis = {
   exact: TileflowVisualPixelMetric | null;
   perceptual: (TileflowVisualPixelMetric & {threshold: number}) | null;
   meanAbsoluteChannelDifference: number | null;
+  appearance: TileflowVisualReferenceAppearance | null;
   diffPng?: Uint8Array;
   warnings: string[];
 };
@@ -116,7 +176,121 @@ export type TileflowVisualBaseline = {
   receipt: string | Uint8Array | TileflowCaptureReceipt;
 };
 
-type TileflowVisualPngRole = 'actual' | 'baseline' | 'reference';
+type TileflowVisualPngRole = 'actual' | 'baseline' | 'left' | 'reference' | 'right';
+
+export type TileflowVisualReviewImageAnalysis = {
+  left: {
+    sha256: string;
+    physicalWidth: number;
+    physicalHeight: number;
+    palette: TileflowVisualPaletteColor[];
+  };
+  right: {
+    sha256: string;
+    physicalWidth: number;
+    physicalHeight: number;
+    palette: TileflowVisualPaletteColor[];
+  };
+  exact: TileflowVisualPixelMetric | null;
+  perceptual: (TileflowVisualPixelMetric & {threshold: number}) | null;
+  meanAbsoluteChannelDifference: number | null;
+  appearance: TileflowVisualReviewAppearance | null;
+  diffPng?: Uint8Array;
+};
+
+/** Internal review primitive: authenticate both images before optionally comparing their pixels. */
+export async function analyzeTileflowCapturePairForReview(
+  left: {png: Uint8Array; receipt: TileflowCaptureReceiptV4},
+  right: {png: Uint8Array; receipt: TileflowCaptureReceiptV4},
+  options: {comparePixels: boolean; includeDiff: boolean; region?: TileflowVisualRegion},
+): Promise<TileflowVisualReviewImageAnalysis> {
+  if (options.region) {
+    resolveTileflowVisualRegion(
+      options.region,
+      left.receipt.image.physicalWidth,
+      left.receipt.image.physicalHeight,
+    );
+    resolveTileflowVisualRegion(
+      options.region,
+      right.receipt.image.physicalWidth,
+      right.receipt.image.physicalHeight,
+    );
+  }
+  if (!options.comparePixels) {
+    // Authenticate sequentially so an incompatible review never retains two decoded RGBA buffers.
+    const leftIdentity = await inspectPngAgainstReceipt(left.png, left.receipt, 'left');
+    const rightIdentity = await inspectPngAgainstReceipt(right.png, right.receipt, 'right');
+    return {
+      left: leftIdentity,
+      right: rightIdentity,
+      exact: null,
+      perceptual: null,
+      meanAbsoluteChannelDifference: null,
+      appearance: null,
+    };
+  }
+
+  const leftImage = await validatePngAgainstReceipt(left.png, left.receipt, 'left');
+  const rightImage = await validatePngAgainstReceipt(right.png, right.receipt, 'right');
+  if (leftImage.width !== rightImage.width || leftImage.height !== rightImage.height) {
+    throw invalidBaseline('Comparable review PNGs did not decode to equal dimensions.');
+  }
+
+  const totalPixels = leftImage.width * leftImage.height;
+  const region = resolveTileflowVisualRegion(options.region, leftImage.width, leftImage.height);
+  const appearance = createTileflowVisualReviewAppearance(leftImage, rightImage, region);
+  const exactChangedPixels = countExactChangedPixels(leftImage.data, rightImage.data);
+  const diffData = options.includeDiff ? new Uint8Array(totalPixels * 4) : undefined;
+  const perceptualChangedPixels = pixelmatch(
+    leftImage.data,
+    rightImage.data,
+    diffData,
+    leftImage.width,
+    leftImage.height,
+    {
+      checkerboard: true,
+      diffColor: [255, 0, 255],
+      diffColorAlt: [0, 255, 255],
+      diffMask: true,
+      includeAA: true,
+      threshold: tileflowVisualPerceptualThreshold,
+    },
+  );
+
+  return {
+    left: reviewImageAnalysisIdentity(leftImage, left.receipt),
+    right: reviewImageAnalysisIdentity(rightImage, right.receipt),
+    exact: pixelMetric(exactChangedPixels, totalPixels),
+    perceptual: {
+      threshold: tileflowVisualPerceptualThreshold,
+      ...pixelMetric(perceptualChangedPixels, totalPixels),
+    },
+    meanAbsoluteChannelDifference: meanAbsoluteChannelDifference(leftImage.data, rightImage.data),
+    appearance,
+    ...(diffData ? {diffPng: encodeDiffPng(diffData, leftImage.width, leftImage.height)} : {}),
+  };
+}
+
+async function inspectPngAgainstReceipt(
+  png: Uint8Array,
+  receipt: TileflowCaptureReceiptV4,
+  role: 'left' | 'right',
+): Promise<TileflowVisualReviewImageAnalysis['left']> {
+  const image = await validatePngAgainstReceipt(png, receipt, role);
+  return reviewImageAnalysisIdentity(image, receipt);
+}
+
+function reviewImageAnalysisIdentity(
+  image: {data: Uint8Array; height: number; width: number},
+  receipt: TileflowCaptureReceiptV4,
+): TileflowVisualReviewImageAnalysis['left'] {
+  return {
+    sha256: receipt.image.sha256,
+    physicalWidth: image.width,
+    physicalHeight: image.height,
+    palette: createQuantizedPalette(image.data),
+  };
+}
 
 export function validateTileflowVisualReferencePng(png: Uint8Array): {
   width: number;
@@ -129,16 +303,26 @@ export function validateTileflowVisualReferencePng(png: Uint8Array): {
 export async function analyzeTileflowCaptureReference(
   actualCapture: TileflowCapture,
   referencePng: Uint8Array,
+  options: TileflowVisualReferenceAnalysisOptions = {},
 ): Promise<TileflowVisualReferenceAnalysis> {
+  const requestedRegion = snapshotTileflowVisualReferenceAnalysisOptions(options);
   const receipt = validateTileflowCaptureReceipt(actualCapture.receipt);
+  if (receipt.schemaVersion !== 4) {
+    throw invalidBaseline('Visual reference analysis requires a schema-v4 capture receipt.');
+  }
   const actualImage = await validatePngAgainstReceipt(actualCapture.png, receipt, 'actual');
   const referenceImage = decodePng(referencePng, 'reference');
   const dimensionsMatch =
     referenceImage.width === actualImage.width && referenceImage.height === actualImage.height;
+  if (requestedRegion) {
+    resolveTileflowVisualRegion(requestedRegion, referenceImage.width, referenceImage.height);
+    resolveTileflowVisualRegion(requestedRegion, actualImage.width, actualImage.height);
+  }
   const common = {
     schemaVersion: tileflowVisualAnalysisSchemaVersion,
     scene: receipt.scene.name,
     map: receipt.scene.map,
+    theme: receipt.scene.theme,
     target: receipt.scene.target,
     dimensionsMatch,
     reference: {
@@ -161,6 +345,7 @@ export async function analyzeTileflowCaptureReference(
       exact: null,
       perceptual: null,
       meanAbsoluteChannelDifference: null,
+      appearance: null,
       warnings: [
         'The reference and actual PNG dimensions differ; pixel metrics and diff were not computed.',
         ...networkWarnings(undefined, receipt),
@@ -169,6 +354,11 @@ export async function analyzeTileflowCaptureReference(
   }
 
   const totalPixels = actualImage.width * actualImage.height;
+  const region = resolveTileflowVisualRegion(
+    requestedRegion,
+    actualImage.width,
+    actualImage.height,
+  );
   const exactChangedPixels = countExactChangedPixels(referenceImage.data, actualImage.data);
   const diffData = new Uint8Array(totalPixels * 4);
   const perceptualChangedPixels = pixelmatch(
@@ -198,6 +388,7 @@ export async function analyzeTileflowCaptureReference(
       referenceImage.data,
       actualImage.data,
     ),
+    appearance: createTileflowVisualReferenceAppearance(referenceImage, actualImage, region),
     diffPng: encodeDiffPng(diffData, actualImage.width, actualImage.height),
     warnings: networkWarnings(undefined, receipt),
   };
@@ -547,6 +738,308 @@ function meanAbsoluteChannelDifference(left: Uint8Array, right: Uint8Array): num
     sum += Math.abs(left[index]! - right[index]!);
   }
   return Math.round((sum / left.byteLength) * 1_000_000) / 1_000_000;
+}
+
+const appearanceHistogramSteps = 4_096;
+const maximumOklabChroma = 0.5;
+
+type DecodedVisualPng = {
+  data: Uint8Array;
+  width: number;
+  height: number;
+};
+
+type AppearanceHistogram = {
+  counts: Uint32Array;
+  maximum: number;
+};
+
+function createTileflowVisualReferenceAppearance(
+  reference: DecodedVisualPng,
+  actual: DecodedVisualPng,
+  region: TileflowVisualRegion,
+): TileflowVisualReferenceAppearance {
+  const referenceProfile = createAppearanceProfile(reference, region);
+  const actualProfile = createAppearanceProfile(actual, region);
+  return {
+    region,
+    reference: referenceProfile,
+    actual: actualProfile,
+    actualMinusReference: subtractAppearanceProfiles(actualProfile, referenceProfile),
+  };
+}
+
+function createTileflowVisualReviewAppearance(
+  left: DecodedVisualPng,
+  right: DecodedVisualPng,
+  region: TileflowVisualRegion,
+): TileflowVisualReviewAppearance {
+  const leftProfile = createAppearanceProfile(left, region);
+  const rightProfile = createAppearanceProfile(right, region);
+  return {
+    region,
+    left: leftProfile,
+    right: rightProfile,
+    rightMinusLeft: subtractAppearanceProfiles(rightProfile, leftProfile),
+  };
+}
+
+function createAppearanceProfile(
+  image: DecodedVisualPng,
+  region: TileflowVisualRegion,
+): TileflowVisualAppearanceProfile {
+  const linearLuminanceHistogram = createAppearanceHistogram(1);
+  const oklabLightnessHistogram = createAppearanceHistogram(1);
+  const oklabChromaHistogram = createAppearanceHistogram(maximumOklabChroma);
+  const previousRow = new Float64Array(region.width);
+  const totalPixels = region.width * region.height;
+  let linearLuminanceSum = 0;
+  let oklabLightnessSum = 0;
+  let oklabChromaSum = 0;
+  let neighborCount = 0;
+  let edgeCount = 0;
+  let localContrastSum = 0;
+
+  for (let localY = 0; localY < region.height; localY += 1) {
+    const y = region.y + localY;
+    let leftLuminance = 0;
+    for (let localX = 0; localX < region.width; localX += 1) {
+      const x = region.x + localX;
+      const offset = (y * image.width + x) * 4;
+      const alpha = image.data[offset + 3]! / 255;
+      const red = srgbToLinear(compositeSrgbOnWhite(image.data[offset]!, alpha));
+      const green = srgbToLinear(compositeSrgbOnWhite(image.data[offset + 1]!, alpha));
+      const blue = srgbToLinear(compositeSrgbOnWhite(image.data[offset + 2]!, alpha));
+      const linearLuminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+      const [oklabLightness, oklabA, oklabB] = linearSrgbToOklab(red, green, blue);
+      const oklabChroma = Math.hypot(oklabA, oklabB);
+
+      linearLuminanceSum += linearLuminance;
+      oklabLightnessSum += oklabLightness;
+      oklabChromaSum += oklabChroma;
+      addAppearanceHistogramValue(linearLuminanceHistogram, linearLuminance);
+      addAppearanceHistogramValue(oklabLightnessHistogram, oklabLightness);
+      addAppearanceHistogramValue(oklabChromaHistogram, oklabChroma);
+
+      if (localX > 0) {
+        const difference = Math.abs(linearLuminance - leftLuminance);
+        localContrastSum += difference;
+        neighborCount += 1;
+        if (difference >= tileflowVisualEdgeThreshold) edgeCount += 1;
+      }
+      if (localY > 0) {
+        const difference = Math.abs(linearLuminance - previousRow[localX]!);
+        localContrastSum += difference;
+        neighborCount += 1;
+        if (difference >= tileflowVisualEdgeThreshold) edgeCount += 1;
+      }
+      leftLuminance = linearLuminance;
+      previousRow[localX] = linearLuminance;
+    }
+  }
+
+  return {
+    linearLuminance: appearanceStatistics(
+      linearLuminanceSum,
+      totalPixels,
+      linearLuminanceHistogram,
+    ),
+    oklabLightness: appearanceStatistics(oklabLightnessSum, totalPixels, oklabLightnessHistogram),
+    oklabChroma: appearanceStatistics(oklabChromaSum, totalPixels, oklabChromaHistogram),
+    edgeDensity: roundAppearanceMetric(neighborCount === 0 ? 0 : edgeCount / neighborCount),
+    localContrast: roundAppearanceMetric(
+      neighborCount === 0 ? 0 : localContrastSum / neighborCount,
+    ),
+  };
+}
+
+function createAppearanceHistogram(maximum: number): AppearanceHistogram {
+  return {counts: new Uint32Array(appearanceHistogramSteps + 1), maximum};
+}
+
+function addAppearanceHistogramValue(histogram: AppearanceHistogram, value: number): void {
+  const normalized = Math.max(0, Math.min(1, value / histogram.maximum));
+  histogram.counts[Math.round(normalized * appearanceHistogramSteps)]! += 1;
+}
+
+function appearanceStatistics(
+  sum: number,
+  total: number,
+  histogram: AppearanceHistogram,
+): TileflowVisualAppearanceStatistics {
+  return {
+    mean: roundAppearanceMetric(sum / total),
+    percentiles: {
+      p10: appearancePercentile(histogram, total, 0.1),
+      p50: appearancePercentile(histogram, total, 0.5),
+      p90: appearancePercentile(histogram, total, 0.9),
+    },
+  };
+}
+
+function appearancePercentile(
+  histogram: AppearanceHistogram,
+  total: number,
+  percentile: number,
+): number {
+  const position = (total - 1) * percentile;
+  const lowerRank = Math.floor(position);
+  const upperRank = Math.ceil(position);
+  const lower = appearanceHistogramValueAtRank(histogram, lowerRank);
+  const upper = appearanceHistogramValueAtRank(histogram, upperRank);
+  return roundAppearanceMetric(lower + (upper - lower) * (position - lowerRank));
+}
+
+function appearanceHistogramValueAtRank(histogram: AppearanceHistogram, rank: number): number {
+  let cumulative = 0;
+  for (let index = 0; index < histogram.counts.length; index += 1) {
+    cumulative += histogram.counts[index]!;
+    if (cumulative > rank) {
+      return (index / appearanceHistogramSteps) * histogram.maximum;
+    }
+  }
+  return histogram.maximum;
+}
+
+function subtractAppearanceProfiles(
+  minuend: TileflowVisualAppearanceProfile,
+  subtrahend: TileflowVisualAppearanceProfile,
+): TileflowVisualAppearanceDelta {
+  return {
+    linearLuminance: subtractAppearanceStatistics(
+      minuend.linearLuminance,
+      subtrahend.linearLuminance,
+    ),
+    oklabLightness: subtractAppearanceStatistics(minuend.oklabLightness, subtrahend.oklabLightness),
+    oklabChroma: subtractAppearanceStatistics(minuend.oklabChroma, subtrahend.oklabChroma),
+    edgeDensity: subtractAppearanceMetric(minuend.edgeDensity, subtrahend.edgeDensity),
+    localContrast: subtractAppearanceMetric(minuend.localContrast, subtrahend.localContrast),
+  };
+}
+
+function subtractAppearanceStatistics(
+  minuend: TileflowVisualAppearanceStatistics,
+  subtrahend: TileflowVisualAppearanceStatistics,
+): TileflowVisualAppearanceStatistics {
+  return {
+    mean: subtractAppearanceMetric(minuend.mean, subtrahend.mean),
+    percentiles: {
+      p10: subtractAppearanceMetric(minuend.percentiles.p10, subtrahend.percentiles.p10),
+      p50: subtractAppearanceMetric(minuend.percentiles.p50, subtrahend.percentiles.p50),
+      p90: subtractAppearanceMetric(minuend.percentiles.p90, subtrahend.percentiles.p90),
+    },
+  };
+}
+
+function subtractAppearanceMetric(minuend: number, subtrahend: number): number {
+  return roundAppearanceMetric(minuend - subtrahend);
+}
+
+function roundAppearanceMetric(value: number): number {
+  const rounded = Math.round(value * 1_000_000) / 1_000_000;
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+function compositeSrgbOnWhite(channel: number, alpha: number): number {
+  return (channel / 255) * alpha + (1 - alpha);
+}
+
+function srgbToLinear(channel: number): number {
+  return channel <= 0.04045 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+}
+
+function linearSrgbToOklab(
+  red: number,
+  green: number,
+  blue: number,
+): [lightness: number, a: number, b: number] {
+  const l = Math.cbrt(0.4122214708 * red + 0.5363325363 * green + 0.0514459929 * blue);
+  const m = Math.cbrt(0.2119034982 * red + 0.6806995451 * green + 0.1073969566 * blue);
+  const s = Math.cbrt(0.0883024619 * red + 0.2817188376 * green + 0.6299787005 * blue);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+}
+
+function snapshotTileflowVisualReferenceAnalysisOptions(
+  options: TileflowVisualReferenceAnalysisOptions,
+): TileflowVisualRegion | undefined {
+  const record = requirePlainVisualRecord(options, 'Visual reference analysis options');
+  const keys = Object.keys(record);
+  if (keys.some((key) => key !== 'region')) {
+    throw invalidBaseline('Visual reference analysis options contain unsupported fields.');
+  }
+  return record.region === undefined
+    ? undefined
+    : snapshotTileflowVisualRegion(record.region, 'Visual reference analysis region');
+}
+
+function snapshotTileflowVisualRegion(value: unknown, label: string): TileflowVisualRegion {
+  const record = requirePlainVisualRecord(value, label);
+  const keys = Object.keys(record);
+  if (
+    keys.length !== 4 ||
+    keys.some((key) => key !== 'x' && key !== 'y' && key !== 'width' && key !== 'height')
+  ) {
+    throw invalidBaseline(`${label} must contain exactly x, y, width, and height.`);
+  }
+  return {
+    x: record.x as number,
+    y: record.y as number,
+    width: record.width as number,
+    height: record.height as number,
+  };
+}
+
+function requirePlainVisualRecord(value: unknown, label: string): Record<string, unknown> {
+  if (
+    value === null ||
+    typeof value !== 'object' ||
+    nodeUtilTypes.isProxy(value) ||
+    Object.getPrototypeOf(value) !== Object.prototype
+  ) {
+    throw invalidBaseline(`${label} must be a plain data object.`);
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const entries: Array<[string, unknown]> = [];
+  for (const key of Reflect.ownKeys(descriptors)) {
+    if (typeof key !== 'string') {
+      throw invalidBaseline(`${label} must not contain symbol fields.`);
+    }
+    const descriptor = descriptors[key]!;
+    if (!('value' in descriptor) || !descriptor.enumerable) {
+      throw invalidBaseline(`${label} must not contain accessors or hidden fields.`);
+    }
+    entries.push([key, descriptor.value]);
+  }
+  return Object.fromEntries(entries);
+}
+
+function resolveTileflowVisualRegion(
+  requested: TileflowVisualRegion | undefined,
+  physicalWidth: number,
+  physicalHeight: number,
+): TileflowVisualRegion {
+  const region = requested ?? {x: 0, y: 0, width: physicalWidth, height: physicalHeight};
+  if (
+    !Number.isSafeInteger(region.x) ||
+    !Number.isSafeInteger(region.y) ||
+    !Number.isSafeInteger(region.width) ||
+    !Number.isSafeInteger(region.height) ||
+    region.x < 0 ||
+    region.y < 0 ||
+    region.width <= 0 ||
+    region.height <= 0 ||
+    region.x > physicalWidth - region.width ||
+    region.y > physicalHeight - region.height
+  ) {
+    throw invalidBaseline(
+      'The visual region must be a positive integer rectangle within the physical PNG bounds.',
+    );
+  }
+  return {...region};
 }
 
 function pixelMetric(changedPixels: number, totalPixels: number): TileflowVisualPixelMetric {

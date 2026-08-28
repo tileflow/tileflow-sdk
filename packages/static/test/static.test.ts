@@ -15,6 +15,7 @@ const baseScene = {
   camera: {center: [0, 0] as [number, number], type: 'center' as const, zoom: 2},
   map: 'main',
   size: {height: 480, width: 640},
+  theme: 'light',
 };
 
 test('rejects open polygon rings', () => {
@@ -47,6 +48,15 @@ test('rejects unsupported device pixel ratios before a render request', () => {
 
   assert.equal(result.ok, false);
   if (!result.ok) assert.match(result.error, /dpr/i);
+});
+
+test('requires one concrete theme for deterministic static rendering', () => {
+  assert.equal(validateStaticScene({...baseScene, theme: 'system'}).ok, false);
+  assert.equal(validateStaticScene({...baseScene, theme: ''}).ok, false);
+  assert.equal(validateStaticScene({...baseScene, theme: 'Dark'}).ok, false);
+  assert.equal(validateStaticScene({...baseScene, theme: 'con'}).ok, false);
+  assert.equal(validateStaticScene({...baseScene, map: 'Main'}).ok, false);
+  assert.equal(validateStaticScene({...baseScene, theme: 'dark'}).ok, true);
 });
 
 test('compiles closed polygon rings', () => {
@@ -396,6 +406,7 @@ test('prepares one normalized scene for both the request body and dedupe key', a
     map: 'main',
     overlays: [],
     size: {dpr: 1, height: 480, width: 640},
+    theme: 'light',
   });
 });
 

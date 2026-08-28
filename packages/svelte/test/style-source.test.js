@@ -23,6 +23,21 @@ test('rejects missing and malformed sources', () => {
   }
 });
 
+test('accepts themes only for logical Tileflow sources', () => {
+  assert.deepEqual(
+    validateTileflowMapStyleInputs({source: {kind: 'tileflow', map: 'main'}, theme: 'system'}),
+    {ok: true},
+  );
+  assert.equal(
+    validateTileflowMapStyleInputs({source: {kind: 'tileflow', map: 'main'}, theme: 'con'}).ok,
+    false,
+  );
+  assert.equal(
+    validateTileflowMapStyleInputs({source: {kind: 'maplibre', style: mapStyle}, theme: 'dark'}).ok,
+    false,
+  );
+});
+
 test('wires source validation into component rendering', async () => {
   const compiled = await compileTileflowMap('style-source');
 

@@ -5,6 +5,10 @@ import type {
   ResolvedTileflowData,
 } from '../data';
 import type {TileflowMap} from '../maps/types';
+import {
+  appendTileflowCompilerEffect,
+  tileflowCompilerProvenanceMetadataKey,
+} from './compiler-inspection';
 import {tileflowCompilerMetadataKeys, tileflowLayerTargetPattern} from './contributions';
 import {type TileflowLayerDomain, tileflowLayerDomains} from './domains';
 import {type TileflowStreetsModuleName, tileflowStreetsModuleNames} from './streets-recipe';
@@ -222,7 +226,13 @@ export function applyTileflowModuleEffects(
         );
       }
       const insertionIndex = 'before' in effect.placement ? anchorIndex : anchorIndex + 1;
-      const layer = markEffect(effect.layer, effect.owner, effect.target, 'add');
+      const layer = markEffect(
+        effect.layer,
+        effect.owner,
+        effect.target,
+        'add',
+        semanticSlot(layers[anchorIndex]!),
+      );
       layers = [...layers.slice(0, insertionIndex), layer, ...layers.slice(insertionIndex)];
       continue;
     }
@@ -312,21 +322,39 @@ function markEffect(
   owner: TileflowStreetsModuleName,
   target: string,
   kind: 'add' | 'patch',
+  fallbackSlot?: string,
 ): Record<string, unknown> {
+  const metadata = asRecord(layer.metadata);
+  // Adds derive their compiler slot exclusively from the semantic anchor. Do not
+  // let authored layer metadata forge compiler-private provenance.
+  const slot = kind === 'add' ? fallbackSlot : (semanticSlot(layer) ?? fallbackSlot);
+  const provenanceSource =
+    kind === 'add'
+      ? {
+          metadata: {
+            [tileflowCompilerMetadataKeys.owner]: owner,
+            [tileflowCompilerMetadataKeys.slot]: slot,
+            [tileflowCompilerMetadataKeys.target]: target,
+          },
+        }
+      : layer;
+  const provenance = appendTileflowCompilerEffect(provenanceSource, {kind, owner, target}, slot);
   return {
     ...layer,
     metadata: {
-      ...asRecord(layer.metadata),
+      ...metadata,
       [tileflowCompilerMetadataKeys.owner]: owner,
+      ...(slot ? {[tileflowCompilerMetadataKeys.slot]: slot} : {}),
       [tileflowCompilerMetadataKeys.target]: target,
       [tileflowModuleEffectMetadataKey]: kind,
+      ...(provenance ? {[tileflowCompilerProvenanceMetadataKey]: provenance} : {}),
     },
   };
 }
 
 function preserveCompilerMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
-    Object.values(tileflowCompilerMetadataKeys)
+    [...Object.values(tileflowCompilerMetadataKeys), tileflowCompilerProvenanceMetadataKey]
       .filter((key) => Object.hasOwn(metadata, key))
       .map((key) => [key, metadata[key]]),
   );
@@ -339,6 +367,11 @@ function semanticOwner(layer: Record<string, unknown>): string | undefined {
 
 function semanticTarget(layer: Record<string, unknown>): string | undefined {
   const value = asRecord(layer.metadata)[tileflowCompilerMetadataKeys.target];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function semanticSlot(layer: Record<string, unknown>): string | undefined {
+  const value = asRecord(layer.metadata)[tileflowCompilerMetadataKeys.slot];
   return typeof value === 'string' ? value : undefined;
 }
 

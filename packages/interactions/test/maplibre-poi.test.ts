@@ -9,7 +9,7 @@ import {
 const binding: TileflowInteractionBinding = {
   id: 'poi-card',
   popup: {content: {kind: 'view', name: 'poi-card'}},
-  target: {categories: ['food'], domain: 'poi', kind: 'semantic-feature'},
+  target: {categories: ['food-drink'], domain: 'poi', kind: 'semantic-feature'},
   tooltip: {content: {field: 'name', kind: 'field'}},
 };
 
@@ -20,8 +20,16 @@ function createFixture() {
   let features: readonly TileflowMapLibrePoiFeature[] = [
     {
       id: 'poi-42',
-      layer: {id: 'streets-poi-food-label'},
-      properties: {class: 'restaurant', name: 'Café', rank: 3, unsafe: {nested: true}},
+      layer: {id: 'streets-poi-food-drink-label'},
+      properties: {
+        category: 'food-drink',
+        filter_rank: 3,
+        icon: 'restaurant',
+        name: 'Café',
+        size_rank: 16,
+        type: 'restaurant',
+        unsafe: {nested: true},
+      },
       source: 'tileflow',
       sourceLayer: 'poi',
     },
@@ -29,13 +37,13 @@ function createFixture() {
   const style = {
     layers: [
       {
-        id: 'streets-poi-food-icon',
+        id: 'streets-poi-food-drink-icon',
         source: 'tileflow',
         'source-layer': 'poi',
         type: 'symbol',
       },
       {
-        id: 'streets-poi-food-label',
+        id: 'streets-poi-food-drink-label',
         source: 'tileflow',
         'source-layer': 'poi',
         type: 'symbol',
@@ -49,14 +57,21 @@ function createFixture() {
               identity: ['source', 'source-layer', 'feature-id'],
               representationPriority: ['marker', 'icon', 'combined', 'label'],
             },
-            fields: {class: 'class', name: 'name', rank: 'rank', subclass: 'subclass'},
+            fields: {
+              category: 'category',
+              filterRank: 'filter_rank',
+              icon: 'icon',
+              name: 'name',
+              sizeRank: 'size_rank',
+              type: 'type',
+            },
             hitTesting: {frequency: 'animation-frame', order: 'rendered-topmost'},
             identity: 'maplibre-feature-id-if-present',
             layers: [
               {
                 anchor: 'pointer-coordinate',
-                category: 'food',
-                layerId: 'streets-poi-food-icon',
+                category: 'food-drink',
+                layerId: 'streets-poi-food-drink-icon',
                 priority: 20,
                 representation: 'icon',
                 source: 'tileflow',
@@ -64,8 +79,8 @@ function createFixture() {
               },
               {
                 anchor: 'pointer-coordinate',
-                category: 'food',
-                layerId: 'streets-poi-food-label',
+                category: 'food-drink',
+                layerId: 'streets-poi-food-drink-label',
                 priority: 10,
                 representation: 'label',
                 source: 'tileflow',
@@ -74,7 +89,7 @@ function createFixture() {
             ],
           },
         },
-        version: 1,
+        version: 2,
       },
     },
   };
@@ -88,7 +103,10 @@ function createFixture() {
     },
     queryRenderedFeatures(_point: unknown, options: {layers: readonly string[]}) {
       queries += 1;
-      assert.deepEqual(options.layers, ['streets-poi-food-icon', 'streets-poi-food-label']);
+      assert.deepEqual(options.layers, [
+        'streets-poi-food-drink-icon',
+        'streets-poi-food-drink-label',
+      ]);
       return features;
     },
   };
@@ -133,9 +151,12 @@ test('coalesces POI hit testing and emits normalized semantic targets without ph
   assert.equal(match.target.kind, 'semantic-feature');
   assert.equal(match.target.feature.id, 'poi-42');
   assert.deepEqual(match.target.feature.properties, {
-    class: 'restaurant',
+    category: 'food-drink',
+    filter_rank: 3,
+    icon: 'restaurant',
     name: 'Café',
-    rank: 3,
+    size_rank: 16,
+    type: 'restaurant',
   });
   assert.equal('layerId' in match.target, false);
   assert.deepEqual(
@@ -170,7 +191,7 @@ test('activates stable POIs and fails closed for popup targets without identity'
   assert.deepEqual(activations, ['poi-42']);
   fixture.setFeatures([
     {
-      layer: {id: 'streets-poi-food-label'},
+      layer: {id: 'streets-poi-food-drink-label'},
       properties: {name: 'No ID'},
       source: 'tileflow',
       sourceLayer: 'poi',
@@ -188,14 +209,14 @@ test('deduplicates repeated POI representations using manifest priority', () => 
   fixture.setFeatures([
     {
       id: 'poi-42',
-      layer: {id: 'streets-poi-food-label'},
+      layer: {id: 'streets-poi-food-drink-label'},
       properties: {name: 'Label representation'},
       source: 'tileflow',
       sourceLayer: 'poi',
     },
     {
       id: 'poi-42',
-      layer: {id: 'streets-poi-food-icon'},
+      layer: {id: 'streets-poi-food-drink-icon'},
       properties: {name: 'Icon representation'},
       source: 'tileflow',
       sourceLayer: 'poi',
@@ -407,7 +428,7 @@ test('rejects a POI manifest spanning multiple feature-ID namespaces', () => {
   });
   fixture.style.metadata['tileflow:interaction-manifest'].domains.poi.layers.push({
     anchor: 'pointer-coordinate',
-    category: 'food',
+    category: 'food-drink',
     layerId: 'other-poi',
     priority: 1,
     representation: 'icon',
@@ -436,13 +457,13 @@ test('accepts and deduplicates GeoJSON POI layers without source-layer', () => {
   fixture.setFeatures([
     {
       id: 'poi-42',
-      layer: {id: 'streets-poi-food-label'},
+      layer: {id: 'streets-poi-food-drink-label'},
       properties: {name: 'Label representation'},
       source: 'tileflow',
     },
     {
       id: 'poi-42',
-      layer: {id: 'streets-poi-food-icon'},
+      layer: {id: 'streets-poi-food-drink-icon'},
       properties: {name: 'Icon representation'},
       source: 'tileflow',
     },

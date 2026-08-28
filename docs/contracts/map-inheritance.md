@@ -5,11 +5,11 @@ map, and a map is either a compiler root or an ordinary map that imports another
 `extends`. Root and derived maps use the same design fields. Inheritance is resolved completely
 before validation, asset preparation, compilation, capture, build, or deploy.
 
-`streets`, `ferraris`, `harad`, `siegfried`, `soundings`, and `verdant` are first-party root maps.
-`streetsDark` and `cyberpunk` are ordinary maps that extend Streets, and `matrix` extends Cyberpunk.
-Ferraris, Härad, Siegfried, Soundings, and Verdant select the same semantic Streets compiler ABI as
-their root contract but define their complete designs directly: none imports, extends, or reuses
-assets from the Streets map. They are exported from `@tileflow/maps`; there is no public basemap,
+`streets`, `cyberpunk`, `ferraris`, `harad`, `matrix`, `siegfried`, `soundings`, and `verdant` are
+first-party root maps. Streets and Siegfried own coordinated light and dark themes. Every official root selects
+the semantic Streets compiler ABI but defines its complete design directly: none imports or extends
+another official map, and each declares only its own asset providers. They are exported from
+`@tileflow/maps`; there is no public basemap,
 map-preset, map-catalog, `streets()` constructor, `editorial-city` alias, or compatibility
 normalization.
 
@@ -19,9 +19,12 @@ Each public field has one explicit merge rule:
 
 - The leaf owns `id`, `name`, `version`, `scenes`, and `delivery`; those fields never inherit.
 - Omitted design fields inherit.
-- `theme`, `light`, and `view` merge recursively. A theme is always an object, and it inherits only
-  because the map itself extends another map. There are no named theme references, theme registry,
-  or `theme.extends` field.
+- `view` merges recursively.
+- `themes` replaces as one complete collection when declared; omission inherits it. Replacing the
+  collection clears an inherited `systemThemes` mapping so it cannot point into an obsolete family.
+  `defaultTheme` may independently select one inherited concrete theme, and an explicit
+  `systemThemes` replaces the complete light/dark mapping. Every resolved selector must name a
+  member of the final collection.
 - `data`, `projection`, and `terrain` replace atomically when declared.
 - `modules` merges by domain name. Declaring `roads(...)`, for example, replaces that inherited
   module request and every compiler-owned contribution belonging to roads. Omitted domains remain
@@ -32,6 +35,26 @@ Arrays inside ordinary design objects replace; MapLibre expressions and Tileflow
 atomic. Map identity remains the leaf identity, every lineage must terminate at one supported root,
 and circular, malformed, or over-deep inheritance fails closed. There is no public physical-layer
 override key.
+
+## Themes
+
+Every root has at least one named `TileflowTheme` and one `defaultTheme`. A theme is a complete,
+inheritance-free visual document with identity, `colorScheme`, typography, lighting, and flat
+`color`, `font`, `image`, and `number` token catalogs. All themes in one resolved map must expose
+the same category/key schema. The reserved name `system` is a browser selector, never a stored or
+compiled theme.
+
+Module recipes and compiler-owned effects retain map structure and refer to visual roles through
+`token.color()`, `token.font()`, `token.image()`, or `token.number()`. `fixed(value, {reason})`
+marks a deliberately invariant visual module value. Theme refs resolve recursively through module
+objects, zoom stops, supported color operations, terrain, typography, lighting, and expressions
+before final schema and MapLibre validation. Unknown refs, cycles, category mismatches,
+token-schema drift, and unresolved nodes fail closed.
+
+`defineTheme(base, definition)` is a construction helper, not runtime inheritance: its return value
+is a fully materialized JSON-safe theme. Changing a theme therefore changes appearance only; data,
+filters, module ownership, semantic interactions, layer ordering, and asset-directory ownership
+remain map concerns.
 
 ## Icons
 
@@ -61,13 +84,15 @@ Directories are read from left to right. `<id>.<ext>` publishes an ordinary icon
 `<id>.pattern.<ext>` publishes an intrinsic-size line/fill pattern as `<id>`. That published ID must
 already be canonical lower-kebab-case. A later directory replaces an earlier file only when the ID
 matches exactly; case-only collisions fail. The official directory descriptors `streetsIcons`,
-`streetsDarkIcons`, `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`,
+`ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`,
 `cyberpunkIcons`, `matrixIcons`, and `verdantIcons` let maps reuse package assets without exposing
 installation paths. Ferraris, Härad, Siegfried, Soundings, and Verdant declare only
 `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`, `[soundingsIcons]`, and `[verdantIcons]`,
 respectively; none of these roots composes with Streets assets. Härad's nine original Tileflow SVG
 patterns are inspired by Lantmäteriet's CC0 Häradsekonomiska kartan series (1859–1934) and official
-legend, without redistributing source scans, pixels, legend artwork, fonts, or map data. Soundings
+legend, without redistributing source scans, pixels, legend artwork, fonts, or map data. Siegfried
+owns nine light/dark engraving-motif pairs in one directory; both themes select the same semantic
+image vocabulary without changing map structure. Soundings
 owns ten original nautical symbols and patterns; GEBCO-derived depth bands are broad visual context,
 not navigation-grade soundings. There is no `builtin`, `source`, `sprite`, icon-level `extends`,
 `mapping`, or additive operator.
@@ -120,26 +145,26 @@ fallback. The reproducible replacement is an explicit
 manifest.
 Siegfried instead declares `[siegfriedFonts]` and uses the packaged exact faces
 `Cormorant Garamond Regular`, `Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic`.
-Cyberpunk instead replaces the provider with its packaged font directory and uses the exact local
-names `Oxanium Medium` and `Oxanium SemiBold`.
-Matrix reuses that exact packaged provider while replacing Cyberpunk's colors and HUD artwork.
+Cyberpunk and Matrix each declare their own packaged font directory and use the exact local names
+`Oxanium Medium` and `Oxanium SemiBold`.
 
 ## Build and runtime
 
-The resolved build output is a standalone MapLibre Style JSON plus the exact prepared sprite and
-font assets it references. Final style validation rejects missing `icon-image`, `fill-pattern`, or
-`line-pattern` IDs and missing primary local font faces.
+The resolved build output is one standalone MapLibre Style JSON per concrete map/theme pair plus
+the exact prepared sprite and font assets the family references. Final style validation rejects
+missing `icon-image`, `fill-pattern`, or `line-pattern` IDs and missing primary local font faces.
 
 The build manifest's `mapRevisionSha256` is a content identity for resolved cartography, not a
 second editorial version. It hashes the effective design, compiler family, compiler-owned effective
 contributions, and source icon/font identities. Leaf `id`, `name`, `version`, `view`, `scenes`, and
 `delivery` remain on their owning manifest, Style, capture, or deployment contracts and do not
-change the cartographic revision. `styleSha256` identifies compiled Style JSON and the per-map
+change the cartographic revision. Each theme has its own `styleSha256`; the per-map
 `assetSetSha256` identifies that build's generated runtime resources. The latter uses the
 `tileflow-map-asset-set-v1` hash domain; it is not the `assetSetSha256` from the global base-asset
 manifest embedded in an official immutable glyph URL.
 
 Browser clients never import `tileflow.config.ts`, resolve `extends`, or infer a development URL.
-They consume runtime manifest version 3. A Tileflow runtime source resolves its named map through
-that strict self-hosted or hosted manifest; a direct MapLibre source is the explicit escape hatch
-for a style object or URL.
+They consume the single runtime manifest version 1 shape. A Tileflow runtime source resolves its
+named map and concrete theme through that manifest; `system` requires the declared light/dark
+mapping and browser color scheme. A direct MapLibre source is the explicit escape hatch for a style
+object or URL.

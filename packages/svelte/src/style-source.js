@@ -1,6 +1,9 @@
-import {validateTileflowRuntimeSource} from '@tileflow/core/runtime';
+import {
+  validateTileflowRuntimeSource,
+  validateTileflowThemeSelection,
+} from '@tileflow/core/runtime';
 
-/** @typedef {{source?: unknown}} TileflowMapStyleInput */
+/** @typedef {{source?: unknown, theme?: unknown}} TileflowMapStyleInput */
 /** @typedef {{ok: true} | {error: string; ok: false}} TileflowMapStyleInputValidation */
 
 /**
@@ -8,7 +11,18 @@ import {validateTileflowRuntimeSource} from '@tileflow/core/runtime';
  * @returns {TileflowMapStyleInputValidation}
  */
 export function validateTileflowMapStyleInputs(input) {
-  return validateTileflowRuntimeSource(input.source);
+  const sourceValidation = validateTileflowRuntimeSource(input.source);
+  if (!sourceValidation.ok) return sourceValidation;
+  if (input.theme !== undefined && !validateTileflowThemeSelection(input.theme)) {
+    return {error: 'theme must be a concrete portable theme name or "system"', ok: false};
+  }
+  if (
+    input.theme !== undefined &&
+    /** @type {{kind?: unknown}} */ (input.source).kind !== 'tileflow'
+  ) {
+    return {error: 'theme is only valid with a tileflow source', ok: false};
+  }
+  return {ok: true};
 }
 
 /** @param {TileflowMapStyleInput} input */

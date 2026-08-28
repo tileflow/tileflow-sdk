@@ -145,11 +145,13 @@ test('packages the singular map engine without official maps or legacy authoring
     const recipe = await import('@tileflow/core/recipe');
     for (const name of [
       'defineMap', 'defineRootMap', 'land', 'water', 'roads', 'transit', 'aeroways',
-      'buildings', 'boundaries', 'labels', 'poi', 'vegetation', 'createStyle',
-      'tileflowWorld',
+      'buildings', 'boundaries', 'labels', 'poi', 'vegetation', 'nautical', 'bathymetry', 'createStyle',
+      'tileflowWorld', 'defineTheme', 'fixed', 'resolveMarine',
+      'inferTileflowSourceRequirements',
     ]) {
       if (typeof entry[name] !== 'function') process.exit(2);
     }
+    if (typeof entry.token !== 'object' || typeof entry.color !== 'object') process.exit(2);
     for (const removed of [
       'basemap', 'createStyleFromProject', 'cyberpunk', 'defineTileflow', 'osm', 'streets',
       'styleOverride', 'verdant', 'WorldGenerationDescriptor', 'parseWorldGenerationDescriptor',
@@ -158,11 +160,28 @@ test('packages the singular map engine without official maps or legacy authoring
       if (removed in entry) process.exit(3);
     }
     let rejectedDataGlyphs = false;
+    const light = entry.defineTheme({
+      id: 'smoke-light', version: 1, colorScheme: 'light',
+      tokens: {
+        color: {
+          'boundaries.default': '#C9D1D9', 'labels.halo': '#FFFFFF',
+          'labels.muted': '#727B84', 'labels.primary': '#3C4043',
+          'roads.casing': '#D9DEE2', 'roads.default': '#FFFFFF',
+          'roads.major': '#F4C95D', 'surface.background': '#F6F7F3',
+          'surface.building': '#E6E3DA', 'surface.land': '#F1F3ED',
+          'surface.park': '#CDE8B5', 'surface.water': '#A9D3F5',
+        },
+        font: {default: 'Noto Sans Regular'},
+      },
+      typography: {font: entry.token.font('default')},
+    });
     try {
       const removedDataGlyphMap = entry.defineRootMap({
         id: 'removed-data-glyphs',
         version: 1,
         root: {compiler: 'streets', compilerVersion: 1},
+        defaultTheme: 'light',
+        themes: {light},
         glyphs: {kind: 'data', fontStacks: ['Noto Sans Regular']},
       });
       entry.parseTileflowMap(removedDataGlyphMap);
@@ -175,18 +194,24 @@ test('packages the singular map engine without official maps or legacy authoring
       id: 'smoke',
       version: 1,
       root: {compiler: 'streets', compilerVersion: 1},
+      defaultTheme: 'light',
       glyphs: {
         kind: 'url',
         url: 'https://fixtures.tileflow.test/fonts/{fontstack}/{range}.pbf',
         fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
       },
+      themes: {light},
     });
     const style = entry.createStyle(map, {
       preparedAssets: {
         icons: {
           ids: [
             'coffee', 'crosswalk', 'culture', 'education', 'food', 'health',
-            'lodging', 'major-transit', 'oneway', 'services', 'shopping', 'sidewalk-dot',
+            'lodging', 'major-transit', 'oneway', 'road-shield-circle-neutral',
+            'road-shield-rectangle-blue', 'road-shield-rectangle-green',
+            'road-shield-rectangle-neutral', 'road-shield-rectangle-orange',
+            'road-shield-rectangle-red', 'road-shield-rectangle-yellow',
+            'services', 'shopping', 'sidewalk-dot',
           ],
           sprite: '/tileflow/test/streets/sprite',
         },

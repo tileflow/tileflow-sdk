@@ -6,17 +6,43 @@ Every public `tileflow.config.ts` exports one map. Most maps import an existing 
 the design fields they own:
 
 ```ts
-import {defineMap, labels, poi, roads, water, zoom} from '@tileflow/core';
-import {streetsDark} from '@tileflow/maps';
+import {
+  defineMap,
+  defineTheme,
+  fixed,
+  labels,
+  poi,
+  roads,
+  token,
+  water,
+  zoom,
+} from '@tileflow/core';
+import {streets, streetsThemes} from '@tileflow/maps';
+
+const madridDark = defineTheme(streetsThemes.dark, {
+  id: 'madrid-dark',
+  version: 1,
+  colorScheme: 'dark',
+  tokens: {color: {'surface.land': '#0d1320', 'surface.water': '#081e2e'}},
+});
 
 export default defineMap({
   id: 'madrid',
   name: 'Madrid',
   version: 1,
-  extends: streetsDark,
+  extends: streets,
+  themes: {light: streetsThemes.light, dark: madridDark},
+  defaultTheme: 'light',
+  systemThemes: {light: 'light', dark: 'dark'},
   projection: 'globe',
   modules: {
-    water: water({bodies: {fill: {opacity: 0.95}}}),
+    water: water({
+      bodies: {
+        fill: {
+          opacity: fixed(0.95, {reason: 'Madrid keeps this water density in every theme'}),
+        },
+      },
+    }),
     roads: roads({
       detail: 'streets',
       hierarchy: 'strong',
@@ -24,23 +50,33 @@ export default defineMap({
         primary: {
           surface: {
             fill: {
-              color: '#E4A85B',
+              color: fixed('#E4A85B', {reason: 'Madrid brand roads stay warm in every theme'}),
               width: zoom.linear([
-                [7, 0.6],
-                [16, 8],
+                [7, fixed(0.6, {reason: 'Madrid keeps its primary-road hierarchy across themes'})],
+                [16, fixed(8, {reason: 'Madrid keeps its primary-road hierarchy across themes'})],
               ]),
             },
           },
         },
+        secondary: {surface: {fill: {color: token.color('roads.secondary')}}},
       },
     }),
     labels: labels({
       language: 'local',
       places: 'all',
       roads: 'streets',
-      styles: {places: {city: {text: {size: 18, haloWidth: 1.5}}}},
+      styles: {
+        places: {
+          city: {
+            text: {
+              size: fixed(18, {reason: 'Madrid keeps its city-label scale across themes'}),
+              haloWidth: fixed(1.5, {reason: 'Madrid keeps its city-label halo across themes'}),
+            },
+          },
+        },
+      },
     }),
-    poi: poi({categories: ['food', 'culture', 'major-transit'], color: 'category'}),
+    poi: poi({categories: ['food-drink', 'arts-entertainment', 'transport'], color: 'category'}),
   },
   view: {center: [-3.7038, 40.4168], pitch: 35, zoom: 12},
 });
@@ -74,14 +110,24 @@ terrain: {
       13: [20, 100],
       15: [10, 50],
     },
-    minor: {color: '#91683A', width: 0.55},
-    index: {color: '#734F2A', width: 1.2},
-    labels: {color: '#734F2A', haloColor: '#F7F0DE'},
+    minor: {
+      color: token.color('terrain.contour.minor'),
+      width: token.number('terrain.contour.minor-width'),
+    },
+    index: {
+      color: token.color('terrain.contour.index'),
+      width: token.number('terrain.contour.index-width'),
+    },
+    labels: {
+      color: token.color('terrain.contour.label'),
+      haloColor: token.color('terrain.contour.halo'),
+    },
   },
 }
 ```
 
-The compiled source is ordinary MapLibre vector data with source layer `contours`; its tile URL
+Declare those `terrain.*` color and number roles with the same keys in every map theme. The
+compiled source is ordinary MapLibre vector data with source layer `contours`; its tile URL
 contains the safely encoded DEM template and complete generation parameters. Register the generic
 protocol before MapLibre reads the style. It lazily initializes the pinned, locally bundled
 `maplibre-contour@0.1.0` browser module on the first contour tile; no public CDN runtime is needed.
@@ -102,26 +148,47 @@ registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
 ## Authoring model
 
 Tileflow exposes one authoring concept: a map. `defineRootMap()` creates a complete compiler root;
-`defineMap()` creates an ordinary map whose `extends` value is another imported map object. Streets,
-Ferraris, Härad, Siegfried, Soundings, and Verdant are the first-party roots. All use the semantic
-Streets compiler, but the five roots after Streets define their complete designs directly and do
-not import or extend Streets. Streets Dark and Cyberpunk extend Streets through exactly the same API
-available to applications, and Matrix extends Cyberpunk. There is no separate public recipe
-selector or compatibility alias.
+`defineMap()` creates an ordinary map whose `extends` value is another imported map object. All
+eight first-party maps are independent roots. They use the semantic Streets compiler while defining
+their complete designs and asset providers directly; no official map imports or extends another
+official map. Applications can extend any of those roots through the same public API. Streets
+itself owns coordinated light and dark themes.
+There is no separate public recipe selector or compatibility alias.
 
 The serialized root literal `compiler: 'streets'` is the current compiler-family ABI identifier,
 retained for compatibility. It selects Core's semantic map engine; it does not select or import the
 official `streets` map, and it does not supply that map's modules, icons, fonts, or other assets.
 `compilerVersion` versions this ABI independently from map and package versions.
 
+Custom build tooling can opt into a separate compiler-inspection sidecar from the build-only
+entrypoint:
+
+```ts
+import {createStyleWithInspection} from '@tileflow/core/build';
+
+const {style, inspection} = createStyleWithInspection(map);
+```
+
+`inspection.layers` stays aligned with the final Style layer order and records the semantic
+`owner`, `slot`, `target`, and ordered add/patch effects that contributed to each layer, including
+layers merged by the optimizer. `createStyleFromCatalogWithInspection` and
+`createStylesFromCatalogWithInspection` provide the corresponding internal catalog forms. The
+ordinary Style bytes are identical to compilation without inspection; private compiler metadata is
+stripped before finalization, and the sidecar never enters a Style, runtime manifest, or production
+artifact unless a caller deliberately stores it.
+
 Resolution happens before validation, asset preparation, compilation, capture, build, or deploy.
-Only `theme`, `light`, and `view` deep-merge (their nested arrays and expressions still replace).
+Only `view` deep-merges (its nested arrays and expressions still replace). The `themes` collection
+replaces atomically when declared and clears an inherited `systemThemes` mapping; omission inherits
+the collection. `defaultTheme` may independently choose one inherited concrete theme, while an
+explicit `systemThemes` replaces the complete light/dark mapping. Every resolved selector must name
+a theme in the final collection.
 `modules` merges by domain name: an omitted domain remains inherited, while declaring `roads(...)`
 or another domain replaces that inherited module request and every compiler-owned contribution
-attached to it as a unit. `data`, `projection`, `terrain`, `icons`, and the text provider are atomic;
-identity and tooling metadata are leaf-owned. `enabled: false` removes the domain and all of its
-inherited effects. The resolved result is a standalone map with no runtime dependency on TypeScript
-imports.
+attached to it as a unit. `data`, `projection`, `terrain`, `marine`, `icons`, and the text provider
+are atomic; identity and tooling metadata are leaf-owned. `enabled: false` removes the domain and
+all of its inherited effects. The resolved result is a standalone map with no runtime dependency on
+TypeScript imports.
 
 `icons` is an intentional exception to implicit array composition: omission inherits the exact
 parent array, any declaration replaces it atomically, and `[]` disables map icons. Compose with a
@@ -134,7 +201,7 @@ compiler-owned lineage:
 
 ```ts
 import {defineMap, defineRootMap, tileflowStreetsCompilerVersion} from '@tileflow/core';
-import {streetsIcons} from '@tileflow/maps';
+import {streetsIcons, streetsThemes} from '@tileflow/maps';
 
 const companyRoot = defineRootMap({
   id: 'company-root',
@@ -147,6 +214,9 @@ const companyRoot = defineRootMap({
     fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
   },
   icons: [streetsIcons],
+  themes: {light: streetsThemes.light, dark: streetsThemes.dark},
+  defaultTheme: 'light',
+  systemThemes: {light: 'light', dark: 'dark'},
 });
 
 export default defineMap({
@@ -180,10 +250,13 @@ that every recipe entry keeps its key, type tag, validator, compiler orchestrati
 in lockstep. Disabling `roads` also removes dependent road names, shields, and junction references;
 independent place, water, aerodrome, and POI labels remain under the labels module.
 
-Every styling module supports semantic shortcuts and exact semantic targets. Style values accept
-constants, raw MapLibre expressions through `expression(...)`, and zoom functions through
-`zoom.step(...)`, `zoom.linear(...)`, or `zoom.exponential(...)`. Exact controls address stable
-concepts such as `roads.classes.primary.surface.fill`, not renderer layer IDs.
+Every styling module supports semantic shortcuts and exact semantic targets. Visual style values
+accept typed token refs, documented `fixed(value, {reason})` values, raw MapLibre expressions through
+`expression(...)`, and zoom functions through `zoom.step(...)`, `zoom.linear(...)`, or
+`zoom.exponential(...)`. Refs and fixed leaves also work inside expressions and zoom stops.
+Structural controls such as presets, visibility, and zoom gates remain ordinary literals. Exact
+controls address stable concepts such as `roads.classes.primary.surface.fill`, not renderer layer
+IDs.
 
 The `land` module exposes stable land-use targets for `cemetery`, `civic`, `commercial`,
 `education`, `government`, `industrial`, `medical`, `military`, `parking`, `railway`,
@@ -283,45 +356,109 @@ The road module distinguishes the path family semantically:
 ```ts
 roads({
   extras: {paths: true},
-  crossings: {image: 'crosswalk'},
+  crossings: {image: token.image('roads.crosswalk')},
   sidewalks: {
-    surface: {color: '#F5F6F7', minZoom: 17},
-    pattern: {pattern: 'sidewalk-dot', minZoom: 17, opacity: 0.6},
+    surface: {color: token.color('roads.city.casing'), minZoom: 17},
+    pattern: {
+      pattern: token.image('roads.sidewalkPattern'),
+      minZoom: 17,
+      opacity: fixed(0.6, {reason: 'Sidewalk texture strength is invariant'}),
+    },
   },
   roundabouts: {
-    casing: {strokeColor: '#FFFFFF'},
-    fill: {strokeColor: '#B3BDCC'},
+    casing: {strokeColor: token.color('roads.default.casing')},
+    fill: {strokeColor: token.color('roads.default')},
   },
   areas: {
     pedestrian: {
-      fill: {color: '#F1F3F5'},
-      outline: {color: '#D5DCE3', width: 1},
+      fill: {color: token.color('surface.land')},
+      outline: {
+        color: token.color('roads.default.casing'),
+        width: fixed(1, {reason: 'Pedestrian-area outline weight is invariant'}),
+      },
     },
   },
   classes: {
     primary: {
       tunnel: {
-        casing: {color: '#8EA3B8', width: 10},
-        fill: {color: '#F5F8FA', width: 8},
-        hatch: {color: '#8EA3B8', opacity: 0.25, spacing: 10},
+        casing: {
+          color: token.color('roads.city.tunnelCasing'),
+          width: fixed(10, {reason: 'Primary-tunnel hierarchy is invariant'}),
+        },
+        fill: {
+          color: token.color('roads.city.tunnel'),
+          width: fixed(8, {reason: 'Primary-tunnel hierarchy is invariant'}),
+        },
+        hatch: {
+          color: token.color('roads.city.tunnelCasing'),
+          opacity: fixed(0.25, {reason: 'Tunnel hatch strength is invariant'}),
+          spacing: fixed(10, {reason: 'Tunnel hatch rhythm is invariant'}),
+        },
       },
     },
-    pedestrian: {surface: {fill: {color: '#F5F6F7', width: 6}}},
-    footway: {surface: {fill: {color: '#D9DEE3', width: 1.2}}},
-    cycleway: {surface: {fill: {color: '#9ED8C5', width: 1.5}}},
-    steps: {surface: {fill: {color: '#C7CED6', dash: [1, 1], width: 1.4}}},
-    pathway: {surface: {fill: {color: '#E8ECEF', width: 1.2}}},
+    pedestrian: {
+      surface: {
+        fill: {
+          color: token.color('roads.path.transition'),
+          width: fixed(6, {reason: 'Pedestrian-road hierarchy is invariant'}),
+        },
+      },
+    },
+    footway: {
+      surface: {
+        fill: {
+          color: token.color('roads.path'),
+          width: fixed(1.2, {reason: 'Path hierarchy is invariant'}),
+        },
+      },
+    },
+    cycleway: {
+      surface: {
+        fill: {
+          color: token.color('roads.cycleway'),
+          width: fixed(1.5, {reason: 'Cycleway hierarchy is invariant'}),
+        },
+      },
+    },
+    steps: {
+      surface: {
+        fill: {
+          color: token.color('roads.path.casing'),
+          width: fixed(1.4, {reason: 'Step hierarchy is invariant'}),
+        },
+      },
+    },
+    pathway: {
+      surface: {
+        fill: {
+          color: token.color('roads.path'),
+          width: fixed(1.2, {reason: 'Path hierarchy is invariant'}),
+        },
+      },
+    },
   },
   modifiers: {
     expressway: {widthScale: 1.06},
     ramp: {widthScale: 0.7},
-    unpaved: {surface: {fill: {color: '#E6DFD3', dash: [2, 1]}}},
-    construction: {surface: {fill: {dash: [2, 1], opacity: 0.7}}},
-    indoor: {surface: {fill: {dash: [1, 1], opacity: 0.4}}},
+    unpaved: {surface: {fill: {color: token.color('roads.path')}}},
+    construction: {
+      surface: {
+        fill: {opacity: fixed(0.7, {reason: 'Construction emphasis is invariant'})},
+      },
+    },
+    indoor: {
+      surface: {fill: {opacity: fixed(0.4, {reason: 'Indoor-road emphasis is invariant'})}},
+    },
   },
   restrictions: {
-    access: {surface: {fill: {dash: [1.5, 1], opacity: 0.55}}},
-    toll: {surface: {casing: {color: '#C5B7D8'}}},
+    access: {
+      surface: {fill: {opacity: fixed(0.55, {reason: 'Restricted-road emphasis is invariant'})}},
+    },
+    toll: {
+      surface: {
+        casing: {color: fixed('#C5B7D8', {reason: 'Toll ink is regulatory and invariant'})},
+      },
+    },
   },
   serviceTypes: {
     driveway: {widthScale: 0.75},
@@ -358,85 +495,167 @@ Road names, shields, and motorway junctions remain label concerns:
 ```ts
 labels({
   roads: 'all',
-  shields: 'all',
+  shields: 'major',
   junctions: true,
   styles: {
     shields: {
       default: {
+        icon: {
+          image: token.image('roads.shield.rectangleNeutral'),
+          optional: false,
+          pitchAlignment: 'viewport',
+          rotationAlignment: 'viewport',
+          textFit: 'width',
+          textFitPadding: [0, 4, 0, 4],
+        },
         text: {
-          color: '#405264',
-          font: 'Noto Sans Bold',
-          haloColor: '#fff',
-          haloWidth: 2,
+          color: token.color('labels.shieldDark'),
+          font: token.font('places'),
+          optional: false,
+          pitchAlignment: 'viewport',
+          rotationAlignment: 'viewport',
         },
       },
-      networks: {
-        'network-value': {text: {color: '#B43A35'}},
+      overview: {minZoom: 6, maxZoom: 11, placement: 'point'},
+      detail: {minZoom: 11, placement: 'line', spacing: 400},
+      kinds: {
+        'rectangle-neutral': {image: token.image('roads.shield.rectangleNeutral')},
+        'rectangle-blue': {image: token.image('roads.shield.rectangleBlue')},
+      },
+      textColors: {
+        dark: {color: token.color('labels.shieldDark')},
+        light: {color: token.color('labels.shieldLight')},
       },
     },
-    junctions: {text: {color: '#405264', haloColor: '#fff', haloWidth: 2}},
+    junctions: {
+      text: {
+        color: token.color('labels.strong'),
+        haloColor: token.color('labels.halo'),
+        haloWidth: fixed(2, {reason: 'Junction halo weight is invariant'}),
+      },
+    },
   },
 });
 ```
 
-POI `density`, `labels`, and `icons` are independent policies. Density bounds eligible feature
-ranks, label detail controls text ranks, icon detail controls icon ranks, and
-`placement.coupleIconAndLabel` deliberately keeps only features eligible for both. Without
-coupling, icon and label layers collide normally but can be styled and zoomed independently.
-The `balanced` policy keeps a practical cross-category candidate set from an overscaled
-OpenMapTiles source tile; MapLibre collision placement still decides which candidates fit the
-current viewport. An inclusive `maxRank` replaces the density/label/icon preset ceiling; it may be
-a positive integer or a `zoom.step(...)`, `zoom.linear(...)`, or `zoom.exponential(...)` value that
-reveals progressively lower-priority candidates. A category style's `maxRank` overrides the shared
-module value when different feature families need different curves, without exposing a raw layer ID
-or filter. Lower ranks are more important, and the ceiling is a candidate bound rather than a count
-of labels that must appear. MapLibre evaluates zoom-dependent filters at integer zoom levels, so
-`linear` and `exponential` ceilings still admit candidates in discrete zoom bands.
+`icon.textFit` and `icon.textFitPadding` let a symbol background grow with its text. Setting both
+icon and text `optional: false` keeps a route shield atomic during collision placement: neither an
+empty badge nor a detached reference can render alone. `overview` renders producer-selected points
+at low zoom and `detail` switches to line placement at street zooms; exclusive `maxZoom: 11` and
+inclusive `minZoom: 11` make that handoff atomic. Keeping both icon and text aligned to `viewport`
+makes the badge horizontal regardless of road bearing.
+
+`kinds` and `textColors` are closed presentation tables. The vector producer supplies semantic
+`shield_kind`, `shield_text_color`, `shield_text`, and `shield_rank` values; Core only matches them
+against the authored tables and falls back to `default`. Country, route-prefix, and network-shape
+rules therefore stay in the data authority instead of leaking into a map theme or multiplying
+runtime layers.
+
+Tileflow World owns POI classification, editorial zoom eligibility, and cross-source ranking. Its
+canonical `poi` layer exposes `category`, `type`, `icon`, `min_zoom`, `filter_rank`, and `size_rank`;
+Core validates that complete contract and never reconstructs those decisions from OpenMapTiles
+`class`, `subclass`, or `rank`. `filter_rank` is an
+integer from 0 through 5, with lower values reserved for the strongest candidates. The numeric
+`density` option is an inclusive threshold from 1 through 5 and defaults to 3. `size_rank` is an
+integer from 0 through 16 used to order eligible candidates before MapLibre performs final
+collision placement.
+
+The closed category vocabulary is `arts-entertainment`, `education`, `food-drink`, `landmark`,
+`lodging`, `medical`, `park-nature`, `public-services`, `religion`, `retail`, `sport-leisure`,
+`transport`, and `visitor-amenity`. Producer `type` and `icon` values use stable snake_case names.
+When an `icon` sprite exists it is used directly; an unknown or absent icon safely falls back to the
+category's themed image role. `labels` and `icons` are booleans. Category styles control only
+presentation and may hide or delay candidates, never promote them above the producer's selection.
+`placement.coupleIconAndLabel` keeps a POI's icon and label atomic during collision placement.
 
 ```ts
 poi({
-  minZoom: 14,
-  maxRank: zoom.step([
-    [14, 14], // z14–16.99: rank <= 14
-    [17, 80], // z17–18.99: rank <= 80
-    [19, 500], // z19+: rank <= 500
-  ]),
+  categories: ['food-drink', 'landmark', 'transport'],
+  density: 3,
+  icons: true,
+  labels: true,
 });
 ```
 
-Cyberpunk uses this policy for both its regular POI layers and its destination HUD. It keeps the
-z15–16 candidate set tight, admits the principal attraction ranks at z17, and expands further at
-z18–21. HUD brackets participate in normal collision placement, while `artwork` is treated as a
-low-priority destination and is deferred to close zooms.
+The same contract drives regular POI layers, custom HUD treatments, semantic interactions, and
+feature inspection. There is intentionally no compatibility path for the former class mapping,
+rank ceilings, or named density/detail presets.
 
-Theme tokens provide shared color and typography defaults. `theme` is always an object; it has no
-name, registry, or nested `extends`. A derived map inherits and deep-merges those tokens only because
-the map itself uses `extends`. A module-level exact style wins over a theme token for that target.
-Precedence is deterministic:
+## Themes and module styles
 
-1. Streets recipe defaults.
-2. Resolved map theme.
-3. Explicit keyed module fields.
+A map declares complete named appearances in `themes`, chooses one deterministic
+`defaultTheme`, and may map the browser's light/dark preference through `systemThemes`. `system` is
+never a compiled theme name: it is a runtime request that resolves immediately to one concrete
+name. Disk builds write `styles/<map>/<theme>.json` beneath their output root. Public and
+content-addressed Style URLs belong to the runtime manifest and may include a deployment prefix;
+capture scenes and receipts store the concrete name rather than `system`.
 
-`theme.mode` selects the compiler defaults and variant metadata used by style fields that remain
-unspecified. It does not walk an inherited map and recolor exact values already authored in its
-modules or compiler-owned contributions. Themes are therefore semantic defaults, not complete map
-skins. For a coordinated dark Streets design, extend the official dark map:
+Themes are flat, JSON-safe documents with `colorScheme`, identity, typography, lighting, and four
+typed token catalogs: `color`, `font`, `image`, and `number`. Every theme on one map must expose the
+same token keys, so changing a theme can never change map structure or silently lose a semantic
+role. `defineTheme(base, definition)` is an authoring convenience that returns a fully materialized
+document; it does not leave an inheritance edge in the resolved config.
+
+The key in the `themes` record is its concrete runtime selector and output-path segment. The
+theme's own `id` and `version` are its editorial identity and build provenance, so they need not
+equal that key. Concrete keys may be names such as `day` and `night`; every `systemThemes.light` or
+`systemThemes.dark` value must name an existing theme whose `colorScheme` matches that branch.
 
 ```ts
-import {defineMap} from '@tileflow/core';
-import {streetsDark} from '@tileflow/maps';
+import {color, defineMap, defineTheme, fixed, roads, token} from '@tileflow/core';
+import {streets, streetsThemes} from '@tileflow/maps';
 
-export default defineMap({
+const dark = defineTheme(streetsThemes.dark, {
   id: 'company-dark',
   version: 1,
-  extends: streetsDark,
+  colorScheme: 'dark',
+  tokens: {
+    color: {
+      'surface.land': '#101722',
+      'labels.primary': color.mix('#eef3fb', token.color('surface.background'), {amount: 0.08}),
+    },
+  },
+});
+
+export default defineMap({
+  id: 'company',
+  version: 1,
+  extends: streets,
+  themes: {light: streetsThemes.light, dark},
+  defaultTheme: 'light',
+  systemThemes: {light: 'light', dark: 'dark'},
+  modules: {
+    roads: roads({
+      classes: {
+        primary: {
+          surface: {
+            fill: {
+              color: fixed('#ff2d78', {reason: 'Regulatory primary-road ink is invariant'}),
+            },
+          },
+        },
+        secondary: {
+          surface: {
+            fill: {
+              color: token.color('roads.secondary'),
+            },
+          },
+        },
+      },
+    }),
+  },
 });
 ```
 
-Extending the current official `streets` map with only `theme: {mode: 'dark'}` is not a visual dark
-mode: Streets already specifies its coordinated appearance explicitly. It is not equivalent to
-`streetsDark`.
+Module recipes own structure and semantic behavior; visual fields accept typed token references.
+Use a visual literal only inside a theme. If a module value intentionally must not vary, wrap it in
+`fixed(value, {reason})`. `tileflow inspect --json` reports stable `THEME_IMPLICIT_FIXED`
+diagnostics: implicit color, font, and image literals block Style compilation, while direct visual
+number literals are warnings so an agent can document their invariance deliberately. Structural
+numbers such as zoom bounds and ranks are not visual-theme diagnostics. `color.alpha()` and
+deterministic OKLCH `color.mix()` keep derived palette logic inspectable. Unknown refs, cycles,
+cross-category refs, token-schema drift, and unresolved visual nodes fail before Style JSON is
+emitted.
 
 There is no public physical-layer override surface. New cartographic behavior belongs to a typed
 control in its owning module. Official maps may add compiler-private semantic contributions, but
@@ -454,8 +673,9 @@ import {streets} from '@tileflow/maps';
 export default streets;
 ```
 
-Theme typography can also set `fallbacks`, `letterSpacing`, and `transform` globally or per label
-domain. Text delivery is explicit and atomic: a map may declare either ordered `fonts` directories
+Theme typography can set `fallbacks`, `letterSpacing`, and `transform` globally or per label
+domain, while the font token catalog gives module styles a stable semantic target. Text delivery is
+explicit and atomic: a map may declare either ordered `fonts` directories
 for browser font files or a `glyphs` provider for PBF glyphs, never both. Omitting both inherits the
 parent's provider; declaring either replaces an inherited provider of either kind. After resolution,
 a map that emits text must have exactly one provider. A text-free root may omit both. On a derived
@@ -463,12 +683,30 @@ map, omission inherits the parent provider while `fonts: []` explicitly removes 
 is valid only when the resolved map emits no text.
 
 ```ts
+import {defineMap, defineTheme} from '@tileflow/core';
+import {streets, streetsThemes} from '@tileflow/maps';
+
+const brandLight = defineTheme(streetsThemes.light, {
+  id: 'brand-light',
+  version: 1,
+  colorScheme: 'light',
+  tokens: {font: {default: 'Brand Sans Regular', places: 'Brand Sans Regular'}},
+});
+const brandDark = defineTheme(streetsThemes.dark, {
+  id: 'brand-dark',
+  version: 1,
+  colorScheme: 'dark',
+  tokens: {font: {default: 'Brand Sans Regular', places: 'Brand Sans Regular'}},
+});
+
 export default defineMap({
   id: 'brand-map',
   version: 1,
   extends: streets,
   fonts: ['./fonts'],
-  theme: {typography: {font: 'Brand Sans Regular'}},
+  themes: {light: brandLight, dark: brandDark},
+  defaultTheme: 'light',
+  systemThemes: {light: 'light', dark: 'dark'},
 });
 ```
 
@@ -489,9 +727,9 @@ do not make a resolved map byte-reproducible. Exact official glyph identity belo
 separately published `/base/<assetSetSha256>/glyphs/...` global base-asset contract. In that URL,
 `assetSetSha256` identifies the standalone glyph collection; it is not the same-domain value as the
 per-map `assetSetSha256` in `build-manifest.json`.
-Cyberpunk replaces the URL provider with its packaged Oxanium directory and references the exact
-local faces `Oxanium Medium` and `Oxanium SemiBold`; Matrix reuses that provider. Siegfried owns its
-packaged Cormorant Garamond Regular, SemiBold, and Italic faces.
+Cyberpunk and Matrix each replace the URL provider with their own packaged Oxanium directory and
+reference the exact local faces `Oxanium Medium` and `Oxanium SemiBold`. Siegfried owns its packaged
+Cormorant Garamond Regular, SemiBold, and Italic faces.
 
 Name the official generation deliberately, or use another OpenMapTiles-compatible vector source:
 
@@ -548,8 +786,10 @@ Tileflow World V1 makes `bathymetry`, `globallandcover`, `circular_feature`, `si
 layer names part of a style. Publication tooling calls `validateTileflowWorldV1Tilejson(...)` and
 fails closed unless each layer occurs exactly once, declares its contracted native zooms, and
 advertises the typed fields consumed by the maps. This includes bathymetry z0–z9, global land cover
-z0–z10, and the three detailed-city layers at native z15. Generic OpenMapTiles sources keep these
-extensions optional and the compiler omits unsupported detail. Resolving omitted data or
+z0–z10, the three detailed-city layers at native z15, and numeric
+`transportation.clearance_extra_px_z15` for butt-capping procedural-roundabout approaches. Generic
+OpenMapTiles sources keep the detailed extensions optional and the compiler omits unsupported
+detail. Resolving omitted data or
 `tileflowWorld(...)` uses the strict V1 schema directly, and `water({bathymetry: {...}})` styles the
 emitted depth bands without raw layer IDs. Use `water({bathymetryContours: {...}})` to customize the
 opt-in companion line layer; an empty style selects subtle defaults, and the zero-depth band is
@@ -559,12 +799,125 @@ edges and are therefore approximate rather than surveyed depth contours. Use
 selects the defaults, whose text is the absolute band-minimum number in metres with no unit suffix.
 It remains a band-floor annotation, not a survey sounding.
 
+For independent ocean products, `marine` composes stable auxiliary vector sources without changing
+the primary World source:
+
+```ts
+import {bathymetry, defineMap, fixed, nautical} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'chart',
+  version: 1,
+  extends: streets,
+  marine: 'chart', // 'none' | 'bathymetry' | 'nautical' | 'chart'
+  modules: {
+    nautical: nautical({
+      soundings: {minZoom: 13},
+      aids: {minZoom: 11},
+      lights: {minZoom: 12},
+      hazards: {minZoom: 12},
+      hazardAreas: {
+        fill: {opacity: fixed(0.1, {reason: 'Chart hazard wash is invariant'})},
+      },
+      wrecks: {minZoom: 12},
+      wreckAreas: {
+        outline: {opacity: fixed(0.6, {reason: 'Chart wreck outline is invariant'})},
+      },
+      reefs: {fill: {opacity: fixed(0.3, {reason: 'Chart reef wash is invariant'})}},
+      navigationAreas: {
+        fill: {opacity: fixed(0.05, {reason: 'Chart navigation-area wash is invariant'})},
+      },
+      coverage: {outline: {visible: false}},
+      labels: {
+        navigationAreas: {minZoom: 11},
+        reefs: {minZoom: 13},
+      },
+    }),
+  },
+});
+```
+
+`bathymetry` resolves to vector source `tileflow-bathymetry` and supplies the 13-stop
+`bathymetry-v1` band contract to `water(...)`. `nautical` resolves to `tileflow-nautical`; the
+`nautical(...)` module
+styles its `sounding`, `aid`, `light`, `hazard`, `wreck`, `reef`, `navigation_area`, and `coverage`
+layers. The schema also names the product's provider-neutral provenance fields (`provenance`,
+`provider`, `cell`, `edition`, `update`, `scale`, `coverage`, and `licence`). `chart` enables both.
+Point features label depth, name, or light character as applicable. The `lighthouses` symbol style
+targets `aid` points whose canonical `class` is `lighthouse`, leaving other aids under `aids`.
+Polygon reefs, navigation
+areas, hazards, wrecks, and named/provider coverage have separate collision-aware labels under
+`nautical({labels: {...}})`; unnamed coverage does not emit empty text.
+Core does not hard-code a nautical provider or attribution: the selected TileJSON owns its actual
+coverage and attribution, and derived vector tiles are not represented as a certified ENC for
+navigation. The V1 geometry contract preserves `sounding`, `aid`, and `light` as points;
+`reef`, `navigation_area`, and `coverage` as polygons; and both point and polygon geometries for
+`hazard` and `wreck`. Point symbols and polygon areas compile separately, without fabricated
+centroids.
+Advanced callers can override either TileJSON URL, attribution, or source ID and can set the other
+member to `false`:
+
+```ts
+marine: {
+  bathymetry: {url: 'https://tiles.example.test/depth/tiles.json'},
+  nautical: false,
+}
+```
+
+Use the `bathymetry(...)` helper when the map needs relief or product-level styling. Bathymetry is
+one logical product with two independently loaded physical sources:
+
+```ts
+marine: {
+  bathymetry: bathymetry({
+    display: 'hybrid',
+    bands: {
+      opacity: fixed(0.72, {reason: 'Keep chart symbols above the depth wash'}),
+    },
+    contours: {visible: true},
+    relief: {
+      multidirectional: true,
+      opacity: fixed(0.18, {reason: 'Relief stays legible beneath bands and labels'}),
+    },
+  }),
+  nautical: false,
+}
+```
+
+`display: 'bands'` loads only vector TileJSON `/tiles/bathymetry/tiles.json` as
+`tileflow-bathymetry`. `display: 'relief'` loads only `/tiles/bathymetry/dem/tiles.json` as
+`tileflow-bathymetry-dem` and emits continuous `color-relief` plus hillshade. `display: 'hybrid'`
+loads both. The hosted DEM contract is 512 px, Terrarium-encoded, lossless WebP; advanced compatible
+sources may override `url`, `sourceId`, `encoding`, or `tileSize` inside `relief`.
+Multidirectional illumination uses directions 270°, 315°, 0°, and 45°. The simple
+`marine: 'chart'` shorthand deliberately stays vector-only; DEM relief is an explicit advanced
+opt-in.
+
+The vector palette uses thresholds −11 000, −8 000, −6 000, −4 000, −2 000, −1 000, −500, −200,
+−100, −50, −20, −10, and 0 metres. `bands`, `contours`, and `labels` remain separate controls.
+Until native contour fields are contracted, contours are a visual fallback drawn from band polygon
+edges, not surveyed isolines. The V1 schema exposes optional source-layer names
+`bathymetry_contour`, `seafloor_landform`, `water_name`, and `bathymetry_coverage`, but promises
+fields only for required `bathymetry.min_depth` and `bathymetry.sort_key`.
+
+The DEM enables future client-side sampling and depth profiles, but Core intentionally exposes no
+profile or remote sampling API yet. Rendered relief must not be interpreted as navigation-safe
+depth data.
+
+Omitting `marine` preserves the transitional Tileflow World V1 bathymetry fallback. Declaring
+`marine: 'none'` suppresses that fallback, while a selected bathymetry sidecar always takes
+precedence. Compiled styles retain the singular `tileflow:data` metadata for existing consumers and
+add `tileflow:sources` plus `tileflow:sourceRequirements` for independent product validation.
+
 Detailed city datasets can bind `sidewalk`, `streetFurniture`, and `circularFeature` source layers
 through `openMapTiles({layers, fields})`. When present, `roads.sidewalks` owns source-backed
 pedestrian polygons, `roads.crossings` owns oriented crossing icons, and `roads.roundabouts` owns
 metric circular road rings. These bindings are optional: a generic OpenMapTiles source remains
 valid and the compiler omits unsupported detail instead of inventing geometry. Crossing icons are
-explicit because the data contract cannot assume a sprite name.
+explicit because the data contract cannot assume a sprite name. They require positive physical
+`markings` evidence and reject `crossing=no`; both fields are semantic bindings, so custom schemas
+can remap them without weakening that rule.
 
 The optional `business_corridor` extension contains activity-selected source footprints below
 buildings. Its `activity_score`, `rank`, `min_zoom`, and `confidence` fields control a quiet local
@@ -579,7 +932,7 @@ source classes into one civic color.
 
 World and text assets are independent contracts. `tileflowWorld()` selects `world-v1/current` or an
 exact `releaseId + descriptorSha256`; a `glyphs` declaration contains its own complete URL. Ordinary
-imports of Streets, Ferraris, Härad, Siegfried, Soundings, Streets Dark, Cyberpunk, Matrix, and
+imports of Streets, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, and
 Verdant remain usable because each official map owns or inherits a URL or packaged-font provider.
 URL-backed maps become exact-byte reproducible
 when the immutable global base-asset set is published and their explicit URL is updated to its
@@ -607,6 +960,7 @@ export default defineMap({
   extends: streets,
   scenes: {
     'madrid-desktop': {
+      theme: 'dark',
       camera: {type: 'center', center: [-3.7038, 40.4168], zoom: 12},
       viewport: {width: 1280, height: 800, dpr: 1},
     },
@@ -615,8 +969,8 @@ export default defineMap({
 ```
 
 Use `tileflow preview --scene madrid-desktop` (`tileflow dev` remains an alias) for live review and
-`tileflow capture madrid-desktop` for exact pixels and a schema-version-3 receipt containing the
-Streets, data, style, renderer, and image identities. World capture resolves the selected TileJSON
+`tileflow capture madrid-desktop` for exact pixels and a schema-version-4 receipt containing the
+concrete theme plus Streets, data, style, renderer, and image identities. World capture resolves the selected TileJSON
 once and records the exact `world-v1` release plus descriptor/archive/data-contract hashes;
 external fixtures may identify their explicit revision.
 
@@ -650,16 +1004,38 @@ not change that content identity. They remain explicit on the map, manifest, Sty
 or Hosted deployment fingerprint that owns them. Compiler ABI, package versions, generated assets,
 and the concrete release selected by World `current` likewise have separate identities.
 
-Runtime manifest version 3 is discriminated as `kind: 'self-hosted'` or `kind: 'hosted'`.
-`parseTileflowRuntimeManifest()` accepts only that canonical shape; version-2 manifests and old
-aliases are rejected rather than normalized. The strict bounded schema uses the same portable map
-IDs as authoring, requires an exact `maps`/`styles` closure, rejects duplicate font identities and
-unsafe owner-relative URLs, prototype-bearing input, unknown fields, and JSON larger than 1 MiB.
+Runtime manifest version 1 has one shape for local and Hosted delivery. Every map entry owns
+`defaultTheme`, optional `systemThemes`, and a `themes` record whose leaves contain
+`colorScheme`, `styleUrl`, and optional font/deployment identity. Hosted-only identity is additive
+metadata on the same map entry; there is no delivery discriminator or parallel `styles` alias.
+`parseTileflowRuntimeManifest()` accepts only this canonical shape. The strict bounded schema uses
+the same portable map and theme IDs as authoring, rejects `system` as a published name, duplicate
+font identities, unsafe owner-relative URLs, prototype-bearing input, unknown fields, and JSON
+larger than 1 MiB.
+
+```json
+{
+  "version": 1,
+  "maps": {
+    "madrid": {
+      "defaultTheme": "light",
+      "systemThemes": {"light": "light", "dark": "dark"},
+      "themes": {
+        "light": {"colorScheme": "light", "styleUrl": "/styles/madrid/light.json"},
+        "dark": {"colorScheme": "dark", "styleUrl": "/styles/madrid/dark.json"}
+      }
+    }
+  }
+}
+```
+
 Runtime fetches share a successful result for 30 seconds, never cache failures, use
 `cache: 'no-store'`, enforce a 10-second timeout (configurable up to 60 seconds), compose an
 external abort signal, and can be invalidated with `clearTileflowManifestCache()`.
 
-Named map `view` values travel in the manifest. `resolveTileflowRuntimeView()` defines the shared
+Named map `view` values travel in the manifest. `resolveTileflowRuntimeTheme()` turns an omitted,
+explicit, or browser `system` request into one concrete published entry; unknown names fail closed.
+`resolveTileflowRuntimeView()` defines the shared
 precedence as explicit runtime values, then the manifest view, then the single exported
 `defaultTileflowRuntimeView` (`[0, 20]`, zoom 2, bearing/pitch 0). Browser delivery is one
 discriminated `TileflowRuntimeSource`: `kind: 'tileflow'` resolves a named map only through its
@@ -729,6 +1105,7 @@ import {
   harad,
   haradIcons,
   matrix,
+  matrixFonts,
   matrixIcons,
   siegfried,
   siegfriedFonts,
@@ -736,22 +1113,20 @@ import {
   soundings,
   soundingsIcons,
   streets,
-  streetsDark,
-  streetsDarkIcons,
   streetsIcons,
+  streetsThemes,
   verdant,
   verdantIcons,
 } from '@tileflow/maps';
 ```
 
-`streets`, `ferraris`, `harad`, `siegfried`, `soundings`, and `verdant` are complete compiler roots.
-All select the semantic Streets compiler, but the five roots after Streets neither import nor extend
-Streets; each declares its own icon directory, and Siegfried also declares `siegfriedFonts`.
-`streetsDark` and `cyberpunk` extend Streets. Streets Dark preserves the root's content and hierarchy
-while owning its complete night palette and lighting. Streets declares `[streetsIcons]`; Streets Dark
-declares `[streetsIcons, streetsDarkIcons]` so its later dark `sidewalk-dot` overrides the shared
-source. Matrix extends Cyberpunk, replaces the inherited icons with `[streetsIcons, matrixIcons]`,
-and reuses `cyberpunkFonts`. The same operation is available to applications:
+All eight official maps are complete compiler roots. Each selects the semantic Streets compiler
+without importing or extending another official map and declares its own icon directory.
+Streets declares `[streetsIcons]` and exposes its complete coordinated appearances as
+`streetsThemes.light` and `streetsThemes.dark`; image tokens select the matching sidewalk pattern
+without changing the asset collection. Cyberpunk declares `[cyberpunkIcons]` and
+`[cyberpunkFonts]`; Matrix independently declares `[matrixIcons]` and `[matrixFonts]`. The same
+asset operation is available to applications:
 
 ```ts
 export default defineMap({
@@ -773,6 +1148,6 @@ sprite selector, icon mapping, icon-specific inheritance, additive command, or c
 and prepares ordinary public artifacts without serializing installation paths. It compiles one
 deterministic sprite from the final icon composition and validates every literal `icon-image`,
 `fill-pattern`, and `line-pattern` in the final style against it. It also prepares any declared font
-directories generically; `cyberpunkFonts` and `siegfriedFonts` are ordinary package descriptors
-rather than pipeline special cases. Calling the pure compiler for a map whose style needs unprepared
+directories generically; `cyberpunkFonts`, `matrixFonts`, and `siegfriedFonts` are ordinary package
+descriptors rather than pipeline special cases. Calling the pure compiler for a map whose style needs unprepared
 assets fails instead of emitting broken runtime references.

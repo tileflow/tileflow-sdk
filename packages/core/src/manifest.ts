@@ -1,51 +1,53 @@
 import {z} from 'zod';
-import {tileflowMapIdSchema} from './maps/types';
+import {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
 import type {TileflowStyleFontFace} from './runtime';
 import type {TileflowViewConfig} from './types';
 
-export const tileflowRuntimeManifestVersion = 3 as const;
+/** The first and only public multi-theme runtime manifest contract. */
+export const tileflowRuntimeManifestVersion = 1 as const;
 export const tileflowRuntimeManifestLimits = Object.freeze({maximumBytes: 1024 * 1024});
 
-export type TileflowSelfHostedManifest = {
-  fontFaces?: Record<string, TileflowStyleFontFace[]>;
-  kind: 'self-hosted';
-  maps: Record<string, string>;
-  styles: Record<string, string>;
-  version: typeof tileflowRuntimeManifestVersion;
-  views?: Record<string, TileflowViewConfig>;
-};
+export type TileflowRuntimeColorScheme = 'dark' | 'light';
 
-export type TileflowHostedManifestMap = {
-  apiUrl?: string;
-  environment: string;
+export type TileflowRuntimeManifestTheme = {
+  colorScheme: TileflowRuntimeColorScheme;
+  /** Complete font closure for this compiled theme. */
   fontFaces?: TileflowStyleFontFace[];
-  mapId: string;
+  /** Content or deployment revision used for cache identity and receipts. */
+  revision?: string;
+  /** Hosted style identity, when different from the logical map identity. */
   styleId?: string;
   styleUrl: string;
+};
+
+export type TileflowRuntimeSystemThemes = {
+  dark: string;
+  light: string;
+};
+
+export type TileflowRuntimeManifestMapEntry = {
+  apiUrl?: string;
+  defaultTheme: string;
+  environment?: string;
+  mapId?: string;
+  systemThemes?: TileflowRuntimeSystemThemes;
+  themes: Record<string, TileflowRuntimeManifestTheme>;
   usageMode?: 'session';
   view?: TileflowViewConfig;
   worldGeneration?: 'v1';
 };
 
-export type TileflowHostedManifest = {
-  apiUrl: string;
-  kind: 'hosted';
-  maps: Record<string, TileflowHostedManifestMap>;
-  styles: Record<string, string>;
+/**
+ * One logical map catalog for local and Hosted delivery.
+ *
+ * Delivery-specific fields are optional metadata on a map. The wire shape never forks into
+ * self-hosted and Hosted variants, so every runtime follows the same theme resolution path.
+ */
+export type TileflowRuntimeManifest = {
+  apiUrl?: string;
+  maps: Record<string, TileflowRuntimeManifestMapEntry>;
   version: typeof tileflowRuntimeManifestVersion;
 };
-
-export type TileflowRuntimeManifest = TileflowSelfHostedManifest | TileflowHostedManifest;
-
-const manifestMapIdSchema = z.string().superRefine((value, context) => {
-  const parsed = tileflowMapIdSchema.safeParse(value);
-  if (!parsed.success || parsed.data !== value) {
-    context.addIssue({
-      code: 'custom',
-      message: 'Expected a canonical Tileflow map id',
-    });
-  }
-});
 
 const safeTextSchema = z
   .string()
@@ -56,10 +58,6 @@ const safeTextSchema = z
 
 const publicResourceUrlSchema = safeTextSchema.refine(isPublicResourceUrl, {
   message: 'Expected an HTTP(S), root-relative, or path-relative public URL',
-});
-
-const absolutePublicUrlSchema = safeTextSchema.refine(isAbsolutePublicUrl, {
-  message: 'Expected an absolute HTTP(S) public URL without credentials or a fragment',
 });
 
 const apiOriginSchema = safeTextSchema.refine(isApiOrigin, {
@@ -88,76 +86,89 @@ const fontFaceSchema: z.ZodType<TileflowStyleFontFace> = z
 
 const fontFacesSchema = z.array(fontFaceSchema).max(16).superRefine(validateUniqueFontFaces);
 
-const selfHostedManifestSchema = z
+const manifestThemeSchema: z.ZodType<TileflowRuntimeManifestTheme> = z
   .object({
-    fontFaces: z.record(manifestMapIdSchema, fontFacesSchema).optional(),
-    kind: z.literal('self-hosted'),
-    maps: z.record(manifestMapIdSchema, publicResourceUrlSchema),
-    styles: z.record(manifestMapIdSchema, publicResourceUrlSchema),
-    version: z.literal(tileflowRuntimeManifestVersion),
-    views: z.record(manifestMapIdSchema, viewSchema).optional(),
+    colorScheme: z.enum(['dark', 'light']),
+    fontFaces: fontFacesSchema.optional(),
+    revision: safeTextSchema.max(128).optional(),
+    styleId: safeTextSchema.max(128).optional(),
+    styleUrl: publicResourceUrlSchema,
   })
-  .strict()
-  .superRefine((manifest, context) => {
-    validateManifestCollections(manifest.maps, manifest.styles, context);
-    validateCollectionSize(manifest.fontFaces, 'fontFaces', context);
-    validateCollectionSize(manifest.views, 'views', context);
-    validateOptionalMapCollection(manifest.fontFaces, manifest.maps, 'fontFaces', context);
-    for (const mapName of Object.keys(manifest.views ?? {})) {
-      if (!Object.hasOwn(manifest.maps, mapName)) {
-        context.addIssue({
-          code: 'custom',
-          message: 'Expected a view for a declared map',
-          path: ['views', mapName],
-        });
-      }
-    }
-  });
+  .strict() as z.ZodType<TileflowRuntimeManifestTheme>;
 
-const hostedManifestMapSchema: z.ZodType<TileflowHostedManifestMap> = z
+const manifestMapSchema: z.ZodType<TileflowRuntimeManifestMapEntry> = z
   .object({
     apiUrl: apiOriginSchema.optional(),
-    environment: safeTextSchema,
-    fontFaces: fontFacesSchema.optional(),
-    mapId: safeTextSchema,
-    styleId: safeTextSchema.optional(),
-    styleUrl: absolutePublicUrlSchema,
+    defaultTheme: tileflowThemeNameSchema,
+    environment: safeTextSchema.max(128).optional(),
+    mapId: safeTextSchema.max(128).optional(),
+    systemThemes: z
+      .object({dark: tileflowThemeNameSchema, light: tileflowThemeNameSchema})
+      .strict()
+      .optional(),
+    themes: z.record(tileflowThemeNameSchema, manifestThemeSchema),
     usageMode: z.literal('session').optional(),
     view: viewSchema.optional(),
     worldGeneration: z.literal('v1').optional(),
   })
   .strict()
   .superRefine((entry, context) => {
+    const names = Object.keys(entry.themes);
+    if (names.length === 0) {
+      context.addIssue({code: 'custom', message: 'Expected at least one theme', path: ['themes']});
+    }
+    if (names.length > 64) {
+      context.addIssue({code: 'too_big', maximum: 64, origin: 'object', path: ['themes']});
+    }
+    if (!Object.hasOwn(entry.themes, entry.defaultTheme)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'defaultTheme must name a declared theme',
+        path: ['defaultTheme'],
+      });
+    }
+    if (entry.systemThemes) {
+      for (const colorScheme of ['light', 'dark'] as const) {
+        const name = entry.systemThemes[colorScheme];
+        const theme = entry.themes[name];
+        if (!theme) {
+          context.addIssue({
+            code: 'custom',
+            message: `systemThemes.${colorScheme} must name a declared theme`,
+            path: ['systemThemes', colorScheme],
+          });
+        } else if (theme.colorScheme !== colorScheme) {
+          context.addIssue({
+            code: 'custom',
+            message: `systemThemes.${colorScheme} must reference a ${colorScheme} theme`,
+            path: ['systemThemes', colorScheme],
+          });
+        }
+      }
+    }
     if ((entry.usageMode === undefined) !== (entry.worldGeneration === undefined)) {
       context.addIssue({
         code: 'custom',
         message: 'usageMode and worldGeneration must be declared together',
       });
     }
-  }) as z.ZodType<TileflowHostedManifestMap>;
+  }) as z.ZodType<TileflowRuntimeManifestMapEntry>;
 
-const hostedManifestSchema = z
+const canonicalManifestSchema: z.ZodType<TileflowRuntimeManifest> = z
   .object({
-    apiUrl: apiOriginSchema,
-    kind: z.literal('hosted'),
-    maps: z.record(manifestMapIdSchema, hostedManifestMapSchema),
-    styles: z.record(manifestMapIdSchema, absolutePublicUrlSchema),
+    apiUrl: apiOriginSchema.optional(),
+    maps: z.record(tileflowPortableIdSchema, manifestMapSchema),
     version: z.literal(tileflowRuntimeManifestVersion),
   })
   .strict()
   .superRefine((manifest, context) => {
-    validateManifestCollections(
-      Object.fromEntries(
-        Object.entries(manifest.maps).map(([mapName, entry]) => [mapName, entry.styleUrl]),
-      ),
-      manifest.styles,
-      context,
-    );
-  });
-
-const canonicalManifestSchema = z
-  .discriminatedUnion('kind', [selfHostedManifestSchema, hostedManifestSchema])
-  .superRefine((manifest, context) => {
+    const mapCount = Object.keys(manifest.maps).length;
+    if (mapCount === 0) {
+      context.addIssue({code: 'custom', message: 'Expected at least one map', path: ['maps']});
+    }
+    if (mapCount > 1_000) {
+      context.addIssue({code: 'too_big', maximum: 1_000, origin: 'object', path: ['maps']});
+    }
     if (
       new TextEncoder().encode(JSON.stringify(manifest)).byteLength >
       tileflowRuntimeManifestLimits.maximumBytes
@@ -169,7 +180,7 @@ const canonicalManifestSchema = z
         message: 'Manifest JSON exceeds the 1 MiB limit',
       });
     }
-  });
+  }) as z.ZodType<TileflowRuntimeManifest>;
 
 const safeManifestInputSchema = z.unknown().superRefine((input, context) => {
   const unsafe = findUnsafeManifestStructure(input);
@@ -185,7 +196,6 @@ const safeManifestInputSchema = z.unknown().superRefine((input, context) => {
   }
 });
 
-/** Strict canonical schema for the current wire contract. */
 export const tileflowRuntimeManifestSchema: z.ZodType<TileflowRuntimeManifest> =
   safeManifestInputSchema.pipe(canonicalManifestSchema) as z.ZodType<TileflowRuntimeManifest>;
 
@@ -195,42 +205,6 @@ export function parseTileflowRuntimeManifest(input: unknown): TileflowRuntimeMan
 
 export function safeParseTileflowRuntimeManifest(input: unknown) {
   return tileflowRuntimeManifestSchema.safeParse(input);
-}
-
-function validateManifestCollections(
-  maps: Record<string, string>,
-  styles: Record<string, string>,
-  context: z.RefinementCtx,
-): void {
-  validateCollectionSize(maps, 'maps', context);
-  validateCollectionSize(styles, 'styles', context);
-  if (Object.keys(maps).length === 0) {
-    context.addIssue({code: 'custom', message: 'Expected at least one map', path: ['maps']});
-  }
-  for (const [mapName, styleUrl] of Object.entries(maps)) {
-    if (!Object.hasOwn(styles, mapName)) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Expected a matching styles entry',
-        path: ['maps', mapName],
-      });
-    } else if (styles[mapName] !== styleUrl) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Expected maps and styles URLs to match',
-        path: ['styles', mapName],
-      });
-    }
-  }
-  for (const mapName of Object.keys(styles)) {
-    if (!Object.hasOwn(maps, mapName)) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Expected a matching maps entry',
-        path: ['styles', mapName],
-      });
-    }
-  }
 }
 
 function validateUniqueFontFaces(
@@ -250,33 +224,6 @@ function validateUniqueFontFaces(
       continue;
     }
     seen.set(identity, index);
-  }
-}
-
-function validateCollectionSize(
-  value: Record<string, unknown> | undefined,
-  path: string,
-  context: z.RefinementCtx,
-): void {
-  if (value && Object.keys(value).length > 1_000) {
-    context.addIssue({code: 'too_big', maximum: 1_000, origin: 'object', path: [path]});
-  }
-}
-
-function validateOptionalMapCollection(
-  value: Record<string, unknown> | undefined,
-  maps: Record<string, unknown>,
-  path: string,
-  context: z.RefinementCtx,
-): void {
-  for (const mapName of Object.keys(value ?? {})) {
-    if (!Object.hasOwn(maps, mapName)) {
-      context.addIssue({
-        code: 'custom',
-        message: 'Expected an entry for a declared map',
-        path: [path, mapName],
-      });
-    }
   }
 }
 
@@ -339,12 +286,6 @@ function isApiOrigin(value: string): boolean {
   } catch {
     return false;
   }
-}
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
 }
 
 function findUnsafeManifestStructure(

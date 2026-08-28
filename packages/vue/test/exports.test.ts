@@ -64,3 +64,11 @@ test('interactive runtime resolves and reuses the MapLibre renderer', async () =
   assert.equal(typeof maplibregl.Marker, 'function');
   assert.equal(typeof maplibregl.addProtocol, 'function');
 });
+
+test('initial renderer loading converges on a theme selected while it is in flight', async () => {
+  const source = await readFile(new URL('../src/index.ts', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(source, /runtimeStyle\.value\s*!==\s*runtime\s*\|\|/u);
+  assert.match(source, /runtimeStyle\.value\s*&&\s*runtimeStyle\.value\s*!==\s*runtime/u);
+  assert.match(source, /themeController\.setTheme\(runtimeStyle\.value\)/u);
+});

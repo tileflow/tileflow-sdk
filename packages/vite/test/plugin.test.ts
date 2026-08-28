@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {test} from 'node:test';
@@ -39,19 +39,32 @@ test('emits manifest and style assets under the configured Vite base path', asyn
     'maps/icons/main/sprite@2x.json',
     'maps/icons/main/sprite@2x.png',
     'maps/manifest.json',
-    'maps/styles/main.json',
+    'maps/styles/main/dark.json',
+    'maps/styles/main/light.json',
   ];
   assert.deepEqual(
     names.filter((name) => !name?.includes('/generations/')),
     stableNames,
   );
   const generated = names.filter((name) => name?.includes('/generations/'));
-  assert.equal(generated.length, 5);
+  assert.equal(generated.length, 6);
   assert.ok(generated.every((name) => /^maps\/generations\/[a-f0-9]{64}\//.test(name ?? '')));
-  const manifest = emitted.find((asset) => asset.fileName === 'maps/manifest.json');
+  const manifest = JSON.parse(
+    String(emitted.find((asset) => asset.fileName === 'maps/manifest.json')?.source),
+  ) as RuntimeManifest;
+  assert.equal(manifest.version, 1);
+  assert.equal(Object.hasOwn(manifest, 'kind'), false);
+  assert.equal(Object.hasOwn(manifest, 'styles'), false);
+  assert.equal(manifest.maps.main?.defaultTheme, 'light');
+  assert.deepEqual(manifest.maps.main?.systemThemes, {dark: 'dark', light: 'light'});
+  assert.deepEqual(Object.keys(manifest.maps.main?.themes ?? {}).sort(), ['dark', 'light']);
   assert.match(
-    String(manifest?.source),
-    /"main": "\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\.json"/,
+    manifest.maps.main?.themes.light?.styleUrl ?? '',
+    /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u,
+  );
+  assert.match(
+    manifest.maps.main?.themes.dark?.styleUrl ?? '',
+    /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/dark\.json$/u,
   );
 });
 
@@ -61,18 +74,18 @@ test('preserves Vite public URL kinds while keeping relative manifests owner-rel
   t.after(() => rm(cwd, {force: true, recursive: true}));
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `import {defineRootMap} from '@tileflow/core'; import {streetsIcons} from '@tileflow/maps'; export default defineRootMap({id:'main',version:1,root:{compiler:'streets',compilerVersion:1},icons:[streetsIcons],glyphs:${externalGlyphProvider}});\n`,
+    `import {defineRootMap} from '@tileflow/core'; import {streetsIcons, streetsThemes} from '@tileflow/maps'; export default defineRootMap({id:'main',version:1,root:{compiler:'streets',compilerVersion:1},defaultTheme:'light',systemThemes:{dark:'dark',light:'light'},themes:streetsThemes,icons:[streetsIcons],glyphs:${externalGlyphProvider}});\n`,
   );
 
   const cases = [
-    ['/', /^\/maps\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u],
-    ['/app/', /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u],
+    ['/', /^\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u],
+    ['/app/', /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u],
     [
       'https://cdn.example.test/app/',
-      /^https:\/\/cdn\.example\.test\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u,
+      /^https:\/\/cdn\.example\.test\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u,
     ],
-    ['./', /^\.\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u],
-    ['../assets/', /^\.\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u],
+    ['./', /^\.\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u],
+    ['../assets/', /^\.\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u],
   ] as const;
 
   for (const [publicBase, expectedStyleUrl] of cases) {
@@ -92,8 +105,8 @@ test('preserves Vite public URL kinds while keeping relative manifests owner-rel
       );
       const manifest = JSON.parse(
         String(emitted.find((asset) => asset.fileName === 'maps/manifest.json')?.source),
-      ) as {styles: {main: string}};
-      assert.match(manifest.styles.main, expectedStyleUrl);
+      ) as RuntimeManifest;
+      assert.match(manifest.maps.main?.themes.light?.styleUrl ?? '', expectedStyleUrl);
     });
   }
 });
@@ -119,12 +132,16 @@ test('serves the production manifest URL in real Vite dev under a non-root base'
 
   const manifestResponse = await fetch(`${origin}/app/maps/manifest.json`);
   assert.equal(manifestResponse.status, 200);
-  const manifest = (await manifestResponse.json()) as {styles: {main: string}};
+  const manifest = (await manifestResponse.json()) as RuntimeManifest;
+  const lightStyleUrl = manifest.maps.main?.themes.light?.styleUrl ?? '';
+  const darkStyleUrl = manifest.maps.main?.themes.dark?.styleUrl ?? '';
   assert.match(
-    manifest.styles.main,
-    /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\.json$/u,
+    lightStyleUrl,
+    /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u,
   );
-  assert.equal((await fetch(`${origin}${manifest.styles.main}`)).status, 200);
+  assert.match(darkStyleUrl, /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/dark\.json$/u);
+  assert.equal((await fetch(`${origin}${lightStyleUrl}`)).status, 200);
+  assert.equal((await fetch(`${origin}${darkStyleUrl}`)).status, 200);
 });
 
 test('rejects traversal in the Vite output and route base', () => {
@@ -176,10 +193,11 @@ test('emits Cyberpunk web fonts from Maps with immutable runtime URLs', async (t
   );
   const manifest = JSON.parse(
     String(emitted.find((asset) => asset.fileName === 'maps/manifest.json')?.source),
-  ) as {fontFaces?: {night?: Array<{source: string}>}};
-  assert.equal(manifest.fontFaces?.night?.length, 2);
+  ) as RuntimeManifest;
+  const fontFaces = manifest.maps.night?.themes.dark?.fontFaces;
+  assert.equal(fontFaces?.length, 2);
   assert.ok(
-    manifest.fontFaces?.night?.every((face) =>
+    fontFaces?.every((face) =>
       /^\/app\/maps\/generations\/[a-f0-9]{64}\/fonts\/oxanium-(?:medium|semibold)-[a-f0-9]{64}\.ttf$/u.test(
         face.source,
       ),
@@ -201,22 +219,9 @@ test('refuses to emit over a Hosted manifest copied from publicDir', async (t) =
   const publicDir = join(cwd, 'public');
   await mkdir(join(publicDir, 'maps'), {recursive: true});
   await writeFile(join(cwd, 'tileflow.config.ts'), streetsConfig());
-  await writeFile(
-    join(publicDir, 'maps', 'manifest.json'),
-    JSON.stringify({
-      apiUrl: 'https://api.example.test',
-      kind: 'hosted',
-      maps: {
-        main: {
-          environment: 'production',
-          mapId: 'map_main',
-          styleUrl: 'https://styles.example.test/main.json',
-        },
-      },
-      styles: {main: 'https://styles.example.test/main.json'},
-      version: 3,
-    }),
-  );
+  const hosted = createHostedManifest();
+  const manifestPath = join(publicDir, 'maps', 'manifest.json');
+  await writeFile(manifestPath, JSON.stringify(hosted));
 
   const plugin = tileflow({base: '/maps'});
   (plugin.configResolved as (config: unknown) => void)({base: '/', publicDir, root: cwd});
@@ -224,6 +229,35 @@ test('refuses to emit over a Hosted manifest copied from publicDir', async (t) =
     () => (plugin.generateBundle as Function).call({emitFile: () => undefined}, {}, {}, false),
     /Refusing to overwrite Hosted manifest/,
   );
+  assert.deepEqual(JSON.parse(await readFile(manifestPath, 'utf8')), hosted);
+});
+
+test('allows an explicit Vite opt-in to replace Hosted manifest metadata', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-vite-hosted-opt-in-'));
+  await linkWorkspacePackages(cwd);
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  const publicDir = join(cwd, 'public');
+  await mkdir(join(publicDir, 'maps'), {recursive: true});
+  await writeFile(join(cwd, 'tileflow.config.ts'), streetsConfig());
+  await writeFile(
+    join(publicDir, 'maps', 'manifest.json'),
+    `${JSON.stringify(createHostedManifest())}\n`,
+  );
+
+  const plugin = tileflow({base: '/maps', overwriteHostedManifest: true});
+  (plugin.configResolved as (config: unknown) => void)({base: '/', publicDir, root: cwd});
+  const emitted: Array<{fileName?: string; source?: unknown; type: string}> = [];
+  await (plugin.generateBundle as Function).call(
+    {emitFile: (asset: (typeof emitted)[number]) => emitted.push(asset)},
+    {},
+    {},
+    false,
+  );
+
+  const replacement = JSON.parse(
+    String(emitted.find((asset) => asset.fileName === 'maps/manifest.json')?.source),
+  ) as RuntimeManifest;
+  assertLocalManifest(replacement, '/maps');
 });
 
 test('refreshes the shared input graph and unwatches retired asset directories', async (t) => {
@@ -236,7 +270,7 @@ test('refreshes the shared input graph and unwatches retired asset directories',
   await Promise.all([
     writeFile(join(iconsA, 'museum.svg'), icon),
     writeFile(join(iconsB, 'museum.svg'), icon),
-    writeFile(join(cwd, 'tokens.ts'), "export const variant = {mode: 'light'} as const;\n"),
+    writeFile(join(cwd, 'tokens.ts'), "export const mapName = 'Watched map';\n"),
   ]);
   await writeFile(configPath, watchedConfig('./icons-a'));
 
@@ -293,7 +327,7 @@ const icon =
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="#000" d="M2 20h20L12 2z"/></svg>';
 
 function watchedConfig(source: string): string {
-  return `import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; import {variant} from './tokens'; export default defineMap({id:'main',version:1,extends:streets,theme:variant,glyphs:${externalGlyphProvider},icons:[${JSON.stringify(source)}],modules:{poi:{type:'poi',enabled:false},roads:{type:'roads',enabled:false}}});\n`;
+  return `import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; import {mapName} from './tokens'; export default defineMap({id:'main',name:mapName,version:1,extends:streets,glyphs:${externalGlyphProvider},icons:[${JSON.stringify(source)}],modules:{poi:{type:'poi',enabled:false},roads:{type:'roads',enabled:false}}});\n`;
 }
 
 function streetsConfig(): string {
@@ -305,6 +339,43 @@ const externalGlyphProvider = JSON.stringify({
   url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
   fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
 });
+
+function createHostedManifest(): RuntimeManifest {
+  return {
+    apiUrl: 'https://api.example.test',
+    maps: {
+      main: {
+        defaultTheme: 'light',
+        environment: 'production',
+        mapId: 'map_main',
+        themes: {
+          light: {
+            colorScheme: 'light',
+            styleId: 'style_main',
+            styleUrl: 'https://styles.example.test/main/light.json',
+          },
+        },
+      },
+    },
+    version: 1,
+  };
+}
+
+function assertLocalManifest(manifest: RuntimeManifest, base: string): void {
+  assert.equal(manifest.version, 1);
+  assert.equal(manifest.apiUrl, undefined);
+  assert.equal(Object.hasOwn(manifest, 'kind'), false);
+  assert.equal(Object.hasOwn(manifest, 'styles'), false);
+  const map = manifest.maps.main;
+  assert.ok(map);
+  assert.equal(map.environment, undefined);
+  assert.equal(map.mapId, undefined);
+  assert.equal(map.themes.light?.styleId, undefined);
+  assert.match(
+    map.themes.light?.styleUrl ?? '',
+    new RegExp(`^${base}/generations/[a-f0-9]{64}/styles/main/light\\.json$`, 'u'),
+  );
+}
 
 function hasPathSuffix(paths: Set<string>, suffix: string): boolean {
   return [...paths].some((path) => path.replaceAll('\\', '/').endsWith(suffix));
@@ -319,3 +390,26 @@ async function waitFor(condition: () => boolean, describe = () => ''): Promise<v
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
   }
 }
+
+type RuntimeManifest = {
+  apiUrl?: string;
+  maps: Record<
+    string,
+    {
+      defaultTheme: string;
+      environment?: string;
+      mapId?: string;
+      systemThemes?: {dark: string; light: string};
+      themes: Record<
+        string,
+        {
+          colorScheme: 'dark' | 'light';
+          fontFaces?: Array<{source: string}>;
+          styleId?: string;
+          styleUrl: string;
+        }
+      >;
+    }
+  >;
+  version: 1;
+};

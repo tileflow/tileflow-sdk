@@ -11,6 +11,7 @@ import {resolveColors} from '../src/themes';
 const context = {
   colors: resolveColors(),
   data: resolveTileflowData(undefined),
+  images: {},
   typography: {
     font: 'Noto Sans Regular',
     places: {font: 'Noto Sans Bold'},
@@ -33,23 +34,22 @@ function styleFor(contributions: readonly TileflowLayerContribution[]) {
 test('POI labels clear their own icons while preserving normal collision and coupling', () => {
   const uncoupled = compilePoi(
     poi({
-      categories: ['food'],
-      density: 'balanced',
-      icons: 'full',
-      labels: 'balanced',
+      categories: ['food-drink'],
+      density: 3,
+      icons: true,
+      labels: true,
       placement: {coupleIconAndLabel: false},
-      preset: 'balanced',
     }),
     context,
   );
-  const icon = uncoupled.find((entry) => entry.layer.id === 'streets-poi-food-icon')?.layer;
-  const label = uncoupled.find((entry) => entry.layer.id === 'streets-poi-food-label')?.layer;
+  const icon = uncoupled.find((entry) => entry.layer.id === 'streets-poi-food-drink-icon')?.layer;
+  const label = uncoupled.find((entry) => entry.layer.id === 'streets-poi-food-drink-label')?.layer;
   const iconLayout = icon?.layout as Record<string, unknown>;
   const labelLayout = label?.layout as Record<string, unknown>;
 
   assert.deepEqual(
     uncoupled.map((entry) => entry.layer.id),
-    ['streets-poi-food-icon', 'streets-poi-food-label'],
+    ['streets-poi-food-drink-icon', 'streets-poi-food-drink-label'],
   );
   assert.equal(iconLayout['icon-allow-overlap'], undefined);
   assert.equal(iconLayout['icon-ignore-placement'], undefined);
@@ -61,12 +61,11 @@ test('POI labels clear their own icons while preserving normal collision and cou
 
   const coupled = compilePoi(
     poi({
-      categories: ['food'],
-      density: 'balanced',
-      icons: 'essential',
-      labels: 'balanced',
+      categories: ['food-drink'],
+      density: 3,
+      icons: true,
+      labels: true,
       placement: {coupleIconAndLabel: true},
-      preset: 'balanced',
     }),
     context,
   );
@@ -74,7 +73,7 @@ test('POI labels clear their own icons while preserving normal collision and cou
 
   assert.deepEqual(
     coupled.map((entry) => entry.layer.id),
-    ['streets-poi-food'],
+    ['streets-poi-food-drink'],
   );
   assert.ok(coupledLayout['icon-image']);
   assert.ok(coupledLayout['text-field']);
@@ -83,16 +82,15 @@ test('POI labels clear their own icons while preserving normal collision and cou
 
   const explicitlyPlaced = compilePoi(
     poi({
-      categories: ['food'],
-      icons: 'full',
-      labels: 'balanced',
-      preset: 'balanced',
-      styles: {food: {text: {offset: [0, 2]}}},
+      categories: ['food-drink'],
+      icons: true,
+      labels: true,
+      styles: {'food-drink': {text: {offset: [0, 2]}}},
     }),
     context,
   );
   const explicitLabel = explicitlyPlaced.find(
-    (entry) => entry.layer.id === 'streets-poi-food-label',
+    (entry) => entry.layer.id === 'streets-poi-food-drink-label',
   )?.layer.layout as Record<string, unknown>;
   assert.deepEqual(explicitLabel['text-offset'], [0, 2]);
   assert.equal(explicitLabel['text-radial-offset'], undefined);
@@ -124,7 +122,7 @@ test('POI and geographic labels share the requested language and bound English f
     localizedContext,
   );
   const points = compilePoi(
-    poi({categories: ['food'], icons: false, labels: 'balanced', preset: 'balanced'}),
+    poi({categories: ['food-drink'], icons: false, labels: true}),
     localizedContext,
     'fr',
   );
@@ -143,7 +141,7 @@ test('POI and geographic labels share the requested language and bound English f
   ]);
 
   const english = compilePoi(
-    poi({categories: ['food'], icons: false, labels: 'balanced', preset: 'balanced'}),
+    poi({categories: ['food-drink'], icons: false, labels: true}),
     localizedContext,
     'en',
   );
@@ -199,11 +197,15 @@ test('shields and junctions use geometry-safe filters and localized junction nam
           class: 'kind',
           name: 'local_label',
           nameLatin: 'latin_label',
-          network: 'route_network',
           ref: 'route_ref',
+          shieldKind: 'shield_family',
+          shieldLineLengthMeters: 'shield_line_length',
+          shieldRank: 'shield_rank',
+          shieldText: 'shield_text',
+          shieldTextColor: 'shield_ink',
           subclass: 'detail',
         },
-        layers: {roadName: 'road_labels'},
+        layers: {roadName: 'road_labels', roadShield: 'road_shields'},
       }),
       url: '/tiles.json',
     }),
@@ -220,16 +222,21 @@ test('shields and junctions use geometry-safe filters and localized junction nam
     roads({detail: 'all'}),
     {...context, data},
   );
-  const shield = contributions.find(
-    (entry) => entry.layer.id === 'streets-label-road-shield',
+  const overview = contributions.find(
+    (entry) => entry.layer.id === 'streets-label-road-shield-overview',
+  )?.layer;
+  const detail = contributions.find(
+    (entry) => entry.layer.id === 'streets-label-road-shield-detail',
   )?.layer;
   const junction = contributions.find(
     (entry) => entry.layer.id === 'streets-label-road-junction',
   )?.layer;
 
-  assert.match(JSON.stringify(shield?.filter), /LineString/);
-  assert.match(JSON.stringify(shield?.layout?.['text-field']), /to-string/);
-  assert.match(JSON.stringify(shield?.layout?.['text-field']), /route_ref/);
+  assert.match(JSON.stringify(overview?.filter), /Point/);
+  assert.match(JSON.stringify(detail?.filter), /LineString/);
+  assert.match(JSON.stringify(overview?.filter), /shield_family/);
+  assert.match(JSON.stringify(detail?.layout?.['text-field']), /to-string/);
+  assert.match(JSON.stringify(detail?.layout?.['text-field']), /shield_text/);
   assert.match(JSON.stringify(junction?.filter), /Point/);
   assert.match(JSON.stringify(junction?.layout?.['text-field']), /name:es/);
   assert.match(JSON.stringify(junction?.layout?.['text-field']), /latin_label/);

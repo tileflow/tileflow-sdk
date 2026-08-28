@@ -1,9 +1,11 @@
 import type {Map as MapLibreMap, MapOptions as MapLibreMapOptions} from 'maplibre-gl';
 import type {Snippet, SvelteComponentTyped} from 'svelte';
+import type {TileflowThemeTransition} from '@tileflow/core/browser';
 import type {
   TileflowAnalytics,
   TileflowMapMarker,
   TileflowRuntimeSource,
+  TileflowThemeSelection,
 } from '@tileflow/core/runtime';
 import type {
   TileflowAnnotation,
@@ -41,6 +43,8 @@ type TileflowMapBaseProps = {
   imageUrl?: string;
   interactive?: boolean;
   mapOptions?: TileflowMapOptions;
+  onThemeChange?: (transition: TileflowThemeTransition) => void;
+  theme?: TileflowThemeSelection;
   zoom?: number;
 };
 

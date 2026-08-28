@@ -1,8 +1,9 @@
 import {
   addresses,
   aeroways,
+  boundaries,
   buildings,
-  defineMap,
+  defineRootMap,
   expression,
   labels,
   land,
@@ -13,7 +14,7 @@ import {
   type TileflowLineJoin,
   type TileflowLineStyle,
   type TileflowRoadClassStyle,
-  type TileflowThemeConfig,
+  token,
   transit,
   vegetation,
   water,
@@ -29,7 +30,7 @@ import {
 } from '@tileflow/core/recipe';
 import {cyberpunkFonts, cyberpunkIcons} from '../assets';
 import {mapboxRailTransitStyle} from './mapbox-rail';
-import {streets} from './streets';
+import {bindOfficialMapTheme, defineOfficialTheme} from './theme-helpers';
 
 const cyberpunkPalette = {
   background: '#060B18',
@@ -65,6 +66,219 @@ const cyberpunkPalette = {
   waterDeep: '#01040C',
   yellow: '#F8EF42',
 } as const;
+
+function cyberpunkColorForSemanticToken(name: string): string {
+  const [group, role = ''] = name.split('.');
+  switch (group) {
+    case 'boundaries':
+      return role === 'halo' ? cyberpunkPalette.labelHalo : cyberpunkPalette.boundary;
+    case 'buildings':
+      return role === 'outline' || role.endsWith('Outline')
+        ? cyberpunkPalette.buildingOutline
+        : cyberpunkPalette.building;
+    case 'hydro':
+      return role === 'label' || role === 'ferry'
+        ? cyberpunkPalette.cyanSoft
+        : cyberpunkPalette.water;
+    case 'labels':
+      if (role === 'halo' || role === 'waterHalo') return cyberpunkPalette.labelHalo;
+      if (role === 'muted' || role === 'neighborhood') return cyberpunkPalette.labelMuted;
+      if (role === 'water') return cyberpunkPalette.labelWater;
+      return cyberpunkPalette.text;
+    case 'landcover':
+      return cyberpunkPalette.park;
+    case 'landuse':
+      return role === 'recreation' || role === 'recreationOutline'
+        ? cyberpunkPalette.park
+        : cyberpunkPalette.land;
+    case 'poi': {
+      const accents: Readonly<Record<string, string>> = {
+        'arts-entertainment': cyberpunkPalette.labelCulture,
+        'food-drink': cyberpunkPalette.orange,
+        halo: cyberpunkPalette.labelHalo,
+        landmark: cyberpunkPalette.labelCulture,
+        lodging: cyberpunkPalette.magentaSoft,
+        medical: cyberpunkPalette.magentaSoft,
+        'park-nature': cyberpunkPalette.green,
+        religion: cyberpunkPalette.labelCulture,
+        retail: cyberpunkPalette.green,
+        'sport-leisure': cyberpunkPalette.green,
+        transport: cyberpunkPalette.neonMagenta,
+      };
+      return accents[role] ?? cyberpunkPalette.cyanSoft;
+    }
+    case 'roads':
+      if (name.includes('casing')) return cyberpunkPalette.roadCasing;
+      if (name.includes('tunnel')) return cyberpunkPalette.roadTunnel;
+      if (role === 'ferry') return cyberpunkPalette.cyanMuted;
+      if (role === 'rail' || role === 'railTransit') return cyberpunkPalette.orange;
+      if (role === 'cycleway' || role === 'parkPath') return cyberpunkPalette.green;
+      return cyberpunkPalette.road;
+    case 'surface':
+      if (role === 'water') return cyberpunkPalette.water;
+      if (role === 'building') return cyberpunkPalette.building;
+      if (role === 'park') return cyberpunkPalette.park;
+      return cyberpunkPalette.land;
+    case 'transit':
+      return cyberpunkPalette.neonMagenta;
+    case 'vegetation':
+      return cyberpunkPalette.park;
+    default:
+      throw new Error(`Cyberpunk has no visual family for semantic token ${name}.`);
+  }
+}
+
+const cyberpunkSemanticColorRoles = {
+  boundaries: ['admin', 'default', 'disputed', 'halo', 'major', 'maritime', 'regional'],
+  buildings: [
+    'active',
+    'businessCorridor',
+    'businessCorridorOutline',
+    'civic',
+    'commercial',
+    'destination',
+    'extrusion',
+    'fill',
+    'generic',
+    'industrial',
+    'outline',
+    'residential',
+    'shadow',
+  ],
+  hydro: [
+    'depth.m0',
+    'depth.m200',
+    'depth.m2000',
+    'depth.m7000',
+    'ferry',
+    'label',
+    'water',
+    'waterway',
+  ],
+  labels: [
+    'country',
+    'halo',
+    'muted',
+    'neighborhood',
+    'overview',
+    'poi',
+    'primary',
+    'road',
+    'settlement',
+    'strong',
+    'water',
+    'waterHalo',
+  ],
+  landcover: [
+    'barren',
+    'farmland',
+    'flowerbed',
+    'grass',
+    'greenspace',
+    'greenspaceDark',
+    'ice',
+    'meadow',
+    'protected',
+    'recreationGround',
+    'rock',
+    'sand',
+    'scrub',
+    'urbanPark',
+    'villageGreen',
+    'wetland',
+    'wood',
+  ],
+  landuse: [
+    'businessCorridor',
+    'businessCorridorOutline',
+    'cemetery',
+    'civic',
+    'commercial',
+    'education',
+    'government',
+    'industrial',
+    'medical',
+    'parking',
+    'parkingOutline',
+    'railway',
+    'recreation',
+    'recreationOutline',
+    'residential',
+  ],
+  poi: [
+    'arts-entertainment',
+    'education',
+    'food-drink',
+    'halo',
+    'icon',
+    'label',
+    'landmark',
+    'lodging',
+    'medical',
+    'park-nature',
+    'public-services',
+    'religion',
+    'retail',
+    'sport-leisure',
+    'transport',
+    'visitor-amenity',
+  ],
+  roads: [
+    'bridge',
+    'casing',
+    'city.casing',
+    'city.minor',
+    'city.primary',
+    'city.secondary',
+    'city.tertiary',
+    'city.tunnel',
+    'city.tunnelCasing',
+    'cycleway',
+    'default',
+    'default.casing',
+    'default.tunnel',
+    'ferry',
+    'major',
+    'minor',
+    'motorway',
+    'motorway.casing',
+    'motorway.tunnel',
+    'parkPath',
+    'path',
+    'path.casing',
+    'path.transition',
+    'path.tunnel',
+    'primary',
+    'rail',
+    'railTransit',
+    'secondary',
+    'trunk',
+    'trunk.casing',
+    'trunk.tunnel',
+    'tunnel',
+  ],
+  surface: ['background', 'building', 'land', 'park', 'water'],
+  transit: ['primary'],
+  vegetation: [
+    'tree.bark',
+    'tree.broadleaf.a',
+    'tree.broadleaf.b',
+    'tree.broadleaf.c',
+    'tree.broadleaf.d',
+    'tree.conifer.a',
+    'tree.conifer.b',
+    'tree.conifer.c',
+  ],
+} as const;
+
+const cyberpunkSemanticColors = Object.fromEntries(
+  Object.entries(cyberpunkSemanticColorRoles).flatMap(([group, roles]) =>
+    roles.map((role) => {
+      const name = `${group}.${role}`;
+      return [name, cyberpunkColorForSemanticToken(name)];
+    }),
+  ),
+);
 
 const cyberpunkBuildingHeight2d = [
   'to-number',
@@ -210,186 +424,34 @@ const cyberpunkRoadImportanceTier = [
   ],
 ];
 
-const cyberpunkPoiClass = ['coalesce', ['get', semanticField('class')], ''];
-const cyberpunkPoiSubclass = ['coalesce', ['get', semanticField('subclass')], ''];
-const cyberpunkPoiIsStadiumDestination = [
-  'all',
-  ['==', cyberpunkPoiClass, 'stadium'],
-  [
-    'match',
-    cyberpunkPoiSubclass,
-    [
-      '',
-      'arena',
-      'baseball_stadium',
-      'basketball_stadium',
-      'football_stadium',
-      'hockey_stadium',
-      'indoor_arena',
-      'multi_purpose_arena',
-      'rugby_stadium',
-      'soccer_stadium',
-      'stadium',
-      'stadium_arena',
-      'sports_arena',
-      'track_and_field_stadium',
-    ],
-    true,
-    false,
-  ],
-];
-const cyberpunkPoiIsHighValueDestination = [
-  'any',
-  [
-    'match',
-    cyberpunkPoiClass,
-    [
-      'art_gallery',
-      'attraction',
-      'castle',
-      'monument',
-      'museum',
-      'square',
-      'theme_park',
-      'theatre',
-      'town_hall',
-    ],
-    true,
-    false,
-  ],
-  [
-    'match',
-    cyberpunkPoiSubclass,
-    [
-      'archaeological_site',
-      'art_museum',
-      'arts_centre',
-      'artwork',
-      'attraction',
-      'castle',
-      'central_government_office',
-      'city_gate',
-      'courthouse',
-      'government',
-      'history_museum',
-      'ministry',
-      'monument',
-      'museum',
-      'palace',
-      'public_plaza',
-      'square',
-      'theme_park',
-      'theatre',
-      'town_hall',
-      'townhall',
-    ],
-    true,
-    false,
-  ],
-  cyberpunkPoiIsStadiumDestination,
-];
-const cyberpunkPoiIsArtwork = ['==', cyberpunkPoiSubclass, 'artwork'];
-const cyberpunkPoiIsLandmarkDestination = [
-  'any',
-  [
-    'match',
-    cyberpunkPoiClass,
-    ['castle', 'monument', 'museum', 'square', 'theme_park', 'theatre', 'town_hall'],
-    true,
-    false,
-  ],
-  [
-    'match',
-    cyberpunkPoiSubclass,
-    [
-      'amusement_park',
-      'archaeological_site',
-      'art_museum',
-      'castle',
-      'central_government_office',
-      'city_gate',
-      'courthouse',
-      'government',
-      'history_museum',
-      'ministry',
-      'monument',
-      'museum',
-      'palace',
-      'public_plaza',
-      'square',
-      'theme_park',
-      'theatre',
-      'town_hall',
-      'townhall',
-    ],
-    true,
-    false,
-  ],
-  cyberpunkPoiIsStadiumDestination,
-];
-const cyberpunkPoiLegacyImportanceTier = [
-  'case',
-  cyberpunkPoiIsLandmarkDestination,
-  3,
-  ['all', cyberpunkPoiIsHighValueDestination, ['!', cyberpunkPoiIsArtwork]],
-  2,
-  cyberpunkPoiIsArtwork,
-  1,
-  0,
-];
-// Decorative artwork is useful context at close zooms, but should not compete with destinations
-// in Cyberpunk's HUD even when the source publishes it as a general tier-2 POI.
+const cyberpunkPoiCategory = ['coalesce', ['get', semanticField('poiCategory')], ''];
+const cyberpunkPoiFilterRank = ['to-number', ['get', semanticField('poiFilterRank')], 6];
+const cyberpunkPoiSizeRank = ['to-number', ['get', semanticField('poiSizeRank')], 17];
 const cyberpunkPoiImportanceTier = [
-  'case',
-  cyberpunkPoiIsArtwork,
+  'match',
+  cyberpunkPoiCategory,
+  'landmark',
+  4,
+  'transport',
+  3,
+  ['arts-entertainment', 'park-nature', 'public-services', 'sport-leisure'],
+  2,
   1,
-  ['has', cyberpunkImportanceTierField],
-  cyberpunkPublishedImportanceTier,
-  cyberpunkPoiLegacyImportanceTier,
 ];
 const cyberpunkHudPoiImportanceTier = cyberpunkPoiImportanceTier;
-const cyberpunkPoiRank = ['to-number', ['coalesce', ['get', semanticField('rank')], 999], 999];
-const cyberpunkPoiRankStops = [
-  [15, 14],
-  [17, 120],
-  [18, 240],
-  [19, 500],
-  [20, 750],
-  [21, 999],
-] as const;
-const cyberpunkPoiMaxRank = zoom.step(cyberpunkPoiRankStops);
-const cyberpunkPoiMaxRankExpression = toMapLibreStyleValue(cyberpunkPoiMaxRank);
-const cyberpunkTierOneMaxRankExpression = [
-  'step',
-  ['zoom'],
-  0,
-  18,
-  14,
-  19,
-  40,
-  20,
-  120,
-  21,
-  320,
-  22,
-  999,
-];
 const cyberpunkPoiIsHudCandidate = [
-  'case',
-  ['>=', cyberpunkHudPoiImportanceTier, 4],
-  true,
-  ['==', cyberpunkHudPoiImportanceTier, 3],
-  ['>=', ['zoom'], 15],
-  ['==', cyberpunkHudPoiImportanceTier, 2],
-  ['all', ['>=', ['zoom'], 16], ['<=', cyberpunkPoiRank, cyberpunkPoiMaxRankExpression]],
-  ['==', cyberpunkHudPoiImportanceTier, 1],
-  ['all', ['>=', ['zoom'], 18], ['<=', cyberpunkPoiRank, cyberpunkTierOneMaxRankExpression]],
-  false,
+  'all',
+  ['has', semanticField('poiFilterRank')],
+  ['>=', cyberpunkPoiFilterRank, 0],
+  ['<=', cyberpunkPoiFilterRank, 2],
+  ['has', semanticField('poiSizeRank')],
+  ['>=', cyberpunkPoiSizeRank, 0],
+  ['<=', cyberpunkPoiSizeRank, 16],
 ];
 const cyberpunkPoiPlacementPriority = [
   '+',
-  ['*', ['-', 4, cyberpunkHudPoiImportanceTier], 1000],
-  cyberpunkPoiRank,
+  ['*', cyberpunkPoiFilterRank, 17],
+  cyberpunkPoiSizeRank,
 ];
 const cyberpunkPoiImportanceColor = [
   'match',
@@ -411,7 +473,53 @@ const roadWidthInterpolationBase = 1.5;
 const expresswayWidthScale = 1.06;
 const tunnelBorderDash = [8, 5] as const;
 const tunnelBorderWidth = 1;
-const roadLineCap = 'butt' as const;
+const roadClearanceExtraAtZ15 = [
+  'to-number',
+  ['coalesce', ['get', semanticField('circularClearanceExtraAtZoom15')], 0],
+  0,
+];
+const roadNeedsStructuralButtCap = [
+  'any',
+  ['==', ['get', semanticField('brunnel')], 'tunnel'],
+  ['==', ['get', semanticField('class')], 'steps'],
+  ['==', ['get', semanticField('subclass')], 'steps'],
+];
+const roadNeedsControlledSurfaceButtCap = [
+  'all',
+  ['match', ['get', semanticField('brunnel')], ['tunnel', 'bridge'], false, true],
+  ['==', ['get', semanticField('foot')], 'no'],
+  [
+    'match',
+    ['get', semanticField('class')],
+    [
+      'motorway',
+      'trunk',
+      'primary',
+      'motorway_construction',
+      'trunk_construction',
+      'primary_construction',
+    ],
+    true,
+    false,
+  ],
+];
+const roadLineCap = expression<TileflowLineCap>([
+  'step',
+  ['zoom'],
+  ['case', roadNeedsStructuralButtCap, 'butt', 'round'],
+  17,
+  [
+    'case',
+    [
+      'any',
+      roadNeedsStructuralButtCap,
+      roadNeedsControlledSurfaceButtCap,
+      ['>', roadClearanceExtraAtZ15, 0],
+    ],
+    'butt',
+    'round',
+  ],
+]);
 const roadLineJoin = zoom.step<TileflowLineJoin>([
   [3, 'miter'],
   [14, 'round'],
@@ -516,12 +624,6 @@ const streetsParkPathWidthStops = [
   [18, 2],
   [22, 20],
 ] as const satisfies WidthStops;
-
-const roadClearanceExtraAtZ15 = [
-  'to-number',
-  ['coalesce', ['get', semanticField('circularClearanceExtraAtZoom15')], 0],
-  0,
-];
 
 function roadWidth(
   widths: WidthStops,
@@ -687,6 +789,7 @@ function cyberpunkPathRoadStyle(
 ): TileflowRoadClassStyle {
   const zoomRange = options.minZoom === undefined ? {} : {minZoom: options.minZoom};
   const cap = options.steps ? ('butt' as const) : pathLineCap;
+  const tunnelCap = 'butt' as const;
   const join = options.steps ? ('round' as const) : pathLineJoin;
   const fillWidth = options.width ?? roadWidth(widths, 1, false, false);
   const fill = {
@@ -713,16 +816,17 @@ function cyberpunkPathRoadStyle(
     surface: {...(options.underlay ? {shadow: options.underlay} : {}), casing, fill},
     bridge: {...(options.underlay ? {shadow: options.underlay} : {}), casing, fill},
     tunnel: {
-      ...(options.underlay ? {shadow: options.underlay} : {}),
+      ...(options.underlay ? {shadow: {...options.underlay, cap: tunnelCap}} : {}),
       casing: {
         ...casing,
+        cap: tunnelCap,
         color: cyberpunkPalette.roadCasing,
         dash: tunnelBorderDash,
         gapWidth: fill.width,
         opacity: 1,
         width: pathTunnelCasingWidth,
       },
-      fill: {...fill, color: '#06152E', dash: [1, 0], opacity: 1},
+      fill: {...fill, cap: tunnelCap, color: '#06152E', dash: [1, 0], opacity: 1},
       hatch: {visible: false},
     },
   };
@@ -830,7 +934,7 @@ function cyberpunkLabelSignals() {
         },
       }),
     ),
-    ...(['poi.transit.label', 'poi.culture.label'] as const).map((target) =>
+    ...(['poi.transport.label', 'poi.arts-entertainment.label'] as const).map((target) =>
       patchModuleLayer('poi', target, {paint: {'text-halo-width': 1.2}}),
     ),
   ];
@@ -1250,7 +1354,7 @@ function cyberpunkDestinationBeacons() {
           'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 15, 0.5, 18, 1, 22, 1.6],
         },
       },
-      {before: 'poi.transit.label'},
+      {before: 'poi.transport.label'},
     ),
     addModuleLayer(
       'poi',
@@ -1361,7 +1465,7 @@ function cyberpunkDestinationBeacons() {
           'text-opacity': ['interpolate', ['linear'], ['zoom'], 15, 0, 16, 0.82],
         },
       },
-      {after: 'poi.culture.label'},
+      {after: 'poi.arts-entertainment.label'},
     ),
   ];
 }
@@ -1631,8 +1735,12 @@ const roundaboutNeonColor = expression<string>([
   cyberpunkPalette.roadCasing,
 ]);
 
-export const cyberpunkTheme = {
-  mode: 'dark',
+export const cyberpunkTheme = defineOfficialTheme({
+  id: 'cyberpunk-dark',
+  version: 1,
+  colorScheme: 'dark',
+  extraColors: cyberpunkSemanticColors,
+  fonts: {default: 'Oxanium Medium', places: 'Oxanium SemiBold'},
   colors: {
     background: cyberpunkPalette.background,
     boundary: cyberpunkPalette.boundary,
@@ -1719,18 +1827,22 @@ export const cyberpunkTheme = {
       residential: '#06183A',
     },
     poi: {
-      coffee: cyberpunkPalette.yellow,
-      culture: cyberpunkPalette.labelCulture,
+      'arts-entertainment': cyberpunkPalette.labelCulture,
       education: cyberpunkPalette.cyanSoft,
-      food: '#FF8A3D',
+      'food-drink': '#FF8A3D',
       halo: cyberpunkPalette.labelHalo,
-      health: '#FF4D6D',
       icon: cyberpunkPalette.cyan,
       label: cyberpunkPalette.text,
+      landmark: cyberpunkPalette.labelCulture,
       lodging: cyberpunkPalette.magentaSoft,
-      services: cyberpunkPalette.cyanSoft,
-      shopping: cyberpunkPalette.green,
-      transit: cyberpunkPalette.neonMagenta,
+      medical: '#FF4D6D',
+      'park-nature': cyberpunkPalette.green,
+      'public-services': cyberpunkPalette.cyanSoft,
+      religion: cyberpunkPalette.labelCulture,
+      retail: cyberpunkPalette.green,
+      'sport-leisure': cyberpunkPalette.green,
+      transport: cyberpunkPalette.neonMagenta,
+      'visitor-amenity': cyberpunkPalette.cyanSoft,
     },
     roads: {
       bridge: cyberpunkPalette.roadBridge,
@@ -1755,272 +1867,343 @@ export const cyberpunkTheme = {
     transform: 'uppercase',
     water: {font: 'Oxanium Medium', letterSpacing: 0.065},
   },
-} satisfies TileflowThemeConfig;
-
-export const cyberpunk = defineMap({
-  id: 'cyberpunk',
-  version: 1,
-  name: 'Cyberpunk',
-  extends: streets,
-  fonts: [cyberpunkFonts],
-  icons: [...streets.icons, cyberpunkIcons],
-  light: {
+  lighting: {
     anchor: 'viewport',
     color: '#FFE6F6',
     intensity: 0.22,
     position: [1.15, 210, 40],
   },
-  modules: {
-    addresses: addresses({enabled: false}),
-    aeroways: aeroways({enabled: false}),
-    buildings: buildings({
-      businessCorridor: {
-        fill: {visible: false},
-        outline: {visible: false},
-      },
-      flat: {
-        fill: {
-          color: expression<string>(cyberpunkBuildingGhostFill),
-          minZoom: 15,
-          opacity: 0.56,
-        },
-        outline: {
-          blur: 0,
-          color: expression<string>(cyberpunkBuildingGhostCore),
-          minZoom: 15,
-          opacity: expression<number>(cyberpunkBuildingGhostCoreOpacity),
-          width: zoom.linear([
-            [15, 0.55],
-            [16, 0.62],
-            [18, 0.9],
-            [22, 1.8],
-          ]),
-        },
-      },
-      mode: 'flat',
-    }),
-    labels: labels({
-      aerodromeCodes: 'none',
-      junctions: false,
-      language: 'local',
-      places: 'all',
-      roadClasses: ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'service'],
-      roads: 'all',
-      shields: 'none',
-      water: 'major',
-    }),
-    land: land({
-      background: {color: cyberpunkPalette.land},
-      globalLandcover: {
-        color: expression<string>(cyberpunkOverviewLandcoverColor),
-        maxZoom: 9,
-        minZoom: 0,
-        opacity: zoom.linear([
-          [0, 0.9],
-          [6, 0.75],
-          [7, 0.45],
-          [8, 0.15],
-          [9, 0],
-        ]),
-      },
-    }),
-    roads: roads({
-      areas: {
-        pedestrian: {fill: {visible: false}, outline: {visible: false}},
-        pier: {fill: {visible: false}, outline: {visible: false}},
-        road: {fill: {visible: false}, outline: {visible: false}},
-      },
-      classes: {
-        motorway: cyberpunkRoadStyle(cyberpunkPalette.cyan, streetsRoadWidths.motorway, {
-          minZoom: 3,
-          neon: true,
-          rampWidths: mapboxMajorRampWidthStops,
-        }),
-        trunk: cyberpunkRoadStyle(cyberpunkPalette.magenta, streetsRoadWidths.trunk, {
-          minZoom: 3,
-          neon: true,
-          rampWidths: mapboxMajorRampWidthStops,
-        }),
-        primary: cyberpunkRoadStyle(cyberpunkPalette.cyan, streetsRoadWidths.primary, {
-          minZoom: 6,
-          neon: true,
-          rampWidths: mapboxArterialRampWidthStops,
-        }),
-        secondary: cyberpunkRoadStyle(cyberpunkPalette.magenta, streetsRoadWidths.secondary, {
-          minZoom: 8,
-          neon: true,
-          rampWidths: mapboxArterialRampWidthStops,
-        }),
-        tertiary: cyberpunkRoadStyle(cyberpunkPalette.cyanSoft, streetsRoadWidths.tertiary, {
-          edgeOpacity: 0.62,
-          minZoom: 8,
-          rampWidths: mapboxArterialRampWidthStops,
-        }),
-        minor: cyberpunkRoadStyle(cyberpunkPalette.cyan, streetsRoadWidths.minor, {
-          edgeOpacity: 0.64,
-          minZoom: 12,
-        }),
-        service: cyberpunkRoadStyle(cyberpunkPalette.cyanMuted, streetsRoadWidths.service, {
-          casingMinZoom: 15,
-          edgeOpacity: 0.44,
-          minZoom: 14,
-          tunnelVisible: false,
-        }),
-        track: cyberpunkRoadStyle(cyberpunkPalette.cyanMuted, streetsRoadWidths.track, {
-          casingMinZoom: 15,
-          edgeOpacity: 0.4,
-          minZoom: 14,
-        }),
-        pathway: cyberpunkPathRoadStyle(cyberpunkPalette.road, streetsParkPathWidthStops, {
-          casingColor: cyberpunkPalette.roadCasing,
-          casingWidth: 0,
-          minZoom: 12,
-        }),
-        footway: cyberpunkPathRoadStyle(cyberpunkPalette.road, streetsParkPathWidthStops, {
-          casingColor: cyberpunkPalette.roadCasing,
-          casingWidth: 0,
-          minZoom: 12,
-        }),
-        cycleway: cyberpunkPathRoadStyle(cyberpunkPalette.cyan, mapboxPathWidthStops, {
-          casingColor: cyberpunkPalette.roadCasing,
-          casingGapWidth: roadWidth(mapboxPathWidthStops, 1, false, false),
-          fillOpacity: zoom.linear([
-            [15, 0],
-            [16, 1],
-          ]),
-          minZoom: 15,
-          underlay: {
-            cap: pathLineCap,
-            color: cyberpunkPalette.road,
-            join: pathLineJoin,
-            minZoom: 12,
-            opacity: 1,
-            width: roadWidth(mapboxPathWidthStops, 1, false, false),
-          },
-          width: zoom.linear([
-            [12, 0],
-            [18, 2],
-            [22, 20],
-          ]),
-        }),
-        steps: cyberpunkPathRoadStyle(cyberpunkPalette.road, streetsParkPathWidthStops, {
-          casingColor: cyberpunkPalette.roadCasing,
-          casingMinZoom: 14,
-          casingWidth: 0,
-          dash: [0.18, 0.15],
-          minZoom: 14,
-          steps: true,
-        }),
-        pedestrian: cyberpunkPathRoadStyle(cyberpunkPalette.road, streetsParkPathWidthStops, {
-          casingColor: cyberpunkPalette.roadCasing,
-          casingMinZoom: 14,
-          casingWidth: 0,
-          minZoom: 12,
-        }),
-      },
-      detail: 'all',
-      extras: {paths: true},
-      hierarchy: 'clear',
-      modifiers: {
-        construction: {
-          surface: {
-            casing: {color: cyberpunkPalette.roadCasing, dash: [1.5, 1], opacity: 0.82},
-            fill: {color: cyberpunkPalette.road, dash: [1.5, 1], opacity: 0.96},
-          },
-        },
-        expressway: {widthScale: expresswayWidthScale},
-        indoor: {surface: {casing: {dash: [1, 0]}, fill: {dash: [1, 0]}}},
-        ramp: {enabled: false},
-        unpaved: {
-          surface: {
-            casing: {color: cyberpunkPalette.roadCasing, dash: [1, 0], opacity: 0.72},
-            fill: {color: cyberpunkPalette.road, dash: [1, 0], opacity: 0.96},
-          },
-        },
-      },
-      oneWayMarkers: false,
-      outline: 'strong',
-      restrictions: {
-        access: {
-          widthScale: 1,
-          surface: {
-            casing: {color: cyberpunkPalette.roadCasing, dash: [1, 0], opacity: 0.62},
-            fill: {color: cyberpunkPalette.road, dash: [1, 0], opacity: 1},
-          },
-        },
-        toll: {surface: {casing: {opacity: 1}}},
-      },
-      roundabouts: {
-        casing: {
-          color: 'rgba(0, 0, 0, 0)',
-          minZoom: 15,
-          pitchAlignment: 'map',
-          pitchScale: 'map',
-          radius: expression<number>(circularRoadCasingRadius),
-          strokeColor: roundaboutNeonColor,
-          strokeWidth: expression<number>(circularRoadCasingWidth),
-        },
-        fill: {
-          color: 'rgba(0, 0, 0, 0)',
-          minZoom: 15,
-          pitchAlignment: 'map',
-          pitchScale: 'map',
-          radius: expression<number>(circularRoadRadius),
-          strokeColor: cyberpunkPalette.road,
-          strokeWidth: expression<number>(circularRoadWidth),
-        },
-      },
-      serviceTypes: {
-        alley: {enabled: false},
-        crossover: {enabled: false},
-        driveway: {enabled: false},
-        parkingAisle: {enabled: false},
-        yard: {enabled: false},
-      },
-      sidewalks: {
-        outline: {visible: false},
-        pattern: {visible: false},
-        surface: {visible: false},
-      },
-      weight: 'regular',
-    }),
-    transit: transit(mapboxRailTransitStyle(cyberpunkPalette.orange)),
-    landforms: landforms({enabled: false}),
-    poi: poi({
-      categories: ['transit', 'culture'],
-      color: 'category',
-      density: 'sparse',
-      enabled: true,
-      icons: false,
-      labels: 'minimal',
-      maxRank: cyberpunkPoiMaxRank,
-      minZoom: 15,
-      placement: {
-        coupleIconAndLabel: false,
-        iconPadding: 4,
-        textPadding: 4,
-      },
-      preset: 'minimal',
-    }),
-    vegetation: vegetation({enabled: false}),
-    // Replace Streets' explicit light-water recipe so this map's dark hydro theme drives it.
-    water: water(),
-  },
-  projection: 'mercator',
-  ...defineModuleEffects([
-    ...cyberpunkLabelSignals(),
-    ...cyberpunkPathOverrides(),
-    ...cyberpunkPrincipalRoadNeon(),
-    ...cyberpunkBuildingGhost(),
-    ...cyberpunkDestinationBeacons(),
-    ...cyberpunkPlanarSystems(),
-  ]),
-  terrain: 'none',
-  theme: cyberpunkTheme,
-  view: {
-    bearing: 0,
-    center: [-3.69275, 40.40866],
-    pitch: 0,
-    zoom: 15,
-  },
 });
+
+export const cyberpunk = bindOfficialMapTheme(
+  defineRootMap({
+    id: 'cyberpunk',
+    version: 1,
+    name: 'Cyberpunk',
+    root: {compiler: 'streets', compilerVersion: 1},
+    data: {
+      generation: 'v1',
+      selection: {kind: 'current', product: 'world-v1'},
+      type: 'tileflow-world',
+    },
+    fonts: [cyberpunkFonts],
+    icons: [cyberpunkIcons],
+    themes: {dark: cyberpunkTheme},
+    defaultTheme: 'dark',
+    modules: {
+      addresses: addresses({enabled: false}),
+      aeroways: aeroways({enabled: false}),
+      boundaries: boundaries({
+        admin2: {
+          color: token.color('boundaries.admin'),
+          dash: [10, 0],
+          minZoom: 1,
+          opacity: 1,
+          width: zoom.linear([
+            [3, 0.5],
+            [12, 2],
+          ]),
+        },
+        admin4: {
+          color: token.color('boundaries.regional'),
+          dash: [2, 0],
+          minZoom: 2,
+          opacity: zoom.linear([
+            [2, 0],
+            [3, 1],
+          ]),
+          width: zoom.linear([
+            [3, 0.3],
+            [12, 1.5],
+          ]),
+        },
+        disputed: {
+          color: token.color('boundaries.admin'),
+          dash: expression<readonly number[]>([
+            'step',
+            ['zoom'],
+            ['literal', [3, 2, 5]],
+            7,
+            ['literal', [2, 1.5]],
+          ]),
+          minZoom: 1,
+          opacity: 1,
+          width: zoom.linear([
+            [3, 0.5],
+            [12, 2],
+          ]),
+        },
+        maritime: {visible: false},
+      }),
+      buildings: buildings({
+        businessCorridor: {
+          fill: {visible: false},
+          outline: {visible: false},
+        },
+        flat: {
+          fill: {
+            color: expression<string>(cyberpunkBuildingGhostFill),
+            minZoom: 15,
+            opacity: 0.56,
+          },
+          outline: {
+            blur: 0,
+            color: expression<string>(cyberpunkBuildingGhostCore),
+            minZoom: 15,
+            opacity: expression<number>(cyberpunkBuildingGhostCoreOpacity),
+            width: zoom.linear([
+              [15, 0.55],
+              [16, 0.62],
+              [18, 0.9],
+              [22, 1.8],
+            ]),
+          },
+        },
+        mode: 'flat',
+      }),
+      labels: labels({
+        aerodromeCodes: 'none',
+        junctions: false,
+        language: 'local',
+        places: 'all',
+        roadClasses: ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'service'],
+        roads: 'all',
+        shields: 'none',
+        water: 'major',
+      }),
+      land: land({
+        background: {color: cyberpunkPalette.land},
+        globalLandcover: {
+          color: expression<string>(cyberpunkOverviewLandcoverColor),
+          maxZoom: 9,
+          minZoom: 0,
+          opacity: zoom.linear([
+            [0, 0.9],
+            [6, 0.75],
+            [7, 0.45],
+            [8, 0.15],
+            [9, 0],
+          ]),
+        },
+      }),
+      roads: roads({
+        areas: {
+          pedestrian: {fill: {visible: false}, outline: {visible: false}},
+          pier: {fill: {visible: false}, outline: {visible: false}},
+          road: {fill: {visible: false}, outline: {visible: false}},
+        },
+        classes: {
+          motorway: cyberpunkRoadStyle(cyberpunkPalette.cyan, streetsRoadWidths.motorway, {
+            minZoom: 3,
+            neon: true,
+            rampWidths: mapboxMajorRampWidthStops,
+          }),
+          trunk: cyberpunkRoadStyle(cyberpunkPalette.magenta, streetsRoadWidths.trunk, {
+            minZoom: 3,
+            neon: true,
+            rampWidths: mapboxMajorRampWidthStops,
+          }),
+          primary: cyberpunkRoadStyle(cyberpunkPalette.cyan, streetsRoadWidths.primary, {
+            minZoom: 6,
+            neon: true,
+            rampWidths: mapboxArterialRampWidthStops,
+          }),
+          secondary: cyberpunkRoadStyle(cyberpunkPalette.magenta, streetsRoadWidths.secondary, {
+            minZoom: 8,
+            neon: true,
+            rampWidths: mapboxArterialRampWidthStops,
+          }),
+          tertiary: cyberpunkRoadStyle(cyberpunkPalette.cyanSoft, streetsRoadWidths.tertiary, {
+            edgeOpacity: 0.62,
+            minZoom: 8,
+            rampWidths: mapboxArterialRampWidthStops,
+          }),
+          minor: cyberpunkRoadStyle(cyberpunkPalette.cyan, streetsRoadWidths.minor, {
+            edgeOpacity: 0.64,
+            minZoom: 12,
+          }),
+          service: cyberpunkRoadStyle(cyberpunkPalette.cyanMuted, streetsRoadWidths.service, {
+            casingMinZoom: 15,
+            edgeOpacity: 0.44,
+            minZoom: 14,
+            tunnelVisible: false,
+          }),
+          track: cyberpunkRoadStyle(cyberpunkPalette.cyanMuted, streetsRoadWidths.track, {
+            casingMinZoom: 15,
+            edgeOpacity: 0.4,
+            minZoom: 14,
+          }),
+          pathway: cyberpunkPathRoadStyle(cyberpunkPalette.road, streetsParkPathWidthStops, {
+            casingColor: cyberpunkPalette.roadCasing,
+            casingWidth: 0,
+            minZoom: 12,
+          }),
+          footway: cyberpunkPathRoadStyle(cyberpunkPalette.road, streetsParkPathWidthStops, {
+            casingColor: cyberpunkPalette.roadCasing,
+            casingWidth: 0,
+            minZoom: 12,
+          }),
+          cycleway: cyberpunkPathRoadStyle(cyberpunkPalette.cyan, mapboxPathWidthStops, {
+            casingColor: cyberpunkPalette.roadCasing,
+            casingGapWidth: roadWidth(mapboxPathWidthStops, 1, false, false),
+            fillOpacity: zoom.linear([
+              [15, 0],
+              [16, 1],
+            ]),
+            minZoom: 15,
+            underlay: {
+              cap: pathLineCap,
+              color: cyberpunkPalette.road,
+              join: pathLineJoin,
+              minZoom: 12,
+              opacity: 1,
+              width: roadWidth(mapboxPathWidthStops, 1, false, false),
+            },
+            width: zoom.linear([
+              [12, 0],
+              [18, 2],
+              [22, 20],
+            ]),
+          }),
+          steps: cyberpunkPathRoadStyle(cyberpunkPalette.road, streetsParkPathWidthStops, {
+            casingColor: cyberpunkPalette.roadCasing,
+            casingMinZoom: 14,
+            casingWidth: 0,
+            dash: [0.18, 0.15],
+            minZoom: 14,
+            steps: true,
+          }),
+          pedestrian: cyberpunkPathRoadStyle(cyberpunkPalette.road, streetsParkPathWidthStops, {
+            casingColor: cyberpunkPalette.roadCasing,
+            casingMinZoom: 14,
+            casingWidth: 0,
+            minZoom: 12,
+          }),
+        },
+        detail: 'all',
+        extras: {paths: true},
+        hierarchy: 'clear',
+        modifiers: {
+          construction: {
+            surface: {
+              casing: {color: cyberpunkPalette.roadCasing, dash: [1.5, 1], opacity: 0.82},
+              fill: {color: cyberpunkPalette.road, dash: [1.5, 1], opacity: 0.96},
+            },
+          },
+          expressway: {widthScale: expresswayWidthScale},
+          indoor: {surface: {casing: {dash: [1, 0]}, fill: {dash: [1, 0]}}},
+          ramp: {enabled: false},
+          unpaved: {
+            surface: {
+              casing: {color: cyberpunkPalette.roadCasing, dash: [1, 0], opacity: 0.72},
+              fill: {color: cyberpunkPalette.road, dash: [1, 0], opacity: 0.96},
+            },
+          },
+        },
+        oneWayMarkers: false,
+        outline: 'strong',
+        restrictions: {
+          access: {
+            widthScale: 1,
+            surface: {
+              casing: {color: cyberpunkPalette.roadCasing, dash: [1, 0], opacity: 0.62},
+              fill: {color: cyberpunkPalette.road, dash: [1, 0], opacity: 1},
+            },
+          },
+          toll: {surface: {casing: {opacity: 1}}},
+        },
+        roundabouts: {
+          casing: {
+            color: 'rgba(0, 0, 0, 0)',
+            minZoom: 15,
+            pitchAlignment: 'map',
+            pitchScale: 'map',
+            radius: expression<number>(circularRoadCasingRadius),
+            strokeColor: roundaboutNeonColor,
+            strokeWidth: expression<number>(circularRoadCasingWidth),
+          },
+          fill: {
+            color: 'rgba(0, 0, 0, 0)',
+            minZoom: 15,
+            pitchAlignment: 'map',
+            pitchScale: 'map',
+            radius: expression<number>(circularRoadRadius),
+            strokeColor: cyberpunkPalette.road,
+            strokeWidth: expression<number>(circularRoadWidth),
+          },
+        },
+        serviceTypes: {
+          alley: {enabled: false},
+          crossover: {enabled: false},
+          driveway: {enabled: false},
+          parkingAisle: {enabled: false},
+          yard: {enabled: false},
+        },
+        sidewalks: {
+          outline: {visible: false},
+          pattern: {visible: false},
+          surface: {visible: false},
+        },
+        weight: 'regular',
+      }),
+      transit: transit(mapboxRailTransitStyle(cyberpunkPalette.orange)),
+      landforms: landforms({enabled: false}),
+      poi: poi({
+        categories: ['transport', 'arts-entertainment'],
+        color: 'category',
+        density: 2,
+        enabled: true,
+        icons: false,
+        labels: true,
+        minZoom: 15,
+        placement: {
+          coupleIconAndLabel: false,
+          iconPadding: 4,
+          textPadding: 4,
+        },
+      }),
+      vegetation: vegetation({enabled: false}),
+      // Keep hydrography driven solely by Cyberpunk's dark theme.
+      water: water(),
+    },
+    projection: 'mercator',
+    ...defineModuleEffects([
+      addModuleLayer(
+        'boundaries',
+        'boundaries.admin2.background',
+        {
+          id: 'streets-boundary-admin2-background',
+          type: 'line',
+          source: 'tileflow',
+          'source-layer': semanticLayer('boundary'),
+          minzoom: 1,
+          filter: [
+            'all',
+            ['==', ['to-number', ['get', semanticField('adminLevel')], 0], 2],
+            ['!=', ['to-number', ['get', semanticField('maritime')], 0], 1],
+          ],
+          paint: {
+            'line-blur': ['interpolate', ['linear'], ['zoom'], 3, 0, 12, 2],
+            'line-color': token.color('boundaries.halo'),
+            'line-opacity': ['interpolate', ['linear'], ['zoom'], 3, 0, 4, 0.5],
+            'line-width': ['interpolate', ['linear'], ['zoom'], 3, 4, 12, 8],
+          },
+        },
+        {before: 'boundaries.admin4'},
+      ),
+      ...cyberpunkLabelSignals(),
+      ...cyberpunkPathOverrides(),
+      ...cyberpunkPrincipalRoadNeon(),
+      ...cyberpunkBuildingGhost(),
+      ...cyberpunkDestinationBeacons(),
+      ...cyberpunkPlanarSystems(),
+    ]),
+    terrain: 'none',
+    view: {
+      bearing: 0,
+      center: [-3.69275, 40.40866],
+      pitch: 0,
+      zoom: 15,
+    },
+  }),
+);

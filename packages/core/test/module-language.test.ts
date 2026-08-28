@@ -31,7 +31,7 @@ test('creates serializable requests for every Streets domain', () => {
     labels: labels({places: 'major'}),
     vegetation: vegetation({mode: '3d'}),
     boundaries: boundaries({admin2: {width: 2}}),
-    poi: poi({preset: 'minimal'}),
+    poi: poi({density: 2}),
     roads: roads({detail: 'major'}),
     transit: transit({rail: {surface: {dash: [2, 1]}}}),
     aeroways: aeroways({
@@ -109,7 +109,7 @@ test('publishes authoring and resolved map entrypoints without hiding extends or
   ]);
 
   const rootMap = definitions.TileflowRootMap;
-  assert.deepEqual(rootMap?.required, ['id', 'root', 'version']);
+  assert.deepEqual(rootMap?.required, ['defaultTheme', 'id', 'root', 'themes', 'version']);
   assert.equal(Object.hasOwn(rootMap?.properties ?? {}, 'root'), true);
   assert.equal(Object.hasOwn(rootMap?.properties ?? {}, 'extends'), false);
   assert.equal(Object.hasOwn(rootMap?.properties ?? {}, 'scenes'), true);
@@ -122,10 +122,17 @@ test('publishes authoring and resolved map entrypoints without hiding extends or
 
   const scene = definitions.TileflowMapScene;
   assert.equal(Object.hasOwn(scene?.properties ?? {}, 'map'), false);
-  assert.deepEqual(scene?.required, ['camera', 'viewport']);
+  assert.deepEqual(scene?.required, ['theme', 'camera', 'viewport']);
 
   const resolvedMap = definitions.ResolvedTileflowMap;
-  assert.deepEqual(resolvedMap?.required, ['id', 'name', 'root', 'version']);
+  assert.deepEqual(resolvedMap?.required, [
+    'defaultTheme',
+    'id',
+    'name',
+    'root',
+    'themes',
+    'version',
+  ]);
   assert.equal(Object.hasOwn(resolvedMap?.properties ?? {}, 'extends'), false);
   assert.equal(Object.hasOwn(resolvedMap?.properties ?? {}, 'scenes'), false);
 
@@ -147,23 +154,62 @@ test('publishes AI-reference constraints that match exact assets and capture aut
   const inheritance = asJsonSchema(reference['x-tileflow-inheritance']);
   assert.deepEqual(inheritance.fields, {
     data: 'atomic',
+    defaultTheme: 'atomic',
     delivery: 'leaf',
     extends: 'lineage',
     fonts: 'text-assets',
     glyphs: 'text-assets',
     icons: 'icons',
     id: 'identity',
-    light: 'deep',
+    marine: 'atomic',
     modules: 'modules',
     name: 'identity',
     projection: 'atomic',
     root: 'lineage',
     scenes: 'leaf',
+    systemThemes: 'atomic',
     terrain: 'atomic',
-    theme: 'deep',
+    themes: 'atomic',
     version: 'identity',
     view: 'deep',
   });
+
+  const themeContract = asJsonSchema(reference['x-tileflow-theme-contract']);
+  const identity = asJsonSchema(themeContract.identity);
+  assert.match(String(identity.selector), /concrete runtime selector/u);
+  assert.match(String(identity.document), /may differ from the selector key/u);
+  assert.match(String(identity.system), /never a concrete theme name/u);
+  const relationalRules = themeContract.relationalRules as JsonSchemaObject[];
+  assert.deepEqual(
+    relationalRules.map(({enforcement, path}) => ({enforcement, path})),
+    [
+      {enforcement: 'config-validation', path: 'defaultTheme'},
+      {
+        enforcement: 'config-validation',
+        path: 'themes.*.tokens.{color,font,image,number}',
+      },
+      {enforcement: 'config-validation', path: 'systemThemes.{light,dark}'},
+      {enforcement: 'theme-resolution', path: 'themes.*'},
+      {enforcement: 'schema-and-theme-audit', path: 'modules|terrain|compilerEffects'},
+    ],
+  );
+  const visualIntent = asJsonSchema(themeContract.visualIntent);
+  assert.deepEqual(visualIntent.implicitLiterals, [
+    {
+      categories: ['color', 'font', 'image'],
+      code: 'THEME_IMPLICIT_FIXED',
+      severity: 'error',
+      effect:
+        'inspect reports the exact semantic path; createStyle, validate, preview, build, and capture fail closed.',
+    },
+    {
+      categories: ['number'],
+      code: 'THEME_IMPLICIT_FIXED',
+      severity: 'warning',
+      effect:
+        'inspect reports the exact semantic path; compilation remains valid because ordinary numeric styling is common.',
+    },
+  ]);
 
   const mapId = dereferenceJsonSchema(reference, asJsonSchema(rootMap.properties?.id));
   assert.ok((asJsonSchema(mapId.not).enum as string[]).includes('constructor'));
@@ -220,7 +266,8 @@ test('publishes AI-reference constraints that match exact assets and capture aut
   assert.equal(stackPattern.test('Noto Sans Regular,Noto Sans Bold'), true);
   assert.equal(stackPattern.test(' Noto Sans Regular'), false);
 
-  const theme = dereferenceJsonSchema(reference, asJsonSchema(rootMap.properties?.theme));
+  const themes = dereferenceJsonSchema(reference, asJsonSchema(rootMap.properties?.themes));
+  const theme = dereferenceJsonSchema(reference, asJsonSchema(themes.additionalProperties));
   const typography = dereferenceJsonSchema(reference, asJsonSchema(theme.properties?.typography));
   const font = dereferenceJsonSchema(reference, asJsonSchema(typography.properties?.font));
   const fontPattern = new RegExp(String(font.pattern), 'u');
@@ -279,20 +326,6 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     if: {required: ['patternWidths']},
     then: {required: ['pattern'], properties: {pattern: {type: 'string'}}},
   });
-
-  const poiRank = collectJsonSchemaObjects(reference).find((schema) => {
-    const refinements = schema['x-tileflow-refinements'];
-    return (
-      Array.isArray(refinements) &&
-      refinements.some(
-        (refinement) =>
-          asJsonSchema(refinement).path === 'stops.*.1' &&
-          asJsonSchema(refinement).rule === 'Rank limits must not decrease.',
-      )
-    );
-  });
-  assert(poiRank);
-  assert.equal((poiRank.allOf as JsonSchemaObject[]).length, 2);
 
   const terrainContours = collectJsonSchemaObjects(reference).find(
     (schema) => schema.properties?.demMaxZoom && schema.properties?.thresholds,
@@ -358,7 +391,6 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     'glyphs.fontStacks[]',
     'delivery.hosted.allowedOrigins[]',
     '**.hatch.patternWidths[]',
-    'modules.poi.{maxRank,styles.*.maxRank}.stops',
     'terrain.contours.demUrl',
     'terrain.contours.thresholds.*',
     'terrain.contours.{thresholds,multiplier}',

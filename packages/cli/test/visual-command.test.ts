@@ -28,6 +28,7 @@ test('visual help explains reference matching and reviewed baselines', async (t)
   assert.equal(updateHelp.code, 0, updateHelp.stderr);
   assert.match(rootHelp.stdout, /references or approved baselines/i);
   assert.match(analyzeHelp.stdout, /reference PNG; it is never modified/i);
+  assert.match(analyzeHelp.stdout, /--region <x,y,width,height>/i);
   assert.match(diffHelp.stdout, /approved baselines without changing them/i);
   assert.match(updateHelp.stdout, /Save fresh scene renders as approved visual baselines/i);
 });
@@ -92,7 +93,7 @@ test(
     const server = createServer((_request, response) => {
       response.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'});
       response.end(
-        `<!doctype html><style>html,body{margin:0}.proof{width:64px;height:64px;background:${color}}</style><div class="proof" data-tileflow-map="proof" data-tileflow-capture-id="proof" data-tileflow-state="idle"></div>`,
+        `<!doctype html><style>html,body{margin:0}.proof{width:64px;height:64px;background:${color}}</style><div class="proof" data-tileflow-map="proof" data-tileflow-theme="light" data-tileflow-capture-id="proof" data-tileflow-state="idle"></div>`,
       );
     });
     server.listen(0, '127.0.0.1');
@@ -130,6 +131,7 @@ test(
     const created = await runCli(directory, ['visual', 'update', ...common]);
     assert.equal(created.code, 0, created.stderr);
     assert.equal(parseUpdate(created.stdout).updates[0]?.status, 'created');
+    assert.equal(parseUpdate(created.stdout).updates[0]?.theme, 'light');
     const baselinePath = join(directory, 'visual-baselines/proof.png');
     const receiptPath = join(directory, 'visual-baselines/proof.receipt.json');
     const originalBaseline = await readFile(baselinePath);
@@ -346,7 +348,40 @@ test('rejects invalid and symlinked analysis references before browser launch', 
   const directory = await createDirectoryFixture(t, 'tileflow-visual-analysis-input-');
   await writeFile(join(directory, 'tileflow.config.ts'), applicationConfig);
   await writeFile(join(directory, 'invalid.png'), 'not a png');
+  await writeFile(join(directory, 'valid.png'), createPng(32, 32, [18, 52, 86, 255]));
   await symlink(join(directory, 'invalid.png'), join(directory, 'linked.png'));
+
+  const invalidRegion = await runCli(directory, [
+    'visual',
+    'analyze',
+    'proof',
+    '--reference',
+    'valid.png',
+    '--region',
+    '0,0,2.5,2',
+    '--json',
+    '--no-browser-install',
+  ]);
+  assert.equal(invalidRegion.code, 1);
+  assert.equal(invalidRegion.stdout, '');
+  assert.match(invalidRegion.stderr, /--region expects.*integers/i);
+  assert.doesNotMatch(invalidRegion.stderr, /browser|chromium/i);
+
+  const outsideReference = await runCli(directory, [
+    'visual',
+    'analyze',
+    'proof',
+    '--reference',
+    'valid.png',
+    '--region',
+    '24,24,9,8',
+    '--json',
+    '--no-browser-install',
+  ]);
+  assert.equal(outsideReference.code, 1);
+  assert.equal(outsideReference.stdout, '');
+  assert.match(outsideReference.stderr, /reference PNG physical dimensions \(32x32\)/i);
+  assert.doesNotMatch(outsideReference.stderr, /browser|chromium/i);
 
   const invalid = await runCli(directory, [
     'visual',
@@ -407,12 +442,12 @@ test(
   async (t) => {
     const directory = await createDirectoryFixture(t, 'tileflow-visual-analysis-');
     await writeFile(join(directory, 'tileflow.config.ts'), applicationConfig);
-    const reference = createPng(32, 32, [18, 52, 86, 255]);
+    const reference = createPng(64, 64, [18, 52, 86, 255]);
     await writeFile(join(directory, 'reference.png'), reference);
     const server = createServer((_request, response) => {
       response.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'});
       response.end(
-        '<!doctype html><style>html,body{margin:0}.proof{width:64px;height:64px;background:#123456}</style><div class="proof" data-tileflow-map="proof" data-tileflow-capture-id="proof" data-tileflow-state="idle"></div>',
+        '<!doctype html><style>html,body{margin:0}.proof{width:64px;height:64px;background:#123456}</style><div class="proof" data-tileflow-map="proof" data-tileflow-theme="light" data-tileflow-capture-id="proof" data-tileflow-state="idle"></div>',
       );
     });
     server.listen(0, '127.0.0.1');
@@ -429,6 +464,8 @@ test(
       'reference.png',
       '--output-dir',
       'analysis',
+      '--region',
+      '8,8,32,24',
       '--app-origin',
       `http://127.0.0.1:${address.port}`,
       '--json',
@@ -438,22 +475,27 @@ test(
     const document = JSON.parse(result.stdout) as {
       command: string;
       dimensionsMatch: boolean;
+      theme: string;
+      appearance: {
+        region: {x: number; y: number; width: number; height: number};
+        actualMinusReference: {linearLuminance: {mean: number}};
+      } | null;
       actualPath: string;
       diffPath: string | null;
       reportPath: string;
     };
     assert.equal(document.command, 'visual.analyze');
-    assert.equal(document.dimensionsMatch, false);
-    assert.equal(document.diffPath, null);
+    assert.equal(document.theme, 'light');
+    assert.equal(document.dimensionsMatch, true);
+    assert.deepEqual(document.appearance?.region, {x: 8, y: 8, width: 32, height: 24});
+    assert.equal(document.appearance?.actualMinusReference.linearLuminance.mean, 0);
+    assert.notEqual(document.diffPath, null);
     assert.equal((await readFile(join(directory, 'reference.png'))).equals(reference), true);
     assert.deepEqual(
       [...(await readFile(join(directory, document.actualPath))).subarray(0, 8)],
       [137, 80, 78, 71, 13, 10, 26, 10],
     );
-    assert.equal(
-      JSON.parse(await readFile(join(directory, document.reportPath), 'utf8')).command,
-      'visual.analyze',
-    );
+    assert.equal(await readFile(join(directory, document.reportPath), 'utf8'), result.stdout);
     await assert.rejects(() => readFile(join(directory, 'visual-baselines/proof.png')));
   },
 );
@@ -461,7 +503,7 @@ test(
 const applicationConfig = tileflowMapFixture({
   data: 'fixture',
   id: 'proof',
-  fields: `scenes: {proof: {camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 128, height: 128}, target: {kind: 'application', path: '/', captureId: 'proof'}}}`,
+  fields: `scenes: {proof: {camera: {type: 'center', center: [0, 0], zoom: 0}, theme: 'light', viewport: {width: 128, height: 128}, target: {kind: 'application', path: '/', captureId: 'proof'}}}`,
 });
 
 type DiffDocument = {
@@ -473,7 +515,7 @@ type DiffDocument = {
   }>;
 };
 
-type UpdateDocument = {updates: Array<{status: string}>};
+type UpdateDocument = {updates: Array<{status: string; theme: string}>};
 
 function parseDiff(source: string): DiffDocument {
   return JSON.parse(source) as DiffDocument;

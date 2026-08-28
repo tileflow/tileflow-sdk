@@ -8,6 +8,7 @@ const scene = {
   camera: {center: [0, 0] as [number, number], type: 'center' as const, zoom: 2},
   map: 'main',
   size: {height: 480, width: 640},
+  theme: 'light',
 };
 
 test('deduplicates only the same normalized idempotency operation', () => {

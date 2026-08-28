@@ -115,6 +115,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
       assetBaseUrl: options.assetBaseUrl,
       config: options.config,
       cwd: this.#cwd,
+      inspection: options.inspection,
       styleBaseUrl: options.styleBaseUrl,
     };
   }

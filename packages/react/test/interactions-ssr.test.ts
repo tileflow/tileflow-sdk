@@ -54,3 +54,34 @@ test('rejects semantic interactions visibly in image mode without evaluating Map
   assert.match(html, /data-tileflow-interaction-diagnostic="UNSUPPORTED_MODE"/u);
   assert.match(html, /interactions require mode=&quot;interactive&quot;/u);
 });
+
+test('exposes a concrete requested theme to deterministic application capture', async () => {
+  const {Map} = await import('../dist/index.js');
+  const html = renderToStaticMarkup(
+    createElement(Map, {
+      imageUrl: 'https://cdn.example.test/madrid.png',
+      mode: 'image',
+      source: {kind: 'tileflow', map: 'madrid'},
+      theme: 'dark',
+    }),
+  );
+  assert.match(html, /data-tileflow-map="madrid"/u);
+  assert.match(html, /data-tileflow-theme="dark"/u);
+});
+
+test('rejects a browser-only system selector on a direct StaticMap image', async () => {
+  const {StaticMap} = await import('../dist/static.js');
+  const html = renderToStaticMarkup(
+    createElement(StaticMap, {
+      camera: {type: 'center', center: [-3.7, 40.4], zoom: 12},
+      imageUrl: 'https://cdn.example.test/madrid.png',
+      map: 'madrid',
+      size: {height: 400, width: 600},
+      theme: 'system',
+    }),
+  );
+
+  assert.match(html, /data-tileflow-state="error"/u);
+  assert.doesNotMatch(html, /data-tileflow-theme=/u);
+  assert.doesNotMatch(html, /<img/u);
+});

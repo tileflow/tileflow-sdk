@@ -1,3 +1,7 @@
+import {
+  tileflowCompilerProvenanceMetadataKey,
+  withMergedTileflowCompilerProvenance,
+} from './compiler-inspection';
 import {tileflowCompilerMetadataKeys} from './contributions';
 import {isMapLibreExpressionOperator} from './expression-operators';
 import {tileflowModuleEffectMetadataKey} from './module-effects';
@@ -224,16 +228,19 @@ function mergeRoadLineGroup(id: string, layers: StyleLayer[]): StyleLayer | unde
   if (!sortKey.ok) return undefined;
   layout['line-sort-key'] = sortKey.value;
 
-  return {
-    ...first,
-    id,
-    type: 'line',
-    filter: unionFilters(conditions),
-    minzoom: roadHighZoom,
-    ...(finiteMaximumZoom(layers) ? {maxzoom: finiteMaximumZoom(layers)} : {}),
-    layout,
-    paint,
-  };
+  return withMergedTileflowCompilerProvenance(
+    {
+      ...first,
+      id,
+      type: 'line',
+      filter: unionFilters(conditions),
+      minzoom: roadHighZoom,
+      ...(finiteMaximumZoom(layers) ? {maxzoom: finiteMaximumZoom(layers)} : {}),
+      layout,
+      paint,
+    },
+    layers,
+  );
 }
 
 function consolidateRoadHatches(layers: StyleLayer[]): StyleLayer[] {
@@ -376,16 +383,19 @@ function consolidateRoadHatches(layers: StyleLayer[]): StyleLayer[] {
       paint[key] = combined.value;
     }
     if (!safe) continue;
-    const merged: StyleLayer = {
-      ...first,
-      id: mergedId,
-      type: first.type,
-      filter: unionFilters(conditions),
-      ...(first.minzoom === undefined ? {} : {minzoom: first.minzoom}),
-      ...(first.maxzoom === undefined ? {} : {maxzoom: first.maxzoom}),
-      layout,
-      paint,
-    };
+    const merged = withMergedTileflowCompilerProvenance<StyleLayer>(
+      {
+        ...first,
+        id: mergedId,
+        type: first.type,
+        filter: unionFilters(conditions),
+        ...(first.minzoom === undefined ? {} : {minzoom: first.minzoom}),
+        ...(first.maxzoom === undefined ? {} : {maxzoom: first.maxzoom}),
+        layout,
+        paint,
+      },
+      entries.map(({layer}) => layer),
+    );
     for (const {index} of entries) replacements.set(index, []);
     replacements.set(entries.at(-1)!.index, [merged]);
   }
@@ -448,12 +458,15 @@ function consolidateRoadLabels(layers: StyleLayer[]): StyleLayer[] {
     const sortKey = combineConditionalValues(sortKeyValues, group.length, minimumZoom(first));
     if (!sortKey.ok) continue;
     layout['symbol-sort-key'] = sortKey.value;
-    const merged: StyleLayer = {
-      ...first,
-      id,
-      filter: unionFilters(conditions),
-      layout,
-    };
+    const merged = withMergedTileflowCompilerProvenance<StyleLayer>(
+      {
+        ...first,
+        id,
+        filter: unionFilters(conditions),
+        layout,
+      },
+      group.map(({layer}) => layer),
+    );
     for (const {index} of group) replacements.set(index, []);
     replacements.set(group.at(-1)!.index, [merged]);
   }
@@ -542,13 +555,16 @@ function consolidateFillFamily(
       layout['fill-sort-key'] = sortKey.value;
       const id = suffix === 0 ? mergedId : `${mergedId}-${suffix}`;
       if (hasGeneratedIdCollision(layers, id, group)) continue;
-      const merged: StyleLayer = {
-        ...first,
-        id,
-        filter: unionFilters(conditions),
-        layout,
-        paint,
-      };
+      const merged = withMergedTileflowCompilerProvenance<StyleLayer>(
+        {
+          ...first,
+          id,
+          filter: unionFilters(conditions),
+          layout,
+          paint,
+        },
+        group.map(({layer}) => layer),
+      );
       suffix += 1;
       for (const {index} of group) replacements.set(index, []);
       replacements.set(group.at(-1)!.index, [merged]);
@@ -628,11 +644,14 @@ function consolidateWaterways(layers: StyleLayer[]): StyleLayer[] {
       paint[key] = combined.value;
     }
     if (!safe) continue;
-    const merged: StyleLayer = {
-      ...regular,
-      filter: unionFilters(conditions),
-      paint,
-    };
+    const merged = withMergedTileflowCompilerProvenance<StyleLayer>(
+      {
+        ...regular,
+        filter: unionFilters(conditions),
+        paint,
+      },
+      [regular, intermittent],
+    );
     replacements.set(regularIndex, []);
     replacements.set(intermittentIndex, [merged]);
   }
@@ -982,6 +1001,7 @@ function isModuleEffect(layer: StyleLayer): boolean {
 function publicMetadata(value: unknown): Record<string, unknown> | undefined {
   const metadata = {...asRecord(value)};
   delete metadata[tileflowModuleEffectMetadataKey];
+  delete metadata[tileflowCompilerProvenanceMetadataKey];
   for (const key of Object.values(tileflowCompilerMetadataKeys)) delete metadata[key];
   return Object.keys(metadata).length > 0 ? metadata : undefined;
 }

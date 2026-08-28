@@ -312,7 +312,7 @@ The same map may bind a view to existing semantic POIs:
       target: {
         kind: 'semantic-feature',
         domain: 'poi',
-        categories: ['food', 'coffee'],
+        categories: ['food-drink', 'retail'],
       },
       tooltip: {
         content: {kind: 'field', field: 'name'},

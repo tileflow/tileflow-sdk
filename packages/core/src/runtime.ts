@@ -1,11 +1,18 @@
-import type {TileflowRuntimeManifest} from './manifest';
+import type {
+  TileflowRuntimeColorScheme,
+  TileflowRuntimeManifest,
+  TileflowRuntimeManifestMapEntry,
+  TileflowRuntimeManifestTheme,
+} from './manifest';
+import {isTileflowPortableId, isTileflowThemeName} from './portable-identity-rules';
 import {type MapLibreStyle, type TileflowViewConfig} from './types';
 
 export type {
-  TileflowHostedManifest,
-  TileflowHostedManifestMap,
+  TileflowRuntimeColorScheme,
   TileflowRuntimeManifest,
-  TileflowSelfHostedManifest,
+  TileflowRuntimeManifestMapEntry,
+  TileflowRuntimeManifestTheme,
+  TileflowRuntimeSystemThemes,
 } from './manifest';
 
 export const defaultTileflowManifestUrl = '/tileflow/manifest.json';
@@ -84,22 +91,27 @@ export type TileflowMapModeOptions = {
   mode?: TileflowMapMode;
 };
 
-export type TileflowRuntimeManifestMap = {
+/** Runtime-ready logical map with all relative theme resources already resolved. */
+export type TileflowRuntimeManifestMap = TileflowRuntimeManifestMapEntry & {
   apiUrl?: string;
-  fontFaces?: TileflowStyleFontFace[];
-  mapId?: string;
-  styleId?: string;
-  styleUrl?: string;
-  usageMode?: 'session';
-  view?: TileflowViewConfig;
-  worldGeneration?: 'v1';
+  name: string;
+};
+
+/** `system` is a selector and therefore reserved as a published theme name. */
+export type TileflowThemeSelection = string | 'system';
+
+export type TileflowResolvedRuntimeTheme = TileflowRuntimeManifestTheme & {
+  name: string;
 };
 
 export type TileflowRuntimeStyle = {
   analytics?: TileflowAnalytics;
+  colorScheme?: TileflowRuntimeColorScheme;
   /** An explicit empty array means the manifest declares that no web fonts are required. */
   fontFaces?: TileflowStyleFontFace[];
+  revision?: string;
   style: MapLibreStyle | string;
+  theme?: string;
 };
 
 export const tileflowStyleFontFacesMetadataKey = 'tileflow:fontFaces' as const;
@@ -128,8 +140,10 @@ export type TileflowRuntimeSource =
     };
 
 export type TileflowRuntimeStyleOptions = {
+  colorScheme?: TileflowRuntimeColorScheme;
   manifestMap?: TileflowRuntimeManifestMap | null;
   source: TileflowRuntimeSource;
+  theme?: TileflowThemeSelection;
 };
 
 export type TileflowRuntimeSourceValidation =
@@ -141,8 +155,6 @@ export type TileflowRuntimeSourceValidation =
     };
 
 export type TileflowManifestLoadOptions = {
-  imageMode?: boolean;
-  imageUrl?: string;
   source: TileflowRuntimeSource;
 };
 
@@ -177,7 +189,7 @@ const manifestCache = new globalThis.Map<
 const missingStaticMapIdWarnings = new Set<string>();
 
 export function shouldLoadTileflowManifest(options: TileflowManifestLoadOptions): boolean {
-  return options.source.kind === 'tileflow' && (!options.imageMode || !options.imageUrl);
+  return options.source.kind === 'tileflow';
 }
 
 export function validateTileflowRuntimeSource(source: unknown): TileflowRuntimeSourceValidation {
@@ -190,15 +202,13 @@ export function validateTileflowRuntimeSource(source: unknown): TileflowRuntimeS
 
   if (source.kind === 'tileflow') {
     if (
-      typeof source.map !== 'string' ||
-      source.map.length === 0 ||
-      source.map !== source.map.trim() ||
+      !isTileflowPortableId(source.map) ||
       (source.manifestUrl !== undefined &&
         (typeof source.manifestUrl !== 'string' || source.manifestUrl.length === 0))
     ) {
       return {
         code: 'invalid-source',
-        error: 'a tileflow source requires a non-empty map and an optional non-empty manifestUrl',
+        error: 'a tileflow source requires a portable map id and an optional non-empty manifestUrl',
         ok: false,
       };
     }
@@ -227,6 +237,11 @@ export function validateTileflowRuntimeSource(source: unknown): TileflowRuntimeS
   };
 }
 
+/** Validate the only runtime selection grammar: one concrete portable name or `system`. */
+export function validateTileflowThemeSelection(value: unknown): value is TileflowThemeSelection {
+  return value === 'system' || isTileflowThemeName(value);
+}
+
 export function assertValidTileflowRuntimeSource(
   source: unknown,
 ): asserts source is TileflowRuntimeSource {
@@ -242,6 +257,9 @@ export function resolveTileflowRuntimeStyle(
   assertValidTileflowRuntimeSource(options.source);
 
   if (options.source.kind === 'maplibre') {
+    if (options.theme !== undefined) {
+      throw new TypeError('The theme option is only valid for a Tileflow map source.');
+    }
     if (typeof options.source.style !== 'string') {
       return {
         fontFaces: getTileflowStyleFontFaces(options.source.style),
@@ -254,19 +272,66 @@ export function resolveTileflowRuntimeStyle(
     };
   }
 
-  if (options.manifestMap?.styleUrl) {
+  if (options.manifestMap) {
+    const theme = resolveTileflowRuntimeTheme(
+      options.manifestMap,
+      options.theme,
+      options.colorScheme,
+    );
     return {
       analytics: {
         apiUrl: options.manifestMap.apiUrl,
         mapId: options.manifestMap.mapId,
-        styleId: options.manifestMap.styleId,
+        styleId: theme.styleId,
       },
-      fontFaces: options.manifestMap.fontFaces ?? [],
-      style: options.manifestMap.styleUrl,
+      colorScheme: theme.colorScheme,
+      ...(theme.fontFaces === undefined ? {} : {fontFaces: [...theme.fontFaces]}),
+      revision: theme.revision,
+      style: theme.styleUrl,
+      theme: theme.name,
     };
   }
 
   return null;
+}
+
+/** Resolve one concrete published theme without consulting ambient browser state. */
+export function resolveTileflowRuntimeTheme(
+  map: TileflowRuntimeManifestMap,
+  selection: TileflowThemeSelection | undefined,
+  colorScheme?: TileflowRuntimeColorScheme,
+): TileflowResolvedRuntimeTheme {
+  let name: string;
+  if (selection === undefined) {
+    name = map.defaultTheme;
+  } else if (selection === 'system') {
+    if (!map.systemThemes) {
+      throw new Error(
+        `Tileflow map "${map.name}" does not declare systemThemes; select a concrete theme.`,
+      );
+    }
+    if (!colorScheme) {
+      throw new Error('Resolving theme="system" requires an explicit browser color scheme.');
+    }
+    name = map.systemThemes[colorScheme];
+  } else {
+    name = selection;
+  }
+
+  if (!isTileflowThemeName(name)) {
+    throw new Error(
+      `Tileflow resolved invalid theme ${JSON.stringify(name)} for map "${map.name}"; expected a concrete portable theme name.`,
+    );
+  }
+
+  const theme = Object.hasOwn(map.themes, name) ? map.themes[name] : undefined;
+  if (!theme) {
+    const available = Object.keys(map.themes).sort().join(', ');
+    throw new Error(
+      `Unknown Tileflow theme "${name}" for map "${map.name}". Available themes: ${available}.`,
+    );
+  }
+  return {...theme, name};
 }
 
 /** Strictly reads Tileflow-owned web-font metadata from a compiled MapLibre style. */
@@ -909,36 +974,6 @@ function resolveLoadedTileflowManifestUrls(
   manifest: TileflowRuntimeManifest,
   manifestUrl: string,
 ): TileflowRuntimeManifest {
-  if (manifest.kind === 'self-hosted') {
-    const maps = Object.fromEntries(
-      Object.entries(manifest.maps).map(([mapName, styleUrl]) => [
-        mapName,
-        resolveTileflowLoadedResourceUrl(styleUrl, manifestUrl),
-      ]),
-    );
-    const styles = Object.fromEntries(
-      Object.entries(manifest.styles).map(([mapName, styleUrl]) => [
-        mapName,
-        resolveTileflowLoadedResourceUrl(styleUrl, manifestUrl),
-      ]),
-    );
-    const fontFaces = manifest.fontFaces
-      ? Object.fromEntries(
-          Object.entries(manifest.fontFaces).map(([mapName, definitions]) => [
-            mapName,
-            definitions.map((definition) => ({
-              ...definition,
-              source: resolveTileflowLoadedResourceUrl(
-                definition.source,
-                styles[mapName] ?? manifestUrl,
-              ),
-            })),
-          ]),
-        )
-      : undefined;
-    return {...manifest, ...(fontFaces ? {fontFaces} : {}), maps, styles};
-  }
-
   return {
     ...manifest,
     maps: Object.fromEntries(
@@ -946,14 +981,26 @@ function resolveLoadedTileflowManifestUrls(
         mapName,
         {
           ...entry,
-          ...(entry.fontFaces
-            ? {
-                fontFaces: entry.fontFaces.map((definition) => ({
-                  ...definition,
-                  source: resolveTileflowLoadedResourceUrl(definition.source, entry.styleUrl),
-                })),
-              }
-            : {}),
+          themes: Object.fromEntries(
+            Object.entries(entry.themes).map(([themeName, theme]) => {
+              const styleUrl = resolveTileflowLoadedResourceUrl(theme.styleUrl, manifestUrl);
+              return [
+                themeName,
+                {
+                  ...theme,
+                  styleUrl,
+                  ...(theme.fontFaces
+                    ? {
+                        fontFaces: theme.fontFaces.map((definition) => ({
+                          ...definition,
+                          source: resolveTileflowLoadedResourceUrl(definition.source, styleUrl),
+                        })),
+                      }
+                    : {}),
+                },
+              ];
+            }),
+          ),
         },
       ]),
     ),
@@ -988,34 +1035,21 @@ export function resolveTileflowManifestMap(
   manifest: TileflowRuntimeManifest,
   mapName: string,
 ): TileflowRuntimeManifestMap | null {
-  if (manifest.kind === 'self-hosted') {
-    if (!Object.hasOwn(manifest.maps, mapName)) return null;
-    const entry = manifest.maps[mapName]!;
-    const analytics = inferTileflowAnalyticsFromStyleUrl(entry);
-
-    return {
-      apiUrl: analytics?.apiUrl,
-      fontFaces: manifest.fontFaces?.[mapName] ?? [],
-      mapId: analytics?.mapId,
-      styleId: analytics?.styleId,
-      styleUrl: entry,
-      view: manifest.views?.[mapName],
-    };
-  }
-
   if (!Object.hasOwn(manifest.maps, mapName)) return null;
   const entry = manifest.maps[mapName]!;
-
-  const styleUrl = entry.styleUrl;
-
-  const analytics = styleUrl ? inferTileflowAnalyticsFromStyleUrl(styleUrl) : undefined;
+  const defaultStyleUrl = entry.themes[entry.defaultTheme]?.styleUrl;
+  const analytics = defaultStyleUrl
+    ? inferTileflowAnalyticsFromStyleUrl(defaultStyleUrl)
+    : undefined;
 
   return {
     apiUrl: entry.apiUrl ?? manifest.apiUrl ?? analytics?.apiUrl,
-    fontFaces: entry.fontFaces ?? [],
     mapId: entry.mapId ?? analytics?.mapId,
-    styleId: entry.styleId ?? analytics?.styleId,
-    styleUrl,
+    name: mapName,
+    defaultTheme: entry.defaultTheme,
+    ...(entry.environment ? {environment: entry.environment} : {}),
+    ...(entry.systemThemes ? {systemThemes: {...entry.systemThemes}} : {}),
+    themes: entry.themes,
     usageMode: entry.usageMode,
     view: entry.view,
     worldGeneration: entry.worldGeneration,
@@ -1024,8 +1058,10 @@ export function resolveTileflowManifestMap(
 
 export function resolveTileflowStaticImageUrl(input: {
   center: [number, number];
+  colorScheme?: TileflowRuntimeColorScheme;
   imageSize: {height: number; width: number} | null;
   manifestMap: TileflowRuntimeManifestMap | null;
+  theme?: TileflowThemeSelection;
   zoom: number;
 }): string | undefined {
   if (!input.manifestMap?.mapId) {
@@ -1040,8 +1076,10 @@ export function resolveTileflowStaticImageUrl(input: {
   const apiUrl = normalizeTileflowUrl(input.manifestMap.apiUrl ?? 'https://api.tileflow.dev');
   const mapId = encodeURIComponent(input.manifestMap.mapId);
   const url = new URL(`/maps/${mapId}/static.png`, apiUrl);
+  const theme = resolveTileflowRuntimeTheme(input.manifestMap, input.theme, input.colorScheme);
 
   url.searchParams.set('center', input.center.join(','));
+  url.searchParams.set('theme', theme.name);
   url.searchParams.set('zoom', String(input.zoom));
   url.searchParams.set('width', String(input.imageSize.width));
   url.searchParams.set('height', String(input.imageSize.height));
@@ -1050,7 +1088,7 @@ export function resolveTileflowStaticImageUrl(input: {
 }
 
 function warnMissingStaticMapId(manifestMap: TileflowRuntimeManifestMap | null): void {
-  const styleUrl = manifestMap?.styleUrl;
+  const styleUrl = manifestMap ? manifestMap.themes[manifestMap.defaultTheme]?.styleUrl : undefined;
 
   if (!styleUrl || missingStaticMapIdWarnings.has(styleUrl) || typeof console === 'undefined') {
     return;

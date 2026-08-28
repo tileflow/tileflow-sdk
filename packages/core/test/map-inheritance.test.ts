@@ -3,6 +3,7 @@ import test from 'node:test';
 import {zoom} from '../src/cartography/values';
 import {tileflowWorld} from '../src/data';
 import {parseTileflowMap} from '../src/map';
+import {defineTheme} from '../src/themes';
 import {
   defineMap,
   defineRootMap,
@@ -11,13 +12,48 @@ import {
   tileflowStreetsCompilerVersion,
 } from '../src/maps';
 import {roads} from '../src/modules';
+import {testLightTheme} from './map-fixture';
 
 test('resolves a lineage to one standalone map with field-specific merge semantics', () => {
+  const rootTheme = defineTheme(testLightTheme, {
+    id: 'root-light',
+    version: 1,
+    colorScheme: 'light',
+    tokens: {color: {'surface.water': '#001122'}},
+    typography: {
+      fallbacks: ['Root Sans Fallback', 'sans-serif'],
+      font: 'Root Sans Regular',
+      places: {letterSpacing: 0.02},
+    },
+    lighting: {
+      anchor: 'map',
+      color: '#FFFFFF',
+      intensity: 0.4,
+      position: [1, 180, 35],
+    },
+  });
+  const customTheme = defineTheme(rootTheme, {
+    id: 'custom-dark',
+    version: 1,
+    colorScheme: 'dark',
+    tokens: {color: {'surface.land': '#223344'}},
+    typography: {
+      fallbacks: ['Child Sans Regular'],
+      places: {letterSpacing: 0.08},
+    },
+    lighting: {intensity: 0.8},
+  });
+  const rootDarkTheme = defineTheme(rootTheme, {
+    id: 'root-dark',
+    version: 1,
+    colorScheme: 'dark',
+  });
   const streets = defineRootMap({
     id: 'streets',
     name: 'Streets',
     version: 1,
     root: {compiler: 'streets', compilerVersion: tileflowStreetsCompilerVersion},
+    defaultTheme: 'light',
     delivery: {hosted: {allowedOrigins: ['https://root.example.test']}},
     data: tileflowWorld({
       release: {
@@ -31,14 +67,8 @@ test('resolves a lineage to one standalone map with field-specific merge semanti
       fontStacks: ['Root Sans Regular,Root Sans Fallback,sans-serif'],
     },
     icons: ['./root-icons'],
-    light: {
-      anchor: 'map',
-      color: '#FFFFFF',
-      intensity: 0.4,
-      position: [1, 180, 35],
-    },
     modules: {
-      poi: {type: 'poi', categories: ['food', 'coffee']},
+      poi: {type: 'poi', categories: ['food-drink', 'retail']},
       roads: roads({
         detail: 'all',
         classes: {
@@ -59,15 +89,8 @@ test('resolves a lineage to one standalone map with field-specific merge semanti
     },
     projection: 'globe',
     terrain: {exaggeration: 2, mode: '3d', url: 'https://root.example.test/terrain'},
-    theme: {
-      colors: {water: '#001122'},
-      mode: 'light',
-      typography: {
-        fallbacks: ['Root Sans Fallback', 'sans-serif'],
-        font: 'Root Sans Regular',
-        places: {letterSpacing: 0.02},
-      },
-    },
+    systemThemes: {dark: 'dark', light: 'light'},
+    themes: {dark: rootDarkTheme, light: rootTheme},
     view: {center: [-3.7, 40.4], pitch: 30, zoom: 10},
   });
   const custom = defineMap({
@@ -83,9 +106,9 @@ test('resolves a lineage to one standalone map with field-specific merge semanti
       fontStacks: ['Root Sans Regular,Child Sans Regular'],
     },
     icons: ['./child-icons'],
-    light: {intensity: 0.8},
+    defaultTheme: 'dark',
     modules: {
-      poi: {type: 'poi', categories: ['culture']},
+      poi: {type: 'poi', categories: ['arts-entertainment']},
       roads: roads({
         hierarchy: 'strong',
         classes: {
@@ -105,14 +128,7 @@ test('resolves a lineage to one standalone map with field-specific merge semanti
     },
     projection: 'mercator',
     terrain: {mode: 'hillshade'},
-    theme: {
-      colors: {land: '#223344'},
-      mode: 'dark',
-      typography: {
-        fallbacks: ['Child Sans Regular'],
-        places: {letterSpacing: 0.08},
-      },
-    },
+    themes: {dark: customTheme},
     view: {zoom: 14},
   });
 
@@ -138,22 +154,10 @@ test('resolves a lineage to one standalone map with field-specific merge semanti
   assert.deepEqual(resolved.terrain, {mode: 'hillshade'});
 
   assert.deepEqual(resolved.icons, ['./child-icons']);
-  assert.deepEqual(resolved.light, {
-    anchor: 'map',
-    color: '#FFFFFF',
-    intensity: 0.8,
-    position: [1, 180, 35],
-  });
   assert.deepEqual(resolved.view, {center: [-3.7, 40.4], pitch: 30, zoom: 14});
-  assert.deepEqual(resolved.theme, {
-    colors: {land: '#223344', water: '#001122'},
-    mode: 'dark',
-    typography: {
-      fallbacks: ['Child Sans Regular'],
-      font: 'Root Sans Regular',
-      places: {letterSpacing: 0.08},
-    },
-  });
+  assert.equal(resolved.defaultTheme, 'dark');
+  assert.deepEqual(resolved.themes, {dark: customTheme});
+  assert.equal(resolved.systemThemes, undefined);
 
   const primary = resolved.modules?.roads?.classes?.primary?.surface?.fill;
   assert.equal(resolved.modules?.roads?.detail, undefined);
@@ -168,7 +172,7 @@ test('resolves a lineage to one standalone map with field-specific merge semanti
     ]),
   );
   assert.equal('base' in (primary?.width as object), false);
-  assert.deepEqual(resolved.modules?.poi?.categories, ['culture']);
+  assert.deepEqual(resolved.modules?.poi?.categories, ['arts-entertainment']);
 
   assert.deepEqual(streets.icons, ['./root-icons']);
   assert.equal(streets.modules.roads.classes?.primary?.surface?.fill?.color, '#111111');
@@ -180,6 +184,8 @@ test('keeps delivery leaf-only and falls back to the normalized map id as its na
     name: 'Root',
     version: 1,
     root: {compiler: 'streets', compilerVersion: 1},
+    defaultTheme: 'light',
+    themes: {light: testLightTheme},
     delivery: {hosted: {allowedOrigins: ['https://root.example.test']}},
   });
   const child = defineMap({id: 'child', version: 1, extends: root});
@@ -193,6 +199,8 @@ test('inherits icon directories by omission and replaces them atomically when de
     id: 'root',
     version: 1,
     root: {compiler: 'streets', compilerVersion: 1},
+    defaultTheme: 'light',
+    themes: {light: testLightTheme},
     icons: ['./root-icons'],
   });
   const mapped = defineMap({
@@ -256,6 +264,8 @@ test('fails closed for malformed, circular, and over-deep inheritance', () => {
     id: 'depth-root',
     version: 1,
     root: {compiler: 'streets', compilerVersion: 1},
+    defaultTheme: 'light',
+    themes: {light: testLightTheme},
   });
   const middle = defineMap({id: 'depth-middle', version: 1, extends: root});
   const leaf = defineMap({id: 'depth-leaf', version: 1, extends: middle});
@@ -299,6 +309,8 @@ test('validates every map in the extends lineage before applying child replaceme
     id: 'invalid-root',
     version: 1,
     root: {compiler: 'streets', compilerVersion: 1},
+    defaultTheme: 'light',
+    themes: {light: testLightTheme},
     projection: 'sphere',
     delivery: {hosted: {unknown: true}},
     modules: {roads: {type: 'roads', detail: 'invalid'}},
@@ -321,6 +333,8 @@ test('validates every map in the extends lineage before applying child replaceme
       id: 'valid-root',
       version: 1,
       root: {compiler: 'streets', compilerVersion: 1},
+      defaultTheme: 'light',
+      themes: {light: testLightTheme},
     }),
     modules: {roads: {type: 'roads', detail: 'invalid'}},
   } as unknown as TileflowMap;

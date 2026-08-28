@@ -1,8 +1,13 @@
 import {getResolvedModuleEffects} from './cartography/module-effects';
-import {inferTileflowDataRequirements, type TileflowDataRequirementsV1} from './data/requirements';
+import {
+  inferTileflowDataRequirements,
+  inferTileflowSourceRequirements,
+  type TileflowDataRequirementsV1,
+  type TileflowSourceRequirementsV1,
+} from './data/requirements';
 import {compareCodeUnits, serializeCanonicalJson, sha256Hex} from './icon-package';
 import {parseTileflowMap} from './map';
-import {type TileflowMap, tileflowMapIdSchema} from './maps';
+import {type ResolvedTileflowMap, type TileflowMap, tileflowMapIdSchema} from './maps';
 import type {MapLibreStyle} from './types';
 
 export const tileflowMapRevisionSchemaVersion = 1 as const;
@@ -60,12 +65,21 @@ export type TileflowMapBuildInput = {
   lineage: readonly TileflowMapBuildLineageEntry[];
   map: TileflowMap;
   sourceAssets: TileflowEffectiveMapSourceAssets;
-  style: MapLibreStyle;
+  styles: Readonly<Record<string, MapLibreStyle>>;
+};
+
+export type TileflowThemeBuildManifestEntryV1 = {
+  colorScheme: 'dark' | 'light';
+  dataRequirements: TileflowDataRequirementsV1;
+  sourceRequirements: TileflowSourceRequirementsV1;
+  styleSha256: string;
+  themeId: string;
+  themeVersion: number;
 };
 
 export type TileflowMapBuildManifestEntryV1 = {
   assetSetSha256: string;
-  dataRequirements: TileflowDataRequirementsV1;
+  defaultTheme: string;
   lineage: readonly TileflowMapBuildLineageEntry[];
   mapRevisionSha256: string;
   mapVersion: number;
@@ -74,7 +88,8 @@ export type TileflowMapBuildManifestEntryV1 = {
     compilerVersion: number;
   };
   sourceAssets: TileflowEffectiveMapSourceAssets;
-  styleSha256: string;
+  systemThemes?: {dark: string; light: string};
+  themes: Record<string, TileflowThemeBuildManifestEntryV1>;
 };
 
 /**
@@ -134,9 +149,9 @@ export async function createTileflowMapBuildManifest(
         }
         const lineage = normalizeLineage(input.lineage, map);
         const sourceAssets = normalizeSourceAssets(input.sourceAssets);
-        const [mapRevisionSha256, styleSha256, assetSetSha256] = await Promise.all([
+        const themes = await normalizeCompiledThemes(map, input.styles);
+        const [mapRevisionSha256, assetSetSha256] = await Promise.all([
           hashTileflowMapRevision(map, sourceAssets),
-          sha256Hex(serializeCanonicalJson(input.style)),
           hashTileflowAssetSet(input.assets),
         ]);
 
@@ -144,13 +159,14 @@ export async function createTileflowMapBuildManifest(
           mapId,
           {
             assetSetSha256,
-            dataRequirements: inferTileflowDataRequirements(input.style),
+            defaultTheme: map.defaultTheme,
             lineage,
             mapRevisionSha256,
             mapVersion: map.version,
             recipe: {...map.root},
             sourceAssets,
-            styleSha256,
+            ...(map.systemThemes ? {systemThemes: {...map.systemThemes}} : {}),
+            themes,
           },
         ] as const;
       }),
@@ -161,6 +177,41 @@ export async function createTileflowMapBuildManifest(
     ...(options.provenance ? {provenance: normalizeProvenance(options.provenance)} : {}),
     schemaVersion: tileflowMapBuildManifestSchemaVersion,
   };
+}
+
+async function normalizeCompiledThemes(
+  map: ReturnType<typeof parseTileflowMap>,
+  styles: Readonly<Record<string, MapLibreStyle>>,
+): Promise<Record<string, TileflowThemeBuildManifestEntryV1>> {
+  const declaredNames = Object.keys(map.themes).sort(compareCodeUnits);
+  const compiledNames = Object.keys(styles).sort(compareCodeUnits);
+  if (
+    declaredNames.length !== compiledNames.length ||
+    declaredNames.some((name, index) => name !== compiledNames[index])
+  ) {
+    throw new Error(
+      `Tileflow map "${map.id}" compiled styles must exactly match its declared themes.`,
+    );
+  }
+
+  const entries = await Promise.all(
+    declaredNames.map(async (name) => {
+      const theme = map.themes[name]!;
+      const style = styles[name]!;
+      return [
+        name,
+        {
+          colorScheme: theme.colorScheme,
+          dataRequirements: inferTileflowDataRequirements(style),
+          sourceRequirements: inferTileflowSourceRequirements(style),
+          styleSha256: await sha256Hex(serializeCanonicalJson(style)),
+          themeId: theme.id,
+          themeVersion: theme.version,
+        },
+      ] as const;
+    }),
+  );
+  return Object.fromEntries(entries);
 }
 
 function normalizeProvenance(input: TileflowMapBuildProvenanceV1): TileflowMapBuildProvenanceV1 {
@@ -195,10 +246,10 @@ function normalizeProvenance(input: TileflowMapBuildProvenanceV1): TileflowMapBu
 
 /** Hash a resolved map definition with the versioned, domain-separated revision contract. */
 export async function hashTileflowMapRevision(
-  input: TileflowMap,
+  input: TileflowMap | ResolvedTileflowMap,
   sourceAssets: TileflowEffectiveMapSourceAssets,
 ): Promise<string> {
-  const map = parseTileflowMap(input);
+  const map = parseTileflowMap(input as TileflowMap);
   const {
     delivery: _delivery,
     fonts: _fonts,
@@ -280,7 +331,7 @@ export async function hashTileflowAssetSetIdentities(
 
 function normalizeLineage(
   input: readonly TileflowMapBuildLineageEntry[],
-  map: TileflowMap,
+  map: Pick<ResolvedTileflowMap, 'id' | 'version'>,
 ): TileflowMapBuildLineageEntry[] {
   if (input.length === 0 || input[0]?.id !== map.id || input[0].mapVersion !== map.version) {
     throw new Error(`Tileflow map "${map.id}" has an invalid build lineage.`);

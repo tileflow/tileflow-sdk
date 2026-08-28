@@ -65,7 +65,7 @@ import type {TileflowInteractionBinding} from '@tileflow/interactions';
 const interactions = [
   {
     id: 'restaurant-card',
-    target: {kind: 'semantic-feature', domain: 'poi', categories: ['food']},
+    target: {kind: 'semantic-feature', domain: 'poi', categories: ['food-drink']},
     tooltip: {content: {kind: 'field', field: 'name'}},
     popup: {content: {kind: 'view', name: 'restaurant-card'}},
   },
@@ -76,6 +76,8 @@ Tileflow Core embeds a bounded, versioned lookup in the exact finalized style. T
 runtime validates that lookup, queries only its declared POI layers, deduplicates repeated
 representations, and exposes normalized properties instead of physical layer IDs. Stable POI IDs
 are required for popup state; an identity-less POI may still show a transient tooltip.
+Normalized POI properties use the source contract unchanged: `category`, `type`, `icon`,
+`filter_rank`, `size_rank`, and `name`.
 
 Annotation tooltip and popup surfaces are declared inline on the annotation. Annotation-target
 bindings, `style-layer`, and `map` remain reserved branches and currently fail closed with a

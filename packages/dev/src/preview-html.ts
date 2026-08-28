@@ -13,7 +13,9 @@ export function renderTileflowPreviewHtml(
   isStreetsPreview: boolean,
   fontFaces: readonly TileflowStyleFontFace[] = [],
 ): string {
-  const styleUrl = preview ? `${basePath}/styles/${preview.mapName}.json` : undefined;
+  const styleUrl = preview
+    ? `${basePath}/styles/${preview.mapName}/${preview.themeName}.json`
+    : undefined;
   const mapOptions = preview ? previewMapOptions(preview) : undefined;
   const viewportCss = preview?.viewport
     ? `
@@ -1288,26 +1290,23 @@ export function renderTileflowPreviewHtml(
       }
 
       function createTreeLayer(map, styleLayer) {
-        const maximumTrees = 3000;
+        const initialTreeInstanceCapacity = 64;
         const maximumCachedTrees = 12000;
         const sourceRefreshIntervalMilliseconds = 120;
         const viewportBufferPixels = 96;
         const treeLods = [
           {
             densityCellPixels: 12,
-            maximumTrees: 1200,
             name: "low",
             untilZoom: 16.5
           },
           {
             densityCellPixels: 8,
-            maximumTrees: 2200,
             name: "medium",
             untilZoom: 17.5
           },
           {
             densityCellPixels: 0,
-            maximumTrees,
             name: "full",
             untilZoom: Infinity
           }
@@ -1337,8 +1336,12 @@ export function renderTileflowPreviewHtml(
         let renderer;
         let treeGroup;
         let treeMaterial;
+        let treeGeometries = [];
         let treeMeshes = [];
+        let treeMeshCapacities = [];
+        let treeShadowGeometry;
         let treeShadowMesh;
+        let treeShadowCapacity = 0;
         let treeShadowMaterial;
         let activeTreeBackend = treeBackendMode;
         let rawGl;
@@ -2233,7 +2236,7 @@ export function renderTileflowPreviewHtml(
           candidates.sort((left, right) =>
             left.key < right.key ? -1 : left.key > right.key ? 1 : 0
           );
-          if (lod.densityCellPixels === 0) return candidates.slice(0, lod.maximumTrees);
+          if (lod.densityCellPixels === 0) return candidates;
           const occupiedCells = new Set();
           const selected = [];
           for (const candidate of candidates) {
@@ -2244,9 +2247,52 @@ export function renderTileflowPreviewHtml(
             if (occupiedCells.has(cellKey)) continue;
             occupiedCells.add(cellKey);
             selected.push(candidate);
-            if (selected.length >= lod.maximumTrees) break;
           }
           return selected;
+        }
+
+        function nextTreeInstanceCapacity(requiredCapacity) {
+          let capacity = initialTreeInstanceCapacity;
+          while (capacity < requiredCapacity) capacity *= 2;
+          return capacity;
+        }
+
+        function createThreeTreeMesh(geometry, capacity) {
+          const treeMesh = new THREE.InstancedMesh(geometry, treeMaterial, capacity);
+          treeMesh.count = 0;
+          treeMesh.frustumCulled = false;
+          return treeMesh;
+        }
+
+        function ensureThreeTreeMeshCapacity(variantIndex, requiredCapacity) {
+          if (treeMeshCapacities[variantIndex] >= requiredCapacity) return;
+          const currentTreeMesh = treeMeshes[variantIndex];
+          const treeMesh = createThreeTreeMesh(
+            treeGeometries[variantIndex],
+            nextTreeInstanceCapacity(requiredCapacity)
+          );
+          treeGroup.remove(currentTreeMesh);
+          currentTreeMesh.dispose();
+          treeMeshes[variantIndex] = treeMesh;
+          treeMeshCapacities[variantIndex] = treeMesh.instanceMatrix.count;
+          treeGroup.add(treeMesh);
+        }
+
+        function ensureThreeTreeShadowCapacity(requiredCapacity) {
+          if (treeShadowCapacity >= requiredCapacity) return;
+          const shadowMesh = new THREE.InstancedMesh(
+            treeShadowGeometry,
+            treeShadowMaterial,
+            nextTreeInstanceCapacity(requiredCapacity)
+          );
+          shadowMesh.count = 0;
+          shadowMesh.frustumCulled = false;
+          shadowMesh.renderOrder = 1;
+          treeGroup.remove(treeShadowMesh);
+          treeShadowMesh.dispose();
+          treeShadowMesh = shadowMesh;
+          treeShadowCapacity = shadowMesh.instanceMatrix.count;
+          treeGroup.add(shadowMesh);
         }
 
         function rememberTreeState(key, state) {
@@ -2531,6 +2577,11 @@ export function renderTileflowPreviewHtml(
             const crownDepth = crownDiameter / crownAspect;
             const shadowRadius = Math.max(0.75, Math.min(5.5, crownDiameter * 0.42));
             if (activeTreeBackend === "three") {
+              ensureThreeTreeMeshCapacity(
+                variantIndex,
+                variantCounts[variantIndex] + 1
+              );
+              ensureThreeTreeShadowCapacity(count + 1);
               crownRotation.setFromAxisAngle(yAxis, rotation);
               position.copy(treePosition);
               scale.set(crownWidth, height, crownDepth);
@@ -2722,6 +2773,7 @@ export function renderTileflowPreviewHtml(
             } else {
               activeTreeBackend = "three";
               treeMetrics.backend = activeTreeBackend;
+              treeGeometries = geometries;
               camera = new THREE.Camera();
               scene = new THREE.Scene();
               scene.rotateX(Math.PI / 2);
@@ -2735,18 +2787,12 @@ export function renderTileflowPreviewHtml(
                 flatShading: false,
                 vertexColors: true
               });
-              treeMeshes = geometries.map((geometry) => {
-                const treeMesh = new THREE.InstancedMesh(
-                  geometry,
-                  treeMaterial,
-                  maximumTrees
-                );
-                treeMesh.count = 0;
-                treeMesh.frustumCulled = false;
-                return treeMesh;
-              });
-              const shadowGeometry = new THREE.PlaneGeometry(2, 2);
-              shadowGeometry.rotateX(-Math.PI / 2);
+              treeMeshes = geometries.map((geometry) =>
+                createThreeTreeMesh(geometry, initialTreeInstanceCapacity)
+              );
+              treeMeshCapacities = geometries.map(() => initialTreeInstanceCapacity);
+              treeShadowGeometry = new THREE.PlaneGeometry(2, 2);
+              treeShadowGeometry.rotateX(-Math.PI / 2);
               treeShadowMaterial = new THREE.ShaderMaterial({
                 depthTest: true,
                 depthWrite: false,
@@ -2772,10 +2818,11 @@ export function renderTileflowPreviewHtml(
                   "}\\n"
               });
               treeShadowMesh = new THREE.InstancedMesh(
-                shadowGeometry,
+                treeShadowGeometry,
                 treeShadowMaterial,
-                maximumTrees
+                initialTreeInstanceCapacity
               );
+              treeShadowCapacity = initialTreeInstanceCapacity;
               treeShadowMesh.count = 0;
               treeShadowMesh.frustumCulled = false;
               treeShadowMesh.renderOrder = 1;
@@ -2903,10 +2950,18 @@ export function renderTileflowPreviewHtml(
                 fallbackCircleStrokeOpacity
               );
             }
-            for (const treeMesh of treeMeshes) treeMesh.geometry.dispose();
+            for (const treeMesh of treeMeshes) {
+              treeMesh.dispose();
+              treeMesh.geometry.dispose();
+            }
             treeMeshes = [];
+            treeMeshCapacities = [];
+            treeGeometries = [];
+            treeShadowMesh?.dispose();
             treeShadowMesh?.geometry.dispose();
             treeShadowMesh = undefined;
+            treeShadowGeometry = undefined;
+            treeShadowCapacity = 0;
             treeShadowMaterial?.dispose();
             treeShadowMaterial = undefined;
             treeMaterial?.dispose();

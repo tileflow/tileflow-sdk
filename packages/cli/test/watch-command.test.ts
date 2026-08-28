@@ -48,7 +48,7 @@ test('dev emits valid/invalid/recovered/stopped NDJSON and serves last-good loca
     (body) => body.status === 'invalid',
   );
   assert.equal(invalidStatus.lastGoodGeneration, 1);
-  assert.equal((await fetch(`http://127.0.0.1:${port}/styles/main.json`)).status, 200);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/styles/main/light.json`)).status, 200);
 
   await writeFile(join(cwd, 'tileflow.config.ts'), createValidConfig(), 'utf8');
   const recovered = await running.waitFor((event) => event.event === 'recovered');
@@ -71,6 +71,150 @@ test('dev emits valid/invalid/recovered/stopped NDJSON and serves last-good loca
   const completion = await running.completion;
   assert.equal(completion.code, 0, completion.stderr);
   assert.doesNotMatch(completion.stderr, /watch-secret/);
+});
+
+test('preview comparison serves two watched sides and their memory-only inspection sidecars', async (t) => {
+  const cwd = await createFixture('tileflow-dev-compare-');
+  await writeWatchFixture(cwd, '#315744');
+  const port = await reservePort();
+  const running = startCli(
+    cwd,
+    ['preview', '--json', '--map', 'main', '--against-map', 'main', '--port', String(port)],
+    {TILEFLOW_API_KEY: 'comparison-secret'},
+  );
+  t.after(async () => {
+    await running.stop();
+    await rm(cwd, {force: true, maxRetries: 5, recursive: true, retryDelay: 100});
+  });
+
+  await Promise.all([
+    running.waitFor((event) => event.command === 'dev.compare' && event.side === 'left'),
+    running.waitFor((event) => event.command === 'dev.compare' && event.side === 'right'),
+  ]);
+  await fetchEventually(`http://127.0.0.1:${port}/left/__status`);
+  await fetchEventually(`http://127.0.0.1:${port}/right/__status`);
+
+  const shell = await (await fetch(`http://127.0.0.1:${port}/`)).text();
+  assert.match(shell, /Tileflow visual workbench/u);
+  assert.match(shell, /Side by side/u);
+  assert.match(shell, /Copy scene/u);
+  assert.doesNotMatch(shell, /"captureConfig":/u);
+  assert.equal(shell.includes(cwd), false);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/left/styles/main/light.json`)).status, 200);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/right/styles/main/light.json`)).status, 200);
+
+  const sidecarResponse = await fetch(`http://127.0.0.1:${port}/left/__inspection/main/light.json`);
+  assert.equal(sidecarResponse.status, 200);
+  const sidecar = (await sidecarResponse.json()) as {
+    layers?: Array<{contributions?: unknown[]}>;
+    map?: string;
+    schemaVersion?: number;
+    theme?: string;
+  };
+  assert.equal(sidecar.schemaVersion, 1);
+  assert.equal(sidecar.map, 'main');
+  assert.equal(sidecar.theme, 'light');
+  assert.ok(Array.isArray(sidecar.layers));
+  assert.equal(JSON.stringify(running.events).includes(cwd), false);
+  assert.doesNotMatch(`${JSON.stringify(running.events)}\n`, /comparison-secret/u);
+
+  running.requestStop();
+  const stopped = await running.waitFor(
+    (event) => event.command === 'dev.compare' && event.event === 'stopped',
+  );
+  assert.deepEqual(Object.keys(stopped.generation as object).sort(), ['left', 'right']);
+  const completion = await running.completion;
+  assert.equal(completion.code, 0, completion.stderr);
+});
+
+test('preview comparison publishes distinct cwd-relative config arguments for Copy command', async (t) => {
+  const cwd = await createFixture('tileflow-dev-compare-configs-');
+  await writeWatchFixture(cwd, '#315744');
+  const leftConfig = join(cwd, 'candidate config.ts');
+  const rightConfig = join(cwd, "reference's config.ts");
+  await Promise.all([
+    writeFile(leftConfig, createValidConfig(), 'utf8'),
+    writeFile(rightConfig, createValidConfig(), 'utf8'),
+  ]);
+  const port = await reservePort();
+  const running = startCli(cwd, [
+    'preview',
+    '--json',
+    '--config',
+    leftConfig,
+    '--against-config',
+    rightConfig,
+    '--map',
+    'main',
+    '--against-map',
+    'main',
+    '--port',
+    String(port),
+  ]);
+  t.after(async () => {
+    await running.stop();
+    await rm(cwd, {force: true, maxRetries: 5, recursive: true, retryDelay: 100});
+  });
+
+  await Promise.all([
+    running.waitFor((event) => event.command === 'dev.compare' && event.side === 'left'),
+    running.waitFor((event) => event.command === 'dev.compare' && event.side === 'right'),
+  ]);
+  await Promise.all([
+    fetchEventually(`http://127.0.0.1:${port}/left/__status`),
+    fetchEventually(`http://127.0.0.1:${port}/right/__status`),
+  ]);
+  const shell = await (await fetch(`http://127.0.0.1:${port}/`)).text();
+  assert.match(shell, /"captureConfig":"candidate config\.ts"/u);
+  assert.match(shell, /"captureConfig":"reference's config\.ts"/u);
+  assert.equal(shell.includes(cwd), false);
+
+  running.requestStop();
+  await running.waitFor((event) => event.command === 'dev.compare' && event.event === 'stopped');
+  const completion = await running.completion;
+  assert.equal(completion.code, 0, completion.stderr);
+});
+
+test('preview comparison keeps initial invalid --json output structured and omits stopped', async (t) => {
+  const cwd = await createFixture('tileflow-dev-compare-initial-invalid-');
+  await writeFile(join(cwd, 'tileflow.config.ts'), invalidConfig, 'utf8');
+  const port = await reservePort();
+  const running = startCli(cwd, [
+    'preview',
+    '--json',
+    '--map',
+    'main',
+    '--against-map',
+    'main',
+    '--port',
+    String(port),
+  ]);
+  t.after(async () => {
+    await running.stop();
+    await rm(cwd, {force: true, maxRetries: 5, recursive: true, retryDelay: 100});
+  });
+
+  const failure = await running.waitFor(
+    (event) => event.command === 'dev.compare' && event.event === 'error',
+  );
+  assert.equal(failure.code, 'COMPARISON_INITIAL_INVALID');
+  assert.equal(failure.phase, 'initialization');
+  assert.ok(Array.isArray(failure.diagnostics));
+  assert.equal((failure.diagnostics as unknown[]).length > 0, true);
+
+  const completion = await running.completion;
+  assert.equal(completion.code, 1, completion.stderr);
+  assert.equal(completion.stderr, '');
+  assert.equal(running.events.filter((event) => event.event === 'invalid').length, 2);
+  assert.equal(
+    running.events.some((event) => event.event === 'stopped'),
+    false,
+  );
+  assert.equal(
+    running.events.every((event) => event.command === 'dev.compare'),
+    true,
+  );
+  assert.equal(JSON.stringify(running.events).includes(cwd), false);
 });
 
 test(
@@ -169,11 +313,21 @@ function createValidConfig(tileOrigin?: string): string {
 `;
   return tileflowMapFixture({
     id: 'main',
-    imports: `import tokens from './tokens.json';`,
-    setup: `if (process.env.TILEFLOW_API_KEY) throw new Error('ambient API key reached watched config');`,
-    fields: `${data}theme: {colors: {background: tokens.background}},
+    imports: `import tokens from './tokens.json';
+import {defineTheme} from '@tileflow/core';
+import {streetsThemes} from '@tileflow/maps';`,
+    setup: `if (process.env.TILEFLOW_API_KEY) throw new Error('ambient API key reached watched config');
+const fixtureTheme = defineTheme(streetsThemes.light, {
+  id: 'fixture-light',
+  version: 1,
+  colorScheme: 'light',
+  tokens: {color: {'surface.background': tokens.background}}
+});`,
+    fields: `${data}themes: {light: fixtureTheme},
+      defaultTheme: 'light',
       scenes: {
     proof: {
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 0},
       viewport: {width: 128, height: 128}
     }

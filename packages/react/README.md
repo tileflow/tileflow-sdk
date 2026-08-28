@@ -12,6 +12,7 @@ export function App() {
   return (
     <Map
       source={{kind: 'tileflow', map: 'madrid'}}
+      theme="system"
       center={[-3.7038, 40.4168]}
       zoom={12}
       mapOptions={{
@@ -101,7 +102,7 @@ import type {TileflowInteractionBinding} from '@tileflow/interactions';
 const interactions = [
   {
     id: 'poi-details',
-    target: {kind: 'semantic-feature', domain: 'poi', categories: ['food', 'coffee']},
+    target: {kind: 'semantic-feature', domain: 'poi', categories: ['food-drink', 'retail']},
     tooltip: {content: {kind: 'field', field: 'name', fallback: 'Point of interest'}},
     popup: {content: {kind: 'view', name: 'poi-card'}},
   },
@@ -160,13 +161,19 @@ provided. Camera resolution is the same in interactive and image modes: direct p
 `mapOptions`, then the published manifest view, then Tileflow's shared runtime defaults.
 
 Every map has exactly one discriminated `source`. Use `kind: 'tileflow'` for a map published in a
-Tileflow manifest, or `kind: 'maplibre'` for a direct MapLibre style object or URL. Browser
-components do not compile `tileflow.config.ts`.
+Tileflow manifest. `kind: 'maplibre'` is the unmanaged MapLibre escape hatch for one direct style
+object or URL: it deliberately has no Tileflow theme identity, `system` selection, switching, or
+manifest traceability. Browser components do not compile `tileflow.config.ts`.
 
 Without `manifestUrl`, the exact default is `/tileflow/manifest.json`. If Vite, Webpack, Next, a
 reverse proxy, or the Tileflow plugin publishes it anywhere else, set the final public URL
 explicitly; the component does not attempt runtime base-path discovery. Manifest 404s, unknown map
 IDs, unresolved styles, and unresolved image URLs enter `data-tileflow-state="error"`.
+
+`theme` selects a published theme name. Omitting it uses the map's `defaultTheme`; `"system"` is
+available only when the map declares explicit light and dark mappings. Changes preload fonts, diff
+the style on the existing MapLibre instance, preserve camera and interactions, and roll back if the
+new style fails. `onThemeChange` reports preloading, applying, ready, and error transitions.
 
 To reuse one published map across multiple repos, point every app at the same
 manifest:
@@ -181,13 +188,13 @@ manifest:
 />
 ```
 
-Or bypass the manifest and load a hosted style directly:
+Or deliberately leave the Tileflow theme contract and load one concrete Style JSON directly:
 
 ```tsx
 <Map
   source={{
     kind: 'maplibre',
-    style: 'https://api.tileflow.dev/maps/map_1234567890abcdef/style.json',
+    style: 'https://cdn.example.com/tileflow/styles/madrid/dark.json',
   }}
 />
 ```

@@ -132,7 +132,7 @@ export default defineRootMap({
         assetBaseUrl: tileflowSyntheticAssetOrigin,
         cwd,
       });
-      const generatedStyle = artifacts.styles.proof;
+      const generatedStyle = artifacts.styles.proof?.light;
       assert.ok(generatedStyle);
       assert.ok(
         generatedStyle.layers.some((layer) => layer.id === 'streets-road-surface-primary-casing'),
@@ -256,7 +256,7 @@ export default defineRootMap({
         assetBaseUrl: tileflowSyntheticAssetOrigin,
         cwd,
       });
-      const generatedStyle = artifacts.styles.proof;
+      const generatedStyle = artifacts.styles.proof?.light;
       assert.ok(generatedStyle);
       assert.equal(generatedStyle.sources['tileflow-contours']?.type, 'vector');
       assert.ok(
@@ -295,6 +295,7 @@ export default defineRootMap({
 
 const scene: NormalizedTileflowCaptureScene = {
   map: 'proof',
+  theme: 'light',
   camera: {
     type: 'center',
     center: [0, 0],
@@ -308,6 +309,7 @@ const scene: NormalizedTileflowCaptureScene = {
 
 const generatedScene: NormalizedTileflowCaptureScene = {
   map: 'proof',
+  theme: 'light',
   camera: {type: 'center', center: [0, 0], zoom: 1, bearing: 0, pitch: 0},
   viewport: {width: 256, height: 256, dpr: 1},
   target: {kind: 'map'},

@@ -25,10 +25,15 @@ import {
   attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
   createTileflowSessionStarter,
+  createTileflowThemeController,
   createTileflowTransformRequest,
+  getTileflowSystemColorScheme,
   loadTileflowStyleFonts,
   registerTileflowContourProtocol,
   registerTileflowWorldRequestBridge,
+  subscribeTileflowSystemColorScheme,
+  type TileflowThemeController,
+  type TileflowThemeTransition,
 } from '@tileflow/core/browser';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
 import {
@@ -42,6 +47,7 @@ import {
   resolveTileflowManifestMap,
   resolveTileflowMapMode,
   resolveTileflowRuntimeStyle,
+  resolveTileflowRuntimeTheme,
   resolveTileflowRuntimeView,
   resolveTileflowStaticImageUrl,
   shouldLoadTileflowManifest,
@@ -107,6 +113,7 @@ type MapSharedProps = {
   mapOptions?: TileflowMapOptions;
   analytics?: TileflowAnalytics;
   onLoad?: (map: MapLibreMap) => void;
+  onThemeChange?: (transition: TileflowThemeTransition) => void;
 };
 
 type TileflowAnnotationInputProps<TAnnotation extends TileflowAnnotation> =
@@ -197,6 +204,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     mapOptions,
     markers,
     analytics,
+    theme,
     interactionState,
     interactions = defaultInteractions,
     onInteractionDiagnostic,
@@ -248,6 +256,8 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   const containerRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const themeControllerRef = useRef<TileflowThemeController | undefined>(undefined);
+  const runtimeStyleRef = useRef<ReturnType<typeof resolveTileflowRuntimeStyle>>(null);
   const interactionRuntimeRef = useRef<TileflowMapLibreDomRuntime<TAnnotation> | undefined>(
     undefined,
   );
@@ -262,6 +272,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   const onInteractionDiagnosticRef = useRef(onInteractionDiagnostic);
   const onInteractionEventRef = useRef(onInteractionEvent);
   const onInteractionStateChangeRef = useRef(onInteractionStateChange);
+  const onThemeChangeRef = useRef(props.onThemeChange);
   const renderMarkerRef = useRef(renderMarker);
   const renderPopupRef = useRef(renderPopup);
   const renderTooltipRef = useRef(renderTooltip);
@@ -271,11 +282,15 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     map: null,
     state: 'loading',
   });
+  const [systemColorScheme, setSystemColorScheme] = useState<'dark' | 'light'>('light');
   const [imageSize, setImageSize] = useState<{
     height: number;
     width: number;
   } | null>(null);
   const [captureState, setCaptureState] = useState<'error' | 'idle' | 'loading'>('loading');
+  const [themeTransitionState, setThemeTransitionState] = useState<'error' | 'idle' | 'loading'>(
+    'idle',
+  );
   const [activeRuntimeResource, setActiveRuntimeResource] = useState<unknown>(undefined);
   const [annotationRenderTargets, setAnnotationRenderTargets] = useState<
     readonly TileflowMapLibreDomRenderTarget<TAnnotation>[]
@@ -302,8 +317,6 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   const resolvedMode = resolveTileflowMapMode({mode});
   const isImageMode = resolvedMode === 'image';
   const shouldLoadManifest = shouldLoadTileflowManifest({
-    imageMode: isImageMode,
-    imageUrl,
     source: runtimeSource,
   });
   const manifestRequestKey = shouldLoadManifest
@@ -319,6 +332,24 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         };
   const manifestMap =
     currentManifestResolution.state === 'ready' ? currentManifestResolution.map : null;
+  const themeResolution = useMemo(() => {
+    if (!manifestMap || runtimeSource.kind !== 'tileflow') {
+      return {
+        error: false,
+        name: runtimeSource.kind === 'tileflow' && theme && theme !== 'system' ? theme : undefined,
+      } as const;
+    }
+
+    try {
+      return {
+        error: false,
+        name: resolveTileflowRuntimeTheme(manifestMap, theme, systemColorScheme).name,
+      } as const;
+    } catch {
+      return {error: true, name: undefined} as const;
+    }
+  }, [manifestMap, runtimeSource, systemColorScheme, theme]);
+  const resolvedThemeName = themeResolution.name;
   const manifestView = resolveTileflowRuntimeView({manifestMap});
   const manifestCenter = useStableMapOptionValue<[number, number]>(
     normalizeTileflowRuntimeCenter(manifestView.center),
@@ -428,6 +459,13 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   renderMarkerRef.current = renderMarker;
   renderPopupRef.current = renderPopup;
   renderTooltipRef.current = renderTooltip;
+  onThemeChangeRef.current = props.onThemeChange;
+
+  useEffect(() => {
+    if (theme !== 'system') return;
+    setSystemColorScheme(getTileflowSystemColorScheme());
+    return subscribeTileflowSystemColorScheme(setSystemColorScheme);
+  }, [theme]);
 
   useEffect(() => {
     const previousKeys = reportedDeclarativeDiagnosticKeysRef.current;
@@ -477,15 +515,24 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   }, [manifestRequestKey, manifestUrl, mapName, shouldLoadManifest]);
 
   const runtimeStyle = useMemo(() => {
-    if (isImageMode) {
+    if (isImageMode || themeResolution.error) {
       return null;
     }
 
     return resolveTileflowRuntimeStyle({
+      colorScheme: systemColorScheme,
       manifestMap,
       source: runtimeSource,
+      theme: themeResolution.name,
     });
-  }, [isImageMode, manifestMap, runtimeSource]);
+  }, [isImageMode, manifestMap, runtimeSource, systemColorScheme, themeResolution]);
+  runtimeStyleRef.current = runtimeStyle;
+  const runtimeMapIdentity =
+    runtimeSource.kind === 'tileflow'
+      ? `${manifestUrl}\0${runtimeSource.map}`
+      : runtimeSource.style;
+  const runtimeStyleReady =
+    runtimeStyle !== null || (themeResolution.error && mapRef.current !== null);
 
   const resolvedAnalytics = useMemo(
     () => mergeTileflowAnalytics(analytics, runtimeStyle?.analytics),
@@ -521,20 +568,32 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   const runtimeImageUrl = useMemo(
     () =>
       imageUrl ??
-      (isImageMode
+      (isImageMode && !themeResolution.error
         ? resolveTileflowStaticImageUrl({
             center: staticImageCenter,
+            colorScheme: systemColorScheme,
             imageSize,
             manifestMap,
+            theme: themeResolution.name,
             zoom: staticImageZoom,
           })
         : undefined),
-    [imageSize, imageUrl, isImageMode, manifestMap, staticImageCenter, staticImageZoom],
+    [
+      imageSize,
+      imageUrl,
+      isImageMode,
+      manifestMap,
+      staticImageCenter,
+      staticImageZoom,
+      systemColorScheme,
+      themeResolution,
+    ],
   );
   const runtimeResolutionState: 'error' | 'idle' | 'loading' = (() => {
     if (shouldLoadManifest && currentManifestResolution.state !== 'ready') {
       return currentManifestResolution.state === 'error' ? 'error' : 'loading';
     }
+    if (themeResolution.error) return 'error';
     if (isImageMode) {
       if (runtimeImageUrl) return 'idle';
       return imageUrl === undefined && imageSize === null ? 'loading' : 'error';
@@ -548,11 +607,13 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   const effectiveCaptureState =
     currentCaptureState === 'error' ||
     interactionReadiness === 'error' ||
-    runtimeResolutionState === 'error'
+    runtimeResolutionState === 'error' ||
+    themeTransitionState === 'error'
       ? 'error'
       : currentCaptureState === 'idle' &&
           interactionReadiness === 'idle' &&
-          runtimeResolutionState === 'idle'
+          runtimeResolutionState === 'idle' &&
+          themeTransitionState === 'idle'
         ? 'idle'
         : 'loading';
   useEffect(() => {
@@ -662,12 +723,14 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   }, [renderMarker, renderPopup, renderTooltip]);
 
   useEffect(() => {
-    if (!containerRef.current || !runtimeStyle) {
+    setThemeTransitionState('idle');
+    const initialRuntimeStyle = runtimeStyleRef.current;
+    if (!containerRef.current || !initialRuntimeStyle) {
       return;
     }
 
     readinessRunRef.current += 1;
-    setActiveRuntimeResource(runtimeStyle);
+    setActiveRuntimeResource(initialRuntimeStyle);
     setCaptureState('loading');
     const container = containerRef.current;
     let cancelled = false;
@@ -675,8 +738,8 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
 
     void Promise.all([
       loadTileflowMapLibre(),
-      loadTileflowStyleFonts(runtimeStyle.style, {
-        fontFaces: runtimeStyle.fontFaces,
+      loadTileflowStyleFonts(initialRuntimeStyle.style, {
+        fontFaces: initialRuntimeStyle.fontFaces,
       }),
     ])
       .then(([maplibregl]) => {
@@ -747,7 +810,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         const map = new maplibregl.Map({
           ...stableMapOptions,
           container,
-          style: runtimeStyle.style as StyleSpecification | string,
+          style: initialRuntimeStyle.style as StyleSpecification | string,
           bearing: bearingRef.current,
           center: centerRef.current,
           pitch: pitchRef.current,
@@ -762,6 +825,32 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         mapRef.current = map;
         setupResources.map = map;
         registerCleanup(() => map.remove());
+        const themeController =
+          initialRuntimeStyle.theme === undefined
+            ? undefined
+            : createTileflowThemeController({
+                initial: initialRuntimeStyle,
+                map,
+                onTransition(transition) {
+                  onThemeChangeRef.current?.(transition);
+                  if (transition.phase === 'preloading' || transition.phase === 'applying') {
+                    setThemeTransitionState('loading');
+                  } else if (transition.phase === 'error') {
+                    setThemeTransitionState('error');
+                  } else {
+                    setThemeTransitionState('idle');
+                  }
+                },
+              });
+        if (themeController) {
+          themeControllerRef.current = themeController;
+          registerCleanup(() => {
+            themeController.dispose();
+            if (themeControllerRef.current === themeController) {
+              themeControllerRef.current = undefined;
+            }
+          });
+        }
         const browserWindow = container.ownerDocument.defaultView;
         if (!browserWindow) {
           throw new Error('Tileflow semantic interactions require a browser document.');
@@ -938,7 +1027,9 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
               analytics: analyticsForLoad,
               styleId:
                 analyticsForLoad?.styleId ??
-                (typeof runtimeStyle.style === 'string' ? runtimeStyle.style : mapNameRef.current),
+                (typeof initialRuntimeStyle.style === 'string'
+                  ? initialRuntimeStyle.style
+                  : mapNameRef.current),
             };
           },
           map,
@@ -957,6 +1048,11 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           },
         });
         registerCleanup(() => lifecycle.dispose());
+        const latestRuntimeStyle = runtimeStyleRef.current;
+        if (themeController && latestRuntimeStyle && latestRuntimeStyle !== initialRuntimeStyle) {
+          setActiveRuntimeResource(latestRuntimeStyle);
+          void themeController.setTheme(latestRuntimeStyle);
+        }
       })
       .catch((error: unknown) => {
         try {
@@ -975,7 +1071,23 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       readinessRunRef.current += 1;
       disposeMap?.();
     };
-  }, [resolvedInteractive, runtimeStyle, stableMapOptions]);
+  }, [resolvedInteractive, runtimeMapIdentity, runtimeStyleReady, stableMapOptions]);
+
+  useEffect(() => {
+    const controller = themeControllerRef.current;
+    if (!controller) return;
+    if (themeResolution.error) {
+      void controller.setTheme(controller.getCurrent());
+      return;
+    }
+    if (!runtimeStyle || controller.getCurrent() === runtimeStyle) return;
+    setActiveRuntimeResource(runtimeStyle);
+    void controller.setTheme(runtimeStyle).then((result) => {
+      if (result.status === 'failed') {
+        console.error('Failed to change the Tileflow map theme', result.error);
+      }
+    });
+  }, [runtimeStyle, themeResolution.error]);
 
   useLayoutEffect(() => {
     if (!isImageMode) return;
@@ -1025,6 +1137,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         className={className}
         data-tileflow-capture-id={resolvedCaptureId}
         data-tileflow-map={mapName}
+        data-tileflow-theme={resolvedThemeName}
         data-tileflow-state={effectiveCaptureState}
         ref={containerRef}
         style={frameStyle}
@@ -1060,6 +1173,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         className={className}
         data-tileflow-capture-id={resolvedCaptureId}
         data-tileflow-map={mapName}
+        data-tileflow-theme={resolvedThemeName}
         data-tileflow-state={effectiveCaptureState}
         style={frameStyle}
       >

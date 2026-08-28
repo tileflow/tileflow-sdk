@@ -1,9 +1,5 @@
-import {
-  compareCodeUnits,
-  type MapLibreStyle,
-  tileflowHostedAlphaCompatibility,
-} from '@tileflow/core';
-import type {TileflowBuildCatalog} from '@tileflow/core/build';
+import {compareCodeUnits, tileflowHostedAlphaCompatibility} from '@tileflow/core';
+import type {TileflowBuildCatalog, TileflowBuildStyles} from '@tileflow/core/build';
 
 export type TileflowHostedCompatibilityIssue = {
   map?: string;
@@ -13,7 +9,7 @@ export type TileflowHostedCompatibilityIssue = {
 
 export function inspectTileflowHostedCompatibility(
   project: TileflowBuildCatalog,
-  styles: Readonly<Record<string, MapLibreStyle>>,
+  styles: TileflowBuildStyles,
 ): TileflowHostedCompatibilityIssue[] {
   const issues: TileflowHostedCompatibilityIssue[] = [];
   const mapNames = Object.keys(project.maps).sort(compareCodeUnits);
@@ -26,20 +22,22 @@ export function inspectTileflowHostedCompatibility(
   }
 
   for (const mapName of [...mapNames].sort(compareCodeUnits)) {
-    const style = styles[mapName];
-    const data = style?.metadata?.['tileflow:data'];
+    const themes = styles[mapName] ?? {};
+    for (const themeName of Object.keys(themes).sort(compareCodeUnits)) {
+      const data = themes[themeName]?.metadata?.['tileflow:data'];
 
-    if (
-      !data ||
-      typeof data !== 'object' ||
-      Array.isArray(data) ||
-      (data as {kind?: unknown}).kind !== 'tileflow-world'
-    ) {
-      issues.push({
-        map: mapName,
-        message: `Hosted deploy supports only Tileflow World data. Map ${mapName} uses an external vector dataset; keep it local or switch to tileflowWorld().`,
-        path: `maps.${mapName}.data`,
-      });
+      if (
+        !data ||
+        typeof data !== 'object' ||
+        Array.isArray(data) ||
+        (data as {kind?: unknown}).kind !== 'tileflow-world'
+      ) {
+        issues.push({
+          map: mapName,
+          message: `Hosted deploy supports only Tileflow World data. Map ${mapName} theme ${themeName} uses an external vector dataset; keep it local or switch to tileflowWorld().`,
+          path: `maps.${mapName}.themes.${themeName}.data`,
+        });
+      }
     }
   }
 

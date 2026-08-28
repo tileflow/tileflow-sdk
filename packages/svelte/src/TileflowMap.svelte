@@ -20,6 +20,7 @@
     resolveTileflowManifestMap,
     resolveTileflowMapMode,
     resolveTileflowRuntimeStyle,
+    resolveTileflowRuntimeTheme,
     resolveTileflowRuntimeView,
     resolveTileflowStaticImageUrl,
     shouldLoadTileflowManifest,
@@ -30,12 +31,16 @@
     attachTileflowFairUseNotice,
     attachTileflowMapLifecycle,
     createTileflowSessionStarter,
+    createTileflowThemeController,
     createTileflowTransformRequest,
+    getTileflowSystemColorScheme,
     loadTileflowStyleFonts,
     registerTileflowContourProtocol,
     registerTileflowWorldRequestBridge,
+    subscribeTileflowSystemColorScheme,
     type TileflowFairUseNoticeController,
     type TileflowMapLifecycleAttachment,
+    type TileflowThemeController,
     type TileflowWorldRequestBridge,
   } from '@tileflow/core/browser';
   import {
@@ -89,8 +94,10 @@
   export let onInteractionDiagnostic: TileflowMapProps['onInteractionDiagnostic'] = undefined;
   export let onInteractionEvent: TileflowMapProps['onInteractionEvent'] = undefined;
   export let onInteractionStateChange: TileflowMapProps['onInteractionStateChange'] = undefined;
+  export let onThemeChange: TileflowMapProps['onThemeChange'] = undefined;
   export let popup: TileflowMapProps['popup'] = undefined;
   export let source: TileflowMapProps['source'];
+  export let theme: TileflowMapProps['theme'] = undefined;
   export let tooltip: TileflowMapProps['tooltip'] = undefined;
   export let zoom: TileflowMapProps['zoom'] = undefined;
 
@@ -122,6 +129,7 @@
   > = {};
   let activeInteractionDiagnosticKeys = new Set<string>();
   let interactionCaptureState: 'idle' | 'loading' = 'idle';
+  let themeTransitionState: 'error' | 'idle' | 'loading' = 'idle';
   let effectiveInteractionCaptureState: 'error' | 'idle' | 'loading' = 'idle';
   let captureState: 'error' | 'idle' | 'loading' = 'loading';
   let hasInteractionErrors = false;
@@ -132,6 +140,9 @@
   let legacyTitles: ReadonlyMap<string, string> = new Map();
   let mapResizeObserver: ResizeObserver | null = null;
   let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
+  let themeController: TileflowThemeController | null = null;
+  let systemColorScheme: 'dark' | 'light' = 'light';
+  let unsubscribeSystemColorScheme: (() => void) | null = null;
   let loadedManifestMap: TileflowRuntimeManifestMap | null = null;
   let manifestMap: TileflowRuntimeManifestMap | null = null;
   let manifestLoadId = 0;
@@ -159,7 +170,7 @@
         : {defaultInteractionState: initialInteractionState}),
     });
   $: resolvedMode = resolveTileflowMapMode({mode});
-  $: assertTileflowMapStyleInputs({source});
+  $: assertTileflowMapStyleInputs({source, theme});
   $: resolvedCaptureId = normalizeTileflowCaptureId(captureId);
   $: isImageMode = resolvedMode === 'image';
   $: mapName = source?.kind === 'tileflow' ? source.map : undefined;
@@ -168,8 +179,6 @@
       ? (source.manifestUrl ?? defaultTileflowManifestUrl)
       : defaultTileflowManifestUrl;
   $: shouldLoadManifest = shouldLoadTileflowManifest({
-    imageMode: isImageMode,
-    imageUrl,
     source,
   });
   $: manifestRequestKey = shouldLoadManifest
@@ -185,6 +194,13 @@
     manifestResolutionKey === manifestRequestKey && manifestResolutionState === 'ready'
       ? loadedManifestMap
       : null;
+  $: themeResolution = resolveThemeSelection({
+    colorScheme: systemColorScheme,
+    manifestMap,
+    source,
+    theme,
+  });
+  $: resolvedThemeName = themeResolution.name;
   $: manifestView = resolveTileflowRuntimeView({manifestMap});
   $: manifestCenter = normalizeTileflowRuntimeCenter(manifestView.center);
   $: imageCenter = normalizeTileflowRuntimeCenter(center ?? mapOptions?.center, manifestCenter);
@@ -195,20 +211,25 @@
   $: resolvedBearing = mapOptions?.bearing ?? manifestView.bearing;
   $: resolvedPitch = mapOptions?.pitch ?? manifestView.pitch;
   $: resolvedInteractive = interactive ?? mapOptions?.interactive ?? true;
-  $: runtimeStyle = isImageMode
-    ? null
-    : resolveTileflowRuntimeStyle({
-        manifestMap,
-        source,
-      });
+  $: runtimeStyle =
+    isImageMode || themeResolution.error
+      ? null
+      : resolveTileflowRuntimeStyle({
+          colorScheme: systemColorScheme,
+          manifestMap,
+          source,
+          theme: themeResolution.name,
+        });
   $: resolvedAnalytics = mergeTileflowAnalytics(analytics, runtimeStyle?.analytics);
   $: runtimeImageUrl =
     imageUrl ??
-    (isImageMode
+    (isImageMode && !themeResolution.error
       ? resolveTileflowStaticImageUrl({
           center: imageCenter,
+          colorScheme: systemColorScheme,
           imageSize,
           manifestMap,
+          theme: themeResolution.name,
           zoom: imageZoom,
         })
       : undefined);
@@ -220,6 +241,7 @@
     runtimeImageUrl,
     runtimeStyle,
     shouldLoadManifest,
+    themeResolutionError: themeResolution.error,
   });
   $: currentMapCaptureState =
     activeRuntimeResource === (isImageMode ? runtimeImageUrl : runtimeStyle)
@@ -266,8 +288,11 @@
   $: hasInteractionErrors = interactionDiagnostics.some(({level}) => level === 'error');
   $: effectiveInteractionCaptureState = hasInteractionErrors ? 'error' : interactionCaptureState;
   $: captureState = combineCaptureStates(
-    combineCaptureStates(currentMapCaptureState, effectiveInteractionCaptureState),
-    runtimeResolutionState,
+    combineCaptureStates(
+      combineCaptureStates(currentMapCaptureState, effectiveInteractionCaptureState),
+      runtimeResolutionState,
+    ),
+    themeTransitionState,
   );
   $: if (mounted && hasInteractionErrors !== hadInteractionErrors) {
     handleInteractionErrorState(hasInteractionErrors);
@@ -281,6 +306,16 @@
     mode;
     source;
     void refresh();
+  }
+
+  $: if (mounted) {
+    theme;
+    syncSystemColorSchemeSubscription();
+  }
+
+  $: if (mounted) {
+    runtimeStyle;
+    void switchTheme();
   }
 
   $: if (mounted) {
@@ -326,11 +361,13 @@
 
   onMount(() => {
     mounted = true;
+    syncSystemColorSchemeSubscription();
 
     return () => {
       mounted = false;
       refreshRunId += 1;
       manifestLoadId += 1;
+      unsubscribeSystemColorScheme?.();
       imageResizeObserver?.disconnect();
       try {
         destroyMap();
@@ -423,6 +460,7 @@
     const unsubscribeSemanticEvents = semanticRuntimeEventsUnsubscribe;
     const unsubscribeSemanticTargets = semanticRuntimeTargetsUnsubscribe;
     const currentMap = mapInstance;
+    const currentThemeController = themeController;
     const worldRequestBridge = mapWorldRequestBridge;
     interactionRuntimesDisposing = true;
     mapFairUseNotice = null;
@@ -448,6 +486,7 @@
     semanticRuntimeDiagnostics = [];
     bridgeInteractionDiagnostics = {};
     mapWorldRequestBridge = null;
+    themeController = null;
     mapResizeObserver?.disconnect();
     mapResizeObserver = null;
 
@@ -464,6 +503,7 @@
       () => semanticInteractionsForMap?.dispose(),
       () => annotationInteractionsForMap?.dispose(),
       () => lifecycleAttachment?.dispose(),
+      () => currentThemeController?.dispose(),
       () => worldRequestBridge?.dispose(),
       () => fairUseNotice?.dispose(),
       () => currentMap?.remove(),
@@ -489,6 +529,7 @@
   async function recreateMap(runId: number) {
     destroyMap();
     mapCaptureState = 'loading';
+    themeTransitionState = 'idle';
 
     if (isImageMode) {
       return;
@@ -522,7 +563,6 @@
       runId !== refreshRunId ||
       loadId !== mapLoadId ||
       container !== targetContainer ||
-      runtimeStyle !== runtime ||
       isImageMode
     ) {
       return;
@@ -562,6 +602,23 @@
     });
 
     mapInstance = maplibreMap;
+    themeController =
+      runtime.theme === undefined
+        ? null
+        : createTileflowThemeController({
+            initial: runtime,
+            map: maplibreMap,
+            onTransition(transition) {
+              onThemeChange?.(transition);
+              if (transition.phase === 'preloading' || transition.phase === 'applying') {
+                themeTransitionState = 'loading';
+              } else if (transition.phase === 'error') {
+                themeTransitionState = 'error';
+              } else {
+                themeTransitionState = 'idle';
+              }
+            },
+          });
 
     setBridgeInteractionDiagnostic('annotation-runtime', null);
     try {
@@ -723,6 +780,35 @@
         const subscription = targetMap.on(event, listener);
         return () => subscription.unsubscribe();
       },
+    });
+    if (themeController && runtimeStyle && runtimeStyle !== runtime) {
+      activeRuntimeResource = runtimeStyle;
+      void themeController.setTheme(runtimeStyle);
+    }
+  }
+
+  async function switchTheme() {
+    if (!themeController) return;
+    if (themeResolution.error) {
+      await themeController.setTheme(themeController.getCurrent());
+      return;
+    }
+    const next = runtimeStyle;
+    if (!next) return;
+    activeRuntimeResource = next;
+    const result = await themeController.setTheme(next);
+    if (result.status === 'failed') {
+      console.error('Failed to change the Tileflow map theme', result.error);
+    }
+  }
+
+  function syncSystemColorSchemeSubscription() {
+    unsubscribeSystemColorScheme?.();
+    unsubscribeSystemColorScheme = null;
+    if (theme !== 'system') return;
+    systemColorScheme = getTileflowSystemColorScheme();
+    unsubscribeSystemColorScheme = subscribeTileflowSystemColorScheme((scheme) => {
+      systemColorScheme = scheme;
     });
   }
 
@@ -1163,6 +1249,32 @@
     return typeof value === 'number' ? `${value}px` : value;
   }
 
+  function resolveThemeSelection(input: {
+    colorScheme: 'dark' | 'light';
+    manifestMap: TileflowRuntimeManifestMap | null;
+    source: TileflowMapProps['source'];
+    theme: TileflowMapProps['theme'];
+  }): Readonly<{error: boolean; name: string | undefined}> {
+    if (!input.manifestMap || input.source.kind !== 'tileflow') {
+      return {
+        error: false,
+        name:
+          input.source.kind === 'tileflow' && input.theme && input.theme !== 'system'
+            ? input.theme
+            : undefined,
+      };
+    }
+
+    try {
+      return {
+        error: false,
+        name: resolveTileflowRuntimeTheme(input.manifestMap, input.theme, input.colorScheme).name,
+      };
+    } catch {
+      return {error: true, name: undefined};
+    }
+  }
+
   function resolveRuntimeResolutionState(input: {
     currentManifestResolutionState: 'error' | 'loading' | 'not-needed' | 'ready';
     imageSize: {height: number; width: number} | null;
@@ -1171,10 +1283,12 @@
     runtimeImageUrl: string | undefined;
     runtimeStyle: ReturnType<typeof resolveTileflowRuntimeStyle>;
     shouldLoadManifest: boolean;
+    themeResolutionError: boolean;
   }): 'error' | 'idle' | 'loading' {
     if (input.shouldLoadManifest && input.currentManifestResolutionState !== 'ready') {
       return input.currentManifestResolutionState === 'error' ? 'error' : 'loading';
     }
+    if (input.themeResolutionError) return 'error';
     if (input.isImageMode) {
       if (input.runtimeImageUrl) return 'idle';
       return input.imageUrl === undefined && input.imageSize === null ? 'loading' : 'error';
@@ -1188,6 +1302,7 @@
   class={className}
   data-tileflow-capture-id={resolvedCaptureId}
   data-tileflow-map={mapName}
+  data-tileflow-theme={resolvedThemeName}
   data-tileflow-state={captureState}
   style={frameStyle}
 >

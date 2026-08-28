@@ -52,6 +52,7 @@ test('projects deterministic relative-only capture JSON', () => {
   assert.deepEqual(Object.keys(document.captures[0] ?? {}), [
     'scene',
     'map',
+    'theme',
     'target',
     'status',
     'outputPath',
@@ -122,6 +123,7 @@ test('normalizes promotable exploratory center and bounds definitions', () => {
     dpr: '2',
     height: '1200',
     map: 'madrid',
+    theme: 'light',
     width: '1200',
     zoom: '16.15',
   });
@@ -130,11 +132,13 @@ test('normalizes promotable exploratory center and bounds definitions', () => {
     browserInstall: true,
     config: 'tileflow.config.ts',
     map: 'madrid',
+    theme: 'light',
   });
 
-  assert.deepEqual(Object.keys(center), ['map', 'camera', 'viewport', 'target']);
+  assert.deepEqual(Object.keys(center), ['map', 'theme', 'camera', 'viewport', 'target']);
   assert.deepEqual(center, {
     map: 'madrid',
+    theme: 'light',
     camera: {
       type: 'center',
       center: [-3.69201, 40.40871],
@@ -147,6 +151,7 @@ test('normalizes promotable exploratory center and bounds definitions', () => {
   });
   assert.deepEqual(bounds, {
     map: 'madrid',
+    theme: 'light',
     camera: {
       type: 'bounds',
       bounds: [-3.8, 40.3, -3.6, 40.5],
@@ -165,6 +170,7 @@ test('normalizes promotable exploratory center and bounds definitions', () => {
         config: 'tileflow.config.ts',
         dpr: '3',
         map: 'madrid',
+        theme: 'light',
         zoom: '1',
       }),
     /Invalid exploratory capture.*dpr/,
@@ -185,6 +191,7 @@ test('normalizes promotable exploratory center and bounds definitions', () => {
   assert.deepEqual(Object.keys(document.captures[0] ?? {}), [
     'scene',
     'map',
+    'theme',
     'target',
     'status',
     'definition',
@@ -429,8 +436,12 @@ test('init creates a singular map and only creates a missing ignore file', async
   assert.equal(initialized.code, 0, initialized.stderr);
   const config = await readFile(join(fresh, 'tileflow.config.ts'), 'utf8');
   assert.match(config, /defineMap/);
+  assert.match(config, /defineTheme/);
   assert.match(config, /id: "madrid"/);
   assert.match(config, /extends: streets/);
+  assert.match(config, /themes: \{ light: streetsThemes\.light, dark: madridDark \}/);
+  assert.match(config, /defaultTheme: "light"/);
+  assert.match(config, /systemThemes: \{ light: "light", dark: "dark" \}/);
   assert.doesNotMatch(config, /\bglyphs\s*:/);
   assert.doesNotMatch(config, /\bmaps\s*:|\bbasemap(?:Version)?\s*:/);
   assert.equal(
@@ -457,7 +468,7 @@ test('init creates a singular map and only creates a missing ignore file', async
   const built = await runCli(fresh, ['build', '--out', 'dist/tileflow'], {});
   assert.equal(built.code, 0, `${built.stdout}\n${built.stderr}`);
   const style = JSON.parse(
-    await readFile(join(fresh, 'dist/tileflow/styles/madrid.json'), 'utf8'),
+    await readFile(join(fresh, 'dist/tileflow/styles/madrid/light.json'), 'utf8'),
   ) as {glyphs?: string};
   assert.equal(style.glyphs, 'https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf');
 
@@ -512,7 +523,7 @@ test('keeps selection and config failures on stderr with empty JSON stdout', asy
 
   const reservedExploratoryName = await runCli(
     directory,
-    ['capture', '--map', 'CON', '--center', '0,0', '--zoom', '1', '--json'],
+    ['capture', '--map', 'CON', '--theme', 'light', '--center', '0,0', '--zoom', '1', '--json'],
     {},
   );
   assert.equal(reservedExploratoryName.code, 1);
@@ -522,13 +533,25 @@ test('keeps selection and config failures on stderr with empty JSON stdout', asy
     /portable|reserved/i,
   );
 
+  const missingExploratoryTheme = await runCli(
+    directory,
+    ['capture', '--map', 'proof', '--center', '0,0', '--zoom', '1', '--json'],
+    {},
+  );
+  assert.equal(missingExploratoryTheme.code, 1);
+  assert.equal(missingExploratoryTheme.stdout, '');
+  assert.match(
+    parseFailureDocument(missingExploratoryTheme.stderr).diagnostics[0]?.message ?? '',
+    /requires one concrete --theme/u,
+  );
+
   await writeFile(
     join(directory, 'tileflow.config.ts'),
     tileflowMapFixture({
       id: 'proof',
       setup: `if (process.env.TILEFLOW_API_KEY) throw new Error('ambient key reached config');`,
       fields: `modules: {poi: {type: 'poi', unsupported: true}},
-  scenes: {proof: {camera: {type: 'center', center: [0, 0], zoom: 1}, viewport: {width: 64, height: 64}}}`,
+  scenes: {proof: {theme: 'light', camera: {type: 'center', center: [0, 0], zoom: 1}, viewport: {width: 64, height: 64}}}`,
     }),
   );
   const invalid = await runCli(directory, ['capture', 'proof', '--json'], {
@@ -554,6 +577,7 @@ test('removed raw style overrides fail at the config boundary and preserve outpu
       id: 'proof',
       fields: `overrides: [{kind: 'patch', id: 'streets-background', patch: {paint: {'background-color': 42}}}],
   scenes: {proof: {
+    theme: 'light',
     camera: {type: 'center', center: [0, 0], zoom: 1},
     viewport: {width: 64, height: 64}
   }}`,
@@ -624,7 +648,7 @@ test(
     attribution: 'Fixture data',
     schema: {type: 'openmaptiles', contractVersion: 1}
   },
-  scenes: {proof: {camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 256, height: 256}}}`,
+  scenes: {proof: {theme: 'light', camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 256, height: 256}}}`,
       }),
     );
     const result = await runCli(directory, ['capture', 'proof', '--json', '--no-browser-install'], {
@@ -681,6 +705,7 @@ test(
         }
       },
   scenes: {proof: {
+    theme: 'light',
     camera: {type: 'center', center: [0, 0], zoom: 1},
     viewport: {width: 256, height: 256}
   }}`,
@@ -726,6 +751,7 @@ test(
         'capture',
         '--map',
         'proof',
+        '--theme=light',
         '--center=0,0',
         '--zoom=1',
         '--width=128',
@@ -743,6 +769,7 @@ test(
     ).captures[0];
     assert.deepEqual(exploratoryEntry?.definition, {
       map: 'proof',
+      theme: 'light',
       camera: {type: 'center', center: [0, 0], zoom: 1, bearing: 0, pitch: 0},
       viewport: {width: 128, height: 128, dpr: 1},
       target: {kind: 'map'},
@@ -765,7 +792,7 @@ test(
       tileflowMapFixture({
         data: 'fixture',
         id: 'proof',
-        fields: `scenes: {application: {camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 320, height: 240}, target: {kind: 'application', path: '/proof?fixture=1', captureId: 'proof'}}}`,
+        fields: `scenes: {application: {theme: 'light', camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 320, height: 240}, target: {kind: 'application', path: '/proof?fixture=1', captureId: 'proof'}}}`,
       }),
     );
     let requests = 0;
@@ -773,7 +800,7 @@ test(
       requests += 1;
       response.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'});
       response.end(
-        '<!doctype html><style>html,body{margin:0}.map{width:211px;height:137px;background:#2468ac}</style><div class="map" data-tileflow-map="proof" data-tileflow-capture-id="proof" data-tileflow-state="idle"></div>',
+        '<!doctype html><style>html,body{margin:0}.map{width:211px;height:137px;background:#2468ac}</style><div class="map" data-tileflow-map="proof" data-tileflow-theme="light" data-tileflow-capture-id="proof" data-tileflow-state="idle"></div>',
       );
     });
     server.listen(0, '127.0.0.1');
@@ -883,6 +910,7 @@ function createCapture(scene: string): TileflowCapture {
     dpr: 1,
     height: 200,
     map: 'madrid',
+    theme: 'light',
     networkDependent: false,
     pngSha256: 'a'.repeat(64),
     renderer,
@@ -895,6 +923,7 @@ function createCapture(scene: string): TileflowCapture {
   return {
     scene,
     map: 'madrid',
+    theme: 'light',
     target: 'map',
     png: new Uint8Array([137, 80, 78, 71]),
     sha256: 'a'.repeat(64),

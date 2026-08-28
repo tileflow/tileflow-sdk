@@ -4,6 +4,8 @@ import {applySymbolStyle} from '../../cartography/layer-style';
 import {labelField, labelFieldExpression} from '../../cartography/localization';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import type {
+  TileflowColorStyleValue,
+  TileflowImageStyleValue,
   TileflowSymbolPlacementStyle,
   TileflowSymbolStyle,
   TileflowTextStyle,
@@ -157,13 +159,12 @@ export function compileLabels(
     shields: {
       default: symbolStyle(context, 'roads', {
         color: colors.labels.road,
-        minZoom: 8,
-        placement: 'line',
         size: 10,
-        spacing: 240,
         padding: 8,
         haloWidth: 1.8,
       }),
+      detail: {minZoom: 11, spacing: 240},
+      overview: {maxZoom: 11, minZoom: 6},
     },
     junctions: symbolStyle(context, 'roads', {
       color: colors.labels.road,
@@ -300,65 +301,94 @@ export function compileLabels(
           roads,
           semantics.roadClasses,
         );
+  const eligibleShieldRoads = shieldRoads.filter(
+    (roadClass) => !['pedestrian', 'service'].includes(roadClass),
+  );
   const shieldDefaults = styles.shields?.default;
-  const shieldNetworks = Object.entries(styles.shields?.networks ?? {}).sort(([left], [right]) =>
+  const shieldKinds = Object.entries(styles.shields?.kinds ?? {}).sort(([left], [right]) =>
     left.localeCompare(right),
   );
-  if (shieldDefaults && shieldDefaults.visible !== false && shieldRoads.length > 0) {
-    const baseFilter = [
+  const shieldTextColors = Object.entries(styles.shields?.textColors ?? {}).sort(
+    ([left], [right]) => left.localeCompare(right),
+  );
+  if (shieldDefaults && shieldDefaults.visible !== false && eligibleShieldRoads.length > 0) {
+    const shieldKindField = schema.fields.shieldKind;
+    const shieldLineLengthField = schema.fields.shieldLineLengthMeters;
+    const shieldRankField = schema.fields.shieldRank;
+    const shieldTextField = schema.fields.shieldText ?? schema.fields.ref;
+    const shieldTextColorField = schema.fields.shieldTextColor;
+    const commonFilter = [
       'all',
       ['has', schema.fields.ref],
-      ['==', ['geometry-type'], 'LineString'],
-      roadClassesFilter(schema.fields, shieldRoads as TileflowRoadClass[]),
+      ...(shieldKindField ? [['has', shieldKindField]] : []),
+      ['>=', ['to-number', ['get', schema.fields.refLength], 0], 1],
+      ['<=', ['to-number', ['coalesce', ['get', schema.fields.refLength], 99], 99], 6],
+      roadClassesFilter(schema.fields, eligibleShieldRoads as TileflowRoadClass[]),
     ];
-    const overriddenNetworks = shieldNetworks.map(([network]) => network);
-    result.push(
-      symbolContribution(
-        'labels.shields.default',
-        400,
-        applySymbolStyle(
-          {
-            id: 'streets-label-road-shield',
-            type: 'symbol',
-            source,
-            'source-layer': schema.layers.roadName,
-            filter:
-              overriddenNetworks.length === 0
-                ? baseFilter
-                : [
-                    'all',
-                    baseFilter,
-                    [
-                      '!',
-                      ['match', ['get', schema.fields.network], overriddenNetworks, true, false],
-                    ],
-                  ],
-          },
-          mergeTileflowDesign(shieldDefaults, {
-            text: {field: expression<string>(['to-string', ['get', schema.fields.ref]])},
-          }),
-        ),
-        'transport-symbols',
-      ),
-    );
-
-    for (const [network, networkStyle] of shieldNetworks) {
-      if (networkStyle.visible === false) continue;
+    const phases = [
+      ...(shieldKindField && schema.layers.roadShield
+        ? [
+            {
+              geometry: 'Point',
+              name: 'overview',
+              order: 400,
+              placement: 'point',
+              sourceLayer: schema.layers.roadShield,
+              style: styles.shields?.overview,
+            } as const,
+          ]
+        : []),
+      {
+        geometry: 'LineString',
+        name: 'detail',
+        order: 401,
+        placement: 'line',
+        sourceLayer: schema.layers.roadName,
+        style: styles.shields?.detail,
+      } as const,
+    ];
+    for (const phase of phases) {
+      if (phase.style?.visible === false) continue;
+      let style = mergeTileflowDesign(shieldDefaults, phase.style, {
+        placement: phase.placement,
+        ...(shieldRankField
+          ? {
+              priority: expression<number>(['*', -1, ['to-number', ['get', shieldRankField], 999]]),
+            }
+          : {}),
+        icon: {pitchAlignment: 'viewport', rotationAlignment: 'viewport'},
+        text: {
+          field: expression<string>(['to-string', ['get', shieldTextField]]),
+          pitchAlignment: 'viewport',
+          rotationAlignment: 'viewport',
+        },
+      });
+      const image = shieldImageMatch(shieldKindField, shieldKinds, style.icon?.image);
+      const color = shieldColorMatch(shieldTextColorField, shieldTextColors, style.text?.color);
+      style = mergeTileflowDesign(style, {
+        ...(image === undefined ? {} : {icon: {image}}),
+        ...(color === undefined ? {} : {text: {color}}),
+      });
       result.push(
         symbolContribution(
-          `labels.shields.networks.${network}`,
-          401 + order++,
+          `labels.shields.${phase.name}`,
+          phase.order,
           applySymbolStyle(
             {
-              id: `streets-label-road-shield-${network}`,
+              id: `streets-label-road-shield-${phase.name}`,
               type: 'symbol',
               source,
-              'source-layer': schema.layers.roadName,
-              filter: ['all', baseFilter, ['==', ['get', schema.fields.network], network]],
+              'source-layer': phase.sourceLayer,
+              filter: [
+                'all',
+                commonFilter,
+                ['==', ['geometry-type'], phase.geometry],
+                ...(phase.name === 'detail' && shieldLineLengthField
+                  ? [shieldLineLengthFilter(shieldLineLengthField)]
+                  : []),
+              ],
             },
-            mergeTileflowDesign(shieldDefaults, networkStyle, {
-              text: {field: expression<string>(['to-string', ['get', schema.fields.ref]])},
-            }),
+            style,
           ),
           'transport-symbols',
         ),
@@ -503,6 +533,59 @@ export function compileLabels(
   }
 
   return result;
+}
+
+function shieldLineLengthFilter(field: string): unknown[] {
+  const length = ['to-number', ['get', field], 0];
+  return [
+    'step',
+    ['zoom'],
+    ['>', length, 5_000],
+    12,
+    ['>', length, 2_500],
+    13,
+    ['>', length, 1_000],
+    14,
+    true,
+  ];
+}
+
+function shieldImageMatch(
+  field: string | undefined,
+  entries: readonly (readonly [string, {image: unknown}])[],
+  fallback: TileflowImageStyleValue | undefined,
+): TileflowImageStyleValue | undefined {
+  if (entries.length === 0 || !field) return fallback;
+  if (fallback === undefined) {
+    throw new TypeError(
+      'Road-shield image kinds require labels.styles.shields.default.icon.image.',
+    );
+  }
+  return expression<string>([
+    'match',
+    ['get', field],
+    ...entries.flatMap(([kind, style]) => [kind, style.image]),
+    fallback,
+  ]);
+}
+
+function shieldColorMatch(
+  field: string | undefined,
+  entries: readonly (readonly [string, {color: unknown}])[],
+  fallback: TileflowColorStyleValue | undefined,
+): TileflowColorStyleValue | undefined {
+  if (entries.length === 0 || !field) return fallback;
+  if (fallback === undefined) {
+    throw new TypeError(
+      'Road-shield text colors require labels.styles.shields.default.text.color.',
+    );
+  }
+  return expression<string>([
+    'match',
+    ['get', field],
+    ...entries.flatMap(([name, style]) => [name, style.color]),
+    fallback,
+  ]);
 }
 
 function symbolStyle(

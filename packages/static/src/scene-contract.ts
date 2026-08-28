@@ -20,6 +20,24 @@ const colorSchema = z.string().regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, {
   message: 'Expected a hex color like #C6A15B',
 });
 
+const portableIdSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z][a-z0-9-]{0,63}$/u, {
+    message: 'Expected lowercase kebab-case beginning with a letter',
+  })
+  .refine(
+    (name) =>
+      !['constructor', 'prototype'].includes(name) &&
+      !/^(?:AUX|CON|NUL|PRN|COM[1-9]|LPT[1-9])$/i.test(name),
+    'Expected a portable identifier that is not a reserved filename or prototype key',
+  );
+
+const concreteThemeSchema = portableIdSchema.refine((value) => value !== 'system', {
+  message: 'Static maps require a concrete theme; "system" is browser-only',
+});
+
 const sizeSchema = z
   .object({
     dpr: z.literal(1).optional(),
@@ -132,9 +150,10 @@ export const staticOverlaySchema = z.discriminatedUnion('type', [
 
 export const staticSceneSchema = z.object({
   camera: z.discriminatedUnion('type', [centerCameraSchema, boundsCameraSchema]),
-  map: z.string().trim().min(1).max(128),
+  map: portableIdSchema,
   overlays: z.array(staticOverlaySchema).max(staticSceneLimits.maxOverlays).default([]),
   size: sizeSchema,
+  theme: concreteThemeSchema,
 });
 
 export type StaticCoordinate = z.infer<typeof coordinateSchema>;

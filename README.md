@@ -16,21 +16,21 @@ in the [SDK responsibility and delivery contract](docs/contracts/sdk-responsibil
 
 ## Packages
 
-| Package                                           | Purpose                                                                                                    |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| [`@tileflow/core`](packages/core)                 | Typed map language, semantic modules, validation, and MapLibre style compilation                           |
-| [`@tileflow/maps`](packages/maps)                 | Official Streets, Ferraris, Härad, Siegfried, Soundings, Streets Dark, Cyberpunk, Matrix, and Verdant maps |
-| [`@tileflow/interactions`](packages/interactions) | Portable annotations, tooltips, popups, state, and MapLibre interaction lifecycle                          |
-| [`@tileflow/static`](packages/static)             | Hosted Static Maps scene schemas, overlays, and bounded request client                                     |
-| [`@tileflow/dev`](packages/dev)                   | Node integration utilities, watched artifacts, icons, fonts, and feature inspection                        |
-| [`@tileflow/capture`](packages/capture)           | Pinned headless capture, receipts, visual analysis, and baseline comparison                                |
-| [`@tileflow/vite`](packages/vite)                 | Vite development and build integration                                                                     |
-| [`@tileflow/next`](packages/next)                 | Next.js development and build integration                                                                  |
-| [`@tileflow/webpack`](packages/webpack)           | Webpack development and build integration                                                                  |
-| [`@tileflow/react`](packages/react)               | React map and static-image components                                                                      |
-| [`@tileflow/vue`](packages/vue)                   | Vue map component                                                                                          |
-| [`@tileflow/svelte`](packages/svelte)             | Svelte map component                                                                                       |
-| [`@tileflow/cli`](packages/cli)                   | `tileflow` init, validate, preview (`dev` alias), capture, visual, icons, build, and deploy commands       |
+| Package                                           | Purpose                                                                                              |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| [`@tileflow/core`](packages/core)                 | Typed map language, semantic modules, validation, and MapLibre style compilation                     |
+| [`@tileflow/maps`](packages/maps)                 | Official Streets, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, and Verdant maps         |
+| [`@tileflow/interactions`](packages/interactions) | Portable annotations, tooltips, popups, state, and MapLibre interaction lifecycle                    |
+| [`@tileflow/static`](packages/static)             | Hosted Static Maps scene schemas, overlays, and bounded request client                               |
+| [`@tileflow/dev`](packages/dev)                   | Node integration utilities, watched artifacts, and the local comparison/inspection workbench         |
+| [`@tileflow/capture`](packages/capture)           | Pinned headless capture, receipts, two-style review, visual analysis, and baseline comparison        |
+| [`@tileflow/vite`](packages/vite)                 | Vite development and build integration                                                               |
+| [`@tileflow/next`](packages/next)                 | Next.js development and build integration                                                            |
+| [`@tileflow/webpack`](packages/webpack)           | Webpack development and build integration                                                            |
+| [`@tileflow/react`](packages/react)               | React map and static-image components                                                                |
+| [`@tileflow/vue`](packages/vue)                   | Vue map component                                                                                    |
+| [`@tileflow/svelte`](packages/svelte)             | Svelte map component                                                                                 |
+| [`@tileflow/cli`](packages/cli)                   | `tileflow` init, validate, preview (`dev` alias), capture, visual, icons, build, and deploy commands |
 
 ## Quick start
 
@@ -45,39 +45,58 @@ npm install --save-dev --save-exact @tileflow/cli@alpha
 Create `tileflow.config.ts`:
 
 ```ts
-import {defineMap, labels, poi, roads} from '@tileflow/core';
-import {streets} from '@tileflow/maps';
+import {defineMap, defineTheme, labels, poi, roads} from '@tileflow/core';
+import {streets, streetsThemes} from '@tileflow/maps';
+
+const madridDark = defineTheme(streetsThemes.dark, {
+  id: 'madrid-dark',
+  version: 1,
+  colorScheme: 'dark',
+  tokens: {
+    color: {
+      'surface.background': '#080b12',
+      'surface.land': '#0d1320',
+      'surface.water': '#081e2e',
+    },
+  },
+});
 
 export default defineMap({
   id: 'madrid',
   name: 'Madrid',
   version: 1,
   extends: streets,
+  themes: {light: streetsThemes.light, dark: madridDark},
+  defaultTheme: 'light',
+  systemThemes: {light: 'light', dark: 'dark'},
   modules: {
     roads: roads({detail: 'streets', hierarchy: 'clear'}),
     labels: labels({roads: 'major'}),
-    poi: poi({categories: ['food', 'culture']}),
+    poi: poi({categories: ['food-drink', 'arts-entertainment'], density: 3}),
   },
 });
 ```
 
-`@tileflow/maps` also exports `ferraris`, `harad`, `siegfried`, `soundings`, `streetsDark`,
-`cyberpunk`, `matrix`, and `verdant`. Streets, Ferraris, Härad, Siegfried, Soundings, and Verdant are complete
-first-party roots. They share Core's semantic Streets compiler, but each defines its design
-directly without importing or extending another official map. Siegfried adds browser-derived
-contours, three-ink terrain engraving patterns, and locally packaged Cormorant Garamond faces;
+The theme collection is a complete visual contract. Module recipes refer to semantic tokens, so the
+same map structure compiles into one independent Style JSON per named theme. `system` is only a
+browser selection policy; builds, captures, URLs, and receipts always use `light`, `dark`, or
+another concrete name.
+
+`@tileflow/maps` also exports `ferraris`, `harad`, `siegfried`, `soundings`, `cyberpunk`, `matrix`,
+and `verdant`. All eight official maps are complete first-party roots. They share Core's semantic
+Streets compiler, but each defines its design directly without importing or extending another
+official map. Siegfried adds browser-derived contours, coordinated light/dark three-ink terrain
+engraving patterns, system-theme selection, and locally packaged Cormorant Garamond faces;
 Ferraris, Härad, Soundings, and Verdant likewise declare only their own package-owned assets.
-Streets Dark and Cyberpunk are ordinary maps that extend Streets; Matrix extends Cyberpunk with a
-monochrome phosphor-green palette and its own terminal-style symbols.
-For the complete dark Streets map, import `streetsDark` and use it as the `extends` value;
-`theme: {mode: 'dark'}` changes defaults for omitted styles but does not recolor exact styles in an
-inherited curated map. The package-owned icons, patterns, and Cyberpunk font files ship under
-`assets/`. Streets, Ferraris, Härad, Soundings, and Verdant each declare the canonical Tileflow glyph
-URL with the exact `Noto Sans Regular` and `Noto Sans Bold` stacks. Cyberpunk selects the local
-`Oxanium Medium` and `Oxanium SemiBold` faces; Siegfried selects local Cormorant Garamond Regular,
-SemiBold, and Italic faces. The package exports each map's reusable icon and font directory
-descriptors; Streets Dark composes its two directories in order so its dark `sidewalk-dot` replaces
-the base icon without duplicating the rest of the catalog.
+Streets and Siegfried contain coordinated `light` and `dark` themes; Cyberpunk and the monochrome
+phosphor-green Matrix independently own their HUD designs and symbols. The package-owned icons,
+patterns, and per-map font files ship under `assets/`. Streets, Ferraris,
+Härad, Soundings, and Verdant each declare the canonical Tileflow glyph
+URL with the exact `Noto Sans Regular` and `Noto Sans Bold` stacks. Cyberpunk and Matrix each select
+their own local copies of the `Oxanium Medium` and `Oxanium SemiBold` faces; Siegfried selects local
+Cormorant Garamond Regular, SemiBold, and Italic faces. The package exports each map's reusable icon and font directory
+descriptors. Streets and Siegfried own their light and dark pattern variants inside one asset
+closure because themes may select different image tokens without changing map structure.
 
 Then validate and run the application through its normal dev server:
 
@@ -107,9 +126,10 @@ pnpm build
 pnpm run smoke:capture-public
 ```
 
-The packed-consumer smoke installs the same `core`, `maps`, `dev`, `capture`, and `cli` tarballs users
-receive, audits their contents, and renders a deterministic local capture with the exact Playwright
-Chromium headless shell.
+The packed-consumer smoke installs the same public tarballs users receive, audits their contents,
+type-checks the public Capture Review contract from a clean TypeScript consumer, renders a
+deterministic local capture with the exact Playwright Chromium headless shell, and executes the
+receipt-authenticated Review API from the installed tarball.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Every package source manifest
 uses `0.0.0-development`; after a normal pull request reaches `main` and its complete CI succeeds,

@@ -1,10 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
   <title>Shopping</title>
-  <desc>Original Tileflow shopping pictogram.</desc>
-  <rect x="2.25" y="3.25" width="19.5" height="19.5" rx="6.25" fill="#44515E" opacity=".14"/>
-  <rect x="2.25" y="2.25" width="19.5" height="19.5" rx="6.25" fill="#FFFFFF"/>
-  <rect x="4" y="4" width="16" height="16" rx="4.75" fill="#4B96F3"/>
-  <g fill="none" stroke="#FFFFFF" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M7.5 10h9l.75 7H6.75zM9.5 10V8.75a2.5 2.5 0 0 1 5 0V10"/>
-  </g>
+  <desc>Tileflow POI disc with a Maki shop pictogram, CC0-1.0.</desc>
+  <circle cx="12" cy="12.75" r="9.5" fill="#44515E" opacity=".16"/>
+  <circle cx="12" cy="12" r="9.5" fill="#FFFFFF"/>
+  <circle cx="12" cy="12" r="8" fill="#4F84D7"/>
+  <path
+    fill="#FFFFFF"
+    transform="translate(6.375 6.375) scale(.75)"
+    d="M13.33 5H11.5l-.39-2.33a2 2 0 0 0-1.41-1.49A3.7 3.7 0 0 0 8.62 1H6.38a3.7 3.7 0 0 0-1.08.18 2 2 0 0 0-1.41 1.49L3.5 5H1.67a.5.5 0 0 0-.48.65l1.88 6.3A1.5 1.5 0 0 0 4.5 13h6a1.5 1.5 0 0 0 1.42-1.05l1.88-6.3a.5.5 0 0 0-.47-.65ZM4.52 5l.36-2.17a1 1 0 0 1 .74-.7c.25-.08.5-.12.76-.13h2.24c.26.01.52.05.77.13a1 1 0 0 1 .74.7l.35 2.17H4.52Z"
+  />
 </svg>

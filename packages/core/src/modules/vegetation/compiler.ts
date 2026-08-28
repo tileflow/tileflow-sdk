@@ -38,9 +38,9 @@ export function compileVegetation(
       minZoom,
       mode,
       threeDimensional: {
-        barkColor: '#929B7B',
-        broadleafColors: ['#7FA97B', '#8BB08C', '#A9C995', '#B0D1AA'],
-        coniferColors: ['#5D966B', '#76AA7D', '#91BD94'],
+        barkColor: context.colors.vegetation.tree.bark,
+        broadleafColors: context.colors.vegetation.tree.broadleaf,
+        coniferColors: context.colors.vegetation.tree.conifer,
         crownScale: 1,
         heightScale: 1,
       },

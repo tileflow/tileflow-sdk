@@ -9,16 +9,19 @@ import {
   tileflowCaptureSceneSchemaVersion,
   validateTileflowMap,
 } from '../src/index';
+import {testLightTheme} from './map-fixture';
 
 const captureRoot = defineRootMap({
   id: 'capture-root',
   version: 1,
   root: {compiler: 'streets', compilerVersion: 1},
+  defaultTheme: 'light',
   glyphs: {
     kind: 'url',
     url: 'https://fixtures.tileflow.test/fonts/{fontstack}/{range}.pbf',
     fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
   },
+  themes: {light: testLightTheme},
 });
 
 const map = defineMap({
@@ -28,10 +31,12 @@ const map = defineMap({
   extends: captureRoot,
   scenes: {
     desktop: {
+      theme: 'light',
       camera: {type: 'center', center: [-3.7038, 40.4168], zoom: 12},
       viewport: {width: 1_200, height: 800, dpr: 2},
     },
     application: {
+      theme: 'light',
       camera: {
         type: 'bounds',
         bounds: [-3.8, 40.3, -3.6, 40.5],
@@ -60,6 +65,7 @@ test('singular maps own portable capture scenes without repeating their map id',
 
   assert.deepEqual(normalizeTileflowCaptureScene({...map.scenes.desktop, map: map.id}), {
     map: 'madrid',
+    theme: 'light',
     camera: {
       type: 'center',
       center: [-3.7038, 40.4168],
@@ -72,6 +78,7 @@ test('singular maps own portable capture scenes without repeating their map id',
   });
   assert.deepEqual(normalizeTileflowCaptureScene({...map.scenes.application, map: map.id}), {
     map: 'madrid',
+    theme: 'light',
     camera: {
       type: 'bounds',
       bounds: [-3.8, 40.3, -3.6, 40.5],
@@ -101,6 +108,26 @@ test('rejects invalid scene geometry, targets, names, and cross-map references',
       ...map,
       scenes: {
         proof: {
+          camera: {type: 'center', center: [0, 0], zoom: 1},
+          viewport: {width: 320, height: 200},
+        },
+      },
+    },
+    {
+      ...map,
+      scenes: {
+        proof: {
+          theme: 'system',
+          camera: {type: 'center', center: [0, 0], zoom: 1},
+          viewport: {width: 320, height: 200},
+        },
+      },
+    },
+    {
+      ...map,
+      scenes: {
+        proof: {
+          theme: 'light',
           camera: {type: 'center', center: [0, 91], zoom: 1},
           viewport: {width: 320, height: 200},
         },
@@ -110,6 +137,7 @@ test('rejects invalid scene geometry, targets, names, and cross-map references',
       ...map,
       scenes: {
         proof: {
+          theme: 'light',
           camera: {type: 'center', center: [0, 0], zoom: 1},
           viewport: {width: 4_096, height: 4_096, dpr: 2},
         },
@@ -119,6 +147,7 @@ test('rejects invalid scene geometry, targets, names, and cross-map references',
       ...map,
       scenes: {
         proof: {
+          theme: 'light',
           camera: {type: 'center', center: [0, 0], zoom: 1},
           viewport: {width: 320, height: 200},
           target: {kind: 'application', path: 'https://example.com'},
@@ -129,6 +158,7 @@ test('rejects invalid scene geometry, targets, names, and cross-map references',
       ...map,
       scenes: {
         CON: {
+          theme: 'light',
           camera: {type: 'center', center: [0, 0], zoom: 1},
           viewport: {width: 320, height: 200},
         },
@@ -138,6 +168,7 @@ test('rejects invalid scene geometry, targets, names, and cross-map references',
       ...map,
       scenes: {
         proof: {
+          theme: 'light',
           map: 'madrid',
           camera: {type: 'center', center: [0, 0], zoom: 1},
           viewport: {width: 320, height: 200},
@@ -148,6 +179,7 @@ test('rejects invalid scene geometry, targets, names, and cross-map references',
       ...map,
       scenes: {
         proof: {
+          theme: 'light',
           map: 'another-map',
           camera: {type: 'center', center: [0, 0], zoom: 1},
           viewport: {width: 320, height: 200},
@@ -164,6 +196,7 @@ test('rejects invalid scene geometry, targets, names, and cross-map references',
 
 test('rejects non-canonical scene ids and non-plain scene records', () => {
   const scene = {
+    theme: 'light',
     camera: {type: 'center' as const, center: [0, 0] as [number, number], zoom: 1},
     viewport: {width: 320, height: 200},
   };

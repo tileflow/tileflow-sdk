@@ -1,8 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
   <title>Health</title>
-  <desc>Original Tileflow hospital pictogram.</desc>
-  <rect x="2.25" y="3.25" width="19.5" height="19.5" rx="6.25" fill="#44515E" opacity=".14"/>
-  <rect x="2.25" y="2.25" width="19.5" height="19.5" rx="6.25" fill="#FFFFFF"/>
-  <rect x="4" y="4" width="16" height="16" rx="4.75" fill="#F88181"/>
-  <path fill="#FFFFFF" d="M10.45 6.75h3.1v3.7h3.7v3.1h-3.7v3.7h-3.1v-3.7h-3.7v-3.1h3.7z"/>
+  <desc>Tileflow POI disc with a Maki hospital pictogram, CC0-1.0.</desc>
+  <circle cx="12" cy="12.75" r="9.5" fill="#44515E" opacity=".16"/>
+  <circle cx="12" cy="12" r="9.5" fill="#FFFFFF"/>
+  <circle cx="12" cy="12" r="8" fill="#C95E6B"/>
+  <path
+    fill="#FFFFFF"
+    transform="translate(6.375 6.375) scale(.75)"
+    d="M7 1a1 1 0 0 0-1 1v4H2a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h4v4a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1V9h4a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1H9V2a1 1 0 0 0-1-1H7Z"
+  />
 </svg>

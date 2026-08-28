@@ -1,7 +1,7 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createStyle, expression, land, poi, water} from '../src';
+import {createStyle, expression, fixed, land, poi, water} from '../src';
 import {tileflowCompilerMetadataKeys} from '../src/cartography/contributions';
 import {
   addModuleLayer,
@@ -35,7 +35,7 @@ test('optimizer-generated IDs remain unique in the final style', () => {
   assert.deepEqual(validateStyleMin(style as never), []);
 });
 
-test('createStyle refuses to return a MapLibre-invalid expression', () => {
+test('createStyle rejects an unthemed dynamic color expression before finalization', () => {
   assert.throws(
     () =>
       compileTestMap({
@@ -43,7 +43,7 @@ test('createStyle refuses to return a MapLibre-invalid expression', () => {
           water: water({bodies: {fill: {color: expression<string>(['get'])}}}),
         },
       }),
-    /not MapLibre-valid/,
+    /theme audit failed/u,
   );
 });
 
@@ -110,19 +110,67 @@ test('closes every MapLibre image property against the prepared sprite', () => {
     'fill-extrusion-pattern',
   ] as const) {
     assert.throws(
-      () => compileImageReferenceLayer({property, value: `missing-${property}`}),
+      () =>
+        compileImageReferenceLayer({
+          property,
+          value: fixed(`missing-${property}`, {reason: 'Missing-image validation fixture.'}),
+        }),
       new RegExp(`missing-${property}`),
     );
   }
 });
 
-test('enumerates every static branch of image expressions and rejects dynamic names', () => {
+test('enumerates every static branch of image expressions and rejects unthemed dynamic names', () => {
   for (const [operator, value] of [
-    ['match', ['match', ['get', 'kind'], 'a', 'known', 'missing-match']],
-    ['case', ['case', ['boolean', ['get', 'active'], false], 'missing-case', 'known']],
-    ['step', ['step', ['zoom'], 'known', 10, 'missing-step']],
-    ['interpolate', ['interpolate', ['linear'], ['zoom'], 0, 'known', 10, 'missing-interpolate']],
-    ['image', ['coalesce', ['image', 'known'], ['image', 'missing-image']]],
+    [
+      'match',
+      [
+        'match',
+        ['get', 'kind'],
+        'a',
+        fixed('known', {reason: 'Static image-expression fixture.'}),
+        fixed('missing-match', {reason: 'Static image-expression fixture.'}),
+      ],
+    ],
+    [
+      'case',
+      [
+        'case',
+        ['boolean', ['get', 'active'], false],
+        fixed('missing-case', {reason: 'Static image-expression fixture.'}),
+        fixed('known', {reason: 'Static image-expression fixture.'}),
+      ],
+    ],
+    [
+      'step',
+      [
+        'step',
+        ['zoom'],
+        fixed('known', {reason: 'Static image-expression fixture.'}),
+        10,
+        fixed('missing-step', {reason: 'Static image-expression fixture.'}),
+      ],
+    ],
+    [
+      'interpolate',
+      [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        0,
+        fixed('known', {reason: 'Static image-expression fixture.'}),
+        10,
+        fixed('missing-interpolate', {reason: 'Static image-expression fixture.'}),
+      ],
+    ],
+    [
+      'image',
+      [
+        'coalesce',
+        ['image', fixed('known', {reason: 'Static image-expression fixture.'})],
+        ['image', fixed('missing-image', {reason: 'Static image-expression fixture.'})],
+      ],
+    ],
   ] as const) {
     assert.throws(
       () => compileImageReferenceLayer({property: 'icon-image', value}),
@@ -134,8 +182,12 @@ test('enumerates every static branch of image expressions and rejects dynamic na
     () =>
       compileImageReferenceLayer({
         property: 'icon-image',
-        value: ['concat', 'icon-', ['get', 'kind']],
+        value: [
+          'concat',
+          fixed('icon-', {reason: 'Dynamic image-expression validation fixture.'}),
+          ['get', 'kind'],
+        ],
       }),
-    /dynamic "concat" output/u,
+    /theme audit failed/u,
   );
 });

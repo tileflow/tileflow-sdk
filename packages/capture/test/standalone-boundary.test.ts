@@ -206,6 +206,7 @@ function captureError(code: string, phase: string): (error: unknown) => boolean 
 
 const scene: NormalizedTileflowCaptureScene = {
   map: 'proof',
+  theme: 'light',
   camera: {type: 'center', center: [0, 0], zoom: 1, bearing: 0, pitch: 0},
   viewport: {width: 64, height: 64, dpr: 1},
   target: {kind: 'map'},

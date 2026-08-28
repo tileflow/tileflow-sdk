@@ -55,7 +55,7 @@ const poiInteractions = [
   {
     id: 'poi-details',
     popup: {content: {kind: 'view', name: 'poi-card'}},
-    target: {categories: ['food'], domain: 'poi', kind: 'semantic-feature'},
+    target: {categories: ['food-drink'], domain: 'poi', kind: 'semantic-feature'},
     tooltip: {content: {field: 'name', fallback: 'Point of interest', kind: 'field'}},
   },
 ] as const satisfies readonly TileflowInteractionBinding[];

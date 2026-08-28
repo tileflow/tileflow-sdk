@@ -14,12 +14,14 @@ test('renders bounded framework-neutral readiness attributes in the loading stat
         imageUrl: 'data:image/png;base64,iVBORw0KGgo=',
         mode: 'image',
         source: {kind: 'tileflow', map: 'main'},
+        theme: 'dark',
       }),
   });
   const html = await renderToString(app);
 
   assert.match(html, /data-tileflow-capture-id="proof-map"/);
   assert.match(html, /data-tileflow-map="main"/);
+  assert.match(html, /data-tileflow-theme="dark"/);
   assert.match(html, /data-tileflow-state="loading"/);
 });
 

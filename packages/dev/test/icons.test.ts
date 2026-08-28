@@ -14,7 +14,6 @@ import {
   siegfried,
   soundings,
   streets,
-  streetsDark,
   verdant,
 } from '@tileflow/maps';
 import {
@@ -33,9 +32,18 @@ const streetsIconIds = [
   'lodging',
   'major-transit',
   'oneway',
+  'parking',
+  'road-shield-circle-neutral',
+  'road-shield-rectangle-blue',
+  'road-shield-rectangle-green',
+  'road-shield-rectangle-neutral',
+  'road-shield-rectangle-orange',
+  'road-shield-rectangle-red',
+  'road-shield-rectangle-yellow',
   'services',
   'shopping',
   'sidewalk-dot',
+  'sidewalk-dot-dark',
 ] as const;
 
 test('prepares inherited Streets directories without mutating the authored map', async () => {
@@ -77,7 +85,7 @@ test('prepares inherited Streets directories without mutating the authored map',
   });
 });
 
-test('composes every official map from package-owned ordered directories', async () => {
+test('prepares every independent official root from its package-owned directories', async () => {
   await withFixture(async (cwd) => {
     const project: TileflowBuildCatalog = {
       maps: {
@@ -88,7 +96,6 @@ test('composes every official map from package-owned ordered directories', async
         siegfried,
         soundings,
         streets,
-        streetsDark,
         verdant,
       },
     };
@@ -97,12 +104,7 @@ test('composes every official map from package-owned ordered directories', async
       compiled.packages.map((iconPackage) => [iconPackage.contentHash, iconPackage]),
     );
     const expectedNames = {
-      cyberpunk: [
-        ...streetsIconIds,
-        'cyber-circuit',
-        'cyber-data-grid',
-        'cyber-target-brackets',
-      ].sort(),
+      cyberpunk: ['cyber-circuit', 'cyber-data-grid', 'cyber-target-brackets'],
       ferraris: [
         'ferraris-crop-hatch',
         'ferraris-heath',
@@ -125,13 +127,17 @@ test('composes every official map from package-owned ordered directories', async
         'harad-water-lines',
         'harad-wetland',
       ],
-      matrix: [
-        ...streetsIconIds,
-        'matrix-crt-scanlines',
-        'matrix-data-grid',
-        'matrix-poi-node',
-      ].sort(),
+      matrix: ['matrix-crt-scanlines', 'matrix-data-grid', 'matrix-poi-node'],
       siegfried: [
+        'siegfried-dark-forest',
+        'siegfried-dark-glacier',
+        'siegfried-dark-gravel',
+        'siegfried-dark-orchard',
+        'siegfried-dark-paper-grain',
+        'siegfried-dark-rock',
+        'siegfried-dark-scree',
+        'siegfried-dark-water-lines',
+        'siegfried-dark-wetland',
         'siegfried-forest',
         'siegfried-glacier',
         'siegfried-gravel',
@@ -155,7 +161,6 @@ test('composes every official map from package-owned ordered directories', async
         'soundings-wreck',
       ],
       streets: streetsIconIds,
-      streetsDark: streetsIconIds,
       verdant: [
         'coffee',
         'crosswalk',
@@ -181,7 +186,7 @@ test('composes every official map from package-owned ordered directories', async
     } as const;
 
     assert.deepEqual(compiled.watchPaths, []);
-    assert.equal(compiled.packages.length, 9);
+    assert.equal(compiled.packages.length, 8);
     for (const binding of compiled.bindings) {
       assert.deepEqual(
         packagesByHash.get(binding.packageHash)?.manifest.iconNames,
@@ -190,7 +195,7 @@ test('composes every official map from package-owned ordered directories', async
     }
 
     const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
-    assert.equal(prepared.assets.length, 36);
+    assert.equal(prepared.assets.length, 32);
     for (const binding of compiled.bindings) {
       assert.deepEqual(prepared.mapAssets[binding.mapName]?.icons?.ids, binding.iconIds);
     }

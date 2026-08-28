@@ -75,7 +75,7 @@ const serviceTypeValues = {
 
 const treatmentPaintDefaults = {
   blur: 0,
-  color: '#000000',
+  color: undefined,
   dash: [1, 0] as readonly number[],
   gapWidth: 0,
   offset: 0,
@@ -141,7 +141,14 @@ export function compileRoads(
           ? []
           : roadTreatmentPhaseConditions(treatments, structure, phase);
         if (!style && materializingConditions.length === 0) continue;
-        const treatedStyle = applyRoadTreatments(style ?? {}, treatments, structure, phase);
+        const phaseDefaults = roadTreatmentPhaseDefaults(context, roadClass, phase);
+        const treatedStyle = applyRoadTreatments(
+          mergeTileflowDesign(phaseDefaults, style ?? {}),
+          treatments,
+          structure,
+          phase,
+          phaseDefaults.color as string,
+        );
         contributions.push({
           kind: 'layer',
           layer: applyLineStyle(
@@ -180,7 +187,13 @@ export function compileRoads(
       const hatch = structureConfig.hatch;
       const fill = structureConfig.fill;
       if (hatch && hatch.visible !== false && fill && fill.visible !== false) {
-        const treatedFill = applyRoadTreatments(fill, treatments, structure, 'fill');
+        const treatedFill = applyRoadTreatments(
+          fill,
+          treatments,
+          structure,
+          'fill',
+          roadColor(context, roadClass),
+        );
         const size =
           hatch.size === undefined
             ? scaleStyleValue(treatedFill.width ?? 1, 0.68)
@@ -194,7 +207,7 @@ export function compileRoads(
               ? hatch.pattern
               : widthMatchedHatchPattern(
                   hatch.pattern,
-                  hatch.patternWidths,
+                  hatch.patternWidths as readonly number[],
                   treatedFill.width ?? 1,
                   minZoom,
                   maxZoom,
@@ -610,6 +623,9 @@ function compileCrossings(
           'all',
           ['==', ['geometry-type'], 'Point'],
           ['==', ['get', fields.subclass], 'crossing'],
+          ['!=', ['get', fields.crossing], 'no'],
+          ['has', fields.markings],
+          ['match', ['get', fields.markings], ['no', 'none', 'unmarked'], false, true],
         ],
       },
       config,
@@ -869,6 +885,7 @@ function applyRoadTreatments(
   treatments: readonly RoadTreatmentEntry[],
   structure: TileflowRoadStructure,
   phase: 'casing' | 'fill' | 'shadow',
+  fallbackColor: string,
 ): typeof base {
   const result = {...base} as Record<string, unknown>;
   const paintProperties = [
@@ -892,7 +909,7 @@ function applyRoadTreatments(
       result[property] = conditionalStyleValue(
         result[property],
         branches,
-        treatmentPaintDefaults[property],
+        property === 'color' ? fallbackColor : treatmentPaintDefaults[property],
       );
     }
   }
@@ -900,7 +917,7 @@ function applyRoadTreatments(
   const widthScales = treatments.flatMap(({condition, style}) =>
     style.widthScale === undefined
       ? []
-      : [{condition, scale: style.widthScale} satisfies WidthScaleEntry],
+      : [{condition, scale: style.widthScale as number} satisfies WidthScaleEntry],
   );
   if (widthScales.length > 0) {
     result.width = conditionalWidthScaleValue(
@@ -1143,6 +1160,18 @@ function roadColor(context: TileflowDomainCompileContext, roadClass: TileflowRoa
     return context.colors.roads.path;
   }
   return context.colors.roads.minor;
+}
+
+function roadTreatmentPhaseDefaults(
+  context: TileflowDomainCompileContext,
+  roadClass: TileflowRoadClass,
+  phase: 'casing' | 'fill' | 'shadow',
+): TileflowLineStyle {
+  return {
+    color: phase === 'fill' ? roadColor(context, roadClass) : context.colors.roads.casing,
+    opacity: phase === 'shadow' ? 0.24 : 1,
+    width: 1,
+  };
 }
 
 function roadWidth(roadClass: TileflowRoadClass, scale: number) {

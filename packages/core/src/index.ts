@@ -10,13 +10,19 @@ export {
   tileflowCaptureCameraSchema,
   tileflowCaptureCenterCameraSchema,
   tileflowCaptureMapTargetSchema,
-  tileflowPortableIdSchema,
   tileflowCaptureSceneLimits,
   tileflowCaptureSceneSchema,
   tileflowCaptureSceneSchemaVersion,
   tileflowCaptureTargetSchema,
   tileflowCaptureViewportSchema,
 } from './capture-scene';
+export {
+  isTileflowPortableId,
+  isTileflowThemeName,
+  tileflowPortableIdMaximumLength,
+  tileflowPortableIdSchema,
+  tileflowThemeNameSchema,
+} from './portable-identity';
 export type {
   NormalizedTileflowCaptureScene,
   TileflowCaptureApplicationTarget,
@@ -31,34 +37,19 @@ export type {
 export type {
   MapLibreStyle,
   TileflowAerodromeCodeDetail,
-  TileflowBaseColors,
-  TileflowBoundaryColorConfig,
-  TileflowBuildingColorConfig,
   TileflowColor,
-  TileflowColorConfig,
-  TileflowColors,
-  TileflowHydroColorConfig,
-  TileflowLabelColorConfig,
   TileflowLabelDetail,
   TileflowLabelLanguage,
   TileflowLabelStyles,
   TileflowLabelsModuleConfig,
   TileflowLabelsModuleOptions,
-  TileflowLandcoverColorConfig,
-  TileflowLanduseColorConfig,
   TileflowLight,
-  TileflowPoi,
   TileflowPoiCategory,
   TileflowPoiCategoryStyle,
-  TileflowPoiClassMapping,
   TileflowPoiColorMode,
-  TileflowPoiColorConfig,
   TileflowPoiDensity,
-  TileflowPoiIcons,
-  TileflowPoiLabels,
   TileflowPoiModuleConfig,
   TileflowPoiModuleOptions,
-  TileflowPoiRankLimit,
   TileflowProjection,
   TileflowPlaceLabelClass,
   TileflowRoadOutline,
@@ -75,7 +66,6 @@ export type {
   TileflowRoadShieldStyles,
   TileflowRoadModifier,
   TileflowMountainBikeScale,
-  TileflowRoadColorConfig,
   TileflowRoadRestriction,
   TileflowRoadRoundaboutStyle,
   TileflowRoadServiceType,
@@ -87,7 +77,6 @@ export type {
   TileflowRoadTreatmentLineStyle,
   TileflowRoadTreatmentStyle,
   TileflowRoadWeight,
-  ResolvedTileflowTypography,
   TileflowTerrain,
   TileflowTerrainConfig,
   TileflowTerrainContourLabelStyle,
@@ -97,18 +86,13 @@ export type {
   TileflowTerrainHillshadeStyle,
   TileflowTerrainLayerRange,
   TileflowTerrainMode,
-  TileflowThemeConfig,
-  TileflowThemeModulesConfig,
-  TileflowThemeMode,
-  TileflowTypography,
-  TileflowTypographyDomain,
-  TileflowTypographyStyle,
   TileflowViewConfig,
   TileflowWaterLabelClass,
   MapLibreSprite,
   ValidationMessage,
   ValidationResult,
 } from './types';
+export {tileflowPoiCategories} from './types';
 export type {TileflowStyleOptions} from './map';
 export {
   defineMap,
@@ -146,10 +130,11 @@ export {
   tileflowRuntimeManifestVersion,
 } from './manifest';
 export type {
-  TileflowHostedManifest,
-  TileflowHostedManifestMap,
+  TileflowRuntimeColorScheme,
   TileflowRuntimeManifest,
-  TileflowSelfHostedManifest,
+  TileflowRuntimeManifestMapEntry,
+  TileflowRuntimeManifestTheme,
+  TileflowRuntimeSystemThemes,
 } from './manifest';
 export type {TileflowStreetsModules} from './cartography/streets-recipe';
 export {
@@ -171,16 +156,56 @@ export {
   tileflowWorldTileJsonUrl,
   vectorTiles,
 } from './data';
-export {expression, filter, zoom} from './cartography/values';
+export {color, expression, filter, fixed, token, zoom} from './cartography/values';
 export {analyzeTileflowStylePerformance} from './cartography/performance';
 export type {TileflowStylePerformance, TileflowZoomPerformance} from './cartography/performance';
 export type {
   TileflowExpression,
   TileflowFilterExpression,
+  TileflowFixedValue,
   TileflowStyleValue,
+  TileflowThemeColorAlpha,
+  TileflowThemeColorMix,
+  TileflowThemeColorOperation,
+  TileflowThemeColorValue,
+  TileflowThemeFontValue,
+  TileflowThemeImageValue,
+  TileflowThemeNumberValue,
+  TileflowThemeTokenCategory,
+  TileflowThemeTokenReference,
+  TileflowThemeValue,
   TileflowZoomInterpolation,
   TileflowZoomValue,
 } from './cartography/values';
+export {
+  assertTileflowMapThemeValues,
+  auditTileflowMapThemeValues,
+  auditTileflowThemeValues,
+  classifyTileflowVisualProperty,
+  defineTheme,
+  resolveThemeSelection,
+  resolveThemeValues,
+  resolveTileflowTheme,
+  TileflowThemeAuditError,
+} from './themes';
+export type {
+  ResolvedTileflowTheme,
+  ResolvedTileflowThemeTokens,
+  TileflowTheme,
+  TileflowThemeAuditContext,
+  TileflowThemeAuditDiagnostic,
+  TileflowThemeAuditEffectKind,
+  TileflowThemeAuditScope,
+  TileflowThemeColorScheme,
+  TileflowThemeDefinition,
+  TileflowThemeLighting,
+  TileflowThemeName,
+  TileflowResolvedThemeSelection,
+  TileflowThemeTokens,
+  TileflowThemeTypography,
+  TileflowThemeTypographyStyle,
+  TileflowVisualValueCategory,
+} from './themes';
 export type {
   OpenMapTilesFieldBindings,
   OpenMapTilesLayerBindings,
@@ -198,6 +223,7 @@ export type {
 } from './data';
 export {
   inferTileflowDataRequirements,
+  inferTileflowSourceRequirements,
   validateTileflowDataCompatibility,
 } from './data/requirements';
 export type {
@@ -207,7 +233,34 @@ export type {
   TileflowDataLayerRequirement,
   TileflowDataRequirementsV1,
   TileflowObservedDataContractV1,
+  TileflowRasterDemSourceRequirementV1,
+  TileflowSourceRequirementsV1,
 } from './data/requirements';
+export {
+  bathymetry,
+  resolveMarine,
+  tileflowBathymetryDemSourceId,
+  tileflowBathymetrySourceId,
+  tileflowBathymetryV1Schema,
+  tileflowNauticalSourceId,
+  tileflowNauticalV1Schema,
+} from './marine';
+export type {
+  ResolvedBathymetry,
+  ResolvedBathymetryRelief,
+  ResolvedMarine,
+  ResolvedMarineSource,
+  TileflowBathymetryConfig,
+  TileflowBathymetryDemSourceIdentity,
+  TileflowBathymetryDisplay,
+  TileflowBathymetryOptions,
+  TileflowBathymetryReliefConfig,
+  TileflowMarine,
+  TileflowMarineConfig,
+  TileflowMarineMode,
+  TileflowMarineSourceConfig,
+  TileflowMarineSourceIdentity,
+} from './marine';
 export {
   addresses,
   aeroways,
@@ -216,9 +269,11 @@ export {
   labels,
   land,
   landforms,
+  nautical,
   poi,
   roads,
   tileflowLandformClasses,
+  tileflowPoiImageRoles,
   transit,
   vegetation,
   water,
@@ -240,6 +295,9 @@ export type {
   TileflowLandModuleConfig,
   TileflowLandModuleOptions,
   TileflowLanduseClass,
+  TileflowNauticalAreaLabelStyles,
+  TileflowNauticalModuleConfig,
+  TileflowNauticalModuleOptions,
   TileflowTransitModuleConfig,
   TileflowTransitModuleOptions,
   TileflowTransitRailStyle,
@@ -258,6 +316,7 @@ export type {
   TileflowBackgroundStyle,
   TileflowCirclePaint,
   TileflowCircleStyle,
+  TileflowColorStyleValue,
   TileflowExtrusionPaint,
   TileflowExtrusionStyle,
   TileflowFillPaint,
@@ -266,6 +325,8 @@ export type {
   TileflowIconLayout,
   TileflowIconPaint,
   TileflowIconStyle,
+  TileflowIconTextFit,
+  TileflowImageStyleValue,
   TileflowLayerRange,
   TileflowLineCap,
   TileflowLineHatchStyle,
@@ -274,6 +335,10 @@ export type {
   TileflowLinePaint,
   TileflowLineStackStyle,
   TileflowLineStyle,
+  TileflowNumberStyleValue,
+  TileflowNumberInsetsStyleValue,
+  TileflowStringStyleValue,
+  TileflowStructuralStyleValue,
   TileflowSymbolPlacement,
   TileflowSymbolPlacementStyle,
   TileflowSymbolStyle,
@@ -339,6 +404,7 @@ export {
   resolveTileflowManifestMap,
   resolveTileflowMapMode,
   resolveTileflowRuntimeStyle,
+  resolveTileflowRuntimeTheme,
   resolveTileflowRuntimeView,
   resolveTileflowStaticImageUrl,
   shouldLoadTileflowManifest,
@@ -346,6 +412,7 @@ export {
   tileflowStyleFontFaceLimits,
   tileflowStyleFontFacesMetadataKey,
   validateTileflowRuntimeSource,
+  validateTileflowThemeSelection,
 } from './runtime';
 export type {
   TileflowAnalytics,
@@ -361,7 +428,9 @@ export type {
   TileflowRuntimeSourceValidation,
   TileflowRuntimeStyleOptions,
   TileflowRuntimeViewOptions,
+  TileflowResolvedRuntimeTheme,
   TileflowSessionController,
   TileflowSessionGrantResponse,
   TileflowStyleFontFace,
+  TileflowThemeSelection,
 } from './runtime';

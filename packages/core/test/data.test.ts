@@ -236,14 +236,32 @@ test('defines and validates the required Tileflow World V1 surface extensions', 
 
   assert.equal(generic.layers.bathymetry, undefined);
   assert.equal(generic.fields.bathymetryMinDepth, undefined);
+  assert.equal(generic.fields.shieldKind, undefined);
+  assert.equal(generic.fields.shieldLineLengthMeters, undefined);
+  assert.equal(generic.fields.shieldNetwork, undefined);
+  assert.equal(generic.fields.shieldRank, undefined);
+  assert.equal(generic.fields.shieldText, undefined);
+  assert.equal(generic.fields.shieldTextColor, undefined);
   assert.equal(worldV1.layers.bathymetry, 'bathymetry');
   assert.equal(worldV1.layers.circularFeature, 'circular_feature');
   assert.equal(worldV1.layers.globalLandcover, 'globallandcover');
   assert.equal(worldV1.layers.sidewalk, 'sidewalk');
   assert.equal(worldV1.layers.streetFurniture, 'street_furniture');
+  assert.equal(worldV1.layers.roadShield, 'transportation_shield');
   assert.equal(worldV1.fields.bathymetryMinDepth, 'min_depth');
   assert.equal(worldV1.fields.bathymetrySortKey, 'sort_key');
   assert.equal(worldV1.fields.importanceTier, 'importance_tier');
+  assert.equal(worldV1.fields.poiCategory, 'category');
+  assert.equal(worldV1.fields.poiFilterRank, 'filter_rank');
+  assert.equal(worldV1.fields.poiIcon, 'icon');
+  assert.equal(worldV1.fields.poiSizeRank, 'size_rank');
+  assert.equal(worldV1.fields.poiType, 'type');
+  assert.equal(worldV1.fields.shieldKind, 'shield_kind');
+  assert.equal(worldV1.fields.shieldLineLengthMeters, 'shield_line_length_m');
+  assert.equal(worldV1.fields.shieldNetwork, 'shield_network');
+  assert.equal(worldV1.fields.shieldRank, 'shield_rank');
+  assert.equal(worldV1.fields.shieldText, 'shield_text');
+  assert.equal(worldV1.fields.shieldTextColor, 'shield_text_color');
   assert.deepEqual(
     validateTileflowWorldV1Tilejson({
       vector_layers: validWorldV1VectorLayers(),
@@ -256,6 +274,10 @@ test('defines and validates the required Tileflow World V1 surface extensions', 
     'Tileflow World V1 requires circular_feature.',
     'Tileflow World V1 requires sidewalk.',
     'Tileflow World V1 requires street_furniture.',
+    'Tileflow World V1 requires poi.',
+    'Tileflow World V1 requires transportation.',
+    'Tileflow World V1 requires transportation_name.',
+    'Tileflow World V1 requires transportation_shield.',
   ]);
   assert.equal(
     tileflowWorldV1Schema({capabilities: {globalLandcover: false}}).layers.globalLandcover,
@@ -293,7 +315,16 @@ test('fails closed on malformed or duplicate Tileflow World V1 detail capabiliti
   };
   malformed[4] = {
     ...malformed[4],
-    fields: {...malformed[4]!.fields, direction: 'Boolean'},
+    fields: {
+      ...malformed[4]!.fields,
+      crossing: 'Boolean',
+      direction: 'Boolean',
+      markings: 'Boolean',
+    },
+  };
+  malformed[5] = {
+    ...malformed[5],
+    fields: {...malformed[5]!.fields, clearance_extra_px_z15: 'String'},
   };
 
   assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: malformed}), [
@@ -302,6 +333,47 @@ test('fails closed on malformed or duplicate Tileflow World V1 detail capabiliti
     'Tileflow World V1 sidewalk must declare native z15.',
     'Tileflow World V1 requires String class on sidewalk.',
     'Tileflow World V1 requires Number or String direction on street_furniture.',
+    'Tileflow World V1 requires String crossing on street_furniture.',
+    'Tileflow World V1 requires String markings on street_furniture.',
+    'Tileflow World V1 requires Number clearance_extra_px_z15 on transportation.',
+  ]);
+
+  const malformedShields = validWorldV1VectorLayers();
+  malformedShields[6] = {
+    ...malformedShields[6]!,
+    fields: {...malformedShields[6]!.fields, shield_kind: 'Number'},
+  };
+  assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: malformedShields}), [
+    'Tileflow World V1 requires String shield_kind on transportation_name.',
+  ]);
+
+  const malformedOverview = validWorldV1VectorLayers();
+  malformedOverview[7] = {
+    ...malformedOverview[7]!,
+    minzoom: 5,
+    fields: {...malformedOverview[7]!.fields, shield_text_color: 'Number'},
+  };
+  assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: malformedOverview}), [
+    'Tileflow World V1 transportation_shield must declare z6-z10.',
+    'Tileflow World V1 requires String shield_text_color on transportation_shield.',
+  ]);
+
+  const malformedPoi = validWorldV1VectorLayers();
+  malformedPoi[8] = {
+    ...malformedPoi[8]!,
+    minzoom: 5,
+    fields: {
+      ...malformedPoi[8]!.fields,
+      category: 'Number',
+      filter_rank: 'String',
+      min_zoom: 'String',
+    },
+  };
+  assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: malformedPoi}), [
+    'Tileflow World V1 poi must declare z12-z15.',
+    'Tileflow World V1 requires String category on poi.',
+    'Tileflow World V1 requires Number filter_rank on poi.',
+    'Tileflow World V1 requires Number min_zoom on poi.',
   ]);
 
   const duplicate = validWorldV1VectorLayers();
@@ -367,7 +439,6 @@ function validWorldV1VectorLayers(): Array<{
       fields: {
         circle_kind: 'String',
         class: 'String',
-        clearance_extra_px_z15: 'Number',
         inner_radius_m: 'Number',
         outer_radius_m: 'Number',
         radius_m: 'Number',
@@ -384,7 +455,63 @@ function validWorldV1VectorLayers(): Array<{
       id: 'street_furniture',
       minzoom: 15,
       maxzoom: 15,
-      fields: {class: 'String', direction: 'Number', subclass: 'String'},
+      fields: {
+        class: 'String',
+        crossing: 'String',
+        direction: 'Number',
+        markings: 'String',
+        subclass: 'String',
+      },
+    },
+    {
+      id: 'transportation',
+      minzoom: 4,
+      maxzoom: 15,
+      fields: {clearance_extra_px_z15: 'Number'},
+    },
+    {
+      id: 'transportation_name',
+      minzoom: 11,
+      maxzoom: 15,
+      fields: {
+        class: 'String',
+        ref: 'String',
+        ref_length: 'Number',
+        shield_kind: 'String',
+        shield_line_length_m: 'Number',
+        shield_network: 'String',
+        shield_rank: 'Number',
+        shield_text: 'String',
+        shield_text_color: 'String',
+      },
+    },
+    {
+      id: 'transportation_shield',
+      minzoom: 6,
+      maxzoom: 10,
+      fields: {
+        class: 'String',
+        ref: 'String',
+        ref_length: 'Number',
+        shield_kind: 'String',
+        shield_network: 'String',
+        shield_rank: 'Number',
+        shield_text: 'String',
+        shield_text_color: 'String',
+      },
+    },
+    {
+      id: 'poi',
+      minzoom: 12,
+      maxzoom: 15,
+      fields: {
+        category: 'String',
+        filter_rank: 'Number',
+        icon: 'String',
+        min_zoom: 'Number',
+        size_rank: 'Number',
+        type: 'String',
+      },
     },
   ];
 }

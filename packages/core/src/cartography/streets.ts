@@ -1,11 +1,13 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import {resolveTileflowData, type TileflowDataConfig} from '../data';
+import {inferTileflowSourceRequirements} from '../data/requirements';
 import {
   type ResolvedTileflowMap,
   resolveMap,
   type TileflowMap,
   type TileflowMapRoot,
 } from '../maps';
+import {resolveMarine} from '../marine';
 import {compileAddresses} from '../modules/addresses/compiler';
 import {compileAeroways} from '../modules/aeroways/compiler';
 import {compileBoundaries} from '../modules/boundaries/compiler';
@@ -14,6 +16,7 @@ import {resolveLabels} from '../modules/labels';
 import {compileLabels} from '../modules/labels/compiler';
 import {compileLand} from '../modules/land/compiler';
 import {compileLandforms} from '../modules/landforms/compiler';
+import {compileNautical} from '../modules/nautical/compiler';
 import {compilePoi} from '../modules/poi/compiler';
 import {compileRoads} from '../modules/roads/compiler';
 import {compileTransit} from '../modules/transit/compiler';
@@ -21,8 +24,21 @@ import {compileVegetation} from '../modules/vegetation/compiler';
 import {compileWater} from '../modules/water/compiler';
 import {parseResolvedTileflowMap} from '../resolved-map-schema';
 import {compileTerrainContributions, resolveTerrain} from '../terrain';
-import {resolveColors, resolveTheme, resolveTypography} from '../themes';
+import {
+  assertTileflowMapThemeValues,
+  resolveThemeColors,
+  resolveThemeImages,
+  resolveThemeSelection,
+  resolveThemeValues,
+  resolveTileflowTheme,
+} from '../themes';
 import type {MapLibreStyle} from '../types';
+import {
+  createTileflowStyleInspection,
+  tileflowCompilerProvenanceMetadataKey,
+  type TileflowInspectedStyle,
+  type TileflowStyleInspection,
+} from './compiler-inspection';
 import {tileflowCompilerMetadataKeys, type TileflowLayerContribution} from './contributions';
 import {assembleTileflowLayers} from './graph';
 import {
@@ -59,6 +75,8 @@ export type TileflowStreetsCompileOptions = {
   };
   /** Build-owned assets prepared from the authoring directories. */
   preparedAssets?: TileflowPreparedMapAssets;
+  /** Concrete named theme. Omission deterministically selects map.defaultTheme. */
+  theme?: string;
 };
 
 export function createStreetsStyle(
@@ -71,15 +89,55 @@ export function createStreetsStyle(
 
 /** Compile an already validated Streets map. Internal orchestration should use this entry point. */
 export function compileStreetsStyle(
-  config: TileflowStreetsMapConfig,
+  input: TileflowStreetsMapConfig,
   options: TileflowStreetsCompileOptions = {},
 ): MapLibreStyle {
+  return compileStreetsStyleInternal(input, options, false).style;
+}
+
+/** Compile Style JSON plus a separate build-only cartographic provenance sidecar. */
+export function compileStreetsStyleWithInspection(
+  input: TileflowStreetsMapConfig,
+  options: TileflowStreetsCompileOptions = {},
+): TileflowInspectedStyle {
+  const compiled = compileStreetsStyleInternal(input, options, true);
+  return {style: compiled.style, inspection: compiled.inspection!};
+}
+
+function compileStreetsStyleInternal(
+  input: TileflowStreetsMapConfig,
+  options: TileflowStreetsCompileOptions,
+  inspect: boolean,
+): {style: MapLibreStyle; inspection?: TileflowStyleInspection} {
+  assertTileflowMapThemeValues(input);
+  const selected = resolveThemeSelection(input, options.theme);
+  const resolvedTheme = resolveTileflowTheme(selected.theme);
+  const {themes: _themes, ...themeableConfig} = input;
+  const config = parseResolvedTileflowMap({
+    ...resolveThemeValues(themeableConfig, selected.theme, `map.${input.id}`),
+    themes: input.themes,
+  } as TileflowStreetsMapConfig);
   const apiBaseUrl = normalizeBaseUrl(options.apiBaseUrl);
   const data = resolveTileflowData(config.data, {apiBaseUrl});
-  const theme = resolveTheme(config.theme);
-  const colors = resolveColors({}, theme.colors, {}, theme.modules);
-  const typography = resolveTypography({}, theme.typography);
-  const context = {colors, data, typography};
+  const marine = resolveMarine(config.marine, apiBaseUrl);
+  const semanticData = marine?.bathymetry?.vector
+    ? {
+        ...data,
+        schema: {
+          ...data.schema,
+          fields: {
+            ...data.schema.fields,
+            bathymetryMinDepth: 'min_depth',
+            bathymetrySortKey: 'sort_key',
+          },
+          layers: {...data.schema.layers, bathymetry: 'bathymetry'},
+        },
+      }
+    : data;
+  const colors = resolveThemeColors(selected.theme);
+  const images = resolveThemeImages(selected.theme);
+  const typography = resolvedTheme.typography;
+  const context = {colors, data, images, ...(marine === undefined ? {} : {marine}), typography};
   const modules = resolveStreetsModules(config.modules);
   const labelLanguage = resolveLabels(modules.labels).language;
   // Bind semantic data references only after each domain compiler has omitted
@@ -91,6 +149,7 @@ export function compileStreetsStyle(
     [
       ...compileLand(modules.land, context),
       ...compileWater(modules.water, context),
+      ...compileNautical(modules.nautical, context),
       ...compileBuildings(modules.buildings, context),
       ...compileVegetation(modules.vegetation, context),
       ...compileRoads(modules.roads, context),
@@ -102,7 +161,7 @@ export function compileStreetsStyle(
       ...compileAddresses(modules.addresses, context),
       ...compilePoi(modules.poi, context, labelLanguage),
     ],
-    data,
+    semanticData,
   );
   const terrain = resolveTerrain(config.terrain, apiBaseUrl);
   const terrainSources = [terrain?.raster, terrain?.contours].filter(
@@ -122,6 +181,28 @@ export function compileStreetsStyle(
     }
     terrainSourceIds.add(source.sourceId);
   }
+  const marineSources = [
+    marine?.bathymetry?.vector,
+    marine?.bathymetry?.relief,
+    marine?.nautical,
+  ].filter((source): source is NonNullable<typeof source> => source !== undefined);
+  const marineSourceIds = new Set<string>();
+  for (const source of marineSources) {
+    if (source.sourceId === data.sourceId) {
+      throw new Error(
+        `Marine source ID "${source.sourceId}" conflicts with the primary vector source.`,
+      );
+    }
+    if (terrainSourceIds.has(source.sourceId)) {
+      throw new Error(`Marine source ID "${source.sourceId}" conflicts with a terrain source.`);
+    }
+    if (marineSourceIds.has(source.sourceId)) {
+      throw new Error(
+        `Marine source ID "${source.sourceId}" conflicts with another marine source.`,
+      );
+    }
+    marineSourceIds.add(source.sourceId);
+  }
   if (terrain) contributions.push(...compileTerrainContributions(terrain, context));
   const activeOwners = new Set(
     Object.entries(modules)
@@ -134,13 +215,18 @@ export function compileStreetsStyle(
       (effect.requires ?? []).every((owner) => activeOwners.has(owner)),
   );
   const optimizedLayers = optimizeTileflowLayers(
-    applyTileflowModuleEffects(assembleTileflowLayers(contributions), moduleEffects, data),
+    applyTileflowModuleEffects(assembleTileflowLayers(contributions), moduleEffects, semanticData),
   );
+  const inspection = inspect
+    ? createTileflowStyleInspection(options.map?.id ?? config.id, selected.name, optimizedLayers)
+    : undefined;
   const interactionManifest = createTileflowInteractionManifest(optimizedLayers, {
-    class: data.schema.fields.class,
+    category: data.schema.fields.poiCategory,
+    filterRank: data.schema.fields.poiFilterRank,
+    icon: data.schema.fields.poiIcon,
     name: data.schema.fields.name,
-    rank: data.schema.fields.rank,
-    subclass: data.schema.fields.subclass,
+    sizeRank: data.schema.fields.poiSizeRank,
+    type: data.schema.fields.poiType,
   });
   const layers = finalizeTileflowLayers(optimizedLayers);
   assertTileflowInteractionManifestLayers(interactionManifest, layers);
@@ -162,18 +248,43 @@ export function compileStreetsStyle(
     version: config.version,
   };
 
+  const sources: MapLibreStyle['sources'] = {
+    [data.sourceId]: primarySource,
+    ...(marine?.bathymetry?.vector
+      ? {[marine.bathymetry.vector.sourceId]: marine.bathymetry.vector.source}
+      : {}),
+    ...(marine?.bathymetry?.relief
+      ? {[marine.bathymetry.relief.sourceId]: marine.bathymetry.relief.source}
+      : {}),
+    ...(marine?.nautical ? {[marine.nautical.sourceId]: marine.nautical.source} : {}),
+    ...(terrain?.raster ? {[terrain.raster.sourceId]: terrain.raster.source} : {}),
+    ...(terrain?.contours ? {[terrain.contours.sourceId]: terrain.contours.source} : {}),
+  };
+  const sourceIdentities = {
+    [data.sourceId]: data.identity,
+    ...(marine?.bathymetry?.vector
+      ? {[marine.bathymetry.vector.sourceId]: marine.bathymetry.vector.identity}
+      : {}),
+    ...(marine?.bathymetry?.relief
+      ? {[marine.bathymetry.relief.sourceId]: marine.bathymetry.relief.identity}
+      : {}),
+    ...(marine?.nautical ? {[marine.nautical.sourceId]: marine.nautical.identity} : {}),
+  };
+  const sourceRequirements = inferTileflowSourceRequirements({
+    version: 8,
+    name: config.name ?? 'Streets',
+    sources,
+    layers,
+  });
+
   const style: MapLibreStyle = {
     version: 8,
     name: config.name ?? 'Streets',
     ...(glyphs ? {glyphs} : {}),
-    ...(config.light ? {light: config.light} : {}),
+    ...(Object.keys(resolvedTheme.lighting).length > 0 ? {light: resolvedTheme.lighting} : {}),
     ...(config.projection ? {projection: {type: config.projection}} : {}),
     ...(sprite ? {sprite} : {}),
-    sources: {
-      [data.sourceId]: primarySource,
-      ...(terrain?.raster ? {[terrain.raster.sourceId]: terrain.raster.source} : {}),
-      ...(terrain?.contours ? {[terrain.contours.sourceId]: terrain.contours.source} : {}),
-    },
+    sources,
     layers,
     ...(terrain?.mode === '3d' && terrain.raster
       ? {terrain: {exaggeration: terrain.exaggeration, source: terrain.raster.sourceId}}
@@ -190,8 +301,11 @@ export function compileStreetsStyle(
               : {}),
           }
         : {}),
-      'tileflow:variant': theme.mode,
+      'tileflow:theme': selected.name,
+      'tileflow:colorScheme': resolvedTheme.colorScheme,
       'tileflow:data': data.identity,
+      'tileflow:sources': sourceIdentities,
+      'tileflow:sourceRequirements': sourceRequirements,
       ...(interactionManifest
         ? {[tileflowInteractionManifestMetadataKey]: interactionManifest}
         : {}),
@@ -206,7 +320,7 @@ export function compileStreetsStyle(
   assertTextAssets(style, config);
   assertGlyphFontStacks(style, config);
   assertMapLibreStyle(style, config.id);
-  return style;
+  return {style, ...(inspection ? {inspection} : {})};
 }
 
 function finalizeTileflowLayers(
@@ -238,6 +352,7 @@ function finalizeTileflowLayers(
       const metadata = isRecord(layer.metadata) ? {...layer.metadata} : undefined;
       if (metadata) {
         delete metadata[tileflowModuleEffectMetadataKey];
+        delete metadata[tileflowCompilerProvenanceMetadataKey];
         for (const key of Object.values(tileflowCompilerMetadataKeys)) delete metadata[key];
       }
       return {
@@ -329,7 +444,10 @@ function collectStaticImageOutputs(value: unknown, result: Set<string>, path: st
       return;
     }
     case 'coalesce': {
-      for (const output of value.slice(1)) collectStaticImageOutputs(output, result, path);
+      const outputs = value.slice(1);
+      const staticOutputs = outputs.filter((output) => !isOptionalSpriteLookup(output));
+      if (staticOutputs.length === 0) throw dynamicImageExpression(path, operator);
+      for (const output of staticOutputs) collectStaticImageOutputs(output, result, path);
       return;
     }
     case 'case': {
@@ -369,6 +487,18 @@ function collectStaticImageOutputs(value: unknown, result: Set<string>, path: st
     default:
       throw dynamicImageExpression(path, operator);
   }
+}
+
+function isOptionalSpriteLookup(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    value[0] === 'image' &&
+    Array.isArray(value[1]) &&
+    value[1].length === 2 &&
+    value[1][0] === 'get' &&
+    typeof value[1][1] === 'string'
+  );
 }
 
 function dynamicImageExpression(path: string, operator: string): Error {

@@ -13,11 +13,13 @@ test('compiles and renders the bounded framework-neutral loading contract', asyn
         imageUrl: 'data:image/png;base64,iVBORw0KGgo=',
         mode: 'image',
         source: {kind: 'tileflow', map: 'main'},
+        theme: 'dark',
       },
     });
 
     assert.match(result.body, /data-tileflow-capture-id="proof-map"/);
     assert.match(result.body, /data-tileflow-map="main"/);
+    assert.match(result.body, /data-tileflow-theme="dark"/);
     assert.match(result.body, /data-tileflow-state="loading"/);
     assert.match(compiled.code, /mapCaptureState = 'idle'/);
     assert.match(compiled.code, /mapCaptureState = 'error'/);

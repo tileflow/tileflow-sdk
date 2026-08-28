@@ -20,6 +20,20 @@ export type TileflowDataRequirementsV1 = Readonly<{
   sourceLayers: readonly TileflowDataLayerRequirement[];
 }>;
 
+/** Per-source requirements for styles that compose independent vector and DEM products. */
+export type TileflowSourceRequirementsV1 = Readonly<{
+  rasterDemSources?: Readonly<Record<string, TileflowRasterDemSourceRequirementV1>>;
+  schemaVersion: 1;
+  sources: Readonly<Record<string, TileflowDataRequirementsV1>>;
+}>;
+
+export type TileflowRasterDemSourceRequirementV1 = Readonly<{
+  encoding: 'mapbox' | 'terrarium';
+  sourceId: string;
+  tileSize: 256 | 512;
+  type: 'raster-dem';
+}>;
+
 export type TileflowObservedDataContractV1 = Readonly<{
   sourceLayers: readonly Readonly<{
     fields: readonly Readonly<{name: string; type: TileflowDataFieldType}>[];
@@ -86,6 +100,52 @@ export function inferTileflowDataRequirements(
           .map(([name, type]) => ({name, ...(type === undefined ? {} : {type})})),
         id,
       })),
+  };
+}
+
+/**
+ * Infer the V1 layer/field contract for every referenced vector source and the physical contract
+ * for each included raster DEM. The singular helper remains unchanged for World-only consumers.
+ */
+export function inferTileflowSourceRequirements(
+  style: MapLibreStyle,
+): TileflowSourceRequirementsV1 {
+  const referenced = new Set(
+    style.layers.flatMap((layer) =>
+      typeof layer.source === 'string' && style.sources[layer.source]?.type === 'vector'
+        ? [layer.source]
+        : [],
+    ),
+  );
+  const sources = Object.fromEntries(
+    [...referenced]
+      .sort(compareCodeUnits)
+      .map((sourceId) => [sourceId, inferTileflowDataRequirements(style, {sourceId})]),
+  );
+  const rasterDemEntries = Object.entries(style.sources)
+    .filter(([, source]) => source.type === 'raster-dem')
+    .sort(([left], [right]) => compareCodeUnits(left, right))
+    .map(([sourceId, source]) => {
+      const encoding = source.encoding ?? 'mapbox';
+      if (encoding !== 'mapbox' && encoding !== 'terrarium') {
+        throw new TypeError(
+          `Unsupported raster-dem encoding for ${sourceId}: ${String(encoding)}.`,
+        );
+      }
+      const tileSize = source.tileSize ?? 512;
+      if (tileSize !== 256 && tileSize !== 512) {
+        throw new TypeError(
+          `Unsupported raster-dem tileSize for ${sourceId}: ${String(tileSize)}.`,
+        );
+      }
+      return [sourceId, {encoding, sourceId, tileSize, type: 'raster-dem'}] as const;
+    });
+  return {
+    ...(rasterDemEntries.length > 0
+      ? {rasterDemSources: Object.fromEntries(rasterDemEntries)}
+      : {}),
+    schemaVersion: 1,
+    sources,
   };
 }
 

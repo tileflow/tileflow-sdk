@@ -3,13 +3,17 @@ import type {
   TileflowInteractionEvent,
   TileflowInteractionInputModality,
   TileflowInteractionJsonValue,
-  TileflowResolvedSemanticFeatureTarget,
+  TileflowPoiCategory,
+  TileflowPoiFilterRank,
+  TileflowPoiProperties,
+  TileflowPoiSizeRank,
+  TileflowResolvedPoiFeatureTarget,
 } from './contracts';
-import {tileflowInteractionLimits} from './contracts';
+import {tileflowInteractionLimits, tileflowPoiCategories} from './contracts';
 import type {TileflowInteractionDiagnostic} from './validation';
 
 const interactionManifestMetadataKey = 'tileflow:interaction-manifest';
-const interactionManifestVersion = 1;
+const interactionManifestVersion = 2;
 const missingSourceLayerNamespace = '\u0001tileflow-no-source-layer';
 
 export type TileflowMapLibrePoiFeature = Readonly<{
@@ -41,7 +45,7 @@ export type TileflowMapLibrePoiMap = Readonly<{
 
 export type TileflowMapLibrePoiMatch = Readonly<{
   binding: TileflowInteractionBinding;
-  target: TileflowResolvedSemanticFeatureTarget;
+  target: TileflowResolvedPoiFeatureTarget;
 }>;
 
 export type TileflowMapLibrePoiControllerOptions = Readonly<{
@@ -70,7 +74,7 @@ export type TileflowMapLibrePoiController = Readonly<{
 }>;
 
 type PoiManifestLayer = Readonly<{
-  category: string;
+  category: TileflowPoiCategory;
   layerId: string;
   priority: number;
   representation: 'combined' | 'icon' | 'label' | 'marker';
@@ -82,7 +86,14 @@ type PoiManifest = Readonly<{
   deduplication: Readonly<{
     representationPriority: readonly PoiManifestLayer['representation'][];
   }>;
-  fields: Readonly<{class: string; name: string; rank: string; subclass: string}>;
+  fields: Readonly<{
+    category: string;
+    filterRank: string;
+    icon: string;
+    name: string;
+    sizeRank: string;
+    type: string;
+  }>;
   layers: readonly PoiManifestLayer[];
 }>;
 
@@ -435,7 +446,9 @@ function parsePoiManifest(
   );
   if (
     !fields ||
-    !['class', 'name', 'rank', 'subclass'].every((field) => isSafeManifestName(fields[field])) ||
+    !['category', 'filterRank', 'icon', 'name', 'sizeRank', 'type'].every((field) =>
+      isSafeManifestName(fields[field]),
+    ) ||
     poi.identity !== 'maplibre-feature-id-if-present' ||
     identityFields.length !== 3 ||
     identityFields[0] !== 'source' ||
@@ -459,7 +472,7 @@ function parsePoiManifest(
     const sourceLayer = layer?.sourceLayer;
     if (
       !layer ||
-      !isSafeManifestName(layer.category) ||
+      !isTileflowPoiCategory(layer.category) ||
       !isSafeManifestName(layer.layerId) ||
       !isSafeManifestName(layer.source) ||
       (sourceLayer !== undefined && !isSafeManifestName(sourceLayer)) ||
@@ -504,7 +517,7 @@ function parsePoiManifest(
     identityNamespace = namespace;
     ids.add(layer.layerId as string);
     layers.push({
-      category: layer.category as string,
+      category: layer.category,
       layerId: layer.layerId as string,
       priority: layer.priority as number,
       representation: layer.representation,
@@ -518,10 +531,12 @@ function parsePoiManifest(
       representationPriority,
     },
     fields: {
-      class: fields.class as string,
+      category: fields.category as string,
+      filterRank: fields.filterRank as string,
+      icon: fields.icon as string,
       name: fields.name as string,
-      rank: fields.rank as string,
-      subclass: fields.subclass as string,
+      sizeRank: fields.sizeRank as string,
+      type: fields.type as string,
     },
     layers: layers.sort((left, right) => right.priority - left.priority),
   };
@@ -590,6 +605,10 @@ function isPoiRepresentation(value: unknown): value is PoiManifestLayer['represe
   return value === 'combined' || value === 'icon' || value === 'label' || value === 'marker';
 }
 
+function isTileflowPoiCategory(value: unknown): value is TileflowPoiCategory {
+  return typeof value === 'string' && (tileflowPoiCategories as readonly string[]).includes(value);
+}
+
 function sourceLayerNamespace(sourceLayer: string | undefined): string {
   return sourceLayer ?? missingSourceLayerNamespace;
 }
@@ -612,26 +631,50 @@ function relevantLayerIds(
 function normalizePoiProperties(
   properties: Readonly<Record<string, unknown>> | undefined,
   fields: PoiManifest['fields'],
-): Readonly<Record<string, TileflowInteractionJsonValue>> {
+): TileflowPoiProperties {
   const source = properties ?? {};
   const normalized: Record<string, TileflowInteractionJsonValue> = {};
-  for (const key of ['class', 'name', 'rank', 'subclass'] as const) {
-    let value: unknown;
+  const read = (field: keyof PoiManifest['fields']): unknown => {
     try {
-      value = source[fields[key]];
+      return source[fields[field]];
     } catch {
-      continue;
+      return undefined;
     }
-    if (
-      value === null ||
-      typeof value === 'boolean' ||
-      (typeof value === 'number' && Number.isFinite(value)) ||
-      (typeof value === 'string' && value.length <= tileflowInteractionLimits.maxContentTextLength)
-    ) {
-      normalized[key] = value;
-    }
+  };
+  const category = read('category');
+  const filterRank = read('filterRank');
+  const icon = read('icon');
+  const name = read('name');
+  const sizeRank = read('sizeRank');
+  const type = read('type');
+
+  if (isTileflowPoiCategory(category)) normalized.category = category;
+  if (isIntegerInRange(filterRank, 0, 5)) {
+    normalized.filter_rank = filterRank as TileflowPoiFilterRank;
   }
-  return Object.freeze(normalized);
+  if (isSnakeCaseValue(icon)) normalized.icon = icon;
+  if (isBoundedText(name)) normalized.name = name;
+  if (isIntegerInRange(sizeRank, 0, 16)) {
+    normalized.size_rank = sizeRank as TileflowPoiSizeRank;
+  }
+  if (isSnakeCaseValue(type)) normalized.type = type;
+  return Object.freeze(normalized) as TileflowPoiProperties;
+}
+
+function isIntegerInRange(value: unknown, minimum: number, maximum: number): value is number {
+  return (
+    Number.isSafeInteger(value) && (value as number) >= minimum && (value as number) <= maximum
+  );
+}
+
+function isBoundedText(value: unknown): value is string {
+  return (
+    typeof value === 'string' && value.length <= tileflowInteractionLimits.maxContentTextLength
+  );
+}
+
+function isSnakeCaseValue(value: unknown): value is string {
+  return isBoundedText(value) && /^[a-z0-9]+(?:_[a-z0-9]+)*$/u.test(value);
 }
 
 function normalizeFeatureId(value: unknown): number | string | undefined {
@@ -665,7 +708,7 @@ function matchesEqual(
 
 function bindingMatchesTarget(
   binding: TileflowInteractionBinding,
-  target: TileflowResolvedSemanticFeatureTarget,
+  target: TileflowResolvedPoiFeatureTarget,
 ): boolean {
   const selector = binding.target;
   if (

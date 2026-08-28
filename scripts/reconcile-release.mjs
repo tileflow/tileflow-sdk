@@ -131,6 +131,7 @@ export async function createRegistryState(tsvContents, root = repositoryRoot) {
             name,
             runtimeDependencySnapshot(sourceManifest),
             versions,
+            {source: true},
           ),
         };
       }
@@ -557,8 +558,19 @@ export function assertSelectedRuntimeDependencies(name, snapshot, versions) {
   }
 }
 
-function targetRuntimeDependencySnapshot(name, snapshot, versions) {
-  validateRuntimeDependencySnapshot(name, snapshot);
+function targetRuntimeDependencySnapshot(name, snapshot, versions, {source = false} = {}) {
+  const validationSnapshot = Object.fromEntries(
+    Object.entries(snapshot).map(([group, dependencies]) => [
+      group,
+      Object.fromEntries(
+        Object.entries(dependencies).map(([dependency, range]) => [
+          dependency,
+          source && range.startsWith('workspace:') ? range.slice('workspace:'.length) : range,
+        ]),
+      ),
+    ]),
+  );
+  validateRuntimeDependencySnapshot(name, validationSnapshot);
   const target = {};
   for (const group of runtimeDependencyGroups) {
     const dependencies = snapshot[group];

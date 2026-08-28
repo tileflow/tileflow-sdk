@@ -136,11 +136,21 @@ test('plans an unpublished package without inventing a registry tarball', async 
   const root = await mkdtemp(join(tmpdir(), 'tileflow-reconcile-unpublished-test-'));
   try {
     const versions = Object.fromEntries(publicPackageNames.map((name) => [name, '0.1.0-alpha.20']));
-    const unpublished = '@tileflow/interactions';
+    const unpublished = '@tileflow/maps';
     versions[unpublished] = '0.1.0-alpha.0';
-    await sourceManifestTree(root);
+    const sourceRuntimeDependencies = {
+      dependencies: {'@tileflow/core': internalWorkspaceRuntimeRange},
+    };
+    const publishedRuntimeDependencies = {
+      dependencies: {
+        '@tileflow/core': automaticInternalRuntimeRange(versions['@tileflow/core']),
+      },
+    };
+    await sourceManifestTree(root, {}, {[unpublished]: sourceRuntimeDependencies});
     const registry = await tarballSet(root, 'registry', versions);
-    const candidates = await tarballSet(root, 'candidate', versions);
+    const candidates = await tarballSet(root, 'candidate', versions, {
+      [unpublished]: {manifest: publishedRuntimeDependencies},
+    });
     const tsv = publicPackageNames
       .map((name) =>
         name === unpublished
@@ -154,7 +164,7 @@ test('plans an unpublished package without inventing a registry tarball', async 
       initialVersion: '0.1.0-alpha.0',
       name: unpublished,
       published: false,
-      runtimeDependencies: {},
+      runtimeDependencies: publishedRuntimeDependencies,
     });
 
     const plan = await createReleasePlan({

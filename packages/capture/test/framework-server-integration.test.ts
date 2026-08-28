@@ -76,6 +76,11 @@ test(
         response.end(await readFile(join(outputDirectory, 'bundle.js')));
         return;
       }
+      if (request.url === '/tileflow/manifest.json') {
+        response.writeHead(200, {'Content-Type': 'application/json; charset=utf-8'});
+        response.end(await readFile(join(outputDirectory, 'tileflow/manifest.json')));
+        return;
+      }
       response.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'});
       response.end(
         '<!doctype html><html><body><div id="root"></div><script src="/bundle.js"></script></body></html>',

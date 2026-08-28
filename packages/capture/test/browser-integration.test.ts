@@ -99,12 +99,14 @@ test(
       await writeFile(
         join(cwd, 'tileflow.config.ts'),
         `import {defineRootMap} from '@tileflow/core';
-import {streetsIcons} from '@tileflow/maps';
+import {streetsIcons, streetsThemes} from '@tileflow/maps';
 
 export default defineRootMap({
       id: 'proof',
       version: 1,
       root: {compiler: 'streets', compilerVersion: 1},
+      defaultTheme: 'light',
+      themes: streetsThemes,
       icons: [streetsIcons],
       glyphs: {
         kind: 'url',
@@ -216,12 +218,14 @@ test(
       await writeFile(
         join(cwd, 'tileflow.config.ts'),
         `import {defineRootMap} from '@tileflow/core';
-import {streetsIcons} from '@tileflow/maps';
+import {streetsIcons, streetsThemes} from '@tileflow/maps';
 
 export default defineRootMap({
   id: 'proof',
   version: 1,
   root: {compiler: 'streets', compilerVersion: 1},
+  defaultTheme: 'light',
+  themes: streetsThemes,
   icons: [streetsIcons],
   glyphs: {
     kind: 'url',

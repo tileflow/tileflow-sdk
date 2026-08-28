@@ -818,6 +818,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       themeTransitionState.value = 'idle';
 
       if (isImageMode.value) {
+        await resetImageReadiness();
         return;
       }
 

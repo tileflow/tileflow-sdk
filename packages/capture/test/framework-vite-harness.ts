@@ -41,6 +41,7 @@ export async function verifyFrameworkViteCapture(
   ]);
 
   const vite = await createViteServer({
+    cacheDir: join(cwd, '.vite-cache'),
     configFile: false,
     logLevel: 'silent',
     plugins: [tileflow(), ...options.plugins],

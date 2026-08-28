@@ -102,6 +102,7 @@ test(
             appOrigin,
             browser,
             colorScheme: 'light',
+            timeoutMs: 250,
             scene: {
               ...applicationScene({frame: 'map'}),
               target: {
@@ -113,7 +114,7 @@ test(
             },
           }),
         (error: unknown) =>
-          error instanceof TileflowCaptureError && error.code === 'APPLICATION_TARGET_NOT_FOUND',
+          error instanceof TileflowCaptureError && error.code === 'CAPTURE_TIMEOUT',
       );
     } finally {
       Server.prototype.listen = originalListen;

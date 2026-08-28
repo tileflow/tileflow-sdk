@@ -532,6 +532,7 @@
     themeTransitionState = 'idle';
 
     if (isImageMode) {
+      await markImageLoading();
       return;
     }
 

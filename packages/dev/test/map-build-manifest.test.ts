@@ -98,6 +98,7 @@ test('package-owned map revision is identical from a workspace package and unpac
   const packedPackageJson = JSON.parse(
     await readFile(join(packageTarget, 'package.json'), 'utf8'),
   ) as Record<string, unknown>;
+  assert.equal(typeof packedPackageJson.version, 'string');
   await writeFile(
     join(packageTarget, 'package.json'),
     `${JSON.stringify({...packedPackageJson, version: '99.0.0'})}\n`,
@@ -118,7 +119,10 @@ test('package-owned map revision is identical from a workspace package and unpac
     source.buildManifest.maps.night?.sourceAssets,
     unpacked.buildManifest.maps.night?.sourceAssets,
   );
-  assert.equal(source.buildManifest.provenance?.packages['@tileflow/maps'], '0.0.0-development');
+  assert.equal(
+    source.buildManifest.provenance?.packages['@tileflow/maps'],
+    packedPackageJson.version,
+  );
   assert.equal(unpacked.buildManifest.provenance?.packages['@tileflow/maps'], '99.0.0');
 });
 

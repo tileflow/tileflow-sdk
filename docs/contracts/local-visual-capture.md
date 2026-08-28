@@ -180,6 +180,10 @@ eight entries. Resource entries contain only kind, sanitized origin, optional HT
 bounded context such as a font stack; they never contain credentials, query strings, response
 bodies, signed paths, or DOM contents.
 
+Diagnostic paths keep compiler-owned RFC 6901 pointers such as `/modules/water/enabled` so agents
+can address the authored field directly. Filesystem paths remain relative to the invocation
+directory when local and become `(external)` when they would escape it.
+
 Static semantic rejection uses `STYLE_INVALID` and `style-validation`. Runtime phases are
 `browser-start`, `resource-load`, `map-load`, `map-idle`, and `screenshot`. Resource HTTP failures
 use `RESOURCE_FAILED`; MapLibre event failures use `MAP_LOAD_FAILED`; load and idle timeouts both

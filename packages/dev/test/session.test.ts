@@ -4,7 +4,12 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {runInNewContext} from 'node:vm';
-import {defaultTileflowRuntimeView, defineMap, parseTileflowMap} from '@tileflow/core';
+import {
+  defaultTileflowRuntimeView,
+  defineMap,
+  parseTileflowMap,
+  TileflowMapResolutionError,
+} from '@tileflow/core';
 import type {TileflowBuildCatalog} from '@tileflow/core/build';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
@@ -171,6 +176,36 @@ test('redacts external absolute paths from watched-build diagnostic messages', a
     cwd,
   );
   assert.equal(windowsDiagnostics[0]?.path, '(external)');
+});
+
+test('preserves semantic resolution pointers without exposing filesystem paths', async (t) => {
+  const cwd = await createFixture(t);
+  const resolutionDiagnostics = createTileflowArtifactDiagnostics(
+    new TileflowMapResolutionError(
+      'TILEFLOW_MODULE_ENABLED_RESERVED',
+      'fixture',
+      '/modules/water/enabled',
+      'enabled is compiler-owned state; use disable() to suppress a complete semantic domain.',
+    ),
+    cwd,
+  );
+
+  assert.deepEqual(resolutionDiagnostics, [
+    {
+      code: 'TILEFLOW_MODULE_ENABLED_RESERVED',
+      message:
+        'Invalid Tileflow map "fixture": enabled is compiler-owned state; use disable() to suppress a complete semantic domain.',
+      path: '/modules/water/enabled',
+    },
+  ]);
+
+  const external = join(cwd, '..', 'private-fixture', 'secret.json');
+  const filesystemDiagnostics = createTileflowArtifactDiagnostics(
+    Object.assign(new Error(`Unable to read ${external}`), {path: external}),
+    cwd,
+  );
+  assert.equal(filesystemDiagnostics[0]?.path, '(external)');
+  assert.equal(JSON.stringify(filesystemDiagnostics).includes(external), false);
 });
 
 test('preserves bounded code/phase diagnostics with deterministic URL-safe ordering', async (t) => {

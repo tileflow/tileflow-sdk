@@ -226,10 +226,24 @@ test('publishes a frozen V1 authoring manifest derived from the closed domain re
   assert.ok(Object.isFrozen(tileflowAuthoringManifest.domains[0]!.dependencies.modules));
 });
 
-test('semantic diff resolves both maps and excludes leaf identity-only changes', () => {
+test('semantic diff accepts resolved compiler state and excludes identity-only changes', () => {
   const difference = diffTileflowMaps(
-    parseTileflowMap(extendStreets({id: 'before', name: 'Before', version: 1})),
-    parseTileflowMap(extendStreets({id: 'after', name: 'After', version: 9})),
+    parseTileflowMap(
+      extendStreets({
+        id: 'before',
+        modules: {water: disable()},
+        name: 'Before',
+        version: 1,
+      }),
+    ),
+    parseTileflowMap(
+      extendStreets({
+        id: 'after',
+        modules: {water: disable()},
+        name: 'After',
+        version: 9,
+      }),
+    ),
   );
 
   assert.deepEqual(difference, {

@@ -1,5 +1,6 @@
 import {parseTileflowMap} from './map';
 import type {ResolvedTileflowMap, TileflowMap} from './maps';
+import {parseResolvedTileflowMap} from './resolved-map-schema';
 
 export const tileflowSemanticDiffSchemaVersion = 1 as const;
 
@@ -64,8 +65,8 @@ export function diffTileflowMaps(
   from: TileflowMap | ResolvedTileflowMap,
   to: TileflowMap | ResolvedTileflowMap,
 ): TileflowSemanticDiff {
-  const resolvedFrom = parseTileflowMap(from as TileflowMap);
-  const resolvedTo = parseTileflowMap(to as TileflowMap);
+  const resolvedFrom = resolveSemanticDiffInput(from);
+  const resolvedTo = resolveSemanticDiffInput(to);
   const changes: TileflowSemanticDifference[] = [];
   compareValues(semanticDesign(resolvedFrom), semanticDesign(resolvedTo), '', changes);
   const summary = {
@@ -81,6 +82,31 @@ export function diffTileflowMaps(
     summary,
     to: {id: resolvedTo.id, version: resolvedTo.version},
   });
+}
+
+function resolveSemanticDiffInput(input: TileflowMap | ResolvedTileflowMap): ResolvedTileflowMap {
+  if (isAuthoringOnlyMapShape(input)) return parseTileflowMap(input as TileflowMap);
+  return parseResolvedTileflowMap(input);
+}
+
+/**
+ * Derived maps, owner-local scenes, omitted resolved names, and module operations exist only in
+ * authoring. A standalone map without those features overlaps the resolved shape and can be
+ * validated directly without catching and replacing a meaningful resolved-map validation error.
+ */
+function isAuthoringOnlyMapShape(input: unknown): boolean {
+  if (!isUnknownRecord(input)) return true;
+  if (
+    !Object.hasOwn(input, 'name') ||
+    Object.hasOwn(input, 'extends') ||
+    Object.hasOwn(input, 'scenes')
+  ) {
+    return true;
+  }
+  if (!isUnknownRecord(input.modules)) return false;
+  return Object.values(input.modules).some(
+    (module) => isUnknownRecord(module) && Object.hasOwn(module, 'op'),
+  );
 }
 
 function semanticDesign(map: ResolvedTileflowMap): SemanticRecord {

@@ -34,11 +34,7 @@ test('declares the browser entry without exposing it from the package root', asy
     import: './dist/runtime.js',
     default: './dist/runtime.js',
   });
-  assert.deepEqual(manifest.exports['./recipe'], {
-    types: './dist/recipe.d.ts',
-    import: './dist/recipe.js',
-    default: './dist/recipe.js',
-  });
+  assert.equal(manifest.exports['./recipe'], undefined);
   assert.equal(manifest.exports['./package.json'], './package.json');
   assert.equal(manifest.exports['./maps'], undefined);
   assert.equal(Object.hasOwn(manifest.exports['.'] as object, 'browser'), false);
@@ -142,9 +138,8 @@ test('does not re-export the browser kernel from the packaged root', async () =>
 test('packages the singular map engine without official maps or legacy authoring exports', async () => {
   const script = `
     const entry = await import('@tileflow/core');
-    const recipe = await import('@tileflow/core/recipe');
     for (const name of [
-      'defineMap', 'defineRootMap', 'land', 'water', 'roads', 'transit', 'aeroways',
+      'defineMap', 'land', 'water', 'roads', 'transit', 'aeroways',
       'buildings', 'boundaries', 'labels', 'poi', 'vegetation', 'nautical', 'bathymetry', 'createStyle',
       'tileflowWorld', 'defineTheme', 'fixed', 'resolveMarine',
       'inferTileflowSourceRequirements',
@@ -153,9 +148,11 @@ test('packages the singular map engine without official maps or legacy authoring
     }
     if (typeof entry.token !== 'object' || typeof entry.color !== 'object') process.exit(2);
     for (const removed of [
-      'basemap', 'createStyleFromProject', 'cyberpunk', 'defineTileflow', 'osm', 'streets',
+      'basemap', 'createStyleFromProject', 'cyberpunk', 'defineRootMap', 'defineTileflow', 'osm', 'streets',
       'styleOverride', 'verdant', 'WorldGenerationDescriptor', 'parseWorldGenerationDescriptor',
-      'tileflowWorldTileUrl',
+      'tileflowStreetsCompilerVersion', 'tileflowWorldTileUrl',
+      'expression', 'filter',
+      'isMapLibreExpressionOperator',
     ]) {
       if (removed in entry) process.exit(3);
     }
@@ -176,10 +173,9 @@ test('packages the singular map engine without official maps or legacy authoring
       typography: {font: entry.token.font('default')},
     });
     try {
-      const removedDataGlyphMap = entry.defineRootMap({
+      const removedDataGlyphMap = entry.defineMap({
         id: 'removed-data-glyphs',
         version: 1,
-        root: {compiler: 'streets', compilerVersion: 1},
         defaultTheme: 'light',
         themes: {light},
         glyphs: {kind: 'data', fontStacks: ['Noto Sans Regular']},
@@ -189,11 +185,9 @@ test('packages the singular map engine without official maps or legacy authoring
       rejectedDataGlyphs = true;
     }
     if (!rejectedDataGlyphs) process.exit(6);
-    if (typeof recipe.defineModuleEffects !== 'function') process.exit(3);
-    const map = entry.defineRootMap({
+    const map = entry.defineMap({
       id: 'smoke',
       version: 1,
-      root: {compiler: 'streets', compilerVersion: 1},
       defaultTheme: 'light',
       glyphs: {
         kind: 'url',
@@ -218,8 +212,8 @@ test('packages the singular map engine without official maps or legacy authoring
       },
     });
     if (style.metadata['tileflow:map'] !== 'smoke') process.exit(4);
-    if (style.metadata['tileflow:root'] !== 'streets') process.exit(4);
-    if (!style.layers.every((layer) => layer.id.startsWith('streets-'))) process.exit(5);
+    if (style.metadata['tileflow:compiler'] !== 'tileflow-semantic') process.exit(4);
+    if (!style.layers.every((layer) => layer.id.startsWith('tileflow-'))) process.exit(5);
 
   `;
 
@@ -235,7 +229,7 @@ test('packages the singular map engine without official maps or legacy authoring
   assert.doesNotMatch(bundle, /highway-primary|rendererPreference/i);
 });
 
-test('keeps removed World descriptors and data glyph providers out of public declarations', async () => {
+test('keeps removed World, compiler-family, and data glyph contracts out of declarations', async () => {
   const declarationDirectory = new URL('../dist/', import.meta.url);
   const declarationFiles = (await readdir(declarationDirectory)).filter((fileName) =>
     fileName.endsWith('.d.ts'),
@@ -248,10 +242,12 @@ test('keeps removed World descriptors and data glyph providers out of public dec
   for (const removed of [
     'WorldGenerationDescriptor',
     'parseWorldGenerationDescriptor',
+    'TileflowStreetsModules',
     'tileflowWorldTileUrl',
     'worldGenerationDescriptorSchema',
   ]) {
     assert.equal(declarations.includes(removed), false, `found removed declaration ${removed}`);
   }
+  assert.equal(declarations.includes('TileflowSemanticModules'), true);
   assert.doesNotMatch(declarations, /kind:\s*(?:'data'|"data")/u);
 });

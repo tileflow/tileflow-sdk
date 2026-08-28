@@ -3,13 +3,14 @@ import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applyLineStyle, applySymbolStyle, createAreaLayers} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {expression, zoom} from '../../cartography/values';
+import type {TileflowResolvedModuleConfig} from '../resolved';
 import type {TileflowAerowaysModuleConfig} from './index';
 
 export function compileAeroways(
-  request: TileflowAerowaysModuleConfig | undefined,
+  request: TileflowResolvedModuleConfig<TileflowAerowaysModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
 ): TileflowLayerContribution[] {
-  const config = mergeTileflowDesign<TileflowAerowaysModuleConfig>(
+  const config = mergeTileflowDesign<TileflowResolvedModuleConfig<TileflowAerowaysModuleConfig>>(
     {
       type: 'aeroways',
       enabled: true,
@@ -79,7 +80,7 @@ export function compileAeroways(
   if (config.area) {
     for (const area of createAreaLayers(
       {
-        id: 'streets-aeroway-area',
+        id: 'tileflow-aeroway-area',
         type: 'fill',
         source,
         'source-layer': schema.layers.aeroway,
@@ -112,7 +113,7 @@ export function compileAeroways(
         kind: 'layer',
         layer: applyLineStyle(
           {
-            id: `streets-aeroway-${name}-${phase}`,
+            id: `tileflow-aeroway-${name}-${phase}`,
             type: 'line',
             source,
             'source-layer': schema.layers.aeroway,
@@ -138,7 +139,7 @@ export function compileAeroways(
       kind: 'layer',
       layer: applySymbolStyle(
         {
-          id: 'streets-aeroway-runway-ref',
+          id: 'tileflow-aeroway-runway-ref',
           type: 'symbol',
           source,
           'source-layer': schema.layers.aeroway,

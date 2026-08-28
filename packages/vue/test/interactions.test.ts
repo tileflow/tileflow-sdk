@@ -7,50 +7,6 @@ import {
   validateTileflowVueInteractionState,
 } from '../src/interactions.js';
 
-test('normalizes legacy markers while preserving their exact label title', () => {
-  const result = resolveTileflowVueAnnotations({
-    markers: [
-      {coordinates: [-3.7, 40.4], id: 'labeled', label: 'Madrid'},
-      {coordinates: [-0.1, 51.5], id: 'empty-label', label: ''},
-      {color: '#C6A15B', coordinates: [2.35, 48.86], id: 'fallback'},
-    ],
-  });
-
-  assert.equal(result.ok, true);
-  assert.deepEqual(result.annotations, [
-    {
-      ariaLabel: 'Madrid',
-      coordinate: [-3.7, 40.4],
-      id: 'labeled',
-      kind: 'marker',
-    },
-    {
-      ariaLabel: 'empty-label',
-      coordinate: [-0.1, 51.5],
-      id: 'empty-label',
-      kind: 'marker',
-    },
-    {
-      ariaLabel: 'fallback',
-      coordinate: [2.35, 48.86],
-      id: 'fallback',
-      kind: 'marker',
-      marker: {color: '#C6A15B'},
-    },
-  ]);
-  assert.equal(result.legacyTitles.get('labeled'), 'Madrid');
-  assert.equal(result.legacyTitles.get('empty-label'), '');
-  assert.equal(result.legacyTitles.get('fallback'), 'fallback');
-});
-
-test('rejects mixed legacy and portable annotation inputs', () => {
-  const result = resolveTileflowVueAnnotations({annotations: [], markers: []});
-
-  assert.equal(result.ok, false);
-  assert.equal(result.diagnostics[0]?.code, 'INVALID_DOCUMENT');
-  assert.match(result.diagnostics[0]?.message ?? '', /mutually exclusive/u);
-});
-
 test('returns the original typed annotation identities after JSON-safe validation', () => {
   const annotation = {
     ariaLabel: 'Property',
@@ -122,12 +78,8 @@ test('bridges annotation and semantic scoped slots through stable MapLibre-DOM t
   assert.match(source, /subscribeDiagnostics/u);
   assert.match(source, /getDiagnostics/u);
   assert.match(source, /h\(\s*Teleport/u);
-  assert.match(source, /\(\) => \[props\.annotations, props\.markers\]/u);
+  assert.match(source, /\(\) => props\.annotations/u);
   assert.match(source, /\(\) => props\.interactions/u);
   assert.match(source, /semantic:\$\{target\.key\}/u);
-  assert.match(
-    source,
-    /element\.title = legacyTitles\.get\(annotation\.id\) \?\? annotation\.ariaLabel/u,
-  );
-  assert.doesNotMatch(source, /createTileflowMarkerController/u);
+  assert.match(source, /element\.title = annotation\.ariaLabel/u);
 });

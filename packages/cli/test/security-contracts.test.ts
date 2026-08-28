@@ -90,7 +90,6 @@ test('one hosted preflight rejects external data for validation and deploy calle
       main: {
         id: 'main',
         version: 1,
-        root: {compiler: 'streets', compilerVersion: 1},
       },
     },
   } as const;

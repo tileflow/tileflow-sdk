@@ -1,8 +1,8 @@
 import type {TileflowAnnotation} from '@tileflow/interactions';
 import TileflowMap, {
   TileflowMap as NamedTileflowMap,
+  type TileflowMapAnnotationSnippet,
   type TileflowMapInteractionSnippet,
-  type TileflowMapMarkerSnippet,
   type TileflowMapProps,
 } from '../src/index.js';
 
@@ -38,7 +38,7 @@ const mixedSource: TileflowMapProps = {
 };
 
 type PropertyAnnotation = TileflowAnnotation<{name: string}>;
-declare const markerSnippet: TileflowMapMarkerSnippet<PropertyAnnotation>;
+declare const markerSnippet: TileflowMapAnnotationSnippet<PropertyAnnotation>;
 declare const overlaySnippet: TileflowMapInteractionSnippet<PropertyAnnotation>;
 
 const interactionProps = {
@@ -71,13 +71,6 @@ const interactionProps = {
   source: {kind: 'tileflow', map: 'main'},
   tooltip: overlaySnippet,
 } satisfies TileflowMapProps<PropertyAnnotation>;
-
-// @ts-expect-error annotations and legacy markers are mutually exclusive.
-const mixedAnnotations: TileflowMapProps = {
-  annotations: [],
-  markers: [],
-  source: {kind: 'tileflow', map: 'main'},
-};
 
 // @ts-expect-error controlled and default interaction states are mutually exclusive.
 const mixedInteractionState: TileflowMapProps = {
@@ -130,7 +123,6 @@ void [
   legacyConfig,
   mixedSource,
   interactionProps,
-  mixedAnnotations,
   mixedInteractionState,
   imageAnnotations,
   imageInteractions,

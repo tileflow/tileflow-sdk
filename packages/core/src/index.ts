@@ -1,4 +1,90 @@
-export {createStyle, parseTileflowMap, validateTileflowMap} from './map';
+export {createStyle, createStyleResult, parseTileflowMap, validateTileflowMap} from './map';
+export type {TileflowCompilationOptions, TileflowStyleOptions} from './map';
+/** Validate an inheritance-free compiler input without applying authoring resolution again. */
+export {parseResolvedTileflowMap} from './resolved-map-schema';
+export {
+  tileflowAuthoringManifest,
+  tileflowAuthoringManifestSchemaVersion,
+} from './authoring-manifest';
+export type {
+  TileflowAuthoringCommand,
+  TileflowAuthoringCommandName,
+  TileflowAuthoringCommandOutputKind,
+  TileflowAuthoringExpressionBuilder,
+  TileflowAuthoringManifest,
+  TileflowAuthoringManifestDomain,
+  TileflowAuthoringOperation,
+} from './authoring-manifest';
+export {diffTileflowMaps, tileflowSemanticDiffSchemaVersion} from './semantic-diff';
+export type {
+  TileflowSemanticAdd,
+  TileflowSemanticChange,
+  TileflowSemanticDiff,
+  TileflowSemanticDifference,
+  TileflowSemanticJsonValue,
+  TileflowSemanticMapIdentity,
+  TileflowSemanticRemove,
+} from './semantic-diff';
+export {
+  isTileflowCompilationPhase,
+  tileflowCompilationPhases,
+  tileflowCompilationPlannerStages,
+  tileflowCompilationReportSchemaVersion,
+} from './cartography/compilation-report';
+export {field} from './cartography/semantic-bindings';
+export type {
+  TileflowDataFieldReference,
+  TileflowDataFieldValue,
+  TileflowNumericDataFieldName,
+} from './cartography/semantic-bindings';
+export {expr} from './cartography/data-expression';
+export type {
+  TileflowDataCaseBranch,
+  TileflowDataExpressionInput,
+  TileflowDataExpressionResult,
+  TileflowDataInterpolation,
+  TileflowDataMatchBranch,
+  TileflowDataStop,
+} from './cartography/data-expression';
+export {
+  refineRenderTarget,
+  renderPass,
+  tileflowRenderSelectorComparisons,
+  tileflowRenderSelectorGeometries,
+  tileflowRenderSelectorKinds,
+  tileflowRenderStackLimits,
+  tileflowRenderStackPhases,
+  tileflowRenderStackRenderers,
+  withRenderStack,
+} from './cartography/render-stack';
+export type {
+  TileflowModuleWithRenderStack,
+  TileflowNamedRenderStack,
+  TileflowRenderComparison,
+  TileflowRenderFeature,
+  TileflowRenderField,
+  TileflowRenderGeometry,
+  TileflowRenderPass,
+  TileflowRenderPassInput,
+  TileflowRenderScalar,
+  TileflowRenderSelector,
+  TileflowRenderStackOperation,
+  TileflowRenderStackPhase,
+  TileflowRenderTargetRefinement,
+  TileflowRenderTargetRefinementInput,
+  TileflowRenderVisibilityGroup,
+} from './cartography/render-stack';
+export type {
+  TileflowCompilationDiagnostic,
+  TileflowCompilationDomainReport,
+  TileflowCompilationFailure,
+  TileflowCompilationPhase,
+  TileflowCompilationPlannerDecision,
+  TileflowCompilationPlannerStage,
+  TileflowCompilationReport,
+  TileflowCompilationResult,
+  TileflowCompilationSuccess,
+} from './cartography/compilation-report';
 export {TileflowResolvedMapValidationError} from './resolved-map-schema';
 export {
   normalizeTileflowCaptureScene,
@@ -93,12 +179,14 @@ export type {
   ValidationResult,
 } from './types';
 export {tileflowPoiCategories} from './types';
-export type {TileflowStyleOptions} from './map';
 export {
   defineMap,
-  defineRootMap,
+  disable,
   isTileflowLocalDirectory,
+  refine,
+  reset,
   resolveMap,
+  TileflowMapResolutionError,
   tileflowLocalDirectoryMaximumLength,
   tileflowLocalDirectoryMessage,
   tileflowMapDefaultMaxDepth,
@@ -107,6 +195,8 @@ export {
 export type {
   ResolvedTileflowMap,
   ResolveMapOptions,
+  TileflowAuthoringModules,
+  TileflowDisableOperation,
   TileflowFontDirectory,
   TileflowDerivedMap,
   TileflowGlyphs,
@@ -114,12 +204,16 @@ export type {
   TileflowIconDirectory,
   TileflowLocalDirectory,
   TileflowMap,
+  TileflowModuleOperation,
+  TileflowModulePatch,
   TileflowMapDelivery,
   TileflowMapDesign,
   TileflowMapIdentity,
-  TileflowMapRoot,
   TileflowMapScene,
+  TileflowStandaloneMap,
   TileflowMapTooling,
+  TileflowRefineOperation,
+  TileflowReset,
   TileflowPackageDirectory,
 } from './maps';
 export {
@@ -136,7 +230,7 @@ export type {
   TileflowRuntimeManifestTheme,
   TileflowRuntimeSystemThemes,
 } from './manifest';
-export type {TileflowStreetsModules} from './cartography/streets-recipe';
+export type {TileflowSemanticModules} from './cartography/domain-registry';
 export {
   isCanonicalOpenMapTilesSchema,
   isTileflowWorldReleaseId,
@@ -156,12 +250,10 @@ export {
   tileflowWorldTileJsonUrl,
   vectorTiles,
 } from './data';
-export {color, expression, filter, fixed, token, zoom} from './cartography/values';
+export {color, fixed, tileflowThemeTokenCategories, token, zoom} from './cartography/values';
 export {analyzeTileflowStylePerformance} from './cartography/performance';
 export type {TileflowStylePerformance, TileflowZoomPerformance} from './cartography/performance';
 export type {
-  TileflowExpression,
-  TileflowFilterExpression,
   TileflowFixedValue,
   TileflowStyleValue,
   TileflowThemeColorAlpha,
@@ -186,6 +278,7 @@ export {
   resolveThemeSelection,
   resolveThemeValues,
   resolveTileflowTheme,
+  tileflowThemeLimits,
   TileflowThemeAuditError,
 } from './themes';
 export type {
@@ -194,7 +287,6 @@ export type {
   TileflowTheme,
   TileflowThemeAuditContext,
   TileflowThemeAuditDiagnostic,
-  TileflowThemeAuditEffectKind,
   TileflowThemeAuditScope,
   TileflowThemeColorScheme,
   TileflowThemeDefinition,
@@ -274,6 +366,7 @@ export {
   roads,
   tileflowLandformClasses,
   tileflowPoiImageRoles,
+  tileflowRoadClasses,
   transit,
   vegetation,
   water,
@@ -335,8 +428,10 @@ export type {
   TileflowLinePaint,
   TileflowLineStackStyle,
   TileflowLineStyle,
+  TileflowMarkerSymbolStyle,
   TileflowNumberStyleValue,
   TileflowNumberInsetsStyleValue,
+  TileflowPriorityOrder,
   TileflowStringStyleValue,
   TileflowStructuralStyleValue,
   TileflowSymbolPlacement,
@@ -420,7 +515,6 @@ export type {
   TileflowManifestLoadOptions,
   TileflowMapMode,
   TileflowMapModeOptions,
-  TileflowMapMarker,
   TileflowRuntimeManifestMap,
   TileflowRuntimeCenterLike,
   TileflowRuntimeStyle,

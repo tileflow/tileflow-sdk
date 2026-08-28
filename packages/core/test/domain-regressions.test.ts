@@ -2,7 +2,6 @@ import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {TileflowLayerContribution} from '../src/cartography/contributions';
-import {assembleTileflowLayers} from '../src/cartography/graph';
 import {
   aeroways,
   buildings,
@@ -23,6 +22,7 @@ import {compilePoi} from '../src/modules/poi/compiler';
 import {compileRoads} from '../src/modules/roads/compiler';
 import {compileVegetation} from '../src/modules/vegetation/compiler';
 import {resolveColors} from '../src/themes';
+import {assembleTileflowLayers} from './layer-ir-fixture';
 
 const context = {
   colors: resolveColors(),
@@ -49,7 +49,7 @@ function styleFor(contributions: readonly TileflowLayerContribution[]) {
 test('vegetation emits ordered radius stops when minZoom is 20 or greater', () => {
   for (const minZoom of [20, 21, 24]) {
     const style = styleFor(compileVegetation(vegetation({minZoom}), context));
-    const trees = style.layers.find((layer) => layer.id === 'streets-vegetation-trees');
+    const trees = style.layers.find((layer) => layer.id === 'tileflow-vegetation-trees');
 
     assert.equal(trees?.minzoom, minZoom);
     assert.deepEqual(validateStyleMin(style), []);
@@ -65,14 +65,14 @@ test('route shields remain available when road-name labels are disabled', () => 
   assert.equal(
     style.layers.some(
       (layer) =>
-        layer.id.startsWith('streets-label-road-') &&
+        layer.id.startsWith('tileflow-label-road-') &&
         !layer.id.includes('shield') &&
         !layer.id.includes('junction'),
     ),
     false,
   );
-  assert.ok(style.layers.some((layer) => layer.id === 'streets-label-road-shield-overview'));
-  assert.ok(style.layers.some((layer) => layer.id === 'streets-label-road-shield-detail'));
+  assert.ok(style.layers.some((layer) => layer.id === 'tileflow-label-road-shield-overview'));
+  assert.ok(style.layers.some((layer) => layer.id === 'tileflow-label-road-shield-detail'));
   assert.deepEqual(validateStyleMin(style), []);
 });
 
@@ -85,7 +85,7 @@ test('English labels honor the remapped nameEnglish binding', () => {
     }),
   );
   const style = styleFor(compileLabels(labels({language: 'en'}), undefined, {...context, data}));
-  const place = style.layers.find((layer) => layer.id === 'streets-label-place-city');
+  const place = style.layers.find((layer) => layer.id === 'tileflow-label-place-city');
 
   assert.match(JSON.stringify(place?.layout), /english_label/);
   assert.doesNotMatch(JSON.stringify(place?.layout), /name:en/);
@@ -123,13 +123,13 @@ test('POI compilation deduplicates canonical categories and honors remapped fiel
       {...context, data},
     ),
   );
-  const poiLayers = style.layers.filter((layer) => layer.id.startsWith('streets-poi-'));
-  const transport = poiLayers.find((layer) => layer.id === 'streets-poi-transport-label');
+  const poiLayers = style.layers.filter((layer) => layer.id.startsWith('tileflow-poi-'));
+  const transport = poiLayers.find((layer) => layer.id === 'tileflow-poi-transport-label');
   const serialized = JSON.stringify(poiLayers);
 
   assert.deepEqual(
     poiLayers.map((layer) => layer.id),
-    ['streets-poi-food-drink-label', 'streets-poi-transport-label'],
+    ['tileflow-poi-food-drink-label', 'tileflow-poi-transport-label'],
   );
   assert.equal(new Set(poiLayers.map((layer) => layer.id)).size, poiLayers.length);
   assert.equal(transport?.minzoom, 20);
@@ -145,7 +145,7 @@ test('POI compilation deduplicates canonical categories and honors remapped fiel
 
 test('one-way markers follow visible road detail and line geometry', () => {
   const style = styleFor(compileRoads(roads({detail: 'highways', oneWayMarkers: true}), context));
-  const marker = style.layers.find((layer) => layer.id === 'streets-road-oneway');
+  const marker = style.layers.find((layer) => layer.id === 'tileflow-road-oneway');
   const filter = JSON.stringify(marker?.filter);
 
   assert.match(filter, /LineString/);
@@ -155,7 +155,7 @@ test('one-way markers follow visible road detail and line geometry', () => {
 
   const noRoads = styleFor(compileRoads(roads({detail: 'none', oneWayMarkers: true}), context));
   assert.equal(
-    noRoads.layers.some((layer) => layer.id === 'streets-road-oneway'),
+    noRoads.layers.some((layer) => layer.id === 'tileflow-road-oneway'),
     false,
   );
   assert.deepEqual(validateStyleMin(style), []);
@@ -166,8 +166,8 @@ test('road and aeroway line phases exclude polygon geometries', () => {
     ...compileAeroways(aeroways(), context),
     ...compileRoads(roads({detail: 'major'}), context),
   ]);
-  const road = style.layers.find((layer) => layer.id === 'streets-road-surface-primary-fill');
-  const runway = style.layers.find((layer) => layer.id === 'streets-aeroway-runway-fill');
+  const road = style.layers.find((layer) => layer.id === 'tileflow-road-surface-primary-fill');
+  const runway = style.layers.find((layer) => layer.id === 'tileflow-aeroway-runway-fill');
 
   assert.match(JSON.stringify(road?.filter), /LineString/);
   assert.match(JSON.stringify(runway?.filter), /LineString/);
@@ -176,8 +176,8 @@ test('road and aeroway line phases exclude polygon geometries', () => {
 
 test('grass and scrub compiler filters are mutually exclusive', () => {
   const layers = compileLand(undefined, context);
-  const grass = layers.find((entry) => entry.layer.id === 'streets-landcover-grass');
-  const scrub = layers.find((entry) => entry.layer.id === 'streets-landcover-scrub');
+  const grass = layers.find((entry) => entry.layer.id === 'tileflow-landcover-grass');
+  const scrub = layers.find((entry) => entry.layer.id === 'tileflow-landcover-scrub');
 
   assert.match(JSON.stringify(grass?.layer.filter), /scrub/);
   assert.match(JSON.stringify(grass?.layer.filter), /"!"/);
@@ -194,9 +194,9 @@ test('administrative, disputed, and maritime boundary filters are disjoint', () 
     }),
   );
   const style = styleFor(compileBoundaries(undefined, {...context, data}));
-  const admin2 = style.layers.find((layer) => layer.id === 'streets-boundary-admin2');
-  const disputed = style.layers.find((layer) => layer.id === 'streets-boundary-disputed');
-  const maritime = style.layers.find((layer) => layer.id === 'streets-boundary-maritime');
+  const admin2 = style.layers.find((layer) => layer.id === 'tileflow-boundary-admin2');
+  const disputed = style.layers.find((layer) => layer.id === 'tileflow-boundary-disputed');
+  const maritime = style.layers.find((layer) => layer.id === 'tileflow-boundary-maritime');
 
   assert.match(JSON.stringify(admin2?.filter), /disputed/);
   assert.match(JSON.stringify(admin2?.filter), /sea_boundary/);
@@ -208,7 +208,7 @@ test('administrative, disputed, and maritime boundary filters are disjoint', () 
 
 test('3d buildings use a conservative height and clamp their base to the height', () => {
   const style = styleFor(compileBuildings(buildings({mode: '3d'}), context));
-  const layer = style.layers.find((candidate) => candidate.id === 'streets-buildings-3d');
+  const layer = style.layers.find((candidate) => candidate.id === 'tileflow-buildings-3d');
   const serialized = JSON.stringify(layer);
 
   assert.match(serialized, /fill-extrusion-height/);
@@ -236,11 +236,11 @@ test('optional source-layer capabilities do not emit permanently missing layers'
   ];
 
   assert.equal(
-    layers.some(({layer}) => layer.id === 'streets-global-landcover'),
+    layers.some(({layer}) => layer.id === 'tileflow-global-landcover'),
     false,
   );
   assert.equal(
-    layers.some(({layer}) => layer.id === 'streets-vegetation-trees'),
+    layers.some(({layer}) => layer.id === 'tileflow-vegetation-trees'),
     false,
   );
 });

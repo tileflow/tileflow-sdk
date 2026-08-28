@@ -1,4 +1,4 @@
-import {getResolvedModuleEffects} from './cartography/module-effects';
+import {tileflowSemanticCompilerIdentity} from './cartography/semantic-compiler';
 import {
   inferTileflowDataRequirements,
   inferTileflowSourceRequirements,
@@ -8,6 +8,7 @@ import {
 import {compareCodeUnits, serializeCanonicalJson, sha256Hex} from './icon-package';
 import {parseTileflowMap} from './map';
 import {type ResolvedTileflowMap, type TileflowMap, tileflowMapIdSchema} from './maps';
+import {parseResolvedTileflowMap} from './resolved-map-schema';
 import type {MapLibreStyle} from './types';
 
 export const tileflowMapRevisionSchemaVersion = 1 as const;
@@ -63,7 +64,8 @@ export type TileflowMapBuildLineageEntry = {
 export type TileflowMapBuildInput = {
   assets: readonly TileflowHashableBuildAsset[];
   lineage: readonly TileflowMapBuildLineageEntry[];
-  map: TileflowMap;
+  /** Validated, inheritance-free semantic compiler input. */
+  map: ResolvedTileflowMap;
   sourceAssets: TileflowEffectiveMapSourceAssets;
   styles: Readonly<Record<string, MapLibreStyle>>;
 };
@@ -83,9 +85,9 @@ export type TileflowMapBuildManifestEntryV1 = {
   lineage: readonly TileflowMapBuildLineageEntry[];
   mapRevisionSha256: string;
   mapVersion: number;
-  recipe: {
-    compiler: 'streets';
-    compilerVersion: number;
+  semanticCompiler: {
+    name: 'tileflow-semantic';
+    version: number;
   };
   sourceAssets: TileflowEffectiveMapSourceAssets;
   systemThemes?: {dark: string; light: string};
@@ -143,7 +145,7 @@ export async function createTileflowMapBuildManifest(
     Object.entries(maps)
       .sort(([left], [right]) => compareCodeUnits(left, right))
       .map(async ([mapId, input]) => {
-        const map = parseTileflowMap(input.map);
+        const map = parseResolvedTileflowMap(input.map);
         if (map.id !== mapId) {
           throw new Error(`Tileflow build manifest key "${mapId}" must match map id "${map.id}".`);
         }
@@ -163,7 +165,7 @@ export async function createTileflowMapBuildManifest(
             lineage,
             mapRevisionSha256,
             mapVersion: map.version,
-            recipe: {...map.root},
+            semanticCompiler: {...tileflowSemanticCompilerIdentity},
             sourceAssets,
             ...(map.systemThemes ? {systemThemes: {...map.systemThemes}} : {}),
             themes,
@@ -180,7 +182,7 @@ export async function createTileflowMapBuildManifest(
 }
 
 async function normalizeCompiledThemes(
-  map: ReturnType<typeof parseTileflowMap>,
+  map: ResolvedTileflowMap,
   styles: Readonly<Record<string, MapLibreStyle>>,
 ): Promise<Record<string, TileflowThemeBuildManifestEntryV1>> {
   const declaredNames = Object.keys(map.themes).sort(compareCodeUnits);
@@ -246,29 +248,26 @@ function normalizeProvenance(input: TileflowMapBuildProvenanceV1): TileflowMapBu
 
 /** Hash a resolved map definition with the versioned, domain-separated revision contract. */
 export async function hashTileflowMapRevision(
-  input: TileflowMap | ResolvedTileflowMap,
+  input: ResolvedTileflowMap,
   sourceAssets: TileflowEffectiveMapSourceAssets,
 ): Promise<string> {
-  const map = parseTileflowMap(input as TileflowMap);
+  const map = parseResolvedTileflowMap(input);
   const {
     delivery: _delivery,
     fonts: _fonts,
     icons: _icons,
     id: _id,
     name: _name,
-    root,
     version: _version,
     view: _view,
     ...effectiveCartography
   } = map;
-  const compilerEffects = getResolvedModuleEffects(map);
   const revisionDocument = {
     canonicalization: tileflowMapRevisionCanonicalization,
-    compilerEffects,
     effectiveCartography: {
       ...effectiveCartography,
-      // The compiler family is map semantics. Its ABI version is a separate compatibility axis.
-      root: {compiler: root.compiler},
+      // The semantic language is map semantics. Its compiler ABI version remains a separate axis.
+      semanticLanguage: tileflowSemanticCompilerIdentity.name,
     },
     schemaVersion: tileflowMapRevisionSchemaVersion,
     sourceAssets: normalizeSourceAssets(sourceAssets),

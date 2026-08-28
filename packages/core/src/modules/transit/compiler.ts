@@ -3,13 +3,14 @@ import type {TileflowLayerContribution, TileflowLayerSlot} from '../../cartograp
 import {applyLineStyle} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {zoom} from '../../cartography/values';
+import type {TileflowResolvedModuleConfig} from '../resolved';
 import type {TileflowTransitModuleConfig} from './index';
 
 export function compileTransit(
-  request: TileflowTransitModuleConfig | undefined,
+  request: TileflowResolvedModuleConfig<TileflowTransitModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
 ): TileflowLayerContribution[] {
-  const config = mergeTileflowDesign<TileflowTransitModuleConfig>(
+  const config = mergeTileflowDesign<TileflowResolvedModuleConfig<TileflowTransitModuleConfig>>(
     {
       type: 'transit',
       enabled: true,
@@ -107,7 +108,7 @@ export function compileTransit(
           kind: 'layer' as const,
           layer: applyLineStyle(
             {
-              id: `streets-transit-${name}`,
+              id: `tileflow-transit-${name}`,
               type: 'line',
               source,
               'source-layer': schema.layers.road,
@@ -143,7 +144,7 @@ export function compileTransit(
         kind: 'layer',
         layer: applyLineStyle(
           {
-            id: `streets-transit-${name}-${structure}`,
+            id: `tileflow-transit-${name}-${structure}`,
             type: 'line',
             source,
             'source-layer': schema.layers.road,

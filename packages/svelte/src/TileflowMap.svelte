@@ -24,7 +24,6 @@
     resolveTileflowRuntimeView,
     resolveTileflowStaticImageUrl,
     shouldLoadTileflowManifest,
-    type TileflowMapMarker,
     type TileflowRuntimeManifestMap,
   } from '@tileflow/core/runtime';
   import {
@@ -61,7 +60,6 @@
     createTileflowMapLibreDomRuntime,
     createTileflowMapLibreInteractionCoordinator,
     createTileflowMapLibreSemanticDomRuntime,
-    normalizeTileflowLegacyMarkers,
     type TileflowMapLibreDomRenderTarget,
     type TileflowMapLibreDomRuntime,
     type TileflowMapLibreInteractionCoordinator,
@@ -89,7 +87,6 @@
   export let interactionState: TileflowMapProps['interactionState'] = undefined;
   export let mapOptions: TileflowMapProps['mapOptions'] = undefined;
   export let marker: TileflowMapProps['marker'] = undefined;
-  export let markers: TileflowMapProps['markers'] = undefined;
   export let mode: NonNullable<TileflowMapProps['mode']> = 'interactive';
   export let onInteractionDiagnostic: TileflowMapProps['onInteractionDiagnostic'] = undefined;
   export let onInteractionEvent: TileflowMapProps['onInteractionEvent'] = undefined;
@@ -137,7 +134,6 @@
   let interactionReadinessTargetKeys: readonly string[] = [];
   let hadInteractionErrors = false;
   let interactionRuntimesDisposing = false;
-  let legacyTitles: ReadonlyMap<string, string> = new Map();
   let mapResizeObserver: ResizeObserver | null = null;
   let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
   let themeController: TileflowThemeController | null = null;
@@ -248,7 +244,7 @@
       ? mapCaptureState
       : 'loading';
   $: frameStyle = `height: ${formatHeight(height)}; min-height: 240px; overflow: hidden; position: relative; width: 100%;`;
-  $: annotationResolution = resolveAnnotationInput(annotations, markers);
+  $: annotationResolution = resolveAnnotationInput(annotations);
   $: interactionBindingResolution = resolveInteractionBindingInput(interactions);
   $: interactionStateDiagnostics = validateInteractionStateInput(
     interactionState,
@@ -256,7 +252,6 @@
   );
   $: hasInteractionConfiguration =
     annotations !== undefined ||
-    markers !== undefined ||
     interactions !== undefined ||
     interactionState !== undefined ||
     defaultInteractionState !== undefined ||
@@ -331,7 +326,6 @@
 
   $: if (mounted) {
     annotations;
-    markers;
     syncAnnotations();
   }
 
@@ -630,7 +624,7 @@
         TileflowAnnotation
       >({
         createMarker({annotation, element}) {
-          element.title = legacyTitles.get(annotation.id) ?? annotation.ariaLabel;
+          element.title = annotation.ariaLabel;
           return new maplibregl.Marker({element});
         },
         createOverlay({container: overlayContainer, kind}) {
@@ -650,7 +644,7 @@
         map: maplibreMap,
         onInteractionStateChange: interactionCoordinator.requestInteractionState,
         updateMarker(_markerInstance, {annotation, element}) {
-          element.title = legacyTitles.get(annotation.id) ?? annotation.ariaLabel;
+          element.title = annotation.ariaLabel;
         },
       });
       annotationRuntime = annotationInteractionsForMap;
@@ -823,7 +817,6 @@
   }
 
   function syncAnnotations() {
-    legacyTitles = annotationResolution.titles;
     if (!annotationRuntime) return;
 
     try {
@@ -942,7 +935,6 @@
     annotations: readonly TileflowAnnotation[];
     diagnostics: readonly TileflowInteractionDiagnostic[];
     ok: boolean;
-    titles: ReadonlyMap<string, string>;
   }>;
 
   type InteractionBindingResolution = Readonly<{
@@ -953,39 +945,18 @@
 
   function resolveAnnotationInput(
     nextAnnotations: readonly TileflowAnnotation[] | undefined,
-    nextMarkers: readonly TileflowMapMarker[] | undefined,
   ): AnnotationResolution {
-    if (nextAnnotations !== undefined && nextMarkers !== undefined) {
-      return {
-        annotations: [],
-        diagnostics: [
-          createInteractionDiagnostic(
-            'INVALID_DOCUMENT',
-            'The annotations and legacy markers props are mutually exclusive.',
-          ),
-        ],
-        ok: false,
-        titles: new Map(),
-      };
-    }
-
-    const normalized = normalizeTileflowLegacyMarkers(nextMarkers ?? []);
-    const candidates = nextAnnotations ?? normalized.annotations;
-    const titles =
-      nextAnnotations === undefined
-        ? normalized.titles
-        : new Map(nextAnnotations.map((annotation) => [annotation.id, annotation.ariaLabel]));
+    const candidates = nextAnnotations ?? [];
     const validation = validateTileflowAnnotations(candidates);
     if (!validation.ok) {
       return {
         annotations: [],
         diagnostics: validation.diagnostics,
         ok: false,
-        titles,
       };
     }
 
-    return {annotations: candidates, diagnostics: [], ok: true, titles};
+    return {annotations: candidates, diagnostics: [], ok: true};
   }
 
   function resolveInteractionBindingInput(

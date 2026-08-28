@@ -11,11 +11,13 @@ const tsxLoader = import.meta.resolve('tsx');
 
 type StructuredDiagnostic = {
   code: string;
+  domain?: string;
   message: string;
   path: string;
   phase: string;
   severity: string;
   suggestion: string;
+  target?: string;
 };
 
 type CommandDocument = StructuredDiagnostic & {
@@ -30,18 +32,17 @@ test('validate and inspect emit deterministic agent JSON on stdout', async (t) =
   const secret = `tf_live_${'a'.repeat(40)}`;
   await writeFile(
     join(directory, 'tileflow.config.ts'),
-    `import {defineMap, defineRootMap, defineTheme} from '@tileflow/core';
+    `import {defineMap, defineTheme} from '@tileflow/core';
 import {streetsThemes} from '@tileflow/maps';
 if (process.env.TILEFLOW_API_KEY) throw new Error('ambient API key reached config');
 const rootTheme = defineTheme(streetsThemes.light, {
   id: 'root-light', version: 1, colorScheme: 'light',
   tokens: {color: {'surface.land': '#eeeeee', 'surface.water': '#88bbdd'}}
 });
-const root = defineRootMap({
+const root = defineMap({
   id: 'root',
   name: 'Root',
   version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   glyphs: {
     kind: 'url',
     url: 'https://example.com/fonts/{fontstack}/{range}.pbf',
@@ -144,10 +145,9 @@ test('validate and inspect emit one safe structured failure on stderr', async (t
 
   await writeFile(
     join(directory, 'tileflow.config.ts'),
-    `import {defineRootMap, defineTheme} from '@tileflow/core';
-export default defineRootMap({
-  id: 'main', version: 1, root: {compiler: 'streets', compilerVersion: 1},
-  defaultTheme: 'light',
+    `import {defineMap, defineTheme} from '@tileflow/core';
+export default defineMap({
+  id: 'main', version: 1, defaultTheme: 'light',
   themes: {light: defineTheme({id: 'light', version: 1, colorScheme: 'light'})}
 });
 `,
@@ -166,10 +166,9 @@ test('validate --json reports the exact editable path in a singular config', asy
   const directory = await createDirectoryFixture(t);
   await writeFile(
     join(directory, 'tileflow.config.ts'),
-    `import {defineRootMap, defineTheme} from '@tileflow/core';
-export default defineRootMap({
+    `import {defineMap, defineTheme} from '@tileflow/core';
+export default defineMap({
   id: 'madrid', version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   defaultTheme: 'light',
   themes: {light: defineTheme({id: 'light', version: 1, colorScheme: 'light'})},
   view: {pitch: 99}
@@ -203,12 +202,14 @@ export default defineMap({
   const document = JSON.parse(result.stderr) as CommandDocument;
   assert.equal(document.phase, 'theme-audit');
   assert.equal(document.code, 'THEME_IMPLICIT_FIXED');
+  assert.equal(document.domain, 'water');
   assert.equal(document.path, 'modules.water.bodies.fill.color');
   assert.match(document.suggestion, /token\.color/u);
   assert.deepEqual(document.diagnostics, [
     {
       phase: 'theme-audit',
       code: 'THEME_IMPLICIT_FIXED',
+      domain: 'water',
       path: 'modules.water.bodies.fill.color',
       severity: 'error',
       message:

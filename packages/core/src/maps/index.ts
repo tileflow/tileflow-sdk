@@ -1,4 +1,13 @@
-export {defineMap, defineRootMap} from './define';
+export {defineMap} from './define';
+export {disable, refine, reset} from './operations';
+export type {
+  TileflowAuthoringModules,
+  TileflowDisableOperation,
+  TileflowModuleOperation,
+  TileflowModulePatch,
+  TileflowRefineOperation,
+  TileflowReset,
+} from './operations';
 export {
   isTileflowLocalDirectory,
   tileflowLocalDirectoryMaximumLength,
@@ -9,10 +18,9 @@ export {
   type TileflowLocalDirectory,
   type TileflowPackageDirectory,
 } from './assets';
-export {resolveMap, tileflowMapDefaultMaxDepth} from './resolve';
+export {resolveMap, TileflowMapResolutionError, tileflowMapDefaultMaxDepth} from './resolve';
 export {
   tileflowMapIdSchema,
-  tileflowStreetsCompilerVersion,
   type ResolvedTileflowMap,
   type ResolveMapOptions,
   type TileflowDerivedMap,
@@ -21,9 +29,7 @@ export {
   type TileflowMapDesign,
   type TileflowMapDelivery,
   type TileflowMapIdentity,
-  type TileflowMapRoot,
   type TileflowMapScene,
   type TileflowMapTooling,
-  type TileflowRootMap,
-  type TileflowStreetsMapRoot,
+  type TileflowStandaloneMap,
 } from './types';

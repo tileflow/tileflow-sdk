@@ -1,13 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {assembleTileflowLayers, resolveSlotOrder} from '../src/cartography/graph';
-import {
-  expression,
-  filter,
-  toMapLibreFilter,
-  toMapLibreStyleValue,
-  zoom,
-} from '../src/cartography/values';
+import {resolveSlotOrder} from '../src/cartography/graph';
+import {expression, toMapLibreStyleValue, zoom} from '../src/cartography/values';
+import {assembleTileflowLayers} from './layer-ir-fixture';
 
 test('converts validated zoom values and expressions to MapLibre values', () => {
   assert.deepEqual(
@@ -29,11 +24,6 @@ test('converts validated zoom values and expressions to MapLibre values', () => 
     ['step', ['zoom'], '#fff', 10, '#000'],
   );
   assert.deepEqual(toMapLibreStyleValue(expression<number>(['get', 'rank'])), ['get', 'rank']);
-  assert.deepEqual(toMapLibreFilter(filter(['==', ['get', 'class'], 'primary'])), [
-    '==',
-    ['get', 'class'],
-    'primary',
-  ]);
 
   assert.throws(() => zoom.linear([]), /at least one stop/);
   assert.throws(
@@ -78,7 +68,7 @@ test('assembles layer contributions deterministically and rejects ambiguity', ()
         contribution('same', 'land', 'land', 10),
         contribution('same', 'water', 'hydro', 20),
       ]),
-    /Duplicate Tileflow layer ID/,
+    /Duplicate Tileflow layer-family key/,
   );
 });
 

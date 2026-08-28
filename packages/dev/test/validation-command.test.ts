@@ -122,3 +122,53 @@ test('preserves top-level theme-audit diagnostics and their actionable suggestio
     },
   ]);
 });
+
+test('preserves semantic context and normalizes legacy owner to domain', () => {
+  const document = createTileflowCommandFailureDocument(
+    'explain',
+    {
+      code: 'TILEFLOW_DOMAIN_IR_CONTEXT',
+      message: 'The semantic contribution could not be lowered.',
+      owner: 'roads',
+      path: 'modules.roads.renderStack.primaryFill',
+      phase: 'domain-ir',
+      severity: 'error',
+      target: 'roads.classes.primary.surface.fill',
+    },
+    '/tmp/tileflow-context-diagnostic',
+    {code: 'COMPILATION_FAILED', phase: 'compilation'},
+  );
+
+  assert.equal(document.domain, 'roads');
+  assert.equal(document.target, 'roads.classes.primary.surface.fill');
+  assert.deepEqual(document.diagnostics, [
+    {
+      phase: 'domain-ir',
+      code: 'TILEFLOW_DOMAIN_IR_CONTEXT',
+      domain: 'roads',
+      path: 'modules.roads.renderStack.primaryFill',
+      target: 'roads.classes.primary.surface.fill',
+      severity: 'error',
+      message: 'The semantic contribution could not be lowered.',
+      suggestion: 'Review the reported path and run the command again.',
+    },
+  ]);
+
+  const secret = `tf_live_${'z'.repeat(32)}`;
+  const unsafe = createTileflowCommandFailureDocument(
+    'explain',
+    {
+      code: 'TILEFLOW_DOMAIN_IR_CONTEXT',
+      domain: `roads-${secret}`,
+      message: 'Context must be sanitized.',
+      path: 'modules.roads',
+      phase: 'domain-ir',
+      target: `roads.primary?token=${secret}`,
+    },
+    '/tmp/tileflow-context-diagnostic',
+    {code: 'COMPILATION_FAILED', phase: 'compilation'},
+  );
+  assert.equal(unsafe.domain, 'roads-tf_[redacted]');
+  assert.equal(unsafe.target, 'roads.primary?token=[redacted]');
+  assert.doesNotMatch(serializeTileflowCommandDocument(unsafe), /tf_live_/u);
+});

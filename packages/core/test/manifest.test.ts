@@ -6,6 +6,7 @@ import {
   defineMap,
   loadTileflowManifest,
   normalizeTileflowRuntimeCenter,
+  parseTileflowMap,
   parseTileflowRuntimeManifest,
   resolveTileflowManifestMap,
   resolveTileflowRuntimeStyle,
@@ -35,8 +36,12 @@ test('creates one multi-theme manifest and transports configured views', () => {
     {
       maps: {
         main: {
-          ...extendStreets({id: 'main'}),
-          view: {bearing: 12, center: [-3.7, 40.4], pitch: 35, zoom: 10},
+          ...parseTileflowMap(
+            extendStreets({
+              id: 'main',
+              view: {bearing: 12, center: [-3.7, 40.4], pitch: 35, zoom: 10},
+            }),
+          ),
         },
       },
     },
@@ -66,7 +71,10 @@ test('manifest generation sorts maps and themes and transports inherited configu
   });
   const alpha = defineMap({id: 'alpha', version: 1, extends: parent, view: {pitch: 40}});
   const zulu = extendStreets({id: 'zulu', view: {zoom: 3}});
-  const manifest = createManifest({maps: {zulu, alpha}}, {styleBaseUrl: './tileflow/'});
+  const manifest = createManifest(
+    {maps: {zulu: parseTileflowMap(zulu), alpha: parseTileflowMap(alpha)}},
+    {styleBaseUrl: './tileflow/'},
+  );
 
   assert.equal(manifest.version, 1);
   assert.deepEqual(Object.keys(manifest.maps), ['alpha', 'zulu']);
@@ -83,7 +91,9 @@ test('manifest generation sorts maps and themes and transports inherited configu
 test('manifest creation fails explicitly for non-canonical map identifiers', () => {
   for (const mapName of ['Main', 'not_portable', 'constructor', 'prototype', 'm'.repeat(65)]) {
     assert.throws(() =>
-      createManifest({maps: Object.fromEntries([[mapName, extendStreets({id: mapName})]])}),
+      createManifest({
+        maps: Object.fromEntries([[mapName, parseTileflowMap(extendStreets({id: 'main'}))]]),
+      }),
     );
   }
 });

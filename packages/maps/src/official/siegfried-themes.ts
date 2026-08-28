@@ -186,7 +186,7 @@ function createSiegfriedTheme(
     },
     images: patternTokens(colorScheme),
     numbers: {
-      'effects.rockMask.opacity': colorScheme === 'light' ? 0.58 : 0.42,
+      'render.rockMask.opacity': colorScheme === 'light' ? 0.58 : 0.42,
     },
     fonts: {
       'type.italic': italicFont,
@@ -216,7 +216,7 @@ export const siegfriedThemes = Object.freeze({
   dark: createSiegfriedTheme('siegfried-dark', 'dark', darkPalette),
 });
 
-/** Explicit visual references consumed by the autonomous Siegfried recipe. */
+/** Explicit visual references consumed by the autonomous Siegfried design. */
 export const siegfriedVisual = Object.freeze({
   color: {
     contour: token.color('ink.contour'),
@@ -233,6 +233,6 @@ export const siegfriedVisual = Object.freeze({
     patternNames.map((name) => [name, token.image(`patterns.${name}`)]),
   ) as Record<(typeof patternNames)[number], ReturnType<typeof token.image>>,
   number: {
-    rockMaskOpacity: token.number('effects.rockMask.opacity'),
+    rockMaskOpacity: token.number('render.rockMask.opacity'),
   },
 });

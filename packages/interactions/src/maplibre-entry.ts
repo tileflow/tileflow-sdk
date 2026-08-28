@@ -8,9 +8,8 @@ export type {
   TileflowOverlayStateController,
   TileflowOverlayStateListener,
 } from './maplibre';
-export {createTileflowMapLibreDomRuntime, normalizeTileflowLegacyMarkers} from './maplibre-dom';
+export {createTileflowMapLibreDomRuntime} from './maplibre-dom';
 export type {
-  TileflowLegacyMarker,
   TileflowMapLibreDomDocument,
   TileflowMapLibreDomCustomRenderers,
   TileflowMapLibreDomDiagnosticListener,
@@ -25,7 +24,6 @@ export type {
   TileflowMapLibreDomRuntimeOptions,
   TileflowMapLibreDomStateChangeReason,
   TileflowMapLibrePositioned,
-  TileflowNormalizedLegacyMarkers,
 } from './maplibre-dom';
 export {createTileflowMapLibreInteractionCoordinator} from './maplibre-coordinator';
 export type {

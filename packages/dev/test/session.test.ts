@@ -4,7 +4,12 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {runInNewContext} from 'node:vm';
-import {defaultTileflowRuntimeView, defineRootMap} from '@tileflow/core';
+import {
+  defaultTileflowRuntimeView,
+  defineMap,
+  parseTileflowMap,
+  TileflowMapResolutionError,
+} from '@tileflow/core';
 import type {TileflowBuildCatalog} from '@tileflow/core/build';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
@@ -66,7 +71,7 @@ test('refreshes transitive JSON imports and preserves last-good artifacts across
     diagnostics: invalid.status === 'invalid' ? invalid.diagnostics : [],
   });
   const lastGoodPreview = await (await handler(new Request('http://localhost/'))).text();
-  assert.match(lastGoodPreview, /const isStreetsPreview = true/);
+  assert.match(lastGoodPreview, /const isSemanticPreview = true/);
   assert.match(lastGoodPreview, /const previewFontFaces = \[/);
   const lastGoodStyle = await handler(new Request('http://localhost/styles/main/light.json'));
   assert.equal(lastGoodStyle.status, 200);
@@ -130,10 +135,9 @@ test('publishes only the newest overlapping refresh generation', async () => {
       manifest: {version: 1, maps: {}},
       project: {
         maps: {
-          [mapId]: defineRootMap({
+          [mapId]: defineMap({
             id: mapId,
             version: 1,
-            root: {compiler: 'streets', compilerVersion: 1},
             ...fixtureThemeFields,
           }),
         },
@@ -172,6 +176,36 @@ test('redacts external absolute paths from watched-build diagnostic messages', a
     cwd,
   );
   assert.equal(windowsDiagnostics[0]?.path, '(external)');
+});
+
+test('preserves semantic resolution pointers without exposing filesystem paths', async (t) => {
+  const cwd = await createFixture(t);
+  const resolutionDiagnostics = createTileflowArtifactDiagnostics(
+    new TileflowMapResolutionError(
+      'TILEFLOW_MODULE_ENABLED_RESERVED',
+      'fixture',
+      '/modules/water/enabled',
+      'enabled is compiler-owned state; use disable() to suppress a complete semantic domain.',
+    ),
+    cwd,
+  );
+
+  assert.deepEqual(resolutionDiagnostics, [
+    {
+      code: 'TILEFLOW_MODULE_ENABLED_RESERVED',
+      message:
+        'Invalid Tileflow map "fixture": enabled is compiler-owned state; use disable() to suppress a complete semantic domain.',
+      path: '/modules/water/enabled',
+    },
+  ]);
+
+  const external = join(cwd, '..', 'private-fixture', 'secret.json');
+  const filesystemDiagnostics = createTileflowArtifactDiagnostics(
+    Object.assign(new Error(`Unable to read ${external}`), {path: external}),
+    cwd,
+  );
+  assert.equal(filesystemDiagnostics[0]?.path, '(external)');
+  assert.equal(JSON.stringify(filesystemDiagnostics).includes(external), false);
 });
 
 test('preserves bounded code/phase diagnostics with deterministic URL-safe ordering', async (t) => {
@@ -475,7 +509,7 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.doesNotMatch(preview, /map\.on\("pitch", this\.update\)/);
   assert.match(preview, /toggle !== "building" && toggle !== "landmark"/);
   assert.match(preview, /setLayoutProperty\(layer\.id, "visibility", visibility\)/);
-  assert.match(preview, /const isStreetsPreview = true/);
+  assert.match(preview, /const isSemanticPreview = true/);
   assert.match(preview, /__events/);
   assert.match(preview, /new URL\(location\.href\)\.searchParams/);
   assert.match(preview, /delete resolved\.bounds/);
@@ -517,7 +551,7 @@ test('serves pinned local preview assets and a cancellable session event stream'
   );
   assert.match(
     preview,
-    /const treeLayer = map\.getLayer\("tileflow-vegetation-trees-3d"\)[\s\S]*?map\.getLayer\("streets-vegetation-trees"\)[\s\S]*?map\.addLayer\(createLandmarkLayer\(map, configLayer, fallbackLayers\), treeLayer\)/,
+    /const treeLayer = map\.getLayer\("tileflow-vegetation-trees-3d"\)[\s\S]*?map\.getLayer\("tileflow-vegetation-trees"\)[\s\S]*?map\.addLayer\(createLandmarkLayer\(map, configLayer, fallbackLayers\), treeLayer\)/,
   );
   assert.match(preview, /loader\.setMeshoptDecoder\(MeshoptDecoder\)/);
   assert.match(preview, /credentials: "include"/);
@@ -698,19 +732,21 @@ test('selects map and scene previews with their configured cameras and viewport'
 
   const project: TileflowBuildCatalog = {
     maps: {
-      first: defineRootMap({
-        id: 'first',
-        version: 1,
-        root: {compiler: 'streets', compilerVersion: 1},
-        ...fixtureThemeFields,
-      }),
-      second: defineRootMap({
-        id: 'second',
-        version: 1,
-        root: {compiler: 'streets', compilerVersion: 1},
-        ...fixtureThemeFields,
-        view: {bearing: 12, center: [2, 3], pitch: 35, zoom: 9},
-      }),
+      first: parseTileflowMap(
+        defineMap({
+          id: 'first',
+          version: 1,
+          ...fixtureThemeFields,
+        }),
+      ),
+      second: parseTileflowMap(
+        defineMap({
+          id: 'second',
+          version: 1,
+          ...fixtureThemeFields,
+          view: {bearing: 12, center: [2, 3], pitch: 35, zoom: 9},
+        }),
+      ),
     },
     scenes: {
       bounds: {
@@ -1141,7 +1177,7 @@ test('rejects and never watches icon directories outside the working tree', asyn
 
 const tokenModule = `import tokens from './tokens.json';\nexport default tokens;\n`;
 const fixtureGlyphsSource = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold']}`;
-const validConfig = `import {defineMap} from '@tileflow/core';
+const validConfig = `import {defineMap, disable} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 import tokens from './tokens.ts';
 export default defineMap({
@@ -1150,25 +1186,25 @@ export default defineMap({
   extends: streets,
   icons: [],
   glyphs: ${fixtureGlyphsSource},
-  modules: {poi: {type: 'poi', icons: false}, roads: {type: 'roads', enabled: false}},
+  modules: {poi: {type: 'poi', icons: false}, roads: disable()},
   name: tokens.water
 });
 `;
 const invalidConfig = `import {defineMap} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 export default defineMap({id: 'main', version: 1, extends: streets, unsupported: true});\n`;
-const previewConfig = `import {defineMap} from '@tileflow/core';
+const previewConfig = `import {defineMap, disable} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 export default {
   maps: {
-    first: defineMap({id: 'first', version: 1, extends: streets, icons: [], glyphs: ${fixtureGlyphsSource}, modules: {poi: {type: 'poi', icons: false}, roads: {type: 'roads', enabled: false}}}),
+    first: defineMap({id: 'first', version: 1, extends: streets, icons: [], glyphs: ${fixtureGlyphsSource}, modules: {poi: {type: 'poi', icons: false}, roads: disable()}}),
     second: defineMap({
       id: 'second',
       version: 1,
       extends: streets,
       icons: [],
       glyphs: ${fixtureGlyphsSource},
-      modules: {poi: {type: 'poi', icons: false}, roads: {type: 'roads', enabled: false}},
+      modules: {poi: {type: 'poi', icons: false}, roads: disable()},
       view: {bearing: 12, center: [2, 3], pitch: 35, zoom: 9},
       scenes: {
         bounds: {
@@ -1381,31 +1417,31 @@ function runPreviewScript(
       return {
         layers: [
           {
-            id: 'streets-landuse-business-area',
+            id: 'tileflow-landuse-business-area',
             metadata: {},
             'source-layer': 'landuse',
             type: 'fill',
           },
           {
-            id: 'streets-buildings-3d',
+            id: 'tileflow-buildings-3d',
             metadata: {'tileflow:3d-toggle': 'building'},
             type: 'fill-extrusion',
           },
           {
-            id: 'streets-vegetation-trees',
+            id: 'tileflow-vegetation-trees',
             metadata: {},
             type: 'circle',
           },
         ],
-        metadata: {'tileflow:root': 'streets'},
+        metadata: {'tileflow:compiler': 'tileflow-semantic'},
       };
     }
 
     getLayoutProperty(layerId: string, property: string): string | undefined {
       if (property !== 'visibility') return undefined;
-      if (layerId === 'streets-landuse-business-area') return businessAreaVisibility;
-      if (layerId === 'streets-buildings-3d') return buildingVisibility;
-      if (layerId === 'streets-vegetation-trees') return treeVisibility;
+      if (layerId === 'tileflow-landuse-business-area') return businessAreaVisibility;
+      if (layerId === 'tileflow-buildings-3d') return buildingVisibility;
+      if (layerId === 'tileflow-vegetation-trees') return treeVisibility;
       return undefined;
     }
 
@@ -1432,13 +1468,13 @@ function runPreviewScript(
     }
 
     setLayoutProperty(layerId: string, property: string, value: string): void {
-      if (layerId === 'streets-landuse-business-area' && property === 'visibility') {
+      if (layerId === 'tileflow-landuse-business-area' && property === 'visibility') {
         businessAreaVisibility = value;
       }
-      if (layerId === 'streets-buildings-3d' && property === 'visibility') {
+      if (layerId === 'tileflow-buildings-3d' && property === 'visibility') {
         buildingVisibility = value;
       }
-      if (layerId === 'streets-vegetation-trees' && property === 'visibility') {
+      if (layerId === 'tileflow-vegetation-trees' && property === 'visibility') {
         treeVisibility = value;
       }
     }

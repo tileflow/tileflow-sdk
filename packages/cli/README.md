@@ -81,14 +81,23 @@ Use JSON mode when an agent or CI job needs to validate or reason about the reso
 npm exec --no -- tileflow validate --json
 npm exec --no -- tileflow inspect --json
 npm exec --no -- tileflow inspect --map madrid --json
+npm exec --no -- tileflow language manifest --json
+npm exec --no -- tileflow language schema --json
+npm exec --no -- tileflow explain --map madrid --theme dark --json
+npm exec --no -- tileflow semantic-diff --from-config before/tileflow.config.ts --to-config after/tileflow.config.ts --json
+npm exec --no -- tileflow semantic-diff --config maps.workspace.ts --from before --to after --json
 ```
 
-Success writes exactly one schema-version-1 document to stdout. Failure leaves stdout empty and
-writes one document to stderr. Both summaries and every failure diagnostic always contain
-`phase`, `code`, `path`, `severity`, `message`, and a bounded safe `suggestion`; diagnostics are
-sorted and deduplicated deterministically.
+`validate`, `inspect`, `explain`, and `semantic-diff` success writes exactly one
+schema-version-1 command envelope to stdout. The two discovery commands intentionally return their
+contracts raw instead of wrapping them: `language manifest --json` emits authoring-manifest version
+1 and `language schema --json` emits config-reference version 3. Every JSON-mode failure, including
+failure to load either raw discovery contract, leaves stdout empty and writes one schema-version-1
+command failure to stderr. Command summaries and every failure diagnostic contain `phase`, `code`,
+`path`, `severity`, `message`, and a bounded safe `suggestion`; diagnostics are sorted and
+deduplicated deterministically.
 
-Config inspection returns the resolved map, root-to-leaf lineage, declared paths, leaf-level merge
+Config inspection returns the resolved map, parent-to-leaf lineage, declared paths, leaf-level merge
 provenance, and an explicit `themeContract`: default/system selection, shared token schema,
 concrete values, typography, lighting, differences from the default, and stable audit diagnostics.
 It omits the executable input-file graph and sanitizes credentials, URL queries,
@@ -99,15 +108,59 @@ config with `extends` and `scenes`, while its named `resolved` entrypoint matche
 compiler input. Both are produced from executable core schemas rather than a handwritten parallel
 API list.
 
+`tileflow language manifest --json` discovers the complete closed semantic language without loading
+a project: compiler identity, domains and their dependencies, public operations, expression-builder
+signatures and limits, render selectors, semantic fields/features, diagnostics, reports, commands,
+and schema references. `tileflow language schema --json` returns the packaged generated JSON Schema
+that those references address. Together they are the canonical bootstrap surface for an authoring
+agent; neither command writes files or accesses the network.
+
+Each manifest command entry declares its `outputKind`, `outputVersion`, and stable
+`outputSchemaRef`. `raw-authoring-manifest` and `raw-config-reference` identify the two bootstrap
+documents above; `command-envelope` identifies the ordinary version-1 CLI contract.
+
+`tileflow explain` compiles exactly one map/theme selection through `createStyleResult()` and emits
+its structured `report` and safe compiler `diagnostics`; it deliberately omits the usually large
+MapLibre `style`. In a singular config, `--map` is optional; a multi-map workbench requires it.
+`--theme` defaults to that map's declared default. `--inspection` adds opt-in, read-only
+physical-output provenance to the report. Its physical layer IDs and indexes are diagnostic
+observations only: they are not stable application or authoring targets, and no semantic operation
+accepts them. The JSON document has this stable projection:
+
+```json
+{
+  "schemaVersion": 1,
+  "command": "explain",
+  "ok": true,
+  "selection": {"map": "madrid", "theme": "dark"},
+  "authoringManifestSchemaVersion": 1,
+  "compilation": {"ok": true, "diagnostics": [], "report": {}},
+  "diagnostics": []
+}
+```
+
+`tileflow semantic-diff --from-config <path> --to-config <path>` compares the sole map exported by
+each ordinary config, which is the normal agent workflow for reviewing a change across two files or
+checkouts. If either endpoint is a multi-map `*.workspace.ts`, select that endpoint explicitly with
+`--from-map` or `--to-map`; selectors are rejected for singular configs. The existing
+`--config <workspace> --from <map> --to <map>` form remains as the same-workspace shortcut. Paired
+config options and workspace options cannot be mixed.
+
+The successful document adds `diff`, whose exact core shape is `{schemaVersion, from, to, summary,
+changes}`; each change is `add`, `remove`, or `change` at an RFC 6901 JSON Pointer. Differences are
+informational, so a non-empty diff still exits successfully. Selection, load, validation, asset, or
+compilation failures leave stdout empty and emit one safe structured document on stderr.
+
 ## Command families
 
-| Family          | Commands                                                                                       |
-| --------------- | ---------------------------------------------------------------------------------------------- |
-| Map authoring   | `init`, `validate`, `inspect`, `build`, `preview` (`dev` alias)                                |
-| Local evidence  | `setup capture`, `capture`, `visual compare`, `visual analyze`, `visual diff`, `visual update` |
-| Data and assets | `inspect features`, `icons list --json`, `icons diff`                                          |
-| Account         | `login`, `logout`, `whoami`                                                                    |
-| Hosted delivery | `deploy`, `status`                                                                             |
+| Family            | Commands                                                                                       |
+| ----------------- | ---------------------------------------------------------------------------------------------- |
+| Semantic language | `language manifest`, `language schema`                                                         |
+| Map authoring     | `init`, `validate`, `inspect`, `explain`, `semantic-diff`, `build`, `preview` (`dev` alias)    |
+| Local evidence    | `setup capture`, `capture`, `visual compare`, `visual analyze`, `visual diff`, `visual update` |
+| Data and assets   | `inspect features`, `icons list --json`, `icons diff`                                          |
+| Account           | `login`, `logout`, `whoami`                                                                    |
+| Hosted delivery   | `deploy`, `status`                                                                             |
 
 Run `tileflow <command> --help` (or the family help, such as `tileflow icons --help`) for the exact
 arguments and bounded JSON modes.

@@ -305,8 +305,12 @@ export function createTileflowArtifactDiagnostics(
   cwd: string,
 ): TileflowArtifactDiagnostic[] {
   const inheritedCode = optionalDiagnosticField(error, 'code');
+  const inheritedPath = optionalDiagnosticPath(error);
   const inheritedPhase =
     optionalDiagnosticField(error, 'phase') ?? optionalNestedDiagnosticField(error, 'phase');
+  const semanticResolutionPath = isTileflowMapResolutionDiagnostic(error, inheritedPath)
+    ? sanitizeDiagnosticSecrets(inheritedPath)
+    : undefined;
   const issueList = getIssueList(error);
   if (issueList.length > 0) {
     return normalizeDiagnostics(
@@ -322,8 +326,13 @@ export function createTileflowArtifactDiagnostics(
   return normalizeDiagnostics([
     {
       ...(inheritedCode ? {code: inheritedCode} : {}),
-      message: sanitizeMessage(error instanceof Error ? error.message : 'Unknown build error', cwd),
-      path: '',
+      message: sanitizeMessage(
+        error instanceof Error
+          ? removeSemanticResolutionPath(error.message, semanticResolutionPath)
+          : 'Unknown build error',
+        cwd,
+      ),
+      path: semanticResolutionPath ?? sanitizePath(inheritedPath ?? '', cwd),
       ...(inheritedPhase ? {phase: inheritedPhase} : {}),
     },
   ]);
@@ -385,9 +394,38 @@ function sanitizeMessage(value: string, cwd: string): string {
 function sanitizePath(value: string, cwd: string): string {
   if (!value) return '';
   if (win32.isAbsolute(value) && !isAbsolute(value)) return '(external)';
-  if (!isAbsolute(value)) return value.replaceAll('\\', '/');
+  if (!isAbsolute(value)) return sanitizeDiagnosticSecrets(value.replaceAll('\\', '/'));
   const local = relative(canonicalPath(cwd), canonicalPath(value)).replaceAll(sep, '/');
-  return local.startsWith('../') || local === '..' ? '(external)' : local || '.';
+  return local.startsWith('../') || local === '..'
+    ? '(external)'
+    : sanitizeDiagnosticSecrets(local || '.');
+}
+
+function optionalDiagnosticPath(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const path = (value as Record<string, unknown>).path;
+  return typeof path === 'string' && path ? path : undefined;
+}
+
+function isTileflowMapResolutionDiagnostic(
+  value: unknown,
+  path: string | undefined,
+): path is string {
+  if (!value || typeof value !== 'object' || !path) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    record.name === 'TileflowMapResolutionError' &&
+    typeof record.code === 'string' &&
+    typeof record.mapId === 'string' &&
+    path.startsWith('/modules/') &&
+    !/[\p{Cc}]/u.test(path) &&
+    !/~(?:[^01]|$)/u.test(path)
+  );
+}
+
+function removeSemanticResolutionPath(message: string, path: string | undefined): string {
+  if (!path) return message;
+  return message.replace(` at ${path}:`, ':');
 }
 
 function localPathAliases(path: string): string[] {

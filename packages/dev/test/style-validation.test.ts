@@ -3,7 +3,7 @@ import {mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {defineRootMap, roads} from '@tileflow/core';
+import {defineMap, parseTileflowMap, roads} from '@tileflow/core';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   assertValidTileflowStyle,
@@ -57,7 +57,7 @@ test('direct style creation reports a stable layer/property diagnostic', () => {
     sources: {},
     layers: [
       {
-        id: 'streets-background',
+        id: 'tileflow-background',
         type: 'background',
         paint: {'background-color': 42},
       },
@@ -74,7 +74,7 @@ test('direct style creation reports a stable layer/property diagnostic', () => {
         {
           map: 'madrid',
           message: 'color expected, number found',
-          path: 'maps.madrid.style.layers.streets-background.paint.background-color',
+          path: 'maps.madrid.style.layers.tileflow-background.paint.background-color',
         },
       ]);
       return true;
@@ -139,12 +139,11 @@ test('artifact construction rejects removed physical overrides before writing', 
   const cwd = await createFixture(t, 'tileflow-dev-removed-overrides-');
   await writeFile(
     join(cwd, 'tileflow.workspace.ts'),
-    `import {defineRootMap} from '@tileflow/core';
+    `import {defineMap, disable} from '@tileflow/core';
 import {streetsThemes} from '@tileflow/maps';
-export default defineRootMap({
+export default defineMap({
   id: 'madrid',
   version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   defaultTheme: 'light',
   themes: {light: streetsThemes.light},
   overrides: []
@@ -163,22 +162,23 @@ test('direct Streets roads validate and written artifacts equal in-memory styles
   const direct = createTileflowStyle(
     {
       maps: {
-        madrid: defineRootMap({
-          id: 'madrid',
-          version: 1,
-          root: {compiler: 'streets', compilerVersion: 1},
-          ...fixtureThemeFields,
-          glyphs: fixtureGlyphs,
-          modules: {
-            roads: roads({
-              detail: 'all',
-              extras: {paths: true},
-              hierarchy: 'clear',
-              outline: 'strong',
-              weight: 'regular',
-            }),
-          },
-        }),
+        madrid: parseTileflowMap(
+          defineMap({
+            id: 'madrid',
+            version: 1,
+            ...fixtureThemeFields,
+            glyphs: fixtureGlyphs,
+            modules: {
+              roads: roads({
+                detail: 'all',
+                extras: {paths: true},
+                hierarchy: 'clear',
+                outline: 'strong',
+                weight: 'regular',
+              }),
+            },
+          }),
+        ),
       },
     },
     'madrid',
@@ -189,12 +189,11 @@ test('direct Streets roads validate and written artifacts equal in-memory styles
   const cwd = await createFixture(t, 'tileflow-dev-valid-style-');
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `import {defineRootMap} from '@tileflow/core';
+    `import {defineMap, disable} from '@tileflow/core';
 import {streetsIcons, streetsThemes} from '@tileflow/maps';
-export default defineRootMap({
+export default defineMap({
   id: 'madrid',
   version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   defaultTheme: 'light',
   themes: {light: streetsThemes.light},
   glyphs: {kind: 'url', url: 'https://fonts.example.test/{fontstack}/{range}.pbf', fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']},
@@ -220,12 +219,11 @@ test('builds World and glyph selectors independently without repository state', 
   const cwd = await createFixture(t, 'tileflow-dev-world-selection-');
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `import {defineRootMap} from '@tileflow/core';
+    `import {defineMap, disable} from '@tileflow/core';
 import {streetsThemes} from '@tileflow/maps';
-export default defineRootMap({
+export default defineMap({
   id: 'madrid',
   version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   defaultTheme: 'light',
   themes: {light: streetsThemes.light},
   glyphs: {
@@ -234,7 +232,7 @@ export default defineRootMap({
     fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']
   },
   icons: [],
-  modules: {roads: {type: 'roads', enabled: false}, poi: {type: 'poi', enabled: false}}
+  modules: {roads: disable(), poi: disable()}
 });\n`,
   );
   const before = await readdir(cwd);
@@ -291,7 +289,7 @@ export default soundings;
   });
   assert.equal(style.sources['tileflow-nautical'], undefined);
 
-  for (const id of ['streets-bathymetry-color-relief', 'streets-bathymetry-relief']) {
+  for (const id of ['tileflow-bathymetry-color-relief', 'tileflow-bathymetry-relief']) {
     assert.equal(
       style.layers.find((layer) => layer.id === id)?.source,
       'tileflow-bathymetry-dem',
@@ -304,11 +302,11 @@ export default soundings;
     false,
   );
   assert.equal(
-    style.layers.some((layer) => layer.id.startsWith('streets-poi-')),
+    style.layers.some((layer) => layer.id.startsWith('tileflow-poi-')),
     false,
   );
   assert.equal(
-    style.layers.some((layer) => layer.id.startsWith('streets-nautical-')),
+    style.layers.some((layer) => layer.id.startsWith('tileflow-nautical-')),
     false,
   );
   assert.match(style.sprite ?? '', /\/icons\/soundings\/sprite$/u);

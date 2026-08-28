@@ -1,11 +1,26 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createStyle} from '../src';
-import {createManifest, createStyleFromCatalog, createStylesFromCatalog} from '../src/build';
+import {createStyle, disable, parseTileflowMap} from '../src';
+import {
+  collectTileflowMapBuildLineage,
+  createManifest,
+  createStyleFromCatalog,
+  createStylesFromCatalog,
+} from '../src/build';
 import {extendStreets} from './map-fixture';
 
-const main = extendStreets({id: 'main'});
-const project = {maps: {main}};
+const mainAuthoring = extendStreets({id: 'main'});
+const main = parseTileflowMap(mainAuthoring);
+const project = {
+  maps: {main},
+  mapMetadata: {
+    main: {
+      id: main.id,
+      lineage: collectTileflowMapBuildLineage(mainAuthoring),
+      version: main.version,
+    },
+  },
+};
 const streetsPreparedAssets = {
   icons: {
     ids: [
@@ -27,10 +42,10 @@ const streetsPreparedAssets = {
 } as const;
 
 test('compiles maps through the internal build catalog API', () => {
-  const style = createStyle(main, {preparedAssets: streetsPreparedAssets});
+  const style = createStyle(mainAuthoring, {preparedAssets: streetsPreparedAssets});
 
   assert.equal(style.metadata?.['tileflow:map'], 'main');
-  assert.equal(style.metadata?.['tileflow:root'], 'streets');
+  assert.equal(style.metadata?.['tileflow:compiler'], 'tileflow-semantic');
   assert.deepEqual(
     createStyleFromCatalog(project, 'main', {preparedAssets: streetsPreparedAssets}),
     style,
@@ -39,6 +54,22 @@ test('compiles maps through the internal build catalog API', () => {
   assert.deepEqual(createStylesFromCatalog(project, {mapAssets: {main: streetsPreparedAssets}}), {
     main: {light: style},
   });
+});
+
+test('catalog compilation validates resolved maps without replaying authoring operations', () => {
+  const authored = extendStreets({
+    id: 'resolved-disabled',
+    modules: {addresses: disable()},
+  });
+  const resolved = parseTileflowMap(authored);
+  assert.deepEqual(resolved.modules?.addresses, {enabled: false, type: 'addresses'});
+
+  const style = createStyleFromCatalog(
+    {maps: {'resolved-disabled': resolved}},
+    'resolved-disabled',
+    {preparedAssets: streetsPreparedAssets},
+  );
+  assert.equal(style.metadata?.['tileflow:map'], 'resolved-disabled');
 });
 
 test('creates the multi-theme manifest without tile data plumbing', () => {

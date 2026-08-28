@@ -2,10 +2,20 @@ import assert from 'node:assert/strict';
 import {once} from 'node:events';
 import {createServer} from 'node:http';
 import test from 'node:test';
-import {defineRootMap, openMapTiles, vectorTiles} from '@tileflow/core';
+import {
+  defineMap,
+  openMapTiles,
+  parseTileflowMap,
+  type TileflowMap,
+  vectorTiles,
+} from '@tileflow/core';
 import type {TileflowBuildCatalog} from '@tileflow/core/build';
 import {inspectTileflowFeatures} from '../src/feature-inspection';
 import {fixtureThemeFields} from './theme-fixture';
+
+function defineResolvedMap(input: TileflowMap) {
+  return parseTileflowMap(defineMap(input));
+}
 
 const tile = Buffer.from(
   'GqkBeAIKA3BvaSiAIBIVCAcSCAAAAQECAgMDGAEiBQmAIIAgEhUICBIIAAQBBQIGAwcYASIFCbA7sDsaBG5hbWUaBWNsYXNzGgRyYW5rGgZzZWNyZXQiDgoMQ2VudHJhbCBjYWZlIgYKBGNhZmUiAigDIg8KDURPX05PVF9FWFBPU0UiCQoHT3V0c2lkZSIGCgRzaG9wIgIoCSIQCg5PVVRTSURFX1NFQ1JFVA==',
@@ -45,10 +55,9 @@ test('inspects bounded features deterministically and projects only requested pr
 
   const project: TileflowBuildCatalog = {
     maps: {
-      fixture: defineRootMap({
+      fixture: defineResolvedMap({
         id: 'fixture',
         version: 1,
-        root: {compiler: 'streets', compilerVersion: 1},
         ...fixtureThemeFields,
         glyphs: {
           kind: 'url',
@@ -131,20 +140,25 @@ test('inspects bounded features deterministically and projects only requested pr
 });
 
 test('rejects unbounded and non-HTTP inspection inputs before fetching', async () => {
+  const validMap = defineResolvedMap({
+    id: 'fixture',
+    version: 1,
+    ...fixtureThemeFields,
+    data: vectorTiles({
+      attribution: 'Fixture data',
+      schema: openMapTiles(),
+      url: 'https://tiles.example.test/tiles.json',
+    }),
+  });
   const project: TileflowBuildCatalog = {
     maps: {
-      fixture: defineRootMap({
-        id: 'fixture',
-        version: 1,
-        root: {compiler: 'streets', compilerVersion: 1},
-        ...fixtureThemeFields,
+      fixture: {
+        ...validMap,
         data: {
-          type: 'vector-tiles',
-          attribution: 'Fixture data',
-          schema: openMapTiles(),
+          ...validMap.data!,
           url: 'file:///tmp/tiles.json',
         },
-      }),
+      },
     },
   };
   let fetched = false;

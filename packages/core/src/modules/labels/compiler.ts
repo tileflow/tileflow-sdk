@@ -20,6 +20,7 @@ import type {
   TileflowRoadsModuleConfig,
   TileflowWaterLabelClass,
 } from '../../types';
+import type {TileflowResolvedModuleConfig} from '../resolved';
 import {resolveRoads} from '../roads';
 import {tileflowRoadClasses, tileflowRoadClassFilter} from '../roads/semantics';
 import {resolveLabels, visibleRoadLabelClasses} from './index';
@@ -50,8 +51,8 @@ const placeLabelOrder: readonly TileflowPlaceLabelClass[] = [
 ];
 
 export function compileLabels(
-  request: TileflowLabelsModuleConfig | undefined,
-  roadRequest: TileflowRoadsModuleConfig | undefined,
+  request: TileflowResolvedModuleConfig<TileflowLabelsModuleConfig> | undefined,
+  roadRequest: TileflowResolvedModuleConfig<TileflowRoadsModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
 ): TileflowLayerContribution[] {
   if (request?.enabled === false) return [];
@@ -235,7 +236,7 @@ export function compileLabels(
   for (const placeClass of visiblePlaceClasses) {
     const style = styles.places?.[placeClass];
     if (!style || style.visible === false || style.text?.visible === false) continue;
-    const id = `streets-label-place-${placeClass}`;
+    const id = `tileflow-label-place-${placeClass}`;
     result.push(
       symbolContribution(
         `labels.places.${placeClass}`,
@@ -267,7 +268,7 @@ export function compileLabels(
   for (const roadClass of visibleRoads as TileflowRoadClass[]) {
     const style = styles.roads?.[roadClass];
     if (!style || style.visible === false || style.text?.visible === false) continue;
-    const id = `streets-label-road-${roadClass}`;
+    const id = `tileflow-label-road-${roadClass}`;
     result.push(
       symbolContribution(
         `labels.roads.${roadClass}`,
@@ -287,6 +288,7 @@ export function compileLabels(
           mergeTileflowDesign(style, {text: {field}}),
         ),
         'transport-symbols',
+        {group: 'roads', kind: 'road-label', member: roadClass},
       ),
     );
   }
@@ -375,7 +377,7 @@ export function compileLabels(
           phase.order,
           applySymbolStyle(
             {
-              id: `streets-label-road-shield-${phase.name}`,
+              id: `tileflow-label-road-shield-${phase.name}`,
               type: 'symbol',
               source,
               'source-layer': phase.sourceLayer,
@@ -410,7 +412,7 @@ export function compileLabels(
         450,
         applySymbolStyle(
           {
-            id: 'streets-label-road-junction',
+            id: 'tileflow-label-road-junction',
             type: 'symbol',
             source,
             'source-layer': schema.layers.roadName,
@@ -496,7 +498,7 @@ export function compileLabels(
           500 + order++,
           applySymbolStyle(
             {
-              id: `streets-label-water-${target.name}`,
+              id: `tileflow-label-water-${target.name}`,
               type: 'symbol',
               source,
               'source-layer': target.sourceLayer,
@@ -520,7 +522,7 @@ export function compileLabels(
         700,
         applySymbolStyle(
           {
-            id: 'streets-label-aerodrome',
+            id: 'tileflow-label-aerodrome',
             type: 'symbol',
             source,
             'source-layer': schema.layers.aerodromeLabel,
@@ -772,6 +774,15 @@ function symbolContribution(
   localOrder: number,
   layer: Record<string, unknown> & {id: string; type: string},
   slot: TileflowLayerContribution['slot'] = 'symbols',
+  family?: TileflowLayerContribution['family'],
 ): TileflowLayerContribution {
-  return {kind: 'layer', layer, localOrder, owner: 'labels', slot, target};
+  return {
+    kind: 'layer',
+    layer,
+    localOrder,
+    owner: 'labels',
+    slot,
+    target,
+    ...(family ? {family} : {}),
+  };
 }

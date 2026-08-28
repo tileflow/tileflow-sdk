@@ -331,20 +331,18 @@ if (!result.js?.code.includes('TileflowMap')) {
   await writeFile(
     join(consumerDirectory, 'tileflow.config.ts'),
     `import {
-  buildings,
+  disable,
   labels,
   openMapTiles,
-  poi,
   roads,
   vectorTiles,
-  defineRootMap,
+  defineMap,
 } from '@tileflow/core';
 import {streetsThemes} from '@tileflow/maps';
 
-export default defineRootMap({
+export default defineMap({
       id: 'proof',
       version: 1,
-      root: {compiler: 'streets', compilerVersion: 1},
       defaultTheme: 'light',
       themes: {light: streetsThemes.light},
       data: vectorTiles({
@@ -362,9 +360,9 @@ export default defineRootMap({
         fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
       },
       modules: {
-        buildings: buildings({enabled: false}),
+        buildings: disable(),
         labels: labels({places: 'none', roads: 'none', water: 'none'}),
-        poi: poi({enabled: false}),
+        poi: disable(),
         roads: roads({
           detail: 'all', hierarchy: 'clear', outline: 'strong', weight: 'regular',
           extras: {paths: true},

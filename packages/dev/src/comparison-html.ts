@@ -1365,15 +1365,11 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           const semanticOwner = typeof contribution?.owner === "string" ? contribution.owner : undefined;
           const semanticTarget = typeof contribution?.target === "string" ? contribution.target : undefined;
           if (!semanticOwner || !semanticTarget) return [];
-          const effects = Array.isArray(contribution.effects) ? contribution.effects : [];
+          const operations = Array.isArray(contribution.operations) ? contribution.operations : [];
           const authoringPaths = [...new Set([
             "modules." + semanticOwner,
             ...causalStringArray(contribution.authoringPaths),
-            ...effects.flatMap((effect) =>
-              (effect?.kind === "add" || effect?.kind === "patch") && typeof effect.target === "string"
-                ? ["compilerEffects." + effect.target + "." + effect.kind]
-                : []
-            )
+            ...(operations.length > 0 ? ["modules." + semanticOwner + ".renderStack"] : [])
           ])];
           const themeTokens = causalArray(contribution.themeTokens);
           return [{

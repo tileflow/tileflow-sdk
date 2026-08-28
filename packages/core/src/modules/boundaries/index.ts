@@ -4,7 +4,6 @@ export type TileflowBoundariesModuleOptions = {
   admin2?: TileflowLineStyle;
   admin4?: TileflowLineStyle;
   disputed?: TileflowLineStyle;
-  enabled?: boolean;
   maritime?: TileflowLineStyle;
 };
 

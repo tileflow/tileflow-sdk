@@ -78,13 +78,6 @@ type TileflowResolvedSessionGrant = {
   session: TileflowSessionState;
 };
 
-export type TileflowMapMarker = {
-  id: string;
-  coordinates: [number, number];
-  color?: string;
-  label?: string;
-};
-
 export type TileflowMapMode = 'interactive' | 'image';
 
 export type TileflowMapModeOptions = {

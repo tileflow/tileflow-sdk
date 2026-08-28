@@ -1,61 +1,64 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import {resolveTileflowData, type TileflowDataConfig} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
-import {
-  type ResolvedTileflowMap,
-  resolveMap,
-  type TileflowMap,
-  type TileflowMapRoot,
-} from '../maps';
+import {type ResolvedTileflowMap, resolveMap, type TileflowMap} from '../maps';
 import {resolveMarine} from '../marine';
-import {compileAddresses} from '../modules/addresses/compiler';
-import {compileAeroways} from '../modules/aeroways/compiler';
-import {compileBoundaries} from '../modules/boundaries/compiler';
-import {compileBuildings} from '../modules/buildings/compiler';
-import {resolveLabels} from '../modules/labels';
-import {compileLabels} from '../modules/labels/compiler';
-import {compileLand} from '../modules/land/compiler';
-import {compileLandforms} from '../modules/landforms/compiler';
-import {compileNautical} from '../modules/nautical/compiler';
-import {compilePoi} from '../modules/poi/compiler';
-import {compileRoads} from '../modules/roads/compiler';
-import {compileTransit} from '../modules/transit/compiler';
-import {compileVegetation} from '../modules/vegetation/compiler';
-import {compileWater} from '../modules/water/compiler';
 import {parseResolvedTileflowMap} from '../resolved-map-schema';
 import {compileTerrainContributions, resolveTerrain} from '../terrain';
 import {
-  assertTileflowMapThemeValues,
+  auditTileflowMapThemeValues,
   resolveThemeColors,
   resolveThemeImages,
   resolveThemeSelection,
   resolveThemeValues,
   resolveTileflowTheme,
+  TileflowThemeAuditError,
 } from '../themes';
 import type {MapLibreStyle} from '../types';
 import {
+  createTileflowCompilationFailure,
+  type TileflowCompilationDiagnostic,
+  type TileflowCompilationDomainReport,
+  type TileflowCompilationPhase,
+  type TileflowCompilationPlannerDecision,
+  type TileflowCompilationReport,
+  tileflowCompilationReportSchemaVersion,
+  type TileflowCompilationResult,
+} from './compilation-report';
+import {
   createTileflowStyleInspection,
+  readTileflowCompilerProvenance,
   tileflowCompilerProvenanceMetadataKey,
   type TileflowInspectedStyle,
   type TileflowStyleInspection,
 } from './compiler-inspection';
-import {tileflowCompilerMetadataKeys, type TileflowLayerContribution} from './contributions';
-import {assembleTileflowLayers} from './graph';
+import {tileflowCompilerMetadataKeys} from './contributions';
+import {
+  createTileflowDomainIR,
+  createTileflowLayerFamilyIR,
+  lowerTileflowDomainIR,
+} from './domain-ir';
+import {
+  compileSemanticDomains,
+  resolveSemanticModules,
+  type TileflowSemanticModules,
+} from './domain-registry';
+import {assembleTileflowLayerFamilies} from './graph';
 import {
   assertTileflowInteractionManifestLayers,
   createTileflowInteractionManifest,
   tileflowInteractionManifestMetadataKey,
 } from './interaction-manifest';
+import {planTileflowLayerFamilies} from './physical-planner';
 import {
-  applyTileflowModuleEffects,
-  bindSemanticReferences,
-  getResolvedModuleEffects,
-  tileflowModuleEffectMetadataKey,
-} from './module-effects';
-import {optimizeTileflowLayers} from './optimizer';
-import {resolveStreetsModules, type TileflowStreetsModules} from './streets-recipe';
+  applyCompiledRenderStacks,
+  compileRenderStacks,
+  type TileflowRenderStackModule,
+} from './render-stack';
+import {createSemanticDataView} from './semantic-bindings';
+import {tileflowSemanticCompilerIdentity} from './semantic-compiler';
 
-export type TileflowStreetsMapConfig = ResolvedTileflowMap;
+export type TileflowSemanticMapConfig = ResolvedTileflowMap;
 
 export type TileflowPreparedMapAssets = {
   icons?: {
@@ -64,13 +67,12 @@ export type TileflowPreparedMapAssets = {
   };
 };
 
-export type TileflowStreetsCompileOptions = {
+export type TileflowSemanticCompileOptions = {
   apiBaseUrl?: string;
   /** Resolved authoring identity. Internal build orchestration supplies this. */
   map?: {
     id: string;
     lineage?: readonly string[];
-    root: TileflowMapRoot;
     version: number;
   };
   /** Build-owned assets prepared from the authoring directories. */
@@ -79,47 +81,167 @@ export type TileflowStreetsCompileOptions = {
   theme?: string;
 };
 
-export function createStreetsStyle(
+export type TileflowSemanticCompilationOptions = TileflowSemanticCompileOptions & {
+  /** Include opt-in read-only physical diagnostics; emitted IDs are not authoring targets. */
+  inspection?: boolean;
+};
+
+export function createSemanticStyle(
   config: TileflowMap,
-  options: TileflowStreetsCompileOptions = {},
+  options: TileflowSemanticCompileOptions = {},
 ): MapLibreStyle {
   const parsed = parseResolvedTileflowMap(resolveMap(config));
-  return compileStreetsStyle(parsed, options);
+  return compileSemanticStyle(parsed, options);
 }
 
-/** Compile an already validated Streets map. Internal orchestration should use this entry point. */
-export function compileStreetsStyle(
-  input: TileflowStreetsMapConfig,
-  options: TileflowStreetsCompileOptions = {},
+/** Compile a public semantic map without throwing, preserving a stable machine-readable report. */
+export function createSemanticStyleResult(
+  config: TileflowMap,
+  options: TileflowSemanticCompilationOptions = {},
+): TileflowCompilationResult {
+  try {
+    const parsed = parseResolvedTileflowMap(resolveMap(config));
+    return compileSemanticStyleResult(parsed, options);
+  } catch (error) {
+    return createTileflowCompilationFailure({
+      error,
+      map: typeof config.id === 'string' ? config.id : '<unresolved>',
+      phase: 'input',
+      theme: options.theme,
+    });
+  }
+}
+
+/** Compile an already validated semantic map. Internal orchestration should use this entry point. */
+export function compileSemanticStyle(
+  input: TileflowSemanticMapConfig,
+  options: TileflowSemanticCompileOptions = {},
 ): MapLibreStyle {
-  return compileStreetsStyleInternal(input, options, false).style;
+  return compileSemanticStyleInternal(input, options, false).style;
 }
 
-/** Compile Style JSON plus a separate build-only cartographic provenance sidecar. */
-export function compileStreetsStyleWithInspection(
-  input: TileflowStreetsMapConfig,
-  options: TileflowStreetsCompileOptions = {},
+/** Compile an already validated map to a structured success/failure result. */
+export function compileSemanticStyleResult(
+  input: TileflowSemanticMapConfig,
+  options: TileflowSemanticCompilationOptions = {},
+): TileflowCompilationResult {
+  const {inspection = false, ...compileOptions} = options;
+  let partialReport: TileflowCompilationReport | undefined;
+  try {
+    const compiled = compileSemanticStyleInternal(input, compileOptions, inspection, (report) => {
+      partialReport = report;
+    });
+    return {
+      diagnostics: compiled.diagnostics,
+      ok: true,
+      report: compiled.report,
+      style: compiled.style,
+    };
+  } catch (error) {
+    return createTileflowCompilationFailure({
+      error,
+      map: input.id,
+      phase: 'validation',
+      ...(partialReport ? {report: partialReport} : {}),
+      theme: options.theme,
+    });
+  }
+}
+
+/** Compile Style JSON plus a separate read-only physical-output diagnostic sidecar. */
+export function compileSemanticStyleWithInspection(
+  input: TileflowSemanticMapConfig,
+  options: TileflowSemanticCompileOptions = {},
 ): TileflowInspectedStyle {
-  const compiled = compileStreetsStyleInternal(input, options, true);
+  const compiled = compileSemanticStyleInternal(input, options, true);
   return {style: compiled.style, inspection: compiled.inspection!};
 }
 
-function compileStreetsStyleInternal(
-  input: TileflowStreetsMapConfig,
-  options: TileflowStreetsCompileOptions,
+function compileSemanticStyleInternal(
+  input: TileflowSemanticMapConfig,
+  options: TileflowSemanticCompileOptions,
   inspect: boolean,
-): {style: MapLibreStyle; inspection?: TileflowStyleInspection} {
-  assertTileflowMapThemeValues(input);
-  const selected = resolveThemeSelection(input, options.theme);
-  const resolvedTheme = resolveTileflowTheme(selected.theme);
+  onReport?: (report: TileflowCompilationReport) => void,
+): {
+  diagnostics: readonly TileflowCompilationDiagnostic[];
+  inspection?: TileflowStyleInspection;
+  report: TileflowCompilationReport;
+  style: MapLibreStyle;
+} {
+  const themeAudit = runCompilationPhase('theme-audit', () => auditTileflowMapThemeValues(input));
+  const blockingThemeDiagnostics = themeAudit.filter(({severity}) => severity === 'error');
+  if (blockingThemeDiagnostics.length > 0) {
+    throw new TileflowThemeAuditError(blockingThemeDiagnostics);
+  }
+  const diagnostics: readonly TileflowCompilationDiagnostic[] = themeAudit
+    .filter(({severity}) => severity === 'warning')
+    .map(({code, message, owner, path, phase, severity, suggestion, target}) => ({
+      code,
+      ...(owner ? {domain: owner as TileflowCompilationDiagnostic['domain']} : {}),
+      message,
+      path,
+      phase,
+      severity,
+      suggestion,
+      ...(target ? {target} : {}),
+    }));
+  const selected = runCompilationPhase('theme', () => resolveThemeSelection(input, options.theme));
+  const resolvedTheme = runCompilationPhase('theme', () => resolveTileflowTheme(selected.theme));
   const {themes: _themes, ...themeableConfig} = input;
-  const config = parseResolvedTileflowMap({
-    ...resolveThemeValues(themeableConfig, selected.theme, `map.${input.id}`),
-    themes: input.themes,
-  } as TileflowStreetsMapConfig);
+  const resolvedThemeConfig = runCompilationPhase('theme', () =>
+    resolveThemeValues(themeableConfig, selected.theme, `map.${input.id}`),
+  );
+  const config = runCompilationPhase('config-validation', () =>
+    parseResolvedTileflowMap({
+      ...resolvedThemeConfig,
+      themes: input.themes,
+    } as TileflowSemanticMapConfig),
+  );
   const apiBaseUrl = normalizeBaseUrl(options.apiBaseUrl);
-  const data = resolveTileflowData(config.data, {apiBaseUrl});
-  const marine = resolveMarine(config.marine, apiBaseUrl);
+  const data = runCompilationPhase('data', () => resolveTileflowData(config.data, {apiBaseUrl}));
+  const marine = runCompilationPhase('data', () => resolveMarine(config.marine, apiBaseUrl));
+  const terrain = runCompilationPhase('data', () => resolveTerrain(config.terrain, apiBaseUrl));
+  const terrainSources = [terrain?.raster, terrain?.contours].filter(
+    (source): source is NonNullable<typeof source> => source !== undefined,
+  );
+  const marineSources = [
+    marine?.bathymetry?.vector,
+    marine?.bathymetry?.relief,
+    marine?.nautical,
+  ].filter((source): source is NonNullable<typeof source> => source !== undefined);
+  runCompilationPhase('data', () => {
+    const terrainSourceIds = new Set<string>();
+    for (const source of terrainSources) {
+      if (source.sourceId === data.sourceId) {
+        throw new Error(
+          `Terrain source ID "${source.sourceId}" conflicts with the primary vector source.`,
+        );
+      }
+      if (terrainSourceIds.has(source.sourceId)) {
+        throw new Error(
+          `Terrain source ID "${source.sourceId}" conflicts with another terrain source.`,
+        );
+      }
+      terrainSourceIds.add(source.sourceId);
+    }
+    const marineSourceIds = new Set<string>();
+    for (const source of marineSources) {
+      if (source.sourceId === data.sourceId) {
+        throw new Error(
+          `Marine source ID "${source.sourceId}" conflicts with the primary vector source.`,
+        );
+      }
+      if (terrainSourceIds.has(source.sourceId)) {
+        throw new Error(`Marine source ID "${source.sourceId}" conflicts with a terrain source.`);
+      }
+      if (marineSourceIds.has(source.sourceId)) {
+        throw new Error(
+          `Marine source ID "${source.sourceId}" conflicts with another marine source.`,
+        );
+      }
+      marineSourceIds.add(source.sourceId);
+    }
+  });
   const semanticData = marine?.bathymetry?.vector
     ? {
         ...data,
@@ -134,103 +256,174 @@ function compileStreetsStyleInternal(
         },
       }
     : data;
-  const colors = resolveThemeColors(selected.theme);
-  const images = resolveThemeImages(selected.theme);
+  const semanticCompilerData = runCompilationPhase('data', () =>
+    createSemanticDataView(semanticData),
+  );
+  const colors = runCompilationPhase('theme', () => resolveThemeColors(selected.theme));
+  const images = runCompilationPhase('theme', () => resolveThemeImages(selected.theme));
   const typography = resolvedTheme.typography;
-  const context = {colors, data, images, ...(marine === undefined ? {} : {marine}), typography};
-  const modules = resolveStreetsModules(config.modules);
-  const labelLanguage = resolveLabels(modules.labels).language;
-  // Bind semantic data references only after each domain compiler has omitted
-  // branches whose optional source capabilities are absent. Binding the raw
-  // authoring modules eagerly would reject a valid generic OpenMapTiles source
-  // merely because an unused optional recipe (for example bathymetry) names a
-  // field that the source deliberately does not provide.
-  const contributions = bindSemanticReferences<TileflowLayerContribution[]>(
-    [
-      ...compileLand(modules.land, context),
-      ...compileWater(modules.water, context),
-      ...compileNautical(modules.nautical, context),
-      ...compileBuildings(modules.buildings, context),
-      ...compileVegetation(modules.vegetation, context),
-      ...compileRoads(modules.roads, context),
-      ...compileTransit(modules.transit, context),
-      ...compileAeroways(modules.aeroways, context),
-      ...compileBoundaries(modules.boundaries, context),
-      ...compileLabels(modules.labels, modules.roads, context),
-      ...compileLandforms(modules.landforms, labelLanguage, context),
-      ...compileAddresses(modules.addresses, context),
-      ...compilePoi(modules.poi, context, labelLanguage),
-    ],
-    semanticData,
+  const context = {
+    colors,
+    data: semanticCompilerData,
+    images,
+    ...(marine === undefined ? {} : {marine}),
+    typography,
+  };
+  const modules = runCompilationPhase('domains', () => resolveSemanticModules(config.modules));
+  const compiledDomains = runCompilationPhase('domains', () =>
+    compileSemanticDomains(modules, context),
   );
-  const terrain = resolveTerrain(config.terrain, apiBaseUrl);
-  const terrainSources = [terrain?.raster, terrain?.contours].filter(
-    (source): source is NonNullable<typeof source> => source !== undefined,
+  const renderStackModules = Object.values(modules).filter(
+    (module): module is typeof module & TileflowRenderStackModule =>
+      isRecord(module) &&
+      module.enabled !== false &&
+      'renderStack' in module &&
+      isRecord(module.renderStack),
   );
-  const terrainSourceIds = new Set<string>();
-  for (const source of terrainSources) {
-    if (source.sourceId === data.sourceId) {
-      throw new Error(
-        `Terrain source ID "${source.sourceId}" conflicts with the primary vector source.`,
-      );
-    }
-    if (terrainSourceIds.has(source.sourceId)) {
-      throw new Error(
-        `Terrain source ID "${source.sourceId}" conflicts with another terrain source.`,
-      );
-    }
-    terrainSourceIds.add(source.sourceId);
-  }
-  const marineSources = [
-    marine?.bathymetry?.vector,
-    marine?.bathymetry?.relief,
-    marine?.nautical,
-  ].filter((source): source is NonNullable<typeof source> => source !== undefined);
-  const marineSourceIds = new Set<string>();
-  for (const source of marineSources) {
-    if (source.sourceId === data.sourceId) {
-      throw new Error(
-        `Marine source ID "${source.sourceId}" conflicts with the primary vector source.`,
-      );
-    }
-    if (terrainSourceIds.has(source.sourceId)) {
-      throw new Error(`Marine source ID "${source.sourceId}" conflicts with a terrain source.`);
-    }
-    if (marineSourceIds.has(source.sourceId)) {
-      throw new Error(
-        `Marine source ID "${source.sourceId}" conflicts with another marine source.`,
-      );
-    }
-    marineSourceIds.add(source.sourceId);
-  }
-  if (terrain) contributions.push(...compileTerrainContributions(terrain, context));
-  const activeOwners = new Set(
-    Object.entries(modules)
-      .filter(([, module]) => !isRecord(module) || module.enabled !== false)
-      .map(([owner]) => owner),
+  const renderOperations = runCompilationPhase('render-stack', () =>
+    compileRenderStacks(renderStackModules, semanticCompilerData),
   );
-  const moduleEffects = getResolvedModuleEffects(config).filter(
-    (effect) =>
-      activeOwners.has(effect.owner) &&
-      (effect.requires ?? []).every((owner) => activeOwners.has(owner)),
+  const domainIR = runCompilationPhase('domain-ir', () =>
+    createTileflowDomainIR({
+      compiledDomains,
+      data: semanticCompilerData,
+      renderOperations,
+    }),
   );
-  const optimizedLayers = optimizeTileflowLayers(
-    applyTileflowModuleEffects(assembleTileflowLayers(contributions), moduleEffects, semanticData),
+  const terrainFamilies = terrain
+    ? runCompilationPhase('domains', () =>
+        compileTerrainContributions(terrain, context).map(createTileflowLayerFamilyIR),
+      )
+    : [];
+  const families = [...domainIR.families, ...terrainFamilies];
+  const assembledFamilies = runCompilationPhase('assembly', () =>
+    assembleTileflowLayerFamilies(families),
   );
+  const requestedRenderOperations = domainIR.renderOperations;
+  const stackedFamilies = runCompilationPhase('render-stack', () =>
+    applyCompiledRenderStacks(assembledFamilies, requestedRenderOperations),
+  );
+  const plannedFamilies = runCompilationPhase('physical-planner', () =>
+    planTileflowLayerFamilies(stackedFamilies),
+  );
+  // This is the sole MapLibre emission and semantic-data binding boundary.
+  const loweredDomainIR = runCompilationPhase('lowering', () =>
+    lowerTileflowDomainIR(plannedFamilies, semanticData),
+  );
+  const plannedLayers = [...loweredDomainIR.layers];
+  const emittedProvenance = plannedLayers.flatMap((layer) => readTileflowCompilerProvenance(layer));
+  const emittedContributionKeys = new Set(
+    emittedProvenance.map(({owner, target}) => semanticReportKey(owner, target)),
+  );
+  const emittedOperationKeys = new Set(
+    emittedProvenance.flatMap(({operations}) =>
+      operations.map(({kind, owner, target}) => semanticReportKey(owner, kind, target)),
+    ),
+  );
+  const emittedRenderOperations = requestedRenderOperations.filter((operation) =>
+    emittedOperationKeys.has(
+      semanticReportKey(
+        operation.owner,
+        operation.kind === 'layer' ? 'pass' : 'refinement',
+        operation.target,
+      ),
+    ),
+  );
+  const plannerDecisions: readonly TileflowCompilationPlannerDecision[] = [
+    {
+      inputCount: domainIR.families.length + domainIR.renderOperations.length,
+      outputCount: domainIR.families.length + domainIR.renderOperations.length,
+      stage: 'domain-ir',
+    },
+    {
+      inputCount: families.length,
+      outputCount: assembledFamilies.length,
+      stage: 'assembly',
+    },
+    {
+      candidateCount: requestedRenderOperations.length,
+      inputCount: assembledFamilies.length,
+      outputCount: stackedFamilies.length,
+      selectedCount: emittedRenderOperations.length,
+      stage: 'render-stack',
+    },
+    {
+      inputCount: stackedFamilies.length,
+      outputCount: plannedFamilies.length,
+      stage: 'physical-planner',
+    },
+    {
+      inputCount: plannedFamilies.length,
+      outputCount: plannedLayers.length,
+      stage: 'lowering',
+    },
+  ];
   const inspection = inspect
-    ? createTileflowStyleInspection(options.map?.id ?? config.id, selected.name, optimizedLayers)
+    ? runCompilationPhase('finalization', () =>
+        createTileflowStyleInspection(options.map?.id ?? config.id, selected.name, plannedLayers),
+      )
     : undefined;
-  const interactionManifest = createTileflowInteractionManifest(optimizedLayers, {
-    category: data.schema.fields.poiCategory,
-    filterRank: data.schema.fields.poiFilterRank,
-    icon: data.schema.fields.poiIcon,
-    name: data.schema.fields.name,
-    sizeRank: data.schema.fields.poiSizeRank,
-    type: data.schema.fields.poiType,
-  });
-  const layers = finalizeTileflowLayers(optimizedLayers);
-  assertTileflowInteractionManifestLayers(interactionManifest, layers);
-  const glyphs = resolveGlyphs(config);
+  const renderOperationsByOwner = new Map<string, {count: number; targets: Set<string>}>();
+  for (const operation of emittedRenderOperations) {
+    const ownerOperations = renderOperationsByOwner.get(operation.owner) ?? {
+      count: 0,
+      targets: new Set<string>(),
+    };
+    ownerOperations.count += 1;
+    ownerOperations.targets.add(operation.target);
+    renderOperationsByOwner.set(operation.owner, ownerOperations);
+  }
+  const domainReports: readonly TileflowCompilationDomainReport[] = compiledDomains.domains.map(
+    (domain) => {
+      const emittedContributions = domain.contributions.filter(({owner, target}) =>
+        emittedContributionKeys.has(semanticReportKey(owner, target)),
+      );
+      const renderOperations = renderOperationsByOwner.get(domain.name);
+      const renderOperationCount = renderOperations?.count ?? 0;
+      const emitted = emittedContributions.length > 0 || renderOperationCount > 0;
+      return {
+        contributionCount: emittedContributions.length,
+        name: domain.name,
+        renderOperationCount,
+        status: emitted ? 'emitted' : 'suppressed',
+        ...(!emitted ? {suppressionReason: domain.suppressionReason ?? 'no-contributions'} : {}),
+        targets: [
+          ...new Set([
+            ...emittedContributions.map(({target}) => target),
+            ...(renderOperations?.targets ?? []),
+          ]),
+        ].sort(compareCodeUnits),
+      };
+    },
+  );
+  const targets = [...new Set(domainReports.flatMap((domain) => domain.targets))].sort(
+    compareCodeUnits,
+  );
+  const partialReport: TileflowCompilationReport = {
+    domains: domainReports,
+    map: options.map?.id ?? config.id,
+    planner: plannerDecisions,
+    ...(inspection ? {provenance: inspection} : {}),
+    schemaVersion: tileflowCompilationReportSchemaVersion,
+    targets,
+    theme: selected.name,
+  };
+  onReport?.(partialReport);
+  const interactionManifest = runCompilationPhase('finalization', () =>
+    createTileflowInteractionManifest(plannedLayers, {
+      category: data.schema.fields.poiCategory,
+      filterRank: data.schema.fields.poiFilterRank,
+      icon: data.schema.fields.poiIcon,
+      name: data.schema.fields.name,
+      sizeRank: data.schema.fields.poiSizeRank,
+      type: data.schema.fields.poiType,
+    }),
+  );
+  const layers = runCompilationPhase('finalization', () => finalizeTileflowLayers(plannedLayers));
+  runCompilationPhase('finalization', () =>
+    assertTileflowInteractionManifestLayers(interactionManifest, layers),
+  );
+  const glyphs = runCompilationPhase('assets', () => resolveGlyphs(config));
   const sprite = options.preparedAssets?.icons?.sprite;
 
   const primarySource: Record<string, unknown> = {
@@ -244,7 +437,6 @@ function compileStreetsStyleInternal(
 
   const mapMetadata = options.map ?? {
     id: config.id,
-    root: config.root,
     version: config.version,
   };
 
@@ -270,12 +462,14 @@ function compileStreetsStyleInternal(
       : {}),
     ...(marine?.nautical ? {[marine.nautical.sourceId]: marine.nautical.identity} : {}),
   };
-  const sourceRequirements = inferTileflowSourceRequirements({
-    version: 8,
-    name: config.name ?? 'Streets',
-    sources,
-    layers,
-  });
+  const sourceRequirements = runCompilationPhase('data', () =>
+    inferTileflowSourceRequirements({
+      version: 8,
+      name: config.name ?? 'Streets',
+      sources,
+      layers,
+    }),
+  );
 
   const style: MapLibreStyle = {
     version: 8,
@@ -294,8 +488,8 @@ function compileStreetsStyleInternal(
         ? {
             'tileflow:map': mapMetadata.id,
             'tileflow:mapVersion': mapMetadata.version,
-            'tileflow:root': mapMetadata.root.compiler,
-            'tileflow:rootCompilerVersion': mapMetadata.root.compilerVersion,
+            'tileflow:compiler': tileflowSemanticCompilerIdentity.name,
+            'tileflow:compilerVersion': tileflowSemanticCompilerIdentity.version,
             ...(mapMetadata.lineage && mapMetadata.lineage.length > 1
               ? {'tileflow:extends': mapMetadata.lineage.slice(1)}
               : {}),
@@ -316,11 +510,18 @@ function compileStreetsStyleInternal(
       ...(config.view ? {'tileflow:view': config.view} : {}),
     },
   };
-  assertPreparedIconReferences(style, config, options.preparedAssets);
-  assertTextAssets(style, config);
-  assertGlyphFontStacks(style, config);
-  assertMapLibreStyle(style, config.id);
-  return {style, ...(inspection ? {inspection} : {})};
+  const report: TileflowCompilationReport = {
+    ...partialReport,
+    requirements: sourceRequirements,
+  };
+  onReport?.(report);
+  runCompilationPhase('assets', () =>
+    assertPreparedIconReferences(style, config, options.preparedAssets),
+  );
+  runCompilationPhase('assets', () => assertTextAssets(style, config));
+  runCompilationPhase('assets', () => assertGlyphFontStacks(style, config));
+  runCompilationPhase('validation', () => assertMapLibreStyle(style, config.id));
+  return {diagnostics, report, style, ...(inspection ? {inspection} : {})};
 }
 
 function finalizeTileflowLayers(
@@ -351,7 +552,6 @@ function finalizeTileflowLayers(
 
       const metadata = isRecord(layer.metadata) ? {...layer.metadata} : undefined;
       if (metadata) {
-        delete metadata[tileflowModuleEffectMetadataKey];
         delete metadata[tileflowCompilerProvenanceMetadataKey];
         for (const key of Object.values(tileflowCompilerMetadataKeys)) delete metadata[key];
       }
@@ -555,6 +755,46 @@ function assertTextAssets(style: MapLibreStyle, config: ResolvedTileflowMap): vo
   );
 }
 
+function runCompilationPhase<T>(phase: TileflowCompilationPhase, operation: () => T): T {
+  try {
+    return operation();
+  } catch (error) {
+    throw withCompilationPhase(error, phase);
+  }
+}
+
+function withCompilationPhase(error: unknown, phase: TileflowCompilationPhase): unknown {
+  const record = isRecord(error) ? error : {};
+  if (typeof record.phase === 'string') return error;
+  if (error instanceof Error && Object.isExtensible(error)) {
+    Object.defineProperty(error, 'phase', {configurable: true, enumerable: true, value: phase});
+    return error;
+  }
+  const wrapped = new Error(error instanceof Error ? error.message : String(error));
+  for (const key of [
+    'code',
+    'diagnostics',
+    'domain',
+    'messages',
+    'owner',
+    'path',
+    'severity',
+    'target',
+  ]) {
+    if (record[key] !== undefined) Object.assign(wrapped, {[key]: record[key]});
+  }
+  Object.assign(wrapped, {phase});
+  return wrapped;
+}
+
 function normalizeBaseUrl(value: string | undefined): string {
   return (value ?? 'https://api.tileflow.dev').replace(/\/+$/, '');
+}
+
+function compareCodeUnits(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function semanticReportKey(...parts: readonly string[]): string {
+  return parts.join('\u0000');
 }

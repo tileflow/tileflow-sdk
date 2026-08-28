@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {readdir, readFile} from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
-import {createStyle, defineMap, resolveMap, resolveTileflowTheme} from '@tileflow/core';
+import {createStyle, defineMap, disable, resolveMap, resolveTileflowTheme} from '@tileflow/core';
+import {createStyleWithInspection} from '@tileflow/core/build';
 import {siegfried, siegfriedFonts, siegfriedIcons, siegfriedThemes} from '../src';
 
 const patternNames = [
@@ -40,6 +41,39 @@ function compileSiegfried(theme: 'light' | 'dark' = 'light') {
     },
     theme,
   });
+}
+
+function compileSiegfriedInspected(theme: 'light' | 'dark' = 'light') {
+  return createStyleWithInspection(siegfried, {
+    preparedAssets: {
+      icons: {ids: iconIds, sprite: '/tileflow/icons/siegfried/sprite'},
+    },
+    theme,
+  });
+}
+
+function compiledTargets(compiled: ReturnType<typeof compileSiegfriedInspected>): Set<string> {
+  return new Set(
+    compiled.inspection.layers.flatMap((layer) =>
+      layer.contributions.map((contribution) => contribution.target),
+    ),
+  );
+}
+
+function compiledLayer(compiled: ReturnType<typeof compileSiegfriedInspected>, target: string) {
+  const layerId = compiled.inspection.layers.find((layer) =>
+    layer.contributions.some((contribution) => contribution.target === target),
+  )?.id;
+  return compiled.style.layers.find((layer) => layer.id === layerId);
+}
+
+function compiledLayerIndex(
+  compiled: ReturnType<typeof compileSiegfriedInspected>,
+  target: string,
+): number {
+  return compiled.inspection.layers.findIndex((layer) =>
+    layer.contributions.some((contribution) => contribution.target === target),
+  );
 }
 
 function patternReferences(style: ReturnType<typeof compileSiegfried>): string[] {
@@ -96,21 +130,25 @@ function collectStrings(value: unknown, output: string[] = []): string[] {
   return output;
 }
 
-test('Siegfried is an autonomous root with only its own assets and semantic visuals', async () => {
+test('Siegfried is an autonomous map with only its own assets and semantic visuals', async () => {
   const source = await readFile(new URL('../src/official/siegfried.ts', import.meta.url), 'utf8');
   const resolved = resolveMap(siegfried);
 
-  assert.deepEqual(siegfried.root, {compiler: 'streets', compilerVersion: 1});
+  assert.equal('root' in siegfried, false);
   assert.equal('extends' in siegfried, false);
   assert.doesNotMatch(source, /from ['"]\.\/streets['"]/u);
   assert.doesNotMatch(source, /from ['"]\.\/streets-themes['"]/u);
   assert.doesNotMatch(source, /extends\s*:/u);
+  assert.doesNotMatch(
+    source,
+    /@tileflow\/core\/recipe|defineModuleEffects|semanticField|semanticLayer/u,
+  );
   assert.doesNotMatch(source, /#[0-9a-f]{3,8}\b/iu);
   for (const id of iconIds) {
     assert.doesNotMatch(
       source,
       new RegExp(`['"]${id}['"]`, 'u'),
-      `Physical artwork id ${id} leaked into the map recipe`,
+      `Physical artwork id ${id} leaked into the semantic map`,
     );
   }
   assert.deepEqual(resolved.icons, [siegfriedIcons]);
@@ -151,7 +189,7 @@ test('Siegfried exposes complete light and dark themes on one map identity', () 
   for (const theme of ['light', 'dark'] as const) {
     const style = compileSiegfried(theme);
     assert.equal(style.metadata?.['tileflow:map'], 'siegfried');
-    assert.equal(style.metadata?.['tileflow:root'], 'streets');
+    assert.equal(style.metadata?.['tileflow:compiler'], 'tileflow-semantic');
     assert.equal(style.metadata?.['tileflow:extends'], undefined);
     assert.equal(style.metadata?.['tileflow:theme'], theme);
     assert.equal(style.metadata?.['tileflow:colorScheme'], theme);
@@ -160,8 +198,11 @@ test('Siegfried exposes complete light and dark themes on one map identity', () 
 });
 
 test('Siegfried dark preserves light topology, structural metrics, and data sources', () => {
-  const light = compileSiegfried('light');
-  const dark = compileSiegfried('dark');
+  const lightCompiled = compileSiegfriedInspected('light');
+  const darkCompiled = compileSiegfriedInspected('dark');
+  const light = lightCompiled.style;
+  const dark = darkCompiled.style;
+  const rockMaskId = compiledLayer(lightCompiled, 'water.render.rockMask')?.id;
   const structuralContract = (layer: (typeof light.layers)[number]) => ({
     filter: layer.filter,
     id: layer.id,
@@ -175,7 +216,7 @@ test('Siegfried dark preserves light topology, structural metrics, and data sour
   const paintMetrics = (layer: (typeof light.layers)[number]) => ({
     id: layer.id,
     metrics: collectNumericMetrics(layer.paint).filter(
-      ([path]) => layer.id !== 'siegfried-rock-contour-mask' || path !== 'fill-opacity',
+      ([path]) => layer.id !== rockMaskId || path !== 'fill-opacity',
     ),
   });
 
@@ -185,23 +226,21 @@ test('Siegfried dark preserves light topology, structural metrics, and data sour
   assert.deepEqual(dark.sources, light.sources);
   assert.equal(dark.glyphs, light.glyphs);
   assert.equal(
-    light.layers.find(({id}) => id === 'siegfried-rock-contour-mask')?.paint?.['fill-opacity'],
+    compiledLayer(lightCompiled, 'water.render.rockMask')?.paint?.['fill-opacity'],
     0.58,
   );
-  assert.equal(
-    dark.layers.find(({id}) => id === 'siegfried-rock-contour-mask')?.paint?.['fill-opacity'],
-    0.42,
-  );
+  assert.equal(compiledLayer(darkCompiled, 'water.render.rockMask')?.paint?.['fill-opacity'], 0.42);
 });
 
 test('Siegfried compiles contours and post-contour rock and ice engraving without hillshade', () => {
-  const style = compileSiegfried();
+  const compiled = compileSiegfriedInspected();
+  const {style} = compiled;
   const source = style.sources['siegfried-contours'];
   const ids = style.layers.map(({id}) => id);
   const contourIds = [
-    'streets-terrain-contour-minor',
-    'streets-terrain-contour-index',
-    'streets-terrain-contour-labels',
+    'tileflow-terrain-contour-minor',
+    'tileflow-terrain-contour-index',
+    'tileflow-terrain-contour-labels',
   ];
 
   assert.equal(style.terrain, undefined);
@@ -224,39 +263,39 @@ test('Siegfried compiles contours and post-contour rock and ice engraving withou
   );
   for (const id of contourIds) assert.ok(ids.includes(id), `Missing contour layer ${id}`);
 
-  const contourIndex = ids.indexOf('streets-terrain-contour-minor');
-  assert.ok(contourIndex > ids.indexOf('streets-background'));
-  assert.ok(contourIndex < ids.indexOf('streets-water'));
-  assert.ok(contourIndex < ids.findIndex((id) => id.startsWith('streets-road-')));
-  assert.ok(contourIndex < ids.indexOf('streets-label-place-city'));
+  const contourIndex = ids.indexOf('tileflow-terrain-contour-minor');
+  assert.ok(contourIndex > ids.indexOf('tileflow-background'));
+  assert.ok(contourIndex < ids.indexOf('tileflow-water'));
+  assert.ok(contourIndex < ids.findIndex((id) => id.startsWith('tileflow-road-')));
+  assert.ok(contourIndex < ids.indexOf('tileflow-label-place-city'));
 
   const postContourOrder = [
-    'streets-terrain-contour-labels',
-    'siegfried-rock-contour-mask',
-    'siegfried-landcover-rock-pattern',
-    'siegfried-landcover-scree-pattern',
-    'siegfried-glacier-mask',
-    'siegfried-landcover-glacier-pattern',
-    'siegfried-glacier-outline',
-    'streets-water',
+    ids.indexOf('tileflow-terrain-contour-labels'),
+    compiledLayerIndex(compiled, 'water.render.rockMask'),
+    compiledLayerIndex(compiled, 'water.render.rockPattern'),
+    compiledLayerIndex(compiled, 'water.render.screePattern'),
+    compiledLayerIndex(compiled, 'water.render.glacierMask'),
+    compiledLayerIndex(compiled, 'water.render.glacierPattern'),
+    compiledLayerIndex(compiled, 'water.render.glacierOutline'),
+    ids.indexOf('tileflow-water'),
   ];
   for (let index = 1; index < postContourOrder.length; index += 1) {
     const previous = postContourOrder[index - 1]!;
     const current = postContourOrder[index]!;
-    assert.ok(ids.indexOf(previous) < ids.indexOf(current), `${previous} must precede ${current}`);
+    assert.ok(previous < current, `Layer ${String(previous)} must precede ${String(current)}`);
   }
 
-  const rockMask = style.layers.find(({id}) => id === 'siegfried-rock-contour-mask');
-  const rock = style.layers.find(({id}) => id === 'siegfried-landcover-rock-pattern');
-  const scree = style.layers.find(({id}) => id === 'siegfried-landcover-scree-pattern');
+  const rockMask = compiledLayer(compiled, 'water.render.rockMask');
+  const rock = compiledLayer(compiled, 'water.render.rockPattern');
+  const scree = compiledLayer(compiled, 'water.render.screePattern');
   assert.deepEqual(rockMask?.filter, ['match', ['get', 'class'], ['rock'], true, false]);
   assert.match(JSON.stringify(rock?.filter), /\["scree","talus"\],false,true/u);
   assert.match(JSON.stringify(scree?.filter), /\["scree","talus"\],true,false/u);
   assert.equal(
-    ids.some((id) => id.startsWith('streets-road-circular-')),
+    ids.some((id) => id.startsWith('tileflow-road-circular-')),
     false,
   );
-  assert.equal(ids.includes('streets-vegetation-trees'), false);
+  assert.equal(ids.includes('tileflow-vegetation-trees'), false);
 });
 
 test('each Siegfried theme references exactly its nine engraved patterns', () => {
@@ -264,19 +303,19 @@ test('each Siegfried theme references exactly its nine engraved patterns', () =>
   assert.deepEqual(patternReferences(compileSiegfried('dark')), darkIconIds);
 
   for (const theme of ['light', 'dark'] as const) {
-    const layerIds = new Set(compileSiegfried(theme).layers.map(({id}) => id));
-    for (const id of [
-      'siegfried-landcover-forest-pattern',
-      'siegfried-landcover-glacier-pattern',
-      'siegfried-landcover-gravel-pattern',
-      'siegfried-landcover-orchard-pattern',
-      'siegfried-landcover-rock-pattern',
-      'siegfried-landcover-scree-pattern',
-      'siegfried-landcover-wetland-pattern',
-      'siegfried-water-lines-pattern',
-      'siegfried-water-intermittent-lines-pattern',
+    const targets = compiledTargets(compileSiegfriedInspected(theme));
+    for (const target of [
+      'land.render.forestPattern',
+      'land.render.gravelPattern',
+      'land.render.orchardPattern',
+      'land.render.wetlandPattern',
+      'water.render.glacierPattern',
+      'water.render.rockPattern',
+      'water.render.screePattern',
+      'water.render.waterLines',
+      'water.render.intermittentWaterLines',
     ]) {
-      assert.ok(layerIds.has(id), `Missing ${theme} Siegfried effect layer ${id}`);
+      assert.ok(targets.has(target), `Missing ${theme} Siegfried render target ${target}`);
     }
   }
 });
@@ -289,8 +328,8 @@ test('Siegfried keeps hydrography blue while engraving water names in each key i
 
   for (const theme of ['light', 'dark'] as const) {
     const style = compileSiegfried(theme);
-    const water = style.layers.find(({id}) => id === 'streets-water');
-    const waterLabels = style.layers.filter(({id}) => id.startsWith('streets-label-water-'));
+    const water = style.layers.find(({id}) => id === 'tileflow-water');
+    const waterLabels = style.layers.filter(({id}) => id.startsWith('tileflow-label-water-'));
 
     assert.equal((water?.paint as Record<string, unknown>)['fill-color'], expected[theme].blue);
     assert.ok(waterLabels.length >= 4);
@@ -309,9 +348,9 @@ test('Siegfried uses its heavier engraved face for overview settlements and road
     const style = compileSiegfried(theme);
     const overviewLabels = style.layers.filter(
       ({id}) =>
-        id === 'streets-label-aerodrome' ||
-        id.startsWith('streets-label-place-') ||
-        /^streets-label-road-(?:major|minor|primary|secondary|service|tertiary)$/u.test(id),
+        id === 'tileflow-label-aerodrome' ||
+        id.startsWith('tileflow-label-place-') ||
+        /^tileflow-label-road-(?:major|minor|primary|secondary|service|tertiary)$/u.test(id),
     );
 
     assert.ok(overviewLabels.length >= 15);
@@ -328,7 +367,7 @@ test('Siegfried uses its heavier engraved face for overview settlements and road
 test("Siegfried landform labels omit the modern ' m' elevation suffix", () => {
   for (const theme of ['light', 'dark'] as const) {
     const labels = compileSiegfried(theme).layers.filter(({id}) =>
-      id.startsWith('streets-landform-'),
+      id.startsWith('tileflow-landform-'),
     );
     assert.ok(labels.length >= 6);
     for (const layer of labels) {
@@ -347,22 +386,22 @@ test('Siegfried removes landcover-backed alpine engraving when land is disabled'
     id: 'siegfried-without-land',
     version: 1,
     extends: siegfried,
-    modules: {land: {type: 'land', enabled: false}},
+    modules: {land: disable()},
   });
-  const style = createStyle(child, {
+  const compiled = createStyleWithInspection(child, {
     preparedAssets: {icons: {ids: iconIds, sprite: '/tileflow/icons/siegfried/sprite'}},
   });
-  const ids = new Set(style.layers.map(({id}) => id));
+  const targets = compiledTargets(compiled);
 
-  for (const id of [
-    'siegfried-rock-contour-mask',
-    'siegfried-landcover-rock-pattern',
-    'siegfried-landcover-scree-pattern',
-    'siegfried-glacier-mask',
-    'siegfried-landcover-glacier-pattern',
-    'siegfried-glacier-outline',
+  for (const target of [
+    'water.render.rockMask',
+    'water.render.rockPattern',
+    'water.render.screePattern',
+    'water.render.glacierMask',
+    'water.render.glacierPattern',
+    'water.render.glacierOutline',
   ]) {
-    assert.equal(ids.has(id), false, `${id} survived without its landcover owner`);
+    assert.equal(targets.has(target), false, `${target} survived without its land requirement`);
   }
 });
 

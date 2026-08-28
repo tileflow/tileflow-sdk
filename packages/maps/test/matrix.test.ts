@@ -2,7 +2,7 @@ import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
-import {createStyle, resolveMap, token} from '@tileflow/core';
+import {createStyle, createStyleResult, resolveMap, token} from '@tileflow/core';
 import {matrix, matrixFonts, matrixIcons} from '../src';
 
 const matrixAssetIds = ['matrix-crt-scanlines', 'matrix-data-grid', 'matrix-poi-node'] as const;
@@ -32,6 +32,29 @@ function compile(map: typeof matrix, ids: readonly string[]) {
   });
 }
 
+function compileWithProvenance(map: typeof matrix, ids: readonly string[]) {
+  const result = createStyleResult(map, {
+    inspection: true,
+    preparedAssets: {icons: {ids, sprite: `/tileflow/icons/${map.id}/sprite`}},
+  });
+  assert.equal(
+    result.ok,
+    true,
+    result.diagnostics.map(({code, message}) => `${code}: ${message}`).join('\n'),
+  );
+  if (!result.ok) throw new Error('Matrix compilation unexpectedly failed.');
+  return result;
+}
+
+function layerForTarget(result: ReturnType<typeof compileWithProvenance>, target: string) {
+  const inspected = result.report.provenance?.layers.find(({contributions}) =>
+    contributions.some((contribution) => contribution.target === target),
+  );
+  return inspected
+    ? {inspection: inspected, layer: result.style.layers[inspected.index]}
+    : undefined;
+}
+
 function collectColorLiterals(value: unknown, output = new Set<string>()): Set<string> {
   if (typeof value === 'string') {
     for (const match of value.matchAll(/#[0-9a-f]+|hsla?\([^)]*\)|rgba?\([^)]*\)/giu)) {
@@ -47,12 +70,12 @@ function collectColorLiterals(value: unknown, output = new Set<string>()): Set<s
   return output;
 }
 
-test('Matrix is a frozen self-contained root with only Matrix-owned assets', async () => {
+test('Matrix is a frozen self-contained map with only Matrix-owned assets', async () => {
   assert.equal(matrix.id, 'matrix');
   assert.equal(matrix.name, 'Matrix');
   assert.equal(matrix.version, 1);
   assert.equal('extends' in matrix, false);
-  assert.deepEqual(matrix.root, {compiler: 'streets', compilerVersion: 1});
+  assert.equal('root' in matrix, false);
   assert.deepEqual(matrix.data, {
     generation: 'v1',
     selection: {kind: 'current', product: 'world-v1'},
@@ -63,6 +86,15 @@ test('Matrix is a frozen self-contained root with only Matrix-owned assets', asy
   assert.equal(Object.isFrozen(matrix), true);
 
   const resolved = resolveMap(matrix);
+  const renderOperationCount = Object.values(resolved.modules ?? {}).reduce(
+    (count, module) =>
+      count +
+      (module && 'renderStack' in module && module.renderStack
+        ? Object.keys(module.renderStack).length
+        : 0),
+    0,
+  );
+  assert.equal(renderOperationCount, 48);
   assert.deepEqual(resolved.icons, [matrixIcons]);
   assert.deepEqual(resolved.fonts, [matrixFonts]);
   assert.equal(resolved.glyphs, undefined);
@@ -78,14 +110,19 @@ test('Matrix is a frozen self-contained root with only Matrix-owned assets', asy
   });
 
   const source = await readFile(new URL('../src/official/matrix.ts', import.meta.url), 'utf8');
-  assert.match(source, /\bdefineRootMap\s*\(/u);
+  assert.match(source, /\bdefineMap\s*\(/u);
   assert.doesNotMatch(source, /from\s+['"]\.\/(?:cyberpunk|streets|streets-themes)['"]/u);
   assert.doesNotMatch(source, /\b(?:resolveMap|getResolvedModuleEffects|matrixizeValue)\b/u);
+  assert.doesNotMatch(
+    source,
+    /@tileflow\/core\/recipe|\b(?:addModuleLayer|defineModuleEffects|patchModuleLayer|semanticField|semanticLayer)\b/u,
+  );
   assert.doesNotMatch(source, /\bcyberpunk\b|cyber-/iu);
 });
 
 test('Matrix owns a restrained terminal grammar without Cyberpunk signatures', () => {
-  const matrixStyle = compile(matrix, matrixAssetIds);
+  const result = compileWithProvenance(matrix, matrixAssetIds);
+  const matrixStyle = result.style;
 
   assert.equal(matrixStyle.metadata?.['tileflow:map'], 'matrix');
   assert.equal(matrixStyle.metadata?.['tileflow:extends'], undefined);
@@ -97,34 +134,31 @@ test('Matrix owns a restrained terminal grammar without Cyberpunk signatures', (
   assert.doesNotMatch(serialized, /cyber-(?:circuit|data-grid|target-brackets)/u);
   assert.doesNotMatch(serialized, /"cyberpunk-[^"]+"/u);
 
-  const byId = new Map(matrixStyle.layers.map((layer) => [layer.id, layer]));
-  const auraIndex = matrixStyle.layers.findIndex(
-    ({id}) => id === 'matrix-road-principal-neon-aura',
-  );
-  const glowIndex = matrixStyle.layers.findIndex(
-    ({id}) => id === 'matrix-road-principal-neon-glow',
-  );
-  assert.ok(auraIndex >= 0 && glowIndex > auraIndex, 'Matrix road glow order drifted');
-  assert.equal(byId.has('matrix-road-principal-neon-core'), false);
-  assert.equal(byId.has('matrix-buildings-circuit-fill'), false);
+  const aura = layerForTarget(result, 'roads.render.principalNeonAura');
+  const glow = layerForTarget(result, 'roads.render.principalNeonGlow');
+  assert.ok(aura && glow, 'Matrix lost its principal-road signal passes');
+  assert.ok(glow.inspection.index > aura.inspection.index, 'Matrix road glow order drifted');
+  assert.equal(result.report.targets.includes('roads.render.principalNeonCore'), false);
+  assert.equal(result.report.targets.includes('buildings.render.circuitFill'), false);
   assert.equal(
     matrixStyle.layers.some(({type}) => type === 'fill-extrusion'),
     false,
   );
 
-  const node = byId.get('matrix-destination-poi-node');
+  const node = layerForTarget(result, 'poi.render.destinationPoiNode')?.layer;
   assert.ok(node, 'Matrix lost its compact POI node');
   assert.equal(node.layout?.['icon-image'], 'matrix-poi-node');
   assert.equal(node.layout?.['text-transform'], 'uppercase');
   assert.equal(node.layout?.['icon-allow-overlap'], false);
   assert.equal(node.layout?.['text-allow-overlap'], false);
 
-  const crtMask = byId.get('matrix-crt-mask');
+  const crt = layerForTarget(result, 'labels.render.crtMask');
+  const crtMask = crt?.layer;
   assert.ok(crtMask, 'Matrix lost its full-screen CRT mask');
   assert.equal(crtMask.type, 'background');
   assert.equal(crtMask.paint?.['background-pattern'], 'matrix-crt-scanlines');
   assert.equal(crtMask.paint?.['background-opacity'], 0.84);
-  const crtMaskIndex = matrixStyle.layers.findIndex(({id}) => id === 'matrix-crt-mask');
+  const crtMaskIndex = crt?.inspection.index ?? -1;
   const textLayerIndexes = matrixStyle.layers.flatMap((layer, index) =>
     layer.type === 'symbol' && layer.layout?.['text-field'] !== undefined ? [index] : [],
   );

@@ -138,7 +138,7 @@ function createHarness(binding: TileflowInteractionBinding = textBinding) {
   const style = {
     layers: [
       {
-        id: 'streets-poi-food-drink-icon',
+        id: 'tileflow-poi-food-drink-icon',
         source: 'tileflow',
         'source-layer': 'poi',
         type: 'symbol',
@@ -166,7 +166,7 @@ function createHarness(binding: TileflowInteractionBinding = textBinding) {
               {
                 anchor: 'pointer-coordinate',
                 category: 'food-drink',
-                layerId: 'streets-poi-food-drink-icon',
+                layerId: 'tileflow-poi-food-drink-icon',
                 priority: 10,
                 representation: 'icon',
                 source: 'tileflow',
@@ -181,7 +181,7 @@ function createHarness(binding: TileflowInteractionBinding = textBinding) {
   };
   let feature: TileflowMapLibrePoiFeature = {
     id: 'poi-42',
-    layer: {id: 'streets-poi-food-drink-icon'},
+    layer: {id: 'tileflow-poi-food-drink-icon'},
     properties: {
       category: 'food-drink',
       filter_rank: 2,
@@ -505,7 +505,7 @@ test('resolves transient query and unstable-identity diagnostics after success o
   assert.deepEqual(harness.runtime.getDiagnostics(), []);
 
   harness.setFeature({
-    layer: {id: 'streets-poi-food-drink-icon'},
+    layer: {id: 'tileflow-poi-food-drink-icon'},
     properties: {name: 'No stable ID'},
     source: 'tileflow',
     sourceLayer: 'poi',

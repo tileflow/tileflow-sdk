@@ -98,13 +98,12 @@ test(
     try {
       await writeFile(
         join(cwd, 'tileflow.config.ts'),
-        `import {defineRootMap} from '@tileflow/core';
+        `import {defineMap} from '@tileflow/core';
 import {streetsIcons, streetsThemes} from '@tileflow/maps';
 
-export default defineRootMap({
+export default defineMap({
       id: 'proof',
       version: 1,
-      root: {compiler: 'streets', compilerVersion: 1},
       defaultTheme: 'light',
       themes: streetsThemes,
       icons: [streetsIcons],
@@ -137,10 +136,10 @@ export default defineRootMap({
       const generatedStyle = artifacts.styles.proof?.light;
       assert.ok(generatedStyle);
       assert.ok(
-        generatedStyle.layers.some((layer) => layer.id === 'streets-road-surface-primary-casing'),
+        generatedStyle.layers.some((layer) => layer.id === 'tileflow-road-surface-primary-casing'),
       );
       assert.ok(
-        generatedStyle.layers.some((layer) => layer.id === 'streets-road-bridge-primary-fill'),
+        generatedStyle.layers.some((layer) => layer.id === 'tileflow-road-bridge-primary-fill'),
       );
       browser = await launchTileflowCaptureBrowser({allowInstall: false});
       const first = await captureStandaloneTileflowScene({
@@ -217,13 +216,12 @@ test(
     try {
       await writeFile(
         join(cwd, 'tileflow.config.ts'),
-        `import {defineRootMap} from '@tileflow/core';
+        `import {defineMap} from '@tileflow/core';
 import {streetsIcons, streetsThemes} from '@tileflow/maps';
 
-export default defineRootMap({
+export default defineMap({
   id: 'proof',
   version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   defaultTheme: 'light',
   themes: streetsThemes,
   icons: [streetsIcons],
@@ -264,7 +262,7 @@ export default defineRootMap({
       assert.ok(generatedStyle);
       assert.equal(generatedStyle.sources['tileflow-contours']?.type, 'vector');
       assert.ok(
-        generatedStyle.layers.some((layer) => layer.id === 'streets-terrain-contour-minor'),
+        generatedStyle.layers.some((layer) => layer.id === 'tileflow-terrain-contour-minor'),
       );
       browser = await launchTileflowCaptureBrowser({allowInstall: false});
       const first = await captureStandaloneTileflowScene({

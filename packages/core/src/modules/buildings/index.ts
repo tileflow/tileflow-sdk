@@ -4,7 +4,6 @@ export type TileflowBuildingMode = '3d' | 'flat';
 
 export type TileflowBuildingsModuleOptions = {
   businessCorridor?: TileflowAreaStyle;
-  enabled?: boolean;
   extrusion?: TileflowExtrusionStyle;
   flat?: TileflowAreaStyle;
   mode?: TileflowBuildingMode;

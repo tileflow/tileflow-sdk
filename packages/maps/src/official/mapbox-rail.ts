@@ -1,5 +1,5 @@
 import {
-  expression,
+  expr,
   type TileflowColorStyleValue,
   type TileflowTransitModuleOptions,
   zoom,
@@ -35,14 +35,9 @@ export function mapboxRailTransitStyle(color: TileflowColorStyleValue): MapboxRa
   const sleepers = () => ({
     cap: 'butt' as const,
     color,
-    dash: expression<readonly number[]>([
-      'step',
-      ['zoom'],
-      ['literal', [0.1, 15]],
-      16,
-      ['literal', [0.1, 1]],
-      18,
-      ['literal', [0.05, 0.5]],
+    dash: expr.step(expr.zoom(), expr.literal<readonly number[]>([0.1, 15]), [
+      [16, expr.literal<readonly number[]>([0.1, 1])],
+      [18, expr.literal<readonly number[]>([0.05, 0.5])],
     ]),
     join: 'miter' as const,
     minZoom: 13,

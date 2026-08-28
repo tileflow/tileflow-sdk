@@ -35,7 +35,6 @@ export type TileflowLandcoverClass =
 
 export type TileflowLandModuleOptions = {
   background?: TileflowBackgroundStyle;
-  enabled?: boolean;
   globalLandcover?: TileflowFillStyle;
   landcover?: Partial<Record<TileflowLandcoverClass, TileflowAreaStyle>>;
   landuse?: Partial<Record<TileflowLanduseClass, TileflowAreaStyle>>;

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {createStyle, defineMap, openMapTiles, resolveMap, vectorTiles} from '@tileflow/core';
+import {createStyleWithInspection} from '@tileflow/core/build';
 import {
   cyberpunk,
   cyberpunkFonts,
@@ -213,7 +214,25 @@ function compileOfficialMap(map: Parameters<typeof resolveMap>[0], theme?: strin
   });
 }
 
-test('exports every official map as an independent compiler root', async () => {
+function compiledTargets(compiled: ReturnType<typeof createStyleWithInspection>): Set<string> {
+  return new Set(
+    compiled.inspection.layers.flatMap((layer) =>
+      layer.contributions.map((contribution) => contribution.target),
+    ),
+  );
+}
+
+function compiledLayerForTarget(
+  compiled: ReturnType<typeof createStyleWithInspection>,
+  target: string,
+) {
+  const inspected = compiled.inspection.layers.find(({contributions}) =>
+    contributions.some((contribution) => contribution.target === target),
+  );
+  return inspected ? compiled.style.layers[inspected.index] : undefined;
+}
+
+test('exports every official map as an independent standalone semantic map', async () => {
   const officialMaps = {
     cyberpunk,
     ferraris,
@@ -227,7 +246,7 @@ test('exports every official map as an independent compiler root', async () => {
   const officialMapIds = new Set(Object.keys(officialMaps));
 
   for (const [id, map] of Object.entries(officialMaps)) {
-    assert.deepEqual(map.root, {compiler: 'streets', compilerVersion: 1});
+    assert.equal('root' in map, false);
     assert.equal('extends' in map, false, `${id} imports another official map`);
 
     const resolved = resolveMap(map);
@@ -235,10 +254,19 @@ test('exports every official map as an independent compiler root', async () => {
     assert.equal(resolved.version, 1);
     assert.equal('extends' in resolved, false);
     assert.equal('basemap' in resolved, false);
-    assert.equal(resolved.root.compiler, 'streets');
+    assert.equal('root' in resolved, false);
 
     const source = await readFile(new URL(`../src/official/${id}.ts`, import.meta.url), 'utf8');
-    assert.match(source, /\bdefineRootMap\s*\(/u, `${id} is not authored as a root`);
+    assert.match(source, /\bdefineMap\s*\(/u, `${id} is not authored as a standalone map`);
+    if (id === 'cyberpunk' || id === 'matrix') {
+      assert.match(source, /\bwithRenderStack\s*\(/u, `${id} lost its semantic render stack`);
+      assert.match(source, /\bfield\s*\(/u, `${id} lost its schema-bound field references`);
+      assert.doesNotMatch(
+        source,
+        /@tileflow\/core\/recipe|\b(?:addModuleLayer|defineModuleEffects|patchModuleLayer|semanticField|semanticLayer)\b/u,
+        `${id} regressed to the legacy raw-effects surface`,
+      );
+    }
     for (const match of source.matchAll(/\bfrom\s+['"]\.\/([^'"]+)['"]/gu)) {
       const importedModule = match[1]!.replace(/\.(?:js|ts)$/u, '');
       assert.equal(
@@ -342,14 +370,15 @@ test('official maps declare their expected icon and typography providers', () =>
 test('Ferraris is self-contained and references exactly its package-owned patterns', () => {
   const resolved = resolveMap(ferraris);
   assert.equal('extends' in ferraris, false);
-  assert.equal(resolved.root.compiler, 'streets');
+  assert.equal('root' in resolved, false);
   assert.deepEqual(resolved.icons, [ferrarisIcons]);
 
-  const style = createStyle(ferraris, {
+  const compiled = createStyleWithInspection(ferraris, {
     preparedAssets: {
       icons: {ids: ferrarisPatternIds, sprite: '/tileflow/icons/ferraris/sprite'},
     },
   });
+  const {style} = compiled;
   assert.equal(style.metadata?.['tileflow:extends'], undefined);
   const patternIds = new Set(
     style.layers.flatMap((layer) =>
@@ -360,34 +389,35 @@ test('Ferraris is self-contained and references exactly its package-owned patter
   );
   assert.deepEqual([...patternIds].sort(), [...ferrarisPatternIds]);
 
-  const layerIds = new Set(style.layers.map((layer) => layer.id));
-  for (const id of [
-    'ferraris-landcover-farmland-pattern',
-    'ferraris-landcover-heath-pattern',
-    'ferraris-landcover-orchard-pattern',
-    'ferraris-landcover-sand-pattern',
-    'ferraris-landcover-wetland-pattern',
-    'ferraris-landcover-wood-pattern',
-    'ferraris-landuse-residential-pattern',
-    'ferraris-water-ripples-pattern',
-    'ferraris-water-intermittent-ripples-pattern',
-    'ferraris-building-print-shadow',
+  const targets = compiledTargets(compiled);
+  for (const target of [
+    'land.render.farmlandTexture',
+    'land.render.heathTexture',
+    'land.render.orchardTexture',
+    'land.render.sandTexture',
+    'land.render.wetlandTexture',
+    'land.render.woodTexture',
+    'land.render.residentialTexture',
+    'water.render.ripples',
+    'water.render.intermittentRipples',
+    'buildings.render.printShadow',
   ]) {
-    assert.equal(layerIds.has(id), true, `Missing Ferraris effect layer ${id}`);
+    assert.equal(targets.has(target), true, `Missing Ferraris render target ${target}`);
   }
 });
 
 test('Härad is self-contained and references exactly its package-owned patterns', () => {
   const resolved = resolveMap(harad);
   assert.equal('extends' in harad, false);
-  assert.equal(resolved.root.compiler, 'streets');
+  assert.equal('root' in resolved, false);
   assert.deepEqual(resolved.icons, [haradIcons]);
 
-  const style = createStyle(harad, {
+  const compiled = createStyleWithInspection(harad, {
     preparedAssets: {
       icons: {ids: haradPatternIds, sprite: '/tileflow/icons/harad/sprite'},
     },
   });
+  const {style} = compiled;
   assert.equal(style.metadata?.['tileflow:extends'], undefined);
   const patternIds = new Set(
     style.layers.flatMap((layer) =>
@@ -398,40 +428,53 @@ test('Härad is self-contained and references exactly its package-owned patterns
   );
   assert.deepEqual([...patternIds].sort(), [...haradPatternIds]);
 
-  const layerIds = new Set(style.layers.map((layer) => layer.id));
-  for (const id of [
-    'harad-landcover-arable-pattern',
-    'harad-landcover-conifer-pattern',
-    'harad-landcover-deciduous-pattern',
-    'harad-landcover-orchard-pattern',
-    'harad-landcover-sand-pattern',
-    'harad-landcover-wetland-pattern',
-    'harad-landuse-settlement-pattern',
-    'harad-field-boundaries',
-    'harad-water-lines-pattern',
-    'harad-water-intermittent-lines-pattern',
+  const targets = compiledTargets(compiled);
+  for (const target of [
+    'land.render.arableTexture',
+    'land.render.coniferTexture',
+    'land.render.deciduousTexture',
+    'land.render.orchardTexture',
+    'land.render.sandTexture',
+    'land.render.wetlandTexture',
+    'land.render.settlementTexture',
+    'land.render.fieldBoundaries',
+    'water.render.printLines',
+    'water.render.intermittentPrintLines',
   ]) {
-    assert.equal(layerIds.has(id), true, `Missing Härad effect layer ${id}`);
+    assert.equal(targets.has(target), true, `Missing Härad render target ${target}`);
   }
+  const layerIds = new Set(style.layers.map((layer) => layer.id));
   assert.equal(layerIds.has('harad-building-ink-shadow'), false);
 });
 
 test('Soundings is self-contained and references only its bathymetric-map artwork', () => {
   const resolved = resolveMap(soundings);
   assert.equal('extends' in soundings, false);
-  assert.deepEqual(soundings.root, {compiler: 'streets', compilerVersion: 1});
+  assert.equal('root' in soundings, false);
   assert.deepEqual(resolved.icons, [soundingsIcons]);
 
-  const style = createStyle(soundings, {
+  const compiled = createStyleWithInspection(soundings, {
     preparedAssets: {
       icons: {ids: soundingsIconIds, sprite: '/tileflow/icons/soundings/sprite'},
     },
   });
+  const {style} = compiled;
   assert.equal(style.metadata?.['tileflow:map'], 'soundings');
   assert.equal(style.metadata?.['tileflow:extends'], undefined);
-  assert.equal(style.metadata?.['tileflow:root'], 'streets');
+  assert.equal(style.metadata?.['tileflow:compiler'], 'tileflow-semantic');
   assert.equal(style.sprite, '/tileflow/icons/soundings/sprite');
   assert.deepEqual(validateStyleMin(style as never), []);
+
+  const targets = compiledTargets(compiled);
+  for (const target of [
+    'water.render.pierOutline',
+    'water.render.pierDeck',
+    'water.render.chartDots',
+    'water.render.intermittentChartDots',
+    'transit.render.ferryLabels',
+  ]) {
+    assert.equal(targets.has(target), true, `Missing Soundings render target ${target}`);
+  }
 
   const serialized = JSON.stringify(style);
   for (const id of ['soundings-paper-grain', 'soundings-water-dots']) {
@@ -454,16 +497,17 @@ test('Soundings is self-contained and references only its bathymetric-map artwor
 test('Verdant is self-contained and references exactly its package-owned patterns', () => {
   const resolved = resolveMap(verdant);
   assert.equal('extends' in verdant, false);
-  assert.deepEqual(verdant.root, {compiler: 'streets', compilerVersion: 1});
+  assert.equal('root' in verdant, false);
   assert.deepEqual(resolved.icons, [verdantIcons]);
 
-  const style = createStyle(verdant, {
+  const compiled = createStyleWithInspection(verdant, {
     preparedAssets: {
       icons: {ids: verdantIconIds, sprite: '/tileflow/icons/verdant/sprite'},
     },
   });
+  const {style} = compiled;
   assert.equal(style.metadata?.['tileflow:extends'], undefined);
-  assert.equal(style.metadata?.['tileflow:root'], 'streets');
+  assert.equal(style.metadata?.['tileflow:compiler'], 'tileflow-semantic');
   assert.deepEqual(validateStyleMin(style as never), []);
 
   const patternIds = new Set(
@@ -475,23 +519,23 @@ test('Verdant is self-contained and references exactly its package-owned pattern
   );
   assert.deepEqual([...patternIds].sort(), [...verdantPatternIds]);
 
-  const layerIds = new Set(style.layers.map((layer) => layer.id));
-  for (const id of [
-    'verdant-landcover-farmland-pattern',
-    'verdant-landcover-scrub-pattern',
-    'verdant-landcover-meadow-pattern',
-    'verdant-landcover-orchard-pattern',
-    'verdant-landcover-rock-pattern',
-    'verdant-landcover-wetland-pattern',
-    'verdant-landcover-wood-pattern',
-    'verdant-landuse-residential-pattern',
-    'verdant-water-lines-pattern',
-    'verdant-water-intermittent-lines-pattern',
-    'verdant-building-print-shadow',
-    'verdant-trail-emphasis',
-    'verdant-landscape-label',
+  const targets = compiledTargets(compiled);
+  for (const target of [
+    'land.render.farmlandTexture',
+    'land.render.scrubTexture',
+    'land.render.meadowTexture',
+    'land.render.orchardTexture',
+    'land.render.rockTexture',
+    'land.render.wetlandTexture',
+    'land.render.woodTexture',
+    'land.render.residentialTexture',
+    'water.render.printLines',
+    'water.render.intermittentPrintLines',
+    'buildings.render.printShadow',
+    'roads.render.trailEmphasis',
+    'labels.render.landscape',
   ]) {
-    assert.equal(layerIds.has(id), true, `Missing Verdant effect layer ${id}`);
+    assert.equal(targets.has(target), true, `Missing Verdant render target ${target}`);
   }
 });
 
@@ -508,7 +552,7 @@ test('all official maps compile directly after their packaged sprite is prepared
   })) {
     const style = compileOfficialMap(map);
     assert.equal(style.metadata?.['tileflow:map'], id);
-    assert.equal(style.metadata?.['tileflow:root'], 'streets');
+    assert.equal(style.metadata?.['tileflow:compiler'], 'tileflow-semantic');
     assert.equal(style.sprite, `/tileflow/icons/${id}/sprite`);
     assert.equal(
       style.glyphs,
@@ -572,7 +616,7 @@ test('Streets-family maps overlap ordinary road endpoints without extending stru
     for (const cohort of ['local', 'arterial', 'major']) {
       for (const phase of ['casing', 'fill']) {
         for (const structure of ['surface', 'bridge', 'tunnel']) {
-          const id = `streets-road-${structure}-highzoom-${cohort}-${phase}`;
+          const id = `tileflow-road-${structure}-highzoom-${cohort}-${phase}`;
           const layer = byId.get(id);
           assert.ok(layer, `Missing compiled ${mapId} road cohort ${id}`);
           assert.deepEqual(
@@ -586,7 +630,7 @@ test('Streets-family maps overlap ordinary road endpoints without extending stru
 
     for (const structure of ['surface', 'tunnel', 'bridge']) {
       for (const phase of ['casing', 'fill']) {
-        const id = `streets-road-${structure}-steps-${phase}`;
+        const id = `tileflow-road-${structure}-steps-${phase}`;
         const layer = byId.get(id);
         assert.ok(layer, `Missing compiled ${mapId} steps layer ${id}`);
         assert.equal(
@@ -599,7 +643,7 @@ test('Streets-family maps overlap ordinary road endpoints without extending stru
 
     for (const roadClass of ['pathway', 'footway', 'cycleway', 'pedestrian']) {
       for (const phase of ['casing', 'fill']) {
-        const id = `streets-road-tunnel-${roadClass}-${phase}`;
+        const id = `tileflow-road-tunnel-${roadClass}-${phase}`;
         const layer = byId.get(id);
         assert.ok(layer, `Missing compiled ${mapId} tunnel path ${id}`);
         assert.equal(
@@ -610,7 +654,7 @@ test('Streets-family maps overlap ordinary road endpoints without extending stru
       }
     }
     assert.equal(
-      byId.get('streets-road-tunnel-cycleway-shadow')?.layout?.['line-cap'],
+      byId.get('tileflow-road-tunnel-cycleway-shadow')?.layout?.['line-cap'],
       'butt',
       `${mapId} tunnel cycleway underlay extends beyond its portal`,
     );
@@ -631,7 +675,7 @@ test('official road maps avoid seam-prone caps on ordinary surface and bridge se
     const ordinaryRoadLayers = style.layers.filter(
       (layer) =>
         layer.type === 'line' &&
-        /^streets-road-(?:surface|bridge)-/u.test(layer.id) &&
+        /^tileflow-road-(?:surface|bridge)-/u.test(layer.id) &&
         !layer.id.includes('-steps-'),
     );
     assert.ok(ordinaryRoadLayers.length > 0, `${mapId} compiled no ordinary road lines`);
@@ -648,7 +692,7 @@ test('official road maps avoid seam-prone caps on ordinary surface and bridge se
   const soundingsStyle = compileOfficialMap(soundings);
   assert.equal(
     soundingsStyle.layers.some((layer) =>
-      /^streets-road-(?:surface|bridge|tunnel)-/u.test(layer.id),
+      /^tileflow-road-(?:surface|bridge|tunnel)-/u.test(layer.id),
     ),
     false,
     'Soundings unexpectedly enabled road geometry',
@@ -684,17 +728,21 @@ test('official maps compile against generic OpenMapTiles without optional capabi
     const layerIds = new Set(style.layers.map((layer) => layer.id));
 
     assert.equal(
-      layerIds.has('streets-bathymetry'),
+      layerIds.has('tileflow-bathymetry'),
       id === 'soundings',
       `${id} emitted unexpected bathymetry selection`,
     );
     if (id === 'soundings') {
       assert.equal(
-        style.layers.find((layer) => layer.id === 'streets-bathymetry')?.source,
+        style.layers.find((layer) => layer.id === 'tileflow-bathymetry')?.source,
         'tileflow-bathymetry',
       );
     }
-    assert.equal(layerIds.has('streets-global-landcover'), false, `${id} emitted global landcover`);
+    assert.equal(
+      layerIds.has('tileflow-global-landcover'),
+      false,
+      `${id} emitted global landcover`,
+    );
     assert.deepEqual(validateStyleMin(style as never), [], `${id} emitted an invalid style`);
   }
 });
@@ -750,25 +798,25 @@ test('Streets green surfaces are typed and contain no legacy raw detail layers',
   const ids = new Set(style.layers.map(({id}) => id));
 
   for (const id of [
-    'streets-global-landcover',
-    'streets-landcover',
-    'streets-landcover-protected',
-    'streets-landuse-recreation',
-    'streets-landuse-recreation-outline',
+    'tileflow-global-landcover',
+    'tileflow-landcover',
+    'tileflow-landcover-protected',
+    'tileflow-landuse-recreation',
+    'tileflow-landuse-recreation-outline',
   ]) {
     assert.equal(ids.has(id), true, `Missing compiled green layer ${id}`);
   }
   for (const id of [
-    'streets-landcover-meadow-detail',
-    'streets-landcover-park-detail',
-    'streets-landuse-recreation-detail',
-    'streets-landuse-recreation-detail-outline',
-    'streets-landcover-legacy-park',
+    'tileflow-landcover-meadow-detail',
+    'tileflow-landcover-park-detail',
+    'tileflow-landuse-recreation-detail',
+    'tileflow-landuse-recreation-detail-outline',
+    'tileflow-landcover-legacy-park',
   ]) {
     assert.equal(ids.has(id), false, `Unexpected legacy green layer ${id}`);
   }
 
-  const globalLandcover = style.layers.find(({id}) => id === 'streets-global-landcover');
+  const globalLandcover = style.layers.find(({id}) => id === 'tileflow-global-landcover');
   assert.equal(globalLandcover?.['source-layer'], 'globallandcover');
   assert.equal(globalLandcover?.maxzoom, 11);
   assert.deepEqual((globalLandcover?.paint as Record<string, unknown>)['fill-opacity'], [
@@ -825,27 +873,36 @@ test('non-Streets official maps do not use Streets surface colors', () => {
 });
 
 test('Streets keeps its runtime-toggle geometry and business surface in the compiled style', () => {
-  const style = compileOfficialMap(streets);
+  const compiled = createStyleWithInspection(streets, {
+    preparedAssets: preparedAssets(streets.id),
+  });
+  const {style} = compiled;
   const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
+  const layerForTarget = (target: string) => {
+    const id = compiled.inspection.layers.find((layer) =>
+      layer.contributions.some((contribution) => contribution.target === target),
+    )?.id;
+    return byId.get(id ?? '');
+  };
 
-  for (const id of [
-    'streets-buildings-3d-shadow-soft',
-    'streets-buildings-3d-shadow-core',
-    'streets-buildings-3d',
+  for (const target of [
+    'buildings.render.shadowSoft',
+    'buildings.render.shadowCore',
+    'buildings.render.extrusion',
   ]) {
-    const layer = byId.get(id);
-    assert.ok(layer, `Streets lost runtime-toggle layer ${id}`);
+    const layer = layerForTarget(target);
+    assert.ok(layer, `Streets lost runtime-toggle target ${target}`);
     assert.equal(layer.layout?.visibility, 'none');
     assert.equal(layer.metadata?.['tileflow:3d-toggle'], 'building');
   }
 
-  const trees = byId.get('streets-vegetation-trees');
+  const trees = byId.get('tileflow-vegetation-trees');
   assert.ok(trees, 'Streets lost its individual-tree layer');
   assert.equal(trees.type, 'circle');
   assert.equal(trees.metadata?.['tileflow:vegetation-mode'], '3d');
   assert.equal(trees.metadata?.['tileflow:vegetation-fallback'], 'flat-circle');
 
-  const businessArea = byId.get('streets-landuse-business-area');
+  const businessArea = layerForTarget('land.render.businessArea');
   assert.ok(businessArea, 'Streets lost its business land-use surface');
   assert.equal(businessArea.type, 'fill');
   assert.match(JSON.stringify(businessArea.filter), /business_area/u);
@@ -854,7 +911,7 @@ test('Streets keeps its runtime-toggle geometry and business surface in the comp
 test('Streets consumes canonical producer-ranked POI and omits house-number noise', () => {
   const resolved = resolveMap(streets);
   assert.equal(resolved.modules?.addresses?.enabled, false);
-  assert.equal(resolved.modules?.poi?.enabled, true);
+  assert.notEqual(resolved.modules?.poi?.enabled, false);
   assert.equal(resolved.modules?.poi?.color, 'category');
   assert.equal(resolved.modules?.poi?.placement?.coupleIconAndLabel, true);
   assert.equal(resolved.modules?.poi?.density, 3);
@@ -876,9 +933,9 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
 
   const style = compileOfficialMap(streets);
   const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
-  assert.equal(byId.has('streets-addresses-labels'), false);
-  assert.equal(byId.has('streets-parking-symbol-disc'), false);
-  assert.equal(byId.has('streets-parking-symbol-label'), false);
+  assert.equal(byId.has('tileflow-addresses-labels'), false);
+  assert.equal(byId.has('tileflow-parking-symbol-disc'), false);
+  assert.equal(byId.has('tileflow-parking-symbol-label'), false);
 
   const expectedPoiTextColors = {
     'arts-entertainment': '#B85CA4',
@@ -896,7 +953,7 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
     'visitor-amenity': '#777876',
   } as const;
   for (const category of resolved.modules?.poi?.categories ?? []) {
-    const id = `streets-poi-${category}`;
+    const id = `tileflow-poi-${category}`;
     const layer = byId.get(id);
     assert.ok(layer, `Streets lost coupled POI layer ${id}`);
     assert.equal(byId.has(`${id}-marker`), false);
@@ -918,7 +975,7 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
     assert.equal(layer.paint?.['text-halo-color'], '#FFFFFF');
   }
 
-  const transportIcon = JSON.stringify(byId.get('streets-poi-transport')?.layout?.['icon-image']);
+  const transportIcon = JSON.stringify(byId.get('tileflow-poi-transport')?.layout?.['icon-image']);
   assert.match(transportIcon, /"icon"/u);
   assert.match(transportIcon, /major-transit/u);
   assert.deepEqual(validateStyleMin(style as never), []);
@@ -926,16 +983,25 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
 
 test('Cyberpunk HUD consumes canonical POI density and size ranks', () => {
   const resolved = resolveMap(cyberpunk);
+  const renderOperationCount = Object.values(resolved.modules ?? {}).reduce(
+    (count, module) =>
+      count +
+      (module && 'renderStack' in module && module.renderStack
+        ? Object.keys(module.renderStack).length
+        : 0),
+    0,
+  );
+  assert.equal(renderOperationCount, 49);
   assert.equal(resolved.modules?.poi?.density, 2);
   assert.deepEqual(resolved.modules?.poi?.categories, ['transport', 'arts-entertainment']);
 
-  const style = createStyle(cyberpunk, {
+  const compiled = createStyleWithInspection(cyberpunk, {
     preparedAssets: preparedAssets('cyberpunk'),
   });
-  const ring = style.layers.find(({id}) => id === 'cyberpunk-destination-scan-ring');
-  const core = style.layers.find(({id}) => id === 'cyberpunk-destination-beacon-core');
-  const brackets = style.layers.find(({id}) => id === 'cyberpunk-destination-target-brackets');
-  const culture = style.layers.find(({id}) => id === 'streets-poi-arts-entertainment-label');
+  const ring = compiledLayerForTarget(compiled, 'poi.render.destinationScanRing');
+  const core = compiledLayerForTarget(compiled, 'poi.render.destinationBeaconCore');
+  const brackets = compiledLayerForTarget(compiled, 'poi.render.destinationBrackets');
+  const culture = compiledLayerForTarget(compiled, 'poi.arts-entertainment.label');
 
   assert.ok(ring, 'Cyberpunk lost its destination scan ring');
   assert.ok(core, 'Cyberpunk lost its destination beacon core');
@@ -960,5 +1026,5 @@ test('Cyberpunk HUD consumes canonical POI density and size ranks', () => {
   assert.equal(matches(20, {category: 'transport', filter_rank: 3, size_rank: 16}), false);
   assert.equal(matches(20, {category: 'transport', filter_rank: 2, size_rank: 17}), false);
   assert.equal(matches(20, {category: 'transport', rank: 1}), false);
-  assert.deepEqual(validateStyleMin(style as never), []);
+  assert.deepEqual(validateStyleMin(compiled.style as never), []);
 });

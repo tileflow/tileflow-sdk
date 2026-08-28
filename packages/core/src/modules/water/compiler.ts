@@ -15,6 +15,7 @@ import type {
 import {expression, zoom} from '../../cartography/values';
 import type {ResolvedBathymetryRelief, TileflowBathymetryReliefConfig} from '../../marine';
 import {alpha, mix} from '../../themes';
+import type {TileflowResolvedModuleConfig} from '../resolved';
 import type {TileflowWaterModuleConfig, TileflowWaterwayClass} from './index';
 
 const waterwayClasses: Record<TileflowWaterwayClass, readonly string[]> = {
@@ -25,10 +26,10 @@ const waterwayClasses: Record<TileflowWaterwayClass, readonly string[]> = {
 };
 
 export function compileWater(
-  request: TileflowWaterModuleConfig | undefined,
+  request: TileflowResolvedModuleConfig<TileflowWaterModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
 ): TileflowLayerContribution[] {
-  const config = mergeTileflowDesign<TileflowWaterModuleConfig>(
+  const config = mergeTileflowDesign<TileflowResolvedModuleConfig<TileflowWaterModuleConfig>>(
     {
       type: 'water',
       enabled: true,
@@ -82,7 +83,7 @@ export function compileWater(
   if (config.bodies) {
     for (const area of createAreaLayers(
       {
-        id: 'streets-water',
+        id: 'tileflow-water',
         type: 'fill',
         source,
         'source-layer': layers.water,
@@ -104,7 +105,7 @@ export function compileWater(
   if (config.intermittent?.bodies) {
     for (const area of createAreaLayers(
       {
-        id: 'streets-water-intermittent',
+        id: 'tileflow-water-intermittent',
         type: 'fill',
         source,
         'source-layer': layers.water,
@@ -176,7 +177,7 @@ export function compileWater(
         kind: 'layer',
         layer: applyFillStyle(
           {
-            id: 'streets-bathymetry',
+            id: 'tileflow-bathymetry',
             type: 'fill',
             source: bathymetrySource,
             'source-layer': bathymetryLayer,
@@ -225,7 +226,7 @@ export function compileWater(
         kind: 'layer',
         layer: applyLineStyle(
           {
-            id: 'streets-bathymetry-contours',
+            id: 'tileflow-bathymetry-contours',
             type: 'line',
             source: bathymetrySource,
             'source-layer': bathymetryLayer,
@@ -283,7 +284,7 @@ export function compileWater(
         kind: 'layer',
         layer: applySymbolStyle(
           {
-            id: 'streets-bathymetry-labels',
+            id: 'tileflow-bathymetry-labels',
             type: 'symbol',
             source: bathymetrySource,
             'source-layer': bathymetryLayer,
@@ -306,10 +307,16 @@ export function compileWater(
     const style = config.waterways?.[name];
     if (!style || style.visible === false) continue;
     contributions.push({
+      family: {
+        group: name,
+        kind: 'waterway',
+        member: name,
+        variant: 'regular',
+      },
       kind: 'layer',
       layer: applyLineStyle(
         {
-          id: `streets-waterway-${name}`,
+          id: `tileflow-waterway-${name}`,
           type: 'line',
           source,
           'source-layer': layers.waterway,
@@ -330,10 +337,16 @@ export function compileWater(
     const intermittent = config.intermittent?.waterways;
     if (intermittent?.visible === false) continue;
     contributions.push({
+      family: {
+        group: name,
+        kind: 'waterway',
+        member: name,
+        variant: 'intermittent',
+      },
       kind: 'layer',
       layer: applyLineStyle(
         {
-          id: `streets-waterway-${name}-intermittent`,
+          id: `tileflow-waterway-${name}-intermittent`,
           type: 'line',
           source,
           'source-layer': layers.waterway,
@@ -371,7 +384,7 @@ function appendBathymetryRelief(
     kind: 'layer',
     layer: applyReliefRange(
       {
-        id: 'streets-bathymetry-color-relief',
+        id: 'tileflow-bathymetry-color-relief',
         type: 'color-relief',
         source: sourceId,
         paint: {
@@ -435,7 +448,7 @@ function appendBathymetryRelief(
     kind: 'layer',
     layer: applyReliefRange(
       {
-        id: 'streets-bathymetry-relief',
+        id: 'tileflow-bathymetry-relief',
         type: 'hillshade',
         source: sourceId,
         paint: {

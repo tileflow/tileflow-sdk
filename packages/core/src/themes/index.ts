@@ -285,13 +285,15 @@ export function resolveColors(
   };
 }
 
-/** Build the Streets compiler's concrete color context from semantic theme roles. */
+/** Build the semantic compiler's concrete color context from semantic theme roles. */
 export function resolveThemeColors(theme: TileflowTheme): TileflowResolvedColors {
   const tokens = resolveTileflowTheme(theme).tokens.color;
   const requireColor = (name: string): string => {
     const value = tokens[name];
     if (value !== undefined) return value;
-    throw new Error(`Tileflow Streets requires color token "${name}" in theme "${theme.id}".`);
+    throw new Error(
+      `Tileflow semantic compiler requires color token "${name}" in theme "${theme.id}".`,
+    );
   };
   const optionalGroup = <const TKeys extends readonly string[]>(
     group: string,

@@ -37,7 +37,6 @@ test('keeps the shared interaction runtime behind the browser lifecycle boundary
     assert.match(source, /createTileflowMapLibreDomRuntime/);
     assert.match(source, /createTileflowMapLibreSemanticDomRuntime/);
     assert.match(source, /createTileflowMapLibreInteractionCoordinator/);
-    assert.match(source, /normalizeTileflowLegacyMarkers/);
     assert.match(source, /validateTileflowInteractionBindings/);
     assert.match(source, /subscribeDiagnostics/);
     assert.match(source, /subscribeRenderTargets/);
@@ -54,7 +53,7 @@ test('keeps the shared interaction runtime behind the browser lifecycle boundary
       2,
     );
     assert.doesNotMatch(source, /import \* as maplibregl/);
-    assert.match(declaration, /marker\?: TileflowMapMarkerSnippet<TAnnotation>/);
+    assert.match(declaration, /marker\?: TileflowMapAnnotationSnippet<TAnnotation>/);
     assert.match(declaration, /popup\?: TileflowMapInteractionSnippet<TAnnotation>/);
     assert.match(declaration, /tooltip\?: TileflowMapInteractionSnippet<TAnnotation>/);
   } finally {
@@ -77,25 +76,6 @@ test('marks image-mode interaction configurations unsupported without loading Ma
 
     assert.match(result.body, /data-tileflow-state="error"/);
     assert.match(compiled.code, /UNSUPPORTED_MODE/);
-  } finally {
-    await compiled.cleanup();
-  }
-});
-
-test('invalid mutually exclusive interaction props participate in capture readiness', async () => {
-  const compiled = await compileTileflowMap('interactions-invalid');
-
-  try {
-    const result = render(compiled.component, {
-      props: {
-        annotations: [annotation],
-        markers: [{coordinates: [-3.7038, 40.4168], id: 'legacy'}],
-        source: {kind: 'tileflow', map: 'main'},
-      },
-    });
-
-    assert.match(result.body, /data-tileflow-state="error"/);
-    assert.match(compiled.code, /annotations and legacy markers props are mutually exclusive/);
   } finally {
     await compiled.cleanup();
   }

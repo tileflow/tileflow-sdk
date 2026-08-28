@@ -17,7 +17,7 @@ import {
 import {
   compareCodeUnits,
   normalizeTileflowCaptureScene,
-  parseTileflowMap,
+  parseResolvedTileflowMap,
   resolveThemeSelection,
   tileflowCaptureSceneLimits,
 } from '@tileflow/core';
@@ -854,7 +854,7 @@ function resolveVisualCompareSide(
       `Unknown ${role} map "${map}". Available maps: ${availableMaps.join(', ') || '(none)'}.`,
     );
   }
-  const resolvedMap = parseTileflowMap(candidate);
+  const resolvedMap = parseResolvedTileflowMap(candidate);
   const theme = resolveThemeSelection(resolvedMap, requestedTheme).name;
   if (!artifacts.styles[map]?.[theme]) {
     throw new Error(`The ${role} map theme "${map}/${theme}" was not compiled.`);

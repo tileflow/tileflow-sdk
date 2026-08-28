@@ -3,8 +3,13 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {format, resolveConfig} from 'prettier';
 import {z} from 'zod';
 import {tileflowCaptureSceneSchema} from '../src/capture-scene';
-import {tileflowMapMergeStrategies} from '../src/maps/resolve';
+import {tileflowDataExpressionLimits} from '../src/cartography/data-expression';
+import {tileflowRenderStackLimits} from '../src/cartography/render-stack';
+import {tileflowSemanticFieldNames} from '../src/cartography/semantic-bindings';
+import {tileflowThemeTokenCategories} from '../src/cartography/values';
+import {tileflowMapDefaultMaxDepth, tileflowMapMergeStrategies} from '../src/maps/resolve';
 import {resolvedTileflowMapSchema} from '../src/resolved-map-schema';
+import {tileflowThemeLimits} from '../src/themes';
 
 const referencePath = fileURLToPath(
   new URL('../../../docs/modules-api-reference.json', import.meta.url),
@@ -15,6 +20,13 @@ type JsonSchema = Record<string, unknown>;
 const authoringMapReference = '#/$defs/TileflowAuthoringMap';
 const resolvedMapReference = '#/$defs/ResolvedTileflowMap';
 const mapSceneReference = '#/$defs/TileflowMapScene';
+const dataExpressionReference = '#/$defs/TileflowDataExpression';
+const expressionAstReferences = {
+  color: '#/$defs/TileflowDataExpressionColor',
+  image: '#/$defs/TileflowDataExpressionImage',
+  number: '#/$defs/TileflowDataExpressionNumber',
+  structural: '#/$defs/TileflowDataExpressionStructural',
+} as const;
 
 export function createTileflowConfigReference(): JsonSchema {
   const generatedResolvedMap = z.toJSONSchema(resolvedTileflowMapSchema, {
@@ -32,10 +44,15 @@ export function createTileflowConfigReference(): JsonSchema {
   );
   enforceExactTuples(generatedResolvedMap);
   enforceExactTuples(generatedMapScene);
+  enrichDataExpressionSchemas(generatedResolvedMap);
   enrichResolvedMapReference(generatedResolvedMap);
   enrichCaptureSceneReference(generatedMapScene);
 
   const definitions = asRecord(generatedResolvedMap.$defs, 'resolved map definitions');
+  if (Object.hasOwn(definitions, 'TileflowReset')) {
+    throw new Error('Generated schema already defines TileflowReset.');
+  }
+  definitions.TileflowReset = resetSchema;
   const sceneDefinitions = asOptionalRecord(generatedMapScene.$defs, 'capture scene definitions');
   const properties = asRecord(generatedResolvedMap.properties, 'resolved map properties');
   const modulesReference = asRecord(properties.modules, 'modules schema').$ref;
@@ -44,6 +61,8 @@ export function createTileflowConfigReference(): JsonSchema {
   }
   const modulesSchema = resolveLocalReference(generatedResolvedMap, modulesReference);
   const moduleProperties = asRecord(modulesSchema.properties, 'module properties');
+  const authoringModuleProperties: Record<string, JsonSchema> = {};
+  const patchState = createPatchSchemaState(generatedResolvedMap, definitions);
   const modules = Object.fromEntries(
     Object.keys(moduleProperties)
       .sort(compareCodeUnits)
@@ -56,11 +75,63 @@ export function createTileflowConfigReference(): JsonSchema {
         if (moduleType !== name) {
           throw new Error(`Module ${name} does not expose its matching type discriminator.`);
         }
+        const resolvedReference = `${modulesReference}/properties/${escapeJsonPointer(name)}`;
+        const resolvedDefinitionName = `Tileflow${toPascalCase(name)}ModuleResolved`;
+        const authoringDefinitionName = `Tileflow${toPascalCase(name)}ModuleAuthoring`;
+        const optionsDefinitionName = `Tileflow${toPascalCase(name)}ModuleOptions`;
+        const patchDefinitionName = `Tileflow${toPascalCase(name)}ModulePatch`;
+        if (Object.hasOwn(definitions, resolvedDefinitionName)) {
+          throw new Error(`Generated resolved module collides with ${resolvedDefinitionName}.`);
+        }
+        if (Object.hasOwn(definitions, authoringDefinitionName)) {
+          throw new Error(`Generated authoring module collides with ${authoringDefinitionName}.`);
+        }
+        if (Object.hasOwn(definitions, optionsDefinitionName)) {
+          throw new Error(`Generated module options collide with ${optionsDefinitionName}.`);
+        }
+        definitions[resolvedDefinitionName] = {
+          $ref: resolvedReference,
+          description: `Resolved ${name} semantic-domain request accepted by the compiler.`,
+        };
+        const authoringModuleSchema = omitTopLevelModuleProperties(moduleSchema, name, ['enabled']);
+        const moduleOptionsSchema = omitTopLevelModuleProperties(authoringModuleSchema, name, [
+          'type',
+        ]);
+        definitions[authoringDefinitionName] = authoringModuleSchema;
+        definitions[optionsDefinitionName] = {
+          ...moduleOptionsSchema,
+          description: `Options accepted by ${name}(options); compiler-owned type and enabled fields are omitted.`,
+        };
+        const stableResolvedReference = `#/$defs/${resolvedDefinitionName}`;
+        const optionsReference = `#/$defs/${optionsDefinitionName}`;
+        const directReference = `#/$defs/${authoringDefinitionName}`;
+        const patchReference = createPatchReference(
+          moduleOptionsSchema,
+          patchDefinitionName,
+          patchState,
+        );
+        authoringModuleProperties[name] = {
+          description: `Author ${name} directly or select one explicit inheritance operation.`,
+          oneOf: [
+            {$ref: directReference},
+            operationSchema('refine', {
+              patches: {
+                type: 'array',
+                minItems: 1,
+                items: patchReference,
+              },
+            }),
+            operationSchema('disable'),
+          ],
+        };
         return [
           name,
           {
             type: name,
-            schemaRef: `${modulesReference}/properties/${escapeJsonPointer(name)}`,
+            schemaRef: stableResolvedReference,
+            authoringSchemaRef: `#/$defs/TileflowAuthoringModules/properties/${escapeJsonPointer(name)}`,
+            optionsSchemaRef: optionsReference,
+            patchSchemaRef: `#/$defs/${patchDefinitionName}`,
           },
         ];
       }),
@@ -72,8 +143,11 @@ export function createTileflowConfigReference(): JsonSchema {
     ...captureSceneSchema
   } = generatedMapScene;
   const mapSceneSchema = omitRequiredProperty(captureSceneSchema, 'map', 'capture scene');
-  const {root: rootSchema, ...sharedAuthoringProperties} = properties;
-  if (!rootSchema) throw new Error('The resolved map schema must define root.');
+  const authoringModulesReference = '#/$defs/TileflowAuthoringModules';
+  const sharedAuthoringProperties = {
+    ...properties,
+    modules: {$ref: authoringModulesReference},
+  };
 
   const scenesSchema = {
     type: 'object',
@@ -82,18 +156,18 @@ export function createTileflowConfigReference(): JsonSchema {
   };
   const authoringProperties = {...sharedAuthoringProperties, scenes: scenesSchema};
   const exclusiveTextProviders = {not: {required: ['fonts', 'glyphs']}};
-  const rootMapSchema = {
+  const standaloneMapSchema = {
     description:
-      'Compiler-owned root passed to defineRootMap(). It declares root and cannot declare extends.',
+      'Complete semantic map passed to defineMap(). The sole compiler is implicit and it cannot declare extends.',
     type: 'object',
-    properties: {...authoringProperties, root: rootSchema},
-    required: ['defaultTheme', 'id', 'root', 'themes', 'version'],
+    properties: authoringProperties,
+    required: ['defaultTheme', 'id', 'themes', 'version'],
     additionalProperties: false,
     ...exclusiveTextProviders,
   };
   const derivedMapSchema = {
     description:
-      'Ordinary map passed to defineMap(). It extends an imported map object and cannot declare root.',
+      'Inherited semantic map passed to defineMap(). It extends exactly one imported map object.',
     type: 'object',
     properties: {
       ...authoringProperties,
@@ -106,8 +180,8 @@ export function createTileflowConfigReference(): JsonSchema {
 
   return {
     $schema,
-    $id: 'https://tileflow.dev/schemas/tileflow-config-reference-v2.json',
-    schemaVersion: 2,
+    $id: 'https://tileflow.dev/schemas/tileflow-config-reference-v3.json',
+    schemaVersion: 3,
     kind: 'tileflow.config.reference',
     authority:
       '@tileflow/core resolvedTileflowMapSchema and tileflowCaptureSceneSchema (input); authoring branches are generated from their shared fields',
@@ -122,28 +196,39 @@ export function createTileflowConfigReference(): JsonSchema {
         role: 'tileflow.config.ts default export',
         schemaRef: authoringMapReference,
         description:
-          'Exactly one of root or extends. In TypeScript, extends normally receives an imported map object; scenes belong only to the leaf definition.',
+          'A complete map omits extends; an inherited map references exactly one imported map object. Scenes belong only to the leaf definition.',
       },
       resolved: {
         role: 'validate, inspect, build, and compiler input after inheritance',
         schemaRef: resolvedMapReference,
-        description: 'Standalone map with a required name and root, without extends or scenes.',
+        description: 'Standalone map with a required name, without extends or scenes.',
       },
+    },
+    expressions: {
+      grammarSchemaRef: dataExpressionReference,
+      astSchemaRefs: expressionAstReferences,
     },
     modules,
     $ref: authoringMapReference,
     $defs: {
       TileflowAuthoringMap: {
         description:
-          'The singular map exported by tileflow.config.ts: exactly one root or derived map definition.',
-        oneOf: [{$ref: '#/$defs/TileflowRootMap'}, {$ref: '#/$defs/TileflowDerivedMap'}],
+          'The singular semantic map exported by tileflow.config.ts: standalone or inherited.',
+        oneOf: [{$ref: '#/$defs/TileflowStandaloneMap'}, {$ref: '#/$defs/TileflowDerivedMap'}],
       },
-      TileflowRootMap: rootMapSchema,
+      TileflowStandaloneMap: standaloneMapSchema,
       TileflowDerivedMap: derivedMapSchema,
       TileflowMapScene: {
         description:
           'Leaf-owned capture scene. Its map id is implicit from the containing map and must not be declared.',
         ...mapSceneSchema,
+      },
+      TileflowAuthoringModules: {
+        additionalProperties: false,
+        description:
+          'Closed semantic-domain record. Direct declarations replace; refine/disable make inheritance intent explicit.',
+        properties: authoringModuleProperties,
+        type: 'object',
       },
       ResolvedTileflowMap: {
         description:
@@ -154,6 +239,25 @@ export function createTileflowConfigReference(): JsonSchema {
       ...definitions,
       ...sceneDefinitions,
     },
+  };
+}
+
+function omitTopLevelModuleProperties(
+  moduleSchema: JsonSchema,
+  name: string,
+  omitted: readonly string[],
+): JsonSchema {
+  const properties = asRecord(moduleSchema.properties, `${name} properties`);
+  const authoringProperties = Object.fromEntries(
+    Object.entries(properties).filter(([property]) => !omitted.includes(property)),
+  );
+  const required = Array.isArray(moduleSchema.required)
+    ? moduleSchema.required.filter((property) => !omitted.includes(String(property)))
+    : moduleSchema.required;
+  return {
+    ...moduleSchema,
+    properties: authoringProperties,
+    ...(required === undefined ? {} : {required}),
   };
 }
 
@@ -191,7 +295,7 @@ function createThemeContractReference(): JsonSchema {
         rule: 'Unknown, cyclic, and cross-category token references are rejected before style compilation.',
       },
       {
-        path: 'modules|terrain|compilerEffects',
+        path: 'modules|terrain',
         enforcement: 'schema-and-theme-audit',
         rule: 'Token categories must match their visual slot directly, in zoom stops, and in expression outputs.',
       },
@@ -225,6 +329,7 @@ function createThemeContractReference(): JsonSchema {
 function createInheritanceReference(): JsonSchema {
   return {
     authority: '@tileflow/core tileflowMapMergeStrategies',
+    maxDepth: tileflowMapDefaultMaxDepth,
     fields: Object.fromEntries(
       Object.entries(tileflowMapMergeStrategies).sort(([left], [right]) =>
         compareCodeUnits(left, right),
@@ -239,11 +344,511 @@ function createInheritanceReference(): JsonSchema {
       leaf: 'Tooling metadata is read only from the leaf and is never inherited.',
       lineage: 'Defines or traverses the map lineage and is removed from the resolved design.',
       modules:
-        'Each declared module domain replaces that complete domain; omitted domains inherit.',
+        'Omission inherits. A direct declaration replaces atomically; refine() deep-merges records and replaces arrays/scalars; reset() removes one inherited override; disable() suppresses the domain.',
       'text-assets':
         'One declaration atomically replaces the inherited text provider and removes the other provider kind.',
     },
   };
+}
+
+function operationSchema(operation: 'disable' | 'refine', fields: JsonSchema = {}): JsonSchema {
+  const properties = {op: {const: operation}, ...fields};
+  return {
+    additionalProperties: false,
+    properties,
+    required: ['op', ...Object.keys(fields)],
+    type: 'object',
+  };
+}
+
+const resetSchema: JsonSchema = {
+  additionalProperties: false,
+  description: 'Serializable reset() sentinel; valid only at a property inside refine().',
+  properties: {$tileflow: {const: 'reset'}},
+  required: ['$tileflow'],
+  type: 'object',
+};
+
+type PatchSchemaState = {
+  definitions: Record<string, unknown>;
+  nextReference: number;
+  prefix: string;
+  references: Map<string, string>;
+  root: JsonSchema;
+};
+
+function createPatchReference(
+  moduleSchema: JsonSchema,
+  definitionName: string,
+  state: PatchSchemaState,
+): JsonSchema {
+  if (Object.hasOwn(state.definitions, definitionName)) {
+    throw new Error(`Generated patch definition collides with ${definitionName}.`);
+  }
+  const targetReference = `#/$defs/${escapeJsonPointer(definitionName)}`;
+  state.definitions[definitionName] = {};
+  const sourceReference = moduleSchema.$ref;
+  const source =
+    typeof sourceReference === 'string'
+      ? resolveLocalReference(state.root, sourceReference)
+      : moduleSchema;
+  if (typeof sourceReference === 'string') {
+    state.references.set(sourceReference, targetReference);
+  }
+  state.definitions[definitionName] = transformPatchSchema(source, state);
+  return {$ref: targetReference};
+}
+
+function createPatchSchemaState(
+  root: JsonSchema,
+  definitions: Record<string, unknown>,
+): PatchSchemaState {
+  return {
+    definitions,
+    nextReference: 1,
+    prefix: 'TileflowModulePatch',
+    references: new Map(),
+    root,
+  };
+}
+
+function transformPatchSchema(input: JsonSchema, state: PatchSchemaState): JsonSchema {
+  if (typeof input.$ref === 'string') return patchReference(input.$ref, state);
+  if (input.type === 'array') return cloneSchema(input);
+  if (isExpressionObjectSchema(input, state.root)) return cloneSchema(input);
+
+  const result = cloneSchema(input);
+  for (const union of ['allOf', 'anyOf', 'oneOf'] as const) {
+    const branches = result[union];
+    if (Array.isArray(branches)) {
+      result[union] = branches.map((branch) =>
+        transformPatchSchema(asRecord(branch, `${union} patch branch`), state),
+      );
+    }
+  }
+
+  const isObject =
+    result.type === 'object' ||
+    isLooseRecord(result.properties) ||
+    isLooseRecord(result.additionalProperties);
+  if (!isObject) return result;
+
+  delete result.required;
+  if (isLooseRecord(result.properties)) {
+    result.properties = Object.fromEntries(
+      Object.entries(result.properties).map(([key, schema]) => [
+        key,
+        resettablePatchSchema(
+          transformPatchSchema(asRecord(schema, `patch property ${key}`), state),
+        ),
+      ]),
+    );
+  }
+  if (isLooseRecord(result.additionalProperties)) {
+    result.additionalProperties = resettablePatchSchema(
+      transformPatchSchema(result.additionalProperties, state),
+    );
+  }
+  return result;
+}
+
+function enrichDataExpressionSchemas(root: JsonSchema): void {
+  const definitions = asRecord(root.$defs, 'resolved map definitions');
+  const categories = ['structural', 'number', 'color', 'image'] as const;
+  type ExpressionCategory = (typeof categories)[number];
+  const categorySuffix = (category: ExpressionCategory): string =>
+    `${category[0].toUpperCase()}${category.slice(1)}`;
+  const categoryExpressionReferences: Readonly<Record<ExpressionCategory, string>> =
+    expressionAstReferences;
+  const categoryValueReferences = Object.fromEntries(
+    categories.map((category) => [
+      category,
+      `#/$defs/TileflowExpressionCategoryValue${categorySuffix(category)}`,
+    ]),
+  ) as Record<ExpressionCategory, string>;
+  const refs = {
+    expression: dataExpressionReference,
+    field: '#/$defs/TileflowSemanticFieldReference',
+    json: '#/$defs/TileflowJsonValue',
+    operand: '#/$defs/TileflowDataExpressionOperand',
+    themeColorNode: '#/$defs/TileflowExpressionThemeColorNode',
+    themeColor: '#/$defs/TileflowExpressionThemeColorValue',
+    themeNumberNode: '#/$defs/TileflowExpressionThemeNumberNode',
+    themeNumber: '#/$defs/TileflowExpressionThemeNumberValue',
+  } as const;
+  for (const name of [
+    'TileflowDataExpression',
+    'TileflowDataExpressionOperand',
+    ...categories.map((category) => `TileflowDataExpression${categorySuffix(category)}`),
+    ...categories.map((category) => `TileflowExpressionCategoryValue${categorySuffix(category)}`),
+    'TileflowExpressionThemeColorNode',
+    'TileflowExpressionThemeColorValue',
+    'TileflowExpressionThemeNumberNode',
+    'TileflowExpressionThemeNumberValue',
+    'TileflowJsonValue',
+    'TileflowSemanticFieldReference',
+  ]) {
+    if (Object.hasOwn(definitions, name)) {
+      throw new Error(`Generated schema already defines ${name}.`);
+    }
+  }
+
+  definitions.TileflowJsonValue = {
+    description: 'Finite JSON value accepted only behind expr.literal().',
+    oneOf: [
+      {type: 'null'},
+      {type: 'boolean'},
+      {type: 'number'},
+      {type: 'string'},
+      {type: 'array', items: {$ref: refs.json}},
+      {type: 'object', additionalProperties: {$ref: refs.json}},
+    ],
+  };
+  definitions.TileflowSemanticFieldReference = {
+    additionalProperties: false,
+    description: 'Schema-bound semantic field emitted by field(name); never a physical column.',
+    properties: {
+      kind: {const: 'tileflow-data-field'},
+      name: {enum: tileflowSemanticFieldNames, type: 'string'},
+    },
+    required: ['kind', 'name'],
+    type: 'object',
+  };
+
+  const themeToken = (category?: 'color' | 'number'): JsonSchema => ({
+    additionalProperties: false,
+    properties: {
+      category: category ? {const: category} : {enum: tileflowThemeTokenCategories, type: 'string'},
+      kind: {const: 'theme-token'},
+      token: {
+        pattern: '^[A-Za-z][A-Za-z0-9_-]*(?:\\.[A-Za-z][A-Za-z0-9_-]*)*$',
+        type: 'string',
+      },
+    },
+    required: ['category', 'kind', 'token'],
+    type: 'object',
+  });
+  const fixed = (value: JsonSchema): JsonSchema => ({
+    additionalProperties: false,
+    properties: {
+      kind: {const: 'theme-fixed'},
+      reason: {minLength: 1, type: 'string'},
+      value,
+    },
+    required: ['kind', 'reason', 'value'],
+    type: 'object',
+  });
+  definitions.TileflowExpressionThemeNumberNode = {
+    oneOf: [themeToken('number'), fixed({type: 'number'})],
+  };
+  definitions.TileflowExpressionThemeNumberValue = {
+    oneOf: [{type: 'number'}, {$ref: refs.themeNumberNode}],
+  };
+  definitions.TileflowExpressionThemeColorNode = {
+    oneOf: [
+      themeToken('color'),
+      fixed({type: 'string'}),
+      {
+        additionalProperties: false,
+        properties: {
+          color: {$ref: refs.themeColor},
+          kind: {const: 'theme-color'},
+          opacity: {$ref: refs.themeNumber},
+          operation: {const: 'alpha'},
+        },
+        required: ['color', 'kind', 'opacity', 'operation'],
+        type: 'object',
+      },
+      {
+        additionalProperties: false,
+        properties: {
+          amount: {$ref: refs.themeNumber},
+          from: {$ref: refs.themeColor},
+          kind: {const: 'theme-color'},
+          operation: {const: 'mix'},
+          space: {const: 'oklch'},
+          to: {$ref: refs.themeColor},
+        },
+        required: ['amount', 'from', 'kind', 'operation', 'space', 'to'],
+        type: 'object',
+      },
+    ],
+  };
+  definitions.TileflowExpressionThemeColorValue = {
+    oneOf: [{type: 'string'}, {$ref: refs.themeColorNode}],
+  };
+  definitions.TileflowDataExpressionOperand = {
+    description: 'One typed operand or nested node from the closed expr.* language.',
+    anyOf: [
+      {type: 'null'},
+      {type: 'boolean'},
+      {type: 'number'},
+      {type: 'string'},
+      {$ref: refs.expression},
+      themeToken(),
+      fixed({$ref: refs.json}),
+      {$ref: refs.themeColorNode},
+    ],
+  };
+
+  const operand = {$ref: refs.operand};
+  const exact = (operator: string, items: readonly JsonSchema[]): JsonSchema => ({
+    type: 'array',
+    prefixItems: [{const: operator}, ...items],
+    items: false,
+    minItems: items.length + 1,
+    maxItems: items.length + 1,
+  });
+  const variadic = (operator: string, minimum: number): JsonSchema => ({
+    type: 'array',
+    prefixItems: [{const: operator}],
+    items: operand,
+    minItems: minimum + 1,
+    maxItems: tileflowDataExpressionLimits.maxOperands + 1,
+  });
+  const matchLabelPrimitive: JsonSchema = {
+    oneOf: [{type: 'boolean'}, {type: 'number'}, {type: 'string'}],
+  };
+  const matchLabel: JsonSchema = {
+    oneOf: [
+      matchLabelPrimitive,
+      {type: 'array', minItems: 1, items: {type: 'boolean'}},
+      {type: 'array', minItems: 1, items: {type: 'number'}},
+      {type: 'array', minItems: 1, items: {type: 'string'}},
+    ],
+  };
+  const interpolation: JsonSchema = {
+    oneOf: [
+      {
+        type: 'array',
+        prefixItems: [{const: 'linear'}],
+        items: false,
+        minItems: 1,
+        maxItems: 1,
+      },
+      {
+        type: 'array',
+        prefixItems: [{const: 'exponential'}, {type: 'number', exclusiveMinimum: 0}],
+        items: false,
+        minItems: 2,
+        maxItems: 2,
+      },
+      {
+        type: 'array',
+        prefixItems: [
+          {const: 'cubic-bezier'},
+          {type: 'number'},
+          {type: 'number'},
+          {type: 'number'},
+          {type: 'number'},
+        ],
+        items: false,
+        minItems: 5,
+        maxItems: 5,
+      },
+    ],
+  };
+  const branchCounts = Array.from(
+    {length: tileflowDataExpressionLimits.maxBranches},
+    (_, index) => index + 1,
+  );
+  const stopCounts = Array.from(
+    {length: tileflowDataExpressionLimits.maxStops},
+    (_, index) => index + 1,
+  );
+  const cases = branchCounts.map((count) =>
+    exact('case', [...Array.from({length: count}, () => [operand, operand]).flat(), operand]),
+  );
+  const matches = branchCounts.map((count) =>
+    exact('match', [
+      operand,
+      ...Array.from({length: count}, () => [matchLabel, operand]).flat(),
+      operand,
+    ]),
+  );
+  const steps = stopCounts.map((count) =>
+    exact('step', [
+      operand,
+      operand,
+      ...Array.from({length: count}, () => [{type: 'number'}, operand]).flat(),
+    ]),
+  );
+  const interpolations = stopCounts.map((count) =>
+    exact('interpolate', [
+      interpolation,
+      operand,
+      ...Array.from({length: count}, () => [{type: 'number'}, operand]).flat(),
+    ]),
+  );
+  definitions.TileflowDataExpression = {
+    description:
+      'Exact serialized AST emitted by expr.*. Alternating branches/stops are bounded and tuple-checked.',
+    oneOf: [
+      exact('get', [{$ref: refs.field}]),
+      exact('has', [{$ref: refs.field}]),
+      exact('literal', [{$ref: refs.json}]),
+      exact('zoom', []),
+      exact('feature-state', [{minLength: 1, type: 'string'}]),
+      exact('var', [{minLength: 1, type: 'string'}]),
+      exact('let', [{minLength: 1, type: 'string'}, operand, operand]),
+      ...['abs', '!', 'to-string'].map((operator) => exact(operator, [operand])),
+      exact('boolean', [operand]),
+      exact('boolean', [operand, operand]),
+      exact('to-number', [operand]),
+      exact('to-number', [operand, operand]),
+      ...['-', '/', '!=', '<', '<=', '==', '>', '>='].map((operator) =>
+        exact(operator, [operand, operand]),
+      ),
+      ...['+', '*', 'min', 'max', 'coalesce', 'concat'].map((operator) => variadic(operator, 2)),
+      ...['all', 'any'].map((operator) => variadic(operator, 1)),
+      ...cases,
+      ...matches,
+      ...steps,
+      ...interpolations,
+    ],
+    'x-tileflow-refinements': [
+      'expr.var names must resolve in the lexical scope of one enclosing expr.let.',
+      'match labels are unique and share one primitive type.',
+      'step/interpolate stops are finite and strictly increasing.',
+    ],
+  };
+
+  const semanticThemeKinds = ['theme-color', 'theme-fixed', 'theme-token'];
+  for (const category of categories) {
+    const valueReference = categoryValueReferences[category];
+    const allowedThemeNodes: JsonSchema[] =
+      category === 'number'
+        ? [{$ref: refs.themeNumberNode}, fixed({type: 'array', items: {type: 'number'}})]
+        : category === 'color'
+          ? [{$ref: refs.themeColorNode}]
+          : category === 'image'
+            ? [themeToken('image'), fixed({type: 'string'})]
+            : [];
+    definitions[`TileflowExpressionCategoryValue${categorySuffix(category)}`] = {
+      description: `Recursive JSON guard for ${category} expression theme nodes.`,
+      oneOf: [
+        {type: 'null'},
+        {type: 'boolean'},
+        {type: 'number'},
+        {type: 'string'},
+        {type: 'array', items: {$ref: valueReference}},
+        ...allowedThemeNodes,
+        {
+          type: 'object',
+          not: {
+            properties: {kind: {enum: semanticThemeKinds}},
+            required: ['kind'],
+          },
+          additionalProperties: {$ref: valueReference},
+        },
+      ],
+    };
+    definitions[`TileflowDataExpression${categorySuffix(category)}`] = {
+      description: `Exact serialized AST for a ${category} Tileflow data-expression slot.`,
+      allOf: [{$ref: refs.expression}, {$ref: valueReference}],
+      'x-tileflow-expression-category': category,
+    };
+  }
+
+  const foundCategories = new Set<ExpressionCategory>();
+  rewriteExpressionValueSchemas(
+    root,
+    root,
+    new WeakSet<object>(),
+    categoryExpressionReferences,
+    foundCategories,
+  );
+  for (const category of categories) {
+    if (!foundCategories.has(category)) {
+      throw new Error(`Generated schema does not expose a ${category} data-expression slot.`);
+    }
+  }
+}
+
+function rewriteExpressionValueSchemas(
+  root: JsonSchema,
+  value: unknown,
+  visited: WeakSet<object>,
+  expressionReferences: Readonly<Record<'color' | 'image' | 'number' | 'structural', string>>,
+  foundCategories: Set<'color' | 'image' | 'number' | 'structural'>,
+): void {
+  if (!value || typeof value !== 'object' || visited.has(value)) return;
+  visited.add(value);
+  if (!Array.isArray(value)) {
+    const schema = value as JsonSchema;
+    const properties = isLooseRecord(schema.properties) ? schema.properties : undefined;
+    const kindSchema = properties?.kind;
+    if (
+      properties &&
+      isLooseRecord(kindSchema) &&
+      resolveSchemaConstant(root, kindSchema) === 'expression'
+    ) {
+      const marker = 'tileflow-data-expression:';
+      if (typeof schema.description !== 'string' || !schema.description.startsWith(marker)) {
+        throw new Error('Generated expression schema is missing its output-category marker.');
+      }
+      const category = schema.description.slice(marker.length);
+      if (!Object.hasOwn(expressionReferences, category)) {
+        throw new Error(`Generated expression schema has unknown output category ${category}.`);
+      }
+      const typedCategory = category as keyof typeof expressionReferences;
+      properties.value = {$ref: expressionReferences[typedCategory]};
+      schema.description = `Typed ${category} Tileflow data-expression wrapper.`;
+      schema['x-tileflow-expression-category'] = category;
+      foundCategories.add(typedCategory);
+    }
+  }
+  for (const child of Array.isArray(value) ? value : Object.values(value)) {
+    rewriteExpressionValueSchemas(root, child, visited, expressionReferences, foundCategories);
+  }
+}
+
+function resolveSchemaConstant(root: JsonSchema, schema: JsonSchema): unknown {
+  const resolved =
+    typeof schema.$ref === 'string' ? resolveLocalReference(root, schema.$ref) : schema;
+  return resolved.const;
+}
+
+function isExpressionObjectSchema(schema: JsonSchema, root: JsonSchema): boolean {
+  if (!isLooseRecord(schema.properties)) return false;
+  const kind = schema.properties.kind;
+  return isLooseRecord(kind) && resolveSchemaConstant(root, kind) === 'expression';
+}
+
+function patchReference(reference: string, state: PatchSchemaState): JsonSchema {
+  const existing = state.references.get(reference);
+  if (existing) return {$ref: existing};
+
+  const name = `${state.prefix}Ref${state.nextReference}`;
+  state.nextReference += 1;
+  const target = `#/$defs/${escapeJsonPointer(name)}`;
+  state.references.set(reference, target);
+  state.definitions[name] = {};
+  state.definitions[name] = transformPatchSchema(
+    resolveLocalReference(state.root, reference),
+    state,
+  );
+  return {$ref: target};
+}
+
+function resettablePatchSchema(schema: JsonSchema): JsonSchema {
+  return {oneOf: [{$ref: '#/$defs/TileflowReset'}, schema]};
+}
+
+function cloneSchema<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function isLooseRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function toPascalCase(value: string): string {
+  return value
+    .split(/[^A-Za-z0-9]+/u)
+    .filter(Boolean)
+    .map((segment) => `${segment[0]?.toUpperCase() ?? ''}${segment.slice(1)}`)
+    .join('');
 }
 
 export async function serializeTileflowConfigReference(): Promise<string> {
@@ -285,6 +890,11 @@ function resolveLocalReference(schema: JsonSchema, reference: string): JsonSchem
 
 function enrichResolvedMapReference(schema: JsonSchema): void {
   const properties = asRecord(schema.properties, 'resolved map properties');
+  enrichRenderStackConstraints(schema);
+  enrichSemanticBoundaryConstraints(schema);
+  enrichZoomValueConstraints(schema);
+  enrichTerrainColorConstraints(schema);
+  enrichTrimmedMarineAttributionConstraints(schema);
   enrichIdentifierConstraints(schema);
   enrichExactFontConstraints(schema);
   enrichHostedOriginConstraints(schema);
@@ -446,6 +1056,286 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
   ];
 }
 
+function enrichZoomValueConstraints(schema: JsonSchema): void {
+  let matches = 0;
+  visitJsonSchema(schema, (node) => {
+    if (!Array.isArray(node.oneOf) || node.oneOf.length !== 3) return;
+    const branches = node.oneOf.map((branch) =>
+      dereferenceSchema(schema, asRecord(branch, 'zoom value branch'), 'zoom value branch'),
+    );
+    const interpolations = branches.map((branch) => {
+      if (!isLooseRecord(branch.properties)) return undefined;
+      const kind = branch.properties.kind;
+      const interpolation = branch.properties.interpolation;
+      const stops = branch.properties.stops;
+      if (!isLooseRecord(kind) || !isLooseRecord(interpolation) || !isLooseRecord(stops)) {
+        return undefined;
+      }
+      if (resolveSchemaConstant(schema, kind) !== 'zoom') return undefined;
+      return resolveSchemaConstant(schema, interpolation);
+    });
+    if (!interpolations.every((value): value is string => typeof value === 'string')) return;
+    if (
+      [...interpolations].sort(compareCodeUnits).join('\0') !==
+      ['exponential', 'linear', 'step'].join('\0')
+    ) {
+      return;
+    }
+    matches += 1;
+    node['x-tileflow-refinements'] = [
+      {path: 'stops.*.0', rule: 'Zoom stops must be finite and strictly increasing.'},
+    ];
+  });
+  if (matches === 0) throw new Error('Expected at least one generated zoom-value schema.');
+}
+
+function enrichTerrainColorConstraints(schema: JsonSchema): void {
+  const hexPattern = '^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$';
+  const channel =
+    '0*(?:(?:[0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-4])(?:\\.[0-9]+)?|255(?:\\.0+)?)';
+  const alpha = '0*(?:0(?:\\.[0-9]+)?|1(?:\\.0+)?)';
+  const rgbPattern = `^rgba?\\(\\s*${channel}\\s*,\\s*${channel}\\s*,\\s*${channel}(?:\\s*,\\s*${alpha})?\\s*\\)$`;
+  let matches = 0;
+  visitJsonSchema(schema, (node) => {
+    if (!Array.isArray(node.anyOf) || node.anyOf.length !== 2) return;
+    const branches = node.anyOf.map((branch) =>
+      dereferenceSchema(schema, asRecord(branch, 'terrain color branch'), 'terrain color branch'),
+    );
+    if (!branches.some((branch) => branch.pattern === hexPattern)) return;
+    const rgb = branches.find((branch) => branch.type === 'string' && branch.pattern === undefined);
+    if (!rgb) throw new Error('Terrain color schema is missing its rgb()/rgba() branch.');
+    matches += 1;
+    rgb.pattern = rgbPattern;
+    rgb.description =
+      'Exact rgb()/rgba() color with decimal channels from 0 through 255 and optional alpha from 0 through 1.';
+    node.description = 'Exact Tileflow hex, rgb(), or rgba() color literal.';
+  });
+  if (matches !== 1) {
+    throw new Error(`Expected exactly one terrain color literal schema; found ${matches}.`);
+  }
+}
+
+function enrichTrimmedMarineAttributionConstraints(schema: JsonSchema): void {
+  let matches = 0;
+  visitJsonSchema(schema, (node) => {
+    if (!isLooseRecord(node.properties) || !isLooseRecord(node.properties.attribution)) return;
+    const attribution = dereferenceSchema(
+      schema,
+      node.properties.attribution,
+      'marine attribution',
+    );
+    if (
+      attribution.type !== 'string' ||
+      attribution.minLength !== 1 ||
+      attribution.maxLength !== 2_048
+    ) {
+      return;
+    }
+    matches += 1;
+    attribution.pattern = '^(?!\\s)(?!.*\\s$)[\\s\\S]+$';
+    attribution.description =
+      'Non-empty marine attribution without leading or trailing whitespace.';
+  });
+  if (matches !== 3) {
+    throw new Error(`Expected exactly three strict marine attribution schemas; found ${matches}.`);
+  }
+}
+
+function enrichRenderStackConstraints(schema: JsonSchema): void {
+  const renderStacks: JsonSchema[] = [];
+  visitJsonSchema(schema, (node) => {
+    if (node.description === 'tileflow-render-stack') renderStacks.push(node);
+  });
+  if (renderStacks.length !== 1) {
+    throw new Error(
+      `Expected exactly one render-stack schema marker; found ${renderStacks.length}.`,
+    );
+  }
+
+  const [renderStack] = renderStacks;
+  renderStack.minProperties = 1;
+  renderStack.maxProperties = tileflowRenderStackLimits.maxOperations;
+  renderStack['x-tileflow-limits'] = cloneSchema(tileflowRenderStackLimits);
+
+  const operationSchema = dereferenceSchema(
+    schema,
+    asRecord(renderStack.additionalProperties, 'render-stack operations'),
+    'render-stack operations',
+  );
+  const requirementsSchemas = new Set<JsonSchema>();
+  const selectorSchemas = new Set<JsonSchema>();
+  visitJsonSchema(operationSchema, (node) => {
+    if (!isLooseRecord(node.properties) || !isLooseRecord(node.properties.kind)) return;
+    const kind = resolveSchemaConstant(schema, node.properties.kind);
+    if (kind !== 'render-pass' && kind !== 'refine-render-target') return;
+    if (isLooseRecord(node.properties.requirements)) {
+      requirementsSchemas.add(
+        dereferenceSchema(schema, node.properties.requirements, 'render requirements'),
+      );
+    }
+    if (isLooseRecord(node.properties.selector)) {
+      selectorSchemas.add(dereferenceSchema(schema, node.properties.selector, 'render selector'));
+    }
+  });
+  if (requirementsSchemas.size !== 1) {
+    throw new Error(
+      `Expected one shared render-requirements schema; found ${requirementsSchemas.size}.`,
+    );
+  }
+  if (selectorSchemas.size !== 1) {
+    throw new Error(`Expected one shared render-selector schema; found ${selectorSchemas.size}.`);
+  }
+
+  const [requirements] = requirementsSchemas;
+  if (
+    requirements.type !== 'array' ||
+    requirements.minItems !== 1 ||
+    requirements.maxItems !== tileflowRenderStackLimits.maxRequirements
+  ) {
+    throw new Error('Render requirements lost their public array limits.');
+  }
+  requirements.uniqueItems = true;
+  requirements.description = `Between one and ${tileflowRenderStackLimits.maxRequirements} unique semantic-domain requirements.`;
+
+  const [selector] = selectorSchemas;
+  selector.description = 'Bounded recursive semantic render selector.';
+  selector['x-tileflow-limits'] = {
+    maxDepth: tileflowRenderStackLimits.maxSelectorDepth,
+    maxNodes: tileflowRenderStackLimits.maxSelectorNodes,
+  };
+  selector['x-tileflow-refinements'] = [
+    {
+      path: '$',
+      rule: `The root is level one; the complete selector may contain at most ${tileflowRenderStackLimits.maxSelectorDepth} levels and ${tileflowRenderStackLimits.maxSelectorNodes} nodes.`,
+    },
+    {
+      path: '**.step.stops.*.zoom',
+      rule: 'Zoom values must be finite and strictly increasing in authored order.',
+    },
+  ];
+
+  const matches = {groups: 0, inValues: 0, matchBranches: 0, matchValues: 0, steps: 0};
+  visitJsonSchema(schema, (node) => {
+    if (!isLooseRecord(node.properties) || !isLooseRecord(node.properties.kind)) return;
+    const kind = resolveSchemaConstant(schema, node.properties.kind);
+    if (kind === 'in' && isLooseRecord(node.properties.values)) {
+      const values = dereferenceSchema(schema, node.properties.values, 'in selector values');
+      if (values.maxItems !== tileflowRenderStackLimits.maxScalarValues) {
+        throw new Error('Render in-selector values lost their public maximum.');
+      }
+      matches.inValues += 1;
+      return;
+    }
+    if (kind === 'match' && isLooseRecord(node.properties.branches)) {
+      const branches = dereferenceSchema(
+        schema,
+        node.properties.branches,
+        'match selector branches',
+      );
+      if (branches.maxItems !== tileflowRenderStackLimits.maxMatchBranches) {
+        throw new Error('Render match-selector branches lost their public maximum.');
+      }
+      const branch = dereferenceSchema(
+        schema,
+        asRecord(branches.items, 'match selector branch'),
+        'match selector branch',
+      );
+      const branchProperties = asRecord(branch.properties, 'match selector branch properties');
+      const values = dereferenceSchema(
+        schema,
+        asRecord(branchProperties.values, 'match selector branch values'),
+        'match selector branch values',
+      );
+      if (values.maxItems !== tileflowRenderStackLimits.maxScalarValues) {
+        throw new Error('Render match-selector values lost their public maximum.');
+      }
+      matches.matchBranches += 1;
+      matches.matchValues += 1;
+      return;
+    }
+    if (kind === 'step' && isLooseRecord(node.properties.stops)) {
+      const stops = dereferenceSchema(schema, node.properties.stops, 'step selector stops');
+      if (stops.maxItems !== tileflowRenderStackLimits.maxStepStops) {
+        throw new Error('Render step-selector stops lost their public maximum.');
+      }
+      stops['x-tileflow-refinements'] = [
+        {
+          path: '*.zoom',
+          rule: 'Zoom values must be finite and strictly increasing in authored order.',
+        },
+      ];
+      matches.steps += 1;
+      return;
+    }
+    const selectorKinds = node.properties.kind.enum;
+    if (
+      Array.isArray(selectorKinds) &&
+      selectorKinds.length === 2 &&
+      selectorKinds.includes('all') &&
+      selectorKinds.includes('any') &&
+      isLooseRecord(node.properties.selectors)
+    ) {
+      const selectors = dereferenceSchema(
+        schema,
+        node.properties.selectors,
+        'render selector children',
+      );
+      if (selectors.maxItems !== tileflowRenderStackLimits.maxSelectorChildren) {
+        throw new Error('Render selector children lost their public maximum.');
+      }
+      matches.groups += 1;
+    }
+  });
+  for (const [name, count] of Object.entries(matches)) {
+    if (count === 0) throw new Error(`Expected at least one generated render-selector ${name}.`);
+  }
+}
+
+function enrichSemanticBoundaryConstraints(schema: JsonSchema): void {
+  const publicUrlPattern =
+    '^(?!\\s)(?!.*\\s$)(?!//)(?!.*[#\\\\\\u0000-\\u001F\\u007F])(?:(?:https?://(?![^/?#]*@)|pmtiles://).+|/(?!/).*)$';
+  const matches = {publicUrl: 0, publicDemUrl: 0, renderStack: 0, themes: 0};
+  visitJsonSchema(schema, (node) => {
+    switch (node.description) {
+      case 'tileflow-public-vector-url':
+        matches.publicUrl += 1;
+        node.minLength = 1;
+        node.maxLength = 4_096;
+        node.pattern = publicUrlPattern;
+        node.description =
+          'Bounded public vector URL: HTTPS, loopback HTTP, root-relative, or pmtiles://; no surrounding whitespace, controls, backslash, fragment, protocol-relative form, or URL credentials.';
+        node['x-tileflow-refinement'] =
+          'Must pass the exact Core WHATWG/PMTiles parser, including loopback-host and safe archive-target checks.';
+        break;
+      case 'tileflow-public-dem-url':
+        matches.publicDemUrl += 1;
+        node.pattern = publicUrlPattern;
+        node.not = {pattern: '^pmtiles://'};
+        node.description =
+          'Bounded public DEM TileJSON URL: HTTPS, loopback HTTP, or root-relative; PMTiles is not accepted.';
+        node['x-tileflow-refinement'] =
+          'Must pass the exact Core public-vector URL parser and must not use pmtiles://.';
+        break;
+      case 'tileflow-render-stack':
+        matches.renderStack += 1;
+        node.minProperties = 1;
+        node.description = 'Non-empty named render-stack operations owned by one semantic domain.';
+        break;
+      case 'tileflow-themes':
+        matches.themes += 1;
+        node.minProperties = 1;
+        node.maxProperties = tileflowThemeLimits.maxThemes;
+        node.description = `Between one and ${tileflowThemeLimits.maxThemes} concrete named themes.`;
+        break;
+    }
+  });
+  for (const [name, count] of Object.entries(matches)) {
+    if (count !== 1) {
+      throw new Error(`Expected exactly one ${name} schema marker; found ${count}.`);
+    }
+  }
+}
+
 function enrichIdentifierConstraints(schema: JsonSchema): void {
   visitJsonSchema(schema, (node) => {
     if (node.type !== 'string') return;
@@ -547,20 +1437,137 @@ function enrichHostedOriginConstraints(schema: JsonSchema): void {
 }
 
 function enrichLineHatchConstraints(schema: JsonSchema): void {
+  let matches = 0;
   visitJsonSchema(schema, (node) => {
     if (!node.properties || typeof node.properties !== 'object' || Array.isArray(node.properties)) {
       return;
     }
     const properties = node.properties as Record<string, unknown>;
     if (!properties.patternWidths || !properties.pattern) return;
+    matches += 1;
+    const pattern = dereferenceSchema(
+      schema,
+      asRecord(properties.pattern, 'line hatch pattern'),
+      'line hatch pattern',
+    );
+    if (!Array.isArray(pattern.anyOf)) {
+      throw new Error('Line hatch pattern must expose themed, expression, and zoom branches.');
+    }
+    const themedPattern = pattern.anyOf
+      .map((branch) => asRecord(branch, 'line hatch pattern branch'))
+      .find((branch) => isThemeImageValueSchema(schema, branch));
+    if (!themedPattern) {
+      throw new Error('Line hatch pattern is missing its literal/token/fixed image branch.');
+    }
+
+    const patternWidths = dereferenceSchema(
+      schema,
+      asRecord(properties.patternWidths, 'line hatch pattern widths'),
+      'line hatch pattern widths',
+    );
+    if (!Array.isArray(patternWidths.anyOf) || patternWidths.anyOf.length !== 2) {
+      throw new Error('Line hatch pattern widths must expose direct and fixed array branches.');
+    }
+    const widthBranches = patternWidths.anyOf.map((branch) =>
+      dereferenceSchema(
+        schema,
+        asRecord(branch, 'line hatch width branch'),
+        'line hatch width branch',
+      ),
+    );
+    const directWidths = widthBranches.find((branch) => branch.type === 'array');
+    const fixedWidths = widthBranches.find(
+      (branch) =>
+        isLooseRecord(branch.properties) &&
+        resolveSchemaConstant(schema, asRecord(branch.properties.kind, 'fixed width kind')) ===
+          'theme-fixed',
+    );
+    if (!directWidths?.items || !fixedWidths || !isLooseRecord(fixedWidths.properties)) {
+      throw new Error('Line hatch pattern widths have an unexpected generated shape.');
+    }
+    constrainHatchWidthArray(directWidths);
+    const fixedValue = dereferenceSchema(
+      schema,
+      asRecord(fixedWidths.properties.value, 'fixed line hatch widths'),
+      'fixed line hatch widths',
+    );
+    if (fixedValue.type !== 'array' || !fixedValue.items) {
+      throw new Error('Fixed line hatch pattern widths must contain an array.');
+    }
+    fixedValue.minItems = 2;
+    fixedValue.items = {type: 'integer', minimum: 1, maximum: 1_024};
+
     appendAllOf(node, {
-      if: {required: ['patternWidths']},
-      then: {required: ['pattern'], properties: {pattern: {type: 'string'}}},
+      if: {
+        required: ['patternWidths'],
+        properties: {patternWidths: {not: {$ref: '#/$defs/TileflowReset'}}},
+      },
+      then: {required: ['pattern'], properties: {pattern: cloneSchema(themedPattern)}},
     });
     node['x-tileflow-refinements'] = [
-      {path: 'patternWidths', rule: 'Values must be strictly increasing.'},
+      {
+        path: 'patternWidths',
+        rule: 'At least two literal/fixed integer widths from 1 through 1024; known numeric widths must be strictly increasing.',
+      },
     ];
   });
+  if (matches !== 1) {
+    throw new Error(`Expected exactly one line hatch schema; found ${matches}.`);
+  }
+}
+
+function constrainHatchWidthArray(schema: JsonSchema): void {
+  const items = asRecord(schema.items, 'line hatch width item');
+  schema.minItems = 2;
+  schema.items = {
+    allOf: [
+      cloneSchema(items),
+      {
+        if: {type: 'number'},
+        then: {type: 'integer', minimum: 1, maximum: 1_024},
+      },
+      {
+        if: {properties: {kind: {const: 'theme-fixed'}}, required: ['kind']},
+        then: {properties: {value: {type: 'integer', minimum: 1, maximum: 1_024}}},
+      },
+    ],
+  };
+}
+
+function isThemeImageValueSchema(root: JsonSchema, input: JsonSchema): boolean {
+  const schema = dereferenceSchema(root, input, 'themed image value');
+  if (!Array.isArray(schema.anyOf)) return false;
+  let fixed = false;
+  let literal = false;
+  let token = false;
+  for (const rawBranch of schema.anyOf) {
+    const branch = dereferenceSchema(
+      root,
+      asRecord(rawBranch, 'themed image value branch'),
+      'themed image value branch',
+    );
+    if (branch.type === 'string') {
+      literal = true;
+      continue;
+    }
+    if (!isLooseRecord(branch.properties)) continue;
+    const kind = resolveSchemaConstant(root, asRecord(branch.properties.kind, 'theme image kind'));
+    if (kind === 'theme-fixed') {
+      const value = dereferenceSchema(
+        root,
+        asRecord(branch.properties.value, 'fixed image value'),
+        'fixed image value',
+      );
+      fixed = value.type === 'string';
+    } else if (kind === 'theme-token') {
+      token =
+        resolveSchemaConstant(
+          root,
+          asRecord(branch.properties.category, 'theme image category'),
+        ) === 'image';
+    }
+  }
+  return fixed && literal && token;
 }
 
 function enrichPoiRankConstraints(schema: JsonSchema): void {

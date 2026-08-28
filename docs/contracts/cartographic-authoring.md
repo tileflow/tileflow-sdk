@@ -8,8 +8,8 @@ the official maps under `packages/maps/src/official/`. The Tileflow Tiles playgr
 exact npm packages after publication; it is not the place to invent SDK controls.
 
 Streets, Cyberpunk, Ferraris, Härad, Matrix, Siegfried, Soundings, and Verdant are Tileflow's
-first-party root maps, declared with `defineRootMap()` and compiled directly from Tileflow-owned
-semantic modules. They select the semantic Streets compiler ABI, but define their full designs
+first-party standalone maps, declared with `defineMap()` and compiled directly from Tileflow-owned
+semantic modules. The sole semantic compiler is implicit, and they define their full designs
 independently: no official map imports or extends another official map, and each owns its asset
 providers. Streets owns coordinated light and dark appearances. Applications customize maps
 through the inheritance and theme contracts. None of these maps clones, bundles, or patches an
@@ -27,34 +27,35 @@ flowchart TD
   C --> F["Resolved cartographic design"]
   D --> F
   E --> F
-  F --> G["Land / water / roads / buildings / vegetation"]
-  F --> H["Boundaries / labels / POI / transit / aeroways / addresses / landforms"]
-  G --> I["Shared layer-order graph"]
-  H --> I
-  I --> J["Owner-bound semantic contributions"]
-  J --> K["Validated MapLibre Style JSON"]
-  K --> L["Preview and visual capture"]
+  F --> G["Closed domain registry"]
+  G --> H["Domain IR + semantic data references"]
+  H --> I["Shared layer-order graph"]
+  I --> J["Owner-local render stacks"]
+  J --> K["Physical planner"]
+  K --> L["Single lowering boundary"]
+  L --> M["Validated MapLibre Style JSON"]
+  M --> N["Preview and visual capture"]
 ```
 
 The public API is deliberately agent-friendly:
 
 - Every `tileflow.config.ts` exports one map.
+- `defineMap({...})` without `extends` creates a complete standalone semantic map.
 - `defineMap({extends: parent})` creates a versioned map from another imported map object.
-- `defineRootMap()` is reserved for a complete compiler-owned root such as Streets, Ferraris,
-  Härad, Siegfried, Soundings, or Verdant.
 - Omitting `data` selects the compiler-owned Tileflow World `v1` generation.
 - `data` changes the compatible dataset, never the drawing system.
 - `modules` is an object keyed by domain; key order never controls z-order and duplicates are
   impossible.
 - Themes expose one stable, typed semantic-token schema across all named appearances.
 - Module presets describe intent, while visual semantic targets accept token refs, documented
-  `fixed()` values, zoom functions, and MapLibre expressions.
+  `fixed()` values, zoom functions, and the closed `expr.*` data-expression builders.
 - Every contribution has one module owner and disappears when that module is replaced or disabled.
 
 A map extending Streets is complete even when `modules` is omitted. Omitted module domains inherit;
 declaring a domain replaces that inherited module request as a unit. Inside a module request,
 unspecified fields preserve its module defaults, arrays replace, and expressions and zoom values are
-atomic. Use `enabled: false` for deliberate removal.
+atomic. Use `disable()` for deliberate removal of a complete semantic domain; `enabled` remains
+available only on documented nested capabilities such as individual road classes and treatments.
 
 Shared symbol ranges govern text and icon together and are inherited by an optional marker. A
 marker can refine that range because it compiles to a separate circle layer; incompatible text and
@@ -118,7 +119,7 @@ the same-domain value as the per-map `assetSetSha256` recorded in `build-manifes
 sprite/font outputs. The pipeline has no map-name or font-family special case and never invents a
 fallback URL.
 
-The compiler creates every `streets-*` layer from a domain compiler. It resolves domain conflicts
+The compiler creates every neutral `tileflow-*` physical layer from a domain compiler. It resolves domain conflicts
 before graph assembly—for example, roads determine eligible road-label classes, aeroways own
 runway geometry and runway references while labels own aerodrome text/codes, and transit owns
 rail/ferry/cableway geometry
@@ -218,8 +219,8 @@ Compiler output records exact durable identity:
 
 - `tileflow:map = <resolved map id>`
 - `tileflow:mapVersion = <resolved map version>`
-- `tileflow:root = streets` (the selected compiler lineage; all eight first-party roots use it)
-- `tileflow:rootCompilerVersion = 1`
+- `tileflow:compiler = tileflow-semantic` (system-generated; it is not author-configurable)
+- `tileflow:compilerVersion = 1`
 - `tileflow:extends = [<parent ids>]` when the map is derived
 - `tileflow:theme = <concrete theme name>`
 - `tileflow:colorScheme = light | dark`
@@ -230,14 +231,16 @@ source `revision` field. Only external fixture/source identity may use `revision
 does not provide glyphs or sprites: each map owns its text and icon providers independently. The
 separate `Map by Tileflow` product credit does not replace upstream source attribution.
 
-Official effects address compiler semantic targets, bind all source layers and fields through the
-resolved data schema, and are applied before the final physical-layer optimizer. They are private
-compiler contributions rather than a public escape hatch. The optimizer may split a target at a
-zoom handoff or combine several targets into a data-driven cohort. Map versions describe editorial
-map revisions; the root compiler owns physical-output compatibility and versions it independently.
+Owner-local render stacks address semantic targets, bind every feature and field through the
+resolved data schema, and never accept a physical ID, source layer, raw filter, or positional layer
+anchor. The compiler preserves those references in Domain IR and resolves them at one lowering
+boundary. The physical planner may split a target at a zoom handoff or combine proven-equivalent
+targets into a data-driven cohort; it never infers semantics from generated IDs. Map versions
+describe editorial revisions, while the implicit compiler versions physical-output compatibility
+independently.
 
-The optimizer must preserve the resolved paint, layout, filters, zoom range, and drawing order.
-Core performs MapLibre validation after optimization and refuses to return an invalid style. Its
+The physical planner must preserve resolved paint, layout, selectors, zoom range, and drawing order.
+Core performs MapLibre validation after planning and refuses to return an invalid style. Its
 z0–z22 structural sweep is a required regression gate alongside browser capture.
 
 ## Evidence-first loop

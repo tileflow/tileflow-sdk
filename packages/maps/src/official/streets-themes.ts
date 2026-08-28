@@ -392,7 +392,7 @@ export const streetsThemes = Object.freeze({
   }),
 });
 
-/** Theme references consumed by the shared Streets module recipe. */
+/** Theme references consumed by the shared Streets semantic modules. */
 export const streetsVisual = {
   boundary: {
     admin: token.color('boundaries.admin'),

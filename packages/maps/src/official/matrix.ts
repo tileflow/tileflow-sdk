@@ -1,33 +1,29 @@
 import {
-  addresses,
-  aeroways,
   boundaries,
   buildings,
-  defineRootMap,
-  expression,
+  defineMap,
+  disable,
+  expr,
+  field,
   labels,
   land,
-  landforms,
   poi,
+  refineRenderTarget,
+  renderPass,
   roads,
+  type TileflowDataExpressionInput,
   type TileflowLineCap,
   type TileflowLineJoin,
   type TileflowLineStyle,
+  type TileflowNamedRenderStack,
+  type TileflowRenderSelector,
   type TileflowRoadClassStyle,
   token,
   transit,
-  vegetation,
   water,
+  withRenderStack,
   zoom,
 } from '@tileflow/core';
-import {
-  addModuleLayer,
-  defineModuleEffects,
-  patchModuleLayer,
-  semanticField,
-  semanticLayer,
-  toMapLibreStyleValue,
-} from '@tileflow/core/recipe';
 import {matrixFonts, matrixIcons} from '../assets';
 import {mapboxRailTransitStyle} from './mapbox-rail';
 import {bindOfficialMapTheme, defineOfficialTheme} from './theme-helpers';
@@ -278,187 +274,168 @@ const matrixSemanticColors = Object.fromEntries(
   ),
 );
 
-const matrixBuildingHeight2d = [
-  'to-number',
-  ['coalesce', ['get', semanticField('renderHeight')], 0],
+const matrixBuildingHeight2d = expr.toNumber(expr.coalesce(expr.get(field('renderHeight')), 0), 0);
+const matrixBuildingTone2d = expr.coalesce(expr.get(field('buildingTone')), '');
+const matrixImportanceTierField = field('importanceTier');
+const matrixPublishedImportanceTier = expr.toNumber(
+  expr.coalesce(expr.get(matrixImportanceTierField), 0),
   0,
-];
-const matrixBuildingTone2d = ['coalesce', ['get', semanticField('buildingTone')], ''];
-const matrixImportanceTierField = semanticField('importanceTier');
-const matrixPublishedImportanceTier = [
-  'to-number',
-  ['coalesce', ['get', matrixImportanceTierField], 0],
-  0,
-];
-const matrixBuildingIsDestination = ['==', matrixBuildingTone2d, 'destination'];
-const matrixBuildingHasColorFamily = [
-  'match',
+);
+const matrixBuildingIsDestination = expr.eq(matrixBuildingTone2d, 'destination');
+const matrixBuildingHasColorFamily = expr.match<string, boolean>(
   matrixBuildingTone2d,
-  ['active', 'commercial', 'destination'],
-  true,
+  [{labels: ['active', 'commercial', 'destination'], value: true}],
   false,
-];
-const matrixBuildingPublishedTierWithProminence = [
-  'let',
+);
+const matrixBuildingPublishedTierWithProminence = expr.let(
   't',
   matrixPublishedImportanceTier,
-  [
-    'case',
+  expr.case<number>(
     [
-      'all',
-      ['>=', ['var', 't'], 1],
-      ['<=', ['var', 't'], 2],
-      ['>=', matrixBuildingHeight2d, ['match', ['var', 't'], 1, 24, 36]],
+      {
+        when: expr.all(
+          expr.gte(expr.var<number>('t'), 1),
+          expr.lte(expr.var<number>('t'), 2),
+          expr.gte(
+            matrixBuildingHeight2d,
+            expr.match<number, number>(expr.var<number>('t'), [{labels: 1, value: 24}], 36),
+          ),
+        ),
+        value: expr.add(expr.var<number>('t'), 1),
+      },
     ],
-    ['+', ['var', 't'], 1],
-    ['var', 't'],
+    expr.var<number>('t'),
+  ),
+);
+const matrixBuildingLegacyImportanceTier = expr.case<number>(
+  [
+    {
+      when: matrixBuildingIsDestination,
+      value: expr.step(matrixBuildingHeight2d, 2, [[36, 3]]),
+    },
+    {
+      when: matrixBuildingHasColorFamily,
+      value: expr.step(matrixBuildingHeight2d, 1, [[24, 2]]),
+    },
+    {when: expr.gte(matrixBuildingHeight2d, 36), value: 1},
   ],
-];
-const matrixBuildingLegacyImportanceTier = [
-  'case',
-  matrixBuildingIsDestination,
-  ['step', matrixBuildingHeight2d, 2, 36, 3],
-  matrixBuildingHasColorFamily,
-  ['step', matrixBuildingHeight2d, 1, 24, 2],
-  ['>=', matrixBuildingHeight2d, 36],
-  1,
   0,
-];
-const matrixBuildingImportanceTier = [
-  'case',
-  // Semantics establishes relevance. Physical prominence may add at most one
-  // visual step, while an ordinary tall building is capped at a faint tier 1.
-  ['has', matrixImportanceTierField],
-  matrixBuildingPublishedTierWithProminence,
+);
+const matrixBuildingImportanceTier = expr.case<number>(
+  [
+    {
+      // Semantics establishes relevance. Physical prominence may add at most one
+      // visual step, while an ordinary tall building is capped at a faint tier 1.
+      when: expr.has(matrixImportanceTierField),
+      value: matrixBuildingPublishedTierWithProminence,
+    },
+  ],
   matrixBuildingLegacyImportanceTier,
-];
+);
 const matrixBuildingIsSelectedDestination = matrixBuildingIsDestination;
-const matrixBuildingIsSignal = ['>=', matrixBuildingImportanceTier, 3];
-const matrixBuildingIsActivityAccent = ['>=', matrixBuildingImportanceTier, 2];
-const matrixBuildingGhostFill = [
-  'case',
-  matrixBuildingIsSelectedDestination,
+const matrixBuildingGhostFill = expr.case<string>(
   [
-    'step',
-    matrixBuildingImportanceTier,
-    '#05210E',
-    1,
-    '#05210E',
-    2,
-    '#082F15',
-    3,
-    '#0C421D',
-    4,
-    '#0C421D',
+    {
+      when: matrixBuildingIsSelectedDestination,
+      value: expr.step(matrixBuildingImportanceTier, '#05210E', [
+        [1, '#05210E'],
+        [2, '#082F15'],
+        [3, '#0C421D'],
+        [4, '#0C421D'],
+      ]),
+    },
   ],
+  expr.step(matrixBuildingImportanceTier, '#05210E', [
+    [1, '#05210E'],
+    [2, '#082F15'],
+    [3, '#0C421D'],
+    [4, '#115827'],
+  ]),
+);
+const matrixBuildingGhostCore = expr.case<string>(
   [
-    'step',
-    matrixBuildingImportanceTier,
-    '#05210E',
-    1,
-    '#05210E',
-    2,
-    '#082F15',
-    3,
-    '#0C421D',
-    4,
-    '#115827',
+    {
+      when: matrixBuildingIsSelectedDestination,
+      value: expr.step(matrixBuildingImportanceTier, '#23933F', [
+        [1, '#30B94E'],
+        [2, '#43DB60'],
+        [3, '#63F77B'],
+        [4, '#87FF98'],
+      ]),
+    },
   ],
-];
-const matrixBuildingGhostCore = [
-  'case',
-  matrixBuildingIsSelectedDestination,
+  expr.step(matrixBuildingImportanceTier, '#23933F', [
+    [1, '#30B94E'],
+    [2, '#43DB60'],
+    [3, '#63F77B'],
+    [4, '#87FF98'],
+  ]),
+);
+const matrixBuildingGhostCoreOpacity = expr.case<number>(
   [
-    'step',
-    matrixBuildingImportanceTier,
-    '#23933F',
-    1,
-    '#30B94E',
-    2,
-    '#43DB60',
-    3,
-    '#63F77B',
-    4,
-    '#87FF98',
+    {
+      when: matrixBuildingIsSelectedDestination,
+      value: expr.step(matrixBuildingImportanceTier, 0.18, [
+        [1, 0.46],
+        [2, 0.64],
+        [3, 0.82],
+        [4, 0.96],
+      ]),
+    },
   ],
-  [
-    'step',
-    matrixBuildingImportanceTier,
-    '#23933F',
-    1,
-    '#30B94E',
-    2,
-    '#43DB60',
-    3,
-    '#63F77B',
-    4,
-    '#87FF98',
-  ],
-];
-const matrixBuildingGhostCoreOpacity = [
-  'case',
-  matrixBuildingIsSelectedDestination,
-  ['step', matrixBuildingImportanceTier, 0.18, 1, 0.46, 2, 0.64, 3, 0.82, 4, 0.96],
-  ['step', matrixBuildingImportanceTier, 0.18, 1, 0.52, 2, 0.68, 3, 0.84, 4, 0.96],
-];
+  expr.step(matrixBuildingImportanceTier, 0.18, [
+    [1, 0.52],
+    [2, 0.68],
+    [3, 0.84],
+    [4, 0.96],
+  ]),
+);
 
-const matrixRoadClass = ['coalesce', ['get', semanticField('class')], ''];
-const matrixRoadImportanceTier = [
-  'case',
-  ['has', matrixImportanceTierField],
-  matrixPublishedImportanceTier,
-  [
-    'match',
+const matrixRoadClass = expr.coalesce(expr.get(field('class')), '');
+const matrixRoadImportanceTier = expr.case<number>(
+  [{when: expr.has(matrixImportanceTierField), value: matrixPublishedImportanceTier}],
+  expr.match<string, number>(
     matrixRoadClass,
-    ['motorway', 'trunk'],
-    4,
-    'primary',
-    3,
-    'secondary',
-    2,
-    'tertiary',
-    1,
+    [
+      {labels: ['motorway', 'trunk'], value: 4},
+      {labels: 'primary', value: 3},
+      {labels: 'secondary', value: 2},
+      {labels: 'tertiary', value: 1},
+    ],
     0,
-  ],
-];
+  ),
+);
 
-const matrixPoiCategory = ['coalesce', ['get', semanticField('poiCategory')], ''];
-const matrixPoiFilterRank = ['to-number', ['get', semanticField('poiFilterRank')], 6];
-const matrixPoiSizeRank = ['to-number', ['get', semanticField('poiSizeRank')], 17];
-const matrixPoiImportanceTier = [
-  'match',
+const matrixPoiCategory = expr.coalesce(expr.get(field('poiCategory')), '');
+const matrixPoiFilterRank = expr.toNumber(expr.get(field('poiFilterRank')), 6);
+const matrixPoiSizeRank = expr.toNumber(expr.get(field('poiSizeRank')), 17);
+const matrixPoiImportanceTier = expr.match<string, number>(
   matrixPoiCategory,
-  'landmark',
-  4,
-  'transport',
-  3,
-  ['arts-entertainment', 'park-nature', 'public-services', 'sport-leisure'],
-  2,
+  [
+    {labels: 'landmark', value: 4},
+    {labels: 'transport', value: 3},
+    {
+      labels: ['arts-entertainment', 'park-nature', 'public-services', 'sport-leisure'],
+      value: 2,
+    },
+  ],
   1,
-];
+);
 const matrixHudPoiImportanceTier = matrixPoiImportanceTier;
-const matrixPoiIsHudCandidate = [
-  'all',
-  ['has', semanticField('poiFilterRank')],
-  ['>=', matrixPoiFilterRank, 0],
-  ['<=', matrixPoiFilterRank, 2],
-  ['has', semanticField('poiSizeRank')],
-  ['>=', matrixPoiSizeRank, 0],
-  ['<=', matrixPoiSizeRank, 16],
-];
-const matrixPoiPlacementPriority = ['+', ['*', matrixPoiFilterRank, 17], matrixPoiSizeRank];
-const matrixPoiImportanceColor = [
-  'match',
+const matrixPoiPlacementPriority = expr.add(
+  expr.multiply(matrixPoiFilterRank, 17),
+  matrixPoiSizeRank,
+);
+const matrixPoiImportanceColor = expr.match<number, string>(
   matrixPoiImportanceTier,
-  4,
-  matrixPalette.yellow,
-  3,
-  matrixPalette.neonMagenta,
-  2,
-  matrixPalette.magentaSoft,
+  [
+    {labels: 4, value: matrixPalette.yellow},
+    {labels: 3, value: matrixPalette.neonMagenta},
+    {labels: 2, value: matrixPalette.magentaSoft},
+  ],
   matrixPalette.cyanSoft,
-];
-const matrixPoiIsActive = ['boolean', ['feature-state', 'active'], false];
+);
+const matrixPoiIsActive = expr.toBoolean(expr.featureState('active'), false);
 
 type WidthStops = readonly (readonly [number, number])[];
 
@@ -467,53 +444,62 @@ const roadWidthInterpolationBase = 1.5;
 const expresswayWidthScale = 1.06;
 const tunnelBorderDash = [8, 5] as const;
 const tunnelBorderWidth = 1;
-const roadClearanceExtraAtZ15 = [
-  'to-number',
-  ['coalesce', ['get', semanticField('circularClearanceExtraAtZoom15')], 0],
+const roadClearanceExtraAtZ15 = expr.toNumber(
+  expr.coalesce(expr.get(field('circularClearanceExtraAtZoom15')), 0),
   0,
-];
-const roadNeedsStructuralButtCap = [
-  'any',
-  ['==', ['get', semanticField('brunnel')], 'tunnel'],
-  ['==', ['get', semanticField('class')], 'steps'],
-  ['==', ['get', semanticField('subclass')], 'steps'],
-];
-const roadNeedsControlledSurfaceButtCap = [
-  'all',
-  ['match', ['get', semanticField('brunnel')], ['tunnel', 'bridge'], false, true],
-  ['==', ['get', semanticField('foot')], 'no'],
-  [
-    'match',
-    ['get', semanticField('class')],
-    [
-      'motorway',
-      'trunk',
-      'primary',
-      'motorway_construction',
-      'trunk_construction',
-      'primary_construction',
-    ],
+);
+const roadNeedsStructuralButtCap = expr.any(
+  expr.eq(expr.get(field('brunnel')), 'tunnel'),
+  expr.eq(expr.get(field('class')), 'steps'),
+  expr.eq(expr.get(field('subclass')), 'steps'),
+);
+const roadNeedsControlledSurfaceButtCap = expr.all(
+  expr.match<string, boolean>(
+    expr.get(field('brunnel')),
+    [{labels: ['tunnel', 'bridge'], value: false}],
     true,
-    false,
-  ],
-];
-const roadLineCap = expression<TileflowLineCap>([
-  'step',
-  ['zoom'],
-  ['case', roadNeedsStructuralButtCap, 'butt', 'round'],
-  17,
-  [
-    'case',
+  ),
+  expr.eq(expr.get(field('foot')), 'no'),
+  expr.match<string, boolean>(
+    expr.get(field('class')),
     [
-      'any',
-      roadNeedsStructuralButtCap,
-      roadNeedsControlledSurfaceButtCap,
-      ['>', roadClearanceExtraAtZ15, 0],
+      {
+        labels: [
+          'motorway',
+          'trunk',
+          'primary',
+          'motorway_construction',
+          'trunk_construction',
+          'primary_construction',
+        ],
+        value: true,
+      },
     ],
-    'butt',
-    'round',
+    false,
+  ),
+);
+const roadLineCap = expr.step<TileflowLineCap>(
+  expr.zoom(),
+  expr.case<TileflowLineCap>([{when: roadNeedsStructuralButtCap, value: 'butt'}], 'round'),
+  [
+    [
+      17,
+      expr.case<TileflowLineCap>(
+        [
+          {
+            when: expr.any(
+              roadNeedsStructuralButtCap,
+              roadNeedsControlledSurfaceButtCap,
+              expr.gt(roadClearanceExtraAtZ15, 0),
+            ),
+            value: 'butt',
+          },
+        ],
+        'round',
+      ),
+    ],
   ],
-]);
+);
 const roadLineJoin = zoom.step<TileflowLineJoin>([
   [3, 'miter'],
   [14, 'round'],
@@ -627,45 +613,56 @@ function roadWidth(
   rampWidths?: WidthStops,
 ) {
   const augmentedWidths = [...widths].sort(([left], [right]) => left - right);
-  const widthOutput = (level: number, width: number) => {
+  const widthOutput = (level: number, width: number): TileflowDataExpressionInput<number> => {
     const ordinaryWidth =
       oneWayScale === 1
         ? width
-        : ['match', ['get', semanticField('oneway')], [1, -1], width * oneWayScale, width];
+        : expr.match<number, number>(
+            expr.get(field('oneway')),
+            [{labels: [1, -1], value: width * oneWayScale}],
+            width,
+          );
     const rampWidth = rampWidths?.find(([rampLevel]) => rampLevel === level)?.[1];
     const surfaceWidth =
       rampWidth === undefined
         ? ordinaryWidth
-        : ['case', ['==', ['get', semanticField('ramp')], 1], rampWidth, ordinaryWidth];
+        : expr.case<number>(
+            [{when: expr.eq(expr.get(field('ramp')), 1), value: rampWidth}],
+            ordinaryWidth,
+          );
     if (!casing) return surfaceWidth;
     return typeof surfaceWidth === 'number'
       ? surfaceWidth + roadBorderTotalWidth
-      : ['+', surfaceWidth, roadBorderTotalWidth];
+      : expr.add(surfaceWidth, roadBorderTotalWidth);
   };
-  const baseWidth = [
-    'interpolate',
-    ['exponential', roadWidthInterpolationBase],
-    ['zoom'],
-    ...augmentedWidths.flatMap(([level, width]) => [level, widthOutput(level, width)]),
-  ];
+  const widthStops = augmentedWidths.map(
+    ([level, width]) => [level, widthOutput(level, width)] as const,
+  );
+  const firstWidthStop = widthStops[0];
+  if (firstWidthStop === undefined) throw new Error('Road widths require at least one zoom stop.');
+  const baseWidth = expr.interpolate(
+    {base: roadWidthInterpolationBase, kind: 'exponential'},
+    expr.zoom(),
+    [firstWidthStop, ...widthStops.slice(1)],
+  );
   const clearanceWidth = clearance
-    ? [
-        '+',
+    ? expr.add(
         baseWidth,
-        [
-          'step',
-          ['zoom'],
-          0,
-          17,
+        expr.step(expr.zoom(), 0, [
           [
-            '*',
-            roadClearanceExtraAtZ15,
-            ['interpolate', ['exponential', 2], ['zoom'], 17, 4, 22, 128],
+            17,
+            expr.multiply(
+              roadClearanceExtraAtZ15,
+              expr.interpolate({base: 2, kind: 'exponential'}, expr.zoom(), [
+                [17, 4],
+                [22, 128],
+              ]),
+            ),
           ],
-        ],
-      ]
+        ]),
+      )
     : baseWidth;
-  return expression<number>(clearanceWidth);
+  return clearanceWidth;
 }
 
 function roadCasingStrokeWidth() {
@@ -826,62 +823,46 @@ function matrixPathRoadStyle(
   };
 }
 
-const unpavedPathCondition = ['==', ['get', semanticField('surface')], 'unpaved'] as const;
-const contextualPathLineWidth = [
-  'interpolate',
-  ['exponential', 1.5],
-  ['zoom'],
-  12,
-  ['case', unpavedPathCondition, 0, 0],
-  15,
-  ['case', unpavedPathCondition, 0.75, 1],
-  16,
-  ['case', unpavedPathCondition, 1, 1.5],
-  17,
-  ['case', unpavedPathCondition, 1.4, 3],
-  18,
-  ['case', unpavedPathCondition, 2, 6],
-  19,
-  ['case', unpavedPathCondition, 3.7, 12],
-  20,
-  ['case', unpavedPathCondition, 7.5, 22],
-  22,
-  ['case', unpavedPathCondition, 20, 60],
-] as const;
-const contextualPathCasingWidth = [
-  'interpolate',
-  ['exponential', 1.5],
-  ['zoom'],
-  15,
-  ['case', unpavedPathCondition, 0, 0],
-  15.5,
-  ['case', unpavedPathCondition, 0, 0.5],
-  18,
-  ['case', unpavedPathCondition, 0, 1],
-  22,
-  ['case', unpavedPathCondition, 0, 2],
-] as const;
+const unpavedPathCondition = expr.eq(expr.get(field('surface')), 'unpaved');
+const contextualPathLineWidth = expr.interpolate<number>(
+  {base: 1.5, kind: 'exponential'},
+  expr.zoom(),
+  [
+    [12, expr.case<number>([{when: unpavedPathCondition, value: 0}], 0)],
+    [15, expr.case<number>([{when: unpavedPathCondition, value: 0.75}], 1)],
+    [16, expr.case<number>([{when: unpavedPathCondition, value: 1}], 1.5)],
+    [17, expr.case<number>([{when: unpavedPathCondition, value: 1.4}], 3)],
+    [18, expr.case<number>([{when: unpavedPathCondition, value: 2}], 6)],
+    [19, expr.case<number>([{when: unpavedPathCondition, value: 3.7}], 12)],
+    [20, expr.case<number>([{when: unpavedPathCondition, value: 7.5}], 22)],
+    [22, expr.case<number>([{when: unpavedPathCondition, value: 20}], 60)],
+  ],
+);
+const contextualPathCasingWidth = expr.interpolate<number>(
+  {base: 1.5, kind: 'exponential'},
+  expr.zoom(),
+  [
+    [15, expr.case<number>([{when: unpavedPathCondition, value: 0}], 0)],
+    [15.5, expr.case<number>([{when: unpavedPathCondition, value: 0}], 0.5)],
+    [18, expr.case<number>([{when: unpavedPathCondition, value: 0}], 1)],
+    [22, expr.case<number>([{when: unpavedPathCondition, value: 0}], 2)],
+  ],
+);
 const contextualPathClasses = ['pathway', 'footway', 'steps', 'pedestrian'] as const;
 
-const matrixOverviewLandcoverColor = [
-  'match',
-  ['get', semanticField('class')],
-  'barren',
-  '#082F15',
-  'crop',
-  '#0C421D',
-  'grass',
-  '#082F15',
-  'shrub',
-  '#082F15',
-  'snow',
-  '#197234',
-  'trees',
-  '#082F15',
-  'urban',
-  '#115827',
+const matrixOverviewLandcoverColor = expr.match<string, string>(
+  expr.get(field('class')),
+  [
+    {labels: 'barren', value: '#082F15'},
+    {labels: 'crop', value: '#0C421D'},
+    {labels: 'grass', value: '#082F15'},
+    {labels: 'shrub', value: '#082F15'},
+    {labels: 'snow', value: '#197234'},
+    {labels: 'trees', value: '#082F15'},
+    {labels: 'urban', value: '#115827'},
+  ],
   'rgba(0, 0, 0, 0)',
-] as const;
+);
 
 const matrixRoadLabelIds = [
   'labels.roads.motorway',
@@ -904,552 +885,808 @@ const matrixSecondaryPlaceLabelIds = [
   'labels.places.continent',
 ] as const;
 
-function matrixLabelSignals() {
-  return [
-    ...matrixRoadLabelIds.map((id) =>
-      patchModuleLayer(
-        'labels',
-        id,
-        {
-          layout: {'text-size': ['interpolate', ['linear'], ['zoom'], 10, 9, 16, 13]},
-          paint: {'text-halo-width': 1.6},
-        },
-        {requires: ['roads']},
-      ),
-    ),
-    ...matrixPrimaryPlaceLabelIds.map((id) =>
-      patchModuleLayer('labels', id, {paint: {'text-halo-width': 1.4}}),
-    ),
-    ...matrixSecondaryPlaceLabelIds.map((id) =>
-      patchModuleLayer('labels', id, {
-        paint: {
-          'text-color': matrixPalette.labelMuted,
-          'text-halo-width': 1.1,
-        },
-      }),
-    ),
-    ...(['poi.transport.label', 'poi.arts-entertainment.label'] as const).map((target) =>
-      patchModuleLayer('poi', target, {paint: {'text-halo-width': 1.2}}),
-    ),
-  ];
+function matrixRenderOperationName(prefix: string, ...parts: string[]): string {
+  return `${prefix}${parts
+    .flatMap((part) => part.split(/[^A-Za-z0-9]+/u))
+    .filter(Boolean)
+    .map((part) => `${part[0]!.toUpperCase()}${part.slice(1)}`)
+    .join('')}`;
 }
 
-function matrixPathOverrides() {
-  return contextualPathClasses.flatMap((roadClass) =>
-    (['surface', 'bridge'] as const).flatMap((structure) => [
-      patchModuleLayer('roads', `roads.classes.${roadClass}.${structure}.fill`, {
-        paint: {
-          'line-color': roadClass === 'steps' ? '#05210E' : matrixPalette.road,
-          ...(roadClass === 'steps' ? {'line-dasharray': [0.18, 0.15]} : {}),
-          'line-width': contextualPathLineWidth,
-        },
-      }),
-      patchModuleLayer('roads', `roads.classes.${roadClass}.${structure}.casing`, {
-        paint: {
-          'line-color': matrixPalette.roadCasing,
-          'line-gap-width': roadClass === 'steps' ? 0 : contextualPathLineWidth,
-          'line-width': roadClass === 'steps' ? contextualPathLineWidth : contextualPathCasingWidth,
-        },
-      }),
+function matrixLabelRenderStack(): TileflowNamedRenderStack {
+  return Object.fromEntries([
+    ...matrixRoadLabelIds.map(
+      (target) =>
+        [
+          matrixRenderOperationName('roadLabel', target.split('.').at(-1) ?? ''),
+          refineRenderTarget({
+            renderer: 'symbol',
+            requirements: ['roads'],
+            target,
+            style: {
+              text: {
+                haloWidth: 1.6,
+                size: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+                  [10, 9],
+                  [16, 13],
+                ]),
+              },
+            },
+          }),
+        ] as const,
+    ),
+    ...matrixPrimaryPlaceLabelIds.map(
+      (target) =>
+        [
+          matrixRenderOperationName('placeLabel', target.split('.').at(-1) ?? ''),
+          refineRenderTarget({renderer: 'symbol', target, style: {text: {haloWidth: 1.4}}}),
+        ] as const,
+    ),
+    ...matrixSecondaryPlaceLabelIds.map(
+      (target) =>
+        [
+          matrixRenderOperationName('placeLabel', target.split('.').at(-1) ?? ''),
+          refineRenderTarget({
+            renderer: 'symbol',
+            target,
+            style: {text: {color: matrixPalette.labelMuted, haloWidth: 1.1}},
+          }),
+        ] as const,
+    ),
+  ]);
+}
+
+function matrixPoiLabelRenderStack(): TileflowNamedRenderStack {
+  return Object.fromEntries(
+    (['poi.transport.label', 'poi.arts-entertainment.label'] as const).map((target) => [
+      matrixRenderOperationName('poiLabel', target.split('.').at(-2) ?? ''),
+      refineRenderTarget({renderer: 'symbol', target, style: {text: {haloWidth: 1.2}}}),
     ]),
   );
 }
 
-function matrixPrincipalRoadNeon() {
-  const eligibleRoadFilter = [
-    'all',
-    ['==', ['geometry-type'], 'LineString'],
-    ['>=', matrixRoadImportanceTier, 1],
-  ];
-  const unobstructedRoadFilter = [
-    ...eligibleRoadFilter,
-    ['!=', ['get', semanticField('ramp')], 1],
-    ['!=', ['get', semanticField('brunnel')], 'tunnel'],
-  ];
-  const roadAuraFilter = [...unobstructedRoadFilter, ['>=', matrixRoadImportanceTier, 3]];
-  const roadGlowFilter = [...unobstructedRoadFilter, ['>=', matrixRoadImportanceTier, 2]];
-  const principalRoadColor = [
-    'match',
+function matrixPathRenderStack(): TileflowNamedRenderStack {
+  return Object.fromEntries(
+    contextualPathClasses.flatMap((roadClass) =>
+      (['surface', 'bridge'] as const).flatMap((structure) => [
+        [
+          matrixRenderOperationName('path', roadClass, structure, 'fill'),
+          refineRenderTarget({
+            renderer: 'line',
+            target: `roads.classes.${roadClass}.${structure}.fill`,
+            style: {
+              color: roadClass === 'steps' ? '#05210E' : matrixPalette.road,
+              ...(roadClass === 'steps' ? {dash: [0.18, 0.15] as const} : {}),
+              width: contextualPathLineWidth,
+            },
+          }),
+        ],
+        [
+          matrixRenderOperationName('path', roadClass, structure, 'casing'),
+          refineRenderTarget({
+            renderer: 'line',
+            target: `roads.classes.${roadClass}.${structure}.casing`,
+            style: {
+              color: matrixPalette.roadCasing,
+              gapWidth: roadClass === 'steps' ? 0 : contextualPathLineWidth,
+              width: roadClass === 'steps' ? contextualPathLineWidth : contextualPathCasingWidth,
+            },
+          }),
+        ],
+      ]),
+    ),
+  );
+}
+
+function matrixRoadImportanceSelector(minimum: 2 | 3): TileflowRenderSelector {
+  const legacyClasses = {
+    2: ['motorway', 'trunk', 'primary', 'secondary'],
+    3: ['motorway', 'trunk', 'primary'],
+  }[minimum];
+  return {
+    kind: 'all',
+    selectors: [
+      {kind: 'geometry', geometry: 'line'},
+      {
+        kind: 'any',
+        selectors: [
+          {
+            kind: 'all',
+            selectors: [
+              {kind: 'has', field: 'importanceTier'},
+              {
+                kind: 'compare',
+                field: 'importanceTier',
+                operator: 'gte',
+                value: minimum,
+                coerce: 'number',
+                fallback: 0,
+              },
+            ],
+          },
+          {
+            kind: 'all',
+            selectors: [
+              {kind: 'not', selector: {kind: 'has', field: 'importanceTier'}},
+              {kind: 'in', field: 'class', values: legacyClasses, fallback: ''},
+            ],
+          },
+        ],
+      },
+      {
+        kind: 'compare',
+        field: 'ramp',
+        operator: 'ne',
+        value: 1,
+        coerce: 'number',
+        fallback: 0,
+      },
+      {kind: 'compare', field: 'brunnel', operator: 'ne', value: 'tunnel', fallback: ''},
+    ],
+  };
+}
+
+function matrixPrincipalRoadRenderStack(): TileflowNamedRenderStack {
+  const principalRoadColor = expr.match<string, string>(
     matrixRoadClass,
-    ['trunk', 'secondary'],
-    matrixPalette.neonMagenta,
+    [{labels: ['trunk', 'secondary'], value: matrixPalette.neonMagenta}],
     matrixPalette.neonCyan,
-  ];
-  const roadWidthScale = ['match', matrixRoadImportanceTier, 4, 1, 3, 0.9, 2, 0.72, 1, 0.48, 0];
-  return [
-    addModuleLayer(
-      'roads',
-      'roads.effects.principalNeon.aura',
-      {
-        id: 'matrix-road-principal-neon-aura',
-        type: 'line',
-        source: 'tileflow',
-        'source-layer': semanticLayer('road'),
-        minzoom: 8,
-        filter: roadAuraFilter,
-        layout: {'line-cap': 'round', 'line-join': 'round'},
-        metadata: {'tileflow:module': 'roads'},
-        paint: {
-          'line-blur': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            8,
-            2,
-            10,
-            3.5,
-            12,
-            8,
-            16,
-            12,
-            18,
-            14,
-            22,
-            18,
-          ],
-          'line-color': principalRoadColor,
-          'line-opacity': ['match', matrixRoadImportanceTier, 4, 0.24, 3, 0.17, 0],
-          'line-width': [
-            'interpolate',
-            ['exponential', 1.5],
-            ['zoom'],
-            8,
-            0,
-            10,
-            0.35,
-            11,
-            0.9,
-            12,
-            ['*', 2.5, roadWidthScale],
-            15,
-            ['*', 7, roadWidthScale],
-            16,
-            ['*', 13.5, roadWidthScale],
-            18,
-            ['*', 24, roadWidthScale],
-            22,
-            ['*', 70, roadWidthScale],
-          ],
-        },
-      },
-      {after: 'roads.classes.motorway.surface.fill'},
-    ),
-    addModuleLayer(
-      'roads',
-      'roads.effects.principalNeon.glow',
-      {
-        id: 'matrix-road-principal-neon-glow',
-        type: 'line',
-        source: 'tileflow',
-        'source-layer': semanticLayer('road'),
-        minzoom: 6,
-        filter: roadGlowFilter,
-        layout: {'line-cap': 'round', 'line-join': 'round'},
-        metadata: {'tileflow:module': 'roads'},
-        paint: {
-          'line-blur': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            6,
-            0.8,
-            8,
-            1.5,
-            10,
-            2.5,
-            12,
-            4,
-            16,
-            5,
-            18,
-            6.5,
-            22,
-            9,
-          ],
-          'line-color': principalRoadColor,
-          'line-opacity': ['match', matrixRoadImportanceTier, 4, 0.54, 3, 0.42, 2, 0.26, 0],
-          'line-width': [
-            'interpolate',
-            ['exponential', 1.5],
-            ['zoom'],
-            6,
-            0,
-            8,
-            0.18,
-            10,
-            0.55,
-            12,
-            ['*', 1.3, roadWidthScale],
-            15,
-            ['*', 3.6, roadWidthScale],
-            16,
-            ['*', 7.2, roadWidthScale],
-            18,
-            ['*', 12, roadWidthScale],
-            22,
-            ['*', 34, roadWidthScale],
-          ],
-        },
-      },
-      {after: 'roads.effects.principalNeon.aura'},
-    ),
-  ];
-}
-
-function matrixBuildingGhost() {
-  const buildingFootprintFilter = ['==', ['geometry-type'], 'Polygon'];
-  const buildingStrongFilter = ['all', buildingFootprintFilter, matrixBuildingIsSignal];
-  const buildingGlowFilter = ['all', buildingFootprintFilter, matrixBuildingIsActivityAccent];
-  return [
-    addModuleLayer(
-      'buildings',
-      'buildings.effects.ghostAura',
-      {
-        id: 'matrix-buildings-ghost-aura',
-        type: 'line',
-        source: 'tileflow',
-        'source-layer': semanticLayer('building'),
-        minzoom: 15,
-        filter: buildingStrongFilter,
-        layout: {'line-cap': 'round', 'line-join': 'round'},
-        metadata: {'tileflow:module': 'buildings'},
-        paint: {
-          'line-blur': 0.8,
-          'line-color': [
-            'case',
-            matrixBuildingIsSelectedDestination,
-            matrixPalette.yellow,
-            matrixPalette.neonMagenta,
-          ],
-          'line-opacity': ['match', matrixBuildingImportanceTier, 4, 0.22, 3, 0.13, 0],
-          'line-width': ['interpolate', ['linear'], ['zoom'], 15, 3, 16, 4, 18, 6, 22, 10],
-        },
-      },
-      {after: 'buildings.flat.fill'},
-    ),
-    addModuleLayer(
-      'buildings',
-      'buildings.effects.ghostGlow',
-      {
-        id: 'matrix-buildings-ghost-glow',
-        type: 'line',
-        source: 'tileflow',
-        'source-layer': semanticLayer('building'),
-        minzoom: 15,
-        filter: buildingGlowFilter,
-        layout: {'line-cap': 'round', 'line-join': 'round'},
-        metadata: {'tileflow:module': 'buildings'},
-        paint: {
-          'line-blur': 0.05,
-          'line-color': [
-            'case',
-            matrixBuildingIsSelectedDestination,
-            matrixPalette.yellow,
-            matrixPalette.neonMagenta,
-          ],
-          'line-gap-width': ['interpolate', ['linear'], ['zoom'], 15, 0.7, 16, 1.1, 18, 1.8, 22, 4],
-          'line-opacity': [
-            'case',
-            matrixBuildingIsSelectedDestination,
-            ['match', matrixBuildingImportanceTier, 4, 0.62, 3, 0.44, 2, 0.24, 0],
-            ['match', matrixBuildingImportanceTier, 4, 0.64, 3, 0.48, 2, 0.28, 0],
-          ],
-          'line-width': ['interpolate', ['linear'], ['zoom'], 15, 0.35, 16, 0.5, 18, 0.8, 22, 1.6],
-        },
-      },
-      {after: 'buildings.effects.ghostAura'},
-    ),
-    addModuleLayer(
-      'buildings',
-      'buildings.effects.signalTrace',
-      {
-        id: 'matrix-buildings-signal-trace',
-        type: 'line',
-        source: 'tileflow',
-        'source-layer': semanticLayer('building'),
-        minzoom: 15,
-        filter: buildingStrongFilter,
-        layout: {'line-cap': 'butt', 'line-join': 'round'},
-        metadata: {'tileflow:module': 'buildings'},
-        paint: {
-          'line-blur': 0,
-          'line-color': ['case', matrixBuildingIsSelectedDestination, '#B3FFC0', '#D9FFDE'],
-          'line-dasharray': [0.45, 1.25],
-          'line-offset': ['interpolate', ['linear'], ['zoom'], 15.5, -1, 18, -1.8, 22, -4],
-          'line-opacity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            15,
-            0,
-            15.75,
-            ['match', matrixBuildingImportanceTier, 4, 0.62, 3, 0.4, 0],
-          ],
-          'line-width': ['interpolate', ['linear'], ['zoom'], 15.5, 0.55, 18, 0.9, 22, 1.8],
-        },
-      },
-      {after: 'buildings.effects.ghostGlow'},
-    ),
-  ];
-}
-
-function matrixDestinationBeacons() {
-  const poiPointFilter = ['==', ['geometry-type'], 'Point'];
-  const hudPoiFilter = ['all', poiPointFilter, matrixPoiIsHudCandidate];
-  const beaconScale = ['match', matrixPoiImportanceTier, 4, 1.4, 3, 1.2, 2, 1, 1, 0.78, 0];
-  return [
-    addModuleLayer(
-      'poi',
-      'poi.effects.destination.scanRing',
-      {
-        id: 'matrix-destination-scan-ring',
-        type: 'circle',
-        source: 'tileflow',
-        'source-layer': semanticLayer('poi'),
-        minzoom: 15,
-        filter: hudPoiFilter,
-        layout: {'circle-sort-key': ['-', 0, matrixPoiPlacementPriority]},
-        metadata: {'tileflow:module': 'poi'},
-        paint: {
-          'circle-color': 'rgba(0, 0, 0, 0)',
-          'circle-radius': ['interpolate', ['linear'], ['zoom'], 15, 6, 16, 8, 18, 14, 22, 24],
-          'circle-stroke-color': [
-            'case',
-            matrixPoiIsActive,
-            matrixPalette.acidGreen,
-            [
-              'match',
-              matrixHudPoiImportanceTier,
-              4,
-              matrixPalette.yellow,
-              3,
-              matrixPalette.neonMagenta,
-              matrixPalette.neonCyan,
-            ],
-          ],
-          'circle-stroke-opacity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            15,
-            0,
-            16,
-            [
-              'case',
-              matrixPoiIsActive,
-              1,
-              ['match', matrixHudPoiImportanceTier, 4, 0.7, 3, 0.52, 0.28],
-            ],
-          ],
-          'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 15, 0.5, 18, 1, 22, 1.6],
-        },
-      },
-      {before: 'poi.transport.label'},
-    ),
-    addModuleLayer(
-      'poi',
-      'poi.effects.destination.beaconCore',
-      {
-        id: 'matrix-destination-beacon-core',
-        type: 'circle',
-        source: 'tileflow',
-        'source-layer': semanticLayer('poi'),
-        minzoom: 14,
-        filter: hudPoiFilter,
-        layout: {'circle-sort-key': ['-', 0, matrixPoiPlacementPriority]},
-        metadata: {'tileflow:module': 'poi'},
-        paint: {
-          'circle-blur': ['match', matrixPoiImportanceTier, 4, 0.14, 3, 0.1, 2, 0.06, 0],
-          'circle-color': matrixPoiImportanceColor,
-          'circle-opacity': [
-            'match',
-            matrixPoiImportanceTier,
-            4,
-            0.96,
-            3,
-            0.9,
-            2,
-            0.74,
-            1,
-            0.46,
-            0,
-          ],
-          'circle-pitch-alignment': 'map',
-          'circle-pitch-scale': 'map',
-          'circle-radius': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            14,
-            ['*', 1.25, beaconScale],
-            16,
-            ['*', 2.5, beaconScale],
-            18,
-            ['*', 4.5, beaconScale],
-            22,
-            ['*', 9, beaconScale],
-          ],
-          'circle-stroke-color': matrixPalette.halo,
-          'circle-stroke-opacity': 0.9,
-          'circle-stroke-width': ['interpolate', ['linear'], ['zoom'], 14, 0.5, 18, 1, 22, 2],
-        },
-      },
-      {after: 'poi.effects.destination.scanRing'},
-    ),
-    addModuleLayer(
-      'poi',
-      'poi.effects.destination.brackets',
-      {
-        id: 'matrix-destination-poi-node',
-        type: 'symbol',
-        source: 'tileflow',
-        'source-layer': semanticLayer('poi'),
-        minzoom: 15,
-        filter: hudPoiFilter,
-        metadata: {'tileflow:module': 'poi'},
-        layout: {
-          'icon-allow-overlap': false,
-          'icon-image': 'matrix-poi-node',
-          'icon-ignore-placement': false,
-          'icon-padding': 4,
-          'icon-size': ['interpolate', ['linear'], ['zoom'], 15, 0.72, 16, 1, 18, 1.35, 22, 1.75],
-          'symbol-sort-key': matrixPoiPlacementPriority,
-          'text-allow-overlap': false,
-          'text-anchor': 'top',
-          'text-field': ['coalesce', ['get', semanticField('name')], ''],
-          'text-font': ['Oxanium Medium'],
-          'text-ignore-placement': false,
-          'text-letter-spacing': 0.055,
-          'text-offset': [0, 1.35],
-          'text-optional': true,
-          'text-padding': 4,
-          'text-size': 10,
-          'text-transform': 'uppercase',
-        },
-        paint: {
-          'icon-opacity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            15,
-            0,
-            16,
-            ['match', matrixHudPoiImportanceTier, 4, 0.9, 3, 0.74, 0.52],
-          ],
-          'text-color': [
-            'case',
-            matrixPoiIsActive,
-            matrixPalette.acidGreen,
-            [
-              'match',
-              matrixHudPoiImportanceTier,
-              4,
-              matrixPalette.yellow,
-              3,
-              matrixPalette.neonMagenta,
-              matrixPalette.neonCyan,
-            ],
-          ],
-          'text-halo-color': matrixPalette.labelHalo,
-          'text-halo-width': 1.2,
-          'text-opacity': ['interpolate', ['linear'], ['zoom'], 15, 0, 16, 0.82],
-        },
-      },
-      {after: 'poi.arts-entertainment.label'},
-    ),
-  ];
-}
-
-function matrixPlanarSystems() {
-  const polygonFilter = ['==', ['geometry-type'], 'Polygon'];
-  const landuseClass = ['coalesce', ['get', semanticField('class')], ''];
-  return [
-    addModuleLayer(
-      'water',
-      'water.effects.shore.aura',
-      {
-        id: 'matrix-water-shore-aura',
-        type: 'line',
-        source: 'tileflow',
-        'source-layer': semanticLayer('water'),
-        minzoom: 6,
-        filter: polygonFilter,
-        metadata: {'tileflow:module': 'water'},
-        paint: {
-          'line-blur': 2,
-          'line-color': matrixPalette.neonCyan,
-          'line-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0, 8, 0.16],
-          'line-width': ['interpolate', ['linear'], ['zoom'], 8, 1, 14, 3, 18, 7],
-        },
-      },
-      {after: 'water.bodies.fill'},
-    ),
-    addModuleLayer(
-      'water',
-      'water.effects.shore.core',
-      {
-        id: 'matrix-water-shore-core',
-        type: 'line',
-        source: 'tileflow',
-        'source-layer': semanticLayer('water'),
-        minzoom: 6,
-        filter: polygonFilter,
-        metadata: {'tileflow:module': 'water'},
-        paint: {
-          'line-blur': 0.15,
-          'line-color': matrixPalette.neonCyan,
-          'line-opacity': ['interpolate', ['linear'], ['zoom'], 6, 0, 8, 0.58],
-          'line-width': ['interpolate', ['linear'], ['zoom'], 8, 0.3, 14, 0.7, 18, 1.5],
-        },
-      },
-      {after: 'water.effects.shore.aura'},
-    ),
-    addModuleLayer(
-      'land',
-      'land.effects.businessGrid',
-      {
-        id: 'matrix-landuse-business-grid',
-        type: 'fill',
-        source: 'tileflow',
-        'source-layer': semanticLayer('landuse'),
-        minzoom: 15,
-        filter: ['all', polygonFilter, ['==', landuseClass, 'business_area']],
-        metadata: {'tileflow:module': 'land'},
-        paint: {
-          'fill-opacity': [
-            'interpolate',
-            ['linear'],
-            ['zoom'],
-            15,
-            0,
-            16,
-            0.08,
-            18,
-            0.12,
-            22,
-            0.16,
-          ],
-          'fill-pattern': 'matrix-data-grid',
-        },
-      },
-      {after: 'land.landuse.residential.fill'},
-    ),
-    addModuleLayer(
-      'land',
-      'land.effects.sectorTrace',
-      {
-        id: 'matrix-landuse-sector-trace',
-        type: 'line',
-        source: 'tileflow',
-        'source-layer': semanticLayer('landuse'),
-        minzoom: 11,
-        filter: [
-          'all',
-          polygonFilter,
+  );
+  const roadWidthScale = expr.match<number, number>(
+    matrixRoadImportanceTier,
+    [
+      {labels: 4, value: 1},
+      {labels: 3, value: 0.9},
+      {labels: 2, value: 0.72},
+      {labels: 1, value: 0.48},
+    ],
+    0,
+  );
+  return {
+    principalNeonAura: renderPass({
+      attachTo: 'roads.classes.motorway.surface.fill',
+      feature: 'road',
+      phase: 'overlay',
+      renderer: 'line',
+      selector: matrixRoadImportanceSelector(3),
+      style: {
+        blur: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [8, 2],
+          [10, 3.5],
+          [12, 8],
+          [16, 12],
+          [18, 14],
+          [22, 18],
+        ]),
+        cap: 'round',
+        color: principalRoadColor,
+        join: 'round',
+        minZoom: 8,
+        opacity: expr.match<number, number>(
+          matrixRoadImportanceTier,
           [
-            'match',
-            landuseClass,
+            {labels: 4, value: 0.24},
+            {labels: 3, value: 0.17},
+          ],
+          0,
+        ),
+        width: expr.interpolate({base: 1.5, kind: 'exponential'}, expr.zoom(), [
+          [8, 0],
+          [10, 0.35],
+          [11, 0.9],
+          [12, expr.multiply(2.5, roadWidthScale)],
+          [15, expr.multiply(7, roadWidthScale)],
+          [16, expr.multiply(13.5, roadWidthScale)],
+          [18, expr.multiply(24, roadWidthScale)],
+          [22, expr.multiply(70, roadWidthScale)],
+        ]),
+      },
+    }),
+    principalNeonGlow: renderPass({
+      attachTo: 'roads.render.principalNeonAura',
+      feature: 'road',
+      phase: 'overlay',
+      renderer: 'line',
+      selector: matrixRoadImportanceSelector(2),
+      style: {
+        blur: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [6, 0.8],
+          [8, 1.5],
+          [10, 2.5],
+          [12, 4],
+          [16, 5],
+          [18, 6.5],
+          [22, 9],
+        ]),
+        cap: 'round',
+        color: principalRoadColor,
+        join: 'round',
+        minZoom: 6,
+        opacity: expr.match<number, number>(
+          matrixRoadImportanceTier,
+          [
+            {labels: 4, value: 0.54},
+            {labels: 3, value: 0.42},
+            {labels: 2, value: 0.26},
+          ],
+          0,
+        ),
+        width: expr.interpolate({base: 1.5, kind: 'exponential'}, expr.zoom(), [
+          [6, 0],
+          [8, 0.18],
+          [10, 0.55],
+          [12, expr.multiply(1.3, roadWidthScale)],
+          [15, expr.multiply(3.6, roadWidthScale)],
+          [16, expr.multiply(7.2, roadWidthScale)],
+          [18, expr.multiply(12, roadWidthScale)],
+          [22, expr.multiply(34, roadWidthScale)],
+        ]),
+      },
+    }),
+  };
+}
+
+function matrixBuildingImportanceSelector(minimum: 2 | 3): TileflowRenderSelector {
+  const hasPublishedTier = {kind: 'has', field: 'importanceTier'} as const;
+  const heightAtLeast = (value: number): TileflowRenderSelector => ({
+    kind: 'compare',
+    field: 'renderHeight',
+    operator: 'gte',
+    value,
+    coerce: 'number',
+    fallback: 0,
+  });
+  const publishedBranch: TileflowRenderSelector = {
+    kind: 'all',
+    selectors: [
+      hasPublishedTier,
+      {
+        kind: 'any',
+        selectors:
+          minimum === 3
+            ? [
+                {
+                  kind: 'compare',
+                  field: 'importanceTier',
+                  operator: 'gte',
+                  value: 3,
+                  coerce: 'number',
+                  fallback: 0,
+                },
+                {
+                  kind: 'all',
+                  selectors: [
+                    {
+                      kind: 'compare',
+                      field: 'importanceTier',
+                      operator: 'eq',
+                      value: 2,
+                      coerce: 'number',
+                      fallback: 0,
+                    },
+                    heightAtLeast(36),
+                  ],
+                },
+              ]
+            : [
+                {
+                  kind: 'compare',
+                  field: 'importanceTier',
+                  operator: 'gte',
+                  value: 2,
+                  coerce: 'number',
+                  fallback: 0,
+                },
+                {
+                  kind: 'all',
+                  selectors: [
+                    {
+                      kind: 'compare',
+                      field: 'importanceTier',
+                      operator: 'eq',
+                      value: 1,
+                      coerce: 'number',
+                      fallback: 0,
+                    },
+                    heightAtLeast(24),
+                  ],
+                },
+              ],
+      },
+    ],
+  };
+  const legacyBranch: TileflowRenderSelector = {
+    kind: 'all',
+    selectors: [
+      {kind: 'not', selector: hasPublishedTier},
+      ...(minimum === 3
+        ? ([
+            {
+              kind: 'compare',
+              field: 'buildingTone',
+              operator: 'eq',
+              value: 'destination',
+              fallback: '',
+            },
+            heightAtLeast(36),
+          ] satisfies TileflowRenderSelector[])
+        : ([
+            {
+              kind: 'any',
+              selectors: [
+                {
+                  kind: 'compare',
+                  field: 'buildingTone',
+                  operator: 'eq',
+                  value: 'destination',
+                  fallback: '',
+                },
+                {
+                  kind: 'all',
+                  selectors: [
+                    {
+                      kind: 'in',
+                      field: 'buildingTone',
+                      values: ['active', 'commercial', 'destination'],
+                      fallback: '',
+                    },
+                    heightAtLeast(24),
+                  ],
+                },
+              ],
+            },
+          ] satisfies TileflowRenderSelector[])),
+    ],
+  };
+  return {
+    kind: 'all',
+    selectors: [
+      {kind: 'geometry', geometry: 'polygon'},
+      {kind: 'any', selectors: [publishedBranch, legacyBranch]},
+    ],
+  };
+}
+
+function matrixBuildingRenderStack(): TileflowNamedRenderStack {
+  const strongSelector = matrixBuildingImportanceSelector(3);
+  const activitySelector = matrixBuildingImportanceSelector(2);
+  return {
+    ghostAura: renderPass({
+      attachTo: 'buildings.flat.fill',
+      feature: 'building',
+      phase: 'overlay',
+      renderer: 'line',
+      selector: strongSelector,
+      style: {
+        blur: 0.8,
+        cap: 'round',
+        color: expr.case<string>(
+          [{when: matrixBuildingIsSelectedDestination, value: matrixPalette.yellow}],
+          matrixPalette.neonMagenta,
+        ),
+        join: 'round',
+        minZoom: 15,
+        opacity: expr.match<number, number>(
+          matrixBuildingImportanceTier,
+          [
+            {labels: 4, value: 0.22},
+            {labels: 3, value: 0.13},
+          ],
+          0,
+        ),
+        width: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [15, 3],
+          [16, 4],
+          [18, 6],
+          [22, 10],
+        ]),
+      },
+    }),
+    ghostGlow: renderPass({
+      attachTo: 'buildings.render.ghostAura',
+      feature: 'building',
+      phase: 'overlay',
+      renderer: 'line',
+      selector: activitySelector,
+      style: {
+        blur: 0.05,
+        cap: 'round',
+        color: expr.case<string>(
+          [{when: matrixBuildingIsSelectedDestination, value: matrixPalette.yellow}],
+          matrixPalette.neonMagenta,
+        ),
+        gapWidth: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [15, 0.7],
+          [16, 1.1],
+          [18, 1.8],
+          [22, 4],
+        ]),
+        join: 'round',
+        minZoom: 15,
+        opacity: expr.case<number>(
+          [
+            {
+              when: matrixBuildingIsSelectedDestination,
+              value: expr.match<number, number>(
+                matrixBuildingImportanceTier,
+                [
+                  {labels: 4, value: 0.62},
+                  {labels: 3, value: 0.44},
+                  {labels: 2, value: 0.24},
+                ],
+                0,
+              ),
+            },
+          ],
+          expr.match<number, number>(
+            matrixBuildingImportanceTier,
             [
+              {labels: 4, value: 0.64},
+              {labels: 3, value: 0.48},
+              {labels: 2, value: 0.28},
+            ],
+            0,
+          ),
+        ),
+        width: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [15, 0.35],
+          [16, 0.5],
+          [18, 0.8],
+          [22, 1.6],
+        ]),
+      },
+    }),
+    signalTrace: renderPass({
+      attachTo: 'buildings.render.ghostGlow',
+      feature: 'building',
+      phase: 'overlay',
+      renderer: 'line',
+      selector: strongSelector,
+      style: {
+        blur: 0,
+        cap: 'butt',
+        color: expr.case<string>(
+          [{when: matrixBuildingIsSelectedDestination, value: '#B3FFC0'}],
+          '#D9FFDE',
+        ),
+        dash: [0.45, 1.25],
+        join: 'round',
+        minZoom: 15,
+        offset: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [15.5, -1],
+          [18, -1.8],
+          [22, -4],
+        ]),
+        opacity: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [15, 0],
+          [
+            15.75,
+            expr.match<number, number>(
+              matrixBuildingImportanceTier,
+              [
+                {labels: 4, value: 0.62},
+                {labels: 3, value: 0.4},
+              ],
+              0,
+            ),
+          ],
+        ]),
+        width: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [15.5, 0.55],
+          [18, 0.9],
+          [22, 1.8],
+        ]),
+      },
+    }),
+  };
+}
+
+function matrixDestinationRenderStack(): TileflowNamedRenderStack {
+  const hudPoiSelector = {
+    kind: 'all',
+    selectors: [
+      {kind: 'geometry', geometry: 'point'},
+      {kind: 'has', field: 'poiFilterRank'},
+      {
+        kind: 'compare',
+        field: 'poiFilterRank',
+        operator: 'gte',
+        value: 0,
+        coerce: 'number',
+        fallback: 6,
+      },
+      {
+        kind: 'compare',
+        field: 'poiFilterRank',
+        operator: 'lte',
+        value: 2,
+        coerce: 'number',
+        fallback: 6,
+      },
+      {kind: 'has', field: 'poiSizeRank'},
+      {
+        kind: 'compare',
+        field: 'poiSizeRank',
+        operator: 'gte',
+        value: 0,
+        coerce: 'number',
+        fallback: 17,
+      },
+      {
+        kind: 'compare',
+        field: 'poiSizeRank',
+        operator: 'lte',
+        value: 16,
+        coerce: 'number',
+        fallback: 17,
+      },
+    ],
+  } as const satisfies TileflowRenderSelector;
+  const beaconScale = expr.match<number, number>(
+    matrixPoiImportanceTier,
+    [
+      {labels: 4, value: 1.4},
+      {labels: 3, value: 1.2},
+      {labels: 2, value: 1},
+      {labels: 1, value: 0.78},
+    ],
+    0,
+  );
+  return {
+    destinationScanRing: renderPass({
+      attachTo: 'poi.transport.label',
+      feature: 'poi',
+      phase: 'underlay',
+      renderer: 'circle',
+      selector: hudPoiSelector,
+      style: {
+        color: 'rgba(0, 0, 0, 0)',
+        minZoom: 15,
+        priority: matrixPoiPlacementPriority,
+        radius: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [15, 6],
+          [16, 8],
+          [18, 14],
+          [22, 24],
+        ]),
+        strokeColor: expr.case<string>(
+          [{when: matrixPoiIsActive, value: matrixPalette.acidGreen}],
+          expr.match<number, string>(
+            matrixHudPoiImportanceTier,
+            [
+              {labels: 4, value: matrixPalette.yellow},
+              {labels: 3, value: matrixPalette.neonMagenta},
+            ],
+            matrixPalette.neonCyan,
+          ),
+        ),
+        strokeOpacity: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [15, 0],
+          [
+            16,
+            expr.case<number>(
+              [{when: matrixPoiIsActive, value: 1}],
+              expr.match<number, number>(
+                matrixHudPoiImportanceTier,
+                [
+                  {labels: 4, value: 0.7},
+                  {labels: 3, value: 0.52},
+                ],
+                0.28,
+              ),
+            ),
+          ],
+        ]),
+        strokeWidth: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [15, 0.5],
+          [18, 1],
+          [22, 1.6],
+        ]),
+      },
+    }),
+    destinationBeaconCore: renderPass({
+      attachTo: 'poi.render.destinationScanRing',
+      feature: 'poi',
+      phase: 'overlay',
+      renderer: 'circle',
+      selector: hudPoiSelector,
+      style: {
+        blur: expr.match<number, number>(
+          matrixPoiImportanceTier,
+          [
+            {labels: 4, value: 0.14},
+            {labels: 3, value: 0.1},
+            {labels: 2, value: 0.06},
+          ],
+          0,
+        ),
+        color: matrixPoiImportanceColor,
+        minZoom: 14,
+        opacity: expr.match<number, number>(
+          matrixPoiImportanceTier,
+          [
+            {labels: 4, value: 0.96},
+            {labels: 3, value: 0.9},
+            {labels: 2, value: 0.74},
+            {labels: 1, value: 0.46},
+          ],
+          0,
+        ),
+        pitchAlignment: 'map',
+        pitchScale: 'map',
+        priority: matrixPoiPlacementPriority,
+        radius: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [14, expr.multiply(1.25, beaconScale)],
+          [16, expr.multiply(2.5, beaconScale)],
+          [18, expr.multiply(4.5, beaconScale)],
+          [22, expr.multiply(9, beaconScale)],
+        ]),
+        strokeColor: matrixPalette.halo,
+        strokeOpacity: 0.9,
+        strokeWidth: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [14, 0.5],
+          [18, 1],
+          [22, 2],
+        ]),
+      },
+    }),
+    destinationPoiNode: renderPass({
+      attachTo: 'poi.arts-entertainment.label',
+      feature: 'poi',
+      phase: 'annotation',
+      renderer: 'symbol',
+      selector: hudPoiSelector,
+      style: {
+        icon: {
+          allowOverlap: false,
+          image: 'matrix-poi-node',
+          ignorePlacement: false,
+          opacity: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+            [15, 0],
+            [
+              16,
+              expr.match<number, number>(
+                matrixHudPoiImportanceTier,
+                [
+                  {labels: 4, value: 0.9},
+                  {labels: 3, value: 0.74},
+                ],
+                0.52,
+              ),
+            ],
+          ]),
+          padding: 4,
+          size: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+            [15, 0.72],
+            [16, 1],
+            [18, 1.35],
+            [22, 1.75],
+          ]),
+        },
+        minZoom: 15,
+        priority: expr.subtract(0, matrixPoiPlacementPriority),
+        text: {
+          allowOverlap: false,
+          anchor: 'top',
+          color: expr.case<string>(
+            [{when: matrixPoiIsActive, value: matrixPalette.acidGreen}],
+            expr.match<number, string>(
+              matrixHudPoiImportanceTier,
+              [
+                {labels: 4, value: matrixPalette.yellow},
+                {labels: 3, value: matrixPalette.neonMagenta},
+              ],
+              matrixPalette.neonCyan,
+            ),
+          ),
+          field: expr.coalesce(expr.get(field('name')), ''),
+          font: 'Oxanium Medium',
+          haloColor: matrixPalette.labelHalo,
+          haloWidth: 1.2,
+          ignorePlacement: false,
+          letterSpacing: 0.055,
+          offset: [0, 1.35],
+          opacity: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+            [15, 0],
+            [16, 0.82],
+          ]),
+          optional: true,
+          padding: 4,
+          size: 10,
+          transform: 'uppercase',
+        },
+      },
+    }),
+  };
+}
+
+function matrixWaterRenderStack(): TileflowNamedRenderStack {
+  const polygonSelector = {kind: 'geometry', geometry: 'polygon'} as const;
+  return {
+    shoreAura: renderPass({
+      attachTo: 'water.bodies.fill',
+      feature: 'water',
+      phase: 'overlay',
+      renderer: 'line',
+      selector: polygonSelector,
+      style: {
+        blur: 2,
+        color: matrixPalette.neonCyan,
+        minZoom: 6,
+        opacity: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [6, 0],
+          [8, 0.16],
+        ]),
+        width: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [8, 1],
+          [14, 3],
+          [18, 7],
+        ]),
+      },
+    }),
+    shoreCore: renderPass({
+      attachTo: 'water.render.shoreAura',
+      feature: 'water',
+      phase: 'overlay',
+      renderer: 'line',
+      selector: polygonSelector,
+      style: {
+        blur: 0.15,
+        color: matrixPalette.neonCyan,
+        minZoom: 6,
+        opacity: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [6, 0],
+          [8, 0.58],
+        ]),
+        width: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [8, 0.3],
+          [14, 0.7],
+          [18, 1.5],
+        ]),
+      },
+    }),
+  };
+}
+
+function matrixLandRenderStack(): TileflowNamedRenderStack {
+  const polygonSelector = {kind: 'geometry', geometry: 'polygon'} as const;
+  return {
+    businessGrid: renderPass({
+      attachTo: 'land.landuse.residential.fill',
+      feature: 'landuse',
+      phase: 'overlay',
+      renderer: 'fill',
+      selector: {
+        kind: 'all',
+        selectors: [
+          polygonSelector,
+          {kind: 'compare', field: 'class', operator: 'eq', value: 'business_area', fallback: ''},
+        ],
+      },
+      style: {
+        minZoom: 15,
+        opacity: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [15, 0],
+          [16, 0.08],
+          [18, 0.12],
+          [22, 0.16],
+        ]),
+        pattern: 'matrix-data-grid',
+      },
+    }),
+    sectorTrace: renderPass({
+      attachTo: 'land.render.businessGrid',
+      feature: 'landuse',
+      phase: 'overlay',
+      renderer: 'line',
+      selector: {
+        kind: 'all',
+        selectors: [
+          polygonSelector,
+          {
+            kind: 'in',
+            field: 'class',
+            values: [
               'business_area',
               'commercial',
               'retail',
@@ -1460,97 +1697,88 @@ function matrixPlanarSystems() {
               'hospital',
               'medical',
             ],
-            true,
-            false,
-          ],
+            fallback: '',
+          },
         ],
-        metadata: {'tileflow:module': 'land'},
-        paint: {
-          'line-blur': 0,
-          'line-color': [
-            'match',
-            landuseClass,
-            ['business_area', 'commercial', 'retail'],
-            '#43DB60',
-            ['hospital', 'medical'],
-            '#63F77B',
-            ['education', 'school', 'university'],
-            '#87FF98',
-            '#63F77B',
+      },
+      style: {
+        blur: 0,
+        color: expr.match<string, string>(
+          expr.coalesce(expr.get(field('class')), ''),
+          [
+            {labels: ['business_area', 'commercial', 'retail'], value: '#43DB60'},
+            {labels: ['hospital', 'medical'], value: '#63F77B'},
+            {labels: ['education', 'school', 'university'], value: '#87FF98'},
           ],
-          'line-dasharray': [1.2, 1.8],
-          'line-opacity': 0.34,
-          'line-width': ['interpolate', ['linear'], ['zoom'], 11, 0.3, 16, 0.7, 20, 1.2],
-        },
+          '#63F77B',
+        ),
+        dash: [1.2, 1.8],
+        minZoom: 11,
+        opacity: 0.34,
+        width: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [11, 0.3],
+          [16, 0.7],
+          [20, 1.2],
+        ]),
       },
-      {after: 'land.effects.businessGrid'},
-    ),
-    addModuleLayer(
-      'land',
-      'land.effects.urbanParkTrace',
-      {
-        id: 'matrix-urban-park-circuit-trace',
-        type: 'line',
-        source: 'tileflow',
-        'source-layer': semanticLayer('landcover'),
-        minzoom: 11,
-        filter: [
-          'all',
-          polygonFilter,
-          ['==', ['get', semanticField('class')], 'grass'],
-          ['match', ['get', semanticField('subclass')], ['park', 'garden'], true, false],
+    }),
+    urbanParkTrace: renderPass({
+      attachTo: 'land.landcover.urbanPark.fill',
+      feature: 'landcover',
+      phase: 'overlay',
+      renderer: 'line',
+      selector: {
+        kind: 'all',
+        selectors: [
+          polygonSelector,
+          {kind: 'compare', field: 'class', operator: 'eq', value: 'grass'},
+          {kind: 'in', field: 'subclass', values: ['park', 'garden']},
         ],
-        metadata: {'tileflow:module': 'land'},
-        paint: {
-          'line-blur': 0.1,
-          'line-color': '#30B94E',
-          'line-dasharray': [2.5, 1.5],
-          'line-opacity': 0.5,
-          'line-width': ['interpolate', ['linear'], ['zoom'], 11, 0.35, 16, 0.9, 20, 1.5],
-        },
       },
-      {after: 'land.landcover.urbanPark.fill'},
-    ),
-  ];
+      style: {
+        blur: 0.1,
+        color: '#30B94E',
+        dash: [2.5, 1.5],
+        minZoom: 11,
+        opacity: 0.5,
+        width: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+          [11, 0.35],
+          [16, 0.9],
+          [20, 1.5],
+        ]),
+      },
+    }),
+  };
 }
 
-const circularRoadRadiusAtZ15 = ['to-number', ['get', semanticField('circularRadiusAtZoom15')], 0];
-const circularRoadRadiusMetres = ['to-number', ['get', semanticField('circularRadiusMeters')], 0];
-const circularRoadOuterRadiusMetres = [
-  'to-number',
-  ['get', semanticField('circularOuterRadiusMeters')],
+const circularRoadRadiusAtZ15 = expr.toNumber(expr.get(field('circularRadiusAtZoom15')), 0);
+const circularRoadRadiusMetres = expr.toNumber(expr.get(field('circularRadiusMeters')), 0);
+const circularRoadOuterRadiusMetres = expr.toNumber(
+  expr.get(field('circularOuterRadiusMeters')),
   0,
-];
-const circularRoadInnerRadiusMetres = [
-  'to-number',
-  ['get', semanticField('circularInnerRadiusMeters')],
+);
+const circularRoadInnerRadiusMetres = expr.toNumber(
+  expr.get(field('circularInnerRadiusMeters')),
   0,
-];
-const hasPhysicalCircularRadii = [
-  'all',
-  ['>', circularRoadRadiusMetres, 0],
-  ['>', circularRoadOuterRadiusMetres, circularRoadInnerRadiusMetres],
-  ['>=', circularRoadInnerRadiusMetres, 0],
-];
-const circularRoadBaseWidth = [
-  'match',
-  ['coalesce', ['get', semanticField('class')], 'minor'],
-  'motorway',
-  6,
-  'trunk',
-  5.5,
-  'primary',
-  5,
-  'secondary',
-  4.5,
-  'tertiary',
-  4,
-  'service',
-  2.5,
-  'track',
-  2,
+);
+const hasPhysicalCircularRadii = expr.all(
+  expr.gt(circularRoadRadiusMetres, 0),
+  expr.gt(circularRoadOuterRadiusMetres, circularRoadInnerRadiusMetres),
+  expr.gte(circularRoadInnerRadiusMetres, 0),
+);
+const circularRoadBaseWidth = expr.match<string, number>(
+  expr.coalesce(expr.get(field('class')), 'minor'),
+  [
+    {labels: 'motorway', value: 6},
+    {labels: 'trunk', value: 5.5},
+    {labels: 'primary', value: 5},
+    {labels: 'secondary', value: 4.5},
+    {labels: 'tertiary', value: 4},
+    {labels: 'service', value: 2.5},
+    {labels: 'track', value: 2},
+  ],
   3,
-];
+);
 
 function circularRoadLegacyScale(level: number) {
   const interpolationBase = 1.35;
@@ -1558,72 +1786,90 @@ function circularRoadLegacyScale(level: number) {
   return 1 + progress * 1.2;
 }
 
-function circularRoadWidthAtLevel(level: number) {
+function circularRoadWidthAtLevel(level: number): TileflowDataExpressionInput<number> {
   const scale = circularRoadLegacyScale(level);
-  return level === 15 ? circularRoadBaseWidth : ['*', circularRoadBaseWidth, scale];
+  return level === 15 ? circularRoadBaseWidth : expr.multiply(circularRoadBaseWidth, scale);
+}
+
+function circularRoadCenterlineRadiusAtLevel(level: number) {
+  return level === 15
+    ? circularRoadRadiusAtZ15
+    : expr.multiply(circularRoadRadiusAtZ15, 2 ** (level - 15));
+}
+
+function circularRoadInnerRadiusAtLevel(level: number, casing: boolean) {
+  const centerlineRadius = circularRoadCenterlineRadiusAtLevel(level);
+  const physicalInnerRadius = expr.multiply(
+    centerlineRadius,
+    expr.divide(circularRoadInnerRadiusMetres, circularRoadRadiusMetres),
+  );
+  const fallbackInnerRadius = expr.subtract(
+    centerlineRadius,
+    expr.divide(circularRoadWidthAtLevel(level), 2),
+  );
+  const innerRadius = expr.case<number>(
+    [{when: hasPhysicalCircularRadii, value: physicalInnerRadius}],
+    fallbackInnerRadius,
+  );
+  return expr.max(0, casing ? expr.subtract(innerRadius, roadBorderTotalWidth / 2) : innerRadius);
 }
 
 function circularRoadInnerRadius(casing: boolean) {
-  const stops: unknown[] = [];
-  for (let level = 15; level <= 22; level += 1) {
-    const centerlineRadius =
-      level === 15 ? circularRoadRadiusAtZ15 : ['*', circularRoadRadiusAtZ15, 2 ** (level - 15)];
-    const physicalInnerRadius = [
-      '*',
-      centerlineRadius,
-      ['/', circularRoadInnerRadiusMetres, circularRoadRadiusMetres],
-    ];
-    const fallbackInnerRadius = ['-', centerlineRadius, ['/', circularRoadWidthAtLevel(level), 2]];
-    const innerRadius = [
-      'case',
-      hasPhysicalCircularRadii,
-      physicalInnerRadius,
-      fallbackInnerRadius,
-    ];
-    stops.push(level, [
-      'max',
-      0,
-      casing ? ['-', innerRadius, roadBorderTotalWidth / 2] : innerRadius,
-    ]);
-  }
-  return ['interpolate', ['linear'], ['zoom'], ...stops];
+  return expr.interpolate({kind: 'linear'}, expr.zoom(), [
+    [15, circularRoadInnerRadiusAtLevel(15, casing)],
+    [16, circularRoadInnerRadiusAtLevel(16, casing)],
+    [17, circularRoadInnerRadiusAtLevel(17, casing)],
+    [18, circularRoadInnerRadiusAtLevel(18, casing)],
+    [19, circularRoadInnerRadiusAtLevel(19, casing)],
+    [20, circularRoadInnerRadiusAtLevel(20, casing)],
+    [21, circularRoadInnerRadiusAtLevel(21, casing)],
+    [22, circularRoadInnerRadiusAtLevel(22, casing)],
+  ]);
+}
+
+function circularRoadStrokeWidthAtLevel(level: number, casing: boolean) {
+  const fallbackWidth = circularRoadWidthAtLevel(level);
+  const centerlineRadius = circularRoadCenterlineRadiusAtLevel(level);
+  const physicalWidth = expr.multiply(
+    centerlineRadius,
+    expr.divide(
+      expr.subtract(circularRoadOuterRadiusMetres, circularRoadInnerRadiusMetres),
+      circularRoadRadiusMetres,
+    ),
+  );
+  const physicalOutput = casing ? expr.add(physicalWidth, roadBorderTotalWidth) : physicalWidth;
+  const fallbackOutput = casing ? expr.add(fallbackWidth, roadBorderTotalWidth) : fallbackWidth;
+  return expr.case<number>(
+    [{when: hasPhysicalCircularRadii, value: physicalOutput}],
+    fallbackOutput,
+  );
 }
 
 function circularRoadStrokeWidth(casing: boolean) {
-  const stops: unknown[] = [];
-  for (let level = 15; level <= 22; level += 1) {
-    const fallbackWidth = circularRoadWidthAtLevel(level);
-    const centerlineRadius =
-      level === 15 ? circularRoadRadiusAtZ15 : ['*', circularRoadRadiusAtZ15, 2 ** (level - 15)];
-    const physicalWidth = [
-      '*',
-      centerlineRadius,
-      [
-        '/',
-        ['-', circularRoadOuterRadiusMetres, circularRoadInnerRadiusMetres],
-        circularRoadRadiusMetres,
-      ],
-    ];
-    const physicalOutput = casing ? ['+', physicalWidth, roadBorderTotalWidth] : physicalWidth;
-    const fallbackOutput = casing ? ['+', fallbackWidth, roadBorderTotalWidth] : fallbackWidth;
-    stops.push(level, ['case', hasPhysicalCircularRadii, physicalOutput, fallbackOutput]);
-  }
-  return ['interpolate', ['linear'], ['zoom'], ...stops];
+  return expr.interpolate({kind: 'linear'}, expr.zoom(), [
+    [15, circularRoadStrokeWidthAtLevel(15, casing)],
+    [16, circularRoadStrokeWidthAtLevel(16, casing)],
+    [17, circularRoadStrokeWidthAtLevel(17, casing)],
+    [18, circularRoadStrokeWidthAtLevel(18, casing)],
+    [19, circularRoadStrokeWidthAtLevel(19, casing)],
+    [20, circularRoadStrokeWidthAtLevel(20, casing)],
+    [21, circularRoadStrokeWidthAtLevel(21, casing)],
+    [22, circularRoadStrokeWidthAtLevel(22, casing)],
+  ]);
 }
 
 const circularRoadRadius = circularRoadInnerRadius(false);
 const circularRoadCasingRadius = circularRoadInnerRadius(true);
 const circularRoadWidth = circularRoadStrokeWidth(false);
 const circularRoadCasingWidth = circularRoadStrokeWidth(true);
-const roundaboutNeonColor = expression<string>([
-  'match',
-  ['coalesce', ['get', semanticField('class')], 'minor'],
-  ['trunk', 'secondary'],
-  matrixPalette.magenta,
-  ['motorway', 'primary'],
-  matrixPalette.cyan,
+const roundaboutNeonColor = expr.match<string, string>(
+  expr.coalesce(expr.get(field('class')), 'minor'),
+  [
+    {labels: ['trunk', 'secondary'], value: matrixPalette.magenta},
+    {labels: ['motorway', 'primary'], value: matrixPalette.cyan},
+  ],
   matrixPalette.roadCasing,
-]);
+);
 
 export const matrixTheme = defineOfficialTheme({
   id: 'matrix-dark',
@@ -1766,11 +2012,10 @@ export const matrixTheme = defineOfficialTheme({
 });
 
 export const matrix = bindOfficialMapTheme(
-  defineRootMap({
+  defineMap({
     id: 'matrix',
     version: 1,
     name: 'Matrix',
-    root: {compiler: 'streets', compilerVersion: 1},
     data: {
       generation: 'v1',
       selection: {kind: 'current', product: 'world-v1'},
@@ -1781,328 +2026,362 @@ export const matrix = bindOfficialMapTheme(
     themes: {dark: matrixTheme},
     defaultTheme: 'dark',
     modules: {
-      addresses: addresses({enabled: false}),
-      aeroways: aeroways({enabled: false}),
-      boundaries: boundaries({
-        admin2: {
-          color: token.color('boundaries.admin'),
-          dash: [10, 0],
-          minZoom: 1,
-          opacity: 1,
-          width: zoom.linear([
-            [3, 0.5],
-            [12, 2],
-          ]),
-        },
-        admin4: {
-          color: token.color('boundaries.regional'),
-          dash: [2, 0],
-          minZoom: 2,
-          opacity: zoom.linear([
-            [2, 0],
-            [3, 1],
-          ]),
-          width: zoom.linear([
-            [3, 0.3],
-            [12, 1.5],
-          ]),
-        },
-        disputed: {
-          color: token.color('boundaries.admin'),
-          dash: expression<readonly number[]>([
-            'step',
-            ['zoom'],
-            ['literal', [3, 2, 5]],
-            7,
-            ['literal', [2, 1.5]],
-          ]),
-          minZoom: 1,
-          opacity: 1,
-          width: zoom.linear([
-            [3, 0.5],
-            [12, 2],
-          ]),
-        },
-        maritime: {visible: false},
-      }),
-      buildings: buildings({
-        businessCorridor: {
-          fill: {visible: false},
-          outline: {visible: false},
-        },
-        flat: {
-          fill: {
-            color: expression<string>(matrixBuildingGhostFill),
-            minZoom: 15,
-            opacity: 0.56,
-          },
-          outline: {
-            blur: 0,
-            color: expression<string>(matrixBuildingGhostCore),
-            minZoom: 15,
-            opacity: expression<number>(matrixBuildingGhostCoreOpacity),
+      addresses: disable(),
+      aeroways: disable(),
+      boundaries: withRenderStack(
+        boundaries({
+          admin2: {
+            color: token.color('boundaries.admin'),
+            dash: [10, 0],
+            minZoom: 1,
+            opacity: 1,
             width: zoom.linear([
-              [15, 0.55],
-              [16, 0.62],
-              [18, 0.9],
-              [22, 1.8],
+              [3, 0.5],
+              [12, 2],
             ]),
           },
-        },
-        mode: 'flat',
-      }),
-      labels: labels({
-        aerodromeCodes: 'none',
-        junctions: false,
-        language: 'local',
-        places: 'all',
-        roadClasses: ['motorway', 'trunk', 'primary', 'secondary', 'tertiary', 'minor', 'service'],
-        roads: 'all',
-        shields: 'none',
-        water: 'major',
-      }),
-      land: land({
-        background: {color: matrixPalette.land},
-        globalLandcover: {
-          color: expression<string>(matrixOverviewLandcoverColor),
-          maxZoom: 9,
-          minZoom: 0,
-          opacity: zoom.linear([
-            [0, 0.9],
-            [6, 0.75],
-            [7, 0.45],
-            [8, 0.15],
-            [9, 0],
-          ]),
-        },
-      }),
-      roads: roads({
-        areas: {
-          pedestrian: {fill: {visible: false}, outline: {visible: false}},
-          pier: {fill: {visible: false}, outline: {visible: false}},
-          road: {fill: {visible: false}, outline: {visible: false}},
-        },
-        classes: {
-          motorway: matrixRoadStyle(matrixPalette.cyan, matrixRoadWidths.motorway, {
-            minZoom: 3,
-            neon: true,
-            rampWidths: mapboxMajorRampWidthStops,
-          }),
-          trunk: matrixRoadStyle(matrixPalette.magenta, matrixRoadWidths.trunk, {
-            minZoom: 3,
-            neon: true,
-            rampWidths: mapboxMajorRampWidthStops,
-          }),
-          primary: matrixRoadStyle(matrixPalette.cyan, matrixRoadWidths.primary, {
-            minZoom: 6,
-            neon: true,
-            rampWidths: mapboxArterialRampWidthStops,
-          }),
-          secondary: matrixRoadStyle(matrixPalette.magenta, matrixRoadWidths.secondary, {
-            minZoom: 8,
-            neon: true,
-            rampWidths: mapboxArterialRampWidthStops,
-          }),
-          tertiary: matrixRoadStyle(matrixPalette.cyanSoft, matrixRoadWidths.tertiary, {
-            edgeOpacity: 0.62,
-            minZoom: 8,
-            rampWidths: mapboxArterialRampWidthStops,
-          }),
-          minor: matrixRoadStyle(matrixPalette.cyan, matrixRoadWidths.minor, {
-            edgeOpacity: 0.64,
-            minZoom: 12,
-          }),
-          service: matrixRoadStyle(matrixPalette.cyanMuted, matrixRoadWidths.service, {
-            casingMinZoom: 15,
-            edgeOpacity: 0.44,
-            minZoom: 14,
-            tunnelVisible: false,
-          }),
-          track: matrixRoadStyle(matrixPalette.cyanMuted, matrixRoadWidths.track, {
-            casingMinZoom: 15,
-            edgeOpacity: 0.4,
-            minZoom: 14,
-          }),
-          pathway: matrixPathRoadStyle(matrixPalette.road, matrixParkPathWidthStops, {
-            casingColor: matrixPalette.roadCasing,
-            casingWidth: 0,
-            minZoom: 12,
-          }),
-          footway: matrixPathRoadStyle(matrixPalette.road, matrixParkPathWidthStops, {
-            casingColor: matrixPalette.roadCasing,
-            casingWidth: 0,
-            minZoom: 12,
-          }),
-          cycleway: matrixPathRoadStyle(matrixPalette.cyan, mapboxPathWidthStops, {
-            casingColor: matrixPalette.roadCasing,
-            casingGapWidth: roadWidth(mapboxPathWidthStops, 1, false, false),
-            fillOpacity: zoom.linear([
-              [15, 0],
-              [16, 1],
+          admin4: {
+            color: token.color('boundaries.regional'),
+            dash: [2, 0],
+            minZoom: 2,
+            opacity: zoom.linear([
+              [2, 0],
+              [3, 1],
             ]),
-            minZoom: 15,
-            underlay: {
-              cap: pathLineCap,
-              color: matrixPalette.road,
-              join: pathLineJoin,
+            width: zoom.linear([
+              [3, 0.3],
+              [12, 1.5],
+            ]),
+          },
+          disputed: {
+            color: token.color('boundaries.admin'),
+            dash: expr.step<readonly number[]>(expr.zoom(), expr.literal([3, 2, 5]), [
+              [7, expr.literal([2, 1.5])],
+            ]),
+            minZoom: 1,
+            opacity: 1,
+            width: zoom.linear([
+              [3, 0.5],
+              [12, 2],
+            ]),
+          },
+          maritime: {visible: false},
+        }),
+        {
+          admin2Background: renderPass({
+            attachTo: 'boundaries.admin4',
+            feature: 'boundary',
+            phase: 'underlay',
+            renderer: 'line',
+            selector: {
+              kind: 'all',
+              selectors: [
+                {
+                  kind: 'compare',
+                  field: 'adminLevel',
+                  operator: 'eq',
+                  value: 2,
+                  coerce: 'number',
+                  fallback: 0,
+                },
+                {
+                  kind: 'compare',
+                  field: 'maritime',
+                  operator: 'ne',
+                  value: 1,
+                  coerce: 'number',
+                  fallback: 0,
+                },
+              ],
+            },
+            style: {
+              blur: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+                [3, 0],
+                [12, 2],
+              ]),
+              color: token.color('boundaries.halo'),
+              minZoom: 1,
+              opacity: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+                [3, 0],
+                [4, 0.5],
+              ]),
+              width: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+                [3, 4],
+                [12, 8],
+              ]),
+            },
+          }),
+        },
+      ),
+      buildings: withRenderStack(
+        buildings({
+          businessCorridor: {
+            fill: {visible: false},
+            outline: {visible: false},
+          },
+          flat: {
+            fill: {
+              color: matrixBuildingGhostFill,
+              minZoom: 15,
+              opacity: 0.56,
+            },
+            outline: {
+              blur: 0,
+              color: matrixBuildingGhostCore,
+              minZoom: 15,
+              opacity: matrixBuildingGhostCoreOpacity,
+              width: zoom.linear([
+                [15, 0.55],
+                [16, 0.62],
+                [18, 0.9],
+                [22, 1.8],
+              ]),
+            },
+          },
+          mode: 'flat',
+        }),
+        matrixBuildingRenderStack(),
+      ),
+      labels: withRenderStack(
+        labels({
+          aerodromeCodes: 'none',
+          junctions: false,
+          language: 'local',
+          places: 'all',
+          roadClasses: [
+            'motorway',
+            'trunk',
+            'primary',
+            'secondary',
+            'tertiary',
+            'minor',
+            'service',
+          ],
+          roads: 'all',
+          shields: 'none',
+          water: 'major',
+        }),
+        {
+          ...matrixLabelRenderStack(),
+          crtMask: renderPass({
+            attachTo: 'labels.roads.motorway',
+            phase: 'underlay',
+            renderer: 'background',
+            requirements: ['roads'],
+            style: {opacity: 0.84, pattern: 'matrix-crt-scanlines'},
+          }),
+        },
+      ),
+      land: withRenderStack(
+        land({
+          background: {color: matrixPalette.land},
+          globalLandcover: {
+            color: matrixOverviewLandcoverColor,
+            maxZoom: 9,
+            minZoom: 0,
+            opacity: zoom.linear([
+              [0, 0.9],
+              [6, 0.75],
+              [7, 0.45],
+              [8, 0.15],
+              [9, 0],
+            ]),
+          },
+        }),
+        matrixLandRenderStack(),
+      ),
+      roads: withRenderStack(
+        roads({
+          areas: {
+            pedestrian: {fill: {visible: false}, outline: {visible: false}},
+            pier: {fill: {visible: false}, outline: {visible: false}},
+            road: {fill: {visible: false}, outline: {visible: false}},
+          },
+          classes: {
+            motorway: matrixRoadStyle(matrixPalette.cyan, matrixRoadWidths.motorway, {
+              minZoom: 3,
+              neon: true,
+              rampWidths: mapboxMajorRampWidthStops,
+            }),
+            trunk: matrixRoadStyle(matrixPalette.magenta, matrixRoadWidths.trunk, {
+              minZoom: 3,
+              neon: true,
+              rampWidths: mapboxMajorRampWidthStops,
+            }),
+            primary: matrixRoadStyle(matrixPalette.cyan, matrixRoadWidths.primary, {
+              minZoom: 6,
+              neon: true,
+              rampWidths: mapboxArterialRampWidthStops,
+            }),
+            secondary: matrixRoadStyle(matrixPalette.magenta, matrixRoadWidths.secondary, {
+              minZoom: 8,
+              neon: true,
+              rampWidths: mapboxArterialRampWidthStops,
+            }),
+            tertiary: matrixRoadStyle(matrixPalette.cyanSoft, matrixRoadWidths.tertiary, {
+              edgeOpacity: 0.62,
+              minZoom: 8,
+              rampWidths: mapboxArterialRampWidthStops,
+            }),
+            minor: matrixRoadStyle(matrixPalette.cyan, matrixRoadWidths.minor, {
+              edgeOpacity: 0.64,
               minZoom: 12,
-              opacity: 1,
-              width: roadWidth(mapboxPathWidthStops, 1, false, false),
+            }),
+            service: matrixRoadStyle(matrixPalette.cyanMuted, matrixRoadWidths.service, {
+              casingMinZoom: 15,
+              edgeOpacity: 0.44,
+              minZoom: 14,
+              tunnelVisible: false,
+            }),
+            track: matrixRoadStyle(matrixPalette.cyanMuted, matrixRoadWidths.track, {
+              casingMinZoom: 15,
+              edgeOpacity: 0.4,
+              minZoom: 14,
+            }),
+            pathway: matrixPathRoadStyle(matrixPalette.road, matrixParkPathWidthStops, {
+              casingColor: matrixPalette.roadCasing,
+              casingWidth: 0,
+              minZoom: 12,
+            }),
+            footway: matrixPathRoadStyle(matrixPalette.road, matrixParkPathWidthStops, {
+              casingColor: matrixPalette.roadCasing,
+              casingWidth: 0,
+              minZoom: 12,
+            }),
+            cycleway: matrixPathRoadStyle(matrixPalette.cyan, mapboxPathWidthStops, {
+              casingColor: matrixPalette.roadCasing,
+              casingGapWidth: roadWidth(mapboxPathWidthStops, 1, false, false),
+              fillOpacity: zoom.linear([
+                [15, 0],
+                [16, 1],
+              ]),
+              minZoom: 15,
+              underlay: {
+                cap: pathLineCap,
+                color: matrixPalette.road,
+                join: pathLineJoin,
+                minZoom: 12,
+                opacity: 1,
+                width: roadWidth(mapboxPathWidthStops, 1, false, false),
+              },
+              width: zoom.linear([
+                [12, 0],
+                [18, 2],
+                [22, 20],
+              ]),
+            }),
+            steps: matrixPathRoadStyle(matrixPalette.road, matrixParkPathWidthStops, {
+              casingColor: matrixPalette.roadCasing,
+              casingMinZoom: 14,
+              casingWidth: 0,
+              dash: [0.18, 0.15],
+              minZoom: 14,
+              steps: true,
+            }),
+            pedestrian: matrixPathRoadStyle(matrixPalette.road, matrixParkPathWidthStops, {
+              casingColor: matrixPalette.roadCasing,
+              casingMinZoom: 14,
+              casingWidth: 0,
+              minZoom: 12,
+            }),
+          },
+          detail: 'all',
+          extras: {paths: true},
+          hierarchy: 'clear',
+          modifiers: {
+            construction: {
+              surface: {
+                casing: {color: matrixPalette.roadCasing, dash: [1.5, 1], opacity: 0.82},
+                fill: {color: matrixPalette.road, dash: [1.5, 1], opacity: 0.96},
+              },
             },
-            width: zoom.linear([
-              [12, 0],
-              [18, 2],
-              [22, 20],
-            ]),
-          }),
-          steps: matrixPathRoadStyle(matrixPalette.road, matrixParkPathWidthStops, {
-            casingColor: matrixPalette.roadCasing,
-            casingMinZoom: 14,
-            casingWidth: 0,
-            dash: [0.18, 0.15],
-            minZoom: 14,
-            steps: true,
-          }),
-          pedestrian: matrixPathRoadStyle(matrixPalette.road, matrixParkPathWidthStops, {
-            casingColor: matrixPalette.roadCasing,
-            casingMinZoom: 14,
-            casingWidth: 0,
-            minZoom: 12,
-          }),
-        },
-        detail: 'all',
-        extras: {paths: true},
-        hierarchy: 'clear',
-        modifiers: {
-          construction: {
-            surface: {
-              casing: {color: matrixPalette.roadCasing, dash: [1.5, 1], opacity: 0.82},
-              fill: {color: matrixPalette.road, dash: [1.5, 1], opacity: 0.96},
+            expressway: {widthScale: expresswayWidthScale},
+            indoor: {surface: {casing: {dash: [1, 0]}, fill: {dash: [1, 0]}}},
+            ramp: {enabled: false},
+            unpaved: {
+              surface: {
+                casing: {color: matrixPalette.roadCasing, dash: [1, 0], opacity: 0.72},
+                fill: {color: matrixPalette.road, dash: [1, 0], opacity: 0.96},
+              },
             },
           },
-          expressway: {widthScale: expresswayWidthScale},
-          indoor: {surface: {casing: {dash: [1, 0]}, fill: {dash: [1, 0]}}},
-          ramp: {enabled: false},
-          unpaved: {
-            surface: {
-              casing: {color: matrixPalette.roadCasing, dash: [1, 0], opacity: 0.72},
-              fill: {color: matrixPalette.road, dash: [1, 0], opacity: 0.96},
+          oneWayMarkers: false,
+          outline: 'strong',
+          restrictions: {
+            access: {
+              widthScale: 1,
+              surface: {
+                casing: {color: matrixPalette.roadCasing, dash: [1, 0], opacity: 0.62},
+                fill: {color: matrixPalette.road, dash: [1, 0], opacity: 1},
+              },
+            },
+            toll: {surface: {casing: {opacity: 1}}},
+          },
+          roundabouts: {
+            casing: {
+              color: 'rgba(0, 0, 0, 0)',
+              minZoom: 15,
+              pitchAlignment: 'map',
+              pitchScale: 'map',
+              radius: circularRoadCasingRadius,
+              strokeColor: roundaboutNeonColor,
+              strokeWidth: circularRoadCasingWidth,
+            },
+            fill: {
+              color: 'rgba(0, 0, 0, 0)',
+              minZoom: 15,
+              pitchAlignment: 'map',
+              pitchScale: 'map',
+              radius: circularRoadRadius,
+              strokeColor: matrixPalette.road,
+              strokeWidth: circularRoadWidth,
             },
           },
-        },
-        oneWayMarkers: false,
-        outline: 'strong',
-        restrictions: {
-          access: {
-            widthScale: 1,
-            surface: {
-              casing: {color: matrixPalette.roadCasing, dash: [1, 0], opacity: 0.62},
-              fill: {color: matrixPalette.road, dash: [1, 0], opacity: 1},
-            },
+          serviceTypes: {
+            alley: {enabled: false},
+            crossover: {enabled: false},
+            driveway: {enabled: false},
+            parkingAisle: {enabled: false},
+            yard: {enabled: false},
           },
-          toll: {surface: {casing: {opacity: 1}}},
-        },
-        roundabouts: {
-          casing: {
-            color: 'rgba(0, 0, 0, 0)',
-            minZoom: 15,
-            pitchAlignment: 'map',
-            pitchScale: 'map',
-            radius: expression<number>(circularRoadCasingRadius),
-            strokeColor: roundaboutNeonColor,
-            strokeWidth: expression<number>(circularRoadCasingWidth),
+          sidewalks: {
+            outline: {visible: false},
+            pattern: {visible: false},
+            surface: {visible: false},
           },
-          fill: {
-            color: 'rgba(0, 0, 0, 0)',
-            minZoom: 15,
-            pitchAlignment: 'map',
-            pitchScale: 'map',
-            radius: expression<number>(circularRoadRadius),
-            strokeColor: matrixPalette.road,
-            strokeWidth: expression<number>(circularRoadWidth),
-          },
+          weight: 'regular',
+        }),
+        {
+          ...matrixPathRenderStack(),
+          ...matrixPrincipalRoadRenderStack(),
         },
-        serviceTypes: {
-          alley: {enabled: false},
-          crossover: {enabled: false},
-          driveway: {enabled: false},
-          parkingAisle: {enabled: false},
-          yard: {enabled: false},
-        },
-        sidewalks: {
-          outline: {visible: false},
-          pattern: {visible: false},
-          surface: {visible: false},
-        },
-        weight: 'regular',
-      }),
+      ),
       transit: transit(mapboxRailTransitStyle(matrixPalette.orange)),
-      landforms: landforms({enabled: false}),
-      poi: poi({
-        categories: ['transport', 'arts-entertainment'],
-        color: 'category',
-        density: 2,
-        enabled: true,
-        icons: false,
-        labels: true,
-        minZoom: 15,
-        placement: {
-          coupleIconAndLabel: false,
-          iconPadding: 4,
-          textPadding: 4,
+      landforms: disable(),
+      poi: withRenderStack(
+        poi({
+          categories: ['transport', 'arts-entertainment'],
+          color: 'category',
+          density: 2,
+          icons: false,
+          labels: true,
+          minZoom: 15,
+          placement: {
+            coupleIconAndLabel: false,
+            iconPadding: 4,
+            textPadding: 4,
+          },
+        }),
+        {
+          ...matrixPoiLabelRenderStack(),
+          ...matrixDestinationRenderStack(),
         },
-      }),
-      vegetation: vegetation({enabled: false}),
+      ),
+      vegetation: disable(),
       // Keep hydrography driven solely by Matrix's dark theme.
-      water: water(),
+      water: withRenderStack(water(), matrixWaterRenderStack()),
     },
     projection: 'mercator',
-    ...defineModuleEffects([
-      addModuleLayer(
-        'boundaries',
-        'boundaries.admin2.background',
-        {
-          id: 'streets-boundary-admin2-background',
-          type: 'line',
-          source: 'tileflow',
-          'source-layer': semanticLayer('boundary'),
-          minzoom: 1,
-          filter: [
-            'all',
-            ['==', ['to-number', ['get', semanticField('adminLevel')], 0], 2],
-            ['!=', ['to-number', ['get', semanticField('maritime')], 0], 1],
-          ],
-          paint: {
-            'line-blur': ['interpolate', ['linear'], ['zoom'], 3, 0, 12, 2],
-            'line-color': token.color('boundaries.halo'),
-            'line-opacity': ['interpolate', ['linear'], ['zoom'], 3, 0, 4, 0.5],
-            'line-width': ['interpolate', ['linear'], ['zoom'], 3, 4, 12, 8],
-          },
-        },
-        {before: 'boundaries.admin4'},
-      ),
-      ...matrixLabelSignals(),
-      ...matrixPathOverrides(),
-      ...matrixPrincipalRoadNeon(),
-      ...matrixBuildingGhost(),
-      ...matrixDestinationBeacons(),
-      ...matrixPlanarSystems(),
-      addModuleLayer(
-        'labels',
-        'labels.effects.crtMask',
-        {
-          id: 'matrix-crt-mask',
-          type: 'background',
-          metadata: {'tileflow:module': 'labels'},
-          paint: {
-            'background-opacity': 0.84,
-            'background-pattern': 'matrix-crt-scanlines',
-          },
-        },
-        {before: 'labels.roads.motorway'},
-        {requires: ['roads']},
-      ),
-    ]),
     terrain: 'none',
     view: {
       bearing: 0,

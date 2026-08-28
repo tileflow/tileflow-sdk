@@ -27,8 +27,17 @@ export const tileflowLayerSlots = [
 
 export type TileflowLayerSlot = (typeof tileflowLayerSlots)[number];
 
-/** Portable dotted identifier used to trace a physical layer to its semantic authoring target. */
-export const tileflowLayerTargetPattern = /^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*$/;
+/**
+ * Portable dotted identifier for one semantic layer-family contribution.
+ *
+ * V1 reserves a lowercase domain-like first segment. Following segments are
+ * case-preserving portable identifiers so existing camelCase semantic names
+ * remain stable.
+ */
+export const tileflowSemanticTargetPattern = /^[a-z][a-z0-9-]*(?:\.[A-Za-z0-9_-]+)*$/u;
+
+/** One lowercase-initial portable render-stack name. Dots belong only to full targets. */
+export const tileflowRenderStackOperationNamePattern = /^[a-z][A-Za-z0-9_-]*$/u;
 
 /** Compiler-only provenance. These keys are removed before Style JSON leaves core. */
 export const tileflowCompilerMetadataKeys = Object.freeze({
@@ -37,7 +46,17 @@ export const tileflowCompilerMetadataKeys = Object.freeze({
   target: 'tileflow:compiler-target',
 } as const);
 
+/** Explicit semantic cohort declaration consumed by the physical planner. */
+export type TileflowPhysicalFamilyDeclaration = Readonly<{
+  group: string;
+  kind: 'fill' | 'road-hatch' | 'road-label' | 'road-line' | 'waterway';
+  member: string;
+  outputKey?: string;
+  variant?: string;
+}>;
+
 export type TileflowLayerContribution = {
+  family?: TileflowPhysicalFamilyDeclaration;
   kind: 'layer';
   layer: Record<string, unknown> & {id: string; type: string};
   localOrder: number;

@@ -3,15 +3,15 @@ import {
   tileflowCompilerMetadataKeys,
   type TileflowLayerSlot,
   tileflowLayerSlots,
-  tileflowLayerTargetPattern,
+  tileflowSemanticTargetPattern,
 } from './contributions';
 import {type TileflowLayerDomain, tileflowLayerDomains} from './domains';
 
-/** Version of the build-only style inspection sidecar. */
+/** Version of the opt-in, read-only physical-output inspection sidecar. */
 export const tileflowStyleInspectionSchemaVersion = 1 as const;
 
-export type TileflowStyleInspectionEffect = {
-  readonly kind: 'add' | 'patch';
+export type TileflowStyleInspectionRenderOperation = {
+  readonly kind: 'pass' | 'refinement';
   readonly owner: TileflowLayerDomain;
   readonly target: string;
 };
@@ -21,19 +21,24 @@ export type TileflowStyleInspectionContribution = {
   readonly owner: TileflowLayerDomain;
   readonly slot: TileflowLayerSlot;
   readonly target: string;
-  /** Ordered module-effect chain applied before physical-layer optimization. */
-  readonly effects: readonly TileflowStyleInspectionEffect[];
+  /** Ordered semantic render operations represented by this contribution. */
+  readonly operations: readonly TileflowStyleInspectionRenderOperation[];
 };
 
 export type TileflowStyleInspectionLayer = {
+  /** Opaque physical output identity for diagnostics; never a public authoring target. */
   readonly id: string;
   readonly index: number;
   readonly type: string;
-  /** Multiple entries are expected when the optimizer combines semantic layers. */
+  /** Multiple entries are expected when the physical planner combines semantic layers. */
   readonly contributions: readonly TileflowStyleInspectionContribution[];
 };
 
-/** Build-only cartographic provenance. This object is never embedded in Style JSON. */
+/**
+ * Opt-in, read-only cartographic provenance for diagnostics and build tooling.
+ * Physical IDs are output observations, not stable or addressable authoring APIs.
+ * This object is never embedded in Style JSON.
+ */
 export type TileflowStyleInspection = {
   readonly schemaVersion: typeof tileflowStyleInspectionSchemaVersion;
   readonly map: string;
@@ -54,28 +59,25 @@ export function createTileflowCompilerProvenance(
   slot: TileflowLayerSlot,
   target: string,
 ): readonly TileflowStyleInspectionContribution[] {
-  return [{owner, slot, target, effects: []}];
+  return [{operations: [], owner, slot, target}];
 }
 
-/**
- * Append one effect without changing compilation when provenance is unavailable.
- * Direct internal callers predating compiler metadata remain supported; the normal
- * compiler path always provides a slot and therefore always records the effect.
- */
-export function appendTileflowCompilerEffect(
+/** Append one render operation to compiler-private provenance. */
+export function appendTileflowCompilerRenderOperation(
   layer: Record<string, unknown>,
-  effect: TileflowStyleInspectionEffect,
+  operation: TileflowStyleInspectionRenderOperation,
   fallbackSlot?: string,
 ): readonly TileflowStyleInspectionContribution[] | undefined {
   const contributions = readTileflowCompilerProvenance(layer);
   const matchingIndex = contributions.findIndex(
-    (contribution) => contribution.owner === effect.owner && contribution.target === effect.target,
+    (contribution) =>
+      contribution.owner === operation.owner && contribution.target === operation.target,
   );
 
   if (matchingIndex >= 0) {
     return contributions.map((contribution, index) =>
       index === matchingIndex
-        ? {...contribution, effects: [...contribution.effects, {...effect}]}
+        ? {...contribution, operations: [...contribution.operations, {...operation}]}
         : contribution,
     );
   }
@@ -84,11 +86,11 @@ export function appendTileflowCompilerEffect(
   if (!slot) return contributions.length > 0 ? contributions : undefined;
   return [
     ...contributions,
-    {owner: effect.owner, slot, target: effect.target, effects: [{...effect}]},
+    {operations: [{...operation}], owner: operation.owner, slot, target: operation.target},
   ];
 }
 
-/** Preserve every semantic origin when the optimizer emits one physical cohort. */
+/** Preserve every semantic origin when the physical planner emits one physical cohort. */
 export function withMergedTileflowCompilerProvenance<T extends Record<string, unknown>>(
   layer: T,
   members: readonly Record<string, unknown>[],
@@ -120,8 +122,8 @@ export function readTileflowCompilerProvenance(
   const owner = requireLayerDomain(metadata[tileflowCompilerMetadataKeys.owner]);
   const slot = requireLayerSlot(metadata[tileflowCompilerMetadataKeys.slot]);
   const target = metadata[tileflowCompilerMetadataKeys.target];
-  return owner && slot && typeof target === 'string' && tileflowLayerTargetPattern.test(target)
-    ? [{owner, slot, target, effects: []}]
+  return owner && slot && typeof target === 'string' && tileflowSemanticTargetPattern.test(target)
+    ? [{operations: [], owner, slot, target}]
     : [];
 }
 
@@ -148,27 +150,32 @@ function parseContribution(value: unknown): TileflowStyleInspectionContribution 
   const owner = requireLayerDomain(input.owner);
   const slot = requireLayerSlot(input.slot);
   const target = input.target;
-  if (!owner || !slot || typeof target !== 'string' || !tileflowLayerTargetPattern.test(target)) {
+  if (
+    !owner ||
+    !slot ||
+    typeof target !== 'string' ||
+    !tileflowSemanticTargetPattern.test(target)
+  ) {
     return undefined;
   }
-  const effects = Array.isArray(input.effects)
-    ? input.effects.flatMap((effect) => {
-        const parsed = parseEffect(effect);
+  const operations = Array.isArray(input.operations)
+    ? input.operations.flatMap((operation) => {
+        const parsed = parseRenderOperation(operation);
         return parsed ? [parsed] : [];
       })
     : [];
-  return {owner, slot, target, effects};
+  return {operations, owner, slot, target};
 }
 
-function parseEffect(value: unknown): TileflowStyleInspectionEffect | undefined {
+function parseRenderOperation(value: unknown): TileflowStyleInspectionRenderOperation | undefined {
   const input = asRecord(value);
   const owner = requireLayerDomain(input.owner);
   const target = input.target;
   if (
-    (input.kind !== 'add' && input.kind !== 'patch') ||
+    (input.kind !== 'pass' && input.kind !== 'refinement') ||
     !owner ||
     typeof target !== 'string' ||
-    !tileflowLayerTargetPattern.test(target)
+    !tileflowSemanticTargetPattern.test(target)
   ) {
     return undefined;
   }

@@ -4,7 +4,6 @@ import test from 'node:test';
 import {
   attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
-  createTileflowMarkerController,
   createTileflowSessionStarter,
   createTileflowThemeController,
   createTileflowTransformRequest,
@@ -1158,47 +1157,6 @@ test('transform request can be omitted, remains a no-op when forced, and propaga
     transformRequest: () => Promise.reject(expected),
   });
   await assert.rejects(rejecting('https://example.com/tile.pbf') as Promise<unknown>, expected);
-});
-
-test('marker replacement cleans previous and partially attached batches and remains reusable', () => {
-  type MarkerDefinition = {id: string};
-  type Marker = {id: string; removed: number};
-  const created: Marker[] = [];
-  const attached: string[] = [];
-  const controller = createTileflowMarkerController<object, MarkerDefinition, Marker>({
-    attach: (marker) => {
-      attached.push(marker.id);
-      if (marker.id === 'broken') throw new Error('attach failed');
-    },
-    create: ({id}) => {
-      const marker = {id, removed: 0};
-      created.push(marker);
-      return marker;
-    },
-    remove: (marker) => {
-      marker.removed += 1;
-      if (marker.id === 'partial') throw new Error('remove failed');
-    },
-  });
-  const map = {};
-
-  controller.replace(map, [{id: 'old'}]);
-  assert.throws(() => controller.replace(map, [{id: 'partial'}, {id: 'broken'}]), /attach failed/);
-  assert.deepEqual(
-    created.map(({id, removed}) => ({id, removed})),
-    [
-      {id: 'old', removed: 1},
-      {id: 'partial', removed: 1},
-      {id: 'broken', removed: 1},
-    ],
-  );
-
-  controller.clear();
-  controller.replace(map, [{id: 'recovered'}]);
-  controller.dispose();
-  controller.dispose();
-  assert.equal(created.at(-1)?.removed, 1);
-  assert.deepEqual(attached, ['old', 'partial', 'broken', 'recovered']);
 });
 
 function registerTestWorldBridge(input: {

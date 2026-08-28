@@ -461,12 +461,12 @@ function generationFiles(inventory: TestInventory): string[] {
 }
 
 function config(mapNames: string[]): string {
-  return `import {defineMap} from '@tileflow/core';
+  return `import {defineMap, disable} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 export default {maps:{${mapNames
     .map(
       (name) =>
-        `${JSON.stringify(name)}:defineMap({id:${JSON.stringify(name)},version:1,extends:streets,icons:[],modules:{poi:{type:'poi',icons:false},roads:{type:'roads',enabled:false}},glyphs:${fixtureGlyphsSource}})`,
+        `${JSON.stringify(name)}:defineMap({id:${JSON.stringify(name)},version:1,extends:streets,icons:[],modules:{poi:{type:'poi',icons:false},roads:disable()},glyphs:${fixtureGlyphsSource}})`,
     )
     .join(',')}}};\n`;
 }

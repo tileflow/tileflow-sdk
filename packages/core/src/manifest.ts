@@ -1,6 +1,7 @@
 import {z} from 'zod';
 import {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
 import type {TileflowStyleFontFace} from './runtime';
+import {tileflowThemeLimits} from './themes';
 import type {TileflowViewConfig} from './types';
 
 /** The first and only public multi-theme runtime manifest contract. */
@@ -117,8 +118,13 @@ const manifestMapSchema: z.ZodType<TileflowRuntimeManifestMapEntry> = z
     if (names.length === 0) {
       context.addIssue({code: 'custom', message: 'Expected at least one theme', path: ['themes']});
     }
-    if (names.length > 64) {
-      context.addIssue({code: 'too_big', maximum: 64, origin: 'object', path: ['themes']});
+    if (names.length > tileflowThemeLimits.maxThemes) {
+      context.addIssue({
+        code: 'too_big',
+        maximum: tileflowThemeLimits.maxThemes,
+        origin: 'object',
+        path: ['themes'],
+      });
     }
     if (!Object.hasOwn(entry.themes, entry.defaultTheme)) {
       context.addIssue({

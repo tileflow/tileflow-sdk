@@ -2,7 +2,8 @@ import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
-import {createStyle, defineMap, openMapTiles, resolveMap, vectorTiles} from '@tileflow/core';
+import {defineMap, openMapTiles, resolveMap, vectorTiles} from '@tileflow/core';
+import {createStyleWithInspection} from '@tileflow/core/build';
 import {soundings, soundingsIcons} from '../src';
 
 const soundingsIconIds = [
@@ -22,26 +23,31 @@ const preparedAssets = {
   icons: {ids: soundingsIconIds, sprite: '/tileflow/icons/soundings/sprite'},
 } as const;
 
-test('Soundings is a frozen independent root with only its own asset directory', async () => {
+test('Soundings is a frozen independent map with only its own asset directory', async () => {
   assert.equal(Object.isFrozen(soundings), true);
-  assert.deepEqual(soundings.root, {compiler: 'streets', compilerVersion: 1});
+  assert.equal('root' in soundings, false);
   assert.equal('extends' in soundings, false);
   assert.deepEqual(resolveMap(soundings).icons, [soundingsIcons]);
 
   const source = await readFile(new URL('../src/official/soundings.ts', import.meta.url), 'utf8');
-  assert.match(source, /\bdefineRootMap\s*\(/u);
+  assert.match(source, /\bdefineMap\s*\(/u);
   assert.doesNotMatch(source, /from\s+['"]\.\/streets['"]/u);
   assert.doesNotMatch(source, /\bextends\s*:\s*streets\b/u);
   assert.doesNotMatch(source, /\bstreets\.icons\b/u);
+  assert.doesNotMatch(
+    source,
+    /@tileflow\/core\/recipe|defineModuleEffects|semanticField|semanticLayer/u,
+  );
 });
 
 test('Soundings compiles a focused bathymetric chart from World and Bathymetry', () => {
-  const style = createStyle(soundings, {preparedAssets});
+  const compiled = createStyleWithInspection(soundings, {preparedAssets});
+  const {style} = compiled;
   const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
 
   assert.equal(style.metadata?.['tileflow:map'], 'soundings');
   assert.equal(style.metadata?.['tileflow:extends'], undefined);
-  assert.equal(style.metadata?.['tileflow:root'], 'streets');
+  assert.equal(style.metadata?.['tileflow:compiler'], 'tileflow-semantic');
   assert.deepEqual(soundings.view, {
     bearing: 0,
     center: [-5.6, 36.05],
@@ -69,19 +75,19 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
   assert.equal(style.sprite, '/tileflow/icons/soundings/sprite');
   assert.deepEqual(validateStyleMin(style as never), []);
 
-  assert.equal(byId.get('streets-background')?.paint?.['background-color'], '#EADDB9');
+  assert.equal(byId.get('tileflow-background')?.paint?.['background-color'], '#EADDB9');
   assert.equal(
-    byId.get('streets-background')?.paint?.['background-pattern'],
+    byId.get('tileflow-background')?.paint?.['background-pattern'],
     'soundings-paper-grain',
   );
-  assert.equal(byId.get('streets-water')?.paint?.['fill-color'], '#F7FBF8');
+  assert.equal(byId.get('tileflow-water')?.paint?.['fill-color'], '#F7FBF8');
 
   for (const pattern of [
-    /^streets-road-/u,
-    /^streets-buildings?-/u,
-    /^streets-address/u,
-    /^streets-aeroway/u,
-    /^streets-transit-(?:rail|cableway)/u,
+    /^tileflow-road-/u,
+    /^tileflow-buildings?-/u,
+    /^tileflow-address/u,
+    /^tileflow-aeroway/u,
+    /^tileflow-transit-(?:rail|cableway)/u,
   ]) {
     assert.equal(
       style.layers.some(({id}) => pattern.test(id)),
@@ -90,11 +96,11 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
     );
   }
 
-  const bathymetry = byId.get('streets-bathymetry');
-  const bathymetryColorRelief = byId.get('streets-bathymetry-color-relief');
-  const bathymetryRelief = byId.get('streets-bathymetry-relief');
-  const bathymetryContours = byId.get('streets-bathymetry-contours');
-  const bathymetryLabels = byId.get('streets-bathymetry-labels');
+  const bathymetry = byId.get('tileflow-bathymetry');
+  const bathymetryColorRelief = byId.get('tileflow-bathymetry-color-relief');
+  const bathymetryRelief = byId.get('tileflow-bathymetry-relief');
+  const bathymetryContours = byId.get('tileflow-bathymetry-contours');
+  const bathymetryLabels = byId.get('tileflow-bathymetry-labels');
   assert.ok(bathymetry);
   assert.equal(bathymetry['source-layer'], 'bathymetry');
   assert.match(JSON.stringify(bathymetry.paint?.['fill-color']), /#BBDDDC/u);
@@ -121,8 +127,8 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
   assert.deepEqual(bathymetryRelief?.paint?.['hillshade-illumination-altitude'], [45, 45, 45, 45]);
   assert.equal(bathymetryRelief?.paint?.['hillshade-exaggeration'], 0.24);
   assert.ok(
-    style.layers.findIndex(({id}) => id === 'streets-bathymetry-relief') <
-      style.layers.findIndex(({id}) => id === 'streets-bathymetry-labels'),
+    style.layers.findIndex(({id}) => id === 'tileflow-bathymetry-relief') <
+      style.layers.findIndex(({id}) => id === 'tileflow-bathymetry-labels'),
   );
   assert.ok(bathymetryContours);
   assert.equal(bathymetryContours['source-layer'], 'bathymetry');
@@ -155,52 +161,53 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
     false,
   );
 
-  const pierOutline = byId.get('soundings-pier-outline');
-  const pierDeck = byId.get('soundings-pier-deck');
+  const pierOutline = compiledLayer(compiled, 'water.render.pierOutline');
+  const pierDeck = compiledLayer(compiled, 'water.render.pierDeck');
   assert.equal(pierOutline?.['source-layer'], 'transportation');
   assert.equal(pierOutline?.paint?.['line-color'], '#263D3F');
   assert.match(JSON.stringify(pierOutline?.filter), /pier/u);
   assert.equal(pierDeck?.['source-layer'], 'transportation');
   assert.equal(pierDeck?.paint?.['line-color'], '#EADDB9');
+  assert.equal(style.layers.indexOf(pierOutline!) + 1, style.layers.indexOf(pierDeck!));
 
-  const ferryLabels = byId.get('soundings-ferry-route-labels');
+  const ferryLabels = compiledLayer(compiled, 'transit.render.ferryLabels');
   assert.equal(ferryLabels?.['source-layer'], 'transportation_name');
   assert.equal(ferryLabels?.layout?.['symbol-placement'], 'line');
   assert.equal(ferryLabels?.layout?.['text-field']?.[1], 'name');
   assert.match(JSON.stringify(ferryLabels?.filter), /ferry/u);
 
   assert.equal(
-    byId.get('soundings-water-dots-pattern')?.paint?.['fill-pattern'],
+    compiledLayer(compiled, 'water.render.chartDots')?.paint?.['fill-pattern'],
     'soundings-water-dots',
   );
   assert.equal(
-    byId.get('soundings-water-intermittent-dots-pattern')?.paint?.['fill-pattern'],
+    compiledLayer(compiled, 'water.render.intermittentChartDots')?.paint?.['fill-pattern'],
     'soundings-water-dots',
   );
 
   for (const id of [
-    'streets-boundary-maritime',
-    'streets-boundary-disputed',
-    'streets-boundary-disputed-maritime',
+    'tileflow-boundary-maritime',
+    'tileflow-boundary-disputed',
+    'tileflow-boundary-disputed-maritime',
   ]) {
     assert.equal(byId.get(id)?.paint?.['line-color'], '#B12A73', `${id} lost technical magenta`);
   }
-  assert.equal(byId.get('streets-transit-ferry')?.paint?.['line-color'], '#466F73');
-  assert.deepEqual(byId.get('streets-transit-ferry')?.paint?.['line-dasharray'], [7, 2, 1, 2]);
+  assert.equal(byId.get('tileflow-transit-ferry')?.paint?.['line-color'], '#466F73');
+  assert.deepEqual(byId.get('tileflow-transit-ferry')?.paint?.['line-dasharray'], [7, 2, 1, 2]);
 
   assert.equal(
-    [...byId.keys()].some((id) => id.startsWith('streets-poi-')),
+    [...byId.keys()].some((id) => id.startsWith('tileflow-poi-')),
     false,
     'broad World POI categories leaked into the nautical chart',
   );
   for (const id of [
-    'streets-poi-buoy-cardinal-icon',
-    'streets-poi-buoy-port-icon',
-    'streets-poi-buoy-starboard-icon',
-    'streets-poi-light-icon',
-    'streets-poi-lighthouse-icon',
-    'streets-poi-rock-awash-icon',
-    'streets-poi-wreck-icon',
+    'tileflow-poi-buoy-cardinal-icon',
+    'tileflow-poi-buoy-port-icon',
+    'tileflow-poi-buoy-starboard-icon',
+    'tileflow-poi-light-icon',
+    'tileflow-poi-lighthouse-icon',
+    'tileflow-poi-rock-awash-icon',
+    'tileflow-poi-wreck-icon',
   ]) {
     assert.equal(byId.has(id), false, `${id} leaked experimental Nautical content`);
   }
@@ -226,22 +233,24 @@ test('Soundings degrades cleanly on generic OpenMapTiles without bathymetry', ()
     data,
     marine: 'none',
   });
-  const style = createStyle(generic, {preparedAssets});
+  const compiled = createStyleWithInspection(generic, {preparedAssets});
+  const {style} = compiled;
   const ids = new Set(style.layers.map(({id}) => id));
+  const targets = compiledTargets(compiled);
 
-  assert.equal(ids.has('streets-bathymetry'), false);
-  assert.equal(ids.has('streets-bathymetry-contours'), false);
-  assert.equal(ids.has('streets-bathymetry-labels'), false);
-  assert.equal(ids.has('streets-bathymetry-color-relief'), false);
-  assert.equal(ids.has('streets-bathymetry-relief'), false);
+  assert.equal(ids.has('tileflow-bathymetry'), false);
+  assert.equal(ids.has('tileflow-bathymetry-contours'), false);
+  assert.equal(ids.has('tileflow-bathymetry-labels'), false);
+  assert.equal(ids.has('tileflow-bathymetry-color-relief'), false);
+  assert.equal(ids.has('tileflow-bathymetry-relief'), false);
   assert.equal(style.sources['tileflow-bathymetry-dem'], undefined);
-  assert.equal(ids.has('streets-water'), true);
-  assert.equal(ids.has('streets-water-intermittent'), true);
-  assert.equal(ids.has('soundings-water-dots-pattern'), true);
-  assert.equal(ids.has('soundings-water-intermittent-dots-pattern'), true);
-  assert.equal(ids.has('soundings-pier-outline'), true);
-  assert.equal(ids.has('soundings-pier-deck'), true);
-  assert.equal(ids.has('soundings-ferry-route-labels'), true);
+  assert.equal(ids.has('tileflow-water'), true);
+  assert.equal(ids.has('tileflow-water-intermittent'), true);
+  assert.equal(targets.has('water.render.chartDots'), true);
+  assert.equal(targets.has('water.render.intermittentChartDots'), true);
+  assert.equal(targets.has('water.render.pierOutline'), true);
+  assert.equal(targets.has('water.render.pierDeck'), true);
+  assert.equal(targets.has('transit.render.ferryLabels'), true);
   assert.deepEqual(validateStyleMin(style as never), []);
 });
 
@@ -269,4 +278,19 @@ function evaluateBathymetryLabel(
     default:
       throw new Error(`Unsupported Bathymetry label test expression: ${String(value[0])}`);
   }
+}
+
+function compiledTargets(compiled: ReturnType<typeof createStyleWithInspection>): Set<string> {
+  return new Set(
+    compiled.inspection.layers.flatMap((layer) =>
+      layer.contributions.map((contribution) => contribution.target),
+    ),
+  );
+}
+
+function compiledLayer(compiled: ReturnType<typeof createStyleWithInspection>, target: string) {
+  const layerId = compiled.inspection.layers.find((layer) =>
+    layer.contributions.some((contribution) => contribution.target === target),
+  )?.id;
+  return compiled.style.layers.find((layer) => layer.id === layerId);
 }

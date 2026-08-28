@@ -1,16 +1,32 @@
 import {mergeTileflowDesign} from '../cartography/merge';
-import {attachResolvedModuleEffects} from '../cartography/module-effects';
+import {
+  isTileflowModuleOperation,
+  isTileflowReset,
+  type TileflowModuleOperation,
+} from './operations';
 import {
   type ResolvedTileflowMap,
   type ResolveMapOptions,
   type TileflowMap,
   tileflowMapIdSchema,
-  type TileflowMapRoot,
-  type TileflowRootMap,
-  tileflowStreetsCompilerVersion,
 } from './types';
 
 export const tileflowMapDefaultMaxDepth = 64;
+
+/** Structured authoring failure surfaced unchanged by validate/explain JSON commands. */
+export class TileflowMapResolutionError extends Error {
+  readonly code: string;
+  readonly mapId: string;
+  readonly path: string;
+
+  constructor(code: string, mapId: string, path: string, message: string) {
+    super(`Invalid Tileflow map "${mapId}" at ${path}: ${message}`);
+    this.code = code;
+    this.mapId = mapId;
+    this.name = 'TileflowMapResolutionError';
+    this.path = path;
+  }
+}
 
 type MapMergeStrategy =
   | 'atomic'
@@ -36,7 +52,6 @@ export const tileflowMapMergeStrategies = {
   modules: 'modules',
   name: 'identity',
   projection: 'atomic',
-  root: 'lineage',
   scenes: 'leaf',
   systemThemes: 'atomic',
   terrain: 'atomic',
@@ -55,8 +70,6 @@ export function resolveMap(map: TileflowMap, options: ResolveMapOptions = {}): R
   }
 
   const lineage = collectLineage(map, maxDepth);
-  const rootMap = lineage[lineage.length - 1] as TileflowRootMap;
-  assertRoot(rootMap.root, rootMap.id);
 
   const design: Record<string, unknown> = {};
   let modules: Record<string, unknown> | undefined;
@@ -95,7 +108,7 @@ export function resolveMap(map: TileflowMap, options: ResolveMapOptions = {}): R
           if (!isPlainRecord(value)) {
             throw new Error(`Tileflow map "${current.id}" modules must be a plain object.`);
           }
-          modules = {...modules, ...cloneDesign(value)};
+          modules = applyModuleRequests(modules, value, currentId);
           break;
         }
         case 'text-assets': {
@@ -130,13 +143,233 @@ export function resolveMap(map: TileflowMap, options: ResolveMapOptions = {}): R
     id,
     name: leaf.name ?? id,
     version: leaf.version,
-    root: cloneDesign(rootMap.root),
     ...design,
     ...(modules === undefined ? {} : {modules}),
     ...(leaf.delivery === undefined ? {} : {delivery: cloneDesign(leaf.delivery)}),
   } as ResolvedTileflowMap;
-  attachResolvedModuleEffects(resolved, lineage);
   return resolved;
+}
+
+function applyModuleRequests(
+  inherited: Record<string, unknown> | undefined,
+  requests: Record<string, unknown>,
+  mapId: string,
+): Record<string, unknown> {
+  const resolved = cloneDesign(inherited ?? {});
+  for (const [moduleName, request] of Object.entries(requests)) {
+    const path = `/modules/${escapeJsonPointer(moduleName)}`;
+    if (!isPlainRecord(request)) {
+      throw moduleResolutionError(
+        'TILEFLOW_INVALID_MODULE_REQUEST',
+        mapId,
+        path,
+        'Expected a semantic module or module operation.',
+      );
+    }
+
+    if (isTileflowModuleOperation(request)) {
+      applyModuleOperation(resolved, moduleName, request, mapId, path);
+      continue;
+    }
+    if (Object.hasOwn(request, 'op')) {
+      throw moduleResolutionError(
+        'TILEFLOW_INVALID_MODULE_OPERATION',
+        mapId,
+        `${path}/op`,
+        `Unsupported operation ${JSON.stringify(request.op)}.`,
+      );
+    }
+    assertNoTopLevelModuleEnabled(request, mapId, path);
+    assertNoReset(request, mapId, path, false);
+    assertModuleOwner(request, moduleName, mapId, path);
+    resolved[moduleName] = cloneDesign(request);
+  }
+  return resolved;
+}
+
+function applyModuleOperation(
+  resolved: Record<string, unknown>,
+  moduleName: string,
+  operation: TileflowModuleOperation<object>,
+  mapId: string,
+  path: string,
+): void {
+  switch (operation.op) {
+    case 'disable': {
+      assertExactKeys(operation, ['op'], mapId, path);
+      resolved[moduleName] = {enabled: false, type: moduleName};
+      return;
+    }
+    case 'refine': {
+      assertExactKeys(operation, ['op', 'patches'], mapId, path);
+      if (!Array.isArray(operation.patches) || operation.patches.length === 0) {
+        throw moduleResolutionError(
+          'TILEFLOW_INVALID_MODULE_PATCH',
+          mapId,
+          `${path}/patches`,
+          'Expected at least one semantic patch.',
+        );
+      }
+      const inherited = resolved[moduleName];
+      if (!isPlainRecord(inherited)) {
+        throw moduleResolutionError(
+          'TILEFLOW_REFINE_WITHOUT_BASE',
+          mapId,
+          path,
+          'Cannot refine this domain because no inherited module exists; declare it directly on a base map first.',
+        );
+      }
+      let next = cloneDesign(inherited);
+      for (const [index, patch] of operation.patches.entries()) {
+        if (!isPlainRecord(patch) || isTileflowReset(patch)) {
+          throw moduleResolutionError(
+            'TILEFLOW_INVALID_MODULE_PATCH',
+            mapId,
+            `${path}/patches/${index}`,
+            'Expected a semantic record.',
+          );
+        }
+        assertNoTopLevelModulePatchKeys(patch, mapId, `${path}/patches/${index}`);
+        assertNoReset(patch, mapId, `${path}/patches/${index}`, true);
+        next = applyModulePatch(next, patch, mapId, `${path}/patches/${index}`);
+      }
+      assertModuleOwner(next, moduleName, mapId, path);
+      resolved[moduleName] = next;
+      return;
+    }
+    default:
+      assertNever(operation);
+  }
+}
+
+function assertNoTopLevelModuleEnabled(
+  module: Record<string, unknown>,
+  mapId: string,
+  path: string,
+): void {
+  if (!Object.hasOwn(module, 'enabled')) return;
+  throw moduleResolutionError(
+    'TILEFLOW_MODULE_ENABLED_RESERVED',
+    mapId,
+    `${path}/enabled`,
+    'enabled is compiler-owned state; use disable() to suppress a complete semantic domain.',
+  );
+}
+
+function assertNoTopLevelModulePatchKeys(
+  patch: Record<string, unknown>,
+  mapId: string,
+  path: string,
+): void {
+  assertNoTopLevelModuleEnabled(patch, mapId, path);
+  if (!Object.hasOwn(patch, 'type')) return;
+  throw moduleResolutionError(
+    'TILEFLOW_MODULE_TYPE_RESERVED',
+    mapId,
+    `${path}/type`,
+    'type is immutable module ownership and cannot be refined.',
+  );
+}
+
+function applyModulePatch(
+  base: Record<string, unknown>,
+  patch: Record<string, unknown>,
+  mapId: string,
+  path: string,
+): Record<string, unknown> {
+  const result = cloneDesign(base);
+  for (const [key, value] of Object.entries(patch)) {
+    const childPath = `${path}/${escapeJsonPointer(key)}`;
+    if (isTileflowReset(value)) {
+      delete result[key];
+      continue;
+    }
+    const inherited = result[key];
+    result[key] =
+      isPlainRecord(inherited) && isPlainRecord(value)
+        ? applyModulePatch(inherited, value, mapId, childPath)
+        : cloneDesign(value);
+  }
+  return result;
+}
+
+function assertNoReset(value: unknown, mapId: string, path: string, allowReset: boolean): void {
+  if (isTileflowReset(value)) {
+    if (!allowReset) {
+      throw moduleResolutionError(
+        'TILEFLOW_RESET_OUTSIDE_REFINE',
+        mapId,
+        path,
+        'reset() is only valid inside refine().',
+      );
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const [index, child] of value.entries()) {
+      if (isTileflowReset(child)) {
+        throw moduleResolutionError(
+          'TILEFLOW_RESET_IN_ARRAY',
+          mapId,
+          `${path}/${index}`,
+          'reset() cannot appear inside an array.',
+        );
+      }
+      assertNoReset(child, mapId, `${path}/${index}`, false);
+    }
+    return;
+  }
+  if (!isPlainRecord(value)) return;
+  for (const [key, child] of Object.entries(value)) {
+    assertNoReset(child, mapId, `${path}/${escapeJsonPointer(key)}`, allowReset);
+  }
+}
+
+function assertModuleOwner(
+  module: Record<string, unknown>,
+  moduleName: string,
+  mapId: string,
+  path: string,
+): void {
+  if (module.type !== moduleName) {
+    throw moduleResolutionError(
+      'TILEFLOW_MODULE_OWNER_MISMATCH',
+      mapId,
+      `${path}/type`,
+      `Expected ${JSON.stringify(moduleName)}, received ${JSON.stringify(module.type)}.`,
+    );
+  }
+}
+
+function assertExactKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+  mapId: string,
+  path: string,
+): void {
+  const allowed = new Set(expected);
+  const unexpected = Object.keys(value).find((key) => !allowed.has(key));
+  if (unexpected) {
+    throw moduleResolutionError(
+      'TILEFLOW_INVALID_MODULE_OPERATION',
+      mapId,
+      `${path}/${escapeJsonPointer(unexpected)}`,
+      `Property is not valid for ${String(value.op)}().`,
+    );
+  }
+}
+
+function moduleResolutionError(
+  code: string,
+  mapId: string,
+  path: string,
+  message: string,
+): TileflowMapResolutionError {
+  return new TileflowMapResolutionError(code, mapId, path, message);
+}
+
+function escapeJsonPointer(value: string): string {
+  return value.replaceAll('~', '~0').replaceAll('/', '~1');
 }
 
 function collectLineage(map: TileflowMap, maxDepth: number): TileflowMap[] {
@@ -175,15 +408,11 @@ function collectLineage(map: TileflowMap, maxDepth: number): TileflowMap[] {
     }
 
     assertIdentity(current);
-    const hasRoot = current.root !== undefined;
     const hasParent = current.extends !== undefined;
-    if (hasRoot === hasParent) {
-      throw new Error(`Tileflow map "${current.id}" must define exactly one of root or extends.`);
-    }
 
     seen.set(current, lineage.length);
     lineage.push(current as TileflowMap);
-    if (hasRoot) return lineage;
+    if (!hasParent) return lineage;
     current = current.extends;
   }
 }
@@ -204,20 +433,6 @@ function parseMapId(input: unknown): string {
   throw new Error(
     `Tileflow map id must be portable and at most 64 characters: ${result.error.issues[0]?.message ?? 'Invalid identifier'}.`,
   );
-}
-
-function assertRoot(root: TileflowMapRoot, mapId: string): void {
-  if (
-    !isRecord(root) ||
-    root.compiler !== 'streets' ||
-    root.compilerVersion !== tileflowStreetsCompilerVersion ||
-    Object.keys(root).some((key) => key !== 'compiler' && key !== 'compilerVersion')
-  ) {
-    throw new Error(
-      `Tileflow map "${mapId}" has an unsupported root; expected ` +
-        `{compiler: "streets", compilerVersion: ${tileflowStreetsCompilerVersion}}.`,
-    );
-  }
 }
 
 function mergeOptionalDesign(base: unknown, overlay: unknown): unknown {

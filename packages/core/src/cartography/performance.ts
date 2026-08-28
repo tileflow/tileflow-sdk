@@ -2,8 +2,6 @@ import type {MapLibreStyle} from '../types';
 
 export type TileflowZoomPerformance = {
   activeLayers: number;
-  /** @deprecated Use styleLayerFamilies. This is not a count of runtime tile buckets. */
-  estimatedBuckets: number;
   sourceLayers: Record<string, number>;
   styleLayerFamilies: number;
   symbols: number;
@@ -38,7 +36,6 @@ export function analyzeTileflowStylePerformance(
       return {
         zoom,
         activeLayers: active.length,
-        estimatedBuckets: styleLayerFamilies,
         styleLayerFamilies,
         symbols: active.filter((layer) => layer.type === 'symbol').length,
         sourceLayers: Object.fromEntries(

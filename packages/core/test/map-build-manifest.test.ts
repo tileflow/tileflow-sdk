@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {defineMap} from '../src';
+import {defineMap, parseTileflowMap} from '../src';
 import {
   collectTileflowMapBuildLineage,
   createTileflowMapBuildManifest,
@@ -56,9 +56,10 @@ test('verified per-file identities reproduce the byte-backed asset-set hash', as
 test('map revision identifies the complete resolved theme document and source closure', async () => {
   const base = extendStreets({id: 'base'});
   const sameDesign = defineMap({id: 'renamed', version: 7, extends: base});
+  const resolvedBase = parseTileflowMap(base);
   assert.equal(
-    await hashTileflowMapRevision(base, sourceAssets),
-    await hashTileflowMapRevision(sameDesign, sourceAssets),
+    await hashTileflowMapRevision(resolvedBase, sourceAssets),
+    await hashTileflowMapRevision(parseTileflowMap(sameDesign), sourceAssets),
   );
 
   const dark = {...testLightTheme, colorScheme: 'dark' as const, id: 'test-dark'};
@@ -68,8 +69,8 @@ test('map revision identifies the complete resolved theme document and source cl
     themes: {dark, light: testLightTheme},
   });
   assert.notEqual(
-    await hashTileflowMapRevision(base, sourceAssets),
-    await hashTileflowMapRevision(themed, sourceAssets),
+    await hashTileflowMapRevision(resolvedBase, sourceAssets),
+    await hashTileflowMapRevision(parseTileflowMap(themed), sourceAssets),
   );
 
   const changedSources: TileflowEffectiveMapSourceAssets = {
@@ -77,8 +78,8 @@ test('map revision identifies the complete resolved theme document and source cl
     icons: [{format: 'svg', id: 'marker', kind: 'icon', sha256: 'b'.repeat(64)}],
   };
   assert.notEqual(
-    await hashTileflowMapRevision(base, sourceAssets),
-    await hashTileflowMapRevision(base, changedSources),
+    await hashTileflowMapRevision(resolvedBase, sourceAssets),
+    await hashTileflowMapRevision(resolvedBase, changedSources),
   );
 });
 
@@ -94,7 +95,7 @@ test('build manifest records every concrete theme on independent style identity 
     main: {
       assets,
       lineage: collectTileflowMapBuildLineage(map),
-      map,
+      map: parseTileflowMap(map),
       sourceAssets,
       styles: {dark: darkStyle, light: lightStyle},
     },
@@ -102,6 +103,7 @@ test('build manifest records every concrete theme on independent style identity 
 
   const entry = manifest.maps.main!;
   assert.equal(entry.defaultTheme, 'dark');
+  assert.deepEqual(entry.semanticCompiler, {name: 'tileflow-semantic', version: 1});
   assert.deepEqual(entry.systemThemes, {dark: 'dark', light: 'light'});
   assert.deepEqual(Object.keys(entry.themes), ['dark', 'light']);
   assert.equal(entry.themes.dark?.colorScheme, 'dark');
@@ -157,7 +159,7 @@ test('build manifest records raster DEM requirements independently from vector f
     main: {
       assets,
       lineage: collectTileflowMapBuildLineage(map),
-      map,
+      map: parseTileflowMap(map),
       sourceAssets,
       styles: {light: reliefStyle},
     },
@@ -182,7 +184,7 @@ test('build manifest fails closed when compiled and declared theme families drif
   const input = {
     assets,
     lineage: collectTileflowMapBuildLineage(map),
-    map,
+    map: parseTileflowMap(map),
     sourceAssets,
   };
   await assert.rejects(
@@ -205,7 +207,7 @@ test('provenance remains a build axis independent of theme style identities', as
         main: {
           assets,
           lineage: collectTileflowMapBuildLineage(map),
-          map,
+          map: parseTileflowMap(map),
           sourceAssets,
           styles: {light: lightStyle},
         },

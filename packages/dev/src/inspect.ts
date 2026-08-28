@@ -426,6 +426,11 @@ function sortInspectableValue(value: unknown): unknown {
   );
 }
 
+/** Sanitize a deterministic JSON-like authoring value for machine-facing CLI output. */
+export function sanitizeTileflowInspectableValue(value: unknown, cwd: string): unknown {
+  return sanitizeInspectValue(value, cwd);
+}
+
 function sanitizeInspectValue(
   value: unknown,
   cwd: string,

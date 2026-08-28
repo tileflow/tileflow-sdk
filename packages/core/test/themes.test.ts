@@ -8,7 +8,7 @@ import {
   createStyle,
   defineMap,
   defineTheme,
-  expression,
+  disable,
   fixed,
   land,
   parseTileflowMap,
@@ -18,11 +18,7 @@ import {
   token,
   zoom,
 } from '../src';
-import {
-  internalModuleEffects,
-  patchModuleLayer,
-  removeModuleLayer,
-} from '../src/cartography/module-effects';
+import {expression} from '../src/cartography/values';
 import {assertTileflowMapThemeValues, TileflowThemeAuditError} from '../src/themes';
 import {extendStreets, testLightTheme} from './map-fixture';
 
@@ -350,73 +346,13 @@ test('forged runtime theme nodes cannot bypass audit or resolution', () => {
   }
 });
 
-test('theme nodes cannot control structure and retain categories inside compiler effects', () => {
-  const map = extendStreets({
-    modules: {land: land({})},
-    ...internalModuleEffects([
-      patchModuleLayer('land', 'land.background', {
-        filter: ['==', ['get', 'class'], token.color('labels.primary')],
-        layout: {
-          'icon-image': token.color('labels.primary'),
-          visibility: fixed('none', {reason: 'Attempted structural switch'}),
-        },
-        metadata: {color: token.color('labels.primary')},
-        minzoom: token.number('style.minimumZoom'),
-        paint: {'fill-color': token.font('default')},
-      }),
-    ]),
-  });
-
-  const diagnostics = auditTileflowMapThemeValues(map).filter(
-    ({scope}) => scope === 'compiler-effect',
-  );
-  assert.deepEqual(
-    diagnostics.map(({category, path, severity}) => ({category, path, severity})),
-    [
-      {
-        category: 'color',
-        path: 'compilerEffects.land.background.patch.filter[2]',
-        severity: 'error',
-      },
-      {
-        category: 'image',
-        path: 'compilerEffects.land.background.patch.layout.icon-image',
-        severity: 'error',
-      },
-      {
-        category: 'color',
-        path: 'compilerEffects.land.background.patch.layout.visibility',
-        severity: 'error',
-      },
-      {
-        category: 'color',
-        path: 'compilerEffects.land.background.patch.metadata.color',
-        severity: 'error',
-      },
-      {
-        category: 'number',
-        path: 'compilerEffects.land.background.patch.minzoom',
-        severity: 'error',
-      },
-      {
-        category: 'color',
-        path: 'compilerEffects.land.background.patch.paint.fill-color',
-        severity: 'error',
-      },
-    ],
-  );
-  assert.throws(
-    () => createStyle(map),
-    (error: unknown) =>
-      error instanceof TileflowThemeAuditError && error.diagnostics.length === diagnostics.length,
-  );
-
+test('theme nodes cannot control structural compiler fields', () => {
   assert.throws(
     () =>
       resolveThemeValues(
         {filter: ['==', ['get', 'class'], token.color('labels.primary')]},
         testLightTheme,
-        'compilerEffects.land.background.patch',
+        'modules.land.renderStack.example',
       ),
     /outside a categorized visual property.*cannot control filters/u,
   );
@@ -569,14 +505,13 @@ test('selection is concrete and createStyle compiles the selected named theme', 
     extends: {
       id: 'themed-root',
       version: 1,
-      root: {compiler: 'streets', compilerVersion: 1},
       defaultTheme: 'light',
       glyphs: {
         kind: 'url',
         url: 'https://example.test/glyphs/{fontstack}/{range}.pbf',
         fontStacks: ['Noto Sans Regular'],
       },
-      modules: {poi: {type: 'poi', enabled: false}},
+      modules: {poi: disable()},
       themes: {dark, light: testLightTheme},
     },
     defaultTheme: 'dark',
@@ -703,7 +638,7 @@ test('the blocking map audit throws structured resource errors but retains numbe
   );
 });
 
-test('the map audit covers modules, terrain, compiler effects, and typed expression outputs', () => {
+test('the map audit covers modules, terrain, and typed expression outputs', () => {
   const diagnostics = auditTileflowMapThemeValues({
     modules: {
       vegetation: {
@@ -722,38 +657,11 @@ test('the map audit covers modules, terrain, compiler effects, and typed express
       },
     },
     terrain: {hillshade: {accentColor: '#654321', exaggeration: 0.42}, minZoom: 4},
-    ...internalModuleEffects([
-      patchModuleLayer('land', 'land.background', {
-        filter: ['==', ['get', 'rank'], 3],
-        paint: {
-          'fill-color': ['case', ['boolean', ['get', 'selected'], false], '#abcdef', '#fedcba'],
-          'line-width': 2,
-        },
-      }),
-    ]),
   });
 
   assert.deepEqual(
     diagnostics.map(({category, path, scope, value}) => ({category, path, scope, value})),
     [
-      {
-        category: 'color',
-        path: 'compilerEffects.land.background.patch.paint.fill-color[2]',
-        scope: 'compiler-effect',
-        value: '#abcdef',
-      },
-      {
-        category: 'color',
-        path: 'compilerEffects.land.background.patch.paint.fill-color[3]',
-        scope: 'compiler-effect',
-        value: '#fedcba',
-      },
-      {
-        category: 'number',
-        path: 'compilerEffects.land.background.patch.paint.line-width',
-        scope: 'compiler-effect',
-        value: 2,
-      },
       {
         category: 'color',
         path: 'modules.land.fill.color',
@@ -797,19 +705,6 @@ test('the map audit covers modules, terrain, compiler effects, and typed express
         value: 0.42,
       },
     ],
-  );
-  const effects = diagnostics.filter(({scope}) => scope === 'compiler-effect');
-  assert.equal(
-    effects.every(({effectKind}) => effectKind === 'patch'),
-    true,
-  );
-  assert.equal(
-    effects.every(({owner}) => owner === 'land'),
-    true,
-  );
-  assert.equal(
-    effects.every(({target}) => target === 'land.background'),
-    true,
   );
   assert.equal(
     diagnostics.some(({path}) => /minZoom|filter/u.test(path)),
@@ -959,20 +854,5 @@ test('numeric vectors and zoom outputs require visible invariant intent', () => 
       {path: 'modules.roads.line.dash[1]', severity: 'warning', value: 1},
       {path: 'modules.roads.line.width.stops[0][1]', severity: 'warning', value: 0.5},
     ],
-  );
-});
-
-test('compiler effect locators stay stable when unrelated effects are inserted', () => {
-  const target = patchModuleLayer('land', 'land.background', {
-    paint: {'fill-color': '#123456'},
-  });
-  const inspect = (effects: Parameters<typeof internalModuleEffects>[0]) =>
-    auditTileflowMapThemeValues({...internalModuleEffects(effects)}).filter(
-      ({target: effectTarget}) => effectTarget === 'land.background',
-    );
-
-  assert.deepEqual(
-    inspect([target]),
-    inspect([removeModuleLayer('water', 'water.bodies'), target]),
   );
 });

@@ -2,7 +2,6 @@
   "id": "complete-example",
   "name": "Complete Tileflow theme example",
   "version": 1,
-  "root": {"compiler": "streets", "compilerVersion": 1},
   "glyphs": {
     "kind": "url",
     "url": "https://cdn.example.com/glyphs/v1/{fontstack}/{range}.pbf",

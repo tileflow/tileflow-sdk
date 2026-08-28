@@ -27,10 +27,10 @@ const streetsPreparedAssets = {
 const compileTestMap = (design: Parameters<typeof extendStreets>[0] = {}) =>
   createStyle(extendStreets(design), {preparedAssets: streetsPreparedAssets});
 
-test('default Streets recipe renders standard house numbers and named landforms', () => {
+test('default semantic modules render standard house numbers and named landforms', () => {
   const style = compileTestMap();
-  const address = style.layers.find(({id}) => id === 'streets-addresses-labels');
-  const peak = style.layers.find(({id}) => id === 'streets-landforms');
+  const address = style.layers.find(({id}) => id === 'tileflow-addresses-labels');
+  const peak = style.layers.find(({id}) => id === 'tileflow-landforms');
   const modules = style.metadata?.['tileflow:modules'] as string[];
 
   assert.equal(address?.['source-layer'], 'housenumber');
@@ -62,10 +62,10 @@ test('address, landform, language, capital, and elevation bindings are remappabl
     }),
     modules: {labels: labels({aerodromeCodes: 'all', language: 'en'})},
   });
-  const address = style.layers.find(({id}) => id === 'streets-addresses-labels');
-  const peak = style.layers.find(({id}) => id === 'streets-landforms');
-  const city = style.layers.find(({id}) => id === 'streets-label-place-city');
-  const aerodrome = style.layers.find(({id}) => id === 'streets-label-aerodrome');
+  const address = style.layers.find(({id}) => id === 'tileflow-addresses-labels');
+  const peak = style.layers.find(({id}) => id === 'tileflow-landforms');
+  const city = style.layers.find(({id}) => id === 'tileflow-label-place-city');
+  const aerodrome = style.layers.find(({id}) => id === 'tileflow-label-aerodrome');
 
   assert.equal(address?.['source-layer'], 'address_points');
   assert.match(JSON.stringify(address), /street_no/);
@@ -97,13 +97,13 @@ test('new semantic modules can be styled or disabled without raw layer IDs', () 
       }),
     },
   });
-  const address = style.layers.find(({id}) => id === 'streets-addresses-labels');
-  const peak = style.layers.find(({id}) => id === 'streets-landform-peak');
+  const address = style.layers.find(({id}) => id === 'tileflow-addresses-labels');
+  const peak = style.layers.find(({id}) => id === 'tileflow-landform-peak');
 
   assert.equal(address?.minzoom, 18);
   assert.equal((address?.paint as Record<string, unknown>)['text-color'], '#334455');
   assert.equal(
-    style.layers.some(({id}) => id === 'streets-landform-cliff'),
+    style.layers.some(({id}) => id === 'tileflow-landform-cliff'),
     false,
   );
   assert.doesNotMatch(JSON.stringify(peak), /elevation|ele|height_m/);

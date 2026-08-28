@@ -5,8 +5,8 @@ import {
   serializeCanonicalJson,
   serializeTileflowFontBundleManifest,
   tileflowFontBundleLimits,
-  tileflowFontBundleManifestSchema,
   type TileflowFontBundleManifest,
+  tileflowFontBundleManifestSchema,
 } from '../src/index';
 
 const fontSha = '1'.repeat(64);

@@ -6,7 +6,6 @@ import type {
 
 export type TileflowAerowaysModuleOptions = {
   area?: TileflowAreaStyle;
-  enabled?: boolean;
   runway?: TileflowLineStackStyle;
   runwayRef?: TileflowSymbolStyle;
   taxiway?: TileflowLineStackStyle;

@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
-import {defineMap} from '@tileflow/core';
+import {defineMap, parseTileflowMap} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 import {type CompiledTileflowIconPackage, compileTileflowIconPackages} from '@tileflow/dev/icons';
 import {
@@ -354,12 +354,14 @@ async function createBaselinePackage(directory: string): Promise<CompiledTileflo
   const compiled = await compileTileflowIconPackages(
     {
       maps: {
-        production: defineMap({
-          id: 'production',
-          version: 1,
-          extends: streets,
-          icons: ['./baseline-icons'],
-        }),
+        production: parseTileflowMap(
+          defineMap({
+            id: 'production',
+            version: 1,
+            extends: streets,
+            icons: ['./baseline-icons'],
+          }),
+        ),
       },
     },
     {cwd: directory, target: 'hosted'},

@@ -8,9 +8,9 @@ to the owning contracts and package READMEs when the plan completes.
 
 Make one tileflow.config.ts export one strict TileflowMap whose result is mechanically predictable
 from ordinary object, array, and extends semantics. Remove legacy aliases and hidden provider
-graphs. Every official map is an independent root; no official map imports or extends another.
+graphs. Every official map is standalone; no official map imports or extends another.
 Streets owns coordinated light and dark themes, while application maps retain ordinary `extends`
-semantics over any imported root.
+semantics over any imported map.
 
 The public authoring contract must be optimized for agents:
 
@@ -22,7 +22,8 @@ The public authoring contract must be optimized for agents:
 
 ## Final decisions
 
-- Identity is leaf-owned. Root and extends are exclusive.
+- Identity is leaf-owned. A standalone map omits `extends`; an inherited map declares exactly one
+  imported parent with `extends`.
 - Modules replace by domain. Replacing or disabling a domain removes every contribution owned by
   that domain.
 - Data, projection, terrain, icons, and the text-asset provider are atomic.
@@ -31,10 +32,8 @@ The public authoring contract must be optimized for agents:
   deep-merges. `defineTheme(base, definition)` materializes a complete document and leaves no theme
   inheritance edge in the resolved map.
 - Scenes and delivery are leaf-only tooling metadata.
-- Raw physical layer overrides leave the public API. Reusable behavior lives in typed modules;
-  editorial-only official refinements may remain compiler-private, owner-scoped semantic
-  contributions. They are discarded atomically with their owning module and never expose source
-  layers, fields, generated layer IDs, or patch operations to map authors.
+- Raw physical layer overrides leave the public API. Reusable and official editorial behavior both
+  use typed modules, owner-local public render stacks, and the same closed semantic expressions.
 - icons is a readonly array of icon directories. Omission inherits, declaration replaces, an empty
   array means none, and later directories win by canonical icon ID.
 - fonts is a readonly array of font directories. Local font files are discovered from OpenType
@@ -61,9 +60,9 @@ has migrated its tests.
 3. Introduce semantic contribution ownership, data layer/field references, capability dependencies,
    and mandatory pre/post MapLibre validation.
 4. Migrate the eight independent Streets, Ferraris, Härad, Siegfried, Soundings, Verdant,
-   Cyberpunk, and Matrix roots away from public/raw physical overrides and captured data bindings
-   into typed modules or owner-scoped compiler semantic contributions. Materialize Streets light and
-   dark as two appearances over its one shared structure.
+   Cyberpunk, and Matrix maps away from public/raw physical overrides and captured data bindings
+   into typed modules and owner-local public render stacks. Materialize Streets light and dark as
+   two appearances over its one shared structure.
 5. Replace icon providers with atomic icon-directory arrays and package-owned directory exports.
    Remove builtin/source/sprite/icon-level extends/mapping/registries and validate every final
    image/pattern.
@@ -82,7 +81,8 @@ has migrated its tests.
 
 ## Required test matrices
 
-- Official parent x 12 domains x omitted/exact/custom/disabled: at least 144 inheritance cases.
+- Eight official parents x 13 domains x omitted/exact/custom/disabled: at least 416 inheritance
+  cases.
 - All eight official maps under canonical, fully remapped, missing-optional, and missing-required
   data schemas.
 - Icon arrays: inherit, replace, empty, ordered collision, case-fold collision, watch fallback,
@@ -96,9 +96,8 @@ has migrated its tests.
 
 ## Release gates
 
-- No public map contract exposes raw overrides, physical generated layer IDs, or captured physical
-  data bindings. Official compiler-private contributions must address semantic targets, bind data
-  through the schema, and declare one atomic module owner.
+- No map contract or official map exposes raw overrides, physical generated layer IDs, or captured
+  physical data bindings. Every map uses the same public semantic modules and render-stack language.
 - Disabling a domain produces zero contributions owned by that domain.
 - A complete schema remap leaves no canonical source-layer or field strings behind.
 - No missing icon, pattern, local font, capability, or invalid expression is silently accepted.
@@ -118,25 +117,96 @@ has migrated its tests.
 - [x] Semantic compiler and official maps migrated.
 - [x] Icon and font directory contracts complete.
 - [x] Unified release plan and manifest-first runtime complete.
-- [x] Integrations and security implementation complete; full consumer verification is in progress.
-- [ ] AI interfaces, packed consumers, and visual evidence complete.
-- [ ] Full release gates green.
+- [x] Integrations and security implementation complete.
+- [x] AI discovery and command interfaces complete.
+- [x] Packed consumers and visual evidence complete.
+- [x] Full release gates green.
+
+## Semantic Compiler V1 closure (2026-08-28)
+
+The earlier cutover removed public physical overrides but retained a second, compiler-private
+authoring path for the eight official maps. V1 closes that gap. The official maps and application
+maps must use the same public semantic language, and the compiler must preserve semantic intent
+until the final MapLibre lowering instead of reconstructing it from generated Style JSON.
+
+### V1 decisions
+
+- The pipeline is `Authoring AST -> resolved semantic plan -> Domain IR -> assembly -> owner-local
+render stacks -> physical planner -> MapLibre lowering -> style + compilation report`.
+- A closed domain registry owns module names, defaults, dependency order, services, and compiler
+  orchestration. The strict resolved Zod schema owns value validation. Generated authoring/options/
+  patch/resolved JSON Schema aliases and exhaustive drift tests keep both authorities in lockstep.
+- Expressions use one typed IR and one visitor. Fields and source layers remain typed semantic
+  references until lowering; raw MapLibre expression arrays are not a V1 authoring surface.
+- Advanced rendering is owner-local and semantic. A domain may expose named render passes with a
+  closed selector vocabulary, compatible renderer style, and finite phase. A pass cannot provide a
+  physical ID, source, source-layer, filter, or before/after anchor.
+- Ordering is deterministic by band, domain, phase, and local pass order. Physical layer IDs and
+  provenance are generated only at lowering.
+- The physical planner may combine only explicitly disjoint members of one `LayerFamilyIR` when
+  exact compositing and expression equivalence are guaranteed. Otherwise it emits separate layers.
+- Compilation returns structured diagnostics and a report covering origins, emitted and suppressed
+  targets, requirements, planner decisions, and opt-in physical-layer provenance. That provenance
+  is a read-only output diagnostic; its IDs are neither stable nor addressable authoring targets.
+- This is a breaking development cutover. There is no cartographic-authoring compatibility adapter,
+  alternate compiler, or raw-style escape hatch in the V1 package.
+
+### Execution order
+
+1. Freeze fresh before screenshots and receipt pairs for every official map/theme in the sibling
+   `tileflow-tiles` laboratory using its exact regional data products and pinned browser.
+2. Add the typed authoring AST, refinement operations, semantic IR, diagnostics/report, registry,
+   and exact lowering/planner foundations alongside the current compiler.
+3. Add the missing closed semantic capabilities discovered by the official-map audit: road
+   variants, owner-local render passes, marker/ring/icon representations, flat/shadow/extrusion
+   building modes, place eligibility, business area, pier, ferry labels, trail emphasis, landscape
+   labels, elevation formatting, one-way representation, and finish overlays.
+4. Migrate Ferraris and Harad, then Streets, Cyberpunk and Matrix, Siegfried, Soundings, and Verdant.
+   Every migrated map must retain its visual identity while importing only public semantic APIs.
+5. Remove `@tileflow/core/recipe`, module effects, raw semantic-field/layer authoring helpers, the
+   legacy optimizer, target parsing, and the redundant public compiler selector.
+6. Generate the V1 authoring manifest and JSON Schema, and provide JSON validate, inspect, explain,
+   and semantic-diff surfaces with machine-applicable diagnostics.
+7. Capture the same matrix after migration, run authenticated visual diffs, inspect every changed
+   scene, correct regressions, and retain the before/after evidence for review.
+8. Run focused tests during each slice, then the complete structural, browser, packed-consumer,
+   capture, reproducibility, performance, build, and publication dry-run gates.
+
+### V1 progress
+
+- [x] Architecture, module-language, and 182-effect capability audits complete.
+- [x] Before capture matrix and receipts frozen (10 deterministic scenes: all eight maps,
+      including both Streets and Siegfried appearances).
+- [x] Typed authoring and semantic IR foundations integrated.
+- [x] Closed registry, planner, diagnostics, and AI manifest integrated.
+- [x] All 182 private effects migrated to public semantic capabilities.
+- [x] Eight official maps use only the V1 public language.
+- [x] Legacy public compiler-selector/effects/optimizer surfaces removed.
+- [x] After captures reviewed and visual regressions closed.
+- [x] Full V1 release gates green.
 
 ## Validation log
 
-- Core build, declaration generation, and complete test suite pass in the current workspace.
-- Maps publication dry-run includes `@tileflow/maps`, all eight official icon directories,
-  Cyberpunk's and Siegfried's exact font files, and their adjacent licenses.
-- Official-map and road semantic regression tests: 12/12 passing.
-- Migrated Core asset/compiler fixtures: 26/26 passing.
-- Machine-readable reference version 2 exposes recursive authoring (`root`/`extends`, leaf scenes)
-  and standalone resolved entrypoints from the same generated field/module schemas; its drift and
-  local-reference checks pass.
-- The sibling tileflow-tiles playground exercises all eight official maps and
-  resolves only a local data replacement for each imported map; its local-preview contract suite
-  passes when loopback is available.
-- Remaining work: complete Dev/CLI/framework suites, run six independent final audits, close their
-  findings, then run repository-wide check/build/packed-consumer/publication gates.
+- `pnpm run publish:alpha:dry-run` passes the complete repository check, all 13 package builds,
+  packed-consumer smoke, pinned-browser public capture smoke, and public package dry-run for all 13
+  tarballs. A subsequent `pnpm build` also passes.
+- Complete package suites pass: Core 346/346, Maps 486/486, Dev 104/104, Interactions 74/74, CLI
+  124 passing with 9 browser-dependent skips, Capture 63 passing with 11 browser-dependent skips,
+  React 30/30, Vue 19/19, Svelte 14/14, Static 22/22, Next 9/9, Vite 14/14, and Webpack 10/10.
+- Machine-readable reference version 3, the generated V1 authoring manifest and schema, local
+  reference closure, AJV false-positive checks, schema/runtime drift checks, public-type checks,
+  legal checks, formatting, lint, and type checking all pass.
+- The sibling `tileflow-tiles` laboratory passes `pnpm local:check` (72/72). Its World,
+  bathymetry, nautical, and DEM products were verified without rebuilding against their frozen byte
+  sizes and SHA-256 identities before capture.
+- Ten frozen before scenes and ten after scenes use the same 1200 x 800, DPR 1, MapLibre 5.24.0,
+  Playwright 1.62.1, and Chromium 151.0.7922.34 renderer identity. The authenticated visual diff
+  reports every scene `unchanged`, with matching dimensions, renderer, and scene identity and 0 of
+  9,600,000 pixels changed. Network-dependent scenes retain explicit remote-resource warnings.
+- A deliberate warm-cache diagnostic rerender of Soundings exposed six isolated, single-channel
+  +/-1 GPU-compositing pixels in its DEM relief and no perceptual changes. No comparator tolerance
+  was relaxed: the final exact gate was rerun from a fresh local server, matching the frozen-baseline
+  procedure, and passed at 0 pixels changed.
 
 ## Constraints and coordination
 

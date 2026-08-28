@@ -1,4 +1,3 @@
-import type {TileflowMapMarker} from '@tileflow/core/runtime';
 import {
   type TileflowAnnotation,
   type TileflowInteractionBinding,
@@ -10,13 +9,11 @@ import {
   validateTileflowAnnotations,
   validateTileflowInteractionBindings,
 } from '@tileflow/interactions';
-import {normalizeTileflowLegacyMarkers} from '@tileflow/interactions/maplibre';
 
 export type TileflowVueAnnotationInput<
   TData extends TileflowInteractionJsonValue = TileflowInteractionJsonValue,
 > = Readonly<{
   annotations?: readonly TileflowAnnotation<TData>[];
-  markers?: readonly TileflowMapMarker[];
 }>;
 
 export type TileflowVueAnnotationResolution<
@@ -24,7 +21,6 @@ export type TileflowVueAnnotationResolution<
 > = Readonly<{
   annotations: readonly TileflowAnnotation<TData>[];
   diagnostics: readonly TileflowInteractionDiagnostic[];
-  legacyTitles: ReadonlyMap<string, string>;
   ok: boolean;
 }>;
 
@@ -36,36 +32,14 @@ export type TileflowVueInteractionBindingResolution = Readonly<{
 
 export function resolveTileflowVueAnnotations<
   TData extends TileflowInteractionJsonValue = TileflowInteractionJsonValue,
->({
-  annotations,
-  markers,
-}: TileflowVueAnnotationInput<TData>): TileflowVueAnnotationResolution<TData> {
-  if (annotations !== undefined && markers !== undefined) {
-    return {
-      annotations: [],
-      diagnostics: [
-        createTileflowVueInteractionDiagnostic(
-          'INVALID_DOCUMENT',
-          'The annotations and legacy markers props are mutually exclusive.',
-        ),
-      ],
-      legacyTitles: new Map(),
-      ok: false,
-    };
-  }
-
-  const normalizedLegacyMarkers = normalizeTileflowLegacyMarkers(markers ?? []);
-  const legacyTitles =
-    markers === undefined ? new Map<string, string>() : normalizedLegacyMarkers.titles;
-  const candidates =
-    annotations ?? (normalizedLegacyMarkers.annotations as readonly TileflowAnnotation<TData>[]);
+>({annotations}: TileflowVueAnnotationInput<TData>): TileflowVueAnnotationResolution<TData> {
+  const candidates = annotations ?? [];
   const validation = validateTileflowAnnotations(candidates);
 
   if (!validation.ok) {
     return {
       annotations: [],
       diagnostics: validation.diagnostics,
-      legacyTitles,
       ok: false,
     };
   }
@@ -75,7 +49,6 @@ export function resolveTileflowVueAnnotations<
     // contexts keep the caller's typed annotation and data identities.
     annotations: candidates,
     diagnostics: [],
-    legacyTitles,
     ok: true,
   };
 }

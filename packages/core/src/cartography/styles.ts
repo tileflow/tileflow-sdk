@@ -77,6 +77,7 @@ export type TileflowLineCap = 'butt' | 'round' | 'square';
 export type TileflowLineJoin = 'bevel' | 'miter' | 'round';
 export type TileflowSymbolPlacement = 'line' | 'line-center' | 'point';
 export type TileflowSymbolZOrder = 'auto' | 'source' | 'viewport-y';
+export type TileflowPriorityOrder = 'higher-first' | 'lower-first';
 export type TileflowTextAnchor =
   | 'bottom'
   | 'bottom-left'
@@ -111,6 +112,8 @@ export type TileflowFillPaint = {
   color?: TileflowColorStyleValue;
   opacity?: TileflowNumberStyleValue;
   pattern?: TileflowImageStyleValue;
+  translate?: TileflowNumberOffsetStyleValue;
+  translateAnchor?: 'map' | 'viewport';
 };
 export type TileflowFillStyle = TileflowLayerRange & TileflowFillPaint;
 
@@ -122,6 +125,8 @@ export type TileflowLinePaint = {
   offset?: TileflowNumberStyleValue;
   opacity?: TileflowNumberStyleValue;
   pattern?: TileflowImageStyleValue;
+  translate?: TileflowNumberOffsetStyleValue;
+  translateAnchor?: 'map' | 'viewport';
   width?: TileflowNumberStyleValue;
 };
 export type TileflowLineLayout = {
@@ -211,6 +216,8 @@ export type TileflowIconStyle = TileflowLayerRange & TileflowIconPaint & Tileflo
 export type TileflowSymbolPlacementStyle = TileflowLayerRange & {
   placement?: TileflowSymbolPlacement;
   priority?: TileflowStructuralStyleValue<number>;
+  /** Collision order for the semantic priority value. Defaults to `higher-first`. */
+  priorityOrder?: TileflowPriorityOrder;
   spacing?: TileflowNumberStyleValue;
   zOrder?: TileflowSymbolZOrder;
 };
@@ -221,10 +228,15 @@ export type TileflowCirclePaint = {
   opacity?: TileflowNumberStyleValue;
   pitchAlignment?: 'map' | 'viewport';
   pitchScale?: 'map' | 'viewport';
+  priority?: TileflowStructuralStyleValue<number>;
+  /** Drawing order for the semantic priority value. Defaults to `higher-first`. */
+  priorityOrder?: TileflowPriorityOrder;
   radius?: TileflowNumberStyleValue;
   strokeColor?: TileflowColorStyleValue;
   strokeOpacity?: TileflowNumberStyleValue;
   strokeWidth?: TileflowNumberStyleValue;
+  translate?: TileflowNumberOffsetStyleValue;
+  translateAnchor?: 'map' | 'viewport';
 };
 export type TileflowCircleStyle = TileflowLayerRange & TileflowCirclePaint;
 
@@ -254,6 +266,10 @@ export type TileflowLineStackStyle = {
 /** A symbol layer composed from one placement policy and optional text/icon parts. */
 export type TileflowSymbolStyle = TileflowSymbolPlacementStyle & {
   icon?: TileflowIconStyle;
-  marker?: TileflowCircleStyle;
   text?: TileflowTextStyle;
+};
+
+/** A symbol style that may also materialize a separate circle marker layer. */
+export type TileflowMarkerSymbolStyle = TileflowSymbolStyle & {
+  marker?: TileflowCircleStyle;
 };

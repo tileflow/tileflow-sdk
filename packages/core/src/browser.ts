@@ -583,12 +583,6 @@ export type TileflowUserTransformRequest<
 
 export type TileflowAsyncAnalyticsTiming = 'request' | 'resolution';
 
-export type TileflowMarkerController<TMap, TDefinition, TMarker> = {
-  clear: () => void;
-  dispose: () => void;
-  replace: (map: TMap, definitions: readonly TDefinition[]) => void;
-};
-
 export function createTileflowSessionStarter(options: {
   getSessionId?: () => string;
   sessionId: string;
@@ -833,46 +827,6 @@ export function createTileflowTransformRequest<
   };
 }
 
-export function createTileflowMarkerController<TMap, TDefinition, TMarker>(options: {
-  attach: (marker: TMarker, map: TMap, definition: TDefinition) => void;
-  create: (definition: TDefinition) => TMarker;
-  remove: (marker: TMarker) => void;
-}): TileflowMarkerController<TMap, TDefinition, TMarker> {
-  let markers: TMarker[] = [];
-
-  const clear = () => {
-    const previousMarkers = markers;
-    markers = [];
-    removeMarkers(previousMarkers, options.remove);
-  };
-
-  return {
-    clear,
-    dispose: clear,
-    replace(map, definitions) {
-      clear();
-      const nextMarkers: TMarker[] = [];
-
-      try {
-        for (const definition of definitions) {
-          const marker = options.create(definition);
-          nextMarkers.push(marker);
-          options.attach(marker, map, definition);
-        }
-      } catch (error) {
-        try {
-          removeMarkers(nextMarkers, options.remove);
-        } catch {
-          // Preserve the construction/attachment error that caused the rollback.
-        }
-        throw error;
-      }
-
-      markers = nextMarkers;
-    },
-  };
-}
-
 function applyTileflowRequest<TRequest extends TileflowTransformRequestParameters>(
   url: string,
   request: TRequest | undefined,
@@ -954,25 +908,4 @@ function disposeFunctions(disposers: Array<() => void>): void {
 
 function isPromiseLike<T>(value: T | Promise<T> | undefined): value is Promise<T> {
   return Boolean(value && typeof (value as Promise<T>).then === 'function');
-}
-
-function removeMarkers<TMarker>(
-  markers: readonly TMarker[],
-  remove: (marker: TMarker) => void,
-): void {
-  let firstError: unknown;
-  let failed = false;
-
-  for (const marker of markers) {
-    try {
-      remove(marker);
-    } catch (error) {
-      if (!failed) firstError = error;
-      failed = true;
-    }
-  }
-
-  if (failed) {
-    throw firstError;
-  }
 }

@@ -133,10 +133,9 @@ last valid runtime state active and reports structured diagnostics. `interaction
 `defaultInteractionState` are mutually exclusive. Annotation and semantic overlays share one popup
 state, so replacing either target closes the previous popup before opening the next.
 
-`MapProps` also rejects `annotations` together with legacy `markers`, and rejects controlled and
-default interaction state together. Its `mode="image"` branch excludes annotations, markers,
-semantic bindings, interaction state, renderers, and interaction callbacks. JavaScript callers and
-widened inputs still receive the corresponding runtime diagnostics.
+`MapProps` rejects controlled and default interaction state together. Its `mode="image"` branch
+excludes annotations, semantic bindings, interaction state, renderers, and interaction callbacks.
+JavaScript callers and widened inputs still receive the corresponding runtime diagnostics.
 
 `onInteractionDiagnostic` receives each newly reported structured runtime diagnostic. Changing any
 callback identity does not resubscribe the runtime or recreate MapLibre.
@@ -149,10 +148,10 @@ defaults. A `view` descriptor is a dispatch name for an application renderer; it
 serialized component tree. Tooltip content remains non-interactive, while popup content may contain
 normal React controls.
 
-The legacy `markers` prop remains available during the alpha migration and is normalized through the
-same keyed runtime. Its `label` keeps the existing marker `title`; do not pass `markers` and
-`annotations` together. `mode="image"` cannot render interaction configuration and shows an
-explicit `UNSUPPORTED_MODE` diagnostic without loading MapLibre.
+`annotations` is the only application-owned marker input. Its singular `coordinate`, required
+`ariaLabel`, and optional `marker` descriptor feed the keyed runtime directly. `mode="image"`
+cannot render interaction configuration and shows an explicit `UNSUPPORTED_MODE` diagnostic
+without loading MapLibre.
 
 `mapOptions` accepts native MapLibre options except `container` and `style`, which
 Tileflow resolves from `source`. Direct

@@ -2,23 +2,14 @@ import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  addresses,
-  aeroways,
-  boundaries,
-  buildings,
   createStyle,
   defineMap,
-  defineRootMap,
   defineTheme,
+  disable,
   fixed,
-  land,
-  landforms,
   labels,
-  poi,
   roads,
   tileflowWorld,
-  transit,
-  vegetation,
   water,
 } from '../src';
 import {extendStreets, testLightTheme} from './map-fixture';
@@ -57,8 +48,8 @@ test('compiles a complete deterministic Streets map from omitted data and module
   assert.deepEqual(first, second);
   assert.equal(first.metadata?.['tileflow:map'], 'test-map');
   assert.equal(first.metadata?.['tileflow:mapVersion'], 1);
-  assert.equal(first.metadata?.['tileflow:root'], 'streets');
-  assert.equal(first.metadata?.['tileflow:rootCompilerVersion'], 1);
+  assert.equal(first.metadata?.['tileflow:compiler'], 'tileflow-semantic');
+  assert.equal(first.metadata?.['tileflow:compilerVersion'], 1);
   assert.equal(first.metadata?.['tileflow:theme'], 'light');
   assert.equal(first.metadata?.['tileflow:colorScheme'], 'light');
   assert.equal(first.metadata?.['tileflow:internalMigration'], undefined);
@@ -72,7 +63,7 @@ test('compiles a complete deterministic Streets map from omitted data and module
     true,
   );
   assert.ok(first.layers.length > 50);
-  assert.ok(first.layers.every((layer) => String(layer.id).startsWith('streets-')));
+  assert.ok(first.layers.every((layer) => String(layer.id).startsWith('tileflow-')));
   assert.equal(new Set(first.layers.map((layer) => layer.id)).size, first.layers.length);
   assert.deepEqual(
     validateStyleMin(first as never).map((error) => error.message),
@@ -80,7 +71,7 @@ test('compiles a complete deterministic Streets map from omitted data and module
   );
 });
 
-test('validates the public Streets compiler before emitting versioned metadata', () => {
+test('rejects the removed compiler selector before emitting versioned metadata', () => {
   assert.throws(
     () =>
       createStyle({
@@ -88,7 +79,7 @@ test('validates the public Streets compiler before emitting versioned metadata',
         version: 1,
         root: {compiler: 'streets', compilerVersion: 999},
       } as never),
-    /unsupported root|compilerVersion/,
+    /unrecognized key "root"/,
   );
   assert.throws(
     () =>
@@ -164,9 +155,9 @@ test('can omit the glyph endpoint and propagate theme typography to local-font l
       layer.type === 'symbol' &&
       Object.hasOwn((layer.layout ?? {}) as Record<string, unknown>, 'text-field'),
   );
-  const city = textLayers.find((layer) => layer.id === 'streets-label-place-city');
+  const city = textLayers.find((layer) => layer.id === 'tileflow-label-place-city');
   const cityLayout = city?.layout as Record<string, unknown> | undefined;
-  const road = textLayers.find((layer) => layer.id === 'streets-label-road-major');
+  const road = textLayers.find((layer) => layer.id === 'tileflow-label-road-major');
   const roadLayout = road?.layout as Record<string, unknown> | undefined;
 
   assert.equal(style.glyphs, undefined);
@@ -190,13 +181,12 @@ test('can omit the glyph endpoint and propagate theme typography to local-font l
   assert.deepEqual(validateStyleMin(style as never), []);
 });
 
-test('rejects a text-bearing root map without a local or remote font provider', () => {
-  const noProvider = defineRootMap({
+test('rejects a text-bearing standalone map without a local or remote font provider', () => {
+  const noProvider = defineMap({
     id: 'no-font-provider',
     version: 1,
-    root: {compiler: 'streets', compilerVersion: 1},
     defaultTheme: 'light',
-    modules: {poi: poi({enabled: false})},
+    modules: {poi: disable()},
     themes: {light: testLightTheme},
   });
 
@@ -207,10 +197,9 @@ test('rejects a text-bearing root map without a local or remote font provider', 
 });
 
 test('treats fonts empty array as an explicit provider removal for text-free maps', () => {
-  const parent = defineRootMap({
+  const parent = defineMap({
     id: 'glyph-parent',
     version: 1,
-    root: {compiler: 'streets', compilerVersion: 1},
     defaultTheme: 'light',
     glyphs: {
       kind: 'url',
@@ -225,18 +214,18 @@ test('treats fonts empty array as an explicit provider removal for text-free map
     extends: parent,
     fonts: [],
     modules: {
-      addresses: addresses({enabled: false}),
-      aeroways: aeroways({enabled: false}),
-      boundaries: boundaries({enabled: false}),
-      buildings: buildings({enabled: false}),
-      labels: labels({enabled: false}),
-      land: land({enabled: false}),
-      landforms: landforms({enabled: false}),
-      poi: poi({enabled: false}),
-      roads: roads({enabled: false}),
-      transit: transit({enabled: false}),
-      vegetation: vegetation({enabled: false}),
-      water: water({enabled: false}),
+      addresses: disable(),
+      aeroways: disable(),
+      boundaries: disable(),
+      buildings: disable(),
+      labels: disable(),
+      land: disable(),
+      landforms: disable(),
+      poi: disable(),
+      roads: disable(),
+      transit: disable(),
+      vegetation: disable(),
+      water: disable(),
     },
   });
 
@@ -255,7 +244,7 @@ test('treats fonts empty array as an explicit provider removal for text-free map
           version: 1,
           extends: parent,
           fonts: [],
-          modules: {poi: poi({enabled: false})},
+          modules: {poi: disable()},
         }),
       ),
     /empty fonts directory array/u,
@@ -316,7 +305,7 @@ test('keeps World selection and glyph delivery explicit and independent', () => 
   assert.equal(Object.hasOwn(source, 'tiles'), false);
   assert.equal(first.glyphs, glyphs.url);
   assert.equal(first.sprite, streetsPreparedAssets.icons.sprite);
-  assert.ok(first.layers.some((layer) => layer.id === 'streets-poi-food-drink-icon'));
+  assert.ok(first.layers.some((layer) => layer.id === 'tileflow-poi-food-drink-icon'));
   assert.deepEqual(first.metadata?.['tileflow:data'], {
     generation: 'v1',
     kind: 'tileflow-world',

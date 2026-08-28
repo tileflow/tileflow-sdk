@@ -71,12 +71,6 @@ const propertyMapProps = {
 } satisfies TileflowMapProps<PropertyAnnotation>;
 const propertyComponentProps: PropertyComponentProps = propertyMapProps;
 
-// @ts-expect-error annotations and legacy markers are mutually exclusive.
-const mixedAnnotationProps: TileflowMapProps<PropertyAnnotation> = {
-  annotations: propertyAnnotations,
-  markers: [],
-  source: {kind: 'tileflow', map: 'main'},
-};
 // @ts-expect-error controlled and default interaction state are mutually exclusive.
 const mixedStateProps: TileflowMapProps = {
   defaultInteractionState: interactionState,
@@ -120,7 +114,6 @@ void [
   missingSource,
   legacyMap,
   legacyConfig,
-  mixedAnnotationProps,
   mixedSource,
   mixedStateProps,
   componentProps,

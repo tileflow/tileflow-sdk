@@ -1,6 +1,8 @@
+import Ajv2020 from 'ajv/dist/2020.js';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
+import {serializeTileflowConfigReference} from '../scripts/generate-config-reference';
 import {
   addresses,
   aeroways,
@@ -9,19 +11,51 @@ import {
   labels,
   land,
   landforms,
+  nautical,
   parseTileflowMap,
   poi,
   roads,
+  tileflowMapDefaultMaxDepth,
+  tileflowRenderStackLimits,
+  tileflowThemeLimits,
   transit,
   vegetation,
   water,
   zoom,
 } from '../src';
+import {
+  tileflowSemanticDefaultModules,
+  tileflowSemanticModuleNames,
+} from '../src/cartography/domain-registry';
 import {mergeTileflowDesign} from '../src/cartography/merge';
-import {tileflowStreetsModuleNames, tileflowStreetsRecipe} from '../src/cartography/streets-recipe';
 import {extendStreets} from './map-fixture';
 
-test('creates serializable requests for every Streets domain', () => {
+type PublicOptionsExposeEnabled<TFactory extends (...input: never[]) => unknown> =
+  'enabled' extends keyof NonNullable<Parameters<TFactory>[0]> ? true : false;
+
+test('keeps complete-domain enablement out of every public module constructor', () => {
+  const exposure = [
+    false satisfies PublicOptionsExposeEnabled<typeof addresses>,
+    false satisfies PublicOptionsExposeEnabled<typeof aeroways>,
+    false satisfies PublicOptionsExposeEnabled<typeof boundaries>,
+    false satisfies PublicOptionsExposeEnabled<typeof buildings>,
+    false satisfies PublicOptionsExposeEnabled<typeof labels>,
+    false satisfies PublicOptionsExposeEnabled<typeof land>,
+    false satisfies PublicOptionsExposeEnabled<typeof landforms>,
+    false satisfies PublicOptionsExposeEnabled<typeof nautical>,
+    false satisfies PublicOptionsExposeEnabled<typeof poi>,
+    false satisfies PublicOptionsExposeEnabled<typeof roads>,
+    false satisfies PublicOptionsExposeEnabled<typeof transit>,
+    false satisfies PublicOptionsExposeEnabled<typeof vegetation>,
+    false satisfies PublicOptionsExposeEnabled<typeof water>,
+  ];
+  assert.equal(
+    exposure.every((value) => value === false),
+    true,
+  );
+});
+
+test('creates serializable requests for every semantic domain', () => {
   const requests = {
     addresses: addresses({labels: {text: {size: 10}}}),
     land: land({landuse: {commercial: {fill: {color: '#eee'}}}}),
@@ -61,28 +95,92 @@ test('creates serializable requests for every Streets domain', () => {
   assert.equal(requests.aeroways.type, 'aeroways');
 });
 
-test('keeps the Streets module recipe, type tags, and root schema in lockstep', () => {
-  assert.deepEqual(Object.keys(tileflowStreetsRecipe.modules).sort(), tileflowStreetsModuleNames);
+test('keeps registry defaults, type tags, and the resolved schema in lockstep', () => {
+  assert.deepEqual(Object.keys(tileflowSemanticDefaultModules).sort(), tileflowSemanticModuleNames);
 
-  for (const name of tileflowStreetsModuleNames) {
-    const request = tileflowStreetsRecipe.modules[name];
+  for (const name of tileflowSemanticModuleNames) {
+    const request = tileflowSemanticDefaultModules[name];
     assert.equal(request.type, name);
     assert.doesNotThrow(
       () => parseTileflowMap(extendStreets({modules: {[name]: request}})),
-      `schema rejected Streets module ${name}`,
+      `schema rejected semantic module ${name}`,
     );
   }
 });
 
-test('keeps the checked-in modules API reference in lockstep with the Streets registry', async () => {
+test('keeps the checked-in machine reference byte-for-byte aligned with its generator', async () => {
+  const actual = await readFile(
+    new URL('../../../docs/modules-api-reference.json', import.meta.url),
+    'utf8',
+  );
+  assert.equal(actual, await serializeTileflowConfigReference());
+});
+
+test('keeps the checked-in modules API reference in lockstep with the semantic registry', async () => {
   const reference = JSON.parse(
     await readFile(new URL('../../../docs/modules-api-reference.json', import.meta.url), 'utf8'),
-  ) as {modules?: Record<string, {type?: unknown}>};
+  ) as {
+    expressions?: {
+      astSchemaRefs?: Record<string, unknown>;
+      grammarSchemaRef?: unknown;
+    };
+    modules?: Record<
+      string,
+      {
+        authoringSchemaRef?: unknown;
+        optionsSchemaRef?: unknown;
+        patchSchemaRef?: unknown;
+        schemaRef?: unknown;
+        type?: unknown;
+      }
+    >;
+    $defs?: Record<string, JsonSchemaObject>;
+  };
   const documentedNames = Object.keys(reference.modules ?? {}).sort();
 
-  assert.deepEqual(documentedNames, tileflowStreetsModuleNames);
-  for (const name of tileflowStreetsModuleNames) {
+  assert.deepEqual(reference.expressions, {
+    grammarSchemaRef: '#/$defs/TileflowDataExpression',
+    astSchemaRefs: {
+      color: '#/$defs/TileflowDataExpressionColor',
+      image: '#/$defs/TileflowDataExpressionImage',
+      number: '#/$defs/TileflowDataExpressionNumber',
+      structural: '#/$defs/TileflowDataExpressionStructural',
+    },
+  });
+  assert.deepEqual(documentedNames, tileflowSemanticModuleNames);
+  for (const name of tileflowSemanticModuleNames) {
     assert.equal(reference.modules?.[name]?.type, name, `documentation type mismatch for ${name}`);
+    const definitionName = `Tileflow${name[0]!.toUpperCase()}${name.slice(1)}ModuleResolved`;
+    const schemaReference = `#/$defs/${definitionName}`;
+    const optionsReference = `#/$defs/Tileflow${name[0]!.toUpperCase()}${name.slice(1)}ModuleOptions`;
+    const patchReference = `#/$defs/Tileflow${name[0]!.toUpperCase()}${name.slice(1)}ModulePatch`;
+    assert.equal(reference.modules?.[name]?.schemaRef, schemaReference);
+    assert.equal(reference.modules?.[name]?.optionsSchemaRef, optionsReference);
+    assert.equal(reference.modules?.[name]?.patchSchemaRef, patchReference);
+    assert.equal(
+      reference.modules?.[name]?.authoringSchemaRef,
+      `#/$defs/TileflowAuthoringModules/properties/${name}`,
+    );
+    const resolvedModule = dereferenceJsonSchema(
+      reference,
+      asJsonSchema(reference.$defs?.[definitionName]),
+    );
+    assert.equal(asJsonSchema(resolvedModule.properties?.type).const, name);
+    const options = dereferenceJsonSchema(
+      reference,
+      asJsonSchema(reference.$defs?.[optionsReference.slice('#/$defs/'.length)]),
+    );
+    const patch = dereferenceJsonSchema(
+      reference,
+      asJsonSchema(reference.$defs?.[patchReference.slice('#/$defs/'.length)]),
+    );
+    for (const [surface, schema] of [
+      ['options', options],
+      ['patch', patch],
+    ] as const) {
+      assert.equal(Object.hasOwn(schema.properties ?? {}, 'enabled'), false, `${name} ${surface}`);
+      assert.equal(Object.hasOwn(schema.properties ?? {}, 'type'), false, `${name} ${surface}`);
+    }
   }
 });
 
@@ -99,20 +197,50 @@ test('publishes authoring and resolved map entrypoints without hiding extends or
   const authoringReference = '#/$defs/TileflowAuthoringMap';
   const resolvedReference = '#/$defs/ResolvedTileflowMap';
 
-  assert.equal(reference.schemaVersion, 2);
+  assert.equal(reference.schemaVersion, 3);
   assert.equal(reference.$ref, authoringReference);
   assert.equal(reference.entrypoints?.authoring?.schemaRef, authoringReference);
   assert.equal(reference.entrypoints?.resolved?.schemaRef, resolvedReference);
   assert.deepEqual(definitions.TileflowAuthoringMap?.oneOf, [
-    {$ref: '#/$defs/TileflowRootMap'},
+    {$ref: '#/$defs/TileflowStandaloneMap'},
     {$ref: '#/$defs/TileflowDerivedMap'},
   ]);
+  assert.doesNotMatch(JSON.stringify(definitions.TileflowAuthoringModules), /"set"/u);
+  for (const [name, moduleRequest] of Object.entries(
+    definitions.TileflowAuthoringModules?.properties ?? {},
+  )) {
+    const branches = moduleRequest.oneOf as JsonSchemaObject[];
+    const direct = dereferenceJsonSchema(reference, branches[0]!);
+    assert.equal(
+      Object.hasOwn(direct.properties ?? {}, 'enabled'),
+      false,
+      `${name} direct authoring exposes compiler-owned enabled`,
+    );
+    const refinement = branches.find(
+      (branch) =>
+        branch.properties?.op !== undefined &&
+        asJsonSchema(branch.properties.op).const === 'refine',
+    );
+    assert(refinement, `${name} is missing refine()`);
+    const patches = asJsonSchema(refinement.properties?.patches);
+    const patch = dereferenceJsonSchema(reference, asJsonSchema(patches.items));
+    assert.equal(
+      Object.hasOwn(patch.properties ?? {}, 'enabled'),
+      false,
+      `${name} refine() exposes compiler-owned enabled`,
+    );
+    assert.equal(
+      Object.hasOwn(patch.properties ?? {}, 'type'),
+      false,
+      `${name} refine() exposes compiler-owned type`,
+    );
+  }
 
-  const rootMap = definitions.TileflowRootMap;
-  assert.deepEqual(rootMap?.required, ['defaultTheme', 'id', 'root', 'themes', 'version']);
-  assert.equal(Object.hasOwn(rootMap?.properties ?? {}, 'root'), true);
-  assert.equal(Object.hasOwn(rootMap?.properties ?? {}, 'extends'), false);
-  assert.equal(Object.hasOwn(rootMap?.properties ?? {}, 'scenes'), true);
+  const standaloneMap = definitions.TileflowStandaloneMap;
+  assert.deepEqual(standaloneMap?.required, ['defaultTheme', 'id', 'themes', 'version']);
+  assert.equal(Object.hasOwn(standaloneMap?.properties ?? {}, 'root'), false);
+  assert.equal(Object.hasOwn(standaloneMap?.properties ?? {}, 'extends'), false);
+  assert.equal(Object.hasOwn(standaloneMap?.properties ?? {}, 'scenes'), true);
 
   const derivedMap = definitions.TileflowDerivedMap;
   assert.deepEqual(derivedMap?.required, ['extends', 'id', 'version']);
@@ -125,14 +253,8 @@ test('publishes authoring and resolved map entrypoints without hiding extends or
   assert.deepEqual(scene?.required, ['theme', 'camera', 'viewport']);
 
   const resolvedMap = definitions.ResolvedTileflowMap;
-  assert.deepEqual(resolvedMap?.required, [
-    'defaultTheme',
-    'id',
-    'name',
-    'root',
-    'themes',
-    'version',
-  ]);
+  assert.deepEqual(resolvedMap?.required, ['defaultTheme', 'id', 'name', 'themes', 'version']);
+  assert.equal(Object.hasOwn(resolvedMap?.properties ?? {}, 'root'), false);
   assert.equal(Object.hasOwn(resolvedMap?.properties ?? {}, 'extends'), false);
   assert.equal(Object.hasOwn(resolvedMap?.properties ?? {}, 'scenes'), false);
 
@@ -149,9 +271,10 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     await readFile(new URL('../../../docs/modules-api-reference.json', import.meta.url), 'utf8'),
   ) as JsonSchemaObject;
   const definitions = reference.$defs as Record<string, JsonSchemaObject>;
-  const rootMap = definitions.TileflowRootMap!;
+  const standaloneMap = definitions.TileflowStandaloneMap!;
 
   const inheritance = asJsonSchema(reference['x-tileflow-inheritance']);
+  assert.equal(inheritance.maxDepth, tileflowMapDefaultMaxDepth);
   assert.deepEqual(inheritance.fields, {
     data: 'atomic',
     defaultTheme: 'atomic',
@@ -165,7 +288,6 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     modules: 'modules',
     name: 'identity',
     projection: 'atomic',
-    root: 'lineage',
     scenes: 'leaf',
     systemThemes: 'atomic',
     terrain: 'atomic',
@@ -190,7 +312,7 @@ test('publishes AI-reference constraints that match exact assets and capture aut
       },
       {enforcement: 'config-validation', path: 'systemThemes.{light,dark}'},
       {enforcement: 'theme-resolution', path: 'themes.*'},
-      {enforcement: 'schema-and-theme-audit', path: 'modules|terrain|compilerEffects'},
+      {enforcement: 'schema-and-theme-audit', path: 'modules|terrain'},
     ],
   );
   const visualIntent = asJsonSchema(themeContract.visualIntent);
@@ -211,11 +333,11 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     },
   ]);
 
-  const mapId = dereferenceJsonSchema(reference, asJsonSchema(rootMap.properties?.id));
+  const mapId = dereferenceJsonSchema(reference, asJsonSchema(standaloneMap.properties?.id));
   assert.ok((asJsonSchema(mapId.not).enum as string[]).includes('constructor'));
   assert.ok((asJsonSchema(mapId.not).enum as string[]).includes('con'));
 
-  const icons = dereferenceJsonSchema(reference, asJsonSchema(rootMap.properties?.icons));
+  const icons = dereferenceJsonSchema(reference, asJsonSchema(standaloneMap.properties?.icons));
   assert.match(String(icons.description), /omission inherits/u);
   assert.match(String(icons.description), /\[\] selects no icons/u);
   assert.match(String(icons.description), /later directory wins/u);
@@ -239,7 +361,7 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     assert.equal(packagePathPattern.test(invalid), false, invalid);
   }
 
-  const glyphs = dereferenceJsonSchema(reference, asJsonSchema(rootMap.properties?.glyphs));
+  const glyphs = dereferenceJsonSchema(reference, asJsonSchema(standaloneMap.properties?.glyphs));
   assert.equal(glyphs.oneOf, undefined);
   const glyphKind = dereferenceJsonSchema(reference, asJsonSchema(glyphs.properties?.kind));
   assert.equal(glyphKind.const, 'url');
@@ -266,7 +388,7 @@ test('publishes AI-reference constraints that match exact assets and capture aut
   assert.equal(stackPattern.test('Noto Sans Regular,Noto Sans Bold'), true);
   assert.equal(stackPattern.test(' Noto Sans Regular'), false);
 
-  const themes = dereferenceJsonSchema(reference, asJsonSchema(rootMap.properties?.themes));
+  const themes = dereferenceJsonSchema(reference, asJsonSchema(standaloneMap.properties?.themes));
   const theme = dereferenceJsonSchema(reference, asJsonSchema(themes.additionalProperties));
   const typography = dereferenceJsonSchema(reference, asJsonSchema(theme.properties?.typography));
   const font = dereferenceJsonSchema(reference, asJsonSchema(typography.properties?.font));
@@ -280,7 +402,10 @@ test('publishes AI-reference constraints that match exact assets and capture aut
   );
   assert.equal(fallbacks.uniqueItems, true);
 
-  const delivery = dereferenceJsonSchema(reference, asJsonSchema(rootMap.properties?.delivery));
+  const delivery = dereferenceJsonSchema(
+    reference,
+    asJsonSchema(standaloneMap.properties?.delivery),
+  );
   const hosted = dereferenceJsonSchema(reference, asJsonSchema(delivery.properties?.hosted));
   const allowedOrigins = dereferenceJsonSchema(
     reference,
@@ -322,10 +447,14 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     (schema) => schema.properties?.patternWidths && schema.properties?.pattern,
   );
   assert(hatch);
-  assert.deepEqual((hatch.allOf as JsonSchemaObject[])[0], {
-    if: {required: ['patternWidths']},
-    then: {required: ['pattern'], properties: {pattern: {type: 'string'}}},
+  const hatchRule = asJsonSchema((hatch.allOf as JsonSchemaObject[])[0]);
+  assert.deepEqual(hatchRule.if, {
+    required: ['patternWidths'],
+    properties: {patternWidths: {not: {$ref: '#/$defs/TileflowReset'}}},
   });
+  const hatchThen = asJsonSchema(hatchRule.then);
+  assert.deepEqual(hatchThen.required, ['pattern']);
+  assert.equal(asJsonSchema(hatchThen.properties?.pattern).type, undefined);
 
   const terrainContours = collectJsonSchemaObjects(reference).find(
     (schema) => schema.properties?.demMaxZoom && schema.properties?.thresholds,
@@ -400,8 +529,30 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     assert.equal(refinementPaths.has(path), true, `missing refinement ${path}`);
   }
 
-  const tuples = collectJsonSchemaObjects(reference).filter((schema) =>
-    Array.isArray(schema.prefixItems),
+  const semanticField = definitions.TileflowSemanticFieldReference!;
+  const semanticFieldName = asJsonSchema(semanticField.properties?.name);
+  assert.ok((semanticFieldName.enum as string[]).includes('class'));
+  assert.equal((semanticFieldName.enum as string[]).includes('physical_column'), false);
+  const dataExpression = definitions.TileflowDataExpression!;
+  assert.equal(Array.isArray(dataExpression.oneOf), true);
+  const getExpression = (dataExpression.oneOf as JsonSchemaObject[]).find(
+    (schema) =>
+      Array.isArray(schema.prefixItems) &&
+      asJsonSchema((schema.prefixItems as unknown[])[0]).const === 'get',
+  );
+  assert(getExpression);
+  assert.deepEqual((getExpression.prefixItems as unknown[])[1], {
+    $ref: '#/$defs/TileflowSemanticFieldReference',
+  });
+  assert.equal(getExpression.items, false);
+  assert.deepEqual(dataExpression['x-tileflow-refinements'], [
+    'expr.var names must resolve in the lexical scope of one enclosing expr.let.',
+    'match labels are unique and share one primitive type.',
+    'step/interpolate stops are finite and strictly increasing.',
+  ]);
+
+  const tuples = collectJsonSchemaObjects(reference).filter(
+    (schema) => Array.isArray(schema.prefixItems) && schema.items === false,
   );
   assert.ok(tuples.length > 0);
   for (const tuple of tuples) {
@@ -412,6 +563,358 @@ test('publishes AI-reference constraints that match exact assets and capture aut
   }
   assert.equal(typeof reference['x-tileflow-refinement-contract'], 'string');
   assert.ok(Array.isArray(definitions.ResolvedTileflowMap?.['x-tileflow-refinements']));
+});
+
+test('generated JSON Schema rejects representable semantic false positives', async () => {
+  const reference = JSON.parse(
+    await readFile(new URL('../../../docs/modules-api-reference.json', import.meta.url), 'utf8'),
+  ) as JsonSchemaObject;
+  const definitions = reference.$defs as Record<string, JsonSchemaObject>;
+  const ajv = new Ajv2020({allErrors: true, strict: false});
+  const compileDefinition = (name: string) =>
+    ajv.compile({
+      $schema: reference.$schema,
+      $defs: definitions,
+      $ref: `#/$defs/${name}`,
+    });
+  const token = (category: 'color' | 'image' | 'number', name: string) => ({
+    category,
+    kind: 'theme-token',
+    token: name,
+  });
+  const semanticField = {kind: 'tileflow-data-field', name: 'class'};
+  const validators = {
+    color: compileDefinition('TileflowDataExpressionColor'),
+    image: compileDefinition('TileflowDataExpressionImage'),
+    number: compileDefinition('TileflowDataExpressionNumber'),
+    structural: compileDefinition('TileflowDataExpressionStructural'),
+  };
+  const roadSurfaces = {
+    options: compileDefinition('TileflowRoadsModuleOptions'),
+    patch: compileDefinition('TileflowRoadsModulePatch'),
+    resolved: compileDefinition('TileflowRoadsModuleResolved'),
+  };
+
+  assert.equal(
+    roadSurfaces.resolved({type: 'roads'}),
+    true,
+    JSON.stringify(roadSurfaces.resolved.errors),
+  );
+  assert.equal(
+    roadSurfaces.options({detail: 'major'}),
+    true,
+    JSON.stringify(roadSurfaces.options.errors),
+  );
+  assert.equal(roadSurfaces.options({type: 'roads'}), false);
+  assert.equal(roadSurfaces.options({enabled: false}), false);
+  assert.equal(
+    roadSurfaces.patch({detail: 'major'}),
+    true,
+    JSON.stringify(roadSurfaces.patch.errors),
+  );
+  assert.equal(roadSurfaces.patch({type: {$tileflow: 'reset'}}), false);
+  assert.equal(roadSurfaces.patch({enabled: false}), false);
+
+  assert.equal(
+    validators.color([
+      'coalesce',
+      ['get', semanticField],
+      {
+        color: token('color', 'surface.land'),
+        kind: 'theme-color',
+        opacity: token('number', 'style.opacity'),
+        operation: 'alpha',
+      },
+    ]),
+    true,
+    JSON.stringify(validators.color.errors),
+  );
+  assert.equal(
+    validators.color(['coalesce', ['get', semanticField], token('image', 'wrong')]),
+    false,
+  );
+  assert.equal(
+    validators.image(['coalesce', ['get', semanticField], token('image', 'surface.pattern')]),
+    true,
+    JSON.stringify(validators.image.errors),
+  );
+  assert.equal(
+    validators.image(['coalesce', ['get', semanticField], token('color', 'wrong')]),
+    false,
+  );
+  assert.equal(
+    validators.number(['coalesce', ['get', semanticField], token('number', 'style.opacity')]),
+    true,
+    JSON.stringify(validators.number.errors),
+  );
+  assert.equal(
+    validators.number(['coalesce', ['get', semanticField], token('color', 'wrong')]),
+    false,
+  );
+  assert.equal(
+    validators.structural(['coalesce', ['get', semanticField], 'fallback']),
+    true,
+    JSON.stringify(validators.structural.errors),
+  );
+  assert.equal(validators.structural(['literal', {nested: token('number', 'wrong')}]), false);
+
+  for (const category of ['color', 'image', 'number', 'structural'] as const) {
+    const wrapper = collectJsonSchemaObjects(reference).find(
+      (schema) =>
+        schema['x-tileflow-expression-category'] === category &&
+        schema.properties?.kind !== undefined,
+    );
+    assert(wrapper, `missing ${category} expression wrapper`);
+    assert.deepEqual(wrapper.properties?.value, {
+      $ref: `#/$defs/TileflowDataExpression${category[0].toUpperCase()}${category.slice(1)}`,
+    });
+  }
+
+  const terrainColor = Object.values(definitions).find(
+    (schema) =>
+      Array.isArray(schema.anyOf) &&
+      schema.anyOf.some(
+        (branch) =>
+          asJsonSchema(branch).pattern ===
+          '^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$',
+      ),
+  );
+  assert(terrainColor);
+  const validateTerrainColor = ajv.compile(terrainColor);
+  for (const valid of ['#abc', '#11223344', 'rgb(0, 127.5, 255)', 'rgba(1, 2, 3, 0.5)']) {
+    assert.equal(
+      validateTerrainColor(valid),
+      true,
+      `${valid}: ${JSON.stringify(validateTerrainColor.errors)}`,
+    );
+  }
+  for (const invalid of ['blue', 'rgb(256, 0, 0)', 'rgb(255.1, 0, 0)', 'rgba(0, 0, 0, 1.1)']) {
+    assert.equal(validateTerrainColor(invalid), false, invalid);
+  }
+
+  const marineAttributions = collectJsonSchemaObjects(reference).filter(
+    (schema) =>
+      schema.description === 'Non-empty marine attribution without leading or trailing whitespace.',
+  );
+  assert.ok(marineAttributions.length >= 2);
+  const validateMarineAttribution = ajv.compile(marineAttributions[0]!);
+  assert.equal(validateMarineAttribution('Open ocean data'), true);
+  assert.equal(validateMarineAttribution(' Open ocean data'), false);
+  assert.equal(validateMarineAttribution('Open ocean data\n'), false);
+
+  const zoomSchemas = collectJsonSchemaObjects(reference).filter((schema) =>
+    String(JSON.stringify(schema['x-tileflow-refinements'])).includes(
+      'Zoom stops must be finite and strictly increasing.',
+    ),
+  );
+  assert.ok(zoomSchemas.length >= 10);
+
+  const publicUrl = Object.values(definitions).find(
+    (schema) =>
+      typeof schema['x-tileflow-refinement'] === 'string' &&
+      String(schema['x-tileflow-refinement']).includes('WHATWG/PMTiles'),
+  );
+  assert(publicUrl);
+  assert.equal(publicUrl.minLength, 1);
+  assert.equal(publicUrl.maxLength, 4_096);
+  const validatePublicUrl = ajv.compile(publicUrl);
+  for (const valid of [
+    '/',
+    '/tiles.json',
+    'https://tiles.example.test/tiles.json',
+    'http://localhost:3000/tiles.json',
+    'pmtiles://./fixtures/world.pmtiles',
+  ]) {
+    assert.equal(
+      validatePublicUrl(valid),
+      true,
+      `${valid}: ${JSON.stringify(validatePublicUrl.errors)}`,
+    );
+  }
+  for (const invalid of [
+    '',
+    ' /tiles.json',
+    '/tiles.json ',
+    '//tiles.example.test/tiles.json',
+    'https://user@tiles.example.test/tiles.json',
+    '/tiles.json#fragment',
+    '/tiles\\unsafe.json',
+    'javascript:alert(1)',
+    'a'.repeat(4_097),
+  ]) {
+    assert.equal(validatePublicUrl(invalid), false, invalid);
+  }
+
+  const themes = Object.values(definitions).find(
+    (schema) =>
+      schema.description ===
+      `Between one and ${tileflowThemeLimits.maxThemes} concrete named themes.`,
+  );
+  assert(themes);
+  assert.equal(themes.minProperties, 1);
+  assert.equal(themes.maxProperties, tileflowThemeLimits.maxThemes);
+  const renderStacks = Object.values(definitions).filter(
+    (schema) =>
+      schema.description ===
+      'Non-empty named render-stack operations owned by one semantic domain.',
+  );
+  assert.ok(renderStacks.length > 0);
+  assert.ok(renderStacks.every((schema) => schema.minProperties === 1));
+  assert.ok(
+    renderStacks.every(
+      (schema) => schema.maxProperties === tileflowRenderStackLimits.maxOperations,
+    ),
+  );
+  assert.ok(
+    renderStacks.every(
+      (schema) =>
+        JSON.stringify(schema['x-tileflow-limits']) === JSON.stringify(tileflowRenderStackLimits),
+    ),
+  );
+
+  const renderRequirements = Object.values(definitions).filter(
+    (schema) =>
+      schema.description ===
+      `Between one and ${tileflowRenderStackLimits.maxRequirements} unique semantic-domain requirements.`,
+  );
+  assert.ok(renderRequirements.length > 0);
+  assert.ok(renderRequirements.every((schema) => schema.minItems === 1));
+  assert.ok(
+    renderRequirements.every(
+      (schema) => schema.maxItems === tileflowRenderStackLimits.maxRequirements,
+    ),
+  );
+  assert.ok(renderRequirements.every((schema) => schema.uniqueItems === true));
+
+  const renderSelectors = Object.values(definitions).filter(
+    (schema) => schema.description === 'Bounded recursive semantic render selector.',
+  );
+  assert.ok(renderSelectors.length > 0);
+  const selectorRefinements = [
+    {
+      path: '$',
+      rule: `The root is level one; the complete selector may contain at most ${tileflowRenderStackLimits.maxSelectorDepth} levels and ${tileflowRenderStackLimits.maxSelectorNodes} nodes.`,
+    },
+    {
+      path: '**.step.stops.*.zoom',
+      rule: 'Zoom values must be finite and strictly increasing in authored order.',
+    },
+  ];
+  for (const selector of renderSelectors) {
+    assert.deepEqual(selector['x-tileflow-limits'], {
+      maxDepth: tileflowRenderStackLimits.maxSelectorDepth,
+      maxNodes: tileflowRenderStackLimits.maxSelectorNodes,
+    });
+    assert.deepEqual(selector['x-tileflow-refinements'], selectorRefinements);
+  }
+  const renderStepStops = collectJsonSchemaObjects(reference).filter(
+    (schema) =>
+      schema.type === 'array' &&
+      schema.maxItems === tileflowRenderStackLimits.maxStepStops &&
+      String(JSON.stringify(schema['x-tileflow-refinements'])).includes(
+        'strictly increasing in authored order',
+      ),
+  );
+  assert.ok(renderStepStops.length > 0);
+  assert.ok(
+    renderStepStops.every(
+      (schema) =>
+        JSON.stringify(schema['x-tileflow-refinements']) ===
+        JSON.stringify([
+          {
+            path: '*.zoom',
+            rule: 'Zoom values must be finite and strictly increasing in authored order.',
+          },
+        ]),
+    ),
+  );
+
+  const validateRenderStack = ajv.compile({
+    $schema: reference.$schema,
+    $defs: definitions,
+    ...renderStacks[0],
+  });
+  const renderOperation = {
+    attachTo: 'water',
+    kind: 'render-pass',
+    phase: 'finish',
+    renderer: 'background',
+    style: {},
+  };
+  const boundedRenderStack = Object.fromEntries(
+    Array.from({length: tileflowRenderStackLimits.maxOperations}, (_, index) => [
+      `operation${index}`,
+      renderOperation,
+    ]),
+  );
+  assert.equal(
+    validateRenderStack(boundedRenderStack),
+    true,
+    JSON.stringify(validateRenderStack.errors),
+  );
+  assert.equal(
+    validateRenderStack({...boundedRenderStack, operationOverflow: renderOperation}),
+    false,
+  );
+  assert.equal(
+    validateRenderStack({limited: {...renderOperation, requirements: ['roads']}}),
+    true,
+    JSON.stringify(validateRenderStack.errors),
+  );
+  assert.equal(
+    validateRenderStack({limited: {...renderOperation, requirements: ['roads', 'roads']}}),
+    false,
+  );
+
+  const hatchSchemas = collectJsonSchemaObjects(reference).filter(
+    (schema) => schema.properties?.patternWidths && schema.properties?.pattern,
+  );
+  const hatch = hatchSchemas.find(
+    (schema) => typeof asJsonSchema(schema.properties?.patternWidths).$ref === 'string',
+  );
+  assert(hatch);
+  const validateHatch = ajv.compile({
+    $schema: reference.$schema,
+    $defs: definitions,
+    ...hatch,
+  });
+  for (const valid of [
+    {pattern: token('image', 'roads.hatch'), patternWidths: [1, 2]},
+    {
+      pattern: {kind: 'theme-fixed', reason: 'Invariant hatch sprite', value: 'roads-hatch'},
+      patternWidths: {
+        kind: 'theme-fixed',
+        reason: 'Invariant sprite widths',
+        value: [1, 4],
+      },
+    },
+  ]) {
+    assert.equal(validateHatch(valid), true, JSON.stringify(validateHatch.errors));
+  }
+  for (const invalid of [
+    {patternWidths: [1, 2]},
+    {pattern: token('color', 'wrong'), patternWidths: [1, 2]},
+    {pattern: {kind: 'expression', value: ['literal', 'sprite']}, patternWidths: [1, 2]},
+    {pattern: 'roads-hatch', patternWidths: [1]},
+    {pattern: 'roads-hatch', patternWidths: [1.5, 2]},
+  ]) {
+    assert.equal(validateHatch(invalid), false, JSON.stringify(invalid));
+  }
+
+  const patchHatch = hatchSchemas.find((schema) =>
+    JSON.stringify(schema.properties?.patternWidths).includes('TileflowReset'),
+  );
+  assert(patchHatch);
+  const validatePatchHatch = ajv.compile({
+    $schema: reference.$schema,
+    $defs: definitions,
+    ...patchHatch,
+  });
+  assert.equal(
+    validatePatchHatch({patternWidths: {$tileflow: 'reset'}}),
+    true,
+    JSON.stringify(validatePatchHatch.errors),
+  );
 });
 
 test('merges partial module requests while replacing arrays and preserving zoom values atomically', () => {

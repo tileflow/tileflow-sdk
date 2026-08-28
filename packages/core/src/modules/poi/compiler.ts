@@ -5,6 +5,7 @@ import {labelField} from '../../cartography/localization';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import type {
   TileflowCircleStyle,
+  TileflowMarkerSymbolStyle,
   TileflowSymbolStyle,
   TileflowTextStyle,
 } from '../../cartography/styles';
@@ -14,10 +15,11 @@ import type {
   TileflowPoiCategoryStyle,
   TileflowPoiModuleConfig,
 } from '../../types';
+import type {TileflowResolvedModuleConfig} from '../resolved';
 import {type ResolvedPoiModuleOptions, resolvePoi, tileflowPoiImageRoles} from './index';
 
 export function compilePoi(
-  request: TileflowPoiModuleConfig | undefined,
+  request: TileflowResolvedModuleConfig<TileflowPoiModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
   language: TileflowLabelLanguage = 'auto',
 ): TileflowLayerContribution[] {
@@ -76,6 +78,7 @@ export function compilePoi(
       };
     }
     style = withPoiTextClearance(style, showText && showIcon);
+    const symbolStyle = withoutMarker(style);
 
     if (markerStyle && markerStyle.visible !== false) {
       const base = createPoiLayer({
@@ -83,7 +86,7 @@ export function compilePoi(
         categoryField: schema.fields.poiCategory,
         density: semantics.density,
         filterRankField: schema.fields.poiFilterRank,
-        id: `streets-poi-${category}-marker`,
+        id: `tileflow-poi-${category}-marker`,
         minZoom: semantics.minZoom,
         sizeRankField: schema.fields.poiSizeRank,
         source,
@@ -108,13 +111,13 @@ export function compilePoi(
         categoryField: schema.fields.poiCategory,
         density: semantics.density,
         filterRankField: schema.fields.poiFilterRank,
-        id: `streets-poi-${category}`,
+        id: `tileflow-poi-${category}`,
         minZoom: semantics.minZoom,
         sizeRankField: schema.fields.poiSizeRank,
         source,
         sourceLayer: schema.layers.poi,
       });
-      layer = applySymbolStyle(layer, style);
+      layer = applySymbolStyle(layer, symbolStyle);
       result.push(poiContribution(category, index * 4 + 1, layer));
       continue;
     }
@@ -126,13 +129,13 @@ export function compilePoi(
           categoryField: schema.fields.poiCategory,
           density: semantics.density,
           filterRankField: schema.fields.poiFilterRank,
-          id: `streets-poi-${category}-icon`,
+          id: `tileflow-poi-${category}-icon`,
           minZoom: semantics.minZoom,
           sizeRankField: schema.fields.poiSizeRank,
           source,
           sourceLayer: schema.layers.poi,
         }),
-        {...style, text: undefined},
+        {...symbolStyle, text: undefined},
       );
       result.push(poiContribution(`${category}.icon`, index * 4 + 1, layer));
     }
@@ -144,13 +147,13 @@ export function compilePoi(
           categoryField: schema.fields.poiCategory,
           density: semantics.density,
           filterRankField: schema.fields.poiFilterRank,
-          id: `streets-poi-${category}-label`,
+          id: `tileflow-poi-${category}-label`,
           minZoom: semantics.minZoom,
           sizeRankField: schema.fields.poiSizeRank,
           source,
           sourceLayer: schema.layers.poi,
         }),
-        {...style, icon: undefined},
+        {...symbolStyle, icon: undefined},
       );
       result.push(poiContribution(`${category}.label`, index * 4 + 2, layer));
     }
@@ -175,7 +178,7 @@ function resolvePoiImage(
   ]);
 }
 
-function resolveMarkerStyle(style: TileflowSymbolStyle): TileflowCircleStyle {
+function resolveMarkerStyle(style: TileflowMarkerSymbolStyle): TileflowCircleStyle {
   return mergeTileflowDesign(
     {
       ...(style.maxZoom === undefined ? {} : {maxZoom: style.maxZoom}),
@@ -260,7 +263,7 @@ function poiTextStyle(
 }
 
 function withPoiTextClearance<
-  T extends TileflowSymbolStyle & {text: NonNullable<TileflowSymbolStyle['text']>},
+  T extends TileflowMarkerSymbolStyle & {text: NonNullable<TileflowSymbolStyle['text']>},
 >(style: T, besideIcon: boolean): T {
   if (
     !besideIcon ||
@@ -279,4 +282,10 @@ function withPoiTextClearance<
       variableAnchors: ['top', 'bottom', 'right', 'left'],
     },
   };
+}
+
+function withoutMarker(style: TileflowMarkerSymbolStyle): TileflowSymbolStyle {
+  const result = {...style};
+  delete result.marker;
+  return result;
 }

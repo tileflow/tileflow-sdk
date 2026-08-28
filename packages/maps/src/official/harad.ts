@@ -1,28 +1,24 @@
 import {
-  addresses,
-  aeroways,
   boundaries,
   buildings,
-  defineRootMap,
-  expression,
+  defineMap,
+  disable,
+  expr,
+  field,
   labels,
   land,
   landforms,
-  poi,
+  renderPass,
   roads,
+  type TileflowRenderSelector,
   type TileflowRoadClassStyle,
   type TileflowSymbolStyle,
   transit,
   vegetation,
   water,
+  withRenderStack,
   zoom,
 } from '@tileflow/core';
-import {
-  addModuleLayer,
-  defineModuleEffects,
-  semanticField,
-  semanticLayer,
-} from '@tileflow/core/recipe';
 import {haradIcons} from '../assets';
 import {bindOfficialMapTheme, defineOfficialTheme} from './theme-helpers';
 
@@ -153,11 +149,7 @@ const haradPathLabel = {
   },
 } satisfies TileflowSymbolStyle;
 
-const landcoverClass = ['get', semanticField('class')];
-const landcoverSubclass = ['get', semanticField('subclass')];
-
 function landcoverPattern(
-  id: string,
   target: string,
   pattern: string,
   classes: readonly string[],
@@ -169,47 +161,42 @@ function landcoverPattern(
     subclasses?: readonly string[];
   } = {},
 ) {
-  const classFilter = ['match', landcoverClass, classes, true, false];
-  const filter = options.subclasses
-    ? ['all', classFilter, ['match', landcoverSubclass, options.subclasses, true, false]]
-    : classFilter;
-
+  const classSelector = {
+    field: 'class',
+    kind: 'in',
+    values: classes,
+  } as const satisfies TileflowRenderSelector;
+  const selector: TileflowRenderSelector = options.subclasses
+    ? {
+        kind: 'all',
+        selectors: [classSelector, {field: 'subclass', kind: 'in', values: options.subclasses}],
+      }
+    : classSelector;
   const minZoom = options.minZoom ?? 8;
   const opacity = options.opacity ?? 0.78;
-  const opacityExpression = [
-    'interpolate',
-    ['linear'],
-    ['zoom'],
-    minZoom,
-    0,
-    minZoom + 1,
-    opacity,
-    ...(options.highZoom !== undefined && options.highZoomOpacity !== undefined
-      ? [options.highZoom, options.highZoomOpacity]
-      : []),
+  const opacityStops: Array<readonly [number, number]> = [
+    [minZoom, 0],
+    [minZoom + 1, opacity],
   ];
+  if (options.highZoom !== undefined && options.highZoomOpacity !== undefined) {
+    opacityStops.push([options.highZoom, options.highZoomOpacity]);
+  }
 
-  return addModuleLayer(
-    'land',
-    `land.effects.pattern.${id}`,
-    {
-      id: `harad-landcover-${id}-pattern`,
-      type: 'fill',
-      source: 'tileflow',
-      'source-layer': semanticLayer('landcover'),
-      minzoom: minZoom,
-      filter,
-      paint: {
-        'fill-opacity': opacityExpression,
-        'fill-pattern': pattern,
-      },
+  return renderPass({
+    attachTo: target,
+    feature: 'landcover',
+    phase: 'overlay',
+    renderer: 'fill',
+    selector,
+    style: {
+      minZoom,
+      opacity: zoom.linear(opacityStops),
+      pattern,
     },
-    {after: target},
-  );
+  });
 }
 
 function landusePattern(
-  id: string,
   target: string,
   pattern: string,
   classes: readonly string[],
@@ -217,40 +204,27 @@ function landusePattern(
   opacity: number,
   maxZoom?: number,
 ) {
-  const opacityExpression = maxZoom
-    ? [
-        'interpolate',
-        ['linear'],
-        ['zoom'],
-        minZoom,
-        0,
-        minZoom + 1,
-        opacity,
-        maxZoom - 2,
-        opacity * 0.5,
-        maxZoom,
-        0,
-      ]
-    : ['interpolate', ['linear'], ['zoom'], minZoom, 0, minZoom + 1, opacity];
+  const opacityStops: Array<readonly [number, number]> = [
+    [minZoom, 0],
+    [minZoom + 1, opacity],
+  ];
+  if (maxZoom !== undefined) {
+    opacityStops.push([maxZoom - 2, opacity * 0.5], [maxZoom, 0]);
+  }
 
-  return addModuleLayer(
-    'land',
-    `land.effects.pattern.${id}`,
-    {
-      id: `harad-landuse-${id}-pattern`,
-      type: 'fill',
-      source: 'tileflow',
-      'source-layer': semanticLayer('landuse'),
-      minzoom: minZoom,
-      ...(maxZoom ? {maxzoom: maxZoom} : {}),
-      filter: ['match', ['get', semanticField('class')], classes, true, false],
-      paint: {
-        'fill-opacity': opacityExpression,
-        'fill-pattern': pattern,
-      },
+  return renderPass({
+    attachTo: target,
+    feature: 'landuse',
+    phase: 'overlay',
+    renderer: 'fill',
+    selector: {field: 'class', kind: 'in', values: classes},
+    style: {
+      ...(maxZoom === undefined ? {} : {maxZoom}),
+      minZoom,
+      opacity: zoom.linear(opacityStops),
+      pattern,
     },
-    {after: target},
-  );
+  });
 }
 
 export const haradTheme = defineOfficialTheme({
@@ -396,11 +370,10 @@ export const haradTheme = defineOfficialTheme({
  * extends the Streets map and owns its complete visual design and asset set.
  */
 export const harad = bindOfficialMapTheme(
-  defineRootMap({
+  defineMap({
     id: 'harad',
     version: 1,
     name: 'Härad',
-    root: {compiler: 'streets', compilerVersion: 1},
     data: {
       generation: 'v1',
       selection: {kind: 'current', product: 'world-v1'},
@@ -417,8 +390,8 @@ export const harad = bindOfficialMapTheme(
     projection: 'mercator',
     terrain: 'none',
     modules: {
-      addresses: addresses({enabled: false}),
-      aeroways: aeroways({enabled: false}),
+      addresses: disable(),
+      aeroways: disable(),
       boundaries: boundaries({
         admin2: {
           color: haradPalette.boundary,
@@ -638,77 +611,144 @@ export const harad = bindOfficialMapTheme(
         },
         water: 'all',
       }),
-      land: land({
-        background: {opacity: 1, pattern: 'harad-paper-grain'},
-        globalLandcover: {
-          color: expression<string>([
-            'match',
-            ['get', semanticField('class')],
-            'barren',
-            '#D9CCB2',
-            'crop',
-            haradPalette.field,
-            'grass',
-            haradPalette.grass,
-            'shrub',
-            haradPalette.scrub,
-            'snow',
-            haradPalette.ice,
-            'trees',
-            haradPalette.wood,
-            'urban',
-            '#DDC67E',
-            'rgba(0, 0, 0, 0)',
-          ]),
-          maxZoom: 10,
-          minZoom: 0,
-          opacity: zoom.linear([
-            [0, 0.9],
-            [7, 0.82],
-            [9, 0.35],
-            [10, 0],
-          ]),
-        },
-        landcover: {
-          farmland: {fill: {color: haradPalette.field, minZoom: 7, opacity: 0.84}},
-          flowerbed: {fill: {color: haradPalette.fieldLight, minZoom: 12, opacity: 0.76}},
-          grass: {fill: {color: haradPalette.grass, minZoom: 7, opacity: 0.72}},
-          ice: {fill: {color: haradPalette.ice, minZoom: 7, opacity: 0.72}},
-          meadow: {fill: {color: haradPalette.meadow, minZoom: 7, opacity: 0.74}},
-          protected: {fill: {color: '#C6CE9D', minZoom: 7, opacity: 0.48}},
-          recreationGround: {fill: {color: '#CED09D', minZoom: 9, opacity: 0.66}},
-          rock: {fill: {color: '#D9CCB2', minZoom: 7, opacity: 0.62}},
-          sand: {fill: {color: haradPalette.sand, minZoom: 7, opacity: 0.78}},
-          scrub: {fill: {color: haradPalette.scrub, minZoom: 7, opacity: 0.72}},
-          urbanPark: {fill: {color: '#C9D09F', minZoom: 9, opacity: 0.72}},
-          villageGreen: {fill: {color: '#CCD2A2', minZoom: 10, opacity: 0.7}},
-          wetland: {fill: {color: haradPalette.wetland, minZoom: 7, opacity: 0.78}},
-          wood: {fill: {color: haradPalette.wood, minZoom: 7, opacity: 0.74}},
-        },
-        landuse: {
-          cemetery: {
-            fill: {color: '#C5C999', minZoom: 10, opacity: 0.7},
-            outline: {color: haradPalette.woodDark, minZoom: 12, opacity: 0.56, width: 0.6},
+      land: withRenderStack(
+        land({
+          background: {opacity: 1, pattern: 'harad-paper-grain'},
+          globalLandcover: {
+            color: expr.match(
+              expr.get(field('class')),
+              [
+                {labels: 'barren', value: '#D9CCB2'},
+                {labels: 'crop', value: haradPalette.field},
+                {labels: 'grass', value: haradPalette.grass},
+                {labels: 'shrub', value: haradPalette.scrub},
+                {labels: 'snow', value: haradPalette.ice},
+                {labels: 'trees', value: haradPalette.wood},
+                {labels: 'urban', value: '#DDC67E'},
+              ],
+              'rgba(0, 0, 0, 0)',
+            ),
+            maxZoom: 10,
+            minZoom: 0,
+            opacity: zoom.linear([
+              [0, 0.9],
+              [7, 0.82],
+              [9, 0.35],
+              [10, 0],
+            ]),
           },
-          civic: {fill: {color: '#E3C985', minZoom: 10, opacity: 0.46}},
-          commercial: {fill: {color: '#DCBC73', minZoom: 10, opacity: 0.42}},
-          education: {fill: {color: '#D8C68D', minZoom: 10, opacity: 0.48}},
-          government: {fill: {color: '#DDC07B', minZoom: 10, opacity: 0.46}},
-          industrial: {fill: {color: '#CCB68A', minZoom: 10, opacity: 0.48}},
-          medical: {fill: {color: '#D9B78A', minZoom: 11, opacity: 0.44}},
-          military: {fill: {color: '#D2AE8D', minZoom: 8, opacity: 0.4}},
-          parking: {
-            fill: {visible: false},
-            outline: {visible: false},
+          landcover: {
+            farmland: {fill: {color: haradPalette.field, minZoom: 7, opacity: 0.84}},
+            flowerbed: {fill: {color: haradPalette.fieldLight, minZoom: 12, opacity: 0.76}},
+            grass: {fill: {color: haradPalette.grass, minZoom: 7, opacity: 0.72}},
+            ice: {fill: {color: haradPalette.ice, minZoom: 7, opacity: 0.72}},
+            meadow: {fill: {color: haradPalette.meadow, minZoom: 7, opacity: 0.74}},
+            protected: {fill: {color: '#C6CE9D', minZoom: 7, opacity: 0.48}},
+            recreationGround: {fill: {color: '#CED09D', minZoom: 9, opacity: 0.66}},
+            rock: {fill: {color: '#D9CCB2', minZoom: 7, opacity: 0.62}},
+            sand: {fill: {color: haradPalette.sand, minZoom: 7, opacity: 0.78}},
+            scrub: {fill: {color: haradPalette.scrub, minZoom: 7, opacity: 0.72}},
+            urbanPark: {fill: {color: '#C9D09F', minZoom: 9, opacity: 0.72}},
+            villageGreen: {fill: {color: '#CCD2A2', minZoom: 10, opacity: 0.7}},
+            wetland: {fill: {color: haradPalette.wetland, minZoom: 7, opacity: 0.78}},
+            wood: {fill: {color: haradPalette.wood, minZoom: 7, opacity: 0.74}},
           },
-          railway: {fill: {color: '#C6B99A', minZoom: 11, opacity: 0.4}},
-          recreation: {
-            fill: {color: '#CCD09E', minZoom: 9, opacity: 0.6},
-            outline: {color: haradPalette.woodDark, minZoom: 13, opacity: 0.42, width: 0.55},
+          landuse: {
+            cemetery: {
+              fill: {color: '#C5C999', minZoom: 10, opacity: 0.7},
+              outline: {color: haradPalette.woodDark, minZoom: 12, opacity: 0.56, width: 0.6},
+            },
+            civic: {fill: {color: '#E3C985', minZoom: 10, opacity: 0.46}},
+            commercial: {fill: {color: '#DCBC73', minZoom: 10, opacity: 0.42}},
+            education: {fill: {color: '#D8C68D', minZoom: 10, opacity: 0.48}},
+            government: {fill: {color: '#DDC07B', minZoom: 10, opacity: 0.46}},
+            industrial: {fill: {color: '#CCB68A', minZoom: 10, opacity: 0.48}},
+            medical: {fill: {color: '#D9B78A', minZoom: 11, opacity: 0.44}},
+            military: {fill: {color: '#D2AE8D', minZoom: 8, opacity: 0.4}},
+            parking: {
+              fill: {visible: false},
+              outline: {visible: false},
+            },
+            railway: {fill: {color: '#C6B99A', minZoom: 11, opacity: 0.4}},
+            recreation: {
+              fill: {color: '#CCD09E', minZoom: 9, opacity: 0.6},
+              outline: {color: haradPalette.woodDark, minZoom: 13, opacity: 0.42, width: 0.55},
+            },
+            residential: {fill: {color: '#DFC472', minZoom: 9, opacity: 0.62}},
           },
-          residential: {fill: {color: '#DFC472', minZoom: 9, opacity: 0.62}},
+        }),
+        {
+          fieldBoundaries: renderPass({
+            attachTo: 'land.landcover.farmland.fill',
+            feature: 'landcover',
+            phase: 'overlay',
+            renderer: 'line',
+            selector: {field: 'class', kind: 'in', values: ['farmland']},
+            style: {
+              color: haradPalette.cadastral,
+              minZoom: 10,
+              opacity: zoom.linear([
+                [10, 0],
+                [12, 0.38],
+                [16, 0.56],
+              ]),
+              width: zoom.linear([
+                [10, 0.2],
+                [16, 0.65],
+              ]),
+            },
+          }),
+          arableTexture: landcoverPattern(
+            'land.landcover.farmland.fill',
+            'harad-arable',
+            ['farmland'],
+            {
+              highZoom: 16,
+              highZoomOpacity: 0.44,
+              minZoom: 8,
+              opacity: 0.8,
+            },
+          ),
+          coniferTexture: landcoverPattern(
+            'land.landcover.wood.fill',
+            'harad-conifer',
+            ['wood', 'forest'],
+            {minZoom: 8, opacity: 0.84},
+          ),
+          orchardTexture: landcoverPattern(
+            'land.landcover.urbanPark.fill',
+            'harad-orchard',
+            ['grass'],
+            {minZoom: 11, opacity: 0.52, subclasses: ['garden']},
+          ),
+          deciduousTexture: landcoverPattern(
+            'land.landcover.urbanPark.fill',
+            'harad-deciduous',
+            ['grass'],
+            {minZoom: 10, opacity: 0.7, subclasses: ['park']},
+          ),
+          sandTexture: landcoverPattern(
+            'land.landcover.sand.fill',
+            'harad-sand',
+            ['sand', 'beach'],
+            {minZoom: 9, opacity: 0.72},
+          ),
+          wetlandTexture: landcoverPattern(
+            'land.landcover.wetland.fill',
+            'harad-wetland',
+            ['wetland'],
+            {minZoom: 9, opacity: 0.82},
+          ),
+          settlementTexture: landusePattern(
+            'land.landuse.residential.fill',
+            'harad-settlement',
+            ['residential'],
+            11,
+            0.56,
+            16,
+          ),
         },
-      }),
+      ),
       landforms: landforms({
         elevation: true,
         classes: {
@@ -747,7 +787,7 @@ export const harad = bindOfficialMapTheme(
           },
         },
       }),
-      poi: poi({enabled: false}),
+      poi: disable(),
       roads: roads({
         areas: {
           pedestrian: {
@@ -874,15 +914,14 @@ export const harad = bindOfficialMapTheme(
       }),
       vegetation: vegetation({
         flat: {
-          color: expression<string>([
-            'match',
-            ['coalesce', ['get', semanticField('leafType')], ''],
-            ['needleleaved', 'needleleaf'],
-            '#416A4C',
-            ['broadleaved', 'broadleaf'],
-            '#5F805A',
+          color: expr.match(
+            expr.coalesce(expr.get(field('leafType')), ''),
+            [
+              {labels: ['needleleaved', 'needleleaf'], value: '#416A4C'},
+              {labels: ['broadleaved', 'broadleaf'], value: '#5F805A'},
+            ],
             haradPalette.woodDark,
-          ]),
+          ),
           minZoom: 15,
           opacity: 0.8,
           radius: zoom.linear([
@@ -896,178 +935,127 @@ export const harad = bindOfficialMapTheme(
         minZoom: 15,
         mode: 'flat',
       }),
-      water: water({
-        bathymetry: {
-          color: expression<string>([
-            'match',
-            ['to-number', ['get', semanticField('bathymetryMinDepth')], 0],
-            0,
-            haradPalette.water,
-            -200,
-            '#B7D4CB',
-            -1000,
-            '#A9C9C0',
-            -2000,
-            '#9EBDB6',
-            -4000,
-            '#8FAFA8',
-            -6000,
-            '#84A29D',
-            haradPalette.water,
-          ]),
-          maxZoom: 9,
-          minZoom: 0,
-          opacity: zoom.linear([
-            [0, 0.68],
-            [7, 0.52],
-            [9, 0],
-          ]),
+      water: withRenderStack(
+        water({
+          bathymetry: {
+            color: expr.match(
+              expr.toNumber(expr.get(field('bathymetryMinDepth')), 0),
+              [
+                {labels: 0, value: haradPalette.water},
+                {labels: -200, value: '#B7D4CB'},
+                {labels: -1000, value: '#A9C9C0'},
+                {labels: -2000, value: '#9EBDB6'},
+                {labels: -4000, value: '#8FAFA8'},
+                {labels: -6000, value: '#84A29D'},
+              ],
+              haradPalette.water,
+            ),
+            maxZoom: 9,
+            minZoom: 0,
+            opacity: zoom.linear([
+              [0, 0.68],
+              [7, 0.52],
+              [9, 0],
+            ]),
+          },
+          bodies: {
+            fill: {color: haradPalette.water, opacity: 0.96},
+            outline: {
+              color: haradPalette.waterInk,
+              minZoom: 5,
+              opacity: 0.76,
+              width: zoom.linear([
+                [5, 0.4],
+                [14, 0.9],
+                [18, 1.25],
+              ]),
+            },
+          },
+          intermittent: {
+            bodies: {fill: {color: haradPalette.water, opacity: 0.5}},
+            waterways: {color: haradPalette.waterInk, dash: [3, 2], opacity: 0.46},
+          },
+          waterways: {
+            canal: {
+              color: haradPalette.waterInk,
+              minZoom: 8,
+              opacity: 0.92,
+              width: zoom.linear([
+                [8, 0.35],
+                [16, 1.8],
+              ]),
+            },
+            other: {
+              color: haradPalette.waterInk,
+              minZoom: 12,
+              opacity: 0.72,
+              width: zoom.linear([
+                [12, 0.25],
+                [17, 1],
+              ]),
+            },
+            river: {
+              color: haradPalette.waterInk,
+              minZoom: 6,
+              opacity: 0.96,
+              width: zoom.linear([
+                [6, 0.4],
+                [16, 2.2],
+              ]),
+            },
+            stream: {
+              color: haradPalette.waterInk,
+              minZoom: 10,
+              opacity: 0.86,
+              width: zoom.linear([
+                [10, 0.28],
+                [16, 1.2],
+              ]),
+            },
+          },
+        }),
+        {
+          printLines: renderPass({
+            attachTo: 'water.bodies.fill',
+            feature: 'water',
+            phase: 'overlay',
+            renderer: 'fill',
+            selector: {
+              coerce: 'number',
+              fallback: 0,
+              field: 'intermittent',
+              kind: 'compare',
+              operator: 'ne',
+              value: 1,
+            },
+            style: {
+              minZoom: 7,
+              opacity: zoom.linear([
+                [7, 0],
+                [9, 0.4],
+                [16, 0.28],
+              ]),
+              pattern: 'harad-water-lines',
+            },
+          }),
+          intermittentPrintLines: renderPass({
+            attachTo: 'water.intermittent.bodies.fill',
+            feature: 'water',
+            phase: 'overlay',
+            renderer: 'fill',
+            selector: {
+              coerce: 'number',
+              fallback: 0,
+              field: 'intermittent',
+              kind: 'compare',
+              operator: 'eq',
+              value: 1,
+            },
+            style: {minZoom: 9, opacity: 0.18, pattern: 'harad-water-lines'},
+          }),
         },
-        bodies: {
-          fill: {color: haradPalette.water, opacity: 0.96},
-          outline: {
-            color: haradPalette.waterInk,
-            minZoom: 5,
-            opacity: 0.76,
-            width: zoom.linear([
-              [5, 0.4],
-              [14, 0.9],
-              [18, 1.25],
-            ]),
-          },
-        },
-        intermittent: {
-          bodies: {fill: {color: haradPalette.water, opacity: 0.5}},
-          waterways: {color: haradPalette.waterInk, dash: [3, 2], opacity: 0.46},
-        },
-        waterways: {
-          canal: {
-            color: haradPalette.waterInk,
-            minZoom: 8,
-            opacity: 0.92,
-            width: zoom.linear([
-              [8, 0.35],
-              [16, 1.8],
-            ]),
-          },
-          other: {
-            color: haradPalette.waterInk,
-            minZoom: 12,
-            opacity: 0.72,
-            width: zoom.linear([
-              [12, 0.25],
-              [17, 1],
-            ]),
-          },
-          river: {
-            color: haradPalette.waterInk,
-            minZoom: 6,
-            opacity: 0.96,
-            width: zoom.linear([
-              [6, 0.4],
-              [16, 2.2],
-            ]),
-          },
-          stream: {
-            color: haradPalette.waterInk,
-            minZoom: 10,
-            opacity: 0.86,
-            width: zoom.linear([
-              [10, 0.28],
-              [16, 1.2],
-            ]),
-          },
-        },
-      }),
+      ),
     },
-    ...defineModuleEffects([
-      landcoverPattern('arable', 'land.landcover.farmland.fill', 'harad-arable', ['farmland'], {
-        highZoom: 16,
-        highZoomOpacity: 0.44,
-        minZoom: 8,
-        opacity: 0.8,
-      }),
-      landcoverPattern('conifer', 'land.landcover.wood.fill', 'harad-conifer', ['wood', 'forest'], {
-        minZoom: 8,
-        opacity: 0.84,
-      }),
-      landcoverPattern('deciduous', 'land.landcover.urbanPark.fill', 'harad-deciduous', ['grass'], {
-        minZoom: 10,
-        opacity: 0.7,
-        subclasses: ['park'],
-      }),
-      landcoverPattern('orchard', 'land.landcover.urbanPark.fill', 'harad-orchard', ['grass'], {
-        minZoom: 11,
-        opacity: 0.52,
-        subclasses: ['garden'],
-      }),
-      landcoverPattern('sand', 'land.landcover.sand.fill', 'harad-sand', ['sand', 'beach'], {
-        minZoom: 9,
-        opacity: 0.72,
-      }),
-      landcoverPattern('wetland', 'land.landcover.wetland.fill', 'harad-wetland', ['wetland'], {
-        minZoom: 9,
-        opacity: 0.82,
-      }),
-      landusePattern(
-        'settlement',
-        'land.landuse.residential.fill',
-        'harad-settlement',
-        ['residential'],
-        11,
-        0.56,
-        16,
-      ),
-      addModuleLayer(
-        'land',
-        'land.effects.fieldBoundaries',
-        {
-          id: 'harad-field-boundaries',
-          type: 'line',
-          source: 'tileflow',
-          'source-layer': semanticLayer('landcover'),
-          minzoom: 10,
-          filter: ['match', ['get', semanticField('class')], ['farmland'], true, false],
-          paint: {
-            'line-color': haradPalette.cadastral,
-            'line-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0, 12, 0.38, 16, 0.56],
-            'line-width': ['interpolate', ['linear'], ['zoom'], 10, 0.2, 16, 0.65],
-          },
-        },
-        {after: 'land.landcover.farmland.fill'},
-      ),
-      addModuleLayer(
-        'water',
-        'water.effects.printLines',
-        {
-          id: 'harad-water-lines-pattern',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('water'),
-          minzoom: 7,
-          filter: ['!=', ['to-number', ['get', semanticField('intermittent')], 0], 1],
-          paint: {
-            'fill-opacity': ['interpolate', ['linear'], ['zoom'], 7, 0, 9, 0.4, 16, 0.28],
-            'fill-pattern': 'harad-water-lines',
-          },
-        },
-        {after: 'water.bodies.fill'},
-      ),
-      addModuleLayer(
-        'water',
-        'water.effects.intermittentPrintLines',
-        {
-          id: 'harad-water-intermittent-lines-pattern',
-          type: 'fill',
-          source: 'tileflow',
-          'source-layer': semanticLayer('water'),
-          minzoom: 9,
-          filter: ['==', ['to-number', ['get', semanticField('intermittent')], 0], 1],
-          paint: {'fill-opacity': 0.18, 'fill-pattern': 'harad-water-lines'},
-        },
-        {after: 'water.intermittent.bodies.fill'},
-      ),
-    ]),
     view: {
       center: [15.2134, 59.2741],
       pitch: 0,

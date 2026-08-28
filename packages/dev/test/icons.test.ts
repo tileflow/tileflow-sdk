@@ -4,7 +4,12 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import test from 'node:test';
 import sharp from 'sharp';
-import {defineMap, diffTileflowIconPackageManifests} from '@tileflow/core';
+import {
+  defineMap,
+  diffTileflowIconPackageManifests,
+  parseTileflowMap,
+  type TileflowMap,
+} from '@tileflow/core';
 import {createStyleFromCatalog, type TileflowBuildCatalog} from '@tileflow/core/build';
 import {
   cyberpunk,
@@ -46,11 +51,19 @@ const streetsIconIds = [
   'sidewalk-dot-dark',
 ] as const;
 
+function defineResolvedMap(input: TileflowMap) {
+  return parseTileflowMap(defineMap(input));
+}
+
+function resolveFixtureMap(input: TileflowMap) {
+  return parseTileflowMap(input);
+}
+
 test('prepares inherited Streets directories without mutating the authored map', async () => {
   await withFixture(async (cwd) => {
     const project: TileflowBuildCatalog = {
       maps: {
-        main: defineMap({
+        main: defineResolvedMap({
           id: 'main',
           version: 1,
           extends: streets,
@@ -81,7 +94,7 @@ test('prepares inherited Streets directories without mutating the authored map',
       preparedAssets: prepared.mapAssets.main,
     });
     assert.equal(style.sprite, '/tileflow/icons/main/sprite');
-    assert.ok(style.layers.some((layer) => layer.id === 'streets-road-oneway'));
+    assert.ok(style.layers.some((layer) => layer.id === 'tileflow-road-oneway'));
   });
 });
 
@@ -89,14 +102,14 @@ test('prepares every independent official root from its package-owned directorie
   await withFixture(async (cwd) => {
     const project: TileflowBuildCatalog = {
       maps: {
-        cyberpunk,
-        ferraris,
-        harad,
-        matrix,
-        siegfried,
-        soundings,
-        streets,
-        verdant,
+        cyberpunk: resolveFixtureMap(cyberpunk),
+        ferraris: resolveFixtureMap(ferraris),
+        harad: resolveFixtureMap(harad),
+        matrix: resolveFixtureMap(matrix),
+        siegfried: resolveFixtureMap(siegfried),
+        soundings: resolveFixtureMap(soundings),
+        streets: resolveFixtureMap(streets),
+        verdant: resolveFixtureMap(verdant),
       },
     };
     const compiled = await compileTileflowIconPackages(project, {cwd, target: 'hosted'});
@@ -209,13 +222,13 @@ test('later directories replace exact canonical IDs and empty arrays disable ico
     await writeSvg(join(cwd, 'brand', 'new.svg'), '#3b82f6');
     const project: TileflowBuildCatalog = {
       maps: {
-        main: defineMap({
+        main: defineResolvedMap({
           id: 'main',
           version: 1,
           extends: streets,
           icons: ['./base', './brand'],
         }),
-        none: defineMap({id: 'none', version: 1, extends: streets, icons: []}),
+        none: defineResolvedMap({id: 'none', version: 1, extends: streets, icons: []}),
       },
     };
     const compiled = await compileTileflowIconPackages(project, {cwd, target: 'hosted'});
@@ -231,8 +244,8 @@ test('compiles exact deterministic packages, deduplicates shared sources, and pr
     await writeSvg(join(cwd, 'icons', 'airport.svg'), '#4f5d75');
     const project: TileflowBuildCatalog = {
       maps: {
-        alpha: defineMap({id: 'alpha', version: 1, extends: streets, icons: ['./icons']}),
-        beta: defineMap({id: 'beta', version: 1, extends: streets, icons: ['./icons']}),
+        alpha: defineResolvedMap({id: 'alpha', version: 1, extends: streets, icons: ['./icons']}),
+        beta: defineResolvedMap({id: 'beta', version: 1, extends: streets, icons: ['./icons']}),
       },
     };
 
@@ -589,7 +602,7 @@ test('rejects images over the decoded pixel limit before atlas creation', async 
 function localProject(source: `./${string}` | `../${string}`): TileflowBuildCatalog {
   return {
     maps: {
-      main: defineMap({
+      main: defineResolvedMap({
         id: 'main',
         version: 1,
         extends: streets,

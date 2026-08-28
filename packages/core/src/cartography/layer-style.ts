@@ -40,6 +40,10 @@ export function applyFillStyle<TLayer extends Layer>(
   setPaint(paint, 'fill-color', style.color);
   setPaint(paint, 'fill-opacity', style.opacity);
   setPaint(paint, 'fill-pattern', style.pattern);
+  setPaint(paint, 'fill-translate', style.translate);
+  if (style.translateAnchor !== undefined) {
+    paint['fill-translate-anchor'] = style.translateAnchor;
+  }
   return applyLayerRange(withLayerParts(layer, undefined, paint), style);
 }
 
@@ -56,6 +60,10 @@ export function applyLineStyle<TLayer extends Layer>(
   setPaint(paint, 'line-offset', style.offset);
   setPaint(paint, 'line-opacity', style.opacity);
   setPaint(paint, 'line-pattern', style.pattern);
+  setPaint(paint, 'line-translate', style.translate);
+  if (style.translateAnchor !== undefined) {
+    paint['line-translate-anchor'] = style.translateAnchor;
+  }
   setPaint(paint, 'line-width', style.width);
   setLayout(layout, 'line-cap', style.cap);
   setLayout(layout, 'line-join', style.join);
@@ -144,7 +152,7 @@ export function applySymbolPlacement<TLayer extends Layer>(
   const layout = {...asRecord(layer.layout)};
   if (style.placement !== undefined) layout['symbol-placement'] = style.placement;
   if (style.priority !== undefined) {
-    layout['symbol-sort-key'] = invertPriority(style.priority);
+    layout['symbol-sort-key'] = resolvePriority(style.priority, style.priorityOrder);
   }
   setLayout(layout, 'symbol-spacing', style.spacing);
   if (style.zOrder !== undefined) layout['symbol-z-order'] = style.zOrder;
@@ -184,6 +192,7 @@ export function applyCircleStyle<TLayer extends Layer>(
   style: TileflowCircleStyle,
 ): TLayer {
   const paint = {...asRecord(layer.paint)};
+  const layout = {...asRecord(layer.layout)};
   setPaint(paint, 'circle-blur', style.blur);
   setPaint(paint, 'circle-color', style.color);
   setPaint(paint, 'circle-opacity', style.opacity);
@@ -191,11 +200,18 @@ export function applyCircleStyle<TLayer extends Layer>(
     paint['circle-pitch-alignment'] = style.pitchAlignment;
   }
   if (style.pitchScale !== undefined) paint['circle-pitch-scale'] = style.pitchScale;
+  if (style.priority !== undefined) {
+    layout['circle-sort-key'] = resolvePriority(style.priority, style.priorityOrder);
+  }
   setPaint(paint, 'circle-radius', style.radius);
   setPaint(paint, 'circle-stroke-color', style.strokeColor);
   setPaint(paint, 'circle-stroke-opacity', style.strokeOpacity);
   setPaint(paint, 'circle-stroke-width', style.strokeWidth);
-  return applyLayerRange(withLayerParts(layer, undefined, paint), style);
+  setPaint(paint, 'circle-translate', style.translate);
+  if (style.translateAnchor !== undefined) {
+    paint['circle-translate-anchor'] = style.translateAnchor;
+  }
+  return applyLayerRange(withLayerParts(layer, layout, paint), style);
 }
 
 export function applyExtrusionStyle<TLayer extends Layer>(
@@ -286,6 +302,13 @@ function invertPriority(value: TileflowSymbolPlacementStyle['priority']): unknow
     );
   }
   return ['*', -1, resolved];
+}
+
+function resolvePriority(
+  value: TileflowSymbolPlacementStyle['priority'],
+  order: TileflowSymbolPlacementStyle['priorityOrder'],
+): unknown {
+  return order === 'lower-first' ? toMapLibreStyleValue(value) : invertPriority(value);
 }
 
 function negateExpressionOutput(value: unknown): unknown {

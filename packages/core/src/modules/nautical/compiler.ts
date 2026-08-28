@@ -2,13 +2,18 @@ import {type TileflowDomainCompileContext, typographyTextStyle} from '../../cart
 import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applyCircleStyle, applySymbolStyle, createAreaLayers} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
-import type {TileflowAreaStyle, TileflowSymbolStyle} from '../../cartography/styles';
+import type {
+  TileflowAreaStyle,
+  TileflowMarkerSymbolStyle,
+  TileflowSymbolStyle,
+} from '../../cartography/styles';
 import {expression, zoom} from '../../cartography/values';
 import {tileflowNauticalV1Schema} from '../../marine';
+import type {TileflowResolvedModuleConfig} from '../resolved';
 import type {TileflowNauticalModuleConfig} from './index';
 
 export function compileNautical(
-  request: TileflowNauticalModuleConfig | undefined,
+  request: TileflowResolvedModuleConfig<TileflowNauticalModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
 ): TileflowLayerContribution[] {
   const nauticalSource = context.marine?.nautical;
@@ -22,7 +27,7 @@ export function compileNautical(
     haloColor: colors.hydro.water,
     haloWidth: 1.2,
   };
-  const config = mergeTileflowDesign<TileflowNauticalModuleConfig>(
+  const config = mergeTileflowDesign<TileflowResolvedModuleConfig<TileflowNauticalModuleConfig>>(
     {
       type: 'nautical',
       enabled: true,
@@ -268,7 +273,7 @@ export function compileNautical(
   const source = nauticalSource.sourceId;
   const contributions: TileflowLayerContribution[] = [];
   appendAreaFeature(contributions, {
-    id: 'streets-nautical-coverage',
+    id: 'tileflow-nautical-coverage',
     localOrder: 380,
     source,
     sourceLayer: layers.coverage,
@@ -276,7 +281,7 @@ export function compileNautical(
     target: 'nautical.coverage',
   });
   appendAreaFeature(contributions, {
-    id: 'streets-nautical-navigation-areas',
+    id: 'tileflow-nautical-navigation-areas',
     localOrder: 390,
     source,
     sourceLayer: layers.navigationAreas,
@@ -284,7 +289,7 @@ export function compileNautical(
     target: 'nautical.navigationAreas',
   });
   appendAreaFeature(contributions, {
-    id: 'streets-nautical-reefs',
+    id: 'tileflow-nautical-reefs',
     localOrder: 400,
     source,
     sourceLayer: layers.reefs,
@@ -292,7 +297,7 @@ export function compileNautical(
     target: 'nautical.reefs',
   });
   appendAreaFeature(contributions, {
-    id: 'streets-nautical-hazard-areas',
+    id: 'tileflow-nautical-hazard-areas',
     localOrder: 410,
     source,
     sourceLayer: layers.hazards,
@@ -300,7 +305,7 @@ export function compileNautical(
     target: 'nautical.hazardAreas',
   });
   appendAreaFeature(contributions, {
-    id: 'streets-nautical-wreck-areas',
+    id: 'tileflow-nautical-wreck-areas',
     localOrder: 420,
     source,
     sourceLayer: layers.wrecks,
@@ -310,7 +315,7 @@ export function compileNautical(
 
   appendPolygonLabel(contributions, {
     featureFilter: ['any', ['has', fields.name], ['has', fields.provider]],
-    id: 'streets-nautical-coverage-labels',
+    id: 'tileflow-nautical-coverage-labels',
     localOrder: 1060,
     source,
     sourceLayer: layers.coverage,
@@ -319,7 +324,7 @@ export function compileNautical(
   });
   appendPolygonLabel(contributions, {
     featureFilter: ['any', ['has', fields.name], ['has', fields.class]],
-    id: 'streets-nautical-navigation-area-labels',
+    id: 'tileflow-nautical-navigation-area-labels',
     localOrder: 1070,
     source,
     sourceLayer: layers.navigationAreas,
@@ -327,7 +332,7 @@ export function compileNautical(
     target: 'nautical.labels.navigationAreas',
   });
   appendPolygonLabel(contributions, {
-    id: 'streets-nautical-reef-labels',
+    id: 'tileflow-nautical-reef-labels',
     localOrder: 1080,
     source,
     sourceLayer: layers.reefs,
@@ -335,7 +340,7 @@ export function compileNautical(
     target: 'nautical.labels.reefs',
   });
   appendPolygonLabel(contributions, {
-    id: 'streets-nautical-hazard-area-labels',
+    id: 'tileflow-nautical-hazard-area-labels',
     localOrder: 1090,
     source,
     sourceLayer: layers.hazards,
@@ -343,7 +348,7 @@ export function compileNautical(
     target: 'nautical.labels.hazards',
   });
   appendPolygonLabel(contributions, {
-    id: 'streets-nautical-wreck-area-labels',
+    id: 'tileflow-nautical-wreck-area-labels',
     localOrder: 1095,
     source,
     sourceLayer: layers.wrecks,
@@ -352,7 +357,7 @@ export function compileNautical(
   });
 
   appendPointFeature(contributions, {
-    id: 'streets-nautical-soundings',
+    id: 'tileflow-nautical-soundings',
     localOrder: 1100,
     source,
     sourceLayer: layers.soundings,
@@ -361,7 +366,7 @@ export function compileNautical(
     filter: ['all', ['==', ['geometry-type'], 'Point'], ['has', fields.depth]],
   });
   appendPointFeature(contributions, {
-    id: 'streets-nautical-aids',
+    id: 'tileflow-nautical-aids',
     localOrder: 1110,
     source,
     sourceLayer: layers.aids,
@@ -374,7 +379,7 @@ export function compileNautical(
     ],
   });
   appendPointFeature(contributions, {
-    id: 'streets-nautical-lighthouses',
+    id: 'tileflow-nautical-lighthouses',
     localOrder: 1115,
     source,
     sourceLayer: layers.aids,
@@ -387,7 +392,7 @@ export function compileNautical(
     ],
   });
   appendPointFeature(contributions, {
-    id: 'streets-nautical-lights',
+    id: 'tileflow-nautical-lights',
     localOrder: 1120,
     source,
     sourceLayer: layers.lights,
@@ -396,7 +401,7 @@ export function compileNautical(
     filter: ['==', ['geometry-type'], 'Point'],
   });
   appendPointFeature(contributions, {
-    id: 'streets-nautical-hazards',
+    id: 'tileflow-nautical-hazards',
     localOrder: 1130,
     source,
     sourceLayer: layers.hazards,
@@ -405,7 +410,7 @@ export function compileNautical(
     filter: ['==', ['geometry-type'], 'Point'],
   });
   appendPointFeature(contributions, {
-    id: 'streets-nautical-wrecks',
+    id: 'tileflow-nautical-wrecks',
     localOrder: 1140,
     source,
     sourceLayer: layers.wrecks,
@@ -450,7 +455,7 @@ function appendPolygonLabel(
             ? ['all', ['==', ['geometry-type'], 'Polygon'], options.featureFilter]
             : ['==', ['geometry-type'], 'Polygon'],
         },
-        {...style, marker: undefined},
+        style,
       ),
       'symbols',
     ),
@@ -498,12 +503,13 @@ function appendPointFeature(
     localOrder: number;
     source: string;
     sourceLayer: string;
-    style: TileflowSymbolStyle | undefined;
+    style: TileflowMarkerSymbolStyle | undefined;
     target: string;
   },
 ): void {
   const style = options.style;
   if (!style || style.visible === false) return;
+  const symbolStyle = withoutMarker(style);
   const base = {
     id: options.id,
     type: 'symbol',
@@ -539,10 +545,16 @@ function appendPointFeature(
     nauticalContribution(
       `${options.target}.symbol`,
       options.localOrder + 1,
-      applySymbolStyle(base, {...style, marker: undefined}),
+      applySymbolStyle(base, symbolStyle),
       'symbols',
     ),
   );
+}
+
+function withoutMarker(style: TileflowMarkerSymbolStyle): TileflowSymbolStyle {
+  const result = {...style};
+  delete result.marker;
+  return result;
 }
 
 function nauticalContribution(

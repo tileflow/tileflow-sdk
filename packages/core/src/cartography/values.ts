@@ -1,11 +1,16 @@
 import {isMapLibreExpressionOperator} from './expression-operators';
 
-const expressionBrand = Symbol('TileflowExpression');
-const filterBrand = Symbol('TileflowFilter');
+declare const expressionBrand: unique symbol;
 const themeValueBrand = Symbol('TileflowThemeValue');
 const zoomBrand = Symbol('TileflowZoom');
 
-export type TileflowThemeTokenCategory = 'color' | 'font' | 'image' | 'number';
+export const tileflowThemeTokenCategories = Object.freeze([
+  'color',
+  'font',
+  'image',
+  'number',
+] as const);
+export type TileflowThemeTokenCategory = (typeof tileflowThemeTokenCategories)[number];
 
 type TileflowThemeTokenPrimitive = {
   color: string;
@@ -134,24 +139,23 @@ export const color = {
 export type TileflowExpression<T> = {
   readonly kind: 'expression';
   readonly value: readonly unknown[];
-  readonly [expressionBrand]?: T;
-};
-
-export type TileflowFilterExpression = {
-  readonly kind: 'filter';
-  readonly value: readonly unknown[];
-  readonly [filterBrand]?: true;
+  /** Opaque result type. Only Tileflow's closed `expr.*` builders expose this brand publicly. */
+  readonly [expressionBrand]: T;
 };
 
 export type TileflowZoomInterpolation = 'linear' | 'exponential';
 
-export type TileflowZoomValue<T> = {
-  readonly base?: number;
-  readonly interpolation: TileflowZoomInterpolation | 'step';
+type TileflowZoomValueCommon<T> = {
   readonly kind: 'zoom';
   readonly stops: readonly (readonly [number, T])[];
   readonly [zoomBrand]?: T;
 };
+
+export type TileflowZoomValue<T> = TileflowZoomValueCommon<T> &
+  (
+    | {readonly base: number; readonly interpolation: 'exponential'}
+    | {readonly base?: never; readonly interpolation: 'linear' | 'step'}
+  );
 
 export type TileflowStyleValue<T> =
   | TileflowExpression<T>
@@ -176,11 +180,6 @@ export const zoom = {
 export function expression<T>(value: readonly unknown[]): TileflowExpression<T> {
   validateExpressionArray(value, 'expression');
   return {kind: 'expression', value: cloneJson(value)} as TileflowExpression<T>;
-}
-
-export function filter(value: readonly unknown[]): TileflowFilterExpression {
-  validateExpressionArray(value, 'filter');
-  return {kind: 'filter', value: cloneJson(value)} as TileflowFilterExpression;
 }
 
 export function toMapLibreStyleValue<T>(value: TileflowStyleValue<T>): T | unknown[] {
@@ -215,10 +214,6 @@ export function toMapLibreStyleValue<T>(value: TileflowStyleValue<T>): T | unkno
   return cloneJson(value as T);
 }
 
-export function toMapLibreFilter(value: TileflowFilterExpression): unknown[] {
-  return cloneJson(value.value) as unknown[];
-}
-
 export function isTileflowExpression(value: unknown): value is TileflowExpression<unknown> {
   return isRecord(value) && value.kind === 'expression' && Array.isArray(value.value);
 }
@@ -236,7 +231,7 @@ export function isTileflowThemeTokenReference(
     value.kind === 'theme-token' &&
     typeof value.token === 'string' &&
     /^[A-Za-z][A-Za-z0-9_-]*(?:\.[A-Za-z][A-Za-z0-9_-]*)*$/.test(value.token) &&
-    ['color', 'font', 'image', 'number'].includes(String(value.category))
+    (tileflowThemeTokenCategories as readonly unknown[]).includes(value.category)
   );
 }
 

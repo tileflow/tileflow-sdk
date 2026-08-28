@@ -14,7 +14,6 @@ export type TileflowWaterModuleOptions = {
   /** Opt-in labels for bathymetry polygon band floors, not measured survey soundings. */
   bathymetryLabels?: TileflowSymbolStyle;
   bodies?: TileflowAreaStyle;
-  enabled?: boolean;
   intermittent?: {
     bodies?: TileflowAreaStyle;
     waterways?: TileflowLineStyle;

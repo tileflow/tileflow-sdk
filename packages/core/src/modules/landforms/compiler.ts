@@ -6,6 +6,7 @@ import {mergeTileflowDesign} from '../../cartography/merge';
 import type {TileflowSymbolStyle} from '../../cartography/styles';
 import {expression} from '../../cartography/values';
 import type {TileflowLabelLanguage} from '../../types';
+import type {TileflowResolvedModuleConfig} from '../resolved';
 import {
   type TileflowLandformClass,
   tileflowLandformClasses,
@@ -22,7 +23,7 @@ const classMinimumZoom = {
 } as const satisfies Record<TileflowLandformClass, number>;
 
 export function compileLandforms(
-  request: TileflowLandformsModuleConfig | undefined,
+  request: TileflowResolvedModuleConfig<TileflowLandformsModuleConfig> | undefined,
   language: TileflowLabelLanguage,
   context: TileflowDomainCompileContext,
 ): TileflowLayerContribution[] {
@@ -66,7 +67,7 @@ export function compileLandforms(
       {text: {field: expression<string>(label)}},
     );
 
-  // The default recipe shares one bucket across every landform class. Exact
+  // The default semantic module shares one bucket across every landform class. Exact
   // per-class authoring still expands only when the user requests it.
   if (!request?.classes || Object.keys(request.classes).length === 0) {
     const style = baseStyle(
@@ -79,7 +80,7 @@ export function compileLandforms(
         900,
         applySymbolStyle(
           {
-            id: 'streets-landforms',
+            id: 'tileflow-landforms',
             type: 'symbol',
             source,
             'source-layer': schema.layers.mountainPeak,
@@ -105,7 +106,7 @@ export function compileLandforms(
         900 + index,
         applySymbolStyle(
           {
-            id: `streets-landform-${landformClass}`,
+            id: `tileflow-landform-${landformClass}`,
             type: 'symbol',
             source,
             'source-layer': schema.layers.mountainPeak,

@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   defineMap,
-  defineRootMap,
   normalizeTileflowCaptureScene,
   parseTileflowMap,
   tileflowCaptureSceneLimits,
@@ -11,10 +10,9 @@ import {
 } from '../src/index';
 import {testLightTheme} from './map-fixture';
 
-const captureRoot = defineRootMap({
+const captureRoot = defineMap({
   id: 'capture-root',
   version: 1,
-  root: {compiler: 'streets', compilerVersion: 1},
   defaultTheme: 'light',
   glyphs: {
     kind: 'url',

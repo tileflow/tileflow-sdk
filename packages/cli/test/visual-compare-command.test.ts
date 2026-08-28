@@ -787,7 +787,21 @@ function startCli(cwd: string, arguments_: string[]) {
     child.on('close', (code) => resolveCompletion({code, stderr}));
   });
   const requestStop = () => {
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    if (child.connected) {
+      try {
+        child.send({type: 'tileflow:stop'}, (error) => {
+          if (error && child.exitCode === null && child.signalCode === null) {
+            child.kill('SIGTERM');
+          }
+        });
+        return;
+      } catch {
+        child.kill('SIGTERM');
+        return;
+      }
+    }
+    child.kill('SIGTERM');
   };
   return {
     completion,

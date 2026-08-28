@@ -15,7 +15,7 @@ const tsxLoader = import.meta.resolve('tsx');
 const fakeApiKey = `tf_live_${'a'.repeat(48)}`;
 const accountSessionToken = `tf_session_${'b'.repeat(64)}`;
 
-test('World promotion auto-selects one map, fixes session mode, and writes a managed manifest', async (t) => {
+test('World conversion auto-selects one map, preserves its theme family, and writes a managed manifest', async (t) => {
   const fixture = await createFixture(t);
   let requestBody: Record<string, unknown> | null = null;
   const api = await createFakeApi(t, async (request) => {
@@ -25,7 +25,7 @@ test('World promotion auto-selects one map, fixes session mode, and writes a man
         changed: true,
         version: 1,
       }),
-      worldPromotionId: 'wpr_12345678',
+      worldConversionId: 'wcv_12345678',
     };
   });
   const result = await runCli(
@@ -38,26 +38,34 @@ test('World promotion auto-selects one map, fixes session mode, and writes a man
       fixture.manifestPath,
       '--api-url',
       api.url,
-      '--world-promotion',
-      'wpr_12345678',
+      '--world-conversion',
+      'wcv_12345678',
     ],
     {TILEFLOW_API_KEY: fakeApiKey},
   );
 
   assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
-  assert.equal(requestBody?.worldPromotionId, 'wpr_12345678');
+  assert.equal(requestBody?.worldConversionId, 'wcv_12345678');
   assert.equal(requestBody?.usageMode, 'session');
+  assert.equal((requestBody as {artifact?: {schemaVersion?: number}})?.artifact?.schemaVersion, 3);
+  assert.deepEqual(
+    Object.keys(
+      (requestBody as {artifact?: {styles?: Record<string, unknown>}})?.artifact?.styles ?? {},
+    ),
+    ['dark', 'light'],
+  );
+  assert.equal('policy' in (requestBody ?? {}), false);
   const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
     maps: {madrid: Record<string, unknown>};
   };
   assert.equal(manifest.maps.madrid.mapId, 'map_managed');
   assert.equal(manifest.maps.madrid.usageMode, 'session');
   assert.equal(manifest.maps.madrid.worldGeneration, 'v1');
-  assert.equal('worldPromotionId' in manifest.maps.madrid, false);
-  assert.doesNotMatch(await readFile(fixture.manifestPath, 'utf8'), /wpr_12345678/u);
+  assert.equal('worldConversionId' in manifest.maps.madrid, false);
+  assert.doesNotMatch(await readFile(fixture.manifestPath, 'utf8'), /wcv_12345678/u);
 });
 
-test('World promotion rejects a mismatched --map before network work', async (t) => {
+test('World conversion rejects a mismatched --map before network work', async (t) => {
   const fixture = await createFixture(t);
   let requests = 0;
   const api = await createFakeApi(t, async () => {
@@ -73,8 +81,8 @@ test('World promotion rejects a mismatched --map before network work', async (t)
       fixture.manifestPath,
       '--api-url',
       api.url,
-      '--world-promotion',
-      'wpr_12345678',
+      '--world-conversion',
+      'wcv_12345678',
       '--map',
       'lisbon',
     ],
@@ -83,12 +91,12 @@ test('World promotion rejects a mismatched --map before network work', async (t)
 
   assert.equal(result.code, 1);
   assert.equal(requests, 0);
-  assert.match(result.stdout, /Unknown Tileflow map for World promotion: lisbon/u);
+  assert.match(result.stdout, /Unknown Tileflow map for World conversion: lisbon/u);
   assert.match(result.stdout, /madrid/u);
   await assert.rejects(() => readFile(fixture.manifestPath, 'utf8'), {code: 'ENOENT'});
 });
 
-test('World promotion deploys only the selected map and preserves unrelated manifest entries', async (t) => {
+test('World conversion deploys only the selected map and preserves unrelated manifest entries', async (t) => {
   const fixture = await createFixture(t);
   await writeFile(
     fixture.configPath,
@@ -102,7 +110,7 @@ test('World promotion deploys only the selected map and preserves unrelated mani
     requests.push(body);
     return {
       ...hostedDeploymentResponse('map_lisbon'),
-      worldPromotionId: 'wpr_12345678',
+      worldConversionId: 'wcv_12345678',
     };
   });
   await writeFile(
@@ -136,8 +144,8 @@ test('World promotion deploys only the selected map and preserves unrelated mani
       fixture.manifestPath,
       '--api-url',
       api.url,
-      '--world-promotion',
-      'wpr_12345678',
+      '--world-conversion',
+      'wcv_12345678',
       '--map',
       'lisbon',
     ],
@@ -164,8 +172,7 @@ test('deploy sends CI provenance but keeps it and the bearer key out of the mani
       icons: 'official',
       imports: `import {writeFileSync} from 'node:fs';`,
       setup: `writeFileSync(${JSON.stringify(observedSecretPath)}, process.env.TILEFLOW_API_KEY ?? 'missing');`,
-      fields: `delivery: {hosted: {allowedOrigins: ['https://maps.example.test']}},
-name: 'Madrid',
+      fields: `name: 'Madrid',
 view: {center: [-3.7, 40.4], zoom: 11}`,
     }),
     'utf8',
@@ -219,9 +226,7 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
     runUrl: 'https://github.example.test/tileflow/maps/actions/runs/42',
   });
   assert.equal((requestBody as {iconPackage?: {label?: unknown}}).iconPackage?.label, 'madrid');
-  assert.deepEqual((requestBody as {policy?: unknown}).policy, {
-    allowedOrigins: ['https://maps.example.test'],
-  });
+  assert.equal((requestBody as {policy?: unknown}).policy, undefined);
   const deployedStyles = (
     requestBody as {
       artifact?: {schemaVersion?: number; styles?: Record<string, {sprite?: unknown}>};
@@ -231,6 +236,10 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
   assert.deepEqual(Object.keys(deployedStyles?.styles ?? {}), ['dark', 'light']);
   for (const style of Object.values(deployedStyles?.styles ?? {})) {
     assert.equal(style.sprite, 'https://api.example.test/sprites/icp_1234567890abcdef/sprite');
+    const source = (style as {sources?: Record<string, {tiles?: unknown; url?: unknown}>}).sources
+      ?.tileflow;
+    assert.equal(source?.url, `${api.url}/tiles/world/tiles.json`);
+    assert.equal(source?.tiles, undefined);
   }
 
   const manifest = await readFile(fixture.manifestPath, 'utf8');
@@ -656,73 +665,15 @@ test('deploy rejects external vector data before any remote write', async (t) =>
   assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
 });
 
-test('deploy uploads package-owned Cyberpunk fonts before binding and publishing the style', async (t) => {
+test('deploy rejects package-owned fonts before authentication while Hosted font storage is unavailable', async (t) => {
   const fixture = await createFixture(t);
   await writeFile(
     fixture.configPath,
     "import {defineMap} from '@tileflow/core'; import {cyberpunk} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,extends:cyberpunk});\n",
   );
-  const requests: string[] = [];
-  const api = await createFakeApi(t, async (request) => {
-    requests.push(`${request.method} ${request.url?.split('/').slice(0, 3).join('/')}`);
-    const bodyBytes = await readRequestBodyBytes(request);
-    const body = bodyBytes.toString('utf8');
-    const contentHash = request.url?.split('/').pop() ?? '';
-    if (request.url?.startsWith('/v1/icon-packages/')) {
-      return iconPackageResponseFromMultipart(request, bodyBytes, api.url, 'icp_cyberpunk_123456');
-    }
-    if (request.url?.startsWith('/v1/font-bundles/')) {
-      const bundleId = 'fnb_1234567890abcdef';
-      assert.match(request.headers['content-type'] ?? '', /^multipart\/form-data; boundary=/u);
-      const manifest = fontBundleManifestFromMultipart(body);
-      assert.equal(manifest.format, 'tileflow-font-bundle-v1');
-      assert.equal(manifest.fontFaces.length, 2);
-      assert.ok(manifest.files.some((file) => file.kind === 'license'));
-      assert.ok(
-        manifest.files.every((file) =>
-          body.includes(`name="file:${encodeURIComponent(file.name)}"`),
-        ),
-      );
-      return {
-        baseUrl: `${api.url}/font-bundles/${bundleId}`,
-        changed: true,
-        contentHash,
-        fontFaceCount: manifest.fontFaces.length,
-        id: bundleId,
-        totalBytes: manifest.files.reduce((total, file) => total + file.byteLength, 0),
-      };
-    }
-
-    const parsed = JSON.parse(body) as Record<string, unknown>;
-    const artifact = parsed.artifact as {
-      buildManifest: {
-        maps: Record<
-          string,
-          {assetSetSha256: string; sourceAssets: {fonts: Array<{sha256: string}>}}
-        >;
-      };
-      mapId: string;
-      schemaVersion: number;
-      styles: Record<string, {metadata?: Record<string, unknown>}>;
-    };
-    const binding = parsed.fontBundle as {contentHash: string};
-    const faces = artifact.styles.dark?.metadata?.['tileflow:fontFaces'] as Array<{
-      source: string;
-    }>;
-    assert.equal(artifact.schemaVersion, 3);
-    assert.equal(artifact.mapId, 'night');
-    assert.deepEqual(Object.keys(artifact.styles), ['dark']);
-    assert.match(binding.contentHash, /^[a-f0-9]{64}$/u);
-    assert.equal(artifact.buildManifest.maps.night?.sourceAssets.fonts.length, 2);
-    assert.match(artifact.buildManifest.maps.night?.assetSetSha256 ?? '', /^[a-f0-9]{64}$/u);
-    assert.ok(
-      faces.every((face) =>
-        face.source.startsWith(`${api.url}/font-bundles/fnb_1234567890abcdef/fonts/`),
-      ),
-    );
-    return {
-      ...hostedDeploymentResponse('map_night', ['dark'], {changed: true, version: 1}),
-    };
+  let requests = 0;
+  const api = await createFakeApi(t, async () => {
+    requests += 1;
   });
   const result = await runCli(
     fixture.directory,
@@ -738,39 +689,10 @@ test('deploy uploads package-owned Cyberpunk fonts before binding and publishing
     {TILEFLOW_API_KEY: fakeApiKey},
   );
 
-  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
-  assert.deepEqual(requests, ['PUT /v1/icon-packages', 'PUT /v1/font-bundles', 'POST /v1/styles']);
-  assert.match(result.stdout, /Uploaded font bundle \(2 faces,/u);
-  assert.match(result.stdout, /Published night \(v1\)\./u);
-  const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
-    maps: {
-      night: {
-        mapId: string;
-        themes: {
-          dark: {
-            colorScheme: string;
-            fontFaces?: Array<{source: string}>;
-            revision?: string;
-            styleId?: string;
-            styleUrl: string;
-          };
-        };
-      };
-    };
-  };
-  assert.equal(manifest.maps.night.mapId, 'map_night');
-  assert.equal(manifest.maps.night.themes.dark.colorScheme, 'dark');
-  assert.match(manifest.maps.night.themes.dark.revision ?? '', /^[a-f0-9]{64}$/u);
-  assert.equal(manifest.maps.night.themes.dark.styleId, 'map_night_dark');
-  assert.equal(
-    manifest.maps.night.themes.dark.styleUrl,
-    'https://api.example.test/maps/map_night/dark.json',
-  );
-  assert.ok(
-    manifest.maps.night.themes.dark.fontFaces?.every((face) =>
-      face.source.startsWith(`${api.url}/font-bundles/fnb_1234567890abcdef/fonts/`),
-    ),
-  );
+  assert.equal(result.code, 1);
+  assert.equal(requests, 0);
+  assert.match(result.stdout, /Hosted deploy does not yet support package-owned web fonts/u);
+  await assert.rejects(() => readFile(fixture.manifestPath, 'utf8'), {code: 'ENOENT'});
 });
 
 test('deploy uploads generated icon files before posting sanitized style JSON', async (t) => {

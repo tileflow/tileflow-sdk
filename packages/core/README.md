@@ -82,8 +82,8 @@ export default defineMap({
 });
 ```
 
-Map identity, scenes, and delivery policy belong to the leaf and do not inherit. Hosting policy such
-as allowed browser origins is delivery metadata because it does not change cartographic output.
+Map identity and scenes belong to the leaf and do not inherit. Hosted browser policy is configured
+in Tileflow and does not enter cartographic authoring or compilation.
 
 Set `projection: 'globe'` for MapLibre's adaptive globe preset. Global zooms render as a sphere,
 then transition to Mercator between zoom 10 and 12 so detailed streets remain planar. Omit the
@@ -1125,8 +1125,8 @@ observe the response's safe fair-use state without adding identity, query parame
 or user headers to the public World URL. The bridge requires the immutable release path and exactly
 one lowercase descriptor digest; the retired mutable World template is never intercepted. Early
 `GRACE` stays silent; signed late `GRACE` creates a compact
-accessible owner-action pill, and `CLAIM_REQUIRED` creates a stronger in-map banner. A missing
-header, absent tile, MapLibre error, or failed response cannot erase an existing claim action; a
+accessible owner-action pill, and `MANAGED_REQUIRED` creates a stronger in-map banner. A missing
+header, absent tile, MapLibre error, or failed response cannot erase an existing manage action; a
 later successful `OPEN` response can clear it. Shaped empty tiles remain render-safe while the owner
 action stays available. Successful World tile bodies are streamed with a 16 MiB maximum: an
 oversized `Content-Length` is rejected before reading, and chunked responses are cancelled as soon

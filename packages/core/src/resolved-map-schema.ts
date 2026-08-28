@@ -1951,22 +1951,6 @@ const viewSchema = z
     zoom: zoomNumberSchema.optional(),
   })
   .strict();
-const hostingOriginSchema = z
-  .string()
-  .min(1)
-  .max(253)
-  .refine(isHttpOrigin, 'Expected an HTTP(S) origin without path, credentials, query, or fragment');
-const allowedOriginsSchema = z.array(hostingOriginSchema).max(20);
-const deliverySchema = z
-  .object({
-    hosted: z
-      .object({
-        allowedOrigins: allowedOriginsSchema.optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
 const themesSchema = z
   .record(tileflowThemeNameSchema, tileflowThemeSchema)
   .superRefine((themes, context) => {
@@ -2002,7 +1986,6 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
   .object({
     data: dataSchema.optional(),
     defaultTheme: tileflowThemeNameSchema,
-    delivery: deliverySchema.optional(),
     fonts: fontDirectoriesSchema.optional(),
     glyphs: glyphsSchema.optional(),
     icons: iconDirectoriesSchema.optional(),
@@ -2123,23 +2106,6 @@ function isSafeGlyphUrl(value: string): boolean {
       !url.username &&
       !url.password &&
       !url.hash
-    );
-  } catch {
-    return false;
-  }
-}
-
-function isHttpOrigin(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return (
-      (url.protocol === 'http:' || url.protocol === 'https:') &&
-      !url.username &&
-      !url.password &&
-      !url.search &&
-      !url.hash &&
-      url.pathname === '/' &&
-      value === url.origin
     );
   } catch {
     return false;

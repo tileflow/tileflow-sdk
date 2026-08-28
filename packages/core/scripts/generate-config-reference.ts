@@ -897,7 +897,6 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
   enrichTrimmedMarineAttributionConstraints(schema);
   enrichIdentifierConstraints(schema);
   enrichExactFontConstraints(schema);
-  enrichHostedOriginConstraints(schema);
   enrichLineHatchConstraints(schema);
   enrichPoiRankConstraints(schema);
   enrichDirectDataConstraints(schema);
@@ -1024,10 +1023,6 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
     {
       path: 'glyphs.fontStacks[]',
       rule: 'Each exact key must already be Unicode NFC.',
-    },
-    {
-      path: 'delivery.hosted.allowedOrigins[]',
-      rule: 'Each value must equal its canonical WHATWG HTTP(S) origin and contain no path, credentials, query, fragment, or redundant trailing slash/default port.',
     },
     {
       path: '**.hatch.patternWidths[]',
@@ -1410,30 +1405,6 @@ function enrichExactFontFace(schema: JsonSchema): void {
   schema.description =
     'Exact NFC OpenType full name, exact glyph stack ID, or CSS generic; no surrounding whitespace, controls, or backslash.';
   schema['x-tileflow-normalization'] = 'NFC';
-}
-
-function enrichHostedOriginConstraints(schema: JsonSchema): void {
-  visitJsonSchema(schema, (node) => {
-    if (!node.properties || typeof node.properties !== 'object' || Array.isArray(node.properties)) {
-      return;
-    }
-    const allowedOrigins = (node.properties as Record<string, unknown>).allowedOrigins;
-    if (!allowedOrigins || typeof allowedOrigins !== 'object' || Array.isArray(allowedOrigins)) {
-      return;
-    }
-    const origins = dereferenceSchema(schema, allowedOrigins as JsonSchema, 'allowed origins');
-    if (origins.type !== 'array' || origins.maxItems !== 20 || !origins.items) return;
-    const origin = dereferenceSchema(
-      schema,
-      asRecord(origins.items, 'allowed origin item'),
-      'allowed origin item',
-    );
-    origin.pattern =
-      '^https?://(?![^/?#]*@)(?!.*[/?#\\\\\\s\\u0000-\\u001F\\u007F-\\u009F])(?:\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9._~-]+)(?::[0-9]+)?$';
-    origin.description =
-      'Canonical HTTP(S) origin only: no path, credentials, query, fragment, trailing slash, controls, or whitespace.';
-    origin['x-tileflow-refinement'] = 'Must equal the canonical WHATWG URL origin.';
-  });
 }
 
 function enrichLineHatchConstraints(schema: JsonSchema): void {

@@ -57,9 +57,9 @@ export type TileflowSemanticDiff = Readonly<{
 type SemanticRecord = Readonly<Record<string, TileflowSemanticJsonValue>>;
 
 /**
- * Compare the resolved semantic designs of two maps. Identity and delivery metadata identify the
- * endpoints but are intentionally not reported as cartographic changes. Arrays are atomic because
- * map inheritance replaces them rather than merging their members.
+ * Compare the resolved semantic designs of two maps. Identity metadata identifies the endpoints
+ * but is intentionally not reported as a cartographic change. Arrays are atomic because map
+ * inheritance replaces them rather than merging their members.
  */
 export function diffTileflowMaps(
   from: TileflowMap | ResolvedTileflowMap,
@@ -110,14 +110,7 @@ function isAuthoringOnlyMapShape(input: unknown): boolean {
 }
 
 function semanticDesign(map: ResolvedTileflowMap): SemanticRecord {
-  const {
-    delivery: _delivery,
-    extends: _extends,
-    id: _id,
-    name: _name,
-    version: _version,
-    ...design
-  } = map;
+  const {extends: _extends, id: _id, name: _name, version: _version, ...design} = map;
   return toSemanticValue(design, '') as SemanticRecord;
 }
 

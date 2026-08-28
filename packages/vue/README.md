@@ -168,7 +168,7 @@ Hosted maps automatically preflight a short-lived commercial session grant befor
 resources. Setting `analytics` with `enabled: false` disables the optional beacon only; it does not
 remove hosted authorization or override a user `mapOptions.transformRequest` callback.
 Direct Tileflow World maps keep early `GRACE` silent, show a compact accessible owner-action pill
-when late `GRACE` is activated, and show a stronger banner in `CLAIM_REQUIRED`. Missing tiles and
+when late `GRACE` is activated, and show a stronger banner in `MANAGED_REQUIRED`. Missing tiles and
 MapLibre failures do not remove that recovery path.
 
 ## Headless capture readiness

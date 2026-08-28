@@ -55,7 +55,6 @@ test('resolves a lineage to one standalone map with field-specific merge semanti
     name: 'Streets',
     version: 1,
     defaultTheme: 'light',
-    delivery: {hosted: {allowedOrigins: ['https://root.example.test']}},
     data: tileflowWorld({
       release: {
         descriptorSha256: 'a'.repeat(64),
@@ -99,7 +98,6 @@ test('resolves a lineage to one standalone map with field-specific merge semanti
     name: 'Custom',
     version: 7,
     extends: streets,
-    delivery: {hosted: {allowedOrigins: ['https://child.example.test']}},
     data: tileflowWorld(),
     glyphs: {
       kind: 'url',
@@ -141,10 +139,6 @@ test('resolves a lineage to one standalone map with field-specific merge semanti
   assert.equal('root' in resolved, false);
   assert.equal('extends' in resolved, false);
   assert.equal('basemap' in resolved, false);
-  assert.deepEqual(resolved.delivery, {
-    hosted: {allowedOrigins: ['https://child.example.test']},
-  });
-
   assert.deepEqual(resolved.data, tileflowWorld());
   assert.deepEqual(resolved.glyphs, {
     kind: 'url',
@@ -179,19 +173,17 @@ test('resolves a lineage to one standalone map with field-specific merge semanti
   assert.equal(streets.modules.roads.classes?.primary?.surface?.fill?.color, '#111111');
 });
 
-test('keeps delivery leaf-only and falls back to the normalized map id as its name', () => {
+test('falls back to the normalized map id as its name', () => {
   const root = defineMap({
     id: 'root',
     name: 'Root',
     version: 1,
     defaultTheme: 'light',
     themes: {light: testLightTheme},
-    delivery: {hosted: {allowedOrigins: ['https://root.example.test']}},
   });
   const child = defineMap({id: 'child', version: 1, extends: root});
 
   assert.equal(resolveMap(child).name, 'child');
-  assert.equal(resolveMap(child).delivery, undefined);
 });
 
 test('inherits icon directories by omission and replaces them atomically when declared', () => {
@@ -500,7 +492,6 @@ test('validates every map in the extends lineage before applying child replaceme
     defaultTheme: 'light',
     themes: {light: testLightTheme},
     projection: 'sphere',
-    delivery: {hosted: {unknown: true}},
     modules: {roads: {type: 'roads', detail: 'invalid'}},
   } as unknown as TileflowMap;
   const child = defineMap({

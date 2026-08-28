@@ -551,7 +551,7 @@ test('World bridge follows signed notice activation and shapes an empty tile', a
 
   response = new Response(new Uint8Array([1, 2, 3]), {
     headers: {
-      Link: '<https://tileflow.dev/world/claim>; rel="help"',
+      Link: '<https://tileflow.dev/world/connect>; rel="help"',
       'Tileflow-Fair-Use': 'grace',
       'Tileflow-Fair-Use-Notice': 'owner',
     },
@@ -580,21 +580,21 @@ test('World bridge follows signed notice activation and shapes an empty tile', a
   response = new Response(null, {
     status: 429,
     headers: {
-      Link: '<https://tileflow.dev/world/claim>; rel="help"',
-      'Tileflow-Fair-Use': 'claim-required',
+      Link: '<https://tileflow.dev/world/connect>; rel="help"',
+      'Tileflow-Fair-Use': 'managed-required',
       'Tileflow-Fair-Use-Notice': 'owner',
     },
   });
-  const shapedClaimRequired = await protocolHandler(transformed, new AbortController());
-  assert.equal(shapedClaimRequired.data.byteLength, 0);
-  assert.equal(shapedClaimRequired.cacheControl, 'private, no-store');
-  assert.equal(notices.at(-1)?.state, 'CLAIM_REQUIRED');
+  const shapedManagedRequired = await protocolHandler(transformed, new AbortController());
+  assert.equal(shapedManagedRequired.data.byteLength, 0);
+  assert.equal(shapedManagedRequired.cacheControl, 'private, no-store');
+  assert.equal(notices.at(-1)?.state, 'MANAGED_REQUIRED');
   assert.match(notices.at(-1)?.message ?? '', /temporarily limited/u);
   assert.match(notices.at(-1)?.action ?? '', /manage this map with Tileflow/u);
 
   response = new Response(new Uint8Array([1, 2, 3]), {
     headers: {
-      Link: '<https://tileflow.dev/world/claim>; rel="help"',
+      Link: '<https://tileflow.dev/world/connect>; rel="help"',
       'Tileflow-Fair-Use': 'grace',
       'Tileflow-Fair-Use-Notice': 'owner',
     },
@@ -602,15 +602,15 @@ test('World bridge follows signed notice activation and shapes an empty tile', a
   await protocolHandler(transformed, new AbortController());
   assert.equal(
     notices.at(-1)?.state,
-    'CLAIM_REQUIRED',
-    'CLAIM_REQUIRED cannot regress to GRACE in one bridge',
+    'MANAGED_REQUIRED',
+    'MANAGED_REQUIRED cannot regress to GRACE in one bridge',
   );
 
   const noticeCountBeforeError = notices.length;
   response = new Response(null, {status: 503});
   await assert.rejects(protocolHandler(transformed, new AbortController()), /failed: 503/u);
   assert.equal(notices.length, noticeCountBeforeError);
-  assert.equal(notices.at(-1)?.state, 'CLAIM_REQUIRED');
+  assert.equal(notices.at(-1)?.state, 'MANAGED_REQUIRED');
 
   response = new Response(new Uint8Array([1, 2, 3]), {
     headers: {'Cache-Control': 'public, max-age=300', 'Tileflow-Fair-Use': 'open'},
@@ -752,14 +752,14 @@ test('World bridge propagates abort and cancels a pending streamed tile', async 
   bridge.dispose();
 });
 
-test('fair-use notice renders the approved compact GRACE pill and strong CLAIM_REQUIRED banner', () => {
+test('fair-use notice renders the approved compact GRACE pill and strong MANAGED_REQUIRED banner', () => {
   const document = new FakeDocument();
   const container = new FakeElement(document);
   const notice = attachTileflowFairUseNotice(container as unknown as HTMLElement);
 
   notice.update({
     action: 'Site owner: manage this map with Tileflow.',
-    helpUrl: 'https://tileflow.dev/world/claim',
+    helpUrl: 'https://tileflow.dev/world/connect',
     message: 'Map usage is approaching its temporary limit.',
     state: 'GRACE',
   });
@@ -778,7 +778,7 @@ test('fair-use notice renders the approved compact GRACE pill and strong CLAIM_R
   assert.equal(grace.style.width, 'max-content');
   assert.equal(graceIndicator.attributes.get('aria-hidden'), 'true');
   assert.equal(graceIndicator.style.background, '#c58c28');
-  assert.equal(graceLink.href, 'https://tileflow.dev/world/claim');
+  assert.equal(graceLink.href, 'https://tileflow.dev/world/connect');
   assert.equal(graceLink.rel, 'noopener noreferrer');
   assert.equal(graceLink.target, '_blank');
   assert.equal(graceCopy.textContent, 'Map usage is approaching its temporary limit. ');
@@ -786,30 +786,30 @@ test('fair-use notice renders the approved compact GRACE pill and strong CLAIM_R
 
   notice.update({
     action: 'Site owner: manage this map with Tileflow.',
-    helpUrl: 'https://tileflow.dev/world/claim',
+    helpUrl: 'https://tileflow.dev/world/connect',
     message: 'Map usage is temporarily limited.',
-    state: 'CLAIM_REQUIRED',
+    state: 'MANAGED_REQUIRED',
   });
-  const claimRequired = container.children[0]!;
-  assert.notEqual(claimRequired, grace);
-  assert.equal(claimRequired.dataset.tileflowFairUseNotice, 'claim-required');
-  assert.equal(claimRequired.style.top, '14px');
-  assert.equal(claimRequired.style.background, 'rgba(25, 34, 29, 0.96)');
-  assert.equal(claimRequired.children[0]!.textContent, '!');
-  assert.match(claimRequired.children[1]!.textContent, /temporarily limited/u);
+  const managedRequired = container.children[0]!;
+  assert.notEqual(managedRequired, grace);
+  assert.equal(managedRequired.dataset.tileflowFairUseNotice, 'managed-required');
+  assert.equal(managedRequired.style.top, '14px');
+  assert.equal(managedRequired.style.background, 'rgba(25, 34, 29, 0.96)');
+  assert.equal(managedRequired.children[0]!.textContent, '!');
+  assert.match(managedRequired.children[1]!.textContent, /temporarily limited/u);
   assert.equal(
-    claimRequired.children[1]!.children[0]!.textContent,
+    managedRequired.children[1]!.children[0]!.textContent,
     'Site owner: manage this map with Tileflow.',
   );
 
   notice.update({
     action: 'Site owner: manage this map with Tileflow.',
-    helpUrl: 'https://tileflow.dev/world/claim',
+    helpUrl: 'https://tileflow.dev/world/connect',
     message: 'Map usage is approaching its temporary limit.',
     state: 'GRACE',
   });
-  assert.equal(container.children[0], claimRequired);
-  assert.match(claimRequired.children[1]!.textContent, /temporarily limited/u);
+  assert.equal(container.children[0], managedRequired);
+  assert.match(managedRequired.children[1]!.textContent, /temporarily limited/u);
 
   notice.dispose();
   assert.equal(container.children.length, 0);

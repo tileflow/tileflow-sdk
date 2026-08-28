@@ -663,8 +663,8 @@ program
   .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
   .option('--project <target>', 'technical destination @organization/project')
-  .option('--world-promotion <id>', 'continue one verified Tileflow World promotion')
-  .option('--map <name>', 'map to connect when a promotion config contains multiple maps')
+  .option('--world-conversion <id>', 'continue one Tileflow World conversion')
+  .option('--map <name>', 'map to connect when a conversion config contains multiple maps')
   .option(
     '--overwrite-self-hosted-manifest',
     'explicitly replace an existing self-hosted manifest at --manifest',
@@ -678,7 +678,7 @@ program
       project?: string;
       map?: string;
       overwriteSelfHostedManifest?: boolean;
-      worldPromotion?: string;
+      worldConversion?: string;
     }) => {
       const source = resolveDeploySource(process.env);
       const resolveApi = (selectedMap?: string) =>
@@ -695,8 +695,8 @@ program
             '--api-url',
             options.apiUrl ?? defaultApiUrl,
             ...(options.overwriteSelfHostedManifest ? ['--overwrite-self-hosted-manifest'] : []),
-            ...(options.worldPromotion && selectedMap
-              ? ['--world-promotion', options.worldPromotion, '--map', selectedMap]
+            ...(options.worldConversion && selectedMap
+              ? ['--world-conversion', options.worldConversion, '--map', selectedMap]
               : []),
           ]),
         });
@@ -715,7 +715,7 @@ program
       assertValidTileflowConfig(project);
 
       const configuredMapNames = getTileflowMapNames(project);
-      const mapNames = selectWorldPromotionMaps(configuredMapNames, options);
+      const mapNames = selectWorldConversionMaps(configuredMapNames, options);
       if (!mapNames) return;
       if (!validateDeployManifestMapNames(mapNames)) return;
       const deploymentProject: TileflowBuildCatalog =
@@ -768,6 +768,14 @@ program
       ) {
         return;
       }
+      const mapsWithHostedFontBundles = Object.keys(preflightFonts.bundles).sort();
+      if (mapsWithHostedFontBundles.length > 0) {
+        logError('Hosted deploy does not yet support package-owned web fonts.');
+        printKeyValue('Maps', mapsWithHostedFontBundles.join(', '));
+        printNextSteps(['Use self-hosted delivery or an explicit public glyph provider.']);
+        process.exitCode = 1;
+        return;
+      }
 
       let outputManifest: DeployedManifest | null = null;
       try {
@@ -787,7 +795,7 @@ program
         process.exitCode = 1;
         return;
       }
-      const existingManifest = options.worldPromotion ? outputManifest : null;
+      const existingManifest = options.worldConversion ? outputManifest : null;
 
       // Authentication and account/project discovery may perform network
       // requests. Keep them after every deterministic config, asset, style,
@@ -920,7 +928,6 @@ program
         const iconPackage = iconBinding ? packagesByHash.get(iconBinding.packageHash) : undefined;
         const fontBundle = hostedFonts.bundles[mapName];
         return {
-          allowedOrigins: deploymentProject.maps[mapName]?.delivery?.hosted?.allowedOrigins,
           iconBinding,
           iconPackage,
           fontBundle,
@@ -938,7 +945,6 @@ program
 
       for (const deployment of deployments) {
         const {
-          allowedOrigins,
           buildManifest,
           fontBundle,
           iconBinding,
@@ -960,10 +966,9 @@ program
               styles: themeStyles,
             },
             environment: mapName,
-            ...(options.worldPromotion
-              ? {usageMode: 'session', worldPromotionId: options.worldPromotion}
+            ...(options.worldConversion
+              ? {usageMode: 'session', worldConversionId: options.worldConversion}
               : {}),
-            ...(allowedOrigins ? {policy: {allowedOrigins}} : {}),
             ...(iconBinding && iconPackage
               ? {
                   iconPackage: {
@@ -991,8 +996,8 @@ program
         }
 
         const body = response.value;
-        if (options.worldPromotion && body.worldPromotionId !== options.worldPromotion) {
-          logError(`Deploy response did not confirm the World promotion for ${mapName}.`);
+        if (options.worldConversion && body.worldConversionId !== options.worldConversion) {
+          logError(`Deploy response did not confirm the World conversion for ${mapName}.`);
           process.exitCode = 1;
           return;
         }
@@ -1029,7 +1034,7 @@ program
             }),
           ),
           ...(resolvedMap.view ? {view: resolvedMap.view} : {}),
-          ...(options.worldPromotion
+          ...(options.worldConversion
             ? {usageMode: 'session' as const, worldGeneration: 'v1' as const}
             : {}),
         };
@@ -1526,24 +1531,24 @@ function createCompiledMapAssets(
   );
 }
 
-function selectWorldPromotionMaps(
+function selectWorldConversionMaps(
   mapNames: string[],
-  options: {map?: string; worldPromotion?: string},
+  options: {map?: string; worldConversion?: string},
 ): string[] | null {
-  if (options.map && !options.worldPromotion) {
-    logError('--map is reserved for continuing a verified World promotion.');
+  if (options.map && !options.worldConversion) {
+    logError('--map is reserved for continuing a World conversion.');
     process.exitCode = 1;
     return null;
   }
-  if (!options.worldPromotion) return mapNames;
-  if (!/^wpr_[A-Za-z0-9_-]{8,80}$/u.test(options.worldPromotion)) {
-    logError('World promotion reference is invalid.');
+  if (!options.worldConversion) return mapNames;
+  if (!/^wcv_[A-Za-z0-9_-]{8,80}$/u.test(options.worldConversion)) {
+    logError('World conversion reference is invalid.');
     process.exitCode = 1;
     return null;
   }
   if (options.map) {
     if (!mapNames.includes(options.map)) {
-      logError(`Unknown Tileflow map for World promotion: ${options.map}.`);
+      logError(`Unknown Tileflow map for World conversion: ${options.map}.`);
       printKeyValue('Maps', mapNames.join(', '));
       process.exitCode = 1;
       return null;
@@ -1551,10 +1556,10 @@ function selectWorldPromotionMaps(
     return [options.map];
   }
   if (mapNames.length === 1) return [mapNames[0]!];
-  logError('World promotion requires an explicit map because this config contains multiple maps.');
+  logError('World conversion requires an explicit map because this config contains multiple maps.');
   printKeyValue('Maps', mapNames.join(', '));
   printNextSteps([
-    `Retry with ${command(`tileflow deploy --world-promotion ${options.worldPromotion} --map ${mapNames[0]}`)}.`,
+    `Retry with ${command(`tileflow deploy --world-conversion ${options.worldConversion} --map ${mapNames[0]}`)}.`,
   ]);
   process.exitCode = 1;
   return null;

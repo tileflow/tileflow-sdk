@@ -100,10 +100,6 @@ its hash does not use the per-map
 is independent of managed font-bundle IDs and World descriptors. No compiler fallback invents
 either provider.
 
-The sources are shipped so local preview, capture, self-hosted framework builds, and Hosted
-preparation compile the same pixels. Hosted preparation creates one bounded canonical font bundle,
-uploads its exact font and license closure before the dependent Style, and binds the Style to the
-immutable URL returned for the project-owned opaque bundle ID. The endpoint and client contract now
-exist, but this is not by itself a production-availability promise: the matching Hosted migration,
-API, and SDK pair still have to be promoted together. See the package-level
-`THIRD_PARTY_NOTICES.md` for provenance and licensing notices.
+The sources are shipped so local preview, capture, and self-hosted framework builds compile the same
+pixels. Hosted deploy currently rejects these package-owned fonts before authentication. See the
+package-level `THIRD_PARTY_NOTICES.md` for provenance and licensing notices.

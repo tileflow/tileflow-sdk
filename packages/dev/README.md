@@ -51,12 +51,12 @@ compiler; its ABI remains a separate `semanticCompiler: {name, version}` build-m
 
 The map revision is versioned and domain-separated. It contains the resolved cartographic design,
 semantic language version, effective public module/render-stack design, and effective icon/font
-source identities. Map `id`, `name`, editorial `mapVersion`, default `view`, capture `scenes`, delivery
-policy, package SemVer, compiler ABI, local paths, timestamps, generated sprite/font output, and a
+identities. Map `id`, `name`, editorial `mapVersion`, default `view`, capture `scenes`, package
+SemVer, compiler ABI, local paths, timestamps, generated sprite/font output, and a
 concrete resolution of a floating World selector are deliberately outside it. Changing a shadowed
 ancestor does not change the revision; changing an effective cartographic override or source asset
-does. Lineage and the leaf `mapVersion` remain beside the hash for traceability, Style JSON owns its
-compiled-output identity, and Hosted delivery policy belongs to the deployment fingerprint. The
+does. Lineage and the leaf `mapVersion` remain beside the hash for traceability, and Style JSON owns
+its compiled-output identity. Hosted browser policy is managed outside repository artifacts. The
 top-level `provenance` block records the exact participating Tileflow package versions and the
 nearest package-manager lockfile's format and content hash, without embedding its local path;
 provenance remains outside every map revision. The same portable block is available to Hosted
@@ -175,18 +175,10 @@ pipeline. After inheritance resolves, a map with any text layer must have exactl
 produced by the style's `text-font` arrays.
 
 The resulting style records strict `tileflow:fontFaces` metadata. Preview, capture, and browser
-framework adapters load those generic definitions before constructing MapLibre. Hosted preparation
-also emits one canonical `tileflow-font-bundle-v1` closure containing only selected faces and their
-license bytes. Its manifest SHA-256 is the sole content identity; Hosted adds an opaque project-owned
-storage ID. Deploy uploads that bundle before the Style and then replaces provisional sources with
-the exact immutable ID URLs confirmed by Hosted. A derived map that declares `glyphs` replaces the
-inherited local provider atomically; the URL-backed map is complete as declared and independent of
-its World selection.
-
-That upload and binding contract is implemented, but it is not by itself a production-availability
-promise. The matching Hosted rollout candidate adds DB-backed project ownership, organization quota,
-durable deployment references, grace-based garbage collection, and deletion receipts; availability
-still requires that matching migration, API, and SDK pair to be promoted together.
+framework adapters load those definitions before constructing MapLibre. Hosted deploy rejects a
+prepared local-font bundle before authentication until managed font storage is available. A derived
+map that declares `glyphs` replaces the inherited local provider atomically; the URL-backed map is
+complete as declared and independent of its World selection.
 
 For Streets styles whose vegetation layer declares `tileflow:vegetation-mode = 3d`, the built-in
 preview uses the same portable circle fallback as capture and the published framework adapters by

@@ -22,17 +22,8 @@ export type TileflowMapIdentity = {
 /** A capture scene owned by one singular map; its map id is implicit. */
 export type TileflowMapScene = Omit<TileflowCaptureScene, 'map'>;
 
-export type TileflowHostedDelivery = {
-  allowedOrigins?: string[];
-};
-
-export type TileflowMapDelivery = {
-  hosted?: TileflowHostedDelivery;
-};
-
 /** Tooling metadata belongs to the leaf definition and is never inherited. */
 export type TileflowMapTooling = {
-  delivery?: TileflowMapDelivery;
   scenes?: Record<string, TileflowMapScene>;
 };
 
@@ -87,7 +78,6 @@ type ResolvedTileflowMapDesign<TDesign extends TileflowMapDesign = TileflowMapDe
 
 /** A standalone map definition with inheritance removed. */
 export type ResolvedTileflowMap = Omit<TileflowMapIdentity, 'name'> &
-  Pick<TileflowMapTooling, 'delivery'> &
   ResolvedTileflowMapDesign & {
     defaultTheme: TileflowThemeName;
     extends?: never;

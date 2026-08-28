@@ -189,6 +189,10 @@ test('commercial grant preflight is shared, scoped, and attached before hosted d
     'https://api.tileflow.dev/maps/map_1/style.json',
     analytics,
   );
+  const theme = await controller.resolveRequestUrl(
+    'https://api.tileflow.dev/maps/map_1/dark.json',
+    analytics,
+  );
   const tile = await controller.resolveRequestUrl(
     'https://cdn.tileflow.dev/tiles/world/v1/0/0/0.pbf?map=map_1',
     analytics,
@@ -196,6 +200,7 @@ test('commercial grant preflight is shared, scoped, and attached before hosted d
 
   assert.equal(calls, 1);
   assert.equal(new URL(style!).searchParams.get('grant'), 'grant-1');
+  assert.equal(new URL(theme!).searchParams.get('grant'), 'grant-1');
   assert.equal(new URL(tile!).searchParams.get('grant'), 'grant-1');
   assert.equal(new URL(tile!).searchParams.get('session'), 'ses_one');
   assert.equal(

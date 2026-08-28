@@ -42,7 +42,6 @@ type MapMergeStrategy =
 export const tileflowMapMergeStrategies = {
   data: 'atomic',
   defaultTheme: 'atomic',
-  delivery: 'leaf',
   extends: 'lineage',
   fonts: 'text-assets',
   glyphs: 'text-assets',
@@ -145,7 +144,6 @@ export function resolveMap(map: TileflowMap, options: ResolveMapOptions = {}): R
     version: leaf.version,
     ...design,
     ...(modules === undefined ? {} : {modules}),
-    ...(leaf.delivery === undefined ? {} : {delivery: cloneDesign(leaf.delivery)}),
   } as ResolvedTileflowMap;
   return resolved;
 }

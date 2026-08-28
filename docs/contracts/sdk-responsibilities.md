@@ -201,8 +201,8 @@ atomically in each referenced Style JSON, while annotation input remains applica
 future decision to split that metadata into its own resource requires an explicit next wire version
 and coordinated validation in self-hosted build, Hosted-client, browser runtime, and capture.
 
-Hosted policy such as allowed browser origins is delivery metadata. It is not inherited with map
-design because it does not affect cartographic output.
+Hosted policy such as allowed browser origins is server-owned delivery state. It does not enter map
+design, inheritance, build identity, or publication payloads.
 
 ## Transaction boundary
 

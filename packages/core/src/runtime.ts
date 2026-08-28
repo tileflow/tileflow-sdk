@@ -741,7 +741,7 @@ function isEligibleResource(
       (apiOrigin === 'https://api.tileflow.dev' && url.origin === 'https://cdn.tileflow.dev');
     if (!originAllowed) return false;
     return (
-      url.pathname === `/maps/${encodeURIComponent(mapId)}/style.json` ||
+      isHostedStylePath(url.pathname, mapId) ||
       url.pathname.startsWith('/tiles/') ||
       url.pathname.startsWith('/v1/tiles/') ||
       url.pathname.startsWith('/fonts/') ||
@@ -750,6 +750,15 @@ function isEligibleResource(
   } catch {
     return false;
   }
+}
+
+function isHostedStylePath(pathname: string, mapId: string): boolean {
+  const prefix = `/maps/${encodeURIComponent(mapId)}/`;
+  if (!pathname.startsWith(prefix)) return false;
+  const file = pathname.slice(prefix.length);
+  if (file === 'style.json') return true;
+  if (!file.endsWith('.json')) return false;
+  return isTileflowThemeName(file.slice(0, -'.json'.length));
 }
 
 function originOf(value: unknown) {

@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {auditTileflowMapThemeValues, resolveMap, resolveTileflowTheme} from '@tileflow/core';
 import {
+  baedeker,
   cyberpunk,
   ferraris,
   harad,
   matrix,
+  sanFrancisto,
   siegfried,
   siegfriedThemes,
   soundings,
@@ -130,7 +132,18 @@ test('every official module, render stack, and terrain value has a valid semanti
     water: ['water', 'hydro', 'surface', 'labels'],
   };
 
-  for (const map of [streets, cyberpunk, ferraris, harad, matrix, siegfried, soundings, verdant]) {
+  for (const map of [
+    streets,
+    baedeker,
+    cyberpunk,
+    ferraris,
+    harad,
+    matrix,
+    sanFrancisto,
+    siegfried,
+    soundings,
+    verdant,
+  ]) {
     assert.deepEqual(
       auditTileflowMapThemeValues(resolveMap(map)),
       [],
@@ -203,7 +216,18 @@ test('Siegfried light and dark expose identical semantic vocabularies', () => {
 });
 
 test('every official map has a deterministic complete theme collection', () => {
-  for (const map of [streets, cyberpunk, ferraris, harad, matrix, siegfried, soundings, verdant]) {
+  for (const map of [
+    streets,
+    baedeker,
+    cyberpunk,
+    ferraris,
+    harad,
+    matrix,
+    sanFrancisto,
+    siegfried,
+    soundings,
+    verdant,
+  ]) {
     const resolved = resolveMap(map);
     assert.ok(Object.keys(resolved.themes).length > 0, `${map.id} has no themes`);
     assert.ok(resolved.themes[resolved.defaultTheme], `${map.id} has an invalid defaultTheme`);

@@ -148,7 +148,7 @@ registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
 ## Authoring model
 
 Tileflow exposes one authoring concept and one constructor: `defineMap()`. A complete map omits
-`extends`; an inherited map sets `extends` to another imported map object. All eight first-party
+`extends`; an inherited map sets `extends` to another imported map object. All ten first-party
 maps are independent standalone maps. They use the sole semantic compiler while defining
 their complete designs and asset providers directly; no official map imports or extends another
 official map. Applications can extend any of those maps through the same public API. Streets
@@ -270,9 +270,9 @@ export default defineMap({
 
 The standalone map above is complete as written. A map always owns its complete text provider; Core does not
 obtain fonts or sprites from World and never invents a fallback URL. The URL-backed first-party
-`streets`, `ferraris`, `harad`, `soundings`, and `verdant` maps declare their glyph providers
-directly, while `siegfried` declares packaged fonts, so ordinary imports and derived maps compile
-without out-of-band release metadata.
+`streets`, `baedeker`, `ferraris`, `harad`, `soundings`, `verdant`, and `sanFrancisto` maps declare their glyph
+providers directly, while `siegfried` declares packaged fonts, so ordinary imports and derived
+maps compile without out-of-band release metadata.
 
 ```mermaid
 flowchart LR
@@ -764,7 +764,7 @@ another. Browser adapters load local faces before MapLibre. Native releases use 
 `glyphs` URL provider instead, which enumerates the exact comma-joined MapLibre request keys in
 `fontStacks`.
 
-Streets, Ferraris, Härad, Soundings, and Verdant each declare
+Streets, Ferraris, Härad, Soundings, Verdant, and San Francisto each declare
 `https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf` with the exact `Noto Sans Regular` and
 `Noto Sans Bold` stacks. That compatibility URL is canonical but not content-addressed; responses revalidate and
 do not make a resolved map byte-reproducible. Exact official glyph identity belongs to the
@@ -772,8 +772,8 @@ separately published `/base/<assetSetSha256>/glyphs/...` global base-asset contr
 `assetSetSha256` identifies the standalone glyph collection; it is not the same-domain value as the
 per-map `assetSetSha256` in `build-manifest.json`.
 Cyberpunk and Matrix each replace the URL provider with their own packaged Oxanium directory and
-reference the exact local faces `Oxanium Medium` and `Oxanium SemiBold`. Siegfried owns its packaged
-Cormorant Garamond Regular, SemiBold, and Italic faces.
+reference the exact local faces `Oxanium Medium` and `Oxanium SemiBold`. Baedeker and Siegfried
+each own a packaged directory containing Cormorant Garamond Regular, SemiBold, and Italic.
 
 Name the official generation deliberately, or use another OpenMapTiles-compatible vector source:
 
@@ -976,8 +976,9 @@ source classes into one civic color.
 
 World and text assets are independent contracts. `tileflowWorld()` selects `world-v1/current` or an
 exact `releaseId + descriptorSha256`; a `glyphs` declaration contains its own complete URL. Ordinary
-imports of Streets, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, and
-Verdant remain usable because each official map owns or inherits a URL or packaged-font provider.
+imports of Streets, Baedeker, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant,
+and San Francisto
+remain usable because each official map owns or inherits a URL or packaged-font provider.
 URL-backed maps become exact-byte reproducible
 when the immutable global base-asset set is published and their explicit URL is updated to its
 `assetSetSha256` path; no World or compiler fallback participates in that rollout. The global
@@ -1140,6 +1141,9 @@ Core. That package exports the maps and their reusable directory descriptors:
 
 ```ts
 import {
+  baedeker,
+  baedekerFonts,
+  baedekerIcons,
   cyberpunk,
   cyberpunkFonts,
   cyberpunkIcons,
@@ -1150,6 +1154,8 @@ import {
   matrix,
   matrixFonts,
   matrixIcons,
+  sanFrancisto,
+  sanFrancistoIcons,
   siegfried,
   siegfriedFonts,
   siegfriedIcons,
@@ -1163,13 +1169,18 @@ import {
 } from '@tileflow/maps';
 ```
 
-All eight official maps are complete standalone maps. The sole semantic compiler is implicit; none
+All ten official maps are complete standalone maps. The sole semantic compiler is implicit; none
 imports or extends another official map, and each declares its own icon directory.
 Streets declares `[streetsIcons]` and exposes its complete coordinated appearances as
 `streetsThemes.light` and `streetsThemes.dark`; image tokens select the matching sidewalk pattern
-without changing the asset collection. Cyberpunk declares `[cyberpunkIcons]` and
-`[cyberpunkFonts]`; Matrix independently declares `[matrixIcons]` and `[matrixFonts]`. The same
-asset operation is available to applications:
+without changing the asset collection. Baedeker declares `[baedekerIcons]`, whose eight original
+patterns support its travel-atlas design, and `[baedekerFonts]`, its own Cormorant Garamond
+directory; it derives contours in the browser from unpackaged Mapterhorn terrain tiles. Cyberpunk
+declares `[cyberpunkIcons]` and `[cyberpunkFonts]`; Matrix
+independently declares `[matrixIcons]` and `[matrixFonts]`. San Francisto declares
+`[sanFrancistoIcons]` for its four technical hatches and schematic POI node, derives contours from
+unpackaged Mapterhorn tiles, and uses the canonical Noto Sans glyph provider. The same asset
+operation is available to applications:
 
 ```ts
 export default defineMap({
@@ -1191,6 +1202,6 @@ sprite selector, icon mapping, icon-specific inheritance, additive command, or c
 and prepares ordinary public artifacts without serializing installation paths. It compiles one
 deterministic sprite from the final icon composition and validates every literal `icon-image`,
 `fill-pattern`, and `line-pattern` in the final style against it. It also prepares any declared font
-directories generically; `cyberpunkFonts`, `matrixFonts`, and `siegfriedFonts` are ordinary package
-descriptors rather than pipeline special cases. Calling the pure compiler for a map whose style needs unprepared
+directories generically; `baedekerFonts`, `cyberpunkFonts`, `matrixFonts`, and `siegfriedFonts` are
+ordinary package descriptors rather than pipeline special cases. Calling the pure compiler for a map whose style needs unprepared
 assets fails instead of emitting broken runtime references.

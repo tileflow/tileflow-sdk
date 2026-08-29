@@ -35,6 +35,16 @@ test('publishes official maps and their assets as one package', async () => {
 
 test('publishes every official icon and font directory with provenance', async () => {
   const expected = {
+    baedeker: [
+      'baedeker-hachures.pattern.svg',
+      'baedeker-orchard.pattern.svg',
+      'baedeker-paper-grain.pattern.svg',
+      'baedeker-park-stipple.pattern.svg',
+      'baedeker-residential.pattern.svg',
+      'baedeker-sand.pattern.svg',
+      'baedeker-water-lines.pattern.svg',
+      'baedeker-wetland.pattern.svg',
+    ],
     cyberpunk: [
       'cyber-circuit.pattern.svg',
       'cyber-data-grid.pattern.svg',
@@ -66,6 +76,13 @@ test('publishes every official icon and font directory with provenance', async (
       'matrix-crt-scanlines.pattern.svg',
       'matrix-data-grid.pattern.svg',
       'matrix-poi-node.svg',
+    ],
+    'san-francisto': [
+      'san-francisto-blueprint-grid.pattern.svg',
+      'san-francisto-building-hatch.pattern.svg',
+      'san-francisto-landscape-hatch.pattern.svg',
+      'san-francisto-poi-node.svg',
+      'san-francisto-water-hatch.pattern.svg',
     ],
     siegfried: [
       'siegfried-dark-forest.pattern.svg',
@@ -227,6 +244,33 @@ test('publishes every official icon and font directory with provenance', async (
         400_000,
     );
   }
+  assert.deepEqual((await readdir(new URL('../assets/baedeker/fonts/', import.meta.url))).sort(), [
+    'CormorantGaramond-Italic.ttf',
+    'CormorantGaramond-Regular.ttf',
+    'CormorantGaramond-SemiBold.ttf',
+    'LICENSE.txt',
+  ]);
+  for (const font of [
+    'CormorantGaramond-Italic.ttf',
+    'CormorantGaramond-Regular.ttf',
+    'CormorantGaramond-SemiBold.ttf',
+  ]) {
+    assert.ok(
+      (await readFile(new URL(`../assets/baedeker/fonts/${font}`, import.meta.url))).byteLength >
+        400_000,
+    );
+  }
+});
+
+test('keeps the Baedeker standalone source independent from other official maps', async () => {
+  const source = await readFile(new URL('../src/official/baedeker.ts', import.meta.url), 'utf8');
+  assert.match(source, /\bdefineMap\s*\(/u);
+  assert.doesNotMatch(
+    source,
+    /from\s+['"]\.\/(?:cyberpunk|ferraris|harad|matrix|san-francisto|siegfried|soundings|streets|verdant)['"]/u,
+  );
+  assert.doesNotMatch(source, /\bextends\s*:/u);
+  assert.doesNotMatch(source, /\bstreets\.icons\b/u);
 });
 
 test('keeps the Härad standalone source independent from Streets', async () => {
@@ -261,12 +305,27 @@ test('keeps the Siegfried standalone source independent from Streets', async () 
   assert.doesNotMatch(source, /\bstreets\.icons\b/u);
 });
 
+test('keeps the San Francisto standalone source independent from other official maps', async () => {
+  const source = await readFile(
+    new URL('../src/official/san-francisto.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /\bdefineMap\s*\(/u);
+  assert.doesNotMatch(
+    source,
+    /from\s+['"]\.\/(?:baedeker|cyberpunk|ferraris|harad|matrix|siegfried|soundings|streets|verdant)['"]/u,
+  );
+  assert.doesNotMatch(source, /\bextends\s*:/u);
+});
+
 test('keeps Cyberpunk and Matrix independent from other official maps', async () => {
   const officialMapIds = new Set([
+    'baedeker',
     'cyberpunk',
     'ferraris',
     'harad',
     'matrix',
+    'san-francisto',
     'siegfried',
     'soundings',
     'streets',
@@ -286,11 +345,13 @@ test('imports and compiles all packaged official maps against public Core APIs',
     const core = await import('@tileflow/core');
     const maps = await import('@tileflow/maps');
     for (const [name, id] of [
+      ['baedeker', 'baedeker'],
       ['streets', 'streets'],
       ['cyberpunk', 'cyberpunk'],
       ['ferraris', 'ferraris'],
       ['harad', 'harad'],
       ['matrix', 'matrix'],
+      ['sanFrancisto', 'san-francisto'],
       ['siegfried', 'siegfried'],
       ['soundings', 'soundings'],
       ['verdant', 'verdant'],
@@ -300,6 +361,9 @@ test('imports and compiles all packaged official maps against public Core APIs',
         preparedAssets: {
           icons: {
             ids: [
+              'baedeker-hachures', 'baedeker-orchard', 'baedeker-paper-grain',
+              'baedeker-park-stipple', 'baedeker-residential', 'baedeker-sand',
+              'baedeker-water-lines', 'baedeker-wetland',
               'coffee', 'crosswalk', 'culture', 'cyber-circuit', 'cyber-data-grid',
               'cyber-target-brackets', 'education', 'food', 'health', 'lodging',
               'ferraris-crop-hatch', 'ferraris-heath', 'ferraris-orchard',
@@ -313,6 +377,9 @@ test('imports and compiles all packaged official maps against public Core APIs',
               'road-shield-rectangle-blue', 'road-shield-rectangle-green',
               'road-shield-rectangle-neutral', 'road-shield-rectangle-orange',
               'road-shield-rectangle-red', 'road-shield-rectangle-yellow',
+              'san-francisto-blueprint-grid', 'san-francisto-building-hatch',
+              'san-francisto-landscape-hatch', 'san-francisto-poi-node',
+              'san-francisto-water-hatch',
               'services', 'shopping', 'sidewalk-dot',
               'sidewalk-dot-dark',
               'siegfried-dark-forest', 'siegfried-dark-glacier',
@@ -340,7 +407,9 @@ test('imports and compiles all packaged official maps against public Core APIs',
       if (!style.layers.length) process.exit(4);
     }
     if ('extends' in maps.cyberpunk || 'root' in maps.cyberpunk) process.exit(5);
+    if ('extends' in maps.baedeker || 'root' in maps.baedeker) process.exit(29);
     if ('extends' in maps.matrix || 'root' in maps.matrix) process.exit(27);
+    if ('extends' in maps.sanFrancisto || 'root' in maps.sanFrancisto) process.exit(31);
     if ('extends' in maps.verdant || 'root' in maps.verdant) process.exit(6);
     if (!maps.streetsThemes?.light || !maps.streetsThemes?.dark) process.exit(7);
     if (maps.streets.defaultTheme !== 'light') process.exit(11);
@@ -354,6 +423,23 @@ test('imports and compiles all packaged official maps against public Core APIs',
     if ('extends' in maps.harad || 'root' in maps.harad) process.exit(20);
     if ('extends' in maps.siegfried || 'root' in maps.siegfried) process.exit(25);
     if ('extends' in maps.soundings || 'root' in maps.soundings) process.exit(22);
+    const resolvedBaedeker = core.resolveMap(maps.baedeker);
+    if (
+      resolvedBaedeker.icons?.length !== 1 ||
+      resolvedBaedeker.icons[0]?.kind !== 'package-directory' ||
+      resolvedBaedeker.icons[0]?.package !== '@tileflow/maps' ||
+      resolvedBaedeker.icons[0]?.path !== 'assets/baedeker/icons' ||
+      resolvedBaedeker.fonts?.length !== 1 ||
+      resolvedBaedeker.fonts[0]?.kind !== 'package-directory' ||
+      resolvedBaedeker.fonts[0]?.package !== '@tileflow/maps' ||
+      resolvedBaedeker.fonts[0]?.path !== 'assets/baedeker/fonts' ||
+      maps.baedekerIcons?.kind !== 'package-directory' ||
+      maps.baedekerIcons?.package !== '@tileflow/maps' ||
+      maps.baedekerIcons?.path !== 'assets/baedeker/icons' ||
+      maps.baedekerFonts?.kind !== 'package-directory' ||
+      maps.baedekerFonts?.package !== '@tileflow/maps' ||
+      maps.baedekerFonts?.path !== 'assets/baedeker/fonts'
+    ) process.exit(30);
     const resolvedFerraris = core.resolveMap(maps.ferraris);
     if (
       resolvedFerraris.icons?.length !== 1 ||
@@ -389,6 +475,16 @@ test('imports and compiles all packaged official maps against public Core APIs',
       maps.soundingsIcons?.package !== '@tileflow/maps' ||
       maps.soundingsIcons?.path !== 'assets/soundings/icons'
     ) process.exit(24);
+    const resolvedSanFrancisto = core.resolveMap(maps.sanFrancisto);
+    if (
+      resolvedSanFrancisto.icons?.length !== 1 ||
+      resolvedSanFrancisto.icons[0]?.kind !== 'package-directory' ||
+      resolvedSanFrancisto.icons[0]?.package !== '@tileflow/maps' ||
+      resolvedSanFrancisto.icons[0]?.path !== 'assets/san-francisto/icons' ||
+      maps.sanFrancistoIcons?.kind !== 'package-directory' ||
+      maps.sanFrancistoIcons?.package !== '@tileflow/maps' ||
+      maps.sanFrancistoIcons?.path !== 'assets/san-francisto/icons'
+    ) process.exit(32);
     const resolvedSiegfried = core.resolveMap(maps.siegfried);
     if (
       resolvedSiegfried.icons?.length !== 1 ||

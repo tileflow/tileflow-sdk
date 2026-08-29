@@ -20,8 +20,9 @@ npm publication interlock for the unrelated open release requirements.
   generated-output grant.
 - Cyberpunk's and Matrix's unmodified Oxanium fonts and OFL licenses live under their respective
   `packages/maps/assets/cyberpunk/fonts/` and `packages/maps/assets/matrix/fonts/` directories.
-  Siegfried's unmodified Cormorant Garamond fonts and OFL license live under
-  `packages/maps/assets/siegfried/fonts/`.
+  Baedeker and Siegfried each own a package copy of the unmodified Cormorant Garamond fonts and OFL
+  license under `packages/maps/assets/baedeker/fonts/` and `packages/maps/assets/siegfried/fonts/`,
+  respectively.
 - `@tileflow/dev` no longer records or bundles map artwork or fonts. It resolves the fixed Maps
   assets during preparation and still carries notices for the separate tooling dependencies it
   executes.
@@ -40,7 +41,7 @@ npm publication interlock for the unrelated open release requirements.
   visual evidence.
 - The map contract makes every official map an independent root with explicit providers: Streets,
   Ferraris, Härad, Soundings, and Verdant declare the canonical Tileflow glyph URL directly;
-  Cyberpunk, Matrix, and Siegfried each own packaged fonts.
+  Baedeker, Cyberpunk, Matrix, and Siegfried each own packaged fonts.
   That URL is canonical rather than content-addressed; responses revalidate and do not provide an
   exact-byte identity. The immutable replacement is the separate
   `/base/<assetSetSha256>/glyphs/...` contract. No compiler fallback manufactures the URL.

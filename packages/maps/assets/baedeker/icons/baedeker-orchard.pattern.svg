@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <g fill="none" stroke="#68725F" stroke-width=".55" opacity=".72">
+    <circle cx="8" cy="8" r="1.25"/>
+    <circle cx="24" cy="8" r="1.25"/>
+    <circle cx="40" cy="8" r="1.25"/>
+    <circle cx="56" cy="8" r="1.25"/>
+    <circle cx="16" cy="24" r="1.25"/>
+    <circle cx="32" cy="24" r="1.25"/>
+    <circle cx="48" cy="24" r="1.25"/>
+    <circle cx="64" cy="24" r="1.25"/>
+    <circle cx="8" cy="40" r="1.25"/>
+    <circle cx="24" cy="40" r="1.25"/>
+    <circle cx="40" cy="40" r="1.25"/>
+    <circle cx="56" cy="40" r="1.25"/>
+    <circle cx="16" cy="56" r="1.25"/>
+    <circle cx="32" cy="56" r="1.25"/>
+    <circle cx="48" cy="56" r="1.25"/>
+    <circle cx="64" cy="56" r="1.25"/>
+  </g>
+  <g fill="#68725F" opacity=".67">
+    <circle cx="8" cy="8" r=".32"/>
+    <circle cx="24" cy="8" r=".32"/>
+    <circle cx="40" cy="8" r=".32"/>
+    <circle cx="56" cy="8" r=".32"/>
+    <circle cx="16" cy="24" r=".32"/>
+    <circle cx="32" cy="24" r=".32"/>
+    <circle cx="48" cy="24" r=".32"/>
+    <circle cx="8" cy="40" r=".32"/>
+    <circle cx="24" cy="40" r=".32"/>
+    <circle cx="40" cy="40" r=".32"/>
+    <circle cx="56" cy="40" r=".32"/>
+    <circle cx="16" cy="56" r=".32"/>
+    <circle cx="32" cy="56" r=".32"/>
+    <circle cx="48" cy="56" r=".32"/>
+  </g>
+</svg>

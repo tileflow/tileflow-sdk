@@ -361,13 +361,14 @@ export default defineMap({
 Directories apply left to right. `<id>.<ext>` publishes an icon as `<id>`;
 `<id>.pattern.<ext>` publishes the intrinsic-size pattern as `<id>`. The published ID must already
 be canonical lower-kebab-case. A later file replaces an earlier file only for the same exact ID;
-case-only collisions fail. Package maps export `streetsIcons`, `ferrarisIcons`,
-`haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`, and `verdantIcons`
-directory descriptors from `@tileflow/maps`. Cyberpunk, Matrix, and Siegfried also export
-`cyberpunkFonts`, `matrixFonts`, and `siegfriedFonts`. Preparation resolves package descriptors inside their owning
-package, checks real-path containment, and compiles them through the same pipeline as a
-config-relative directory. There are no built-in/source/sprite selectors, mappings, icon-specific
-inheritance, or compatibility aliases.
+case-only collisions fail. Package maps export `streetsIcons`, `baedekerIcons`, `ferrarisIcons`,
+`haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`, and
+`verdantIcons`, and `sanFrancistoIcons` directory descriptors from `@tileflow/maps`. Cyberpunk,
+Matrix, Baedeker, and Siegfried also export `cyberpunkFonts`, `matrixFonts`, `baedekerFonts`, and
+`siegfriedFonts`. Preparation
+resolves package descriptors inside their owning package, checks real-path containment, and
+compiles them through the same pipeline as a config-relative directory. There are no
+built-in/source/sprite selectors, mappings, icon-specific inheritance, or compatibility aliases.
 
 Local directories resolve from the directory containing the selected `tileflow.config.ts`, while
 the workspace `cwd` remains their containment boundary. Canonical local syntax starts with `./` or
@@ -452,14 +453,18 @@ const result = await compileTileflowIconPackages(internalCatalog, {
 ```
 
 Streets declares `[streetsIcons]` and keeps light/dark image-token targets in that one closure;
-Cyberpunk and Matrix independently declare `[cyberpunkIcons]` and `[matrixIcons]`. Ferraris, Härad,
-Siegfried, Soundings, and Verdant declare only `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
-`[soundingsIcons]`, and `[verdantIcons]`, respectively. No official root composes another map's
-assets even though all use the semantic compiler ABI. Härad's directory contains nine original Tileflow
-patterns inspired by Lantmäteriet's CC0 Häradsekonomiska kartan series from 1859–1934. Soundings owns ten
-original nautical symbols and patterns. An application map may inherit a root's exact array,
-replace it, clear it with `[]`, or
-compose it explicitly with a spread.
+Cyberpunk and Matrix independently declare `[cyberpunkIcons]` and `[matrixIcons]`. Baedeker,
+Ferraris, Härad, Siegfried, Soundings, Verdant, and San Francisto declare only `[baedekerIcons]`,
+`[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`, `[soundingsIcons]`, `[verdantIcons]`, and
+`[sanFrancistoIcons]`, respectively. No official root composes another map's assets even though all
+use the semantic compiler ABI. Baedeker's directory contains eight original travel-atlas patterns;
+its browser-derived Mapterhorn contours use runtime terrain tiles and are not part of the icon
+package. Härad's directory contains nine original Tileflow patterns inspired by Lantmäteriet's CC0
+Häradsekonomiska kartan series from 1859–1934. Soundings owns ten original nautical symbols and
+patterns. San Francisto owns four technical blueprint patterns and one schematic POI node; its
+unbundled Mapterhorn contours remain runtime terrain, and its text uses the canonical Noto Sans
+glyph provider. An application map may inherit a root's exact array, replace it, clear it with `[]`,
+or compose it explicitly with a spread.
 `modules.poi.icons: false` or a disabled POI module suppresses POI icon layers without moving asset
 ownership into dev. POI density is the numeric producer threshold 1–5; it is not an asset-provider
 preset.

@@ -8,10 +8,10 @@ public API; this contract records the relationships between those APIs.
 
 - A **map** is the only public cartographic authoring unit. It has its own identity and version and
   is either standalone or extends another imported map.
-- A **standalone map** terminates an inheritance lineage. Streets, Cyberpunk, Ferraris, Härad,
-  Matrix, Siegfried, Soundings, and Verdant are the first-party standalone maps. The sole semantic
-  compiler is implicit; none imports or extends another official map, and each declares its own
-  asset providers.
+- A **standalone map** terminates an inheritance lineage. Streets, Baedeker, Cyberpunk, Ferraris,
+  Härad, Matrix, Siegfried, Soundings, Verdant, and San Francisto are the first-party standalone
+  maps. The sole semantic compiler is implicit; none imports or extends another official map, and
+  each declares its own asset providers.
 - A **theme** is one complete named visual appearance for a map. Every theme in a map shares one
   typed semantic-token schema; `system` is only a browser selector for concrete themes.
 - A **module** is a semantic authoring input owned by a map domain, such as roads, buildings,
@@ -97,11 +97,17 @@ PMTiles contract.
 
 ### `@tileflow/maps`
 
-Owns the official Streets, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix,
-and Verdant map objects, their package-directory descriptors, and the icon, pattern, font, and
-notice files those maps require. All eight official maps are complete standalone maps. Ferraris, Härad,
-Siegfried, Soundings, and Verdant declare only their own `ferrarisIcons`, `haradIcons`,
-`siegfriedIcons`, `soundingsIcons`, and `verdantIcons` directories.
+Owns the official Streets, Baedeker, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix,
+Verdant, and San Francisto map objects, their package-directory descriptors, and the icon, pattern,
+font, and notice files those maps require. All ten official maps are complete standalone maps.
+Baedeker, Ferraris, Härad, Siegfried, Soundings, Verdant, and San Francisto declare only their own
+`baedekerIcons`, `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, `verdantIcons`,
+and `sanFrancistoIcons` directories.
+Baedeker's eight patterns are original Tileflow artwork informed by historical Baedeker and Wagner
+& Debes maps without including scans, source pixels, historical typefaces, legend artwork,
+geospatial data, or source maps; the Tileflow map has no affiliation with or endorsement from
+Baedeker or Wagner & Debes. Its separately licensed Cormorant files and OFL license live in its own
+package asset closure. Its browser-derived contours use Mapterhorn terrain tiles that are not packaged.
 Härad's directory contains nine original Tileflow SVG patterns inspired by Lantmäteriet's CC0
 Häradsekonomiska kartan series (1859–1934) and official legend; no Lantmäteriet scan, pixel, legend
 artwork, font, or map data is redistributed. Soundings retains ten original chart symbols and
@@ -111,7 +117,9 @@ context, not navigation-grade survey soundings. Every standalone map uses the im
 compiler but does not import, extend, or inherit
 assets from another official map. Streets owns light and dark theme documents over one map
 structure. Cyberpunk owns `cyberpunkIcons` and `cyberpunkFonts`; Matrix independently owns
-`matrixIcons` and `matrixFonts`.
+`matrixIcons` and `matrixFonts`. San Francisto owns four blueprint patterns and one schematic POI
+symbol, derives contours from unbundled Mapterhorn tiles, and declares the canonical Noto Sans
+glyph provider directly.
 
 Maps has a peer dependency on Core because its exports are authored with Core's map language. Core
 never depends on or re-exports Maps. A consumer that wants an official map installs both packages;

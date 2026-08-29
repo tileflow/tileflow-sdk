@@ -25,7 +25,18 @@ import {
   water,
 } from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
-import {cyberpunk, ferraris, harad, matrix, siegfried, soundings, streets, verdant} from '../src';
+import {
+  baedeker,
+  cyberpunk,
+  ferraris,
+  harad,
+  matrix,
+  sanFrancisto,
+  siegfried,
+  soundings,
+  streets,
+  verdant,
+} from '../src';
 
 const moduleFactories = {
   addresses,
@@ -47,10 +58,12 @@ type Domain = keyof typeof moduleFactories;
 
 const officialMaps = {
   streets,
+  baedeker,
   cyberpunk,
   ferraris,
   harad,
   matrix,
+  'san-francisto': sanFrancisto,
   siegfried,
   soundings,
   verdant,
@@ -60,6 +73,14 @@ const preparedOfficialAssets = {
   preparedAssets: {
     icons: {
       ids: [
+        'baedeker-hachures',
+        'baedeker-orchard',
+        'baedeker-paper-grain',
+        'baedeker-park-stipple',
+        'baedeker-residential',
+        'baedeker-sand',
+        'baedeker-water-lines',
+        'baedeker-wetland',
         'coffee',
         'crosswalk',
         'culture',
@@ -101,6 +122,11 @@ const preparedOfficialAssets = {
         'road-shield-rectangle-orange',
         'road-shield-rectangle-red',
         'road-shield-rectangle-yellow',
+        'san-francisto-blueprint-grid',
+        'san-francisto-building-hatch',
+        'san-francisto-landscape-hatch',
+        'san-francisto-poi-node',
+        'san-francisto-water-hatch',
         'services',
         'shopping',
         'sidewalk-dot',

@@ -72,7 +72,7 @@ function collectColorLiterals(value: unknown, output = new Set<string>()): Set<s
 
 test('Matrix is a frozen self-contained map with only Matrix-owned assets', async () => {
   assert.equal(matrix.id, 'matrix');
-  assert.equal(matrix.name, 'Matrix');
+  assert.equal(matrix.name, 'Terminal');
   assert.equal(matrix.version, 1);
   assert.equal('extends' in matrix, false);
   assert.equal('root' in matrix, false);

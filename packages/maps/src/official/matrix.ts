@@ -2015,7 +2015,7 @@ export const matrix = bindOfficialMapTheme(
   defineMap({
     id: 'matrix',
     version: 1,
-    name: 'Matrix',
+    name: 'Terminal',
     data: {
       generation: 'v1',
       selection: {kind: 'current', product: 'world-v1'},

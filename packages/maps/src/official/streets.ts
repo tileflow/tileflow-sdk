@@ -943,7 +943,7 @@ function streetsLabelRenderStack() {
             values: ['suburb', 'neighbourhood', 'quarter', 'borough'],
           },
           {
-            fallback: rankAtMost(12),
+            fallback: rankAtMost(18),
             kind: 'step',
             stops: [
               {selector: rankAtMost(16), zoom: 12},
@@ -2169,7 +2169,7 @@ export const streets = bindOfficialMapTheme(
               },
               city: {
                 minZoom: 2,
-                maxZoom: 15,
+                maxZoom: 16,
                 priority: expr.subtract(100, expr.coalesce(expr.get(field('rank')), 20)),
                 text: {
                   color: zoom.linear([
@@ -2252,7 +2252,7 @@ export const streets = bindOfficialMapTheme(
               },
               town: {
                 minZoom: 2,
-                maxZoom: 13,
+                maxZoom: 16,
                 priority: expr.subtract(80, expr.coalesce(expr.get(field('rank')), 20)),
                 text: {
                   color: streetsVisual.label.settlement,
@@ -2264,7 +2264,8 @@ export const streets = bindOfficialMapTheme(
                   padding: 1,
                   radialOffset: zoom.step([
                     [2, 0.55],
-                    [8, 0],
+                    [8, 0.35],
+                    [11, 0],
                   ]),
                   size: expr.interpolate(
                     {kind: 'cubic-bezier', x1: 0.2, x2: 0.9, y1: 0, y2: 1},
@@ -2297,11 +2298,21 @@ export const streets = bindOfficialMapTheme(
                     ],
                   ),
                   font: streetsVisual.font.default,
+                  variableAnchors: [
+                    'left',
+                    'right',
+                    'top',
+                    'bottom',
+                    'top-left',
+                    'top-right',
+                    'bottom-left',
+                    'bottom-right',
+                  ],
                 },
               },
               village: {
                 minZoom: 2,
-                maxZoom: 13,
+                maxZoom: 16,
                 priority: expr.subtract(65, expr.coalesce(expr.get(field('rank')), 20)),
                 text: {
                   color: streetsVisual.label.settlement,
@@ -2313,7 +2324,8 @@ export const streets = bindOfficialMapTheme(
                   padding: 1,
                   radialOffset: zoom.step([
                     [2, 0.55],
-                    [8, 0],
+                    [8, 0.35],
+                    [11, 0],
                   ]),
                   size: expr.interpolate(
                     {kind: 'cubic-bezier', x1: 0.2, x2: 0.9, y1: 0, y2: 1},
@@ -2346,12 +2358,22 @@ export const streets = bindOfficialMapTheme(
                     ],
                   ),
                   font: streetsVisual.font.default,
+                  variableAnchors: [
+                    'left',
+                    'right',
+                    'top',
+                    'bottom',
+                    'top-left',
+                    'top-right',
+                    'bottom-left',
+                    'bottom-right',
+                  ],
                 },
               },
               neighborhood: {
                 minZoom: 10,
-                maxZoom: 15,
-                priority: 55,
+                maxZoom: 16,
+                priority: expr.subtract(65, expr.coalesce(expr.get(field('rank')), 20)),
                 text: {
                   color: streetsVisual.label.neighborhood,
                   haloColor: streetsDetailPalette.halo,
@@ -2363,13 +2385,21 @@ export const streets = bindOfficialMapTheme(
                     0.05,
                   ),
                   maxWidth: 7,
-                  padding: 3,
+                  padding: 2,
                   size: expr.interpolate(
                     {kind: 'cubic-bezier', x1: 0.5, x2: 1, y1: 0, y2: 1},
                     expr.zoom(),
                     [
                       [
-                        11,
+                        10,
+                        expr.match<string, number>(
+                          expr.get(field('class')),
+                          [{labels: 'suburb', value: 10.5}],
+                          10,
+                        ),
+                      ],
+                      [
+                        12,
                         expr.match<string, number>(
                           expr.get(field('class')),
                           [{labels: 'suburb', value: 12}],
@@ -2380,8 +2410,8 @@ export const streets = bindOfficialMapTheme(
                         15,
                         expr.match<string, number>(
                           expr.get(field('class')),
-                          [{labels: 'suburb', value: 16}],
-                          15,
+                          [{labels: 'suburb', value: 15}],
+                          14,
                         ),
                       ],
                     ],
@@ -2391,7 +2421,7 @@ export const streets = bindOfficialMapTheme(
               },
               other: {
                 minZoom: 11,
-                maxZoom: 15,
+                maxZoom: 16,
                 priority: 40,
                 text: {
                   color: streetsVisual.label.neighborhood,

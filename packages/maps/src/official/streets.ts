@@ -136,8 +136,8 @@ const globalLandcoverOpacity = zoom.linear([
   [7, 1],
   [8, 0.85],
   [9, 0.78],
-  [10, 0.75],
-  [10.5, 0.5],
+  [10, 0.9],
+  [10.5, 0.55],
   [10.75, 0.25],
   [11, 0],
 ]);
@@ -164,10 +164,21 @@ const protectedAreaOpacity = zoom.linear([
 const streetsPoiStyle = {
   icon: {
     size: zoom.linear([
-      [12, 1],
-      [17, 1.06],
+      [12, 1.04],
+      [15, 1.1],
+      [17, 1.14],
     ]),
   },
+} satisfies TileflowPoiCategoryStyle;
+
+const sparseStreetsPoiStyle = {
+  ...streetsPoiStyle,
+  density: 2,
+} satisfies TileflowPoiCategoryStyle;
+
+const deferredStreetsPoiStyle = {
+  ...streetsPoiStyle,
+  minZoom: 15.5,
 } satisfies TileflowPoiCategoryStyle;
 
 // Match Standard's warm 2D footprints here; authored 3D extrusions keep their
@@ -217,7 +228,10 @@ function cityRoadColorStops(
   ];
 }
 
-const roadBorderZoom = detailedRoadZoom;
+// Standard separates the structural network with a restrained casing well
+// before the detailed z15 handoff. Keeping this at z15 made country and metro
+// views look like pale centre-lines instead of a navigable hierarchy.
+const roadBorderZoom = 6;
 // Circle casings express the total diameter delta, so 1 px leaves a subtle
 // 0.5 px edge on either side of the carriageway at detailed zooms.
 const roadBorderTotalWidth = 1;
@@ -515,6 +529,8 @@ function roadCasingStrokeWidth() {
     // Keep the visible border below one physical pixel at ordinary city
     // zooms. A full 1 px stroke per side can cover a second pixel column on
     // curved or fractionally positioned lines and make one edge look doubled.
+    [6, 0.4],
+    [12, 0.55],
     [15, 0.75],
     [18, 1],
     [22, 1.5],
@@ -724,6 +740,96 @@ function streetsBoundaryRenderStack() {
         ]),
       },
     }),
+    admin4Background: renderPass({
+      attachTo: 'boundaries.admin4',
+      feature: 'boundary',
+      phase: 'underlay',
+      renderer: 'line',
+      selector: {
+        kind: 'all',
+        selectors: [
+          {
+            coerce: 'number',
+            fallback: 0,
+            field: 'adminLevel',
+            kind: 'compare',
+            operator: 'eq',
+            value: 4,
+          },
+          {
+            coerce: 'number',
+            fallback: 0,
+            field: 'maritime',
+            kind: 'compare',
+            operator: 'ne',
+            value: 1,
+          },
+        ],
+      },
+      style: {
+        blur: zoom.linear([
+          [3, 0],
+          [12, 1],
+        ]),
+        color: streetsVisual.boundary.halo,
+        minZoom: 2,
+        opacity: zoom.linear([
+          [2, 0],
+          [4, 0.42],
+        ]),
+        width: zoom.linear([
+          [3, 2.4],
+          [6, 3.1],
+          [12, 4.2],
+        ]),
+      },
+    }),
+    // OpenMapTiles carries admin-6 boundaries, but the generic boundaries
+    // module deliberately exposes only the stable admin-2/admin-4 pair.
+    // Standard uses the next tier as a restrained dotted municipal cue from
+    // metro zooms onward, so Streets adds it as an explicit semantic pass.
+    admin6: renderPass({
+      attachTo: 'boundaries.admin4',
+      feature: 'boundary',
+      phase: 'overlay',
+      renderer: 'line',
+      selector: {
+        kind: 'all',
+        selectors: [
+          {
+            coerce: 'number',
+            fallback: 0,
+            field: 'adminLevel',
+            kind: 'compare',
+            operator: 'eq',
+            value: 6,
+          },
+          {
+            coerce: 'number',
+            fallback: 0,
+            field: 'maritime',
+            kind: 'compare',
+            operator: 'ne',
+            value: 1,
+          },
+        ],
+      },
+      style: {
+        color: streetsVisual.boundary.regional,
+        dash: [1, 1.5],
+        minZoom: 8,
+        opacity: zoom.linear([
+          [8, 0],
+          [9, 0.5],
+          [12, 0.68],
+        ]),
+        width: zoom.linear([
+          [8, 0.45],
+          [10, 0.7],
+          [12, 0.95],
+        ]),
+      },
+    }),
   };
 }
 
@@ -746,31 +852,31 @@ function streetsLandRenderStack() {
 
 function streetsBuildingRenderStack() {
   return {
-    // Standard's day preset gives flat footprints a soft ambient edge even
-    // when 3D objects are disabled. Keep this independent from the runtime 3D
-    // toggle so the 2D map does not collapse into the surrounding landuse.
+    // Keep just enough ambient separation for dense footprint clusters. The
+    // fill and its close-colour outline carry the 2D building hierarchy; a
+    // dark shadow at z15 would turn every footprint into a heavy sticker.
     flatShadow: renderPass({
       attachTo: 'buildings.flat.fill',
       feature: 'building',
       phase: 'underlay',
       renderer: 'line',
       style: {
-        blur: 3.5,
+        blur: 2,
         color: buildingShadowColor,
-        minZoom: 15,
+        minZoom: 15.5,
         opacity: zoom.linear([
-          [15, 0.08],
-          [16, 0.18],
-          [18, 0.28],
-          [20, 0.32],
+          [15.5, 0],
+          [16, 0.03],
+          [18, 0.08],
+          [20, 0.1],
         ]),
-        translate: [1.25, 2],
+        translate: [0.5, 0.75],
         translateAnchor: 'viewport',
         width: zoom.linear([
-          [15, 2],
-          [16, 4],
-          [18, 7],
-          [20, 8],
+          [15.5, 0.5],
+          [16, 1],
+          [18, 3],
+          [20, 4],
         ]),
       },
     }),
@@ -1578,9 +1684,9 @@ export const streets = bindOfficialMapTheme(
               [3, 1],
             ]),
             width: zoom.linear([
-              [3, 0.55],
-              [6, 1],
-              [12, 1.6],
+              [3, 0.7],
+              [6, 1.2],
+              [12, 1.8],
             ]),
           },
           disputed: {
@@ -1813,7 +1919,7 @@ export const streets = bindOfficialMapTheme(
               primaryRoadSurfaceColor,
               [
                 [3, 0.8],
-                [12, 3],
+                [12, 2.6],
                 [18, 28],
                 [22, 280],
               ],
@@ -1824,11 +1930,11 @@ export const streets = bindOfficialMapTheme(
                   [22, mapboxRoadPalette.roadCasing],
                 ],
                 colorStops: cityRoadColorStops(
-                  6,
+                  5,
                   streetsCityRoadPalette.primary,
                   primaryRoadSurfaceColor,
                 ),
-                minZoom: 6,
+                minZoom: 5,
                 rampWidths: mapboxArterialRampWidthStops,
                 tunnelCasingColor: mapboxRoadPalette.roadCasing,
                 tunnelColor: mapboxRoadPalette.roadTunnel,
@@ -1838,7 +1944,7 @@ export const streets = bindOfficialMapTheme(
               secondaryRoadSurfaceColor,
               [
                 [3, 0],
-                [12, 2.2],
+                [12, 1.8],
                 [18, 26],
                 [22, 260],
               ],
@@ -1863,7 +1969,7 @@ export const streets = bindOfficialMapTheme(
               tertiaryRoadSurfaceColor,
               [
                 [3, 0],
-                [12, 2.2],
+                [12, 1.2],
                 [18, 26],
                 [22, 260],
               ],
@@ -1888,7 +1994,7 @@ export const streets = bindOfficialMapTheme(
               roadSurfaceColor,
               [
                 [3, 0],
-                [12, 0.5],
+                [12, 0.35],
                 [18, 20],
                 [22, 200],
               ],
@@ -1908,24 +2014,26 @@ export const streets = bindOfficialMapTheme(
               roadSurfaceColor,
               [
                 [3, 0],
-                [12, 0],
-                [14, 0],
+                [13, 0],
+                [13.5, 0.35],
+                [14, 0.8],
                 [15, 2.2],
+                [16, 3.8],
                 [18, 10],
                 [22, 100],
               ],
               {
-                casingMinZoom: 15,
+                casingMinZoom: 14.5,
                 casingColorStops: [
-                  [15, mapboxRoadPalette.roadCasing],
+                  [14.5, mapboxRoadPalette.roadCasing],
                   [22, mapboxRoadPalette.roadCasing],
                 ],
                 clearance: false,
                 colorStops: [
-                  [15, roadSurfaceColor],
+                  [13.5, roadSurfaceColor],
                   [22, roadSurfaceColor],
                 ],
-                minZoom: 14,
+                minZoom: 13.5,
                 tunnelVisible: false,
               },
             ),
@@ -1933,24 +2041,26 @@ export const streets = bindOfficialMapTheme(
               mapboxRoadPalette.road,
               [
                 [3, 0],
-                [12, 0],
-                [14, 0],
-                [15, 2.2],
+                [13, 0],
+                [13.5, 0.25],
+                [14, 0.6],
+                [15, 1.8],
+                [16, 3.2],
                 [18, 10],
                 [22, 100],
               ],
               {
-                casingMinZoom: 15,
+                casingMinZoom: 14.5,
                 casingColorStops: [
-                  [15, mapboxRoadPalette.roadCasing],
+                  [14.5, mapboxRoadPalette.roadCasing],
                   [22, mapboxRoadPalette.roadCasing],
                 ],
                 clearance: false,
                 colorStops: [
-                  [15, mapboxRoadPalette.road],
+                  [13.5, mapboxRoadPalette.road],
                   [22, mapboxRoadPalette.road],
                 ],
-                minZoom: 14,
+                minZoom: 13.5,
                 tunnelCasingColor: mapboxRoadPalette.roadCasing,
                 tunnelColor: mapboxRoadPalette.roadTunnel,
               },
@@ -2025,21 +2135,31 @@ export const streets = bindOfficialMapTheme(
             outline: {visible: false},
           },
           flat: {
-            fill: {color: buildingFillColor, minZoom: 15, opacity: 1},
+            fill: {
+              color: buildingFillColor,
+              minZoom: 14.25,
+              opacity: zoom.linear([
+                [14.25, 0],
+                [14.75, 0.5],
+                [15, 1],
+              ]),
+            },
             outline: {
               color: buildingOutlineColor,
-              minZoom: 15,
+              minZoom: 14.5,
               opacity: zoom.linear([
-                [15, 0.4],
-                [16, 0.72],
-                [17, 0.9],
-                [18, 1],
+                [14.5, 0],
+                [15, 0.24],
+                [16, 0.34],
+                [17, 0.42],
+                [18, 0.5],
               ]),
               width: zoom.linear([
-                [15, 0.45],
-                [16, 0.62],
-                [17, 0.78],
-                [20, 0.9],
+                [14.5, 0.2],
+                [15, 0.25],
+                [16, 0.32],
+                [17, 0.4],
+                [20, 0.55],
               ]),
             },
           },
@@ -2048,6 +2168,7 @@ export const streets = bindOfficialMapTheme(
       ),
       labels: withRenderStack(
         labels({
+          collisionPriority: 'navigation',
           language: 'local', // 'auto' | 'local' | 'en' | another language field suffix.
           places: 'all', // 'none' | 'major' | 'all'.
           roads: 'all', // 'none' | 'highways' | 'major' | 'streets' | 'all'.
@@ -2237,6 +2358,9 @@ export const streets = bindOfficialMapTheme(
                       ],
                     ],
                   ),
+                  // Regular minor-city labels leave room for the denser
+                  // regional label field used by Standard. Capital dots and
+                  // rank-driven size still carry the major-city hierarchy.
                   font: streetsVisual.font.default,
                   variableAnchors: [
                     'left',
@@ -2603,19 +2727,19 @@ export const streets = bindOfficialMapTheme(
         // selects only the canonical categories and leaves final placement to
         // MapLibre collision handling.
         categories: [
-          'visitor-amenity',
-          'retail',
+          'transport',
           'food-drink',
+          'lodging',
+          'retail',
+          'arts-entertainment',
+          'landmark',
+          'park-nature',
+          'medical',
+          'education',
+          'public-services',
           'sport-leisure',
           'religion',
-          'public-services',
-          'education',
-          'medical',
-          'lodging',
-          'arts-entertainment',
-          'park-nature',
-          'landmark',
-          'transport',
+          'visitor-amenity',
         ],
         // Standard carries the POI category into both marker and label colour.
         // A uniform grey treatment suppresses a meaningful amount of chroma
@@ -2628,23 +2752,23 @@ export const streets = bindOfficialMapTheme(
           // One collision unit: the circular icon is required while its name is
           // optional and may move around the marker when space is tight.
           coupleIconAndLabel: true,
-          iconPadding: 2,
-          textPadding: 3,
+          iconPadding: 10,
+          textPadding: 12,
         },
         styles: {
-          'arts-entertainment': streetsPoiStyle,
-          education: streetsPoiStyle,
+          'arts-entertainment': sparseStreetsPoiStyle,
+          education: deferredStreetsPoiStyle,
           'food-drink': streetsPoiStyle,
-          landmark: streetsPoiStyle,
-          lodging: streetsPoiStyle,
-          medical: streetsPoiStyle,
-          'park-nature': streetsPoiStyle,
-          'public-services': streetsPoiStyle,
-          religion: streetsPoiStyle,
+          landmark: deferredStreetsPoiStyle,
+          lodging: sparseStreetsPoiStyle,
+          medical: deferredStreetsPoiStyle,
+          'park-nature': deferredStreetsPoiStyle,
+          'public-services': deferredStreetsPoiStyle,
+          religion: deferredStreetsPoiStyle,
           retail: streetsPoiStyle,
           'sport-leisure': streetsPoiStyle,
           transport: streetsPoiStyle,
-          'visitor-amenity': streetsPoiStyle,
+          'visitor-amenity': deferredStreetsPoiStyle,
         },
       }),
     },

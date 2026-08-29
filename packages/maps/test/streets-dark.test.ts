@@ -44,18 +44,23 @@ const approvedLightStyleColors = new Set([
   '#0093F659',
   '#0FB7FF59',
   '#1B1D27',
+  '#242624',
   '#303230',
   '#4C9478',
   '#505050',
+  '#557BC4',
   '#5A88A9',
   '#5C74D6',
+  '#626361',
+  '#667C9E',
   '#67AD73',
+  '#6D6E6C',
   '#729B78',
-  '#777876',
   '#63C6FE59',
   '#806DC4',
   '#81A880',
   '#83AD83',
+  '#8A756B',
   '#8B8E99',
   '#8D9EAE',
   '#8E909D',
@@ -63,18 +68,21 @@ const approvedLightStyleColors = new Set([
   '#918878',
   '#91B68B',
   '#91BA8D',
+  '#987A55',
   '#99DDFF',
   '#99DDFF59',
   '#ADB3C3',
   '#A1C99B',
   '#A5A7BF',
   '#A6B1C2',
-  '#ACA7A3',
   '#AED7A5',
   '#AFD4A7',
-  '#B7E2AC',
+  '#AFE0A0',
+  '#B1E1A4',
   '#B85CA4',
   '#B8E0AE',
+  '#BDB7B1',
+  '#BFE2B0',
   '#BFE6AE',
   '#C0C5D8',
   '#C2E7B5',
@@ -82,44 +90,42 @@ const approvedLightStyleColors = new Set([
   '#C2C6D0',
   '#C4C6CD',
   '#C4C6CE',
+  '#C5E7B6',
   '#C6C8D4',
-  '#DCA2A1',
   '#C8C8CF',
   '#C95E6B',
   '#C9E9BC',
   '#CCE5C6',
+  '#CE9298',
+  '#CE9698',
   '#CED0D8',
   '#D1C7C7',
-  '#D0ECC3',
-  '#D49399',
+  '#CDE9C0',
+  '#CDECBF',
   '#D5DCE0',
   '#D5E8D0',
   '#D6E7D3',
   '#D7892C',
   '#D7E9DE',
   '#D8E1D8',
-  '#D9EBDD',
-  '#D5EEC5',
-  '#D8EFC8',
-  '#C6BCB2',
+  '#D4EDC8',
+  '#DED5CD',
   '#DEE0E8',
-  '#DFF1CF',
-  '#E0ECD8',
-  '#E1E4F5',
   '#E4E1E5',
   '#E8E3DE',
   '#E8E5E6',
+  '#E8E8F0',
   '#E9E6E7',
   '#E9E8ED',
   '#EFECEF',
-  '#EDE6D4',
+  '#ECE4D2',
   '#EEE0DF',
   '#F0ECC6',
   '#F2EAE0',
   '#F2F0EB',
+  '#F3F2F0',
   '#F4F0EF',
   '#F4F7F8',
-  '#F7F6F4',
   '#F8F6F8',
   '#FBEDE2',
   '#FFFFFF',
@@ -561,13 +567,17 @@ test('Streets uses blue road decks with darker casings that strengthen toward cl
     for (const layer of [surfaceCasing, bridgeCasing]) {
       const width = layer.paint?.['line-width'];
       assert.ok(Array.isArray(width));
-      assert.deepEqual(width.slice(0, 4), ['interpolate', ['linear'], ['zoom'], 15]);
-      assert.equal(width[5], 18);
-      assert.equal(width[7], 22);
+      assert.deepEqual(width.slice(0, 4), ['interpolate', ['linear'], ['zoom'], 6]);
+      assert.equal(width[5], 12);
+      assert.equal(width[7], 15);
+      assert.equal(width[9], 18);
+      assert.equal(width[11], 22);
       for (const [outputIndex, expectedWidth] of [
-        [4, 0.75],
-        [6, 1],
-        [8, 1.5],
+        [4, 0.4],
+        [6, 0.55],
+        [8, 0.75],
+        [10, 1],
+        [12, 1.5],
       ] as const) {
         const output = width[outputIndex];
         assert.ok(Array.isArray(output));
@@ -586,7 +596,7 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
   const style = compile('light');
   const countryBoundary = requireLayer(style, 'tileflow-boundary-admin2');
   const regionalBoundary = requireLayer(style, 'tileflow-boundary-admin4');
-  assert.equal(countryBoundary.paint?.['line-color'], '#D49399');
+  assert.equal(countryBoundary.paint?.['line-color'], '#CE9298');
   assert.deepEqual(countryBoundary.paint?.['line-width'], [
     'interpolate',
     ['linear'],
@@ -598,17 +608,17 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     12,
     2.1,
   ]);
-  assert.equal(regionalBoundary.paint?.['line-color'], '#DCA2A1');
+  assert.equal(regionalBoundary.paint?.['line-color'], '#CE9698');
   assert.deepEqual(regionalBoundary.paint?.['line-width'], [
     'interpolate',
     ['linear'],
     ['zoom'],
     3,
-    0.55,
+    0.7,
     6,
-    1,
+    1.2,
     12,
-    1.6,
+    1.8,
   ]);
 
   const countryLabel = requireLayer(style, 'tileflow-label-place-country');
@@ -624,7 +634,7 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
   for (const family of ['town', 'village'] as const) {
     const settlement = requireLayer(style, `tileflow-label-place-${family}`);
     assert.equal(settlement.maxzoom, 16);
-    assert.equal(settlement.paint?.['text-color'], '#303230');
+    assert.equal(settlement.paint?.['text-color'], '#242624');
     assert.deepEqual(settlement.layout?.['text-variable-anchor'], [
       'left',
       'right',
@@ -658,71 +668,88 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
 
   assert.match(
     JSON.stringify(requireLayer(style, 'tileflow-landuse-1').paint?.['fill-color']),
-    /"residential"\],"#F7F6F4"/u,
+    /"residential"\],"#F3F2F0"/u,
   );
   assert.equal(
     requireLayer(style, 'tileflow-land-render-businessArea').paint?.['fill-color'],
     '#FBEDE2',
   );
-  assert.equal(requireLayer(style, 'tileflow-buildings-fill').paint?.['fill-color'], '#F2EAE0');
+  const buildingFill = requireLayer(style, 'tileflow-buildings-fill');
+  assert.equal(buildingFill.paint?.['fill-color'], '#F2EAE0');
+  assert.equal(buildingFill.minzoom, 14.25);
+  assert.deepEqual(buildingFill.paint?.['fill-opacity'], [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    14.25,
+    0,
+    14.75,
+    0.5,
+    15,
+    1,
+  ]);
   const outlines = requireLayer(style, 'tileflow-buildings-fill-outline');
-  assert.equal(outlines.paint?.['line-color'], '#C6BCB2');
+  assert.equal(outlines.paint?.['line-color'], '#DED5CD');
   assert.deepEqual(outlines.paint?.['line-opacity'], [
     'interpolate',
     ['linear'],
     ['zoom'],
+    14.5,
+    0,
     15,
-    0.4,
+    0.24,
     16,
-    0.72,
+    0.34,
     17,
-    0.9,
+    0.42,
     18,
-    1,
+    0.5,
   ]);
   assert.deepEqual(outlines.paint?.['line-width'], [
     'interpolate',
     ['linear'],
     ['zoom'],
+    14.5,
+    0.2,
     15,
-    0.45,
+    0.25,
     16,
-    0.62,
+    0.32,
     17,
-    0.78,
+    0.4,
     20,
-    0.9,
+    0.55,
   ]);
 
   const flatShadow = requireLayer(style, 'tileflow-buildings-render-flatShadow');
-  assert.equal(flatShadow.paint?.['line-color'], '#ACA7A3');
-  assert.equal(flatShadow.paint?.['line-blur'], 3.5);
-  assert.deepEqual(flatShadow.paint?.['line-translate'], [1.25, 2]);
+  assert.equal(flatShadow.paint?.['line-color'], '#BDB7B1');
+  assert.equal(flatShadow.paint?.['line-blur'], 2);
+  assert.deepEqual(flatShadow.paint?.['line-translate'], [0.5, 0.75]);
   assert.deepEqual(flatShadow.paint?.['line-opacity'], [
     'interpolate',
     ['linear'],
     ['zoom'],
-    15,
-    0.08,
+    15.5,
+    0,
     16,
-    0.18,
+    0.03,
     18,
-    0.28,
+    0.08,
     20,
-    0.32,
+    0.1,
   ]);
   assert.deepEqual(flatShadow.paint?.['line-width'], [
     'interpolate',
     ['linear'],
     ['zoom'],
-    15,
-    2,
+    15.5,
+    0.5,
     16,
-    4,
+    1,
     18,
-    7,
+    3,
     20,
-    8,
+    4,
   ]);
 });
 
@@ -751,6 +778,8 @@ test('Streets Dark retains every public render-stack contribution and refinement
   );
   const addedTargets = [
     'boundaries.render.admin2Background',
+    'boundaries.render.admin4Background',
+    'boundaries.render.admin6',
     'land.render.businessArea',
     'buildings.render.shadowSoft',
     'buildings.render.shadowCore',
@@ -844,9 +873,11 @@ test('Streets Dark keeps canonical POI category colors around the same ranked sp
       ['linear'],
       ['zoom'],
       12,
-      1,
+      1.04,
+      15,
+      1.1,
       17,
-      1.06,
+      1.14,
     ]);
     assert.deepEqual(darkLayer.layout?.['icon-size'], lightLayer.layout?.['icon-size']);
     assert.equal(darkLayer.paint?.['text-color'], darkCategoryColors[category]);

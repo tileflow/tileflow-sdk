@@ -979,9 +979,9 @@ test('Streets green surfaces are typed and contain no legacy raw detail layers',
     9,
     0.78,
     10,
-    0.75,
+    0.9,
     10.5,
-    0.5,
+    0.55,
     10.75,
     0.25,
     11,
@@ -1058,25 +1058,30 @@ test('Streets keeps its runtime-toggle geometry and business surface in the comp
 test('Streets consumes canonical producer-ranked POI and omits house-number noise', () => {
   const resolved = resolveMap(streets);
   assert.equal(resolved.modules?.addresses?.enabled, false);
+  assert.equal(resolved.modules?.labels?.collisionPriority, 'navigation');
   assert.notEqual(resolved.modules?.poi?.enabled, false);
   assert.equal(resolved.modules?.poi?.color, 'category');
   assert.equal(resolved.modules?.poi?.placement?.coupleIconAndLabel, true);
   assert.equal(resolved.modules?.poi?.density, 3);
   assert.deepEqual(resolved.modules?.poi?.categories, [
-    'visitor-amenity',
-    'retail',
+    'transport',
     'food-drink',
+    'lodging',
+    'retail',
+    'arts-entertainment',
+    'landmark',
+    'park-nature',
+    'medical',
+    'education',
+    'public-services',
     'sport-leisure',
     'religion',
-    'public-services',
-    'education',
-    'medical',
-    'lodging',
-    'arts-entertainment',
-    'park-nature',
-    'landmark',
-    'transport',
+    'visitor-amenity',
   ]);
+  assert.equal(resolved.modules?.poi?.placement?.iconPadding, 10);
+  assert.equal(resolved.modules?.poi?.placement?.textPadding, 12);
+  assert.equal(resolved.modules?.poi?.styles?.['arts-entertainment']?.density, 2);
+  assert.equal(resolved.modules?.poi?.styles?.lodging?.density, 2);
 
   const style = compileOfficialMap(streets);
   const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
@@ -1086,18 +1091,18 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
 
   const expectedPoiTextColors = {
     'arts-entertainment': '#B85CA4',
-    education: '#777876',
+    education: '#987A55',
     'food-drink': '#D7892C',
     landmark: '#B85CA4',
     lodging: '#806DC4',
     medical: '#C95E6B',
     'park-nature': '#4C9478',
-    'public-services': '#777876',
-    religion: '#B85CA4',
-    retail: '#4C9478',
+    'public-services': '#667C9E',
+    religion: '#8A756B',
+    retail: '#557BC4',
     'sport-leisure': '#4C9478',
     transport: '#5C74D6',
-    'visitor-amenity': '#777876',
+    'visitor-amenity': '#557BC4',
   } as const;
   for (const category of resolved.modules?.poi?.categories ?? []) {
     const id = `tileflow-poi-${category}`;
@@ -1118,8 +1123,27 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
     assert.match(JSON.stringify(layer.filter), /"filter_rank"/u);
     assert.match(JSON.stringify(layer.filter), /"size_rank"/u);
     assert.doesNotMatch(JSON.stringify(layer.filter), /"class"|"subclass"|"rank"/u);
+    assert.deepEqual((layer.filter as unknown[])[4], [
+      '<=',
+      ['to-number', ['get', 'filter_rank'], 6],
+      category === 'arts-entertainment' || category === 'lodging' ? 2 : 3,
+    ]);
     assert.equal(layer.paint?.['text-color'], expectedPoiTextColors[category]);
     assert.equal(layer.paint?.['text-halo-color'], '#FFFFFF');
+    assert.equal(
+      layer.minzoom,
+      [
+        'education',
+        'landmark',
+        'medical',
+        'park-nature',
+        'public-services',
+        'religion',
+        'visitor-amenity',
+      ].includes(category)
+        ? 15.5
+        : 0,
+    );
   }
 
   const transportIcon = JSON.stringify(byId.get('tileflow-poi-transport')?.layout?.['icon-image']);

@@ -754,6 +754,11 @@ const markerSymbolStyleSchema = symbolStyleSchema
   .strict();
 const poiCategoryStyleSchema = markerSymbolStyleSchema
   .omit({priority: true, priorityOrder: true})
+  .extend({
+    density: z
+      .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
+      .optional(),
+  })
   .strict();
 
 const renderScalarSchema = z.union([z.boolean(), z.number().finite(), z.string()]);
@@ -1255,6 +1260,7 @@ const labelsModuleSchema = z
   .object({
     type: z.literal('labels'),
     aerodromeCodes: z.enum(['none', 'iata', 'all']).optional(),
+    collisionPriority: z.enum(['balanced', 'navigation']).optional(),
     enabled: z.boolean().optional(),
     junctions: z.boolean().optional(),
     language: z.string().trim().min(1).optional(),

@@ -360,7 +360,7 @@ export const ferraris = bindOfficialMapTheme(
   defineMap({
     id: 'ferraris',
     version: 1,
-    name: 'Ferraris',
+    name: '1777',
     data: {
       generation: 'v1',
       selection: {kind: 'current', product: 'world-v1'},

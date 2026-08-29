@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48" viewBox="0 0 64 48">
+  <rect width="64" height="48" fill="#A8CED2"/>
+  <g fill="none" stroke="#4B8E99" stroke-linecap="round" opacity=".66">
+    <path d="M-5 3.5h19m3 0h23m3 0h26M-8 7.5H8m3 0h31m3 0h24M-4 11.5h27m3 0h18m3 0h21M-7 15.5h22m3 0h30m3 0h18M-3 19.5h13m3 0h34m3 0h18M-7 23.5h29m3 0h20m3 0h21M-4 27.5h20m3 0h29m3 0h18M-8 31.5H8m3 0h33m3 0h22M-5 35.5h26m3 0h19m3 0h23M-8 39.5h24m3 0h27m3 0h20M-4 43.5h17m3 0h32m3 0h18M-7 47.5h29m3 0h21m3 0h18" stroke-width=".42"/>
+  </g>
+  <g fill="none" stroke="#E7F0E8" stroke-linecap="round" stroke-width=".28" opacity=".42">
+    <path d="M7 5.5h17m15 4h18M2 17.5h12m34 4h10M20 29.5h16M5 37.5h13m26 4h14"/>
+  </g>
+</svg>

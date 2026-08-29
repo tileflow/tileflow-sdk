@@ -5,6 +5,9 @@ import test from 'node:test';
 import {createStyle, defineMap, openMapTiles, resolveMap, vectorTiles} from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
 import {
+  baedeker,
+  baedekerFonts,
+  baedekerIcons,
   cyberpunk,
   cyberpunkFonts,
   cyberpunkIcons,
@@ -15,6 +18,8 @@ import {
   matrix,
   matrixFonts,
   matrixIcons,
+  sanFrancisto,
+  sanFrancistoIcons,
   siegfried,
   siegfriedFonts,
   siegfriedIcons,
@@ -29,6 +34,14 @@ import {
 } from '../src';
 
 const officialIconIds = [
+  'baedeker-hachures',
+  'baedeker-orchard',
+  'baedeker-paper-grain',
+  'baedeker-park-stipple',
+  'baedeker-residential',
+  'baedeker-sand',
+  'baedeker-water-lines',
+  'baedeker-wetland',
   'coffee',
   'crosswalk',
   'culture',
@@ -70,6 +83,11 @@ const officialIconIds = [
   'road-shield-rectangle-orange',
   'road-shield-rectangle-red',
   'road-shield-rectangle-yellow',
+  'san-francisto-blueprint-grid',
+  'san-francisto-building-hatch',
+  'san-francisto-landscape-hatch',
+  'san-francisto-poi-node',
+  'san-francisto-water-hatch',
   'services',
   'shopping',
   'sidewalk-dot',
@@ -113,6 +131,16 @@ const officialIconIds = [
   'verdant-water-lines',
   'verdant-wetland-reeds',
 ] as const;
+const baedekerPatternIds = [
+  'baedeker-hachures',
+  'baedeker-orchard',
+  'baedeker-paper-grain',
+  'baedeker-park-stipple',
+  'baedeker-residential',
+  'baedeker-sand',
+  'baedeker-water-lines',
+  'baedeker-wetland',
+] as const;
 const ferrarisPatternIds = [
   'ferraris-crop-hatch',
   'ferraris-heath',
@@ -146,6 +174,13 @@ const soundingsIconIds = [
   'soundings-rock-awash',
   'soundings-water-dots',
   'soundings-wreck',
+] as const;
+const sanFrancistoIconIds = [
+  'san-francisto-blueprint-grid',
+  'san-francisto-building-hatch',
+  'san-francisto-landscape-hatch',
+  'san-francisto-poi-node',
+  'san-francisto-water-hatch',
 ] as const;
 const siegfriedPatternIds = [
   'siegfried-dark-forest',
@@ -234,10 +269,12 @@ function compiledLayerForTarget(
 
 test('exports every official map as an independent standalone semantic map', async () => {
   const officialMaps = {
+    baedeker,
     cyberpunk,
     ferraris,
     harad,
     matrix,
+    'san-francisto': sanFrancisto,
     siegfried,
     soundings,
     streets,
@@ -258,7 +295,7 @@ test('exports every official map as an independent standalone semantic map', asy
 
     const source = await readFile(new URL(`../src/official/${id}.ts`, import.meta.url), 'utf8');
     assert.match(source, /\bdefineMap\s*\(/u, `${id} is not authored as a standalone map`);
-    if (id === 'cyberpunk' || id === 'matrix') {
+    if (id === 'cyberpunk' || id === 'matrix' || id === 'san-francisto') {
       assert.match(source, /\bwithRenderStack\s*\(/u, `${id} lost its semantic render stack`);
       assert.match(source, /\bfield\s*\(/u, `${id} lost its schema-bound field references`);
       assert.doesNotMatch(
@@ -279,7 +316,18 @@ test('exports every official map as an independent standalone semantic map', asy
 });
 
 test('deep-freezes only the exported official map singletons', () => {
-  for (const map of [streets, ferraris, harad, siegfried, soundings, cyberpunk, matrix, verdant]) {
+  for (const map of [
+    streets,
+    baedeker,
+    ferraris,
+    harad,
+    siegfried,
+    soundings,
+    cyberpunk,
+    matrix,
+    sanFrancisto,
+    verdant,
+  ]) {
     assertDeepFrozen(map);
   }
 
@@ -319,27 +367,33 @@ test('deep-freezes only the exported official map singletons', () => {
 });
 
 test('official maps declare their expected icon and typography providers', () => {
+  const resolvedBaedeker = resolveMap(baedeker);
   const resolvedStreets = resolveMap(streets);
   const resolvedCyberpunk = resolveMap(cyberpunk);
   const resolvedFerraris = resolveMap(ferraris);
   const resolvedHarad = resolveMap(harad);
   const resolvedMatrix = resolveMap(matrix);
+  const resolvedSanFrancisto = resolveMap(sanFrancisto);
   const resolvedSiegfried = resolveMap(siegfried);
   const resolvedSoundings = resolveMap(soundings);
   const resolvedVerdant = resolveMap(verdant);
 
+  assert.deepEqual(resolvedBaedeker.icons, [baedekerIcons]);
   assert.deepEqual(resolvedStreets.icons, [streetsIcons]);
   assert.deepEqual(resolvedCyberpunk.icons, [cyberpunkIcons]);
   assert.deepEqual(resolvedFerraris.icons, [ferrarisIcons]);
   assert.deepEqual(resolvedHarad.icons, [haradIcons]);
   assert.deepEqual(resolvedMatrix.icons, [matrixIcons]);
+  assert.deepEqual(resolvedSanFrancisto.icons, [sanFrancistoIcons]);
   assert.deepEqual(resolvedSiegfried.icons, [siegfriedIcons]);
   assert.deepEqual(resolvedSoundings.icons, [soundingsIcons]);
   assert.deepEqual(resolvedVerdant.icons, [verdantIcons]);
   assert.deepEqual(resolvedCyberpunk.fonts, [cyberpunkFonts]);
+  assert.deepEqual(resolvedBaedeker.fonts, [baedekerFonts]);
   assert.deepEqual(resolvedMatrix.fonts, [matrixFonts]);
   assert.deepEqual(resolvedSiegfried.fonts, [siegfriedFonts]);
   assert.equal(resolvedCyberpunk.glyphs, undefined);
+  assert.equal(resolvedBaedeker.glyphs, undefined);
   assert.equal(resolvedMatrix.glyphs, undefined);
   assert.equal(resolvedSiegfried.glyphs, undefined);
   assert.deepEqual(resolvedStreets.glyphs, {
@@ -350,9 +404,15 @@ test('official maps declare their expected icon and typography providers', () =>
   assert.deepEqual(resolvedFerraris.glyphs, resolvedStreets.glyphs);
   assert.deepEqual(resolvedHarad.glyphs, resolvedStreets.glyphs);
   assert.deepEqual(resolvedSoundings.glyphs, resolvedStreets.glyphs);
+  assert.deepEqual(resolvedSanFrancisto.glyphs, resolvedStreets.glyphs);
   assert.deepEqual(verdant.glyphs, resolvedStreets.glyphs);
   assert.deepEqual(resolvedVerdant.glyphs, resolvedStreets.glyphs);
   assert.equal(resolvedCyberpunk.themes.dark.typography?.font, 'Oxanium Medium');
+  assert.equal(resolvedBaedeker.themes.light.typography?.font, 'Cormorant Garamond Regular');
+  assert.equal(
+    resolvedBaedeker.themes.light.typography?.places?.font,
+    'Cormorant Garamond SemiBold',
+  );
   assert.equal(resolvedFerraris.themes.light.typography?.font, 'Noto Sans Regular');
   assert.equal(resolvedMatrix.themes.dark.typography?.font, 'Oxanium Medium');
   assert.equal(resolvedHarad.themes.light.typography?.font, 'Noto Sans Regular');
@@ -363,12 +423,56 @@ test('official maps declare their expected icon and typography providers', () =>
   assert.equal(siegfriedThemes.light.colorScheme, 'light');
   assert.equal(siegfriedThemes.dark.colorScheme, 'dark');
   assert.equal(resolvedSoundings.themes.light.typography?.font, 'Noto Sans Regular');
+  assert.equal(resolvedSanFrancisto.themes.blueprint.typography?.font, 'Noto Sans Regular');
+  assert.equal(resolvedSanFrancisto.themes.blueprint.typography?.places?.font, 'Noto Sans Bold');
   assert.equal(resolvedVerdant.themes.light.typography?.font, 'Noto Sans Regular');
   assert.equal(resolvedVerdant.themes.light.typography?.places?.font, 'Noto Sans Bold');
 });
 
+test('Baedeker is self-contained and references exactly its package-owned patterns', () => {
+  const resolved = resolveMap(baedeker);
+  assert.equal('extends' in baedeker, false);
+  assert.equal('root' in resolved, false);
+  assert.deepEqual(resolved.icons, [baedekerIcons]);
+
+  const compiled = createStyleWithInspection(baedeker, {
+    preparedAssets: {
+      icons: {ids: baedekerPatternIds, sprite: '/tileflow/icons/baedeker/sprite'},
+    },
+  });
+  const {style} = compiled;
+  assert.equal(style.metadata?.['tileflow:extends'], undefined);
+  const patternIds = new Set(
+    style.layers.flatMap((layer) =>
+      Object.entries((layer.paint ?? {}) as Record<string, unknown>).flatMap(([property, value]) =>
+        property.endsWith('-pattern') && typeof value === 'string' ? [value] : [],
+      ),
+    ),
+  );
+  assert.deepEqual([...patternIds].sort(), [...baedekerPatternIds]);
+
+  const targets = compiledTargets(compiled);
+  for (const target of [
+    'buildings.render.engravedBlocks',
+    'land.render.rockHachures',
+    'land.render.scrubHachures',
+    'land.render.orchardTexture',
+    'land.render.sandTexture',
+    'land.render.wetlandTexture',
+    'land.render.parkStipple',
+    'land.render.woodStipple',
+    'land.render.residentialTexture',
+    'water.render.printLines',
+    'water.render.intermittentPrintLines',
+  ]) {
+    assert.equal(targets.has(target), true, `Missing Baedeker render target ${target}`);
+  }
+  assert.equal(targets.has('buildings.render.printShadow'), false);
+});
+
 test('Ferraris is self-contained and references exactly its package-owned patterns', () => {
   const resolved = resolveMap(ferraris);
+  assert.equal(ferraris.name, '1777');
   assert.equal('extends' in ferraris, false);
   assert.equal('root' in resolved, false);
   assert.deepEqual(resolved.icons, [ferrarisIcons]);
@@ -539,12 +643,36 @@ test('Verdant is self-contained and references exactly its package-owned pattern
   }
 });
 
+test('San Francisto is self-contained and references exactly its blueprint assets', () => {
+  const resolved = resolveMap(sanFrancisto);
+  assert.equal('extends' in sanFrancisto, false);
+  assert.equal('root' in resolved, false);
+  assert.deepEqual(resolved.icons, [sanFrancistoIcons]);
+
+  const compiled = createStyleWithInspection(sanFrancisto, {
+    preparedAssets: {
+      icons: {
+        ids: sanFrancistoIconIds,
+        sprite: '/tileflow/icons/san-francisto/sprite',
+      },
+    },
+  });
+  assert.equal(compiled.style.metadata?.['tileflow:extends'], undefined);
+  const serialized = JSON.stringify(compiled.style);
+  for (const id of sanFrancistoIconIds) {
+    assert.match(serialized, new RegExp(`"${id}"`, 'u'), `Missing blueprint asset ${id}`);
+  }
+  assert.deepEqual(validateStyleMin(compiled.style as never), []);
+});
+
 test('all official maps compile directly after their packaged sprite is prepared', () => {
   for (const [id, map] of Object.entries({
+    baedeker,
     cyberpunk,
     ferraris,
     harad,
     matrix,
+    'san-francisto': sanFrancisto,
     siegfried,
     soundings,
     streets,
@@ -556,7 +684,9 @@ test('all official maps compile directly after their packaged sprite is prepared
     assert.equal(style.sprite, `/tileflow/icons/${id}/sprite`);
     assert.equal(
       style.glyphs,
-      id === 'cyberpunk' || id === 'matrix' || id === 'siegfried' ? undefined : officialGlyphsUrl,
+      id === 'baedeker' || id === 'cyberpunk' || id === 'matrix' || id === 'siegfried'
+        ? undefined
+        : officialGlyphsUrl,
     );
     assert.ok(
       style.layers.length > (id === 'soundings' ? 50 : 100),
@@ -664,11 +794,13 @@ test('Streets-family maps overlap ordinary road endpoints without extending stru
 test('official road maps avoid seam-prone caps on ordinary surface and bridge segments', () => {
   for (const [mapId, map] of Object.entries({
     streets,
+    baedeker,
     cyberpunk,
     matrix,
     ferraris,
     harad,
     siegfried,
+    'san-francisto': sanFrancisto,
     verdant,
   })) {
     const style = compileOfficialMap(map);
@@ -714,10 +846,12 @@ test('official maps compile against generic OpenMapTiles without optional capabi
   });
 
   for (const [id, map] of Object.entries({
+    baedeker,
     cyberpunk,
     ferraris,
     harad,
     matrix,
+    'san-francisto': sanFrancisto,
     siegfried,
     soundings,
     streets,
@@ -749,10 +883,19 @@ test('official maps compile against generic OpenMapTiles without optional capabi
 
 test('official maps emit only exact declared font-face stacks', () => {
   const expected = {
+    baedeker: new Set([
+      JSON.stringify(['Cormorant Garamond Italic']),
+      JSON.stringify(['Cormorant Garamond Regular']),
+      JSON.stringify(['Cormorant Garamond SemiBold']),
+    ]),
     cyberpunk: new Set([JSON.stringify(['Oxanium Medium']), JSON.stringify(['Oxanium SemiBold'])]),
     ferraris: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
     harad: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
     matrix: new Set([JSON.stringify(['Oxanium Medium']), JSON.stringify(['Oxanium SemiBold'])]),
+    'san-francisto': new Set([
+      JSON.stringify(['Noto Sans Regular']),
+      JSON.stringify(['Noto Sans Bold']),
+    ]),
     siegfried: new Set([
       JSON.stringify(['Cormorant Garamond Italic']),
       JSON.stringify(['Cormorant Garamond Regular']),
@@ -764,10 +907,12 @@ test('official maps emit only exact declared font-face stacks', () => {
   } as const;
 
   for (const [id, map] of Object.entries({
+    baedeker,
     cyberpunk,
     ferraris,
     harad,
     matrix,
+    'san-francisto': sanFrancisto,
     siegfried,
     soundings,
     streets,
@@ -849,9 +994,11 @@ test('non-Streets official maps do not use Streets surface colors', () => {
   const streetsSurfaceSignatures = ['#AEDBFC', '#B7E2AC', '#C2E8B3', '#D5E8D0', '#E0ECD8'];
 
   for (const [id, map, ownSignatures] of [
+    ['baedeker', baedeker, ['#E8DABD', '#9DC8CC']],
     ['cyberpunk', cyberpunk, ['#071E31', '#0D2828']],
     ['harad', harad, ['#C4DED5', '#E1B23B']],
     ['matrix', matrix, ['#010704', '#63F77B']],
+    ['san-francisto', sanFrancisto, ['#061D35', '#EEF3EA']],
     ['siegfried', siegfried, ['#F0EBE0', '#A96C4D']],
     ['streets-dark', streets, ['#2D3043', '#18223B']],
     ['verdant', verdant, ['#B8DDE7', '#C8DCC4']],

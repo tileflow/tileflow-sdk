@@ -1,15 +1,15 @@
 # Official map assets
 
-These directories contain the package-owned sources required by the official Streets, Ferraris,
-Härad, Siegfried, Soundings, Cyberpunk, Matrix, and Verdant maps. Their SVG icons and patterns live
-under each map's `icons/` directory. Streets includes a pinned CC0 subset of Maki pictograms inside
-Tileflow-authored circular POI markers; its provenance is recorded in `../THIRD_PARTY_NOTICES.md`
-and the upstream license is kept at `streets/LICENSE-MAKI.txt`. A map refers to those directories
-through the exported `streetsIcons`, `ferrarisIcons`, `haradIcons`, `siegfriedIcons`,
-`soundingsIcons`, `cyberpunkIcons`, `matrixIcons`, and `verdantIcons` descriptors. Cyberpunk,
-Matrix, and Siegfried refer to their own packaged font directories through `cyberpunkFonts`,
-`matrixFonts`, and `siegfriedFonts`; the files and their `LICENSE.txt` remain beside the map that
-owns them.
+These directories contain the package-owned sources required by the official Streets, Baedeker,
+Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant, and San Francisto maps. Their SVG icons and
+patterns live under each map's `icons/` directory. Streets includes a pinned CC0 subset of Maki
+pictograms inside Tileflow-authored circular POI markers; its provenance is recorded in
+`../THIRD_PARTY_NOTICES.md` and the upstream license is kept at `streets/LICENSE-MAKI.txt`. A map
+refers to those directories through the exported `streetsIcons`, `baedekerIcons`, `ferrarisIcons`,
+`haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`, `verdantIcons`,
+and `sanFrancistoIcons` descriptors. Baedeker, Cyberpunk, Matrix, and Siegfried refer to their own
+packaged font directories through `baedekerFonts`, `cyberpunkFonts`, `matrixFonts`, and
+`siegfriedFonts`; the files and their `LICENSE.txt` remain beside the map that owns them.
 
 The seven `road-shield-*` SVGs are original Tileflow artwork: a deliberately generic neutral,
 colored-rectangle, and neutral-circle vocabulary. They do not reproduce a national sign template
@@ -26,6 +26,20 @@ original intrinsic-size SVG patterns:
 `ferraris-crop-hatch`, `ferraris-heath`, `ferraris-orchard`, `ferraris-paper-grain`,
 `ferraris-residential`, `ferraris-sand`, `ferraris-water-ripples`, `ferraris-wetland`, and
 `ferraris-woodland`.
+
+The Baedeker directory contains eight original intrinsic-size SVG patterns:
+`baedeker-hachures`, `baedeker-orchard`, `baedeker-paper-grain`, `baedeker-park-stipple`,
+`baedeker-residential`, `baedeker-sand`, `baedeker-water-lines`, and `baedeker-wetland`. Tileflow
+authored them from scratch using the
+[Baedeker / Karl Wagner & Debes collection](https://www.antiquemapsandprints.com/collections/baedeker-karl-wagner-debes?srsltid=AfmBOoqG_2Q_Zje0wPPVYjShDjDZe5aIgH_h08XcPkpu7zFaPvF6n5hq)
+and Wikimedia Commons'
+[maps by Karl Baedeker of Italy](https://commons.wikimedia.org/wiki/Category:Maps_by_Karl_Baedeker_of_Italy)
+as visual references. No historical scan, raster pixel, historical typeface, legend artwork,
+geospatial data, or source map is included or redistributed. Baedeker also owns a package copy of
+the three Cormorant Garamond faces selected by the map. Browser-derived Mapterhorn contours are
+runtime terrain and no Mapterhorn tile is packaged here. Baedeker is not affiliated with or
+endorsed by Baedeker or Wagner & Debes. See `baedeker/README.md` and the package-level
+`THIRD_PARTY_NOTICES.md`.
 
 The Härad directory contains nine original intrinsic-size SVG patterns: `harad-arable`,
 `harad-conifer`, `harad-deciduous`, `harad-orchard`, `harad-paper-grain`, `harad-sand`,
@@ -51,6 +65,12 @@ the eight point symbols remain available to the separate experimental Nautical c
 World POI is deliberately not relabelled as a harbour. Soundings uses GEBCO-derived depth bands only
 as broad cartographic context and is not a navigation product.
 
+The San Francisto directory contains four original intrinsic-size patterns and one original
+technical symbol: `san-francisto-blueprint-grid`, `san-francisto-building-hatch`,
+`san-francisto-landscape-hatch`, `san-francisto-water-hatch`, and `san-francisto-poi-node`.
+Together they provide drawing-paper grid, building, landscape, and water notation plus a schematic
+POI marker without importing another official map's sprite assets.
+
 `@tileflow/dev` resolves each package descriptor, verifies that its real path remains inside the
 installed package, and compiles the complete ordered directory composition into deterministic
 MapLibre sprite atlases. `<id>.<ext>` publishes an icon as `<id>` and
@@ -66,10 +86,11 @@ values are exact OpenType full names. Cyberpunk and Matrix each select their own
 stacks contain the two packaged Oxanium faces, so either map's primary-face local pipeline remains
 independent and never depends on an unfixed system or remote fallback.
 The compiler never manufactures a face ID by adding a weight. Streets, Ferraris, Härad, Soundings,
-and Verdant each declare the canonical Tileflow glyph URL with exact `Noto Sans Regular` and
-`Noto Sans Bold` stacks. Cyberpunk and Matrix name `Oxanium Medium` and `Oxanium SemiBold`, while
-Siegfried names `Cormorant Garamond Regular`, `Cormorant Garamond SemiBold`, and
-`Cormorant Garamond Italic`, all from their respective packaged directories. The compatibility URL
+Verdant, and San Francisto each declare the canonical Tileflow glyph URL with exact
+`Noto Sans Regular` and `Noto Sans Bold` stacks. Cyberpunk and Matrix name `Oxanium Medium` and
+`Oxanium SemiBold`, while Baedeker and Siegfried each name `Cormorant Garamond Regular`,
+`Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic` from their respective packaged
+directories. The compatibility URL
 is canonical but not content-addressed; responses
 revalidate and do not provide an exact-byte receipt. Reproducible official PBF delivery will use the
 separate `/base/<assetSetSha256>/glyphs/...` contract once Hosted has verified and published that

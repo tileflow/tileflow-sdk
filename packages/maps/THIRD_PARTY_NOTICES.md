@@ -1,8 +1,8 @@
 # Third-party notices
 
-Except for the Streets POI pictograms documented below, the official themed Streets, Ferraris,
-Härad, Siegfried, Soundings, Cyberpunk, Matrix, and Verdant icon and pattern artwork published under
-`assets/` is original Tileflow artwork.
+Except for the Streets POI pictograms documented below, the official themed Streets, Baedeker,
+Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant, and San Francisto icon and pattern
+artwork published under `assets/` is original Tileflow artwork.
 
 This file is shipped with `@tileflow/maps` so future third-party assets have a stable place for
 their required notices. The repository's Apache-2.0 license and generated-output grant are
@@ -25,6 +25,35 @@ The `ferraris` map and its nine SVG patterns are original Tileflow code and artw
 does not include or redistribute any FerrarGIS assets, code, style files, textures, fonts, source
 scans, or map data.
 
+## Baedeker map references and terrain data
+
+The `baedeker` map and its eight SVG patterns are original Tileflow code and artwork. Their visual
+grammar was informed by late-nineteenth- and early-twentieth-century Baedeker travel maps and town
+plans engraved by Wagner & Debes.
+
+- Baedeker / Karl Wagner & Debes collection:
+  <https://www.antiquemapsandprints.com/collections/baedeker-karl-wagner-debes?srsltid=AfmBOoqG_2Q_Zje0wPPVYjShDjDZe5aIgH_h08XcPkpu7zFaPvF6n5hq>
+- Maps by Karl Baedeker of Italy:
+  <https://commons.wikimedia.org/wiki/Category:Maps_by_Karl_Baedeker_of_Italy>
+- Moscow I, Wagner & Debes, 1914:
+  <https://imperiia.omeka.fas.harvard.edu/document/2461>
+- Amiens, Baedeker, 1908:
+  <https://commons.wikimedia.org/wiki/File:Amiens_%E2%80%94_Plan_extrait_du_guide_B%C3%A6deker_%E2%80%9CNord-Ouest_de_la_France%E2%80%9E_1908.jpg>
+- Berlin-Westend, Baedeker, 1914:
+  <https://commons.wikimedia.org/wiki/File:Baedeker,_Plan_von_Westend,_1914.jpg>
+
+This package does not include or redistribute a historical scan, raster pixel, historical
+typeface, legend artwork, geospatial data, or source map from either reference. The package
+contains Tileflow-authored style code and original patterns plus the separately licensed Cormorant
+Garamond files documented below. `baedeker` is an official Tileflow map; it is not affiliated with
+or endorsed by Baedeker or Wagner & Debes.
+
+At runtime, Baedeker derives contour vectors in the browser from Mapterhorn terrain tiles. No
+Mapterhorn tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
+catalog of its constituent open terrain sources and their individual attribution and license terms
+at <https://mapterhorn.com/attribution/>. The compiled Style carries that link as source
+attribution.
+
 ## Häradsekonomiska kartan reference
 
 The `harad` map and its nine SVG patterns are original Tileflow code and artwork inspired by the
@@ -44,6 +73,19 @@ Its contemporary field-atlas direction was informed by publicly documented park-
 design and general outdoor-navigation conventions. This package does not include or redistribute
 National Park Service or Lantmäteriet artwork, symbols, logos, fonts, source sheets, scans, style
 files, or map data.
+
+## San Francisto blueprint artwork and terrain data
+
+The `san-francisto` map and its four SVG patterns and one SVG technical symbol are original Tileflow
+code and artwork. Its architectural-blueprint direction uses general drafting conventions; this
+package does not include or redistribute an architectural drawing, CAD file, municipal plan,
+survey sheet, font, source image, or third-party symbol artwork.
+
+At runtime, San Francisto derives contour vectors in the browser from Mapterhorn terrain tiles. No
+Mapterhorn tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
+catalog of its constituent open terrain sources and their individual attribution and license terms
+at <https://mapterhorn.com/attribution/>. The compiled Style carries that link as source
+attribution.
 
 ## Nautical-chart references
 
@@ -79,11 +121,11 @@ attribution.
 
 ## Cormorant Garamond
 
-Siegfried includes unmodified Cormorant Garamond Regular, SemiBold, and Italic font files under
-`assets/siegfried/fonts/`, pinned to upstream revision
-`cc1bfb51ce6568cb3abf9199ab718d543f6fa189`. Cormorant is copyright 2015 the Cormorant Project
-Authors and is distributed under the SIL Open Font License 1.1 included beside the font files as
-`LICENSE.txt`.
+Baedeker and Siegfried each include their own unmodified Cormorant Garamond Regular, SemiBold, and
+Italic font files under `assets/baedeker/fonts/` and `assets/siegfried/fonts/`, respectively. Both
+copies are pinned to upstream revision `cc1bfb51ce6568cb3abf9199ab718d543f6fa189`. Cormorant is
+copyright 2015 the Cormorant Project Authors and is distributed under the SIL Open Font License
+1.1 included beside each map's font files as `LICENSE.txt`.
 
 The `matrix` map and its three phosphor-green SVG pattern and symbol assets are original Tileflow code
 and artwork. The package includes no pixels or vector artwork from an external screen or map

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="36" height="18" viewBox="0 0 36 18">
+  <g id="callout-ring">
+    <circle cx="7" cy="7" r="4" fill="#082743" stroke="#91B7C9" stroke-width="0.65"/>
+    <path id="callout-letter" d="M5.8 4.6v4.7h2.7" fill="none" stroke="#F2E6B9" stroke-linecap="square" stroke-width="0.7"/>
+  </g>
+  <path id="callout-leader" d="M10.5 8.8 16 12h19.5" fill="none" stroke="#91B7C9" stroke-width="0.55" opacity="0.78"/>
+  <path id="callout-terminal" d="M35.5 9.5v5" fill="none" stroke="#F2E6B9" stroke-width="0.5" opacity="0.72"/>
+</svg>

@@ -6,11 +6,11 @@ single `defineMap()` constructor and the same design fields. The semantic compil
 Inheritance is resolved completely
 before validation, asset preparation, compilation, capture, build, or deploy.
 
-`streets`, `cyberpunk`, `ferraris`, `harad`, `matrix`, `siegfried`, `soundings`, and `verdant` are
-first-party standalone maps. Streets and Siegfried own coordinated light and dark themes. Every
-official map defines its complete design directly: none imports or extends
-another official map, and each declares only its own asset providers. They are exported from
-`@tileflow/maps`; there is no public basemap,
+`streets`, `baedeker`, `cyberpunk`, `ferraris`, `harad`, `matrix`, `siegfried`, `soundings`,
+`verdant`, and `sanFrancisto` are first-party standalone maps. Streets and Siegfried own coordinated
+light and dark themes. Every official map defines its complete design directly: none imports or
+extends another official map, and each declares only its own asset providers. They are exported
+from `@tileflow/maps`; there is no public basemap,
 map-preset, map-catalog, `streets()` constructor, `editorial-city` alias, or compatibility
 normalization.
 
@@ -85,18 +85,25 @@ Directories are read from left to right. `<id>.<ext>` publishes an ordinary icon
 `<id>.pattern.<ext>` publishes an intrinsic-size line/fill pattern as `<id>`. That published ID must
 already be canonical lower-kebab-case. A later directory replaces an earlier file only when the ID
 matches exactly; case-only collisions fail. The official directory descriptors `streetsIcons`,
-`ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`,
-`cyberpunkIcons`, `matrixIcons`, and `verdantIcons` let maps reuse package assets without exposing
-installation paths. Ferraris, Härad, Siegfried, Soundings, and Verdant declare only
-`[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`, `[soundingsIcons]`, and `[verdantIcons]`,
-respectively; none of these standalone maps composes with Streets assets. Härad's nine original Tileflow SVG
-patterns are inspired by Lantmäteriet's CC0 Häradsekonomiska kartan series (1859–1934) and official
-legend, without redistributing source scans, pixels, legend artwork, fonts, or map data. Siegfried
-owns nine light/dark engraving-motif pairs in one directory; both themes select the same semantic
-image vocabulary without changing map structure. Soundings
+`baedekerIcons`, `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`,
+`cyberpunkIcons`, `matrixIcons`, `verdantIcons`, and `sanFrancistoIcons` let maps reuse package assets
+without exposing installation paths. Baedeker, Ferraris, Härad, Siegfried, Soundings, Verdant, and
+San Francisto declare only `[baedekerIcons]`, `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
+`[soundingsIcons]`, `[verdantIcons]`, and `[sanFrancistoIcons]`, respectively; none of these
+standalone maps composes with Streets assets.
+Baedeker's eight original Tileflow patterns use historical Baedeker and Wagner & Debes maps only as
+visual references: no scan, source pixel, historical typeface, legend artwork, geospatial data, or
+source map is redistributed, and the map is not affiliated with or endorsed by Baedeker or Wagner
+& Debes. Its separately licensed Cormorant files live in its own package asset closure.
+Its contours are browser-derived from Mapterhorn terrain tiles that are not packaged. Härad's nine
+original Tileflow SVG patterns are inspired by Lantmäteriet's CC0 Häradsekonomiska kartan series
+(1859–1934) and official legend, without redistributing source scans, pixels, legend artwork,
+fonts, or map data. Siegfried owns nine light/dark engraving-motif pairs in one directory; both
+themes select the same semantic image vocabulary without changing map structure. Soundings
 owns ten original nautical symbols and patterns; GEBCO-derived depth bands are broad visual context,
-not navigation-grade soundings. There is no `builtin`, `source`, `sprite`, icon-level `extends`,
-`mapping`, or additive operator.
+not navigation-grade soundings. San Francisto owns four original drafting patterns and one
+schematic POI symbol in its blueprint asset closure. There is no `builtin`, `source`, `sprite`,
+icon-level `extends`, `mapping`, or additive operator.
 
 A local directory resolves from the directory containing the selected `tileflow.config.ts`. Its
 only accepted spelling starts with `./` or one or more leading `../` segments; every remaining
@@ -137,15 +144,16 @@ Browser font files and native/PBF glyphs are different delivery mechanisms, so a
 combine them or fall back silently between them. After inheritance resolves, every map that emits
 text has exactly one provider; only a text-free map may have neither.
 
-Streets, Ferraris, Härad, Soundings, and Verdant each declare the canonical
+Streets, Ferraris, Härad, Soundings, Verdant, and San Francisto each declare the canonical
 `https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf` URL with `Noto Sans Regular` and
 `Noto Sans Bold`. The URL is canonical rather than content-addressed; responses revalidate and the
 URL is not an exact-byte identity. It is stated directly in each standalone map, not synthesized as a
 fallback. The reproducible replacement is an explicit
 `/base/<assetSetSha256>/glyphs/...` URL backed by one validated immutable global base-asset
 manifest.
-Siegfried instead declares `[siegfriedFonts]` and uses the packaged exact faces
-`Cormorant Garamond Regular`, `Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic`.
+Baedeker and Siegfried instead declare `[baedekerFonts]` and `[siegfriedFonts]`, respectively, and
+each uses its own package copy of the exact faces `Cormorant Garamond Regular`,
+`Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic`.
 Cyberpunk and Matrix each declare their own packaged font directory and use the exact local names
 `Oxanium Medium` and `Oxanium SemiBold`.
 

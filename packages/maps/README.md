@@ -30,6 +30,9 @@ declaring its own modules or other atomic overrides.
 
 ```ts
 import {
+  baedeker,
+  baedekerFonts,
+  baedekerIcons,
   cyberpunk,
   cyberpunkFonts,
   cyberpunkIcons,
@@ -40,6 +43,8 @@ import {
   matrix,
   matrixFonts,
   matrixIcons,
+  sanFrancisto,
+  sanFrancistoIcons,
   siegfried,
   siegfriedFonts,
   siegfriedIcons,
@@ -53,6 +58,23 @@ import {
   verdantIcons,
 } from '@tileflow/maps';
 ```
+
+`baedeker` is a self-contained travel-atlas and town-plan design with open warm paper, fine coral
+building and residential hatching, paper-negative streets, dominant black railways, horizontally
+engraved cyan water, ring-stippled gardens, and browser-derived Mapterhorn contours. Travel POIs
+are rendered as compact serif labels without modern pictograms. It declares
+`[baedekerIcons]`, whose eight original Tileflow SVG patterns describe hachures, orchards, paper
+grain, public gardens, residential blocks, sand, water lines, and wetlands, plus
+`[baedekerFonts]`, its own package copy of Cormorant Garamond Regular, SemiBold, and Italic. Its
+visual grammar was informed by the
+[Baedeker / Karl Wagner & Debes collection](https://www.antiquemapsandprints.com/collections/baedeker-karl-wagner-debes?srsltid=AfmBOoqG_2Q_Zje0wPPVYjShDjDZe5aIgH_h08XcPkpu7zFaPvF6n5hq)
+and Wikimedia Commons'
+[maps by Karl Baedeker of Italy](https://commons.wikimedia.org/wiki/Category:Maps_by_Karl_Baedeker_of_Italy).
+The package includes no historical scan, raster pixel, historical typeface, legend artwork,
+geospatial data, or source map; the style and patterns are original Tileflow work. The packaged
+Cormorant faces are unmodified upstream font software under the SIL Open Font License 1.1. No
+Mapterhorn terrain tile is packaged or redistributed. Baedeker is an official Tileflow map and is
+not affiliated with or endorsed by Baedeker or Wagner & Debes.
 
 `ferraris` is a self-contained printed-atlas design. It uses Core's semantic compiler, but
 it does not import or extend the `streets` map and it does not inherit Streets assets. It declares
@@ -103,6 +125,12 @@ trail-forward accent; its original botanical textures appear only where detailed
 useful. It uses the same semantic compiler contract without importing or extending `streets`,
 declares its own Noto Sans glyph provider, and owns its complete icon and pattern set through
 `[verdantIcons]`.
+
+`sanFrancisto` is a self-contained dark architectural-blueprint design centered on San Francisco.
+Fine technical road strokes, survey-like uppercase labels, precise building footprints, contour
+dimensions, and dedicated landscape and water hatches replace naturalistic map color. It declares
+the canonical Noto Sans glyph provider and only `[sanFrancistoIcons]`, whose four original patterns
+and schematic POI node form its complete sprite vocabulary.
 
 `cyberpunk` is a self-contained dark HUD root. Its road hierarchy, building signals, destination
 beacons, semantic render passes, theme, World data selection, `[cyberpunkIcons]`, and

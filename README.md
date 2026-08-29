@@ -16,21 +16,21 @@ in the [SDK responsibility and delivery contract](docs/contracts/sdk-responsibil
 
 ## Packages
 
-| Package                                           | Purpose                                                                                              |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| [`@tileflow/core`](packages/core)                 | Typed map language, semantic modules, validation, and MapLibre style compilation                     |
-| [`@tileflow/maps`](packages/maps)                 | Official Streets, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, and Verdant maps         |
-| [`@tileflow/interactions`](packages/interactions) | Portable annotations, tooltips, popups, state, and MapLibre interaction lifecycle                    |
-| [`@tileflow/static`](packages/static)             | Hosted Static Maps scene schemas, overlays, and bounded request client                               |
-| [`@tileflow/dev`](packages/dev)                   | Node integration utilities, watched artifacts, and the local comparison/inspection workbench         |
-| [`@tileflow/capture`](packages/capture)           | Pinned headless capture, receipts, two-style review, visual analysis, and baseline comparison        |
-| [`@tileflow/vite`](packages/vite)                 | Vite development and build integration                                                               |
-| [`@tileflow/next`](packages/next)                 | Next.js development and build integration                                                            |
-| [`@tileflow/webpack`](packages/webpack)           | Webpack development and build integration                                                            |
-| [`@tileflow/react`](packages/react)               | React map and static-image components                                                                |
-| [`@tileflow/vue`](packages/vue)                   | Vue map component                                                                                    |
-| [`@tileflow/svelte`](packages/svelte)             | Svelte map component                                                                                 |
-| [`@tileflow/cli`](packages/cli)                   | `tileflow` init, validate, preview (`dev` alias), capture, visual, icons, build, and deploy commands |
+| Package                                           | Purpose                                                                                                               |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| [`@tileflow/core`](packages/core)                 | Typed map language, semantic modules, validation, and MapLibre style compilation                                      |
+| [`@tileflow/maps`](packages/maps)                 | Official Streets, Baedeker, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant, and San Francisto maps |
+| [`@tileflow/interactions`](packages/interactions) | Portable annotations, tooltips, popups, state, and MapLibre interaction lifecycle                                     |
+| [`@tileflow/static`](packages/static)             | Hosted Static Maps scene schemas, overlays, and bounded request client                                                |
+| [`@tileflow/dev`](packages/dev)                   | Node integration utilities, watched artifacts, and the local comparison/inspection workbench                          |
+| [`@tileflow/capture`](packages/capture)           | Pinned headless capture, receipts, two-style review, visual analysis, and baseline comparison                         |
+| [`@tileflow/vite`](packages/vite)                 | Vite development and build integration                                                                                |
+| [`@tileflow/next`](packages/next)                 | Next.js development and build integration                                                                             |
+| [`@tileflow/webpack`](packages/webpack)           | Webpack development and build integration                                                                             |
+| [`@tileflow/react`](packages/react)               | React map and static-image components                                                                                 |
+| [`@tileflow/vue`](packages/vue)                   | Vue map component                                                                                                     |
+| [`@tileflow/svelte`](packages/svelte)             | Svelte map component                                                                                                  |
+| [`@tileflow/cli`](packages/cli)                   | `tileflow` init, validate, preview (`dev` alias), capture, visual, icons, build, and deploy commands                  |
 
 ## Quick start
 
@@ -82,20 +82,27 @@ same map structure compiles into one independent Style JSON per named theme. `sy
 browser selection policy; builds, captures, URLs, and receipts always use `light`, `dark`, or
 another concrete name.
 
-`@tileflow/maps` also exports `ferraris`, `harad`, `siegfried`, `soundings`, `cyberpunk`, `matrix`,
-and `verdant`. All eight official maps are complete first-party roots. They share Core's single
+`@tileflow/maps` also exports `baedeker`, `ferraris`, `harad`, `siegfried`, `soundings`,
+`cyberpunk`, `matrix`, `verdant`, and `sanFrancisto`. All ten official maps are complete first-party roots. They
+share Core's single
 semantic compiler, but each defines its design directly without importing or extending another
-official map. Siegfried adds browser-derived contours, coordinated light/dark three-ink terrain
-engraving patterns, system-theme selection, and locally packaged Cormorant Garamond faces;
-Ferraris, Härad, Soundings, and Verdant likewise declare only their own package-owned assets.
+official map. Baedeker adds an original travel-atlas treatment with browser-derived Mapterhorn
+contours, eight package-owned patterns, and its own locally packaged Cormorant Garamond faces.
+Siegfried adds browser-derived contours, coordinated light/dark three-ink terrain engraving
+patterns, system-theme selection, and its own copy of the same upstream Cormorant faces; Ferraris,
+Härad, Soundings, and Verdant likewise declare only their own package-owned assets. San Francisto
+redraws San Francisco as a dark architectural blueprint with
+precise building footprints, restrained technical linework, contour labels, hatches, and schematic
+POI nodes.
 Streets and Siegfried contain coordinated `light` and `dark` themes; Cyberpunk and the monochrome
 phosphor-green Matrix independently own their HUD designs and symbols. The package-owned icons,
-patterns, and per-map font files ship under `assets/`. Streets, Ferraris,
-Härad, Soundings, and Verdant each declare the canonical Tileflow glyph
-URL with the exact `Noto Sans Regular` and `Noto Sans Bold` stacks. Cyberpunk and Matrix each select
-their own local copies of the `Oxanium Medium` and `Oxanium SemiBold` faces; Siegfried selects local
-Cormorant Garamond Regular, SemiBold, and Italic faces. The package exports each map's reusable icon and font directory
-descriptors. Streets and Siegfried own their light and dark pattern variants inside one asset
+patterns, and per-map font files ship under `assets/`. Streets, Ferraris, Härad, Soundings,
+Verdant, and San Francisto each declare the canonical Tileflow glyph URL with the exact
+`Noto Sans Regular` and `Noto Sans Bold` stacks. Cyberpunk and Matrix each select their own local
+copies of the `Oxanium Medium` and `Oxanium SemiBold` faces; Baedeker and Siegfried each select
+their own local Cormorant Garamond Regular, SemiBold, and Italic files. The package exports each
+map's reusable icon and font directory descriptors. Streets and Siegfried own their light and dark
+pattern variants inside one asset
 closure because themes may select different image tokens without changing map structure.
 
 Then validate and run the application through its normal dev server:

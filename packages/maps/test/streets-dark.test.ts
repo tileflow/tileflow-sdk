@@ -41,8 +41,8 @@ const preparedAssets = {
 // Symmetric physical-output review for the complete Standard-day calibration.
 const approvedLightStyleColors = new Set([
   '#000000',
-  '#0093F659',
-  '#0FB7FF59',
+  '#15AFFA59',
+  '#29B5FD59',
   '#1B1D27',
   '#242624',
   '#303230',
@@ -56,7 +56,7 @@ const approvedLightStyleColors = new Set([
   '#67AD73',
   '#6D6E6C',
   '#729B78',
-  '#63C6FE59',
+  '#6ECEFE59',
   '#806DC4',
   '#81A880',
   '#83AD83',
@@ -69,50 +69,48 @@ const approvedLightStyleColors = new Set([
   '#91B68B',
   '#91BA8D',
   '#987A55',
-  '#99DDFF',
+  '#98DCFE',
   '#99DDFF59',
   '#ADB3C3',
   '#A1C99B',
-  '#A5A7BF',
-  '#A6B1C2',
+  '#A1B0C2',
+  '#A3A6C2',
   '#AED7A5',
   '#AFD4A7',
-  '#AFE0A0',
-  '#B1E1A4',
+  '#9BE494',
+  '#B1EAAC',
   '#B85CA4',
   '#B8E0AE',
   '#BDB7B1',
-  '#BFE2B0',
+  '#BEC5D8',
   '#BFE6AE',
-  '#C0C5D8',
+  '#C1EFBE',
   '#C2E7B5',
-  '#BEE9B3',
-  '#C2C6D0',
-  '#C4C6CD',
-  '#C4C6CE',
-  '#C5E7B6',
+  '#C1C6D3',
+  '#C2C6D6',
   '#C6C8D4',
   '#C8C8CF',
   '#C95E6B',
-  '#C9E9BC',
+  '#CDCED7',
   '#CCE5C6',
   '#CE9298',
   '#CE9698',
-  '#CED0D8',
   '#D1C7C7',
-  '#CDE9C0',
-  '#CDECBF',
+  '#D2EEC6',
+  '#D2F0C2',
+  '#D3F1C5',
+  '#D4F0C5',
   '#D5DCE0',
   '#D5E8D0',
-  '#D6E7D3',
+  '#E2F3D1',
   '#D7892C',
   '#D7E9DE',
   '#D8E1D8',
-  '#D4EDC8',
-  '#DED5CD',
+  '#CFF0C6',
+  '#DED5CA',
   '#DEE0E8',
   '#E4E1E5',
-  '#E8E3DE',
+  '#EBE1D8',
   '#E8E5E6',
   '#E8E8F0',
   '#E9E6E7',
@@ -123,7 +121,7 @@ const approvedLightStyleColors = new Set([
   '#F0ECC6',
   '#F3E9DF',
   '#F2F0EB',
-  '#F3F2F0',
+  '#F5F0EF',
   '#F4F0EF',
   '#F4F7F8',
   '#F8F6F8',
@@ -460,10 +458,10 @@ test('Streets Dark recolors every color-bearing Streets layer without major ligh
   const serialized = JSON.stringify(dark).toUpperCase();
   for (const lightSignature of [
     '#505050',
-    '#99DDFF',
+    '#98DCFE',
     '#ADB3C3',
-    '#BEE9B3',
-    '#C0C5D8',
+    '#B1EAAC',
+    '#BEC5D8',
     '#D49399',
     '#D5E8D0',
     '#F3E9DF',
@@ -537,7 +535,7 @@ test('Streets Dark keeps a legible road hierarchy and high-contrast key labels',
 
 test('Streets uses blue road decks with darker casings that strengthen toward close zooms', () => {
   const expected = {
-    light: {casing: '#ADB3C3', deck: '#C0C5D8'},
+    light: {casing: '#ADB3C3', deck: '#BEC5D8'},
     dark: {casing: '#454A59', deck: '#636779'},
   } as const;
 
@@ -609,6 +607,7 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     2.1,
   ]);
   assert.equal(regionalBoundary.paint?.['line-color'], '#CE9698');
+  assert.deepEqual(regionalBoundary.paint?.['line-dasharray'], [3, 2]);
   assert.deepEqual(regionalBoundary.paint?.['line-width'], [
     'interpolate',
     ['linear'],
@@ -657,10 +656,10 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
   assert.match(JSON.stringify(neighborhood.layout?.['text-size']), /,10,\["match"/u);
 
   for (const [roadClass, color] of [
-    ['primary', '#C2C6D0'],
-    ['secondary', '#C4C6CE'],
-    ['tertiary', '#C4C6CD'],
-    ['minor', '#CED0D8'],
+    ['primary', '#C1C6D3'],
+    ['secondary', '#C2C6D6'],
+    ['tertiary', '#C2C6D6'],
+    ['minor', '#CDCED7'],
   ] as const) {
     const layer = requireLayer(style, `tileflow-road-surface-${roadClass}-fill`);
     assert.match(JSON.stringify(layer.paint?.['line-color']), new RegExp(color));
@@ -668,7 +667,7 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
 
   assert.match(
     JSON.stringify(requireLayer(style, 'tileflow-landuse-1').paint?.['fill-color']),
-    /"residential"\],"#F3F2F0"/u,
+    /"residential"\],"#F5F0EF"/u,
   );
   assert.equal(
     requireLayer(style, 'tileflow-land-render-businessArea').paint?.['fill-color'],
@@ -689,7 +688,7 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     1,
   ]);
   const outlines = requireLayer(style, 'tileflow-buildings-fill-outline');
-  assert.equal(outlines.paint?.['line-color'], '#DED5CD');
+  assert.equal(outlines.paint?.['line-color'], '#DED5CA');
   assert.deepEqual(outlines.paint?.['line-opacity'], [
     'interpolate',
     ['linear'],
@@ -697,13 +696,13 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     14.5,
     0,
     15,
-    0.5,
+    0.6,
     16,
-    0.7,
-    17,
     0.82,
+    17,
+    0.96,
     18,
-    0.9,
+    1,
   ]);
   assert.deepEqual(outlines.paint?.['line-width'], [
     'interpolate',
@@ -716,7 +715,7 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     16,
     0.65,
     17,
-    0.8,
+    0.9,
     20,
     1,
   ]);

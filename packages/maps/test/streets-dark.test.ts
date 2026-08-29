@@ -45,6 +45,7 @@ const approvedLightStyleColors = new Set([
   '#0FB7FF59',
   '#1B1D27',
   '#4C9478',
+  '#4D4F4D',
   '#505050',
   '#5A88A9',
   '#5B5C5A',
@@ -65,35 +66,33 @@ const approvedLightStyleColors = new Set([
   '#91BA8D',
   '#99DDFF',
   '#99DDFF59',
-  '#A0ABC1',
+  '#ADB3C3',
   '#A1C99B',
   '#A5A7BF',
   '#A6B1C2',
   '#ACA7A3',
   '#AED7A5',
-  '#AEDBFC',
   '#AFD4A7',
   '#B7E2AC',
   '#B85CA4',
   '#B8E0AE',
   '#BFE6AE',
-  '#C1C5D7',
-  '#C2E7B3',
+  '#C0C5D8',
   '#C2E7B5',
-  '#C2E8B3',
+  '#BEE9B3',
   '#C2C6D0',
   '#C4C6CD',
   '#C4C6CE',
   '#C6C8D4',
-  '#C7B7B8',
+  '#DCA2A1',
   '#C8C8CF',
   '#C95E6B',
   '#C9E9BC',
   '#CCE5C6',
   '#CED0D8',
-  '#D2CED2',
+  '#D1C7C7',
   '#D0ECC3',
-  '#D5A6AC',
+  '#D49399',
   '#D5DCE0',
   '#D5E8D0',
   '#D6E7D3',
@@ -103,7 +102,7 @@ const approvedLightStyleColors = new Set([
   '#D9EBDD',
   '#D5EEC5',
   '#D8EFC8',
-  '#DDD4C4',
+  '#C6BCB2',
   '#DEE0E8',
   '#DFF1CF',
   '#E0ECD8',
@@ -113,16 +112,17 @@ const approvedLightStyleColors = new Set([
   '#E8E5E6',
   '#E9E6E7',
   '#E9E8ED',
-  '#ECE9EB',
+  '#EFECEF',
   '#EDE6D4',
   '#EEE0DF',
   '#F0ECC6',
-  '#F0EDEE',
-  '#EFEBDF',
+  '#F2EAE0',
   '#F2F0EB',
   '#F4F0EF',
   '#F4F7F8',
-  '#F8EEE3',
+  '#F7F6F4',
+  '#F8F6F8',
+  '#FBEDE2',
   '#FFFFFF',
   'RGBA(0, 0, 0, 0)',
   'RGBA(244, 240, 239, 0.72)',
@@ -455,13 +455,16 @@ test('Streets Dark recolors every color-bearing Streets layer without major ligh
   const serialized = JSON.stringify(dark).toUpperCase();
   for (const lightSignature of [
     '#505050',
-    '#AEDBFC',
-    '#C1C5D7',
-    '#C2E8B3',
-    '#D5A6AC',
+    '#99DDFF',
+    '#ADB3C3',
+    '#BEE9B3',
+    '#C0C5D8',
+    '#D49399',
     '#D5E8D0',
-    '#EFEBDF',
+    '#F2EAE0',
     '#F4F0EF',
+    '#F7F6F4',
+    '#FBEDE2',
   ]) {
     assert.equal(
       serialized.includes(lightSignature),
@@ -529,7 +532,7 @@ test('Streets Dark keeps a legible road hierarchy and high-contrast key labels',
 
 test('Streets uses blue road decks with darker casings that strengthen toward close zooms', () => {
   const expected = {
-    light: {casing: '#A0ABC1', deck: '#C1C5D7'},
+    light: {casing: '#ADB3C3', deck: '#C0C5D8'},
     dark: {casing: '#454A59', deck: '#636779'},
   } as const;
 
@@ -582,6 +585,41 @@ test('Streets uses blue road decks with darker casings that strengthen toward cl
 
 test('Streets restores Mapbox-scale contrast at city overview and building detail', () => {
   const style = compile('light');
+  const countryBoundary = requireLayer(style, 'tileflow-boundary-admin2');
+  const regionalBoundary = requireLayer(style, 'tileflow-boundary-admin4');
+  assert.equal(countryBoundary.paint?.['line-color'], '#D49399');
+  assert.deepEqual(countryBoundary.paint?.['line-width'], [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    3,
+    0.8,
+    6,
+    1.35,
+    12,
+    2.1,
+  ]);
+  assert.equal(regionalBoundary.paint?.['line-color'], '#DCA2A1');
+  assert.deepEqual(regionalBoundary.paint?.['line-width'], [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    3,
+    0.55,
+    6,
+    1,
+    12,
+    1.6,
+  ]);
+
+  const countryLabel = requireLayer(style, 'tileflow-label-place-country');
+  const cityLabel = requireLayer(style, 'tileflow-label-place-city');
+  assert.equal(countryLabel.paint?.['text-color'], '#4D4F4D');
+  assert.deepEqual(cityLabel.layout?.['text-font'], ['Noto Sans Regular']);
+  assert.equal(cityLabel.layout?.['text-padding'], 1);
+  assert.match(JSON.stringify(countryLabel.layout?.['text-size']), /,5,\["step"/u);
+  assert.match(JSON.stringify(cityLabel.layout?.['text-size']), /,5,\["step"/u);
+
   for (const [roadClass, color] of [
     ['primary', '#C2C6D0'],
     ['secondary', '#C4C6CE'],
@@ -592,21 +630,29 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     assert.match(JSON.stringify(layer.paint?.['line-color']), new RegExp(color));
   }
 
-  assert.equal(requireLayer(style, 'tileflow-buildings-fill').paint?.['fill-color'], '#EFEBDF');
+  assert.match(
+    JSON.stringify(requireLayer(style, 'tileflow-landuse-1').paint?.['fill-color']),
+    /"residential"\],"#F7F6F4"/u,
+  );
+  assert.equal(
+    requireLayer(style, 'tileflow-land-render-businessArea').paint?.['fill-color'],
+    '#FBEDE2',
+  );
+  assert.equal(requireLayer(style, 'tileflow-buildings-fill').paint?.['fill-color'], '#F2EAE0');
   const outlines = requireLayer(style, 'tileflow-buildings-fill-outline');
-  assert.equal(outlines.paint?.['line-color'], '#DDD4C4');
+  assert.equal(outlines.paint?.['line-color'], '#C6BCB2');
   assert.deepEqual(outlines.paint?.['line-opacity'], [
     'interpolate',
     ['linear'],
     ['zoom'],
     15,
-    0.48,
+    0.4,
     16,
-    0.7,
+    0.72,
     17,
-    0.86,
-    20,
-    0.94,
+    0.9,
+    18,
+    1,
   ]);
   assert.deepEqual(outlines.paint?.['line-width'], [
     'interpolate',
@@ -615,11 +661,42 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     15,
     0.45,
     16,
-    0.65,
+    0.62,
     17,
-    0.85,
+    0.78,
     20,
-    1,
+    0.9,
+  ]);
+
+  const flatShadow = requireLayer(style, 'tileflow-buildings-render-flatShadow');
+  assert.equal(flatShadow.paint?.['line-color'], '#ACA7A3');
+  assert.equal(flatShadow.paint?.['line-blur'], 3.5);
+  assert.deepEqual(flatShadow.paint?.['line-translate'], [1.25, 2]);
+  assert.deepEqual(flatShadow.paint?.['line-opacity'], [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    15,
+    0.08,
+    16,
+    0.18,
+    18,
+    0.28,
+    20,
+    0.32,
+  ]);
+  assert.deepEqual(flatShadow.paint?.['line-width'], [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    15,
+    2,
+    16,
+    4,
+    18,
+    7,
+    20,
+    8,
   ]);
 });
 
@@ -736,6 +813,16 @@ test('Streets Dark keeps canonical POI category colors around the same ranked sp
       ['*', ['to-number', ['get', 'filter_rank'], 6], 17],
       ['to-number', ['get', 'size_rank'], 17],
     ]);
+    assert.deepEqual(lightLayer.layout?.['icon-size'], [
+      'interpolate',
+      ['linear'],
+      ['zoom'],
+      12,
+      1,
+      17,
+      1.06,
+    ]);
+    assert.deepEqual(darkLayer.layout?.['icon-size'], lightLayer.layout?.['icon-size']);
     assert.equal(darkLayer.paint?.['text-color'], darkCategoryColors[category]);
     assert.equal(darkLayer.paint?.['text-halo-color'], '#252839');
   }

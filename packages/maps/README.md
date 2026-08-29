@@ -154,7 +154,9 @@ Streets uses one ranked destination hierarchy in both themes. Major transit and 
 appear first; lodging, health, education, services, shopping, food, coffee, and parking enter
 progressively as the camera approaches street level. Each visible destination is one collision
 unit made from a colored circular pictogram and an optional neutral name, so the marker remains
-useful when the label cannot fit. Portal-number labels are intentionally disabled. The ten POI
+useful when the label cannot fit. The pictogram scale grows gently from 1× at z12 to 1.06× at z17,
+giving detailed street views a little more visual presence without increasing POI density.
+Portal-number labels are intentionally disabled. The ten POI
 pictograms are adapted from the pinned CC0 Maki subset documented in
 `THIRD_PARTY_NOTICES.md`; their containers, colors, sizing, and composition are Tileflow-authored.
 

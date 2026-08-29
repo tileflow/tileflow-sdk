@@ -16,6 +16,7 @@ import {
   type TileflowLineCap,
   type TileflowLineJoin,
   type TileflowLineStyle,
+  type TileflowPoiCategoryStyle,
   type TileflowRenderSelector,
   type TileflowRoadClassStyle,
   type TileflowSymbolStyle,
@@ -157,8 +158,22 @@ const protectedAreaOpacity = zoom.linear([
   [9, 0.32],
 ]);
 
+// The 24 px source artwork keeps a small transparent fringe around each POI.
+// Grow it gently at street zooms so the marker gains presence without turning
+// the overview into a denser visual field.
+const streetsPoiStyle = {
+  icon: {
+    size: zoom.linear([
+      [12, 1],
+      [17, 1.06],
+    ]),
+  },
+} satisfies TileflowPoiCategoryStyle;
+
 // Match Standard's warm 2D footprints here; authored 3D extrusions keep their
-// separate neutral palette.
+// separate neutral palette. The light palette stores rendered day colours,
+// rather than the raw Standard configuration roles, so footprints remain
+// distinct from residential and commercial ground without relying on opacity.
 const mapboxBuildingPalette = {
   fill: streetsVisual.building.fill,
   outline: streetsVisual.building.outline,
@@ -224,7 +239,7 @@ const buildingColors = {
   residential: buildingFillColor,
 } as const;
 const building3dColor = streetsVisual.building.extrusion;
-const building3dShadowColor = streetsVisual.building.shadow;
+const buildingShadowColor = streetsVisual.building.shadow;
 const visibleBuilding3dSelector = {
   kind: 'all',
   selectors: [
@@ -731,6 +746,34 @@ function streetsLandRenderStack() {
 
 function streetsBuildingRenderStack() {
   return {
+    // Standard's day preset gives flat footprints a soft ambient edge even
+    // when 3D objects are disabled. Keep this independent from the runtime 3D
+    // toggle so the 2D map does not collapse into the surrounding landuse.
+    flatShadow: renderPass({
+      attachTo: 'buildings.flat.fill',
+      feature: 'building',
+      phase: 'underlay',
+      renderer: 'line',
+      style: {
+        blur: 3.5,
+        color: buildingShadowColor,
+        minZoom: 15,
+        opacity: zoom.linear([
+          [15, 0.08],
+          [16, 0.18],
+          [18, 0.28],
+          [20, 0.32],
+        ]),
+        translate: [1.25, 2],
+        translateAnchor: 'viewport',
+        width: zoom.linear([
+          [15, 2],
+          [16, 4],
+          [18, 7],
+          [20, 8],
+        ]),
+      },
+    }),
     shadowSoft: renderPass({
       attachTo: 'buildings.flat.fill',
       feature: 'building',
@@ -739,7 +782,7 @@ function streetsBuildingRenderStack() {
       selector: visibleBuilding3dSelector,
       style: {
         blur: 7,
-        color: building3dShadowColor,
+        color: buildingShadowColor,
         minZoom: 16,
         opacity: 0.12,
         translate: [3, 5],
@@ -756,7 +799,7 @@ function streetsBuildingRenderStack() {
       selector: visibleBuilding3dSelector,
       style: {
         antialias: true,
-        color: building3dShadowColor,
+        color: buildingShadowColor,
         minZoom: 16,
         opacity: 0.1,
         translate: [2, 4],
@@ -1521,8 +1564,9 @@ export const streets = bindOfficialMapTheme(
             minZoom: 1,
             opacity: 1,
             width: zoom.linear([
-              [3, 0.5],
-              [12, 2],
+              [3, 0.8],
+              [6, 1.35],
+              [12, 2.1],
             ]),
           },
           admin4: {
@@ -1534,8 +1578,9 @@ export const streets = bindOfficialMapTheme(
               [3, 1],
             ]),
             width: zoom.linear([
-              [3, 0.3],
-              [12, 1.5],
+              [3, 0.55],
+              [6, 1],
+              [12, 1.6],
             ]),
           },
           disputed: {
@@ -1985,16 +2030,16 @@ export const streets = bindOfficialMapTheme(
               color: buildingOutlineColor,
               minZoom: 15,
               opacity: zoom.linear([
-                [15, 0.48],
-                [16, 0.7],
-                [17, 0.86],
-                [20, 0.94],
+                [15, 0.4],
+                [16, 0.72],
+                [17, 0.9],
+                [18, 1],
               ]),
               width: zoom.linear([
                 [15, 0.45],
-                [16, 0.65],
-                [17, 0.85],
-                [20, 1],
+                [16, 0.62],
+                [17, 0.78],
+                [20, 0.9],
               ]),
             },
           },
@@ -2063,10 +2108,24 @@ export const streets = bindOfficialMapTheme(
                         ]),
                       ],
                       [
+                        5,
+                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 14, [
+                          [3, 13],
+                          [5, 11],
+                        ]),
+                      ],
+                      [
+                        7,
+                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 16, [
+                          [3, 15],
+                          [5, 13],
+                        ]),
+                      ],
+                      [
                         9,
-                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 22, [
-                          [4, 19],
-                          [5, 17],
+                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 18, [
+                          [3, 17],
+                          [5, 15],
                         ]),
                       ],
                     ],
@@ -2123,7 +2182,7 @@ export const streets = bindOfficialMapTheme(
                   haloWidth: 1,
                   lineHeight: 1.1,
                   maxWidth: 7,
-                  padding: 3,
+                  padding: 1,
                   radialOffset: zoom.step([
                     [2, 0.6],
                     [8, 0],
@@ -2132,19 +2191,40 @@ export const streets = bindOfficialMapTheme(
                     {kind: 'cubic-bezier', x1: 0.2, x2: 0.9, y1: 0, y2: 1},
                     expr.zoom(),
                     [
-                      [3, expr.step(expr.coalesce(expr.get(field('rank')), 99), 13, [[6, 11]])],
+                      [
+                        3,
+                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 13, [
+                          [3, 12],
+                          [6, 10],
+                        ]),
+                      ],
+                      [
+                        5,
+                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 15, [
+                          [3, 13],
+                          [4, 12],
+                          [6, 11],
+                          [8, 10],
+                          [14, 9.5],
+                        ]),
+                      ],
                       [
                         6,
-                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 18, [
-                          [6, 16],
-                          [7, 14],
+                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 17, [
+                          [3, 15],
+                          [4, 13],
+                          [6, 12],
+                          [8, 10.5],
+                          [14, 10],
                         ]),
                       ],
                       [
                         8,
                         expr.step(expr.coalesce(expr.get(field('rank')), 99), 20, [
-                          [9, 16],
-                          [10, 14],
+                          [3, 18],
+                          [6, 16],
+                          [9, 14],
+                          [12, 12],
                         ]),
                       ],
                       [
@@ -2157,6 +2237,7 @@ export const streets = bindOfficialMapTheme(
                       ],
                     ],
                   ),
+                  font: streetsVisual.font.default,
                   variableAnchors: [
                     'left',
                     'right',
@@ -2519,6 +2600,21 @@ export const streets = bindOfficialMapTheme(
           coupleIconAndLabel: true,
           iconPadding: 2,
           textPadding: 3,
+        },
+        styles: {
+          'arts-entertainment': streetsPoiStyle,
+          education: streetsPoiStyle,
+          'food-drink': streetsPoiStyle,
+          landmark: streetsPoiStyle,
+          lodging: streetsPoiStyle,
+          medical: streetsPoiStyle,
+          'park-nature': streetsPoiStyle,
+          'public-services': streetsPoiStyle,
+          religion: streetsPoiStyle,
+          retail: streetsPoiStyle,
+          'sport-leisure': streetsPoiStyle,
+          transport: streetsPoiStyle,
+          'visitor-amenity': streetsPoiStyle,
         },
       }),
     },

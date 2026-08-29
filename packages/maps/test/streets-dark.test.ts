@@ -121,7 +121,7 @@ const approvedLightStyleColors = new Set([
   '#ECE4D2',
   '#EEE0DF',
   '#F0ECC6',
-  '#F2EAE0',
+  '#F3E9DF',
   '#F2F0EB',
   '#F3F2F0',
   '#F4F0EF',
@@ -466,7 +466,7 @@ test('Streets Dark recolors every color-bearing Streets layer without major ligh
     '#C0C5D8',
     '#D49399',
     '#D5E8D0',
-    '#F2EAE0',
+    '#F3E9DF',
     '#F4F0EF',
     '#F7F6F4',
     '#FBEDE2',
@@ -675,7 +675,7 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     '#FBEDE2',
   );
   const buildingFill = requireLayer(style, 'tileflow-buildings-fill');
-  assert.equal(buildingFill.paint?.['fill-color'], '#F2EAE0');
+  assert.equal(buildingFill.paint?.['fill-color'], '#F3E9DF');
   assert.equal(buildingFill.minzoom, 14.25);
   assert.deepEqual(buildingFill.paint?.['fill-opacity'], [
     'interpolate',
@@ -697,28 +697,28 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     14.5,
     0,
     15,
-    0.24,
-    16,
-    0.34,
-    17,
-    0.42,
-    18,
     0.5,
+    16,
+    0.7,
+    17,
+    0.82,
+    18,
+    0.9,
   ]);
   assert.deepEqual(outlines.paint?.['line-width'], [
     'interpolate',
     ['linear'],
     ['zoom'],
     14.5,
-    0.2,
-    15,
     0.25,
-    16,
-    0.32,
-    17,
+    15,
     0.4,
+    16,
+    0.65,
+    17,
+    0.8,
     20,
-    0.55,
+    1,
   ]);
 
   const flatShadow = requireLayer(style, 'tileflow-buildings-render-flatShadow');

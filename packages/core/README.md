@@ -1120,6 +1120,17 @@ can set `grantTimeoutMs` from 1 to 120,000 milliseconds.
 server-owned commercial authorization. User `transformRequest` callbacks still run first; Tileflow
 then decorates only the resulting eligible URL and preserves the other request options.
 
+Set `analytics.surfaceId` to a stable product location when the same Map appears in several places:
+
+```ts
+const analytics = {surfaceId: 'store-locator'};
+```
+
+A Surface ID is 1–64 lowercase ASCII letters, digits, `.`, `_`, or `-`; it starts and ends with a
+letter or digit. Missing or invalid values become `default`. Use a durable integration name such as
+`checkout` or `dealer-search`, not a URL, branch, preview, random component instance, or user ID.
+Surface labels do not change authorization, entitlement, or Session identity.
+
 For exact Tileflow World release tiles, framework adapters also use the browser request bridge to
 observe the response's safe fair-use state without adding identity, query parameters, credentials,
 or user headers to the public World URL. The bridge requires the immutable release path and exactly

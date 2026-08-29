@@ -10,7 +10,7 @@ import {withTileflowConfigSecretsHidden} from '../src/config-execution';
 import {defaultTileflowDevHost, parseTileflowDevHost, tileflowDevOrigin} from '../src/dev-host';
 import {inspectTileflowHostedCompatibility} from '../src/hosted-preflight';
 import {
-  hostedProjectStatusSchema,
+  hostedMapStatusSchema,
   hostedStyleDeploymentResponseSchema,
   readHostedJson,
 } from '../src/hosted-response';
@@ -122,15 +122,15 @@ test('hosted success responses validate exact atomic theme families and bounded 
     new Response(
       JSON.stringify({
         changed: true,
-        mapId: 'map_test',
+        mapId: 'map_AbCdEfGhIjKlMnOp',
         themes: {
           dark: {
             styleId: 'sty_test_dark',
-            styleUrl: 'https://api.example.test/maps/map_test/dark.json',
+            styleUrl: 'https://api.example.test/maps/map_AbCdEfGhIjKlMnOp/dark.json',
           },
           light: {
             styleId: 'sty_test_light',
-            styleUrl: 'https://api.example.test/maps/map_test/light.json',
+            styleUrl: 'https://api.example.test/maps/map_AbCdEfGhIjKlMnOp/light.json',
           },
         },
         version: 2,
@@ -140,7 +140,7 @@ test('hosted success responses validate exact atomic theme families and bounded 
     hostedStyleDeploymentResponseSchema,
     'Deploy response',
   );
-  assert.equal(deployment.mapId, 'map_test');
+  assert.equal(deployment.mapId, 'map_AbCdEfGhIjKlMnOp');
   assert.deepEqual(Object.keys(deployment.themes), ['dark', 'light']);
 
   await assert.rejects(
@@ -161,7 +161,7 @@ test('hosted success responses validate exact atomic theme families and bounded 
   const status = await readHostedJson(
     new Response(
       JSON.stringify({
-        projectId: 'prj_test',
+        mapId: 'map_AbCdEfGhIjKlMnOp',
         unvalidated: 'must be stripped',
         styles: [
           {
@@ -175,7 +175,7 @@ test('hosted success responses validate exact atomic theme families and bounded 
         ],
       }),
     ),
-    hostedProjectStatusSchema,
+    hostedMapStatusSchema,
     'Status response',
   );
   assert.equal(Object.hasOwn(status, 'unvalidated'), false);
@@ -196,7 +196,8 @@ test('hosted success responses validate exact atomic theme families and bounded 
     /invalid response/,
   );
   assert.equal(
-    hostedProjectStatusSchema.safeParse({projectId: 'prj_test', styles: 'not-an-array'}).success,
+    hostedMapStatusSchema.safeParse({mapId: 'map_AbCdEfGhIjKlMnOp', styles: 'not-an-array'})
+      .success,
     false,
   );
 

@@ -458,23 +458,23 @@ effects and removes `TILEFLOW_API_KEY` before loading config.
 Hosted writes have two independent authorization paths:
 
 - Personal developer session: run `npm exec --no -- tileflow login` once for a
-  Tileflow API origin. Login authenticates the account and selects no managed destination.
-  The CLI exchanges that account session for a brief, narrow capability only
-  after resolving the application internally.
+  Tileflow API origin. Login authenticates the account and selects no Map.
+  Each hosted command exchanges that account session for a brief capability scoped to its
+  explicit Map ID.
 - CI key: create a dashboard `CI deploy` key, store it as
-  `TILEFLOW_API_KEY`, and let the repository workflow deploy without a local
-  login. The server binds that key to exactly one internal application boundary.
+  `TILEFLOW_API_KEY`, and let the repository workflow deploy without a local login. The server
+  binds that key to exactly one Map.
 
 Hosted control-plane requests stay pinned to the configured HTTP(S) origin, apply a hard bounded
 timeout, and stream at most 1 MiB of response data. CLI diagnostics never echo an untrusted remote
 response body or bearer credential.
 
-Inspect the account and use the automatically resolved destination:
+Inspect the account, then target the Map shown in the dashboard:
 
 ```sh
 npm exec --no -- tileflow whoami --json
-npm exec --no -- tileflow deploy
-npm exec --no -- tileflow status
+npm exec --no -- tileflow deploy --map-id map_AbCdEfGhIjKlMnOp
+npm exec --no -- tileflow status --map-id map_AbCdEfGhIjKlMnOp
 npm exec --no -- tileflow logout
 ```
 
@@ -483,25 +483,19 @@ conversion reference in that exact deploy action:
 
 ```sh
 npm exec --no -- tileflow deploy \
-  --project @acme/web \
   --world-conversion wcv_example1234
 ```
 
-The conversion reference is neither a map ID nor a credential. The CLI uses the map exported by the
-selected config. A successful server-confirmed continuation keeps unrelated manifest entries and
-records only that map's stable `mapId`, hosted theme URLs, World `v1` generation, and fixed session
-usage mode. Do not add an API key or payment authority to a copied prompt.
+The conversion reference is neither a Map ID nor a credential. It resolves the new Map on the
+server. The CLI uses the sole map exported by the selected config; if the config contains several,
+add `--map <name>` to select the local map to connect. A successful server-confirmed continuation
+keeps unrelated manifest entries and records only that Map's stable `mapId`, hosted theme URLs,
+World `v1` generation, and fixed session usage mode. Do not add an API key or payment authority to
+a copied prompt.
 
-If the account has exactly one accessible managed destination, a hosted command resolves it
-automatically. With more than one, writes fail before config execution or network mutation, print
-deterministically sorted application choices with their technical `@organization/project`
-references, and give an exact retry containing `--project`. There is no persistent selection,
-per-directory profile, or `login --project`. The hidden `projects` compatibility family remains
-callable when support or explicit multi-application administration requires it.
-
-An explicit key or `TILEFLOW_API_KEY` never uses the saved account session. If
-it is combined with `--project`, the selector is an assertion: the CLI checks
-`/v1/me` and rejects any mismatch before loading executable config or writing.
+An explicit key or `TILEFLOW_API_KEY` never uses the saved account session. The deploy API rejects a
+`--map-id` that does not match the key. Read-only hosted icon comparison validates the same binding
+before loading its baseline.
 
 The CI key grants only `styles:write` and `status:read`. It cannot upload
 datasets or render images. Give it an expiration, rotate the repository secret
@@ -518,7 +512,7 @@ and do not pass keys through the `--api-key` command line in CI.
 
 The [deploy documentation](https://tileflow.dev/docs/deploy) contains copyable
 GitHub Actions and GitLab CI workflows. Both use `npm ci`, the committed
-lockfile, and the project-local CLI. GitHub exposes the key only to its deploy
+lockfile, and the repository-local CLI. GitHub exposes the key only to its deploy
 step. GitLab variables are job-scoped, so its example validates in a keyless job
 and deploys in a protected `production` job; the locked install and runner are
 part of that trusted job boundary. Both serialize publications and intentionally
@@ -541,7 +535,7 @@ Invalid explicit values fail before a network write. Provider metadata that is
 missing, malformed, or too long is omitted. Secrets and the complete
 environment are never logged.
 
-Application build is absent from the minimal workflows. Self-hosted build and deploy emit the same
+A separate app-build step is absent from the minimal workflows. Self-hosted build and deploy emit the same
 runtime manifest version 1 shape; Hosted fields are optional identity metadata on its map/theme
 entries. Filesystem build writers refuse to replace a manifest carrying Hosted metadata by default,
 and deploy refuses to replace a purely local manifest. Prefer `emitBuildArtifacts: false` or
@@ -653,14 +647,15 @@ source path with normal repository tools only when the pixels themselves are nee
 Compare the exported map with its active hosted revision before deciding whether to deploy:
 
 ```sh
-npm exec --no -- tileflow icons diff --against production
-npm exec --no -- tileflow icons diff --against production --json
-npm exec --no -- tileflow icons diff --against production --report ./icon-diff.html
+npm exec --no -- tileflow icons diff --map-id map_AbCdEfGhIjKlMnOp --against production
+npm exec --no -- tileflow icons diff --map-id map_AbCdEfGhIjKlMnOp --against production --json
+npm exec --no -- tileflow icons diff --map-id map_AbCdEfGhIjKlMnOp --against production --report ./icon-diff.html
 ```
 
-The command compiles only the exported map, performs one authenticated baseline `GET`, and never
-uploads a package, creates a deployment, or writes the frontend manifest. Plain and JSON modes
-create no files. A requested HTML report adds reads of the baseline's four public sprite files and
+The command compiles only the exported map, performs authenticated read-only control-plane
+requests, and never uploads a package, creates a deployment, or writes the frontend manifest.
+Plain and JSON modes create no files. A requested HTML report adds reads of the baseline's four
+public sprite files and
 embeds verified old/new images in one self-contained file. The report groups exact-cell icon
 previews under `Added`, `Modified`, and `Removed`. Added and removed cards show only the affected
 icon; modified cards compare `Before` with `Next`. A script-free 1x/2x selector defaults to 2x,

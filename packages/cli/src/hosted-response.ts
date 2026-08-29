@@ -29,7 +29,7 @@ export const hostedStyleDeploymentResponseSchema = z
   .object({
     changed: z.boolean().optional(),
     deploymentId: safeIdentifierSchema.optional(),
-    mapId: safeIdentifierSchema,
+    mapId: z.string().regex(/^map_[A-Za-z0-9_-]{16}$/u),
     themes: z
       .record(
         safeIdentifierSchema,
@@ -72,12 +72,12 @@ const hostedStatusStyleSchema = z.object({
   uploaded: z.iso.datetime({offset: true}),
 });
 
-export const hostedProjectStatusSchema = z.object({
-  projectId: safeIdentifierSchema,
+export const hostedMapStatusSchema = z.object({
+  mapId: z.string().regex(/^map_[A-Za-z0-9_-]{16}$/u),
   styles: z.array(hostedStatusStyleSchema).max(10_000),
 });
 
-export type HostedProjectStatus = z.infer<typeof hostedProjectStatusSchema>;
+export type HostedMapStatus = z.infer<typeof hostedMapStatusSchema>;
 
 export async function readHostedJson<T>(
   response: Response,

@@ -84,9 +84,10 @@ import {allowsStoredDeployCredential, resolveDeploySource} from './deploy-source
 import {defaultTileflowDevHost, parseTileflowDevHost, tileflowDevOrigin} from './dev-host';
 import {registerFeatureInspectCommand} from './feature-inspect-command';
 import {
-  fetchHostedProjectStatus,
+  fetchHostedMapStatus,
   pollDeviceToken,
   publishHostedStyle,
+  requestMapCapability,
   requestProjectCapability,
   revokeHostedAccountSession,
   startDeviceAuthorization,
@@ -96,7 +97,7 @@ import {
   validateApiKey,
 } from './hosted-client';
 import {inspectTileflowHostedCompatibility} from './hosted-preflight';
-import type {HostedProjectStatus} from './hosted-response';
+import type {HostedMapStatus} from './hosted-response';
 import {registerIconDiffCommand} from './icon-diff-command';
 import {registerIconListCommand} from './icon-list-command';
 import {registerLanguageCommand} from './language-command';
@@ -662,7 +663,7 @@ program
   .option('--manifest <path>', 'manifest path written for frontend bundlers', defaultManifestPath)
   .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
-  .option('--project <target>', 'technical destination @organization/project')
+  .option('--map-id <id>', 'managed Map destination')
   .option('--world-conversion <id>', 'continue one Tileflow World conversion')
   .option('--map <name>', 'map to connect when a conversion config contains multiple maps')
   .option(
@@ -675,7 +676,7 @@ program
       manifest: string;
       apiUrl?: string;
       apiKey?: string;
-      project?: string;
+      mapId?: string;
       map?: string;
       overwriteSelfHostedManifest?: boolean;
       worldConversion?: string;
@@ -684,6 +685,7 @@ program
       const resolveApi = (selectedMap?: string) =>
         requireApiOptions(options, {
           allowStoredCredential: allowsStoredDeployCredential(source),
+          assertExplicitKeyMap: true,
           capabilityScopes: ['styles:write'],
           retryCommand: cliInvocation([
             'tileflow',
@@ -695,6 +697,7 @@ program
             '--api-url',
             options.apiUrl ?? defaultApiUrl,
             ...(options.overwriteSelfHostedManifest ? ['--overwrite-self-hosted-manifest'] : []),
+            ...(options.mapId ? ['--map-id', options.mapId] : []),
             ...(options.worldConversion && selectedMap
               ? ['--world-conversion', options.worldConversion, '--map', selectedMap]
               : []),
@@ -717,6 +720,7 @@ program
       const configuredMapNames = getTileflowMapNames(project);
       const mapNames = selectWorldConversionMaps(configuredMapNames, options);
       if (!mapNames) return;
+      if (!validateDeployTarget(options)) return;
       if (!validateDeployManifestMapNames(mapNames)) return;
       const deploymentProject: TileflowBuildCatalog =
         mapNames.length === configuredMapNames.length
@@ -966,6 +970,7 @@ program
               styles: themeStyles,
             },
             environment: mapName,
+            ...(options.mapId ? {managedMapId: options.mapId} : {}),
             ...(options.worldConversion
               ? {usageMode: 'session', worldConversionId: options.worldConversion}
               : {}),
@@ -996,6 +1001,12 @@ program
         }
 
         const body = response.value;
+        const expectedMapId = options.mapId ?? api.mapId;
+        if (expectedMapId && body.mapId !== expectedMapId) {
+          logError(`Deploy response did not confirm the requested Map for ${mapName}.`);
+          process.exitCode = 1;
+          return;
+        }
         if (options.worldConversion && body.worldConversionId !== options.worldConversion) {
           logError(`Deploy response did not confirm the World conversion for ${mapName}.`);
           process.exitCode = 1;
@@ -1056,7 +1067,12 @@ program
       logSuccess('Deployed Tileflow maps.');
       printKeyValue('Manifest', pathLabel(manifestPath));
       printDeployedMaps(deployedMaps);
-      printNextSteps([`Check hosted state with ${command('tileflow status')}.`]);
+      const deployedMapId = Object.values(deployedMaps)[0]?.mapId;
+      if (deployedMapId) {
+        printNextSteps([
+          `Check hosted state with ${command(`tileflow status --map-id ${deployedMapId}`)}.`,
+        ]);
+      }
     },
   );
 
@@ -1065,9 +1081,15 @@ program
   .description('Show deployed compiled styles')
   .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
-  .option('--project <target>', 'technical destination @organization/project')
+  .option('--map-id <id>', 'managed Map destination')
   .option('--json', 'print raw JSON')
-  .action(async (options: {apiUrl?: string; apiKey?: string; json?: boolean; project?: string}) => {
+  .action(async (options: {apiUrl?: string; apiKey?: string; json?: boolean; mapId?: string}) => {
+    if (!options.mapId || !/^map_[A-Za-z0-9_-]{16}$/u.test(options.mapId)) {
+      if (options.json) console.error('Status requires a valid --map-id.');
+      else logError('Status requires a valid --map-id.');
+      process.exitCode = 1;
+      return;
+    }
     let api: {apiKey: string; apiUrl: string} | null;
     try {
       api = await requireApiOptions(options, {
@@ -1094,13 +1116,19 @@ program
       return;
     }
 
-    let status: HostedProjectStatus;
+    let status: HostedMapStatus;
     try {
-      status = await fetchHostedProjectStatus(api);
+      status = await fetchHostedMapStatus(api);
     } catch (error) {
       const message = safeStatusError(error);
       if (options.json) console.error(message);
       else logError(message);
+      process.exitCode = 1;
+      return;
+    }
+    if (status.mapId !== options.mapId) {
+      if (options.json) console.error('Status response belongs to another Map.');
+      else logError('Status response belongs to another Map.');
       process.exitCode = 1;
       return;
     }
@@ -1110,7 +1138,7 @@ program
       return;
     }
 
-    printProjectStatus(status, api.apiUrl);
+    printMapStatus(status, api.apiUrl);
   });
 
 const iconsCommand = program.command('icons').description('Inspect managed Tileflow icons');
@@ -1123,6 +1151,7 @@ registerIconDiffCommand(iconsCommand, {
   resolveApi: (options) => {
     const source = resolveDeploySource(process.env);
     return requireApiOptions(options, {
+      assertExplicitKeyMap: true,
       allowStoredCredential: allowsStoredDeployCredential(source),
       capabilityScopes: ['status:read'],
       retryCommand: cliInvocation([
@@ -1132,6 +1161,8 @@ registerIconDiffCommand(iconsCommand, {
         '--against',
         options.against,
         ...(options.config ? ['--config', options.config] : []),
+        '--map-id',
+        options.mapId,
         '--api-url',
         options.apiUrl ?? defaultApiUrl,
       ]),
@@ -1533,36 +1564,61 @@ function createCompiledMapAssets(
 
 function selectWorldConversionMaps(
   mapNames: string[],
-  options: {map?: string; worldConversion?: string},
+  options: {map?: string; mapId?: string; worldConversion?: string},
 ): string[] | null {
-  if (options.map && !options.worldConversion) {
-    logError('--map is reserved for continuing a World conversion.');
-    process.exitCode = 1;
-    return null;
-  }
-  if (!options.worldConversion) return mapNames;
-  if (!/^wcv_[A-Za-z0-9_-]{8,80}$/u.test(options.worldConversion)) {
-    logError('World conversion reference is invalid.');
+  if (options.map && !options.worldConversion && !options.mapId) {
+    logError('--map requires --map-id or --world-conversion.');
     process.exitCode = 1;
     return null;
   }
   if (options.map) {
     if (!mapNames.includes(options.map)) {
-      logError(`Unknown Tileflow map for World conversion: ${options.map}.`);
+      logError(`Unknown Tileflow map: ${options.map}.`);
       printKeyValue('Maps', mapNames.join(', '));
       process.exitCode = 1;
       return null;
     }
     return [options.map];
   }
+  if (!options.mapId && !options.worldConversion) return mapNames;
   if (mapNames.length === 1) return [mapNames[0]!];
-  logError('World conversion requires an explicit map because this config contains multiple maps.');
+  logError(
+    'This managed target requires an explicit map because the config contains multiple maps.',
+  );
   printKeyValue('Maps', mapNames.join(', '));
   printNextSteps([
-    `Retry with ${command(`tileflow deploy --world-conversion ${options.worldConversion} --map ${mapNames[0]}`)}.`,
+    `Retry with ${command(
+      options.worldConversion
+        ? `tileflow deploy --world-conversion ${options.worldConversion} --map ${mapNames[0]}`
+        : `tileflow deploy --map-id ${options.mapId} --map ${mapNames[0]}`,
+    )}.`,
   ]);
   process.exitCode = 1;
   return null;
+}
+
+function validateDeployTarget(options: {mapId?: string; worldConversion?: string}) {
+  if (options.mapId && options.worldConversion) {
+    logError('Use either --map-id or --world-conversion, not both.');
+    process.exitCode = 1;
+    return false;
+  }
+  if (!options.mapId && !options.worldConversion) {
+    logError('Managed deploy requires --map-id or --world-conversion.');
+    process.exitCode = 1;
+    return false;
+  }
+  if (options.mapId && !/^map_[A-Za-z0-9_-]{16}$/u.test(options.mapId)) {
+    logError('Managed Map ID is invalid.');
+    process.exitCode = 1;
+    return false;
+  }
+  if (options.worldConversion && !/^wcv_[A-Za-z0-9_-]{8,80}$/u.test(options.worldConversion)) {
+    logError('World conversion reference is invalid.');
+    process.exitCode = 1;
+    return false;
+  }
+  return true;
 }
 
 function validateDeployManifestMapNames(mapNames: string[]): boolean {
@@ -1625,17 +1681,27 @@ async function requireApiOptions(
   options: {
     apiUrl?: string;
     apiKey?: string;
+    mapId?: string;
     project?: string;
+    worldConversion?: string;
   },
   behavior: {
     allowStoredCredential?: boolean;
+    assertExplicitKeyMap?: boolean;
     capabilityScopes?: Array<'static:write' | 'status:read' | 'styles:write'>;
     retryCommand?: string;
     silent?: boolean;
   } = {},
-): Promise<{apiUrl: string; apiKey: string} | null> {
+): Promise<{apiUrl: string; apiKey: string; mapId?: string} | null> {
   const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
+  const requestedMapId = options.mapId;
   const requested = options.project ? parseProjectReference(options.project) : null;
+
+  if (requestedMapId && !/^map_[A-Za-z0-9_-]{16}$/u.test(requestedMapId)) {
+    if (!behavior.silent) logError('Managed Map ID is invalid.');
+    process.exitCode = 1;
+    return null;
+  }
 
   if (options.project && !requested) {
     if (!behavior.silent) logError('Managed destination must use @organization/project syntax.');
@@ -1644,6 +1710,19 @@ async function requireApiOptions(
   }
 
   if (options.apiKey) {
+    if (requestedMapId && behavior.assertExplicitKeyMap) {
+      const profile = await validateApiKey(apiUrl, options.apiKey);
+      if (!profile.ok) {
+        if (!behavior.silent) logError(profile.error);
+        process.exitCode = 1;
+        return null;
+      }
+      if (profile.value.mapId !== requestedMapId) {
+        if (!behavior.silent) logError('This API key belongs to another Map.');
+        process.exitCode = 1;
+        return null;
+      }
+    }
     if (requested) {
       const profile = await validateApiKey(apiUrl, options.apiKey);
       if (!profile.ok) {
@@ -1651,7 +1730,7 @@ async function requireApiOptions(
         process.exitCode = 1;
         return null;
       }
-      if (projectReference(profile.value) !== options.project) {
+      if (requested && projectReference(profile.value) !== options.project) {
         if (!behavior.silent) {
           logError(
             `This project key belongs to ${projectReference(profile.value)}, not ${options.project}.`,
@@ -1661,7 +1740,11 @@ async function requireApiOptions(
         return null;
       }
     }
-    return {apiKey: options.apiKey, apiUrl};
+    return {
+      apiKey: options.apiKey,
+      apiUrl,
+      ...(requestedMapId ? {mapId: requestedMapId} : {}),
+    };
   }
 
   const allowStoredCredential =
@@ -1669,7 +1752,7 @@ async function requireApiOptions(
     allowsStoredDeployCredential(resolveDeploySource(process.env));
   if (!allowStoredCredential) {
     if (!behavior.silent) {
-      logError('CI requires an explicit application-scoped Tileflow API key.');
+      logError('CI requires an explicit Map-scoped Tileflow API key.');
       printNextSteps([
         `Set ${pc.cyan('TILEFLOW_API_KEY')} from the CI secret store.`,
         'The saved personal account session is never used in CI.',
@@ -1699,6 +1782,20 @@ async function requireApiOptions(
     }
     process.exitCode = 1;
     return null;
+  }
+
+  if (requestedMapId || options.worldConversion) {
+    const capability = await requestMapCapability(
+      resolvedSession.session,
+      requestedMapId ? {mapId: requestedMapId} : {worldConversionId: options.worldConversion!},
+      behavior.capabilityScopes ?? ['status:read'],
+    );
+    if (!capability.ok) {
+      if (!behavior.silent) logError(capability.error);
+      process.exitCode = 1;
+      return null;
+    }
+    return {apiKey: capability.capability, apiUrl, mapId: capability.mapId};
   }
 
   const target = await resolveAccountProjectTarget(resolvedSession.session, options.project);
@@ -1985,9 +2082,9 @@ function printHostedCompatibilityIssues(
   return false;
 }
 
-function printProjectStatus(status: HostedProjectStatus, apiUrl: string) {
+function printMapStatus(status: HostedMapStatus, apiUrl: string) {
   printTitle('Tileflow status');
-  printKeyValue('Application', pc.bold(status.projectId));
+  printKeyValue('Map', pc.bold(status.mapId));
 
   console.log(`\n${pc.bold('Styles')}`);
   if (status.styles.length === 0) {

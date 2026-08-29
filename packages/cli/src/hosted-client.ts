@@ -11,8 +11,8 @@ import {
 import {
   hostedFontBundleResponseSchema,
   hostedIconPackageResponseSchema,
-  type HostedProjectStatus,
-  hostedProjectStatusSchema,
+  type HostedMapStatus,
+  hostedMapStatusSchema,
   hostedStyleDeploymentResponseSchema,
   readBoundedResponseText,
 } from './hosted-response';
@@ -31,6 +31,7 @@ export type HostedRequestOptions = {
 export type ApiProfile = {
   apiKeyId: string;
   credentialType: 'project_api_key';
+  mapId: string;
   organization: ProjectIdentity;
   project: ProjectIdentity;
   projectId: string;
@@ -204,6 +205,8 @@ export async function validateApiKey(
     !response.json ||
     typeof body.apiKeyId !== 'string' ||
     body.credentialType !== 'project_api_key' ||
+    typeof body.mapId !== 'string' ||
+    !/^map_[A-Za-z0-9_-]{16}$/u.test(body.mapId) ||
     !isProjectIdentity(body.organization) ||
     !isProjectIdentity(body.project) ||
     typeof body.projectId !== 'string' ||
@@ -217,12 +220,59 @@ export async function validateApiKey(
     value: {
       apiKeyId: body.apiKeyId,
       credentialType: body.credentialType,
+      mapId: body.mapId,
       organization: body.organization,
       project: body.project,
       projectId: body.projectId,
       scopes: body.scopes.filter((scope): scope is string => typeof scope === 'string'),
     },
   };
+}
+
+export async function requestMapCapability(
+  session: CliAccountSessionV2,
+  target: {mapId: string} | {worldConversionId: string},
+  scopes: HostedCapabilityScope[],
+  options: HostedRequestOptions = {},
+): Promise<{capability: string; mapId: string; ok: true} | {error: string; ok: false}> {
+  let response: HostedJsonResponse;
+  try {
+    response = await requestHostedJson(
+      session.apiOrigin,
+      '/v1/cli/map-capabilities',
+      {
+        ...jsonRequest('POST', {...target, scopes}),
+        headers: {
+          ...authorizationHeaders(session.accountSession),
+          'Content-Type': 'application/json',
+        },
+      },
+      options,
+    );
+  } catch (error) {
+    return {error: safeTransportError(error, 'Map capability request failed.'), ok: false};
+  }
+  if (!response.ok) {
+    return {error: `Map capability request failed (${response.status}).`, ok: false};
+  }
+  const body = asRecord(response.body);
+  const requestedMapId = 'mapId' in target ? target.mapId : undefined;
+  if (
+    !response.json ||
+    typeof body.capability !== 'string' ||
+    !body.capability.startsWith('tf_cap_') ||
+    body.capability.length > 8_192 ||
+    typeof body.mapId !== 'string' ||
+    !/^map_[A-Za-z0-9_-]{16}$/u.test(body.mapId) ||
+    (requestedMapId !== undefined && body.mapId !== requestedMapId) ||
+    ('worldConversionId' in target && body.worldConversionId !== target.worldConversionId) ||
+    !validIsoDate(body.expiresAt) ||
+    !Array.isArray(body.scopes) ||
+    body.scopes.join('\0') !== [...scopes].sort().join('\0')
+  ) {
+    return {error: 'Map capability response was invalid.', ok: false};
+  }
+  return {capability: body.capability, mapId: body.mapId, ok: true};
 }
 
 export async function requestProjectCapability(
@@ -394,10 +444,10 @@ export async function uploadHostedFontBundle(
   return {ok: true, value};
 }
 
-export async function fetchHostedProjectStatus(
+export async function fetchHostedMapStatus(
   api: HostedApi,
   options: HostedRequestOptions = {},
-): Promise<HostedProjectStatus> {
+): Promise<HostedMapStatus> {
   const response = await requestHostedJson(
     api.apiUrl,
     '/v1/status',
@@ -405,7 +455,7 @@ export async function fetchHostedProjectStatus(
     options,
   );
   if (!response.ok) throw new Error(`Status failed: ${response.status}.`);
-  return parseResponse(response, hostedProjectStatusSchema, 'Status response');
+  return parseResponse(response, hostedMapStatusSchema, 'Status response');
 }
 
 export async function revokeHostedAccountSession(

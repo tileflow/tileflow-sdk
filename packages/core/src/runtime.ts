@@ -33,7 +33,14 @@ export type TileflowAnalytics = {
   sdkVersion?: string;
   source?: string;
   styleId?: string;
+  surfaceId?: string;
 };
+
+const tileflowSurfaceIdPattern = /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/u;
+
+export function normalizeTileflowSurfaceId(value: unknown): string {
+  return typeof value === 'string' && tileflowSurfaceIdPattern.test(value) ? value : 'default';
+}
 
 export type TileflowSessionGrantResponse = {
   billingEnabled?: false;
@@ -539,6 +546,7 @@ async function requestSessionGrant(input: {
         sessionId: input.sessionId,
         source: input.analytics.source ?? input.source,
         styleId: input.analytics.styleId,
+        surfaceId: normalizeTileflowSurfaceId(input.analytics.surfaceId),
       }),
       credentials: 'omit',
       headers: {'Content-Type': 'application/json'},
@@ -829,6 +837,7 @@ export function startTileflowSession(
     sessionId: input.sessionId,
     source: analytics.source ?? input.source,
     styleId: input.styleId,
+    surfaceId: normalizeTileflowSurfaceId(analytics.surfaceId),
     timestamp: new Date().toISOString(),
   });
   const blob = new Blob([payload], {type: 'application/json'});
@@ -879,6 +888,7 @@ export function mergeTileflowAnalytics(
     apiUrl: userAnalytics?.apiUrl ?? runtimeAnalytics?.apiUrl,
     mapId: userAnalytics?.mapId ?? runtimeAnalytics?.mapId,
     styleId: userAnalytics?.styleId ?? runtimeAnalytics?.styleId,
+    surfaceId: normalizeTileflowSurfaceId(userAnalytics?.surfaceId ?? runtimeAnalytics?.surfaceId),
   };
 }
 

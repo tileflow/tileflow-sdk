@@ -65,6 +65,9 @@ or evaluating MapLibre. All environments follow the same published manifest cont
 Hosted maps automatically preflight a short-lived commercial session grant before eligible
 resources. Setting `analytics={{enabled: false}}` disables the optional beacon only; it does not
 remove hosted authorization or override a user `mapOptions.transformRequest` callback.
+Use `analytics={{surfaceId: 'store-locator'}}` when the same Map is embedded in several stable
+product locations. Missing or invalid Surface IDs become `default`; do not use URLs, branches,
+random instance IDs, or user IDs.
 Direct Tileflow World maps keep early `GRACE` silent, show a compact accessible owner-action pill
 when late `GRACE` is activated, and show a stronger banner in `MANAGED_REQUIRED`. Missing tiles and
 MapLibre failures do not remove that recovery path.

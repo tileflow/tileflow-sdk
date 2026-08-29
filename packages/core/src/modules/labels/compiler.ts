@@ -224,6 +224,7 @@ export function compileLabels(
     aerodromeLabelExpression(semantics.aerodromeCodes, semantics.language, context),
   );
   let order = 0;
+  const navigationPriority = semantics.collisionPriority === 'navigation';
 
   const visiblePlaceClasses =
     semantics.places === 'none'
@@ -240,7 +241,7 @@ export function compileLabels(
     result.push(
       symbolContribution(
         `labels.places.${placeClass}`,
-        800 + order++,
+        (navigationPriority ? 1300 : 800) + order++,
         applySymbolStyle(
           {
             id,
@@ -265,14 +266,19 @@ export function compileLabels(
   }
 
   const visibleRoads = visibleRoadLabelClasses(semantics.roads, roads, semantics.roadClasses);
-  for (const roadClass of visibleRoads as TileflowRoadClass[]) {
+  // In navigation-priority maps, MapLibre resolves collisions from the top of
+  // the final symbol stack. Put minor road names first and the structural
+  // classes last, after POIs, so dense destinations cannot erase orientation
+  // labels. The balanced default retains the established transport slot.
+  const orderedRoads = navigationPriority ? [...visibleRoads].reverse() : visibleRoads;
+  for (const roadClass of orderedRoads as TileflowRoadClass[]) {
     const style = styles.roads?.[roadClass];
     if (!style || style.visible === false || style.text?.visible === false) continue;
     const id = `tileflow-label-road-${roadClass}`;
     result.push(
       symbolContribution(
         `labels.roads.${roadClass}`,
-        200 + order++,
+        (navigationPriority ? 1200 : 200) + order++,
         applySymbolStyle(
           {
             id,
@@ -287,7 +293,7 @@ export function compileLabels(
           },
           mergeTileflowDesign(style, {text: {field}}),
         ),
-        'transport-symbols',
+        navigationPriority ? 'symbols' : 'transport-symbols',
         {group: 'roads', kind: 'road-label', member: roadClass},
       ),
     );

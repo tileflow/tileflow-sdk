@@ -29,6 +29,9 @@ export function compilePoi(
   const {sourceId: source, schema} = context.data;
 
   for (const [index, category] of semantics.categories.entries()) {
+    const requestedCategoryStyle = request?.styles?.[category];
+    const categoryDensity = requestedCategoryStyle?.density ?? semantics.density;
+    const {density: _density, ...categoryStyle} = requestedCategoryStyle ?? {};
     const categoryColor =
       semantics.color === 'category'
         ? (context.colors.poi[category as keyof typeof context.colors.poi] ??
@@ -64,7 +67,7 @@ export function compilePoi(
         icon: NonNullable<TileflowSymbolStyle['icon']>;
         text: NonNullable<TileflowSymbolStyle['text']>;
       }
-    >(defaults, request?.styles?.[category]);
+    >(defaults, categoryStyle);
     const markerStyle = style.marker ? resolveMarkerStyle(style) : undefined;
     const showText = semantics.labels && style.text.visible !== false;
     const showIcon = semantics.icons && style.icon.visible !== false;
@@ -84,7 +87,7 @@ export function compilePoi(
       const base = createPoiLayer({
         category,
         categoryField: schema.fields.poiCategory,
-        density: semantics.density,
+        density: categoryDensity,
         filterRankField: schema.fields.poiFilterRank,
         id: `tileflow-poi-${category}-marker`,
         minZoom: semantics.minZoom,
@@ -109,7 +112,7 @@ export function compilePoi(
       let layer = createPoiLayer({
         category,
         categoryField: schema.fields.poiCategory,
-        density: semantics.density,
+        density: categoryDensity,
         filterRankField: schema.fields.poiFilterRank,
         id: `tileflow-poi-${category}`,
         minZoom: semantics.minZoom,
@@ -127,7 +130,7 @@ export function compilePoi(
         createPoiLayer({
           category,
           categoryField: schema.fields.poiCategory,
-          density: semantics.density,
+          density: categoryDensity,
           filterRankField: schema.fields.poiFilterRank,
           id: `tileflow-poi-${category}-icon`,
           minZoom: semantics.minZoom,
@@ -145,7 +148,7 @@ export function compilePoi(
         createPoiLayer({
           category,
           categoryField: schema.fields.poiCategory,
-          density: semantics.density,
+          density: categoryDensity,
           filterRankField: schema.fields.poiFilterRank,
           id: `tileflow-poi-${category}-label`,
           minZoom: semantics.minZoom,

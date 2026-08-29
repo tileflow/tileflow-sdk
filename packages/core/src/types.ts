@@ -351,6 +351,7 @@ export type TileflowPlaceLabelClass =
   | 'village';
 export type TileflowWaterLabelClass = 'line' | 'ocean' | 'other' | 'waterway';
 export type TileflowRoadShieldDetail = 'none' | 'major' | 'all';
+export type TileflowLabelCollisionPriority = 'balanced' | 'navigation';
 export type TileflowRoadShieldStyles = {
   default?: TileflowSymbolStyle;
   detail?: TileflowSymbolStyle;
@@ -369,6 +370,7 @@ export type TileflowLabelStyles = {
 export type TileflowLabelsModuleConfig = {
   type: 'labels';
   aerodromeCodes?: TileflowAerodromeCodeDetail;
+  collisionPriority?: TileflowLabelCollisionPriority;
   junctions?: boolean;
   language?: TileflowLabelLanguage;
   places?: TileflowLabelDetail;
@@ -399,7 +401,10 @@ export const tileflowPoiCategories = [
 export type TileflowPoiCategory = (typeof tileflowPoiCategories)[number];
 export type TileflowPoiDensity = 1 | 2 | 3 | 4 | 5;
 export type TileflowPoiColorMode = 'uniform' | 'category';
-export type TileflowPoiCategoryStyle = Omit<TileflowMarkerSymbolStyle, 'priority'>;
+export type TileflowPoiCategoryStyle = Omit<TileflowMarkerSymbolStyle, 'priority'> & {
+  /** Optional category-local cap within the module's canonical density tiers. */
+  density?: TileflowPoiDensity;
+};
 export type TileflowPoiModuleConfig = {
   type: 'poi';
   categories?: readonly TileflowPoiCategory[];

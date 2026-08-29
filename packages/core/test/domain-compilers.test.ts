@@ -791,7 +791,7 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
     poi({
       categories: ['food-drink', 'transport'],
       density: 3,
-      styles: {'food-drink': {text: {color: '#AA4422'}}},
+      styles: {'food-drink': {density: 2, text: {color: '#AA4422'}}},
     }),
     context,
   );
@@ -815,6 +815,16 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
   );
   assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /filter_rank/);
   assert.match(JSON.stringify(poiContributions[1]?.layer.filter), /size_rank/);
+  assert.deepEqual((poiContributions[0]?.layer.filter as unknown[])[4], [
+    '<=',
+    ['to-number', ['get', 'filter_rank'], 6],
+    2,
+  ]);
+  assert.deepEqual((poiContributions[2]?.layer.filter as unknown[])[4], [
+    '<=',
+    ['to-number', ['get', 'filter_rank'], 6],
+    3,
+  ]);
 });
 
 test('partitions point and line water labels without duplicate candidates', () => {

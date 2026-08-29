@@ -136,7 +136,7 @@ const globalLandcoverOpacity = zoom.linear([
   [7, 1],
   [8, 0.85],
   [9, 0.78],
-  [10, 0.9],
+  [10, 1],
   [10.5, 0.55],
   [10.75, 0.25],
   [11, 0],
@@ -226,6 +226,10 @@ function cityRoadColorStops(
     [detailedRoadZoom, detailedColor],
     [22, detailedColor],
   ];
+}
+
+function cityRoadCasingColorStops(minZoom: number): ColorStops {
+  return cityRoadColorStops(minZoom, streetsDetailPalette.roadCasing, mapboxRoadPalette.roadCasing);
 }
 
 // Standard separates the structural network with a restrained casing well
@@ -1677,7 +1681,7 @@ export const streets = bindOfficialMapTheme(
           },
           admin4: {
             color: streetsOverviewPalette.admin1,
-            dash: [2, 0],
+            dash: [3, 2],
             minZoom: 2,
             opacity: zoom.linear([
               [2, 0],
@@ -1925,10 +1929,7 @@ export const streets = bindOfficialMapTheme(
               ],
               {
                 clearance: false,
-                casingColorStops: [
-                  [15, mapboxRoadPalette.roadCasing],
-                  [22, mapboxRoadPalette.roadCasing],
-                ],
+                casingColorStops: cityRoadCasingColorStops(5),
                 colorStops: cityRoadColorStops(
                   5,
                   streetsCityRoadPalette.primary,
@@ -1950,10 +1951,7 @@ export const streets = bindOfficialMapTheme(
               ],
               {
                 clearance: false,
-                casingColorStops: [
-                  [15, mapboxRoadPalette.roadCasing],
-                  [22, mapboxRoadPalette.roadCasing],
-                ],
+                casingColorStops: cityRoadCasingColorStops(8),
                 colorStops: cityRoadColorStops(
                   8,
                   streetsCityRoadPalette.secondary,
@@ -1975,10 +1973,7 @@ export const streets = bindOfficialMapTheme(
               ],
               {
                 clearance: false,
-                casingColorStops: [
-                  [15, mapboxRoadPalette.roadCasing],
-                  [22, mapboxRoadPalette.roadCasing],
-                ],
+                casingColorStops: cityRoadCasingColorStops(8),
                 colorStops: cityRoadColorStops(
                   8,
                   streetsCityRoadPalette.tertiary,
@@ -2000,10 +1995,8 @@ export const streets = bindOfficialMapTheme(
               ],
               {
                 clearance: false,
-                casingColorStops: [
-                  [15, mapboxRoadPalette.roadCasing],
-                  [22, mapboxRoadPalette.roadCasing],
-                ],
+                casingColorStops: cityRoadCasingColorStops(12),
+                casingMinZoom: 14.5,
                 colorStops: cityRoadColorStops(12, streetsCityRoadPalette.minor, roadSurfaceColor),
                 minZoom: 12,
                 tunnelCasingColor: mapboxRoadPalette.roadCasing,
@@ -2149,16 +2142,16 @@ export const streets = bindOfficialMapTheme(
               minZoom: 14.5,
               opacity: zoom.linear([
                 [14.5, 0],
-                [15, 0.5],
-                [16, 0.7],
-                [17, 0.82],
-                [18, 0.9],
+                [15, 0.6],
+                [16, 0.82],
+                [17, 0.96],
+                [18, 1],
               ]),
               width: zoom.linear([
                 [14.5, 0.25],
                 [15, 0.4],
                 [16, 0.65],
-                [17, 0.8],
+                [17, 0.9],
                 [20, 1],
               ]),
             },

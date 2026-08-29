@@ -44,11 +44,10 @@ const approvedLightStyleColors = new Set([
   '#0093F659',
   '#0FB7FF59',
   '#1B1D27',
+  '#303230',
   '#4C9478',
-  '#4D4F4D',
   '#505050',
   '#5A88A9',
-  '#5B5C5A',
   '#5C74D6',
   '#67AD73',
   '#729B78',
@@ -614,11 +613,38 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
 
   const countryLabel = requireLayer(style, 'tileflow-label-place-country');
   const cityLabel = requireLayer(style, 'tileflow-label-place-city');
-  assert.equal(countryLabel.paint?.['text-color'], '#4D4F4D');
+  assert.equal(countryLabel.paint?.['text-color'], '#303230');
   assert.deepEqual(cityLabel.layout?.['text-font'], ['Noto Sans Regular']);
   assert.equal(cityLabel.layout?.['text-padding'], 1);
+  assert.equal(cityLabel.maxzoom, 16);
   assert.match(JSON.stringify(countryLabel.layout?.['text-size']), /,5,\["step"/u);
   assert.match(JSON.stringify(cityLabel.layout?.['text-size']), /,5,\["step"/u);
+  assert.match(JSON.stringify(cityLabel.paint?.['text-color']), /#303230/u);
+
+  for (const family of ['town', 'village'] as const) {
+    const settlement = requireLayer(style, `tileflow-label-place-${family}`);
+    assert.equal(settlement.maxzoom, 16);
+    assert.equal(settlement.paint?.['text-color'], '#303230');
+    assert.deepEqual(settlement.layout?.['text-variable-anchor'], [
+      'left',
+      'right',
+      'top',
+      'bottom',
+      'top-left',
+      'top-right',
+      'bottom-left',
+      'bottom-right',
+    ]);
+    assert.match(JSON.stringify(settlement.layout?.['text-radial-offset']), /,8,0\.35,11,0/u);
+  }
+
+  const neighborhood = requireLayer(style, 'tileflow-label-place-neighborhood');
+  assert.equal(neighborhood.minzoom, 10);
+  assert.equal(neighborhood.maxzoom, 16);
+  assert.equal(neighborhood.layout?.['text-transform'], 'uppercase');
+  assert.equal(neighborhood.layout?.['text-padding'], 2);
+  assert.match(JSON.stringify(neighborhood.filter), /,18/u);
+  assert.match(JSON.stringify(neighborhood.layout?.['text-size']), /,10,\["match"/u);
 
   for (const [roadClass, color] of [
     ['primary', '#C2C6D0'],

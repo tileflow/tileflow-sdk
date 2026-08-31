@@ -1446,12 +1446,13 @@ async function createRejectingApi(
 }
 
 async function createFailingIconApi(t: TestContext, inspect: () => void) {
-  const server = createServer((request, response) => {
+  const server = createServer(async (request, response) => {
     if (respondWithApiProfile(request, response)) return;
     inspect();
-    request.resume();
     assert.equal(request.method, 'PUT');
     assert.match(request.url ?? '', /^\/v1\/icon-packages\/[a-f0-9]{64}$/);
+    await readRequestBodyBytes(request);
+
     response.writeHead(503, {'Content-Type': 'application/json'});
     response.end(JSON.stringify({error: 'storage unavailable'}));
   });

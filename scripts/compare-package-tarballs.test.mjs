@@ -102,7 +102,7 @@ test('detects public bytes, file lists, and executable-mode changes', async () =
     const baseline = await tarball(
       root,
       'baseline',
-      {name: '@tileflow/cli', version: '0.1.0-alpha.16'},
+      {name: 'tileflow', version: '0.1.0-alpha.16'},
       {
         'dist/index.js': 'export const value = 1;\n',
       },
@@ -110,7 +110,7 @@ test('detects public bytes, file lists, and executable-mode changes', async () =
     const bytes = await tarball(
       root,
       'bytes',
-      {name: '@tileflow/cli', version: '0.1.0-alpha.16'},
+      {name: 'tileflow', version: '0.1.0-alpha.16'},
       {
         'dist/index.js': 'export const value = 2;\n',
       },
@@ -118,7 +118,7 @@ test('detects public bytes, file lists, and executable-mode changes', async () =
     const list = await tarball(
       root,
       'list',
-      {name: '@tileflow/cli', version: '0.1.0-alpha.16'},
+      {name: 'tileflow', version: '0.1.0-alpha.16'},
       {
         'README.md': 'Public docs.\n',
         'dist/index.js': 'export const value = 1;\n',
@@ -127,7 +127,7 @@ test('detects public bytes, file lists, and executable-mode changes', async () =
     const mode = await tarball(
       root,
       'mode',
-      {name: '@tileflow/cli', version: '0.1.0-alpha.16'},
+      {name: 'tileflow', version: '0.1.0-alpha.16'},
       {
         'dist/index.js': {contents: 'export const value = 1;\n', mode: 0o755},
       },

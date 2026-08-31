@@ -181,7 +181,7 @@ Static overlays are visual scene inputs, not interactive annotations. A future s
 requires its own scene-contract change and does not acquire hover, focus, activation, or close
 semantics from `@tileflow/interactions`.
 
-### `@tileflow/cli`
+### `tileflow`
 
 Owns command presentation and composes the preparation, preview, capture, inspection, and Hosted
 clients. Hosted authentication, bounded HTTP transport, deployment planning, and presentation are

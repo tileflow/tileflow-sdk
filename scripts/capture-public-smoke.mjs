@@ -12,6 +12,7 @@ import {
   internalRuntimeRange,
   packageLegalFileNames,
   publicLicenseIdentifier,
+  publicPackageCatalog,
   publicPackageNames,
   publicPackageNameSet,
   runtimeDependencyGroups,
@@ -284,10 +285,10 @@ if (!result.js?.code.includes('TileflowMap')) {
   });
 
   const packedCli = JSON.parse(
-    await readTarballFile(tarballs.get('@tileflow/cli'), 'package/package.json'),
+    await readTarballFile(tarballs.get('tileflow'), 'package/package.json'),
   );
   const installedCli = JSON.parse(
-    await readFile(join(consumerDirectory, 'node_modules/@tileflow/cli/package.json'), 'utf8'),
+    await readFile(join(consumerDirectory, 'node_modules/tileflow/package.json'), 'utf8'),
   );
   assert.equal(installedCli.version, packedCli.version);
 
@@ -307,7 +308,7 @@ if (!result.js?.code.includes('TileflowMap')) {
     PATH: `${trapDirectory}${delimiter}${process.env.PATH ?? ''}`,
     TILEFLOW_API_KEY: '',
   };
-  const cliEntry = join(consumerDirectory, 'node_modules/@tileflow/cli/dist/index.js');
+  const cliEntry = join(consumerDirectory, 'node_modules/tileflow/dist/index.js');
   assert.ok(existsSync(cliEntry), 'The packed CLI entry point was not installed locally.');
 
   server = createServer((request, response) => {
@@ -708,9 +709,8 @@ function argumentValue(flag) {
 }
 
 async function packRequiredPackages(directory) {
-  const packages = publicPackageNames.map((name) => name.replace('@tileflow/', ''));
   const tarballs = new Map();
-  for (const packageDirectory of packages) {
+  for (const {directory: packageDirectory, name: packageName} of publicPackageCatalog) {
     const sourceRoot = join(repositoryRoot, 'packages', packageDirectory);
     const stagingRoot = join(temporaryRoot, 'staging', packageDirectory);
     await cp(sourceRoot, stagingRoot, {recursive: true});
@@ -730,7 +730,7 @@ async function packRequiredPackages(directory) {
 
     const result = await run(pnpmCommand(), ['pack', '--pack-destination', directory, '--json'], {
       cwd: stagingRoot,
-      label: `pack @tileflow/${packageDirectory}`,
+      label: `pack ${packageName}`,
     });
     const packed = JSON.parse(result.stdout);
     tarballs.set(packed.name, resolve(packed.filename));

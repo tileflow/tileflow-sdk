@@ -30,7 +30,7 @@ in the [SDK responsibility and delivery contract](docs/contracts/sdk-responsibil
 | [`@tileflow/react`](packages/react)               | React map and static-image components                                                                                 |
 | [`@tileflow/vue`](packages/vue)                   | Vue map component                                                                                                     |
 | [`@tileflow/svelte`](packages/svelte)             | Svelte map component                                                                                                  |
-| [`@tileflow/cli`](packages/cli)                   | `tileflow` init, validate, preview (`dev` alias), capture, visual, icons, build, and deploy commands                  |
+| [`tileflow`](packages/cli)                        | `tileflow` init, validate, preview (`dev` alias), capture, visual, icons, build, and deploy commands                  |
 
 ## Quick start
 
@@ -39,7 +39,7 @@ Install the alpha packages explicitly while the public API is still evolving:
 ```sh
 npm install @tileflow/core@alpha @tileflow/maps@alpha @tileflow/react@alpha maplibre-gl
 npm install --save-dev @tileflow/vite@alpha
-npm install --save-dev --save-exact @tileflow/cli@alpha
+npm install --save-dev --save-exact tileflow@alpha
 ```
 
 Create `tileflow.config.ts`:
@@ -108,7 +108,7 @@ closure because themes may select different image tokens without changing map st
 Then validate and run the application through its normal dev server:
 
 ```sh
-npm exec --no -- tileflow validate
+npx tileflow validate
 npm run dev
 ```
 

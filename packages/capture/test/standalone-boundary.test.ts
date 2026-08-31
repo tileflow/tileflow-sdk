@@ -60,7 +60,7 @@ test('classifies MapLibre load errors separately from load and idle timeouts', a
   );
 });
 
-test('installs the contour protocol runtime before the standalone map is created', async () => {
+test('installs contour and PMTiles protocol runtimes before the standalone map is created', async () => {
   const scripts: Array<{content?: string; path?: string; type?: string}> = [];
   await captureStandaloneTileflowScene({
     assets: [],
@@ -74,9 +74,15 @@ test('installs the contour protocol runtime before the standalone map is created
   assert.equal(scripts[1]?.type, 'module');
   assert.match(scripts[1]?.content ?? '', /registerTileflowContourProtocol/u);
   assert.match(scripts[1]?.content ?? '', /__tileflowRegisterContourProtocol/u);
+  assert.match(scripts[1]?.content ?? '', /registerTileflowPmtilesProtocol/u);
+  assert.match(scripts[1]?.content ?? '', /__tileflowRegisterPmtilesProtocol/u);
   const pageRuntime = scripts[2]?.content ?? '';
   assert.ok(
     pageRuntime.indexOf('__tileflowRegisterContourProtocol') <
+      pageRuntime.indexOf('new window.maplibregl.Map'),
+  );
+  assert.ok(
+    pageRuntime.indexOf('__tileflowRegisterPmtilesProtocol') <
       pageRuntime.indexOf('new window.maplibregl.Map'),
   );
 });

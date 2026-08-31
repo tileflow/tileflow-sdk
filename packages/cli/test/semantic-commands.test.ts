@@ -80,7 +80,7 @@ export default defineMap({
   assert.equal(second.stdout, first.stdout);
   const document = JSON.parse(first.stdout) as ExplainDocument;
   assert.equal(document.schemaVersion, 1);
-  assert.equal(document.authoringManifestSchemaVersion, 1);
+  assert.equal(document.authoringManifestSchemaVersion, 2);
   assert.equal(document.command, 'explain');
   assert.equal(document.ok, true);
   assert.deepEqual(document.selection, {map: 'explained', theme: 'light'});

@@ -132,7 +132,7 @@ export type TileflowMapBuildManifestV1 = {
  * Create the portable map build identity document.
  *
  * `mapRevisionSha256` identifies the effective cartographic definition and effective source
- * icon/font bytes. Editorial identity, default view, capture scenes, delivery policy, package
+ * icon/font bytes. Editorial identity, default view, capture scenes, package
  * versions, compiler ABI versions, compiled Style JSON, generated sprite/font outputs, filesystem
  * paths, and a concrete resolution of a floating World selector are outside that hash. They have
  * their own identities or remain tooling/delivery state.
@@ -253,7 +253,6 @@ export async function hashTileflowMapRevision(
 ): Promise<string> {
   const map = parseResolvedTileflowMap(input);
   const {
-    delivery: _delivery,
     fonts: _fonts,
     icons: _icons,
     id: _id,
@@ -265,7 +264,7 @@ export async function hashTileflowMapRevision(
   const revisionDocument = {
     canonicalization: tileflowMapRevisionCanonicalization,
     effectiveCartography: {
-      ...effectiveCartography,
+      ...normalizeRevisionCartography(effectiveCartography),
       // The semantic language is map semantics. Its compiler ABI version remains a separate axis.
       semanticLanguage: tileflowSemanticCompilerIdentity.name,
     },
@@ -273,6 +272,23 @@ export async function hashTileflowMapRevision(
     sourceAssets: normalizeSourceAssets(sourceAssets),
   };
   return sha256Hex(`${tileflowMapRevisionDomain}${serializeCanonicalJson(revisionDocument)}`);
+}
+
+function normalizeRevisionCartography(
+  input: Omit<ResolvedTileflowMap, 'fonts' | 'icons' | 'id' | 'name' | 'version' | 'view'>,
+) {
+  if (!input.sources) return input;
+  return {
+    ...input,
+    sources: Object.fromEntries(
+      Object.entries(input.sources)
+        .sort(([left], [right]) => compareCodeUnits(left, right))
+        .map(([sourceId, source]) => {
+          const {local: _local, ...logicalSource} = source;
+          return [sourceId, logicalSource];
+        }),
+    ),
+  };
 }
 
 /** Hash the exact compiled resources bound to one map, independently from its Style JSON. */

@@ -1,6 +1,6 @@
 import {isTileflowWorldReleaseId} from './data/world-release-id-values';
 
-export type TileflowFairUseNoticeState = 'GRACE' | 'CLAIM_REQUIRED';
+export type TileflowFairUseNoticeState = 'GRACE' | 'MANAGED_REQUIRED';
 
 export type TileflowFairUseNotice = Readonly<{
   action: string;
@@ -37,7 +37,7 @@ export type TileflowFairUseNoticeController = Readonly<{
 }>;
 
 const protocol = 'tileflow-world';
-const defaultHelpUrl = 'https://tileflow.dev/world/claim';
+const defaultHelpUrl = 'https://tileflow.dev/world/connect';
 const ownerAction = 'Site owner: manage this map with Tileflow.';
 const maximumWorldTileBytes = 16 * 1024 * 1024;
 const oversizedWorldTileMessage = 'Tileflow World tile exceeds the maximum response size';
@@ -88,7 +88,7 @@ export function registerTileflowWorldRequestBridge(input: {
 }
 
 export function tileflowFairUseNoticeMessage(state: TileflowFairUseNoticeState): string {
-  return state === 'CLAIM_REQUIRED'
+  return state === 'MANAGED_REQUIRED'
     ? 'Map usage is temporarily limited.'
     : 'Map usage is approaching its temporary limit.';
 }
@@ -118,7 +118,7 @@ export function attachTileflowFairUseNotice(
         remove();
         return;
       }
-      if (current?.state === 'CLAIM_REQUIRED' && notice.state === 'GRACE') return;
+      if (current?.state === 'MANAGED_REQUIRED' && notice.state === 'GRACE') return;
       if (element && current?.state !== notice.state) {
         element.remove();
         element = null;
@@ -137,7 +137,7 @@ export function attachTileflowFairUseNotice(
       element.replaceChildren();
       const indicator = container.ownerDocument.createElement('span');
       indicator.setAttribute('aria-hidden', 'true');
-      indicator.textContent = notice.state === 'CLAIM_REQUIRED' ? '!' : '';
+      indicator.textContent = notice.state === 'MANAGED_REQUIRED' ? '!' : '';
       Object.assign(indicator.style, noticeIndicatorStyles(notice.state));
       element.append(indicator);
       const copy = container.ownerDocument.createElement('span');
@@ -194,11 +194,11 @@ async function loadTileflowWorldRequest(
         registration.onNotice(null);
       }
     } else if (
-      fairUse === 'CLAIM_REQUIRED' ||
+      fairUse === 'MANAGED_REQUIRED' ||
       (fairUse === 'GRACE' && (ownerNotice || response.status === 429))
     ) {
       registration.lastNoticeSequence = requestSequence;
-      if (!(registration.currentNoticeState === 'CLAIM_REQUIRED' && fairUse === 'GRACE')) {
+      if (!(registration.currentNoticeState === 'MANAGED_REQUIRED' && fairUse === 'GRACE')) {
         registration.currentNoticeState = fairUse;
         registration.onNotice(
           Object.freeze({
@@ -211,7 +211,7 @@ async function loadTileflowWorldRequest(
       }
     } else if (fairUse === 'GRACE' && response.ok) {
       registration.lastNoticeSequence = requestSequence;
-      if (registration.currentNoticeState !== 'CLAIM_REQUIRED') {
+      if (registration.currentNoticeState !== 'MANAGED_REQUIRED') {
         registration.currentNoticeState = null;
         registration.onNotice(null);
       }
@@ -220,7 +220,7 @@ async function loadTileflowWorldRequest(
 
   if (
     response.status === 404 ||
-    (response.status === 429 && (fairUse === 'GRACE' || fairUse === 'CLAIM_REQUIRED'))
+    (response.status === 429 && (fairUse === 'GRACE' || fairUse === 'MANAGED_REQUIRED'))
   ) {
     await cancelResponseBody(response.body);
     return Object.freeze({
@@ -337,7 +337,7 @@ function abortReason(signal: AbortSignal): unknown {
 function parseFairUseState(value: string | null): TileflowFairUseNoticeState | 'OPEN' | null {
   if (value === 'open') return 'OPEN';
   if (value === 'grace') return 'GRACE';
-  if (value === 'claim-required') return 'CLAIM_REQUIRED';
+  if (value === 'managed-required') return 'MANAGED_REQUIRED';
   return null;
 }
 

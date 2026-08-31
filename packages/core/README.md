@@ -82,8 +82,8 @@ export default defineMap({
 });
 ```
 
-Map identity, scenes, and delivery policy belong to the leaf and do not inherit. Hosting policy such
-as allowed browser origins is delivery metadata because it does not change cartographic output.
+Map identity and scenes belong to the leaf and do not inherit. Hosted browser policy is configured
+in Tileflow and does not enter cartographic authoring or compilation.
 
 Set `projection: 'globe'` for MapLibre's adaptive globe preset. Global zooms render as a sphere,
 then transition to Mercator between zoom 10 and 12 so detailed streets remain planar. Omit the
@@ -701,13 +701,72 @@ deterministic OKLCH `color.mix()` keep derived palette logic inspectable. Unknow
 cross-category refs, token-schema drift, and unresolved visual nodes fail before Style JSON is
 emitted.
 
-There is no physical-layer override or separate official-map authoring surface. New cartographic
-behavior belongs to a typed control or owner-local render stack in its owning public module. Every
+There is no physical-layer override for the Tileflow basemap or separate official-map authoring
+surface. Basemap behavior belongs to a typed control or owner-local render stack. Every
 official and application map therefore follows the same schema, inheritance rules, diagnostics,
 and lowering path. `createStyle()` validates the final planned Style JSON with the MapLibre style
 spec and never returns an invalid style.
 
 ## Data is separate from design
+
+Team data uses named logical sources and validated MapLibre overlays. The hosted identity never
+contains a CDN URL; `local` is the explicit account-free PMTiles resolution for Dev and Capture:
+
+```ts
+import {defineMap, hostedTileset, maplibreOverlay} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+const stores = hostedTileset({
+  tileset: 'stores',
+  local: './data/stores.pmtiles',
+  attribution: 'Store data © Example',
+});
+
+export default defineMap({
+  id: 'store-locator',
+  version: 1,
+  extends: streets,
+  sources: {stores},
+  overlays: {
+    stores: maplibreOverlay({
+      source: 'stores',
+      placement: 'above-roads',
+      layers: [
+        {
+          id: 'stores-points',
+          type: 'circle',
+          'source-layer': 'store_locations',
+          paint: {
+            'circle-color': ['match', ['get', 'category'], 'restaurant', '#ef4444', '#64748b'],
+          },
+        },
+      ],
+    }),
+  },
+});
+```
+
+Tileflow automatically registers only protocols in namespaces that Tileflow owns.
+`tileflow-pmtiles://` is reserved for PMTiles resources managed by Tileflow. Tileflow never
+automatically registers, removes, or replaces the global `pmtiles://` handler. Explicit PMTiles
+sources supplied by an application remain the application's responsibility.
+
+For local resolution, the Style URL is based on the logical tileset ID and remains stable when Dev
+creates a new immutable snapshot. Physical generation IDs and local content hashes never enter the
+Style representation. A new Dev request or Capture operation resolves current and retains that
+snapshot for its duration; an operation already in progress keeps its acquired generation.
+
+`local` does not make build output own or publish the archive. Production builds reject unresolved
+local PMTiles. Use explicit managed publication or an application-owned production source.
+
+One overlay owns one ordered group of ordinary MapLibre Style Layers. Public layer IDs are retained
+for `map.on(...)`, feature queries, and application state. Placement is one of `above-water`,
+`below-roads`, `above-roads`, `above-buildings`, `below-labels`, or `above-labels`; overlays sharing
+a placement sort by overlay ID. A map accepts up to 16 Team sources in addition to Tileflow World
+and terrain. These semantic boundaries do not expose generated basemap layer IDs.
+`sources` and `overlays` merge by key through `extends`, declarations replace atomically, and
+`remove()` deletes one inherited key. Removing a still-used source fails validation. There is no
+interaction DSL or parallel expression language.
 
 Omitting `data` selects the compiler-owned Tileflow World `v1` compatibility generation:
 
@@ -1034,7 +1093,8 @@ subpaths. Node build integrations import the small deterministic map-identity co
 reproduces the same asset-set v1 hash from exact per-file identities after another system has
 independently confirmed the immutable bytes; package or bundle hashes are not substitutes. The
 previous aggregate-wrapper and recipe-selector APIs, `renderer`, top-level `tiles`/`tileset`, module
-arrays, and raw `layers` are not part of this API.
+arrays, and top-level raw `layers` are not part of this API. Raw MapLibre layers are accepted only
+inside a named `maplibreOverlay()` bound to a named Team source.
 
 Advanced cartography remains in the same public language: `withRenderStack()`, `renderPass()`, and
 `refineRenderTarget()` address owner-local semantic targets without exposing physical layer IDs,
@@ -1120,13 +1180,24 @@ can set `grantTimeoutMs` from 1 to 120,000 milliseconds.
 server-owned commercial authorization. User `transformRequest` callbacks still run first; Tileflow
 then decorates only the resulting eligible URL and preserves the other request options.
 
+Set `analytics.surfaceId` to a stable product location when the same Map appears in several places:
+
+```ts
+const analytics = {surfaceId: 'store-locator'};
+```
+
+A Surface ID is 1–64 lowercase ASCII letters, digits, `.`, `_`, or `-`; it starts and ends with a
+letter or digit. Missing or invalid values become `default`. Use a durable integration name such as
+`checkout` or `dealer-search`, not a URL, branch, preview, random component instance, or user ID.
+Surface labels do not change authorization, entitlement, or Session identity.
+
 For exact Tileflow World release tiles, framework adapters also use the browser request bridge to
 observe the response's safe fair-use state without adding identity, query parameters, credentials,
 or user headers to the public World URL. The bridge requires the immutable release path and exactly
 one lowercase descriptor digest; the retired mutable World template is never intercepted. Early
 `GRACE` stays silent; signed late `GRACE` creates a compact
-accessible owner-action pill, and `CLAIM_REQUIRED` creates a stronger in-map banner. A missing
-header, absent tile, MapLibre error, or failed response cannot erase an existing claim action; a
+accessible owner-action pill, and `MANAGED_REQUIRED` creates a stronger in-map banner. A missing
+header, absent tile, MapLibre error, or failed response cannot erase an existing manage action; a
 later successful `OPEN` response can clear it. Shaped empty tiles remain render-safe while the owner
 action stays available. Successful World tile bodies are streamed with a 16 MiB maximum: an
 oversized `Content-Length` is rejected before reading, and chunked responses are cancelled as soon

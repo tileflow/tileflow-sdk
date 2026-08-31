@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
@@ -91,6 +91,25 @@ test('registers watch inputs and emits deterministic Webpack assets', async (t) 
     manifest.maps.main?.themes.dark?.styleUrl ?? '',
     /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/dark\.json$/u,
   );
+});
+
+test('rejects a local PMTiles source before emitting Webpack production assets', async (t) => {
+  const cwd = await createFixture(t, 'tileflow-webpack-local-tileset-');
+  const archive = createPmtiles();
+  const outputPath = join(cwd, 'dist');
+  await writeFile(join(cwd, 'stores.pmtiles'), archive);
+  await writeFile(join(cwd, 'tileflow.config.ts'), localTilesetConfig);
+  const harness = createWebpackHarness(cwd, outputPath);
+  new TileflowWebpackPlugin({base: '/maps'}).apply(harness.compiler as never);
+  const compilation = harness.createCompilation();
+  harness.runThisCompilation(compilation.compilation);
+
+  await assert.rejects(() => compilation.runProcessAssets(), {
+    code: 'TF_LOCAL_TILESET_PRODUCTION_UNRESOLVED',
+  });
+  assert.deepEqual([...compilation.emitted.keys()], []);
+  await assert.rejects(stat(outputPath), {code: 'ENOENT'});
+  await assert.rejects(stat(join(cwd, '.tileflow/cache/pmtiles-snapshots')), {code: 'ENOENT'});
 });
 
 test('preserves Webpack publicPath kinds while keeping relative manifests owner-relative', async (t) => {
@@ -205,6 +224,12 @@ const streetsConfig = `import {defineMap} from '@tileflow/core'; import {streets
   },
 )}});\n`;
 
+const localTilesetConfig = `import {defineMap, hostedTileset} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+export default defineMap({id:'main',version:1,extends:streets,sources:{
+  stores:hostedTileset({tileset:'stores',local:'./stores.pmtiles',attribution:'Example'})
+}});\n`;
+
 function createHostedManifest() {
   return {
     apiUrl: 'https://api.example.test',
@@ -243,6 +268,7 @@ function assertLocalManifest(manifest: RuntimeManifest, base: string): void {
 }
 
 function createWebpackHarness(cwd: string, outputPath: string, publicPath = '/app/') {
+  let afterEmit: ((compilation: any) => Promise<void>) | undefined;
   let thisCompilation: ((compilation: any) => void) | undefined;
 
   class RawSource {
@@ -252,6 +278,9 @@ function createWebpackHarness(cwd: string, outputPath: string, publicPath = '/ap
   const compiler = {
     context: cwd,
     hooks: {
+      afterEmit: {
+        tapPromise: (_name: string, callback: typeof afterEmit) => (afterEmit = callback),
+      },
       afterCompile: {tapPromise: () => undefined},
       thisCompilation: {
         tap: (_name: string, callback: typeof thisCompilation) => (thisCompilation = callback),
@@ -292,7 +321,61 @@ function createWebpackHarness(cwd: string, outputPath: string, publicPath = '/ap
       assert.ok(thisCompilation);
       thisCompilation(compilation);
     },
+    async runAfterEmit(compilation: unknown) {
+      assert.ok(afterEmit);
+      await afterEmit(compilation);
+    },
   };
+}
+
+function createPmtiles() {
+  const headerLength = 127;
+  const directory = new Uint8Array([1, 0, 1, 1, 1]);
+  const metadata = new TextEncoder().encode(
+    JSON.stringify({vector_layers: [{fields: {}, id: 'store-locations'}]}),
+  );
+  const tile = new Uint8Array([0]);
+  const bytes = new Uint8Array(
+    headerLength + directory.byteLength + metadata.byteLength + tile.byteLength,
+  );
+  const view = new DataView(bytes.buffer);
+  const rootOffset = headerLength;
+  const metadataOffset = rootOffset + directory.byteLength;
+  const tileOffset = metadataOffset + metadata.byteLength;
+  bytes.set(new TextEncoder().encode('PMTiles'), 0);
+  view.setUint8(7, 3);
+  for (const [offset, value] of [
+    [8, rootOffset],
+    [16, directory.byteLength],
+    [24, metadataOffset],
+    [32, metadata.byteLength],
+    [40, tileOffset],
+    [48, 0],
+    [56, tileOffset],
+    [64, tile.byteLength],
+    [72, 1],
+    [80, 1],
+    [88, 1],
+  ] as const) {
+    setUint64(view, offset, value);
+  }
+  view.setUint8(96, 1);
+  view.setUint8(97, 1);
+  view.setUint8(98, 1);
+  view.setUint8(99, 1);
+  view.setInt32(102, -1_800_000_000, true);
+  view.setInt32(106, -850_000_000, true);
+  view.setInt32(110, 1_800_000_000, true);
+  view.setInt32(114, 850_000_000, true);
+  bytes.set(directory, rootOffset);
+  bytes.set(metadata, metadataOffset);
+  bytes.set(tile, tileOffset);
+  return bytes;
+}
+
+function setUint64(view: DataView, offset: number, value: number) {
+  view.setUint32(offset, value >>> 0, true);
+  view.setUint32(offset + 4, Math.floor(value / 2 ** 32), true);
 }
 
 type RuntimeManifest = {

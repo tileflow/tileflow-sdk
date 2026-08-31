@@ -36,6 +36,11 @@ import {
 } from './maps/types';
 import {tileflowLandformClasses} from './modules/landforms';
 import {tileflowRoadClasses} from './modules/roads/semantics';
+import {
+  isSafeLocalPmtilesPath,
+  tileflowHostedSourceLimit,
+  tileflowOverlayPlacements,
+} from './overlays';
 import {tileflowThemeNameSchema} from './portable-identity';
 import {
   isSafeTileflowDemUrlTemplate,
@@ -1702,6 +1707,73 @@ const dataSchema = z.union([
   z.object({...vectorDataShape, url: publicVectorUrlSchema}).strict(),
   directVectorDataSchema,
 ]);
+const hostedTilesetSourceSchema = z
+  .object({
+    attribution: z.string().trim().min(1).max(4_096),
+    kind: z.literal('hosted-tileset'),
+    local: z.string().refine(isSafeLocalPmtilesPath, {
+      message: 'Expected a safe relative .pmtiles path beginning with ./ or ../',
+    }),
+    tileset: z
+      .string()
+      .regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u)
+      .refine((value) => value !== 'terrain' && value !== 'world', 'Expected a Team tileset ID'),
+    tileSize: z.union([z.literal(256), z.literal(512)]).optional(),
+    type: z.enum(['raster', 'vector']),
+  })
+  .strict()
+  .superRefine((source, context) => {
+    if (source.type === 'vector' && source.tileSize !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Vector hosted tilesets do not accept tileSize',
+        path: ['tileSize'],
+      });
+    }
+  });
+const hostedSourcesSchema = z
+  .record(tileflowMapIdSchema, hostedTilesetSourceSchema)
+  .superRefine((sources, context) => {
+    if (Object.keys(sources).length > tileflowHostedSourceLimit) {
+      context.addIssue({
+        code: 'too_big',
+        maximum: tileflowHostedSourceLimit,
+        origin: 'object',
+      });
+    }
+  });
+const maplibreOverlayLayerSchema = z
+  .record(z.string(), z.unknown())
+  .superRefine((layer, context) => {
+    if (!tileflowMapIdSchema.safeParse(layer.id).success) {
+      context.addIssue({code: 'custom', message: 'Expected a portable layer ID', path: ['id']});
+    }
+    if (
+      typeof layer.id === 'string' &&
+      (layer.id === 'tileflow' || layer.id.startsWith('tileflow-'))
+    ) {
+      context.addIssue({code: 'custom', message: 'Expected a non-reserved layer ID', path: ['id']});
+    }
+    if (typeof layer.type !== 'string' || !layer.type) {
+      context.addIssue({code: 'custom', message: 'Expected a MapLibre layer type', path: ['type']});
+    }
+    if (Object.hasOwn(layer, 'source')) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Overlay layers inherit source from their overlay',
+        path: ['source'],
+      });
+    }
+  });
+const maplibreOverlaySchema = z
+  .object({
+    kind: z.literal('maplibre-overlay'),
+    layers: z.array(maplibreOverlayLayerSchema).min(1),
+    placement: z.enum(tileflowOverlayPlacements),
+    source: tileflowMapIdSchema,
+  })
+  .strict();
+const overlaysSchema = z.record(tileflowMapIdSchema, maplibreOverlaySchema);
 const localAssetDirectorySchema = z
   .string()
   .min(3)
@@ -1951,22 +2023,6 @@ const viewSchema = z
     zoom: zoomNumberSchema.optional(),
   })
   .strict();
-const hostingOriginSchema = z
-  .string()
-  .min(1)
-  .max(253)
-  .refine(isHttpOrigin, 'Expected an HTTP(S) origin without path, credentials, query, or fragment');
-const allowedOriginsSchema = z.array(hostingOriginSchema).max(20);
-const deliverySchema = z
-  .object({
-    hosted: z
-      .object({
-        allowedOrigins: allowedOriginsSchema.optional(),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
 const themesSchema = z
   .record(tileflowThemeNameSchema, tileflowThemeSchema)
   .superRefine((themes, context) => {
@@ -2002,7 +2058,6 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
   .object({
     data: dataSchema.optional(),
     defaultTheme: tileflowThemeNameSchema,
-    delivery: deliverySchema.optional(),
     fonts: fontDirectoriesSchema.optional(),
     glyphs: glyphsSchema.optional(),
     icons: iconDirectoriesSchema.optional(),
@@ -2010,7 +2065,9 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
     marine: marineSchema.optional(),
     modules: modulesSchema.optional(),
     name: z.string().trim().min(1),
+    overlays: overlaysSchema.optional(),
     projection: z.enum(['globe', 'mercator']).optional(),
+    sources: hostedSourcesSchema.optional(),
     systemThemes: systemThemesSchema.optional(),
     terrain: terrainSchema.optional(),
     themes: themesSchema,
@@ -2123,23 +2180,6 @@ function isSafeGlyphUrl(value: string): boolean {
       !url.username &&
       !url.password &&
       !url.hash
-    );
-  } catch {
-    return false;
-  }
-}
-
-function isHttpOrigin(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return (
-      (url.protocol === 'http:' || url.protocol === 'https:') &&
-      !url.username &&
-      !url.password &&
-      !url.search &&
-      !url.hash &&
-      url.pathname === '/' &&
-      value === url.origin
     );
   } catch {
     return false;

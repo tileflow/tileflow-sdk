@@ -192,6 +192,24 @@ export {
   tileflowMapDefaultMaxDepth,
   tileflowMapIdSchema,
 } from './maps';
+export {
+  hostedTileset,
+  isSafeLocalPmtilesPath,
+  maplibreOverlay,
+  remove,
+  tileflowHostedSourceLimit,
+  tileflowOverlayPlacements,
+} from './overlays';
+export type {
+  TileflowHostedSourceCollection,
+  TileflowHostedTilesetSource,
+  TileflowHostedTilesetType,
+  TileflowMapLibreOverlay,
+  TileflowMapLibreOverlayLayer,
+  TileflowOverlayCollection,
+  TileflowOverlayPlacement,
+  TileflowRemoveOperation,
+} from './overlays';
 export type {
   ResolvedTileflowMap,
   ResolveMapOptions,
@@ -200,13 +218,11 @@ export type {
   TileflowFontDirectory,
   TileflowDerivedMap,
   TileflowGlyphs,
-  TileflowHostedDelivery,
   TileflowIconDirectory,
   TileflowLocalDirectory,
   TileflowMap,
   TileflowModuleOperation,
   TileflowModulePatch,
-  TileflowMapDelivery,
   TileflowMapDesign,
   TileflowMapIdentity,
   TileflowMapScene,

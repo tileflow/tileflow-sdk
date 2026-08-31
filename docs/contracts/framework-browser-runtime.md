@@ -127,11 +127,8 @@ sources resolve against their owning Style URL. Importing the browser subpath re
 
 Standalone capture applies the same metadata before constructing its page-local MapLibre map and
 bounds streamed font bytes. Native renderers do not use this browser contract and require a PBF
-glyph provider. For package-owned web fonts, Hosted preparation uploads a canonical
-content-addressed closure of the selected faces and their licenses before the dependent Style, then
-uses the immutable public URLs bound to that bundle hash. That endpoint and validation path exist,
-but they are not yet generally production-enabled: DB-backed organization ownership, quota
-accounting, durable deployment/library references, and safe garbage collection remain required.
+glyph provider. Hosted deploy rejects package-owned web fonts before authentication until managed
+font storage has durable ownership, quota, references, retention, and deletion.
 
 ## Session starts
 
@@ -173,10 +170,10 @@ protocol bridge. The bridge requires a valid immutable release path, exactly one
 `worldDescriptorSha256`, and only the delivery query keys owned by the contract. It fetches that
 original HTTPS URL with omitted credentials and no caller headers, then exposes bytes and bounded
 cache metadata back to MapLibre. The retired mutable World template is not intercepted. The bridge
-interprets only the exact `Tileflow-Fair-Use: open | grace | claim-required` response, the exact optional
+interprets only the exact `Tileflow-Fair-Use: open | grace | managed-required` response, the exact optional
 `Tileflow-Fair-Use-Notice: owner` activation signal, and a validated Tileflow-owned
 `Link: ...; rel="help"`. Early `GRACE` remains silent. Late `GRACE` appears only with the signed
-activation signal, except that a shaped `429` is a defensive activation fallback. `CLAIM_REQUIRED`
+activation signal, except that a shaped `429` is a defensive activation fallback. `MANAGED_REQUIRED`
 always appears. Unknown or failed responses cannot clear a prior owner notice. Concurrent responses
 apply notice state in request order; successful `open` clears any notice, while silent `GRACE` clears
 only an existing `GRACE` notice.
@@ -184,8 +181,8 @@ only an existing `GRACE` notice.
 `attachTileflowFairUseNotice` owns one DOM status inside the map container. It uses `role="status"`,
 `aria-live="polite"`, `aria-atomic="true"`, a visible HTTPS owner-action link, and no viewer or site
 identity. `GRACE` renders as a compact bottom pill with a subtle yellow surface;
-`CLAIM_REQUIRED` renders as a high-contrast top banner. The status sentence remains plain text and
-only the owner action is the underlined link. `CLAIM_REQUIRED` cannot regress to `GRACE` within the
+`MANAGED_REQUIRED` renders as a high-contrast top banner. The status sentence remains plain text and
+only the owner action is the underlined link. `MANAGED_REQUIRED` cannot regress to `GRACE` within the
 same controller. Disposal removes the protocol registration and notice; ordinary MapLibre errors and
 shaped empty tiles do not.
 

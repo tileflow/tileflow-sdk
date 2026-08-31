@@ -4,7 +4,9 @@ import type {CompiledTileflowIconPackage} from '@tileflow/dev/icons';
 import type {CliAccountSessionV2} from '../src/account-session';
 import {
   requestHostedJson,
+  requestMapCapability,
   requestProjectCapability,
+  requestTeamCapability,
   uploadHostedIconPackage,
   validateApiKey,
 } from '../src/hosted-client';
@@ -20,6 +22,7 @@ test('Hosted client pins requests and credentials to one normalized origin', asy
     return Response.json({
       apiKeyId: 'key_test',
       credentialType: 'project_api_key',
+      mapId: 'map_AbCdEfGhIjKlMnOp',
       organization: {id: 'org_test', name: 'Test', slug: 'test'},
       project: {id: 'prj_map', name: 'Map', slug: 'map'},
       projectId: 'prj_map',
@@ -50,6 +53,41 @@ test('Hosted client pins requests and credentials to one normalized origin', asy
     /safe root-relative path/u,
   );
   assert.equal(calls, 1);
+});
+
+test('Map capability requests preserve the visible target and hide its Project', async () => {
+  const session: CliAccountSessionV2 = {
+    account: {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'},
+    accountSession: `tf_session_${'a'.repeat(64)}`,
+    apiOrigin: 'https://api.example.test',
+    createdAt: '2026-08-15T00:00:00.000Z',
+    expiresAt: '2026-12-01T00:00:00.000Z',
+    sessionId: 'cli_session_ada',
+  };
+  let requestBody: Record<string, unknown> | null = null;
+  const result = await requestMapCapability(
+    session,
+    {mapId: 'map_AbCdEfGhIjKlMnOp'},
+    ['styles:write'],
+    {
+      fetch: (async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return Response.json({
+          capability: `tf_cap_${'a'.repeat(80)}`,
+          expiresAt: '2026-08-15T00:05:00.000Z',
+          mapId: 'map_AbCdEfGhIjKlMnOp',
+          scopes: ['styles:write'],
+        });
+      }) as typeof fetch,
+    },
+  );
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(requestBody, {
+    mapId: 'map_AbCdEfGhIjKlMnOp',
+    scopes: ['styles:write'],
+  });
+  assert.equal(Object.hasOwn(requestBody ?? {}, 'project'), false);
 });
 
 test('Hosted client applies a bounded timeout across fetch and body consumption', async () => {
@@ -111,6 +149,35 @@ test('Hosted authentication failures never reflect an untrusted remote body', as
 
   assert.deepEqual(result, {error: 'Project capability request failed (403).', ok: false});
   assert.doesNotMatch(JSON.stringify(result), new RegExp(secret));
+});
+
+test('Team capability requests carry a Team selector and data-only scopes', async () => {
+  const session: CliAccountSessionV2 = {
+    account: {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'},
+    accountSession: `tf_session_${'a'.repeat(64)}`,
+    apiOrigin: 'https://api.example.test',
+    createdAt: '2026-08-29T00:00:00.000Z',
+    expiresAt: '2026-12-01T00:00:00.000Z',
+    sessionId: 'cli_session_ada',
+  };
+  let requestBody: unknown;
+  const result = await requestTeamCapability(session, '@acme', ['tilesets:write'], {
+    fetch: (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return Response.json({
+        capability: `tf_cap_${'a'.repeat(80)}`,
+        expiresAt: '2026-08-29T00:05:00.000Z',
+        reference: '@acme',
+        schemaVersion: 1,
+        scopes: ['tilesets:write'],
+        team: {id: 'org_acme', name: 'Acme', slug: 'acme'},
+      });
+    }) as typeof fetch,
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(requestBody, {scopes: ['tilesets:write'], team: '@acme'});
+  assert.equal(JSON.stringify(requestBody).includes('project'), false);
 });
 
 test('icon upload accepts only the exact server-confirmed package identity and sprite URL', async () => {

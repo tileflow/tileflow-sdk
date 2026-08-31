@@ -32,6 +32,7 @@ import {
   createTileflowArtifactSession,
   createTileflowBuildProvenance,
   createTileflowStyles,
+  prepareTileflowLocalTilesets,
   type TileflowArtifactSessionState,
   writeTileflowBuildArtifacts,
 } from '@tileflow/dev/artifacts';
@@ -84,9 +85,10 @@ import {allowsStoredDeployCredential, resolveDeploySource} from './deploy-source
 import {defaultTileflowDevHost, parseTileflowDevHost, tileflowDevOrigin} from './dev-host';
 import {registerFeatureInspectCommand} from './feature-inspect-command';
 import {
-  fetchHostedProjectStatus,
+  fetchHostedMapStatus,
   pollDeviceToken,
   publishHostedStyle,
+  requestMapCapability,
   requestProjectCapability,
   revokeHostedAccountSession,
   startDeviceAuthorization,
@@ -95,13 +97,17 @@ import {
   validateAccountSession,
   validateApiKey,
 } from './hosted-client';
-import {inspectTileflowHostedCompatibility} from './hosted-preflight';
-import type {HostedProjectStatus} from './hosted-response';
+import {
+  inspectTileflowHostedCompatibility,
+  prepareTileflowHostedThemeFamily,
+} from './hosted-preflight';
+import type {HostedMapStatus} from './hosted-response';
 import {registerIconDiffCommand} from './icon-diff-command';
 import {registerIconListCommand} from './icon-list-command';
 import {registerLanguageCommand} from './language-command';
 import {openTileflowExternal} from './open-external';
 import {registerProjectCommands, resolveAccountProjectTarget} from './project-commands';
+import {registerTilesetCommands} from './tileset-command';
 import {registerVisualCommands} from './visual-command';
 
 const packageJson = JSON.parse(
@@ -122,6 +128,7 @@ program
   .showSuggestionAfterError();
 
 registerLanguageCommand(program);
+registerTilesetCommands(program, {defaultApiUrl, loadAuthConfig});
 
 program
   .command('init')
@@ -339,8 +346,14 @@ program
         apiBaseUrl: options.apiBaseUrl,
         mapAssets,
       });
+      failureDefaults = {code: 'TF_LOCAL_TILESET_INVALID', phase: 'local-tileset-resolution'};
+      const localTilesets = await prepareTileflowLocalTilesets(project, compiledStyles, {
+        assetBaseUrl: '/tileflow',
+        baseDirectory,
+        cwd: process.cwd(),
+      });
       failureDefaults = {code: 'FONT_COMPILATION_FAILED', phase: 'font-compilation'};
-      const {styles} = await prepareTileflowStyleFonts(project, compiledStyles, {
+      const {styles} = await prepareTileflowStyleFonts(project, localTilesets.styles, {
         assetBaseUrl: '/tileflow',
         baseDirectory,
         cwd: process.cwd(),
@@ -662,9 +675,8 @@ program
   .option('--manifest <path>', 'manifest path written for frontend bundlers', defaultManifestPath)
   .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
-  .option('--project <target>', 'technical destination @organization/project')
-  .option('--world-promotion <id>', 'continue one verified Tileflow World promotion')
-  .option('--map <name>', 'map to connect when a promotion config contains multiple maps')
+  .option('--map-id <id>', 'managed Map destination')
+  .option('--map <name>', 'configured map to connect when the repository contains multiple maps')
   .option(
     '--overwrite-self-hosted-manifest',
     'explicitly replace an existing self-hosted manifest at --manifest',
@@ -675,15 +687,15 @@ program
       manifest: string;
       apiUrl?: string;
       apiKey?: string;
-      project?: string;
+      mapId?: string;
       map?: string;
       overwriteSelfHostedManifest?: boolean;
-      worldPromotion?: string;
     }) => {
       const source = resolveDeploySource(process.env);
       const resolveApi = (selectedMap?: string) =>
         requireApiOptions(options, {
           allowStoredCredential: allowsStoredDeployCredential(source),
+          assertExplicitKeyMap: true,
           capabilityScopes: ['styles:write'],
           retryCommand: cliInvocation([
             'tileflow',
@@ -695,9 +707,8 @@ program
             '--api-url',
             options.apiUrl ?? defaultApiUrl,
             ...(options.overwriteSelfHostedManifest ? ['--overwrite-self-hosted-manifest'] : []),
-            ...(options.worldPromotion && selectedMap
-              ? ['--world-promotion', options.worldPromotion, '--map', selectedMap]
-              : []),
+            ...(options.mapId ? ['--map-id', options.mapId] : []),
+            ...(options.map && selectedMap ? ['--map', selectedMap] : []),
           ]),
         });
       const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
@@ -715,8 +726,9 @@ program
       assertValidTileflowConfig(project);
 
       const configuredMapNames = getTileflowMapNames(project);
-      const mapNames = selectWorldPromotionMaps(configuredMapNames, options);
+      const mapNames = selectManagedDeployMaps(configuredMapNames, options);
       if (!mapNames) return;
+      if (!validateDeployTarget(options)) return;
       if (!validateDeployManifestMapNames(mapNames)) return;
       const deploymentProject: TileflowBuildCatalog =
         mapNames.length === configuredMapNames.length
@@ -750,9 +762,14 @@ program
         apiBaseUrl: apiUrl,
         mapAssets: preflightMapAssets,
       });
-      const preflightFonts = await prepareTileflowStyleFonts(
+      const preflightLocalTilesets = await prepareTileflowLocalTilesets(
         deploymentProject,
         compiledPreflightStyles,
+        {assetBaseUrl: apiUrl, baseDirectory, cwd: process.cwd()},
+      );
+      const preflightFonts = await prepareTileflowStyleFonts(
+        deploymentProject,
+        preflightLocalTilesets.styles,
         {
           assetBaseUrl: `${apiUrl}/fonts/preflight`,
           baseDirectory,
@@ -766,6 +783,14 @@ program
           inspectTileflowHostedCompatibility(deploymentProject, preflightFonts.styles),
         )
       ) {
+        return;
+      }
+      const mapsWithHostedFontBundles = Object.keys(preflightFonts.bundles).sort();
+      if (mapsWithHostedFontBundles.length > 0) {
+        logError('Hosted deploy does not yet support package-owned web fonts.');
+        printKeyValue('Maps', mapsWithHostedFontBundles.join(', '));
+        printNextSteps(['Use self-hosted delivery or an explicit public glyph provider.']);
+        process.exitCode = 1;
         return;
       }
 
@@ -787,7 +812,7 @@ program
         process.exitCode = 1;
         return;
       }
-      const existingManifest = options.worldPromotion ? outputManifest : null;
+      const existingManifest = outputManifest;
 
       // Authentication and account/project discovery may perform network
       // requests. Keep them after every deterministic config, asset, style,
@@ -829,12 +854,21 @@ program
         apiBaseUrl: api.apiUrl,
         mapAssets: hostedMapAssets,
       });
-      const hostedFonts = await prepareTileflowStyleFonts(deploymentProject, compiledHostedStyles, {
-        assetBaseUrl: `${api.apiUrl}/font-bundles/preflight`,
-        baseDirectory,
-        cwd: process.cwd(),
-        target: 'hosted',
-      });
+      const hostedLocalTilesets = await prepareTileflowLocalTilesets(
+        deploymentProject,
+        compiledHostedStyles,
+        {assetBaseUrl: api.apiUrl, baseDirectory, cwd: process.cwd()},
+      );
+      const hostedFonts = await prepareTileflowStyleFonts(
+        deploymentProject,
+        hostedLocalTilesets.styles,
+        {
+          assetBaseUrl: `${api.apiUrl}/font-bundles/preflight`,
+          baseDirectory,
+          cwd: process.cwd(),
+          target: 'hosted',
+        },
+      );
       for (const mapName of mapNames) {
         if (
           hostedFonts.bundles[mapName]?.contentHash !== preflightFonts.bundles[mapName]?.contentHash
@@ -863,7 +897,7 @@ program
         hostedFontBaseByHash.set(bundle.contentHash, uploaded.value.baseUrl);
       }
 
-      const styles = Object.fromEntries(
+      const fontBoundStyles = Object.fromEntries(
         mapNames.map((mapName) => {
           const themeStyles = hostedFonts.styles[mapName]!;
           const bundle = hostedFonts.bundles[mapName];
@@ -880,6 +914,19 @@ program
             ),
           ];
         }),
+      );
+      const hostedThemeFamilies = Object.fromEntries(
+        mapNames.map((mapName) => [
+          mapName,
+          prepareTileflowHostedThemeFamily(
+            mapName,
+            deploymentProject.maps[mapName]!,
+            fontBoundStyles[mapName]!,
+          ),
+        ]),
+      );
+      const styles = Object.fromEntries(
+        Object.entries(hostedThemeFamilies).map(([mapName, family]) => [mapName, family.styles]),
       );
       const buildManifest = await createTileflowMapBuildManifest(
         Object.fromEntries(
@@ -920,11 +967,11 @@ program
         const iconPackage = iconBinding ? packagesByHash.get(iconBinding.packageHash) : undefined;
         const fontBundle = hostedFonts.bundles[mapName];
         return {
-          allowedOrigins: deploymentProject.maps[mapName]?.delivery?.hosted?.allowedOrigins,
           iconBinding,
           iconPackage,
           fontBundle,
           mapName,
+          teamSources: hostedThemeFamilies[mapName]!.teamSources,
           buildManifest: {
             maps: {[mapName]: buildManifest.maps[mapName]!},
             ...(buildManifest.provenance ? {provenance: buildManifest.provenance} : {}),
@@ -938,12 +985,12 @@ program
 
       for (const deployment of deployments) {
         const {
-          allowedOrigins,
           buildManifest,
           fontBundle,
           iconBinding,
           iconPackage,
           mapName,
+          teamSources,
           styles: themeStyles,
         } = deployment;
         const themeNames = Object.keys(themeStyles).sort();
@@ -955,15 +1002,15 @@ program
           {
             artifact: {
               buildManifest,
+              kind: 'tileflow-map-deployment',
               mapId: mapName,
-              schemaVersion: 3,
+              schemaVersion: 1,
               styles: themeStyles,
+              teamSources,
             },
             environment: mapName,
-            ...(options.worldPromotion
-              ? {usageMode: 'session', worldPromotionId: options.worldPromotion}
-              : {}),
-            ...(allowedOrigins ? {policy: {allowedOrigins}} : {}),
+            managedMapId: options.mapId,
+            usageMode: 'session',
             ...(iconBinding && iconPackage
               ? {
                   iconPackage: {
@@ -991,8 +1038,9 @@ program
         }
 
         const body = response.value;
-        if (options.worldPromotion && body.worldPromotionId !== options.worldPromotion) {
-          logError(`Deploy response did not confirm the World promotion for ${mapName}.`);
+        const expectedMapId = options.mapId ?? api.mapId;
+        if (expectedMapId && body.mapId !== expectedMapId) {
+          logError(`Deploy response did not confirm the requested Map for ${mapName}.`);
           process.exitCode = 1;
           return;
         }
@@ -1029,9 +1077,8 @@ program
             }),
           ),
           ...(resolvedMap.view ? {view: resolvedMap.view} : {}),
-          ...(options.worldPromotion
-            ? {usageMode: 'session' as const, worldGeneration: 'v1' as const}
-            : {}),
+          usageMode: 'session' as const,
+          worldGeneration: 'v1' as const,
         };
         const versionLabel = Number.isInteger(body.version) ? ` (v${body.version})` : '';
 
@@ -1051,7 +1098,12 @@ program
       logSuccess('Deployed Tileflow maps.');
       printKeyValue('Manifest', pathLabel(manifestPath));
       printDeployedMaps(deployedMaps);
-      printNextSteps([`Check hosted state with ${command('tileflow status')}.`]);
+      const deployedMapId = Object.values(deployedMaps)[0]?.mapId;
+      if (deployedMapId) {
+        printNextSteps([
+          `Check hosted state with ${command(`tileflow status --map-id ${deployedMapId}`)}.`,
+        ]);
+      }
     },
   );
 
@@ -1060,9 +1112,15 @@ program
   .description('Show deployed compiled styles')
   .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
-  .option('--project <target>', 'technical destination @organization/project')
+  .option('--map-id <id>', 'managed Map destination')
   .option('--json', 'print raw JSON')
-  .action(async (options: {apiUrl?: string; apiKey?: string; json?: boolean; project?: string}) => {
+  .action(async (options: {apiUrl?: string; apiKey?: string; json?: boolean; mapId?: string}) => {
+    if (!options.mapId || !/^map_[A-Za-z0-9_-]{16}$/u.test(options.mapId)) {
+      if (options.json) console.error('Status requires a valid --map-id.');
+      else logError('Status requires a valid --map-id.');
+      process.exitCode = 1;
+      return;
+    }
     let api: {apiKey: string; apiUrl: string} | null;
     try {
       api = await requireApiOptions(options, {
@@ -1089,13 +1147,19 @@ program
       return;
     }
 
-    let status: HostedProjectStatus;
+    let status: HostedMapStatus;
     try {
-      status = await fetchHostedProjectStatus(api);
+      status = await fetchHostedMapStatus(api);
     } catch (error) {
       const message = safeStatusError(error);
       if (options.json) console.error(message);
       else logError(message);
+      process.exitCode = 1;
+      return;
+    }
+    if (status.mapId !== options.mapId) {
+      if (options.json) console.error('Status response belongs to another Map.');
+      else logError('Status response belongs to another Map.');
       process.exitCode = 1;
       return;
     }
@@ -1105,7 +1169,7 @@ program
       return;
     }
 
-    printProjectStatus(status, api.apiUrl);
+    printMapStatus(status, api.apiUrl);
   });
 
 const iconsCommand = program.command('icons').description('Inspect managed Tileflow icons');
@@ -1118,6 +1182,7 @@ registerIconDiffCommand(iconsCommand, {
   resolveApi: (options) => {
     const source = resolveDeploySource(process.env);
     return requireApiOptions(options, {
+      assertExplicitKeyMap: true,
       allowStoredCredential: allowsStoredDeployCredential(source),
       capabilityScopes: ['status:read'],
       retryCommand: cliInvocation([
@@ -1127,6 +1192,8 @@ registerIconDiffCommand(iconsCommand, {
         '--against',
         options.against,
         ...(options.config ? ['--config', options.config] : []),
+        '--map-id',
+        options.mapId,
         '--api-url',
         options.apiUrl ?? defaultApiUrl,
       ]),
@@ -1526,38 +1593,49 @@ function createCompiledMapAssets(
   );
 }
 
-function selectWorldPromotionMaps(
+function selectManagedDeployMaps(
   mapNames: string[],
-  options: {map?: string; worldPromotion?: string},
+  options: {map?: string; mapId?: string},
 ): string[] | null {
-  if (options.map && !options.worldPromotion) {
-    logError('--map is reserved for continuing a verified World promotion.');
-    process.exitCode = 1;
-    return null;
-  }
-  if (!options.worldPromotion) return mapNames;
-  if (!/^wpr_[A-Za-z0-9_-]{8,80}$/u.test(options.worldPromotion)) {
-    logError('World promotion reference is invalid.');
+  if (options.map && !options.mapId) {
+    logError('--map requires --map-id.');
     process.exitCode = 1;
     return null;
   }
   if (options.map) {
     if (!mapNames.includes(options.map)) {
-      logError(`Unknown Tileflow map for World promotion: ${options.map}.`);
+      logError(`Unknown Tileflow map: ${options.map}.`);
       printKeyValue('Maps', mapNames.join(', '));
       process.exitCode = 1;
       return null;
     }
     return [options.map];
   }
+  if (!options.mapId) return mapNames;
   if (mapNames.length === 1) return [mapNames[0]!];
-  logError('World promotion requires an explicit map because this config contains multiple maps.');
+  logError(
+    'This managed target requires an explicit map because the config contains multiple maps.',
+  );
   printKeyValue('Maps', mapNames.join(', '));
   printNextSteps([
-    `Retry with ${command(`tileflow deploy --world-promotion ${options.worldPromotion} --map ${mapNames[0]}`)}.`,
+    `Retry with ${command(`tileflow deploy --map-id ${options.mapId} --map ${mapNames[0]}`)}.`,
   ]);
   process.exitCode = 1;
   return null;
+}
+
+function validateDeployTarget(options: {mapId?: string}) {
+  if (!options.mapId) {
+    logError('Managed deploy requires --map-id.');
+    process.exitCode = 1;
+    return false;
+  }
+  if (options.mapId && !/^map_[A-Za-z0-9_-]{16}$/u.test(options.mapId)) {
+    logError('Managed Map ID is invalid.');
+    process.exitCode = 1;
+    return false;
+  }
+  return true;
 }
 
 function validateDeployManifestMapNames(mapNames: string[]): boolean {
@@ -1620,17 +1698,26 @@ async function requireApiOptions(
   options: {
     apiUrl?: string;
     apiKey?: string;
+    mapId?: string;
     project?: string;
   },
   behavior: {
     allowStoredCredential?: boolean;
+    assertExplicitKeyMap?: boolean;
     capabilityScopes?: Array<'static:write' | 'status:read' | 'styles:write'>;
     retryCommand?: string;
     silent?: boolean;
   } = {},
-): Promise<{apiUrl: string; apiKey: string} | null> {
+): Promise<{apiUrl: string; apiKey: string; mapId?: string} | null> {
   const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
+  const requestedMapId = options.mapId;
   const requested = options.project ? parseProjectReference(options.project) : null;
+
+  if (requestedMapId && !/^map_[A-Za-z0-9_-]{16}$/u.test(requestedMapId)) {
+    if (!behavior.silent) logError('Managed Map ID is invalid.');
+    process.exitCode = 1;
+    return null;
+  }
 
   if (options.project && !requested) {
     if (!behavior.silent) logError('Managed destination must use @organization/project syntax.');
@@ -1639,6 +1726,19 @@ async function requireApiOptions(
   }
 
   if (options.apiKey) {
+    if (requestedMapId && behavior.assertExplicitKeyMap) {
+      const profile = await validateApiKey(apiUrl, options.apiKey);
+      if (!profile.ok) {
+        if (!behavior.silent) logError(profile.error);
+        process.exitCode = 1;
+        return null;
+      }
+      if (profile.value.mapId !== requestedMapId) {
+        if (!behavior.silent) logError('This API key belongs to another Map.');
+        process.exitCode = 1;
+        return null;
+      }
+    }
     if (requested) {
       const profile = await validateApiKey(apiUrl, options.apiKey);
       if (!profile.ok) {
@@ -1646,7 +1746,7 @@ async function requireApiOptions(
         process.exitCode = 1;
         return null;
       }
-      if (projectReference(profile.value) !== options.project) {
+      if (requested && projectReference(profile.value) !== options.project) {
         if (!behavior.silent) {
           logError(
             `This project key belongs to ${projectReference(profile.value)}, not ${options.project}.`,
@@ -1656,7 +1756,11 @@ async function requireApiOptions(
         return null;
       }
     }
-    return {apiKey: options.apiKey, apiUrl};
+    return {
+      apiKey: options.apiKey,
+      apiUrl,
+      ...(requestedMapId ? {mapId: requestedMapId} : {}),
+    };
   }
 
   const allowStoredCredential =
@@ -1664,7 +1768,7 @@ async function requireApiOptions(
     allowsStoredDeployCredential(resolveDeploySource(process.env));
   if (!allowStoredCredential) {
     if (!behavior.silent) {
-      logError('CI requires an explicit application-scoped Tileflow API key.');
+      logError('CI requires an explicit Map-scoped Tileflow API key.');
       printNextSteps([
         `Set ${pc.cyan('TILEFLOW_API_KEY')} from the CI secret store.`,
         'The saved personal account session is never used in CI.',
@@ -1694,6 +1798,20 @@ async function requireApiOptions(
     }
     process.exitCode = 1;
     return null;
+  }
+
+  if (requestedMapId) {
+    const capability = await requestMapCapability(
+      resolvedSession.session,
+      {mapId: requestedMapId},
+      behavior.capabilityScopes ?? ['status:read'],
+    );
+    if (!capability.ok) {
+      if (!behavior.silent) logError(capability.error);
+      process.exitCode = 1;
+      return null;
+    }
+    return {apiKey: capability.capability, apiUrl, mapId: capability.mapId};
   }
 
   const target = await resolveAccountProjectTarget(resolvedSession.session, options.project);
@@ -1980,9 +2098,9 @@ function printHostedCompatibilityIssues(
   return false;
 }
 
-function printProjectStatus(status: HostedProjectStatus, apiUrl: string) {
+function printMapStatus(status: HostedMapStatus, apiUrl: string) {
   printTitle('Tileflow status');
-  printKeyValue('Application', pc.bold(status.projectId));
+  printKeyValue('Map', pc.bold(status.mapId));
 
   console.log(`\n${pc.bold('Styles')}`);
   if (status.styles.length === 0) {

@@ -32,6 +32,12 @@ const source = {
 
 Development and production expose that same prefixed URL.
 
+Development snapshots local `hostedTileset()` archives for coherent preview requests. Production
+builds reject unresolved local PMTiles before emitting Tileflow assets; they never copy, hash, or
+deduplicate user datasets. Publish a managed tileset explicitly or provide an application-owned
+production source. Development Style URLs remain stable by logical tileset ID while the served
+snapshot changes by generation.
+
 The Vite process is the only application server needed. It watches config, transitive imports, and
 local icon/font files, serves the Tileflow manifest, styles, sprites, and prepared fonts, and reloads
 from the latest valid generation. To capture an application scene, keep `vite` running and point the

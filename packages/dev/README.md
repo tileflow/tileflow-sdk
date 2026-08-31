@@ -12,6 +12,12 @@ import {createTileflowBuildArtifacts} from '@tileflow/dev/artifacts';
 const artifacts = await createTileflowBuildArtifacts({
   config: 'tileflow.config.ts',
 });
+
+try {
+  // Serve, capture, or write this exact generation.
+} finally {
+  await artifacts.dispose?.();
+}
 ```
 
 The integration surfaces are deliberately split: use `@tileflow/dev/artifacts` for source
@@ -31,11 +37,22 @@ point to content-addressed `generations/<sha256>/...` theme styles and sprites; 
 installed before the manifest pointer changes. Stable style paths are
 `styles/<map>/<theme>.json`; every manifest lookup resolves a concrete theme. The disk writer also stages the complete plan,
 records a managed-file inventory, rolls back caught filesystem failures, and removes only stale
-files named by its previous valid inventory. It retains the immediately preceding immutable
-generation during each replacement, so a client that already read the old manifest can finish its
-style and sprite requests; the next replacement retires that older generation. Stable `styles/`
-and `icons/` paths remain available, but generation-consistent consumers
-resolve maps through `manifest.json`.
+files named by its previous valid inventory. Stable `styles/` and `icons/` paths remain available,
+but generation-consistent consumers resolve maps through `manifest.json`.
+
+A local `hostedTileset()` path remains user-owned input. Dev performs bounded header, root-directory,
+and metadata checks, then creates an opaque immutable snapshot under
+`.tileflow/cache/pmtiles-snapshots/v1/`, using copy-on-write cloning when available and a safe copy
+otherwise. It does not hash the complete archive or traverse every leaf directory. Dev and Capture
+read only that snapshot. The current generation and already-started operations retain references;
+a replaced generation accepts no new acquisitions and is collected after its last operation.
+The Style-facing path remains `tilesets/<logical-id>.pmtiles` across generations; physical snapshot
+identity stays out of Style JSON. Generation ETags make cached PMTiles reads restart instead of
+mixing ranges when current changes. Invalid edits keep the prior valid generation. Production
+writers reject unresolved local PMTiles instead of copying, content-addressing, deduplicating, or
+retaining them. Explicit `tileset publish` owns managed publication and exhaustive validation.
+Startup removes snapshot generations owned by dead processes, and symlinked snapshot-store
+boundaries are rejected.
 
 Every plan also emits canonical `build-manifest.json` (schema version 1). For each map it records
 the leaf `mapVersion`, resolved lineage, effective icon/font source identities, semantic compiler ABI, and
@@ -51,12 +68,12 @@ compiler; its ABI remains a separate `semanticCompiler: {name, version}` build-m
 
 The map revision is versioned and domain-separated. It contains the resolved cartographic design,
 semantic language version, effective public module/render-stack design, and effective icon/font
-source identities. Map `id`, `name`, editorial `mapVersion`, default `view`, capture `scenes`, delivery
-policy, package SemVer, compiler ABI, local paths, timestamps, generated sprite/font output, and a
+identities. Map `id`, `name`, editorial `mapVersion`, default `view`, capture `scenes`, package
+SemVer, compiler ABI, local paths, timestamps, generated sprite/font output, and a
 concrete resolution of a floating World selector are deliberately outside it. Changing a shadowed
 ancestor does not change the revision; changing an effective cartographic override or source asset
-does. Lineage and the leaf `mapVersion` remain beside the hash for traceability, Style JSON owns its
-compiled-output identity, and Hosted delivery policy belongs to the deployment fingerprint. The
+does. Lineage and the leaf `mapVersion` remain beside the hash for traceability, and Style JSON owns
+its compiled-output identity. Hosted browser policy is managed outside repository artifacts. The
 top-level `provenance` block records the exact participating Tileflow package versions and the
 nearest package-manager lockfile's format and content hash, without embedding its local path;
 provenance remains outside every map revision. The same portable block is available to Hosted
@@ -90,6 +107,11 @@ unsubscribe();
 await session.close();
 ```
 
+`getState()` and `getLastGoodArtifacts()` are borrowed synchronous views. Before starting async
+work, call `session.acquireArtifacts(generation?)` and release the returned acquisition in `finally`.
+A replacement stops new acquisitions of the old generation and deletes its snapshot after the last
+release. `close()` waits for outstanding acquisitions.
+
 The bounded watcher follows the config, transitive local TypeScript/JavaScript/JSON imports, and
 effective local icon/font directory inputs. Generations are monotonic, overlapping refreshes are latest-wins, invalid
 edits retain the last good snapshot, and caller-supplied output directories can be ignored to avoid
@@ -107,7 +129,12 @@ const fetch = createTileflowDevRequestHandler({
   session,
   scene: 'madrid-mobile',
 });
+
+// On server shutdown:
+await Promise.all([fetch.close(), session.close()]);
 ```
+
+The handler does not close a caller-owned session.
 
 Map preview uses the exported map's `view` and accepts one concrete `theme`; scene preview uses its
 committed concrete theme, camera, and CSS viewport metadata from that same map. A scene does not
@@ -175,18 +202,10 @@ pipeline. After inheritance resolves, a map with any text layer must have exactl
 produced by the style's `text-font` arrays.
 
 The resulting style records strict `tileflow:fontFaces` metadata. Preview, capture, and browser
-framework adapters load those generic definitions before constructing MapLibre. Hosted preparation
-also emits one canonical `tileflow-font-bundle-v1` closure containing only selected faces and their
-license bytes. Its manifest SHA-256 is the sole content identity; Hosted adds an opaque project-owned
-storage ID. Deploy uploads that bundle before the Style and then replaces provisional sources with
-the exact immutable ID URLs confirmed by Hosted. A derived map that declares `glyphs` replaces the
-inherited local provider atomically; the URL-backed map is complete as declared and independent of
-its World selection.
-
-That upload and binding contract is implemented, but it is not by itself a production-availability
-promise. The matching Hosted rollout candidate adds DB-backed project ownership, organization quota,
-durable deployment references, grace-based garbage collection, and deletion receipts; availability
-still requires that matching migration, API, and SDK pair to be promoted together.
+framework adapters load those definitions before constructing MapLibre. Hosted deploy rejects a
+prepared local-font bundle before authentication until managed font storage is available. A derived
+map that declares `glyphs` replaces the inherited local provider atomically; the URL-backed map is
+complete as declared and independent of its World selection.
 
 For Streets styles whose vegetation layer declares `tileflow:vegetation-mode = 3d`, the built-in
 preview uses the same portable circle fallback as capture and the published framework adapters by
@@ -412,6 +431,26 @@ reverse-engineering compiler layers or parsing prose. It never returns `inputFil
 URL queries, data URLs, or recognized secret formats. Structured summaries and diagnostics use the
 same required schema-version-1 fields and bounded safe suggestions so consumers do not need to
 parse human prose.
+
+## Bounded PMTiles resource inspection
+
+Node tooling can inspect one local PMTiles archive without reading it completely:
+
+```ts
+import {inspectTileflowPmtiles} from '@tileflow/dev/tilesets';
+
+const inspection = await inspectTileflowPmtiles('./data/stores.pmtiles', {
+  includeValues: ['category', 'status'],
+});
+```
+
+Inspection schema 1 separates the authoritative PMTiles header and TileJSON `vector_layers` metadata
+from deterministic bounded MVT observations. Each sampled field reports present/missing feature
+counts, observed primitive types, capped distinct-value cardinality, numeric min/max, and explicit
+truncation. Values are returned only for requested portable field names, with at most 32 requested
+fields, 16 values per field, and 256 characters per string. Sampling reads at most eight tiles,
+20,000 features, or 24 MB of tile data; `sample: false` returns only authoritative metadata and does
+not accept `includeValues`.
 
 ## Bounded vector-feature inspection
 

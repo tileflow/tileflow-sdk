@@ -1,3 +1,4 @@
+import {convertFilter, type FilterSpecification} from '@maplibre/maplibre-gl-style-spec';
 import type {MapLibreStyle} from '../types';
 
 export type TileflowDataFieldType = 'Boolean' | 'Number' | 'String';
@@ -67,7 +68,10 @@ export function inferTileflowDataRequirements(
     if (layer.source !== sourceId || typeof layer['source-layer'] !== 'string') continue;
     const sourceLayer = layer['source-layer'];
     const fields = getOrCreate(fieldsByLayer, sourceLayer);
-    for (const key of ['filter', 'layout', 'paint'] as const) {
+    const filter =
+      layer.filter === undefined ? undefined : convertFilter(layer.filter as FilterSpecification);
+    collectFieldAccesses(filter, fields, dynamicAccesses, `layers[${index}].filter`);
+    for (const key of ['layout', 'paint'] as const) {
       collectFieldAccesses(layer[key], fields, dynamicAccesses, `layers[${index}].${key}`);
     }
   }
@@ -202,19 +206,42 @@ function collectFieldAccesses(
 ): void {
   if (Array.isArray(value)) {
     const operator = value[0];
+    if (operator === 'literal') return;
     if (operator === 'get' || operator === 'has') {
-      if (typeof value[1] === 'string') fields.set(value[1], fields.get(value[1]));
-      else dynamicAccesses.add(`${path}[1]`);
+      const featureProperties = value.length === 2 || isPropertiesExpression(value[2]);
+      if (featureProperties) {
+        if (typeof value[1] === 'string') fields.set(value[1], fields.get(value[1]));
+        else dynamicAccesses.add(`${path}[1]`);
+      }
+      if (typeof value[1] !== 'string') {
+        collectFieldAccesses(value[1], fields, dynamicAccesses, `${path}[1]`);
+      }
+      if (!featureProperties) {
+        collectFieldAccesses(value[2], fields, dynamicAccesses, `${path}[2]`);
+      }
+      for (let index = 3; index < value.length; index += 1) {
+        collectFieldAccesses(value[index], fields, dynamicAccesses, `${path}[${index}]`);
+      }
+      return;
     }
+    if (operator === 'properties') dynamicAccesses.add(path);
     for (let index = 1; index < value.length; index += 1) {
       collectFieldAccesses(value[index], fields, dynamicAccesses, `${path}[${index}]`);
     }
     return;
   }
   if (!value || typeof value !== 'object') return;
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+  const record = value as Record<string, unknown>;
+  if (typeof record.property === 'string' && Array.isArray(record.stops)) {
+    fields.set(record.property, fields.get(record.property));
+  }
+  for (const [key, child] of Object.entries(record)) {
     collectFieldAccesses(child, fields, dynamicAccesses, `${path}.${key}`);
   }
+}
+
+function isPropertiesExpression(value: unknown): boolean {
+  return Array.isArray(value) && value.length === 1 && value[0] === 'properties';
 }
 
 function getOrCreate(

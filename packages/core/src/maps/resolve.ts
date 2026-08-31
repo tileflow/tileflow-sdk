@@ -1,4 +1,5 @@
 import {mergeTileflowDesign} from '../cartography/merge';
+import {isTileflowRemoveOperation} from '../overlays';
 import {
   isTileflowModuleOperation,
   isTileflowReset,
@@ -33,6 +34,7 @@ type MapMergeStrategy =
   | 'deep'
   | 'icons'
   | 'identity'
+  | 'keyed-resources'
   | 'leaf'
   | 'lineage'
   | 'modules'
@@ -42,7 +44,6 @@ type MapMergeStrategy =
 export const tileflowMapMergeStrategies = {
   data: 'atomic',
   defaultTheme: 'atomic',
-  delivery: 'leaf',
   extends: 'lineage',
   fonts: 'text-assets',
   glyphs: 'text-assets',
@@ -51,8 +52,10 @@ export const tileflowMapMergeStrategies = {
   marine: 'atomic',
   modules: 'modules',
   name: 'identity',
+  overlays: 'keyed-resources',
   projection: 'atomic',
   scenes: 'leaf',
+  sources: 'keyed-resources',
   systemThemes: 'atomic',
   terrain: 'atomic',
   themes: 'atomic',
@@ -103,6 +106,28 @@ export function resolveMap(map: TileflowMap, options: ResolveMapOptions = {}): R
           design.icons = cloneDesign(value);
           break;
         }
+        case 'keyed-resources': {
+          if (value === undefined) break;
+          if (!isPlainRecord(value)) {
+            throw new Error(`Tileflow map "${current.id}" ${key} must be a plain object.`);
+          }
+          const resources: Record<string, unknown> = value;
+          const existing = isPlainRecord(design[key]) ? cloneDesign(design[key]) : {};
+          for (const resourceId of Object.keys(resources).sort()) {
+            const resource = resources[resourceId];
+            if (isTileflowRemoveOperation(resource)) {
+              delete existing[resourceId];
+            } else {
+              existing[resourceId] = cloneDesign(resource);
+            }
+          }
+          design[key] = Object.fromEntries(
+            Object.entries(existing).sort(([left], [right]) =>
+              left < right ? -1 : left > right ? 1 : 0,
+            ),
+          );
+          break;
+        }
         case 'modules': {
           if (value === undefined) break;
           if (!isPlainRecord(value)) {
@@ -145,7 +170,6 @@ export function resolveMap(map: TileflowMap, options: ResolveMapOptions = {}): R
     version: leaf.version,
     ...design,
     ...(modules === undefined ? {} : {modules}),
-    ...(leaf.delivery === undefined ? {} : {delivery: cloneDesign(leaf.delivery)}),
   } as ResolvedTileflowMap;
   return resolved;
 }

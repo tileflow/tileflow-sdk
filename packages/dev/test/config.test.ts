@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import test from 'node:test';
 import {loadValidTileflowConfig, TileflowValidationError} from '../src/config';
 
-test('loads exact singular identity, leaf delivery, and map-owned scene ids', async (t) => {
+test('loads exact singular identity and map-owned scene ids', async (t) => {
   const cwd = await fixture(t);
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
@@ -15,7 +15,6 @@ export default defineMap({
   version: 1,
   defaultTheme: 'light',
   themes: {light: defineTheme({id: 'fixture-light', version: 1, colorScheme: 'light'})},
-  delivery: {hosted: {allowedOrigins: ['https://maps.example.test']}},
   scenes: {
     mobile: {
       camera: {type: 'center', center: [0, 0], zoom: 1},
@@ -30,9 +29,6 @@ export default defineMap({
   const project = await loadValidTileflowConfig(undefined, {cwd});
   assert.deepEqual(Object.keys(project.maps), ['main']);
   assert.equal(project.maps.main?.name, 'main');
-  assert.deepEqual(project.maps.main?.delivery, {
-    hosted: {allowedOrigins: ['https://maps.example.test']},
-  });
   assert.deepEqual(Object.keys(project.scenes ?? {}), ['mobile']);
   assert.equal(project.scenes?.mobile?.map, 'main');
   assert.deepEqual(project.mapMetadata?.main?.lineage, [{id: 'main', mapVersion: 1}]);

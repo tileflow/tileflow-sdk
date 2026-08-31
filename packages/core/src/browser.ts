@@ -22,6 +22,14 @@ export {
   type TileflowContourProtocolRequest,
   type TileflowContourProtocolResponse,
 } from './contour-browser';
+export {
+  registerTileflowPmtilesProtocol,
+  tileflowPmtilesMaximumDirectoryDepth,
+  tileflowPmtilesProtocol,
+  type TileflowPmtilesProtocolRegistrationOptions,
+  type TileflowPmtilesProtocolHandler,
+  type TileflowPmtilesProtocolRegistry,
+} from './pmtiles-browser';
 
 export type TileflowMapReadinessState = 'error' | 'idle' | 'loading';
 

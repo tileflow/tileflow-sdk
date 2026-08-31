@@ -14,18 +14,18 @@ const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const tsxLoader = import.meta.resolve('tsx');
 const fakeApiKey = `tf_live_${'a'.repeat(48)}`;
 const accountSessionToken = `tf_session_${'b'.repeat(64)}`;
+const managedMapId = 'map_AbCdEfGhIjKlMnOp';
 
-test('World promotion auto-selects one map, fixes session mode, and writes a managed manifest', async (t) => {
+test('Map deploy auto-selects one map, preserves its theme family, and writes a session manifest', async (t) => {
   const fixture = await createFixture(t);
   let requestBody: Record<string, unknown> | null = null;
   const api = await createFakeApi(t, async (request) => {
     requestBody = JSON.parse(await readRequestBody(request)) as Record<string, unknown>;
     return {
-      ...hostedDeploymentResponse('map_managed', ['dark', 'light'], {
+      ...hostedDeploymentResponse(managedMapId, ['dark', 'light'], {
         changed: true,
         version: 1,
       }),
-      worldPromotionId: 'wpr_12345678',
     };
   });
   const result = await runCli(
@@ -38,26 +38,41 @@ test('World promotion auto-selects one map, fixes session mode, and writes a man
       fixture.manifestPath,
       '--api-url',
       api.url,
-      '--world-promotion',
-      'wpr_12345678',
+      '--map-id',
+      managedMapId,
     ],
     {TILEFLOW_API_KEY: fakeApiKey},
   );
 
   assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
-  assert.equal(requestBody?.worldPromotionId, 'wpr_12345678');
+  assert.equal(requestBody?.managedMapId, managedMapId);
   assert.equal(requestBody?.usageMode, 'session');
+  assert.equal(
+    (requestBody as {artifact?: {kind?: string}})?.artifact?.kind,
+    'tileflow-map-deployment',
+  );
+  assert.equal((requestBody as {artifact?: {schemaVersion?: number}})?.artifact?.schemaVersion, 1);
+  assert.deepEqual(
+    (requestBody as {artifact?: {teamSources?: Record<string, unknown>}})?.artifact?.teamSources,
+    {},
+  );
+  assert.deepEqual(
+    Object.keys(
+      (requestBody as {artifact?: {styles?: Record<string, unknown>}})?.artifact?.styles ?? {},
+    ),
+    ['dark', 'light'],
+  );
+  assert.equal('policy' in (requestBody ?? {}), false);
   const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
     maps: {madrid: Record<string, unknown>};
   };
-  assert.equal(manifest.maps.madrid.mapId, 'map_managed');
+  assert.equal(manifest.maps.madrid.mapId, managedMapId);
   assert.equal(manifest.maps.madrid.usageMode, 'session');
   assert.equal(manifest.maps.madrid.worldGeneration, 'v1');
-  assert.equal('worldPromotionId' in manifest.maps.madrid, false);
-  assert.doesNotMatch(await readFile(fixture.manifestPath, 'utf8'), /wpr_12345678/u);
+  assert.doesNotMatch(await readFile(fixture.manifestPath, 'utf8'), /wcv_12345678/u);
 });
 
-test('World promotion rejects a mismatched --map before network work', async (t) => {
+test('Map deploy rejects a mismatched --map before network work', async (t) => {
   const fixture = await createFixture(t);
   let requests = 0;
   const api = await createFakeApi(t, async () => {
@@ -73,8 +88,8 @@ test('World promotion rejects a mismatched --map before network work', async (t)
       fixture.manifestPath,
       '--api-url',
       api.url,
-      '--world-promotion',
-      'wpr_12345678',
+      '--map-id',
+      managedMapId,
       '--map',
       'lisbon',
     ],
@@ -83,12 +98,12 @@ test('World promotion rejects a mismatched --map before network work', async (t)
 
   assert.equal(result.code, 1);
   assert.equal(requests, 0);
-  assert.match(result.stdout, /Unknown Tileflow map for World promotion: lisbon/u);
+  assert.match(result.stdout, /Unknown Tileflow map: lisbon/u);
   assert.match(result.stdout, /madrid/u);
   await assert.rejects(() => readFile(fixture.manifestPath, 'utf8'), {code: 'ENOENT'});
 });
 
-test('World promotion deploys only the selected map and preserves unrelated manifest entries', async (t) => {
+test('Map deploy publishes only the selected map and preserves unrelated manifest entries', async (t) => {
   const fixture = await createFixture(t);
   await writeFile(
     fixture.configPath,
@@ -101,8 +116,7 @@ test('World promotion deploys only the selected map and preserves unrelated mani
     const body = JSON.parse(await readRequestBody(request)) as Record<string, unknown>;
     requests.push(body);
     return {
-      ...hostedDeploymentResponse('map_lisbon'),
-      worldPromotionId: 'wpr_12345678',
+      ...hostedDeploymentResponse(managedMapId),
     };
   });
   await writeFile(
@@ -136,8 +150,8 @@ test('World promotion deploys only the selected map and preserves unrelated mani
       fixture.manifestPath,
       '--api-url',
       api.url,
-      '--world-promotion',
-      'wpr_12345678',
+      '--map-id',
+      managedMapId,
       '--map',
       'lisbon',
     ],
@@ -151,7 +165,7 @@ test('World promotion deploys only the selected map and preserves unrelated mani
     maps: Record<string, {mapId: string}>;
   };
   assert.equal(manifest.maps.madrid?.mapId, 'map_existing');
-  assert.equal(manifest.maps.lisbon?.mapId, 'map_lisbon');
+  assert.equal(manifest.maps.lisbon?.mapId, managedMapId);
 });
 
 test('deploy sends CI provenance but keeps it and the bearer key out of the manifest', async (t) => {
@@ -164,8 +178,7 @@ test('deploy sends CI provenance but keeps it and the bearer key out of the mani
       icons: 'official',
       imports: `import {writeFileSync} from 'node:fs';`,
       setup: `writeFileSync(${JSON.stringify(observedSecretPath)}, process.env.TILEFLOW_API_KEY ?? 'missing');`,
-      fields: `delivery: {hosted: {allowedOrigins: ['https://maps.example.test']}},
-name: 'Madrid',
+      fields: `name: 'Madrid',
 view: {center: [-3.7, 40.4], zoom: 11}`,
     }),
     'utf8',
@@ -218,19 +231,22 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
     runId: '42',
     runUrl: 'https://github.example.test/tileflow/maps/actions/runs/42',
   });
+  assert.equal((requestBody as {managedMapId?: unknown}).managedMapId, managedMapId);
   assert.equal((requestBody as {iconPackage?: {label?: unknown}}).iconPackage?.label, 'madrid');
-  assert.deepEqual((requestBody as {policy?: unknown}).policy, {
-    allowedOrigins: ['https://maps.example.test'],
-  });
+  assert.equal((requestBody as {policy?: unknown}).policy, undefined);
   const deployedStyles = (
     requestBody as {
       artifact?: {schemaVersion?: number; styles?: Record<string, {sprite?: unknown}>};
     }
   ).artifact;
-  assert.equal(deployedStyles?.schemaVersion, 3);
+  assert.equal(deployedStyles?.schemaVersion, 1);
   assert.deepEqual(Object.keys(deployedStyles?.styles ?? {}), ['dark', 'light']);
   for (const style of Object.values(deployedStyles?.styles ?? {})) {
     assert.equal(style.sprite, 'https://api.example.test/sprites/icp_1234567890abcdef/sprite');
+    const source = (style as {sources?: Record<string, {tiles?: unknown; url?: unknown}>}).sources
+      ?.tileflow;
+    assert.equal(source?.url, `${api.url}/tiles/world/tiles.json`);
+    assert.equal(source?.tiles, undefined);
   }
 
   const manifest = await readFile(fixture.manifestPath, 'utf8');
@@ -263,10 +279,10 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
   for (const theme of Object.values(manifestDocument.maps.madrid.themes)) {
     assert.deepEqual(theme.fontFaces, []);
     assert.match(theme.revision ?? '', /^[a-f0-9]{64}$/u);
-    assert.match(theme.styleId ?? '', /^map_test_(?:dark|light)$/u);
+    assert.match(theme.styleId ?? '', new RegExp(`^${managedMapId}_(?:dark|light)$`, 'u'));
     assert.match(
       theme.styleUrl,
-      /^https:\/\/api\.example\.test\/maps\/map_test\/(?:dark|light)\.json$/u,
+      new RegExp(`^https://api\\.example\\.test/maps/${managedMapId}/(?:dark|light)\\.json$`, 'u'),
     );
   }
   assert.deepEqual(manifestDocument.maps.madrid.view, {
@@ -281,7 +297,7 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
 test('deploy reports an idempotent hosted no-op without changing the manifest contract', async (t) => {
   const fixture = await createFixture(t);
   const api = await createFakeApi(t, async () => undefined, {
-    ...hostedDeploymentResponse('map_test', ['dark', 'light'], {
+    ...hostedDeploymentResponse(managedMapId, ['dark', 'light'], {
       changed: false,
       version: 7,
     }),
@@ -308,7 +324,7 @@ test('deploy reports an idempotent hosted no-op without changing the manifest co
   };
   assert.equal(
     manifest.maps.madrid.themes.light.styleUrl,
-    'https://api.example.test/maps/map_test/light.json',
+    `https://api.example.test/maps/${managedMapId}/light.json`,
   );
   assert.equal('deploymentId' in manifest.maps.madrid, false);
   assert.equal('version' in manifest.maps.madrid, false);
@@ -317,7 +333,7 @@ test('deploy reports an idempotent hosted no-op without changing the manifest co
 test('deploy reports a changed hosted version for one atomic theme family', async (t) => {
   const fixture = await createFixture(t);
   const api = await createFakeApi(t, async () => undefined, {
-    ...hostedDeploymentResponse('map_test', ['dark', 'light'], {
+    ...hostedDeploymentResponse(managedMapId, ['dark', 'light'], {
       changed: true,
       version: 8,
     }),
@@ -352,6 +368,7 @@ test('a failed singular deploy preserves the previous manifest and a retry conve
   const published = new Set<string>();
   const attempts: string[] = [];
   const server = createServer(async (request, response) => {
+    if (respondWithApiProfile(request, response)) return;
     const body = JSON.parse(await readRequestBody(request)) as {environment: string};
     attempts.push(body.environment);
     if (failBeta) {
@@ -365,13 +382,13 @@ test('a failed singular deploy preserves the previous manifest and a retry conve
     response.end(
       JSON.stringify({
         changed,
-        mapId: `map_${body.environment}`,
+        mapId: managedMapId,
         themes: Object.fromEntries(
           ['dark', 'light'].map((theme) => [
             theme,
             {
               styleId: `style_${body.environment}_${theme}`,
-              styleUrl: `https://cdn.example.test/maps/map_${body.environment}/${theme}.json`,
+              styleUrl: `https://cdn.example.test/maps/${managedMapId}/${theme}.json`,
             },
           ]),
         ),
@@ -448,8 +465,8 @@ test('a failed singular deploy preserves the previous manifest and a retry conve
     version: number;
   };
   assert.equal(manifest.version, 1);
-  assert.equal(manifest.maps.beta?.mapId, 'map_beta');
-  assert.deepEqual(Object.keys(manifest.maps), ['beta']);
+  assert.equal(manifest.maps.beta?.mapId, managedMapId);
+  assert.deepEqual(Object.keys(manifest.maps), ['previous', 'beta']);
 });
 
 test('deploy refuses a self-hosted manifest unless replacement is explicit', async (t) => {
@@ -601,8 +618,8 @@ overrides: [{kind: 'patch', id: 'tileflow-background', patch: {paint: {'backgrou
       fixture.manifestPath,
       '--api-url',
       api.url,
-      '--project',
-      '@acme/web',
+      '--map-id',
+      managedMapId,
     ],
     {TILEFLOW_API_KEY: fakeApiKey},
   );
@@ -656,73 +673,15 @@ test('deploy rejects external vector data before any remote write', async (t) =>
   assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
 });
 
-test('deploy uploads package-owned Cyberpunk fonts before binding and publishing the style', async (t) => {
+test('deploy rejects package-owned fonts before authentication while Hosted font storage is unavailable', async (t) => {
   const fixture = await createFixture(t);
   await writeFile(
     fixture.configPath,
     "import {defineMap} from '@tileflow/core'; import {cyberpunk} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,extends:cyberpunk});\n",
   );
-  const requests: string[] = [];
-  const api = await createFakeApi(t, async (request) => {
-    requests.push(`${request.method} ${request.url?.split('/').slice(0, 3).join('/')}`);
-    const bodyBytes = await readRequestBodyBytes(request);
-    const body = bodyBytes.toString('utf8');
-    const contentHash = request.url?.split('/').pop() ?? '';
-    if (request.url?.startsWith('/v1/icon-packages/')) {
-      return iconPackageResponseFromMultipart(request, bodyBytes, api.url, 'icp_cyberpunk_123456');
-    }
-    if (request.url?.startsWith('/v1/font-bundles/')) {
-      const bundleId = 'fnb_1234567890abcdef';
-      assert.match(request.headers['content-type'] ?? '', /^multipart\/form-data; boundary=/u);
-      const manifest = fontBundleManifestFromMultipart(body);
-      assert.equal(manifest.format, 'tileflow-font-bundle-v1');
-      assert.equal(manifest.fontFaces.length, 2);
-      assert.ok(manifest.files.some((file) => file.kind === 'license'));
-      assert.ok(
-        manifest.files.every((file) =>
-          body.includes(`name="file:${encodeURIComponent(file.name)}"`),
-        ),
-      );
-      return {
-        baseUrl: `${api.url}/font-bundles/${bundleId}`,
-        changed: true,
-        contentHash,
-        fontFaceCount: manifest.fontFaces.length,
-        id: bundleId,
-        totalBytes: manifest.files.reduce((total, file) => total + file.byteLength, 0),
-      };
-    }
-
-    const parsed = JSON.parse(body) as Record<string, unknown>;
-    const artifact = parsed.artifact as {
-      buildManifest: {
-        maps: Record<
-          string,
-          {assetSetSha256: string; sourceAssets: {fonts: Array<{sha256: string}>}}
-        >;
-      };
-      mapId: string;
-      schemaVersion: number;
-      styles: Record<string, {metadata?: Record<string, unknown>}>;
-    };
-    const binding = parsed.fontBundle as {contentHash: string};
-    const faces = artifact.styles.dark?.metadata?.['tileflow:fontFaces'] as Array<{
-      source: string;
-    }>;
-    assert.equal(artifact.schemaVersion, 3);
-    assert.equal(artifact.mapId, 'night');
-    assert.deepEqual(Object.keys(artifact.styles), ['dark']);
-    assert.match(binding.contentHash, /^[a-f0-9]{64}$/u);
-    assert.equal(artifact.buildManifest.maps.night?.sourceAssets.fonts.length, 2);
-    assert.match(artifact.buildManifest.maps.night?.assetSetSha256 ?? '', /^[a-f0-9]{64}$/u);
-    assert.ok(
-      faces.every((face) =>
-        face.source.startsWith(`${api.url}/font-bundles/fnb_1234567890abcdef/fonts/`),
-      ),
-    );
-    return {
-      ...hostedDeploymentResponse('map_night', ['dark'], {changed: true, version: 1}),
-    };
+  let requests = 0;
+  const api = await createFakeApi(t, async () => {
+    requests += 1;
   });
   const result = await runCli(
     fixture.directory,
@@ -738,39 +697,10 @@ test('deploy uploads package-owned Cyberpunk fonts before binding and publishing
     {TILEFLOW_API_KEY: fakeApiKey},
   );
 
-  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
-  assert.deepEqual(requests, ['PUT /v1/icon-packages', 'PUT /v1/font-bundles', 'POST /v1/styles']);
-  assert.match(result.stdout, /Uploaded font bundle \(2 faces,/u);
-  assert.match(result.stdout, /Published night \(v1\)\./u);
-  const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
-    maps: {
-      night: {
-        mapId: string;
-        themes: {
-          dark: {
-            colorScheme: string;
-            fontFaces?: Array<{source: string}>;
-            revision?: string;
-            styleId?: string;
-            styleUrl: string;
-          };
-        };
-      };
-    };
-  };
-  assert.equal(manifest.maps.night.mapId, 'map_night');
-  assert.equal(manifest.maps.night.themes.dark.colorScheme, 'dark');
-  assert.match(manifest.maps.night.themes.dark.revision ?? '', /^[a-f0-9]{64}$/u);
-  assert.equal(manifest.maps.night.themes.dark.styleId, 'map_night_dark');
-  assert.equal(
-    manifest.maps.night.themes.dark.styleUrl,
-    'https://api.example.test/maps/map_night/dark.json',
-  );
-  assert.ok(
-    manifest.maps.night.themes.dark.fontFaces?.every((face) =>
-      face.source.startsWith(`${api.url}/font-bundles/fnb_1234567890abcdef/fonts/`),
-    ),
-  );
+  assert.equal(result.code, 1);
+  assert.equal(requests, 0);
+  assert.match(result.stdout, /Hosted deploy does not yet support package-owned web fonts/u);
+  await assert.rejects(() => readFile(fixture.manifestPath, 'utf8'), {code: 'ENOENT'});
 });
 
 test('deploy uploads generated icon files before posting sanitized style JSON', async (t) => {
@@ -820,7 +750,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     };
     const mapEntry = artifact.buildManifest?.maps?.madrid;
     assert.equal(artifact.mapId, 'madrid');
-    assert.equal(artifact.schemaVersion, 3);
+    assert.equal(artifact.schemaVersion, 1);
     assert.equal(artifact.buildManifest?.schemaVersion, 1);
     assert.equal(mapEntry?.mapVersion, 1);
     assert.equal(mapEntry?.semanticCompiler?.name, 'tileflow-semantic');
@@ -851,7 +781,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     });
     assert.doesNotMatch(JSON.stringify(artifact), /\.\/icons|source-secret/);
     return {
-      ...hostedDeploymentResponse('map_test', ['dark', 'light'], {
+      ...hostedDeploymentResponse(managedMapId, ['dark', 'light'], {
         changed: true,
         version: 1,
       }),
@@ -879,6 +809,33 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
   assert.match(result.stdout, /Uploaded icon package madrid \(2 icons,/);
   assert.match(result.stdout, /Published madrid \(v1\)\./);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(fakeApiKey));
+});
+
+test('an explicit key for another Map is rejected before icon or style writes', async (t) => {
+  const fixture = await createIconFixture(t);
+  let writes = 0;
+  const api = await createMismatchedMapApi(t, () => {
+    writes += 1;
+  });
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      api.url,
+      '--map-id',
+      managedMapId,
+    ],
+    {TILEFLOW_API_KEY: fakeApiKey},
+  );
+
+  assert.equal(result.code, 1);
+  assert.equal(writes, 0);
+  assert.match(result.stdout, /API key belongs to another Map/u);
 });
 
 test('a failed icon upload makes no style request and does not rewrite the manifest', async (t) => {
@@ -991,17 +948,14 @@ test('CI deploy runs local config preflight before failing closed on saved crede
   );
 
   assert.equal(result.code, 1);
-  assert.match(
-    `${result.stdout}\n${result.stderr}`,
-    /explicit application-scoped Tileflow API key/,
-  );
+  assert.match(`${result.stdout}\n${result.stderr}`, /explicit Map-scoped Tileflow API key/);
   assert.match(`${result.stdout}\n${result.stderr}`, /TILEFLOW_API_KEY/);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /tileflow login/);
   assert.equal(requests, 0);
   assert.equal(await readFile(configMarkerPath, 'utf8'), 'imported');
 });
 
-test('an ambiguous account-session deploy authenticates after local config preflight', async (t) => {
+test('an account-session Map lookup happens after local config preflight', async (t) => {
   const fixture = await createFixture(t);
   const configMarkerPath = join(fixture.directory, 'ambiguous-config-imported.txt');
   await writeFile(
@@ -1016,13 +970,13 @@ test('an ambiguous account-session deploy authenticates after local config prefl
   let requests = 0;
   const api = await createFakeApi(t, async (request) => {
     requests += 1;
-    assert.match(request.url ?? '', /^\/v1\/cli\/projects\?/u);
+    assert.equal(request.url, '/v1/cli/map-capabilities');
     assert.equal(request.headers.authorization, `Bearer ${accountSessionToken}`);
-    return {
-      items: [accountProjectTarget('acme', 'web'), accountProjectTarget('acme', 'worker')],
-      nextCursor: null,
-      schemaVersion: 1,
-    };
+    assert.deepEqual(JSON.parse(await readRequestBody(request)), {
+      mapId: managedMapId,
+      scopes: ['styles:write'],
+    });
+    return {error: 'not found'};
   });
   await writeAccountSession(fixture.directory, api.url);
 
@@ -1042,22 +996,7 @@ test('an ambiguous account-session deploy authenticates after local config prefl
 
   assert.equal(result.code, 1);
   assert.equal(requests, 1);
-  assert.match(result.stdout, /Managed destination is ambiguous: @acme\/web, @acme\/worker/);
-  const expectedRetry = [
-    'tileflow',
-    'deploy',
-    '--config',
-    fixture.configPath,
-    '--manifest',
-    fixture.manifestPath,
-    '--api-url',
-    api.url,
-    '--project',
-    '@acme/web',
-  ]
-    .map(quoteExpectedCliArgument)
-    .join(' ');
-  assert.ok(result.stdout.includes(expectedRetry), result.stdout);
+  assert.match(result.stdout, /Map capability response was invalid/u);
   assert.equal(await readFile(configMarkerPath, 'utf8'), 'imported');
 });
 
@@ -1077,24 +1016,16 @@ test('one account session exchanges a visible target for a brief deploy capabili
   const requests: string[] = [];
   const api = await createFakeApi(t, async (request) => {
     requests.push(`${request.method} ${request.url}`);
-    if (request.url?.startsWith('/v1/cli/projects?')) {
-      assert.equal(request.headers.authorization, `Bearer ${accountSessionToken}`);
-      return {
-        items: [accountProjectTarget('acme', 'web'), accountProjectTarget('acme', 'worker')],
-        nextCursor: null,
-        schemaVersion: 1,
-      };
-    }
-    if (request.url === '/v1/cli/project-capabilities') {
+    if (request.url === '/v1/cli/map-capabilities') {
       assert.equal(request.headers.authorization, `Bearer ${accountSessionToken}`);
       assert.deepEqual(JSON.parse(await readRequestBody(request)), {
-        project: '@acme/web',
+        mapId: managedMapId,
         scopes: ['styles:write'],
       });
       return {
         capability,
         expiresAt: '2026-08-15T23:59:00.000Z',
-        reference: '@acme/web',
+        mapId: managedMapId,
         schemaVersion: 1,
         scopes: ['styles:write'],
       };
@@ -1102,7 +1033,7 @@ test('one account session exchanges a visible target for a brief deploy capabili
     assert.equal(request.url, '/v1/styles');
     assert.equal(request.headers.authorization, `Bearer ${capability}`);
     await readRequestBody(request);
-    return hostedDeploymentResponse('map_test');
+    return hostedDeploymentResponse(managedMapId);
   });
   await writeAccountSession(fixture.directory, api.url);
 
@@ -1116,18 +1047,14 @@ test('one account session exchanges a visible target for a brief deploy capabili
       fixture.manifestPath,
       '--api-url',
       api.url,
-      '--project',
-      '@acme/web',
+      '--map-id',
+      managedMapId,
     ],
     {HOME: fixture.directory, USERPROFILE: fixture.directory},
   );
 
   assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(requests, [
-    'GET /v1/cli/projects?includeArchived=false&limit=100',
-    'POST /v1/cli/project-capabilities',
-    'POST /v1/styles',
-  ]);
+  assert.deepEqual(requests, ['POST /v1/cli/map-capabilities', 'POST /v1/styles']);
   assert.equal(await readFile(observedSecretPath, 'utf8'), 'missing');
   assert.doesNotMatch(
     `${result.stdout}\n${result.stderr}\n${await readFile(fixture.manifestPath, 'utf8')}`,
@@ -1135,7 +1062,7 @@ test('one account session exchanges a visible target for a brief deploy capabili
   );
 });
 
-test('an explicit project key rejects a mismatched --project after local config preflight', async (t) => {
+test('a Map-scoped key rejection preserves the explicit target after local preflight', async (t) => {
   const fixture = await createFixture(t);
   const configMarkerPath = join(fixture.directory, 'mismatch-config-imported.txt');
   await writeFile(
@@ -1148,18 +1075,12 @@ test('an explicit project key rejects a mismatched --project after local config 
     }),
   );
   let requests = 0;
-  const api = await createFakeApi(t, async (request) => {
+  const api = await createRejectingApi(t, 403, async (request) => {
     requests += 1;
-    assert.equal(request.url, '/v1/me');
+    assert.equal(request.url, '/v1/styles');
     assert.equal(request.headers.authorization, `Bearer ${fakeApiKey}`);
-    return {
-      apiKeyId: 'key_test',
-      credentialType: 'project_api_key',
-      organization: {id: 'org_acme', name: 'Acme', slug: 'acme'},
-      project: {id: 'prj_web', name: 'Web', slug: 'web'},
-      projectId: 'prj_web',
-      scopes: ['styles:write'],
-    };
+    const body = JSON.parse(await readRequestBody(request)) as Record<string, unknown>;
+    assert.equal(body.managedMapId, managedMapId);
   });
 
   const result = await runCli(
@@ -1172,25 +1093,53 @@ test('an explicit project key rejects a mismatched --project after local config 
       fixture.manifestPath,
       '--api-url',
       api.url,
-      '--project',
-      '@acme/other',
+      '--map-id',
+      managedMapId,
     ],
     {TILEFLOW_API_KEY: fakeApiKey},
   );
 
   assert.equal(result.code, 1);
   assert.equal(requests, 1);
-  assert.match(result.stdout, /belongs to @acme\/web, not @acme\/other/);
+  assert.match(result.stdout, /Deploy failed for madrid: 403/u);
   assert.equal(await readFile(configMarkerPath, 'utf8'), 'imported');
 });
 
-test('/v1/me validation returns one canonical project property', async () => {
+test('deploy rejects a successful response for another persistent Map', async (t) => {
+  const fixture = await createFixture(t);
+  const api = await createFakeApi(
+    t,
+    async () => undefined,
+    hostedDeploymentResponse('map_ZYXWVUTSRQPONMLK'),
+  );
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      api.url,
+      '--map-id',
+      managedMapId,
+    ],
+    {TILEFLOW_API_KEY: fakeApiKey},
+  );
+
+  assert.equal(result.code, 1);
+  assert.match(result.stdout, /did not confirm the requested Map/u);
+  await assert.rejects(() => readFile(fixture.manifestPath, 'utf8'), {code: 'ENOENT'});
+});
+
+test('/v1/me validation requires one canonical Map identity', async () => {
   const source = await readFile(new URL('../src/hosted-client.ts', import.meta.url), 'utf8');
   const validator = source.slice(
     source.indexOf('export async function validateApiKey'),
-    source.indexOf('function isProjectIdentity'),
+    source.indexOf('export async function requestMapCapability'),
   );
-  assert.equal(validator.match(/project: body\.project/gu)?.length, 1);
+  assert.equal(validator.match(/mapId: body\.mapId/gu)?.length, 1);
 });
 
 test('validate --target hosted shares deploy rejection of external vector data', async (t) => {
@@ -1298,12 +1247,21 @@ test('invalid hosted deploy and status responses fail closed and preserve the ma
   assert.equal(await readFile(fixture.manifestPath, 'utf8'), originalManifest);
 
   const statusApi = await createFakeApi(t, async () => undefined, {
-    projectId: 'prj_test',
+    mapId: managedMapId,
     styles: 'invalid',
   });
   const status = await runCli(
     fixture.directory,
-    ['status', '--json', '--api-url', statusApi.url, '--api-key', fakeApiKey],
+    [
+      'status',
+      '--json',
+      '--api-url',
+      statusApi.url,
+      '--api-key',
+      fakeApiKey,
+      '--map-id',
+      managedMapId,
+    ],
     {},
   );
   assert.equal(status.code, 1);
@@ -1313,36 +1271,13 @@ test('invalid hosted deploy and status responses fail closed and preserve the ma
 
   const unauthenticatedStatus = await runCli(
     fixture.directory,
-    ['status', '--json', '--api-url', 'https://api.example.test'],
+    ['status', '--json', '--api-url', 'https://api.example.test', '--map-id', managedMapId],
     {HOME: fixture.directory, USERPROFILE: fixture.directory},
   );
   assert.equal(unauthenticatedStatus.code, 1);
   assert.equal(unauthenticatedStatus.stdout, '');
   assert.match(unauthenticatedStatus.stderr, /^Status authentication failed\.\n$/u);
 });
-
-function accountProjectTarget(organizationSlug: string, projectSlug: string) {
-  return {
-    organization: {
-      id: `org_${organizationSlug}`,
-      name: organizationSlug[0].toUpperCase() + organizationSlug.slice(1),
-      slug: organizationSlug,
-    },
-    project: {
-      archivedAt: null,
-      createdAt: '2026-08-15T00:00:00.000Z',
-      id: `prj_${projectSlug}`,
-      name: projectSlug[0].toUpperCase() + projectSlug.slice(1),
-      slug: projectSlug,
-      updatedAt: '2026-08-15T00:00:00.000Z',
-    },
-    reference: `@${organizationSlug}/${projectSlug}`,
-  };
-}
-
-function quoteExpectedCliArgument(value: string) {
-  return /^[A-Za-z0-9_./:@%+=,-]+$/u.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
-}
 
 async function writeAccountSession(home: string, apiUrl: string) {
   const authDirectory = join(home, '.tileflow');
@@ -1458,11 +1393,12 @@ async function createFakeApi(
     request: import('node:http').IncomingMessage,
   ) => Promise<Record<string, unknown> | void>,
   result: Record<string, unknown> = {
-    ...hostedDeploymentResponse('map_test'),
+    ...hostedDeploymentResponse(managedMapId),
   },
 ) {
   const server = createServer(async (request, response) => {
     try {
+      if (respondWithApiProfile(request, response)) return;
       const requestResult = await inspectRequest(request);
       response.writeHead(200, {'Content-Type': 'application/json'});
       response.end(JSON.stringify(requestResult ?? result));
@@ -1485,12 +1421,38 @@ async function createFakeApi(
   return {url: `http://127.0.0.1:${address.port}`};
 }
 
+async function createRejectingApi(
+  t: TestContext,
+  status: number,
+  inspectRequest: (request: import('node:http').IncomingMessage) => Promise<void>,
+) {
+  const server = createServer(async (request, response) => {
+    if (respondWithApiProfile(request, response)) return;
+    await inspectRequest(request);
+    response.writeHead(status, {'Content-Type': 'application/json'});
+    response.end(JSON.stringify({error: 'rejected'}));
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      }),
+  );
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  return {url: `http://127.0.0.1:${address.port}`};
+}
+
 async function createFailingIconApi(t: TestContext, inspect: () => void) {
-  const server = createServer((request, response) => {
+  const server = createServer(async (request, response) => {
+    if (respondWithApiProfile(request, response)) return;
     inspect();
-    request.resume();
     assert.equal(request.method, 'PUT');
     assert.match(request.url ?? '', /^\/v1\/icon-packages\/[a-f0-9]{64}$/);
+    await readRequestBodyBytes(request);
+
     response.writeHead(503, {'Content-Type': 'application/json'});
     response.end(JSON.stringify({error: 'storage unavailable'}));
   });
@@ -1509,6 +1471,7 @@ async function createFailingIconApi(t: TestContext, inspect: () => void) {
 
 async function createStyleFailingAfterIconApi(t: TestContext, inspect: (method: string) => void) {
   const server = createServer(async (request, response) => {
+    if (respondWithApiProfile(request, response)) return;
     const method = request.method ?? '';
     inspect(method);
     const body = await readRequestBodyBytes(request);
@@ -1538,6 +1501,78 @@ async function createStyleFailingAfterIconApi(t: TestContext, inspect: (method: 
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   return {url: `http://127.0.0.1:${address.port}`};
+}
+
+async function createMismatchedMapApi(t: TestContext, inspectWrite: () => void) {
+  const server = createServer(async (request, response) => {
+    if (request.url === '/v1/me') {
+      response.writeHead(200, {'Content-Type': 'application/json'});
+      response.end(
+        JSON.stringify({
+          apiKeyId: 'key_other_map',
+          credentialType: 'project_api_key',
+          mapId: 'map_ZYXWVUTSRQPONMLK',
+          organization: {id: 'org_test', name: 'Test', slug: 'test'},
+          project: {id: 'prj_other', name: 'Other', slug: 'other'},
+          projectId: 'prj_other',
+          scopes: ['styles:write'],
+        }),
+      );
+      return;
+    }
+
+    inspectWrite();
+    const body = await readRequestBodyBytes(request);
+    if (request.method === 'PUT') {
+      response.writeHead(200, {'Content-Type': 'application/json'});
+      response.end(
+        JSON.stringify(
+          await iconPackageResponseFromMultipart(
+            request,
+            body,
+            'https://api.example.test',
+            'icp_12345678-1234-1234-1234-123456789abc',
+          ),
+        ),
+      );
+      return;
+    }
+
+    response.writeHead(200, {'Content-Type': 'application/json'});
+    response.end(JSON.stringify(hostedDeploymentResponse(managedMapId)));
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      }),
+  );
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  return {url: `http://127.0.0.1:${address.port}`};
+}
+
+function respondWithApiProfile(
+  request: import('node:http').IncomingMessage,
+  response: import('node:http').ServerResponse,
+) {
+  if (request.url !== '/v1/me') return false;
+  request.resume();
+  response.writeHead(200, {'Content-Type': 'application/json'});
+  response.end(
+    JSON.stringify({
+      apiKeyId: 'key_test',
+      credentialType: 'project_api_key',
+      mapId: managedMapId,
+      organization: {id: 'org_test', name: 'Test', slug: 'test'},
+      project: {id: 'prj_map', name: 'Map', slug: 'map'},
+      projectId: 'prj_map',
+      scopes: ['styles:write'],
+    }),
+  );
+  return true;
 }
 
 function runCli(
@@ -1570,12 +1605,21 @@ function runCli(
 
   Object.assign(environment, overrides, {NO_COLOR: '1'});
 
+  const effectiveArguments =
+    arguments_[0] === 'deploy' && !arguments_.includes('--map-id')
+      ? [...arguments_, '--map-id', managedMapId]
+      : arguments_;
+
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
-      cwd,
-      env: environment,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const child = spawn(
+      process.execPath,
+      ['--import', tsxLoader, cliEntry, ...effectiveArguments],
+      {
+        cwd,
+        env: environment,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
     let stderr = '';
     let stdout = '';
     child.stderr.setEncoding('utf8');

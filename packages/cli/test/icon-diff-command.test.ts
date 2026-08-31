@@ -21,6 +21,15 @@ const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const cliNodeModules = fileURLToPath(new URL('../node_modules', import.meta.url));
 const tsxLoader = import.meta.resolve('tsx');
 const fakeApiKey = `tf_live_${'b'.repeat(48)}`;
+const managedMapId = 'map_AbCdEfGhIjKlMnOp';
+
+test('help targets a managed Map without exposing Project selection', async () => {
+  const result = await runCli(tmpdir(), ['icons', 'diff', '--help'], {});
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /--map-id <id>/u);
+  assert.doesNotMatch(result.stdout, /--project|application destination/iu);
+});
 
 test('JSON initial diff is deterministic, exact, read-only, and manifest-based', async (t) => {
   const fixture = await createLocalFixture(t);
@@ -31,6 +40,8 @@ test('JSON initial diff is deterministic, exact, read-only, and manifest-based',
     'diff',
     '--against',
     'production',
+    '--map-id',
+    managedMapId,
     '--config',
     fixture.configPath,
     '--api-url',
@@ -60,7 +71,7 @@ test('JSON initial diff is deterministic, exact, read-only, and manifest-based',
   assert.equal(document.hasChanges, true);
   assert.deepEqual(
     requests.map((request) => request.method),
-    ['GET', 'GET'],
+    ['GET', 'GET', 'GET', 'GET'],
   );
   assert.ok(requests.every((request) => request.authorization === `Bearer ${fakeApiKey}`));
   await assert.rejects(() => readFile(join(fixture.directory, 'public/tileflow/manifest.json')), {
@@ -78,6 +89,8 @@ test('classifies added, modified, removed, and empty package transitions', async
     'diff',
     '--against',
     'production',
+    '--map-id',
+    managedMapId,
     '--config',
     fixture.configPath,
     '--api-url',
@@ -124,6 +137,8 @@ test('classifies added, modified, removed, and empty package transitions', async
       'diff',
       '--against',
       'production',
+      '--map-id',
+      managedMapId,
       '--config',
       fixture.configPath,
       '--api-url',
@@ -181,6 +196,8 @@ test('HTML report is self-contained, atomic, and contains only final visual diff
     'diff',
     '--against',
     'production',
+    '--map-id',
+    managedMapId,
     '--config',
     fixture.configPath,
     '--api-url',
@@ -261,6 +278,8 @@ test('unknown maps and removed flags fail before any request', async (t) => {
       'diff',
       '--against',
       'staging',
+      '--map-id',
+      managedMapId,
       '--config',
       fixture.configPath,
       '--api-url',
@@ -275,7 +294,17 @@ test('unknown maps and removed flags fail before any request', async (t) => {
 
   const removedFlag = await runCli(
     fixture.directory,
-    ['icons', 'diff', '--against', 'production', '--fail-on', 'dangling', '--json'],
+    [
+      'icons',
+      'diff',
+      '--map-id',
+      managedMapId,
+      '--against',
+      'production',
+      '--fail-on',
+      'dangling',
+      '--json',
+    ],
     {TILEFLOW_API_KEY: fakeApiKey},
   );
   assert.equal(removedFlag.code, 1);
@@ -290,6 +319,20 @@ test('malformed baseline responses fail closed with diagnostics only on stderr',
   const server = createServer((request, response) => {
     requests += 1;
     request.resume();
+
+    if (request.url === '/v1/me') {
+      sendJson(response, {
+        apiKeyId: 'key_test',
+        credentialType: 'project_api_key',
+        mapId: managedMapId,
+        organization: {id: 'org_test', name: 'Test', slug: 'test'},
+        project: {id: 'prj_map', name: 'Map', slug: 'map'},
+        projectId: 'prj_map',
+        scopes: ['status:read'],
+      });
+      return;
+    }
+
     response.writeHead(200, {'Content-Type': 'application/json'});
     response.end(JSON.stringify({baseline: null, environment: 'wrong', schemaVersion: 1}));
   });
@@ -301,6 +344,8 @@ test('malformed baseline responses fail closed with diagnostics only on stderr',
       'diff',
       '--against',
       'production',
+      '--map-id',
+      managedMapId,
       '--config',
       fixture.configPath,
       '--api-url',
@@ -313,7 +358,7 @@ test('malformed baseline responses fail closed with diagnostics only on stderr',
   assert.equal(result.code, 1);
   assert.equal(result.stdout, '');
   assert.match(result.stderr, /does not match the required schema/u);
-  assert.equal(requests, 1);
+  assert.equal(requests, 2);
 });
 
 type IconDiffDocument = {
@@ -406,6 +451,20 @@ async function createIconDiffApi(
           : null,
         environment: 'production',
         schemaVersion: 1,
+      });
+      return;
+    }
+
+    if (request.url === '/v1/me') {
+      request.resume();
+      sendJson(response, {
+        apiKeyId: 'key_test',
+        credentialType: 'project_api_key',
+        mapId: managedMapId,
+        organization: {id: 'org_test', name: 'Test', slug: 'test'},
+        project: {id: 'prj_map', name: 'Map', slug: 'map'},
+        projectId: 'prj_map',
+        scopes: ['status:read'],
       });
       return;
     }

@@ -509,7 +509,13 @@ async function runCaptureWatchCommand(
       emit({event: 'recovered', generation: state.generation});
       invalidSinceLastReady = false;
     }
-    const task = captureGeneration(state.generation, state.artifacts, activeCapture.signal);
+    const acquisition = artifactSession.acquireArtifacts(state.generation);
+    if (!acquisition) return;
+    const task = captureGeneration(
+      state.generation,
+      acquisition.artifacts,
+      activeCapture.signal,
+    ).finally(() => acquisition.release());
     activeTasks.add(task);
     void task.finally(() => activeTasks.delete(task));
   };

@@ -53,6 +53,7 @@ export function createTileflowConfigReference(): JsonSchema {
     throw new Error('Generated schema already defines TileflowReset.');
   }
   definitions.TileflowReset = resetSchema;
+  definitions.TileflowRemove = removeSchema;
   const sceneDefinitions = asOptionalRecord(generatedMapScene.$defs, 'capture scene definitions');
   const properties = asRecord(generatedResolvedMap.properties, 'resolved map properties');
   const modulesReference = asRecord(properties.modules, 'modules schema').$ref;
@@ -147,6 +148,18 @@ export function createTileflowConfigReference(): JsonSchema {
   const sharedAuthoringProperties = {
     ...properties,
     modules: {$ref: authoringModulesReference},
+    overlays: createKeyedResourceAuthoringReference(
+      generatedResolvedMap,
+      definitions,
+      properties.overlays,
+      'TileflowOverlayCollectionAuthoring',
+    ),
+    sources: createKeyedResourceAuthoringReference(
+      generatedResolvedMap,
+      definitions,
+      properties.sources,
+      'TileflowHostedSourceCollectionAuthoring',
+    ),
   };
 
   const scenesSchema = {
@@ -180,8 +193,8 @@ export function createTileflowConfigReference(): JsonSchema {
 
   return {
     $schema,
-    $id: 'https://tileflow.dev/schemas/tileflow-config-reference-v3.json',
-    schemaVersion: 3,
+    $id: 'https://tileflow.dev/schemas/tileflow-config-reference-v4.json',
+    schemaVersion: 4,
     kind: 'tileflow.config.reference',
     authority:
       '@tileflow/core resolvedTileflowMapSchema and tileflowCaptureSceneSchema (input); authoring branches are generated from their shared fields',
@@ -341,6 +354,8 @@ function createInheritanceReference(): JsonSchema {
       icons:
         'Omission inherits; any declared array replaces atomically; [] selects no icon directories.',
       identity: 'The leaf map owns the value; it is never inherited.',
+      'keyed-resources':
+        'Omission inherits. New keys add, existing keys replace atomically, and remove() deletes one inherited entry.',
       leaf: 'Tooling metadata is read only from the leaf and is never inherited.',
       lineage: 'Defines or traverses the map lineage and is removed from the resolved design.',
       modules:
@@ -368,6 +383,39 @@ const resetSchema: JsonSchema = {
   required: ['$tileflow'],
   type: 'object',
 };
+
+const removeSchema: JsonSchema = {
+  additionalProperties: false,
+  description: 'Serializable remove() operation for one inherited keyed source or overlay.',
+  properties: {op: {const: 'remove'}},
+  required: ['op'],
+  type: 'object',
+};
+
+function createKeyedResourceAuthoringReference(
+  root: JsonSchema,
+  definitions: Record<string, unknown>,
+  propertySchema: unknown,
+  definitionName: string,
+): JsonSchema {
+  const property = asRecord(propertySchema, `${definitionName} property`);
+  const reference = property.$ref;
+  if (typeof reference !== 'string') {
+    throw new Error(`${definitionName} must use one local JSON Schema reference.`);
+  }
+  const resolved = resolveLocalReference(root, reference);
+  const additionalProperties = resolved.additionalProperties;
+  if (!additionalProperties || typeof additionalProperties !== 'object') {
+    throw new Error(`${definitionName} must define keyed values.`);
+  }
+  definitions[definitionName] = {
+    ...resolved,
+    additionalProperties: {
+      oneOf: [additionalProperties, {$ref: '#/$defs/TileflowRemove'}],
+    },
+  };
+  return {$ref: `#/$defs/${definitionName}`};
+}
 
 type PatchSchemaState = {
   definitions: Record<string, unknown>;
@@ -897,7 +945,6 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
   enrichTrimmedMarineAttributionConstraints(schema);
   enrichIdentifierConstraints(schema);
   enrichExactFontConstraints(schema);
-  enrichHostedOriginConstraints(schema);
   enrichLineHatchConstraints(schema);
   enrichPoiRankConstraints(schema);
   enrichDirectDataConstraints(schema);
@@ -1024,10 +1071,6 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
     {
       path: 'glyphs.fontStacks[]',
       rule: 'Each exact key must already be Unicode NFC.',
-    },
-    {
-      path: 'delivery.hosted.allowedOrigins[]',
-      rule: 'Each value must equal its canonical WHATWG HTTP(S) origin and contain no path, credentials, query, fragment, or redundant trailing slash/default port.',
     },
     {
       path: '**.hatch.patternWidths[]',
@@ -1410,30 +1453,6 @@ function enrichExactFontFace(schema: JsonSchema): void {
   schema.description =
     'Exact NFC OpenType full name, exact glyph stack ID, or CSS generic; no surrounding whitespace, controls, or backslash.';
   schema['x-tileflow-normalization'] = 'NFC';
-}
-
-function enrichHostedOriginConstraints(schema: JsonSchema): void {
-  visitJsonSchema(schema, (node) => {
-    if (!node.properties || typeof node.properties !== 'object' || Array.isArray(node.properties)) {
-      return;
-    }
-    const allowedOrigins = (node.properties as Record<string, unknown>).allowedOrigins;
-    if (!allowedOrigins || typeof allowedOrigins !== 'object' || Array.isArray(allowedOrigins)) {
-      return;
-    }
-    const origins = dereferenceSchema(schema, allowedOrigins as JsonSchema, 'allowed origins');
-    if (origins.type !== 'array' || origins.maxItems !== 20 || !origins.items) return;
-    const origin = dereferenceSchema(
-      schema,
-      asRecord(origins.items, 'allowed origin item'),
-      'allowed origin item',
-    );
-    origin.pattern =
-      '^https?://(?![^/?#]*@)(?!.*[/?#\\\\\\s\\u0000-\\u001F\\u007F-\\u009F])(?:\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9._~-]+)(?::[0-9]+)?$';
-    origin.description =
-      'Canonical HTTP(S) origin only: no path, credentials, query, fragment, trailing slash, controls, or whitespace.';
-    origin['x-tileflow-refinement'] = 'Must equal the canonical WHATWG URL origin.';
-  });
 }
 
 function enrichLineHatchConstraints(schema: JsonSchema): void {

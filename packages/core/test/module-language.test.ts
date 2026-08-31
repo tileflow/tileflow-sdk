@@ -197,7 +197,7 @@ test('publishes authoring and resolved map entrypoints without hiding extends or
   const authoringReference = '#/$defs/TileflowAuthoringMap';
   const resolvedReference = '#/$defs/ResolvedTileflowMap';
 
-  assert.equal(reference.schemaVersion, 3);
+  assert.equal(reference.schemaVersion, 4);
   assert.equal(reference.$ref, authoringReference);
   assert.equal(reference.entrypoints?.authoring?.schemaRef, authoringReference);
   assert.equal(reference.entrypoints?.resolved?.schemaRef, resolvedReference);
@@ -278,7 +278,6 @@ test('publishes AI-reference constraints that match exact assets and capture aut
   assert.deepEqual(inheritance.fields, {
     data: 'atomic',
     defaultTheme: 'atomic',
-    delivery: 'leaf',
     extends: 'lineage',
     fonts: 'text-assets',
     glyphs: 'text-assets',
@@ -287,8 +286,10 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     marine: 'atomic',
     modules: 'modules',
     name: 'identity',
+    overlays: 'keyed-resources',
     projection: 'atomic',
     scenes: 'leaf',
+    sources: 'keyed-resources',
     systemThemes: 'atomic',
     terrain: 'atomic',
     themes: 'atomic',
@@ -402,27 +403,6 @@ test('publishes AI-reference constraints that match exact assets and capture aut
   );
   assert.equal(fallbacks.uniqueItems, true);
 
-  const delivery = dereferenceJsonSchema(
-    reference,
-    asJsonSchema(standaloneMap.properties?.delivery),
-  );
-  const hosted = dereferenceJsonSchema(reference, asJsonSchema(delivery.properties?.hosted));
-  const allowedOrigins = dereferenceJsonSchema(
-    reference,
-    asJsonSchema(hosted.properties?.allowedOrigins),
-  );
-  const origin = dereferenceJsonSchema(reference, asJsonSchema(allowedOrigins.items));
-  const originPattern = new RegExp(String(origin.pattern), 'u');
-  assert.equal(originPattern.test('https://maps.example.test'), true);
-  assert.equal(originPattern.test('http://localhost:3000'), true);
-  for (const invalid of [
-    'anything',
-    'https://user@maps.example.test',
-    'https://maps.example.test/',
-  ]) {
-    assert.equal(originPattern.test(invalid), false, invalid);
-  }
-
   const scene = definitions.TileflowMapScene!;
   const viewport = dereferenceJsonSchema(reference, asJsonSchema(scene.properties?.viewport));
   assert.deepEqual(viewport.allOf, [
@@ -518,7 +498,6 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     'data.bounds',
     '**.{font,fallbacks[]}',
     'glyphs.fontStacks[]',
-    'delivery.hosted.allowedOrigins[]',
     '**.hatch.patternWidths[]',
     'terrain.contours.demUrl',
     'terrain.contours.thresholds.*',

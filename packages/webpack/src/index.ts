@@ -1,10 +1,12 @@
 import {stat} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {
+  assertNoLocalTilesetsForProduction,
   assertTileflowSelfHostedManifestTarget,
   createTileflowArtifactSession,
   createTileflowBuildArtifacts,
   defaultTileflowConfigPath,
+  disposeTileflowBuildArtifacts,
   getTileflowAssetBasePath,
   getTileflowAssetFileName,
   getTileflowWatchPaths,
@@ -295,23 +297,29 @@ export class TileflowWebpackPlugin {
       cwd: input.cwd,
       styleBaseUrl: publicUrls.styleBaseUrl,
       apiBaseUrl: this.options.apiBaseUrl,
+      target: 'production',
     });
-    await assertTileflowSelfHostedManifestTarget(
-      resolve(compiler.options.output.path, assetBase, 'manifest.json'),
-      {overwriteHostedManifest: this.options.overwriteHostedManifest},
-    );
-    const RawSource = compiler.webpack.sources.RawSource;
+    try {
+      assertNoLocalTilesetsForProduction(artifacts);
 
-    for (const asset of artifacts.files) {
-      compilation.emitAsset(
-        getTileflowAssetFileName(assetBase, asset.fileName),
-        new RawSource(toRawSourceValue(asset.source)),
+      await assertTileflowSelfHostedManifestTarget(
+        resolve(compiler.options.output.path, assetBase, 'manifest.json'),
+        {overwriteHostedManifest: this.options.overwriteHostedManifest},
       );
-    }
+      const RawSource = compiler.webpack.sources.RawSource;
 
-    compiler
-      .getInfrastructureLogger?.('tileflow:webpack')
-      .info?.(`emitted Tileflow artifacts under ${assetBase || '.'}`);
+      for (const asset of artifacts.files) {
+        compilation.emitAsset(
+          getTileflowAssetFileName(assetBase, asset.fileName),
+          new RawSource(toRawSourceValue(asset.source)),
+        );
+      }
+      compiler
+        .getInfrastructureLogger?.('tileflow:webpack')
+        .info?.(`emitted Tileflow artifacts under ${assetBase || '.'}`);
+    } finally {
+      await disposeTileflowBuildArtifacts(artifacts);
+    }
   }
 
   private resolvePublicBase(compiler: WebpackCompiler): string {

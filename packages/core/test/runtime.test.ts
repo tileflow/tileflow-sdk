@@ -5,12 +5,53 @@ import {
   createTileflowSessionController,
   inferTileflowAnalyticsFromStyleUrl,
   mergeTileflowAnalytics,
+  normalizeTileflowSurfaceId,
   resolveTileflowMapMode,
   resolveTileflowRuntimeStyle,
   shouldLoadTileflowManifest,
   startTileflowSession,
   validateTileflowRuntimeSource,
 } from '../src/runtime';
+
+test('normalizes stable Surface IDs without blocking runtime delivery', () => {
+  for (const value of ['default', 'store-locator', 'homepage.v2', 'checkout_2']) {
+    assert.equal(normalizeTileflowSurfaceId(value), value);
+  }
+
+  for (const value of [undefined, '', 'UPPER', '-leading', 'trailing-', 'x'.repeat(65), 'a/b']) {
+    assert.equal(normalizeTileflowSurfaceId(value), 'default');
+  }
+});
+
+test('commercial preflight sends the normalized Surface declared by the integration', async () => {
+  let requestBody: Record<string, unknown> | undefined;
+  const controller = createTileflowSessionController({
+    fetch: (async (_url: string | URL | Request, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return Response.json(
+        {
+          expiresAt: '2026-08-29T12:15:00.000Z',
+          grant: 'surface-grant',
+          ok: true,
+          sessionId: requestBody.sessionId,
+          usageMode: 'session',
+        },
+        {status: 201},
+      );
+    }) as typeof fetch,
+    now: () => new Date('2026-08-29T12:00:00.000Z'),
+    sessionIdFactory: () => 'ses_surface',
+    source: 'test',
+  });
+
+  await controller.resolveRequestUrl('https://api.tileflow.dev/maps/map_1/style.json', {
+    apiUrl: 'https://api.tileflow.dev',
+    mapId: 'map_1',
+    surfaceId: 'store-locator',
+  });
+
+  assert.equal(requestBody?.surfaceId, 'store-locator');
+});
 
 test('validates the discriminated runtime source contract', () => {
   const style = {layers: [], name: 'Direct', sources: {}, version: 8 as const};
@@ -189,6 +230,10 @@ test('commercial grant preflight is shared, scoped, and attached before hosted d
     'https://api.tileflow.dev/maps/map_1/style.json',
     analytics,
   );
+  const theme = await controller.resolveRequestUrl(
+    'https://api.tileflow.dev/maps/map_1/dark.json',
+    analytics,
+  );
   const tile = await controller.resolveRequestUrl(
     'https://cdn.tileflow.dev/tiles/world/v1/0/0/0.pbf?map=map_1',
     analytics,
@@ -196,6 +241,7 @@ test('commercial grant preflight is shared, scoped, and attached before hosted d
 
   assert.equal(calls, 1);
   assert.equal(new URL(style!).searchParams.get('grant'), 'grant-1');
+  assert.equal(new URL(theme!).searchParams.get('grant'), 'grant-1');
   assert.equal(new URL(tile!).searchParams.get('grant'), 'grant-1');
   assert.equal(new URL(tile!).searchParams.get('session'), 'ses_one');
   assert.equal(

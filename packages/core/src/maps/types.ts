@@ -2,6 +2,12 @@ import type {TileflowCaptureScene} from '../capture-scene';
 import type {TileflowResolvedSemanticModuleOverrides} from '../cartography/domain-registry';
 import type {TileflowDataConfig} from '../data';
 import type {TileflowMarine} from '../marine';
+import type {
+  TileflowHostedSourceCollection,
+  TileflowHostedTilesetSource,
+  TileflowMapLibreOverlay,
+  TileflowOverlayCollection,
+} from '../overlays';
 import {tileflowPortableIdSchema} from '../portable-identity';
 import type {TileflowTheme, TileflowThemeName} from '../themes';
 import type {TileflowProjection, TileflowTerrain, TileflowViewConfig} from '../types';
@@ -22,17 +28,8 @@ export type TileflowMapIdentity = {
 /** A capture scene owned by one singular map; its map id is implicit. */
 export type TileflowMapScene = Omit<TileflowCaptureScene, 'map'>;
 
-export type TileflowHostedDelivery = {
-  allowedOrigins?: string[];
-};
-
-export type TileflowMapDelivery = {
-  hosted?: TileflowHostedDelivery;
-};
-
 /** Tooling metadata belongs to the leaf definition and is never inherited. */
 export type TileflowMapTooling = {
-  delivery?: TileflowMapDelivery;
   scenes?: Record<string, TileflowMapScene>;
 };
 
@@ -52,7 +49,11 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
   marine?: TileflowMarine;
   /** Semantic domains, expressed directly or with explicit refine/disable operations. */
   modules?: TileflowAuthoringModules;
+  /** Keyed MapLibre overlay units. Omission inherits; entries replace atomically. */
+  overlays?: TileflowOverlayCollection;
   projection?: TileflowProjection;
+  /** Keyed logical hosted sources. Omission inherits; entries replace atomically. */
+  sources?: TileflowHostedSourceCollection;
   /** Browser color-scheme mapping. Runtime resolves "system" to one of these concrete names. */
   systemThemes?: {
     dark: TileflowThemeName;
@@ -83,16 +84,19 @@ export type TileflowDerivedMap = TileflowMapIdentity &
 export type TileflowMap = TileflowDerivedMap | TileflowStandaloneMap;
 
 type ResolvedTileflowMapDesign<TDesign extends TileflowMapDesign = TileflowMapDesign> =
-  TDesign extends TileflowMapDesign ? Omit<TDesign, 'defaultTheme' | 'modules' | 'themes'> : never;
+  TDesign extends TileflowMapDesign
+    ? Omit<TDesign, 'defaultTheme' | 'modules' | 'overlays' | 'sources' | 'themes'>
+    : never;
 
 /** A standalone map definition with inheritance removed. */
 export type ResolvedTileflowMap = Omit<TileflowMapIdentity, 'name'> &
-  Pick<TileflowMapTooling, 'delivery'> &
   ResolvedTileflowMapDesign & {
     defaultTheme: TileflowThemeName;
     extends?: never;
     modules?: TileflowResolvedSemanticModuleOverrides;
     name: string;
+    overlays?: Readonly<Record<string, TileflowMapLibreOverlay>>;
+    sources?: Readonly<Record<string, TileflowHostedTilesetSource>>;
     themes: Readonly<Record<TileflowThemeName, TileflowTheme>>;
   };
 

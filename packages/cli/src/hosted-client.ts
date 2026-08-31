@@ -11,8 +11,8 @@ import {
 import {
   hostedFontBundleResponseSchema,
   hostedIconPackageResponseSchema,
-  type HostedProjectStatus,
-  hostedProjectStatusSchema,
+  type HostedMapStatus,
+  hostedMapStatusSchema,
   hostedStyleDeploymentResponseSchema,
   readBoundedResponseText,
 } from './hosted-response';
@@ -22,6 +22,7 @@ const maximumHostedRequestTimeoutMs = 60_000;
 
 export type HostedApi = {apiKey: string; apiUrl: string};
 export type HostedCapabilityScope = 'static:write' | 'status:read' | 'styles:write';
+export type HostedTeamCapabilityScope = 'status:read' | 'tilesets:read' | 'tilesets:write';
 export type HostedRequestOptions = {
   fetch?: typeof globalThis.fetch;
   signal?: AbortSignal;
@@ -31,6 +32,7 @@ export type HostedRequestOptions = {
 export type ApiProfile = {
   apiKeyId: string;
   credentialType: 'project_api_key';
+  mapId: string;
   organization: ProjectIdentity;
   project: ProjectIdentity;
   projectId: string;
@@ -204,6 +206,8 @@ export async function validateApiKey(
     !response.json ||
     typeof body.apiKeyId !== 'string' ||
     body.credentialType !== 'project_api_key' ||
+    typeof body.mapId !== 'string' ||
+    !/^map_[A-Za-z0-9_-]{16}$/u.test(body.mapId) ||
     !isProjectIdentity(body.organization) ||
     !isProjectIdentity(body.project) ||
     typeof body.projectId !== 'string' ||
@@ -217,12 +221,57 @@ export async function validateApiKey(
     value: {
       apiKeyId: body.apiKeyId,
       credentialType: body.credentialType,
+      mapId: body.mapId,
       organization: body.organization,
       project: body.project,
       projectId: body.projectId,
       scopes: body.scopes.filter((scope): scope is string => typeof scope === 'string'),
     },
   };
+}
+
+export async function requestMapCapability(
+  session: CliAccountSessionV2,
+  target: {mapId: string},
+  scopes: HostedCapabilityScope[],
+  options: HostedRequestOptions = {},
+): Promise<{capability: string; mapId: string; ok: true} | {error: string; ok: false}> {
+  let response: HostedJsonResponse;
+  try {
+    response = await requestHostedJson(
+      session.apiOrigin,
+      '/v1/cli/map-capabilities',
+      {
+        ...jsonRequest('POST', {...target, scopes}),
+        headers: {
+          ...authorizationHeaders(session.accountSession),
+          'Content-Type': 'application/json',
+        },
+      },
+      options,
+    );
+  } catch (error) {
+    return {error: safeTransportError(error, 'Map capability request failed.'), ok: false};
+  }
+  if (!response.ok) {
+    return {error: `Map capability request failed (${response.status}).`, ok: false};
+  }
+  const body = asRecord(response.body);
+  if (
+    !response.json ||
+    typeof body.capability !== 'string' ||
+    !body.capability.startsWith('tf_cap_') ||
+    body.capability.length > 8_192 ||
+    typeof body.mapId !== 'string' ||
+    !/^map_[A-Za-z0-9_-]{16}$/u.test(body.mapId) ||
+    body.mapId !== target.mapId ||
+    !validIsoDate(body.expiresAt) ||
+    !Array.isArray(body.scopes) ||
+    body.scopes.join('\0') !== [...scopes].sort().join('\0')
+  ) {
+    return {error: 'Map capability response was invalid.', ok: false};
+  }
+  return {capability: body.capability, mapId: body.mapId, ok: true};
 }
 
 export async function requestProjectCapability(
@@ -268,6 +317,83 @@ export async function requestProjectCapability(
     return {error: 'Project capability response was invalid.', ok: false};
   }
   return {capability: body.capability, ok: true};
+}
+
+export async function requestTeamCapability(
+  session: CliAccountSessionV2,
+  team: string,
+  scopes: HostedTeamCapabilityScope[],
+  options: HostedRequestOptions = {},
+): Promise<{capability: string; ok: true; team: ProjectIdentity} | {error: string; ok: false}> {
+  let response: HostedJsonResponse;
+  try {
+    response = await requestHostedJson(
+      session.apiOrigin,
+      '/v1/cli/team-capabilities',
+      {
+        ...jsonRequest('POST', {scopes, team}),
+        headers: {
+          ...authorizationHeaders(session.accountSession),
+          'Content-Type': 'application/json',
+        },
+      },
+      options,
+    );
+  } catch (error) {
+    return {error: safeTransportError(error, 'Team capability request failed.'), ok: false};
+  }
+  if (!response.ok) {
+    return {error: `Team capability request failed (${response.status}).`, ok: false};
+  }
+  const body = asRecord(response.body);
+  if (
+    !response.json ||
+    body.schemaVersion !== 1 ||
+    typeof body.capability !== 'string' ||
+    !body.capability.startsWith('tf_cap_') ||
+    body.capability.length > 8_192 ||
+    body.reference !== team ||
+    !isProjectIdentity(body.team) ||
+    `@${body.team.slug}` !== team ||
+    !validIsoDate(body.expiresAt) ||
+    !Array.isArray(body.scopes) ||
+    body.scopes.join('\0') !== [...scopes].sort().join('\0')
+  ) {
+    return {error: 'Team capability response was invalid.', ok: false};
+  }
+  return {capability: body.capability, ok: true, team: body.team};
+}
+
+export async function listAccountTeams(
+  session: CliAccountSessionV2,
+  options: HostedRequestOptions = {},
+): Promise<{ok: true; teams: ProjectIdentity[]} | {error: string; ok: false}> {
+  const response = await requestHostedJson(
+    session.apiOrigin,
+    '/v1/cli/teams',
+    {headers: authorizationHeaders(session.accountSession)},
+    options,
+  );
+  const body = asRecord(response.body);
+  if (!response.ok) return {error: `Team discovery failed (${response.status}).`, ok: false};
+  if (
+    !response.json ||
+    body.schemaVersion !== 1 ||
+    !Array.isArray(body.teams) ||
+    !body.teams.every(isProjectIdentity)
+  ) {
+    return {error: 'Team discovery returned an invalid response.', ok: false};
+  }
+  const teams = [...body.teams].sort((left, right) =>
+    left.slug < right.slug ? -1 : left.slug > right.slug ? 1 : 0,
+  );
+  if (
+    new Set(teams.map(({id}) => id)).size !== teams.length ||
+    teams.some((team, index) => index > 0 && teams[index - 1]!.slug >= team.slug)
+  ) {
+    return {error: 'Team discovery returned unstable ordering.', ok: false};
+  }
+  return {ok: true, teams};
 }
 
 export async function publishHostedStyle(
@@ -394,10 +520,10 @@ export async function uploadHostedFontBundle(
   return {ok: true, value};
 }
 
-export async function fetchHostedProjectStatus(
+export async function fetchHostedMapStatus(
   api: HostedApi,
   options: HostedRequestOptions = {},
-): Promise<HostedProjectStatus> {
+): Promise<HostedMapStatus> {
   const response = await requestHostedJson(
     api.apiUrl,
     '/v1/status',
@@ -405,7 +531,7 @@ export async function fetchHostedProjectStatus(
     options,
   );
   if (!response.ok) throw new Error(`Status failed: ${response.status}.`);
-  return parseResponse(response, hostedProjectStatusSchema, 'Status response');
+  return parseResponse(response, hostedMapStatusSchema, 'Status response');
 }
 
 export async function revokeHostedAccountSession(

@@ -192,27 +192,15 @@ test('accepts ordered icon-directory arrays and rejects provider objects or bare
   }
 });
 
-test('validates leaf-owned Hosted delivery without a plural project wrapper', () => {
+test('rejects repository-owned Hosted delivery policy', () => {
   assert.equal(
     validateDesign({
       delivery: {
-        hosted: {allowedOrigins: ['https://maps.example.test', 'http://localhost:3000']},
+        hosted: {allowedOrigins: ['https://maps.example.test']},
       },
     }).valid,
-    true,
-  );
-  assert.equal(
-    validateDesign({delivery: {hosted: {allowedOrigins: ['not an origin']}}}).valid,
     false,
   );
-  for (const origin of [
-    ' https://maps.example.test',
-    'https://maps.example.test/',
-    'https://maps.example.test/path',
-    'https://user@maps.example.test',
-  ]) {
-    assert.equal(validateDesign({delivery: {hosted: {allowedOrigins: [origin]}}}).valid, false);
-  }
   assert.equal(validateDesign({allowedOrigins: ['https://maps.example.test']}).valid, false);
 });
 

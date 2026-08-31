@@ -38,9 +38,19 @@ export type TileflowArtifactSessionOptions = TileflowBuildArtifactsOptions & {
   watch?: boolean;
 };
 
+export type TileflowArtifactAcquisition = Readonly<{
+  artifacts: TileflowBuildArtifacts;
+  generation: number;
+  release(): Promise<void>;
+}>;
+
 export type TileflowArtifactSession = {
+  /** Pins the current generation for asynchronous work; the caller must release it. */
+  acquireArtifacts(generation?: number): TileflowArtifactAcquisition | undefined;
   close(): Promise<void>;
+  /** Borrowed synchronous view. Use acquireArtifacts() before retaining it across an await. */
   getLastGoodArtifacts(): TileflowBuildArtifacts | undefined;
+  /** Ready-state artifacts are a borrowed synchronous view. */
   getState(): TileflowArtifactSessionState;
   refresh(reason?: string): Promise<void>;
   subscribe(listener: (state: TileflowArtifactSessionState) => void): () => void;
@@ -48,6 +58,16 @@ export type TileflowArtifactSession = {
 
 type BuildArtifacts = (options: TileflowBuildArtifactsOptions) => Promise<TileflowBuildArtifacts>;
 type DiscoverWatchPaths = () => Promise<string[]>;
+type ArtifactGeneration = {
+  accepting: boolean;
+  artifacts: TileflowBuildArtifacts;
+  completion: Promise<void>;
+  disposeStarted: boolean;
+  generation: number;
+  references: number;
+  rejectCompletion(error: unknown): void;
+  resolveCompletion(): void;
+};
 
 const configExtensions = new Set(['.cjs', '.cts', '.js', '.json', '.mjs', '.mts', '.ts', '.tsx']);
 const iconExtensions = new Set(['.jpeg', '.jpg', '.png', '.svg', '.webp']);
@@ -89,10 +109,13 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
   readonly #ignoredPaths: string[];
   readonly #watchEnabled: boolean;
   #closed = false;
+  #closing: Promise<void> | undefined;
   #debounceTimer: ReturnType<typeof setTimeout> | undefined;
   #generation = 0;
-  #lastGoodArtifacts: TileflowBuildArtifacts | undefined;
+  #current: ArtifactGeneration | undefined;
+  readonly #artifactGenerations = new Set<ArtifactGeneration>();
   #lastGoodGeneration: number | undefined;
+  readonly #refreshes = new Set<Promise<void>>();
   #refreshToken = 0;
   #state: TileflowArtifactSessionState = {generation: 0, status: 'building'};
   #watcher: FSWatcher | undefined;
@@ -117,6 +140,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
       cwd: this.#cwd,
       inspection: options.inspection,
       styleBaseUrl: options.styleBaseUrl,
+      target: options.target,
     };
   }
 
@@ -167,7 +191,33 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
   }
 
   getLastGoodArtifacts(): TileflowBuildArtifacts | undefined {
-    return this.#lastGoodArtifacts;
+    return this.#current?.artifacts;
+  }
+
+  acquireArtifacts(generation?: number): TileflowArtifactAcquisition | undefined {
+    const current = this.#current;
+    if (
+      this.#closed ||
+      !current?.accepting ||
+      (generation !== undefined && generation !== current.generation)
+    ) {
+      return undefined;
+    }
+
+    current.references += 1;
+    let released = false;
+    return Object.freeze({
+      artifacts: current.artifacts,
+      generation: current.generation,
+      release: async () => {
+        if (released) return;
+        released = true;
+        current.references -= 1;
+        if (!current.accepting && current.references === 0) {
+          await this.#disposeGeneration(current);
+        }
+      },
+    });
   }
 
   subscribe(listener: (state: TileflowArtifactSessionState) => void): () => void {
@@ -177,6 +227,16 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
   }
 
   async refresh(_reason = 'manual'): Promise<void> {
+    const refresh = this.#refresh();
+    this.#refreshes.add(refresh);
+    try {
+      await refresh;
+    } finally {
+      this.#refreshes.delete(refresh);
+    }
+  }
+
+  async #refresh(): Promise<void> {
     if (this.#closed) return;
 
     const generation = ++this.#generation;
@@ -191,11 +251,21 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
 
     try {
       const artifacts = await this.#buildArtifacts(this.#buildOptions);
-      if (this.#closed || token !== this.#refreshToken) return;
+      if (this.#closed || token !== this.#refreshToken) {
+        await disposeArtifacts(artifacts);
+        return;
+      }
 
-      this.#lastGoodArtifacts = artifacts;
+      const previous = this.#current;
+      const current = createArtifactGeneration(generation, artifacts);
+      this.#artifactGenerations.add(current);
+      this.#current = current;
       this.#lastGoodGeneration = generation;
       this.#updateArtifactWatchPaths(artifacts.watchPaths);
+      if (previous) {
+        previous.accepting = false;
+        if (previous.references === 0) await this.#disposeGeneration(previous);
+      }
       this.#publish({
         artifacts,
         generation,
@@ -217,13 +287,25 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
     }
   }
 
-  async close(): Promise<void> {
-    if (this.#closed) return;
+  close(): Promise<void> {
+    this.#closing ??= this.#close();
+    return this.#closing;
+  }
+
+  async #close(): Promise<void> {
     this.#closed = true;
     this.#refreshToken += 1;
     if (this.#debounceTimer) clearTimeout(this.#debounceTimer);
     this.#listeners.clear();
     await this.#watcher?.close();
+    const retained = [...this.#artifactGenerations];
+    this.#current = undefined;
+    for (const generation of retained) {
+      generation.accepting = false;
+      if (generation.references === 0) void this.#disposeGeneration(generation);
+    }
+    await Promise.allSettled([...this.#refreshes]);
+    await Promise.all(retained.map((generation) => generation.completion));
   }
 
   #ignoreWatchPath(path: string, isDirectory: boolean | undefined): boolean {
@@ -293,6 +375,50 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
       }
     }
   }
+
+  #disposeGeneration(generation: ArtifactGeneration): Promise<void> {
+    if (generation.disposeStarted) return generation.completion;
+    generation.disposeStarted = true;
+    void disposeArtifacts(generation.artifacts).then(
+      () => {
+        this.#artifactGenerations.delete(generation);
+        generation.resolveCompletion();
+      },
+      (error: unknown) => {
+        this.#artifactGenerations.delete(generation);
+        generation.rejectCompletion(error);
+      },
+    );
+    return generation.completion;
+  }
+}
+
+function createArtifactGeneration(
+  generation: number,
+  artifacts: TileflowBuildArtifacts,
+): ArtifactGeneration {
+  let rejectCompletion!: (error: unknown) => void;
+  let resolveCompletion!: () => void;
+  const completion = new Promise<void>((resolvePromise, rejectPromise) => {
+    rejectCompletion = rejectPromise;
+    resolveCompletion = resolvePromise;
+  });
+  return {
+    accepting: true,
+    artifacts,
+    completion,
+    disposeStarted: false,
+    generation,
+    references: 0,
+    rejectCompletion,
+    resolveCompletion,
+  };
+}
+
+async function disposeArtifacts(artifacts: TileflowBuildArtifacts): Promise<void> {
+  const dispose = artifacts.dispose;
+  artifacts.dispose = undefined;
+  await dispose?.();
 }
 
 function isSameOrInside(root: string, candidate: string): boolean {

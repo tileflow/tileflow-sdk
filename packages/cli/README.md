@@ -69,9 +69,16 @@ explicitly with `--out`:
 npm exec --no -- tileflow build --out public/tileflow
 ```
 
+Named hosted sources with `local` archives are for preview and capture. `tileflow build` rejects
+them instead of copying user data into production output. Publish managed data explicitly with
+`tileset publish`, or provide the production dataset through an application-owned source.
+Preview, capture, and the React/Vue/Svelte adapters register Tileflow's local PMTiles protocol
+before MapLibre reads the compiled Style. Its URL is stable by logical tileset ID; physical local
+snapshot generations do not change Style or Capture identity.
+
 Build is local and credential-free. Hosted compatibility is a separate
-`tileflow validate --target hosted` preflight; both that command and `deploy` reject non-Tileflow
-World data through the same compatibility check.
+`tileflow validate --target hosted` preflight. Primary map data must remain Tileflow World; named
+Team sources are validated and resolved independently.
 
 ## Deterministic agent diagnostics
 
@@ -91,7 +98,7 @@ npm exec --no -- tileflow semantic-diff --config maps.workspace.ts --from before
 `validate`, `inspect`, `explain`, and `semantic-diff` success writes exactly one
 schema-version-1 command envelope to stdout. The two discovery commands intentionally return their
 contracts raw instead of wrapping them: `language manifest --json` emits authoring-manifest version
-1 and `language schema --json` emits config-reference version 3. Every JSON-mode failure, including
+2 and `language schema --json` emits config-reference version 4. Every JSON-mode failure, including
 failure to load either raw discovery contract, leaves stdout empty and writes one schema-version-1
 command failure to stderr. Command summaries and every failure diagnostic contain `phase`, `code`,
 `path`, `severity`, `message`, and a bounded safe `suggestion`; diagnostics are sorted and
@@ -133,7 +140,7 @@ accepts them. The JSON document has this stable projection:
   "command": "explain",
   "ok": true,
   "selection": {"map": "madrid", "theme": "dark"},
-  "authoringManifestSchemaVersion": 1,
+  "authoringManifestSchemaVersion": 2,
   "compilation": {"ok": true, "diagnostics": [], "report": {}},
   "diagnostics": []
 }
@@ -158,7 +165,7 @@ compilation failures leave stdout empty and emit one safe structured document on
 | Semantic language | `language manifest`, `language schema`                                                         |
 | Map authoring     | `init`, `validate`, `inspect`, `explain`, `semantic-diff`, `build`, `preview` (`dev` alias)    |
 | Local evidence    | `setup capture`, `capture`, `visual compare`, `visual analyze`, `visual diff`, `visual update` |
-| Data and assets   | `inspect features`, `icons list --json`, `icons diff`                                          |
+| Data and assets   | `tileset inspect`, `tileset publish/list/status/purge`, `inspect features`, `icons list/diff`  |
 | Account           | `login`, `logout`, `whoami`                                                                    |
 | Hosted delivery   | `deploy`, `status`                                                                             |
 
@@ -458,50 +465,87 @@ effects and removes `TILEFLOW_API_KEY` before loading config.
 Hosted writes have two independent authorization paths:
 
 - Personal developer session: run `npm exec --no -- tileflow login` once for a
-  Tileflow API origin. Login authenticates the account and selects no managed destination.
-  The CLI exchanges that account session for a brief, narrow capability only
-  after resolving the application internally.
+  Tileflow API origin. Login authenticates the account and selects no Map.
+  Map commands exchange it for a brief Map capability; tileset commands use a separate Team data
+  capability.
 - CI key: create a dashboard `CI deploy` key, store it as
-  `TILEFLOW_API_KEY`, and let the repository workflow deploy without a local
-  login. The server binds that key to exactly one internal application boundary.
+  `TILEFLOW_API_KEY`, and let the repository workflow deploy without a local login. The server
+  binds that key to exactly one Map.
 
 Hosted control-plane requests stay pinned to the configured HTTP(S) origin, apply a hard bounded
 timeout, and stream at most 1 MiB of response data. CLI diagnostics never echo an untrusted remote
 response body or bearer credential.
 
-Inspect the account and use the automatically resolved destination:
+Inspect the account, then target the Map shown in the dashboard:
 
 ```sh
 npm exec --no -- tileflow whoami --json
-npm exec --no -- tileflow deploy
-npm exec --no -- tileflow status
+npm exec --no -- tileflow deploy --map-id map_AbCdEfGhIjKlMnOp
+npm exec --no -- tileflow status --map-id map_AbCdEfGhIjKlMnOp
 npm exec --no -- tileflow logout
 ```
 
-When Tileflow gives an agent a continuation command for a verified World conversion, keep its
-opaque technical destination and promotion reference in that exact deploy action:
+The dashboard creates the Map and browser-access policy before repository setup. Keep that exact
+Map ID in the deploy action. If the config contains several maps, select the authored map explicitly:
 
 ```sh
 npm exec --no -- tileflow deploy \
-  --project @acme/web \
-  --world-promotion wpr_example1234
+  --map-id map_AbCdEfGhIjKlMnOp \
+  --map store-locator
 ```
 
-The promotion reference is neither a map ID nor a credential. The CLI uses the map exported by the
-selected config. A successful server-confirmed continuation keeps unrelated manifest entries and
-records only that map's stable `mapId`, hosted theme URLs, World `v1` generation, and fixed session
-usage mode. Do not add an API key or payment authority to a copied prompt.
+The Map ID is a public destination, not a credential. A successful server-confirmed deploy keeps
+unrelated manifest entries and records that Map's stable ID, hosted theme URLs, World `v1`
+generation, and fixed session usage mode. Browser access remains server-owned and is never read
+from or written to repository configuration. Do not add an API key or payment authority to a copied
+prompt.
 
-If the account has exactly one accessible managed destination, a hosted command resolves it
-automatically. With more than one, writes fail before config execution or network mutation, print
-deterministically sorted application choices with their technical `@organization/project`
-references, and give an exact retry containing `--project`. There is no persistent selection,
-per-directory profile, or `login --project`. The hidden `projects` compatibility family remains
-callable when support or explicit multi-application administration requires it.
+Team tileset commands exchange the same account session for a separate Team-scoped data capability;
+it carries no Map authority. Inspect and preview remain account-free:
 
-An explicit key or `TILEFLOW_API_KEY` never uses the saved account session. If
-it is combined with `--project`, the selector is an assertion: the CLI checks
-`/v1/me` and rejects any mismatch before loading executable config or writing.
+```sh
+npm exec --no -- tileflow tileset inspect ./data/stores.pmtiles --json
+npm exec --no -- tileflow tileset inspect ./data/stores.pmtiles \
+  --include-values category,status --json
+npm exec --no -- tileflow tileset publish ./data/stores.pmtiles \
+  --id stores --team @acme --attribution 'Store data © Example' --json
+npm exec --no -- tileflow tileset list --team @acme --json
+npm exec --no -- tileflow tileset status stores --team @acme --json
+```
+
+Inspection schema 1 separates authoritative PMTiles/TileJSON declarations from bounded MVT
+observations. Sampled fields report present/missing feature counts, observed distinct-value counts,
+numeric min/max, and truncation. Raw primitive values remain absent unless `--include-values`
+explicitly selects their comma-separated field names; the command emits at most 16 values per field,
+32 selected fields, and 256 characters per string. `--no-sample` returns only authoritative metadata
+and cannot be combined with value inspection. Directory traversal recomputes addressed-tile and
+tile-entry counts; the header's tile-content count is reported only as a nullable declaration and is
+not treated as authority.
+
+`publish --id` names a Team-local logical resource; Tileflow owns its opaque delivery ID. The
+command validates the archive locally before authentication, hashes it in fixed 16 MiB parts, then
+uploads at most four parts concurrently without buffering the complete file. Interrupted sessions
+remain resumable for 24 hours: rerunning the same command reconciles server receipts and transfers
+only missing parts. Normal Queue initialization is polled for at most two minutes before the command
+returns a resumable availability error. Retryable transfer failures receive fresh short-lived authorization; a changed
+local file stops before completion. Free accepts versions through exactly 2,000,000,000 bytes and
+Starter through exactly 4,000,000,000 bytes, subject to the Team's hosted-storage capacity.
+
+Publication completes only after server-side integrity and PMTiles validation. A compatible new
+version becomes current at the same stable TileJSON and tile URLs, so newly resolved browser
+requests see it without creating a Map deployment. Purge requires `--confirm <exact-id>` and fails
+with bounded dependency context while any retained Map deployment uses the resource. Automation may set a Team data
+`TILEFLOW_API_KEY`; that key selects its Team, so commands omit `--team` and never load account
+state.
+
+`tileset publish --json` emits schema version 2 with the Team selector when known, logical and
+opaque tileset identities, immutable version ID and number, exact byte count, content-hash
+algorithm/hash, final state, and `changed` or `unchanged` publication result. It never emits the
+local path, upload session, storage key, signed URL, ETag, credential, or retry details.
+
+An explicit key or `TILEFLOW_API_KEY` never uses the saved account session. The deploy API rejects a
+`--map-id` that does not match the key. Read-only hosted icon comparison validates the same binding
+before loading its baseline.
 
 The CI key grants only `styles:write` and `status:read`. It cannot upload
 datasets or render images. Give it an expiration, rotate the repository secret
@@ -518,7 +562,7 @@ and do not pass keys through the `--api-key` command line in CI.
 
 The [deploy documentation](https://tileflow.dev/docs/deploy) contains copyable
 GitHub Actions and GitLab CI workflows. Both use `npm ci`, the committed
-lockfile, and the project-local CLI. GitHub exposes the key only to its deploy
+lockfile, and the repository-local CLI. GitHub exposes the key only to its deploy
 step. GitLab variables are job-scoped, so its example validates in a keyless job
 and deploys in a protected `production` job; the locked install and runner are
 part of that trusted job boundary. Both serialize publications and intentionally
@@ -541,15 +585,16 @@ Invalid explicit values fail before a network write. Provider metadata that is
 missing, malformed, or too long is omitted. Secrets and the complete
 environment are never logged.
 
-Application build is absent from the minimal workflows. Self-hosted build and deploy emit the same
+A separate app-build step is absent from the minimal workflows. Self-hosted build and deploy emit the same
 runtime manifest version 1 shape; Hosted fields are optional identity metadata on its map/theme
 entries. Filesystem build writers refuse to replace a manifest carrying Hosted metadata by default,
 and deploy refuses to replace a purely local manifest. Prefer `emitBuildArtifacts: false` or
 separate output paths when the app deliberately packages a deploy manifest. The explicit
 `overwriteHostedManifest: true` build option and
 `tileflow deploy --overwrite-self-hosted-manifest` flag authorize that destination replacement. A
-retry of the same compiled theme family and delivery policy reuses its deployment version and prints
-`Unchanged`; changed desired state prints `Published` with a new version. The
+retry of the same compiled theme family reuses its deployment version and prints `Unchanged`;
+changed cartography prints `Published` with a new version. Allowed websites is managed separately
+in Tileflow and is never read from repository config. The
 fingerprint binds resource references, not the changing bytes behind referenced
 glyph or sprite URLs. Every theme of one logical map publishes atomically; separate maps can still
 partially succeed when no remote batch release is used.
@@ -589,21 +634,13 @@ before deletion. Upload success must confirm the submitted `contentHash`, exact 
 generated byte total, one opaque `icp_<id>`, and the corresponding query-free
 `/sprites/<id>/sprite` URL. The CLI rejects any missing or divergent field before using that URL.
 
-For a map with local or package-owned `fonts`, deploy selects only faces used by the final Style and
-requires the contributing `LICENSE.txt` bytes. It uploads one bounded canonical font bundle to
-`PUT /v1/font-bundles/:contentHash` before the dependent Style. Hosted confirms the exact file set,
-hashes, MIME/signature agreement, licenses, and immutable public base URL; the CLI then binds
-`tileflow:fontFaces` to the returned `.../font-bundles/fnb_<id>/fonts/<content-addressed-file>` and
-sends only `fontBundle: {contentHash}` with the Style. Upload success must carry that exact opaque ID
-and base URL; clients never derive a storage URL from the hash. The build manifest records the effective font-byte
-digests, so a claimed hash or a different public URL cannot substitute for the uploaded bytes.
-Hosted's matching rollout candidate persists project ownership, organization quota, deployment
-references, grace-based cleanup, and deletion receipts. This repository contract does not by itself
-establish that the matching Hosted migration and API are already deployed in production.
+Hosted deploy currently rejects local or package-owned web fonts before authentication or remote
+writes. Use self-hosted delivery or an explicit public glyph provider. Enabling managed font bundles
+requires a separately deployed ownership, quota, retention, and immutable-delivery contract.
 
 For both managed resource kinds, `assetSetSha256` remains a separate per-map output identity. It
 hashes each generated file's exact portable name, media type, byte count, and SHA-256 using Core's
-asset-set v1 contract; it does not hash only the icon-package or font-bundle manifest. Hosted must
+asset-set v1 contract; it does not hash only the icon-package manifest. Hosted must
 confirm the immutable resource bytes, reconstruct those same per-file identities (including the
 `icons/<mapId>/` prefix), and reject the Style when the submitted build-manifest hash diverges.
 
@@ -660,14 +697,15 @@ source path with normal repository tools only when the pixels themselves are nee
 Compare the exported map with its active hosted revision before deciding whether to deploy:
 
 ```sh
-npm exec --no -- tileflow icons diff --against production
-npm exec --no -- tileflow icons diff --against production --json
-npm exec --no -- tileflow icons diff --against production --report ./icon-diff.html
+npm exec --no -- tileflow icons diff --map-id map_AbCdEfGhIjKlMnOp --against production
+npm exec --no -- tileflow icons diff --map-id map_AbCdEfGhIjKlMnOp --against production --json
+npm exec --no -- tileflow icons diff --map-id map_AbCdEfGhIjKlMnOp --against production --report ./icon-diff.html
 ```
 
-The command compiles only the exported map, performs one authenticated baseline `GET`, and never
-uploads a package, creates a deployment, or writes the frontend manifest. Plain and JSON modes
-create no files. A requested HTML report adds reads of the baseline's four public sprite files and
+The command compiles only the exported map, performs authenticated read-only control-plane
+requests, and never uploads a package, creates a deployment, or writes the frontend manifest.
+Plain and JSON modes create no files. A requested HTML report adds reads of the baseline's four
+public sprite files and
 embeds verified old/new images in one self-contained file. The report groups exact-cell icon
 previews under `Added`, `Modified`, and `Removed`. Added and removed cards show only the affected
 icon; modified cards compare `Before` with `Next`. A script-free 1x/2x selector defaults to 2x,

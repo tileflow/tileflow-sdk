@@ -119,8 +119,8 @@ type IconDiffOptions = {
   config: string;
   force?: boolean;
   json?: boolean;
+  mapId: string;
   open?: boolean;
-  project?: string;
   report?: string;
 };
 
@@ -135,7 +135,7 @@ export function registerIconDiffCommand(
       apiKey?: string;
       apiUrl?: string;
       config?: string;
-      project?: string;
+      mapId: string;
     }) => Promise<{apiKey: string; apiUrl: string} | null>;
   },
 ): void {
@@ -146,7 +146,7 @@ export function registerIconDiffCommand(
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)
     .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
     .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
-    .option('--project <target>', 'technical destination @organization/project')
+    .requiredOption('--map-id <id>', 'managed Map destination')
     .option('--json', 'print deterministic schema-version-1 JSON')
     .option('--report <path>', 'write a self-contained HTML visual report')
     .option('--open', 'open an explicitly requested report')
@@ -174,7 +174,7 @@ async function runIconDiff(
       apiKey?: string;
       apiUrl?: string;
       config?: string;
-      project?: string;
+      mapId: string;
     }) => Promise<{apiKey: string; apiUrl: string} | null>;
   },
 ): Promise<void> {
@@ -187,12 +187,6 @@ async function runIconDiff(
   }
 
   const environment = environmentSchema.parse(options.against);
-  const api = await dependencies.resolveApi(options);
-
-  if (!api) {
-    throw new Error('Missing Tileflow API key. Run tileflow login or set TILEFLOW_API_KEY.');
-  }
-
   const loaded = await withTileflowConfigSecretsHidden(() =>
     loadTileflowConfigWithInputs(options.config),
   );
@@ -205,6 +199,12 @@ async function runIconDiff(
     throw new Error(
       `Unknown map environment "${environment}". Available maps: ${mapNames.join(', ') || '(none)'}`,
     );
+  }
+
+  const api = await dependencies.resolveApi(options);
+
+  if (!api) {
+    throw new Error('Missing Tileflow API key. Run tileflow login or set TILEFLOW_API_KEY.');
   }
 
   const selectedProject = {...project, maps: {[environment]: project.maps[environment]}};

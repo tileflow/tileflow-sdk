@@ -70,6 +70,14 @@ Capture verifies the concrete theme before and after screenshot production. A fu
 props own application camera state; capture includes that camera in scene identity but does not
 rewrite it.
 
+The application's development server also remains authoritative for local PMTiles. Each range is
+served from one immutable snapshot and strong ETags prevent one PMTiles read from silently mixing
+generations. Application Capture deliberately adds no lease or token that freezes every local
+dataset for the complete screenshot. A source edit during that exact window can therefore move a
+later read to the next valid generation; application receipts already classify style and data as
+`expected-unverified`. Standalone Capture is stricter because it owns and retains its artifact
+snapshot for the complete render.
+
 ## Prepared/offline browser setup
 
 ```ts

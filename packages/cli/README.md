@@ -68,12 +68,18 @@ explicitly with `--out`:
 npx tileflow build --out public/tileflow
 ```
 
-Named hosted sources with `local` archives are for preview and capture. `tileflow build` rejects
-them instead of copying user data into production output. Publish managed data explicitly with
-`tileset publish`, or provide the production dataset through an application-owned source.
+Named hosted sources with `local` archives are for account-free validation, development, preview,
+and capture. `tileflow build` rejects them instead of copying, publishing, or taking ownership of
+user data. For production, either publish managed data explicitly with `tileset publish` or serve
+it from infrastructure owned by the application. A local declaration never selects either path
+implicitly.
+
 Preview, capture, and the React/Vue/Svelte adapters register Tileflow's local PMTiles protocol
 before MapLibre reads the compiled Style. Its URL is stable by logical tileset ID; physical local
-snapshot generations do not change Style or Capture identity.
+snapshot generations do not change Style identity. Standalone Capture retains one snapshot for the
+render. Application Capture uses the application's server; Tileflow's local handler provides
+immutable, ETag-guarded PMTiles reads, but does not freeze every local dataset for the complete
+screenshot window.
 
 Build is local and credential-free. Hosted compatibility is a separate
 `tileflow validate --target hosted` preflight. Primary map data must remain Tileflow World; named

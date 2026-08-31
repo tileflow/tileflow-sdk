@@ -27,9 +27,13 @@ test('interactive React build installs the World notice bridge', async () => {
   assert.match(output, /worldRequestBridge/);
   assert.match(output, /loadTileflowStyleFonts/);
   assert.match(output, /registerTileflowContourProtocol/);
+  assert.match(output, /registerTileflowPmtilesProtocol/);
   assert.ok(output.indexOf('loadTileflowStyleFonts') < output.indexOf('new maplibregl.Map'));
   assert.ok(
     output.indexOf('registerTileflowContourProtocol') < output.indexOf('new maplibregl.Map'),
+  );
+  assert.ok(
+    output.indexOf('registerTileflowPmtilesProtocol') < output.indexOf('new maplibregl.Map'),
   );
 });
 

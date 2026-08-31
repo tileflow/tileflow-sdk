@@ -18,7 +18,7 @@ test('language manifest exposes the complete deterministic AI authoring contract
   assert.equal(manifest.expressions.builders.length, 32);
   assert.equal(
     manifest.schemas.document,
-    'https://tileflow.dev/schemas/tileflow-config-reference-v3.json',
+    'https://tileflow.dev/schemas/tileflow-config-reference-v4.json',
   );
   assert.ok(result.stdout.endsWith('\n'));
   assert.equal(result.stderr, '');
@@ -27,9 +27,9 @@ test('language manifest exposes the complete deterministic AI authoring contract
 
 test('language schema exposes the generated authoring and resolved entrypoints', async () => {
   const result = await runLanguage(['language', 'schema', '--json'], undefined, async () => ({
-    $id: 'https://tileflow.dev/schemas/tileflow-config-reference-v3.json',
+    $id: 'https://tileflow.dev/schemas/tileflow-config-reference-v4.json',
     $ref: '#/$defs/TileflowAuthoringMap',
-    schemaVersion: 3,
+    schemaVersion: 4,
     entrypoints: {
       authoring: {schemaRef: '#/$defs/TileflowAuthoringMap'},
       resolved: {schemaRef: '#/$defs/ResolvedTileflowMap'},
@@ -40,7 +40,7 @@ test('language schema exposes the generated authoring and resolved entrypoints',
     entrypoints: {authoring: {schemaRef: string}; resolved: {schemaRef: string}};
     schemaVersion: number;
   };
-  assert.equal(schema.schemaVersion, 3);
+  assert.equal(schema.schemaVersion, 4);
   assert.equal(schema.$ref, '#/$defs/TileflowAuthoringMap');
   assert.equal(schema.entrypoints.resolved.schemaRef, '#/$defs/ResolvedTileflowMap');
   assert.equal(result.stderr, '');

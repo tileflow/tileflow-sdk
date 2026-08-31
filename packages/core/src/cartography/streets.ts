@@ -3,6 +3,11 @@ import {resolveTileflowData, type TileflowDataConfig} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import {type ResolvedTileflowMap, resolveMap, type TileflowMap} from '../maps';
 import {resolveMarine} from '../marine';
+import {
+  insertTileflowOverlays,
+  resolveTileflowHostedSources,
+  tileflowHostedSourceLimit,
+} from '../overlays';
 import {parseResolvedTileflowMap} from '../resolved-map-schema';
 import {compileTerrainContributions, resolveTerrain} from '../terrain';
 import {
@@ -187,13 +192,14 @@ function compileSemanticStyleInternal(
     }));
   const selected = runCompilationPhase('theme', () => resolveThemeSelection(input, options.theme));
   const resolvedTheme = runCompilationPhase('theme', () => resolveTileflowTheme(selected.theme));
-  const {themes: _themes, ...themeableConfig} = input;
+  const {overlays, themes: _themes, ...themeableConfig} = input;
   const resolvedThemeConfig = runCompilationPhase('theme', () =>
     resolveThemeValues(themeableConfig, selected.theme, `map.${input.id}`),
   );
   const config = runCompilationPhase('config-validation', () =>
     parseResolvedTileflowMap({
       ...resolvedThemeConfig,
+      ...(overlays ? {overlays} : {}),
       themes: input.themes,
     } as TileflowSemanticMapConfig),
   );
@@ -242,6 +248,20 @@ function compileSemanticStyleInternal(
       marineSourceIds.add(source.sourceId);
     }
   });
+  const platformSourceIds = [
+    data.sourceId,
+    ...terrainSources.map(({sourceId}) => sourceId),
+    ...marineSources.map(({sourceId}) => sourceId),
+  ];
+  const hostedSources = runCompilationPhase('data', () =>
+    resolveTileflowHostedSources(config.id, config.sources, new Set(platformSourceIds)),
+  );
+  if (Object.keys(hostedSources.definitions).length > tileflowHostedSourceLimit) {
+    throw Object.assign(
+      new Error(`Tileflow maps support at most ${tileflowHostedSourceLimit} Team sources.`),
+      {code: 'TF_SOURCE_LIMIT_EXCEEDED', path: `map.${config.id}.sources`},
+    );
+  }
   const semanticData = marine?.bathymetry?.vector
     ? {
         ...data,
@@ -310,8 +330,17 @@ function compileSemanticStyleInternal(
   const loweredDomainIR = runCompilationPhase('lowering', () =>
     lowerTileflowDomainIR(plannedFamilies, semanticData),
   );
-  const plannedLayers = [...loweredDomainIR.layers];
-  const emittedProvenance = plannedLayers.flatMap((layer) => readTileflowCompilerProvenance(layer));
+  const basemapLayers = [...loweredDomainIR.layers];
+  const loweredOverlays = runCompilationPhase('lowering', () =>
+    insertTileflowOverlays({
+      basemapLayers,
+      mapId: config.id,
+      overlays: config.overlays,
+      sourceIds: Object.keys(hostedSources.definitions),
+    }),
+  );
+  const plannedLayers = loweredOverlays.layers;
+  const emittedProvenance = basemapLayers.flatMap((layer) => readTileflowCompilerProvenance(layer));
   const emittedContributionKeys = new Set(
     emittedProvenance.map(({owner, target}) => semanticReportKey(owner, target)),
   );
@@ -451,6 +480,7 @@ function compileSemanticStyleInternal(
     ...(marine?.nautical ? {[marine.nautical.sourceId]: marine.nautical.source} : {}),
     ...(terrain?.raster ? {[terrain.raster.sourceId]: terrain.raster.source} : {}),
     ...(terrain?.contours ? {[terrain.contours.sourceId]: terrain.contours.source} : {}),
+    ...hostedSources.definitions,
   };
   const sourceIdentities = {
     [data.sourceId]: data.identity,
@@ -461,6 +491,7 @@ function compileSemanticStyleInternal(
       ? {[marine.bathymetry.relief.sourceId]: marine.bathymetry.relief.identity}
       : {}),
     ...(marine?.nautical ? {[marine.nautical.sourceId]: marine.nautical.identity} : {}),
+    ...hostedSources.identities,
   };
   const sourceRequirements = runCompilationPhase('data', () =>
     inferTileflowSourceRequirements({
@@ -499,6 +530,9 @@ function compileSemanticStyleInternal(
       'tileflow:colorScheme': resolvedTheme.colorScheme,
       'tileflow:data': data.identity,
       'tileflow:sources': sourceIdentities,
+      ...(Object.keys(loweredOverlays.identities).length > 0
+        ? {'tileflow:overlays': loweredOverlays.identities}
+        : {}),
       'tileflow:sourceRequirements': sourceRequirements,
       ...(interactionManifest
         ? {[tileflowInteractionManifestMetadataKey]: interactionManifest}
@@ -576,7 +610,17 @@ function assertMapLibreStyle(style: MapLibreStyle, mapId: string): void {
     .map((error) => error.message)
     .join('; ');
   const remaining = errors.length > 8 ? `; ${errors.length - 8} more` : '';
-  throw new Error(`Compiled Tileflow map "${mapId}" is not MapLibre-valid: ${details}${remaining}`);
+  const first = errors[0];
+  const identifier =
+    errors.find((error) => typeof error.identifier === 'string')?.identifier ??
+    (first ? /^(layers(?:\[[0-9]+\])?(?:\.[A-Za-z0-9_-]+)*)/u.exec(first.message)?.[1] : undefined);
+  throw Object.assign(
+    new Error(`Compiled Tileflow map "${mapId}" is not MapLibre-valid: ${details}${remaining}`),
+    {
+      code: 'TF_MAPLIBRE_STYLE_INVALID',
+      path: `map.${mapId}.${identifier ? identifier.replaceAll('[', '.').replaceAll(']', '') : 'style'}`,
+    },
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

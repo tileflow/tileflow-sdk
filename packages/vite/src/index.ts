@@ -1,10 +1,12 @@
 import {resolve} from 'node:path';
 import type {Plugin, ResolvedConfig} from 'vite';
 import {
+  assertNoLocalTilesetsForProduction,
   assertTileflowSelfHostedManifestTarget,
   createTileflowArtifactSession,
   createTileflowBuildArtifacts,
   defaultTileflowConfigPath,
+  disposeTileflowBuildArtifacts,
   getTileflowAssetBasePath,
   getTileflowAssetFileName,
   normalizeTileflowBasePath,
@@ -160,19 +162,26 @@ export function tileflow(options: TileflowVitePluginOptions = {}): Plugin {
         cwd: config.root,
         styleBaseUrl: publicUrls.styleBaseUrl,
         apiBaseUrl: options.apiBaseUrl,
+        target: 'production',
       });
-      const assetBase = getTileflowAssetBasePath(basePath);
-      await assertTileflowSelfHostedManifestTarget(
-        resolve(config.publicDir, assetBase, 'manifest.json'),
-        {overwriteHostedManifest: options.overwriteHostedManifest},
-      );
+      try {
+        assertNoLocalTilesetsForProduction(artifacts);
 
-      for (const asset of artifacts.files) {
-        this.emitFile({
-          fileName: getTileflowAssetFileName(assetBase, asset.fileName),
-          source: asset.source,
-          type: 'asset',
-        });
+        const assetBase = getTileflowAssetBasePath(basePath);
+        await assertTileflowSelfHostedManifestTarget(
+          resolve(config.publicDir, assetBase, 'manifest.json'),
+          {overwriteHostedManifest: options.overwriteHostedManifest},
+        );
+
+        for (const asset of artifacts.files) {
+          this.emitFile({
+            fileName: getTileflowAssetFileName(assetBase, asset.fileName),
+            source: asset.source,
+            type: 'asset',
+          });
+        }
+      } finally {
+        await disposeTileflowBuildArtifacts(artifacts);
       }
     },
   };

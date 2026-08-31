@@ -1,18 +1,17 @@
+import {open} from 'node:fs/promises';
 import type {IncomingMessage, ServerResponse} from 'node:http';
 import {
   getTileflowStyleFontFaces,
   tileflowMapIdSchema,
   tileflowThemeNameSchema,
 } from '@tileflow/core';
-import {
-  createTileflowBuildArtifacts,
-  type TileflowBuildArtifacts,
-  type TileflowBuildArtifactsOptions,
-} from './artifacts';
+import {createTileflowArtifactSession, type TileflowBuildArtifacts} from './artifacts';
 import {defaultTileflowApiUrl, defaultTileflowConfigPath, TileflowValidationError} from './config';
 import type {TileflowBuildAsset} from './icons';
+import type {TileflowLocalTilesetFile} from './local-tilesets';
 import {normalizeTileflowBasePath} from './public-paths';
 import {
+  type TileflowArtifactAcquisition,
   type TileflowArtifactSession,
   tileflowArtifactSessionSchemaVersion,
   type TileflowArtifactSessionState,
@@ -31,6 +30,7 @@ export type {
   TileflowComparisonSide,
 } from './comparison';
 export type {
+  TileflowArtifactAcquisition,
   TileflowArtifactDiagnostic,
   TileflowArtifactSession,
   TileflowArtifactSessionOptions,
@@ -56,6 +56,11 @@ export type TileflowDevRequestHandlerOptions = {
   session?: TileflowArtifactSession;
   styleBaseUrl?: string;
   theme?: string;
+};
+
+export type TileflowDevRequestHandler = ((request: Request) => Promise<Response>) & {
+  close(): Promise<void>;
+  refresh(): Promise<void>;
 };
 
 export function getTileflowStyleSelection(
@@ -101,6 +106,11 @@ export function createTileflowNodeRequest(request: IncomingMessage) {
   const host = getNodeHeader(request, 'host') ?? 'localhost';
 
   return new Request(`${protocol}://${host}${request.url ?? '/'}`, {
+    headers: Object.fromEntries(
+      Object.entries(request.headers).flatMap(([name, value]) =>
+        value === undefined ? [] : [[name, Array.isArray(value) ? value.join(', ') : value]],
+      ),
+    ),
     method: request.method,
   });
 }
@@ -135,13 +145,34 @@ export async function writeTileflowNodeResponse(
   }
 }
 
-export function createTileflowDevRequestHandler(options: TileflowDevRequestHandlerOptions = {}) {
+export function createTileflowDevRequestHandler(
+  options: TileflowDevRequestHandlerOptions = {},
+): TileflowDevRequestHandler {
   const basePath = normalizeTileflowBasePath(options.basePath);
   const configPath = options.config ?? defaultTileflowConfigPath;
   const cwd = options.cwd ?? process.cwd();
   const apiBaseUrl = options.apiBaseUrl ?? defaultTileflowApiUrl;
+  let ownedSessionPromise: Promise<TileflowArtifactSession> | undefined;
+  let closed = false;
+  let lastOrigin: string | undefined;
+  const loadOwnedSession = (origin: string) => {
+    lastOrigin = origin;
+    ownedSessionPromise ??= createTileflowArtifactSession({
+      assetBaseUrl: `${origin}${basePath}`,
+      config: configPath,
+      cwd,
+      inspection: options.inspection,
+      styleBaseUrl: options.styleBaseUrl ?? `${origin}${basePath}`,
+      apiBaseUrl,
+    }).catch((error: unknown) => {
+      ownedSessionPromise = undefined;
+      throw error;
+    });
+    return ownedSessionPromise;
+  };
 
-  return async function handleTileflowDevRequest(request: Request) {
+  const handleTileflowDevRequest = async (request: Request) => {
+    if (closed) return jsonResponse({error: 'Tileflow request handler is closed.'}, 503);
     if (request.method !== 'GET' && request.method !== 'HEAD') {
       return jsonResponse({error: 'Method not allowed'}, 405);
     }
@@ -153,6 +184,7 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
       return jsonResponse({error: 'Not found'}, 404);
     }
 
+    let acquisition: TileflowArtifactAcquisition | undefined;
     try {
       if (path === '/__events') {
         return options.session
@@ -167,27 +199,10 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
         if (runtimeResponse) return runtimeResponse;
       }
 
-      let artifacts: TileflowBuildArtifacts | undefined;
-      let state: TileflowArtifactSessionState;
-      if (options.session) {
-        artifacts = getSessionArtifacts(options.session);
-        state = options.session.getState();
-      } else {
-        artifacts = await createTileflowBuildArtifacts({
-          assetBaseUrl: `${url.origin}${basePath}`,
-          config: configPath,
-          cwd,
-          inspection: options.inspection,
-          styleBaseUrl: options.styleBaseUrl ?? `${url.origin}${basePath}`,
-          apiBaseUrl,
-        });
-        state = {
-          artifacts,
-          generation: 1,
-          lastGoodGeneration: 1,
-          status: 'ready',
-        };
-      }
+      const session = options.session ?? (await loadOwnedSession(url.origin));
+      acquisition = session.acquireArtifacts();
+      const artifacts: TileflowBuildArtifacts | undefined = acquisition?.artifacts;
+      const state: TileflowArtifactSessionState = session.getState();
 
       if (path === '/__status') {
         return jsonResponse(createTileflowArtifactStatus(state));
@@ -231,6 +246,15 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
       }
 
       if (!artifacts) return unavailableArtifactsResponse(state);
+
+      if (path.startsWith('/tilesets/')) {
+        const fileName = path.replace(/^\/+/, '');
+        const localTileset = artifacts.localTilesets?.find(
+          (candidate) => candidate.fileName === fileName,
+        );
+        if (!localTileset) return jsonResponse({error: 'Unknown local tileset.'}, 404);
+        return localTilesetResponse(request, localTileset);
+      }
 
       if (path.startsWith('/generations/') && 'files' in artifacts) {
         const fileName = path.replace(/^\/+/, '');
@@ -297,8 +321,91 @@ export function createTileflowDevRequestHandler(options: TileflowDevRequestHandl
     } catch (error) {
       options.onError?.(error);
       return tileflowErrorResponse(error);
+    } finally {
+      await acquisition?.release();
     }
   };
+
+  return Object.assign(handleTileflowDevRequest, {
+    async close() {
+      if (closed) return;
+      closed = true;
+      const ownedSession = await ownedSessionPromise?.catch(() => undefined);
+      await ownedSession?.close();
+    },
+    async refresh() {
+      if (closed) return;
+      if (options.session) {
+        await options.session.refresh('request-handler');
+        return;
+      }
+      if (!lastOrigin) return;
+      await (await loadOwnedSession(lastOrigin)).refresh('request-handler');
+    },
+  });
+}
+
+async function localTilesetResponse(
+  request: Request,
+  file: TileflowLocalTilesetFile,
+): Promise<Response> {
+  const headers = new Headers({
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Expose-Headers': 'ETag',
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'no-store',
+    'Content-Type': 'application/vnd.pmtiles',
+    ETag: file.etag,
+  });
+  if (request.method === 'HEAD') {
+    headers.set('Content-Length', String(file.byteLength));
+    return new Response(null, {headers, status: 200});
+  }
+
+  const range = parseLocalTilesetRange(request.headers.get('range'), file.byteLength);
+  if (!range) {
+    headers.set('Content-Range', `bytes */${file.byteLength}`);
+    return new Response(null, {headers, status: 416});
+  }
+  const length = range.end - range.start + 1;
+  if (length > 16 * 1024 * 1024) {
+    headers.set('Content-Range', `bytes */${file.byteLength}`);
+    return new Response(null, {headers, status: 416});
+  }
+
+  const handle = await open(file.sourcePath, 'r');
+  try {
+    const bytes = new Uint8Array(length);
+    let read = 0;
+    while (read < length) {
+      const result = await handle.read(bytes, read, length - read, range.start + read);
+      if (result.bytesRead === 0) throw new Error('Local PMTiles snapshot ended during read.');
+      read += result.bytesRead;
+    }
+    headers.set('Content-Length', String(length));
+    headers.set('Content-Range', `bytes ${range.start}-${range.end}/${file.byteLength}`);
+    return new Response(bytes, {headers, status: 206});
+  } finally {
+    await handle.close();
+  }
+}
+
+function parseLocalTilesetRange(value: string | null, size: number) {
+  const match = value?.match(/^bytes=(\d+)-(\d*)$/u);
+  if (!match) return null;
+  const start = Number(match[1]);
+  const requestedEnd = match[2] ? Number(match[2]) : size - 1;
+  const end = Math.min(requestedEnd, size - 1);
+  if (
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(requestedEnd) ||
+    start < 0 ||
+    start >= size ||
+    requestedEnd < start
+  ) {
+    return null;
+  }
+  return {end, start};
 }
 
 export function createTileflowArtifactStatus(state: TileflowArtifactSessionState) {
@@ -311,11 +418,6 @@ export function createTileflowArtifactStatus(state: TileflowArtifactSessionState
       : {}),
     ...(state.status === 'invalid' ? {diagnostics: state.diagnostics} : {}),
   };
-}
-
-function getSessionArtifacts(session: TileflowArtifactSession): TileflowBuildArtifacts | undefined {
-  const state = session.getState();
-  return state.status === 'ready' ? state.artifacts : session.getLastGoodArtifacts();
 }
 
 function unavailableArtifactsResponse(state: TileflowArtifactSessionState): Response {
@@ -398,6 +500,7 @@ function isOwnedTileflowRequestPath(path: string): boolean {
     getTileflowStyleInspectionSelection(path) !== undefined ||
     path.startsWith('/generations/') ||
     path.startsWith('/icons/') ||
+    path.startsWith('/tilesets/') ||
     getTileflowStyleSelection(path) !== undefined ||
     path.startsWith('/fonts/') ||
     path.startsWith('/__runtime/')

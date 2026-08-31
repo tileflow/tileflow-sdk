@@ -16,7 +16,7 @@ const fakeApiKey = `tf_live_${'a'.repeat(48)}`;
 const accountSessionToken = `tf_session_${'b'.repeat(64)}`;
 const managedMapId = 'map_AbCdEfGhIjKlMnOp';
 
-test('World conversion auto-selects one map, preserves its theme family, and writes a managed manifest', async (t) => {
+test('Map deploy auto-selects one map, preserves its theme family, and writes a session manifest', async (t) => {
   const fixture = await createFixture(t);
   let requestBody: Record<string, unknown> | null = null;
   const api = await createFakeApi(t, async (request) => {
@@ -26,7 +26,6 @@ test('World conversion auto-selects one map, preserves its theme family, and wri
         changed: true,
         version: 1,
       }),
-      worldConversionId: 'wcv_12345678',
     };
   });
   const result = await runCli(
@@ -39,16 +38,24 @@ test('World conversion auto-selects one map, preserves its theme family, and wri
       fixture.manifestPath,
       '--api-url',
       api.url,
-      '--world-conversion',
-      'wcv_12345678',
+      '--map-id',
+      managedMapId,
     ],
     {TILEFLOW_API_KEY: fakeApiKey},
   );
 
   assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
-  assert.equal(requestBody?.worldConversionId, 'wcv_12345678');
+  assert.equal(requestBody?.managedMapId, managedMapId);
   assert.equal(requestBody?.usageMode, 'session');
-  assert.equal((requestBody as {artifact?: {schemaVersion?: number}})?.artifact?.schemaVersion, 3);
+  assert.equal(
+    (requestBody as {artifact?: {kind?: string}})?.artifact?.kind,
+    'tileflow-map-deployment',
+  );
+  assert.equal((requestBody as {artifact?: {schemaVersion?: number}})?.artifact?.schemaVersion, 1);
+  assert.deepEqual(
+    (requestBody as {artifact?: {teamSources?: Record<string, unknown>}})?.artifact?.teamSources,
+    {},
+  );
   assert.deepEqual(
     Object.keys(
       (requestBody as {artifact?: {styles?: Record<string, unknown>}})?.artifact?.styles ?? {},
@@ -62,11 +69,10 @@ test('World conversion auto-selects one map, preserves its theme family, and wri
   assert.equal(manifest.maps.madrid.mapId, managedMapId);
   assert.equal(manifest.maps.madrid.usageMode, 'session');
   assert.equal(manifest.maps.madrid.worldGeneration, 'v1');
-  assert.equal('worldConversionId' in manifest.maps.madrid, false);
   assert.doesNotMatch(await readFile(fixture.manifestPath, 'utf8'), /wcv_12345678/u);
 });
 
-test('World conversion rejects a mismatched --map before network work', async (t) => {
+test('Map deploy rejects a mismatched --map before network work', async (t) => {
   const fixture = await createFixture(t);
   let requests = 0;
   const api = await createFakeApi(t, async () => {
@@ -82,8 +88,8 @@ test('World conversion rejects a mismatched --map before network work', async (t
       fixture.manifestPath,
       '--api-url',
       api.url,
-      '--world-conversion',
-      'wcv_12345678',
+      '--map-id',
+      managedMapId,
       '--map',
       'lisbon',
     ],
@@ -97,7 +103,7 @@ test('World conversion rejects a mismatched --map before network work', async (t
   await assert.rejects(() => readFile(fixture.manifestPath, 'utf8'), {code: 'ENOENT'});
 });
 
-test('World conversion deploys only the selected map and preserves unrelated manifest entries', async (t) => {
+test('Map deploy publishes only the selected map and preserves unrelated manifest entries', async (t) => {
   const fixture = await createFixture(t);
   await writeFile(
     fixture.configPath,
@@ -111,7 +117,6 @@ test('World conversion deploys only the selected map and preserves unrelated man
     requests.push(body);
     return {
       ...hostedDeploymentResponse(managedMapId),
-      worldConversionId: 'wcv_12345678',
     };
   });
   await writeFile(
@@ -145,8 +150,8 @@ test('World conversion deploys only the selected map and preserves unrelated man
       fixture.manifestPath,
       '--api-url',
       api.url,
-      '--world-conversion',
-      'wcv_12345678',
+      '--map-id',
+      managedMapId,
       '--map',
       'lisbon',
     ],
@@ -234,7 +239,7 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
       artifact?: {schemaVersion?: number; styles?: Record<string, {sprite?: unknown}>};
     }
   ).artifact;
-  assert.equal(deployedStyles?.schemaVersion, 3);
+  assert.equal(deployedStyles?.schemaVersion, 1);
   assert.deepEqual(Object.keys(deployedStyles?.styles ?? {}), ['dark', 'light']);
   for (const style of Object.values(deployedStyles?.styles ?? {})) {
     assert.equal(style.sprite, 'https://api.example.test/sprites/icp_1234567890abcdef/sprite');
@@ -461,7 +466,7 @@ test('a failed singular deploy preserves the previous manifest and a retry conve
   };
   assert.equal(manifest.version, 1);
   assert.equal(manifest.maps.beta?.mapId, managedMapId);
-  assert.deepEqual(Object.keys(manifest.maps), ['beta']);
+  assert.deepEqual(Object.keys(manifest.maps), ['previous', 'beta']);
 });
 
 test('deploy refuses a self-hosted manifest unless replacement is explicit', async (t) => {
@@ -745,7 +750,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     };
     const mapEntry = artifact.buildManifest?.maps?.madrid;
     assert.equal(artifact.mapId, 'madrid');
-    assert.equal(artifact.schemaVersion, 3);
+    assert.equal(artifact.schemaVersion, 1);
     assert.equal(artifact.buildManifest?.schemaVersion, 1);
     assert.equal(mapEntry?.mapVersion, 1);
     assert.equal(mapEntry?.semanticCompiler?.name, 'tileflow-semantic');
@@ -1600,9 +1605,7 @@ function runCli(
   Object.assign(environment, overrides, {NO_COLOR: '1'});
 
   const effectiveArguments =
-    arguments_[0] === 'deploy' &&
-    !arguments_.includes('--map-id') &&
-    !arguments_.includes('--world-conversion')
+    arguments_[0] === 'deploy' && !arguments_.includes('--map-id')
       ? [...arguments_, '--map-id', managedMapId]
       : arguments_;
 

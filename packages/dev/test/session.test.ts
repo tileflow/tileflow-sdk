@@ -160,6 +160,49 @@ test('publishes only the newest overlapping refresh generation', async () => {
   }
 });
 
+test('retires a replaced generation after its last operation releases it', async () => {
+  let build = 0;
+  const disposed: number[] = [];
+  const session = await createTileflowArtifactSessionWithBuilder({}, async () => {
+    const generation = ++build;
+    return {
+      assets: [],
+      buildManifest: {maps: {}, schemaVersion: 1},
+      dispose: async () => {
+        disposed.push(generation);
+      },
+      manifest: {version: 1, maps: {}},
+      project: {maps: {}},
+      styles: {},
+      watchPaths: [],
+    } as never;
+  });
+  const first = session.acquireArtifacts(1);
+  assert.ok(first);
+
+  await session.refresh('replacement');
+
+  assert.deepEqual(disposed, []);
+  assert.equal(session.acquireArtifacts(1), undefined);
+  const second = session.acquireArtifacts(2);
+  assert.ok(second);
+
+  await first.release();
+  assert.deepEqual(disposed, [1]);
+
+  const close = session.close();
+  let concurrentCloseFinished = false;
+  const concurrentClose = session.close().then(() => {
+    concurrentCloseFinished = true;
+  });
+  await Promise.resolve();
+  assert.deepEqual(disposed, [1]);
+  assert.equal(concurrentCloseFinished, false);
+  await second.release();
+  await Promise.all([close, concurrentClose]);
+  assert.deepEqual(disposed, [1, 2]);
+});
+
 test('redacts external absolute paths from watched-build diagnostic messages', async (t) => {
   const cwd = await createFixture(t);
   const external = join(cwd, '..', 'private-fixture', 'secret.json');
@@ -1293,6 +1336,7 @@ function runPreviewScript(
     .exec(html)?.[1]
     ?.replace(/^[ \t]*import [^\n]+;[ \t]*$/gm, '')
     .replace(/^[ \t]*await loadTileflowStyleFonts\([^\n]+;[ \t]*$/gm, '')
+    .replace(/^[ \t]*registerTileflowPmtilesProtocol\([^\n]+;[ \t]*$/gm, '')
     .replace(/^[ \t]*registerTileflowContourProtocol\([^\n]+;[ \t]*$/gm, '');
   assert.ok(script, 'expected an inline preview script');
 

@@ -35,7 +35,7 @@
     "TRADEMARKS.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/artifacts.ts src/config.ts src/fonts.ts src/icons.ts src/inspect.ts src/preview.ts src/server.ts src/validation.ts --format esm --dts --clean --platform node --external sharp",
+    "build": "tsup src/index.ts src/artifacts.ts src/config.ts src/fonts.ts src/icons.ts src/inspect.ts src/preview.ts src/server.ts src/tilesets.ts src/validation.ts --format esm --dts --clean --platform node --external sharp",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
@@ -81,6 +81,11 @@
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js",
       "default": "./dist/server.js"
+    },
+    "./tilesets": {
+      "types": "./dist/tilesets.d.ts",
+      "import": "./dist/tilesets.js",
+      "default": "./dist/tilesets.js"
     },
     "./validation": {
       "types": "./dist/validation.d.ts",

@@ -138,6 +138,7 @@ export function renderTileflowPreviewHtml(
     <script type="module">
       import {loadTileflowStyleFonts} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowContourProtocol} from "${basePath}/__runtime/tileflow-browser.js";
+      import {registerTileflowPmtilesProtocol} from "${basePath}/__runtime/tileflow-browser.js";
 
       const initialStatus = ${JSON.stringify(initialStatus)};
       const normalizeTileflowLandmarkManifest = ${normalizeTileflowLandmarkManifest.toString()};
@@ -241,6 +242,7 @@ export function renderTileflowPreviewHtml(
       let threeCoreRuntimePromise;
       let buildingWireframeRuntimePromise;
       let landmarkRuntimePromise;
+      let pmtilesRuntimePromise;
       const landmarkManifestPromises = new Map();
       const landmarkManifestMaximumBytes = 1024 * 1024;
       const landmarkManifestTimeoutMs = 10000;
@@ -279,7 +281,7 @@ export function renderTileflowPreviewHtml(
             import("${basePath}/__runtime/three-addons/loaders/GLTFLoader.js"),
             import("${basePath}/__runtime/three-addons/loaders/DRACOLoader.js"),
             import("${basePath}/__runtime/three-addons/libs/meshopt_decoder.module.js"),
-            import("${basePath}/__runtime/pmtiles.js")
+            loadPmtilesRuntime()
           ]).then(([, gltfLoaderModule, dracoLoaderModule, meshoptDecoderModule, pmtilesModule]) => {
             GLTFLoader = gltfLoaderModule.GLTFLoader;
             DRACOLoader = dracoLoaderModule.DRACOLoader;
@@ -293,6 +295,17 @@ export function renderTileflowPreviewHtml(
           });
         }
         return landmarkRuntimePromise;
+      }
+
+      function loadPmtilesRuntime() {
+        if (!pmtilesRuntimePromise) {
+          pmtilesRuntimePromise = import("${basePath}/__runtime/pmtiles.js").then((pmtilesModule) => {
+            PMTiles = pmtilesModule.PMTiles;
+            FetchSource = pmtilesModule.FetchSource;
+            return pmtilesModule;
+          });
+        }
+        return pmtilesRuntimePromise;
       }
 
       function waitForLandmarkManifest(promise, signal) {
@@ -3748,6 +3761,7 @@ export function renderTileflowPreviewHtml(
         maplibregl.setWorkerCount?.(mapWorkerCount);
         await loadTileflowStyleFonts(styleUrl, {fontFaces: previewFontFaces});
         registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
+        registerTileflowPmtilesProtocol({addProtocol: maplibregl.addProtocol});
         const map = new maplibregl.Map({
           collectResourceTiming: mapBenchmarkEnabled,
           container: "map",

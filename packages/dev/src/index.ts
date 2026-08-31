@@ -6,4 +6,5 @@ export * from './icons';
 export * from './inspect';
 export * from './preview';
 export * from './server';
+export * from './tileset-inspection';
 export * from './validation';

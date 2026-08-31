@@ -26,8 +26,9 @@ import {
 } from './cartography/semantic-bindings';
 import {tileflowSemanticCompilerIdentity} from './cartography/semantic-compiler';
 import {tileflowMapDefaultMaxDepth} from './maps/resolve';
+import {tileflowHostedSourceLimit, tileflowOverlayPlacements} from './overlays';
 
-export const tileflowAuthoringManifestSchemaVersion = 1 as const;
+export const tileflowAuthoringManifestSchemaVersion = 2 as const;
 
 export type TileflowAuthoringCommandName =
   | 'explain'
@@ -49,7 +50,7 @@ export type TileflowAuthoringCommand = Readonly<{
   outputKind: TileflowAuthoringCommandOutputKind;
   /** Stable identifier for the exact versioned JSON contract emitted on success. */
   outputSchemaRef: string;
-  outputVersion: 1 | 3;
+  outputVersion: 1 | 2 | 4;
   purpose: string;
   writes: false;
 }>;
@@ -68,13 +69,16 @@ export type TileflowAuthoringOperation = Readonly<{
     | 'define-map'
     | 'data-expression'
     | 'disable-domain'
+    | 'hosted-source'
+    | 'maplibre-overlay'
+    | 'remove-resource'
     | 'extend-map'
     | 'refine-domain'
     | 'refine-render-target'
     | 'render-pass'
     | 'reset-value'
     | 'replace-domain';
-  scope: 'domain' | 'expression' | 'map' | 'render-stack';
+  scope: 'domain' | 'expression' | 'map' | 'render-stack' | 'resource';
 }>;
 
 export type TileflowAuthoringManifestDomain = Readonly<{
@@ -178,11 +182,27 @@ export type TileflowAuthoringManifest = Readonly<{
     selectorKinds: readonly string[];
     targetPattern: string;
   }>;
+  resources: Readonly<{
+    hostedSources: Readonly<{
+      api: 'hostedTileset({ tileset, local, attribution, type?, tileSize? })';
+      localResolution: 'explicit-relative-pmtiles';
+      maxPerMap: typeof tileflowHostedSourceLimit;
+      identity: 'keyed-source-id-and-team-local-tileset';
+    }>;
+    overlays: Readonly<{
+      api: 'maplibreOverlay({ source, placement, layers })';
+      layers: 'ordered-maplibre-style-layers-without-source';
+      placement: typeof tileflowOverlayPlacements;
+      replacement: 'atomic-by-overlay-id';
+    }>;
+    removal: 'remove()';
+  }>;
   resolution: Readonly<{
     arrays: 'replace';
     domains: 'replace-refine-disable-reset';
     identity: 'leaf-owned';
     inheritance: Readonly<{maxDepth: typeof tileflowMapDefaultMaxDepth}>;
+    keyedResources: 'merge-replace-remove';
     namedRecords: 'merge-by-key';
     records: 'deep-merge';
     scalars: 'replace';
@@ -192,7 +212,7 @@ export type TileflowAuthoringManifest = Readonly<{
   schemaVersion: typeof tileflowAuthoringManifestSchemaVersion;
   schemas: Readonly<{
     authoring: '#/$defs/TileflowAuthoringMap';
-    document: 'https://tileflow.dev/schemas/tileflow-config-reference-v3.json';
+    document: 'https://tileflow.dev/schemas/tileflow-config-reference-v4.json';
     modules: '#/$defs/TileflowAuthoringModules';
     resolved: '#/$defs/ResolvedTileflowMap';
   }>;
@@ -215,6 +235,24 @@ const operations: readonly TileflowAuthoringOperation[] = [
     description: 'Extend one imported map; identity remains leaf-owned.',
     name: 'extend-map',
     scope: 'map',
+  },
+  {
+    api: 'sources.<id> = hostedTileset(options)',
+    description: 'Bind one Team-local logical tileset to an explicit local PMTiles archive.',
+    name: 'hosted-source',
+    scope: 'resource',
+  },
+  {
+    api: 'overlays.<id> = maplibreOverlay({ source, placement, layers })',
+    description: 'Place one ordered group of validated MapLibre Style Layers.',
+    name: 'maplibre-overlay',
+    scope: 'resource',
+  },
+  {
+    api: 'sources.<id> = remove() or overlays.<id> = remove()',
+    description: 'Explicitly remove one inherited keyed source or overlay.',
+    name: 'remove-resource',
+    scope: 'resource',
   },
   {
     api: 'modules.<domain> = <domain>(options)',
@@ -266,8 +304,8 @@ const commands: readonly TileflowAuthoringCommand[] = [
     name: 'language-manifest',
     output: 'The complete versioned semantic language, operations, domains, and workflows.',
     outputKind: 'raw-authoring-manifest',
-    outputSchemaRef: 'urn:tileflow:schema:authoring-manifest:v1',
-    outputVersion: 1,
+    outputSchemaRef: 'urn:tileflow:schema:authoring-manifest:v2',
+    outputVersion: 2,
     purpose: 'Discover the finite public authoring surface without reading implementation code.',
     writes: false,
   },
@@ -276,8 +314,8 @@ const commands: readonly TileflowAuthoringCommand[] = [
     name: 'language-schema',
     output: 'Exact authoring, options, patch, resolved, scene, and expression JSON Schemas.',
     outputKind: 'raw-config-reference',
-    outputSchemaRef: 'https://tileflow.dev/schemas/tileflow-config-reference-v3.json',
-    outputVersion: 3,
+    outputSchemaRef: 'https://tileflow.dev/schemas/tileflow-config-reference-v4.json',
+    outputVersion: 4,
     purpose: 'Generate only values accepted by runtime validation and the semantic compiler.',
     writes: false,
   },
@@ -619,11 +657,27 @@ export const tileflowAuthoringManifest: TileflowAuthoringManifest = deepFreeze({
     selectorKinds: [...tileflowRenderSelectorKinds],
     targetPattern: tileflowSemanticTargetPattern.source,
   },
+  resources: {
+    hostedSources: {
+      api: 'hostedTileset({ tileset, local, attribution, type?, tileSize? })',
+      identity: 'keyed-source-id-and-team-local-tileset',
+      localResolution: 'explicit-relative-pmtiles',
+      maxPerMap: tileflowHostedSourceLimit,
+    },
+    overlays: {
+      api: 'maplibreOverlay({ source, placement, layers })',
+      layers: 'ordered-maplibre-style-layers-without-source',
+      placement: tileflowOverlayPlacements,
+      replacement: 'atomic-by-overlay-id',
+    },
+    removal: 'remove()',
+  },
   resolution: {
     arrays: 'replace',
     domains: 'replace-refine-disable-reset',
     identity: 'leaf-owned',
     inheritance: {maxDepth: tileflowMapDefaultMaxDepth},
+    keyedResources: 'merge-replace-remove',
     namedRecords: 'merge-by-key',
     records: 'deep-merge',
     scalars: 'replace',
@@ -633,7 +687,7 @@ export const tileflowAuthoringManifest: TileflowAuthoringManifest = deepFreeze({
   schemaVersion: tileflowAuthoringManifestSchemaVersion,
   schemas: {
     authoring: '#/$defs/TileflowAuthoringMap',
-    document: 'https://tileflow.dev/schemas/tileflow-config-reference-v3.json',
+    document: 'https://tileflow.dev/schemas/tileflow-config-reference-v4.json',
     modules: '#/$defs/TileflowAuthoringModules',
     resolved: '#/$defs/ResolvedTileflowMap',
   },

@@ -1,11 +1,29 @@
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {withTileflow} from '../src/index';
 import {createTileflowRouteHandlers} from '../src/server';
+
+test('reuses one watched generation across repeated mutable requests', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-watched-server-'));
+  await linkWorkspacePackages(cwd);
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  await writeFile(join(cwd, 'tileflow.config.ts'), rootConfig('#112233'));
+  const handlers = createTileflowRouteHandlers({cwd});
+  t.after(() => handlers.close());
+  const style = new Request('http://localhost/tileflow/styles/main/light.json');
+
+  assert.equal((await handlers.GET(style)).status, 200);
+  assert.equal((await handlers.GET(style)).status, 200);
+  const status = (await (
+    await handlers.GET(new Request('http://localhost/tileflow/__status'))
+  ).json()) as {generation: number};
+
+  assert.equal(status.generation, 1);
+});
 
 test('emits production artifacts without adding a webpack config', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-'));
@@ -61,6 +79,29 @@ test('emits production artifacts without adding a webpack config', async () => {
     process.env.NODE_ENV = previousNodeEnv;
     await rm(cwd, {force: true, recursive: true});
   }
+});
+
+test('rejects a local PMTiles source before writing Next production assets', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-local-tileset-'));
+  await linkWorkspacePackages(cwd);
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  t.after(async () => {
+    process.env.NODE_ENV = previousNodeEnv;
+    await rm(cwd, {force: true, recursive: true});
+  });
+  await writeFile(
+    join(cwd, 'tileflow.config.ts'),
+    `import {defineMap, hostedTileset} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+export default defineMap({id:'stores-map',version:1,extends:streets,sources:{
+  stores:hostedTileset({tileset:'stores',local:'./stores.pmtiles',attribution:'Example'})
+}});`,
+  );
+
+  const config = withTileflow({}, {cwd});
+  await assert.rejects(() => config.rewrites!(), {code: 'TF_LOCAL_TILESET_PRODUCTION_UNRESOLVED'});
+  await assert.rejects(stat(join(cwd, 'public')), {code: 'ENOENT'});
 });
 
 test('combines valid Next and Tileflow base paths without changing URL kind', async (t) => {
@@ -196,9 +237,10 @@ test('refreshes direct style requests after a config edit without requiring a ma
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-server-'));
   await linkWorkspacePackages(cwd);
   const configPath = join(cwd, 'tileflow.config.ts');
+  let handlers: ReturnType<typeof createTileflowRouteHandlers> | undefined;
   try {
     await writeFile(configPath, configWithBackground('#112233'));
-    const handlers = createTileflowRouteHandlers({cwd});
+    handlers = createTileflowRouteHandlers({cwd});
     const request = new Request('http://localhost/tileflow/styles/main/light.json');
     const first = await handlers.GET(request);
     const firstStyle = await first.json();
@@ -206,9 +248,15 @@ test('refreshes direct style requests after a config edit without requiring a ma
     assert.equal(vectorUrl(firstStyle), 'https://api.tileflow.dev/tiles/world/tiles.json');
 
     await writeFile(configPath, configWithBackground('#445566'));
-    const second = await handlers.GET(request);
-    assert.equal(backgroundColor(await second.json()), '#445566');
+    const deadline = Date.now() + 3_000;
+    while (true) {
+      const second = await handlers.GET(request);
+      if (backgroundColor(await second.json()) === '#445566') break;
+      if (Date.now() > deadline) throw new Error('Next watcher did not publish the config edit.');
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
   } finally {
+    await handlers?.close();
     await rm(cwd, {force: true, recursive: true});
   }
 });

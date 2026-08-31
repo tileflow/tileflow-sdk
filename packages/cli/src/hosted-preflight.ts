@@ -1,4 +1,9 @@
-import {compareCodeUnits, tileflowHostedAlphaCompatibility} from '@tileflow/core';
+import {
+  compareCodeUnits,
+  type MapLibreStyle,
+  type ResolvedTileflowMap,
+  tileflowHostedAlphaCompatibility,
+} from '@tileflow/core';
 import type {TileflowBuildCatalog, TileflowBuildStyles} from '@tileflow/core/build';
 
 export type TileflowHostedCompatibilityIssue = {
@@ -6,6 +11,53 @@ export type TileflowHostedCompatibilityIssue = {
   message: string;
   path: string;
 };
+
+export type TileflowHostedSourceBinding = Readonly<{
+  tileset: string;
+  type: 'raster' | 'vector';
+}>;
+
+export type TileflowHostedTeamSources = Readonly<Record<string, TileflowHostedSourceBinding>>;
+
+export function prepareTileflowHostedThemeFamily(
+  mapName: string,
+  map: ResolvedTileflowMap,
+  styles: Readonly<Record<string, MapLibreStyle>>,
+): {styles: Record<string, MapLibreStyle>; teamSources: TileflowHostedTeamSources} {
+  const prepared = Object.fromEntries(
+    Object.entries(styles)
+      .sort(([left], [right]) => compareCodeUnits(left, right))
+      .map(([themeName, style]) => [themeName, cloneStyle(style)]),
+  );
+  const teamSources = Object.fromEntries(
+    Object.entries(map.sources ?? {})
+      .sort(([left], [right]) => compareCodeUnits(left, right))
+      .map(([sourceId, source]) => {
+        for (const [themeName, style] of Object.entries(prepared)) {
+          const definition = style.sources[sourceId];
+          if (!definition) {
+            throw Object.assign(
+              new Error(`Hosted theme ${themeName} is missing logical source ${sourceId}.`),
+              {
+                code: 'TF_HOSTED_SOURCE_MISSING',
+                path: `maps.${mapName}.themes.${themeName}.sources.${sourceId}`,
+              },
+            );
+          }
+          definition.url = `tileflow://hosted-sources/${sourceId}`;
+          delete definition.tiles;
+        }
+        return [
+          sourceId,
+          Object.freeze({
+            tileset: source.tileset,
+            type: source.type,
+          }),
+        ];
+      }),
+  );
+  return {styles: prepared, teamSources};
+}
 
 export function inspectTileflowHostedCompatibility(
   project: TileflowBuildCatalog,
@@ -42,4 +94,8 @@ export function inspectTileflowHostedCompatibility(
   }
 
   return issues;
+}
+
+function cloneStyle(style: MapLibreStyle): MapLibreStyle {
+  return JSON.parse(JSON.stringify(style)) as MapLibreStyle;
 }

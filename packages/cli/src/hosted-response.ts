@@ -42,7 +42,6 @@ export const hostedStyleDeploymentResponseSchema = z
       )
       .refine((themes) => Object.keys(themes).length > 0),
     version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
-    worldConversionId: safeIdentifierSchema.optional(),
   })
   .strict();
 

@@ -123,18 +123,25 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
     this.#assertOpen();
 
     const artifacts = await this.#createArtifacts();
-
-    return this.captureArtifacts(artifacts, scenes, signal ?? this.#options.signal);
+    try {
+      return await this.captureArtifacts(artifacts, scenes, signal ?? this.#options.signal);
+    } finally {
+      await disposeCaptureArtifacts(artifacts);
+    }
   }
 
   async captureAll(signal?: AbortSignal): Promise<TileflowCaptureResult> {
     this.#assertOpen();
     const artifacts = await this.#createArtifacts();
-    return this.captureArtifacts(
-      artifacts,
-      Object.keys(artifacts.project.scenes ?? {}),
-      signal ?? this.#options.signal,
-    );
+    try {
+      return await this.captureArtifacts(
+        artifacts,
+        Object.keys(artifacts.project.scenes ?? {}),
+        signal ?? this.#options.signal,
+      );
+    } finally {
+      await disposeCaptureArtifacts(artifacts);
+    }
   }
 
   async captureDefinitions(
@@ -147,11 +154,15 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
       ...artifacts,
       project: {...artifacts.project, scenes},
     };
-    return this.captureArtifacts(
-      withDefinitions,
-      Object.keys(scenes),
-      signal ?? this.#options.signal,
-    );
+    try {
+      return await this.captureArtifacts(
+        withDefinitions,
+        Object.keys(scenes),
+        signal ?? this.#options.signal,
+      );
+    } finally {
+      await disposeCaptureArtifacts(artifacts);
+    }
   }
 
   async captureArtifacts(
@@ -233,6 +244,7 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
           : await captureStandaloneTileflowScene({
               assets: artifacts.assets,
               browser,
+              ...(artifacts.localTilesets ? {localTilesets: artifacts.localTilesets} : {}),
               scene,
               signal,
               style,
@@ -291,13 +303,18 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
     await this.#browserManager.close();
   }
 
-  #createArtifacts(): Promise<TileflowBuildArtifacts> {
+  async #createArtifacts(): Promise<TileflowBuildArtifacts> {
     const cwd = resolve(this.#options.cwd ?? process.cwd());
-    return createTileflowBuildArtifacts({
-      assetBaseUrl: tileflowSyntheticAssetOrigin,
-      config: this.#options.config ?? defaultTileflowConfigPath,
-      cwd,
-    }).catch((error: unknown) => throwCaptureStyleValidationError(error));
+    try {
+      const artifacts = await createTileflowBuildArtifacts({
+        assetBaseUrl: tileflowSyntheticAssetOrigin,
+        config: this.#options.config ?? defaultTileflowConfigPath,
+        cwd,
+      });
+      return artifacts;
+    } catch (error) {
+      return throwCaptureStyleValidationError(error);
+    }
   }
 
   #assertOpen(): void {
@@ -345,6 +362,14 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
       },
     };
   }
+}
+
+async function disposeCaptureArtifacts(
+  artifacts: Pick<TileflowBuildArtifacts, 'dispose'>,
+): Promise<void> {
+  const dispose = artifacts.dispose;
+  artifacts.dispose = undefined;
+  await dispose?.();
 }
 
 export function selectTileflowCaptureSceneNames(

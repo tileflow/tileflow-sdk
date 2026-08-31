@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
@@ -266,6 +266,29 @@ writeFileSync(command + '.observed.json', JSON.stringify({
       false,
     );
   }
+});
+
+test('build rejects a local PMTiles source before creating output', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-build-local-tileset-'));
+  await linkWorkspacePackages(directory);
+  t.after(() => rm(directory, {force: true, recursive: true}));
+  await writeFile(
+    join(directory, 'tileflow.config.ts'),
+    `import {defineMap, hostedTileset} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+export default defineMap({id:'stores-map',version:1,extends:streets,sources:{
+  stores:hostedTileset({tileset:'stores',local:'./stores.pmtiles',attribution:'Example'})
+}});`,
+  );
+
+  const result = await runCli(directory, ['build', '--out', 'dist/tileflow'], {});
+
+  assert.notEqual(result.code, 0);
+  assert.match(
+    `${result.stdout}\n${result.stderr}`,
+    /Production builds cannot publish local PMTiles sources/u,
+  );
+  await assert.rejects(stat(join(directory, 'dist')), {code: 'ENOENT'});
 });
 
 function runCli(

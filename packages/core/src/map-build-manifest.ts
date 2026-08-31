@@ -264,7 +264,7 @@ export async function hashTileflowMapRevision(
   const revisionDocument = {
     canonicalization: tileflowMapRevisionCanonicalization,
     effectiveCartography: {
-      ...effectiveCartography,
+      ...normalizeRevisionCartography(effectiveCartography),
       // The semantic language is map semantics. Its compiler ABI version remains a separate axis.
       semanticLanguage: tileflowSemanticCompilerIdentity.name,
     },
@@ -272,6 +272,23 @@ export async function hashTileflowMapRevision(
     sourceAssets: normalizeSourceAssets(sourceAssets),
   };
   return sha256Hex(`${tileflowMapRevisionDomain}${serializeCanonicalJson(revisionDocument)}`);
+}
+
+function normalizeRevisionCartography(
+  input: Omit<ResolvedTileflowMap, 'fonts' | 'icons' | 'id' | 'name' | 'version' | 'view'>,
+) {
+  if (!input.sources) return input;
+  return {
+    ...input,
+    sources: Object.fromEntries(
+      Object.entries(input.sources)
+        .sort(([left], [right]) => compareCodeUnits(left, right))
+        .map(([sourceId, source]) => {
+          const {local: _local, ...logicalSource} = source;
+          return [sourceId, logicalSource];
+        }),
+    ),
+  };
 }
 
 /** Hash the exact compiled resources bound to one map, independently from its Style JSON. */

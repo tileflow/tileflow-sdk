@@ -197,7 +197,7 @@ test('publishes authoring and resolved map entrypoints without hiding extends or
   const authoringReference = '#/$defs/TileflowAuthoringMap';
   const resolvedReference = '#/$defs/ResolvedTileflowMap';
 
-  assert.equal(reference.schemaVersion, 3);
+  assert.equal(reference.schemaVersion, 4);
   assert.equal(reference.$ref, authoringReference);
   assert.equal(reference.entrypoints?.authoring?.schemaRef, authoringReference);
   assert.equal(reference.entrypoints?.resolved?.schemaRef, resolvedReference);
@@ -286,8 +286,10 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     marine: 'atomic',
     modules: 'modules',
     name: 'identity',
+    overlays: 'keyed-resources',
     projection: 'atomic',
     scenes: 'leaf',
+    sources: 'keyed-resources',
     systemThemes: 'atomic',
     terrain: 'atomic',
     themes: 'atomic',

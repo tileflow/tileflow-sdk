@@ -1,10 +1,11 @@
 import {readFileSync} from 'node:fs';
+import {open} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {dirname, join} from 'node:path';
 import type {Browser, BrowserContext} from 'playwright';
 import type {MapLibreStyle, NormalizedTileflowCaptureScene} from '@tileflow/core';
 import {getTileflowStyleFontFaces} from '@tileflow/core/runtime';
-import type {TileflowBuildAsset} from '@tileflow/dev/artifacts';
+import type {TileflowBuildAsset, TileflowLocalTilesetFile} from '@tileflow/dev/artifacts';
 import {assertValidTileflowStyle, TileflowStyleValidationError} from '@tileflow/dev/validation';
 import {
   TileflowCaptureError,
@@ -18,6 +19,7 @@ export const tileflowSyntheticAssetOrigin = 'https://tileflow.local.invalid';
 export type StandaloneTileflowCaptureInput = {
   assets: TileflowBuildAsset[];
   browser: Browser;
+  localTilesets?: readonly TileflowLocalTilesetFile[];
   scene: NormalizedTileflowCaptureScene;
   signal?: AbortSignal;
   style: MapLibreStyle;
@@ -39,7 +41,8 @@ const tileflowCorePackagePath = require.resolve('@tileflow/core/package.json');
 const tileflowBrowserModule = `${readFileSync(
   join(dirname(tileflowCorePackagePath), 'dist', 'browser.js'),
   'utf8',
-)}\nglobalThis.__tileflowRegisterContourProtocol = registerTileflowContourProtocol;`;
+)}\nglobalThis.__tileflowRegisterContourProtocol = registerTileflowContourProtocol;
+globalThis.__tileflowRegisterPmtilesProtocol = registerTileflowPmtilesProtocol;`;
 
 type PagePhaseResult =
   | {status: 'ok'}
@@ -112,6 +115,9 @@ export async function captureStandaloneTileflowScene(
     timeout.unref?.();
 
     const assets = new Map(input.assets.map((asset) => [asset.fileName, asset]));
+    const localTilesets = new Map(
+      (input.localTilesets ?? []).map((tileset) => [tileset.fileName, tileset]),
+    );
     const fontFaces = getTileflowStyleFontFaces(input.style);
     const remoteOrigins = new Set<string>();
     let syntheticAssetFailure: string | undefined;
@@ -131,6 +137,15 @@ export async function captureStandaloneTileflowScene(
 
       if (url.origin === tileflowSyntheticAssetOrigin) {
         const fileName = decodeURIComponent(url.pathname.slice(1));
+        const localTileset = url.search === '' ? localTilesets.get(fileName) : undefined;
+        if (localTileset) {
+          const response = await localTilesetCaptureResponse(
+            route.request().headers()['range'],
+            localTileset,
+          );
+          await route.fulfill(response);
+          return;
+        }
         const asset = url.search === '' ? assets.get(fileName) : undefined;
 
         if (!asset) {
@@ -290,6 +305,74 @@ export async function captureStandaloneTileflowScene(
     }
     input.signal?.removeEventListener('abort', onAbort);
     await context?.close().catch(() => undefined);
+  }
+}
+
+async function localTilesetCaptureResponse(
+  rangeHeader: string | undefined,
+  file: TileflowLocalTilesetFile,
+): Promise<{
+  body: Buffer;
+  contentType?: string;
+  headers: Record<string, string>;
+  status: number;
+}> {
+  const match = rangeHeader?.match(/^bytes=(\d+)-(\d*)$/u);
+  if (!match) {
+    return {
+      body: Buffer.alloc(0),
+      headers: {
+        'Accept-Ranges': 'bytes',
+        'Content-Range': `bytes */${file.byteLength}`,
+        ETag: file.etag,
+      },
+      status: 416,
+    };
+  }
+  const start = Number(match[1]);
+  const requestedEnd = match[2] ? Number(match[2]) : file.byteLength - 1;
+  const end = Math.min(requestedEnd, file.byteLength - 1);
+  if (
+    !Number.isSafeInteger(start) ||
+    !Number.isSafeInteger(requestedEnd) ||
+    start < 0 ||
+    start >= file.byteLength ||
+    requestedEnd < start ||
+    end - start + 1 > 16 * 1024 * 1024
+  ) {
+    return {
+      body: Buffer.alloc(0),
+      headers: {
+        'Accept-Ranges': 'bytes',
+        'Content-Range': `bytes */${file.byteLength}`,
+        ETag: file.etag,
+      },
+      status: 416,
+    };
+  }
+  const length = end - start + 1;
+  const handle = await open(file.sourcePath, 'r');
+  try {
+    const body = Buffer.alloc(length);
+    let read = 0;
+    while (read < length) {
+      const result = await handle.read(body, read, length - read, start + read);
+      if (result.bytesRead === 0) throw new Error('Local PMTiles snapshot ended during capture.');
+      read += result.bytesRead;
+    }
+    return {
+      body,
+      contentType: 'application/vnd.pmtiles',
+      headers: {
+        'Accept-Ranges': 'bytes',
+        'Content-Length': String(length),
+        'Content-Range': `bytes ${start}-${end}/${file.byteLength}`,
+        ETag: file.etag,
+      },
+      status: 206,
+    };
+  } finally {
+    await handle.close();
   }
 }
 
@@ -528,6 +611,7 @@ window.__tileflowCaptureLoad = async function(input) {
   try {
     await loadTileflowFontFaces(input.fontFaces || []);
     window.__tileflowRegisterContourProtocol?.({addProtocol: window.maplibregl.addProtocol});
+    window.__tileflowRegisterPmtilesProtocol?.({addProtocol: window.maplibregl.addProtocol});
     window.__tileflowCaptureLoopbackSourceIds = Object.entries(input.style.sources || {})
       .filter(([, source]) => isLoopbackSourceUrl(source?.url))
       .map(([sourceId]) => sourceId);

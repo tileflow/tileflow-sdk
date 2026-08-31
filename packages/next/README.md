@@ -49,7 +49,14 @@ export const {GET, HEAD} = createTileflowRouteHandlers({
 
 During `next build`, `withTileflow()` writes static artifacts to
 `public/tileflow`. During development, the route handler serves the same manifest,
-styles, icon sprites, and package-owned fonts without a separate `tileflow dev` process.
+styles, icon sprites, package-owned fonts, and immutable generation-local PMTiles snapshots without a
+separate `tileflow dev` process. Repeated route-module evaluation reuses one process-wide watched
+generation instead of rebuilding PMTiles per request. Production rejects unresolved local PMTiles
+before writing Tileflow assets; publish managed data explicitly or provide an application-owned
+production source. Development Style URLs remain stable by logical tileset ID while the served
+snapshot changes by generation. Custom test/server harnesses that
+own the returned handlers should call `await handlers.close()` during shutdown; the documented App
+Router module intentionally keeps its shared handler for the server process lifetime.
 Artifact generation works with both the default Turbopack build and `next build --webpack`.
 
 `next dev` (or the production server used by a test fixture) remains the only server for

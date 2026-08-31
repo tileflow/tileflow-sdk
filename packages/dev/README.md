@@ -12,6 +12,12 @@ import {createTileflowBuildArtifacts} from '@tileflow/dev/artifacts';
 const artifacts = await createTileflowBuildArtifacts({
   config: 'tileflow.config.ts',
 });
+
+try {
+  // Serve, capture, or write this exact generation.
+} finally {
+  await artifacts.dispose?.();
+}
 ```
 
 The integration surfaces are deliberately split: use `@tileflow/dev/artifacts` for source
@@ -31,11 +37,22 @@ point to content-addressed `generations/<sha256>/...` theme styles and sprites; 
 installed before the manifest pointer changes. Stable style paths are
 `styles/<map>/<theme>.json`; every manifest lookup resolves a concrete theme. The disk writer also stages the complete plan,
 records a managed-file inventory, rolls back caught filesystem failures, and removes only stale
-files named by its previous valid inventory. It retains the immediately preceding immutable
-generation during each replacement, so a client that already read the old manifest can finish its
-style and sprite requests; the next replacement retires that older generation. Stable `styles/`
-and `icons/` paths remain available, but generation-consistent consumers
-resolve maps through `manifest.json`.
+files named by its previous valid inventory. Stable `styles/` and `icons/` paths remain available,
+but generation-consistent consumers resolve maps through `manifest.json`.
+
+A local `hostedTileset()` path remains user-owned input. Dev performs bounded header, root-directory,
+and metadata checks, then creates an opaque immutable snapshot under
+`.tileflow/cache/pmtiles-snapshots/v1/`, using copy-on-write cloning when available and a safe copy
+otherwise. It does not hash the complete archive or traverse every leaf directory. Dev and Capture
+read only that snapshot. The current generation and already-started operations retain references;
+a replaced generation accepts no new acquisitions and is collected after its last operation.
+The Style-facing path remains `tilesets/<logical-id>.pmtiles` across generations; physical snapshot
+identity stays out of Style JSON. Generation ETags make cached PMTiles reads restart instead of
+mixing ranges when current changes. Invalid edits keep the prior valid generation. Production
+writers reject unresolved local PMTiles instead of copying, content-addressing, deduplicating, or
+retaining them. Explicit `tileset publish` owns managed publication and exhaustive validation.
+Startup removes snapshot generations owned by dead processes, and symlinked snapshot-store
+boundaries are rejected.
 
 Every plan also emits canonical `build-manifest.json` (schema version 1). For each map it records
 the leaf `mapVersion`, resolved lineage, effective icon/font source identities, semantic compiler ABI, and
@@ -90,6 +107,11 @@ unsubscribe();
 await session.close();
 ```
 
+`getState()` and `getLastGoodArtifacts()` are borrowed synchronous views. Before starting async
+work, call `session.acquireArtifacts(generation?)` and release the returned acquisition in `finally`.
+A replacement stops new acquisitions of the old generation and deletes its snapshot after the last
+release. `close()` waits for outstanding acquisitions.
+
 The bounded watcher follows the config, transitive local TypeScript/JavaScript/JSON imports, and
 effective local icon/font directory inputs. Generations are monotonic, overlapping refreshes are latest-wins, invalid
 edits retain the last good snapshot, and caller-supplied output directories can be ignored to avoid
@@ -107,7 +129,12 @@ const fetch = createTileflowDevRequestHandler({
   session,
   scene: 'madrid-mobile',
 });
+
+// On server shutdown:
+await Promise.all([fetch.close(), session.close()]);
 ```
+
+The handler does not close a caller-owned session.
 
 Map preview uses the exported map's `view` and accepts one concrete `theme`; scene preview uses its
 committed concrete theme, camera, and CSS viewport metadata from that same map. A scene does not
@@ -404,6 +431,26 @@ reverse-engineering compiler layers or parsing prose. It never returns `inputFil
 URL queries, data URLs, or recognized secret formats. Structured summaries and diagnostics use the
 same required schema-version-1 fields and bounded safe suggestions so consumers do not need to
 parse human prose.
+
+## Bounded PMTiles resource inspection
+
+Node tooling can inspect one local PMTiles archive without reading it completely:
+
+```ts
+import {inspectTileflowPmtiles} from '@tileflow/dev/tilesets';
+
+const inspection = await inspectTileflowPmtiles('./data/stores.pmtiles', {
+  includeValues: ['category', 'status'],
+});
+```
+
+Inspection schema 1 separates the authoritative PMTiles header and TileJSON `vector_layers` metadata
+from deterministic bounded MVT observations. Each sampled field reports present/missing feature
+counts, observed primitive types, capped distinct-value cardinality, numeric min/max, and explicit
+truncation. Values are returned only for requested portable field names, with at most 32 requested
+fields, 16 values per field, and 256 characters per string. Sampling reads at most eight tiles,
+20,000 features, or 24 MB of tile data; `sample: false` returns only authoritative metadata and does
+not accept `includeValues`.
 
 ## Bounded vector-feature inspection
 

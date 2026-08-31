@@ -36,9 +36,13 @@ test('keeps MapLibre behind the interactive runtime boundary', async () => {
   assert.match(output, /import\(["']maplibre-gl["']\)/u);
   assert.match(output, /loadTileflowStyleFonts/u);
   assert.match(output, /registerTileflowContourProtocol/u);
+  assert.match(output, /registerTileflowPmtilesProtocol/u);
   assert.ok(output.indexOf('loadTileflowStyleFonts') < output.indexOf('new maplibregl.Map'));
   assert.ok(
     output.indexOf('registerTileflowContourProtocol') < output.indexOf('new maplibregl.Map'),
+  );
+  assert.ok(
+    output.indexOf('registerTileflowPmtilesProtocol') < output.indexOf('new maplibregl.Map'),
   );
   assert.match(output, /new maplibregl\.Map/u);
   assert.doesNotMatch(output, /^import .*?["']maplibre-gl["'];?$/mu);

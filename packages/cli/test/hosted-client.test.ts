@@ -6,6 +6,7 @@ import {
   requestHostedJson,
   requestMapCapability,
   requestProjectCapability,
+  requestTeamCapability,
   uploadHostedIconPackage,
   validateApiKey,
 } from '../src/hosted-client';
@@ -148,6 +149,35 @@ test('Hosted authentication failures never reflect an untrusted remote body', as
 
   assert.deepEqual(result, {error: 'Project capability request failed (403).', ok: false});
   assert.doesNotMatch(JSON.stringify(result), new RegExp(secret));
+});
+
+test('Team capability requests carry a Team selector and data-only scopes', async () => {
+  const session: CliAccountSessionV2 = {
+    account: {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'},
+    accountSession: `tf_session_${'a'.repeat(64)}`,
+    apiOrigin: 'https://api.example.test',
+    createdAt: '2026-08-29T00:00:00.000Z',
+    expiresAt: '2026-12-01T00:00:00.000Z',
+    sessionId: 'cli_session_ada',
+  };
+  let requestBody: unknown;
+  const result = await requestTeamCapability(session, '@acme', ['tilesets:write'], {
+    fetch: (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body));
+      return Response.json({
+        capability: `tf_cap_${'a'.repeat(80)}`,
+        expiresAt: '2026-08-29T00:05:00.000Z',
+        reference: '@acme',
+        schemaVersion: 1,
+        scopes: ['tilesets:write'],
+        team: {id: 'org_acme', name: 'Acme', slug: 'acme'},
+      });
+    }) as typeof fetch,
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(requestBody, {scopes: ['tilesets:write'], team: '@acme'});
+  assert.equal(JSON.stringify(requestBody).includes('project'), false);
 });
 
 test('icon upload accepts only the exact server-confirmed package identity and sprite URL', async () => {

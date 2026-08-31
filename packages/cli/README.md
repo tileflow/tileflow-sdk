@@ -69,9 +69,16 @@ explicitly with `--out`:
 npm exec --no -- tileflow build --out public/tileflow
 ```
 
+Named hosted sources with `local` archives are for preview and capture. `tileflow build` rejects
+them instead of copying user data into production output. Publish managed data explicitly with
+`tileset publish`, or provide the production dataset through an application-owned source.
+Preview, capture, and the React/Vue/Svelte adapters register Tileflow's local PMTiles protocol
+before MapLibre reads the compiled Style. Its URL is stable by logical tileset ID; physical local
+snapshot generations do not change Style or Capture identity.
+
 Build is local and credential-free. Hosted compatibility is a separate
-`tileflow validate --target hosted` preflight; both that command and `deploy` reject non-Tileflow
-World data through the same compatibility check.
+`tileflow validate --target hosted` preflight. Primary map data must remain Tileflow World; named
+Team sources are validated and resolved independently.
 
 ## Deterministic agent diagnostics
 
@@ -91,7 +98,7 @@ npm exec --no -- tileflow semantic-diff --config maps.workspace.ts --from before
 `validate`, `inspect`, `explain`, and `semantic-diff` success writes exactly one
 schema-version-1 command envelope to stdout. The two discovery commands intentionally return their
 contracts raw instead of wrapping them: `language manifest --json` emits authoring-manifest version
-1 and `language schema --json` emits config-reference version 3. Every JSON-mode failure, including
+2 and `language schema --json` emits config-reference version 4. Every JSON-mode failure, including
 failure to load either raw discovery contract, leaves stdout empty and writes one schema-version-1
 command failure to stderr. Command summaries and every failure diagnostic contain `phase`, `code`,
 `path`, `severity`, `message`, and a bounded safe `suggestion`; diagnostics are sorted and
@@ -133,7 +140,7 @@ accepts them. The JSON document has this stable projection:
   "command": "explain",
   "ok": true,
   "selection": {"map": "madrid", "theme": "dark"},
-  "authoringManifestSchemaVersion": 1,
+  "authoringManifestSchemaVersion": 2,
   "compilation": {"ok": true, "diagnostics": [], "report": {}},
   "diagnostics": []
 }
@@ -158,7 +165,7 @@ compilation failures leave stdout empty and emit one safe structured document on
 | Semantic language | `language manifest`, `language schema`                                                         |
 | Map authoring     | `init`, `validate`, `inspect`, `explain`, `semantic-diff`, `build`, `preview` (`dev` alias)    |
 | Local evidence    | `setup capture`, `capture`, `visual compare`, `visual analyze`, `visual diff`, `visual update` |
-| Data and assets   | `inspect features`, `icons list --json`, `icons diff`                                          |
+| Data and assets   | `tileset inspect`, `tileset publish/list/status/purge`, `inspect features`, `icons list/diff`  |
 | Account           | `login`, `logout`, `whoami`                                                                    |
 | Hosted delivery   | `deploy`, `status`                                                                             |
 
@@ -459,8 +466,8 @@ Hosted writes have two independent authorization paths:
 
 - Personal developer session: run `npm exec --no -- tileflow login` once for a
   Tileflow API origin. Login authenticates the account and selects no Map.
-  Each hosted command exchanges that account session for a brief capability scoped to its
-  explicit Map ID.
+  Map commands exchange it for a brief Map capability; tileset commands use a separate Team data
+  capability.
 - CI key: create a dashboard `CI deploy` key, store it as
   `TILEFLOW_API_KEY`, and let the repository workflow deploy without a local login. The server
   binds that key to exactly one Map.
@@ -478,20 +485,63 @@ npm exec --no -- tileflow status --map-id map_AbCdEfGhIjKlMnOp
 npm exec --no -- tileflow logout
 ```
 
-When Tileflow gives an agent a World conversion command, keep its opaque technical destination and
-conversion reference in that exact deploy action:
+The dashboard creates the Map and browser-access policy before repository setup. Keep that exact
+Map ID in the deploy action. If the config contains several maps, select the authored map explicitly:
 
 ```sh
 npm exec --no -- tileflow deploy \
-  --world-conversion wcv_example1234
+  --map-id map_AbCdEfGhIjKlMnOp \
+  --map store-locator
 ```
 
-The conversion reference is neither a Map ID nor a credential. It resolves the new Map on the
-server. The CLI uses the sole map exported by the selected config; if the config contains several,
-add `--map <name>` to select the local map to connect. A successful server-confirmed continuation
-keeps unrelated manifest entries and records only that Map's stable `mapId`, hosted theme URLs,
-World `v1` generation, and fixed session usage mode. Do not add an API key or payment authority to
-a copied prompt.
+The Map ID is a public destination, not a credential. A successful server-confirmed deploy keeps
+unrelated manifest entries and records that Map's stable ID, hosted theme URLs, World `v1`
+generation, and fixed session usage mode. Browser access remains server-owned and is never read
+from or written to repository configuration. Do not add an API key or payment authority to a copied
+prompt.
+
+Team tileset commands exchange the same account session for a separate Team-scoped data capability;
+it carries no Map authority. Inspect and preview remain account-free:
+
+```sh
+npm exec --no -- tileflow tileset inspect ./data/stores.pmtiles --json
+npm exec --no -- tileflow tileset inspect ./data/stores.pmtiles \
+  --include-values category,status --json
+npm exec --no -- tileflow tileset publish ./data/stores.pmtiles \
+  --id stores --team @acme --attribution 'Store data © Example' --json
+npm exec --no -- tileflow tileset list --team @acme --json
+npm exec --no -- tileflow tileset status stores --team @acme --json
+```
+
+Inspection schema 1 separates authoritative PMTiles/TileJSON declarations from bounded MVT
+observations. Sampled fields report present/missing feature counts, observed distinct-value counts,
+numeric min/max, and truncation. Raw primitive values remain absent unless `--include-values`
+explicitly selects their comma-separated field names; the command emits at most 16 values per field,
+32 selected fields, and 256 characters per string. `--no-sample` returns only authoritative metadata
+and cannot be combined with value inspection. Directory traversal recomputes addressed-tile and
+tile-entry counts; the header's tile-content count is reported only as a nullable declaration and is
+not treated as authority.
+
+`publish --id` names a Team-local logical resource; Tileflow owns its opaque delivery ID. The
+command validates the archive locally before authentication, hashes it in fixed 16 MiB parts, then
+uploads at most four parts concurrently without buffering the complete file. Interrupted sessions
+remain resumable for 24 hours: rerunning the same command reconciles server receipts and transfers
+only missing parts. Normal Queue initialization is polled for at most two minutes before the command
+returns a resumable availability error. Retryable transfer failures receive fresh short-lived authorization; a changed
+local file stops before completion. Free accepts versions through exactly 2,000,000,000 bytes and
+Starter through exactly 4,000,000,000 bytes, subject to the Team's hosted-storage capacity.
+
+Publication completes only after server-side integrity and PMTiles validation. A compatible new
+version becomes current at the same stable TileJSON and tile URLs, so newly resolved browser
+requests see it without creating a Map deployment. Purge requires `--confirm <exact-id>` and fails
+with bounded dependency context while any retained Map deployment uses the resource. Automation may set a Team data
+`TILEFLOW_API_KEY`; that key selects its Team, so commands omit `--team` and never load account
+state.
+
+`tileset publish --json` emits schema version 2 with the Team selector when known, logical and
+opaque tileset identities, immutable version ID and number, exact byte count, content-hash
+algorithm/hash, final state, and `changed` or `unchanged` publication result. It never emits the
+local path, upload session, storage key, signed URL, ETag, credential, or retry details.
 
 An explicit key or `TILEFLOW_API_KEY` never uses the saved account session. The deploy API rejects a
 `--map-id` that does not match the key. Read-only hosted icon comparison validates the same binding

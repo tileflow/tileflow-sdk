@@ -36,6 +36,7 @@ import {
   getTileflowSystemColorScheme,
   loadTileflowStyleFonts,
   registerTileflowContourProtocol,
+  registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   subscribeTileflowSystemColorScheme,
   type TileflowFairUseNoticeController,
@@ -847,6 +848,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       });
       mapFairUseNotice = attachTileflowFairUseNotice(container);
       registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
+      registerTileflowPmtilesProtocol({addProtocol: maplibregl.addProtocol});
       mapWorldRequestBridge = registerTileflowWorldRequestBridge({
         addProtocol: maplibregl.addProtocol,
         onNotice: mapFairUseNotice.update,

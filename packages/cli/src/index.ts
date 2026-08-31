@@ -32,6 +32,7 @@ import {
   createTileflowArtifactSession,
   createTileflowBuildProvenance,
   createTileflowStyles,
+  prepareTileflowLocalTilesets,
   type TileflowArtifactSessionState,
   writeTileflowBuildArtifacts,
 } from '@tileflow/dev/artifacts';
@@ -96,13 +97,17 @@ import {
   validateAccountSession,
   validateApiKey,
 } from './hosted-client';
-import {inspectTileflowHostedCompatibility} from './hosted-preflight';
+import {
+  inspectTileflowHostedCompatibility,
+  prepareTileflowHostedThemeFamily,
+} from './hosted-preflight';
 import type {HostedMapStatus} from './hosted-response';
 import {registerIconDiffCommand} from './icon-diff-command';
 import {registerIconListCommand} from './icon-list-command';
 import {registerLanguageCommand} from './language-command';
 import {openTileflowExternal} from './open-external';
 import {registerProjectCommands, resolveAccountProjectTarget} from './project-commands';
+import {registerTilesetCommands} from './tileset-command';
 import {registerVisualCommands} from './visual-command';
 
 const packageJson = JSON.parse(
@@ -123,6 +128,7 @@ program
   .showSuggestionAfterError();
 
 registerLanguageCommand(program);
+registerTilesetCommands(program, {defaultApiUrl, loadAuthConfig});
 
 program
   .command('init')
@@ -340,8 +346,14 @@ program
         apiBaseUrl: options.apiBaseUrl,
         mapAssets,
       });
+      failureDefaults = {code: 'TF_LOCAL_TILESET_INVALID', phase: 'local-tileset-resolution'};
+      const localTilesets = await prepareTileflowLocalTilesets(project, compiledStyles, {
+        assetBaseUrl: '/tileflow',
+        baseDirectory,
+        cwd: process.cwd(),
+      });
       failureDefaults = {code: 'FONT_COMPILATION_FAILED', phase: 'font-compilation'};
-      const {styles} = await prepareTileflowStyleFonts(project, compiledStyles, {
+      const {styles} = await prepareTileflowStyleFonts(project, localTilesets.styles, {
         assetBaseUrl: '/tileflow',
         baseDirectory,
         cwd: process.cwd(),
@@ -664,8 +676,7 @@ program
   .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
   .option('--map-id <id>', 'managed Map destination')
-  .option('--world-conversion <id>', 'continue one Tileflow World conversion')
-  .option('--map <name>', 'map to connect when a conversion config contains multiple maps')
+  .option('--map <name>', 'configured map to connect when the repository contains multiple maps')
   .option(
     '--overwrite-self-hosted-manifest',
     'explicitly replace an existing self-hosted manifest at --manifest',
@@ -679,7 +690,6 @@ program
       mapId?: string;
       map?: string;
       overwriteSelfHostedManifest?: boolean;
-      worldConversion?: string;
     }) => {
       const source = resolveDeploySource(process.env);
       const resolveApi = (selectedMap?: string) =>
@@ -698,9 +708,7 @@ program
             options.apiUrl ?? defaultApiUrl,
             ...(options.overwriteSelfHostedManifest ? ['--overwrite-self-hosted-manifest'] : []),
             ...(options.mapId ? ['--map-id', options.mapId] : []),
-            ...(options.worldConversion && selectedMap
-              ? ['--world-conversion', options.worldConversion, '--map', selectedMap]
-              : []),
+            ...(options.map && selectedMap ? ['--map', selectedMap] : []),
           ]),
         });
       const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
@@ -718,7 +726,7 @@ program
       assertValidTileflowConfig(project);
 
       const configuredMapNames = getTileflowMapNames(project);
-      const mapNames = selectWorldConversionMaps(configuredMapNames, options);
+      const mapNames = selectManagedDeployMaps(configuredMapNames, options);
       if (!mapNames) return;
       if (!validateDeployTarget(options)) return;
       if (!validateDeployManifestMapNames(mapNames)) return;
@@ -754,9 +762,14 @@ program
         apiBaseUrl: apiUrl,
         mapAssets: preflightMapAssets,
       });
-      const preflightFonts = await prepareTileflowStyleFonts(
+      const preflightLocalTilesets = await prepareTileflowLocalTilesets(
         deploymentProject,
         compiledPreflightStyles,
+        {assetBaseUrl: apiUrl, baseDirectory, cwd: process.cwd()},
+      );
+      const preflightFonts = await prepareTileflowStyleFonts(
+        deploymentProject,
+        preflightLocalTilesets.styles,
         {
           assetBaseUrl: `${apiUrl}/fonts/preflight`,
           baseDirectory,
@@ -799,7 +812,7 @@ program
         process.exitCode = 1;
         return;
       }
-      const existingManifest = options.worldConversion ? outputManifest : null;
+      const existingManifest = outputManifest;
 
       // Authentication and account/project discovery may perform network
       // requests. Keep them after every deterministic config, asset, style,
@@ -841,12 +854,21 @@ program
         apiBaseUrl: api.apiUrl,
         mapAssets: hostedMapAssets,
       });
-      const hostedFonts = await prepareTileflowStyleFonts(deploymentProject, compiledHostedStyles, {
-        assetBaseUrl: `${api.apiUrl}/font-bundles/preflight`,
-        baseDirectory,
-        cwd: process.cwd(),
-        target: 'hosted',
-      });
+      const hostedLocalTilesets = await prepareTileflowLocalTilesets(
+        deploymentProject,
+        compiledHostedStyles,
+        {assetBaseUrl: api.apiUrl, baseDirectory, cwd: process.cwd()},
+      );
+      const hostedFonts = await prepareTileflowStyleFonts(
+        deploymentProject,
+        hostedLocalTilesets.styles,
+        {
+          assetBaseUrl: `${api.apiUrl}/font-bundles/preflight`,
+          baseDirectory,
+          cwd: process.cwd(),
+          target: 'hosted',
+        },
+      );
       for (const mapName of mapNames) {
         if (
           hostedFonts.bundles[mapName]?.contentHash !== preflightFonts.bundles[mapName]?.contentHash
@@ -875,7 +897,7 @@ program
         hostedFontBaseByHash.set(bundle.contentHash, uploaded.value.baseUrl);
       }
 
-      const styles = Object.fromEntries(
+      const fontBoundStyles = Object.fromEntries(
         mapNames.map((mapName) => {
           const themeStyles = hostedFonts.styles[mapName]!;
           const bundle = hostedFonts.bundles[mapName];
@@ -892,6 +914,19 @@ program
             ),
           ];
         }),
+      );
+      const hostedThemeFamilies = Object.fromEntries(
+        mapNames.map((mapName) => [
+          mapName,
+          prepareTileflowHostedThemeFamily(
+            mapName,
+            deploymentProject.maps[mapName]!,
+            fontBoundStyles[mapName]!,
+          ),
+        ]),
+      );
+      const styles = Object.fromEntries(
+        Object.entries(hostedThemeFamilies).map(([mapName, family]) => [mapName, family.styles]),
       );
       const buildManifest = await createTileflowMapBuildManifest(
         Object.fromEntries(
@@ -936,6 +971,7 @@ program
           iconPackage,
           fontBundle,
           mapName,
+          teamSources: hostedThemeFamilies[mapName]!.teamSources,
           buildManifest: {
             maps: {[mapName]: buildManifest.maps[mapName]!},
             ...(buildManifest.provenance ? {provenance: buildManifest.provenance} : {}),
@@ -954,6 +990,7 @@ program
           iconBinding,
           iconPackage,
           mapName,
+          teamSources,
           styles: themeStyles,
         } = deployment;
         const themeNames = Object.keys(themeStyles).sort();
@@ -965,15 +1002,15 @@ program
           {
             artifact: {
               buildManifest,
+              kind: 'tileflow-map-deployment',
               mapId: mapName,
-              schemaVersion: 3,
+              schemaVersion: 1,
               styles: themeStyles,
+              teamSources,
             },
             environment: mapName,
-            ...(options.mapId ? {managedMapId: options.mapId} : {}),
-            ...(options.worldConversion
-              ? {usageMode: 'session', worldConversionId: options.worldConversion}
-              : {}),
+            managedMapId: options.mapId,
+            usageMode: 'session',
             ...(iconBinding && iconPackage
               ? {
                   iconPackage: {
@@ -1004,11 +1041,6 @@ program
         const expectedMapId = options.mapId ?? api.mapId;
         if (expectedMapId && body.mapId !== expectedMapId) {
           logError(`Deploy response did not confirm the requested Map for ${mapName}.`);
-          process.exitCode = 1;
-          return;
-        }
-        if (options.worldConversion && body.worldConversionId !== options.worldConversion) {
-          logError(`Deploy response did not confirm the World conversion for ${mapName}.`);
           process.exitCode = 1;
           return;
         }
@@ -1045,9 +1077,8 @@ program
             }),
           ),
           ...(resolvedMap.view ? {view: resolvedMap.view} : {}),
-          ...(options.worldConversion
-            ? {usageMode: 'session' as const, worldGeneration: 'v1' as const}
-            : {}),
+          usageMode: 'session' as const,
+          worldGeneration: 'v1' as const,
         };
         const versionLabel = Number.isInteger(body.version) ? ` (v${body.version})` : '';
 
@@ -1562,12 +1593,12 @@ function createCompiledMapAssets(
   );
 }
 
-function selectWorldConversionMaps(
+function selectManagedDeployMaps(
   mapNames: string[],
-  options: {map?: string; mapId?: string; worldConversion?: string},
+  options: {map?: string; mapId?: string},
 ): string[] | null {
-  if (options.map && !options.worldConversion && !options.mapId) {
-    logError('--map requires --map-id or --world-conversion.');
+  if (options.map && !options.mapId) {
+    logError('--map requires --map-id.');
     process.exitCode = 1;
     return null;
   }
@@ -1580,41 +1611,27 @@ function selectWorldConversionMaps(
     }
     return [options.map];
   }
-  if (!options.mapId && !options.worldConversion) return mapNames;
+  if (!options.mapId) return mapNames;
   if (mapNames.length === 1) return [mapNames[0]!];
   logError(
     'This managed target requires an explicit map because the config contains multiple maps.',
   );
   printKeyValue('Maps', mapNames.join(', '));
   printNextSteps([
-    `Retry with ${command(
-      options.worldConversion
-        ? `tileflow deploy --world-conversion ${options.worldConversion} --map ${mapNames[0]}`
-        : `tileflow deploy --map-id ${options.mapId} --map ${mapNames[0]}`,
-    )}.`,
+    `Retry with ${command(`tileflow deploy --map-id ${options.mapId} --map ${mapNames[0]}`)}.`,
   ]);
   process.exitCode = 1;
   return null;
 }
 
-function validateDeployTarget(options: {mapId?: string; worldConversion?: string}) {
-  if (options.mapId && options.worldConversion) {
-    logError('Use either --map-id or --world-conversion, not both.');
-    process.exitCode = 1;
-    return false;
-  }
-  if (!options.mapId && !options.worldConversion) {
-    logError('Managed deploy requires --map-id or --world-conversion.');
+function validateDeployTarget(options: {mapId?: string}) {
+  if (!options.mapId) {
+    logError('Managed deploy requires --map-id.');
     process.exitCode = 1;
     return false;
   }
   if (options.mapId && !/^map_[A-Za-z0-9_-]{16}$/u.test(options.mapId)) {
     logError('Managed Map ID is invalid.');
-    process.exitCode = 1;
-    return false;
-  }
-  if (options.worldConversion && !/^wcv_[A-Za-z0-9_-]{8,80}$/u.test(options.worldConversion)) {
-    logError('World conversion reference is invalid.');
     process.exitCode = 1;
     return false;
   }
@@ -1683,7 +1700,6 @@ async function requireApiOptions(
     apiKey?: string;
     mapId?: string;
     project?: string;
-    worldConversion?: string;
   },
   behavior: {
     allowStoredCredential?: boolean;
@@ -1784,10 +1800,10 @@ async function requireApiOptions(
     return null;
   }
 
-  if (requestedMapId || options.worldConversion) {
+  if (requestedMapId) {
     const capability = await requestMapCapability(
       resolvedSession.session,
-      requestedMapId ? {mapId: requestedMapId} : {worldConversionId: options.worldConversion!},
+      {mapId: requestedMapId},
       behavior.capabilityScopes ?? ['status:read'],
     );
     if (!capability.ok) {

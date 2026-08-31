@@ -89,6 +89,11 @@ export default defineMap({
 
 function readySession(artifacts: TileflowBuildArtifacts): TileflowArtifactSession {
   return {
+    acquireArtifacts: () => ({
+      artifacts,
+      generation: 1,
+      release: async () => {},
+    }),
     close: async () => {},
     getLastGoodArtifacts: () => artifacts,
     getState: () => ({

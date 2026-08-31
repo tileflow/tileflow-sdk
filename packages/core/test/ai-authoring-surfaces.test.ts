@@ -22,7 +22,7 @@ import {
 } from '../src/cartography/semantic-bindings';
 import {extendStreets} from './map-fixture';
 
-test('publishes a frozen V1 authoring manifest derived from the closed domain registry', () => {
+test('publishes a frozen V2 authoring manifest with semantic and MapLibre resource floors', () => {
   assert.equal(tileflowAuthoringManifest.schemaVersion, tileflowAuthoringManifestSchemaVersion);
   assert.equal(tileflowAuthoringManifest.language, 'tileflow-semantic-v1');
   assert.deepEqual(
@@ -52,6 +52,9 @@ test('publishes a frozen V1 authoring manifest derived from the closed domain re
     [
       'define-map',
       'extend-map',
+      'hosted-source',
+      'maplibre-overlay',
+      'remove-resource',
       'replace-domain',
       'refine-domain',
       'reset-value',
@@ -66,6 +69,7 @@ test('publishes a frozen V1 authoring manifest derived from the closed domain re
     domains: 'replace-refine-disable-reset',
     identity: 'leaf-owned',
     inheritance: {maxDepth: tileflowMapDefaultMaxDepth},
+    keyedResources: 'merge-replace-remove',
     namedRecords: 'merge-by-key',
     records: 'deep-merge',
     scalars: 'replace',
@@ -135,15 +139,15 @@ test('publishes a frozen V1 authoring manifest derived from the closed domain re
       {
         name: 'language-manifest',
         outputKind: 'raw-authoring-manifest',
-        outputSchemaRef: 'urn:tileflow:schema:authoring-manifest:v1',
-        outputVersion: 1,
+        outputSchemaRef: 'urn:tileflow:schema:authoring-manifest:v2',
+        outputVersion: 2,
         writes: false,
       },
       {
         name: 'language-schema',
         outputKind: 'raw-config-reference',
-        outputSchemaRef: 'https://tileflow.dev/schemas/tileflow-config-reference-v3.json',
-        outputVersion: 3,
+        outputSchemaRef: 'https://tileflow.dev/schemas/tileflow-config-reference-v4.json',
+        outputVersion: 4,
         writes: false,
       },
       {
@@ -178,10 +182,19 @@ test('publishes a frozen V1 authoring manifest derived from the closed domain re
   );
   assert.deepEqual(tileflowAuthoringManifest.schemas, {
     authoring: '#/$defs/TileflowAuthoringMap',
-    document: 'https://tileflow.dev/schemas/tileflow-config-reference-v3.json',
+    document: 'https://tileflow.dev/schemas/tileflow-config-reference-v4.json',
     modules: '#/$defs/TileflowAuthoringModules',
     resolved: '#/$defs/ResolvedTileflowMap',
   });
+  assert.deepEqual(tileflowAuthoringManifest.resources.overlays.placement, [
+    'above-water',
+    'below-roads',
+    'above-roads',
+    'above-buildings',
+    'below-labels',
+    'above-labels',
+  ]);
+  assert.equal(tileflowAuthoringManifest.resources.hostedSources.maxPerMap, 16);
   assert.deepEqual(tileflowAuthoringManifest.workflows, {
     author: ['validate', 'inspect', 'explain'],
     discover: ['language-manifest', 'language-schema'],

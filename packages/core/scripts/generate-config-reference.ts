@@ -53,6 +53,7 @@ export function createTileflowConfigReference(): JsonSchema {
     throw new Error('Generated schema already defines TileflowReset.');
   }
   definitions.TileflowReset = resetSchema;
+  definitions.TileflowRemove = removeSchema;
   const sceneDefinitions = asOptionalRecord(generatedMapScene.$defs, 'capture scene definitions');
   const properties = asRecord(generatedResolvedMap.properties, 'resolved map properties');
   const modulesReference = asRecord(properties.modules, 'modules schema').$ref;
@@ -147,6 +148,18 @@ export function createTileflowConfigReference(): JsonSchema {
   const sharedAuthoringProperties = {
     ...properties,
     modules: {$ref: authoringModulesReference},
+    overlays: createKeyedResourceAuthoringReference(
+      generatedResolvedMap,
+      definitions,
+      properties.overlays,
+      'TileflowOverlayCollectionAuthoring',
+    ),
+    sources: createKeyedResourceAuthoringReference(
+      generatedResolvedMap,
+      definitions,
+      properties.sources,
+      'TileflowHostedSourceCollectionAuthoring',
+    ),
   };
 
   const scenesSchema = {
@@ -180,8 +193,8 @@ export function createTileflowConfigReference(): JsonSchema {
 
   return {
     $schema,
-    $id: 'https://tileflow.dev/schemas/tileflow-config-reference-v3.json',
-    schemaVersion: 3,
+    $id: 'https://tileflow.dev/schemas/tileflow-config-reference-v4.json',
+    schemaVersion: 4,
     kind: 'tileflow.config.reference',
     authority:
       '@tileflow/core resolvedTileflowMapSchema and tileflowCaptureSceneSchema (input); authoring branches are generated from their shared fields',
@@ -341,6 +354,8 @@ function createInheritanceReference(): JsonSchema {
       icons:
         'Omission inherits; any declared array replaces atomically; [] selects no icon directories.',
       identity: 'The leaf map owns the value; it is never inherited.',
+      'keyed-resources':
+        'Omission inherits. New keys add, existing keys replace atomically, and remove() deletes one inherited entry.',
       leaf: 'Tooling metadata is read only from the leaf and is never inherited.',
       lineage: 'Defines or traverses the map lineage and is removed from the resolved design.',
       modules:
@@ -368,6 +383,39 @@ const resetSchema: JsonSchema = {
   required: ['$tileflow'],
   type: 'object',
 };
+
+const removeSchema: JsonSchema = {
+  additionalProperties: false,
+  description: 'Serializable remove() operation for one inherited keyed source or overlay.',
+  properties: {op: {const: 'remove'}},
+  required: ['op'],
+  type: 'object',
+};
+
+function createKeyedResourceAuthoringReference(
+  root: JsonSchema,
+  definitions: Record<string, unknown>,
+  propertySchema: unknown,
+  definitionName: string,
+): JsonSchema {
+  const property = asRecord(propertySchema, `${definitionName} property`);
+  const reference = property.$ref;
+  if (typeof reference !== 'string') {
+    throw new Error(`${definitionName} must use one local JSON Schema reference.`);
+  }
+  const resolved = resolveLocalReference(root, reference);
+  const additionalProperties = resolved.additionalProperties;
+  if (!additionalProperties || typeof additionalProperties !== 'object') {
+    throw new Error(`${definitionName} must define keyed values.`);
+  }
+  definitions[definitionName] = {
+    ...resolved,
+    additionalProperties: {
+      oneOf: [additionalProperties, {$ref: '#/$defs/TileflowRemove'}],
+    },
+  };
+  return {$ref: `#/$defs/${definitionName}`};
+}
 
 type PatchSchemaState = {
   definitions: Record<string, unknown>;

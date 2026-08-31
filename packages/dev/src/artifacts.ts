@@ -56,6 +56,7 @@ import {
   type TileflowBuildAsset,
   type TileflowSourceCatalog,
 } from './icons';
+import {prepareTileflowLocalTilesets, type TileflowLocalTilesetFile} from './local-tilesets';
 import {isPathWithin} from './path-safety';
 import {
   createTileflowArtifactSessionWithBuilder,
@@ -84,8 +85,10 @@ export {
   resolveTileflowArtifactPublicUrls,
 } from './public-paths';
 export {defaultTileflowConfigPath} from './config';
+export {prepareTileflowLocalTilesets, type TileflowLocalTilesetFile} from './local-tilesets';
 export {createTileflowArtifactDiagnostics, tileflowArtifactSessionSchemaVersion} from './session';
 export type {
+  TileflowArtifactAcquisition,
   TileflowArtifactDiagnostic,
   TileflowArtifactSession,
   TileflowArtifactSessionOptions,
@@ -107,6 +110,8 @@ export type TileflowBuildArtifactsOptions = {
   /** Build a memory-only compiler sidecar for local authoring tools. */
   inspection?: boolean;
   styleBaseUrl?: string;
+  /** Local tools may snapshot local PMTiles; production output must resolve them explicitly. */
+  target?: 'local' | 'production';
 };
 
 export type TileflowBuildStyleInspections = Record<string, Record<string, TileflowStyleInspection>>;
@@ -115,8 +120,12 @@ export type TileflowBuildStyleInspections = Record<string, Record<string, Tilefl
 export type TileflowBuildArtifacts = {
   assets: TileflowBuildAsset[];
   buildManifest: TileflowMapBuildManifestV1;
+  /** Releases local immutable snapshot references owned by this artifact generation. */
+  dispose?: () => Promise<void>;
   manifest: TileflowRuntimeManifest;
   project: TileflowBuildCatalog;
+  /** Local-only archive ports. Paths never enter serialized build artifacts. */
+  localTilesets?: TileflowLocalTilesetFile[];
   /** Optional local-only provenance. It is never serialized as a build artifact. */
   styleInspections?: TileflowBuildStyleInspections;
   styles: TileflowBuildStyles;
@@ -146,7 +155,7 @@ export type TileflowArtifactPlan = TileflowBuildArtifacts & {
 
 export type CreateTileflowArtifactPlanOptions = Pick<
   TileflowBuildArtifactsOptions,
-  'apiBaseUrl' | 'assetBaseUrl' | 'inspection' | 'styleBaseUrl'
+  'apiBaseUrl' | 'assetBaseUrl' | 'inspection' | 'styleBaseUrl' | 'target'
 > & {
   inputFiles?: readonly string[];
 };
@@ -174,6 +183,17 @@ export class TileflowHostedManifestOverwriteError extends Error {
       `Refusing to overwrite Hosted manifest at ${path}. Remove it, choose another output directory, or explicitly set overwriteHostedManifest: true.`,
     );
     this.name = 'TileflowHostedManifestOverwriteError';
+  }
+}
+
+export class TileflowLocalTilesetProductionError extends Error {
+  readonly code = 'TF_LOCAL_TILESET_PRODUCTION_UNRESOLVED' as const;
+
+  constructor() {
+    super(
+      'Production builds cannot publish local PMTiles sources. Publish the tileset explicitly or provide an application-owned production source.',
+    );
+    this.name = 'TileflowLocalTilesetProductionError';
   }
 }
 
@@ -267,6 +287,10 @@ export async function createTileflowArtifactPlan(
   prepared: PreparedTileflowCatalog,
   options: CreateTileflowArtifactPlanOptions = {},
 ): Promise<TileflowArtifactPlan> {
+  if (options.target === 'production' && hasLocalTilesetSources(prepared.project)) {
+    throw new TileflowLocalTilesetProductionError();
+  }
+
   const inspected = options.inspection
     ? createTileflowStylesWithInspection(prepared.project, {
         apiBaseUrl: options.apiBaseUrl,
@@ -279,76 +303,90 @@ export async function createTileflowArtifactPlan(
       apiBaseUrl: options.apiBaseUrl,
       mapAssets: prepared.mapAssets,
     });
-  const preparedFonts = await prepareTileflowStyleFonts(prepared.project, compiledStyles, {
+  const localTilesets = await prepareTileflowLocalTilesets(prepared.project, compiledStyles, {
     assetBaseUrl: resolveAssetBaseUrl(options),
     baseDirectory: prepared.baseDirectory,
     cwd: prepared.cwd,
-    target: 'local',
   });
-  const styles = preparedFonts.styles;
-  const assets = [...prepared.assets, ...preparedFonts.assets];
-  const provenance = await createTileflowBuildProvenance(prepared.cwd);
-  const buildManifest = await createTileflowMapBuildManifest(
-    Object.fromEntries(
-      Object.keys(prepared.project.maps)
-        .sort(compareCodeUnits)
-        .map((mapName) => {
-          const map = prepared.project.maps[mapName]!;
-          const style = styles[mapName]!;
-          return [
-            mapName,
-            {
-              assets: getMapBuildAssets(
-                mapName,
-                assets,
-                preparedFonts.bundles[mapName]?.files ?? [],
-              ),
-              lineage: prepared.project.mapMetadata?.[mapName]?.lineage ?? [
-                {id: map.id, mapVersion: map.version},
-              ],
-              map,
-              sourceAssets: {
-                fonts: preparedFonts.sourceIdentities[mapName] ?? [],
-                icons: prepared.mapIconSources[mapName] ?? [],
+  try {
+    const preparedFonts = await prepareTileflowStyleFonts(prepared.project, localTilesets.styles, {
+      assetBaseUrl: resolveAssetBaseUrl(options),
+      baseDirectory: prepared.baseDirectory,
+      cwd: prepared.cwd,
+      target: 'local',
+    });
+    const styles = preparedFonts.styles;
+    const assets = [...prepared.assets, ...preparedFonts.assets];
+    const provenance = await createTileflowBuildProvenance(prepared.cwd);
+    const buildManifest = await createTileflowMapBuildManifest(
+      Object.fromEntries(
+        Object.keys(prepared.project.maps)
+          .sort(compareCodeUnits)
+          .map((mapName) => {
+            const map = prepared.project.maps[mapName]!;
+            const style = styles[mapName]!;
+            return [
+              mapName,
+              {
+                assets: getMapBuildAssets(
+                  mapName,
+                  assets,
+                  preparedFonts.bundles[mapName]?.files ?? [],
+                ),
+                lineage: prepared.project.mapMetadata?.[mapName]?.lineage ?? [
+                  {id: map.id, mapVersion: map.version},
+                ],
+                map,
+                sourceAssets: {
+                  fonts: preparedFonts.sourceIdentities[mapName] ?? [],
+                  icons: prepared.mapIconSources[mapName] ?? [],
+                },
+                styles: style,
               },
-              styles: style,
-            },
-          ];
-        }),
-    ),
-    {provenance},
-  );
-  const stableManifest = createFontAwareManifest(
-    createManifest(prepared.project, {styleBaseUrl: options.styleBaseUrl}),
-    styles,
-  );
-  const inputs: TileflowArtifactInputGraph = {
-    directories: uniqueStrings(
-      [...prepared.watchPaths, ...preparedFonts.watchPaths].map(canonicalInputPath),
-    ),
-    files: uniqueStrings((options.inputFiles ?? []).map(canonicalInputPath)),
-  };
-  const partial: TileflowBuildArtifacts = {
-    assets,
-    buildManifest,
-    manifest: stableManifest,
-    project: prepared.project,
-    ...(inspected ? {styleInspections: inspected.inspections} : {}),
-    styles,
-    watchPaths: uniqueStrings([...inputs.files, ...inputs.directories]),
-  };
-  const generation = hashArtifactGeneration(getStableTileflowArtifactFiles(partial));
-  const manifest = createGenerationManifest(stableManifest, generation, assets);
-  const generationArtifacts = {...partial, manifest};
+            ];
+          }),
+      ),
+      {provenance},
+    );
+    const stableManifest = createFontAwareManifest(
+      createManifest(prepared.project, {styleBaseUrl: options.styleBaseUrl}),
+      styles,
+    );
+    const inputs: TileflowArtifactInputGraph = {
+      directories: uniqueStrings(
+        [...prepared.watchPaths, ...preparedFonts.watchPaths].map(canonicalInputPath),
+      ),
+      files: uniqueStrings(
+        [...(options.inputFiles ?? []), ...localTilesets.watchPaths].map(canonicalInputPath),
+      ),
+    };
+    const partial: TileflowBuildArtifacts = {
+      assets,
+      buildManifest,
+      dispose: localTilesets.dispose,
+      manifest: stableManifest,
+      project: prepared.project,
+      ...(localTilesets.files.length > 0 ? {localTilesets: localTilesets.files} : {}),
+      ...(inspected ? {styleInspections: inspected.inspections} : {}),
+      styles,
+      watchPaths: uniqueStrings([...inputs.files, ...inputs.directories]),
+    };
+    const generation = hashArtifactGeneration(getStableTileflowArtifactFiles(partial));
+    const manifest = createGenerationManifest(stableManifest, generation, assets);
+    const generationArtifacts = {...partial, manifest};
 
-  return {
-    ...generationArtifacts,
-    files: createGenerationArtifactFiles(generationArtifacts, generation),
-    inputs,
-    project: prepared.project,
-    schemaVersion: tileflowArtifactPlanSchemaVersion,
-    sourceProject: prepared.sourceProject,
-  };
+    return {
+      ...generationArtifacts,
+      files: createGenerationArtifactFiles(generationArtifacts, generation),
+      inputs,
+      project: prepared.project,
+      schemaVersion: tileflowArtifactPlanSchemaVersion,
+      sourceProject: prepared.sourceProject,
+    };
+  } catch (error) {
+    await localTilesets.dispose().catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function createTileflowBuildArtifacts(
@@ -725,9 +763,21 @@ function getArtifactInputGraph(
 export async function writeTileflowBuildArtifacts(
   options: WriteTileflowBuildArtifactsOptions,
 ): Promise<TileflowArtifactPlan> {
-  const artifacts = await createTileflowBuildArtifacts(options);
-  await writeTileflowArtifactPlan(artifacts, options);
-  return artifacts;
+  const artifacts = await createTileflowBuildArtifacts({...options, target: 'production'});
+  try {
+    await writeTileflowArtifactPlan(artifacts, options);
+    return {...artifacts, dispose: undefined, localTilesets: undefined};
+  } finally {
+    await disposeTileflowBuildArtifacts(artifacts);
+  }
+}
+
+export async function disposeTileflowBuildArtifacts(
+  artifacts: Pick<TileflowBuildArtifacts, 'dispose'>,
+): Promise<void> {
+  const dispose = artifacts.dispose;
+  artifacts.dispose = undefined;
+  await dispose?.();
 }
 
 /**
@@ -738,12 +788,24 @@ export async function writeTileflowArtifactPlan(
   artifacts: TileflowArtifactPlan,
   options: WriteTileflowArtifactPlanOptions,
 ): Promise<void> {
+  assertNoLocalTilesetsForProduction(artifacts);
+
   const cwd = options.cwd ?? process.cwd();
   const output = await prepareTileflowOutputDirectory(cwd, options.outDir);
   const files = getTileflowArtifactFiles(artifacts);
 
   await assertTileflowSelfHostedManifestTarget(resolve(output.outDir, 'manifest.json'), options);
   await commitTileflowArtifactFiles(output, files);
+}
+
+export function assertNoLocalTilesetsForProduction(
+  artifacts: Pick<TileflowBuildArtifacts, 'localTilesets'>,
+): void {
+  if (artifacts.localTilesets?.length) throw new TileflowLocalTilesetProductionError();
+}
+
+function hasLocalTilesetSources(project: TileflowBuildCatalog): boolean {
+  return Object.values(project.maps).some((map) => Object.keys(map.sources ?? {}).length > 0);
 }
 
 /** Prevents a framework build from silently replacing the frontend's Hosted delivery contract. */
@@ -809,9 +871,10 @@ async function commitTileflowArtifactFiles(
       : [previous.generation]
     : [];
   const retainedPrefixes = retainedGenerations.map((item) => `generations/${item}/`);
-  const retainedNames = previous
+  const retainedGenerationNames = previous
     ? previous.files.filter((name) => retainedPrefixes.some((prefix) => name.startsWith(prefix)))
     : [];
+  const retainedNames = uniqueStrings(retainedGenerationNames);
   const inventoryNames = uniqueStrings([...desiredNames, ...retainedNames]);
   const inventory: TileflowArtifactInventory = {
     files: inventoryNames,
@@ -842,7 +905,6 @@ async function commitTileflowArtifactFiles(
       await mkdir(dirname(stagePath), {recursive: true});
       await writeFileDurably(stagePath, file.source);
     }
-
     for (const name of affectedNames) {
       await assertManagedTargetIsSafe(outDir, name);
       const targetPath = managedPath(outDir, name);
@@ -1112,6 +1174,7 @@ function assertTileflowArtifactFileName(fileName: string): void {
       tileflowMapIdSchema.safeParse(styleMatch[1]).success &&
       tileflowThemeNameSchema.safeParse(styleMatch[2]).success) ||
     (iconMatch && tileflowMapIdSchema.safeParse(iconMatch[1]).success) ||
+    /^tilesets\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.pmtiles$/u.test(logicalName) ||
     /^fonts\/[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{64}\.(?:otf|ttf|woff2)$/.test(logicalName) ||
     /^fonts\/licenses\/license-[a-f0-9]{64}\.txt$/.test(logicalName)
   ) {

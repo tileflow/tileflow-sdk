@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {test} from 'node:test';
@@ -66,6 +66,38 @@ test('emits manifest and style assets under the configured Vite base path', asyn
     manifest.maps.main?.themes.dark?.styleUrl ?? '',
     /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/dark\.json$/u,
   );
+});
+
+test('rejects a local PMTiles source before emitting Vite production assets', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-vite-local-tileset-'));
+  await linkWorkspacePackages(cwd);
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  const archive = createPmtiles();
+  const outDir = join(cwd, 'dist');
+  await writeFile(join(cwd, 'stores.pmtiles'), archive);
+  await writeFile(join(cwd, 'tileflow.config.ts'), localTilesetConfig);
+  const plugin = tileflow({base: '/maps'});
+  (plugin.configResolved as (config: unknown) => void)({
+    base: '/',
+    build: {outDir},
+    publicDir: join(cwd, 'public'),
+    root: cwd,
+  });
+  const emitted: Array<{fileName?: string; source?: unknown; type: string}> = [];
+  const outputOptions = {dir: outDir};
+  await assert.rejects(
+    () =>
+      (plugin.generateBundle as Function).call(
+        {emitFile: (asset: (typeof emitted)[number]) => emitted.push(asset)},
+        outputOptions,
+        {},
+        false,
+      ),
+    {code: 'TF_LOCAL_TILESET_PRODUCTION_UNRESOLVED'},
+  );
+  assert.deepEqual(emitted, []);
+  await assert.rejects(stat(outDir), {code: 'ENOENT'});
+  await assert.rejects(stat(join(cwd, '.tileflow/cache/pmtiles-snapshots')), {code: 'ENOENT'});
 });
 
 test('preserves Vite public URL kinds while keeping relative manifests owner-relative', async (t) => {
@@ -332,6 +364,62 @@ function watchedConfig(source: string): string {
 
 function streetsConfig(): string {
   return `import {defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'main',version:1,extends:streets,glyphs:${externalGlyphProvider}});\n`;
+}
+
+const localTilesetConfig = `import {defineMap, hostedTileset} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+export default defineMap({id:'main',version:1,extends:streets,sources:{
+  stores:hostedTileset({tileset:'stores',local:'./stores.pmtiles',attribution:'Example'})
+}});\n`;
+
+function createPmtiles() {
+  const headerLength = 127;
+  const directory = new Uint8Array([1, 0, 1, 1, 1]);
+  const metadata = new TextEncoder().encode(
+    JSON.stringify({vector_layers: [{fields: {}, id: 'store-locations'}]}),
+  );
+  const tile = new Uint8Array([0]);
+  const bytes = new Uint8Array(
+    headerLength + directory.byteLength + metadata.byteLength + tile.byteLength,
+  );
+  const view = new DataView(bytes.buffer);
+  const rootOffset = headerLength;
+  const metadataOffset = rootOffset + directory.byteLength;
+  const tileOffset = metadataOffset + metadata.byteLength;
+  bytes.set(new TextEncoder().encode('PMTiles'), 0);
+  view.setUint8(7, 3);
+  for (const [offset, value] of [
+    [8, rootOffset],
+    [16, directory.byteLength],
+    [24, metadataOffset],
+    [32, metadata.byteLength],
+    [40, tileOffset],
+    [48, 0],
+    [56, tileOffset],
+    [64, tile.byteLength],
+    [72, 1],
+    [80, 1],
+    [88, 1],
+  ] as const) {
+    setUint64(view, offset, value);
+  }
+  view.setUint8(96, 1);
+  view.setUint8(97, 1);
+  view.setUint8(98, 1);
+  view.setUint8(99, 1);
+  view.setInt32(102, -1_800_000_000, true);
+  view.setInt32(106, -850_000_000, true);
+  view.setInt32(110, 1_800_000_000, true);
+  view.setInt32(114, 850_000_000, true);
+  bytes.set(directory, rootOffset);
+  bytes.set(metadata, metadataOffset);
+  bytes.set(tile, tileOffset);
+  return bytes;
+}
+
+function setUint64(view: DataView, offset: number, value: number) {
+  view.setUint32(offset, value >>> 0, true);
+  view.setUint32(offset + 4, Math.floor(value / 2 ** 32), true);
 }
 
 const externalGlyphProvider = JSON.stringify({

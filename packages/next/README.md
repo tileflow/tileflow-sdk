@@ -65,7 +65,7 @@ Tileflow listener:
 
 ```sh
 npm run dev
-TILEFLOW_APP_ORIGIN=http://127.0.0.1:3000 npm exec --no -- tileflow capture app-desktop
+TILEFLOW_APP_ORIGIN=http://127.0.0.1:3000 npx tileflow capture app-desktop
 ```
 
 ## Compatibility

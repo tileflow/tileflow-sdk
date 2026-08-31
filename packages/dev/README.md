@@ -2,7 +2,7 @@
 
 Node utilities used by the Tileflow CLI and build integrations.
 
-Most apps should use `@tileflow/cli`, `@tileflow/vite`, or `@tileflow/next` directly. Use this
+Most apps should use `tileflow`, `@tileflow/vite`, or `@tileflow/next` directly. Use this
 package when you are building a custom dev server, bundler plugin, or deployment adapter that needs
 to load and compile the single map exported by `tileflow.config.ts`.
 

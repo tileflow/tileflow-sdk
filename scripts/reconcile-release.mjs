@@ -10,7 +10,6 @@ import {
   automaticInternalRuntimeRange,
   initialVersionByPackageName,
   nextAlphaVersion,
-  packageDirectories,
   publicPackageCatalog,
   publicPackageNames,
   publicPackageNameSet,
@@ -46,10 +45,10 @@ function releaseBaselineSnapshot(entry) {
 export async function readPublicManifests(root = repositoryRoot) {
   return new Map(
     await Promise.all(
-      packageDirectories.map(async (directory, index) => {
+      publicPackageCatalog.map(async ({directory, name}) => {
         const path = join(root, 'packages', directory, 'package.json');
         const manifest = JSON.parse(await readFile(path, 'utf8'));
-        return [publicPackageNames[index], {directory, manifest, path}];
+        return [name, {directory, manifest, path}];
       }),
     ),
   );
@@ -302,20 +301,20 @@ export async function packAllPackages(
   await mkdir(destination, {recursive: true});
   const tarballs = [];
 
-  for (const directory of packageDirectories) {
+  for (const {directory, name} of publicPackageCatalog) {
     const packageRoot = join(root, 'packages', directory);
     const {stdout} = await runCommand(
       'pnpm',
       ['pack', '--pack-destination', destination, '--json'],
-      {cwd: packageRoot, label: `pack @tileflow/${directory}`},
+      {cwd: packageRoot, label: `pack ${name}`},
     );
     const parsed = JSON.parse(stdout);
     const results = Array.isArray(parsed) ? parsed : [parsed];
-    assert.equal(results.length, 1, `Unexpected pnpm pack result for @tileflow/${directory}.`);
+    assert.equal(results.length, 1, `Unexpected pnpm pack result for ${name}.`);
     assert.equal(
       typeof results[0]?.filename,
       'string',
-      `pnpm pack did not return a filename for @tileflow/${directory}.`,
+      `pnpm pack did not return a filename for ${name}.`,
     );
     tarballs.push(
       results[0].filename.startsWith('/')

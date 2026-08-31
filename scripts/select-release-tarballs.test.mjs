@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {basename, join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
@@ -17,7 +17,7 @@ const scriptPath = fileURLToPath(new URL('select-release-tarballs.mjs', import.m
 
 test('selects only changed tarballs in dependency-safe repository order', async () => {
   const fixture = await createFixture({
-    '@tileflow/cli': {
+    tileflow: {
       dependencies: {
         '@tileflow/capture': automaticInternalRuntimeRange('0.1.0-alpha.17'),
         '@tileflow/core': automaticInternalRuntimeRange('0.1.0-alpha.16'),
@@ -25,13 +25,11 @@ test('selects only changed tarballs in dependency-safe repository order', async 
     },
   });
   try {
-    await writePlan(fixture, ['@tileflow/capture', '@tileflow/cli']);
+    await writePlan(fixture, ['@tileflow/capture', 'tileflow']);
     await runSelector(fixture);
     assert.deepEqual(
-      nonEmptyLines(await readFile(fixture.selectedPath, 'utf8')).map(
-        (path) => path.match(/tileflow-(capture|cli)-/u)?.[1],
-      ),
-      ['capture', 'cli'],
+      nonEmptyLines(await readFile(fixture.selectedPath, 'utf8')).map((path) => basename(path)),
+      ['tileflow-capture-0.1.0-alpha.17.tgz', 'tileflow-0.1.0-alpha.17.tgz'],
     );
   } finally {
     await rm(fixture.root, {force: true, recursive: true});
@@ -41,10 +39,10 @@ test('selects only changed tarballs in dependency-safe repository order', async 
 test('rejects selected-package exact pins and ranges that omit the effective dependency', async () => {
   for (const range of ['0.1.0-alpha.16', '>=0.1.0-alpha.99 <0.1.0-beta.0']) {
     const fixture = await createFixture({
-      '@tileflow/cli': {dependencies: {'@tileflow/core': range}},
+      tileflow: {dependencies: {'@tileflow/core': range}},
     });
     try {
-      await writePlan(fixture, ['@tileflow/capture', '@tileflow/cli']);
+      await writePlan(fixture, ['@tileflow/capture', 'tileflow']);
       await assert.rejects(runSelector(fixture));
     } finally {
       await rm(fixture.root, {force: true, recursive: true});
@@ -55,9 +53,9 @@ test('rejects selected-package exact pins and ranges that omit the effective dep
 test('rejects omitted and injected internal edges relative to the release plan', async () => {
   const omitted = await createFixture();
   try {
-    await writePlan(omitted, ['@tileflow/capture', '@tileflow/cli']);
+    await writePlan(omitted, ['@tileflow/capture', 'tileflow']);
     const plan = JSON.parse(await readFile(omitted.planPath, 'utf8'));
-    plan.packages.find(({name}) => name === '@tileflow/cli').runtimeDependencies = {
+    plan.packages.find(({name}) => name === 'tileflow').runtimeDependencies = {
       dependencies: {
         '@tileflow/core': automaticInternalRuntimeRange('0.1.0-alpha.16'),
       },
@@ -72,16 +70,16 @@ test('rejects omitted and injected internal edges relative to the release plan',
   }
 
   const injected = await createFixture({
-    '@tileflow/cli': {
+    tileflow: {
       dependencies: {
         '@tileflow/core': automaticInternalRuntimeRange('0.1.0-alpha.16'),
       },
     },
   });
   try {
-    await writePlan(injected, ['@tileflow/capture', '@tileflow/cli']);
+    await writePlan(injected, ['@tileflow/capture', 'tileflow']);
     const plan = JSON.parse(await readFile(injected.planPath, 'utf8'));
-    plan.packages.find(({name}) => name === '@tileflow/cli').runtimeDependencies = {};
+    plan.packages.find(({name}) => name === 'tileflow').runtimeDependencies = {};
     await writeFile(injected.planPath, `${JSON.stringify(plan, null, 2)}\n`);
     await assert.rejects(
       runSelector(injected),
@@ -97,7 +95,7 @@ test('ignores development-only dependency topology', async () => {
     '@tileflow/capture': {devDependencies: {'@tileflow/react': '0.1.0-alpha.16'}},
   });
   try {
-    await writePlan(fixture, ['@tileflow/capture', '@tileflow/cli']);
+    await writePlan(fixture, ['@tileflow/capture', 'tileflow']);
     await runSelector(fixture);
     assert.equal(nonEmptyLines(await readFile(fixture.selectedPath, 'utf8')).length, 2);
   } finally {
@@ -142,9 +140,7 @@ async function createFixture(overrides = {}) {
     const packageRoot = join(fixtureRoot, 'package');
     await mkdir(packageRoot, {recursive: true});
     const version =
-      name === '@tileflow/capture' || name === '@tileflow/cli'
-        ? '0.1.0-alpha.17'
-        : '0.1.0-alpha.16';
+      name === '@tileflow/capture' || name === 'tileflow' ? '0.1.0-alpha.17' : '0.1.0-alpha.16';
     const packageManifest = {name, version, ...overrides[name]};
     await writeFile(
       join(packageRoot, 'package.json'),

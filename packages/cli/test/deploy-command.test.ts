@@ -1345,7 +1345,7 @@ function hostedDeploymentResponse(
 }
 
 async function createFixture(t: TestContext) {
-  const directory = await mkdtemp(join(tmpdir(), 'tileflow-cli-adversarial-'));
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-adversarial-'));
   await linkWorkspacePackages(directory);
   const configPath = join(directory, 'tileflow.config.ts');
   const manifestPath = join(directory, 'manifest.json');

@@ -51,7 +51,7 @@ short-lived headless command at the same loopback origin; do not run `tileflow d
 
 ```sh
 npm run dev
-TILEFLOW_APP_ORIGIN=http://127.0.0.1:8080 npm exec --no -- tileflow capture app-desktop
+TILEFLOW_APP_ORIGIN=http://127.0.0.1:8080 npx tileflow capture app-desktop
 ```
 
 ## Compatibility

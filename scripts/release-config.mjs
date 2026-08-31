@@ -14,26 +14,24 @@ export const internalWorkspaceRuntimeRange = `workspace:${internalRuntimeRange}`
 export const internalRuntimeUpperBound = '0.1.0-beta.0';
 export const publicPackageCatalog = Object.freeze(
   [
-    {directory: 'core', initialVersion: '0.1.0-alpha.0'},
-    {directory: 'maps', initialVersion: '0.1.0-alpha.0'},
-    {directory: 'interactions', initialVersion: '0.1.0-alpha.0'},
-    {directory: 'static', initialVersion: '0.1.0-alpha.0'},
-    {directory: 'dev', initialVersion: '0.1.0-alpha.0'},
-    {directory: 'capture', initialVersion: '0.1.0-alpha.0'},
-    {directory: 'vite', initialVersion: '0.1.0-alpha.0'},
-    {directory: 'next', initialVersion: '0.1.0-alpha.0'},
-    {directory: 'webpack', initialVersion: '0.1.0-alpha.0'},
-    {directory: 'react', initialVersion: '0.1.0-alpha.0'},
-    {directory: 'vue', initialVersion: '0.1.0-alpha.0'},
-    {directory: 'svelte', initialVersion: '0.1.0-alpha.0'},
-    {directory: 'cli', initialVersion: '0.1.0-alpha.0'},
-  ].map(({directory, initialVersion}) =>
-    Object.freeze({
-      directory,
-      initialVersion,
-      name: `@tileflow/${directory}`,
-    }),
-  ),
+    {directory: 'core', initialVersion: '0.1.0-alpha.0', name: '@tileflow/core'},
+    {directory: 'maps', initialVersion: '0.1.0-alpha.0', name: '@tileflow/maps'},
+    {
+      directory: 'interactions',
+      initialVersion: '0.1.0-alpha.0',
+      name: '@tileflow/interactions',
+    },
+    {directory: 'static', initialVersion: '0.1.0-alpha.0', name: '@tileflow/static'},
+    {directory: 'dev', initialVersion: '0.1.0-alpha.0', name: '@tileflow/dev'},
+    {directory: 'capture', initialVersion: '0.1.0-alpha.0', name: '@tileflow/capture'},
+    {directory: 'vite', initialVersion: '0.1.0-alpha.0', name: '@tileflow/vite'},
+    {directory: 'next', initialVersion: '0.1.0-alpha.0', name: '@tileflow/next'},
+    {directory: 'webpack', initialVersion: '0.1.0-alpha.0', name: '@tileflow/webpack'},
+    {directory: 'react', initialVersion: '0.1.0-alpha.0', name: '@tileflow/react'},
+    {directory: 'vue', initialVersion: '0.1.0-alpha.0', name: '@tileflow/vue'},
+    {directory: 'svelte', initialVersion: '0.1.0-alpha.0', name: '@tileflow/svelte'},
+    {directory: 'cli', initialVersion: '0.1.0-alpha.0', name: 'tileflow'},
+  ].map((entry) => Object.freeze(entry)),
 );
 export const packageDirectories = publicPackageCatalog.map(({directory}) => directory);
 export const publicPackageNames = publicPackageCatalog.map(({name}) => name);

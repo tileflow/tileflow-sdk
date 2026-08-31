@@ -1,20 +1,20 @@
-# @tileflow/cli
+# tileflow
 
 CLI-only tools for Tileflow config, preview, validation, capture, and hosted deploy. The package
 requires Node.js 22 or newer and intentionally exposes only the `tileflow` binary; importing
-`@tileflow/cli` as a JavaScript library is not a supported surface.
+`tileflow` as a JavaScript library is not a supported surface.
 
 Local config, validation, build, preview, and hosted-compatibility checks require
 no Tileflow account or API key:
 
 ```sh
 npm install @tileflow/core@alpha @tileflow/maps@alpha
-npm install --save-dev --save-exact @tileflow/cli@alpha
-npm exec --no -- tileflow init
-npm exec --no -- tileflow validate
-npm exec --no -- tileflow validate --target hosted
-npm exec --no -- tileflow build
-npm exec --no -- tileflow preview
+npm install --save-dev --save-exact tileflow@alpha
+npx tileflow init
+npx tileflow validate
+npx tileflow validate --target hosted
+npx tileflow build
+npx tileflow preview
 ```
 
 The generated config imports `streets`, extends it, materializes a custom dark theme from
@@ -22,15 +22,14 @@ The generated config imports `streets`, extends it, materializes a custom dark t
 owns its complete icon and glyph providers, so the leaf does not repeat font stacks or know a
 delivery URL.
 
-`npm exec --no --` runs the project-local CLI and fails instead of downloading
-a missing package. Other package managers work; use the equivalent command for
-the lockfile already owned by the project.
+Install the exact project dependency first; then `npx tileflow` runs its local executable. Other
+package managers work; use the equivalent command for the lockfile already owned by the project.
 
 `tileflow preview` previews the map exported by `tileflow.config.ts` and uses its configured `view`.
 Select one of that map's committed standalone scenes explicitly:
 
 ```sh
-npm exec --no -- tileflow preview --scene madrid-mobile
+npx tileflow preview --scene madrid-mobile
 ```
 
 To work on another map, point `--config` at another singular config. Multi-map catalogs are internal
@@ -66,7 +65,7 @@ whose `fontStacks` are explicit. The default output is `dist/tileflow`; choose a
 explicitly with `--out`:
 
 ```sh
-npm exec --no -- tileflow build --out public/tileflow
+npx tileflow build --out public/tileflow
 ```
 
 Named hosted sources with `local` archives are for preview and capture. `tileflow build` rejects
@@ -85,14 +84,14 @@ Team sources are validated and resolved independently.
 Use JSON mode when an agent or CI job needs to validate or reason about the resolved config:
 
 ```sh
-npm exec --no -- tileflow validate --json
-npm exec --no -- tileflow inspect --json
-npm exec --no -- tileflow inspect --map madrid --json
-npm exec --no -- tileflow language manifest --json
-npm exec --no -- tileflow language schema --json
-npm exec --no -- tileflow explain --map madrid --theme dark --json
-npm exec --no -- tileflow semantic-diff --from-config before/tileflow.config.ts --to-config after/tileflow.config.ts --json
-npm exec --no -- tileflow semantic-diff --config maps.workspace.ts --from before --to after --json
+npx tileflow validate --json
+npx tileflow inspect --json
+npx tileflow inspect --map madrid --json
+npx tileflow language manifest --json
+npx tileflow language schema --json
+npx tileflow explain --map madrid --theme dark --json
+npx tileflow semantic-diff --from-config before/tileflow.config.ts --to-config after/tileflow.config.ts --json
+npx tileflow semantic-diff --config maps.workspace.ts --from before --to after --json
 ```
 
 `validate`, `inspect`, `explain`, and `semantic-diff` success writes exactly one
@@ -181,7 +180,7 @@ Explore with capture itself. The first run may install Playwright's exact pinned
 shell into its versioned per-user cache:
 
 ```sh
-npm exec --no -- tileflow capture \
+npx tileflow capture \
   --map madrid \
   --theme dark \
   --center=-3.69201,40.40871 \
@@ -236,12 +235,12 @@ authoring:
 
 ```sh
 # Two maps or themes from one config.
-npm exec --no -- tileflow preview \
+npx tileflow preview \
   --map harad --theme light \
   --against-map ferraris --against-theme light
 
 # Or compare against another config.
-npm exec --no -- tileflow preview \
+npx tileflow preview \
   --config ./candidate.config.ts --map candidate \
   --against-config ./reference.config.ts --against-map reference
 ```
@@ -263,7 +262,7 @@ only in memory in this local workbench and is not emitted by `tileflow build`.
 For shareable evidence with exact pixels, use headless capture instead of the live preview:
 
 ```sh
-npm exec --no -- tileflow visual compare \
+npx tileflow visual compare \
   --config ./candidate.config.ts --map candidate --theme light \
   --against-config ./reference.config.ts --against-map reference --against-theme light \
   --center=-3.7038,40.4168 --zooms=12,14,16 \
@@ -315,9 +314,9 @@ one complete generation and no unresolved invalid or failed state; otherwise it 
 Render one checkpoint, or recapture after every edit:
 
 ```sh
-npm exec --no -- tileflow capture madrid-desktop --json
-npm exec --no -- tileflow capture --all --json
-npm exec --no -- tileflow capture madrid-desktop --watch --json
+npx tileflow capture madrid-desktop --json
+npx tileflow capture --all --json
+npx tileflow capture madrid-desktop --watch --json
 ```
 
 Use the first command when you want a single image and the last command while refining a map. Watch
@@ -333,7 +332,7 @@ shell in its versioned per-user cache. `--no-browser-install` makes a prepared/o
 strict. Tileflow never falls back to a system browser or packages the browser in npm.
 
 For prepared or offline CI, install ahead of time with
-`npm exec --no -- tileflow setup capture --json`. Use `setup capture --no-browser-install` or
+`npx tileflow setup capture --json`. Use `setup capture --no-browser-install` or
 `capture --no-browser-install` as an enforcement check that the exact shell is already cached.
 
 For an application scene, its route and component props must render the committed camera. Tileflow
@@ -371,7 +370,7 @@ only that normal server; Tileflow does not run a package script, scan ports, or 
 ```sh
 npm run dev
 TILEFLOW_APP_ORIGIN=http://127.0.0.1:3000 \
-  npm exec --no -- tileflow capture madrid-product --json
+  npx tileflow capture madrid-product --json
 ```
 
 The React, Vue, and Svelte wrappers expose `data-tileflow-map`, the resolved concrete
@@ -387,7 +386,7 @@ reused profile, cookies, local storage, or service workers.
 While refining a style, compare the current scene with any reference screenshot:
 
 ```sh
-npm exec --no -- tileflow visual analyze madrid-desktop \
+npx tileflow visual analyze madrid-desktop \
   --reference ./design-reference.png --region=0,0,1200,760 --json
 ```
 
@@ -404,19 +403,19 @@ regressions:
 
 ```sh
 # Save the reviewed current render as the expected baseline.
-npm exec --no -- tileflow visual update madrid-desktop \
+npx tileflow visual update madrid-desktop \
   --baseline-dir test/visual-baselines --json
 
 # Compare a fresh render without changing the baseline.
-npm exec --no -- tileflow visual diff madrid-desktop \
+npx tileflow visual diff madrid-desktop \
   --baseline-dir test/visual-baselines --json
 
 # Or apply the operation to every committed scene.
-npm exec --no -- tileflow visual diff --all \
+npx tileflow visual diff --all \
   --baseline-dir test/visual-baselines --json
 
 # In CI, return exit 2 when the pixels have changed.
-npm exec --no -- tileflow visual diff madrid-desktop \
+npx tileflow visual diff madrid-desktop \
   --baseline-dir test/visual-baselines --fail-on changed --json
 ```
 
@@ -448,7 +447,7 @@ See which bounded source features the exported map sees near a camera before tun
 density, or labels:
 
 ```sh
-npm exec --no -- tileflow inspect features \
+npx tileflow inspect features \
   --center=-3.6927512,40.4086555 --zoom=16 \
   --layers=poi --properties=name,category,type,icon,filter_rank,size_rank --json
 ```
@@ -464,7 +463,7 @@ effects and removes `TILEFLOW_API_KEY` before loading config.
 
 Hosted writes have two independent authorization paths:
 
-- Personal developer session: run `npm exec --no -- tileflow login` once for a
+- Personal developer session: run `npx tileflow login` once for a
   Tileflow API origin. Login authenticates the account and selects no Map.
   Map commands exchange it for a brief Map capability; tileset commands use a separate Team data
   capability.
@@ -479,17 +478,17 @@ response body or bearer credential.
 Inspect the account, then target the Map shown in the dashboard:
 
 ```sh
-npm exec --no -- tileflow whoami --json
-npm exec --no -- tileflow deploy --map-id map_AbCdEfGhIjKlMnOp
-npm exec --no -- tileflow status --map-id map_AbCdEfGhIjKlMnOp
-npm exec --no -- tileflow logout
+npx tileflow whoami --json
+npx tileflow deploy --map-id map_AbCdEfGhIjKlMnOp
+npx tileflow status --map-id map_AbCdEfGhIjKlMnOp
+npx tileflow logout
 ```
 
 The dashboard creates the Map and browser-access policy before repository setup. Keep that exact
 Map ID in the deploy action. If the config contains several maps, select the authored map explicitly:
 
 ```sh
-npm exec --no -- tileflow deploy \
+npx tileflow deploy \
   --map-id map_AbCdEfGhIjKlMnOp \
   --map store-locator
 ```
@@ -504,13 +503,13 @@ Team tileset commands exchange the same account session for a separate Team-scop
 it carries no Map authority. Inspect and preview remain account-free:
 
 ```sh
-npm exec --no -- tileflow tileset inspect ./data/stores.pmtiles --json
-npm exec --no -- tileflow tileset inspect ./data/stores.pmtiles \
+npx tileflow tileset inspect ./data/stores.pmtiles --json
+npx tileflow tileset inspect ./data/stores.pmtiles \
   --include-values category,status --json
-npm exec --no -- tileflow tileset publish ./data/stores.pmtiles \
+npx tileflow tileset publish ./data/stores.pmtiles \
   --id stores --team @acme --attribution 'Store data © Example' --json
-npm exec --no -- tileflow tileset list --team @acme --json
-npm exec --no -- tileflow tileset status stores --team @acme --json
+npx tileflow tileset list --team @acme --json
+npx tileflow tileset status stores --team @acme --json
 ```
 
 Inspection schema 1 separates authoritative PMTiles/TileJSON declarations from bounded MVT
@@ -649,7 +648,7 @@ confirm the immutable resource bytes, reconstruct those same per-file identities
 List the effective local catalog used by the exported map:
 
 ```sh
-npm exec --no -- tileflow icons list --json
+npx tileflow icons list --json
 ```
 
 The successful stdout contract is one deterministic JSON document followed by exactly one newline.
@@ -678,7 +677,7 @@ more than one.
 
 All reported paths are relative to the invocation working directory. A source outside that tree
 uses `../` and `insideWorkingTree: false`; no absolute path is emitted. Listing follows local
-authoring semantics. Run `npm exec --no -- tileflow validate --target hosted` separately before a
+authoring semantics. Run `npx tileflow validate --target hosted` separately before a
 hosted deploy to check containment, portable IDs, SVG safety, and hosted limits.
 
 The Tileflow command performs no authentication, network request, browser/server launch, or file
@@ -697,9 +696,9 @@ source path with normal repository tools only when the pixels themselves are nee
 Compare the exported map with its active hosted revision before deciding whether to deploy:
 
 ```sh
-npm exec --no -- tileflow icons diff --map-id map_AbCdEfGhIjKlMnOp --against production
-npm exec --no -- tileflow icons diff --map-id map_AbCdEfGhIjKlMnOp --against production --json
-npm exec --no -- tileflow icons diff --map-id map_AbCdEfGhIjKlMnOp --against production --report ./icon-diff.html
+npx tileflow icons diff --map-id map_AbCdEfGhIjKlMnOp --against production
+npx tileflow icons diff --map-id map_AbCdEfGhIjKlMnOp --against production --json
+npx tileflow icons diff --map-id map_AbCdEfGhIjKlMnOp --against production --report ./icon-diff.html
 ```
 
 The command compiles only the exported map, performs authenticated read-only control-plane

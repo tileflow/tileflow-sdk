@@ -127,7 +127,7 @@ The application's normal Vite, Next.js, Webpack, or custom server is therefore t
 
 ```sh
 npm run dev
-TILEFLOW_APP_ORIGIN=http://127.0.0.1:3000 npm exec --no -- tileflow capture app-desktop
+TILEFLOW_APP_ORIGIN=http://127.0.0.1:3000 npx tileflow capture app-desktop
 ```
 
 Each navigation uses a fresh context with no reused cookies, local storage, user profile, or
@@ -253,7 +253,7 @@ sidecar is never a build artifact or runtime manifest field.
 Durable review evidence uses an exact headless capture matrix:
 
 ```sh
-npm exec --no -- tileflow visual compare \
+npx tileflow visual compare \
   --config ./candidate.config.ts --map candidate --theme light \
   --against-config ./reference.config.ts --against-map reference --against-theme light \
   --center=-3.7038,40.4168 --zooms=12,14,16 \
@@ -302,7 +302,7 @@ approves a baseline.
 An external screenshot is exploratory evidence, not a Tileflow baseline. Analyze it separately:
 
 ```sh
-npm exec --no -- tileflow visual analyze app-desktop \
+npx tileflow visual analyze app-desktop \
   --reference ./design-reference.png --region=0,0,1200,760 --json
 ```
 
@@ -323,7 +323,7 @@ user-owned test artifact and is never inferred from `.tileflow`; teams decide wh
 it. `visual diff` is read-only with respect to baselines:
 
 ```sh
-npm exec --no -- tileflow visual diff app-desktop \
+npx tileflow visual diff app-desktop \
   --baseline-dir test/visual-baselines --json
 ```
 

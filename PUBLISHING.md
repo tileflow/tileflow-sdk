@@ -29,7 +29,7 @@ publication order and the independent first version for every package:
 - `@tileflow/react`
 - `@tileflow/vue`
 - `@tileflow/svelte`
-- `@tileflow/cli`
+- `tileflow`
 
 Every source manifest uses the sentinel version `0.0.0-development`. Do not edit it to prepare a
 release. This deliberately keeps release-only version churn out of source commits. The protected
@@ -43,11 +43,11 @@ package advances independently from `X.Y.Z-alpha.N` to `X.Y.Z-alpha.(N+1)`. An u
 keeps its npm version. While the SDK remains in alpha, the reconciler never chooses patch, minor, or
 major intent and never updates `latest`.
 
-A package with no published alpha does not inherit Core's counter. Its catalog entry supplies its
-own explicit `initialVersion`; currently Maps and Interactions each begin at `0.1.0-alpha.0`. The
-release plan records `from: null`, `to: <initialVersion>`, and `package-unpublished`. npm requires a
-one-time maintainer bootstrap before OIDC trust can be configured, so `PUBLIC_RELEASE_BLOCKERS.json`
-must keep that package blocked until bootstrap and Trusted Publisher verification are complete.
+A package with no published alpha does not inherit another package's counter. Its catalog entry
+supplies its own explicit `initialVersion`; `tileflow` begins at `0.1.0-alpha.0`. The release plan
+records `from: null`, `to: <initialVersion>`, and `package-unpublished`. npm requires a one-time
+maintainer bootstrap before OIDC trust can be configured, so `PUBLIC_RELEASE_BLOCKERS.json` must
+keep that package blocked until bootstrap and Trusted Publisher verification are complete.
 The interlock file is optional and machine-readable: absence means the gate is open, a valid
 non-empty blocker list fails publication with its stable IDs, and malformed JSON or schema fails
 closed. Resolve every item and remove the file in a reviewed change; do not replace it with an empty
@@ -273,4 +273,4 @@ matters:
     pnpm add @tileflow/vue@alpha @tileflow/svelte@alpha
     pnpm add @tileflow/static@alpha
     pnpm add -D @tileflow/capture@alpha
-    pnpm add -D --save-exact @tileflow/cli@alpha
+    pnpm add -D --save-exact tileflow@alpha

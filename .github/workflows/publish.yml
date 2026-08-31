@@ -247,7 +247,7 @@ jobs:
 
       - name: Verify the pinned capture browser shell
         if: steps.plan.outputs.selected_count != '' && steps.plan.outputs.selected_count != '0'
-        run: pnpm --filter @tileflow/cli run cli setup capture --json --no-browser-install
+        run: pnpm --filter tileflow run cli setup capture --json --no-browser-install
 
       - name: Smoke final packed packages
         if: steps.plan.outputs.selected_count != '' && steps.plan.outputs.selected_count != '0'

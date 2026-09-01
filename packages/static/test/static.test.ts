@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   compileStaticOverlays,
+  createRenderManifest,
   createStaticMap,
   createStaticMapIdempotencyKey,
   hashStaticSceneRequest,
@@ -57,6 +58,20 @@ test('requires one concrete theme for deterministic static rendering', () => {
   assert.equal(validateStaticScene({...baseScene, theme: 'con'}).ok, false);
   assert.equal(validateStaticScene({...baseScene, map: 'Main'}).ok, false);
   assert.equal(validateStaticScene({...baseScene, theme: 'dark'}).ok, true);
+});
+
+test('keeps the scene map distinct from the resolved Hosted Map identity', () => {
+  const manifest = createRenderManifest({
+    mapId: 'map_1234567890abcdef',
+    rendererVersion: 'static-v1',
+    scene: {...baseScene, map: 'madrid', theme: 'dark'},
+    styleRevision: 'revision-1',
+    styleUrl: 'https://api.tileflow.dev/maps/map_1234567890abcdef/dark.json',
+  });
+
+  assert.equal(manifest.mapId, 'map_1234567890abcdef');
+  assert.equal(manifest.scene.map, 'madrid');
+  assert.equal(manifest.scene.theme, 'dark');
 });
 
 test('compiles closed polygon rings', () => {

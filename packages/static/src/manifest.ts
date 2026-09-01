@@ -65,10 +65,7 @@ export function createRenderManifest(input: {
       mapId: input.mapId,
       rendererVersion: input.rendererVersion,
       schemaVersion: staticRendererSchemaVersion,
-      scene: normalizeStaticScene({
-        ...input.scene,
-        map: input.mapId,
-      }),
+      scene: normalizeStaticScene(input.scene),
       styleId: input.styleId,
       styleRevision: input.styleRevision,
       styleUrl: input.styleUrl,

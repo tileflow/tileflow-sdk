@@ -25,7 +25,7 @@
     "lint:fix": "eslint --fix .",
     "legal:check": "node scripts/sync-package-legal-files.mjs --check",
     "legal:sync": "node scripts/sync-package-legal-files.mjs --write",
-    "test:release": "node --test scripts/compare-package-tarballs.test.mjs scripts/create-release-receipt.test.mjs scripts/public-release-interlock.test.mjs scripts/publication-decision.test.mjs scripts/reconcile-release.test.mjs scripts/release-config.test.mjs scripts/release-workflow.test.mjs scripts/run-command.test.mjs scripts/select-release-tarballs.test.mjs",
+    "test:release": "node --test scripts/compare-package-tarballs.test.mjs scripts/create-release-receipt.test.mjs scripts/public-release-interlock.test.mjs scripts/publication-decision.test.mjs scripts/reconcile-release.test.mjs scripts/release-config.test.mjs scripts/release-workflow.test.mjs scripts/run-command.test.mjs scripts/select-release-tarballs.test.mjs scripts/wait-for-published-packages.test.mjs",
     "test:architecture": "node --test scripts/sdk-boundaries.test.mjs",
     "verify": "pnpm -r --workspace-concurrency=1 --if-present run verify",
     "format": "prettier --plugin=prettier-plugin-svelte --write .",

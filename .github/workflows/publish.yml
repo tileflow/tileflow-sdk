@@ -484,6 +484,14 @@ jobs:
               --loglevel verbose
           done < "$RUNNER_TEMP/tileflow-release/publish.txt"
 
+      - name: Wait for npm registry processing
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/wait-for-published-packages.mjs \
+            "$RUNNER_TEMP/tileflow-release/selected-relative.txt" \
+            "$RUNNER_TEMP/tileflow-release"
+
       - name: Verify exact published artifacts and create receipt
         shell: bash
         run: |
@@ -500,16 +508,7 @@ jobs:
             package_name="$(PACKAGE_JSON="$package_json" node -e "console.log(JSON.parse(process.env.PACKAGE_JSON).name);")"
             package_version="$(PACKAGE_JSON="$package_json" node -e "console.log(JSON.parse(process.env.PACKAGE_JSON).version);")"
 
-            current_tag=''
-            for attempt in 1 2 3 4 5
-            do
-              if current_tag="$(npm view "$package_name" "dist-tags.$NPM_TAG" --prefer-online 2>/dev/null)" && \
-                [[ "$current_tag" = "$package_version" ]]
-              then
-                break
-              fi
-              sleep "$((attempt * 2))"
-            done
+            current_tag="$(npm view "$package_name" "dist-tags.$NPM_TAG" --prefer-online)"
             test "$current_tag" = "$package_version"
 
             local_integrity="$(TARBALL="$tarball" node -e "const {createHash} = require('node:crypto'); const {readFileSync} = require('node:fs'); process.stdout.write('sha512-' + createHash('sha512').update(readFileSync(process.env.TARBALL)).digest('base64'));")"

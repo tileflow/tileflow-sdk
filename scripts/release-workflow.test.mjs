@@ -76,8 +76,13 @@ test('publishes the approved bundle without rebuilding and verifies a final rece
   );
   assert.ok(
     publishJob.indexOf('Publish changed packages') <
+      publishJob.indexOf('Wait for npm registry processing'),
+  );
+  assert.ok(
+    publishJob.indexOf('Wait for npm registry processing') <
       publishJob.indexOf('Verify exact published artifacts and create receipt'),
   );
+  assert.match(publishJob, /node scripts\/wait-for-published-packages\.mjs/u);
   assert.match(publishJob, /compare-package-tarballs\.mjs/u);
   assert.match(publishJob, /dist\.integrity/u);
   assert.match(publishJob, /create-release-receipt\.mjs/u);

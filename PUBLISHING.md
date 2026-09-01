@@ -209,8 +209,11 @@ is no approval per package. Approval cannot alter the plan; any correction requi
 and a new deliberate workflow run.
 
 After approval, the isolated publish job downloads the bundle, verifies its SHA-256 and source SHA,
-rechecks npm immediately, publishes in catalog order with OIDC and provenance, downloads every
-selected package back from npm, compares exact contents, and writes the final receipt.
+rechecks npm immediately, publishes in catalog order with OIDC and provenance, and waits
+collectively for every selected `alpha` tag to become visible. npm may accept a package with `202`
+while processing it asynchronously, so this convergence gate allows up to ten minutes without
+multiplying that wait by package count. The job then downloads every selected package back from
+npm, compares exact contents, and writes the final receipt.
 
 ## Retry, partial publication, and recovery
 
@@ -233,6 +236,11 @@ overwrite, unpublish, manually move `alpha`, or bypass an invariant. If `main` a
 is defective, merge a corrective PR and deliberately prepare a new bundle. Platform and SDK changes
 cannot be one atomic transaction; shared hosted contracts must remain backward compatible and deploy
 server-first.
+
+An npm `202` followed by delayed package visibility is a successful asynchronous publication, not
+authority to republish immediately. Let the bounded convergence gate finish. If it still times out,
+verify the target version, `alpha` tag, integrity, and bytes independently before using **Re-run
+failed jobs**; the same idempotent preflight must classify visible targets as identical.
 
 ## One-time package bootstrap
 

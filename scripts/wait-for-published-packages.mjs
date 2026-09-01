@@ -4,7 +4,6 @@ import {readFile} from 'node:fs/promises';
 import {isAbsolute, relative, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
-import {publicPackageNameSet} from './release-config.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -59,12 +58,22 @@ export async function waitForPublishedPackages(
 }
 
 export async function readPublishedTargets(listPath, releaseRoot) {
-  const selected = (await readFile(listPath, 'utf8')).split('\n').filter(Boolean);
+  const [selectedContents, planContents] = await Promise.all([
+    readFile(listPath, 'utf8'),
+    readFile(resolve(releaseRoot, 'plan.json'), 'utf8'),
+  ]);
+  const selected = selectedContents.split('\n').filter(Boolean);
+  const plan = JSON.parse(planContents);
   assert.ok(selected.length > 0, 'Expected selected release tarballs.');
+  assert.ok(Array.isArray(plan.packages), 'Expected release plan packages.');
+  assert.equal(
+    selected.length,
+    plan.packages.length,
+    'Selected tarball count does not match the release plan.',
+  );
 
   const targets = [];
-  const names = new Set();
-  for (const selectedPath of selected) {
+  for (const [index, selectedPath] of selected.entries()) {
     assert.equal(isAbsolute(selectedPath), false, 'Selected tarball paths must be relative.');
     const tarball = resolve(releaseRoot, selectedPath);
     const projected = relative(releaseRoot, tarball);
@@ -74,10 +83,14 @@ export async function readPublishedTargets(listPath, releaseRoot) {
       encoding: 'utf8',
     });
     const manifest = JSON.parse(stdout);
-    assert.ok(publicPackageNameSet.has(manifest.name), `Unknown public package ${manifest.name}.`);
+    const release = plan.packages[index];
+    assert.equal(manifest.name, release?.name, 'Selected package order differs from release plan.');
+    assert.equal(
+      manifest.version,
+      release?.to,
+      `${manifest.name} selected version differs from release plan.`,
+    );
     assert.match(manifest.version, /^0\.1\.0-alpha\.\d+$/u);
-    assert.equal(names.has(manifest.name), false, `Duplicate package ${manifest.name}.`);
-    names.add(manifest.name);
     targets.push({name: manifest.name, version: manifest.version});
   }
 

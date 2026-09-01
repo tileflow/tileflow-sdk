@@ -215,6 +215,10 @@ while processing it asynchronously, so this convergence gate allows up to ten mi
 multiplying that wait by package count. The job then downloads every selected package back from
 npm, compares exact contents, and writes the final receipt.
 
+The isolated publish job installs no workspace dependencies. Every repository script it runs after
+approval must load with Node built-ins alone, and the convergence check validates each selected
+package name, version, order, and count against the sealed `plan.json`.
+
 ## Retry, partial publication, and recovery
 
 npm has no multi-package transaction. A bundle can therefore be partially visible briefly. The

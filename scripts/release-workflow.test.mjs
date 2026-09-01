@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
-import {readFile} from 'node:fs/promises';
+import {cp, mkdtemp, readFile, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import test from 'node:test';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {promisify} from 'node:util';
 import {publicPackageNames} from './release-config.mjs';
 import {
@@ -88,6 +90,26 @@ test('publishes the approved bundle without rebuilding and verifies a final rece
   assert.match(publishJob, /create-release-receipt\.mjs/u);
   assert.match(publishJob, /retention-days: 90/u);
   assert.equal((workflow.match(/id-token: write/gu) ?? []).length, 1);
+});
+
+test('loads every post-approval repository script without workspace dependencies', async () => {
+  const temporaryRoot = await mkdtemp(join(tmpdir(), 'tileflow-publish-scripts-'));
+
+  try {
+    const scriptsRoot = join(temporaryRoot, 'scripts');
+    await cp(fileURLToPath(new URL('.', import.meta.url)), scriptsRoot, {recursive: true});
+
+    for (const entrypoint of [
+      'compare-package-tarballs.mjs',
+      'create-release-receipt.mjs',
+      'publication-decision.mjs',
+      'wait-for-published-packages.mjs',
+    ]) {
+      await import(`${pathToFileURL(join(scriptsRoot, entrypoint)).href}?isolated=${entrypoint}`);
+    }
+  } finally {
+    await rm(temporaryRoot, {force: true, recursive: true});
+  }
 });
 
 test('downloads registry baselines from the single dependency-safe public catalog', async () => {

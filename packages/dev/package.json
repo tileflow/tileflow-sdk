@@ -97,7 +97,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@mapbox/vector-tile": "2.0.5",
+    "@mapbox/vector-tile": "3.0.0",
     "@maplibre/maplibre-gl-style-spec": "24.8.5",
     "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "chokidar": "4.0.3",

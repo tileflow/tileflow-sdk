@@ -111,7 +111,8 @@ installed MapLibre JS and CSS into a fresh browser context, fulfills generated l
 from memory under a closed synthetic origin, applies the camera, waits for MapLibre `load` and
 `idle`, waits two animation frames, and captures the map. Multiple scenes and warm watch use one
 Browser with a fresh context per scene. No Node listener, user profile, visible window, or public
-CDN runtime is created.
+CDN runtime is created. If the map uses local PMTiles, the standalone operation retains one
+immutable artifact generation until that render finishes.
 
 Non-loopback HTTP(S) resources make a receipt network-dependent and produce sorted origin-only
 warnings. Loopback direct-tile, TileJSON, sprite, and glyph fixtures remain local dependencies and do not
@@ -147,6 +148,15 @@ pixels. The same trust boundary applies to the configured style and data: standa
 both as `rendered`, while application receipts mark both as `expected-unverified`. An application
 receipt identifies the configuration expected by the scene, but does not claim that Tileflow
 inspected the running application's MapLibre style or data source.
+
+Local PMTiles keep a stable logical Style URL. The Tileflow handler in the application server
+resolves each range request to its current immutable snapshot, retains that generation until the
+response is prepared, and returns a strong generation ETag so one cached PMTiles read cannot
+silently combine ranges from two generations. Application Capture does not add a token or lease
+spanning the complete screenshot.
+If the user edits the PMTiles during that exact window, separate reads may resolve different valid
+generations; this bounded race is part of the `expected-unverified` application boundary. A later
+implementation may add an explicit capture-scoped lease if real evidence justifies its lifecycle.
 
 ## DOM readiness protocol
 

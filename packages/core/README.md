@@ -753,11 +753,15 @@ sources supplied by an application remain the application's responsibility.
 
 For local resolution, the Style URL is based on the logical tileset ID and remains stable when Dev
 creates a new immutable snapshot. Physical generation IDs and local content hashes never enter the
-Style representation. A new Dev request or Capture operation resolves current and retains that
-snapshot for its duration; an operation already in progress keeps its acquired generation.
+Style representation. Each Dev PMTiles request retains the snapshot it resolved until its response
+is prepared, and strong generation ETags prevent one cached PMTiles read from silently combining
+ranges from different generations. Standalone Capture retains one snapshot for its complete render.
+Application Capture does not freeze every local dataset across the complete screenshot window; the
+application's development server remains authoritative for its per-read generation.
 
 `local` does not make build output own or publish the archive. Production builds reject unresolved
-local PMTiles. Use explicit managed publication or an application-owned production source.
+local PMTiles. Explicitly publish the tileset through Tileflow's managed upload, validation,
+versioning, and hosting flow, or serve it from infrastructure owned by the application.
 
 One overlay owns one ordered group of ordinary MapLibre Style Layers. Public layer IDs are retained
 for `map.on(...)`, feature queries, and application state. Placement is one of `above-water`,

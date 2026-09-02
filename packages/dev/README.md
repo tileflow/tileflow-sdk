@@ -44,15 +44,20 @@ A local `hostedTileset()` path remains user-owned input. Dev performs bounded he
 and metadata checks, then creates an opaque immutable snapshot under
 `.tileflow/cache/pmtiles-snapshots/v1/`, using copy-on-write cloning when available and a safe copy
 otherwise. It does not hash the complete archive or traverse every leaf directory. Dev and Capture
-read only that snapshot. The current generation and already-started operations retain references;
-a replaced generation accepts no new acquisitions and is collected after its last operation.
+read only that snapshot. The current generation and already-started acquisitions retain references;
+a replaced generation accepts no new acquisitions and is collected after its last acquisition.
 The Style-facing path remains `tilesets/<logical-id>.pmtiles` across generations; physical snapshot
-identity stays out of Style JSON. Generation ETags make cached PMTiles reads restart instead of
-mixing ranges when current changes. Invalid edits keep the prior valid generation. Production
-writers reject unresolved local PMTiles instead of copying, content-addressing, deduplicating, or
-retaining them. Explicit `tileset publish` owns managed publication and exhaustive validation.
-Startup removes snapshot generations owned by dead processes, and symlinked snapshot-store
-boundaries are rejected.
+identity stays out of Style JSON. Standalone Capture retains one generation for the complete render.
+Application Capture delegates PMTiles reads to the application's development server, where each
+range request retains its generation until that response is prepared; it does not lease one
+generation for the complete capture. Strong generation ETags make a cached PMTiles read restart if
+current changes between its ranges. Invalid edits keep the prior valid generation.
+
+Production writers reject unresolved local PMTiles instead of copying, content-addressing,
+deduplicating, retaining, or publishing them. Production data therefore requires an explicit
+`tileset publish` operation or an application-owned PMTiles location. Managed publication owns its
+separate exhaustive validation and version lifecycle. Startup removes snapshot generations owned
+by dead processes, and symlinked snapshot-store boundaries are rejected.
 
 Every plan also emits canonical `build-manifest.json` (schema version 1). For each map it records
 the leaf `mapVersion`, resolved lineage, effective icon/font source identities, semantic compiler ABI, and

@@ -5,6 +5,16 @@ import type {NormalizedTileflowCaptureScene} from '@tileflow/core';
 import {captureApplicationTileflowScene} from '../src/application';
 import {TileflowCaptureError} from '../src/errors';
 
+type ApplicationRoute = (route: {
+  abort(reason?: string): Promise<void>;
+  continue(overrides?: unknown): Promise<void>;
+  request(): {
+    frame(): {parentFrame(): unknown};
+    isNavigationRequest(): boolean;
+    url(): string;
+  };
+}) => Promise<void>;
+
 test('rejects an oversized map target before requesting screenshot bytes', async () => {
   let screenshotCalls = 0;
   const png = pngHeader(1, 1);
@@ -67,6 +77,38 @@ test('labels external WebSocket input as a remote visual dependency', async () =
   assert.deepEqual(result.warnings, [
     'Application capture requested remote resources from ws://remote.example.',
   ]);
+});
+
+test('leaves application PMTiles requests under the application server authority', async () => {
+  const {browser, routes} = fakeApplicationBrowser();
+  const resultPromise = captureApplicationTileflowScene({
+    appOrigin: 'http://127.0.0.1:3000',
+    browser,
+    colorScheme: 'light',
+    scene: applicationScene,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(routes.length, 1);
+
+  const continuations: unknown[] = [];
+  await routes[0]?.({
+    abort: async () => {
+      throw new Error(
+        'Application PMTiles request must remain under application server authority.',
+      );
+    },
+    continue: async (overrides?: unknown) => {
+      continuations.push(overrides);
+    },
+    request: () => ({
+      frame: () => ({parentFrame: () => ({})}),
+      isNavigationRequest: () => false,
+      url: () => 'http://127.0.0.1:3000/tileflow/tilesets/stores.pmtiles',
+    }),
+  });
+  await resultPromise;
+
+  assert.deepEqual(continuations, [undefined]);
 });
 
 test('fails when the application reports an error during screenshot capture', async () => {
@@ -174,6 +216,7 @@ function pngHeader(width: number, height: number): Uint8Array {
 function fakeApplicationBrowser(pageUrl = 'http://127.0.0.1:3000/'): {
   browser: Browser;
   handlers: Map<string, (...args: unknown[]) => void>;
+  routes: ApplicationRoute[];
   locator: {
     boundingBox(): Promise<{height: number; width: number; x: number; y: number}>;
     count(): Promise<number>;
@@ -185,6 +228,7 @@ function fakeApplicationBrowser(pageUrl = 'http://127.0.0.1:3000/'): {
   };
 } {
   const handlers = new Map<string, (...args: unknown[]) => void>();
+  const routes: ApplicationRoute[] = [];
   const locator = {
     boundingBox: async () => ({height: 64, width: 64, x: 0, y: 0}),
     count: async () => 1,
@@ -204,7 +248,9 @@ function fakeApplicationBrowser(pageUrl = 'http://127.0.0.1:3000/'): {
       handlers.set(event, handler);
       return page;
     },
-    route: async () => undefined,
+    route: async (_matcher: unknown, handler: unknown) => {
+      routes.push(handler as ApplicationRoute);
+    },
     screenshot: async () => Buffer.from(pngHeader(320, 240)),
     setDefaultTimeout: () => undefined,
     url: () => pageUrl,
@@ -217,5 +263,6 @@ function fakeApplicationBrowser(pageUrl = 'http://127.0.0.1:3000/'): {
     browser: {newContext: async () => context} as unknown as Browser,
     handlers,
     locator,
+    routes,
   };
 }

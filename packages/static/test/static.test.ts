@@ -220,6 +220,24 @@ test('retries a processing operation with the same key and validates the ready r
   assert.equal(result.remainingUnits, 499_985);
 });
 
+test('accepts an unbounded Starter balance in a ready response', async () => {
+  const result = await createStaticMap(baseScene, {
+    fetch: async () =>
+      Response.json({
+        cached: false,
+        hash: 'a'.repeat(43),
+        imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
+        operationId: 'smo_12345678901234567890',
+        remainingUnits: null,
+        status: 'ready',
+        unitCost: 15,
+      }),
+    idempotencyKey: 'static_12345678',
+  });
+
+  assert.equal(result.remainingUnits, null);
+});
+
 test('rejects malformed success responses instead of casting them', async () => {
   await assert.rejects(
     createStaticMap(baseScene, {

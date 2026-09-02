@@ -46,7 +46,7 @@ export const staticMapReadyResultSchema = z
       .max(2048)
       .refine(isSafeHttpUrl, {message: 'Expected an http(s) URL without credentials'}),
     operationId: z.string().min(20).max(68),
-    remainingUnits: z.number().int().nonnegative(),
+    remainingUnits: z.number().int().nonnegative().nullable(),
     status: z.literal('ready'),
     unitCost: z.literal(15),
   })

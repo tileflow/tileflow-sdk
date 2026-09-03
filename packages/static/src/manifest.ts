@@ -1,5 +1,6 @@
 import {z} from 'zod';
-import {hashStableValue, isSafeHttpUrl, stripUndefined} from './canonical';
+import {analyzeStaticAutoFit, staticAutoFitPlanSchema} from './auto-fit';
+import {hashStableValue, isSafeHttpUrl, stableStringify, stripUndefined} from './canonical';
 import {
   normalizeStaticScene,
   type StaticSceneInput,
@@ -10,6 +11,7 @@ import {
 export const staticRendererSchemaVersion = 1;
 
 export const staticRenderManifestSchema = z.object({
+  autoFit: staticAutoFitPlanSchema.optional(),
   mapId: z.string().trim().min(1).max(128),
   rendererVersion: z.string().trim().min(1).max(64),
   schemaVersion: z.literal(staticRendererSchemaVersion),
@@ -26,7 +28,20 @@ export type StaticRenderManifest = z.infer<typeof staticRenderManifestSchema>;
 export function validateStaticRenderManifest(
   input: unknown,
 ): {manifest: StaticRenderManifest; ok: true} | {error: string; ok: false} {
-  const parsed = staticRenderManifestSchema.safeParse(input);
+  const rawScene =
+    input && typeof input === 'object' && !Array.isArray(input) && 'scene' in input
+      ? (input as {scene: unknown}).scene
+      : undefined;
+  const sceneValidation = validateStaticScene(rawScene);
+
+  if (!sceneValidation.ok) {
+    return sceneValidation;
+  }
+
+  const parsed = staticRenderManifestSchema.safeParse({
+    ...(input as Record<string, unknown>),
+    scene: sceneValidation.scene,
+  });
 
   if (!parsed.success) {
     return {
@@ -37,15 +52,18 @@ export function validateStaticRenderManifest(
     };
   }
 
-  const sceneValidation = validateStaticScene(parsed.data.scene);
-
-  if (!sceneValidation.ok) {
-    return sceneValidation;
+  const autoFit = expectedAutoFit(sceneValidation.scene);
+  if (
+    (autoFit === undefined) !== (parsed.data.autoFit === undefined) ||
+    (autoFit !== undefined && stableStringify(autoFit) !== stableStringify(parsed.data.autoFit))
+  ) {
+    return {error: 'manifest.autoFit: Expected the exact plan derived from scene', ok: false};
   }
 
   return {
     manifest: {
       ...parsed.data,
+      ...(autoFit === undefined ? {} : {autoFit}),
       scene: sceneValidation.scene,
     },
     ok: true,
@@ -60,12 +78,16 @@ export function createRenderManifest(input: {
   styleRevision: string;
   styleUrl: string;
 }): StaticRenderManifest {
+  const scene = normalizeStaticScene(input.scene);
+  const autoFit = expectedAutoFit(scene);
+
   return staticRenderManifestSchema.parse(
     stripUndefined({
+      autoFit,
       mapId: input.mapId,
       rendererVersion: input.rendererVersion,
       schemaVersion: staticRendererSchemaVersion,
-      scene: normalizeStaticScene(input.scene),
+      scene,
       styleId: input.styleId,
       styleRevision: input.styleRevision,
       styleUrl: input.styleUrl,
@@ -74,15 +96,20 @@ export function createRenderManifest(input: {
 }
 
 export async function hashRenderManifest(manifest: StaticRenderManifest): Promise<string> {
-  const normalized = staticRenderManifestSchema.parse({
-    ...manifest,
-    scene: normalizeStaticScene(manifest.scene),
-  });
-  return hashStableValue(normalized);
+  const validation = validateStaticRenderManifest(manifest);
+  if (!validation.ok) throw new Error(`Invalid Tileflow render manifest: ${validation.error}`);
+  return hashStableValue(validation.manifest);
 }
 
 export async function hashStaticSceneRequest(scene: StaticSceneInput): Promise<string> {
   const validation = validateStaticScene(scene);
   if (!validation.ok) throw new Error(`Invalid Tileflow static scene: ${validation.error}`);
   return hashStableValue(validation.scene);
+}
+
+function expectedAutoFit(scene: ReturnType<typeof normalizeStaticScene>) {
+  if (scene.camera.type !== 'auto') return undefined;
+  const analysis = analyzeStaticAutoFit(scene);
+  if (!analysis.ok) throw new Error(`Invalid Tileflow auto-fit scene: ${analysis.error}`);
+  return analysis.plan;
 }

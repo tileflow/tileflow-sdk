@@ -1,18 +1,50 @@
+import {
+  analyzeStaticAutoFit,
+  autoFitErrorResponse,
+  findStaticOverlayLatitudeFailure,
+  type StaticAutoFitErrorResponse,
+  type StaticAutoFitFailure,
+  StaticMapRequestError,
+  type StaticMapRequestErrorResponse,
+  staticMapRequestErrorResponseSchema,
+  type StaticMapRequestFailure,
+} from './auto-fit';
 import {jsonByteLength, roundNumber, stripUndefined} from './canonical';
 import {normalizeStaticCoordinate, normalizeStaticOverlay} from './overlay-normalization';
 import {
+  type StaticPadding,
   type StaticScene,
   type StaticSceneInput,
   staticSceneLimits,
   staticSceneSchema,
 } from './scene-contract';
 
-export {staticSceneLimits, staticSceneSchema, staticSceneSchemaVersion} from './scene-contract';
-export type {StaticCoordinate, StaticScene, StaticSceneInput} from './scene-contract';
+export {
+  MAX_OVERLAY_LATITUDE,
+  staticSceneLimits,
+  staticSceneSchema,
+  staticSceneSchemaVersion,
+} from './scene-contract';
+export {StaticMapRequestError, staticMapRequestErrorResponseSchema};
+export type {
+  StaticAutoFitErrorResponse,
+  StaticAutoFitFailure,
+  StaticMapRequestErrorResponse,
+  StaticMapRequestFailure,
+};
+export type {
+  StaticCoordinate,
+  StaticPadding,
+  StaticScene,
+  StaticSceneInput,
+} from './scene-contract';
 
 export function validateStaticScene(
   input: unknown,
-): {ok: true; scene: StaticScene} | {error: string; ok: false} {
+): {ok: true; scene: StaticScene} | {error: string; ok: false} | StaticMapRequestFailure {
+  const overlayLatitudeFailure = findStaticOverlayLatitudeFailure(input);
+  if (overlayLatitudeFailure) return overlayLatitudeFailure;
+
   const parsed = staticSceneSchema.safeParse(input);
 
   if (!parsed.success) {
@@ -31,11 +63,33 @@ export function validateStaticScene(
     };
   }
 
-  return {ok: true, scene: normalizeParsedStaticScene(parsed.data)};
+  const scene = normalizeParsedStaticScene(parsed.data);
+
+  if (scene.camera.type === 'auto') {
+    const analysis = analyzeStaticAutoFit(scene);
+    if (!analysis.ok) return analysis;
+  }
+
+  return {ok: true, scene};
 }
 
 export function normalizeStaticScene(scene: StaticSceneInput): StaticScene {
-  return normalizeParsedStaticScene(staticSceneSchema.parse(scene));
+  const overlayLatitudeFailure = findStaticOverlayLatitudeFailure(scene);
+  if (overlayLatitudeFailure) {
+    const {ok: _ok, ...response} = overlayLatitudeFailure;
+    throw new StaticMapRequestError(response);
+  }
+
+  const normalized = normalizeParsedStaticScene(staticSceneSchema.parse(scene));
+
+  if (normalized.camera.type === 'auto') {
+    const analysis = analyzeStaticAutoFit(normalized);
+    if (!analysis.ok) {
+      throw new StaticMapRequestError(autoFitErrorResponse(analysis));
+    }
+  }
+
+  return normalized;
 }
 
 function normalizeParsedStaticScene(parsed: StaticScene): StaticScene {
@@ -48,12 +102,19 @@ function normalizeParsedStaticScene(parsed: StaticScene): StaticScene {
             type: 'center',
             zoom: roundNumber(parsed.camera.zoom),
           }
-        : {
-            bearing: roundNumber(parsed.camera.bearing ?? 0),
-            bounds: parsed.camera.bounds.map(roundNumber) as [number, number, number, number],
-            padding: parsed.camera.padding ?? 32,
-            type: 'bounds',
-          },
+        : parsed.camera.type === 'bounds'
+          ? {
+              bearing: roundNumber(parsed.camera.bearing ?? 0),
+              bounds: parsed.camera.bounds.map(roundNumber) as [number, number, number, number],
+              padding: parsed.camera.padding ?? 32,
+              type: 'bounds',
+            }
+          : {
+              bearing: roundNumber(parsed.camera.bearing ?? 0),
+              maxZoom: roundNumber(parsed.camera.maxZoom ?? 16),
+              padding: normalizeAutoPadding(parsed.camera.padding, parsed.size),
+              type: 'auto',
+            },
     map: parsed.map,
     overlays: parsed.overlays.map((overlay, index) =>
       normalizeStaticOverlay({
@@ -68,4 +129,25 @@ function normalizeParsedStaticScene(parsed: StaticScene): StaticScene {
     },
     theme: parsed.theme,
   }) as StaticScene;
+}
+
+function normalizeAutoPadding(
+  padding: number | Partial<StaticPadding> | undefined,
+  size: {height: number; width: number},
+): StaticPadding {
+  if (padding === undefined) {
+    const value = Math.min(32, Math.ceil(Math.min(size.width, size.height) * 0.05));
+    return {bottom: value, left: value, right: value, top: value};
+  }
+
+  if (typeof padding === 'number') {
+    return {bottom: padding, left: padding, right: padding, top: padding};
+  }
+
+  return {
+    bottom: padding.bottom ?? 0,
+    left: padding.left ?? 0,
+    right: padding.right ?? 0,
+    top: padding.top ?? 0,
+  };
 }

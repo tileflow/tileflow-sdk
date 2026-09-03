@@ -1,4 +1,9 @@
 import {z} from 'zod';
+import {
+  StaticMapRequestError,
+  staticMapRequestErrorResponseSchema,
+  type StaticMapRequestFailure,
+} from './auto-fit';
 import {isSafeHttpUrl, stableStringify} from './canonical';
 import {type StaticSceneInput, validateStaticScene} from './scene';
 
@@ -88,6 +93,11 @@ export function prepareStaticMapRequest(scene: StaticSceneInput): PreparedStatic
   const validation = validateStaticScene(scene);
 
   if (!validation.ok) {
+    if (isStaticMapRequestFailure(validation)) {
+      const {ok: _ok, ...response} = validation;
+      throw new StaticMapRequestError(response);
+    }
+
     throw new Error(`Invalid Tileflow static scene: ${validation.error}`);
   }
 
@@ -173,8 +183,16 @@ export async function requestStaticMapUntilReady(
       throwIfAborted(signal);
 
       if (!response.ok) {
-        await discardBoundedResponse(response, 8 * 1024);
+        const requestError =
+          response.status === 422
+            ? await readStaticMapRequestErrorResponse(response, 8 * 1024)
+            : await discardBoundedResponse(response, 8 * 1024);
         throwIfAborted(signal);
+
+        if (requestError) {
+          throw new StaticMapRequestError(requestError, response.status);
+        }
+
         throw new Error(`Tileflow static map failed (${response.status}).`);
       }
 
@@ -229,12 +247,33 @@ async function readJsonResponse(response: Response) {
   }
 }
 
-async function discardBoundedResponse(response: Response, maximumBytes: number): Promise<void> {
+async function readStaticMapRequestErrorResponse(response: Response, maximumBytes: number) {
+  try {
+    const source = await readBoundedResponseText(response, maximumBytes, `${maximumBytes} bytes`);
+    const parsed = staticMapRequestErrorResponseSchema.safeParse(JSON.parse(source));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+async function discardBoundedResponse(response: Response, maximumBytes: number) {
   try {
     await readBoundedResponseText(response, maximumBytes, `${maximumBytes} bytes`);
   } catch {
-    // Error response bodies are untrusted diagnostics and are never reflected to callers.
+    // Remote diagnostics remain bounded and are never reflected to callers.
   }
+
+  return null;
+}
+
+function isStaticMapRequestFailure(value: {
+  error: string;
+  ok: false;
+}): value is StaticMapRequestFailure {
+  if (!('code' in value)) return false;
+  const {ok: _ok, ...response} = value as StaticMapRequestFailure;
+  return staticMapRequestErrorResponseSchema.safeParse(response).success;
 }
 
 async function readBoundedResponseText(

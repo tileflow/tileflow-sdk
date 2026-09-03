@@ -1,6 +1,7 @@
 import {z} from 'zod';
 
 export const staticSceneSchemaVersion = 1;
+export const MAX_OVERLAY_LATITUDE = 85.051129;
 export const staticSceneLimits = {
   maxDimension: 1280,
   maxGeoJsonBytes: 96_000,
@@ -15,6 +16,13 @@ export const coordinateSchema = z
   .refine(([lng, lat]) => lng >= -180 && lng <= 180 && lat >= -90 && lat <= 90, {
     message: 'Expected [lng, lat] within world bounds',
   });
+
+const overlayCoordinateSchema = coordinateSchema.refine(
+  ([, latitude]) => Math.abs(latitude) <= MAX_OVERLAY_LATITUDE,
+  {
+    message: `Static overlay latitude must be within ±${MAX_OVERLAY_LATITUDE}°`,
+  },
+);
 
 const colorSchema = z.string().regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, {
   message: 'Expected a hex color like #C6A15B',
@@ -88,9 +96,37 @@ const boundsCameraSchema = z
     message: 'Bounds north must be greater than south',
   });
 
+export const staticPaddingSchema = z
+  .object({
+    bottom: z.number().int().nonnegative(),
+    left: z.number().int().nonnegative(),
+    right: z.number().int().nonnegative(),
+    top: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const autoPaddingInputSchema = z.union([
+  z.number().int().nonnegative(),
+  z
+    .object({
+      bottom: z.number().int().nonnegative().optional(),
+      left: z.number().int().nonnegative().optional(),
+      right: z.number().int().nonnegative().optional(),
+      top: z.number().int().nonnegative().optional(),
+    })
+    .strict(),
+]);
+
+const autoCameraSchema = z.object({
+  bearing: z.number().finite().min(-180).max(180).optional(),
+  maxZoom: z.number().finite().min(0).max(22).optional(),
+  padding: autoPaddingInputSchema.optional(),
+  type: z.literal('auto'),
+});
+
 export const lineOverlaySchema = z.object({
   color: colorSchema.default('#C6A15B'),
-  coordinates: z.array(coordinateSchema).min(2).max(staticSceneLimits.maxPathCoordinates),
+  coordinates: z.array(overlayCoordinateSchema).min(2).max(staticSceneLimits.maxPathCoordinates),
   id: z.string().trim().min(1).max(64).optional(),
   opacity: z.number().finite().min(0).max(1).default(1),
   type: z.literal('line'),
@@ -99,7 +135,7 @@ export const lineOverlaySchema = z.object({
 
 export const circleOverlaySchema = z.object({
   color: colorSchema.default('#C6A15B'),
-  coordinate: coordinateSchema,
+  coordinate: overlayCoordinateSchema,
   id: z.string().trim().min(1).max(64).optional(),
   opacity: z.number().finite().min(0).max(1).default(1),
   radius: z.number().finite().min(1).max(64).default(6),
@@ -110,7 +146,7 @@ export const circleOverlaySchema = z.object({
 
 export const markerOverlaySchema = z.object({
   color: colorSchema.default('#C6A15B'),
-  coordinate: coordinateSchema,
+  coordinate: overlayCoordinateSchema,
   id: z.string().trim().min(1).max(64).optional(),
   radius: z.number().finite().min(2).max(64).default(8),
   strokeColor: colorSchema.default('#ffffff'),
@@ -119,7 +155,7 @@ export const markerOverlaySchema = z.object({
 });
 
 const polygonRingSchema = z
-  .array(coordinateSchema)
+  .array(overlayCoordinateSchema)
   .min(4)
   .max(staticSceneLimits.maxPathCoordinates)
   .refine(
@@ -149,7 +185,7 @@ export const staticOverlaySchema = z.discriminatedUnion('type', [
 ]);
 
 export const staticSceneSchema = z.object({
-  camera: z.discriminatedUnion('type', [centerCameraSchema, boundsCameraSchema]),
+  camera: z.discriminatedUnion('type', [centerCameraSchema, boundsCameraSchema, autoCameraSchema]),
   map: portableIdSchema,
   overlays: z.array(staticOverlaySchema).max(staticSceneLimits.maxOverlays).default([]),
   size: sizeSchema,
@@ -157,6 +193,7 @@ export const staticSceneSchema = z.object({
 });
 
 export type StaticCoordinate = z.infer<typeof coordinateSchema>;
+export type StaticPadding = z.infer<typeof staticPaddingSchema>;
 export type StaticSceneInput = z.input<typeof staticSceneSchema>;
 export type StaticScene = z.infer<typeof staticSceneSchema>;
 export type StaticOverlayInput = z.input<typeof staticOverlaySchema>;

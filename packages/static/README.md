@@ -20,7 +20,7 @@ import {
 const scene = validateStaticScene({
   map: 'madrid',
   theme: 'dark',
-  camera: {type: 'center', center: [-3.7038, 40.4168], zoom: 12},
+  camera: {type: 'auto', padding: 24},
   size: {width: 1200, height: 800},
   overlays: [marker({coordinate: [-3.7038, 40.4168]})],
 });
@@ -32,6 +32,43 @@ await precacheStaticMap(scene.scene, {
   idempotencyKey: createStaticMapIdempotencyKey(),
 });
 ```
+
+## Automatic framing
+
+`camera.type: 'auto'` fits the complete nominal footprint of every declared marker, circle, line,
+and polygon. It works with Mercator and Globe styles when the geometry can be shown. It never clips
+silently.
+
+```ts
+camera: {
+  type: 'auto',
+  padding: {top: 24, right: 240, bottom: 24, left: 24},
+  maxZoom: 16,
+  bearing: 0,
+}
+```
+
+Padding uses logical CSS pixels. A number applies to every side; omitted sides in an object are
+zero. Without `padding`, Tileflow uses `min(32, ceil(5% * min(width, height)))`. `maxZoom` defaults
+to 16 and `bearing` to 0. A single position still honors asymmetric padding, so its apparent center
+can move away from the viewport center.
+
+Point-like overlays around ±180° use the shortest longitude interval. Tileflow never reinterprets
+vertices inside a line or polygon: an ambiguous crossing returns an error. Represent a correctly
+cut `MultiLineString` or `MultiPolygon` as several `line` or `polygon` overlays with identical
+styles; auto-fit may move each complete component to an adjacent world copy.
+
+Current overlay primitives use MapLibre's GeoJSON pipeline and require
+`abs(latitude) <= MAX_OVERLAY_LATITUDE` (`85.051129`). Tileflow rejects larger latitudes instead of
+clamping them. A Globe basemap may display polar regions even though these overlay primitives cannot
+yet be drawn there.
+
+Deterministic request failures return `422`, set `retryable: false`, and preserve a stable code,
+reason, and bounded details. `validateStaticScene` returns that document; request helpers throw
+`StaticMapRequestError` either locally or from the Hosted response. The reasons distinguish an empty
+scene, an ambiguous antimeridian path, an out-of-range overlay latitude, an insufficient viewport,
+a Globe visibility conflict, an unresolvable camera, and failed post-fit containment. Correct the
+scene; do not retry it unchanged.
 
 The package has four deliberately separate surfaces, all available from the root for compatibility:
 

@@ -1,4 +1,5 @@
 import type {z} from 'zod';
+import {roundNumber} from './canonical';
 import {normalizeStaticOverlay} from './overlay-normalization';
 import {
   circleOverlaySchema,
@@ -27,17 +28,33 @@ export function polygon(input: Omit<z.input<typeof polygonOverlaySchema>, 'type'
   return normalizeStaticOverlay({...input, type: 'polygon'});
 }
 
-export function compileStaticOverlays(overlays: StaticOverlay[]) {
+export function compileStaticOverlays(
+  overlays: StaticOverlay[],
+  options: {longitudeOffsets?: readonly number[]} = {},
+) {
+  if (
+    options.longitudeOffsets !== undefined &&
+    (options.longitudeOffsets.length !== overlays.length ||
+      options.longitudeOffsets.some(
+        (offset) => !Number.isInteger(offset) || Math.abs(offset) > 360 || offset % 360 !== 0,
+      ))
+  ) {
+    throw new Error(
+      'Static overlay longitude offsets must contain one -360, 0, or 360 per overlay',
+    );
+  }
+
   const sources: Record<string, Record<string, unknown>> = {};
   const layers: Array<Record<string, unknown>> = [];
 
   for (const [index, overlay] of overlays.entries()) {
+    const longitudeOffset = options.longitudeOffsets?.[index] ?? 0;
     const id = safeLayerId(`overlay-${index + 1}-${overlay.id ?? overlay.type}`);
     const sourceId = `${id}-source`;
 
     if (overlay.type === 'line') {
       sources[sourceId] = {
-        data: feature('LineString', overlay.coordinates),
+        data: feature('LineString', shiftLongitudes(overlay.coordinates, longitudeOffset)),
         type: 'geojson',
       };
       layers.push({
@@ -56,7 +73,7 @@ export function compileStaticOverlays(overlays: StaticOverlay[]) {
 
     if (overlay.type === 'polygon') {
       sources[sourceId] = {
-        data: feature('Polygon', overlay.coordinates),
+        data: feature('Polygon', shiftLongitudes(overlay.coordinates, longitudeOffset)),
         type: 'geojson',
       };
       layers.push({
@@ -85,7 +102,7 @@ export function compileStaticOverlays(overlays: StaticOverlay[]) {
     }
 
     sources[sourceId] = {
-      data: feature('Point', overlay.coordinate),
+      data: feature('Point', shiftLongitudes(overlay.coordinate, longitudeOffset)),
       type: 'geojson',
     };
     layers.push({
@@ -103,6 +120,16 @@ export function compileStaticOverlays(overlays: StaticOverlay[]) {
   }
 
   return {layers, sources};
+}
+
+function shiftLongitudes(value: unknown, offset: number): unknown {
+  if (!Array.isArray(value)) return value;
+
+  if (value.length === 2 && typeof value[0] === 'number' && typeof value[1] === 'number') {
+    return [roundNumber(value[0] + offset), value[1]];
+  }
+
+  return value.map((entry) => shiftLongitudes(entry, offset));
 }
 
 function feature(type: string, coordinates: unknown) {

@@ -7,6 +7,9 @@ import {z} from 'zod';
 export type AccountIdentity = Readonly<{email: string; id: string; name: string}>;
 export type ProjectIdentity = Readonly<{id: string; name: string; slug: string}>;
 
+export const rejectedAccountSessionMessage =
+  'The saved Tileflow account session is no longer valid. Run tileflow login to authorize this machine again.';
+
 export type CliAccountSessionV2 = Readonly<{
   account: AccountIdentity;
   accountSession: string;

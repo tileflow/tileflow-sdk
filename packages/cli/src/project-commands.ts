@@ -4,6 +4,7 @@ import {
   type AuthConfigV2,
   type CliAccountSessionV2,
   parseProjectReference,
+  rejectedAccountSessionMessage,
   resolveAccountSession,
 } from './account-session';
 import {requestHostedJson} from './hosted-client';
@@ -306,7 +307,10 @@ async function accountRequest(session: CliAccountSessionV2, path: string, init: 
     ? {body: response.body, ok: true as const, status: response.status}
     : {
         body: response.body,
-        error: `Request failed (${response.status}).`,
+        error:
+          response.status === 401
+            ? rejectedAccountSessionMessage
+            : `Request failed (${response.status}).`,
         ok: false as const,
         status: response.status,
       };

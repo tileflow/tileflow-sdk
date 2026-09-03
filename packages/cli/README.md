@@ -490,6 +490,11 @@ npx tileflow status --map-id map_AbCdEfGhIjKlMnOp
 npx tileflow logout
 ```
 
+Changing or resetting the hosted account password revokes saved personal CLI sessions. The next
+account or hosted command stops with a clear message and asks you to run `tileflow login` again.
+Project API and CI keys are independent project credentials and are not removed by a personal
+password change.
+
 The dashboard creates the Map and browser-access policy before repository setup. Keep that exact
 Map ID in the deploy action. If the config contains several maps, select the authored map explicitly:
 

@@ -65,6 +65,39 @@ test('projects list uses the account session and emits deterministic secret-free
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(accountToken));
 });
 
+test('a server-revoked account session clearly requires a fresh login', async (t) => {
+  const fixture = await createFixture(t);
+  const api = await createApi(t, async () => json(401, {error: 'Invalid CLI account session'}));
+  await writeSession(fixture, api.url);
+
+  const projects = await runCli(
+    fixture.projectDirectory,
+    ['projects', 'list', '--json', '--api-url', api.url],
+    fixture.directory,
+  );
+  const whoami = await runCli(
+    fixture.projectDirectory,
+    ['whoami', '--json', '--api-url', api.url],
+    fixture.directory,
+  );
+
+  assert.equal(projects.code, 1);
+  assert.equal(whoami.code, 1);
+  assert.match(projects.stderr, /session is no longer valid.*tileflow login/iu);
+  assert.match(whoami.stderr, /session is no longer valid.*tileflow login/iu);
+  assert.doesNotMatch(`${projects.stderr}\n${whoami.stderr}`, /Invalid CLI account session/u);
+  assert.deepEqual(JSON.parse(projects.stdout), {
+    error: {code: 'http_401'},
+    ok: false,
+    schemaVersion: 1,
+  });
+  assert.deepEqual(JSON.parse(whoami.stdout), {
+    error: {code: 'authentication_failed'},
+    ok: false,
+    schemaVersion: 1,
+  });
+});
+
 test('projects archive carries its exact reference and never performs hidden selection', async (t) => {
   const fixture = await createFixture(t);
   let requestCount = 0;

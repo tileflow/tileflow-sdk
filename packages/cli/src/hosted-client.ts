@@ -7,6 +7,7 @@ import {
   type CliAccountSessionV2,
   normalizeApiOrigin,
   type ProjectIdentity,
+  rejectedAccountSessionMessage,
 } from './account-session';
 import {
   hostedFontBundleResponseSchema,
@@ -161,7 +162,13 @@ export async function validateAccountSession(
     options,
   );
   if (!response.ok) {
-    return {error: `Account session validation failed (${response.status}).`, ok: false};
+    return {
+      error:
+        response.status === 401
+          ? rejectedAccountSessionMessage
+          : `Account session validation failed (${response.status}).`,
+      ok: false,
+    };
   }
   const body = asRecord(response.body);
   const account = asRecord(body.account);
@@ -301,7 +308,13 @@ export async function requestProjectCapability(
     };
   }
   if (!response.ok) {
-    return {error: `Project capability request failed (${response.status}).`, ok: false};
+    return {
+      error:
+        response.status === 401
+          ? rejectedAccountSessionMessage
+          : `Project capability request failed (${response.status}).`,
+      ok: false,
+    };
   }
   const body = asRecord(response.body);
   if (

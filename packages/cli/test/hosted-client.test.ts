@@ -8,6 +8,7 @@ import {
   requestProjectCapability,
   requestTeamCapability,
   uploadHostedIconPackage,
+  validateAccountSession,
   validateApiKey,
 } from '../src/hosted-client';
 
@@ -149,6 +150,31 @@ test('Hosted authentication failures never reflect an untrusted remote body', as
 
   assert.deepEqual(result, {error: 'Project capability request failed (403).', ok: false});
   assert.doesNotMatch(JSON.stringify(result), new RegExp(secret));
+});
+
+test('a revoked account session reports the stable reauthentication action', async () => {
+  const session: CliAccountSessionV2 = {
+    account: {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'},
+    accountSession: `tf_session_${'a'.repeat(64)}`,
+    apiOrigin: 'https://api.example.test',
+    createdAt: '2026-08-15T00:00:00.000Z',
+    expiresAt: '2026-12-01T00:00:00.000Z',
+    sessionId: 'cli_session_ada',
+  };
+  const fetch = (async () =>
+    Response.json({error: 'private reason'}, {status: 401})) as typeof globalThis.fetch;
+
+  const account = await validateAccountSession(session, {fetch});
+  const capability = await requestProjectCapability(session, '@acme/maps', ['styles:write'], {
+    fetch,
+  });
+
+  assert.deepEqual(account, {
+    error:
+      'The saved Tileflow account session is no longer valid. Run tileflow login to authorize this machine again.',
+    ok: false,
+  });
+  assert.deepEqual(capability, account);
 });
 
 test('Team capability requests carry a Team selector and data-only scopes', async () => {

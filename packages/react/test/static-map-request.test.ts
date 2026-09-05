@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {prepareStaticMapRequest} from '@tileflow/static/client';
+import {prepareStaticMapRequest, STATIC_MAP_RESULT_V2_MEDIA_TYPE} from '@tileflow/static/client';
 import {createStaticMapRequestKey, resolveStaticMap} from '../src/static-map-request';
 
 const createUrl = 'https://api.example.test/v1/static/maps';
@@ -22,6 +22,30 @@ test('deduplicates only the same normalized idempotency operation', () => {
   assert.notEqual(
     createStaticMapRequestKey({...common, idempotencyKey: 'static_first'}),
     createStaticMapRequestKey({...common, idempotencyKey: 'static_second'}),
+  );
+});
+
+test('attribution mode and requested position participate in the React request key', () => {
+  const embedded = prepareStaticMapRequest({
+    ...scene,
+    attribution: {mode: 'embedded', position: 'bottom-left'},
+  });
+  const external = prepareStaticMapRequest({
+    ...scene,
+    attribution: {mode: 'external'},
+  });
+
+  assert.notEqual(
+    createStaticMapRequestKey({
+      createUrl,
+      idempotencyKey: 'static_attribution',
+      request: embedded,
+    }),
+    createStaticMapRequestKey({
+      createUrl,
+      idempotencyKey: 'static_attribution',
+      request: external,
+    }),
   );
 });
 
@@ -88,15 +112,7 @@ test('the React client rejects operation identity drift through the shared polle
               {operationId: 'smo_12345678901234567890', retryAfterMs: 0, status: 'processing'},
               {status: 202},
             )
-          : Response.json({
-              cached: false,
-              hash: 'a'.repeat(43),
-              imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
-              operationId: 'smo_99999999999999999999',
-              remainingUnits: 499_985,
-              status: 'ready',
-              unitCost: 15,
-            });
+          : readyResponse({operationId: 'smo_99999999999999999999'});
       },
       idempotencyKey: 'static_drift_123',
       request: prepareStaticMapRequest(scene),
@@ -185,14 +201,30 @@ test('the last React consumer aborts its shared network request', async () => {
   assert.equal(requestSignal?.aborted, true);
 });
 
-function readyResponse() {
-  return Response.json({
-    cached: false,
-    hash: 'a'.repeat(43),
-    imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
-    operationId: 'smo_12345678901234567890',
-    remainingUnits: 499_985,
-    status: 'ready',
-    unitCost: 15,
-  });
+function readyResponse(overrides: {operationId?: string} = {}) {
+  return Response.json(
+    {
+      attribution: {
+        entries: [
+          {
+            authority: 'platform-notice',
+            links: [],
+            text: '© Example data',
+          },
+        ],
+        mode: 'embedded',
+        position: 'bottom-right',
+      },
+      cached: false,
+      hash: 'a'.repeat(43),
+      imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
+      operationId: 'smo_12345678901234567890',
+      remainingUnits: 499_985,
+      resultVersion: 2,
+      status: 'ready',
+      unitCost: 15,
+      ...overrides,
+    },
+    {headers: {'Content-Type': STATIC_MAP_RESULT_V2_MEDIA_TYPE}},
+  );
 }

@@ -48,6 +48,28 @@ const concreteThemeSchema = portableIdSchema.refine((value) => value !== 'system
 
 const staticMapFormatSchema = z.enum(['png', 'jpeg', 'webp']);
 
+export const staticAttributionPositionSchema = z.enum([
+  'auto',
+  'top-left',
+  'top-right',
+  'bottom-left',
+  'bottom-right',
+]);
+
+export const staticAttributionRequestSchema = z.union([
+  z
+    .object({
+      mode: z.literal('embedded').optional(),
+      position: staticAttributionPositionSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      mode: z.literal('external'),
+    })
+    .strict(),
+]);
+
 const sizeSchema = z
   .object({
     dpr: z.union([z.literal(1), z.literal(2)]).optional(),
@@ -190,6 +212,7 @@ export const staticOverlaySchema = z.discriminatedUnion('type', [
 ]);
 
 export const staticSceneSchema = z.object({
+  attribution: staticAttributionRequestSchema.optional(),
   camera: z.discriminatedUnion('type', [centerCameraSchema, boundsCameraSchema, autoCameraSchema]),
   format: staticMapFormatSchema.optional(),
   map: portableIdSchema,
@@ -199,6 +222,9 @@ export const staticSceneSchema = z.object({
 });
 
 export type StaticCoordinate = z.infer<typeof coordinateSchema>;
+export type StaticAttributionMode = 'embedded' | 'external';
+export type StaticAttributionPosition = z.infer<typeof staticAttributionPositionSchema>;
+export type StaticAttributionRequest = z.infer<typeof staticAttributionRequestSchema>;
 export type StaticMapFormat = z.infer<typeof staticMapFormatSchema>;
 export type StaticPadding = z.infer<typeof staticPaddingSchema>;
 export type StaticSceneInput = z.input<typeof staticSceneSchema>;

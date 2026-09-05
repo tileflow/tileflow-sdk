@@ -230,9 +230,13 @@ export function Preview() {
     <StaticMap
       map="madrid"
       camera={{type: 'center', center: [-3.7038, 40.4168], zoom: 12}}
+      attribution={{mode: 'external'}}
       size={{width: 1200, height: 800}}
       createUrl="/api/static-maps"
       idempotencyKey={idempotencyKey}
+      onReady={(result) => {
+        if (result.resultVersion === 2) showAttribution(result.attribution.entries);
+      }}
     />
   );
 }
@@ -242,6 +246,11 @@ export function Preview() {
 reuse it across retries and remounts. Concurrent React consumers share work only when URL,
 normalized scene, and idempotency key all identify the same operation; unmounting the final
 consumer aborts its in-flight request.
+
+`StaticMap` forwards `attribution` as part of the normalized scene and request identity. Omission
+uses embedded automatic placement. With `mode: 'external'`, the component still renders the image,
+but the application must render every structured `onReady` attribution entry beside it. Existing
+`imageUrl` mode has no operation result and cannot infer attribution from an immutable image URL.
 
 Hosted interactive maps automatically preflight a short-lived commercial session grant before
 eligible resources. Setting `analytics={{enabled: false}}` disables the optional beacon only; it

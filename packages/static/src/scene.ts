@@ -21,6 +21,8 @@ import {
 
 export {
   MAX_OVERLAY_LATITUDE,
+  staticAttributionPositionSchema,
+  staticAttributionRequestSchema,
   staticSceneLimits,
   staticSceneSchema,
   staticSceneSchemaVersion,
@@ -34,6 +36,9 @@ export type {
 };
 export type {
   StaticCoordinate,
+  StaticAttributionMode,
+  StaticAttributionPosition,
+  StaticAttributionRequest,
   StaticMapFormat,
   StaticPadding,
   StaticScene,
@@ -95,6 +100,17 @@ export function normalizeStaticScene(scene: StaticSceneInput): StaticScene {
 
 function normalizeParsedStaticScene(parsed: StaticScene): StaticScene {
   return stripUndefined({
+    ...(parsed.attribution && Object.keys(parsed.attribution).length > 0
+      ? {
+          attribution:
+            parsed.attribution.mode === 'external'
+              ? {mode: 'external'}
+              : stripUndefined({
+                  mode: parsed.attribution.mode,
+                  position: parsed.attribution.position,
+                }),
+        }
+      : {}),
     camera:
       parsed.camera.type === 'center'
         ? {

@@ -3,14 +3,18 @@ import test from 'node:test';
 import {
   compileStaticOverlays,
   createRenderManifest,
+  createRenderManifestV2,
   createStaticMap,
   createStaticMapIdempotencyKey,
   hashRenderManifest,
   hashStaticSceneRequest,
   prepareStaticMapRequest,
   requestStaticMapUntilReady,
+  STATIC_MAP_RESULT_V2_MEDIA_TYPE,
+  staticRenderManifestV1Schema,
   staticSceneLimits,
   validateStaticMapIdempotencyKey,
+  validateStaticRenderManifest,
   validateStaticScene,
 } from '../src/index';
 
@@ -19,6 +23,36 @@ const baseScene = {
   map: 'main',
   size: {height: 480, width: 640},
   theme: 'light',
+};
+
+const attributionPlan = {
+  entries: [
+    {
+      authority: 'team-declared' as const,
+      provenance: {
+        authority: 'team-declared' as const,
+        sources: [
+          {
+            mapRevision: 'deployment-1',
+            resourceId: 'stores',
+            sourceId: 'stores',
+            sourceSelectionIdentity: 'archive:stores-v1',
+          },
+        ],
+      },
+      segments: [
+        {kind: 'text' as const, text: '© Example '},
+        {
+          kind: 'link' as const,
+          label: 'terms',
+          url: 'https://example.test/terms',
+        },
+      ],
+    },
+  ],
+  mode: 'embedded' as const,
+  position: 'auto' as const,
+  schemaVersion: 1 as const,
 };
 
 test('rejects open polygon rings', () => {
@@ -95,6 +129,37 @@ test('validates output formats and keeps PNG as an omitted canonical default', (
     assert.equal('format' in png.scene, false);
     assert.equal(jpeg.scene.format, 'jpeg');
     assert.equal(webp.scene.format, 'webp');
+  }
+});
+
+test('validates attribution choices without injecting the omitted default into the scene', () => {
+  const omitted = validateStaticScene(baseScene);
+  const empty = validateStaticScene({...baseScene, attribution: {}});
+  const explicitAuto = validateStaticScene({
+    ...baseScene,
+    attribution: {mode: 'embedded', position: 'auto'},
+  });
+  const external = validateStaticScene({...baseScene, attribution: {mode: 'external'}});
+
+  assert.equal(omitted.ok, true);
+  assert.equal(empty.ok, true);
+  assert.equal(explicitAuto.ok, true);
+  assert.equal(external.ok, true);
+  assert.equal(
+    validateStaticScene({
+      ...baseScene,
+      attribution: {mode: 'external', position: 'bottom-right'},
+    }).ok,
+    false,
+  );
+  if (omitted.ok && empty.ok && explicitAuto.ok && external.ok) {
+    assert.equal('attribution' in omitted.scene, false);
+    assert.equal('attribution' in empty.scene, false);
+    assert.deepEqual(explicitAuto.scene.attribution, {
+      mode: 'embedded',
+      position: 'auto',
+    });
+    assert.deepEqual(external.scene.attribution, {mode: 'external'});
   }
 });
 
@@ -201,7 +266,7 @@ test('accepts a strict root-relative create URL for same-origin proxies', async 
     createUrl: '/api/static-maps',
     fetch: (async (url) => {
       urls.push(String(url));
-      return readyResponse();
+      return hostedReadyResponse();
     }) as typeof fetch,
     idempotencyKey: 'static_12345678',
   });
@@ -218,7 +283,7 @@ test('accepts a strict root-relative create URL for same-origin proxies', async 
     await assert.rejects(
       requestStaticMapUntilReady(prepareStaticMapRequest(baseScene), {
         createUrl,
-        fetch: (async () => readyResponse()) as typeof fetch,
+        fetch: (async () => hostedReadyResponse()) as typeof fetch,
         idempotencyKey: 'static_12345678',
       }),
       /safe root-relative path/,
@@ -247,15 +312,7 @@ test('retries a processing operation with the same key and validates the ready r
         );
       }
 
-      return Response.json({
-        cached: false,
-        hash: 'a'.repeat(43),
-        imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
-        operationId: 'smo_12345678901234567890',
-        remainingUnits: 499_985,
-        status: 'ready',
-        unitCost: 15,
-      });
+      return hostedReadyResponse();
     },
     idempotencyKey: 'static_12345678',
     pollIntervalMs: 0,
@@ -267,18 +324,53 @@ test('retries a processing operation with the same key and validates the ready r
   assert.equal(result.remainingUnits, 499_985);
 });
 
+test('requests strict result v2 on create and every poll', async () => {
+  const acceptHeaders: string[] = [];
+  let calls = 0;
+
+  const result = await createStaticMap(baseScene, {
+    fetch: async (_url, init) => {
+      calls += 1;
+      acceptHeaders.push(new Headers(init?.headers).get('Accept') ?? '');
+
+      if (calls === 1) {
+        return Response.json(
+          {
+            operationId: 'smo_12345678901234567890',
+            retryAfterMs: 0,
+            status: 'processing',
+          },
+          {status: 202},
+        );
+      }
+
+      return hostedReadyResponse();
+    },
+    idempotencyKey: 'static_result_v2',
+    pollIntervalMs: 0,
+  });
+
+  assert.deepEqual(acceptHeaders, [
+    STATIC_MAP_RESULT_V2_MEDIA_TYPE,
+    STATIC_MAP_RESULT_V2_MEDIA_TYPE,
+  ]);
+  assert.equal(result.resultVersion, 2);
+  assert.equal(result.attribution.position, 'bottom-right');
+});
+
+test('a v2 client rejects a legacy success instead of claiming attribution', async () => {
+  await assert.rejects(
+    createStaticMap(baseScene, {
+      fetch: async () => readyResponse(),
+      idempotencyKey: 'static_legacy_result',
+    }),
+    /invalid response/i,
+  );
+});
+
 test('accepts an unbounded Starter balance in a ready response', async () => {
   const result = await createStaticMap(baseScene, {
-    fetch: async () =>
-      Response.json({
-        cached: false,
-        hash: 'a'.repeat(43),
-        imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
-        operationId: 'smo_12345678901234567890',
-        remainingUnits: null,
-        status: 'ready',
-        unitCost: 15,
-      }),
+    fetch: async () => hostedReadyResponse({remainingUnits: null}),
     idempotencyKey: 'static_12345678',
   });
 
@@ -336,15 +428,7 @@ test('rejects a server response that changes the logical operation while polling
               },
               {status: 202},
             )
-          : Response.json({
-              cached: false,
-              hash: 'a'.repeat(43),
-              imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
-              operationId: 'smo_99999999999999999999',
-              remainingUnits: 499_985,
-              status: 'ready',
-              unitCost: 15,
-            });
+          : hostedReadyResponse({operationId: 'smo_99999999999999999999'});
       },
       idempotencyKey: 'static_12345678',
       pollIntervalMs: 0,
@@ -357,16 +441,7 @@ test('rejects a server response that changes the logical operation while polling
 test('rejects a non-http immutable image URL', async () => {
   await assert.rejects(
     createStaticMap(baseScene, {
-      fetch: async () =>
-        Response.json({
-          cached: false,
-          hash: 'a'.repeat(43),
-          imageUrl: 'javascript:alert(1)',
-          operationId: 'smo_12345678901234567890',
-          remainingUnits: 499_985,
-          status: 'ready',
-          unitCost: 15,
-        }),
+      fetch: async () => hostedReadyResponse({imageUrl: 'javascript:alert(1)'}),
       idempotencyKey: 'static_12345678',
     }),
     /invalid response/i,
@@ -474,6 +549,45 @@ test('keeps the released PNG manifest hash stable', async () => {
   assert.equal('format' in manifest.scene, false);
 });
 
+test('creates strict attributed manifest v2 while preserving requested auto placement', async () => {
+  const manifest = createRenderManifestV2({
+    attribution: attributionPlan,
+    mapId: 'map_1234567890abcdef',
+    rendererVersion: 'static-v2',
+    scene: {...baseScene, attribution: {mode: 'embedded', position: 'auto'}},
+    styleRevision: 'revision-2',
+    styleUrl: 'https://api.tileflow.dev/maps/map_1234567890abcdef/light.json',
+  });
+
+  assert.equal(manifest.schemaVersion, 2);
+  assert.equal(manifest.attribution.position, 'auto');
+  assert.equal(validateStaticRenderManifest(manifest).ok, true);
+  assert.equal(validateStaticRenderManifest({...manifest, unexpected: true}).ok, false);
+  assert.notEqual(
+    await hashRenderManifest(manifest),
+    await hashRenderManifest(
+      createRenderManifestV2({
+        ...manifest,
+        attribution: {...attributionPlan, mode: 'external', position: null},
+        scene: {...baseScene, attribution: {mode: 'external'}},
+      }),
+    ),
+  );
+});
+
+test('the legacy manifest schema rejects v2 before it can omit attribution', () => {
+  const manifest = createRenderManifestV2({
+    attribution: attributionPlan,
+    mapId: 'map_1234567890abcdef',
+    rendererVersion: 'static-v2',
+    scene: baseScene,
+    styleRevision: 'revision-2',
+    styleUrl: 'https://api.tileflow.dev/maps/map_1234567890abcdef/light.json',
+  });
+
+  assert.equal(staticRenderManifestV1Schema.safeParse(manifest).success, false);
+});
+
 test('prepares one normalized scene for both the request body and dedupe key', async () => {
   const implicitDefaults = prepareStaticMapRequest(baseScene);
   const explicitDefaults = prepareStaticMapRequest({
@@ -485,15 +599,7 @@ test('prepares one normalized scene for both the request body and dedupe key', a
   const bodies: string[] = [];
   const fetcher = (async (_url, init) => {
     bodies.push(String(init?.body));
-    return Response.json({
-      cached: false,
-      hash: 'a'.repeat(43),
-      imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
-      operationId: 'smo_12345678901234567890',
-      remainingUnits: 499_985,
-      status: 'ready',
-      unitCost: 15,
-    });
+    return hostedReadyResponse();
   }) as typeof fetch;
 
   assert.equal(implicitDefaults.sceneKey, explicitDefaults.sceneKey);
@@ -530,4 +636,38 @@ function readyResponse(): Response {
     status: 'ready',
     unitCost: 15,
   });
+}
+
+function hostedReadyResponse(
+  overrides: Partial<{
+    imageUrl: string;
+    operationId: string;
+    remainingUnits: number | null;
+  }> = {},
+): Response {
+  return Response.json(
+    {
+      attribution: {
+        entries: [
+          {
+            authority: 'platform-notice',
+            links: [{label: 'data', url: 'https://example.test/data'}],
+            text: '© Example data',
+          },
+        ],
+        mode: 'embedded',
+        position: 'bottom-right',
+      },
+      cached: false,
+      hash: 'a'.repeat(43),
+      imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
+      operationId: 'smo_12345678901234567890',
+      remainingUnits: 499_985,
+      resultVersion: 2,
+      status: 'ready',
+      unitCost: 15,
+      ...overrides,
+    },
+    {headers: {'Content-Type': STATIC_MAP_RESULT_V2_MEDIA_TYPE}},
+  );
 }

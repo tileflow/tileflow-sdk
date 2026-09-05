@@ -14,22 +14,37 @@ const sourceRoot = join(packageRoot, 'src');
 const distRoot = join(packageRoot, 'dist');
 
 const clientExports = [
+  'STATIC_MAP_RESULT_V2_MEDIA_TYPE',
   'createStaticMap',
   'createStaticMapIdempotencyKey',
   'precacheStaticMap',
   'prepareStaticMapRequest',
   'requestStaticMapUntilReady',
   'stableStringify',
+  'staticMapAttributionEntrySchema',
+  'staticMapAttributionResultSchema',
+  'staticMapHostedResultSchema',
   'staticMapProcessingResultSchema',
   'staticMapReadyResultSchema',
   'validateStaticMapIdempotencyKey',
 ];
 const manifestExports = [
   'createRenderManifest',
+  'createRenderManifestV1',
+  'createRenderManifestV2',
   'hashRenderManifest',
   'hashStaticSceneRequest',
+  'staticAttributionEntrySchema',
+  'staticAttributionLimits',
+  'staticAttributionPlanSchemaV1',
+  'staticAttributionPlanSchemaVersion',
+  'staticAttributionProvenanceSchema',
+  'staticAttributionSegmentSchema',
   'staticRenderManifestSchema',
+  'staticRenderManifestV1Schema',
+  'staticRenderManifestV2Schema',
   'staticRendererSchemaVersion',
+  'staticRendererSchemaVersionV1',
   'validateStaticRenderManifest',
 ];
 const overlayExports = [
@@ -44,6 +59,8 @@ const sceneExports = [
   'MAX_OVERLAY_LATITUDE',
   'StaticMapRequestError',
   'normalizeStaticScene',
+  'staticAttributionPositionSchema',
+  'staticAttributionRequestSchema',
   'staticMapRequestErrorResponseSchema',
   'staticSceneLimits',
   'staticSceneSchema',
@@ -114,6 +131,7 @@ test('built entry graphs exclude unrelated responsibilities and publish required
   ]);
   for (const name of [
     'PreparedStaticMapRequest',
+    'StaticMapHostedResult',
     'StaticMapResult',
     'prepareStaticMapRequest',
     'requestStaticMapUntilReady',
@@ -139,11 +157,17 @@ test('prepared requests work across root and client built entries in both direct
   };
   const fetcher = (async () =>
     Response.json({
+      attribution: {
+        entries: [],
+        mode: 'embedded',
+        position: 'bottom-right',
+      },
       cached: false,
       hash: 'a'.repeat(43),
       imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
       operationId: 'smo_12345678901234567890',
       remainingUnits: 1,
+      resultVersion: 2,
       status: 'ready',
       unitCost: 15,
     })) as typeof fetch;

@@ -4,21 +4,45 @@ import {
   staticMapRequestErrorResponseSchema,
   type StaticMapRequestFailure,
 } from './auto-fit';
-import {isSafeHttpUrl, stableStringify} from './canonical';
-import {type StaticSceneInput, validateStaticScene} from './scene';
+import {isSafeHttpUrl, jsonByteLength, stableStringify} from './canonical';
+import {type StaticAttributionPosition, type StaticSceneInput, validateStaticScene} from './scene';
 
 const maxStaticMapResponseBytes = 64 * 1024;
 const staticMapIdempotencyKeyPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
+export const STATIC_MAP_RESULT_V2_MEDIA_TYPE =
+  'application/vnd.tileflow.static-map-result+json;version=2';
+
+export type StaticMapAttributionEntry = Readonly<{
+  authority: 'platform-notice' | 'team-declared';
+  links: readonly Readonly<{label: string; url: string}>[];
+  text: string;
+}>;
+
+export type StaticMapAttributionResult = Readonly<{
+  entries: readonly StaticMapAttributionEntry[];
+  mode: 'embedded' | 'external';
+  position: Exclude<StaticAttributionPosition, 'auto'> | null;
+}>;
 
 export type StaticMapResult = {
+  attribution?: StaticMapAttributionResult;
   cached: boolean;
   hash: string;
   imageUrl: string;
   operationId: string | null;
   remainingUnits: number | null;
+  resultVersion?: 2;
   status: 'ready';
   unitCost: 0 | 15;
 };
+
+export type StaticMapHostedResult = StaticMapResult &
+  Readonly<{
+    attribution: StaticMapAttributionResult;
+    operationId: string;
+    resultVersion: 2;
+    unitCost: 15;
+  }>;
 
 export type StaticMapCreateOptions = {
   apiKey?: string;
@@ -54,6 +78,62 @@ export const staticMapReadyResultSchema = z
     remainingUnits: z.number().int().nonnegative().nullable(),
     status: z.literal('ready'),
     unitCost: z.literal(15),
+  })
+  .strict();
+
+const safeAttributionTextSchema = z
+  .string()
+  .min(1)
+  .max(16_384)
+  .refine(hasNoControlCharacters, {message: 'Attribution text contains control characters'});
+
+export const staticMapAttributionEntrySchema = z
+  .object({
+    authority: z.enum(['platform-notice', 'team-declared']),
+    links: z
+      .array(
+        z
+          .object({
+            label: safeAttributionTextSchema,
+            url: z.string().trim().url().max(2048).refine(isSafeHttpUrl, {
+              message: 'Expected an http(s) URL without credentials or a fragment',
+            }),
+          })
+          .strict(),
+      )
+      .max(8),
+    text: safeAttributionTextSchema,
+  })
+  .strict();
+
+export const staticMapAttributionResultSchema = z
+  .object({
+    entries: z.array(staticMapAttributionEntrySchema).max(18),
+    mode: z.enum(['embedded', 'external']),
+    position: z.enum(['top-left', 'top-right', 'bottom-left', 'bottom-right']).nullable(),
+  })
+  .strict()
+  .superRefine((result, context) => {
+    if (
+      (result.mode === 'external' && result.position !== null) ||
+      (result.mode === 'embedded' && result.position === null)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Attribution position must match its mode',
+        path: ['position'],
+      });
+    }
+
+    if (jsonByteLength(result) > 32 * 1024) {
+      context.addIssue({code: 'custom', message: 'Attribution result exceeds 32 KiB'});
+    }
+  });
+
+export const staticMapHostedResultSchema = staticMapReadyResultSchema
+  .extend({
+    attribution: staticMapAttributionResultSchema,
+    resultVersion: z.literal(2),
   })
   .strict();
 
@@ -112,14 +192,14 @@ export function prepareStaticMapRequest(scene: StaticSceneInput): PreparedStatic
 export async function createStaticMap(
   scene: StaticSceneInput,
   options: StaticMapCreateOptions,
-): Promise<StaticMapResult> {
+): Promise<StaticMapHostedResult> {
   return requestStaticMap(scene, options, '/v1/static/maps');
 }
 
 export async function precacheStaticMap(
   scene: StaticSceneInput,
   options: StaticMapCreateOptions,
-): Promise<StaticMapResult> {
+): Promise<StaticMapHostedResult> {
   return requestStaticMap(scene, options, '/v1/static/maps/precache');
 }
 
@@ -127,7 +207,7 @@ async function requestStaticMap(
   scene: StaticSceneInput,
   options: StaticMapCreateOptions,
   path: '/v1/static/maps' | '/v1/static/maps/precache',
-): Promise<StaticMapResult> {
+): Promise<StaticMapHostedResult> {
   const preparedRequest = prepareStaticMapRequest(scene);
   const {apiUrl = 'https://api.tileflow.dev', ...requestOptions} = options;
 
@@ -140,7 +220,7 @@ async function requestStaticMap(
 export async function requestStaticMapUntilReady(
   request: PreparedStaticMapRequest,
   options: StaticMapEndpointRequestOptions,
-): Promise<StaticMapResult> {
+): Promise<StaticMapHostedResult> {
   const body = preparedStaticMapRequestBodies.get(request);
   if (body === undefined) {
     throw new Error('Tileflow static map request must be created with prepareStaticMapRequest');
@@ -162,6 +242,7 @@ export async function requestStaticMapUntilReady(
   const fetcher = options.fetch ?? fetch;
   const createUrl = normalizeStaticMapEndpointUrl(options.createUrl);
   const headers: Record<string, string> = {
+    Accept: STATIC_MAP_RESULT_V2_MEDIA_TYPE,
     'Content-Type': 'application/json',
     'Idempotency-Key': idempotency.key,
   };
@@ -199,7 +280,7 @@ export async function requestStaticMapUntilReady(
       const json = await readJsonResponse(response);
       throwIfAborted(signal);
       if (response.status !== 202) {
-        const parsed = staticMapReadyResultSchema.safeParse(json);
+        const parsed = staticMapHostedResultSchema.safeParse(json);
         if (!parsed.success) {
           throw new Error(
             `Tileflow static map returned an invalid response: ${parsed.error.message}`,
@@ -219,6 +300,13 @@ export async function requestStaticMapUntilReady(
       operationId ??= pending.data.operationId;
       await delay(Math.max(pollIntervalMs, pending.data.retryAfterMs), signal);
     }
+  });
+}
+
+function hasNoControlCharacters(value: string) {
+  return !Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 31 || codePoint === 127;
   });
 }
 

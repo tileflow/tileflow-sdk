@@ -1,14 +1,14 @@
 import {
+  type PreparedStaticMapRequest,
   requestStaticMapUntilReady,
   stableStringify,
-  type PreparedStaticMapRequest,
-  type StaticMapResult,
+  type StaticMapHostedResult,
 } from '@tileflow/static/client';
 
 type InFlightStaticMapRequest = {
   controller: AbortController;
   consumers: number;
-  promise: Promise<StaticMapResult>;
+  promise: Promise<StaticMapHostedResult>;
   settled: boolean;
 };
 

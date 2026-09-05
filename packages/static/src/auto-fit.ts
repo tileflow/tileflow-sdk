@@ -92,6 +92,27 @@ export const staticMapRequestErrorResponseSchema = z.discriminatedUnion('code', 
       reason: z.literal('OVERLAY_LATITUDE_OUT_OF_RANGE'),
     })
     .strict(),
+  z
+    .object({
+      ...autoFitErrorBase,
+      code: z.literal('STATIC_MAP_ATTRIBUTION_UNSUPPORTED'),
+      reason: z.enum(['UNSUPPORTED_DECLARATION', 'UNSUPPORTED_GLYPH']),
+    })
+    .strict(),
+  z
+    .object({
+      ...autoFitErrorBase,
+      code: z.literal('STATIC_MAP_ATTRIBUTION_TOO_LARGE'),
+      reason: z.literal('CONTENT_LIMIT_EXCEEDED'),
+    })
+    .strict(),
+  z
+    .object({
+      ...autoFitErrorBase,
+      code: z.literal('STATIC_MAP_ATTRIBUTION_DOES_NOT_FIT'),
+      reason: z.literal('BLOCK_DOES_NOT_FIT'),
+    })
+    .strict(),
 ]);
 
 export type StaticMapRequestErrorResponse = z.infer<typeof staticMapRequestErrorResponseSchema>;

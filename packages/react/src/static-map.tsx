@@ -49,6 +49,7 @@ export type StaticMapProps = StaticMapBaseProps & (StaticMapCreateProps | Static
 
 export function StaticMap({
   alt = '',
+  attribution,
   camera,
   className,
   captureId,
@@ -78,10 +79,10 @@ export function StaticMap({
   const resolvedCaptureId = normalizeTileflowCaptureId(captureId);
   const onErrorRef = useRef(onError);
   const onReadyRef = useRef(onReady);
-  const sceneInputKey = stableStringify({camera, format, map, overlays, size, theme});
+  const sceneInputKey = stableStringify({attribution, camera, format, map, overlays, size, theme});
   const preparedSceneCandidate = useMemo(
-    () => prepareSceneRequest({camera, format, map, overlays, size, theme}),
-    [camera, format, map, overlays, size, theme],
+    () => prepareSceneRequest({attribution, camera, format, map, overlays, size, theme}),
+    [attribution, camera, format, map, overlays, size, theme],
   );
   const preparedScene = useStablePreparedSceneRequest(preparedSceneCandidate);
   const sceneKey = preparedScene.ok ? preparedScene.request.sceneKey : `invalid:${sceneInputKey}`;

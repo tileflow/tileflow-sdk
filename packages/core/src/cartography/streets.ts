@@ -54,6 +54,11 @@ import {
   createTileflowInteractionManifest,
   tileflowInteractionManifestMetadataKey,
 } from './interaction-manifest';
+import {
+  assertTileflowOverlayPlacementManifestLayers,
+  createTileflowOverlayPlacementManifest,
+  tileflowOverlayPlacementManifestMetadataKey,
+} from './overlay-placement-manifest';
 import {planTileflowLayerFamilies} from './physical-planner';
 import {
   applyCompiledRenderStacks,
@@ -448,9 +453,15 @@ function compileSemanticStyleInternal(
       type: data.schema.fields.poiType,
     }),
   );
+  const overlayPlacementManifest = runCompilationPhase('finalization', () =>
+    createTileflowOverlayPlacementManifest(plannedLayers),
+  );
   const layers = runCompilationPhase('finalization', () => finalizeTileflowLayers(plannedLayers));
   runCompilationPhase('finalization', () =>
     assertTileflowInteractionManifestLayers(interactionManifest, layers),
+  );
+  runCompilationPhase('finalization', () =>
+    assertTileflowOverlayPlacementManifestLayers(overlayPlacementManifest, layers),
   );
   const glyphs = runCompilationPhase('assets', () => resolveGlyphs(config));
   const sprite = options.preparedAssets?.icons?.sprite;
@@ -537,6 +548,7 @@ function compileSemanticStyleInternal(
       ...(interactionManifest
         ? {[tileflowInteractionManifestMetadataKey]: interactionManifest}
         : {}),
+      [tileflowOverlayPlacementManifestMetadataKey]: overlayPlacementManifest,
       'tileflow:modules': Object.entries(modules)
         .filter(([, module]) => !isRecord(module) || module.enabled !== false)
         .map(([name]) => name)

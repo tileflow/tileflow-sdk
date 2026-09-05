@@ -32,7 +32,7 @@
   ],
   "scripts": {
     "build": "tsup src/index.ts src/scene.ts src/overlays.ts src/manifest.ts src/client.ts --format esm --dts --clean --splitting",
-    "verify": "tsx --test test/*.test.ts",
+    "verify": "pnpm --silent --dir ../.. static-text:check && tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
   },

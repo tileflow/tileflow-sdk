@@ -2,6 +2,7 @@ import {z} from 'zod';
 import {roundNumber} from './canonical';
 import {StaticMapError} from './errors';
 import {
+  isSupportedStaticSymbolCodePoint,
   MAX_OVERLAY_LATITUDE,
   type StaticOverlay,
   type StaticPadding,
@@ -14,7 +15,7 @@ const autoFitOverlayReferenceSchema = z
   .object({
     id: z.string().min(1).max(64),
     index: z.number().int().min(0).max(23),
-    type: z.enum(['circle', 'line', 'marker', 'polygon']),
+    type: z.enum(['circle', 'line', 'marker', 'polygon', 'symbol']),
   })
   .strict();
 
@@ -47,9 +48,38 @@ const staticOverlayInvalidDetailsSchema = z
   })
   .strict();
 
+const staticLabelUnsupportedDetailsSchema = z
+  .object({
+    codePoint: z.number().int().min(0).max(0x10ffff),
+    overlay: autoFitOverlayReferenceSchema.extend({type: z.literal('symbol')}).strict(),
+  })
+  .strict();
+
+const staticIconUnavailableDetailsSchema = z
+  .object({
+    icon: z
+      .string()
+      .max(64)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
+    overlay: autoFitOverlayReferenceSchema.extend({type: z.literal('symbol')}).strict(),
+  })
+  .strict();
+
+const staticSymbolTooLargeDetailsSchema = z
+  .object({
+    height: z.number().finite().positive().max(16_384),
+    limit: z.literal(2048),
+    overlay: autoFitOverlayReferenceSchema.extend({type: z.literal('symbol')}).strict(),
+    width: z.number().finite().positive().max(16_384),
+  })
+  .strict();
+
 export type StaticMapRequestErrorDetails =
   | StaticAutoFitDetails
-  | z.infer<typeof staticOverlayInvalidDetailsSchema>;
+  | z.infer<typeof staticIconUnavailableDetailsSchema>
+  | z.infer<typeof staticOverlayInvalidDetailsSchema>
+  | z.infer<typeof staticLabelUnsupportedDetailsSchema>
+  | z.infer<typeof staticSymbolTooLargeDetailsSchema>;
 
 const autoFitErrorBase = {
   error: z.string().min(1).max(512),
@@ -91,6 +121,37 @@ export const staticMapRequestErrorResponseSchema = z.discriminatedUnion('code', 
       code: z.literal('STATIC_OVERLAY_INVALID'),
       details: staticOverlayInvalidDetailsSchema,
       reason: z.literal('OVERLAY_LATITUDE_OUT_OF_RANGE'),
+    })
+    .strict(),
+  z
+    .object({
+      ...autoFitErrorBase,
+      code: z.literal('STATIC_MAP_LABEL_UNSUPPORTED'),
+      details: staticLabelUnsupportedDetailsSchema,
+      reason: z.literal('UNSUPPORTED_GLYPH'),
+    })
+    .strict(),
+  z
+    .object({
+      ...autoFitErrorBase,
+      code: z.literal('STATIC_MAP_ICON_UNAVAILABLE'),
+      details: staticIconUnavailableDetailsSchema,
+      reason: z.enum(['ICON_NOT_FOUND', 'MANAGED_SPRITE_REQUIRED']),
+    })
+    .strict(),
+  z
+    .object({
+      ...autoFitErrorBase,
+      code: z.literal('STATIC_MAP_PLACEMENT_UNAVAILABLE'),
+      reason: z.literal('MAP_REDEPLOY_REQUIRED'),
+    })
+    .strict(),
+  z
+    .object({
+      ...autoFitErrorBase,
+      code: z.literal('STATIC_MAP_SYMBOL_TOO_LARGE'),
+      details: staticSymbolTooLargeDetailsSchema,
+      reason: z.literal('COMPOSED_IMAGE_TOO_LARGE'),
     })
     .strict(),
   z
@@ -288,7 +349,7 @@ function failure(response: StaticAutoFitErrorResponse): StaticAutoFitFailure {
 }
 
 function overlayCoordinates(overlay: StaticOverlay): Array<[number, number]> {
-  if (overlay.type === 'circle' || overlay.type === 'marker') {
+  if (overlay.type === 'circle' || overlay.type === 'marker' || overlay.type === 'symbol') {
     return [overlay.coordinate];
   }
 
@@ -302,7 +363,8 @@ function overlayCoordinates(overlay: StaticOverlay): Array<[number, number]> {
 function findAmbiguousSegment(
   overlay: StaticOverlay,
 ): {ringIndex?: number; segmentIndex: number} | null {
-  if (overlay.type === 'circle' || overlay.type === 'marker') return null;
+  if (overlay.type === 'circle' || overlay.type === 'marker' || overlay.type === 'symbol')
+    return null;
 
   const paths = overlay.type === 'line' ? [overlay.coordinates] : overlay.coordinates;
 
@@ -327,6 +389,8 @@ function nominalOverlayExpansion(overlay: StaticOverlay): number {
   if (overlay.type === 'circle' || overlay.type === 'marker') {
     return overlay.radius + overlay.strokeWidth;
   }
+
+  if (overlay.type === 'symbol') return 0;
 
   if (overlay.type === 'line') {
     return overlay.width / 2 + 0.5;
@@ -461,9 +525,9 @@ export function findStaticOverlayLatitudeFailure(input: unknown): StaticMapReque
     if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue;
     const overlay = candidate as Record<string, unknown>;
     const type = overlay.type;
-    if (!['circle', 'line', 'marker', 'polygon'].includes(String(type))) continue;
+    if (!['circle', 'line', 'marker', 'polygon', 'symbol'].includes(String(type))) continue;
     const coordinates =
-      type === 'circle' || type === 'marker'
+      type === 'circle' || type === 'marker' || type === 'symbol'
         ? [overlay.coordinate]
         : overlayCoordinateCandidates(type, overlay.coordinates);
 
@@ -490,7 +554,7 @@ export function findStaticOverlayLatitudeFailure(input: unknown): StaticMapReque
           overlay: {
             id: id.slice(0, 64),
             index,
-            type: type as 'circle' | 'line' | 'marker' | 'polygon',
+            type: type as 'circle' | 'line' | 'marker' | 'polygon' | 'symbol',
           },
         },
         error: `Overlay overlays.${index} latitude ${coordinate[1]} exceeds the supported ±${MAX_OVERLAY_LATITUDE}° range`,
@@ -500,6 +564,50 @@ export function findStaticOverlayLatitudeFailure(input: unknown): StaticMapReque
 
       return {...response, ok: false};
     }
+  }
+
+  return null;
+}
+
+export function findStaticSymbolLabelGlyphFailure(input: unknown): StaticMapRequestFailure | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const overlays = (input as {overlays?: unknown}).overlays;
+  if (!Array.isArray(overlays)) return null;
+
+  for (const [index, candidate] of overlays.entries()) {
+    if (index >= staticSceneLimits.maxOverlays) break;
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue;
+    const overlay = candidate as Record<string, unknown>;
+    if (overlay.type !== 'symbol') continue;
+    const label = overlay.label;
+    const text =
+      typeof label === 'string'
+        ? label
+        : label && typeof label === 'object' && !Array.isArray(label)
+          ? (label as {text?: unknown}).text
+          : undefined;
+    if (typeof text !== 'string') continue;
+
+    const unsupported = Array.from(text).find(
+      (character) => !isSupportedStaticSymbolCodePoint(character.codePointAt(0)!),
+    );
+    if (!unsupported) continue;
+    const codePoint = unsupported.codePointAt(0)!;
+    const id =
+      typeof overlay.id === 'string' && overlay.id.trim()
+        ? overlay.id.trim()
+        : `overlay-${index + 1}`;
+    return {
+      code: 'STATIC_MAP_LABEL_UNSUPPORTED',
+      details: {
+        codePoint,
+        overlay: {id: id.slice(0, 64), index, type: 'symbol'},
+      },
+      error: `Overlay overlays.${index} label contains unsupported glyph U+${codePoint.toString(16).toUpperCase().padStart(4, '0')}`,
+      ok: false,
+      reason: 'UNSUPPORTED_GLYPH',
+      retryable: false,
+    };
   }
 
   return null;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {prepareStaticMapRequest, STATIC_MAP_RESULT_V2_MEDIA_TYPE} from '@tileflow/static/client';
+import {prepareStaticMapRequest, STATIC_MAP_RESULT_MEDIA_TYPE} from '@tileflow/static/client';
 import {createStaticMapRequestKey, resolveStaticMap} from '../src/static-map-request';
 
 const createUrl = 'https://api.example.test/v1/static/maps';
@@ -220,11 +220,11 @@ function readyResponse(overrides: {operationId?: string} = {}) {
       imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
       operationId: 'smo_12345678901234567890',
       remainingUnits: 499_985,
-      resultVersion: 2,
+      resultVersion: 1,
       status: 'ready',
       unitCost: 15,
       ...overrides,
     },
-    {headers: {'Content-Type': STATIC_MAP_RESULT_V2_MEDIA_TYPE}},
+    {headers: {'Content-Type': STATIC_MAP_RESULT_MEDIA_TYPE}},
   );
 }

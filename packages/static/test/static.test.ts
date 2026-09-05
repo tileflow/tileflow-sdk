@@ -1,20 +1,29 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  circle,
   compileStaticOverlays,
   createRenderManifest,
-  createRenderManifestV2,
   createStaticMap,
   createStaticMapIdempotencyKey,
   hashRenderManifest,
   hashStaticSceneRequest,
+  line,
+  marker,
+  polygon,
   prepareStaticMapRequest,
   requestStaticMapUntilReady,
-  STATIC_MAP_RESULT_V2_MEDIA_TYPE,
+  STATIC_MAP_RESULT_MEDIA_TYPE,
   StaticMapError,
-  staticRenderManifestV1Schema,
+  staticOverlayPlacements,
+  staticRenderManifestSchema,
   staticSceneLimits,
   staticSceneSchema,
+  staticSymbolAnchors,
+  staticSymbolLabelAppearances,
+  staticSymbolLabelPositions,
+  staticSymbolLanguages,
+  symbol,
   validateStaticMapIdempotencyKey,
   validateStaticRenderManifest,
   validateStaticScene,
@@ -54,6 +63,19 @@ const attributionPlan = {
   ],
   mode: 'embedded' as const,
   position: 'auto' as const,
+  schemaVersion: 1 as const,
+};
+
+const composition = {
+  anchors: {
+    'above-water': 'building-areas',
+    'below-roads': 'roads',
+    'above-roads': 'boundaries',
+    'above-buildings': 'vegetation',
+    'below-labels': 'labels',
+    'above-labels': null,
+  },
+  icons: [],
   schemaVersion: 1 as const,
 };
 
@@ -165,6 +187,280 @@ test('validates attribution choices without injecting the omitted default into t
   }
 });
 
+test('uses one semantic placement vocabulary across every overlay', async () => {
+  assert.deepEqual(staticOverlayPlacements, [
+    'above-water',
+    'below-roads',
+    'above-roads',
+    'above-buildings',
+    'below-labels',
+    'above-labels',
+  ]);
+
+  const inputs = [
+    marker({coordinate: [0, 0], placement: 'below-labels'}),
+    circle({coordinate: [0, 0], placement: 'below-labels'}),
+    line({
+      coordinates: [
+        [0, 0],
+        [1, 1],
+      ],
+      placement: 'below-labels',
+    }),
+    polygon({
+      coordinates: [
+        [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [0, 0],
+        ],
+      ],
+      placement: 'below-labels',
+    }),
+    symbol({coordinate: [0, 0], icon: 'store', placement: 'below-labels'}),
+  ];
+
+  assert.ok(inputs.every((overlay) => overlay.placement === 'below-labels'));
+
+  const implicit = marker({coordinate: [0, 0]});
+  const explicit = marker({coordinate: [0, 0], placement: 'above-labels'});
+  assert.deepEqual(explicit, implicit);
+  assert.equal('placement' in implicit, false);
+  assert.equal(
+    await hashStaticSceneRequest({...baseScene, overlays: [implicit]}),
+    await hashStaticSceneRequest({...baseScene, overlays: [explicit]}),
+  );
+  assert.notEqual(
+    await hashStaticSceneRequest({
+      ...baseScene,
+      overlays: [
+        symbol({
+          coordinate: [0, 0],
+          label: {appearance: 'plain', language: 'ja', text: '骨'},
+        }),
+      ],
+    }),
+    await hashStaticSceneRequest({
+      ...baseScene,
+      overlays: [
+        symbol({
+          coordinate: [0, 0],
+          label: {appearance: 'plain', language: 'zh-Hans', text: '骨'},
+        }),
+      ],
+    }),
+  );
+});
+
+test('normalizes deterministic icon, plain-label, and badge symbols', () => {
+  assert.deepEqual(staticSymbolAnchors, [
+    'center',
+    'top',
+    'top-right',
+    'right',
+    'bottom-right',
+    'bottom',
+    'bottom-left',
+    'left',
+    'top-left',
+  ]);
+  assert.deepEqual(staticSymbolLanguages, ['ja', 'zh-Hans', 'zh-Hant', 'ko']);
+  assert.deepEqual(staticSymbolLabelAppearances, ['plain', 'badge']);
+  assert.deepEqual(staticSymbolLabelPositions, [
+    'center',
+    'above',
+    'above-right',
+    'right',
+    'below-right',
+    'below',
+    'below-left',
+    'left',
+    'above-left',
+  ]);
+
+  assert.deepEqual(
+    symbol({
+      anchor: 'bottom',
+      coordinate: [-3.7038, 40.4168],
+      icon: 'store',
+      label: {
+        appearance: 'badge',
+        language: 'ja',
+        position: 'above-right',
+        text: '23',
+      },
+      offset: [0, -4],
+      scale: 1,
+    }),
+    {
+      anchor: 'bottom',
+      collision: 'always-visible',
+      coordinate: [-3.7038, 40.4168],
+      icon: 'store',
+      label: {
+        appearance: 'badge',
+        backgroundColor: '#111827',
+        borderColor: '#ffffff',
+        borderRadius: 6,
+        borderWidth: 1,
+        color: '#ffffff',
+        fontSize: 12,
+        gap: 2,
+        language: 'ja',
+        padding: {x: 5, y: 3},
+        position: 'above-right',
+        text: '23',
+      },
+      offset: [0, -4],
+      opacity: 1,
+      scale: 1,
+      type: 'symbol',
+    },
+  );
+
+  assert.deepEqual(symbol({coordinate: [0, 0], icon: 'store', label: 'Madrid'}).label, {
+    appearance: 'plain',
+    color: '#111827',
+    fontSize: 12,
+    gap: 4,
+    haloColor: '#ffffff',
+    haloWidth: 2,
+    language: 'zh-Hans',
+    position: 'above',
+    text: 'Madrid',
+  });
+  assert.equal(symbol({coordinate: [0, 0], label: 'Madrid'}).label?.position, 'center');
+  assert.equal(
+    symbol({coordinate: [0, 0], label: {appearance: 'plain', text: '東京'}}).label?.language,
+    'zh-Hans',
+  );
+});
+
+test('accepts the deterministic multilingual baseline and closed CJK languages', async () => {
+  for (const [text, language] of [
+    ['Madrid', undefined],
+    ['Tiếng Việt', undefined],
+    ['Αθήνα', undefined],
+    ['Москва', undefined],
+    ['القاهرة', undefined],
+    ['ירושלים', undefined],
+    ['दिल्ली', undefined],
+    ['กรุงเทพมหานคร', undefined],
+    ['東京', 'ja'],
+    ['北京', 'zh-Hans'],
+    ['臺北', 'zh-Hant'],
+    ['서울', 'ko'],
+  ] as const) {
+    const label = {
+      appearance: 'plain' as const,
+      ...(language ? {language} : {}),
+      text,
+    };
+    assert.equal(
+      validateStaticScene({...baseScene, overlays: [{coordinate: [0, 0], label, type: 'symbol'}]})
+        .ok,
+      true,
+      text,
+    );
+  }
+
+  assert.throws(
+    () =>
+      symbol({
+        coordinate: [0, 0],
+        label: {appearance: 'plain', language: 'fr' as 'ja', text: 'Paris'},
+      }),
+    /language/iu,
+  );
+
+  const implicit = symbol({
+    coordinate: [0, 0],
+    label: {appearance: 'plain', text: '東京'},
+  });
+  const explicit = symbol({
+    coordinate: [0, 0],
+    label: {appearance: 'plain', language: 'zh-Hans', text: '東京'},
+  });
+  assert.deepEqual(implicit, explicit);
+  assert.equal(
+    await hashStaticSceneRequest({...baseScene, overlays: [implicit]}),
+    await hashStaticSceneRequest({...baseScene, overlays: [explicit]}),
+  );
+});
+
+test('rejects unsafe or unsupported symbol content deterministically', () => {
+  assert.equal(
+    validateStaticScene({...baseScene, overlays: [{coordinate: [0, 0], type: 'symbol'}]}).ok,
+    false,
+  );
+  assert.equal(
+    validateStaticScene({
+      ...baseScene,
+      overlays: [{coordinate: [0, 0], icon: 'https://example.test/pin.png', type: 'symbol'}],
+    }).ok,
+    false,
+  );
+  assert.deepEqual(
+    validateStaticScene({
+      ...baseScene,
+      overlays: [{coordinate: [0, 0], id: 'emoji', label: 'Map 🗺️', type: 'symbol'}],
+    }),
+    {
+      code: 'STATIC_MAP_LABEL_UNSUPPORTED',
+      details: {
+        codePoint: 0x1f5fa,
+        overlay: {id: 'emoji', index: 0, type: 'symbol'},
+      },
+      error: 'Overlay overlays.0 label contains unsupported glyph U+1F5FA',
+      ok: false,
+      reason: 'UNSUPPORTED_GLYPH',
+      retryable: false,
+    },
+  );
+  assert.throws(() => symbol({coordinate: [0, 0], label: 'line\nbreak'}), /label|text/i);
+});
+
+test('compiles placement groups and symbol composition without physical layer input', () => {
+  const overlays = [
+    line({
+      coordinates: [
+        [0, 0],
+        [1, 1],
+      ],
+      placement: 'below-labels',
+    }),
+    symbol({coordinate: [0, 0], icon: 'store'}),
+    symbol({coordinate: [1, 1], label: {appearance: 'badge', text: '23'}}),
+  ];
+  const compiled = compileStaticOverlays(overlays);
+
+  assert.equal(compiled.placements[compiled.layers[0]!.id], 'below-labels');
+  assert.equal(compiled.placements[compiled.layers[1]!.id], 'above-labels');
+  assert.equal(compiled.layers[1]?.type, 'symbol');
+  assert.equal((compiled.layers[1]?.layout as Record<string, unknown>)['icon-image'], 'store');
+  assert.equal((compiled.layers[1]?.layout as Record<string, unknown>)['icon-allow-overlap'], true);
+  assert.equal(compiled.symbols[0]?.imageId, 'store');
+  assert.match(compiled.symbols[1]?.imageId ?? '', /^__tileflow-static-symbol-/u);
+  assert.equal(
+    (compiled.layers[2]?.layout as Record<string, unknown>)['icon-image'],
+    compiled.symbols[1]?.imageId,
+  );
+  assert.ok(compiled.layers.every((layer) => !Object.hasOwn(layer, 'beforeLayerId')));
+
+  const collision = compileStaticOverlays([
+    symbol({collision: 'avoid-overlap', coordinate: [0, 0], icon: 'store'}),
+  ]);
+  assert.equal(
+    (collision.layers[0]?.layout as Record<string, unknown>)['icon-allow-overlap'],
+    false,
+  );
+  assert.equal(
+    (collision.layers[0]?.layout as Record<string, unknown>)['icon-ignore-placement'],
+    false,
+  );
+});
+
 test('rejects unknown fields at every public scene object boundary', () => {
   const candidates = [
     {...baseScene, quality: 80},
@@ -240,6 +536,8 @@ test('requires one concrete theme for deterministic static rendering', () => {
 
 test('keeps the scene map distinct from the resolved Hosted Map identity', () => {
   const manifest = createRenderManifest({
+    attribution: attributionPlan,
+    composition,
     mapId: 'map_1234567890abcdef',
     rendererVersion: 'static-v1',
     scene: {...baseScene, map: 'madrid', theme: 'dark'},
@@ -390,7 +688,7 @@ test('retries a processing operation with the same key and validates the ready r
   assert.equal(result.remainingUnits, 499_985);
 });
 
-test('requests strict result v2 on create and every poll', async () => {
+test('requests the single strict result contract on create and every poll', async () => {
   const acceptHeaders: string[] = [];
   let calls = 0;
 
@@ -412,26 +710,13 @@ test('requests strict result v2 on create and every poll', async () => {
 
       return hostedReadyResponse();
     },
-    idempotencyKey: 'static_result_v2',
+    idempotencyKey: 'static_result_v1',
     pollIntervalMs: 0,
   });
 
-  assert.deepEqual(acceptHeaders, [
-    STATIC_MAP_RESULT_V2_MEDIA_TYPE,
-    STATIC_MAP_RESULT_V2_MEDIA_TYPE,
-  ]);
-  assert.equal(result.resultVersion, 2);
+  assert.deepEqual(acceptHeaders, [STATIC_MAP_RESULT_MEDIA_TYPE, STATIC_MAP_RESULT_MEDIA_TYPE]);
+  assert.equal(result.resultVersion, 1);
   assert.equal(result.attribution.position, 'bottom-right');
-});
-
-test('a v2 client rejects a legacy success instead of claiming attribution', async () => {
-  await assert.rejects(
-    createStaticMap(baseScene, {
-      fetch: async () => readyResponse(),
-      idempotencyKey: 'static_legacy_result',
-    }),
-    /invalid response/i,
-  );
 });
 
 test('accepts an unbounded Starter balance in a ready response', async () => {
@@ -710,8 +995,10 @@ test('preserves old PNG identity and distinguishes DPR and encoded outputs', asy
   assert.notEqual(dense, implicit);
 });
 
-test('keeps the released PNG manifest hash stable', async () => {
+test('hashes the single complete render manifest deterministically', async () => {
   const manifest = createRenderManifest({
+    attribution: attributionPlan,
+    composition,
     mapId: 'map_1234567890abcdef',
     rendererVersion: 'static-v1',
     scene: baseScene,
@@ -719,28 +1006,30 @@ test('keeps the released PNG manifest hash stable', async () => {
     styleUrl: 'https://api.tileflow.dev/maps/map_1234567890abcdef/light.json',
   });
 
-  assert.equal(await hashRenderManifest(manifest), 'PsD5OpyyjZk6plYPPPmBmYmCel6kGkeps2HYxOnEh1I');
+  assert.equal(await hashRenderManifest(manifest), await hashRenderManifest({...manifest}));
+  assert.equal(manifest.schemaVersion, 1);
   assert.equal('format' in manifest.scene, false);
 });
 
-test('creates strict attributed manifest v2 while preserving requested auto placement', async () => {
-  const manifest = createRenderManifestV2({
+test('creates one strict attributed manifest with resolved composition', async () => {
+  const manifest = createRenderManifest({
     attribution: attributionPlan,
+    composition,
     mapId: 'map_1234567890abcdef',
-    rendererVersion: 'static-v2',
+    rendererVersion: 'static-semantic-overlays',
     scene: {...baseScene, attribution: {mode: 'embedded', position: 'auto'}},
     styleRevision: 'revision-2',
     styleUrl: 'https://api.tileflow.dev/maps/map_1234567890abcdef/light.json',
   });
 
-  assert.equal(manifest.schemaVersion, 2);
+  assert.equal(manifest.schemaVersion, 1);
   assert.equal(manifest.attribution.position, 'auto');
   assert.equal(validateStaticRenderManifest(manifest).ok, true);
   assert.equal(validateStaticRenderManifest({...manifest, unexpected: true}).ok, false);
   assert.notEqual(
     await hashRenderManifest(manifest),
     await hashRenderManifest(
-      createRenderManifestV2({
+      createRenderManifest({
         ...manifest,
         attribution: {...attributionPlan, mode: 'external', position: null},
         scene: {...baseScene, attribution: {mode: 'external'}},
@@ -749,17 +1038,22 @@ test('creates strict attributed manifest v2 while preserving requested auto plac
   );
 });
 
-test('the legacy manifest schema rejects v2 before it can omit attribution', () => {
-  const manifest = createRenderManifestV2({
+test('has no prelaunch legacy render-manifest branch', () => {
+  const manifest = createRenderManifest({
     attribution: attributionPlan,
+    composition,
     mapId: 'map_1234567890abcdef',
-    rendererVersion: 'static-v2',
+    rendererVersion: 'static-semantic-overlays',
     scene: baseScene,
-    styleRevision: 'revision-2',
+    styleRevision: 'revision-1',
     styleUrl: 'https://api.tileflow.dev/maps/map_1234567890abcdef/light.json',
   });
 
-  assert.equal(staticRenderManifestV1Schema.safeParse(manifest).success, false);
+  assert.equal(staticRenderManifestSchema.safeParse(manifest).success, true);
+  assert.equal(
+    staticRenderManifestSchema.safeParse({...manifest, schemaVersion: 2}).success,
+    false,
+  );
 });
 
 test('prepares one normalized scene for both the request body and dedupe key', async () => {
@@ -800,18 +1094,6 @@ test('prepares one normalized scene for both the request body and dedupe key', a
   });
 });
 
-function readyResponse(): Response {
-  return Response.json({
-    cached: false,
-    hash: 'a'.repeat(43),
-    imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
-    operationId: 'smo_12345678901234567890',
-    remainingUnits: 499_985,
-    status: 'ready',
-    unitCost: 15,
-  });
-}
-
 function hostedReadyResponse(
   overrides: Partial<{
     imageUrl: string;
@@ -837,11 +1119,11 @@ function hostedReadyResponse(
       imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
       operationId: 'smo_12345678901234567890',
       remainingUnits: 499_985,
-      resultVersion: 2,
+      resultVersion: 1,
       status: 'ready',
       unitCost: 15,
       ...overrides,
     },
-    {headers: {'Content-Type': STATIC_MAP_RESULT_V2_MEDIA_TYPE}},
+    {headers: {'Content-Type': STATIC_MAP_RESULT_MEDIA_TYPE}},
   );
 }

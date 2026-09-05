@@ -10,8 +10,8 @@ import {type StaticAttributionPosition, type StaticSceneInput, validateStaticSce
 
 const maxStaticMapResponseBytes = 64 * 1024;
 const staticMapIdempotencyKeyPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
-export const STATIC_MAP_RESULT_V2_MEDIA_TYPE =
-  'application/vnd.tileflow.static-map-result+json;version=2';
+export const STATIC_MAP_RESULT_MEDIA_TYPE =
+  'application/vnd.tileflow.static-map-result+json;version=1';
 
 export {StaticMapError, staticMapErrorResponseSchema};
 export type {StaticMapErrorResponse};
@@ -28,25 +28,29 @@ export type StaticMapAttributionResult = Readonly<{
   position: Exclude<StaticAttributionPosition, 'auto'> | null;
 }>;
 
-export type StaticMapResult = {
-  attribution?: StaticMapAttributionResult;
+type StaticMapResultBase = Readonly<{
   cached: boolean;
   hash: string;
   imageUrl: string;
-  operationId: string | null;
   remainingUnits: number | null;
-  resultVersion?: 2;
   status: 'ready';
-  unitCost: 0 | 15;
-};
+}>;
 
-export type StaticMapHostedResult = StaticMapResult &
+export type StaticMapImageResult = StaticMapResultBase &
+  Readonly<{
+    operationId: null;
+    unitCost: 0;
+  }>;
+
+export type StaticMapHostedResult = StaticMapResultBase &
   Readonly<{
     attribution: StaticMapAttributionResult;
     operationId: string;
-    resultVersion: 2;
+    resultVersion: 1;
     unitCost: 15;
   }>;
+
+export type StaticMapResult = StaticMapImageResult | StaticMapHostedResult;
 
 export type StaticMapCreateOptions = {
   apiKey?: string;
@@ -68,7 +72,7 @@ export type PreparedStaticMapRequest = Readonly<{
 
 const preparedStaticMapRequestBodies = new WeakMap<PreparedStaticMapRequest, string>();
 
-export const staticMapReadyResultSchema = z
+const staticMapReadyResultBaseSchema = z
   .object({
     cached: z.boolean(),
     hash: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
@@ -134,10 +138,10 @@ export const staticMapAttributionResultSchema = z
     }
   });
 
-export const staticMapHostedResultSchema = staticMapReadyResultSchema
+export const staticMapHostedResultSchema = staticMapReadyResultBaseSchema
   .extend({
     attribution: staticMapAttributionResultSchema,
-    resultVersion: z.literal(2),
+    resultVersion: z.literal(1),
   })
   .strict();
 
@@ -246,7 +250,7 @@ export async function requestStaticMapUntilReady(
   const fetcher = options.fetch ?? fetch;
   const createUrl = normalizeStaticMapEndpointUrl(options.createUrl);
   const headers: Record<string, string> = {
-    Accept: STATIC_MAP_RESULT_V2_MEDIA_TYPE,
+    Accept: STATIC_MAP_RESULT_MEDIA_TYPE,
     'Content-Type': 'application/json',
     'Idempotency-Key': idempotency.key,
   };

@@ -9,6 +9,10 @@ existing hosted image and does not create or poll a Static Maps operation.
 Every scene names one concrete `theme`. The browser-only `"system"` selector is rejected so hashes,
 cache keys, receipts, and regenerated images remain reproducible.
 
+Scene, size, camera, attribution, padding, and overlay objects are strict. Unknown fields are
+rejected instead of being removed during normalization, so misspelled or unsupported options cannot
+silently share another scene's identity.
+
 ```ts
 import {
   createStaticMapIdempotencyKey,
@@ -118,6 +122,11 @@ scene, an ambiguous antimeridian path, an out-of-range overlay latitude, an insu
 a Globe visibility conflict, an unresolvable camera, and failed post-fit containment. Correct the
 scene; do not retry it unchanged. Unsupported attribution grammar or glyphs, excessive attribution,
 and a block that cannot fit use the same non-retryable `422` boundary.
+
+Other bounded Hosted JSON failures throw `StaticMapError`. It preserves HTTP `status` and any safe
+`code`, `retryable`, `requestId`, or `remainingUnits` fields the server supplied; absent fields are
+`null`. `StaticMapRequestError` extends the same class. Malformed, oversized, or unsafe remote
+documents remain generic errors and are never reflected to the caller.
 
 The package has four deliberately separate surfaces, all available from the root for compatibility:
 

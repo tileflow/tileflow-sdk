@@ -80,6 +80,7 @@ const sizeSchema = z
       .max(staticSceneLimits.maxDimension),
     width: z.number().int().min(staticSceneLimits.minDimension).max(staticSceneLimits.maxDimension),
   })
+  .strict()
   .refine(
     (size) => {
       const dpr = size.dpr ?? 1;
@@ -90,12 +91,14 @@ const sizeSchema = z
     },
   );
 
-const centerCameraSchema = z.object({
-  bearing: z.number().finite().min(-180).max(180).optional(),
-  center: coordinateSchema,
-  type: z.literal('center'),
-  zoom: z.number().finite().min(0).max(22),
-});
+const centerCameraSchema = z
+  .object({
+    bearing: z.number().finite().min(-180).max(180).optional(),
+    center: coordinateSchema,
+    type: z.literal('center'),
+    zoom: z.number().finite().min(0).max(22),
+  })
+  .strict();
 
 const boundsCameraSchema = z
   .object({
@@ -119,6 +122,7 @@ const boundsCameraSchema = z
     padding: z.number().int().min(0).max(256).optional(),
     type: z.literal('bounds'),
   })
+  .strict()
   .refine((camera) => camera.bounds[3] > camera.bounds[1], {
     message: 'Bounds north must be greater than south',
   });
@@ -144,42 +148,50 @@ const autoPaddingInputSchema = z.union([
     .strict(),
 ]);
 
-const autoCameraSchema = z.object({
-  bearing: z.number().finite().min(-180).max(180).optional(),
-  maxZoom: z.number().finite().min(0).max(22).optional(),
-  padding: autoPaddingInputSchema.optional(),
-  type: z.literal('auto'),
-});
+const autoCameraSchema = z
+  .object({
+    bearing: z.number().finite().min(-180).max(180).optional(),
+    maxZoom: z.number().finite().min(0).max(22).optional(),
+    padding: autoPaddingInputSchema.optional(),
+    type: z.literal('auto'),
+  })
+  .strict();
 
-export const lineOverlaySchema = z.object({
-  color: colorSchema.default('#C6A15B'),
-  coordinates: z.array(overlayCoordinateSchema).min(2).max(staticSceneLimits.maxPathCoordinates),
-  id: z.string().trim().min(1).max(64).optional(),
-  opacity: z.number().finite().min(0).max(1).default(1),
-  type: z.literal('line'),
-  width: z.number().finite().min(0.5).max(32).default(4),
-});
+export const lineOverlaySchema = z
+  .object({
+    color: colorSchema.default('#C6A15B'),
+    coordinates: z.array(overlayCoordinateSchema).min(2).max(staticSceneLimits.maxPathCoordinates),
+    id: z.string().trim().min(1).max(64).optional(),
+    opacity: z.number().finite().min(0).max(1).default(1),
+    type: z.literal('line'),
+    width: z.number().finite().min(0.5).max(32).default(4),
+  })
+  .strict();
 
-export const circleOverlaySchema = z.object({
-  color: colorSchema.default('#C6A15B'),
-  coordinate: overlayCoordinateSchema,
-  id: z.string().trim().min(1).max(64).optional(),
-  opacity: z.number().finite().min(0).max(1).default(1),
-  radius: z.number().finite().min(1).max(64).default(6),
-  strokeColor: colorSchema.optional(),
-  strokeWidth: z.number().finite().min(0).max(16).default(0),
-  type: z.literal('circle'),
-});
+export const circleOverlaySchema = z
+  .object({
+    color: colorSchema.default('#C6A15B'),
+    coordinate: overlayCoordinateSchema,
+    id: z.string().trim().min(1).max(64).optional(),
+    opacity: z.number().finite().min(0).max(1).default(1),
+    radius: z.number().finite().min(1).max(64).default(6),
+    strokeColor: colorSchema.optional(),
+    strokeWidth: z.number().finite().min(0).max(16).default(0),
+    type: z.literal('circle'),
+  })
+  .strict();
 
-export const markerOverlaySchema = z.object({
-  color: colorSchema.default('#C6A15B'),
-  coordinate: overlayCoordinateSchema,
-  id: z.string().trim().min(1).max(64).optional(),
-  radius: z.number().finite().min(2).max(64).default(8),
-  strokeColor: colorSchema.default('#ffffff'),
-  strokeWidth: z.number().finite().min(0).max(16).default(2),
-  type: z.literal('marker'),
-});
+export const markerOverlaySchema = z
+  .object({
+    color: colorSchema.default('#C6A15B'),
+    coordinate: overlayCoordinateSchema,
+    id: z.string().trim().min(1).max(64).optional(),
+    radius: z.number().finite().min(2).max(64).default(8),
+    strokeColor: colorSchema.default('#ffffff'),
+    strokeWidth: z.number().finite().min(0).max(16).default(2),
+    type: z.literal('marker'),
+  })
+  .strict();
 
 const polygonRingSchema = z
   .array(overlayCoordinateSchema)
@@ -194,15 +206,17 @@ const polygonRingSchema = z
     {message: 'Polygon rings must end at their starting coordinate'},
   );
 
-export const polygonOverlaySchema = z.object({
-  coordinates: z.array(polygonRingSchema).min(1).max(16),
-  fill: colorSchema.default('#C6A15B'),
-  id: z.string().trim().min(1).max(64).optional(),
-  opacity: z.number().finite().min(0).max(1).default(0.28),
-  stroke: colorSchema.optional(),
-  strokeWidth: z.number().finite().min(0).max(16).default(0),
-  type: z.literal('polygon'),
-});
+export const polygonOverlaySchema = z
+  .object({
+    coordinates: z.array(polygonRingSchema).min(1).max(16),
+    fill: colorSchema.default('#C6A15B'),
+    id: z.string().trim().min(1).max(64).optional(),
+    opacity: z.number().finite().min(0).max(1).default(0.28),
+    stroke: colorSchema.optional(),
+    strokeWidth: z.number().finite().min(0).max(16).default(0),
+    type: z.literal('polygon'),
+  })
+  .strict();
 
 export const staticOverlaySchema = z.discriminatedUnion('type', [
   lineOverlaySchema,
@@ -211,15 +225,21 @@ export const staticOverlaySchema = z.discriminatedUnion('type', [
   polygonOverlaySchema,
 ]);
 
-export const staticSceneSchema = z.object({
-  attribution: staticAttributionRequestSchema.optional(),
-  camera: z.discriminatedUnion('type', [centerCameraSchema, boundsCameraSchema, autoCameraSchema]),
-  format: staticMapFormatSchema.optional(),
-  map: portableIdSchema,
-  overlays: z.array(staticOverlaySchema).max(staticSceneLimits.maxOverlays).default([]),
-  size: sizeSchema,
-  theme: concreteThemeSchema,
-});
+export const staticSceneSchema = z
+  .object({
+    attribution: staticAttributionRequestSchema.optional(),
+    camera: z.discriminatedUnion('type', [
+      centerCameraSchema,
+      boundsCameraSchema,
+      autoCameraSchema,
+    ]),
+    format: staticMapFormatSchema.optional(),
+    map: portableIdSchema,
+    overlays: z.array(staticOverlaySchema).max(staticSceneLimits.maxOverlays).default([]),
+    size: sizeSchema,
+    theme: concreteThemeSchema,
+  })
+  .strict();
 
 export type StaticCoordinate = z.infer<typeof coordinateSchema>;
 export type StaticAttributionMode = 'embedded' | 'external';

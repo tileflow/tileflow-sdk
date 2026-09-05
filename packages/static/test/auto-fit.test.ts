@@ -7,6 +7,7 @@ import {
   hashStaticSceneRequest,
   marker,
   prepareStaticMapRequest,
+  StaticMapError,
   StaticMapRequestError,
   staticMapRequestErrorResponseSchema,
   validateStaticRenderManifest,
@@ -442,6 +443,7 @@ test('preserves a bounded remote auto-fit error as a typed SDK error', async () 
     }),
     (error: unknown) => {
       assert.ok(error instanceof StaticMapRequestError);
+      assert.ok(error instanceof StaticMapError);
       assert.equal(error.status, 422);
       assert.equal(error.code, 'AUTO_FIT_IMPOSSIBLE');
       assert.equal(error.reason, 'GLOBE_NOT_SIMULTANEOUSLY_VISIBLE');
@@ -473,7 +475,11 @@ test('trusts structured request failures only on their contractual 422 status', 
     (error: unknown) => {
       assert.ok(error instanceof Error);
       assert.equal(error instanceof StaticMapRequestError, false);
-      assert.match(error.message, /503/u);
+      assert.equal(error.name, 'StaticMapError');
+      assert.equal(Reflect.get(error, 'status'), 503);
+      assert.equal(Reflect.get(error, 'code'), 'AUTO_FIT_IMPOSSIBLE');
+      assert.equal(Reflect.get(error, 'retryable'), false);
+      assert.equal(error.message, 'Untrusted status/body combination');
       return true;
     },
   );

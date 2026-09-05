@@ -1,5 +1,6 @@
 import {z} from 'zod';
 import {roundNumber} from './canonical';
+import {StaticMapError} from './errors';
 import {
   MAX_OVERLAY_LATITUDE,
   type StaticOverlay,
@@ -121,7 +122,7 @@ export type StaticAutoFitErrorResponse = Extract<
   {code: `AUTO_FIT_${string}`}
 >;
 
-export class StaticMapRequestError extends Error {
+export class StaticMapRequestError extends StaticMapError {
   readonly code: StaticMapRequestErrorResponse['code'];
   readonly details?: StaticMapRequestErrorDetails;
   readonly reason: StaticMapRequestErrorResponse['reason'];
@@ -129,7 +130,7 @@ export class StaticMapRequestError extends Error {
   readonly status: number;
 
   constructor(response: StaticMapRequestErrorResponse, status = 422) {
-    super(response.error);
+    super(response, status);
     this.name = 'StaticMapRequestError';
     this.code = response.code;
     this.details = 'details' in response ? response.details : undefined;

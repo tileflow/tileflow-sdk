@@ -15,6 +15,7 @@ const distRoot = join(packageRoot, 'dist');
 
 const clientExports = [
   'STATIC_MAP_RESULT_V2_MEDIA_TYPE',
+  'StaticMapError',
   'createStaticMap',
   'createStaticMapIdempotencyKey',
   'precacheStaticMap',
@@ -23,6 +24,7 @@ const clientExports = [
   'stableStringify',
   'staticMapAttributionEntrySchema',
   'staticMapAttributionResultSchema',
+  'staticMapErrorResponseSchema',
   'staticMapHostedResultSchema',
   'staticMapProcessingResultSchema',
   'staticMapReadyResultSchema',
@@ -131,6 +133,8 @@ test('built entry graphs exclude unrelated responsibilities and publish required
   ]);
   for (const name of [
     'PreparedStaticMapRequest',
+    'StaticMapError',
+    'StaticMapErrorResponse',
     'StaticMapHostedResult',
     'StaticMapResult',
     'prepareStaticMapRequest',

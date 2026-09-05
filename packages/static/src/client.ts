@@ -5,12 +5,16 @@ import {
   type StaticMapRequestFailure,
 } from './auto-fit';
 import {isSafeHttpUrl, jsonByteLength, stableStringify} from './canonical';
+import {StaticMapError, type StaticMapErrorResponse, staticMapErrorResponseSchema} from './errors';
 import {type StaticAttributionPosition, type StaticSceneInput, validateStaticScene} from './scene';
 
 const maxStaticMapResponseBytes = 64 * 1024;
 const staticMapIdempotencyKeyPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
 export const STATIC_MAP_RESULT_V2_MEDIA_TYPE =
   'application/vnd.tileflow.static-map-result+json;version=2';
+
+export {StaticMapError, staticMapErrorResponseSchema};
+export type {StaticMapErrorResponse};
 
 export type StaticMapAttributionEntry = Readonly<{
   authority: 'platform-notice' | 'team-declared';
@@ -264,14 +268,19 @@ export async function requestStaticMapUntilReady(
       throwIfAborted(signal);
 
       if (!response.ok) {
-        const requestError =
-          response.status === 422
-            ? await readStaticMapRequestErrorResponse(response, 8 * 1024)
-            : await discardBoundedResponse(response, 8 * 1024);
+        const errorBody = await readStaticMapErrorBody(response, 8 * 1024);
         throwIfAborted(signal);
 
-        if (requestError) {
-          throw new StaticMapRequestError(requestError, response.status);
+        if (response.status === 422) {
+          const requestError = staticMapRequestErrorResponseSchema.safeParse(errorBody);
+          if (requestError.success) {
+            throw new StaticMapRequestError(requestError.data, response.status);
+          }
+        }
+
+        const structured = staticMapErrorResponseSchema.safeParse(errorBody);
+        if (structured.success) {
+          throw new StaticMapError(structured.data, response.status);
         }
 
         throw new Error(`Tileflow static map failed (${response.status}).`);
@@ -335,24 +344,13 @@ async function readJsonResponse(response: Response) {
   }
 }
 
-async function readStaticMapRequestErrorResponse(response: Response, maximumBytes: number) {
+async function readStaticMapErrorBody(response: Response, maximumBytes: number) {
   try {
     const source = await readBoundedResponseText(response, maximumBytes, `${maximumBytes} bytes`);
-    const parsed = staticMapRequestErrorResponseSchema.safeParse(JSON.parse(source));
-    return parsed.success ? parsed.data : null;
+    return JSON.parse(source) as unknown;
   } catch {
     return null;
   }
-}
-
-async function discardBoundedResponse(response: Response, maximumBytes: number) {
-  try {
-    await readBoundedResponseText(response, maximumBytes, `${maximumBytes} bytes`);
-  } catch {
-    // Remote diagnostics remain bounded and are never reflected to callers.
-  }
-
-  return null;
 }
 
 function isStaticMapRequestFailure(value: {

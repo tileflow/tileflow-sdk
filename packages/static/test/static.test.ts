@@ -11,8 +11,10 @@ import {
   prepareStaticMapRequest,
   requestStaticMapUntilReady,
   STATIC_MAP_RESULT_V2_MEDIA_TYPE,
+  StaticMapError,
   staticRenderManifestV1Schema,
   staticSceneLimits,
+  staticSceneSchema,
   validateStaticMapIdempotencyKey,
   validateStaticRenderManifest,
   validateStaticScene,
@@ -160,6 +162,70 @@ test('validates attribution choices without injecting the omitted default into t
       position: 'auto',
     });
     assert.deepEqual(external.scene.attribution, {mode: 'external'});
+  }
+});
+
+test('rejects unknown fields at every public scene object boundary', () => {
+  const candidates = [
+    {...baseScene, quality: 80},
+    {...baseScene, attribution: {mode: 'embedded', position: 'auto', unknown: true}},
+    {...baseScene, size: {...baseScene.size, pixelRatio: 2}},
+    {...baseScene, camera: {...baseScene.camera, pitch: 45}},
+    {
+      ...baseScene,
+      camera: {bounds: [-10, -10, 10, 10], padding: 16, type: 'bounds', unknown: true},
+    },
+    {...baseScene, camera: {maxZoom: 12, padding: 16, type: 'auto', unknown: true}},
+    {
+      ...baseScene,
+      camera: {maxZoom: 12, padding: {top: 16, unknown: true}, type: 'auto'},
+    },
+    {
+      ...baseScene,
+      overlays: [{coordinate: [0, 0], label: 'Madrid', type: 'marker'}],
+    },
+    {
+      ...baseScene,
+      overlays: [{coordinate: [0, 0], icon: 'pin', type: 'circle'}],
+    },
+    {
+      ...baseScene,
+      overlays: [
+        {
+          coordinates: [
+            [0, 0],
+            [1, 1],
+          ],
+          dasharray: [2, 2],
+          type: 'line',
+        },
+      ],
+    },
+    {
+      ...baseScene,
+      overlays: [
+        {
+          coordinates: [
+            [
+              [0, 0],
+              [1, 0],
+              [1, 1],
+              [0, 0],
+            ],
+          ],
+          label: 'Area',
+          type: 'polygon',
+        },
+      ],
+    },
+  ];
+
+  for (const candidate of candidates) {
+    const result = validateStaticScene(candidate);
+
+    assert.equal(result.ok, false, JSON.stringify(candidate));
+    assert.equal(staticSceneSchema.safeParse(candidate).success, false, JSON.stringify(candidate));
+    if (!result.ok) assert.notEqual(result.error, '');
   }
 });
 
@@ -385,6 +451,114 @@ test('rejects malformed success responses instead of casting them', async () => 
     }),
     /invalid response/i,
   );
+});
+
+test('preserves bounded structured fields from non-422 API errors', async () => {
+  const cases = [
+    {
+      body: {
+        code: 'STATIC_MAP_IDEMPOTENCY_KEY_INVALID',
+        error: 'Idempotency key is invalid',
+        internal: 'not-public',
+        requestId: 'request-400',
+        retryable: false,
+      },
+      status: 400,
+    },
+    {
+      body: {
+        code: 'STATIC_MAP_IDEMPOTENCY_CONFLICT',
+        error: 'Idempotency key was already used',
+      },
+      status: 409,
+    },
+    {
+      body: {
+        code: 'STATIC_MAP_SHARED_API_QUOTA_EXHAUSTED',
+        error: 'Fewer than 15 shared API units remain',
+        remainingUnits: 4,
+      },
+      status: 429,
+    },
+    {
+      body: {
+        code: 'STATIC_MAP_LEDGER_STALE',
+        error: 'Static Maps is temporarily unavailable',
+        retryable: true,
+      },
+      status: 503,
+    },
+    {
+      body: {
+        code: 'STATIC_MAP_ATTRIBUTION_INTEGRITY_FAILED',
+        error: 'Static Maps attribution integrity check failed',
+      },
+      status: 500,
+    },
+    {
+      body: {error: 'Too many requests', requestId: 'request-rate-limit'},
+      status: 429,
+    },
+  ] as const;
+
+  for (const expected of cases) {
+    const requestId = 'requestId' in expected.body ? expected.body.requestId : 'code';
+
+    await assert.rejects(
+      createStaticMap(baseScene, {
+        fetch: async () => Response.json(expected.body, {status: expected.status}),
+        idempotencyKey: `static_error_${expected.status}_${requestId}`,
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof StaticMapError);
+        assert.equal(error.name, 'StaticMapError');
+        assert.equal(Reflect.get(error, 'status'), expected.status);
+        assert.equal(
+          Reflect.get(error, 'code'),
+          'code' in expected.body ? expected.body.code : null,
+        );
+        assert.equal(
+          Reflect.get(error, 'retryable'),
+          'retryable' in expected.body ? expected.body.retryable : null,
+        );
+        assert.equal(
+          Reflect.get(error, 'requestId'),
+          'requestId' in expected.body ? expected.body.requestId : null,
+        );
+        assert.equal(
+          Reflect.get(error, 'remainingUnits'),
+          'remainingUnits' in expected.body ? expected.body.remainingUnits : null,
+        );
+        assert.match(error.message, new RegExp(expected.body.error, 'u'));
+        assert.equal('internal' in error.response, false);
+        return true;
+      },
+    );
+  }
+});
+
+test('does not reflect malformed or oversized API error bodies', async () => {
+  const secret = 'sensitive-remote-diagnostic';
+
+  for (const body of [
+    JSON.stringify({error: `${secret}\u0000`}),
+    JSON.stringify({error: secret, padding: 'x'.repeat(9_000)}),
+    '<html>upstream failure</html>',
+  ]) {
+    await assert.rejects(
+      createStaticMap(baseScene, {
+        fetch: async () => new Response(body, {status: 503}),
+        idempotencyKey: 'static_invalid_error_body',
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal(error instanceof StaticMapError, false);
+        assert.equal(error.message, 'Tileflow static map failed (503).');
+        assert.doesNotMatch(error.message, new RegExp(secret, 'u'));
+        return true;
+      },
+    );
+  }
 });
 
 test('rejects oversized response documents without echoing their contents', async () => {

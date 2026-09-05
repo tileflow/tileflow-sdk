@@ -34,6 +34,7 @@ export type {
 };
 export type {
   StaticCoordinate,
+  StaticMapFormat,
   StaticPadding,
   StaticScene,
   StaticSceneInput,
@@ -115,6 +116,7 @@ function normalizeParsedStaticScene(parsed: StaticScene): StaticScene {
               padding: normalizeAutoPadding(parsed.camera.padding, parsed.size),
               type: 'auto',
             },
+    ...(parsed.format && parsed.format !== 'png' ? {format: parsed.format} : {}),
     map: parsed.map,
     overlays: parsed.overlays.map((overlay, index) =>
       normalizeStaticOverlay({

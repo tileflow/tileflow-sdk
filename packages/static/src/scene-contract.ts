@@ -3,11 +3,11 @@ import {z} from 'zod';
 export const staticSceneSchemaVersion = 1;
 export const MAX_OVERLAY_LATITUDE = 85.051129;
 export const staticSceneLimits = {
-  maxDimension: 1280,
+  maxDimension: 2048,
   maxGeoJsonBytes: 96_000,
   maxOverlays: 24,
   maxPathCoordinates: 2000,
-  maxPhysicalPixels: 1280 * 1280,
+  maxPhysicalPixels: 2048 * 2048 * 4,
   minDimension: 64,
 } as const;
 
@@ -46,9 +46,11 @@ const concreteThemeSchema = portableIdSchema.refine((value) => value !== 'system
   message: 'Static maps require a concrete theme; "system" is browser-only',
 });
 
+const staticMapFormatSchema = z.enum(['png', 'jpeg', 'webp']);
+
 const sizeSchema = z
   .object({
-    dpr: z.literal(1).optional(),
+    dpr: z.union([z.literal(1), z.literal(2)]).optional(),
     height: z
       .number()
       .int()
@@ -57,7 +59,10 @@ const sizeSchema = z
     width: z.number().int().min(staticSceneLimits.minDimension).max(staticSceneLimits.maxDimension),
   })
   .refine(
-    (size) => size.width * size.height * (size.dpr ?? 1) <= staticSceneLimits.maxPhysicalPixels,
+    (size) => {
+      const dpr = size.dpr ?? 1;
+      return size.width * size.height * dpr * dpr <= staticSceneLimits.maxPhysicalPixels;
+    },
     {
       message: 'Static map exceeds the maximum render pixel budget',
     },
@@ -186,6 +191,7 @@ export const staticOverlaySchema = z.discriminatedUnion('type', [
 
 export const staticSceneSchema = z.object({
   camera: z.discriminatedUnion('type', [centerCameraSchema, boundsCameraSchema, autoCameraSchema]),
+  format: staticMapFormatSchema.optional(),
   map: portableIdSchema,
   overlays: z.array(staticOverlaySchema).max(staticSceneLimits.maxOverlays).default([]),
   size: sizeSchema,
@@ -193,6 +199,7 @@ export const staticSceneSchema = z.object({
 });
 
 export type StaticCoordinate = z.infer<typeof coordinateSchema>;
+export type StaticMapFormat = z.infer<typeof staticMapFormatSchema>;
 export type StaticPadding = z.infer<typeof staticPaddingSchema>;
 export type StaticSceneInput = z.input<typeof staticSceneSchema>;
 export type StaticScene = z.infer<typeof staticSceneSchema>;

@@ -85,3 +85,20 @@ test('rejects a browser-only system selector on a direct StaticMap image', async
   assert.doesNotMatch(html, /data-tileflow-theme=/u);
   assert.doesNotMatch(html, /<img/u);
 });
+
+test('forwards output format through direct StaticMap scene validation', async () => {
+  const {StaticMap} = await import('../dist/static.js');
+  const html = renderToStaticMarkup(
+    createElement(StaticMap, {
+      camera: {type: 'center', center: [-3.7, 40.4], zoom: 12},
+      format: 'gif' as 'png',
+      imageUrl: 'https://cdn.example.test/madrid.png',
+      map: 'madrid',
+      size: {height: 400, width: 600},
+      theme: 'light',
+    }),
+  );
+
+  assert.match(html, /data-tileflow-state="error"/u);
+  assert.doesNotMatch(html, /<img/u);
+});

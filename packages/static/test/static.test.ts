@@ -5,9 +5,11 @@ import {
   createRenderManifest,
   createStaticMap,
   createStaticMapIdempotencyKey,
+  hashRenderManifest,
   hashStaticSceneRequest,
   prepareStaticMapRequest,
   requestStaticMapUntilReady,
+  staticSceneLimits,
   validateStaticMapIdempotencyKey,
   validateStaticScene,
 } from '../src/index';
@@ -41,14 +43,59 @@ test('rejects open polygon rings', () => {
   assert.match(result.ok ? '' : result.error, /must end at their starting coordinate/);
 });
 
-test('rejects unsupported device pixel ratios before a render request', () => {
+test('accepts DPR 2 within the physical pixel budget', () => {
   const result = validateStaticScene({
     ...baseScene,
     size: {...baseScene.size, dpr: 2},
   });
 
-  assert.equal(result.ok, false);
-  if (!result.ok) assert.match(result.error, /dpr/i);
+  assert.equal(result.ok, true);
+  if (result.ok) assert.deepEqual(result.scene.size, {dpr: 2, height: 480, width: 640});
+});
+
+test('rejects invalid DPR and admits the 2048-logical parity maximum', () => {
+  for (const dpr of [0, 1.5, 3, Number.NaN, Number.POSITIVE_INFINITY]) {
+    const result = validateStaticScene({
+      ...baseScene,
+      size: {...baseScene.size, dpr},
+    });
+
+    assert.equal(result.ok, false, String(dpr));
+    if (!result.ok) assert.match(result.error, /dpr/i);
+  }
+
+  assert.equal(staticSceneLimits.maxDimension, 2048);
+  assert.equal(staticSceneLimits.maxPhysicalPixels, 2048 * 2048 * 4);
+  assert.equal(
+    validateStaticScene({...baseScene, size: {dpr: 2, height: 2048, width: 2048}}).ok,
+    true,
+  );
+  const overDimension = validateStaticScene({
+    ...baseScene,
+    size: {dpr: 2, height: 2049, width: 2048},
+  });
+  assert.equal(overDimension.ok, false);
+  if (!overDimension.ok) assert.match(overDimension.error, /2048/i);
+});
+
+test('validates output formats and keeps PNG as an omitted canonical default', () => {
+  const implicit = validateStaticScene(baseScene);
+  const png = validateStaticScene({...baseScene, format: 'png'});
+  const jpeg = validateStaticScene({...baseScene, format: 'jpeg'});
+  const webp = validateStaticScene({...baseScene, format: 'webp'});
+  const unknown = validateStaticScene({...baseScene, format: 'gif'});
+
+  assert.equal(implicit.ok, true);
+  assert.equal(png.ok, true);
+  assert.equal(jpeg.ok, true);
+  assert.equal(webp.ok, true);
+  assert.equal(unknown.ok, false);
+  if (implicit.ok && png.ok && jpeg.ok && webp.ok) {
+    assert.deepEqual(png.scene, implicit.scene);
+    assert.equal('format' in png.scene, false);
+    assert.equal(jpeg.scene.format, 'jpeg');
+    assert.equal(webp.scene.format, 'webp');
+  }
 });
 
 test('requires one concrete theme for deterministic static rendering', () => {
@@ -395,6 +442,36 @@ test('hashes the normalized request body rather than input spelling', async () =
 
   assert.equal(left, right);
   assert.match(left, /^[A-Za-z0-9_-]{43}$/);
+});
+
+test('preserves old PNG identity and distinguishes DPR and encoded outputs', async () => {
+  const implicit = await hashStaticSceneRequest(baseScene);
+  const png = await hashStaticSceneRequest({...baseScene, format: 'png'});
+  const jpeg = await hashStaticSceneRequest({...baseScene, format: 'jpeg'});
+  const webp = await hashStaticSceneRequest({...baseScene, format: 'webp'});
+  const dense = await hashStaticSceneRequest({
+    ...baseScene,
+    size: {...baseScene.size, dpr: 2},
+  });
+
+  assert.equal(png, implicit);
+  assert.notEqual(jpeg, implicit);
+  assert.notEqual(webp, implicit);
+  assert.notEqual(jpeg, webp);
+  assert.notEqual(dense, implicit);
+});
+
+test('keeps the released PNG manifest hash stable', async () => {
+  const manifest = createRenderManifest({
+    mapId: 'map_1234567890abcdef',
+    rendererVersion: 'static-v1',
+    scene: baseScene,
+    styleRevision: 'revision-1',
+    styleUrl: 'https://api.tileflow.dev/maps/map_1234567890abcdef/light.json',
+  });
+
+  assert.equal(await hashRenderManifest(manifest), 'PsD5OpyyjZk6plYPPPmBmYmCel6kGkeps2HYxOnEh1I');
+  assert.equal('format' in manifest.scene, false);
 });
 
 test('prepares one normalized scene for both the request body and dedupe key', async () => {

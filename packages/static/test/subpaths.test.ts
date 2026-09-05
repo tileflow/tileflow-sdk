@@ -123,6 +123,7 @@ test('built entry graphs exclude unrelated responsibilities and publish required
     assert.match(clientTypes, new RegExp(`\\b${name}\\b`, 'u'));
   }
   assert.match(sceneTypes, /\bStaticSceneInput\b/u);
+  assert.match(sceneTypes, /\bStaticMapFormat\b/u);
   assert.match(sceneTypes, /\bStaticMapRequestErrorResponse\b/u);
   assert.match(sceneTypes, /\bStaticMapRequestError\b/u);
 });

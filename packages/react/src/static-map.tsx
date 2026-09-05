@@ -53,6 +53,7 @@ export function StaticMap({
   className,
   captureId,
   createUrl,
+  format,
   imageStyle,
   imageUrl,
   idempotencyKey,
@@ -77,10 +78,10 @@ export function StaticMap({
   const resolvedCaptureId = normalizeTileflowCaptureId(captureId);
   const onErrorRef = useRef(onError);
   const onReadyRef = useRef(onReady);
-  const sceneInputKey = stableStringify({camera, map, overlays, size, theme});
+  const sceneInputKey = stableStringify({camera, format, map, overlays, size, theme});
   const preparedSceneCandidate = useMemo(
-    () => prepareSceneRequest({camera, map, overlays, size, theme}),
-    [camera, map, overlays, size, theme],
+    () => prepareSceneRequest({camera, format, map, overlays, size, theme}),
+    [camera, format, map, overlays, size, theme],
   );
   const preparedScene = useStablePreparedSceneRequest(preparedSceneCandidate);
   const sceneKey = preparedScene.ok ? preparedScene.request.sceneKey : `invalid:${sceneInputKey}`;

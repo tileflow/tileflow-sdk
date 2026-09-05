@@ -20,8 +20,9 @@ import {
 const scene = validateStaticScene({
   map: 'madrid',
   theme: 'dark',
+  format: 'webp',
   camera: {type: 'auto', padding: 24},
-  size: {width: 1200, height: 800},
+  size: {width: 600, height: 400, dpr: 2},
   overlays: [marker({coordinate: [-3.7038, 40.4168]})],
 });
 
@@ -32,6 +33,15 @@ await precacheStaticMap(scene.scene, {
   idempotencyKey: createStaticMapIdempotencyKey(),
 });
 ```
+
+`width` and `height` are logical CSS pixels. `dpr` accepts 1 or 2 and defaults to 1, so a 600 by
+400 scene at DPR 2 produces a 1200 by 800 image without changing camera, padding, or overlay paint
+sizes. Logical dimensions may reach 2048 per axis; the physical budget permits 4096 by 4096 output,
+or 16,777,216 total pixels.
+
+`format` accepts `png`, `jpeg`, or `webp` and defaults to PNG. PNG's canonical default stays omitted,
+so explicit and omitted PNG requests share identity. JPEG and WebP use a fixed encoder quality;
+there is no public quality option.
 
 ## Automatic framing
 

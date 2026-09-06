@@ -78,7 +78,7 @@ test('ships notices for every third-party component embedded in the browser entr
   for (const requiredNotice of [
     'maplibre-contour 0.1.0',
     'PMTiles 4.4.0',
-    'fflate 0.8.2',
+    'fflate 0.8.3',
     'd3-contour',
     'vt-pbf',
     'pbf 4.0.1',

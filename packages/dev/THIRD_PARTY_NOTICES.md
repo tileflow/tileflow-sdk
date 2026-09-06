@@ -38,7 +38,7 @@ contributors and is distributed under the BSD 3-Clause License. Its `fflate` dep
 copyright 2020 Arjun Barrett and is distributed under the MIT License.
 
 - PMTiles source and license: <https://github.com/protomaps/PMTiles/tree/v4.5.0/js>
-- fflate source and license: <https://github.com/101arrowz/fflate/tree/v0.8.2>
+- fflate source and license: <https://github.com/101arrowz/fflate/tree/v0.8.3>
 
 ## sharp 0.35.3
 

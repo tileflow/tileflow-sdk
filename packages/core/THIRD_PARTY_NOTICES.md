@@ -1,6 +1,6 @@
 # Third-party notices
 
-`@tileflow/core/browser` embeds `maplibre-contour` 0.1.0, `PMTiles` 4.4.0, and `fflate` 0.8.2 so
+`@tileflow/core/browser` embeds `maplibre-contour` 0.1.0, `PMTiles` 4.4.0, and `fflate` 0.8.3 so
 contour and local archive rendering remain self-contained. The complete upstream licenses follow.
 
 ## maplibre-contour 0.1.0
@@ -203,7 +203,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ---
 
-## fflate 0.8.2
+## fflate 0.8.3
 
 MIT License
 

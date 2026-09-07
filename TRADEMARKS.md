@@ -1,10 +1,14 @@
-# Tileflow trademarks
+# Tileflow Trademarks
 
-The Apache License, Version 2.0, and the Tileflow generated-output grant do not grant permission to
-use the Tileflow name, `tileflow.dev`, logos, service marks, product names, or other Tileflow brand
-features except for reasonable and customary use that truthfully describes the origin of the SDK or
-compatibility with Tileflow, and for reproducing required notices.
+"Tileflow", "tileflow.dev", the Tileflow logo, and related brand features are trademarks of
+Tileflow.
 
-You may not use Tileflow brand features in a way that suggests sponsorship, endorsement, or an
-official Tileflow product when none exists. Third-party names and marks remain the property of their
-respective owners.
+The Apache License 2.0 does not grant rights to use these marks except for reasonable use describing
+the origin of the software or compatibility with Tileflow.
+
+You may truthfully state that a product uses, is based on, or is compatible with Tileflow.
+
+You may not use Tileflow marks in a way that implies sponsorship, endorsement, affiliation, or
+official status when none exists.
+
+Third-party marks remain the property of their respective owners.

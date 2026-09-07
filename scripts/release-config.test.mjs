@@ -98,7 +98,7 @@ test('rejects exact internal runtime pins, release versions in source, and rever
   assert.throws(() => validatePublicManifests(reversed, {source: true}), /must precede/u);
 });
 
-test('requires Apache-2.0 metadata and every legal distribution file', () => {
+test('requires Apache-2.0 metadata and the packaged license', () => {
   const missingLicense = fixtureManifests();
   delete missingLicense.get('@tileflow/core').manifest.license;
   assert.throws(
@@ -106,11 +106,12 @@ test('requires Apache-2.0 metadata and every legal distribution file', () => {
     /must declare Apache-2\.0/u,
   );
 
-  const missingNotice = fixtureManifests();
-  missingNotice.get('@tileflow/core').manifest.files = packageLegalFileNames.filter(
-    (name) => name !== 'NOTICE',
+  const missingLicenseFile = fixtureManifests();
+  missingLicenseFile.get('@tileflow/core').manifest.files = [];
+  assert.throws(
+    () => validatePublicManifests(missingLicenseFile, {source: true}),
+    /must pack LICENSE/u,
   );
-  assert.throws(() => validatePublicManifests(missingNotice, {source: true}), /must pack NOTICE/u);
 });
 
 function fixtureManifests() {

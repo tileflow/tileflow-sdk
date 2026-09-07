@@ -25,12 +25,11 @@
   "types": "./src/index.d.ts",
   "files": [
     "src",
-    "LICENSE",
-    "NOTICE",
-    "GENERATED_OUTPUT_LICENSE.md",
-    "TRADEMARKS.md"
+    "LICENSE"
   ],
   "scripts": {
+    "prepack": "node ../../scripts/package-license.mjs --prepare",
+    "postpack": "node ../../scripts/package-license.mjs --clean",
     "build": "svelte-check --tsconfig ./tsconfig.json",
     "test": "node --test test/*.test.js",
     "verify": "pnpm run typecheck && pnpm run test",

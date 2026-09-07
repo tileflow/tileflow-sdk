@@ -5,7 +5,7 @@ Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant, and San Fran
 artwork published under `assets/` is original Tileflow artwork.
 
 This file is shipped with `@tileflow/maps` so future third-party assets have a stable place for
-their required notices. The repository's Apache-2.0 license and generated-output grant are
+their required notices. The repository's Apache-2.0 license is
 authoritative for the original Tileflow artwork.
 
 ## Maki POI pictograms

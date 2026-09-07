@@ -15,15 +15,7 @@ test('publishes official maps and their assets as one package', async () => {
     peerDependencies: Record<string, string>;
   };
 
-  assert.deepEqual(manifest.files, [
-    'assets',
-    'dist',
-    'THIRD_PARTY_NOTICES.md',
-    'LICENSE',
-    'NOTICE',
-    'GENERATED_OUTPUT_LICENSE.md',
-    'TRADEMARKS.md',
-  ]);
+  assert.deepEqual(manifest.files, ['assets', 'dist', 'THIRD_PARTY_NOTICES.md', 'LICENSE']);
   assert.equal(manifest.peerDependencies['@tileflow/core'].startsWith('workspace:'), true);
   assert.deepEqual(manifest.exports['.'], {
     types: './dist/index.d.ts',

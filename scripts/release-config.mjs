@@ -3,12 +3,7 @@ import semver from 'semver';
 
 export const developmentVersion = '0.0.0-development';
 export const publicLicenseIdentifier = 'Apache-2.0';
-export const packageLegalFileNames = [
-  'LICENSE',
-  'NOTICE',
-  'GENERATED_OUTPUT_LICENSE.md',
-  'TRADEMARKS.md',
-];
+export const packageLegalFileNames = ['LICENSE'];
 export const internalRuntimeRange = '>=0.1.0-alpha.16 <0.1.0-beta.0';
 export const internalWorkspaceRuntimeRange = `workspace:${internalRuntimeRange}`;
 export const internalRuntimeUpperBound = '0.1.0-beta.0';

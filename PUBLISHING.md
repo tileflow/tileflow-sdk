@@ -137,6 +137,11 @@ publishable manifest metadata. Comparison ignores only:
 - object-key ordering in `package.json`, except condition order under `exports` and `imports` where
   order is semantic.
 
+`LICENSE` is maintained once at the repository root. Each package's pack lifecycle copies that file
+into its tarball and removes the temporary copy afterwards; release verification requires the packed
+bytes to match the root license. Third-party notices remain only with the packages and assets they
+cover.
+
 Tests, workflows, and repository-only documentation do not cause a release unless they change a
 packed artifact. Package READMEs, `files`, exports, runtime dependencies, executable modes, built
 JavaScript, declarations, maps, icons, fonts, and other packaged resources do. A non-deterministic

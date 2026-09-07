@@ -25,15 +25,14 @@
   },
   "files": [
     "dist",
-    "LICENSE",
-    "NOTICE",
-    "GENERATED_OUTPUT_LICENSE.md",
-    "TRADEMARKS.md"
+    "LICENSE"
   ],
   "bin": {
     "tileflow": "./dist/index.js"
   },
   "scripts": {
+    "prepack": "node ../../scripts/package-license.mjs --prepare",
+    "postpack": "node ../../scripts/package-license.mjs --clean",
     "build": "tsup src/index.ts --format esm --clean --no-splitting --platform node",
     "cli": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",

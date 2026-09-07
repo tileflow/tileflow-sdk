@@ -713,6 +713,14 @@ function argumentValue(flag) {
 
 async function packRequiredPackages(directory) {
   const tarballs = new Map();
+  await mkdir(join(temporaryRoot, 'scripts'), {recursive: true});
+  await Promise.all([
+    cp(join(repositoryRoot, 'LICENSE'), join(temporaryRoot, 'LICENSE')),
+    cp(
+      join(repositoryRoot, 'scripts', 'package-license.mjs'),
+      join(temporaryRoot, 'scripts', 'package-license.mjs'),
+    ),
+  ]);
   for (const {directory: packageDirectory, name: packageName} of publicPackageCatalog) {
     const sourceRoot = join(repositoryRoot, 'packages', packageDirectory);
     const stagingRoot = join(temporaryRoot, 'staging', packageDirectory);

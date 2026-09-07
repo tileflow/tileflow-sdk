@@ -18,6 +18,7 @@ const allowedTileflowDependencies = {
   maps: new Set(['core']),
   next: new Set(['dev']),
   react: new Set(['core', 'interactions', 'static']),
+  search: new Set(),
   static: new Set(),
   svelte: new Set(['core', 'interactions']),
   vite: new Set(['dev']),
@@ -56,7 +57,7 @@ test('public package sources respect the SDK responsibility graph', async () => 
       for (const specifier of importedSpecifiers(source)) {
         if (specifier.startsWith('node:')) {
           assert.equal(
-            ['core', 'interactions', 'maps', 'react', 'static', 'svelte', 'vue'].includes(
+            ['core', 'interactions', 'maps', 'react', 'search', 'static', 'svelte', 'vue'].includes(
               packageName,
             ),
             false,

@@ -20,6 +20,7 @@ publication order and the independent first version for every package:
 - `@tileflow/core`
 - `@tileflow/maps`
 - `@tileflow/interactions`
+- `@tileflow/search`
 - `@tileflow/static`
 - `@tileflow/dev`
 - `@tileflow/capture`
@@ -286,3 +287,7 @@ matters:
     pnpm add @tileflow/static@alpha
     pnpm add -D @tileflow/capture@alpha
     pnpm add -D --save-exact tileflow@alpha
+
+After the first `@tileflow/search` alpha exists, install it through the same explicit channel:
+
+    pnpm add @tileflow/search@alpha

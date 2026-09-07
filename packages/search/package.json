@@ -1,0 +1,62 @@
+{
+  "name": "@tileflow/search",
+  "version": "0.0.0-development",
+  "license": "Apache-2.0",
+  "description": "Headless forward and reverse geocoding client and wire contracts for Tileflow.",
+  "type": "module",
+  "sideEffects": false,
+  "homepage": "https://tileflow.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tileflow/tileflow-sdk.git",
+    "directory": "packages/search"
+  },
+  "bugs": {
+    "url": "https://github.com/tileflow/tileflow-sdk/issues"
+  },
+  "keywords": [
+    "tileflow",
+    "maps",
+    "search",
+    "geocoding"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "NOTICE",
+    "GENERATED_OUTPUT_LICENSE.md",
+    "TRADEMARKS.md"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts src/contract.ts src/client.ts --format esm --dts --clean --splitting",
+    "verify": "pnpm run build && tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./contract": {
+      "types": "./dist/contract.d.ts",
+      "import": "./dist/contract.js",
+      "default": "./dist/contract.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js",
+      "default": "./dist/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
+}

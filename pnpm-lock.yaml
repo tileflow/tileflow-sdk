@@ -326,6 +326,12 @@ importers:
         specifier: ^19.2.7
         version: 19.2.7(react@19.2.7)
 
+  packages/search:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
   packages/static:
     dependencies:
       zod:

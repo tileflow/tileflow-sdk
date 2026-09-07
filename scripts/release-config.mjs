@@ -21,6 +21,7 @@ export const publicPackageCatalog = Object.freeze(
       initialVersion: '0.1.0-alpha.0',
       name: '@tileflow/interactions',
     },
+    {directory: 'search', initialVersion: '0.1.0-alpha.0', name: '@tileflow/search'},
     {directory: 'static', initialVersion: '0.1.0-alpha.0', name: '@tileflow/static'},
     {directory: 'dev', initialVersion: '0.1.0-alpha.0', name: '@tileflow/dev'},
     {directory: 'capture', initialVersion: '0.1.0-alpha.0', name: '@tileflow/capture'},

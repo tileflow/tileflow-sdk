@@ -21,6 +21,7 @@ in the [SDK responsibility and delivery contract](docs/contracts/sdk-responsibil
 | [`@tileflow/core`](packages/core)                 | Typed map language, semantic modules, validation, and MapLibre style compilation                                      |
 | [`@tileflow/maps`](packages/maps)                 | Official Streets, Baedeker, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant, and San Francisto maps |
 | [`@tileflow/interactions`](packages/interactions) | Portable annotations, tooltips, popups, state, and MapLibre interaction lifecycle                                     |
+| [`@tileflow/geoip`](packages/geoip)               | Bounded anonymous and managed IP geolocation client and response contracts                                            |
 | [`@tileflow/search`](packages/search)             | Headless forward and reverse geocoding client and provider-neutral response contracts                                 |
 | [`@tileflow/static`](packages/static)             | Hosted Static Maps scene schemas, overlays, and bounded request client                                                |
 | [`@tileflow/dev`](packages/dev)                   | Node integration utilities, watched artifacts, and the local comparison/inspection workbench                          |

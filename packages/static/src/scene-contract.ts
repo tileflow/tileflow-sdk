@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {isSupportedStaticTextCodePoint} from './text-coverage';
 
 export const staticSceneSchemaVersion = 1;
 export const MAX_OVERLAY_LATITUDE = 85.051129;
@@ -27,6 +28,110 @@ const overlayCoordinateSchema = coordinateSchema.refine(
 const colorSchema = z.string().regex(/^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/, {
   message: 'Expected a hex color like #C6A15B',
 });
+
+export const staticOverlayPlacements = [
+  'above-water',
+  'below-roads',
+  'above-roads',
+  'above-buildings',
+  'below-labels',
+  'above-labels',
+] as const;
+export const staticSymbolAnchors = [
+  'center',
+  'top',
+  'top-right',
+  'right',
+  'bottom-right',
+  'bottom',
+  'bottom-left',
+  'left',
+  'top-left',
+] as const;
+export const staticSymbolCollisions = ['always-visible', 'avoid-overlap'] as const;
+export const staticSymbolLanguages = ['ja', 'zh-Hans', 'zh-Hant', 'ko'] as const;
+export const staticSymbolLabelAppearances = ['plain', 'badge'] as const;
+export const staticSymbolLabelPositions = [
+  'center',
+  'above',
+  'above-right',
+  'right',
+  'below-right',
+  'below',
+  'below-left',
+  'left',
+  'above-left',
+] as const;
+
+const overlayPlacementSchema = z.enum(staticOverlayPlacements).optional();
+const symbolIconSchema = z
+  .string()
+  .max(64)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u, {
+    message: 'Expected a deployed sprite icon ID',
+  });
+const symbolTextSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .refine((value) => value === value.trim(), 'Symbol label text must be trimmed')
+  .refine(
+    (value) => Array.from(value).length <= 64,
+    'Symbol labels may contain at most 64 characters',
+  )
+  .refine(
+    (value) =>
+      Array.from(value).every((character) =>
+        isSupportedStaticTextCodePoint(character.codePointAt(0)!),
+      ),
+    'Symbol label contains a character unsupported by the deterministic renderer font',
+  );
+const symbolLabelPositionSchema = z.enum(staticSymbolLabelPositions).optional();
+const symbolLanguageSchema = z.enum(staticSymbolLanguages).default('zh-Hans');
+const symbolFontSizeSchema = z.number().finite().min(8).max(32).default(12);
+const symbolGapSchema = z.number().finite().min(0).max(32);
+const plainSymbolLabelSchema = z
+  .object({
+    appearance: z.literal('plain'),
+    color: colorSchema.default('#111827'),
+    fontSize: symbolFontSizeSchema,
+    gap: symbolGapSchema.default(4),
+    haloColor: colorSchema.default('#ffffff'),
+    haloWidth: z.number().finite().min(0).max(8).default(2),
+    language: symbolLanguageSchema,
+    position: symbolLabelPositionSchema,
+    text: symbolTextSchema,
+  })
+  .strict();
+const badgeSymbolLabelSchema = z
+  .object({
+    appearance: z.literal('badge'),
+    backgroundColor: colorSchema.default('#111827'),
+    borderColor: colorSchema.default('#ffffff'),
+    borderRadius: z.number().finite().min(0).max(32).default(6),
+    borderWidth: z.number().finite().min(0).max(8).default(1),
+    color: colorSchema.default('#ffffff'),
+    fontSize: symbolFontSizeSchema,
+    gap: symbolGapSchema.default(2),
+    language: symbolLanguageSchema,
+    padding: z
+      .object({
+        x: z.number().finite().min(0).max(32).default(5),
+        y: z.number().finite().min(0).max(32).default(3),
+      })
+      .strict()
+      .default({x: 5, y: 3}),
+    position: symbolLabelPositionSchema,
+    text: symbolTextSchema,
+  })
+  .strict();
+const symbolLabelSchema = z
+  .union([symbolTextSchema, plainSymbolLabelSchema, badgeSymbolLabelSchema])
+  .transform((label) =>
+    typeof label === 'string'
+      ? plainSymbolLabelSchema.parse({appearance: 'plain', text: label})
+      : label,
+  );
 
 const portableIdSchema = z
   .string()
@@ -80,6 +185,7 @@ const sizeSchema = z
       .max(staticSceneLimits.maxDimension),
     width: z.number().int().min(staticSceneLimits.minDimension).max(staticSceneLimits.maxDimension),
   })
+  .strict()
   .refine(
     (size) => {
       const dpr = size.dpr ?? 1;
@@ -90,12 +196,14 @@ const sizeSchema = z
     },
   );
 
-const centerCameraSchema = z.object({
-  bearing: z.number().finite().min(-180).max(180).optional(),
-  center: coordinateSchema,
-  type: z.literal('center'),
-  zoom: z.number().finite().min(0).max(22),
-});
+const centerCameraSchema = z
+  .object({
+    bearing: z.number().finite().min(-180).max(180).optional(),
+    center: coordinateSchema,
+    type: z.literal('center'),
+    zoom: z.number().finite().min(0).max(22),
+  })
+  .strict();
 
 const boundsCameraSchema = z
   .object({
@@ -119,6 +227,7 @@ const boundsCameraSchema = z
     padding: z.number().int().min(0).max(256).optional(),
     type: z.literal('bounds'),
   })
+  .strict()
   .refine((camera) => camera.bounds[3] > camera.bounds[1], {
     message: 'Bounds north must be greater than south',
   });
@@ -144,42 +253,53 @@ const autoPaddingInputSchema = z.union([
     .strict(),
 ]);
 
-const autoCameraSchema = z.object({
-  bearing: z.number().finite().min(-180).max(180).optional(),
-  maxZoom: z.number().finite().min(0).max(22).optional(),
-  padding: autoPaddingInputSchema.optional(),
-  type: z.literal('auto'),
-});
+const autoCameraSchema = z
+  .object({
+    bearing: z.number().finite().min(-180).max(180).optional(),
+    maxZoom: z.number().finite().min(0).max(22).optional(),
+    padding: autoPaddingInputSchema.optional(),
+    type: z.literal('auto'),
+  })
+  .strict();
 
-export const lineOverlaySchema = z.object({
-  color: colorSchema.default('#C6A15B'),
-  coordinates: z.array(overlayCoordinateSchema).min(2).max(staticSceneLimits.maxPathCoordinates),
-  id: z.string().trim().min(1).max(64).optional(),
-  opacity: z.number().finite().min(0).max(1).default(1),
-  type: z.literal('line'),
-  width: z.number().finite().min(0.5).max(32).default(4),
-});
+export const lineOverlaySchema = z
+  .object({
+    color: colorSchema.default('#C6A15B'),
+    coordinates: z.array(overlayCoordinateSchema).min(2).max(staticSceneLimits.maxPathCoordinates),
+    id: z.string().trim().min(1).max(64).optional(),
+    opacity: z.number().finite().min(0).max(1).default(1),
+    placement: overlayPlacementSchema,
+    type: z.literal('line'),
+    width: z.number().finite().min(0.5).max(32).default(4),
+  })
+  .strict();
 
-export const circleOverlaySchema = z.object({
-  color: colorSchema.default('#C6A15B'),
-  coordinate: overlayCoordinateSchema,
-  id: z.string().trim().min(1).max(64).optional(),
-  opacity: z.number().finite().min(0).max(1).default(1),
-  radius: z.number().finite().min(1).max(64).default(6),
-  strokeColor: colorSchema.optional(),
-  strokeWidth: z.number().finite().min(0).max(16).default(0),
-  type: z.literal('circle'),
-});
+export const circleOverlaySchema = z
+  .object({
+    color: colorSchema.default('#C6A15B'),
+    coordinate: overlayCoordinateSchema,
+    id: z.string().trim().min(1).max(64).optional(),
+    opacity: z.number().finite().min(0).max(1).default(1),
+    placement: overlayPlacementSchema,
+    radius: z.number().finite().min(1).max(64).default(6),
+    strokeColor: colorSchema.optional(),
+    strokeWidth: z.number().finite().min(0).max(16).default(0),
+    type: z.literal('circle'),
+  })
+  .strict();
 
-export const markerOverlaySchema = z.object({
-  color: colorSchema.default('#C6A15B'),
-  coordinate: overlayCoordinateSchema,
-  id: z.string().trim().min(1).max(64).optional(),
-  radius: z.number().finite().min(2).max(64).default(8),
-  strokeColor: colorSchema.default('#ffffff'),
-  strokeWidth: z.number().finite().min(0).max(16).default(2),
-  type: z.literal('marker'),
-});
+export const markerOverlaySchema = z
+  .object({
+    color: colorSchema.default('#C6A15B'),
+    coordinate: overlayCoordinateSchema,
+    id: z.string().trim().min(1).max(64).optional(),
+    placement: overlayPlacementSchema,
+    radius: z.number().finite().min(2).max(64).default(8),
+    strokeColor: colorSchema.default('#ffffff'),
+    strokeWidth: z.number().finite().min(0).max(16).default(2),
+    type: z.literal('marker'),
+  })
+  .strict();
 
 const polygonRingSchema = z
   .array(overlayCoordinateSchema)
@@ -194,32 +314,63 @@ const polygonRingSchema = z
     {message: 'Polygon rings must end at their starting coordinate'},
   );
 
-export const polygonOverlaySchema = z.object({
-  coordinates: z.array(polygonRingSchema).min(1).max(16),
-  fill: colorSchema.default('#C6A15B'),
-  id: z.string().trim().min(1).max(64).optional(),
-  opacity: z.number().finite().min(0).max(1).default(0.28),
-  stroke: colorSchema.optional(),
-  strokeWidth: z.number().finite().min(0).max(16).default(0),
-  type: z.literal('polygon'),
-});
+export const polygonOverlaySchema = z
+  .object({
+    coordinates: z.array(polygonRingSchema).min(1).max(16),
+    fill: colorSchema.default('#C6A15B'),
+    id: z.string().trim().min(1).max(64).optional(),
+    opacity: z.number().finite().min(0).max(1).default(0.28),
+    placement: overlayPlacementSchema,
+    stroke: colorSchema.optional(),
+    strokeWidth: z.number().finite().min(0).max(16).default(0),
+    type: z.literal('polygon'),
+  })
+  .strict();
+
+export const symbolOverlaySchema = z
+  .object({
+    anchor: z.enum(staticSymbolAnchors).default('center'),
+    collision: z.enum(staticSymbolCollisions).default('always-visible'),
+    coordinate: overlayCoordinateSchema,
+    icon: symbolIconSchema.optional(),
+    id: z.string().trim().min(1).max(64).optional(),
+    label: symbolLabelSchema.optional(),
+    offset: z
+      .tuple([z.number().finite().min(-256).max(256), z.number().finite().min(-256).max(256)])
+      .default([0, 0]),
+    opacity: z.number().finite().min(0).max(1).default(1),
+    placement: overlayPlacementSchema,
+    scale: z.number().finite().min(0.25).max(4).default(1),
+    type: z.literal('symbol'),
+  })
+  .strict()
+  .refine((value) => value.icon !== undefined || value.label !== undefined, {
+    message: 'Static symbols require an icon or label',
+  });
 
 export const staticOverlaySchema = z.discriminatedUnion('type', [
   lineOverlaySchema,
   circleOverlaySchema,
   markerOverlaySchema,
   polygonOverlaySchema,
+  symbolOverlaySchema,
 ]);
 
-export const staticSceneSchema = z.object({
-  attribution: staticAttributionRequestSchema.optional(),
-  camera: z.discriminatedUnion('type', [centerCameraSchema, boundsCameraSchema, autoCameraSchema]),
-  format: staticMapFormatSchema.optional(),
-  map: portableIdSchema,
-  overlays: z.array(staticOverlaySchema).max(staticSceneLimits.maxOverlays).default([]),
-  size: sizeSchema,
-  theme: concreteThemeSchema,
-});
+export const staticSceneSchema = z
+  .object({
+    attribution: staticAttributionRequestSchema.optional(),
+    camera: z.discriminatedUnion('type', [
+      centerCameraSchema,
+      boundsCameraSchema,
+      autoCameraSchema,
+    ]),
+    format: staticMapFormatSchema.optional(),
+    map: portableIdSchema,
+    overlays: z.array(staticOverlaySchema).max(staticSceneLimits.maxOverlays).default([]),
+    size: sizeSchema,
+    theme: concreteThemeSchema,
+  })
+  .strict();
 
 export type StaticCoordinate = z.infer<typeof coordinateSchema>;
 export type StaticAttributionMode = 'embedded' | 'external';
@@ -231,3 +382,13 @@ export type StaticSceneInput = z.input<typeof staticSceneSchema>;
 export type StaticScene = z.infer<typeof staticSceneSchema>;
 export type StaticOverlayInput = z.input<typeof staticOverlaySchema>;
 export type StaticOverlay = z.infer<typeof staticOverlaySchema>;
+export type StaticOverlayPlacement = (typeof staticOverlayPlacements)[number];
+export type StaticSymbolAnchor = (typeof staticSymbolAnchors)[number];
+export type StaticSymbolCollision = (typeof staticSymbolCollisions)[number];
+export type StaticSymbolLanguage = (typeof staticSymbolLanguages)[number];
+export type StaticSymbolLabelAppearance = (typeof staticSymbolLabelAppearances)[number];
+export type StaticSymbolLabelPosition = (typeof staticSymbolLabelPositions)[number];
+
+export function isSupportedStaticSymbolCodePoint(codePoint: number) {
+  return isSupportedStaticTextCodePoint(codePoint);
+}

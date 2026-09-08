@@ -21,6 +21,7 @@ in the [SDK responsibility and delivery contract](docs/contracts/sdk-responsibil
 | [`@tileflow/core`](packages/core)                 | Typed map language, semantic modules, validation, and MapLibre style compilation                                      |
 | [`@tileflow/maps`](packages/maps)                 | Official Streets, Baedeker, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant, and San Francisto maps |
 | [`@tileflow/interactions`](packages/interactions) | Portable annotations, tooltips, popups, state, and MapLibre interaction lifecycle                                     |
+| [`@tileflow/search`](packages/search)             | Headless forward and reverse geocoding client and provider-neutral response contracts                                 |
 | [`@tileflow/static`](packages/static)             | Hosted Static Maps scene schemas, overlays, and bounded request client                                                |
 | [`@tileflow/dev`](packages/dev)                   | Node integration utilities, watched artifacts, and the local comparison/inspection workbench                          |
 | [`@tileflow/capture`](packages/capture)           | Pinned headless capture, receipts, two-style review, visual analysis, and baseline comparison                         |
@@ -151,12 +152,9 @@ local capture and visual-testing behavior is recorded in
 ## Licensing
 
 The Tileflow SDK and Tileflow-owned official map artwork are licensed under the
-[Apache License, Version 2.0](LICENSE). Every public npm package carries the same `LICENSE`,
-[`NOTICE`](NOTICE), [generated-output grant](GENERATED_OUTPUT_LICENSE.md), and
-[trademark boundary](TRADEMARKS.md).
+[Apache License, Version 2.0](LICENSE). Every public npm package carries that license.
 
-The generated-output grant explicitly permits personal and commercial use, modification,
-deployment, and redistribution of Tileflow-owned compiled styles and artifacts. It does not
-relicense third-party software, fonts, map data, imagery, or other inputs. Preserve the license,
-notice, and attribution requirements recorded beside those materials and in package-specific
+The [trademark boundary](TRADEMARKS.md) governs Tileflow brand features. Third-party software,
+fonts, icons, map data, imagery, and other materials remain under their own terms. Preserve the
+license and attribution requirements recorded beside those materials and in package-specific
 `THIRD_PARTY_NOTICES.md` files.

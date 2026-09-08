@@ -16,8 +16,7 @@ npm publication interlock for the unrelated open release requirements.
   the Soundings asset directory are first-party geometric drawings; only the harbor and paper/water
   assets participate in official Soundings, while the remaining symbols support an experimental
   Nautical canary. Their source directories and
-  `packages/maps/THIRD_PARTY_NOTICES.md` record provenance alongside the repository's
-  generated-output grant.
+  `packages/maps/THIRD_PARTY_NOTICES.md` record provenance alongside their source assets.
 - Cyberpunk's and Matrix's unmodified Oxanium fonts and OFL licenses live under their respective
   `packages/maps/assets/cyberpunk/fonts/` and `packages/maps/assets/matrix/fonts/` directories.
   Baedeker and Siegfried each own a package copy of the unmodified Cormorant Garamond fonts and OFL
@@ -47,9 +46,10 @@ npm publication interlock for the unrelated open release requirements.
   `/base/<assetSetSha256>/glyphs/...` contract. No compiler fallback manufactures the URL.
 - The deliberately dispatched npm workflow fails before registry reconciliation while
   `PUBLIC_RELEASE_BLOCKERS.json` exists. Local source/test validation remains available on the branch.
-- The repository and all thirteen public package manifests now declare Apache-2.0. Byte-identical
-  `LICENSE`, `NOTICE`, `GENERATED_OUTPUT_LICENSE.md`, and `TRADEMARKS.md` files ship in every npm
-  tarball, and permanent source and packed-artifact assertions enforce that boundary.
+- The repository and all thirteen public package manifests declare Apache-2.0. The root `LICENSE` is
+  prepared for each npm tarball during packing and removed afterwards, so every tarball carries the
+  same license without versioning duplicate copies. Third-party notices remain with the packages and
+  source assets they cover.
 - The project owner approved `Tileflow.dev contributors` as the public copyright-holder label and
   confirmed on 2026-08-26 that the current SDK does not use or derive from OSM Bright.
 - At this dated checkpoint, before `@tileflow/interactions` joined the public release set, the branch

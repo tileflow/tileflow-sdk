@@ -13,10 +13,11 @@ import {
   staticSceneSchema,
   validateStaticScene,
 } from './scene';
+import {staticOverlayPlacements} from './scene-contract';
 
-export const staticRendererSchemaVersionV1 = 1;
-export const staticRendererSchemaVersion = 2;
+export const staticRendererSchemaVersion = 1;
 export const staticAttributionPlanSchemaVersion = 1;
+export const staticRenderCompositionSchemaVersion = 1;
 export const staticAttributionLimits = {
   maxBytes: 32 * 1024,
   maxEntries: 18,
@@ -136,7 +137,7 @@ export const staticAttributionEntrySchema = z
     }
   });
 
-export const staticAttributionPlanSchemaV1 = z
+export const staticAttributionPlanSchema = z
   .object({
     entries: z.array(staticAttributionEntrySchema).max(staticAttributionLimits.maxEntries),
     mode: z.enum(['embedded', 'external']),
@@ -167,15 +168,62 @@ export const staticAttributionPlanSchemaV1 = z
 export type StaticAttributionSegment = z.infer<typeof staticAttributionSegmentSchema>;
 export type StaticAttributionProvenance = z.infer<typeof staticAttributionProvenanceSchema>;
 export type StaticAttributionEntry = z.infer<typeof staticAttributionEntrySchema>;
-export type StaticAttributionPlanV1 = z.infer<typeof staticAttributionPlanSchemaV1>;
+export type StaticAttributionPlan = z.infer<typeof staticAttributionPlanSchema>;
 export type StaticResolvedAttributionPosition = z.infer<
   typeof staticResolvedAttributionPositionSchema
 >;
 
+const placementAnchorsSchema = z
+  .object({
+    'above-water': z.string().min(1).max(256).nullable(),
+    'below-roads': z.string().min(1).max(256).nullable(),
+    'above-roads': z.string().min(1).max(256).nullable(),
+    'above-buildings': z.string().min(1).max(256).nullable(),
+    'below-labels': z.string().min(1).max(256).nullable(),
+    'above-labels': z.null(),
+  })
+  .strict()
+  .refine(anchorsHaveTerminalNulls, {
+    message: 'Placement anchors may become null only at the end of semantic order',
+  });
+const resolvedIconSchema = z
+  .object({
+    height: z.number().int().positive().max(2048),
+    icon: z
+      .string()
+      .max(64)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
+    overlayIndex: z.number().int().min(0).max(23),
+    width: z.number().int().positive().max(2048),
+  })
+  .strict();
+
+export const staticRenderCompositionSchema = z
+  .object({
+    anchors: placementAnchorsSchema,
+    icons: z.array(resolvedIconSchema).max(24),
+    schemaVersion: z.literal(staticRenderCompositionSchemaVersion),
+  })
+  .strict()
+  .refine(
+    (composition) =>
+      composition.icons.every(
+        (icon, index) =>
+          index === 0 || composition.icons[index - 1]!.overlayIndex < icon.overlayIndex,
+      ),
+    {message: 'Resolved symbol icons must be unique and sorted by overlay index'},
+  );
+
+export type StaticRenderComposition = z.infer<typeof staticRenderCompositionSchema>;
+
 const staticRenderManifestBaseShape = {
+  attribution: staticAttributionPlanSchema,
   autoFit: staticAutoFitPlanSchema.optional(),
+  composition: staticRenderCompositionSchema,
   mapId: z.string().trim().min(1).max(128),
   rendererVersion: z.string().trim().min(1).max(64),
+  schemaVersion: z.literal(staticRendererSchemaVersion),
+  scene: staticSceneSchema,
   styleId: z.string().trim().min(1).max(128).optional(),
   styleRevision: z.string().trim().min(1).max(128),
   styleUrl: z.string().trim().url().max(512).refine(isSafeHttpUrl, {
@@ -183,30 +231,7 @@ const staticRenderManifestBaseShape = {
   }),
 } as const;
 
-const staticSceneSchemaV1 = staticSceneSchema.omit({attribution: true});
-
-export const staticRenderManifestV1Schema = z.object({
-  ...staticRenderManifestBaseShape,
-  schemaVersion: z.literal(staticRendererSchemaVersionV1),
-  scene: staticSceneSchemaV1,
-});
-
-export const staticRenderManifestV2Schema = z
-  .object({
-    ...staticRenderManifestBaseShape,
-    attribution: staticAttributionPlanSchemaV1,
-    schemaVersion: z.literal(staticRendererSchemaVersion),
-    scene: staticSceneSchema,
-  })
-  .strict();
-
-export const staticRenderManifestSchema = z.discriminatedUnion('schemaVersion', [
-  staticRenderManifestV1Schema,
-  staticRenderManifestV2Schema,
-]);
-
-export type StaticRenderManifestV1 = z.infer<typeof staticRenderManifestV1Schema>;
-export type StaticRenderManifestV2 = z.infer<typeof staticRenderManifestV2Schema>;
+export const staticRenderManifestSchema = z.object(staticRenderManifestBaseShape).strict();
 export type StaticRenderManifest = z.infer<typeof staticRenderManifestSchema>;
 
 export function validateStaticRenderManifest(
@@ -216,28 +241,18 @@ export function validateStaticRenderManifest(
     return {error: 'manifest: Expected an object', ok: false};
   }
 
-  const schemaVersion = (input as Record<string, unknown>).schemaVersion;
-  if (
-    schemaVersion !== staticRendererSchemaVersionV1 &&
-    schemaVersion !== staticRendererSchemaVersion
-  ) {
+  if ((input as Record<string, unknown>).schemaVersion !== staticRendererSchemaVersion) {
     return {error: 'manifest.schemaVersion: Unsupported renderer schema version', ok: false};
   }
 
   const rawScene = (input as {scene?: unknown}).scene;
-  const sceneValidation = validateVersionedScene(rawScene, schemaVersion);
-
+  const sceneValidation = validateStaticScene(rawScene);
   if (!sceneValidation.ok) return sceneValidation;
 
-  const schema =
-    schemaVersion === staticRendererSchemaVersionV1
-      ? staticRenderManifestV1Schema
-      : staticRenderManifestV2Schema;
-  const parsed = schema.safeParse({
+  const parsed = staticRenderManifestSchema.safeParse({
     ...(input as Record<string, unknown>),
     scene: sceneValidation.scene,
   });
-
   if (!parsed.success) return zodFailure(parsed.error);
 
   const autoFit = expectedAutoFit(sceneValidation.scene);
@@ -247,14 +262,15 @@ export function validateStaticRenderManifest(
   ) {
     return {error: 'manifest.autoFit: Expected the exact plan derived from scene', ok: false};
   }
-
-  if (
-    schemaVersion === staticRendererSchemaVersion &&
-    (!('attribution' in parsed.data) ||
-      !attributionMatchesScene(parsed.data.attribution, sceneValidation.scene))
-  ) {
+  if (!attributionMatchesScene(parsed.data.attribution, sceneValidation.scene)) {
     return {
       error: 'manifest.attribution: Expected the exact request resolved from scene',
+      ok: false,
+    };
+  }
+  if (!compositionMatchesScene(parsed.data.composition, sceneValidation.scene)) {
+    return {
+      error: 'manifest.composition: Expected exact resolved symbol icon references',
       ok: false,
     };
   }
@@ -264,56 +280,29 @@ export function validateStaticRenderManifest(
       ...parsed.data,
       ...(autoFit === undefined ? {} : {autoFit}),
       scene: sceneValidation.scene,
-    } as StaticRenderManifest,
+    },
     ok: true,
   };
 }
 
-export function createRenderManifestV1(input: {
+export function createRenderManifest(input: {
+  attribution: StaticAttributionPlan;
+  composition: StaticRenderComposition;
   mapId: string;
   rendererVersion: string;
   scene: StaticSceneInput;
   styleId?: string;
   styleRevision: string;
   styleUrl: string;
-}): StaticRenderManifestV1 {
-  const rawScene = staticSceneSchemaV1.parse(input.scene);
-  const scene = normalizeStaticScene(rawScene);
-  const autoFit = expectedAutoFit(scene);
-
-  return staticRenderManifestV1Schema.parse(
-    stripUndefined({
-      autoFit,
-      mapId: input.mapId,
-      rendererVersion: input.rendererVersion,
-      schemaVersion: staticRendererSchemaVersionV1,
-      scene,
-      styleId: input.styleId,
-      styleRevision: input.styleRevision,
-      styleUrl: input.styleUrl,
-    }),
-  );
-}
-
-/** Compatibility creation path for historical manifest v1 fixtures and readers. */
-export const createRenderManifest = createRenderManifestV1;
-
-export function createRenderManifestV2(input: {
-  attribution: StaticAttributionPlanV1;
-  mapId: string;
-  rendererVersion: string;
-  scene: StaticSceneInput;
-  styleId?: string;
-  styleRevision: string;
-  styleUrl: string;
-}): StaticRenderManifestV2 {
+}): StaticRenderManifest {
   const scene = normalizeStaticScene(input.scene);
   const autoFit = expectedAutoFit(scene);
 
-  return staticRenderManifestV2Schema.parse(
+  return staticRenderManifestSchema.parse(
     stripUndefined({
       attribution: input.attribution,
       autoFit,
+      composition: input.composition,
       mapId: input.mapId,
       rendererVersion: input.rendererVersion,
       schemaVersion: staticRendererSchemaVersion,
@@ -337,16 +326,8 @@ export async function hashStaticSceneRequest(scene: StaticSceneInput): Promise<s
   return hashStableValue(validation.scene);
 }
 
-function validateVersionedScene(input: unknown, version: 1 | 2) {
-  if (version === 1 && input && typeof input === 'object' && !Array.isArray(input)) {
-    const {attribution: _attribution, ...legacy} = input as Record<string, unknown>;
-    return validateStaticScene(legacy);
-  }
-  return validateStaticScene(input);
-}
-
 function attributionMatchesScene(
-  plan: StaticAttributionPlanV1,
+  plan: StaticAttributionPlan,
   scene: ReturnType<typeof normalizeStaticScene>,
 ) {
   const request = scene.attribution;
@@ -361,11 +342,38 @@ function attributionMatchesScene(
   return plan.mode === expectedMode && plan.position === expectedPosition;
 }
 
+function compositionMatchesScene(
+  composition: StaticRenderComposition,
+  scene: ReturnType<typeof normalizeStaticScene>,
+) {
+  const expected = scene.overlays.flatMap((overlay, overlayIndex) =>
+    overlay.type === 'symbol' && overlay.icon ? [{icon: overlay.icon, overlayIndex}] : [],
+  );
+  return (
+    expected.length === composition.icons.length &&
+    expected.every(
+      (icon, index) =>
+        composition.icons[index]?.icon === icon.icon &&
+        composition.icons[index]?.overlayIndex === icon.overlayIndex,
+    )
+  );
+}
+
 function expectedAutoFit(scene: ReturnType<typeof normalizeStaticScene>) {
   if (scene.camera.type !== 'auto') return undefined;
   const analysis = analyzeStaticAutoFit(scene);
   if (!analysis.ok) throw new Error(`Invalid Tileflow auto-fit scene: ${analysis.error}`);
   return analysis.plan;
+}
+
+function anchorsHaveTerminalNulls(anchors: Record<string, string | null>) {
+  let sawNull = false;
+  for (const placement of staticOverlayPlacements) {
+    const anchor = anchors[placement];
+    if (anchor === null) sawNull = true;
+    else if (sawNull) return false;
+  }
+  return true;
 }
 
 function hasNoControlCharacters(value: string) {

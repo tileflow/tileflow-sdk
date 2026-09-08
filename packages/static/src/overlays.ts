@@ -7,6 +7,8 @@ import {
   markerOverlaySchema,
   polygonOverlaySchema,
   type StaticOverlay,
+  type StaticOverlayPlacement,
+  symbolOverlaySchema,
 } from './scene-contract';
 
 export {staticOverlaySchema} from './scene-contract';
@@ -28,6 +30,10 @@ export function polygon(input: Omit<z.input<typeof polygonOverlaySchema>, 'type'
   return normalizeStaticOverlay({...input, type: 'polygon'});
 }
 
+export function symbol(input: Omit<z.input<typeof symbolOverlaySchema>, 'type'>): StaticOverlay {
+  return normalizeStaticOverlay({...input, type: 'symbol'});
+}
+
 export function compileStaticOverlays(
   overlays: StaticOverlay[],
   options: {longitudeOffsets?: readonly number[]} = {},
@@ -46,10 +52,18 @@ export function compileStaticOverlays(
 
   const sources: Record<string, Record<string, unknown>> = {};
   const layers: Array<Record<string, unknown>> = [];
+  const placements: Record<string, StaticOverlayPlacement> = {};
+  const symbols: Array<{imageId: string; overlayIndex: number}> = [];
+
+  const pushLayer = (layer: Record<string, unknown>, overlay: StaticOverlay) => {
+    const layerId = String(layer.id);
+    layers.push(layer);
+    placements[layerId] = overlay.placement ?? 'above-labels';
+  };
 
   for (const [index, overlay] of overlays.entries()) {
     const longitudeOffset = options.longitudeOffsets?.[index] ?? 0;
-    const id = safeLayerId(`overlay-${index + 1}-${overlay.id ?? overlay.type}`);
+    const id = safeLayerId(`tileflow-static-overlay-${index + 1}-${overlay.id ?? overlay.type}`);
     const sourceId = `${id}-source`;
 
     if (overlay.type === 'line') {
@@ -57,17 +71,20 @@ export function compileStaticOverlays(
         data: feature('LineString', shiftLongitudes(overlay.coordinates, longitudeOffset)),
         type: 'geojson',
       };
-      layers.push({
-        id,
-        layout: {'line-cap': 'round', 'line-join': 'round'},
-        paint: {
-          'line-color': overlay.color,
-          'line-opacity': overlay.opacity,
-          'line-width': overlay.width,
+      pushLayer(
+        {
+          id,
+          layout: {'line-cap': 'round', 'line-join': 'round'},
+          paint: {
+            'line-color': overlay.color,
+            'line-opacity': overlay.opacity,
+            'line-width': overlay.width,
+          },
+          source: sourceId,
+          type: 'line',
         },
-        source: sourceId,
-        type: 'line',
-      });
+        overlay,
+      );
       continue;
     }
 
@@ -76,27 +93,33 @@ export function compileStaticOverlays(
         data: feature('Polygon', shiftLongitudes(overlay.coordinates, longitudeOffset)),
         type: 'geojson',
       };
-      layers.push({
-        id,
-        paint: {
-          'fill-color': overlay.fill,
-          'fill-opacity': overlay.opacity,
-        },
-        source: sourceId,
-        type: 'fill',
-      });
-
-      if (overlay.stroke && overlay.strokeWidth > 0) {
-        layers.push({
-          id: `${id}-stroke`,
-          layout: {'line-cap': 'round', 'line-join': 'round'},
+      pushLayer(
+        {
+          id,
           paint: {
-            'line-color': overlay.stroke,
-            'line-width': overlay.strokeWidth,
+            'fill-color': overlay.fill,
+            'fill-opacity': overlay.opacity,
           },
           source: sourceId,
-          type: 'line',
-        });
+          type: 'fill',
+        },
+        overlay,
+      );
+
+      if (overlay.stroke && overlay.strokeWidth > 0) {
+        pushLayer(
+          {
+            id: `${id}-stroke`,
+            layout: {'line-cap': 'round', 'line-join': 'round'},
+            paint: {
+              'line-color': overlay.stroke,
+              'line-width': overlay.strokeWidth,
+            },
+            source: sourceId,
+            type: 'line',
+          },
+          overlay,
+        );
       }
       continue;
     }
@@ -105,21 +128,61 @@ export function compileStaticOverlays(
       data: feature('Point', shiftLongitudes(overlay.coordinate, longitudeOffset)),
       type: 'geojson',
     };
-    layers.push({
-      id,
-      paint: {
-        'circle-color': overlay.color,
-        'circle-opacity': overlay.type === 'circle' ? overlay.opacity : 1,
-        'circle-radius': overlay.radius,
-        'circle-stroke-color': overlay.strokeColor ?? overlay.color,
-        'circle-stroke-width': overlay.strokeWidth,
+
+    if (overlay.type === 'symbol') {
+      const composed = overlay.label !== undefined;
+      const imageId = composed
+        ? safeLayerId(`__tileflow-static-symbol-${index + 1}-${overlay.id}`)
+        : overlay.icon!;
+      const alwaysVisible = overlay.collision === 'always-visible';
+      const iconSize = composed ? 1 : overlay.scale;
+      const iconOffset = composed
+        ? overlay.offset
+        : overlay.offset.map((value) => roundNumber(value / overlay.scale));
+
+      pushLayer(
+        {
+          id,
+          layout: {
+            'icon-allow-overlap': alwaysVisible,
+            'icon-anchor': overlay.anchor,
+            'icon-ignore-placement': alwaysVisible,
+            'icon-image': imageId,
+            'icon-offset': iconOffset,
+            'icon-pitch-alignment': 'viewport',
+            'icon-rotation-alignment': 'viewport',
+            'icon-size': iconSize,
+            'symbol-placement': 'point',
+            'symbol-z-order': 'source',
+          },
+          paint: {'icon-opacity': overlay.opacity},
+          source: sourceId,
+          type: 'symbol',
+        },
+        overlay,
+      );
+      symbols.push({imageId, overlayIndex: index});
+      continue;
+    }
+
+    pushLayer(
+      {
+        id,
+        paint: {
+          'circle-color': overlay.color,
+          'circle-opacity': overlay.type === 'circle' ? overlay.opacity : 1,
+          'circle-radius': overlay.radius,
+          'circle-stroke-color': overlay.strokeColor ?? overlay.color,
+          'circle-stroke-width': overlay.strokeWidth,
+        },
+        source: sourceId,
+        type: 'circle',
       },
-      source: sourceId,
-      type: 'circle',
-    });
+      overlay,
+    );
   }
 
-  return {layers, sources};
+  return {layers, placements, sources, symbols};
 }
 
 function shiftLongitudes(value: unknown, offset: number): unknown {

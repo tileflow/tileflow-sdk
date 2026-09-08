@@ -29,12 +29,11 @@
   "files": [
     "dist",
     "THIRD_PARTY_NOTICES.md",
-    "LICENSE",
-    "NOTICE",
-    "GENERATED_OUTPUT_LICENSE.md",
-    "TRADEMARKS.md"
+    "LICENSE"
   ],
   "scripts": {
+    "prepack": "node ../../scripts/package-license.mjs --prepare",
+    "postpack": "node ../../scripts/package-license.mjs --clean",
     "build": "tsup src/index.ts src/artifacts.ts src/config.ts src/fonts.ts src/icons.ts src/inspect.ts src/preview.ts src/server.ts src/tilesets.ts src/validation.ts --format esm --dts --clean --platform node --external sharp",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -97,18 +96,18 @@
     "access": "public"
   },
   "dependencies": {
-    "@mapbox/vector-tile": "2.0.5",
+    "@mapbox/vector-tile": "3.0.0",
     "@maplibre/maplibre-gl-style-spec": "24.8.5",
     "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "chokidar": "4.0.3",
-    "fflate": "0.8.2",
+    "fflate": "0.8.3",
     "fontkit": "2.0.4",
     "jiti": "^2.7.0",
     "maplibre-gl": "5.24.0",
     "pbf": "5.1.2",
     "pmtiles": "4.5.0",
     "saxes": "6.0.0",
-    "three": "0.180.0"
+    "three": "0.185.1"
   },
   "devDependencies": {
     "@tileflow/maps": "workspace:*"

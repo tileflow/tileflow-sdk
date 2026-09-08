@@ -7,6 +7,7 @@ import {
   hashStaticSceneRequest,
   marker,
   prepareStaticMapRequest,
+  StaticMapError,
   StaticMapRequestError,
   staticMapRequestErrorResponseSchema,
   validateStaticRenderManifest,
@@ -442,6 +443,7 @@ test('preserves a bounded remote auto-fit error as a typed SDK error', async () 
     }),
     (error: unknown) => {
       assert.ok(error instanceof StaticMapRequestError);
+      assert.ok(error instanceof StaticMapError);
       assert.equal(error.status, 422);
       assert.equal(error.code, 'AUTO_FIT_IMPOSSIBLE');
       assert.equal(error.reason, 'GLOBE_NOT_SIMULTANEOUSLY_VISIBLE');
@@ -473,14 +475,77 @@ test('trusts structured request failures only on their contractual 422 status', 
     (error: unknown) => {
       assert.ok(error instanceof Error);
       assert.equal(error instanceof StaticMapRequestError, false);
-      assert.match(error.message, /503/u);
+      assert.equal(error.name, 'StaticMapError');
+      assert.equal(Reflect.get(error, 'status'), 503);
+      assert.equal(Reflect.get(error, 'code'), 'AUTO_FIT_IMPOSSIBLE');
+      assert.equal(Reflect.get(error, 'retryable'), false);
+      assert.equal(error.message, 'Untrusted status/body combination');
+      return true;
+    },
+  );
+});
+
+test('preserves managed sprite failures as correctable request errors', async () => {
+  const response = {
+    code: 'STATIC_MAP_ICON_UNAVAILABLE',
+    details: {
+      icon: 'store',
+      overlay: {id: 'shop', index: 0, type: 'symbol'},
+    },
+    error: 'Icon "store" is not present in the deployed Map sprite',
+    reason: 'ICON_NOT_FOUND',
+    retryable: false,
+  } as const;
+
+  await assert.rejects(
+    createStaticMap(
+      {
+        ...baseAutoScene,
+        camera: {center: [0, 0], type: 'center', zoom: 2},
+        overlays: [{coordinate: [0, 0], id: 'shop', icon: 'store', type: 'symbol'}],
+      },
+      {
+        fetch: async () => Response.json(response, {status: 422}),
+        idempotencyKey: 'static_sprite_failure',
+      },
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof StaticMapRequestError);
+      assert.equal(error.code, response.code);
+      assert.equal(error.reason, response.reason);
+      assert.deepEqual(error.details, response.details);
       return true;
     },
   );
 });
 
 function createManifest(scene: Parameters<typeof createRenderManifest>[0]['scene']) {
+  const symbols = (scene.overlays ?? []).flatMap((overlay, overlayIndex) =>
+    overlay.type === 'symbol' && overlay.icon
+      ? [{height: 1, icon: overlay.icon, overlayIndex, width: 1}]
+      : [],
+  );
+
   return createRenderManifest({
+    attribution: {
+      entries: [],
+      mode: scene.attribution?.mode === 'external' ? 'external' : 'embedded',
+      position:
+        scene.attribution?.mode === 'external' ? null : (scene.attribution?.position ?? 'auto'),
+      schemaVersion: 1,
+    },
+    composition: {
+      anchors: {
+        'above-water': null,
+        'below-roads': null,
+        'above-roads': null,
+        'above-buildings': null,
+        'below-labels': null,
+        'above-labels': null,
+      },
+      icons: symbols,
+      schemaVersion: 1,
+    },
     mapId: 'map_1234567890abcdef',
     rendererVersion: 'static-v1',
     scene,

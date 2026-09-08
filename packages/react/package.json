@@ -25,12 +25,11 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "LICENSE",
-    "NOTICE",
-    "GENERATED_OUTPUT_LICENSE.md",
-    "TRADEMARKS.md"
+    "LICENSE"
   ],
   "scripts": {
+    "prepack": "node ../../scripts/package-license.mjs --prepare",
+    "postpack": "node ../../scripts/package-license.mjs --clean",
     "build": "tsup",
     "verify": "pnpm run build && tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.contract.json",

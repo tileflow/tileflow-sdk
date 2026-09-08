@@ -1,0 +1,10 @@
+{
+  "blockers": [
+    {
+      "id": "search-package-bootstrap",
+      "summary": "Bootstrap @tileflow/search and verify its npm Trusted Publisher before the first alpha release."
+    }
+  ],
+  "kind": "tileflow-public-release-blockers",
+  "schemaVersion": 1
+}

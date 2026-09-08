@@ -18,6 +18,36 @@ export function normalizeStaticOverlay(overlay: StaticOverlayInput): StaticOverl
     normalized.coordinates = normalizeStaticCoordinates(normalized.coordinates);
   }
 
+  if (normalized.placement === 'above-labels') {
+    delete normalized.placement;
+  }
+
+  if (normalized.type === 'symbol') {
+    normalized.offset = (normalized.offset as [number, number]).map(roundNumber);
+    normalized.opacity = roundNumber(normalized.opacity as number);
+    normalized.scale = roundNumber(normalized.scale as number);
+
+    const label = normalized.label as Record<string, unknown> | undefined;
+    if (label) {
+      label.position ??=
+        normalized.icon === undefined
+          ? 'center'
+          : label.appearance === 'badge'
+            ? 'above-right'
+            : 'above';
+
+      for (const key of ['borderRadius', 'borderWidth', 'fontSize', 'gap', 'haloWidth']) {
+        if (typeof label[key] === 'number') label[key] = roundNumber(label[key]);
+      }
+
+      if (label.padding && typeof label.padding === 'object') {
+        const padding = label.padding as Record<string, unknown>;
+        padding.x = roundNumber(padding.x as number);
+        padding.y = roundNumber(padding.y as number);
+      }
+    }
+  }
+
   return normalized as StaticOverlay;
 }
 

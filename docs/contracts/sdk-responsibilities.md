@@ -46,6 +46,8 @@ Source map exported by tileflow.config.ts
        `-> Hosted deploy       -> Hosted API + the same runtime manifest shape
 
 Static Map scene -> Static Maps client -> Hosted renderer -> immutable image
+
+Forward or reverse query -> Search client -> Hosted Geocoding API -> provider-neutral candidates
 ```
 
 The semantic interaction artifact is versioned private metadata inside the exact finalized Style
@@ -159,6 +161,14 @@ does not create maps or controls, load a second renderer, compile styles, prepar
 or implement framework components. Core does not depend on or re-export it; framework adapters
 depend on it. Full behavior and the rollout gates are owned by
 [`map-interactions.md`](map-interactions.md).
+
+### `@tileflow/search`
+
+Owns strict forward and reverse query schemas, provider-neutral result schemas, and one bounded
+headless HTTP client. It authenticates to Tileflow, validates the response, accepts an injected Fetch
+implementation and AbortSignal, and performs no automatic retry. It does not select or contact a
+geocoding provider, validate an address, render UI, or provide structured, autocomplete, or batch
+operations.
 
 ### Build integrations
 

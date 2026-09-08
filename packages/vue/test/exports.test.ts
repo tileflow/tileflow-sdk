@@ -15,13 +15,7 @@ test('publishes one ESM entry with matching default and named components', async
   };
   const source = await readFile(new URL('../src/index.ts', import.meta.url), 'utf8');
 
-  assert.deepEqual(packageJson.files, [
-    'dist',
-    'LICENSE',
-    'NOTICE',
-    'GENERATED_OUTPUT_LICENSE.md',
-    'TRADEMARKS.md',
-  ]);
+  assert.deepEqual(packageJson.files, ['dist', 'LICENSE']);
   assert.equal(packageJson.main, packageJson.exports['.'].import);
   assert.equal(packageJson.types, packageJson.exports['.'].types);
   assert.equal(packageJson.exports['.'].default, packageJson.exports['.'].import);

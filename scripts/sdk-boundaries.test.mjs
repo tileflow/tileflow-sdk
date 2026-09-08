@@ -18,12 +18,26 @@ const allowedTileflowDependencies = {
   maps: new Set(['core']),
   next: new Set(['dev']),
   react: new Set(['core', 'interactions', 'static']),
+  search: new Set(),
   static: new Set(),
   svelte: new Set(['core', 'interactions']),
   vite: new Set(['dev']),
   vue: new Set(['core', 'interactions']),
   webpack: new Set(['dev']),
 };
+
+test('Core and Static Maps share one semantic overlay placement vocabulary', async () => {
+  const core = await readSourceStringTuple(
+    new URL('../packages/core/src/overlays.ts', import.meta.url),
+    'tileflowOverlayPlacements',
+  );
+  const staticMaps = await readSourceStringTuple(
+    new URL('../packages/static/src/scene-contract.ts', import.meta.url),
+    'staticOverlayPlacements',
+  );
+
+  assert.deepEqual(staticMaps, core);
+});
 
 test('public package sources respect the SDK responsibility graph', async () => {
   const manifests = new Map();
@@ -43,7 +57,7 @@ test('public package sources respect the SDK responsibility graph', async () => 
       for (const specifier of importedSpecifiers(source)) {
         if (specifier.startsWith('node:')) {
           assert.equal(
-            ['core', 'interactions', 'maps', 'react', 'static', 'svelte', 'vue'].includes(
+            ['core', 'interactions', 'maps', 'react', 'search', 'static', 'svelte', 'vue'].includes(
               packageName,
             ),
             false,
@@ -328,4 +342,14 @@ function assertLazyMapLibreImportsStayIsolated(source, label) {
     /\/maplibre\.(?:js|ts)$/u,
     `${label} must isolate the conditional MapLibre import in its loader`,
   );
+}
+
+async function readSourceStringTuple(sourceUrl, exportName) {
+  const source = await readFile(sourceUrl, 'utf8');
+  const declaration = new RegExp(
+    `export const ${exportName} = \\[([\\s\\S]*?)\\] as const;`,
+    'u',
+  ).exec(source);
+  assert.ok(declaration, `Expected exported tuple ${exportName}`);
+  return [...declaration[1].matchAll(/'([^']+)'/gu)].map((match) => match[1]);
 }

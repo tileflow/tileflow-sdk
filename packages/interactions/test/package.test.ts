@@ -45,13 +45,7 @@ test('publishes one focused root entry and its package metadata', async () => {
     default: './dist/maplibre-entry.js',
   });
   assert.equal(manifest.exports['./package.json'], './package.json');
-  assert.deepEqual(manifest.files, [
-    'dist',
-    'LICENSE',
-    'NOTICE',
-    'GENERATED_OUTPUT_LICENSE.md',
-    'TRADEMARKS.md',
-  ]);
+  assert.deepEqual(manifest.files, ['dist', 'LICENSE']);
   assert.equal(manifest.sideEffects, false);
 });
 

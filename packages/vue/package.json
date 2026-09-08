@@ -25,12 +25,11 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "LICENSE",
-    "NOTICE",
-    "GENERATED_OUTPUT_LICENSE.md",
-    "TRADEMARKS.md"
+    "LICENSE"
   ],
   "scripts": {
+    "prepack": "node ../../scripts/package-license.mjs --prepare",
+    "postpack": "node ../../scripts/package-license.mjs --clean",
     "build": "tsup src/index.ts --format esm --dts --clean --external vue --external maplibre-gl",
     "test": "tsx --test test/*.test.ts",
     "verify": "pnpm run typecheck && pnpm run build && pnpm run test",
@@ -58,7 +57,7 @@
   "devDependencies": {
     "@vue/server-renderer": "3.5.39",
     "maplibre-gl": "^5.24.0",
-    "tsx": "^4.23.1",
+    "tsx": "^4.23.12",
     "vue": "^3.5.26"
   }
 }

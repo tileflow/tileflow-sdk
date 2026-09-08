@@ -2,6 +2,7 @@ import {
   analyzeStaticAutoFit,
   autoFitErrorResponse,
   findStaticOverlayLatitudeFailure,
+  findStaticSymbolLabelGlyphFailure,
   type StaticAutoFitErrorResponse,
   type StaticAutoFitFailure,
   StaticMapRequestError,
@@ -20,12 +21,19 @@ import {
 } from './scene-contract';
 
 export {
+  isSupportedStaticSymbolCodePoint,
   MAX_OVERLAY_LATITUDE,
+  staticOverlayPlacements,
   staticAttributionPositionSchema,
   staticAttributionRequestSchema,
   staticSceneLimits,
   staticSceneSchema,
   staticSceneSchemaVersion,
+  staticSymbolAnchors,
+  staticSymbolCollisions,
+  staticSymbolLanguages,
+  staticSymbolLabelAppearances,
+  staticSymbolLabelPositions,
 } from './scene-contract';
 export {StaticMapRequestError, staticMapRequestErrorResponseSchema};
 export type {
@@ -40,9 +48,15 @@ export type {
   StaticAttributionPosition,
   StaticAttributionRequest,
   StaticMapFormat,
+  StaticOverlayPlacement,
   StaticPadding,
   StaticScene,
   StaticSceneInput,
+  StaticSymbolAnchor,
+  StaticSymbolCollision,
+  StaticSymbolLanguage,
+  StaticSymbolLabelAppearance,
+  StaticSymbolLabelPosition,
 } from './scene-contract';
 
 export function validateStaticScene(
@@ -50,6 +64,8 @@ export function validateStaticScene(
 ): {ok: true; scene: StaticScene} | {error: string; ok: false} | StaticMapRequestFailure {
   const overlayLatitudeFailure = findStaticOverlayLatitudeFailure(input);
   if (overlayLatitudeFailure) return overlayLatitudeFailure;
+  const labelGlyphFailure = findStaticSymbolLabelGlyphFailure(input);
+  if (labelGlyphFailure) return labelGlyphFailure;
 
   const parsed = staticSceneSchema.safeParse(input);
 
@@ -83,6 +99,11 @@ export function normalizeStaticScene(scene: StaticSceneInput): StaticScene {
   const overlayLatitudeFailure = findStaticOverlayLatitudeFailure(scene);
   if (overlayLatitudeFailure) {
     const {ok: _ok, ...response} = overlayLatitudeFailure;
+    throw new StaticMapRequestError(response);
+  }
+  const labelGlyphFailure = findStaticSymbolLabelGlyphFailure(scene);
+  if (labelGlyphFailure) {
+    const {ok: _ok, ...response} = labelGlyphFailure;
     throw new StaticMapRequestError(response);
   }
 

@@ -20,6 +20,7 @@ publication order and the independent first version for every package:
 - `@tileflow/core`
 - `@tileflow/maps`
 - `@tileflow/interactions`
+- `@tileflow/search`
 - `@tileflow/static`
 - `@tileflow/dev`
 - `@tileflow/capture`
@@ -135,6 +136,11 @@ publishable manifest metadata. Comparison ignores only:
 - `devDependencies`, because consumers do not install them from the published artifact; and
 - object-key ordering in `package.json`, except condition order under `exports` and `imports` where
   order is semantic.
+
+`LICENSE` is maintained once at the repository root. Each package's pack lifecycle copies that file
+into its tarball and removes the temporary copy afterwards; release verification requires the packed
+bytes to match the root license. Third-party notices remain only with the packages and assets they
+cover.
 
 Tests, workflows, and repository-only documentation do not cause a release unless they change a
 packed artifact. Package READMEs, `files`, exports, runtime dependencies, executable modes, built
@@ -286,3 +292,7 @@ matters:
     pnpm add @tileflow/static@alpha
     pnpm add -D @tileflow/capture@alpha
     pnpm add -D --save-exact tileflow@alpha
+
+After the first `@tileflow/search` alpha exists, install it through the same explicit channel:
+
+    pnpm add @tileflow/search@alpha

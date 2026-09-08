@@ -12,10 +12,10 @@ an immutable description of revision `4223da5`; they have not been rewritten as 
 the later branch.
 
 Resolution recorded 2026-08-26: the project owner approved `Tileflow.dev contributors` as the
-public copyright-holder label, Apache-2.0 for the public SDK and official Tileflow map artwork, an
-explicit generated-output grant, and an explicit trademark boundary. The owner also confirmed that
-the current SDK does not use or derive from OSM Bright. The root legal files and package tarballs,
-not this historical inventory, are the operative grants.
+public copyright-holder label, Apache-2.0 for the public SDK and official Tileflow map artwork, and
+an explicit trademark boundary. The owner also confirmed that the current SDK does not use or derive
+from OSM Bright. The root legal files and package tarballs, not this historical inventory, are the
+operative grants.
 
 Current-branch asset location (2026-08-25): the replacement first-party Streets artwork and the
 official Cyberpunk/Verdant icon and pattern sources now ship from

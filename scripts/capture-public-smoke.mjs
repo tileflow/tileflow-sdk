@@ -19,6 +19,7 @@ import {
   runtimeDependencySnapshot,
   validatePublishedInternalRuntimeRange,
 } from './release-config.mjs';
+import {stagePackageLicenseInputs} from './package-license.mjs';
 import {runCommand} from './run-command.mjs';
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -160,6 +161,9 @@ if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
       '@tileflow/next/server': ['createTileflowRouteHandlers'],
       '@tileflow/react': ['Map'],
       '@tileflow/react/static': ['StaticMap'],
+      '@tileflow/search': ['geocode', 'geocodingForwardResponseSchema'],
+      '@tileflow/search/client': ['geocode'],
+      '@tileflow/search/contract': ['geocodingForwardResponseSchema'],
       '@tileflow/static': ['normalizeStaticScene'],
       '@tileflow/static/client': ['createStaticMap'],
       '@tileflow/static/manifest': ['createRenderManifest'],
@@ -710,6 +714,7 @@ function argumentValue(flag) {
 
 async function packRequiredPackages(directory) {
   const tarballs = new Map();
+  await stagePackageLicenseInputs({root: repositoryRoot, stagingRoot: temporaryRoot});
   for (const {directory: packageDirectory, name: packageName} of publicPackageCatalog) {
     const sourceRoot = join(repositoryRoot, 'packages', packageDirectory);
     const stagingRoot = join(temporaryRoot, 'staging', packageDirectory);

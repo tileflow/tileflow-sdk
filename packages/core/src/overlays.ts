@@ -293,7 +293,7 @@ export function insertTileflowOverlays(input: {
   for (const placement of tileflowOverlayPlacements) {
     const overlayLayers = groups.get(placement);
     if (!overlayLayers?.length) continue;
-    const index = insertionIndex(layers, placement);
+    const index = tileflowOverlayInsertionIndex(layers, placement);
     layers = [...layers.slice(0, index), ...overlayLayers, ...layers.slice(index)];
   }
 
@@ -335,7 +335,7 @@ function cloneJson<T>(value: T): T {
   ) as T;
 }
 
-function insertionIndex(
+export function tileflowOverlayInsertionIndex(
   layers: readonly Record<string, unknown>[],
   placement: TileflowOverlayPlacement,
 ): number {

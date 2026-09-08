@@ -14,7 +14,8 @@ const sourceRoot = join(packageRoot, 'src');
 const distRoot = join(packageRoot, 'dist');
 
 const clientExports = [
-  'STATIC_MAP_RESULT_V2_MEDIA_TYPE',
+  'STATIC_MAP_RESULT_MEDIA_TYPE',
+  'StaticMapError',
   'createStaticMap',
   'createStaticMapIdempotencyKey',
   'precacheStaticMap',
@@ -23,28 +24,25 @@ const clientExports = [
   'stableStringify',
   'staticMapAttributionEntrySchema',
   'staticMapAttributionResultSchema',
+  'staticMapErrorResponseSchema',
   'staticMapHostedResultSchema',
   'staticMapProcessingResultSchema',
-  'staticMapReadyResultSchema',
   'validateStaticMapIdempotencyKey',
 ];
 const manifestExports = [
   'createRenderManifest',
-  'createRenderManifestV1',
-  'createRenderManifestV2',
   'hashRenderManifest',
   'hashStaticSceneRequest',
   'staticAttributionEntrySchema',
   'staticAttributionLimits',
-  'staticAttributionPlanSchemaV1',
+  'staticAttributionPlanSchema',
   'staticAttributionPlanSchemaVersion',
   'staticAttributionProvenanceSchema',
   'staticAttributionSegmentSchema',
+  'staticRenderCompositionSchema',
+  'staticRenderCompositionSchemaVersion',
   'staticRenderManifestSchema',
-  'staticRenderManifestV1Schema',
-  'staticRenderManifestV2Schema',
   'staticRendererSchemaVersion',
-  'staticRendererSchemaVersionV1',
   'validateStaticRenderManifest',
 ];
 const overlayExports = [
@@ -54,17 +52,25 @@ const overlayExports = [
   'marker',
   'polygon',
   'staticOverlaySchema',
+  'symbol',
 ];
 const sceneExports = [
   'MAX_OVERLAY_LATITUDE',
   'StaticMapRequestError',
+  'isSupportedStaticSymbolCodePoint',
   'normalizeStaticScene',
   'staticAttributionPositionSchema',
   'staticAttributionRequestSchema',
   'staticMapRequestErrorResponseSchema',
+  'staticOverlayPlacements',
   'staticSceneLimits',
   'staticSceneSchema',
   'staticSceneSchemaVersion',
+  'staticSymbolAnchors',
+  'staticSymbolCollisions',
+  'staticSymbolLabelAppearances',
+  'staticSymbolLabelPositions',
+  'staticSymbolLanguages',
   'validateStaticScene',
 ];
 
@@ -131,6 +137,8 @@ test('built entry graphs exclude unrelated responsibilities and publish required
   ]);
   for (const name of [
     'PreparedStaticMapRequest',
+    'StaticMapError',
+    'StaticMapErrorResponse',
     'StaticMapHostedResult',
     'StaticMapResult',
     'prepareStaticMapRequest',
@@ -167,7 +175,7 @@ test('prepared requests work across root and client built entries in both direct
       imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
       operationId: 'smo_12345678901234567890',
       remainingUnits: 1,
-      resultVersion: 2,
+      resultVersion: 1,
       status: 'ready',
       unitCost: 15,
     })) as typeof fetch;

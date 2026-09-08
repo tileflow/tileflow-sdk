@@ -267,6 +267,12 @@ importers:
         specifier: 0.35.3
         version: 0.35.3(@types/node@25.9.2)
 
+  packages/geoip:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
   packages/interactions:
     dependencies:
       maplibre-gl:

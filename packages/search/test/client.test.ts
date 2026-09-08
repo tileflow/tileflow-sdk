@@ -1,11 +1,33 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {geocode, geocodeReverse, GEOCODING_ERROR_CODES, GeocodingError} from '../src/client';
+import {
+  autocomplete,
+  geocode,
+  geocodeReverse,
+  GEOCODING_ERROR_CODES,
+  GeocodingError,
+  resolveSuggestion,
+} from '../src/client';
 
 const success = {
   attribution: [{text: 'Synthetic fixture'}],
   queryId: 'gq_11111111-1111-4111-8111-111111111111',
   results: [],
+  schemaVersion: 1,
+  source: {id: 'synthetic', revision: 'fixture-1'},
+  usage: {units: 1},
+};
+
+const autocompleteSuccess = {
+  attribution: [{text: 'Synthetic fixture'}],
+  schemaVersion: 1,
+  source: {id: 'synthetic', revision: 'fixture-1'},
+  suggestions: [{kind: 'place', label: 'Hospital La Paz', token: 'opaque-token_1'}],
+};
+
+const resolveSuccess = {
+  attribution: [{text: 'Synthetic fixture'}],
+  result: {address: {}, kind: 'place', label: 'Hospital La Paz', position: [-3.7, 40.4]},
   schemaVersion: 1,
   source: {id: 'synthetic', revision: 'fixture-1'},
   usage: {units: 1},
@@ -409,4 +431,192 @@ test('rejects reverse responses beyond the default limit or byte bound', async (
       /invalid response/u,
     );
   }
+});
+
+test('posts one normalized autocomplete request and accepts an empty response', async () => {
+  const requests: Request[] = [];
+  const result = await autocomplete(
+    {query: '  Hospital La Paz  '},
+    {
+      apiKey: 'team_test_key',
+      apiUrl: 'https://api.example.test/root/',
+      fetch: async (input, init) => {
+        requests.push(new Request(input, init));
+        return Response.json({...autocompleteSuccess, suggestions: []});
+      },
+    },
+  );
+
+  assert.deepEqual(result.suggestions, []);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.url, 'https://api.example.test/root/v1/geocoding/autocomplete');
+  assert.equal(requests[0]?.method, 'POST');
+  assert.equal(requests[0]?.headers.get('Authorization'), 'Bearer team_test_key');
+  assert.equal(requests[0]?.redirect, 'error');
+  assert.deepEqual(await requests[0]?.json(), {limit: 5, query: 'Hospital La Paz'});
+});
+
+test('rejects autocomplete response envelopes with excess suggestions or usage', async () => {
+  const suggestion = autocompleteSuccess.suggestions[0];
+  for (const response of [
+    {...autocompleteSuccess, suggestions: Array.from({length: 6}, () => suggestion)},
+    {...autocompleteSuccess, usage: {units: 1}},
+  ]) {
+    await assert.rejects(
+      autocomplete(
+        {query: 'Hospital', limit: 5},
+        {apiKey: 'team_test_key', fetch: async () => Response.json(response)},
+      ),
+      /invalid response/u,
+    );
+  }
+});
+
+test('keeps only the selected newer suggestion after an aborted earlier autocomplete', async () => {
+  const first = new AbortController();
+  const second = new AbortController();
+  let autocompleteCalls = 0;
+  let firstCanceled = false;
+  let resolveCalls = 0;
+  const fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const request = new Request(input, init);
+    const body = (await request.json()) as {query?: string; retention?: string; token?: string};
+
+    if (request.url.endsWith('/autocomplete')) {
+      autocompleteCalls += 1;
+      if (body.query === 'A') {
+        return new Response(
+          new ReadableStream({
+            cancel() {
+              firstCanceled = true;
+            },
+          }),
+        );
+      }
+      assert.deepEqual(body, {limit: 5, query: 'B'});
+      return Response.json({
+        ...autocompleteSuccess,
+        suggestions: [{kind: 'place', label: 'B place', token: 'token-B'}],
+      });
+    }
+
+    assert.equal(request.url.endsWith('/resolve-suggestion'), true);
+    resolveCalls += 1;
+    assert.equal(body.token, 'token-B');
+    assert.equal(body.retention, resolveCalls === 1 ? 'temporary' : 'persistent');
+    return Response.json(resolveSuccess);
+  };
+
+  const pendingFirst = autocomplete(
+    {query: 'A'},
+    {apiKey: 'team_test_key', fetch, signal: first.signal},
+  );
+  const latest = await autocomplete(
+    {query: 'B'},
+    {apiKey: 'team_test_key', fetch, signal: second.signal},
+  );
+  first.abort(new Error('superseded by B'));
+
+  await assert.rejects(pendingFirst, /superseded by B/u);
+  assert.equal(firstCanceled, true);
+  assert.deepEqual(latest.suggestions, [{kind: 'place', label: 'B place', token: 'token-B'}]);
+
+  await resolveSuggestion(
+    {token: latest.suggestions[0]!.token},
+    {apiKey: 'team_test_key', fetch, signal: second.signal},
+  );
+  await resolveSuggestion(
+    {retention: 'persistent', token: latest.suggestions[0]!.token},
+    {apiKey: 'team_test_key', fetch, signal: second.signal},
+  );
+
+  assert.equal(autocompleteCalls, 2);
+  assert.equal(resolveCalls, 2);
+});
+
+test('posts one suggestion resolution with retention and returns one candidate', async () => {
+  const requests: Request[] = [];
+  const result = await resolveSuggestion(
+    {retention: 'persistent', token: 'opaque-token_1'},
+    {
+      apiKey: 'team_test_key',
+      apiUrl: 'https://api.example.test/root/',
+      fetch: async (input, init) => {
+        requests.push(new Request(input, init));
+        return Response.json(resolveSuccess);
+      },
+    },
+  );
+
+  assert.equal(result.result.label, 'Hospital La Paz');
+  assert.equal(result.usage.units, 1);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0]?.url, 'https://api.example.test/root/v1/geocoding/resolve-suggestion');
+  assert.deepEqual(await requests[0]?.json(), {
+    retention: 'persistent',
+    token: 'opaque-token_1',
+  });
+});
+
+test('rejects invalid suggestion usage and preserves pick error semantics', async () => {
+  await assert.rejects(
+    resolveSuggestion(
+      {token: 'opaque-token_1'},
+      {
+        apiKey: 'team_test_key',
+        fetch: async () => Response.json({...resolveSuccess, usage: {units: 0}}),
+      },
+    ),
+    /invalid response/u,
+  );
+
+  for (const [code, status] of [
+    ['GEOCODING_INVALID_SUGGESTION', 400],
+    ['GEOCODING_SUGGESTION_EXPIRED', 410],
+    ['GEOCODING_UPSTREAM_THROTTLED', 429],
+    ['GEOCODING_PICK_LIMIT_EXCEEDED', 429],
+  ] as const) {
+    await assert.rejects(
+      resolveSuggestion(
+        {token: 'opaque-token_1'},
+        {
+          apiKey: 'team_test_key',
+          fetch: async () => Response.json({code, error: 'Synthetic failure'}, {status}),
+        },
+      ),
+      (error) => {
+        assert.ok(error instanceof GeocodingError);
+        assert.equal(error.code, code);
+        assert.equal(error.status, status);
+        return true;
+      },
+    );
+  }
+});
+
+test('preserves caller cancellation while reading a suggestion resolution', async () => {
+  const controller = new AbortController();
+  const reason = new Error('caller stopped resolution');
+  let canceled = false;
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  const response = new Response(
+    new ReadableStream({
+      start(stream) {
+        closeTimer = setTimeout(() => stream.close(), 25);
+      },
+      cancel() {
+        canceled = true;
+        clearTimeout(closeTimer);
+      },
+    }),
+  );
+  const pending = resolveSuggestion(
+    {token: 'opaque-token_1'},
+    {apiKey: 'team_test_key', fetch: async () => response, signal: controller.signal},
+  );
+  controller.abort(reason);
+
+  await assert.rejects(pending, (error) => error === reason);
+  assert.equal(canceled, true);
+  assert.equal(response.body?.locked, false);
 });

@@ -1,5 +1,9 @@
 import {z} from 'zod';
 import {
+  type AutocompleteRequest,
+  autocompleteRequestSchema,
+  type AutocompleteResponse,
+  autocompleteResponseSchema,
   type GeocodingForwardRequest,
   geocodingForwardRequestSchema,
   type GeocodingForwardResponse,
@@ -9,17 +13,25 @@ import {
   geocodingReverseRequestSchema,
   type GeocodingReverseResponse,
   type ReverseGeocodingKind,
+  type ResolveSuggestionRequest,
+  resolveSuggestionRequestSchema,
+  type ResolveSuggestionResponse,
+  resolveSuggestionResponseSchema,
 } from './contract';
 
 export const GEOCODING_ERROR_CODES = [
   'GEOCODING_ABORTED',
   'GEOCODING_DISABLED',
   'GEOCODING_INVALID_REQUEST',
+  'GEOCODING_INVALID_SUGGESTION',
+  'GEOCODING_PICK_LIMIT_EXCEEDED',
   'GEOCODING_QUOTA_EXCEEDED',
   'GEOCODING_REQUEST_TOO_LARGE',
+  'GEOCODING_SUGGESTION_EXPIRED',
   'GEOCODING_TERRITORY_UNSUPPORTED',
   'GEOCODING_UNAVAILABLE',
   'GEOCODING_UPSTREAM_INVALID',
+  'GEOCODING_UPSTREAM_THROTTLED',
   'GEOCODING_UPSTREAM_TIMEOUT',
   'GEOCODING_UPSTREAM_UNAVAILABLE',
   'GEOCODING_USAGE_UNCONFIRMED',
@@ -31,11 +43,15 @@ const geocodingErrorStatuses: Record<GeocodingErrorCode, number> = {
   GEOCODING_ABORTED: 499,
   GEOCODING_DISABLED: 503,
   GEOCODING_INVALID_REQUEST: 400,
+  GEOCODING_INVALID_SUGGESTION: 400,
+  GEOCODING_PICK_LIMIT_EXCEEDED: 429,
   GEOCODING_QUOTA_EXCEEDED: 429,
   GEOCODING_REQUEST_TOO_LARGE: 413,
+  GEOCODING_SUGGESTION_EXPIRED: 410,
   GEOCODING_TERRITORY_UNSUPPORTED: 422,
   GEOCODING_UNAVAILABLE: 503,
   GEOCODING_UPSTREAM_INVALID: 502,
+  GEOCODING_UPSTREAM_THROTTLED: 429,
   GEOCODING_UPSTREAM_TIMEOUT: 504,
   GEOCODING_UPSTREAM_UNAVAILABLE: 502,
   GEOCODING_USAGE_UNCONFIRMED: 503,
@@ -102,8 +118,10 @@ export async function geocode(
   return requestGeocoding(
     '/v1/geocoding/forward',
     parsedRequest.data,
-    parsedRequest.data.limit ?? geocodingLimits.defaultLimit,
     options,
+    geocodingForwardResponseSchema,
+    (response) =>
+      response.results.length <= (parsedRequest.data.limit ?? geocodingLimits.defaultLimit),
   );
 }
 
@@ -119,19 +137,60 @@ export async function geocodeReverse(
   return requestGeocoding(
     '/v1/geocoding/reverse',
     parsedRequest.data,
-    parsedRequest.data.limit,
     options,
-    parsedRequest.data.kinds,
+    geocodingForwardResponseSchema,
+    (response) =>
+      response.results.length <= parsedRequest.data.limit &&
+      containsOnlyKinds(response, parsedRequest.data.kinds),
   );
 }
 
-async function requestGeocoding(
-  path: '/v1/geocoding/forward' | '/v1/geocoding/reverse',
-  request: unknown,
-  requestedLimit: number,
+export async function autocomplete(
+  request: AutocompleteRequest,
   options: GeocodeOptions,
-  allowedKinds?: readonly ReverseGeocodingKind[],
-): Promise<GeocodingForwardResponse> {
+): Promise<AutocompleteResponse> {
+  const parsedRequest = autocompleteRequestSchema.safeParse(request);
+  if (!parsedRequest.success) {
+    throw new Error('Invalid Tileflow geocoding request');
+  }
+
+  return requestGeocoding(
+    '/v1/geocoding/autocomplete',
+    parsedRequest.data,
+    options,
+    autocompleteResponseSchema,
+    (response) => response.suggestions.length <= parsedRequest.data.limit,
+  );
+}
+
+export async function resolveSuggestion(
+  request: ResolveSuggestionRequest,
+  options: GeocodeOptions,
+): Promise<ResolveSuggestionResponse> {
+  const parsedRequest = resolveSuggestionRequestSchema.safeParse(request);
+  if (!parsedRequest.success) {
+    throw new Error('Invalid Tileflow geocoding request');
+  }
+
+  return requestGeocoding(
+    '/v1/geocoding/resolve-suggestion',
+    parsedRequest.data,
+    options,
+    resolveSuggestionResponseSchema,
+  );
+}
+
+async function requestGeocoding<T>(
+  path:
+    | '/v1/geocoding/autocomplete'
+    | '/v1/geocoding/forward'
+    | '/v1/geocoding/resolve-suggestion'
+    | '/v1/geocoding/reverse',
+  request: unknown,
+  options: GeocodeOptions,
+  responseSchema: z.ZodType<T>,
+  isExpectedResponse: (response: T) => boolean = () => true,
+): Promise<T> {
   const apiKey = normalizeApiKey(options.apiKey);
   const apiUrl = normalizeApiUrl(options.apiUrl ?? 'https://api.tileflow.dev');
   const fetcher = options.fetch ?? fetch;
@@ -171,19 +230,24 @@ async function requestGeocoding(
       status: response.status,
     });
   }
-  const parsedResponse = geocodingForwardResponseSchema.safeParse(body);
-  const kindFilter = allowedKinds ? new Set<string>(allowedKinds) : undefined;
-  if (
-    !parsedResponse.success ||
-    parsedResponse.data.results.length > requestedLimit ||
-    (kindFilter && parsedResponse.data.results.some(({kind}) => !kindFilter.has(kind)))
-  ) {
+  const parsedResponse = responseSchema.safeParse(body);
+  if (!parsedResponse.success || !isExpectedResponse(parsedResponse.data)) {
     throw new GeocodingError('Tileflow geocoding returned an invalid response', {
       status: response.status,
     });
   }
 
   return parsedResponse.data;
+}
+
+function containsOnlyKinds(
+  response: GeocodingForwardResponse,
+  allowedKinds: readonly ReverseGeocodingKind[] | undefined,
+) {
+  if (!allowedKinds) return true;
+
+  const kindFilter = new Set<string>(allowedKinds);
+  return response.results.every(({kind}) => kindFilter.has(kind));
 }
 
 function normalizeApiKey(value: string) {

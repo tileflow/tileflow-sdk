@@ -1,15 +1,15 @@
 {
-  "name": "@tileflow/search",
+  "name": "@tileflow/geoip",
   "version": "0.0.0-development",
   "license": "Apache-2.0",
-  "description": "Headless geocoding and location selection client and wire contracts for Tileflow.",
+  "description": "Bounded anonymous and managed IP geolocation client for Tileflow.",
   "type": "module",
   "sideEffects": false,
   "homepage": "https://tileflow.dev",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tileflow/tileflow-sdk.git",
-    "directory": "packages/search"
+    "directory": "packages/geoip"
   },
   "bugs": {
     "url": "https://github.com/tileflow/tileflow-sdk/issues"
@@ -17,8 +17,8 @@
   "keywords": [
     "tileflow",
     "maps",
-    "search",
-    "geocoding"
+    "geoip",
+    "geolocation"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  autocompleteRequestSchema,
+  autocompleteResponseSchema,
   geocodingForwardRequestSchema,
   geocodingForwardResponseSchema,
   geocodingLimits,
   geocodingReverseRequestSchema,
   geocodingReverseResponseSchema,
+  resolveSuggestionRequestSchema,
+  resolveSuggestionResponseSchema,
   reverseGeocodingKindSchema,
 } from '../src/contract';
 
@@ -137,6 +141,95 @@ test('rejects provider leakage and unsafe or malformed results', () => {
     },
   ]) {
     assert.equal(geocodingForwardResponseSchema.safeParse(response).success, false);
+  }
+});
+
+test('normalizes one strict autocomplete request without retention', () => {
+  assert.deepEqual(
+    autocompleteRequestSchema.parse({
+      bounds: [-10, 37, -8, 40],
+      language: 'pt-PT',
+      query: '  Hospital La Paz  ',
+    }),
+    {
+      bounds: [-10, 37, -8, 40],
+      language: 'pt-PT',
+      limit: 5,
+      query: 'Hospital La Paz',
+    },
+  );
+
+  for (const request of [
+    {query: 'Lisboa', retention: 'temporary'},
+    {query: 'Lisboa', limit: 11},
+    {query: 'Lisboa', bounds: [-10, 37, -8, 40], proximity: [-9.1393, 38.7223]},
+  ]) {
+    assert.equal(autocompleteRequestSchema.safeParse(request).success, false);
+  }
+});
+
+test('accepts strict empty autocomplete responses and rejects leaked fields or excess suggestions', () => {
+  const empty = autocompleteResponseSchema.parse({
+    attribution: [{text: 'Synthetic fixture'}],
+    schemaVersion: 1,
+    source: {id: 'synthetic', revision: null},
+    suggestions: [],
+  });
+  assert.deepEqual(empty.suggestions, []);
+
+  const suggestion = {kind: 'place', label: 'Hospital La Paz', token: 'opaque-token_1'};
+  assert.deepEqual(
+    autocompleteResponseSchema.parse({...empty, suggestions: [suggestion]}).suggestions,
+    [suggestion],
+  );
+
+  for (const response of [
+    {...empty, queryId},
+    {...empty, usage: {units: 1}},
+    {...empty, suggestions: Array.from({length: 11}, () => suggestion)},
+    {...empty, suggestions: [{...suggestion, token: 'has space'}]},
+    {...empty, suggestions: [{...suggestion, token: 'x'.repeat(2049)}]},
+    {...empty, suggestions: [{...suggestion, kind: 'category'}]},
+  ]) {
+    assert.equal(autocompleteResponseSchema.safeParse(response).success, false);
+  }
+});
+
+test('normalizes a strict suggestion resolution and requires one completed usage unit', () => {
+  assert.deepEqual(resolveSuggestionRequestSchema.parse({token: 'opaque-token_1'}), {
+    retention: 'temporary',
+    token: 'opaque-token_1',
+  });
+  assert.deepEqual(
+    resolveSuggestionRequestSchema.parse({token: 'opaque-token_1', retention: 'persistent'}),
+    {retention: 'persistent', token: 'opaque-token_1'},
+  );
+
+  for (const request of [
+    {token: ''},
+    {token: 'has space'},
+    {token: 'x'.repeat(2049)},
+    {token: 'opaque-token_1', query: 'Hospital'},
+  ]) {
+    assert.equal(resolveSuggestionRequestSchema.safeParse(request).success, false);
+  }
+
+  const response = {
+    attribution: [{text: 'Synthetic fixture'}],
+    result: {address: {}, kind: 'place', label: 'Hospital La Paz', position: [-3.7, 40.4]},
+    schemaVersion: 1,
+    source: {id: 'synthetic', revision: 'fixture-1'},
+    usage: {units: 1},
+  };
+  assert.equal(resolveSuggestionResponseSchema.parse(response).result.label, 'Hospital La Paz');
+
+  for (const invalidResponse of [
+    {...response, queryId},
+    {...response, usage: {units: 0}},
+    {...response, result: [response.result]},
+    {...response, result: {...response.result, provider: 'aws'}},
+  ]) {
+    assert.equal(resolveSuggestionResponseSchema.safeParse(invalidResponse).success, false);
   }
 });
 

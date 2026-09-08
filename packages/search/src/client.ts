@@ -8,6 +8,7 @@ import {
   type GeocodingReverseRequest,
   geocodingReverseRequestSchema,
   type GeocodingReverseResponse,
+  type ReverseGeocodingKind,
 } from './contract';
 
 export const GEOCODING_ERROR_CODES = [
@@ -120,6 +121,7 @@ export async function geocodeReverse(
     parsedRequest.data,
     parsedRequest.data.limit,
     options,
+    parsedRequest.data.kinds,
   );
 }
 
@@ -128,6 +130,7 @@ async function requestGeocoding(
   request: unknown,
   requestedLimit: number,
   options: GeocodeOptions,
+  allowedKinds?: readonly ReverseGeocodingKind[],
 ): Promise<GeocodingForwardResponse> {
   const apiKey = normalizeApiKey(options.apiKey);
   const apiUrl = normalizeApiUrl(options.apiUrl ?? 'https://api.tileflow.dev');
@@ -169,7 +172,12 @@ async function requestGeocoding(
     });
   }
   const parsedResponse = geocodingForwardResponseSchema.safeParse(body);
-  if (!parsedResponse.success || parsedResponse.data.results.length > requestedLimit) {
+  const kindFilter = allowedKinds ? new Set<string>(allowedKinds) : undefined;
+  if (
+    !parsedResponse.success ||
+    parsedResponse.data.results.length > requestedLimit ||
+    (kindFilter && parsedResponse.data.results.some(({kind}) => !kindFilter.has(kind)))
+  ) {
     throw new GeocodingError('Tileflow geocoding returned an invalid response', {
       status: response.status,
     });

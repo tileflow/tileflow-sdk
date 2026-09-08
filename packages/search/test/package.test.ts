@@ -26,6 +26,10 @@ test('preserves the exact source and built root surface', async () => {
   assert.deepEqual(Object.keys(built).sort(), Object.keys(source).sort());
   assert.equal(typeof built.geocode, 'function');
   assert.equal(typeof built.geocodeReverse, 'function');
+  assert.equal(typeof built.autocomplete, 'function');
+  assert.equal(typeof built.resolveSuggestion, 'function');
+  assert.equal(typeof built.autocompleteRequestSchema, 'object');
+  assert.equal(typeof built.resolveSuggestionResponseSchema, 'object');
   assert.equal(typeof built.geocodingForwardResponseSchema, 'object');
   assert.equal(typeof built.geocodingReverseRequestSchema, 'object');
   assert.equal(typeof built.reverseGeocodingKindSchema, 'object');

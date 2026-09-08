@@ -17,6 +17,7 @@ export const geocodingLimits = Object.freeze({
   maximumResponseBytes: 64 * 1024,
   maximumSafeErrorBytes: 8 * 1024,
   maximumSourceCharacters: 128,
+  maximumSuggestionTokenCharacters: 2048,
 });
 
 const boundedText = (maximum: number) =>
@@ -55,6 +56,29 @@ export const geocodingForwardRequestSchema = z
     proximity: geocodingPositionSchema.optional(),
     query: boundedText(geocodingLimits.maximumQueryCharacters),
     retention: z.enum(geocodingRetentionModes).default('temporary'),
+  })
+  .strict()
+  .refine((request) => request.bounds === undefined || request.proximity === undefined, {
+    message: 'Bounds and proximity are mutually exclusive',
+    path: ['proximity'],
+  });
+
+export const autocompleteRequestSchema = z
+  .object({
+    bounds: geocodingBoundsSchema.optional(),
+    language: z
+      .string()
+      .max(geocodingLimits.maximumLanguageCharacters)
+      .regex(languagePattern)
+      .optional(),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(geocodingLimits.maximumLimit)
+      .default(geocodingLimits.defaultLimit),
+    proximity: geocodingPositionSchema.optional(),
+    query: boundedText(geocodingLimits.maximumQueryCharacters),
   })
   .strict()
   .refine((request) => request.bounds === undefined || request.proximity === undefined, {
@@ -167,6 +191,54 @@ export const geocodingForwardResponseSchema = z
 
 export const geocodingReverseResponseSchema = geocodingForwardResponseSchema;
 
+export const geocodingSuggestionSchema = z
+  .object({
+    kind: z.enum(geocodingResultKinds),
+    label: boundedText(512),
+    token: z
+      .string()
+      .min(1)
+      .max(geocodingLimits.maximumSuggestionTokenCharacters)
+      .regex(/^[\x21-\x7e]+$/u),
+  })
+  .strict();
+
+export const autocompleteResponseSchema = z
+  .object({
+    attribution: z
+      .array(geocodingAttributionSchema)
+      .min(1)
+      .max(geocodingLimits.maximumAttributionEntries),
+    schemaVersion: z.literal(1),
+    source: geocodingSourceSchema,
+    suggestions: z.array(geocodingSuggestionSchema).max(geocodingLimits.maximumLimit),
+  })
+  .strict();
+
+export const resolveSuggestionRequestSchema = z
+  .object({
+    retention: z.enum(geocodingRetentionModes).default('temporary'),
+    token: z
+      .string()
+      .min(1)
+      .max(geocodingLimits.maximumSuggestionTokenCharacters)
+      .regex(/^[\x21-\x7e]+$/u),
+  })
+  .strict();
+
+export const resolveSuggestionResponseSchema = z
+  .object({
+    attribution: z
+      .array(geocodingAttributionSchema)
+      .min(1)
+      .max(geocodingLimits.maximumAttributionEntries),
+    result: geocodingResultSchema,
+    schemaVersion: z.literal(1),
+    source: geocodingSourceSchema,
+    usage: z.object({units: z.literal(1)}).strict(),
+  })
+  .strict();
+
 export type GeocodingForwardRequest = z.input<typeof geocodingForwardRequestSchema>;
 export type NormalizedGeocodingForwardRequest = z.output<typeof geocodingForwardRequestSchema>;
 export type ReverseGeocodingKind = z.infer<typeof reverseGeocodingKindSchema>;
@@ -175,6 +247,13 @@ export type NormalizedGeocodingReverseRequest = z.output<typeof geocodingReverse
 export type GeocodingResult = z.infer<typeof geocodingResultSchema>;
 export type GeocodingForwardResponse = z.infer<typeof geocodingForwardResponseSchema>;
 export type GeocodingReverseResponse = GeocodingForwardResponse;
+export type AutocompleteRequest = z.input<typeof autocompleteRequestSchema>;
+export type NormalizedAutocompleteRequest = z.output<typeof autocompleteRequestSchema>;
+export type GeocodingSuggestion = z.infer<typeof geocodingSuggestionSchema>;
+export type AutocompleteResponse = z.infer<typeof autocompleteResponseSchema>;
+export type ResolveSuggestionRequest = z.input<typeof resolveSuggestionRequestSchema>;
+export type NormalizedResolveSuggestionRequest = z.output<typeof resolveSuggestionRequestSchema>;
+export type ResolveSuggestionResponse = z.infer<typeof resolveSuggestionResponseSchema>;
 
 function isCredentialFreeHttpsUrl(value: string) {
   try {

@@ -164,11 +164,11 @@ depend on it. Full behavior and the rollout gates are owned by
 
 ### `@tileflow/search`
 
-Owns strict forward and reverse query schemas, provider-neutral result schemas, and one bounded
-headless HTTP client. It authenticates to Tileflow, validates the response, accepts an injected Fetch
-implementation and AbortSignal, and performs no automatic retry. It does not select or contact a
-geocoding provider, validate an address, render UI, or provide structured, autocomplete, or batch
-operations.
+Owns strict forward, reverse, autocomplete, and suggestion-resolution schemas, provider-neutral
+result schemas, and one bounded headless HTTP client. It authenticates to Tileflow, validates the
+response, accepts an injected Fetch implementation and AbortSignal, and performs no automatic retry.
+It does not select or contact a geocoding provider, validate an address, render UI, or provide
+structured, category-discovery, or batch operations.
 
 ### Build integrations
 

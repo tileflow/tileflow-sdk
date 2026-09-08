@@ -2,7 +2,7 @@
   "name": "@tileflow/search",
   "version": "0.0.0-development",
   "license": "Apache-2.0",
-  "description": "Headless forward and reverse geocoding client and wire contracts for Tileflow.",
+  "description": "Headless geocoding and location selection client and wire contracts for Tileflow.",
   "type": "module",
   "sideEffects": false,
   "homepage": "https://tileflow.dev",

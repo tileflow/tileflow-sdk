@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {copyFile, readFile, readdir, rm} from 'node:fs/promises';
+import {copyFile, mkdir, readFile, readdir, rm} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -15,6 +15,18 @@ export async function preparePackageLicense({root = repositoryRoot, packageRoot}
 export async function removePackageLicense({packageRoot} = {}) {
   assert.ok(packageRoot, 'A package root is required.');
   await rm(join(packageRoot, licenseFileName), {force: true});
+}
+
+export async function stagePackageLicenseInputs({root = repositoryRoot, stagingRoot} = {}) {
+  assert.ok(stagingRoot, 'A staging root is required.');
+  await mkdir(join(stagingRoot, 'scripts'), {recursive: true});
+  await Promise.all([
+    copyFile(join(root, licenseFileName), join(stagingRoot, licenseFileName)),
+    copyFile(
+      join(root, 'scripts', 'package-license.mjs'),
+      join(stagingRoot, 'scripts', 'package-license.mjs'),
+    ),
+  ]);
 }
 
 export async function verifyPackageLicenseLayout({root = repositoryRoot} = {}) {

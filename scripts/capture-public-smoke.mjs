@@ -19,6 +19,7 @@ import {
   runtimeDependencySnapshot,
   validatePublishedInternalRuntimeRange,
 } from './release-config.mjs';
+import {stagePackageLicenseInputs} from './package-license.mjs';
 import {runCommand} from './run-command.mjs';
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -713,14 +714,7 @@ function argumentValue(flag) {
 
 async function packRequiredPackages(directory) {
   const tarballs = new Map();
-  await mkdir(join(temporaryRoot, 'scripts'), {recursive: true});
-  await Promise.all([
-    cp(join(repositoryRoot, 'LICENSE'), join(temporaryRoot, 'LICENSE')),
-    cp(
-      join(repositoryRoot, 'scripts', 'package-license.mjs'),
-      join(temporaryRoot, 'scripts', 'package-license.mjs'),
-    ),
-  ]);
+  await stagePackageLicenseInputs({root: repositoryRoot, stagingRoot: temporaryRoot});
   for (const {directory: packageDirectory, name: packageName} of publicPackageCatalog) {
     const sourceRoot = join(repositoryRoot, 'packages', packageDirectory);
     const stagingRoot = join(temporaryRoot, 'staging', packageDirectory);

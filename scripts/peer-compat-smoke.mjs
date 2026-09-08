@@ -4,6 +4,7 @@ import {tmpdir} from 'node:os';
 import {dirname, join, relative, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import semver from 'semver';
+import {stagePackageLicenseInputs} from './package-license.mjs';
 import {runCommand} from './run-command.mjs';
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -284,6 +285,7 @@ async function packPackages(directories) {
   const packDirectory = join(temporaryRoot, 'packs');
   const tarballs = new Map();
   await mkdir(packDirectory, {recursive: true});
+  await stagePackageLicenseInputs({root: repositoryRoot, stagingRoot: temporaryRoot});
 
   for (const directory of directories) {
     const sourceRoot = join(repositoryRoot, 'packages', directory);

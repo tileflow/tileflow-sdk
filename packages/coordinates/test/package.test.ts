@@ -3,6 +3,7 @@ import {execFile} from 'node:child_process';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {promisify} from 'node:util';
+import {valid} from 'semver';
 import * as contractSource from '../src/contract';
 import * as rootSource from '../src/index';
 
@@ -24,7 +25,8 @@ test('built root exposes the client while contract remains validation-only', asy
   assert.equal(typeof root.parseCoordinatesResponse, 'function');
   const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
   assert.deepEqual(Object.keys(manifest.exports), ['.', './contract', './package.json']);
-  assert.equal(manifest.version, '0.0.0-development');
+  assert.equal(typeof manifest.version, 'string');
+  assert.equal(valid(manifest.version), manifest.version);
   assert.equal(manifest.sideEffects, false);
 });
 

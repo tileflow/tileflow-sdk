@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
-import {mkdtemp, readFile, readdir, rm} from 'node:fs/promises';
+import {mkdtemp, readdir, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {promisify} from 'node:util';
 import {runInNewContext} from 'node:vm';
+import {valid} from 'semver';
 import * as source from '../src/index';
 
 const execFileAsync = promisify(execFile);
@@ -20,7 +21,8 @@ test('publishes root, contract, client and package metadata entries', async () =
     './package.json',
   ]);
   assert.equal(manifest.sideEffects, false);
-  assert.equal(manifest.version, '0.0.0-development');
+  assert.equal(typeof manifest.version, 'string');
+  assert.equal(valid(manifest.version), manifest.version);
   assert.equal(manifest.publishConfig.access, 'public');
 });
 

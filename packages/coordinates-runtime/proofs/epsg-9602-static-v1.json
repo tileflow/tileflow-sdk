@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "version": 1,
+  "method": {"authority": "EPSG", "code": "9602"},
+  "algorithm": "epsg-9602-static-v1",
+  "tolerances": {"angularDegrees": 1e-9, "linearMetres": 0.002},
+  "domain": {
+    "ellipsoid": "oblate-or-sphere",
+    "latitude": "open-poles",
+    "longitude": "defined",
+    "normalBranch": "positive-polar-radius"
+  },
+  "requirements": [
+    "direct-epsg-9602-conversion",
+    "static-geographic-3d-and-geocentric-3d",
+    "equivalent-datum-or-ensemble-ellipsoid-and-prime-meridian",
+    "declared-axis-units-and-reversible-normalization",
+    "no-ballpark-no-grids-no-time",
+    "independent-cartesian-equation-residual",
+    "forward-and-inverse-residuals",
+    "source-and-target-crs-areas"
+  ],
+  "equations": {
+    "e2": "1 - (b/a)^2",
+    "N": "a / sqrt(1 - e2*sin(latitude)^2)",
+    "X": "(N+h)*cos(latitude)*cos(longitude)",
+    "Y": "(N+h)*cos(latitude)*sin(longitude)",
+    "Z": "(N*(1-e2)+h)*sin(latitude)",
+    "branch": "N*(1-e2)+h > 0, abs(latitude) < pi/2, hypot(X,Y) > 0"
+  },
+  "controls": [
+    {
+      "from": "EPSG:4979",
+      "to": "EPSG:4978",
+      "position": [12, 55, 10],
+      "expected": [3586475.2672, 762328.8513, 5201391.7147],
+      "linearToleranceMetres": 0.001,
+      "inverseRequired": true
+    }
+  ],
+  "sources": [
+    "https://proj.org/en/stable/operations/conversions/cart.html",
+    "https://github.com/OSGeo/PROJ/blob/9.8.1/test/gie/epsg_no_grid.gie",
+    "https://github.com/OSGeo/PROJ/blob/9.8.1/src/conversions/cart.cpp"
+  ]
+}

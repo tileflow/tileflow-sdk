@@ -17,6 +17,12 @@ export const publicPackageCatalog = Object.freeze(
       name: '@tileflow/interactions',
     },
     {directory: 'geoip', initialVersion: '0.1.0-alpha.0', name: '@tileflow/geoip'},
+    {directory: 'coordinates', initialVersion: '0.1.0-alpha.0', name: '@tileflow/coordinates'},
+    {
+      directory: 'coordinates-runtime',
+      initialVersion: '0.1.0-alpha.0',
+      name: '@tileflow/coordinates-runtime',
+    },
     {directory: 'search', initialVersion: '0.1.0-alpha.0', name: '@tileflow/search'},
     {directory: 'static', initialVersion: '0.1.0-alpha.0', name: '@tileflow/static'},
     {directory: 'dev', initialVersion: '0.1.0-alpha.0', name: '@tileflow/dev'},

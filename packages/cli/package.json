@@ -46,11 +46,13 @@
   "dependencies": {
     "@hono/node-server": "2.0.10",
     "@tileflow/capture": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
+    "@tileflow/coordinates": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
+    "@tileflow/coordinates-runtime": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "@tileflow/dev": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "@tileflow/maps": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
-    "hono": "4.13.5",
     "commander": "^15.0.0",
+    "hono": "4.13.5",
     "picocolors": "^1.1.1",
     "zod": "^4.4.3"
   },

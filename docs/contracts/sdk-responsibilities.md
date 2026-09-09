@@ -162,6 +162,19 @@ or implement framework components. Core does not depend on or re-export it; fram
 depend on it. Full behavior and the rollout gates are owned by
 [`map-interactions.md`](map-interactions.md).
 
+### `@tileflow/coordinates`
+
+Owns portable coordinate contract schemas, types, and validation. It does not own a coordinate
+engine, release installation, an HTTP client, or CLI presentation.
+
+### `@tileflow/coordinates-runtime`
+
+Owns explicit installation and local execution of a verified coordinate release. A release identity
+and provenance are separate from distribution delivery locations; the runtime selects a compatible
+artifact, verifies every declared asset and file, and starts its native engine only from the installed
+payload. It does not define coordinate request or response contracts, select a delivery provider,
+perform Hosted execution, or download additional resources while executing a request.
+
 ### `@tileflow/search`
 
 Owns strict forward, reverse, autocomplete, and suggestion-resolution schemas, provider-neutral
@@ -193,7 +206,8 @@ semantics from `@tileflow/interactions`.
 
 ### `tileflow`
 
-Owns command presentation and composes the preparation, preview, capture, inspection, and Hosted
+Owns command presentation and composes the preparation, preview, capture, local Coordinates,
+inspection, and Hosted
 clients. Hosted authentication, bounded HTTP transport, deployment planning, and presentation are
 internal services rather than cartographic concerns.
 

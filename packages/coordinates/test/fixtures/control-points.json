@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "controlPoints": [
+    {
+      "id": "etrs89-to-utm32",
+      "from": "EPSG:4258",
+      "to": "EPSG:25832",
+      "position": [12, 55],
+      "expectedPosition": [691875.6321, 6098907.825],
+      "toleranceMetres": 0.0001,
+      "source": {
+        "kind": "upstream-proj-gie",
+        "url": "https://raw.githubusercontent.com/OSGeo/PROJ/b834d1f401067d2fa1ce8ad2762c29563cac9000/test/gie/epsg_no_grid.gie",
+        "revision": "b834d1f401067d2fa1ce8ad2762c29563cac9000",
+        "sha256": "acec30144b59cdda117572957deb9b3118b764edf429570c305af2e94bc0571b",
+        "note": "Forward GIE regression vector; geographic latitude, longitude input is normalized to x, y."
+      },
+      "sourceGridNames": []
+    },
+    {
+      "id": "bd72-lambert72-to-etrs89-bel-lambert2008",
+      "from": "EPSG:31370",
+      "to": "EPSG:3812",
+      "position": [149186.41, 170810.74],
+      "expectedPosition": [649186.03701863, 670811.1694936],
+      "toleranceMetres": 0.0001,
+      "source": {
+        "kind": "upstream-proj-gie",
+        "url": "https://raw.githubusercontent.com/OSGeo/PROJ/b834d1f401067d2fa1ce8ad2762c29563cac9000/test/gie/epsg_grid.gie",
+        "revision": "b834d1f401067d2fa1ce8ad2762c29563cac9000",
+        "sha256": "0707877498de20af5861055518d2e565cf5b26bd186e04a7b3e345cb234303f6",
+        "note": "Forward GIE regression vector with projected easting, northing axes."
+      },
+      "sourceGridNames": ["be_ign_bd72lb72_etrs89lb08.tif"]
+    },
+    {
+      "id": "wgs84-3d-to-egm2008",
+      "from": "EPSG:4979",
+      "to": "EPSG:9518",
+      "position": [12, 55, 10],
+      "expectedPosition": [12, 55, -27.8257],
+      "toleranceMetres": 0.0001,
+      "source": {
+        "kind": "upstream-proj-gie",
+        "url": "https://raw.githubusercontent.com/OSGeo/PROJ/b834d1f401067d2fa1ce8ad2762c29563cac9000/test/gie/epsg_grid.gie",
+        "revision": "b834d1f401067d2fa1ce8ad2762c29563cac9000",
+        "sha256": "0707877498de20af5861055518d2e565cf5b26bd186e04a7b3e345cb234303f6",
+        "note": "Forward GIE regression vector; geographic latitude, longitude, height axes are normalized to x, y, z."
+      },
+      "sourceGridNames": ["us_nga_egm08_25.tif"]
+    },
+    {
+      "id": "ostn15-osgm15-etrs89-3d-to-osgb36-bng-odn-tp02",
+      "from": "EPSG:4937",
+      "to": "EPSG:7405",
+      "position": [-5.20304609998, 49.9600613782, 124.269],
+      "expectedPosition": [170370.718, 11572.405, 71.264],
+      "toleranceMetres": 0.002,
+      "source": {
+        "kind": "ordnance-survey-agency-test-vector",
+        "url": "https://www.ordnancesurvey.co.uk/documents/resources/OSTN15-OSGM15-DevelopersPack.zip",
+        "revision": "sha256:67069a6d6efe74f637249366f400f3192c03853c78d5a9c3eac2c78ede88364d",
+        "sha256": "67069a6d6efe74f637249366f400f3192c03853c78d5a9c3eac2c78ede88364d",
+        "note": "Full Developer Pack TP02 forward test vector; geographic latitude, longitude, height input is normalized to x, y, z."
+      },
+      "sourceGridNames": ["OSTN15_OSGM15_DataFile.txt"]
+    }
+  ]
+}

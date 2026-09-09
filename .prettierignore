@@ -1,5 +1,6 @@
 node_modules
 .turbo
+.tileflow/coordinates-acceptance/
 dist
 coverage
 pnpm-lock.yaml

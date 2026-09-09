@@ -9,6 +9,7 @@ import {hostname} from 'node:os';
 import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {createInterface} from 'node:readline/promises';
 import pc from 'picocolors';
+import {createLocalCoordinates, setupCoordinates} from '@tileflow/coordinates-runtime';
 import {
   auditTileflowMapThemeValues,
   getTileflowStyleFontFaces,
@@ -81,6 +82,7 @@ import {installSignalAbortController, registerCaptureCommands} from './capture-c
 import {writeAtomicFile} from './capture-output';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 import {registerConfigInspectCommand} from './config-inspect-command';
+import {registerCoordinatesCommands} from './coordinates-command';
 import {allowsStoredDeployCredential, resolveDeploySource} from './deploy-source';
 import {defaultTileflowDevHost, parseTileflowDevHost, tileflowDevOrigin} from './dev-host';
 import {registerFeatureInspectCommand} from './feature-inspect-command';
@@ -1206,6 +1208,7 @@ registerConfigInspectCommand(inspectCommand, {defaultConfigPath});
 registerFeatureInspectCommand(inspectCommand, {defaultConfigPath});
 registerAiCommands(program, {defaultApiUrl, defaultConfigPath});
 registerCaptureCommands(program, {defaultConfigPath});
+registerCoordinatesCommands(program, {createLocalCoordinates, setupCoordinates});
 registerVisualCommands(program, {
   defaultConfigPath,
   openReport: (path) => openBrowser(path, true),

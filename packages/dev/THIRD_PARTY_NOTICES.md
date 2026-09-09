@@ -40,28 +40,28 @@ copyright 2020 Arjun Barrett and is distributed under the MIT License.
 - PMTiles source and license: <https://github.com/protomaps/PMTiles/tree/v4.5.0/js>
 - fflate source and license: <https://github.com/101arrowz/fflate/tree/v0.8.3>
 
-## sharp 0.35.3
+## sharp 0.35.4
 
 `@tileflow/dev` declares `sharp` as an optional dependency and loads it dynamically only when local
 SVG or raster icon sources must be inspected and packed. The Tileflow build externalizes `sharp`
 rather than bundling it. `sharp` is copyright Lovell Fuller and contributors and is distributed under
 the Apache License 2.0.
 
-- Source: <https://github.com/lovell/sharp/tree/v0.35.3>
-- License: <https://github.com/lovell/sharp/blob/v0.35.3/LICENSE>
+- Source: <https://github.com/lovell/sharp/tree/v0.35.4>
+- License: <https://github.com/lovell/sharp/blob/v0.35.4/LICENSE>
 
-## sharp libvips distributions 1.3.2
+## sharp libvips distributions 1.3.3
 
 `sharp` selects a separate optional `@img/sharp-libvips-*` package for the current platform. The
 installed platform-package manifest declares `LGPL-3.0-or-later`; the packaging scripts themselves
 are distributed under Apache-2.0. The packages contain prebuilt libvips and separately licensed
-runtime dependencies. For `sharp` 0.35.3 the selected libvips ABI is 8.18.3.
+runtime dependencies. For `sharp` 0.35.4 the selected libvips ABI is 8.18.6.
 
-- Packaging source: <https://github.com/lovell/sharp-libvips/tree/v1.3.2>
-- Packaging-script license: <https://github.com/lovell/sharp-libvips/blob/v1.3.2/LICENSE>
-- libvips 8.18.3 source: <https://github.com/libvips/libvips/tree/v8.18.3>
-- libvips 8.18.3 license (LGPL-2.1-or-later):
-  <https://github.com/libvips/libvips/blob/v8.18.3/LICENSE>
+- Packaging source: <https://github.com/lovell/sharp-libvips/tree/v1.3.3>
+- Packaging-script license: <https://github.com/lovell/sharp-libvips/blob/v1.3.3/LICENSE>
+- libvips 8.18.6 source: <https://github.com/libvips/libvips/tree/v8.18.6>
+- libvips 8.18.6 license (LGPL-2.1-or-later):
+  <https://github.com/libvips/libvips/blob/v8.18.6/LICENSE>
 
 Because `sharp` remains a separately installed optional package, users can install, update, remove,
 or replace it independently of `@tileflow/dev`. Tileflow does not modify libvips and does not place a

@@ -11,6 +11,10 @@
     {
       "id": "search-package-bootstrap",
       "summary": "Bootstrap @tileflow/search and verify its npm Trusted Publisher before the first alpha release."
+    },
+    {
+      "id": "geoip-package-bootstrap",
+      "summary": "Bootstrap @tileflow/geoip and verify its npm Trusted Publisher before the first alpha release."
     }
   ],
   "kind": "tileflow-public-release-blockers",

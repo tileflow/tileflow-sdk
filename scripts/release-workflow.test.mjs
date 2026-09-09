@@ -92,6 +92,20 @@ test('publishes the approved bundle without rebuilding and verifies a final rece
   assert.equal((workflow.match(/id-token: write/gu) ?? []).length, 1);
 });
 
+test('binds a Coordinates builder input to the selected runtime tarball inside the release bundle', async () => {
+  const workflow = await readFile(
+    new URL('../.github/workflows/publish.yml', import.meta.url),
+    'utf8',
+  );
+  const publishing = await readFile(new URL('../PUBLISHING.md', import.meta.url), 'utf8');
+
+  assert.match(workflow, /Produce verified Coordinates builder input/u);
+  assert.match(workflow, /@tileflow\/coordinates-runtime/u);
+  assert.match(workflow, /coordinates-builder-input/u);
+  assert.match(workflow, /--admission native-qualified-eligible/u);
+  assert.match(publishing, /coordinates-builder-input\/.*offline-verifiable/su);
+});
+
 test('loads every post-approval repository script without workspace dependencies', async () => {
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'tileflow-publish-scripts-'));
 

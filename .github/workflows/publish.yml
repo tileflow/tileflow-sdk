@@ -258,6 +258,32 @@ jobs:
           --pack-dir "$RUNNER_TEMP/tileflow-release/final"
           --release-plan "$RUNNER_TEMP/tileflow-release/plan.json"
 
+      - name: Produce verified Coordinates builder input
+        if: steps.plan.outputs.selected_count != '' && steps.plan.outputs.selected_count != '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_root="$RUNNER_TEMP/tileflow-release"
+          runtime_tarball="$(FINAL_TARBALLS="$release_root/final-tarballs.txt" node <<'NODE'
+          const {execFileSync} = require('node:child_process');
+          const {readFileSync} = require('node:fs');
+          const tarballs = readFileSync(process.env.FINAL_TARBALLS, 'utf8').trim().split('\n').filter(Boolean);
+          const matches = tarballs.filter((tarball) => {
+            const manifest = JSON.parse(execFileSync('tar', ['-xOf', tarball, 'package/package.json'], {encoding: 'utf8'}));
+            return manifest.name === '@tileflow/coordinates-runtime';
+          });
+          if (matches.length > 1) throw new Error('Coordinates runtime tarball is ambiguous.');
+          if (matches.length === 1) process.stdout.write(matches[0]);
+          NODE
+          )"
+          if [[ -n "$runtime_tarball" ]]
+          then
+            node scripts/coordinates-builder-input.mjs produce \
+              --admission native-qualified-eligible \
+              --runtime-package "$runtime_tarball" \
+              --output "$release_root/coordinates-builder-input"
+          fi
+
       - name: Recheck current main before handing off publication
         if: steps.plan.outputs.selected_count != '' && steps.plan.outputs.selected_count != '0'
         id: publish-head
@@ -284,11 +310,12 @@ jobs:
             cp "$tarball" "$release_root/selected/$filename"
             echo "selected/$filename" >> "$release_root/selected-relative.txt"
           done < "$release_root/selected-tarballs.txt"
-          tar -cf "$release_root/release-bundle.tar" \
-            -C "$release_root" \
-            plan.json \
-            selected-relative.txt \
-            selected
+          bundle_entries=(plan.json selected-relative.txt selected)
+          if [[ -d "$release_root/coordinates-builder-input" ]]
+          then
+            bundle_entries+=(coordinates-builder-input)
+          fi
+          tar -cf "$release_root/release-bundle.tar" -C "$release_root" "${bundle_entries[@]}"
           bundle_digest="$(shasum -a 256 "$release_root/release-bundle.tar" | cut -d ' ' -f 1)"
           echo "bundle_digest=$bundle_digest" >> "$GITHUB_OUTPUT"
           {

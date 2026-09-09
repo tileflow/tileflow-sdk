@@ -42,6 +42,18 @@ Environment configuration does not qualify them. macOS DMG admission remains a s
 distribution path. Qualification records contain no cloud account, region, provider, or deployment
 identity.
 
+## Builder inputs
+
+SDK release preparation can emit a content-addressed builder input for private release assembly.
+It contains the adapter source, proof documents, conformance bundles, build configuration, and the
+small exact runtime-package tarball; it never carries grids or a native runtime distribution.
+`verifyCoordinatesBuilderInput()` verifies the supplied input offline and, when given an installed
+runtime package directory, requires its complete package inventory and source descriptor to match.
+
+A builder input is not an installer, a Hosted endpoint, or a public runtime distribution. A
+development input cannot qualify a native release; an eligible input is bound to an exact published
+alpha runtime package and an SDK source revision.
+
 ## Local execution
 
 `createLocalCoordinates()` opens an explicitly supplied installed directory, or the active release

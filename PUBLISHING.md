@@ -113,7 +113,10 @@ The preparation job creates these ephemeral records under its runner temporary d
   packages, material differences, target alphas, and final internal ranges;
 - `final/`: all packages rebuilt at the target graph;
 - `selected-relative.txt`: dependency-safe ordered list of only the selected tarballs; and
-- `release-bundle.tar`: `plan.json`, `selected-relative.txt`, and those exact selected tarballs.
+- `coordinates-builder-input/`: an offline-verifiable input only when
+  `@tileflow/coordinates-runtime` is selected, bound to its exact tarball and source revision; and
+- `release-bundle.tar`: `plan.json`, `selected-relative.txt`, the exact selected tarballs, and that
+  optional builder input.
 
 The bundle SHA-256 and human-readable package table appear in the workflow summary. The bundle is
 retained as a private GitHub artifact for 30 days so a failed publish job can retry the same bytes.

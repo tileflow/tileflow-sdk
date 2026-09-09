@@ -1,5 +1,6 @@
 import {Command} from 'commander';
 import assert from 'node:assert/strict';
+import {AsyncLocalStorage} from 'node:async_hooks';
 import {spawn} from 'node:child_process';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
@@ -8,6 +9,25 @@ import {
   type CoordinatesCommandDependencies,
   registerCoordinatesCommands,
 } from '../src/coordinates-command';
+
+test('coordinates output capture excludes unrelated asynchronous writes', async () => {
+  const unrelatedWrite = new Promise<void>((resolve) => {
+    setImmediate(() => {
+      process.stdout.write('unrelated test diagnostic\n');
+      resolve();
+    });
+  });
+  const response = {schemaVersion: 1, ok: true, command: 'search', matches: [], nextCursor: null};
+  const result = await runCoordinates(['coordinates', 'search', '--input', 'request.json'], {
+    readInput: async () => {
+      await unrelatedWrite;
+      return JSON.stringify({query: 'Madrid'});
+    },
+    createLocalCoordinates: async () => localClient(response),
+  });
+
+  assert.equal(result.stdout, `${JSON.stringify(response)}\n`);
+});
 
 test('coordinates search emits one response document and closes its local runtime', async () => {
   let closeCalls = 0;
@@ -378,22 +398,25 @@ async function runCoordinates(
     },
     ...overrides,
   });
+  const capture = new AsyncLocalStorage<boolean>();
   const originalStdoutWrite = process.stdout.write;
   const originalStderrWrite = process.stderr.write;
   const originalExitCode = process.exitCode;
   let stdout = '';
   let stderr = '';
   process.exitCode = undefined;
-  process.stdout.write = ((chunk: string | Uint8Array) => {
-    stdout += String(chunk);
+  process.stdout.write = ((...args: Parameters<typeof process.stdout.write>) => {
+    if (!capture.getStore()) return originalStdoutWrite.apply(process.stdout, args);
+    stdout += String(args[0]);
     return true;
   }) as typeof process.stdout.write;
-  process.stderr.write = ((chunk: string | Uint8Array) => {
-    stderr += String(chunk);
+  process.stderr.write = ((...args: Parameters<typeof process.stderr.write>) => {
+    if (!capture.getStore()) return originalStderrWrite.apply(process.stderr, args);
+    stderr += String(args[0]);
     return true;
   }) as typeof process.stderr.write;
   try {
-    await program.parseAsync(args, {from: 'user'});
+    await capture.run(true, () => program.parseAsync(args, {from: 'user'}));
     return {exitCode: process.exitCode, stderr, stdout};
   } finally {
     process.stdout.write = originalStdoutWrite;

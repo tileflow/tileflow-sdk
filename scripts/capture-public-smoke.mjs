@@ -885,7 +885,7 @@ async function auditPublicTarball(packageName, tarball, packedVersions, releaseC
       entries.includes('package/THIRD_PARTY_NOTICES.md'),
       'Dev tarball is missing sharp/libvips notices.',
     );
-    assert.equal(manifest.optionalDependencies?.sharp, '0.35.3');
+    assert.equal(manifest.optionalDependencies?.sharp, '0.35.4');
   }
 
   assert.equal(manifest.name, packageName);

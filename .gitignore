@@ -15,6 +15,7 @@ packages/*/.tileflow-test-*
 .tileflow/captures/
 .tileflow/diffs/
 .tileflow/analysis/
+.tileflow/coordinates-acceptance/
 
 pnpm-debug.log*
 npm-debug.log*

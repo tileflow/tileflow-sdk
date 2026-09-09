@@ -1,0 +1,55 @@
+{
+  "name": "@tileflow/coordinates",
+  "version": "0.0.0-development",
+  "license": "Apache-2.0",
+  "description": "Portable coordinate contract schemas and validation for Tileflow.",
+  "type": "module",
+  "sideEffects": false,
+  "homepage": "https://tileflow.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tileflow/tileflow-sdk.git",
+    "directory": "packages/coordinates"
+  },
+  "bugs": {
+    "url": "https://github.com/tileflow/tileflow-sdk/issues"
+  },
+  "keywords": [
+    "tileflow",
+    "coordinates",
+    "crs"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/package-license.mjs --prepare",
+    "postpack": "node ../../scripts/package-license.mjs --clean",
+    "build": "tsup src/index.ts src/contract.ts --format esm --dts --clean --splitting",
+    "verify": "pnpm run build && tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./contract": {
+      "types": "./dist/contract.d.ts",
+      "import": "./dist/contract.js",
+      "default": "./dist/contract.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
+}

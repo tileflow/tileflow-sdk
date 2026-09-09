@@ -1,0 +1,50 @@
+{
+  "name": "@tileflow/coordinates-runtime",
+  "version": "0.0.0-development",
+  "license": "Apache-2.0",
+  "description": "Explicit provisioning and offline native coordinate execution for Node.js.",
+  "type": "module",
+  "sideEffects": false,
+  "homepage": "https://tileflow.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tileflow/tileflow-sdk.git",
+    "directory": "packages/coordinates-runtime"
+  },
+  "bugs": {
+    "url": "https://github.com/tileflow/tileflow-sdk/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "proofs"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "prepack": "node ../../scripts/package-license.mjs --prepare",
+    "postpack": "node ../../scripts/package-license.mjs --clean",
+    "build": "tsup src/index.ts --format esm --dts --clean --no-splitting --platform node",
+    "verify": "pnpm run build && tsx --test test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@tileflow/coordinates": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
+    "zod": "^4.4.3"
+  }
+}

@@ -11,7 +11,9 @@ const runtimeDependencySections = ['dependencies', 'optionalDependencies', 'peer
 
 const allowedTileflowDependencies = {
   capture: new Set(['core', 'dev']),
-  cli: new Set(['capture', 'core', 'dev', 'maps']),
+  cli: new Set(['capture', 'coordinates', 'coordinates-runtime', 'core', 'dev', 'maps']),
+  coordinates: new Set(),
+  'coordinates-runtime': new Set(['coordinates']),
   core: new Set(),
   dev: new Set(['core']),
   interactions: new Set(),
@@ -57,9 +59,17 @@ test('public package sources respect the SDK responsibility graph', async () => 
       for (const specifier of importedSpecifiers(source)) {
         if (specifier.startsWith('node:')) {
           assert.equal(
-            ['core', 'interactions', 'maps', 'react', 'search', 'static', 'svelte', 'vue'].includes(
-              packageName,
-            ),
+            [
+              'coordinates',
+              'core',
+              'interactions',
+              'maps',
+              'react',
+              'search',
+              'static',
+              'svelte',
+              'vue',
+            ].includes(packageName),
             false,
             `${label} crosses the browser/pure boundary with ${specifier}`,
           );

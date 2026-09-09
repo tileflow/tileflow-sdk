@@ -20,6 +20,9 @@ publication order and the independent first version for every package:
 - `@tileflow/core`
 - `@tileflow/maps`
 - `@tileflow/interactions`
+- `@tileflow/geoip`
+- `@tileflow/coordinates`
+- `@tileflow/coordinates-runtime`
 - `@tileflow/search`
 - `@tileflow/static`
 - `@tileflow/dev`

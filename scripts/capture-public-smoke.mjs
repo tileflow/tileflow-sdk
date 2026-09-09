@@ -153,6 +153,17 @@ if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
         'TileflowVisualReviewError',
       ],
       '@tileflow/capture/receipt': ['parseTileflowCaptureReceipt'],
+      '@tileflow/coordinates': [
+        'parseCoordinatesRequest',
+        'parseCoordinatesResponse',
+        'CoordinatesContractError',
+      ],
+      '@tileflow/coordinates/contract': ['coordinatesTransformRequestSchema'],
+      '@tileflow/coordinates-runtime': [
+        'createLocalCoordinates',
+        'setupCoordinates',
+        'CoordinatesSetupError',
+      ],
       '@tileflow/dev': ['createTileflowBuildArtifacts'],
       '@tileflow/interactions': ['validateTileflowAnnotations'],
       '@tileflow/interactions/maplibre': ['createTileflowAnnotationRegistry'],
@@ -194,6 +205,23 @@ if (capture.tileflowVisualReviewLimits.maximumAggregatePngBytes !== 256 * 1024 *
 if (new capture.TileflowVisualReviewError('packed proof').code !== 'VISUAL_REVIEW_INVALID') {
   throw new Error('@tileflow/capture does not export the stable visual review error code');
 }
+const coordinates = await import('@tileflow/coordinates');
+const request = coordinates.parseCoordinatesRequest('transform', {
+  from: 'EPSG:4258', to: 'EPSG:25832', positions: [[12, 55]],
+});
+if (request.schemaVersion !== 1 || request.allowBallpark !== false || request.requireBestKnown !== true) {
+  throw new Error('Packed Coordinates request defaults differ');
+}
+try {
+  coordinates.parseCoordinatesJsonRequest('transform', '{');
+  throw new Error('Packed Coordinates accepted invalid JSON');
+} catch (error) {
+  if (!(error instanceof coordinates.CoordinatesContractError)) throw error;
+  const failure = JSON.parse(JSON.stringify(error));
+  if (failure.schemaVersion !== 1 || failure.ok !== false || failure.error.reason !== 'INVALID_JSON') {
+    throw new Error('Packed Coordinates failure is not a stable JSON document');
+  }
+}
 `,
   );
   await run(process.execPath, [publicImports], {
@@ -202,6 +230,35 @@ if (new capture.TileflowVisualReviewError('packed proof').code !== 'VISUAL_REVIE
   });
 
   const captureReviewTypes = join(consumerDirectory, 'consume-capture-review-types.ts');
+  const coordinatesTypes = join(consumerDirectory, 'consume-coordinates-types.ts');
+  await writeFile(
+    coordinatesTypes,
+    `import {
+  parseCoordinatesRequest, parseCoordinatesResponse,
+  type CoordinatesTransformRequest, type NormalizedCoordinatesTransformRequest,
+  type CoordinatesResponse,
+} from '@tileflow/coordinates';
+const request: CoordinatesTransformRequest = {
+  from: 'EPSG:4258', to: 'EPSG:25832', positions: [[12, 55]],
+};
+const normalized: NormalizedCoordinatesTransformRequest = parseCoordinatesRequest('transform', request);
+function consume(value: unknown): CoordinatesResponse<'transform'> {
+  const reply = parseCoordinatesResponse('transform', normalized, value, {mode: 'local'});
+  if (reply.ok) {
+    const ref: string = reply.result.results[0].selection.bestKnown.operationRef;
+    const unit: string = reply.result.axes.to.normalized[0].unit.name;
+    void ref; void unit;
+  } else {
+    const reason: string = reply.error.reason;
+    void reason;
+  }
+  return reply;
+}
+// @ts-expect-error Coordinate epochs are not a fourth ordinate.
+const invalid: CoordinatesTransformRequest = {...request, positions: [[1, 2, 3, 4]]};
+void consume; void invalid;
+`,
+  );
   await writeFile(
     captureReviewTypes,
     `import {
@@ -264,6 +321,7 @@ void consumePackedReview;
       '--typeRoots',
       join(repositoryRoot, 'node_modules/@types'),
       captureReviewTypes,
+      coordinatesTypes,
     ],
     {
       cwd: consumerDirectory,

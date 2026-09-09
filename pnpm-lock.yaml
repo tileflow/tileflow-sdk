@@ -175,6 +175,12 @@ importers:
       '@tileflow/capture':
         specifier: workspace:>=0.1.0-alpha.16 <0.1.0-beta.0
         version: link:../capture
+      '@tileflow/coordinates':
+        specifier: workspace:>=0.1.0-alpha.16 <0.1.0-beta.0
+        version: link:../coordinates
+      '@tileflow/coordinates-runtime':
+        specifier: workspace:>=0.1.0-alpha.16 <0.1.0-beta.0
+        version: link:../coordinates-runtime
       '@tileflow/core':
         specifier: workspace:>=0.1.0-alpha.16 <0.1.0-beta.0
         version: link:../core
@@ -203,6 +209,21 @@ importers:
       pngjs:
         specifier: 7.0.0
         version: 7.0.0
+
+  packages/coordinates:
+    dependencies:
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
+  packages/coordinates-runtime:
+    dependencies:
+      '@tileflow/coordinates':
+        specifier: workspace:>=0.1.0-alpha.16 <0.1.0-beta.0
+        version: link:../coordinates
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
   packages/core:
     dependencies:

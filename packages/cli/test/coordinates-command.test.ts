@@ -298,40 +298,82 @@ test('setup coordinates rejects a URL archive before setup can download it', asy
   });
 });
 
-test('coordinates stdin cancellation is structured', async () => {
-  const child = spawn(
-    process.execPath,
-    ['--import', 'tsx', 'src/index.ts', 'coordinates', 'transform', '--input', '-', '--json'],
-    {cwd: fileURLToPath(new URL('..', import.meta.url)), stdio: ['pipe', 'pipe', 'pipe']},
-  );
-  let stdout = '';
-  let stderr = '';
-  child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
-    stdout += chunk;
+test('coordinates serializes cancelled input before runtime creation on every platform', async () => {
+  let closeCalls = 0;
+  let factoryCalls = 0;
+  const controller = Object.assign(new AbortController(), {
+    close: () => {
+      closeCalls += 1;
+    },
   });
-  child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
-    stderr += chunk;
+  const result = await runCoordinates(['coordinates', 'transform', '--input', '-', '--json'], {
+    createSignalController: () => controller,
+    createLocalCoordinates: async () => {
+      factoryCalls += 1;
+      throw new Error('runtime must not be created');
+    },
+    readInput: async (input, signal) => {
+      assert.equal(input, '-');
+      assert.equal(signal, controller.signal);
+      controller.abort('private cancellation reason');
+      return '{';
+    },
   });
-  const exited = new Promise<number | null>((resolve, reject) => {
-    child.once('error', reject);
-    child.once('exit', resolve);
-  });
-  await new Promise<void>((resolve) => child.once('spawn', resolve));
-  child.stdin.write('{');
-  await new Promise<void>((resolve) => setTimeout(resolve, 4000));
-  child.kill('SIGINT');
-  await new Promise<void>((resolve) => setTimeout(resolve, 50));
-  child.stdin.end();
 
-  const exitCode = await exited;
-
-  assert.equal(exitCode, 1);
-  assert.equal(stdout, '');
-  const failure = JSON.parse(stderr) as {command: string; error: {code: string; reason: string}};
+  assert.equal(factoryCalls, 0);
+  assert.equal(closeCalls, 1);
+  assert.equal(result.exitCode, 1);
+  assert.equal(result.stdout, '');
+  assert.ok(!result.stderr.includes('private cancellation reason'));
+  const failure = JSON.parse(result.stderr) as {
+    command: string;
+    error: {code: string; reason: string};
+  };
   assert.equal(failure.command, 'transform');
   assert.equal(failure.error.code, 'COORDINATES_CANCELLED');
   assert.equal(failure.error.reason, 'CANCELLED');
 });
+
+// Windows child.kill('SIGINT') forcibly terminates instead of delivering a catchable signal.
+// https://nodejs.org/api/child_process.html#subprocesskillsignal
+test(
+  'coordinates stdin cancellation is structured on POSIX',
+  {skip: process.platform === 'win32'},
+  async () => {
+    const child = spawn(
+      process.execPath,
+      ['--import', 'tsx', 'src/index.ts', 'coordinates', 'transform', '--input', '-', '--json'],
+      {cwd: fileURLToPath(new URL('..', import.meta.url)), stdio: ['pipe', 'pipe', 'pipe']},
+    );
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    const exited = new Promise<number | null>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('exit', resolve);
+    });
+    await new Promise<void>((resolve) => child.once('spawn', resolve));
+    child.stdin.write('{');
+    await new Promise<void>((resolve) => setTimeout(resolve, 4000));
+    child.kill('SIGINT');
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    child.stdin.end();
+
+    const exitCode = await exited;
+
+    assert.equal(exitCode, 1);
+    assert.equal(stdout, '');
+    const failure = JSON.parse(stderr) as {command: string; error: {code: string; reason: string}};
+    assert.equal(failure.command, 'transform');
+    assert.equal(failure.error.code, 'COORDINATES_CANCELLED');
+    assert.equal(failure.error.reason, 'CANCELLED');
+  },
+);
 
 test('setup coordinates forwards the offline source and emits its receipt', async () => {
   let setupInput: unknown;

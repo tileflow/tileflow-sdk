@@ -235,7 +235,9 @@ jobs:
 
       - name: Provision pinned capture browser dependencies
         if: steps.plan.outputs.selected_count != '' && steps.plan.outputs.selected_count != '0'
-        run: pnpm --filter @tileflow/capture exec playwright install-deps chromium
+        run: |
+          sudo "$(command -v node)" scripts/remove-runner-chrome-repositories.mjs
+          pnpm --filter @tileflow/capture exec playwright install-deps chromium
 
       - name: Provision pinned capture browser shell
         if: steps.plan.outputs.selected_count != '' && steps.plan.outputs.selected_count != '0'

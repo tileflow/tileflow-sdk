@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
-import {cp, mkdtemp, readFile, rm} from 'node:fs/promises';
+import {cp, mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
@@ -217,3 +217,28 @@ function trustedRun() {
     head_sha: releaseSha,
   };
 }
+
+test('Chromium provisioning removes only unused Chrome APT sources', async () => {
+  const {removeRunnerChromeRepositories} = await import('./remove-runner-chrome-repositories.mjs');
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-apt-sources-'));
+  try {
+    const files = [
+      'google-chrome.list',
+      'google-chrome-stable.sources',
+      'ubuntu.sources',
+      'google-cloud-sdk.list',
+    ];
+    for (const file of files) await writeFile(join(directory, file), 'source contents');
+    assert.deepEqual(await removeRunnerChromeRepositories(directory), [
+      'google-chrome-stable.sources',
+      'google-chrome.list',
+    ]);
+    assert.deepEqual((await readdir(directory)).sort(), [
+      'google-cloud-sdk.list',
+      'ubuntu.sources',
+    ]);
+    assert.deepEqual(await removeRunnerChromeRepositories(directory), []);
+  } finally {
+    await rm(directory, {recursive: true, force: true});
+  }
+});

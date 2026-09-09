@@ -122,7 +122,9 @@ jobs:
 
       - name: Install Linux Chromium dependencies
         if: runner.os == 'Linux'
-        run: pnpm --filter @tileflow/capture exec playwright install-deps chromium
+        run: |
+          sudo "$(command -v node)" scripts/remove-runner-chrome-repositories.mjs
+          pnpm --filter @tileflow/capture exec playwright install-deps chromium
 
       - name: Provision pinned Chromium headless shell
         run: pnpm --filter @tileflow/capture exec playwright install --only-shell chromium
@@ -174,7 +176,9 @@ jobs:
           key: playwright-${{ runner.os }}-${{ runner.arch }}-1.62.1-chromium-headless-shell-1234
 
       - name: Install Linux Chromium dependencies
-        run: pnpm --filter @tileflow/capture exec playwright install-deps chromium
+        run: |
+          sudo "$(command -v node)" scripts/remove-runner-chrome-repositories.mjs
+          pnpm --filter @tileflow/capture exec playwright install-deps chromium
 
       - name: Provision pinned Chromium headless shell
         run: pnpm --filter @tileflow/capture exec playwright install --only-shell chromium

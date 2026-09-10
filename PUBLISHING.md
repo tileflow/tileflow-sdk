@@ -155,13 +155,15 @@ cover.
 
 Tests, workflows, and repository-only documentation do not cause a release unless they change a
 packed artifact. Package READMEs, `files`, exports, runtime dependencies, executable modes, built
-JavaScript, declarations, maps, icons, fonts, and other packaged resources do. A non-deterministic
-build appears changed on every run, so packed outputs must remain deterministic.
+JavaScript, declarations, maps, icons, fonts, and other packaged resources do. Candidate comparison
+is byte-sensitive: a non-deterministic candidate build is material. Candidate tarballs remain the
+immutability proof for unselected packages; their later final rebuild output is neither selected nor
+bundled.
 
 After selection, the workflow applies target versions and dependency floors, forces a clean build,
 runs the complete repository check and packed public consumer, and packs again. A selected tarball
-whose topology differs from `plan.json`, an unselected artifact that changes, or an unselected
-dependency range that drifts fails closed.
+whose topology differs from `plan.json`, or an unselected final manifest version or dependency range
+that drifts, fails closed.
 
 ## GitHub configuration contract
 

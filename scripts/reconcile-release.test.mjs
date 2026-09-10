@@ -430,6 +430,35 @@ test('accepts final tarballs after applying workspace ranges and preserves unsel
   }
 });
 
+test('uses candidate artifacts to prove unselected packages stay immutable', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tileflow-reconcile-candidate-immutability-test-'));
+  try {
+    const versions = Object.fromEntries(publicPackageNames.map((name) => [name, '0.1.0-alpha.16']));
+    const registry = await tarballSet(root, 'registry', versions);
+    const candidates = await tarballSet(root, 'candidate', versions);
+    const state = await registryState(registry, versions);
+    const plan = releasePlan([releaseEntry('@tileflow/core')]);
+    const final = await tarballSet(
+      root,
+      'final',
+      {...versions, '@tileflow/core': '0.1.0-alpha.17'},
+      {
+        '@tileflow/core': {files: {'dist/index.js': 'export const changed = true;\n'}},
+        '@tileflow/dev': {files: {'dist/index.js': 'generated declaration order changed\n'}},
+      },
+    );
+
+    await validateFinalRelease({
+      plan,
+      registryState: state,
+      candidateTarballs: candidates.paths,
+      finalTarballs: final.paths,
+    });
+  } finally {
+    await rm(root, {force: true, recursive: true});
+  }
+});
+
 test('validates selected dependents after applying workspace release ranges', async () => {
   const root = await mkdtemp(join(tmpdir(), 'tileflow-reconcile-selected-range-test-'));
   try {

@@ -227,6 +227,7 @@ jobs:
             validate \
             "$release_root/plan.json" \
             "$release_root/registry.json" \
+            "$release_root/candidate-tarballs.txt" \
             "$release_root/final-tarballs.txt"
           node scripts/select-release-tarballs.mjs \
             "$release_root/plan.json" \

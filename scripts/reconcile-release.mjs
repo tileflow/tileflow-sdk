@@ -328,6 +328,26 @@ export async function packAllPackages(
   return tarballs;
 }
 
+export async function validateCandidateDeterminism({candidateTarballs, repeatedCandidateTarballs}) {
+  const candidates = await readTarballsByName(candidateTarballs);
+  const repeated = await readTarballsByName(repeatedCandidateTarballs);
+  validatePublicManifests(candidates);
+  validatePublicManifests(repeated);
+
+  for (const name of publicPackageNames) {
+    const comparison = await comparePackageTarballs(
+      candidates.get(name).tarball,
+      repeated.get(name).tarball,
+      {mode: 'exact'},
+    );
+    assert.equal(
+      comparison.equal,
+      true,
+      `${name} candidate artifacts are non-deterministic: ${comparison.differences.join(', ')}.`,
+    );
+  }
+}
+
 export async function createReleasePlan({sourceSha, registryState, candidateTarballs}) {
   assert.match(sourceSha, commitPattern, 'Release source must be a full lowercase commit SHA.');
   await validateRegistryState(registryState);
@@ -489,7 +509,12 @@ export function validateReleasePlan(plan) {
   return plan;
 }
 
-export async function validateFinalRelease({plan, registryState, finalTarballs}) {
+export async function validateFinalRelease({
+  plan,
+  registryState,
+  finalTarballs,
+  candidateTarballs = finalTarballs,
+}) {
   validateReleasePlan(plan);
   await validateRegistryState(registryState);
   assert.deepEqual(
@@ -497,6 +522,8 @@ export async function validateFinalRelease({plan, registryState, finalTarballs})
     registryState.packages.map(releaseBaselineSnapshot),
     'Release plan registry baselines changed before final validation.',
   );
+  const candidateByName = await readTarballsByName(candidateTarballs);
+  validatePublicManifests(candidateByName);
   const finalByName = await readTarballsByName(finalTarballs);
   validatePublicManifests(finalByName);
   const registryByName = new Map(registryState.packages.map((entry) => [entry.name, entry]));
@@ -506,13 +533,25 @@ export async function validateFinalRelease({plan, registryState, finalTarballs})
   const baselineByName = new Map(plan.baselines.map((baseline) => [baseline.name, baseline]));
 
   for (const name of publicPackageNames) {
+    const candidate = candidateByName.get(name);
     const final = finalByName.get(name);
     assert.equal(final.manifest.version, versions.get(name), `${name} final version mismatch.`);
     const registry = registryByName.get(name);
+    if (!selected.has(name)) {
+      assert.equal(
+        candidate.manifest.version,
+        effectiveBaselineVersion(registry),
+        `${name} candidate version does not match its registry baseline.`,
+      );
+    }
     if (registry.published) {
-      const comparison = await comparePackageTarballs(final.tarball, registry.tarball, {
-        mode: 'material',
-      });
+      const comparison = await comparePackageTarballs(
+        selected.has(name) ? final.tarball : candidate.tarball,
+        registry.tarball,
+        {
+          mode: 'material',
+        },
+      );
       assert.equal(
         comparison.equal,
         !selected.has(name),
@@ -686,6 +725,15 @@ async function main() {
     console.log(`Packed ${tarballs.length} public packages.`);
     return;
   }
+  if (command === 'candidate-determinism') {
+    assert.equal(args.length, 2, 'candidate-determinism expects two packed tarball lists.');
+    await validateCandidateDeterminism({
+      candidateTarballs: nonEmptyLines(await readFile(resolve(args[0]), 'utf8')),
+      repeatedCandidateTarballs: nonEmptyLines(await readFile(resolve(args[1]), 'utf8')),
+    });
+    console.log('Validated deterministic candidate artifacts.');
+    return;
+  }
   if (command === 'plan') {
     assert.equal(
       args.length,
@@ -702,12 +750,17 @@ async function main() {
     return;
   }
   if (command === 'validate') {
-    assert.equal(args.length, 3, 'validate expects a plan, registry state, and final list.');
+    assert.equal(
+      args.length,
+      4,
+      'validate expects a plan, registry state, candidate list, and final list.',
+    );
     const plan = JSON.parse(await readFile(resolve(args[0]), 'utf8'));
     await validateFinalRelease({
       plan,
       registryState: JSON.parse(await readFile(resolve(args[1]), 'utf8')),
-      finalTarballs: nonEmptyLines(await readFile(resolve(args[2]), 'utf8')),
+      candidateTarballs: nonEmptyLines(await readFile(resolve(args[2]), 'utf8')),
+      finalTarballs: nonEmptyLines(await readFile(resolve(args[3]), 'utf8')),
     });
     console.log(`Validated ${plan.packages.length} alpha release package(s).`);
     return;

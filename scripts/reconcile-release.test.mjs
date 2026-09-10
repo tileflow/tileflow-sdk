@@ -10,6 +10,7 @@ import {
   createRegistryState,
   createReleasePlan,
   renderReleaseSummary,
+  validateCandidateDeterminism,
   validateFinalRelease,
   validatePublicCatalogCoverage,
   validateReleasePlan,
@@ -127,6 +128,27 @@ test('produces an empty plan when npm already contains the current public artifa
       candidateTarballs: candidates.paths,
     });
     assert.deepEqual(plan.packages, []);
+  } finally {
+    await rm(root, {force: true, recursive: true});
+  }
+});
+
+test('rejects non-deterministic candidate artifacts before release planning', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tileflow-reconcile-candidate-determinism-test-'));
+  try {
+    const versions = Object.fromEntries(publicPackageNames.map((name) => [name, '0.1.0-alpha.16']));
+    const candidate = await tarballSet(root, 'candidate', versions);
+    const rebuilt = await tarballSet(root, 'rebuilt', versions, {
+      '@tileflow/search': {files: {'dist/index.js': 'declaration order changed\n'}},
+    });
+
+    await assert.rejects(
+      validateCandidateDeterminism({
+        candidateTarballs: candidate.paths,
+        repeatedCandidateTarballs: rebuilt.paths,
+      }),
+      /@tileflow\/search candidate artifacts are non-deterministic: package\/dist\/index\.js/u,
+    );
   } finally {
     await rm(root, {force: true, recursive: true});
   }
@@ -425,6 +447,35 @@ test('accepts final tarballs after applying workspace ranges and preserves unsel
       }),
       /Expected an exact alpha or an automatic alpha-only range, found workspace:0\.1\.0-alpha\.16/u,
     );
+  } finally {
+    await rm(root, {force: true, recursive: true});
+  }
+});
+
+test('uses candidate artifacts to prove unselected packages stay immutable', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tileflow-reconcile-candidate-immutability-test-'));
+  try {
+    const versions = Object.fromEntries(publicPackageNames.map((name) => [name, '0.1.0-alpha.16']));
+    const registry = await tarballSet(root, 'registry', versions);
+    const candidates = await tarballSet(root, 'candidate', versions);
+    const state = await registryState(registry, versions);
+    const plan = releasePlan([releaseEntry('@tileflow/core')]);
+    const final = await tarballSet(
+      root,
+      'final',
+      {...versions, '@tileflow/core': '0.1.0-alpha.17'},
+      {
+        '@tileflow/core': {files: {'dist/index.js': 'export const changed = true;\n'}},
+        '@tileflow/dev': {files: {'dist/index.js': 'generated declaration order changed\n'}},
+      },
+    );
+
+    await validateFinalRelease({
+      plan,
+      registryState: state,
+      candidateTarballs: candidates.paths,
+      finalTarballs: final.paths,
+    });
   } finally {
     await rm(root, {force: true, recursive: true});
   }

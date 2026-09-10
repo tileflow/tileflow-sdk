@@ -113,8 +113,9 @@ The preparation job creates these ephemeral records under its runner temporary d
   packages, material differences, target alphas, and final internal ranges;
 - `final/`: all packages rebuilt at the target graph;
 - `selected-relative.txt`: dependency-safe ordered list of only the selected tarballs; and
-- `coordinates-builder-input/`: an offline-verifiable input only when
-  `@tileflow/coordinates-runtime` is selected, bound to its exact tarball and source revision; and
+- `coordinates-builder-input/` and `coordinates-builder-input-receipt.json`: an offline-verifiable
+  input only when `@tileflow/coordinates-runtime` is selected, bound to its exact tarball, source
+  revision, and content-addressed input ID; and
 - `release-bundle.tar`: `plan.json`, `selected-relative.txt`, the exact selected tarballs, and that
   optional builder input.
 
@@ -124,6 +125,10 @@ After npm returns, each registry integrity value is matched to the approved tarb
 selected version is downloaded again and compared exactly. The workflow creates
 `release-receipt.json`. The receipt records the source SHA, bundle SHA-256, package versions,
 material reasons, npm integrity, and each tarball's SHA-256 and size; it is retained for 90 days.
+
+Before native qualification, a consumer verifies the exact release-bundle SHA-256, then supplies
+the builder-input ID from `coordinates-builder-input-receipt.json` as a separate expected value.
+It must not trust an ID or receipt copied from an unverified input directory.
 
 Merging to `main` alone creates none of these artifacts. `main` plus its green required CI is the
 candidate; preparation is deliberately requested only when a release is wanted.

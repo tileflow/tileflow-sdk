@@ -264,10 +264,10 @@ jobs:
         run: |
           set -euo pipefail
           release_root="$RUNNER_TEMP/tileflow-release"
-          runtime_tarball="$(FINAL_TARBALLS="$release_root/final-tarballs.txt" node <<'NODE'
+          runtime_tarball="$(SELECTED_TARBALLS="$release_root/selected-tarballs.txt" node <<'NODE'
           const {execFileSync} = require('node:child_process');
           const {readFileSync} = require('node:fs');
-          const tarballs = readFileSync(process.env.FINAL_TARBALLS, 'utf8').trim().split('\n').filter(Boolean);
+          const tarballs = readFileSync(process.env.SELECTED_TARBALLS, 'utf8').trim().split('\n').filter(Boolean);
           const matches = tarballs.filter((tarball) => {
             const manifest = JSON.parse(execFileSync('tar', ['-xOf', tarball, 'package/package.json'], {encoding: 'utf8'}));
             return manifest.name === '@tileflow/coordinates-runtime';
@@ -282,6 +282,34 @@ jobs:
               --admission native-qualified-eligible \
               --runtime-package "$runtime_tarball" \
               --output "$release_root/coordinates-builder-input"
+            BUILDER_INPUT_DIRECTORY="$release_root/coordinates-builder-input" \
+            RECEIPT_PATH="$release_root/coordinates-builder-input-receipt.json" \
+            RELEASE_SHA="$RELEASE_SHA" node <<'NODE'
+            const {readFileSync, writeFileSync} = require('node:fs');
+            const directory = process.env.BUILDER_INPUT_DIRECTORY;
+            const manifestPath = `${directory}/builder-input.json`;
+            const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+            if (manifest.adapter?.sourceRevision !== process.env.RELEASE_SHA) {
+              throw new Error('Coordinates builder input source revision does not match the release SHA.');
+            }
+            const receipt = {
+              schemaVersion: 1,
+              kind: 'tileflow-coordinates-builder-input-release-receipt',
+              sourceRevision: manifest.adapter.sourceRevision,
+              builderInput: {
+                id: manifest.inputId,
+                sourceDigest: manifest.adapter.sourceDigest,
+                runtimePackage: {
+                  archiveSha256: manifest.runtimePackage.archive.sha256,
+                  integrity: manifest.runtimePackage.integrity,
+                  name: manifest.runtimePackage.name,
+                  version: manifest.runtimePackage.version,
+                },
+              },
+            };
+            writeFileSync(process.env.RECEIPT_PATH, `${JSON.stringify(receipt, null, 2)}\n`);
+            process.stdout.write(`Coordinates builder input: ${receipt.builderInput.id}\n`);
+            NODE
           fi
 
       - name: Recheck current main before handing off publication
@@ -313,7 +341,7 @@ jobs:
           bundle_entries=(plan.json selected-relative.txt selected)
           if [[ -d "$release_root/coordinates-builder-input" ]]
           then
-            bundle_entries+=(coordinates-builder-input)
+            bundle_entries+=(coordinates-builder-input coordinates-builder-input-receipt.json)
           fi
           tar -cf "$release_root/release-bundle.tar" -C "$release_root" "${bundle_entries[@]}"
           bundle_digest="$(shasum -a 256 "$release_root/release-bundle.tar" | cut -d ' ' -f 1)"

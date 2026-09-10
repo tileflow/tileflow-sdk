@@ -1,10 +1,13 @@
 export {createLocalCoordinates, type CoordinatesLocalOptions} from './local';
 export {
   CoordinatesBuilderInputError,
+  coordinatesBuilderInputReceiptSchema,
   coordinatesBuilderInputSchema,
   coordinatesBuilderInputSourceSchema,
+  verifyCoordinatesBuilderInputReceipt,
   verifyCoordinatesBuilderInput,
   type CoordinatesBuilderInput,
+  type CoordinatesBuilderInputReceipt,
   type CoordinatesBuilderInputSource,
 } from './builder-input';
 export {

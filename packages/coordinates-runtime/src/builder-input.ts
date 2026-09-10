@@ -187,11 +187,71 @@ export const coordinatesBuilderInputSchema = z
 
 export type CoordinatesBuilderInput = z.infer<typeof coordinatesBuilderInputSchema>;
 
+/** A release-bundle record that binds a trusted input identity to its exact SDK release inputs. */
+export const coordinatesBuilderInputReceiptSchema = z
+  .object({
+    builderInput: z
+      .object({
+        id: z.string().regex(/^cbi_[a-f0-9]{64}$/u),
+        runtimePackage: z
+          .object({
+            archiveSha256: sha256,
+            integrity: sha512Integrity,
+            name: z.literal('@tileflow/coordinates-runtime'),
+            version: z.string().regex(/^\d+\.\d+\.\d+-alpha\.\d+$/u),
+          })
+          .strict(),
+        sourceDigest: sha256,
+      })
+      .strict(),
+    kind: z.literal('tileflow-coordinates-builder-input-release-receipt'),
+    schemaVersion: z.literal(1),
+    sourceRevision,
+  })
+  .strict();
+
+export type CoordinatesBuilderInputReceipt = z.infer<typeof coordinatesBuilderInputReceiptSchema>;
+
 export class CoordinatesBuilderInputError extends Error {
   constructor(readonly code: string) {
     super('Coordinates builder input verification failed.');
     this.name = 'CoordinatesBuilderInputError';
   }
+}
+
+/**
+ * Match an offline-verified input to the identity selected from a trusted SDK release bundle.
+ * The caller owns the receipt transport and supplies the independently trusted input ID.
+ */
+export function verifyCoordinatesBuilderInputReceipt(options: {
+  expectedInputId: string;
+  input: CoordinatesBuilderInput;
+  receipt: unknown;
+}): CoordinatesBuilderInputReceipt {
+  if (options.expectedInputId !== options.input.inputId)
+    throw new CoordinatesBuilderInputError('BUILDER_INPUT_EXPECTED_ID_MISMATCH');
+
+  let receipt: CoordinatesBuilderInputReceipt;
+  try {
+    receipt = coordinatesBuilderInputReceiptSchema.parse(options.receipt);
+  } catch {
+    throw new CoordinatesBuilderInputError('BUILDER_INPUT_RECEIPT_INVALID');
+  }
+
+  if (
+    receipt.sourceRevision !== options.input.adapter.sourceRevision ||
+    receipt.builderInput.id !== options.input.inputId ||
+    receipt.builderInput.sourceDigest !== options.input.adapter.sourceDigest ||
+    receipt.builderInput.runtimePackage.archiveSha256 !==
+      options.input.runtimePackage.archive.sha256 ||
+    receipt.builderInput.runtimePackage.integrity !== options.input.runtimePackage.integrity ||
+    receipt.builderInput.runtimePackage.name !== options.input.runtimePackage.name ||
+    receipt.builderInput.runtimePackage.version !== options.input.runtimePackage.version
+  ) {
+    throw new CoordinatesBuilderInputError('BUILDER_INPUT_RECEIPT_MISMATCH');
+  }
+
+  return receipt;
 }
 
 export async function verifyCoordinatesBuilderInput(options: {

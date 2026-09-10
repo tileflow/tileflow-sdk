@@ -52,7 +52,8 @@ runtime package directory, requires its complete package inventory and source de
 
 A builder input is not an installer, a Hosted endpoint, or a public runtime distribution. A
 development input cannot qualify a native release; an eligible input is bound to an exact published
-alpha runtime package and an SDK source revision.
+alpha runtime package and an SDK source revision. Native qualification also requires the matching
+release-bundle receipt and an independently trusted content-addressed input ID.
 
 ## Local execution
 

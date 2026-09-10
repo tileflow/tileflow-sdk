@@ -309,7 +309,7 @@ jobs:
             };
             writeFileSync(process.env.RECEIPT_PATH, `${JSON.stringify(receipt, null, 2)}\n`);
             process.stdout.write(`Coordinates builder input: ${receipt.builderInput.id}\n`);
-            NODE
+          NODE
           fi
 
       - name: Recheck current main before handing off publication

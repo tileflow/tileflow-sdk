@@ -47,6 +47,7 @@ test('documents candidate, approval, and human-owned stable SemVer boundaries', 
     publishing,
     /Candidate tarballs remain the\s+immutability proof for unselected packages/u,
   );
+  assert.match(publishing, /package's contents must match under the exact\s+release comparison/u);
 });
 
 test('only a deliberate parameter-free dispatch from current main can prepare publication', async () => {
@@ -151,6 +152,22 @@ test('downloads registry baselines from the single dependency-safe public catalo
   assert.match(workflow, /\\tunpublished\\n/u);
   assert.match(workflow, /configured first release \$initial_version/u);
   assert.match(workflow, /baseline_state/u);
+});
+
+test('proves candidate package artifacts deterministic before release planning', async () => {
+  const workflow = await readFile(
+    new URL('../.github/workflows/publish.yml', import.meta.url),
+    'utf8',
+  );
+  const candidate = workflow.slice(
+    workflow.indexOf('Build and pack at current registry versions'),
+    workflow.indexOf('Plan changed package releases'),
+  );
+
+  assert.match(candidate, /candidate-repeat/u);
+  assert.match(candidate, /candidate-repeat-tarballs\.txt/u);
+  assert.match(candidate, /reconcile-release\.mjs \\\n\s+candidate-determinism/u);
+  assert.equal((candidate.match(/pnpm exec turbo build --force/gu) ?? []).length, 2);
 });
 
 test('keeps unselected package proof bound to candidate tarballs', async () => {

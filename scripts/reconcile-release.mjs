@@ -328,6 +328,26 @@ export async function packAllPackages(
   return tarballs;
 }
 
+export async function validateCandidateDeterminism({candidateTarballs, repeatedCandidateTarballs}) {
+  const candidates = await readTarballsByName(candidateTarballs);
+  const repeated = await readTarballsByName(repeatedCandidateTarballs);
+  validatePublicManifests(candidates);
+  validatePublicManifests(repeated);
+
+  for (const name of publicPackageNames) {
+    const comparison = await comparePackageTarballs(
+      candidates.get(name).tarball,
+      repeated.get(name).tarball,
+      {mode: 'exact'},
+    );
+    assert.equal(
+      comparison.equal,
+      true,
+      `${name} candidate artifacts are non-deterministic: ${comparison.differences.join(', ')}.`,
+    );
+  }
+}
+
 export async function createReleasePlan({sourceSha, registryState, candidateTarballs}) {
   assert.match(sourceSha, commitPattern, 'Release source must be a full lowercase commit SHA.');
   await validateRegistryState(registryState);
@@ -703,6 +723,15 @@ async function main() {
     assert.equal(args.length, 2, 'pack expects a destination and tarball-list path.');
     const tarballs = await packAllPackages(args[0], args[1]);
     console.log(`Packed ${tarballs.length} public packages.`);
+    return;
+  }
+  if (command === 'candidate-determinism') {
+    assert.equal(args.length, 2, 'candidate-determinism expects two packed tarball lists.');
+    await validateCandidateDeterminism({
+      candidateTarballs: nonEmptyLines(await readFile(resolve(args[0]), 'utf8')),
+      repeatedCandidateTarballs: nonEmptyLines(await readFile(resolve(args[1]), 'utf8')),
+    });
+    console.log('Validated deterministic candidate artifacts.');
     return;
   }
   if (command === 'plan') {

@@ -192,6 +192,15 @@ jobs:
             pack \
             "$release_root/candidate" \
             "$release_root/candidate-tarballs.txt"
+          pnpm exec turbo build --force
+          node scripts/reconcile-release.mjs \
+            pack \
+            "$release_root/candidate-repeat" \
+            "$release_root/candidate-repeat-tarballs.txt"
+          node scripts/reconcile-release.mjs \
+            candidate-determinism \
+            "$release_root/candidate-tarballs.txt" \
+            "$release_root/candidate-repeat-tarballs.txt"
 
       - name: Plan changed package releases
         if: steps.head.outputs.current == 'true'

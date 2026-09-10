@@ -10,6 +10,7 @@ import {
   createRegistryState,
   createReleasePlan,
   renderReleaseSummary,
+  validateCandidateDeterminism,
   validateFinalRelease,
   validatePublicCatalogCoverage,
   validateReleasePlan,
@@ -127,6 +128,27 @@ test('produces an empty plan when npm already contains the current public artifa
       candidateTarballs: candidates.paths,
     });
     assert.deepEqual(plan.packages, []);
+  } finally {
+    await rm(root, {force: true, recursive: true});
+  }
+});
+
+test('rejects non-deterministic candidate artifacts before release planning', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tileflow-reconcile-candidate-determinism-test-'));
+  try {
+    const versions = Object.fromEntries(publicPackageNames.map((name) => [name, '0.1.0-alpha.16']));
+    const candidate = await tarballSet(root, 'candidate', versions);
+    const rebuilt = await tarballSet(root, 'rebuilt', versions, {
+      '@tileflow/search': {files: {'dist/index.js': 'declaration order changed\n'}},
+    });
+
+    await assert.rejects(
+      validateCandidateDeterminism({
+        candidateTarballs: candidate.paths,
+        repeatedCandidateTarballs: rebuilt.paths,
+      }),
+      /@tileflow\/search candidate artifacts are non-deterministic: package\/dist\/index\.js/u,
+    );
   } finally {
     await rm(root, {force: true, recursive: true});
   }

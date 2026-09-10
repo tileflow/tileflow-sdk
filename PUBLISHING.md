@@ -108,7 +108,8 @@ The preparation job creates these ephemeral records under its runner temporary d
 
 - `registry.json`: schema 4 snapshot of every npm alpha baseline, including explicit unpublished
   state and configured first versions;
-- `candidate/`: all packages built at their effective baseline versions;
+- `candidate/` and `candidate-repeat/`: two candidate packings of all packages built at their
+  effective baseline versions;
 - `plan.json`: schema 4 plan bound to the exact 40-character `main` SHA, with baselines, selected
   packages, material differences, target alphas, and final internal ranges;
 - `final/`: all packages rebuilt at the target graph;
@@ -155,10 +156,11 @@ cover.
 
 Tests, workflows, and repository-only documentation do not cause a release unless they change a
 packed artifact. Package READMEs, `files`, exports, runtime dependencies, executable modes, built
-JavaScript, declarations, maps, icons, fonts, and other packaged resources do. Candidate comparison
-is byte-sensitive: a non-deterministic candidate build is material. Candidate tarballs remain the
-immutability proof for unselected packages; their later final rebuild output is neither selected nor
-bundled.
+JavaScript, declarations, maps, icons, fonts, and other packaged resources do. Before selection, the
+workflow builds and packs every candidate twice. Each package's contents must match under the exact
+release comparison; otherwise preparation stops.
+Candidate tarballs remain the immutability proof for unselected packages; their later final rebuild
+output is neither selected nor bundled.
 
 After selection, the workflow applies target versions and dependency floors, forces a clean build,
 runs the complete repository check and packed public consumer, and packs again. A selected tarball

@@ -15,6 +15,9 @@ test('retains a Coordinates builder input only for the selected runtime tarball'
   assert.match(step, /SELECTED_TARBALLS=.*selected-tarballs\.txt/u);
   assert.doesNotMatch(step, /FINAL_TARBALLS/u);
   assert.match(step, /coordinates-builder-input-receipt\.json/u);
+  assert.match(step, /manifest\.adapter\?\.sourceRevision !== process\.env\.RELEASE_SHA/u);
+  assert.match(step, /sourceDigest: manifest\.adapter\.sourceDigest/u);
+  assert.match(step, /archiveSha256: manifest\.runtimePackage\.archive\.sha256/u);
   assert.match(
     workflow,
     /bundle_entries\+=\(coordinates-builder-input coordinates-builder-input-receipt\.json\)/u,

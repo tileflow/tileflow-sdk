@@ -6,6 +6,7 @@ import type {CoordinatesExecutionRelease, CoordinatesRuntimeArtifact} from './re
 
 const sha256 = z.string().regex(/^[a-f0-9]{64}$/u);
 const version = z.string().regex(/^\d+\.\d+\.\d+$/u);
+const integrity = z.string().regex(/^sha512-[A-Za-z0-9+/]+={0,2}$/u);
 
 /** The first qualified ABI profile; other profiles need their own verified evidence. */
 export const nativeRuntimeProfile = Object.freeze({
@@ -48,6 +49,19 @@ export const coordinatesNativeQualificationSchema = z
     id: z.string().regex(/^nq_[a-f0-9]{64}$/u),
     policy: z.literal('native-offline-v1'),
     subjectDigest: sha256,
+    builderInput: z
+      .object({
+        id: z.string().regex(/^cbi_[a-f0-9]{64}$/u),
+        sourceDigest: sha256,
+        runtimePackage: z
+          .object({
+            integrity,
+            name: z.literal('@tileflow/coordinates-runtime'),
+            version: z.string().regex(/^\d+\.\d+\.\d+-alpha\.\d+$/u),
+          })
+          .strict(),
+      })
+      .strict(),
     runtimeProfile: profileSchema,
     toolchain: z
       .object({

@@ -59,6 +59,9 @@ test('qualification rejects missing evidence, provider fields, mismatched identi
       value.account = '123456789012';
     },
     (value: any) => {
+      value.builderInput.id = 'cbi_' + '0'.repeat(64);
+    },
+    (value: any) => {
       value.runtimeProfile.region = 'example';
     },
     (value: any) => {
@@ -135,6 +138,16 @@ export function qualified(subjectDigest: string) {
     schemaVersion: 1 as const,
     policy: 'native-offline-v1' as const,
     subjectDigest,
+    builderInput: {
+      id: 'cbi_' + 'a'.repeat(64),
+      sourceDigest: 'b'.repeat(64),
+      runtimePackage: {
+        integrity:
+          'sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==',
+        name: '@tileflow/coordinates-runtime' as const,
+        version: '0.1.0-alpha.1',
+      },
+    },
     runtimeProfile: nativeRuntimeProfile,
     toolchain: {
       compiler: {name: 'gcc' as const, version: '12.2.0'},

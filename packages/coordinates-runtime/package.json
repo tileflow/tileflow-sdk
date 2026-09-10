@@ -35,7 +35,7 @@
   "scripts": {
     "prepack": "node ../../scripts/package-license.mjs --prepare",
     "postpack": "node ../../scripts/package-license.mjs --clean",
-    "build": "tsup src/index.ts --format esm --dts --clean --no-splitting --platform node",
+    "build": "tsup src/index.ts --format esm --dts --clean --no-splitting --platform node && node ../../scripts/coordinates-builder-input.mjs source-descriptor",
     "verify": "pnpm run build && tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"

@@ -592,7 +592,7 @@ An explicit key or `TILEFLOW_API_KEY` never uses the saved account session. The 
 `--map-id` that does not match the key. Read-only hosted icon comparison validates the same binding
 before loading its baseline.
 
-The CI key grants only `styles:write` and `status:read`. It cannot upload
+A deploy-only key grants `styles:write` and `status:read`. Without additional permissions it cannot upload
 datasets or render images. Give it an expiration, rotate the repository secret
 before it expires, and avoid non-expiring CI keys.
 
@@ -795,3 +795,12 @@ GitHub Action, an atomic multi-map deploy set, or a Tileflow-hosted remote
 builder.
 
 Docs: https://tileflow.dev/docs/deploy
+
+### Team credentials and explicit Map targets
+
+A unified Team credential can combine data and Map operations. Use `TILEFLOW_API_KEY` and an
+explicit `--map-id` for deployment, status and hosted icon comparisons. The CLI sends that target
+with style, icon and font requests and verifies the credential covers it. The Hosted API must
+support unified credentials. All Maps includes future Maps; selected Maps is an explicit list.
+A legacy Map key keeps its original binding. Personal CLI login remains separate from machine
+credentials. Credential administration and Team management use the Hosted API or dashboard.

@@ -3,6 +3,7 @@ import test from 'node:test';
 import type {CompiledTileflowIconPackage} from '@tileflow/dev/icons';
 import type {CliAccountSessionV2} from '../src/account-session';
 import {
+  publishHostedStyle,
   requestHostedJson,
   requestMapCapability,
   requestProjectCapability,
@@ -11,6 +12,41 @@ import {
   validateAccountSession,
   validateApiKey,
 } from '../src/hosted-client';
+
+test('Team credentials validate without a Project and Map operations send the chosen target', async () => {
+  const profile = await validateApiKey('https://api.example.test', 'synthetic-team-key', {
+    fetch: (async () =>
+      Response.json({
+        apiKeyId: 'key_team',
+        credentialType: 'team_api_key',
+        mapId: null,
+        project: null,
+        projectId: null,
+        organization: {id: 'org_team', name: 'Team', slug: 'team'},
+        mapAccess: {mode: 'selected', ids: ['map_AbCdEfGhIjKlMnOp']},
+        scopes: ['styles:write'],
+      })) as typeof fetch,
+  });
+  assert.equal(profile.ok, true);
+  if (profile.ok) assert.equal(profile.value.credentialType, 'team_api_key');
+  let target: string | null = null;
+  await publishHostedStyle(
+    {
+      apiKey: 'synthetic-team-key',
+      apiUrl: 'https://api.example.test',
+      mapId: 'map_AbCdEfGhIjKlMnOp',
+    },
+    {},
+    'Deploy',
+    {
+      fetch: (async (_url, init) => {
+        target = new Headers(init?.headers).get('X-Tileflow-Map-Id');
+        return Response.json({error: 'fixture'}, {status: 403});
+      }) as typeof fetch,
+    },
+  );
+  assert.equal(target, 'map_AbCdEfGhIjKlMnOp');
+});
 
 test('Hosted client pins requests and credentials to one normalized origin', async () => {
   let calls = 0;

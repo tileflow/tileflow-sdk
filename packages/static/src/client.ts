@@ -54,6 +54,7 @@ export type StaticMapResult = StaticMapImageResult | StaticMapHostedResult;
 
 export type StaticMapCreateOptions = {
   apiKey?: string;
+  mapId?: string;
   apiUrl?: string;
   fetch?: typeof fetch;
   idempotencyKey: string;
@@ -257,6 +258,12 @@ export async function requestStaticMapUntilReady(
 
   if (options.apiKey) {
     headers.Authorization = `Bearer ${options.apiKey}`;
+  }
+  if (options.mapId !== undefined) {
+    if (!/^map_[A-Za-z0-9_-]{16}$/u.test(options.mapId)) {
+      throw new Error('Invalid Tileflow Map ID.');
+    }
+    headers['X-Tileflow-Map-Id'] = options.mapId;
   }
 
   return runWithinStaticMapBudget(maxWaitMs, options.signal, async (signal) => {

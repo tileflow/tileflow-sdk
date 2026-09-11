@@ -21,7 +21,7 @@ import {
 const defaultHostedRequestTimeoutMs = 30_000;
 const maximumHostedRequestTimeoutMs = 60_000;
 
-export type HostedApi = {apiKey: string; apiUrl: string};
+export type HostedApi = {apiKey: string; apiUrl: string; mapId?: string};
 export type HostedCapabilityScope = 'static:write' | 'status:read' | 'styles:write';
 export type HostedTeamCapabilityScope = 'status:read' | 'tilesets:read' | 'tilesets:write';
 export type HostedRequestOptions = {
@@ -30,7 +30,7 @@ export type HostedRequestOptions = {
   timeoutMs?: number;
 };
 
-export type ApiProfile = {
+export type ProjectApiProfile = {
   apiKeyId: string;
   credentialType: 'project_api_key';
   mapId: string;
@@ -39,6 +39,27 @@ export type ApiProfile = {
   projectId: string;
   scopes: string[];
 };
+
+export type TeamApiProfile = {
+  apiKeyId: string;
+  credentialType: 'team_api_key';
+  organization: ProjectIdentity;
+  mapId: null;
+  project: null;
+  projectId: null;
+  mapAccess: {mode: 'all'} | {mode: 'selected'; ids: string[]} | null;
+  scopes: string[];
+};
+
+export type ApiProfile = ProjectApiProfile | TeamApiProfile;
+
+export function apiProfileCanTargetMap(profile: ApiProfile, mapId: string) {
+  if (!/^map_[A-Za-z0-9_-]{16}$/u.test(mapId)) return false;
+  return profile.credentialType === 'project_api_key'
+    ? profile.mapId === mapId
+    : profile.mapAccess?.mode === 'all' ||
+        (profile.mapAccess?.mode === 'selected' && profile.mapAccess.ids.includes(mapId));
+}
 
 export type DeviceAuthorization = {
   apiUrl: string;
@@ -209,6 +230,51 @@ export async function validateApiKey(
     return {error: `API key validation failed (${response.status}).`, ok: false};
   }
   const body = asRecord(response.body);
+  if (response.json && body.credentialType === 'team_api_key') {
+    const mapAccess = asRecord(body.mapAccess);
+    const validMaps =
+      body.mapAccess === null ||
+      (mapAccess.mode === 'all' && Object.keys(mapAccess).length === 1) ||
+      (mapAccess.mode === 'selected' &&
+        Object.keys(mapAccess).length === 2 &&
+        Array.isArray(mapAccess.ids) &&
+        mapAccess.ids.length > 0 &&
+        mapAccess.ids.length <= 1000 &&
+        mapAccess.ids.every(
+          (id) => typeof id === 'string' && /^map_[A-Za-z0-9_-]{16}$/u.test(id),
+        ) &&
+        new Set(mapAccess.ids).size === mapAccess.ids.length);
+    if (
+      typeof body.apiKeyId !== 'string' ||
+      !isProjectIdentity(body.organization) ||
+      body.project !== null ||
+      body.projectId !== null ||
+      body.mapId !== null ||
+      !validMaps ||
+      !Array.isArray(body.scopes) ||
+      !body.scopes.every((scope) => typeof scope === 'string')
+    ) {
+      return {error: 'API key validation returned an invalid response.', ok: false};
+    }
+    return {
+      ok: true,
+      value: {
+        apiKeyId: body.apiKeyId,
+        credentialType: 'team_api_key',
+        organization: body.organization,
+        mapId: null,
+        project: null,
+        projectId: null,
+        scopes: body.scopes as string[],
+        mapAccess:
+          body.mapAccess === null
+            ? null
+            : mapAccess.mode === 'all'
+              ? {mode: 'all'}
+              : {mode: 'selected', ids: mapAccess.ids as string[]},
+      },
+    };
+  }
   if (
     !response.json ||
     typeof body.apiKeyId !== 'string' ||
@@ -423,7 +489,7 @@ export async function publishHostedStyle(
     '/v1/styles',
     {
       ...jsonRequest('POST', body),
-      headers: {...authorizationHeaders(api.apiKey), 'Content-Type': 'application/json'},
+      headers: {...authorizationHeaders(api.apiKey, api.mapId), 'Content-Type': 'application/json'},
     },
     options,
   );
@@ -458,7 +524,7 @@ export async function uploadHostedIconPackage(
   const response = await requestHostedJson(
     api.apiUrl,
     `/v1/icon-packages/${encodeURIComponent(iconPackage.contentHash)}`,
-    {body: formData, headers: authorizationHeaders(api.apiKey), method: 'PUT'},
+    {body: formData, headers: authorizationHeaders(api.apiKey, api.mapId), method: 'PUT'},
     options,
   );
   if (!response.ok) return {ok: false, status: response.status};
@@ -510,7 +576,7 @@ export async function uploadHostedFontBundle(
   const response = await requestHostedJson(
     api.apiUrl,
     `/v1/font-bundles/${encodeURIComponent(bundle.contentHash)}`,
-    {body: formData, headers: authorizationHeaders(api.apiKey), method: 'PUT'},
+    {body: formData, headers: authorizationHeaders(api.apiKey, api.mapId), method: 'PUT'},
     options,
   );
   if (!response.ok) return {ok: false, status: response.status};
@@ -540,7 +606,7 @@ export async function fetchHostedMapStatus(
   const response = await requestHostedJson(
     api.apiUrl,
     '/v1/status',
-    {headers: authorizationHeaders(api.apiKey)},
+    {headers: authorizationHeaders(api.apiKey, api.mapId)},
     options,
   );
   if (!response.ok) throw new Error(`Status failed: ${response.status}.`);
@@ -657,11 +723,16 @@ function jsonRequest(method: string, body: unknown): RequestInit {
   };
 }
 
-function authorizationHeaders(token: string): Record<string, string> {
+function authorizationHeaders(token: string, mapId?: string): Record<string, string> {
   if (!token || token.length > 8_192 || /[\p{Cc}]/u.test(token)) {
     throw new TypeError('Hosted authorization credential is invalid.');
   }
-  return {Authorization: `Bearer ${token}`};
+  if (mapId !== undefined && !/^map_[A-Za-z0-9_-]{16}$/u.test(mapId))
+    throw new TypeError('Hosted Map ID is invalid.');
+  return {
+    Authorization: `Bearer ${token}`,
+    ...(mapId === undefined ? {} : {'X-Tileflow-Map-Id': mapId}),
+  };
 }
 
 function parseResponse<T>(response: HostedJsonResponse, schema: z.ZodType<T>, label: string): T {

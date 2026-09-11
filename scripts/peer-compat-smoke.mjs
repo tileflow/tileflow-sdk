@@ -35,24 +35,24 @@ const suites = {
           '@types/react': '18.3.3',
           '@types/react-dom': '18.3.0',
           '@types/geojson': geoJsonTypesVersion,
-          'maplibre-gl': '5.0.0',
+          'maplibre-gl': '6.4.1',
           react: '18.0.0',
           'react-dom': '18.0.0',
           typescript: typeScriptVersion,
         },
-        name: 'react-18-maplibre-5',
+        name: 'react-18-maplibre-6-4',
       },
       {
         dependencies: {
           '@types/react': '19.0.0',
           '@types/react-dom': '19.0.0',
           '@types/geojson': geoJsonTypesVersion,
-          'maplibre-gl': '6.0.0',
+          'maplibre-gl': '6.9.0',
           react: '19.0.0',
           'react-dom': '19.0.0',
           typescript: typeScriptVersion,
         },
-        name: 'react-19-maplibre-6',
+        name: 'react-19-maplibre-6-9',
       },
     ],
     verify: verifyReact,
@@ -60,7 +60,7 @@ const suites = {
   vue: {
     build: ['core', 'interactions', 'vue'],
     packages: ['core', 'interactions', 'vue'],
-    scenarios: ['5.0.0', '6.0.0'].map((maplibreVersion) => ({
+    scenarios: ['6.4.1', '6.9.0'].map((maplibreVersion) => ({
       dependencies: {
         '@types/geojson': geoJsonTypesVersion,
         '@vue/server-renderer': '3.3.0',
@@ -68,14 +68,14 @@ const suites = {
         typescript: typeScriptVersion,
         vue: '3.3.0',
       },
-      name: `vue-3.3-maplibre-${semver.major(maplibreVersion)}`,
+      name: `vue-3.3-maplibre-${maplibreVersion.replaceAll('.', '-')}`,
     })),
     verify: verifyVue,
   },
   svelte: {
     build: ['core', 'interactions', 'svelte'],
     packages: ['core', 'interactions', 'svelte'],
-    scenarios: ['5.0.0', '6.0.0'].map((maplibreVersion) => ({
+    scenarios: ['6.4.1', '6.9.0'].map((maplibreVersion) => ({
       dependencies: {
         '@types/geojson': geoJsonTypesVersion,
         'maplibre-gl': maplibreVersion,
@@ -83,7 +83,7 @@ const suites = {
         'svelte-preprocess': '6.0.5',
         typescript: typeScriptVersion,
       },
-      name: `svelte-5-maplibre-${semver.major(maplibreVersion)}`,
+      name: `svelte-5-maplibre-${maplibreVersion.replaceAll('.', '-')}`,
     })),
     verify: verifySvelte,
   },

@@ -1202,9 +1202,11 @@
   }
 
   function createTileflowMapLibrePoiMap(map: MapLibreMap): TileflowMapLibrePoiMap {
+    const poiMap = map as unknown as TileflowMapLibrePoiMap;
+
     return {
       getStyle: () => map.getStyle(),
-      on: (event, listener) => map.on(event, listener),
+      on: (event, listener) => poiMap.on(event, listener),
       queryRenderedFeatures(point, options) {
         return map
           .queryRenderedFeatures(point as PointLike, {layers: [...options.layers]})

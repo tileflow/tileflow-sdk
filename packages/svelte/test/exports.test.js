@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {access, readFile} from 'node:fs/promises';
 import test from 'node:test';
-import {loadTileflowMapLibre} from '../src/maplibre.js';
+import {configureTileflowMapLibre, loadTileflowMapLibre} from '../src/maplibre.js';
 
 test('publishes resolvable Svelte and declaration entry points', async () => {
   const packageJson = JSON.parse(
@@ -61,6 +61,31 @@ test('interactive runtime resolves and reuses the MapLibre renderer', async () =
   assert.equal(typeof maplibregl.Map, 'function');
   assert.equal(typeof maplibregl.Marker, 'function');
   assert.equal(typeof maplibregl.addProtocol, 'function');
+});
+
+test('configures the MapLibre worker before an interactive map uses it', async () => {
+  configureTileflowMapLibre({workerUrl: '/assets/maplibre-gl-worker.mjs'});
+
+  const maplibregl = await loadTileflowMapLibre();
+  assert.equal(maplibregl.getWorkerUrl(), '/assets/maplibre-gl-worker.mjs');
+});
+
+test('worker configuration does not add an unhandled renderer-load rejection', async () => {
+  const source = await readFile(new URL('../src/maplibre.js', import.meta.url), 'utf8');
+  const runtime = await import(`data:text/javascript,${encodeURIComponent(source)}`);
+  const unhandled = [];
+  const observe = (reason) => unhandled.push(reason);
+
+  process.on('unhandledRejection', observe);
+  try {
+    const loading = runtime.loadTileflowMapLibre();
+    runtime.configureTileflowMapLibre({workerUrl: '/assets/maplibre-gl-worker.mjs'});
+    await assert.rejects(loading);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off('unhandledRejection', observe);
+  }
 });
 
 test('initial renderer loading converges on a theme selected while it is in flight', async () => {

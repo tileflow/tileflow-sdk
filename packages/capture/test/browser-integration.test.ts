@@ -60,6 +60,106 @@ test(
 );
 
 test(
+  'loads a loopback Tileflow font from the virtual module document origin',
+  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1'},
+  async () => {
+    const requests = new Set<string>();
+    const server = createServer((request, response) => {
+      requests.add(request.url ?? '/');
+      response.writeHead(200, {'Content-Type': 'font/ttf'});
+      response.end(oxaniumMedium);
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const origin = `http://127.0.0.1:${address.port}`;
+    const browser = await launchTileflowCaptureBrowser({allowInstall: false});
+    const loopbackFontStyle: MapLibreStyle = {
+      ...style,
+      metadata: {
+        'tileflow:fontFaces': [
+          {
+            family: 'Oxanium Medium',
+            source: `${origin}/fonts/oxanium-medium.ttf`,
+            weight: '500',
+          },
+        ],
+      },
+    };
+
+    try {
+      const capture = await captureStandaloneTileflowScene({
+        assets,
+        browser,
+        scene,
+        style: loopbackFontStyle,
+      });
+
+      assert.deepEqual(readPngDimensions(capture.png), {height: 64, width: 64});
+      assert.equal(capture.networkDependent, false);
+      assert.deepEqual(capture.warnings, []);
+      assert.equal(requests.has('/fonts/oxanium-medium.ttf'), true);
+    } finally {
+      await browser.close();
+      await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
+    }
+  },
+);
+
+test(
+  'loads a loopback sprite array from the virtual module document origin',
+  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1'},
+  async () => {
+    const requests = new Set<string>();
+    const server = createServer((request, response) => {
+      const path = request.url?.split('?')[0] ?? '/';
+      requests.add(path);
+      response.setHeader('Access-Control-Allow-Origin', '*');
+      if (path === '/sprites/fixture.json' || path === '/sprites/fixture@2x.json') {
+        response.writeHead(200, {'Content-Type': 'application/json'});
+        response.end(JSON.stringify({marker: {height: 2, pixelRatio: 1, width: 2, x: 0, y: 0}}));
+        return;
+      }
+      if (path === '/sprites/fixture.png' || path === '/sprites/fixture@2x.png') {
+        response.writeHead(200, {'Content-Type': 'image/png'});
+        response.end(transparentPng);
+        return;
+      }
+      response.writeHead(404).end();
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const origin = `http://127.0.0.1:${address.port}`;
+    const browser = await launchTileflowCaptureBrowser({allowInstall: false});
+    const loopbackSpriteStyle: MapLibreStyle = {
+      ...style,
+      sprite: [{id: 'default', url: `${origin}/sprites/fixture`}],
+    };
+
+    try {
+      const capture = await captureStandaloneTileflowScene({
+        assets,
+        browser,
+        scene,
+        style: loopbackSpriteStyle,
+      });
+
+      assert.deepEqual(readPngDimensions(capture.png), {height: 64, width: 64});
+      assert.equal(capture.networkDependent, false);
+      assert.deepEqual(capture.warnings, []);
+      assert.equal(requests.has('/sprites/fixture.json'), true);
+      assert.equal(requests.has('/sprites/fixture.png'), true);
+    } finally {
+      await browser.close();
+      await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
+    }
+  },
+);
+
+test(
   'renders validated compiler-generated roads twice against loopback vector fixtures',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 30_000},
   async () => {

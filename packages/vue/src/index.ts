@@ -95,6 +95,9 @@ import {
 import {loadTileflowMapLibre} from './maplibre.js';
 import {assertTileflowMapStyleInputs, type TileflowMapStyleSourceProps} from './style-source.js';
 
+export {configureTileflowMapLibre} from './maplibre.js';
+export type {TileflowMapLibreConfiguration} from './maplibre.js';
+
 export type TileflowMapMode = 'interactive' | 'image';
 export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
 export type TileflowMapSource = TileflowRuntimeSource;
@@ -1313,9 +1316,11 @@ function interactionDiagnosticKey(diagnostic: TileflowInteractionDiagnostic): st
 }
 
 function createTileflowVuePoiMap(map: MapLibreMap): TileflowMapLibrePoiMap {
+  const poiMap = map as unknown as TileflowMapLibrePoiMap;
+
   return {
     getStyle: () => map.getStyle(),
-    on: (event, listener) => map.on(event, listener),
+    on: (event, listener) => poiMap.on(event, listener),
     queryRenderedFeatures(point, options) {
       return map
         .queryRenderedFeatures(point as Parameters<MapLibreMap['queryRenderedFeatures']>[0], {

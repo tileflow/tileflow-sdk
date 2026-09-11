@@ -31,6 +31,30 @@ const source = {
 The browser runtime does not discover `basePath`; the explicit URL keeps SSR and hydration on the
 same manifest generation.
 
+## MapLibre 6 worker
+
+Copy the exact worker and shared module from the application's installed MapLibre package into
+`public` as part of the build setup:
+
+```sh
+mkdir -p public/maplibre
+cp node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs public/maplibre/
+cp node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs public/maplibre/
+```
+
+Then configure the React adapter in a client entry before mounting an interactive map:
+
+```tsx
+'use client';
+
+import {configureTileflowMapLibre} from '@tileflow/react';
+
+configureTileflowMapLibre({workerUrl: '/maplibre/maplibre-gl-worker.mjs'});
+```
+
+With `basePath`, include that prefix in `workerUrl`. The static worker and shared module must stay
+from the same installed MapLibre version. MapLibre GL JS 6.4.1-6.x is supported.
+
 Add a catch-all App Router handler so `next dev` can serve fresh local styles from
 `tileflow.config.ts`. `withTileflow()` rewrites `/tileflow/*` to this internal route only during
 development; production uses the static files written to `public/tileflow`.

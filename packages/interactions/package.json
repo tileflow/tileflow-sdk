@@ -54,7 +54,7 @@
     "zod": "^4.4.3"
   },
   "peerDependencies": {
-    "maplibre-gl": ">=5 <7"
+    "maplibre-gl": ">=6.4.1 <7"
   },
   "peerDependenciesMeta": {
     "maplibre-gl": {

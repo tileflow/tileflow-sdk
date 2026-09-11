@@ -81,6 +81,15 @@ an interactive runtime style. Importing an adapter during SSR and rendering `mod
 not load or evaluate MapLibre. Changing from interactive mode or unmounting while the import is in
 flight invalidates that map creation; a late import may not attach a map to the retired container.
 
+With MapLibre GL JS 6, an application calls `configureTileflowMapLibre({workerUrl})` from its
+selected adapter package before mounting its first interactive Tileflow map. The application owns
+the bundler-resolved URL and it must name the worker graph from the same installed `maplibre-gl`
+peer. The adapter applies that URL to its lazily imported renderer before constructing a map; the
+configuration itself does not load MapLibre. Repeating one URL is allowed, while a different URL is
+rejected. Versions before MapLibre GL JS 6.4.1 are unsupported. Applications that construct
+MapLibre maps directly configure their own renderer with the same worker URL before their first
+direct map.
+
 An interactive import failure moves the framework-neutral readiness state to `error`. Successful
 interactive loading retains the same MapLibre map, control, marker, World request bridge, fair-use
 notice, lifecycle, and ResizeObserver ownership described below.

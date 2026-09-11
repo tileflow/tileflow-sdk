@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
-import {loadTileflowMapLibre} from '../src/maplibre.js';
+import {configureTileflowMapLibre, loadTileflowMapLibre} from '../src/maplibre.js';
 
 test('publishes one ESM entry with matching default and named components', async () => {
   const packageJson = JSON.parse(
@@ -61,6 +61,13 @@ test('interactive runtime resolves and reuses the MapLibre renderer', async () =
   assert.equal(typeof maplibregl.Map, 'function');
   assert.equal(typeof maplibregl.Marker, 'function');
   assert.equal(typeof maplibregl.addProtocol, 'function');
+});
+
+test('configures the MapLibre worker before an interactive map uses it', async () => {
+  configureTileflowMapLibre({workerUrl: '/assets/maplibre-gl-worker.mjs'});
+
+  const maplibregl = await loadTileflowMapLibre();
+  assert.equal(maplibregl.getWorkerUrl(), '/assets/maplibre-gl-worker.mjs');
 });
 
 test('initial renderer loading converges on a theme selected while it is in flight', async () => {

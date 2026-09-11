@@ -32,6 +32,22 @@ const source = {
 
 Development and production expose that same prefixed URL.
 
+## MapLibre 6 worker
+
+Vite applications configure the MapLibre worker in their client entry before mounting an interactive
+Tileflow map:
+
+```ts
+import {configureTileflowMapLibre} from '@tileflow/react';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+
+configureTileflowMapLibre({workerUrl});
+```
+
+Import `configureTileflowMapLibre` from the adapter in use (`@tileflow/react`, `@tileflow/vue`, or
+`@tileflow/svelte`). Vite emits the matching worker closure from the application's installed
+MapLibre package. MapLibre GL JS 6.4.1-6.x is supported.
+
 Development snapshots local `hostedTileset()` archives for coherent preview requests. Production
 builds reject unresolved local PMTiles before emitting Tileflow assets; they never copy, hash, or
 deduplicate user datasets. Publish a managed tileset explicitly or provide an application-owned

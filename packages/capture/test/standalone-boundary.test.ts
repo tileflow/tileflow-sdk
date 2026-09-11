@@ -3,7 +3,7 @@ import test from 'node:test';
 import type {Browser, BrowserContext, Locator, Page} from 'playwright';
 import type {MapLibreStyle, NormalizedTileflowCaptureScene} from '@tileflow/core';
 import {TileflowCaptureError} from '../src/errors';
-import {captureStandaloneTileflowScene} from '../src/standalone';
+import {captureStandaloneTileflowScene, tileflowSyntheticAssetOrigin} from '../src/standalone';
 
 type PhaseResult = {status: 'ok'} | {reason: 'error' | 'timeout'; status: 'failed'};
 
@@ -70,7 +70,8 @@ test('installs contour and PMTiles protocol runtimes before the standalone map i
   });
 
   assert.equal(scripts.length, 3);
-  assert.match(scripts[0]?.path ?? '', /maplibre-gl\.js$/u);
+  assert.equal(scripts[0]?.type, 'module');
+  assert.match(scripts[0]?.content ?? '', /maplibregl\.setWorkerUrl/u);
   assert.equal(scripts[1]?.type, 'module');
   assert.match(scripts[1]?.content ?? '', /registerTileflowContourProtocol/u);
   assert.match(scripts[1]?.content ?? '', /__tileflowRegisterContourProtocol/u);
@@ -85,6 +86,139 @@ test('installs contour and PMTiles protocol runtimes before the standalone map i
     pageRuntime.indexOf('__tileflowRegisterPmtilesProtocol') <
       pageRuntime.indexOf('new window.maplibregl.Map'),
   );
+});
+
+test('loads MapLibre from a synthetic same-origin v6 module closure', async () => {
+  const navigations: string[] = [];
+  const scripts: Array<{content?: string; path?: string; type?: string}> = [];
+  let runtimeWaits = 0;
+
+  await captureStandaloneTileflowScene({
+    assets: [],
+    browser: createBrowser({
+      onGoto: (url) => navigations.push(url),
+      onScriptTag: (options) => scripts.push(options),
+      onWaitForFunction: () => {
+        runtimeWaits += 1;
+      },
+    }),
+    scene,
+    style,
+  });
+
+  assert.deepEqual(navigations, [`${tileflowSyntheticAssetOrigin}/__runtime/document.html`]);
+  assert.equal(scripts[0]?.type, 'module');
+  assert.match(scripts[0]?.content ?? '', /import \* as maplibregl/u);
+  assert.match(scripts[0]?.content ?? '', /maplibre-gl\.mjs/u);
+  assert.match(scripts[0]?.content ?? '', /maplibre-gl-worker\.mjs/u);
+  assert.match(scripts[0]?.content ?? '', /maplibregl\.setWorkerUrl/u);
+  assert.equal(runtimeWaits, 1);
+});
+
+test('uses the existing loopback source origin for the virtual runtime document', async () => {
+  const navigations: string[] = [];
+
+  await captureStandaloneTileflowScene({
+    assets: [],
+    browser: createBrowser({onGoto: (url) => navigations.push(url)}),
+    scene,
+    style: {
+      ...style,
+      sources: {
+        fixture: {
+          tiles: ['http://127.0.0.1:4321/tiles/{z}/{x}/{y}.pbf'],
+          type: 'vector',
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(navigations, ['http://127.0.0.1:4321/__runtime/document.html']);
+});
+
+test('uses a loopback font source origin for the virtual runtime document', async () => {
+  const navigations: string[] = [];
+
+  await captureStandaloneTileflowScene({
+    assets: [],
+    browser: createBrowser({onGoto: (url) => navigations.push(url)}),
+    scene,
+    style: {
+      ...style,
+      metadata: {
+        'tileflow:fontFaces': [
+          {
+            family: 'Capture Fixture',
+            source: 'http://127.0.0.1:4321/fonts/capture-fixture.ttf',
+          },
+        ],
+      },
+    },
+  });
+
+  assert.deepEqual(navigations, ['http://127.0.0.1:4321/__runtime/document.html']);
+});
+
+test('uses a loopback GeoJSON data origin for the virtual runtime document', async () => {
+  const navigations: string[] = [];
+
+  await captureStandaloneTileflowScene({
+    assets: [],
+    browser: createBrowser({onGoto: (url) => navigations.push(url)}),
+    scene,
+    style: {
+      ...style,
+      sources: {
+        fixture: {
+          data: 'http://127.0.0.1:4321/data/fixture.geojson',
+          type: 'geojson',
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(navigations, ['http://127.0.0.1:4321/__runtime/document.html']);
+});
+
+test('uses a loopback sprite-array origin for the virtual runtime document', async () => {
+  const navigations: string[] = [];
+
+  await captureStandaloneTileflowScene({
+    assets: [],
+    browser: createBrowser({onGoto: (url) => navigations.push(url)}),
+    scene,
+    style: {
+      ...style,
+      sprite: [{id: 'fixture', url: 'http://127.0.0.1:4321/sprites/fixture'}],
+    },
+  });
+
+  assert.deepEqual(navigations, ['http://127.0.0.1:4321/__runtime/document.html']);
+});
+
+test('prefers a loopback origin over another HTTP source for the virtual runtime document', async () => {
+  const navigations: string[] = [];
+
+  await captureStandaloneTileflowScene({
+    assets: [],
+    browser: createBrowser({onGoto: (url) => navigations.push(url)}),
+    scene,
+    style: {
+      ...style,
+      sources: {
+        external: {
+          tiles: ['http://a.example.test/tiles/{z}/{x}/{y}.pbf'],
+          type: 'vector',
+        },
+        fixture: {
+          tiles: ['http://localhost:4321/tiles/{z}/{x}/{y}.pbf'],
+          type: 'vector',
+        },
+      },
+    },
+  });
+
+  assert.deepEqual(navigations, ['http://localhost:4321/__runtime/document.html']);
 });
 
 test('prefers a sanitized glyph 404 over a generic MapLibre load error', async () => {
@@ -161,6 +295,8 @@ test('identifies screenshot API, page, and PNG validation failures', async () =>
 });
 
 function createBrowser(options: {
+  onGoto?: (url: string) => void;
+  onWaitForFunction?: () => void;
   idle?: PhaseResult;
   load?: PhaseResult;
   onEvaluate?: (call: number, handlers: Map<string, (...args: unknown[]) => void>) => void;
@@ -184,6 +320,9 @@ function createBrowser(options: {
         ? (options.load ?? {status: 'ok'})
         : (options.idle ?? {status: 'ok'});
     },
+    goto: async (url: string) => {
+      options.onGoto?.(url);
+    },
     locator: () => locator,
     on: (event: string, handler: (...args: unknown[]) => void) => {
       handlers.set(event, handler);
@@ -191,6 +330,9 @@ function createBrowser(options: {
     },
     setContent: async () => undefined,
     setDefaultTimeout: () => undefined,
+    waitForFunction: async () => {
+      options.onWaitForFunction?.();
+    },
   } as unknown as Page;
   const context = {
     close: async () => undefined,

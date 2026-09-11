@@ -18,7 +18,7 @@ the platform-specific headless shell into its versioned per-user browser cache; 
 distribution carries Chromium's license and credits. Chromium source and license information are
 available at https://www.chromium.org/chromium-projects/.
 
-## MapLibre GL JS 5.24.0
+## MapLibre GL JS 6.9.0
 
 Copyright (c) 2023 MapLibre contributors. Licensed under BSD-3-Clause. The installed `maplibre-gl`
 package includes `LICENSE.txt`, including notices for code derived from Mapbox GL JS and other

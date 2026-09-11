@@ -133,12 +133,14 @@ export function renderTileflowPreviewHtml(
     <div class="badge" id="badge">Tileflow preview</div>
     <div class="status" id="status" role="status"></div>
     <div id="map"></div>
-    <script src="${basePath}/__runtime/maplibre-gl.js"></script>
     <script type="importmap">{"imports":{"fflate":"${basePath}/__runtime/fflate.js","three":"${basePath}/__runtime/three.module.js"}}</script>
     <script type="module">
+      import * as maplibregl from "${basePath}/__runtime/maplibre-gl.mjs";
       import {loadTileflowStyleFonts} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowContourProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowPmtilesProtocol} from "${basePath}/__runtime/tileflow-browser.js";
+
+      maplibregl.setWorkerUrl("${basePath}/__runtime/maplibre-gl-worker.mjs");
 
       const initialStatus = ${JSON.stringify(initialStatus)};
       const normalizeTileflowLandmarkManifest = ${normalizeTileflowLandmarkManifest.toString()};

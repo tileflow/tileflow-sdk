@@ -193,7 +193,7 @@ test('validates peer-smoke topology and peer ranges without installing packages'
   assert.deepEqual(result.buildDirectories.slice(0, 4), ['core', 'interactions', 'static', 'dev']);
   assert.ok(result.packageDirectories.includes('interactions'));
   assert.deepEqual(result.suites.find(({name}) => name === 'react')?.peers, {
-    'maplibre-gl': '>=5 <7',
+    'maplibre-gl': '>=6.4.1 <7',
     react: '>=18 <20',
     'react-dom': '>=18 <20',
   });

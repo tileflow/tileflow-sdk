@@ -29,6 +29,22 @@ const source = {
 
 The browser runtime does not inspect Webpack configuration at runtime.
 
+## MapLibre 6 worker
+
+Configure the worker in the application entry before mounting an interactive Tileflow map:
+
+```js
+import {configureTileflowMapLibre} from '@tileflow/react';
+
+const workerUrl = new URL('maplibre-gl/dist/maplibre-gl-worker.mjs', import.meta.url).toString();
+
+configureTileflowMapLibre({workerUrl});
+```
+
+Import the configuration function from the adapter in use. Webpack emits the matching worker
+closure; the application's server must serve every emitted asset at its configured `publicPath`.
+MapLibre GL JS 6.4.1-6.x is supported.
+
 When used with `webpack-dev-server`, the plugin serves `/tileflow/manifest.json`
 and `/tileflow/styles/:mapName/:themeName.json` from `tileflow.config.ts`. Production builds emit
 those files plus the same prepared sprites and package-owned content-addressed fonts. They reject

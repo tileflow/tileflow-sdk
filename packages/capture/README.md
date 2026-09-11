@@ -16,12 +16,12 @@ const result = await captureTileflowScenes({
 const [{png, receipt, sha256, networkDependent}] = result.captures;
 ```
 
-Standalone scenes compile through `@tileflow/dev`, inject the installed MapLibre JS and CSS into a
-pinned Playwright Chromium headless shell, fulfill generated local icon assets in memory, and wait
-for `load`, `idle`, and two animation frames. They never open a visible window or an HTTP listener.
-One call with multiple scenes uses one Browser and a fresh isolated context per scene. Capture
-installs the exact pinned shell automatically when `allowBrowserInstall` is true; the CLI enables
-that normal happy path by default.
+Standalone scenes compile through `@tileflow/dev`, fulfill the installed MapLibre main module,
+shared module, worker module, and CSS closure in a pinned Playwright Chromium headless shell,
+fulfill generated local icon assets in memory, and wait for `load`, `idle`, and two animation
+frames. They never open a visible window or an HTTP listener. One call with multiple scenes uses
+one Browser and a fresh isolated context per scene. Capture installs the exact pinned shell
+automatically when `allowBrowserInstall` is true; the CLI enables that normal happy path by default.
 
 For a warm integration, retain and close a session:
 

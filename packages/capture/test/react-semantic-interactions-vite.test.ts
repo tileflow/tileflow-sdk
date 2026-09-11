@@ -91,6 +91,16 @@ test(
       );
       assert.equal(await page.locator('canvas.maplibregl-canvas').count(), 1);
 
+      const zoomLevelsToOverscale = await page.evaluate(() => {
+        const nativeMap = (
+          window as typeof window & {
+            __tileflowSemanticMap: MapLibreMap & {_zoomLevelsToOverscale?: unknown};
+          }
+        ).__tileflowSemanticMap;
+        return nativeMap._zoomLevelsToOverscale;
+      });
+      assert.equal(zoomLevelsToOverscale, 4);
+
       const nativeHit = await page.evaluate(() => {
         const nativeMap = (window as typeof window & {__tileflowSemanticMap: MapLibreMap})
           .__tileflowSemanticMap;
@@ -201,8 +211,11 @@ test(
 
 const applicationSource = `import React, {useLayoutEffect} from 'react';
 import {createRoot} from 'react-dom/client';
-import {Map} from '@tileflow/react';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import {configureTileflowMapLibre, Map} from '@tileflow/react';
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+configureTileflowMapLibre({workerUrl});
 
 const proof = window.__tileflowSemanticProof = {diagnostics: [], events: [], states: []};
 const style = {

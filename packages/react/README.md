@@ -24,6 +24,22 @@ export function App() {
 }
 ```
 
+## MapLibre 6 worker
+
+With MapLibre GL JS 6, configure the application-owned worker once before mounting an interactive
+map. The worker URL must come from the same `maplibre-gl` package installed by the application.
+
+```tsx
+import {configureTileflowMapLibre} from '@tileflow/react';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+
+configureTileflowMapLibre({workerUrl});
+```
+
+This is the Vite setup. Call it in the client entry before rendering `Map`; `mode="image"` remains
+MapLibre-free. MapLibre GL JS 6.4.1-6.x is supported. Use the `@tileflow/next` or
+`@tileflow/webpack` README for their worker-delivery recipes.
+
 ## Annotations, tooltips, and popups
 
 Use `annotations` for small application-owned marker sets. Annotation data is serializable, while
@@ -278,8 +294,8 @@ application scenes and requires exactly one target.
 
 ## Compatibility
 
-The supported peer window is React 18-19 and MapLibre GL JS 5-6. Compatibility smoke tests install
-the exact lower bound and the first release of every accepted major from packed Tileflow tarballs,
+The supported peer window is React 18-19 and MapLibre GL JS 6.4.1-6.x. Compatibility smoke tests
+install the exact lower bound and the selected current release from packed Tileflow tarballs,
 typecheck a consumer, and render the image/SSR path while rejecting any MapLibre import. Future
 majors stay outside the peer range until that matrix passes.
 

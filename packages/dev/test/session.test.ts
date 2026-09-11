@@ -323,7 +323,9 @@ test('serves pinned local preview assets and a cancellable session event stream'
 
   const preview = await (await handler(new Request('http://localhost/'))).text();
   assert.doesNotMatch(preview, /unpkg|fonts\.googleapis|fonts\.gstatic/);
-  assert.match(preview, /__runtime\/maplibre-gl\.js/);
+  assert.match(preview, /__runtime\/maplibre-gl\.mjs/);
+  assert.match(preview, /__runtime\/maplibre-gl-worker\.mjs/);
+  assert.doesNotMatch(preview, /__runtime\/maplibre-gl\.js/);
   assert.match(preview, /__runtime\/tileflow-browser\.js/);
   assert.match(preview, /import \{loadTileflowStyleFonts\}/);
   assert.match(
@@ -701,7 +703,9 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /const mapWorkerCount = mapWorkerCountOverride \?\? 1/);
 
   const [
-    javascript,
+    mapLibreMain,
+    mapLibreShared,
+    mapLibreWorker,
     stylesheet,
     three,
     threeCore,
@@ -716,7 +720,9 @@ test('serves pinned local preview assets and a cancellable session event stream'
     fflate,
     tileflowBrowser,
   ] = await Promise.all([
-    handler(new Request('http://localhost/__runtime/maplibre-gl.js')),
+    handler(new Request('http://localhost/__runtime/maplibre-gl.mjs')),
+    handler(new Request('http://localhost/__runtime/maplibre-gl-shared.mjs')),
+    handler(new Request('http://localhost/__runtime/maplibre-gl-worker.mjs')),
     handler(new Request('http://localhost/__runtime/maplibre-gl.css')),
     handler(new Request('http://localhost/__runtime/three.module.js')),
     handler(new Request('http://localhost/__runtime/three.core.min.js')),
@@ -733,8 +739,12 @@ test('serves pinned local preview assets and a cancellable session event stream'
     handler(new Request('http://localhost/__runtime/fflate.js')),
     handler(new Request('http://localhost/__runtime/tileflow-browser.js')),
   ]);
-  assert.match(javascript.headers.get('content-type') ?? '', /javascript/);
-  assert.ok((await javascript.text()).length > 1_000_000);
+  assert.match(mapLibreMain.headers.get('content-type') ?? '', /javascript/);
+  assert.match(await mapLibreMain.text(), /maplibre-gl-shared\.mjs/u);
+  assert.match(mapLibreShared.headers.get('content-type') ?? '', /javascript/);
+  assert.ok((await mapLibreShared.text()).length > 100_000);
+  assert.match(mapLibreWorker.headers.get('content-type') ?? '', /javascript/);
+  assert.ok((await mapLibreWorker.text()).length > 1_000);
   assert.match(stylesheet.headers.get('content-type') ?? '', /text\/css/);
   assert.match(three.headers.get('content-type') ?? '', /javascript/);
   assert.ok((await three.text()).length > 300_000);
@@ -1568,7 +1578,7 @@ function runPreviewScript(
         reloadCount += 1;
       },
     },
-    maplibregl: {Map: FakeMap, NavigationControl: class {}},
+    maplibregl: {Map: FakeMap, NavigationControl: class {}, setWorkerUrl() {}},
     parent: parentWindow,
     setTimeout,
     clearTimeout,

@@ -35,8 +35,12 @@ export type StandaloneTileflowCaptureOutput = {
 };
 
 const require = createRequire(import.meta.url);
-const maplibreJsPath = require.resolve('maplibre-gl/dist/maplibre-gl.js');
-const maplibreCssPath = require.resolve('maplibre-gl/dist/maplibre-gl.css');
+const mapLibreRuntimePaths = Object.freeze({
+  css: require.resolve('maplibre-gl/dist/maplibre-gl.css'),
+  main: require.resolve('maplibre-gl/dist/maplibre-gl.mjs'),
+  shared: require.resolve('maplibre-gl/dist/maplibre-gl-shared.mjs'),
+  worker: require.resolve('maplibre-gl/dist/maplibre-gl-worker.mjs'),
+});
 const tileflowCorePackagePath = require.resolve('@tileflow/core/package.json');
 const tileflowBrowserModule = `${readFileSync(
   join(dirname(tileflowCorePackagePath), 'dist', 'browser.js'),
@@ -74,6 +78,9 @@ export async function captureStandaloneTileflowScene(
   }
 
   const timeoutMs = input.timeoutMs ?? 30_000;
+  const mapLibreRuntimeUrls = createMapLibreRuntimeUrls(
+    resolveMapLibreRuntimeDocumentOrigin(input.style),
+  );
   let termination: 'aborted' | 'timeout' | undefined;
   let context: BrowserContext | undefined;
   let phase: TileflowCapturePhase = 'browser-start';
@@ -135,6 +142,14 @@ export async function captureStandaloneTileflowScene(
     await context.route('**/*', async (route) => {
       const url = new URL(route.request().url());
 
+      if (url.origin === mapLibreRuntimeUrls.origin) {
+        const runtime = getMapLibreRuntimeResponse(url.pathname, input.scene.viewport);
+        if (runtime) {
+          await route.fulfill(runtime);
+          return;
+        }
+      }
+
       if (url.origin === tileflowSyntheticAssetOrigin) {
         const fileName = decodeURIComponent(url.pathname.slice(1));
         const localTileset = url.search === '' ? localTilesets.get(fileName) : undefined;
@@ -143,7 +158,10 @@ export async function captureStandaloneTileflowScene(
             route.request().headers()['range'],
             localTileset,
           );
-          await route.fulfill(response);
+          await route.fulfill({
+            ...response,
+            headers: {'Access-Control-Allow-Origin': '*', ...response.headers},
+          });
           return;
         }
         const asset = url.search === '' ? assets.get(fileName) : undefined;
@@ -158,6 +176,7 @@ export async function captureStandaloneTileflowScene(
         await route.fulfill({
           body: typeof source === 'string' ? source : Buffer.from(source),
           contentType: asset.contentType,
+          headers: {'Access-Control-Allow-Origin': '*'},
           status: 200,
         });
         return;
@@ -191,9 +210,17 @@ export async function captureStandaloneTileflowScene(
     page.on('requestfailed', (request) => recordResourceFailure(request.url()));
     page.setDefaultTimeout(timeoutMs);
 
-    await page.setContent(renderHtml(input.scene.viewport), {waitUntil: 'domcontentloaded'});
-    await page.addStyleTag({path: maplibreCssPath});
-    await page.addScriptTag({path: maplibreJsPath});
+    await page.goto(mapLibreRuntimeUrls.document, {waitUntil: 'domcontentloaded'});
+    await page.addStyleTag({url: mapLibreRuntimeUrls.css});
+    await page.addScriptTag({
+      content: `import * as maplibregl from ${JSON.stringify(mapLibreRuntimeUrls.main)};
+maplibregl.setWorkerUrl(${JSON.stringify(mapLibreRuntimeUrls.worker)});
+globalThis.maplibregl = maplibregl;`,
+      type: 'module',
+    });
+    await page.waitForFunction(() =>
+      Boolean((globalThis as typeof globalThis & {maplibregl?: unknown}).maplibregl),
+    );
     await page.addScriptTag({content: tileflowBrowserModule, type: 'module'});
     await page.addScriptTag({content: renderMapInPageScript});
 
@@ -306,6 +333,105 @@ export async function captureStandaloneTileflowScene(
     input.signal?.removeEventListener('abort', onAbort);
     await context?.close().catch(() => undefined);
   }
+}
+
+function createMapLibreRuntimeUrls(origin: string) {
+  return Object.freeze({
+    css: `${origin}/__runtime/maplibre-gl.css`,
+    document: `${origin}/__runtime/document.html`,
+    main: `${origin}/__runtime/maplibre-gl.mjs`,
+    origin,
+    shared: `${origin}/__runtime/maplibre-gl-shared.mjs`,
+    worker: `${origin}/__runtime/maplibre-gl-worker.mjs`,
+  });
+}
+
+function resolveMapLibreRuntimeDocumentOrigin(style: MapLibreStyle): string {
+  const origins = new Set<string>();
+  const loopbackOrigins = new Set<string>();
+  const addOrigin = (value: unknown) => {
+    if (typeof value !== 'string') return;
+    try {
+      const url = new URL(value);
+      if (
+        (url.protocol === 'http:' || url.protocol === 'https:') &&
+        url.username === '' &&
+        url.password === ''
+      ) {
+        origins.add(url.origin);
+        if (isLoopbackUrl(url)) loopbackOrigins.add(url.origin);
+      }
+    } catch {
+      // MapLibre validates style URLs independently. Only a safe origin can host this virtual page.
+    }
+  };
+
+  addOrigin(style.glyphs);
+  if (Array.isArray(style.sprite)) {
+    for (const sprite of style.sprite) {
+      if (sprite && typeof sprite === 'object') {
+        addOrigin((sprite as {url?: unknown}).url);
+      }
+    }
+  } else {
+    addOrigin(style.sprite);
+  }
+  const fontFaces = style.metadata?.['tileflow:fontFaces'];
+  if (Array.isArray(fontFaces)) {
+    for (const fontFace of fontFaces) {
+      if (fontFace && typeof fontFace === 'object') {
+        addOrigin((fontFace as {source?: unknown}).source);
+      }
+    }
+  }
+  for (const source of Object.values(style.sources)) {
+    const candidate = source as {data?: unknown; tiles?: unknown; url?: unknown; urls?: unknown};
+    addOrigin(candidate.data);
+    addOrigin(candidate.url);
+    if (Array.isArray(candidate.tiles)) {
+      for (const tile of candidate.tiles) addOrigin(tile);
+    }
+    if (Array.isArray(candidate.urls)) {
+      for (const url of candidate.urls) addOrigin(url);
+    }
+  }
+
+  const preferredOrigins = loopbackOrigins.size > 0 ? loopbackOrigins : origins;
+  return [...preferredOrigins].sort(compareCodeUnits)[0] ?? tileflowSyntheticAssetOrigin;
+}
+
+function getMapLibreRuntimeResponse(
+  pathname: string,
+  viewport: {height: number; width: number},
+): {body: string; contentType: string; status: number} | undefined {
+  if (pathname === '/__runtime/document.html') {
+    return {
+      body: renderHtml(viewport),
+      contentType: 'text/html; charset=utf-8',
+      status: 200,
+    };
+  }
+
+  const asset =
+    pathname === '/__runtime/maplibre-gl.mjs'
+      ? mapLibreRuntimePaths.main
+      : pathname === '/__runtime/maplibre-gl-shared.mjs'
+        ? mapLibreRuntimePaths.shared
+        : pathname === '/__runtime/maplibre-gl-worker.mjs'
+          ? mapLibreRuntimePaths.worker
+          : pathname === '/__runtime/maplibre-gl.css'
+            ? mapLibreRuntimePaths.css
+            : undefined;
+  if (!asset) return undefined;
+
+  return {
+    body: readFileSync(asset, 'utf8'),
+    contentType:
+      pathname === '/__runtime/maplibre-gl.css'
+        ? 'text/css; charset=utf-8'
+        : 'text/javascript; charset=utf-8',
+    status: 200,
+  };
 }
 
 async function localTilesetCaptureResponse(

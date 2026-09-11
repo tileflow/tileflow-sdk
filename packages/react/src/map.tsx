@@ -1383,10 +1383,12 @@ function wrapMapLibrePositioned(positioned: MapLibreMarker | MapLibrePopup) {
 type TileflowReactMapLibrePositioned = ReturnType<typeof wrapMapLibrePositioned>;
 
 function createTileflowMapLibrePoiMap(map: MapLibreMap): TileflowMapLibrePoiMap {
+  const poiMap = map as unknown as TileflowMapLibrePoiMap;
+
   return {
     getStyle: () => map.getStyle(),
     on(event, listener) {
-      return map.on(event, listener);
+      return poiMap.on(event, listener);
     },
     queryRenderedFeatures(point, options) {
       return map.queryRenderedFeatures(point as PointLike, {

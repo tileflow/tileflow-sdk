@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
-import {Server} from 'node:http';
+import {mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
+import {createServer as createNodeServer, Server} from 'node:http';
 import {dirname, join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
-import {createServer as createViteServer} from 'vite';
+import {build as buildVite, createServer as createViteServer} from 'vite';
 import {tileflow} from '@tileflow/vite';
 import {createTileflowCaptureSession} from '../src/index';
 import {assertPngContainsProbeColor} from './framework-vite-harness';
@@ -103,10 +103,146 @@ test(
   },
 );
 
+test(
+  'captures an interactive React wrapper from a built Vite app under its configured base path',
+  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
+  async () => {
+    const capturePackageRoot = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
+    const cwd = await mkdtemp(join(capturePackageRoot, '.tileflow-test-react-vite-build-'));
+    const reactSource = fileURLToPath(new URL('../../react/src/index.ts', import.meta.url));
+    await symlink(
+      join(capturePackageRoot, 'node_modules'),
+      join(cwd, 'node_modules'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    await Promise.all([
+      writeFile(
+        join(cwd, 'index.html'),
+        '<!doctype html><html><body><div id="root"></div><script type="module" src="/main.tsx"></script></body></html>',
+      ),
+      writeFile(join(cwd, 'main.tsx'), builtApplicationSource),
+      writeFile(join(cwd, 'tileflow.config.ts'), builtApplicationConfig),
+    ]);
+    await buildVite({
+      base: '/app/',
+      build: {outDir: 'dist'},
+      configFile: false,
+      logLevel: 'silent',
+      plugins: [tileflow()],
+      resolve: {alias: {'@tileflow/react': reactSource}},
+      root: cwd,
+    });
+    const outputDirectory = join(cwd, 'dist');
+    const server = createNodeServer(async (request, response) => {
+      const pathname = new URL(request.url ?? '/', 'http://127.0.0.1').pathname;
+      const outputPath =
+        pathname === '/app' || pathname === '/app/'
+          ? join(outputDirectory, 'index.html')
+          : pathname.startsWith('/app/')
+            ? join(outputDirectory, pathname.slice('/app/'.length))
+            : undefined;
+
+      if (!outputPath) {
+        response.writeHead(404);
+        response.end();
+        return;
+      }
+
+      try {
+        const output = await readFile(outputPath);
+        response.writeHead(200, {'Content-Type': viteContentType(outputPath)});
+        response.end(output);
+      } catch {
+        response.writeHead(404);
+        response.end();
+      }
+    });
+    server.listen(0, '127.0.0.1');
+    await new Promise<void>((resolveListen) => server.once('listening', resolveListen));
+    const address = server.address();
+    assert.ok(address && typeof address === 'object');
+    const session = createTileflowCaptureSession({
+      allowBrowserInstall: false,
+      appOrigin: `http://127.0.0.1:${address.port}`,
+      config: 'tileflow.config.ts',
+      cwd,
+    });
+
+    try {
+      const result = await session.capture(['proof']);
+      assert.equal(result.captures[0]?.target, 'application');
+      assert.equal(result.captures[0]?.width, 222);
+      assert.equal(result.captures[0]?.height, 240);
+    } finally {
+      await session.close();
+      await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
+      await rm(cwd, {force: true, recursive: true});
+    }
+  },
+);
+
+test(
+  'captures an interactive React wrapper with the MapLibre 6.4.1 peer floor',
+  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
+  async () => {
+    const capturePackageRoot = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
+    const cwd = await mkdtemp(join(capturePackageRoot, '.tileflow-test-react-vite-maplibre-min-'));
+    const reactSource = fileURLToPath(new URL('../../react/src/index.ts', import.meta.url));
+    const maplibreMinimumSource = fileURLToPath(
+      new URL('../node_modules/maplibre-gl-min', import.meta.url),
+    );
+    await symlink(
+      join(capturePackageRoot, 'node_modules'),
+      join(cwd, 'node_modules'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    await Promise.all([
+      writeFile(
+        join(cwd, 'index.html'),
+        '<!doctype html><html><body><div id="root"></div><script type="module" src="/main.tsx"></script></body></html>',
+      ),
+      writeFile(join(cwd, 'main.tsx'), minimumApplicationSource),
+      writeFile(join(cwd, 'tileflow.config.ts'), minimumApplicationConfig),
+    ]);
+    const vite = await createViteServer({
+      cacheDir: join(cwd, '.vite-cache'),
+      configFile: false,
+      logLevel: 'silent',
+      plugins: [tileflow()],
+      resolve: {alias: {'@tileflow/react': reactSource, 'maplibre-gl': maplibreMinimumSource}},
+      root: cwd,
+      server: {host: '127.0.0.1', port: 0},
+    });
+    await vite.listen();
+    const address = vite.httpServer?.address();
+    assert.ok(address && typeof address === 'object');
+    const session = createTileflowCaptureSession({
+      allowBrowserInstall: false,
+      appOrigin: `http://127.0.0.1:${address.port}`,
+      config: 'tileflow.config.ts',
+      cwd,
+    });
+
+    try {
+      const result = await session.capture(['proof']);
+      assert.equal(result.captures[0]?.target, 'application');
+      assert.equal(result.captures[0]?.width, 222);
+      assert.equal(result.captures[0]?.height, 240);
+    } finally {
+      await session.close();
+      await vite.close();
+      await rm(cwd, {force: true, recursive: true});
+    }
+  },
+);
+
 const applicationSource = `import React from 'react';
 import {createRoot} from 'react-dom/client';
-import {Map} from '@tileflow/react';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import {configureTileflowMapLibre, Map} from '@tileflow/react';
 import 'maplibre-gl/dist/maplibre-gl.css';
+
+configureTileflowMapLibre({workerUrl});
 
 const style = {version: 8, sources: {}, layers: [{id: 'background', type: 'background', paint: {'background-color': '#2468ac'}}]};
 const popupAnnotations = [{
@@ -201,3 +337,98 @@ export default defineMap({
   }
 });
 `;
+
+const builtApplicationSource = `import React from 'react';
+import {createRoot} from 'react-dom/client';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import {configureTileflowMapLibre, Map} from '@tileflow/react';
+
+configureTileflowMapLibre({workerUrl});
+
+const style = {version: 8, sources: {}, layers: [{id: 'background', type: 'background', paint: {'background-color': '#2468ac'}}]};
+createRoot(document.getElementById('root')).render(
+  <div style={{width: 222}}>
+    <Map captureId="proof" height={100} source={{kind: 'maplibre', style}} />
+  </div>,
+);
+`;
+
+const builtApplicationConfig = `import {defineMap, openMapTiles, vectorTiles} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+export default defineMap({
+  id: 'main',
+  version: 1,
+  extends: streets,
+  data: vectorTiles({
+    attribution: '© Tileflow capture fixture',
+    revision: 'capture-fixture-v1',
+    schema: openMapTiles(),
+    tiles: ['https://tiles.example.invalid/{z}/{x}/{y}.pbf']
+  }),
+  scenes: {
+    proof: {
+      theme: 'light',
+      camera: {type: 'center', center: [0, 0], zoom: 1},
+      viewport: {width: 320, height: 480},
+      target: {kind: 'application', path: '/app/', selector: '[data-tileflow-capture-id="proof"]'}
+    }
+  },
+  glyphs: {
+    kind: 'url',
+    url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']
+  }
+});
+`;
+
+const minimumApplicationSource = `import React from 'react';
+import {createRoot} from 'react-dom/client';
+import workerUrl from 'maplibre-gl-min/dist/maplibre-gl-worker.mjs?worker&url';
+import {configureTileflowMapLibre, Map} from '@tileflow/react';
+
+configureTileflowMapLibre({workerUrl});
+
+const style = {version: 8, sources: {}, layers: [{id: 'background', type: 'background', paint: {'background-color': '#2468ac'}}]};
+createRoot(document.getElementById('root')).render(
+  <div style={{width: 222}}>
+    <Map captureId="proof" height={100} source={{kind: 'maplibre', style}} />
+  </div>,
+);
+`;
+
+const minimumApplicationConfig = `import {defineMap, openMapTiles, vectorTiles} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+export default defineMap({
+  id: 'main',
+  version: 1,
+  extends: streets,
+  data: vectorTiles({
+    attribution: '© Tileflow capture fixture',
+    revision: 'capture-fixture-v1',
+    schema: openMapTiles(),
+    tiles: ['https://tiles.example.invalid/{z}/{x}/{y}.pbf']
+  }),
+  scenes: {
+    proof: {
+      theme: 'light',
+      camera: {type: 'center', center: [0, 0], zoom: 1},
+      viewport: {width: 320, height: 480},
+      target: {kind: 'application', path: '/', selector: '[data-tileflow-capture-id="proof"]'}
+    }
+  },
+  glyphs: {
+    kind: 'url',
+    url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']
+  }
+});
+`;
+
+function viteContentType(filePath: string): string {
+  if (filePath.endsWith('.html')) return 'text/html; charset=utf-8';
+  if (filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
+    return 'text/javascript; charset=utf-8';
+  }
+  if (filePath.endsWith('.json')) return 'application/json; charset=utf-8';
+  return 'application/octet-stream';
+}

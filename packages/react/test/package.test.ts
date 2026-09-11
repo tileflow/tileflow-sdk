@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
-import {loadTileflowMapLibre} from '../src/maplibre';
+import {configureTileflowMapLibre, loadTileflowMapLibre} from '../src/maplibre';
 
 for (const entry of ['index.js', 'static.js']) {
   test(`preserves the client boundary in dist/${entry}`, async () => {
@@ -89,4 +89,11 @@ test('interactive runtime resolves and reuses the MapLibre renderer', async () =
   assert.equal(typeof maplibregl.Map, 'function');
   assert.equal(typeof maplibregl.Marker, 'function');
   assert.equal(typeof maplibregl.addProtocol, 'function');
+});
+
+test('configures the MapLibre worker before an interactive map uses it', async () => {
+  configureTileflowMapLibre({workerUrl: '/assets/maplibre-gl-worker.mjs'});
+
+  const maplibregl = await loadTileflowMapLibre();
+  assert.equal(maplibregl.getWorkerUrl(), '/assets/maplibre-gl-worker.mjs');
 });

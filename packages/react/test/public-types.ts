@@ -1,7 +1,18 @@
 import type {TileflowAnnotation, TileflowInteractionState} from '@tileflow/interactions';
-import {Map, type MapProps} from '../src/index';
+import {
+  configureTileflowMapLibre,
+  Map,
+  type MapProps,
+  type TileflowMapLibreConfiguration,
+} from '../src/index';
 
 const mapStyle = {layers: [], name: 'Direct', sources: {}, version: 8 as const};
+const mapLibreConfiguration = {
+  workerUrl: '/assets/maplibre-gl-worker.mjs',
+} satisfies TileflowMapLibreConfiguration;
+configureTileflowMapLibre(mapLibreConfiguration);
+// @ts-expect-error workerUrl is required.
+configureTileflowMapLibre({});
 
 const validProps = [
   {source: {kind: 'tileflow', map: 'main'}},

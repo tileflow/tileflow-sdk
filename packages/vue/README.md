@@ -24,6 +24,23 @@ import {TileflowMap} from '@tileflow/vue';
 </template>
 ```
 
+## MapLibre 6 worker
+
+With MapLibre GL JS 6, configure the application-owned worker once before mounting an interactive
+map. The worker URL must come from the same `maplibre-gl` package installed by the application.
+
+```ts
+// main.ts
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import {configureTileflowMapLibre} from '@tileflow/vue';
+
+configureTileflowMapLibre({workerUrl});
+```
+
+This is the Vite setup. Run it before `createApp(...).mount(...)`; `mode="image"` remains
+MapLibre-free. MapLibre GL JS 6.4.1-6.x is supported. Use the `@tileflow/next` or
+`@tileflow/webpack` README for their worker-delivery recipes.
+
 `mapOptions` accepts native MapLibre options except `container` and `style`, which
 Tileflow resolves from `source`. Direct
 Tileflow props such as `center`, `zoom`, and `interactive` take priority when
@@ -191,9 +208,9 @@ application capture selects exactly one ready target.
 
 ## Compatibility
 
-The supported peer window is Vue 3.3-3.x and MapLibre GL JS 5-6. Compatibility smoke tests install
-Vue 3.3.0 with the first release of both MapLibre majors from packed Tileflow tarballs, typecheck a
-consumer, and render the image/SSR path while rejecting any MapLibre import. Vue 4 stays outside the
-peer range until that matrix passes.
+The supported peer window is Vue 3.3-3.x and MapLibre GL JS 6.4.1-6.x. Compatibility smoke tests
+install Vue 3.3.0 with the exact lower bound and selected current release from packed Tileflow
+tarballs, typecheck a consumer, and render the image/SSR path while rejecting any MapLibre import.
+Vue 4 stays outside the peer range until that matrix passes.
 
 Docs: https://tileflow.dev/docs

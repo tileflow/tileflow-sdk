@@ -183,6 +183,22 @@ export default defineMap({
   assert.equal(document.diagnostics[0]?.path, 'view.pitch');
 });
 
+test('validate omits fabricated diagnostics when the theme audit is clean', async (t) => {
+  const directory = await createDirectoryFixture(t);
+  await writeFile(
+    join(directory, 'tileflow.config.ts'),
+    `import {defineMap} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+export default defineMap({id: 'madrid', name: 'Madrid', version: 1, extends: streets});
+`,
+  );
+
+  const result = await runCli(directory, ['validate', '--json'], 'no-secret');
+  assert.equal(result.code, 0, result.stderr);
+  const document = JSON.parse(result.stdout) as CommandDocument;
+  assert.deepEqual(document.diagnostics, []);
+});
+
 test('validate --json preserves blocking theme-audit diagnostics for agents', async (t) => {
   const directory = await createDirectoryFixture(t);
   await writeFile(

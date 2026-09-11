@@ -58,7 +58,7 @@ Core never imports or re-exports `@tileflow/interactions`. Interactions may cons
 runtime-manifest and browser-kernel surfaces; this preserves an acyclic graph and leaves Core usable
 without the interaction package. Framework adapters add a normal dependency on interactions.
 
-`maplibre-gl` is an optional `>=5 <7` peer of `@tileflow/interactions`, matching the framework
+`maplibre-gl` is an optional `>=6.4.1 <7` peer of `@tileflow/interactions`, matching the framework
 packages' required peer range. This prevents a pure-model consumer from being required to install a
 renderer. Direct users of `/maplibre` must provide the peer. Framework adapters retain their
 required MapLibre peer, load one cached renderer module after mount, create the map, and pass that

@@ -381,17 +381,18 @@ program
         });
       }
 
-      const diagnostics = createTileflowStructuredDiagnostics(
-        {
-          diagnostics: mapNames.flatMap((mapName) =>
-            auditTileflowMapThemeValues(project.maps[mapName]!).filter(
-              ({severity}) => severity === 'warning',
-            ),
-          ),
-        },
-        process.cwd(),
-        {code: 'VALIDATION_WARNING', phase: 'theme-audit'},
+      const themeWarnings = mapNames.flatMap((mapName) =>
+        auditTileflowMapThemeValues(project.maps[mapName]!).filter(
+          ({severity}) => severity === 'warning',
+        ),
       );
+      const diagnostics =
+        themeWarnings.length === 0
+          ? []
+          : createTileflowStructuredDiagnostics({diagnostics: themeWarnings}, process.cwd(), {
+              code: 'VALIDATION_WARNING',
+              phase: 'theme-audit',
+            });
 
       const checks = [
         'Config schema',

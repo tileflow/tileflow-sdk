@@ -9,7 +9,7 @@ Matrix names the exact OpenType face `Oxanium Medium` for roads, water, and POIs
 `Oxanium SemiBold` for place labels. Its stacks contain only those package-owned faces: the local
 font pipeline selects the first face in each stack, so Matrix does not declare unfixed system or
 remote fallbacks. Tileflow does not synthesize a face by combining a family with a weight. The
-style omits a remote glyph endpoint so MapLibre GL JS 5.24 rasterizes the packaged faces locally.
+style omits a remote glyph endpoint so MapLibre GL JS rasterizes the packaged faces locally.
 
 - Upstream: <https://github.com/sevmeyer/oxanium>
 - Google Fonts specimen: <https://fonts.google.com/specimen/Oxanium>

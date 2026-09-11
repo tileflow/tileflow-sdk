@@ -106,13 +106,17 @@ under a chosen `scenes.<name>` key. Tileflow does not rewrite executable TypeScr
 
 ## Standalone and application modes
 
-A standalone scene compiles the owning map into one artifact snapshot through `@tileflow/dev`, injects the
-installed MapLibre JS and CSS into a fresh browser context, fulfills generated local sprite assets
-from memory under a closed synthetic origin, applies the camera, waits for MapLibre `load` and
-`idle`, waits two animation frames, and captures the map. Multiple scenes and warm watch use one
-Browser with a fresh context per scene. No Node listener, user profile, visible window, or public
-CDN runtime is created. If the map uses local PMTiles, the standalone operation retains one
+A standalone scene compiles the owning map into one artifact snapshot through `@tileflow/dev`, fulfills the
+exact installed MapLibre main module, shared module, worker module, and CSS closure in a fresh
+browser context, fulfills generated local sprite assets from memory under a closed synthetic origin,
+applies the camera, waits for MapLibre `load` and `idle`, waits two animation frames, and captures
+the map. Multiple scenes and warm watch use one Browser with a fresh context per scene. No Node
+listener, user profile, visible window, or public CDN runtime is created. If the map uses local PMTiles, the standalone operation retains one
 immutable artifact generation until that render finishes.
+
+The virtual document and MapLibre module closure are routed before network access at a credential-free
+HTTP(S) resource origin from the style, preferring loopback when present. This lets loopback tiles
+and Tileflow font faces load without Private Network Access blocking a synthetic page.
 
 Non-loopback HTTP(S) resources make a receipt network-dependent and produce sorted origin-only
 warnings. Loopback direct-tile, TileJSON, sprite, and glyph fixtures remain local dependencies and do not

@@ -40,6 +40,10 @@ const imageUrl =
 
 const vueEntrySource = `import {createApp} from 'vue';
 import App from './App.vue';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import {configureTileflowMapLibre} from '@tileflow/vue';
+
+configureTileflowMapLibre({workerUrl});
 createApp(App).mount('#root');
 `;
 
@@ -108,6 +112,10 @@ html, body, #root { margin: 0; width: 100%; min-height: 100%; }
 
 const svelteEntrySource = `import {mount} from 'svelte';
 import App from './App.svelte';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import {configureTileflowMapLibre} from '@tileflow/svelte';
+
+configureTileflowMapLibre({workerUrl});
 mount(App, {target: document.getElementById('root')});
 `;
 

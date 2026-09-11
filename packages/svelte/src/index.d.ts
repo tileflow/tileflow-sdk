@@ -19,6 +19,10 @@ import type {
 export type TileflowMapMode = 'interactive' | 'image';
 export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
 export type TileflowMapSource = TileflowRuntimeSource;
+export type TileflowMapLibreConfiguration = Readonly<{workerUrl: string}>;
+
+/** Configure the application-owned worker before mounting an interactive Tileflow map. */
+export function configureTileflowMapLibre(configuration: TileflowMapLibreConfiguration): void;
 
 export type TileflowMapAnnotationSnippet<
   TAnnotation extends TileflowAnnotation = TileflowAnnotation,

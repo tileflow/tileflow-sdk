@@ -4,8 +4,7 @@ import {dirname, join} from 'node:path';
 import {isPathWithin} from './path-safety';
 
 const localRequire = createRequire(import.meta.url);
-let localMapLibreJavaScript: string | undefined;
-let localMapLibreStylesheet: string | undefined;
+const localMapLibreAssets = new Map<string, string>();
 let localTileflowBrowserJavaScript: string | undefined;
 let localThreeCoreJavaScript: string | undefined;
 let localThreeModuleJavaScript: string | undefined;
@@ -13,11 +12,26 @@ let localPmtilesJavaScript: string | undefined;
 let localFflateJavaScript: string | undefined;
 
 export function getTileflowPreviewRuntimeResponse(path: string): Response | undefined {
-  if (path === '/__runtime/maplibre-gl.js') {
-    return textAssetResponse(getLocalMapLibreAsset('js'), 'text/javascript; charset=utf-8');
+  if (path === '/__runtime/maplibre-gl.mjs') {
+    return textAssetResponse(
+      getLocalMapLibreAsset('maplibre-gl.mjs'),
+      'text/javascript; charset=utf-8',
+    );
+  }
+  if (path === '/__runtime/maplibre-gl-shared.mjs') {
+    return textAssetResponse(
+      getLocalMapLibreAsset('maplibre-gl-shared.mjs'),
+      'text/javascript; charset=utf-8',
+    );
+  }
+  if (path === '/__runtime/maplibre-gl-worker.mjs') {
+    return textAssetResponse(
+      getLocalMapLibreAsset('maplibre-gl-worker.mjs'),
+      'text/javascript; charset=utf-8',
+    );
   }
   if (path === '/__runtime/maplibre-gl.css') {
-    return textAssetResponse(getLocalMapLibreAsset('css'), 'text/css; charset=utf-8');
+    return textAssetResponse(getLocalMapLibreAsset('maplibre-gl.css'), 'text/css; charset=utf-8');
   }
   if (path === '/__runtime/tileflow-browser.js') {
     return textAssetResponse(getLocalTileflowBrowserAsset(), 'text/javascript; charset=utf-8');
@@ -49,16 +63,18 @@ export function getTileflowPreviewRuntimeResponse(path: string): Response | unde
   return undefined;
 }
 
-function getLocalMapLibreAsset(kind: 'css' | 'js'): string {
-  if (kind === 'js' && localMapLibreJavaScript !== undefined) return localMapLibreJavaScript;
-  if (kind === 'css' && localMapLibreStylesheet !== undefined) return localMapLibreStylesheet;
-  const packagePath = localRequire.resolve('maplibre-gl/package.json');
-  const source = readFileSync(
-    join(dirname(packagePath), 'dist', kind === 'js' ? 'maplibre-gl.js' : 'maplibre-gl.css'),
-    'utf8',
-  );
-  if (kind === 'js') localMapLibreJavaScript = source;
-  else localMapLibreStylesheet = source;
+function getLocalMapLibreAsset(
+  fileName:
+    | 'maplibre-gl.css'
+    | 'maplibre-gl.mjs'
+    | 'maplibre-gl-shared.mjs'
+    | 'maplibre-gl-worker.mjs',
+): string {
+  const cached = localMapLibreAssets.get(fileName);
+  if (cached !== undefined) return cached;
+
+  const source = readFileSync(localRequire.resolve(`maplibre-gl/dist/${fileName}`), 'utf8');
+  localMapLibreAssets.set(fileName, source);
   return source;
 }
 

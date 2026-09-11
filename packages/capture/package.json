@@ -79,7 +79,7 @@
     "maplibre-gl-min": "npm:maplibre-gl@6.4.1",
     "next": "16.3.3",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "react-dom": "^19.2.8",
     "svelte": "^5.56.4",
     "vite": "^8.0.16",
     "vue": "^3.5.39",

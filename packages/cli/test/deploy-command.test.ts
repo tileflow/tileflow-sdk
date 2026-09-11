@@ -948,7 +948,10 @@ test('CI deploy runs local config preflight before failing closed on saved crede
   );
 
   assert.equal(result.code, 1);
-  assert.match(`${result.stdout}\n${result.stderr}`, /explicit Map-scoped Tileflow API key/);
+  assert.match(
+    `${result.stdout}\n${result.stderr}`,
+    /explicit Tileflow credential with access to the target Map/,
+  );
   assert.match(`${result.stdout}\n${result.stderr}`, /TILEFLOW_API_KEY/);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /tileflow login/);
   assert.equal(requests, 0);

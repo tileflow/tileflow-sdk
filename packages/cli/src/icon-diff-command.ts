@@ -217,7 +217,7 @@ async function runIconDiff(
   const proposedPackage = binding
     ? (compiled.packages.find((candidate) => candidate.contentHash === binding.packageHash) ?? null)
     : null;
-  const baseline = await readBaseline(api, environment);
+  const baseline = await readBaseline({...api, mapId: options.mapId}, environment);
   const beforeManifest = baseline.baseline?.package?.manifest ?? null;
   const iconDiff = diffTileflowIconPackageManifests(
     beforeManifest,
@@ -280,13 +280,13 @@ async function runIconDiff(
 }
 
 async function readBaseline(
-  api: {apiKey: string; apiUrl: string},
+  api: {apiKey: string; apiUrl: string; mapId: string},
   environment: string,
 ): Promise<IconPackageBaselineResponse> {
   const response = await requestHostedJson(
     api.apiUrl,
     `/v1/icon-packages/baseline/${encodeURIComponent(environment)}`,
-    {headers: {Authorization: `Bearer ${api.apiKey}`}},
+    {headers: {Authorization: `Bearer ${api.apiKey}`, 'X-Tileflow-Map-Id': api.mapId}},
   );
 
   if (!response.ok) {

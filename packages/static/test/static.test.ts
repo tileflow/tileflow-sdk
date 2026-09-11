@@ -36,6 +36,36 @@ const baseScene = {
   theme: 'light',
 };
 
+test('Hosted requests carry an explicit Map target separately from the scene', async () => {
+  let target: string | null = null;
+  let body: unknown;
+  await createStaticMap(baseScene, {
+    apiKey: 'synthetic-team-key',
+    mapId: 'map_AbCdEfGhIjKlMnOp',
+    idempotencyKey: 'static_target_1234',
+    fetch: (async (_url, init) => {
+      target = new Headers(init?.headers).get('X-Tileflow-Map-Id');
+      body = JSON.parse(String(init?.body));
+      return hostedReadyResponse();
+    }) as typeof fetch,
+  });
+  assert.equal(target, 'map_AbCdEfGhIjKlMnOp');
+  assert.equal((body as Record<string, unknown>).mapId, undefined);
+  let calls = 0;
+  await assert.rejects(
+    createStaticMap(baseScene, {
+      mapId: 'bad',
+      idempotencyKey: 'static_target_1234',
+      fetch: (async () => {
+        calls++;
+        return hostedReadyResponse();
+      }) as typeof fetch,
+    }),
+    /Map ID/u,
+  );
+  assert.equal(calls, 0);
+});
+
 const attributionPlan = {
   entries: [
     {

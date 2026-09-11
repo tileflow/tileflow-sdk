@@ -237,3 +237,11 @@ logical operation, including a distinct-key cache reuse. Downloading an immutabl
 consumes zero units.
 
 Docs: https://tileflow.dev/docs
+
+## Team credentials
+
+A Team credential can serve multiple Maps. Pass `mapId` in the options to `createStaticMap` or
+`precacheStaticMap`; it must be a Managed Map ID such as `map_1234567890abcdef`. The client sends
+`X-Tileflow-Map-Id` separately from the portable scene. `scene.map` remains the deployed environment
+name. The Hosted API must support unified Team credentials and authorize the selected Map.
+Existing Map-scoped keys remain usable without this option. Keep either key on a trusted server.

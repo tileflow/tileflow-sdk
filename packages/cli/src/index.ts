@@ -87,6 +87,7 @@ import {allowsStoredDeployCredential, resolveDeploySource} from './deploy-source
 import {defaultTileflowDevHost, parseTileflowDevHost, tileflowDevOrigin} from './dev-host';
 import {registerFeatureInspectCommand} from './feature-inspect-command';
 import {
+  apiProfileCanTargetMap,
   fetchHostedMapStatus,
   pollDeviceToken,
   publishHostedStyle,
@@ -1737,7 +1738,7 @@ async function requireApiOptions(
         process.exitCode = 1;
         return null;
       }
-      if (profile.value.mapId !== requestedMapId) {
+      if (!apiProfileCanTargetMap(profile.value, requestedMapId)) {
         if (!behavior.silent) logError('This API key belongs to another Map.');
         process.exitCode = 1;
         return null;
@@ -1747,6 +1748,11 @@ async function requireApiOptions(
       const profile = await validateApiKey(apiUrl, options.apiKey);
       if (!profile.ok) {
         if (!behavior.silent) logError(profile.error);
+        process.exitCode = 1;
+        return null;
+      }
+      if (profile.value.credentialType === 'team_api_key') {
+        if (!behavior.silent) logError('Team credentials require an explicit --map-id.');
         process.exitCode = 1;
         return null;
       }
@@ -1772,7 +1778,7 @@ async function requireApiOptions(
     allowsStoredDeployCredential(resolveDeploySource(process.env));
   if (!allowStoredCredential) {
     if (!behavior.silent) {
-      logError('CI requires an explicit Map-scoped Tileflow API key.');
+      logError('CI requires an explicit Tileflow credential with access to the target Map.');
       printNextSteps([
         `Set ${pc.cyan('TILEFLOW_API_KEY')} from the CI secret store.`,
         'The saved personal account session is never used in CI.',

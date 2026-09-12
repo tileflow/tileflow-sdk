@@ -3,7 +3,7 @@ name: Validate icon set foundations stage
 on:
   pull_request:
     paths:
-      - scripts/icon-set-foundations-stage.mjs
+      - scripts/icon-set-foundations-*.mjs
       - .github/workflows/icon-set-foundations-stage.yml
 
 permissions:
@@ -38,8 +38,8 @@ jobs:
           pnpm install --frozen-lockfile
       - name: Apply checked source edits
         run: |
-          node scripts/icon-set-foundations-stage.mjs
-          rm scripts/icon-set-foundations-stage.mjs .github/workflows/icon-set-foundations-stage.yml
+          node scripts/icon-set-foundations-fixes.mjs
+          rm scripts/icon-set-foundations-stage.mjs scripts/icon-set-foundations-fixes.mjs .github/workflows/icon-set-foundations-stage.yml
           pnpm --filter @tileflow/core reference:generate
           git diff --name-only 72b46424ee3076585039293c8360dfd0ce347586 -- '*.ts' '*.md' '*.json' | while IFS= read -r file; do
             if [ -f "$file" ]; then pnpm exec prettier --write "$file"; fi
@@ -59,7 +59,7 @@ jobs:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          git restore --source=HEAD -- scripts/icon-set-foundations-stage.mjs .github/workflows/icon-set-foundations-stage.yml
+          git restore --source=HEAD -- scripts/icon-set-foundations-stage.mjs scripts/icon-set-foundations-fixes.mjs .github/workflows/icon-set-foundations-stage.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A

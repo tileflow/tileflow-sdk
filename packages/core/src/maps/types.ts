@@ -11,7 +11,8 @@ import type {
 import {tileflowPortableIdSchema} from '../portable-identity';
 import type {TileflowTheme, TileflowThemeName} from '../themes';
 import type {TileflowProjection, TileflowTerrain, TileflowViewConfig} from '../types';
-import type {TileflowFontDirectory, TileflowGlyphs, TileflowIconDirectory} from './assets';
+import type {TileflowFontDirectory, TileflowGlyphs} from './assets';
+import type {TileflowIconSource} from '../icon-set';
 import type {TileflowAuthoringModules} from './operations';
 
 /** Portable, filesystem-safe identity shared by maps and their leaf-owned scenes. */
@@ -43,8 +44,8 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
   data?: TileflowDataConfig;
   /** Name used whenever a concrete theme is not explicitly requested. */
   defaultTheme?: TileflowThemeName;
-  /** Ordered icon directories. Omission inherits; declaration replaces; [] means no icons. */
-  icons?: readonly TileflowIconDirectory[];
+  /** Ordered icon contributors. Omission inherits; declaration replaces; [] means no icons. */
+  icons?: readonly TileflowIconSource[];
   /** Independent Bathymetry and Nautical products composed by the compiler. */
   marine?: TileflowMarine;
   /** Semantic domains, expressed directly or with explicit refine/disable operations. */

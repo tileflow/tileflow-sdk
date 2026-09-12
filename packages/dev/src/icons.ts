@@ -1,3 +1,16 @@
+import {
+  isTileflowIconSetSource,
+  TileflowIconSetError,
+  type TileflowIconDirectory,
+} from '@tileflow/core';
+import {
+  assertGeneratedFileLimits,
+  createSpriteImage,
+  createSpriteLayout,
+  loadSharp,
+  type TileflowSpriteIndex as SpriteIndex,
+  type TileflowRenderedIcon,
+} from './icon-sprite';
 import {readdir, readFile, realpath, stat} from 'node:fs/promises';
 import {extname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {SaxesParser} from 'saxes';
@@ -220,17 +233,6 @@ type CompileIconSourcesResult = {
   compiledBySequence: Map<string, CompiledIconSource>;
   mapRequests: MapIconRequest[];
 };
-
-type SpriteIndex = Record<
-  string,
-  {
-    height: number;
-    pixelRatio: 1 | 2;
-    width: number;
-    x: number;
-    y: number;
-  }
->;
 
 const iconFileExtensions = new Set(['.svg', '.png', '.jpg', '.jpeg', '.webp']);
 const iconSpriteSize = 24;
@@ -512,13 +514,22 @@ async function getMapIconRequests(
     if (!mapConfig) throw new Error(`Unknown Tileflow map: ${mapName}`);
     const resolvedMap = parseResolvedTileflowMap(mapConfig);
     try {
-      const directories = await resolveTileflowAssetDirectories(resolvedMap.icons ?? [], {
-        baseDirectory,
-        configPath: `maps.${mapName}.icons`,
-        cwd,
-        kind: 'icons',
-        target,
-      });
+      const sourceDirectories = resolvedMap.icons ?? [];
+      if (sourceDirectories.some(isTileflowIconSetSource))
+        throw new TileflowIconSetError(
+          'ICON_SET_INVALID',
+          'Shared icon sets require the explicit composeTileflowIconSources build port; command integration is not installed',
+        );
+      const directories = await resolveTileflowAssetDirectories(
+        sourceDirectories as readonly TileflowIconDirectory[],
+        {
+          baseDirectory,
+          configPath: `maps.${mapName}.icons`,
+          cwd,
+          kind: 'icons',
+          target,
+        },
+      );
       requests.push({
         directories,
         mapName,
@@ -776,46 +787,7 @@ async function inspectIconSource(
 async function compileInspectedIconSource(
   inspected: InspectedIconSource,
 ): Promise<CompiledIconSource> {
-  const rendered = await mapWithConcurrency(
-    inspected.icons,
-    tileflowIconPackageLimits.decodeConcurrency,
-    async (icon) => {
-      const dimensions = await validateDecodedDimensions(icon);
-      if (
-        icon.kind === 'pattern' &&
-        (dimensions.width < 2 ||
-          dimensions.width > 512 ||
-          (dimensions.width & (dimensions.width - 1)) !== 0)
-      ) {
-        throw new Error(
-          `${icon.fileName} pattern width must be a power of two from 2 through 512 pixels`,
-        );
-      }
-      const oneX = await renderIcon(icon, dimensions, 1);
-      const twoX = await renderIcon(icon, dimensions, 2);
-      return {
-        dimensions,
-        input: icon,
-        oneX,
-        pixelSha256: {
-          oneX: await hashTileflowRenderedIconPixels({
-            height: oneX.height,
-            pixelRatio: 1,
-            rgba: oneX.rgba,
-            width: oneX.width,
-          }),
-          twoX: await hashTileflowRenderedIconPixels({
-            height: twoX.height,
-            pixelRatio: 2,
-            rgba: twoX.rgba,
-            width: twoX.width,
-          }),
-        },
-        sourceSha256: await sha256Hex(icon.source),
-        twoX,
-      };
-    },
-  );
+  const rendered = await renderIconInputs(inspected.icons);
   const layoutOneX = createSpriteLayout(
     rendered.map(({input, oneX}) => ({...oneX, name: input.name})),
     1,
@@ -882,66 +854,6 @@ async function compileInspectedIconSource(
   };
 }
 
-function createSpriteLayout(
-  icons: Array<{height: number; name: string; width: number}>,
-  pixelRatio: 1 | 2,
-) {
-  const columns = Math.ceil(Math.sqrt(icons.length));
-  const widest = Math.max(...icons.map((icon) => icon.width));
-  const targetWidth = Math.min(tileflowIconPackageLimits.maxAtlasDimension, columns * widest);
-  const placements: Array<{left: number; top: number}> = [];
-  let left = 0;
-  let rowHeight = 0;
-  let top = 0;
-
-  for (const icon of icons) {
-    if (icon.width > tileflowIconPackageLimits.maxAtlasDimension) {
-      throw new Error(
-        `Generated sprite exceeds ${tileflowIconPackageLimits.maxAtlasDimension} pixels per dimension`,
-      );
-    }
-    if (left > 0 && left + icon.width > targetWidth) {
-      top += rowHeight;
-      left = 0;
-      rowHeight = 0;
-    }
-    placements.push({left, top});
-    left += icon.width;
-    rowHeight = Math.max(rowHeight, icon.height);
-  }
-
-  const width = targetWidth;
-  const height = top + rowHeight;
-
-  if (
-    width > tileflowIconPackageLimits.maxAtlasDimension ||
-    height > tileflowIconPackageLimits.maxAtlasDimension
-  ) {
-    throw new Error(
-      `Generated sprite exceeds ${tileflowIconPackageLimits.maxAtlasDimension} pixels per dimension`,
-    );
-  }
-
-  const index: SpriteIndex = Object.fromEntries(
-    icons.map((icon, indexNumber) => {
-      const placement = placements[indexNumber]!;
-
-      return [
-        icon.name,
-        {
-          height: icon.height,
-          pixelRatio,
-          width: icon.width,
-          x: placement.left,
-          y: placement.top,
-        },
-      ];
-    }),
-  );
-
-  return {height, index, width};
-}
-
 async function validateDecodedDimensions(icon: IconInput): Promise<DecodedIconDimensions> {
   const sharp = await loadSharp();
   const metadata = await sharp(icon.source, {
@@ -998,59 +910,6 @@ async function renderIcon(
     .toBuffer();
 
   return {height: info.height, png, rgba, width: info.width};
-}
-
-async function createSpriteImage(
-  icons: Array<{height: number; name: string; rgba: Uint8Array; width: number}>,
-  layout: ReturnType<typeof createSpriteLayout>,
-): Promise<Uint8Array> {
-  const sharp = await loadSharp();
-  const atlas = new Uint8Array(layout.width * layout.height * 4);
-
-  for (const icon of icons) {
-    const placement = layout.index[icon.name];
-    if (!placement || icon.width !== placement.width || icon.height !== placement.height) {
-      throw new Error('Rendered icon dimensions do not match the sprite layout');
-    }
-
-    const rowBytes = icon.width * 4;
-
-    for (let row = 0; row < icon.height; row += 1) {
-      const sourceStart = row * rowBytes;
-      const targetStart = ((placement.y + row) * layout.width + placement.x) * 4;
-      atlas.set(icon.rgba.subarray(sourceStart, sourceStart + rowBytes), targetStart);
-    }
-  }
-
-  return sharp(atlas, {
-    raw: {
-      channels: 4,
-      height: layout.height,
-      width: layout.width,
-    },
-  })
-    .png({adaptiveFiltering: false, compressionLevel: 9, palette: false})
-    .toBuffer();
-}
-
-function assertGeneratedFileLimits(files: CompiledTileflowIconPackageFile[]): void {
-  let totalBytes = 0;
-
-  for (const file of files) {
-    if (file.source.byteLength > tileflowIconPackageLimits.maxGeneratedFileBytes) {
-      throw new Error(
-        `${file.fileName} exceeds ${tileflowIconPackageLimits.maxGeneratedFileBytes} generated bytes`,
-      );
-    }
-
-    totalBytes += file.source.byteLength;
-  }
-
-  if (totalBytes > tileflowIconPackageLimits.maxGeneratedPackageBytes) {
-    throw new Error(
-      `Generated package exceeds ${tileflowIconPackageLimits.maxGeneratedPackageBytes} bytes`,
-    );
-  }
 }
 
 function validateHostedSvg(source: Uint8Array, displayPath: string): void {
@@ -1203,17 +1062,6 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-async function loadSharp(): Promise<(typeof import('sharp'))['default']> {
-  try {
-    return (await import('sharp')).default;
-  } catch (error) {
-    throw new Error(
-      'Local icon sprites require the optional "sharp" package. Install sharp or disable local icons.',
-      {cause: error},
-    );
-  }
-}
-
 function atlasRectangle(entry: SpriteIndex[string]): TileflowIconCatalogAtlasRectangle {
   return {height: entry.height, width: entry.width, x: entry.x, y: entry.y};
 }
@@ -1270,3 +1118,130 @@ function uniqueStrings(values: string[]): string[] {
 }
 
 export {iconFileExtensions};
+
+async function renderIconInputs(inputs: IconInput[]): Promise<CompiledIcon[]> {
+  let renderedOneXPixels = 0;
+  return mapWithConcurrency(inputs, tileflowIconPackageLimits.decodeConcurrency, async (icon) => {
+    const dimensions = await validateDecodedDimensions(icon);
+    const oneXWidth = icon.kind === 'pattern' ? dimensions.width : iconSpriteSize;
+    const oneXHeight = icon.kind === 'pattern' ? dimensions.height : iconSpriteSize;
+    const maximumOneXDimension = tileflowIconPackageLimits.maxAtlasDimension / 2;
+    renderedOneXPixels += oneXWidth * oneXHeight;
+    if (
+      oneXWidth > maximumOneXDimension ||
+      oneXHeight > maximumOneXDimension ||
+      renderedOneXPixels > maximumOneXDimension ** 2
+    ) {
+      throw new Error(
+        'Rendered icon inputs exceed the paired sprite capacity before rasterization',
+      );
+    }
+    if (
+      icon.kind === 'pattern' &&
+      (dimensions.width < 2 ||
+        dimensions.width > 512 ||
+        (dimensions.width & (dimensions.width - 1)) !== 0)
+    ) {
+      throw new Error(
+        `${icon.fileName} pattern width must be a power of two from 2 through 512 pixels`,
+      );
+    }
+    const oneX = await renderIcon(icon, dimensions, 1);
+    const twoX = await renderIcon(icon, dimensions, 2);
+    return {
+      dimensions,
+      input: icon,
+      oneX,
+      pixelSha256: {
+        oneX: await hashTileflowRenderedIconPixels({
+          height: oneX.height,
+          pixelRatio: 1,
+          rgba: oneX.rgba,
+          width: oneX.width,
+        }),
+        twoX: await hashTileflowRenderedIconPixels({
+          height: twoX.height,
+          pixelRatio: 2,
+          rgba: twoX.rgba,
+          width: twoX.width,
+        }),
+      },
+      sourceSha256: await sha256Hex(icon.source),
+      twoX,
+    };
+  });
+}
+
+/** A bounded local source snapshot used by the explicit shared-composition build port. */
+export async function readTileflowIconDirectory(
+  source: TileflowIconDirectory,
+  options: {cwd: string; baseDirectory: string; target: TileflowIconCompilationTarget},
+): Promise<{
+  iconIds: string[];
+  watchPath?: string;
+  render: (ids: readonly string[]) => Promise<
+    Array<{
+      icon: TileflowRenderedIcon;
+      identity: TileflowEffectiveIconSourceIdentity;
+      sourceBytes: number;
+    }>
+  >;
+}> {
+  const directory = (
+    await resolveTileflowAssetDirectories([source], {
+      ...options,
+      configPath: 'icons',
+      kind: 'icons',
+    })
+  )[0];
+  if (!directory)
+    throw new TileflowIconCompilationError([{path: 'icons', message: 'Missing icon directory'}]);
+  const issues: TileflowIconCompilationIssue[] = [];
+  const inspected = await inspectIconSource(directory, options.target, issues);
+  if (!inspected || issues.length) throw new TileflowIconCompilationError(issues);
+  if (inspected.icons.length > tileflowIconPackageLimits.maxIconCount)
+    throw new TileflowIconCompilationError([
+      {path: 'icons', message: 'One icon contributor supports at most 256 exports'},
+    ]);
+  return {
+    iconIds: inspected.icons.map((icon) => icon.name),
+    ...(directory.watch ? {watchPath: directory.realPath} : {}),
+    render: async (ids) => {
+      const selected = new Set(ids);
+      const inputs = inspected.icons.filter((icon) => selected.has(icon.name));
+      if (
+        inputs.length !== ids.length ||
+        inputs.reduce((sum, icon) => sum + icon.source.byteLength, 0) >
+          tileflowIconPackageLimits.maxSourceBytes
+      )
+        throw new TileflowIconCompilationError([
+          {
+            path: 'icons',
+            message: 'Selected icon inputs exceed their source budget or have invalid IDs',
+          },
+        ]);
+      return (await renderIconInputs(inputs)).map((rendered) => ({
+        icon: {
+          id: rendered.input.name,
+          oneX: {
+            height: rendered.oneX.height,
+            width: rendered.oneX.width,
+            rgba: rendered.oneX.rgba,
+          },
+          twoX: {
+            height: rendered.twoX.height,
+            width: rendered.twoX.width,
+            rgba: rendered.twoX.rgba,
+          },
+        },
+        identity: {
+          id: rendered.input.name,
+          kind: rendered.input.kind,
+          format: rendered.input.format,
+          sha256: rendered.sourceSha256,
+        },
+        sourceBytes: rendered.input.source.byteLength,
+      }));
+    },
+  };
+}

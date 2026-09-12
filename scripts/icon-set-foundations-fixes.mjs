@@ -29,4 +29,19 @@ if (!composition.includes('tileflowIconsLockfileName')) {
 }
 
 replace('packages/core/README.md', 'There is no built-in selector, source object, external\nsprite selector, icon mapping, icon-specific inheritance, additive command, or compatibility alias.', 'There is no built-in selector, mutable external sprite selector, icon mapping or icon-specific\ninheritance. Shared sets use the explicit locked descriptor described below; this is not a generic\nsource registry or an implicit additive operation.');
-console.log('Updated generated-reference handling and exact manifest preflight.');
+
+const artifactPath = 'packages/dev/src/icon-artifact.ts';
+let artifact = readFileSync(artifactPath, 'utf8');
+if (artifact.includes("import {z} from 'zod';")) {
+	artifact = artifact.replace("import {z} from 'zod';", "import {tileflowIconSpriteIndexSchema as indexSchema, type TileflowIconSpriteIndexEntry as Rectangle} from '@tileflow/core';");
+	artifact = artifact.replace('tileflowIconIdSchema, ', '');
+	const first = artifact.indexOf('const entrySchema = z.object(');
+	const last = artifact.indexOf('export type VerifiedTileflowIconArtifact', first);
+	if (first < 0 || last < 0) throw new Error('Missing generated-index schema extraction boundary');
+	artifact = artifact.slice(0, first) + artifact.slice(last);
+	writeFileSync(artifactPath, artifact);
+}
+const indexPath = 'packages/core/src/index.ts';
+const indexSource = readFileSync(indexPath, 'utf8');
+if (!indexSource.includes("export * from './icon-sprite-index';")) writeFileSync(indexPath, `${indexSource}\nexport * from './icon-sprite-index';\n`);
+console.log('Updated generated-reference handling, portable sprite schema and exact manifest preflight.');

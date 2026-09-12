@@ -51,6 +51,17 @@ test('emits a clean, offline-verifiable development builder input', async () => 
     assert.equal(manifest.adapter.sourceDigest, descriptor.sourceDigest);
     assert.equal(manifest.adapter.engineBundle.path, 'artifacts/engine.mjs');
     assert.equal(manifest.adapter.verifiers.length, 4);
+
+    const environment = {...process.env};
+    delete environment.NODE_TEST_CONTEXT;
+
+    for (const verifier of manifest.adapter.verifiers) {
+      await execFileAsync(
+        process.execPath,
+        ['--test', '--test-name-pattern=^$', join(output, verifier.path)],
+        {cwd: temporary, env: environment},
+      );
+    }
   } finally {
     await rm(temporary, {force: true, recursive: true});
   }

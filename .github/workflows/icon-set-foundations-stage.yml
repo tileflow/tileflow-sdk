@@ -1,0 +1,69 @@
+name: Validate icon set foundations stage
+
+on:
+  pull_request:
+    paths:
+      - scripts/icon-set-foundations-stage.mjs
+      - .github/workflows/icon-set-foundations-stage.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: icon-set-foundations-stage
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.event.pull_request.number == 91 && github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feat/team-icon-sets-foundations'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact SDK work branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Install the existing locked toolchain
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+          pnpm install --frozen-lockfile
+      - name: Apply checked source edits
+        run: |
+          node scripts/icon-set-foundations-stage.mjs
+          rm scripts/icon-set-foundations-stage.mjs .github/workflows/icon-set-foundations-stage.yml
+          pnpm --filter @tileflow/core reference:generate
+          git diff --name-only 72b46424ee3076585039293c8360dfd0ce347586 -- '*.ts' '*.md' '*.json' | while IFS= read -r file; do
+            if [ -f "$file" ]; then pnpm exec prettier --write "$file"; fi
+          done
+      - name: Build all packages
+        run: pnpm build
+      - name: Check types lint contracts and tests
+        run: pnpm check
+      - name: Check final source diff
+        run: |
+          git diff --check
+          git diff --stat 72b46424ee3076585039293c8360dfd0ce347586
+          node -e "const{execFileSync}=require('node:child_process');const paths=execFileSync('git',['diff','--name-only','72b46424ee3076585039293c8360dfd0ce347586'],{encoding:'utf8'}).trim().split('\n');if(paths.some(p=>!p.startsWith('packages/core/')&&!p.startsWith('packages/dev/')&&p!=='docs/modules-api-reference.json'))throw Error('Unexpected final changed path');"
+      - name: Save validated source on the same work branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git restore --source=HEAD -- scripts/icon-set-foundations-stage.mjs .github/workflows/icon-set-foundations-stage.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat(icons): integrate and validate artifact-based SDK foundations'
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" push origin HEAD:refs/heads/feat/team-icon-sets-foundations
+          git rev-parse HEAD
+          git rev-parse HEAD^{tree}

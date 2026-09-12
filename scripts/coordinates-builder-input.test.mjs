@@ -55,11 +55,27 @@ test('emits a clean, offline-verifiable development builder input', async () => 
     const environment = {...process.env};
     delete environment.NODE_TEST_CONTEXT;
 
+    // Standalone bundles must reach their input guard without an installed runtime or node_modules.
+    for (const key of [
+      'COORDINATES_INSTALLATION_PATH',
+      'COORDINATES_DISTRIBUTION_PATH',
+      'COORDINATES_CACHE_PATH',
+      'COORDINATES_NATIVE_PATH',
+      'COORDINATES_RESOURCES_PATH',
+    ]) {
+      delete environment[key];
+    }
+
     for (const verifier of manifest.adapter.verifiers) {
-      await execFileAsync(
-        process.execPath,
-        ['--test', '--test-name-pattern=^$', join(output, verifier.path)],
-        {cwd: temporary, env: environment},
+      await assert.rejects(
+        execFileAsync(process.execPath, [join(output, verifier.path)], {
+          cwd: temporary,
+          env: environment,
+        }),
+        {
+          stderr:
+            /Error: (?:An explicit installed proof-bearing execution release is required\.|Explicit native artifact and resources are required\.|Native conformance requires an explicit native artifact and resource directory\.|Runtime conformance requires an explicit development distribution and cache\.)/u,
+        },
       );
     }
   } finally {

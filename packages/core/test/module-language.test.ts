@@ -341,9 +341,23 @@ test('publishes AI-reference constraints that match exact assets and capture aut
   const icons = dereferenceJsonSchema(reference, asJsonSchema(standaloneMap.properties?.icons));
   assert.match(String(icons.description), /omission inherits/u);
   assert.match(String(icons.description), /\[\] selects no icons/u);
-  assert.match(String(icons.description), /later directory wins/u);
+  assert.match(String(icons.description), /later contributor wins/u);
   const assetDirectory = dereferenceJsonSchema(reference, asJsonSchema(icons.items));
   const directoryBranches = assetDirectory.anyOf as JsonSchemaObject[];
+  assert.equal(directoryBranches.length, 3);
+  const sharedSet = dereferenceJsonSchema(reference, directoryBranches[2]!);
+  assert.equal(
+    dereferenceJsonSchema(reference, asJsonSchema(sharedSet.properties?.kind)).const,
+    'icon-set',
+  );
+  const setReference = dereferenceJsonSchema(
+    reference,
+    asJsonSchema(sharedSet.properties?.reference),
+  );
+  const setPattern = new RegExp(String(setReference.pattern), 'u');
+  assert.equal(setPattern.test('@acme/brand'), true);
+  assert.equal(setPattern.test('@acme/brand@2'), false);
+  assert.equal(setPattern.test('@acme/../brand'), false);
   const localDirectory = dereferenceJsonSchema(reference, directoryBranches[0]!);
   const localPattern = new RegExp(String(localDirectory.pattern), 'u');
   assert.equal(localPattern.test('./icons'), true);

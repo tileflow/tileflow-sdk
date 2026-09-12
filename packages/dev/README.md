@@ -556,3 +556,43 @@ This package is public, but it is an integration layer. Styling primitives live 
 rendering lives in `@tileflow/react`.
 
 Docs: https://tileflow.dev/docs
+
+## Locked Icon Set composition foundations
+
+`composeTileflowIconSources(sources, {cwd, lock, cacheRoot, offline: true})` combines local/package
+directories and `iconSet('@team/set')` contributors into one effective sprite. Without an explicit
+lock object, it reads `tileflow.icons.lock.json` beside `baseDirectory` (default: `cwd`).
+It never resolves latest or writes the lock. The result contains the generated `package`,
+ordered `composition` receipt, effective `sourceIdentities`, replacement ordinals and local watch
+paths. Pass both the source identities and receipt to Core map-revision hashing.
+
+The reader verifies each file length/checksum, PNG/index geometry, names, density pairing and both
+per-icon pixel hashes. It copies decoded 1x and 2x cells independently, without resampling either.
+The existing directory compiler and this port share the same sprite packer. A sole shared set
+reuses its exact artifact; mixed inputs are packed deterministically. Later contributors win and
+all dependencies remain in the receipt, even when entirely shadowed. Shared inputs never pretend
+to contain original SVG/source identities. Existing local-only compilation remains unchanged.
+
+`storeTileflowIconSetArtifact` seeds an exact verified cache entry. `loadTileflowIconSetArtifact`
+uses the cache or hydrates only the selected artifact's four public files. Hydration defaults to
+the trusted `https://api.tileflow.dev` origin, sends no credentials and follows no redirects.
+Applications may explicitly configure trusted `deliveryOrigins`; locks cannot add them.
+`offline` forbids all fetches and fails on missing or corrupt entries. Complete-map offline
+rendering still depends on unrelated tiles, glyphs and other external resources.
+
+The cache lives under the OS user cache with `tileflow/icons/v1/<contentHash>`. `cacheRoot` or
+`TILEFLOW_ICON_CACHE_DIR` overrides its parent. Atomic directory installation and exact-entry
+retirement support concurrent writers and corruption repair. Symlink entries are rejected. This
+is a disposable cache, not a security sandbox against another process controlling the same user
+account. Incomplete temporary entries are never accepted as published cache entries.
+
+`writeTileflowIconsLockfile(directory, lock, expectedContents)` uses a whole-file compare-and-swap
+and atomic rename. A conflicting writer fails without overwriting pins. An interrupted writer
+leaves the previous complete lock intact; remove a stale `.writing` guard only after confirming
+that its writer has exited. Ordinary reads and Core validation never acquire write guards.
+
+The existing 256-effective-icon, 2048-atlas-dimension, 4 MiB/file and 8 MiB/package bounds still
+apply. Several individually valid sets can exceed the effective map limit; composition fails
+explicitly instead of clipping. Cache and composition do not create Team resources or publish
+anything. Normal CLI/build/framework and Hosted command integration follows separately; those
+existing entry points currently reject shared descriptors rather than silently dropping them.

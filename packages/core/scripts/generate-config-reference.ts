@@ -953,7 +953,7 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
   const fonts = asRecord(properties.fonts, 'fonts property');
   const glyphs = asRecord(properties.glyphs, 'glyphs property');
   icons.description =
-    'Ordered icon directories. In authoring, omission inherits, declaration atomically replaces, [] selects no icons, and a later directory wins by exact canonical ID.';
+    'Ordered icon contributors: local/package directories or explicitly locked Team Icon Sets. In authoring, omission inherits, declaration atomically replaces, [] selects no icons, and a later contributor wins by exact canonical ID.';
   fonts.description =
     'Ordered local font directories. In authoring, omission inherits, declaration atomically replaces either text provider, and [] explicitly selects no provider for a text-free map.';
   glyphs.description =
@@ -969,6 +969,13 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
       {kind: 'package-directory', package: '@tileflow/maps', path: 'assets/cyberpunk/icons'},
     ],
   ];
+  iconArray.examples = [
+    ...(iconArray.examples as unknown[]),
+    [{kind: 'icon-set', reference: '@acme/brand'}, './icons'],
+  ];
+  iconArray['x-tileflow-refinements'] = [
+    'An icon set reference may appear only once; exact revisions are resolved from the separate lockfile.',
+  ];
   const fontArray = dereferenceSchema(schema, fonts, 'fonts array');
   fontArray.description = fonts.description;
   fontArray.examples = [
@@ -983,7 +990,7 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
   ];
   const assetDirectory = dereferenceSchema(
     schema,
-    asRecord(iconArray.items, 'icon directory items'),
+    asRecord(fontArray.items, 'font directory items'),
     'asset directory',
   );
   const directoryBranches = assetDirectory.anyOf;

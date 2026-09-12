@@ -1,13 +1,75 @@
 # @tileflow/svelte
 
-Svelte component for rendering Tileflow maps with MapLibre.
+Svelte components for interactive Tileflow maps, annotations, and existing-image display.
+The component consumes prepared assets; it does not compile executable map configuration in the
+browser.
 
-Install `maplibre-gl` alongside the package and import its CSS once in your app.
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+
+## Install
+
+Use an existing Svelte 5 application. Supported peers are Svelte `>=5 <6` and MapLibre GL JS
+`>=6.4.1 <7`. The local build workflow below requires Node.js 22 or newer.
+
+```sh
+npm install @tileflow/svelte@alpha @tileflow/core@alpha @tileflow/maps@alpha "maplibre-gl@^6.4.1"
+npm install --save-dev --save-exact tileflow@alpha
+```
+
+## Prepare a map
+
+Create `tileflow.config.ts` at the application root:
+
+<!-- docs:check -->
+
+```ts
+import {defineMap} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'madrid',
+  version: 1,
+  extends: streets,
+  view: {center: [-3.7038, 40.4168], zoom: 12},
+});
+```
+
+For a Vite application serving `public/` at the URL root:
+
+```sh
+npx tileflow build --out public/tileflow
+```
+
+SvelteKit serves static files from `static/` by default; for that setup, build to `static/tileflow`
+instead. Set the component's manifest URL to the final public URL when a base path changes it.
+Rebuild after config/asset changes or use the
+[Vite integration](https://github.com/tileflow/tileflow-sdk/blob/main/packages/vite/README.md)
+for watched development and production output. Local preparation needs no API key; rendering can
+still fetch configured remote resources.
+
+## Configure the worker
+
+In a Vite client entry, add the following before mounting the application:
+
+```ts
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import {configureTileflowMapLibre} from '@tileflow/svelte';
+
+configureTileflowMapLibre({workerUrl});
+```
+
+Configure once before an interactive map mounts. In SvelteKit, place client-only setup in the
+application's client initialization path rather than running browser setup in a server load
+function. The `?worker&url` syntax is Vite-specific. Webpack users need the
+[Webpack worker recipe](https://github.com/tileflow/tileflow-sdk/blob/main/packages/webpack/README.md).
+The worker and shared module must match the application's installed MapLibre version.
+
+## Render a map
 
 ```svelte
 <script lang="ts">
-  import {TileflowMap} from '@tileflow/svelte';
   import 'maplibre-gl/dist/maplibre-gl.css';
+  import {TileflowMap} from '@tileflow/svelte';
 </script>
 
 <TileflowMap
@@ -15,197 +77,120 @@ Install `maplibre-gl` alongside the package and import its CSS once in your app.
   theme="system"
   center={[-3.7038, 40.4168]}
   zoom={12}
-  mapOptions={{
-    cooperativeGestures: true,
-    maxZoom: 18,
-  }}
+  mapOptions={{cooperativeGestures: true, maxZoom: 18}}
 />
 ```
 
-## MapLibre 6 worker
+Coordinates are `[longitude, latitude]`. `source.map` matches the config's portable ID, not a hosted
+`map_...` identifier. The default manifest URL is exactly `/tileflow/manifest.json`. Set
+`source.manifestUrl` for a subpath or external host; the browser does not infer bundler configuration.
 
-With MapLibre GL JS 6, configure the application-owned worker once before mounting an interactive
-map. The worker URL must come from the same `maplibre-gl` package installed by the application.
+Omitting `theme` uses `defaultTheme`. `system` needs an explicit light/dark mapping, which Streets
+supplies. Theme changes keep the MapLibre instance, camera, and interactions, and roll back on
+failure. `onThemeChange` reports transitions.
 
-```ts
-// main.ts
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import {configureTileflowMapLibre} from '@tileflow/svelte';
+`mapOptions` accepts native MapLibre options except `container` and `style`. Direct props win over
+those options, then the manifest view, then shared defaults. An unmanaged source with
+`{kind: 'maplibre', style: styleUrl}` loads one style without Tileflow themes or manifest identity;
+do not pass a Tileflow theme with it.
 
-configureTileflowMapLibre({workerUrl});
+## Add annotations and native popup UI
+
+Install the contract types used below:
+
+```sh
+npm install @tileflow/interactions@alpha
 ```
 
-This is the Vite setup. Run it before `mount(...)`; `mode="image"` remains MapLibre-free. MapLibre
-GL JS 6.4.1-6.x is supported. Use the `@tileflow/next` or `@tileflow/webpack` README for their
-worker-delivery recipes.
-
-`mapOptions` accepts native MapLibre options except `container` and `style`, which
-Tileflow resolves from `source`. Direct
-Tileflow props such as `center`, `zoom`, and `interactive` take priority when
-provided. Camera resolution is the same in interactive and image modes: direct props, then
-`mapOptions`, then the published manifest view, then Tileflow's shared runtime defaults.
-
-Every map has exactly one discriminated `source`. Use `kind: 'tileflow'` with `map` and an optional
-`manifestUrl` for published delivery. `kind: 'maplibre'` is an unmanaged escape hatch for one direct
-style object or URL; it has no Tileflow theme identity, `system` selection, switching, or manifest
-traceability. Browser components do not compile `tileflow.config.ts`.
-
-Without `manifestUrl`, the exact default is `/tileflow/manifest.json`. If a bundler, framework base
-path, reverse proxy, or Tileflow plugin publishes it elsewhere, set the final public URL explicitly;
-the component does not guess it. Manifest 404s, unknown map IDs, unresolved styles, and unresolved
-image URLs enter `data-tileflow-state="error"`.
-
-`theme` selects a published theme name. Omission uses `defaultTheme`; `"system"` requires the map's
-explicit light/dark mapping. Switching preserves the MapLibre instance, camera, and interactions,
-and rolls back a failed style. `onThemeChange` receives transition state.
-
-```svelte
-<TileflowMap
-  source={{
-    kind: 'tileflow',
-    map: 'madrid',
-    manifestUrl: 'https://cdn.example.com/tileflow/manifest.json',
-  }}
-/>
-
-<TileflowMap
-  source={{
-    kind: 'maplibre',
-    style: 'https://cdn.example.com/tileflow/styles/madrid/dark.json',
-  }}
-/>
-```
-
-`mode="image"` resolves an explicit or published image URL and renders an `<img>` without loading
-or evaluating MapLibre. All environments follow the same published manifest contract.
-
-Hosted maps automatically preflight a short-lived commercial session grant before eligible
-resources. Setting `analytics={{enabled: false}}` disables the optional beacon only; it does not
-remove hosted authorization or override a user `mapOptions.transformRequest` callback.
-Use `analytics={{surfaceId: 'store-locator'}}` when the same Map is embedded in several stable
-product locations. Missing or invalid Surface IDs become `default`; do not use URLs, branches,
-random instance IDs, or user IDs.
-Direct Tileflow World maps keep early `GRACE` silent, show a compact accessible owner-action pill
-when late `GRACE` is activated, and show a stronger banner in `MANAGED_REQUIRED`. Missing tiles and
-MapLibre failures do not remove that recovery path.
-
-## Annotations and overlays
-
-Use `annotations` for keyed markers with optional tooltips and popups. Tileflow supplies accessible,
-text-only defaults; Svelte snippets can replace any surface and are mounted into the DOM containers
-owned by the shared MapLibre interaction runtime.
+This Svelte 5 component uses the worker and CSS setup above:
 
 ```svelte
 <script lang="ts">
-  import {TileflowMap} from '@tileflow/svelte';
   import type {
     TileflowAnnotation,
-    TileflowInteractionBinding,
     TileflowInteractionState,
+    TileflowInteractionViewContext,
   } from '@tileflow/interactions';
+  import {TileflowMap} from '@tileflow/svelte';
 
-  const annotations: TileflowAnnotation[] = [
+  const annotations = [
     {
-      ariaLabel: 'Madrid',
-      coordinate: [-3.7038, 40.4168],
       id: 'madrid',
       kind: 'marker',
-      marker: {content: {kind: 'text', text: 'Madrid'}},
+      coordinate: [-3.7038, 40.4168],
+      ariaLabel: 'Madrid',
+      tooltip: {content: {kind: 'text', text: 'View Madrid'}},
       popup: {content: {kind: 'view', name: 'city-card'}},
-      tooltip: {content: {kind: 'text', text: 'Open Madrid'}},
     },
-  ];
+  ] satisfies readonly TileflowAnnotation[];
 
-  const interactions: TileflowInteractionBinding[] = [
-    {
-      id: 'poi-details',
-      popup: {content: {kind: 'view', name: 'poi-card'}},
-      target: {categories: ['food-drink'], domain: 'poi', kind: 'semantic-feature'},
-      tooltip: {content: {field: 'name', fallback: 'Restaurant', kind: 'field'}},
-    },
-  ];
-
-  let interactionState: TileflowInteractionState = {popup: null};
+  let state = $state<TileflowInteractionState>({popup: null});
 </script>
 
-{#snippet marker(context)}
-  <span>{context.annotation.ariaLabel}</span>
-{/snippet}
-
-{#snippet tooltip(context)}
+{#snippet popup(context: TileflowInteractionViewContext)}
   {#if context.target.kind === 'annotation'}
-    <span>{context.target.annotation.ariaLabel}</span>
-  {:else}
-    <span>Point of interest</span>
-  {/if}
-{/snippet}
-
-{#snippet popup(context)}
-  <article>
-    {#if context.target.kind === 'annotation'}
+    <article>
       <h2>{context.target.annotation.ariaLabel}</h2>
-    {:else if context.target.kind === 'semantic-feature'}
-      <h2>POI details</h2>
-    {/if}
-    <button type="button" onclick={context.close}>Close</button>
-  </article>
+      <button type="button" onclick={context.close}>Close</button>
+    </article>
+  {/if}
 {/snippet}
 
 <TileflowMap
   source={{kind: 'tileflow', map: 'madrid'}}
   {annotations}
-  {interactions}
-  {interactionState}
-  onInteractionStateChange={(next) => (interactionState = next)}
-  onInteractionEvent={(event) => console.log(event.type)}
-  onInteractionDiagnostic={(diagnostic) => console.error(diagnostic)}
-  {marker}
-  {tooltip}
+  interactionState={state}
+  onInteractionStateChange={(next) => (state = next)}
+  onInteractionDiagnostic={(diagnostic) => console.error(diagnostic.code)}
   {popup}
 />
 ```
 
-`annotations` is the only application-owned marker input. Controlled `interactionState` and
-uncontrolled `defaultInteractionState` are mutually exclusive. `interactions` binds tooltips and
-popups to semantic POIs exposed by the compiled style metadata; applications select the stable
-`poi` domain and optional categories rather than physical style-layer IDs.
+Annotations need a stable `id`, singular `coordinate`, and non-empty `ariaLabel`; optional data must
+be JSON-safe. `marker` receives annotation-only context. `tooltip` and `popup` receive the shared
+interaction context; narrow `target.kind` before reading annotation or semantic feature data.
 
-Snippet callbacks are read at the time an interaction occurs, and adding or removing a snippet
-switches between custom and default rendering without recreating the map or its keyed markers.
-`marker` receives the annotation-only context. `tooltip` and `popup` receive the general interaction
-context and therefore handle both annotation and semantic-feature targets. Each context includes
-resolved content, the target, optional view name, and `close()`.
+Use `interactions` with `target: {kind: 'semantic-feature', domain: 'poi'}` for POIs already rendered
+by the style. Optional categories use Tileflow's taxonomy, such as `food-drink` or `retail`, not raw
+source classes. Semantic bindings require compatible style metadata and avoid one DOM marker per
+feature. Annotation and semantic overlays share one popup state.
 
-Both runtimes are controlled by one interaction-state coordinator. Replacing an annotation popup
-with a POI popup (or the reverse) closes the previous owner before opening the next one, so event
-order remains `popup:close` followed by `popup:open`.
+Controlled `interactionState` and uncontrolled `defaultInteractionState` are mutually exclusive.
+Do not change ownership during the component's lifetime. Updating annotations, bindings, state, or
+snippets reconciles existing runtimes rather than recreating MapLibre.
 
-Annotations and semantic interactions are interactive-only. The TypeScript API excludes
-annotations, interactions, interaction state, snippets, and interaction callbacks from the
-`mode="image"` branch. Untyped JavaScript that supplies them still receives an
-`UNSUPPORTED_MODE` diagnostic and capture readiness `error`, rather than pretending the static image
-contains live overlays.
+Text/field descriptors render as text. A `view` names an application snippet; it is not serialized
+HTML. Keep tooltips non-interactive and put buttons, links, and forms in popups.
 
-## Headless capture readiness
+## Display an existing image
 
-Use `captureId` to disambiguate repeated named maps:
+`mode="image"` displays an explicit `imageUrl` or a published manifest image without loading
+MapLibre. A local style build does not generate that image. This mode does not submit or poll a
+Static Maps operation; use the server-side
+[Static Maps client](https://github.com/tileflow/tileflow-sdk/blob/main/packages/static/README.md)
+for new renders, keeping privileged credentials off the browser.
 
-```svelte
-<TileflowMap source={{kind: 'tileflow', map: 'madrid'}} captureId="checkout-map" />
-```
+Annotations, semantic bindings, interaction state, and interaction snippets are interactive-only.
+Untyped callers that pass them to image mode receive `UNSUPPORTED_MODE` and capture readiness
+`error`, not simulated live overlays.
 
-The root exposes `data-tileflow-map`, optional `data-tileflow-capture-id`, and
-`data-tileflow-state="loading|idle|error"`. It becomes idle only after MapLibre idle plus two
-animation frames and, for custom interaction snippets, the Svelte DOM commit plus two current
-animation frames. It returns to loading when either surface changes and marks map or interaction
-errors. In image mode, readiness follows image decode/load when no interaction configuration is
-present. Application capture selects exactly one ready target.
+## Capture, authorization, and troubleshooting
 
-## Compatibility
+Use `captureId` to disambiguate repeated maps. The root exposes `data-tileflow-map`, resolved
+`data-tileflow-theme`, optional `data-tileflow-capture-id`, and
+`data-tileflow-state="loading|idle|error"`. Readiness includes MapLibre/image loading and committed
+Svelte interaction views. Application capture needs exactly one ready target and the application's
+normal loopback server.
 
-The supported peer window is Svelte 5.x and MapLibre GL JS 6.4.1-6.x. Compatibility smoke tests
-install Svelte 5.0.0 with the exact lower bound and selected current release from packed Tileflow
-tarballs, typecheck the public declarations, and compile real Svelte consumers. Future Svelte majors
-stay outside the peer range until that matrix passes.
+For an error or blank map, check the manifest URL, map/theme IDs, imported CSS, and matching
+worker/shared assets. The component does not guess a new manifest location after a 404.
 
-Docs: https://tileflow.dev/docs
+Hosted maps acquire a short-lived session grant before eligible resource requests.
+`analytics={{enabled: false}}` disables the optional beacon, not authorization. Use a stable product
+`surfaceId`, not a URL or user identifier. Direct World maps can show owner-action notices when
+managed delivery is required. Imports and the image path remain SSR-safe; interactive rendering
+requires a browser with WebGL.
+
+See the [interaction guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/interactions/README.md)
+and [browser runtime contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/framework-browser-runtime.md).
+Use the installed declarations and README for release-specific behavior; `main` may be newer than npm.

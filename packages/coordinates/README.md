@@ -1,8 +1,26 @@
-# `@tileflow/coordinates`
+# @tileflow/coordinates
 
 Portable, versioned CRS discovery and coordinate-transformation contracts. This package provides
 schemas, types, validation, and a portable HTTP client. It does not execute transformations, install
 an engine, or register CLI commands.
+
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+
+## Install
+
+```sh
+npm install @tileflow/coordinates@alpha
+```
+
+Use a JavaScript runtime with `fetch` for HTTP requests. The schema-only path works without a
+network connection or native engine. For local execution, use the separate
+[`@tileflow/coordinates-runtime`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/coordinates-runtime/README.md)
+adapter with an explicitly supplied distribution; installing either npm package does not supply
+public native engine, catalog, or grid assets.
+
+## Validate a request
+
+<!-- docs:check -->
 
 ```ts
 import {CoordinatesContractError, parseCoordinatesJsonRequest} from '@tileflow/coordinates';
@@ -38,6 +56,37 @@ supported. Client failures are `CoordinatesContractError` documents with fixed s
 
 The default endpoint is `https://api.tileflow.dev`; local HTTP endpoints are limited to loopback.
 Creating a client does not establish service availability or activate a Hosted capability.
+
+Run this example on a trusted server with an authorized `TILEFLOW_API_KEY`. The target API must
+have Coordinates enabled; installing the client does not enable it. Never bundle the key into a
+browser application.
+
+<!-- docs:check -->
+
+```ts
+import {CoordinatesContractError, createCoordinatesClient} from '@tileflow/coordinates';
+
+const apiKey = process.env.TILEFLOW_API_KEY;
+if (!apiKey) throw new Error('Set TILEFLOW_API_KEY on the server.');
+
+const coordinates = createCoordinatesClient({apiKey});
+
+try {
+  const response = await coordinates.transform({
+    from: 'EPSG:4258',
+    to: 'EPSG:25832',
+    positions: [[12, 55]],
+  });
+  console.log(JSON.stringify(response));
+} catch (error) {
+  if (!(error instanceof CoordinatesContractError)) throw error;
+  console.error(JSON.stringify(error.toJSON()));
+}
+```
+
+The example inputs are longitude/latitude in degrees; its projected output is easting/northing in
+the target CRS's units. No expected numeric result is hard-coded: operation selection and provenance
+belong to the verified execution release. Do not interpret request validation as a transformation.
 
 ## Validation
 
@@ -196,7 +245,7 @@ documents; a CLI adapter owns stream IO and process status.
 
 ## Reference data
 
-[`test/fixtures/sources.md`](test/fixtures/sources.md) records forward PROJ/Ordnance Survey values,
+[`test/fixtures/sources.md`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/coordinates/test/fixtures/sources.md) records forward PROJ/Ordnance Survey values,
 source revisions, axis normalization, and numerical tolerances. Schema tests validate their contract
 representation, not numerical engine output. Runtime conformance needs separate execution against
 these references and must state its verified platform and tolerance.

@@ -19,7 +19,7 @@
   "scripts": {
     "build": "turbo build",
     "build:packages": "turbo build --filter='./packages/*'",
-    "check": "pnpm run legal:check && pnpm run reference:check && pnpm run test:release && pnpm run test:architecture && pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run verify",
+    "check": "pnpm run legal:check && pnpm run reference:check && pnpm run docs:check && pnpm run test:release && pnpm run test:architecture && pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run verify",
     "typecheck": "turbo typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
@@ -37,7 +37,8 @@
     "smoke:peer-compat": "node scripts/peer-compat-smoke.mjs",
     "static-text:check": "node scripts/generate-static-text-coverage.mjs --check",
     "static-text:generate": "node scripts/generate-static-text-coverage.mjs",
-    "publish:alpha:dry-run": "pnpm run release:verify-source && pnpm run build:packages && pnpm run check && pnpm run smoke:capture-public"
+    "publish:alpha:dry-run": "pnpm run release:verify-source && pnpm run build:packages && pnpm run check && pnpm run smoke:capture-public",
+    "docs:check": "node --test scripts/check-docs.test.mjs && node scripts/check-docs.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

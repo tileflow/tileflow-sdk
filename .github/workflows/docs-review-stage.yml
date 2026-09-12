@@ -87,10 +87,39 @@ jobs:
               after = json.loads((root / path).read_text())
               allowed = {'scripts'} if path == 'package.json' else {'files'}
               assert {k: v for k, v in before.items() if k not in allowed} == {k: v for k, v in after.items() if k not in allowed}, path
+          replacements = {
+              'packages/core/test/package.test.ts': (
+                  "assert.deepEqual(manifest.files, ['dist', 'LICENSE', 'THIRD_PARTY_NOTICES.md']);",
+                  "assert.deepEqual(manifest.files, ['dist', 'docs', 'LICENSE', 'THIRD_PARTY_NOTICES.md']);",
+              ),
+              'packages/maps/test/package.test.ts': (
+                  "assert.deepEqual(manifest.files, ['assets', 'dist', 'THIRD_PARTY_NOTICES.md', 'LICENSE']);",
+                  "assert.deepEqual(manifest.files, ['assets', 'docs', 'dist', 'THIRD_PARTY_NOTICES.md', 'LICENSE']);",
+              ),
+          }
+          for path, (old, new) in replacements.items():
+              target = root / path
+              content = target.read_text()
+              assert content.count(old) == 1, path
+              target.write_text(content.replace(old, new))
+              paths.append(path)
+          directive = '> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).\n\n'
+          for path in paths:
+              if path == 'README.md' or re.fullmatch(r'packages/[a-z-]+/README\.md', path):
+                  target = root / path
+                  content = target.read_text()
+                  position = content.index('\n## ') + 1
+                  target.write_text(content[:position] + directive + content[position:])
+          guide = root / 'docs/documentation.md'
+          content = guide.read_text()
+          old = 'package catalog and points directly to raw Markdown. Keep it synchronized when adding a package.'
+          assert content.count(old) == 1
+          guide.write_text(content.replace(old, old + '\nLink to that index near the top of every package README so readers arriving from npm can find it.'))
+          assert len(paths) == 58
           (root / '.github/workflows/docs-review-stage.yml').unlink()
           pathlib.Path('/tmp/docs-review/paths.json').write_text(json.dumps(paths))
           pathlib.Path('/tmp/docs-review/paths.txt').write_text('\n'.join(paths) + '\n')
-          print('Reconstructed 56 documentation and validation files; temporary workflow excluded.')
+          print('Reconstructed 58 documentation and test files; temporary workflow excluded.')
           PY
       - name: Install review tooling
         run: |
@@ -107,39 +136,15 @@ jobs:
           PY
       - name: Build
         id: build
-        run: pnpm build 2>&1 | tee /tmp/docs-review/build.log
+        run: |
+          set -o pipefail
+          pnpm build 2>&1 | tee /tmp/docs-review/build.log
       - name: Validate documentation and SDK
         id: checks
         continue-on-error: true
-        run: pnpm check 2>&1 | tee /tmp/docs-review/check.log
-      - name: Inspect published README delivery
-        continue-on-error: true
         run: |
-          python <<'PY'
-          import io, json, pathlib, tarfile, urllib.parse, urllib.request
-          results = []
-          for path in sorted(pathlib.Path('packages').glob('*/package.json')):
-              manifest = json.loads(path.read_text())
-              if manifest.get('private'):
-                  continue
-              name = manifest['name']
-              try:
-                  with urllib.request.urlopen('https://registry.npmjs.org/' + urllib.parse.quote(name, safe=''), timeout=30) as response:
-                      metadata = json.load(response)
-                  version = metadata['dist-tags']['alpha']
-                  distribution = metadata['versions'][version]['dist']['tarball']
-                  assert urllib.parse.urlsplit(distribution).hostname == 'registry.npmjs.org'
-                  with urllib.request.urlopen(distribution, timeout=30) as response:
-                      data = response.read(32000001)
-                  assert len(data) <= 32000000
-                  with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as archive:
-                      readme = archive.extractfile('package/README.md').read().decode('utf-8')
-                  results.append({'name': name, 'alpha': version, 'tags': metadata['dist-tags'], 'registryReadmeCharacters': len(metadata.get('readme') or ''), 'tarballReadmeCharacters': len(readme)})
-              except Exception as error:
-                  results.append({'name': name, 'error': str(error)})
-          pathlib.Path('/tmp/docs-review/npm-audit.json').write_text(json.dumps(results, indent=2))
-          print(json.dumps(results, indent=2))
-          PY
+          set -o pipefail
+          pnpm check 2>&1 | tee /tmp/docs-review/check.log
       - name: Store candidate Git objects without updating a branch
         if: always() && steps.apply.outcome == 'success' && steps.format.outcome == 'success'
         env:

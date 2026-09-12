@@ -50,9 +50,9 @@ jobs:
       - name: Focused icon foundations regressions
         run: |
           set +e
-          pnpm --filter @tileflow/core exec tsx --test test/icon-sets.test.ts
+          pnpm --filter @tileflow/core exec tsx --test test/icon-sets.test.ts test/module-language.test.ts
           core_status=$?
-          pnpm --filter @tileflow/dev exec tsx --test test/icon-artifact.test.ts test/icon-cache.test.ts test/icon-composition.test.ts test/icon-composition-bounds.test.ts test/icon-source-identity.test.ts
+          pnpm --filter @tileflow/dev exec tsx --test test/icon-artifact.test.ts test/icon-cache.test.ts test/icon-cache-http.test.ts test/icon-composition.test.ts test/icon-composition-bounds.test.ts test/icon-source-identity.test.ts
           dev_status=$?
           test "$core_status" = 0 && test "$dev_status" = 0
       - name: Check types lint contracts and tests

@@ -8,9 +8,20 @@ function replace(path, before, after) {
 	writeFileSync(path, source.replace(before, after));
 }
 
+replace('packages/core/src/resolved-map-schema.ts', 'z.union([assetDirectorySchema, tileflowIconSetSourceSchema])', 'z.union([localAssetDirectorySchema, packageAssetDirectorySchema, tileflowIconSetSourceSchema])');
 replace('packages/core/scripts/generate-config-reference.ts', "    asRecord(iconArray.items, 'icon directory items'),", "    asRecord(fontArray.items, 'font directory items'),");
-replace('packages/core/scripts/generate-config-reference.ts', "    'Ordered icon directories. In authoring, omission inherits, declaration atomically replaces, [] selects no icons, and a later directory wins by exact canonical ID.';", "    'Ordered icon contributors: local/package directories or explicitly locked Team Icon Sets. Omission inherits, declaration atomically replaces, [] selects no icons, and a later contributor wins by exact canonical ID.';");
+replace('packages/core/scripts/generate-config-reference.ts', "    'Ordered icon directories. In authoring, omission inherits, declaration atomically replaces, [] selects no icons, and a later directory wins by exact canonical ID.';", "    'Ordered icon contributors: local/package directories or explicitly locked Team Icon Sets. In authoring, omission inherits, declaration atomically replaces, [] selects no icons, and a later contributor wins by exact canonical ID.';");
 replace('packages/core/scripts/generate-config-reference.ts', "  const fontArray = dereferenceSchema(schema, fonts, 'fonts array');", "  iconArray.examples = [...(iconArray.examples as unknown[]), [{kind: 'icon-set', reference: '@acme/brand'}, './icons']];\n  iconArray['x-tileflow-refinements'] = ['An icon set reference may appear only once; exact revisions are resolved from the separate lockfile.'];\n  const fontArray = dereferenceSchema(schema, fonts, 'fonts array');");
+replace('packages/core/test/module-language.test.ts', '  assert.match(String(icons.description), /later directory wins/u);', '  assert.match(String(icons.description), /later contributor wins/u);');
+replace('packages/core/test/module-language.test.ts', '  const localDirectory = dereferenceJsonSchema(reference, directoryBranches[0]!);', `  assert.equal(directoryBranches.length, 3);
+  const sharedSet = dereferenceJsonSchema(reference, directoryBranches[2]!);
+  assert.equal(dereferenceJsonSchema(reference, asJsonSchema(sharedSet.properties?.kind)).const, 'icon-set');
+  const setReference = dereferenceJsonSchema(reference, asJsonSchema(sharedSet.properties?.reference));
+  const setPattern = new RegExp(String(setReference.pattern), 'u');
+  assert.equal(setPattern.test('@acme/brand'), true);
+  assert.equal(setPattern.test('@acme/brand@2'), false);
+  assert.equal(setPattern.test('@acme/../brand'), false);
+  const localDirectory = dereferenceJsonSchema(reference, directoryBranches[0]!);`);
 
 const cachePath = 'packages/dev/src/icon-cache.ts';
 let cache = readFileSync(cachePath, 'utf8');
@@ -19,6 +30,9 @@ if (!cache.includes('Locked manifest hash mismatch')) {
 	cache = cache.replaceAll('const pin = tileflowIconSetPinSchema.parse(input);', "const pin = tileflowIconSetPinSchema.parse(input);\n\tif (await hashTileflowIconPackageManifest(pin.manifest) !== pin.contentHash) throw new TileflowIconSetError('ICON_LOCK_INVALID', 'Locked manifest hash mismatch');");
 	writeFileSync(cachePath, cache);
 }
+replace(cachePath, 'headers: {Accept: expected.contentType}', "headers: {Accept: expected.contentType, 'Accept-Encoding': 'identity'}");
+replace(cachePath, "const length = response.headers.get('content-length');", "const length = response.headers.get('content-length');\n\t\t\tconst encoding = response.headers.get('content-encoding')?.trim().toLowerCase();\n\t\t\tconst isIdentityEncoding = encoding === undefined || encoding === '' || encoding === 'identity';");
+replace(cachePath, "if (type !== expected.contentType || (length !== null && (!/^\\d+$/u.test(length) || Number(length) !== expected.byteLength))) {", "if (type !== expected.contentType || (length !== null && (!/^\\d+$/u.test(length) || (isIdentityEncoding && Number(length) !== expected.byteLength)))) {");
 
 const compositionPath = 'packages/dev/src/icon-composition.ts';
 let composition = readFileSync(compositionPath, 'utf8');

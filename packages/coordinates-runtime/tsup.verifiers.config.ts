@@ -9,6 +9,7 @@ export default defineConfig({
   ],
   format: ['esm'],
   platform: 'node',
+  removeNodeProtocol: false,
   target: 'node24',
   outExtension: () => ({js: '.mjs'}),
   splitting: false,

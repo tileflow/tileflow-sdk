@@ -1,73 +1,120 @@
 # @tileflow/vite
 
-Vite plugin for local Tileflow style development and static build artifacts.
+Prepare Tileflow styles and assets inside a Vite application. Development watches config and asset
+changes; production emits the same prepared manifest, concrete-theme styles, sprites, and fonts.
+Use a browser adapter separately to render the map.
+
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+
+## Install
+
+Use an existing Vite 5–8 application. Tileflow requires Node.js 22 or newer; the selected Vite release
+may impose a higher Node.js minor version.
+
+```sh
+npm install --save-dev @tileflow/vite@alpha
+npm install @tileflow/core@alpha @tileflow/maps@alpha
+```
+
+For the browser component and its peers, follow the
+[React](https://github.com/tileflow/tileflow-sdk/blob/main/packages/react/README.md),
+[Vue](https://github.com/tileflow/tileflow-sdk/blob/main/packages/vue/README.md), or
+[Svelte](https://github.com/tileflow/tileflow-sdk/blob/main/packages/svelte/README.md) guide. Those
+adapters support MapLibre GL JS `>=6.4.1 <7`.
+
+## Configure a map
+
+Create `tileflow.config.ts` at the application root:
+
+<!-- docs:check -->
 
 ```ts
-import react from '@vitejs/plugin-react';
+import {defineMap} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({id: 'madrid', version: 1, extends: streets});
+```
+
+Add `tileflow()` to the existing Vite plugins in `vite.config.ts`. Keep your existing framework
+plugins; this minimal configuration shows only the Tileflow integration:
+
+<!-- docs:check -->
+
+```ts
 import {defineConfig} from 'vite';
 import {tileflow} from '@tileflow/vite';
 
-export default defineConfig({
-  plugins: [react(), tileflow()],
-});
+export default defineConfig({plugins: [tileflow()]});
 ```
 
-Omitting a component's `manifestUrl` is valid only when the public URL is exactly
-`/tileflow/manifest.json`. With a Vite or Tileflow base, pass the resulting public URL explicitly;
-the browser runtime deliberately does not guess bundler configuration:
+Run the application's normal development or production-build command. At the default base, the
+component can use `source={{kind: 'tileflow', map: 'madrid'}}`; it reads
+`/tileflow/manifest.json`. Do not also run a CLI build that overwrites the same delivery manifest.
+Config loading executes trusted imports and is not a sandbox.
+
+## Configure the worker
+
+In a React application's client entry, before mounting an interactive map:
 
 ```ts
-export default defineConfig({
-  base: '/app/',
-  plugins: [react(), tileflow({base: '/maps'})],
-});
-
-// React; Vue and Svelte use the same source value.
-const source = {
-  kind: 'tileflow' as const,
-  map: 'main',
-  manifestUrl: '/app/maps/manifest.json',
-};
-```
-
-Development and production expose that same prefixed URL.
-
-## MapLibre 6 worker
-
-Vite applications configure the MapLibre worker in their client entry before mounting an interactive
-Tileflow map:
-
-```ts
-import {configureTileflowMapLibre} from '@tileflow/react';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import {configureTileflowMapLibre} from '@tileflow/react';
 
 configureTileflowMapLibre({workerUrl});
 ```
 
-Import `configureTileflowMapLibre` from the adapter in use (`@tileflow/react`, `@tileflow/vue`, or
-`@tileflow/svelte`). Vite emits the matching worker closure from the application's installed
-MapLibre package. MapLibre GL JS 6.4.1-6.x is supported.
+Vue and Svelte import the configuration function from their own adapter. This URL import is
+Vite-specific. Keep the worker and main module from the same installed MapLibre version, and import
+`maplibre-gl/dist/maplibre-gl.css` in the client. The browser needs the emitted worker closure, not
+a CDN worker from another version.
 
-Development snapshots local `hostedTileset()` archives for coherent preview requests. Production
-builds reject unresolved local PMTiles before emitting Tileflow assets; they never copy, hash, or
-deduplicate user datasets. Publish a managed tileset explicitly or provide an application-owned
-production source. Development Style URLs remain stable by logical tileset ID while the served
-snapshot changes by generation.
+## Serve under a subpath
 
-The Vite process is the only application server needed. It watches config, transitive imports, and
-local icon/font files, serves the Tileflow manifest, styles, sprites, and prepared fonts, and reloads
-from the latest valid generation. To capture an application scene, keep `vite` running and point the
-short-lived headless command at that same loopback origin; do not start `tileflow dev`:
+Set the build bases in `vite.config.ts`:
 
-```sh
-npm run dev
-TILEFLOW_APP_ORIGIN=http://127.0.0.1:5173 npx tileflow capture app-desktop
+<!-- docs:check -->
+
+```ts
+import {defineConfig} from 'vite';
+import {tileflow} from '@tileflow/vite';
+
+export default defineConfig({
+  base: '/app/',
+  plugins: [tileflow({base: '/maps'})],
+});
 ```
 
-## Compatibility
+In the application, pass the resulting public URL explicitly:
 
-The supported peer window is Vite 5-8 on Node.js 22 or newer. CI installs the exact first release
-of each accepted Vite major with packed Tileflow tarballs, typechecks the plugin contract, and runs
-a production Vite build. Future majors remain excluded until the same smoke passes.
+```ts
+const source = {
+  kind: 'tileflow' as const,
+  map: 'madrid',
+  manifestUrl: '/app/maps/manifest.json',
+};
+```
 
-Docs: https://tileflow.dev/docs
+Development and production expose the same prefixed URL. The browser does not infer Vite's base;
+omitting `manifestUrl` is correct only for exactly `/tileflow/manifest.json`.
+
+## Assets and capture
+
+Development watches transitive config imports and local icon/font inputs, and serves the latest
+valid generation. Invalid edits retain the last good snapshot. Local PMTiles are snapshotted for
+coherent requests. Production rejects unresolved local PMTiles; publish managed data explicitly or
+supply an application-owned production source. The plugin does not copy, hash, or publish datasets.
+
+The normal Vite process is the only application server needed. Keep it running in one terminal.
+With the [CLI](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/README.md) installed
+and an `app-desktop` application scene defined, run in another terminal:
+
+```sh
+npx tileflow capture app-desktop --url http://127.0.0.1:5173/ --json
+```
+
+Use the application's actual loopback URL. Do not start a second `tileflow dev` listener.
+Local preparation needs no Tileflow key; rendering can still fetch remote map resources.
+
+CI tests the accepted Vite major boundaries with packed packages and production builds. Future
+majors remain excluded until verified. For a published release, prefer its installed README and types
+rather than newer source on `main`.

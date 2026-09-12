@@ -4,6 +4,8 @@ React components for interactive Tileflow maps, annotations, and static-image di
 Interactive maps use MapLibre GL JS; browser components read prepared assets rather than compiling
 `tileflow.config.ts`.
 
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+
 ## Install
 
 Use an existing React 18 or 19 application with matching `react-dom`. The following local build

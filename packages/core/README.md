@@ -3,6 +3,8 @@
 Define, validate, and compile Tileflow maps into MapLibre Style JSON. Core owns the map language;
 it does not start a server, prepare files on disk, render a browser map, or deploy a hosted map.
 
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+
 ## Install
 
 ```sh
@@ -169,3 +171,18 @@ and [public exports](https://github.com/tileflow/tileflow-sdk/blob/main/packages
 for exact options. Prefer the installed CLI's generated contracts when using a published release;
 `main` can contain unreleased changes. Report defects in the
 [issue tracker](https://github.com/tileflow/tileflow-sdk/issues).
+
+## Detailed guides
+
+These guides are also included in the installed package under `docs/`. They describe this source
+revision; prefer the installed copy when working with an older release.
+
+- [Map and terrain examples](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-and-terrain-examples.md)
+- [Authoring model](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/authoring-model.md)
+- [Shared visual primitives](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/shared-visual-primitives.md)
+- [Compiled-style performance](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/compiled-style-performance.md)
+- [Themes and module styles](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/themes-and-module-styles.md)
+- [Data is separate from design](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/data-is-separate-from-design.md)
+- [Capture scenes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-scenes.md)
+- [Public API and browser subpath](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/public-api-and-browser-subpath.md)
+- [Hosted session authorization](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/hosted-session-authorization.md)

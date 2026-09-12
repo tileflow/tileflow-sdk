@@ -4,6 +4,8 @@ The Tileflow command-line interface: author, validate, preview, build, capture, 
 This package exposes the `tileflow` executable only. Do not import `tileflow` as a JavaScript library;
 use `@tileflow/core` or the relevant integration package instead.
 
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+
 ## Install
 
 Use Node.js 22 or newer. Install the CLI in your project and commit the lockfile:
@@ -235,3 +237,19 @@ See [deployment documentation](https://tileflow.dev/docs/deploy),
 [SDK responsibility boundaries](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/sdk-responsibilities.md),
 and [issues](https://github.com/tileflow/tileflow-sdk/issues). Source `main` may be newer than npm;
 use the installed CLI's help and generated contracts for that release.
+
+## Detailed guides
+
+These guides are also included in the installed package under `docs/`. They describe this source
+revision; prefer the installed copy when working with an older release.
+
+- [CLI setup and defaults](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/cli-setup-and-defaults.md)
+- [Build artifacts](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/build-artifacts.md)
+- [Deterministic agent diagnostics](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/deterministic-agent-diagnostics.md)
+- [Coordinates](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/coordinates.md)
+- [Command families](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/command-families.md)
+- [Local visual feedback](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/local-visual-feedback.md)
+- [Inspect vector features](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/inspect-vector-features.md)
+- [Hosted authentication and deploy](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/hosted-authentication-and-deploy.md)
+- [Agent icon composition](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/agent-icon-composition.md)
+- [Read-only icon comparison](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/read-only-icon-comparison.md)

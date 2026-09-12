@@ -9,8 +9,8 @@ Use Node.js 22 or newer and the pnpm version declared in `package.json`:
 ```sh
 corepack enable
 pnpm install --frozen-lockfile
-pnpm check
 pnpm build
+pnpm check
 ```
 
 Run a focused package check while iterating, for example:
@@ -21,14 +21,15 @@ pnpm --filter @tileflow/core typecheck
 ```
 
 Do not edit package versions, add changesets, create release tags, or run `npm publish`. Every
-source package keeps `0.0.0-development`. Merging a normal PR to `main` is the entire release
-action: after `CI / Required` succeeds, automation compares packed artifacts with npm and publishes
-only the packages whose public contents changed, each at its next independent numeric alpha.
+source package keeps `0.0.0-development`. Merging to `main` creates a candidate; it does not
+publish to npm. Publication requires an explicit workflow dispatch from `main`, verification of the
+prepared release bundle, and approval of the protected `npm-publish` environment. See
+[PUBLISHING.md](PUBLISHING.md) for the complete procedure.
 
-Repository-only changes publish nothing. A package README, export, runtime dependency, executable
-mode, or built file is part of that package's public artifact and causes its release automatically.
-Keep builds deterministic and review the source PR with the understanding that a green merge can
-become public immediately.
+A package README and its packaged guides are part of its public artifact. Documentation changes can
+therefore make that package eligible for its next independent numeric alpha release, but do not
+publish it automatically. Keep builds deterministic and review the packed files before approving a
+release.
 
 Before submitting a package change, exercise the packed consumer:
 
@@ -44,7 +45,8 @@ explicitly.
 
 ## Public contracts
 
-Keep package exports and README examples aligned. Update
+Keep package exports and README examples aligned. Follow the
+[documentation guide](docs/documentation.md) and run `pnpm run docs:check` after building the packages. Update
 `docs/contracts/local-visual-capture.md` when scene, readiness, receipt, capture, or visual-baseline
 behavior changes. Shared hosted API and rendering contracts must remain backward compatible because
 npm and platform production cannot update atomically; deploy compatible server behavior before

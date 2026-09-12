@@ -4,6 +4,8 @@ TypeScript packages and command-line tools for authoring, rendering, and deployi
 Define a map in `tileflow.config.ts`, preview it locally, and use the same definition in an
 application or a hosted deployment. Interactive maps use MapLibre GL JS.
 
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+
 ## Start with a local map
 
 Use Node.js 22 or newer. Install the alpha packages explicitly and keep your package-manager lockfile:

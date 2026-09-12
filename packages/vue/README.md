@@ -4,6 +4,8 @@ Vue components for interactive Tileflow maps, annotations, and existing-image di
 The component reads prepared manifests and styles; it does not compile `tileflow.config.ts` in the
 browser.
 
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+
 ## Install
 
 Use an existing Vue 3 application. Supported peers are Vue `>=3.3 <4` and MapLibre GL JS

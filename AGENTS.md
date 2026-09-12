@@ -4,6 +4,7 @@
 
 - Public package source lives under `packages/`.
 - Package behavior belongs in the owning package README.
+- Follow `docs/documentation.md` for documentation changes; run `pnpm run docs:check` after building.
 - Durable capture and visual-testing behavior belongs in
   `docs/contracts/local-visual-capture.md`.
 - Package release procedure belongs in `PUBLISHING.md`.

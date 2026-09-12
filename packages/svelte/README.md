@@ -4,6 +4,8 @@ Svelte components for interactive Tileflow maps, annotations, and existing-image
 The component consumes prepared assets; it does not compile executable map configuration in the
 browser.
 
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+
 ## Install
 
 Use an existing Svelte 5 application. Supported peers are Svelte `>=5 <6` and MapLibre GL JS

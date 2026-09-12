@@ -3,6 +3,8 @@
 Official Tileflow maps with their icon, pattern, and font assets. Extend a map with
 `@tileflow/core`; render its prepared output with a framework adapter or MapLibre.
 
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+
 ## Install
 
 ```sh
@@ -126,3 +128,8 @@ See the [Core guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages
 for inheritance and styling, or the
 [public exports](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/src/index.ts)
 for exact names. The installed package's definitions and README take precedence over a newer `main`.
+
+## Design and asset reference
+
+The [design and asset notes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/docs/design-and-assets.md) describe each map's visual grammar, source references, and third-party asset boundaries. They are also included under
+`docs/` in the installed package.

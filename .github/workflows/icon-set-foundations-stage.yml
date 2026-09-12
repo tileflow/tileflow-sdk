@@ -41,18 +41,27 @@ jobs:
           node scripts/icon-set-foundations-fixes.mjs
           rm scripts/icon-set-foundations-stage.mjs scripts/icon-set-foundations-fixes.mjs .github/workflows/icon-set-foundations-stage.yml
           pnpm --filter @tileflow/core reference:generate
-          git diff --name-only 72b46424ee3076585039293c8360dfd0ce347586 -- '*.ts' '*.md' '*.json' | while IFS= read -r file; do
-            if [ -f "$file" ]; then pnpm exec prettier --write "$file"; fi
-          done
+          mapfile -t files < <(git diff --name-only 72b46424ee3076585039293c8360dfd0ce347586 -- '*.ts' '*.md' '*.json')
+          pnpm exec prettier --plugin=prettier-plugin-svelte --write "${files[@]}"
+          pnpm exec prettier --plugin=prettier-plugin-svelte --write "${files[@]}"
+          pnpm exec prettier --plugin=prettier-plugin-svelte --check "${files[@]}"
       - name: Build all packages
         run: pnpm build
+      - name: Focused icon foundations regressions
+        run: |
+          set +e
+          pnpm --filter @tileflow/core exec tsx --test test/icon-sets.test.ts
+          core_status=$?
+          pnpm --filter @tileflow/dev exec tsx --test test/icon-artifact.test.ts test/icon-cache.test.ts test/icon-composition.test.ts test/icon-composition-bounds.test.ts test/icon-source-identity.test.ts
+          dev_status=$?
+          test "$core_status" = 0 && test "$dev_status" = 0
       - name: Check types lint contracts and tests
         run: pnpm check
       - name: Check final source diff
         run: |
           git diff --check
           git diff --stat 72b46424ee3076585039293c8360dfd0ce347586
-          node -e "const{execFileSync}=require('node:child_process');const paths=execFileSync('git',['diff','--name-only','72b46424ee3076585039293c8360dfd0ce347586'],{encoding:'utf8'}).trim().split('\n');if(paths.some(p=>!p.startsWith('packages/core/')&&!p.startsWith('packages/dev/')&&p!=='docs/modules-api-reference.json'))throw Error('Unexpected final changed path');"
+          node -e "const{execFileSync}=require('node:child_process');const paths=execFileSync('git',['diff','--name-only','72b46424ee3076585039293c8360dfd0ce347586'],{encoding:'utf8'}).trim().split('\n');if(paths.some(p=>!p.startsWith('packages/core/')&&!p.startsWith('packages/dev/')&&p!=='docs/modules-api-reference.json'&&p!=='docs/contracts/map-inheritance.md'))throw Error('Unexpected final changed path');"
       - name: Save validated source on the same work branch
         env:
           GH_TOKEN: ${{ github.token }}

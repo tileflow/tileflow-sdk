@@ -124,6 +124,7 @@ arrays from a public endpoint.
 
 These references are also included under `docs/` in the installed package:
 
+- [Native artifact preparation](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-artifacts.md): static compatibility, renderer-qualified output, and limitations.
 - [Artifact lifecycle](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/artifact-lifecycle.md): generations, immutable snapshots, provenance, and cleanup.
 - [Local comparison and inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md): workbench controls and preview-only models.
 - [Config diagnostics](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/structured-config-inspection-and-diagnostics.md): bounded, machine-readable inspection.

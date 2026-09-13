@@ -31,3 +31,10 @@ screenshot window.
 Build is local and credential-free. Hosted compatibility is a separate
 `tileflow validate --target hosted` preflight. Primary map data must remain Tileflow World; named
 Team sources are validated and resolved independently.
+
+## Choose an artifact renderer
+
+`validate` and `build` accept `--renderer web|native`; omission preserves the web pipeline and its
+bytes. Native artifacts use a separate `native/` output directory and do not establish a running
+mobile SDK. See [native artifact validation and output](native-artifacts.md) for the target matrix,
+JSON diagnostics, prepared fonts and explicit limitations.

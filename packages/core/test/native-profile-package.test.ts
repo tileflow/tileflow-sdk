@@ -18,9 +18,18 @@ test('publishes a build-only profile entry without widening the root or native U
   assert.equal(manifest.dependencies['@maplibre/maplibre-gl-style-spec'], '24.8.5');
   assert.deepEqual(manifest.files, ['dist', 'docs', 'LICENSE', 'THIRD_PARTY_NOTICES.md']);
   const declarations = await readFile(new URL('dist/native-profile.d.ts', packageRoot), 'utf8');
-  for (const name of ['tileflowNativeProfileSchema', 'validateTileflowNativeStyle', 'tileflowNativeBuildRecordSchema']) {
+  for (const name of [
+    'tileflowNativeProfileSchema',
+    'validateTileflowNativeStyle',
+    'tileflowNativeBuildRecordSchema',
+  ]) {
     assert.match(declarations, new RegExp(name, 'u'));
   }
+
+  const built = await readFile(new URL('dist/native-profile.js', packageRoot), 'utf8');
+  assert.doesNotMatch(built, /node:module/u);
+  assert.doesNotMatch(built, /maplibre-gl-style-spec\/dist\/latest\.json/u);
+
   const script = `
     for (const name of ['window', 'document', 'navigator', 'fetch', 'FontFace']) {
       Object.defineProperty(globalThis, name, {configurable:true, get() { throw new Error('Unexpected browser access.'); }});
@@ -33,6 +42,7 @@ test('publishes a build-only profile entry without widening the root or native U
     if (issues.length) throw new Error(JSON.stringify(issues));
   `;
   await execFileAsync(process.execPath, ['--input-type=module', '--eval', script], {
-    cwd: fileURLToPath(packageRoot), timeout: 10_000,
+    cwd: fileURLToPath(packageRoot),
+    timeout: 10_000,
   });
 });

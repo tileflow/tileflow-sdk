@@ -78,11 +78,17 @@ test('prepares an authored external HTTPS vector source for native artifacts', a
 import {streets} from '@tileflow/maps';
 export default defineMap({
   id:'main',version:1,extends:streets,
+  projection:'mercator',
   data:vectorTiles({
     attribution:'External vector fixture',revision:'external-v1',schema:openMapTiles(),
     tiles:['https://tiles.example.test/{z}/{x}/{y}.pbf']
   }),
-  modules:{roads:disable()}
+  modules:{
+    aeroways:disable(),
+    boundaries:disable(),
+    roads:disable(),
+    transit:disable()
+  }
 });\n`,
   );
 

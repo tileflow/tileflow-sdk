@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
+import ts from 'typescript';
 
 const execFileAsync = promisify(execFile);
 const packageRoot = new URL('../', import.meta.url);
@@ -27,8 +28,9 @@ test('publishes a build-only profile entry without widening the root or native U
   }
 
   const built = await readFile(new URL('dist/native-profile.js', packageRoot), 'utf8');
-  assert.doesNotMatch(built, /node:module/u);
-  assert.doesNotMatch(built, /maplibre-gl-style-spec\/dist\/latest\.json/u);
+  const specifiers = runtimeSpecifiers(built);
+  assert.equal(specifiers.some((specifier) => specifier.startsWith('node:')), false);
+  assert.equal(specifiers.includes('@maplibre/maplibre-gl-style-spec/dist/latest.json'), false);
 
   const script = `
     for (const name of ['window', 'document', 'navigator', 'fetch', 'FontFace']) {
@@ -45,4 +47,31 @@ test('publishes a build-only profile entry without widening the root or native U
     cwd: fileURLToPath(packageRoot),
     timeout: 10_000,
   });
+});
+
+/** Inspect syntax, not source-map comments or strings inside bundled specification metadata. */
+function runtimeSpecifiers(source: string): string[] {
+  const result: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier &&
+      ts.isStringLiteralLike(node.moduleSpecifier)) result.push(node.moduleSpecifier.text);
+    if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+      (ts.isIdentifier(node.expression) && ['require', '__require'].includes(node.expression.text)))) {
+      const specifier = node.arguments[0];
+      if (specifier && ts.isStringLiteralLike(specifier)) result.push(specifier.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(ts.createSourceFile('native-profile.js', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS));
+  return result;
+}
+
+test('distinguishes runtime imports from bundled JSON path comments', () => {
+  const name = '@maplibre/maplibre-gl-style-spec/dist/latest.json';
+  assert.deepEqual(runtimeSpecifiers(`// ${name}\nconst data = {doc: '${name}'};`), []);
+  assert.deepEqual(runtimeSpecifiers(`import data from '${name}';`), [name]);
+  assert.deepEqual(runtimeSpecifiers(`const data = import('${name}');`), [name]);
+  assert.deepEqual(runtimeSpecifiers(`export {default} from '${name}';`), [name]);
+  assert.deepEqual(runtimeSpecifiers(`const data = require('node:module');`), ['node:module']);
+  assert.deepEqual(runtimeSpecifiers(`const data = __require('${name}');`), [name]);
 });

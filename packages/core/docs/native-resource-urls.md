@@ -96,13 +96,11 @@ a development server. The application still owns any narrowly scoped debug trans
 
 Failures throw `TileflowNativeUrlError`, a `TypeError` with a stable `code` and `field`.
 
-| Code                                    | Meaning                                                |
-| --------------------------------------- | ------------------------------------------------------ |
-| `NATIVE_URL_INVALID`                    | Malformed, unsafe, unsupported-scheme, or oversized URL. |
-| `NATIVE_URL_ABSOLUTE_REQUIRED`          | A document URL is missing its explicit HTTP(S) origin.  |
-| `NATIVE_URL_HTTPS_REQUIRED`             | HTTP does not match the selected development origin.    |
-| `NATIVE_URL_DEVELOPMENT_ORIGIN_INVALID` | The development exception is not one valid HTTP origin. |
-| `NATIVE_URL_TEMPLATE_INVALID`           | A template is unsupported, misplaced, or incomplete.    |
+- `NATIVE_URL_INVALID`: malformed, unsafe, unsupported-scheme, or oversized URL.
+- `NATIVE_URL_ABSOLUTE_REQUIRED`: a document URL is missing its explicit HTTP(S) origin.
+- `NATIVE_URL_HTTPS_REQUIRED`: HTTP does not match the selected development origin.
+- `NATIVE_URL_DEVELOPMENT_ORIGIN_INVALID`: the development exception is not one valid HTTP origin.
+- `NATIVE_URL_TEMPLATE_INVALID`: a template is unsupported, misplaced, or incomplete.
 
 `field` is `manifestUrl`, `documentUrl`, `resourceUrl`, or `developmentOrigin`. Error messages do not
 include the submitted URL or attach the original parser error. The application should preserve

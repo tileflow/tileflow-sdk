@@ -108,7 +108,8 @@ export function resolveTileflowNativeResourceUrl(
 	const resolved = parseUrl(protectedValue, 'resourceUrl', document.href);
 	assertTransport(resolved, 'resourceUrl', developmentOrigin);
 	// URL parsing decodes host escapes; restore placeholders only outside that authority.
-	const suffix = resolved.href.slice(resolved.origin.length).replace(
+	const resourcePath = resolved.href.slice(resolved.origin.length);
+	const suffix = resourcePath.replace(
 		new RegExp(`${prefix}(\\d+)__`, 'gu'),
 		(match, index: string) => placeholders[Number(index)] ?? match,
 	);
@@ -122,9 +123,15 @@ function resolveDevelopmentOrigin(value: unknown): string | undefined {
 	try {
 		assertUrlText(value, 'developmentOrigin');
 		const match = /^(http:\/\/[^/?#]+)\/?$/iu.exec(value);
-		if (!match || /[{}@*]/u.test(match[1]!)) throw new Error();
+		if (!match || /[{}@*]/u.test(value)) throw new Error();
 		const url = parseUrl(value, 'developmentOrigin');
-		if (url.protocol !== 'http:' || url.pathname !== '/' || url.search || url.hash) {
+		if (
+			url.protocol !== 'http:' ||
+			url.pathname !== '/' ||
+			url.search ||
+			url.hash ||
+			url.hostname.includes('*')
+		) {
 			throw new Error();
 		}
 		return url.origin;
@@ -182,13 +189,18 @@ function assertReferenceSyntax(
 }
 
 function parseUrl(value: string, field: TileflowNativeUrlField, base?: string): URL {
+	let url: URL;
 	try {
-		const url = base === undefined ? new URL(value) : new URL(value, base);
+		url = base === undefined ? new URL(value) : new URL(value, base);
 		if (!url.hostname || url.username || url.password || url.hash) throw new Error();
-		return url;
 	} catch {
 		throw new TileflowNativeUrlError('NATIVE_URL_INVALID', field);
 	}
+	// Percent decoding and IDNA mapping can reveal braces absent from the input authority.
+	if (/[{}]/u.test(url.hostname)) {
+		throw new TileflowNativeUrlError('NATIVE_URL_TEMPLATE_INVALID', field);
+	}
+	return url;
 }
 
 function assertTransport(

@@ -1,0 +1,45 @@
+# Tileflow SDK
+
+> TypeScript map authoring, browser adapters, build integrations, and location-service clients.
+
+This index describes the source on main. For a published release, use its installed README,
+declarations, packaged guides, and generated CLI contracts. Package versions advance independently.
+Install the alpha channel explicitly; do not infer native runtime or hosted service availability
+from the presence of an npm package. Config files are trusted executable code.
+
+## Start here
+
+- [SDK overview and package selection](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/README.md): Local setup, package boundaries, and release guidance.
+- [CLI](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/cli/README.md): Validate, preview, build, capture, inspect, and deploy.
+- [Core](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/core/README.md): Map definitions, semantic modules, themes, inheritance, and compilation.
+- [Official maps](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/maps/README.md): Ten standalone maps, their assets, and customization boundaries.
+
+## Browser UI
+
+- [React](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/react/README.md): Worker setup, interactive maps, annotations, and static rendering UI.
+- [Vue](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/vue/README.md): Worker setup, TileflowMap, slots, and controlled interaction state.
+- [Svelte](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/svelte/README.md): Svelte 5 components, snippets, and interaction state.
+- [Interactions](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/interactions/README.md): Portable annotations, semantic POIs, validation, and popup state.
+
+## Build and capture
+
+- [Vite](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/vite/README.md): Watched assets, production output, public bases, and worker delivery.
+- [Next.js](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/next/README.md): App Router setup, development route handlers, client boundaries, and workers.
+- [Webpack](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/webpack/README.md): Development middleware, static artifacts, and public paths.
+- [Development utilities](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/dev/README.md): Custom integration APIs, generation ownership, and cleanup.
+- [Capture](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/capture/README.md): Headless capture, versioned receipts, and reviewed baselines.
+
+## Location services
+
+- [Static Maps](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/static/README.md): Scenes, overlays, attribution, idempotency, and asynchronous rendering.
+- [Search](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/search/README.md): Geocoding, suggestions, credentials, retention, and usage.
+- [GeoIP](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/geoip/README.md): Approximate connection geography, anonymous/managed access, and fallbacks.
+- [Coordinates](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/coordinates/README.md): CRS contracts, validation, axis conventions, and the HTTP client.
+- [Coordinate runtime](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/coordinates-runtime/README.md): Explicit native distributions, supported profiles, provisioning, and local execution.
+
+## Deeper reference
+
+- [Contract index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/docs/README.md): Ownership and durable integration contracts.
+- [Generated language reference](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/docs/modules-api-reference.json): Exact authoring grammar; prefer `tileflow language schema --json` for an installed release.
+- [Documentation maintenance](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/docs/documentation.md): Writing conventions and executable example checks.
+- [Publication procedure](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/PUBLISHING.md): Explicit, protected release preparation and approval; merging alone does not publish.

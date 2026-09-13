@@ -1,166 +1,145 @@
 # Tileflow SDK
 
-Public TypeScript packages and command-line tooling for building beautiful, config-driven maps with
-Tileflow and MapLibre GL JS.
+TypeScript packages and command-line tools for authoring, rendering, and deploying Tileflow maps.
+Define a map in `tileflow.config.ts`, preview it locally, and use the same definition in an
+application or a hosted deployment. Interactive maps use MapLibre GL JS.
 
-The SDK keeps map configuration, local compilation, framework rendering, build integration,
-headless capture, and hosted deployment tooling in one versioned workspace. The hosted platform,
-API implementation, dashboard, database, and infrastructure live separately and are not part of
-this repository.
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
 
-These workflows share one public authoring unit: a map. Every `tileflow.config.ts` exports one map,
-usually by importing an existing map and extending it. Map inheritance and semantic modules resolve
-to MapLibre Style JSON, MapLibre renders that style, local tooling prepares and serves assets, and
-Hosted deployment publishes the prepared result. The durable ownership rules and terminology live
-in the [SDK responsibility and delivery contract](docs/contracts/sdk-responsibilities.md).
+## Start with a local map
 
-Coordinates native runtime assets are distributed separately from npm. No public Local runtime
-download is currently offered; installing the adapter package does not provide those assets.
-
-## Packages
-
-| Package                                                         | Purpose                                                                                                               |
-| --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| [`@tileflow/core`](packages/core)                               | Typed map language, semantic modules, validation, and MapLibre style compilation                                      |
-| [`@tileflow/maps`](packages/maps)                               | Official Streets, Baedeker, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant, and San Francisto maps |
-| [`@tileflow/interactions`](packages/interactions)               | Portable annotations, tooltips, popups, state, and MapLibre interaction lifecycle                                     |
-| [`@tileflow/coordinates`](packages/coordinates)                 | Portable coordinate contract schemas and validation                                                                   |
-| [`@tileflow/coordinates-runtime`](packages/coordinates-runtime) | Explicit local provisioning and native execution for verified coordinate releases                                     |
-| [`@tileflow/geoip`](packages/geoip)                             | Bounded anonymous and managed IP geolocation client and response contracts                                            |
-| [`@tileflow/search`](packages/search)                           | Headless forward and reverse geocoding client and provider-neutral response contracts                                 |
-| [`@tileflow/static`](packages/static)                           | Hosted Static Maps scene schemas, overlays, and bounded request client                                                |
-| [`@tileflow/dev`](packages/dev)                                 | Node integration utilities, watched artifacts, and the local comparison/inspection workbench                          |
-| [`@tileflow/capture`](packages/capture)                         | Pinned headless capture, receipts, two-style review, visual analysis, and baseline comparison                         |
-| [`@tileflow/vite`](packages/vite)                               | Vite development and build integration                                                                                |
-| [`@tileflow/next`](packages/next)                               | Next.js development and build integration                                                                             |
-| [`@tileflow/webpack`](packages/webpack)                         | Webpack development and build integration                                                                             |
-| [`@tileflow/react`](packages/react)                             | React map and static-image components                                                                                 |
-| [`@tileflow/vue`](packages/vue)                                 | Vue map component                                                                                                     |
-| [`@tileflow/svelte`](packages/svelte)                           | Svelte map component                                                                                                  |
-| [`tileflow`](packages/cli)                                      | `tileflow` init, validate, preview (`dev` alias), capture, coordinates, visual, icons, build, and deploy commands     |
-
-## Quick start
-
-Install the alpha packages explicitly while the public API is still evolving:
+Use Node.js 22 or newer. Install the alpha packages explicitly and keep your package-manager lockfile:
 
 ```sh
-npm install @tileflow/core@alpha @tileflow/maps@alpha @tileflow/react@alpha maplibre-gl
-npm install --save-dev @tileflow/vite@alpha
+npm install @tileflow/core@alpha @tileflow/maps@alpha
 npm install --save-dev --save-exact tileflow@alpha
+npx tileflow init
+npx tileflow validate
+npx tileflow preview
 ```
 
-Create `tileflow.config.ts`:
+`init` creates `tileflow.config.ts`. `preview` serves that map on a loopback interface. Local
+validation, compilation, and asset preparation need no Tileflow account or API key. Rendering may
+still fetch the tiles, glyphs, or other remote resources referenced by the map; local does not mean
+offline.
+
+Each config exports one map. For example, replace the generated config with:
+
+<!-- docs:check -->
 
 ```ts
-import {defineMap, defineTheme, labels, poi, roads} from '@tileflow/core';
-import {streets, streetsThemes} from '@tileflow/maps';
-
-const madridDark = defineTheme(streetsThemes.dark, {
-  id: 'madrid-dark',
-  version: 1,
-  colorScheme: 'dark',
-  tokens: {
-    color: {
-      'surface.background': '#080b12',
-      'surface.land': '#0d1320',
-      'surface.water': '#081e2e',
-    },
-  },
-});
+import {defineMap} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
 
 export default defineMap({
   id: 'madrid',
   name: 'Madrid',
   version: 1,
   extends: streets,
-  themes: {light: streetsThemes.light, dark: madridDark},
   defaultTheme: 'light',
-  systemThemes: {light: 'light', dark: 'dark'},
-  modules: {
-    roads: roads({detail: 'streets', hierarchy: 'clear'}),
-    labels: labels({roads: 'major'}),
-    poi: poi({categories: ['food-drink', 'arts-entertainment'], density: 3}),
-  },
+  view: {center: [-3.7038, 40.4168], zoom: 12},
 });
 ```
 
-The theme collection is a complete visual contract. Semantic modules refer to theme tokens, so the
-same map structure compiles into one independent Style JSON per named theme. `system` is only a
-browser selection policy; builds, captures, URLs, and receipts always use `light`, `dark`, or
-another concrete name.
+Coordinates are `[longitude, latitude]`. This map inherits Streets' assets and its `light` and
+`dark` themes. The browser selector `system` requires the map's light/dark mapping; builds and
+captures always select a concrete theme.
 
-`@tileflow/maps` also exports `baedeker`, `ferraris`, `harad`, `siegfried`, `soundings`,
-`cyberpunk`, `matrix`, `verdant`, and `sanFrancisto`. All ten official maps are complete first-party roots. They
-share Core's single
-semantic compiler, but each defines its design directly without importing or extending another
-official map. Baedeker adds an original travel-atlas treatment with browser-derived Mapterhorn
-contours, eight package-owned patterns, and its own locally packaged Cormorant Garamond faces.
-Siegfried adds browser-derived contours, coordinated light/dark three-ink terrain engraving
-patterns, system-theme selection, and its own copy of the same upstream Cormorant faces; Ferraris,
-Härad, Soundings, and Verdant likewise declare only their own package-owned assets. San Francisto
-redraws San Francisco as a dark architectural blueprint with
-precise building footprints, restrained technical linework, contour labels, hatches, and schematic
-POI nodes.
-Streets and Siegfried contain coordinated `light` and `dark` themes; Cyberpunk and the monochrome
-phosphor-green Matrix independently own their HUD designs and symbols. The package-owned icons,
-patterns, and per-map font files ship under `assets/`. Streets, Ferraris, Härad, Soundings,
-Verdant, and San Francisto each declare the canonical Tileflow glyph URL with the exact
-`Noto Sans Regular` and `Noto Sans Bold` stacks. Cyberpunk and Matrix each select their own local
-copies of the `Oxanium Medium` and `Oxanium SemiBold` faces; Baedeker and Siegfried each select
-their own local Cormorant Garamond Regular, SemiBold, and Italic files. The package exports each
-map's reusable icon and font directory descriptors. Streets and Siegfried own their light and dark
-pattern variants inside one asset
-closure because themes may select different image tokens without changing map structure.
+## Choose a package
 
-Then validate and run the application through its normal dev server:
+### Author and inspect maps
+
+- [`tileflow`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/README.md): CLI for
+  initialization, validation, preview, builds, capture, data publication, and deployment. It is not
+  a JavaScript library.
+- [`@tileflow/core`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md): map
+  definitions, semantic styling, validation, and MapLibre style compilation.
+- [`@tileflow/maps`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/README.md): ten
+  official maps and their icon, pattern, and font assets.
+- [`@tileflow/capture`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/capture/README.md):
+  Node API for headless capture, receipts, visual reviews, and baseline comparisons.
+
+### Render an application
+
+Use one browser adapter and, optionally, the integration for your build tool. Browser adapters read
+prepared manifests and styles; they do not compile executable map configuration.
+
+- [`@tileflow/react`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/react/README.md),
+  [`@tileflow/vue`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/vue/README.md), and
+  [`@tileflow/svelte`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/svelte/README.md):
+  interactive maps, themes, annotations, and image display.
+- [`@tileflow/vite`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/vite/README.md),
+  [`@tileflow/next`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/next/README.md), and
+  [`@tileflow/webpack`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/webpack/README.md):
+  watched development assets and production build integration.
+- [`@tileflow/interactions`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/interactions/README.md):
+  portable annotations, popup state, semantic POI bindings, and a direct MapLibre adapter.
+- [`@tileflow/dev`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/README.md): Node
+  utilities for custom build and development-server integrations.
+
+### Use location services
+
+Installing a client does not enable a hosted service. Read the package's authentication,
+availability, attribution, and retry requirements before making requests.
+
+- [`@tileflow/static`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/static/README.md):
+  static scenes, overlays, and creation/polling of hosted image renders.
+- [`@tileflow/search`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/search/README.md):
+  forward/reverse geocoding and suggestion resolution, without a UI.
+- [`@tileflow/geoip`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/geoip/README.md):
+  approximate location of the calling network connection; no private API key.
+- [`@tileflow/coordinates`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/coordinates/README.md):
+  coordinate reference system contracts, validation, and an HTTP client.
+- [`@tileflow/coordinates-runtime`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/coordinates-runtime/README.md):
+  local provisioning and execution adapter. Native engine, catalog, and grid assets are separate;
+  no public native runtime distribution is currently offered.
+
+## Use Tileflow from an agent
+
+Start with the relevant package README or the [documentation index](llms.txt). Discover the map
+language from the installed CLI rather than inventing properties or renderer layer IDs:
 
 ```sh
-npx tileflow validate
-npm run dev
+npx tileflow language manifest --json
+npx tileflow language schema --json
+npx tileflow validate --json
+npx tileflow inspect --json
+npx tileflow explain --theme dark --json
 ```
 
-See the [Tileflow documentation](https://tileflow.dev/docs) and each package README for framework,
-capture, visual-testing, icon, static-map, and hosted deployment workflows.
+The two language commands return generated contracts without loading a project or accessing the
+network. Other config-aware commands execute trusted repository code. Do not load an untrusted
+`tileflow.config.ts` with credentials available.
 
-## Map playground
+The `main` branch can be ahead of npm. For an installed release, its packaged README, declarations,
+and generated language contracts take precedence over examples from a newer checkout. Package
+versions advance independently; do not assume every Tileflow package has the same alpha number.
 
-The SDK owns the reusable map definitions and packaged assets. The Tileflow Tiles repository owns
-the local playground, development data wiring, scenes, and visual baselines that exercise those
-maps. This keeps published SDK packages independent from repository-only example applications.
+## Contribute
 
-## Development
-
-This repository uses Node.js 22 or newer and pnpm 11.13.1.
+This workspace uses Node.js 22 or newer and pnpm 11.13.1:
 
 ```sh
 corepack enable
 pnpm install --frozen-lockfile
-pnpm check
 pnpm build
+pnpm check
 pnpm run smoke:capture-public
 ```
 
-The packed-consumer smoke installs the same public tarballs users receive, audits their contents,
-type-checks the public Capture Review contract from a clean TypeScript consumer, renders a
-deterministic local capture with the exact Playwright Chromium headless shell, and executes the
-receipt-authenticated Review API from the installed tarball.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [documentation guide](docs/documentation.md).
+Package behavior belongs in package READMEs; detailed ownership and lifecycle rules live in
+[the SDK contracts](docs/README.md). The hosted API, dashboard, database, infrastructure, and
+repository-only map playground are maintained separately.
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request. Every package source manifest
-uses `0.0.0-development`; after a normal pull request reaches `main` and its complete CI succeeds,
-it is a release candidate but nothing is published automatically. A deliberate, parameter-free
-dispatch of the protected workflow compares packed artifacts with npm, prepares one exact bundle,
-and waits for a single `npm-publish` environment approval before releasing only material changes at
-their next independent alpha. There are no changesets, release tags, or Release PRs.
-The exact operational and recovery contract lives in [PUBLISHING.md](PUBLISHING.md). The durable
-local capture and visual-testing behavior is recorded in
-[`docs/contracts/local-visual-capture.md`](docs/contracts/local-visual-capture.md).
+Source packages use `0.0.0-development`. Merging a PR creates a release candidate, not an npm
+publication. An authorized operator must dispatch the protected publication workflow and approve
+its prepared bundle. See [PUBLISHING.md](PUBLISHING.md); do not edit versions, add changesets, create
+release tags, or run `npm publish`.
 
-## Licensing
+## License
 
-The Tileflow SDK and Tileflow-owned official map artwork are licensed under the
-[Apache License, Version 2.0](LICENSE). Every public npm package carries that license.
-
-The [trademark boundary](TRADEMARKS.md) governs Tileflow brand features. Third-party software,
-fonts, icons, map data, imagery, and other materials remain under their own terms. Preserve the
-license and attribution requirements recorded beside those materials and in package-specific
-`THIRD_PARTY_NOTICES.md` files.
+The SDK and Tileflow-owned official map artwork use the [Apache License, Version 2.0](LICENSE).
+[Trademark rules](TRADEMARKS.md) apply separately. Third-party software, fonts, icons, data, and
+imagery retain their own terms. Preserve the notices and attribution supplied with each package
+and data source.

@@ -1,4 +1,4 @@
-# `@tileflow/interactions`
+# @tileflow/interactions
 
 Portable annotations, tooltips, popups, state, and interaction bindings for Tileflow maps.
 
@@ -10,10 +10,26 @@ The package has two boundaries:
 Framework applications normally use `@tileflow/react`, `@tileflow/vue`, or `@tileflow/svelte`
 instead of calling the MapLibre controller directly.
 
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+
+## Install
+
+```sh
+npm install @tileflow/interactions@alpha
+```
+
+The root entry needs no MapLibre installation or browser. For live UI, install one framework adapter
+and follow its worker, CSS, and asset-preparation guide:
+[React](https://github.com/tileflow/tileflow-sdk/blob/main/packages/react/README.md),
+[Vue](https://github.com/tileflow/tileflow-sdk/blob/main/packages/vue/README.md), or
+[Svelte](https://github.com/tileflow/tileflow-sdk/blob/main/packages/svelte/README.md).
+
 ## Annotation model
 
+<!-- docs:check -->
+
 ```ts
-import type {TileflowAnnotation} from '@tileflow/interactions';
+import {type TileflowAnnotation, validateTileflowAnnotations} from '@tileflow/interactions';
 
 const properties = [
   {
@@ -27,6 +43,10 @@ const properties = [
     popup: {content: {kind: 'view', name: 'property-card'}},
   },
 ] satisfies TileflowAnnotation[];
+
+const result = validateTileflowAnnotations(properties);
+if (!result.ok) throw new Error(JSON.stringify(result.diagnostics));
+console.log(result.annotations);
 ```
 
 `text` and scalar `field` content are inserted as text. `view` is a small dispatch name for a
@@ -35,10 +55,12 @@ Custom tooltip views must remain brief and non-focusable; put buttons, links, fo
 interactive content in a popup.
 
 Every new annotation needs a stable `id`, singular `coordinate`, and non-empty `ariaLabel`.
-Optional `data` must be recursively JSON-safe. Call `validateTileflowAnnotations` at an untrusted
+Coordinates use `[longitude, latitude]`. Optional `data` must be recursively JSON-safe. Call `validateTileflowAnnotations` at an untrusted
 boundary to receive atomic validation and structured JSON-Pointer diagnostics.
 
 ## Popup state
+
+<!-- docs:check -->
 
 ```ts
 import {
@@ -58,6 +80,8 @@ adapters expose controlled and uncontrolled ownership without changing this seri
 ## Semantic targets
 
 The first semantic runtime target is `domain: 'poi'`:
+
+<!-- docs:check -->
 
 ```ts
 import type {TileflowInteractionBinding} from '@tileflow/interactions';
@@ -91,5 +115,5 @@ objects and schedulers are injected at attach time, so both subpath imports rema
 `createTileflowMapLibreInteractionCoordinator` joins them around one controlled or uncontrolled
 popup state and commits the closing runtime before the opening runtime.
 
-See [`docs/contracts/map-interactions.md`](../../docs/contracts/map-interactions.md) for lifecycle,
+See [`docs/contracts/map-interactions.md`](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/map-interactions.md) for lifecycle,
 accessibility, security, capture, and framework parity requirements.

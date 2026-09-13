@@ -25,6 +25,7 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "docs",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md"
   ],

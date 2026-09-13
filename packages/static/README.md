@@ -1,10 +1,25 @@
 # @tileflow/static
 
-Static map schemas, overlay helpers, and request utilities for Tileflow static map rendering.
+Validate static map scenes, author overlays, and request hosted image renders. The client follows
+an asynchronous operation until an immutable image is ready. It does not display the image or
+provide an interactive map.
 
-This package describes and submits a render scene, then follows its asynchronous operation until an
-immutable image is ready. It is distinct from React's `<Map mode="image">`, which only displays an
-existing hosted image and does not create or poll a Static Maps operation.
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+
+## Install
+
+```sh
+npm install @tileflow/static@alpha
+```
+
+Validation and overlay authoring work without a hosted account. Creating a render needs a deployed
+Tileflow map, an enabled Static Maps service, and an authorized credential. Run authenticated
+requests on a trusted server with `fetch` available, such as Node.js 22 or newer. Keep credentials
+out of browser bundles. A React application can use
+[`@tileflow/react/static`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/react/README.md)
+through its own authorized server endpoint.
+
+## Create a render
 
 Every scene names one concrete `theme`. The browser-only `"system"` selector is rejected so hashes,
 cache keys, receipts, and regenerated images remain reproducible.
@@ -13,13 +28,18 @@ Scene, size, camera, attribution, padding, and overlay objects are strict. Unkno
 rejected instead of being removed during normalization, so misspelled or unsupported options cannot
 silently share another scene's identity.
 
+<!-- docs:check -->
+
 ```ts
 import {
   createStaticMapIdempotencyKey,
   marker,
-  precacheStaticMap,
+  createStaticMap,
   validateStaticScene,
 } from '@tileflow/static';
+
+const apiKey = process.env.TILEFLOW_API_KEY;
+if (!apiKey) throw new Error('Set TILEFLOW_API_KEY on the server.');
 
 const scene = validateStaticScene({
   map: 'madrid',
@@ -32,13 +52,26 @@ const scene = validateStaticScene({
 
 if (!scene.ok) throw new Error(scene.error);
 
-const result = await precacheStaticMap(scene.scene, {
-  apiKey: process.env.TILEFLOW_API_KEY,
-  idempotencyKey: createStaticMapIdempotencyKey(),
+const idempotencyKey = createStaticMapIdempotencyKey();
+const result = await createStaticMap(scene.scene, {
+  apiKey,
+  idempotencyKey,
 });
 
-console.log(result.attribution.entries);
+console.log(result.imageUrl, result.attribution.entries);
 ```
+
+`map: 'madrid'` is the deployed portable map name; replace it with yours. For a Team credential,
+pass the destination's public `mapId` separately in the request options, as described below.
+`createStaticMap` and `precacheStaticMap` both return a hosted result with `resultVersion: 1`, an
+operation ID, image URL, and attribution. Use precache for cache warming, not as a free validation
+operation. Neither helper is the same as `<Map mode="image">`, which only displays an existing image.
+
+Create one idempotency key per intentional action and retain it across retries. Do not put the key
+factory inside a retry callback. The helper handles polling; cancellation or a timeout does not
+prove that the server did no work.
+
+## Image size and format
 
 `width` and `height` are logical CSS pixels. `dpr` accepts 1 or 2 and defaults to 1, so a 600 by
 400 scene at DPR 2 produces a 1200 by 800 image without changing camera, padding, or overlay paint
@@ -119,24 +152,39 @@ bounds cameras never move.
 
 Choose a corner when composition requires it:
 
+<!-- docs:check -->
+
 ```ts
-attribution: {mode: 'embedded', position: 'bottom-left'}
+import type {StaticAttributionRequest} from '@tileflow/static';
+
+const attribution = {
+  mode: 'embedded',
+  position: 'bottom-left',
+} satisfies StaticAttributionRequest;
 ```
 
 Or request structured external attribution:
 
+<!-- docs:check -->
+
 ```ts
+import {createStaticMap, createStaticMapIdempotencyKey} from '@tileflow/static';
+
+const apiKey = process.env.TILEFLOW_API_KEY;
+if (!apiKey) throw new Error('Set TILEFLOW_API_KEY on the server.');
+
 const result = await createStaticMap(
-  {...scene.scene, attribution: {mode: 'external'}},
   {
-    apiKey: process.env.TILEFLOW_API_KEY,
-    idempotencyKey: createStaticMapIdempotencyKey(),
+    map: 'madrid',
+    theme: 'dark',
+    camera: {type: 'center', center: [-3.7038, 40.4168], zoom: 12},
+    size: {width: 600, height: 400},
+    attribution: {mode: 'external'},
   },
+  {apiKey, idempotencyKey: createStaticMapIdempotencyKey()},
 );
 
-for (const entry of result.attribution.entries) {
-  renderAttributionText(entry.text, entry.links);
-}
+console.log(JSON.stringify({imageUrl: result.imageUrl, entries: result.attribution.entries}));
 ```
 
 External mode leaves the image unchanged and returns `position: null`. The caller must retain and
@@ -157,12 +205,12 @@ measurement, anchor, scale, and offset. It works with Mercator and Globe styles 
 can be shown. It never clips silently.
 
 ```ts
-camera: {
+const camera = {
   type: 'auto',
   padding: {top: 24, right: 240, bottom: 24, left: 24},
   maxZoom: 16,
   bearing: 0,
-}
+} as const;
 ```
 
 Padding uses logical CSS pixels. A number applies to every side; omitted sides in an object are
@@ -180,6 +228,8 @@ Current overlay primitives use MapLibre's GeoJSON pipeline and require
 clamping them. A Globe basemap may display polar regions even though these overlay primitives cannot
 yet be drawn there.
 
+## Handle failures
+
 Deterministic request failures return `422`, set `retryable: false`, and preserve a stable code,
 reason, and bounded details. `validateStaticScene` returns that document; request helpers throw
 `StaticMapRequestError` either locally or from the Hosted response. The reasons distinguish an empty
@@ -194,6 +244,8 @@ Other bounded Hosted JSON failures throw `StaticMapError`. It preserves HTTP `st
 `code`, `retryable`, `requestId`, or `remainingUnits` fields the server supplied; absent fields are
 `null`. `StaticMapRequestError` extends the same class. Malformed, oversized, or unsafe remote
 documents remain generic errors and are never reflected to the caller.
+
+## API entry points
 
 The package has four deliberately separate surfaces, all available from the root for compatibility:
 
@@ -215,6 +267,8 @@ anchors, and resolved sprite dimensions. Its top-level `mapId` identifies the re
 while `scene.map` retains the portable map name supplied by the application. It is unrelated to the
 runtime delivery manifest generated by application build or deploy workflows.
 
+## Operation identity and usage
+
 Create one idempotency key per intentional create/precache action and retain it across network
 retries. Reusing the key with the same normalized scene returns the stored result; reusing it with a
 different scene returns 409. A successful paid operation reports `unitCost: 15`, shared
@@ -235,8 +289,6 @@ deduplicate consistently without duplicating the polling implementation.
 Free cannot initiate Static Maps work. Starter consumes 15 shared API units for each successful
 logical operation, including a distinct-key cache reuse. Downloading an immutable PNG, JPEG, or WebP
 consumes zero units.
-
-Docs: https://tileflow.dev/docs
 
 ## Team credentials
 

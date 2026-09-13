@@ -19,7 +19,7 @@ A native client must provide the complete manifest URL. There is no implicit
 import {resolveTileflowNativeManifestUrl} from '@tileflow/core/native';
 
 const manifestUrl = resolveTileflowNativeManifestUrl(
-	'https://maps.example.com/tileflow/native/manifest.json',
+  'https://maps.example.com/tileflow/native/manifest.json',
 );
 ```
 
@@ -41,12 +41,12 @@ The helper uses normal URL path resolution and never guesses a deployment prefix
 import {resolveTileflowNativeResourceUrl} from '@tileflow/core/native';
 
 const styleUrl = resolveTileflowNativeResourceUrl('styles/main/light.json', {
-	documentUrl: 'https://maps.example.com/tileflow/native/manifest.json',
+  documentUrl: 'https://maps.example.com/tileflow/native/manifest.json',
 });
 
 const tileUrl = resolveTileflowNativeResourceUrl('./{z}/{x}/{y}.pbf', {
-	documentUrl: 'https://tiles.example.com/streets/tiles.json',
-	template: 'tile',
+  documentUrl: 'https://tiles.example.com/streets/tiles.json',
+  template: 'tile',
 });
 ```
 
@@ -77,8 +77,8 @@ A debug integration can explicitly permit one HTTP origin:
 import {resolveTileflowNativeManifestUrl} from '@tileflow/core/native';
 
 const manifestUrl = resolveTileflowNativeManifestUrl(
-	'http://192.168.1.5:8080/tileflow/manifest.json',
-	{developmentOrigin: 'http://192.168.1.5:8080'},
+  'http://192.168.1.5:8080/tileflow/manifest.json',
+  {developmentOrigin: 'http://192.168.1.5:8080'},
 );
 ```
 
@@ -105,6 +105,12 @@ Failures throw `TileflowNativeUrlError`, a `TypeError` with a stable `code` and 
 `field` is `manifestUrl`, `documentUrl`, `resourceUrl`, or `developmentOrigin`. Error messages do not
 include the submitted URL or attach the original parser error. The application should preserve
 that boundary when reporting failures: resource URLs may contain sensitive query parameters.
+
+For JavaScript callers, missing or non-object resource options report `NATIVE_URL_INVALID` with
+`field: 'documentUrl'`, just like an options object without its required `documentUrl`. Non-object
+manifest options report `NATIVE_URL_DEVELOPMENT_ORIGIN_INVALID` with `field: 'developmentOrigin'`.
+Omitting manifest options or passing `undefined` remains valid and uses the default HTTPS policy.
+Neither function accepts `null` as an options object.
 
 This is URL policy, not an authorization or server-side request-forgery defense. Callers still own
 resource-origin authorization, redirect handling, response size limits, cancellation, and any

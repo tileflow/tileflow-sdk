@@ -21,14 +21,4 @@ module.exports = {
     '^[../]',
     '^[./]',
   ],
-  overrides: [
-    {
-      files: [
-        'packages/core/src/native.ts',
-        'packages/core/test/native*.test.ts',
-        'packages/core/docs/native-resource-urls.md',
-      ],
-      options: {useTabs: true},
-    },
-  ],
 };

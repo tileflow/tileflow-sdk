@@ -208,7 +208,7 @@ export function validateTileflowNativeStyle(
     else checkUrl(style.sprite, '/sprite');
   }
   if (style.glyphs !== undefined) {
-    if (typeof style.glyphs !== 'string' || !style.glyphs.includes('{fontstack}') || !style.glyphs.includes('range}')) {
+    if (typeof style.glyphs !== 'string' || !style.glyphs.includes('{fontstack}') || !style.glyphs.includes('{range}')) {
       add('NATIVE_FONT_UNAVAILABLE', '/glyphs');
     } else checkUrl(style.glyphs, '/glyphs', 'glyphs');
   }
@@ -227,7 +227,7 @@ export function validateTileflowNativeStyle(
       if (record(source.clusterProperties)) {
         for (const key of Object.keys(source.clusterProperties).sort()) {
           const values = source.clusterProperties[key];
-          if (Array.isArray(values)) values.forEach((ralue, i) => expressions(value, `${pointer(`${path}/clusterProperties`, key)}/${i}`, add));
+          if (Array.isArray(values)) values.forEach((value, i) => expressions(value, `${pointer(`${path}/clusterProperties`, key)}/${i}`, add));
         }
       }
     }
@@ -235,7 +235,8 @@ export function validateTileflowNativeStyle(
     if (Array.isArray(source.tiles)) source.tiles.forEach((url, i) => checkUrl(url, `${path}/tiles/${i}`, 'tile'));
     if (source.type === 'geojson' && typeof source.data === 'string') checkUrl(source.data, `${path}/data`);
     if (source.type === 'raster-dem' && source.encoding !== undefined && !['mapbox', 'terrarium'].includes(String(source.encoding))) {
-      add('NATIVE_UNSUPPORTED_SOURCE', `${path}/encoding`);
+      add('NATIVE_UNSUPPORTED_SOURCE',
+        `${path}/encoding`);
     }
     if (['vector', 'raster', 'raster-dem'].includes(source.type) && source.url === undefined && (!Array.isArray(source.tiles) || !source.tiles.length)) {
       add('NATIVE_UNSUPPORTED_SOURCE', path);

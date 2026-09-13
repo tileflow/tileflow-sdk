@@ -78,10 +78,12 @@ The `deferFontClosure` option is only for compiler preflight before font prepara
 does not prove text-provider closure. The Dev pipeline always performs the final full validation
 after preparation; external callers must not present a preflight result as a complete artifact check.
 
-The validator limits JSON to 8 MiB of serialized UTF-8, depth 64 and 100,000 visited values, with at
-most 128 sources, 4,096 layers, 16 prepared font faces and 32 returned errors. Prepared font bytes
-retain the existing 1 MiB per-face bound. URL, icon and sprite limits remain the owning pipelines'
-limits. These are local validation-work bounds, not download, GPU-memory or billing limits.
+The validator limits JSON to 8 MiB of serialized UTF-8, depth 64 and 160,000 visited values, with at
+most 128 sources, 4,096 layers, 16 prepared font faces and 32 returned errors. The node budget leaves
+bounded headroom over the current official Streets styles without making validation unbounded.
+Prepared font bytes retain the existing 1 MiB per-face bound. URL, icon and sprite limits remain the
+owning pipelines' limits. These are local validation-work bounds, not download, GPU-memory or billing
+limits.
 
 ## Read diagnostics
 

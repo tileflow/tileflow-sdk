@@ -2,7 +2,8 @@
 export const tileflowNativeProfileLimits = Object.freeze({
   maximumStyleBytes: 8 * 1024 * 1024,
   maximumDepth: 64,
-  maximumNodes: 100_000,
+  // Streets currently traverses ~122k values; 160k keeps ~30% deterministic headroom.
+  maximumNodes: 160_000,
   maximumSources: 128,
   maximumLayers: 4_096,
   maximumIssues: 32,
@@ -40,7 +41,12 @@ export function isBoundedNativeJson(input: unknown): boolean {
   const ancestors = new Set<object>();
   const encoder = new TextEncoder();
   const visit = (value: unknown, depth: number): boolean => {
-    if (++nodes > tileflowNativeProfileLimits.maximumNodes || depth > tileflowNativeProfileLimits.maximumDepth) return false;
+    if (
+      ++nodes > tileflowNativeProfileLimits.maximumNodes ||
+      depth > tileflowNativeProfileLimits.maximumDepth
+    ) {
+      return false;
+    }
     if (typeof value === 'string') {
       if (value.length > tileflowNativeProfileLimits.maximumStyleBytes) return false;
       stringBytes += encoder.encode(value).byteLength;
@@ -53,18 +59,35 @@ export function isBoundedNativeJson(input: unknown): boolean {
     if (!Array.isArray(value) && prototype !== null && prototype !== Object.prototype) return false;
     const keys = Reflect.ownKeys(value);
     if (keys.some((key) => typeof key === 'symbol' || key === 'toJSON')) return false;
-    if (Array.isArray(value) && (value.length > tileflowNativeProfileLimits.maximumNodes || Object.keys(value).length !== value.length)) return false;
+    if (
+      Array.isArray(value) &&
+      (value.length > tileflowNativeProfileLimits.maximumNodes ||
+        Object.keys(value).length !== value.length)
+    ) {
+      return false;
+    }
     ancestors.add(value);
     for (const key of keys as string[]) {
       if (Array.isArray(value) && key === 'length') continue;
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (!descriptor || !descriptor.enumerable || !('value' in descriptor) || !visit(key, depth + 1) || !visit(descriptor.value, depth + 1)) return false;
+      if (
+        !descriptor ||
+        !descriptor.enumerable ||
+        !('value' in descriptor) ||
+        !visit(key, depth + 1) ||
+        !visit(descriptor.value, depth + 1)
+      ) {
+        return false;
+      }
     }
     ancestors.delete(value);
     return true;
   };
   try {
-    return visit(input, 0) && encoder.encode(JSON.stringify(input)).byteLength <= tileflowNativeProfileLimits.maximumStyleBytes;
+    return (
+      visit(input, 0) &&
+      encoder.encode(JSON.stringify(input)).byteLength <= tileflowNativeProfileLimits.maximumStyleBytes
+    );
   } catch {
     return false;
   }

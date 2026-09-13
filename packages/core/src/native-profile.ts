@@ -1,6 +1,5 @@
+import {createRequire} from 'node:module';
 import {isExpression, validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
-import specification from '@maplibre/maplibre-gl-style-spec/dist/latest.json' with {type: 'json'};
-import specificationPackage from '@maplibre/maplibre-gl-style-spec/package.json' with {type: 'json'};
 import {z} from 'zod';
 import {resolveTileflowNativeResourceUrl, TileflowNativeUrlError} from './native';
 import {serializeCanonicalJson} from './icon-package';
@@ -21,6 +20,12 @@ export {
   tileflowRendererSchema,
 } from './native-profile-definition';
 export type {TileflowNativeProfile, TileflowRenderer} from './native-profile-definition';
+
+const packageRequire = createRequire(import.meta.url);
+const specification = packageRequire('@maplibre/maplibre-gl-style-spec/dist/latest.json') as unknown;
+const specificationPackage = packageRequire('@maplibre/maplibre-gl-style-spec/package.json') as {
+  version: string;
+};
 
 export const tileflowNativeDiagnosticCodeSchema = z.enum([
   'NATIVE_UNSUPPORTED_STYLE',
@@ -160,6 +165,12 @@ export function validateTileflowNativeStyle(
     if (!rootStructure.has(key) || unsupportedRoots.has(key)) {
       add('NATIVE_UNSUPPORTED_STYLE', pointer('', key));
     }
+  }
+  if (
+    style.pitch !== undefined &&
+    (typeof style.pitch !== 'number' || style.pitch < 0 || style.pitch > 85)
+  ) {
+    add('NATIVE_UNSUPPORTED_STYLE', '/pitch');
   }
   if (style.projection !== undefined) {
     const projection = style.projection;

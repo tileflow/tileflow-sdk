@@ -30,10 +30,6 @@ function withContext(issue: TileflowNativeDiagnostic, map: string, theme: string
 export function assertTileflowNativeCompiledStyles(project: TileflowBuildCatalog, styles: TileflowBuildStyles): void {
   const issues: TileflowNativeDiagnostic[] = [];
   for (const mapName of Object.keys(project.maps).sort()) {
-    const map = project.maps[mapName]!;
-    if (Object.keys(map.sources ?? {}).length) {
-      issues.push(createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_SOURCE', `/maps/${mapName}/sources`));
-    }
     for (const theme of Object.keys(styles[mapName] ?? {}).sort()) {
       issues.push(...validateTileflowNativeStyle(styles[mapName]![theme], {
         documentUrl: documentUrl(mapName, theme), deferFontClosure: true,

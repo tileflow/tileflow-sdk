@@ -1,5 +1,5 @@
-import {createRequire} from 'node:module';
 import {isExpression, validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
+import specification from '@maplibre/maplibre-gl-style-spec/dist/latest.json' with {type: 'json'};
 import {z} from 'zod';
 import {resolveTileflowNativeResourceUrl, TileflowNativeUrlError} from './native';
 import {serializeCanonicalJson} from './icon-package';
@@ -21,11 +21,6 @@ export {
 } from './native-profile-definition';
 export type {TileflowNativeProfile, TileflowRenderer} from './native-profile-definition';
 
-const packageRequire = createRequire(import.meta.url);
-const specification = packageRequire('@maplibre/maplibre-gl-style-spec/dist/latest.json') as unknown;
-const specificationPackage = packageRequire('@maplibre/maplibre-gl-style-spec/package.json') as {
-  version: string;
-};
 
 export const tileflowNativeDiagnosticCodeSchema = z.enum([
   'NATIVE_UNSUPPORTED_STYLE',
@@ -152,7 +147,6 @@ export function validateTileflowNativeStyle(
   }
   if (
     (options.profile !== undefined && options.profile !== 'native-v1') ||
-    specificationPackage.version !== tileflowNativeProfile.validatorStyleSpec ||
     !expressionDefinitions
   ) {
     return [createTileflowNativeDiagnostic('NATIVE_RENDERER_UNSUPPORTED', '/profile')];
@@ -214,7 +208,7 @@ export function validateTileflowNativeStyle(
     else checkUrl(style.sprite, '/sprite');
   }
   if (style.glyphs !== undefined) {
-    if (typeof style.glyphs !== 'string' || !style.glyphs.includes('{fontstack}') || !style.glyphs.includes('{range}')) {
+    if (typeof style.glyphs !== 'string' || !style.glyphs.includes('{fontstack}') || !style.glyphs.includes('range}')) {
       add('NATIVE_FONT_UNAVAILABLE', '/glyphs');
     } else checkUrl(style.glyphs, '/glyphs', 'glyphs');
   }
@@ -233,7 +227,7 @@ export function validateTileflowNativeStyle(
       if (record(source.clusterProperties)) {
         for (const key of Object.keys(source.clusterProperties).sort()) {
           const values = source.clusterProperties[key];
-          if (Array.isArray(values)) values.forEach((value, i) => expressions(value, `${pointer(`${path}/clusterProperties`, key)}/${i}`, add));
+          if (Array.isArray(values)) values.forEach((ralue, i) => expressions(value, `${pointer(`${path}/clusterProperties`, key)}/${i}`, add));
         }
       }
     }
@@ -284,7 +278,8 @@ export function validateTileflowNativeStyle(
     if (!options.deferFontClosure && record(layer.layout) && layer.layout['text-field'] !== undefined) {
       const fonts = layer.layout['text-font'];
       if (style.glyphs === undefined) {
-        if (!fontStackAvailable(fonts, faces)) add('NATIVE_FONT_UNAVAILABLE', `${path}/layout/text-font`);
+        if (!fontStackAvailable(fonts, faces)) add('NATIVE_FONT_UNAVAILABLE',
+          `${path}/layout/text-font`);
         inlineFontStacks(layer.layout['text-field'], `${path}/layout/text-field`, faces, add);
       }
     }

@@ -1,34 +1,97 @@
 # @tileflow/capture
 
-Pinned, headless local capture and visual comparison for Tileflow scenes. Most users should invoke
-it through the project-local `tileflow` CLI; this package is the public Node integration surface.
+Headless Tileflow map capture for Node.js. Produce PNGs with versioned receipts, compare reviewed
+baselines, or inspect differences between deliberate renders. Use the
+[CLI](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/README.md) for ordinary terminal
+work; use this package when embedding capture in a script or integration.
 
-## Capture committed scenes
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+
+## Install
+
+Use Node.js 22 or newer:
+
+```sh
+npm install --save-dev @tileflow/capture@alpha @tileflow/core@alpha @tileflow/maps@alpha
+```
+
+Capture uses Playwright's exact pinned Chromium headless shell. The browser is not bundled in npm
+and a system Chrome installation is not a substitute. `allowBrowserInstall: true` permits its
+first-use download. Provision the matching shell and system libraries ahead of time in restricted
+CI environments; never assume that installing the npm package installed the browser.
+
+Local capture needs no Tileflow API key. Configs are executable trusted code; remote tiles, fonts,
+and sprites may still require network access and their own permissions.
+
+## Capture a committed scene
+
+Create `tileflow.config.ts` in the working directory:
+
+<!-- docs:check -->
 
 ```ts
-import {captureTileflowScenes} from '@tileflow/capture';
+import {defineMap} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'madrid',
+  version: 1,
+  extends: streets,
+  scenes: {
+    'madrid-desktop': {
+      theme: 'dark',
+      camera: {type: 'center', center: [-3.7038, 40.4168], zoom: 12},
+      viewport: {width: 1280, height: 800, dpr: 1},
+    },
+  },
+});
+```
+
+Scenes belong to this map and do not inherit. Every scene needs a concrete theme; omission and
+`system` are invalid. Coordinates are `[longitude, latitude]`, viewport dimensions are CSS pixels,
+and `dpr` is 1 or 2.
+
+Run the following TypeScript module from that working directory with your project's TypeScript
+runner. It writes evidence, not an approved baseline:
+
+<!-- docs:check -->
+
+```ts
+import {mkdir, writeFile} from 'node:fs/promises';
+import {captureTileflowScenes, serializeTileflowCaptureReceipt} from '@tileflow/capture';
 
 const result = await captureTileflowScenes({
+  config: 'tileflow.config.ts',
   scenes: ['madrid-desktop'],
   allowBrowserInstall: true,
 });
+const capture = result.captures[0];
+if (!capture) throw new Error('Capture returned no image.');
 
-const [{png, receipt, sha256, networkDependent}] = result.captures;
+await mkdir('.tileflow/captures', {recursive: true});
+await writeFile('.tileflow/captures/madrid-desktop.png', capture.png);
+await writeFile(
+  '.tileflow/captures/madrid-desktop.receipt.json',
+  serializeTileflowCaptureReceipt(capture.receipt),
+);
+console.log(capture.sha256, capture.networkDependent, capture.warnings);
 ```
 
-Standalone scenes compile through `@tileflow/dev`, fulfill the installed MapLibre main module,
-shared module, worker module, and CSS closure in a pinned Playwright Chromium headless shell,
-fulfill generated local icon assets in memory, and wait for `load`, `idle`, and two animation
-frames. They never open a visible window or an HTTP listener. One call with multiple scenes uses
-one Browser and a fresh isolated context per scene. Capture installs the exact pinned shell
-automatically when `allowBrowserInstall` is true; the CLI enables that normal happy path by default.
+A standalone capture needs no HTTP server or visible browser window. One call uses one browser and
+a fresh isolated context for each scene. Results include PNG bytes, dimensions, concrete theme,
+scene/style/image hashes, runtime identity, a receipt, warnings, and `networkDependent`. They do not
+expose a Playwright page or browser.
 
-For a warm integration, retain and close a session:
+## Reuse or prepare the browser
+
+For repeated capture, retain a session and close it even after errors:
+
+<!-- docs:check -->
 
 ```ts
 import {createTileflowCaptureSession} from '@tileflow/capture';
 
-const session = createTileflowCaptureSession({cwd: process.cwd()});
+const session = createTileflowCaptureSession({allowBrowserInstall: true});
 try {
   await session.capture(['madrid-desktop']);
   await session.captureAll();
@@ -37,166 +100,107 @@ try {
 }
 ```
 
-Sessions can also capture caller-provided scene definitions or a prepared `TileflowBuildArtifacts`
-snapshot. Every durable definition names one concrete theme; omission and the browser-only
-`system` selector are rejected. Results carry that theme, PNG bytes, dimensions, hashes, safe
-runtime identity, the canonical receipt, warnings, and a `networkDependent` flag. They never expose
-a Playwright page or browser as part of the capture result.
+To provision ahead of time, call `setupTileflowCaptureBrowser({allowInstall: true})`. In an offline
+prepared environment, use `allowInstall: false` and capture with `allowBrowserInstall: false`.
+The equivalent CLI command is `tileflow setup capture`. These settings control browser installation,
+not the network access required by a map's remote resources. Tileflow never deletes the shared
+per-user browser cache.
 
-Failures use `TileflowCaptureError` with a stable code and optional bounded details. The phase
-distinguishes style validation, browser start, resource loading, MapLibre load/idle, and screenshot
-production. Resource details contain only a classified kind, sanitized origin, optional HTTP
-status, and safe bounded context; raw Playwright stacks, queries, credentials, response bodies, and
-DOM contents are not part of the public diagnostic contract.
+## Capture the running application
 
-## Application capture
+Application capture uses the app's normal loopback server; it does not start a server or discover a
+port. Add a `madrid-product` entry to the config's `scenes` using this definition:
 
-Application scenes need only the app's normal loopback server:
+<!-- docs:check -->
 
 ```ts
+import type {TileflowCaptureScene} from '@tileflow/core';
+
+const applicationScene = {
+  theme: 'dark',
+  camera: {type: 'center', center: [-3.7038, 40.4168], zoom: 12},
+  viewport: {width: 1280, height: 800, dpr: 1},
+  target: {kind: 'application', path: '/maps/madrid', captureId: 'main-map'},
+} satisfies Omit<TileflowCaptureScene, 'map'>;
+```
+
+The route must render a Tileflow component for `madrid`, with theme `dark` and
+`captureId="main-map"`. The application owns its camera; capture records the scene camera but does
+not move the application's map. Start the app in one terminal, then run:
+
+<!-- docs:check -->
+
+```ts
+import {captureTileflowScenes} from '@tileflow/capture';
+
 const result = await captureTileflowScenes({
   appOrigin: 'http://127.0.0.1:3000',
   scenes: ['madrid-product'],
+  allowBrowserInstall: true,
 });
+console.log(result.captures[0]?.sha256);
 ```
 
-Tileflow does not start or discover the server. It accepts only loopback HTTP(S), creates a fresh
-context without reused profile/cookies/storage or service workers, confines redirects to the exact
-approved origin, finds exactly one target, waits for Tileflow's `data-tileflow-state="idle"` marker,
-and captures the element or viewport. The React, Vue, and Svelte wrappers expose the marker plus
-`data-tileflow-map`, the resolved `data-tileflow-theme`, and optional `data-tileflow-capture-id`.
-Capture verifies the concrete theme before and after screenshot production. A full one-off
-`appUrl`, selector, and frame can be supplied through the session options. The route and component
-props own application camera state; capture includes that camera in scene identity but does not
-rewrite it.
+Only loopback HTTP(S) is accepted. Capture confines redirects to the approved origin, uses no
+reused profile/cookies/storage or service workers, selects exactly one target, waits for
+`data-tileflow-state="idle"`, and verifies the concrete theme before and after capture.
+`appUrl`, `selector`, and `frame` provide explicit one-off overrides. Do not run a separate
+`tileflow preview` server beside the app.
 
-The application's development server also remains authoritative for local PMTiles. Each range is
-served from one immutable snapshot and strong ETags prevent one PMTiles read from silently mixing
-generations. Application Capture deliberately adds no lease or token that freezes every local
-dataset for the complete screenshot. A source edit during that exact window can therefore move a
-later read to the next valid generation; application receipts already classify style and data as
-`expected-unverified`. Standalone Capture is stricter because it owns and retains its artifact
-snapshot for the complete render.
+Application receipts mark style/data as `expected-unverified`; capture cannot inspect an arbitrary
+application's live MapLibre instance. Standalone receipts mark them as `rendered` and retain one
+prepared artifact generation for the whole capture. An application dataset edit can move later
+requests to a new generation; application capture does not freeze every dataset for the screenshot.
 
-## Prepared/offline browser setup
+## Compare a reviewed baseline
+
+This example requires an existing reviewed PNG and receipt pair in `test/visual-baselines`. It
+reads them without replacing them:
+
+<!-- docs:check -->
 
 ```ts
-import {setupTileflowCaptureBrowser} from '@tileflow/capture';
+import {readFile} from 'node:fs/promises';
+import {captureTileflowScenes, compareTileflowCaptureToBaseline} from '@tileflow/capture';
 
-const renderer = await setupTileflowCaptureBrowser({allowInstall: true});
-```
-
-Playwright provisions its exact platform-specific headless shell in the versioned per-user browser
-cache. Tileflow always launches headlessly, never uses system Chrome, never embeds a browser in the
-npm tarball, and never deletes the shared cache. Set `allowInstall: false` for an offline prepared
-environment. The equivalent CLI command is `tileflow setup capture`; use it to pay installation
-cost in advance or verify prepared CI, not as a prerequisite for normal capture.
-
-## Receipts and visual comparison
-
-`createTileflowCaptureReceipt`, `parseTileflowCaptureReceipt`,
-`validateTileflowCaptureReceipt`, and `serializeTileflowCaptureReceipt` implement the strict,
-bounded schema-version-4 receipt contract. A receipt contains the concrete theme,
-image/scene/style hashes, dimensions,
-renderer/platform identity, the required resolved `data` identity, explicit style/data verification,
-and remote-dependency state. Standalone map receipts mark configured style and data as `rendered`;
-application receipts mark them as `expected-unverified` because capture cannot inspect an arbitrary
-application's live MapLibre instance. Vector endpoints are represented by a query-free SHA-256
-fingerprint rather than a raw URL. Receipts contain no time, user, origin, path, query, signed token,
-repository, absolute filesystem path, config source, environment, or credential.
-
-For Tileflow World, Capture resolves the map's TileJSON selector once per session, requires
-`tileflow.world` to identify `world-v1` with exact release, descriptor, archive, data-contract, and
-product-contract SHA-256 values, and renders every standalone scene from the returned immutable tile
-template. Repeated scenes and retries reuse that one resolution; another selector in the same
-session fails instead of mixing releases. Existing canonical schema-v2 and schema-v3 receipts remain
-readable as historical evidence and are never reclassified as schema v4.
-
-Capture reuses Core's exact World V1 release-ID contract: 12–128 characters matching
-`^world-v1-[a-z0-9][a-z0-9._-]*[a-z0-9]$`. Selector responses and durable receipts reject rather
-than normalize uppercase, whitespace, another generation, or an incomplete boundary value.
-
-Receipt-only tooling can import these contracts from `@tileflow/capture/receipt` without loading the
-Playwright capture runtime.
-
-```ts
-import {compareTileflowCaptureToBaseline} from '@tileflow/capture';
-
-const comparison = await compareTileflowCaptureToBaseline(result.captures[0], {
-  png: baselinePng,
-  receipt: baselineReceiptJson,
+const result = await captureTileflowScenes({
+  scenes: ['madrid-desktop'],
+  allowBrowserInstall: true,
 });
-```
+const capture = result.captures[0];
+if (!capture) throw new Error('Capture returned no image.');
 
-Comparison validates PNG CRC, hash, dimensions, pixel bounds, and receipt identity before reading
-pixels. It classifies unchanged, changed, missing, scene-mismatch, and runtime-mismatch results,
-reports exact RGBA changed pixels plus a fixed 0.1 perceptual metric, and returns an optional
-transparent high-contrast diff PNG. Exact RGBA inequality determines `changed`.
-
-To review two deliberate Tileflow renders that are allowed to use different maps, themes, and
-styles, use the separate review primitive:
-
-```ts
-import {
-  compareTileflowCapturesForReview,
-  createTileflowVisualReviewDocument,
-} from '@tileflow/capture';
-
-const review = await compareTileflowCapturesForReview(
-  {capture: leftCapture, definition: leftDefinition},
-  {capture: rightCapture, definition: rightDefinition},
-  {includeDiff: true, region: {x: 0, y: 0, width: 1200, height: 760}},
-);
-const document = createTileflowVisualReviewDocument(review);
-```
-
-Review requires each PNG, its schema-v4 receipt, and the exact normalized definition used to
-produce it. It authenticates both sides before comparing pixels. Different map/style/theme
-identities are intentional, but camera, viewport, target frame, physical dimensions, renderer, and
-resolved data identity must agree before exact or perceptual metrics are meaningful. Statuses are
-`comparable`, `frame-mismatch`, `dimensions-mismatch`, `runtime-mismatch`, and `data-mismatch`.
-Inputs are snapshotted from plain accessor-free data before asynchronous work, and both individual
-and aggregate PNG byte limits are enforced before hashing. Pixelmatch runs only for compatible
-captures; `includeDiff: false` does not allocate or encode a diff. The optional diff is contextual
-evidence only; this API never reads, writes, or approves a visual baseline.
-
-Every comparable review also reports `appearance: {region, left, right, rightMinusLeft}`. Profiles
-contain linear luminance, OKLab lightness/chroma (`mean`, `p10`, `p50`, `p90`), edge density, and
-local contrast. The optional region is one bounded physical-pixel rectangle from the top-left and
-affects only `appearance`; exact/perceptual metrics and the diff still describe the complete frame.
-
-Review documents are a schema-version-1 compatibility boundary, exposed through
-`tileflowVisualReviewSchemaVersion`. `tileflowVisualReviewLimits.maximumAggregatePngBytes` exposes
-the 256 MiB aggregate input cap; each input is also subject to the 256 MiB
-`tileflowVisualArtifactLimits.maximumPngBytes` cap and the shared decoded-pixel limits. Invalid,
-non-plain, unauthenticated, or over-limit inputs throw `TileflowVisualReviewError` with stable code
-`VISUAL_REVIEW_INVALID`. `createTileflowVisualReviewDocument` removes contextual `diffPng` bytes
-while retaining the versioned identities, status, metrics, and warnings.
-
-For an external design screenshot that has no Tileflow receipt, use the separate exploratory
-primitive:
-
-```ts
-import {analyzeTileflowCaptureReference} from '@tileflow/capture';
-
-const analysis = await analyzeTileflowCaptureReference(result.captures[0], referencePng, {
-  region: {x: 0, y: 0, width: 1200, height: 760},
+const comparison = await compareTileflowCaptureToBaseline(capture, {
+  png: await readFile('test/visual-baselines/madrid-desktop.png'),
+  receipt: await readFile('test/visual-baselines/madrid-desktop.receipt.json', 'utf8'),
 });
+console.log(comparison.status);
 ```
 
-It strictly validates the bounded non-interlaced PNG, reports dimensions and up to 16 deterministic
-quantized palette entries, and—only for equal dimensions—exact/perceptual changed pixels, mean
-absolute RGBA-channel difference, a high-contrast diff PNG, and
-`appearance.actualMinusReference` with the same signed profile. It does not assert scene/runtime
-compatibility, accept a receipt for the reference, or create a baseline.
+Comparison validates the image and receipt before reading pixels. Results distinguish unchanged,
+changed, missing, scene mismatch, and runtime mismatch. Exact RGBA inequality determines `changed`;
+the perceptual metric and optional diff image are additional evidence. Never update a baseline
+merely to make a failing comparison pass.
 
-## Security and determinism boundary
+`compareTileflowCapturesForReview` compares two deliberate renders with different styles while
+requiring compatible framing, renderer, and data identity. `analyzeTileflowCaptureReference` analyzes
+an external PNG without claiming receipt compatibility. Neither operation approves a baseline.
+See the [receipt and comparison reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/capture/docs/receipts-and-comparison.md),
+also included under `docs/` in the installed package, for identities, metrics, and limits.
 
-`tileflow.config.ts` is executable trusted repository code, not a sandbox. Chromium receives a
-small non-secret environment allowlist. Standalone capture fulfills only exact compiled synthetic
-assets and reports external HTTP(S) origins; application capture accepts only loopback URLs and
-does not echo query strings or DOM contents in failures. Remote tiles, glyphs, or sprites can change,
-so a remote-dependent result is evidence but not a globally byte-stable golden image.
+## Errors, receipts, and reproducibility
 
-See `THIRD_PARTY_NOTICES.md` for runtime license treatment and
-https://tileflow.dev/docs/agent-workflow for the complete CLI workflow.
+`TileflowCaptureError` reports a stable code, phase, and bounded details. Phases distinguish style
+validation, browser startup, resource loading, MapLibre readiness, and screenshot production.
+Resource diagnostics contain safe classification and origin/status information, not credentials,
+query strings, response bodies, raw browser stacks, or DOM contents.
+
+New receipts use schema version 4. Version-2 and version-3 receipts remain readable as historical
+evidence, not as newly verified version-4 captures. Import `@tileflow/capture/receipt` for receipt-only
+tooling without loading the capture runtime. World selectors resolve once per capture session to
+an immutable release. Remote-dependent rendering is not a guarantee of globally identical pixels
+across platforms or future runs.
+
+Read the [capture contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/local-visual-capture.md)
+for durable behavior and [third-party notices](https://github.com/tileflow/tileflow-sdk/blob/main/packages/capture/THIRD_PARTY_NOTICES.md)
+for runtime licenses. For release-specific behavior, prefer installed declarations and docs over `main`.

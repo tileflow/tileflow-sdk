@@ -1,101 +1,151 @@
 # @tileflow/next
 
-Next.js adapter for local Tileflow style development and static build artifacts.
+Prepare Tileflow styles and assets for a Next.js application. Development serves fresh generations
+through an App Router route handler; production writes static files to `public/tileflow`. No separate
+Tileflow server is needed.
 
-```ts
-// next.config.ts
-import {withTileflow} from '@tileflow/next';
-import type {NextConfig} from 'next';
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
 
-const nextConfig: NextConfig = {};
+## Install
 
-export default withTileflow(nextConfig);
-```
-
-Omitting a component's `manifestUrl` is valid only for exactly
-`/tileflow/manifest.json`. A Next `basePath` and/or custom Tileflow `base` changes the public URL,
-so declare the same final URL in the component source:
-
-```ts
-const nextConfig: NextConfig = {basePath: '/app'};
-
-export default withTileflow(nextConfig, {base: '/maps'});
-
-const source = {
-  kind: 'tileflow' as const,
-  map: 'main',
-  manifestUrl: '/app/maps/manifest.json',
-};
-```
-
-The browser runtime does not discover `basePath`; the explicit URL keeps SSR and hydration on the
-same manifest generation.
-
-## MapLibre 6 worker
-
-Copy the exact worker and shared module from the application's installed MapLibre package into
-`public` as part of the build setup:
+Use an existing Next.js 14–16 App Router application on Node.js 22 or newer:
 
 ```sh
-mkdir -p public/maplibre
-cp node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs public/maplibre/
-cp node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs public/maplibre/
+npm install @tileflow/next@alpha @tileflow/react@alpha @tileflow/core@alpha @tileflow/maps@alpha "maplibre-gl@^6.4.1"
 ```
 
-Then configure the React adapter in a client entry before mounting an interactive map:
+Use compatible React/React DOM versions from your Next.js application. The React adapter accepts
+versions 18–19 and MapLibre GL JS `>=6.4.1 <7`. The server integration uses Node.js, not the Edge
+runtime.
 
-```tsx
-'use client';
+## Configure the map and Next.js
 
-import {configureTileflowMapLibre} from '@tileflow/react';
+Create `tileflow.config.ts` at the application root:
 
-configureTileflowMapLibre({workerUrl: '/maplibre/maplibre-gl-worker.mjs'});
-```
-
-With `basePath`, include that prefix in `workerUrl`. The static worker and shared module must stay
-from the same installed MapLibre version. MapLibre GL JS 6.4.1-6.x is supported.
-
-Add a catch-all App Router handler so `next dev` can serve fresh local styles from
-`tileflow.config.ts`. `withTileflow()` rewrites `/tileflow/*` to this internal route only during
-development; production uses the static files written to `public/tileflow`.
+<!-- docs:check -->
 
 ```ts
-// app/api/tileflow/[[...tileflow]]/route.ts
+import {defineMap} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'madrid',
+  version: 1,
+  extends: streets,
+  view: {center: [-3.7038, 40.4168], zoom: 12},
+});
+```
+
+Wrap your existing configuration in `next.config.mjs`. The `.mjs` form works across the supported
+Next.js versions:
+
+<!-- docs:check -->
+
+```js
+import {withTileflow} from '@tileflow/next';
+
+export default withTileflow({});
+```
+
+Keep the application's other Next.js options. Add
+`app/api/tileflow/[[...tileflow]]/route.ts` (under `src/` when your app uses that directory):
+
+<!-- docs:check -->
+
+```ts
 import {createTileflowRouteHandlers} from '@tileflow/next/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-export const {GET, HEAD} = createTileflowRouteHandlers({
-  routeBase: '/api/tileflow',
-});
+export const {GET, HEAD} = createTileflowRouteHandlers({routeBase: '/api/tileflow'});
 ```
 
-During `next build`, `withTileflow()` writes static artifacts to
-`public/tileflow`. During development, the route handler serves the same manifest,
-styles, icon sprites, package-owned fonts, and immutable generation-local PMTiles snapshots without a
-separate `tileflow dev` process. Repeated route-module evaluation reuses one process-wide watched
-generation instead of rebuilding PMTiles per request. Production rejects unresolved local PMTiles
-before writing Tileflow assets; publish managed data explicitly or provide an application-owned
-production source. Development Style URLs remain stable by logical tileset ID while the served
-snapshot changes by generation. Custom test/server harnesses that
-own the returned handlers should call `await handlers.close()` during shutdown; the documented App
-Router module intentionally keeps its shared handler for the server process lifetime.
-Artifact generation works with both the default Turbopack build and `next build --webpack`.
+`withTileflow()` rewrites `/tileflow/*` to this route only in development. The handler shares one
+watched generation across repeated route-module evaluation. A custom harness that owns handlers
+must call `close()` on shutdown; this App Router module retains its shared handler for the process
+lifetime.
 
-`next dev` (or the production server used by a test fixture) remains the only server for
-application capture. Run the short-lived headless command against it; never add a second standalone
-Tileflow listener:
+## Deliver the matching worker
+
+Create `scripts/copy-maplibre-worker.mjs` in the application. Run it from the application root after
+installing dependencies and before development or production builds:
+
+```js
+import {copyFile, mkdir} from 'node:fs/promises';
+
+await mkdir('public/maplibre', {recursive: true});
+for (const file of ['maplibre-gl-worker.mjs', 'maplibre-gl-shared.mjs']) {
+  await copyFile(
+    new URL(import.meta.resolve(`maplibre-gl/dist/${file}`)),
+    `public/maplibre/${file}`,
+  );
+}
+```
 
 ```sh
-npm run dev
-TILEFLOW_APP_ORIGIN=http://127.0.0.1:3000 npx tileflow capture app-desktop
+node scripts/copy-maplibre-worker.mjs
 ```
 
-## Compatibility
+Include that command in your existing `predev` and `prebuild` scripts. Copy both files from the same
+installed MapLibre version; do not combine a new main module with an old or CDN-hosted worker.
 
-The supported peer window is Next.js 14-16 on Node.js 22 or newer. CI installs the exact first
-release of every accepted Next.js major with packed Tileflow tarballs and compiles a minimal App
-Router production build. Future majors remain excluded until that smoke passes.
+## Render a client component
 
-Docs: https://tileflow.dev/docs
+Create `app/map.tsx` (or `src/app/map.tsx`) and render `CityMap` from a page:
+
+<!-- docs:check -->
+
+```tsx
+'use client';
+
+import 'maplibre-gl/dist/maplibre-gl.css';
+import {configureTileflowMapLibre, Map} from '@tileflow/react';
+
+configureTileflowMapLibre({workerUrl: '/maplibre/maplibre-gl-worker.mjs'});
+
+export function CityMap() {
+  return <Map source={{kind: 'tileflow', map: 'madrid'}} theme="system" />;
+}
+```
+
+The interactive map belongs behind a client boundary. It reads prepared assets, not executable
+config. For annotations, capture readiness, and static-image behavior, see the
+[React guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/react/README.md).
+
+## Use a base path
+
+In `next.config.mjs`:
+
+<!-- docs:check -->
+
+```js
+import {withTileflow} from '@tileflow/next';
+
+export default withTileflow({basePath: '/app'}, {base: '/maps'});
+```
+
+Set the component's `source.manifestUrl` to `/app/maps/manifest.json` and the worker URL to
+`/app/maplibre/maplibre-gl-worker.mjs`. Omitting `manifestUrl` is correct only for exactly
+`/tileflow/manifest.json`. The browser does not discover `basePath`; explicit URLs also keep SSR and
+hydration consistent.
+
+## Build and capture
+
+`next build` writes the complete static artifact generation. Preparation works with Next.js's
+Webpack and Turbopack builds where those modes are supported by the installed Next.js version.
+Development serves local PMTiles snapshots; production rejects unresolved local archives. Publish
+managed data explicitly or supply an application-owned production source. Do not run a second CLI
+build over a hosted delivery manifest.
+
+Keep the normal Next.js server running in one terminal. With the
+[CLI](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/README.md) installed and an
+`app-desktop` application scene defined, run in another terminal:
+
+```sh
+npx tileflow capture app-desktop --url http://127.0.0.1:3000/ --json
+```
+
+Use the app's actual loopback URL. Capture does not start a server. Config loading executes trusted
+imports; local preparation needs no API key, but rendering can still fetch remote data and fonts.
+CI compiles packed consumers at the supported Next.js major boundaries. Use the installed README
+and declarations for a release rather than newer source on `main`.

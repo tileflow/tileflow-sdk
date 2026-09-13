@@ -4,14 +4,55 @@
 CRS search, description, operation discovery, and transformations through that release's native
 engine. It requires Node.js 22 or newer.
 
-This source package does not establish registry availability for a package or release. Use the
-package registry and its immutable release artifacts to determine what can be installed.
-
 No public native runtime distribution is currently offered. Installing this package supplies the
 provisioning and execution adapter, not the native engine/catalog/grid assets. Use an explicitly
 provided compatible distribution. The verified production profile is Linux x64 on Debian 12,
 glibc 2.36 and Node.js 24; the package’s Node minimum does not broaden that profile. Public macOS,
 Windows and other Linux profiles are not supported distributions.
+
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+
+## Install
+
+```sh
+npm install @tileflow/coordinates-runtime@alpha
+```
+
+Before running the example, obtain a compatible `distribution.json` and its referenced assets from
+your runtime provider. There is no implicit default download. Use directories you control for both
+the distribution and cache. The example intentionally opts into a development distribution;
+`allowDevelopment: true` does not qualify that distribution for production.
+
+## Run a local request
+
+<!-- docs:check -->
+
+```ts
+import {createLocalCoordinates, setupCoordinates} from '@tileflow/coordinates-runtime';
+
+const source = process.env.COORDINATES_DISTRIBUTION;
+const cacheDirectory = process.env.COORDINATES_CACHE_DIRECTORY;
+if (!source || !cacheDirectory) {
+  throw new Error('Set COORDINATES_DISTRIBUTION and COORDINATES_CACHE_DIRECTORY.');
+}
+
+const installed = await setupCoordinates({source, cacheDirectory, allowDevelopment: true});
+const coordinates = await createLocalCoordinates({
+  directory: installed.directory,
+  allowDevelopment: true,
+});
+
+try {
+  console.log(await coordinates.search({query: 'ETRS89'}));
+} finally {
+  await coordinates.close();
+}
+```
+
+Setup verifies the declared assets before selecting a release. The search returns a versioned
+response with provenance. Call `describe`, `operations`, or `transform` with the
+[Coordinates request contracts](https://github.com/tileflow/tileflow-sdk/blob/main/packages/coordinates/README.md)
+for other operations. Always close the engine, including on errors.
 
 ## Execution releases
 
@@ -66,7 +107,7 @@ Execution never fetches a release, grid, or replacement artifact. Provisioning i
 that acquires release assets.
 
 For the static geographic/geocentric conversion EPSG:9602, a release may include a versioned
-[analytical applicability proof](proofs/README.md). Its descriptor appears in provenance; its JSON
+[analytical applicability proof](https://github.com/tileflow/tileflow-sdk/blob/main/packages/coordinates-runtime/proofs/README.md). Its descriptor appears in provenance; its JSON
 document is a hashed file in every artifact, at `proofs/<proof-id>.json`. Both manifest binding and
 document bytes are verified before native execution. The native method independently verifies CRS
 compatibility, its mathematical domain and forward/inverse residuals for every position. Missing
@@ -77,32 +118,12 @@ The small reference specifications are also included in the npm package. Their p
 not authorize execution: the selected execution release must independently register and contain
 the exact proof.
 
-```ts
-import {createLocalCoordinates, setupCoordinates} from '@tileflow/coordinates-runtime';
-
-const installed = await setupCoordinates({
-  source: '/path/to/distribution.json',
-  cacheDirectory: '/path/to/coordinates-cache',
-  allowDevelopment: true,
-});
-
-const coordinates = await createLocalCoordinates({
-  directory: installed.directory,
-  allowDevelopment: true,
-});
-
-try {
-  const result = await coordinates.search({query: 'ETRS89'});
-  console.log(result);
-} finally {
-  await coordinates.close();
-}
-```
-
 `CoordinatesSetupError` serializes a stable setup failure document. Coordinate request and execution
 failures use `CoordinatesContractError` from `@tileflow/coordinates`.
 
-## macOS quarantine
+## Distribution implementers: macOS quarantine
+
+This implementation detail does not announce a supported public macOS distribution.
 
 On macOS, DMG provisioning uses built-in system tools to preserve quarantine metadata while copying
 an offline DMG into the cache and while staging its payload. A verified remote DMG without existing

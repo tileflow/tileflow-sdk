@@ -38,7 +38,7 @@ test('declares the browser entry without exposing it from the package root', asy
   assert.equal(manifest.exports['./package.json'], './package.json');
   assert.equal(manifest.exports['./maps'], undefined);
   assert.equal(Object.hasOwn(manifest.exports['.'] as object, 'browser'), false);
-  assert.deepEqual(manifest.files, ['dist', 'LICENSE', 'THIRD_PARTY_NOTICES.md']);
+  assert.deepEqual(manifest.files, ['dist', 'docs', 'LICENSE', 'THIRD_PARTY_NOTICES.md']);
 });
 
 test('imports the packaged manifest and runtime boundaries without browser globals', async () => {

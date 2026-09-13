@@ -174,7 +174,6 @@ export default defineMap({id:'main',version:1,extends:streets,themes,fonts:['./f
 });
 
 for (const [label, extra, expectedPath] of [
-  ['globe', "projection:'globe',", '/projection'],
   ['terrain displacement', "terrain:'3d',", '/terrain'],
 ] as const) {
   test(`rejects ${label} before replacing an existing native output`, async (t) => {
@@ -201,7 +200,7 @@ test('forwards the renderer into watched generations and retains the last valid 
     const generation = session.getState().generation;
     let readyEvents = 0;
     session.subscribe((state) => {if (state.status === 'ready') readyEvents++;});
-    await writeFile(join(cwd, 'tileflow.config.ts'), config("projection:'globe',"));
+    await writeFile(join(cwd, 'tileflow.config.ts'), config("terrain:'3d',"));
     const deadline = Date.now() + 10_000;
     while (session.getState().status !== 'invalid' && Date.now() < deadline) await delay(25);
     const invalid = session.getState();
@@ -241,10 +240,12 @@ test('rejects an unresolved local archive before the native snapshot/preparation
   t.after(() => disposeTileflowBuildArtifacts(artifacts));
   const map = artifacts.project.maps.main!;
   const project = {maps: {main: {...map, sources: {roads: hostedTileset({local: './missing.pmtiles', tileset: 'roads', attribution: 'Test fixture'})}}}};
-  assert.throws(() => assertTileflowNativeCompiledStyles(project, {}), (error: unknown) => {
+  assert.throws(() => assertTileflowNativeCompiledStyles(project, {main: {light: {
+    version: 8, name: 'Unresolved archive', sources: {roads: {type: 'vector', url: 'tileflow-pmtiles://./missing.pmtiles'}}, layers: [],
+  }}}), (error: unknown) => {
     assert.ok(error instanceof TileflowNativeCompatibilityError);
     assert.equal(error.issues[0]?.code, 'NATIVE_UNSUPPORTED_SOURCE');
-    assert.equal(error.issues[0]?.path, '/maps/main/sources');
+    assert.equal(error.issues[0]?.path, '/maps/main/themes/light/style/sources/roads/url');
     return true;
   });
 });

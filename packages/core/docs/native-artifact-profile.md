@@ -59,13 +59,25 @@ hillshade and building extrusions, one effective sprite, glyph URLs and complete
 faces. Paint, layout and expression values must also pass the pinned semantic parser and native
 support metadata. Hillshade and building extrusions do not establish 3D terrain support.
 
-It rejects globe or adaptive projection, terrain displacement, sky and global-state extensions,
+The raw style validator rejects globe or adaptive projection, terrain displacement, sky and global-state extensions,
 unsupported source/layer/property values, legacy stop-function objects, browser contour and PMTiles protocols, local file URLs,
 multiple sprite providers. The existing portable camera/view bounds are preserved; an artifact
 does not configure a native map instance's camera constraints. It does not silently remove
 an unsupported feature or replace a font. An explicit fixed-Mercator property can be omitted in the
 native representation because Native has no GL JS projection controller; this does not change the
 logical map revision.
+
+Dev's `native-lowering-v1` preparation policy explicitly converts a fixed `{type: 'globe'}`
+projection to Native's implicit Mercator before this validator runs. This is a recorded projection
+change, not globe support or visual equivalence. It also lowers proven finite `line-cap` and
+`line-dasharray` decisions into constant-property layers. The raw validator continues to reject
+unlowered unsupported expressions. See the [preparation contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-artifacts.md)
+for the grammar, expansion limits and pending native visual checks.
+
+`native-build.json` uses strict schema version 2 and `preparationVersion: 'native-lowering-v1'`.
+Its `transformations` array is ordered by map/theme and binds the input/lowered style hashes,
+projection policy and physical layer spans. The runtime manifest remains version 1. An old v1
+build-record decoder must reject v2 rather than silently ignore the preparation evidence.
 
 Text must use a valid glyph template containing `{fontstack}` and `{range}`, or a complete static
 font stack backed by prepared faces. Native preparation maps each exact OpenType full name to its
@@ -79,8 +91,8 @@ does not prove text-provider closure. The Dev pipeline always performs the final
 after preparation; external callers must not present a preflight result as a complete artifact check.
 
 The validator limits JSON to 8 MiB of serialized UTF-8, depth 64 and 160,000 visited values, with at
-most 128 sources, 4,096 layers, 16 prepared font faces and 32 returned errors. The node budget leaves
-bounded headroom over the current official Streets styles without making validation unbounded.
+most 128 sources, 4,096 layers, 16 prepared font faces and 32 returned errors. The same bounds apply
+after lowering; expansion that exceeds them fails before an output generation can be written.
 Prepared font bytes retain the existing 1 MiB per-face bound. URL, icon and sprite limits remain the
 owning pipelines' limits. These are local validation-work bounds, not download, GPU-memory or billing
 limits.

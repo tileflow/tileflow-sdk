@@ -11,7 +11,7 @@ npx tileflow build --renderer native --target local --out public/tileflow --json
 
 `validate` prepares and checks the complete theme family without writing production output.
 `build` writes the checked generation beneath `public/tileflow/native`, including a strict version-1
-runtime manifest and a separate `native-build.json` record. Serve the complete renderer directory,
+runtime manifest and a separate schema-v2 `native-build.json` record. Serve the complete renderer directory,
 not just the style. A failed compatibility check leaves existing output unchanged.
 
 Both commands accept `--renderer web|native`; omission means `web`. Renderer selection is separate
@@ -26,7 +26,9 @@ one structured envelope to stderr, leaves stdout empty and exits nonzero. Native
 safe JSON Pointers, stable codes, severity and suggestions. Unknown renderer names are not echoed.
 The ordinary web commands and their default artifact bytes retain their existing behavior.
 
-Native preparation rejects incompatible projections, terrain, browser PMTiles/contour protocols,
+The `native-lowering-v1` preparation policy records fixed globe-to-Mercator normalization and
+finite cap/dash layer partitioning in `native-build.json`; it does not change web artifacts.
+Native preparation rejects adaptive/unknown projections, terrain, browser PMTiles/contour protocols,
 missing text providers and unsupported style values rather than degrading them silently. It preserves
 shared icon inheritance and independent sprite densities, and maps verified licensed TTF/OTF faces
 into native style declarations. See the

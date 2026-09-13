@@ -89,6 +89,10 @@ test('native build writes a separate strict v1 manifest and renderer record', as
   assert.equal(manifest.renderer, undefined);
   const record = JSON.parse(await readFile(join(cwd, 'output/native/native-build.json'), 'utf8'));
   assert.equal(record.validation, 'static-artifacts');
+  assert.equal(record.schemaVersion, 2);
+  assert.equal(record.preparationVersion, 'native-lowering-v1');
+  assert.ok(record.transformations.every(({projection}: {projection: string}) => projection === 'globe-to-mercator'));
+  assert.equal(manifest.transformations, undefined);
   await assert.rejects(access(join(cwd, 'output/manifest.json')));
 });
 
@@ -117,12 +121,12 @@ test('default and explicit web build/validate preserve their original output', a
 
 test('an incompatible native style fails without creating an output directory', async (t) => {
   const cwd = await fixture(t);
-  await writeFile(join(cwd, 'tileflow.config.ts'), validConfig.replace('extends:streets', "extends:streets,projection:'globe'"));
+  await writeFile(join(cwd, 'tileflow.config.ts'), validConfig.replace('extends:streets', "extends:streets,terrain:'3d'"));
   const result = await run(cwd, ['build', '--renderer', 'native', '--out', 'output', '--json']);
   assert.equal(result.code, 1);
   const body = JSON.parse(result.stderr);
   assert.equal(body.profile, 'native-v1');
-  assert.ok(body.diagnostics.some(({path}: {path: string}) => path.endsWith('/projection')));
+  assert.ok(body.diagnostics.some(({path}: {path: string}) => path.endsWith('/terrain')));
   await assert.rejects(access(join(cwd, 'output')));
 });
 

@@ -1,6 +1,8 @@
 import {createHash} from 'node:crypto';
+import {convertFilter, validateStyleMin, type FilterSpecification} from '@maplibre/maplibre-gl-style-spec';
 import {
   getTileflowStyleFontFaces,
+  serializeCanonicalJson,
   type MapLibreStyle,
   tileflowStyleFontFacesMetadataKey,
   tileflowIconIdPattern,
@@ -9,12 +11,16 @@ import {
 import type {TileflowBuildCatalog, TileflowBuildStyles} from '@tileflow/core/build';
 import {
   createTileflowNativeDiagnostic,
+  type TileflowNativeBuildRecord,
   TileflowNativeCompatibilityError,
   type TileflowNativeDiagnostic,
   tileflowNativeProfileLimits,
   validateTileflowNativeStyle,
 } from '@tileflow/core/native-profile';
 import type {TileflowBuildAsset} from './icons';
+import {lowerNativeStyleRepresentation, NativeLoweringError} from './native-lowering';
+
+type TileflowNativeStyleTransformation = TileflowNativeBuildRecord['transformations'][number];
 
 /** No delivery URL is inferred: this non-routable base is used only to check relative URL syntax. */
 function documentUrl(map: string, theme: string): string {
@@ -24,6 +30,61 @@ function documentUrl(map: string, theme: string): string {
 function withContext(issue: TileflowNativeDiagnostic, map: string, theme: string): TileflowNativeDiagnostic {
   const prefix = `/maps/${map}/themes/${theme}/style`;
   return {...issue, path: prefix.length + issue.path.length <= 300 ? prefix + issue.path : prefix};
+}
+
+/** Lower only the native representation; shared compilation and authored map identity stay intact. */
+export function lowerTileflowNativeCompiledStyles(input: TileflowBuildStyles): {
+  styles: TileflowBuildStyles;
+  transformations: TileflowNativeStyleTransformation[];
+} {
+  const styles: TileflowBuildStyles = {};
+  const transformations: TileflowNativeStyleTransformation[] = [];
+  for (const map of Object.keys(input).sort()) {
+    styles[map] = {};
+    for (const theme of Object.keys(input[map]!).sort()) {
+      const original = input[map]![theme]!;
+      try {
+        const options = {documentUrl: documentUrl(map, theme), deferFontClosure: true};
+        const pending = validateTileflowNativeStyle(original, options);
+        // Only these representation-level diagnostics may be deferred. Bounds, source protocols,
+        // other style properties and the final native validation are never bypassed.
+        const blockers = pending.filter((issue) => issue.code !== 'NATIVE_UNSUPPORTED_STYLE' ||
+          !(issue.path === '/projection' || /^\/layers\/\d+\/(?:layout\/line-cap|paint\/line-dasharray)(?:\/|$)/u.test(issue.path)));
+        if (blockers.length) throw new TileflowNativeCompatibilityError(blockers.map((issue) => withContext(issue, map, theme)));
+        const syntax = validateStyleMin(JSON.parse(serializeCanonicalJson(original)));
+        if (syntax.length) throw new TileflowNativeCompatibilityError(syntax.map((issue) => {
+          const match = /^layers\[(\d+)\]\.(layout\.line-cap|paint\.line-dasharray)(?=[:.\[]|$)/u.exec(issue.message);
+          const path = match ? `/layers/${match[1]}/${match[2]!.replace('.', '/')}`
+            : issue.message.startsWith('projection') ? '/projection' : '';
+          return withContext(createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE', path), map, theme);
+        }));
+        const lowered = lowerNativeStyleRepresentation(original, (filter) =>
+          convertFilter(structuredClone(filter) as FilterSpecification));
+        const issues = validateTileflowNativeStyle(lowered.style, options);
+        if (issues.length) throw new TileflowNativeCompatibilityError(issues.map((issue) => withContext(issue, map, theme)));
+        styles[map]![theme] = lowered.style as MapLibreStyle;
+        transformations.push({
+          map, theme,
+          inputStyleSha256: createHash('sha256').update(serializeCanonicalJson(original)).digest('hex'),
+          loweredStyleSha256: createHash('sha256').update(serializeCanonicalJson(lowered.style)).digest('hex'),
+          inputLayers: lowered.inputLayers, outputLayers: lowered.outputLayers,
+          projection: lowered.projection, layers: lowered.layers,
+        });
+      } catch (error) {
+        if (!(error instanceof NativeLoweringError)) throw error;
+        throw new TileflowNativeCompatibilityError([withContext({
+          ...createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE', error.path),
+          message: error.message,
+          suggestion: error.reason === 'budget'
+            ? 'Reduce the decision expansion or style size; native lowering never raises its resource limits automatically.'
+            : error.path === '/projection'
+              ? 'Use a fixed globe or Mercator projection for native-v1; adaptive projections are not supported.'
+              : 'Use finite case/match/step decisions with constant leaves and supported scalar predicates, or select web.',
+        }, map, theme)]);
+      }
+    }
+  }
+  return {styles, transformations};
 }
 
 /** Reject browser protocols before local PMTiles snapshotting and before any output writes. */

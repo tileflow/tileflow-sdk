@@ -70,6 +70,7 @@ import {prepareTileflowLocalTilesets, type TileflowLocalTilesetFile} from './loc
 import {
   assertTileflowNativeCompiledStyles,
   assertTileflowNativeGeneratedStyle,
+  lowerTileflowNativeCompiledStyles,
   prepareTileflowNativeStyles,
   replaceTileflowNativeFontSources,
 } from './native-artifacts';
@@ -333,8 +334,10 @@ export async function createTileflowArtifactPlan(
       apiBaseUrl: options.apiBaseUrl,
       mapAssets: prepared.mapAssets,
     });
-  if (renderer === 'native') assertTileflowNativeCompiledStyles(prepared.project, compiledStyles);
-  const localTilesets = await prepareTileflowLocalTilesets(prepared.project, compiledStyles, {
+  const nativeLowering = renderer === 'native' ? lowerTileflowNativeCompiledStyles(compiledStyles) : undefined;
+  const rendererStyles = nativeLowering?.styles ?? compiledStyles;
+  if (renderer === 'native') assertTileflowNativeCompiledStyles(prepared.project, rendererStyles);
+  const localTilesets = await prepareTileflowLocalTilesets(prepared.project, rendererStyles, {
     assetBaseUrl: resolveRendererAssetBaseUrl(options),
     baseDirectory: prepared.baseDirectory,
     cwd: prepared.cwd,
@@ -408,7 +411,9 @@ export async function createTileflowArtifactPlan(
       assets,
       buildManifest,
       ...(renderer === 'native' ? {
-        nativeBuild: createTileflowNativeBuildRecord(hashBytes(serializeCanonicalJson(buildManifest))),
+        nativeBuild: createTileflowNativeBuildRecord(
+          hashBytes(serializeCanonicalJson(buildManifest)), nativeLowering!.transformations,
+        ),
       } : {}),
       dispose: localTilesets.dispose,
       manifest: stableManifest,

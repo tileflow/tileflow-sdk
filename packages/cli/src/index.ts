@@ -110,6 +110,7 @@ import {registerIconListCommand} from './icon-list-command';
 import {registerLanguageCommand} from './language-command';
 import {openTileflowExternal} from './open-external';
 import {registerProjectCommands, resolveAccountProjectTarget} from './project-commands';
+import {runRendererArtifactCommand} from './renderer-artifact-command';
 import {registerTilesetCommands} from './tileset-command';
 import {registerVisualCommands} from './visual-command';
 
@@ -283,13 +284,18 @@ program
   .description('Validate a Tileflow config')
   .option('-c, --config <path>', 'config path', defaultConfigPath)
   .option('--target <target>', 'validation target: local or hosted', 'local')
+  .option('--renderer <renderer>', 'artifact renderer: web or native', 'web')
   .option(
     '--api-base-url <url>',
     'Tileflow API base URL used to resolve official map assets',
     process.env.TILEFLOW_API_URL ?? defaultApiUrl,
   )
   .option('--json', 'print deterministic schema-version-1 JSON')
-  .action(async (options: {apiBaseUrl: string; config: string; json?: boolean; target: string}) => {
+  .action(async (options: {apiBaseUrl: string; config: string; json?: boolean; renderer: string; target: string}) => {
+    if (options.renderer !== 'web') {
+      await runRendererArtifactCommand('validate', options);
+      return;
+    }
     if (options.target !== 'local' && options.target !== 'hosted') {
       if (options.json) {
         const failure = createTileflowCommandFailureDocument(
@@ -449,12 +455,19 @@ program
   .description('Generate static Tileflow styles')
   .option('-c, --config <path>', 'config path', defaultConfigPath)
   .option('-o, --out <path>', 'output directory', 'dist/tileflow')
+  .option('--renderer <renderer>', 'artifact renderer: web or native', 'web')
+  .option('--target <target>', 'artifact target: local or hosted (build supports local)', 'local')
+  .option('--json', 'print deterministic schema-version-1 JSON')
   .option(
     '--api-base-url <url>',
     'Tileflow API base URL used to resolve official map assets',
     process.env.TILEFLOW_API_URL ?? defaultApiUrl,
   )
-  .action(async (options: {apiBaseUrl: string; config: string; out: string}) => {
+  .action(async (options: {apiBaseUrl: string; config: string; json?: boolean; out: string; renderer: string; target: string}) => {
+    if (options.renderer !== 'web' || options.target !== 'local' || options.json) {
+      await runRendererArtifactCommand('build', options);
+      return;
+    }
     logInfo(`Building ${pathLabel(options.config)}.`);
     await withTileflowConfigSecretsHidden(() =>
       writeTileflowBuildArtifacts({

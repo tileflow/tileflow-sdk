@@ -97,50 +97,17 @@ test('publishes the approved bundle without rebuilding and verifies a final rece
   assert.equal((workflow.match(/id-token: write/gu) ?? []).length, 1);
 });
 
-test('signals platform reconciliation only after exact npm artifact verification', async () => {
+test('keeps publication independent of private platform orchestration', async () => {
   const workflow = await readFile(
     new URL('../.github/workflows/publish.yml', import.meta.url),
     'utf8',
   );
   const publishJob = workflow.slice(workflow.indexOf('\n  publish:\n'));
-  const verification = publishJob.indexOf('Verify exact published artifacts and create receipt');
-  const signal = publishJob.indexOf('Signal platform SDK reconciliation');
 
-  assert.ok(verification >= 0, 'Expected exact npm artifact verification.');
-  assert.ok(signal > verification, 'Platform reconciliation must follow artifact verification.');
-  assert.match(publishJob, /Create scoped platform dispatch token/u);
-  assert.match(
-    publishJob,
-    /uses: actions\/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2/u,
-  );
-  assert.match(publishJob, /app-id: \$\{\{ vars\.TILEFLOW_PLATFORM_DISPATCH_APP_ID \}\}/u);
-  assert.match(
-    publishJob,
-    /private-key: \$\{\{ secrets\.TILEFLOW_PLATFORM_DISPATCH_PRIVATE_KEY \}\}/u,
-  );
-  assert.match(publishJob, /owner: tileflow/u);
-  assert.match(publishJob, /repositories: tileflow/u);
-  assert.match(publishJob, /permission-contents: write/u);
-  assert.match(
-    publishJob,
-    /github-token: \$\{\{ steps\.platform-dispatch-token\.outputs\.token \}\}/u,
-  );
-  assert.match(publishJob, /event_type: 'sdk-published'/u);
-  assert.match(publishJob, /source_repository: 'tileflow\/tileflow-sdk'/u);
-  assert.match(publishJob, /release_sha: process\.env\.RELEASE_SHA/u);
-  assert.doesNotMatch(publishJob, /TILEFLOW_PLATFORM_DISPATCH_TOKEN/u);
-
-  const signalLines = publishJob.slice(signal).split('\n');
-  const scriptStart = signalLines.indexOf('          script: |');
-  assert.ok(scriptStart >= 0, 'Expected the platform dispatch script.');
-  const script = [];
-  for (let index = scriptStart + 1; index < signalLines.length; index += 1) {
-    const line = signalLines[index];
-    if (line !== '' && !line.startsWith('            ')) break;
-    script.push(line.startsWith('            ') ? line.slice(12) : line);
-  }
-  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-  assert.doesNotThrow(() => new AsyncFunction('github', 'context', 'core', script.join('\n')));
+  assert.doesNotMatch(publishJob, /TILEFLOW_PLATFORM_DISPATCH_/u);
+  assert.doesNotMatch(publishJob, /create-github-app-token/u);
+  assert.doesNotMatch(publishJob, /createDispatchEvent/u);
+  assert.doesNotMatch(publishJob, /sdk-published/u);
 });
 
 test('binds a Coordinates builder input to the selected runtime tarball inside the release bundle', async () => {

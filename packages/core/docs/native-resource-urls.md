@@ -1,12 +1,14 @@
-# Native resource URLs and manifests
+# Native resource URLs, sources and initial views
 
-`@tileflow/core/native` provides URL helpers and manifest-source coordination for clients without
-a browser origin. Its published entry bundles a private WHATWG parser with IDNA processing. It does not use
-or replace the ambient `URL`, `TextEncoder` or `TextDecoder`, and has no renderer dependency.
+`@tileflow/core/native` provides URL helpers, source coordination and renderer-neutral initial
+views for clients without a browser origin. Its published entry bundles a private WHATWG parser
+with IDNA processing. It does not use or replace the ambient `URL`, `TextEncoder` or `TextDecoder`,
+and has no renderer dependency.
 
-The synchronous URL helpers resolve references only. The optional manifest loader below uses an
-injected bounded acquisition adapter. Neither capability renders maps or authorizes Hosted requests. A successful resolution is not a claim that a style or feature works on
-a particular native renderer. Install `@tileflow/core@alpha` as described in the
+The synchronous URL helpers resolve references only. Manifest sources use an injected bounded
+acquisition adapter; direct MapLibre sources do not make requests. None of these APIs renders maps
+or authorizes Hosted requests. A successful resolution is not a claim that a style or feature works
+on a particular native renderer. Install `@tileflow/core@alpha` as described in the
 [package README](../README.md); the examples use only this package's public exports.
 
 ## Resolve the manifest explicitly
@@ -150,7 +152,7 @@ code units. No parser or codec error is exposed as a cause containing the reject
 From an installed and built SDK checkout:
 
 ```sh
-pnpm --filter @tileflow/core exec tsx --test test/native-runtime-url.test.ts test/native-url-provider.test.ts test/native-url-utf8.test.ts test/native-url-policy.test.ts
+pnpm --filter @tileflow/core exec tsx --test test/native-runtime-url.test.ts test/native-url-provider.test.ts test/native-url-utf8.test.ts test/native-url-policy.test.ts test/native-source-view-package.test.ts
 ```
 
 The existing runtime regression checks the Node host and a React Native URL fixture independently.
@@ -173,9 +175,9 @@ Native acceptance must install the exact tarball in an existing iOS/Android appl
 with the installed `@tileflow/core/native` exports, leaving the application's URL global unchanged.
 The [fixture procedure](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/test/fixtures/native-url-contract.md)
 covers the two explicit development origins without network requests. Packaged Hermes execution
-remains a separate qualification step; static parsing and Node tests do not establish it. This
-URL-provider evidence does not establish acceptance of the manifest loader/source controller below.
-This entry does not render maps, create transport grants or make mobile service availability claims.
+remains a separate qualification step; static parsing and Node tests do not establish it. URL-provider
+checks do not qualify new source/view behavior. This entry does not render maps, create transport
+grants or make mobile service availability claims.
 
 ## Acquire a bounded manifest
 
@@ -225,12 +227,13 @@ hook to finish. It retires an aborted operation immediately, observes late promi
 cancels a reader that arrives after retirement. Physical cancellation of network work still depends
 on the adapter honoring its cancellation methods.
 
-## Control a manifest source
+## Control a source
 
-`createTileflowNativeSourceController({acquire})` coordinates a manifest-backed Tileflow source.
-Its `state` is undefined until the first `replace()`. It then publishes only `loading`, `ready`, or
-`error` snapshots, each with a monotonically increasing `generation`. It has no renderer, camera
-props, Appearance subscription, or direct MapLibre-style branch.
+`createTileflowNativeSourceController({acquire})` coordinates either a manifest-backed Tileflow
+source or an unmanaged direct MapLibre style. Its `state` is undefined until the first `replace()`.
+It then publishes only `loading`, `ready`, or `error` snapshots, each with a monotonically increasing
+`generation`. The acquisition adapter remains required at construction, but is used only for
+Tileflow sources. Core does not mount a renderer or subscribe to device appearance.
 
 The following function expects an acquisition adapter implementing the bounded protocol above.
 The example URL represents an existing manifest endpoint; no network adapter is supplied here.
@@ -254,7 +257,7 @@ export async function connectNativeManifest(acquire: TileflowNativeManifestAcqui
     {theme: 'dark'},
   );
   const state = controller.state;
-  if (state?.status === 'ready') {
+  if (state?.status === 'ready' && state.kind === 'tileflow') {
     console.log(state.map.name, state.theme.name, state.theme.revision);
   } else if (state?.status === 'error') {
     console.error(state.error.code, state.error.field);
@@ -263,25 +266,28 @@ export async function connectNativeManifest(acquire: TileflowNativeManifestAcqui
 }
 ```
 
-A `ready` snapshot contains the immutable requested `source`, the final `manifestUrl`, the resolved
-`manifest`, the selected `map` and concrete `theme`. Map/theme identity and revisions come from the
-manifest. Map-level `apiUrl` takes precedence over manifest-level `apiUrl`; no identity is guessed
-from URL paths. The map's canonical `view` is preserved as metadata. No camera defaults or component
-props are introduced by this controller.
+Every `ready` snapshot has `kind`, which always matches `source.kind`. Narrow `state.kind` to narrow
+the entire ready union in TypeScript. The Tileflow variant retains the immutable requested `source`,
+final `manifestUrl`, resolved `manifest`, selected `map` and concrete `theme` as required fields.
+The direct variant contains only `status`, `generation`, `kind` and its immutable `source`; its style
+is `source.style`. It has no manifest, map or theme fields, not optional placeholders for those fields.
+
+For Tileflow sources, map/theme identity and revisions come from the manifest. Map-level `apiUrl`
+takes precedence over manifest-level `apiUrl`; no identity is guessed from URL paths. The map's
+canonical `view` is preserved as metadata. The controller does not combine camera inputs.
 
 Omitted `theme` uses `defaultTheme`; a concrete theme selects that exact declared name. `system`
 uses the manifest's `systemThemes` mapping only when an explicit `colorScheme: 'light' | 'dark'`
 is supplied. The same portable resolver owns this precedence in the existing runtime. Core never
 reads device appearance. A missing map, missing theme or unresolved system selection is an error;
-there is no first-map or first-theme fallback. Direct MapLibre styles are outside this manifest-only
-controller and must not be routed through it to bypass theme validation.
+there is no first-map or first-theme fallback.
 
-`replace(source, options)` snapshots inputs and retires the prior generation before validating the
-replacement. A failed replacement cannot publish the previous source as newly ready. Only the
-current generation can publish success or error, even when responses arrive out of order or a
-transport ignores cancellation. Each call reacquires the manifest; it does not retain a hidden
-source cache. Its promise settles when that generation completes or is retired; source failures are
-reported in `state`, not as rejected replacement promises. Calling it after disposal rejects with
+`replace(source, options)` snapshots inputs and retires the prior generation. A failed replacement
+cannot publish the previous source as newly ready. Only the current generation can publish success
+or error, even when responses arrive out of order or a transport ignores cancellation. Each Tileflow
+replacement reacquires its manifest; direct replacements make no request. There is no hidden source
+cache. The promise settles when that generation completes or is retired; source failures are reported
+in `state`, not as rejected replacement promises. Calling it after disposal rejects with
 `NATIVE_SOURCE_DISPOSED`.
 
 `subscribe(listener)` synchronously receives the current snapshot, when present, and subsequent
@@ -291,36 +297,120 @@ from receiving an obsolete notification. `dispose()` is idempotent: it retires a
 listeners and retains the last snapshot for inspection without publishing another state. No late
 completion or abort can notify a disposed controller.
 
+## Use an unmanaged direct style
+
+A direct source is `{kind: 'maplibre', style: string | MapLibreStyle}`. It does not call `acquire`,
+parse a manifest, infer Hosted identity, attach credentials, select a Tileflow theme, or fetch the
+style or its resources. A supplied `theme`, including `system`, fails with `NATIVE_THEME_INVALID`.
+An injected `colorScheme` alone has no effect on a direct source.
+
+This example uses an already-created controller; no acquisition adapter is needed for the replacement:
+
+<!-- docs:check -->
+
+```ts
+import type {TileflowNativeSourceController} from '@tileflow/core/native';
+
+export async function useDirectStyle(controller: TileflowNativeSourceController) {
+  await controller.replace({
+    kind: 'maplibre',
+    style: 'https://maps.example.com/styles/light.json',
+  });
+  const state = controller.state;
+  return state?.status === 'ready' && state.kind === 'maplibre' ? state.source.style : undefined;
+}
+```
+
+A string must be an explicit absolute HTTP(S) document URL. It uses the same bounded WHATWG/IDNA
+policy as manifest URLs, including HTTPS by default and an exact opt-in development origin. Relative
+strings and custom protocols are rejected; there is no owner URL to resolve them against.
+
+A style object is copied as data and deeply frozen without freezing or mutating caller-owned
+objects. Its strings, expressions, metadata and resource references are preserved: there is no
+lowering, URL rewriting, font preparation or fallback. Values must be finite JSON data in plain
+objects or dense arrays. Accessors, hidden properties, symbol keys/values, functions, bigint,
+cycles, custom prototypes and `__proto__`, `constructor`, `prototype` or `toJSON` keys are rejected.
+Shared non-cyclic subobjects are copied and counted at each occurrence. This is not a JavaScript
+sandbox: supply data, not executable objects or proxies with side effects.
+
+Direct input uses the existing raw native style ceilings: 8 MiB of compact serialized UTF-8 JSON,
+depth 64, 160,000 visited keys/indexes and values, 4,096 layers and 128 sources. It does not use the
+larger allowance reserved for compiled/lowered artifacts. An oversized direct object can instead
+be delivered through a style URL, with resource acquisition governed by its consuming adapter.
+These checks establish data safety and bounded copying, not conformance to the Style Specification
+or support for a style property on a particular renderer. A direct `ready` state is not a rendering
+or authorization result. Failures use `NATIVE_SOURCE_INVALID` with `field: 'source'`.
+
+Replacing a pending Tileflow source with a direct source retires the manifest operation. Its late
+response, error or abort cannot overwrite the direct state. Switching back to Tileflow follows the
+normal manifest acquisition path. The direct style is snapshotted before observer notifications or
+retired-transport cleanup can mutate the original data.
+
+## Resolve an initial view without a renderer
+
+`resolveTileflowNativeInitialView({view?, mapOptionsView?, manifestView?})` returns an immutable
+`{center, zoom, bearing, pitch}`. All three inputs are partial renderer-neutral view objects, not
+React Native props or MapLibre camera types. Precedence applies independently to each field:
+`view` > `mapOptionsView` > `manifestView` > shared runtime defaults.
+
+<!-- docs:check -->
+
+```ts
+import {resolveTileflowNativeInitialView} from '@tileflow/core/native';
+
+const initialView = resolveTileflowNativeInitialView({
+  manifestView: {center: [-3.7, 40.4], zoom: 10, bearing: 12},
+  mapOptionsView: {zoom: 11, pitch: 30},
+  view: {zoom: 13},
+});
+```
+
+The result is `{center: [-3.7, 40.4], zoom: 13, bearing: 12, pitch: 30}`. With no inputs, the defaults
+are `{center: [0, 20], zoom: 2, bearing: 0, pitch: 0}`. Coordinates always use
+`[longitude, latitude]`; Core neither swaps nor wraps them.
+
+Validation reuses the manifest view grammar: longitude -180 to 180, latitude -90 to 90, zoom 0 to 24,
+bearing -180 to 180 and pitch 0 to 85, all finite. Supplied fields with `undefined` are omitted;
+`null`, out-of-range values, unknown fields, accessors and malformed tuples are errors. Every
+supplied level is validated, even if a higher-precedence level would override it. Invalid explicit
+input never silently falls back. The result owns a new frozen tuple, not a reference to an input or
+to the shared defaults. Failures use `NATIVE_SOURCE_INVALID` with `field: 'view'` and no caller values.
+
+The resolver is synchronous and independent of source control. Calling it again for a camera update
+does not load a manifest, change the selected theme or increment a source generation. It does not
+animate, read device appearance, install listeners or apply the result to a renderer.
+
 ## Handle source errors
 
-Manifest/source operations use `TileflowNativeSourceError` with stable `code`, `field` and `kind`.
-An active external abort produces `kind: 'cancelled'` and `NATIVE_SOURCE_ABORTED`; superseded or
-disposed work cannot publish that error into a newer generation. All acquisition, response, schema
-and selection failures are terminal for that generation. A later explicit `replace()` can retry.
-Tile-resource failures after a map is created are outside this controller and do not get classified
-as manifest failures.
+Source operations and initial-view resolution use `TileflowNativeSourceError` with stable `code`,
+`field` and `kind`. An active external abort produces `kind: 'cancelled'` and `NATIVE_SOURCE_ABORTED`;
+superseded or disposed work cannot publish that error into a newer generation. Acquisition,
+response, schema and selection failures are terminal for that generation. A later explicit
+`replace()` can retry. Tile-resource failures after a map is created are outside this controller
+and do not get classified as manifest failures.
 
-| Code                                                           | Meaning                                                          |
-| -------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `NATIVE_SOURCE_INVALID`                                        | Invalid source, acquisition configuration or cancellation input. |
-| `NATIVE_SOURCE_ABORTED`, `NATIVE_SOURCE_DISPOSED`              | Cancellation or use after controller disposal.                   |
-| `NATIVE_MANIFEST_URL_INVALID`                                  | Invalid request/final URL or development-origin policy.          |
-| `NATIVE_MANIFEST_REQUEST_FAILED`                               | Acquisition/read failure or unsuccessful response.               |
-| `NATIVE_MANIFEST_RESPONSE_INVALID`                             | Invalid response, reader or chunk protocol.                      |
-| `NATIVE_MANIFEST_ACCESS_DENIED`, `NATIVE_MANIFEST_NOT_FOUND`   | HTTP 401/403 or 404, respectively.                               |
-| `NATIVE_MANIFEST_TOO_LARGE`                                    | Actual body or resolved/canonical JSON exceeds the 1 MiB cap.    |
-| `NATIVE_MANIFEST_UTF8_INVALID`, `NATIVE_MANIFEST_JSON_INVALID` | Malformed UTF-8 or JSON.                                         |
-| `NATIVE_MANIFEST_INVALID`                                      | Invalid version-1 structure, relationships or excessive nesting. |
-| `NATIVE_MANIFEST_RESOURCE_INVALID`                             | A manifest resource fails native URL policy.                     |
-| `NATIVE_MAP_NOT_FOUND`, `NATIVE_THEME_INVALID`                 | Missing map or invalid/unresolved theme selection.               |
+| Code | Meaning |
+| --- | --- |
+| `NATIVE_SOURCE_INVALID` | Invalid source, view, acquisition configuration or cancellation input. |
+| `NATIVE_SOURCE_ABORTED`, `NATIVE_SOURCE_DISPOSED` | Cancellation or use after controller disposal. |
+| `NATIVE_MANIFEST_URL_INVALID` | Invalid request/final URL or development-origin policy. |
+| `NATIVE_MANIFEST_REQUEST_FAILED` | Acquisition/read failure or unsuccessful response. |
+| `NATIVE_MANIFEST_RESPONSE_INVALID` | Invalid response, reader or chunk protocol. |
+| `NATIVE_MANIFEST_ACCESS_DENIED`, `NATIVE_MANIFEST_NOT_FOUND` | HTTP 401/403 or 404, respectively. |
+| `NATIVE_MANIFEST_TOO_LARGE` | Actual body or resolved/canonical JSON exceeds the 1 MiB cap. |
+| `NATIVE_MANIFEST_UTF8_INVALID`, `NATIVE_MANIFEST_JSON_INVALID` | Malformed UTF-8 or JSON. |
+| `NATIVE_MANIFEST_INVALID` | Invalid version-1 structure, relationships or excessive nesting. |
+| `NATIVE_MANIFEST_RESOURCE_INVALID` | A manifest resource fails native URL policy. |
+| `NATIVE_MAP_NOT_FOUND`, `NATIVE_THEME_INVALID` | Missing map or invalid/unresolved theme selection; a theme on a direct source. |
 
-Fields identify only `source`, `signal`, `manifestUrl`, `response`, `body`, `map` or `theme`. Errors
-never carry a rejected URL, response body, credential, remote exception, schema issue list or abort
-reason. Successful snapshots necessarily contain resource URLs; treat them as potentially sensitive
-when logging. The synchronous URL helpers retain their existing `TileflowNativeUrlError` contract.
+Fields identify only `source`, `signal`, `manifestUrl`, `response`, `body`, `map`, `theme` or `view`.
+Errors never carry a rejected URL, response body, credential, remote exception, schema issue list or
+abort reason. Successful snapshots necessarily contain resource URLs; treat them as potentially
+sensitive when logging. The synchronous URL helpers retain their existing `TileflowNativeUrlError`
+contract. A view error is thrown by the pure resolver and does not change controller state.
 
-These APIs acquire and select manifests. They do not establish a style's cartographic compatibility,
-fetch its resources, render a map, create Hosted authorization or sessions, or provide a React Native
-component. The accepted URL-provider checks do not qualify the new loader/controller in Hermes.
-Its packed iOS/Android execution and the adapter's actual bounded-read behavior require their own
-validation; Node tests and browser captures do not establish those results.
+These APIs acquire manifests, snapshot direct sources and resolve view data. They do not load styles,
+validate their cartographic compatibility, fetch their resources, render maps, create Hosted
+authorization or sessions, or provide a React Native component. New direct-source and view behavior
+requires its own packed Hermes checks; prior URL/manifest checks, Node tests and browser captures do
+not establish those results.

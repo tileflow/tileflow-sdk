@@ -31,3 +31,10 @@ export {
   type TileflowMapTooling,
   type TileflowStandaloneMap,
 } from './types';
+
+export {
+  iconSet,
+  type TileflowIconSource,
+  type TileflowIconSetSource,
+  type TileflowIconSetReference,
+} from '../icon-set';

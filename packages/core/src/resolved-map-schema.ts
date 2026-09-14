@@ -1,5 +1,11 @@
 import {z} from 'zod';
 import {
+  collectTileflowIconSetReferences,
+  tileflowIconSetSourceSchema,
+  tileflowIconSourceLimit,
+  type TileflowIconSource,
+} from './icon-set';
+import {
   tileflowRenderStackOperationNamePattern,
   tileflowSemanticTargetPattern,
 } from './cartography/contributions';
@@ -1804,7 +1810,21 @@ const packageAssetDirectorySchema = z
   })
   .strict();
 const assetDirectorySchema = z.union([localAssetDirectorySchema, packageAssetDirectorySchema]);
-const iconDirectoriesSchema = z.array(assetDirectorySchema).max(32);
+const iconDirectoriesSchema = z
+  .array(
+    z.union([localAssetDirectorySchema, packageAssetDirectorySchema, tileflowIconSetSourceSchema]),
+  )
+  .max(tileflowIconSourceLimit)
+  .superRefine((sources, context) => {
+    try {
+      collectTileflowIconSetReferences(sources as TileflowIconSource[]);
+    } catch (cause) {
+      context.addIssue({
+        code: 'custom',
+        message: cause instanceof Error ? cause.message : 'Invalid icon contributors',
+      });
+    }
+  });
 const fontDirectoriesSchema = z.array(assetDirectorySchema).max(16);
 const fontStacksSchema = z
   .array(

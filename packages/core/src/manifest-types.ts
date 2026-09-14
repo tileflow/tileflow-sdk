@@ -46,4 +46,3 @@ export type TileflowRuntimeManifest = {
   maps: Record<string, TileflowRuntimeManifestMapEntry>;
   version: typeof tileflowRuntimeManifestVersion;
 };
-

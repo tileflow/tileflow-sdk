@@ -26,7 +26,8 @@ console.log(diagnostics);
 
 The result is an empty array for a style that passes this profile, or bounded structured errors.
 `assertTileflowNativeStyle()` throws `TileflowNativeCompatibilityError` for the same errors.
-Neither function modifies the input. Relative resources require the explicit `documentUrl` option
+Neither function modifies the input. Both enforce the raw input budget, even when given a style
+that was already prepared. Relative resources require the explicit `documentUrl` option
 and resolve against that declaring style; it is not inferred from a browser or Metro address.
 
 Use the [Dev artifact pipeline](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-artifacts.md)
@@ -69,8 +70,9 @@ logical map revision.
 
 Dev's `native-lowering-v1` preparation policy explicitly converts a fixed `{type: 'globe'}`
 projection to Native's implicit Mercator before this validator runs. This is a recorded projection
-change, not globe support or visual equivalence. It also lowers proven finite `line-cap` and
-`line-dasharray` decisions into constant-property layers. The raw validator continues to reject
+change, not globe support or visual equivalence. One authored map serves web and native preparation;
+no native-specific Streets definition is used. Preparation adapts only finite `line-cap` and
+`line-dasharray` decisions into constant-property layers. Other unsupported properties have no implicit fallback. The raw validator continues to reject
 unlowered unsupported expressions. See the [preparation contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-artifacts.md)
 for the grammar, expansion limits and pending native visual checks. The lowering checks establish
 per-feature selection and cap/dash values, not global feature draw order. A copied `line-sort-key`
@@ -93,12 +95,38 @@ The `deferFontClosure` option is only for compiler preflight before font prepara
 does not prove text-provider closure. The Dev pipeline always performs the final full validation
 after preparation; external callers must not present a preflight result as a complete artifact check.
 
-The validator limits JSON to 8 MiB of serialized UTF-8, depth 64 and 160,000 visited values, with at
-most 128 sources, 4,096 layers, 16 prepared font faces and 32 returned errors. The same bounds apply
-after lowering; expansion that exceeds them fails before an output generation can be written.
-Prepared font bytes retain the existing 1 MiB per-face bound. URL, icon and sprite limits remain the
-owning pipelines' limits. These are local validation-work bounds, not download, GPU-memory or billing
-limits.
+## Input and prepared-style budgets
+
+`tileflowNativeProfileLimits` and `validateTileflowNativeStyle()` keep untrusted compiler input at
+**160,000 visited JSON nodes**. Dev applies this gate before lowering. The raw validator has no
+option to borrow the output allowance, and preparation never retries rejected input with a larger
+budget. Exceeding the input bound remains `NATIVE_UNSUPPORTED_STYLE` at the root style pointer.
+
+`tileflowNativePreparedStyleLimits` and `validateTileflowNativePreparedStyle()` use a separate fixed
+ceiling of **540,000 nodes** for the expanded representation. The latter performs the same semantic,
+source, font and URL checks; it does not lower a style, relax unsupported properties or establish
+that the input came from a trusted build. Use it to check prepared artifact JSON, not as the entry
+gate for authoring. Dev uses it after lowering, after font preparation and after generation URL
+retargeting, before writing the output generation.
+
+Both stages use the same traversal. Each object key or array index and each value counts as a
+node. Both retain **8 MiB of serialized UTF-8, depth 64, 128 sources, 4,096 layers, 16 prepared font
+faces and 32 returned errors**. Cycles, getters, sparse arrays, non-JSON values and `toJSON` hooks
+remain invalid. The prepared budget changes only the node allowance; per-decision and per-layer
+expansion limits also remain mandatory.
+
+The measured full Streets family expands from 122,253 to 513,321 nodes for dark and from 122,163 to
+513,231 for light. The 540,000-node ceiling leaves 26,679/26,769 nodes (about 5.2%) of headroom rather
+than multiplying the raw allowance arbitrarily. This accommodates the bounded prepared
+representation, not unbounded growth of custom styles. Prepared font bytes retain the existing
+1 MiB per-face bound; URL, icon and sprite limits retain their owning pipelines' bounds. These are
+validation-work limits, not download, GPU-memory or billing limits.
+
+Allowing the larger prepared representation increases the maximum traversal and parser workload.
+The byte, depth, layer and decision bounds still apply; there is no caller-selected unlimited
+mode. The node traversal stops at its ceiling before JSON serialization and semantic parsing.
+These finite limits are not a latency guarantee for every machine or a substitute for admission
+controls in an application accepting arbitrary artifacts.
 
 ## Read diagnostics
 

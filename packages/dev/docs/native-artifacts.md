@@ -75,9 +75,19 @@ reordered. Existing sort-key expressions are retained, not simplified or replace
 
 Work is bounded per property by depth 16, 512 decision visits, 64 decision paths, 16 distinct
 outcomes and 64 dash elements; the product is limited to 32 physical layers and 32 zoom intervals
-per logical layer. The entire lowered style must still fit 4,096 layers, 160,000 visited JSON values,
-depth 64 and 8 MiB. Limits are checked before writing outputs; preparation does not raise them to
-make a particular map pass. A failure leaves the previous valid generation intact.
+per logical layer. Raw compiler input must fit 160,000 JSON nodes before any lowering. Its expanded
+native representation has a separate fixed 540,000-node ceiling, checked after lowering, after
+font preparation and after generation URL retargeting. Both stages retain 4,096 layers, depth 64
+and 8 MiB. No caller option raises either budget and no rejected input is retried under the output
+allowance. A failure occurs before output writes and leaves the previous valid generation intact.
+
+This is one shared authored map, not a second mobile catalog: the native-v1 representation adapts
+only finite `line-cap`/`line-dasharray` decisions, together with its explicit fixed-projection
+policy. Unsupported advanced expressions or other properties fail with their native diagnostic
+and JSON Pointer; their web behavior is unchanged. The raw and prepared validators share their
+semantic checks and bounded traversal. See the
+[Core budget contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-artifact-profile.md#input-and-prepared-style-budgets)
+for the measured Streets sizes and the approximately 5.2% output margin.
 
 The equivalence checks cover per-feature selection, cap/dash values and zoom ranges, **not draw
 order across features**. Copying `line-sort-key` preserves ordering only inside each physical
@@ -86,12 +96,15 @@ the second, the physical layers draw them as 1 then 0 instead of 0 then 1. Both 
 mutually exclusive filters yet have overlapping geometry. The resulting composition can differ,
 not merely its antialiasing. Even without a sort key, partitioning can change source feature order.
 
-Applications requiring exact overlapping-feature order must not treat a feature-partitioned
-artifact as order-equivalent to its web style. A static-compatible result does not establish
-complete cartographic or pixel equivalence. Native visual qualification remains a separate pending
-gate on the pinned iOS/Android renderers, including overlaps between branches, sort keys, dash
-transitions, camera movement and projection differences. Browser capture cannot satisfy this gate,
-and visual samples alone cannot prove preservation of arbitrary feature order.
+The native-lowering-v1 policy permits these bounded partitions without promising identical global
+feature order. Applications requiring exact overlapping-feature order must not treat such an
+artifact as order-equivalent to its web style. Automated checks establish feature selection,
+cap/dash values, zoom ranges, determinism and resource bounds, not pixel equivalence.
+
+A small directed iOS/Android rendering check of cap/dash/overlap remains to be run using the recipe
+below. Full visual qualification belongs to the general mobile release gate; it is not claimed
+by artifact preparation. Browser capture cannot replace either native check, and a few visual
+samples cannot prove preservation of arbitrary feature order.
 
 ## Write a separate output
 
@@ -175,6 +188,51 @@ dominates; they are not an additive byte decomposition. The counters include arr
 the profile's existing node convention. Retain the report with the checkout SHA. An over-budget
 result must not be treated as a successful native build or fixed by dropping layers or weakening
 validation. The test suite prints the two-theme size summary even when a budget assertion fails.
+
+## Prepare Streets for a directed native check
+
+From a source checkout, install and build the pinned workspace first. The test-only
+`test/fixtures/native-streets.config.ts` exports the unchanged official Streets definition. It
+exists to make artifact generation repeatable without a second compiler, custom map or native
+harness. From the SDK root:
+
+```sh
+pnpm --filter @tileflow/dev exec node ../cli/dist/index.js validate \
+  --config test/fixtures/native-streets.config.ts --renderer native --target local --json
+pnpm --filter @tileflow/dev exec node ../cli/dist/index.js build \
+  --config test/fixtures/native-streets.config.ts --renderer native --target local \
+  --out output/native-streets --json
+pnpm exec tsx scripts/native-lowering-audit.ts > /tmp/native-lowering-audit.json
+```
+
+The output root is `packages/dev/output/native-streets/native`. It contains
+`styles/streets/dark.json`, `styles/streets/light.json`, their shared sprite/font assets, a version-1
+`manifest.json` and the version-2 `native-build.json` receipt. Keep the complete directory together.
+The manifest points to the content-addressed generation; use those URLs for an actual render.
+Do not copy only the two style files and leave their relative assets behind. Record the checkout
+SHA, both prepared style hashes, engine versions and the resource origin used for the check.
+The fixture and output are source-checkout tools, not a published mobile component or a baseline.
+
+Use an existing native test application with the pinned engines and a reachable artifact origin;
+artifact generation starts no server and requests no deployment. Load the same generated manifest
+family independently on iOS and Android. A useful starting viewport is a dense road/rail junction
+with visible paths and bridges; select one where the loaded vector data actually contains features
+for the transformed layers listed in `/tmp/native-lowering-audit.json`. Use the audit's exact
+physical IDs, source layers, branch counts and zoom intervals rather than assuming that a map
+location exercises every branch.
+
+Check both themes at the same center, viewport, pitch 0 and bearing 0. Exercise at least one cap
+partition, one dashed/solid partition and an overlap between simultaneously active branches. Pan
+slightly and inspect just below/at/above the relevant audit zoom cuts (for example 15.99/16/16.01
+when a selected interval changes at 16). Check that caps and dash patterns are visible, layers do
+not disappear or double-select a feature, theme replacement preserves the scene, and no resource
+or style errors are reported. Inspect overlapping strokes for the documented composition
+trade-off, not for equality with web drawing order. Keep brief per-platform observations and
+explicitly distinguish an unexercised branch from a passed one.
+
+This check has not been run by the artifact tests. It neither establishes full iOS/Android visual
+qualification nor creates a screenshot baseline. Renderers, native view lifecycle, network
+transport and mobile distribution remain outside these build tools.
 
 ## Reproduce the official-map report
 

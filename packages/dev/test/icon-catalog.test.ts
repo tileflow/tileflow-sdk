@@ -97,7 +97,10 @@ test('inspection exposes exact directory order, winning sources, and later-wins 
       },
     ]);
     const cafe = composed.icons.find((icon) => icon.id === 'cafe')?.source;
-    assert.equal(cafe?.kind === 'file' && cafe.byteLength, (await readFile(join(cwd, 'icons', 'brand', 'cafe.svg'))).byteLength);
+    assert.equal(
+      cafe?.kind === 'file' && cafe.byteLength,
+      (await readFile(join(cwd, 'icons', 'brand', 'cafe.svg'))).byteLength,
+    );
     assert.equal(cafe?.contributor, 1);
 
     for (const catalog of inspection.catalogs) {

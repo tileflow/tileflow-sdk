@@ -107,7 +107,9 @@ test('the normal artifact path composes two exact pins with a later local overri
   const realCwd = await realpath(cwd);
   assert.ok(plan.inputs.files.includes(join(realCwd, tileflowIconsLockfileName)));
   assert.ok(plan.inputs.directories.includes(join(realCwd, 'icons')));
-  assert.ok((await getTileflowWatchPaths({cwd})).includes(join(realCwd, tileflowIconsLockfileName)));
+  assert.ok(
+    (await getTileflowWatchPaths({cwd})).includes(join(realCwd, tileflowIconsLockfileName)),
+  );
 });
 
 test('a local-only map keeps its exact prior sprite bytes, manifest and content hash', async (t) => {

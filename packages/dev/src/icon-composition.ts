@@ -171,7 +171,10 @@ export async function composeTileflowIconSources(
       details[ordinal] = {
         entries: directory.entries,
         iconIds: directory.iconIds,
-        insideWorkingTree: isPathInside((realCwd ??= await realpath(options.cwd)), directory.realPath),
+        insideWorkingTree: isPathInside(
+          (realCwd ??= await realpath(options.cwd)),
+          directory.realPath,
+        ),
         kind: typeof source === 'string' ? 'local' : 'package',
         label: directory.label,
       };

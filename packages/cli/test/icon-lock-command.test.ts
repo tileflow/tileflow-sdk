@@ -35,9 +35,7 @@ async function realPin(setIndex: number, version: number, iconId: string) {
     height: 2 * ratio,
     rgba: new Uint8Array(4 * ratio * 2 * ratio * 4).fill(setIndex * 16 + version),
   });
-  const artifact = await packTileflowRenderedIcons([
-    {id: iconId, oneX: cell(1), twoX: cell(2)},
-  ]);
+  const artifact = await packTileflowRenderedIcons([{id: iconId, oneX: cell(1), twoX: cell(2)}]);
   const packageId = `icp_${artifact.contentHash.slice(0, 16)}`;
   return {
     ...pin(setIndex, version),

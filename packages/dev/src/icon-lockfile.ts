@@ -17,9 +17,7 @@ import {readSafeFile} from './icon-cache';
  * `null` means no lock exists yet. The returned text is the only valid `expectedContents` for a
  * later `writeTileflowIconsLockfile` call, so a concurrent writer can never be silently lost.
  */
-export async function readTileflowIconsLockfileText(
-  baseDirectory: string,
-): Promise<string | null> {
+export async function readTileflowIconsLockfileText(baseDirectory: string): Promise<string | null> {
   return readLockText(join(resolve(baseDirectory), tileflowIconsLockfileName));
 }
 

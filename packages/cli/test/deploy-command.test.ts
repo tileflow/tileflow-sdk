@@ -878,10 +878,15 @@ test('deploy binds one composition receipt to the effective package in manifest 
   assert.equal(body.iconComposition.packageHash, body.iconPackage?.contentHash);
   assert.equal(
     body.iconComposition.packageHash,
-    requests.find((request) => request.method === 'PUT')?.url?.split('/').pop(),
+    requests
+      .find((request) => request.method === 'PUT')
+      ?.url?.split('/')
+      .pop(),
   );
   assert.deepEqual(
-    body.iconComposition.contributors.map((contributor) => contributor.reference ?? contributor.kind),
+    body.iconComposition.contributors.map(
+      (contributor) => contributor.reference ?? contributor.kind,
+    ),
     ['@acme/brand', '@acme/transport', 'local'],
   );
   // The referenced source revisions are never re-uploaded by a deploy.

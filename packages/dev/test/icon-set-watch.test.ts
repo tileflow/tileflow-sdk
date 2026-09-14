@@ -66,8 +66,8 @@ test('a lock edit rebuilds from its new exact pins without any catalog lookup', 
   await writeFile(join(cwd, tileflowIconsLockfileName), await serializeTileflowIconsLockfile(lock));
   await session.refresh('lock edit');
 
-  const updated = session.getLastGoodArtifacts()?.buildManifest.maps.main!.sourceAssets
-    .iconComposition;
+  const updated =
+    session.getLastGoodArtifacts()?.buildManifest.maps.main!.sourceAssets.iconComposition;
   assert.ok(updated);
   assert.equal(
     updated.contributors[0]!.kind === 'icon-set' && updated.contributors[0]!.version,

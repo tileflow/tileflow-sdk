@@ -546,8 +546,5 @@ test('the Vite production build emits the exact locked icon composition', async 
   ) as Record<string, unknown>;
   assert.deepEqual(Object.keys(sprite).sort(), ['bus', 'hospital', 'shop']);
   // The composed sprite is one effective atlas, never a runtime multi-sprite dependency.
-  assert.equal(
-    emitted.filter((asset) => asset.fileName?.endsWith('/sprite.json')).length,
-    2,
-  );
+  assert.equal(emitted.filter((asset) => asset.fileName?.endsWith('/sprite.json')).length, 2);
 });

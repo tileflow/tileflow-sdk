@@ -197,26 +197,27 @@ function createMapJson(
       composition: mapIcons.composition,
       sources: [...catalog.icons]
         .sort((left, right) => compareCodeUnits(left.id, right.id))
-        .map((icon): TileflowIconSourceJson =>
-          icon.source.kind === 'icon-set'
-            ? {
-                kind: 'icon-set',
-                id: icon.id,
-                contributor: icon.source.contributor,
-                reference: icon.source.reference,
-                version: icon.source.version,
-              }
-            : {
-                kind: 'file',
-                id: icon.id,
-                contributor: icon.source.contributor,
-                path: icon.source.path,
-                format: icon.source.format,
-                byteLength: icon.source.byteLength,
-                dimensions: icon.source.dimensions
-                  ? {width: icon.source.dimensions.width, height: icon.source.dimensions.height}
-                  : null,
-              },
+        .map(
+          (icon): TileflowIconSourceJson =>
+            icon.source.kind === 'icon-set'
+              ? {
+                  kind: 'icon-set',
+                  id: icon.id,
+                  contributor: icon.source.contributor,
+                  reference: icon.source.reference,
+                  version: icon.source.version,
+                }
+              : {
+                  kind: 'file',
+                  id: icon.id,
+                  contributor: icon.source.contributor,
+                  path: icon.source.path,
+                  format: icon.source.format,
+                  byteLength: icon.source.byteLength,
+                  dimensions: icon.source.dimensions
+                    ? {width: icon.source.dimensions.width, height: icon.source.dimensions.height}
+                    : null,
+                },
         ),
     },
   };

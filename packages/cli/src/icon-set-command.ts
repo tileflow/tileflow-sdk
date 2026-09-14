@@ -2,10 +2,7 @@ import type {Command} from 'commander';
 import pc from 'picocolors';
 import {isAbsolute} from 'node:path';
 import {tileflowIconSetPinSchema, tileflowIconSetReferenceSchema} from '@tileflow/core';
-import {
-  type CompiledTileflowIconPackage,
-  composeTileflowIconSources,
-} from '@tileflow/dev/icons';
+import {type CompiledTileflowIconPackage, composeTileflowIconSources} from '@tileflow/dev/icons';
 import {z} from 'zod';
 import type {AuthConfigV2} from './account-session';
 import {

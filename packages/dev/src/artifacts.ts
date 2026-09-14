@@ -369,11 +369,9 @@ export async function createTileflowArtifactPlan(
         [...prepared.watchPaths, ...preparedFonts.watchPaths].map(canonicalInputPath),
       ),
       files: uniqueStrings(
-        [
-          ...(options.inputFiles ?? []),
-          ...prepared.watchFiles,
-          ...localTilesets.watchPaths,
-        ].map(canonicalInputPath),
+        [...(options.inputFiles ?? []), ...prepared.watchFiles, ...localTilesets.watchPaths].map(
+          canonicalInputPath,
+        ),
       ),
     };
     const partial: TileflowBuildArtifacts = {

@@ -213,6 +213,44 @@ explicit, requires confirmation, and can be blocked by retained deployment depen
 prepared icon identities; they do not turn package directories into a separate hosted library.
 Use the installed command's help for exact arguments and supported JSON output.
 
+## Team Icon Sets and repository locks
+
+Two intentionally separate families cover shared icons. `icon-set` manages the remote Team catalog
+with Team authority; `icons install|update|pin` maintain the repository's exact
+`tileflow.icons.lock.json` beside the selected config.
+
+```sh
+npx tileflow icon-set publish ./icons --id brand --team @acme --idempotency-key brand-2026-09-14 --json
+npx tileflow icon-set versions brand --team @acme --json
+npx tileflow icons install --team @acme --json
+npx tileflow icons pin @acme/brand --version 3 --team @acme --json
+```
+
+Use your own directory, Team selector, and retry key. `publish` compiles one local directory into
+the four generated sprite files and creates an immutable integer revision; republishing identical
+bytes reports `unchanged` and reuses the same revision. `list`, `status`, `versions` and `uses` are
+bounded Team reads. `archive` and `unarchive` change only catalog state and never remove retained
+revisions. `purge <slug> --version <n>` additionally requires `--idempotency-key`, an exact
+`--confirm @team/set@version`, and `--acknowledge-unknown-locks`, because repository locks that were
+never deployed are not discoverable and already-downloaded public bytes cannot be revoked.
+
+The lock commands inspect the `iconSet()` references your config declares. They are the only
+commands that resolve `latest`, and the only ones that write the lock. `install` fills in declared
+references that have no pin, `update` moves selected references to their current latest revision,
+and `pin` selects one exact revision. Every requested reference is resolved before a single
+compare-and-swap write of the whole snapshot, so a concurrent writer fails the command instead of
+losing its pins. No lock command rewrites `tileflow.config.ts`.
+
+`validate`, `build`, `preview`, `deploy`, `icons list` and `icons diff` read the lock and never
+resolve a catalog head. `--cache-dir` chooses the verified artifact cache root and `--offline` fails
+a cache miss instead of hydrating it. Publishing a newer revision changes nothing in a repository
+until `install`, `update` or `pin` changes its exact pin.
+
+These commands require an account session or a Team data key carrying `icons:read` for reads and
+`icons:write` for publication, archive state and purge. A Map-scoped deploy key never gains catalog
+authority. Availability depends on your deployment; check the installed command's help and your
+Team's enabled features.
+
 ## Local coordinate commands
 
 `setup coordinates` and `coordinates search|describe|operations|transform` require a compatible,

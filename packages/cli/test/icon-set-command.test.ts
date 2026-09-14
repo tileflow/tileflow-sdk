@@ -114,17 +114,19 @@ test('Team data keys read the Icon Set catalog without loading account state', a
     captured,
   );
 
-  await output.run(() => command.parseAsync([
-    'node',
-    'tileflow',
-    'icon-set',
-    'list',
-    '--api-url',
-    'https://api.example.test',
-    '--api-key',
-    apiKey,
-    '--json',
-  ]));
+  await output.run(() =>
+    command.parseAsync([
+      'node',
+      'tileflow',
+      'icon-set',
+      'list',
+      '--api-url',
+      'https://api.example.test',
+      '--api-key',
+      apiKey,
+      '--json',
+    ]),
+  );
 
   assert.equal(captured.length, 1);
   assert.equal(captured[0]!.url, 'https://api.example.test/v1/icon-sets?limit=100');
@@ -154,21 +156,19 @@ test('list follows bounded cursors and rejects a repeated page', async (t) => {
     (request) =>
       Response.json(
         request.url.includes('cursor=')
-          ? {schemaVersion: 1, sets: [{...set, id: 'ics_0000000000000002', reference: '@acme/transport'}], nextCursor: null}
+          ? {
+              schemaVersion: 1,
+              sets: [{...set, id: 'ics_0000000000000002', reference: '@acme/transport'}],
+              nextCursor: null,
+            }
           : {schemaVersion: 1, sets: [set], nextCursor: 'next-page'},
       ),
     captured,
   );
 
-  await output.run(() => command.parseAsync([
-    'node',
-    'tileflow',
-    'icon-set',
-    'list',
-    '--api-key',
-    apiKey,
-    '--json',
-  ]));
+  await output.run(() =>
+    command.parseAsync(['node', 'tileflow', 'icon-set', 'list', '--api-key', apiKey, '--json']),
+  );
 
   assert.deepEqual(
     captured.map((request) => request.url),
@@ -207,20 +207,22 @@ test('publish sends the exact four generated files with one durable idempotency 
     });
   }, captured);
 
-  await output.run(() => command.parseAsync([
-    'node',
-    'tileflow',
-    'icon-set',
-    'publish',
-    './icons',
-    '--id',
-    'brand',
-    '--api-key',
-    apiKey,
-    '--idempotency-key',
-    'publish-key-0001',
-    '--json',
-  ]));
+  await output.run(() =>
+    command.parseAsync([
+      'node',
+      'tileflow',
+      'icon-set',
+      'publish',
+      './icons',
+      '--id',
+      'brand',
+      '--api-key',
+      apiKey,
+      '--idempotency-key',
+      'publish-key-0001',
+      '--json',
+    ]),
+  );
 
   assert.equal(captured.length, 1);
   const request = captured[0]!;
@@ -232,10 +234,12 @@ test('publish sends the exact four generated files with one durable idempotency 
   assert.equal(request.headers.get('idempotency-key'), 'publish-key-0001');
   assert.ok(request.body instanceof FormData);
   const form = request.body;
-  assert.deepEqual(
-    [...form.keys()].sort(),
-    ['sprite.json', 'sprite.png', 'sprite@2x.json', 'sprite@2x.png'],
-  );
+  assert.deepEqual([...form.keys()].sort(), [
+    'sprite.json',
+    'sprite.png',
+    'sprite@2x.json',
+    'sprite@2x.png',
+  ]);
   for (const [name, value] of form.entries()) {
     assert.ok(value instanceof File, `${name} must be a file part`);
     assert.equal(value.name, name);
@@ -272,20 +276,22 @@ test('an unchanged republication reports the same revision without a new integer
     });
   }, captured);
 
-  await output.run(() => command.parseAsync([
-    'node',
-    'tileflow',
-    'icon-set',
-    'publish',
-    './icons',
-    '--id',
-    'brand',
-    '--api-key',
-    apiKey,
-    '--idempotency-key',
-    'publish-key-0001',
-    '--json',
-  ]));
+  await output.run(() =>
+    command.parseAsync([
+      'node',
+      'tileflow',
+      'icon-set',
+      'publish',
+      './icons',
+      '--id',
+      'brand',
+      '--api-key',
+      apiKey,
+      '--idempotency-key',
+      'publish-key-0001',
+      '--json',
+    ]),
+  );
 
   const document = JSON.parse(output.stdout) as Record<string, unknown>;
   assert.equal(document.publication, 'unchanged');
@@ -307,26 +313,30 @@ test('archive and unarchive patch only the catalog display state', async (t) => 
   };
   const command = program(() => Response.json({schemaVersion: 1, set}), captured);
 
-  await output.run(() => command.parseAsync([
-    'node',
-    'tileflow',
-    'icon-set',
-    'archive',
-    'brand',
-    '--api-key',
-    apiKey,
-    '--json',
-  ]));
-  await output.run(() => command.parseAsync([
-    'node',
-    'tileflow',
-    'icon-set',
-    'unarchive',
-    'brand',
-    '--api-key',
-    apiKey,
-    '--json',
-  ]));
+  await output.run(() =>
+    command.parseAsync([
+      'node',
+      'tileflow',
+      'icon-set',
+      'archive',
+      'brand',
+      '--api-key',
+      apiKey,
+      '--json',
+    ]),
+  );
+  await output.run(() =>
+    command.parseAsync([
+      'node',
+      'tileflow',
+      'icon-set',
+      'unarchive',
+      'brand',
+      '--api-key',
+      apiKey,
+      '--json',
+    ]),
+  );
 
   assert.deepEqual(
     captured.map((request) => [request.method, request.url, request.body]),
@@ -359,71 +369,74 @@ test('purge requires the exact confirmation and an explicit unknown-lock acknowl
     captured,
   );
 
-  await output.run(() => command.parseAsync([
-    'node',
-    'tileflow',
-    'icon-set',
-    'purge',
-    'brand',
-    '--version',
-    '2',
-    '--confirm',
-    '@acme/brand@3',
-    '--acknowledge-unknown-locks',
-    '--idempotency-key',
-    'purge-key-0001',
-    '--api-key',
-    apiKey,
-    '--json',
-  ]));
+  await output.run(() =>
+    command.parseAsync([
+      'node',
+      'tileflow',
+      'icon-set',
+      'purge',
+      'brand',
+      '--version',
+      '2',
+      '--confirm',
+      '@acme/brand@3',
+      '--acknowledge-unknown-locks',
+      '--idempotency-key',
+      'purge-key-0001',
+      '--api-key',
+      apiKey,
+      '--json',
+    ]),
+  );
   assert.equal(captured.length, 0);
   assert.match(output.stderr, /confirm/iu);
 
   process.exitCode = 0;
-  await output.run(() => command.parseAsync([
-    'node',
-    'tileflow',
-    'icon-set',
-    'purge',
-    'brand',
-    '--version',
-    '2',
-    '--confirm',
-    '@acme/brand@2',
-    '--idempotency-key',
-    'purge-key-0001',
-    '--api-key',
-    apiKey,
-    '--json',
-  ]));
+  await output.run(() =>
+    command.parseAsync([
+      'node',
+      'tileflow',
+      'icon-set',
+      'purge',
+      'brand',
+      '--version',
+      '2',
+      '--confirm',
+      '@acme/brand@2',
+      '--idempotency-key',
+      'purge-key-0001',
+      '--api-key',
+      apiKey,
+      '--json',
+    ]),
+  );
   assert.equal(captured.length, 0);
   assert.match(output.stderr, /acknowledge/iu);
 
   process.exitCode = 0;
   output.stdout = '';
-  await output.run(() => command.parseAsync([
-    'node',
-    'tileflow',
-    'icon-set',
-    'purge',
-    'brand',
-    '--version',
-    '2',
-    '--confirm',
-    '@acme/brand@2',
-    '--acknowledge-unknown-locks',
-    '--idempotency-key',
-    'purge-key-0001',
-    '--api-key',
-    apiKey,
-    '--json',
-  ]));
+  await output.run(() =>
+    command.parseAsync([
+      'node',
+      'tileflow',
+      'icon-set',
+      'purge',
+      'brand',
+      '--version',
+      '2',
+      '--confirm',
+      '@acme/brand@2',
+      '--acknowledge-unknown-locks',
+      '--idempotency-key',
+      'purge-key-0001',
+      '--api-key',
+      apiKey,
+      '--json',
+    ]),
+  );
   assert.equal(captured.length, 1);
   assert.equal(captured[0]!.method, 'POST');
-  assert.equal(
-    captured[0]!.url,
-    'https://api.tileflow.dev/v1/icon-sets/brand/versions/2/purge',
-  );
+  assert.equal(captured[0]!.url, 'https://api.tileflow.dev/v1/icon-sets/brand/versions/2/purge');
   assert.equal(captured[0]!.headers.get('idempotency-key'), 'purge-key-0001');
   assert.deepEqual(JSON.parse(String(captured[0]!.body)), {
     acknowledgeUnknownLocks: true,
@@ -477,9 +490,7 @@ test('account sessions exchange for a Team capability carrying only Icon Set sco
     command.parseAsync(['node', 'tileflow', 'icon-set', 'list', '--team', '@acme', '--json']),
   );
 
-  const capability = captured.find((request) =>
-    request.url.endsWith('/v1/cli/team-capabilities'),
-  );
+  const capability = captured.find((request) => request.url.endsWith('/v1/cli/team-capabilities'));
   assert.ok(capability);
   assert.deepEqual(JSON.parse(String(capability.body)), {scopes: ['icons:read'], team: '@acme'});
   assert.deepEqual((JSON.parse(output.stdout) as {team: unknown}).team, {
@@ -500,16 +511,18 @@ test('a rejected credential emits a sanitized bounded failure document', async (
     captured,
   );
 
-  await output.run(() => command.parseAsync([
-    'node',
-    'tileflow',
-    'icon-set',
-    'status',
-    'brand',
-    '--api-key',
-    apiKey,
-    '--json',
-  ]));
+  await output.run(() =>
+    command.parseAsync([
+      'node',
+      'tileflow',
+      'icon-set',
+      'status',
+      'brand',
+      '--api-key',
+      apiKey,
+      '--json',
+    ]),
+  );
 
   const failure = JSON.parse(output.stderr) as {error: {code: string; message: string}};
   assert.equal(failure.error.code, 'http_403');

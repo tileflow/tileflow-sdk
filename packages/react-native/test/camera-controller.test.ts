@@ -83,6 +83,7 @@ test('adopted gesture changes emit immutable views and need no return command', 
 	t.camera.changeGesture(gesture, view(3));
 	t.camera.changeGesture(gesture, view(3));
 	t.camera.endGesture(gesture, view(4));
+	t.camera.settleGesture(gesture);
 	assert.deepEqual(events.map((event) => event.view.zoom), [3, 4]);
 	assert.deepEqual(Object.keys(events[0]!).sort(), ['type', 'view']);
 	assert.ok(events.every((event) => Object.isFrozen(event) && Object.isFrozen(event.view.center)));
@@ -90,7 +91,7 @@ test('adopted gesture changes emit immutable views and need no return command', 
 	assert.equal(t.camera.view?.zoom, 4);
 });
 
-test('an unadopted gesture returns once to the latest received controlled view', async () => {
+test('an unadopted gesture returns once to the latest received controlled view at settlement', async () => {
 	const t = setup();
 	const events: MapViewChangeEvent[] = [];
 	const onViewChange = (event: MapViewChangeEvent) => { events.push(event); };
@@ -101,6 +102,8 @@ test('an unadopted gesture returns once to the latest received controlled view',
 	t.camera.update({view: view(5), onViewChange});
 	assert.equal(t.commands.length, 1);
 	t.camera.endGesture(gesture, view(9));
+	assert.equal(t.commands.length, 1);
+	t.camera.settleGesture(gesture);
 	assert.equal(t.commands.length, 2);
 	assert.equal(t.commands[1]!.command.view.zoom, 5);
 	t.camera.endGesture(gesture, view(9));
@@ -113,14 +116,16 @@ test('an unadopted gesture returns once to the latest received controlled view',
 	assert.equal(t.commands.length, 3);
 });
 
-test('adoption inside the final callback is considered before reconciliation', async () => {
+test('adoption inside the final callback is considered at settlement', async () => {
 	const t = setup();
 	const onViewChange = (event: MapViewChangeEvent) => {
 		t.camera.update({view: event.view, onViewChange});
 	};
 	t.camera.mount({view: view(), onViewChange});
 	await t.finish();
-	t.camera.endGesture(t.camera.startGesture()!, view(7));
+	const gesture = t.camera.startGesture()!;
+	t.camera.endGesture(gesture, view(7));
+	t.camera.settleGesture(gesture);
 	assert.equal(t.commands.length, 1);
 	assert.equal(t.camera.view?.zoom, 7);
 });
@@ -134,6 +139,7 @@ test('uncontrolled change observation is optional and never grants the callback 
 		const gesture = t.camera.startGesture()!;
 		t.camera.changeGesture(gesture, view(6));
 		t.camera.endGesture(gesture, view(6));
+		t.camera.settleGesture(gesture);
 		assert.equal(events.length, observed ? 1 : 0);
 		assert.equal(t.commands.length, 1);
 		assert.equal(t.camera.mode, 'initial');
@@ -181,6 +187,7 @@ test('restoration reaffirms live uncontrolled view or controlled authority witho
 		t.camera.restoreAfterStyleChange();
 		assert.equal(t.commands[1]!.command.view.zoom, controlled ? 2 : 8);
 		t.camera.endGesture(gesture, view(15));
+		t.camera.settleGesture(gesture);
 		await t.finish();
 		assert.equal(t.camera.view?.zoom, controlled ? 2 : 8);
 		assert.equal(t.commands.length, 2);
@@ -197,7 +204,9 @@ test('invalid replacements preserve the last mode, view and observer', async () 
 	assert.throws(() => t.camera.update({view: {...view(), pitch: 86}, onViewChange: ignore}), {code: 'CAMERA_INPUT_INVALID'});
 	assert.equal(t.camera.view, before);
 	assert.equal(t.commands.length, 1);
-	t.camera.endGesture(t.camera.startGesture()!, view(4));
+	const gesture = t.camera.startGesture()!;
+	t.camera.endGesture(gesture, view(4));
+	t.camera.settleGesture(gesture);
 	assert.equal(events.length, 1);
 	const initial = setup();
 	initial.camera.mount({});
@@ -224,11 +233,14 @@ test('inputs and command/event tuples are copied and frozen before external call
 	assert.deepEqual(t.camera.view?.center, [2, 3]);
 });
 
-test('listener exceptions cannot prevent final reconciliation or create echo loops', async () => {
+test('listener exceptions cannot prevent settled reconciliation or create echo loops', async () => {
 	const t = setup();
 	t.camera.mount({view: view(), onViewChange() { throw new Error('Caller secret'); }});
 	await t.finish();
-	assert.doesNotThrow(() => t.camera.endGesture(t.camera.startGesture()!, view(8)));
+	const gesture = t.camera.startGesture()!;
+	assert.doesNotThrow(() => t.camera.endGesture(gesture, view(8)));
+	assert.equal(t.commands.length, 1);
+	assert.doesNotThrow(() => t.camera.settleGesture(gesture));
 	assert.equal(t.commands.length, 2);
 	t.camera.observeCommand(t.commands[1]!.command.token, view());
 	await t.finish();
@@ -240,12 +252,16 @@ test('reentrant disposal and a newer gesture suppress a finishing gesture reconc
 	const t = setup();
 	t.camera.mount({view: view(), onViewChange() { t.camera.dispose(); }});
 	await t.finish();
-	t.camera.endGesture(t.camera.startGesture()!, view(4));
+	const disposedGesture = t.camera.startGesture()!;
+	t.camera.endGesture(disposedGesture, view(4));
+	t.camera.settleGesture(disposedGesture);
 	assert.equal(t.commands.length, 1);
 	const next = setup();
 	next.camera.mount({view: view(), onViewChange() { next.camera.startGesture(); }});
 	await next.finish();
-	next.camera.endGesture(next.camera.startGesture()!, view(5));
+	const retiredGesture = next.camera.startGesture()!;
+	next.camera.endGesture(retiredGesture, view(5));
+	next.camera.settleGesture(retiredGesture);
 	assert.equal(next.commands.length, 1);
 	next.camera.dispose();
 });
@@ -298,6 +314,7 @@ test('tokens are instance-local and disposal/remount do not share seed or observ
 	first.camera.dispose();
 	first.camera.changeGesture(token, null as never);
 	first.camera.endGesture(token, null as never);
+	first.camera.settleGesture(token);
 	first.camera.restoreAfterStyleChange();
 	assert.equal(first.commands[0]!.cancels, 1);
 	await first.finish();
@@ -308,5 +325,6 @@ test('tokens are instance-local and disposal/remount do not share seed or observ
 	second.camera.changeGesture(token, view(20));
 	assert.equal(second.camera.view?.zoom, 7);
 	second.camera.endGesture(own, view(8));
+	second.camera.settleGesture(own);
 	assert.equal(second.camera.view?.zoom, 8);
 });

@@ -1,5 +1,12 @@
 import {tileflowSemanticCompilerIdentity} from './cartography/semantic-compiler';
 import {
+  parseTileflowIconComposition,
+  tileflowRenderedIconIdentitySchema,
+  type TileflowIconCompositionV1,
+  type TileflowRenderedIconIdentity,
+} from './icon-composition';
+import {collectTileflowIconSetReferences} from './icon-set';
+import {
   inferTileflowDataRequirements,
   inferTileflowSourceRequirements,
   type TileflowDataRequirementsV1,
@@ -12,6 +19,7 @@ import {parseResolvedTileflowMap} from './resolved-map-schema';
 import type {MapLibreStyle} from './types';
 
 export const tileflowMapRevisionSchemaVersion = 1 as const;
+export const tileflowSharedIconMapRevisionSchemaVersion = 2 as const;
 export const tileflowMapRevisionCanonicalization = 'tileflow-canonical-json-v1' as const;
 export const tileflowMapBuildManifestSchemaVersion = 1 as const;
 export const tileflowMapBuildManifestFileName = 'build-manifest.json' as const;
@@ -21,12 +29,14 @@ const tileflowAssetSetDomain = 'tileflow-map-asset-set-v1\0';
 const sha256Pattern = /^[a-f0-9]{64}$/u;
 
 /** One effective icon source after ordered directory replacement has completed. */
-export type TileflowEffectiveIconSourceIdentity = {
-  format: 'jpeg' | 'png' | 'svg' | 'webp';
-  id: string;
-  kind: 'icon' | 'pattern';
-  sha256: string;
-};
+export type TileflowEffectiveIconSourceIdentity =
+  | TileflowRenderedIconIdentity
+  | {
+      format: 'jpeg' | 'png' | 'svg' | 'webp';
+      id: string;
+      kind: 'icon' | 'pattern';
+      sha256: string;
+    };
 
 /** One effective local font face actually referenced by the compiled map. */
 export type TileflowEffectiveFontSourceIdentity = {
@@ -39,6 +49,8 @@ export type TileflowEffectiveFontSourceIdentity = {
 export type TileflowEffectiveMapSourceAssets = {
   fonts: readonly TileflowEffectiveFontSourceIdentity[];
   icons: readonly TileflowEffectiveIconSourceIdentity[];
+  /** Exact ordered shared dependencies, separate from original-source history and output bytes. */
+  iconComposition?: TileflowIconCompositionV1;
 };
 
 export type TileflowHashableBuildAsset = {
@@ -84,6 +96,8 @@ export type TileflowMapBuildManifestEntryV1 = {
   defaultTheme: string;
   lineage: readonly TileflowMapBuildLineageEntry[];
   mapRevisionSha256: string;
+  /** Omission means the unchanged legacy v1 source contract. Shared sets use explicit v2. */
+  mapRevisionSchemaVersion?: 2;
   mapVersion: number;
   semanticCompiler: {
     name: 'tileflow-semantic';
@@ -164,6 +178,7 @@ export async function createTileflowMapBuildManifest(
             defaultTheme: map.defaultTheme,
             lineage,
             mapRevisionSha256,
+            ...(sourceAssets.iconComposition ? {mapRevisionSchemaVersion: 2 as const} : {}),
             mapVersion: map.version,
             semanticCompiler: {...tileflowSemanticCompilerIdentity},
             sourceAssets,
@@ -261,6 +276,8 @@ export async function hashTileflowMapRevision(
     view: _view,
     ...effectiveCartography
   } = map;
+  const normalizedSources = normalizeSourceAssets(sourceAssets);
+  assertIconCompositionMatchesMap(map, normalizedSources);
   const revisionDocument = {
     canonicalization: tileflowMapRevisionCanonicalization,
     effectiveCartography: {
@@ -268,10 +285,15 @@ export async function hashTileflowMapRevision(
       // The semantic language is map semantics. Its compiler ABI version remains a separate axis.
       semanticLanguage: tileflowSemanticCompilerIdentity.name,
     },
-    schemaVersion: tileflowMapRevisionSchemaVersion,
-    sourceAssets: normalizeSourceAssets(sourceAssets),
+    schemaVersion: normalizedSources.iconComposition
+      ? tileflowSharedIconMapRevisionSchemaVersion
+      : tileflowMapRevisionSchemaVersion,
+    sourceAssets: normalizedSources,
   };
-  return sha256Hex(`${tileflowMapRevisionDomain}${serializeCanonicalJson(revisionDocument)}`);
+  const domain = normalizedSources.iconComposition
+    ? 'tileflow-map-revision-v2\0'
+    : tileflowMapRevisionDomain;
+  return sha256Hex(`${domain}${serializeCanonicalJson(revisionDocument)}`);
 }
 
 function normalizeRevisionCartography(
@@ -368,6 +390,7 @@ function normalizeSourceAssets(
 ): TileflowEffectiveMapSourceAssets {
   const icons = [...input.icons]
     .map((icon) => {
+      if (icon.kind === 'rendered-icon') return tileflowRenderedIconIdentitySchema.parse(icon);
       assertSha256(icon.sha256, `icon ${icon.id}`);
       return {...icon};
     })
@@ -384,7 +407,13 @@ function normalizeSourceAssets(
   if (new Set(fonts.map(fontIdentity)).size !== fonts.length) {
     throw new Error('Effective Tileflow font source identities must have unique faces.');
   }
-  return {fonts, icons};
+  const iconComposition =
+    input.iconComposition === undefined
+      ? undefined
+      : parseTileflowIconComposition(input.iconComposition);
+  if (icons.some((icon) => icon.kind === 'rendered-icon') && !iconComposition)
+    throw new Error('Rendered icon identities require an explicit composition receipt');
+  return {fonts, icons, ...(iconComposition ? {iconComposition} : {})};
 }
 
 function fontIdentity(font: TileflowEffectiveFontSourceIdentity): string {
@@ -406,5 +435,46 @@ function assertPortableAssetName(value: string): void {
     value.split('/').some((segment) => !segment || segment === '.' || segment === '..')
   ) {
     throw new Error(`Invalid Tileflow map asset name: ${value}`);
+  }
+}
+
+function assertIconCompositionMatchesMap(
+  map: ResolvedTileflowMap,
+  sources: TileflowEffectiveMapSourceAssets,
+): void {
+  const declared = map.icons ?? [];
+  const references = collectTileflowIconSetReferences(declared);
+  const receipt = sources.iconComposition;
+  if (references.length === 0 && receipt === undefined) return;
+  if (!receipt || receipt.contributors.length !== declared.length)
+    throw new Error('Shared icon dependencies require their complete ordered composition receipt');
+  for (const [ordinal, source] of declared.entries()) {
+    const contributor = receipt.contributors[ordinal]!;
+    if (typeof source === 'string') {
+      if (contributor.kind !== 'local') throw new Error('Icon contributor kind mismatch');
+    } else if (source.kind === 'icon-set') {
+      if (contributor.kind !== 'icon-set' || contributor.reference !== source.reference)
+        throw new Error('Icon dependency reference mismatch');
+    } else if (contributor.kind !== 'package' || contributor.package !== source.package)
+      throw new Error('Package icon contributor mismatch');
+  }
+  if (sources.icons.length !== receipt.winners.length)
+    throw new Error('Effective icon identities must cover the entire winner closure');
+  for (const [ordinal, winner] of receipt.winners.entries()) {
+    const identity = sources.icons[ordinal]!;
+    if (identity.id !== winner.id) throw new Error('Effective icon identity mismatch');
+    if (receipt.contributors[winner.contributor]!.kind === 'icon-set') {
+      if (
+        identity.kind !== 'rendered-icon' ||
+        identity.width !== winner.width ||
+        identity.height !== winner.height ||
+        identity.pixelSha256.oneX !== winner.pixelSha256.oneX ||
+        identity.pixelSha256.twoX !== winner.pixelSha256.twoX
+      )
+        throw new Error(
+          'Shared icon identity must match verified rendered pixels, not original-source hashes',
+        );
+    } else if (identity.kind === 'rendered-icon')
+      throw new Error('Local originals must retain their existing source identity');
   }
 }

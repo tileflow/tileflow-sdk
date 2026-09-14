@@ -544,3 +544,10 @@ export type {
   TileflowStyleFontFace,
   TileflowThemeSelection,
 } from './runtime';
+
+export * from './icon-set';
+export * from './icon-lock';
+export * from './icon-json';
+export * from './icon-composition';
+
+export * from './icon-sprite-index';

@@ -62,8 +62,10 @@ Omitted fields inherit, but declaring a field does not imply a recursive merge:
   an explicit reset inside a supported patch.
 - `themes` replaces the complete collection and clears an inherited `systemThemes` mapping.
   `defaultTheme` can select an inherited concrete theme; `systemThemes` replaces its complete mapping.
-- `icons` replaces the ordered directory list. Omission inherits it; `[]` disables it. Spread the
-  parent's list explicitly when composing directories. Later directories win for an exact icon ID.
+- `icons` replaces the ordered contributor list. Omission inherits it; `[]` disables it. Local and
+  package directories can be combined with explicit locked `iconSet('@team/set')` descriptors.
+  Spread the parent's list explicitly when composing contributors. Later contributors win for an
+  exact icon ID.
 - `fonts` and `glyphs` are mutually exclusive text providers. Declaring either replaces the inherited
   provider. `data`, `projection`, `terrain`, and `marine` are also atomic.
 
@@ -71,6 +73,34 @@ Identity (`id`, `name`, `version`) and tooling `scenes` belong to the leaf map a
 Module object order does not determine rendering order. See the
 [map inheritance contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/map-inheritance.md)
 for the complete merge rules.
+
+## Team Icon Sets foundations
+
+`iconSet('@team/set')` is an explicit icon contributor alongside local and package-owned directories.
+It performs no I/O. A resolved map accepts at most 32 contributors, and the same set reference may
+appear only once. Shared sets use the same explicit array order and later-wins semantics as ordinary
+icon directories.
+
+An exact `tileflow.icons.lock.json` identifies immutable set revisions and generated artifacts. The
+lock parser rejects duplicate JSON keys, stale reference sets, mixed Teams, invalid IDs, floating
+versions, unsafe URLs, and manifest/hash mismatches. Serialization is canonical. Hashes are internal
+integrity machinery, not identifiers that application authors manage.
+
+Shared-set content identifies the effective published artifact. Git owns original artwork history;
+source-only SVG edits producing the same artifact are not shared content changes. No original-source
+hash, source format, or filesystem path is added to a shared package. Local/package originals retain
+their existing source identity. Shared winners use explicit `rendered-icon` identity, while an
+ordered `tileflow-icon-composition-v1` receipt records consumed revisions separately, including
+fully shadowed sets and dependency changes that preserve rendered pixels.
+
+Map revision hashing preserves the existing v1 result for maps without shared sets. Maps with sets
+require a complete receipt and use the domain-separated v2 revision contract. Build-manifest map
+entries identify that contract with `mapRevisionSchemaVersion: 2`; omission means legacy v1. The
+generated icon package remains `tileflow-icon-package-v1` and the asset-set hash is unchanged.
+
+These are SDK foundation APIs. The explicit `@tileflow/dev` composition port can consume verified
+fixture or cached artifacts without a registry. Registry publication, managed deployment, and normal
+CLI/framework wiring are separate integrations, not implied by importing `iconSet`.
 
 ## Style with themes and semantic modules
 

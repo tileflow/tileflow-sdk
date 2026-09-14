@@ -95,12 +95,14 @@ export default defineMap({
 });
 ```
 
-`icons` is a `readonly TileflowIconDirectory[]`. Omission inherits the parent's exact array,
-declaration replaces it atomically, and `[]` means no icons. Directories apply left to right.
+`icons` is a `readonly TileflowIconSource[]`. Omission inherits the parent's exact array,
+declaration replaces it atomically, and `[]` means no icons. Local and package directories, plus
+explicit locked `iconSet('@team/set')` descriptors, apply left to right.
 `<id>.<ext>` publishes an icon as `<id>`; `<id>.pattern.<ext>` publishes an intrinsic-size pattern
 as `<id>`. The published ID must already be canonical lower-kebab; a later exact ID wins and a
-case-only collision fails. There is no built-in selector, source object, external
-sprite selector, icon mapping, icon-specific inheritance, additive command, or compatibility alias.
+case-only collision fails. There is no built-in selector, mutable external sprite selector, icon
+mapping, icon-specific inheritance, additive command, or compatibility alias. An Icon Set is an
+explicit locked descriptor, not a generic source registry.
 
 `@tileflow/dev` resolves local and package directory descriptors, verifies real-path containment,
 and prepares ordinary public artifacts without serializing installation paths. It compiles one

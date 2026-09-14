@@ -49,23 +49,38 @@ test('lists deterministic ordered composition, final sources, and later-wins rep
   assert.equal(sentinel.requests(), 0);
   const document = JSON.parse(first.stdout) as IconListDocument;
   assert.deepEqual(Object.keys(document), ['schemaVersion', 'pathBase', 'maps']);
-  assert.equal(document.schemaVersion, 2);
+  assert.equal(document.schemaVersion, 3);
   assert.equal(document.pathBase, 'cwd');
   assert.equal(document.maps.length, 1);
 
   const map = document.maps[0];
-  assert.ok(map && map.icons.kind === 'directories');
+  assert.ok(map && map.icons.kind === 'sources');
   assert.equal(map.id, 'alpha');
   assert.deepEqual(Object.keys(map.icons), [
     'kind',
-    'directories',
+    'contributors',
     'finalIds',
     'insideWorkingTree',
     'replacements',
     'packageHash',
+    'composition',
     'sources',
   ]);
-  assert.deepEqual(map.icons.directories, ['./icons/base', './icons/brand']);
+  assert.deepEqual(map.icons.composition, null);
+  assert.deepEqual(map.icons.contributors, [
+    {
+      kind: 'local',
+      label: './icons/base',
+      iconIds: ['cafe', 'photo'],
+      insideWorkingTree: true,
+    },
+    {
+      kind: 'local',
+      label: './icons/brand',
+      iconIds: ['bicycle', 'cafe'],
+      insideWorkingTree: true,
+    },
+  ]);
   assert.deepEqual(map.icons.finalIds, ['bicycle', 'cafe', 'photo']);
   assert.equal(map.icons.insideWorkingTree, true);
   assert.match(map.icons.packageHash, /^[a-f0-9]{64}$/u);
@@ -77,14 +92,20 @@ test('lists deterministic ordered composition, final sources, and later-wins rep
     },
   ]);
   assert.deepEqual(
-    map.icons.sources.map((source) => [source.id, source.format, source.path]),
+    map.icons.sources.map((source) => [
+      source.id,
+      source.kind,
+      source.contributor,
+      source.format,
+      source.path,
+    ]),
     [
-      ['bicycle', 'svg', './icons/brand/bicycle.svg'],
-      ['cafe', 'svg', './icons/brand/cafe.svg'],
-      ['photo', 'svg', './icons/base/photo.svg'],
+      ['bicycle', 'file', 1, 'svg', './icons/brand/bicycle.svg'],
+      ['cafe', 'file', 1, 'svg', './icons/brand/cafe.svg'],
+      ['photo', 'file', 0, 'svg', './icons/base/photo.svg'],
     ],
   );
-  assert.ok(map.icons.sources.every((source) => source.byteLength > 0));
+  assert.ok(map.icons.sources.every((source) => (source.byteLength ?? 0) > 0));
 
   for (const forbidden of [directory, ambientApiKey, sourceMarker, 'data:', 'base64,', '\u001b[']) {
     assert.ok(!first.stdout.includes(forbidden), `stdout contained forbidden value ${forbidden}`);
@@ -141,8 +162,11 @@ test('resolves icon directories relative to a nested config rather than process 
   );
   assert.equal(result.code, 0, result.stderr);
   const map = (JSON.parse(result.stdout) as IconListDocument).maps[0];
-  assert.ok(map && map.icons.kind === 'directories');
-  assert.deepEqual(map.icons.directories, ['./icons', '../shared']);
+  assert.ok(map && map.icons.kind === 'sources');
+  assert.deepEqual(
+    map.icons.contributors.map(({label}) => label),
+    ['./icons', '../shared'],
+  );
   assert.deepEqual(map.icons.finalIds, ['local', 'shared']);
   assert.deepEqual(
     map.icons.sources.map(({id, path}) => [id, path]),
@@ -276,17 +300,27 @@ type IconListDocument = {
     icons:
       | {kind: 'none'}
       | {
-          kind: 'directories';
-          directories: string[];
+          kind: 'sources';
+          composition: unknown;
+          contributors: Array<{
+            iconIds: string[];
+            insideWorkingTree?: boolean;
+            kind: string;
+            label: string;
+            reference?: string;
+            version?: number;
+          }>;
           finalIds: string[];
           insideWorkingTree: boolean;
           packageHash: string;
           replacements: Array<{id: string; replaced: string; winner: string}>;
           sources: Array<{
-            byteLength: number;
-            format: string;
+            byteLength?: number;
+            contributor: number;
+            format?: string;
             id: string;
-            path: string;
+            kind: string;
+            path?: string;
           }>;
         };
   }>;

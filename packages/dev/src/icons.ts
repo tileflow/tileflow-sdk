@@ -43,6 +43,35 @@ import {
   type TileflowComposedIconContributor,
   type TileflowComposedIconSources,
 } from './icon-composition';
+
+export {verifyTileflowIconArtifact, type VerifiedTileflowIconArtifact} from './icon-artifact';
+
+export {
+  getTileflowIconCacheDirectory,
+  loadTileflowIconSetArtifact,
+  storeTileflowIconSetArtifact,
+  type TileflowIconCacheOptions,
+} from './icon-cache';
+
+export {
+  packTileflowRenderedIcons,
+  type TileflowRenderedIcon,
+  type TileflowRenderedIconCell,
+} from './icon-sprite';
+
+export {
+  readTileflowIconsLockfile,
+  readTileflowIconsLockfileText,
+  writeTileflowIconsLockfile,
+} from './icon-lockfile';
+
+export {
+  composeTileflowIconSources,
+  type ComposeTileflowIconSourcesOptions,
+  type TileflowComposedIconContributor,
+  type TileflowComposedIconSources,
+  type TileflowComposedIconWinner,
+} from './icon-composition';
 import type {TileflowIconCacheOptions} from './icon-cache';
 
 export type TileflowBuildAsset = {

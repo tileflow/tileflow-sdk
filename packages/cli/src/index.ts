@@ -51,7 +51,11 @@ import {
   prepareTileflowStyleFonts,
   TileflowFontCompilationError,
 } from '@tileflow/dev/fonts';
-import {compileTileflowIconPackages, TileflowIconCompilationError} from '@tileflow/dev/icons';
+import {
+  compileTileflowIconPackages,
+  TileflowIconCompilationError,
+  type TileflowIconResolutionOptions,
+} from '@tileflow/dev/icons';
 import {resolveTileflowPreview} from '@tileflow/dev/preview';
 import {
   createTileflowComparisonRequestHandler,
@@ -107,6 +111,8 @@ import {
 import type {HostedMapStatus} from './hosted-response';
 import {registerIconDiffCommand} from './icon-diff-command';
 import {registerIconListCommand} from './icon-list-command';
+import {registerIconLockCommands} from './icon-lock-command';
+import {registerIconSetCommands} from './icon-set-command';
 import {registerLanguageCommand} from './language-command';
 import {openTileflowExternal} from './open-external';
 import {registerProjectCommands, resolveAccountProjectTarget} from './project-commands';
@@ -132,6 +138,7 @@ program
 
 registerLanguageCommand(program);
 registerTilesetCommands(program, {defaultApiUrl, loadAuthConfig});
+registerIconSetCommands(program, {defaultApiUrl, loadAuthConfig});
 
 program
   .command('init')
@@ -288,8 +295,18 @@ program
     'Tileflow API base URL used to resolve official map assets',
     process.env.TILEFLOW_API_URL ?? defaultApiUrl,
   )
+  .option('--cache-dir <path>', 'verified Icon Set artifact cache root')
+  .option('--offline', 'fail a locked Icon Set cache miss instead of hydrating it')
   .option('--json', 'print deterministic schema-version-1 JSON')
-  .action(async (options: {apiBaseUrl: string; config: string; json?: boolean; target: string}) => {
+  .action(
+    async (options: {
+      apiBaseUrl: string;
+      cacheDir?: string;
+      config: string;
+      json?: boolean;
+      offline?: boolean;
+      target: string;
+    }) => {
     if (options.target !== 'local' && options.target !== 'hosted') {
       if (options.json) {
         const failure = createTileflowCommandFailureDocument(
@@ -337,6 +354,7 @@ program
       const compiledIcons = await compileTileflowIconPackages(project, {
         baseDirectory,
         cwd: process.cwd(),
+        icons: resolveIconOptions(options),
         target: options.target,
       });
       const mapAssets = createCompiledMapAssets(compiledIcons, (binding) =>
@@ -395,9 +413,11 @@ program
               phase: 'theme-audit',
             });
 
+      const sharedIconMaps = Object.keys(compiledIcons.compositions).sort();
       const checks = [
         'Config schema',
         'Icon asset closure',
+        ...(sharedIconMaps.length > 0 ? ['Locked Icon Set composition'] : []),
         'Text provider closure',
         'Named map styles',
         'MapLibre style semantics',
@@ -442,7 +462,8 @@ program
       process.stderr.write(serializeTileflowCommandDocument(failure));
       process.exitCode = 1;
     }
-  });
+    },
+  );
 
 program
   .command('build')
@@ -454,20 +475,32 @@ program
     'Tileflow API base URL used to resolve official map assets',
     process.env.TILEFLOW_API_URL ?? defaultApiUrl,
   )
-  .action(async (options: {apiBaseUrl: string; config: string; out: string}) => {
+  .option('--cache-dir <path>', 'verified Icon Set artifact cache root')
+  .option('--offline', 'fail a locked Icon Set cache miss instead of hydrating it')
+  .action(
+    async (options: {
+      apiBaseUrl: string;
+      cacheDir?: string;
+      config: string;
+      offline?: boolean;
+      out: string;
+    }) => {
     logInfo(`Building ${pathLabel(options.config)}.`);
+    const icons = resolveIconOptions(options);
     await withTileflowConfigSecretsHidden(() =>
       writeTileflowBuildArtifacts({
         config: options.config,
         outDir: options.out,
         styleBaseUrl: '.',
         apiBaseUrl: options.apiBaseUrl,
+        ...(icons ? {icons} : {}),
       }),
     );
 
     logSuccess('Built Tileflow artifacts.');
     printKeyValue('Output', pathLabel(resolve(process.cwd(), options.out)));
-  });
+    },
+  );
 
 program
   .command('preview')
@@ -488,6 +521,8 @@ program
     'Tileflow API base URL used to resolve official map assets',
     process.env.TILEFLOW_API_URL ?? defaultApiUrl,
   )
+  .option('--cache-dir <path>', 'verified Icon Set artifact cache root')
+  .option('--offline', 'fail a locked Icon Set cache miss instead of hydrating it')
   .option('--json', 'emit schema-version-1 NDJSON lifecycle events')
   .action(
     async (options: {
@@ -496,10 +531,12 @@ program
       againstMap?: string;
       againstScene?: string;
       againstTheme?: string;
+      cacheDir?: string;
       config: string;
       host: string;
       json?: boolean;
       map?: string;
+      offline?: boolean;
       port: string;
       scene?: string;
       theme?: string;
@@ -568,10 +605,12 @@ program
 
       await withTileflowConfigSecretsHidden(async () => {
         const origin = tileflowDevOrigin(host, port);
+        const icons = resolveIconOptions(options);
         const session = await createTileflowArtifactSession({
           assetBaseUrl: origin,
           apiBaseUrl: options.apiBaseUrl,
           config: options.config,
+          ...(icons ? {icons} : {}),
           styleBaseUrl: origin,
           watch: true,
         });
@@ -685,14 +724,18 @@ program
     '--overwrite-self-hosted-manifest',
     'explicitly replace an existing self-hosted manifest at --manifest',
   )
+  .option('--cache-dir <path>', 'verified Icon Set artifact cache root')
+  .option('--offline', 'fail a locked Icon Set cache miss instead of hydrating it')
   .action(
     async (options: {
+      cacheDir?: string;
       config: string;
       manifest: string;
       apiUrl?: string;
       apiKey?: string;
       mapId?: string;
       map?: string;
+      offline?: boolean;
       overwriteSelfHostedManifest?: boolean;
     }) => {
       const source = resolveDeploySource(process.env);
@@ -746,6 +789,7 @@ program
       const compiledIcons = await compileTileflowIconPackages(deploymentProject, {
         baseDirectory,
         cwd: process.cwd(),
+        icons: resolveIconOptions(options),
         target: 'hosted',
       });
       const bindingsByMap = new Map(
@@ -958,6 +1002,9 @@ program
                 sourceAssets: {
                   fonts: hostedFonts.sourceIdentities[mapName] ?? [],
                   icons: compiledIcons.sourceIdentities[mapName] ?? [],
+                  ...(compiledIcons.compositions[mapName]
+                    ? {iconComposition: compiledIcons.compositions[mapName]}
+                    : {}),
                 },
                 styles: styles[mapName]!,
               },
@@ -972,6 +1019,7 @@ program
         const fontBundle = hostedFonts.bundles[mapName];
         return {
           iconBinding,
+          iconComposition: compiledIcons.compositions[mapName],
           iconPackage,
           fontBundle,
           mapName,
@@ -992,11 +1040,18 @@ program
           buildManifest,
           fontBundle,
           iconBinding,
+          iconComposition,
           iconPackage,
           mapName,
           teamSources,
           styles: themeStyles,
         } = deployment;
+        // The composition receipt must bind the exact effective package this deploy uploaded.
+        if (iconComposition && iconComposition.packageHash !== iconPackage?.contentHash) {
+          logError(`Icon composition does not match the effective package for ${mapName}.`);
+          process.exitCode = 1;
+          return;
+        }
         const themeNames = Object.keys(themeStyles).sort();
         logInfo(
           `Deploying compiled map ${pc.bold(mapName)} (${plural(themeNames.length, 'theme')}).`,
@@ -1023,6 +1078,7 @@ program
                   },
                 }
               : {}),
+            ...(iconComposition ? {iconComposition} : {}),
             ...(fontBundle ? {fontBundle: {contentHash: fontBundle.contentHash}} : {}),
             source,
           },
@@ -1178,6 +1234,7 @@ program
 
 const iconsCommand = program.command('icons').description('Inspect managed Tileflow icons');
 
+registerIconLockCommands(program, {defaultApiUrl, defaultConfigPath, loadAuthConfig});
 registerIconListCommand(iconsCommand, {defaultConfigPath});
 registerIconDiffCommand(iconsCommand, {
   defaultApiUrl,
@@ -1233,9 +1290,11 @@ type TileflowComparisonPreviewCommandOptions = {
   againstMap?: string;
   againstScene?: string;
   againstTheme?: string;
+  cacheDir?: string;
   config: string;
   json?: boolean;
   map?: string;
+  offline?: boolean;
   scene?: string;
   theme?: string;
 };
@@ -1289,10 +1348,12 @@ async function runTileflowComparisonPreview(
     try {
       const leftCaptureConfig = comparisonCaptureConfigArgument(options.config);
       const rightCaptureConfig = comparisonCaptureConfigArgument(rightConfig);
+      const comparisonIcons = resolveIconOptions(options);
       leftSession = await createTileflowArtifactSession({
         apiBaseUrl: options.apiBaseUrl,
         assetBaseUrl: `${origin}${leftBasePath}`,
         config: options.config,
+        ...(comparisonIcons ? {icons: comparisonIcons} : {}),
         inspection: true,
         styleBaseUrl: `${origin}${leftBasePath}`,
         watch: true,
@@ -1301,6 +1362,7 @@ async function runTileflowComparisonPreview(
         apiBaseUrl: options.apiBaseUrl,
         assetBaseUrl: `${origin}${rightBasePath}`,
         config: rightConfig,
+        ...(comparisonIcons ? {icons: comparisonIcons} : {}),
         inspection: true,
         styleBaseUrl: `${origin}${rightBasePath}`,
         watch: true,
@@ -1582,6 +1644,23 @@ async function writeDeployManifest(manifestPath: string, manifest: DeployedManif
   });
 
   return manifestPath;
+}
+
+/**
+ * Build the explicit shared Icon Set resolution settings for one command invocation.
+ *
+ * Only these options select a cache root or offline behavior. No command resolves a catalog head
+ * during validation, build, preview or deploy.
+ */
+function resolveIconOptions(options: {
+  cacheDir?: string;
+  offline?: boolean;
+}): TileflowIconResolutionOptions | undefined {
+  const icons: TileflowIconResolutionOptions = {
+    ...(options.cacheDir ? {cacheRoot: options.cacheDir} : {}),
+    ...(options.offline ? {offline: true} : {}),
+  };
+  return Object.keys(icons).length > 0 ? icons : undefined;
 }
 
 type CompiledProjectIcons = Awaited<ReturnType<typeof compileTileflowIconPackages>>;

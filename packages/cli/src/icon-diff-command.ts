@@ -15,7 +15,11 @@ import {
   getTileflowMapNames,
   loadTileflowConfigWithInputs,
 } from '@tileflow/dev/config';
-import {type CompiledTileflowIconPackage, compileTileflowIconPackages} from '@tileflow/dev/icons';
+import {
+  type CompiledTileflowIconPackage,
+  compileTileflowIconPackages,
+  type TileflowIconResolutionOptions,
+} from '@tileflow/dev/icons';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 import {requestHostedJson} from './hosted-client';
 import {writeIconDiffReport} from './icon-diff-report';
@@ -116,10 +120,12 @@ type IconDiffOptions = {
   against: string;
   apiKey?: string;
   apiUrl?: string;
+  cacheDir?: string;
   config: string;
   force?: boolean;
   json?: boolean;
   mapId: string;
+  offline?: boolean;
   open?: boolean;
   report?: string;
 };
@@ -148,6 +154,8 @@ export function registerIconDiffCommand(
     .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
     .requiredOption('--map-id <id>', 'managed Map destination')
     .option('--json', 'print deterministic schema-version-1 JSON')
+    .option('--cache-dir <path>', 'verified Icon Set artifact cache root')
+    .option('--offline', 'fail a locked Icon Set cache miss instead of hydrating it')
     .option('--report <path>', 'write a self-contained HTML visual report')
     .option('--open', 'open an explicitly requested report')
     .option('--force', 'replace a different explicitly requested report')
@@ -208,9 +216,14 @@ async function runIconDiff(
   }
 
   const selectedProject = {...project, maps: {[environment]: project.maps[environment]}};
+  const icons: TileflowIconResolutionOptions = {
+    ...(options.cacheDir ? {cacheRoot: options.cacheDir} : {}),
+    ...(options.offline ? {offline: true} : {}),
+  };
   const compiled = await compileTileflowIconPackages(selectedProject, {
     baseDirectory: dirname(loaded.configFile),
     cwd: process.cwd(),
+    ...(Object.keys(icons).length > 0 ? {icons} : {}),
     target: 'hosted',
   });
   const binding = compiled.bindings.find((candidate) => candidate.mapName === environment);

@@ -165,20 +165,23 @@ export function registerIconLockCommands(
       const pin = resolved[reference] ?? current[reference];
       if (pin) sets[reference] = pin;
     }
-    try {
-      await writeTileflowIconsLockfile(baseDirectory, {lockfileVersion: 1, sets}, expected);
-    } catch (error) {
-      const code =
-        error !== null && typeof error === 'object' && 'code' in error
-          ? String((error as {code: unknown}).code)
-          : 'icon_lock_write_failed';
-      return emitFailure(
-        options.json,
-        code,
-        code === 'ICON_LOCK_CONFLICT'
-          ? 'The icon lock changed while this command ran; rerun it without discarding other pins.'
-          : 'The icon lock could not be written.',
-      );
+    // Never create an empty lock for a repository that declares no shared set.
+    if (expected !== null || Object.keys(sets).length > 0) {
+      try {
+        await writeTileflowIconsLockfile(baseDirectory, {lockfileVersion: 1, sets}, expected);
+      } catch (error) {
+        const code =
+          error !== null && typeof error === 'object' && 'code' in error
+            ? String((error as {code: unknown}).code)
+            : 'icon_lock_write_failed';
+        return emitFailure(
+          options.json,
+          code,
+          code === 'ICON_LOCK_CONFLICT'
+            ? 'The icon lock changed while this command ran; rerun it without discarding other pins.'
+            : 'The icon lock could not be written.',
+        );
+      }
     }
 
     const missing = declared.references.filter((reference) => !sets[reference]);

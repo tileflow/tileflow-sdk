@@ -220,13 +220,6 @@ export function registerIconSetCommands(
       .argument('<slug>', 'Team-local Icon Set slug'),
   ).action(async (slug: string, options: HostedTeamOptions) => {
     await readCommand(slug, options, 'icon-set uses', async (authority) => {
-      const response = await authorizedTeamRequest(
-        authority,
-        `/v1/icon-sets/${encodeURIComponent(slug)}/uses?limit=${pageSize}`,
-        'GET',
-      );
-      if (!response.ok) return {status: response.status};
-      const first = usesResponseSchema.parse(response.body);
       const uses = await readAllPages(
         authority,
         `/v1/icon-sets/${encodeURIComponent(slug)}/uses`,
@@ -238,8 +231,8 @@ export function registerIconSetCommands(
       return {
         value: {
           // Repository locks that were never deployed are unknowable to the catalog.
-          coverage: first.coverage,
-          includesUndeployedRepositoryLocks: first.includesUndeployedRepositoryLocks,
+          coverage: 'known-hosted-deployments',
+          includesUndeployedRepositoryLocks: false,
           uses,
         },
       };
@@ -550,8 +543,9 @@ const setSchema = z
     updatedAt: isoDateSchema,
   })
   .strict();
+/** Bounded exactly like every other Team response; the CLI keeps only what its receipt reports. */
 const revisionSchema = z
-  .looseObject({
+  .object({
     id: z.string().regex(/^icv_[A-Za-z0-9_-]{16}$/u),
     reference: tileflowIconSetReferenceSchema,
     version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
@@ -564,6 +558,7 @@ const revisionSchema = z
       .strict(),
     pin: tileflowIconSetPinSchema.nullable(),
   })
+  .strict()
   .transform(({id, reference, version, publishedAt, purgedAt, iconCount, totalBytes, pin}) => ({
     iconCount,
     id,

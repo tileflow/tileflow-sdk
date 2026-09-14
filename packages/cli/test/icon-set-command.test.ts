@@ -92,7 +92,8 @@ function captureOutput(t: {after(callback: () => void): void}) {
   return output;
 }
 
-const revision = (version: number, contentHash: string, packageId: string) => ({
+/** Exactly the fields the Icon Set service projects for one retained revision. */
+const revision = (version: number) => ({
   id: `icv_${String(version).padStart(16, '0')}`,
   reference: '@acme/brand',
   version,
@@ -102,8 +103,6 @@ const revision = (version: number, contentHash: string, packageId: string) => ({
   totalBytes: 383,
   publisher: {kind: 'membership', id: 'user_1'},
   pin: null as unknown,
-  contentHash,
-  packageId,
 });
 
 test('Team data keys read the Icon Set catalog without loading account state', async (t) => {
@@ -195,17 +194,10 @@ test('publish sends the exact four generated files with one durable idempotency 
   process.chdir(directory);
   t.after(() => process.chdir(originalCwd));
 
-  const command = program((request) => {
-    const hash = new URL(request.url).pathname.split('/').at(-1)!;
-    return Response.json({
-      schemaVersion: 1,
-      changed: true,
-      revision: {
-        ...revision(3, hash, 'icp_0123456789abcdef'),
-        pin: null,
-      },
-    });
-  }, captured);
+  const command = program(
+    () => Response.json({schemaVersion: 1, changed: true, revision: revision(3)}),
+    captured,
+  );
 
   await output.run(() =>
     command.parseAsync([
@@ -267,14 +259,10 @@ test('an unchanged republication reports the same revision without a new integer
   process.chdir(directory);
   t.after(() => process.chdir(originalCwd));
 
-  const command = program((request) => {
-    const hash = new URL(request.url).pathname.split('/').at(-1)!;
-    return Response.json({
-      schemaVersion: 1,
-      changed: false,
-      revision: {...revision(3, hash, 'icp_0123456789abcdef'), pin: null},
-    });
-  }, captured);
+  const command = program(
+    () => Response.json({schemaVersion: 1, changed: false, revision: revision(3)}),
+    captured,
+  );
 
   await output.run(() =>
     command.parseAsync([

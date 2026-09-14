@@ -1,7 +1,8 @@
 import {z} from 'zod';
+import {strictNativeObject} from './native-zod-object';
 
 /** Static preparation profile, not evidence that an application ran on a device. */
-export const tileflowNativeProfileSchema = z.object({
+export const tileflowNativeProfileSchema = strictNativeObject({
   id: z.literal('native-v1'),
   renderer: z.literal('native'),
   schemaVersion: z.literal(1),
@@ -11,7 +12,7 @@ export const tileflowNativeProfileSchema = z.object({
   maplibreReactNative: z.literal('11.3.10'),
   android: z.literal('13.2.0'),
   ios: z.literal('6.26.0'),
-}).strict();
+});
 export type TileflowNativeProfile = z.infer<typeof tileflowNativeProfileSchema>;
 export const tileflowNativeProfile: Readonly<TileflowNativeProfile> = Object.freeze({
   id: 'native-v1',

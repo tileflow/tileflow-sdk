@@ -1,21 +1,14 @@
 import {z} from 'zod';
 import {tileflowNativeProfile} from './native-profile-definition';
 import {tileflowNativeProfileLimits} from './native-profile-helpers';
+import {strictNativeObject} from './native-zod-object';
 import {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
 
 export const tileflowNativeBuildRecordFileName = 'native-build.json';
-// The interpreted Core constructor avoids Zod's environment-sensitive object JIT probe.
-// The lazy wrapper adds the classic parse/refinement API without merging raw input back in.
-function strictBuildObject<Shape extends z.core.$ZodShape>(shape: Shape) {
-  const object = new z.core.$ZodObject({
-    type: 'object', shape, catchall: z.never(),
-  }) as z.core.$ZodObject<Shape, z.core.$strict>;
-  return z.lazy(() => object);
-}
 
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/u);
 const layerCountSchema = z.number().int().min(0).max(tileflowNativeProfileLimits.maximumLayers);
-const layerTransformationSchema = strictBuildObject({
+const layerTransformationSchema = strictNativeObject({
   inputLayer: layerCountSchema,
   outputStart: layerCountSchema,
   outputCount: z.number().int().min(1).max(32),
@@ -24,7 +17,7 @@ const layerTransformationSchema = strictBuildObject({
       (properties[0] === 'line-cap' && properties[1] === 'line-dasharray'), 'Expected unique, ordered properties'),
 });
 
-export const tileflowNativeStyleTransformationSchema = strictBuildObject({
+export const tileflowNativeStyleTransformationSchema = strictNativeObject({
   map: tileflowPortableIdSchema,
   theme: tileflowThemeNameSchema,
   inputStyleSha256: hashSchema,
@@ -52,13 +45,13 @@ export const tileflowNativeStyleTransformationSchema = strictBuildObject({
 export type TileflowNativeStyleTransformation = z.infer<typeof tileflowNativeStyleTransformationSchema>;
 
 /** Version 2 adds explicit preparation evidence. The runtime manifest remains version 1. */
-export const tileflowNativeBuildRecordSchema = strictBuildObject({
+export const tileflowNativeBuildRecordSchema = strictNativeObject({
   schemaVersion: z.literal(2),
   renderer: z.literal('native'),
   profile: z.literal('native-v1'),
   validation: z.literal('static-artifacts'),
   preparationVersion: z.literal('native-lowering-v1'),
-  engines: strictBuildObject({android: z.literal('13.2.0'), ios: z.literal('6.26.0')}),
+  engines: strictNativeObject({android: z.literal('13.2.0'), ios: z.literal('6.26.0')}),
   buildManifestSha256: hashSchema,
   transformations: z.array(tileflowNativeStyleTransformationSchema).max(4096),
 }).superRefine((record, context) => {

@@ -4,6 +4,7 @@ import {z} from 'zod';
 import {resolveTileflowNativeResourceUrl, TileflowNativeUrlError} from './native';
 import type {MapLibreStyle} from './types';
 import {isBoundedNativeJson, nativePointer as pointer, supportsNativeVersions, tileflowNativeProfileLimits} from './native-profile-helpers';
+import {strictNativeObject} from './native-zod-object';
 export {tileflowNativeProfileLimits} from './native-profile-helpers';
 
 import {
@@ -31,7 +32,7 @@ export const tileflowNativeDiagnosticCodeSchema = z.enum([
 export type TileflowNativeDiagnosticCode = z.infer<typeof tileflowNativeDiagnosticCodeSchema>;
 
 /** Uses the command diagnostic fields; renderer/profile are bounded additional context. */
-export const tileflowNativeDiagnosticSchema = z.object({
+export const tileflowNativeDiagnosticSchema = strictNativeObject({
   code: tileflowNativeDiagnosticCodeSchema,
   phase: z.literal('native-compatibility'),
   severity: z.literal('error'),
@@ -40,7 +41,7 @@ export const tileflowNativeDiagnosticSchema = z.object({
   profile: tileflowNativeProfileIdSchema,
   message: z.string().max(300),
   suggestion: z.string().max(300),
-}).strict();
+});
 export type TileflowNativeDiagnostic = z.infer<typeof tileflowNativeDiagnosticSchema>;
 
 

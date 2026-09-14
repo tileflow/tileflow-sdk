@@ -101,10 +101,10 @@ feature order. Applications requiring exact overlapping-feature order must not t
 artifact as order-equivalent to its web style. Automated checks establish feature selection,
 cap/dash values, zoom ranges, determinism and resource bounds, not pixel equivalence.
 
-A small directed iOS/Android rendering check of cap/dash/overlap remains to be run using the recipe
-below. Full visual qualification belongs to the general mobile release gate; it is not claimed
-by artifact preparation. Browser capture cannot replace either native check, and a few visual
-samples cannot prove preservation of arbitrary feature order.
+A small directed iOS/Android rendering check of cap/dash/overlap is required for each accepted
+candidate using the recipe below. Full visual qualification belongs to the general mobile release
+gate; it is not claimed by artifact preparation. Browser capture cannot replace either native
+check, and a few visual samples cannot prove preservation of arbitrary feature order.
 
 ## Write a separate output
 
@@ -215,11 +215,14 @@ The fixture and output are source-checkout tools, not a published mobile compone
 
 Use an existing native test application with the pinned engines and a reachable artifact origin;
 artifact generation starts no server and requests no deployment. Load the same generated manifest
-family independently on iOS and Android. A useful starting viewport is a dense road/rail junction
-with visible paths and bridges; select one where the loaded vector data actually contains features
-for the transformed layers listed in `/tmp/native-lowering-audit.json`. Use the audit's exact
-physical IDs, source layers, branch counts and zoom intervals rather than assuming that a map
-location exercises every branch.
+family independently on iOS and Android. Resolve its style URL against the manifest URL, then each
+relative style resource against that style's URL before passing the style to MapLibre Native. A raw
+style URL does not transfer this ownership to the renderer. The directed artifact check may use a
+test-owned resolver, but that does not qualify a future runtime resolver. A useful starting viewport
+is a dense road/rail junction with visible paths and bridges; select one where the loaded vector data
+actually contains features for the transformed layers listed in
+`/tmp/native-lowering-audit.json`. Use the audit's exact physical IDs, source layers, branch counts
+and zoom intervals rather than assuming that a map location exercises every branch.
 
 Check both themes at the same center, viewport, pitch 0 and bearing 0. Exercise at least one cap
 partition, one dashed/solid partition and an overlap between simultaneously active branches. Pan

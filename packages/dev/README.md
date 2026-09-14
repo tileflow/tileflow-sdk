@@ -172,8 +172,9 @@ writer has exited. Ordinary reads and Core validation never acquire write guards
 The existing 256-effective-icon, 2048-atlas-dimension, 4 MiB/file, and 8 MiB/package bounds still
 apply. Several individually valid sets can exceed the effective map limit; composition fails
 explicitly instead of clipping. Cache and composition do not create Team resources or publish
-anything. Normal CLI/build/framework and Hosted command integration follows separately; those
-existing entry points currently reject shared descriptors rather than silently dropping them.
+anything. Every normal entry point composes declared shared descriptors through this path; catalog
+publication and lock maintenance stay in the `tileflow` CLI, which is the only writer of
+`tileflow.icons.lock.json` and the only caller that resolves `latest`.
 
 ## Detailed guides
 

@@ -51,7 +51,7 @@ async function fixture(
   references: readonly string[],
 ) {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-icon-lock-'));
-  t.after(() => rm(cwd, {force: true, recursive: true}));
+  t.after(() => rm(cwd, {force: true, maxRetries: 5, recursive: true, retryDelay: 100}));
   await mkdir(join(cwd, 'icons'));
   await writeFile(
     join(cwd, 'icons', 'shop.svg'),
@@ -74,14 +74,9 @@ function run(
   respond: (request: CapturedRequest) => Response,
   captured: CapturedRequest[],
 ) {
-  const originalFetch = globalThis.fetch;
-  const originalStdoutWrite = process.stdout.write;
-  const originalStderrWrite = process.stderr.write;
-  const originalExitCode = process.exitCode;
-  const originalCwd = process.cwd();
   const output = {stderr: '', stdout: ''};
-  process.chdir(cwd);
-  globalThis.fetch = (async (input, init) => {
+  const originalExitCode = process.exitCode;
+  const fetchStub = (async (input, init) => {
     const request: CapturedRequest = {
       body: init?.body === undefined ? undefined : JSON.parse(String(init.body)),
       method: init?.method ?? 'GET',
@@ -89,10 +84,8 @@ function run(
     };
     captured.push(request);
     return respond(request);
-  }) as typeof fetch;
+  }) as typeof globalThis.fetch;
   t.after(() => {
-    globalThis.fetch = originalFetch;
-    process.chdir(originalCwd);
     process.exitCode = originalExitCode;
   });
   const command = new Command().name('tileflow').exitOverride();
@@ -107,6 +100,13 @@ function run(
     command,
     output,
     async parse(argv: string[]) {
+      const originalFetch = globalThis.fetch;
+      const originalStdoutWrite = process.stdout.write;
+      const originalStderrWrite = process.stderr.write;
+      const originalExitCode = process.exitCode;
+      const originalCwd = process.cwd();
+      process.chdir(cwd);
+      globalThis.fetch = fetchStub;
       process.stdout.write = ((chunk: string | Uint8Array) => {
         output.stdout += String(chunk);
         return true;
@@ -118,6 +118,8 @@ function run(
       try {
         await command.parseAsync(['node', 'tileflow', ...argv]);
       } finally {
+        globalThis.fetch = originalFetch;
+        process.chdir(originalCwd);
         process.stdout.write = originalStdoutWrite;
         process.stderr.write = originalStderrWrite;
       }

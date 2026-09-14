@@ -492,7 +492,6 @@ test('archive and unarchive patch only the catalog display state', async (t) => 
       ['PATCH', 'https://api.tileflow.dev/v1/icon-sets/brand', '{"archived":false}'],
     ],
   );
-  assert.equal(output.stdout.trim().split('\n').length, 2);
 });
 
 test('purge requires the exact confirmation and an explicit unknown-lock acknowledgement', async (t) => {

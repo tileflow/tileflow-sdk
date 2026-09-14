@@ -13,13 +13,19 @@ const exec = promisify(execFile);
 function runtimeImports(text: string): string[] {
   const result: string[] = [];
   const visit = (node: ts.Node) => {
-    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
-      node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) {
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteralLike(node.moduleSpecifier)
+    ) {
       result.push(node.moduleSpecifier.text);
     }
-    if (ts.isCallExpression(node) &&
+    if (
+      ts.isCallExpression(node) &&
       (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-        (ts.isIdentifier(node.expression) && ['require', '__require'].includes(node.expression.text)))) {
+        (ts.isIdentifier(node.expression) &&
+          ['require', '__require'].includes(node.expression.text)))
+    ) {
       result.push(node.getText());
     }
     ts.forEachChild(node, visit);
@@ -37,7 +43,9 @@ test('remains private with exact native peers and the ordinary package/license b
   assert.equal(manifest.publishConfig, undefined);
   assert.equal(manifest.sideEffects, false);
   assert.deepEqual(manifest.peerDependencies, {
-    '@maplibre/maplibre-react-native': '11.3.10', react: '19.2.0', 'react-native': '0.83.10',
+    '@maplibre/maplibre-react-native': '11.3.10',
+    react: '19.2.0',
+    'react-native': '0.83.10',
   });
   for (const [name, version] of Object.entries(manifest.peerDependencies)) {
     assert.equal(manifest.devDependencies[name], version);
@@ -60,16 +68,25 @@ test('remains private with exact native peers and the ordinary package/license b
   // A type-only ESM entry can be empty. The declarations and private adapters must exist.
   await readFile(new URL('dist/index.js', root), 'utf8');
   for (const path of [
-    'dist/index.d.ts', 'dist/internal/native-appearance.js', 'dist/internal/native-appearance.d.ts',
-    'dist/internal/initial-view.js', 'dist/internal/source-state.js',
-  ]) assert.ok((await readFile(new URL(path, root), 'utf8')).length > 0, path);
+    'dist/index.d.ts',
+    'dist/internal/native-appearance.js',
+    'dist/internal/native-appearance.d.ts',
+    'dist/internal/initial-view.js',
+    'dist/internal/source-state.js',
+  ])
+    assert.ok((await readFile(new URL(path, root), 'utf8')).length > 0, path);
 });
 
 test('the contract imports standalone with no peers, globals or renderer evaluation', async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-native-contract-'));
   t.after(() => rm(cwd, {recursive: true, force: true}));
   await copyFile(new URL('dist/index.js', root), join(cwd, 'contract.mjs'));
-  const {stdout, stderr} = await exec(process.execPath, ['--input-type=module', '--eval', `
+  const {stdout, stderr} = await exec(
+    process.execPath,
+    [
+      '--input-type=module',
+      '--eval',
+      `
     import assert from 'node:assert/strict';
     for (const name of ['window', 'document', 'navigator', 'fetch', 'URL', 'URLSearchParams',
       'TextEncoder', 'TextDecoder', 'crypto', 'FontFace', 'Appearance', 'ReactNative', 'MapLibre']) {
@@ -79,21 +96,39 @@ test('the contract imports standalone with no peers, globals or renderer evaluat
     }
     const contract = await import('./contract.mjs');
     assert.deepEqual(Object.keys(contract), []);
-  `], {cwd, timeout: 10_000});
+  `,
+    ],
+    {cwd, timeout: 10_000},
+  );
   assert.equal(stdout, '');
   assert.equal(stderr, '');
   assert.deepEqual(runtimeImports(await readFile(new URL('dist/index.js', root), 'utf8')), []);
 });
 
 test('only the private appearance entry evaluates React Native and no output evaluates MapLibre', async () => {
-  for (const entry of ['index', 'internal/native-appearance', 'internal/initial-view', 'internal/source-state']) {
+  for (const entry of [
+    'index',
+    'internal/native-appearance',
+    'internal/initial-view',
+    'internal/source-state',
+  ]) {
     const imports = runtimeImports(await readFile(new URL(`dist/${entry}.js`, root), 'utf8'));
-    assert.equal(imports.some((name) => name.includes('maplibre')), false, entry);
+    assert.equal(
+      imports.some((name) => name.includes('maplibre')),
+      false,
+      entry,
+    );
     if (entry === 'internal/native-appearance') assert.deepEqual(imports, ['react-native']);
     else assert.equal(imports.includes('react-native'), false, entry);
   }
   const declarations = await readFile(new URL('dist/index.d.ts', root), 'utf8');
-  for (const name of ['MapBaseProps', 'MapOptions', 'MapRef', 'MapSourceState', 'MapInitialViewInputs']) {
+  for (const name of [
+    'MapBaseProps',
+    'MapOptions',
+    'MapRef',
+    'MapSourceState',
+    'MapInitialViewInputs',
+  ]) {
     assert.ok(declarations.includes(name), name);
   }
   assert.doesNotMatch(declarations, /declare (?:const|function|class) Map\b/u);

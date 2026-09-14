@@ -1,5 +1,9 @@
 import {Appearance} from 'react-native';
-import {createAppearanceObserver, type AppearanceSelection, type AppearanceState} from './appearance';
+import {
+  type AppearanceSelection,
+  type AppearanceState,
+  createAppearanceObserver,
+} from './appearance';
 
 // Constructing the broker does not read Appearance or create a native subscription.
 const observer = createAppearanceObserver({

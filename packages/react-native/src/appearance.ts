@@ -43,7 +43,11 @@ function normalizeEvent(value: unknown): AppearanceState {
 }
 
 function remove(subscription: {remove(): void} | undefined): void {
-  try { subscription?.remove(); } catch { /* Retirement is authoritative even if native cleanup throws. */ }
+  try {
+    subscription?.remove();
+  } catch {
+    /* Retirement is authoritative even if native cleanup throws. */
+  }
 }
 
 /** One native listener per active broker, regardless of how many system-theme maps subscribe. */
@@ -56,7 +60,9 @@ export function createAppearanceObserver(port: AppearancePort) {
     entry.last = state;
     try {
       void Promise.resolve(entry.notify(state)).catch(() => undefined);
-    } catch { /* Application callback failures do not own the subscription. */ }
+    } catch {
+      /* Application callback failures do not own the subscription. */
+    }
   };
   const publish = (current: Connection, state: AppearanceState) => {
     if (connection !== current || current.closed || current.current === state) return;
@@ -87,14 +93,22 @@ export function createAppearanceObserver(port: AppearancePort) {
     }
     current.subscription = subscription;
     let initial: AppearanceState;
-    try { initial = normalize(port.getColorScheme()); } catch { initial = unavailable; }
+    try {
+      initial = normalize(port.getColorScheme());
+    } catch {
+      initial = unavailable;
+    }
     // An event observed while subscribing/reading is newer than a potentially cached initial value.
     if (current.revision === 0) publish(current, initial);
   };
 
   return {
-    subscribe(selection: AppearanceSelection, listener: (state: AppearanceState) => void): () => void {
-      if (selection.sourceKind !== 'tileflow' || selection.theme !== 'system') return () => undefined;
+    subscribe(
+      selection: AppearanceSelection,
+      listener: (state: AppearanceState) => void,
+    ): () => void {
+      if (selection.sourceKind !== 'tileflow' || selection.theme !== 'system')
+        return () => undefined;
       if (typeof listener !== 'function') throw new TypeError('Expected an appearance listener.');
       const entry: Listener = {notify: listener};
       listeners.add(entry);

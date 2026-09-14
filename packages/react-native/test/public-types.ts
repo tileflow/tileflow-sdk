@@ -1,11 +1,4 @@
-import type {ReactNode, Ref} from 'react';
-import type {ViewProps} from 'react-native';
 import type {MapProps as NativeMapProps} from '@maplibre/maplibre-react-native';
-import type {
-  TileflowNativeInitialView,
-  TileflowNativeInitialViewOptions,
-  TileflowNativeSource,
-} from '@tileflow/core/native';
 import type {
   MapBaseProps,
   MapErrorEvent,
@@ -19,13 +12,28 @@ import type {
   MapThemeChangeEvent,
   MapView,
 } from '@tileflow/react-native';
+import type {ReactNode, Ref} from 'react';
+import type {ViewProps} from 'react-native';
+import type {
+  TileflowNativeInitialView,
+  TileflowNativeInitialViewOptions,
+  TileflowNativeSource,
+} from '@tileflow/core/native';
 
-function acceptsProps(value: MapBaseProps): void { void value; }
-function acceptsOptions(value: MapOptions): void { void value; }
-function acceptsView(value: MapView): void { void value; }
+function acceptsProps(value: MapBaseProps): void {
+  void value;
+}
+function acceptsOptions(value: MapOptions): void {
+  void value;
+}
+function acceptsView(value: MapView): void {
+  void value;
+}
 
 const tileflow = {
-  kind: 'tileflow', map: 'streets', manifestUrl: 'https://maps.example.test/native/manifest.json',
+  kind: 'tileflow',
+  map: 'streets',
+  manifestUrl: 'https://maps.example.test/native/manifest.json',
 } as const;
 const direct = {kind: 'maplibre', style: 'https://maps.example.test/style.json'} as const;
 
@@ -45,7 +53,9 @@ export function acceptsExistingCoreContracts(
   acceptsView(sameView);
   acceptsProps({source: tileflow, theme: 'system', children, style, testID: 'map', ref});
   acceptsProps({source: direct, mapOptions: {dragPan: true, touchZoom: false, scaleBar: true}});
-  acceptsProps({source: {kind: 'maplibre', style: {version: 8, name: 'Direct', sources: {}, layers: []}}});
+  acceptsProps({
+    source: {kind: 'maplibre', style: {version: 8, name: 'Direct', sources: {}, layers: []}},
+  });
   const options: Pick<NativeMapProps, 'dragPan' | 'touchZoom' | 'compass'> = {dragPan: true};
   acceptsOptions(options);
 }
@@ -139,10 +149,21 @@ export function handlesEvents(
   }
   const status: 'loading' | 'ready' | 'error' = readiness.status;
   void status;
-  acceptsProps({source: tileflow, onLoad: (event) => { void event.selection; },
-    onError: (event) => { void event.type; },
-    onReadinessChange: (event) => { void event.status; },
-    onThemeChange: (event) => { void event.phase; }});
+  acceptsProps({
+    source: tileflow,
+    onLoad: (event) => {
+      void event.selection;
+    },
+    onError: (event) => {
+      void event.type;
+    },
+    onReadinessChange: (event) => {
+      void event.status;
+    },
+    onThemeChange: (event) => {
+      void event.phase;
+    },
+  });
   // @ts-expect-error onLoad receives a safe event, not a native map ref.
   acceptsProps({source: tileflow, onLoad: (_map: NativeMapProps) => undefined});
 }

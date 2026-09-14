@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  createAppearanceObserver,
   type AppearancePort,
   type AppearanceState,
+  createAppearanceObserver,
 } from '../src/appearance';
 
 const system = {sourceKind: 'tileflow', theme: 'system'} as const;
@@ -22,7 +22,11 @@ function port(initial: unknown = 'light') {
     addChangeListener(listener) {
       subscriptions++;
       listeners.push(listener);
-      return {remove() { removals++; }};
+      return {
+        remove() {
+          removals++;
+        },
+      };
     },
   };
   return {
@@ -32,10 +36,18 @@ function port(initial: unknown = 'light') {
       value = next;
       listeners[index]?.({colorScheme: next});
     },
-    set(next: unknown) { value = next; },
-    get reads() { return reads; },
-    get subscriptions() { return subscriptions; },
-    get removals() { return removals; },
+    set(next: unknown) {
+      value = next;
+    },
+    get reads() {
+      return reads;
+    },
+    get subscriptions() {
+      return subscriptions;
+    },
+    get removals() {
+      return removals;
+    },
   };
 }
 
@@ -69,7 +81,9 @@ test('null, unspecified and unexpected values are unavailable, never an implicit
     const p = port();
     p.set(initial);
     const states: AppearanceState[] = [];
-    const release = createAppearanceObserver(p.api).subscribe(system, (state) => states.push(state));
+    const release = createAppearanceObserver(p.api).subscribe(system, (state) =>
+      states.push(state),
+    );
     assert.deepEqual(states, [{status: 'unavailable'}]);
     p.emit('dark');
     p.emit(null);
@@ -92,7 +106,9 @@ test('default, concrete and direct sources neither read nor subscribe nor publis
     {sourceKind: 'maplibre'},
     {sourceKind: 'maplibre', theme: 'system'},
   ] as const) {
-    const release = observer.subscribe(selection, () => assert.fail('Unexpected appearance update.'));
+    const release = observer.subscribe(selection, () =>
+      assert.fail('Unexpected appearance update.'),
+    );
     release();
     release();
   }
@@ -162,10 +178,7 @@ test('reentrant changes suppress obsolete observer delivery', () => {
   });
   const releaseSecond = observer.subscribe(system, (state) => second.push(state));
   p.emit('dark');
-  assert.deepEqual(second, [
-    {status: 'available', colorScheme: 'light'},
-    {status: 'unavailable'},
-  ]);
+  assert.deepEqual(second, [{status: 'available', colorScheme: 'light'}, {status: 'unavailable'}]);
   releaseFirst();
   releaseSecond();
 });
@@ -173,7 +186,9 @@ test('reentrant changes suppress obsolete observer delivery', () => {
 test('observer exceptions do not prevent cleanup or other observers', () => {
   const p = port();
   const observer = createAppearanceObserver(p.api);
-  const stopBad = observer.subscribe(system, () => { throw new Error('Observer-only secret.'); });
+  const stopBad = observer.subscribe(system, () => {
+    throw new Error('Observer-only secret.');
+  });
   const states: AppearanceState[] = [];
   const stopGood = observer.subscribe(system, (state) => states.push(state));
   p.emit('dark');
@@ -185,11 +200,18 @@ test('observer exceptions do not prevent cleanup or other observers', () => {
 
 test('native read failures and malformed event objects reveal no remote details', () => {
   const p = port();
-  p.api.getColorScheme = () => { throw new Error('Native secret.'); };
+  p.api.getColorScheme = () => {
+    throw new Error('Native secret.');
+  };
   const states: AppearanceState[] = [];
   const stop = createAppearanceObserver(p.api).subscribe(system, (state) => states.push(state));
   let getterReads = 0;
-  p.listeners[0]!({get colorScheme() { getterReads++; throw new Error('Secret.'); }});
+  p.listeners[0]!({
+    get colorScheme() {
+      getterReads++;
+      throw new Error('Secret.');
+    },
+  });
   p.listeners[0]!(null);
   assert.equal(getterReads, 0);
   assert.deepEqual(states, [{status: 'unavailable'}]);

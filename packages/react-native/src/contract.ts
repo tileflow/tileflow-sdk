@@ -1,6 +1,6 @@
+import type {MapProps as NativeMapProps} from '@maplibre/maplibre-react-native';
 import type {ReactNode, Ref} from 'react';
 import type {ViewProps} from 'react-native';
-import type {MapProps as NativeMapProps} from '@maplibre/maplibre-react-native';
 import type {
   TileflowNativeInitialView,
   TileflowNativeInitialViewOptions,
@@ -32,12 +32,19 @@ type AllowedMapOptions =
   | 'compassHiddenFacingNorth'
   | 'scaleBar';
 
-type OwnedMapOptions = Exclude<keyof NativeMapProps, AllowedMapOptions>
-  | 'container' | 'styleURL' | 'styleUrl' | 'transformRequest' | 'requestTransform' | 'requestHeaders';
+type OwnedMapOptions =
+  | Exclude<keyof NativeMapProps, AllowedMapOptions>
+  | 'container'
+  | 'styleURL'
+  | 'styleUrl'
+  | 'transformRequest'
+  | 'requestTransform'
+  | 'requestHeaders';
 
 /** A positive allowlist. Style, interception, view and lifecycle remain adapter-owned. */
-export type MapOptions = Readonly<Pick<NativeMapProps, AllowedMapOptions>> &
-  {readonly [Key in OwnedMapOptions]?: never};
+export type MapOptions = Readonly<Pick<NativeMapProps, AllowedMapOptions>> & {
+  readonly [Key in OwnedMapOptions]?: never;
+};
 
 export type MapPresentationProps = Readonly<{
   children?: ReactNode;
@@ -82,22 +89,20 @@ export type MapErrorEvent =
 export type MapReadinessChangeEvent = Readonly<{
   type: 'readiness-change';
   generation: number;
-}> & (
-  | Readonly<{status: 'loading'}>
-  | Readonly<{status: 'ready'}>
-  | Readonly<{status: 'error'}>
-);
+}> &
+  (Readonly<{status: 'loading'}> | Readonly<{status: 'ready'}> | Readonly<{status: 'error'}>);
 
 /** Theme transitions retain concrete names; source/renderer error details use onError. */
 export type MapThemeChangeEvent = Readonly<{
   type: 'theme-change';
   generation: number;
   map: TileflowReady['map']['name'];
-}> & (
-  | Readonly<{phase: 'preloading' | 'applying'; targetTheme: MapTheme; currentTheme?: MapTheme}>
-  | Readonly<{phase: 'ready'; currentTheme: MapTheme}>
-  | Readonly<{phase: 'error'; targetTheme?: MapTheme; currentTheme?: MapTheme}>
-);
+}> &
+  (
+    | Readonly<{phase: 'preloading' | 'applying'; targetTheme: MapTheme; currentTheme?: MapTheme}>
+    | Readonly<{phase: 'ready'; currentTheme: MapTheme}>
+    | Readonly<{phase: 'error'; targetTheme?: MapTheme; currentTheme?: MapTheme}>
+  );
 
 export type MapEventHandlers = Readonly<{
   onLoad?: (event: MapLoadEvent) => void;
@@ -107,5 +112,7 @@ export type MapEventHandlers = Readonly<{
 }>;
 
 /** Shared contract pieces only. No Map component or controlled-camera props are exported yet. */
-export type MapBaseProps = MapSourceProps & MapPresentationProps & MapEventHandlers &
+export type MapBaseProps = MapSourceProps &
+  MapPresentationProps &
+  MapEventHandlers &
   Readonly<{ref?: Ref<MapRef>}>;

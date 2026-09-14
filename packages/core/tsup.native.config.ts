@@ -49,7 +49,7 @@ const codecPlugin: NonNullable<Options['esbuildPlugins']>[number] = {
       if (
         inputs.includes(resolve(providerLib, 'encoding.js')) ||
         !inputs.includes(codecPath) ||
-        foreign.some((name) => !['whatwg-url', 'tr46', 'punycode'].includes(name)) ||
+        foreign.some((name) => !['whatwg-url', 'tr46', 'punycode', 'zod'].includes(name)) ||
         inputs.some(
           (path) =>
             path.startsWith(providerLib) &&
@@ -63,7 +63,7 @@ const codecPlugin: NonNullable<Options['esbuildPlugins']>[number] = {
         return {
           errors: [
             {
-              text: 'Native URL output must contain only the private parser graph and no external imports.',
+              text: 'Native URL output must contain only the private parser, canonical manifest schema and no external imports.',
             },
           ],
         };
@@ -80,7 +80,7 @@ export default defineConfig({
   target: 'es2020',
   splitting: false,
   dts: true,
-  noExternal: [/^whatwg-url(?:\/|$)/u, /^tr46(?:\/|$)/u, /^punycode(?:\/|$)/u],
+  noExternal: [/^whatwg-url(?:\/|$)/u, /^tr46(?:\/|$)/u, /^punycode(?:\/|$)/u, /^zod(?:\/|$)/u],
   esbuildPlugins: [codecPlugin],
   esbuildOptions(options) {
     options.metafile = true;

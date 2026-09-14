@@ -119,6 +119,7 @@ test('runs the standalone published native file with no installed dependencies o
       'TileflowNativeUrlError',
       'createTileflowNativeSourceController',
       'loadTileflowNativeManifest',
+      'resolveTileflowNativeInitialView',
       'resolveTileflowNativeManifestUrl',
       'resolveTileflowNativeResourceUrl',
       'tileflowNativeManifestLimits',

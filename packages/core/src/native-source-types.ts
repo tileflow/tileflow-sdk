@@ -1,10 +1,11 @@
-import type {TileflowRuntimeManifest} from './manifest';
+import type {TileflowRuntimeManifest} from './manifest-types';
 import type {TileflowNativeNetworkOptions} from './native-url-policy';
 import type {
   TileflowResolvedRuntimeTheme,
   TileflowRuntimeColorScheme,
   TileflowRuntimeManifestMap,
 } from './runtime';
+import type {MapLibreStyle} from './types';
 
 /** The adapter must honor the requested read bound, without first buffering an unbounded body. */
 export type TileflowNativeManifestReader = {
@@ -44,15 +45,15 @@ export type TileflowNativeManifestLoadOptions = TileflowNativeNetworkOptions & {
   signal?: TileflowNativeAbortSignal;
 };
 
-export type TileflowNativeSource = {
-  kind: 'tileflow';
-  map: string;
-  manifestUrl: string;
-};
+/** A manifest map or unmanaged direct style data; neither branch creates a renderer. */
+export type TileflowNativeSource =
+  | {kind: 'tileflow'; map: string; manifestUrl: string}
+  | {kind: 'maplibre'; style: string | MapLibreStyle};
 
 export type TileflowNativeSourceOptions = TileflowNativeNetworkOptions & {
+  /** Only valid for a Tileflow manifest source. */
   theme?: string;
-  /** Required only for theme="system". Core never reads system appearance. */
+  /** Required only for theme="system"; ignored for direct styles. No ambient appearance access. */
   colorScheme?: TileflowRuntimeColorScheme;
   signal?: TileflowNativeAbortSignal;
 };
@@ -68,11 +69,19 @@ export type TileflowNativeSourceState =
   | {readonly status: 'loading'; readonly generation: number}
   | ({
       readonly status: 'ready';
+      /** Mirrors source.kind and narrows the whole ready snapshot in TypeScript. */
+      readonly kind: 'tileflow';
       readonly generation: number;
-      readonly source: Readonly<TileflowNativeSource>;
+      readonly source: Readonly<Extract<TileflowNativeSource, {kind: 'tileflow'}>>;
       readonly map: Immutable<TileflowRuntimeManifestMap>;
       readonly theme: Immutable<TileflowResolvedRuntimeTheme>;
     } & TileflowNativeManifestResult)
+  | {
+      readonly status: 'ready';
+      readonly kind: 'maplibre';
+      readonly generation: number;
+      readonly source: Immutable<Extract<TileflowNativeSource, {kind: 'maplibre'}>>;
+    }
   | {
       readonly status: 'error';
       readonly generation: number;
@@ -88,8 +97,8 @@ export type TileflowNativeSourceController = {
 };
 
 const messages = {
-  NATIVE_SOURCE_INVALID: 'Expected an explicit Tileflow manifest source and portable map identity.',
-  NATIVE_SOURCE_ABORTED: 'The manifest source operation was cancelled.',
+  NATIVE_SOURCE_INVALID: 'Expected a valid native source or renderer-neutral view.',
+  NATIVE_SOURCE_ABORTED: 'The source operation was cancelled.',
   NATIVE_SOURCE_DISPOSED: 'The source controller has been disposed.',
   NATIVE_MANIFEST_URL_INVALID:
     'Expected a safe absolute manifest URL and an exact development origin.',
@@ -116,7 +125,8 @@ export type TileflowNativeSourceErrorField =
   | 'response'
   | 'body'
   | 'map'
-  | 'theme';
+  | 'theme'
+  | 'view';
 
 /** Contains no body, URL, remote cause, parser details, or AbortSignal.reason. */
 export class TileflowNativeSourceError extends Error {
@@ -145,7 +155,7 @@ export function normalizeNativeSourceError(error: unknown): TileflowNativeSource
       if (
         typeof code === 'string' &&
         Object.hasOwn(messages, code) &&
-        ['source', 'signal', 'manifestUrl', 'response', 'body', 'map', 'theme'].includes(field)
+        ['source', 'signal', 'manifestUrl', 'response', 'body', 'map', 'theme', 'view'].includes(field)
       ) {
         return new TileflowNativeSourceError(code as TileflowNativeSourceErrorCode, field);
       }

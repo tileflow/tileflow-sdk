@@ -1,3 +1,4 @@
+import {snapshotNativeDirectStyle} from './native-direct-style';
 import {loadNativeManifest} from './native-manifest';
 import {NativeSourceCancellation} from './native-source-cancellation';
 import {
@@ -17,7 +18,7 @@ import {
   validateTileflowThemeSelection,
 } from './runtime';
 
-/** A renderer-neutral, manifest-only source lifecycle. No I/O until replace() is called. */
+/** A renderer-neutral source lifecycle. Only Tileflow replacements acquire a manifest. */
 export function createTileflowNativeSourceController(options: {
   acquire: TileflowNativeManifestAcquire;
 }): TileflowNativeSourceController {
@@ -69,27 +70,51 @@ export function createTileflowNativeSourceController(options: {
       if (disposed) throw new TileflowNativeSourceError('NATIVE_SOURCE_DISPOSED', 'source');
       if (generation >= Number.MAX_SAFE_INTEGER)
         throw new TileflowNativeSourceError('NATIVE_SOURCE_INVALID', 'source');
-      // Copy before invoking an observer or a transport cleanup that might reenter the controller.
-      const sourceInput = nativeOwnRecord(source);
-      const selection = nativeOwnRecord(options);
       const own = {generation: ++generation, cancellation: new NativeSourceCancellation()};
       const previous = active;
       active = own;
-      previous?.cancellation.cancel();
       const current = () => !disposed && generation === own.generation;
+      let sourceInput: Record<string, unknown> | undefined;
+      let selection: Record<string, unknown> | undefined;
+      let direct: Extract<TileflowNativeSource, {kind: 'maplibre'}> | undefined;
+      let snapshotError: TileflowNativeSourceError | undefined;
+      // Copy nested direct data before observers or retired transports can mutate caller inputs.
+      // Reserve the generation first so even reentrant reflection cannot supersede newer work.
+      try {
+        sourceInput = nativeOwnRecord(source);
+        selection = nativeOwnRecord(options);
+        if (sourceInput?.kind === 'maplibre' && selection) {
+          if (selection.theme !== undefined)
+            throw new TileflowNativeSourceError('NATIVE_THEME_INVALID', 'theme');
+          direct = {
+            kind: 'maplibre',
+            style: snapshotNativeDirectStyle(sourceInput.style, {
+              developmentOrigin: selection.developmentOrigin as string | undefined,
+            }),
+          };
+        }
+      } catch (error) {
+        snapshotError = normalizeNativeSourceError(error);
+      }
+      previous?.cancellation.cancel();
       let detach = () => undefined as void;
       try {
         if (!current()) return;
         publish({status: 'loading', generation: own.generation});
         if (!current()) return;
-        if (
-          !sourceInput ||
-          sourceInput.kind !== 'tileflow' ||
-          !isTileflowPortableId(sourceInput.map) ||
-          !selection
-        ) {
+        if (snapshotError) throw snapshotError;
+        if (!sourceInput || !selection)
           throw new TileflowNativeSourceError('NATIVE_SOURCE_INVALID', 'source');
+        if (sourceInput.kind === 'maplibre') {
+          if (!direct) throw new TileflowNativeSourceError('NATIVE_SOURCE_INVALID', 'source');
+          // colorScheme has no meaning here; do not infer Tileflow theme or delivery identity.
+          detach = own.cancellation.link(selection.signal as TileflowNativeSourceOptions['signal']);
+          own.cancellation.check();
+          publish({status: 'ready', kind: 'maplibre', generation: own.generation, source: direct});
+          return;
         }
+        if (sourceInput.kind !== 'tileflow' || !isTileflowPortableId(sourceInput.map))
+          throw new TileflowNativeSourceError('NATIVE_SOURCE_INVALID', 'source');
         if (
           (selection.theme !== undefined && !validateTileflowThemeSelection(selection.theme)) ||
           (selection.colorScheme !== undefined &&
@@ -98,7 +123,7 @@ export function createTileflowNativeSourceController(options: {
         ) {
           throw new TileflowNativeSourceError('NATIVE_THEME_INVALID', 'theme');
         }
-        const selectedSource: TileflowNativeSource = {
+        const selectedSource: Extract<TileflowNativeSource, {kind: 'tileflow'}> = {
           kind: 'tileflow',
           map: sourceInput.map,
           manifestUrl: sourceInput.manifestUrl as string,
@@ -136,6 +161,7 @@ export function createTileflowNativeSourceController(options: {
         }
         publish({
           status: 'ready',
+          kind: 'tileflow',
           generation: own.generation,
           source: selectedSource,
           ...result,

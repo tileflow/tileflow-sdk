@@ -12,6 +12,8 @@ export type {
 } from './native-urls';
 export {loadTileflowNativeManifest, tileflowNativeManifestLimits} from './native-manifest';
 export {createTileflowNativeSourceController} from './native-source-controller';
+export {resolveTileflowNativeInitialView} from './native-initial-view';
+export type {TileflowNativeInitialView, TileflowNativeInitialViewOptions} from './native-initial-view';
 export {TileflowNativeSourceError} from './native-source-types';
 export type {
   TileflowNativeAbortSignal,

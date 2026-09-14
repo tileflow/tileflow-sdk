@@ -12,8 +12,8 @@ import {
 } from './manifest-types';
 import {createPortableIdentitySchemas} from './portable-identity-schema';
 import type {TileflowStyleFontFace} from './runtime';
+import {createTileflowRuntimeViewSchema} from './runtime-view-schema';
 import {tileflowThemeLimits} from './themes/model';
-import type {TileflowViewConfig} from './types';
 
 /** Private primitives, not a second manifest wire format or a consumer configuration API. */
 export type TileflowManifestPrimitives = {
@@ -58,14 +58,7 @@ export function createTileflowRuntimeManifestSchema(
     isApiOrigin,
     'Expected an absolute HTTP(S) origin without path, credentials, query, or fragment',
   );
-  const viewSchema = operations.object<TileflowViewConfig>({
-    bearing: operations.optional(operations.number(-180, 180)),
-    center: operations.optional(
-      operations.tuplePair(operations.number(-180, 180), operations.number(-90, 90)),
-    ),
-    pitch: operations.optional(operations.number(0, 85)),
-    zoom: operations.optional(operations.number(0, 24)),
-  });
+  const viewSchema = createTileflowRuntimeViewSchema(operations);
   const fontFaceSchema = operations.object<TileflowStyleFontFace>({
     family: operations.maxLength(safeTextSchema, 100),
     source: publicResourceUrlSchema,

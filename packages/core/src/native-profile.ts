@@ -5,7 +5,7 @@ import {resolveTileflowNativeResourceUrl, TileflowNativeUrlError} from './native
 import type {MapLibreStyle} from './types';
 import {isBoundedNativeJson, nativePointer as pointer, supportsNativeVersions, tileflowNativeProfileLimits} from './native-profile-helpers';
 import {strictNativeObject} from './native-zod-object';
-export {tileflowNativeProfileLimits} from './native-profile-helpers';
+export {tileflowNativeProfileLimits, tileflowNativePreparedStyleLimits} from './native-profile-helpers';
 
 import {
   tileflowNativeProfile,
@@ -136,6 +136,25 @@ export function validateTileflowNativeStyle(
   input: unknown,
   options: TileflowNativeStyleValidationOptions = {},
 ): TileflowNativeDiagnostic[] {
+  return validateNativeStyle(input, options, 'input');
+}
+
+/**
+ * Check an already prepared artifact with the fixed native-v1 output allowance.
+ * This does not lower a style or prove its origin. Authoring input must use the raw validator.
+ */
+export function validateTileflowNativePreparedStyle(
+  input: unknown,
+  options: TileflowNativeStyleValidationOptions = {},
+): TileflowNativeDiagnostic[] {
+  return validateNativeStyle(input, options, 'prepared');
+}
+
+function validateNativeStyle(
+  input: unknown,
+  options: TileflowNativeStyleValidationOptions,
+  stage: 'input' | 'prepared',
+): TileflowNativeDiagnostic[] {
   const issues: TileflowNativeDiagnostic[] = [];
   const add = (code: TileflowNativeDiagnosticCode, path: string) => {
     if (issues.length < tileflowNativeProfileLimits.maximumIssues) {
@@ -151,7 +170,7 @@ export function validateTileflowNativeStyle(
   ) {
     return [createTileflowNativeDiagnostic('NATIVE_RENDERER_UNSUPPORTED', '/profile')];
   }
-  if (!isBoundedNativeJson(input) || !record(input)) {
+  if (!isBoundedNativeJson(input, stage) || !record(input)) {
     return [createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE')];
   }
   const style = input;

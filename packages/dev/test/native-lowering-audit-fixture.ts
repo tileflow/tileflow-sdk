@@ -91,7 +91,7 @@ export function auditNativeLowering(
 export async function auditOfficialStreets(cwd: string) {
   const {parseTileflowMap} = await import('@tileflow/core');
   const {collectTileflowMapBuildLineage} = await import('@tileflow/core/build');
-  const {tileflowNativeProfileLimits} = await import('@tileflow/core/native-profile');
+  const {tileflowNativeProfileLimits, tileflowNativePreparedStyleLimits} = await import('@tileflow/core/native-profile');
   const {streets} = await import('@tileflow/maps');
   const {convertFilter} = await import('@maplibre/maplibre-gl-style-spec');
   const {prepareTileflowCatalogIcons} = await import('../src/icons');
@@ -109,10 +109,14 @@ export async function auditOfficialStreets(cwd: string) {
         const report = auditNativeLowering(style, lowered);
         return {
           theme, ...report,
-          withinOutputBudget: report.after.nodes <= tileflowNativeProfileLimits.maximumNodes &&
-            report.after.bytes <= tileflowNativeProfileLimits.maximumStyleBytes &&
-            report.after.depth <= tileflowNativeProfileLimits.maximumDepth &&
-            report.after.layers <= tileflowNativeProfileLimits.maximumLayers,
+          withinInputBudget: report.before.nodes <= tileflowNativeProfileLimits.maximumNodes &&
+            report.before.bytes <= tileflowNativeProfileLimits.maximumStyleBytes &&
+            report.before.depth <= tileflowNativeProfileLimits.maximumDepth &&
+            report.before.layers <= tileflowNativeProfileLimits.maximumLayers,
+          withinOutputBudget: report.after.nodes <= tileflowNativePreparedStyleLimits.maximumNodes &&
+            report.after.bytes <= tileflowNativePreparedStyleLimits.maximumStyleBytes &&
+            report.after.depth <= tileflowNativePreparedStyleLimits.maximumDepth &&
+            report.after.layers <= tileflowNativePreparedStyleLimits.maximumLayers,
         };
       });
     return {
@@ -120,6 +124,7 @@ export async function auditOfficialStreets(cwd: string) {
       scope: 'static-lowering-size-and-order-audit',
       nativeVisualQualification: 'pending',
       limits: tileflowNativeProfileLimits,
+      preparedLimits: tileflowNativePreparedStyleLimits,
       map: map.id,
       themes,
     };

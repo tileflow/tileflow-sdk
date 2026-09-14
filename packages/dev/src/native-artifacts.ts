@@ -16,6 +16,7 @@ import {
   type TileflowNativeDiagnostic,
   tileflowNativeProfileLimits,
   validateTileflowNativeStyle,
+  validateTileflowNativePreparedStyle,
 } from '@tileflow/core/native-profile';
 import type {TileflowBuildAsset} from './icons';
 import {lowerNativeStyleRepresentation, NativeLoweringError} from './native-lowering';
@@ -60,7 +61,7 @@ export function lowerTileflowNativeCompiledStyles(input: TileflowBuildStyles): {
         }));
         const lowered = lowerNativeStyleRepresentation(original, (filter) =>
           convertFilter(structuredClone(filter) as FilterSpecification));
-        const issues = validateTileflowNativeStyle(lowered.style, options);
+        const issues = validateTileflowNativePreparedStyle(lowered.style, options);
         if (issues.length) throw new TileflowNativeCompatibilityError(issues.map((issue) => withContext(issue, map, theme)));
         styles[map]![theme] = lowered.style as MapLibreStyle;
         transformations.push({
@@ -87,12 +88,12 @@ export function lowerTileflowNativeCompiledStyles(input: TileflowBuildStyles): {
   return {styles, transformations};
 }
 
-/** Reject browser protocols before local PMTiles snapshotting and before any output writes. */
+/** Check lowered compiler output before local snapshots. Raw inputs are gated before lowering. */
 export function assertTileflowNativeCompiledStyles(project: TileflowBuildCatalog, styles: TileflowBuildStyles): void {
   const issues: TileflowNativeDiagnostic[] = [];
   for (const mapName of Object.keys(project.maps).sort()) {
     for (const theme of Object.keys(styles[mapName] ?? {}).sort()) {
-      issues.push(...validateTileflowNativeStyle(styles[mapName]![theme], {
+      issues.push(...validateTileflowNativePreparedStyle(styles[mapName]![theme], {
         documentUrl: documentUrl(mapName, theme), deferFontClosure: true,
       }).map((issue) => withContext(issue, mapName, theme)));
     }
@@ -117,7 +118,7 @@ export function prepareTileflowNativeStyles(
     }
     for (const theme of Object.keys(input[map]!).sort()) {
       const original = input[map]![theme]!;
-      const preflight = validateTileflowNativeStyle(original, {
+      const preflight = validateTileflowNativePreparedStyle(original, {
         documentUrl: documentUrl(map, theme), deferFontClosure: true,
       });
       if (preflight.length) {
@@ -147,7 +148,7 @@ export function prepareTileflowNativeStyles(
         ...rest, metadata,
         ...(faces.length ? {'font-faces': nativeFaces} : {}),
       } as MapLibreStyle;
-      issues.push(...validateTileflowNativeStyle(style, {
+      issues.push(...validateTileflowNativePreparedStyle(style, {
         documentUrl: documentUrl(map, theme),
       }).map((issue) => withContext(issue, map, theme)));
       result[map]![theme] = style;
@@ -168,7 +169,7 @@ function isNativeFontAsset(asset: TileflowBuildAsset): boolean {
 
 /** Recheck the final generation URLs after content-addressed paths have been inserted. */
 export function assertTileflowNativeGeneratedStyle(style: MapLibreStyle, map: string, theme: string): void {
-  const issues = validateTileflowNativeStyle(style, {documentUrl: documentUrl(map, theme)});
+  const issues = validateTileflowNativePreparedStyle(style, {documentUrl: documentUrl(map, theme)});
   if (issues.length) {
     throw new TileflowNativeCompatibilityError(issues.map((issue) => withContext(issue, map, theme)));
   }

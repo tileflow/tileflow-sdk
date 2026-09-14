@@ -11,6 +11,15 @@ export const tileflowNativeProfileLimits = Object.freeze({
   maximumFontBytes: 1024 * 1024,
 });
 
+/** Fixed output budget for a prepared native-v1 style, never a raw input allowance. */
+export const tileflowNativePreparedStyleLimits = Object.freeze({
+  ...tileflowNativeProfileLimits,
+  // Full Streets themes lower to 513321/513231 nodes. 540k leaves 5.20%/5.22% headroom.
+  maximumNodes: 540_000,
+});
+
+type NativeJsonStage = 'input' | 'prepared';
+
 /** Issue links and missing support entries are not released SDK version evidence. */
 export function supportsNativeVersions(
   support: Readonly<Record<string, unknown>>,
@@ -35,22 +44,25 @@ export function nativePointer(parent: string, key: string): string {
   return path.length > 300 ? parent : path;
 }
 
-export function isBoundedNativeJson(input: unknown): boolean {
+/** One traversal and JSON policy; only the two fixed node allowances differ. */
+export function isBoundedNativeJson(input: unknown, stage: NativeJsonStage = 'input'): boolean {
+  if (stage !== 'input' && stage !== 'prepared') return false;
+  const limits = stage === 'prepared' ? tileflowNativePreparedStyleLimits : tileflowNativeProfileLimits;
   let nodes = 0;
   let stringBytes = 0;
   const ancestors = new Set<object>();
   const encoder = new TextEncoder();
   const visit = (value: unknown, depth: number): boolean => {
     if (
-      ++nodes > tileflowNativeProfileLimits.maximumNodes ||
-      depth > tileflowNativeProfileLimits.maximumDepth
+      ++nodes > limits.maximumNodes ||
+      depth > limits.maximumDepth
     ) {
       return false;
     }
     if (typeof value === 'string') {
-      if (value.length > tileflowNativeProfileLimits.maximumStyleBytes) return false;
+      if (value.length > limits.maximumStyleBytes) return false;
       stringBytes += encoder.encode(value).byteLength;
-      return stringBytes <= tileflowNativeProfileLimits.maximumStyleBytes;
+      return stringBytes <= limits.maximumStyleBytes;
     }
     if (value === null || typeof value === 'boolean') return true;
     if (typeof value === 'number') return Number.isFinite(value);
@@ -61,7 +73,7 @@ export function isBoundedNativeJson(input: unknown): boolean {
     if (keys.some((key) => typeof key === 'symbol' || key === 'toJSON')) return false;
     if (
       Array.isArray(value) &&
-      (value.length > tileflowNativeProfileLimits.maximumNodes ||
+      (value.length > limits.maximumNodes ||
         Object.keys(value).length !== value.length)
     ) {
       return false;
@@ -86,7 +98,7 @@ export function isBoundedNativeJson(input: unknown): boolean {
   try {
     return (
       visit(input, 0) &&
-      encoder.encode(JSON.stringify(input)).byteLength <= tileflowNativeProfileLimits.maximumStyleBytes
+      encoder.encode(JSON.stringify(input)).byteLength <= limits.maximumStyleBytes
     );
   } catch {
     return false;

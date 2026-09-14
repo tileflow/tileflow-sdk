@@ -59,8 +59,12 @@ test('inspection exposes exact directory order, winning sources, and later-wins 
       ['clone', 'none', 'zeta'],
     );
     assert.deepEqual(
-      inspection.catalogs.map((catalog) => catalog.directories),
+      inspection.catalogs.map((catalog) => catalog.contributors.map(({label}) => label)),
       [['./icons/base', './icons/brand'], ['./icons/clone']],
+    );
+    assert.deepEqual(
+      inspection.catalogs.map((catalog) => catalog.composition),
+      [null, null],
     );
     assert.equal(
       requiredCatalog(inspection.catalogs, ['./icons/base', './icons/brand']).insideWorkingTree,
@@ -75,7 +79,10 @@ test('inspection exposes exact directory order, winning sources, and later-wins 
       clone.compiledPackage.files.map((file) => Buffer.from(file.source).toString('hex')),
     );
     assert.deepEqual(
-      composed.icons.map((icon) => ({id: icon.id, path: icon.source.path})),
+      composed.icons.map((icon) => ({
+        id: icon.id,
+        path: icon.source.kind === 'file' ? icon.source.path : icon.source.reference,
+      })),
       [
         {id: 'bicycle', path: './icons/brand/bicycle.svg'},
         {id: 'cafe', path: './icons/brand/cafe.svg'},
@@ -89,10 +96,9 @@ test('inspection exposes exact directory order, winning sources, and later-wins 
         winner: './icons/brand/cafe.svg',
       },
     ]);
-    assert.equal(
-      composed.icons.find((icon) => icon.id === 'cafe')?.source.byteLength,
-      (await readFile(join(cwd, 'icons', 'brand', 'cafe.svg'))).byteLength,
-    );
+    const cafe = composed.icons.find((icon) => icon.id === 'cafe')?.source;
+    assert.equal(cafe?.kind === 'file' && cafe.byteLength, (await readFile(join(cwd, 'icons', 'brand', 'cafe.svg'))).byteLength);
+    assert.equal(cafe?.contributor, 1);
 
     for (const catalog of inspection.catalogs) {
       const compiled = before.packages.find(
@@ -114,8 +120,12 @@ test('inspection exposes exact directory order, winning sources, and later-wins 
     }
 
     const zeta = inspection.maps.find((map) => map.name === 'zeta');
-    assert.ok(zeta?.icons.kind === 'directories');
-    assert.deepEqual(zeta.icons.directories, ['./icons/base', './icons/brand']);
+    assert.ok(zeta?.icons.kind === 'sources');
+    assert.deepEqual(
+      zeta.icons.contributors.map(({label}) => label),
+      ['./icons/base', './icons/brand'],
+    );
+    assert.equal(zeta.icons.composition, null);
     assert.deepEqual(zeta.icons.iconIds, ['bicycle', 'cafe', 'photo']);
     assert.equal(zeta.icons.packageHash, composed.compiledPackage.contentHash);
     assert.deepEqual(
@@ -158,7 +168,7 @@ test('filters maps before touching an unselected missing directory', async () =>
       ['good'],
     );
     assert.deepEqual(
-      inspection.catalogs.map((catalog) => catalog.directories),
+      inspection.catalogs.map((catalog) => catalog.contributors.map(({label}) => label)),
       [['./icons']],
     );
     assert.deepEqual(
@@ -172,14 +182,14 @@ test('filters maps before touching an unselected missing directory', async () =>
 
 function requiredCatalog(
   catalogs: readonly TileflowIconCatalog[],
-  directories: readonly string[],
+  labels: readonly string[],
 ): TileflowIconCatalog {
   const catalog = catalogs.find(
     (candidate) =>
-      candidate.directories.length === directories.length &&
-      candidate.directories.every((directory, index) => directory === directories[index]),
+      candidate.contributors.length === labels.length &&
+      candidate.contributors.every((contributor, index) => contributor.label === labels[index]),
   );
-  assert.ok(catalog, `Expected catalog ${directories.join(', ')}`);
+  assert.ok(catalog, `Expected catalog ${labels.join(', ')}`);
   return catalog;
 }
 

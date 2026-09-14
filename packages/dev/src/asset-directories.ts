@@ -49,6 +49,8 @@ export async function resolveTileflowAssetDirectories(
     configPath: string;
     cwd: string;
     kind: TileflowAssetDirectoryKind;
+    /** Diagnostic index of the first entry inside its complete declared sequence. */
+    ordinalOffset?: number;
     target: 'hosted' | 'local';
   },
 ): Promise<ResolvedTileflowAssetDirectory[]> {
@@ -83,7 +85,7 @@ export async function resolveTileflowAssetDirectories(
   const result: ResolvedTileflowAssetDirectory[] = [];
   const seen = new Map<string, string>();
   for (const [index, directory] of directories.entries()) {
-    const configPath = `${options.configPath}.${index}`;
+    const configPath = `${options.configPath}.${index + (options.ordinalOffset ?? 0)}`;
     let candidate: string;
     let containmentRoot: string;
     let packageOwned = false;

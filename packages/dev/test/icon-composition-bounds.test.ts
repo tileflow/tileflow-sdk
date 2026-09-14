@@ -40,7 +40,8 @@ test('implicit lock reads are watchable and a changed pin is acquired as a new s
       cacheRoot: cwd,
       offline: true,
     });
-    assert.deepEqual(first.watchPaths, [path]);
+    assert.deepEqual(first.watchFiles, [path]);
+    assert.deepEqual(first.watchPaths, []);
     lock.sets['@acme/brand']!.version = 2;
     lock.sets['@acme/brand']!.versionId = `icv_${'revision-two'.padStart(16, '0')}`;
     await writeFile(path, await serializeTileflowIconsLockfile(lock));

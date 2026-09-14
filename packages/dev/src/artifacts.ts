@@ -54,6 +54,7 @@ import {
   type PreparedTileflowCatalog,
   prepareTileflowCatalogIcons,
   type TileflowBuildAsset,
+  type TileflowIconResolutionOptions,
   type TileflowSourceCatalog,
 } from './icons';
 import {prepareTileflowLocalTilesets, type TileflowLocalTilesetFile} from './local-tilesets';
@@ -74,6 +75,7 @@ export type {
   PreparedTileflowCatalog,
   PreparedTileflowBuildCatalog,
   TileflowBuildAsset,
+  TileflowIconResolutionOptions,
   TileflowSourceCatalog,
 } from './icons';
 
@@ -107,6 +109,13 @@ export type TileflowBuildArtifactsOptions = {
   assetBaseUrl?: string;
   config?: string;
   cwd?: string;
+  /**
+   * Explicit shared Icon Set resolution settings for this build.
+   *
+   * Builds never resolve a catalog head. These options only choose the verified cache root,
+   * offline behavior, trusted delivery origins and the transport used to hydrate exact pins.
+   */
+  icons?: TileflowIconResolutionOptions;
   /** Build a memory-only compiler sidecar for local authoring tools. */
   inspection?: boolean;
   styleBaseUrl?: string;
@@ -340,6 +349,9 @@ export async function createTileflowArtifactPlan(
                 sourceAssets: {
                   fonts: preparedFonts.sourceIdentities[mapName] ?? [],
                   icons: prepared.mapIconSources[mapName] ?? [],
+                  ...(prepared.mapIconCompositions[mapName]
+                    ? {iconComposition: prepared.mapIconCompositions[mapName]}
+                    : {}),
                 },
                 styles: style,
               },
@@ -357,7 +369,11 @@ export async function createTileflowArtifactPlan(
         [...prepared.watchPaths, ...preparedFonts.watchPaths].map(canonicalInputPath),
       ),
       files: uniqueStrings(
-        [...(options.inputFiles ?? []), ...localTilesets.watchPaths].map(canonicalInputPath),
+        [
+          ...(options.inputFiles ?? []),
+          ...prepared.watchFiles,
+          ...localTilesets.watchPaths,
+        ].map(canonicalInputPath),
       ),
     };
     const partial: TileflowBuildArtifacts = {
@@ -403,6 +419,7 @@ export async function createTileflowBuildArtifacts(
     assetBaseUrl: resolveAssetBaseUrl(options),
     baseDirectory: dirname(loaded.configFile),
     cwd: options.cwd ?? process.cwd(),
+    ...(options.icons ? {icons: options.icons} : {}),
   });
 
   return await createTileflowArtifactPlan(prepared, {...options, inputFiles: loaded.inputFiles});

@@ -1,4 +1,5 @@
-import {resolve} from 'node:path';
+import {realpath} from 'node:fs/promises';
+import {isAbsolute, relative, resolve, sep} from 'node:path';
 import {tileflowIconsLockfileName} from '@tileflow/core';
 import {
   collectTileflowIconSetReferences,
@@ -18,30 +19,72 @@ import {
   readTileflowIconDirectory,
   type CompiledTileflowIconPackage,
   type TileflowIconCompilationTarget,
+  type TileflowIconDirectoryEntry,
+  type TileflowIconDirectorySourceFile,
 } from './icons';
 import {packTileflowRenderedIcons, type TileflowRenderedIcon} from './icon-sprite';
 
 export type ComposeTileflowIconSourcesOptions = TileflowIconCacheOptions & {
   cwd: string;
   baseDirectory?: string;
+  /** Trusted caller-owned diagnostic prefix, such as `maps.main.icons`. */
+  configPath?: string;
   lock?: unknown;
   target?: TileflowIconCompilationTarget;
 };
+
+/** One declared contributor, retained even when later contributors shadow all of its exports. */
+export type TileflowComposedIconContributor =
+  | {
+      /** Ordered declared entries, before later contributors replace any of them. */
+      entries: readonly TileflowIconDirectoryEntry[];
+      iconIds: readonly string[];
+      insideWorkingTree: boolean;
+      kind: 'local' | 'package';
+      label: string;
+    }
+  | {
+      iconIds: readonly string[];
+      kind: 'icon-set';
+      /** Canonical `@team/set` reference; the exact revision lives in the receipt. */
+      label: string;
+      packageId: string;
+      reference: string;
+      setId: string;
+      version: number;
+      versionId: string;
+    };
+
+/** One effective icon after ordered last-wins replacement has completed. */
+export type TileflowComposedIconWinner = {
+  contributor: number;
+  id: string;
+  identity: TileflowEffectiveIconSourceIdentity;
+  /** Present only for filesystem-backed winners; verified shared cells expose no original. */
+  source: TileflowIconDirectorySourceFile | null;
+};
+
 export type TileflowComposedIconSources = {
   package: CompiledTileflowIconPackage | null;
   composition: TileflowIconCompositionV1 | null;
+  contributors: TileflowComposedIconContributor[];
   sourceIdentities: TileflowEffectiveIconSourceIdentity[];
   replacements: Array<{id: string; replaced: number; winner: number}>;
+  /** Exact files whose contents select this composition, such as the icon lock. */
+  watchFiles: string[];
+  /** Local directories whose children can change the composition without a config edit. */
   watchPaths: string[];
+  winners: TileflowComposedIconWinner[];
 };
 
-/** Foundational build port. Registry and command integration are intentionally separate. */
+/** The single normal icon-preparation path for declared local, package and shared contributors. */
 export async function composeTileflowIconSources(
   input: readonly TileflowIconSource[],
   options: ComposeTileflowIconSourcesOptions,
 ): Promise<TileflowComposedIconSources> {
   const sources = structuredClone(input);
   const references = collectTileflowIconSetReferences(sources);
+  let realCwd: string | undefined;
   const lock =
     references.length > 0
       ? options.lock === undefined
@@ -49,13 +92,20 @@ export async function composeTileflowIconSources(
         : await parseTileflowIconsLockfile(options.lock, sources)
       : await parseTileflowIconsLockfile(options.lock ?? {lockfileVersion: 1, sets: {}}, sources);
   const contributors = new Array<TileflowIconContributorIdentity>(sources.length);
+  const details = new Array<TileflowComposedIconContributor>(sources.length);
   const winners = new Map<
     string,
-    {ordinal: number; icon: TileflowRenderedIcon; identity: TileflowEffectiveIconSourceIdentity}
+    {
+      ordinal: number;
+      icon: TileflowRenderedIcon;
+      identity: TileflowEffectiveIconSourceIdentity;
+      source: TileflowIconDirectorySourceFile | null;
+    }
   >();
   const watchPaths = new Set<string>();
+  const watchFiles = new Set<string>();
   if (references.length > 0 && options.lock === undefined)
-    watchPaths.add(resolve(options.baseDirectory ?? options.cwd, tileflowIconsLockfileName));
+    watchFiles.add(resolve(options.baseDirectory ?? options.cwd, tileflowIconsLockfileName));
   let reused: CompiledTileflowIconPackage | undefined;
   let pixelBytes = 0;
   let localSourceBytes = 0;
@@ -76,24 +126,41 @@ export async function composeTileflowIconSources(
         contentHash: pin.contentHash,
         iconIds: [...pin.manifest.iconNames],
       };
+      details[ordinal] = {
+        iconIds: [...pin.manifest.iconNames],
+        kind: 'icon-set',
+        label: source.reference,
+        packageId: pin.packageId,
+        reference: source.reference,
+        setId: pin.setId,
+        version: pin.version,
+        versionId: pin.versionId,
+      };
       if (sources.length === 1) reused = loaded.package;
       for (const icon of loaded.icons) {
         if (winners.has(icon.id)) continue;
         const pixels = pin.manifest.renderedIcons.find(
           (entry) => entry.name === icon.id,
         )!.pixelSha256;
-        addWinner(ordinal, icon, {
-          kind: 'rendered-icon',
-          id: icon.id,
-          width: icon.oneX.width,
-          height: icon.oneX.height,
-          pixelSha256: {...pixels},
-        });
+        addWinner(
+          ordinal,
+          icon,
+          {
+            kind: 'rendered-icon',
+            id: icon.id,
+            width: icon.oneX.width,
+            height: icon.oneX.height,
+            pixelSha256: {...pixels},
+          },
+          null,
+        );
       }
     } else {
       const directory = await readTileflowIconDirectory(source, {
         cwd: options.cwd,
         baseDirectory: options.baseDirectory ?? options.cwd,
+        ...(options.configPath === undefined ? {} : {configPath: options.configPath}),
+        ordinal,
         target: options.target ?? 'local',
       });
       if (directory.watchPath) watchPaths.add(directory.watchPath);
@@ -101,6 +168,13 @@ export async function composeTileflowIconSources(
         typeof source === 'string'
           ? {kind: 'local', iconIds: directory.iconIds}
           : {kind: 'package', package: source.package, iconIds: directory.iconIds};
+      details[ordinal] = {
+        entries: directory.entries,
+        iconIds: directory.iconIds,
+        insideWorkingTree: isPathInside((realCwd ??= await realpath(options.cwd)), directory.realPath),
+        kind: typeof source === 'string' ? 'local' : 'package',
+        label: directory.label,
+      };
       const selected = directory.iconIds.filter((id) => !winners.has(id));
       if (winners.size + selected.length > tileflowIconPackageLimits.maxIconCount)
         throw new TileflowIconSetError(
@@ -114,7 +188,7 @@ export async function composeTileflowIconSources(
             'ICON_COMPOSITION_INVALID',
             'Effective local icon originals exceed the source-byte limit',
           );
-        addWinner(ordinal, item.icon, item.identity);
+        addWinner(ordinal, item.icon, item.identity, item.source);
       }
     }
   }
@@ -152,15 +226,24 @@ export async function composeTileflowIconSources(
   return {
     package: iconPackage,
     composition,
+    contributors: details,
     sourceIdentities: sorted.map((winner) => winner.identity),
     replacements,
+    watchFiles: [...watchFiles].sort(compareCodeUnits),
     watchPaths: [...watchPaths].sort(compareCodeUnits),
+    winners: sorted.map((winner) => ({
+      contributor: winner.ordinal,
+      id: winner.icon.id,
+      identity: winner.identity,
+      source: winner.source,
+    })),
   };
 
   function addWinner(
     ordinal: number,
     icon: TileflowRenderedIcon,
     identity: TileflowEffectiveIconSourceIdentity,
+    source: TileflowIconDirectorySourceFile | null,
   ): void {
     pixelBytes += icon.oneX.rgba.byteLength + icon.twoX.rgba.byteLength;
     const maximumPixelBytes =
@@ -172,6 +255,14 @@ export async function composeTileflowIconSources(
         'ICON_COMPOSITION_INVALID',
         'Composed rendered cells exceed the final sprite capacity',
       );
-    winners.set(icon.id, {ordinal, icon, identity});
+    winners.set(icon.id, {ordinal, icon, identity, source});
   }
+}
+
+function isPathInside(root: string, candidate: string): boolean {
+  const pathFromRoot = relative(root, candidate);
+  return (
+    pathFromRoot === '' ||
+    (!isAbsolute(pathFromRoot) && pathFromRoot !== '..' && !pathFromRoot.startsWith(`..${sep}`))
+  );
 }

@@ -1,0 +1,54 @@
+{
+  "name": "@tileflow/react-native",
+  "version": "0.0.0-development",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Pre-release contracts and internal appearance adaptation for Tileflow on React Native. No map renderer is exported.",
+  "type": "module",
+  "sideEffects": false,
+  "homepage": "https://tileflow.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tileflow/tileflow-sdk.git",
+    "directory": "packages/react-native"
+  },
+  "bugs": {
+    "url": "https://github.com/tileflow/tileflow-sdk/issues"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/package-license.mjs --prepare",
+    "postpack": "node ../../scripts/package-license.mjs --clean",
+    "build": "tsup",
+    "test": "tsx --test test/*.test.ts",
+    "verify": "pnpm run build && pnpm run typecheck && pnpm run test",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.contract.json",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0"
+  },
+  "peerDependencies": {
+    "@maplibre/maplibre-react-native": "11.3.10",
+    "react": "19.2.0",
+    "react-native": "0.83.10"
+  },
+  "devDependencies": {
+    "@maplibre/maplibre-react-native": "11.3.10",
+    "@types/react": "^19.2.17",
+    "react": "19.2.0",
+    "react-native": "0.83.10"
+  }
+}

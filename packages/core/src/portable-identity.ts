@@ -3,9 +3,9 @@ import {classicManifestStringOperations} from './manifest-schema-classic';
 import {createPortableIdentitySchemas} from './portable-identity-schema';
 
 export {
-	isTileflowPortableId,
-	isTileflowThemeName,
-	tileflowPortableIdMaximumLength,
+  isTileflowPortableId,
+  isTileflowThemeName,
+  tileflowPortableIdMaximumLength,
 } from './portable-identity-rules';
 
 const schemas = createPortableIdentitySchemas(classicManifestStringOperations);

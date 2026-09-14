@@ -119,23 +119,23 @@ export type MapBaseProps = MapSourceProps &
 
 /** Canonical user-driven change only. Commands, renderer events and source generations stay private. */
 export type MapViewChangeEvent = Readonly<{
-	type: 'view-change';
-	view: MapView;
+  type: 'view-change';
+  view: MapView;
 }>;
 
 /** The ownership mode is fixed for one mounted native instance. */
 export type MapCameraProps =
-	| Readonly<{
-		view: MapView;
-		initialView?: never;
-		onViewChange: (event: MapViewChangeEvent) => void;
-	}>
-	| Readonly<{
-		view?: never;
-		initialView?: MapInitialViewInputs['view'];
-		/** Observation alone does not make the camera controlled. */
-		onViewChange?: (event: MapViewChangeEvent) => void;
-	}>;
+  | Readonly<{
+      view: MapView;
+      initialView?: never;
+      onViewChange: (event: MapViewChangeEvent) => void;
+    }>
+  | Readonly<{
+      view?: never;
+      initialView?: MapInitialViewInputs['view'];
+      /** Observation alone does not make the camera controlled. */
+      onViewChange?: (event: MapViewChangeEvent) => void;
+    }>;
 
 /** Type contract only; this package does not export a Map component. */
 export type MapProps = MapBaseProps & MapCameraProps;

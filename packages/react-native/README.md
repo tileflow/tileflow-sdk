@@ -1,6 +1,6 @@
 # @tileflow/react-native
 
-Pre-release TypeScript contracts and internal appearance adaptation for Tileflow on React Native.
+Pre-release TypeScript contracts, camera ownership and internal appearance adaptation for Tileflow on React Native.
 This is a **private workspace** package. It is not in the publication catalog and does not export a `Map` component.
 Its package entry exports types only; importing that entry does not load React Native, MapLibre,
 Core's runtime, a renderer, or a network adapter.
@@ -30,9 +30,9 @@ older published Core release has every declaration used here.
 
 ## Contract pieces
 
-`MapBaseProps` combines the required source, optional theme, presentation, event callbacks and
-ref type. It is a base contract, **not a complete `MapProps` interface**. There is no callable
-`Map`, placeholder component or JSX renderer in this package.
+`MapProps` combines `MapBaseProps` (source, presentation, lifecycle callbacks and ref) with the
+exclusive camera modes in `MapCameraProps`. These are complete type contracts for that bounded
+surface, not a callable `Map`, placeholder component or JSX renderer.
 
 The source is the existing `TileflowNativeSource` union:
 
@@ -58,7 +58,7 @@ It does not re-export MapLibre's full props or ref. These types do not replace r
 by the eventual component.
 
 ```ts
-import type {MapBaseProps} from '@tileflow/react-native';
+import type {MapProps} from '@tileflow/react-native';
 
 const definition = {
   source: {
@@ -67,9 +67,10 @@ const definition = {
     manifestUrl: 'https://maps.example.com/tileflow/native/manifest.json',
   },
   theme: 'system',
+  initialView: {center: [-3.7038, 40.4168], zoom: 12},
   mapOptions: {dragPan: true, touchZoom: true},
   testID: 'streets-map',
-} satisfies MapBaseProps;
+} satisfies MapProps;
 ```
 
 This is data checked against the declarations, not a map-rendering example.
@@ -136,25 +137,92 @@ when source/theme ownership changes.
 This helper has no manifest acquisition, style switching or source-controller capability. It only
 reports appearance to the future owner of those operations.
 
-## Portable view composition boundary
+## Camera ownership
 
-`MapView` and `MapInitialViewInputs` alias Core's immutable resolved view and composition inputs.
-The internal `resolveMapInitialView()` delegates directly to `resolveTileflowNativeInitialView()`:
-explicit `view` values take precedence over `mapOptionsView`, then `manifestView`, then the shared
-defaults. Coordinate order, validation, errors and tuple cloning are unchanged.
+`MapCameraProps` has two mutually exclusive modes, fixed for the lifetime of one real native
+instance. In initial mode, `initialView` is an optional partial seed and `view` is forbidden. In
+controlled mode, `view` is a complete `MapView` and `onViewChange` is required; `initialView` is
+forbidden. Supplying only an `onViewChange` callback in initial mode observes the camera without
+making it controlled. Omitting both view props selects initial mode with the shared defaults.
 
-These are renderer-neutral data types, not native Camera props. Initial-versus-controlled camera
-ownership is not part of `MapBaseProps`: no `initialView`, controlled `view`, camera-change callback
-or imperative camera method is frozen by this package. Gesture reconciliation, source changes and
-switching ownership require a separate component contract. This does not affect the independent
-source, appearance or initial-view composition helpers implemented here.
+`MapView` is the immutable canonical `{center, zoom, bearing, pitch}` from Core. Coordinates are
+`[longitude, latitude]`. Initial composition delegates to `resolveTileflowNativeInitialView()`:
+explicit seed values precede the adapter's `mapOptionsView`, then `manifestView`, then shared
+defaults. The controller does not interpret native Camera props or duplicate Core's validation.
+All controlled values are required, so no missing field can silently use a default.
+
+The seed is applied once. Later valid `initialView` changes are ignored for movement; supplied
+invalid views still fail validation rather than corrupting the last valid state. A genuine
+unmount/remount creates a new instance and uses its seed again. Source and theme changes do not
+reapply the seed or change camera ownership. Controlled `view` remains authoritative; an initial
+camera preserves its last live view. Camera activity never changes a source generation or acquires
+a manifest.
+
+`onViewChange` receives only a frozen `{type: 'view-change', view}` with a separately owned, frozen
+coordinate tuple. It carries no native event, gesture token, renderer ref or source identity.
+Repeated equal views are coalesced. Programmatic applications of props do not echo through this
+callback. In initial mode the callback is optional and does not cause reconciliation.
+
+In controlled mode, gestures can move the camera according to `mapOptions`. The application should
+adopt emitted views by updating its `view` prop. While a gesture is active, new controlled values
+update the desired view without issuing competing commands. At its end, the controller compares
+the final observed view with the latest prop it has actually received. If equal, there is no return
+command. Otherwise it issues one command to that prop value. An adoption made during the final
+callback is included in this comparison. An update received later is a new controlled update; the
+controller does not wait for a timer, rendering cycle or assumed React scheduling deadline.
+
+No public duration, easing, animation, bounds, padding or imperative camera method is introduced.
+The ref remains the source-state query described above.
+
+## Internal camera adapter boundary
+
+`createMapCameraController()` is internal and pure. Its constructor performs no command; `mount()`
+validates and applies the initial view once, and `update()` processes subsequent camera props.
+Repeated `mount()` calls on that controller behave like updates, not new native instances. The
+owner creates one controller per real native view and disposes it when that view is destroyed.
+The package does not implement that native owner yet.
+
+The injected `apply({token, view})` returns an immediate cancellation handle and a `finished`
+promise. Resolution acknowledges that the target was applied, not merely enqueued. The adapter
+must preserve command ordering, honor retirement/cancellation and correlate programmatic
+observations with the supplied token through `observeCommand()`. Tokens are opaque instance-local
+identities with monotonic sequences; old or foreign tokens are ignored. A command superseded
+before its handle is returned is cancelled when the handle arrives. All late promise rejections
+are observed, and retired results cannot change live state or report a new failure.
+
+User-driven observations are separate: `startGesture()` returns a token used by `changeGesture()`
+and `endGesture()`, each receiving a complete canonical view. End closes that observation epoch
+before notifying the parent and reconciling. Delayed callbacks from that epoch cannot change a
+newer view. A new gesture retires pending programmatic work. The future adapter must classify
+native callbacks correctly; it cannot treat every region callback as a gesture or infer origin
+using a delay. This protocol does not claim that raw MapLibre events already carry these tokens.
+
+After replacing a style/source on the same native view, the owner calls the internal
+`restoreAfterStyleChange()`. It reaffirms the latest controlled prop or last uncontrolled live view,
+never the original seed. This explicit call retires the old observation epoch and emits a command
+even when the stored view is equal, because the renderer may have reset its camera. It neither
+accepts source data nor touches source/theme selection. No public set-camera escape hatch exists.
+
+Input failures throw an internal `CameraControllerError` with a fixed code and message. Codes are
+`CAMERA_INPUT_INVALID`, `CAMERA_MODE_CHANGE`, `CAMERA_NOT_MOUNTED` and `CAMERA_DISPOSED`. Failed active
+commands report only `CAMERA_COMMAND_FAILED` to the injected owner callback. There are no caller
+values, native messages or remote causes. Failed updates preserve the last valid mode, view and
+observer. This unit does not convert these internal diagnostics into a new public `onError` event.
+The future owner must handle them at its existing lifecycle boundary.
+
+Disposal is idempotent and cancels the active command. Late observations, completions and style
+restoration callbacks are ignored. Further explicit `mount()`/`update()` calls fail safely.
+Observer exceptions and reentrant updates/disposal cannot publish an obsolete result, block cleanup
+or start an echo loop. No timers, subscriptions, source acquisition or native imports are owned by
+the camera controller.
 
 ## Validation boundary
 
 The tests cover the type-only entry, exact peers/private status, isolated appearance lifecycle,
-safe source projection, delegated view composition and package graph boundaries. Compile-only
-consumers use the built public declarations and reject owned props/lifecycle callbacks. The
-standalone entry test installs global traps and has no installed mobile peers.
+safe source projection, delegated view composition, camera ownership and package graph boundaries.
+Compile-only consumers use the built public declarations and reject mixed camera modes, incomplete
+controlled views and owned props/lifecycle callbacks. Command promises and observations are injected;
+permuted completions, reentrant callbacks and mutation attacks do not need timing-based tests.
 
 These checks do not run a native renderer or establish Hermes/device acceptance for a React Native
 component. This package supplies no Swift/Kotlin bridge, Expo plugin, Metro configuration, transport,

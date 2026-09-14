@@ -10,9 +10,14 @@ import {
 
 function paddedStyle(maximum: number, above = false) {
   // The style's empty containers and keys account for 11 nodes.
-  return {version: 8, sources: {}, layers: [], metadata: {
-    padding: new Array(Math.floor((maximum - 11) / 2) + Number(above)).fill(0),
-  }};
+  return {
+    version: 8,
+    sources: {},
+    layers: [],
+    metadata: {
+      padding: new Array(Math.floor((maximum - 11) / 2) + Number(above)).fill(0),
+    },
+  };
 }
 const budgetIssue = [createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE')];
 
@@ -37,9 +42,19 @@ test('the prepared validator does not lower or relax incompatible semantics', ()
     {...base, projection: {type: 'globe'}},
     {...base, terrain: {source: 'dem'}},
     {...base, sources: {world: {type: 'vector', url: 'pmtiles://https://example.test/a.pmtiles'}}},
-    {...base, sources: {world: {type: 'vector', tiles: ['https://example.test/{z}/{x}/{y}.pbf']}},
-      layers: [{id: 'road', type: 'line', source: 'world', 'source-layer': 'roads',
-        layout: {'line-cap': ['get', 'cap']}}]},
+    {
+      ...base,
+      sources: {world: {type: 'vector', tiles: ['https://example.test/{z}/{x}/{y}.pbf']}},
+      layers: [
+        {
+          id: 'road',
+          type: 'line',
+          source: 'world',
+          'source-layer': 'roads',
+          layout: {'line-cap': ['get', 'cap']},
+        },
+      ],
+    },
   ]) {
     const raw = validateTileflowNativeStyle(style);
     assert.ok(raw.length > 0);
@@ -52,6 +67,9 @@ test('both validators preserve input and share diagnostic ordering', () => {
   const before = JSON.stringify(style);
   const raw = validateTileflowNativeStyle(style);
   assert.deepEqual(validateTileflowNativePreparedStyle(style), raw);
-  assert.deepEqual(raw.map(({path}) => path), ['/pitch', '/roll']);
+  assert.deepEqual(
+    raw.map(({path}) => path),
+    ['/pitch', '/roll'],
+  );
   assert.equal(JSON.stringify(style), before);
 });

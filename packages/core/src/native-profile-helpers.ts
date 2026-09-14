@@ -47,16 +47,14 @@ export function nativePointer(parent: string, key: string): string {
 /** One traversal and JSON policy; only the two fixed node allowances differ. */
 export function isBoundedNativeJson(input: unknown, stage: NativeJsonStage = 'input'): boolean {
   if (stage !== 'input' && stage !== 'prepared') return false;
-  const limits = stage === 'prepared' ? tileflowNativePreparedStyleLimits : tileflowNativeProfileLimits;
+  const limits =
+    stage === 'prepared' ? tileflowNativePreparedStyleLimits : tileflowNativeProfileLimits;
   let nodes = 0;
   let stringBytes = 0;
   const ancestors = new Set<object>();
   const encoder = new TextEncoder();
   const visit = (value: unknown, depth: number): boolean => {
-    if (
-      ++nodes > limits.maximumNodes ||
-      depth > limits.maximumDepth
-    ) {
+    if (++nodes > limits.maximumNodes || depth > limits.maximumDepth) {
       return false;
     }
     if (typeof value === 'string') {
@@ -73,8 +71,7 @@ export function isBoundedNativeJson(input: unknown, stage: NativeJsonStage = 'in
     if (keys.some((key) => typeof key === 'symbol' || key === 'toJSON')) return false;
     if (
       Array.isArray(value) &&
-      (value.length > limits.maximumNodes ||
-        Object.keys(value).length !== value.length)
+      (value.length > limits.maximumNodes || Object.keys(value).length !== value.length)
     ) {
       return false;
     }

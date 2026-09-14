@@ -5,11 +5,19 @@ import {auditNativeLowering, measureNativeJson} from './native-lowering-audit-fi
 
 function input(cap: unknown) {
   return {
-    version: 8, projection: {type: 'globe'},
+    version: 8,
+    projection: {type: 'globe'},
     sources: {world: {type: 'vector', url: 'https://example.test/world.json'}},
-    layers: [{id: 'road', type: 'line', source: 'world', 'source-layer': 'transportation',
-      layout: {'line-cap': cap, 'line-sort-key': ['get', 'priority']},
-      paint: {'line-color': '#abcdef', 'line-width': 3}, metadata: {fixture: true}},
+    layers: [
+      {
+        id: 'road',
+        type: 'line',
+        source: 'world',
+        'source-layer': 'transportation',
+        layout: {'line-cap': cap, 'line-sort-key': ['get', 'priority']},
+        paint: {'line-color': '#abcdef', 'line-width': 3},
+        metadata: {fixture: true},
+      },
     ],
   };
 }
@@ -36,7 +44,10 @@ test('lists exact physical spans, copied payload and conservative draw-order ind
   assert.equal(row.maximumConcurrentBranches, 2);
   assert.equal(row.featureOrder, 'not-proven');
   assert.equal(row.additionalCopiedNodes, row.retainedPayload.nodes);
-  assert.deepEqual(row.branches.map(({id}) => id), ['road--native-v1-0', 'road--native-v1-1']);
+  assert.deepEqual(
+    row.branches.map(({id}) => id),
+    ['road--native-v1-0', 'road--native-v1-1'],
+  );
   assert.deepEqual(auditNativeLowering(source, lowered), report);
 });
 
@@ -45,5 +56,11 @@ test('distinguishes zoom-only replacement from simultaneous feature partitions',
   const row = auditNativeLowering(source, lowerNativeStyleRepresentation(source)).layers[0]!;
   assert.equal(row.maximumConcurrentBranches, 1);
   assert.equal(row.featureOrder, 'no-simultaneous-branches');
-  assert.deepEqual(row.branches.map(({minzoom, maxzoom}) => [minzoom, maxzoom]), [[0, 12], [12, 24]]);
+  assert.deepEqual(
+    row.branches.map(({minzoom, maxzoom}) => [minzoom, maxzoom]),
+    [
+      [0, 12],
+      [12, 24],
+    ],
+  );
 });

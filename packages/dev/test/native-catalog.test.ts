@@ -16,11 +16,18 @@ test('records every official map/theme deterministically and requires Streets to
   const second = await evaluateNativeCatalog(cwd);
   assert.equal(serializeCanonicalJson(first), serializeCanonicalJson(second));
   assert.equal(new Set(first.rows.map(({map}) => map)).size, 10);
-  const expected = nativeCatalogMaps.flatMap((map) => Object.keys(parseTileflowMap(map).themes).map((theme) => `${map.id}/${theme}`)).sort();
+  const expected = nativeCatalogMaps
+    .flatMap((map) =>
+      Object.keys(parseTileflowMap(map).themes).map((theme) => `${map.id}/${theme}`),
+    )
+    .sort();
   assert.deepEqual(first.rows.map(({map, theme}) => `${map}/${theme}`).sort(), expected);
   const streets = first.rows.filter(({map}) => map === 'streets');
   assert.ok(streets.length > 0);
-  assert.ok(streets.every(({status}) => status === 'compatible-artifacts'), JSON.stringify(streets));
+  assert.ok(
+    streets.every(({status}) => status === 'compatible-artifacts'),
+    JSON.stringify(streets),
+  );
   for (const row of first.rows) {
     if (row.status === 'compatible-artifacts') {
       assert.match(row.styleSha256 ?? '', /^[a-f0-9]{64}$/u);

@@ -65,9 +65,7 @@ export default defineMap({id:'main',version:1,extends:streets});\n`,
     layers: [],
   };
 
-  assert.doesNotThrow(() =>
-    assertTileflowNativeCompiledStyles(project, {main: {light: style}}),
-  );
+  assert.doesNotThrow(() => assertTileflowNativeCompiledStyles(project, {main: {light: style}}));
 });
 
 test('prepares an authored external HTTPS vector source for native artifacts', async (t) => {
@@ -135,7 +133,9 @@ export default defineMap({
 
 test('runs the repository native catalog report through the real tsx loader', async () => {
   const root = fileURLToPath(new URL('../../../', import.meta.url));
-  const script = fileURLToPath(new URL('../../../scripts/native-catalog-report.ts', import.meta.url));
+  const script = fileURLToPath(
+    new URL('../../../scripts/native-catalog-report.ts', import.meta.url),
+  );
   const result = await execFileAsync(process.execPath, ['--import', tsxLoader, script], {
     cwd: root,
     timeout: 120_000,

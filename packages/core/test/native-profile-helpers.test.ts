@@ -26,15 +26,27 @@ for (const [name, support, expected] of [
 
 test('escapes real JSON Pointer segments and omits sensitive keys', () => {
   assert.equal(nativePointer('/sources', 'a/~'), '/sources/a~1~0');
-  for (const key of ['https://private.test/x', 'tf_live_private', '?token=x', 'a\\b', 'x'.repeat(129)]) {
+  for (const key of [
+    'https://private.test/x',
+    'tf_live_private',
+    '?token=x',
+    'a\\b',
+    'x'.repeat(129),
+  ]) {
     assert.equal(nativePointer('/sources', key), '/sources');
   }
   assert.equal(nativePointer('/' + 'a'.repeat(299), 'b'), '/' + 'a'.repeat(299));
 });
 
 for (const [name, value] of [
-  ['function', () => undefined], ['undefined', undefined], ['NaN', NaN], ['infinity', Infinity],
-  ['bigint', 1n], ['date', new Date(0)], ['symbol', Symbol('x')], ['sparse', new Array(2)],
+  ['function', () => undefined],
+  ['undefined', undefined],
+  ['NaN', NaN],
+  ['infinity', Infinity],
+  ['bigint', 1n],
+  ['date', new Date(0)],
+  ['symbol', Symbol('x')],
+  ['sparse', new Array(2)],
 ] as const) {
   test(`rejects non-JSON value: ${name}`, () => assert.equal(isBoundedNativeJson(value), false));
 }
@@ -48,10 +60,21 @@ test('accepts bounded recursive JSON, including repeated non-cyclic references',
 test('does not call accessors or serialization hooks', () => {
   let calls = 0;
   for (const enumerable of [true, false]) {
-    const value = Object.defineProperty({}, 'value', {enumerable, get() {calls++; return 'private';} });
+    const value = Object.defineProperty({}, 'value', {
+      enumerable,
+      get() {
+        calls++;
+        return 'private';
+      },
+    });
     assert.equal(isBoundedNativeJson(value), false);
   }
-  const value = Object.defineProperty({}, 'toJSON', {value() {calls++; return 'private';} });
+  const value = Object.defineProperty({}, 'toJSON', {
+    value() {
+      calls++;
+      return 'private';
+    },
+  });
   assert.equal(isBoundedNativeJson(value), false);
   assert.equal(calls, 0);
 });
@@ -63,6 +86,12 @@ test('bounds nesting, cycles, node count and actual UTF-8 output bytes', () => {
   const cyclic: Record<string, unknown> = {};
   cyclic.child = cyclic;
   assert.equal(isBoundedNativeJson(cyclic), false);
-  assert.equal(isBoundedNativeJson(new Array(tileflowNativeProfileLimits.maximumNodes).fill(0)), false);
-  assert.equal(isBoundedNativeJson('é'.repeat(tileflowNativeProfileLimits.maximumStyleBytes / 2)), false);
+  assert.equal(
+    isBoundedNativeJson(new Array(tileflowNativeProfileLimits.maximumNodes).fill(0)),
+    false,
+  );
+  assert.equal(
+    isBoundedNativeJson('é'.repeat(tileflowNativeProfileLimits.maximumStyleBytes / 2)),
+    false,
+  );
 });

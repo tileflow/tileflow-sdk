@@ -3,9 +3,17 @@ import specification from '@maplibre/maplibre-gl-style-spec/dist/latest.json' wi
 import {z} from 'zod';
 import {resolveTileflowNativeResourceUrl, TileflowNativeUrlError} from './native';
 import type {MapLibreStyle} from './types';
-import {isBoundedNativeJson, nativePointer as pointer, supportsNativeVersions, tileflowNativeProfileLimits} from './native-profile-helpers';
+import {
+  isBoundedNativeJson,
+  nativePointer as pointer,
+  supportsNativeVersions,
+  tileflowNativeProfileLimits,
+} from './native-profile-helpers';
 import {strictNativeObject} from './native-zod-object';
-export {tileflowNativeProfileLimits, tileflowNativePreparedStyleLimits} from './native-profile-helpers';
+export {
+  tileflowNativeProfileLimits,
+  tileflowNativePreparedStyleLimits,
+} from './native-profile-helpers';
 
 import {
   tileflowNativeProfile,
@@ -21,7 +29,6 @@ export {
 } from './native-profile-definition';
 export type {TileflowNativeProfile, TileflowRenderer} from './native-profile-definition';
 
-
 export const tileflowNativeDiagnosticCodeSchema = z.enum([
   'NATIVE_UNSUPPORTED_STYLE',
   'NATIVE_UNSUPPORTED_SOURCE',
@@ -36,14 +43,16 @@ export const tileflowNativeDiagnosticSchema = strictNativeObject({
   code: tileflowNativeDiagnosticCodeSchema,
   phase: z.literal('native-compatibility'),
   severity: z.literal('error'),
-  path: z.string().max(300).regex(/^(?:\/(?:[^~]|~[01])*)?$/u),
+  path: z
+    .string()
+    .max(300)
+    .regex(/^(?:\/(?:[^~]|~[01])*)?$/u),
   renderer: z.literal('native'),
   profile: tileflowNativeProfileIdSchema,
   message: z.string().max(300),
   suggestion: z.string().max(300),
 });
 export type TileflowNativeDiagnostic = z.infer<typeof tileflowNativeDiagnosticSchema>;
-
 
 const descriptions: Record<TileflowNativeDiagnosticCode, [string, string]> = {
   NATIVE_UNSUPPORTED_STYLE: [
@@ -75,8 +84,14 @@ export function createTileflowNativeDiagnostic(
   const [message, suggestion] = descriptions[code];
   while (path.length > 300) path = path.slice(0, path.lastIndexOf('/'));
   return {
-    code, phase: 'native-compatibility', severity: 'error',
-    path, renderer: 'native', profile: 'native-v1', message, suggestion,
+    code,
+    phase: 'native-compatibility',
+    severity: 'error',
+    path,
+    renderer: 'native',
+    profile: 'native-v1',
+    message,
+    suggestion,
   };
 }
 
@@ -88,7 +103,9 @@ export class TileflowNativeCompatibilityError extends Error {
   constructor(issues: readonly TileflowNativeDiagnostic[]) {
     super('Native artifact validation failed.');
     this.name = 'TileflowNativeCompatibilityError';
-    this.issues = Object.freeze(normalizeNativeDiagnostics(issues).map((issue) => Object.freeze(issue)));
+    this.issues = Object.freeze(
+      normalizeNativeDiagnostics(issues).map((issue) => Object.freeze(issue)),
+    );
     this.code = this.issues[0]?.code ?? 'NATIVE_UNSUPPORTED_STYLE';
   }
 }
@@ -118,17 +135,40 @@ type SpecProperty = {
   'sdk-support'?: Record<string, Record<string, unknown>>;
 };
 const spec = specification as unknown as Record<string, Record<string, SpecProperty>>;
-const expressionDefinitions = (specification as unknown as {
-  expression_name?: {values?: Record<string, SpecProperty>};
-}).expression_name?.values;
+const expressionDefinitions = (
+  specification as unknown as {
+    expression_name?: {values?: Record<string, SpecProperty>};
+  }
+).expression_name?.values;
 const sourceKinds = new Set(['vector', 'raster', 'raster-dem', 'geojson', 'image']);
 const layerKinds = new Set([
-  'background', 'fill', 'line', 'symbol', 'raster', 'circle', 'fill-extrusion', 'heatmap', 'hillshade',
+  'background',
+  'fill',
+  'line',
+  'symbol',
+  'raster',
+  'circle',
+  'fill-extrusion',
+  'heatmap',
+  'hillshade',
 ]);
 const unsupportedRoots = new Set(['terrain', 'sky', 'state', 'roll', 'centerAltitude']);
 const rootStructure = new Set([
-  'version', 'name', 'metadata', 'center', 'zoom', 'bearing', 'pitch', 'sources', 'layers',
-  'sprite', 'glyphs', 'font-faces', 'light', 'transition', 'projection',
+  'version',
+  'name',
+  'metadata',
+  'center',
+  'zoom',
+  'bearing',
+  'pitch',
+  'sources',
+  'layers',
+  'sprite',
+  'glyphs',
+  'font-faces',
+  'light',
+  'transition',
+  'projection',
 ]);
 
 /** Validate bounded JSON and the common native engine surface without executing a renderer. */
@@ -187,7 +227,11 @@ function validateNativeStyle(
   }
   if (style.projection !== undefined) {
     const projection = style.projection;
-    if (!record(projection) || projection.type !== 'mercator' || Object.keys(projection).length !== 1) {
+    if (
+      !record(projection) ||
+      projection.type !== 'mercator' ||
+      Object.keys(projection).length !== 1
+    ) {
       add('NATIVE_UNSUPPORTED_STYLE', '/projection');
     }
   }
@@ -202,12 +246,17 @@ function validateNativeStyle(
     }
   }
   const checkUrl = (value: unknown, path: string, template?: 'tile' | 'glyphs') => {
-    if (typeof value !== 'string') {add('NATIVE_UNSUPPORTED_SOURCE', path); return;}
+    if (typeof value !== 'string') {
+      add('NATIVE_UNSUPPORTED_SOURCE', path);
+      return;
+    }
     if (/^[a-z][a-z\d+.-]*:/iu.test(value) && !/^https?:\/\//iu.test(value)) {
-      add('NATIVE_UNSUPPORTED_SOURCE', path); return;
+      add('NATIVE_UNSUPPORTED_SOURCE', path);
+      return;
     }
     if (!options.documentUrl && !/^https?:\/\//iu.test(value)) {
-      add('NATIVE_MANIFEST_REQUIRED', path); return;
+      add('NATIVE_MANIFEST_REQUIRED', path);
+      return;
     }
     try {
       resolveTileflowNativeResourceUrl(value, {
@@ -216,8 +265,12 @@ function validateNativeStyle(
         template,
       });
     } catch (error) {
-      const code = error instanceof TileflowNativeUrlError && error.code === 'NATIVE_URL_ABSOLUTE_REQUIRED' && error.field === 'documentUrl'
-        ? 'NATIVE_MANIFEST_REQUIRED' : 'NATIVE_UNSUPPORTED_SOURCE';
+      const code =
+        error instanceof TileflowNativeUrlError &&
+        error.code === 'NATIVE_URL_ABSOLUTE_REQUIRED' &&
+        error.field === 'documentUrl'
+          ? 'NATIVE_MANIFEST_REQUIRED'
+          : 'NATIVE_UNSUPPORTED_SOURCE';
       add(code, path);
     }
   };
@@ -227,7 +280,11 @@ function validateNativeStyle(
     else checkUrl(style.sprite, '/sprite');
   }
   if (style.glyphs !== undefined) {
-    if (typeof style.glyphs !== 'string' || !style.glyphs.includes('{fontstack}') || !style.glyphs.includes('{range}')) {
+    if (
+      typeof style.glyphs !== 'string' ||
+      !style.glyphs.includes('{fontstack}') ||
+      !style.glyphs.includes('{range}')
+    ) {
       add('NATIVE_FONT_UNAVAILABLE', '/glyphs');
     } else checkUrl(style.glyphs, '/glyphs', 'glyphs');
   }
@@ -235,29 +292,50 @@ function validateNativeStyle(
   if (Object.keys(sources).length > tileflowNativeProfileLimits.maximumSources) {
     add('NATIVE_UNSUPPORTED_SOURCE', '/sources');
   }
-  for (const id of Object.keys(sources).sort().slice(0, tileflowNativeProfileLimits.maximumSources)) {
+  for (const id of Object.keys(sources)
+    .sort()
+    .slice(0, tileflowNativeProfileLimits.maximumSources)) {
     const source = sources[id];
     const path = pointer('/sources', id);
     if (!record(source) || typeof source.type !== 'string' || !sourceKinds.has(source.type)) {
-      add('NATIVE_UNSUPPORTED_SOURCE', path); continue;
+      add('NATIVE_UNSUPPORTED_SOURCE', path);
+      continue;
     }
-    properties(source, spec[`source_${source.type.replaceAll('-', '_')}`], path, add, 'NATIVE_UNSUPPORTED_SOURCE');
+    properties(
+      source,
+      spec[`source_${source.type.replaceAll('-', '_')}`],
+      path,
+      add,
+      'NATIVE_UNSUPPORTED_SOURCE',
+    );
     if (source.clusterProperties !== undefined) {
       if (record(source.clusterProperties)) {
         for (const key of Object.keys(source.clusterProperties).sort()) {
           const values = source.clusterProperties[key];
-          if (Array.isArray(values)) values.forEach((value, i) => expressions(value, `${pointer(`${path}/clusterProperties`, key)}/${i}`, add));
+          if (Array.isArray(values))
+            values.forEach((value, i) =>
+              expressions(value, `${pointer(`${path}/clusterProperties`, key)}/${i}`, add),
+            );
         }
       }
     }
     if (source.url !== undefined) checkUrl(source.url, pointer(path, 'url'));
-    if (Array.isArray(source.tiles)) source.tiles.forEach((url, i) => checkUrl(url, `${path}/tiles/${i}`, 'tile'));
-    if (source.type === 'geojson' && typeof source.data === 'string') checkUrl(source.data, `${path}/data`);
-    if (source.type === 'raster-dem' && source.encoding !== undefined && !['mapbox', 'terrarium'].includes(String(source.encoding))) {
-      add('NATIVE_UNSUPPORTED_SOURCE',
-        `${path}/encoding`);
+    if (Array.isArray(source.tiles))
+      source.tiles.forEach((url, i) => checkUrl(url, `${path}/tiles/${i}`, 'tile'));
+    if (source.type === 'geojson' && typeof source.data === 'string')
+      checkUrl(source.data, `${path}/data`);
+    if (
+      source.type === 'raster-dem' &&
+      source.encoding !== undefined &&
+      !['mapbox', 'terrarium'].includes(String(source.encoding))
+    ) {
+      add('NATIVE_UNSUPPORTED_SOURCE', `${path}/encoding`);
     }
-    if (['vector', 'raster', 'raster-dem'].includes(source.type) && source.url === undefined && (!Array.isArray(source.tiles) || !source.tiles.length)) {
+    if (
+      ['vector', 'raster', 'raster-dem'].includes(source.type) &&
+      source.url === undefined &&
+      (!Array.isArray(source.tiles) || !source.tiles.length)
+    ) {
       add('NATIVE_UNSUPPORTED_SOURCE', path);
     }
   }
@@ -265,7 +343,10 @@ function validateNativeStyle(
   if (faces !== undefined) {
     const support = spec.$root?.['font-faces']?.['sdk-support']?.['basic functionality'];
     if (!support || !supportsBoth(support)) add('NATIVE_FONT_UNAVAILABLE', '/font-faces');
-    if (!record(faces) || Object.keys(faces).length > tileflowNativeProfileLimits.maximumFontFaces) {
+    if (
+      !record(faces) ||
+      Object.keys(faces).length > tileflowNativeProfileLimits.maximumFontFaces
+    ) {
       add('NATIVE_FONT_UNAVAILABLE', '/font-faces');
     } else {
       for (const name of Object.keys(faces).sort()) {
@@ -279,35 +360,56 @@ function validateNativeStyle(
     }
   }
   const layers = Array.isArray(style.layers) ? style.layers : [];
-  if (layers.length > tileflowNativeProfileLimits.maximumLayers) add('NATIVE_UNSUPPORTED_STYLE', '/layers');
-  layers.slice(0, tileflowNativeProfileLimits.maximumLayers).forEach((layer: unknown, i: number) => {
-    const path = `/layers/${i}`;
-    if (!record(layer) || typeof layer.type !== 'string' || !layerKinds.has(layer.type) || layer.ref !== undefined) {
-      add('NATIVE_UNSUPPORTED_STYLE', path); return;
-    }
-    properties(layer, spec.layer, path, add);
-    for (const group of ['layout', 'paint']) {
-      const values = layer[group];
-      if (!record(values)) continue;
-      properties(values, spec[`${group}_${layer.type}`], `${path}/${group}`, add, 'NATIVE_UNSUPPORTED_STYLE', true);
-      for (const key of Object.keys(values).sort()) {
-        expressions(values[key], pointer(`${path}/${group}`, key), add);
+  if (layers.length > tileflowNativeProfileLimits.maximumLayers)
+    add('NATIVE_UNSUPPORTED_STYLE', '/layers');
+  layers
+    .slice(0, tileflowNativeProfileLimits.maximumLayers)
+    .forEach((layer: unknown, i: number) => {
+      const path = `/layers/${i}`;
+      if (
+        !record(layer) ||
+        typeof layer.type !== 'string' ||
+        !layerKinds.has(layer.type) ||
+        layer.ref !== undefined
+      ) {
+        add('NATIVE_UNSUPPORTED_STYLE', path);
+        return;
       }
-    }
-    expressions(layer.filter, `${path}/filter`, add);
-    if (!options.deferFontClosure && record(layer.layout) && layer.layout['text-field'] !== undefined) {
-      const fonts = layer.layout['text-font'];
-      if (style.glyphs === undefined) {
-        if (!fontStackAvailable(fonts, faces)) add('NATIVE_FONT_UNAVAILABLE',
-          `${path}/layout/text-font`);
-        inlineFontStacks(layer.layout['text-field'], `${path}/layout/text-field`, faces, add);
+      properties(layer, spec.layer, path, add);
+      for (const group of ['layout', 'paint']) {
+        const values = layer[group];
+        if (!record(values)) continue;
+        properties(
+          values,
+          spec[`${group}_${layer.type}`],
+          `${path}/${group}`,
+          add,
+          'NATIVE_UNSUPPORTED_STYLE',
+          true,
+        );
+        for (const key of Object.keys(values).sort()) {
+          expressions(values[key], pointer(`${path}/${group}`, key), add);
+        }
       }
-    }
-  });
+      expressions(layer.filter, `${path}/filter`, add);
+      if (
+        !options.deferFontClosure &&
+        record(layer.layout) &&
+        layer.layout['text-field'] !== undefined
+      ) {
+        const fonts = layer.layout['text-font'];
+        if (style.glyphs === undefined) {
+          if (!fontStackAvailable(fonts, faces))
+            add('NATIVE_FONT_UNAVAILABLE', `${path}/layout/text-font`);
+          inlineFontStacks(layer.layout['text-field'], `${path}/layout/text-field`, faces, add);
+        }
+      }
+    });
   for (const key of ['light', 'transition']) {
     if (record(style[key])) {
       properties(style[key], spec[key], `/${key}`, add);
-      for (const [property, value] of Object.entries(style[key])) expressions(value, pointer(`/${key}`, property), add);
+      for (const [property, value] of Object.entries(style[key]))
+        expressions(value, pointer(`/${key}`, property), add);
     }
   }
   // Use the same pinned parser as compilation; compatibility metadata comes from its unminified JSON.
@@ -335,25 +437,31 @@ function properties(
   code: TileflowNativeDiagnosticCode = 'NATIVE_UNSUPPORTED_STYLE',
   checkFeatureSupport = false,
 ): void {
-  if (!definitions) {add(code, path); return;}
+  if (!definitions) {
+    add(code, path);
+    return;
+  }
   for (const key of Object.keys(values).sort()) {
     if (key === 'metadata') continue;
     const definition = definitions[key];
     if (!definition) {
       if (key.endsWith('-transition') && definitions[key.slice(0, -11)]?.transition) continue;
-      add(code, pointer(path, key)); continue;
+      add(code, pointer(path, key));
+      continue;
     }
     const basic = definition['sdk-support']?.['basic functionality'];
     if (basic && !supportsBoth(basic)) add(code, pointer(path, key));
     const value = values[key];
-    if (checkFeatureSupport && record(value) && Object.hasOwn(value, 'stops')) add(code, pointer(path, key));
+    if (checkFeatureSupport && record(value) && Object.hasOwn(value, 'stops'))
+      add(code, pointer(path, key));
     if (typeof value === 'string') {
       const enumSupport = definition.values?.[value]?.['sdk-support']?.['basic functionality'];
       if (enumSupport && !supportsBoth(enumSupport)) add(code, pointer(path, key));
     }
     if (isExpression(value)) {
       const support = definition['sdk-support']?.['data-driven styling'];
-      if (checkFeatureSupport && usesFeatureInput(value) && (!support || !supportsBoth(support))) add(code, pointer(path, key));
+      if (checkFeatureSupport && usesFeatureInput(value) && (!support || !supportsBoth(support)))
+        add(code, pointer(path, key));
     }
   }
 }
@@ -373,21 +481,37 @@ function expressions(value: unknown, path: string, add: AddDiagnostic): void {
     if (operator === 'match' && index >= 2 && index < value.length - 1 && index % 2 === 0) return;
     if (operator.startsWith('interpolate') && index === 1) return;
     if (record(child)) {
-      for (const key of Object.keys(child).sort()) expressions(child[key], pointer(`${path}/${index}`, key), add);
+      for (const key of Object.keys(child).sort())
+        expressions(child[key], pointer(`${path}/${index}`, key), add);
     } else expressions(child, `${path}/${index}`, add);
   });
 }
 
 function fontStackAvailable(value: unknown, faces: unknown): boolean {
-  const stack = Array.isArray(value) && value.length === 2 && value[0] === 'literal' ? value[1] : value;
-  return Array.isArray(stack) && stack.length > 0 && record(faces) && stack.every((name) => typeof name === 'string' && Object.hasOwn(faces, name));
+  const stack =
+    Array.isArray(value) && value.length === 2 && value[0] === 'literal' ? value[1] : value;
+  return (
+    Array.isArray(stack) &&
+    stack.length > 0 &&
+    record(faces) &&
+    stack.every((name) => typeof name === 'string' && Object.hasOwn(faces, name))
+  );
 }
 
 function inlineFontStacks(value: unknown, path: string, faces: unknown, add: AddDiagnostic): void {
   if (!Array.isArray(value) || !isExpression(value) || value[0] === 'literal') return;
   value.forEach((child, index) => {
-    if (index === 0 || (value[0] === 'match' && index >= 2 && index < value.length - 1 && index % 2 === 0)) return;
-    if (value[0] === 'format' && record(child) && child['text-font'] !== undefined && !fontStackAvailable(child['text-font'], faces)) {
+    if (
+      index === 0 ||
+      (value[0] === 'match' && index >= 2 && index < value.length - 1 && index % 2 === 0)
+    )
+      return;
+    if (
+      value[0] === 'format' &&
+      record(child) &&
+      child['text-font'] !== undefined &&
+      !fontStackAvailable(child['text-font'], faces)
+    ) {
       add('NATIVE_FONT_UNAVAILABLE', `${path}/${index}/text-font`);
     }
     inlineFontStacks(child, `${path}/${index}`, faces, add);
@@ -407,7 +531,9 @@ function parserIssuePointer(key: string, style: JsonRecord): string {
       value = value[Number(match[1])];
       rest = rest.slice(match[0].length).replace(/^\./u, '');
     } else if (record(value)) {
-      const matches = Object.keys(value).filter((name) => rest === name || rest.startsWith(`${name}.`) || rest.startsWith(`${name}[`));
+      const matches = Object.keys(value).filter(
+        (name) => rest === name || rest.startsWith(`${name}.`) || rest.startsWith(`${name}[`),
+      );
       if (matches.length !== 1) return path;
       const name = matches[0]!;
       path = pointer(path, name);
@@ -420,7 +546,11 @@ function parserIssuePointer(key: string, style: JsonRecord): string {
 
 function usesFeatureInput(value: unknown): boolean {
   if (!Array.isArray(value) || !isExpression(value) || value[0] === 'literal') return false;
-  return ['get', 'has', 'id', 'properties', 'geometry-type', 'feature-state'].includes(String(value[0])) || value.slice(1).some(usesFeatureInput);
+  return (
+    ['get', 'has', 'id', 'properties', 'geometry-type', 'feature-state'].includes(
+      String(value[0]),
+    ) || value.slice(1).some(usesFeatureInput)
+  );
 }
 
 function plainOptions(value: JsonRecord): boolean {
@@ -440,12 +570,24 @@ function record(value: unknown): value is JsonRecord {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
-function normalizeNativeDiagnostics(input: readonly TileflowNativeDiagnostic[]): TileflowNativeDiagnostic[] {
-  const sorted = [...input].sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : a.code < b.code ? -1 : a.code > b.code ? 1 : 0);
-  return sorted.filter((item, i) => i === 0 || item.path !== sorted[i - 1]!.path || item.code !== sorted[i - 1]!.code).slice(0, tileflowNativeProfileLimits.maximumIssues);
+function normalizeNativeDiagnostics(
+  input: readonly TileflowNativeDiagnostic[],
+): TileflowNativeDiagnostic[] {
+  const sorted = [...input].sort((a, b) =>
+    a.path < b.path ? -1 : a.path > b.path ? 1 : a.code < b.code ? -1 : a.code > b.code ? 1 : 0,
+  );
+  return sorted
+    .filter(
+      (item, i) =>
+        i === 0 || item.path !== sorted[i - 1]!.path || item.code !== sorted[i - 1]!.code,
+    )
+    .slice(0, tileflowNativeProfileLimits.maximumIssues);
 }
 
-export function assertTileflowNativeStyle(style: unknown, options: TileflowNativeStyleValidationOptions = {}): asserts style is MapLibreStyle {
+export function assertTileflowNativeStyle(
+  style: unknown,
+  options: TileflowNativeStyleValidationOptions = {},
+): asserts style is MapLibreStyle {
   const issues = validateTileflowNativeStyle(style, options);
   if (issues.length) throw new TileflowNativeCompatibilityError(issues);
 }

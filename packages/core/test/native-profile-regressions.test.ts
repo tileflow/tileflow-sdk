@@ -3,10 +3,7 @@ import {execFile} from 'node:child_process';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
-import {
-  isBoundedNativeJson,
-  tileflowNativeProfileLimits,
-} from '../src/native-profile-helpers';
+import {isBoundedNativeJson, tileflowNativeProfileLimits} from '../src/native-profile-helpers';
 import {validateTileflowNativeStyle} from '../src/native-profile';
 
 const execFileAsync = promisify(execFile);
@@ -43,9 +40,7 @@ test('rejects pitch 86 at the exact native root pointer while accepting 85', () 
   assert.deepEqual(validateTileflowNativeStyle({...background(), pitch: 85}), []);
   const issues = validateTileflowNativeStyle({...background(), pitch: 86});
   assert.ok(
-    issues.some(
-      ({code, path}) => code === 'NATIVE_UNSUPPORTED_STYLE' && path === '/pitch',
-    ),
+    issues.some(({code, path}) => code === 'NATIVE_UNSUPPORTED_STYLE' && path === '/pitch'),
     JSON.stringify(issues),
   );
 });

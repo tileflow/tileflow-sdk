@@ -334,7 +334,8 @@ export async function createTileflowArtifactPlan(
       apiBaseUrl: options.apiBaseUrl,
       mapAssets: prepared.mapAssets,
     });
-  const nativeLowering = renderer === 'native' ? lowerTileflowNativeCompiledStyles(compiledStyles) : undefined;
+  const nativeLowering =
+    renderer === 'native' ? lowerTileflowNativeCompiledStyles(compiledStyles) : undefined;
   const rendererStyles = nativeLowering?.styles ?? compiledStyles;
   if (renderer === 'native') assertTileflowNativeCompiledStyles(prepared.project, rendererStyles);
   const localTilesets = await prepareTileflowLocalTilesets(prepared.project, rendererStyles, {
@@ -357,9 +358,10 @@ export async function createTileflowArtifactPlan(
       throw error;
     });
     const assets = [...prepared.assets, ...preparedFonts.assets];
-    const styles = renderer === 'native'
-      ? prepareTileflowNativeStyles(preparedFonts.styles, assets)
-      : preparedFonts.styles;
+    const styles =
+      renderer === 'native'
+        ? prepareTileflowNativeStyles(preparedFonts.styles, assets)
+        : preparedFonts.styles;
     const provenance = await createTileflowBuildProvenance(prepared.cwd);
     const buildManifest = await createTileflowMapBuildManifest(
       Object.fromEntries(
@@ -391,14 +393,15 @@ export async function createTileflowArtifactPlan(
       ),
       {provenance},
     );
-    const stableManifest = renderer === 'native'
-      ? createManifest(prepared.project, {
-          styleBaseUrl: nativePublicBase(options.styleBaseUrl ?? '.'),
-        })
-      : createFontAwareManifest(
-          createManifest(prepared.project, {styleBaseUrl: options.styleBaseUrl}),
-          styles,
-        );
+    const stableManifest =
+      renderer === 'native'
+        ? createManifest(prepared.project, {
+            styleBaseUrl: nativePublicBase(options.styleBaseUrl ?? '.'),
+          })
+        : createFontAwareManifest(
+            createManifest(prepared.project, {styleBaseUrl: options.styleBaseUrl}),
+            styles,
+          );
     const inputs: TileflowArtifactInputGraph = {
       directories: uniqueStrings(
         [...prepared.watchPaths, ...preparedFonts.watchPaths].map(canonicalInputPath),
@@ -410,11 +413,14 @@ export async function createTileflowArtifactPlan(
     const partial: TileflowBuildArtifacts = {
       assets,
       buildManifest,
-      ...(renderer === 'native' ? {
-        nativeBuild: createTileflowNativeBuildRecord(
-          hashBytes(serializeCanonicalJson(buildManifest)), nativeLowering!.transformations,
-        ),
-      } : {}),
+      ...(renderer === 'native'
+        ? {
+            nativeBuild: createTileflowNativeBuildRecord(
+              hashBytes(serializeCanonicalJson(buildManifest)),
+              nativeLowering!.transformations,
+            ),
+          }
+        : {}),
       dispose: localTilesets.dispose,
       manifest: stableManifest,
       project: prepared.project,
@@ -425,9 +431,8 @@ export async function createTileflowArtifactPlan(
     };
     const generation = hashArtifactGeneration(getStableTileflowArtifactFiles(partial));
     const generatedManifest = createGenerationManifest(stableManifest, generation, assets);
-    const manifest = renderer === 'native'
-      ? parseTileflowRuntimeManifest(generatedManifest)
-      : generatedManifest;
+    const manifest =
+      renderer === 'native' ? parseTileflowRuntimeManifest(generatedManifest) : generatedManifest;
     const generationArtifacts = {...partial, manifest};
 
     return {
@@ -493,11 +498,15 @@ function getStableTileflowArtifactFiles(artifacts: TileflowBuildArtifacts): Tile
       })),
     ),
     ...artifacts.assets,
-    ...(artifacts.nativeBuild ? [{
-      contentType: 'application/json; charset=utf-8',
-      fileName: tileflowNativeBuildRecordFileName,
-      source: `${serializeCanonicalJson(artifacts.nativeBuild)}\n`,
-    }] : []),
+    ...(artifacts.nativeBuild
+      ? [
+          {
+            contentType: 'application/json; charset=utf-8',
+            fileName: tileflowNativeBuildRecordFileName,
+            source: `${serializeCanonicalJson(artifacts.nativeBuild)}\n`,
+          },
+        ]
+      : []),
   ];
   return validateArtifactFiles(files);
 }
@@ -586,7 +595,8 @@ function createGenerationArtifactFiles(
       const generationStyle = replaceFontSources(generationStyleWithSprite, (source) =>
         retargetLocalFontAssetUrl(source, artifacts.assets, generation),
       );
-      if (artifacts.nativeBuild) assertTileflowNativeGeneratedStyle(generationStyle, mapName, themeName);
+      if (artifacts.nativeBuild)
+        assertTileflowNativeGeneratedStyle(generationStyle, mapName, themeName);
       return {
         contentType: 'application/json; charset=utf-8',
         fileName: `${prefix}/styles/${mapName}/${themeName}.json`,
@@ -856,7 +866,9 @@ export async function writeTileflowArtifactPlan(
   assertNoLocalTilesetsForProduction(artifacts);
 
   const cwd = options.cwd ?? process.cwd();
-  const outDir = artifacts.nativeBuild ? `${options.outDir.replace(/[\\/]$/u, '')}/native` : options.outDir;
+  const outDir = artifacts.nativeBuild
+    ? `${options.outDir.replace(/[\\/]$/u, '')}/native`
+    : options.outDir;
   const output = await prepareTileflowOutputDirectory(cwd, outDir);
   const files = getTileflowArtifactFiles(artifacts);
 

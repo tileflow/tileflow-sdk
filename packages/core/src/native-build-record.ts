@@ -12,9 +12,16 @@ const layerTransformationSchema = strictNativeObject({
   inputLayer: layerCountSchema,
   outputStart: layerCountSchema,
   outputCount: z.number().int().min(1).max(32),
-  properties: z.array(z.enum(['line-cap', 'line-dasharray'])).min(1).max(2)
-    .refine((properties) => properties.length === 1 ||
-      (properties[0] === 'line-cap' && properties[1] === 'line-dasharray'), 'Expected unique, ordered properties'),
+  properties: z
+    .array(z.enum(['line-cap', 'line-dasharray']))
+    .min(1)
+    .max(2)
+    .refine(
+      (properties) =>
+        properties.length === 1 ||
+        (properties[0] === 'line-cap' && properties[1] === 'line-dasharray'),
+      'Expected unique, ordered properties',
+    ),
 });
 
 export const tileflowNativeStyleTransformationSchema = strictNativeObject({
@@ -30,19 +37,32 @@ export const tileflowNativeStyleTransformationSchema = strictNativeObject({
   let previous = -1;
   let added = 0;
   for (const [index, layer] of style.layers.entries()) {
-    if (layer.inputLayer <= previous || layer.inputLayer >= style.inputLayers ||
+    if (
+      layer.inputLayer <= previous ||
+      layer.inputLayer >= style.inputLayers ||
       layer.outputStart !== layer.inputLayer + added ||
-      layer.outputStart + layer.outputCount > style.outputLayers) {
-      context.addIssue({code: 'custom', path: ['layers', index], message: 'Invalid physical layer span'});
+      layer.outputStart + layer.outputCount > style.outputLayers
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['layers', index],
+        message: 'Invalid physical layer span',
+      });
     }
     previous = layer.inputLayer;
     added += layer.outputCount - 1;
   }
   if (style.outputLayers !== style.inputLayers + added) {
-    context.addIssue({code: 'custom', path: ['outputLayers'], message: 'Layer counts do not match transformation spans'});
+    context.addIssue({
+      code: 'custom',
+      path: ['outputLayers'],
+      message: 'Layer counts do not match transformation spans',
+    });
   }
 });
-export type TileflowNativeStyleTransformation = z.infer<typeof tileflowNativeStyleTransformationSchema>;
+export type TileflowNativeStyleTransformation = z.infer<
+  typeof tileflowNativeStyleTransformationSchema
+>;
 
 /** Version 2 adds explicit preparation evidence. The runtime manifest remains version 1. */
 export const tileflowNativeBuildRecordSchema = strictNativeObject({
@@ -58,9 +78,12 @@ export const tileflowNativeBuildRecordSchema = strictNativeObject({
   let previous = '';
   for (const [index, item] of record.transformations.entries()) {
     const name = `${item.map}/${item.theme}`;
-    if (name <= previous) context.addIssue({
-      code: 'custom', path: ['transformations', index], message: 'Expected unique map/theme order',
-    });
+    if (name <= previous)
+      context.addIssue({
+        code: 'custom',
+        path: ['transformations', index],
+        message: 'Expected unique map/theme order',
+      });
     previous = name;
   }
 });
@@ -71,8 +94,11 @@ export function createTileflowNativeBuildRecord(
   transformations: readonly TileflowNativeStyleTransformation[] = [],
 ): TileflowNativeBuildRecord {
   return tileflowNativeBuildRecordSchema.parse({
-    schemaVersion: 2, renderer: 'native', profile: tileflowNativeProfile.id,
-    validation: 'static-artifacts', preparationVersion: 'native-lowering-v1',
+    schemaVersion: 2,
+    renderer: 'native',
+    profile: tileflowNativeProfile.id,
+    validation: 'static-artifacts',
+    preparationVersion: 'native-lowering-v1',
     engines: {android: tileflowNativeProfile.android, ios: tileflowNativeProfile.ios},
     buildManifestSha256,
     transformations: [...transformations].sort((left, right) => {

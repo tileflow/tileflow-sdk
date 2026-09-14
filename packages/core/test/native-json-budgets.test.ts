@@ -47,11 +47,30 @@ for (const stage of ['input', 'prepared'] as const) {
 
   test(`${stage} rejects unsafe JSON without evaluating getters or toJSON`, () => {
     let reads = 0;
-    const getter = Object.defineProperty({}, 'data', {enumerable: true, get() {reads++; return 0;}});
+    const getter = Object.defineProperty({}, 'data', {
+      enumerable: true,
+      get() {
+        reads++;
+        return 0;
+      },
+    });
     const cyclic: unknown[] = [];
     cyclic.push(cyclic);
-    for (const value of [getter, cyclic, new Array(1), new Date(0), Infinity, NaN,
-      {toJSON() {reads++; return {}; }}, {[Symbol('key')]: 0}]) {
+    for (const value of [
+      getter,
+      cyclic,
+      new Array(1),
+      new Date(0),
+      Infinity,
+      NaN,
+      {
+        toJSON() {
+          reads++;
+          return {};
+        },
+      },
+      {[Symbol('key')]: 0},
+    ]) {
       assert.equal(budgets.isBoundedNativeJson(value, stage), false);
     }
     assert.equal(reads, 0);

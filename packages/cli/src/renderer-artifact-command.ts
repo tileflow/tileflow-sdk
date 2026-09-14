@@ -38,7 +38,9 @@ export async function runRendererArtifactCommand(
     const renderer = resolveTileflowRenderer(options.renderer);
     if (options.target !== 'local' && options.target !== 'hosted') {
       throw Object.assign(new Error('Expected a local or hosted target.'), {
-        code: 'INVALID_TARGET', phase: 'command-validation', path: 'target',
+        code: 'INVALID_TARGET',
+        phase: 'command-validation',
+        path: 'target',
       });
     }
     if (renderer === 'native' && options.target === 'hosted') {
@@ -47,40 +49,58 @@ export async function runRendererArtifactCommand(
       ]);
     }
     if (command === 'build' && options.target === 'hosted') {
-      throw Object.assign(new Error('Build prepares local artifacts; Hosted publication uses deploy.'), {
-        code: 'HOSTED_INCOMPATIBLE', phase: 'command-validation', path: 'target',
-        suggestion: 'Use validate --target hosted for web preflight, or build --target local.',
-      });
+      throw Object.assign(
+        new Error('Build prepares local artifacts; Hosted publication uses deploy.'),
+        {
+          code: 'HOSTED_INCOMPATIBLE',
+          phase: 'command-validation',
+          path: 'target',
+          suggestion: 'Use validate --target hosted for web preflight, or build --target local.',
+        },
+      );
     }
-    artifacts = await withTileflowConfigSecretsHidden(() => createTileflowBuildArtifacts({
-      apiBaseUrl: options.apiBaseUrl,
-      config: options.config,
-      renderer,
-      styleBaseUrl: '.',
-      target: 'production',
-    }));
+    artifacts = await withTileflowConfigSecretsHidden(() =>
+      createTileflowBuildArtifacts({
+        apiBaseUrl: options.apiBaseUrl,
+        config: options.config,
+        renderer,
+        styleBaseUrl: '.',
+        target: 'production',
+      }),
+    );
     const outDir = options.out ?? 'dist/tileflow';
     if (command === 'build') await writeTileflowArtifactPlan(artifacts, {outDir});
     const summary = createTileflowCommandSummary({
       code: command === 'validate' ? 'VALIDATION_OK' : 'BUILD_OK',
       command,
-      message: command === 'validate' ? 'Tileflow artifact validation passed.' : 'Built Tileflow artifacts.',
+      message:
+        command === 'validate'
+          ? 'Tileflow artifact validation passed.'
+          : 'Built Tileflow artifacts.',
       ok: true,
       phase: command === 'validate' ? 'validation' : 'build',
       severity: 'info',
-      suggestion: renderer === 'native'
-        ? 'Use the prepared native manifest with a separately qualified native runtime.'
-        : 'Serve the prepared artifact directory.',
+      suggestion:
+        renderer === 'native'
+          ? 'Use the prepared native manifest with a separately qualified native runtime.'
+          : 'Serve the prepared artifact directory.',
     });
     const warnings = Object.values(artifacts.project.maps).flatMap((map) =>
       auditTileflowMapThemeValues(map).filter(({severity}) => severity === 'warning'),
     );
-    const diagnostics = warnings.length ? createTileflowStructuredDiagnostics({diagnostics: warnings}, process.cwd(), {code: 'VALIDATION_WARNING', phase: 'theme-audit'}) : [];
+    const diagnostics = warnings.length
+      ? createTileflowStructuredDiagnostics({diagnostics: warnings}, process.cwd(), {
+          code: 'VALIDATION_WARNING',
+          phase: 'theme-audit',
+        })
+      : [];
     const document = {
       ...summary,
       target: options.target,
       renderer,
-      ...(artifacts.nativeBuild ? {profile: artifacts.nativeBuild.profile, validation: 'static-artifacts'} : {}),
+      ...(artifacts.nativeBuild
+        ? {profile: artifacts.nativeBuild.profile, validation: 'static-artifacts'}
+        : {}),
       maps: Object.keys(artifacts.project.maps).sort(),
       diagnostics,
     };
@@ -88,8 +108,10 @@ export async function runRendererArtifactCommand(
     else {
       console.log(summary.message);
       for (const issue of diagnostics) console.warn(`${issue.path}: ${issue.message}`);
-      if (artifacts.nativeBuild) console.log('Profile: native-v1 (static artifacts; no device qualification).');
-      if (command === 'build') console.log(`Output: ${resolve(outDir, ...(renderer === 'native' ? ['native'] : []))}`);
+      if (artifacts.nativeBuild)
+        console.log('Profile: native-v1 (static artifacts; no device qualification).');
+      if (command === 'build')
+        console.log(`Output: ${resolve(outDir, ...(renderer === 'native' ? ['native'] : []))}`);
     }
   } catch (error) {
     const document = createTileflowCommandFailureDocument(command, error, process.cwd(), {

@@ -291,164 +291,172 @@ program
     process.env.TILEFLOW_API_URL ?? defaultApiUrl,
   )
   .option('--json', 'print deterministic schema-version-1 JSON')
-  .action(async (options: {apiBaseUrl: string; config: string; json?: boolean; renderer: string; target: string}) => {
-    if (options.renderer !== 'web') {
-      await runRendererArtifactCommand('validate', options);
-      return;
-    }
-    if (options.target !== 'local' && options.target !== 'hosted') {
-      if (options.json) {
-        const failure = createTileflowCommandFailureDocument(
-          'validate',
-          {
-            code: 'INVALID_TARGET',
-            issues: [
-              {
-                code: 'INVALID_TARGET',
-                message: `Invalid validation target: ${options.target}`,
-                path: 'target',
-                phase: 'command-validation',
-              },
-            ],
-            phase: 'command-validation',
-          },
-          process.cwd(),
-          {code: 'INVALID_TARGET', phase: 'command-validation'},
-        );
-        process.stderr.write(serializeTileflowCommandDocument(failure));
+  .action(
+    async (options: {
+      apiBaseUrl: string;
+      config: string;
+      json?: boolean;
+      renderer: string;
+      target: string;
+    }) => {
+      if (options.renderer !== 'web') {
+        await runRendererArtifactCommand('validate', options);
+        return;
+      }
+      if (options.target !== 'local' && options.target !== 'hosted') {
+        if (options.json) {
+          const failure = createTileflowCommandFailureDocument(
+            'validate',
+            {
+              code: 'INVALID_TARGET',
+              issues: [
+                {
+                  code: 'INVALID_TARGET',
+                  message: `Invalid validation target: ${options.target}`,
+                  path: 'target',
+                  phase: 'command-validation',
+                },
+              ],
+              phase: 'command-validation',
+            },
+            process.cwd(),
+            {code: 'INVALID_TARGET', phase: 'command-validation'},
+          );
+          process.stderr.write(serializeTileflowCommandDocument(failure));
+          process.exitCode = 1;
+          return;
+        }
+        logError(`Invalid validation target: ${options.target}`);
+        printNextSteps([
+          `Use ${command('tileflow validate --target local')} or ${command('tileflow validate --target hosted')}.`,
+        ]);
         process.exitCode = 1;
         return;
       }
-      logError(`Invalid validation target: ${options.target}`);
-      printNextSteps([
-        `Use ${command('tileflow validate --target local')} or ${command('tileflow validate --target hosted')}.`,
-      ]);
-      process.exitCode = 1;
-      return;
-    }
 
-    let failureDefaults = {code: 'CONFIG_LOAD_FAILED', phase: 'config-load'};
-    try {
-      if (!options.json) logInfo(`Validating ${pathLabel(options.config)}.`);
-      const loaded = await withTileflowConfigSecretsHidden(() =>
-        loadTileflowConfigWithInputs(options.config),
-      );
-      const project = loaded.project;
-      const baseDirectory = dirname(loaded.configFile);
-      failureDefaults = {code: 'CONFIG_INVALID', phase: 'config-validation'};
-      assertValidTileflowConfig(project);
+      let failureDefaults = {code: 'CONFIG_LOAD_FAILED', phase: 'config-load'};
+      try {
+        if (!options.json) logInfo(`Validating ${pathLabel(options.config)}.`);
+        const loaded = await withTileflowConfigSecretsHidden(() =>
+          loadTileflowConfigWithInputs(options.config),
+        );
+        const project = loaded.project;
+        const baseDirectory = dirname(loaded.configFile);
+        failureDefaults = {code: 'CONFIG_INVALID', phase: 'config-validation'};
+        assertValidTileflowConfig(project);
 
-      const mapNames = getTileflowMapNames(project).sort();
-      failureDefaults = {code: 'ICON_COMPILATION_FAILED', phase: 'icon-compilation'};
-      const compiledIcons = await compileTileflowIconPackages(project, {
-        baseDirectory,
-        cwd: process.cwd(),
-        target: options.target,
-      });
-      const mapAssets = createCompiledMapAssets(compiledIcons, (binding) =>
-        options.target === 'hosted'
-          ? `${normalizeUrl(options.apiBaseUrl)}/sprites/preflight/${binding.packageHash}/sprite`
-          : `/tileflow/icons/${binding.mapName}/sprite`,
-      );
-      failureDefaults = {code: 'STYLE_INVALID', phase: 'style-validation'};
-      const compiledStyles = createTileflowStyles(project, {
-        apiBaseUrl: options.apiBaseUrl,
-        mapAssets,
-      });
-      failureDefaults = {code: 'TF_LOCAL_TILESET_INVALID', phase: 'local-tileset-resolution'};
-      const localTilesets = await prepareTileflowLocalTilesets(project, compiledStyles, {
-        assetBaseUrl: '/tileflow',
-        baseDirectory,
-        cwd: process.cwd(),
-      });
-      failureDefaults = {code: 'FONT_COMPILATION_FAILED', phase: 'font-compilation'};
-      const {styles} = await prepareTileflowStyleFonts(project, localTilesets.styles, {
-        assetBaseUrl: '/tileflow',
-        baseDirectory,
-        cwd: process.cwd(),
-        target: options.target,
-      });
-      failureDefaults = {code: 'HOSTED_INCOMPATIBLE', phase: 'hosted-validation'};
-      const hostedIssues =
-        options.target === 'hosted' ? inspectTileflowHostedCompatibility(project, styles) : [];
-      if (hostedIssues.length > 0) {
-        if (!options.json) {
-          printHostedCompatibilityIssues(hostedIssues);
+        const mapNames = getTileflowMapNames(project).sort();
+        failureDefaults = {code: 'ICON_COMPILATION_FAILED', phase: 'icon-compilation'};
+        const compiledIcons = await compileTileflowIconPackages(project, {
+          baseDirectory,
+          cwd: process.cwd(),
+          target: options.target,
+        });
+        const mapAssets = createCompiledMapAssets(compiledIcons, (binding) =>
+          options.target === 'hosted'
+            ? `${normalizeUrl(options.apiBaseUrl)}/sprites/preflight/${binding.packageHash}/sprite`
+            : `/tileflow/icons/${binding.mapName}/sprite`,
+        );
+        failureDefaults = {code: 'STYLE_INVALID', phase: 'style-validation'};
+        const compiledStyles = createTileflowStyles(project, {
+          apiBaseUrl: options.apiBaseUrl,
+          mapAssets,
+        });
+        failureDefaults = {code: 'TF_LOCAL_TILESET_INVALID', phase: 'local-tileset-resolution'};
+        const localTilesets = await prepareTileflowLocalTilesets(project, compiledStyles, {
+          assetBaseUrl: '/tileflow',
+          baseDirectory,
+          cwd: process.cwd(),
+        });
+        failureDefaults = {code: 'FONT_COMPILATION_FAILED', phase: 'font-compilation'};
+        const {styles} = await prepareTileflowStyleFonts(project, localTilesets.styles, {
+          assetBaseUrl: '/tileflow',
+          baseDirectory,
+          cwd: process.cwd(),
+          target: options.target,
+        });
+        failureDefaults = {code: 'HOSTED_INCOMPATIBLE', phase: 'hosted-validation'};
+        const hostedIssues =
+          options.target === 'hosted' ? inspectTileflowHostedCompatibility(project, styles) : [];
+        if (hostedIssues.length > 0) {
+          if (!options.json) {
+            printHostedCompatibilityIssues(hostedIssues);
+            return;
+          }
+          throw Object.assign(new Error('Tileflow config is not Hosted-compatible.'), {
+            code: 'HOSTED_INCOMPATIBLE',
+            issues: hostedIssues.map((issue) => ({
+              code: 'HOSTED_INCOMPATIBLE',
+              message: issue.message,
+              path: issue.path,
+              phase: 'hosted-validation',
+            })),
+            phase: 'hosted-validation',
+          });
+        }
+
+        const themeWarnings = mapNames.flatMap((mapName) =>
+          auditTileflowMapThemeValues(project.maps[mapName]!).filter(
+            ({severity}) => severity === 'warning',
+          ),
+        );
+        const diagnostics =
+          themeWarnings.length === 0
+            ? []
+            : createTileflowStructuredDiagnostics({diagnostics: themeWarnings}, process.cwd(), {
+                code: 'VALIDATION_WARNING',
+                phase: 'theme-audit',
+              });
+
+        const checks = [
+          'Config schema',
+          'Icon asset closure',
+          'Text provider closure',
+          'Named map styles',
+          'MapLibre style semantics',
+          ...(options.target === 'hosted' ? ['Hosted compatibility'] : []),
+        ];
+        if (options.json) {
+          const summary = createTileflowCommandSummary({
+            code: 'VALIDATION_OK',
+            command: 'validate',
+            message: `Tileflow config is valid (${plural(mapNames.length, 'map')}).`,
+            ok: true,
+            path: '',
+            phase: 'validation',
+            severity: 'info',
+            suggestion: 'No changes are required.',
+          });
+          process.stdout.write(
+            serializeTileflowCommandDocument({
+              ...summary,
+              target: options.target,
+              maps: mapNames,
+              checks,
+              diagnostics,
+            }),
+          );
           return;
         }
-        throw Object.assign(new Error('Tileflow config is not Hosted-compatible.'), {
-          code: 'HOSTED_INCOMPATIBLE',
-          issues: hostedIssues.map((issue) => ({
-            code: 'HOSTED_INCOMPATIBLE',
-            message: issue.message,
-            path: issue.path,
-            phase: 'hosted-validation',
-          })),
-          phase: 'hosted-validation',
-        });
-      }
 
-      const themeWarnings = mapNames.flatMap((mapName) =>
-        auditTileflowMapThemeValues(project.maps[mapName]!).filter(
-          ({severity}) => severity === 'warning',
-        ),
-      );
-      const diagnostics =
-        themeWarnings.length === 0
-          ? []
-          : createTileflowStructuredDiagnostics({diagnostics: themeWarnings}, process.cwd(), {
-              code: 'VALIDATION_WARNING',
-              phase: 'theme-audit',
-            });
-
-      const checks = [
-        'Config schema',
-        'Icon asset closure',
-        'Text provider closure',
-        'Named map styles',
-        'MapLibre style semantics',
-        ...(options.target === 'hosted' ? ['Hosted compatibility'] : []),
-      ];
-      if (options.json) {
-        const summary = createTileflowCommandSummary({
-          code: 'VALIDATION_OK',
-          command: 'validate',
-          message: `Tileflow config is valid (${plural(mapNames.length, 'map')}).`,
-          ok: true,
-          path: '',
-          phase: 'validation',
-          severity: 'info',
-          suggestion: 'No changes are required.',
-        });
-        process.stdout.write(
-          serializeTileflowCommandDocument({
-            ...summary,
-            target: options.target,
-            maps: mapNames,
-            checks,
-            diagnostics,
-          }),
+        logSuccess(`Config is valid (${plural(mapNames.length, 'map')}).`);
+        printChecks(checks);
+        for (const diagnostic of diagnostics) {
+          logWarning(`${diagnostic.path || '(root)'}: ${diagnostic.message}`);
+        }
+      } catch (error) {
+        if (!options.json) throw error;
+        const failure = createTileflowCommandFailureDocument(
+          'validate',
+          error,
+          process.cwd(),
+          failureDefaults,
         );
-        return;
+        process.stderr.write(serializeTileflowCommandDocument(failure));
+        process.exitCode = 1;
       }
-
-      logSuccess(`Config is valid (${plural(mapNames.length, 'map')}).`);
-      printChecks(checks);
-      for (const diagnostic of diagnostics) {
-        logWarning(`${diagnostic.path || '(root)'}: ${diagnostic.message}`);
-      }
-    } catch (error) {
-      if (!options.json) throw error;
-      const failure = createTileflowCommandFailureDocument(
-        'validate',
-        error,
-        process.cwd(),
-        failureDefaults,
-      );
-      process.stderr.write(serializeTileflowCommandDocument(failure));
-      process.exitCode = 1;
-    }
-  });
+    },
+  );
 
 program
   .command('build')
@@ -463,24 +471,33 @@ program
     'Tileflow API base URL used to resolve official map assets',
     process.env.TILEFLOW_API_URL ?? defaultApiUrl,
   )
-  .action(async (options: {apiBaseUrl: string; config: string; json?: boolean; out: string; renderer: string; target: string}) => {
-    if (options.renderer !== 'web' || options.target !== 'local' || options.json) {
-      await runRendererArtifactCommand('build', options);
-      return;
-    }
-    logInfo(`Building ${pathLabel(options.config)}.`);
-    await withTileflowConfigSecretsHidden(() =>
-      writeTileflowBuildArtifacts({
-        config: options.config,
-        outDir: options.out,
-        styleBaseUrl: '.',
-        apiBaseUrl: options.apiBaseUrl,
-      }),
-    );
+  .action(
+    async (options: {
+      apiBaseUrl: string;
+      config: string;
+      json?: boolean;
+      out: string;
+      renderer: string;
+      target: string;
+    }) => {
+      if (options.renderer !== 'web' || options.target !== 'local' || options.json) {
+        await runRendererArtifactCommand('build', options);
+        return;
+      }
+      logInfo(`Building ${pathLabel(options.config)}.`);
+      await withTileflowConfigSecretsHidden(() =>
+        writeTileflowBuildArtifacts({
+          config: options.config,
+          outDir: options.out,
+          styleBaseUrl: '.',
+          apiBaseUrl: options.apiBaseUrl,
+        }),
+      );
 
-    logSuccess('Built Tileflow artifacts.');
-    printKeyValue('Output', pathLabel(resolve(process.cwd(), options.out)));
-  });
+      logSuccess('Built Tileflow artifacts.');
+      printKeyValue('Output', pathLabel(resolve(process.cwd(), options.out)));
+    },
+  );
 
 program
   .command('preview')

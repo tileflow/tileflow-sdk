@@ -29,7 +29,10 @@ test('publishes a build-only profile entry without widening the root or native U
 
   const built = await readFile(new URL('dist/native-profile.js', packageRoot), 'utf8');
   const specifiers = runtimeSpecifiers(built);
-  assert.equal(specifiers.some((specifier) => specifier.startsWith('node:')), false);
+  assert.equal(
+    specifiers.some((specifier) => specifier.startsWith('node:')),
+    false,
+  );
   assert.equal(specifiers.includes('@maplibre/maplibre-gl-style-spec/dist/latest.json'), false);
 
   const script = `
@@ -55,16 +58,32 @@ test('publishes a build-only profile entry without widening the root or native U
 function runtimeSpecifiers(source: string): string[] {
   const result: string[] = [];
   const visit = (node: ts.Node): void => {
-    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier &&
-      ts.isStringLiteralLike(node.moduleSpecifier)) result.push(node.moduleSpecifier.text);
-    if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-      (ts.isIdentifier(node.expression) && ['require', '__require'].includes(node.expression.text)))) {
+    if (
+      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+      node.moduleSpecifier &&
+      ts.isStringLiteralLike(node.moduleSpecifier)
+    )
+      result.push(node.moduleSpecifier.text);
+    if (
+      ts.isCallExpression(node) &&
+      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(node.expression) &&
+          ['require', '__require'].includes(node.expression.text)))
+    ) {
       const specifier = node.arguments[0];
       if (specifier && ts.isStringLiteralLike(specifier)) result.push(specifier.text);
     }
     ts.forEachChild(node, visit);
   };
-  visit(ts.createSourceFile('native-profile.js', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS));
+  visit(
+    ts.createSourceFile(
+      'native-profile.js',
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.JS,
+    ),
+  );
   return result;
 }
 

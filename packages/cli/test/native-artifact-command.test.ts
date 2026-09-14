@@ -10,7 +10,8 @@ import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 
 const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const tsxLoader = import.meta.resolve('tsx');
-const validConfig = "import {defineMap} from '@tileflow/core';import {streets} from '@tileflow/maps';export default defineMap({id:'main',version:1,extends:streets});\n";
+const validConfig =
+  "import {defineMap} from '@tileflow/core';import {streets} from '@tileflow/maps';export default defineMap({id:'main',version:1,extends:streets});\n";
 
 async function fixture(t: {after(callback: () => Promise<void>): void}) {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-native-cli-'));
@@ -20,19 +21,36 @@ async function fixture(t: {after(callback: () => Promise<void>): void}) {
   return cwd;
 }
 
-function run(cwd: string, args: string[]): Promise<{code: number | null; stdout: string; stderr: string}> {
+function run(
+  cwd: string,
+  args: string[],
+): Promise<{code: number | null; stdout: string; stderr: string}> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...args], {
-      cwd, env: {...process.env, TILEFLOW_API_KEY: '', TILEFLOW_API_URL: 'https://api.example.test'},
+      cwd,
+      env: {...process.env, TILEFLOW_API_KEY: '', TILEFLOW_API_URL: 'https://api.example.test'},
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';
     let stderr = '';
-    const timer = setTimeout(() => {child.kill(); reject(new Error('CLI fixture timed out.'));}, 60_000);
-    child.stdout.on('data', (value) => {stdout += value;});
-    child.stderr.on('data', (value) => {stderr += value;});
-    child.on('error', (error) => {clearTimeout(timer); reject(error);});
-    child.on('close', (code) => {clearTimeout(timer); resolve({code, stdout, stderr});});
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error('CLI fixture timed out.'));
+    }, 60_000);
+    child.stdout.on('data', (value) => {
+      stdout += value;
+    });
+    child.stderr.on('data', (value) => {
+      stderr += value;
+    });
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({code, stdout, stderr});
+    });
   });
 }
 
@@ -55,8 +73,18 @@ for (const command of ['validate', 'build']) {
 
   test(`${command} rejects native Hosted before loading config or writing output`, async (t) => {
     const cwd = await fixture(t);
-    await writeFile(join(cwd, 'tileflow.config.ts'), "throw new Error('CONFIG_MUST_NOT_EXECUTE');\n");
-    const result = await run(cwd, [command, '--renderer', 'native', '--target', 'hosted', '--json']);
+    await writeFile(
+      join(cwd, 'tileflow.config.ts'),
+      "throw new Error('CONFIG_MUST_NOT_EXECUTE');\n",
+    );
+    const result = await run(cwd, [
+      command,
+      '--renderer',
+      'native',
+      '--target',
+      'hosted',
+      '--json',
+    ]);
     assert.equal(result.code, 1);
     const body = JSON.parse(result.stderr);
     assert.equal(body.code, 'NATIVE_RENDERER_UNSUPPORTED');
@@ -68,7 +96,14 @@ for (const command of ['validate', 'build']) {
 
 test('native validate uses the existing envelope and never creates output', async (t) => {
   const cwd = await fixture(t);
-  const result = await run(cwd, ['validate', '--renderer', 'native', '--target', 'local', '--json']);
+  const result = await run(cwd, [
+    'validate',
+    '--renderer',
+    'native',
+    '--target',
+    'local',
+    '--json',
+  ]);
   assert.equal(result.code, 0, result.stderr);
   const body = JSON.parse(result.stdout);
   assert.equal(body.schemaVersion, 1);
@@ -91,7 +126,11 @@ test('native build writes a separate strict v1 manifest and renderer record', as
   assert.equal(record.validation, 'static-artifacts');
   assert.equal(record.schemaVersion, 2);
   assert.equal(record.preparationVersion, 'native-lowering-v1');
-  assert.ok(record.transformations.every(({projection}: {projection: string}) => projection === 'globe-to-mercator'));
+  assert.ok(
+    record.transformations.every(
+      ({projection}: {projection: string}) => projection === 'globe-to-mercator',
+    ),
+  );
   assert.equal(manifest.transformations, undefined);
   await assert.rejects(access(join(cwd, 'output/manifest.json')));
 });
@@ -113,7 +152,11 @@ test('default and explicit web build/validate preserve their original output', a
     assert.deepEqual(files.map(({name}) => name).sort(), (await readdir(right)).sort());
     for (const file of files) {
       if (file.isDirectory()) await compare(join(left, file.name), join(right, file.name));
-      else assert.deepEqual(await readFile(join(left, file.name)), await readFile(join(right, file.name)));
+      else
+        assert.deepEqual(
+          await readFile(join(left, file.name)),
+          await readFile(join(right, file.name)),
+        );
     }
   }
   await compare(join(cwd, 'implicit'), join(cwd, 'explicit'));
@@ -121,7 +164,10 @@ test('default and explicit web build/validate preserve their original output', a
 
 test('an incompatible native style fails without creating an output directory', async (t) => {
   const cwd = await fixture(t);
-  await writeFile(join(cwd, 'tileflow.config.ts'), validConfig.replace('extends:streets', "extends:streets,terrain:'3d'"));
+  await writeFile(
+    join(cwd, 'tileflow.config.ts'),
+    validConfig.replace('extends:streets', "extends:streets,terrain:'3d'"),
+  );
   const result = await run(cwd, ['build', '--renderer', 'native', '--out', 'output', '--json']);
   assert.equal(result.code, 1);
   const body = JSON.parse(result.stderr);

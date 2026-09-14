@@ -24,7 +24,7 @@ test('publishes native URL helpers through an explicit entrypoint', async () => 
 test('imports the native entrypoint without browser globals or network access', async () => {
   const script = `
     for (const name of [
-      'window', 'document', 'navigator', 'fetch', 'URL', 'TextEncoder',
+      'window', 'document', 'navigator', 'fetch', 'URL', 'TextEncoder', 'TextDecoder', 'AbortController',
       'FontFace', 'ResizeObserver', 'requestAnimationFrame', 'matchMedia',
     ]) {
       Object.defineProperty(globalThis, name, {
@@ -41,9 +41,13 @@ test('imports the native entrypoint without browser globals or network access', 
     timeout: 10_000,
   });
   assert.deepEqual(JSON.parse(stdout), [
+    'TileflowNativeSourceError',
     'TileflowNativeUrlError',
+    'createTileflowNativeSourceController',
+    'loadTileflowNativeManifest',
     'resolveTileflowNativeManifestUrl',
     'resolveTileflowNativeResourceUrl',
+    'tileflowNativeManifestLimits',
     'tileflowNativeUrlLimits',
   ]);
 });

@@ -1,15 +1,16 @@
 import type {Command} from 'commander';
-import pc from 'picocolors';
 import {dirname} from 'node:path';
+import pc from 'picocolors';
 import {
   collectTileflowIconSetReferences,
   compareCodeUnits,
   parseResolvedTileflowMap,
+  parseTileflowIconsLockfile,
   type TileflowIconSetPin,
   type TileflowIconSetReference,
-  type TileflowIconSource,
   tileflowIconSetReferenceSchema,
   tileflowIconsLockfileName,
+  type TileflowIconSource,
 } from '@tileflow/core';
 import type {TileflowBuildCatalog} from '@tileflow/core/build';
 import {
@@ -123,7 +124,7 @@ export function registerIconLockCommands(
     let current: Record<string, TileflowIconSetPin>;
     try {
       expected = await readTileflowIconsLockfileText(baseDirectory);
-      current = expected === null ? {} : readCurrentPins(expected);
+      current = expected === null ? {} : await readCurrentPins(expected);
     } catch {
       return emitFailure(
         options.json,
@@ -346,9 +347,6 @@ function selectReferences(
 }
 
 /** Retain every existing pin verbatim; an unselected reference is never re-resolved or dropped. */
-function readCurrentPins(contents: string): Record<string, TileflowIconSetPin> {
-  const parsed = JSON.parse(contents) as {sets?: Record<string, TileflowIconSetPin>};
-  return parsed.sets && typeof parsed.sets === 'object' && !Array.isArray(parsed.sets)
-    ? parsed.sets
-    : {};
+async function readCurrentPins(contents: string): Promise<Record<string, TileflowIconSetPin>> {
+  return (await parseTileflowIconsLockfile(contents)).sets;
 }

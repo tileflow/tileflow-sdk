@@ -1,19 +1,17 @@
-import {
-  TileflowIconSetError,
-  tileflowIconsLockfileName,
-  tileflowIconSpriteIndexSchema,
-  type TileflowIconCompositionV1,
-  type TileflowIconDirectory,
-  type TileflowIconSource,
-} from '@tileflow/core';
-import {
-  loadSharp,
-  type TileflowSpriteIndex as SpriteIndex,
-  type TileflowRenderedIcon,
-} from './icon-sprite';
 import {readdir, readFile, realpath, stat} from 'node:fs/promises';
 import {extname, isAbsolute, relative, resolve as resolvePath, sep} from 'node:path';
 import {SaxesParser} from 'saxes';
+import {
+  collectTileflowIconSetReferences,
+  type TileflowIconCompositionV1,
+  type TileflowIconDirectory,
+  TileflowIconSetError,
+  type TileflowIconSetReference,
+  tileflowIconsLockfileName,
+  type TileflowIconsLockfileV1,
+  type TileflowIconSource,
+  tileflowIconSpriteIndexSchema,
+} from '@tileflow/core';
 import {
   compareCodeUnits,
   hashTileflowIconPackageManifest,
@@ -38,11 +36,18 @@ import {
   resolveTileflowAssetDirectories,
   TileflowAssetDirectoryError,
 } from './asset-directories';
+import type {TileflowIconCacheOptions} from './icon-cache';
 import {
   composeTileflowIconSources,
   type TileflowComposedIconContributor,
   type TileflowComposedIconSources,
 } from './icon-composition';
+import {readTileflowIconsLockfile} from './icon-lockfile';
+import {
+  loadSharp,
+  type TileflowSpriteIndex as SpriteIndex,
+  type TileflowRenderedIcon,
+} from './icon-sprite';
 
 export {verifyTileflowIconArtifact, type VerifiedTileflowIconArtifact} from './icon-artifact';
 
@@ -72,7 +77,6 @@ export {
   type TileflowComposedIconSources,
   type TileflowComposedIconWinner,
 } from './icon-composition';
-import type {TileflowIconCacheOptions} from './icon-cache';
 
 export type TileflowBuildAsset = {
   contentType: string;
@@ -502,21 +506,33 @@ async function composeMapIconSources(
   options: CompileTileflowIconPackagesOptions & {mapNames?: readonly string[]},
 ): Promise<ComposeMapIconSourcesResult> {
   const mapRequests = getMapIconRequests(project, options.mapNames);
+  const workspaceRequests =
+    options.mapNames === undefined ? mapRequests : getMapIconRequests(project);
+  const baseDirectory = options.baseDirectory ?? options.cwd;
+  const workspaceLock = await readWorkspaceIconSetLock(workspaceRequests, baseDirectory);
+  const lockPath = workspaceLock
+    ? resolvePath(baseDirectory, tileflowIconsLockfileName)
+    : undefined;
   const issues: TileflowIconCompilationIssue[] = [];
   const composedBySequence = new Map<string, TileflowComposedIconSources>();
 
   for (const request of uniqueSequences(mapRequests)) {
     if (request.sources.length === 0) continue;
     try {
+      const lock = workspaceLock ? selectMapIconSetLock(workspaceLock, request.sources) : undefined;
+      const composed = await composeTileflowIconSources(request.sources, {
+        ...options.icons,
+        baseDirectory,
+        configPath: `maps.${request.mapName}.icons`,
+        cwd: options.cwd,
+        ...(lock ? {lock} : {}),
+        target: options.target,
+      });
       composedBySequence.set(
         request.sequenceKey,
-        await composeTileflowIconSources(request.sources, {
-          ...options.icons,
-          baseDirectory: options.baseDirectory ?? options.cwd,
-          configPath: `maps.${request.mapName}.icons`,
-          cwd: options.cwd,
-          target: options.target,
-        }),
+        lockPath && lock
+          ? {...composed, watchFiles: uniqueStrings([...composed.watchFiles, lockPath])}
+          : composed,
       );
     } catch (error) {
       if (error instanceof TileflowIconSetError) throw error;
@@ -531,6 +547,38 @@ async function composeMapIconSources(
   }
   if (issues.length > 0) throw new TileflowIconCompilationError(issues);
   return {composedBySequence, mapRequests};
+}
+
+/** Validate one repository snapshot before deriving exact per-map lock subsets. */
+async function readWorkspaceIconSetLock(
+  requests: readonly MapIconRequest[],
+  baseDirectory: string,
+): Promise<TileflowIconsLockfileV1 | undefined> {
+  const references = new Set<TileflowIconSetReference>();
+  for (const request of requests) {
+    for (const reference of collectTileflowIconSetReferences(request.sources))
+      references.add(reference);
+  }
+  if (references.size === 0) return undefined;
+
+  const sources: TileflowIconSource[] = [...references]
+    .sort(compareCodeUnits)
+    .map((reference) => ({kind: 'icon-set', reference}));
+  return readTileflowIconsLockfile(baseDirectory, sources);
+}
+
+/** A map consumes only the pins it declares after the whole workspace snapshot is exact. */
+function selectMapIconSetLock(
+  lock: TileflowIconsLockfileV1,
+  sources: readonly TileflowIconSource[],
+): TileflowIconsLockfileV1 | undefined {
+  const references = collectTileflowIconSetReferences(sources);
+  if (references.length === 0) return undefined;
+
+  return {
+    lockfileVersion: 1,
+    sets: Object.fromEntries(references.map((reference) => [reference, lock.sets[reference]!])),
+  };
 }
 
 export async function prepareTileflowCatalogIcons(

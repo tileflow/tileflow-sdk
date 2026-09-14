@@ -7,8 +7,9 @@ integer revision of the four generated sprite files. Maps in different repositor
 independently pinned revisions through `iconSet('@acme/brand')` without copying original artwork.
 
 Two command families cover this, and the split is deliberate. `icon-set` is a networked Team
-authority that changes the catalog. `icons` stays with repository-local work: `list` and `diff`
-inspect prepared output without any credential, and `install`, `update` and `pin` maintain the exact
+authority that changes the catalog. `icons list` stays local and needs no credential. `icons diff`
+compares prepared output with an active Hosted Map baseline, so it requires `--map-id` and a Map
+credential but never mutates that Map. `install`, `update` and `pin` maintain the exact
 `tileflow.icons.lock.json` beside the selected config.
 
 Availability depends on your deployment and your Team's enabled features. Check
@@ -40,6 +41,10 @@ The first successful publication creates the set. Republishing identical bytes r
 `"publication": "unchanged"` and returns the same revision rather than a new integer. Repeating an
 uncertain request with the same `--idempotency-key` returns its original result instead of creating
 extra history.
+
+`--name` and `--description` set bounded catalog display metadata after the immutable revision is
+confirmed. If that metadata update fails, the revision remains published; rerun the same command to
+retry the display update.
 
 The JSON receipt reports the Team, the canonical reference, the immutable revision and version ID,
 the package identity, the content hash, the byte count and whether the publication changed

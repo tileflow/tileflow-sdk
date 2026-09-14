@@ -328,3 +328,24 @@ test('a lock changed by another writer fails compare-and-swap without losing its
   assert.equal(failure.error.code, 'ICON_LOCK_CONFLICT');
   assert.equal(process.exitCode, 1);
 });
+
+test('install preserves an invalid existing lock and makes no catalog request', async (t) => {
+  const brand = await realPin(1, 2, 'hospital');
+  const cwd = await fixture(t, ['@acme/brand']);
+  const invalid = `${JSON.stringify({
+    lockfileVersion: 1,
+    sets: {'@acme/brand': brand},
+    unexpected: true,
+  })}\n`;
+  await writeFile(join(cwd, tileflowIconsLockfileName), invalid);
+  const captured: CapturedRequest[] = [];
+  const context = run(t, cwd, () => revisionResponse(brand, '@acme/brand'), captured);
+
+  await context.parse(['icons', 'install', '--api-key', apiKey, '--json']);
+
+  assert.equal(captured.length, 0);
+  assert.equal(await readFile(join(cwd, tileflowIconsLockfileName), 'utf8'), invalid);
+  const failure = JSON.parse(context.output.stderr) as {error: {code: string}};
+  assert.equal(failure.error.code, 'icon_lock_unreadable');
+  assert.equal(process.exitCode, 1);
+});

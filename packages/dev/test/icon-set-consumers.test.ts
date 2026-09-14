@@ -4,11 +4,17 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {
+  defineMap,
+  disable,
+  iconSet,
+  parseTileflowMap,
   serializeTileflowIconsLockfile,
   sha256Hex,
   tileflowIconsLockfileName,
   type TileflowIconsLockfileV1,
 } from '@tileflow/core';
+import type {TileflowBuildCatalog} from '@tileflow/core/build';
+import {streets} from '@tileflow/maps';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {createTileflowBuildArtifacts, getTileflowWatchPaths} from '../src/artifacts';
 import {storeTileflowIconSetArtifact} from '../src/icon-cache';
@@ -110,6 +116,60 @@ test('the normal artifact path composes two exact pins with a later local overri
   assert.ok(
     (await getTileflowWatchPaths({cwd})).includes(join(realCwd, tileflowIconsLockfileName)),
   );
+});
+
+test('one workspace lock composes the exact subset declared by each map', async (t) => {
+  const cwd = await fixture(t, 'tileflow-icon-set-workspace-');
+  const {brand, transport} = await seedSharedFixture(cwd);
+  const workspaceGlyphs = {
+    kind: 'url' as const,
+    url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
+  };
+  const workspaceModules = {poi: {type: 'poi' as const, icons: false}, roads: disable()};
+  const project: TileflowBuildCatalog = {
+    maps: {
+      brand: parseTileflowMap(
+        defineMap({
+          id: 'brand',
+          version: 1,
+          extends: streets,
+          glyphs: workspaceGlyphs,
+          icons: [iconSet('@acme/brand')],
+          modules: workspaceModules,
+        }),
+      ),
+      transport: parseTileflowMap(
+        defineMap({
+          id: 'transport',
+          version: 1,
+          extends: streets,
+          glyphs: workspaceGlyphs,
+          icons: [iconSet('@acme/transport')],
+          modules: workspaceModules,
+        }),
+      ),
+    },
+  };
+
+  const compiled = await compileTileflowIconPackages(project, {
+    cwd,
+    icons: {cacheRoot: cwd, offline: true},
+    target: 'local',
+  });
+
+  assert.deepEqual(Object.keys(compiled.compositions).sort(), ['brand', 'transport']);
+  assert.equal(
+    compiled.compositions.brand!.contributors[0]?.kind === 'icon-set' &&
+      compiled.compositions.brand!.contributors[0].version,
+    brand.pin.version,
+  );
+  assert.equal(
+    compiled.compositions.transport!.contributors[0]?.kind === 'icon-set' &&
+      compiled.compositions.transport!.contributors[0].version,
+    transport.pin.version,
+  );
+  assert.deepEqual(compiled.watchFiles, [join(cwd, tileflowIconsLockfileName)]);
 });
 
 test('a local-only map keeps its exact prior sprite bytes, manifest and content hash', async (t) => {

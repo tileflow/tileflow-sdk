@@ -105,6 +105,18 @@ const revision = (version: number) => ({
   pin: null as unknown,
 });
 
+const revisionSummary = (version: number) => ({
+  id: `icv_${String(version).padStart(16, '0')}`,
+  reference: '@acme/brand',
+  version,
+  publishedAt: '2026-09-14T10:00:00.000Z',
+  purgedAt: null,
+  iconCount: 1,
+  totalBytes: 383,
+  publisher: {kind: 'membership', id: 'user_1'},
+  packageId: `icp_${String(version).padStart(16, '0')}`,
+});
+
 test('Team data keys read the Icon Set catalog without loading account state', async (t) => {
   const output = captureOutput(t);
   const captured: CapturedRequest[] = [];
@@ -183,6 +195,43 @@ test('list follows bounded cursors and rejects a repeated page', async (t) => {
   );
 });
 
+test('versions accepts bounded revision summaries without artifact manifests', async (t) => {
+  const output = captureOutput(t);
+  const captured: CapturedRequest[] = [];
+  const command = program(
+    () => Response.json({schemaVersion: 1, versions: [revisionSummary(2)], nextCursor: null}),
+    captured,
+  );
+
+  await output.run(() =>
+    command.parseAsync([
+      'node',
+      'tileflow',
+      'icon-set',
+      'versions',
+      'brand',
+      '--api-key',
+      apiKey,
+      '--json',
+    ]),
+  );
+
+  assert.equal(captured[0]!.url, 'https://api.tileflow.dev/v1/icon-sets/brand/versions?limit=100');
+  const document = JSON.parse(output.stdout) as {versions: Array<Record<string, unknown>>};
+  assert.deepEqual(document.versions, [
+    {
+      iconCount: 1,
+      id: 'icv_0000000000000002',
+      packageId: 'icp_0000000000000002',
+      publishedAt: '2026-09-14T10:00:00.000Z',
+      purgedAt: null,
+      reference: '@acme/brand',
+      totalBytes: 383,
+      version: 2,
+    },
+  ]);
+});
+
 test('publish sends the exact four generated files with one durable idempotency key', async (t) => {
   const output = captureOutput(t);
   const captured: CapturedRequest[] = [];
@@ -246,6 +295,116 @@ test('publish sends the exact four generated files with one durable idempotency 
   assert.match(String(iconSet.contentHash), /^[a-f0-9]{64}$/u);
   assert.equal(output.stdout.includes(apiKey), false);
   assert.equal(output.stdout.includes(directory), false);
+});
+
+test('publish applies requested display metadata after the durable revision', async (t) => {
+  const output = captureOutput(t);
+  const captured: CapturedRequest[] = [];
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-icon-set-metadata-'));
+  t.after(() => void rm(directory, {force: true, recursive: true}));
+  await mkdir(join(directory, 'icons'));
+  await writeFile(join(directory, 'icons', 'shop.svg'), svg);
+  const originalCwd = process.cwd();
+  process.chdir(directory);
+  t.after(() => process.chdir(originalCwd));
+
+  const command = program(
+    (request) =>
+      request.method === 'PUT'
+        ? Response.json({schemaVersion: 1, changed: true, revision: revision(3)})
+        : Response.json({
+            schemaVersion: 1,
+            set: {
+              id: 'ics_0000000000000001',
+              reference: '@acme/brand',
+              name: 'Brand icons',
+              description: 'Shared identity icons.',
+              archivedAt: null,
+              latestVersion: 3,
+              createdAt: '2026-09-01T00:00:00.000Z',
+              updatedAt: '2026-09-14T10:00:00.000Z',
+            },
+          }),
+    captured,
+  );
+
+  await output.run(() =>
+    command.parseAsync([
+      'node',
+      'tileflow',
+      'icon-set',
+      'publish',
+      './icons',
+      '--id',
+      'brand',
+      '--name',
+      'Brand icons',
+      '--description',
+      'Shared identity icons.',
+      '--api-key',
+      apiKey,
+      '--idempotency-key',
+      'publish-key-0001',
+      '--json',
+    ]),
+  );
+
+  assert.deepEqual(
+    captured.map((request) => [request.method, request.url]),
+    [
+      ['PUT', captured[0]!.url],
+      ['PATCH', 'https://api.tileflow.dev/v1/icon-sets/brand'],
+    ],
+  );
+  assert.equal(captured[1]!.headers.get('content-type'), 'application/json');
+  assert.deepEqual(JSON.parse(String(captured[1]!.body)), {
+    description: 'Shared identity icons.',
+    name: 'Brand icons',
+  });
+});
+
+test('publish reports an explicit retryable failure when metadata delivery fails', async (t) => {
+  const output = captureOutput(t);
+  const captured: CapturedRequest[] = [];
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-icon-set-metadata-failure-'));
+  t.after(() => void rm(directory, {force: true, recursive: true}));
+  await mkdir(join(directory, 'icons'));
+  await writeFile(join(directory, 'icons', 'shop.svg'), svg);
+  const originalCwd = process.cwd();
+  process.chdir(directory);
+  t.after(() => process.chdir(originalCwd));
+
+  const command = program((request) => {
+    if (request.method === 'PUT') {
+      return Response.json({schemaVersion: 1, changed: true, revision: revision(3)});
+    }
+    throw new Error('metadata transport unavailable');
+  }, captured);
+
+  await output.run(() =>
+    command.parseAsync([
+      'node',
+      'tileflow',
+      'icon-set',
+      'publish',
+      './icons',
+      '--id',
+      'brand',
+      '--name',
+      'Brand icons',
+      '--api-key',
+      apiKey,
+      '--idempotency-key',
+      'publish-key-0001',
+      '--json',
+    ]),
+  );
+
+  assert.deepEqual(
+    captured.map((request) => request.method),
+    ['PUT', 'PATCH'],
+  );
+  assert.equal(JSON.parse(output.stderr).error.code, 'icon_set_metadata_update_failed');
 });
 
 test('an unchanged republication reports the same revision without a new integer', async (t) => {

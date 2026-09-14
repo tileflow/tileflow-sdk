@@ -9,6 +9,7 @@ import {
   disposeTileflowBuildArtifacts,
   getTileflowAssetBasePath,
   getTileflowAssetFileName,
+  getTileflowWatchPaths,
   normalizeTileflowBasePath,
   refreshTileflowArtifactSession,
   resolveTileflowArtifactPublicUrls,
@@ -89,7 +90,9 @@ export function tileflow(options: TileflowVitePluginOptions = {}): Plugin {
       const refreshWatchedInputPaths = async () => {
         try {
           const session = await sessionPromise;
-          const watchPaths = session.getLastGoodArtifacts()?.watchPaths ?? [];
+          const watchPaths =
+            session.getLastGoodArtifacts()?.watchPaths ??
+            (await getTileflowWatchPaths({config: configPath, cwd: root}));
           const nextWatchPaths = new Set(watchPaths);
 
           const staleWatchPaths = [...watchedInputPaths].filter(

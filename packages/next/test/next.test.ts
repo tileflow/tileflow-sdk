@@ -26,6 +26,30 @@ test('reuses one watched generation across repeated mutable requests', async (t)
   assert.equal(status.generation, 1);
 });
 
+test('does not share a Next session across distinct explicit icon transports', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-icon-transport-'));
+  await linkWorkspacePackages(cwd);
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  await writeFile(join(cwd, 'tileflow.config.ts'), rootConfig());
+  const first = createTileflowRouteHandlers({
+    cwd,
+    icons: {cacheRoot: cwd, fetch: async () => Response.error()},
+  });
+  const second = createTileflowRouteHandlers({
+    cwd,
+    icons: {cacheRoot: cwd, fetch: async () => Response.error()},
+  });
+  t.after(async () => {
+    await Promise.allSettled([first.close(), second.close()]);
+  });
+  const request = new Request('http://localhost/tileflow/styles/main/light.json');
+
+  assert.equal((await first.GET(request)).status, 200);
+  assert.equal((await second.GET(request)).status, 200);
+  await first.close();
+  assert.equal((await second.GET(request)).status, 200);
+});
+
 test('emits production artifacts without adding a webpack config', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-'));
   await linkWorkspacePackages(cwd);

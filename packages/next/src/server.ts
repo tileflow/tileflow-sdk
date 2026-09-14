@@ -50,7 +50,10 @@ export function createTileflowRouteHandlers(
 ): TileflowNextRouteHandlers {
   const basePath = normalizeTileflowBasePath(options.base ?? '/tileflow');
   const routeBasePath = normalizeTileflowBasePath(options.routeBase ?? basePath);
-  const sharedKey = options.onError ? undefined : createSharedHandlerKey(options, basePath);
+  const sharedKey =
+    options.onError || options.icons?.fetch || options.icons?.signal
+      ? undefined
+      : createSharedHandlerKey(options, basePath);
   let shared = sharedKey ? sharedHandlers.get(sharedKey) : undefined;
   if (!shared) {
     shared = createSharedRouteHandler(options, basePath);
@@ -123,8 +126,6 @@ function createSharedHandlerKey(
       ? {
           cacheRoot: options.icons.cacheRoot ?? null,
           deliveryOrigins: options.icons.deliveryOrigins ?? null,
-          hasFetch: Boolean(options.icons.fetch),
-          hasSignal: Boolean(options.icons.signal),
           offline: options.icons.offline ?? null,
         }
       : null,

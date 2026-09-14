@@ -1,9 +1,13 @@
 import type {Command} from 'commander';
-import pc from 'picocolors';
 import {isAbsolute} from 'node:path';
-import {tileflowIconSetPinSchema, tileflowIconSetReferenceSchema} from '@tileflow/core';
-import {type CompiledTileflowIconPackage, composeTileflowIconSources} from '@tileflow/dev/icons';
+import pc from 'picocolors';
 import {z} from 'zod';
+import {
+  tileflowIconSetPackageIdSchema,
+  tileflowIconSetPinSchema,
+  tileflowIconSetReferenceSchema,
+} from '@tileflow/core';
+import {type CompiledTileflowIconPackage, composeTileflowIconSources} from '@tileflow/dev/icons';
 import type {AuthConfigV2} from './account-session';
 import {
   authorizedTeamRequest,
@@ -110,6 +114,39 @@ export function registerIconSetCommands(
             'icon_set_publish_unconfirmed',
             'Publication response did not confirm the submitted generated artifact.',
           );
+        }
+        const metadata = {
+          ...(options.description === undefined ? {} : {description: options.description}),
+          ...(options.name === undefined ? {} : {name: options.name}),
+        };
+        if (Object.keys(metadata).length > 0) {
+          try {
+            const metadataResponse = await authorizedTeamRequest(
+              authority,
+              `/v1/icon-sets/${encodeURIComponent(options.id)}`,
+              'PATCH',
+              {
+                body: JSON.stringify(metadata),
+                headers: {'Content-Type': 'application/json'},
+              },
+            );
+            if (
+              !metadataResponse.ok ||
+              !catalogDetailResponseSchema.safeParse(metadataResponse.body).success
+            ) {
+              return emitFailure(
+                options.json,
+                'icon_set_metadata_update_failed',
+                'Icon Set publication succeeded, but display metadata could not be updated; rerun the same command.',
+              );
+            }
+          } catch {
+            return emitFailure(
+              options.json,
+              'icon_set_metadata_update_failed',
+              'Icon Set publication succeeded, but display metadata could not be updated; rerun the same command.',
+            );
+          }
         }
         const totalBytes = iconPackage.manifest.files.reduce(
           (total, file) => total + file.byteLength,
@@ -489,11 +526,11 @@ function describeTeam(authority: HostedTeamAuthority) {
   return authority.team ? {id: authority.team.id, slug: authority.team.slug} : null;
 }
 
-function describeRevision(revision: z.infer<typeof revisionSchema>) {
+function describeRevision(revision: z.infer<typeof revisionSummarySchema>) {
   return {
     iconCount: revision.iconCount,
     id: revision.id,
-    packageId: revision.pin?.packageId ?? null,
+    packageId: revision.packageId,
     publishedAt: revision.publishedAt,
     purgedAt: revision.purgedAt,
     reference: revision.reference,
@@ -543,8 +580,8 @@ const setSchema = z
     updatedAt: isoDateSchema,
   })
   .strict();
-/** Bounded exactly like every other Team response; the CLI keeps only what its receipt reports. */
-const revisionSchema = z
+/** Fields shared by the compact catalog projection and exact lockable revision response. */
+const revisionBaseSchema = z
   .object({
     id: z.string().regex(/^icv_[A-Za-z0-9_-]{16}$/u),
     reference: tileflowIconSetReferenceSchema,
@@ -556,9 +593,12 @@ const revisionSchema = z
     publisher: z
       .object({kind: z.enum(['credential', 'membership']), id: z.string().max(200).nullable()})
       .strict(),
-    pin: tileflowIconSetPinSchema.nullable(),
   })
-  .strict()
+  .strict();
+
+/** Exact revision routes retain the pin needed to create a local lock. */
+const revisionSchema = revisionBaseSchema
+  .extend({pin: tileflowIconSetPinSchema.nullable()})
   .transform(({id, reference, version, publishedAt, purgedAt, iconCount, totalBytes, pin}) => ({
     iconCount,
     id,
@@ -569,6 +609,22 @@ const revisionSchema = z
     totalBytes,
     version,
   }));
+
+/** Catalog pages expose bounded summaries and never repeat the package manifest per row. */
+const revisionSummarySchema = revisionBaseSchema
+  .extend({packageId: tileflowIconSetPackageIdSchema.nullable()})
+  .transform(
+    ({id, reference, version, publishedAt, purgedAt, iconCount, totalBytes, packageId}) => ({
+      iconCount,
+      id,
+      packageId,
+      publishedAt,
+      purgedAt,
+      reference,
+      totalBytes,
+      version,
+    }),
+  );
 
 export const catalogListResponseSchema = z
   .object({
@@ -583,7 +639,7 @@ export const catalogDetailResponseSchema = z
 export const versionsResponseSchema = z
   .object({
     schemaVersion: z.literal(1),
-    versions: z.array(revisionSchema).max(pageSize),
+    versions: z.array(revisionSummarySchema).max(pageSize),
     nextCursor: cursorSchema.optional(),
   })
   .strict();

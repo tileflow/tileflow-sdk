@@ -356,6 +356,69 @@ test('refreshes the shared input graph and unwatches retired asset directories',
   await waitFor(() => hasPathSuffix(added, '/icons-b') && hasPathSuffix(unwatched, '/icons-a'));
 });
 
+test('watches a missing shared Icon Set lock and recovers when it is restored', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-vite-icon-lock-'));
+  await createTileflowIconSetProject(cwd);
+  const iconLockfileName = 'tileflow.icons.lock.json';
+  const lockPath = join(cwd, iconLockfileName);
+  const lock = await readFile(lockPath, 'utf8');
+  await rm(lockPath);
+  const added = new Set<string>();
+  const callbacks = new Map<string, (file: string) => void>();
+  const reloads: unknown[] = [];
+  const warnings: string[] = [];
+  let closeServer = () => undefined;
+  const plugin = tileflow({icons: {cacheRoot: cwd, offline: true}});
+  (plugin.configureServer as Function)({
+    config: {
+      logger: {
+        error() {},
+        warn(message: string) {
+          warnings.push(message);
+        },
+      },
+      root: cwd,
+    },
+    httpServer: {
+      once(_event: string, callback: () => void) {
+        closeServer = callback;
+      },
+    },
+    middlewares: {use() {}},
+    watcher: {
+      add(paths: string | string[]) {
+        for (const path of Array.isArray(paths) ? paths : [paths]) added.add(resolve(path));
+      },
+      on(event: string, callback: (file: string) => void) {
+        callbacks.set(event, callback);
+      },
+      async unwatch() {},
+    },
+    ws: {
+      send(payload: unknown) {
+        reloads.push(payload);
+      },
+    },
+  });
+  t.after(async () => {
+    closeServer();
+    await rm(cwd, {force: true, recursive: true});
+  });
+
+  const watchedLockPath = () =>
+    [...added].find((path) => path.replaceAll('\\', '/').endsWith(`/${iconLockfileName}`));
+  await waitFor(
+    () => watchedLockPath() !== undefined,
+    () => `added=${JSON.stringify([...added])} warnings=${JSON.stringify(warnings)}`,
+  );
+  await writeFile(lockPath, lock);
+  callbacks.get('add')?.(watchedLockPath()!);
+  await waitFor(
+    () => reloads.some((payload) => (payload as {type?: string}).type === 'full-reload'),
+    () => `reloads=${JSON.stringify(reloads)} warnings=${JSON.stringify(warnings)}`,
+  );
+});
+
 const icon =
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="#000" d="M2 20h20L12 2z"/></svg>';
 

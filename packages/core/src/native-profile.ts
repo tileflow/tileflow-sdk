@@ -2,7 +2,6 @@ import {isExpression, validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import specification from '@maplibre/maplibre-gl-style-spec/dist/latest.json' with {type: 'json'};
 import {z} from 'zod';
 import {resolveTileflowNativeResourceUrl, TileflowNativeUrlError} from './native';
-import {serializeCanonicalJson} from './icon-package';
 import type {MapLibreStyle} from './types';
 import {isBoundedNativeJson, nativePointer as pointer, supportsNativeVersions, tileflowNativeProfileLimits} from './native-profile-helpers';
 export {tileflowNativeProfileLimits} from './native-profile-helpers';
@@ -293,10 +292,11 @@ export function validateTileflowNativeStyle(
   }
   // Use the same pinned parser as compilation; compatibility metadata comes from its unminified JSON.
   try {
-    const canonical = JSON.parse(serializeCanonicalJson(style)) as Parameters<typeof validateStyleMin>[0];
-    for (const issue of validateStyleMin(canonical)) {
-      const prefix = issue.message.split(': ')[0] ?? '';
-      const path = parserIssuePointer(prefix, style);
+    const plain = JSON.parse(JSON.stringify(style)) as Parameters<typeof validateStyleMin>[0];
+    const parserPaths = validateStyleMin(plain)
+      .map((issue) => parserIssuePointer(issue.message.split(': ')[0] ?? '', style))
+      .sort();
+    for (const path of parserPaths) {
       add('NATIVE_UNSUPPORTED_STYLE', path);
     }
   } catch {

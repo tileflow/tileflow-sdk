@@ -164,12 +164,13 @@ Repeated equal views are coalesced. Programmatic applications of props do not ec
 callback. In initial mode the callback is optional and does not cause reconciliation.
 
 In controlled mode, gestures can move the camera according to `mapOptions`. The application should
-adopt emitted views by updating its `view` prop. While a gesture is active, new controlled values
-update the desired view without issuing competing commands. At its end, the controller compares
-the final observed view with the latest prop it has actually received. If equal, there is no return
-command. Otherwise it issues one command to that prop value. An adoption made during the final
-callback is included in this comparison. An update received later is a new controlled update; the
-controller does not wait for a timer, rendering cycle or assumed React scheduling deadline.
+adopt emitted views by updating its `view` prop. While a gesture is active or awaiting post-gesture
+settlement, new controlled values update authority and callbacks without issuing competing commands.
+Ending the gesture does not interpret a prop that has not arrived yet as rejection. The owner first
+delivers the subsequent committed props, then confirms settlement. If the latest prop equals the
+final observed view, no return command is issued; otherwise one command applies that prop value.
+Both synchronous adoption and adoption delivered after the callback count before settlement.
+Updates received after settlement retain ordinary controlled-update behavior.
 
 No public duration, easing, animation, bounds, padding or imperative camera method is introduced.
 The ref remains the source-state query described above.
@@ -192,16 +193,34 @@ are observed, and retired results cannot change live state or report a new failu
 
 User-driven observations are separate: `startGesture()` returns a token used by `changeGesture()`
 and `endGesture()`, each receiving a complete canonical view. End closes that observation epoch
-before notifying the parent and reconciling. Delayed callbacks from that epoch cannot change a
-newer view. A new gesture retires pending programmatic work. The future adapter must classify
-native callbacks correctly; it cannot treat every region callback as a gesture or infer origin
-using a delay. This protocol does not claim that raw MapLibre events already carry these tokens.
+before notifying the parent and leaves settlement pending. Delayed observations from that epoch
+cannot change the live view. A new gesture retires pending programmatic work and any older
+settlement. The future adapter must classify native callbacks correctly; it cannot treat every
+region callback as a gesture or infer origin using a delay. This protocol does not claim that raw
+MapLibre events already carry these tokens.
+
+The internal `settleGesture(token)` confirms the prop-delivery boundary for that completed gesture.
+The future component owner must retain its token, call `endGesture()`, and arrange a post-callback
+React commit opportunity. After React has processed the callback's updates, the owner delivers the
+current camera props through `update()` and only then calls `settleGesture()` with the same token.
+This confirmation is required even when the parent kept the same props or the final view event was
+coalesced. A callback returning, a resolved promise, a microtask or an animation frame does not by
+itself establish that React has committed those props. No such scheduling is implemented here.
+
+Settlement compares once, consumes its token before dispatching any command, and never emits an
+additional `onViewChange`. Repeated, foreign or retired confirmations are no-ops. A confirmation
+inside that gesture's final notification is ignored; the owner must confirm after prop delivery.
+A new gesture, explicit style restoration or disposal retires the pending confirmation, including
+when it happens reentrantly during the final callback. If the owner never confirms, controlled
+reconciliation remains pending rather than guessing a timeout. In initial mode confirmation just
+retires the pending token and preserves the live view. This method is not a public prop or ref API.
 
 After replacing a style/source on the same native view, the owner calls the internal
 `restoreAfterStyleChange()`. It reaffirms the latest controlled prop or last uncontrolled live view,
-never the original seed. This explicit call retires the old observation epoch and emits a command
-even when the stored view is equal, because the renderer may have reset its camera. It neither
-accepts source data nor touches source/theme selection. No public set-camera escape hatch exists.
+never the original seed. This explicit call retires the old observation epoch and settlement and
+emits a command even when the stored view is equal, because the renderer may have reset its camera.
+It neither accepts source data nor touches source/theme selection. No public set-camera escape
+hatch exists.
 
 Input failures throw an internal `CameraControllerError` with a fixed code and message. Codes are
 `CAMERA_INPUT_INVALID`, `CAMERA_MODE_CHANGE`, `CAMERA_NOT_MOUNTED` and `CAMERA_DISPOSED`. Failed active
@@ -210,8 +229,9 @@ values, native messages or remote causes. Failed updates preserve the last valid
 observer. This unit does not convert these internal diagnostics into a new public `onError` event.
 The future owner must handle them at its existing lifecycle boundary.
 
-Disposal is idempotent and cancels the active command. Late observations, completions and style
-restoration callbacks are ignored. Further explicit `mount()`/`update()` calls fail safely.
+Disposal is idempotent and cancels the active command. Late observations, completions, settlement
+confirmations and style restoration callbacks are ignored. Further explicit `mount()`/`update()`
+calls fail safely.
 Observer exceptions and reentrant updates/disposal cannot publish an obsolete result, block cleanup
 or start an echo loop. No timers, subscriptions, source acquisition or native imports are owned by
 the camera controller.
@@ -221,8 +241,9 @@ the camera controller.
 The tests cover the type-only entry, exact peers/private status, isolated appearance lifecycle,
 safe source projection, delegated view composition, camera ownership and package graph boundaries.
 Compile-only consumers use the built public declarations and reject mixed camera modes, incomplete
-controlled views and owned props/lifecycle callbacks. Command promises and observations are injected;
-permuted completions, reentrant callbacks and mutation attacks do not need timing-based tests.
+controlled views and owned props/lifecycle callbacks. Command promises, prop delivery and observations
+are injected; permuted completions, settlement, reentrant callbacks and mutation attacks do not need
+timing-based tests.
 
 These checks do not run a native renderer or establish Hermes/device acceptance for a React Native
 component. This package supplies no Swift/Kotlin bridge, Expo plugin, Metro configuration, transport,

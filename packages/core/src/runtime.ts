@@ -3,7 +3,7 @@ import type {
   TileflowRuntimeManifest,
   TileflowRuntimeManifestMapEntry,
   TileflowRuntimeManifestTheme,
-} from './manifest';
+} from './manifest-types';
 import {isTileflowPortableId, isTileflowThemeName} from './portable-identity-rules';
 import {type MapLibreStyle, type TileflowViewConfig} from './types';
 
@@ -13,7 +13,7 @@ export type {
   TileflowRuntimeManifestMapEntry,
   TileflowRuntimeManifestTheme,
   TileflowRuntimeSystemThemes,
-} from './manifest';
+} from './manifest-types';
 
 export const defaultTileflowManifestUrl = '/tileflow/manifest.json';
 export const defaultTileflowRuntimeView = Object.freeze({

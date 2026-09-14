@@ -4,11 +4,8 @@ import {
   compileSemanticStyleWithInspection,
   type TileflowPreparedMapAssets,
 } from './cartography/streets';
-import {
-  parseTileflowRuntimeManifest,
-  type TileflowRuntimeManifest,
-  tileflowRuntimeManifestVersion,
-} from './manifest';
+import {parseTileflowRuntimeManifest, tileflowRuntimeManifestVersion} from './manifest';
+import type {TileflowRuntimeManifest} from './manifest-types';
 import {collectMapLineage, type TileflowStyleOptions} from './map';
 import {
   collectTileflowMapBuildLineage,

@@ -114,8 +114,16 @@ test('runs the standalone published native file with no installed dependencies o
     }});
     const before = Object.fromEntries(names.map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
     const native = await import('./native.mjs');
-    assert.deepEqual(Object.keys(native).sort(), ['TileflowNativeUrlError', 'resolveTileflowNativeManifestUrl',
-      'resolveTileflowNativeResourceUrl', 'tileflowNativeUrlLimits']);
+    assert.deepEqual(Object.keys(native).sort(), [
+      'TileflowNativeSourceError',
+      'TileflowNativeUrlError',
+      'createTileflowNativeSourceController',
+      'loadTileflowNativeManifest',
+      'resolveTileflowNativeManifestUrl',
+      'resolveTileflowNativeResourceUrl',
+      'tileflowNativeManifestLimits',
+      'tileflowNativeUrlLimits',
+    ]);
     for (const origin of ['http://127.0.0.1:8765', 'http://10.0.2.2:8765']) {
       const results = checkNativeUrlContract(native, origin);
       assert.equal(results.length, 22);

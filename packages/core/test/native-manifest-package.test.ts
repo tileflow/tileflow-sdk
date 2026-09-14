@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {readFile} from 'node:fs/promises';
+import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
-import test from 'node:test';
 
 const packageRoot = fileURLToPath(new URL('../', import.meta.url));
 
 test('the built native entry acquires, validates and selects without ambient runtime services', async () => {
-	const script = `
+  const script = `
 		import assert from 'node:assert/strict';
 		let reads = 0;
 		for (const name of ['window', 'document', 'navigator', 'fetch', 'FontFace', 'URL',
@@ -44,21 +44,38 @@ test('the built native entry acquires, validates and selects without ambient run
 		controller.dispose(); controller.dispose();
 		assert.equal(reads, 0);
 	`;
-	const {stdout, stderr} = await promisify(execFile)(process.execPath, ['--input-type=module', '--eval', script], {
-		cwd: packageRoot, timeout: 10_000,
-	});
-	assert.equal(stdout, ''); assert.equal(stderr, '');
+  const {stdout, stderr} = await promisify(execFile)(
+    process.execPath,
+    ['--input-type=module', '--eval', script],
+    {
+      cwd: packageRoot,
+      timeout: 10_000,
+    },
+  );
+  assert.equal(stdout, '');
+  assert.equal(stderr, '');
 });
 
 test('loader and controller remain exclusive to native and preserve the package export map', async () => {
-	for (const name of ['index', 'browser', 'build', 'runtime', 'native-profile']) {
-		const output = await readFile(new URL(`../dist/${name}.js`, import.meta.url), 'utf8');
-		assert.doesNotMatch(output, /createTileflowNativeSourceController|NATIVE_MANIFEST_UTF8_INVALID|whatwg-url\/lib\/url-state-machine/u);
-	}
-	const declarations = await readFile(new URL('../dist/native.d.ts', import.meta.url), 'utf8');
-	for (const name of ['loadTileflowNativeManifest', 'createTileflowNativeSourceController', 'TileflowNativeSourceState', 'TileflowNativeManifestAcquire']) {
-		assert.ok(declarations.includes(name));
-	}
-	const output = await readFile(new URL('../dist/native.js', import.meta.url), 'utf8');
-	assert.doesNotMatch(output, /\bcreateTileflowSessionController\b|\bgetTileflowStyleFontFaces\b|\bloadTileflowManifest\b/u);
+  for (const name of ['index', 'browser', 'build', 'runtime', 'native-profile']) {
+    const output = await readFile(new URL(`../dist/${name}.js`, import.meta.url), 'utf8');
+    assert.doesNotMatch(
+      output,
+      /createTileflowNativeSourceController|NATIVE_MANIFEST_UTF8_INVALID|whatwg-url\/lib\/url-state-machine/u,
+    );
+  }
+  const declarations = await readFile(new URL('../dist/native.d.ts', import.meta.url), 'utf8');
+  for (const name of [
+    'loadTileflowNativeManifest',
+    'createTileflowNativeSourceController',
+    'TileflowNativeSourceState',
+    'TileflowNativeManifestAcquire',
+  ]) {
+    assert.ok(declarations.includes(name));
+  }
+  const output = await readFile(new URL('../dist/native.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(
+    output,
+    /\bcreateTileflowSessionController\b|\bgetTileflowStyleFontFaces\b|\bloadTileflowManifest\b/u,
+  );
 });

@@ -29,26 +29,42 @@ function controlled() {
   const acquire: TileflowNativeManifestAcquire = () => {
     const request = {response: deferred<TileflowNativeManifestResponse>(), cancels: 0};
     requests.push(request);
-    return {response: request.response.promise, cancel() { request.cancels++; }};
+    return {
+      response: request.response.promise,
+      cancel() {
+        request.cancels++;
+      },
+    };
   };
   const controller = createTileflowNativeSourceController({acquire});
   const states: TileflowNativeSourceState[] = [];
-  controller.subscribe((state) => { states.push(state); });
+  controller.subscribe((state) => {
+    states.push(state);
+  });
   return {controller, states, requests};
 }
 
 test('direct HTTPS styles are canonical, unmanaged, and do not acquire a manifest', async () => {
   const {controller, requests, states} = controlled();
-  await controller.replace({kind: 'maplibre', style: 'https://ＭＡＰＳ.example.test:443/a/../style.json'});
+  await controller.replace({
+    kind: 'maplibre',
+    style: 'https://ＭＡＰＳ.example.test:443/a/../style.json',
+  });
   const ready = controller.state;
   assert.ok(ready?.status === 'ready' && ready.kind === 'maplibre');
   assert.deepEqual(ready.source, {kind: 'maplibre', style: 'https://maps.example.test/style.json'});
   assert.deepEqual(Object.keys(ready).sort(), ['generation', 'kind', 'source', 'status']);
-  assert.deepEqual(states.map(({status}) => status), ['loading', 'ready']);
+  assert.deepEqual(
+    states.map(({status}) => status),
+    ['loading', 'ready'],
+  );
   assert.equal(requests.length, 0);
   for (const key of ['manifest', 'manifestUrl', 'map', 'theme', 'analytics', 'grant'])
     assert.equal(Object.hasOwn(ready, key), false);
-  await controller.replace({kind: 'maplibre', style: 'https://api.tileflow.dev/maps/map-fixture/style.json'});
+  await controller.replace({
+    kind: 'maplibre',
+    style: 'https://api.tileflow.dev/maps/map-fixture/style.json',
+  });
   assert.equal(requests.length, 0);
   assert.equal(Object.hasOwn(controller.state!, 'map'), false);
 });
@@ -97,8 +113,15 @@ test('direct themes are rejected while an injected color scheme alone is neutral
 
 test('direct URLs retain explicit network policy and sanitize failures', async () => {
   const {controller, requests} = controlled();
-  for (const value of ['', '/relative.json', 'file:///private.json', 'mapbox://styles/private',
-    'https://user:private@host.test/a', 'https://host.test/a#private', 'http://host.test/a']) {
+  for (const value of [
+    '',
+    '/relative.json',
+    'file:///private.json',
+    'mapbox://styles/private',
+    'https://user:private@host.test/a',
+    'https://host.test/a#private',
+    'http://host.test/a',
+  ]) {
     await controller.replace({kind: 'maplibre', style: value});
     const state = controller.state;
     assert.ok(state?.status === 'error');
@@ -107,14 +130,24 @@ test('direct URLs retain explicit network policy and sanitize failures', async (
     assert.equal(state.error.cause, undefined);
     assert.equal(state.error.message.includes('private'), false);
   }
-  await controller.replace({kind: 'maplibre', style: 'http://10.0.2.2:8765/a.json'}, {
-    developmentOrigin: 'http://10.0.2.2:8765',
-  });
+  await controller.replace(
+    {kind: 'maplibre', style: 'http://10.0.2.2:8765/a.json'},
+    {
+      developmentOrigin: 'http://10.0.2.2:8765',
+    },
+  );
   assert.ok(controller.state?.status === 'ready' && controller.state.kind === 'maplibre');
   assert.equal(requests.length, 0);
 });
 
-for (const order of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]) {
+for (const order of [
+  [0, 1, 2],
+  [0, 2, 1],
+  [1, 0, 2],
+  [1, 2, 0],
+  [2, 0, 1],
+  [2, 1, 0],
+]) {
   for (const staleRejects of [false, true]) {
     test(`mixed sources remain latest-wins: ${order}; stale rejects=${staleRejects}`, async () => {
       const {controller, states, requests} = controlled();
@@ -124,16 +157,25 @@ for (const order of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 
       await controller.replace({kind: 'maplibre', style: style()});
       const third = controller.replace(source);
       assert.equal(requests.length, 3);
-      assert.deepEqual(requests.map(({cancels}) => cancels), [1, 1, 0]);
+      assert.deepEqual(
+        requests.map(({cancels}) => cancels),
+        [1, 1, 0],
+      );
       for (const index of order) {
-        if (index < 2 && staleRejects) requests[index]!.response.reject(new Error('remote private'));
+        if (index < 2 && staleRejects)
+          requests[index]!.response.reject(new Error('remote private'));
         else requests[index]!.response.resolve(transport().response);
       }
       await Promise.all([first, second, third]);
       const ready = states.filter((state) => state.status === 'ready');
-      assert.deepEqual(ready.map((state) => [state.generation, state.kind]), [
-        [2, 'maplibre'], [4, 'maplibre'], [5, 'tileflow'],
-      ]);
+      assert.deepEqual(
+        ready.map((state) => [state.generation, state.kind]),
+        [
+          [2, 'maplibre'],
+          [4, 'maplibre'],
+          [5, 'tileflow'],
+        ],
+      );
       const last = controller.state;
       assert.ok(last?.status === 'ready' && last.kind === 'tileflow');
       assert.equal(last.source.kind, 'tileflow');
@@ -151,9 +193,14 @@ test('invalid direct replacement retires a Tileflow operation and never republis
   requests[0]!.response.resolve(transport().response);
   await pending;
   assert.equal(requests[0]!.cancels, 1);
-  assert.deepEqual(states.map(({status, generation}) => [status, generation]), [
-    ['loading', 1], ['loading', 2], ['error', 2],
-  ]);
+  assert.deepEqual(
+    states.map(({status, generation}) => [status, generation]),
+    [
+      ['loading', 1],
+      ['loading', 2],
+      ['error', 2],
+    ],
+  );
   await controller.replace(direct);
   await controller.replace({...source, manifestUrl: ''});
   assert.equal(controller.state?.status, 'error');
@@ -164,10 +211,15 @@ test('a direct snapshot precedes cleanup and loading observers that mutate calle
   const input = style();
   const before = structuredClone(input);
   const response = deferred<TileflowNativeManifestResponse>();
-  const controller = createTileflowNativeSourceController({acquire: () => ({
-    response: response.promise,
-    cancel() { input.name = 'cleanup'; input.layers.length = 0; },
-  })});
+  const controller = createTileflowNativeSourceController({
+    acquire: () => ({
+      response: response.promise,
+      cancel() {
+        input.name = 'cleanup';
+        input.layers.length = 0;
+      },
+    }),
+  });
   const pending = controller.replace(source);
   controller.subscribe((state) => {
     if (state.status === 'loading' && state.generation === 2) input.sources = {};
@@ -185,17 +237,26 @@ test('direct reentrancy suppresses stale notifications and dispose remains idemp
   const observed: Array<[string, number]> = [];
   let replacement: Promise<void> | undefined;
   controller.subscribe((state) => {
-    if (state.status === 'loading' && state.generation === 1) replacement = controller.replace(direct);
+    if (state.status === 'loading' && state.generation === 1)
+      replacement = controller.replace(direct);
   });
-  controller.subscribe((state) => { observed.push([state.status, state.generation]); });
+  controller.subscribe((state) => {
+    observed.push([state.status, state.generation]);
+  });
   await controller.replace({kind: 'maplibre', style: style()});
   await replacement;
-  assert.deepEqual(observed, [['loading', 2], ['ready', 2]]);
+  assert.deepEqual(observed, [
+    ['loading', 2],
+    ['ready', 2],
+  ]);
   assert.equal(requests.length, 0);
-  controller.dispose(); controller.dispose();
+  controller.dispose();
+  controller.dispose();
   await assert.rejects(controller.replace(direct), {code: 'NATIVE_SOURCE_DISPOSED'});
   const last = controller.state;
-  controller.subscribe(() => { throw new Error('Must not notify after disposal.'); });
+  controller.subscribe(() => {
+    throw new Error('Must not notify after disposal.');
+  });
   assert.equal(controller.state, last);
 });
 
@@ -213,10 +274,15 @@ test('direct pre-abort and reentrant disposal cannot manufacture readiness', asy
   const next = controlled();
   let late = 0;
   next.controller.subscribe(() => next.controller.dispose());
-  next.controller.subscribe(() => { late++; });
+  next.controller.subscribe(() => {
+    late++;
+  });
   await next.controller.replace(direct);
   assert.equal(late, 0);
   assert.equal(next.controller.state?.status, 'loading');
-  assert.equal(states.some(({status}) => status === 'ready'), false);
+  assert.equal(
+    states.some(({status}) => status === 'ready'),
+    false,
+  );
   assert.equal(requests.length, 0);
 });

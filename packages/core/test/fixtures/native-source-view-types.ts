@@ -1,10 +1,10 @@
+import type {MapLibreStyle} from '@tileflow/core';
 import {
   resolveTileflowNativeInitialView,
   type TileflowNativeInitialView,
   type TileflowNativeSource,
   type TileflowNativeSourceState,
 } from '@tileflow/core/native';
-import type {MapLibreStyle} from '@tileflow/core';
 
 const style: MapLibreStyle = {version: 8, name: 'Direct', sources: {}, layers: []};
 const inputs: TileflowNativeSource[] = [
@@ -28,9 +28,11 @@ export function narrow(state: TileflowNativeSourceState): string | undefined {
     const map: string = state.map.name;
     const theme: string = state.theme.name;
     const version: 1 = state.manifest.version;
-    const view: TileflowNativeInitialView = resolveTileflowNativeInitialView({manifestView: state.map.view});
+    const view: TileflowNativeInitialView = resolveTileflowNativeInitialView({
+      manifestView: state.map.view,
+    });
     // @ts-expect-error A Tileflow source is not a direct style.
-    state.source.style;
+    void state.source.style;
     // @ts-expect-error Ready snapshots are immutable.
     state.source.map = 'changed';
     return `${kind}:${url}:${map}:${theme}:${version}:${view.zoom}`;
@@ -42,13 +44,13 @@ export function narrow(state: TileflowNativeSourceState): string | undefined {
     value.layers.push({id: 'extra'});
   }
   // @ts-expect-error Direct readiness has no fabricated manifest.
-  state.manifest;
+  void state.manifest;
   // @ts-expect-error Direct readiness has no fabricated manifest URL.
-  state.manifestUrl;
+  void state.manifestUrl;
   // @ts-expect-error Direct readiness has no Tileflow map.
-  state.map;
+  void state.map;
   // @ts-expect-error Direct readiness has no theme.
-  state.theme;
+  void state.theme;
   return kind;
 }
 

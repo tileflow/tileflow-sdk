@@ -19,10 +19,18 @@ export function snapshotNativeDirectStyle(
     if (!validateTileflowRuntimeSource({kind: 'maplibre', style: value}).ok) return fail();
     if (typeof value === 'string') return resolveTileflowNativeManifestUrl(value, network);
     const copy = cloneDirectStyleJson(value, fail) as MapLibreStyle;
-    if (Array.isArray(copy.layers) && copy.layers.length > tileflowNativeProfileLimits.maximumLayers)
+    if (
+      Array.isArray(copy.layers) &&
+      copy.layers.length > tileflowNativeProfileLimits.maximumLayers
+    )
       return fail();
-    if (copy.sources && typeof copy.sources === 'object' && !Array.isArray(copy.sources) &&
-      Object.keys(copy.sources).length > tileflowNativeProfileLimits.maximumSources) return fail();
+    if (
+      copy.sources &&
+      typeof copy.sources === 'object' &&
+      !Array.isArray(copy.sources) &&
+      Object.keys(copy.sources).length > tileflowNativeProfileLimits.maximumSources
+    )
+      return fail();
     return freezeNativeSnapshot(copy);
   } catch {
     return fail();
@@ -52,9 +60,18 @@ function cloneDirectStyleJson(input: unknown, fail: () => never): unknown {
   };
   const visit = (value: unknown, depth: number): unknown => {
     node(depth);
-    if (value === null) { addBytes(4); return null; }
-    if (typeof value === 'string') { addBytes(stringBytes(value)); return value; }
-    if (typeof value === 'boolean') { addBytes(value ? 4 : 5); return value; }
+    if (value === null) {
+      addBytes(4);
+      return null;
+    }
+    if (typeof value === 'string') {
+      addBytes(stringBytes(value));
+      return value;
+    }
+    if (typeof value === 'boolean') {
+      addBytes(value ? 4 : 5);
+      return value;
+    }
     if (typeof value === 'number') {
       if (!Number.isFinite(value)) return fail();
       addBytes(JSON.stringify(value).length);
@@ -63,11 +80,14 @@ function cloneDirectStyleJson(input: unknown, fail: () => never): unknown {
     if (!value || typeof value !== 'object' || ancestors.has(value)) return fail();
     const array = Array.isArray(value);
     const prototype = Object.getPrototypeOf(value);
-    if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null)
+    if (
+      array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null
+    )
       return fail();
     const keys = Reflect.ownKeys(value);
     const length = array ? Object.getOwnPropertyDescriptor(value, 'length')?.value : 0;
-    if (array && (!Number.isSafeInteger(length) || length < 0 || keys.length !== length + 1)) return fail();
+    if (array && (!Number.isSafeInteger(length) || length < 0 || keys.length !== length + 1))
+      return fail();
     const entries = array ? keys.length - 1 : keys.length;
     // Every property/index and value consumes at least two more visits.
     if (entries * 2 > limits.maximumNodes - nodes) return fail();
@@ -77,11 +97,15 @@ function cloneDirectStyleJson(input: unknown, fail: () => never): unknown {
     let emitted = 0;
     for (const key of keys) {
       if (array && key === 'length') continue;
-      if (typeof key !== 'string' || ['__proto__', 'constructor', 'prototype', 'toJSON'].includes(key))
+      if (
+        typeof key !== 'string' ||
+        ['__proto__', 'constructor', 'prototype', 'toJSON'].includes(key)
+      )
         return fail();
       if (array) {
         const index = Number(key);
-        if (!Number.isInteger(index) || index < 0 || index >= length || String(index) !== key) return fail();
+        if (!Number.isInteger(index) || index < 0 || index >= length || String(index) !== key)
+          return fail();
       }
       node(depth + 1);
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
@@ -89,7 +113,12 @@ function cloneDirectStyleJson(input: unknown, fail: () => never): unknown {
       if (emitted++ > 0) addBytes(1);
       if (!array) addBytes(stringBytes(key) + 1);
       const child = visit(descriptor.value, depth + 1);
-      Object.defineProperty(output, key, {value: child, enumerable: true, writable: true, configurable: true});
+      Object.defineProperty(output, key, {
+        value: child,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
     ancestors.delete(value);
     return output;

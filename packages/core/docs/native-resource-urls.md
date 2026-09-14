@@ -389,19 +389,19 @@ response, schema and selection failures are terminal for that generation. A late
 `replace()` can retry. Tile-resource failures after a map is created are outside this controller
 and do not get classified as manifest failures.
 
-| Code | Meaning |
-| --- | --- |
-| `NATIVE_SOURCE_INVALID` | Invalid source, view, acquisition configuration or cancellation input. |
-| `NATIVE_SOURCE_ABORTED`, `NATIVE_SOURCE_DISPOSED` | Cancellation or use after controller disposal. |
-| `NATIVE_MANIFEST_URL_INVALID` | Invalid request/final URL or development-origin policy. |
-| `NATIVE_MANIFEST_REQUEST_FAILED` | Acquisition/read failure or unsuccessful response. |
-| `NATIVE_MANIFEST_RESPONSE_INVALID` | Invalid response, reader or chunk protocol. |
-| `NATIVE_MANIFEST_ACCESS_DENIED`, `NATIVE_MANIFEST_NOT_FOUND` | HTTP 401/403 or 404, respectively. |
-| `NATIVE_MANIFEST_TOO_LARGE` | Actual body or resolved/canonical JSON exceeds the 1 MiB cap. |
-| `NATIVE_MANIFEST_UTF8_INVALID`, `NATIVE_MANIFEST_JSON_INVALID` | Malformed UTF-8 or JSON. |
-| `NATIVE_MANIFEST_INVALID` | Invalid version-1 structure, relationships or excessive nesting. |
-| `NATIVE_MANIFEST_RESOURCE_INVALID` | A manifest resource fails native URL policy. |
-| `NATIVE_MAP_NOT_FOUND`, `NATIVE_THEME_INVALID` | Missing map or invalid/unresolved theme selection; a theme on a direct source. |
+| Code                                                           | Meaning                                                                        |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `NATIVE_SOURCE_INVALID`                                        | Invalid source, view, acquisition configuration or cancellation input.         |
+| `NATIVE_SOURCE_ABORTED`, `NATIVE_SOURCE_DISPOSED`              | Cancellation or use after controller disposal.                                 |
+| `NATIVE_MANIFEST_URL_INVALID`                                  | Invalid request/final URL or development-origin policy.                        |
+| `NATIVE_MANIFEST_REQUEST_FAILED`                               | Acquisition/read failure or unsuccessful response.                             |
+| `NATIVE_MANIFEST_RESPONSE_INVALID`                             | Invalid response, reader or chunk protocol.                                    |
+| `NATIVE_MANIFEST_ACCESS_DENIED`, `NATIVE_MANIFEST_NOT_FOUND`   | HTTP 401/403 or 404, respectively.                                             |
+| `NATIVE_MANIFEST_TOO_LARGE`                                    | Actual body or resolved/canonical JSON exceeds the 1 MiB cap.                  |
+| `NATIVE_MANIFEST_UTF8_INVALID`, `NATIVE_MANIFEST_JSON_INVALID` | Malformed UTF-8 or JSON.                                                       |
+| `NATIVE_MANIFEST_INVALID`                                      | Invalid version-1 structure, relationships or excessive nesting.               |
+| `NATIVE_MANIFEST_RESOURCE_INVALID`                             | A manifest resource fails native URL policy.                                   |
+| `NATIVE_MAP_NOT_FOUND`, `NATIVE_THEME_INVALID`                 | Missing map or invalid/unresolved theme selection; a theme on a direct source. |
 
 Fields identify only `source`, `signal`, `manifestUrl`, `response`, `body`, `map`, `theme` or `view`.
 Errors never carry a rejected URL, response body, credential, remote exception, schema issue list or

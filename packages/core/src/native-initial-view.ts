@@ -54,8 +54,11 @@ function snapshotRecord(input: unknown, keys: readonly string[]): Record<string,
   const snapshot = nativeOwnRecord(input);
   if (!snapshot) return invalid();
   const ownKeys = Reflect.ownKeys(input as object);
-  if (ownKeys.length !== Object.keys(snapshot).length ||
-    ownKeys.some((key) => typeof key !== 'string' || !keys.includes(key))) return invalid();
+  if (
+    ownKeys.length !== Object.keys(snapshot).length ||
+    ownKeys.some((key) => typeof key !== 'string' || !keys.includes(key))
+  )
+    return invalid();
   return snapshot;
 }
 
@@ -64,13 +67,22 @@ function snapshotView(input: unknown): TileflowViewConfig {
   const snapshot = snapshotRecord(input, viewKeys);
   if (snapshot.center !== undefined) {
     const center = snapshot.center;
-    if (!Array.isArray(center) || Object.getPrototypeOf(center) !== Array.prototype ||
+    if (
+      !Array.isArray(center) ||
+      Object.getPrototypeOf(center) !== Array.prototype ||
       Reflect.ownKeys(center).length !== 3 ||
-      Object.getOwnPropertyDescriptor(center, 'length')?.value !== 2) return invalid();
+      Object.getOwnPropertyDescriptor(center, 'length')?.value !== 2
+    )
+      return invalid();
     const longitude = Object.getOwnPropertyDescriptor(center, '0');
     const latitude = Object.getOwnPropertyDescriptor(center, '1');
-    if (!longitude?.enumerable || !latitude?.enumerable ||
-      !('value' in longitude) || !('value' in latitude)) return invalid();
+    if (
+      !longitude?.enumerable ||
+      !latitude?.enumerable ||
+      !('value' in longitude) ||
+      !('value' in latitude)
+    )
+      return invalid();
     snapshot.center = [longitude.value, latitude.value];
   }
   const parsed = parse(viewSchema, snapshot);

@@ -44,9 +44,14 @@ test('the packaged native entry handles direct sources and views without ambient
     for (let i = 0; i < names.length; i++) assert.deepEqual(Object.getOwnPropertyDescriptor(globalThis, names[i]), descriptors[i]);
     controller.dispose(); controller.dispose();
   `;
-  const {stdout, stderr} = await promisify(execFile)(process.execPath, ['--input-type=module', '--eval', script], {
-    cwd: root, timeout: 15_000,
-  });
+  const {stdout, stderr} = await promisify(execFile)(
+    process.execPath,
+    ['--input-type=module', '--eval', script],
+    {
+      cwd: root,
+      timeout: 15_000,
+    },
+  );
   assert.equal(stdout, '');
   assert.equal(stderr, '');
 });
@@ -54,18 +59,36 @@ test('the packaged native entry handles direct sources and views without ambient
 test('ready variants and view inputs narrow against the built public declarations', () => {
   const path = fileURLToPath(new URL('fixtures/native-source-view-types.ts', import.meta.url));
   const program = ts.createProgram([path], {
-    strict: true, noEmit: true, skipLibCheck: true,
-    target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.NodeNext,
+    strict: true,
+    noEmit: true,
+    skipLibCheck: true,
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.NodeNext,
     moduleResolution: ts.ModuleResolutionKind.NodeNext,
   });
   const diagnostics = ts.getPreEmitDiagnostics(program);
-  assert.deepEqual(diagnostics.map((item) => ts.flattenDiagnosticMessageText(item.messageText, '\n')), []);
+  assert.deepEqual(
+    diagnostics.map((item) => ts.flattenDiagnosticMessageText(item.messageText, '\n')),
+    [],
+  );
 });
 
 test('direct-source and initial-view implementation remains exclusive to the native artifact', async () => {
-  for (const name of ['index', 'browser', 'build', 'runtime', 'manifest', 'capture', 'native-profile']) {
+  for (const name of [
+    'index',
+    'browser',
+    'build',
+    'runtime',
+    'manifest',
+    'capture',
+    'native-profile',
+  ]) {
     const code = await readFile(new URL(`../dist/${name}.js`, import.meta.url), 'utf8');
-    assert.doesNotMatch(code, /\bresolveTileflowNativeInitialView\b|\bsnapshotNativeDirectStyle\b|native-direct-style|native-initial-view/u, name);
+    assert.doesNotMatch(
+      code,
+      /\bresolveTileflowNativeInitialView\b|\bsnapshotNativeDirectStyle\b|native-direct-style|native-initial-view/u,
+      name,
+    );
   }
   const declarations = await readFile(new URL('../dist/native.d.ts', import.meta.url), 'utf8');
   assert.match(declarations, /resolveTileflowNativeInitialView/u);
@@ -74,9 +97,15 @@ test('direct-source and initial-view implementation remains exclusive to the nat
   const code = await readFile(new URL('../dist/native.js', import.meta.url), 'utf8');
   const imports: string[] = [];
   function visit(node: ts.Node): void {
-    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier) imports.push(node.moduleSpecifier.getText());
-    if (ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-      (ts.isIdentifier(node.expression) && ['require', '__require'].includes(node.expression.text)))) imports.push(node.getText());
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier)
+      imports.push(node.moduleSpecifier.getText());
+    if (
+      ts.isCallExpression(node) &&
+      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(node.expression) &&
+          ['require', '__require'].includes(node.expression.text)))
+    )
+      imports.push(node.getText());
     ts.forEachChild(node, visit);
   }
   visit(ts.createSourceFile('native.js', code, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS));

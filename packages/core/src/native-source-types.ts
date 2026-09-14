@@ -155,7 +155,9 @@ export function normalizeNativeSourceError(error: unknown): TileflowNativeSource
       if (
         typeof code === 'string' &&
         Object.hasOwn(messages, code) &&
-        ['source', 'signal', 'manifestUrl', 'response', 'body', 'map', 'theme', 'view'].includes(field)
+        ['source', 'signal', 'manifestUrl', 'response', 'body', 'map', 'theme', 'view'].includes(
+          field,
+        )
       ) {
         return new TileflowNativeSourceError(code as TileflowNativeSourceErrorCode, field);
       }

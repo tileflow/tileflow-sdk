@@ -50,7 +50,8 @@ test('publishes immutable loading/ready snapshots and canonical manifest-driven 
     ],
   );
   assert.equal(c.state?.status, 'ready');
-  if (c.state?.status !== 'ready' || c.state.kind !== 'tileflow') throw new Error('Expected Tileflow ready.');
+  if (c.state?.status !== 'ready' || c.state.kind !== 'tileflow')
+    throw new Error('Expected Tileflow ready.');
   assert.equal(c.state.theme.name, 'light');
   assert.equal(c.state.map.name, 'streets');
   assert.deepEqual(c.state.map.view, manifest().maps.streets.view);
@@ -230,7 +231,8 @@ test('snapshots inputs before async work and ignores observer failures/reentrant
   options.theme = 'changed';
   requests[0]!.response.resolve(transport().response);
   await pending;
-  if (controller.state?.status !== 'ready' || controller.state.kind !== 'tileflow') throw new Error('Expected Tileflow ready.');
+  if (controller.state?.status !== 'ready' || controller.state.kind !== 'tileflow')
+    throw new Error('Expected Tileflow ready.');
   assert.equal(controller.state.map.name, 'streets');
   assert.equal(controller.state.theme.name, 'dark');
   const calls: number[] = [];

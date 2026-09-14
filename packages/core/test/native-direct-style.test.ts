@@ -5,20 +5,26 @@ import {tileflowNativeProfileLimits} from '../src/native-profile-helpers';
 import {TileflowNativeSourceError} from '../src/native-source-types';
 
 function invalid(value: unknown): void {
-  assert.throws(() => snapshotNativeDirectStyle(value, {}), (error: unknown) => {
-    assert.ok(error instanceof TileflowNativeSourceError);
-    assert.equal(error.code, 'NATIVE_SOURCE_INVALID');
-    assert.equal(error.field, 'source');
-    assert.equal(error.cause, undefined);
-    assert.equal(error.message.includes('secret'), false);
-    return true;
-  });
+  assert.throws(
+    () => snapshotNativeDirectStyle(value, {}),
+    (error: unknown) => {
+      assert.ok(error instanceof TileflowNativeSourceError);
+      assert.equal(error.code, 'NATIVE_SOURCE_INVALID');
+      assert.equal(error.field, 'source');
+      assert.equal(error.cause, undefined);
+      assert.equal(error.message.includes('secret'), false);
+      return true;
+    },
+  );
 }
 
 test('snapshots finite JSON without coercing values, references, expressions or style metadata', () => {
   const shared = {nested: [null, false, -0, 0.1, 'e\u0301', '\ud800', '\ufeff']};
   const input = {
-    version: 8, name: 'Data', sources: {}, layers: [],
+    version: 8,
+    name: 'Data',
+    sources: {},
+    layers: [],
     metadata: {left: shared, right: shared},
     projection: {type: 'globe'},
     custom: ['case', ['get', 'enabled'], 1, 0],
@@ -37,24 +43,53 @@ test('snapshots finite JSON without coercing values, references, expressions or 
 
 test('rejects non-JSON values and non-record roots instead of silently dropping them', () => {
   for (const value of [null, [], undefined, true, 2, () => 0, Symbol('secret'), 1n]) invalid(value);
-  for (const value of [undefined, () => 0, Symbol('secret'), 1n, NaN, Infinity, -Infinity,
-    new Date(), new Map(), new Set(), new Uint8Array([1]), /secret/]) {
+  for (const value of [
+    undefined,
+    () => 0,
+    Symbol('secret'),
+    1n,
+    NaN,
+    Infinity,
+    -Infinity,
+    new Date(),
+    new Map(),
+    new Set(),
+    new Uint8Array([1]),
+    /secret/,
+  ]) {
     invalid({metadata: {value}});
   }
 });
 
 test('rejects getters, hidden/symbol keys and unsafe prototypes without invoking accessors', () => {
   let reads = 0;
-  const getter = {get value() { reads++; throw new Error('secret'); }};
+  const getter = {
+    get value() {
+      reads++;
+      throw new Error('secret');
+    },
+  };
   invalid(getter);
   invalid({metadata: getter});
-  invalid(Object.defineProperty({}, 'hidden', {get() { reads++; return 1; }}));
+  invalid(
+    Object.defineProperty({}, 'hidden', {
+      get() {
+        reads++;
+        return 1;
+      },
+    }),
+  );
   invalid(Object.defineProperty({}, 'hidden', {value: 1}));
   invalid({[Symbol('secret')]: 1});
   invalid(Object.create({secret: true}));
   invalid({metadata: Object.create({secret: true})});
   const array = [1];
-  Object.defineProperty(array, '0', {get() { reads++; return 1; }});
+  Object.defineProperty(array, '0', {
+    get() {
+      reads++;
+      return 1;
+    },
+  });
   invalid({metadata: array});
   const extra = [1] as number[] & {extra?: boolean};
   extra.extra = true;
@@ -110,11 +145,14 @@ test('enforces depth, layer and source cardinality without validating the Style 
     for (let index = 0; index < depth; index++) value = {item: value};
     return value as object;
   };
-  assert.doesNotThrow(() => snapshotNativeDirectStyle(nested(tileflowNativeProfileLimits.maximumDepth), {}));
+  assert.doesNotThrow(() =>
+    snapshotNativeDirectStyle(nested(tileflowNativeProfileLimits.maximumDepth), {}),
+  );
   invalid(nested(tileflowNativeProfileLimits.maximumDepth + 1));
   assert.doesNotThrow(() => snapshotNativeDirectStyle({layers: Array(4_096).fill({})}, {}));
   invalid({layers: Array(4_097).fill({})});
-  const sources = (count: number) => Object.fromEntries(Array.from({length: count}, (_, i) => [`s${i}`, {}]));
+  const sources = (count: number) =>
+    Object.fromEntries(Array.from({length: count}, (_, i) => [`s${i}`, {}]));
   assert.doesNotThrow(() => snapshotNativeDirectStyle({sources: sources(128)}, {}));
   invalid({sources: sources(129)});
   assert.doesNotThrow(() => snapshotNativeDirectStyle({metadata: {applicationField: true}}, {}));

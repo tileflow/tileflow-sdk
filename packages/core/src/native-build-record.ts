@@ -69,7 +69,7 @@ export function createTileflowNativeBuildRecord(
   transformations: readonly TileflowNativeStyleTransformation[] = [],
 ): TileflowNativeBuildRecord {
   return tileflowNativeBuildRecordSchema.parse({
-    schemaVersion: 2, renderer: 'native', profile: tileflowNativeProfile.profile,
+    schemaVersion: 2, renderer: 'native', profile: tileflowNativeProfile.id,
     validation: 'static-artifacts', preparationVersion: 'native-lowering-v1',
     engines: {android: tileflowNativeProfile.android, ios: tileflowNativeProfile.ios},
     buildManifestSha256,

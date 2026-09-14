@@ -14,7 +14,7 @@ export type MapSource = TileflowNativeSource;
 export type MapThemeSelection = NonNullable<TileflowNativeSourceOptions['theme']>;
 export type MapColorScheme = NonNullable<TileflowNativeSourceOptions['colorScheme']>;
 export type MapView = TileflowNativeInitialView;
-/** Portable composition inputs, not a controlled-camera prop interface. */
+/** Portable composition inputs, independent from source acquisition. */
 export type MapInitialViewInputs = TileflowNativeInitialViewOptions;
 
 export type MapSourceProps =
@@ -111,8 +111,31 @@ export type MapEventHandlers = Readonly<{
   onThemeChange?: (event: MapThemeChangeEvent) => void;
 }>;
 
-/** Shared contract pieces only. No Map component or controlled-camera props are exported yet. */
+/** Common source/presentation/lifecycle pieces; MapProps adds camera ownership. */
 export type MapBaseProps = MapSourceProps &
   MapPresentationProps &
   MapEventHandlers &
   Readonly<{ref?: Ref<MapRef>}>;
+
+/** Canonical user-driven change only. Commands, renderer events and source generations stay private. */
+export type MapViewChangeEvent = Readonly<{
+	type: 'view-change';
+	view: MapView;
+}>;
+
+/** The ownership mode is fixed for one mounted native instance. */
+export type MapCameraProps =
+	| Readonly<{
+		view: MapView;
+		initialView?: never;
+		onViewChange: (event: MapViewChangeEvent) => void;
+	}>
+	| Readonly<{
+		view?: never;
+		initialView?: MapInitialViewInputs['view'];
+		/** Observation alone does not make the camera controlled. */
+		onViewChange?: (event: MapViewChangeEvent) => void;
+	}>;
+
+/** Type contract only; this package does not export a Map component. */
+export type MapProps = MapBaseProps & MapCameraProps;

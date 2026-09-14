@@ -8,6 +8,7 @@ export default defineConfig({
     'internal/native-appearance': 'src/native-appearance.ts',
     'internal/initial-view': 'src/initial-view.ts',
     'internal/source-state': 'src/source-state.ts',
+    'internal/camera': 'src/camera-controller.ts',
   },
   external: [
     '@tileflow/core',

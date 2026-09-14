@@ -1,5 +1,6 @@
 export type {
   MapBaseProps,
+  MapCameraProps,
   MapColorScheme,
   MapErrorEvent,
   MapEventHandlers,
@@ -7,6 +8,7 @@ export type {
   MapLoadEvent,
   MapOptions,
   MapPresentationProps,
+  MapProps,
   MapReadinessChangeEvent,
   MapRef,
   MapSelection,
@@ -18,4 +20,5 @@ export type {
   MapThemeChangeEvent,
   MapThemeSelection,
   MapView,
+  MapViewChangeEvent,
 } from './contract';

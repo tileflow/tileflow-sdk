@@ -7,6 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
 
@@ -811,6 +812,83 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(fakeApiKey));
 });
 
+test('deploy binds one composition receipt to the effective package in manifest and body', async (t) => {
+  const fixture = await createSharedIconFixture(t);
+  const requests: Array<{method?: string; url?: string}> = [];
+  let deployBody: Record<string, unknown> | null = null;
+  const api = await createFakeApi(t, async (request) => {
+    const bodyBytes = await readRequestBodyBytes(request);
+    requests.push({method: request.method, url: request.url});
+    if (request.method === 'PUT') {
+      return iconPackageResponseFromMultipart(
+        request,
+        bodyBytes,
+        api.url,
+        'icp_12345678-1234-1234-1234-123456789abc',
+      );
+    }
+    deployBody = JSON.parse(bodyBytes.toString('utf8')) as Record<string, unknown>;
+    return {
+      ...hostedDeploymentResponse(managedMapId, ['dark', 'light'], {changed: true, version: 1}),
+    };
+  });
+
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      api.url,
+      '--cache-dir',
+      fixture.directory,
+      '--offline',
+    ],
+    {TILEFLOW_API_KEY: fakeApiKey},
+  );
+
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+  assert.deepEqual(
+    requests.map((request) => `${request.method} ${request.url?.split('/').slice(0, 3).join('/')}`),
+    ['PUT /v1/icon-packages', 'POST /v1/styles'],
+  );
+  const body = deployBody as unknown as {
+    artifact: {
+      buildManifest: {
+        maps: Record<
+          string,
+          {
+            mapRevisionSchemaVersion?: number;
+            sourceAssets: {iconComposition?: Record<string, unknown>};
+          }
+        >;
+      };
+    };
+    iconComposition?: {contributors: Array<Record<string, unknown>>; packageHash: string};
+    iconPackage?: {contentHash: string};
+  };
+  const embedded = body.artifact.buildManifest.maps.madrid!.sourceAssets.iconComposition;
+  assert.ok(body.iconComposition);
+  assert.ok(embedded);
+  assert.equal(body.artifact.buildManifest.maps.madrid!.mapRevisionSchemaVersion, 2);
+  assert.equal(JSON.stringify(body.iconComposition), JSON.stringify(embedded));
+  assert.equal(body.iconComposition.packageHash, body.iconPackage?.contentHash);
+  assert.equal(
+    body.iconComposition.packageHash,
+    requests.find((request) => request.method === 'PUT')?.url?.split('/').pop(),
+  );
+  assert.deepEqual(
+    body.iconComposition.contributors.map((contributor) => contributor.reference ?? contributor.kind),
+    ['@acme/brand', '@acme/transport', 'local'],
+  );
+  // The referenced source revisions are never re-uploaded by a deploy.
+  assert.equal(requests.filter((request) => request.method === 'PUT').length, 1);
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(fakeApiKey));
+});
+
 test('an explicit key for another Map is rejected before icon or style writes', async (t) => {
   const fixture = await createIconFixture(t);
   let writes = 0;
@@ -1388,6 +1466,17 @@ name: 'Madrid'`,
     }),
   );
   return fixture;
+}
+
+async function createSharedIconFixture(t: TestContext) {
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-shared-icons-'));
+  t.after(() => rm(directory, {force: true, recursive: true}));
+  await createTileflowIconSetProject(directory, {mapId: 'madrid'});
+  return {
+    configPath: join(directory, 'tileflow.config.ts'),
+    directory,
+    manifestPath: join(directory, 'manifest.json'),
+  };
 }
 
 async function createFakeApi(

@@ -15,6 +15,7 @@ import {
   createTileflowBuildArtifacts,
   defaultTileflowConfigPath,
   type TileflowBuildArtifacts,
+  type TileflowIconResolutionOptions,
 } from '@tileflow/dev/artifacts';
 import {assertValidTileflowStyle, TileflowStyleValidationError} from '@tileflow/dev/validation';
 import {captureApplicationTileflowScene, resolveTileflowApplicationUrl} from './application';
@@ -36,6 +37,14 @@ export type TileflowCaptureOptions = {
   appUrl?: string;
   config?: string;
   cwd?: string;
+  /**
+   * Explicit shared Icon Set resolution settings.
+   *
+   * These choose the verified cache root, offline behavior, trusted delivery origins and the
+   * transport used to hydrate exact locked pins. No build resolves a catalog head.
+   */
+  icons?: TileflowIconResolutionOptions;
+
   onBrowserInstallProgress?: (progress: TileflowBrowserInstallProgress) => void;
   frame?: 'map' | 'viewport';
   scenes: string[];
@@ -310,6 +319,7 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
         assetBaseUrl: tileflowSyntheticAssetOrigin,
         config: this.#options.config ?? defaultTileflowConfigPath,
         cwd,
+        ...(this.#options.icons ? {icons: this.#options.icons} : {}),
       });
       return artifacts;
     } catch (error) {

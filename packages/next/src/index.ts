@@ -5,6 +5,7 @@ import {
   getTileflowAssetBasePath,
   normalizeTileflowBasePath,
   resolveTileflowArtifactPublicUrls,
+  type TileflowIconResolutionOptions,
   writeTileflowBuildArtifacts,
 } from '@tileflow/dev/artifacts';
 
@@ -14,6 +15,13 @@ export type TileflowNextPluginOptions = {
   config?: string;
   cwd?: string;
   emitBuildArtifacts?: boolean;
+  /**
+   * Explicit shared Icon Set resolution settings.
+   *
+   * These choose the verified cache root, offline behavior, trusted delivery origins and the
+   * transport used to hydrate exact locked pins. No build resolves a catalog head.
+   */
+  icons?: TileflowIconResolutionOptions;
   overwriteHostedManifest?: boolean;
   publicDir?: string;
   routeBase?: string | false;
@@ -75,6 +83,7 @@ async function emitTileflowBuildArtifacts(
     assetBaseUrl: publicUrls.assetBaseUrl,
     config: options.config ?? defaultTileflowConfigPath,
     cwd,
+    ...(options.icons ? {icons: options.icons} : {}),
     outDir,
     overwriteHostedManifest: options.overwriteHostedManifest,
     styleBaseUrl: publicUrls.styleBaseUrl,

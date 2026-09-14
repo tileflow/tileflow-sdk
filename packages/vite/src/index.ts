@@ -12,6 +12,7 @@ import {
   normalizeTileflowBasePath,
   refreshTileflowArtifactSession,
   resolveTileflowArtifactPublicUrls,
+  type TileflowIconResolutionOptions,
 } from '@tileflow/dev/artifacts';
 import {
   createTileflowDevRequestHandler,
@@ -25,6 +26,13 @@ export type TileflowVitePluginOptions = {
   base?: string;
   config?: string;
   emitBuildArtifacts?: boolean;
+  /**
+   * Explicit shared Icon Set resolution settings.
+   *
+   * These choose the verified cache root, offline behavior, trusted delivery origins and the
+   * transport used to hydrate exact locked pins. No build resolves a catalog head.
+   */
+  icons?: TileflowIconResolutionOptions;
   overwriteHostedManifest?: boolean;
 };
 
@@ -50,6 +58,7 @@ export function tileflow(options: TileflowVitePluginOptions = {}): Plugin {
         assetBaseUrl: artifactBasePath,
         config: configPath,
         cwd: root,
+        ...(options.icons ? {icons: options.icons} : {}),
         styleBaseUrl: artifactBasePath,
         apiBaseUrl: options.apiBaseUrl,
         watch: false,
@@ -160,6 +169,7 @@ export function tileflow(options: TileflowVitePluginOptions = {}): Plugin {
         assetBaseUrl: publicUrls.assetBaseUrl,
         config: configPath,
         cwd: config.root,
+        ...(options.icons ? {icons: options.icons} : {}),
         styleBaseUrl: publicUrls.styleBaseUrl,
         apiBaseUrl: options.apiBaseUrl,
         target: 'production',

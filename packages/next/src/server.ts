@@ -4,6 +4,7 @@ import {
   defaultTileflowConfigPath,
   normalizeTileflowBasePath,
   type TileflowArtifactSession,
+  type TileflowIconResolutionOptions,
 } from '@tileflow/dev/artifacts';
 import {
   createTileflowDevRequestHandler,
@@ -15,6 +16,13 @@ export type TileflowNextRouteHandlerOptions = {
   base?: string;
   config?: string;
   cwd?: string;
+  /**
+   * Explicit shared Icon Set resolution settings.
+   *
+   * These choose the verified cache root, offline behavior, trusted delivery origins and the
+   * transport used to hydrate exact locked pins. No build resolves a catalog head.
+   */
+  icons?: TileflowIconResolutionOptions;
   onError?: (error: unknown) => void;
   routeBase?: string;
   styleBaseUrl?: string;
@@ -79,6 +87,7 @@ function createSharedRouteHandler(
     assetBaseUrl: basePath,
     config: options.config ?? defaultTileflowConfigPath,
     cwd: options.cwd,
+    ...(options.icons ? {icons: options.icons} : {}),
     styleBaseUrl: options.styleBaseUrl ?? basePath,
     apiBaseUrl: options.apiBaseUrl,
     watch: true,
@@ -109,6 +118,16 @@ function createSharedHandlerKey(
     basePath,
     config: resolve(cwd, options.config ?? defaultTileflowConfigPath),
     cwd,
+    // Different explicit Icon Set resolution settings must never share one session.
+    icons: options.icons
+      ? {
+          cacheRoot: options.icons.cacheRoot ?? null,
+          deliveryOrigins: options.icons.deliveryOrigins ?? null,
+          hasFetch: Boolean(options.icons.fetch),
+          hasSignal: Boolean(options.icons.signal),
+          offline: options.icons.offline ?? null,
+        }
+      : null,
     styleBaseUrl: options.styleBaseUrl ?? basePath,
   });
 }

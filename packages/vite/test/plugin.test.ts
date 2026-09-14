@@ -4,6 +4,7 @@ import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {test} from 'node:test';
 import {createServer as createViteServer} from 'vite';
+import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflow} from '../src/index';
 
@@ -501,3 +502,52 @@ type RuntimeManifest = {
   >;
   version: 1;
 };
+
+test('the Vite production build emits the exact locked icon composition', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-vite-icon-sets-'));
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  await createTileflowIconSetProject(cwd);
+
+  const plugin = tileflow({base: '/maps', icons: {cacheRoot: cwd, offline: true}});
+  (plugin.configResolved as (config: unknown) => void)({
+    base: '/app/',
+    publicDir: join(cwd, 'public'),
+    root: cwd,
+  });
+  const emitted: Array<{fileName?: string; source?: unknown; type: string}> = [];
+  await (plugin.generateBundle as Function).call(
+    {emitFile: (asset: (typeof emitted)[number]) => emitted.push(asset)},
+    {},
+    {},
+    false,
+  );
+
+  const buildManifest = JSON.parse(
+    String(emitted.find((asset) => asset.fileName === 'maps/build-manifest.json')?.source),
+  ) as {
+    maps: Record<
+      string,
+      {
+        mapRevisionSchemaVersion?: number;
+        sourceAssets: {iconComposition?: {contributors: Array<{reference?: string}>}};
+      }
+    >;
+  };
+  const entry = buildManifest.maps.main!;
+  assert.equal(entry.mapRevisionSchemaVersion, 2);
+  assert.deepEqual(
+    entry.sourceAssets.iconComposition?.contributors.map(
+      (contributor) => contributor.reference ?? 'local',
+    ),
+    ['@acme/brand', '@acme/transport', 'local'],
+  );
+  const sprite = JSON.parse(
+    String(emitted.find((asset) => asset.fileName === 'maps/icons/main/sprite.json')?.source),
+  ) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(sprite).sort(), ['bus', 'hospital', 'shop']);
+  // The composed sprite is one effective atlas, never a runtime multi-sprite dependency.
+  assert.equal(
+    emitted.filter((asset) => asset.fileName?.endsWith('/sprite.json')).length,
+    2,
+  );
+});

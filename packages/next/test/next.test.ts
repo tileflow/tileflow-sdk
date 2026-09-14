@@ -3,6 +3,7 @@ import {mkdir, mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
+import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {withTileflow} from '../src/index';
 import {createTileflowRouteHandlers} from '../src/server';
@@ -341,3 +342,51 @@ type RuntimeManifest = {
   >;
   version: 1;
 };
+
+test('the Next production build and dev route serve the exact locked icon composition', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-next-icon-sets-'));
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  await createTileflowIconSetProject(cwd);
+  const icons = {cacheRoot: cwd, offline: true} as const;
+  const previousNodeEnv = process.env.NODE_ENV;
+
+  const handlers = createTileflowRouteHandlers({cwd, icons});
+  t.after(() => handlers.close());
+  let sprite = await handlers.GET(new Request('http://localhost/tileflow/icons/main/sprite.json'));
+  for (let attempt = 0; attempt < 40 && sprite.status === 409; attempt += 1) {
+    await new Promise((settle) => setTimeout(settle, 50));
+    sprite = await handlers.GET(new Request('http://localhost/tileflow/icons/main/sprite.json'));
+  }
+  assert.equal(sprite.status, 200, await sprite.clone().text());
+  assert.deepEqual(Object.keys((await sprite.json()) as Record<string, unknown>).sort(), [
+    'bus',
+    'hospital',
+    'shop',
+  ]);
+
+  try {
+    process.env.NODE_ENV = 'production';
+    const config = withTileflow({}, {cwd, icons});
+    await config.rewrites!();
+    const buildManifest = JSON.parse(
+      await readFile(join(cwd, 'public/tileflow/build-manifest.json'), 'utf8'),
+    ) as {
+      maps: Record<
+        string,
+        {
+          mapRevisionSchemaVersion?: number;
+          sourceAssets: {iconComposition?: {contributors: Array<{reference?: string}>}};
+        }
+      >;
+    };
+    assert.equal(buildManifest.maps.main?.mapRevisionSchemaVersion, 2);
+    assert.deepEqual(
+      buildManifest.maps.main?.sourceAssets.iconComposition?.contributors.map(
+        (contributor) => contributor.reference ?? 'local',
+      ),
+      ['@acme/brand', '@acme/transport', 'local'],
+    );
+  } finally {
+    process.env.NODE_ENV = previousNodeEnv;
+  }
+});

@@ -38,8 +38,7 @@ test('publishes a build-only profile entry without widening the root or native U
     }
     const profile = await import('@tileflow/core/native-profile');
     const native = await import('@tileflow/core/native');
-    const root = await import('@tileflow/core');
-    if ('validateTileflowNativeStyle' in native || 'validateTileflowNativeStyle' in root) process.exit(2);
+    if ('validateTileflowNativeStyle' in native) process.exit(2);
     const issues = profile.validateTileflowNativeStyle({version:8,sources:{},layers:[]});
     if (issues.length) throw new Error(JSON.stringify(issues));
   `;
@@ -47,6 +46,9 @@ test('publishes a build-only profile entry without widening the root or native U
     cwd: fileURLToPath(packageRoot),
     timeout: 10_000,
   });
+
+  const root = await import('@tileflow/core');
+  assert.equal('validateTileflowNativeStyle' in root, false);
 });
 
 /** Inspect syntax, not source-map comments or strings inside bundled specification metadata. */

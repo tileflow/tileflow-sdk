@@ -46,6 +46,16 @@ const codecPlugin: NonNullable<Options['esbuildPlugins']>[number] = {
         .map((path) => path.replaceAll('\\', '/'))
         .filter((path) => path.includes('/node_modules/'))
         .map((path) => path.slice(path.lastIndexOf('/node_modules/') + 14).split('/')[0] ?? '');
+      // Inspect emitted contributions, not merely resolved files that tree-shaking can discard.
+      const classicSchemaEmitted = Object.values(metadata.outputs).some((output) =>
+        Object.entries(output.inputs).some(([path, contribution]) =>
+          contribution.bytesInOutput > 0 &&
+          /\/zod\/(?:src\/)?v4\/classic\//u.test(path.replaceAll('\\', '/')),
+        ),
+      );
+      if (classicSchemaEmitted) {
+        return {errors: [{text: 'The native manifest must not embed the Classic Zod method graph.'}]};
+      }
       if (
         inputs.includes(resolve(providerLib, 'encoding.js')) ||
         !inputs.includes(codecPath) ||

@@ -1,25 +1,27 @@
-import {createTileflowRuntimeManifestParser} from './manifest-schema';
+import type {z} from 'zod';
+import {createTileflowRuntimeManifestSchema} from './manifest-schema';
+import {classicManifestSchemaOperations} from './manifest-schema-classic';
 import type {TileflowRuntimeManifest} from './manifest-types';
+import {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
 
 export {tileflowRuntimeManifestLimits, tileflowRuntimeManifestVersion} from './manifest-types';
 export type {
-  TileflowRuntimeColorScheme,
-  TileflowRuntimeManifest,
-  TileflowRuntimeManifestMapEntry,
-  TileflowRuntimeManifestTheme,
-  TileflowRuntimeSystemThemes,
+	TileflowRuntimeColorScheme,
+	TileflowRuntimeManifest,
+	TileflowRuntimeManifestMapEntry,
+	TileflowRuntimeManifestTheme,
+	TileflowRuntimeSystemThemes,
 } from './manifest-types';
 
-const parser = createTileflowRuntimeManifestParser({
-  parseUrl: (value, base) => (base === undefined ? new URL(value) : new URL(value, base)),
-  utf8ByteLength: (value) => new TextEncoder().encode(value).byteLength,
-});
-export const tileflowRuntimeManifestSchema = parser.tileflowRuntimeManifestSchema;
+export const tileflowRuntimeManifestSchema: z.ZodType<TileflowRuntimeManifest> = createTileflowRuntimeManifestSchema({
+	parseUrl: (value, base) => (base === undefined ? new URL(value) : new URL(value, base)),
+	utf8ByteLength: (value) => new TextEncoder().encode(value).byteLength,
+}, classicManifestSchemaOperations, {tileflowPortableIdSchema, tileflowThemeNameSchema}) as z.ZodType<TileflowRuntimeManifest>;
 
 export function parseTileflowRuntimeManifest(input: unknown): TileflowRuntimeManifest {
-  return parser.parseTileflowRuntimeManifest(input);
+	return tileflowRuntimeManifestSchema.parse(input);
 }
 
 export function safeParseTileflowRuntimeManifest(input: unknown) {
-  return parser.safeParseTileflowRuntimeManifest(input);
+	return tileflowRuntimeManifestSchema.safeParse(input);
 }

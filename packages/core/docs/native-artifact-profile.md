@@ -72,7 +72,10 @@ projection to Native's implicit Mercator before this validator runs. This is a r
 change, not globe support or visual equivalence. It also lowers proven finite `line-cap` and
 `line-dasharray` decisions into constant-property layers. The raw validator continues to reject
 unlowered unsupported expressions. See the [preparation contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-artifacts.md)
-for the grammar, expansion limits and pending native visual checks.
+for the grammar, expansion limits and pending native visual checks. The lowering checks establish
+per-feature selection and cap/dash values, not global feature draw order. A copied `line-sort-key`
+cannot preserve ordering between simultaneous physical branches; overlapping features may produce
+a different composition even when every property value is retained.
 
 `native-build.json` uses strict schema version 2 and `preparationVersion: 'native-lowering-v1'`.
 Its `transformations` array is ordered by map/theme and binds the input/lowered style hashes,

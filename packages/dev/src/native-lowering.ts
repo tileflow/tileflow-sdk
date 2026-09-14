@@ -85,6 +85,35 @@ function combine(operator: 'all' | 'any', values: Predicate[]): Predicate {
   return result.length === 0 ? identity : result.length === 1 ? result[0]! : [operator, ...result];
 }
 
+/** Predicates admitted by Decisions are total; these identities preserve first-match results. */
+function choose(when: Predicate, yes: Predicate, no: Predicate): Predicate {
+  if (when === true) return yes;
+  if (when === false) return no;
+  if (key(yes) === key(no)) return yes;
+  if (yes === true) return combine('any', [when, no]);
+  if (yes === false) return combine('all', [negate(when), no]);
+  if (no === true) return combine('any', [negate(when), yes]);
+  if (no === false) return combine('all', [when, yes]);
+  return ['case', when, yes, no];
+}
+
+/** Keep multi-arm decisions flat: nested binary tests would consume the output depth budget. */
+function decision(arms: {when: Predicate; value: Predicate}[], fallback: Predicate): Predicate {
+  const active: {when: Predicate; value: Predicate}[] = [];
+  for (const arm of arms) {
+    if (arm.when === false) continue;
+    if (arm.when === true) {fallback = arm.value; break;}
+    const previous = active.at(-1);
+    if (previous && key(previous.value) === key(arm.value)) {
+      previous.when = combine('any', [previous.when, arm.when]);
+    } else active.push({...arm});
+  }
+  while (active.length && key(active.at(-1)!.value) === key(fallback)) active.pop();
+  if (!active.length) return fallback;
+  if (active.length === 1) return choose(active[0]!.when, active[0]!.value, fallback);
+  return ['case', ...active.flatMap(({when, value}) => [when, value]), fallback];
+}
+
 /** Both layout camera values and line-dasharray use integer zoom evaluation in the pinned spec. */
 class Decisions {
   private visited = 0;
@@ -323,13 +352,34 @@ class Decisions {
     const grouped = new Map<string, Outcome>();
     for (const outcome of leaves) {
       const id = key(outcome.value);
-      const previous = grouped.get(id);
-      if (previous) previous.when = combine('any', [previous.when, outcome.when]);
-      else grouped.set(id, {...outcome});
+      if (!grouped.has(id)) grouped.set(id, {when: true, value: outcome.value});
     }
     if (grouped.size > nativeLoweringLimits.maximumPropertyBranches) fail(this.path, 'budget');
-    return [...grouped.values()];
+    // Keep the same outcome order and path budget, but do not serialize a DNF containing
+    // every earlier arm's negated guard. Each outcome is a compact boolean decision tree.
+    return [...grouped.entries()].map(([id, outcome]) => ({
+      value: outcome.value, when: this.accepts(tree, id, zoom),
+    }));
   }
+
+  private accepts(tree: Tree, outcome: string, zoom: number): Predicate {
+    if (tree.kind === 'leaf') return key(tree.value) === outcome;
+    if (tree.kind === 'case') {
+      return decision(tree.arms.map((arm) => ({
+        when: this.atZoom(arm.when, zoom), value: this.accepts(arm.value, outcome, zoom),
+      })), this.accepts(tree.fallback, outcome, zoom));
+    }
+    if (operation(tree.input, 'zoom', 1)) {
+      let selected = tree.fallback;
+      for (const stop of tree.stops) {if (zoom < stop.at) break; selected = stop.value;}
+      return this.accepts(selected, outcome, zoom);
+    }
+    return decision(tree.stops.map((stop, index) => ({
+      when: ['<', tree.input, stop.at],
+      value: this.accepts(index === 0 ? tree.fallback : tree.stops[index - 1]!.value, outcome, zoom),
+    })), this.accepts(tree.stops.at(-1)!.value, outcome, zoom));
+  }
+
 }
 
 function isConstant(value: unknown, property: Property): boolean {

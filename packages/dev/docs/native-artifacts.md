@@ -66,6 +66,8 @@ intersection. Source, source-layer, metadata and other layout/paint values are p
 camera-zoom evaluation, so a step at 8.5 changes its value at zoom 9, while an original fractional
 layer visibility bound remains fractional. New branch filters contain no camera-zoom expression.
 
+Grouped outcomes use compact boolean decision trees rather than repeated lists of every earlier
+arm's negated guard. Multi-arm cases remain flat to avoid trading size for excessive depth.
 Identical outcomes and adjacent identical intervals are coalesced. IDs derive from the original
 layer ID, the lowering version and deterministic branch order, with collision checks against the
 whole input style. The original layer's replacements stay together; surrounding layers are not
@@ -77,11 +79,19 @@ per logical layer. The entire lowered style must still fit 4,096 layers, 160,000
 depth 64 and 8 MiB. Limits are checked before writing outputs; preparation does not raise them to
 make a particular map pass. A failure leaves the previous valid generation intact.
 
-The equivalence checks cover feature selection, property values and zoom ranges. They do not
-establish pixel equivalence or GPU behavior. Native visual qualification is a separate pending
-gate on the pinned iOS/Android renderers, including overlapping lines, within-layer feature order,
-retained sort keys, dash transitions, camera movement and projection differences. Browser capture
-cannot satisfy this gate.
+The equivalence checks cover per-feature selection, cap/dash values and zoom ranges, **not draw
+order across features**. Copying `line-sort-key` preserves ordering only inside each physical
+layer. If a feature with sort key 1 enters the first branch and a feature with sort key 0 enters
+the second, the physical layers draw them as 1 then 0 instead of 0 then 1. Both features can satisfy
+mutually exclusive filters yet have overlapping geometry. The resulting composition can differ,
+not merely its antialiasing. Even without a sort key, partitioning can change source feature order.
+
+Applications requiring exact overlapping-feature order must not treat a feature-partitioned
+artifact as order-equivalent to its web style. A static-compatible result does not establish
+complete cartographic or pixel equivalence. Native visual qualification remains a separate pending
+gate on the pinned iOS/Android renderers, including overlaps between branches, sort keys, dash
+transitions, camera movement and projection differences. Browser capture cannot satisfy this gate,
+and visual samples alone cannot prove preservation of arbitrary feature order.
 
 ## Write a separate output
 
@@ -142,6 +152,29 @@ releasing and disposing a generation follow the existing [artifact lifecycle](ar
 This is artifact watching, not a native preview server. Do not pass these artifacts to browser
 preview/capture as evidence of a native render. Native inspection sidecars, React Native components,
 Hermes execution, iOS/Android qualification, Hosted authorization and deployment are not supplied.
+
+## Audit lowering size and feature order
+
+From the SDK source root after installing and building the pinned workspace:
+
+```sh
+pnpm exec tsx scripts/native-lowering-audit.ts > native-lowering-audit.json
+```
+
+This diagnostic report compiles the unchanged full Streets family through the web preparation
+path, then measures the native representation for **both** dark and light before applying output
+budget assertions. It writes no native artifact generation and is not a compatibility verdict.
+Each theme includes layer counts, visited JSON nodes, UTF-8 bytes and maximum depth before/after;
+every transformed layer is listed with its ID, physical span, branch count and zoom intervals,
+sort-key expression and paint indicators. Simultaneously active branches are marked as an
+unproven feature-order boundary, not as a claim that their geometry is disjoint.
+
+Subtree accounts separate copied unchanged layer payload from generated filters and input
+cap/dash decisions. They identify whether predicate expansion or repetition of other properties
+dominates; they are not an additive byte decomposition. The counters include array keys, matching
+the profile's existing node convention. Retain the report with the checkout SHA. An over-budget
+result must not be treated as a successful native build or fixed by dropping layers or weakening
+validation. The test suite prints the two-theme size summary even when a budget assertion fails.
 
 ## Reproduce the official-map report
 

@@ -4,18 +4,27 @@ import {tileflowNativeProfileLimits} from './native-profile-helpers';
 import {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
 
 export const tileflowNativeBuildRecordFileName = 'native-build.json';
+// The interpreted Core constructor avoids Zod's environment-sensitive object JIT probe.
+// The lazy wrapper adds the classic parse/refinement API without merging raw input back in.
+function strictBuildObject<Shape extends z.core.$ZodShape>(shape: Shape) {
+  const object = new z.core.$ZodObject({
+    type: 'object', shape, catchall: z.never(),
+  }) as z.core.$ZodObject<Shape, z.core.$strict>;
+  return z.lazy(() => object);
+}
+
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/u);
 const layerCountSchema = z.number().int().min(0).max(tileflowNativeProfileLimits.maximumLayers);
-const layerTransformationSchema = z.object({
+const layerTransformationSchema = strictBuildObject({
   inputLayer: layerCountSchema,
   outputStart: layerCountSchema,
   outputCount: z.number().int().min(1).max(32),
   properties: z.array(z.enum(['line-cap', 'line-dasharray'])).min(1).max(2)
     .refine((properties) => properties.length === 1 ||
       (properties[0] === 'line-cap' && properties[1] === 'line-dasharray'), 'Expected unique, ordered properties'),
-}).strict();
+});
 
-export const tileflowNativeStyleTransformationSchema = z.object({
+export const tileflowNativeStyleTransformationSchema = strictBuildObject({
   map: tileflowPortableIdSchema,
   theme: tileflowThemeNameSchema,
   inputStyleSha256: hashSchema,
@@ -24,7 +33,7 @@ export const tileflowNativeStyleTransformationSchema = z.object({
   outputLayers: layerCountSchema,
   projection: z.enum(['none', 'mercator-to-implicit', 'globe-to-mercator']),
   layers: z.array(layerTransformationSchema).max(tileflowNativeProfileLimits.maximumLayers),
-}).strict().superRefine((style, context) => {
+}).superRefine((style, context) => {
   let previous = -1;
   let added = 0;
   for (const [index, layer] of style.layers.entries()) {
@@ -43,16 +52,16 @@ export const tileflowNativeStyleTransformationSchema = z.object({
 export type TileflowNativeStyleTransformation = z.infer<typeof tileflowNativeStyleTransformationSchema>;
 
 /** Version 2 adds explicit preparation evidence. The runtime manifest remains version 1. */
-export const tileflowNativeBuildRecordSchema = z.object({
+export const tileflowNativeBuildRecordSchema = strictBuildObject({
   schemaVersion: z.literal(2),
   renderer: z.literal('native'),
   profile: z.literal('native-v1'),
   validation: z.literal('static-artifacts'),
   preparationVersion: z.literal('native-lowering-v1'),
-  engines: z.object({android: z.literal('13.2.0'), ios: z.literal('6.26.0')}).strict(),
+  engines: strictBuildObject({android: z.literal('13.2.0'), ios: z.literal('6.26.0')}),
   buildManifestSha256: hashSchema,
   transformations: z.array(tileflowNativeStyleTransformationSchema).max(4096),
-}).strict().superRefine((record, context) => {
+}).superRefine((record, context) => {
   let previous = '';
   for (const [index, item] of record.transformations.entries()) {
     const name = `${item.map}/${item.theme}`;

@@ -36,14 +36,21 @@ for (const origin of ['http://127.0.0.1:8765', 'http://10.0.2.2:8765']) {
         assert.equal(globalThis.URL, ambient, 'The SDK must not install a global polyfill.');
         process.stdout.write(JSON.stringify(results));
       `;
-      const {stdout} = await execFileAsync(process.execPath, ['--input-type=module', '--eval', script], {
-        cwd: packageRoot,
-        timeout: 10_000,
-        maxBuffer: 64 * 1024,
-      });
+      const {stdout} = await execFileAsync(
+        process.execPath,
+        ['--input-type=module', '--eval', script],
+        {
+          cwd: packageRoot,
+          timeout: 10_000,
+          maxBuffer: 64 * 1024,
+        },
+      );
       const results = JSON.parse(stdout) as Array<{id: string; passed: boolean}>;
       assert.equal(results.length, 22);
-      assert.deepEqual(results.filter(({passed}) => !passed), []);
+      assert.deepEqual(
+        results.filter(({passed}) => !passed),
+        [],
+      );
     });
   }
 }

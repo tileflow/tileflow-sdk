@@ -1,7 +1,8 @@
 # Native resource URLs
 
 `@tileflow/core/native` provides synchronous URL helpers for clients that do not have a browser
-origin. It has no renderer dependency and does not access browser globals when imported.
+origin. Its published entry bundles a private WHATWG parser with IDNA processing. It does not use
+or replace the ambient `URL`, `TextEncoder` or `TextDecoder`, and has no renderer dependency.
 
 These helpers resolve URLs; they do not load manifests, validate MapLibre styles, create maps, or
 authorize Hosted requests. A successful resolution is not a claim that a style or feature works on
@@ -115,3 +116,62 @@ Neither function accepts `null` as an options object.
 This is URL policy, not an authorization or server-side request-forgery defense. Callers still own
 resource-origin authorization, redirect handling, response size limits, cancellation, and any
 network request. Do not attach a credential merely because this helper accepted a URL.
+
+## Private parser and source builds
+
+The native entry embeds the low-level parser from `whatwg-url` 15.1.0, `tr46` 6.0.0 (Unicode 17
+IDNA processing) and Punycode.js 2.3.1. It exposes no URL class or parser configuration. Package
+consumers only install Core; the published `dist/native.js` has no external runtime imports.
+The parser is a development/build dependency, not an additional runtime package to install.
+Complete notices are included in [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md).
+
+A React Native URL shim can concatenate references onto a filename or append a slash to `.json`.
+The native helpers instead resolve against the owning document with the bundled parser, including
+host percent-decoding, IDNA mapping, default ports and encoded dot segments. This does not require
+an application-wide polyfill. The build-time native artifact validator uses the same Tileflow URL
+policy with its existing host parser; it does not embed the mobile parser in its own bundle.
+
+From an SDK source checkout, run the ordinary Core build, not a direct source import in a native
+application. `tsup.native.config.ts` builds only the native entry with `platform: 'browser'`,
+`target: 'es2020'`, ESM and no splitting. Its plugin redirects exactly the two relative
+`./encoding` imports in the pinned parser modules to Core's private UTF-8 codec. It rejects an
+unexpected dependency version, an unbound codec import or external runtime imports. It does not
+patch packages on disk, configure a global alias or change another entry's build.
+
+The codec uses replacement semantics for unmatched UTF-16 surrogates and invalid UTF-8 bytes and
+preserves BOMs, matching `TextEncoder` and non-fatal `TextDecoder('utf-8', {ignoreBOM: true})`.
+It processes at most 65,536 code units for encoding or 65,536 bytes for decoding per call. Private
+placeholder sentinels are bounded well below that ceiling; the public URL ceiling stays at 2,048
+code units. No parser or codec error is exposed as a cause containing the rejected URL.
+
+## Check the built package
+
+From an installed and built SDK checkout:
+
+```sh
+pnpm --filter @tileflow/core exec tsx --test test/native-runtime-url.test.ts test/native-url-provider.test.ts test/native-url-utf8.test.ts test/native-url-policy.test.ts
+```
+
+The existing runtime regression checks the Node host and a React Native URL fixture independently.
+Another test copies the built native file into an empty directory and executes it with ambient URL
+and codec getters that throw. Neither test is a Hermes or device qualification.
+
+For size comparisons, build Core in two isolated checkouts and retain an `npm pack --json` receipt
+from each package directory. Pass the already-built Core directories and optional receipt paths to:
+
+```sh
+node packages/core/scripts/measure-native-url.mjs /path/to/before/packages/core /path/to/after/packages/core /path/to/before-pack.json /path/to/after-pack.json
+```
+
+The report separates raw native entry bytes, its runtime graph, a minified ES2020 browser consumer,
+gzip size, compressed tarball bytes and unpacked package bytes. It performs no installation and is
+not a Metro bundle, Hermes bytecode or device-memory measurement.
+
+Native acceptance must install the exact tarball in an existing iOS/Android application and run
+[`checkNativeUrlContract`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/test/fixtures/native-url-contract.mjs)
+with the installed `@tileflow/core/native` exports, leaving the application's URL global unchanged.
+The [fixture procedure](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/test/fixtures/native-url-contract.md)
+covers the two explicit development origins without network requests. Packaged Hermes execution
+remains a separate qualification step; static parsing and Node tests do not establish it. This
+entry still does not load manifests, render maps, create transport grants or make mobile service
+availability claims.

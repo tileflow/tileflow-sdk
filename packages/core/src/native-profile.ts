@@ -1,26 +1,27 @@
 import {isExpression, validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import specification from '@maplibre/maplibre-gl-style-spec/dist/latest.json' with {type: 'json'};
 import {z} from 'zod';
-import {resolveTileflowNativeResourceUrl, TileflowNativeUrlError} from './native';
-import type {MapLibreStyle} from './types';
+import {
+  tileflowNativeProfile,
+  tileflowNativeProfileIdSchema,
+  type TileflowRenderer,
+  tileflowRendererSchema,
+} from './native-profile-definition';
 import {
   isBoundedNativeJson,
   nativePointer as pointer,
   supportsNativeVersions,
   tileflowNativeProfileLimits,
 } from './native-profile-helpers';
+import {resolveTileflowNativeResourceUrl, TileflowNativeUrlError} from './native-url-host';
 import {strictNativeObject} from './native-zod-object';
+import type {MapLibreStyle} from './types';
+
 export {
   tileflowNativeProfileLimits,
   tileflowNativePreparedStyleLimits,
 } from './native-profile-helpers';
 
-import {
-  tileflowNativeProfile,
-  tileflowNativeProfileIdSchema,
-  tileflowRendererSchema,
-  type TileflowRenderer,
-} from './native-profile-definition';
 export {
   tileflowNativeProfile,
   tileflowNativeProfileIdSchema,

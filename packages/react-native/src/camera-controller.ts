@@ -30,6 +30,7 @@ type CommandRun = {
 	operation?: CameraOperation;
 };
 type Gesture = {token: CameraToken; lastEmitted: MapView};
+type GestureSettlement = {token: CameraToken; notifying: boolean};
 
 /** One pure owner per real native instance. No renderer, source, appearance or scheduling API. */
 export function createMapCameraController(
@@ -52,7 +53,7 @@ export function createMapCameraController(
 	let props: CameraPropsSnapshot | undefined;
 	let live: MapView | undefined;
 	let gesture: Gesture | undefined;
-	let finishing: CameraToken | undefined;
+	let settlement: GestureSettlement | undefined;
 	let pending: CommandRun | undefined;
 	let sequence = 0;
 	let revision = 0;
@@ -130,7 +131,7 @@ export function createMapCameraController(
 		}
 	}
 	function reconcile(): void {
-		if (!disposed && !gesture && !finishing && props?.mode === 'controlled') issue(props.view);
+		if (!disposed && !gesture && !settlement && props?.mode === 'controlled') issue(props.view);
 	}
 
 	function update(input: MapCameraProps): void {
@@ -141,7 +142,7 @@ export function createMapCameraController(
 		if (disposed || revision !== own) return;
 		if (next.mode !== mode) throw new CameraControllerError('CAMERA_MODE_CHANGE');
 		props = next;
-		// While interacting, update authority/callbacks but do not fight the gesture.
+		// During a gesture or pending commit settlement, update authority/callbacks without commands.
 		// In initial mode the validated replacement seed is deliberately not reapplied.
 		reconcile();
 	}
@@ -171,7 +172,7 @@ export function createMapCameraController(
 			advance();
 			const next = {token: token(), lastEmitted: live};
 			gesture = next;
-			finishing = undefined;
+			settlement = undefined;
 			const previous = pending;
 			pending = undefined;
 			retire(previous);
@@ -196,13 +197,25 @@ export function createMapCameraController(
 			if (disposed || gesture !== active || revision !== own) return;
 			live = view;
 			gesture = undefined;
-			finishing = identity;
-			if (!sameCameraView(active.lastEmitted, view)) {
-				notify(Object.freeze({type: 'view-change', view}));
+			const waiting: GestureSettlement = {token: identity, notifying: true};
+			settlement = waiting;
+			try {
+				if (!sameCameraView(active.lastEmitted, view)) {
+					notify(Object.freeze({type: 'view-change', view}));
+				}
+			} finally {
+				// Never clear a newer settlement installed by a reentrant callback.
+				waiting.notifying = false;
 			}
-			// A synchronous parent adoption is visible here; a new gesture/style/disposal wins.
-			if (disposed || finishing !== identity) return;
-			finishing = undefined;
+			// Only the owner can confirm the subsequent prop commit; do not infer rejection here.
+		},
+		/** Confirm the post-gesture prop commit, after update() has delivered its current props. */
+		settleGesture(identity: CameraToken): void {
+			const waiting = settlement;
+			if (disposed || !waiting || waiting.token !== identity || waiting.notifying) return;
+			advance();
+			// Consume before issuing a command so reentrant/repeated confirmations are harmless.
+			settlement = undefined;
 			reconcile();
 		},
 		/** Programmatic observations are never public changes, even when their values differ. */
@@ -220,14 +233,14 @@ export function createMapCameraController(
 			advance();
 			const view = props.mode === 'controlled' ? props.view : live;
 			gesture = undefined;
-			finishing = undefined;
+			settlement = undefined;
 			issue(view, true);
 		},
 		dispose(): void {
 			if (disposed) return;
 			disposed = true;
 			gesture = undefined;
-			finishing = undefined;
+			settlement = undefined;
 			props = undefined;
 			report = undefined;
 			const previous = pending;

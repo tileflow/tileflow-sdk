@@ -43,6 +43,9 @@ test('validates strict v2 records without browser probes or global Zod configura
       assert.equal(profile.tileflowNativeBuildRecordSchema.safeParse(invalid).success, false);
     }
     assert.deepEqual(profile.validateTileflowNativeStyle({version: 8, sources: {}, layers: []}), []);
+    assert.deepEqual(profile.validateTileflowNativePreparedStyle({version: 8, sources: {}, layers: []}), []);
+    assert.equal(profile.tileflowNativeProfileLimits.maximumNodes, 160000);
+    assert.equal(profile.tileflowNativePreparedStyleLimits.maximumNodes, 540000);
     assert.deepEqual(z.config(), config);
     assert.equal(reads, 0);
   `;

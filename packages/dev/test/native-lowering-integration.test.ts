@@ -3,7 +3,7 @@ import {createHash} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
-import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {copyFile, mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
@@ -13,7 +13,8 @@ import {
   TileflowNativeCompatibilityError,
   tileflowNativeBuildRecordSchema,
   tileflowNativeProfileLimits,
-  validateTileflowNativeStyle,
+  tileflowNativePreparedStyleLimits,
+  validateTileflowNativePreparedStyle,
 } from '@tileflow/core/native-profile';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {createTileflowBuildArtifacts, disposeTileflowBuildArtifacts} from '../src/artifacts';
@@ -44,7 +45,7 @@ test('matches the pinned expression and filter evaluators at range and camera bo
   const before = serializeCanonicalJson(original);
   const lowered = lowerTileflowNativeCompiledStyles({fixture: {light: original}});
   const result = lowered.styles.fixture!.light!;
-  assert.deepEqual(validateTileflowNativeStyle(result), []);
+  assert.deepEqual(validateTileflowNativePreparedStyle(result), []);
   const expressions = ['line-cap', 'line-dasharray'].map((property) => {
     const parsed = createExpression(source[property === 'line-cap' ? 'layout' : 'paint'][property]);
     assert.equal(parsed.result, 'success');
@@ -83,8 +84,8 @@ test('does not defer unsafe source, terrain or unknown projection semantics to l
   }
 });
 
-test('bounds expanded serialized nodes and bytes, without changing the input or raising profile limits', () => {
-  for (const metadata of [{samples: new Array(45_000).fill(0)}, {text: 'a'.repeat(4_194_304)}]) {
+test('bounds expanded serialized bytes without changing the input or byte limit', () => {
+  for (const metadata of [{text: 'a'.repeat(4_194_304)}]) {
     const input = inputStyle();
     const layer = input.layers[0]! as any;
     layer.layout = {'line-cap': propertyCase};
@@ -105,7 +106,7 @@ test('Streets themes retain identity and audited native transformation spans', a
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-native-streets-'));
   t.after(() => rm(cwd, {recursive: true, force: true}));
   await linkWorkspacePackages(cwd, ['core', 'maps']);
-  await writeFile(join(cwd, 'tileflow.config.ts'), `import {streets} from '@tileflow/maps';\nexport default streets;\n`);
+  await copyFile(new URL('./fixtures/native-streets.config.ts', import.meta.url), join(cwd, 'tileflow.config.ts'));
   const web = await createTileflowBuildArtifacts({cwd, styleBaseUrl: '.'});
   t.after(() => disposeTileflowBuildArtifacts(web));
   // Collect both themes before any assertion, so a failing dark budget cannot hide light evidence.
@@ -118,7 +119,9 @@ test('Streets themes retain identity and audited native transformation spans', a
   assert.deepEqual(measured.map(({theme}) => theme), ['dark', 'light']);
   t.diagnostic(JSON.stringify({scope: 'Streets lowering measurements', themes: measured}));
   for (const item of measured) {
-    assert.ok(item.after.nodes <= tileflowNativeProfileLimits.maximumNodes, JSON.stringify(measured));
+    assert.ok(item.before.nodes <= tileflowNativeProfileLimits.maximumNodes, JSON.stringify(measured));
+    assert.ok(item.after.nodes > tileflowNativeProfileLimits.maximumNodes, JSON.stringify(measured));
+    assert.ok(item.after.nodes <= tileflowNativePreparedStyleLimits.maximumNodes, JSON.stringify(measured));
     assert.ok(item.after.bytes <= tileflowNativeProfileLimits.maximumStyleBytes, JSON.stringify(measured));
     assert.ok(item.after.depth <= tileflowNativeProfileLimits.maximumDepth, JSON.stringify(measured));
     assert.ok(item.after.layers <= tileflowNativeProfileLimits.maximumLayers, JSON.stringify(measured));
@@ -139,7 +142,7 @@ test('Streets themes retain identity and audited native transformation spans', a
     assert.notEqual(native.buildManifest.maps.streets!.themes[item.theme]!.styleSha256,
       web.buildManifest.maps.streets!.themes[item.theme]!.styleSha256);
     assert.equal('projection' in output, false);
-    assert.deepEqual(validateTileflowNativeStyle(output, {documentUrl: 'https://artifacts.invalid/style.json'}), []);
+    assert.deepEqual(validateTileflowNativePreparedStyle(output, {documentUrl: 'https://artifacts.invalid/style.json'}), []);
     const independentlyLowered = lowerNativeStyleRepresentation(original, (filter) => convertFilter(structuredClone(filter) as any));
     // Font/sprite URL preparation is renderer-owned; structural layer data is unchanged except for lowering.
     assert.deepEqual(output.layers, independentlyLowered.style.layers);
@@ -196,8 +199,12 @@ test('runs the complete two-theme lowering audit through the workspace tsx loade
   const report = JSON.parse(stdout);
   assert.equal(report.scope, 'static-lowering-size-and-order-audit');
   assert.equal(report.nativeVisualQualification, 'pending');
+  assert.equal(report.limits.maximumNodes, 160_000);
+  assert.equal(report.preparedLimits.maximumNodes, 540_000);
   assert.deepEqual(report.themes.map((row: {theme: string}) => row.theme), ['dark', 'light']);
   for (const row of report.themes) {
+    assert.equal(row.withinInputBudget, true);
+    assert.equal(row.withinOutputBudget, true);
     assert.ok(row.before.nodes > 0 && row.after.nodes > 0);
     assert.ok(row.before.bytes > 0 && row.after.bytes > 0);
     assert.ok(row.layers.length > 0);

@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {execFile} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+import {promisify} from 'node:util';
 import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -16,6 +19,7 @@ import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {createTileflowBuildArtifacts, disposeTileflowBuildArtifacts} from '../src/artifacts';
 import {lowerTileflowNativeCompiledStyles} from '../src/native-artifacts';
 import {lowerNativeStyleRepresentation, nativeLoweringVersion} from '../src/native-lowering';
+import {auditNativeLowering, measureNativeJson as footprint} from './native-lowering-audit-fixture';
 
 const propertyCase = ['case', ['==', ['get', 'class'], 'primary'], 'round', 'butt'];
 function inputStyle(): MapLibreStyle {
@@ -32,18 +36,6 @@ function inputStyle(): MapLibreStyle {
 }
 function sha(value: unknown): string {
   return createHash('sha256').update(serializeCanonicalJson(value)).digest('hex');
-}
-function footprint(value: unknown): {nodes: number; depth: number; bytes: number} {
-  let nodes = 0;
-  let depth = 0;
-  const visit = (item: unknown, level: number) => {
-    nodes++; depth = Math.max(depth, level);
-    if (item && typeof item === 'object') for (const [key, child] of Object.entries(item)) {
-      visit(key, level + 1); visit(child, level + 1);
-    }
-  };
-  visit(value, 0);
-  return {nodes, depth, bytes: Buffer.byteLength(JSON.stringify(value))};
 }
 
 test('matches the pinned expression and filter evaluators at range and camera boundaries', () => {
@@ -109,19 +101,27 @@ test('bounds expanded serialized nodes and bytes, without changing the input or 
   }
 });
 
-test('Streets themes retain structural semantics, identity and audited native transformation spans', async (t) => {
+test('Streets themes retain identity and audited native transformation spans', async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-native-streets-'));
   t.after(() => rm(cwd, {recursive: true, force: true}));
   await linkWorkspacePackages(cwd, ['core', 'maps']);
   await writeFile(join(cwd, 'tileflow.config.ts'), `import {streets} from '@tileflow/maps';\nexport default streets;\n`);
   const web = await createTileflowBuildArtifacts({cwd, styleBaseUrl: '.'});
   t.after(() => disposeTileflowBuildArtifacts(web));
-  // Measure the real compiled family before enforcing the unchanged output JSON budgets.
-  for (const [theme, input] of Object.entries(web.styles.streets!)) {
-    const lowered = lowerNativeStyleRepresentation(input, (filter) => convertFilter(structuredClone(filter) as any));
-    const measured = {theme, before: footprint(input), after: footprint(lowered.style)};
-    assert.ok(measured.after.nodes <= tileflowNativeProfileLimits.maximumNodes, JSON.stringify(measured));
-    assert.ok(measured.after.bytes <= tileflowNativeProfileLimits.maximumStyleBytes, JSON.stringify(measured));
+  // Collect both themes before any assertion, so a failing dark budget cannot hide light evidence.
+  const measured = Object.entries(web.styles.streets!).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+    .map(([theme, input]) => {
+      const lowered = lowerNativeStyleRepresentation(input, (filter) => convertFilter(structuredClone(filter) as any));
+      const audit = auditNativeLowering(input, lowered);
+      return {theme, before: audit.before, after: audit.after, duplication: audit.duplication};
+    });
+  assert.deepEqual(measured.map(({theme}) => theme), ['dark', 'light']);
+  t.diagnostic(JSON.stringify({scope: 'Streets lowering measurements', themes: measured}));
+  for (const item of measured) {
+    assert.ok(item.after.nodes <= tileflowNativeProfileLimits.maximumNodes, JSON.stringify(measured));
+    assert.ok(item.after.bytes <= tileflowNativeProfileLimits.maximumStyleBytes, JSON.stringify(measured));
+    assert.ok(item.after.depth <= tileflowNativeProfileLimits.maximumDepth, JSON.stringify(measured));
+    assert.ok(item.after.layers <= tileflowNativeProfileLimits.maximumLayers, JSON.stringify(measured));
   }
   const native = await createTileflowBuildArtifacts({cwd, styleBaseUrl: '.', renderer: 'native'});
   t.after(() => disposeTileflowBuildArtifacts(native));
@@ -161,5 +161,46 @@ test('Streets themes retain structural semantics, identity and audited native tr
         if (physical.paint?.['line-dasharray'] !== undefined) assert.ok(physical.paint['line-dasharray'].every((value: unknown) => typeof value === 'number'));
       }
     }
+  }
+});
+
+
+test('compact grouped predicates agree with the pinned evaluator for every overlapping flag combination', () => {
+  const input = inputStyle();
+  const layer = input.layers[0]! as any;
+  const cap = ['case', ...Array.from({length: 12}, (_, index) => [
+    ['==', ['get', `flag${index}`], true], index % 2 === 0 ? 'round' : 'butt',
+  ]).flat(), 'square'];
+  layer.layout = {'line-cap': cap};
+  layer.paint = {'line-dasharray': [1, 0]};
+  const lowered = lowerTileflowNativeCompiledStyles({fixture: {light: input}}).styles.fixture!.light!;
+  const parsed = createExpression(cap);
+  assert.equal(parsed.result, 'success');
+  if (parsed.result !== 'success') throw new Error('Expected a valid finite expression.');
+  const filters = lowered.layers.map((physical: any) => ({physical, filter: featureFilter(physical.filter)}));
+  for (let mask = 0; mask < 4096; mask++) {
+    const properties = Object.fromEntries(Array.from({length: 12}, (_, index) => [`flag${index}`, Boolean(mask & (1 << index))]));
+    const feature = {type: 2 as const, properties};
+    const globals = {zoom: 12};
+    const selected = filters.filter(({filter}) => filter.filter(globals, feature));
+    assert.equal(selected.length, 1, String(mask));
+    assert.equal(selected[0]!.physical.layout['line-cap'], parsed.value.evaluate(globals, feature));
+  }
+});
+
+test('runs the complete two-theme lowering audit through the workspace tsx loader', async () => {
+  const root = fileURLToPath(new URL('../../../', import.meta.url));
+  const {stdout} = await promisify(execFile)(process.execPath, [
+    '--import', import.meta.resolve('tsx'), 'scripts/native-lowering-audit.ts',
+  ], {cwd: root, timeout: 120_000, maxBuffer: 8 * 1024 * 1024});
+  const report = JSON.parse(stdout);
+  assert.equal(report.scope, 'static-lowering-size-and-order-audit');
+  assert.equal(report.nativeVisualQualification, 'pending');
+  assert.deepEqual(report.themes.map((row: {theme: string}) => row.theme), ['dark', 'light']);
+  for (const row of report.themes) {
+    assert.ok(row.before.nodes > 0 && row.after.nodes > 0);
+    assert.ok(row.before.bytes > 0 && row.after.bytes > 0);
+    assert.ok(row.layers.length > 0);
+    assert.ok(row.layers.every((layer: any) => layer.branches.length === layer.outputCount));
   }
 });

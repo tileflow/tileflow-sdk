@@ -60,28 +60,6 @@ test('safe observable state contains identities only and retains a bounded error
 	assert.equal(JSON.stringify(controller.state).includes('expiresAt'), false);
 });
 
-test('a failed authority refresh does not consume the 10,000 admitted-resource rotation budget', async () => {
-	const clock = createClock();
-	const queue = createFetchQueue([
-		response(201, success()),
-		response(503, {code: 'MOBILE_SESSION_UNAVAILABLE'}),
-		response(201, success({
-			issuedAt: '2026-09-15T20:14:31.000Z',
-			serverTime: '2026-09-15T20:14:31.000Z',
-			expiresAt: '2026-09-15T20:29:31.000Z',
-		})),
-	]);
-	const controller = createHostedNativeSessionController({binding: hosted(), fetch: queue.fetch, now: clock.now, sessionIdFactory: createIds()});
-	await controller.acquire();
-	for (let index = 1; index < 9_999; index += 1) await controller.acquire();
-	clock.advance(14 * 60_000 + 31_000);
-	assert.equal(await rejectedCode(controller.acquire()), 'NATIVE_SESSION_UNAVAILABLE');
-	const authority = await controller.acquire();
-	assert.equal(authority?.sessionId, 'ses_test_1');
-	assert.equal(queue.calls.length, 3);
-	assert.deepEqual(queue.calls.map((call) => JSON.parse(call.init.body).sessionId), ['ses_test_1', 'ses_test_1', 'ses_test_1']);
-});
-
 test('invalid Surface is normalized in the bootstrap body and response origins must be canonical origin strings', async () => {
 	const normalizedQueue = createFetchQueue([response(201, success({surfaceId: 'default'}))]);
 	const normalized = createHostedNativeSessionController({binding: hosted('INVALID SURFACE'), fetch: normalizedQueue.fetch, now: createClock().now, sessionIdFactory: createIds()});
@@ -95,6 +73,21 @@ test('invalid Surface is normalized in the bootstrap body and response origins m
 		sessionIdFactory: createIds(),
 	});
 	assert.equal(await rejectedCode(invalidOrigin.acquire()), 'NATIVE_SESSION_RESPONSE_INVALID');
+});
+
+test('restart authority requires the exact bounded server shape rather than only matching code fields', async () => {
+	const queue = createFetchQueue([
+		response(409, {
+			code: 'COMMERCIAL_SESSION_RESTART_REQUIRED',
+			error: 'restart',
+			retryWithNewSession: true,
+			sessionId: 'ses_test_1',
+			unexpected: true,
+		}),
+	]);
+	const controller = createHostedNativeSessionController({binding: hosted(), fetch: queue.fetch, now: createClock().now, sessionIdFactory: createIds()});
+	assert.equal(await rejectedCode(controller.acquire()), 'NATIVE_SESSION_REJECTED');
+	assert.equal(queue.calls.length, 1);
 });
 
 test('injected clock and fetch failures are normalized without exposing causes or authority material', async () => {

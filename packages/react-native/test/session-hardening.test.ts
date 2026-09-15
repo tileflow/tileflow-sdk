@@ -109,6 +109,16 @@ test('clock rollback after bootstrap completion still forces a fresh authority b
 	assert.equal(queue.calls.length, 2);
 });
 
+test('unmetered disposition is accepted only with disabled metering', async () => {
+	const controller = createHostedNativeSessionController({
+		binding: hosted(),
+		fetch: createFetchQueue([response(201, success({meterMode: 'shadow', disposition: 'unmetered'}))]).fetch,
+		now: createClock().now,
+		sessionIdFactory: createIds(),
+	});
+	assert.equal(await rejectedCode(controller.acquire()), 'NATIVE_SESSION_RESPONSE_INVALID');
+});
+
 test('injected clock and fetch failures are normalized without exposing causes or authority material', async () => {
 	assert.throws(
 		() => createHostedNativeSessionController({

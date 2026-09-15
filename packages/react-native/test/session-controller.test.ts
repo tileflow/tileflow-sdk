@@ -85,7 +85,6 @@ test('normalizes Surface and rejects malformed credentials and non-canonical tru
 		now: createClock().now,
 		sessionIdFactory: createIds(),
 	});
-	queue.fetch = queue.fetch;
 	assert.equal(valid.state.status, 'idle');
 
 	for (const binding of [

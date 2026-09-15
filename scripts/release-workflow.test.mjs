@@ -97,6 +97,19 @@ test('publishes the approved bundle without rebuilding and verifies a final rece
   assert.equal((workflow.match(/id-token: write/gu) ?? []).length, 1);
 });
 
+test('keeps publication independent of private platform orchestration', async () => {
+  const workflow = await readFile(
+    new URL('../.github/workflows/publish.yml', import.meta.url),
+    'utf8',
+  );
+  const publishJob = workflow.slice(workflow.indexOf('\n  publish:\n'));
+
+  assert.doesNotMatch(publishJob, /TILEFLOW_PLATFORM_DISPATCH_/u);
+  assert.doesNotMatch(publishJob, /create-github-app-token/u);
+  assert.doesNotMatch(publishJob, /createDispatchEvent/u);
+  assert.doesNotMatch(publishJob, /sdk-published/u);
+});
+
 test('binds a Coordinates builder input to the selected runtime tarball inside the release bundle', async () => {
   const workflow = await readFile(
     new URL('../.github/workflows/publish.yml', import.meta.url),

@@ -11,6 +11,7 @@ import {
   type TileflowArtifactPlan,
   writeTileflowArtifactPlan,
 } from '@tileflow/dev/artifacts';
+import type {TileflowIconResolutionOptions} from '@tileflow/dev/icons';
 import {
   createTileflowCommandFailureDocument,
   createTileflowCommandSummary,
@@ -22,6 +23,7 @@ import {withTileflowConfigSecretsHidden} from './config-execution';
 export type RendererArtifactCommandOptions = {
   apiBaseUrl: string;
   config: string;
+  icons?: TileflowIconResolutionOptions;
   json?: boolean;
   out?: string;
   renderer: string;
@@ -63,6 +65,7 @@ export async function runRendererArtifactCommand(
       createTileflowBuildArtifacts({
         apiBaseUrl: options.apiBaseUrl,
         config: options.config,
+        ...(options.icons ? {icons: options.icons} : {}),
         renderer,
         styleBaseUrl: '.',
         target: 'production',

@@ -3,13 +3,17 @@ import pc from 'picocolors';
 import {serializeCanonicalJson} from '@tileflow/core';
 import {inspectTileflowPmtiles} from '@tileflow/dev/tilesets';
 import {z} from 'zod';
-import {type AuthConfigV2, normalizeApiOrigin, resolveAccountSession} from './account-session';
+import type {AuthConfigV2} from './account-session';
+import {requestHostedJson} from './hosted-client';
 import {
-  type HostedTeamCapabilityScope,
-  listAccountTeams,
-  requestHostedJson,
-  requestTeamCapability,
-} from './hosted-client';
+  authorizedTeamRequest,
+  emitFailure,
+  emitJson,
+  type HostedTeamAuthority,
+  type HostedTeamOptions,
+  resolveTeamAuthority,
+  safeMessage,
+} from './hosted-team';
 import {
   createHostedTeamTilesetUploadTransport,
   inspectNodeTeamTilesetArchive,
@@ -20,12 +24,7 @@ import {
   type PositionedUploadFile,
 } from './tileset-upload';
 
-type HostedTilesetOptions = {
-  apiKey?: string;
-  apiUrl?: string;
-  json?: boolean;
-  team?: string;
-};
+type HostedTilesetOptions = HostedTeamOptions;
 
 export function registerTilesetCommands(
   program: Command,
@@ -326,107 +325,7 @@ export function registerTilesetCommands(
     });
 }
 
-async function resolveTeamAuthority(
-  options: HostedTilesetOptions,
-  scopes: HostedTeamCapabilityScope[],
-  dependencies: {defaultApiUrl: string; loadAuthConfig: () => Promise<AuthConfigV2>},
-) {
-  let apiOrigin: string;
-  try {
-    apiOrigin = normalizeApiOrigin(options.apiUrl ?? dependencies.defaultApiUrl);
-  } catch (error) {
-    emitFailure(options.json, 'invalid_api_url', safeMessage(error));
-    return null;
-  }
-  if (options.apiKey) {
-    if (!/^tf_live_[0-9a-f]{48}$/u.test(options.apiKey)) {
-      emitFailure(options.json, 'invalid_team_data_key', 'Team data API key is invalid.');
-      return null;
-    }
-    if (options.team) {
-      emitFailure(
-        options.json,
-        'team_selector_with_api_key',
-        'A Team data key already selects its Team; omit --team.',
-      );
-      return null;
-    }
-    return {apiOrigin, credential: options.apiKey, team: null};
-  }
-
-  let config: AuthConfigV2;
-  try {
-    config = await dependencies.loadAuthConfig();
-  } catch (error) {
-    emitFailure(options.json, 'auth_state_unavailable', safeMessage(error));
-    return null;
-  }
-  const selected = resolveAccountSession(config, options.apiUrl ?? dependencies.defaultApiUrl);
-  if (selected.kind !== 'selected') {
-    emitFailure(
-      options.json,
-      `account_session_${selected.kind}`,
-      selected.kind === 'expired'
-        ? 'Account session expired. Run tileflow login.'
-        : 'Run tileflow login.',
-    );
-    return null;
-  }
-  const discovered = await listAccountTeams(selected.session);
-  if (!discovered.ok) {
-    emitFailure(options.json, 'team_discovery_failed', discovered.error);
-    return null;
-  }
-  const requested = options.team
-    ? /^@([A-Za-z0-9][A-Za-z0-9._-]{0,127})$/u.exec(options.team)
-    : null;
-  if (options.team && !requested) {
-    emitFailure(options.json, 'invalid_team', 'Team must use @team syntax.');
-    return null;
-  }
-  const team = requested
-    ? discovered.teams.find(({slug}) => slug === requested[1])
-    : discovered.teams.length === 1
-      ? discovered.teams[0]
-      : null;
-  if (!team) {
-    const options_ = discovered.teams.map(({slug}) => `@${slug}`);
-    emitFailure(
-      options.json,
-      options_.length > 1 ? 'team_ambiguous' : 'team_not_found',
-      options_.length > 1
-        ? `Choose one Team with --team: ${options_.join(', ')}.`
-        : 'No matching Team is available.',
-      {options: options_},
-    );
-    return null;
-  }
-  const capability = await requestTeamCapability(selected.session, `@${team.slug}`, scopes);
-  if (!capability.ok) {
-    emitFailure(options.json, 'team_capability_failed', capability.error);
-    return null;
-  }
-  return {
-    apiOrigin: selected.session.apiOrigin,
-    credential: capability.capability,
-    team,
-  };
-}
-
-function authorizedTeamRequest(
-  authority: Awaited<ReturnType<typeof resolveTeamAuthority>> & {},
-  path: string,
-  method: string,
-) {
-  return requestHostedJson(authority.apiOrigin, path, {
-    headers: {Authorization: `Bearer ${authority.credential}`},
-    method,
-  });
-}
-
-async function fetchAllTeamTilesets(
-  authority: Awaited<ReturnType<typeof resolveTeamAuthority>> & {},
-) {
+async function fetchAllTeamTilesets(authority: HostedTeamAuthority) {
   const items: Array<z.infer<typeof tilesetInventoryItemSchema>> = [];
   const seenCursors = new Set<string>();
   const seenIds = new Set<string>();
@@ -469,26 +368,6 @@ async function fetchAllTeamTilesets(
   throw new Error('Tileset list exceeded its safe page limit.');
 }
 
-function emitJson(value: unknown) {
-  process.stdout.write(`${serializeCanonicalJson(value)}\n`);
-}
-
-function emitFailure(
-  json: boolean | undefined,
-  code: string,
-  message: string,
-  context: Record<string, unknown> = {},
-) {
-  if (json) {
-    process.stderr.write(
-      `${serializeCanonicalJson({error: {code, ...context, message}, ok: false, schemaVersion: 1})}\n`,
-    );
-  } else {
-    console.error(`${pc.red('Error:')} ${message}`);
-  }
-  process.exitCode = 1;
-}
-
 function isTilesetId(value: string) {
   return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(value) && !['terrain', 'world'].includes(value);
 }
@@ -507,10 +386,6 @@ function inspectionOptionError(message: string) {
     code: 'TF_TILESET_INSPECTION_OPTIONS_INVALID',
     path: 'includeValues',
   });
-}
-
-function safeMessage(error: unknown) {
-  return error instanceof Error ? error.message : 'Tileset command failed.';
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

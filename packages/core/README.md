@@ -98,9 +98,10 @@ require a complete receipt and use the domain-separated v2 revision contract. Bu
 entries identify that contract with `mapRevisionSchemaVersion: 2`; omission means legacy v1. The
 generated icon package remains `tileflow-icon-package-v1` and the asset-set hash is unchanged.
 
-These are SDK foundation APIs. The explicit `@tileflow/dev` composition port can consume verified
-fixture or cached artifacts without a registry. Registry publication, managed deployment, and normal
-CLI/framework wiring are separate integrations, not implied by importing `iconSet`.
+These are portable contracts. `@tileflow/dev` composes declared contributors on its normal
+preparation path, and the `tileflow` CLI owns catalog management and exact lock maintenance.
+Importing `iconSet` adds a declaration; it performs no I/O, resolves no revision, and does not by
+itself make a Team catalog available to your deployment.
 
 ## Style with themes and semantic modules
 

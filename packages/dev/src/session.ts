@@ -143,6 +143,8 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
       assetBaseUrl: options.assetBaseUrl,
       config: options.config,
       cwd: this.#cwd,
+      // Trusted shared Icon Set resolution settings, supplied once by the owning command.
+      ...(options.icons ? {icons: options.icons} : {}),
       inspection: options.inspection,
       ...(options.renderer === undefined ? {} : {renderer: options.renderer}),
       styleBaseUrl: options.styleBaseUrl,

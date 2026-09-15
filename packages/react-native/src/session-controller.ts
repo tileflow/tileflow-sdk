@@ -9,6 +9,8 @@ const ROTATION_AGE_MS = 6 * 60 * 60 * 1000;
 const ROTATION_REQUEST_LIMIT = 10_000;
 const FUTURE_ISSUE_SKEW_MS = 30_000;
 const MOBILE_CREDENTIAL = /^tf_public_[0-9a-f]{48}$/u;
+const MAP_ID = /^map_[A-Za-z0-9_-]{16}$/u;
+const CREDENTIAL_ID = /^key_[A-Za-z0-9_-]{8,80}$/u;
 const COMPACT_ID = /^[A-Za-z0-9._:-]{1,255}$/u;
 const SURFACE_ID = /^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/u;
 const NATIVE_GRANT = /^tf_native_v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u;
@@ -267,7 +269,7 @@ export function createHostedNativeSessionController(input: {
 		} catch {
 			throw new HostedNativeSessionError('NATIVE_SESSION_INPUT_INVALID');
 		}
-		if (typeof sessionId !== 'string' || !COMPACT_ID.test(sessionId)) {
+		if (typeof sessionId !== 'string' || !COMPACT_ID.test(sessionId) || secretShaped(sessionId)) {
 			throw new HostedNativeSessionError('NATIVE_SESSION_INPUT_INVALID');
 		}
 		return {
@@ -675,7 +677,7 @@ function normalizeBinding(value: HostedNativeSessionBinding): Binding {
 			typeof value.credential !== 'string' ||
 			!MOBILE_CREDENTIAL.test(value.credential) ||
 			typeof value.mapId !== 'string' ||
-			!COMPACT_ID.test(value.mapId)
+			!MAP_ID.test(value.mapId)
 		) {
 			throw new Error();
 		}
@@ -708,7 +710,11 @@ function canonicalOrigin(value: unknown): string {
 }
 
 function normalizeSurface(value: unknown) {
-	return typeof value === 'string' && SURFACE_ID.test(value) ? value : 'default';
+	return typeof value === 'string' && SURFACE_ID.test(value) && !secretShaped(value) ? value : 'default';
+}
+
+function secretShaped(value: string) {
+	return MOBILE_CREDENTIAL.test(value) || value.startsWith('tf_native_');
 }
 
 function sameHostedBinding(left: HostedBinding, right: HostedBinding) {
@@ -741,8 +747,9 @@ function parseSuccess(value: unknown, binding: HostedBinding, expectedSessionId:
 		value.sessionId !== expectedSessionId ||
 		typeof value.surfaceId !== 'string' ||
 		!SURFACE_ID.test(value.surfaceId) ||
+		secretShaped(value.surfaceId) ||
 		typeof value.credentialId !== 'string' ||
-		!COMPACT_ID.test(value.credentialId) ||
+		!CREDENTIAL_ID.test(value.credentialId) ||
 		!positiveRevision(value.credentialRevision) ||
 		!positiveRevision(value.deliveryPolicyRevision) ||
 		typeof value.grant !== 'string' ||
@@ -750,7 +757,8 @@ function parseSuccess(value: unknown, binding: HostedBinding, expectedSessionId:
 		value.grant.length > GRANT_CHARACTER_LIMIT ||
 		!NATIVE_GRANT.test(value.grant) ||
 		!['disabled', 'shadow', 'enforced'].includes(String(value.meterMode)) ||
-		!['unmetered', 'ordinary', 'unbilled_fail_open'].includes(String(value.disposition))
+		!['unmetered', 'ordinary', 'unbilled_fail_open'].includes(String(value.disposition)) ||
+		(value.disposition === 'unmetered' && value.meterMode !== 'disabled')
 	) {
 		throw new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_INVALID');
 	}

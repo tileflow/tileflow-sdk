@@ -53,7 +53,11 @@ test('safe observable state contains identities only and retains a bounded error
 	assert.equal(controller.state.status, 'error');
 	assert.equal(controller.state.lifecycle, 'foreground');
 
-	await controller.acquire();
+	const authority = await controller.acquire();
+	assert.ok(authority);
+	assert.equal(authority.grant, grant);
+	assert.equal(Object.keys(authority).includes('grant'), false);
+	assert.equal(JSON.stringify(authority).includes(grant), false);
 	assert.equal(controller.state.status, 'ready');
 	assertSafeState(controller.state, [credential, grant]);
 	assert.equal(JSON.stringify(controller.state).includes('requestCount'), false);
@@ -88,6 +92,21 @@ test('restart authority requires the exact bounded server shape rather than only
 	const controller = createHostedNativeSessionController({binding: hosted(), fetch: queue.fetch, now: createClock().now, sessionIdFactory: createIds()});
 	assert.equal(await rejectedCode(controller.acquire()), 'NATIVE_SESSION_REJECTED');
 	assert.equal(queue.calls.length, 1);
+});
+
+test('clock rollback after bootstrap completion still forces a fresh authority before acquire returns', async () => {
+	const t0 = Date.parse('2026-09-15T20:00:00.000Z');
+	const values = [t0, t0, t0, t0 - 3_600_000, t0 - 3_600_000, t0 - 3_600_000, t0 - 3_600_000];
+	let index = 0;
+	const now = () => new Date(values[Math.min(index++, values.length - 1)]);
+	const queue = createFetchQueue([
+		response(201, success()),
+		response(201, success()),
+	]);
+	const controller = createHostedNativeSessionController({binding: hosted(), fetch: queue.fetch, now, sessionIdFactory: createIds()});
+	const authority = await controller.acquire();
+	assert.equal(authority?.sessionId, 'ses_test_1');
+	assert.equal(queue.calls.length, 2);
 });
 
 test('injected clock and fetch failures are normalized without exposing causes or authority material', async () => {

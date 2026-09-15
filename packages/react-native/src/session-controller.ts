@@ -73,6 +73,7 @@ export type HostedNativeSessionAbortSignal = Readonly<{
 
 export type HostedNativeSessionFetchInit = Readonly<{
   body: string;
+  credentials: 'omit';
   headers: Readonly<Record<string, string>>;
   method: 'POST';
   signal: HostedNativeSessionAbortSignal;
@@ -276,6 +277,10 @@ export function createHostedNativeSessionController(input: {
     return clock.logical;
   }
 
+  function bindingIsDirect() {
+    return binding.kind === 'direct';
+  }
+
   function createSession(surfaceId: string, startedAt: number): SessionRecord {
     let sessionId: unknown;
     try {
@@ -325,7 +330,8 @@ export function createHostedNativeSessionController(input: {
     error?: SafeError,
   ) {
     if (disposed || activeSession !== session || binding.kind !== 'hosted') return;
-    if (status === 'ready' && session.authority) {
+    if (status === 'ready') {
+      if (!session.authority) return;
       const authority = session.authority.public;
       publish(
         Object.freeze({
@@ -342,7 +348,8 @@ export function createHostedNativeSessionController(input: {
       );
       return;
     }
-    if (status === 'error' && error) {
+    if (status === 'error') {
+      if (!error) return;
       publish(
         Object.freeze({
           status: 'error' as const,
@@ -439,7 +446,7 @@ export function createHostedNativeSessionController(input: {
           }
           return result;
         } catch (error) {
-          const normalized = normalizeError(error);
+          const normalized = abort.signal.aborted ? abort.error() : normalizeError(error);
           const target = latestSession(session);
           if (
             normalized.code !== 'NATIVE_SESSION_REPLACED' &&
@@ -472,7 +479,17 @@ export function createHostedNativeSessionController(input: {
     allowRestart: boolean,
     allowServerAgeRotation: boolean,
   ): Promise<{authority: StoredAuthority; session: SessionRecord}> {
-    const response = await fetchResponse(hostedBinding, session, abort);
+    const requestStartedAt = readClock();
+    const requestClockEpoch = clock.epoch;
+    if (abort.signal.aborted) throw abort.error();
+    const expectedSurfaceId =
+      session.authority?.public.surfaceId ?? session.requestedSurfaceId;
+    const response = await fetchResponse(
+      hostedBinding,
+      session,
+      expectedSurfaceId,
+      abort,
+    );
     const source = await readBoundedResponse(response, abort);
     let body: unknown;
     try {
@@ -492,7 +509,12 @@ export function createHostedNativeSessionController(input: {
       throw new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_INVALID');
     }
 
-    const payload = parseSuccess(body, hostedBinding, session.sessionId);
+    const payload = parseSuccess(
+      body,
+      hostedBinding,
+      session.sessionId,
+      expectedSurfaceId,
+    );
     if (session.lastServerTime !== null && payload.serverTimeMs < session.lastServerTime) {
       throw new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_INVALID');
     }
@@ -513,8 +535,8 @@ export function createHostedNativeSessionController(input: {
     return {
       authority: Object.freeze({
         public: payload.authority,
-        validUntil: readClock() + ttl,
-        clockEpoch: clock.epoch,
+        validUntil: requestStartedAt + ttl,
+        clockEpoch: requestClockEpoch,
       }),
       session,
     };
@@ -533,15 +555,17 @@ export function createHostedNativeSessionController(input: {
   async function fetchResponse(
     hostedBinding: HostedBinding,
     session: SessionRecord,
+    surfaceId: string,
     abort: SessionAbortController,
   ) {
     const body = JSON.stringify({
       mapId: hostedBinding.mapId,
       sessionId: session.sessionId,
-      surfaceId: session.authority?.public.surfaceId ?? session.requestedSurfaceId,
+      surfaceId,
     });
     const init: HostedNativeSessionFetchInit = Object.freeze({
       body,
+      credentials: 'omit' as const,
       headers: Object.freeze({
         'Content-Type': 'application/json',
         'X-Tileflow-Mobile-Client': hostedBinding.credential,
@@ -554,6 +578,7 @@ export function createHostedNativeSessionController(input: {
     try {
       pending = Promise.resolve(fetch(`${hostedBinding.apiOrigin}/v1/sessions/start`, init));
     } catch {
+      if (abort.signal.aborted) throw abort.error();
       throw new HostedNativeSessionError('NATIVE_SESSION_UNAVAILABLE');
     }
     pending.then(
@@ -644,11 +669,11 @@ export function createHostedNativeSessionController(input: {
     },
     async acquire() {
       if (disposed) throw new HostedNativeSessionError('NATIVE_SESSION_DISPOSED');
-      if (binding.kind === 'direct') return null;
+      if (bindingIsDirect()) return null;
       const at = readClock();
       rotateIfRequired(at);
       if (disposed) throw new HostedNativeSessionError('NATIVE_SESSION_DISPOSED');
-      if (binding.kind === 'direct' || !activeSession) return null;
+      if (bindingIsDirect() || !activeSession) return null;
       const session = activeSession;
       session.requestCount += 1;
       session.pendingAdmissions += 1;
@@ -683,7 +708,7 @@ export function createHostedNativeSessionController(input: {
         activeSession.authority.clockEpoch !== clock.epoch ||
         activeSession.authority.validUntil - at <= REFRESH_MARGIN_MS
       ) {
-        await ensureAuthority(activeSession, at);
+        await acquireAuthority(activeSession, at);
       }
     },
     replaceBinding(nextBinding) {
@@ -813,7 +838,12 @@ function snapshotIdle(
       });
 }
 
-function parseSuccess(value: unknown, binding: HostedBinding, expectedSessionId: string) {
+function parseSuccess(
+  value: unknown,
+  binding: HostedBinding,
+  expectedSessionId: string,
+  expectedSurfaceId: string,
+) {
   if (
     !isRecord(value) ||
     Object.keys(value).length !== SUCCESS_KEYS.size ||
@@ -825,6 +855,7 @@ function parseSuccess(value: unknown, binding: HostedBinding, expectedSessionId:
     value.counted !== false ||
     value.mapId !== binding.mapId ||
     value.sessionId !== expectedSessionId ||
+    value.surfaceId !== expectedSurfaceId ||
     typeof value.surfaceId !== 'string' ||
     !SURFACE_ID.test(value.surfaceId) ||
     secretShaped(value.surfaceId) ||
@@ -1119,24 +1150,34 @@ async function cancelResponse(response: HostedNativeSessionFetchResponse) {
   }
 }
 
-class SessionAbortSignal implements HostedNativeSessionAbortSignal {
+class SessionAbortController {
+  readonly signal: HostedNativeSessionAbortSignal;
   #aborted = false;
+  #code: 'NATIVE_SESSION_REPLACED' | 'NATIVE_SESSION_DISPOSED' = 'NATIVE_SESSION_REPLACED';
   readonly #listeners = new Set<() => void>();
 
-  get aborted() {
-    return this.#aborted;
+  constructor() {
+    const controller = this;
+    this.signal = Object.freeze({
+      get aborted() {
+        return controller.#aborted;
+      },
+      addEventListener(
+        type: 'abort',
+        listener: () => void,
+        _options?: {once?: boolean},
+      ) {
+        if (type === 'abort' && !controller.#aborted) controller.#listeners.add(listener);
+      },
+      removeEventListener(type: 'abort', listener: () => void) {
+        if (type === 'abort') controller.#listeners.delete(listener);
+      },
+    });
   }
 
-  addEventListener(type: 'abort', listener: () => void) {
-    if (type === 'abort') this.#listeners.add(listener);
-  }
-
-  removeEventListener(type: 'abort', listener: () => void) {
-    if (type === 'abort') this.#listeners.delete(listener);
-  }
-
-  fire() {
+  abort(code: 'NATIVE_SESSION_REPLACED' | 'NATIVE_SESSION_DISPOSED') {
     if (this.#aborted) return;
+    this.#code = code;
     this.#aborted = true;
     for (const listener of [...this.#listeners]) {
       try {
@@ -1146,17 +1187,6 @@ class SessionAbortSignal implements HostedNativeSessionAbortSignal {
       }
     }
     this.#listeners.clear();
-  }
-}
-
-class SessionAbortController {
-  readonly signal = new SessionAbortSignal();
-  #code: 'NATIVE_SESSION_REPLACED' | 'NATIVE_SESSION_DISPOSED' = 'NATIVE_SESSION_REPLACED';
-
-  abort(code: 'NATIVE_SESSION_REPLACED' | 'NATIVE_SESSION_DISPOSED') {
-    if (this.signal.aborted) return;
-    this.#code = code;
-    this.signal.fire();
   }
 
   error() {

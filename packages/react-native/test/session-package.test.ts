@@ -38,11 +38,7 @@ test('session state stays internal and the public package entry remains type-onl
   assert.deepEqual(runtimeImports(publicRuntime), []);
   assert.equal(publicRuntime.includes('session'), false);
   const declarations = await readFile(new URL('dist/index.d.ts', root), 'utf8');
-  for (const name of [
-    'HostedNativeSession',
-    'NativeSessionAuthority',
-    'X-Tileflow-Native-Grant',
-  ]) {
+  for (const name of ['HostedNativeSession', 'NativeSessionAuthority', 'X-Tileflow-Native-Grant']) {
     assert.equal(declarations.includes(name), false, name);
   }
 });

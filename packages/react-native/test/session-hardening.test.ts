@@ -76,9 +76,7 @@ test('safe observable state contains identities only and retains a bounded error
 
 test('invalid Surface is normalized in the bootstrap body and response origins must be canonical origin strings', async () => {
   for (const surfaceId of ['INVALID SURFACE', credential]) {
-    const normalizedQueue = createFetchQueue([
-      response(201, success({surfaceId: 'default'})),
-    ]);
+    const normalizedQueue = createFetchQueue([response(201, success({surfaceId: 'default'}))]);
     const normalized = createHostedNativeSessionController({
       binding: hosted(surfaceId),
       fetch: normalizedQueue.fetch,
@@ -115,8 +113,7 @@ test('Map, session and server identity fields reject secret-shaped values before
           sessionIdFactory: createIds(),
         }),
       (error: unknown) =>
-        error instanceof HostedNativeSessionError &&
-        error.code === 'NATIVE_SESSION_INPUT_INVALID',
+        error instanceof HostedNativeSessionError && error.code === 'NATIVE_SESSION_INPUT_INVALID',
     );
   }
   for (const generated of [credential, grant]) {
@@ -129,8 +126,7 @@ test('Map, session and server identity fields reject secret-shaped values before
           sessionIdFactory: () => generated,
         }),
       (error: unknown) =>
-        error instanceof HostedNativeSessionError &&
-        error.code === 'NATIVE_SESSION_INPUT_INVALID',
+        error instanceof HostedNativeSessionError && error.code === 'NATIVE_SESSION_INPUT_INVALID',
     );
   }
   for (const overrides of [{surfaceId: credential}, {credentialId: credential}]) {
@@ -167,10 +163,7 @@ test('restart authority requires the exact bounded server shape rather than only
 test('clock rollback while bootstrap is pending still forces fresh authority before acquire returns', async () => {
   const clock = createClock();
   const pending = deferred<ReturnType<typeof response>>();
-  const queue = createFetchQueue([
-    () => pending.promise,
-    response(201, success()),
-  ]);
+  const queue = createFetchQueue([() => pending.promise, response(201, success())]);
   const controller = createHostedNativeSessionController({
     binding: hosted(),
     fetch: queue.fetch,

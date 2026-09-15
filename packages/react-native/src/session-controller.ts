@@ -428,8 +428,7 @@ export function createHostedNativeSessionController(input: {
     const operationBinding = binding;
     const abort = new SessionAbortController();
     operations.add(abort);
-    let operation!: SessionOperation;
-    operation = {
+    const operation: SessionOperation = {
       abort,
       promise: Promise.resolve().then(async () => {
         session.error = null;
@@ -482,14 +481,8 @@ export function createHostedNativeSessionController(input: {
     const requestStartedAt = readClock();
     const requestClockEpoch = clock.epoch;
     if (abort.signal.aborted) throw abort.error();
-    const expectedSurfaceId =
-      session.authority?.public.surfaceId ?? session.requestedSurfaceId;
-    const response = await fetchResponse(
-      hostedBinding,
-      session,
-      expectedSurfaceId,
-      abort,
-    );
+    const expectedSurfaceId = session.authority?.public.surfaceId ?? session.requestedSurfaceId;
+    const response = await fetchResponse(hostedBinding, session, expectedSurfaceId, abort);
     const source = await readBoundedResponse(response, abort);
     let body: unknown;
     try {
@@ -509,12 +502,7 @@ export function createHostedNativeSessionController(input: {
       throw new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_INVALID');
     }
 
-    const payload = parseSuccess(
-      body,
-      hostedBinding,
-      session.sessionId,
-      expectedSurfaceId,
-    );
+    const payload = parseSuccess(body, hostedBinding, session.sessionId, expectedSurfaceId);
     if (session.lastServerTime !== null && payload.serverTimeMs < session.lastServerTime) {
       throw new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_INVALID');
     }
@@ -1157,20 +1145,16 @@ class SessionAbortController {
   readonly #listeners = new Set<() => void>();
 
   constructor() {
-    const controller = this;
+    const isAborted = () => this.#aborted;
     this.signal = Object.freeze({
       get aborted() {
-        return controller.#aborted;
+        return isAborted();
       },
-      addEventListener(
-        type: 'abort',
-        listener: () => void,
-        _options?: {once?: boolean},
-      ) {
-        if (type === 'abort' && !controller.#aborted) controller.#listeners.add(listener);
+      addEventListener: (type: 'abort', listener: () => void, _options?: {once?: boolean}) => {
+        if (type === 'abort' && !this.#aborted) this.#listeners.add(listener);
       },
-      removeEventListener(type: 'abort', listener: () => void) {
-        if (type === 'abort') controller.#listeners.delete(listener);
+      removeEventListener: (type: 'abort', listener: () => void) => {
+        if (type === 'abort') this.#listeners.delete(listener);
       },
     });
   }

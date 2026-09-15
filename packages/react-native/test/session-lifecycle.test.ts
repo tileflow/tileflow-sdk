@@ -52,10 +52,7 @@ test('9,999/10,000 eligible-request races rotate atomically at the transport bou
   for (let index = 1; index < 9_999; index += 1) await controller.acquire();
   assert.equal(queue.calls.length, 1);
 
-  const [tenThousandth, rotated] = await Promise.all([
-    controller.acquire(),
-    controller.acquire(),
-  ]);
+  const [tenThousandth, rotated] = await Promise.all([controller.acquire(), controller.acquire()]);
   assert.equal(tenThousandth?.sessionId, 'ses_test_1');
   assert.equal(rotated?.sessionId, 'ses_test_2');
   assert.equal(queue.calls.length, 2);
@@ -97,7 +94,10 @@ test('six-hour rotation is checked before admission and concurrent callers share
     ),
   );
   const results = await Promise.all([one, two]);
-  assert.equal(results.every((value) => value?.sessionId === 'ses_test_2'), true);
+  assert.equal(
+    results.every((value) => value?.sessionId === 'ses_test_2'),
+    true,
+  );
 });
 
 test('background preserves identity; resume refreshes near-expiry/expired authority but does not depend on timers', async () => {
@@ -156,10 +156,7 @@ test('two controllers with identical inputs never share session identity, work, 
     response(201, success({sessionId: 'ses_a_1', surfaceId: 'default'})),
   ]);
   const bFetch = createFetchQueue([
-    response(
-      201,
-      success({sessionId: 'ses_b_1', surfaceId: 'default', grant: `${grant}b`}),
-    ),
+    response(201, success({sessionId: 'ses_b_1', surfaceId: 'default', grant: `${grant}b`})),
   ]);
   const a = createHostedNativeSessionController({
     binding: hosted(),
@@ -294,14 +291,7 @@ test('mutation attempts cannot alter retained authority or safe snapshots', asyn
   assert.equal(Object.isFrozen(snapshot), true);
   assert.throws(() => Object.assign(snapshot, {status: 'disposed'}));
   const again = await controller.acquire();
-  assert.deepEqual(again?.resourceScopes, [
-    'style',
-    'tilejson',
-    'tile',
-    'sprite',
-    'glyph',
-    'font',
-  ]);
+  assert.deepEqual(again?.resourceScopes, ['style', 'tilejson', 'tile', 'sprite', 'glyph', 'font']);
   assert.equal(again?.resourceOrigins[0], 'https://api.tileflow.test');
   assertSafeState(controller.state, [credential, grant]);
 });

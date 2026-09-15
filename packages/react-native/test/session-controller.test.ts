@@ -79,10 +79,7 @@ test('constructs only the accepted native bootstrap request and publishes secret
     sessionId: 'ses_test_1',
     surfaceId: 'store-locator',
   });
-  assert.equal(
-    Object.keys(call.init).sort().join(','),
-    'body,credentials,headers,method,signal',
-  );
+  assert.equal(Object.keys(call.init).sort().join(','), 'body,credentials,headers,method,signal');
   const signal = call.init.signal as typeof call.init.signal & {fire?: () => void};
   assert.equal(Object.isFrozen(signal), true);
   assert.equal(signal.fire, undefined);
@@ -121,8 +118,7 @@ test('normalizes Surface and rejects malformed credentials and non-canonical tru
           sessionIdFactory: createIds(),
         }),
       (error: unknown) =>
-        error instanceof HostedNativeSessionError &&
-        error.code === 'NATIVE_SESSION_INPUT_INVALID',
+        error instanceof HostedNativeSessionError && error.code === 'NATIVE_SESSION_INPUT_INVALID',
     );
   }
   assert.equal(queue.calls.length, 0);
@@ -250,10 +246,7 @@ test('binds every success response to the exact Surface sent in that bootstrap o
     now: createClock().now,
     sessionIdFactory: createIds(),
   });
-  assert.equal(
-    (await errorCode(firstMismatch.acquire())).code,
-    'NATIVE_SESSION_RESPONSE_INVALID',
-  );
+  assert.equal((await errorCode(firstMismatch.acquire())).code, 'NATIVE_SESSION_RESPONSE_INVALID');
 
   const clock = createClock();
   const queue = createFetchQueue([
@@ -276,10 +269,7 @@ test('binds every success response to the exact Surface sent in that bootstrap o
   });
   await controller.acquire();
   clock.advance(14 * 60_000 + 31_000);
-  assert.equal(
-    (await errorCode(controller.acquire())).code,
-    'NATIVE_SESSION_RESPONSE_INVALID',
-  );
+  assert.equal((await errorCode(controller.acquire())).code, 'NATIVE_SESSION_RESPONSE_INVALID');
   assert.deepEqual(JSON.parse(queue.calls[1].init.body), {
     mapId,
     sessionId: 'ses_test_1',
@@ -357,7 +347,10 @@ test('coalesces concurrent bootstrap and ordinary refresh while preserving the e
     controller.acquire(),
   ]);
   assert.equal(queue.calls.length, 2);
-  assert.equal(refreshes.every((value) => value?.sessionId === 'ses_test_1'), true);
+  assert.equal(
+    refreshes.every((value) => value?.sessionId === 'ses_test_1'),
+    true,
+  );
   assert.deepEqual(JSON.parse(queue.calls[1].init.body), {
     mapId,
     sessionId: 'ses_test_1',
@@ -372,10 +365,7 @@ test('retries only the exact restart response once with a new session identity',
     retryWithNewSession: true,
     sessionId: 'ses_test_1',
   });
-  const queue = createFetchQueue([
-    restart,
-    response(201, success({sessionId: 'ses_test_2'})),
-  ]);
+  const queue = createFetchQueue([restart, response(201, success({sessionId: 'ses_test_2'}))]);
   const controller = createHostedNativeSessionController({
     binding: hosted(),
     fetch: queue.fetch,
@@ -424,10 +414,7 @@ test('retries only the exact restart response once with a new session identity',
 test('direct sources never bootstrap, same Hosted binding retains identity, and a different Map cannot reuse authority', async () => {
   const queue = createFetchQueue([
     response(201, success()),
-    response(
-      201,
-      success({mapId: 'map_abcdef0123456789', sessionId: 'ses_test_2'}),
-    ),
+    response(201, success({mapId: 'map_abcdef0123456789', sessionId: 'ses_test_2'})),
   ]);
   const controller = createHostedNativeSessionController({
     binding: {kind: 'direct'},

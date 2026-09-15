@@ -81,9 +81,9 @@ export function response(
     nullBody?: boolean;
   } = {},
 ): HostedNativeSessionFetchResponse {
-  const bytes =
-    options.chunks ??
-    [new TextEncoder().encode(typeof body === 'string' ? body : JSON.stringify(body))];
+  const bytes = options.chunks ?? [
+    new TextEncoder().encode(typeof body === 'string' ? body : JSON.stringify(body)),
+  ];
   let index = 0;
   let cancelled = false;
   return {
@@ -141,10 +141,7 @@ export function createFetchQueue(
   return {calls, fetch, waitForCalls};
 }
 
-export function assertSafeState(
-  state: HostedNativeSessionState,
-  secrets: readonly string[],
-) {
+export function assertSafeState(state: HostedNativeSessionState, secrets: readonly string[]) {
   const serialized = JSON.stringify(state);
   for (const secret of secrets) assert.equal(serialized.includes(secret), false, serialized);
   assert.equal(serialized.includes('https://'), false, serialized);

@@ -1,6 +1,6 @@
 # @tileflow/react-native
 
-Pre-release TypeScript contracts, camera ownership and internal appearance adaptation for Tileflow on React Native.
+Pre-release TypeScript contracts, camera/session ownership and internal appearance adaptation for Tileflow on React Native.
 This is a **private workspace** package. It is not in the publication catalog and does not export a `Map` component.
 Its package entry exports types only; importing that entry does not load React Native, MapLibre,
 Core's runtime, a renderer, or a network adapter.
@@ -236,16 +236,52 @@ Observer exceptions and reentrant updates/disposal cannot publish an obsolete re
 or start an echo loop. No timers, subscriptions, source acquisition or native imports are owned by
 the camera controller.
 
+## Internal Hosted session state
+
+`createHostedNativeSessionController()` is an internal build artifact for the future owner of one
+real native Map instance. It is not a package export or a public Hosted client. Direct/unmanaged
+MapLibre bindings return no Tileflow authority and never bootstrap a session. A Hosted binding owns
+one session identity; separate controller instances never share that identity, counters or work.
+
+The controller receives its fetch adapter, clock and session-ID factory as dependencies. Bootstrap
+posts only `mapId`, `sessionId` and normalized `surfaceId` to the trusted canonical HTTPS API origin,
+using `X-Tileflow-Mobile-Client` for the exact publishable credential. It adds no query authority,
+Origin, Referer, Authorization, Cookie or browser attribution. The response is streamed and bounded
+to 65,536 actual UTF-8 bytes, must be `201`/`no-store`, and is rejected unless its native bindings,
+server times, resource origins/scopes and tileset inventory satisfy the bounded server contract.
+
+`acquire()` is the internal transport-facing barrier. Bootstrap and refresh work is single-flight,
+refresh preserves the session and server-returned Surface, and only the exact commercial restart
+response may replace the session once. Six-hour and 10,000-eligible-request rotation is evaluated
+at this acquisition boundary before authority is returned. Backgrounding does not create a new
+session; resume and every acquisition re-evaluate lifetime and rotation without depending on a
+timer firing while JavaScript is suspended. Server time bounds grant lifetime, and a detected local
+clock rollback forces fresh authority rather than extending an existing grant.
+
+The sensitive native grant is available only on the internal authority returned to the future
+transport, where it will be carried as `X-Tileflow-Native-Grant`. Its property is non-enumerable so
+ordinary serialization does not copy it. Observable controller state and subscriber callbacks are
+frozen diagnostic snapshots containing only status, stable error code/kind and non-secret
+identities; they contain no credential, grant, resource URL, raw response or native exception.
+Replacement and disposal abort owned work, disposal is idempotent, and late completions cannot
+revive retired state.
+
+This unit does not install the grant on renderer requests. It adds no Map component, hook, MapLibre
+import, request interceptor, URL rewrite, Swift/Kotlin bridge, annotation/UI surface or public
+`createTileflowMobileClient` API. Per-map transport ownership and native renderer integration remain
+separate qualification work.
+
 ## Validation boundary
 
 The tests cover the type-only entry, exact peers/private status, isolated appearance lifecycle,
-safe source projection, delegated view composition, camera ownership and package graph boundaries.
-Compile-only consumers use the built public declarations and reject mixed camera modes, incomplete
-controlled views and owned props/lifecycle callbacks. Command promises, prop delivery and observations
-are injected; permuted completions, settlement, reentrant callbacks and mutation attacks do not need
-timing-based tests.
+safe source projection, delegated view composition, camera ownership, internal Hosted session
+state and package graph boundaries. Compile-only consumers use the built public declarations and
+reject mixed camera modes, incomplete controlled views and owned props/lifecycle callbacks. Camera
+command promises, prop delivery and observations are injected; session fetch, clock and identity
+inputs are also injected so lifecycle, rotation, cancellation and adversarial response behavior can
+be deterministic without timer-based tests.
 
 These checks do not run a native renderer or establish Hermes/device acceptance for a React Native
-component. This package supplies no Swift/Kotlin bridge, Expo plugin, Metro configuration, transport,
-Hosted client, sessions, annotations, location, screenshots or UI. Full renderer readiness and mobile
-service availability are not implied by this contract foundation.
+component. This package supplies no Swift/Kotlin bridge, Expo plugin, Metro configuration, native
+transport/interceptor, public Hosted client, annotations, location, screenshots or UI. Full renderer
+readiness and mobile service availability are not implied by this contract foundation.

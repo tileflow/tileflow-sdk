@@ -560,6 +560,27 @@ export function createHostedNativeSessionController(input: {
 		});
 	}
 
+	async function acquireAuthority(session: SessionRecord, at: number) {
+		let candidate = session;
+		let checkedAt = at;
+		for (let attempt = 0; attempt < 2; attempt += 1) {
+			const resolved = await ensureAuthority(candidate, checkedAt);
+			checkedAt = readClock();
+			if (
+				resolved.authority.clockEpoch === clock.epoch &&
+				resolved.authority.validUntil > checkedAt
+			) {
+				return resolved.authority.public;
+			}
+			resolved.session.authority = null;
+			candidate = resolved.session;
+		}
+		const error = new HostedNativeSessionError('NATIVE_SESSION_UNAVAILABLE');
+		candidate.error = Object.freeze({code: error.code, kind: error.kind});
+		publishSession(candidate, 'error', candidate.error);
+		throw error;
+	}
+
 	return Object.freeze({
 		get state() {
 			return state;
@@ -575,15 +596,7 @@ export function createHostedNativeSessionController(input: {
 			session.requestCount += 1;
 			session.pendingAdmissions += 1;
 			try {
-				const resolved = await ensureAuthority(session, at);
-				if (
-					resolved.authority.clockEpoch !== clock.epoch ||
-					resolved.authority.validUntil <= readClock()
-				) {
-					resolved.session.authority = null;
-					return (await ensureAuthority(resolved.session, readClock())).authority.public;
-				}
-				return resolved.authority.public;
+				return await acquireAuthority(session, at);
 			} finally {
 				session.pendingAdmissions = Math.max(0, session.pendingAdmissions - 1);
 			}
@@ -753,8 +766,7 @@ function parseSuccess(value: unknown, binding: HostedBinding, expectedSessionId:
 	) {
 		throw new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_INVALID');
 	}
-	const authority = Object.freeze({
-		grant: value.grant,
+	const authority = {
 		mapId: value.mapId,
 		sessionId: value.sessionId,
 		surfaceId: value.surfaceId,
@@ -769,8 +781,14 @@ function parseSuccess(value: unknown, binding: HostedBinding, expectedSessionId:
 		resourceOrigins: Object.freeze(parseOrigins(value.resourceOrigins)),
 		resourceScopes: Object.freeze(parseScopes(value.resourceScopes)),
 		tilesetIds: Object.freeze(parseTilesets(value.tilesetIds)),
-	}) satisfies HostedNativeSessionAuthority;
-	return {authority, serverTimeMs, expiresAtMs};
+	} as Omit<HostedNativeSessionAuthority, 'grant'>;
+	const withGrant = Object.defineProperty(authority, 'grant', {
+		value: value.grant,
+		enumerable: false,
+		configurable: false,
+		writable: false,
+	}) as HostedNativeSessionAuthority;
+	return {authority: Object.freeze(withGrant), serverTimeMs, expiresAtMs};
 }
 
 function parseOrigins(value: unknown) {
@@ -956,8 +974,11 @@ async function cancelResponse(response: HostedNativeSessionFetchResponse) {
 }
 
 class SessionAbortSignal implements HostedNativeSessionAbortSignal {
-	aborted = false;
+	#aborted = false;
 	readonly #listeners = new Set<() => void>();
+	get aborted() {
+		return this.#aborted;
+	}
 	addEventListener(type: 'abort', listener: () => void) {
 		if (type === 'abort') this.#listeners.add(listener);
 	}
@@ -965,8 +986,8 @@ class SessionAbortSignal implements HostedNativeSessionAbortSignal {
 		if (type === 'abort') this.#listeners.delete(listener);
 	}
 	fire() {
-		if (this.aborted) return;
-		this.aborted = true;
+		if (this.#aborted) return;
+		this.#aborted = true;
 		for (const listener of [...this.#listeners]) {
 			try {
 				listener();

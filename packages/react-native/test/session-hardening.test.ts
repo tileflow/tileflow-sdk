@@ -140,6 +140,39 @@ test('unmetered disposition is accepted only with disabled metering', async () =
 	assert.equal(await rejectedCode(controller.acquire()), 'NATIVE_SESSION_RESPONSE_INVALID');
 });
 
+test('constructor captures injected dependencies so later caller mutation cannot retarget session work', async () => {
+	const queue = createFetchQueue([response(201, success())]);
+	const clock = createClock();
+	const dependencies = {
+		binding: hosted(),
+		fetch: queue.fetch,
+		now: clock.now,
+		sessionIdFactory: createIds(),
+	};
+	const controller = createHostedNativeSessionController(dependencies);
+	dependencies.fetch = async () => { throw new Error(credential); };
+	dependencies.now = () => { throw new Error(grant); };
+	dependencies.sessionIdFactory = () => credential;
+	const authority = await controller.acquire();
+	assert.equal(authority?.sessionId, 'ses_test_1');
+	assert.equal(queue.calls.length, 1);
+});
+
+test('rotation and restart cannot reuse an already issued session identity', async () => {
+	const clock = createClock();
+	const queue = createFetchQueue([response(201, success({sessionId: 'ses_same'}))]);
+	const controller = createHostedNativeSessionController({
+		binding: hosted(),
+		fetch: queue.fetch,
+		now: clock.now,
+		sessionIdFactory: () => 'ses_same',
+	});
+	await controller.acquire();
+	clock.advance(6 * 60 * 60 * 1000);
+	assert.equal(await rejectedCode(controller.acquire()), 'NATIVE_SESSION_INPUT_INVALID');
+	assert.equal(queue.calls.length, 1);
+});
+
 test('injected clock and fetch failures are normalized without exposing causes or authority material', async () => {
 	assert.throws(
 		() => createHostedNativeSessionController({

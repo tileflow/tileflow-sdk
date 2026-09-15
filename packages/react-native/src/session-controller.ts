@@ -1,4 +1,4 @@
-import {resolveTileflowNativeManifestUrl, TileflowNativeUrlError} from '@tileflow/core/native';
+import {resolveTileflowNativeManifestUrl} from '@tileflow/core/native';
 
 const RESPONSE_BYTE_LIMIT = 65_536;
 const GRANT_CHARACTER_LIMIT = 24_576;
@@ -43,6 +43,7 @@ const SUCCESS_KEYS = new Set([
 	'resourceScopes',
 	'tilesetIds',
 ]);
+const RESTART_KEYS = new Set(['code', 'error', 'retryWithNewSession', 'sessionId']);
 
 export type NativeSessionResourceScope =
 	| 'style'
@@ -176,8 +177,6 @@ export type HostedNativeSessionState =
 		credentialId: string;
 		credentialRevision: number;
 		deliveryPolicyRevision: number;
-		expiresAt: string;
-		requestCount: number;
 	}>
 	| Readonly<{
 		status: 'error';
@@ -211,6 +210,7 @@ type Binding = HostedBinding | Readonly<{kind: 'direct'}>;
 type StoredAuthority = Readonly<{
 	public: HostedNativeSessionAuthority;
 	validUntil: number;
+	clockEpoch: number;
 }>;
 
 type SessionOperation = {
@@ -220,15 +220,19 @@ type SessionOperation = {
 
 type SessionRecord = {
 	authority: StoredAuthority | null;
+	error: SafeError | null;
+	lastServerTime: number | null;
 	operation: SessionOperation | null;
 	pendingAdmissions: number;
+	redirect: SessionRecord | null;
 	requestCount: number;
 	requestedSurfaceId: string;
+	serverStartedAt: number | null;
 	sessionId: string;
 	startedAt: number;
 };
 
-type ClockState = {lastWall: number; logical: number};
+type ClockState = {lastWall: number; logical: number; epoch: number};
 
 export function createHostedNativeSessionController(input: {
 	binding: HostedNativeSessionBinding;
@@ -242,7 +246,7 @@ export function createHostedNativeSessionController(input: {
 	let binding = normalizeBinding(input.binding);
 	let lifecycle: Lifecycle = 'foreground';
 	let disposed = false;
-	const clock: ClockState = {lastWall: readWallClock(input.now), logical: 0};
+	const clock: ClockState = {lastWall: readWallClock(input.now), logical: 0, epoch: 0};
 	let activeSession: SessionRecord | null = binding.kind === 'hosted' ? createSession(binding.surfaceId, 0) : null;
 	let state = snapshotIdle(binding, activeSession, lifecycle);
 	const listeners = new Set<(state: HostedNativeSessionState) => void>();
@@ -250,7 +254,8 @@ export function createHostedNativeSessionController(input: {
 
 	function readClock() {
 		const wall = readWallClock(input.now);
-		clock.logical += Math.max(0, wall - clock.lastWall);
+		if (wall < clock.lastWall) clock.epoch += 1;
+		else clock.logical += wall - clock.lastWall;
 		clock.lastWall = wall;
 		return clock.logical;
 	}
@@ -267,10 +272,14 @@ export function createHostedNativeSessionController(input: {
 		}
 		return {
 			authority: null,
+			error: null,
+			lastServerTime: null,
 			operation: null,
 			pendingAdmissions: 0,
+			redirect: null,
 			requestCount: 0,
 			requestedSurfaceId: surfaceId,
+			serverStartedAt: null,
 			sessionId,
 			startedAt,
 		};
@@ -291,7 +300,7 @@ export function createHostedNativeSessionController(input: {
 	function publishSession(
 		session: SessionRecord,
 		status: 'idle' | 'loading' | 'ready' | 'error',
-		error?: HostedNativeSessionError,
+		error?: SafeError,
 	) {
 		if (disposed || activeSession !== session || binding.kind !== 'hosted') return;
 		if (status === 'ready' && session.authority) {
@@ -306,8 +315,6 @@ export function createHostedNativeSessionController(input: {
 				credentialId: authority.credentialId,
 				credentialRevision: authority.credentialRevision,
 				deliveryPolicyRevision: authority.deliveryPolicyRevision,
-				expiresAt: authority.expiresAt,
-				requestCount: session.requestCount,
 			}));
 			return;
 		}
@@ -318,7 +325,7 @@ export function createHostedNativeSessionController(input: {
 				lifecycle,
 				mapId: binding.mapId,
 				sessionId: session.sessionId,
-				error: Object.freeze({code: error.code, kind: error.kind}),
+				error: Object.freeze({...error}),
 			}));
 			return;
 		}
@@ -339,8 +346,32 @@ export function createHostedNativeSessionController(input: {
 		publishSession(activeSession, 'idle');
 	}
 
+	function redirectSession(session: SessionRecord, at: number) {
+		const replacement = createSession(session.authority?.public.surfaceId ?? session.requestedSurfaceId, at);
+		replacement.requestCount = Math.max(1, session.pendingAdmissions);
+		replacement.operation = session.operation;
+		session.redirect = replacement;
+		activeSession = replacement;
+		publishSession(replacement, 'loading');
+		return replacement;
+	}
+
+	function latestSession(session: SessionRecord) {
+		const seen = new Set<SessionRecord>();
+		let current = session;
+		while (current.redirect && !seen.has(current.redirect)) {
+			seen.add(current);
+			current = current.redirect;
+		}
+		return current;
+	}
+
 	async function ensureAuthority(session: SessionRecord, at: number) {
-		if (session.authority && session.authority.validUntil - at > REFRESH_MARGIN_MS) {
+		if (
+			session.authority &&
+			session.authority.clockEpoch === clock.epoch &&
+			session.authority.validUntil - at > REFRESH_MARGIN_MS
+		) {
 			return {authority: session.authority, session};
 		}
 		if (session.operation) return session.operation.promise;
@@ -352,12 +383,14 @@ export function createHostedNativeSessionController(input: {
 		operation = {
 			abort,
 			promise: Promise.resolve().then(async () => {
+				session.error = null;
 				publishSession(session, 'loading');
 				if (abort.signal.aborted) throw abort.error();
 				try {
-					const result = await bootstrap(session, operationBinding, abort, true);
+					const result = await bootstrap(session, operationBinding, abort, true, true);
 					if (abort.signal.aborted) throw abort.error();
 					result.session.authority = result.authority;
+					result.session.error = null;
 					if (activeSession === result.session) {
 						publishSession(result.session, 'ready');
 						if (abort.signal.aborted) throw abort.error();
@@ -365,14 +398,21 @@ export function createHostedNativeSessionController(input: {
 					return result;
 				} catch (error) {
 					const normalized = normalizeError(error);
+					const target = latestSession(session);
 					if (normalized.code !== 'NATIVE_SESSION_REPLACED' && normalized.code !== 'NATIVE_SESSION_DISPOSED') {
-						publishSession(session, 'error', normalized);
+						target.error = Object.freeze({code: normalized.code, kind: normalized.kind});
+						publishSession(target, 'error', target.error);
 					}
 					throw normalized;
 				} finally {
 					operations.delete(abort);
-					if (session.operation === operation) session.operation = null;
-					if (activeSession && activeSession !== session && activeSession.operation === operation) activeSession.operation = null;
+					let current: SessionRecord | null = session;
+					const seen = new Set<SessionRecord>();
+					while (current && !seen.has(current)) {
+						seen.add(current);
+						if (current.operation === operation) current.operation = null;
+						current = current.redirect;
+					}
 				}
 			}),
 		};
@@ -385,6 +425,7 @@ export function createHostedNativeSessionController(input: {
 		hostedBinding: HostedBinding,
 		abort: SessionAbortController,
 		allowRestart: boolean,
+		allowServerAgeRotation: boolean,
 	): Promise<{authority: StoredAuthority; session: SessionRecord}> {
 		const response = await fetchResponse(hostedBinding, session, abort);
 		const source = await readBoundedResponse(response, abort);
@@ -394,38 +435,47 @@ export function createHostedNativeSessionController(input: {
 		} catch {
 			throw new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_JSON_INVALID');
 		}
-		if (
-			response.status === 409 &&
-			allowRestart &&
-			isRecord(body) &&
-			body.code === 'COMMERCIAL_SESSION_RESTART_REQUIRED' &&
-			body.retryWithNewSession === true &&
-			body.sessionId === session.sessionId
-		) {
-			if (activeSession !== session || binding.kind !== 'hosted' || !sameHostedBinding(binding, hostedBinding)) {
-				throw new HostedNativeSessionError('NATIVE_SESSION_REPLACED');
-			}
-			const replacement = createSession(
-				session.authority?.public.surfaceId ?? session.requestedSurfaceId,
-				readClock(),
-			);
-			replacement.requestCount = Math.max(1, session.pendingAdmissions);
-			activeSession = replacement;
-			replacement.operation = session.operation;
-			publishSession(replacement, 'loading');
+		if (response.status === 409 && allowRestart && isExactRestart(body, session.sessionId)) {
+			assertCurrentSession(session, hostedBinding);
+			const replacement = redirectSession(session, readClock());
 			if (abort.signal.aborted) throw abort.error();
-			return bootstrap(replacement, hostedBinding, abort, false);
+			return bootstrap(replacement, hostedBinding, abort, false, false);
 		}
 		if (response.status !== 201) throw statusError(response.status);
 		if (!hasNoStore(response.headers.get('cache-control'))) {
 			throw new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_INVALID');
 		}
 		const payload = parseSuccess(body, hostedBinding, session.sessionId);
+		if (session.lastServerTime !== null && payload.serverTimeMs < session.lastServerTime) {
+			throw new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_INVALID');
+		}
+		if (
+			allowServerAgeRotation &&
+			session.serverStartedAt !== null &&
+			payload.serverTimeMs - session.serverStartedAt >= ROTATION_AGE_MS
+		) {
+			assertCurrentSession(session, hostedBinding);
+			const replacement = redirectSession(session, readClock());
+			if (abort.signal.aborted) throw abort.error();
+			return bootstrap(replacement, hostedBinding, abort, false, false);
+		}
+		session.serverStartedAt ??= payload.serverTimeMs;
+		session.lastServerTime = payload.serverTimeMs;
 		const ttl = payload.expiresAtMs - payload.serverTimeMs;
 		return {
-			authority: Object.freeze({public: payload.authority, validUntil: readClock() + ttl}),
+			authority: Object.freeze({
+				public: payload.authority,
+				validUntil: readClock() + ttl,
+				clockEpoch: clock.epoch,
+			}),
 			session,
 		};
+	}
+
+	function assertCurrentSession(session: SessionRecord, expectedBinding: HostedBinding) {
+		if (activeSession !== session || binding.kind !== 'hosted' || !sameHostedBinding(binding, expectedBinding)) {
+			throw new HostedNativeSessionError('NATIVE_SESSION_REPLACED');
+		}
 	}
 
 	async function fetchResponse(hostedBinding: HostedBinding, session: SessionRecord, abort: SessionAbortController) {
@@ -468,6 +518,25 @@ export function createHostedNativeSessionController(input: {
 		if (binding.kind === 'direct' || !activeSession) {
 			return Object.freeze({status: 'idle', source: 'direct', lifecycle});
 		}
+		if (activeSession.operation) {
+			return Object.freeze({
+				status: 'loading',
+				source: 'hosted',
+				lifecycle,
+				mapId: binding.mapId,
+				sessionId: activeSession.sessionId,
+			});
+		}
+		if (activeSession.error) {
+			return Object.freeze({
+				status: 'error',
+				source: 'hosted',
+				lifecycle,
+				mapId: binding.mapId,
+				sessionId: activeSession.sessionId,
+				error: Object.freeze({...activeSession.error}),
+			});
+		}
 		if (activeSession.authority) {
 			const authority = activeSession.authority.public;
 			return Object.freeze({
@@ -480,12 +549,10 @@ export function createHostedNativeSessionController(input: {
 				credentialId: authority.credentialId,
 				credentialRevision: authority.credentialRevision,
 				deliveryPolicyRevision: authority.deliveryPolicyRevision,
-				expiresAt: authority.expiresAt,
-				requestCount: activeSession.requestCount,
 			});
 		}
 		return Object.freeze({
-			status: activeSession.operation ? 'loading' : 'idle',
+			status: 'idle',
 			source: 'hosted',
 			lifecycle,
 			mapId: binding.mapId,
@@ -509,7 +576,10 @@ export function createHostedNativeSessionController(input: {
 			session.pendingAdmissions += 1;
 			try {
 				const resolved = await ensureAuthority(session, at);
-				if (resolved.authority.validUntil <= readClock()) {
+				if (
+					resolved.authority.clockEpoch !== clock.epoch ||
+					resolved.authority.validUntil <= readClock()
+				) {
 					resolved.session.authority = null;
 					return (await ensureAuthority(resolved.session, readClock())).authority.public;
 				}
@@ -540,6 +610,7 @@ export function createHostedNativeSessionController(input: {
 			if (
 				activeSession !== previous ||
 				!activeSession.authority ||
+				activeSession.authority.clockEpoch !== clock.epoch ||
 				activeSession.authority.validUntil - at <= REFRESH_MARGIN_MS
 			) {
 				await ensureAuthority(activeSession, at);
@@ -616,12 +687,9 @@ function canonicalOrigin(value: unknown): string {
 		const resolved = resolveTileflowNativeManifestUrl(value);
 		if (!resolved.endsWith('/')) throw new Error();
 		const origin = resolved.slice(0, -1);
-		if (value !== origin && value !== `${origin}/`) throw new Error();
+		if (value !== origin) throw new Error();
 		return origin;
-	} catch (error) {
-		if (error instanceof TileflowNativeUrlError || error instanceof Error) {
-			throw new HostedNativeSessionError('NATIVE_SESSION_INPUT_INVALID');
-		}
+	} catch {
 		throw new HostedNativeSessionError('NATIVE_SESSION_INPUT_INVALID');
 	}
 }
@@ -715,7 +783,7 @@ function parseOrigins(value: unknown) {
 			const resolved = resolveTileflowNativeManifestUrl(item);
 			if (!resolved.endsWith('/')) throw new Error();
 			origin = resolved.slice(0, -1);
-			if (item !== origin && item !== `${origin}/`) throw new Error();
+			if (item !== origin) throw new Error();
 		} catch {
 			throw new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_INVALID');
 		}
@@ -754,6 +822,20 @@ function parseExactIso(value: unknown) {
 
 function positiveRevision(value: unknown): value is number {
 	return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function isExactRestart(value: unknown, expectedSessionId: string) {
+	return (
+		isRecord(value) &&
+		Object.keys(value).length === RESTART_KEYS.size &&
+		Object.keys(value).every((key) => RESTART_KEYS.has(key)) &&
+		value.code === 'COMMERCIAL_SESSION_RESTART_REQUIRED' &&
+		typeof value.error === 'string' &&
+		value.error.length > 0 &&
+		value.error.length <= 500 &&
+		value.retryWithNewSession === true &&
+		value.sessionId === expectedSessionId
+	);
 }
 
 async function readBoundedResponse(response: HostedNativeSessionFetchResponse, abort: SessionAbortController) {

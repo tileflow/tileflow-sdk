@@ -3,6 +3,7 @@ import {mkdir, mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
+import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {TileflowWebpackPlugin} from '../src/index';
 
@@ -399,3 +400,73 @@ type RuntimeManifest = {
   >;
   version: 1;
 };
+
+test('the Webpack production build emits the exact locked icon composition', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-webpack-icon-sets-'));
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  await createTileflowIconSetProject(cwd);
+
+  let thisCompilation: ((compilation: any) => void) | undefined;
+  let processAssets: (() => Promise<void>) | undefined;
+  const emitted = new Map<string, unknown>();
+  class RawSource {
+    constructor(readonly value: unknown) {}
+  }
+  const compiler = {
+    context: cwd,
+    hooks: {
+      afterCompile: {tapPromise: () => undefined},
+      thisCompilation: {
+        tap: (_name: string, callback: typeof thisCompilation) => (thisCompilation = callback),
+      },
+      watchClose: {tap: () => undefined},
+    },
+    options: {output: {path: join(cwd, 'dist'), publicPath: '/app/'}},
+    webpack: {
+      Compilation: {PROCESS_ASSETS_STAGE_ADDITIONAL: 1},
+      sources: {RawSource},
+    },
+  };
+
+  new TileflowWebpackPlugin({base: '/maps', icons: {cacheRoot: cwd, offline: true}}).apply(
+    compiler as never,
+  );
+  const compilation = {
+    contextDependencies: new Set<string>(),
+    emitAsset: (name: string, source: unknown) => emitted.set(name, source),
+    fileDependencies: new Set<string>(),
+    hooks: {
+      processAssets: {
+        tapPromise: (_options: unknown, callback: () => Promise<void>) =>
+          (processAssets = callback),
+      },
+    },
+  };
+  assert.ok(thisCompilation);
+  thisCompilation(compilation);
+  assert.ok(processAssets);
+  await processAssets();
+
+  const buildManifest = JSON.parse(
+    String((emitted.get('maps/build-manifest.json') as RawSource).value),
+  ) as {
+    maps: Record<
+      string,
+      {
+        mapRevisionSchemaVersion?: number;
+        sourceAssets: {iconComposition?: {contributors: Array<{reference?: string}>}};
+      }
+    >;
+  };
+  assert.equal(buildManifest.maps.main?.mapRevisionSchemaVersion, 2);
+  assert.deepEqual(
+    buildManifest.maps.main?.sourceAssets.iconComposition?.contributors.map(
+      (contributor) => contributor.reference ?? 'local',
+    ),
+    ['@acme/brand', '@acme/transport', 'local'],
+  );
+  const sprite = JSON.parse(
+    String((emitted.get('maps/icons/main/sprite.json') as RawSource).value),
+  ) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(sprite).sort(), ['bus', 'hospital', 'shop']);
+});

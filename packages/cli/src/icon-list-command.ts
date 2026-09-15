@@ -9,25 +9,54 @@ import {
 import {
   inspectTileflowIconCatalogs,
   type TileflowIconCatalog,
+  type TileflowIconCatalogContributor,
   type TileflowIconCatalogInspection,
   type TileflowIconCatalogMap,
   TileflowIconCompilationError,
+  type TileflowIconResolutionOptions,
 } from '@tileflow/dev/icons';
+import type {TileflowIconCompositionV1} from '@tileflow/core';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 
-export type TileflowIconListJsonV2 = {
-  schemaVersion: 2;
+export type TileflowIconListJsonV3 = {
+  schemaVersion: 3;
   pathBase: 'cwd';
   maps: TileflowIconMapJson[];
 };
 
-export type TileflowIconSourceJson = {
-  id: string;
-  path: string;
-  format: 'jpeg' | 'png' | 'svg' | 'webp';
-  byteLength: number;
-  dimensions: {width: number; height: number} | null;
-};
+/** One declared contributor in exact authoring order, retained even when fully shadowed. */
+export type TileflowIconContributorJson =
+  | {
+      kind: 'local' | 'package';
+      label: string;
+      iconIds: string[];
+      insideWorkingTree: boolean;
+    }
+  | {
+      kind: 'icon-set';
+      label: string;
+      iconIds: string[];
+      reference: string;
+      version: number;
+    };
+
+export type TileflowIconSourceJson =
+  | {
+      kind: 'file';
+      id: string;
+      contributor: number;
+      path: string;
+      format: 'jpeg' | 'png' | 'svg' | 'webp';
+      byteLength: number;
+      dimensions: {width: number; height: number} | null;
+    }
+  | {
+      kind: 'icon-set';
+      id: string;
+      contributor: number;
+      reference: string;
+      version: number;
+    };
 
 export type TileflowIconReplacementJson = {
   id: string;
@@ -39,12 +68,14 @@ export type TileflowIconMapJson = {
   id: string;
   icons:
     | {
-        kind: 'directories';
-        directories: string[];
+        kind: 'sources';
+        contributors: TileflowIconContributorJson[];
         finalIds: string[];
         insideWorkingTree: boolean;
         replacements: TileflowIconReplacementJson[];
         packageHash: string;
+        /** Exact ordered shared dependencies; `null` when the map declares no Icon Set. */
+        composition: TileflowIconCompositionV1 | null;
         sources: TileflowIconSourceJson[];
       }
     | {
@@ -53,9 +84,11 @@ export type TileflowIconMapJson = {
 };
 
 type IconListOptions = {
+  cacheDir?: string;
   config: string;
   json?: boolean;
   map?: string;
+  offline?: boolean;
 };
 
 export function registerIconListCommand(
@@ -67,7 +100,9 @@ export function registerIconListCommand(
     .description('List each map icon directory composition as deterministic agent JSON')
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)
     .option('--map <id>', 'inspect one exact configured map')
-    .option('--json', 'print deterministic schema-version-2 JSON')
+    .option('--cache-dir <path>', 'verified Icon Set artifact cache root')
+    .option('--offline', 'fail a locked Icon Set cache miss instead of hydrating it')
+    .option('--json', 'print deterministic schema-version-3 JSON')
     .action(async (options: IconListOptions) => {
       if (!options.json) {
         console.error(
@@ -88,9 +123,9 @@ export function registerIconListCommand(
 
 export function createTileflowIconListJson(
   inspection: TileflowIconCatalogInspection,
-): TileflowIconListJsonV2 {
+): TileflowIconListJsonV3 {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     pathBase: 'cwd',
     maps: [...inspection.maps]
       .sort((left, right) => compareCodeUnits(left.name, right.name))
@@ -98,7 +133,7 @@ export function createTileflowIconListJson(
   };
 }
 
-export function serializeTileflowIconListJson(value: TileflowIconListJsonV2): string {
+export function serializeTileflowIconListJson(value: TileflowIconListJsonV3): string {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
@@ -115,9 +150,14 @@ async function runIconList(options: IconListOptions): Promise<void> {
     );
   }
 
+  const icons: TileflowIconResolutionOptions = {
+    ...(options.cacheDir ? {cacheRoot: options.cacheDir} : {}),
+    ...(options.offline ? {offline: true} : {}),
+  };
   const inspection = await inspectTileflowIconCatalogs(project, {
     baseDirectory: dirname(loaded.configFile),
     cwd: process.cwd(),
+    ...(Object.keys(icons).length > 0 ? {icons} : {}),
     ...(options.map ? {mapNames: [options.map]} : {}),
   });
   process.stdout.write(serializeTileflowIconListJson(createTileflowIconListJson(inspection)));
@@ -135,7 +175,7 @@ function createMapJson(
   const catalog = catalogs.find(
     (candidate) =>
       candidate.compiledPackage.contentHash === mapIcons.packageHash &&
-      sameStrings(candidate.directories, mapIcons.directories),
+      sameContributors(candidate.contributors, mapIcons.contributors),
   );
   if (!catalog) {
     throw new Error(`Missing inspected icon catalog for map ${map.name}`);
@@ -144,8 +184,8 @@ function createMapJson(
   return {
     id: map.name,
     icons: {
-      kind: 'directories',
-      directories: [...mapIcons.directories],
+      kind: 'sources',
+      contributors: mapIcons.contributors.map(createContributorJson),
       finalIds: [...mapIcons.iconIds],
       insideWorkingTree: catalog.insideWorkingTree,
       replacements: catalog.replacements.map((replacement) => ({
@@ -154,23 +194,62 @@ function createMapJson(
         winner: replacement.winner,
       })),
       packageHash: mapIcons.packageHash,
+      composition: mapIcons.composition,
       sources: [...catalog.icons]
         .sort((left, right) => compareCodeUnits(left.id, right.id))
-        .map((icon) => ({
-          id: icon.id,
-          path: icon.source.path,
-          format: icon.source.format,
-          byteLength: icon.source.byteLength,
-          dimensions: icon.source.dimensions
-            ? {width: icon.source.dimensions.width, height: icon.source.dimensions.height}
-            : null,
-        })),
+        .map(
+          (icon): TileflowIconSourceJson =>
+            icon.source.kind === 'icon-set'
+              ? {
+                  kind: 'icon-set',
+                  id: icon.id,
+                  contributor: icon.source.contributor,
+                  reference: icon.source.reference,
+                  version: icon.source.version,
+                }
+              : {
+                  kind: 'file',
+                  id: icon.id,
+                  contributor: icon.source.contributor,
+                  path: icon.source.path,
+                  format: icon.source.format,
+                  byteLength: icon.source.byteLength,
+                  dimensions: icon.source.dimensions
+                    ? {width: icon.source.dimensions.width, height: icon.source.dimensions.height}
+                    : null,
+                },
+        ),
     },
   };
 }
 
-function sameStrings(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+function createContributorJson(
+  contributor: TileflowIconCatalogContributor,
+): TileflowIconContributorJson {
+  return contributor.kind === 'icon-set'
+    ? {
+        kind: 'icon-set',
+        label: contributor.label,
+        iconIds: [...contributor.iconIds],
+        reference: contributor.reference,
+        version: contributor.version,
+      }
+    : {
+        kind: contributor.kind,
+        label: contributor.label,
+        iconIds: [...contributor.iconIds],
+        insideWorkingTree: contributor.insideWorkingTree,
+      };
+}
+
+function sameContributors(
+  left: readonly TileflowIconCatalogContributor[],
+  right: readonly TileflowIconCatalogContributor[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((contributor, index) => contributor.label === right[index]?.label)
+  );
 }
 
 function printIconListError(error: unknown): void {

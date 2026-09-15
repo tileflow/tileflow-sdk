@@ -4,6 +4,7 @@ import {
   defaultTileflowConfigPath,
   normalizeTileflowBasePath,
   type TileflowArtifactSession,
+  type TileflowIconResolutionOptions,
 } from '@tileflow/dev/artifacts';
 import {
   createTileflowDevRequestHandler,
@@ -15,6 +16,13 @@ export type TileflowNextRouteHandlerOptions = {
   base?: string;
   config?: string;
   cwd?: string;
+  /**
+   * Explicit shared Icon Set resolution settings.
+   *
+   * These choose the verified cache root, offline behavior, trusted delivery origins and the
+   * transport used to hydrate exact locked pins. No build resolves a catalog head.
+   */
+  icons?: TileflowIconResolutionOptions;
   onError?: (error: unknown) => void;
   routeBase?: string;
   styleBaseUrl?: string;
@@ -42,7 +50,10 @@ export function createTileflowRouteHandlers(
 ): TileflowNextRouteHandlers {
   const basePath = normalizeTileflowBasePath(options.base ?? '/tileflow');
   const routeBasePath = normalizeTileflowBasePath(options.routeBase ?? basePath);
-  const sharedKey = options.onError ? undefined : createSharedHandlerKey(options, basePath);
+  const sharedKey =
+    options.onError || options.icons?.fetch || options.icons?.signal
+      ? undefined
+      : createSharedHandlerKey(options, basePath);
   let shared = sharedKey ? sharedHandlers.get(sharedKey) : undefined;
   if (!shared) {
     shared = createSharedRouteHandler(options, basePath);
@@ -79,6 +90,7 @@ function createSharedRouteHandler(
     assetBaseUrl: basePath,
     config: options.config ?? defaultTileflowConfigPath,
     cwd: options.cwd,
+    ...(options.icons ? {icons: options.icons} : {}),
     styleBaseUrl: options.styleBaseUrl ?? basePath,
     apiBaseUrl: options.apiBaseUrl,
     watch: true,
@@ -109,6 +121,14 @@ function createSharedHandlerKey(
     basePath,
     config: resolve(cwd, options.config ?? defaultTileflowConfigPath),
     cwd,
+    // Different explicit Icon Set resolution settings must never share one session.
+    icons: options.icons
+      ? {
+          cacheRoot: options.icons.cacheRoot ?? null,
+          deliveryOrigins: options.icons.deliveryOrigins ?? null,
+          offline: options.icons.offline ?? null,
+        }
+      : null,
     styleBaseUrl: options.styleBaseUrl ?? basePath,
   });
 }

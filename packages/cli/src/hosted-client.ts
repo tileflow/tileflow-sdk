@@ -23,7 +23,12 @@ const maximumHostedRequestTimeoutMs = 60_000;
 
 export type HostedApi = {apiKey: string; apiUrl: string; mapId?: string};
 export type HostedCapabilityScope = 'static:write' | 'status:read' | 'styles:write';
-export type HostedTeamCapabilityScope = 'status:read' | 'tilesets:read' | 'tilesets:write';
+export type HostedTeamCapabilityScope =
+  | 'icons:read'
+  | 'icons:write'
+  | 'status:read'
+  | 'tilesets:read'
+  | 'tilesets:write';
 export type HostedRequestOptions = {
   fetch?: typeof globalThis.fetch;
   signal?: AbortSignal;

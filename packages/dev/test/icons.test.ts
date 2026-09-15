@@ -589,7 +589,7 @@ test('rejects symlink escapes, nested directories, unsafe SVG content, and sourc
     await assertIconIssue(
       () => compileTileflowIconPackages(localProject('./many'), {cwd, target: 'hosted'}),
       'maps.main.icons',
-      'more than 256 icons',
+      'at most 256 exports',
     );
 
     const largeDirectory = join(cwd, 'large');

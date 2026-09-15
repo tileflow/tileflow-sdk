@@ -65,10 +65,12 @@ test('safe observable state contains identities only and retains a bounded error
 });
 
 test('invalid Surface is normalized in the bootstrap body and response origins must be canonical origin strings', async () => {
-	const normalizedQueue = createFetchQueue([response(201, success({surfaceId: 'default'}))]);
-	const normalized = createHostedNativeSessionController({binding: hosted('INVALID SURFACE'), fetch: normalizedQueue.fetch, now: createClock().now, sessionIdFactory: createIds()});
-	await normalized.acquire();
-	assert.deepEqual(JSON.parse(normalizedQueue.calls[0].init.body), {mapId, sessionId: 'ses_test_1', surfaceId: 'default'});
+	for (const surfaceId of ['INVALID SURFACE', credential]) {
+		const normalizedQueue = createFetchQueue([response(201, success({surfaceId: 'default'}))]);
+		const normalized = createHostedNativeSessionController({binding: hosted(surfaceId), fetch: normalizedQueue.fetch, now: createClock().now, sessionIdFactory: createIds()});
+		await normalized.acquire();
+		assert.deepEqual(JSON.parse(normalizedQueue.calls[0].init.body), {mapId, sessionId: 'ses_test_1', surfaceId: 'default'});
+	}
 
 	const invalidOrigin = createHostedNativeSessionController({
 		binding: hosted(),
@@ -77,6 +79,25 @@ test('invalid Surface is normalized in the bootstrap body and response origins m
 		sessionIdFactory: createIds(),
 	});
 	assert.equal(await rejectedCode(invalidOrigin.acquire()), 'NATIVE_SESSION_RESPONSE_INVALID');
+});
+
+test('Map, session and server identity fields reject secret-shaped values before they can reach safe state', async () => {
+	for (const invalidMapId of [credential, 'map_short']) {
+		assert.throws(
+			() => createHostedNativeSessionController({binding: {...hosted(), mapId: invalidMapId}, fetch: createFetchQueue([]).fetch, now: createClock().now, sessionIdFactory: createIds()}),
+			(error: unknown) => error instanceof HostedNativeSessionError && error.code === 'NATIVE_SESSION_INPUT_INVALID',
+		);
+	}
+	for (const generated of [credential, grant]) {
+		assert.throws(
+			() => createHostedNativeSessionController({binding: hosted(), fetch: createFetchQueue([]).fetch, now: createClock().now, sessionIdFactory: () => generated}),
+			(error: unknown) => error instanceof HostedNativeSessionError && error.code === 'NATIVE_SESSION_INPUT_INVALID',
+		);
+	}
+	for (const overrides of [{surfaceId: credential}, {credentialId: credential}]) {
+		const controller = createHostedNativeSessionController({binding: hosted(), fetch: createFetchQueue([response(201, success(overrides))]).fetch, now: createClock().now, sessionIdFactory: createIds()});
+		assert.equal(await rejectedCode(controller.acquire()), 'NATIVE_SESSION_RESPONSE_INVALID');
+	}
 });
 
 test('restart authority requires the exact bounded server shape rather than only matching code fields', async () => {

@@ -1,95 +1,108 @@
 # Private native resource admission
 
-This guide describes the source-checkout transport in `@tileflow/react-native`. It is **not a public API** or a published Hosted client. The package stays private; its root runtime exports nothing and installs no networking. There is no Tileflow `Map` component, hook, renderer lifecycle owner, annotation API or location API.
+This guide describes the private native networking boundary used by the mounted Tileflow `Map` in `@tileflow/react-native`. The transport, session controller, resource catalog, configuration reader and native bridge are **not a public API**. The package root exports the Tileflow `Map` and public Map types only; it does not export grants, credentials, session objects, admission handles, native renderer handles or request interception controls.
 
-The internal transport supports already context-discriminated requests with a small, explicit resource catalog. **Full style/TileJSON closure projection** is not implemented. A remote style's child URLs are not automatically discovered, rewritten or authorized. Do not point an application at an arbitrary Hosted style and assume this unit protects the entire resource graph.
+The mounted owner prepares a **bounded Style/TileJSON resource closure** before native rendering. It covers the current owned style document, one TileJSON edge per tile source, tile templates, sprite leaves, glyph templates, native-v1 managed font faces and supported base assets represented by the current contracts. It does not recursively trust arbitrary remote graphs. Ambiguous, unsafe, oversized or incomplete protected graphs fail closed, while foreign/unowned resources remain unchanged.
 
 ## Exact native dependencies
 
-The source targets React 19.2.0, React Native 0.83.10, MapLibre React Native 11.3.10, MapLibre Native Android 13.2.0 and MapLibre Native iOS 6.26.0. Android's HTTP dependency is OkHttp 4.12.0. These pins and the existence of source tests are **not evidence** of a successful build, a mounted device Map or app-store acceptance. The local host must qualify this exact combination.
+The source targets React 19.2.0, React Native 0.83.10, MapLibre React Native 11.3.10, MapLibre Native Android 13.2.0 and MapLibre Native iOS 6.26.0. Android's HTTP dependency is OkHttp 4.12.0. These pins and the existence of source tests are **not evidence** of a successful build, device run, Hosted service or app-store acceptance; qualify the exact revision in the intended host.
 
-Android's library build uses the host's Android Gradle and Kotlin plugins, Java 17, and the host's SDK settings. It does not install a build system. `react-native.config.cjs` identifies `TileflowNativeAdmissionPackage` for autolinking; creating the module does not install the MapLibre provider. A conflicting native dependency version fails resolution instead of silently selecting another version.
+Android's library build uses the host's Android Gradle/Kotlin plugins and SDK settings. `react-native.config.cjs` autolinks `TileflowNativeAdmissionPackage`, which registers the private admission, document, configuration and surface modules. The library depends on the autolinked `:maplibre_maplibre-react-native` project and rejects conflicting MapLibre Native versions rather than selecting another version silently.
 
-On iOS, the `TileflowNativeAdmission` pod depends on the exact React and MapLibre React Native pods. MapLibre Native itself is the **existing pinned Swift Package Manager product**, not a second MapLibre CocoaPod. The deployment target is React Native 0.83.10's minimum, iOS 15.1.
-
-In the existing development host's Podfile, retain its React Native post-install work and MapLibre setup. After the existing MapLibre post-install call, invoke the Tileflow helper loaded by the local podspec:
+On iOS, the `TileflowNativeAdmission` pod depends on the exact React and MapLibre React Native pods. MapLibre Native itself is the existing pinned Swift Package Manager product, not a second MapLibre CocoaPod. Retain the host's React Native post-install work and MapLibre setup, then invoke:
 
 ```ruby
-# Fragment inside the existing post_install block; installer is its parameter.
 $MLRN.post_install(installer)
 tileflow_native_admission_post_install(installer)
 ```
 
-The helper requires the MapLibre distribution reference with `exactVersion` 6.26.0, reuses it for the Tileflow pod and its test targets, and rejects conflicting products or versions. It does not add a shell phase, download a second SDK or change a version pin. Enable the pod's `Admission` test specification in a local test host when running XCTest. Autolinking alone does not opt into CocoaPods test specifications.
+The helper requires the MapLibre distribution reference with `exactVersion` 6.26.0 and reuses that product for the Tileflow pod/test targets. It does not add another SDK or change the pin.
 
-## Explicit installation and removal
+## Installation ownership
 
-Initialize upstream MapLibre and any compatible pre-existing network customization first. Explicitly install the internal Tileflow transport **before creating a native Map view or using MapLibre offline storage**. On iOS, sessions copy their configuration: changing it cannot retrofit a previously created session. Use a cold development-host launch for qualification, not a hot reload over an older MapLibre session.
+Tileflow owns the MapLibre networking seam in explicit installation order. Android captures the previous `ModuleProvider`, wraps `createHttpRequest()` and delegates unowned traffic to the previous provider. iOS adds `TFNativeAdmissionURLProtocol` only to MapLibre's session configuration and uses an independent internal URLSession; it never registers an application-global protocol.
 
-Android captures the previous `ModuleProvider`, wraps `createHttpRequest()`, and delegates library loading and unowned requests to that provider. iOS adds `TFNativeAdmissionURLProtocol` only to `MLNNetworkConfiguration.sessionConfiguration`; it never calls app-global protocol registration. Unowned iOS requests remain in the prior protocol chain. Direct context requests delegate without acquiring session authority.
+Installation/removal are acknowledged operations. Partial installation rolls back only state still owned by that attempt. A later incompatible provider/configuration replacement makes protected work fail closed; removal never overwrites a later owner. This is not a guarantee for arbitrary third-party mutation chains.
 
-Installation and removal return native acknowledgements, not fire-and-forget flags. Partial installation rolls back only state still owned by the attempted installation. Removing an owner never overwrites a later provider or session configuration. Native work checks ownership before admission delivery, network start and response completion; incompatible mutation fails protected work closed. This is an explicit installation-order contract, not a promise to support arbitrary third-party replacement or concurrent mutation of upstream global configuration.
+The process-level installation may be shared by mounted Maps, but that is the only shared ownership. Each real Map owns a distinct source generation, Hosted binding/session/controller, native context, catalog, queue, tickets and callbacks. One Map's retirement or cleanup failure cannot spend, remove or reuse another Map's authority.
 
-Retirement is idempotent. It invalidates the context, cancels queued/admitted/native work and discards late completions. The acknowledgement establishes that native logical retirement and owned cancellation have been processed; it is not a promise that every operating-system socket or cancellation callback has already drained. Installation teardown preserves its actual removal/ownership-loss receipt for repeated calls.
+## Mounted Map lifecycle
 
-## One Map, one admission owner
+A native Map is created only after source resolution and context acknowledgement. If the resolved manifest uses Hosted session delivery, application configuration must first yield a binding whose canonical API origin exactly matches the manifest. Non-session delivery does not read the mobile credential or bootstrap Hosted authority.
 
-`createNativeAdmissionOwner()` creates one session controller per registered Map context. Concurrent Maps have distinct context identities, controllers, queues, tickets and callbacks, even when they request identical original URLs. A context discriminator is transient and non-secret. It is not session authority and cannot be used to share admissions.
+Theme transactions keep the same native Map, context, session and camera. Resource additions are append-only and become usable only after native `extendContext` acknowledgement. Glyph templates may extend their finite font-stack allowlist across themes by an acknowledged union; the template URL, origin, class and scope cannot change. A logical source/Map replacement retires the previous context before opening the next one.
 
-Changes of source or theme on the **same real Map** retain its context. Replacing that real Map retires the old context before opening another. The source-checkout harness demonstrates both operations; a later production renderer must own these lifecycle calls itself.
+Retirement is idempotent and cancels queue, JavaScript wait, admitted work, document acquisition and late native completions. Removal acknowledgements are retryable. Strict Mode unmount/remount therefore cannot revive the old generation or share its context with the replacement.
 
-The test-only catalog approves exact canonical HTTPS URLs, resource classes and applicable tileset IDs. Every protected ticket is checked against that catalog and then against the controller's approved origins, ports, Map identity, scopes and tilesets. Unknown, malformed, duplicate, stale or retired reserved discriminators are rejected, not delegated as third-party traffic. Only `__tf_native_context` is removed before HTTP; other URL identity is preserved, and conflicting reserved parameters are rejected.
+## Resource identity and projection
 
-One bounded bridge message may contain several tickets. The TypeScript owner invokes **one logical `acquire()` per eligible protected ticket**, in ticket order. It never acquires once for a whole batch, preallocates grants or counts network chunks. Direct requests do not call `acquire()`. Native sequence numbers and queue reservations identify transport work only; they are not authoritative commercial counters.
+Every protected resource is canonical HTTPS and belongs to one explicit class: `style`, `tilejson`, `tile`, `sprite`, `glyph` or `font`. Tile and TileJSON entries also preserve exact tileset identity. Tile templates use only the bounded native placeholder grammar. Glyph templates require both `{fontstack}` and `{range}` and a finite exact font-stack set.
 
-The existing controller retains exact 10,000-request and six-hour rotation semantics. The 10,000th acquisition still belongs to its current session; the next acquisition rotates. Bootstrap and refresh remain single-flight, preserve the current session where permitted, and allow only the exact bounded restart response to replace it. A native cancellation does not refund an acquisition already made. Response observation does not confirm, undo or retry commercial completion; that remains server-owned.
+Style preparation resolves relative URLs through Core's native URL policy. A style may discover at most one bounded TileJSON document for a declared tile source; TileJSON cannot recursively point to another TileJSON. Sprite base URLs are admitted through their concrete JSON/PNG 1x/2x leaves before the style receives its transient context discriminator. Native-v1 font-face arrays preserve family/style/weight attributes while only their admitted URL is rewritten.
 
-## Independent bootstrap and conservative expiry
+Owned URLs must match the exact Hosted origin/path rules and the session policy's scope/tileset set. A resource on a foreign origin remains unmodified. An URL on an owned origin but outside a known resource path fails closed instead of inheriting authority merely because its origin matches.
 
-The native bootstrap uses its own OkHttp client or ephemeral URLSession configuration, separate from MapLibre and from the protected-resource channel. It sends only the expected POST body (`mapId`, `sessionId`, normalized `surfaceId`) to the canonical HTTPS API origin's `/v1/sessions/start` endpoint. The publishable credential is carried in `X-Tileflow-Mobile-Client`, never a query parameter. Cookies, ambient credentials and automatic redirects are disabled on this channel.
+The non-secret `__tf_native_context` discriminator selects one Map context. It is stripped before HTTP and never conveys authority. Unknown, malformed, stale, duplicate or retired reserved context values are rejected rather than delegated as third-party traffic. Other URL identity is preserved.
 
-Each context binds the first validated bootstrap endpoint and credential; subsequent attempts cannot change either. The native registry checks the context's Map identity, bounded request identifiers, request body and lifecycle before sending. Retiring a context cancels its bootstrap without cancelling another Map's operation. The response travels through a bounded native promise, not an event. Only TypeScript parses session authority and admits protected tickets. Native bootstrap guards retain the original engine identity rather than reading a mutable module installation from a network thread.
+## Admission accounting
 
-The internal controller's `transportBudget(authority)` returns a conservative remaining budget anchored to its existing local `validUntil`. Native does not calculate a fresh lifetime from `expiresAt` and `serverTime`. It anchors the budget at the earlier native ticket-enqueue time, subtracts a safety margin, caps it by the transport deadline and rechecks it immediately before network start and each redirect. Clock rollback, replacement, disposal and expiry invalidate the budget.
+Every eligible protected request produces one logical controller `acquire()` result. A bounded bridge batch may carry several tickets but never shares one acquire, preallocates grants, counts chunks or maintains a native commercial counter. Direct/non-session contexts delegate without commercial acquisition.
 
-Neither a synchronous network hook, the main thread nor an OkHttp interceptor waits for JavaScript. The interceptor's final liveness check is synchronous and nonblocking; acquisition is asynchronous. Backgrounding cancels protected work. Suspended JavaScript cannot authorize stale work: native deadline checks use native elapsed/continuous time, and resumed acquisition revalidates without requiring a JavaScript timer to have fired.
+The controller preserves the 10,000-request and six-hour rotation semantics: the 10,000th acquisition remains in its session and the next rotates. Bootstrap/refresh are single-flight where allowed. Native cancellation does not refund a logical acquisition already made. HTTP response observation does not confirm or undo server-owned commercial completion.
 
-## Authority and diagnostics
+`X-Tileflow-Native-Grant` is the only protected-resource grant carrier. It is attached only after resource/context/session policy checks and never enters query strings, URLs, cache keys, public state, events, errors or logs.
 
-`X-Tileflow-Native-Grant` is the only resource-grant carrier. Grant material does not belong in URLs, cache identities, logs, exceptions, events, snapshots or public state. The controller's authority property is non-enumerable; transport serialization is private and ephemeral. Do not log bridge calls, native requests or raw bootstrap responses. The adapter does not use upstream `TransformRequestManager.addHeader`.
+## Independent bootstrap and expiry
 
-Protected redirects are observed by the adapter itself. Automatic forwarding is disabled. Same-origin targets must still match the exact approved catalog, path/class, tileset and context, and the original ticket must remain valid. Cross-origin targets are rejected without forwarding the grant. Redirects do not acquire another admission for the same ticket. The iOS adapter does not depend on MapLibre forwarding `didReceiveResponse` to its configuration delegate.
+Bootstrap uses an independent OkHttp client or ephemeral URLSession channel. It sends the bounded session-start POST to the configured canonical API origin and carries the publishable mobile credential only in `X-Tileflow-Mobile-Client`. Cookies, ambient credentials and automatic redirects are disabled.
 
-Native observation events contain only bounded identifiers and HTTP status. They are not public renderer readiness or success events. Errors use fixed codes/messages rather than a native exception, response body or cause. An HTTP response does not prove a rendered frame, service availability or commercial completion.
+Each context binds its validated bootstrap endpoint/credential. Retiring that context cancels its bootstrap without cancelling another Map. TypeScript alone parses session authority and makes admission decisions.
 
-## Fixed bounds
+The controller's private transport budget remains anchored to its existing local `validUntil`. Native never reconstructs a fresh lifetime from server timestamps. The budget is bounded by the earlier ticket-enqueue time, the native wait deadline and a safety margin, and is rechecked immediately before network start and redirects. Backgrounding, clock rollback, source replacement, disposal and expiry invalidate stale authority.
 
-| Boundary                                                                   | Limit                                                  |
-| -------------------------------------------------------------------------- | ------------------------------------------------------ |
-| Live Map contexts per installation                                         | 16                                                     |
-| Exact resources in one test catalog                                        | 128                                                    |
-| Native engine ingress per installation, reserved before scheduler dispatch | 2,048                                                  |
-| Protected work per context                                                 | 128                                                    |
-| Tickets in one bridge batch                                                | 8                                                      |
-| Resource URL                                                               | 2,048 characters, including room for the discriminator |
-| Admission bridge payload                                                   | 524,288 bytes                                          |
-| Grant                                                                      | 24,576 characters                                      |
-| Protected transport deadline                                               | 30 seconds from enqueue                                |
-| Validity safety margin                                                     | 1 second                                               |
-| Protected redirects                                                        | 3                                                      |
-| Protected response body                                                    | 8,388,608 bytes                                        |
-| Pending bootstrap bridge work                                              | 32                                                     |
-| Bootstrap request / response                                               | 2,048 / 65,536 bytes                                   |
-| Bootstrap deadline                                                         | 30 seconds                                             |
+No synchronous network hook, main thread or OkHttp interceptor waits for JavaScript. Suspended JavaScript therefore cannot authorize stale protected work.
 
-A cancelled bridge operation retains its capacity reservation until native completion; an unread delivered bootstrap body also retains a bounded slot until consumed, cancelled or retired. Native ingress is reserved before posting to the main scheduler, so cancellation churn cannot bypass its limit while that scheduler is paused. Repeated cancellation does not enqueue repeated cleanup.
+## Redirects and observation
 
-Native network capacity is separate from logical admission. Android retains its physical slot through its terminal OkHttp callback. iOS reports logical failure promptly but retains a created URLSession and its capacity until `didBecomeInvalidWithError`; a request cancelled before session creation releases only after its queued start is processed. Native teardown does not create additional capacity by forgetting sessions still awaiting invalidation. These are transport bounds, not product quotas, admission counters or billing guarantees.
+Protected redirects are handled by the adapter, not by automatic credential forwarding. Same-origin targets must still satisfy catalog, path/class, tileset, context and ticket validity. Cross-origin, different-port, uncataloged or conflicting-context targets receive no forwarded grant. A redirect does not consume another admission for the same ticket.
+
+iOS does not rely on MapLibre forwarding `didReceiveResponse` to a configuration delegate. The adapter observes its own response. Native observation events contain only bounded identifiers/status and are private; they are not renderer readiness or commercial completion events.
+
+## Renderer readiness
+
+Admission success is not Map readiness. The private surface adapter requires current style acceptance, committed positive native layout and a fully rendered native map/frame after that layout. Background, layout loss, camera gesture/command epochs and style replacement invalidate the evidence. Resume re-arms native evidence; JavaScript animation frames and sleeps are not readiness proof.
+
+Camera commands carry private monotonically correlated tokens. A successful public controller command is acknowledged only after the native target is applied, not merely queued by the upstream React Native bridge. User gestures are classified from native gesture reasons and remain separate from programmatic commands.
+
+## Fixed transport bounds
+
+| Boundary | Limit |
+| --- | ---: |
+| Live Map contexts per installation | 16 |
+| Catalog resources per context | 128 |
+| Native engine ingress per installation | 2,048 |
+| Protected work per context | 128 |
+| Tickets per bridge batch | 8 |
+| Resource URL | 2,048 characters including discriminator room |
+| Admission bridge payload | 524,288 bytes |
+| Grant | 24,576 characters |
+| Protected transport deadline | 30 seconds from enqueue |
+| Validity safety margin | 1 second |
+| Protected redirects | 3 |
+| Protected response body | 8,388,608 bytes |
+| Pending bootstrap bridge work | 32 |
+| Bootstrap request / response | 2,048 / 65,536 bytes |
+| Bootstrap deadline | 30 seconds |
+
+Cancellation retains transport capacity until the corresponding native cleanup boundary. Capacity bounds are transport safety limits, not product quotas or billing counters.
+
+## Application configuration
+
+The publishable mobile application credential and trusted API origin are configured through native application configuration only. They are not component props or JavaScript globals. See [Native application configuration](./native-configuration.md) for exact iOS/Android keys, credential grammar, origin normalization, rotation/revocation and the end-user threat-model boundary.
 
 ## Local qualification
 
-The source tests cover JS admission accounting, deterministic barriers around 9,999/10,000/10,001 and six-hour concurrency, expiry after acquisition, mixed results, context isolation, lifecycle cancellation, native protocol/provider ownership, redirects, bootstrap bounds and package inertness. Additional regressions exercise setters that mutate before throwing, duplicate installation, retained teardown receipts, ingress before main-queue drain, cancellation churn and delayed native invalidation. The archive test checks the actual packed source and metadata, not just the manifest allowlist.
+The source-checkout [mounted Map harness](../harness/README.md) uses the real public Tileflow component in an existing development host and is excluded from package exports/packed files. It creates no service, runner or deployment.
 
-The [local native harness](https://github.com/tileflow/tileflow-sdk/tree/na/native-sdk-integration/packages/react-native/harness) is deliberately excluded from the packed package and runtime exports. It uses an existing development host and fixture endpoints, the real TypeScript controller, the real RN bridge and upstream native Maps. No generated project, runner, external service or deployment is supplied.
-
-Before accepting this unit, run the JS/type/package checks, Android unit and integration tests, CocoaPods/SPM resolution and XCTest, then the harness in the pinned native host. Exercise cold installation, identical URLs across Maps, an unchanged third-party request, style continuity, replacement, cancellation at each phase, background/resume, ownership mutation and redirection. Inspect only redacted observations and controlled fixture assertions. Qualify native callback ordering and retention with memory/thread diagnostics as well as renderer behavior. Source inspection and authored tests do not constitute execution evidence.
+Before accepting a revision, qualify package build/types/tests, the exact Android and iOS native test suites, CocoaPods/SPM integration, two concurrent Maps, Strict Mode replay, source replacement during each asynchronous phase, theme success/rollback, controlled camera gestures/commands, background/resume, readiness ordering, redirects, ownership mutation and teardown retries. Inspect only secret-free fixture assertions and public events. Authored source and tests are not evidence that these checks passed.

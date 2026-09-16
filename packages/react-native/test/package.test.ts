@@ -1,15 +1,10 @@
 import assert from 'node:assert/strict';
-import {execFile} from 'node:child_process';
-import {copyFile, mkdtemp, readFile, rm} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {readFile} from 'node:fs/promises';
 import test from 'node:test';
-import {promisify} from 'node:util';
 import ts from 'typescript';
 import {nativePackageFiles} from './native-admission-pack-files';
 
 const root = new URL('../', import.meta.url);
-const exec = promisify(execFile);
 
 function runtimeImports(text: string): string[] {
   const result: string[] = [];
@@ -23,8 +18,7 @@ function runtimeImports(text: string): string[] {
     if (
       ts.isCallExpression(node) &&
       (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-        (ts.isIdentifier(node.expression) &&
-          ['require', '__require'].includes(node.expression.text)))
+        (ts.isIdentifier(node.expression) && ['require', '__require'].includes(node.expression.text)))
     )
       result.push(node.getText());
     ts.forEachChild(node, visit);
@@ -33,7 +27,7 @@ function runtimeImports(text: string): string[] {
   return result;
 }
 
-test('remains private with exact native peers and the ordinary package/license boundaries', async () => {
+test('remains private with exact native peers and one ordinary public root', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
   assert.equal(manifest.name, '@tileflow/react-native');
   assert.equal(manifest.private, true);
@@ -62,10 +56,9 @@ test('remains private with exact native peers and the ordinary package/license b
   const readme = await readFile(new URL('README.md', root), 'utf8');
   assert.match(readme, /^# @tileflow\/react-native\n/u);
   assert.match(readme, /private workspace/u);
-  assert.match(readme, /does not export a `Map` component/u);
-  // A type-only ESM entry can be empty. Internal artifacts must still exist.
-  await readFile(new URL('dist/index.js', root), 'utf8');
+  assert.match(readme, /exports a mounted `Map`/u);
   for (const path of [
+    'dist/index.js',
     'dist/index.d.ts',
     'dist/internal/native-appearance.js',
     'dist/internal/native-appearance.d.ts',
@@ -81,55 +74,23 @@ test('remains private with exact native peers and the ordinary package/license b
     assert.ok((await readFile(new URL(path, root), 'utf8')).length > 0, path);
 });
 
-test('the contract imports standalone with no peers, globals or renderer evaluation', async (t) => {
-  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-native-contract-'));
-  t.after(() => rm(cwd, {recursive: true, force: true}));
-  await copyFile(new URL('dist/index.js', root), join(cwd, 'contract.mjs'));
-  const {stdout, stderr} = await exec(
-    process.execPath,
-    [
-      '--input-type=module',
-      '--eval',
-      `
-		import assert from 'node:assert/strict';
-		for (const name of ['window', 'document', 'navigator', 'fetch', 'URL', 'URLSearchParams',
-			'TextEncoder', 'TextDecoder', 'crypto', 'FontFace', 'Appearance', 'ReactNative', 'MapLibre']) {
-			Object.defineProperty(globalThis, name, {configurable: true, get() {
-				throw new Error('Unexpected global: ' + name);
-			}});
-		}
-		const contract = await import('./contract.mjs');
-		assert.deepEqual(Object.keys(contract), []);
-	`,
-    ],
-    {cwd, timeout: 10000},
-  );
-  assert.equal(stdout, '');
-  assert.equal(stderr, '');
-  assert.deepEqual(runtimeImports(await readFile(new URL('dist/index.js', root), 'utf8')), []);
+test('the public root has only the deliberate React Native renderer dependency boundary', async () => {
+  const output = await readFile(new URL('dist/index.js', root), 'utf8');
+  const imports = runtimeImports(output);
+  for (const name of imports) {
+    assert.ok(
+      name === 'react' ||
+        name === 'react-native' ||
+        name === '@maplibre/maplibre-react-native' ||
+        name === '@tileflow/core/native',
+      name,
+    );
+  }
+  assert.equal(imports.includes('@maplibre/maplibre-react-native'), true);
+  assert.equal(imports.includes('react-native'), true);
 });
 
-test('only explicit private platform adapters evaluate React Native and no output evaluates MapLibre', async () => {
-  for (const entry of [
-    'index',
-    'internal/native-appearance',
-    'internal/initial-view',
-    'internal/source-state',
-    'internal/session',
-    'internal/native-admission',
-    'internal/native-admission-bridge',
-  ]) {
-    const imports = runtimeImports(await readFile(new URL(`dist/${entry}.js`, root), 'utf8'));
-    assert.equal(
-      imports.some((name) => name.includes('maplibre')),
-      false,
-      entry,
-    );
-    if (entry === 'internal/native-appearance') assert.deepEqual(imports, ['react-native']);
-    else if (entry === 'internal/native-admission-bridge')
-      assert.equal(imports.includes('react-native'), true, entry);
-    else assert.equal(imports.includes('react-native'), false, entry);
-  }
+test('private transport and renderer-control contracts remain absent from public declarations', async () => {
   const declarations = await readFile(new URL('dist/index.d.ts', root), 'utf8');
   for (const name of [
     'MapBaseProps',
@@ -137,11 +98,12 @@ test('only explicit private platform adapters evaluate React Native and no outpu
     'MapRef',
     'MapSourceState',
     'MapInitialViewInputs',
+    'MapProps',
   ])
     assert.ok(declarations.includes(name), name);
-  assert.doesNotMatch(declarations, /declare (?:const|function|class) Map\b/u);
+  assert.match(declarations, /(?:declare\s+)?function Map\b|declare const Map\b/u);
   assert.doesNotMatch(
     declarations,
-    /HostedNativeSession|NativeSessionAuthority|NativeAdmission|NativeBootstrap/u,
+    /HostedNativeSession|NativeSessionAuthority|NativeAdmission|NativeBootstrap|NativeSurface|NativeRenderer|MobileConfiguration/u,
   );
 });

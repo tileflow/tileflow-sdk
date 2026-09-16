@@ -71,8 +71,20 @@ internal class AdmissionEngine(
 		return { context.live.get() && foreground && checkOwnership() }
 	}
 
+	private fun extension(previous: AdmissionResource, next: AdmissionResource): AdmissionResource {
+		if (previous.scope != next.scope || previous.tilesetId != next.tilesetId || previous.template != next.template) invalid()
+		if (previous.fontStacks == next.fontStacks) return previous
+		if (previous.scope != "glyph" || previous.template != "glyphs") invalid()
+		val before = previous.fontStacks ?: invalid()
+		val after = next.fontStacks ?: invalid()
+		if (!after.containsAll(before) || after.size > 16) invalid()
+		return AdmissionCatalog.validate(
+			AdmissionResource(previous.url, previous.scope, previous.tilesetId, previous.template, after)
+		)
+	}
+
 	// Append-only within a context: rollback can still use its last accepted style.
-	// Identical retries are acknowledged; a URL can never acquire a different identity.
+	// Identical retries are acknowledged; only a glyph template may widen its finite stack set.
 	fun extend(contextId: String, resources: List<AdmissionResource>): Int {
 		val context = contexts[contextId] ?: invalid()
 		if (!checkOwnership() || !context.live.get() || resources.size > AdmissionLimits.RESOURCES) invalid()
@@ -80,9 +92,7 @@ internal class AdmissionEngine(
 		for (resource in resources) {
 			val snapshot = AdmissionCatalog.validate(resource)
 			val previous = next[snapshot.url]
-			if (previous != null && (previous.scope != snapshot.scope || previous.tilesetId != snapshot.tilesetId ||
-				previous.template != snapshot.template || previous.fontStacks != snapshot.fontStacks)) invalid()
-			next[snapshot.url] = snapshot
+			next[snapshot.url] = if (previous == null) snapshot else extension(previous, snapshot)
 		}
 		val catalog = AdmissionCatalog(next.values.toList())
 		context.resources = next

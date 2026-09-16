@@ -31,11 +31,14 @@
 @interface TFAdmissionCatalogEngineTests : XCTestCase
 @end
 @implementation TFAdmissionCatalogEngineTests
+- (TFAdmissionEngine *)engineWithScheduler:(TFCatalogScheduler *)scheduler network:(TFCatalogNetwork *)network events:(NSMutableArray *)events {
+	return [[TFAdmissionEngine alloc] initWithInstallation:@"installation" scheduler:scheduler network:network owns:^BOOL { return YES; } emit:^(NSDictionary *event) { [events addObject:event]; }];
+}
 - (void)testCatalogExtensionKeepsIdentityAndRequiresOneIndependentVerdict {
 	TFCatalogScheduler *scheduler = [TFCatalogScheduler new];
 	TFCatalogNetwork *network = [TFCatalogNetwork new];
 	NSMutableArray *events = [NSMutableArray array];
-	TFAdmissionEngine *engine = [[TFAdmissionEngine alloc] initWithInstallation:@"installation" scheduler:scheduler network:network owns:^BOOL { return YES; } emit:^(NSDictionary *event) { [events addObject:event]; }];
+	TFAdmissionEngine *engine = [self engineWithScheduler:scheduler network:network events:events];
 	NSString *mapId = @"map_0123456789abcdef";
 	NSDictionary *resourceTemplate = @{@"url": @"https://tiles.example.test/world/{z}/{x}/{y}.pbf", @"scope": @"tile", @"tilesetId": @"world", @"template": @"tile"};
 	NSString *first = [engine registerMap:mapId resources:@[]], *second = [engine registerMap:mapId resources:@[resourceTemplate]];
@@ -47,7 +50,7 @@
 	__block NSUInteger failed = 0;
 	for (NSString *context in @[first, second]) {
 		NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:[url stringByAppendingFormat:@"?__tf_native_context=%@", context]]];
-		[engine request:request response:^(NSHTTPURLResponse *response, NSData *body) {} failure:^{ failed++; } delegate:^id<TFAdmissionCancel>(NSURLRequest *request, TFAdmissionNetworkCompletion completion) { XCTFail(@"Unexpected delegation"); return [TFCatalogCancel new]; }];
+		[engine request:request response:^(__unused NSHTTPURLResponse *response, __unused NSData *body) {} failure:^{ failed++; } delegate:^id<TFAdmissionCancel>(NSURLRequest *request, TFAdmissionNetworkCompletion completion) { XCTFail(@"Unexpected delegation"); return [TFCatalogCancel new]; }];
 	}
 	[scheduler flush];
 	XCTAssertEqual(events.count, 2u);
@@ -63,5 +66,24 @@
 	[engine retire:first];
 	XCTAssertThrows([engine extendContext:first resources:@[resourceTemplate]]);
 	XCTAssertEqual([engine extendContext:second resources:@[resourceTemplate]], 1u);
+}
+- (void)testGlyphTemplateExtensionIsAppendOnlyAndFinite {
+	TFCatalogScheduler *scheduler = [TFCatalogScheduler new];
+	TFCatalogNetwork *network = [TFCatalogNetwork new];
+	NSMutableArray *events = [NSMutableArray array];
+	TFAdmissionEngine *engine = [self engineWithScheduler:scheduler network:network events:events];
+	NSString *url = @"https://tiles.example.test/fonts/{fontstack}/{range}.pbf";
+	NSDictionary *first = @{@"url": url, @"scope": @"glyph", @"template": @"glyphs", @"fontStacks": @[@"Brand Regular"]};
+	NSString *context = [engine registerMap:@"map_0123456789abcdef" resources:@[first]];
+	NSDictionary *extended = @{@"url": url, @"scope": @"glyph", @"template": @"glyphs", @"fontStacks": @[@"Brand Bold", @"Brand Regular"]};
+	XCTAssertEqual([engine extendContext:context resources:@[extended]], 1u);
+	NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:[@"https://tiles.example.test/fonts/Brand%20Bold/0-255.pbf" stringByAppendingFormat:@"?__tf_native_context=%@", context]]];
+	__block NSUInteger failures = 0;
+	[engine request:request response:^(__unused NSHTTPURLResponse *response, __unused NSData *body) {} failure:^{ failures++; } delegate:^id<TFAdmissionCancel>(NSURLRequest *request, TFAdmissionNetworkCompletion completion) { XCTFail(@"Unexpected delegation"); return [TFCatalogCancel new]; }];
+	[scheduler flush];
+	XCTAssertEqual(failures, 0u);
+	XCTAssertThrows([engine extendContext:context resources:@[first]]);
+	NSDictionary *wrongClass = @{@"url": url, @"scope": @"font", @"template": @"glyphs", @"fontStacks": @[@"Brand Bold", @"Brand Regular"]};
+	XCTAssertThrows([engine extendContext:context resources:@[wrongClass]]);
 }
 @end

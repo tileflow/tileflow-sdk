@@ -33,6 +33,7 @@ repositories {
 }
 
 dependencies {
+	implementation project(':maplibre_maplibre-react-native')
 	implementation('com.facebook.react:react-android:0.83.10') { version { strictly '0.83.10' } }
 	implementation("org.maplibre.gl:android-sdk-${nativeVariant}:13.2.0") { version { strictly '13.2.0' } }
 	implementation('com.squareup.okhttp3:okhttp:4.12.0') { version { strictly '4.12.0' } }

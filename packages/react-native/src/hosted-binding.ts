@@ -54,10 +54,13 @@ function bind(metadata: Metadata, configuration: MobileConfiguration): HostedNat
   }
   // A fresh binding belongs to this resolution. Only immutable application data is shared.
   // Ordinary serialization cannot copy the configured origin or credential into diagnostics.
-  const binding = Object.defineProperties({kind: 'hosted', mapId: metadata.mapId}, {
-    apiOrigin: {value: snapshot.apiOrigin},
-    credential: {value: snapshot.credential},
-  });
+  const binding = Object.defineProperties(
+    {kind: 'hosted', mapId: metadata.mapId},
+    {
+      apiOrigin: {value: snapshot.apiOrigin},
+      credential: {value: snapshot.credential},
+    },
+  );
   return Object.freeze(binding) as HostedNativeSessionBinding;
 }
 
@@ -125,7 +128,6 @@ export function createHostedNativeBindingResolver(
         })
         .catch((error: unknown) => {
           if (!current()) return;
-          active = undefined;
           let code: unknown;
           try {
             if (error && typeof error === 'object') {
@@ -134,11 +136,17 @@ export function createHostedNativeBindingResolver(
           } catch {
             /* Never propagate an exception supplied by a bridge or an injected reader. */
           }
-          reject(new NativeConfigurationError(
-            code === 'NATIVE_CONFIGURATION_INVALID' || code === 'NATIVE_CONFIGURATION_ORIGIN_MISMATCH'
-              ? code
-              : 'NATIVE_CONFIGURATION_UNAVAILABLE',
-          ));
+          // Even descriptor reflection can reenter a replacement or disposal.
+          if (!current()) return;
+          active = undefined;
+          reject(
+            new NativeConfigurationError(
+              code === 'NATIVE_CONFIGURATION_INVALID' ||
+                code === 'NATIVE_CONFIGURATION_ORIGIN_MISMATCH'
+                ? code
+                : 'NATIVE_CONFIGURATION_UNAVAILABLE',
+            ),
+          );
         });
       return result;
     },

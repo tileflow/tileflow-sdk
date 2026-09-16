@@ -48,18 +48,44 @@ test('normalizes only HTTPS scheme, ASCII host case, port 443 and one root slash
 
 test('rejects origin aliases and URL components instead of dropping them', () => {
   for (const input of [
-    undefined, null, 1, {}, '', ' https://api.example.test', 'https://api.example.test\n',
-    'http://api.example.test', '//api.example.test', 'https://api.example.test/path',
-    'https://api.example.test//', 'https://api.example.test/.', 'https://api.example.test/..',
-    'https://api.example.test?', 'https://api.example.test/#', 'https://user@api.example.test',
-    'https://api.example.test\\', 'https://api.%65xample.test', 'https://bücher.example',
-    'https://api.example.test.', 'https://*.example.test', 'https://bad_host.example',
-    'https://-bad.example', 'https://bad-.example', 'https://a..example',
-    'https://api.example.test:0', 'https://api.example.test:0443',
-    'https://api.example.test:65536', 'https://api.example.test:',
-    'https://127.1', 'https://0177.0.0.1', 'https://0x7f000001', 'https://2130706433',
-    'https://example.0x1', 'https://256.0.0.1', 'https://[::1]',
-    `https://${'a'.repeat(64)}.example`, `https://${'a'.repeat(2048)}`,
+    undefined,
+    null,
+    1,
+    {},
+    '',
+    ' https://api.example.test',
+    'https://api.example.test\n',
+    'http://api.example.test',
+    '//api.example.test',
+    'https://api.example.test/path',
+    'https://api.example.test//',
+    'https://api.example.test/.',
+    'https://api.example.test/..',
+    'https://api.example.test?',
+    'https://api.example.test/#',
+    'https://user@api.example.test',
+    'https://api.example.test\\',
+    'https://api.%65xample.test',
+    'https://bücher.example',
+    'https://api.example.test.',
+    'https://*.example.test',
+    'https://bad_host.example',
+    'https://-bad.example',
+    'https://bad-.example',
+    'https://a..example',
+    'https://api.example.test:0',
+    'https://api.example.test:0443',
+    'https://api.example.test:65536',
+    'https://api.example.test:',
+    'https://127.1',
+    'https://0177.0.0.1',
+    'https://0x7f000001',
+    'https://2130706433',
+    'https://example.0x1',
+    'https://256.0.0.1',
+    'https://[::1]',
+    `https://${'a'.repeat(64)}.example`,
+    `https://${'a'.repeat(2048)}`,
   ]) {
     assert.throws(() => canonicalMobileApiOrigin(input), (error) => safe(error));
   }
@@ -67,15 +93,29 @@ test('rejects origin aliases and URL components instead of dropping them', () =>
 
 test('requires the exact mobile credential grammar and a complete bounded native result', () => {
   for (const value of [
-    undefined, null, 1, '', 'placeholder', credential().toUpperCase(), `${credential()}\n`,
-    ` ${credential()}`, `tf_public_${'a'.repeat(47)}`, `tf_public_${'a'.repeat(49)}`,
+    undefined,
+    null,
+    1,
+    '',
+    'placeholder',
+    credential().toUpperCase(),
+    `${credential()}\n`,
+    ` ${credential()}`,
+    `tf_public_${'a'.repeat(47)}`,
+    `tf_public_${'a'.repeat(49)}`,
     `tf_public_${'g'.repeat(48)}`,
   ]) {
     assert.throws(() => snapshotMobileConfiguration({...configuration(), credential: value}), safe);
   }
   for (const input of [
-    undefined, null, [], {}, {credential: credential()}, {apiOrigin: 'https://api.example.test'},
-    {...configuration(), extra: 'remote-detail'}, Object.create(configuration()),
+    undefined,
+    null,
+    [],
+    {},
+    {credential: credential()},
+    {apiOrigin: 'https://api.example.test'},
+    {...configuration(), extra: 'remote-detail'},
+    Object.create(configuration()),
   ]) {
     assert.throws(() => snapshotMobileConfiguration(input), safe);
   }
@@ -133,8 +173,14 @@ test('native absence, throws, rejection and malformed results produce only safe 
   for (const lookup of [
     () => undefined,
     () => ({}),
-    () => { throw new Error(`remote-detail ${credential()}`); },
-    () => ({readConfiguration() { throw new Error(`remote-detail ${credential()}`); }}),
+    () => {
+      throw new Error(`remote-detail ${credential()}`);
+    },
+    () => ({
+      readConfiguration() {
+        throw new Error(`remote-detail ${credential()}`);
+      },
+    }),
     () => ({readConfiguration: () => Promise.reject(new Error('remote-detail'))}),
   ]) {
     const reader = createNativeConfigurationReader(lookup);
@@ -142,7 +188,12 @@ test('native absence, throws, rejection and malformed results produce only safe 
     await assert.rejects(reader.read(), (error) => safe(error, 'NATIVE_CONFIGURATION_UNAVAILABLE'));
   }
   let calls = 0;
-  const module = {readConfiguration() { calls++; return Promise.resolve({credential: credential()}); }};
+  const module = {
+    readConfiguration() {
+      calls++;
+      return Promise.resolve({credential: credential()});
+    },
+  };
   const reader = createNativeConfigurationReader(() => module);
   await assert.rejects(reader.read(), safe);
   await assert.rejects(reader.read(), safe);

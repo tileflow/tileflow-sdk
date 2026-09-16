@@ -19,8 +19,12 @@ function source(metadata: Record<string, unknown> = {}): TileflowNativeSourceSta
     manifestUrl: `${origin}/manifest.json`,
     manifest: {version: 1, maps: {streets: {defaultTheme: 'light', themes: {light: theme}}}},
     map: {
-      name: 'streets', defaultTheme: 'light', themes: {light: theme},
-      usageMode: 'session', mapId: 'map_abcdefghijklmnop', apiUrl: origin,
+      name: 'streets',
+      defaultTheme: 'light',
+      themes: {light: theme},
+      usageMode: 'session',
+      mapId: 'map_abcdefghijklmnop',
+      apiUrl: origin,
       ...metadata,
     },
     theme,
@@ -30,7 +34,10 @@ function source(metadata: Record<string, unknown> = {}): TileflowNativeSourceSta
 function gate<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
   return {promise, resolve, reject};
 }
 
@@ -51,9 +58,15 @@ test('non-session delivery never locates configuration or creates commercial ide
     assert.deepEqual(binding, {kind: 'direct'});
     const controller = createHostedNativeSessionController({
       binding,
-      fetch: async () => { requests++; throw new Error('Unexpected bootstrap.'); },
+      fetch: async () => {
+        requests++;
+        throw new Error('Unexpected bootstrap.');
+      },
       now: () => new Date(0),
-      sessionIdFactory: () => { identities++; return 'ses_unexpected'; },
+      sessionIdFactory: () => {
+        identities++;
+        return 'ses_unexpected';
+      },
     });
     assert.equal(await controller.acquire(), null);
     controller.dispose();
@@ -66,17 +79,28 @@ test('non-session delivery never locates configuration or creates commercial ide
 
 test('requires declared session metadata and exact canonical origin agreement', async () => {
   let reads = 0;
-  const resolver = createHostedNativeBindingResolver(async () => { reads++; return config(); });
+  const resolver = createHostedNativeBindingResolver(async () => {
+    reads++;
+    return config();
+  });
   for (const metadata of [
-    {mapId: undefined}, {mapId: 'streets'}, {mapId: 'map_short'},
-    {apiUrl: undefined}, {apiUrl: `${origin}/api`}, {apiUrl: `${origin}?`},
+    {mapId: undefined},
+    {mapId: 'streets'},
+    {mapId: 'map_short'},
+    {apiUrl: undefined},
+    {apiUrl: `${origin}/api`},
+    {apiUrl: `${origin}?`},
     {usageMode: 'request'},
   ]) {
-    await assert.rejects(resolver.replace(source(metadata)), {code: 'NATIVE_CONFIGURATION_SOURCE_INVALID'});
+    await assert.rejects(resolver.replace(source(metadata)), {
+      code: 'NATIVE_CONFIGURATION_SOURCE_INVALID',
+    });
   }
   assert.equal(reads, 0);
   for (const apiUrl of ['https://other.example', 'https://api.example.test:8443']) {
-    await assert.rejects(resolver.replace(source({apiUrl})), {code: 'NATIVE_CONFIGURATION_ORIGIN_MISMATCH'});
+    await assert.rejects(resolver.replace(source({apiUrl})), {
+      code: 'NATIVE_CONFIGURATION_ORIGIN_MISMATCH',
+    });
   }
   const binding = await resolver.replace(source({apiUrl: 'HTTPS://API.EXAMPLE.TEST:443/'}));
   assert.equal(binding.kind, 'hosted');
@@ -103,7 +127,10 @@ test('replacement snapshots metadata and retires stale success or failure immedi
     const rejected = assert.rejects(pending, {code: 'NATIVE_CONFIGURATION_REPLACED'});
     await entered.promise;
     if (mutable.status !== 'ready') assert.fail('Expected resolved source.');
-    Object.assign(mutable.map, {apiUrl: 'https://other.example', mapId: 'map_ponmlkjihgfedcba'});
+    Object.assign(mutable.map, {
+      apiUrl: 'https://other.example',
+      mapId: 'map_ponmlkjihgfedcba',
+    });
     assert.deepEqual(await resolver.replace(source({usageMode: undefined})), {kind: 'direct'});
     await rejected;
     if (rejects) response.reject(new Error(`remote-detail ${credential()}`));
@@ -132,7 +159,12 @@ test('metadata changes during configuration acquisition cannot redirect the bind
 test('disposal during configuration lookup cancels only that Map and suppresses late completion', async () => {
   const response = gate<unknown>();
   let calls = 0;
-  const module = {readConfiguration() { calls++; return response.promise; }};
+  const module = {
+    readConfiguration() {
+      calls++;
+      return response.promise;
+    },
+  };
   const application = createNativeConfigurationReader(() => module);
   const first = createHostedNativeBindingResolver(application.read);
   const second = createHostedNativeBindingResolver(application.read);
@@ -159,12 +191,16 @@ test('shared application data never shares controllers or session identities', a
   const bindings = await Promise.all([first.replace(source()), second.replace(source())]);
   assert.notEqual(bindings[0], bindings[1]);
   let sequence = 0;
-  const controllers = bindings.map((binding) => createHostedNativeSessionController({
-    binding,
-    fetch: async () => { throw new Error('No acquisition requested.'); },
-    now: () => new Date(0),
-    sessionIdFactory: () => `ses_isolated_${++sequence}`,
-  }));
+  const controllers = bindings.map((binding) =>
+    createHostedNativeSessionController({
+      binding,
+      fetch: async () => {
+        throw new Error('No acquisition requested.');
+      },
+      now: () => new Date(0),
+      sessionIdFactory: () => `ses_isolated_${++sequence}`,
+    }),
+  );
   assert.notDeepEqual(controllers[0]!.state, controllers[1]!.state);
   controllers[0]!.dispose();
   assert.notEqual(controllers[1]!.state.status, 'disposed');

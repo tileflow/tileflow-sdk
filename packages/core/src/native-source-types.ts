@@ -5,7 +5,6 @@ import type {
   TileflowRuntimeColorScheme,
   TileflowRuntimeManifestMap,
 } from './runtime';
-import type {MapLibreStyle} from './types';
 
 /** The adapter must honor the requested read bound, without first buffering an unbounded body. */
 export type TileflowNativeManifestReader = {
@@ -45,15 +44,12 @@ export type TileflowNativeManifestLoadOptions = TileflowNativeNetworkOptions & {
   signal?: TileflowNativeAbortSignal;
 };
 
-/** A manifest map or unmanaged direct style data; neither branch creates a renderer. */
-export type TileflowNativeSource =
-  | {kind: 'tileflow'; map: string; manifestUrl: string}
-  | {kind: 'maplibre'; style: string | MapLibreStyle};
+/** A published Tileflow map with an explicit manifest URL. Does not create a renderer. */
+export type TileflowNativeSource = {map: string; manifestUrl: string};
 
 export type TileflowNativeSourceOptions = TileflowNativeNetworkOptions & {
-  /** Only valid for a Tileflow manifest source. */
   theme?: string;
-  /** Required only for theme="system"; ignored for direct styles. No ambient appearance access. */
+  /** Required only for theme="system"; no ambient appearance access. */
   colorScheme?: TileflowRuntimeColorScheme;
   signal?: TileflowNativeAbortSignal;
 };
@@ -69,19 +65,11 @@ export type TileflowNativeSourceState =
   | {readonly status: 'loading'; readonly generation: number}
   | ({
       readonly status: 'ready';
-      /** Mirrors source.kind and narrows the whole ready snapshot in TypeScript. */
-      readonly kind: 'tileflow';
       readonly generation: number;
-      readonly source: Readonly<Extract<TileflowNativeSource, {kind: 'tileflow'}>>;
+      readonly source: Readonly<TileflowNativeSource>;
       readonly map: Immutable<TileflowRuntimeManifestMap>;
       readonly theme: Immutable<TileflowResolvedRuntimeTheme>;
     } & TileflowNativeManifestResult)
-  | {
-      readonly status: 'ready';
-      readonly kind: 'maplibre';
-      readonly generation: number;
-      readonly source: Immutable<Extract<TileflowNativeSource, {kind: 'maplibre'}>>;
-    }
   | {
       readonly status: 'error';
       readonly generation: number;

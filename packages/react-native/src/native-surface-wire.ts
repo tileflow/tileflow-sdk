@@ -109,12 +109,41 @@ export function createNativeSurfaceTransport(
       let live = true;
       let failed = false;
       let lastSequence = 0;
+      let acknowledgedSequence = 0;
       let released = false;
       let retirement: Promise<void> | undefined;
       let unsubscribe: (() => void) | undefined;
+      type AcknowledgementWaiter = {
+        sequence: number;
+        resolve(): void;
+        reject(error: NativeSurfaceError): void;
+      };
+      const acknowledgementWaiters = new Set<AcknowledgementWaiter>();
+      const rejectAcknowledgementWaiters = () => {
+        if (!acknowledgementWaiters.size) return;
+        const error = new NativeSurfaceError();
+        for (const waiter of acknowledgementWaiters) waiter.reject(error);
+        acknowledgementWaiters.clear();
+      };
+      const resolveAcknowledgementWaiters = () => {
+        for (const waiter of [...acknowledgementWaiters]) {
+          if (waiter.sequence > acknowledgedSequence) continue;
+          acknowledgementWaiters.delete(waiter);
+          waiter.resolve();
+        }
+      };
+      const waitForAcknowledgement = (sequence: number): Promise<void> => {
+        if (!positive(sequence) || !live || failed) return Promise.reject(new NativeSurfaceError());
+        if (sequence <= acknowledgedSequence) return Promise.resolve();
+        if (acknowledgementWaiters.size >= 16) return Promise.reject(new NativeSurfaceError());
+        return new Promise<void>((resolve, reject) => {
+          acknowledgementWaiters.add({sequence, resolve, reject});
+        });
+      };
       const fail = () => {
         if (!live || failed) return;
         failed = true;
+        rejectAcknowledgementWaiters();
         try {
           failure();
         } catch {
@@ -140,7 +169,15 @@ export function createNativeSurfaceTransport(
               notify(event);
             }
             void safe(() => native.acknowledgeSurface(id!, event.sequence)).then((ack) => {
-              if (ack?.acknowledged !== true) fail();
+              if (ack?.acknowledged !== true) {
+                fail();
+                return;
+              }
+              if (!live || failed) return;
+              if (event.sequence > acknowledgedSequence) {
+                acknowledgedSequence = event.sequence;
+                resolveAcknowledgementWaiters();
+              }
             }, fail);
           } catch {
             fail();
@@ -152,6 +189,7 @@ export function createNativeSurfaceTransport(
         id = ack.surface;
       } catch {
         live = false;
+        rejectAcknowledgementWaiters();
         unsubscribe?.();
         reservations--;
         throw new NativeSurfaceError();
@@ -182,11 +220,17 @@ export function createNativeSurfaceTransport(
         async applyCamera(command, view) {
           check();
           if (!positive(command)) throw new NativeSurfaceError();
+          const before = lastSequence;
           const ack = await safe(() =>
             native.applyCamera(surface, command, snapshotCameraView(view)),
           );
           check();
-          return Object.freeze({command: ack.command, view: snapshotCameraView(ack.view)});
+          if (ack.command !== command || !positive(ack.invalidation) || ack.invalidation <= before)
+            throw new NativeSurfaceError();
+          const receipt = Object.freeze({command: ack.command, view: snapshotCameraView(ack.view)});
+          await waitForAcknowledgement(ack.invalidation);
+          check();
+          return receipt;
         },
         async cancelCamera(command) {
           if (!positive(command)) throw new NativeSurfaceError();
@@ -197,6 +241,7 @@ export function createNativeSurfaceTransport(
         retire(): Promise<void> {
           if (retirement) return retirement;
           live = false;
+          rejectAcknowledgementWaiters();
           unsubscribe?.();
           unsubscribe = undefined;
           const attempt = safe(() => native.retireSurface(surface)).then((ack) => {

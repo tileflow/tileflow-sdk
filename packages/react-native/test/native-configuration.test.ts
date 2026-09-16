@@ -87,7 +87,10 @@ test('rejects origin aliases and URL components instead of dropping them', () =>
     `https://${'a'.repeat(64)}.example`,
     `https://${'a'.repeat(2048)}`,
   ]) {
-    assert.throws(() => canonicalMobileApiOrigin(input), (error) => safe(error));
+    assert.throws(
+      () => canonicalMobileApiOrigin(input),
+      (error) => safe(error),
+    );
   }
 });
 

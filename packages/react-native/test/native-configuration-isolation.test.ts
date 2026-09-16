@@ -26,7 +26,10 @@ test('the built private factory never looks up configuration for a non-session s
   `,
   );
   const entry = join(directory, 'bridge.mjs');
-  await copyFile(new URL('../dist/internal/native-configuration-bridge.js', import.meta.url), entry);
+  await copyFile(
+    new URL('../dist/internal/native-configuration-bridge.js', import.meta.url),
+    entry,
+  );
   const script = `
     import assert from 'node:assert/strict';
     for (const name of ['window', 'document', 'navigator', 'fetch', 'XMLHttpRequest']) {

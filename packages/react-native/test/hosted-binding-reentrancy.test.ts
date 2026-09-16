@@ -63,6 +63,7 @@ test('real Core resolution preserves the manifest API binding without inferring 
             apiUrl: 'https://api.example.test',
             mapId: 'map_abcdefghijklmnop',
             usageMode,
+            ...(usageMode === 'session' ? {worldGeneration: 'v1'} : {}),
             defaultTheme: 'light',
             themes: {light: {colorScheme: 'light', styleUrl: './light.json'}},
           },

@@ -63,7 +63,9 @@
 		@[valid[0], valid[1], valid[1]], @[valid[0], valid[1], @"unknown=value"]
 	]) [self assertInvalid:input];
 	[self assertInvalid:nil];
-	XCTAssertNotNil([TFMobileConfiguration parse:@[valid[1], valid[0]] error:nil]);
+	TFMobileConfiguration *reordered =
+		[TFMobileConfiguration parse:@[valid[1], valid[0]] error:nil];
+	XCTAssertNotNil(reordered);
 }
 - (void)testApplicationInfoHasNoLocalizedOrAlternatePrecedence {
 	NSDictionary *info = @{@"TileflowMobileConfiguration": [self values:@"https://api.example.test"]};

@@ -95,5 +95,8 @@ test('the actual private archive contains exactly the native sources and metadat
     /TileflowNativeAdmission|native-admission|react-native|MapLibre|createHostedNativeSessionController|NativeConfiguration/u,
   );
   const {stdout: declarations} = await exec('tar', ['-xOzf', archive, 'package/dist/index.d.ts']);
-  assert.doesNotMatch(declarations, /MobileConfiguration|NativeConfiguration|HostedNativeBindingResolver/u);
+  assert.doesNotMatch(
+    declarations,
+    /MobileConfiguration|NativeConfiguration|HostedNativeBindingResolver/u,
+  );
 });

@@ -31,7 +31,7 @@ internal class NativeSurfaceState(private val surface: String, private val emit:
 		if (closed) return
 		visible = isVisible
 		if (layoutEpoch >= 9007199254740991L) { fail(); return }
-		layoutEpoch++; committed = 0; frame = null; reported = false
+		layoutEpoch++; committed = 0; frame = null; fullyRendered = false; reported = false; gesture = 0
 		enqueue("invalidate")
 	}
 	fun loaded(value: String, identity: Any) {
@@ -60,7 +60,7 @@ internal class NativeSurfaceState(private val surface: String, private val emit:
 	}
 	fun beginCommand(value: Long): Boolean {
 		if (!active || !visible || style == null || gesture != 0L || value <= command || value > 9007199254740991L) return false
-		command = value; committed = 0; frame = null; reported = false
+		command = value; committed = 0; frame = null; fullyRendered = false; reported = false
 		enqueue("invalidate")
 		return true
 	}
@@ -81,7 +81,7 @@ internal class NativeSurfaceState(private val surface: String, private val emit:
 	}
 	fun fail() {
 		if (closed || failed) return
-		failed = true; committed = 0; frame = null; gesture = 0
+		failed = true; committed = 0; frame = null; fullyRendered = false; gesture = 0
 		enqueue("error")
 	}
 	private fun enqueue(kind: String, fields: Map<String, Any> = emptyMap()) {
@@ -89,7 +89,7 @@ internal class NativeSurfaceState(private val surface: String, private val emit:
 		val last = pending.lastOrNull()
 		if ((kind == "gesture-change" || kind == "invalidate") && last?.get("kind") == kind && last["style"] == token && last["gesture"] == fields["gesture"]) pending.removeLast()
 		if (pending.size >= 32) {
-			pending.clear(); failed = true; frame = null; committed = 0; gesture = 0
+			pending.clear(); failed = true; frame = null; committed = 0; fullyRendered = false; gesture = 0
 			pending.addLast(mapOf("surface" to surface, "style" to token, "layout" to layoutEpoch, "sequence" to ++sequence, "kind" to "error"))
 		} else pending.addLast(mapOf("surface" to surface, "style" to token, "layout" to layoutEpoch, "sequence" to ++sequence, "kind" to kind) + fields)
 		drain()
@@ -104,6 +104,6 @@ internal class NativeSurfaceState(private val surface: String, private val emit:
 		if (awaitingSequence != value) return
 		awaitingSequence = null; drain()
 	}
-	fun close() { closed = true; style = null; frame = null; gesture = 0; pending.clear(); awaitingSequence = null }
+	fun close() { closed = true; style = null; frame = null; fullyRendered = false; gesture = 0; pending.clear(); awaitingSequence = null }
 	override fun toString() = "NativeSurfaceState"
 }

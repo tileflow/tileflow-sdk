@@ -1,49 +1,58 @@
 import type {MapProps as NativeMapProps} from '@maplibre/maplibre-react-native';
 import type {
-	MapBaseProps,
-	MapErrorEvent,
-	MapInitialViewInputs,
-	MapLoadEvent,
-	MapOptions,
-	MapReadinessChangeEvent,
-	MapRef,
-	MapSource,
-	MapSourceState,
-	MapThemeChangeEvent,
-	MapView,
+  MapBaseProps,
+  MapErrorEvent,
+  MapInitialViewInputs,
+  MapLoadEvent,
+  MapOptions,
+  MapReadinessChangeEvent,
+  MapRef,
+  MapSource,
+  MapSourceState,
+  MapThemeChangeEvent,
+  MapView,
 } from '@tileflow/react-native';
 import type {ReactNode, Ref} from 'react';
 import type {ViewProps} from 'react-native';
 import type {
-	TileflowNativeInitialView,
-	TileflowNativeInitialViewOptions,
-	TileflowNativeSource,
+  TileflowNativeInitialView,
+  TileflowNativeInitialViewOptions,
+  TileflowNativeSource,
 } from '@tileflow/core/native';
 
-function acceptsProps(value: MapBaseProps): void { void value; }
-function acceptsOptions(value: MapOptions): void { void value; }
-function acceptsView(value: MapView): void { void value; }
+function acceptsProps(value: MapBaseProps): void {
+  void value;
+}
+function acceptsOptions(value: MapOptions): void {
+  void value;
+}
+function acceptsView(value: MapView): void {
+  void value;
+}
 
-const source = {map: 'streets', manifestUrl: 'https://maps.example.test/native/manifest.json'} as const;
+const source = {
+  map: 'streets',
+  manifestUrl: 'https://maps.example.test/native/manifest.json',
+} as const;
 
 export function acceptsExistingCoreContracts(
-	input: TileflowNativeSource,
-	view: TileflowNativeInitialView,
-	inputs: TileflowNativeInitialViewOptions,
-	ref: Ref<MapRef>,
-	children: ReactNode,
-	style: ViewProps['style'],
+  input: TileflowNativeSource,
+  view: TileflowNativeInitialView,
+  inputs: TileflowNativeInitialViewOptions,
+  ref: Ref<MapRef>,
+  children: ReactNode,
+  style: ViewProps['style'],
 ): void {
-	const sameSource: MapSource = input;
-	const sameView: MapView = view;
-	const sameInputs: MapInitialViewInputs = inputs;
-	void sameSource;
-	void sameInputs;
-	acceptsView(sameView);
-	acceptsProps({source, theme: 'system', children, style, testID: 'map', ref});
-	acceptsProps({source, mapOptions: {dragPan: true, touchZoom: false, scaleBar: true}});
-	const options: Pick<NativeMapProps, 'dragPan' | 'touchZoom' | 'compass'> = {dragPan: true};
-	acceptsOptions(options);
+  const sameSource: MapSource = input;
+  const sameView: MapView = view;
+  const sameInputs: MapInitialViewInputs = inputs;
+  void sameSource;
+  void sameInputs;
+  acceptsView(sameView);
+  acceptsProps({source, theme: 'system', children, style, testID: 'map', ref});
+  acceptsProps({source, mapOptions: {dragPan: true, touchZoom: false, scaleBar: true}});
+  const options: Pick<NativeMapProps, 'dragPan' | 'touchZoom' | 'compass'> = {dragPan: true};
+  acceptsOptions(options);
 }
 
 // Compile-only calls against the built public entry.
@@ -88,56 +97,65 @@ const optionsWithOwnedLifecycle = {dragPan: true, onDidFailLoadingMap: () => und
 acceptsOptions(optionsWithOwnedLifecycle);
 
 export function consumesState(state: MapSourceState | undefined, ref: MapRef): void {
-	const observed = ref.getSourceState();
-	void observed;
-	// @ts-expect-error No renderer or camera mutation escape hatch is exposed.
-	ref.setCamera({zoom: 8});
-	if (state?.status === 'ready') {
-		const name: string = state.map;
-		const scheme: 'dark' | 'light' = state.theme.colorScheme;
-		void name;
-		void scheme;
-		// @ts-expect-error Ready identity has no renderer discriminator.
-		void state.kind;
-		// @ts-expect-error Diagnostics do not disclose URLs or style bodies.
-		void state.source;
-	} else if (state?.status === 'error') {
-		const kind: 'terminal' | 'cancelled' = state.error.kind;
-		void kind;
-		// @ts-expect-error A safe diagnostic is not an exception with a remote message.
-		void state.error.message;
-	}
+  const observed = ref.getSourceState();
+  void observed;
+  // @ts-expect-error No renderer or camera mutation escape hatch is exposed.
+  ref.setCamera({zoom: 8});
+  if (state?.status === 'ready') {
+    const name: string = state.map;
+    const scheme: 'dark' | 'light' = state.theme.colorScheme;
+    void name;
+    void scheme;
+    // @ts-expect-error Ready identity has no renderer discriminator.
+    void state.kind;
+    // @ts-expect-error Diagnostics do not disclose URLs or style bodies.
+    void state.source;
+  } else if (state?.status === 'error') {
+    const kind: 'terminal' | 'cancelled' = state.error.kind;
+    void kind;
+    // @ts-expect-error A safe diagnostic is not an exception with a remote message.
+    void state.error.message;
+  }
 }
 
 export function handlesEvents(
-	load: MapLoadEvent,
-	error: MapErrorEvent,
-	readiness: MapReadinessChangeEvent,
-	theme: MapThemeChangeEvent,
+  load: MapLoadEvent,
+  error: MapErrorEvent,
+  readiness: MapReadinessChangeEvent,
+  theme: MapThemeChangeEvent,
 ): void {
-	const name: string = load.selection.theme.name;
-	void name;
-	// @ts-expect-error Selections contain Tileflow identity, not a renderer discriminator.
-	void load.selection.kind;
-	if (error.type === 'source-error') {
-		const field: string = error.error.field;
-		void field;
-	} else {
-		// @ts-expect-error Renderer failures contain no raw exception.
-		void error.error;
-	}
-	if (theme.phase === 'ready') {
-		const current: string = theme.currentTheme.name;
-		void current;
-	}
-	const status: 'loading' | 'ready' | 'error' = readiness.status;
-	void status;
-	acceptsProps({source,
-		onLoad: (event) => { void event.selection; },
-		onError: (event) => { void event.type; },
-		onReadinessChange: (event) => { void event.status; },
-		onThemeChange: (event) => { void event.phase; },
-	});
-	// @ts-expect-error onLoad receives a safe event, not a native map ref.
-	acceptsProps({source, onLoad: (_map: NativeMapProps) => undefined});
+  const name: string = load.selection.theme.name;
+  void name;
+  // @ts-expect-error Selections contain Tileflow identity, not a renderer discriminator.
+  void load.selection.kind;
+  if (error.type === 'source-error') {
+    const field: string = error.error.field;
+    void field;
+  } else {
+    // @ts-expect-error Renderer failures contain no raw exception.
+    void error.error;
+  }
+  if (theme.phase === 'ready') {
+    const current: string = theme.currentTheme.name;
+    void current;
+  }
+  const status: 'loading' | 'ready' | 'error' = readiness.status;
+  void status;
+  acceptsProps({
+    source,
+    onLoad: (event) => {
+      void event.selection;
+    },
+    onError: (event) => {
+      void event.type;
+    },
+    onReadinessChange: (event) => {
+      void event.status;
+    },
+    onThemeChange: (event) => {
+      void event.phase;
+    },
+  });
+  // @ts-expect-error onLoad receives a safe event, not a native map ref.
+  acceptsProps({source, onLoad: (_map: NativeMapProps) => undefined});
 }

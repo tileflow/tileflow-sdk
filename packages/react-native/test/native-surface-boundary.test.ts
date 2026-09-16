@@ -40,8 +40,9 @@ test('iOS surface deadlines and retirement callbacks preserve typed cancellation
 	assert.doesNotMatch(ios, /dispatch_block_create\(0,/u);
 	assert.match(ios, /NSString \*identifier = \[surface\.identifier copy\];/u);
 	assert.match(ios, /__weak TFSurfaceAttachment \*weakSurface = surface;/u);
-	assert.match(ios, /owner\.surfaces\[identifier\] != attachment/u);
-	assert.match(ios, /\[owner\.surfaces removeObjectForKey:identifier\]/u);
+	assert.match(ios, /TFSurfaceAttachment \*registered = owner\.surfaces\[identifier\];/u);
+	assert.match(ios, /if \(registered && registered != attachment\) return;/u);
+	assert.match(ios, /if \(registered == attachment\) \[owner\.surfaces removeObjectForKey:identifier\];/u);
 	assert.doesNotMatch(ios, /removeObjectForKey:surface\.identifier/u);
 });
 

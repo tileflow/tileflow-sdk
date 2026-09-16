@@ -7,7 +7,6 @@ test('a late native foreground event retries only the live Map without rebuildin
 	let foreground = false;
 	let opens = 0;
 	let styles = 0;
-	let lifecycle: ((foreground: boolean) => void) | undefined;
 	const ports: MountedMapPorts = {
 		documents: {acquire(url) {
 			const document = url.endsWith('manifest.json') ? {version: 1, maps: {main: {defaultTheme: 'light', themes: {
@@ -21,7 +20,6 @@ test('a late native foreground event retries only the live Map without rebuildin
 		}},
 		createBinding: () => ({async replace() { return {kind: 'direct'}; }, dispose() {}}),
 		appearance: () => () => undefined,
-		nativeLifecycle(listener) { lifecycle = listener; return () => { if (lifecycle === listener) lifecycle = undefined; }; },
 		installation: {open() {
 			opens++;
 			const map: NativeMapAdmission = {context: 'context', generation: 1, scope: {context: 'context', installation: 'installation'},
@@ -38,11 +36,11 @@ test('a late native foreground event retries only the live Map without rebuildin
 	await owner.whenIdle();
 	assert.equal(owner.getSnapshot().renderer, undefined);
 	foreground = true;
-	lifecycle?.(true);
+	owner.nativeLifecycle(true);
 	await owner.whenIdle();
 	assert.ok(owner.getSnapshot().renderer);
 	assert.equal(opens, 1); assert.equal(styles, 1);
 	await owner.dispose();
-	assert.equal(lifecycle, undefined);
+	owner.nativeLifecycle(true);
 	assert.equal(opens, 1);
 });

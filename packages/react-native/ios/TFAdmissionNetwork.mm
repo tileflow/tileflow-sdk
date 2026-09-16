@@ -36,8 +36,7 @@
 	dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
 	token.timer = timer;
 	__weak TFScheduledAdmission *weakToken = token;
-	// Cancellation clears the capture immediately rather than retaining the
-	// entire context until a cancelled dispatch_after block reaches its date.
+	// Cancellation releases captured work without waiting for the timer date.
 	dispatch_source_set_event_handler(timer, ^{ [weakToken fire]; });
 	dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(milliseconds * NSEC_PER_MSEC)), DISPATCH_TIME_FOREVER, 0);
 	dispatch_resume(timer);
@@ -48,55 +47,103 @@
 @interface TFAdmissionSessionOperation : NSObject <TFAdmissionCancel, NSURLSessionDataDelegate, NSURLSessionTaskDelegate> {
 	std::atomic_bool _cancelled;
 	std::atomic_bool _finished;
+	std::atomic_bool _started;
+	std::atomic_bool _cleaned;
 }
-@property (nonatomic, strong) NSURLRequest *request;
-@property (nonatomic, strong) NSURLSessionConfiguration *configuration;
+@property (nonatomic, strong, nullable) NSURLRequest *request;
+@property (nonatomic, strong, nullable) NSURLSessionConfiguration *configuration;
 @property (nonatomic, strong) NSOperationQueue *delegateQueue;
 @property (nonatomic) BOOL followsRedirects;
 @property (nonatomic) NSUInteger responseByteLimit;
-@property (nonatomic, copy) TFAdmissionStartGuard guard;
-@property (nonatomic, copy) TFAdmissionNetworkCompletion completion;
+@property (atomic, copy, nullable) TFAdmissionStartGuard guard;
+@property (nonatomic, copy, nullable) TFAdmissionNetworkCompletion completion;
+@property (nonatomic, copy, nullable) dispatch_block_t cleanup;
 @property (atomic, strong, nullable) NSURLSession *session;
 @property (atomic, strong, nullable) NSURLSessionDataTask *task;
-@property (nonatomic, strong) NSMutableData *body;
+@property (nonatomic, strong, nullable) NSMutableData *body;
 @property (nonatomic, strong, nullable) NSHTTPURLResponse *response;
 - (BOOL)isCancelled;
 - (void)start;
 - (void)finish:(nullable NSHTTPURLResponse *)response body:(nullable NSData *)body;
+- (void)releaseNativeResources;
 @end
 
 @implementation TFAdmissionSessionOperation
 - (instancetype)init {
-	if ((self = [super init])) { _cancelled.store(false); _finished.store(false); _body = [NSMutableData data]; }
+	if ((self = [super init])) {
+		_cancelled.store(false); _finished.store(false); _started.store(false); _cleaned.store(false);
+		_body = [NSMutableData data];
+	}
 	return self;
 }
 - (NSString *)description { return @"TFAdmissionSessionOperation(redacted)"; }
 - (BOOL)isCancelled { return _cancelled.load(); }
-- (BOOL)mayStart { return !_cancelled.load() && !_finished.load() && self.guard(); }
+- (BOOL)mayStart {
+	TFAdmissionStartGuard guard = self.guard;
+	return guard && !_cancelled.load() && !_finished.load() && guard();
+}
 - (void)start {
-	if (![self mayStart]) { [self finish:nil body:nil]; return; }
-	NSURLSessionConfiguration *configuration = [self.configuration copy];
-	configuration.waitsForConnectivity = NO;
-	configuration.discretionary = NO;
-	configuration.timeoutIntervalForResource = MIN(30.0, self.request.timeoutInterval);
-	configuration.timeoutIntervalForRequest = MIN(30.0, self.request.timeoutInterval);
-	self.session = [NSURLSession sessionWithConfiguration:configuration delegate:self delegateQueue:self.delegateQueue];
-	self.task = [self.session dataTaskWithRequest:self.request];
-	// Recheck after session/task creation, immediately before native resume.
-	if (![self mayStart]) { [self cancel]; return; }
-	[self.task resume];
+	if (_started.exchange(true)) return;
+	BOOL noSession = NO;
+	@try {
+		// Protect task construction against native cancellation, not against
+		// JavaScript. There is no asynchronous wait or I/O under this lock.
+		@synchronized(self) {
+			if ([self mayStart]) {
+				NSURLSessionConfiguration *configuration = [self.configuration copy];
+				configuration.waitsForConnectivity = NO;
+				configuration.discretionary = NO;
+				configuration.timeoutIntervalForResource = MIN(30.0, self.request.timeoutInterval);
+				configuration.timeoutIntervalForRequest = MIN(30.0, self.request.timeoutInterval);
+				self.session = [NSURLSession sessionWithConfiguration:configuration delegate:self delegateQueue:self.delegateQueue];
+				self.task = [self.session dataTaskWithRequest:self.request];
+				// Recheck after task creation, immediately before native resume.
+				if (self.task && [self mayStart]) [self.task resume];
+				else [self cancel];
+			} else [self finish:nil body:nil];
+			noSession = self.session == nil;
+		}
+	} @catch (NSException *exception) {
+		[self cancel];
+		@synchronized(self) { noSession = self.session == nil; }
+	}
+	// A request cancelled before queue drain has no native terminal event.
+	// Only processing its queued start may release that reservation.
+	if (noSession) [self releaseNativeResources];
 }
 - (void)cancel {
 	_cancelled.store(true);
-	[self.task cancel];
-	[self.session invalidateAndCancel];
 	[self finish:nil body:nil];
+	NSURLSession *session;
+	NSURLSessionDataTask *task;
+	@synchronized(self) { session = self.session; task = self.task; }
+	[task cancel]; [session invalidateAndCancel];
 }
 - (void)finish:(NSHTTPURLResponse *)response body:(NSData *)body {
 	if (_finished.exchange(true)) return;
-	[self.session invalidateAndCancel];
-	self.task = nil; self.session = nil;
-	self.completion(response, body);
+	NSURLSession *session;
+	@synchronized(self) { session = self.session; }
+	[session invalidateAndCancel];
+	TFAdmissionNetworkCompletion completion = self.completion;
+	self.completion = nil;
+	if (completion) completion(response, body);
+	// Logical completion is not physical cleanup. A cancelled URLSession
+	// retains its native capacity slot until didBecomeInvalidWithError.
+}
+- (void)releaseNativeResources {
+	if (_cleaned.exchange(true)) return;
+	dispatch_block_t cleanup;
+	@synchronized(self) {
+		self.task = nil; self.session = nil;
+		self.request = nil; self.configuration = nil; self.guard = nil;
+		self.body = nil; self.response = nil;
+		cleanup = self.cleanup; self.cleanup = nil;
+	}
+	if (cleanup) cleanup();
+}
+- (void)URLSession:(NSURLSession *)session didBecomeInvalidWithError:(NSError *)error {
+	[self finish:nil body:nil];
+	[self releaseNativeResources];
 }
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler {
 	if (![self mayStart] || ![response isKindOfClass:NSHTTPURLResponse.class] || response.expectedContentLength > (int64_t)self.responseByteLimit) {
@@ -116,8 +163,7 @@
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest *_Nullable))completionHandler {
 	if (![self mayStart]) { completionHandler(nil); [self cancel]; return; }
 	if (self.followsRedirects) { completionHandler(request); return; }
-	// Observe the response ourselves. The engine validates any redirect and
-	// creates a new request using the same still-live logical admission.
+	// Observe the response here, not through MapLibre delegate forwarding.
 	completionHandler(nil);
 	[self finish:response body:[NSData data]];
 }
@@ -179,23 +225,21 @@
 	operation.request = [request copy]; operation.guard = guard; operation.configuration = self.configuration;
 	operation.delegateQueue = self.delegateQueue; operation.followsRedirects = self.followsRedirects;
 	operation.responseByteLimit = self.responseByteLimit;
+	operation.completion = completion;
 	__weak TFAdmissionSessionOperation *weakOperation = operation;
-	operation.completion = ^(NSHTTPURLResponse *response, NSData *body) {
-		@try { completion(response, body); }
-		@finally {
-			if (reserved) dispatch_async(self.queue, ^{
-				TFAdmissionSessionOperation *finished = weakOperation;
-				if (finished) { [self.active removeObject:finished]; [self.pending removeObject:finished]; }
-				@synchronized(self) { self.reservations--; }
-				[self drain];
-			});
-		}
+	operation.cleanup = ^{
+		if (reserved) dispatch_async(self.queue, ^{
+			TFAdmissionSessionOperation *finished = weakOperation;
+			if (finished) { [self.active removeObject:finished]; [self.pending removeObject:finished]; }
+			@synchronized(self) { self.reservations--; }
+			[self drain];
+		});
 	};
-	if (!reserved) { [operation cancel]; return operation; }
-	// Reserve before posting to the queue. Cancelled work retains its slot
-	// until serialized cleanup, so cancellation churn cannot grow GCD work.
+	if (!reserved) { [operation cancel]; [operation start]; return operation; }
+	// Capacity is reserved before posting. Native terminal cleanup, not
+	// promise rejection, releases it after a URLSession has been created.
 	dispatch_async(self.queue, ^{
-		if (self.closed || operation.isCancelled) { [operation cancel]; return; }
+		if (self.closed || operation.isCancelled) { [operation cancel]; [operation start]; return; }
 		[self.pending addObject:operation];
 		[self drain];
 	});
@@ -205,7 +249,7 @@
 	while (!self.closed && self.active.count < self.concurrency && self.pending.count) {
 		TFAdmissionSessionOperation *operation = self.pending.firstObject;
 		[self.pending removeObjectAtIndex:0];
-		if (operation.isCancelled) { [operation cancel]; continue; }
+		if (operation.isCancelled) { [operation start]; continue; }
 		[self.active addObject:operation];
 		[operation start];
 	}
@@ -213,9 +257,10 @@
 - (void)close {
 	@synchronized(self) { if (self.closed) return; self.closed = YES; }
 	dispatch_async(self.queue, ^{
-		for (TFAdmissionSessionOperation *operation in [self.pending copy]) [operation cancel];
+		for (TFAdmissionSessionOperation *operation in [self.pending copy]) { [operation cancel]; [operation start]; }
+		[self.pending removeAllObjects];
+		// Keep active sessions and their reservations until invalidation.
 		for (TFAdmissionSessionOperation *operation in [self.active copy]) [operation cancel];
-		[self.pending removeAllObjects]; [self.active removeAllObjects];
 	});
 }
 @end

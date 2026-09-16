@@ -19,12 +19,8 @@ export function projectMapSourceState(
       }),
     });
   }
-  if (state.kind === 'maplibre') {
-    return Object.freeze({status: 'ready', kind: 'maplibre', generation: state.generation});
-  }
   return Object.freeze({
     status: 'ready',
-    kind: 'tileflow',
     generation: state.generation,
     map: state.map.name,
     theme: Object.freeze({name: state.theme.name, colorScheme: state.theme.colorScheme}),

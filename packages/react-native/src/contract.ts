@@ -17,9 +17,7 @@ export type MapView = TileflowNativeInitialView;
 /** Portable composition inputs, independent from source acquisition. */
 export type MapInitialViewInputs = TileflowNativeInitialViewOptions;
 
-export type MapSourceProps =
-  | Readonly<{source: Extract<MapSource, {kind: 'tileflow'}>; theme?: MapThemeSelection}>
-  | Readonly<{source: Extract<MapSource, {kind: 'maplibre'}>; theme?: never}>;
+export type MapSourceProps = Readonly<{source: MapSource; theme?: MapThemeSelection}>;
 
 type AllowedMapOptions =
   | 'dragPan'
@@ -53,14 +51,12 @@ export type MapPresentationProps = Readonly<{
   mapOptions?: MapOptions;
 }>;
 
-type TileflowReady = Extract<TileflowNativeSourceState, {status: 'ready'; kind: 'tileflow'}>;
+type TileflowReady = Extract<TileflowNativeSourceState, {status: 'ready'}>;
 export type MapTheme = Readonly<Pick<TileflowReady['theme'], 'name' | 'colorScheme'>>;
 export type MapSourceError = Readonly<Pick<TileflowNativeSourceError, 'code' | 'field' | 'kind'>>;
 
-/** Safe identity only: no URL, style body, credentials or native object. */
-export type MapSelection =
-  | Readonly<{kind: 'tileflow'; map: TileflowReady['map']['name']; theme: MapTheme}>
-  | Readonly<{kind: 'maplibre'}>;
+/** Safe Tileflow identity only: no URL, style body, credentials or native object. */
+export type MapSelection = Readonly<{map: TileflowReady['map']['name']; theme: MapTheme}>;
 
 /** Source readiness is not renderer/frame readiness. */
 export type MapSourceState =
@@ -137,5 +133,5 @@ export type MapCameraProps =
       onViewChange?: (event: MapViewChangeEvent) => void;
     }>;
 
-/** Type contract only; this package does not export a Map component. */
+/** Complete Tileflow source, presentation and mount-stable camera inputs. */
 export type MapProps = MapBaseProps & MapCameraProps;

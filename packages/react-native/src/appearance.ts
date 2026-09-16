@@ -1,13 +1,10 @@
-import type {MapColorScheme, MapSource, MapThemeSelection} from './contract';
+import type {MapColorScheme, MapThemeSelection} from './contract';
 
 export type AppearanceState =
   | Readonly<{status: 'available'; colorScheme: MapColorScheme}>
   | Readonly<{status: 'unavailable'}>;
 
-export type AppearanceSelection = Readonly<{
-  sourceKind: MapSource['kind'];
-  theme?: MapThemeSelection;
-}>;
+export type AppearanceSelection = Readonly<{theme?: MapThemeSelection}>;
 
 /** Only public Appearance reads/subscriptions are needed. No mutation or acquisition capability. */
 export type AppearancePort = {
@@ -107,8 +104,7 @@ export function createAppearanceObserver(port: AppearancePort) {
       selection: AppearanceSelection,
       listener: (state: AppearanceState) => void,
     ): () => void {
-      if (selection.sourceKind !== 'tileflow' || selection.theme !== 'system')
-        return () => undefined;
+      if (selection.theme !== 'system') return () => undefined;
       if (typeof listener !== 'function') throw new TypeError('Expected an appearance listener.');
       const entry: Listener = {notify: listener};
       listeners.add(entry);

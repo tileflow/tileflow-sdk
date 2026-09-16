@@ -3,7 +3,7 @@
   "version": "0.0.0-development",
   "private": true,
   "license": "Apache-2.0",
-  "description": "Pre-release contracts and private native adapters for Tileflow on React Native. No map renderer is exported.",
+  "description": "Pre-release mounted Tileflow Map and private native adapters for React Native.",
   "type": "module",
   "sideEffects": false,
   "homepage": "https://tileflow.dev",

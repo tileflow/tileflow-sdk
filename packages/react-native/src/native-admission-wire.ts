@@ -122,6 +122,7 @@ export function createNativeAdmissionWire(
   let installation: Installation | null = null;
   let sequence = 0;
   const reservations = new Set<string>();
+  const lifecycle = new Set<(foreground: boolean) => void>();
   async function safe<T>(action: () => Promise<T>): Promise<T> {
     try {
       return await action();
@@ -141,15 +142,27 @@ export function createNativeAdmissionWire(
     for (const context of [...installation.contexts.keys()]) retireContext(context);
     installation = null;
   }
+  function publishLifecycle(foreground: boolean) {
+    for (const listener of [...lifecycle]) {
+      try {
+        listener(foreground);
+      } catch {
+        /* Lifecycle observers never own transport state. */
+      }
+    }
+  }
   const bridge: NativeAdmissionBridge = Object.freeze({
     subscribe(listener) {
       return listen((event) => {
         if (event && event.installation === installation?.id) {
           if (event.kind === 'retired') retireContext(event.context);
           if (event.kind === 'ownershipLost') retireInstallation();
-          if (event.kind === 'lifecycle' && !event.foreground) {
-            for (const gate of installation?.contexts.values() ?? [])
-              for (const abort of [...gate.cancel]) abort();
+          if (event.kind === 'lifecycle') {
+            if (!event.foreground) {
+              for (const gate of installation?.contexts.values() ?? [])
+                for (const abort of [...gate.cancel]) abort();
+            }
+            publishLifecycle(event.foreground === true);
           }
         }
         listener(event);
@@ -163,10 +176,11 @@ export function createNativeAdmissionWire(
       return Object.freeze({installation: ack.installation});
     },
     registerContext: (id, registration) => safe(() => native.registerContext(id, registration)),
-    extendContext: (id, context, resources) => safe(() => {
-      if (!native.extendContext) throw unavailable();
-      return native.extendContext(id, context, resources);
-    }),
+    extendContext: (id, context, resources) =>
+      safe(() => {
+        if (!native.extendContext) throw unavailable();
+        return native.extendContext(id, context, resources);
+      }),
     retireContext(id, context) {
       if (id === installation?.id) retireContext(context);
       return safe(() => native.retireContext(id, context));
@@ -301,5 +315,18 @@ export function createNativeAdmissionWire(
       });
     };
   }
-  return Object.freeze({bridge, fetchForContext});
+  return Object.freeze({
+    bridge,
+    fetchForContext,
+    subscribeLifecycle(listener: (foreground: boolean) => void): () => void {
+      if (typeof listener !== 'function') throw invalid();
+      lifecycle.add(listener);
+      let live = true;
+      return () => {
+        if (!live) return;
+        live = false;
+        lifecycle.delete(listener);
+      };
+    },
+  });
 }

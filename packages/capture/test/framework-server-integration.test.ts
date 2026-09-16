@@ -2,7 +2,7 @@ import next from 'next';
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {once} from 'node:events';
-import {copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
+import {copyFile, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {createServer, type Server as NodeServer, Server} from 'node:http';
 import {dirname, join, relative, resolve} from 'node:path';
 import test from 'node:test';
@@ -11,6 +11,7 @@ import {promisify} from 'node:util';
 import webpack from 'webpack';
 import {TileflowWebpackPlugin} from '@tileflow/webpack';
 import {createTileflowCaptureSession} from '../src/index';
+import {writeFrameworkMapFixture} from './tileflow-source-fixture';
 
 const execFileAsync = promisify(execFile);
 
@@ -136,6 +137,7 @@ test(
       target: 'web',
     });
     await runWebpack(compiler);
+    await cp(join(fixture.cwd, 'public/tileflow-fixture'), join(outputDirectory, 'tileflow-fixture'), {recursive: true});
     assert.equal(
       JSON.parse(await readFile(join(outputDirectory, 'tileflow/manifest.json'), 'utf8')).version,
       1,
@@ -179,6 +181,7 @@ test(
       target: 'web',
     });
     await runWebpack(compiler);
+    await cp(join(fixture.cwd, 'public/tileflow-fixture'), join(outputDirectory, 'tileflow-fixture'), {recursive: true});
     const server = createWebpackApplicationServer(outputDirectory, '/app/');
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
@@ -235,7 +238,9 @@ async function createFrameworkFixture(kind: 'next' | 'webpack', options: {basePa
     process.platform === 'win32' ? 'junction' : 'dir',
   );
   const applicationPath = options.basePath ? `${options.basePath}/` : '/';
+  const manifestUrl = `${applicationPath}tileflow-fixture/manifest.json`;
   await writeFile(join(cwd, 'tileflow.config.ts'), createTileflowConfig(applicationPath), 'utf8');
+  await writeFrameworkMapFixture(cwd);
 
   if (kind === 'next') {
     await mkdir(join(cwd, 'pages'));
@@ -258,7 +263,7 @@ async function createFrameworkFixture(kind: 'next' | 'webpack', options: {basePa
     ]);
     await writeFile(
       join(cwd, 'pages', 'index.js'),
-      createNextApplicationSource(`${options.basePath ?? ''}/maplibre/maplibre-gl-worker.mjs`),
+      createNextApplicationSource(`${options.basePath ?? ''}/maplibre/maplibre-gl-worker.mjs`, manifestUrl),
       'utf8',
     );
     await writeFile(
@@ -268,26 +273,26 @@ async function createFrameworkFixture(kind: 'next' | 'webpack', options: {basePa
     );
     await writeFile(join(cwd, 'package.json'), '{"type":"module"}\n', 'utf8');
   } else {
-    await writeFile(join(cwd, 'main.js'), browserApplicationSource, 'utf8');
+    await writeFile(join(cwd, 'main.js'), createBrowserApplicationSource(manifestUrl), 'utf8');
   }
 
   return {cwd};
 }
 
-function createNextApplicationSource(workerUrl: string): string {
+function createNextApplicationSource(workerUrl: string, manifestUrl: string): string {
   return `import React from 'react';
 import {configureTileflowMapLibre, Map} from '@tileflow/react';
 
 configureTileflowMapLibre({workerUrl: '${workerUrl}'});
 
-const style = {version: 8, sources: {}, layers: [{id: 'background', type: 'background', paint: {'background-color': '#2468ac'}}]};
-
 export default function Page() {
-  return React.createElement('div', {style: {width: 222}}, React.createElement(Map, {captureId: 'proof', height: 100, source: {kind: 'maplibre', style}}));
+  return React.createElement('div', {style: {width: 222}}, React.createElement(Map, {captureId: 'proof', height: 100, source: {map: 'main', manifestUrl: ${JSON.stringify(manifestUrl)}}}));
 }
 `;
 }
-const browserApplicationSource = `import React from 'react';
+
+function createBrowserApplicationSource(manifestUrl: string): string {
+  return `import React from 'react';
 import {createRoot} from 'react-dom/client';
 import {configureTileflowMapLibre, Map} from '@tileflow/react';
 
@@ -296,10 +301,11 @@ configureTileflowMapLibre({workerUrl});
 
 document.documentElement.style.margin = '0';
 document.body.style.margin = '0';
-const style = {version: 8, sources: {}, layers: [{id: 'background', type: 'background', paint: {'background-color': '#2468ac'}}]};
-const frame = React.createElement('div', {style: {width: 222}}, React.createElement(Map, {captureId: 'proof', height: 100, source: {kind: 'maplibre', style}}));
+const frame = React.createElement('div', {style: {width: 222}}, React.createElement(Map, {captureId: 'proof', height: 100, source: {map: 'main', manifestUrl: ${JSON.stringify(manifestUrl)}}}));
 createRoot(document.getElementById('root')).render(frame);
 `;
+}
+
 function createTileflowConfig(applicationPath: string): string {
   return `import {defineMap, openMapTiles, vectorTiles} from '@tileflow/core';
 import {streets} from '@tileflow/maps';

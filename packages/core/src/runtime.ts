@@ -499,7 +499,7 @@ async function requestSessionGrant(input: {
         mapId: input.analytics.mapId,
         sdkVersion: input.analytics.sdkVersion,
         sessionId: input.sessionId,
-        source: input.source,
+        source: input.analytics.source ?? input.source,
         styleId: input.analytics.styleId,
         surfaceId: normalizeTileflowSurfaceId(input.analytics.surfaceId),
       }),

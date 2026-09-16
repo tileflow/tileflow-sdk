@@ -84,7 +84,11 @@ static MLRNMapView *TFSurfaceMap(UIView *root) {
 @end
 
 @implementation TFSurfaceAttachment
-- (BOOL)owns { return !self.retiring && self.map.delegate == self && TFSurfaceMap(self.root) == self.map; }
+- (BOOL)owns {
+	if (self.retiring || self.map.delegate != self) return NO;
+	@try { return TFSurfaceMap(self.root) == self.map; }
+	@catch (__unused NSException *exception) { return NO; }
+}
 - (NSString *)marker { return [@"__tileflow_native_style_" stringByAppendingString:self.token ?: @""]; }
 - (MLNStyle *)style { MLNStyle *style = self.map.style; return [style layerWithIdentifier:self.marker] ? style : nil; }
 - (NSDictionary *)view {
@@ -234,8 +238,9 @@ RCT_REMAP_METHOD(attachSurface, attachSurfaceWithTag:(NSNumber *)tag resolver:(R
 				__weak TFSurfaceAttachment *weakSurface = surface;
 				surface.state = [[TFNativeSurfaceState alloc] initWithSurface:surface.identifier emit:^(NSDictionary *event) {
 					TileflowNativeSurface *owner = weakSelf; TFSurfaceAttachment *attachment = weakSurface;
+					if (!attachment) return;
 					if ([event[@"kind"] isEqual:@"render"] && attachment.deadline) { dispatch_block_cancel(attachment.deadline); attachment.deadline = nil; }
-					if (!owner || owner.invalidated || !owner.observing) TFSurfaceInvalid();
+					if (!owner || owner.invalidated || !owner.observing) { [attachment.state close]; return; }
 					[owner sendEventWithName:@"TileflowNativeSurfaceEvent" body:event];
 				}];
 				self.surfaces[surface.identifier] = surface;
@@ -304,6 +309,11 @@ RCT_REMAP_METHOD(applyCamera, applyCameraForSurface:(NSString *)identifier seque
 		NSUInteger cameras = 0;
 		for (UIView *child in surface.map.reactSubviews) if ([child isKindOfClass:MLRNCamera.class]) cameras++;
 		if (cameras != 1) TFSurfaceInvalid();
+		// The pinned iOS CameraUpdateItem computes altitude before applying a changed pitch.
+		// Apply center/bearing/pitch first, then compute the exact zoom at that pitch.
+		NSMutableDictionary *pitchStop = [target mutableCopy];
+		[pitchStop removeObjectForKey:@"zoom"]; pitchStop[@"duration"] = @0;
+		[camera handleImperativeStop:pitchStop];
 		NSMutableDictionary *stop = [target mutableCopy]; stop[@"duration"] = @0;
 		[camera handleImperativeStop:stop];
 		NSDictionary *actual = surface.view;

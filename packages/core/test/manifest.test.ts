@@ -144,7 +144,7 @@ test('parses one canonical shape for local and Hosted delivery metadata', () => 
   assert.equal(map?.mapId, 'map_main');
   assert.equal(resolveTileflowRuntimeTheme(map!, 'system', 'dark').name, 'dark');
   assert.equal(
-    resolveTileflowRuntimeStyle({manifestMap: map, source: {kind: 'tileflow', map: 'main'}})?.theme,
+    resolveTileflowRuntimeStyle({manifestMap: map, source: {map: 'main'}})?.theme,
     'dark',
   );
 });

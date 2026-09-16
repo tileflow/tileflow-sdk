@@ -240,6 +240,16 @@ export function createMapCameraController(
       settlement = undefined;
       reconcile();
     },
+    /** Retire renderer-bound camera epochs without guessing a completion or issuing a replacement. */
+    interrupt(): void {
+      if (!mounted || disposed) return;
+      advance();
+      gesture = undefined;
+      settlement = undefined;
+      const previous = pending;
+      pending = undefined;
+      retire(previous);
+    },
     /** Programmatic observations are never public changes, even when their values differ. */
     observeCommand(identity: CameraToken, input: MapView): void {
       const run = pending;

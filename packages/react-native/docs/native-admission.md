@@ -48,7 +48,7 @@ The existing controller retains exact 10,000-request and six-hour rotation seman
 
 The native bootstrap uses its own OkHttp client or ephemeral URLSession configuration, separate from MapLibre and from the protected-resource channel. It sends only the expected POST body (`mapId`, `sessionId`, normalized `surfaceId`) to the canonical HTTPS API origin's `/v1/sessions/start` endpoint. The publishable credential is carried in `X-Tileflow-Mobile-Client`, never a query parameter. Cookies, ambient credentials and automatic redirects are disabled on this channel.
 
-Each context binds the first validated bootstrap endpoint and credential; subsequent attempts cannot change either. The native registry checks the context's Map identity, bounded request identifiers, request body and lifecycle before sending. Retiring a context cancels its bootstrap without cancelling another Map's operation. The response travels through a bounded native promise, not an event. Only TypeScript parses session authority and admits protected tickets.
+Each context binds the first validated bootstrap endpoint and credential; subsequent attempts cannot change either. The native registry checks the context's Map identity, bounded request identifiers, request body and lifecycle before sending. Retiring a context cancels its bootstrap without cancelling another Map's operation. The response travels through a bounded native promise, not an event. Only TypeScript parses session authority and admits protected tickets. Native bootstrap guards retain the original engine identity rather than reading a mutable module installation from a network thread.
 
 The internal controller's `transportBudget(authority)` returns a conservative remaining budget anchored to its existing local `validUntil`. Native does not calculate a fresh lifetime from `expiresAt` and `serverTime`. It anchors the budget at the earlier native ticket-enqueue time, subtracts a safety margin, caps it by the transport deadline and rechecks it immediately before network start and each redirect. Clock rollback, replacement, disposal and expiry invalidate the budget.
 
@@ -68,6 +68,7 @@ Native observation events contain only bounded identifiers and HTTP status. They
 | --- | --- |
 | Live Map contexts per installation | 16 |
 | Exact resources in one test catalog | 128 |
+| Native engine ingress per installation, reserved before scheduler dispatch | 2,048 |
 | Protected work per context | 128 |
 | Tickets in one bridge batch | 8 |
 | Resource URL | 2,048 characters, including room for the discriminator |
@@ -81,12 +82,14 @@ Native observation events contain only bounded identifiers and HTTP status. They
 | Bootstrap request / response | 2,048 / 65,536 bytes |
 | Bootstrap deadline | 30 seconds |
 
-A cancelled bridge operation retains its capacity reservation until native completion; an unread delivered bootstrap body also retains a bounded slot until consumed, cancelled or retired. Native transport reservations separately bound queued physical work. Diagnostics do not expose authority when these limits reject a request. Limits are conservative transport bounds, not promises about product quotas or billing.
+A cancelled bridge operation retains its capacity reservation until native completion; an unread delivered bootstrap body also retains a bounded slot until consumed, cancelled or retired. Native ingress is reserved before posting to the main scheduler, so cancellation churn cannot bypass its limit while that scheduler is paused. Repeated cancellation does not enqueue repeated cleanup.
+
+Native network capacity is separate from logical admission. Android retains its physical slot through its terminal OkHttp callback. iOS reports logical failure promptly but retains a created URLSession and its capacity until `didBecomeInvalidWithError`; a request cancelled before session creation releases only after its queued start is processed. Native teardown does not create additional capacity by forgetting sessions still awaiting invalidation. These are transport bounds, not product quotas, admission counters or billing guarantees.
 
 ## Local qualification
 
-The source tests cover JS admission accounting, deterministic barriers around 9,999/10,000/10,001 and six-hour concurrency, expiry after acquisition, mixed results, context isolation, lifecycle cancellation, native protocol/provider ownership, redirects, bootstrap bounds and package inertness. The archive test checks the actual packed source and metadata, not just the manifest allowlist.
+The source tests cover JS admission accounting, deterministic barriers around 9,999/10,000/10,001 and six-hour concurrency, expiry after acquisition, mixed results, context isolation, lifecycle cancellation, native protocol/provider ownership, redirects, bootstrap bounds and package inertness. Additional regressions exercise setters that mutate before throwing, duplicate installation, retained teardown receipts, ingress before main-queue drain, cancellation churn and delayed native invalidation. The archive test checks the actual packed source and metadata, not just the manifest allowlist.
 
 The [local native harness](https://github.com/tileflow/tileflow-sdk/tree/na/native-sdk-integration/packages/react-native/harness) is deliberately excluded from the packed package and runtime exports. It uses an existing development host and fixture endpoints, the real TypeScript controller, the real RN bridge and upstream native Maps. No generated project, runner, external service or deployment is supplied.
 
-Before accepting this unit, run the JS/type/package checks, Android unit and integration tests, CocoaPods/SPM resolution and XCTest, then the harness in the pinned native host. Exercise cold installation, identical URLs across Maps, an unchanged third-party request, style continuity, replacement, cancellation at each phase, background/resume, ownership mutation and redirection. Inspect only redacted observations and controlled fixture assertions. Source inspection and authored tests do not constitute execution evidence.
+Before accepting this unit, run the JS/type/package checks, Android unit and integration tests, CocoaPods/SPM resolution and XCTest, then the harness in the pinned native host. Exercise cold installation, identical URLs across Maps, an unchanged third-party request, style continuity, replacement, cancellation at each phase, background/resume, ownership mutation and redirection. Inspect only redacted observations and controlled fixture assertions. Qualify native callback ordering and retention with memory/thread diagnostics as well as renderer behavior. Source inspection and authored tests do not constitute execution evidence.

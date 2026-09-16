@@ -1005,7 +1005,6 @@ function isExactRestart(value: unknown, expectedSessionId: string) {
   return (
     isRecord(value) &&
     Object.keys(value).length === RESTART_KEYS.size &&
-    Object.keys(value).every((key) => !RESTART_KEYS.has(key)) === false &&
     Object.keys(value).every((key) => RESTART_KEYS.has(key)) &&
     value.code === 'COMMERCIAL_SESSION_RESTART_REQUIRED' &&
     typeof value.error === 'string' &&

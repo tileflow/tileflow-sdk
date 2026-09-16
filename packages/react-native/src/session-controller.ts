@@ -158,6 +158,11 @@ export type HostedNativeSessionAuthority = Readonly<{
   tilesetIds: readonly string[];
 }>;
 
+/** Private graph classification data; it cannot authorize a resource request. */
+export type HostedNativeResourcePolicy = Readonly<
+  Pick<HostedNativeSessionAuthority, 'mapId' | 'resourceOrigins' | 'resourceScopes' | 'tilesetIds'>
+>;
+
 type SafeError = Readonly<{
   code: HostedNativeSessionErrorCode;
   kind: HostedNativeSessionErrorKind;
@@ -197,6 +202,7 @@ export type HostedNativeSessionState =
 export type HostedNativeSessionController = Readonly<{
   readonly state: HostedNativeSessionState;
   acquire(): Promise<HostedNativeSessionAuthority | null>;
+  prepare?(): Promise<HostedNativeResourcePolicy | null>;
   transportBudget(authority: HostedNativeSessionAuthority): number;
   background(): void;
   resume(): Promise<void>;
@@ -398,7 +404,8 @@ export function createHostedNativeSessionController(input: {
       session.authority?.public.surfaceId ?? session.requestedSurfaceId,
       at,
     );
-    replacement.requestCount = Math.max(1, session.pendingAdmissions);
+    // Preparation has no ticket. Only actual pending acquisitions transfer accounting.
+    replacement.requestCount = session.pendingAdmissions;
     replacement.operation = session.operation;
     session.redirect = replacement;
     activeSession = replacement;
@@ -667,6 +674,24 @@ export function createHostedNativeSessionController(input: {
     get state() {
       return state;
     },
+    async prepare() {
+      if (disposed) throw new HostedNativeSessionError('NATIVE_SESSION_DISPOSED');
+      if (bindingIsDirect()) return null;
+      if (lifecycle !== 'foreground') throw new HostedNativeSessionError('NATIVE_SESSION_UNAVAILABLE');
+      const at = readClock();
+      rotateIfRequired(at);
+      if (disposed) throw new HostedNativeSessionError('NATIVE_SESSION_DISPOSED');
+      if (bindingIsDirect() || !activeSession) throw new HostedNativeSessionError('NATIVE_SESSION_REPLACED');
+      const authority = await acquireAuthority(activeSession, at);
+      if (lifecycle !== 'foreground') throw new HostedNativeSessionError('NATIVE_SESSION_UNAVAILABLE');
+      // This snapshot is not a grant, ticket, or reservation. Each later request still acquires.
+      return Object.freeze({
+        mapId: authority.mapId,
+        resourceOrigins: Object.freeze([...authority.resourceOrigins]),
+        resourceScopes: Object.freeze([...authority.resourceScopes]),
+        tilesetIds: Object.freeze([...authority.tilesetIds]),
+      });
+    },
     async acquire() {
       if (disposed) throw new HostedNativeSessionError('NATIVE_SESSION_DISPOSED');
       if (bindingIsDirect()) return null;
@@ -898,7 +923,7 @@ function parseSuccess(
     expiresAtMs <= serverTimeMs ||
     expiresAtMs <= issuedAtMs ||
     expiresAtMs - issuedAtMs > MAX_GRANT_LIFETIME_MS ||
-    expiresAtMs - serverTimeMs > MAX_GRANT_LIFETIME_MS
+    expiresAtMs - issuedAtMs > MAX_GRANT_LIFETIME_MS
   ) {
     throw new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_INVALID');
   }

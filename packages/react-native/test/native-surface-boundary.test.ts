@@ -34,6 +34,17 @@ test('native surface adapters observe only their owned view and redact all nativ
 	assert.match(ios, /\[camera handleImperativeStop:pitchStop\][\s\S]*\[camera handleImperativeStop:stop\]/u);
 });
 
+test('iOS surface deadlines and retirement callbacks preserve typed cancellation and attachment identity', async () => {
+	const ios = await source('ios/TileflowNativeSurface.mm');
+	assert.match(ios, /dispatch_block_create\(\(dispatch_block_flags_t\)0,\s*\^\{/u);
+	assert.doesNotMatch(ios, /dispatch_block_create\(0,/u);
+	assert.match(ios, /NSString \*identifier = \[surface\.identifier copy\];/u);
+	assert.match(ios, /__weak TFSurfaceAttachment \*weakSurface = surface;/u);
+	assert.match(ios, /owner\.surfaces\[identifier\] != attachment/u);
+	assert.match(ios, /\[owner\.surfaces removeObjectForKey:identifier\]/u);
+	assert.doesNotMatch(ios, /removeObjectForKey:surface\.identifier/u);
+});
+
 test('surface code has private build wiring without widening peers or publishing a native handle', async () => {
 	const gradle = await source('android/build.gradle');
 	assert.match(gradle, /implementation project\(':maplibre_maplibre-react-native'\)/u);

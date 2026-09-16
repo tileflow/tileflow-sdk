@@ -67,6 +67,7 @@ export function createNativeRendererOwner(
   let pendingSuccess = true;
   let rollback = false;
   let preloading = false;
+  let styleAccepted = false;
   let loaded = false;
   let cameraMounted = false;
   let needsCommit = false;
@@ -76,7 +77,13 @@ export function createNativeRendererOwner(
   let settlement: CameraToken | undefined;
   let cameraProps = initialCamera;
   const initial = snapshotCameraProps(initialCamera, {manifestView: initialTarget.source.map.view});
-  let snapshot = Object.freeze({key, style: blank as Readonly<Record<string, unknown>>, revision});
+  const initialView = initial.view;
+  let snapshot = Object.freeze({
+    key,
+    style: blank as Readonly<Record<string, unknown>>,
+    initialView,
+    revision,
+  });
   const tasks = new Set<Promise<unknown>>();
   const track = <T>(promise: Promise<T>): Promise<T> => {
     tasks.add(promise);
@@ -86,13 +93,19 @@ export function createNativeRendererOwner(
   const changed = () => {
     if (disposed) return;
     snapshot = Object.freeze({...snapshot, revision: ++revision});
-    try { ports.changed(); } catch { /* A subscriber cannot own renderer lifetime. */ }
+    try {
+      ports.changed();
+    } catch {
+      /* A subscriber cannot own renderer lifetime. */
+    }
   };
   const emit = (event: NativeRendererEvent) => {
     if (disposed) return;
     try {
       void Promise.resolve(ports.emit(Object.freeze(event))).catch(() => undefined);
-    } catch { /* Observer failure is not a renderer failure. */ }
+    } catch {
+      /* Observer failure is not a renderer failure. */
+    }
   };
   const readiness = createNativeReadiness((status) => {
     if (disposed) return;
@@ -102,14 +115,20 @@ export function createNativeRendererOwner(
       pendingSuccess = false;
       emit({type: 'readiness-change', generation: eventGeneration, status});
       if (!disposed && transaction === version) {
-        emit({type: 'theme-change', phase: 'ready', generation: eventGeneration,
-          map: active.source.map.name, currentTheme: selection(active).theme});
+        emit({
+          type: 'theme-change',
+          phase: 'ready',
+          generation: eventGeneration,
+          map: active.source.map.name,
+          currentTheme: selection(active).theme,
+        });
       }
     } else emit({type: 'readiness-change', generation: eventGeneration, status});
   });
   const cameraPort = createNativeCameraPort({
     applyCamera(command, view) {
-      if (!surface || disposed || terminal || !loaded) return Promise.reject(new NativePreparationError());
+      if (!surface || disposed || terminal || !loaded || !foreground)
+        return Promise.reject(new NativePreparationError());
       return surface.applyCamera(command, view);
     },
     cancelCamera(command) {
@@ -127,18 +146,60 @@ export function createNativeRendererOwner(
     readiness.invalidate();
     changed();
   }
+  function interruptCamera() {
+    if (!cameraMounted) return;
+    gesture = undefined;
+    settlement = undefined;
+    camera.interrupt();
+  }
+  function activateStyle(version: number) {
+    if (
+      disposed ||
+      terminal ||
+      !foreground ||
+      !styleAccepted ||
+      loaded ||
+      version !== transaction
+    )
+      return;
+    loaded = true;
+    emit({type: 'load', generation: eventGeneration, selection: selection(active)});
+    if (disposed || version !== transaction || !foreground) return;
+    try {
+      if (!cameraMounted) {
+        cameraMounted = true;
+        camera.mount(
+          initial.mode === 'controlled'
+            ? {view: initial.view, onViewChange: cameraProps.onViewChange!}
+            : {initialView: initial.view, onViewChange: cameraProps.onViewChange},
+        );
+        camera.update(cameraProps);
+      } else camera.restoreAfterStyleChange();
+      track(
+        cameraPort.whenIdle().then(() => {
+          if (!disposed && foreground && version === transaction) invalidate();
+        }),
+      );
+    } catch {
+      fail();
+    }
+  }
   function apply(target: NativeRendererTarget, restoring: boolean) {
     if (disposed) return;
     const version = ++transaction;
-    if (styleSequence >= Number.MAX_SAFE_INTEGER) { terminal = true; readiness.fail(); return; }
+    if (styleSequence >= Number.MAX_SAFE_INTEGER) {
+      terminal = true;
+      readiness.fail();
+      return;
+    }
     active = target;
     terminal = false;
     rollback = restoring;
     pendingSuccess = !restoring;
     preloading = false;
+    styleAccepted = false;
     loaded = false;
-    gesture = undefined;
-    settlement = undefined;
+    interruptCamera();
     token = `style_${++styleSequence}`;
     const expected = token;
     barrierEpoch++;
@@ -146,24 +207,51 @@ export function createNativeRendererOwner(
     readiness.begin(expected);
     if (!surface) return;
     const nativeSurface = surface;
-    const work = Promise.resolve().then(async () => {
-      if (disposed || version !== transaction) return;
-      await nativeSurface.expectStyle(expected);
-      if (disposed || version !== transaction || surface !== nativeSurface) return;
-      const layers = target.style.layers;
-      if (!Array.isArray(layers) || layers.length >= 4096 || layers.some((layer) =>
-        !layer || typeof layer !== 'object' || typeof layer.id !== 'string' ||
-        layer.id.startsWith('__tileflow_native_style_'))) throw new NativePreparationError();
-      const style = freezeNativePreparedJson({...target.style, layers: [...layers, {
-        id: `__tileflow_native_style_${expected}`, type: 'background',
-        layout: {visibility: 'none'}, paint: {'background-opacity': 0},
-      }]});
-      snapshot = Object.freeze({key, style, revision: ++revision});
-      if (!restoring) emit({type: 'theme-change', phase: 'applying', generation: eventGeneration,
-        map: target.source.map.name, targetTheme: selection(target).theme,
-        ...(committed ? {currentTheme: selection(committed).theme} : {})});
-      if (!disposed && version === transaction) changed();
-    }).catch(() => { if (!disposed && version === transaction) fail(); });
+    const work = Promise.resolve()
+      .then(async () => {
+        if (disposed || version !== transaction) return;
+        await nativeSurface.expectStyle(expected);
+        if (disposed || version !== transaction || surface !== nativeSurface) return;
+        const layers = target.style.layers;
+        if (
+          !Array.isArray(layers) ||
+          layers.length >= 4096 ||
+          layers.some(
+            (layer) =>
+              !layer ||
+              typeof layer !== 'object' ||
+              typeof layer.id !== 'string' ||
+              layer.id.startsWith('__tileflow_native_style_'),
+          )
+        )
+          throw new NativePreparationError();
+        const style = freezeNativePreparedJson({
+          ...target.style,
+          layers: [
+            ...layers,
+            {
+              id: `__tileflow_native_style_${expected}`,
+              type: 'background',
+              layout: {visibility: 'none'},
+              paint: {'background-opacity': 0},
+            },
+          ],
+        });
+        snapshot = Object.freeze({key, style, initialView, revision: ++revision});
+        if (!restoring)
+          emit({
+            type: 'theme-change',
+            phase: 'applying',
+            generation: eventGeneration,
+            map: target.source.map.name,
+            targetTheme: selection(target).theme,
+            ...(committed ? {currentTheme: selection(committed).theme} : {}),
+          });
+        if (!disposed && version === transaction) changed();
+      })
+      .catch(() => {
+        if (!disposed && version === transaction) fail();
+      });
     track(work);
   }
   function fail() {
@@ -173,25 +261,33 @@ export function createNativeRendererOwner(
     const version = transaction;
     emit({type: 'renderer-error', generation});
     if (disposed || version !== transaction) return;
-    emit({type: 'theme-change', phase: 'error', generation, map: active.source.map.name,
-      targetTheme: selection(active).theme, ...(previous ? {currentTheme: selection(previous).theme} : {})});
+    emit({
+      type: 'theme-change',
+      phase: 'error',
+      generation,
+      map: active.source.map.name,
+      targetTheme: selection(active).theme,
+      ...(previous ? {currentTheme: selection(previous).theme} : {}),
+    });
     if (disposed || version !== transaction) return;
     if (!rollback && previous) apply(previous, true);
     else {
       ++transaction;
       terminal = true;
+      styleAccepted = false;
       loaded = false;
       needsCommit = false;
-      gesture = undefined;
-      settlement = undefined;
+      interruptCamera();
       readiness.fail();
     }
   }
   function native(event: NativeSurfaceEvent) {
-    if (disposed || terminal || !surface || event.surface !== surface.id ||
-      event.style !== token || !foreground) return;
+    if (disposed || terminal || !surface || event.surface !== surface.id || event.style !== token) return;
     const version = transaction;
-    if (event.kind === 'error') { fail(); return; }
+    if (event.kind === 'error') {
+      fail();
+      return;
+    }
     if (event.kind === 'invalidate') {
       readiness.native(event);
       barrierEpoch++;
@@ -201,29 +297,16 @@ export function createNativeRendererOwner(
     }
     if (event.kind === 'style') {
       readiness.native(event);
-      if (loaded) return;
-      loaded = true;
-      emit({type: 'load', generation: eventGeneration, selection: selection(active)});
-      if (disposed || version !== transaction) return;
-      try {
-        if (!cameraMounted) {
-          cameraMounted = true;
-          camera.mount(initial.mode === 'controlled'
-            ? {view: initial.view, onViewChange: cameraProps.onViewChange!}
-            : {initialView: initial.view, onViewChange: cameraProps.onViewChange});
-          camera.update(cameraProps);
-        } else camera.restoreAfterStyleChange();
-        track(cameraPort.whenIdle().then(() => {
-          if (!disposed && version === transaction) invalidate();
-        }));
-      } catch { fail(); }
+      if (styleAccepted) return;
+      styleAccepted = true;
+      activateStyle(version);
       return;
     }
     if (event.kind === 'render') {
-      if (!preloading && loaded && !gesture && !settlement) readiness.native(event);
+      if (foreground && !preloading && loaded && !gesture && !settlement) readiness.native(event);
       return;
     }
-    if (!cameraMounted || !loaded) return;
+    if (!foreground || !cameraMounted || !loaded) return;
     if (event.kind === 'gesture-start') {
       const started = camera.startGesture();
       if (!started) return;
@@ -245,26 +328,59 @@ export function createNativeRendererOwner(
   }
 
   return Object.freeze({
-    get snapshot() { return snapshot; },
-    get token() { return token; },
-    get currentTheme() { return committed ? selection(committed).theme : undefined; },
-    get currentTarget() { return committed; },
+    get snapshot() {
+      return snapshot;
+    },
+    get initialView() {
+      return initialView;
+    },
+    get token() {
+      return token;
+    },
+    get currentTheme() {
+      return committed ? selection(committed).theme : undefined;
+    },
+    get currentTarget() {
+      return committed;
+    },
     bindRoot(rootTag: number): void {
-      if (disposed || !Number.isSafeInteger(rootTag) || rootTag < 1 ||
-        (root !== undefined && root !== rootTag)) return;
+      if (
+        disposed ||
+        !Number.isSafeInteger(rootTag) ||
+        rootTag < 1 ||
+        (root !== undefined && root !== rootTag)
+      )
+        return;
       root = rootTag;
     },
-    layoutChanged(): void { invalidate(); },
+    layoutChanged(): void {
+      if (disposed || terminal) return;
+      interruptCamera();
+      invalidate();
+    },
     attach(rootTag: number): Promise<void> {
       if (attached) return attached;
-      if (disposed || !Number.isSafeInteger(rootTag) || rootTag < 1 ||
-        (root !== undefined && root !== rootTag)) return Promise.reject(new NativePreparationError());
+      if (
+        disposed ||
+        !Number.isSafeInteger(rootTag) ||
+        rootTag < 1 ||
+        (root !== undefined && root !== rootTag)
+      )
+        return Promise.reject(new NativePreparationError());
       root = rootTag;
-      const pending = ports.surfaces.attach(rootTag, native, fail).then(async (value) => {
-        surface = value;
-        if (disposed) { await value.retire(); return; }
-        apply(active, rollback);
-      }).catch(() => { if (!disposed) fail(); });
+      const pending = ports.surfaces
+        .attach(rootTag, native, fail)
+        .then(async (value) => {
+          surface = value;
+          if (disposed) {
+            await value.retire();
+            return;
+          }
+          apply(active, rollback);
+        })
+        .catch(() => {
+          if (!disposed) fail();
+        });
       attached = pending;
       track(pending);
       return pending;
@@ -273,11 +389,18 @@ export function createNativeRendererOwner(
       if (disposed) return;
       eventGeneration = generation;
       preloading = true;
+      interruptCamera();
       invalidate();
       // A pending manifest does not yet establish the requested concrete theme.
-      if (targetTheme) emit({type: 'theme-change', phase: 'preloading', generation,
-        map: active.source.map.name, targetTheme,
-        ...(committed ? {currentTheme: selection(committed).theme} : {})});
+      if (targetTheme)
+        emit({
+          type: 'theme-change',
+          phase: 'preloading',
+          generation,
+          map: active.source.map.name,
+          targetTheme,
+          ...(committed ? {currentTheme: selection(committed).theme} : {}),
+        });
     },
     setTarget(target: NativeRendererTarget): void {
       if (disposed) return;
@@ -292,17 +415,32 @@ export function createNativeRendererOwner(
       preloading = false;
       pendingSuccess = true;
       rollback = false;
+      interruptCamera();
       invalidate();
     },
     preparationFailed(generation: number): void {
       if (disposed) return;
       eventGeneration = generation;
       preloading = false;
-      emit({type: 'theme-change', phase: 'error', generation, map: active.source.map.name,
-        ...(committed ? {currentTheme: selection(committed).theme} : {})});
-      if (!committed) { terminal = true; readiness.fail(); return; }
+      emit({
+        type: 'theme-change',
+        phase: 'error',
+        generation,
+        map: active.source.map.name,
+        ...(committed ? {currentTheme: selection(committed).theme} : {}),
+      });
+      if (!committed) {
+        terminal = true;
+        readiness.fail();
+        return;
+      }
       if (active !== committed || terminal) apply(committed, true);
-      else { rollback = true; pendingSuccess = false; invalidate(); }
+      else {
+        rollback = true;
+        pendingSuccess = false;
+        interruptCamera();
+        invalidate();
+      }
     },
     afterCommit(props: MapCameraProps): void {
       if (disposed || terminal) return;
@@ -310,44 +448,101 @@ export function createNativeRendererOwner(
         const next = snapshotCameraProps(props);
         if (next.mode !== initial.mode) throw new NativePreparationError();
         cameraProps = props;
-        if (cameraMounted) camera.update(props);
+        if (cameraMounted) {
+          camera.update(props);
+          if (!foreground) camera.interrupt();
+        }
         const completed = settlement;
         settlement = undefined;
-        if (completed) camera.settleGesture(completed);
-      } catch { fail(); return; }
-      if (!surface || !loaded || !foreground || preloading || gesture || !needsCommit || barrier) return;
+        if (completed && foreground) camera.settleGesture(completed);
+      } catch {
+        fail();
+        return;
+      }
+      if (
+        !surface ||
+        !loaded ||
+        !foreground ||
+        preloading ||
+        gesture ||
+        !needsCommit ||
+        barrier
+      )
+        return;
       const nativeSurface = surface;
       const expected = token;
       const epoch = barrierEpoch;
       const version = transaction;
-      const work = cameraPort.whenIdle().then(async () => {
-        if (disposed || !foreground || preloading || gesture || version !== transaction || epoch !== barrierEpoch) return;
-        const layout = await nativeSurface.commitLayout(expected);
-        if (disposed || !foreground || preloading || gesture || version !== transaction || epoch !== barrierEpoch) return;
-        needsCommit = false;
-        readiness.commit(expected, layout);
-        await nativeSurface.requestFrame(expected);
-      }).catch(() => {
-        if (!disposed && version === transaction && epoch === barrierEpoch && foreground) fail();
-      });
+      const work = cameraPort
+        .whenIdle()
+        .then(async () => {
+          if (
+            disposed ||
+            !foreground ||
+            preloading ||
+            gesture ||
+            version !== transaction ||
+            epoch !== barrierEpoch
+          )
+            return;
+          const layout = await nativeSurface.commitLayout(expected);
+          if (
+            disposed ||
+            !foreground ||
+            preloading ||
+            gesture ||
+            version !== transaction ||
+            epoch !== barrierEpoch
+          )
+            return;
+          needsCommit = false;
+          readiness.commit(expected, layout);
+          await nativeSurface.requestFrame(expected);
+        })
+        .catch(() => {
+          if (!disposed && version === transaction && epoch === barrierEpoch && foreground) fail();
+        });
       barrier = work;
-      track(work.then(() => {
-        if (barrier === work) barrier = undefined;
-        if (!disposed && !terminal && needsCommit && foreground && loaded && !gesture && !preloading) changed();
-      }));
+      track(
+        work.then(() => {
+          if (barrier === work) barrier = undefined;
+          if (
+            !disposed &&
+            !terminal &&
+            needsCommit &&
+            foreground &&
+            loaded &&
+            !gesture &&
+            !preloading
+          )
+            changed();
+        }),
+      );
     },
     background(): void {
-      if (disposed) return;
+      if (disposed || !foreground) return;
       foreground = false;
-      gesture = undefined;
-      settlement = undefined;
+      interruptCamera();
       invalidate();
     },
     resume(): void {
-      if (disposed || terminal) return;
+      if (disposed || terminal || foreground) return;
       foreground = true;
-      try { if (cameraMounted && loaded) camera.restoreAfterStyleChange(); } catch { fail(); }
-      track(cameraPort.whenIdle().then(() => { if (!disposed) invalidate(); }));
+      if (styleAccepted && !loaded) {
+        activateStyle(transaction);
+        return;
+      }
+      try {
+        if (cameraMounted && loaded) camera.restoreAfterStyleChange();
+      } catch {
+        fail();
+        return;
+      }
+      track(
+        cameraPort.whenIdle().then(() => {
+          if (!disposed && foreground) invalidate();
+        }),
+      );
     },
     async whenIdle(): Promise<void> {
       for (;;) {
@@ -371,7 +566,9 @@ export function createNativeRendererOwner(
         else if (root !== undefined) await ports.surfaces.retireRoot(root);
       });
       disposal = attempt;
-      void attempt.catch(() => { if (disposal === attempt) disposal = undefined; });
+      void attempt.catch(() => {
+        if (disposal === attempt) disposal = undefined;
+      });
       return attempt;
     },
   });

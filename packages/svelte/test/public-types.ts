@@ -118,7 +118,18 @@ const imageCallback: TileflowMapProps = {
 const namedComponent: typeof TileflowMap = NamedTileflowMap;
 
 void [
-  validProps, missingSource, flattenedMap, configInput, rendererInput, discriminatorInput,
-  interactionProps, mixedInteractionState, imageAnnotations, imageInteractions,
-  imageInteractionState, imageSnippet, imageCallback, namedComponent,
+  validProps,
+  missingSource,
+  flattenedMap,
+  configInput,
+  rendererInput,
+  discriminatorInput,
+  interactionProps,
+  mixedInteractionState,
+  imageAnnotations,
+  imageInteractions,
+  imageInteractionState,
+  imageSnippet,
+  imageCallback,
+  namedComponent,
 ];

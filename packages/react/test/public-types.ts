@@ -151,7 +151,18 @@ const imageInteractionState: MapProps = {
 };
 
 void [
-  annotatedProps, annotationOnlyProps, validProps, missingSource, flattenedMap, configInput,
-  rendererInput, discriminatorInput, component, mixedInteractionStateInputs, imageAnnotations,
-  imageInteractions, imageInteractionState, semanticRequiresGeneralContext,
+  annotatedProps,
+  annotationOnlyProps,
+  validProps,
+  missingSource,
+  flattenedMap,
+  configInput,
+  rendererInput,
+  discriminatorInput,
+  component,
+  mixedInteractionStateInputs,
+  imageAnnotations,
+  imageInteractions,
+  imageInteractionState,
+  semanticRequiresGeneralContext,
 ];

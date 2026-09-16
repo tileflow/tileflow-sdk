@@ -113,7 +113,19 @@ const propertySlots: TileflowMapSlots<PropertyAnnotation> = {
 };
 
 void [
-  validProps, missingSource, flattenedMap, configInput, rendererInput, mixedStateProps,
-  componentProps, invalidComponentProps, invalidImageComponentProps, interactiveImageProps,
-  handleInteractionEvent, poiInteractions, propertyMapProps, propertyComponentProps, propertySlots,
+  validProps,
+  missingSource,
+  flattenedMap,
+  configInput,
+  rendererInput,
+  mixedStateProps,
+  componentProps,
+  invalidComponentProps,
+  invalidImageComponentProps,
+  interactiveImageProps,
+  handleInteractionEvent,
+  poiInteractions,
+  propertyMapProps,
+  propertyComponentProps,
+  propertySlots,
 ];

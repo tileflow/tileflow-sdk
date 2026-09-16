@@ -40,21 +40,23 @@ test seam; it is not reachable through a public runtime export.
 exclusive camera modes in `MapCameraProps`. These are complete type contracts for that bounded
 surface, not a callable `Map`, placeholder component or JSX renderer.
 
-The source is the existing `TileflowNativeSource` union:
+`source` is one `TileflowNativeSource` object: `{map, manifestUrl}`. It selects a named Tileflow
+map and requires an explicit manifest URL. It has no renderer discriminator or direct-style mode.
+The same Tileflow-only boundary applies to React, Vue and Svelte; only those web bindings retain
+their existing optional `manifestUrl` and browser default. Native does not discover a manifest.
+A completely unmanaged map uses `@maplibre/maplibre-react-native` directly. Tileflow Map contracts
+are not a general MapLibre wrapper API.
 
-- `{kind: 'tileflow', map, manifestUrl}` requires an explicit manifest URL and accepts an optional
-  concrete theme or `system`.
-- `{kind: 'maplibre', style}` accepts the existing direct style URL/JSON type and rejects `theme`.
-  It remains unmanaged and has no manifest or Tileflow theme identity.
-
-Omitted Tileflow themes use the manifest default. The future renderer owner supplies the current
-appearance for `system`; Core's selection rules are unchanged. Source validation, bounded manifest
-acquisition, generation ownership and URL policy remain in
+Omitted themes use the manifest default. A concrete theme selects that published name; the future
+renderer owner supplies the current appearance for `system`. Core's selection rules are unchanged.
+Source validation, bounded manifest acquisition, generation ownership and URL policy remain in
 [Core's native contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-resource-urls.md).
 These public source contracts do not themselves issue network requests.
 
 Presentation uses React `children` and ref types plus React Native's `style` and `testID` types.
 Children are opaque React nodes here; this does not introduce a Tileflow annotation or popup API.
+Composable MapLibre children do not transfer ownership of the map, style, lifecycle or Hosted
+networking away from Tileflow.
 
 `MapOptions` is a positive type allowlist from the pinned MapLibre declaration:
 `dragPan`, `touchZoom`, `doubleTapZoom`, `doubleTapHoldZoom`, `touchRotate`, `touchPitch`, `compass`,
@@ -68,7 +70,6 @@ import type {MapProps} from '@tileflow/react-native';
 
 const definition = {
   source: {
-    kind: 'tileflow',
     map: 'streets',
     manifestUrl: 'https://maps.example.com/tileflow/native/manifest.json',
   },
@@ -89,9 +90,9 @@ It is intentionally narrower than the MapLibre ref: there is no renderer handle,
 feature query, screenshot method, resource visibility mutation or disposal command.
 
 `MapSourceState` preserves Core's `loading`, `ready` and `error` states and generation number.
-A ready Tileflow snapshot has `kind: 'tileflow'`, the logical map name and a concrete
-`{name, colorScheme}` theme. A direct ready snapshot has `kind: 'maplibre'` and does not invent those
-fields. Error snapshots carry only the existing Core `code`, `field` and `kind`.
+Every ready snapshot has the logical map name and a concrete `{name, colorScheme}` theme, without
+a renderer discriminator or direct-style state. Error snapshots carry only the existing Core
+`code`, `field` and `kind`; the diagnostic `kind` classifies a terminal or cancelled failure.
 
 The internal projection copies and freezes this small diagnostic surface. It never forwards the
 manifest, style body, resource URLs, exception instance, message or cause. Source readiness still
@@ -103,12 +104,14 @@ frame. A ref is a contract for the later component, not an instantiated object e
 The declarations distinguish source state, renderer loading, rendered readiness and theme
 transitions. None of these renderer events is emitted by a component in this phase.
 
-| Callback            | Contract                                                                                                                                                                |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `onLoad`            | A `load` event for the current generation and safe selection after the renderer accepts its style. This is not proof of a fully rendered frame.                         |
-| `onError`           | Either a `source-error` with the existing safe Core diagnostic or a `renderer-error` with only its generation. No native event, raw message or remote cause is exposed. |
-| `onReadinessChange` | A `readiness-change` event with `loading`, `ready` or `error`. Only the renderer owner can establish rendered readiness; a resolved manifest cannot do so.              |
-| `onThemeChange`     | A `theme-change` event with `preloading`, `applying`, `ready` or `error`. A committed `ready` transition requires a concrete current theme.                             |
+- `onLoad`: a `load` event for the current generation and safe selection after the renderer accepts
+  its style. This is not proof of a fully rendered frame.
+- `onError`: either a `source-error` with the existing safe Core diagnostic or a `renderer-error`
+  with only its generation. No native event, raw message or remote cause is exposed.
+- `onReadinessChange`: a `readiness-change` event with `loading`, `ready` or `error`. Only the
+  renderer owner can establish rendered readiness; a resolved manifest cannot do so.
+- `onThemeChange`: a `theme-change` event with `preloading`, `applying`, `ready` or `error`.
+  A committed `ready` transition requires a concrete current theme.
 
 Theme transitions retain the established distinction between the current and target theme. A
 failed selection may have no valid target. Error details use `onError`, not an exception attached
@@ -123,10 +126,10 @@ use but is not a package export and is not reachable from the contract entry. It
 `Appearance.setColorScheme()`. The separate private admission bridge also imports React Native;
 neither module is loaded by the package root.
 
-A broker activates only for a Tileflow source selecting `system`. Its first active subscription
-reads the current scheme and installs one native listener; concurrent system-theme subscribers
-share that listener. Default/concrete themes and direct MapLibre sources neither read nor
-subscribe and cannot be overwritten by an appearance update.
+A broker activates only when selecting `system`. Its first active subscription reads the current
+scheme and installs one native listener; concurrent system-theme subscribers share that listener.
+Default and concrete themes neither read nor subscribe and cannot be overwritten by an appearance
+update.
 
 `light` and `dark` produce a frozen `available` state with that exact scheme. `null`, `undefined`,
 `unspecified`, unexpected data or a failed native read produce `unavailable`. No fallback theme is
@@ -246,8 +249,8 @@ the camera controller.
 ## Internal Hosted sessions and native admission
 
 `createHostedNativeSessionController()` is internal, not a package export or public Hosted client.
-One real Map context owns one controller. Direct bindings never bootstrap or acquire Tileflow
-authority; concurrent Hosted Maps never share session identities, counters, tickets or callbacks.
+One real Map context owns one controller. Non-session transport bindings never bootstrap or acquire
+Tileflow authority; concurrent Hosted Maps never share session identities, counters, tickets or callbacks.
 
 The controller is the sole admission authority. Every eligible protected ticket receives one
 logical `acquire()` result; bounded bridge batching does not change accounting. The 10,000-request

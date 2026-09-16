@@ -48,7 +48,8 @@ test('keeps the shared interaction runtime behind the browser lifecycle boundary
     assert.match(source, /interactionCoordinator\.attach\(\s*'annotation'/);
     assert.match(source, /interactionCoordinator\.attach\(\s*'semantic'/);
     assert.equal(
-      source.match(/onInteractionStateChange: interactionCoordinator\.requestInteractionState/g)?.length,
+      source.match(/onInteractionStateChange: interactionCoordinator\.requestInteractionState/g)
+        ?.length,
       2,
     );
     assert.doesNotMatch(source, /import \* as maplibregl/);

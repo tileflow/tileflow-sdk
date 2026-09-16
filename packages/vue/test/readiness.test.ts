@@ -61,7 +61,10 @@ test('diagnoses annotations in image mode without evaluating MapLibre', async ()
   const html = await renderToString(app);
 
   assert.match(html, /data-tileflow-state="error"/u);
-  assert.deepEqual(diagnostics.map(({code}) => code), ['UNSUPPORTED_MODE']);
+  assert.deepEqual(
+    diagnostics.map(({code}) => code),
+    ['UNSUPPORTED_MODE'],
+  );
 });
 
 test('diagnoses semantic interactions in image mode without evaluating MapLibre', async () => {
@@ -86,7 +89,10 @@ test('diagnoses semantic interactions in image mode without evaluating MapLibre'
   const html = await renderToString(app);
 
   assert.match(html, /data-tileflow-state="error"/u);
-  assert.deepEqual(diagnostics.map(({code}) => code), ['UNSUPPORTED_MODE']);
+  assert.deepEqual(
+    diagnostics.map(({code}) => code),
+    ['UNSUPPORTED_MODE'],
+  );
 });
 
 test('gates custom interaction views on Vue commit and two animation frames', async () => {

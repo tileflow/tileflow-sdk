@@ -12,7 +12,7 @@ import {
   type TileflowMapSlots,
 } from '../src/index.js';
 
-const mapStyle = {layers: [], name: 'Direct', sources: {}, version: 8 as const};
+const source = {map: 'main'};
 const mapLibreConfiguration = {
   workerUrl: '/assets/maplibre-gl-worker.mjs',
 } satisfies TileflowMapLibreConfiguration;
@@ -21,35 +21,26 @@ configureTileflowMapLibre(mapLibreConfiguration);
 configureTileflowMapLibre({});
 
 const validProps = [
-  {source: {kind: 'tileflow', map: 'main'}},
-  {
-    source: {
-      kind: 'tileflow',
-      manifestUrl: 'https://cdn.example.test/manifest.json',
-      map: 'main',
-    },
-  },
-  {source: {kind: 'maplibre', style: mapStyle}},
-  {source: {kind: 'maplibre', style: '/styles/main.json'}},
+  {source},
+  {source: {manifestUrl: 'https://cdn.example.test/manifest.json', map: 'main'}},
+  {source, theme: 'system'},
 ] satisfies TileflowMapProps[];
 
 // @ts-expect-error every map has one explicit delivery source.
 const missingSource: TileflowMapProps = {};
-// @ts-expect-error legacy top-level map is not a source.
-const legacyMap: TileflowMapProps = {map: 'main'};
-// @ts-expect-error config compilation is not available in browser wrappers.
-const legacyConfig: TileflowMapProps = {config: {}};
-const mixedSource: TileflowMapProps = {
-  // @ts-expect-error source branches cannot be combined.
-  source: {kind: 'maplibre', map: 'main', style: mapStyle},
+// @ts-expect-error top-level map is not a source.
+const flattenedMap: TileflowMapProps = {map: 'main'};
+// @ts-expect-error config compilation is not available in browser bindings.
+const configInput: TileflowMapProps = {config: {}};
+const rendererInput: TileflowMapProps = {
+  // @ts-expect-error Renderer style input is not a Tileflow source.
+  source: {map: 'main', style: '/style.json'},
 };
 
 type ComponentProps = InstanceType<typeof TileflowMap>['$props'];
-const componentProps: ComponentProps = {
-  source: {kind: 'tileflow', map: 'main'},
-};
-// @ts-expect-error the exported Vue component preserves the source discriminant.
-const invalidComponentProps: ComponentProps = {source: {kind: 'maplibre'}};
+const componentProps: ComponentProps = {source};
+// @ts-expect-error The exported Vue component has no renderer discriminator.
+const invalidComponentProps: ComponentProps = {source: {map: 'main', kind: 'tileflow'}};
 
 type Property = {address: string; price: number};
 const propertyAnnotations = [
@@ -79,7 +70,7 @@ const propertyMapProps = {
   annotations: propertyAnnotations,
   interactions: poiInteractions,
   interactionState,
-  source: {kind: 'tileflow', map: 'main'},
+  source,
 } satisfies TileflowMapProps<PropertyAnnotation>;
 const propertyComponentProps: PropertyComponentProps = propertyMapProps;
 
@@ -87,19 +78,19 @@ const propertyComponentProps: PropertyComponentProps = propertyMapProps;
 const mixedStateProps: TileflowMapProps = {
   defaultInteractionState: interactionState,
   interactionState,
-  source: {kind: 'tileflow', map: 'main'},
+  source,
 };
 // @ts-expect-error image mode cannot accept live interaction bindings.
 const interactiveImageProps: TileflowMapProps = {
   interactions: poiInteractions,
   mode: 'image',
-  source: {kind: 'tileflow', map: 'main'},
+  source,
 };
 // @ts-expect-error the exported component instance preserves the strict image branch.
 const invalidImageComponentProps: ComponentProps = {
   annotations: propertyAnnotations,
   mode: 'image',
-  source: {kind: 'tileflow', map: 'main'},
+  source,
 };
 
 const handleInteractionEvent = (event: TileflowInteractionEvent<PropertyAnnotation>) => {
@@ -122,19 +113,7 @@ const propertySlots: TileflowMapSlots<PropertyAnnotation> = {
 };
 
 void [
-  validProps,
-  missingSource,
-  legacyMap,
-  legacyConfig,
-  mixedSource,
-  mixedStateProps,
-  componentProps,
-  invalidComponentProps,
-  invalidImageComponentProps,
-  interactiveImageProps,
-  handleInteractionEvent,
-  poiInteractions,
-  propertyMapProps,
-  propertyComponentProps,
-  propertySlots,
+  validProps, missingSource, flattenedMap, configInput, rendererInput, mixedStateProps,
+  componentProps, invalidComponentProps, invalidImageComponentProps, interactiveImageProps,
+  handleInteractionEvent, poiInteractions, propertyMapProps, propertyComponentProps, propertySlots,
 ];

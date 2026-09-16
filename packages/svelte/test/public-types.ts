@@ -8,7 +8,7 @@ import TileflowMap, {
   type TileflowMapProps,
 } from '../src/index.js';
 
-const mapStyle = {layers: [], name: 'Direct', sources: {}, version: 8 as const};
+const source = {map: 'main'};
 const mapLibreConfiguration = {
   workerUrl: '/assets/maplibre-gl-worker.mjs',
 } satisfies TileflowMapLibreConfiguration;
@@ -17,32 +17,25 @@ configureTileflowMapLibre(mapLibreConfiguration);
 configureTileflowMapLibre({});
 
 const validProps = [
-  {source: {kind: 'tileflow', map: 'main'}},
-  {
-    source: {
-      kind: 'tileflow',
-      manifestUrl: 'https://cdn.example.test/manifest.json',
-      map: 'main',
-    },
-  },
-  {source: {kind: 'maplibre', style: mapStyle}},
-  {source: {kind: 'maplibre', style: '/styles/main.json'}},
-  {
-    imageUrl: 'https://cdn.example.test/map.png',
-    mode: 'image',
-    source: {kind: 'tileflow', map: 'main'},
-  },
+  {source},
+  {source: {manifestUrl: 'https://cdn.example.test/manifest.json', map: 'main'}},
+  {source, theme: 'system'},
+  {imageUrl: 'https://cdn.example.test/map.png', mode: 'image', source},
 ] satisfies TileflowMapProps[];
 
 // @ts-expect-error every map has one explicit delivery source.
 const missingSource: TileflowMapProps = {};
-// @ts-expect-error legacy top-level map is not a source.
-const legacyMap: TileflowMapProps = {map: 'main'};
-// @ts-expect-error config compilation is not available in browser wrappers.
-const legacyConfig: TileflowMapProps = {config: {}};
-const mixedSource: TileflowMapProps = {
-  // @ts-expect-error source branches cannot be combined.
-  source: {kind: 'maplibre', map: 'main', style: mapStyle},
+// @ts-expect-error top-level map is not a source.
+const flattenedMap: TileflowMapProps = {map: 'main'};
+// @ts-expect-error config compilation is not available in browser bindings.
+const configInput: TileflowMapProps = {config: {}};
+const rendererInput: TileflowMapProps = {
+  // @ts-expect-error Renderer style input is not a Tileflow source.
+  source: {map: 'main', style: '/style.json'},
+};
+const discriminatorInput: TileflowMapProps = {
+  // @ts-expect-error A Tileflow source has no renderer discriminator.
+  source: {map: 'main', kind: 'tileflow'},
 };
 
 type PropertyAnnotation = TileflowAnnotation<{name: string}>;
@@ -76,7 +69,7 @@ const interactionProps = {
     void state.popup;
   },
   popup: overlaySnippet,
-  source: {kind: 'tileflow', map: 'main'},
+  source,
   tooltip: overlaySnippet,
 } satisfies TileflowMapProps<PropertyAnnotation>;
 
@@ -84,58 +77,48 @@ const interactionProps = {
 const mixedInteractionState: TileflowMapProps = {
   defaultInteractionState: {popup: null},
   interactionState: {popup: null},
-  source: {kind: 'tileflow', map: 'main'},
+  source,
 };
 
 // @ts-expect-error image mode excludes live annotations.
 const imageAnnotations: TileflowMapProps = {
   annotations: [],
   mode: 'image',
-  source: {kind: 'tileflow', map: 'main'},
+  source,
 };
 
 // @ts-expect-error image mode excludes semantic interactions.
 const imageInteractions: TileflowMapProps = {
   interactions: [],
   mode: 'image',
-  source: {kind: 'tileflow', map: 'main'},
+  source,
 };
 
 // @ts-expect-error image mode excludes interaction state.
 const imageInteractionState: TileflowMapProps = {
   interactionState: {popup: null},
   mode: 'image',
-  source: {kind: 'tileflow', map: 'main'},
+  source,
 };
 
 // @ts-expect-error image mode excludes custom interaction snippets.
 const imageSnippet: TileflowMapProps<PropertyAnnotation> = {
   mode: 'image',
   popup: overlaySnippet,
-  source: {kind: 'tileflow', map: 'main'},
+  source,
 };
 
 // @ts-expect-error image mode excludes interaction callbacks.
 const imageCallback: TileflowMapProps = {
   mode: 'image',
   onInteractionDiagnostic: (_diagnostic: unknown) => undefined,
-  source: {kind: 'tileflow', map: 'main'},
+  source,
 };
 
 const namedComponent: typeof TileflowMap = NamedTileflowMap;
 
 void [
-  validProps,
-  missingSource,
-  legacyMap,
-  legacyConfig,
-  mixedSource,
-  interactionProps,
-  mixedInteractionState,
-  imageAnnotations,
-  imageInteractions,
-  imageInteractionState,
-  imageSnippet,
-  imageCallback,
-  namedComponent,
+  validProps, missingSource, flattenedMap, configInput, rendererInput, discriminatorInput,
+  interactionProps, mixedInteractionState, imageAnnotations, imageInteractions,
+  imageInteractionState, imageSnippet, imageCallback, namedComponent,
 ];

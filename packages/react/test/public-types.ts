@@ -6,7 +6,7 @@ import {
   type TileflowMapLibreConfiguration,
 } from '../src/index';
 
-const mapStyle = {layers: [], name: 'Direct', sources: {}, version: 8 as const};
+const source = {map: 'main'};
 const mapLibreConfiguration = {
   workerUrl: '/assets/maplibre-gl-worker.mjs',
 } satisfies TileflowMapLibreConfiguration;
@@ -15,36 +15,30 @@ configureTileflowMapLibre(mapLibreConfiguration);
 configureTileflowMapLibre({});
 
 const validProps = [
-  {source: {kind: 'tileflow', map: 'main'}},
-  {
-    source: {
-      kind: 'tileflow',
-      manifestUrl: 'https://cdn.example.test/manifest.json',
-      map: 'main',
-    },
-  },
-  {source: {kind: 'maplibre', style: mapStyle}},
-  {source: {kind: 'maplibre', style: '/styles/main.json'}},
-  {mode: 'image', imageUrl: '/maps/main.png', source: {kind: 'maplibre', style: mapStyle}},
+  {source},
+  {source: {manifestUrl: 'https://cdn.example.test/manifest.json', map: 'main'}},
+  {source, theme: 'system'},
+  {mode: 'image', imageUrl: '/maps/main.png', source},
 ] satisfies MapProps[];
 
 // @ts-expect-error every map has one explicit delivery source.
 const missingSource: MapProps = {};
-// @ts-expect-error legacy top-level map is not a source.
-const legacyMap: MapProps = {map: 'main'};
-// @ts-expect-error config compilation is not available in browser wrappers.
-const legacyConfig: MapProps = {config: {}};
-const mixedSource: MapProps = {
-  // @ts-expect-error source branches cannot be combined.
-  source: {kind: 'maplibre', map: 'main', style: mapStyle},
+// @ts-expect-error top-level map is not a source.
+const flattenedMap: MapProps = {map: 'main'};
+// @ts-expect-error config compilation is not available in browser bindings.
+const configInput: MapProps = {config: {}};
+const rendererInput: MapProps = {
+  // @ts-expect-error Renderer style input is not a Tileflow source.
+  source: {map: 'main', style: '/style.json'},
+};
+const discriminatorInput: MapProps = {
+  // @ts-expect-error A Tileflow source has no renderer discriminator.
+  source: {map: 'main', kind: 'tileflow'},
 };
 
 const component: typeof Map = Map;
 
-type Property = {
-  price: number;
-  title: string;
-};
+type Property = {price: number; title: string};
 
 function PropertyCard({close, property}: {close: () => void; property: Property}) {
   void close;
@@ -74,7 +68,7 @@ const poiInteractions = [
 const annotationOnlyProps = {
   annotations: propertyAnnotations,
   renderPopup: ({annotation, close}) => PropertyCard({close, property: annotation.data}),
-  source: {kind: 'maplibre' as const, style: mapStyle},
+  source,
 } satisfies MapProps<(typeof propertyAnnotations)[number]>;
 const annotatedProps = {
   annotations: propertyAnnotations,
@@ -116,7 +110,7 @@ const annotatedProps = {
       ? String(context.target.feature.properties.name ?? '')
       : null;
   },
-  source: {kind: 'maplibre' as const, style: mapStyle},
+  source,
 } satisfies MapProps<(typeof propertyAnnotations)[number]>;
 
 const semanticRequiresGeneralContext = {
@@ -124,28 +118,28 @@ const semanticRequiresGeneralContext = {
   interactions: poiInteractions,
   // @ts-expect-error semantic bindings require narrowing the general interaction context.
   renderPopup: ({annotation}) => annotation.data.title,
-  source: {kind: 'maplibre' as const, style: mapStyle},
+  source,
 } satisfies MapProps<(typeof propertyAnnotations)[number]>;
 
 // @ts-expect-error controlled and uncontrolled interaction state are mutually exclusive.
 const mixedInteractionStateInputs: MapProps = {
   defaultInteractionState: interactionState,
   interactionState,
-  source: {kind: 'maplibre', style: mapStyle},
+  source,
 };
 
 // @ts-expect-error image mode cannot mount annotation interactions.
 const imageAnnotations: MapProps = {
   annotations: propertyAnnotations,
   mode: 'image',
-  source: {kind: 'maplibre', style: mapStyle},
+  source,
 };
 
 // @ts-expect-error image mode cannot mount semantic interactions.
 const imageInteractions: MapProps = {
   interactions: poiInteractions,
   mode: 'image',
-  source: {kind: 'maplibre', style: mapStyle},
+  source,
 };
 
 // @ts-expect-error image mode cannot expose interaction state or render callbacks.
@@ -153,21 +147,11 @@ const imageInteractionState: MapProps = {
   interactionState,
   mode: 'image',
   renderPopup: () => null,
-  source: {kind: 'maplibre', style: mapStyle},
+  source,
 };
 
 void [
-  annotatedProps,
-  annotationOnlyProps,
-  validProps,
-  missingSource,
-  legacyMap,
-  legacyConfig,
-  mixedSource,
-  component,
-  mixedInteractionStateInputs,
-  imageAnnotations,
-  imageInteractions,
-  imageInteractionState,
-  semanticRequiresGeneralContext,
+  annotatedProps, annotationOnlyProps, validProps, missingSource, flattenedMap, configInput,
+  rendererInput, discriminatorInput, component, mixedInteractionStateInputs, imageAnnotations,
+  imageInteractions, imageInteractionState, semanticRequiresGeneralContext,
 ];

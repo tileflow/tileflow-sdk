@@ -32,6 +32,9 @@ test('native surface adapters observe only their owned view and redact all nativ
 	assert.match(ios, /NSMutableDictionary \*pitchStop = \[target mutableCopy\]/u);
 	assert.match(ios, /\[pitchStop removeObjectForKey:@"zoom"\]/u);
 	assert.match(ios, /\[camera handleImperativeStop:pitchStop\][\s\S]*\[camera handleImperativeStop:stop\]/u);
+	assert.match(ios, /\[self\.previous mapViewDidFinishRenderingFrame:mapView fullyRendered:fully frameEncodingTime:encoding frameRenderingTime:rendering\]/u);
+	assert.match(ios, /\[self\.previous mapViewDidFinishRenderingFrame:mapView fullyRendered:fully renderingStats:stats\]/u);
+	assert.doesNotMatch(ios, /\[self\.previous mapView:mapView didFinishRenderingFrame:/u);
 });
 
 test('iOS surface deadlines and retirement callbacks preserve typed cancellation and attachment identity', async () => {

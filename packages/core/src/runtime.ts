@@ -374,7 +374,6 @@ export function createTileflowSessionController(input: {
     pendingGrantRequests: 0,
     requestCount: 0,
     sessionId: sessionIdFactory(),
-    sessionId: sessionIdFactory(),
     startedAt,
   });
   let activeSession = createSession(now().getTime());

@@ -23,7 +23,7 @@ export type NativeSurfaceModule = {
     surface: string,
     command: number,
     view: MapView,
-  ): Promise<Readonly<{command: number; view: MapView}>>;
+  ): Promise<Readonly<{command: number; invalidation: number; view: MapView}>>;
   cancelCamera(surface: string, command: number): Promise<Readonly<{cancelled: true}>>;
   acknowledgeSurface(surface: string, sequence: number): Promise<Readonly<{acknowledged: true}>>;
   retireSurface(surface: string): Promise<Readonly<{detached: true}>>;

@@ -10,11 +10,13 @@ function fixture() {
 	let onReady: (() => void) | undefined;
 	let holdDark: Promise<void> | undefined;
 	const darkEntered = deferred<void>();
+	const darkCancelled = deferred<void>();
 	let opens = 0;
 	let darkReads = 0;
+	let darkCancels = 0;
 	const source = {map: 'main', manifestUrl: 'https://maps.example.test/manifest.json'};
 	const manifest = {version: 1, maps: {main: {defaultTheme: 'light', themes: {
-		light: {styleUrl: 'light.json', colorScheme: 'light'}, dark: {styleUrl: 'dark.json', colorScheme: 'dark'},
+		light: {styleUrl: './light.json', colorScheme: 'light'}, dark: {styleUrl: './dark.json', colorScheme: 'dark'},
 	}}}};
 	const ports: MountedMapPorts = {
 		documents: {acquire(url): TileflowNativeManifestOperation {
@@ -24,14 +26,19 @@ function fixture() {
 			const bytes = new TextEncoder().encode(JSON.stringify(url.endsWith('manifest.json') ? manifest : {version: 8, sources: {}, layers: []}));
 			let offset = 0;
 			const gate = dark ? holdDark : undefined;
+			const cancel = () => {
+				if (cancelled) return;
+				cancelled = true;
+				if (dark) { darkCancels++; darkCancelled.resolve(); }
+			};
 			return {response: Promise.resolve(gate).then(() => ({url, status: 200, reader: {
 				async read(maximumBytes) {
 					if (cancelled) throw new Error('Cancelled.');
 					if (offset === bytes.length) return {done: true};
 					const value = bytes.slice(offset, offset + maximumBytes); offset += value.length;
 					return {done: false, value};
-				}, cancel() { cancelled = true; },
-			}})), async cancel() { cancelled = true; }};
+				}, cancel,
+			}})), async cancel() { cancel(); }};
 		}},
 		createBinding: () => ({async replace() { return {kind: 'direct'}; }, dispose() {}}),
 		appearance() { return () => undefined; },
@@ -50,8 +57,9 @@ function fixture() {
 	};
 	owner = createMountedMapOwner(ports);
 	owner.subscribe(() => { if (owner.getSourceState()?.status === 'ready') onReady?.(); });
-	return {owner, source, darkEntered, opens: () => opens, darkReads: () => darkReads,
-		onReady(callback: () => void) { onReady = callback; }, holdDark(value: Promise<void> | undefined) { holdDark = value; }};
+	return {owner, source, darkEntered, darkCancelled, opens: () => opens, darkReads: () => darkReads,
+		darkCancels: () => darkCancels, onReady(callback: () => void) { onReady = callback; },
+		holdDark(value: Promise<void> | undefined) { holdDark = value; }};
 }
 
 test('replacement from a ready-source subscriber cannot make a retired context await itself', async () => {
@@ -73,11 +81,17 @@ test('background interruption reselects the requested concrete theme instead of 
 	const f = fixture();
 	f.owner.update({source: f.source}); await f.owner.whenIdle();
 	const first = f.owner.getSnapshot().renderer?.key;
+	assert.ok(first);
 	const dark = deferred<void>(); f.holdDark(dark.promise);
 	f.owner.update({source: f.source, theme: 'dark'});
 	await f.darkEntered.promise;
+	assert.equal(f.darkReads(), 1);
 	f.owner.background();
-	dark.resolve(); await f.owner.whenIdle();
+	await f.darkCancelled.promise;
+	await f.owner.whenIdle();
+	assert.equal(f.darkCancels(), 1);
+	// The cancelled adapter response may arrive later; it cannot retain or resurrect the retired job.
+	dark.resolve(); await dark.promise;
 	f.holdDark(undefined);
 	f.owner.resume(); await f.owner.whenIdle();
 	assert.equal(f.darkReads(), 2);

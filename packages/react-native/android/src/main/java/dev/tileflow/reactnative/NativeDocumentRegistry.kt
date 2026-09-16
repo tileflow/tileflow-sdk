@@ -6,6 +6,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class NativeDocumentScope(
 	val isActive: () -> Boolean,
 	val load: (String, (AdmissionHttpResponse?) -> Unit) -> AdmissionCancellation,
+	val context: String? = null,
 ) {
 	override fun toString() = "NativeDocumentScope(redacted)"
 }
@@ -86,13 +87,18 @@ internal class NativeDocumentRegistry(
 		item.timer?.cancel(); item.timer = null
 		val waiter = item.waiter; item.waiter = null
 		item.body?.fill(0); item.body = null; item.header = null
-		val cancellation = item.cancellation; item.cancellation = null
-		try { cancellation?.cancel() } finally {
+		try {
+			if (!item.nativeFinished) item.cancellation?.cancel()
+			item.cancellation = null
+		} finally {
 			if (item.nativeFinished) work.remove(id)
 			waiter?.invoke(null)
 		}
 	}
 
+	fun retireContext(context: String) {
+		for (item in work.values.toList()) if (item.scope?.context == context) cancel(item.id)
+	}
 	fun lifecycle(active: Boolean) {
 		foreground = active
 		if (!active) for (id in work.keys.toList()) cancel(id)

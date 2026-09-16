@@ -10,7 +10,7 @@ const policy = Object.freeze({
 	resourceScopes: ['style', 'tilejson', 'tile', 'sprite', 'glyph', 'font'] as const,
 	tilesetIds: ['world'],
 });
-function fixture(style: Record<string, unknown>, tileJson: Record<string, unknown> = {}) {
+function fixture(style: Record<string, unknown>, tileJson: Record<string, unknown> = {}, fontFaces: readonly Record<string, unknown>[] = []) {
 	const calls: string[] = [];
 	const accepted = new Map<string, NativeAdmissionResource>();
 	const documents: Record<string, Record<string, unknown>> = {
@@ -18,7 +18,7 @@ function fixture(style: Record<string, unknown>, tileJson: Record<string, unknow
 		[`${apiOrigin}/tiles/world/tiles.json`]: tileJson,
 	};
 	const ports = {
-		policy, styleUrl,
+		policy, styleUrl, fontFaces,
 		current: () => true,
 		async accept(resources: readonly NativeAdmissionResource[]) {
 			for (const resource of resources) accepted.set(resource.url, resource);
@@ -36,6 +36,7 @@ function fixture(style: Record<string, unknown>, tileJson: Record<string, unknow
 }
 
 test('projects exact style TileJSON tile sprite glyph and font closure without a second document fetch', async () => {
+	const fontUrl = `${apiOrigin}/fonts/fb_example/regular.ttf`;
 	const source = {
 		version: 8,
 		sources: {
@@ -45,10 +46,11 @@ test('projects exact style TileJSON tile sprite glyph and font closure without a
 		layers: [{id: 'label', type: 'symbol', source: 'first', 'source-layer': 'place', layout: {'text-field': 'A', 'text-font': ['Noto Sans Regular']}}],
 		sprite: '/sprites/icp_example/sprite?revision=one',
 		glyphs: '/fonts/{fontstack}/{range}.pbf',
-		'font-faces': {'Noto Sans Regular': '/fonts/fb_example/regular.ttf'},
+		'font-faces': {'Noto Sans Regular': [{url: fontUrl, 'font-family': 'Noto Sans', 'font-style': 'normal', 'font-weight': 400}]},
 	};
 	const before = JSON.stringify(source);
-	const f = fixture(source, {tilejson: '3.0.0', tiles: ['https://tiles.tileflow.test/tiles/world/release/{z}/{x}/{y}.pbf?revision=one'], minzoom: 0, maxzoom: 14});
+	const f = fixture(source, {tilejson: '3.0.0', tiles: ['https://tiles.tileflow.test/tiles/world/release/{z}/{x}/{y}.pbf?revision=one'], minzoom: 0, maxzoom: 14},
+		[{id: 'Noto Sans Regular', family: 'Noto Sans', url: fontUrl, format: 'ttf', style: 'normal', weight: '400'}]);
 	const result = await projectNativeResources(f.ports);
 	assert.deepEqual(f.calls, [styleUrl, `${apiOrigin}/tiles/world/tiles.json`]);
 	const sources = result.style.sources as Record<string, Record<string, unknown>>;

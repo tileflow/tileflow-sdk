@@ -54,19 +54,21 @@ test('a reflected rejection cannot publish an error after replacing its own reso
 
 test('real Core resolution preserves the manifest API binding without inferring an origin', async () => {
   for (const usageMode of [undefined, 'session'] as const) {
-    const body = new TextEncoder().encode(JSON.stringify({
-      version: 1,
-      apiUrl: 'https://unapproved.example.test',
-      maps: {
-        streets: {
-          apiUrl: 'https://api.example.test',
-          mapId: 'map_abcdefghijklmnop',
-          usageMode,
-          defaultTheme: 'light',
-          themes: {light: {colorScheme: 'light', styleUrl: './light.json'}},
+    const body = new TextEncoder().encode(
+      JSON.stringify({
+        version: 1,
+        apiUrl: 'https://unapproved.example.test',
+        maps: {
+          streets: {
+            apiUrl: 'https://api.example.test',
+            mapId: 'map_abcdefghijklmnop',
+            usageMode,
+            defaultTheme: 'light',
+            themes: {light: {colorScheme: 'light', styleUrl: './light.json'}},
+          },
         },
-      },
-    }));
+      }),
+    );
     let configurations = 0;
     const core = createTileflowNativeSourceController({
       acquire(url) {

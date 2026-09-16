@@ -21,7 +21,7 @@ async function files(path: string): Promise<string[]> {
   return result.sort();
 }
 
-test('the actual private archive contains exactly the native sources and metadata without a public runtime', async (t) => {
+test('the actual private archive contains the mounted native sources and one public Map root', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-native-pack-'));
   t.after(() => rm(directory, {recursive: true, force: true}));
   const archive = join(directory, 'native.tgz');
@@ -60,9 +60,11 @@ test('the actual private archive contains exactly the native sources and metadat
     'android/src/main/java/dev/tileflow/reactnative/MobileConfiguration.kt',
     'android/src/main/java/dev/tileflow/reactnative/MobileConfigurationResources.kt',
     'android/src/main/java/dev/tileflow/reactnative/TileflowNativeConfigurationModule.kt',
+    'android/src/main/java/dev/tileflow/reactnative/TileflowNativeSurfaceModule.kt',
     'android/src/main/res/raw/tileflow_configuration_keep.xml',
     'ios/TFAdmissionBootstrap.mm',
     'ios/TFAdmissionInstallation.mm',
+    'ios/TileflowNativeSurface.mm',
     'ios/Tests/TFAdmissionRollbackTests.mm',
     'ios/TFMobileConfiguration.h',
     'ios/TFMobileConfiguration.mm',
@@ -90,13 +92,13 @@ test('the actual private archive contains exactly the native sources and metadat
   assert.equal(manifest.private, true);
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
   const {stdout: runtime} = await exec('tar', ['-xOzf', archive, 'package/dist/index.js']);
-  assert.doesNotMatch(
-    runtime,
-    /TileflowNativeAdmission|native-admission|react-native|MapLibre|createHostedNativeSessionController|NativeConfiguration/u,
-  );
+  assert.match(runtime, /@maplibre\/maplibre-react-native/u);
+  assert.match(runtime, /react-native/u);
+  assert.doesNotMatch(runtime, /tf_public_[0-9a-f]{48}|tf_native_v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/u);
   const {stdout: declarations} = await exec('tar', ['-xOzf', archive, 'package/dist/index.d.ts']);
+  assert.match(declarations, /\bMap\b/u);
   assert.doesNotMatch(
     declarations,
-    /MobileConfiguration|NativeConfiguration|HostedNativeBindingResolver/u,
+    /MobileConfiguration|NativeConfiguration|HostedNativeBindingResolver|NativeAdmission|NativeSurface|HostedNativeSession/u,
   );
 });

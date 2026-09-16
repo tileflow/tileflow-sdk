@@ -7,9 +7,26 @@ import {createReactNativeHostedBindingResolver} from './native-configuration-bri
 import {getNativeDocumentTransport} from './native-document-bridge';
 import {getNativeSurfaceTransport} from './native-surface-bridge';
 
+const liveOwners = new Set<ReturnType<typeof createMountedMapOwner>>();
 const installation = createAdmissionInstallation(() => {
   const transport = createReactNativeAdmissionTransport();
-  return createNativeAdmissionOwner({bridge: transport.bridge, sessionFetch: transport.fetchForContext});
+  const releaseLifecycle = transport.subscribeLifecycle((foreground) => {
+    for (const owner of [...liveOwners]) owner.nativeLifecycle(foreground);
+  });
+  const owner = createNativeAdmissionOwner({
+    bridge: transport.bridge,
+    sessionFetch: transport.fetchForContext,
+  });
+  return Object.freeze({
+    openMap: owner.openMap,
+    async dispose() {
+      try {
+        return await owner.dispose();
+      } finally {
+        releaseLifecycle();
+      }
+    },
+  });
 });
 const ports: MountedMapPorts = Object.freeze({
   documents: getNativeDocumentTransport(),
@@ -23,10 +40,16 @@ const ports: MountedMapPorts = Object.freeze({
 // Failed cleanup is retained for an explicit lifecycle retry, never reused by another Map.
 const retiring = new Set<ReturnType<typeof createMountedMapOwner>>();
 export function retireNativeMapOwner(owner: ReturnType<typeof createMountedMapOwner>): void {
+  liveOwners.delete(owner);
   retiring.add(owner);
-  void owner.dispose().then(() => retiring.delete(owner), () => undefined);
+  void owner.dispose().then(
+    () => retiring.delete(owner),
+    () => undefined,
+  );
 }
 export function createNativeMapOwner() {
   for (const owner of retiring) retireNativeMapOwner(owner);
-  return createMountedMapOwner(ports);
+  const owner = createMountedMapOwner(ports);
+  liveOwners.add(owner);
+  return owner;
 }

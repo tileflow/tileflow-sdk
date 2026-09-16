@@ -6,7 +6,7 @@ import {
   createAppearanceObserver,
 } from '../src/appearance';
 
-const system = {sourceKind: 'tileflow', theme: 'system'} as const;
+const system = {theme: 'system'} as const;
 
 function port(initial: unknown = 'light') {
   let value = initial;
@@ -96,16 +96,10 @@ test('null, unspecified and unexpected values are unavailable, never an implicit
   }
 });
 
-test('default, concrete and direct sources neither read nor subscribe nor publish', () => {
+test('default and concrete themes neither read nor subscribe nor publish', () => {
   const p = port('dark');
   const observer = createAppearanceObserver(p.api);
-  for (const selection of [
-    {sourceKind: 'tileflow'},
-    {sourceKind: 'tileflow', theme: 'light'},
-    {sourceKind: 'tileflow', theme: 'dark'},
-    {sourceKind: 'maplibre'},
-    {sourceKind: 'maplibre', theme: 'system'},
-  ] as const) {
+  for (const selection of [{}, {theme: 'light'}, {theme: 'dark'}] as const) {
     const release = observer.subscribe(selection, () =>
       assert.fail('Unexpected appearance update.'),
     );

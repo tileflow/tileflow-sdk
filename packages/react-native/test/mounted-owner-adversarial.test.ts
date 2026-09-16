@@ -26,19 +26,27 @@ function fixture() {
 			const bytes = new TextEncoder().encode(JSON.stringify(url.endsWith('manifest.json') ? manifest : {version: 8, sources: {}, layers: []}));
 			let offset = 0;
 			const gate = dark ? holdDark : undefined;
+			let rejectStop!: (error: Error) => void;
+			const stop = new Promise<never>((_resolve, reject) => { rejectStop = reject; });
+			void stop.catch(() => undefined);
 			const cancel = () => {
 				if (cancelled) return;
 				cancelled = true;
+				rejectStop(new Error('Cancelled.'));
 				if (dark) { darkCancels++; darkCancelled.resolve(); }
 			};
-			return {response: Promise.resolve(gate).then(() => ({url, status: 200, reader: {
-				async read(maximumBytes) {
-					if (cancelled) throw new Error('Cancelled.');
-					if (offset === bytes.length) return {done: true};
-					const value = bytes.slice(offset, offset + maximumBytes); offset += value.length;
-					return {done: false, value};
-				}, cancel,
-			}})), async cancel() { cancel(); }};
+			const response = Promise.race([
+				Promise.resolve(gate).then(() => ({url, status: 200, reader: {
+					async read(maximumBytes: number) {
+						if (cancelled) throw new Error('Cancelled.');
+						if (offset === bytes.length) return {done: true as const};
+						const value = bytes.slice(offset, offset + maximumBytes); offset += value.length;
+						return {done: false as const, value};
+					}, cancel,
+				}})),
+				stop,
+			]);
+			return {response, async cancel() { cancel(); }};
 		}},
 		createBinding: () => ({async replace() { return {kind: 'direct'}; }, dispose() {}}),
 		appearance() { return () => undefined; },

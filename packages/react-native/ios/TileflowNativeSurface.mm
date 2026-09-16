@@ -50,6 +50,22 @@ static MLRNMapView *TFSurfaceMap(UIView *root) {
 	if (!found) TFSurfaceInvalid();
 	return found;
 }
+static MLRNCamera *TFSurfaceCamera(UIView *root, MLRNMapView *map) {
+	NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:root];
+	MLRNCamera *found = nil; NSUInteger visited = 0;
+	while (queue.count) {
+		if (++visited > 1024) TFSurfaceInvalid();
+		UIView *view = queue.firstObject; [queue removeObjectAtIndex:0];
+		if ([view isKindOfClass:MLRNCamera.class]) {
+			if (found) TFSurfaceInvalid(); found = (MLRNCamera *)view;
+		}
+		if (queue.count + view.subviews.count > 1024) TFSurfaceInvalid();
+		[queue addObjectsFromArray:view.subviews];
+	}
+	id registered = map.reactCamera;
+	if (!found || ![registered isKindOfClass:MLRNCamera.class] || registered != found || ((MLRNCamera *)registered).map != map) TFSurfaceInvalid();
+	return found;
+}
 
 @interface TFSurfaceLayoutProbe : UIView
 @property (nonatomic, copy) dispatch_block_t changed;
@@ -294,8 +310,10 @@ RCT_REMAP_METHOD(requestFrame, requestFrameForSurface:(NSString *)identifier sty
 		if (![surface.token isEqual:token]) TFSurfaceInvalid();
 		MLNStyleLayer *layer = [surface.style layerWithIdentifier:surface.marker];
 		if (![layer isKindOfClass:MLNBackgroundStyleLayer.class]) TFSurfaceInvalid();
+		// Toggle between two fully transparent colors. The first request is a real style mutation,
+		// and neither value can alter the customer's visible cartography.
 		surface.repaint = !surface.repaint;
-		((MLNBackgroundStyleLayer *)layer).backgroundOpacity = [NSExpression expressionForConstantValue:surface.repaint ? @0 : @0.0001];
+		((MLNBackgroundStyleLayer *)layer).backgroundColor = [NSExpression expressionForConstantValue:surface.repaint ? [UIColor colorWithRed:1 green:1 blue:1 alpha:0] : [UIColor colorWithRed:0 green:0 blue:0 alpha:0]];
 		resolve(@{@"requested": @YES});
 	} @catch (NSException *exception) { TFSurfaceReject(reject); }
 }
@@ -304,11 +322,7 @@ RCT_REMAP_METHOD(applyCamera, applyCameraForSurface:(NSString *)identifier seque
 		TFSurfaceAttachment *surface = [self current:identifier allowFailed:NO];
 		NSDictionary *target = TFSurfaceView(input); NSUInteger command = TFSurfaceInteger(sequence);
 		if (![surface.state beginCommand:command]) TFSurfaceInvalid();
-		id camera = surface.map.reactCamera;
-		if (![camera isKindOfClass:MLRNCamera.class] || ((MLRNCamera *)camera).map != surface.map) TFSurfaceInvalid();
-		NSUInteger cameras = 0;
-		for (UIView *child in surface.map.reactSubviews) if ([child isKindOfClass:MLRNCamera.class]) cameras++;
-		if (cameras != 1) TFSurfaceInvalid();
+		MLRNCamera *camera = TFSurfaceCamera(surface.root, surface.map);
 		// The pinned iOS CameraUpdateItem computes altitude before applying a changed pitch.
 		// Apply center/bearing/pitch first, then compute the exact zoom at that pitch.
 		NSMutableDictionary *pitchStop = [target mutableCopy];

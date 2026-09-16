@@ -5,15 +5,14 @@ import test from 'node:test';
 const root = new URL('../', import.meta.url);
 const text = (path: string) => readFile(new URL(path, root), 'utf8');
 
-test('private admission documentation does not claim a public renderer or executed native acceptance', async () => {
+test('package documentation describes the mounted Map without claiming executed acceptance', async () => {
   const readme = await text('README.md');
-  assert.match(readme, /does not export a `Map` component/u);
+  assert.match(readme, /exports a mounted `Map`/u);
+  assert.match(readme, /Tileflow-only/u);
   assert.match(readme, /docs\/native-admission\.md/u);
-  assert.ok(readme.length <= 20000);
-  assert.doesNotMatch(
-    readme,
-    /This package supplies no Swift\/Kotlin bridge|only module with a React Native value import/u,
-  );
+  assert.match(readme, /docs\/native-configuration\.md/u);
+  assert.ok(readme.length <= 24000);
+  assert.doesNotMatch(readme, /does not export a `Map`|future renderer|publication is supported/u);
   const guide = await text('docs/native-admission.md');
   for (const term of [
     '13.2.0',
@@ -28,22 +27,28 @@ test('private admission documentation does not claim a public renderer or execut
     assert.ok(guide.includes(term), term);
   }
   assert.match(guide, /not a public API/u);
-  assert.match(guide, /Full style\/TileJSON closure projection/u);
+  assert.match(guide, /bounded Style\/TileJSON resource closure/u);
   assert.match(guide, /not evidence/u);
+  assert.doesNotMatch(guide, /Full style\/TileJSON closure projection[^\n]*not implemented/u);
 });
 
-test('the explicit local harness mounts upstream Maps without entering the published runtime graph', async () => {
+test('the source-checkout harness mounts the public Tileflow Map without exposing private admission controls', async () => {
   const harness = await text('harness/AdmissionHarness.tsx');
   assert.match(harness, /if \(!__DEV__\)/u);
-  assert.match(harness, /Map as MapLibreMap/u);
-  assert.match(harness, /createReactNativeAdmissionTransport/u);
-  assert.match(harness, /sessionFetch: transport\.fetchForContext/u);
-  assert.match(harness, /await owner\.install\(\)/u);
-  assert.match(harness, /discriminateForTest/u);
+  assert.match(harness, /Map as TileflowMap/u);
+  assert.match(harness, /from ['"]\.\.\/src\/index['"]/u);
+  assert.match(harness, /StrictMode/u);
+  assert.match(harness, /replaceFirstSource/u);
+  assert.match(harness, /setFirstTheme/u);
+  assert.doesNotMatch(
+    harness,
+    /createReactNativeAdmissionTransport|createNativeAdmissionOwner|HostedNativeSessionBinding|discriminateForTest|X-Tileflow/u,
+  );
   assert.doesNotMatch(harness, /console\.|TransformRequestManager|addHeader\(|globalThis\.fetch/u);
   assert.doesNotMatch(await text('tsup.config.ts'), /harness/u);
   assert.doesNotMatch(await text('src/index.ts'), /harness|admission/iu);
   const instructions = await text('harness/README.md');
   assert.match(instructions, /existing development host/u);
   assert.match(instructions, /No native acceptance result/u);
+  assert.match(instructions, /mounted Tileflow `Map`/u);
 });

@@ -197,6 +197,7 @@ export type HostedNativeSessionState =
 export type HostedNativeSessionController = Readonly<{
   readonly state: HostedNativeSessionState;
   acquire(): Promise<HostedNativeSessionAuthority | null>;
+  transportBudget(authority: HostedNativeSessionAuthority): number;
   background(): void;
   resume(): Promise<void>;
   replaceBinding(binding: HostedNativeSessionBinding): void;
@@ -217,6 +218,7 @@ type StoredAuthority = Readonly<{
   public: HostedNativeSessionAuthority;
   validUntil: number;
   clockEpoch: number;
+  bindingGeneration: number;
 }>;
 
 type SessionOperation = {
@@ -262,6 +264,8 @@ export function createHostedNativeSessionController(input: {
   let binding = normalizeBinding(input.binding);
   let lifecycle: Lifecycle = 'foreground';
   let disposed = false;
+  let bindingGeneration = 0;
+  const admittedAuthorities = new WeakMap<HostedNativeSessionAuthority, StoredAuthority>();
   const clock: ClockState = {lastWall: readWallClock(now), logical: 0, epoch: 0};
   let activeSession: SessionRecord | null =
     binding.kind === 'hosted' ? createSession(binding.surfaceId, 0) : null;
@@ -480,6 +484,7 @@ export function createHostedNativeSessionController(input: {
   ): Promise<{authority: StoredAuthority; session: SessionRecord}> {
     const requestStartedAt = readClock();
     const requestClockEpoch = clock.epoch;
+    const requestBindingGeneration = bindingGeneration;
     if (abort.signal.aborted) throw abort.error();
     const expectedSurfaceId = session.authority?.public.surfaceId ?? session.requestedSurfaceId;
     const response = await fetchResponse(hostedBinding, session, expectedSurfaceId, abort);
@@ -525,6 +530,7 @@ export function createHostedNativeSessionController(input: {
         public: payload.authority,
         validUntil: requestStartedAt + ttl,
         clockEpoch: requestClockEpoch,
+        bindingGeneration: requestBindingGeneration,
       }),
       session,
     };
@@ -631,15 +637,21 @@ export function createHostedNativeSessionController(input: {
   }
 
   async function acquireAuthority(session: SessionRecord, at: number) {
+    const expectedGeneration = bindingGeneration;
     let candidate = session;
     let checkedAt = at;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const resolved = await ensureAuthority(candidate, checkedAt);
+      if (disposed) throw new HostedNativeSessionError('NATIVE_SESSION_DISPOSED');
+      if (bindingGeneration !== expectedGeneration) {
+        throw new HostedNativeSessionError('NATIVE_SESSION_REPLACED');
+      }
       checkedAt = readClock();
       if (
         resolved.authority.clockEpoch === clock.epoch &&
         resolved.authority.validUntil > checkedAt
       ) {
+        admittedAuthorities.set(resolved.authority.public, resolved.authority);
         return resolved.authority.public;
       }
       resolved.session.authority = null;
@@ -669,6 +681,20 @@ export function createHostedNativeSessionController(input: {
         return await acquireAuthority(session, at);
       } finally {
         session.pendingAdmissions = Math.max(0, session.pendingAdmissions - 1);
+      }
+    },
+    transportBudget(authority) {
+      if (disposed || lifecycle !== 'foreground') return 0;
+      const stored = admittedAuthorities.get(authority);
+      if (!stored || stored.bindingGeneration !== bindingGeneration) return 0;
+      try {
+        const at = readClock();
+        if (stored.clockEpoch !== clock.epoch) return 0;
+        // Preserve the original local deadline; neither transport nor callers
+        // may reconstruct a fresh lifetime from server timestamps.
+        return Math.max(0, Math.floor(stored.validUntil - at));
+      } catch {
+        return 0;
       }
     },
     background() {
@@ -703,6 +729,7 @@ export function createHostedNativeSessionController(input: {
       if (disposed) throw new HostedNativeSessionError('NATIVE_SESSION_DISPOSED');
       const next = normalizeBinding(nextBinding);
       if (sameBinding(binding, next)) return;
+      bindingGeneration += 1;
       for (const operation of operations) operation.abort('NATIVE_SESSION_REPLACED');
       binding = next;
       activeSession = next.kind === 'hosted' ? createSession(next.surfaceId, readClock()) : null;
@@ -724,6 +751,7 @@ export function createHostedNativeSessionController(input: {
     dispose() {
       if (disposed) return;
       disposed = true;
+      bindingGeneration += 1;
       for (const operation of operations) operation.abort('NATIVE_SESSION_DISPOSED');
       operations.clear();
       activeSession = null;
@@ -977,6 +1005,7 @@ function isExactRestart(value: unknown, expectedSessionId: string) {
   return (
     isRecord(value) &&
     Object.keys(value).length === RESTART_KEYS.size &&
+    Object.keys(value).every((key) => !RESTART_KEYS.has(key)) === false &&
     Object.keys(value).every((key) => RESTART_KEYS.has(key)) &&
     value.code === 'COMMERCIAL_SESSION_RESTART_REQUIRED' &&
     typeof value.error === 'string' &&

@@ -42,7 +42,7 @@ override key.
 Every standalone map has at least one named `TileflowTheme` and one `defaultTheme`. A theme is a complete,
 inheritance-free visual document with identity, `colorScheme`, typography, lighting, and flat
 `color`, `font`, `image`, and `number` token catalogs. All themes in one resolved map must expose
-the same category/key schema. The reserved name `system` is a browser selector, never a stored or
+the same category/key schema. The reserved name `system` is a runtime selector, never a stored or
 compiled theme.
 
 Domain modules and owner-local render stacks retain map structure and refer to visual roles through
@@ -194,7 +194,9 @@ order, including completely shadowed inputs. Source history, set revisions and s
 remain distinct. The generated icon package and runtime asset-set formats remain unchanged.
 
 Browser clients never import `tileflow.config.ts`, resolve `extends`, or infer a development URL.
-They consume the single runtime manifest version 1 shape. A Tileflow runtime source resolves its
+They consume the single runtime manifest version 1 shape. Every Tileflow framework Map selects its
 named map and concrete theme through that manifest; `system` requires the declared light/dark
-mapping and browser color scheme. A direct MapLibre source is the explicit escape hatch for a style
-object or URL.
+mapping and an explicit runtime color scheme. Web sources use `{map, manifestUrl?}`, with the
+existing `/tileflow/manifest.json` default. Native sources use `{map, manifestUrl}` with an explicit
+absolute URL. Neither source contract exposes a renderer discriminator or a direct-style mode.
+Completely unmanaged maps use upstream MapLibre directly, outside the Tileflow framework Map API.

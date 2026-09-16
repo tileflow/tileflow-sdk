@@ -72,18 +72,18 @@ class MobileConfigurationTest {
 	}
 
 	@Test fun boundsAndClosesResourceInputIncludingFailure() {
-		for (size in listOf(0, 1, 2, 3, Int.MAX_VALUE)) {
+		for (count in listOf(0, 1, 2, 3, Int.MAX_VALUE)) {
 			var reads = 0
 			var closes = 0
 			val resource = object : MobileConfigurationValues {
-				override val size = size
+				override val size = count
 				override val applicationOwned = true
 				override fun literalString(index: Int): String { reads++; return values()[index] }
 				override fun close() { closes++ }
 			}
-			if (size == 2) assertEquals(credential(), MobileConfiguration.load(resource).credential)
+			if (count == 2) assertEquals(credential(), MobileConfiguration.load(resource).credential)
 			else invalid { MobileConfiguration.load(resource) }
-			assertEquals(if (size == 2) 2 else 0, reads)
+			assertEquals(if (count == 2) 2 else 0, reads)
 			assertEquals(1, closes)
 		}
 		for (owned in listOf(false, true)) {

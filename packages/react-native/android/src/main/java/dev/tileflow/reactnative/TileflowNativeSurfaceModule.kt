@@ -68,9 +68,9 @@ class TileflowNativeSurfaceModule(context: ReactApplicationContext) : ReactConte
 		}
 		return found ?: invalid()
 	}
-	private fun current(id: String): Surface {
+	private fun current(id: String, allowFailed: Boolean = false): Surface {
 		val surface = surfaces[id] ?: invalid()
-		if (invalidated || surface.retiring || !surface.state.active || root(surface.root.id) !== surface.root || mapIn(surface.root) !== surface.map) invalid()
+		if (invalidated || surface.retiring || (!allowFailed && !surface.state.active) || root(surface.root.id) !== surface.root || mapIn(surface.root) !== surface.map) invalid()
 		return surface
 	}
 
@@ -85,7 +85,7 @@ class TileflowNativeSurfaceModule(context: ReactApplicationContext) : ReactConte
 		Arguments.makeNativeMap(mapOf("surface" to surface.id))
 	}
 	@ReactMethod fun expectStyle(id: String, token: String, promise: Promise) = action(promise) {
-		val surface = current(id)
+		val surface = current(id, allowFailed = true)
 		surface.state.expect(token); surface.token = token
 		surface.deadline?.let { handler.removeCallbacks(it) }
 		val deadline = Runnable { if (!surface.retiring && surface.token == token) surface.state.fail() }

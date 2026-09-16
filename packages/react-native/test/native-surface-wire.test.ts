@@ -23,7 +23,7 @@ function fixture() {
       return {requested: true};
     },
     async applyCamera(_surface, command, view) {
-      return {command, view};
+      return {command, invalidation: 1, view};
     },
     async cancelCamera() {
       return {cancelled: true};

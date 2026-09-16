@@ -15,15 +15,17 @@ import {
 } from './native-admission-url';
 import {
   createHostedNativeSessionController,
+  type HostedNativeResourcePolicy,
   type HostedNativeSessionAuthority,
   type HostedNativeSessionController,
   type HostedNativeSessionFetch,
 } from './session-controller';
 
 type SessionInput = Parameters<typeof createHostedNativeSessionController>[0];
-export type NativeMapAdmissionInput = Omit<SessionInput, 'fetch'> &
+export type NativeMapAdmissionInput = Omit<SessionInput, 'fetch' | 'sessionIdFactory'> &
   Readonly<{
     fetch?: HostedNativeSessionFetch;
+    sessionIdFactory?: () => string;
     resources: readonly NativeAdmissionResource[];
   }>;
 export type NativeMapAdmission = Readonly<{
@@ -31,6 +33,7 @@ export type NativeMapAdmission = Readonly<{
   generation: number;
   scope: Readonly<{installation: string; context: string}>;
   readonly state: Readonly<{status: 'active' | 'retired'; context: string}>;
+  prepare(): Promise<HostedNativeResourcePolicy | null>;
   discriminate(url: string): string;
   discriminateForTest(url: string): string;
   extendResources(resources: readonly NativeAdmissionResource[]): Promise<Readonly<{resources: number}>>;
@@ -75,6 +78,7 @@ export function createNativeAdmissionOwner(options: {
   let installResult: Promise<Readonly<{installation: string}>> | undefined;
   let disposed = false;
   let foreground = true;
+  let contextSequence = 0;
   let status: 'idle' | 'installing' | 'ready' | 'error' | 'disposed' = 'idle';
   let disposal: Promise<NativeRemovalAck> | undefined;
 
@@ -316,8 +320,15 @@ export function createNativeAdmissionOwner(options: {
     if (input.fetch && options.sessionFetch) throw cancel('NATIVE_ADMISSION_INVALID');
     const ack = await install();
     if (disposed) throw cancel();
-    if (contexts.size + pendingControllers.size >= nativeAdmissionLimits.contexts)
+    if (contexts.size + pendingControllers.size >= nativeAdmissionLimits.contexts ||
+      contextSequence >= Number.MAX_SAFE_INTEGER)
       throw cancel('NATIVE_ADMISSION_UNAVAILABLE');
+    const identity = `${ack.installation}.${++contextSequence}`;
+    let sessionSequence = 0;
+    const sessionIdFactory = input.sessionIdFactory ?? (() => {
+      if (sessionSequence >= Number.MAX_SAFE_INTEGER) throw cancel('NATIVE_ADMISSION_INVALID');
+      return `${identity}.${++sessionSequence}`;
+    });
     let boundFetch: HostedNativeSessionFetch | undefined;
     const fetch: HostedNativeSessionFetch | undefined = options.sessionFetch
       ? (url, init) => {
@@ -333,12 +344,7 @@ export function createNativeAdmissionOwner(options: {
     if (!fetch) throw cancel('NATIVE_ADMISSION_INVALID');
     let controller: HostedNativeSessionController;
     try {
-      controller = factory({
-        binding: input.binding,
-        fetch,
-        now: input.now,
-        sessionIdFactory: input.sessionIdFactory,
-      });
+      controller = factory({binding: input.binding, fetch, now: input.now, sessionIdFactory});
     } catch {
       throw cancel('NATIVE_ADMISSION_INVALID');
     }
@@ -382,10 +388,20 @@ export function createNativeAdmissionOwner(options: {
         generation: context.generation,
         scope: Object.freeze({installation: ack.installation, context: context.id}),
         get state() {
-          return Object.freeze({
-            status: context.live ? ('active' as const) : ('retired' as const),
-            context: context.id,
-          });
+          return Object.freeze({status: context.live ? ('active' as const) : ('retired' as const), context: context.id});
+        },
+        async prepare() {
+          if (!context.live || disposed) throw cancel();
+          if (context.mapId === null) return null;
+          if (!foreground || !controller.prepare) throw cancel('NATIVE_ADMISSION_UNAVAILABLE');
+          try {
+            const policy = await controller.prepare();
+            if (!context.live || disposed) throw cancel();
+            if (!foreground || !policy || policy.mapId !== context.mapId) throw cancel('NATIVE_ADMISSION_DENIED');
+            return policy;
+          } catch {
+            throw cancel(context.live && !disposed ? 'NATIVE_ADMISSION_DENIED' : 'NATIVE_ADMISSION_CANCELLED');
+          }
         },
         discriminate: catalog.discriminate,
         discriminateForTest: catalog.discriminate,
@@ -439,18 +455,12 @@ export function createNativeAdmissionOwner(options: {
     if (disposal) return disposal;
     disposed = true;
     status = 'disposed';
-    const retiring = [...contexts.values()].map((context) =>
-      retire(context).catch(() => undefined),
-    );
+    const retiring = [...contexts.values()].map((context) => retire(context).catch(() => undefined));
     for (const controller of pendingControllers) controller.dispose();
     const attempt = (async () => {
       try {
         let id: string | undefined;
-        try {
-          id = await installed;
-        } catch {
-          /* No successful installation to remove. */
-        }
+        try { id = await installed; } catch { /* No successful installation to remove. */ }
         await Promise.all(retiring);
         if (!id) return Object.freeze({removed: false, ownershipLost: false});
         try {
@@ -458,17 +468,11 @@ export function createNativeAdmissionOwner(options: {
           if (!ack || typeof ack.removed !== 'boolean' || typeof ack.ownershipLost !== 'boolean')
             throw cancel('NATIVE_ADMISSION_INVALID');
           return Object.freeze({removed: ack.removed, ownershipLost: ack.ownershipLost});
-        } catch {
-          throw cancel('NATIVE_ADMISSION_UNAVAILABLE');
-        }
-      } finally {
-        unsubscribe();
-      }
+        } catch { throw cancel('NATIVE_ADMISSION_UNAVAILABLE'); }
+      } finally { unsubscribe(); }
     })();
     disposal = attempt;
-    void attempt.catch(() => {
-      if (disposal === attempt) disposal = undefined;
-    });
+    void attempt.catch(() => { if (disposal === attempt) disposal = undefined; });
     return attempt;
   }
   return Object.freeze({
@@ -481,11 +485,7 @@ export function createNativeAdmissionOwner(options: {
     },
     dispose,
     get state() {
-      return Object.freeze({
-        status,
-        contexts: contexts.size,
-        pendingRegistrations: pendingControllers.size,
-      });
+      return Object.freeze({status, contexts: contexts.size, pendingRegistrations: pendingControllers.size});
     },
   });
 }

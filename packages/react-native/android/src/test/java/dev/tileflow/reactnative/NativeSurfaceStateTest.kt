@@ -18,6 +18,7 @@ class NativeSurfaceStateTest {
 		state.acknowledge((events.last()["sequence"] as Number).toLong())
 		val layout = state.commit("one")
 		state.frameStart(style)
+		state.mapRendered(style, true)
 		state.frameEnd(style, true)
 		state.acknowledge((events.last()["sequence"] as Number).toLong())
 		assertTrue(events.any { it["kind"] == "render" && it["layout"] == layout })
@@ -38,6 +39,36 @@ class NativeSurfaceStateTest {
 		assertThrows(IllegalStateException::class.java) { state.commit("two") }
 		state.close()
 		assertFalse(state.active)
+	}
+
+	@Test fun layoutChangeRequiresFreshFullyRenderedMapEvidenceAndClosesGesture() {
+		val events = mutableListOf<Map<String, Any>>()
+		val state = NativeSurfaceState("surface", events::add)
+		val style = Any()
+		val view = mapOf<String, Any>("center" to listOf(1.0, 2.0), "zoom" to 3.0, "bearing" to 4.0, "pitch" to 5.0)
+		state.expect("one"); state.layout(true); state.loaded("one", style)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		state.commit("one"); state.mapRendered(style, true)
+		state.gestureStart(view)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		state.layout(true)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		assertTrue(state.beginCommand(1))
+		state.commit("one"); state.frameStart(style); state.frameEnd(style, true)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		assertFalse(events.any { it["kind"] == "render" })
+		state.frameStart(style); state.mapRendered(style, true); state.frameEnd(style, true)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		assertTrue(events.any { it["kind"] == "render" })
+	}
+
+	@Test fun failedStyleCanBeRearmedForRollback() {
+		val state = NativeSurfaceState("surface") {}
+		state.expect("one")
+		state.fail()
+		assertFalse(state.active)
+		state.expect("rollback")
+		assertTrue(state.active)
 	}
 
 	@Test fun cameraTokensAreMonotonicAndGestureChangesCannotBeCommands() {

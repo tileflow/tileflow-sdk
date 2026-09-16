@@ -16,8 +16,7 @@ const messages: Record<NativeConfigurationErrorCode, string> = {
   NATIVE_CONFIGURATION_REPLACED: 'Hosted binding resolution was replaced.',
   NATIVE_CONFIGURATION_DISPOSED: 'Hosted binding resolution is disposed.',
 };
-const originPattern =
-  /^([Hh][Tt][Tt][Pp][Ss]):\/\/([A-Za-z0-9.-]+)(?::([1-9][0-9]{0,4}))?\/?$/u;
+const originPattern = /^([Hh][Tt][Tt][Pp][Ss]):\/\/([A-Za-z0-9.-]+)(?::([1-9][0-9]{0,4}))?\/?$/u;
 
 /** Internal diagnostics never retain input values or a native exception. */
 export class NativeConfigurationError extends Error {
@@ -100,10 +99,13 @@ export function snapshotMobileConfiguration(value: unknown): MobileConfiguration
     }
     const apiOrigin = canonicalMobileApiOrigin(data.apiOrigin);
     // Private callers can read these fields. Public serialization/inspection cannot copy them.
-    const snapshot = Object.defineProperties({}, {
-      apiOrigin: {value: apiOrigin},
-      credential: {value: data.credential},
-    });
+    const snapshot = Object.defineProperties(
+      {},
+      {
+        apiOrigin: {value: apiOrigin},
+        credential: {value: data.credential},
+      },
+    );
     return Object.freeze(snapshot) as MobileConfiguration;
   } catch {
     return invalid();

@@ -57,14 +57,20 @@ Runtime fetches share a successful result for 30 seconds, never cache failures, 
 external abort signal, and can be invalidated with `clearTileflowManifestCache()`.
 
 Named map `view` values travel in the manifest. `resolveTileflowRuntimeTheme()` turns an omitted,
-explicit, or browser `system` request into one concrete published entry; unknown names fail closed.
-`resolveTileflowRuntimeView()` defines the shared
-precedence as explicit runtime values, then the manifest view, then the single exported
-`defaultTileflowRuntimeView` (`[0, 20]`, zoom 2, bearing/pitch 0). Browser delivery is one
-discriminated `TileflowRuntimeSource`: `kind: 'tileflow'` resolves a named map only through its
-published manifest, while `kind: 'maplibre'` accepts a direct style object or URL. The runtime
-subpath does not import the config compiler, invent a localhost style URL, or change image mode by
-environment.
+explicit, or `system` request with a supplied color scheme into one concrete published entry;
+unknown names fail closed. `resolveTileflowRuntimeView()` defines the shared precedence as explicit
+runtime values, then the manifest view, then the single exported `defaultTileflowRuntimeView`
+(`[0, 20]`, zoom 2, bearing/pitch 0).
+
+`TileflowRuntimeSource` is one object, `{map, manifestUrl?}`, selecting a named Tileflow map only
+through its published manifest. React, Vue and Svelte share that source contract. Omitting the URL
+means exactly `/tileflow/manifest.json`; other locations must be explicit. The native Core contract
+uses `{map, manifestUrl}` with a required absolute URL and no discovery, as described in the
+[native guide](native-resource-urls.md). The React Native type contract preserves that requirement.
+No public framework Map source exposes a renderer discriminator or direct-style branch. The obsolete
+`kind` and `style` fields are rejected; completely unmanaged maps use upstream MapLibre directly.
+The runtime subpath does not import the config compiler, invent a localhost style URL, or change
+image mode by environment.
 
 Framework adapters import the browser-only lifecycle kernel explicitly:
 

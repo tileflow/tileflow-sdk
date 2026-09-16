@@ -6,6 +6,7 @@ import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {createServer as createViteServer} from 'vite';
 import {launchTileflowCaptureBrowser} from '../src/browser';
+import {writeFrameworkMapFixture} from './tileflow-source-fixture';
 
 type SemanticProof = {
   diagnostics: string[];
@@ -46,6 +47,7 @@ test(
           '<!doctype html><html><body><div id="root"></div><script type="module" src="/main.tsx"></script></body></html>',
         ),
         writeFile(join(cwd, 'main.tsx'), applicationSource),
+        writeFrameworkMapFixture(cwd, semanticStyle),
       ]);
 
       vite = await createViteServer({
@@ -68,10 +70,14 @@ test(
       const page = await browser.newPage({viewport: {height: 480, width: 640}});
       const browserErrors: string[] = [];
       const remoteOrigins = new Set<string>();
+      const loadedResources = new Set<string>();
       page.on('console', (message) => {
         if (message.type() === 'error') browserErrors.push(message.text());
       });
       page.on('pageerror', (error) => browserErrors.push(error.message));
+      page.on('response', (response) => {
+        if (response.ok()) loadedResources.add(new URL(response.url()).pathname);
+      });
       page.on('request', (request) => {
         const url = new URL(request.url());
         if ((url.protocol === 'http:' || url.protocol === 'https:') && url.origin !== appOrigin) {
@@ -90,6 +96,10 @@ test(
             ?.getAttribute('data-tileflow-state') === 'idle',
       );
       assert.equal(await page.locator('canvas.maplibregl-canvas').count(), 1);
+      assert.ok(loadedResources.has('/tileflow-fixture/manifest.json'));
+      assert.ok(loadedResources.has('/tileflow-fixture/style.json'));
+      assert.equal(await map.getAttribute('data-tileflow-map'), 'main');
+      assert.equal(await map.getAttribute('data-tileflow-theme'), 'light');
 
       const zoomLevelsToOverscale = await page.evaluate(() => {
         const nativeMap = (
@@ -209,16 +219,7 @@ test(
   },
 );
 
-const applicationSource = `import React, {useLayoutEffect} from 'react';
-import {createRoot} from 'react-dom/client';
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import {configureTileflowMapLibre, Map} from '@tileflow/react';
-import 'maplibre-gl/dist/maplibre-gl.css';
-
-configureTileflowMapLibre({workerUrl});
-
-const proof = window.__tileflowSemanticProof = {diagnostics: [], events: [], states: []};
-const style = {
+const semanticStyle = {
   version: 8,
   name: 'Tileflow semantic GeoJSON browser fixture',
   center: [0, 0],
@@ -229,7 +230,7 @@ const style = {
         poi: {
           deduplication: {
             identity: ['source', 'source-layer', 'feature-id'],
-            representationPriority: ['marker', 'icon', 'combined', 'label']
+            representationPriority: ['marker', 'icon', 'combined', 'label'],
           },
           fields: {
             category: 'category',
@@ -241,45 +242,69 @@ const style = {
           },
           hitTesting: {frequency: 'animation-frame', order: 'rendered-topmost'},
           identity: 'maplibre-feature-id-if-present',
-          layers: [{
-            anchor: 'pointer-coordinate',
-            category: 'food-drink',
-            layerId: 'semantic-poi-layer',
-            priority: 10,
-            representation: 'marker',
-            source: 'semantic-pois'
-          }]
-        }
+          layers: [
+            {
+              anchor: 'pointer-coordinate',
+              category: 'food-drink',
+              layerId: 'semantic-poi-layer',
+              priority: 10,
+              representation: 'marker',
+              source: 'semantic-pois',
+            },
+          ],
+        },
       },
-      version: 2
-    }
+      version: 2,
+    },
   },
   sources: {
     'semantic-pois': {
       type: 'geojson',
       data: {
         type: 'FeatureCollection',
-        features: [{
-          type: 'Feature',
-          id: 42,
-          properties: {
-            category: 'food-drink',
-            filter_rank: 1,
-            icon: 'restaurant',
-            name: 'Café Browser',
-            size_rank: 16,
-            type: 'restaurant'
+        features: [
+          {
+            type: 'Feature',
+            id: 42,
+            properties: {
+              category: 'food-drink',
+              filter_rank: 1,
+              icon: 'restaurant',
+              name: 'Café Browser',
+              size_rank: 16,
+              type: 'restaurant',
+            },
+            geometry: {type: 'Point', coordinates: [0, 0]},
           },
-          geometry: {type: 'Point', coordinates: [0, 0]}
-        }]
-      }
-    }
+        ],
+      },
+    },
   },
   layers: [
     {id: 'background', type: 'background', paint: {'background-color': '#2468ac'}},
-    {id: 'semantic-poi-layer', type: 'circle', source: 'semantic-pois', paint: {'circle-color': '#ffe100', 'circle-radius': 24, 'circle-stroke-color': '#111111', 'circle-stroke-width': 2}}
-  ]
+    {
+      id: 'semantic-poi-layer',
+      type: 'circle',
+      source: 'semantic-pois',
+      paint: {
+        'circle-color': '#ffe100',
+        'circle-radius': 24,
+        'circle-stroke-color': '#111111',
+        'circle-stroke-width': 2,
+      },
+    },
+  ],
 };
+
+const applicationSource = `import React, {useLayoutEffect} from 'react';
+import {createRoot} from 'react-dom/client';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import {configureTileflowMapLibre, Map} from '@tileflow/react';
+import 'maplibre-gl/dist/maplibre-gl.css';
+
+configureTileflowMapLibre({workerUrl});
+
+const proof = window.__tileflowSemanticProof = {diagnostics: [], events: [], states: []};
 const interactions = [{
   id: 'semantic-poi-popup',
   popup: {content: {kind: 'view', name: 'semantic-poi-card'}},
@@ -324,7 +349,7 @@ function App() {
     }}
     onInteractionStateChange={(state) => proof.states.push(state)}
     renderPopup={(context) => <SemanticPopup context={context} />}
-    source={{kind: 'maplibre', style}}
+    source={{map: 'main', manifestUrl: '/tileflow-fixture/manifest.json'}}
   /></div>;
 }
 

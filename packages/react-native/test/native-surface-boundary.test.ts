@@ -29,6 +29,9 @@ test('native surface adapters observe only their owned view and redact all nativ
 	assert.match(ios, /delegate ==/u);
 	assert.match(ios, /@try\s*\{\s*return TFSurfaceMap\(self\.root\) == self\.map;/u);
 	assert.match(ios, /\[attachment\.state close\];\s*return;/u);
+	assert.match(ios, /NSMutableDictionary \*pitchStop = \[target mutableCopy\]/u);
+	assert.match(ios, /\[pitchStop removeObjectForKey:@"zoom"\]/u);
+	assert.match(ios, /\[camera handleImperativeStop:pitchStop\][\s\S]*\[camera handleImperativeStop:stop\]/u);
 });
 
 test('surface code has private build wiring without widening peers or publishing a native handle', async () => {

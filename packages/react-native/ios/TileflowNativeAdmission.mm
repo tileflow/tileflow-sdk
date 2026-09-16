@@ -6,11 +6,11 @@
 #import <cmath>
 
 @interface TileflowNativeAdmission ()
-@property (nonatomic, nullable) TFAdmissionInstallation *installation;
-@property (nonatomic, nullable) TFAdmissionBootstrap *bootstrapRequests;
-@property (nonatomic, nullable) TFAdmissionURLSessionNetwork *bootstrapNetwork;
-@property (nonatomic, nullable) NSString *lastRemoved;
-@property (nonatomic, nullable) NSDictionary *lastRemoval;
+@property (nonatomic, strong, nullable) TFAdmissionInstallation *installation;
+@property (nonatomic, strong, nullable) TFAdmissionBootstrap *bootstrapRequests;
+@property (nonatomic, strong, nullable) TFAdmissionURLSessionNetwork *bootstrapNetwork;
+@property (nonatomic, copy, nullable) NSString *lastRemoved;
+@property (nonatomic, copy, nullable) NSDictionary *lastRemoval;
 @property (nonatomic) BOOL observing;
 @property (nonatomic) BOOL invalidated;
 @end
@@ -48,11 +48,14 @@ RCT_REMAP_METHOD(install, installWithResolver:(RCTPromiseResolveBlock)resolve re
 		}];
 		self.bootstrapNetwork = [self createBootstrapNetwork];
 		if (!self.installation || !self.bootstrapNetwork) [self invalid];
+		// The network guard may run off the main queue. Capture its original
+		// engine instead of reading the module's mutable installation pointer.
+		TFAdmissionEngine *admission = self.installation.engine;
 		self.bootstrapRequests = [[TFAdmissionBootstrap alloc] initWithInstallation:self.installation.identifier scheduler:[TFContinuousAdmissionScheduler new]
-			network:self.bootstrapNetwork owns:^BOOL { return [weakSelf.installation.engine isOwner]; }];
+			network:self.bootstrapNetwork owns:^BOOL { return [admission isOwner]; }];
 		if (!self.bootstrapRequests) [self invalid];
-		[self.installation.engine lifecycle:UIApplication.sharedApplication.applicationState == UIApplicationStateActive];
-		if (![self.installation.engine isOwner]) [self invalid];
+		[admission lifecycle:UIApplication.sharedApplication.applicationState == UIApplicationStateActive];
+		if (![admission isOwner]) [self invalid];
 		resolve(@{@"installation": self.installation.identifier});
 	} @catch (NSException *exception) {
 		// Do not roll back an existing installation rejected by the guard.
@@ -122,7 +125,7 @@ RCT_REMAP_METHOD(completeBatch, completeInstallation:(NSString *)identifier cont
 		if (![NSJSONSerialization isValidJSONObject:results]) [self invalid];
 		NSData *wire = [NSJSONSerialization dataWithJSONObject:results options:0 error:nil];
 		if (!wire || wire.length > 524288) [self invalid];
-		NSUInteger accepted = [self.installation.engine completeContext:context generation:1 batch:batch results:results];
+		NSUInteger accepted = [installation.engine completeContext:context generation:1 batch:batch results:results];
 		resolve(@{@"accepted": @(accepted)});
 	} @catch (NSException *exception) { [self reject:reject]; }
 }

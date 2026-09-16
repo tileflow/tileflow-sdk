@@ -140,7 +140,8 @@ test('system theme selection is explicit and unknown themes fail with available 
     /concrete portable theme name/u,
   );
   assert.throws(
-    () => resolveTileflowRuntimeStyle({manifestMap: {...manifestMap, defaultTheme: 'system'}, source}),
+    () =>
+      resolveTileflowRuntimeStyle({manifestMap: {...manifestMap, defaultTheme: 'system'}, source}),
     /concrete portable theme name/u,
   );
   assert.throws(

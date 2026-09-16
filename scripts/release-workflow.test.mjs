@@ -295,7 +295,10 @@ test('Chromium provisioning removes only unused Chrome APT sources', async () =>
       'google-chrome-stable.sources',
       'google-chrome.list',
     ]);
-    assert.deepEqual((await readdir(directory)).sort(), ['google-cloud-sdk.list', 'ubuntu.sources']);
+    assert.deepEqual((await readdir(directory)).sort(), [
+      'google-cloud-sdk.list',
+      'ubuntu.sources',
+    ]);
     assert.deepEqual(await removeRunnerChromeRepositories(directory), []);
   } finally {
     await rm(directory, {recursive: true, force: true});

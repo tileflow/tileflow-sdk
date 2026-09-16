@@ -1,9 +1,10 @@
-import {resolveTileflowNativeManifestUrl} from '@tileflow/core/native';
+import {resolveTileflowNativeManifestUrl, resolveTileflowNativeResourceUrl} from '@tileflow/core/native';
 import {
   nativeAdmissionLimits,
   type NativeAdmissionResource,
   nativeContextParameter,
 } from './native-admission-contract';
+import {normalizeNativeTemplate} from './native-resource-template';
 import type {HostedNativeSessionAuthority} from './session-controller';
 
 const scopes = new Set(['style', 'tilejson', 'tile', 'sprite', 'glyph', 'font']);
@@ -47,29 +48,33 @@ export function normalizeNativeResources(
         !scopes.has(resource.scope) ||
         hasReservedNativeContext(resource.url) ||
         /[^\x21-\x7e]|[\\#]/u.test(resource.url) ||
-        seen.has(resource.url) ||
-        resolveTileflowNativeManifestUrl(resource.url) !== resource.url
-      )
-        throw new Error('Invalid native resource');
+        seen.has(resource.url)
+      ) throw new Error('Invalid native resource');
+      const origin = nativeResourceOrigin(resource.url);
+      const canonical = resource.template === undefined
+        ? resolveTileflowNativeManifestUrl(resource.url)
+        : resolveTileflowNativeResourceUrl(resource.url, {
+            documentUrl: `${origin}/`, template: resource.template,
+          });
+      if (canonical !== resource.url) throw new Error('Invalid native resource');
       const decoded = decodeURIComponent(resource.url);
       if (/tf_native_|tf_public_/iu.test(decoded)) throw new Error('Invalid native resource');
-      nativeResourceOrigin(resource.url);
       if (
         (resource.scope === 'tile' || resource.scope === 'tilejson') &&
         resource.tilesetId === undefined
-      )
-        throw new Error('Missing native tileset');
+      ) throw new Error('Missing native tileset');
       if (
         resource.tilesetId !== undefined &&
         (!/^[A-Za-z0-9._:-]{1,255}$/u.test(resource.tilesetId) ||
           /tf_native_|tf_public_/iu.test(resource.tilesetId))
-      )
-        throw new Error('Invalid native tileset');
+      ) throw new Error('Invalid native tileset');
+      const template = normalizeNativeTemplate(resource);
       seen.add(resource.url);
       return Object.freeze({
         url: resource.url,
         scope: resource.scope,
         ...(resource.tilesetId === undefined ? {} : {tilesetId: resource.tilesetId}),
+        ...template,
       });
     }),
   );

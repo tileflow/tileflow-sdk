@@ -18,12 +18,14 @@ export const nativeAdmissionLimits = Object.freeze({
 export const nativeContextParameter = '__tf_native_context';
 export const nativeGrantHeader = 'X-Tileflow-Native-Grant';
 
-// An explicit, exact resource catalog is the test seam for this unit. It is not
-// a style/TileJSON closure projector or a public URL transformation contract.
+// Exact documents or bounded expansions of an explicit resource template.
+// A template never changes its origin, fixed path/query identity, class or tileset.
 export type NativeAdmissionResource = Readonly<{
   url: string;
   scope: NativeSessionResourceScope;
   tilesetId?: string;
+  template?: 'tile' | 'glyphs';
+  fontStacks?: readonly string[];
 }>;
 
 export type NativeAdmissionCode =

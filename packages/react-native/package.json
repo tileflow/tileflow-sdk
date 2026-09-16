@@ -17,6 +17,7 @@
 	"types": "./dist/index.d.ts",
 	"files": [
 		"dist",
+		"docs",
 		"android/build.gradle",
 		"android/src",
 		"ios/*.h",

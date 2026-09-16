@@ -1,13 +1,13 @@
 # @tileflow/react-native
 
-Pre-release TypeScript contracts, camera/session ownership and internal appearance adaptation for Tileflow on React Native.
+Pre-release TypeScript contracts, camera/session ownership, appearance adaptation and private native resource admission for Tileflow on React Native.
 This is a **private workspace** package. It is not in the publication catalog and does not export a `Map` component.
 Its package entry exports types only; importing that entry does not load React Native, MapLibre,
 Core's runtime, a renderer, or a network adapter.
 
 > Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
 
-## Work in the source checkout
+## Installation in a source checkout
 
 Use this package with the matching Core workspace, not as a published mobile SDK. After installing
 the repository dependencies and building Core, the focused checks are:
@@ -17,8 +17,9 @@ pnpm --filter @tileflow/core build
 pnpm --filter @tileflow/react-native verify
 ```
 
-The initial peer matrix is exact: React **19.2.0**, React Native **0.83.10**, and
+The peer matrix is exact: React **19.2.0**, React Native **0.83.10**, and
 `@maplibre/maplibre-react-native` **11.3.10**. Development dependencies use the same versions.
+The private transport targets MapLibre Native **13.2.0** on Android and **6.26.0** on iOS.
 The package does not establish support for another version, Expo Go, another architecture or an
 app-store build. Declaring these peers is not evidence that this package has mounted a native map.
 
@@ -27,6 +28,11 @@ repository's Apache-2.0 license at pack time; no native libraries or third-party
 sources are vendored. The internal Core dependency follows the workspace protocol used by the
 other adapters. This private package consumes source-checkout capabilities, not a promise that an
 older published Core release has every declaration used here.
+
+Native autolinking does not install the networking owner. For the required installation order,
+Android build integration, iOS CocoaPods/SPM post-install step and execution boundary, read the
+[private native admission guide](docs/native-admission.md). The transport is an explicit internal
+test seam; it is not reachable through a public runtime export.
 
 ## Contract pieces
 
@@ -45,7 +51,7 @@ Omitted Tileflow themes use the manifest default. The future renderer owner supp
 appearance for `system`; Core's selection rules are unchanged. Source validation, bounded manifest
 acquisition, generation ownership and URL policy remain in
 [Core's native contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-resource-urls.md).
-This package does not add an acquisition adapter or issue requests.
+These public source contracts do not themselves issue network requests.
 
 Presentation uses React `children` and ref types plus React Native's `style` and `testID` types.
 Children are opaque React nodes here; this does not introduce a Tileflow annotation or popup API.
@@ -61,15 +67,15 @@ by the eventual component.
 import type {MapProps} from '@tileflow/react-native';
 
 const definition = {
-  source: {
-    kind: 'tileflow',
-    map: 'streets',
-    manifestUrl: 'https://maps.example.com/tileflow/native/manifest.json',
-  },
-  theme: 'system',
-  initialView: {center: [-3.7038, 40.4168], zoom: 12},
-  mapOptions: {dragPan: true, touchZoom: true},
-  testID: 'streets-map',
+	source: {
+		kind: 'tileflow',
+		map: 'streets',
+		manifestUrl: 'https://maps.example.com/tileflow/native/manifest.json',
+	},
+	theme: 'system',
+	initialView: {center: [-3.7038, 40.4168], zoom: 12},
+	mapOptions: {dragPan: true, touchZoom: true},
+	testID: 'streets-map',
 } satisfies MapProps;
 ```
 
@@ -97,12 +103,12 @@ frame. A ref is a contract for the later component, not an instantiated object e
 The declarations distinguish source state, renderer loading, rendered readiness and theme
 transitions. None of these renderer events is emitted by a component in this phase.
 
-| Callback            | Contract                                                                                                                                                                |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `onLoad`            | A `load` event for the current generation and safe selection after the renderer accepts its style. This is not proof of a fully rendered frame.                         |
-| `onError`           | Either a `source-error` with the existing safe Core diagnostic or a `renderer-error` with only its generation. No native event, raw message or remote cause is exposed. |
-| `onReadinessChange` | A `readiness-change` event with `loading`, `ready` or `error`. Only the renderer owner can establish rendered readiness; a resolved manifest cannot do so.              |
-| `onThemeChange`     | A `theme-change` event with `preloading`, `applying`, `ready` or `error`. A committed `ready` transition requires a concrete current theme.                             |
+| Callback | Contract |
+| --- | --- |
+| `onLoad` | A `load` event for the current generation and safe selection after the renderer accepts its style. This is not proof of a fully rendered frame. |
+| `onError` | Either a `source-error` with the existing safe Core diagnostic or a `renderer-error` with only its generation. No native event, raw message or remote cause is exposed. |
+| `onReadinessChange` | A `readiness-change` event with `loading`, `ready` or `error`. Only the renderer owner can establish rendered readiness; a resolved manifest cannot do so. |
+| `onThemeChange` | A `theme-change` event with `preloading`, `applying`, `ready` or `error`. A committed `ready` transition requires a concrete current theme. |
 
 Theme transitions retain the established distinction between the current and target theme. A
 failed selection may have no valid target. Error details use `onError`, not an exception attached
@@ -111,10 +117,11 @@ The future renderer owner must discard stale-generation events and own native li
 
 ## Internal Appearance adaptation
 
-`native-appearance.ts` is the only module with a React Native value import. It binds a small
-injected broker to the public `Appearance.getColorScheme()` and `Appearance.addChangeListener()`
-APIs. It is built for internal use but is not a package export and is not reachable from the
-contract entry. It never calls `Appearance.setColorScheme()`.
+`native-appearance.ts` binds a small injected broker to React Native's public
+`Appearance.getColorScheme()` and `Appearance.addChangeListener()` APIs. It is built for internal
+use but is not a package export and is not reachable from the contract entry. It never calls
+`Appearance.setColorScheme()`. The separate private admission bridge also imports React Native;
+neither module is loaded by the package root.
 
 A broker activates only for a Tileflow source selecting `system`. Its first active subscription
 reads the current scheme and installs one native listener; concurrent system-theme subscribers
@@ -236,52 +243,48 @@ Observer exceptions and reentrant updates/disposal cannot publish an obsolete re
 or start an echo loop. No timers, subscriptions, source acquisition or native imports are owned by
 the camera controller.
 
-## Internal Hosted session state
+## Internal Hosted sessions and native admission
 
-`createHostedNativeSessionController()` is an internal build artifact for the future owner of one
-real native Map instance. It is not a package export or a public Hosted client. Direct/unmanaged
-MapLibre bindings return no Tileflow authority and never bootstrap a session. A Hosted binding owns
-one session identity; separate controller instances never share that identity, counters or work.
+`createHostedNativeSessionController()` is internal, not a package export or public Hosted client.
+One real Map context owns one controller. Direct bindings never bootstrap or acquire Tileflow
+authority; concurrent Hosted Maps never share session identities, counters, tickets or callbacks.
 
-The controller receives its fetch adapter, clock and session-ID factory as dependencies. Bootstrap
-posts only `mapId`, `sessionId` and normalized `surfaceId` to the trusted canonical HTTPS API origin,
-using `X-Tileflow-Mobile-Client` for the exact publishable credential. It adds no query authority,
-Origin, Referer, Authorization, Cookie or browser attribution. The response is streamed and bounded
-to 65,536 actual UTF-8 bytes, must be `201`/`no-store`, and is rejected unless its native bindings,
-server times, resource origins/scopes and tileset inventory satisfy the bounded server contract.
+The controller is the sole admission authority. Every eligible protected ticket receives one
+logical `acquire()` result; bounded bridge batching does not change accounting. The 10,000-request
+and six-hour rotation boundary, single-flight refresh, strict bootstrap response validation,
+Surface continuity and secret-free controller snapshots remain in that controller. Its conservative
+transport budget uses the existing local validity deadline rather than inventing a fresh lifetime.
 
-`acquire()` is the internal transport-facing barrier. Bootstrap and refresh work is single-flight,
-refresh preserves the session and server-returned Surface, and only the exact commercial restart
-response may replace the session once. Six-hour and 10,000-eligible-request rotation is evaluated
-at this acquisition boundary before authority is returned. Backgrounding does not create a new
-session; resume and every acquisition re-evaluate lifetime and rotation without depending on a
-timer firing while JavaScript is suspended. Server time bounds grant lifetime, and a detected local
-clock rollback forces fresh authority rather than extending an existing grant.
+The private native adapter now supplies independent context-bound bootstrap, asynchronous ticket
+admission, cancellation and ownership-aware MapLibre networking. Android wraps the previous
+`ModuleProvider`/`HttpRequest`; iOS uses a MapLibre-scoped `NSURLProtocol` and an independent
+`URLSession`. Unowned traffic delegates without Tileflow authority. Only the reserved non-secret
+context discriminator is removed before HTTP; the native grant is carried only in
+`X-Tileflow-Native-Grant`, after exact resource, origin, port, class and tileset checks.
 
-The sensitive native grant is available only on the internal authority returned to the future
-transport, where it will be carried as `X-Tileflow-Native-Grant`. Its property is non-enumerable so
-ordinary serialization does not copy it. Observable controller state and subscriber callbacks are
-frozen diagnostic snapshots containing only status, stable error code/kind and non-secret
-identities; they contain no credential, grant, resource URL, raw response or native exception.
-Replacement and disposal abort owned work, disposal is idempotent, and late completions cannot
-revive retired state.
+Installation and retirement must be explicitly awaited. Native expiry and liveness checks occur
+before network start and each permitted same-origin redirect. Backgrounding, replacement, disposal
+and ownership loss invalidate pending work; late completions cannot revive it. Observing a response
+does not confirm or undo server-owned commercial completion.
 
-This unit does not install the grant on renderer requests. It adds no Map component, hook, MapLibre
-import, request interceptor, URL rewrite, Swift/Kotlin bridge, annotation/UI surface or public
-`createTileflowMobileClient` API. Per-map transport ownership and native renderer integration remain
-separate qualification work.
+This is a test-only exact-resource catalog, not automatic style/TileJSON closure projection.
+The later public renderer must supply the complete owned resource graph and real Map lifecycle.
+There is still no component, hook, public Hosted client or runtime API. Read the
+[private native admission guide](docs/native-admission.md) for installation order, fixed limits,
+security/lifecycle details, native dependencies, and the explicit source-checkout harness.
 
 ## Validation boundary
 
-The tests cover the type-only entry, exact peers/private status, isolated appearance lifecycle,
-safe source projection, delegated view composition, camera ownership, internal Hosted session
-state and package graph boundaries. Compile-only consumers use the built public declarations and
-reject mixed camera modes, incomplete controlled views and owned props/lifecycle callbacks. Camera
-command promises, prop delivery and observations are injected; session fetch, clock and identity
-inputs are also injected so lifecycle, rotation, cancellation and adversarial response behavior can
-be deterministic without timer-based tests.
+The authored tests cover the type-only entry, exact peers/private status, isolated appearance
+lifecycle, safe source projection, camera ownership, real-controller admission accounting,
+bootstrap wire lifecycle, native engine/provider/protocol behavior and actual packed contents.
+Compile-only consumers reject mixed camera modes, incomplete controlled views and owned props.
+Clocks, bridge barriers and native schedulers are injected for deterministic concurrency tests;
+those tests do not replace a real RN bridge and renderer.
 
-These checks do not run a native renderer or establish Hermes/device acceptance for a React Native
-component. This package supplies no Swift/Kotlin bridge, Expo plugin, Metro configuration, native
-transport/interceptor, public Hosted client, annotations, location, screenshots or UI. Full renderer
-readiness and mobile service availability are not implied by this contract foundation.
+The source-checkout harness mounts upstream MapLibre Maps through the real private admission bridge
+in an existing development host. It is not a public Tileflow renderer and is excluded from package
+exports and packed files. No test source, build pin or harness file is evidence that native checks
+have run or passed. Build/type/package checks, Android tests, CocoaPods/SPM resolution, XCTest and
+Hermes/device qualification remain required before acceptance. No Expo plugin, production Metro
+configuration, full renderer readiness, mobile service availability or app-store support is implied.

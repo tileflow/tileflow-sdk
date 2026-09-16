@@ -2,6 +2,7 @@ import {
 	createHostedNativeSessionController,
 	type HostedNativeSessionAuthority,
 	type HostedNativeSessionController,
+	type HostedNativeSessionFetch,
 } from './session-controller';
 import {
 	nativeAdmissionLimits,
@@ -15,7 +16,10 @@ import {
 import {authorityAllowsResource, discriminateNativeResourceForTest, isNativeToken, normalizeNativeResources} from './native-admission-url';
 
 type SessionInput = Parameters<typeof createHostedNativeSessionController>[0];
-export type NativeMapAdmissionInput = SessionInput & Readonly<{resources: readonly NativeAdmissionResource[]}>;
+export type NativeMapAdmissionInput = Omit<SessionInput, 'fetch'> & Readonly<{
+	fetch?: HostedNativeSessionFetch;
+	resources: readonly NativeAdmissionResource[];
+}>;
 export type NativeMapAdmission = Readonly<{
 	context: string;
 	generation: number;
@@ -49,6 +53,7 @@ type Context = {
 
 export function createNativeAdmissionOwner(options: {
 	bridge: NativeAdmissionBridge;
+	sessionFetch?: (context: string) => HostedNativeSessionFetch;
 	createController?: (input: SessionInput) => HostedNativeSessionController;
 	onObservation?: (observation: Readonly<{context: string; status: number}>) => void;
 }) {
@@ -64,9 +69,7 @@ export function createNativeAdmissionOwner(options: {
 	let status: 'idle' | 'installing' | 'ready' | 'error' | 'disposed' = 'idle';
 	let disposal: Promise<NativeRemovalAck> | undefined;
 
-	function cancel(code: NativeAdmissionCode = 'NATIVE_ADMISSION_CANCELLED') {
-		return new NativeAdmissionError(code);
-	}
+	function cancel(code: NativeAdmissionCode = 'NATIVE_ADMISSION_CANCELLED') { return new NativeAdmissionError(code); }
 
 	function install(): Promise<Readonly<{installation: string}>> {
 		if (disposed) return Promise.reject(cancel());
@@ -78,9 +81,7 @@ export function createNativeAdmissionOwner(options: {
 				installation = ack.installation;
 				return ack.installation;
 			}, () => { throw cancel('NATIVE_ADMISSION_UNAVAILABLE'); });
-		} catch {
-			installed = Promise.reject(cancel('NATIVE_ADMISSION_UNAVAILABLE'));
-		}
+		} catch { installed = Promise.reject(cancel('NATIVE_ADMISSION_UNAVAILABLE')); }
 		installResult = installed.then((id) => {
 			if (disposed) throw cancel();
 			status = 'ready';
@@ -92,10 +93,7 @@ export function createNativeAdmissionOwner(options: {
 		return installResult;
 	}
 
-	function retire(context: Context): Promise<Readonly<{retired: true}>> {
-		return context.handle.retire();
-	}
-
+	function retire(context: Context): Promise<Readonly<{retired: true}>> { return context.handle.retire(); }
 	function failContext(context: Context) {
 		void retire(context).catch(() => { void dispose().catch(() => undefined); });
 	}
@@ -104,21 +102,17 @@ export function createNativeAdmissionOwner(options: {
 		if (!context.live || !foreground || event.generation !== context.generation) return;
 		const serial = typeof event.batch === 'string' && /^[1-9][0-9]{0,15}$/u.test(event.batch) ? Number(event.batch) : NaN;
 		if (Number.isSafeInteger(serial) && serial <= context.lastBatch) return;
-		if (!Number.isSafeInteger(serial) || context.batch !== null || !Array.isArray(event.tickets) ||
-			event.tickets.length === 0 || event.tickets.length > nativeAdmissionLimits.batchSize) {
-			failContext(context);
-			return;
+		if (!Number.isSafeInteger(serial) || context.batch !== null || !Array.isArray(event.tickets) || event.tickets.length === 0 || event.tickets.length > nativeAdmissionLimits.batchSize) {
+			failContext(context); return;
 		}
 		const seen = new Set<string>();
 		for (const ticket of event.tickets) {
 			if (!ticket || !isNativeToken(ticket.ticket) || seen.has(ticket.ticket) || typeof ticket.url !== 'string' || !context.resources.has(ticket.url)) {
-				failContext(context);
-				return;
+				failContext(context); return;
 			}
 			seen.add(ticket.ticket);
 		}
-		context.lastBatch = serial;
-		context.batch = event.batch;
+		context.lastBatch = serial; context.batch = event.batch;
 		const tickets = new Map(event.tickets.map((ticket) => [ticket.ticket, {cancelled: false}]));
 		context.tickets = tickets;
 		// Invoke acquire in ticket order, once per eligible ticket. Promise.all
@@ -140,40 +134,22 @@ export function createNativeAdmissionOwner(options: {
 			if (!authority || !authorityAllowsResource(authority, resource, context.mapId)) return reject('NATIVE_ADMISSION_DENIED');
 			const validForMs = context.controller.transportBudget(authority);
 			if (!Number.isSafeInteger(validForMs) || validForMs <= nativeAdmissionLimits.validitySafetyMs || validForMs > 900000) return reject('NATIVE_ADMISSION_EXPIRED');
-			return {
-				ticket: ticket.ticket,
-				kind: 'grant',
-				validForMs,
-				authority: {
-					grant: authority.grant,
-					mapId: authority.mapId,
-					resourceOrigins: [...authority.resourceOrigins],
-					resourceScopes: [...authority.resourceScopes],
-					tilesetIds: [...authority.tilesetIds],
-				},
-			};
+			return {ticket: ticket.ticket, kind: 'grant', validForMs, authority: {
+				grant: authority.grant, mapId: authority.mapId, resourceOrigins: [...authority.resourceOrigins],
+				resourceScopes: [...authority.resourceScopes], tilesetIds: [...authority.tilesetIds],
+			}};
 		});
-		// Controller-validated authority and catalog strings are ASCII. This
-		// temporary serialization is only a wire-size check, not a snapshot.
-		if (JSON.stringify(results).length > nativeAdmissionLimits.bridgeBytes) {
-			failContext(context);
-			return;
-		}
-		context.batch = null;
-		context.tickets = new Map();
-		try {
-			await bridge.completeBatch(event.installation, context.id, context.generation, event.batch, results);
-		} catch {
-			if (context.live) failContext(context);
-		}
+		// Temporary wire-size check, never a snapshot. Validated authority and
+		// catalog strings are ASCII; each native receiver enforces its bound too.
+		if (JSON.stringify(results).length > nativeAdmissionLimits.bridgeBytes) { failContext(context); return; }
+		context.batch = null; context.tickets = new Map();
+		try { await bridge.completeBatch(event.installation, context.id, context.generation, event.batch, results); }
+		catch { if (context.live) failContext(context); }
 	}
 
 	function onEvent(event: NativeAdmissionEvent) {
 		if (disposed || !event || event.installation !== installation) return;
-		if (event.kind === 'ownershipLost') {
-			void dispose().catch(() => undefined);
-			return;
-		}
+		if (event.kind === 'ownershipLost') { void dispose().catch(() => undefined); return; }
 		if (event.kind === 'lifecycle') {
 			foreground = event.foreground === true;
 			for (const context of contexts.values()) {
@@ -190,10 +166,7 @@ export function createNativeAdmissionOwner(options: {
 		if (event.kind === 'retired') { failContext(context); return; }
 		if (event.kind === 'cancel') {
 			if (!Array.isArray(event.tickets) || event.tickets.length > nativeAdmissionLimits.queueDepth) { failContext(context); return; }
-			for (const id of event.tickets) {
-				const ticket = context.tickets.get(id);
-				if (ticket) ticket.cancelled = true;
-			}
+			for (const id of event.tickets) { const ticket = context.tickets.get(id); if (ticket) ticket.cancelled = true; }
 			return;
 		}
 		if (event.kind === 'response') {
@@ -204,7 +177,6 @@ export function createNativeAdmissionOwner(options: {
 		}
 		if (event.kind === 'batch') void handleBatch(context, event).catch(() => failContext(context));
 	}
-
 	const unsubscribe = bridge.subscribe((event) => {
 		try { onEvent(event); } catch { void dispose().catch(() => undefined); }
 	});
@@ -213,39 +185,36 @@ export function createNativeAdmissionOwner(options: {
 		if (disposed) throw cancel();
 		let resources: readonly NativeAdmissionResource[];
 		try { resources = normalizeNativeResources(input.resources); } catch { throw cancel('NATIVE_ADMISSION_INVALID'); }
+		if (input.fetch && options.sessionFetch) throw cancel('NATIVE_ADMISSION_INVALID');
 		const ack = await install();
 		if (disposed) throw cancel();
 		if (contexts.size + pendingControllers.size >= nativeAdmissionLimits.contexts) throw cancel('NATIVE_ADMISSION_UNAVAILABLE');
+		let boundFetch: HostedNativeSessionFetch | undefined;
+		const fetch: HostedNativeSessionFetch | undefined = options.sessionFetch ? (url, init) => {
+			if (!boundFetch) return Promise.reject(cancel('NATIVE_ADMISSION_CANCELLED'));
+			return boundFetch(url, init);
+		} : input.fetch ?? (input.binding.kind === 'direct' ? async () => { throw cancel('NATIVE_ADMISSION_INVALID'); } : undefined);
+		if (!fetch) throw cancel('NATIVE_ADMISSION_INVALID');
 		let controller: HostedNativeSessionController;
-		try { controller = factory({binding: input.binding, fetch: input.fetch, now: input.now, sessionIdFactory: input.sessionIdFactory}); } catch { throw cancel('NATIVE_ADMISSION_INVALID'); }
+		try { controller = factory({binding: input.binding, fetch, now: input.now, sessionIdFactory: input.sessionIdFactory}); }
+		catch { throw cancel('NATIVE_ADMISSION_INVALID'); }
 		pendingControllers.add(controller);
 		const mapId = input.binding.kind === 'hosted' ? input.binding.mapId : null;
+		let orphan: string | undefined;
 		try {
 			const registered = await bridge.registerContext(ack.installation, {mapId, resources});
 			if (!registered || !isNativeToken(registered.context) || !Number.isSafeInteger(registered.generation) || registered.generation < 1 || contexts.has(registered.context)) {
-				void dispose().catch(() => undefined);
-				throw cancel('NATIVE_ADMISSION_INVALID');
+				void dispose().catch(() => undefined); throw cancel('NATIVE_ADMISSION_INVALID');
 			}
-			if (disposed) {
-				await bridge.retireContext(ack.installation, registered.context);
-				throw cancel();
-			}
+			orphan = registered.context;
+			if (disposed) throw cancel();
+			if (options.sessionFetch) boundFetch = options.sessionFetch(registered.context);
 			let retirement: Promise<Readonly<{retired: true}>> | undefined;
-			const context: Context = {
-				id: registered.context,
-				generation: registered.generation,
-				mapId,
-				live: true,
-				lastBatch: 0,
-				batch: null,
-				tickets: new Map(),
-				resources: new Map(resources.map((resource) => [resource.url, resource])),
-				controller,
-				handle: undefined as unknown as NativeMapAdmission,
-			};
+			const context: Context = {id: registered.context, generation: registered.generation, mapId, live: true, lastBatch: 0,
+				batch: null, tickets: new Map(), resources: new Map(resources.map((resource) => [resource.url, resource])), controller,
+				handle: undefined as unknown as NativeMapAdmission};
 			context.handle = Object.freeze({
-				context: context.id,
-				generation: context.generation,
+				context: context.id, generation: context.generation,
 				get state() { return Object.freeze({status: context.live ? 'active' as const : 'retired' as const, context: context.id}); },
 				discriminateForTest(url: string) {
 					if (!context.live || !context.resources.has(url)) throw cancel('NATIVE_ADMISSION_INVALID');
@@ -253,11 +222,8 @@ export function createNativeAdmissionOwner(options: {
 				},
 				retire() {
 					if (retirement) return retirement;
-					context.live = false;
-					context.batch = null;
-					context.tickets.clear();
-					contexts.delete(context.id);
-					controller.dispose();
+					context.live = false; context.batch = null; context.tickets.clear(); contexts.delete(context.id);
+					controller.dispose(); boundFetch = undefined;
 					retirement = Promise.resolve().then(async () => {
 						try {
 							const retired = await bridge.retireContext(ack.installation, context.id);
@@ -269,20 +235,21 @@ export function createNativeAdmissionOwner(options: {
 				},
 			});
 			if (!foreground) controller.background();
-			contexts.set(context.id, context);
+			contexts.set(context.id, context); orphan = undefined;
 			return context.handle;
 		} catch (error) {
-			controller.dispose();
+			controller.dispose(); boundFetch = undefined;
+			if (orphan) {
+				try { await bridge.retireContext(ack.installation, orphan); }
+				catch { void dispose().catch(() => undefined); }
+			}
 			throw error instanceof NativeAdmissionError ? error : cancel('NATIVE_ADMISSION_UNAVAILABLE');
-		} finally {
-			pendingControllers.delete(controller);
-		}
+		} finally { pendingControllers.delete(controller); }
 	}
 
 	function dispose(): Promise<NativeRemovalAck> {
 		if (disposal) return disposal;
-		disposed = true;
-		status = 'disposed';
+		disposed = true; status = 'disposed';
 		const retiring = [...contexts.values()].map((context) => retire(context).catch(() => undefined));
 		for (const controller of pendingControllers) controller.dispose();
 		disposal = (async () => {
@@ -300,13 +267,11 @@ export function createNativeAdmissionOwner(options: {
 		})();
 		return disposal;
 	}
-
 	return Object.freeze({
-		install,
-		openMap,
+		install, openMap,
 		async replaceMap(previous: NativeMapAdmission, input: NativeMapAdmissionInput) {
-			await previous.retire();
-			return openMap(input);
+			if (disposed) throw cancel();
+			await previous.retire(); return openMap(input);
 		},
 		dispose,
 		get state() { return Object.freeze({status, contexts: contexts.size, pendingRegistrations: pendingControllers.size}); },

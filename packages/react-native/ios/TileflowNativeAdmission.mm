@@ -1,10 +1,14 @@
 #import "TileflowNativeAdmission.h"
 #import "TFAdmissionInstallation.h"
+#import "TFAdmissionBootstrap.h"
+#import "TFAdmissionNetwork.h"
 #import <UIKit/UIKit.h>
 #import <cmath>
 
 @interface TileflowNativeAdmission ()
 @property (nonatomic, nullable) TFAdmissionInstallation *installation;
+@property (nonatomic, nullable) TFAdmissionBootstrap *bootstrapRequests;
+@property (nonatomic, nullable) TFAdmissionURLSessionNetwork *bootstrapNetwork;
 @property (nonatomic, nullable) NSString *lastRemoved;
 @property (nonatomic, nullable) NSDictionary *lastRemoval;
 @property (nonatomic) BOOL observing;
@@ -34,9 +38,21 @@ RCT_REMAP_METHOD(install, installWithResolver:(RCTPromiseResolveBlock)resolve re
 		__weak TileflowNativeAdmission *weakSelf = self;
 		self.installation = [[TFAdmissionInstallation alloc] initWithEmitter:^(NSDictionary *event) {
 			TileflowNativeAdmission *strongSelf = weakSelf;
+			if ([event[@"kind"] isEqual:@"retired"]) [strongSelf.bootstrapRequests retire:event[@"context"]];
+			else if ([event[@"kind"] isEqual:@"ownershipLost"]) [strongSelf.bootstrapRequests close];
+			else if ([event[@"kind"] isEqual:@"lifecycle"]) [strongSelf.bootstrapRequests lifecycle:[event[@"foreground"] boolValue]];
 			if (!strongSelf || strongSelf.invalidated || !strongSelf.observing) [NSException raise:@"TFNativeAdmissionListener" format:@"Native admission listener is unavailable"];
 			[strongSelf sendEventWithName:@"TileflowNativeAdmissionEvent" body:event];
 		}];
+		NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
+		configuration.protocolClasses = @[];
+		configuration.URLCache = nil; configuration.HTTPCookieStorage = nil; configuration.URLCredentialStorage = nil;
+		configuration.HTTPShouldSetCookies = NO; configuration.HTTPAdditionalHeaders = nil;
+		configuration.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
+		configuration.HTTPMaximumConnectionsPerHost = 4;
+		self.bootstrapNetwork = [[TFAdmissionURLSessionNetwork alloc] initWithConfiguration:configuration followsRedirects:NO responseByteLimit:65536 queueDepth:32 concurrency:4];
+		self.bootstrapRequests = [[TFAdmissionBootstrap alloc] initWithInstallation:self.installation.identifier scheduler:[TFContinuousAdmissionScheduler new]
+			network:self.bootstrapNetwork owns:^BOOL { return [weakSelf.installation.engine isOwner]; }];
 		[self.installation.engine lifecycle:UIApplication.sharedApplication.applicationState == UIApplicationStateActive];
 		resolve(@{@"installation": self.installation.identifier});
 	} @catch (NSException *exception) { [self reject:reject]; }
@@ -49,15 +65,38 @@ RCT_REMAP_METHOD(registerContext, registerInstallation:(NSString *)identifier re
 		NSArray *resources = registration[@"resources"];
 		if (![resources isKindOfClass:NSArray.class] || resources.count > 128) [self invalid];
 		NSString *context = [installation.engine registerMap:mapId resources:resources];
+		@try {
+			if (!self.bootstrapRequests) [self invalid];
+			[self.bootstrapRequests registerContext:context mapId:mapId];
+		} @catch (NSException *exception) { [installation.engine retire:context]; @throw; }
 		resolve(@{@"context": context, @"generation": @1});
 	} @catch (NSException *exception) { [self reject:reject]; }
 }
 RCT_REMAP_METHOD(retireContext, retireInstallation:(NSString *)identifier context:(NSString *)context resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
 	@try {
 		if (!TFAdmissionValidToken(context)) [self invalid];
-		if ([self.installation.identifier isEqual:identifier]) [self.installation.engine retire:context];
-		else if (![self.lastRemoved isEqual:identifier]) [self invalid];
+		if ([self.installation.identifier isEqual:identifier]) {
+			[self.bootstrapRequests retire:context]; [self.installation.engine retire:context];
+		} else if (![self.lastRemoved isEqual:identifier]) [self invalid];
 		resolve(@{@"retired": @YES});
+	} @catch (NSException *exception) { [self reject:reject]; }
+}
+RCT_REMAP_METHOD(bootstrap, bootstrapInstallation:(NSString *)identifier context:(NSString *)context request:(NSString *)request url:(NSString *)url credential:(NSString *)credential body:(NSString *)body resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+	@try {
+		[self current:identifier];
+		if (!self.bootstrapRequests) [self invalid];
+		[self.bootstrapRequests startContext:context request:request url:url credential:credential body:body completion:^(NSDictionary *reply) {
+			if (reply) resolve(reply);
+			else reject(@"NATIVE_ADMISSION_UNAVAILABLE", @"Native resource admission failed", nil);
+		}];
+	} @catch (NSException *exception) { [self reject:reject]; }
+}
+RCT_REMAP_METHOD(cancelBootstrap, cancelBootstrapInstallation:(NSString *)identifier context:(NSString *)context request:(NSString *)request resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+	@try {
+		if (!TFAdmissionValidToken(context) || !TFAdmissionValidToken(request)) [self invalid];
+		if ([self.installation.identifier isEqual:identifier]) [self.bootstrapRequests cancelContext:context request:request];
+		else if (![self.lastRemoved isEqual:identifier]) [self invalid];
+		resolve(@{@"cancelled": @YES});
 	} @catch (NSException *exception) { [self reject:reject]; }
 }
 RCT_REMAP_METHOD(completeBatch, completeInstallation:(NSString *)identifier context:(NSString *)context generation:(double)generation batch:(NSString *)batch results:(NSArray<NSDictionary *> *)results resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
@@ -77,6 +116,8 @@ RCT_REMAP_METHOD(remove, removeInstallation:(NSString *)identifier resolver:(RCT
 	@try {
 		if (!self.installation && [self.lastRemoved isEqual:identifier]) { resolve(self.lastRemoval); return; }
 		if (![self.installation.identifier isEqual:identifier]) [self invalid];
+		[self.bootstrapRequests close]; [self.bootstrapNetwork close];
+		self.bootstrapRequests = nil; self.bootstrapNetwork = nil;
 		NSDictionary *ack = [self.installation remove];
 		self.lastRemoved = identifier; self.lastRemoval = ack; self.installation = nil;
 		resolve(ack);
@@ -92,6 +133,8 @@ RCT_REMAP_METHOD(remove, removeInstallation:(NSString *)identifier resolver:(RCT
 	[NSNotificationCenter.defaultCenter removeObserver:self];
 	dispatch_async(dispatch_get_main_queue(), ^{
 		self.invalidated = YES;
+		[self.bootstrapRequests close]; [self.bootstrapNetwork close];
+		self.bootstrapRequests = nil; self.bootstrapNetwork = nil;
 		if (self.installation) {
 			self.lastRemoved = self.installation.identifier;
 			self.lastRemoval = [self.installation remove]; self.installation = nil;

@@ -33,6 +33,7 @@
 @property (nonatomic) NSURLSessionConfiguration *configuration;
 @property (nonatomic) NSOperationQueue *delegateQueue;
 @property (nonatomic) BOOL followsRedirects;
+@property (nonatomic) NSUInteger responseByteLimit;
 @property (nonatomic, copy) TFAdmissionStartGuard guard;
 @property (nonatomic, copy) TFAdmissionNetworkCompletion completion;
 @property (atomic, strong, nullable) NSURLSession *session;
@@ -78,14 +79,14 @@
 	self.completion(response, body);
 }
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))completionHandler {
-	if (![self mayStart] || ![response isKindOfClass:NSHTTPURLResponse.class] || response.expectedContentLength > 8388608) {
+	if (![self mayStart] || ![response isKindOfClass:NSHTTPURLResponse.class] || response.expectedContentLength > (int64_t)self.responseByteLimit) {
 		completionHandler(NSURLSessionResponseCancel); [self cancel]; return;
 	}
 	self.response = (NSHTTPURLResponse *)response;
 	completionHandler(NSURLSessionResponseAllow);
 }
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
-	if (![self mayStart] || data.length > 8388608 - self.body.length) { [self cancel]; return; }
+	if (![self mayStart] || data.length > self.responseByteLimit - self.body.length) { [self cancel]; return; }
 	[self.body appendData:data];
 }
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
@@ -115,6 +116,9 @@
 @interface TFAdmissionURLSessionNetwork ()
 @property (nonatomic) NSURLSessionConfiguration *configuration;
 @property (nonatomic) BOOL followsRedirects;
+@property (nonatomic) NSUInteger responseByteLimit;
+@property (nonatomic) NSUInteger queueDepth;
+@property (nonatomic) NSUInteger concurrency;
 @property (nonatomic) dispatch_queue_t queue;
 @property (nonatomic) NSOperationQueue *delegateQueue;
 @property (nonatomic) NSMutableArray<TFAdmissionSessionOperation *> *pending;
@@ -124,8 +128,15 @@
 
 @implementation TFAdmissionURLSessionNetwork
 - (instancetype)initWithConfiguration:(NSURLSessionConfiguration *)configuration followsRedirects:(BOOL)followsRedirects {
+	return [self initWithConfiguration:configuration followsRedirects:followsRedirects responseByteLimit:8388608 queueDepth:2048 concurrency:16];
+}
+- (instancetype)initWithConfiguration:(NSURLSessionConfiguration *)configuration followsRedirects:(BOOL)followsRedirects responseByteLimit:(NSUInteger)responseByteLimit queueDepth:(NSUInteger)queueDepth concurrency:(NSUInteger)concurrency {
 	if ((self = [super init])) {
+		if (!responseByteLimit || responseByteLimit > 8388608 || !queueDepth || queueDepth > 2048 || !concurrency || concurrency > 16 || concurrency > queueDepth) {
+			[NSException raise:@"TFNativeAdmissionBounds" format:@"Invalid native transport bounds"];
+		}
 		_configuration = [configuration copy]; _followsRedirects = followsRedirects;
+		_responseByteLimit = responseByteLimit; _queueDepth = queueDepth; _concurrency = concurrency;
 		_queue = dispatch_queue_create("dev.tileflow.native-admission.network", DISPATCH_QUEUE_SERIAL);
 		_delegateQueue = [NSOperationQueue new]; _delegateQueue.maxConcurrentOperationCount = 1;
 		_pending = [NSMutableArray array]; _active = [NSMutableSet set];
@@ -137,6 +148,7 @@
 	TFAdmissionSessionOperation *operation = [TFAdmissionSessionOperation new];
 	operation.request = [request copy]; operation.guard = guard; operation.configuration = self.configuration;
 	operation.delegateQueue = self.delegateQueue; operation.followsRedirects = self.followsRedirects;
+	operation.responseByteLimit = self.responseByteLimit;
 	__weak TFAdmissionSessionOperation *weakOperation = operation;
 	operation.completion = ^(NSHTTPURLResponse *response, NSData *body) {
 		completion(response, body);
@@ -147,14 +159,14 @@
 		});
 	};
 	dispatch_async(self.queue, ^{
-		if (self.closed || self.pending.count + self.active.count >= 2048 || operation.isCancelled) { [operation cancel]; return; }
+		if (self.closed || self.pending.count + self.active.count >= self.queueDepth || operation.isCancelled) { [operation cancel]; return; }
 		[self.pending addObject:operation];
 		[self drain];
 	});
 	return operation;
 }
 - (void)drain {
-	while (!self.closed && self.active.count < 16 && self.pending.count) {
+	while (!self.closed && self.active.count < self.concurrency && self.pending.count) {
 		TFAdmissionSessionOperation *operation = self.pending.firstObject;
 		[self.pending removeObjectAtIndex:0];
 		if (operation.isCancelled) { [operation cancel]; continue; }

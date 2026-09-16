@@ -1,6 +1,6 @@
 # Framework browser runtime contract
 
-Status: public alpha contract as of 2026-08-27.
+Status: public alpha contract as of 2026-09-16.
 
 This document owns the framework-neutral browser lifecycle shared by Tileflow's React, Vue, and
 Svelte map adapters. The DOM attributes consumed by application capture remain owned by
@@ -28,17 +28,22 @@ or choose when a framework should recreate a map.
 
 ## Delivery source boundary
 
-React, Vue, and Svelte expose one required `source` prop with the same two branches as
-`TileflowRuntimeSource`: `{kind: 'tileflow', map, manifestUrl?}` or
-`{kind: 'maplibre', style}`. The Tileflow branch is manifest-first in every environment. The
-MapLibre branch accepts a style object or URL and never loads a Tileflow manifest. Browser wrappers
-do not accept config/theme compilation, a style-base URL, or a local-development preference; those
-authoring and dev concerns must produce published artifacts before browser rendering.
+React, Vue, and Svelte expose one required `source` prop with the same object shape as
+`TileflowRuntimeSource`: `{map, manifestUrl?}`. Every source selects a named Tileflow map through
+its manifest. There is no renderer discriminator or unmanaged style branch. The obsolete source
+fields `kind` and `style` are rejected; completely unmanaged maps use upstream MapLibre directly.
+Browser wrappers do not accept config/theme compilation, a style-base URL, or a local-development
+preference; those authoring and dev concerns must produce published artifacts before rendering.
 
-The Tileflow branch accepts only runtime manifest version 1. One shape covers local and Hosted
-delivery: each map declares `defaultTheme`, optional `systemThemes`, and an exact `themes` record of
-concrete Style URLs. Adapters do not normalize an older manifest, follow authoring `extends`, or
-invent asset URLs from a map or theme name.
+This Tileflow-only source boundary also applies to the native Core and React Native type contracts,
+where the existing object is `{map, manifestUrl}` with a required absolute manifest URL. Native
+has no implicit manifest discovery. The browser lifecycle mechanics below do not establish native
+renderer readiness or imply that the private React Native package exports a mounted Map component.
+
+Sources accept only runtime manifest version 1. One shape covers local and Hosted delivery: each
+map declares `defaultTheme`, optional `systemThemes`, and an exact `themes` record of concrete
+Style URLs. Adapters do not normalize an older manifest, follow authoring `extends`, or invent
+asset URLs from a map or theme name.
 
 Omitting `manifestUrl` means exactly `/tileflow/manifest.json` at the current origin. Adapters do
 not infer a deployment prefix from `document.baseURI`, a bundler setting, a script URL, or the
@@ -46,9 +51,9 @@ current route: such discovery would differ between SSR and the browser and could
 the wrong map generation. Therefore `manifestUrl` is required whenever the public artifact URL is
 anything else, including a custom Tileflow plugin `base`, Vite `base`, Webpack `publicPath`, or Next
 `basePath`. For example, artifacts published under `/app/maps` require
-`source={{kind: 'tileflow', map: 'main', manifestUrl: '/app/maps/manifest.json'}}`.
+`source={{map: 'main', manifestUrl: '/app/maps/manifest.json'}}`.
 
-Manifest fetching has four explicit adapter states: `not-needed`, `loading`, `ready`, and `error`.
+Manifest fetching has three explicit adapter states: `loading`, `ready`, and `error`.
 A missing manifest, a missing requested map, an interactive source without a resolvable style, or
 image mode without a resolvable image URL enters the terminal public readiness state `error`.
 Changing `source` immediately invalidates readiness, so an adapter cannot expose the previous
@@ -57,10 +62,10 @@ terminal state to `APPLICATION_ERROR` rather than waiting for its timeout.
 
 ## Theme selection and switching
 
-React, Vue, and Svelte expose the same optional `theme` input for Tileflow sources. Omission selects
-the manifest's `defaultTheme`; an explicit concrete name selects exactly that entry; `system`
-requires `systemThemes` and resolves from the browser light/dark preference. Direct MapLibre
-sources reject `theme` because Tileflow does not own their appearance catalog.
+React, Vue, and Svelte expose the same optional `theme` input. Omission selects the manifest's
+`defaultTheme`; an explicit concrete name selects exactly that entry; `system` requires
+`systemThemes` and resolves from the browser light/dark preference. Tileflow owns the map's
+appearance catalog through the manifest, not a caller-supplied style object.
 
 The browser color-scheme observer is a shared singleton rather than one media-query listener per
 component. Its value is read only after mount, keeping server rendering deterministic. Every DOM

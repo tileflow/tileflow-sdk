@@ -15,7 +15,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)frameStart:(nullable id)identity;
 - (void)mapRendered:(nullable id)identity fully:(BOOL)fully;
 - (void)frameEnd:(nullable id)identity fully:(BOOL)fully;
-- (BOOL)beginCommand:(NSUInteger)command;
+- (NSUInteger)beginCommand:(NSUInteger)command;
 - (void)cancelCommand:(NSUInteger)command;
 - (void)gestureStart:(NSDictionary *)view;
 - (void)gestureChange:(NSDictionary *)view;

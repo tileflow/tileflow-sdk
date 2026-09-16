@@ -3,6 +3,24 @@ import {NativeAdmissionError} from './native-admission-owner';
 import {discriminateNativeResourceForTest, normalizeNativeResources} from './native-admission-url';
 import {matchNativeResource} from './native-resource-template';
 
+function mergeGlyphResource(
+	previous: NativeAdmissionResource,
+	next: NativeAdmissionResource,
+): NativeAdmissionResource | undefined {
+	if (
+		previous.scope !== 'glyph' ||
+		next.scope !== 'glyph' ||
+		previous.template !== 'glyphs' ||
+		next.template !== 'glyphs' ||
+		previous.tilesetId !== next.tilesetId ||
+		!previous.fontStacks ||
+		!next.fontStacks
+	) return undefined;
+	const fontStacks = [...new Set([...previous.fontStacks, ...next.fontStacks])].sort();
+	if (fontStacks.length > 16) return undefined;
+	return normalizeNativeResources([{...previous, fontStacks}])[0];
+}
+
 /** The native receipt commits new resources; failed or retired work never expands JS authority. */
 export function createNativeAdmissionCatalog(
 	initial: readonly NativeAdmissionResource[],
@@ -33,17 +51,28 @@ export function createNativeAdmissionCatalog(
 			let next: readonly NativeAdmissionResource[];
 			let additions: readonly NativeAdmissionResource[];
 			try {
-				additions = normalizeNativeResources(input);
+				const requested = normalizeNativeResources(input);
 				const merged = new Map(resources.map((entry) => [entry.url, entry]));
-				for (const entry of additions) {
+				const nativeUpdates: NativeAdmissionResource[] = [];
+				for (const entry of requested) {
 					const previous = merged.get(entry.url);
-					if (previous && JSON.stringify(previous) !== JSON.stringify(entry)) throw invalid();
-					merged.set(entry.url, entry);
+					if (!previous) {
+						merged.set(entry.url, entry);
+						nativeUpdates.push(entry);
+						continue;
+					}
+					if (JSON.stringify(previous) === JSON.stringify(entry)) continue;
+					const union = mergeGlyphResource(previous, entry);
+					if (!union) throw invalid();
+					merged.set(entry.url, union);
+					nativeUpdates.push(union);
 				}
 				next = normalizeNativeResources([...merged.values()]);
+				additions = Object.freeze(nativeUpdates);
 			} catch {
 				return Promise.reject(invalid());
 			}
+			if (additions.length === 0) return Promise.resolve(Object.freeze({resources: next.length}));
 			let resolve!: (ack: Readonly<{resources: number}>) => void;
 			let reject!: (error: NativeAdmissionError) => void;
 			const result = new Promise<Readonly<{resources: number}>>((yes, no) => { resolve = yes; reject = no; });

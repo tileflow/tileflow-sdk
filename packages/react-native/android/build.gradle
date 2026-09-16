@@ -1,0 +1,42 @@
+apply plugin: 'com.android.library'
+
+// The host React Native project owns AGP and Kotlin plugin versions.
+def agpMajor = com.android.Version.ANDROID_GRADLE_PLUGIN_VERSION.tokenize('.')[0].toInteger()
+if (agpMajor < 9 || (agpMajor == 9 && !providers.gradleProperty('android.builtInKotlin').getOrElse('true').toBoolean())) {
+	apply plugin: 'org.jetbrains.kotlin.android'
+}
+
+def nativeVersion = rootProject.ext.has('org.maplibre.reactnative.nativeVersion') ? rootProject.ext.get('org.maplibre.reactnative.nativeVersion').toString() : '13.2.0'
+def nativeVariant = rootProject.ext.has('org.maplibre.reactnative.nativeVariant') ? rootProject.ext.get('org.maplibre.reactnative.nativeVariant').toString() : 'opengl'
+if (nativeVersion != '13.2.0') throw new GradleException('Tileflow native admission requires MapLibre Native 13.2.0')
+
+android {
+	namespace 'dev.tileflow.reactnative'
+	compileSdkVersion rootProject.ext.has('compileSdkVersion') ? rootProject.ext.get('compileSdkVersion') : 36
+	defaultConfig {
+		minSdkVersion rootProject.ext.has('minSdkVersion') ? rootProject.ext.get('minSdkVersion') : 24
+		targetSdkVersion rootProject.ext.has('targetSdkVersion') ? rootProject.ext.get('targetSdkVersion') : 36
+	}
+	compileOptions {
+		sourceCompatibility JavaVersion.VERSION_17
+		targetCompatibility JavaVersion.VERSION_17
+	}
+	if (project.plugins.hasPlugin('org.jetbrains.kotlin.android')) {
+		kotlinOptions { jvmTarget = '17' }
+	}
+	testOptions { unitTests.includeAndroidResources = true }
+}
+
+repositories {
+	google()
+	mavenCentral()
+}
+
+dependencies {
+	implementation('com.facebook.react:react-android:0.83.10') { version { strictly '0.83.10' } }
+	implementation("org.maplibre.gl:android-sdk-${nativeVariant}:13.2.0") { version { strictly '13.2.0' } }
+	implementation('com.squareup.okhttp3:okhttp:4.12.0') { version { strictly '4.12.0' } }
+	testImplementation 'junit:junit:4.13.2'
+	testImplementation 'org.robolectric:robolectric:4.14.1'
+	testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+}

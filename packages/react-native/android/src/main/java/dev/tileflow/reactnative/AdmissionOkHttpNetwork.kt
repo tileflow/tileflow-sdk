@@ -10,11 +10,14 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 
-internal class AdmissionOkHttpNetwork : AdmissionNetwork {
+internal class AdmissionOkHttpNetwork(private val dispatcher: Dispatcher = Dispatcher()) : AdmissionNetwork {
 	private class StartGuard(val allowed: () -> Boolean) {
 		override fun toString() = "NativeAdmissionStartGuard"
 	}
-	private val dispatcher = Dispatcher().apply { maxRequests = 16; maxRequestsPerHost = 8 }
+	private val lock = Any()
+	private val calls = mutableSetOf<Call>()
+	private var closed = false
+	init { dispatcher.maxRequests = 16; dispatcher.maxRequestsPerHost = 8 }
 	// This client is independent of MapLibre's global HTTP client and of the
 	// bootstrap channel. Never add a logging interceptor or shared cookie jar.
 	private val client = OkHttpClient.Builder()
@@ -38,40 +41,54 @@ internal class AdmissionOkHttpNetwork : AdmissionNetwork {
 		val builder = Request.Builder().url(request.url).get().tag(StartGuard::class.java, StartGuard(request.mayStart))
 		for ((name, value) in request.headers) builder.header(name, value)
 		val call = client.newCall(builder.build())
-		call.enqueue(object : Callback {
-			override fun onFailure(call: Call, e: IOException) { callback(null) }
-			override fun onResponse(call: Call, response: Response) {
-				val result = try {
-					response.use {
-						val body = it.body
-						if (body != null && body.contentLength() > AdmissionLimits.RESPONSE_BYTES) throw IOException("Native resource exceeded its size limit")
-						val bytes = ByteArrayOutputStream()
-						body?.byteStream()?.use { stream ->
-							val buffer = ByteArray(8192)
-							while (true) {
-								val count = stream.read(buffer)
-								if (count < 0) break
-								if (bytes.size().toLong() + count > AdmissionLimits.RESPONSE_BYTES) throw IOException("Native resource exceeded its size limit")
-								bytes.write(buffer, 0, count)
+		val accepted = synchronized(lock) {
+			if (closed || calls.size >= AdmissionLimits.CONTEXTS * AdmissionLimits.QUEUE) false
+			else { calls.add(call); true }
+		}
+		if (!accepted) { callback(null); return AdmissionCancellation {} }
+		fun complete(response: AdmissionHttpResponse?) {
+			synchronized(lock) { calls.remove(call) }
+			callback(response)
+		}
+		try {
+			call.enqueue(object : Callback {
+				override fun onFailure(call: Call, e: IOException) { complete(null) }
+				override fun onResponse(call: Call, response: Response) {
+					val result = try {
+						response.use {
+							val body = it.body
+							if (body != null && body.contentLength() > AdmissionLimits.RESPONSE_BYTES) throw IOException("Native resource exceeded its size limit")
+							val bytes = ByteArrayOutputStream()
+							body?.byteStream()?.use { stream ->
+								val buffer = ByteArray(8192)
+								while (true) {
+									val count = stream.read(buffer)
+									if (count < 0) break
+									if (!request.mayStart() || bytes.size().toLong() + count > AdmissionLimits.RESPONSE_BYTES) throw IOException("Native resource is unavailable")
+									bytes.write(buffer, 0, count)
+								}
 							}
+							// Forward only metadata consumed by MapLibre and Location
+							// for our own redirect validation, never raw headers.
+							val headers = linkedMapOf<String, String>()
+							for (name in listOf("etag", "last-modified", "cache-control", "expires", "retry-after", "x-rate-limit-reset", "location")) {
+								it.header(name)?.let { value -> headers[name] = value }
+							}
+							AdmissionHttpResponse(it.code, headers, bytes.toByteArray())
 						}
-						// Forward only response metadata consumed by MapLibre plus
-						// Location for our own redirect validation, not raw headers.
-						val headers = linkedMapOf<String, String>()
-						for (name in listOf("etag", "last-modified", "cache-control", "expires", "retry-after", "x-rate-limit-reset", "location")) {
-							it.header(name)?.let { value -> headers[name] = value }
-						}
-						AdmissionHttpResponse(it.code, headers, bytes.toByteArray())
-					}
-				} catch (_: Exception) { null }
-				callback(result)
-			}
-		})
+					} catch (_: Exception) { null }
+					complete(result)
+				}
+			})
+		} catch (_: Exception) { call.cancel(); complete(null) }
+		// Logical cancellation does not release the physical dispatcher slot.
+		// Its terminal callback does, so rapid retire/register cannot grow it.
 		return AdmissionCancellation { call.cancel() }
 	}
 
 	fun close() {
-		dispatcher.cancelAll()
+		val pending = synchronized(lock) { closed = true; calls.toList() }
+		for (call in pending) call.cancel()
 		client.connectionPool.evictAll()
 		dispatcher.executorService.shutdown()
 	}

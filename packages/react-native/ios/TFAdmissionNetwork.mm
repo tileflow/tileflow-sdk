@@ -3,10 +3,23 @@
 #import <atomic>
 
 @interface TFScheduledAdmission : NSObject <TFAdmissionCancel>
-@property (nonatomic, copy) dispatch_block_t block;
+@property (nonatomic, copy, nullable) dispatch_block_t action;
+@property (nonatomic, strong, nullable) dispatch_source_t timer;
 @end
 @implementation TFScheduledAdmission
-- (void)cancel { dispatch_block_cancel(self.block); }
+- (void)cancel {
+	@synchronized(self) {
+		self.action = nil;
+		if (self.timer) dispatch_source_cancel(self.timer);
+		self.timer = nil;
+	}
+}
+- (void)fire {
+	dispatch_block_t action;
+	@synchronized(self) { action = self.action; [self cancel]; }
+	if (action) action();
+}
+- (void)dealloc { if (_timer) dispatch_source_cancel(_timer); }
 @end
 
 @implementation TFContinuousAdmissionScheduler
@@ -19,8 +32,15 @@
 - (void)enqueue:(dispatch_block_t)block { dispatch_async(dispatch_get_main_queue(), block); }
 - (id<TFAdmissionCancel>)after:(NSTimeInterval)milliseconds perform:(dispatch_block_t)block {
 	TFScheduledAdmission *token = [TFScheduledAdmission new];
-	token.block = dispatch_block_create(0, block);
-	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(milliseconds * NSEC_PER_MSEC)), dispatch_get_main_queue(), token.block);
+	token.action = block;
+	dispatch_source_t timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
+	token.timer = timer;
+	__weak TFScheduledAdmission *weakToken = token;
+	// Cancellation clears the capture immediately rather than retaining the
+	// entire context until a cancelled dispatch_after block reaches its date.
+	dispatch_source_set_event_handler(timer, ^{ [weakToken fire]; });
+	dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(milliseconds * NSEC_PER_MSEC)), DISPATCH_TIME_FOREVER, 0);
+	dispatch_resume(timer);
 	return token;
 }
 @end
@@ -29,17 +49,17 @@
 	std::atomic_bool _cancelled;
 	std::atomic_bool _finished;
 }
-@property (nonatomic) NSURLRequest *request;
-@property (nonatomic) NSURLSessionConfiguration *configuration;
-@property (nonatomic) NSOperationQueue *delegateQueue;
+@property (nonatomic, strong) NSURLRequest *request;
+@property (nonatomic, strong) NSURLSessionConfiguration *configuration;
+@property (nonatomic, strong) NSOperationQueue *delegateQueue;
 @property (nonatomic) BOOL followsRedirects;
 @property (nonatomic) NSUInteger responseByteLimit;
 @property (nonatomic, copy) TFAdmissionStartGuard guard;
 @property (nonatomic, copy) TFAdmissionNetworkCompletion completion;
 @property (atomic, strong, nullable) NSURLSession *session;
 @property (atomic, strong, nullable) NSURLSessionDataTask *task;
-@property (nonatomic) NSMutableData *body;
-@property (nonatomic, nullable) NSHTTPURLResponse *response;
+@property (nonatomic, strong) NSMutableData *body;
+@property (nonatomic, strong, nullable) NSHTTPURLResponse *response;
 - (BOOL)isCancelled;
 - (void)start;
 - (void)finish:(nullable NSHTTPURLResponse *)response body:(nullable NSData *)body;
@@ -114,16 +134,17 @@
 @end
 
 @interface TFAdmissionURLSessionNetwork ()
-@property (nonatomic) NSURLSessionConfiguration *configuration;
+@property (nonatomic, strong) NSURLSessionConfiguration *configuration;
 @property (nonatomic) BOOL followsRedirects;
 @property (nonatomic) NSUInteger responseByteLimit;
 @property (nonatomic) NSUInteger queueDepth;
 @property (nonatomic) NSUInteger concurrency;
-@property (nonatomic) dispatch_queue_t queue;
-@property (nonatomic) NSOperationQueue *delegateQueue;
-@property (nonatomic) NSMutableArray<TFAdmissionSessionOperation *> *pending;
-@property (nonatomic) NSMutableSet<TFAdmissionSessionOperation *> *active;
-@property (nonatomic) BOOL closed;
+@property (nonatomic) NSUInteger reservations;
+@property (nonatomic, strong) dispatch_queue_t queue;
+@property (nonatomic, strong) NSOperationQueue *delegateQueue;
+@property (nonatomic, strong) NSMutableArray<TFAdmissionSessionOperation *> *pending;
+@property (nonatomic, strong) NSMutableSet<TFAdmissionSessionOperation *> *active;
+@property (atomic) BOOL closed;
 @end
 
 @implementation TFAdmissionURLSessionNetwork
@@ -131,13 +152,17 @@
 	return [self initWithConfiguration:configuration followsRedirects:followsRedirects responseByteLimit:8388608 queueDepth:2048 concurrency:16];
 }
 - (instancetype)initWithConfiguration:(NSURLSessionConfiguration *)configuration followsRedirects:(BOOL)followsRedirects responseByteLimit:(NSUInteger)responseByteLimit queueDepth:(NSUInteger)queueDepth concurrency:(NSUInteger)concurrency {
+	return [self initWithConfiguration:configuration followsRedirects:followsRedirects responseByteLimit:responseByteLimit queueDepth:queueDepth concurrency:concurrency
+		workQueue:dispatch_queue_create("dev.tileflow.native-admission.network", DISPATCH_QUEUE_SERIAL)];
+}
+- (instancetype)initWithConfiguration:(NSURLSessionConfiguration *)configuration followsRedirects:(BOOL)followsRedirects responseByteLimit:(NSUInteger)responseByteLimit queueDepth:(NSUInteger)queueDepth concurrency:(NSUInteger)concurrency workQueue:(dispatch_queue_t)workQueue {
 	if ((self = [super init])) {
-		if (!responseByteLimit || responseByteLimit > 8388608 || !queueDepth || queueDepth > 2048 || !concurrency || concurrency > 16 || concurrency > queueDepth) {
+		if (!workQueue || !responseByteLimit || responseByteLimit > 8388608 || !queueDepth || queueDepth > 2048 || !concurrency || concurrency > 16 || concurrency > queueDepth) {
 			[NSException raise:@"TFNativeAdmissionBounds" format:@"Invalid native transport bounds"];
 		}
 		_configuration = [configuration copy]; _followsRedirects = followsRedirects;
 		_responseByteLimit = responseByteLimit; _queueDepth = queueDepth; _concurrency = concurrency;
-		_queue = dispatch_queue_create("dev.tileflow.native-admission.network", DISPATCH_QUEUE_SERIAL);
+		_queue = workQueue;
 		_delegateQueue = [NSOperationQueue new]; _delegateQueue.maxConcurrentOperationCount = 1;
 		_pending = [NSMutableArray array]; _active = [NSMutableSet set];
 	}
@@ -145,21 +170,32 @@
 }
 - (NSString *)description { return @"TFAdmissionURLSessionNetwork(redacted)"; }
 - (id<TFAdmissionCancel>)start:(NSURLRequest *)request mayStart:(TFAdmissionStartGuard)guard completion:(TFAdmissionNetworkCompletion)completion {
+	BOOL reserved;
+	@synchronized(self) {
+		reserved = !self.closed && self.reservations < self.queueDepth;
+		if (reserved) self.reservations++;
+	}
 	TFAdmissionSessionOperation *operation = [TFAdmissionSessionOperation new];
 	operation.request = [request copy]; operation.guard = guard; operation.configuration = self.configuration;
 	operation.delegateQueue = self.delegateQueue; operation.followsRedirects = self.followsRedirects;
 	operation.responseByteLimit = self.responseByteLimit;
 	__weak TFAdmissionSessionOperation *weakOperation = operation;
 	operation.completion = ^(NSHTTPURLResponse *response, NSData *body) {
-		completion(response, body);
-		dispatch_async(self.queue, ^{
-			TFAdmissionSessionOperation *finished = weakOperation;
-			if (finished) { [self.active removeObject:finished]; [self.pending removeObject:finished]; }
-			[self drain];
-		});
+		@try { completion(response, body); }
+		@finally {
+			if (reserved) dispatch_async(self.queue, ^{
+				TFAdmissionSessionOperation *finished = weakOperation;
+				if (finished) { [self.active removeObject:finished]; [self.pending removeObject:finished]; }
+				@synchronized(self) { self.reservations--; }
+				[self drain];
+			});
+		}
 	};
+	if (!reserved) { [operation cancel]; return operation; }
+	// Reserve before posting to the queue. Cancelled work retains its slot
+	// until serialized cleanup, so cancellation churn cannot grow GCD work.
 	dispatch_async(self.queue, ^{
-		if (self.closed || self.pending.count + self.active.count >= self.queueDepth || operation.isCancelled) { [operation cancel]; return; }
+		if (self.closed || operation.isCancelled) { [operation cancel]; return; }
 		[self.pending addObject:operation];
 		[self drain];
 	});
@@ -175,8 +211,8 @@
 	}
 }
 - (void)close {
+	@synchronized(self) { if (self.closed) return; self.closed = YES; }
 	dispatch_async(self.queue, ^{
-		self.closed = YES;
 		for (TFAdmissionSessionOperation *operation in [self.pending copy]) [operation cancel];
 		for (TFAdmissionSessionOperation *operation in [self.active copy]) [operation cancel];
 		[self.pending removeAllObjects]; [self.active removeAllObjects];

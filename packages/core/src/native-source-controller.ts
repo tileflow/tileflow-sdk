@@ -91,8 +91,13 @@ export function createTileflowNativeSourceController(options: {
         publish({status: 'loading', generation: own.generation});
         if (!current()) return;
         if (snapshotError) throw snapshotError;
-        if (!sourceInput || !selection || Object.hasOwn(sourceInput, 'kind') ||
-          Object.hasOwn(sourceInput, 'style') || !isTileflowPortableId(sourceInput.map))
+        if (
+          !sourceInput ||
+          !selection ||
+          Object.hasOwn(sourceInput, 'kind') ||
+          Object.hasOwn(sourceInput, 'style') ||
+          !isTileflowPortableId(sourceInput.map)
+        )
           throw new TileflowNativeSourceError('NATIVE_SOURCE_INVALID', 'source');
         if (
           (selection.theme !== undefined && !validateTileflowThemeSelection(selection.theme)) ||

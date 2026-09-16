@@ -4,13 +4,31 @@ import {createRef, type ReactElement} from 'react';
 
 const source = {map: 'main', manifestUrl: 'https://maps.example.test/manifest.json'};
 const ref = createRef<MapRef>();
-const props: MapProps = {source, theme: 'system', initialView: {center: [-3.7, 40.4], zoom: 12}};
-const map: ReactElement = <Map {...props} ref={ref} style={{flex: 1}} testID="map" mapOptions={{dragPan: true}} />;
+const props: MapProps = {
+  source,
+  theme: 'system',
+  initialView: {center: [-3.7, 40.4], zoom: 12},
+};
+const map: ReactElement = (
+  <Map {...props} ref={ref} style={{flex: 1}} testID="map" mapOptions={{dragPan: true}} />
+);
 void map;
-const controlled = <Map source={source} view={{center: [0, 0], zoom: 2, bearing: 0, pitch: 0}} onViewChange={() => undefined} />;
+const controlled = (
+  <Map
+    source={source}
+    view={{center: [0, 0], zoom: 2, bearing: 0, pitch: 0}}
+    onViewChange={() => undefined}
+  />
+);
 void controlled;
 // Existing upstream source/layer primitives remain children, not another Tileflow source mode.
-const composition = <Map source={source}><VectorSource id="external" tileUrlTemplates={['https://outside.example.test/{z}/{x}/{y}.pbf']}><Layer id="external-line" type="line" source-layer="roads" /></VectorSource></Map>;
+const composition = (
+  <Map source={source}>
+    <VectorSource id="external" tiles={['https://outside.example.test/{z}/{x}/{y}.pbf']}>
+      <Layer id="external-line" type="line" source-layer="roads" />
+    </VectorSource>
+  </Map>
+);
 void composition;
 // @ts-expect-error Native source descriptors require the explicit manifest URL.
 <Map source={{map: 'main'}} />;

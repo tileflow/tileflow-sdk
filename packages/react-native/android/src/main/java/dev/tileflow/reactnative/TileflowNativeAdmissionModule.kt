@@ -2,7 +2,6 @@ package dev.tileflow.reactnative
 
 import android.util.Base64
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicBoolean
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.Promise
@@ -112,26 +111,9 @@ class TileflowNativeAdmissionModule(context: ReactApplicationContext) : ReactCon
 		Arguments.makeNativeMap(mapOf("retired" to true))
 	}
 
-	internal fun documentScope(id: String, context: String): NativeDocumentScope {
+	internal fun documentScope(id: String, context: String, maximumBytes: Int = 8388608): NativeDocumentScope {
 		if (!AdmissionUrl.validToken(context)) invalid()
-		val admission = current(id)
-		return NativeDocumentScope({ admission.checkOwnership() }, { url, completion ->
-			AdmissionUrl.clean(url)
-			val completed = AtomicBoolean(false)
-			val finish: (AdmissionHttpResponse?) -> Unit = { response ->
-				if (completed.compareAndSet(false, true)) completion(response)
-			}
-			val tagged = "$url${if (url.contains('?')) '&' else '?'}__tf_native_context=$context"
-			val request = admission.request(tagged, emptyMap(), { finish(it) }, { finish(null) }, { _, _ ->
-				// Non-session preparation uses the separate credential-free reader.
-				finish(null); AdmissionCancellation {}
-			})
-			AdmissionCancellation {
-				request.cancel()
-				// The engine retains its own physical transport reservation.
-				finish(null)
-			}
-		}, context)
+		return createAdmissionDocumentScope(current(id), context, maximumBytes)
 	}
 
 	@ReactMethod fun bootstrap(id: String, context: String, request: String, url: String, credential: String, body: String, promise: Promise) {

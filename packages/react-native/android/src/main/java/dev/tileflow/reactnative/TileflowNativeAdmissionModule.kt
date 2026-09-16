@@ -13,13 +13,11 @@ import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.common.LifecycleState
 import org.maplibre.android.MapLibre
-import org.maplibre.android.ModuleProvider
 
 class TileflowNativeAdmissionModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(context), LifecycleEventListener {
 	private val scheduler = HandlerAdmissionScheduler()
 	private var installation: String? = null
-	private var previous: ModuleProvider? = null
-	private var provider: AdmissionModuleProvider? = null
+	private var lease: AdmissionProviderLease? = null
 	private var engine: AdmissionEngine? = null
 	private var network: AdmissionOkHttpNetwork? = null
 	private var bootstrapRequests: AdmissionBootstrap? = null
@@ -27,7 +25,7 @@ class TileflowNativeAdmissionModule(context: ReactApplicationContext) : ReactCon
 	private var listeners = 0
 	private var invalidated = false
 	private var lastRemoved: String? = null
-	private var lastLost = false
+	private var lastRemoval: Map<String, Boolean>? = null
 
 	init { context.addLifecycleEventListener(this) }
 	override fun getName() = "TileflowNativeAdmission"
@@ -37,27 +35,29 @@ class TileflowNativeAdmissionModule(context: ReactApplicationContext) : ReactCon
 
 	@ReactMethod fun install(promise: Promise) = action(promise) {
 		if (invalidated || installation != null || listeners <= 0) invalid()
-		val saved = MapLibre.getModuleProvider()
-		if (saved is AdmissionModuleProvider) invalid()
+		val ownership = AdmissionProviderLease({ MapLibre.getModuleProvider() }, { MapLibre.setModuleProvider(it) })
+		if (ownership.previous is AdmissionModuleProvider) invalid()
 		val id = UUID.randomUUID().toString()
-		val transport = AdmissionOkHttpNetwork()
-		lateinit var wrapper: AdmissionModuleProvider
-		val admission = AdmissionEngine(id, scheduler, transport, { MapLibre.getModuleProvider() === wrapper }, ::emit)
-		wrapper = AdmissionModuleProvider(saved, admission)
-		previous = saved
-		provider = wrapper
-		network = transport
-		engine = admission
+		lease = ownership
 		installation = id
-		val bootstrapTransport = AdmissionBootstrapOkHttpNetwork()
-		bootstrapNetwork = bootstrapTransport
-		bootstrapRequests = AdmissionBootstrap(id, scheduler, bootstrapTransport) { admission.checkOwnership() }
-		MapLibre.setModuleProvider(wrapper)
-		if (MapLibre.getModuleProvider() !== wrapper) {
-			admission.close(); transport.close(); bootstrapRequests?.close(); bootstrapTransport.close(); invalid()
+		try {
+			val transport = AdmissionOkHttpNetwork()
+			network = transport
+			val admission = AdmissionEngine(id, scheduler, transport, ownership::owns, ::emit)
+			engine = admission
+			val bootstrapTransport = AdmissionBootstrapOkHttpNetwork()
+			bootstrapNetwork = bootstrapTransport
+			bootstrapRequests = AdmissionBootstrap(id, scheduler, bootstrapTransport) { admission.checkOwnership() }
+			ownership.install(AdmissionModuleProvider(ownership.previous, admission))
+			admission.lifecycle(reactApplicationContext.lifecycleState == LifecycleState.RESUMED)
+			if (!admission.checkOwnership()) invalid()
+			Arguments.makeNativeMap(mapOf("installation" to id))
+		} catch (_: Exception) {
+			// Includes failures after writing the provider or emitting lifecycle.
+			// Keep failed cleanup state available for a later teardown attempt.
+			try { shutdown() } catch (_: Exception) { /* No successful acknowledgement. */ }
+			invalid()
 		}
-		admission.lifecycle(reactApplicationContext.lifecycleState == LifecycleState.RESUMED)
-		Arguments.makeNativeMap(mapOf("installation" to id))
 	}
 
 	@ReactMethod fun registerContext(id: String, registration: ReadableMap, promise: Promise) = action(promise) {
@@ -150,17 +150,9 @@ class TileflowNativeAdmissionModule(context: ReactApplicationContext) : ReactCon
 	}
 
 	@ReactMethod fun remove(id: String, promise: Promise) = action(promise) {
-		if (installation == null && id == lastRemoved) return@action Arguments.makeNativeMap(mapOf("removed" to !lastLost, "ownershipLost" to lastLost))
+		if (installation == null && id == lastRemoved) return@action Arguments.makeNativeMap(lastRemoval ?: invalid())
 		if (id != installation) invalid()
-		val lost = MapLibre.getModuleProvider() !== provider
-		bootstrapRequests?.close()
-		engine?.close()
-		network?.close(); bootstrapNetwork?.close()
-		if (!lost) previous?.let { MapLibre.setModuleProvider(it) }
-		installation = null; engine = null; provider = null; previous = null; network = null
-		bootstrapRequests = null; bootstrapNetwork = null
-		lastRemoved = id; lastLost = lost
-		Arguments.makeNativeMap(mapOf("removed" to !lost, "ownershipLost" to lost))
+		Arguments.makeNativeMap(shutdown())
 	}
 
 	private fun current(id: String): AdmissionEngine {
@@ -189,18 +181,23 @@ class TileflowNativeAdmissionModule(context: ReactApplicationContext) : ReactCon
 
 	override fun onHostPause() { scheduler.dispatch { engine?.lifecycle(false) } }
 	override fun onHostResume() { scheduler.dispatch { engine?.lifecycle(true) } }
-	override fun onHostDestroy() { scheduler.dispatch { shutdown() } }
+	override fun onHostDestroy() { scheduler.dispatch { invalidated = true; teardown() } }
 	override fun invalidate() {
 		reactApplicationContext.removeLifecycleEventListener(this)
-		scheduler.dispatch { invalidated = true; shutdown() }
+		scheduler.dispatch { invalidated = true; teardown() }
 		super.invalidate()
 	}
-	private fun shutdown() {
+	private fun teardown() {
+		try { shutdown() } catch (_: Exception) { /* Retain failed cleanup for retry; never report success. */ }
+	}
+	private fun shutdown(): Map<String, Boolean> {
+		val id = installation ?: return lastRemoval ?: mapOf("removed" to false, "ownershipLost" to false)
 		bootstrapRequests?.close(); engine?.close(); network?.close(); bootstrapNetwork?.close()
-		if (provider != null && MapLibre.getModuleProvider() === provider) previous?.let { MapLibre.setModuleProvider(it) }
-		lastRemoved = installation
-		installation = null; engine = null; network = null; provider = null; previous = null
+		val ack = (lease ?: invalid()).remove()
+		lastRemoved = id; lastRemoval = ack
+		installation = null; engine = null; network = null; lease = null
 		bootstrapRequests = null; bootstrapNetwork = null
+		return ack
 	}
 	private fun invalid(): Nothing = throw IllegalArgumentException("Invalid native admission")
 }

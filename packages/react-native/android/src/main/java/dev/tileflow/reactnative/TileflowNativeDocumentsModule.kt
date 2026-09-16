@@ -30,7 +30,7 @@ class TileflowNativeDocumentsModule(context: ReactApplicationContext) : ReactCon
 		val scope = if (installation == null) null else {
 			if (!AdmissionUrl.validToken(installation) || !AdmissionUrl.validToken(context)) invalid()
 			val admission = reactApplicationContext.getNativeModule(TileflowNativeAdmissionModule::class.java) ?: invalid()
-			admission.documentScope(installation, context!!)
+			admission.documentScope(installation, context!!, maximumBytes.toInt())
 		}
 		Arguments.makeNativeMap(mapOf("document" to registry.open(url, maximumBytes.toInt(), scope)))
 	}

@@ -21,6 +21,7 @@ test('native lifecycle is observable privately without identifying Map contexts'
 	const wire = createNativeAdmissionWire(native, (listener) => native.subscribe(listener));
 	const lifecycle: boolean[] = [];
 	const release = wire.subscribeLifecycle((foreground) => lifecycle.push(foreground));
+	const unsubscribe = wire.bridge.subscribe(() => undefined);
 	await wire.bridge.install();
 	native.listener({kind: 'lifecycle', installation: native.installation, foreground: false});
 	native.listener({kind: 'lifecycle', installation: native.installation, foreground: true});
@@ -30,4 +31,5 @@ test('native lifecycle is observable privately without identifying Map contexts'
 	native.listener({kind: 'lifecycle', installation: native.installation, foreground: false});
 	assert.deepEqual(lifecycle, [false, true]);
 	await wire.bridge.remove(native.installation);
+	unsubscribe();
 });

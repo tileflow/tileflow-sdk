@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import ts from 'typescript';
+import {inspectPublicMapRuntime} from './map-runtime-fixture';
 
 const root = new URL('../', import.meta.url);
 const read = (path: string) => readFile(new URL(path, root), 'utf8');
@@ -34,9 +35,7 @@ test('configuration stays private with the exact peer matrix behind the inert pu
 		react: '19.2.0',
 		'react-native': '0.83.10',
 	});
-	const runtime = await import('../dist/index.js');
-	assert.deepEqual(Object.keys(runtime), ['Map']);
-	assert.equal(typeof runtime.Map, 'function');
+	assert.deepEqual(await inspectPublicMapRuntime(), {exports: ['Map'], callable: 'function'});
 	const sourceEntry = await read('src/index.ts');
 	assert.doesNotMatch(sourceEntry, /MobileConfiguration|NativeConfiguration|readConfiguration|HostedNativeBindingResolver/u);
 	const declarations = await read('dist/index.d.ts');

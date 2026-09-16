@@ -7,6 +7,11 @@ import type {
 } from '../src/native-admission-contract';
 import {deferred} from './session-fixture';
 
+export const styleResource: NativeAdmissionResource = Object.freeze({
+  url: 'https://maps.example.test/light.json',
+  scope: 'style',
+});
+
 // This double models only bridge messages and acknowledgements. Native network
 // safety must be tested against the actual Android and iOS implementations.
 export class AdmissionBridgeDouble implements NativeAdmissionBridge {
@@ -35,6 +40,10 @@ export class AdmissionBridgeDouble implements NativeAdmissionBridge {
     return () => {
       this.listener = () => undefined;
     };
+  }
+
+  emit(event: NativeAdmissionEvent) {
+    this.listener(event);
   }
 
   async install() {

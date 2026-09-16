@@ -80,6 +80,7 @@ test('the public root has only the deliberate React Native renderer dependency b
   for (const name of imports) {
     assert.ok(
       name === 'react' ||
+        name === 'react/jsx-runtime' ||
         name === 'react-native' ||
         name === '@maplibre/maplibre-react-native' ||
         name === '@tileflow/core/native',

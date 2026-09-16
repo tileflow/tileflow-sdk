@@ -11,7 +11,7 @@ export function deferred<T>() {
 }
 
 export const manifestUrl = 'https://maps.example.test/native/manifest.json';
-export const source = {kind: 'tileflow' as const, map: 'streets', manifestUrl};
+export const source = {map: 'streets', manifestUrl};
 
 export function manifest() {
   return {

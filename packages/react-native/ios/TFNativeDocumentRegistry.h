@@ -19,6 +19,7 @@ typedef id<TFAdmissionCancel> _Nonnull (^TFNativeDocumentLoad)(NSURLRequest *req
 - (NSDictionary *)chunk:(NSString *)identifier maximumBytes:(NSUInteger)maximumBytes;
 - (void)cancel:(NSString *)identifier;
 - (void)retireContext:(NSString *)context;
+- (void)retireProtected;
 - (void)lifecycle:(BOOL)foreground;
 - (void)close;
 @end

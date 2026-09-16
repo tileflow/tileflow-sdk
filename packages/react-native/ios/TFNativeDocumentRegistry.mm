@@ -171,6 +171,9 @@ static void TFDocumentInvalid(void) {
 - (void)retireContext:(NSString *)context {
 	for (TFNativeDocumentWork *work in self.work.allValues) if ([work.scope.context isEqual:context]) [self retireQuietly:work.identifier];
 }
+- (void)retireProtected {
+	for (TFNativeDocumentWork *work in self.work.allValues) if (work.scope) [self retireQuietly:work.identifier];
+}
 - (void)lifecycle:(BOOL)foreground {
 	self->_foreground.store(foreground);
 	if (!foreground) for (NSString *identifier in self.work.allKeys) [self retireQuietly:identifier];

@@ -58,6 +58,8 @@ test('native build metadata is explicit, pinned, and does not activate networkin
     build,
     /['"]internal\/native-admission-bridge['"]:\s*['"]src\/native-admission-bridge\.ts['"]/u,
   );
+  const contract = JSON.parse(await text('tsconfig.contract.json'));
+  assert.ok(contract.include.includes('test/map-component-public-types.tsx'));
 });
 
 test('native adapters have no global protocol registration or grant logger', async () => {

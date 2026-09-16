@@ -27,6 +27,7 @@ internal class AdmissionEngine(
 		val context: Context,
 		val url: String,
 		val headers: Map<String, String>,
+		val maximumBytes: Int,
 		val entered: Long,
 		val live: AtomicBoolean,
 		val response: (AdmissionHttpResponse) -> Unit,
@@ -63,6 +64,13 @@ internal class AdmissionEngine(
 		return id
 	}
 
+	// Capture the original atomic context lifetime rather than consulting a mutable registry off-thread.
+	fun contextGuard(contextId: String): () -> Boolean {
+		val context = contexts[contextId] ?: invalid()
+		if (!context.live.get() || !checkOwnership()) invalid()
+		return { context.live.get() && foreground && checkOwnership() }
+	}
+
 	// Append-only within a context: rollback can still use its last accepted style.
 	// Identical retries are acknowledged; a URL can never acquire a different identity.
 	fun extend(contextId: String, resources: List<AdmissionResource>): Int {
@@ -91,7 +99,27 @@ internal class AdmissionEngine(
 		onResponse: (AdmissionHttpResponse) -> Unit,
 		onFailure: () -> Unit,
 		onDelegate: (String, (AdmissionHttpResponse?) -> Unit) -> AdmissionCancellation,
+	): AdmissionCancellation = requestBounded(url, headers, AdmissionLimits.RESPONSE_BYTES.toInt(), onResponse, onFailure, onDelegate)
+
+	fun requestDocument(
+		url: String,
+		maximumBytes: Int,
+		onResponse: (AdmissionHttpResponse) -> Unit,
+		onFailure: () -> Unit,
+	): AdmissionCancellation = requestBounded(url, emptyMap(), maximumBytes, onResponse, onFailure, { _, completion ->
+		// Unprotected preparation uses the separate credential-free document channel.
+		completion(null); AdmissionCancellation {}
+	})
+
+	private fun requestBounded(
+		url: String,
+		headers: Map<String, String>,
+		maximumBytes: Int,
+		onResponse: (AdmissionHttpResponse) -> Unit,
+		onFailure: () -> Unit,
+		onDelegate: (String, (AdmissionHttpResponse?) -> Unit) -> AdmissionCancellation,
 	): AdmissionCancellation {
+		if (maximumBytes !in 1..AdmissionLimits.RESPONSE_BYTES.toInt()) invalid()
 		// Bound ingress before posting to the main scheduler. Cancellation
 		// retains this transport slot until serialized cleanup has run.
 		if (reservations.incrementAndGet() > AdmissionLimits.CONTEXTS * AdmissionLimits.QUEUE) {
@@ -113,7 +141,7 @@ internal class AdmissionEngine(
 				ticketSequence >= 9007199254740991L) {
 				active.set(false); release(); onFailure(); return@dispatch
 			}
-			val item = Work((++ticketSequence).toString(), context, tagged.url, headers.toMap(), scheduler.nowMs(), active, onResponse, onFailure, onDelegate, release)
+			val item = Work((++ticketSequence).toString(), context, tagged.url, headers.toMap(), maximumBytes, scheduler.nowMs(), active, onResponse, onFailure, onDelegate, release)
 			work = item
 			context.work[item.id] = item
 			item.timer = scheduler.after(AdmissionLimits.WAIT_MS) {
@@ -204,7 +232,7 @@ internal class AdmissionEngine(
 		item.phase = "network"
 		val headers = item.headers + (AdmissionLimits.GRANT_HEADER to authority.grant)
 		return try {
-			item.cancellation = network.start(AdmissionHttpRequest(url, headers) { canStart(item) }) { response ->
+			item.cancellation = network.start(AdmissionHttpRequest(url, headers, item.maximumBytes) { canStart(item) }) { response ->
 				scheduler.dispatch { received(item, url, response) }
 			}
 			if (!item.live.get()) item.cancellation?.cancel()
@@ -215,7 +243,7 @@ internal class AdmissionEngine(
 	private fun received(item: Work, url: String, response: AdmissionHttpResponse?) {
 		if (!item.live.get() || !item.context.live.get()) return
 		if (!checkOwnership()) return
-		if (response == null || !foreground || scheduler.nowMs() >= item.deadline) { fail(item); return }
+		if (response == null || response.body.size > item.maximumBytes || !foreground || scheduler.nowMs() >= item.deadline) { fail(item); return }
 		event(item.context, "response", mapOf("status" to response.code))
 		if (item.authority != null && response.code in listOf(301, 302, 303, 307, 308)) {
 			if (++item.redirects > AdmissionLimits.REDIRECTS) { fail(item); return }

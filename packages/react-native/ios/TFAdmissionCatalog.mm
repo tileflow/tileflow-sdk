@@ -134,6 +134,18 @@ static BOOL TFRuleMatches(TFAdmissionCatalogRule *rule, NSString *url) {
 	return YES;
 }
 
+static NSDictionary *TFMergeExtension(NSDictionary *previous, NSDictionary *next) {
+	if ([previous isEqual:next]) return previous;
+	if (![previous[@"scope"] isEqual:next[@"scope"]] ||
+		!((previous[@"tilesetId"] == nil && next[@"tilesetId"] == nil) || [previous[@"tilesetId"] isEqual:next[@"tilesetId"]]) ||
+		!((previous[@"template"] == nil && next[@"template"] == nil) || [previous[@"template"] isEqual:next[@"template"]]) ||
+		![previous[@"scope"] isEqual:@"glyph"] || ![previous[@"template"] isEqual:@"glyphs"]) TFCatalogInvalid();
+	NSArray *before = previous[@"fontStacks"], *after = next[@"fontStacks"];
+	if (![before isKindOfClass:NSArray.class] || ![after isKindOfClass:NSArray.class] || after.count > 16) TFCatalogInvalid();
+	for (NSString *stack in before) if (![after containsObject:stack]) TFCatalogInvalid();
+	return next;
+}
+
 @interface TFAdmissionCatalog ()
 @property (nonatomic, readwrite, copy) NSDictionary<NSString *, NSDictionary *> *resources;
 @property (nonatomic, copy) NSArray<TFAdmissionCatalogRule *> *rules;
@@ -161,8 +173,7 @@ static BOOL TFRuleMatches(TFAdmissionCatalogRule *rule, NSString *url) {
 	NSMutableDictionary *merged = [self.resources mutableCopy];
 	for (NSString *url in incoming.resources) {
 		NSDictionary *resource = incoming.resources[url];
-		if (merged[url] && ![merged[url] isEqual:resource]) TFCatalogInvalid();
-		merged[url] = resource;
+		merged[url] = merged[url] ? TFMergeExtension(merged[url], resource) : resource;
 	}
 	return [[TFAdmissionCatalog alloc] initWithResources:merged.allValues];
 }

@@ -42,7 +42,8 @@
 	if (self.closed) return;
 	self.visible = visible;
 	if (self.layoutEpoch >= 9007199254740991ULL) { [self fail]; return; }
-	self.layoutEpoch++; self.committed = 0; self.frame = nil; self.reported = NO;
+	self.layoutEpoch++; self.committed = 0; self.frame = nil; self.fullyRendered = NO;
+	self.reported = NO; self.gesture = 0;
 	[self enqueue:@"invalidate" fields:@{}];
 }
 - (void)loaded:(NSString *)token identity:(id)identity {
@@ -70,7 +71,7 @@
 }
 - (BOOL)beginCommand:(NSUInteger)command {
 	if (!self.active || !self.visible || !self.style || self.gesture || command <= self.command || command > 9007199254740991ULL) return NO;
-	self.command = command; self.committed = 0; self.frame = nil; self.reported = NO;
+	self.command = command; self.committed = 0; self.frame = nil; self.fullyRendered = NO; self.reported = NO;
 	[self enqueue:@"invalidate" fields:@{}]; return YES;
 }
 - (void)cancelCommand:(NSUInteger)command { if (command > self.command && command <= 9007199254740991ULL) self.command = command; }
@@ -90,7 +91,7 @@
 }
 - (void)fail {
 	if (self.closed || self.failed) return;
-	self.failed = YES; self.committed = 0; self.frame = nil; self.gesture = 0;
+	self.failed = YES; self.committed = 0; self.frame = nil; self.fullyRendered = NO; self.gesture = 0;
 	[self enqueue:@"error" fields:@{}];
 }
 - (void)enqueue:(NSString *)kind fields:(NSDictionary *)fields {
@@ -99,8 +100,8 @@
 	if (([kind isEqual:@"gesture-change"] || [kind isEqual:@"invalidate"]) && [last[@"kind"] isEqual:kind] &&
 		[last[@"style"] isEqual:self.token] && (last[@"gesture"] == fields[@"gesture"] || [last[@"gesture"] isEqual:fields[@"gesture"]])) [self.pending removeLastObject];
 	if (self.pending.count >= 32) {
-		[self.pending removeAllObjects]; self.failed = YES; self.frame = nil; self.committed = 0; self.gesture = 0;
-		kind = @"error"; fields = @{};
+		[self.pending removeAllObjects]; self.failed = YES; self.frame = nil; self.committed = 0;
+		self.fullyRendered = NO; self.gesture = 0; kind = @"error"; fields = @{};
 	}
 	NSMutableDictionary *event = [@{@"surface": self.surface, @"style": self.token, @"layout": @(self.layoutEpoch), @"sequence": @(++self.sequence), @"kind": kind} mutableCopy];
 	[event addEntriesFromDictionary:fields]; [self.pending addObject:[event copy]]; [self drain];
@@ -115,7 +116,7 @@
 	if (!self.awaitingSequence || self.awaitingSequence.unsignedLongLongValue != sequence) return;
 	self.awaitingSequence = nil; [self drain];
 }
-- (void)close { self.closed = YES; self.style = nil; self.frame = nil; self.gesture = 0; [self.pending removeAllObjects]; self.awaitingSequence = nil; }
+- (void)close { self.closed = YES; self.style = nil; self.frame = nil; self.fullyRendered = NO; self.gesture = 0; [self.pending removeAllObjects]; self.awaitingSequence = nil; }
 - (NSString *)description { return @"TFNativeSurfaceState"; }
 - (void)invalid { @throw [NSException exceptionWithName:@"TFNativeSurfaceInvalid" reason:@"Native surface operation failed." userInfo:nil]; }
 @end

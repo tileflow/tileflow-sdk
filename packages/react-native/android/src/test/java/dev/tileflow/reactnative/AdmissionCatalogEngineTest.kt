@@ -37,6 +37,23 @@ class AdmissionCatalogEngineTest {
 		catch (_: IllegalArgumentException) { }
 	}
 
+	@Test fun glyphTemplateExtensionIsAppendOnlyAndFinite() {
+		val scheduler = ManualAdmissionScheduler()
+		val engine = AdmissionEngine("installation", scheduler, AdmissionNetworkDouble(), { true }, {})
+		val url = "$origin/fonts/{fontstack}/{range}.pbf"
+		val first = AdmissionResource(url, "glyph", null, "glyphs", listOf("Brand Regular"))
+		val context = engine.register(mapId, listOf(first))
+		assertEquals(1, engine.extend(context, listOf(AdmissionResource(url, "glyph", null, "glyphs", listOf("Brand Bold", "Brand Regular")))))
+		var failures = 0
+		engine.request("$origin/fonts/Brand%20Bold/0-255.pbf?__tf_native_context=$context", emptyMap(), {}, { failures++ }, { _, _ -> error("Protected glyph delegated.") })
+		scheduler.flush()
+		assertEquals(0, failures)
+		try { engine.extend(context, listOf(AdmissionResource(url, "glyph", null, "glyphs", listOf("Brand Regular")))); fail("Expected shrinking glyph scope rejection.") }
+		catch (_: IllegalArgumentException) { }
+		try { engine.extend(context, listOf(AdmissionResource(url, "font", null, "glyphs", listOf("Brand Bold", "Brand Regular")))); fail("Expected class change rejection.") }
+		catch (_: IllegalArgumentException) { }
+	}
+
 	@Test fun unknownAndOutOfRangeExpansionsNeverBecomeThirdPartyTraffic() {
 		val scheduler = ManualAdmissionScheduler()
 		val engine = AdmissionEngine("installation", scheduler, AdmissionNetworkDouble(), { true }, {})

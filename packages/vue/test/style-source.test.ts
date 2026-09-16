@@ -5,49 +5,32 @@ import {createSSRApp, h} from 'vue';
 import {TileflowMap} from '../src/index.js';
 import {validateTileflowMapStyleInputs} from '../src/style-source.js';
 
-const mapStyle = {layers: [], sources: {}, version: 8 as const};
-
-test('accepts both supported discriminated sources', () => {
-  for (const source of [
-    {kind: 'tileflow', map: 'main'},
-    {kind: 'tileflow', manifestUrl: '/custom/manifest.json', map: 'main'},
-    {kind: 'maplibre', style: mapStyle},
-    {kind: 'maplibre', style: '/styles/main.json'},
-  ]) {
-    assert.deepEqual(validateTileflowMapStyleInputs({source}), {ok: true});
-  }
+test('accepts Tileflow map and manifest fields without a renderer selector', () => {
+	for (const source of [{map: 'main'}, {manifestUrl: '/custom/manifest.json', map: 'main'}]) {
+		for (const theme of [undefined, 'day', 'system']) {
+			assert.deepEqual(validateTileflowMapStyleInputs({source, theme}), {ok: true});
+		}
+	}
 });
 
-test('rejects missing and malformed sources', () => {
-  for (const source of [undefined, {}, {kind: 'tileflow'}, {kind: 'maplibre'}]) {
-    assert.equal(validateTileflowMapStyleInputs({source}).ok, false);
-  }
+test('rejects missing, malformed and obsolete renderer sources', () => {
+	for (const source of [undefined, {}, {kind: 'tileflow', map: 'main'},
+		{kind: 'maplibre', style: '/style.json'}, {map: 'main', style: '/style.json'},
+		{map: 'main', kind: undefined}, {map: 'main', manifestUrl: ''}]) {
+		assert.equal(validateTileflowMapStyleInputs({source}).ok, false);
+	}
 });
 
-test('accepts themes only for logical Tileflow sources', () => {
-  assert.deepEqual(
-    validateTileflowMapStyleInputs({source: {kind: 'tileflow', map: 'main'}, theme: 'dark'}),
-    {ok: true},
-  );
-  assert.equal(
-    validateTileflowMapStyleInputs({source: {kind: 'tileflow', map: 'main'}, theme: 'Dark'}).ok,
-    false,
-  );
-  assert.equal(
-    validateTileflowMapStyleInputs({source: {kind: 'maplibre', style: mapStyle}, theme: 'system'})
-      .ok,
-    false,
-  );
+test('preserves concrete and system theme validation', () => {
+	for (const theme of ['', 'Dark', 'dark_mode', 'con']) {
+		assert.equal(validateTileflowMapStyleInputs({source: {map: 'main'}, theme}).ok, false, theme);
+	}
 });
 
-test('wires source validation into component rendering', async () => {
-  const app = createSSRApp({
-    render: () => h(TileflowMap, {source: {kind: 'config'}} as never),
-  });
-  app.config.warnHandler = () => undefined;
-
-  await assert.rejects(
-    () => renderToString(app),
-    /Invalid TileflowMap source: source\.kind must be 'tileflow' or 'maplibre'/u,
-  );
+test('component rendering rejects renderer input before mounting', async () => {
+	for (const source of [{kind: 'tileflow', map: 'main'}, {kind: 'maplibre', style: '/style.json'}]) {
+		const app = createSSRApp({render: () => h(TileflowMap, {source} as never)});
+		app.config.warnHandler = () => undefined;
+		await assert.rejects(() => renderToString(app), /Invalid TileflowMap source/u);
+	}
 });

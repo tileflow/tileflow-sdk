@@ -21,6 +21,7 @@ export const configurationFiles = [
   'ios/TFMobileConfiguration.mm',
   'ios/TileflowNativeConfiguration.mm',
   'ios/Tests/TFMobileConfigurationTests.mm',
+  'ios/Tests/TFMobileConfigurationConcurrencyTests.mm',
   'docs/native-configuration.md',
 ];
 
@@ -35,16 +36,27 @@ test('configuration stays private with the exact peer matrix and inert public en
   });
   assert.deepEqual(Object.keys(await import('../dist/index.js')), []);
   for (const file of ['dist/index.js', 'dist/index.d.ts']) {
-    assert.doesNotMatch(await read(file), /MobileConfiguration|NativeConfiguration|readConfiguration|HostedNativeBindingResolver/u);
+    assert.doesNotMatch(
+      await read(file),
+      /MobileConfiguration|NativeConfiguration|readConfiguration|HostedNativeBindingResolver/u,
+    );
   }
   for (const name of ['configuration', 'native-configuration-bridge', 'hosted-binding']) {
-    await assert.rejects(import(`@tileflow/react-native/${name}`), {code: 'ERR_PACKAGE_PATH_NOT_EXPORTED'});
-    await assert.rejects(import(`@tileflow/react-native/internal/${name}`), {code: 'ERR_PACKAGE_PATH_NOT_EXPORTED'});
+    await assert.rejects(import(`@tileflow/react-native/${name}`), {
+      code: 'ERR_PACKAGE_PATH_NOT_EXPORTED',
+    });
+    await assert.rejects(import(`@tileflow/react-native/internal/${name}`), {
+      code: 'ERR_PACKAGE_PATH_NOT_EXPORTED',
+    });
   }
 });
 
 test('configuration code cannot import a network owner or renderer', async () => {
-  for (const file of ['src/mobile-configuration.ts', 'src/hosted-binding.ts', 'src/native-configuration-reader.ts']) {
+  for (const file of [
+    'src/mobile-configuration.ts',
+    'src/hosted-binding.ts',
+    'src/native-configuration-reader.ts',
+  ]) {
     const text = await read(file);
     const syntax = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
     for (const statement of syntax.statements) {
@@ -52,17 +64,26 @@ test('configuration code cannot import a network owner or renderer', async () =>
       if (statement.importClause?.isTypeOnly) continue;
       assert.match(statement.moduleSpecifier.getText(), /^['"]\.\/mobile-configuration['"]$/u);
     }
-    assert.doesNotMatch(text, /\bfetch\s*\(|NativeModules|NativeEventEmitter|\.acquire\s*\(|console\./u);
+    assert.doesNotMatch(
+      text,
+      /\bfetch\s*\(|NativeModules|NativeEventEmitter|\.acquire\s*\(|console\./u,
+    );
   }
 });
 
 test('one native reader is autolinked without eager constants or another configuration path', async () => {
-  const registration = await read('android/src/main/java/dev/tileflow/reactnative/TileflowNativeAdmissionPackage.kt');
+  const registration = await read(
+    'android/src/main/java/dev/tileflow/reactnative/TileflowNativeAdmissionPackage.kt',
+  );
   assert.match(registration, /TileflowNativeConfigurationModule\(context\)/u);
-  const android = await read('android/src/main/java/dev/tileflow/reactnative/TileflowNativeConfigurationModule.kt');
+  const android = await read(
+    'android/src/main/java/dev/tileflow/reactnative/TileflowNativeConfigurationModule.kt',
+  );
   assert.match(android, /@ReactMethod fun readConfiguration/u);
   assert.doesNotMatch(android, /getConstants|AdmissionEngine|addLifecycleEventListener|MapLibre/u);
-  const resources = await read('android/src/main/java/dev/tileflow/reactnative/MobileConfigurationResources.kt');
+  const resources = await read(
+    'android/src/main/java/dev/tileflow/reactnative/MobileConfigurationResources.kt',
+  );
   assert.match(resources, /tileflow_mobile_configuration/u);
   assert.match(resources, /getResourcePackageName/u);
   assert.match(resources, /resourceId/u);
@@ -83,7 +104,10 @@ test('private build entries, native sources and setup guide contain no credentia
   }
   const build = await read('tsup.config.ts');
   assert.match(build, /'internal\/hosted-binding': 'src\/hosted-binding\.ts'/u);
-  assert.match(build, /'internal\/native-configuration-bridge': 'src\/native-configuration-bridge\.ts'/u);
+  assert.match(
+    build,
+    /'internal\/native-configuration-bridge': 'src\/native-configuration-bridge\.ts'/u,
+  );
   for (const name of ['hosted-binding', 'native-configuration-bridge']) {
     assert.ok((await read(`dist/internal/${name}.js`)).length > 0);
   }

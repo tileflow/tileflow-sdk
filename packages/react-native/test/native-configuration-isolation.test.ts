@@ -12,15 +12,19 @@ test('the built private factory never looks up configuration for a non-session s
   t.after(() => rm(directory, {recursive: true, force: true}));
   const native = join(directory, 'node_modules', 'react-native');
   await mkdir(native, {recursive: true});
-  await writeFile(join(native, 'package.json'), JSON.stringify({
-    name: 'react-native', type: 'module', exports: './index.js',
-  }));
-  await writeFile(join(native, 'index.js'), `
+  await writeFile(
+    join(native, 'package.json'),
+    JSON.stringify({name: 'react-native', type: 'module', exports: './index.js'}),
+  );
+  await writeFile(
+    join(native, 'index.js'),
+    `
     export let lookups = 0;
     export const NativeModules = Object.defineProperty({}, 'TileflowNativeConfiguration', {
       get() { lookups++; throw new Error('Native lookup must remain lazy.'); }
     });
-  `);
+  `,
+  );
   const entry = join(directory, 'bridge.mjs');
   await copyFile(new URL('../dist/internal/native-configuration-bridge.js', import.meta.url), entry);
   const script = `

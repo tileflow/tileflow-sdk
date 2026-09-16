@@ -6,35 +6,52 @@ import {canonicalMobileApiOrigin, snapshotMobileConfiguration} from '../src/mobi
 import {createNativeConfigurationReader} from '../src/native-configuration-reader';
 
 const credential = () => `tf_public_${'c'.repeat(48)}`;
-const configuration = () => snapshotMobileConfiguration({
-  apiOrigin: 'https://api.example.test',
-  credential: credential(),
-});
+const configuration = () =>
+  snapshotMobileConfiguration({
+    apiOrigin: 'https://api.example.test',
+    credential: credential(),
+  });
 
 function source(): TileflowNativeSourceState {
-  const theme = {name: 'light', colorScheme: 'light' as const, styleUrl: 'https://maps.example/style.json'};
+  const theme = {
+    name: 'light',
+    colorScheme: 'light' as const,
+    styleUrl: 'https://maps.example/style.json',
+  };
   return {
-    status: 'ready', generation: 1,
+    status: 'ready',
+    generation: 1,
     source: {map: 'streets', manifestUrl: 'https://maps.example/manifest.json'},
     manifestUrl: 'https://maps.example/manifest.json',
     manifest: {version: 1, maps: {streets: {defaultTheme: 'light', themes: {light: theme}}}},
     map: {
-      name: 'streets', defaultTheme: 'light', themes: {light: theme},
-      usageMode: 'session', mapId: 'map_abcdefghijklmnop', apiUrl: 'https://api.example.test',
+      name: 'streets',
+      defaultTheme: 'light',
+      themes: {light: theme},
+      usageMode: 'session',
+      mapId: 'map_abcdefghijklmnop',
+      apiUrl: 'https://api.example.test',
     },
     theme,
   };
 }
 
 test('Unicode case folding cannot turn non-ASCII configuration into an approved origin', () => {
-  for (const value of ['https://\u212A.example', 'https://\u017F.example', 'http\u017F://api.example.test']) {
+  for (const value of [
+    'https://\u212A.example',
+    'https://\u017F.example',
+    'http\u017F://api.example.test',
+  ]) {
     assert.throws(() => canonicalMobileApiOrigin(value), {code: 'NATIVE_CONFIGURATION_INVALID'});
   }
 });
 
 test('a session requires matching declared logical identities, not two missing fields', async () => {
   let reads = 0;
-  const resolver = createHostedNativeBindingResolver(async () => { reads++; return configuration(); });
+  const resolver = createHostedNativeBindingResolver(async () => {
+    reads++;
+    return configuration();
+  });
   for (const name of [undefined, '', 1, null]) {
     const input = source();
     assert.ok(input.status === 'ready');
@@ -52,7 +69,10 @@ test('non-session metadata is not read through incidental getters', async () => 
   Object.assign(input.map, {usageMode: undefined});
   let reads = 0;
   Object.defineProperty(input.map, 'apiUrl', {
-    get() { reads++; throw new Error(credential()); },
+    get() {
+      reads++;
+      throw new Error(credential());
+    },
   });
   const resolver = createHostedNativeBindingResolver(async () => {
     reads++;
@@ -65,7 +85,10 @@ test('non-session metadata is not read through incidental getters', async () => 
 
 test('disposal before queued lookup does not evaluate native configuration', async () => {
   let reads = 0;
-  const resolver = createHostedNativeBindingResolver(async () => { reads++; return configuration(); });
+  const resolver = createHostedNativeBindingResolver(async () => {
+    reads++;
+    return configuration();
+  });
   const pending = resolver.replace(source());
   resolver.dispose();
   await assert.rejects(pending, {code: 'NATIVE_CONFIGURATION_DISPOSED'});
@@ -75,7 +98,10 @@ test('disposal before queued lookup does not evaluate native configuration', asy
 test('reentrant reflection cannot publish an older Hosted binding', async () => {
   let replacement: Promise<unknown> | undefined;
   let reads = 0;
-  const resolver = createHostedNativeBindingResolver(async () => { reads++; return configuration(); });
+  const resolver = createHostedNativeBindingResolver(async () => {
+    reads++;
+    return configuration();
+  });
   const direct = source();
   assert.ok(direct.status === 'ready');
   Object.assign(direct.map, {usageMode: undefined});
@@ -102,11 +128,16 @@ test('a changed method or malicious native error cannot reuse a cached configura
   module.readConfiguration = async () => configuration();
   await assert.rejects(reader.read(), {code: 'NATIVE_CONFIGURATION_UNAVAILABLE'});
   let reads = 0;
-  const bad = createNativeConfigurationReader(() => ({readConfiguration() {
-    throw Object.defineProperty(new Error(credential()), 'code', {
-      get() { reads++; throw new Error(credential()); },
-    });
-  }}));
+  const bad = createNativeConfigurationReader(() => ({
+    readConfiguration() {
+      throw Object.defineProperty(new Error(credential()), 'code', {
+        get() {
+          reads++;
+          throw new Error(credential());
+        },
+      });
+    },
+  }));
   await assert.rejects(bad.read(), (error: unknown) => {
     assert.ok(error instanceof Error);
     assert.equal(error.message.includes(credential()), false);

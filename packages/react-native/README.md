@@ -194,7 +194,7 @@ settlement, new controlled values update authority and callbacks without issuing
 Ending the gesture does not interpret a prop that has not arrived yet as rejection. The owner first
 delivers the subsequent committed props, then confirms settlement. If the latest prop equals the
 final observed view, no return command is issued; otherwise one command applies that prop value.
-Both synchronous adoption and adoption delivered after the callback count as settlement.
+Both synchronous adoption and adoption delivered after the callback count before settlement.
 Updates received after settlement retain ordinary controlled-update behavior.
 
 No public duration, easing, animation, bounds, padding or imperative camera method is introduced.

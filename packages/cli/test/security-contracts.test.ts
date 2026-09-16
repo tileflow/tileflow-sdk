@@ -166,7 +166,7 @@ test('hosted success responses validate exact atomic theme families and bounded 
         styles: [
           {
             environment: 'production',
-            key: 'production',
+            key: 'styles/prj_AbCdEfGhIjKlMnOp/icon-sets-smoke/v1.json',
             mapId: 'map_test',
             size: 123,
             uploaded: '2026-08-21T00:00:00Z',
@@ -180,6 +180,21 @@ test('hosted success responses validate exact atomic theme families and bounded 
   );
   assert.equal(Object.hasOwn(status, 'unvalidated'), false);
   assert.equal(Object.hasOwn(status.styles[0]!, 'unvalidated'), false);
+  assert.equal(
+    hostedMapStatusSchema.safeParse({
+      mapId: 'map_AbCdEfGhIjKlMnOp',
+      styles: [
+        {
+          environment: 'production',
+          key: 'styles/prj_AbCdEfGhIjKlMnOp/../secrets.json',
+          mapId: 'map_test',
+          size: 123,
+          uploaded: '2026-08-21T00:00:00Z',
+        },
+      ],
+    }).success,
+    false,
+  );
 
   await assert.rejects(
     () =>
@@ -230,6 +245,37 @@ test('published package is CLI-only instead of executing a binary as an importab
   assert.equal(Object.hasOwn(packageJson, 'types'), false);
   assert.equal(Object.hasOwn(packageJson, 'exports'), false);
   assert.deepEqual(packageJson.engines, {node: '>=22'});
+});
+
+test('root version does not consume a revision-valued Icon Set option', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-cli-version-'));
+  t.after(() => rm(directory, {force: true, recursive: true}));
+
+  const root = await runCli(directory, ['--version'], {});
+  assert.equal(root.code, 0);
+  assert.match(root.stdout, /^0\.0\.0-development\n$/u);
+
+  const purge = await runCli(
+    directory,
+    [
+      'icon-set',
+      'purge',
+      'brand',
+      '--version',
+      '2',
+      '--confirm',
+      '@acme/brand@2',
+      '--acknowledge-unknown-locks',
+      '--idempotency-key',
+      'purge-key-0001',
+      '--json',
+    ],
+    {},
+  );
+
+  assert.equal(purge.code, 1);
+  assert.doesNotMatch(`${purge.stdout}\n${purge.stderr}`, /^0\.0\.0-development\n$/u);
+  assert.match(`${purge.stdout}\n${purge.stderr}`, /account_session_missing/u);
 });
 
 test('validate and build hide ambient API keys from executable config', async (t) => {

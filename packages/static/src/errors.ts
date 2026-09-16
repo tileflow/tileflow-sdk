@@ -18,6 +18,7 @@ export const staticMapErrorResponseSchema = z
     error: safeErrorTextSchema,
     remainingUnits: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
     requestId: safeErrorIdentifierSchema.optional(),
+    requiredPlan: safeErrorIdentifierSchema.optional(),
     retryable: z.boolean().optional(),
   })
   .strip();
@@ -28,6 +29,7 @@ export class StaticMapError extends Error {
   readonly code: string | null;
   readonly remainingUnits: number | null;
   readonly requestId: string | null;
+  readonly requiredPlan: string | null;
   readonly response: StaticMapErrorResponse;
   readonly retryable: boolean | null;
   readonly status: number;
@@ -40,6 +42,7 @@ export class StaticMapError extends Error {
     this.code = parsed.code ?? null;
     this.remainingUnits = parsed.remainingUnits ?? null;
     this.requestId = parsed.requestId ?? null;
+    this.requiredPlan = parsed.requiredPlan ?? null;
     this.response = Object.freeze(parsed);
     this.retryable = parsed.retryable ?? null;
     this.status = status;

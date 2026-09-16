@@ -12,6 +12,8 @@ export default defineConfig({
     'internal/session': 'src/session-controller.ts',
     'internal/native-admission': 'src/native-admission-owner.ts',
     'internal/native-admission-bridge': 'src/native-admission-bridge.ts',
+    'internal/hosted-binding': 'src/hosted-binding.ts',
+    'internal/native-configuration-bridge': 'src/native-configuration-bridge.ts',
   },
   external: [
     '@tileflow/core',

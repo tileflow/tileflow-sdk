@@ -6,6 +6,9 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.uimanager.ViewManager
 
 class TileflowNativeAdmissionPackage : ReactPackage {
-	override fun createNativeModules(context: ReactApplicationContext): List<NativeModule> = listOf(TileflowNativeAdmissionModule(context))
+	override fun createNativeModules(context: ReactApplicationContext): List<NativeModule> = listOf(
+		TileflowNativeAdmissionModule(context),
+		TileflowNativeConfigurationModule(context)
+	)
 	override fun createViewManagers(context: ReactApplicationContext): List<ViewManager<*, *>> = emptyList()
 }

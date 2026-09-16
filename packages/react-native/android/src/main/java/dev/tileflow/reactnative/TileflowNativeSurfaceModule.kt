@@ -140,7 +140,8 @@ class TileflowNativeSurfaceModule(context: ReactApplicationContext) : ReactConte
 		val surface = current(id)
 		val target = view(input)
 		val number = integer(sequence)
-		if (!surface.state.beginCommand(number)) invalid()
+		val invalidation = surface.state.beginCommand(number)
+		if (invalidation == 0L) invalid()
 		val cameras = (0 until surface.map.featureCount).mapNotNull { surface.map.getFeatureAt(it)?.toView() as? MLRNCamera }
 		if (cameras.size != 1) invalid()
 		val command = Arguments.makeNativeMap(target + mapOf("duration" to 0))
@@ -153,7 +154,7 @@ class TileflowNativeSurfaceModule(context: ReactApplicationContext) : ReactConte
 			abs(actual["zoom"] as Double - target["zoom"] as Double) > 0.000001 ||
 			!nearAngular(actual["bearing"] as Double, target["bearing"] as Double) ||
 			abs(actual["pitch"] as Double - target["pitch"] as Double) > 0.000001 || current(id) !== surface) invalid()
-		Arguments.makeNativeMap(mapOf("command" to number, "view" to target))
+		Arguments.makeNativeMap(mapOf("command" to number, "invalidation" to invalidation, "view" to target))
 	}
 	@ReactMethod fun cancelCamera(id: String, sequence: Double, promise: Promise) = action(promise) {
 		if (!AdmissionUrl.validToken(id)) invalid()

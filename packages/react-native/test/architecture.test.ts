@@ -96,6 +96,7 @@ test('contract source imports are type-only and runtime responsibilities remain 
       const privatePlatformEntry =
         file === join(root, 'native-appearance.ts') ||
         file === join(root, 'native-admission-bridge.ts') ||
+        file === join(root, 'native-document-bridge.ts') ||
         file === join(root, 'native-configuration-bridge.ts');
       if (specifier === 'react-native' && !privatePlatformEntry)
         assert.equal(statement.importClause?.isTypeOnly, true, file);

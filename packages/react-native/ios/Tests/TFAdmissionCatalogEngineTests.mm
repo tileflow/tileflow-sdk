@@ -37,11 +37,11 @@
 	NSMutableArray *events = [NSMutableArray array];
 	TFAdmissionEngine *engine = [[TFAdmissionEngine alloc] initWithInstallation:@"installation" scheduler:scheduler network:network owns:^BOOL { return YES; } emit:^(NSDictionary *event) { [events addObject:event]; }];
 	NSString *mapId = @"map_0123456789abcdef";
-	NSDictionary *template = @{@"url": @"https://tiles.example.test/world/{z}/{x}/{y}.pbf", @"scope": @"tile", @"tilesetId": @"world", @"template": @"tile"};
-	NSString *first = [engine registerMap:mapId resources:@[]], *second = [engine registerMap:mapId resources:@[template]];
-	XCTAssertEqual([engine extendContext:first resources:@[template]], 1u);
-	XCTAssertEqual([engine extendContext:first resources:@[template]], 1u);
-	NSMutableDictionary *conflict = [template mutableCopy]; conflict[@"tilesetId"] = @"other";
+	NSDictionary *resourceTemplate = @{@"url": @"https://tiles.example.test/world/{z}/{x}/{y}.pbf", @"scope": @"tile", @"tilesetId": @"world", @"template": @"tile"};
+	NSString *first = [engine registerMap:mapId resources:@[]], *second = [engine registerMap:mapId resources:@[resourceTemplate]];
+	XCTAssertEqual([engine extendContext:first resources:@[resourceTemplate]], 1u);
+	XCTAssertEqual([engine extendContext:first resources:@[resourceTemplate]], 1u);
+	NSMutableDictionary *conflict = [resourceTemplate mutableCopy]; conflict[@"tilesetId"] = @"other";
 	XCTAssertThrows([engine extendContext:first resources:@[conflict]]);
 	NSString *url = @"https://tiles.example.test/world/2/3/1.pbf";
 	__block NSUInteger failed = 0;
@@ -54,12 +54,14 @@
 	NSDictionary *batch = events.firstObject, *ticket = [batch[@"tickets"] firstObject];
 	XCTAssertEqualObjects(ticket[@"url"], url);
 	NSDictionary *authority = @{@"grant": [@"tf_native_v1." stringByAppendingString:@"fixture.signature"], @"mapId": mapId, @"resourceOrigins": @[@"https://tiles.example.test"], @"resourceScopes": @[@"tile"], @"tilesetIds": @[@"world"]};
-	XCTAssertEqual([engine completeContext:first generation:1 batch:batch[@"batch"] results:@[@{@"ticket": ticket[@"ticket"], @"kind": @"grant", @"validForMs": @900000, @"authority": authority}]], 1u);
+	NSArray *results = @[@{@"ticket": ticket[@"ticket"], @"kind": @"grant", @"validForMs": @900000, @"authority": authority}];
+	NSUInteger accepted = [engine completeContext:first generation:1 batch:batch[@"batch"] results:results];
+	XCTAssertEqual(accepted, 1u);
 	XCTAssertEqual(network.requests.count, 1u);
 	XCTAssertEqualObjects(network.requests.firstObject.URL.absoluteString, url);
 	XCTAssertEqual(failed, 0u);
 	[engine retire:first];
-	XCTAssertThrows([engine extendContext:first resources:@[template]]);
-	XCTAssertEqual([engine extendContext:second resources:@[template]], 1u);
+	XCTAssertThrows([engine extendContext:first resources:@[resourceTemplate]]);
+	XCTAssertEqual([engine extendContext:second resources:@[resourceTemplate]], 1u);
 }
 @end

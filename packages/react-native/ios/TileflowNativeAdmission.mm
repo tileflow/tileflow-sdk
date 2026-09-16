@@ -1,7 +1,9 @@
 #import "TileflowNativeAdmission.h"
 #import "TFAdmissionInstallation.h"
 #import "TFAdmissionBootstrap.h"
+#import "TFAdmissionDocumentScope.h"
 #import "TFAdmissionNetwork.h"
+#import "TileflowNativeDocuments.h"
 #import <UIKit/UIKit.h>
 #import <cmath>
 
@@ -9,6 +11,7 @@
 @property (nonatomic, strong, nullable) TFAdmissionInstallation *installation;
 @property (nonatomic, strong, nullable) TFAdmissionBootstrap *bootstrapRequests;
 @property (nonatomic, strong, nullable) TFAdmissionURLSessionNetwork *bootstrapNetwork;
+@property (nonatomic, weak, nullable) TileflowNativeDocuments *documents;
 @property (nonatomic, copy, nullable) NSString *lastRemoved;
 @property (nonatomic, copy, nullable) NSDictionary *lastRemoval;
 @property (nonatomic) BOOL observing;
@@ -40,9 +43,13 @@ RCT_REMAP_METHOD(install, installWithResolver:(RCTPromiseResolveBlock)resolve re
 		__weak TileflowNativeAdmission *weakSelf = self;
 		self.installation = [[TFAdmissionInstallation alloc] initWithEmitter:^(NSDictionary *event) {
 			TileflowNativeAdmission *strongSelf = weakSelf;
-			if ([event[@"kind"] isEqual:@"retired"]) [strongSelf.bootstrapRequests retire:event[@"context"]];
-			else if ([event[@"kind"] isEqual:@"ownershipLost"]) [strongSelf.bootstrapRequests close];
-			else if ([event[@"kind"] isEqual:@"lifecycle"]) [strongSelf.bootstrapRequests lifecycle:[event[@"foreground"] boolValue]];
+			if ([event[@"kind"] isEqual:@"retired"]) {
+				[strongSelf.bootstrapRequests retire:event[@"context"]];
+				[strongSelf.documents retireNativeContext:event[@"context"]];
+			} else if ([event[@"kind"] isEqual:@"ownershipLost"]) {
+				[strongSelf.bootstrapRequests close];
+				[strongSelf.documents retireProtectedDocuments];
+			} else if ([event[@"kind"] isEqual:@"lifecycle"]) [strongSelf.bootstrapRequests lifecycle:[event[@"foreground"] boolValue]];
 			if (!strongSelf || strongSelf.invalidated || !strongSelf.observing) [NSException raise:@"TFNativeAdmissionListener" format:@"Native admission listener is unavailable"];
 			[strongSelf sendEventWithName:@"TileflowNativeAdmissionEvent" body:event];
 		}];
@@ -88,6 +95,20 @@ RCT_REMAP_METHOD(registerContext, registerInstallation:(NSString *)identifier re
 		} @catch (NSException *exception) { [installation.engine retire:context]; @throw; }
 		resolve(@{@"context": context, @"generation": @1});
 	} @catch (NSException *exception) { [self reject:reject]; }
+}
+RCT_REMAP_METHOD(extendContext, extendInstallation:(NSString *)identifier context:(NSString *)context resources:(NSArray<NSDictionary *> *)resources resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+	@try {
+		TFAdmissionInstallation *installation = [self current:identifier];
+		if (!TFAdmissionValidToken(context) || ![resources isKindOfClass:NSArray.class] || resources.count > 128) [self invalid];
+		resolve(@{@"resources": @([installation.engine extendContext:context resources:resources])});
+	} @catch (NSException *exception) { [self reject:reject]; }
+}
+- (TFNativeDocumentScope *)documentScopeForInstallation:(NSString *)identifier context:(NSString *)context documents:(TileflowNativeDocuments *)documents {
+	if (!documents || !TFAdmissionValidToken(context)) [self invalid];
+	TFAdmissionInstallation *installation = [self current:identifier];
+	if (self.documents && self.documents != documents) [self invalid];
+	self.documents = documents;
+	return TFCreateAdmissionDocumentScope(installation.engine, context);
 }
 RCT_REMAP_METHOD(retireContext, retireInstallation:(NSString *)identifier context:(NSString *)context resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
 	@try {

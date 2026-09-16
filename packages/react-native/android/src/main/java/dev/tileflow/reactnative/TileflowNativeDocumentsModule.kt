@@ -28,9 +28,9 @@ class TileflowNativeDocumentsModule(context: ReactApplicationContext) : ReactCon
 		if (invalidated || !maximumBytes.isFinite() || maximumBytes != maximumBytes.toInt().toDouble() || maximumBytes < 1 || maximumBytes > 8388608 ||
 			(installation == null) != (context == null)) invalid()
 		val scope = if (installation == null) null else {
-			if (!AdmissionUrl.validToken(installation) || !AdmissionUrl.validToken(context)) invalid()
+			if (!AdmissionUrl.validToken(installation) || !AdmissionUrl.validToken(context!!)) invalid()
 			val admission = reactApplicationContext.getNativeModule(TileflowNativeAdmissionModule::class.java) ?: invalid()
-			admission.documentScope(installation, context!!, maximumBytes.toInt())
+			admission.documentScope(installation!!, context!!, maximumBytes.toInt())
 		}
 		Arguments.makeNativeMap(mapOf("document" to registry.open(url, maximumBytes.toInt(), scope)))
 	}

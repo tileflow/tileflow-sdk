@@ -1,61 +1,59 @@
-# Local native admission harness
+# Local mounted Map harness
 
-`AdmissionHarness.tsx` is the smallest source-checkout harness for the real TypeScript controller, RN native bridge and upstream MapLibre networking seam. It must run in an **existing development host**, not in Node, Expo Go or a generated remote runner. It creates no server, cloud resource, simulator or build infrastructure. **No native acceptance result** is recorded or implied by these source files.
+`AdmissionHarness.tsx` is a source-checkout harness for the mounted Tileflow `Map`. It runs only inside an **existing development host**. It creates no server, simulator, cloud resource, runner or build infrastructure. **No native acceptance result** is recorded or implied by these source files.
+
+The harness imports the package root from source and mounts two independent Tileflow Maps inside React `StrictMode`. Each Map therefore exercises the same public component and private source, configuration, session, admission, renderer, camera and readiness ownership used by an application. The harness does not import private admission/session controllers and cannot inspect credentials, grants, native handles or protected request headers.
 
 ## Host prerequisites
 
-Use React 19.2.0, React Native 0.83.10, MapLibre React Native 11.3.10, Android Native 13.2.0 or iOS Native 6.26.0, and the matching built Core workspace. Autolink the private package. On iOS retain the host's React Native and MapLibre CocoaPods setup and call `tileflow_native_admission_post_install(installer)` after `$MLRN.post_install(installer)`; enable the pod's `Admission` test specification in the test host. Do not add a second MapLibre Native CocoaPod.
+Use the package's exact peer matrix: React 19.2.0, React Native 0.83.10 and MapLibre React Native 11.3.10, with MapLibre Native Android 13.2.0 or iOS 6.26.0. Autolink the private package in the existing host. On iOS retain the host's React Native and MapLibre CocoaPods/SPM setup and call `tileflow_native_admission_post_install(installer)` after `$MLRN.post_install(installer)`. Do not add another MapLibre Native dependency.
 
-Use the host's existing Metro configuration with source-checkout access to this package and its peers. The harness imports `../src` deliberately. It is excluded from the npm pack allowlist and public exports and is not a consumer example for a released package. Typecheck it separately with the local compiler against `harness/tsconfig.json` before attempting a native build.
+Use the host's existing Metro setup with source-checkout access to this package and its peers. This directory is excluded from package exports and packed files and is not a released consumer example.
 
-Initialize upstream MapLibre and prior compatible customization before invoking the harness, but do not create a Map view, offline store or cached MapLibre session first. Start from a cold app launch rather than a hot reload. The explicit install acknowledgement must precede rendering `Screen`.
+Hosted fixture Maps require the application-level native configuration documented in `../docs/native-configuration.md`. Direct/non-session fixture Maps must work without reading that configuration. Never embed a production credential in this harness or its source tree.
 
-## Existing fixture inputs
+## Inputs
 
-Supply `createAdmissionHarness()` with a Hosted `binding`, `styleUrl`, a distinct `alternateStyleUrl`, `thirdPartyStyleUrl`, and an `observe(event)` callback. Obtain the binding and fixture endpoints from the local orchestrator's already available test environment. Do not embed production credentials, create new services or disable TLS validation for this harness.
+Call `createAdmissionHarness()` with three ordinary Tileflow source descriptors:
 
-Both protected style URLs must be exact canonical HTTPS resources approved by the test binding's style scope. The third-party URL must be on a separate origin and contain no Tileflow discriminator or authority. Use styles with no child resource URLs; this unit does not project their closure. For example, each fixture can return a self-contained style of this form:
+- `firstSource` and `secondSource` for two simultaneous Maps;
+- `replacementSource` for replacement of the first real Map;
+- optional initial themes and an optional complete controlled `initialView`;
+- a secret-free `observe(event)` callback.
 
-```json
-{
-  "version": 8,
-  "sources": {},
-  "layers": [{"id": "background", "type": "background"}]
-}
-```
+The source descriptors must use explicit manifest URLs. Fixture manifests and their style/TileJSON/resource closure must be served by infrastructure the development host already uses. The harness does not create a server or add an ambient fetch path.
 
-The two protected Maps intentionally request the same original style URL. Their transient discriminators differ and are stripped before HTTP. The third-party Map requests its original URL unchanged. The native bootstrap must use the independent channel, without a grant header or resource interception.
+## Controls
 
-## Drive the harness explicitly
+The returned `Screen` mounts the two Maps. The remaining controls are deterministic source-checkout seams:
 
-Call and await `createAdmissionHarness(input)` from the host's existing development entry, outside React render/effects. Register or render its returned `Screen` in the host using the host's existing application registration name. Do not construct the owner in an effect that React development checks may tear down and replay.
+| Control | Purpose |
+| --- | --- |
+| `setFirstTheme(theme)` | Drive a concrete/system theme transaction on the same mounted Map. A fixture theme may intentionally fail so rollback can be observed. |
+| `updateFirstSource(source)` | Change the logical source descriptor while keeping the React slot, exercising source replacement ownership. |
+| `replaceFirstSource(source)` | Replace the first React Map instance with a new key and source. |
+| `setFirstView(view)` | Drive the controlled camera contract. Gesture callbacks update the same controlled view so post-commit settlement can occur. |
+| `removeFirst()` / `restoreFirst()` | Exercise teardown and remount while the second Map stays live. |
+| `stop()` | Remove the harness snapshot and release its React subscriptions. The host must still unmount `Screen` to await component teardown normally. |
 
-The returned controls are private harness operations:
+The observer reports only the Map label and bounded public event kind/status. It never receives request URLs, raw native events, exception causes, credential material, grant material or renderer handles.
 
-| Control              | Expected operation to qualify                                                                         |
-| -------------------- | ----------------------------------------------------------------------------------------------------- |
-| `Screen`             | Mounts two protected upstream Maps and one third-party Map.                                           |
-| `changeFirstStyle()` | Switches between the two approved fixture URLs while retaining the first Map's React key and context. |
-| `retireFirst()`      | Awaits native retirement of the first context and removes its view; the second remains independent.   |
-| `replaceFirst()`     | Retires the old context, opens a new one and changes the React key for the replacement real Map.      |
-| `stop()`             | Removes the views, disposes the owner and returns the native removal/ownership-loss acknowledgement.  |
+## Scenarios for local qualification
 
-Await `stop()` before unmounting the harness or ending the local run. A React unmount alone is not its asynchronous teardown acknowledgement. Repeated calls return the same stop promise. A style-ready callback means that MapLibre loaded the style; it is not a commercial receipt or proof of a rendered frame.
+Use controlled fixture barriers rather than sleeps. At minimum, exercise:
 
-The observer receives only a Map label, a bounded kind and, for owned HTTP observations, a status code. Never attach the full input, native event, request, headers, exception, bootstrap reply or authority to a result report. Record fixture assertions such as `grantPresent`, `contextRemoved` and `thirdPartyUnchanged`, not credential or grant values.
+1. two simultaneous Maps with distinct contexts and sessions where applicable;
+2. source replacement while manifest, application configuration, bootstrap/context acknowledgement and style preparation are independently held;
+3. theme success and theme failure followed by rollback on the same native view;
+4. a system-theme appearance change without changing Map identity;
+5. controlled camera commands plus real gesture callbacks and the following React commit;
+6. readiness ordering where style acceptance, native layout commit and fully rendered frame arrive in different orders;
+7. background/resume while bootstrap, style load or native frame evidence is pending;
+8. Strict Mode mount/unmount replay and late callbacks after removal;
+9. a second Map remaining usable while the first retires or fails cleanup.
 
-## Required runtime scenarios
-
-First establish the baseline with cold caches: two independent session/controller identities for the protected Maps, matching original URLs at the fixture, the exact grant header on eligible protected requests, and no grant or discriminator on the third-party request. Verify both native response observation and MapLibre style completion rather than treating either as a substitute for the other.
-
-Use existing fixture barriers to hold bootstrap or resource completion while retiring/replacing a context. Release the barrier afterwards and verify that the first Map has no late callback and that the second still completes. Exercise retirement before queue drain, during JS acquisition, after admission and during native completion; deterministic engine tests cover the scheduling boundaries the renderer does not expose directly.
-
-Pause JavaScript while protected native work is waiting, then background/resume the app. No protected request may start with authority whose conservative deadline has passed. Resume must revalidate rather than depend on a JavaScript timeout. Use the deterministic controller/batch tests for the 9,999/10,000/10,001 and six-hour boundaries; do not wait six hours or add sleeps to those tests.
-
-Exercise same-origin redirects to another cataloged resource, an uncataloged path, a conflicting context, another port and another origin. Record that unsafe targets receive no forwarded grant. In a dedicated native test invocation, replace the installed provider/configuration and check that removal preserves the replacement and reports ownership loss. Restart the host afterwards; the contract does not support arbitrary mutation chains.
-
-Run the Android provider/engine/bootstrap/lease tests and the iOS engine/protocol/bootstrap/rollback tests in addition to this harness. Qualify cancellation churn and native memory cleanup with held native callbacks, not merely successful promise rejection. Inspect the actual packed package and an isolated root import separately; a successful harness does not prove packaging or publication safety.
+For Hosted fixtures, inspect network behavior only in the host's existing test instrumentation: protected requests must carry authority only after exact resource/catalog admission, while foreign resources remain unchanged. The harness itself deliberately has no access to those headers.
 
 ## Record execution, not inference
 
-A local receipt should identify the repository commit, host OS/device, resolved dependency versions, exact commands actually executed, fixture scenario and secret-free assertions. Record failures and missing scenarios explicitly. Do not mark tests, builds, CI, native integration or product acceptance as passed because source exists, a typecheck succeeds or a Map becomes visible.
+A local receipt should identify the repository commit, host OS/device, resolved dependency versions, commands actually executed, fixture scenario and secret-free assertions. Record missing scenarios and failures explicitly. A visible Map, successful typecheck or source-level test does not by itself prove native lifecycle, packaging, Hosted availability, publication or device acceptance.

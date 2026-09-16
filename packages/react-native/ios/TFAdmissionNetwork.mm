@@ -1,4 +1,5 @@
 #import "TFAdmissionNetwork.h"
+#import "TFDocumentBounds.h"
 #import <mach/mach_time.h>
 #import <atomic>
 
@@ -216,6 +217,7 @@
 }
 - (NSString *)description { return @"TFAdmissionURLSessionNetwork(redacted)"; }
 - (id<TFAdmissionCancel>)start:(NSURLRequest *)request mayStart:(TFAdmissionStartGuard)guard completion:(TFAdmissionNetworkCompletion)completion {
+	NSUInteger responseByteLimit = TFDocumentResponseByteLimit(request, self.responseByteLimit);
 	BOOL reserved;
 	@synchronized(self) {
 		reserved = !self.closed && self.reservations < self.queueDepth;
@@ -224,7 +226,7 @@
 	TFAdmissionSessionOperation *operation = [TFAdmissionSessionOperation new];
 	operation.request = [request copy]; operation.guard = guard; operation.configuration = self.configuration;
 	operation.delegateQueue = self.delegateQueue; operation.followsRedirects = self.followsRedirects;
-	operation.responseByteLimit = self.responseByteLimit;
+	operation.responseByteLimit = responseByteLimit;
 	operation.completion = completion;
 	__weak TFAdmissionSessionOperation *weakOperation = operation;
 	operation.cleanup = ^{

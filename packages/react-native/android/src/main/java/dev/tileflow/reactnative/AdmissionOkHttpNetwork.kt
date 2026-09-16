@@ -1,6 +1,5 @@
 package dev.tileflow.reactnative
 
-import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 import okhttp3.Call
@@ -57,24 +56,16 @@ internal class AdmissionOkHttpNetwork(private val dispatcher: Dispatcher = Dispa
 					val result = try {
 						response.use {
 							val body = it.body
-							if (body != null && body.contentLength() > AdmissionLimits.RESPONSE_BYTES) throw IOException("Native resource exceeded its size limit")
-							val bytes = ByteArrayOutputStream()
-							body?.byteStream()?.use { stream ->
-								val buffer = ByteArray(8192)
-								while (true) {
-									val count = stream.read(buffer)
-									if (count < 0) break
-									if (!request.mayStart() || bytes.size().toLong() + count > AdmissionLimits.RESPONSE_BYTES) throw IOException("Native resource is unavailable")
-									bytes.write(buffer, 0, count)
-								}
-							}
+							val bytes = body?.byteStream()?.use { stream ->
+								readNativeDocumentBody(stream, request.maximumBytes, body.contentLength(), request.mayStart)
+							} ?: byteArrayOf()
 							// Forward only metadata consumed by MapLibre and Location
 							// for our own redirect validation, never raw headers.
 							val headers = linkedMapOf<String, String>()
 							for (name in listOf("etag", "last-modified", "cache-control", "expires", "retry-after", "x-rate-limit-reset", "location")) {
 								it.header(name)?.let { value -> headers[name] = value }
 							}
-							AdmissionHttpResponse(it.code, headers, bytes.toByteArray())
+							AdmissionHttpResponse(it.code, headers, bytes)
 						}
 					} catch (_: Exception) { null }
 					complete(result)

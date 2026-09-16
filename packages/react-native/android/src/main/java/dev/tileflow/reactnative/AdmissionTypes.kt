@@ -17,8 +17,12 @@ internal interface AdmissionNetwork {
 internal class AdmissionHttpRequest(
 	val url: String,
 	val headers: Map<String, String>,
+	val maximumBytes: Int,
 	val mayStart: () -> Boolean,
 ) {
+	constructor(url: String, headers: Map<String, String>, mayStart: () -> Boolean) :
+		this(url, headers, AdmissionLimits.RESPONSE_BYTES.toInt(), mayStart)
+	init { require(maximumBytes in 1..AdmissionLimits.RESPONSE_BYTES.toInt()) { "Invalid native resource bound" } }
 	override fun toString() = "AdmissionHttpRequest(redacted)"
 }
 

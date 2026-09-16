@@ -65,7 +65,7 @@ export type NativeAdmissionEvent =
         batch: string;
         tickets: readonly NativeAdmissionTicket[];
       }>)
-  | (ContextEvent & Readonly<{kind: 'cancel'; tickets: readonly string[]}>)
+  | (ContextEvent & Readonly<{kind: 'cancel'; tickets: readonly string[]}> )
   | (ContextEvent & Readonly<{kind: 'retired'; code: NativeAdmissionCode}>)
   | (ContextEvent & Readonly<{kind: 'response'; status: number}>)
   | Readonly<{kind: 'lifecycle'; installation: string; foreground: boolean}>
@@ -84,6 +84,12 @@ export type NativeAdmissionBridge = Readonly<{
     installation: string,
     registration: Readonly<{mapId: string | null; resources: readonly NativeAdmissionResource[]}>,
   ): Promise<NativeContextAck>;
+  // Older internal exact-resource fixtures may omit this capability; extension then fails closed.
+  extendContext?(
+    installation: string,
+    context: string,
+    resources: readonly NativeAdmissionResource[],
+  ): Promise<Readonly<{resources: number}>>;
   retireContext(installation: string, context: string): Promise<Readonly<{retired: true}>>;
   completeBatch(
     installation: string,

@@ -32,6 +32,7 @@ typedef id<TFAdmissionCancel> _Nonnull (^TFAdmissionDelegate)(NSURLRequest *requ
 	emit:(void (^)(NSDictionary *event))emit;
 - (NSString *)registerMap:(nullable NSString *)mapId resources:(NSArray<NSDictionary *> *)resources;
 - (NSUInteger)extendContext:(NSString *)context resources:(NSArray<NSDictionary *> *)resources;
+- (TFAdmissionStartGuard)contextGuard:(NSString *)context;
 - (id<TFAdmissionCancel>)request:(NSURLRequest *)request
 	response:(void (^)(NSHTTPURLResponse *response, NSData *body))response
 	failure:(dispatch_block_t)failure

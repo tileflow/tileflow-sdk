@@ -123,6 +123,16 @@ static BOOL TFGrantShape(NSString *value) {
 	context.catalog = next;
 	return next.resources.count;
 }
+- (TFAdmissionStartGuard)contextGuard:(NSString *)identifier {
+	TFAdmissionContext *context = self.contexts[identifier];
+	if (!context || !context.alive->value.load() || ![self isOwner]) TFInvalidAdmission();
+	TFAdmissionFlag *alive = context.alive;
+	// Capture only the original atomic lifetime, never a mutable registry lookup off-thread.
+	return [^BOOL {
+		@try { return alive->value.load() && self->_foreground.load() && [self isOwner]; }
+		@catch (NSException *exception) { return NO; }
+	} copy];
+}
 - (NSDictionary *)resource:(NSString *)url context:(TFAdmissionContext *)context {
 	@try { return [context.catalog find:url]; }
 	@catch (NSException *exception) { return nil; }

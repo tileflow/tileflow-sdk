@@ -2,6 +2,7 @@ package dev.tileflow.reactnative
 
 import android.util.Base64
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.Promise
@@ -63,20 +64,43 @@ class TileflowNativeAdmissionModule(context: ReactApplicationContext) : ReactCon
 	@ReactMethod fun registerContext(id: String, registration: ReadableMap, promise: Promise) = action(promise) {
 		val admission = current(id)
 		val mapId = if (registration.isNull("mapId")) null else registration.getString("mapId") ?: invalid()
-		val source = registration.getArray("resources") ?: invalid()
-		if (source.size() > AdmissionLimits.RESOURCES) invalid()
-		var characters = 0
-		val resources = (0 until source.size()).map { index ->
-			val item = source.getMap(index) ?: invalid()
-			val url = item.getString("url") ?: invalid()
-			characters += url.length
-			if (characters > AdmissionLimits.BRIDGE_BYTES || url.length > AdmissionLimits.URL) invalid()
-			AdmissionResource(url, item.getString("scope") ?: invalid(), if (item.hasKey("tilesetId") && !item.isNull("tilesetId")) item.getString("tilesetId") else null)
-		}
-		val context = admission.register(mapId, resources)
+		val context = admission.register(mapId, readResources(registration.getArray("resources") ?: invalid()))
 		try { (bootstrapRequests ?: invalid()).register(context, mapId) }
 		catch (error: Exception) { admission.retire(context); throw error }
 		Arguments.makeNativeMap(mapOf("context" to context, "generation" to 1))
+	}
+
+	@ReactMethod fun extendContext(id: String, context: String, source: ReadableArray, promise: Promise) = action(promise) {
+		if (!AdmissionUrl.validToken(context)) invalid()
+		Arguments.makeNativeMap(mapOf("resources" to current(id).extend(context, readResources(source))))
+	}
+
+	private fun readResources(source: ReadableArray): List<AdmissionResource> {
+		if (source.size() > AdmissionLimits.RESOURCES) invalid()
+		var characters = 0
+		return (0 until source.size()).map { index ->
+			val item = source.getMap(index) ?: invalid()
+			val keys = item.keySetIterator()
+			var fields = 0
+			while (keys.hasNextKey()) if (++fields > 5 || keys.nextKey() !in setOf("url", "scope", "tilesetId", "template", "fontStacks")) invalid()
+			val url = item.getString("url") ?: invalid()
+			val scope = item.getString("scope") ?: invalid()
+			val tileset = if (item.hasKey("tilesetId") && !item.isNull("tilesetId")) item.getString("tilesetId") else null
+			val template = if (item.hasKey("template") && !item.isNull("template")) item.getString("template") else null
+			val stacks = if (item.hasKey("fontStacks")) {
+				val array = item.getArray("fontStacks") ?: invalid()
+				if (array.size() > 16) invalid()
+				(0 until array.size()).map { position ->
+					val value = array.getString(position) ?: invalid()
+					if (value.length > 256) invalid()
+					characters += value.length * 4
+					value
+				}
+			} else null
+			characters += url.length + scope.length + (tileset?.length ?: 0) + (template?.length ?: 0) + 128
+			if (characters > AdmissionLimits.BRIDGE_BYTES || url.length > AdmissionLimits.URL) invalid()
+			AdmissionResource(url, scope, tileset, template, stacks)
+		}
 	}
 
 	@ReactMethod fun retireContext(id: String, context: String, promise: Promise) = action(promise) {
@@ -86,6 +110,28 @@ class TileflowNativeAdmissionModule(context: ReactApplicationContext) : ReactCon
 			engine?.retire(context)
 		} else if (lastRemoved != id) invalid()
 		Arguments.makeNativeMap(mapOf("retired" to true))
+	}
+
+	internal fun documentScope(id: String, context: String): NativeDocumentScope {
+		if (!AdmissionUrl.validToken(context)) invalid()
+		val admission = current(id)
+		return NativeDocumentScope({ admission.checkOwnership() }, { url, completion ->
+			AdmissionUrl.clean(url)
+			val completed = AtomicBoolean(false)
+			val finish: (AdmissionHttpResponse?) -> Unit = { response ->
+				if (completed.compareAndSet(false, true)) completion(response)
+			}
+			val tagged = "$url${if (url.contains('?')) '&' else '?'}__tf_native_context=$context"
+			val request = admission.request(tagged, emptyMap(), { finish(it) }, { finish(null) }, { _, _ ->
+				// Non-session preparation uses the separate credential-free reader.
+				finish(null); AdmissionCancellation {}
+			})
+			AdmissionCancellation {
+				request.cancel()
+				// The engine retains its own physical transport reservation.
+				finish(null)
+			}
+		}, context)
 	}
 
 	@ReactMethod fun bootstrap(id: String, context: String, request: String, url: String, credential: String, body: String, promise: Promise) {
@@ -170,7 +216,10 @@ class TileflowNativeAdmissionModule(context: ReactApplicationContext) : ReactCon
 	private fun reject(promise: Promise) { promise.reject("NATIVE_ADMISSION_UNAVAILABLE", "Native resource admission failed") }
 	private fun emit(event: Map<String, Any>) {
 		when (event["kind"]) {
-			"retired" -> (event["context"] as? String)?.let { bootstrapRequests?.retire(it) }
+			"retired" -> (event["context"] as? String)?.let {
+				bootstrapRequests?.retire(it)
+				reactApplicationContext.getNativeModule(TileflowNativeDocumentsModule::class.java)?.retireNativeContext(it)
+			}
 			"ownershipLost" -> bootstrapRequests?.close()
 			"lifecycle" -> bootstrapRequests?.lifecycle(event["foreground"] == true)
 		}

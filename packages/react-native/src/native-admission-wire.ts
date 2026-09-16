@@ -1,6 +1,6 @@
 import {NativeAdmissionError} from './native-admission-owner';
 import {isNativeToken} from './native-admission-url';
-import type {NativeAdmissionBridge, NativeAdmissionEvent} from './native-admission-contract';
+import {nativeAdmissionLimits, type NativeAdmissionBridge, type NativeAdmissionEvent} from './native-admission-contract';
 import {nativeBootstrapLimits, type NativeAdmissionNativeModule, type NativeBootstrapReply} from './native-bootstrap-contract';
 import type {HostedNativeSessionFetch, HostedNativeSessionFetchResponse} from './session-controller';
 
@@ -31,57 +31,94 @@ function decodeBoundedBase64(value: unknown): Uint8Array {
 	return bytes;
 }
 
-function responseFromWire(reply: NativeBootstrapReply, isAborted: () => boolean): HostedNativeSessionFetchResponse {
+function responseFromWire(reply: NativeBootstrapReply, isAborted: () => boolean, release: () => void) {
 	if (!reply || !Number.isInteger(reply.status) || reply.status < 100 || reply.status > 599 ||
 		typeof reply.cacheControl !== 'string' || reply.cacheControl.length > 1024) throw invalid();
+	// Do not retain the wire object (and its encoded body) in header closures.
+	const status = reply.status;
+	const cacheControl = reply.cacheControl;
 	let bytes = decodeBoundedBase64(reply.bodyBase64);
 	let readerTaken = false;
-	return Object.freeze({
-		status: reply.status,
-		headers: Object.freeze({get(name: string) { return name.toLowerCase() === 'cache-control' ? reply.cacheControl : null; }}),
+	let done = false;
+	const clear = () => { bytes.fill(0); bytes = new Uint8Array(0); done = true; release(); };
+	const response: HostedNativeSessionFetchResponse = Object.freeze({
+		status,
+		headers: Object.freeze({get(name: string) { return name.toLowerCase() === 'cache-control' ? cacheControl : null; }}),
 		body: Object.freeze({getReader() {
 			if (readerTaken) throw invalid();
 			readerTaken = true;
-			let done = false;
 			return Object.freeze({
 				async read(): Promise<{done: true; value?: undefined} | {done: false; value: Uint8Array}> {
-					if (isAborted()) { bytes = new Uint8Array(0); throw cancelled(); }
+					if (isAborted()) { clear(); throw cancelled(); }
 					if (done) return {done: true};
 					done = true;
 					const value = bytes;
 					bytes = new Uint8Array(0);
+					release();
 					return {done: false, value};
 				},
-				cancel() { done = true; bytes = new Uint8Array(0); },
+				cancel: clear,
 			});
 		}}),
 	});
+	return {response, clear};
 }
 
-// No React Native import here: deterministic tests exercise the exact wire
-// adapter independently of the renderer and platform module loader.
+type ContextGate = {live: boolean; cancel: Set<() => void>};
+type Installation = {id: string; contexts: Map<string, ContextGate>};
+
+// No renderer dependency. Native validates registration and request identity;
+// these gates bound bridge work and invalidate already-delivered readers.
 export function createNativeAdmissionWire(
 	native: NativeAdmissionNativeModule,
 	listen: (listener: (event: NativeAdmissionEvent) => void) => () => void,
 ) {
-	let installation: string | null = null;
+	let installation: Installation | null = null;
 	let sequence = 0;
+	const reservations = new Set<string>();
 	async function safe<T>(action: () => Promise<T>): Promise<T> {
 		try { return await action(); } catch { throw unavailable(); }
 	}
+	function retireContext(context: string) {
+		const gate = installation?.contexts.get(context);
+		if (!gate) return;
+		gate.live = false;
+		for (const abort of [...gate.cancel]) abort();
+		installation?.contexts.delete(context);
+	}
+	function retireInstallation() {
+		if (!installation) return;
+		for (const context of [...installation.contexts.keys()]) retireContext(context);
+		installation = null;
+	}
 	const bridge: NativeAdmissionBridge = Object.freeze({
-		subscribe: listen,
+		subscribe(listener) {
+			return listen((event) => {
+				if (event && event.installation === installation?.id) {
+					if (event.kind === 'retired') retireContext(event.context);
+					if (event.kind === 'ownershipLost') retireInstallation();
+					if (event.kind === 'lifecycle' && !event.foreground) {
+						for (const gate of installation?.contexts.values() ?? []) for (const abort of [...gate.cancel]) abort();
+					}
+				}
+				listener(event);
+			});
+		},
 		async install() {
 			const ack = await safe(() => native.install());
 			if (!ack || !isNativeToken(ack.installation)) throw invalid();
-			installation = ack.installation;
-			return Object.freeze({installation});
+			retireInstallation();
+			installation = {id: ack.installation, contexts: new Map()};
+			return Object.freeze({installation: ack.installation});
 		},
 		registerContext: (id, registration) => safe(() => native.registerContext(id, registration)),
-		retireContext: (id, context) => safe(() => native.retireContext(id, context)),
+		retireContext(id, context) {
+			if (id === installation?.id) retireContext(context);
+			return safe(() => native.retireContext(id, context));
+		},
 		completeBatch: (id, context, generation, batch, results) => safe(() => native.completeBatch(id, context, generation, batch, results)),
-		async remove(id) {
-			if (id === installation) installation = null;
+		remove(id) {
+			if (id === installation?.id) retireInstallation();
 			return safe(() => native.remove(id));
 		},
 	});
@@ -89,37 +126,62 @@ export function createNativeAdmissionWire(
 	function fetchForContext(context: string): HostedNativeSessionFetch {
 		const installed = installation;
 		if (!installed || !isNativeToken(context)) throw invalid();
+		let gate = installed.contexts.get(context);
+		if (!gate) {
+			if (installed.contexts.size >= nativeAdmissionLimits.contexts) throw unavailable();
+			gate = {live: true, cancel: new Set()};
+			installed.contexts.set(context, gate);
+		}
+		const scope = gate;
 		return (url, init) => {
-			if (installation !== installed || init.signal.aborted) return Promise.reject(cancelled());
+			const active = () => installation === installed && scope.live && !init.signal.aborted;
+			if (!active()) return Promise.reject(cancelled());
+			if (reservations.size >= nativeBootstrapLimits.queueDepth) return Promise.reject(unavailable());
 			const credential = init.headers['X-Tileflow-Mobile-Client'];
 			if (init.method !== 'POST' || init.credentials !== 'omit' || typeof init.body !== 'string' ||
 				init.body.length > nativeBootstrapLimits.requestBytes || typeof credential !== 'string' ||
 				!/^tf_public_[0-9a-f]{48}$/u.test(credential) || sequence >= Number.MAX_SAFE_INTEGER) return Promise.reject(invalid());
-			const request = `${installed}.${++sequence}`;
+			const request = `${installed.id}.${++sequence}`;
+			reservations.add(request);
 			return new Promise<HostedNativeSessionFetchResponse>((resolve, reject) => {
 				let settled = false;
+				let aborted = false;
+				let dispatched = false;
+				let nativeFinished = false;
+				let bodyFinished = true;
+				let clearBody: (() => void) | undefined;
 				const cleanup = () => init.signal.removeEventListener('abort', abort);
-				const abort = () => {
-					if (settled) return;
-					settled = true;
-					cleanup();
-					void safe(() => native.cancelBootstrap(installed, context, request)).catch(() => undefined);
-					reject(cancelled());
+				const release = () => {
+					if (!nativeFinished || !bodyFinished) return;
+					reservations.delete(request); scope.cancel.delete(abort); cleanup(); clearBody = undefined;
 				};
+				const abort = () => {
+					if (aborted) return;
+					aborted = true; cleanup();
+					clearBody?.(); bodyFinished = true;
+					if (dispatched && !nativeFinished) void safe(() => native.cancelBootstrap(installed.id, context, request)).catch(() => undefined);
+					if (!settled) { settled = true; reject(cancelled()); }
+					release();
+				};
+				scope.cancel.add(abort);
 				init.signal.addEventListener('abort', abort, {once: true});
-				if (init.signal.aborted) { abort(); return; }
+				if (!active()) { nativeFinished = true; abort(); return; }
 				let pending: Promise<NativeBootstrapReply>;
-				try { pending = Promise.resolve(native.bootstrap(installed, context, request, url, credential, init.body)); }
-				catch { settled = true; cleanup(); reject(unavailable()); return; }
+				try { dispatched = true; pending = Promise.resolve(native.bootstrap(installed.id, context, request, url, credential, init.body)); }
+				catch { nativeFinished = true; settled = true; cleanup(); release(); reject(unavailable()); return; }
 				pending.then((reply) => {
-					if (settled) return;
+					nativeFinished = true;
+					if (settled) { release(); return; }
+					if (!active()) { abort(); return; }
 					settled = true; cleanup();
-					if (init.signal.aborted || installation !== installed) { reject(cancelled()); return; }
-					try { resolve(responseFromWire(reply, () => init.signal.aborted)); }
-					catch { reject(invalid()); }
+					try {
+						const result = responseFromWire(reply, () => aborted || !active(), () => { bodyFinished = true; release(); });
+						bodyFinished = false; clearBody = result.clear; resolve(result.response);
+					} catch { release(); reject(invalid()); }
 				}, () => {
-					if (settled) return;
-					settled = true; cleanup(); reject(unavailable());
+					nativeFinished = true;
+					if (!settled) { settled = true; cleanup(); reject(unavailable()); }
+					release();
 				});
 			});
 		};

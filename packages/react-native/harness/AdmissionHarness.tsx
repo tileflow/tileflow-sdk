@@ -1,10 +1,11 @@
 import {StrictMode, useSyncExternalStore} from 'react';
 import {View} from 'react-native';
 import {
-  Map as TileflowMap,
+  type MapCameraProps,
   type MapSource,
   type MapThemeSelection,
   type MapView,
+  Map as TileflowMap,
 } from '../src/index';
 
 type Observation = Readonly<{
@@ -89,40 +90,44 @@ export function createAdmissionHarness(input: {
     return (
       <StrictMode>
         <View style={{flex: 1}}>
-          {current.slots.map((slot) => (
-            <TileflowMap
-              key={slot.key}
-              source={slot.source}
-              theme={slot.theme}
-              testID={`tileflow-mounted-${slot.map}`}
-              style={{flex: 1}}
-              {...(slot.view
-                ? {
-                    view: slot.view,
-                    onViewChange(event) {
-                      if (!active) return;
-                      updateFirst((currentFirst) =>
-                        currentFirst.map === slot.map
-                          ? {...currentFirst, view: event.view}
-                          : currentFirst,
-                      );
-                      report({map: slot.map, kind: 'view'});
-                    },
-                  }
-                : {})}
-              onLoad={() => report({map: slot.map, kind: 'load'})}
-              onReadinessChange={(event) =>
-                report({map: slot.map, kind: 'readiness', status: event.status})
-              }
-              onThemeChange={() => report({map: slot.map, kind: 'theme'})}
-              onError={(event) =>
-                report({
-                  map: slot.map,
-                  kind: event.type === 'source-error' ? 'source-error' : 'renderer-error',
-                })
-              }
-            />
-          ))}
+          {current.slots.map((slot) => {
+            const camera: MapCameraProps = slot.view
+              ? {
+                  view: slot.view,
+                  onViewChange(event) {
+                    if (!active) return;
+                    updateFirst((currentFirst) =>
+                      currentFirst.map === slot.map
+                        ? {...currentFirst, view: event.view}
+                        : currentFirst,
+                    );
+                    report({map: slot.map, kind: 'view'});
+                  },
+                }
+              : {};
+
+            return (
+              <TileflowMap
+                key={slot.key}
+                source={slot.source}
+                theme={slot.theme}
+                testID={`tileflow-mounted-${slot.map}`}
+                style={{flex: 1}}
+                {...camera}
+                onLoad={() => report({map: slot.map, kind: 'load'})}
+                onReadinessChange={(event) =>
+                  report({map: slot.map, kind: 'readiness', status: event.status})
+                }
+                onThemeChange={() => report({map: slot.map, kind: 'theme'})}
+                onError={(event) =>
+                  report({
+                    map: slot.map,
+                    kind: event.type === 'source-error' ? 'source-error' : 'renderer-error',
+                  })
+                }
+              />
+            );
+          })}
         </View>
       </StrictMode>
     );

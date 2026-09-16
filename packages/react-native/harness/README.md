@@ -18,9 +18,9 @@ Both protected style URLs must be exact canonical HTTPS resources approved by th
 
 ```json
 {
-	"version": 8,
-	"sources": {},
-	"layers": [{"id": "background", "type": "background"}]
+  "version": 8,
+  "sources": {},
+  "layers": [{"id": "background", "type": "background"}]
 }
 ```
 
@@ -32,13 +32,13 @@ Call and await `createAdmissionHarness(input)` from the host's existing developm
 
 The returned controls are private harness operations:
 
-| Control | Expected operation to qualify |
-| --- | --- |
-| `Screen` | Mounts two protected upstream Maps and one third-party Map. |
+| Control              | Expected operation to qualify                                                                         |
+| -------------------- | ----------------------------------------------------------------------------------------------------- |
+| `Screen`             | Mounts two protected upstream Maps and one third-party Map.                                           |
 | `changeFirstStyle()` | Switches between the two approved fixture URLs while retaining the first Map's React key and context. |
-| `retireFirst()` | Awaits native retirement of the first context and removes its view; the second remains independent. |
-| `replaceFirst()` | Retires the old context, opens a new one and changes the React key for the replacement real Map. |
-| `stop()` | Removes the views, disposes the owner and returns the native removal/ownership-loss acknowledgement. |
+| `retireFirst()`      | Awaits native retirement of the first context and removes its view; the second remains independent.   |
+| `replaceFirst()`     | Retires the old context, opens a new one and changes the React key for the replacement real Map.      |
+| `stop()`             | Removes the views, disposes the owner and returns the native removal/ownership-loss acknowledgement.  |
 
 Await `stop()` before unmounting the harness or ending the local run. A React unmount alone is not its asynchronous teardown acknowledgement. Repeated calls return the same stop promise. A style-ready callback means that MapLibre loaded the style; it is not a commercial receipt or proof of a rendered frame.
 

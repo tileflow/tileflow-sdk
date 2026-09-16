@@ -67,15 +67,15 @@ by the eventual component.
 import type {MapProps} from '@tileflow/react-native';
 
 const definition = {
-	source: {
-		kind: 'tileflow',
-		map: 'streets',
-		manifestUrl: 'https://maps.example.com/tileflow/native/manifest.json',
-	},
-	theme: 'system',
-	initialView: {center: [-3.7038, 40.4168], zoom: 12},
-	mapOptions: {dragPan: true, touchZoom: true},
-	testID: 'streets-map',
+  source: {
+    kind: 'tileflow',
+    map: 'streets',
+    manifestUrl: 'https://maps.example.com/tileflow/native/manifest.json',
+  },
+  theme: 'system',
+  initialView: {center: [-3.7038, 40.4168], zoom: 12},
+  mapOptions: {dragPan: true, touchZoom: true},
+  testID: 'streets-map',
 } satisfies MapProps;
 ```
 
@@ -103,12 +103,12 @@ frame. A ref is a contract for the later component, not an instantiated object e
 The declarations distinguish source state, renderer loading, rendered readiness and theme
 transitions. None of these renderer events is emitted by a component in this phase.
 
-| Callback | Contract |
-| --- | --- |
-| `onLoad` | A `load` event for the current generation and safe selection after the renderer accepts its style. This is not proof of a fully rendered frame. |
-| `onError` | Either a `source-error` with the existing safe Core diagnostic or a `renderer-error` with only its generation. No native event, raw message or remote cause is exposed. |
-| `onReadinessChange` | A `readiness-change` event with `loading`, `ready` or `error`. Only the renderer owner can establish rendered readiness; a resolved manifest cannot do so. |
-| `onThemeChange` | A `theme-change` event with `preloading`, `applying`, `ready` or `error`. A committed `ready` transition requires a concrete current theme. |
+| Callback            | Contract                                                                                                                                                                |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `onLoad`            | A `load` event for the current generation and safe selection after the renderer accepts its style. This is not proof of a fully rendered frame.                         |
+| `onError`           | Either a `source-error` with the existing safe Core diagnostic or a `renderer-error` with only its generation. No native event, raw message or remote cause is exposed. |
+| `onReadinessChange` | A `readiness-change` event with `loading`, `ready` or `error`. Only the renderer owner can establish rendered readiness; a resolved manifest cannot do so.              |
+| `onThemeChange`     | A `theme-change` event with `preloading`, `applying`, `ready` or `error`. A committed `ready` transition requires a concrete current theme.                             |
 
 Theme transitions retain the established distinction between the current and target theme. A
 failed selection may have no valid target. Error details use `onError`, not an exception attached

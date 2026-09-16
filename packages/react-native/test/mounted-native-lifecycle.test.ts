@@ -10,7 +10,7 @@ test('a late native foreground event retries only the live Map without rebuildin
 	const ports: MountedMapPorts = {
 		documents: {acquire(url) {
 			const document = url.endsWith('manifest.json') ? {version: 1, maps: {main: {defaultTheme: 'light', themes: {
-				light: {styleUrl: 'light.json', colorScheme: 'light'},
+				light: {styleUrl: './light.json', colorScheme: 'light'},
 			}}}} : {version: 8, sources: {}, layers: []};
 			if (!url.endsWith('manifest.json')) styles++;
 			const bytes = new TextEncoder().encode(JSON.stringify(document)); let read = false;

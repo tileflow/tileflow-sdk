@@ -58,11 +58,10 @@ internal class NativeSurfaceState(private val surface: String, private val emit:
 		reported = true
 		enqueue("render")
 	}
-	fun beginCommand(value: Long): Boolean {
-		if (!active || !visible || style == null || gesture != 0L || value <= command || value > 9007199254740991L) return false
+	fun beginCommand(value: Long): Long {
+		if (!active || !visible || style == null || gesture != 0L || value <= command || value > 9007199254740991L) return 0
 		command = value; committed = 0; frame = null; fullyRendered = false; reported = false
-		enqueue("invalidate")
-		return true
+		return enqueue("invalidate")
 	}
 	fun cancelCommand(value: Long) { if (value > command && value <= 9007199254740991L) command = value }
 	fun gestureStart(view: Map<String, Any>) {
@@ -84,15 +83,21 @@ internal class NativeSurfaceState(private val surface: String, private val emit:
 		failed = true; committed = 0; frame = null; fullyRendered = false; gesture = 0
 		enqueue("error")
 	}
-	private fun enqueue(kind: String, fields: Map<String, Any> = emptyMap()) {
-		if (closed || token.isEmpty() || sequence >= 9007199254740991L) return
+	private fun enqueue(kindInput: String, fieldsInput: Map<String, Any> = emptyMap()): Long {
+		if (closed || token.isEmpty() || sequence >= 9007199254740991L) return 0
+		var kind = kindInput
+		var fields = fieldsInput
 		val last = pending.lastOrNull()
 		if ((kind == "gesture-change" || kind == "invalidate") && last?.get("kind") == kind && last["style"] == token && last["gesture"] == fields["gesture"]) pending.removeLast()
-		if (pending.size >= 32) {
+		val overflow = pending.size >= 32
+		if (overflow) {
 			pending.clear(); failed = true; frame = null; committed = 0; fullyRendered = false; gesture = 0
-			pending.addLast(mapOf("surface" to surface, "style" to token, "layout" to layoutEpoch, "sequence" to ++sequence, "kind" to "error"))
-		} else pending.addLast(mapOf("surface" to surface, "style" to token, "layout" to layoutEpoch, "sequence" to ++sequence, "kind" to kind) + fields)
+			kind = "error"; fields = emptyMap()
+		}
+		val emitted = ++sequence
+		pending.addLast(mapOf("surface" to surface, "style" to token, "layout" to layoutEpoch, "sequence" to emitted, "kind" to kind) + fields)
 		drain()
+		return if (overflow) 0 else emitted
 	}
 	private fun drain() {
 		if (closed || awaitingSequence != null || pending.isEmpty()) return

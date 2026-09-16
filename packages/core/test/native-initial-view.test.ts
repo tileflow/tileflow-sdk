@@ -9,6 +9,7 @@ import {
 } from '../src/native';
 import {defaultTileflowRuntimeView} from '../src/runtime';
 import type {TileflowViewConfig} from '../src/types';
+import {source, transport} from './native-manifest-fixture';
 
 function invalid(input: unknown): void {
   assert.throws(
@@ -182,18 +183,14 @@ test('clones all view inputs and leaves caller-owned tuples and defaults untouch
 });
 
 test('view resolution is independent of acquisition and does not advance source generation', async () => {
-  let calls = 0;
-  const controller = createTileflowNativeSourceController({
-    acquire: () => {
-      calls++;
-      throw new Error('No acquisition for direct styles.');
-    },
-  });
-  await controller.replace({kind: 'maplibre', style: 'https://maps.example.test/style.json'});
+  const network = transport();
+  const controller = createTileflowNativeSourceController({acquire: network.acquire});
+  await controller.replace(source);
   const snapshot = controller.state;
+  assert.equal(snapshot?.status, 'ready');
   for (const zoom of [1, 2, 12, 24]) resolveTileflowNativeInitialView({view: {zoom}});
   invalid({view: {pitch: 86}});
   assert.equal(controller.state, snapshot);
   assert.equal(controller.state?.generation, 1);
-  assert.equal(calls, 0);
+  assert.equal(network.calls, 1);
 });

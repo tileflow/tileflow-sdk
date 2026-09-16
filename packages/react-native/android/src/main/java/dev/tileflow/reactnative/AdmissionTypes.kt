@@ -22,7 +22,12 @@ internal class AdmissionHttpRequest(
 	override fun toString() = "AdmissionHttpRequest(redacted)"
 }
 
-internal class AdmissionHttpResponse(val code: Int, val headers: Map<String, String>, val body: ByteArray) {
+internal class AdmissionHttpResponse(
+	val code: Int,
+	val headers: Map<String, String>,
+	val body: ByteArray,
+	val url: String? = null,
+) {
 	override fun toString() = "AdmissionHttpResponse(redacted)"
 }
 

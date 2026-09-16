@@ -12,7 +12,8 @@ internal class AdmissionEngine(
 	private val owns: () -> Boolean,
 	private val emit: (Map<String, Any>) -> Unit,
 ) {
-	private class Context(val id: String, val mapId: String?, val resources: Map<String, AdmissionResource>) {
+	private class Context(val id: String, val mapId: String?, var resources: Map<String, AdmissionResource>) {
+		var catalog = AdmissionCatalog(resources.values.toList())
 		val live = AtomicBoolean(true)
 		val work = linkedMapOf<String, Work>()
 		var batch: Batch? = null
@@ -53,14 +54,36 @@ internal class AdmissionEngine(
 			(mapId != null && !Regex("map_[A-Za-z0-9_-]{16}").matches(mapId))) invalid()
 		val catalog = linkedMapOf<String, AdmissionResource>()
 		for (resource in resources) {
-			AdmissionUrl.resource(resource)
-			if (catalog.put(resource.url, resource) != null) invalid()
+			val snapshot = AdmissionCatalog.validate(resource)
+			if (catalog.put(snapshot.url, snapshot) != null) invalid()
 		}
 		if (contextSequence >= 9007199254740991L) invalid()
 		val id = "$installation.${++contextSequence}"
 		contexts[id] = Context(id, mapId, catalog)
 		return id
 	}
+
+	// Append-only within a context: rollback can still use its last accepted style.
+	// Identical retries are acknowledged; a URL can never acquire a different identity.
+	fun extend(contextId: String, resources: List<AdmissionResource>): Int {
+		val context = contexts[contextId] ?: invalid()
+		if (!checkOwnership() || !context.live.get() || resources.size > AdmissionLimits.RESOURCES) invalid()
+		val next = LinkedHashMap(context.resources)
+		for (resource in resources) {
+			val snapshot = AdmissionCatalog.validate(resource)
+			val previous = next[snapshot.url]
+			if (previous != null && (previous.scope != snapshot.scope || previous.tilesetId != snapshot.tilesetId ||
+				previous.template != snapshot.template || previous.fontStacks != snapshot.fontStacks)) invalid()
+			next[snapshot.url] = snapshot
+		}
+		val catalog = AdmissionCatalog(next.values.toList())
+		context.resources = next
+		context.catalog = catalog
+		return next.size
+	}
+
+	private fun resource(context: Context, url: String): AdmissionResource? =
+		try { context.catalog.find(url) } catch (_: Exception) { null }
 
 	fun request(
 		url: String,
@@ -85,7 +108,7 @@ internal class AdmissionEngine(
 			}
 			val context = contexts[tagged.context]
 			if (!foreground || !checkOwnership() || context == null || !context.live.get() ||
-				!context.resources.containsKey(tagged.url) || context.work.size >= AdmissionLimits.QUEUE ||
+				resource(context, tagged.url) == null || context.work.size >= AdmissionLimits.QUEUE ||
 				headers.keys.any { it.equals(AdmissionLimits.GRANT_HEADER, true) } ||
 				ticketSequence >= 9007199254740991L) {
 				active.set(false); release(); onFailure(); return@dispatch
@@ -151,11 +174,11 @@ internal class AdmissionEngine(
 					} catch (_: Exception) { fail(item) }
 				}
 				is AdmissionResult.Grant -> {
-					val resource = context.resources[item.url]
+					val selected = resource(context, item.url)
 					val authority = result.authority
-					if (context.mapId == null || resource == null || result.validForMs !in 1..AdmissionLimits.MAX_VALID_MS ||
+					if (context.mapId == null || selected == null || result.validForMs !in 1..AdmissionLimits.MAX_VALID_MS ||
 						authority.grant.length > AdmissionLimits.GRANT || !Regex("tf_native_v1\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+").matches(authority.grant) ||
-						!authority.allows(resource, context.mapId)) { fail(item); continue }
+						!authority.allows(selected, context.mapId)) { fail(item); continue }
 					item.authority = authority
 					// Anchor at the earlier enqueue time, never at bridge receipt.
 					item.deadline = minOf(item.entered + AdmissionLimits.WAIT_MS, item.entered + result.validForMs - AdmissionLimits.SAFETY_MS)
@@ -175,9 +198,9 @@ internal class AdmissionEngine(
 
 	private fun start(item: Work, url: String): Boolean {
 		val authority = item.authority ?: return false
-		val resource = item.context.resources[url]
+		val selected = resource(item.context, url)
 		val mapId = item.context.mapId
-		if (resource == null || mapId == null || !authority.allows(resource, mapId) || !canStart(item)) { fail(item); return false }
+		if (selected == null || mapId == null || !authority.allows(selected, mapId) || !canStart(item)) { fail(item); return false }
 		item.phase = "network"
 		val headers = item.headers + (AdmissionLimits.GRANT_HEADER to authority.grant)
 		return try {
@@ -204,7 +227,7 @@ internal class AdmissionEngine(
 		}
 		if (!item.live.compareAndSet(true, false)) return
 		finish(item)
-		item.response(response)
+		item.response(AdmissionHttpResponse(response.code, response.headers, response.body, url))
 	}
 
 	private fun finish(item: Work) {

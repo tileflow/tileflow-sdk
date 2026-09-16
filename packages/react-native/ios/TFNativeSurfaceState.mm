@@ -21,6 +21,7 @@
 @property (nonatomic) BOOL reported;
 @property (nonatomic, strong) NSMutableArray<NSDictionary *> *pending;
 @property (nonatomic, readwrite, nullable) NSNumber *awaitingSequence;
+- (NSUInteger)enqueue:(NSString *)kind fields:(NSDictionary *)fields;
 @end
 
 @implementation TFNativeSurfaceState

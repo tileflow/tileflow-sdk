@@ -49,7 +49,7 @@ export default {
 Keep your application's existing entry, loaders, and plugins. Start it with its normal development
 command, or run its production Webpack build. By default, the plugin exposes
 `/tileflow/manifest.json` and concrete-theme styles under `/tileflow/styles/`. A component source of
-`{kind: 'tileflow', map: 'madrid'}` selects the matching config ID.
+`{map: 'madrid'}` selects the matching config ID through that manifest, not a renderer or direct style.
 
 ## Configure the MapLibre worker
 
@@ -85,12 +85,15 @@ export default {
 
 Pass the final URL in your application, not in the Webpack configuration:
 
+<!-- docs:check -->
+
 ```ts
+import type {TileflowRuntimeSource} from '@tileflow/core/runtime';
+
 const source = {
-  kind: 'tileflow' as const,
   map: 'madrid',
   manifestUrl: '/app/maps/manifest.json',
-};
+} satisfies TileflowRuntimeSource;
 ```
 
 `base` defaults to `/tileflow`; `config` defaults to `tileflow.config.ts`. An explicit plugin

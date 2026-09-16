@@ -137,7 +137,11 @@ test(
       target: 'web',
     });
     await runWebpack(compiler);
-    await cp(join(fixture.cwd, 'public/tileflow-fixture'), join(outputDirectory, 'tileflow-fixture'), {recursive: true});
+    await cp(
+      join(fixture.cwd, 'public/tileflow-fixture'),
+      join(outputDirectory, 'tileflow-fixture'),
+      {recursive: true},
+    );
     assert.equal(
       JSON.parse(await readFile(join(outputDirectory, 'tileflow/manifest.json'), 'utf8')).version,
       1,
@@ -181,7 +185,11 @@ test(
       target: 'web',
     });
     await runWebpack(compiler);
-    await cp(join(fixture.cwd, 'public/tileflow-fixture'), join(outputDirectory, 'tileflow-fixture'), {recursive: true});
+    await cp(
+      join(fixture.cwd, 'public/tileflow-fixture'),
+      join(outputDirectory, 'tileflow-fixture'),
+      {recursive: true},
+    );
     const server = createWebpackApplicationServer(outputDirectory, '/app/');
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
@@ -263,7 +271,10 @@ async function createFrameworkFixture(kind: 'next' | 'webpack', options: {basePa
     ]);
     await writeFile(
       join(cwd, 'pages', 'index.js'),
-      createNextApplicationSource(`${options.basePath ?? ''}/maplibre/maplibre-gl-worker.mjs`, manifestUrl),
+      createNextApplicationSource(
+        `${options.basePath ?? ''}/maplibre/maplibre-gl-worker.mjs`,
+        manifestUrl,
+      ),
       'utf8',
     );
     await writeFile(

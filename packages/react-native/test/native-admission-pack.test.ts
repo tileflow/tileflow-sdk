@@ -25,7 +25,7 @@ test('the actual private archive contains exactly the native sources and metadat
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-native-pack-'));
   t.after(() => rm(directory, {recursive: true, force: true}));
   const archive = join(directory, 'native.tgz');
-  // The local orchestrator executes this test. Packing is not publication.
+  // Packing is not publication.
   await exec('pnpm', ['pack', '--out', archive], {cwd: fileURLToPath(root), timeout: 120000});
   const {stdout} = await exec('tar', ['-tzf', archive], {maxBuffer: 4 * 1024 * 1024});
   const actual = stdout
@@ -57,10 +57,21 @@ test('the actual private archive contains exactly the native sources and metadat
   for (const required of [
     'android/src/main/java/dev/tileflow/reactnative/AdmissionProviderLease.kt',
     'android/src/main/java/dev/tileflow/reactnative/AdmissionBootstrap.kt',
+    'android/src/main/java/dev/tileflow/reactnative/MobileConfiguration.kt',
+    'android/src/main/java/dev/tileflow/reactnative/MobileConfigurationResources.kt',
+    'android/src/main/java/dev/tileflow/reactnative/TileflowNativeConfigurationModule.kt',
+    'android/src/main/res/raw/tileflow_configuration_keep.xml',
     'ios/TFAdmissionBootstrap.mm',
     'ios/TFAdmissionInstallation.mm',
     'ios/Tests/TFAdmissionRollbackTests.mm',
+    'ios/TFMobileConfiguration.h',
+    'ios/TFMobileConfiguration.mm',
+    'ios/TileflowNativeConfiguration.mm',
+    'ios/Tests/TFMobileConfigurationTests.mm',
+    'dist/internal/hosted-binding.js',
+    'dist/internal/native-configuration-bridge.js',
     'docs/native-admission.md',
+    'docs/native-configuration.md',
   ])
     assert.ok(actual.includes(`package/${required}`), required);
   assert.equal(
@@ -74,12 +85,15 @@ test('the actual private archive contains exactly the native sources and metadat
     assert.equal(packed, await readFile(new URL(path, root), 'utf8'), path);
   }
   const {stdout: manifestText} = await exec('tar', ['-xOzf', archive, 'package/package.json']);
+  assert.doesNotMatch(manifestText, /tf_public_[0-9a-f]{48}/u);
   const manifest = JSON.parse(manifestText);
   assert.equal(manifest.private, true);
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
   const {stdout: runtime} = await exec('tar', ['-xOzf', archive, 'package/dist/index.js']);
   assert.doesNotMatch(
     runtime,
-    /TileflowNativeAdmission|native-admission|react-native|MapLibre|createHostedNativeSessionController/u,
+    /TileflowNativeAdmission|native-admission|react-native|MapLibre|createHostedNativeSessionController|NativeConfiguration/u,
   );
+  const {stdout: declarations} = await exec('tar', ['-xOzf', archive, 'package/dist/index.d.ts']);
+  assert.doesNotMatch(declarations, /MobileConfiguration|NativeConfiguration|HostedNativeBindingResolver/u);
 });

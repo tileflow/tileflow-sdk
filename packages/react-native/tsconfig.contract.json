@@ -4,5 +4,10 @@
     "noEmit": true,
     "rootDir": "."
   },
-  "include": ["src", "test/public-types.ts", "test/camera-public-types.ts"]
+  "include": [
+    "src",
+    "test/public-types.ts",
+    "test/camera-public-types.ts",
+    "test/configuration-public-types.ts"
+  ]
 }

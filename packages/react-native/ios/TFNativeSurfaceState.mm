@@ -69,10 +69,10 @@
 		captured != identity || captured != self.style || self.frameLayout != self.layoutEpoch || self.committed != self.layoutEpoch) return;
 	self.reported = YES; [self enqueue:@"render" fields:@{}];
 }
-- (BOOL)beginCommand:(NSUInteger)command {
-	if (!self.active || !self.visible || !self.style || self.gesture || command <= self.command || command > 9007199254740991ULL) return NO;
+- (NSUInteger)beginCommand:(NSUInteger)command {
+	if (!self.active || !self.visible || !self.style || self.gesture || command <= self.command || command > 9007199254740991ULL) return 0;
 	self.command = command; self.committed = 0; self.frame = nil; self.fullyRendered = NO; self.reported = NO;
-	[self enqueue:@"invalidate" fields:@{}]; return YES;
+	return [self enqueue:@"invalidate" fields:@{}];
 }
 - (void)cancelCommand:(NSUInteger)command { if (command > self.command && command <= 9007199254740991ULL) self.command = command; }
 - (void)gestureStart:(NSDictionary *)view {
@@ -94,17 +94,20 @@
 	self.failed = YES; self.committed = 0; self.frame = nil; self.fullyRendered = NO; self.gesture = 0;
 	[self enqueue:@"error" fields:@{}];
 }
-- (void)enqueue:(NSString *)kind fields:(NSDictionary *)fields {
-	if (self.closed || !self.token.length || self.sequence >= 9007199254740991ULL) return;
+- (NSUInteger)enqueue:(NSString *)kind fields:(NSDictionary *)fields {
+	if (self.closed || !self.token.length || self.sequence >= 9007199254740991ULL) return 0;
 	NSDictionary *last = self.pending.lastObject;
 	if (([kind isEqual:@"gesture-change"] || [kind isEqual:@"invalidate"]) && [last[@"kind"] isEqual:kind] &&
 		[last[@"style"] isEqual:self.token] && (last[@"gesture"] == fields[@"gesture"] || [last[@"gesture"] isEqual:fields[@"gesture"]])) [self.pending removeLastObject];
-	if (self.pending.count >= 32) {
+	BOOL overflow = self.pending.count >= 32;
+	if (overflow) {
 		[self.pending removeAllObjects]; self.failed = YES; self.frame = nil; self.committed = 0;
 		self.fullyRendered = NO; self.gesture = 0; kind = @"error"; fields = @{};
 	}
-	NSMutableDictionary *event = [@{@"surface": self.surface, @"style": self.token, @"layout": @(self.layoutEpoch), @"sequence": @(++self.sequence), @"kind": kind} mutableCopy];
+	NSUInteger emitted = ++self.sequence;
+	NSMutableDictionary *event = [@{@"surface": self.surface, @"style": self.token, @"layout": @(self.layoutEpoch), @"sequence": @(emitted), @"kind": kind} mutableCopy];
 	[event addEntriesFromDictionary:fields]; [self.pending addObject:[event copy]]; [self drain];
+	return overflow ? 0 : emitted;
 }
 - (void)drain {
 	if (self.closed || self.awaitingSequence || !self.pending.count) return;

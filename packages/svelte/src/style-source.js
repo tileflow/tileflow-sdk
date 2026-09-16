@@ -16,12 +16,6 @@ export function validateTileflowMapStyleInputs(input) {
   if (input.theme !== undefined && !validateTileflowThemeSelection(input.theme)) {
     return {error: 'theme must be a concrete portable theme name or "system"', ok: false};
   }
-  if (
-    input.theme !== undefined &&
-    /** @type {{kind?: unknown}} */ (input.source).kind !== 'tileflow'
-  ) {
-    return {error: 'theme is only valid with a tileflow source', ok: false};
-  }
   return {ok: true};
 }
 

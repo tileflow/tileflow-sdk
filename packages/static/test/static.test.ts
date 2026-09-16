@@ -772,6 +772,16 @@ test('preserves bounded structured fields from non-422 API errors', async () => 
   const cases = [
     {
       body: {
+        code: 'STATIC_MAPS_PLAN_UNAVAILABLE',
+        error: 'Static Maps creation requires the Starter plan',
+        internal: 'not-public',
+        requiredPlan: 'starter-v1',
+        retryable: false,
+      },
+      status: 403,
+    },
+    {
+      body: {
         code: 'STATIC_MAP_IDEMPOTENCY_KEY_INVALID',
         error: 'Idempotency key is invalid',
         internal: 'not-public',
@@ -843,6 +853,10 @@ test('preserves bounded structured fields from non-422 API errors', async () => 
         assert.equal(
           Reflect.get(error, 'remainingUnits'),
           'remainingUnits' in expected.body ? expected.body.remainingUnits : null,
+        );
+        assert.equal(
+          Reflect.get(error, 'requiredPlan'),
+          'requiredPlan' in expected.body ? expected.body.requiredPlan : null,
         );
         assert.match(error.message, new RegExp(expected.body.error, 'u'));
         assert.equal('internal' in error.response, false);

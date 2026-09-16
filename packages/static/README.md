@@ -32,9 +32,9 @@ silently share another scene's identity.
 
 ```ts
 import {
+  createStaticMap,
   createStaticMapIdempotencyKey,
   marker,
-  createStaticMap,
   validateStaticScene,
 } from '@tileflow/static';
 
@@ -241,9 +241,13 @@ attribution grammar or glyphs, excessive attribution, and a block that cannot fi
 non-retryable `422` boundary.
 
 Other bounded Hosted JSON failures throw `StaticMapError`. It preserves HTTP `status` and any safe
-`code`, `retryable`, `requestId`, or `remainingUnits` fields the server supplied; absent fields are
-`null`. `StaticMapRequestError` extends the same class. Malformed, oversized, or unsafe remote
-documents remain generic errors and are never reflected to the caller.
+`code`, `requiredPlan`, `retryable`, `requestId`, or `remainingUnits` fields the server supplied;
+absent fields are `null`. `StaticMapRequestError` extends the same class. Malformed, oversized, or
+unsafe remote documents remain generic errors and are never reflected to the caller.
+
+`STATIC_MAPS_PLAN_UNAVAILABLE` is a non-retryable Starter requirement. Its `requiredPlan` is
+`starter-v1`; select a Starter Team or use a non-static fallback. It occurs before a Static Maps
+operation or API-unit charge. A different `403` is a credential or Map-coverage failure.
 
 ## API entry points
 

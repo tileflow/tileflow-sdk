@@ -12,6 +12,12 @@ const safeIdentifierSchema = z
   .min(1)
   .max(200)
   .regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u);
+const safeStorageKeySchema = z
+  .string()
+  .min(1)
+  .max(512)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/u)
+  .refine((value) => value.split('/').every((segment) => segment !== '.' && segment !== '..'));
 const publicHttpUrlSchema = z
   .url()
   .max(2048)
@@ -65,7 +71,7 @@ export const hostedFontBundleResponseSchema = z.object({
 
 const hostedStatusStyleSchema = z.object({
   environment: safeTextSchema,
-  key: safeIdentifierSchema,
+  key: safeStorageKeySchema,
   mapId: safeIdentifierSchema,
   size: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   uploaded: z.iso.datetime({offset: true}),

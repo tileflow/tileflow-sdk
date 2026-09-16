@@ -31,9 +31,17 @@ test('the actual private archive contains exactly the native sources and metadat
 	const actual = stdout.trim().split('\n').filter((path) => !path.endsWith('/')).sort();
 	const ios = (await files('ios')).filter((path) => /^ios\/[^/]+\.(?:h|mm|rb)$/u.test(path) || /^ios\/Tests\/[^/]+\.mm$/u.test(path));
 	const native = [...await files('android/src'), ...ios, 'android/build.gradle', 'TileflowNativeAdmission.podspec', 'react-native.config.cjs'];
-	const expected = [...native, ...await files('dist'), 'README.md', 'LICENSE', 'package.json'].map((path) => `package/${path}`).sort();
+	const documentation = ['README.md', ...await files('docs')];
+	const expected = [...native, ...documentation, ...await files('dist'), 'LICENSE', 'package.json'].map((path) => `package/${path}`).sort();
 	assert.deepEqual(actual, expected);
-	for (const path of native) {
+	for (const required of [
+		'android/src/main/java/dev/tileflow/reactnative/AdmissionProviderLease.kt',
+		'android/src/main/java/dev/tileflow/reactnative/AdmissionBootstrap.kt',
+		'ios/TFAdmissionBootstrap.mm', 'ios/TFAdmissionInstallation.mm',
+		'ios/Tests/TFAdmissionRollbackTests.mm', 'docs/native-admission.md',
+	]) assert.ok(actual.includes(`package/${required}`), required);
+	assert.equal(actual.some((path) => path.startsWith('package/harness/')), false);
+	for (const path of [...native, ...documentation]) {
 		const {stdout: packed} = await exec('tar', ['-xOzf', archive, `package/${path}`], {maxBuffer: 4 * 1024 * 1024});
 		assert.equal(packed, await readFile(new URL(path, root), 'utf8'), path);
 	}

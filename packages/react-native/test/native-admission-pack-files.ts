@@ -1,5 +1,6 @@
 export const nativePackageFiles = [
 	'dist',
+	'docs',
 	'android/build.gradle',
 	'android/src',
 	'ios/*.h',

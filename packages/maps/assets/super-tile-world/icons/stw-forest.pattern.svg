@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" shape-rendering="crispEdges">
+  <title>Forest.Pattern</title>
+  <path d="M22 13H32V16H37V21H40V30H37V34H32V37H23V34H18V30H16V21H19V16H22Z" fill="#3AA965"/><path d="M22 17H29V20H23V26H20V21H22Z" fill="#96D875"/><rect x="25" y="25" width="2" height="4" fill="#28734F"/><rect x="31" y="25" width="2" height="4" fill="#28734F"/><path d="M84 69H94V72H99V77H102V86H99V90H94V93H85V90H80V86H78V77H81V72H84Z" fill="#3AA965"/><path d="M84 73H91V76H85V82H82V77H84Z" fill="#96D875"/><rect x="87" y="81" width="2" height="4" fill="#28734F"/><rect x="93" y="81" width="2" height="4" fill="#28734F"/>
+</svg>

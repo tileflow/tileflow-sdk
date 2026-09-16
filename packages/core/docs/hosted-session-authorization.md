@@ -48,6 +48,9 @@ import {
   baedeker,
   baedekerFonts,
   baedekerIcons,
+  civica,
+  civicaFonts,
+  civicaIcons,
   cyberpunk,
   cyberpunkFonts,
   cyberpunkIcons,
@@ -68,18 +71,24 @@ import {
   streets,
   streetsIcons,
   streetsThemes,
+  superTileWorld,
+  superTileWorldFonts,
+  superTileWorldIcons,
   verdant,
   verdantIcons,
 } from '@tileflow/maps';
 ```
 
-All ten official maps are complete standalone maps. The sole semantic compiler is implicit; none
+All official maps are complete standalone maps. The sole semantic compiler is implicit; none
 imports or extends another official map, and each declares its own icon directory.
 Streets declares `[streetsIcons]` and exposes its complete coordinated appearances as
 `streetsThemes.light` and `streetsThemes.dark`; image tokens select the matching sidewalk pattern
 without changing the asset collection. Baedeker declares `[baedekerIcons]`, whose eight original
 patterns support its travel-atlas design, and `[baedekerFonts]`, its own Cormorant Garamond
-directory; it derives contours in the browser from unpackaged Mapterhorn terrain tiles. Cyberpunk
+directory; it derives contours in the browser from unpackaged Mapterhorn terrain tiles. Cívica
+declares `[civicaIcons]` for its original civic-print patterns and destination artwork and
+`[civicaFonts]` for its packaged lettering. Super Tile World declares `[superTileWorldIcons]` and
+`[superTileWorldFonts]` for its pixel-art sprites, patterns, and lettering. Cyberpunk
 declares `[cyberpunkIcons]` and `[cyberpunkFonts]`; Matrix
 independently declares `[matrixIcons]` and `[matrixFonts]`. San Francisto declares
 `[sanFrancistoIcons]` for its four technical hatches and schematic POI node, derives contours from

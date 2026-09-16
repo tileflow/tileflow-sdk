@@ -1,7 +1,7 @@
 # Third-party notices
 
 Except for the Streets POI pictograms documented below, the official themed Streets, Baedeker,
-Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant, and San Francisto icon and pattern
+Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant, San Francisto, Cívica, and Super Tile World icon and pattern
 artwork published under `assets/` is original Tileflow artwork.
 
 This file is shipped with `@tileflow/maps` so future third-party assets have a stable place for
@@ -138,3 +138,66 @@ respective `assets/cyberpunk/fonts/` and `assets/matrix/fonts/` directories. Oxa
 2019 The Oxanium Project Authors and is distributed under the SIL Open Font License 1.1 included
 beside both font copies. The canonical license filename consumed by Tileflow's generic font
 pipeline is `LICENSE.txt`.
+
+## Cívica artwork and fonts
+
+The `civica` map, its five SVG patterns, and its eleven SVG POI pictograms are original Tileflow
+code and artwork. Its civic print-atlas vocabulary takes broad visual inspiration from the user's
+[Inside the Belt Way — Washington DC reference](https://www.etsy.com/listing/990932175/inside-the-belt-way-washington-dc).
+This package does not include or redistribute the reference map, geography, composition,
+lettering, symbols, images, or other artwork. Cívica declares its own assets and does not import
+another official map's artwork or font directories.
+
+Cívica includes five unmodified upstream font files under `assets/civica/fonts/`:
+
+- `DMSerifText-Regular.ttf` and `DMSerifText-Italic.ttf` are from the official Google Fonts
+  [DM Serif Text directory](https://github.com/google/fonts/tree/2536d8f1f906c7bb1f4b1d09ac073109dc6a7cd9/ofl/dmseriftext),
+  pinned to revision `2536d8f1f906c7bb1f4b1d09ac073109dc6a7cd9`. Their complete upstream
+  SIL Open Font License 1.1 notice is preserved at `assets/civica/fonts/OFL.txt`.
+- `BarlowSemiCondensed-Regular.ttf` and `BarlowSemiCondensed-SemiBold.ttf` are from the official
+  Google Fonts [Barlow Semi Condensed directory](https://github.com/google/fonts/tree/3218ae2acc5bce7ccd97c477965b5b4094241fb0/ofl/barlowsemicondensed),
+  pinned to revision `3218ae2acc5bce7ccd97c477965b5b4094241fb0`. Their complete upstream
+  SIL Open Font License 1.1 notice is preserved at `assets/civica/fonts/LICENSE-BarlowSemiCondensed.txt`.
+- `NotoSans-Regular.ttf` is from the official Noto
+  [static hinted Noto Sans directory](https://github.com/notofonts/noto-fonts/tree/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSans),
+  pinned to revision `c971829a87e7920f960e7277c3dafd9bedd3c601`. Its complete upstream
+  SIL Open Font License 1.1 notice is preserved at `assets/civica/fonts/LICENSE-NotoSans.txt`.
+
+`assets/civica/fonts/LICENSE.txt` combines all three complete upstream notices and licenses with
+component filenames and source revisions for Tileflow's generic font preparation pipeline.
+`assets/civica/fonts/README.md` records individual pinned source links and verified OpenType full
+names. No font file has been subsetted, renamed internally, or modified.
+
+## Super Tile World artwork and fonts
+
+The `superTileWorld` map, sixteen SVG sprites, and seven SVG patterns are original Tileflow code
+and artwork. Its pixel-art overworld takes visual inspiration from _Super Mario World_. This
+package includes no extracted game sprites, Nintendo logo, source map, or downloaded icon artwork.
+Super Mario World is a Nintendo trademark; this independent showcase has no affiliation with or
+endorsement from Nintendo. The asset research references are recorded in
+`assets/super-tile-world/README.md`.
+
+Super Tile World packages three unmodified static upstream font files and one renamed derivative in its own
+`assets/super-tile-world/fonts/` directory:
+
+- `PixelifySans-Regular.ttf` and `PixelifySans-SemiBold.ttf` are from the official
+  [Pixelify Sans project](https://github.com/eifetx/Pixelify-Sans/tree/39df74aba80df8157546034b878e8be1eb565ced),
+  pinned to revision `39df74aba80df8157546034b878e8be1eb565ced`. Its complete SIL Open Font
+  License 1.1 notice is preserved as `LICENSE-PixelifySans.txt`.
+- `TileWorldArcade-Regular.ttf` is a name-table-only derivative of `PressStart2P-Regular.ttf`
+  from the official Google Fonts
+  [Press Start 2P directory](https://github.com/google/fonts/tree/e06fe11c39051bddaef73ec338a9d1c8175723f1/ofl/pressstart2p),
+  pinned to revision `e06fe11c39051bddaef73ec338a9d1c8175723f1`. The derivative is named
+  “Tile World Arcade” to satisfy the upstream reserved-font-name requirement and to give browser
+  canvas rendering a compatible family name. Glyph outlines, metrics, and character mappings
+  remain unchanged. Its complete SIL Open Font License 1.1 notice, including the upstream
+  reserved font name, is preserved as `LICENSE-PressStart2P.txt`.
+- `NotoSans-Regular.ttf` is from the official Noto
+  [static hinted Noto Sans directory](https://github.com/notofonts/noto-fonts/tree/c971829a87e7920f960e7277c3dafd9bedd3c601/hinted/ttf/NotoSans),
+  pinned to revision `c971829a87e7920f960e7277c3dafd9bedd3c601`. Its complete SIL Open Font
+  License 1.1 notice is preserved as `LICENSE-NotoSans.txt`.
+
+`LICENSE.txt` combines all three complete font-family notices and licenses for the generic local
+font preparation pipeline. The adjacent `fonts/README.md` records the pinned source files,
+verified OpenType full names, and the derivative's exact name-table changes. No font is subsetted;
+Pixelify Sans and Noto Sans remain unmodified upstream files.

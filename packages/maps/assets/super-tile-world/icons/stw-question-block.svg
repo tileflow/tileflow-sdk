@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" shape-rendering="crispEdges">
+  <title>Question Block</title>
+  <path d="M8 8H38V40H8V38H6V10H8Z" fill="#FFDA67" stroke="#28345C" stroke-width="2" stroke-linejoin="miter"/><path d="M8 36H35V10H39V40H8Z" fill="#DD9148"/><rect x="10" y="10" width="23" height="2" fill="#FFF7D4"/><rect x="9" y="13" width="2" height="19" fill="#FFF7D4"/><rect x="10" y="14" width="2" height="2" fill="#28345C"/><rect x="33" y="14" width="2" height="2" fill="#28345C"/><rect x="10" y="32" width="2" height="2" fill="#28345C"/><rect x="33" y="32" width="2" height="2" fill="#28345C"/><path d="M17 15H27V17H29V23H25V27H21V23H24V19H20V21H16V17H17Z" fill="#28345C"/><rect x="21" y="29" width="4" height="4" fill="#28345C"/>
+</svg>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+  <title>Cívica lodging</title>
+  <desc>Original compact bed pictogram.</desc>
+  <path d="M6.5 8.5v12M21.5 14v6.5M7 17.5h14" fill="none" stroke="#F7F3E8" stroke-width="3.4" stroke-linecap="round"/>
+  <path d="M6.5 8.5v12M21.5 14v6.5M7 17.5h14" fill="none" stroke="#64716D" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="10" cy="12" r="2.1" fill="#64716D" stroke="#F7F3E8" stroke-width="1.4" paint-order="stroke fill"/>
+  <path d="M13.5 10.5h5a3 3 0 0 1 3 3V16h-8Z" fill="#64716D" stroke="#F7F3E8" stroke-width="1.4" paint-order="stroke fill"/>
+</svg>

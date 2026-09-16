@@ -1,5 +1,100 @@
 # Map designs and assets
 
+## superTileWorld
+
+`superTileWorld` is an independent pixel-art showcase named “Super Tile World”, inspired by the
+playful overworld of Super Mario World. It translates real geographic features into a game board:
+raised green landscapes, layered blue shores, golden routes, block-like buildings, and destination
+sprites. Transit stations become warp pipes, landmarks become castles or stars, and everyday
+places use a coordinated vocabulary of mushrooms, question blocks, coins, hearts, and flags.
+Its own semantic render stacks define the composition; it does not import an existing map or
+post-process screenshots. The normal World geography remains interactive at every zoom.
+
+The map declares `[superTileWorldIcons]` for sixteen original SVG sprites and seven repeating
+pixel patterns, plus `[superTileWorldFonts]` for local Pixelify Sans Regular and SemiBold detail
+lettering, Tile World Arcade Regular display lettering, and Noto Sans Regular fallback. The small-scale world, district board,
+and close street views use different geometry and label densities. The result intentionally
+prioritizes an expressive showcase over navigation. Asset sources and licenses are documented in
+`assets/super-tile-world/README.md` and `THIRD_PARTY_NOTICES.md`.
+
+| Zoom  | Showcase treatment                                                                            |
+| ----- | --------------------------------------------------------------------------------------------- |
+| 0–9   | Pixel display lettering, broad colored landscapes, forest tiles, and layered shores.          |
+| 10–14 | City castles and settlement nodes, dotted golden routes, raised gardens, and district blocks. |
+| 15–16 | Building footprints, street labels, and selected destination sprites.                         |
+| 17–19 | Brick roof texture, pedestrian coin trails, point trees, and supporting destinations.         |
+| 20+   | Address detail and larger close-view lettering; decorative coin trails retire.                |
+
+Platform depth uses ordered, translated 2D fills rather than terrain or building extrusion.
+Optional tree sprites inherit the vegetation anchor, so sources without tree capability omit
+them. POI sprites and names share collision placement. Their selectors retain category,
+filter ranks 0–5, size ranks 0–16, and the producer's minimum zoom. Before z17, featured categories
+admit filter ranks up to 2 and supporting categories stop at 1. At z17, all categories admit ranks
+up to 3; from z18 they admit ranks up to 5, allowing ordinary shops and food destinations to join
+the close street view. Generic transit facilities enter at z18, while real stations can appear earlier. Unranked or invalid candidates are not turned into
+fictional destinations. Airports have a separate airship label, and small secondary culture POIs
+wait until z17. Every decision follows schema-bound fields rather than geographic exceptions.
+
+## civica
+
+`civica` is a self-contained civic print design named “Cívica”. Pale paper, warm stone blocks,
+olive parkland, blue water, and vermilion landmarks give cities the character of an illustrated
+wall map. Broad urban shapes lead at overview scale; solid building masses, cream streets, and
+selected destinations describe the city. Large italic serif park titles and blue uppercase station
+names anchor the district drawing; smaller parks keep a quieter italic size, and condensed captions
+provide supporting detail. Fine paths and sparse landscape textures enter at closer zooms.
+It declares its complete World data selection,
+modules, render stacks, and theme directly,
+owns its patterns and symbols through `[civicaIcons]`, and selects its own packaged DM Serif Text
+Regular and Italic lettering, Barlow Semi Condensed detail labels, and Noto Sans Regular fallback
+through `[civicaFonts]`. Its graphic direction was informed by the
+[Inside the Beltway Washington DC print](https://www.etsy.com/listing/990932175/inside-the-belt-way-washington-dc).
+The map definition and vector artwork are original Tileflow work; no source map, image pixels,
+illustrations, or third-party style are included.
+
+Cívica changes its drawing and label hierarchy with scale:
+
+| Zoom  | Cartographic treatment                                                                                        |
+| ----- | ------------------------------------------------------------------------------------------------------------- |
+| 0–6   | Continental and country lettering over broad land and water shapes.                                           |
+| 7–11  | Regional roads, settlements, and landscape areas; global landcover fades out by z10.                          |
+| 12–14 | District names, broad pedestrian promenades, and generalized footprints from z13; eligible POIs use rank 0–1. |
+| 15–17 | Solid building masses and street names; POIs admit rank 2 from z15 and featured rank 3 from z17.              |
+| 18–19 | Fine paths and their names enter progressively; trees and sparse botanical textures begin at z19.             |
+| 20+   | Address numbers, sidewalks, and quiet industrial texture complete the close street view.                      |
+
+Buildings, park parcels, and water bodies have no outlines. Ordinary surface streets use one cream
+stroke, with broader widths at city and neighborhood scales to separate the printed blocks.
+Motorway, trunk, and bridge casings retain the main transport hierarchy. Pedestrian areas
+and roundabouts omit their extra outline, and tunnel hatches are disabled. Ordinary fine path lines
+are solid: cycleways begin at z17, footways and tracks at z17.5, paths at z18, and steps at z19. The
+corresponding labels wait until z18–20. Water remains a flat color at every zoom, and tree points
+have no stroke.
+
+The red building plate selects civic buildings directly and destination buildings only when
+`importanceTier` is at least 3. Tier-2 destinations use darker gray; lower-ranked destinations and
+ordinary buildings share the same warm-gray fill. Building height never determines landmark color.
+The generalized footprint pass ends at z15 with the same opacity at which the
+detail pass begins.
+
+POI symbols and names form one collision unit. Each category retains its own filter, and candidates
+must carry the schema-bound `poiCategory`, `poiFilterRank`, and `poiSizeRank` fields (`category`,
+`filter_rank`, and `size_rank` in World V1). Size ranks must be 0–16, filter ranks must be
+nonnegative, and the producer's `minZoom` (`min_zoom`) is honored when present. Landmarks, culture,
+parks, transport, and medical destinations can reach rank 3; other categories stop at rank 2.
+Food, retail, visitor amenities, and lodging begin at z17.5. Generic `public_transit_facility`
+POIs also wait until z17.5, while train stations retain their earlier schedule. Culture, education,
+public-service, and medical POIs with filter rank 2 or higher and size rank 16 enter at z17.5;
+rank-1 destinations and other valid size ranks retain their earlier schedule. These rules preserve
+major stations even when their size rank is 16 and leave room for parks and selected institutions
+at district scale. They use source categories and ranks without place-name or location exceptions.
+Park titles use DM Serif Text Italic, with larger type for size ranks 0–4. Transport uses Barlow
+Semi Condensed SemiBold in uppercase; supporting captions use Barlow Semi Condensed Regular.
+Classic OpenMapTiles data without those category and rank fields renders the base map without
+POIs; Cívica does not infer or retrofit those fields. All five font faces are packaged locally:
+DM Serif Text Regular and Italic, Barlow Semi Condensed Regular and SemiBold, and the Noto Sans
+Regular fallback.
+
 ## baedeker
 
 `baedeker` is a self-contained travel-atlas and town-plan design with open warm paper, fine coral
@@ -160,5 +255,5 @@ font list when the property is omitted. Declaring a list replaces the inherited 
 directory wins for an exact duplicate ID, and `[]` selects no directories.
 
 `@tileflow/maps` has a peer dependency on `@tileflow/core`. Core owns the map language and compiler;
-this package owns the official map definitions, icon and pattern sources, Cyberpunk, Matrix, and
-Siegfried fonts, and their notices. Core never depends on this package.
+this package owns the official map definitions, icon and pattern sources, Baedeker, Cívica,
+Cyberpunk, Matrix, Siegfried, and Super Tile World fonts, and their notices. Core never depends on this package.

@@ -1,15 +1,15 @@
 # Official map assets
 
 These directories contain the package-owned sources required by the official Streets, Baedeker,
-Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant, and San Francisto maps. Their SVG icons and
+Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant, San Francisto, Cívica, and Super Tile World maps. Their SVG icons and
 patterns live under each map's `icons/` directory. Streets includes a pinned CC0 subset of Maki
 pictograms inside Tileflow-authored circular POI markers; its provenance is recorded in
 `../THIRD_PARTY_NOTICES.md` and the upstream license is kept at `streets/LICENSE-MAKI.txt`. A map
 refers to those directories through the exported `streetsIcons`, `baedekerIcons`, `ferrarisIcons`,
 `haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`, `verdantIcons`,
-and `sanFrancistoIcons` descriptors. Baedeker, Cyberpunk, Matrix, and Siegfried refer to their own
-packaged font directories through `baedekerFonts`, `cyberpunkFonts`, `matrixFonts`, and
-`siegfriedFonts`; the files and their `LICENSE.txt` remain beside the map that owns them.
+`sanFrancistoIcons`, `civicaIcons`, and `superTileWorldIcons` descriptors. Baedeker, Cívica, Cyberpunk, Matrix, Siegfried, and Super Tile World refer to their own
+packaged font directories through `baedekerFonts`, `civicaFonts`, `cyberpunkFonts`, `matrixFonts`, and
+`siegfriedFonts`, and `superTileWorldFonts`; the files and their `LICENSE.txt` remain beside the map that owns them.
 
 The seven `road-shield-*` SVGs are original Tileflow artwork: a deliberately generic neutral,
 colored-rectangle, and neutral-circle vocabulary. They do not reproduce a national sign template
@@ -71,6 +71,22 @@ technical symbol: `san-francisto-blueprint-grid`, `san-francisto-building-hatch`
 Together they provide drawing-paper grid, building, landscape, and water notation plus a schematic
 POI marker without importing another official map's sprite assets.
 
+The Cívica directory contains five original transparent patterns: `civica-paper-grain`,
+`civica-park-groves`, `civica-orchard`, `civica-water-lines`, and `civica-industrial-hatch`.
+Eleven original `civica-poi-*` pictograms provide civic, cultural, garden, transport, and everyday
+destination glyphs with fine ivory clearances and compact paper squares for transport symbols.
+Small marks and a quiet secondary point preserve the map's label hierarchy. The map also owns its packaged fonts; artwork and font
+provenance are recorded in `civica/README.md` and `civica/fonts/README.md`.
+
+The Super Tile World directory contains sixteen original pixel-art SVG sprites and seven
+intrinsic-size patterns for grass, water, forest, brick, sand, meadow, and farmland. Its `stw-*`
+asset vocabulary supports a game-board interpretation of real geography without importing another
+map's sprites. Pixelify Sans Regular and SemiBold supply detail lettering; Tile World Arcade Regular
+supplies display lettering, with Noto Sans Regular as a local fallback. Tile World Arcade is a
+name-table-only derivative of Press Start 2P, with its glyphs preserved and a distinct family name
+for reliable browser canvas rendering. All four font faces and their complete OFL notices are packaged
+locally. See `super-tile-world/README.md` and `super-tile-world/fonts/README.md`.
+
 `@tileflow/dev` resolves each package descriptor, verifies that its real path remains inside the
 installed package, and compiles the complete ordered directory composition into deterministic
 MapLibre sprite atlases. `<id>.<ext>` publishes an icon as `<id>` and
@@ -90,7 +106,10 @@ Verdant, and San Francisto each declare the canonical Tileflow glyph URL with ex
 `Noto Sans Regular` and `Noto Sans Bold` stacks. Cyberpunk and Matrix name `Oxanium Medium` and
 `Oxanium SemiBold`, while Baedeker and Siegfried each name `Cormorant Garamond Regular`,
 `Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic` from their respective packaged
-directories. The compatibility URL
+directories. Cívica packages `DM Serif Text Regular` and `DM Serif Text Italic` for its place
+and water lettering, `Barlow Semi Condensed Regular` and `Barlow Semi Condensed SemiBold` for
+roads and destinations, and `Noto Sans Regular` as an explicit local fallback. It declares only local fonts because the public contract makes local
+font directories and remote glyph providers mutually exclusive. The compatibility URL
 is canonical but not content-addressed; responses
 revalidate and do not provide an exact-byte receipt. Reproducible official PBF delivery will use the
 separate `/base/<assetSetSha256>/glyphs/...` contract once Hosted has verified and published that

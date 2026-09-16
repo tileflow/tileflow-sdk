@@ -11,12 +11,20 @@ export function createMapLifecycle(create: () => Owner, retire: (owner: Owner) =
   const listeners = new Set<() => void>();
   const notify = () => {
     for (const listener of [...listeners]) {
-      try { listener(); } catch { /* Subscribers do not own native cleanup. */ }
+      try {
+        listener();
+      } catch {
+        /* Subscribers do not own native cleanup. */
+      }
     }
   };
   return Object.freeze({
-    getSnapshot(): Snapshot { return active?.owner.getSnapshot() ?? empty; },
-    getSourceState() { return active?.owner.getSourceState(); },
+    getSnapshot(): Snapshot {
+      return active?.owner.getSnapshot() ?? empty;
+    },
+    getSourceState() {
+      return active?.owner.getSourceState();
+    },
     subscribe(listener: () => void): () => void {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -26,7 +34,9 @@ export function createMapLifecycle(create: () => Owner, retire: (owner: Owner) =
       const owner = create();
       const epoch = {owner, release: () => undefined as void};
       active = epoch;
-      epoch.release = owner.subscribe(() => { if (active === epoch) notify(); });
+      epoch.release = owner.subscribe(() => {
+        if (active === epoch) notify();
+      });
       notify();
       let closed = false;
       return () => {
@@ -38,11 +48,23 @@ export function createMapLifecycle(create: () => Owner, retire: (owner: Owner) =
         notify();
       };
     },
-    update(props: MapProps): void { active?.owner.update(props); },
-    rootMounted(key: string, root: number): void { active?.owner.rootMounted(key, root); },
-    nativeStyleLoaded(key: string, root: number): void { active?.owner.nativeStyleLoaded(key, root); },
-    layoutChanged(key: string): void { active?.owner.layoutChanged(key); },
-    background(): void { active?.owner.background(); },
-    resume(): void { active?.owner.resume(); },
+    update(props: MapProps): void {
+      active?.owner.update(props);
+    },
+    rootMounted(key: string, root: number): void {
+      active?.owner.rootMounted(key, root);
+    },
+    nativeStyleLoaded(key: string, root: number): void {
+      active?.owner.nativeStyleLoaded(key, root);
+    },
+    layoutChanged(key: string): void {
+      active?.owner.layoutChanged(key);
+    },
+    background(): void {
+      active?.owner.background();
+    },
+    resume(): void {
+      active?.owner.resume();
+    },
   });
 }

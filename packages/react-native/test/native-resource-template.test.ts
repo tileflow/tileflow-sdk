@@ -35,7 +35,8 @@ test('tile expansions preserve origin path query class and tileset identity', ()
     url.replace('revision=3', 'revision=4'),
     `${url}&map=other`,
     `${url}#fragment`,
-  ]) assert.equal(match(tile, candidate), undefined);
+  ])
+    assert.equal(match(tile, candidate), undefined);
 });
 
 test('glyph expansions cannot select another font stack or arbitrary byte ranges', () => {
@@ -48,7 +49,8 @@ test('glyph expansions cannot select another font stack or arbitrary byte ranges
     url.replace('0-255', '0-511'),
     url.replace('0-255', '00-255'),
     url.replace('Regular', 'Regular%2F..'),
-  ]) assert.equal(match(glyph, candidate), undefined);
+  ])
+    assert.equal(match(glyph, candidate), undefined);
 });
 
 test('templates cannot change authorities or introduce unknown expansion grammars', () => {
@@ -64,7 +66,8 @@ test('templates cannot change authorities or introduce unknown expansion grammar
     {...glyph, fontStacks: ['x'.repeat(257)]},
     {...glyph, template: undefined},
     {...tile, fontStacks: ['Noto']},
-  ]) assert.throws(() => normalizeNativeResources([rule as NativeAdmissionResource]));
+  ])
+    assert.throws(() => normalizeNativeResources([rule as NativeAdmissionResource]));
 });
 
 test('overlapping identities fail closed instead of choosing a scope by array order', () => {
@@ -72,14 +75,19 @@ test('overlapping identities fail closed instead of choosing a scope by array or
   for (const rules of [
     [tile, {url, scope: 'tile', tilesetId: 'other'}],
     [{url, scope: 'tile', tilesetId: 'other'}, tile],
-  ]) assert.throws(() => matchNativeResource(normalizeNativeResources(rules as NativeAdmissionResource[]), url));
+  ])
+    assert.throws(() =>
+      matchNativeResource(normalizeNativeResources(rules as NativeAdmissionResource[]), url),
+    );
 });
 
 test('repeated slots must agree and reserved context never participates in catalog identity', () => {
   const repeated = {...tile, url: 'https://tiles.example.test/{z}/{x}/{x}/{y}.pbf'};
   assert.ok(match(repeated, 'https://tiles.example.test/2/3/3/1.pbf'));
   assert.equal(match(repeated, 'https://tiles.example.test/2/3/2/1.pbf'), undefined);
-  assert.throws(() => normalizeNativeResources([{...tile, url: `${tile.url}&__tf_native_context=x`}]));
+  assert.throws(() =>
+    normalizeNativeResources([{...tile, url: `${tile.url}&__tf_native_context=x`}]),
+  );
 });
 
 test('catalog templates are bounded immutable snapshots, not native admission counters', () => {
@@ -89,7 +97,12 @@ test('catalog templates are bounded immutable snapshots, not native admission co
   assert.deepEqual(resources[0]!.fontStacks, glyph.fontStacks);
   assert.ok(Object.isFrozen(resources));
   assert.ok(Object.isFrozen(resources[0]!.fontStacks));
-  assert.throws(() => normalizeNativeResources(Array.from({length: 129}, (_, index) => ({
-    url: `https://assets.example.test/sprite-${index}.png`, scope: 'sprite',
-  }))));
+  assert.throws(() =>
+    normalizeNativeResources(
+      Array.from({length: 129}, (_, index) => ({
+        url: `https://assets.example.test/sprite-${index}.png`,
+        scope: 'sprite',
+      })),
+    ),
+  );
 });

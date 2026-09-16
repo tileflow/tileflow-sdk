@@ -64,14 +64,18 @@ test('concurrent Maps share installation only and each retains its own context',
   assert.equal(installations.length, 1);
   assert.equal(installations[0]!.requests.length, 2);
   const retired: string[] = [];
-  installations[0]!.requests[0]!.resolve(context('one', async () => {
-    retired.push('one');
-    return acknowledged();
-  }));
-  installations[0]!.requests[1]!.resolve(context('two', async () => {
-    retired.push('two');
-    return acknowledged();
-  }));
+  installations[0]!.requests[0]!.resolve(
+    context('one', async () => {
+      retired.push('one');
+      return acknowledged();
+    }),
+  );
+  installations[0]!.requests[1]!.resolve(
+    context('two', async () => {
+      retired.push('two');
+      return acknowledged();
+    }),
+  );
   assert.notEqual(await first.ready, await second.ready);
   await first.retire();
   assert.deepEqual(retired, ['one']);
@@ -88,7 +92,9 @@ test('retirement during registration waits for and retires the late native conte
   await Promise.resolve();
   const failed = assert.rejects(first.ready, {code: 'NATIVE_ADMISSION_CANCELLED'});
   let settled = false;
-  const retirement = first.retire().then(() => { settled = true; });
+  const retirement = first.retire().then(() => {
+    settled = true;
+  });
   await failed;
   assert.equal(settled, false);
   const ack = barrier<Readonly<{retired: true}>>();
@@ -107,10 +113,12 @@ test('a failed context acknowledgement never disposes a neighboring Map', async 
   const second = shared.open(input);
   await Promise.resolve();
   let calls = 0;
-  installations[0]!.requests[0]!.resolve(context('one', async () => {
-    if (++calls === 1) throw new Error('Untrusted native details.');
-    return acknowledged();
-  }));
+  installations[0]!.requests[0]!.resolve(
+    context('one', async () => {
+      if (++calls === 1) throw new Error('Untrusted native details.');
+      return acknowledged();
+    }),
+  );
   installations[0]!.requests[1]!.resolve(context('two', acknowledged));
   await Promise.all([first.ready, second.ready]);
   await assert.rejects(first.retire(), {code: 'NATIVE_ADMISSION_UNAVAILABLE'});

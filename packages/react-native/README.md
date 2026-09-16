@@ -56,10 +56,7 @@ There is no implicit native manifest discovery. `theme` accepts one concrete pub
 The existing mount-stable camera contract is preserved. Use either an initial camera seed or complete controlled camera ownership for the lifetime of one mounted Map:
 
 ```tsx
-<Map
-  source={source}
-  initialView={{center: [-9.14, 38.72], zoom: 11}}
-/>
+<Map source={source} initialView={{center: [-9.14, 38.72], zoom: 11}} />
 ```
 
 or:

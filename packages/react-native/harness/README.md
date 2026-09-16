@@ -27,14 +27,14 @@ The source descriptors must use explicit manifest URLs. Fixture manifests and th
 
 The returned `Screen` mounts the two Maps. The remaining controls are deterministic source-checkout seams:
 
-| Control | Purpose |
-| --- | --- |
-| `setFirstTheme(theme)` | Drive a concrete/system theme transaction on the same mounted Map. A fixture theme may intentionally fail so rollback can be observed. |
-| `updateFirstSource(source)` | Change the logical source descriptor while keeping the React slot, exercising source replacement ownership. |
-| `replaceFirstSource(source)` | Replace the first React Map instance with a new key and source. |
-| `setFirstView(view)` | Drive the controlled camera contract. Gesture callbacks update the same controlled view so post-commit settlement can occur. |
-| `removeFirst()` / `restoreFirst()` | Exercise teardown and remount while the second Map stays live. |
-| `stop()` | Remove the harness snapshot and release its React subscriptions. The host must still unmount `Screen` to await component teardown normally. |
+| Control                            | Purpose                                                                                                                                     |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setFirstTheme(theme)`             | Drive a concrete/system theme transaction on the same mounted Map. A fixture theme may intentionally fail so rollback can be observed.      |
+| `updateFirstSource(source)`        | Change the logical source descriptor while keeping the React slot, exercising source replacement ownership.                                 |
+| `replaceFirstSource(source)`       | Replace the first React Map instance with a new key and source.                                                                             |
+| `setFirstView(view)`               | Drive the controlled camera contract. Gesture callbacks update the same controlled view so post-commit settlement can occur.                |
+| `removeFirst()` / `restoreFirst()` | Exercise teardown and remount while the second Map stays live.                                                                              |
+| `stop()`                           | Remove the harness snapshot and release its React subscriptions. The host must still unmount `Screen` to await component teardown normally. |
 
 The observer reports only the Map label and bounded public event kind/status. It never receives request URLs, raw native events, exception causes, credential material, grant material or renderer handles.
 

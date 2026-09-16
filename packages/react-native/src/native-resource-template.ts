@@ -26,10 +26,18 @@ function compile(resource: NativeAdmissionResource): Compiled {
   let pattern = '^';
   for (const match of resource.url.matchAll(/\{([a-z0-9-]+)\}/gu)) {
     const name = match[1]!;
-    if (!Object.hasOwn(slots, name) || names.length >= 16 || (names.length > 0 && match.index === cursor)) {
+    if (
+      !Object.hasOwn(slots, name) ||
+      names.length >= 16 ||
+      (names.length > 0 && match.index === cursor)
+    ) {
       throw invalid();
     }
-    if (resource.template === 'glyphs' ? !['fontstack', 'range'].includes(name) : ['fontstack', 'range'].includes(name)) {
+    if (
+      resource.template === 'glyphs'
+        ? !['fontstack', 'range'].includes(name)
+        : ['fontstack', 'range'].includes(name)
+    ) {
       throw invalid();
     }
     pattern += escape(resource.url.slice(cursor, match.index)) + `(${slots[name]})`;
@@ -42,7 +50,9 @@ function compile(resource: NativeAdmissionResource): Compiled {
 }
 
 /** Called only after Core has validated the URL, including its fixed authority. */
-export function normalizeNativeTemplate(resource: NativeAdmissionResource): Partial<NativeAdmissionResource> {
+export function normalizeNativeTemplate(
+  resource: NativeAdmissionResource,
+): Partial<NativeAdmissionResource> {
   if (resource.template === undefined) {
     if (resource.fontStacks !== undefined || /[{}]/u.test(resource.url)) throw invalid();
     return {};
@@ -55,13 +65,24 @@ export function normalizeNativeTemplate(resource: NativeAdmissionResource): Part
   }
   const stacks = resource.fontStacks;
   if (
-    resource.scope !== 'glyph' || !Array.isArray(stacks) || stacks.length === 0 || stacks.length > 16 ||
-    !resource.url.includes('{fontstack}') || !resource.url.includes('{range}') ||
-    stacks.some((value) => typeof value !== 'string' || value.length === 0 || value.length > 256 ||
-      value !== value.trim() || /[\p{Cc}\\/?#%&=]|tf_native_|tf_public_/iu.test(value) ||
-      value.split(',').some((part) => part.length === 0 || part !== part.trim())) ||
+    resource.scope !== 'glyph' ||
+    !Array.isArray(stacks) ||
+    stacks.length === 0 ||
+    stacks.length > 16 ||
+    !resource.url.includes('{fontstack}') ||
+    !resource.url.includes('{range}') ||
+    stacks.some(
+      (value) =>
+        typeof value !== 'string' ||
+        value.length === 0 ||
+        value.length > 256 ||
+        value !== value.trim() ||
+        /[\p{Cc}\\/?#%&=]|tf_native_|tf_public_/iu.test(value) ||
+        value.split(',').some((part) => part.length === 0 || part !== part.trim()),
+    ) ||
     new Set(stacks).size !== stacks.length
-  ) throw invalid();
+  )
+    throw invalid();
   compile(resource);
   return {template: 'glyphs', fontStacks: Object.freeze([...stacks])};
 }
@@ -86,15 +107,22 @@ function expansionMatches(resource: NativeAdmissionResource, url: string): boole
   if (z !== undefined && Number(z) > 30) return false;
   for (const name of ['x', 'y']) {
     const value = values.get(name);
-    if (value !== undefined && Number(value) >= 2 ** (z === undefined ? 30 : Number(z))) return false;
+    if (value !== undefined && Number(value) >= 2 ** (z === undefined ? 30 : Number(z)))
+      return false;
   }
   const quadkey = values.get('quadkey');
   if (quadkey !== undefined && z !== undefined && quadkey.length !== Number(z)) return false;
   const box = values.get('bbox-epsg-3857');
   if (box !== undefined) {
     const [west, south, east, north] = box.split(',').map(Number);
-    if ([west, south, east, north].some((value) => !Number.isFinite(value) || Math.abs(value!) > 20037508.343) ||
-      west! >= east! || south! >= north!) return false;
+    if (
+      [west, south, east, north].some(
+        (value) => !Number.isFinite(value) || Math.abs(value!) > 20037508.343,
+      ) ||
+      west! >= east! ||
+      south! >= north!
+    )
+      return false;
   }
   const range = values.get('range');
   if (range !== undefined) {
@@ -105,7 +133,9 @@ function expansionMatches(resource: NativeAdmissionResource, url: string): boole
   if (stack !== undefined) {
     try {
       if (!resource.fontStacks?.includes(decodeURIComponent(stack))) return false;
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   }
   return true;
 }
@@ -116,14 +146,20 @@ export function matchNativeResource(
   url: string,
 ): NativeAdmissionResource | undefined {
   try {
-    if (url.length > 2048 || resolveTileflowNativeManifestUrl(url) !== url || /[{}]/u.test(url)) return undefined;
-  } catch { return undefined; }
+    if (url.length > 2048 || resolveTileflowNativeManifestUrl(url) !== url || /[{}]/u.test(url))
+      return undefined;
+  } catch {
+    return undefined;
+  }
   let found: NativeAdmissionResource | undefined;
   for (const resource of resources) {
     if (!expansionMatches(resource, url)) continue;
     if (found) throw invalid();
-    found = Object.freeze({url, scope: resource.scope,
-      ...(resource.tilesetId === undefined ? {} : {tilesetId: resource.tilesetId})});
+    found = Object.freeze({
+      url,
+      scope: resource.scope,
+      ...(resource.tilesetId === undefined ? {} : {tilesetId: resource.tilesetId}),
+    });
   }
   return found;
 }

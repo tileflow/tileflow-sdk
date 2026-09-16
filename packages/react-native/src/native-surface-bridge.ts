@@ -7,7 +7,11 @@ const transport = createNativeSurfaceTransport(
   () => NativeModules.TileflowNativeSurface,
   (listener) => {
     const module = NativeModules.TileflowNativeSurface;
-    if (!module || typeof module.addListener !== 'function' || typeof module.removeListeners !== 'function') {
+    if (
+      !module ||
+      typeof module.addListener !== 'function' ||
+      typeof module.removeListeners !== 'function'
+    ) {
       throw new NativeSurfaceError();
     }
     const emitter = new NativeEventEmitter(module);

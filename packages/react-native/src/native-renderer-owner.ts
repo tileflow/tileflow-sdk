@@ -1,5 +1,5 @@
 import type {TileflowNativeSourceState} from '@tileflow/core/native';
-import {createMapCameraController, type CameraToken} from './camera-controller';
+import {type CameraToken, createMapCameraController} from './camera-controller';
 import {snapshotCameraProps} from './camera-input';
 import type {
   MapCameraProps,
@@ -36,7 +36,10 @@ const blank = Object.freeze({version: 8, sources: Object.freeze({}), layers: Obj
 const selection = (target: NativeRendererTarget): MapSelection =>
   Object.freeze({
     map: target.source.map.name,
-    theme: Object.freeze({name: target.source.theme.name, colorScheme: target.source.theme.colorScheme}),
+    theme: Object.freeze({
+      name: target.source.theme.name,
+      colorScheme: target.source.theme.colorScheme,
+    }),
   });
 
 /** Owns one real native view; theme transactions never construct another owner or camera. */
@@ -87,7 +90,10 @@ export function createNativeRendererOwner(
   const tasks = new Set<Promise<unknown>>();
   const track = <T>(promise: Promise<T>): Promise<T> => {
     tasks.add(promise);
-    void promise.then(() => tasks.delete(promise), () => tasks.delete(promise));
+    void promise.then(
+      () => tasks.delete(promise),
+      () => tasks.delete(promise),
+    );
     return promise;
   };
   const changed = () => {
@@ -153,14 +159,7 @@ export function createNativeRendererOwner(
     camera.interrupt();
   }
   function activateStyle(version: number) {
-    if (
-      disposed ||
-      terminal ||
-      !foreground ||
-      !styleAccepted ||
-      loaded ||
-      version !== transaction
-    )
+    if (disposed || terminal || !foreground || !styleAccepted || loaded || version !== transaction)
       return;
     loaded = true;
     emit({type: 'load', generation: eventGeneration, selection: selection(active)});
@@ -282,7 +281,8 @@ export function createNativeRendererOwner(
     }
   }
   function native(event: NativeSurfaceEvent) {
-    if (disposed || terminal || !surface || event.surface !== surface.id || event.style !== token) return;
+    if (disposed || terminal || !surface || event.surface !== surface.id || event.style !== token)
+      return;
     const version = transaction;
     if (event.kind === 'error') {
       fail();
@@ -459,15 +459,7 @@ export function createNativeRendererOwner(
         fail();
         return;
       }
-      if (
-        !surface ||
-        !loaded ||
-        !foreground ||
-        preloading ||
-        gesture ||
-        !needsCommit ||
-        barrier
-      )
+      if (!surface || !loaded || !foreground || preloading || gesture || !needsCommit || barrier)
         return;
       const nativeSurface = surface;
       const expected = token;

@@ -65,7 +65,7 @@ export type NativeAdmissionEvent =
         batch: string;
         tickets: readonly NativeAdmissionTicket[];
       }>)
-  | (ContextEvent & Readonly<{kind: 'cancel'; tickets: readonly string[]}> )
+  | (ContextEvent & Readonly<{kind: 'cancel'; tickets: readonly string[]}>)
   | (ContextEvent & Readonly<{kind: 'retired'; code: NativeAdmissionCode}>)
   | (ContextEvent & Readonly<{kind: 'response'; status: number}>)
   | Readonly<{kind: 'lifecycle'; installation: string; foreground: boolean}>

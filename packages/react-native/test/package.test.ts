@@ -18,7 +18,8 @@ function runtimeImports(text: string): string[] {
     if (
       ts.isCallExpression(node) &&
       (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-        (ts.isIdentifier(node.expression) && ['require', '__require'].includes(node.expression.text)))
+        (ts.isIdentifier(node.expression) &&
+          ['require', '__require'].includes(node.expression.text)))
     )
       result.push(node.getText());
     ts.forEachChild(node, visit);

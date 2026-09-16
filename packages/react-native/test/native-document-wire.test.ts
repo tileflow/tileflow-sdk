@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createNativeDocumentTransport} from '../src/native-document-wire';
 import type {NativeDocumentModule} from '../src/native-document-contract';
+import {createNativeDocumentTransport} from '../src/native-document-wire';
 
 function gate<T>() {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
   return {promise, resolve, reject};
 }
 
@@ -19,13 +22,31 @@ function fixture() {
   const requests: unknown[][] = [];
   const chunks: number[] = [];
   const native: NativeDocumentModule = {
-    openDocument(...args) { requests.push(args); opened.resolve(); return identifier.promise; },
+    openDocument(...args) {
+      requests.push(args);
+      opened.resolve();
+      return identifier.promise;
+    },
     documentResponse: () => headers.promise,
-    documentChunk(_id, maximumBytes) { chunks.push(maximumBytes); return data.promise; },
-    async cancelDocument(id) { cancellations.push(id); return {cancelled: true}; },
+    documentChunk(_id, maximumBytes) {
+      chunks.push(maximumBytes);
+      return data.promise;
+    },
+    async cancelDocument(id) {
+      cancellations.push(id);
+      return {cancelled: true};
+    },
   };
-  return {opened, identifier, headers, data, requests, chunks, cancellations,
-    transport: createNativeDocumentTransport(() => native)};
+  return {
+    opened,
+    identifier,
+    headers,
+    data,
+    requests,
+    chunks,
+    cancellations,
+    transport: createNativeDocumentTransport(() => native),
+  };
 }
 const url = 'https://maps.example.test/manifest.json';
 
@@ -49,7 +70,11 @@ test('an ordinary manifest read has no admission context and honors every reques
 
 test('a protected document preserves its context without carrying a grant through this bridge', async () => {
   const f = fixture();
-  const operation = f.transport.acquire(url, {maximumBytes: 1024}, {installation: 'installation', context: 'context-1'});
+  const operation = f.transport.acquire(
+    url,
+    {maximumBytes: 1024},
+    {installation: 'installation', context: 'context-1'},
+  );
   await f.opened.promise;
   assert.deepEqual(f.requests, [[url, 1024, 'installation', 'context-1']]);
   f.identifier.resolve({document: 'document-1'});
@@ -90,7 +115,8 @@ test('cancellation invalidates a reader and an already pending chunk', async () 
 test('oversized malformed or foreign final document responses fail with fixed diagnostics', async () => {
   for (const reply of [
     {url: 'https://other.example.test/manifest.json', status: 200},
-    {url, status: 0}, {url, status: '200'},
+    {url, status: 0},
+    {url, status: '200'},
     {url: `${url}?grant=tf_native_untrusted`, status: 200},
   ]) {
     const f = fixture();
@@ -127,7 +153,9 @@ test('oversized malformed or foreign final document responses fail with fixed di
 test('failed cancellation acknowledgements remain retryable without repeating successful cancellation', async () => {
   let calls = 0;
   const transport = createNativeDocumentTransport(() => ({
-    async openDocument() { return {document: 'document-1'}; },
+    async openDocument() {
+      return {document: 'document-1'};
+    },
     documentResponse: () => new Promise(() => undefined),
     documentChunk: () => new Promise(() => undefined),
     async cancelDocument() {
@@ -146,7 +174,10 @@ test('failed cancellation acknowledgements remain retryable without repeating su
 
 test('module lookup remains lazy and each transport operation keeps separate cancellation', async () => {
   let lookups = 0;
-  const transport = createNativeDocumentTransport(() => { lookups++; throw new Error('Unavailable'); });
+  const transport = createNativeDocumentTransport(() => {
+    lookups++;
+    throw new Error('Unavailable');
+  });
   assert.equal(lookups, 0);
   const operation = transport.acquire(url, {maximumBytes: 1024});
   await assert.rejects(operation.response, {code: 'NATIVE_DOCUMENT_UNAVAILABLE'});

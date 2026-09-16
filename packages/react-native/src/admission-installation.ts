@@ -80,22 +80,24 @@ export function createAdmissionInstallation(create: () => Installation) {
         entry.retiring = true;
         reject(new NativeAdmissionError('NATIVE_ADMISSION_CANCELLED'));
         if (epoch && [...epoch.entries].every((item) => item.retiring)) epoch.sealed = true;
-        const attempt = work.catch(() => null).then(async (map) => {
-          try {
-            if (!released) {
-              if (map) {
-                const ack = await map.retire();
-                if (ack?.retired !== true) throw unavailable();
+        const attempt = work
+          .catch(() => null)
+          .then(async (map) => {
+            try {
+              if (!released) {
+                if (map) {
+                  const ack = await map.retire();
+                  if (ack?.retired !== true) throw unavailable();
+                }
+                released = true;
+                epoch?.entries.delete(entry);
+                entries.delete(entry);
               }
-              released = true;
-              epoch?.entries.delete(entry);
-              entries.delete(entry);
+              if (epoch && epoch.entries.size === 0) await remove(epoch);
+            } catch {
+              throw unavailable();
             }
-            if (epoch && epoch.entries.size === 0) await remove(epoch);
-          } catch {
-            throw unavailable();
-          }
-        });
+          });
         retirement = attempt;
         void attempt.catch(() => {
           if (retirement === attempt) retirement = undefined;
@@ -147,7 +149,9 @@ export function createAdmissionInstallation(create: () => Installation) {
     open,
     /** Retry only retired leases. An active Map cannot be removed by another Map's cleanup. */
     async retryRetirements(): Promise<void> {
-      await Promise.all([...entries].filter((entry) => entry.retiring).map((entry) => entry.lease.retire()));
+      await Promise.all(
+        [...entries].filter((entry) => entry.retiring).map((entry) => entry.lease.retire()),
+      );
       if (current?.sealed && current.entries.size === 0) await remove(current);
     },
     /** Registration scheduling barrier; this does not acknowledge a context or native work. */

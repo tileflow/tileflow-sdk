@@ -677,13 +677,16 @@ export function createHostedNativeSessionController(input: {
     async prepare() {
       if (disposed) throw new HostedNativeSessionError('NATIVE_SESSION_DISPOSED');
       if (bindingIsDirect()) return null;
-      if (lifecycle !== 'foreground') throw new HostedNativeSessionError('NATIVE_SESSION_UNAVAILABLE');
+      if (lifecycle !== 'foreground')
+        throw new HostedNativeSessionError('NATIVE_SESSION_UNAVAILABLE');
       const at = readClock();
       rotateIfRequired(at);
       if (disposed) throw new HostedNativeSessionError('NATIVE_SESSION_DISPOSED');
-      if (bindingIsDirect() || !activeSession) throw new HostedNativeSessionError('NATIVE_SESSION_REPLACED');
+      if (bindingIsDirect() || !activeSession)
+        throw new HostedNativeSessionError('NATIVE_SESSION_REPLACED');
       const authority = await acquireAuthority(activeSession, at);
-      if (lifecycle !== 'foreground') throw new HostedNativeSessionError('NATIVE_SESSION_UNAVAILABLE');
+      if (lifecycle !== 'foreground')
+        throw new HostedNativeSessionError('NATIVE_SESSION_UNAVAILABLE');
       // This snapshot is not a grant, ticket, or reservation. Each later request still acquires.
       return Object.freeze({
         mapId: authority.mapId,

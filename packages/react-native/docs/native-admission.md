@@ -77,23 +77,23 @@ Camera commands carry private monotonically correlated tokens. A successful publ
 
 ## Fixed transport bounds
 
-| Boundary | Limit |
-| --- | ---: |
-| Live Map contexts per installation | 16 |
-| Catalog resources per context | 128 |
-| Native engine ingress per installation | 2,048 |
-| Protected work per context | 128 |
-| Tickets per bridge batch | 8 |
-| Resource URL | 2,048 characters including discriminator room |
-| Admission bridge payload | 524,288 bytes |
-| Grant | 24,576 characters |
-| Protected transport deadline | 30 seconds from enqueue |
-| Validity safety margin | 1 second |
-| Protected redirects | 3 |
-| Protected response body | 8,388,608 bytes |
-| Pending bootstrap bridge work | 32 |
-| Bootstrap request / response | 2,048 / 65,536 bytes |
-| Bootstrap deadline | 30 seconds |
+| Boundary                               |                                         Limit |
+| -------------------------------------- | --------------------------------------------: |
+| Live Map contexts per installation     |                                            16 |
+| Catalog resources per context          |                                           128 |
+| Native engine ingress per installation |                                         2,048 |
+| Protected work per context             |                                           128 |
+| Tickets per bridge batch               |                                             8 |
+| Resource URL                           | 2,048 characters including discriminator room |
+| Admission bridge payload               |                                 524,288 bytes |
+| Grant                                  |                             24,576 characters |
+| Protected transport deadline           |                       30 seconds from enqueue |
+| Validity safety margin                 |                                      1 second |
+| Protected redirects                    |                                             3 |
+| Protected response body                |                               8,388,608 bytes |
+| Pending bootstrap bridge work          |                                            32 |
+| Bootstrap request / response           |                          2,048 / 65,536 bytes |
+| Bootstrap deadline                     |                                    30 seconds |
 
 Cancellation retains transport capacity until the corresponding native cleanup boundary. Capacity bounds are transport safety limits, not product quotas or billing counters.
 

@@ -13,14 +13,25 @@ test('native document modules carry no grant or application-configuration input'
     'src/native-document-bridge.ts',
   ]) {
     const source = await read(path);
-    assert.doesNotMatch(source, /tf_public_[0-9a-f]{48}|tf_native_v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/u);
-    assert.doesNotMatch(source, /X-Tileflow-Native-Grant|X-Tileflow-Mobile-Client|MobileConfiguration|HostedNativeSessionAuthority/u);
-    assert.doesNotMatch(source, /\bconsole\.|\bNSLog\s*\(|\bLog\.|\bTimber\.|HttpLoggingInterceptor/u);
+    assert.doesNotMatch(
+      source,
+      /tf_public_[0-9a-f]{48}|tf_native_v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/u,
+    );
+    assert.doesNotMatch(
+      source,
+      /X-Tileflow-Native-Grant|X-Tileflow-Mobile-Client|MobileConfiguration|HostedNativeSessionAuthority/u,
+    );
+    assert.doesNotMatch(
+      source,
+      /\bconsole\.|\bNSLog\s*\(|\bLog\.|\bTimber\.|HttpLoggingInterceptor/u,
+    );
   }
 });
 
 test('native document and catalog sources use the existing package globs and installation package', async () => {
-  const android = await read('android/src/main/java/dev/tileflow/reactnative/TileflowNativeAdmissionPackage.kt');
+  const android = await read(
+    'android/src/main/java/dev/tileflow/reactnative/TileflowNativeAdmissionPackage.kt',
+  );
   assert.match(android, /TileflowNativeDocumentsModule\(context\)/u);
   const pod = await read('TileflowNativeAdmission.podspec');
   assert.match(pod, /source_files\s*=\s*'ios\/\*\.\{h,mm\}'/u);
@@ -35,6 +46,8 @@ test('native document and catalog sources use the existing package globs and ins
   assert.equal(manifest.private, true);
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
   assert.deepEqual(manifest.peerDependencies, {
-    '@maplibre/maplibre-react-native': '11.3.10', react: '19.2.0', 'react-native': '0.83.10',
+    '@maplibre/maplibre-react-native': '11.3.10',
+    react: '19.2.0',
+    'react-native': '0.83.10',
   });
 });

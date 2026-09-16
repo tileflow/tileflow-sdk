@@ -94,7 +94,10 @@ test('the actual private archive contains the mounted native sources and one pub
   const {stdout: runtime} = await exec('tar', ['-xOzf', archive, 'package/dist/index.js']);
   assert.match(runtime, /@maplibre\/maplibre-react-native/u);
   assert.match(runtime, /react-native/u);
-  assert.doesNotMatch(runtime, /tf_public_[0-9a-f]{48}|tf_native_v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/u);
+  assert.doesNotMatch(
+    runtime,
+    /tf_public_[0-9a-f]{48}|tf_native_v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/u,
+  );
   const {stdout: declarations} = await exec('tar', ['-xOzf', archive, 'package/dist/index.d.ts']);
   assert.match(declarations, /\bMap\b/u);
   assert.doesNotMatch(

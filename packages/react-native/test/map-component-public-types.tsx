@@ -1,5 +1,5 @@
+import {Layer, VectorSource} from '@maplibre/maplibre-react-native';
 import {Map, type MapProps, type MapRef} from '@tileflow/react-native';
-import {VectorSource, Layer} from '@maplibre/maplibre-react-native';
 import {createRef, type ReactElement} from 'react';
 
 const source = {map: 'main', manifestUrl: 'https://maps.example.test/manifest.json'};

@@ -1,4 +1,7 @@
-import {resolveTileflowNativeManifestUrl, resolveTileflowNativeResourceUrl} from '@tileflow/core/native';
+import {
+  resolveTileflowNativeManifestUrl,
+  resolveTileflowNativeResourceUrl,
+} from '@tileflow/core/native';
 import {
   nativeAdmissionLimits,
   type NativeAdmissionResource,
@@ -49,25 +52,30 @@ export function normalizeNativeResources(
         hasReservedNativeContext(resource.url) ||
         /[^\x21-\x7e]|[\\#]/u.test(resource.url) ||
         seen.has(resource.url)
-      ) throw new Error('Invalid native resource');
+      )
+        throw new Error('Invalid native resource');
       const origin = nativeResourceOrigin(resource.url);
-      const canonical = resource.template === undefined
-        ? resolveTileflowNativeManifestUrl(resource.url)
-        : resolveTileflowNativeResourceUrl(resource.url, {
-            documentUrl: `${origin}/`, template: resource.template,
-          });
+      const canonical =
+        resource.template === undefined
+          ? resolveTileflowNativeManifestUrl(resource.url)
+          : resolveTileflowNativeResourceUrl(resource.url, {
+              documentUrl: `${origin}/`,
+              template: resource.template,
+            });
       if (canonical !== resource.url) throw new Error('Invalid native resource');
       const decoded = decodeURIComponent(resource.url);
       if (/tf_native_|tf_public_/iu.test(decoded)) throw new Error('Invalid native resource');
       if (
         (resource.scope === 'tile' || resource.scope === 'tilejson') &&
         resource.tilesetId === undefined
-      ) throw new Error('Missing native tileset');
+      )
+        throw new Error('Missing native tileset');
       if (
         resource.tilesetId !== undefined &&
         (!/^[A-Za-z0-9._:-]{1,255}$/u.test(resource.tilesetId) ||
           /tf_native_|tf_public_/iu.test(resource.tilesetId))
-      ) throw new Error('Invalid native tileset');
+      )
+        throw new Error('Invalid native tileset');
       const template = normalizeNativeTemplate(resource);
       seen.add(resource.url);
       return Object.freeze({

@@ -72,7 +72,13 @@ test('public runtime is limited to the Map component while private responsibilit
   }
 
   const index = await readFile(join(root, 'index.ts'), 'utf8');
-  const indexSyntax = ts.createSourceFile('index.ts', index, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const indexSyntax = ts.createSourceFile(
+    'index.ts',
+    index,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
   const valueExports = indexSyntax.statements.filter(
     (statement) => ts.isExportDeclaration(statement) && statement.isTypeOnly === false,
   );
@@ -91,7 +97,8 @@ test('public runtime is limited to the Map component while private responsibilit
     const content = await readFile(file, 'utf8');
     for (const specifier of imports(content)) {
       assert.equal(specifier.startsWith('node:'), false, file);
-      if (specifier.startsWith('@tileflow/')) assert.equal(specifier, '@tileflow/core/native', file);
+      if (specifier.startsWith('@tileflow/'))
+        assert.equal(specifier, '@tileflow/core/native', file);
     }
     const syntax = ts.createSourceFile(
       file,
@@ -101,7 +108,8 @@ test('public runtime is limited to the Map component while private responsibilit
       file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
     );
     for (const statement of syntax.statements) {
-      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+      if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier))
+        continue;
       const specifier = statement.moduleSpecifier.text;
       if (specifier === '@maplibre/maplibre-react-native' && file !== join(root, 'map.tsx'))
         assert.equal(statement.importClause?.isTypeOnly, true, file);

@@ -42,7 +42,10 @@
 	[state expect:@"one"]; [state layout:YES]; [state loaded:@"one" identity:style]; [self drain:state];
 	[state commit:@"one"]; [state mapRendered:style fully:YES]; [state gestureStart:view]; [self drain:state];
 	[state layout:YES]; [self drain:state];
-	XCTAssertTrue([state beginCommand:1]);
+	NSUInteger invalidation = [state beginCommand:1];
+	XCTAssertGreaterThan(invalidation, 0u); [self drain:state];
+	XCTAssertEqualObjects(events.lastObject[@"kind"], @"invalidate");
+	XCTAssertEqualObjects(events.lastObject[@"sequence"], @(invalidation));
 	[state commit:@"one"]; [state frameStart:style]; [state frameEnd:style fully:YES]; [self drain:state];
 	XCTAssertFalse([[events valueForKey:@"kind"] containsObject:@"render"]);
 	[state frameStart:style]; [state mapRendered:style fully:YES]; [state frameEnd:style fully:YES]; [self drain:state];
@@ -55,14 +58,32 @@
 	[state expect:@"rollback"]; XCTAssertTrue(state.active);
 	[state close];
 }
+- (void)testCommandInvalidationReceiptIsOwnedByItsSurface {
+	NSMutableArray<NSDictionary *> *firstEvents = [NSMutableArray array];
+	NSMutableArray<NSDictionary *> *secondEvents = [NSMutableArray array];
+	TFNativeSurfaceState *first = [[TFNativeSurfaceState alloc] initWithSurface:@"first" emit:^(NSDictionary *event) { [firstEvents addObject:event]; }];
+	TFNativeSurfaceState *second = [[TFNativeSurfaceState alloc] initWithSurface:@"second" emit:^(NSDictionary *event) { [secondEvents addObject:event]; }];
+	NSObject *firstStyle = [NSObject new]; NSObject *secondStyle = [NSObject new];
+	[first expect:@"one"]; [first layout:YES]; [first loaded:@"one" identity:firstStyle]; [self drain:first];
+	[second expect:@"two"]; [second layout:YES]; [second loaded:@"two" identity:secondStyle]; [self drain:second];
+	NSUInteger firstInvalidation = [first beginCommand:1];
+	NSUInteger secondInvalidation = [second beginCommand:1];
+	XCTAssertGreaterThan(firstInvalidation, 0u); XCTAssertGreaterThan(secondInvalidation, 0u);
+	[self drain:first]; [self drain:second];
+	XCTAssertEqualObjects(firstEvents.lastObject[@"surface"], @"first");
+	XCTAssertEqualObjects(firstEvents.lastObject[@"sequence"], @(firstInvalidation));
+	XCTAssertEqualObjects(secondEvents.lastObject[@"surface"], @"second");
+	XCTAssertEqualObjects(secondEvents.lastObject[@"sequence"], @(secondInvalidation));
+	[first close]; [second close];
+}
 - (void)testNativeGestureEpochsExcludeProgrammaticCommandsAndQueueCapacityIsBounded {
 	NSMutableArray<NSDictionary *> *events = [NSMutableArray array];
 	TFNativeSurfaceState *state = [[TFNativeSurfaceState alloc] initWithSurface:@"surface" emit:^(NSDictionary *event) { [events addObject:event]; }];
 	[state expect:@"one"]; [state layout:YES]; [state loaded:@"one" identity:[NSObject new]];
-	XCTAssertTrue([state beginCommand:1]); [state cancelCommand:2]; XCTAssertFalse([state beginCommand:2]);
+	XCTAssertGreaterThan([state beginCommand:1], 0u); [state cancelCommand:2]; XCTAssertEqual([state beginCommand:2], 0u);
 	NSDictionary *view = @{@"center": @[@1, @2], @"zoom": @3, @"bearing": @4, @"pitch": @5};
-	[state gestureStart:view]; XCTAssertFalse([state beginCommand:3]); [state gestureEnd:view];
-	XCTAssertTrue([state beginCommand:4]);
+	[state gestureStart:view]; XCTAssertEqual([state beginCommand:3], 0u); [state gestureEnd:view];
+	XCTAssertGreaterThan([state beginCommand:4], 0u);
 	for (NSUInteger index = 0; index < 1000; index++) { [state gestureStart:view]; [state gestureChange:view]; [state gestureEnd:view]; }
 	XCTAssertLessThanOrEqual(state.pendingCount, 32u); XCTAssertEqual(events.count, 1u);
 	XCTAssertEqualObjects(state.description, @"TFNativeSurfaceState");

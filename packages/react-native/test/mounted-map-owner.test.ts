@@ -14,7 +14,7 @@ function fixture() {
 	let retired = 0;
 	let registrations: Promise<void> | undefined;
 	const manifest = {version: 1, maps: {main: {defaultTheme: 'light', systemThemes: {light: 'light', dark: 'dark'}, themes: {
-		light: {colorScheme: 'light', styleUrl: 'light.json'}, dark: {colorScheme: 'dark', styleUrl: 'dark.json'},
+		light: {colorScheme: 'light', styleUrl: './light.json'}, dark: {colorScheme: 'dark', styleUrl: './dark.json'},
 	}}}};
 	const documents: Record<string, unknown> = {
 		'https://maps.example.test/manifest.json': manifest,

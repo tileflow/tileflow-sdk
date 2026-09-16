@@ -68,6 +68,23 @@ test('catalogs grow only after native acknowledgement and retain original resour
 	await f.owner.dispose();
 });
 
+test('glyph templates extend only by an acknowledged finite font-stack union', async () => {
+	const f = fixture();
+	const glyph: NativeAdmissionResource = {
+		url: `${apiOrigin}/fonts/{fontstack}/{range}.pbf`,
+		scope: 'glyph',
+		template: 'glyphs',
+		fontStacks: ['Brand Regular'],
+	};
+	const map = await f.owner.openMap({...f.input, resources: [glyph]});
+	assert.match(map.discriminate(`${apiOrigin}/fonts/Brand%20Regular/0-255.pbf`), /__tf_native_context=/u);
+	assert.deepEqual(await map.extendResources([{...glyph, fontStacks: ['Brand Bold']}]), {resources: 1});
+	assert.match(map.discriminate(`${apiOrigin}/fonts/Brand%20Bold/0-255.pbf`), /__tf_native_context=/u);
+	assert.deepEqual(f.bridge.registrations.get(map.context)?.resources[0].fontStacks, ['Brand Bold', 'Brand Regular']);
+	await assert.rejects(map.extendResources([{...glyph, scope: 'font'}]), {code: 'NATIVE_ADMISSION_INVALID'});
+	await f.owner.dispose();
+});
+
 test('concrete template tickets each acquire independently and preserve ticket order', async () => {
 	const f = fixture();
 	const map = await f.owner.openMap({...f.input, resources: [tile]});

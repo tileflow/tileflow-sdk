@@ -4,10 +4,9 @@ import {TileflowNativeSourceError} from './native-source-types';
 import {freezeNativeSnapshot} from './native-source-utils';
 import type {TileflowNativeNetworkOptions} from './native-url-policy';
 import {resolveTileflowNativeManifestUrl} from './native-urls';
-import {validateTileflowRuntimeSource} from './runtime';
 import type {MapLibreStyle} from './types';
 
-/** Copy caller-owned style data; do not interpret or rewrite the Style Specification. */
+/** Copy private renderer data; this is not a public framework Map source validator. */
 export function snapshotNativeDirectStyle(
   value: unknown,
   network: TileflowNativeNetworkOptions,
@@ -16,8 +15,8 @@ export function snapshotNativeDirectStyle(
     throw new TileflowNativeSourceError('NATIVE_SOURCE_INVALID', 'source');
   };
   try {
-    if (!validateTileflowRuntimeSource({kind: 'maplibre', style: value}).ok) return fail();
     if (typeof value === 'string') return resolveTileflowNativeManifestUrl(value, network);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return fail();
     const copy = cloneDirectStyleJson(value, fail) as MapLibreStyle;
     if (
       Array.isArray(copy.layers) &&

@@ -1,3 +1,4 @@
+export {Map} from './map';
 export type {
   MapBaseProps,
   MapCameraProps,

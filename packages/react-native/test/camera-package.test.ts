@@ -5,19 +5,19 @@ import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import ts from 'typescript';
+import {inspectPublicMapRuntime} from './map-runtime-fixture';
 
 const root = new URL('../', import.meta.url);
 
 test('private built camera runs with global traps and package import does not mount or acquire', async () => {
+	assert.deepEqual(await inspectPublicMapRuntime(), {exports: ['Map'], callable: 'function'});
+
 	const script = `
 		import assert from 'node:assert/strict';
 		for (const name of ['window', 'document', 'navigator', 'URL', 'URLSearchParams', 'fetch',
 			'TextEncoder', 'TextDecoder', 'crypto', 'FontFace', 'Appearance', 'ReactNative', 'MapLibre']) {
 			Object.defineProperty(globalThis, name, {configurable: true, get() { throw new Error(name); }});
 		}
-		const contract = await import('@tileflow/react-native');
-		assert.deepEqual(Object.keys(contract), ['Map']);
-		assert.equal(typeof contract.Map, 'function');
 		const {createMapCameraController} = await import('./dist/internal/camera.js');
 		const commands = [];
 		const events = [];

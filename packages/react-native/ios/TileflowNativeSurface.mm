@@ -163,12 +163,12 @@ static MLRNMapView *TFSurfaceMap(UIView *root) {
 }
 - (void)mapViewDidFinishRenderingFrame:(MLNMapView *)mapView fullyRendered:(BOOL)fully frameEncodingTime:(double)encoding frameRenderingTime:(double)rendering {
 	if ([self owns]) [self.state frameEnd:self.style fully:fully];
-	if ([self.previous respondsToSelector:_cmd]) [self.previous mapView:mapView didFinishRenderingFrame:mapView fullyRendered:fully frameEncodingTime:encoding frameRenderingTime:rendering];
+	if ([self.previous respondsToSelector:_cmd]) [self.previous mapViewDidFinishRenderingFrame:mapView fullyRendered:fully frameEncodingTime:encoding frameRenderingTime:rendering];
 	else if ([self.previous respondsToSelector:@selector(mapViewDidFinishRenderingFrame:fullyRendered:)]) [self.previous mapViewDidFinishRenderingFrame:mapView fullyRendered:fully];
 }
 - (void)mapViewDidFinishRenderingFrame:(MLNMapView *)mapView fullyRendered:(BOOL)fully renderingStats:(MLNRenderingStats *)stats {
 	if ([self owns]) [self.state frameEnd:self.style fully:fully];
-	if ([self.previous respondsToSelector:_cmd]) [self.previous mapView:mapView didFinishRenderingFrame:mapView fullyRendered:fully renderingStats:stats];
+	if ([self.previous respondsToSelector:_cmd]) [self.previous mapViewDidFinishRenderingFrame:mapView fullyRendered:fully renderingStats:stats];
 	else if ([self.previous respondsToSelector:@selector(mapViewDidFinishRenderingFrame:fullyRendered:)]) [self.previous mapViewDidFinishRenderingFrame:mapView fullyRendered:fully];
 }
 - (void)mapView:(MLNMapView *)mapView regionWillChangeWithReason:(MLNCameraChangeReason)reason animated:(BOOL)animated {

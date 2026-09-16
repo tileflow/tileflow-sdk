@@ -1,6 +1,5 @@
 package dev.tileflow.reactnative
 
-import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -127,13 +126,11 @@ class TileflowNativeSurfaceModule(context: ReactApplicationContext) : ReactConte
 	@ReactMethod fun requestFrame(id: String, token: String, promise: Promise) = action(promise) {
 		val surface = current(id)
 		if (surface.token != token) invalid()
-		// Toggle between two fully transparent colors. The property changes on the first request,
-		// while either value is mathematically invisible to the customer's cartography.
+		// The marker color has alpha zero. Mutating its opacity is a real paint change on the
+		// first request while remaining mathematically transparent to customer cartography.
 		val layer = surface.style()?.getLayer(surface.marker()) as? BackgroundLayer ?: invalid()
 		surface.repaint = !surface.repaint
-		layer.setProperties(
-			PropertyFactory.backgroundColor(if (surface.repaint) Color.argb(0, 255, 255, 255) else Color.argb(0, 0, 0, 0)),
-		)
+		layer.setProperties(PropertyFactory.backgroundOpacity(if (surface.repaint) 0.0001f else 0.0f))
 		Arguments.makeNativeMap(mapOf("requested" to true))
 	}
 	@ReactMethod fun applyCamera(id: String, sequence: Double, input: ReadableMap, promise: Promise) = action(promise) {

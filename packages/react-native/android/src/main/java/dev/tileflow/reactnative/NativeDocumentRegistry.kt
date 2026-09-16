@@ -45,7 +45,7 @@ internal class NativeDocumentRegistry(
 		if (!AdmissionUrl.validToken(id) || work.containsKey(id)) invalid()
 		val item = Work(id, url, maximumBytes, scope, scheduler.nowMs() + 30000)
 		work[id] = item
-		item.timer = scheduler.after(30000) { cancel(id) }
+		item.timer = scheduler.after(30000) { retireQuietly(id) }
 		try {
 			val cancellation = load(url, maximumBytes, scope, { active(item) }) { response ->
 				scheduler.dispatch { received(item, response) }
@@ -54,7 +54,7 @@ internal class NativeDocumentRegistry(
 			if (!item.live.get()) cancellation.cancel()
 		} catch (_: Exception) {
 			item.nativeFinished = true
-			cancel(id)
+			retireQuietly(id)
 			invalid()
 		}
 		return id
@@ -70,7 +70,7 @@ internal class NativeDocumentRegistry(
 
 	fun chunk(id: String, maximumBytes: Int): NativeDocumentChunk {
 		val item = work[id] ?: invalid()
-		if (!active(item) || !item.requested || maximumBytes !in 1..65536) { cancel(id); invalid() }
+		if (!active(item) || !item.requested || maximumBytes !in 1..65536) { retireQuietly(id); invalid() }
 		val bytes = item.body ?: invalid()
 		val end = minOf(bytes.size, item.offset + maximumBytes)
 		val value = bytes.copyOfRange(item.offset, end)
@@ -97,15 +97,18 @@ internal class NativeDocumentRegistry(
 	}
 
 	fun retireContext(context: String) {
-		for (item in work.values.toList()) if (item.scope?.context == context) cancel(item.id)
+		for (item in work.values.toList()) if (item.scope?.context == context) retireQuietly(item.id)
 	}
 	fun lifecycle(active: Boolean) {
 		foreground = active
-		if (!active) for (id in work.keys.toList()) cancel(id)
+		if (!active) for (id in work.keys.toList()) retireQuietly(id)
 	}
 	fun close() {
 		closed = true
-		for (id in work.keys.toList()) cancel(id)
+		for (id in work.keys.toList()) retireQuietly(id)
+	}
+	private fun retireQuietly(id: String) {
+		try { cancel(id) } catch (_: Exception) { /* Logical retirement precedes retryable native cleanup. */ }
 	}
 
 	private fun active(item: Work): Boolean = try {
@@ -116,13 +119,13 @@ internal class NativeDocumentRegistry(
 		if (item.nativeFinished) return
 		item.nativeFinished = true
 		if (!active(item) || response == null || response.code !in 100..599 || response.body.size > item.maximumBytes) {
-			response?.body?.fill(0); cancel(item.id); return
+			response?.body?.fill(0); retireQuietly(item.id); return
 		}
 		val finalUrl = response.url ?: item.url
 		try {
 			AdmissionUrl.clean(finalUrl)
 			if (AdmissionUrl.origin(finalUrl) != AdmissionUrl.origin(item.url)) invalid()
-		} catch (_: Exception) { response.body.fill(0); cancel(item.id); return }
+		} catch (_: Exception) { response.body.fill(0); retireQuietly(item.id); return }
 		item.body = response.body
 		item.header = NativeDocumentHeader(finalUrl, response.code)
 		val waiter = item.waiter; item.waiter = null

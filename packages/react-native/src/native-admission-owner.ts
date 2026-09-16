@@ -7,9 +7,9 @@ import {
   type NativeAdmissionResult,
   type NativeRemovalAck,
 } from './native-admission-contract';
+import {createNativeAdmissionCatalog} from './native-admission-catalog';
 import {
   authorityAllowsResource,
-  discriminateNativeResourceForTest,
   isNativeToken,
   normalizeNativeResources,
 } from './native-admission-url';
@@ -29,8 +29,11 @@ export type NativeMapAdmissionInput = Omit<SessionInput, 'fetch'> &
 export type NativeMapAdmission = Readonly<{
   context: string;
   generation: number;
+  scope: Readonly<{installation: string; context: string}>;
   readonly state: Readonly<{status: 'active' | 'retired'; context: string}>;
+  discriminate(url: string): string;
   discriminateForTest(url: string): string;
+  extendResources(resources: readonly NativeAdmissionResource[]): Promise<Readonly<{resources: number}>>;
   retire(): Promise<Readonly<{retired: true}>>;
 }>;
 
@@ -52,7 +55,7 @@ type Context = {
   lastBatch: number;
   batch: string | null;
   tickets: Map<string, TicketState>;
-  resources: ReadonlyMap<string, NativeAdmissionResource>;
+  catalog: ReturnType<typeof createNativeAdmissionCatalog>;
   controller: HostedNativeSessionController;
   handle: NativeMapAdmission;
 };
@@ -147,19 +150,23 @@ export function createNativeAdmissionOwner(options: {
       failContext(context);
       return;
     }
-    const seen = new Set<string>();
+    const selected = new Map<string, NativeAdmissionResource>();
     for (const ticket of event.tickets) {
       if (
         !ticket ||
         !isNativeToken(ticket.ticket) ||
-        seen.has(ticket.ticket) ||
-        typeof ticket.url !== 'string' ||
-        !context.resources.has(ticket.url)
+        selected.has(ticket.ticket) ||
+        typeof ticket.url !== 'string'
       ) {
         failContext(context);
         return;
       }
-      seen.add(ticket.ticket);
+      const resource = context.catalog.match(ticket.url);
+      if (!resource) {
+        failContext(context);
+        return;
+      }
+      selected.set(ticket.ticket, resource);
     }
     context.lastBatch = serial;
     context.batch = event.batch;
@@ -197,7 +204,7 @@ export function createNativeAdmissionOwner(options: {
       const authority = authorities[index];
       if (authority === false) return reject('NATIVE_ADMISSION_DENIED');
       if (context.mapId === null) return {ticket: ticket.ticket, kind: 'delegate'};
-      const resource = context.resources.get(ticket.url)!;
+      const resource = selected.get(ticket.ticket)!;
       if (!authority || !authorityAllowsResource(authority, resource, context.mapId))
         return reject('NATIVE_ADMISSION_DENIED');
       const validForMs = context.controller.transportBudget(authority);
@@ -354,6 +361,10 @@ export function createNativeAdmissionOwner(options: {
       if (disposed) throw cancel();
       if (options.sessionFetch) boundFetch = options.sessionFetch(registered.context);
       let retirement: Promise<Readonly<{retired: true}>> | undefined;
+      const catalog = createNativeAdmissionCatalog(resources, registered.context, (additions) => {
+        if (!bridge.extendContext) return Promise.reject(cancel('NATIVE_ADMISSION_UNAVAILABLE'));
+        return bridge.extendContext(ack.installation, registered.context, additions);
+      });
       const context: Context = {
         id: registered.context,
         generation: registered.generation,
@@ -362,33 +373,29 @@ export function createNativeAdmissionOwner(options: {
         lastBatch: 0,
         batch: null,
         tickets: new Map(),
-        resources: new Map(resources.map((resource) => [resource.url, resource])),
+        catalog,
         controller,
         handle: undefined as unknown as NativeMapAdmission,
       };
       context.handle = Object.freeze({
         context: context.id,
         generation: context.generation,
+        scope: Object.freeze({installation: ack.installation, context: context.id}),
         get state() {
           return Object.freeze({
             status: context.live ? ('active' as const) : ('retired' as const),
             context: context.id,
           });
         },
-        discriminateForTest(url: string) {
-          if (!context.live || !context.resources.has(url))
-            throw cancel('NATIVE_ADMISSION_INVALID');
-          try {
-            return discriminateNativeResourceForTest(url, context.id);
-          } catch {
-            throw cancel('NATIVE_ADMISSION_INVALID');
-          }
-        },
+        discriminate: catalog.discriminate,
+        discriminateForTest: catalog.discriminate,
+        extendResources: catalog.extend,
         retire() {
           if (retirement) return retirement;
           context.live = false;
           context.batch = null;
           context.tickets.clear();
+          catalog.retire();
           contexts.delete(context.id);
           controller.dispose();
           boundFetch = undefined;

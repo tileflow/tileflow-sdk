@@ -321,7 +321,8 @@ RCT_REMAP_METHOD(applyCamera, applyCameraForSurface:(NSString *)identifier seque
 	@try {
 		TFSurfaceAttachment *surface = [self current:identifier allowFailed:NO];
 		NSDictionary *target = TFSurfaceView(input); NSUInteger command = TFSurfaceInteger(sequence);
-		if (![surface.state beginCommand:command]) TFSurfaceInvalid();
+		NSUInteger invalidation = [surface.state beginCommand:command];
+		if (!invalidation) TFSurfaceInvalid();
 		MLRNCamera *camera = TFSurfaceCamera(surface.root, surface.map);
 		// The pinned iOS CameraUpdateItem computes altitude before applying a changed pitch.
 		// Apply center/bearing/pitch first, then compute the exact zoom at that pitch.
@@ -335,7 +336,7 @@ RCT_REMAP_METHOD(applyCamera, applyCameraForSurface:(NSString *)identifier seque
 		for (NSString *key in @[@"bearing"]) if (std::abs(std::fmod([actual[key] doubleValue] - [target[key] doubleValue] + 540, 360) - 180) > 0.000001) TFSurfaceInvalid();
 		if (std::abs(std::fmod([actual[@"center"][0] doubleValue] - [target[@"center"][0] doubleValue] + 540, 360) - 180) > 0.000001 ||
 			std::abs([actual[@"center"][1] doubleValue] - [target[@"center"][1] doubleValue]) > 0.000001 || [self current:identifier allowFailed:NO] != surface) TFSurfaceInvalid();
-		resolve(@{@"command": @(command), @"view": target});
+		resolve(@{@"command": @(command), @"invalidation": @(invalidation), @"view": target});
 	} @catch (NSException *exception) { TFSurfaceReject(reject); }
 }
 RCT_REMAP_METHOD(cancelCamera, cancelCameraForSurface:(NSString *)identifier sequence:(NSNumber *)sequence resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {

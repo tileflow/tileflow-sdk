@@ -231,8 +231,10 @@ export function createNativeRendererOwner(
             {
               id: `__tileflow_native_style_${expected}`,
               type: 'background',
-              layout: {visibility: 'none'},
-              paint: {'background-opacity': 0},
+              paint: {
+                'background-color': 'rgba(0,0,0,0)',
+                'background-opacity': 1,
+              },
             },
           ],
         });

@@ -19,7 +19,8 @@ def tileflow_native_admission_post_install(installer)
 	end
 
 	targets = project.targets.select do |target|
-		target.name == 'TileflowNativeAdmission' || target.name.start_with?('TileflowNativeAdmission-', 'AppHost-TileflowNativeAdmission-')
+		target.is_a?(Xcodeproj::Project::Object::PBXNativeTarget) &&
+			(target.name == 'TileflowNativeAdmission' || target.name.start_with?('TileflowNativeAdmission-', 'AppHost-TileflowNativeAdmission-'))
 	end
 	raise 'TileflowNativeAdmission pod target is missing' unless targets.any? { |target| target.name == 'TileflowNativeAdmission' }
 	targets.each do |target|

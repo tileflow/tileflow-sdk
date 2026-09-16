@@ -5,14 +5,14 @@ package = JSON.parse(File.read(File.join(__dir__, 'package.json')))
 
 Pod::Spec.new do |s|
 	s.name = 'TileflowNativeAdmission'
-	s.version = package['version']
+	s.version = package['version'].delete_suffix('-development')
 	s.summary = 'Private asynchronous native resource admission for Tileflow.'
 	s.homepage = package['homepage']
 	s.authors = 'Tileflow'
 	s.license = { :type => 'Apache-2.0', :file => File.exist?(File.join(__dir__, 'LICENSE')) ? 'LICENSE' : '../../LICENSE' }
 	# This private development pod is consumed by local path/autolinking.
 	s.source = { :git => 'https://github.com/tileflow/tileflow-sdk.git' }
-	s.platforms = { :ios => min_ios_version_supported }
+	s.platforms = { :ios => '15.1' }
 	s.source_files = 'ios/*.{h,mm}'
 	s.private_header_files = 'ios/*.h'
 	s.frameworks = 'Foundation', 'UIKit'

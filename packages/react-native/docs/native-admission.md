@@ -10,7 +10,7 @@ The source targets React 19.2.0, React Native 0.83.10, MapLibre React Native 11.
 
 Android's library build uses the host's Android Gradle and Kotlin plugins, Java 17, and the host's SDK settings. It does not install a build system. `react-native.config.cjs` identifies `TileflowNativeAdmissionPackage` for autolinking; creating the module does not install the MapLibre provider. A conflicting native dependency version fails resolution instead of silently selecting another version.
 
-On iOS, the `TileflowNativeAdmission` pod depends on the exact React and MapLibre React Native pods. MapLibre Native itself is the **existing pinned Swift Package Manager product**, not a second MapLibre CocoaPod. The deployment target comes from React Native's `min_ios_version_supported`.
+On iOS, the `TileflowNativeAdmission` pod depends on the exact React and MapLibre React Native pods. MapLibre Native itself is the **existing pinned Swift Package Manager product**, not a second MapLibre CocoaPod. The deployment target is React Native 0.83.10's minimum, iOS 15.1.
 
 In the existing development host's Podfile, retain its React Native post-install work and MapLibre setup. After the existing MapLibre post-install call, invoke the Tileflow helper loaded by the local podspec:
 
@@ -64,23 +64,23 @@ Native observation events contain only bounded identifiers and HTTP status. They
 
 ## Fixed bounds
 
-| Boundary | Limit |
-| --- | --- |
-| Live Map contexts per installation | 16 |
-| Exact resources in one test catalog | 128 |
-| Native engine ingress per installation, reserved before scheduler dispatch | 2,048 |
-| Protected work per context | 128 |
-| Tickets in one bridge batch | 8 |
-| Resource URL | 2,048 characters, including room for the discriminator |
-| Admission bridge payload | 524,288 bytes |
-| Grant | 24,576 characters |
-| Protected transport deadline | 30 seconds from enqueue |
-| Validity safety margin | 1 second |
-| Protected redirects | 3 |
-| Protected response body | 8,388,608 bytes |
-| Pending bootstrap bridge work | 32 |
-| Bootstrap request / response | 2,048 / 65,536 bytes |
-| Bootstrap deadline | 30 seconds |
+| Boundary                                                                   | Limit                                                  |
+| -------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Live Map contexts per installation                                         | 16                                                     |
+| Exact resources in one test catalog                                        | 128                                                    |
+| Native engine ingress per installation, reserved before scheduler dispatch | 2,048                                                  |
+| Protected work per context                                                 | 128                                                    |
+| Tickets in one bridge batch                                                | 8                                                      |
+| Resource URL                                                               | 2,048 characters, including room for the discriminator |
+| Admission bridge payload                                                   | 524,288 bytes                                          |
+| Grant                                                                      | 24,576 characters                                      |
+| Protected transport deadline                                               | 30 seconds from enqueue                                |
+| Validity safety margin                                                     | 1 second                                               |
+| Protected redirects                                                        | 3                                                      |
+| Protected response body                                                    | 8,388,608 bytes                                        |
+| Pending bootstrap bridge work                                              | 32                                                     |
+| Bootstrap request / response                                               | 2,048 / 65,536 bytes                                   |
+| Bootstrap deadline                                                         | 30 seconds                                             |
 
 A cancelled bridge operation retains its capacity reservation until native completion; an unread delivered bootstrap body also retains a bounded slot until consumed, cancelled or retired. Native ingress is reserved before posting to the main scheduler, so cancellation churn cannot bypass its limit while that scheduler is paused. Repeated cancellation does not enqueue repeated cleanup.
 

@@ -157,7 +157,7 @@
 	for (NSUInteger index = 0; index < 129; index++) [self request:context];
 	[self.scheduler flush];
 	XCTAssertEqual(self.failures, 1u);
-	XCTAssertEqual([self batch:context][@"tickets"].count, 8u);
+	XCTAssertEqual([(NSArray *)[self batch:context][@"tickets"] count], 8u);
 	XCTAssertEqual(self.network.requests.count, 0u);
 	[self.scheduler advance:30000];
 	XCTAssertTrue([[self.events valueForKey:@"kind"] containsObject:@"retired"]);

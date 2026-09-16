@@ -34,6 +34,21 @@ Android build integration, iOS CocoaPods/SPM post-install step and execution bou
 [private native admission guide](docs/native-admission.md). The transport is an explicit internal
 test seam; it is not reachable through a public runtime export.
 
+## Hosted application configuration
+
+Hosted native delivery uses a scoped, revocable publishable application credential, not a Tileflow
+end-user login. Configure the credential and approved API origin once in the native application:
+`TileflowMobileConfiguration` in the iOS application Info.plist, or the Android application String
+Array `tileflow_mobile_configuration`. Both contain exactly `apiOrigin=...` and `credential=...`.
+The [native configuration guide](docs/native-configuration.md) gives the complete native snippets,
+origin grammar, duplicate-value rules, threat model and rotation procedure. There is no credential
+prop, JS setter, client constructor, React provider or Expo plugin.
+
+Only resolved manifest delivery with `usageMode: 'session'` reads these settings. Non-session
+sources never evaluate that path. The private resolver compares exact canonical origins before
+producing a Hosted binding; configuration is immutable application data, never shared Map/session
+identity. This boundary does not mount a component or start network work by itself.
+
 ## Contract pieces
 
 `MapProps` combines `MapBaseProps` (source, presentation, lifecycle callbacks and ref) with the
@@ -123,8 +138,8 @@ The future renderer owner must discard stale-generation events and own native li
 `native-appearance.ts` binds a small injected broker to React Native's public
 `Appearance.getColorScheme()` and `Appearance.addChangeListener()` APIs. It is built for internal
 use but is not a package export and is not reachable from the contract entry. It never calls
-`Appearance.setColorScheme()`. The separate private admission bridge also imports React Native;
-neither module is loaded by the package root.
+`Appearance.setColorScheme()`. The private admission and configuration bridges also import React
+Native; none of these modules is loaded by the package root.
 
 A broker activates only when selecting `system`. Its first active subscription reads the current
 scheme and installs one native listener; concurrent system-theme subscribers share that listener.
@@ -179,7 +194,7 @@ settlement, new controlled values update authority and callbacks without issuing
 Ending the gesture does not interpret a prop that has not arrived yet as rejection. The owner first
 delivers the subsequent committed props, then confirms settlement. If the latest prop equals the
 final observed view, no return command is issued; otherwise one command applies that prop value.
-Both synchronous adoption and adoption delivered after the callback count before settlement.
+Both synchronous adoption and adoption delivered after the callback count as settlement.
 Updates received after settlement retain ordinary controlled-update behavior.
 
 No public duration, easing, animation, bounds, padding or imperative camera method is introduced.
@@ -252,6 +267,11 @@ the camera controller.
 One real Map context owns one controller. Non-session transport bindings never bootstrap or acquire
 Tileflow authority; concurrent Hosted Maps never share session identities, counters, tickets or callbacks.
 
+The private source-to-session resolver supplies a fresh binding only after resolved Hosted metadata
+agrees with native application configuration. Its shared application snapshot contains no session,
+grant, controller, Map identity or callback. The existing session controller remains the sole
+admission authority; configuration resolution does not perform bootstrap or admission.
+
 The controller is the sole admission authority. Every eligible protected ticket receives one
 logical `acquire()` result; bounded bridge batching does not change accounting. The 10,000-request
 and six-hour rotation boundary, single-flight refresh, strict bootstrap response validation,
@@ -281,6 +301,8 @@ security/lifecycle details, native dependencies, and the explicit source-checkou
 The authored tests cover the type-only entry, exact peers/private status, isolated appearance
 lifecycle, safe source projection, camera ownership, real-controller admission accounting,
 bootstrap wire lifecycle, native engine/provider/protocol behavior and actual packed contents.
+Application-configuration tests cover the native grammar, exact origin binding, lazy lookup,
+immutable process data and per-Map cancellation without public credential exports.
 Compile-only consumers reject mixed camera modes, incomplete controlled views and owned props.
 Clocks, bridge barriers and native schedulers are injected for deterministic concurrency tests;
 those tests do not replace a real RN bridge and renderer.

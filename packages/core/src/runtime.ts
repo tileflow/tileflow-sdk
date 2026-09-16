@@ -129,8 +129,8 @@ export type TileflowStyleFontFace = {
 
 /** One published Tileflow map. Renderer-specific styles are not framework Map inputs. */
 export type TileflowRuntimeSource = {
-	manifestUrl?: string;
-	map: string;
+  manifestUrl?: string;
+  map: string;
 };
 
 export type TileflowRuntimeStyleOptions = {
@@ -183,29 +183,31 @@ const manifestCache = new globalThis.Map<
 const missingStaticMapIdWarnings = new Set<string>();
 
 export function shouldLoadTileflowManifest(options: TileflowManifestLoadOptions): boolean {
-	return validateTileflowRuntimeSource(options.source).ok;
+  return validateTileflowRuntimeSource(options.source).ok;
 }
 
 export function validateTileflowRuntimeSource(source: unknown): TileflowRuntimeSourceValidation {
-	if (source === undefined) {
-		return {code: 'missing-source', error: 'source is required', ok: false};
-	}
-	if (!isPlainRuntimeRecord(source)) {
-		return {code: 'invalid-source', error: 'source must be an object', ok: false};
-	}
-	if (
-		'kind' in source || 'style' in source ||
-		!isTileflowPortableId(source.map) ||
-		(source.manifestUrl !== undefined &&
-			(typeof source.manifestUrl !== 'string' || source.manifestUrl.length === 0))
-	) {
-		return {
-			code: 'invalid-source',
-			error: 'source requires a portable map id and an optional non-empty manifestUrl; renderer inputs are not supported',
-			ok: false,
-		};
-	}
-	return {ok: true};
+  if (source === undefined) {
+    return {code: 'missing-source', error: 'source is required', ok: false};
+  }
+  if (!isPlainRuntimeRecord(source)) {
+    return {code: 'invalid-source', error: 'source must be an object', ok: false};
+  }
+  if (
+    'kind' in source ||
+    'style' in source ||
+    !isTileflowPortableId(source.map) ||
+    (source.manifestUrl !== undefined &&
+      (typeof source.manifestUrl !== 'string' || source.manifestUrl.length === 0))
+  ) {
+    return {
+      code: 'invalid-source',
+      error:
+        'source requires a portable map id and an optional non-empty manifestUrl; renderer inputs are not supported',
+      ok: false,
+    };
+  }
+  return {ok: true};
 }
 
 /** Validate the only runtime selection grammar: one concrete portable name or `system`. */
@@ -371,6 +373,7 @@ export function createTileflowSessionController(input: {
     grantPromise: null,
     pendingGrantRequests: 0,
     requestCount: 0,
+    sessionId: sessionIdFactory(),
     sessionId: sessionIdFactory(),
     startedAt,
   });

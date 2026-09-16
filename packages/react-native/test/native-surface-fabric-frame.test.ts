@@ -20,7 +20,7 @@ test('iOS finds exactly one owned Fabric camera through the bounded native hiera
 test('the private frame marker is visible-but-fully-transparent and the first request mutates it on both platforms', async () => {
   const renderer = await source('src/native-renderer-owner.ts');
   assert.match(renderer, /type: 'background',[\s\S]*'background-color': 'rgba\(0,0,0,0\)'/u);
-  assert.match(renderer, /'background-opacity': 0/u);
+  assert.match(renderer, /'background-opacity': 1/u);
   assert.doesNotMatch(renderer, /visibility:\s*'none'/u);
 
   const ios = await source('ios/TileflowNativeSurface.mm');

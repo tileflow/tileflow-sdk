@@ -1,6 +1,7 @@
 package dev.tileflow.reactnative
 
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 // All mutable collections are confined to the injected serial scheduler.
 // Atomic liveness and volatile deadlines are also read at OkHttp network start.
@@ -30,6 +31,7 @@ internal class AdmissionEngine(
 		val response: (AdmissionHttpResponse) -> Unit,
 		val failure: () -> Unit,
 		val delegate: (String, (AdmissionHttpResponse?) -> Unit) -> AdmissionCancellation,
+		val release: () -> Unit,
 	) {
 		var phase = "queue"
 		var cancellation: AdmissionCancellation? = null
@@ -41,6 +43,7 @@ internal class AdmissionEngine(
 	private val contexts = linkedMapOf<String, Context>()
 	private val live = AtomicBoolean(true)
 	private val lossQueued = AtomicBoolean(false)
+	private val reservations = AtomicInteger(0)
 	@Volatile private var foreground = true
 	private var contextSequence = 0L
 	private var ticketSequence = 0L
@@ -66,21 +69,28 @@ internal class AdmissionEngine(
 		onFailure: () -> Unit,
 		onDelegate: (String, (AdmissionHttpResponse?) -> Unit) -> AdmissionCancellation,
 	): AdmissionCancellation {
+		// Bound ingress before posting to the main scheduler. Cancellation
+		// retains this transport slot until serialized cleanup has run.
+		if (reservations.incrementAndGet() > AdmissionLimits.CONTEXTS * AdmissionLimits.QUEUE) {
+			reservations.decrementAndGet(); onFailure(); return AdmissionCancellation {}
+		}
+		val reserved = AtomicBoolean(true)
+		val release: () -> Unit = { if (reserved.getAndSet(false)) reservations.decrementAndGet() }
 		val active = AtomicBoolean(true)
 		var work: Work? = null
 		scheduler.dispatch {
-			if (!active.get()) return@dispatch
+			if (!active.get()) { release(); return@dispatch }
 			val tagged = try { AdmissionUrl.strip(url) } catch (_: Exception) {
-				active.set(false); onFailure(); return@dispatch
+				active.set(false); release(); onFailure(); return@dispatch
 			}
 			val context = contexts[tagged.context]
 			if (!foreground || !checkOwnership() || context == null || !context.live.get() ||
 				!context.resources.containsKey(tagged.url) || context.work.size >= AdmissionLimits.QUEUE ||
 				headers.keys.any { it.equals(AdmissionLimits.GRANT_HEADER, true) } ||
 				ticketSequence >= 9007199254740991L) {
-				active.set(false); onFailure(); return@dispatch
+				active.set(false); release(); onFailure(); return@dispatch
 			}
-			val item = Work((++ticketSequence).toString(), context, tagged.url, headers.toMap(), scheduler.nowMs(), active, onResponse, onFailure, onDelegate)
+			val item = Work((++ticketSequence).toString(), context, tagged.url, headers.toMap(), scheduler.nowMs(), active, onResponse, onFailure, onDelegate, release)
 			work = item
 			context.work[item.id] = item
 			item.timer = scheduler.after(AdmissionLimits.WAIT_MS) {
@@ -90,8 +100,7 @@ internal class AdmissionEngine(
 			scheduler.dispatch { drain(context) }
 		}
 		return AdmissionCancellation {
-			active.set(false)
-			scheduler.dispatch {
+			if (active.compareAndSet(true, false)) scheduler.dispatch {
 				work?.let { item ->
 					if (item.context.batch?.tickets?.contains(item.id) == true) {
 						event(item.context, "cancel", mapOf("tickets" to listOf(item.id)))
@@ -206,6 +215,7 @@ internal class AdmissionEngine(
 		item.timer = null
 		item.authority = null
 		item.context.work.remove(item.id)
+		item.release()
 		scheduler.dispatch { drain(item.context) }
 	}
 	private fun fail(item: Work) {

@@ -66,6 +66,7 @@ static BOOL TFGrantShape(NSString *value) {
 @property (nonatomic, copy) void (^response)(NSHTTPURLResponse *, NSData *);
 @property (nonatomic, copy) dispatch_block_t failure;
 @property (nonatomic, copy) TFAdmissionDelegate delegate;
+@property (nonatomic, copy, nullable) dispatch_block_t releaseReservation;
 @property (nonatomic, nullable) id<TFAdmissionCancel> cancellation;
 @property (nonatomic, nullable) id<TFAdmissionCancel> timer;
 @property (nonatomic, nullable) NSDictionary *authority;
@@ -79,6 +80,7 @@ static BOOL TFGrantShape(NSString *value) {
 	std::atomic_bool _active;
 	std::atomic_bool _foreground;
 	std::atomic_bool _lossQueued;
+	std::atomic_uint _reservations;
 }
 @property (nonatomic, copy) NSString *installation;
 @property (nonatomic) id<TFAdmissionScheduler> scheduler;
@@ -94,7 +96,7 @@ static BOOL TFGrantShape(NSString *value) {
 - (instancetype)initWithInstallation:(NSString *)installation scheduler:(id<TFAdmissionScheduler>)scheduler network:(id<TFAdmissionNetwork>)network owns:(TFAdmissionStartGuard)owns emit:(void (^)(NSDictionary *))emit {
 	if ((self = [super init])) {
 		_installation = [installation copy]; _scheduler = scheduler; _network = network; _owns = [owns copy]; _emit = [emit copy];
-		_contexts = [NSMutableDictionary dictionary]; _active.store(true); _foreground.store(true); _lossQueued.store(false);
+		_contexts = [NSMutableDictionary dictionary]; _active.store(true); _foreground.store(true); _lossQueued.store(false); _reservations.store(0);
 	}
 	return self;
 }
@@ -130,25 +132,33 @@ static BOOL TFGrantShape(NSString *value) {
 }
 
 - (id<TFAdmissionCancel>)request:(NSURLRequest *)request response:(void (^)(NSHTTPURLResponse *, NSData *))response failure:(dispatch_block_t)failure delegate:(TFAdmissionDelegate)delegate {
+	// Reserve before posting to the main scheduler, not after it drains.
+	// This bounds ingress as well as the per-context admitted work queues.
+	if (self->_reservations.fetch_add(1) >= 2048) {
+		self->_reservations.fetch_sub(1); failure();
+		return [[TFAdmissionCancellation alloc] initWithAction:^{}];
+	}
+	TFAdmissionFlag *reserved = [TFAdmissionFlag new];
+	dispatch_block_t release = ^{ if (reserved->value.exchange(false)) self->_reservations.fetch_sub(1); };
 	TFAdmissionFlag *alive = [TFAdmissionFlag new];
 	__block TFAdmissionWork *work = nil;
 	[self.scheduler enqueue:^{
-		if (!alive->value.load()) return;
+		if (!alive->value.load()) { release(); return; }
 		NSDictionary *tagged;
 		@try { tagged = TFAdmissionStripContext(request.URL.absoluteString); }
-		@catch (NSException *exception) { alive->value.store(false); failure(); return; }
+		@catch (NSException *exception) { alive->value.store(false); release(); failure(); return; }
 		TFAdmissionContext *context = self.contexts[tagged[@"context"]];
 		if (!self->_foreground.load() || ![self isOwner] || !context || !context.alive->value.load() || !context.resources[tagged[@"url"]] || context.work.count >= 128 ||
 			![request.HTTPMethod isEqual:@"GET"] || request.HTTPBody || request.HTTPBodyStream ||
 			[request valueForHTTPHeaderField:TFAdmissionGrantHeader] != nil || self.ticketSequence >= 9007199254740991ULL) {
-			alive->value.store(false); failure(); return;
+			alive->value.store(false); release(); failure(); return;
 		}
 		NSMutableURLRequest *clean = [request mutableCopy];
 		clean.URL = [NSURL URLWithString:tagged[@"url"]];
 		work = [TFAdmissionWork new];
 		work.identifier = [NSString stringWithFormat:@"%lu", (unsigned long)++self.ticketSequence];
 		work.context = context; work.request = clean; work.alive = alive; work.entered = [self.scheduler nowMs]; work.phase = @"queue";
-		work.response = response; work.failure = failure; work.delegate = delegate;
+		work.response = response; work.failure = failure; work.delegate = delegate; work.releaseReservation = release;
 		context.work[work.identifier] = work; [context.order addObject:work.identifier];
 		work.timer = [self.scheduler after:30000 perform:^{
 			if ([context.batchTickets containsObject:work.identifier]) [self retire:context.identifier];
@@ -157,7 +167,7 @@ static BOOL TFGrantShape(NSString *value) {
 		[self.scheduler enqueue:^{ [self drain:context]; }];
 	}];
 	return [[TFAdmissionCancellation alloc] initWithAction:^{
-		alive->value.store(false);
+		if (!alive->value.exchange(false)) return;
 		[self.scheduler enqueue:^{
 			if (!work) return;
 			if ([work.context.batchTickets containsObject:work.identifier]) [self event:work.context kind:@"cancel" fields:@{@"tickets": @[work.identifier]}];
@@ -297,6 +307,8 @@ static BOOL TFGrantShape(NSString *value) {
 	[work.cancellation cancel]; work.cancellation = nil;
 	[work.timer cancel]; work.timer = nil; work.authority = nil;
 	[work.context.work removeObjectForKey:work.identifier]; [work.context.order removeObject:work.identifier];
+	if (work.releaseReservation) work.releaseReservation();
+	work.releaseReservation = nil;
 	[self.scheduler enqueue:^{ [self drain:work.context]; }];
 }
 - (void)fail:(TFAdmissionWork *)work {

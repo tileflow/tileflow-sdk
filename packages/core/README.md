@@ -135,7 +135,7 @@ export default defineMap({
 });
 ```
 
-`system` is a browser selection policy, not a stored theme. Builds, captures, static scenes, and
+`system` is a runtime selection policy, not a stored theme. Builds, captures, static scenes, and
 receipts must use a concrete theme such as `light` or `dark`.
 
 The semantic domains are `land`, `water`, `nautical`, `roads`, `buildings`, `boundaries`, `labels`,
@@ -173,6 +173,36 @@ The language manifest is also exported as `tileflowAuthoringManifest`, with
 resolved compiler input. `diffTileflowMaps(before, after)` returns deterministic semantic changes
 at JSON Pointer paths. Physical inspection IDs and indexes are diagnostic observations, not stable
 application targets.
+
+## Select a prepared map
+
+React, Vue and Svelte accept a required `source` object, `{map, manifestUrl?}`. `map` is the portable
+name in the manifest, not a Hosted `map_...` identifier. An omitted web `manifestUrl` means exactly
+`/tileflow/manifest.json`; custom paths and external hosts must be explicit. The native Core and
+React Native type contracts use `{map, manifestUrl}` with an explicit absolute URL. They do not
+infer an application origin, Metro host or manifest location.
+
+<!-- docs:check -->
+
+```ts
+import type {TileflowNativeSource} from '@tileflow/core/native';
+import type {TileflowRuntimeSource} from '@tileflow/core/runtime';
+
+const webSource = {map: 'madrid'} satisfies TileflowRuntimeSource;
+const nativeSource = {
+  map: 'madrid',
+  manifestUrl: 'https://maps.example.com/tileflow/native/manifest.json',
+} satisfies TileflowNativeSource;
+```
+
+These objects select existing prepared maps; they do not compile or render one. Every Tileflow
+framework Map is manifest-backed, without a renderer discriminator or direct-style mode. The
+obsolete source fields `kind` and `style` are rejected. Completely unmanaged maps use upstream
+MapLibre directly. Omitted themes use the manifest default, concrete themes select exact names,
+and `system` requires the manifest's explicit light/dark mapping and a supplied runtime color scheme.
+See the [native source guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-resource-urls.md)
+for source coordination, bounded acquisition and safe diagnostics. The private React Native package
+currently exports type contracts, not a mounted Map component.
 
 ## Data, terrain, and browser resources
 

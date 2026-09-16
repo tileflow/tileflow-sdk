@@ -26,7 +26,14 @@ internal class AdmissionHttpResponse(val code: Int, val headers: Map<String, Str
 	override fun toString() = "AdmissionHttpResponse(redacted)"
 }
 
-internal class AdmissionResource(val url: String, val scope: String, val tilesetId: String?) {
+internal class AdmissionResource(
+	val url: String,
+	val scope: String,
+	val tilesetId: String?,
+	val template: String? = null,
+	fontStacks: List<String>? = null,
+) {
+	val fontStacks: List<String>? = fontStacks?.let { java.util.Collections.unmodifiableList(it.toList()) }
 	override fun toString() = "AdmissionResource(redacted)"
 }
 

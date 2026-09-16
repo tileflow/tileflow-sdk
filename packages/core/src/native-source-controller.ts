@@ -1,4 +1,3 @@
-import {snapshotNativeDirectStyle} from './native-direct-style';
 import {loadNativeManifest} from './native-manifest';
 import {NativeSourceCancellation} from './native-source-cancellation';
 import {
@@ -18,7 +17,7 @@ import {
   validateTileflowThemeSelection,
 } from './runtime';
 
-/** A renderer-neutral source lifecycle. Only Tileflow replacements acquire a manifest. */
+/** A renderer-neutral lifecycle for an explicitly located Tileflow manifest. */
 export function createTileflowNativeSourceController(options: {
   acquire: TileflowNativeManifestAcquire;
 }): TileflowNativeSourceController {
@@ -76,23 +75,12 @@ export function createTileflowNativeSourceController(options: {
       const current = () => !disposed && generation === own.generation;
       let sourceInput: Record<string, unknown> | undefined;
       let selection: Record<string, unknown> | undefined;
-      let direct: Extract<TileflowNativeSource, {kind: 'maplibre'}> | undefined;
       let snapshotError: TileflowNativeSourceError | undefined;
-      // Copy nested direct data before observers or retired transports can mutate caller inputs.
-      // Reserve the generation first so even reentrant reflection cannot supersede newer work.
+      // Snapshot before observers and retired transports can mutate caller inputs.
+      // Reserve the generation first so reentrant reflection cannot supersede newer work.
       try {
         sourceInput = nativeOwnRecord(source);
         selection = nativeOwnRecord(options);
-        if (sourceInput?.kind === 'maplibre' && selection) {
-          if (selection.theme !== undefined)
-            throw new TileflowNativeSourceError('NATIVE_THEME_INVALID', 'theme');
-          direct = {
-            kind: 'maplibre',
-            style: snapshotNativeDirectStyle(sourceInput.style, {
-              developmentOrigin: selection.developmentOrigin as string | undefined,
-            }),
-          };
-        }
       } catch (error) {
         snapshotError = normalizeNativeSourceError(error);
       }
@@ -103,17 +91,8 @@ export function createTileflowNativeSourceController(options: {
         publish({status: 'loading', generation: own.generation});
         if (!current()) return;
         if (snapshotError) throw snapshotError;
-        if (!sourceInput || !selection)
-          throw new TileflowNativeSourceError('NATIVE_SOURCE_INVALID', 'source');
-        if (sourceInput.kind === 'maplibre') {
-          if (!direct) throw new TileflowNativeSourceError('NATIVE_SOURCE_INVALID', 'source');
-          // colorScheme has no meaning here; do not infer Tileflow theme or delivery identity.
-          detach = own.cancellation.link(selection.signal as TileflowNativeSourceOptions['signal']);
-          own.cancellation.check();
-          publish({status: 'ready', kind: 'maplibre', generation: own.generation, source: direct});
-          return;
-        }
-        if (sourceInput.kind !== 'tileflow' || !isTileflowPortableId(sourceInput.map))
+        if (!sourceInput || !selection || Object.hasOwn(sourceInput, 'kind') ||
+          Object.hasOwn(sourceInput, 'style') || !isTileflowPortableId(sourceInput.map))
           throw new TileflowNativeSourceError('NATIVE_SOURCE_INVALID', 'source');
         if (
           (selection.theme !== undefined && !validateTileflowThemeSelection(selection.theme)) ||
@@ -123,8 +102,7 @@ export function createTileflowNativeSourceController(options: {
         ) {
           throw new TileflowNativeSourceError('NATIVE_THEME_INVALID', 'theme');
         }
-        const selectedSource: Extract<TileflowNativeSource, {kind: 'tileflow'}> = {
-          kind: 'tileflow',
+        const selectedSource: TileflowNativeSource = {
           map: sourceInput.map,
           manifestUrl: sourceInput.manifestUrl as string,
         };
@@ -161,7 +139,6 @@ export function createTileflowNativeSourceController(options: {
         }
         publish({
           status: 'ready',
-          kind: 'tileflow',
           generation: own.generation,
           source: selectedSource,
           ...result,

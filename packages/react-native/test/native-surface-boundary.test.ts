@@ -20,12 +20,15 @@ test('native surface adapters observe only their owned view and redact all nativ
 	assert.match(android, /REASON_API_GESTURE/u);
 	assert.match(android, /removeOnDidFinishRenderingFrameListener/u);
 	assert.match(android, /UIManagerHelper/u);
+	assert.match(android, /current\(id, allowFailed = true\)/u);
 	const ios = await source('ios/TileflowNativeSurface.mm');
 	assert.match(ios, /viewRegistry_DEPRECATED/u);
 	assert.match(ios, /addUIBlock/u);
 	assert.match(ios, /regionWillChangeWithReason/u);
 	assert.match(ios, /CATransaction/u);
 	assert.match(ios, /delegate ==/u);
+	assert.match(ios, /@try\s*\{\s*return TFSurfaceMap\(self\.root\) == self\.map;/u);
+	assert.match(ios, /\[attachment\.state close\];\s*return;/u);
 });
 
 test('surface code has private build wiring without widening peers or publishing a native handle', async () => {

@@ -163,12 +163,12 @@ static MLRNMapView *TFSurfaceMap(UIView *root) {
 }
 - (void)mapViewDidFinishRenderingFrame:(MLNMapView *)mapView fullyRendered:(BOOL)fully frameEncodingTime:(double)encoding frameRenderingTime:(double)rendering {
 	if ([self owns]) [self.state frameEnd:self.style fully:fully];
-	if ([self.previous respondsToSelector:_cmd]) [self.previous mapViewDidFinishRenderingFrame:mapView fullyRendered:fully frameEncodingTime:encoding frameRenderingTime:rendering];
+	if ([self.previous respondsToSelector:_cmd]) [self.previous mapView:mapView didFinishRenderingFrame:mapView fullyRendered:fully frameEncodingTime:encoding frameRenderingTime:rendering];
 	else if ([self.previous respondsToSelector:@selector(mapViewDidFinishRenderingFrame:fullyRendered:)]) [self.previous mapViewDidFinishRenderingFrame:mapView fullyRendered:fully];
 }
 - (void)mapViewDidFinishRenderingFrame:(MLNMapView *)mapView fullyRendered:(BOOL)fully renderingStats:(MLNRenderingStats *)stats {
 	if ([self owns]) [self.state frameEnd:self.style fully:fully];
-	if ([self.previous respondsToSelector:_cmd]) [self.previous mapViewDidFinishRenderingFrame:mapView fullyRendered:fully renderingStats:stats];
+	if ([self.previous respondsToSelector:_cmd]) [self.previous mapView:mapView didFinishRenderingFrame:mapView fullyRendered:fully renderingStats:stats];
 	else if ([self.previous respondsToSelector:@selector(mapViewDidFinishRenderingFrame:fullyRendered:)]) [self.previous mapViewDidFinishRenderingFrame:mapView fullyRendered:fully];
 }
 - (void)mapView:(MLNMapView *)mapView regionWillChangeWithReason:(MLNCameraChangeReason)reason animated:(BOOL)animated {
@@ -256,7 +256,7 @@ RCT_REMAP_METHOD(expectStyle, expectSurface:(NSString *)identifier style:(NSStri
 		[surface.state expect:token]; surface.token = token;
 		if (surface.deadline) dispatch_block_cancel(surface.deadline);
 		__weak TFSurfaceAttachment *weakSurface = surface;
-		dispatch_block_t deadline = dispatch_block_create(0, ^{
+		dispatch_block_t deadline = dispatch_block_create((dispatch_block_flags_t)0, ^{
 			TFSurfaceAttachment *current = weakSurface;
 			if (current && !current.retiring && [current.token isEqual:token]) [current.state fail];
 		});
@@ -333,9 +333,16 @@ RCT_REMAP_METHOD(cancelCamera, cancelCameraForSurface:(NSString *)identifier seq
 	if (!surface.root.window) { [self.surfaces removeObjectForKey:surface.identifier]; resolve(@{@"detached": @YES}); return; }
 	if (surface.detached.count >= 16) TFSurfaceInvalid();
 	__block BOOL completed = NO;
+	NSString *identifier = [surface.identifier copy];
 	__weak TileflowNativeSurface *weakSelf = self;
+	__weak TFSurfaceAttachment *weakSurface = surface;
 	[surface.detached addObject:^{
-		[weakSelf.surfaces removeObjectForKey:surface.identifier];
+		TileflowNativeSurface *owner = weakSelf;
+		TFSurfaceAttachment *attachment = weakSurface;
+		if (!owner || !attachment) return;
+		TFSurfaceAttachment *registered = owner.surfaces[identifier];
+		if (registered && registered != attachment) return;
+		if (registered == attachment) [owner.surfaces removeObjectForKey:identifier];
 		if (!completed) { completed = YES; resolve(@{@"detached": @YES}); }
 	}];
 	dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{

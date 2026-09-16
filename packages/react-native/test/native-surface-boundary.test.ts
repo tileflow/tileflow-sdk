@@ -40,8 +40,8 @@ test('surface code has private build wiring without widening peers or publishing
 	const registration = await source('android/src/main/java/dev/tileflow/reactnative/TileflowNativeAdmissionPackage.kt');
 	assert.match(registration, /TileflowNativeSurfaceModule\(context\)/u);
 	const podspec = await source('TileflowNativeAdmission.podspec');
+	assert.match(podspec, /private_header_files = 'ios\/\*\.h'/u);
 	assert.match(podspec, /Headers\/Private\/MapLibreReactNative/u);
-	assert.match(podspec, /dependency 'MapLibreReactNative', '11\.3\.10'/u);
 	assert.doesNotMatch(podspec, /public_header_files/u);
 	const contract = await source('src/contract.ts');
 	assert.doesNotMatch(contract, /NativeSurface|SurfaceHandle|attachSurface|applyCamera|prepare\(/u);

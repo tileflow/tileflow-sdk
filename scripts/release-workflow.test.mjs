@@ -216,9 +216,10 @@ test('keeps framework peer-smoke fixtures on the required source API', async () 
   const peerSmoke = await readFile(new URL('./peer-compat-smoke.mjs', import.meta.url), 'utf8');
 
   assert.doesNotMatch(peerSmoke, /<Map\s+styleUrl=/u);
-  assert.match(peerSmoke, /export const interactive = <Map source=\{\{kind: 'maplibre'/u);
-  assert.match(peerSmoke, /const props = \{source: \{kind: 'maplibre' as const/u);
-  assert.match(peerSmoke, /<TileflowMap source=\{\{kind: 'maplibre'/u);
+  assert.doesNotMatch(peerSmoke, /\bkind\s*:\s*['"](?:tileflow|maplibre)['"]/u);
+  assert.match(peerSmoke, /export const interactive = <Map source=\{\{map: 'main'\}\}/u);
+  assert.match(peerSmoke, /const props = \{source: \{map: 'main'\}/u);
+  assert.match(peerSmoke, /<TileflowMap source=\{\{map: 'main'\}\}/u);
 });
 
 test('accepts only a successful push CI run from tileflow-sdk main at the exact SHA', () => {
@@ -294,10 +295,7 @@ test('Chromium provisioning removes only unused Chrome APT sources', async () =>
       'google-chrome-stable.sources',
       'google-chrome.list',
     ]);
-    assert.deepEqual((await readdir(directory)).sort(), [
-      'google-cloud-sdk.list',
-      'ubuntu.sources',
-    ]);
+    assert.deepEqual((await readdir(directory)).sort(), ['google-cloud-sdk.list', 'ubuntu.sources']);
     assert.deepEqual(await removeRunnerChromeRepositories(directory), []);
   } finally {
     await rm(directory, {recursive: true, force: true});

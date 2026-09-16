@@ -8,7 +8,7 @@ function fixture() {
 	let calls = 0;
 	const body = new TextEncoder().encode(JSON.stringify({version: 1, maps: {main: {
 		defaultTheme: 'light', systemThemes: {light: 'light', dark: 'dark'},
-		themes: {light: {colorScheme: 'light', styleUrl: 'light.json'}, dark: {colorScheme: 'dark', styleUrl: 'dark.json'}},
+		themes: {light: {colorScheme: 'light', styleUrl: './light.json'}, dark: {colorScheme: 'dark', styleUrl: './dark.json'}},
 	}}}));
 	const acquire: TileflowNativeManifestAcquire = (url) => {
 		calls++;

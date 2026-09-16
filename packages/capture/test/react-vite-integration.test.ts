@@ -8,6 +8,7 @@ import {build as buildVite, createServer as createViteServer} from 'vite';
 import {tileflow} from '@tileflow/vite';
 import {createTileflowCaptureSession} from '../src/index';
 import {assertPngContainsProbeColor} from './framework-vite-harness';
+import {writeFrameworkMapFixture} from './tileflow-source-fixture';
 
 test(
   'captures React wrapper readiness at narrow and desktop sizes through one Vite server',
@@ -28,6 +29,7 @@ test(
       ),
       writeFile(join(cwd, 'main.tsx'), applicationSource),
       writeFile(join(cwd, 'tileflow.config.ts'), applicationConfig),
+      writeFrameworkMapFixture(cwd),
     ]);
     const vite = await createViteServer({
       configFile: false,
@@ -122,6 +124,7 @@ test(
       ),
       writeFile(join(cwd, 'main.tsx'), builtApplicationSource),
       writeFile(join(cwd, 'tileflow.config.ts'), builtApplicationConfig),
+      writeFrameworkMapFixture(cwd),
     ]);
     await buildVite({
       base: '/app/',
@@ -203,6 +206,7 @@ test(
       ),
       writeFile(join(cwd, 'main.tsx'), minimumApplicationSource),
       writeFile(join(cwd, 'tileflow.config.ts'), minimumApplicationConfig),
+      writeFrameworkMapFixture(cwd),
     ]);
     const vite = await createViteServer({
       cacheDir: join(cwd, '.vite-cache'),
@@ -244,7 +248,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 configureTileflowMapLibre({workerUrl});
 
-const style = {version: 8, sources: {}, layers: [{id: 'background', type: 'background', paint: {'background-color': '#2468ac'}}]};
+const source = {map: 'main', manifestUrl: '/tileflow-fixture/manifest.json'};
 const popupAnnotations = [{
   ariaLabel: 'React browser popup proof',
   coordinate: [0, 0],
@@ -265,12 +269,12 @@ function App() {
         data-tileflow-popup-probe="react"
         style={{background: '#ff00cc', boxSizing: 'border-box', color: '#111', font: '11px/16px sans-serif', height: 40, padding: '12px 8px', whiteSpace: 'nowrap', width: 168}}
       >Tileflow React popup ready: {annotation.id}</div>}
-      source={{kind: 'maplibre', style}}
+      source={source}
     /></div>
-    <div className="secondary"><Map captureId="secondary" height={80} source={{kind: 'maplibre', style}} /></div>
-    <div className="image"><Map captureId="image" height={80} imageUrl="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWP4WSz2H4QZYAwAWswKBc9NlmIAAAAASUVORK5CYII=" mode="image" source={{kind: 'tileflow', map: 'main'}} /></div>
-    <div className="image"><Map captureId="missing-map" height={80} source={{kind: 'tileflow', map: 'missing'}} /></div>
-    <div className="image"><Map captureId="unresolved-image" height={80} mode="image" source={{kind: 'maplibre', style}} /></div>
+    <div className="secondary"><Map captureId="secondary" height={80} source={source} /></div>
+    <div className="image"><Map captureId="image" height={80} imageUrl="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVQImWP4WSz2H4QZYAwAWswKBc9NlmIAAAAASUVORK5CYII=" mode="image" source={source} /></div>
+    <div className="image"><Map captureId="missing-map" height={80} source={{...source, map: 'missing'}} /></div>
+    <div className="image"><Map captureId="unresolved-image" height={80} mode="image" source={source} /></div>
   </main>;
 }
 
@@ -345,10 +349,9 @@ import {configureTileflowMapLibre, Map} from '@tileflow/react';
 
 configureTileflowMapLibre({workerUrl});
 
-const style = {version: 8, sources: {}, layers: [{id: 'background', type: 'background', paint: {'background-color': '#2468ac'}}]};
 createRoot(document.getElementById('root')).render(
   <div style={{width: 222}}>
-    <Map captureId="proof" height={100} source={{kind: 'maplibre', style}} />
+    <Map captureId="proof" height={100} source={{map: 'main', manifestUrl: '/app/tileflow-fixture/manifest.json'}} />
   </div>,
 );
 `;
@@ -388,10 +391,9 @@ import {configureTileflowMapLibre, Map} from '@tileflow/react';
 
 configureTileflowMapLibre({workerUrl});
 
-const style = {version: 8, sources: {}, layers: [{id: 'background', type: 'background', paint: {'background-color': '#2468ac'}}]};
 createRoot(document.getElementById('root')).render(
   <div style={{width: 222}}>
-    <Map captureId="proof" height={100} source={{kind: 'maplibre', style}} />
+    <Map captureId="proof" height={100} source={{map: 'main', manifestUrl: '/tileflow-fixture/manifest.json'}} />
   </div>,
 );
 `;

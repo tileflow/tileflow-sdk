@@ -16,7 +16,7 @@
 	[self drain:state];
 	XCTAssertFalse([[events valueForKey:@"kind"] containsObject:@"render"]);
 	NSUInteger layout = [state commit:@"one"];
-	[state frameStart:style]; [state frameEnd:style fully:YES]; [self drain:state];
+	[state frameStart:style]; [state mapRendered:style fully:YES]; [state frameEnd:style fully:YES]; [self drain:state];
 	XCTAssertEqualObjects(events.lastObject[@"kind"], @"render");
 	XCTAssertEqualObjects(events.lastObject[@"layout"], @(layout));
 	[state close];
@@ -33,6 +33,27 @@
 	XCTAssertFalse([[events valueForKey:@"kind"] containsObject:@"render"]);
 	XCTAssertThrows([state commit:@"two"]);
 	[state close]; XCTAssertFalse(state.active);
+}
+- (void)testLayoutChangeRequiresFreshMapEvidenceAndClosesGesture {
+	NSMutableArray<NSDictionary *> *events = [NSMutableArray array];
+	TFNativeSurfaceState *state = [[TFNativeSurfaceState alloc] initWithSurface:@"surface" emit:^(NSDictionary *event) { [events addObject:event]; }];
+	NSObject *style = [NSObject new];
+	NSDictionary *view = @{@"center": @[@1, @2], @"zoom": @3, @"bearing": @4, @"pitch": @5};
+	[state expect:@"one"]; [state layout:YES]; [state loaded:@"one" identity:style]; [self drain:state];
+	[state commit:@"one"]; [state mapRendered:style fully:YES]; [state gestureStart:view]; [self drain:state];
+	[state layout:YES]; [self drain:state];
+	XCTAssertTrue([state beginCommand:1]);
+	[state commit:@"one"]; [state frameStart:style]; [state frameEnd:style fully:YES]; [self drain:state];
+	XCTAssertFalse([[events valueForKey:@"kind"] containsObject:@"render"]);
+	[state frameStart:style]; [state mapRendered:style fully:YES]; [state frameEnd:style fully:YES]; [self drain:state];
+	XCTAssertTrue([[events valueForKey:@"kind"] containsObject:@"render"]);
+	[state close];
+}
+- (void)testFailedStyleCanBeRearmedForRollback {
+	TFNativeSurfaceState *state = [[TFNativeSurfaceState alloc] initWithSurface:@"surface" emit:^(__unused NSDictionary *event) {}];
+	[state expect:@"one"]; [state fail]; XCTAssertFalse(state.active);
+	[state expect:@"rollback"]; XCTAssertTrue(state.active);
+	[state close];
 }
 - (void)testNativeGestureEpochsExcludeProgrammaticCommandsAndQueueCapacityIsBounded {
 	NSMutableArray<NSDictionary *> *events = [NSMutableArray array];

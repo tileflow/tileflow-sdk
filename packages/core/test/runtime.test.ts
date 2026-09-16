@@ -53,50 +53,20 @@ test('commercial preflight sends the normalized Surface declared by the integrat
   assert.equal(requestBody?.surfaceId, 'store-locator');
 });
 
-test('validates the discriminated runtime source contract', () => {
-  const style = {layers: [], name: 'Direct', sources: {}, version: 8 as const};
-  for (const source of [
-    {kind: 'tileflow', map: 'main'},
-    {kind: 'tileflow', manifestUrl: '/custom/manifest.json', map: 'main'},
-    {kind: 'maplibre', style},
-    {kind: 'maplibre', style: '/styles/main.json'},
-  ]) {
+test('validates portable map identity and explicit manifest overrides', () => {
+  for (const source of [{map: 'main'}, {manifestUrl: '/custom/manifest.json', map: 'main'}]) {
     assert.deepEqual(validateTileflowRuntimeSource(source), {ok: true});
   }
 
-  for (const source of [
-    undefined,
-    null,
-    {},
-    {kind: 'config', config: {}},
-    {kind: 'tileflow', map: ''},
-    {kind: 'tileflow', map: ' main'},
-    {kind: 'tileflow', map: 'Main'},
-    {kind: 'tileflow', map: 'con'},
-    {kind: 'tileflow', manifestUrl: '', map: 'main'},
-    {kind: 'maplibre', style: ''},
-  ]) {
+  for (const source of [undefined, null, {}, {map: ''}, {map: ' main'}, {map: 'Main'},
+    {map: 'con'}, {manifestUrl: '', map: 'main'}]) {
     assert.equal(validateTileflowRuntimeSource(source).ok, false);
     assert.throws(() => assertValidTileflowRuntimeSource(source), TypeError);
   }
 });
 
-test('resolves direct MapLibre sources without a compiler path', () => {
-  const style = {layers: [], name: 'Direct', sources: {}, version: 8 as const};
-  assert.deepEqual(resolveTileflowRuntimeStyle({source: {kind: 'maplibre', style}}), {
-    fontFaces: [],
-    style,
-  });
-  assert.deepEqual(
-    resolveTileflowRuntimeStyle({
-      source: {kind: 'maplibre', style: 'https://cdn.example.test/style.json'},
-    }),
-    {analytics: undefined, style: 'https://cdn.example.test/style.json'},
-  );
-});
-
 test('resolves Tileflow styles only from a loaded manifest entry', () => {
-  const source = {kind: 'tileflow', map: 'main'} as const;
+  const source = {map: 'main'} as const;
   assert.equal(resolveTileflowRuntimeStyle({source}), null);
   assert.deepEqual(
     resolveTileflowRuntimeStyle({
@@ -133,7 +103,7 @@ test('resolves Tileflow styles only from a loaded manifest entry', () => {
 });
 
 test('system theme selection is explicit and unknown themes fail with available names', () => {
-  const source = {kind: 'tileflow', map: 'main'} as const;
+  const source = {map: 'main'} as const;
   const manifestMap = {
     defaultTheme: 'light',
     name: 'main',
@@ -162,38 +132,23 @@ test('system theme selection is explicit and unknown themes fail with available 
     /concrete portable theme name/u,
   );
   assert.throws(
-    () =>
-      resolveTileflowRuntimeStyle({
-        manifestMap: {...manifestMap, defaultTheme: 'system'},
-        source,
-      }),
+    () => resolveTileflowRuntimeStyle({manifestMap: {...manifestMap, defaultTheme: 'system'}, source}),
     /concrete portable theme name/u,
   );
   assert.throws(
-    () =>
-      resolveTileflowRuntimeStyle({
-        colorScheme: 'dark',
-        manifestMap: {...manifestMap, systemThemes: {dark: 'con', light: 'light'}},
-        source,
-        theme: 'system',
-      }),
+    () => resolveTileflowRuntimeStyle({
+      colorScheme: 'dark',
+      manifestMap: {...manifestMap, systemThemes: {dark: 'con', light: 'light'}},
+      source,
+      theme: 'system',
+    }),
     /concrete portable theme name/u,
-  );
-  assert.throws(
-    () =>
-      resolveTileflowRuntimeStyle({
-        source: {kind: 'maplibre', style: '/style.json'},
-        theme: 'dark',
-      }),
-    /only valid for a Tileflow/u,
   );
 });
 
-test('loads manifests only for Tileflow sources that need published delivery data', () => {
-  const tileflow = {kind: 'tileflow', map: 'main'} as const;
-  const maplibre = {kind: 'maplibre', style: '/style.json'} as const;
-  assert.equal(shouldLoadTileflowManifest({source: tileflow}), true);
-  assert.equal(shouldLoadTileflowManifest({source: maplibre}), false);
+test('every public runtime source loads published manifest data', () => {
+  assert.equal(shouldLoadTileflowManifest({source: {map: 'main'}}), true);
+  assert.equal(shouldLoadTileflowManifest({source: {map: 'main', manifestUrl: '/custom/manifest.json'}}), true);
 });
 
 test('map mode has no environment-dependent local fallback', () => {

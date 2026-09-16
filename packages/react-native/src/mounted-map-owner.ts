@@ -471,13 +471,17 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
 		}
 		const epoch = current;
 		const state = core.state;
-		if (
-			epoch?.live &&
-			state?.status === 'ready' &&
-			(!epoch.renderer || !epoch.renderer.currentTarget) &&
-			!epoch.job
-		)
-			prepare(epoch, state);
+		if (epoch?.live && state?.status === 'ready' && !epoch.job) {
+			const target = epoch.renderer?.currentTarget;
+			if (
+				!target ||
+				target.source.generation !== state.generation ||
+				target.source.theme.name !== state.theme.name ||
+				target.source.theme.styleUrl !== state.theme.styleUrl ||
+				target.source.theme.revision !== state.theme.revision
+			)
+				prepare(epoch, state);
+		}
 	}
 
 	return Object.freeze({

@@ -1,4 +1,5 @@
 #import "TFAdmissionEngine.h"
+#import "TFAdmissionCatalog.h"
 #import <atomic>
 #import <cmath>
 
@@ -38,7 +39,7 @@ static BOOL TFGrantShape(NSString *value) {
 @interface TFAdmissionContext : NSObject
 @property (nonatomic, copy) NSString *identifier;
 @property (nonatomic, copy, nullable) NSString *mapId;
-@property (nonatomic) NSDictionary<NSString *, NSDictionary *> *resources;
+@property (nonatomic) TFAdmissionCatalog *catalog;
 @property (nonatomic) NSMutableDictionary<NSString *, TFAdmissionWork *> *work;
 @property (nonatomic) NSMutableArray<NSString *> *order;
 @property (nonatomic) TFAdmissionFlag *alive;
@@ -107,28 +108,24 @@ static BOOL TFGrantShape(NSString *value) {
 		NSRegularExpression *pattern = [NSRegularExpression regularExpressionWithPattern:@"^map_[A-Za-z0-9_-]{16}$" options:0 error:nil];
 		if (!TFString(mapId, 64) || [pattern numberOfMatchesInString:mapId options:0 range:NSMakeRange(0, mapId.length)] != 1) TFInvalidAdmission();
 	}
-	NSMutableDictionary *catalog = [NSMutableDictionary dictionary];
-	NSArray *scopes = @[@"style", @"tilejson", @"tile", @"sprite", @"glyph", @"font"];
-	for (NSDictionary *resource in resources) {
-		if (![resource isKindOfClass:NSDictionary.class] || !TFString(resource[@"url"], 1920) || ![scopes containsObject:resource[@"scope"]]) TFInvalidAdmission();
-		NSString *url = TFAdmissionCleanURL(resource[@"url"]);
-		if (catalog[url]) TFInvalidAdmission();
-		NSString *tileset = resource[@"tilesetId"];
-		if (([resource[@"scope"] isEqual:@"tile"] || [resource[@"scope"] isEqual:@"tilejson"]) && !tileset) TFInvalidAdmission();
-		if (tileset) {
-			NSRegularExpression *pattern = [NSRegularExpression regularExpressionWithPattern:@"^[A-Za-z0-9._:-]{1,255}$" options:0 error:nil];
-			if (!TFString(tileset, 255) || [pattern numberOfMatchesInString:tileset options:0 range:NSMakeRange(0, tileset.length)] != 1 ||
-				[tileset.lowercaseString containsString:@"tf_native_"] || [tileset.lowercaseString containsString:@"tf_public_"]) TFInvalidAdmission();
-		}
-		NSMutableDictionary *copy = [@{@"url": url, @"scope": resource[@"scope"]} mutableCopy];
-		if (tileset) copy[@"tilesetId"] = tileset;
-		catalog[url] = [copy copy];
-	}
+	TFAdmissionCatalog *catalog = [[TFAdmissionCatalog alloc] initWithResources:resources];
 	TFAdmissionContext *context = [TFAdmissionContext new];
 	context.identifier = [NSString stringWithFormat:@"%@.%lu", self.installation, (unsigned long)++self.contextSequence];
-	context.mapId = mapId; context.resources = [catalog copy];
+	context.mapId = mapId; context.catalog = catalog;
 	self.contexts[context.identifier] = context;
 	return context.identifier;
+}
+- (NSUInteger)extendContext:(NSString *)identifier resources:(NSArray<NSDictionary *> *)resources {
+	TFAdmissionContext *context = self.contexts[identifier];
+	if (!context || !context.alive->value.load() || ![self isOwner]) TFInvalidAdmission();
+	// Append-only identity permits replay of an acknowledgement and theme rollback.
+	TFAdmissionCatalog *next = [context.catalog extending:resources];
+	context.catalog = next;
+	return next.resources.count;
+}
+- (NSDictionary *)resource:(NSString *)url context:(TFAdmissionContext *)context {
+	@try { return [context.catalog find:url]; }
+	@catch (NSException *exception) { return nil; }
 }
 
 - (id<TFAdmissionCancel>)request:(NSURLRequest *)request response:(void (^)(NSHTTPURLResponse *, NSData *))response failure:(dispatch_block_t)failure delegate:(TFAdmissionDelegate)delegate {
@@ -148,7 +145,7 @@ static BOOL TFGrantShape(NSString *value) {
 		@try { tagged = TFAdmissionStripContext(request.URL.absoluteString); }
 		@catch (NSException *exception) { alive->value.store(false); release(); failure(); return; }
 		TFAdmissionContext *context = self.contexts[tagged[@"context"]];
-		if (!self->_foreground.load() || ![self isOwner] || !context || !context.alive->value.load() || !context.resources[tagged[@"url"]] || context.work.count >= 128 ||
+		if (!self->_foreground.load() || ![self isOwner] || !context || !context.alive->value.load() || ![self resource:tagged[@"url"] context:context] || context.work.count >= 128 ||
 			![request.HTTPMethod isEqual:@"GET"] || request.HTTPBody || request.HTTPBodyStream ||
 			[request valueForHTTPHeaderField:TFAdmissionGrantHeader] != nil || self.ticketSequence >= 9007199254740991ULL) {
 			alive->value.store(false); release(); failure(); return;
@@ -200,7 +197,7 @@ static BOOL TFGrantShape(NSString *value) {
 }
 
 - (BOOL)authority:(NSDictionary *)authority allows:(NSDictionary *)resource context:(TFAdmissionContext *)context {
-	return [authority[@"mapId"] isEqual:context.mapId] && [authority[@"resourceOrigins"] containsObject:TFAdmissionOrigin(resource[@"url"])] &&
+	return resource && [authority[@"mapId"] isEqual:context.mapId] && [authority[@"resourceOrigins"] containsObject:TFAdmissionOrigin(resource[@"url"])] &&
 		[authority[@"resourceScopes"] containsObject:resource[@"scope"]] && (!resource[@"tilesetId"] || [authority[@"tilesetIds"] containsObject:resource[@"tilesetId"]]);
 }
 - (BOOL)validAuthority:(NSDictionary *)authority {
@@ -241,7 +238,7 @@ static BOOL TFGrantShape(NSString *value) {
 			continue;
 		}
 		NSDictionary *authority = result[@"authority"];
-		NSDictionary *resource = context.resources[work.request.URL.absoluteString];
+		NSDictionary *resource = [self resource:work.request.URL.absoluteString context:context];
 		if (![result[@"kind"] isEqual:@"grant"] || !context.mapId || !TFExactNumber(result[@"validForMs"], 1, 900000) ||
 			![self validAuthority:authority] || ![self authority:authority allows:resource context:context]) { [self fail:work]; continue; }
 		work.authority = [authority copy];
@@ -260,7 +257,7 @@ static BOOL TFGrantShape(NSString *value) {
 	return YES;
 }
 - (BOOL)start:(TFAdmissionWork *)work url:(NSURL *)url {
-	NSDictionary *resource = work.context.resources[url.absoluteString];
+	NSDictionary *resource = [self resource:url.absoluteString context:work.context];
 	if (!resource || !work.authority || ![self authority:work.authority allows:resource context:work.context] || ![self canStart:work]) { [self fail:work]; return NO; }
 	NSMutableURLRequest *request = [work.request mutableCopy];
 	request.URL = url;

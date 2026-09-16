@@ -58,8 +58,16 @@ test('validates portable map identity and explicit manifest overrides', () => {
     assert.deepEqual(validateTileflowRuntimeSource(source), {ok: true});
   }
 
-  for (const source of [undefined, null, {}, {map: ''}, {map: ' main'}, {map: 'Main'},
-    {map: 'con'}, {manifestUrl: '', map: 'main'}]) {
+  for (const source of [
+    undefined,
+    null,
+    {},
+    {map: ''},
+    {map: ' main'},
+    {map: 'Main'},
+    {map: 'con'},
+    {manifestUrl: '', map: 'main'},
+  ]) {
     assert.equal(validateTileflowRuntimeSource(source).ok, false);
     assert.throws(() => assertValidTileflowRuntimeSource(source), TypeError);
   }
@@ -136,19 +144,23 @@ test('system theme selection is explicit and unknown themes fail with available 
     /concrete portable theme name/u,
   );
   assert.throws(
-    () => resolveTileflowRuntimeStyle({
-      colorScheme: 'dark',
-      manifestMap: {...manifestMap, systemThemes: {dark: 'con', light: 'light'}},
-      source,
-      theme: 'system',
-    }),
+    () =>
+      resolveTileflowRuntimeStyle({
+        colorScheme: 'dark',
+        manifestMap: {...manifestMap, systemThemes: {dark: 'con', light: 'light'}},
+        source,
+        theme: 'system',
+      }),
     /concrete portable theme name/u,
   );
 });
 
 test('every public runtime source loads published manifest data', () => {
   assert.equal(shouldLoadTileflowManifest({source: {map: 'main'}}), true);
-  assert.equal(shouldLoadTileflowManifest({source: {map: 'main', manifestUrl: '/custom/manifest.json'}}), true);
+  assert.equal(
+    shouldLoadTileflowManifest({source: {map: 'main', manifestUrl: '/custom/manifest.json'}}),
+    true,
+  );
 });
 
 test('map mode has no environment-dependent local fallback', () => {

@@ -29,7 +29,7 @@ test('keeps the shared interaction runtime behind the browser lifecycle boundary
       props: {
         annotations: [annotation],
         interactions: [poiInteraction],
-        source: {kind: 'tileflow', map: 'main'},
+        source: {map: 'main'},
       },
     });
 
@@ -48,8 +48,7 @@ test('keeps the shared interaction runtime behind the browser lifecycle boundary
     assert.match(source, /interactionCoordinator\.attach\(\s*'annotation'/);
     assert.match(source, /interactionCoordinator\.attach\(\s*'semantic'/);
     assert.equal(
-      source.match(/onInteractionStateChange: interactionCoordinator\.requestInteractionState/g)
-        ?.length,
+      source.match(/onInteractionStateChange: interactionCoordinator\.requestInteractionState/g)?.length,
       2,
     );
     assert.doesNotMatch(source, /import \* as maplibregl/);
@@ -70,7 +69,7 @@ test('marks image-mode interaction configurations unsupported without loading Ma
         interactions: [poiInteraction],
         imageUrl: 'data:image/png;base64,iVBORw0KGgo=',
         mode: 'image',
-        source: {kind: 'tileflow', map: 'main'},
+        source: {map: 'main'},
       },
     });
 
@@ -88,7 +87,7 @@ test('invalid semantic bindings participate in capture readiness', async () => {
     const result = render(compiled.component, {
       props: {
         interactions: [poiInteraction, poiInteraction],
-        source: {kind: 'tileflow', map: 'main'},
+        source: {map: 'main'},
       },
     });
 

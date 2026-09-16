@@ -13,7 +13,7 @@ test('renders bounded framework-neutral readiness attributes in the loading stat
         captureId: 'proof-map',
         imageUrl: 'data:image/png;base64,iVBORw0KGgo=',
         mode: 'image',
-        source: {kind: 'tileflow', map: 'main'},
+        source: {map: 'main'},
         theme: 'dark',
       }),
   });
@@ -30,7 +30,7 @@ test('rejects an invalid capture ID before it reaches the DOM', async () => {
     render: () =>
       h(TileflowMap, {
         captureId: 'unsafe id',
-        source: {kind: 'tileflow', map: 'main'},
+        source: {map: 'main'},
       }),
   });
   app.config.warnHandler = () => undefined;
@@ -55,16 +55,13 @@ test('diagnoses annotations in image mode without evaluating MapLibre', async ()
         mode: 'image',
         onInteractionDiagnostic: (diagnostic: TileflowInteractionDiagnostic) =>
           diagnostics.push(diagnostic),
-        source: {kind: 'tileflow', map: 'main'},
+        source: {map: 'main'},
       }),
   });
   const html = await renderToString(app);
 
   assert.match(html, /data-tileflow-state="error"/u);
-  assert.deepEqual(
-    diagnostics.map(({code}) => code),
-    ['UNSUPPORTED_MODE'],
-  );
+  assert.deepEqual(diagnostics.map(({code}) => code), ['UNSUPPORTED_MODE']);
 });
 
 test('diagnoses semantic interactions in image mode without evaluating MapLibre', async () => {
@@ -83,16 +80,13 @@ test('diagnoses semantic interactions in image mode without evaluating MapLibre'
         mode: 'image',
         onInteractionDiagnostic: (diagnostic: TileflowInteractionDiagnostic) =>
           diagnostics.push(diagnostic),
-        source: {kind: 'tileflow', map: 'main'},
+        source: {map: 'main'},
       }),
   });
   const html = await renderToString(app);
 
   assert.match(html, /data-tileflow-state="error"/u);
-  assert.deepEqual(
-    diagnostics.map(({code}) => code),
-    ['UNSUPPORTED_MODE'],
-  );
+  assert.deepEqual(diagnostics.map(({code}) => code), ['UNSUPPORTED_MODE']);
 });
 
 test('gates custom interaction views on Vue commit and two animation frames', async () => {

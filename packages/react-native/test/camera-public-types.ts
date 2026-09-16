@@ -9,7 +9,7 @@ import type {
 function accepts(value: MapProps): void {
   void value;
 }
-const source = {kind: 'maplibre', style: 'https://maps.example.test/style.json'} as const;
+const source = {map: 'streets', manifestUrl: 'https://maps.example.test/manifest.json'} as const;
 const view: MapView = {center: [0, 20], zoom: 2, bearing: 0, pitch: 0};
 const change = (event: MapViewChangeEvent) => {
   void event.view;
@@ -19,16 +19,8 @@ accepts({source});
 accepts({source, initialView: {zoom: 8}});
 accepts({source, initialView: {center: [10, 30]}, onViewChange: change});
 accepts({source, view, onViewChange: change});
-accepts({
-  source: {
-    kind: 'tileflow',
-    map: 'streets',
-    manifestUrl: 'https://maps.example.test/manifest.json',
-  },
-  theme: 'system',
-  view,
-  onViewChange: change,
-});
+accepts({source, theme: 'system', view, onViewChange: change});
+accepts({source, theme: 'dark', view, onViewChange: change});
 
 // @ts-expect-error A controlled view requires observation/adoption by the parent.
 accepts({source, view});
@@ -36,8 +28,6 @@ accepts({source, view});
 accepts({source, view: {zoom: 5}, onViewChange: change});
 // @ts-expect-error Ownership modes are mutually exclusive.
 accepts({source, initialView: {}, view, onViewChange: change});
-// @ts-expect-error Direct styles cannot gain a theme through the camera contract.
-accepts({source, theme: 'dark', view, onViewChange: change});
 // @ts-expect-error No public animation policy has been introduced.
 accepts({source, view, onViewChange: change, duration: 100});
 // @ts-expect-error Bounds and padding are not initial-view props.

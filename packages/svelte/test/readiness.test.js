@@ -12,7 +12,7 @@ test('compiles and renders the bounded framework-neutral loading contract', asyn
         captureId: 'proof-map',
         imageUrl: 'data:image/png;base64,iVBORw0KGgo=',
         mode: 'image',
-        source: {kind: 'tileflow', map: 'main'},
+        source: {map: 'main'},
         theme: 'dark',
       },
     });
@@ -31,10 +31,7 @@ test('compiles and renders the bounded framework-neutral loading contract', asyn
       compiled.code,
       /effectiveInteractionCaptureState = hasInteractionErrors \? 'error' : interactionCaptureState/,
     );
-    assert.match(
-      compiled.code,
-      /await nextAnimationFrame\(\);[\s\S]*await nextAnimationFrame\(\);/,
-    );
+    assert.match(compiled.code, /await nextAnimationFrame\(\);[\s\S]*await nextAnimationFrame\(\);/);
     assert.match(compiled.code, /registerTileflowWorldRequestBridge/);
     assert.match(compiled.code, /attachTileflowFairUseNotice/);
   } finally {

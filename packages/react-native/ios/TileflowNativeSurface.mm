@@ -310,10 +310,10 @@ RCT_REMAP_METHOD(requestFrame, requestFrameForSurface:(NSString *)identifier sty
 		if (![surface.token isEqual:token]) TFSurfaceInvalid();
 		MLNStyleLayer *layer = [surface.style layerWithIdentifier:surface.marker];
 		if (![layer isKindOfClass:MLNBackgroundStyleLayer.class]) TFSurfaceInvalid();
-		// Toggle between two fully transparent colors. The first request is a real style mutation,
-		// and neither value can alter the customer's visible cartography.
+		// The marker color has alpha zero. Mutating its opacity is a real paint change on the
+		// first request while remaining mathematically transparent to customer cartography.
 		surface.repaint = !surface.repaint;
-		((MLNBackgroundStyleLayer *)layer).backgroundColor = [NSExpression expressionForConstantValue:surface.repaint ? [UIColor colorWithRed:1 green:1 blue:1 alpha:0] : [UIColor colorWithRed:0 green:0 blue:0 alpha:0]];
+		((MLNBackgroundStyleLayer *)layer).backgroundOpacity = [NSExpression expressionForConstantValue:surface.repaint ? @0.0001 : @0];
 		resolve(@{@"requested": @YES});
 	} @catch (NSException *exception) { TFSurfaceReject(reject); }
 }

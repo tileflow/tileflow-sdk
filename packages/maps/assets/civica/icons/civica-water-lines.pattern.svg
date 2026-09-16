@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="32" viewBox="0 0 64 32">
+  <title>Cívica water lines</title>
+  <desc>Original broken blue horizontal strokes for quiet printed water.</desc>
+  <g fill="none" stroke="#507B92" stroke-linecap="round" stroke-width=".6" opacity=".32">
+    <path d="M4 6h12m13 0h6m16 0h9M12 15h7m17 0h17M2 26h6m12 0h16m14 0h5"/>
+  </g>
+</svg>

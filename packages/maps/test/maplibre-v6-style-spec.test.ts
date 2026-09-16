@@ -6,6 +6,7 @@ import test from 'node:test';
 import {createStyle} from '@tileflow/core';
 import {
   baedeker,
+  civica,
   cyberpunk,
   ferraris,
   harad,
@@ -14,11 +15,13 @@ import {
   siegfried,
   soundings,
   streets,
+  superTileWorld,
   verdant,
 } from '../src';
 
 const officialMaps = [
   baedeker,
+  civica,
   cyberpunk,
   ferraris,
   harad,
@@ -27,6 +30,7 @@ const officialMaps = [
   siegfried,
   soundings,
   streets,
+  superTileWorld,
   verdant,
 ] as const;
 

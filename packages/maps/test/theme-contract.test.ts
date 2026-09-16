@@ -3,6 +3,7 @@ import test from 'node:test';
 import {auditTileflowMapThemeValues, resolveMap, resolveTileflowTheme} from '@tileflow/core';
 import {
   baedeker,
+  civica,
   cyberpunk,
   ferraris,
   harad,
@@ -13,6 +14,7 @@ import {
   soundings,
   streets,
   streetsThemes,
+  superTileWorld,
   verdant,
 } from '../src';
 
@@ -134,7 +136,9 @@ test('every official module, render stack, and terrain value has a valid semanti
 
   for (const map of [
     streets,
+    superTileWorld,
     baedeker,
+    civica,
     cyberpunk,
     ferraris,
     harad,
@@ -218,7 +222,9 @@ test('Siegfried light and dark expose identical semantic vocabularies', () => {
 test('every official map has a deterministic complete theme collection', () => {
   for (const map of [
     streets,
+    superTileWorld,
     baedeker,
+    civica,
     cyberpunk,
     ferraris,
     harad,

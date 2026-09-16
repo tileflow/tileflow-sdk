@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+  <title>Cívica monument</title>
+  <desc>Original obelisk pictogram with a darker vermilion facet.</desc>
+  <path d="m14 5 2.4 4 1.1 9.5h-7L11.6 9Z" fill="#9E493C" stroke="#F7F3E8" stroke-width="1.6" stroke-linejoin="round" paint-order="stroke fill"/>
+  <path d="m14 5 2.4 4 1.1 9.5H14Z" fill="#9E493C"/>
+  <path d="M8 19.5h12V22H8Z" fill="#9E493C" stroke="#F7F3E8" stroke-width="1.6" paint-order="stroke fill"/>
+</svg>

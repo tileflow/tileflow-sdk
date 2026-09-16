@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>Cívica paper grain</title>
+  <desc>Original transparent, seamless flecks of warm printing ink.</desc>
+  <g fill="#756D5C" opacity=".13">
+    <circle cx="9.4" cy="15.7" r=".45"/>
+    <circle cx="36.8" cy="8.2" r=".35"/>
+    <circle cx="61.1" cy="22.5" r=".5"/>
+    <circle cx="89.7" cy="11.9" r=".3"/>
+    <circle cx="119.2" cy="31.4" r=".4"/>
+    <circle cx="22.6" cy="41.8" r=".3"/>
+    <circle cx="47.2" cy="56.1" r=".45"/>
+    <circle cx="75.9" cy="39.6" r=".35"/>
+    <circle cx="99.1" cy="61.3" r=".5"/>
+    <circle cx="6.8" cy="75.2" r=".35"/>
+    <circle cx="29.5" cy="92.7" r=".5"/>
+    <circle cx="63.4" cy="81.8" r=".3"/>
+    <circle cx="82.2" cy="105.6" r=".45"/>
+    <circle cx="116.3" cy="91.1" r=".3"/>
+    <circle cx="12.1" cy="115.9" r=".4"/>
+    <circle cx="51.7" cy="118.2" r=".35"/>
+    <circle cx="105.6" cy="122.7" r=".4"/>
+  </g>
+  <g fill="none" stroke="#756D5C" stroke-width=".45" stroke-linecap="round" opacity=".09">
+    <path d="m18 25 2.2-.5m32 10 1.8.4m48-3 2.8-.2m-68 36 1.6.3m45-5 2.3-.4m-61 39 2.1.1m50-4 1.5.3m42 11 2.4-.3"/>
+  </g>
+</svg>

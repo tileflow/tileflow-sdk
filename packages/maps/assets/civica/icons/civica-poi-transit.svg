@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+  <title>Cívica transit</title>
+  <desc>Original blue ink transit carriage pictogram.</desc>
+  <rect x="3" y="3" width="22" height="22" rx=".8" fill="#F7F3E8" stroke="#547B94" stroke-width=".6"/>
+  <path d="M10 20 8.5 22M18 20l1.5 2" fill="none" stroke="#547B94" stroke-width="1.5" stroke-linecap="round"/>
+  <rect x="7.5" y="6" width="13" height="14" rx="3" fill="#547B94"/>
+  <path d="M10 9h8v5h-8Z" fill="#F7F3E8"/>
+  <circle cx="10.5" cy="17" r="1" fill="#F7F3E8"/>
+  <circle cx="17.5" cy="17" r="1" fill="#F7F3E8"/>
+</svg>

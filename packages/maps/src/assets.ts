@@ -22,6 +22,9 @@ export const ferrarisIcons = packageDirectory('assets/ferraris/icons');
 /** Package-owned Baedeker patterns. This root does not compose another map's assets. */
 export const baedekerIcons = packageDirectory('assets/baedeker/icons');
 
+/** Package-owned Cívica print textures and landmark symbols. */
+export const civicaIcons = packageDirectory('assets/civica/icons');
+
 /** Package-owned San Francisto blueprint patterns and technical symbol. */
 export const sanFrancistoIcons = packageDirectory('assets/san-francisto/icons');
 
@@ -33,6 +36,13 @@ export const haradIcons = packageDirectory('assets/harad/icons');
 
 /** Package-owned Siegfried patterns. This root does not compose Streets assets. */
 export const siegfriedIcons = packageDirectory('assets/siegfried/icons');
+
+/** Package-owned Cívica print lettering and its license. */
+export const civicaFonts = packageDirectory('assets/civica/fonts');
+
+/** Package-owned Super Tile World pixel sprites, terrain tiles, and lettering. */
+export const superTileWorldIcons = packageDirectory('assets/super-tile-world/icons');
+export const superTileWorldFonts = packageDirectory('assets/super-tile-world/fonts');
 
 /** Package-owned Cyberpunk web fonts and their license. */
 export const cyberpunkFonts = packageDirectory('assets/cyberpunk/fonts');

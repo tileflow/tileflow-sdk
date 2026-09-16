@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+  <title>Cívica food</title>
+  <desc>Original fork and spoon pictogram.</desc>
+  <path d="M8 7v5c0 2 4 2 4 0V7M10 7v14M18.3 13.5V21" fill="none" stroke="#F7F3E8" stroke-width="3.3" stroke-linecap="round"/>
+  <path d="M8 7v5c0 2 4 2 4 0V7M10 7v14M18.3 13.5V21" fill="none" stroke="#64716D" stroke-width="1.7" stroke-linecap="round"/>
+  <ellipse cx="18.3" cy="10.4" rx="2.5" ry="4" fill="#64716D" stroke="#F7F3E8" stroke-width="1.6" paint-order="stroke fill"/>
+</svg>

@@ -3,7 +3,7 @@
 Start with the [@tileflow/core guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md) for installation and a complete first example.
 
 Tileflow exposes one authoring concept and one constructor: `defineMap()`. A complete map omits
-`extends`; an inherited map sets `extends` to another imported map object. All ten first-party
+`extends`; an inherited map sets `extends` to another imported map object. All first-party
 maps are independent standalone maps. They use the sole semantic compiler while defining
 their complete designs and asset providers directly; no official map imports or extends another
 official map. Applications can extend any of those maps through the same public API. Streets
@@ -126,8 +126,9 @@ export default defineMap({
 The standalone map above is complete as written. A map always owns its complete text provider; Core does not
 obtain fonts or sprites from World and never invents a fallback URL. The URL-backed first-party
 `streets`, `ferraris`, `harad`, `soundings`, `verdant`, and `sanFrancisto` maps declare their glyph
-providers directly, while `baedeker`, `siegfried`, `cyberpunk`, and `matrix` declare packaged fonts, so ordinary imports and derived
-maps compile without out-of-band release metadata.
+providers directly. `baedeker`, `civica`, `cyberpunk`, `matrix`, `siegfried`, and `superTileWorld`
+declare packaged fonts, so ordinary imports and derived maps compile without out-of-band release
+metadata.
 
 ```mermaid
 flowchart LR

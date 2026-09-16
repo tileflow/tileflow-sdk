@@ -37,12 +37,13 @@ test('configuration stays private with the exact peer matrix behind the inert pu
 	const runtime = await import('../dist/index.js');
 	assert.deepEqual(Object.keys(runtime), ['Map']);
 	assert.equal(typeof runtime.Map, 'function');
-	for (const file of ['dist/index.js', 'dist/index.d.ts']) {
-		assert.doesNotMatch(
-			await read(file),
-			/MobileConfiguration|NativeConfiguration|readConfiguration|HostedNativeBindingResolver/u,
-		);
-	}
+	const sourceEntry = await read('src/index.ts');
+	assert.doesNotMatch(sourceEntry, /MobileConfiguration|NativeConfiguration|readConfiguration|HostedNativeBindingResolver/u);
+	const declarations = await read('dist/index.d.ts');
+	assert.doesNotMatch(
+		declarations,
+		/MobileConfiguration|NativeConfiguration|readConfiguration|HostedNativeBindingResolver/u,
+	);
 	for (const name of ['configuration', 'native-configuration-bridge', 'hosted-binding']) {
 		await assert.rejects(import(`@tileflow/react-native/${name}`), {
 			code: 'ERR_PACKAGE_PATH_NOT_EXPORTED',

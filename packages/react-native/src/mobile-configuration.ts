@@ -16,6 +16,8 @@ const messages: Record<NativeConfigurationErrorCode, string> = {
   NATIVE_CONFIGURATION_REPLACED: 'Hosted binding resolution was replaced.',
   NATIVE_CONFIGURATION_DISPOSED: 'Hosted binding resolution is disposed.',
 };
+const originPattern =
+  /^([Hh][Tt][Tt][Pp][Ss]):\/\/([A-Za-z0-9.-]+)(?::([1-9][0-9]{0,4}))?\/?$/u;
 
 /** Internal diagnostics never retain input values or a native exception. */
 export class NativeConfigurationError extends Error {
@@ -39,7 +41,7 @@ function invalid(): never {
  */
 export function canonicalMobileApiOrigin(value: unknown): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 2_048) return invalid();
-  const match = /^(https):\/\/([a-z0-9.-]+)(?::([1-9][0-9]{0,4}))?\/?$/iu.exec(value);
+  const match = originPattern.exec(value);
   // JavaScript's dollar anchor can precede a final newline; require the complete match.
   if (!match || match[0] !== value) return invalid();
   const host = match[2]!.toLowerCase();
@@ -47,14 +49,18 @@ export function canonicalMobileApiOrigin(value: unknown): string {
   if (
     host.length > 253 ||
     labels.some((label) => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(label))
-  ) return invalid();
+  ) {
+    return invalid();
+  }
   const last = labels[labels.length - 1]!;
   if (!/^[a-z]/u.test(last)) {
     // Prevent WHATWG's shortened, octal, hexadecimal and integer IPv4 aliases.
     if (
       labels.length !== 4 ||
       labels.some((label) => !/^(?:0|[1-9][0-9]{0,2})$/u.test(label) || Number(label) > 255)
-    ) return invalid();
+    ) {
+      return invalid();
+    }
   }
   const port = match[3] === undefined ? 443 : Number(match[3]);
   if (port > 65_535) return invalid();
@@ -89,13 +95,16 @@ export function snapshotMobileConfiguration(value: unknown): MobileConfiguration
       typeof data.credential !== 'string' ||
       data.credential.length !== 58 ||
       !/^tf_public_[0-9a-f]{48}$/u.test(data.credential)
-    ) return invalid();
+    ) {
+      return invalid();
+    }
     const apiOrigin = canonicalMobileApiOrigin(data.apiOrigin);
     // Private callers can read these fields. Public serialization/inspection cannot copy them.
-    return Object.freeze(Object.defineProperties({}, {
+    const snapshot = Object.defineProperties({}, {
       apiOrigin: {value: apiOrigin},
       credential: {value: data.credential},
-    })) as MobileConfiguration;
+    });
+    return Object.freeze(snapshot) as MobileConfiguration;
   } catch {
     return invalid();
   }

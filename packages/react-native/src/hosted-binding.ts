@@ -29,11 +29,18 @@ function snapshotMetadata(source: TileflowNativeSourceState): Metadata | null {
     if (usageMode === undefined) return null;
     if (usageMode !== 'session') throw new Error();
     const mapId = field(map, 'mapId');
+    const name = field(map, 'name');
     if (
-      typeof mapId !== 'string' || mapId.length !== 20 ||
+      typeof mapId !== 'string' ||
+      mapId.length !== 20 ||
       !/^map_[A-Za-z0-9_-]{16}$/u.test(mapId) ||
-      field(map, 'name') !== field(field(source, 'source'), 'map')
-    ) throw new Error();
+      typeof name !== 'string' ||
+      name.length === 0 ||
+      name.length > 64 ||
+      name !== field(field(source, 'source'), 'map')
+    ) {
+      throw new Error();
+    }
     return Object.freeze({mapId, apiOrigin: canonicalMobileApiOrigin(field(map, 'apiUrl'))});
   } catch {
     throw new NativeConfigurationError('NATIVE_CONFIGURATION_SOURCE_INVALID');
@@ -47,31 +54,39 @@ function bind(metadata: Metadata, configuration: MobileConfiguration): HostedNat
   }
   // A fresh binding belongs to this resolution. Only immutable application data is shared.
   // Ordinary serialization cannot copy the configured origin or credential into diagnostics.
-  return Object.freeze(Object.defineProperties({kind: 'hosted', mapId: metadata.mapId}, {
+  const binding = Object.defineProperties({kind: 'hosted', mapId: metadata.mapId}, {
     apiOrigin: {value: snapshot.apiOrigin},
     credential: {value: snapshot.credential},
-  })) as HostedNativeSessionBinding;
+  });
+  return Object.freeze(binding) as HostedNativeSessionBinding;
 }
 
 /**
  * Private source-to-session boundary, with no network or renderer capability.
  * Its caller owns the separate session controller and retires it with the real Map.
  */
-export function createHostedNativeBindingResolver(readConfiguration: () => Promise<MobileConfiguration>) {
+export function createHostedNativeBindingResolver(
+  readConfiguration: () => Promise<MobileConfiguration>,
+) {
   let disposed = false;
   let generation = 0;
   let active: {reject(error: NativeConfigurationError): void} | undefined;
 
   return Object.freeze({
     replace(source: TileflowNativeSourceState): Promise<HostedNativeSessionBinding> {
-      if (disposed) return Promise.reject(new NativeConfigurationError('NATIVE_CONFIGURATION_DISPOSED'));
+      if (disposed) {
+        return Promise.reject(new NativeConfigurationError('NATIVE_CONFIGURATION_DISPOSED'));
+      }
       if (generation >= Number.MAX_SAFE_INTEGER) {
         return Promise.reject(new NativeConfigurationError('NATIVE_CONFIGURATION_SOURCE_INVALID'));
       }
       const sequence = ++generation;
       let resolve!: (binding: HostedNativeSessionBinding) => void;
       let reject!: (error: NativeConfigurationError) => void;
-      const result = new Promise<HostedNativeSessionBinding>((yes, no) => { resolve = yes; reject = no; });
+      const result = new Promise<HostedNativeSessionBinding>((yes, no) => {
+        resolve = yes;
+        reject = no;
+      });
       // Retirement can be reentrant before the caller receives this promise.
       void result.catch(() => undefined);
       const previous = active;
@@ -96,29 +111,35 @@ export function createHostedNativeBindingResolver(readConfiguration: () => Promi
         return result;
       }
       const selected = metadata;
-      void Promise.resolve().then(() => {
-        if (!current()) return undefined;
-        return readConfiguration();
-      }).then((configuration) => {
-        if (!current()) return;
-        const binding = bind(selected, configuration!);
-        if (!current()) return;
-        active = undefined;
-        resolve(binding);
-      }).catch((error: unknown) => {
-        if (!current()) return;
-        active = undefined;
-        let code: unknown;
-        try {
-          if (error && typeof error === 'object') code = Object.getOwnPropertyDescriptor(error, 'code')?.value;
-        } catch {
-          /* Never propagate an exception supplied by a bridge or an injected reader. */
-        }
-        reject(new NativeConfigurationError(
-          code === 'NATIVE_CONFIGURATION_INVALID' || code === 'NATIVE_CONFIGURATION_ORIGIN_MISMATCH'
-            ? code : 'NATIVE_CONFIGURATION_UNAVAILABLE',
-        ));
-      });
+      void Promise.resolve()
+        .then(() => {
+          if (!current()) return undefined;
+          return readConfiguration();
+        })
+        .then((configuration) => {
+          if (!current()) return;
+          const binding = bind(selected, configuration!);
+          if (!current()) return;
+          active = undefined;
+          resolve(binding);
+        })
+        .catch((error: unknown) => {
+          if (!current()) return;
+          active = undefined;
+          let code: unknown;
+          try {
+            if (error && typeof error === 'object') {
+              code = Object.getOwnPropertyDescriptor(error, 'code')?.value;
+            }
+          } catch {
+            /* Never propagate an exception supplied by a bridge or an injected reader. */
+          }
+          reject(new NativeConfigurationError(
+            code === 'NATIVE_CONFIGURATION_INVALID' || code === 'NATIVE_CONFIGURATION_ORIGIN_MISMATCH'
+              ? code
+              : 'NATIVE_CONFIGURATION_UNAVAILABLE',
+          ));
+        });
       return result;
     },
     dispose(): void {

@@ -57,7 +57,11 @@ const view = Object.freeze({center: [1, 2] as const, zoom: 3, bearing: 4, pitch:
 
 test('camera application is incomplete until its own native invalidation is delivered and acknowledged', async () => {
   const f = fixture();
-  const surface = await f.transport.attach(1, () => undefined, () => assert.fail());
+  const surface = await f.transport.attach(
+    1,
+    () => undefined,
+    () => assert.fail(),
+  );
   let settled = false;
   const applied = surface.applyCamera(1, view).then(() => {
     settled = true;
@@ -73,8 +77,16 @@ test('camera application is incomplete until its own native invalidation is deli
 
 test('simultaneous surfaces cannot satisfy another camera command invalidation', async () => {
   const f = fixture();
-  const first = await f.transport.attach(1, () => undefined, () => assert.fail());
-  const second = await f.transport.attach(2, () => undefined, () => assert.fail());
+  const first = await f.transport.attach(
+    1,
+    () => undefined,
+    () => assert.fail(),
+  );
+  const second = await f.transport.attach(
+    2,
+    () => undefined,
+    () => assert.fail(),
+  );
   let firstDone = false;
   let secondDone = false;
   const one = first.applyCamera(1, view).then(() => {

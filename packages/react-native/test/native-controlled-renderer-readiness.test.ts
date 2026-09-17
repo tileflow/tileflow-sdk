@@ -19,7 +19,11 @@ function target(generation: number) {
       map,
       manifest: {version: 1, maps: {main: map}},
       manifestUrl: 'https://maps.example.test/manifest.json',
-      theme: {name: 'light', colorScheme: 'light', styleUrl: 'https://maps.example.test/light.json'},
+      theme: {
+        name: 'light',
+        colorScheme: 'light',
+        styleUrl: 'https://maps.example.test/light.json',
+      },
     } as Extract<TileflowNativeSourceState, {status: 'ready'}>,
     style: {version: 8, sources: {}, layers: []},
   };
@@ -32,7 +36,13 @@ function fixture(id: string, props: MapCameraProps, generation: number) {
   let sequence = 0;
   let owner: ReturnType<typeof createNativeRendererOwner>;
   const emit = (kind: NativeSurfaceEvent['kind']) =>
-    notify({surface: id, style: owner.token, sequence: ++sequence, layout: 1, kind} as NativeSurfaceEvent);
+    notify({
+      surface: id,
+      style: owner.token,
+      sequence: ++sequence,
+      layout: 1,
+      kind,
+    } as NativeSurfaceEvent);
   const surface: NativeSurface = {
     id,
     async expectStyle() {},

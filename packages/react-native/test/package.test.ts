@@ -123,6 +123,6 @@ test('private transport and renderer-control contracts remain absent from public
   assert.match(declarations, /(?:declare\s+)?function Map\b|declare const Map\b/u);
   assert.doesNotMatch(
     declarations,
-    /HostedNativeSession|NativeSessionAuthority|NativeAdmission|NativeBootstrap|NativeSurface|NativeRenderer|MobileConfiguration|NativeInteraction|NativePoi/u,
+    /HostedNativeSession|NativeSessionAuthority|NativeAdmission|NativeBootstrap|NativeSurface|NativeRenderer|MobileConfiguration|NativeInteraction|NativePoi|ForegroundLocation|ApplicationLocation|LocationProvider|LocationPermission|useLocation/u,
   );
 });

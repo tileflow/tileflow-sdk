@@ -206,91 +206,112 @@ function choose(features: unknown[], manifest: Manifest, bindings: readonly Tile
 export function createNativePoiAdapter() {
 	let disposed = false;
 	let generation = 0;
+	let intent = 0;
 	let lease: NativePoiStyleLease | undefined;
 	let manifest: Manifest | undefined;
 	type Pending = {live: boolean; resolve(result: NativePoiQueryResult): void; cancel?: () => void};
 	let pending: Pending | undefined;
-	const current = (candidate: NativePoiStyleLease | undefined, expected: number) => {
-		try { return !disposed && generation === expected && lease === candidate && candidate?.isCurrent() === true && generation === expected && lease === candidate && !disposed; }
-		catch { return false; }
+	const inspect = (candidate: NativePoiStyleLease | undefined, expected: number): 'current' | 'stale' | 'error' => {
+		const live = () => !disposed && generation === expected && lease === candidate;
+		if (!live()) return 'stale';
+		try {
+			const owned = candidate?.isCurrent() === true;
+			return live() && owned ? 'current' : 'stale';
+		} catch { return live() ? 'error' : 'stale'; }
 	};
-	const cancelQueries = () => {
-		const job = pending;
-		pending = undefined;
+	const stopPending = () => {
+		const job = pending; pending = undefined;
 		if (!job) return;
 		job.live = false; job.resolve(stale);
 		try { job.cancel?.(); } catch { /* Cancellation cannot transfer style ownership. */ }
 	};
+	const cancelQueries = () => { ++intent; stopPending(); };
 	return Object.freeze({
-		get available() { return !!manifest && current(lease, generation); },
+		get available() {
+			const parsed = manifest;
+			return !!parsed && inspect(lease, generation) === 'current' && manifest === parsed;
+		},
 		supports(target: TileflowResolvedPoiFeatureTarget): boolean {
-			return !!manifest && current(lease, generation) && manifest.layers.some((layer) => layer.category === target.feature.category);
+			const parsed = manifest;
+			return !!parsed && inspect(lease, generation) === 'current' && manifest === parsed &&
+				parsed.layers.some((layer) => layer.category === target.feature.category);
 		},
 		replaceStyle(next?: NativePoiStyleLease): readonly TileflowInteractionDiagnostic[] {
 			if (disposed) return emptyDiagnostics;
 			const expected = ++generation;
 			manifest = undefined; lease = next;
 			cancelQueries();
-			if (!next || !current(next, expected)) return next && generation === expected ? failure().diagnostics : emptyDiagnostics;
+			if (!next || inspect(next, expected) !== 'current') return next && generation === expected ? failure().diagnostics : emptyDiagnostics;
 			try {
 				const parsed = parseManifest(next.style);
-				if (current(next, expected)) { manifest = parsed; return emptyDiagnostics; }
+				if (inspect(next, expected) === 'current') { manifest = parsed; return emptyDiagnostics; }
 			} catch { /* Only fixed portable diagnostics leave the native boundary. */ }
 			return generation === expected ? failure().diagnostics : emptyDiagnostics;
 		},
 		cancelQueries,
 		queryTouch(input: unknown, bindingsInput: readonly TileflowInteractionBinding[]): Promise<NativePoiQueryResult> {
-			cancelQueries();
-			if (disposed) return Promise.resolve(stale);
+			const ticket = ++intent;
 			const expected = generation;
+			const invocationIsLive = () => !disposed && intent === ticket && generation === expected;
+			const answer = (value: NativePoiQueryResult) => Promise.resolve(invocationIsLive() ? value : stale);
+			stopPending();
+			if (!invocationIsLive()) return Promise.resolve(stale);
 			const owner = lease;
 			const selected = manifest;
 			let point: readonly [number, number];
 			let coordinate: TileflowInteractionCoordinate;
 			try {
-				if (field(input, 'inputModality') !== 'touch') return Promise.resolve(failure('UNSUPPORTED_MODE'));
+				if (field(input, 'inputModality') !== 'touch') return answer(failure('UNSUPPORTED_MODE'));
 				const p = array(field(input, 'point'), 2);
 				const c = array(field(input, 'coordinate'), 2);
 				if (p.length !== 2 || c.length !== 2 || !p.every((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 10_000_000) ||
 					!c.every((value) => typeof value === 'number' && Number.isFinite(value)) ||
 					typeof p[0] !== 'number' || typeof p[1] !== 'number' || typeof c[0] !== 'number' || typeof c[1] !== 'number' ||
 					c[0] < -180 || c[0] > 180 || c[1] < -90 || c[1] > 90) throw new Error();
-				point = Object.freeze([p[0], p[1]]); coordinate = Object.freeze([c[0], c[1]]);
-			} catch { return Promise.resolve(failure('INVALID_DOCUMENT')); }
+				point = Object.freeze([p[0], p[1]] as const); coordinate = Object.freeze([c[0], c[1]] as const);
+			} catch { return answer(failure('INVALID_DOCUMENT')); }
 			const prepared = prepareNativeInteractionInputs({interactions: bindingsInput});
-			if (prepared.diagnostics.length) return Promise.resolve(Object.freeze({status: 'error', diagnostics: prepared.diagnostics}));
+			if (prepared.diagnostics.length) return answer(Object.freeze({status: 'error', diagnostics: prepared.diagnostics}));
 			const bindings = prepared.bindings.filter((binding) => binding.target.kind === 'semantic-feature' && binding.target.domain === 'poi');
-			if (!bindings.length) return Promise.resolve(prepared.bindings.length ? failure('UNSUPPORTED_TARGET') : miss);
-			if (!owner || !selected || !current(owner, expected)) return Promise.resolve(failure());
+			if (!bindings.length) return answer(prepared.bindings.length ? failure('UNSUPPORTED_TARGET') : miss);
+			if (!owner || !selected) return answer(failure());
+			const ownership = inspect(owner, expected);
+			if (ownership !== 'current') return answer(ownership === 'error' ? failure() : stale);
 			const layers = selected.layers.filter((layer) => bindings.some((binding) => binding.target.kind === 'semantic-feature' &&
 				(!binding.target.categories || binding.target.categories.includes(layer.category)))).map((layer) => layer.layerId);
-			if (!layers.length) return Promise.resolve(miss);
+			if (!layers.length) return answer(miss);
+			if (!invocationIsLive()) return Promise.resolve(stale);
 			const request: NativePoiQueryRequest = Object.freeze({point, layers: Object.freeze(layers), limit: nativePoiQueryLimit});
 			let resolve!: (value: NativePoiQueryResult) => void;
 			const result = new Promise<NativePoiQueryResult>((yes) => { resolve = yes; });
 			const job: Pending = {live: true, resolve}; pending = job;
 			const finish = (value: NativePoiQueryResult) => {
 				if (!job.live || pending !== job) return;
-				const accepted = current(owner, expected);
+				const ownership = inspect(owner, expected);
 				if (!job.live || pending !== job) return;
-				pending = undefined; job.live = false; resolve(accepted ? value : stale);
+				pending = undefined; job.live = false;
+				resolve(ownership === 'error' ? failure() : ownership === 'current' && invocationIsLive() ? value : stale);
 			};
 			try {
 				const operation = owner.query(request);
-				job.cancel = () => operation.cancel();
-				const completion = operation.result;
-				void Promise.resolve(completion).then((value) => {
+				const cancel = operation.cancel;
+				if (typeof cancel !== 'function') throw new Error();
+				let cancelled = false;
+				job.cancel = () => { if (!cancelled) { cancelled = true; cancel.call(operation); } };
+				void Promise.resolve(operation.result).then((value) => {
 					if (!job.live || pending !== job) return;
 					try {
-						if (!current(owner, expected)) { finish(stale); return; }
+						const ownership = inspect(owner, expected);
+						if (ownership !== 'current') { finish(ownership === 'error' ? failure() : stale); return; }
 						if (field(value, 'request') !== request) throw new Error();
 						const raw = field(value, 'features');
-						if (Array.isArray(raw) && raw.length > nativePoiQueryLimit) { finish(failure('LIMIT_EXCEEDED')); return; }
+						const length = Array.isArray(raw) ? Object.getOwnPropertyDescriptor(raw, 'length')?.value as unknown : undefined;
+						if (typeof length === 'number' && length > nativePoiQueryLimit) { finish(failure('LIMIT_EXCEEDED')); return; }
 						const match = choose(array(raw, nativePoiQueryLimit), selected, bindings, coordinate, layers);
 						finish(match ? Object.freeze({status: 'match', match, diagnostics: emptyDiagnostics}) : miss);
 					} catch { finish(failure()); }
 				}, () => finish(failure()));
-				if (!job.live || pending !== job || !current(owner, expected)) {
+				if (!job.live || pending !== job || inspect(owner, expected) !== 'current') {
 					if (pending === job) cancelQueries();
 					else { try { job.cancel(); } catch { /* A retired query has no observers. */ } }
 				}

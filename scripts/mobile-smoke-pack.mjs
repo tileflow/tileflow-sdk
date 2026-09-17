@@ -1,4 +1,4 @@
-import {mkdir, readdir} from 'node:fs/promises';
+import {mkdir, readdir, realpath} from 'node:fs/promises';
 import {join, resolve} from 'node:path';
 import {stagePackageLicenseInputs} from './package-license.mjs';
 import {assertArchiveListing, assertPackedAndroidConfig, assertPackedManifest, mobilePackages, mobileVersions, pnpmPackArguments, requireMobile, stageMobileManifest} from './mobile-smoke-contract.mjs';
@@ -23,16 +23,18 @@ export async function extractMobileTarball(context, path, destination) {
 
 /** Build fresh staged sources using the repository lock; no checkout dist or consumer aliases. */
 export async function packMobilePackages(context, repository, pnpm) {
+	const sourceRoot = await realpath(repository);
 	const stage = join(context.root, 'staging');
 	await mkdir(stage);
 	const excluded = new Set(['node_modules', 'dist', '.git', '.turbo', 'build', 'Pods', '.gradle', '.DS_Store']);
 	for (const file of ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig.base.json']) {
-		await copyMobileInputs(join(repository, file), join(stage, file));
+		await copyMobileInputs(join(sourceRoot, file), join(stage, file));
 	}
-	await copyMobileInputs(join(repository, 'docs', 'modules-api-reference.json'), join(stage, 'docs', 'modules-api-reference.json'));
-	await stagePackageLicenseInputs({root: repository, stagingRoot: stage});
+	await copyMobileInputs(join(sourceRoot, 'docs', 'modules-api-reference.json'), join(stage, 'docs', 'modules-api-reference.json'));
+	for (const file of ['LICENSE', 'scripts/package-license.mjs']) await readMobileFile(sourceRoot, join(sourceRoot, file));
+	await stagePackageLicenseInputs({root: sourceRoot, stagingRoot: stage});
 	for (const directory of mobilePackages) {
-		await copyMobileInputs(join(repository, 'packages', directory), join(stage, 'packages', directory), excluded);
+		await copyMobileInputs(join(sourceRoot, 'packages', directory), join(stage, 'packages', directory), excluded);
 	}
 	const inputLock = await mobileFileIdentity(context.root, join(stage, 'pnpm-lock.yaml'), 'pnpm-lock.yaml');
 	await context.run(pnpm.command, [...pnpm.prefix, 'install', '--frozen-lockfile', '--ignore-scripts'], {cwd: stage, step: 'stage'});

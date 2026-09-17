@@ -2,7 +2,7 @@ import {createHash, randomUUID} from 'node:crypto';
 import {createReadStream} from 'node:fs';
 import {copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {dirname, join, resolve} from 'node:path';
+import {delimiter, dirname, join, resolve} from 'node:path';
 import {isWithin, MobileSmokeError, requireMobile} from './mobile-smoke-contract.mjs';
 import {runMobileCommand} from './mobile-smoke-process.mjs';
 
@@ -30,11 +30,25 @@ export async function createMobileWorkspace(parent = tmpdir()) {
 	const identity = await lstat(root);
 	const token = randomUUID();
 	const marker = join(root, '.tileflow-mobile-owner');
-	await writeFile(marker, token, {flag: 'wx', mode: 0o600});
-	let disposed = false;
-	const verifyOwner = async () => {
+	const verifyRoot = async () => {
 		const current = await lstat(root);
 		requireMobile(!current.isSymbolicLink() && current.isDirectory() && current.ino === identity.ino && current.dev === identity.dev && await realpath(root) === root, 'WORKSPACE_UNSAFE', 'cleanup');
+	};
+	try {
+		await writeFile(marker, token, {flag: 'wx', mode: 0o600});
+	} catch (error) {
+		// No child has started. Clean a partially created marker only under the original inode.
+		try {
+			await verifyRoot();
+			await rm(root, {recursive: true, force: true});
+		} catch {
+			throw new MobileSmokeError('CLEANUP_FAILED', 'cleanup');
+		}
+		throw error;
+	}
+	let disposed = false;
+	const verifyOwner = async () => {
+		await verifyRoot();
 		const markerStat = await lstat(marker);
 		requireMobile(markerStat.isFile() && !markerStat.isSymbolicLink() && markerStat.size === token.length && await readFile(marker, 'utf8') === token, 'WORKSPACE_UNSAFE', 'cleanup');
 	};
@@ -123,6 +137,7 @@ export async function createMobileContext(root, options = {}) {
 	await writeFile(join(root, 'npm-user.npmrc'), '');
 	await writeFile(join(root, 'npm-global.npmrc'), '');
 	Object.assign(env, {
+		PATH: [dirname(process.execPath), ...(env.PATH ? [env.PATH] : [])].join(delimiter),
 		HOME: join(root, 'home'),
 		TMPDIR: join(root, 'tmp'), TMP: join(root, 'tmp'), TEMP: join(root, 'tmp'),
 		XDG_CACHE_HOME: join(root, 'cache'), XDG_CONFIG_HOME: join(root, 'home', '.config'),

@@ -36,9 +36,14 @@ export function resolveTileflowNativePreviewSelection(
   return Object.freeze({mapName, themeName});
 }
 
+const nativePreviewUnavailablePaths = new Set([
+  `${tileflowNativePreviewBasePath}/__events`,
+  `${tileflowNativePreviewBasePath}/__status`,
+]);
+
 /**
  * Native preview exposes the existing Tileflow artifact routes only. Metro remains the JavaScript
- * development server; the browser shell, runtime and compiler-inspection sidecars are unavailable.
+ * development server; browser shell/runtime, status/event controls and inspection are unavailable.
  */
 export function createTileflowNativePreviewRequestHandler(
   options: Omit<TileflowDevRequestHandlerOptions, 'basePath' | 'map' | 'scene' | 'theme'>,
@@ -47,26 +52,26 @@ export function createTileflowNativePreviewRequestHandler(
     ...options,
     basePath: tileflowNativePreviewBasePath,
   });
+  const notFound = () =>
+    new Response(JSON.stringify({error: 'Not found'}), {
+      headers: {'Content-Type': 'application/json; charset=utf-8'},
+      status: 404,
+    });
   const handler = async (request: Request): Promise<Response> => {
     let pathname: string;
     try {
       pathname = new URL(request.url).pathname;
     } catch {
-      return new Response(JSON.stringify({error: 'Not found'}), {
-        headers: {'Content-Type': 'application/json; charset=utf-8'},
-        status: 404,
-      });
+      return notFound();
     }
     if (
       pathname === tileflowNativePreviewBasePath ||
       pathname === `${tileflowNativePreviewBasePath}/` ||
+      nativePreviewUnavailablePaths.has(pathname) ||
       pathname.startsWith(`${tileflowNativePreviewBasePath}/__runtime/`) ||
       pathname.startsWith(`${tileflowNativePreviewBasePath}/__inspection/`)
     ) {
-      return new Response(JSON.stringify({error: 'Not found'}), {
-        headers: {'Content-Type': 'application/json; charset=utf-8'},
-        status: 404,
-      });
+      return notFound();
     }
     return delegate(request);
   };

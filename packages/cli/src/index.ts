@@ -239,7 +239,7 @@ program
     } else {
       await removeAuthFile();
     }
-    logSuccess('Signed out of Tileflow.');
+    logSuccess('Signed out of this Tileflow origin.');
   });
 
 program
@@ -887,6 +887,9 @@ program
           ]),
         });
       const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
+      // The config is executable repository code. Keep the captured bearer
+      // credential for the HTTP request, but do not expose it while Jiti
+      // imports tileflow.config.ts or anything that file imports.
       delete process.env.TILEFLOW_API_KEY;
 
       logInfo(`Deploying ${pathLabel(options.config)}.`);
@@ -924,6 +927,9 @@ program
         compiledIcons.packages.map((iconPackage) => [iconPackage.contentHash, iconPackage]),
       );
 
+      // Validate the complete local style before the first remote write. Hosted
+      // sprite URLs are substituted after upload, but they do not change layer
+      // semantics.
       const preflightMapAssets = createCompiledMapAssets(
         compiledIcons,
         (binding) => `${apiUrl}/sprites/preflight/${binding.packageHash}/sprite`,
@@ -941,7 +947,7 @@ program
         deploymentProject,
         preflightLocalTilesets.styles,
         {
-          assetBaseUrl: `${apiUrl}/font-bundles/preflight`,
+          assetBaseUrl: `${apiUrl}/fonts/preflight`,
           baseDirectory,
           cwd: process.cwd(),
           target: 'hosted',
@@ -984,6 +990,10 @@ program
       }
       const existingManifest = outputManifest;
 
+      // Authentication and account/project discovery may perform network
+      // requests. Keep them after every deterministic config, asset, style,
+      // font, compatibility, and existing-manifest check so invalid local
+      // input always fails without network access.
       const api = await resolveApi(mapNames[0]);
       if (!api) return;
 
@@ -1164,6 +1174,7 @@ program
           teamSources,
           styles: themeStyles,
         } = deployment;
+        // The composition receipt must bind the exact effective package this deploy uploaded.
         if (iconComposition && iconComposition.packageHash !== iconPackage?.contentHash) {
           logError(`Icon composition does not match the effective package for ${mapName}.`);
           process.exitCode = 1;
@@ -1763,6 +1774,12 @@ async function writeDeployManifest(manifestPath: string, manifest: DeployedManif
   return manifestPath;
 }
 
+/**
+ * Build the explicit shared Icon Set resolution settings for one command invocation.
+ *
+ * Only these options select a cache root or offline behavior. No command resolves a catalog head
+ * during validation, build, preview or deploy.
+ */
 function resolveIconOptions(options: {
   cacheDir?: string;
   offline?: boolean;

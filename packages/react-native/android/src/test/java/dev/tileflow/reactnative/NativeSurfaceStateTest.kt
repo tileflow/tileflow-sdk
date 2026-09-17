@@ -4,7 +4,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class NativeSurfaceStateTest {
-	@Test fun requiresLoadedStyleCommittedLayoutAndMatchingFullyRenderedFrame() {
+	@Test fun requiresLoadedStyleCommittedLayoutRequestedFrameAndMatchingFullyRenderedEvidence() {
 		val events = mutableListOf<Map<String, Any>>()
 		val state = NativeSurfaceState("surface", events::add)
 		val style = Any()
@@ -14,11 +14,14 @@ class NativeSurfaceStateTest {
 		state.frameStart(style)
 		state.frameEnd(style, true)
 		assertFalse(events.any { it["kind"] == "render" })
-		state.acknowledge((events.last()["sequence"] as Number).toLong())
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
 		val layout = state.commit("one")
+		state.frameStart(style); state.frameEnd(style, true)
+		assertFalse(events.any { it["kind"] == "render" })
+		state.request("one")
 		state.frameStart(style)
 		state.frameEnd(style, true)
-		state.acknowledge((events.last()["sequence"] as Number).toLong())
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
 		assertTrue(events.any { it["kind"] == "render" && it["layout"] == layout })
 	}
 
@@ -27,19 +30,22 @@ class NativeSurfaceStateTest {
 		val state = NativeSurfaceState("surface") { event -> events.add(event) }
 		val old = Any(); val current = Any()
 		state.expect("one"); state.layout(true); state.loaded("one", old)
-		state.commit("one"); state.frameStart(old)
-		state.expect("two"); state.loaded("two", current); state.commit("two")
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		state.commit("one"); state.request("one"); state.frameStart(old)
+		state.expect("two"); state.loaded("two", current)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		state.commit("two"); state.request("two")
 		state.frameEnd(old, true)
 		state.frameStart(current)
 		state.layout(false); state.frameEnd(current, true)
-		repeat(8) { events.lastOrNull()?.let { state.acknowledge((it["sequence"] as Number).toLong()) } }
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
 		assertFalse(events.any { it["kind"] == "render" })
 		assertThrows(IllegalStateException::class.java) { state.commit("two") }
 		state.close()
 		assertFalse(state.active)
 	}
 
-	@Test fun layoutChangeRequiresFreshCommittedFullFrameAndClosesGesture() {
+	@Test fun layoutChangeRequiresFreshRequestedFullFrameAndClosesGesture() {
 		val events = mutableListOf<Map<String, Any>>()
 		val state = NativeSurfaceState("surface", events::add)
 		val style = Any()
@@ -56,11 +62,13 @@ class NativeSurfaceStateTest {
 		assertEquals("invalidate", events.last()["kind"])
 		assertEquals(invalidation, events.last()["sequence"])
 		state.commit("one"); state.frameStart(style); state.frameEnd(style, true)
+		assertFalse(events.any { it["kind"] == "render" })
+		state.request("one"); state.frameStart(style); state.frameEnd(style, true)
 		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
 		assertTrue(events.any { it["kind"] == "render" })
 	}
 
-	@Test fun successiveStyleTokensAcceptTheirOwnPostBarrierFullFrame() {
+	@Test fun successiveStyleTokensAcceptOnlyTheirOwnPostRequestFullFrame() {
 		val events = mutableListOf<Map<String, Any>>()
 		val state = NativeSurfaceState("surface", events::add)
 		val first = Any(); val second = Any()
@@ -69,7 +77,7 @@ class NativeSurfaceStateTest {
 		val firstInvalidation = state.beginCommand(1)
 		assertTrue(firstInvalidation > 0)
 		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
-		state.commit("one"); state.frameStart(first); state.frameEnd(first, true)
+		state.commit("one"); state.request("one"); state.frameStart(first); state.frameEnd(first, true)
 		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
 		assertEquals(1, events.count { it["kind"] == "render" })
 		assertEquals("one", events.last { it["kind"] == "render" }["style"])
@@ -80,6 +88,9 @@ class NativeSurfaceStateTest {
 		assertTrue(secondInvalidation > firstInvalidation)
 		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
 		state.commit("two")
+		state.frameStart(second); state.frameEnd(second, true)
+		assertEquals(1, events.count { it["kind"] == "render" })
+		state.request("two")
 		state.frameStart(first); state.frameEnd(first, true)
 		state.frameStart(second); state.frameEnd(second, false)
 		assertEquals(1, events.count { it["kind"] == "render" })

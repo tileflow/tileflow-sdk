@@ -17,14 +17,14 @@ test('iOS finds exactly one owned Fabric camera through the bounded native hiera
   assert.doesNotMatch(ios, /reactSubviews/u);
 });
 
-test('the private style marker stays transparent while native requestFrame explicitly schedules repaint', async () => {
+test('the private marker stays transparent while each current barrier arms and requests explicit repaint', async () => {
   const renderer = await source('src/native-renderer-owner.ts');
   assert.match(renderer, /type: 'background',[\s\S]*'background-color': 'rgba\(0,0,0,0\)'/u);
   assert.match(renderer, /'background-opacity': 1/u);
 
   const ios = await source('ios/TileflowNativeSurface.mm');
   assert.match(ios, /if \(!surface\.style\) TFSurfaceInvalid\(\);/u);
-  assert.match(ios, /\[surface\.map triggerRepaint\];/u);
+  assert.match(ios, /\[surface\.state request:token\];\s*\[surface\.map triggerRepaint\];/u);
   assert.doesNotMatch(ios, /surface\.repaint = !surface\.repaint/u);
   assert.doesNotMatch(ios, /backgroundOpacity = \[NSExpression expressionForConstantValue:surface\.repaint/u);
 
@@ -32,7 +32,7 @@ test('the private style marker stays transparent while native requestFrame expli
     'android/src/main/java/dev/tileflow/reactnative/TileflowNativeSurfaceModule.kt',
   );
   assert.match(android, /surface\.style\(\) \?: invalid\(\)/u);
-  assert.match(android, /surface\.sdk\.triggerRepaint\(\)/u);
+  assert.match(android, /surface\.state\.request\(token\)\s*surface\.sdk\.triggerRepaint\(\)/u);
   assert.doesNotMatch(android, /surface\.repaint = !surface\.repaint/u);
   assert.doesNotMatch(android, /backgroundOpacity\(if \(surface\.repaint\)/u);
 });

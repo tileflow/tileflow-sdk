@@ -78,15 +78,31 @@ export function snapshotNativeInteractionJson(input: unknown): TileflowInteracti
 		const prototype: unknown = Object.getPrototypeOf(value);
 		if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null) throw new Error();
 		if (array) {
-			const length = Object.getOwnPropertyDescriptor(value, 'length')?.value as unknown;
+			const lengthDescriptor = Object.getOwnPropertyDescriptor(value, 'length');
+			if (!lengthDescriptor || !('value' in lengthDescriptor)) throw new Error();
+			const length: unknown = lengthDescriptor.value;
 			if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0 || length > tileflowInteractionLimits.maxDocumentProperties - properties) throw new Error();
+			if (length > 0 && depth >= tileflowInteractionLimits.maxDocumentDepth) throw new Error();
 			properties += length;
-			const result: TileflowInteractionJsonValue[] = [];
-			for (let index = 0; index < length; index++) {
-				const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
-				if (descriptor && (!('value' in descriptor) || !descriptor.enumerable)) throw new Error();
-				result.push(copy(descriptor ? descriptor.value : null, depth + 1));
+			// Holes consume the portable property/byte budgets, but are not document nodes.
+			// Enumerate only own indices so copying never expands a sparse array into nulls.
+			const keys = Reflect.ownKeys(value);
+			if (keys.length > length + 1) throw new Error();
+			const result = new Array<TileflowInteractionJsonValue>(length);
+			let sawLength = false;
+			for (const key of keys) {
+				if (typeof key !== 'string') throw new Error();
+				if (key === 'length') { sawLength = true; continue; }
+				const index = Number(key);
+				if (!Number.isSafeInteger(index) || index < 0 || index >= length || String(index) !== key) throw new Error();
+				const descriptor = Object.getOwnPropertyDescriptor(value, key);
+				if (!descriptor || !('value' in descriptor) || !descriptor.enumerable) throw new Error();
+				Object.defineProperty(result, key, {
+					value: copy(descriptor.value, depth + 1),
+					enumerable: true, configurable: true, writable: true,
+				});
 			}
+			if (!sawLength) throw new Error();
 			return Object.freeze(result);
 		}
 		const keys = Reflect.ownKeys(value);
@@ -118,7 +134,10 @@ export function freezeNativeInteractionValue<T>(value: T): T {
 export function nativeInteractionValuesEqual(left: unknown, right: unknown): boolean {
 	if (left === right) return true;
 	if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false;
-	if (Array.isArray(left) !== Array.isArray(right)) return false;
+	const array = Array.isArray(left);
+	if (array !== Array.isArray(right)) return false;
+	// Enumerable keys encode the occupied indices, not trailing holes or an empty sparse length.
+	if (array && Object.getOwnPropertyDescriptor(left, 'length')?.value !== Object.getOwnPropertyDescriptor(right, 'length')?.value) return false;
 	const a = Object.keys(left).sort();
 	const b = Object.keys(right).sort();
 	return a.length === b.length && a.every((key, index) => key === b[index] && nativeInteractionValuesEqual(

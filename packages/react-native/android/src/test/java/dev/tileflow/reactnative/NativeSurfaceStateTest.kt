@@ -12,13 +12,11 @@ class NativeSurfaceStateTest {
 		state.layout(true)
 		state.loaded("one", style)
 		state.frameStart(style)
-		state.mapRendered(style, true)
 		state.frameEnd(style, true)
 		assertFalse(events.any { it["kind"] == "render" })
 		state.acknowledge((events.last()["sequence"] as Number).toLong())
 		val layout = state.commit("one")
 		state.frameStart(style)
-		state.mapRendered(style, true)
 		state.frameEnd(style, true)
 		state.acknowledge((events.last()["sequence"] as Number).toLong())
 		assertTrue(events.any { it["kind"] == "render" && it["layout"] == layout })
@@ -31,8 +29,8 @@ class NativeSurfaceStateTest {
 		state.expect("one"); state.layout(true); state.loaded("one", old)
 		state.commit("one"); state.frameStart(old)
 		state.expect("two"); state.loaded("two", current); state.commit("two")
-		state.mapRendered(old, true); state.frameEnd(old, true)
-		state.frameStart(current); state.mapRendered(current, true)
+		state.frameEnd(old, true)
+		state.frameStart(current)
 		state.layout(false); state.frameEnd(current, true)
 		repeat(8) { events.lastOrNull()?.let { state.acknowledge((it["sequence"] as Number).toLong()) } }
 		assertFalse(events.any { it["kind"] == "render" })
@@ -41,14 +39,14 @@ class NativeSurfaceStateTest {
 		assertFalse(state.active)
 	}
 
-	@Test fun layoutChangeRequiresFreshFullyRenderedMapEvidenceAndClosesGesture() {
+	@Test fun layoutChangeRequiresFreshCommittedFullFrameAndClosesGesture() {
 		val events = mutableListOf<Map<String, Any>>()
 		val state = NativeSurfaceState("surface", events::add)
 		val style = Any()
 		val view = mapOf<String, Any>("center" to listOf(1.0, 2.0), "zoom" to 3.0, "bearing" to 4.0, "pitch" to 5.0)
 		state.expect("one"); state.layout(true); state.loaded("one", style)
 		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
-		state.commit("one"); state.mapRendered(style, true); state.gestureStart(view)
+		state.commit("one"); state.gestureStart(view)
 		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
 		state.layout(true)
 		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
@@ -59,10 +57,36 @@ class NativeSurfaceStateTest {
 		assertEquals(invalidation, events.last()["sequence"])
 		state.commit("one"); state.frameStart(style); state.frameEnd(style, true)
 		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
-		assertFalse(events.any { it["kind"] == "render" })
-		state.frameStart(style); state.mapRendered(style, true); state.frameEnd(style, true)
-		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
 		assertTrue(events.any { it["kind"] == "render" })
+	}
+
+	@Test fun successiveStyleTokensAcceptTheirOwnPostBarrierFullFrame() {
+		val events = mutableListOf<Map<String, Any>>()
+		val state = NativeSurfaceState("surface", events::add)
+		val first = Any(); val second = Any()
+		state.expect("one"); state.layout(true); state.loaded("one", first)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		val firstInvalidation = state.beginCommand(1)
+		assertTrue(firstInvalidation > 0)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		state.commit("one"); state.frameStart(first); state.frameEnd(first, true)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		assertEquals(1, events.count { it["kind"] == "render" })
+		assertEquals("one", events.last { it["kind"] == "render" }["style"])
+
+		state.expect("two"); state.loaded("two", second)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		val secondInvalidation = state.beginCommand(2)
+		assertTrue(secondInvalidation > firstInvalidation)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		state.commit("two")
+		state.frameStart(first); state.frameEnd(first, true)
+		state.frameStart(second); state.frameEnd(second, false)
+		assertEquals(1, events.count { it["kind"] == "render" })
+		state.frameStart(second); state.frameEnd(second, true)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		assertEquals(2, events.count { it["kind"] == "render" })
+		assertEquals("two", events.last { it["kind"] == "render" }["style"])
 	}
 
 	@Test fun failedStyleCanBeRearmedForRollback() {

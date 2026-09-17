@@ -63,7 +63,11 @@ async function reservePort(): Promise<number> {
 test('preview rejects an unknown renderer before config execution without echoing it', async (t) => {
   const cwd = await fixture('tileflow-native-preview-renderer-');
   t.after(() => rm(cwd, {force: true, recursive: true}));
-  await writeFile(join(cwd, 'tileflow.config.ts'), "throw new Error('CONFIG_MUST_NOT_EXECUTE');\n", 'utf8');
+  await writeFile(
+    join(cwd, 'tileflow.config.ts'),
+    "throw new Error('CONFIG_MUST_NOT_EXECUTE');\n",
+    'utf8',
+  );
   const result = await runCli(cwd, [
     'preview',
     '--renderer',
@@ -154,6 +158,7 @@ test('native preview human output names the exact assets-only manifest and profi
   assert.match(stdout, /Profile:\s+native-v1/u);
   assert.match(stdout, /Endpoint:\s+assets-only/u);
   assert.match(stdout, /Metro remains the JavaScript development server/u);
+  assert.doesNotMatch(stdout, /\bLocal:\s/u);
   assert.doesNotMatch(stdout, /visual workbench/u);
 
   requestStop();

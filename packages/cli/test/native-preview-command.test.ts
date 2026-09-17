@@ -118,7 +118,9 @@ function startCli(cwd: string, arguments_: string[]) {
           resolve,
           timer: setTimeout(() => {
             waiters.delete(waiter);
-            reject(new Error(`Timed out waiting for CLI event: ${JSON.stringify(events)} ${stderr}`));
+            reject(
+              new Error(`Timed out waiting for CLI event: ${JSON.stringify(events)} ${stderr}`),
+            );
           }, timeoutMs),
         };
         waiters.add(waiter);
@@ -208,7 +210,12 @@ test('native preview serves canonical native-v1 assets only and preserves last-k
   const manifest = parseTileflowRuntimeManifest(await manifestResponse.json());
   const styleUrl = manifest.maps.main?.themes.light?.styleUrl;
   assert.ok(styleUrl);
-  assert.equal(styleUrl.startsWith(`${origin}/native/styles/`), true);
+  const styleLocation = new URL(styleUrl);
+  assert.equal(styleLocation.origin, origin);
+  assert.match(
+    styleLocation.pathname,
+    /^\/native\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u,
+  );
   const styleResponse = await fetch(styleUrl);
   assert.equal(styleResponse.status, 200);
   const style = (await styleResponse.json()) as {version?: number};
@@ -243,7 +250,11 @@ test('native preview serves canonical native-v1 assets only and preserves last-k
 test('native preview rejects browser-only workbench selections before config execution', async (t) => {
   const cwd = await fixture('tileflow-native-preview-reject-');
   t.after(() => rm(cwd, {force: true, recursive: true}));
-  await writeFile(join(cwd, 'tileflow.config.ts'), "throw new Error('CONFIG_MUST_NOT_EXECUTE');\n", 'utf8');
+  await writeFile(
+    join(cwd, 'tileflow.config.ts'),
+    "throw new Error('CONFIG_MUST_NOT_EXECUTE');\n",
+    'utf8',
+  );
 
   for (const extra of [
     ['--scene', 'proof'],

@@ -1,6 +1,8 @@
 import type {MapProps as NativeMapProps} from '@maplibre/maplibre-react-native';
 import type {ReactNode, Ref} from 'react';
 import type {ViewProps} from 'react-native';
+import type {TileflowAnnotation} from '@tileflow/interactions';
+import type {MapInteractionProps} from './interaction-contract';
 import type {
   TileflowNativeInitialView,
   TileflowNativeInitialViewOptions,
@@ -133,5 +135,6 @@ export type MapCameraProps =
       onViewChange?: (event: MapViewChangeEvent) => void;
     }>;
 
-/** Complete Tileflow source, presentation and mount-stable camera inputs. */
-export type MapProps = MapBaseProps & MapCameraProps;
+/** Complete Tileflow source, presentation, mount-stable camera and portable interaction inputs. */
+export type MapProps<TAnnotation extends TileflowAnnotation = TileflowAnnotation> =
+	MapBaseProps & MapCameraProps & MapInteractionProps<TAnnotation>;

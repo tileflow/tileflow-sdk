@@ -481,6 +481,13 @@ export function createNativeInteractionOwner(
       }
       if (live(version)) ignoreFailure(() => callbacks.onInteractionStateChange?.(next));
     },
+		/** Retires only touch intent; selection and style ownership remain unchanged. */
+		cancelTouch(): void {
+			if (disposed) return;
+			++transaction;
+			++queryGeneration;
+			semantic.cancelQueries();
+		},
     retireSource: dispose,
     dispose,
   });

@@ -93,12 +93,22 @@ test('public runtime is limited to the Map component while private responsibilit
     ['Map'],
   );
 
+  const interactionOwners = new Set([
+    join(root, 'native-interaction-input.ts'),
+    join(root, 'native-interaction-poi.ts'),
+    join(root, 'native-interaction-owner.ts'),
+  ]);
   for (const file of await sourceFiles(root)) {
     const content = await readFile(file, 'utf8');
     for (const specifier of imports(content)) {
       assert.equal(specifier.startsWith('node:'), false, file);
       if (specifier.startsWith('@tileflow/'))
-        assert.equal(specifier, '@tileflow/core/native', file);
+        assert.ok(
+          specifier === '@tileflow/core/native' ||
+            (specifier === '@tileflow/interactions' && interactionOwners.has(file)),
+          `${file}: ${specifier}`,
+        );
+      assert.doesNotMatch(specifier, /^(?:maplibre-gl|@tileflow\/interactions\/)/u, file);
     }
     const syntax = ts.createSourceFile(
       file,

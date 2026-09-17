@@ -20,7 +20,7 @@ function deferred<T>() {
   return {promise, reject, resolve};
 }
 
-test('foreground location is idle until the application explicitly requests permission', async () => {
+test('foreground location is idle until the mounted application explicitly requests permission', async () => {
   const permission = deferred<ApplicationLocationPermission>();
   let permissionRequests = 0;
   let observations = 0;
@@ -39,6 +39,9 @@ test('foreground location is idle until the application explicitly requests perm
   assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'idle'});
   assert.equal(permissionRequests, 0);
   assert.equal(observations, 0);
+  const unmount = owner.mount();
+  assert.equal(permissionRequests, 0);
+  assert.equal(observations, 0);
 
   const request = owner.requestPermission();
   assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'requesting'});
@@ -49,6 +52,7 @@ test('foreground location is idle until the application explicitly requests perm
   await request;
   assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'granted-precise'});
   assert.equal(observations, 1);
+  unmount();
   owner.dispose();
 });
 
@@ -64,6 +68,7 @@ test('only validated coordinates and accuracy become the stable accessible locat
     },
   };
   const owner = createForegroundLocationController(adapter, true);
+  const unmount = owner.mount();
   await owner.requestPermission();
   listener?.({
     type: 'fix',
@@ -93,6 +98,7 @@ test('only validated coordinates and accuracy become the stable accessible locat
   listener?.({type: 'fix', fix: {accuracy: -1, latitude: 38, longitude: -9}});
   assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'unavailable'});
   assert.deepEqual(foregroundLocationAnnotations(owner.getSnapshot()), []);
+  unmount();
   owner.dispose();
 });
 
@@ -110,10 +116,12 @@ test('denied permission remains mounted application state and never starts obser
     },
     true,
   );
+  const unmount = owner.mount();
   await owner.requestPermission();
   assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'denied'});
   assert.equal(observations, 0);
   assert.deepEqual(foregroundLocationAnnotations(owner.getSnapshot()), []);
+  unmount();
   owner.dispose();
 });
 
@@ -132,6 +140,7 @@ test('background teardown, foreground restart and revocation ignore retired prov
     },
   };
   const owner = createForegroundLocationController(adapter, true);
+  const unmount = owner.mount();
   await owner.requestPermission();
   assert.equal(listeners.length, 1);
   listeners[0]?.({type: 'fix', fix: {accuracy: 4, latitude: 38.72, longitude: -9.14}});
@@ -149,6 +158,7 @@ test('background teardown, foreground restart and revocation ignore retired prov
   assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'revoked'});
   assert.deepEqual(foregroundLocationAnnotations(owner.getSnapshot()), []);
   assert.equal(releases, 2);
+  unmount();
   owner.dispose();
 });
 
@@ -233,15 +243,17 @@ test('unmount retires a pending permission epoch and replay does not prompt auto
   owner.dispose();
 });
 
-test('dispose retires a live observation and makes its late provider result inert', async () => {
+test('dispose is terminal, retires a live observation and makes late provider results inert', async () => {
   let listener: ((update: ApplicationLocationObservation) => void) | undefined;
   let releases = 0;
+  let observations = 0;
   const owner = createForegroundLocationController(
     {
       async requestPermission() {
         return 'granted-precise';
       },
       observe(next) {
+        observations += 1;
         listener = next;
         return () => {
           releases += 1;
@@ -250,12 +262,17 @@ test('dispose retires a live observation and makes its late provider result iner
     },
     true,
   );
+  owner.mount();
   await owner.requestPermission();
   const before = owner.getSnapshot();
   owner.dispose();
   assert.equal(releases, 1);
   listener?.({type: 'fix', fix: {accuracy: 3, latitude: 38.7, longitude: -9.1}});
   assert.equal(owner.getSnapshot(), before);
+  const terminalUnmount = owner.mount();
+  terminalUnmount();
+  await owner.requestPermission();
+  assert.equal(observations, 1);
 });
 
 test('provider failure is application state and late permission results cannot survive disposal', async () => {
@@ -270,6 +287,7 @@ test('provider failure is application state and late permission results cannot s
     },
     true,
   );
+  unavailable.mount();
   await unavailable.requestPermission();
   assert.deepEqual(unavailable.getSnapshot(), {fix: null, status: 'unavailable'});
 
@@ -285,6 +303,7 @@ test('provider failure is application state and late permission results cannot s
     },
     true,
   );
+  retired.mount();
   const pending = retired.requestPermission();
   retired.dispose();
   permission.resolve('granted-precise');

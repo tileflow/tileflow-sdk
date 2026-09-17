@@ -45,6 +45,7 @@ test('remains private with exact native peers and one ordinary public root', asy
     assert.equal(manifest.devDependencies[name], version);
   assert.deepEqual(manifest.dependencies, {
     '@tileflow/core': 'workspace:>=0.1.0-alpha.16 <0.1.0-beta.0',
+    '@tileflow/interactions': 'workspace:>=0.1.0-alpha.16 <0.1.0-beta.0',
   });
   assert.deepEqual(manifest.exports, {
     '.': {types: './dist/index.d.ts', import: './dist/index.js', default: './dist/index.js'},
@@ -71,6 +72,8 @@ test('remains private with exact native peers and one ordinary public root', asy
     'dist/internal/native-admission.d.ts',
     'dist/internal/native-admission-bridge.js',
     'dist/internal/native-admission-bridge.d.ts',
+    'dist/internal/interactions.js',
+    'dist/internal/interactions.d.ts',
   ])
     assert.ok((await readFile(new URL(path, root), 'utf8')).length > 0, path);
 });
@@ -106,6 +109,6 @@ test('private transport and renderer-control contracts remain absent from public
   assert.match(declarations, /(?:declare\s+)?function Map\b|declare const Map\b/u);
   assert.doesNotMatch(
     declarations,
-    /HostedNativeSession|NativeSessionAuthority|NativeAdmission|NativeBootstrap|NativeSurface|NativeRenderer|MobileConfiguration/u,
+    /HostedNativeSession|NativeSessionAuthority|NativeAdmission|NativeBootstrap|NativeSurface|NativeRenderer|MobileConfiguration|NativeInteraction|NativePoi/u,
   );
 });

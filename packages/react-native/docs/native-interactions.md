@@ -164,3 +164,16 @@ idempotent and exposes a final safe empty snapshot plus the annotation removal p
 Selection presentation remains outside this contract. The application owns its layout, focus,
 dismissal and accessibility behavior. Device location is also separate and requires an explicit
 application-owned permission and provider flow.
+
+## Location composes as an ordinary application annotation
+
+Foreground device location does not extend the interaction owner or semantic query port. An
+application that chooses to display its latest validated fix can provide one stable-ID annotation
+through the existing `annotations` input, and remove that annotation when permission is revoked or
+the provider becomes unavailable. Tileflow does not request permission, start observation or
+recenter the camera when that annotation changes.
+
+See [Application-owned foreground location](./native-location.md) for the source-checkout recipe.
+The application remains responsible for provider lifetime, privacy policy, recenter controls and
+status/error UI, and the recipe does not alter the rule that all selection presentation remains
+application-owned.

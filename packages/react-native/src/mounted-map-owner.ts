@@ -7,7 +7,7 @@ import {
 } from '@tileflow/core/native';
 import type {AppearanceSelection, AppearanceState} from './appearance';
 import {snapshotCameraProps} from './camera-input';
-import type {MapCameraProps, MapOptions, MapProps, MapSourceState} from './contract';
+import type {MapBaseProps, MapCameraProps, MapOptions, MapSourceState} from './contract';
 import type {NativeMapAdmission, NativeMapAdmissionInput} from './native-admission-owner';
 import {discriminateNativeResourceForTest} from './native-admission-url';
 import type {NativeDocumentScope} from './native-document-contract';
@@ -23,6 +23,7 @@ import {NativePreparationError, readNativeStyleDocument} from './native-style-do
 import type {HostedNativeSessionBinding} from './session-controller';
 import {projectMapSourceState} from './source-state';
 
+type MountedMapProps = MapBaseProps & MapCameraProps;
 type ReadySource = Extract<TileflowNativeSourceState, {status: 'ready'}>;
 type BindingResolver = Readonly<{
   replace(source: TileflowNativeSourceState): Promise<HostedNativeSessionBinding>;
@@ -65,7 +66,7 @@ export type MountedMapPorts = Readonly<{
   now(): Date;
 }>;
 
-function cameraInput(props: MapProps): MapCameraProps {
+function cameraInput(props: MountedMapProps): MapCameraProps {
   const result: Record<string, unknown> = {};
   for (const key of ['view', 'initialView', 'onViewChange']) {
     const property = Object.getOwnPropertyDescriptor(props, key);
@@ -109,7 +110,7 @@ function sourceIdentity(value: unknown): string | undefined {
 export function createMountedMapOwner(ports: MountedMapPorts) {
   let disposed = false;
   let foreground = true;
-  let props: MapProps | undefined;
+  let props: MountedMapProps | undefined;
   let camera: MapCameraProps = {};
   let mapOptions: MapOptions = Object.freeze({});
   let sourceKey: string | undefined;
@@ -390,6 +391,9 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
               changed() {
                 if (current === epoch && epoch.live) notify();
               },
+							interactionsChanged() {
+								if (current === epoch && epoch.live && !disposed) notify();
+							},
             },
           );
         else epoch.renderer.setTarget({source, style: prepared.style});
@@ -480,13 +484,17 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
   }
 
   return Object.freeze({
+		getInteractionStyle() {
+			if (disposed || !foreground || !current?.live || sourceState?.status !== 'ready') return;
+			return current.renderer?.getInteractionStyle();
+		},
     getSnapshot: () => snapshot,
     getSourceState: () => sourceState,
     subscribe(listener: () => void): () => void {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    update(next: MapProps): void {
+    update(next: MountedMapProps): void {
       if (disposed) return;
       props = next;
       let options: MapOptions;

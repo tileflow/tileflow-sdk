@@ -14,10 +14,12 @@ export default defineConfig({
     'internal/native-admission-bridge': 'src/native-admission-bridge.ts',
     'internal/hosted-binding': 'src/hosted-binding.ts',
     'internal/native-configuration-bridge': 'src/native-configuration-bridge.ts',
+    'internal/interactions': 'src/native-interaction-owner.ts',
   },
   external: [
     '@tileflow/core',
     '@tileflow/core/native',
+    '@tileflow/interactions',
     'react',
     'react-native',
     '@maplibre/maplibre-react-native',

@@ -16,7 +16,7 @@ const marker = (id = 'one') => ({
 });
 const binding = {id: 'places', target: {kind: 'semantic-feature', domain: 'poi'}};
 
- test('portable inputs start empty, snapshot caller data and retain the last valid documents', () => {
+test('portable inputs start empty, snapshot caller data and retain the last valid documents', () => {
 	const empty = prepareNativeInteractionInputs({});
 	assert.deepEqual(empty.annotations, []);
 	assert.deepEqual(empty.bindings, []);

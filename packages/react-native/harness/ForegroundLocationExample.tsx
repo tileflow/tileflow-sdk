@@ -62,12 +62,13 @@ export function ForegroundLocationExample({
 
   useEffect(() => {
     controller.setForeground(AppState.currentState === 'active');
+    const unmount = controller.mount();
     const subscription = AppState.addEventListener('change', (state) => {
       controller.setForeground(state === 'active');
     });
     return () => {
       subscription.remove();
-      controller.dispose();
+      unmount();
     };
   }, [controller]);
 

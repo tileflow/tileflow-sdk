@@ -96,6 +96,27 @@ test('only validated coordinates and accuracy become the stable accessible locat
   owner.dispose();
 });
 
+test('denied permission remains mounted application state and never starts observation', async () => {
+  let observations = 0;
+  const owner = createForegroundLocationController(
+    {
+      async requestPermission() {
+        return 'denied';
+      },
+      observe() {
+        observations += 1;
+        return () => undefined;
+      },
+    },
+    true,
+  );
+  await owner.requestPermission();
+  assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'denied'});
+  assert.equal(observations, 0);
+  assert.deepEqual(foregroundLocationAnnotations(owner.getSnapshot()), []);
+  owner.dispose();
+});
+
 test('background teardown, foreground restart and revocation ignore retired provider callbacks', async () => {
   const listeners: Array<(update: ApplicationLocationObservation) => void> = [];
   let releases = 0;
@@ -129,6 +150,31 @@ test('background teardown, foreground restart and revocation ignore retired prov
   assert.deepEqual(foregroundLocationAnnotations(owner.getSnapshot()), []);
   assert.equal(releases, 2);
   owner.dispose();
+});
+
+test('dispose retires a live observation and makes its late provider result inert', async () => {
+  let listener: ((update: ApplicationLocationObservation) => void) | undefined;
+  let releases = 0;
+  const owner = createForegroundLocationController(
+    {
+      async requestPermission() {
+        return 'granted-precise';
+      },
+      observe(next) {
+        listener = next;
+        return () => {
+          releases += 1;
+        };
+      },
+    },
+    true,
+  );
+  await owner.requestPermission();
+  const before = owner.getSnapshot();
+  owner.dispose();
+  assert.equal(releases, 1);
+  listener?.({type: 'fix', fix: {accuracy: 3, latitude: 38.7, longitude: -9.1}});
+  assert.equal(owner.getSnapshot(), before);
 });
 
 test('provider failure is application state and late permission results cannot survive disposal', async () => {

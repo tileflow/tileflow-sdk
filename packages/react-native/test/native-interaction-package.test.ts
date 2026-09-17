@@ -5,15 +5,18 @@ import {createNativeInteractionOwner} from '../src/native-interaction-owner';
 
 const root = new URL('../', import.meta.url);
 const modules = ['native-interaction-input', 'native-interaction-poi', 'native-interaction-owner'];
-const imports = (text: string) => [...text.matchAll(/(?:from\s+|import\s*\(\s*|import\s+)["']([^"']+)["']/gu)].map((match) => match[1]!);
+const imports = (text: string) =>
+	[...text.matchAll(/(?:from\s+|import\s*\(\s*|import\s+)["']([^"']+)["']/gu)].map((match) => match[1]!);
 
 test('the interaction foundation imports only portable root contracts and its private neutral modules', async () => {
 	for (const name of modules) {
 		const source = await readFile(new URL(`src/${name}.ts`, root), 'utf8');
-		for (const specifier of imports(source)) assert.ok(
-			specifier === '@tileflow/interactions' || modules.some((value) => specifier === `./${value}`),
-			specifier,
-		);
+		for (const specifier of imports(source)) {
+			assert.ok(
+				specifier === '@tileflow/interactions' || modules.some((value) => specifier === `./${value}`),
+				specifier,
+			);
+		}
 		assert.doesNotMatch(source, /\b(?:window|document|navigator)\s*[.\[]|\b(?:HTMLElement|requestAnimationFrame|setTimeout|setInterval)\b/u);
 		assert.doesNotMatch(source, /maplibre-gl|@tileflow\/interactions\//u);
 	}
@@ -21,7 +24,7 @@ test('the interaction foundation imports only portable root contracts and its pr
 	const visitRoot = async (file: string): Promise<void> => {
 		if (visited.has(file)) return;
 		visited.add(file);
-		const source = await readFile(new URL(`../../interactions/src/${file}.ts`, root), 'utf8');
+		const source = await readFile(new URL(`../interactions/src/${file}.ts`, root), 'utf8');
 		for (const specifier of imports(source)) {
 			assert.doesNotMatch(specifier, /maplibre|react|node:|browser|dom/iu);
 			if (specifier.startsWith('./')) await visitRoot(specifier.slice(2));

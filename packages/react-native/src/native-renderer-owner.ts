@@ -11,6 +11,7 @@ import type {
   MapThemeChangeEvent,
 } from './contract';
 import {createNativeCameraPort} from './native-camera-port';
+import {createNativeInteractionStyleOwner} from './native-interaction-style';
 import {createNativeReadiness} from './native-readiness';
 import {freezeNativePreparedJson, NativePreparationError} from './native-style-document';
 import type {NativeSurface, NativeSurfaceEvent} from './native-surface-contract';
@@ -51,6 +52,7 @@ export function createNativeRendererOwner(
     surfaces: NativeRendererSurfaces;
     emit(event: NativeRendererEvent): void;
     changed(): void;
+		interactionsChanged?(): void;
   }>,
 ) {
   let disposed = false;
@@ -87,6 +89,7 @@ export function createNativeRendererOwner(
     initialView,
     revision,
   });
+	const interactionStyles = createNativeInteractionStyleOwner(() => ports.interactionsChanged?.());
   const tasks = new Set<Promise<unknown>>();
   const track = <T>(promise: Promise<T>): Promise<T> => {
     tasks.add(promise);
@@ -145,6 +148,18 @@ export function createNativeRendererOwner(
     if (foreground) fail();
   });
 
+	function publishInteractionStyle(version: number) {
+		if (disposed || terminal || !foreground || preloading || !styleAccepted || !loaded ||
+			!surface || version !== transaction) return;
+		const nativeSurface = surface;
+		const style = snapshot.style;
+		const expected = token;
+		const generation = eventGeneration;
+		interactionStyles.publish(key, expected, style, () =>
+			!disposed && !terminal && foreground && !preloading && styleAccepted && loaded &&
+			surface === nativeSurface && token === expected && snapshot.style === style &&
+			transaction === version && eventGeneration === generation);
+	}
   function invalidate() {
     if (disposed || terminal) return;
     barrierEpoch++;
@@ -162,6 +177,8 @@ export function createNativeRendererOwner(
     if (disposed || terminal || !foreground || !styleAccepted || loaded || version !== transaction)
       return;
     loaded = true;
+		publishInteractionStyle(version);
+		if (disposed || version !== transaction || !foreground) return;
     emit({type: 'load', generation: eventGeneration, selection: selection(active)});
     if (disposed || version !== transaction || !foreground) return;
     try {
@@ -188,6 +205,7 @@ export function createNativeRendererOwner(
     const version = ++transaction;
     if (styleSequence >= Number.MAX_SAFE_INTEGER) {
       terminal = true;
+			interactionStyles.retire();
       readiness.fail();
       return;
     }
@@ -203,6 +221,8 @@ export function createNativeRendererOwner(
     const expected = token;
     barrierEpoch++;
     needsCommit = true;
+		interactionStyles.retire();
+		if (disposed || version !== transaction) return;
     readiness.begin(expected);
     if (!surface) return;
     const nativeSurface = surface;
@@ -260,6 +280,8 @@ export function createNativeRendererOwner(
     const generation = eventGeneration;
     const previous = committed;
     const version = transaction;
+		interactionStyles.retire();
+		if (disposed || version !== transaction) return;
     emit({type: 'renderer-error', generation});
     if (disposed || version !== transaction) return;
     emit({
@@ -330,6 +352,7 @@ export function createNativeRendererOwner(
   }
 
   return Object.freeze({
+		getInteractionStyle: interactionStyles.get,
     get snapshot() {
       return snapshot;
     },
@@ -391,6 +414,7 @@ export function createNativeRendererOwner(
       if (disposed) return;
       eventGeneration = generation;
       preloading = true;
+		interactionStyles.retire();
       interruptCamera();
       invalidate();
       // A pending manifest does not yet establish the requested concrete theme.
@@ -417,13 +441,16 @@ export function createNativeRendererOwner(
       preloading = false;
       pendingSuccess = true;
       rollback = false;
+		interactionStyles.retire();
       interruptCamera();
       invalidate();
+		publishInteractionStyle(transaction);
     },
     preparationFailed(generation: number): void {
       if (disposed) return;
       eventGeneration = generation;
       preloading = false;
+		interactionStyles.retire();
       emit({
         type: 'theme-change',
         phase: 'error',
@@ -442,6 +469,7 @@ export function createNativeRendererOwner(
         pendingSuccess = false;
         interruptCamera();
         invalidate();
+			publishInteractionStyle(transaction);
       }
     },
     afterCommit(props: MapCameraProps): void {
@@ -516,6 +544,7 @@ export function createNativeRendererOwner(
     background(): void {
       if (disposed || !foreground) return;
       foreground = false;
+		interactionStyles.retire();
       interruptCamera();
       invalidate();
     },
@@ -526,6 +555,7 @@ export function createNativeRendererOwner(
         activateStyle(transaction);
         return;
       }
+		const version = transaction;
       try {
         if (cameraMounted && loaded) camera.restoreAfterStyleChange();
       } catch {
@@ -534,7 +564,10 @@ export function createNativeRendererOwner(
       }
       track(
         cameraPort.whenIdle().then(() => {
-          if (!disposed && foreground) invalidate();
+					if (!disposed && foreground) {
+						invalidate();
+						publishInteractionStyle(version);
+					}
         }),
       );
     },
@@ -550,6 +583,7 @@ export function createNativeRendererOwner(
       disposed = true;
       ++transaction;
       ++barrierEpoch;
+		interactionStyles.retire();
       readiness.dispose();
       camera.dispose();
       cameraPort.dispose();

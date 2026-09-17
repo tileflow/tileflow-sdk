@@ -47,7 +47,8 @@
     }
   },
   "dependencies": {
-    "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0"
+    "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
+    "@tileflow/interactions": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0"
   },
   "peerDependencies": {
     "@maplibre/maplibre-react-native": "11.3.10",

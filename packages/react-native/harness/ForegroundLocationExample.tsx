@@ -1,18 +1,18 @@
 import {useEffect, useMemo, useState, useSyncExternalStore} from 'react';
 import {AppState, Pressable, Text, View} from 'react-native';
 import {
-  Map as TileflowMap,
   type MapSource,
   type MapThemeSelection,
   type MapView,
+  Map as TileflowMap,
 } from '../src/index';
 import {
+  type ApplicationForegroundLocationAdapter,
+  type ApplicationForegroundLocationState,
+  type ApplicationLocationAnnotation,
   createForegroundLocationController,
   foregroundLocationAnnotations,
   recenterForegroundLocationView,
-  type ApplicationForegroundLocationAdapter,
-  type ApplicationLocationAnnotation,
-  type ApplicationForegroundLocationState,
 } from './foreground-location-recipe';
 
 export type ForegroundLocationExampleProps = Readonly<{

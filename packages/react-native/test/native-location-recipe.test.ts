@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  type ApplicationForegroundLocationAdapter,
+  type ApplicationLocationObservation,
+  type ApplicationLocationPermission,
   createForegroundLocationController,
   foregroundLocationAnnotations,
   recenterForegroundLocationView,
   validateForegroundLocationFix,
-  type ApplicationForegroundLocationAdapter,
-  type ApplicationLocationObservation,
-  type ApplicationLocationPermission,
 } from '../harness/foreground-location-recipe';
 
 function deferred<T>() {

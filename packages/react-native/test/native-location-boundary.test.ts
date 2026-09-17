@@ -21,8 +21,14 @@ test('the foreground location recipe is compile-only and excluded from package r
   assert.equal(manifest.exports['./location'], undefined);
   assert.equal(manifest.exports['./foreground-location'], undefined);
   assert.equal(manifest.files.includes('harness'), false);
-  assert.equal(manifest.files.some((value: string) => value.startsWith('harness/')), false);
-  assert.doesNotMatch(publicIndex, /ForegroundLocation|LocationProvider|LocationPermission|useLocation/u);
+  assert.equal(
+    manifest.files.some((value: string) => value.startsWith('harness/')),
+    false,
+  );
+  assert.doesNotMatch(
+    publicIndex,
+    /ForegroundLocation|LocationProvider|LocationPermission|useLocation/u,
+  );
 
   assert.match(example, /from '\.\.\/src\/index'/u);
   assert.match(recipe, /import type \{MapView, TileflowAnnotation\} from '\.\.\/src\/index'/u);

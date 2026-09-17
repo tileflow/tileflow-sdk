@@ -36,9 +36,7 @@ export type ApplicationForegroundLocationAdapter = Readonly<{
   requestPermission(): Promise<
     'granted-precise' | 'granted-approximate' | 'denied' | 'unavailable'
   >;
-  observe(
-    listener: (update: ApplicationLocationObservation) => void,
-  ): () => void;
+  observe(listener: (update: ApplicationLocationObservation) => void): () => void;
 }>;
 ```
 
@@ -51,15 +49,15 @@ packed runtime files.
 
 The recipe models these states without unmounting the Map:
 
-| State | Meaning | Location annotation |
-| --- | --- | --- |
-| `idle` | The application has not requested permission. | none |
-| `requesting` | An explicit application action started a permission request. | none |
-| `granted-precise` | Foreground policy allows precise observation. | one marker after a valid fix |
-| `granted-approximate` | Foreground policy allows approximate observation. | one marker after a valid fix |
-| `denied` | The permission request was denied. | none |
-| `unavailable` | Permission/provider setup failed or emitted invalid data. | none |
-| `revoked` | A previously granted observation reported revocation. | removed immediately |
+| State                 | Meaning                                                      | Location annotation          |
+| --------------------- | ------------------------------------------------------------ | ---------------------------- |
+| `idle`                | The application has not requested permission.                | none                         |
+| `requesting`          | An explicit application action started a permission request. | none                         |
+| `granted-precise`     | Foreground policy allows precise observation.                | one marker after a valid fix |
+| `granted-approximate` | Foreground policy allows approximate observation.            | one marker after a valid fix |
+| `denied`              | The permission request was denied.                           | none                         |
+| `unavailable`         | Permission/provider setup failed or emitted invalid data.    | none                         |
+| `revoked`             | A previously granted observation reported revocation.        | removed immediately          |
 
 Construction is inert: it neither requests permission nor starts observation. The example's **Use
 my location** control is the only permission-request trigger. A rejected provider promise is reduced

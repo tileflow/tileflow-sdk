@@ -59,8 +59,8 @@ export function validateForegroundLocationFix(input: unknown): ApplicationLocati
     const keys = Reflect.ownKeys(input);
     if (
       keys.length !== 3 ||
-      !keys.every((key) =>
-        typeof key === 'string' && ['accuracy', 'latitude', 'longitude'].includes(key),
+      !keys.every(
+        (key) => typeof key === 'string' && ['accuracy', 'latitude', 'longitude'].includes(key),
       )
     )
       return undefined;
@@ -96,7 +96,9 @@ function permissionState(permission: unknown): ApplicationForegroundLocationStat
   return Object.freeze({fix: null, status: 'unavailable'});
 }
 
-function canObserve(state: ApplicationForegroundLocationState): state is Extract<
+function canObserve(
+  state: ApplicationForegroundLocationState,
+): state is Extract<
   ApplicationForegroundLocationState,
   {status: 'granted-precise' | 'granted-approximate'}
 > {

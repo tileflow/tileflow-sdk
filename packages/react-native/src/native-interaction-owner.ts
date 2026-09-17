@@ -1,5 +1,4 @@
 import {
-	initialTileflowInteractionState,
 	reduceTileflowInteractionState,
 	tileflowInteractionTargetRefsEqual,
 	type TileflowInteractionContent,
@@ -220,6 +219,7 @@ export function createNativeInteractionOwner(initial: NativeInteractionInput = {
 		},
 		async activateTouch(input: unknown): Promise<void> {
 			if (disposed || !prepared) return;
+			++transaction;
 			const query = ++queryGeneration;
 			const result = await semantic.queryTouch(input, prepared.bindings.filter((binding) => binding.target.kind === 'semantic-feature'));
 			if (disposed || query !== queryGeneration || result.status === 'stale') return;

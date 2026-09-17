@@ -412,9 +412,11 @@ export function createNativeRendererOwner(
     },
     preload(generation: number, targetTheme?: MapTheme): void {
       if (disposed) return;
+		const version = transaction;
       eventGeneration = generation;
       preloading = true;
 		interactionStyles.retire();
+		if (disposed || version !== transaction || eventGeneration !== generation || !preloading) return;
       interruptCamera();
       invalidate();
       // A pending manifest does not yet establish the requested concrete theme.
@@ -437,20 +439,25 @@ export function createNativeRendererOwner(
       if (disposed || !committed || terminal) return;
       active = {...committed, source};
       committed = active;
+		const target = active;
+		const version = transaction;
       eventGeneration = source.generation;
       preloading = false;
       pendingSuccess = true;
       rollback = false;
 		interactionStyles.retire();
+		if (disposed || terminal || version !== transaction || active !== target) return;
       interruptCamera();
       invalidate();
-		publishInteractionStyle(transaction);
+		publishInteractionStyle(version);
     },
     preparationFailed(generation: number): void {
       if (disposed) return;
+		const version = transaction;
       eventGeneration = generation;
       preloading = false;
 		interactionStyles.retire();
+		if (disposed || version !== transaction || eventGeneration !== generation) return;
       emit({
         type: 'theme-change',
         phase: 'error',
@@ -458,6 +465,7 @@ export function createNativeRendererOwner(
         map: active.source.map.name,
         ...(committed ? {currentTheme: selection(committed).theme} : {}),
       });
+		if (disposed || version !== transaction || eventGeneration !== generation) return;
       if (!committed) {
         terminal = true;
         readiness.fail();
@@ -469,7 +477,7 @@ export function createNativeRendererOwner(
         pendingSuccess = false;
         interruptCamera();
         invalidate();
-			publishInteractionStyle(transaction);
+			publishInteractionStyle(version);
       }
     },
     afterCommit(props: MapCameraProps): void {
@@ -545,6 +553,7 @@ export function createNativeRendererOwner(
       if (disposed || !foreground) return;
       foreground = false;
 		interactionStyles.retire();
+		if (disposed || foreground) return;
       interruptCamera();
       invalidate();
     },

@@ -165,6 +165,33 @@ export function createMountedMapInteractions(
     }
     return currentTouch(gesture);
   };
+  const startTouch = () => {
+    if (disposed) return;
+    const intent = ++touchVersion;
+    touch = undefined;
+    owner?.cancelTouch();
+    sync();
+    if (!ready() || !owner || !proof || !host || !query) return;
+    const accepted = proof;
+    const mounted = host;
+    const previous = query;
+    const next = createQuery(accepted, mounted);
+    query = next;
+    const renewed = owner.renewTouchLease(next.lease);
+    // The old lease is permanently invalid before this newer gesture can issue a query.
+    previous.retire();
+    if (disposed || query !== next || touchVersion !== intent) return;
+    if (!renewed || proof !== accepted || host !== mounted || !ready()) {
+      next.retire();
+      query = undefined;
+      proof = undefined;
+      boundHost = undefined;
+      owner.replaceStyle();
+      notify();
+      return;
+    }
+    touch = {proof: accepted, host: mounted};
+  };
   return Object.freeze({
     getSnapshot: () => owner?.getSnapshot(),
     get ready() {
@@ -238,46 +265,38 @@ export function createMountedMapInteractions(
       sync();
     },
     beginTouch(): void {
-      if (disposed) return;
-      const intent = ++touchVersion;
-      touch = undefined;
-      owner?.cancelTouch();
-      sync();
-      if (!ready() || !owner || !proof || !host || !query) return;
-      const accepted = proof;
-      const mounted = host;
-      const previous = query;
-      const next = createQuery(accepted, mounted);
-      query = next;
-      const renewed = owner.renewTouchLease(next.lease);
-      // The old lease is permanently invalid before this newer gesture can issue a query.
-      previous.retire();
-      if (disposed || query !== next || touchVersion !== intent) return;
-      if (!renewed || proof !== accepted || host !== mounted || !ready()) {
-        next.retire();
-        query = undefined;
-        proof = undefined;
-        boundHost = undefined;
-        owner.replaceStyle();
-        notify();
-        return;
-      }
-      touch = {proof: accepted, host: mounted};
+      startTouch();
     },
     claimMarker,
     markerPress(annotation: TileflowAnnotation): void {
-      const gesture = touch;
+      let gesture = touch;
+      if (!currentTouch(gesture)) {
+        startTouch();
+        gesture = touch;
+      }
       if (!currentTouch(gesture) || gesture.markerActivated || !claimMarker(annotation)) return;
       gesture.markerActivated = true;
       owner?.activateAnnotation(annotation.id, 'touch');
+      // Preserve the claim through synchronous native bubbling, then retire this gesture.
+      void Promise.resolve().then(() => {
+        if (touch === gesture && gesture.markerActivated) touch = undefined;
+      });
     },
     async mapPress(input: unknown): Promise<void> {
-      const gesture = touch;
+      let gesture = touch;
+      if (!currentTouch(gesture)) {
+        startTouch();
+        gesture = touch;
+      }
       if (!owner || !currentTouch(gesture) || gesture.marker || gesture.mapActivated) return;
       sync();
       if (!currentTouch(gesture)) return;
       gesture.mapActivated = true;
-      await owner.activateTouch(input);
+      try {
+        await owner.activateTouch(input);
+      } finally {
+        if (touch === gesture) touch = undefined;
+      }
     },
     report,
     background(): void {

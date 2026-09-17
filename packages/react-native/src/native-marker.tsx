@@ -67,11 +67,15 @@ export function NativeAnnotationMarker<TAnnotation extends TileflowAnnotation>({
     <NativeMarker
       id={`tileflow-annotation-${model.key}`}
       lngLat={model.lngLat}
-      accessible={false}
+      {...model.accessibility}
       onPress={press}
+      onAccessibilityTap={() => {
+        lifecycle.beginTouch(sceneKey);
+        press();
+      }}
     >
       <Pressable
-        {...model.accessibility}
+        accessible={false}
         disabled={!enabled}
         style={button}
         onTouchStart={(event) => {
@@ -79,10 +83,6 @@ export function NativeAnnotationMarker<TAnnotation extends TileflowAnnotation>({
           event.stopPropagation();
         }}
         onPress={press}
-        onAccessibilityTap={() => {
-          lifecycle.beginTouch(sceneKey);
-          press();
-        }}
       >
         <View
           pointerEvents="none"

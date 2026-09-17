@@ -71,11 +71,14 @@ test('default and custom content retain one authoritative accessible activation 
     assert.equal(marker.type, 'NativeMarker');
     assert.equal(marker.props.id, 'tileflow-annotation-place');
     assert.deepEqual(marker.props.lngLat, [1, 2]);
+    assert.equal(marker.props.accessible, true);
+    assert.equal(marker.props.accessibilityRole, 'button');
+    assert.equal(marker.props.accessibilityLabel, annotation.ariaLabel);
     const button = marker.props.children;
     assert.equal(button.type, 'NativePressable');
-    assert.equal(button.props.accessible, true);
-    assert.equal(button.props.accessibilityRole, 'button');
-    assert.equal(button.props.accessibilityLabel, annotation.ariaLabel);
+    assert.equal(button.props.accessible, false);
+    assert.equal(button.props.accessibilityRole, undefined);
+    assert.equal(button.props.accessibilityLabel, undefined);
     assert.equal(button.props.style.minWidth, 44);
     assert.equal(button.props.style.minHeight, 44);
     const wrapper = button.props.children;
@@ -129,7 +132,7 @@ test('Pressable and native Marker deliveries share one activation and accessibil
   button.props.onPress(event);
   assert.equal(events.length, 1);
   assert.equal(stopped, 3);
-  button.props.onAccessibilityTap();
+  marker.props.onAccessibilityTap();
   assert.equal(events.length, 2);
   interactions.dispose();
   marker.props.onPress(event);

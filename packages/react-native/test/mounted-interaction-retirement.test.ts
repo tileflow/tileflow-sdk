@@ -42,7 +42,7 @@ function fixture() {
   return {owner, proofs, host, events, queries: () => queries};
 }
 
-test('background and style retirement require a fresh gesture before accepting another press', async () => {
+test('background and style retirement discard old claims before a native press starts a fresh gesture', async () => {
   for (const retirement of ['background', 'style', 'host'] as const) {
     const f = fixture();
     const marker = f.owner.getSnapshot()!.annotations[0]!;
@@ -59,13 +59,15 @@ test('background and style retirement require a fresh gesture before accepting a
       f.owner.unbind(f.host);
       f.owner.bind(f.host);
     }
-    f.owner.markerPress(marker);
-    await f.owner.mapPress(touch);
+    assert.equal(f.owner.claimMarker(marker), false);
     assert.equal(f.events.length, 0);
     assert.equal(f.queries(), 0);
-    f.owner.beginTouch();
+
     f.owner.markerPress(marker);
     assert.equal(f.events.filter((event) => event.type === 'target:activate').length, 1);
+    await f.owner.mapPress(touch);
+    assert.equal(f.events.filter((event) => event.type === 'target:activate').length, 1);
+    assert.equal(f.queries(), 0);
   }
 });
 

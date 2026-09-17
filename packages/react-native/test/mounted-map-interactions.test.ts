@@ -61,6 +61,43 @@ test('one marker activation survives both native bubbling orders and suppresses 
   assert.equal(events.filter((event) => event.type === 'target:activate').length, 2);
 });
 
+test('a native map press starts its own touch when responder capture is unavailable', async () => {
+  const f = fixture(async (_point, options) => [
+    {
+      type: 'Feature',
+      id: 1,
+      properties: {
+        name: 'Place',
+        category: options.layers[0] === 'hotel' ? 'lodging' : 'food-drink',
+      },
+    },
+  ]);
+  const events: TileflowInteractionEvent[] = [];
+  f.owner.update({
+    interactions: [poiBinding],
+    onInteractionEvent: (event) => events.push(event),
+  });
+
+  await f.owner.mapPress(touch);
+
+  assert.equal(events.filter((event) => event.type === 'target:activate').length, 1);
+  assert.equal(events[0]?.target.kind, 'semantic-feature');
+});
+
+test('a native marker press starts its own touch when responder capture is unavailable', () => {
+  const f = fixture();
+  const events: TileflowInteractionEvent[] = [];
+  f.owner.update({
+    annotations: [annotation],
+    onInteractionEvent: (event) => events.push(event),
+  });
+
+  f.owner.markerPress(f.owner.getSnapshot()!.annotations[0]!);
+
+  assert.equal(events.filter((event) => event.type === 'target:activate').length, 1);
+  assert.equal(events[0]?.target.kind, 'annotation');
+});
+
 test('callbacks update without replacing ownership; retained IDs keep host plans and removed callbacks are inert', () => {
   const f = fixture();
   const first: unknown[] = [],

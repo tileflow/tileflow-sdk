@@ -176,9 +176,10 @@ test('an incompatible native style fails without creating an output directory', 
   await assert.rejects(access(join(cwd, 'output')));
 });
 
-test('preview does not advertise a native renderer integration', async (t) => {
+test('preview advertises the same explicit web/native renderer selector', async (t) => {
   const cwd = await fixture(t);
   const result = await run(cwd, ['preview', '--help']);
   assert.equal(result.code, 0);
-  assert.doesNotMatch(result.stdout, /--renderer/);
+  assert.match(result.stdout, /--renderer <renderer>/u);
+  assert.match(result.stdout, /web or native/u);
 });

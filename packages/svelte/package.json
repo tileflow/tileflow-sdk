@@ -62,7 +62,7 @@
   },
   "devDependencies": {
     "maplibre-gl": "6.9.0",
-    "svelte": "^5.43.17",
+    "svelte": "^5.57.0",
     "svelte-check": "^4.3.4"
   }
 }

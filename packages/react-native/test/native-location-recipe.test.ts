@@ -152,6 +152,87 @@ test('background teardown, foreground restart and revocation ignore retired prov
   owner.dispose();
 });
 
+test('effect replay remounts granted observation without requesting permission again', async () => {
+  const listeners: Array<(update: ApplicationLocationObservation) => void> = [];
+  let permissionRequests = 0;
+  let releases = 0;
+  const owner = createForegroundLocationController(
+    {
+      async requestPermission() {
+        permissionRequests += 1;
+        return 'granted-precise';
+      },
+      observe(listener) {
+        listeners.push(listener);
+        return () => {
+          releases += 1;
+        };
+      },
+    },
+    true,
+  );
+
+  const unmountFirst = owner.mount();
+  await owner.requestPermission();
+  assert.equal(permissionRequests, 1);
+  assert.equal(listeners.length, 1);
+  listeners[0]?.({type: 'fix', fix: {accuracy: 4, latitude: 38.72, longitude: -9.14}});
+  assert.equal(foregroundLocationAnnotations(owner.getSnapshot()).length, 1);
+
+  unmountFirst();
+  assert.equal(releases, 1);
+  listeners[0]?.({type: 'revoked'});
+  assert.equal(owner.getSnapshot().status, 'granted-precise');
+
+  const unmountReplay = owner.mount();
+  assert.equal(permissionRequests, 1);
+  assert.equal(listeners.length, 2);
+  listeners[0]?.({type: 'unavailable'});
+  assert.equal(owner.getSnapshot().status, 'granted-precise');
+  listeners[1]?.({type: 'fix', fix: {accuracy: 3, latitude: 38.73, longitude: -9.13}});
+  assert.deepEqual(owner.getSnapshot().fix, {accuracy: 3, latitude: 38.73, longitude: -9.13});
+
+  unmountReplay();
+  assert.equal(releases, 2);
+  owner.dispose();
+});
+
+test('unmount retires a pending permission epoch and replay does not prompt automatically', async () => {
+  const permission = deferred<ApplicationLocationPermission>();
+  let permissionRequests = 0;
+  let observations = 0;
+  const owner = createForegroundLocationController(
+    {
+      requestPermission() {
+        permissionRequests += 1;
+        return permission.promise;
+      },
+      observe() {
+        observations += 1;
+        return () => undefined;
+      },
+    },
+    true,
+  );
+
+  const unmount = owner.mount();
+  const request = owner.requestPermission();
+  assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'requesting'});
+  unmount();
+  assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'idle'});
+
+  permission.resolve('granted-precise');
+  await request;
+  assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'idle'});
+  assert.equal(observations, 0);
+
+  const unmountReplay = owner.mount();
+  assert.equal(permissionRequests, 1);
+  assert.equal(observations, 0);
+  unmountReplay();
+  owner.dispose();
+});
+
 test('dispose retires a live observation and makes its late provider result inert', async () => {
   let listener: ((update: ApplicationLocationObservation) => void) | undefined;
   let releases = 0;

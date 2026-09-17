@@ -45,7 +45,14 @@ export function createMapLifecycle(create: () => Owner, retire: (owner: Owner) =
 					notify();
 				}
 			} while (refreshAgain && active === epoch);
-		} finally { refreshing = false; }
+		} finally {
+			refreshing = false;
+			if (refreshAgain && active && active !== epoch) refresh(active);
+		}
+	};
+	const forScene = (key: string) => {
+		const epoch = active;
+		return epoch?.owner.getSnapshot().renderer?.key === key ? epoch : undefined;
 	};
 	return Object.freeze({
 		getSnapshot: (): Snapshot => snapshot,
@@ -89,21 +96,21 @@ export function createMapLifecycle(create: () => Owner, retire: (owner: Owner) =
 			refresh(epoch);
 		},
 		bindInteractionHost(host: NativeInteractionHost): void {
-			const epoch = active;
-			if (!epoch || epoch.owner.getSnapshot().renderer?.key !== host.key) return;
+			const epoch = forScene(host.key);
+			if (!epoch) return;
 			epoch.interactions.bind(host);
 			refresh(epoch);
 		},
 		unbindInteractionHost(host: NativeInteractionHost): void {
 			active?.interactions.unbind(host);
 		},
-		beginTouch(): void { active?.interactions.beginTouch(); },
-		claimMarker(annotation: TileflowAnnotation): void { active?.interactions.claimMarker(annotation); },
-		markerPress(annotation: TileflowAnnotation): void { active?.interactions.markerPress(annotation); },
-		mapPress(input: unknown): void {
-			void active?.interactions.mapPress(input).catch(() => undefined);
+		beginTouch(key: string): void { forScene(key)?.interactions.beginTouch(); },
+		claimMarker(key: string, annotation: TileflowAnnotation): void { forScene(key)?.interactions.claimMarker(annotation); },
+		markerPress(key: string, annotation: TileflowAnnotation): void { forScene(key)?.interactions.markerPress(annotation); },
+		mapPress(key: string, input: unknown): void {
+			void forScene(key)?.interactions.mapPress(input).catch(() => undefined);
 		},
-		interactionDiagnostic(code: TileflowInteractionDiagnosticCode): void { active?.interactions.report(code); },
+		interactionDiagnostic(key: string, code: TileflowInteractionDiagnosticCode): void { forScene(key)?.interactions.report(code); },
 		rootMounted(key: string, root: number): void { active?.owner.rootMounted(key, root); },
 		nativeStyleLoaded(key: string, root: number): void { active?.owner.nativeStyleLoaded(key, root); },
 		layoutChanged(key: string): void { active?.owner.layoutChanged(key); },

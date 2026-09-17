@@ -36,6 +36,7 @@ export function createMountedMapInteractions(
 	let foreground = true;
 	let propsVersion = 0;
 	let ownershipVersion = 0;
+	let touchVersion = 0;
 	let owner: ReturnType<typeof createNativeInteractionOwner> | undefined;
 	let release: (() => void) | undefined;
 	let host: NativeInteractionHost | undefined;
@@ -68,6 +69,11 @@ export function createMountedMapInteractions(
 				hostCurrent(host) && proof.isCurrent() && getStyle() === proof;
 		} catch { return false; }
 	};
+	const createQuery = (accepted: NativeInteractionStyle, mounted: NativeInteractionHost) =>
+		createNativeInteractionQuery(accepted.style, () =>
+			!disposed && foreground && host === mounted && hostCurrent(mounted) &&
+			proof === accepted && accepted.isCurrent() && getStyle() === accepted,
+			mounted.query);
 	const sync = () => {
 		if (disposed || !owner) return;
 		const version = ownershipVersion;
@@ -92,13 +98,9 @@ export function createMountedMapInteractions(
 			notify();
 			return;
 		}
-		const accepted = next;
-		proof = accepted;
+		proof = next;
 		boundHost = mounted;
-		query = createNativeInteractionQuery(accepted.style, () =>
-			!disposed && foreground && host === mounted && hostCurrent(mounted) &&
-			proof === accepted && accepted.isCurrent() && getStyle() === accepted,
-			mounted.query);
+		query = createQuery(next, mounted);
 		owner.replaceStyle(query.lease);
 		notify();
 	};
@@ -177,10 +179,30 @@ export function createMountedMapInteractions(
 		},
 		beginTouch(): void {
 			if (disposed) return;
+			const intent = ++touchVersion;
 			touch = undefined;
 			owner?.cancelTouch();
 			sync();
-			if (ready() && proof && host) touch = {proof, host};
+			if (!ready() || !owner || !proof || !host || !query) return;
+			const accepted = proof;
+			const mounted = host;
+			const previous = query;
+			const next = createQuery(accepted, mounted);
+			query = next;
+			const renewed = owner.renewTouchLease(next.lease);
+			// The old lease is permanently invalid before this newer gesture can issue a query.
+			previous.retire();
+			if (disposed || query !== next || touchVersion !== intent) return;
+			if (!renewed || proof !== accepted || host !== mounted || !ready()) {
+				next.retire();
+				query = undefined;
+				proof = undefined;
+				boundHost = undefined;
+				owner.replaceStyle();
+				notify();
+				return;
+			}
+			touch = {proof: accepted, host: mounted};
 		},
 		claimMarker,
 		markerPress(annotation: TileflowAnnotation): void {

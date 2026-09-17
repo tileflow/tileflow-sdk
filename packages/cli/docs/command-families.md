@@ -14,7 +14,11 @@ Start with the [tileflow guide](https://github.com/tileflow/tileflow-sdk/blob/ma
 | Hosted delivery   | `deploy`, `status`                                                                             |
 
 Run `tileflow <command> --help` (or the family help, such as `tileflow icons --help`) for the exact
-arguments and bounded JSON modes.
+arguments and bounded JSON modes. `preview` defaults to the existing web renderer. The explicit
+`preview --renderer native` / `dev --renderer native` mode serves watched `native-v1` artifacts only;
+Metro remains the React Native JavaScript development server. See
+[Native artifacts and local preview](./native-artifacts.md) for the endpoint and qualification
+boundary.
 
 `icon-set` and `icons` are deliberately separate. `icon-set` needs Team authority and changes the
 remote catalog. `icons list` and `icons diff` are keyless local inspection, and

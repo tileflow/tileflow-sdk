@@ -1,14 +1,15 @@
 {
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "noEmit": true,
-    "rootDir": "."
-  },
-  "include": [
-    "src",
-    "test/public-types.ts",
-    "test/camera-public-types.ts",
-    "test/configuration-public-types.ts",
-    "test/map-component-public-types.tsx"
-  ]
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"rootDir": "."
+	},
+	"include": [
+		"src",
+		"test/public-types.ts",
+		"test/camera-public-types.ts",
+		"test/configuration-public-types.ts",
+		"test/map-component-public-types.tsx",
+		"test/map-interaction-public-types.tsx"
+	]
 }

@@ -104,26 +104,30 @@ function canObserve(state: ApplicationForegroundLocationState): state is Extract
 }
 
 /**
- * A small application-owned foreground controller. Construction never requests permission or
- * starts observation. Backgrounding retires the current observation; foregrounding restarts only
- * while the application's last permission decision remains granted.
+ * A small application-owned foreground controller. Construction is inert. mount() owns one
+ * replayable React effect epoch; its cleanup retires observation and pending permission work but
+ * retains settled application permission/fix state for a StrictMode replay. dispose() is terminal.
  */
 export function createForegroundLocationController(
   adapter: ApplicationForegroundLocationAdapter,
   initiallyForeground: boolean,
 ) {
   let disposed = false;
+  let mounted = false;
   let foreground = initiallyForeground;
+  let mountEpoch = 0;
   let permissionEpoch = 0;
   let observationEpoch = 0;
   let observing = false;
   let releaseObservation: (() => void) | undefined;
   let snapshot: ApplicationForegroundLocationState = idle;
+  let settledSnapshot: ApplicationForegroundLocationState = idle;
   const listeners = new Set<() => void>();
 
   const publish = (next: ApplicationForegroundLocationState) => {
     if (disposed) return;
     snapshot = next;
+    if (next.status !== 'requesting') settledSnapshot = next;
     for (const listener of [...listeners]) {
       try {
         listener();
@@ -147,7 +151,15 @@ export function createForegroundLocationController(
   };
 
   const startObservation = () => {
-    if (disposed || !foreground || observing || releaseObservation || !canObserve(snapshot)) return;
+    if (
+      disposed ||
+      !mounted ||
+      !foreground ||
+      observing ||
+      releaseObservation ||
+      !canObserve(snapshot)
+    )
+      return;
     const ticket = ++observationEpoch;
     observing = true;
     let release!: () => void;
@@ -155,6 +167,7 @@ export function createForegroundLocationController(
       release = adapter.observe((update) => {
         if (
           disposed ||
+          !mounted ||
           !foreground ||
           ticket !== observationEpoch ||
           !canObserve(snapshot)
@@ -182,14 +195,20 @@ export function createForegroundLocationController(
       });
     } catch {
       observing = false;
-      if (!disposed && ticket === observationEpoch) {
+      if (!disposed && mounted && ticket === observationEpoch) {
         observationEpoch += 1;
         publish(Object.freeze({fix: null, status: 'unavailable'}));
       }
       return;
     }
     observing = false;
-    if (disposed || !foreground || ticket !== observationEpoch || !canObserve(snapshot)) {
+    if (
+      disposed ||
+      !mounted ||
+      !foreground ||
+      ticket !== observationEpoch ||
+      !canObserve(snapshot)
+    ) {
       try {
         release();
       } catch {
@@ -200,6 +219,15 @@ export function createForegroundLocationController(
     releaseObservation = release;
   };
 
+  const retireMount = (ticket: number) => {
+    if (disposed || !mounted || ticket !== mountEpoch) return;
+    mounted = false;
+    mountEpoch += 1;
+    permissionEpoch += 1;
+    stopObservation();
+    if (snapshot.status === 'requesting') publish(settledSnapshot);
+  };
+
   return Object.freeze({
     getSnapshot: (): ApplicationForegroundLocationState => snapshot,
     subscribe(listener: () => void): () => void {
@@ -207,8 +235,25 @@ export function createForegroundLocationController(
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
+    mount(): () => void {
+      if (disposed) return () => undefined;
+      if (mounted) {
+        permissionEpoch += 1;
+        stopObservation();
+        if (snapshot.status === 'requesting') publish(settledSnapshot);
+      }
+      mounted = true;
+      const ticket = ++mountEpoch;
+      startObservation();
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        retireMount(ticket);
+      };
+    },
     async requestPermission(): Promise<void> {
-      if (disposed) return;
+      if (disposed || !mounted) return;
       const ticket = ++permissionEpoch;
       stopObservation();
       publish(Object.freeze({fix: null, status: 'requesting'}));
@@ -218,7 +263,7 @@ export function createForegroundLocationController(
       } catch {
         permission = 'unavailable';
       }
-      if (disposed || ticket !== permissionEpoch) return;
+      if (disposed || !mounted || ticket !== permissionEpoch) return;
       publish(permissionState(permission));
       startObservation();
     },
@@ -226,14 +271,16 @@ export function createForegroundLocationController(
       if (disposed || foreground === next) return;
       foreground = next;
       if (!foreground) {
-        stopObservation();
+        if (mounted) stopObservation();
         return;
       }
-      startObservation();
+      if (mounted) startObservation();
     },
     dispose(): void {
       if (disposed) return;
       disposed = true;
+      mounted = false;
+      mountEpoch += 1;
       permissionEpoch += 1;
       stopObservation();
       listeners.clear();

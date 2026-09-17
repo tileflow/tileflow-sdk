@@ -1,4 +1,5 @@
 import type {TileflowRuntimeManifest} from '@tileflow/core/manifest';
+import {tileflowNativeProfile} from '@tileflow/core/native-profile';
 import {
   createTileflowDevRequestHandler,
   type TileflowDevRequestHandler,
@@ -6,7 +7,7 @@ import {
 } from '@tileflow/dev/server';
 
 export const tileflowNativePreviewBasePath = '/native';
-export const tileflowNativePreviewProfile = 'native-v1' as const;
+export const tileflowNativePreviewProfile = tileflowNativeProfile.id;
 
 export function getTileflowNativePreviewManifestUrl(origin: string): string {
   return `${origin}${tileflowNativePreviewBasePath}/manifest.json`;

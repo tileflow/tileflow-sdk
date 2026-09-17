@@ -174,3 +174,14 @@ Expo config plugin, CLI behavior, deployment or publication. The package remains
 pre-release.
 
 Source and tests describe contracts; they do not establish that a native build, simulator/device run, Hosted service, app-store submission or package publication succeeded. Qualify the exact source revision in the intended host before relying on it.
+
+## Foreground location is application-owned
+
+`Map` does not request location permission, start a provider, track the device or recenter when a
+fix arrives. Applications can compose a validated foreground fix through the existing accessible
+annotation and controlled-camera contracts while keeping permission, provider lifetime, privacy
+policy, status UI and recenter controls outside Tileflow.
+
+See [Application-owned foreground location](./docs/native-location.md) for the package-owned
+source-checkout recipe. The recipe is excluded from package exports and packed runtime files and
+imports no concrete location provider.

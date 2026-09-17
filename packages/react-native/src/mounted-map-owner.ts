@@ -391,9 +391,9 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
               changed() {
                 if (current === epoch && epoch.live) notify();
               },
-							interactionsChanged() {
-								if (current === epoch && epoch.live && !disposed) notify();
-							},
+              interactionsChanged() {
+                if (current === epoch && epoch.live && !disposed) notify();
+              },
             },
           );
         else epoch.renderer.setTarget({source, style: prepared.style});
@@ -484,10 +484,10 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
   }
 
   return Object.freeze({
-		getInteractionStyle() {
-			if (disposed || !foreground || !current?.live || sourceState?.status !== 'ready') return;
-			return current.renderer?.getInteractionStyle();
-		},
+    getInteractionStyle() {
+      if (disposed || !foreground || !current?.live || sourceState?.status !== 'ready') return;
+      return current.renderer?.getInteractionStyle();
+    },
     getSnapshot: () => snapshot,
     getSourceState: () => sourceState,
     subscribe(listener: () => void): () => void {

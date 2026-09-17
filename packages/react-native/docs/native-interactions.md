@@ -1,14 +1,33 @@
-# Private native interaction contracts
+# Native interaction contract
 
-The React Native package contains a renderer-neutral interaction foundation. It reuses the schemas,
-validation results, target types, diagnostics and popup reducer from the ordinary
-`@tileflow/interactions` root. It does not import the browser adapter, DOM implementations or
-`maplibre-gl`.
+The React Native `Map` accepts portable annotations, semantic interaction bindings, controlled or
+uncontrolled interaction state, interaction callbacks and an optional marker renderer. It exposes
+normalized targets and bounded data so the application can present its own selected-place
+experience. Tileflow does not render a popup, callout, tooltip, sheet, panel or modal.
 
-These modules are private implementation details, not application APIs. They are not exported by
-`@tileflow/react-native`, do not add public `Map` props, and are not connected to the mounted Map.
-Importing or constructing the neutral owner does not evaluate React Native or MapLibre, create a
-native host, query a map, install networking or schedule a timer.
+The mounted implementation uses a private renderer-neutral foundation. It reuses schemas, target
+types, diagnostics and state transitions from the ordinary `@tileflow/interactions` root without
+importing its browser adapter, DOM implementation or `maplibre-gl`. Native map handles, style
+proofs, query ports and owners are not exported by `@tileflow/react-native`.
+
+## Public Map inputs
+
+`Map` is generic over the supplied annotation type, so application data remains typed in
+`renderMarker` and `onInteractionEvent`. `annotations` and `interactions` are complete portable
+documents, not patches. `interactionState` selects controlled ownership;
+`defaultInteractionState` selects uncontrolled ownership. They cannot be supplied together and the
+mode cannot change for one mounted Map.
+
+`renderMarker` composes marker content only. Tileflow retains the native marker host, coordinate,
+stable key, activation and authoritative accessibility wrapper. Without a renderer, Tileflow shows
+a bounded default marker. Each marker has the annotation label, a 44-by-44-point minimum touch
+target, button semantics and selected or disabled accessibility state. Custom marker content does
+not create another accessible target.
+
+`onInteractionEvent` receives portable activation events for annotations and semantic POIs.
+`onInteractionStateChange` requests or reports portable selection-state changes, while
+`onInteractionDiagnostic` receives fixed structured diagnostics. Popup-named state remains the
+cross-runtime state vocabulary; it does not create native presentation.
 
 ## Input ownership and validation
 
@@ -44,10 +63,9 @@ coordinates, data or declarative surfaces change. Its update entry contains the 
 validated definitions. New IDs create entries; absent IDs produce removals in previous order.
 Unchanged IDs are retained, and final order follows the new document.
 
-An invalid replacement produces no partial creates, updates or removals. A consumer applies plans
-only for a new snapshot revision. A consumer that skips revisions must compute its plan from its
-own last-applied annotations and the latest validated annotations; a plan is not an accumulated
-command log. This foundation does not instantiate or mutate marker hosts.
+An invalid replacement produces no partial creates, updates or removals. The mounted adapter uses
+the annotation ID as the React and native marker identity, so updates and reordering retain the
+compatible host while removal retires it.
 
 ## One popup state, two ownership modes
 
@@ -84,9 +102,19 @@ platform adapter may construct that envelope only after rechecking native map/st
 Native handles never cross this neutral boundary. The adapter rejects a response associated with
 another request or Map even when the physical URLs or layer names happen to match.
 
-The injected port is the boundary in this package unit; there is no new Swift, Kotlin or public
-query API. Platform wiring must later prove native result order, source identity and cancellation
-against the pinned renderer. A test fixture is not evidence of those runtime properties.
+The mounted adapter uses the existing public query on the pinned MapLibre React Native Map. Because
+its iOS and Android serializers omit physical provenance, Tileflow queries one verified semantic
+layer at a time in finalized topmost order. The exact single-layer filter supplies the physical
+layer, source and source-layer identity that the neutral adapter verifies again. Results preserve
+their within-layer order and share one global 512-feature bound. This adds no Swift, Kotlin or
+public query API.
+
+A lease becomes current only after the private Tileflow native-surface owner accepts the matching
+style token. A JavaScript style-loaded callback or equal style JSON is insufficient. A newer touch
+rotates the query lease; style or source replacement, backgrounding and unmount permanently retire
+the old proof. Upstream queries have no abort handle, so cancellation is logical: Tileflow settles
+the old operation as stale immediately, stops issuing further layer queries and ignores late
+results.
 
 ## Semantic POI rules
 
@@ -123,16 +151,16 @@ integers or nonempty strings of at most 128 characters; no property-based fallba
 
 ## Retirement and observation
 
-Each owner has independent inputs, annotation plans, popup state, style generation, query tickets
-and subscribers. No authority, Map identity or asynchronous operation is shared between owners.
-A newer touch supersedes the previous query. Style replacement, source retirement and disposal
-cancel the appropriate work. Cancellation settles the logical query immediately without waiting
-for a late native response; native cleanup remains the injected port's responsibility.
+Each mounted Map has independent inputs, annotation plans, portable selection state, style proofs,
+query tickets and subscribers. No authority, Map identity or asynchronous operation is shared
+between Maps. Marker and map delivery for one touch share one claim, so a marker activation cannot
+also activate a semantic feature underneath it.
 
 Ownership is checked again after asynchronous results and before state publication. Late results
 from disposed owners or retired styles are inert. Reentrant cancellation, observer replacement,
 exceptions and rejected observer promises cannot transfer ownership to another Map. Disposal is
 idempotent and exposes a final safe empty snapshot plus the annotation removal plan.
 
-The popup presentation remains outside these contracts. No anchored popup, application sheet,
-marker component, location API or accessibility UI is implemented here.
+Selection presentation remains outside this contract. The application owns its layout, focus,
+dismissal and accessibility behavior. Device location is also separate and requires an explicit
+application-owned permission and provider flow.

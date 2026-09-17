@@ -99,11 +99,13 @@ test('the public root has only the deliberate React Native renderer dependency b
         name === 'react/jsx-runtime' ||
         name === 'react-native' ||
         name === '@maplibre/maplibre-react-native' ||
+        name === '@tileflow/interactions' ||
         name === '@tileflow/core/native',
       name,
     );
   }
   assert.equal(imports.includes('@maplibre/maplibre-react-native'), true);
+  assert.equal(imports.includes('@tileflow/interactions'), true);
   assert.equal(imports.includes('react-native'), true);
 });
 

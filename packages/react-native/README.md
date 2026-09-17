@@ -140,12 +140,37 @@ Do not add a second MapLibre Native CocoaPod. See [Private native resource admis
 
 `harness/AdmissionHarness.tsx` mounts the real public Tileflow `Map` in an existing development host, including two simultaneous Maps under React `StrictMode`. It provides deterministic source-checkout controls for source replacement, theme transactions, controlled camera updates and teardown. The harness is excluded from exports and packed files and creates no service or runner. See [the harness guide](./harness/README.md).
 
-## Private interaction foundation
+## Interactions and markers
 
-The package also contains a renderer-neutral interaction owner based on the portable `@tileflow/interactions` root contracts. It prepares immutable last-valid inputs, plans annotation updates by stable ID, manages controlled or uncontrolled popup state, and resolves semantic POI touch queries through an injected current-style port. These internal modules are not connected to the mounted `Map` and add no public props, exports or rendered hosts. See [Private native interaction contracts](./docs/native-interactions.md).
+`Map` accepts portable `annotations`, semantic `interactions`, controlled `interactionState` or
+uncontrolled `defaultInteractionState`, and the corresponding event, state and diagnostic
+callbacks. Annotation data stays typed through a generic `Map` and optional `renderMarker`:
+
+```tsx
+<Map
+  source={source}
+  annotations={places}
+  interactions={bindings}
+  onInteractionEvent={(event) => {
+    if (event.type === 'target:activate') selectPlace(event.target);
+  }}
+  renderMarker={({annotation}) => <PlaceMarker place={annotation.data} />}
+/>
+```
+
+Tileflow owns each stable native marker host, its coordinate, touch activation and accessibility
+wrapper. A bounded accessible marker is rendered when `renderMarker` is omitted. Large feature sets
+remain in native vector or GeoJSON layers and are selected through semantic rendered-feature
+queries rather than thousands of React marker views.
+
+The application owns all selection presentation. The SDK exposes normalized target data and
+portable state but no popup, callout, tooltip, sheet, panel or modal renderer. See
+[Native interaction contract](./docs/native-interactions.md).
 
 ## Current boundary
 
-The mounted component does not add annotations, Tileflow interaction APIs, location, offline product APIs, an Expo config plugin, CLI behavior, deployment or publication. Popup presentation is not selected by the private interaction foundation. The package remains private and pre-release.
+The mounted component does not add location, selection-presentation UI, offline product APIs, an
+Expo config plugin, CLI behavior, deployment or publication. The package remains private and
+pre-release.
 
 Source and tests describe contracts; they do not establish that a native build, simulator/device run, Hosted service, app-store submission or package publication succeeded. Qualify the exact source revision in the intended host before relying on it.

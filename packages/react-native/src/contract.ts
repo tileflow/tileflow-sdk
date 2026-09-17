@@ -1,8 +1,6 @@
 import type {MapProps as NativeMapProps} from '@maplibre/maplibre-react-native';
 import type {ReactNode, Ref} from 'react';
 import type {ViewProps} from 'react-native';
-import type {TileflowAnnotation} from '@tileflow/interactions';
-import type {MapInteractionProps} from './interaction-contract';
 import type {
   TileflowNativeInitialView,
   TileflowNativeInitialViewOptions,
@@ -11,6 +9,8 @@ import type {
   TileflowNativeSourceOptions,
   TileflowNativeSourceState,
 } from '@tileflow/core/native';
+import type {TileflowAnnotation} from '@tileflow/interactions';
+import type {MapInteractionProps} from './interaction-contract';
 
 export type MapSource = TileflowNativeSource;
 export type MapThemeSelection = NonNullable<TileflowNativeSourceOptions['theme']>;
@@ -136,5 +136,6 @@ export type MapCameraProps =
     }>;
 
 /** Complete Tileflow source, presentation, mount-stable camera and portable interaction inputs. */
-export type MapProps<TAnnotation extends TileflowAnnotation = TileflowAnnotation> =
-	MapBaseProps & MapCameraProps & MapInteractionProps<TAnnotation>;
+export type MapProps<TAnnotation extends TileflowAnnotation = TileflowAnnotation> = MapBaseProps &
+  MapCameraProps &
+  MapInteractionProps<TAnnotation>;

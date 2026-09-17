@@ -83,7 +83,7 @@ export function createNativeInteractionOwner(
   let revision = 0;
   let callbacks = initialCallbacks;
   let prepared: NativePreparedInteractions | undefined;
-	let styleLease: NativePoiStyleLease | undefined;
+  let styleLease: NativePoiStyleLease | undefined;
   let requestedPopup: NativeInteractionPopup | null = null;
   let blocked: TileflowInteractionTargetRef | null = null;
   let staleRequest: TileflowInteractionTargetRef | null = null;
@@ -347,7 +347,7 @@ export function createNativeInteractionOwner(
     disposed = true;
     ++transaction;
     ++queryGeneration;
-		styleLease = undefined;
+    styleLease = undefined;
     semantic.dispose();
     subscribers.clear();
     callbacks = {};
@@ -389,7 +389,7 @@ export function createNativeInteractionOwner(
       if (disposed || !prepared) return;
       const version = ++transaction;
       ++queryGeneration;
-			styleLease = next;
+      styleLease = next;
       const diagnostics = semantic.replaceStyle(next);
       if (!live(version)) return;
       styleDiagnostics = diagnostics;
@@ -405,34 +405,42 @@ export function createNativeInteractionOwner(
         'programmatic',
       );
     },
-		/**
-		 * Rotate touch authority only while both leases prove the same still-owned finalized style.
-		 * The mounted adapter must use the same native proof and retire the previous lease on return.
-		 * A true result means the lease was installed, not that semantic metadata was accepted.
-		 */
-		renewTouchLease(next: NativePoiStyleLease): boolean {
-			if (disposed || !prepared) return false;
-			const inspected = transaction;
-			const previous = styleLease;
-			try {
-				if (!previous || previous.style !== next.style || !previous.isCurrent() || !next.isCurrent()) return false;
-			} catch { return false; }
-			if (!live(inspected) || styleLease !== previous) return false;
-			const version = ++transaction;
-			++queryGeneration;
-			styleLease = next;
-			const diagnostics = semantic.replaceStyle(next);
-			if (!live(version)) return false;
-			styleDiagnostics = diagnostics;
-			commit(
-				prepared,
-				planNativeAnnotations(prepared.annotations, prepared.annotations),
-				preferenceFor(prepared.state),
-				version,
-				'programmatic',
-			);
-			return live(version) && styleLease === next;
-		},
+    /**
+     * Rotate touch authority only while both leases prove the same still-owned finalized style.
+     * The mounted adapter must use the same native proof and retire the previous lease on return.
+     * A true result means the lease was installed, not that semantic metadata was accepted.
+     */
+    renewTouchLease(next: NativePoiStyleLease): boolean {
+      if (disposed || !prepared) return false;
+      const inspected = transaction;
+      const previous = styleLease;
+      try {
+        if (
+          !previous ||
+          previous.style !== next.style ||
+          !previous.isCurrent() ||
+          !next.isCurrent()
+        )
+          return false;
+      } catch {
+        return false;
+      }
+      if (!live(inspected) || styleLease !== previous) return false;
+      const version = ++transaction;
+      ++queryGeneration;
+      styleLease = next;
+      const diagnostics = semantic.replaceStyle(next);
+      if (!live(version)) return false;
+      styleDiagnostics = diagnostics;
+      commit(
+        prepared,
+        planNativeAnnotations(prepared.annotations, prepared.annotations),
+        preferenceFor(prepared.state),
+        version,
+        'programmatic',
+      );
+      return live(version) && styleLease === next;
+    },
     activateAnnotation(id: string, inputModality: string): void {
       if (disposed || !prepared) return;
       if (inputModality !== 'touch') {
@@ -512,13 +520,13 @@ export function createNativeInteractionOwner(
       }
       if (live(version)) ignoreFailure(() => callbacks.onInteractionStateChange?.(next));
     },
-		/** Retires only touch intent; selection and style ownership remain unchanged. */
-		cancelTouch(): void {
-			if (disposed) return;
-			++transaction;
-			++queryGeneration;
-			semantic.cancelQueries();
-		},
+    /** Retires only touch intent; selection and style ownership remain unchanged. */
+    cancelTouch(): void {
+      if (disposed) return;
+      ++transaction;
+      ++queryGeneration;
+      semantic.cancelQueries();
+    },
     retireSource: dispose,
     dispose,
   });

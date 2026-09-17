@@ -79,12 +79,15 @@ test('remains private with exact native peers and one ordinary public root', asy
 });
 
 test('the native importer locks its portable interaction workspace dependency', async () => {
-	const lockfile = await readFile(new URL('../../pnpm-lock.yaml', root), 'utf8');
-	const importer = lockfile.split('\n  packages/react-native:\n')[1]?.split('\n  packages/')[0];
-	assert.ok(importer);
-	const dependencies = importer.match(/^    dependencies:\n((?: {6,}.+\n)+)/mu)?.[1];
-	assert.ok(dependencies);
-	assert.match(dependencies, /^      '@tileflow\/interactions':\n        specifier: workspace:>=0\.1\.0-alpha\.16 <0\.1\.0-beta\.0\n        version: link:\.\.\/interactions\n/mu);
+  const lockfile = await readFile(new URL('../../pnpm-lock.yaml', root), 'utf8');
+  const importer = lockfile.split('\n  packages/react-native:\n')[1]?.split('\n  packages/')[0];
+  assert.ok(importer);
+  const dependencies = importer.match(/^ {4}dependencies:\n((?: {6,}.+\n)+)/mu)?.[1];
+  assert.ok(dependencies);
+  assert.match(
+    dependencies,
+    /^ {6}'@tileflow\/interactions':\n {8}specifier: workspace:>=0\.1\.0-alpha\.16 <0\.1\.0-beta\.0\n {8}version: link:\.\.\/interactions\n/mu,
+  );
 });
 
 test('the public root has only the deliberate React Native renderer dependency boundary', async () => {

@@ -134,7 +134,7 @@ export function prepareNativeInteractionInputs(
 	let annotations = previous?.annotations ?? Object.freeze([]);
 	let bindings = previous?.bindings ?? Object.freeze([]);
 	let state = previous?.state ?? initialTileflowInteractionState;
-	let ownership = previous?.ownership ?? 'uncontrolled';
+	let ownership: NativePreparedInteractions['ownership'] = previous?.ownership ?? 'uncontrolled';
 	const diagnostics: TileflowInteractionDiagnostic[] = [];
 	const report = (code: TileflowInteractionDiagnosticCode) => {
 		if (!diagnostics.some((value) => value.code === code)) diagnostics.push(nativeInteractionDiagnostic(code));
@@ -156,10 +156,14 @@ export function prepareNativeInteractionInputs(
 		} else for (const diagnostic of result.diagnostics) report(diagnostic.code);
 	} catch { report('INVALID_DOCUMENT'); }
 	try {
+		// Declared ownership survives an invalid initial value; never evaluate its accessor.
+		if (!previous) {
+			const declaration = Object.getOwnPropertyDescriptor(input, 'interactionState');
+			if (declaration && (!('value' in declaration) || declaration.value !== undefined)) ownership = 'controlled';
+		}
 		const controlled = nativeInteractionField(input, 'interactionState');
 		const initial = nativeInteractionField(input, 'defaultInteractionState');
 		const requested = controlled !== undefined ? 'controlled' : 'uncontrolled';
-		if (!previous) ownership = requested;
 		if ((controlled !== undefined && initial !== undefined) || ownership !== requested) throw new Error();
 		const value = controlled !== undefined ? controlled : initial;
 		if (value !== undefined) {

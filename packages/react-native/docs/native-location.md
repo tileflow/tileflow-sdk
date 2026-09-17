@@ -106,9 +106,18 @@ retires the current observation token and calls the provider cleanup. Returning 
 starts a new observation only if the last application permission policy still allows it. Denied,
 revoked and unavailable states do not restart observation automatically.
 
-Unmount disposes the controller and retires its observation. Permission and provider callbacks carry
-application-owned epochs; results that arrive after background teardown, provider replacement or
-unmount are ignored. The recipe does not persist fixes or observation history.
+The React effect owns a replayable `mount()` epoch. Its cleanup immediately retires the current
+observation and any pending permission/provider callback without terminally disposing the
+controller. A StrictMode setup replay may therefore mount the same controller again; if the retained
+settled permission state is granted and the application is foregrounded, observation restarts
+without another permission prompt. If cleanup interrupted an in-flight permission request, that
+request is retired and the last settled application state is restored instead of accepting its late
+result. A real unmount or adapter replacement uses the same cleanup boundary, so late callbacks are
+inert even though no timing heuristic distinguishes them from a replay. The recipe does not persist
+fixes or observation history.
+
+`dispose()` remains a separate terminal operation for an owner that will never mount again. The
+React example does not use terminal disposal for ordinary effect cleanup.
 
 ## Recenter is explicit
 

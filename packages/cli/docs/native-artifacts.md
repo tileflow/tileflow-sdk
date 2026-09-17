@@ -72,7 +72,8 @@ under their own platform/network policy.
 Browser-only selections fail before config execution in native mode. In particular, committed
 `--scene` preview and every `--against-*` comparison-workbench option are unavailable with
 `--renderer native`. Native mode does not serve the browser preview root, preview JavaScript runtime,
-or compiler-inspection sidecars. Use ordinary/default web preview for those workflows.
+compiler-inspection sidecars, or the dev handler's status/event control routes. Use ordinary/default
+web preview for those workflows.
 
 The `native-lowering-v1` preparation policy records fixed globe-to-Mercator normalization and
 finite cap/dash layer partitioning in `native-build.json`; it does not change web artifacts.

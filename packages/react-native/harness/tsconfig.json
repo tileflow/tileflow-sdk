@@ -5,5 +5,9 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["AdmissionHarness.tsx"]
+  "include": [
+    "AdmissionHarness.tsx",
+    "ForegroundLocationExample.tsx",
+    "foreground-location-recipe.ts"
+  ]
 }

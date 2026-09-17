@@ -4,42 +4,80 @@ import {
   type CameraRef as NativeCameraRef,
   Map as NativeMap,
   type MapProps as NativeMapProps,
+	type MapRef as NativeMapRef,
 } from '@maplibre/maplibre-react-native';
+import type {TileflowAnnotation} from '@tileflow/interactions';
 import {
+	Fragment,
   type ReactElement,
   type ReactNode,
   useImperativeHandle,
   useLayoutEffect,
+	useMemo,
   useRef,
   useState,
   useSyncExternalStore,
 } from 'react';
 import {AppState, findNodeHandle, View} from 'react-native';
 import type {MapProps} from './contract';
+import type {MapMarkerRenderer} from './interaction-contract';
 import {createMapLifecycle} from './map-lifecycle';
+import type {NativeInteractionHost} from './mounted-map-interactions';
+import {NativeAnnotationMarker} from './native-marker';
 import {createNativeMapOwner, retireNativeMapOwner} from './native-runtime';
 
 type Lifecycle = ReturnType<typeof createMapLifecycle>;
-type Scene = NonNullable<ReturnType<Lifecycle['getSnapshot']>['renderer']>;
+type Snapshot = ReturnType<Lifecycle['getSnapshot']>;
+type Scene = NonNullable<Snapshot['renderer']>;
 const fill = Object.freeze({flex: 1});
 
-function NativeScene({
+function NativeScene<TAnnotation extends TileflowAnnotation>({
   scene,
   lifecycle,
   mapOptions,
   children,
+	interactions,
+	interactionEnabled,
+	renderMarker,
 }: {
   scene: Scene;
   lifecycle: Lifecycle;
-  mapOptions: ReturnType<Lifecycle['getSnapshot']>['mapOptions'];
+  mapOptions: Snapshot['mapOptions'];
   children?: ReactNode;
+	interactions: Snapshot['interactions'];
+	interactionEnabled: boolean;
+	renderMarker?: MapMarkerRenderer<TAnnotation>;
 }): ReactElement {
   const view = useRef<View | null>(null);
   const camera = useRef<NativeCameraRef | null>(null);
+	const nativeMap = useRef<NativeMapRef | null>(null);
+	const committedHost = useRef<NativeInteractionHost | undefined>(undefined);
   const tag = useRef<number | null>(null);
   const laidOut = useRef(false);
   const styleLoaded = useRef(false);
   const attachRequested = useRef(false);
+	const host = useMemo<NativeInteractionHost>(() => {
+		const value: NativeInteractionHost = Object.freeze({
+			key: scene.key,
+			style: scene.style,
+			current: () => committedHost.current === value && nativeMap.current !== null,
+			query(point, options) {
+				const map = nativeMap.current;
+				if (!map || committedHost.current !== value)
+					return Promise.reject(new Error('Native interaction host is unavailable.'));
+				return map.queryRenderedFeatures(point, options);
+			},
+		});
+		return value;
+	}, [scene.key, scene.style]);
+	useLayoutEffect(() => {
+		committedHost.current = host;
+		lifecycle.bindInteractionHost(host);
+		return () => {
+			if (committedHost.current === host) committedHost.current = undefined;
+			lifecycle.unbindInteractionHost(host);
+		};
+	}, [host, lifecycle]);
   const [initialViewState] = useState<NonNullable<NativeCameraProps['initialViewState']>>(() => {
     const center: [number, number] = [scene.initialView.center[0], scene.initialView.center[1]];
     Object.freeze(center);
@@ -64,11 +102,18 @@ function NativeScene({
     lifecycle.rootMounted(scene.key, value);
     attach();
   };
+	// Stage A owns validation and detached JSON. This restores the consumer's annotation type only.
+	const annotations = interactions?.annotations as readonly TAnnotation[] | undefined;
+	const byId = new globalThis.Map(annotations?.map((annotation) => [annotation.id, annotation]));
   return (
     <View
       ref={bind}
       collapsable={false}
       style={fill}
+			onStartShouldSetResponderCapture={() => {
+				lifecycle.beginTouch(scene.key);
+				return false;
+			}}
       onLayout={(event) => {
         const {width, height} = event.nativeEvent.layout;
         laidOut.current =
@@ -80,8 +125,19 @@ function NativeScene({
     >
       <NativeMap
         {...mapOptions}
+				ref={nativeMap}
         style={fill}
         mapStyle={scene.style as NativeMapProps['mapStyle']}
+				onPress={(event) => {
+					if (!host.current()) return;
+					try {
+						lifecycle.mapPress(scene.key, {
+							inputModality: 'touch',
+							point: event.nativeEvent.point,
+							coordinate: event.nativeEvent.lngLat,
+						});
+					} catch { lifecycle.interactionDiagnostic(scene.key, 'INVALID_DOCUMENT'); }
+				}}
         onDidFinishLoadingStyle={() => {
           // This wakes the private adapter only. A JS callback is not readiness evidence.
           styleLoaded.current = true;
@@ -95,6 +151,22 @@ function NativeScene({
           minZoom={0}
           maxZoom={24}
         />
+				<Fragment key="tileflow-annotations">
+					{interactions?.plan.order.map((id) => {
+						const annotation = byId.get(id);
+						return annotation ? (
+							<NativeAnnotationMarker
+								key={annotation.id}
+								annotation={annotation}
+								state={interactions.state}
+								enabled={interactionEnabled}
+								sceneKey={scene.key}
+								lifecycle={lifecycle}
+								renderMarker={renderMarker}
+							/>
+						) : null;
+					})}
+				</Fragment>
         {children}
       </NativeMap>
     </View>
@@ -102,7 +174,7 @@ function NativeScene({
 }
 
 /** A Tileflow-only native Map. Its imperative ref exposes safe source state only. */
-export function Map(props: MapProps): ReactElement {
+export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>(props: MapProps<TAnnotation>): ReactElement {
   const [lifecycle] = useState(() =>
     createMapLifecycle(createNativeMapOwner, retireNativeMapOwner),
   );
@@ -140,6 +212,9 @@ export function Map(props: MapProps): ReactElement {
           scene={snapshot.renderer}
           lifecycle={lifecycle}
           mapOptions={snapshot.mapOptions}
+					interactions={snapshot.interactions}
+					interactionEnabled={snapshot.interactionEnabled === true}
+					renderMarker={props.renderMarker}
         >
           {props.children}
         </NativeScene>

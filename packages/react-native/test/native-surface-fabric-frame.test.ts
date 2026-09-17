@@ -26,7 +26,10 @@ test('the private marker stays transparent while each current barrier arms and r
   assert.match(ios, /if \(!surface\.style\) TFSurfaceInvalid\(\);/u);
   assert.match(ios, /\[surface\.state request:token\];\s*\[surface\.map triggerRepaint\];/u);
   assert.doesNotMatch(ios, /surface\.repaint = !surface\.repaint/u);
-  assert.doesNotMatch(ios, /backgroundOpacity = \[NSExpression expressionForConstantValue:surface\.repaint/u);
+  assert.doesNotMatch(
+    ios,
+    /backgroundOpacity = \[NSExpression expressionForConstantValue:surface\.repaint/u,
+  );
 
   const android = await source(
     'android/src/main/java/dev/tileflow/reactnative/TileflowNativeSurfaceModule.kt',

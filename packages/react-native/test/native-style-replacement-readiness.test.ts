@@ -34,7 +34,6 @@ function fixture(id: string, props: MapCameraProps, generation: number) {
   const order: Array<{kind: 'camera' | 'layout' | 'frame'; style: string}> = [];
   let notify: (event: NativeSurfaceEvent) => void = () => undefined;
   let sequence = 0;
-  let owner: ReturnType<typeof createNativeRendererOwner>;
   const emit = (kind: NativeSurfaceEvent['kind'], style = owner.token) =>
     notify({surface: id, style, sequence: ++sequence, layout: 2, kind} as NativeSurfaceEvent);
   const surface: NativeSurface = {
@@ -57,7 +56,7 @@ function fixture(id: string, props: MapCameraProps, generation: number) {
     },
     async retire() {},
   };
-  owner = createNativeRendererOwner(id, target('light', generation), props, {
+  const owner = createNativeRendererOwner(id, target('light', generation), props, {
     surfaces: {
       async attach(_root, listener) {
         notify = listener;

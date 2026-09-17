@@ -22,8 +22,6 @@ import kotlin.math.abs
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
-import org.maplibre.android.style.layers.BackgroundLayer
-import org.maplibre.android.style.layers.PropertyFactory
 import org.maplibre.reactnative.components.camera.MLRNCamera
 import org.maplibre.reactnative.components.mapview.MLRNMapView
 
@@ -126,11 +124,9 @@ class TileflowNativeSurfaceModule(context: ReactApplicationContext) : ReactConte
 	@ReactMethod fun requestFrame(id: String, token: String, promise: Promise) = action(promise) {
 		val surface = current(id)
 		if (surface.token != token) invalid()
-		// The marker color has alpha zero. Mutating its opacity is a real paint change on the
-		// first request while remaining mathematically transparent to customer cartography.
-		val layer = surface.style()?.getLayer(surface.marker()) as? BackgroundLayer ?: invalid()
-		surface.repaint = !surface.repaint
-		layer.setProperties(PropertyFactory.backgroundOpacity(if (surface.repaint) 0.0001f else 0.0f))
+		surface.style() ?: invalid()
+		surface.state.request(token)
+		surface.sdk.triggerRepaint()
 		Arguments.makeNativeMap(mapOf("requested" to true))
 	}
 	@ReactMethod fun applyCamera(id: String, sequence: Double, input: ReadableMap, promise: Promise) = action(promise) {
@@ -223,7 +219,6 @@ class TileflowNativeSurfaceModule(context: ReactApplicationContext) : ReactConte
 			else invalid()
 		}
 		var token = ""
-		var repaint = false
 		var retiring = false
 		var deadline: Runnable? = null
 		var layoutWaiter: (() -> Unit)? = null
@@ -240,7 +235,6 @@ class TileflowNativeSurfaceModule(context: ReactApplicationContext) : ReactConte
 		private val loaded = MapView.OnDidFinishLoadingStyleListener { guarded { style()?.let { state.loaded(token, it) } } }
 		private val frameStart = MapView.OnWillStartRenderingFrameListener { guarded { sampleLayout(); state.frameStart(style()) } }
 		private val frameEnd = MapView.OnDidFinishRenderingFrameListener { fully, _, _ -> guarded { state.frameEnd(style(), fully) } }
-		private val mapEnd = MapView.OnDidFinishRenderingMapListener { fully -> guarded { state.mapRendered(style(), fully) } }
 		private val cameraStart = MapLibreMap.OnCameraMoveStartedListener { reason -> guarded {
 			if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) state.gestureStart(view())
 			else state.gestureEnd(view())
@@ -257,7 +251,7 @@ class TileflowNativeSurfaceModule(context: ReactApplicationContext) : ReactConte
 		fun attach() {
 			root.addOnAttachStateChangeListener(this); root.addOnLayoutChangeListener(layout); map.addOnLayoutChangeListener(layout)
 			map.addOnDidFinishLoadingStyleListener(loaded); map.addOnWillStartRenderingFrameListener(frameStart)
-			map.addOnDidFinishRenderingFrameListener(frameEnd); map.addOnDidFinishRenderingMapListener(mapEnd)
+			map.addOnDidFinishRenderingFrameListener(frameEnd)
 			sdk.addOnCameraMoveStartedListener(cameraStart); sdk.addOnCameraMoveListener(cameraMove); sdk.addOnCameraIdleListener(cameraEnd)
 			sampleLayout()
 		}
@@ -267,7 +261,7 @@ class TileflowNativeSurfaceModule(context: ReactApplicationContext) : ReactConte
 			layoutWaiter?.invoke(); layoutWaiter = null
 			root.removeOnLayoutChangeListener(layout); map.removeOnLayoutChangeListener(layout)
 			map.removeOnDidFinishLoadingStyleListener(loaded); map.removeOnWillStartRenderingFrameListener(frameStart)
-			map.removeOnDidFinishRenderingFrameListener(frameEnd); map.removeOnDidFinishRenderingMapListener(mapEnd)
+			map.removeOnDidFinishRenderingFrameListener(frameEnd)
 			sdk.removeOnCameraMoveStartedListener(cameraStart); sdk.removeOnCameraMoveListener(cameraMove); sdk.removeOnCameraIdleListener(cameraEnd)
 			if (!root.isAttachedToWindow) onViewDetachedFromWindow(root)
 		}

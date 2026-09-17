@@ -89,7 +89,6 @@ static MLRNCamera *TFSurfaceCamera(UIView *root, MLRNMapView *map) {
 @property (nonatomic, copy, nullable) dispatch_block_t layoutCancel;
 @property (nonatomic) BOOL retiring;
 @property (nonatomic) BOOL foreground;
-@property (nonatomic) BOOL repaint;
 @property (nonatomic) BOOL observing;
 - (void)attach;
 - (void)retire;
@@ -170,7 +169,6 @@ static MLRNCamera *TFSurfaceCamera(UIView *root, MLRNMapView *map) {
 	if ([self.previous respondsToSelector:_cmd]) [self.previous mapViewWillStartRenderingFrame:mapView];
 }
 - (void)mapViewDidFinishRenderingMap:(MLNMapView *)mapView fullyRendered:(BOOL)fully {
-	if ([self owns]) [self.state mapRendered:self.style fully:fully];
 	if ([self.previous respondsToSelector:_cmd]) [self.previous mapViewDidFinishRenderingMap:mapView fullyRendered:fully];
 }
 - (void)mapViewDidFinishRenderingFrame:(MLNMapView *)mapView fullyRendered:(BOOL)fully {
@@ -308,12 +306,9 @@ RCT_REMAP_METHOD(requestFrame, requestFrameForSurface:(NSString *)identifier sty
 	@try {
 		TFSurfaceAttachment *surface = [self current:identifier allowFailed:NO];
 		if (![surface.token isEqual:token]) TFSurfaceInvalid();
-		MLNStyleLayer *layer = [surface.style layerWithIdentifier:surface.marker];
-		if (![layer isKindOfClass:MLNBackgroundStyleLayer.class]) TFSurfaceInvalid();
-		// The marker color has alpha zero. Mutating its opacity is a real paint change on the
-		// first request while remaining mathematically transparent to customer cartography.
-		surface.repaint = !surface.repaint;
-		((MLNBackgroundStyleLayer *)layer).backgroundOpacity = [NSExpression expressionForConstantValue:surface.repaint ? @0.0001 : @0];
+		if (!surface.style) TFSurfaceInvalid();
+		[surface.state request:token];
+		[surface.map triggerRepaint];
 		resolve(@{@"requested": @YES});
 	} @catch (NSException *exception) { TFSurfaceReject(reject); }
 }

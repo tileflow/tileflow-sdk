@@ -12,8 +12,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)layout:(BOOL)visible;
 - (void)loaded:(NSString *)token identity:(id)identity;
 - (NSUInteger)commit:(NSString *)token;
+- (void)request:(NSString *)token;
 - (void)frameStart:(nullable id)identity;
-- (void)mapRendered:(nullable id)identity fully:(BOOL)fully;
 - (void)frameEnd:(nullable id)identity fully:(BOOL)fully;
 - (NSUInteger)beginCommand:(NSUInteger)command;
 - (void)cancelCommand:(NSUInteger)command;

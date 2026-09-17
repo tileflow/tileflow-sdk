@@ -42,7 +42,10 @@ const idle: ApplicationForegroundLocationState = Object.freeze({fix: null, statu
 
 function dataNumber(input: object, key: string): number | undefined {
   const descriptor = Object.getOwnPropertyDescriptor(input, key);
-  return descriptor && descriptor.enumerable && 'value' in descriptor && typeof descriptor.value === 'number'
+  return descriptor &&
+    descriptor.enumerable &&
+    'value' in descriptor &&
+    typeof descriptor.value === 'number'
     ? descriptor.value
     : undefined;
 }
@@ -84,9 +87,7 @@ export function validateForegroundLocationFix(input: unknown): ApplicationLocati
   }
 }
 
-function permissionState(
-  permission: unknown,
-): Exclude<ApplicationForegroundLocationState, {status: 'idle' | 'requesting' | 'revoked'}> {
+function permissionState(permission: unknown): ApplicationForegroundLocationState {
   if (permission === 'granted-precise')
     return Object.freeze({fix: null, status: 'granted-precise'});
   if (permission === 'granted-approximate')
@@ -149,7 +150,7 @@ export function createForegroundLocationController(
     if (disposed || !foreground || observing || releaseObservation || !canObserve(snapshot)) return;
     const ticket = ++observationEpoch;
     observing = true;
-    let release: (() => void) | undefined;
+    let release!: () => void;
     try {
       release = adapter.observe((update) => {
         if (
@@ -188,12 +189,7 @@ export function createForegroundLocationController(
       return;
     }
     observing = false;
-    if (
-      disposed ||
-      !foreground ||
-      ticket !== observationEpoch ||
-      !canObserve(snapshot)
-    ) {
+    if (disposed || !foreground || ticket !== observationEpoch || !canObserve(snapshot)) {
       try {
         release();
       } catch {

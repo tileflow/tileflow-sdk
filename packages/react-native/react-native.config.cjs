@@ -1,10 +1,8 @@
-const path = require('node:path');
-
 module.exports = {
   dependency: {
     platforms: {
       android: {
-        sourceDir: path.join(__dirname, 'android'),
+        sourceDir: 'android',
         packageImportPath: 'import dev.tileflow.reactnative.TileflowNativeAdmissionPackage;',
         packageInstance: 'new TileflowNativeAdmissionPackage()',
       },

@@ -19,6 +19,7 @@ test('native build metadata is explicit, pinned, and does not activate networkin
   );
   assert.deepEqual(Object.keys(config), ['dependency']);
   assert.deepEqual(config.dependency.platforms.ios, {});
+  assert.equal(config.dependency.platforms.android.sourceDir, 'android');
   assert.equal(
     config.dependency.platforms.android.packageImportPath,
     'import dev.tileflow.reactnative.TileflowNativeAdmissionPackage;',

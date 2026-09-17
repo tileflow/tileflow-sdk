@@ -140,8 +140,12 @@ Do not add a second MapLibre Native CocoaPod. See [Private native resource admis
 
 `harness/AdmissionHarness.tsx` mounts the real public Tileflow `Map` in an existing development host, including two simultaneous Maps under React `StrictMode`. It provides deterministic source-checkout controls for source replacement, theme transactions, controlled camera updates and teardown. The harness is excluded from exports and packed files and creates no service or runner. See [the harness guide](./harness/README.md).
 
+## Private interaction foundation
+
+The package also contains a renderer-neutral interaction owner based on the portable `@tileflow/interactions` root contracts. It prepares immutable last-valid inputs, plans annotation updates by stable ID, manages controlled or uncontrolled popup state, and resolves semantic POI touch queries through an injected current-style port. These internal modules are not connected to the mounted `Map` and add no public props, exports or rendered hosts. See [Private native interaction contracts](./docs/native-interactions.md).
+
 ## Current boundary
 
-This Stage C component does not add annotations, Tileflow interaction APIs, location, offline product APIs, an Expo config plugin, CLI behavior, deployment or publication. The package remains private and pre-release.
+The mounted component does not add annotations, Tileflow interaction APIs, location, offline product APIs, an Expo config plugin, CLI behavior, deployment or publication. Popup presentation is not selected by the private interaction foundation. The package remains private and pre-release.
 
 Source and tests describe contracts; they do not establish that a native build, simulator/device run, Hosted service, app-store submission or package publication succeeded. Qualify the exact source revision in the intended host before relying on it.

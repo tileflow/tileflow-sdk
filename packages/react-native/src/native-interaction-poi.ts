@@ -315,7 +315,10 @@ export function createNativePoiAdapter() {
 					if (pending === job) cancelQueries();
 					else { try { job.cancel(); } catch { /* A retired query has no observers. */ } }
 				}
-			} catch { finish(failure()); }
+			} catch {
+				finish(failure());
+				try { job.cancel?.(); } catch { /* A malformed port cannot expose its cleanup error. */ }
+			}
 			return result;
 		},
 		dispose(): void {

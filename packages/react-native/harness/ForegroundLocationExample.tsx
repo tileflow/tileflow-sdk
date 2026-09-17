@@ -81,10 +81,7 @@ export function ForegroundLocationExample({
         onViewChange={(event) => setView(event.view)}
         annotations={annotations}
       />
-      <View
-        accessibilityRole="summary"
-        style={{position: 'absolute', left: 16, right: 16, bottom: 16, gap: 8}}
-      >
+      <View style={{position: 'absolute', left: 16, right: 16, bottom: 16, gap: 8}}>
         <Text accessibilityLiveRegion="polite">{statusText(location)}</Text>
         <Pressable
           accessibilityRole="button"

@@ -19,6 +19,13 @@ export type NativeInteractionHost = Readonly<{
 	current(): boolean;
 	query: NativeInteractionQuery;
 }>;
+type Touch = {
+	proof: NativeInteractionStyle;
+	host: NativeInteractionHost;
+	marker?: string;
+	markerActivated?: boolean;
+	mapActivated?: boolean;
+};
 
 /** Lazily initializes state ownership from the first committed props, never from placeholder props. */
 export function createMountedMapInteractions(
@@ -27,14 +34,17 @@ export function createMountedMapInteractions(
 ) {
 	let disposed = false;
 	let foreground = true;
+	let propsVersion = 0;
+	let ownershipVersion = 0;
 	let owner: ReturnType<typeof createNativeInteractionOwner> | undefined;
 	let release: (() => void) | undefined;
 	let host: NativeInteractionHost | undefined;
+	let boundHost: NativeInteractionHost | undefined;
 	let proof: NativeInteractionStyle | undefined;
 	let query: ReturnType<typeof createNativeInteractionQuery> | undefined;
 	let callbacks: NativeInteractionCallbacks = {};
 	let initialNotifications: (() => unknown)[] | undefined;
-	let touch: {marker?: string; markerActivated?: boolean; mapActivated?: boolean} = {};
+	let touch: Touch | undefined;
 	const invoke = (work: () => unknown) => {
 		if (disposed) return;
 		if (initialNotifications) { initialNotifications.push(work); return; }
@@ -54,23 +64,28 @@ export function createMountedMapInteractions(
 	};
 	const ready = () => {
 		try {
-			return !disposed && foreground && !!proof && !!query && hostCurrent(host) &&
-				proof.isCurrent() && getStyle() === proof;
+			return !disposed && foreground && !!proof && !!query && host === boundHost &&
+				hostCurrent(host) && proof.isCurrent() && getStyle() === proof;
 		} catch { return false; }
 	};
 	const sync = () => {
 		if (disposed || !owner) return;
+		const version = ownershipVersion;
 		let next: NativeInteractionStyle | undefined;
 		const mounted = host;
 		try {
 			next = foreground && hostCurrent(mounted) ? getStyle() : undefined;
-			if (next && (!next.isCurrent() || next.key !== mounted?.key || next.style !== mounted.style))
+			if (next && (!mounted || !next.isCurrent() || next.key !== mounted.key || next.style !== mounted.style))
 				next = undefined;
 		} catch { next = undefined; }
-		if (next === proof && (next === undefined || query)) return;
+		if (disposed || version !== ownershipVersion || mounted !== host) return;
+		if (next === proof && (next === undefined || (query && mounted === boundHost))) return;
+		++ownershipVersion;
 		const previous = query;
 		query = undefined;
 		proof = undefined;
+		boundHost = undefined;
+		touch = undefined;
 		previous?.retire();
 		if (!next || !mounted) {
 			owner.replaceStyle();
@@ -79,6 +94,7 @@ export function createMountedMapInteractions(
 		}
 		const accepted = next;
 		proof = accepted;
+		boundHost = mounted;
 		query = createNativeInteractionQuery(accepted.style, () =>
 			!disposed && foreground && host === mounted && hostCurrent(mounted) &&
 			proof === accepted && accepted.isCurrent() && getStyle() === accepted,
@@ -86,17 +102,21 @@ export function createMountedMapInteractions(
 		owner.replaceStyle(query.lease);
 		notify();
 	};
+	const currentTouch = (candidate: Touch | undefined): candidate is Touch =>
+		!!candidate && touch === candidate && candidate.proof === proof && candidate.host === host && ready();
 	const currentAnnotation = (annotation: TileflowAnnotation) =>
 		owner?.getSnapshot().annotations.some((candidate) => candidate === annotation) === true;
 	const claimMarker = (annotation: TileflowAnnotation): boolean => {
-		if (disposed || !owner) return false;
-		// Claim before activation so a native map event cannot also activate a semantic feature.
-		if (touch.marker !== undefined && touch.marker !== annotation.id) return false;
-		touch.marker = annotation.id;
-		owner.cancelTouch();
-		if (!ready()) return false;
+		const gesture = touch;
+		if (!owner || !currentTouch(gesture)) return false;
 		if (!currentAnnotation(annotation)) { report('STALE_TARGET'); return false; }
-		return true;
+		if (gesture.marker !== undefined && gesture.marker !== annotation.id) return false;
+		// Claim before activation so a native map event cannot also activate a semantic feature.
+		if (gesture.marker === undefined) {
+			gesture.marker = annotation.id;
+			owner.cancelTouch();
+		}
+		return currentTouch(gesture);
 	};
 	return Object.freeze({
 		getSnapshot: () => owner?.getSnapshot(),
@@ -104,6 +124,7 @@ export function createMountedMapInteractions(
 		sync,
 		update<TAnnotation extends TileflowAnnotation>(props: MapInteractionProps<TAnnotation>): void {
 			if (disposed) return;
+			const version = ++propsVersion;
 			let invalidCallback = false;
 			const callback = (key: keyof MapInteractionProps<TAnnotation>): unknown => {
 				try {
@@ -117,6 +138,7 @@ export function createMountedMapInteractions(
 			const event = callback('onInteractionEvent') as MapInteractionProps<TAnnotation>['onInteractionEvent'];
 			const state = callback('onInteractionStateChange') as MapInteractionProps<TAnnotation>['onInteractionStateChange'];
 			const diagnostic = callback('onInteractionDiagnostic') as MapInteractionProps<TAnnotation>['onInteractionDiagnostic'];
+			if (disposed || propsVersion !== version) return;
 			callbacks = {
 				// Stage A retains detached annotation JSON; this boundary restores the consumer's generic type.
 				onInteractionEvent: (value) => event?.(value as TileflowInteractionEvent<TAnnotation>),
@@ -129,63 +151,74 @@ export function createMountedMapInteractions(
 				release = owner.subscribe(notify);
 				const notifications = initialNotifications;
 				initialNotifications = undefined;
-				for (const notification of notifications) invoke(notification);
+				for (const notification of notifications) {
+					if (disposed || propsVersion !== version) return;
+					invoke(notification);
+				}
 				notify();
 			} else owner.update(props);
+			if (disposed || propsVersion !== version) return;
 			if (invalidCallback) report('INVALID_FIELD');
 			sync();
 		},
 		bind(next: NativeInteractionHost): void {
 			if (disposed || host === next) return;
-			if (host) {
-				query?.retire();
-				query = undefined;
-				proof = undefined;
-				owner?.replaceStyle();
-			}
+			++ownershipVersion;
 			host = next;
+			touch = undefined;
 			sync();
 		},
 		unbind(expected: NativeInteractionHost): void {
 			if (host !== expected) return;
+			++ownershipVersion;
 			host = undefined;
+			touch = undefined;
 			sync();
 		},
 		beginTouch(): void {
 			if (disposed) return;
-			touch = {};
+			touch = undefined;
 			owner?.cancelTouch();
+			sync();
+			if (ready() && proof && host) touch = {proof, host};
 		},
 		claimMarker,
 		markerPress(annotation: TileflowAnnotation): void {
-			if (!claimMarker(annotation) || touch.markerActivated) return;
-			touch.markerActivated = true;
+			const gesture = touch;
+			if (!currentTouch(gesture) || gesture.markerActivated || !claimMarker(annotation)) return;
+			gesture.markerActivated = true;
 			owner?.activateAnnotation(annotation.id, 'touch');
 		},
 		async mapPress(input: unknown): Promise<void> {
-			if (disposed || !foreground || !owner || touch.marker || touch.mapActivated) return;
+			const gesture = touch;
+			if (!owner || !currentTouch(gesture) || gesture.marker || gesture.mapActivated) return;
 			sync();
-			if (!ready()) return;
-			touch.mapActivated = true;
+			if (!currentTouch(gesture)) return;
+			gesture.mapActivated = true;
 			await owner.activateTouch(input);
 		},
 		report,
 		background(): void {
 			if (disposed) return;
+			++ownershipVersion;
 			foreground = false;
-			touch = {};
+			touch = undefined;
 			owner?.cancelTouch();
 			sync();
 		},
 		resume(): void {
 			if (disposed) return;
+			++ownershipVersion;
 			foreground = true;
 			sync();
 		},
 		dispose(): void {
 			if (disposed) return;
 			disposed = true;
+			++ownershipVersion;
+			++propsVersion;
 			host = undefined;
+			boundHost = undefined;
 			proof = undefined;
 			query?.retire();
 			query = undefined;
@@ -193,7 +226,7 @@ export function createMountedMapInteractions(
 			owner?.dispose();
 			callbacks = {};
 			initialNotifications = undefined;
-			touch = {};
+			touch = undefined;
 		},
 	});
 }

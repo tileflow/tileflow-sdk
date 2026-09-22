@@ -61,7 +61,7 @@ function request(
           })),
           schemaVersion: 1,
           source: {id: 'synthetic', revision: 'fixture-1'},
-          usage: {units: 1},
+          usage: {units: 25},
         }),
     },
   );

@@ -8,3 +8,4 @@ export * from './preview';
 export * from './server';
 export * from './tileset-inspection';
 export * from './validation';
+export {prepareTileflowHostedNativeDeployment} from './hosted-native-artifacts';

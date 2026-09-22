@@ -3,7 +3,11 @@ import {createHash} from 'node:crypto';
 import test from 'node:test';
 import type {MapLibreStyle} from '@tileflow/core';
 import {serializeCanonicalJson} from '@tileflow/core';
-import type {TileflowMapBuildManifestV1} from '@tileflow/core/build';
+import {
+	inferTileflowDataRequirements,
+	inferTileflowSourceRequirements,
+	type TileflowMapBuildManifestV1,
+} from '@tileflow/core/build';
 import {prepareTileflowHostedNativeDeployment} from '../src/hosted-native-artifacts';
 
 const digest = (value: unknown) => createHash('sha256').update(serializeCanonicalJson(value)).digest('hex');
@@ -18,8 +22,8 @@ function fixture() {
 		assetSetSha256: 'a'.repeat(64), mapRevisionSha256: 'b'.repeat(64),
 		defaultTheme: 'light', lineage: [{id: 'main', mapVersion: 1}], mapVersion: 1,
 		semanticCompiler: {name: 'tileflow-semantic', version: 1}, sourceAssets: {fonts: [], icons: []},
-		themes: {light: {colorScheme: 'light', dataRequirements: {schemaVersion: 1, sources: []},
-			sourceRequirements: {schemaVersion: 1, sources: []}, styleSha256: digest(style),
+		themes: {light: {colorScheme: 'light', dataRequirements: inferTileflowDataRequirements(style),
+			sourceRequirements: inferTileflowSourceRequirements(style), styleSha256: digest(style),
 			themeId: 'light', themeVersion: 1}},
 	}}};
 	return {mapId: 'main', buildManifest, styles: {light: style}, teamSources: {}, assets: []};

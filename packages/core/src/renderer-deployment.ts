@@ -119,10 +119,10 @@ export class TileflowRendererDeploymentError extends Error {
 /** Hash/profile verification is deliberately separate from shape validation and server authority. */
 export async function parseTileflowRendererDeploymentArtifact(input: unknown): Promise<TileflowRendererDeploymentArtifact> {
 	try {
+		const inputText = serializeCanonicalJson(input);
+		if (new TextEncoder().encode(inputText).byteLength > tileflowRendererDeploymentLimits.maximumBytes ||
+			/tf_(?:public|native|live)_/u.test(inputText)) throw new Error();
 		const artifact = tileflowRendererDeploymentArtifactSchema.parse(input);
-		const text = serializeCanonicalJson(artifact);
-		if (new TextEncoder().encode(text).byteLength > tileflowRendererDeploymentLimits.maximumBytes ||
-			/tf_(?:public|native|live)_/u.test(text)) throw new Error();
 		const {web, native} = artifact.renderers;
 		if (new TextEncoder().encode(serializeCanonicalJson(native)).byteLength > tileflowRendererDeploymentLimits.maximumNativeFamilyBytes)
 			throw new Error();
@@ -144,7 +144,7 @@ export async function parseTileflowRendererDeploymentArtifact(input: unknown): P
 				!Array.isArray(webStyle.layers) || !Array.isArray(nativeStyle.layers) ||
 				transformation.inputLayers !== webStyle.layers.length || transformation.outputLayers !== nativeStyle.layers.length)
 				throw new Error();
-			if (validateTileflowNativePreparedStyle(nativeStyle, {
+			if (validateTileflowNativePreparedStyle(nativeValidationStyle(nativeStyle, artifact.teamSources), {
 				documentUrl: `https://artifacts.invalid/native/styles/${artifact.mapId}/${name}.json`,
 			}).length) throw new Error();
 			// Representation lowering cannot introduce a different delivery graph or attribution.
@@ -167,6 +167,18 @@ export async function parseTileflowRendererDeploymentArtifact(input: unknown): P
 	}
 }
 
+function nativeValidationStyle(style: Record<string, unknown>, bindings: TileflowRendererDeploymentArtifact['teamSources']) {
+	const copy = JSON.parse(serializeCanonicalJson(style)) as Record<string, unknown>;
+	const sources = object(copy.sources);
+	for (const [id, binding] of Object.entries(bindings)) {
+		const source = object(sources?.[id]);
+		if (!source || source.type !== binding.type || source.url !== `tileflow://hosted-sources/${id}` || source.tiles !== undefined)
+			throw new Error();
+		// Validate the representation without resolving a tenant or inventing resource authority.
+		source.url = `https://artifacts.invalid/tiles/${id}/tiles.json`;
+	}
+	return copy;
+}
 function authoredIdentity(manifest: z.infer<typeof buildManifestSchema>) {
 	return {...manifest, maps: Object.fromEntries(Object.entries(manifest.maps).map(([name, map]) => [name, {
 		...map, themes: Object.fromEntries(Object.entries(map.themes).map(([theme, value]) => {
@@ -234,12 +246,16 @@ export const tileflowRendererDeploymentResponseSchema = z.object({
 			themes: z.record(tileflowThemeNameSchema, nativeResponseTheme)}).strict(),
 	}).strict(),
 }).strict().superRefine((value, context) => {
-	const names = Object.keys(value.renderers.web.themes).sort();
-	const native = value.renderers.native;
-	const url = new URL(native.manifestUrl);
-	if (!names.length || names.length > 64 || !equal(names, Object.keys(native.themes).sort()) ||
-		url.pathname !== `/maps/${value.mapId}/native/manifest.json` ||
-		names.some((name) => native.themes[name]!.styleUrl !== `${url.origin}/maps/${value.mapId}/native/v${value.version}/${name}.json`))
+	try {
+		const names = Object.keys(value.renderers.web.themes).sort();
+		const native = value.renderers.native;
+		const url = new URL(native.manifestUrl);
+		if (!names.length || names.length > 64 || !equal(names, Object.keys(native.themes).sort()) ||
+			url.pathname !== `/maps/${value.mapId}/native/manifest.json` ||
+			names.some((name) => native.themes[name]!.styleUrl !== `${url.origin}/maps/${value.mapId}/native/v${value.version}/${name}.json`))
+			throw new Error();
+	} catch {
 		context.addIssue({code: 'custom', message: 'Renderer response does not bind one complete deployment'});
+	}
 });
 export type TileflowRendererDeploymentResponse = z.infer<typeof tileflowRendererDeploymentResponseSchema>;

@@ -11,6 +11,7 @@ import {createTileflowNativeBuildRecord, TileflowNativeCompatibilityError,
 	createTileflowNativeDiagnostic} from '@tileflow/core/native-profile';
 import type {TileflowBuildAsset} from './icons';
 import {lowerTileflowNativeCompiledStyles, prepareTileflowNativeStyles} from './native-artifacts';
+import {finalizeNativeHostedProvenance} from './native-hosted-provenance';
 
 type Input = Readonly<{
 	mapId: string;
@@ -43,6 +44,12 @@ export async function prepareTileflowHostedNativeDeployment(input: Input): Promi
 		}
 	}
 	const lowered = lowerTileflowNativeCompiledStyles({[input.mapId]: validationStyles});
+	for (const transformation of lowered.transformations) {
+		const name = transformation.theme;
+		lowered.styles[input.mapId]![name] = finalizeNativeHostedProvenance(
+			validationStyles[name]!, lowered.styles[input.mapId]![name]!, transformation.layers,
+		);
+	}
 	const projected = prepareTileflowNativeStyles(lowered.styles, input.assets)[input.mapId]!;
 	for (const [name, style] of Object.entries(projected)) {
 		for (const sourceId of Object.keys(input.teamSources)) {

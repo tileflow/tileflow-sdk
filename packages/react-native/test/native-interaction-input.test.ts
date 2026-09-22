@@ -20,8 +20,6 @@ test('portable inputs start empty, snapshot caller data and retain the last vali
   const empty = prepareNativeInteractionInputs({});
   assert.deepEqual(empty.annotations, []);
   assert.deepEqual(empty.bindings, []);
-  assert.deepEqual(empty.state, {popup: null});
-  assert.equal(empty.ownership, 'uncontrolled');
   const annotation = marker();
   const prepared = prepareNativeInteractionInputs(
     {annotations: [annotation], interactions: [binding]},
@@ -78,38 +76,6 @@ test('hostile documents fail without invoking accessors or reflecting their cont
   sparse.length = tileflowInteractionLimits.maxAnnotations + 1;
   const overflow = prepareNativeInteractionInputs({annotations: sparse});
   assert.equal(overflow.diagnostics[0]?.code, 'LIMIT_EXCEEDED');
-});
-
-test('state ownership is mount-stable and invalid replacements preserve the last valid state', () => {
-  const state = {popup: {kind: 'annotation', id: 'one'}};
-  const controlled = prepareNativeInteractionInputs({interactionState: state});
-  assert.equal(controlled.ownership, 'controlled');
-  for (const input of [
-    {},
-    {defaultInteractionState: {popup: null}},
-    {interactionState: state, defaultInteractionState: {popup: null}},
-    {interactionState: {popup: {kind: 'annotation', id: ''}}},
-    {interactionState: {popup: null, unrecognized: 'sensitive'}},
-  ]) {
-    const next = prepareNativeInteractionInputs(input, controlled);
-    assert.equal(next.ownership, 'controlled');
-    assert.equal(next.state, controlled.state);
-    assert.ok(next.diagnostics.some((value) => value.code === 'INVALID_DOCUMENT'));
-  }
-  const initial = prepareNativeInteractionInputs({defaultInteractionState: state});
-  const later = prepareNativeInteractionInputs({defaultInteractionState: {popup: null}}, initial);
-  assert.equal(later.ownership, 'uncontrolled');
-  assert.equal(later.state, initial.state);
-  const switched = prepareNativeInteractionInputs({interactionState: {popup: null}}, initial);
-  assert.equal(switched.state, initial.state);
-  assert.equal(switched.diagnostics[0]?.code, 'INVALID_DOCUMENT');
-  const both = prepareNativeInteractionInputs({
-    interactionState: state,
-    defaultInteractionState: state,
-  });
-  assert.deepEqual(both.state, {popup: null});
-  assert.equal(both.ownership, 'controlled');
-  assert.equal(both.diagnostics[0]?.code, 'INVALID_DOCUMENT');
 });
 
 test('annotation plans retain compatible hosts, update by ID, and remove deterministically', () => {

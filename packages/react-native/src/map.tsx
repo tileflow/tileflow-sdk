@@ -160,7 +160,6 @@ function NativeScene<TAnnotation extends TileflowAnnotation>({
               <NativeAnnotationMarker
                 key={annotation.id}
                 annotation={annotation}
-                state={interactions.state}
                 enabled={interactionEnabled}
                 sceneKey={scene.key}
                 lifecycle={lifecycle}

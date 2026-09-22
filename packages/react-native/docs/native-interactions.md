@@ -1,12 +1,12 @@
 # Native interaction contract
 
-The React Native `Map` accepts portable annotations, semantic interaction bindings, controlled or
-uncontrolled interaction state, interaction callbacks and an optional marker renderer. It exposes
-normalized targets and bounded data so the application can present its own selected-place
-experience. Tileflow does not render a popup, callout, tooltip, sheet, panel or modal.
+The React Native `Map` accepts portable annotations, semantic interaction bindings, activation
+callbacks and an optional marker renderer. It exposes normalized targets and bounded data. The
+application owns persistent selection and its presentation. Tileflow does not render a popup,
+callout, tooltip, sheet, panel or modal.
 
 The mounted implementation uses a private renderer-neutral foundation. It reuses schemas, target
-types, diagnostics and state transitions from the ordinary `@tileflow/interactions` root without
+types and diagnostics from the ordinary `@tileflow/interactions` root without
 importing its browser adapter, DOM implementation or `maplibre-gl`. Native map handles, style
 proofs, query ports and owners are not exported by `@tileflow/react-native`.
 
@@ -14,30 +14,28 @@ proofs, query ports and owners are not exported by `@tileflow/react-native`.
 
 `Map` is generic over the supplied annotation type, so application data remains typed in
 `renderMarker` and `onInteractionEvent`. `annotations` and `interactions` are complete portable
-documents, not patches. `interactionState` selects controlled ownership;
-`defaultInteractionState` selects uncontrolled ownership. They cannot be supplied together and the
-mode cannot change for one mounted Map.
+documents, not patches. The shared annotation and binding validators still accept web presentation
+metadata, but mobile does not use `popup` or `tooltip` fields.
 
 `renderMarker` composes marker content only. Tileflow retains the native marker host, coordinate,
 stable key, activation and authoritative accessibility wrapper. Without a renderer, Tileflow shows
 a bounded default marker. Each marker has the annotation label, a 44-by-44-point minimum touch
-target, button semantics and selected or disabled accessibility state. Custom marker content does
+target, button semantics and disabled accessibility state. Custom marker content does
 not create another accessible target.
 
-`onInteractionEvent` receives portable activation events for annotations and semantic POIs.
-`onInteractionStateChange` requests or reports portable selection-state changes, while
-`onInteractionDiagnostic` receives fixed structured diagnostics. Popup-named state remains the
-cross-runtime state vocabulary; it does not create native presentation.
+`onInteractionEvent` receives `target:activate` events for annotations and semantic POIs.
+`onInteractionDiagnostic` receives fixed structured diagnostics. There is no mobile selection-state
+prop, state callback or popup event. The application can retain the selected target in its own
+state and choose what, if anything, to render.
 
 ## Input ownership and validation
 
-One owner receives complete annotation, interaction-binding and interaction-state inputs. Omitted
-annotations and bindings mean empty collections. They are not partial document patches.
+One owner receives complete annotation and interaction-binding inputs. Omitted collections mean
+empty collections, not partial document patches.
 
 The owner uses the portable validators before planning any annotation changes. Invalid annotation
 or binding replacements preserve the entire previous valid collection. The initial fallback is an
-empty collection. A state replacement is validated independently and preserves its previous valid
-value on failure. The initial state fallback is `{popup: null}`.
+empty collection.
 
 Inputs are copied and frozen before they become committed values. The portable JSON perimeter
 rejects accessors, unsupported prototypes, non-finite numbers, unsafe keys, cycles, shared object
@@ -45,15 +43,9 @@ references and oversized documents. The native foundation uses the same portable
 1,000 annotations, 100 bindings, 256,000 JSON bytes, depth 64, 20,000 nodes and 50,000 properties per
 document. It does not expand large feature sets into annotation hosts.
 
-Supplying `interactionState` establishes controlled ownership. Otherwise the owner is uncontrolled,
-optionally seeded by `defaultInteractionState`. Ownership is fixed for that owner. Supplying both
-states or changing modes produces `INVALID_DOCUMENT`, never a silent ownership switch. A declared
-but invalid initial controlled value retains controlled ownership with the safe empty fallback.
-Later default-state values do not reset uncontrolled state.
-
 Diagnostics retain the portable code, level and a fixed bounded message. They do not include raw
 validator paths, input values, physical layer identifiers, style JSON, URLs or native error causes.
-Replacing callbacks alone does not change snapshots, annotation identities or interaction state.
+Replacing callbacks alone does not change snapshots or annotation identities.
 
 ## Annotation reconciliation
 
@@ -67,26 +59,16 @@ An invalid replacement produces no partial creates, updates or removals. The mou
 the annotation ID as the React and native marker identity, so updates and reordering retain the
 compatible host while removal retires it.
 
-## One popup state, two ownership modes
+## Activation without selection ownership
 
-An explicit touch activation can emit `target:activate`. Popup content is still the portable
-text/field/view descriptor; the owner does not render it or choose its presentation.
+A valid annotation activation emits one normalized `target:activate` event with annotation data,
+coordinate and optional binding ID. A semantic POI activation emits the same event type with a
+bounded POI target. No event changes or clears application selection. The application decides how
+to handle removed entities, style changes and dismissal.
 
-An uncontrolled open or explicit close commits the portable reducer result and notifies the state
-listener. In controlled mode it requests the new state through the listener and leaves the
-committed state and popup unchanged until the application supplies that state. A requested target
-is separate from the currently committed target, so a pending controlled replacement cannot hide
-or replace an existing popup.
-
-Removing the open annotation closes its target. Removing the active binding, removing its popup
-content, changing its target/category selection or retiring the current semantic style invalidates
-the resolved popup and reports `STALE_TARGET`. A syntactically invalid binding document retains the
-last valid binding document; it is not treated as a partially applied removal.
-
-For controlled stale state, the resolved popup is hidden immediately, but the application-owned
-state is not rewritten. The owner requests a close once for that stale target. The stale reference
-cannot resurrect a popup until the application acknowledges a closed or different state. A
-semantic reference without a current resolved feature cannot invent an anchor or property set.
+A syntactically invalid annotation or binding replacement retains the last valid collection. New
+touches, source/style replacement, backgrounding and unmount discard pending semantic queries, so
+late results cannot activate a target from a retired map or style.
 
 ## Finalized-style query port
 
@@ -145,18 +127,18 @@ rank ranges follow the portable contract; icon/type use bounded snake-case value
 portable 4,096-character limit. Unknown fields and unsafe property accessors are not forwarded.
 
 Touch is the only activation modality in this adapter. There is no inferred hover, tooltip,
-long-press or keyboard behavior. An activation without a stable feature ID may emit a target event,
-but requesting popup state then fails with `UNSTABLE_FEATURE_IDENTITY`. Durable identities are safe
-integers or nonempty strings of at most 128 characters; no property-based fallback ID is invented.
+long-press or keyboard behavior. An activation without a stable feature ID can still emit a target
+event. When present, feature IDs are safe integers or nonempty strings of at most 128 characters;
+no property-based fallback ID is invented.
 
 ## Retirement and observation
 
-Each mounted Map has independent inputs, annotation plans, portable selection state, style proofs,
+Each mounted Map has independent inputs, annotation plans, style proofs,
 query tickets and subscribers. No authority, Map identity or asynchronous operation is shared
 between Maps. Marker and map delivery for one touch share one claim, so a marker activation cannot
 also activate a semantic feature underneath it.
 
-Ownership is checked again after asynchronous results and before state publication. Late results
+Ownership is checked again after asynchronous results and before event publication. Late results
 from disposed owners or retired styles are inert. Reentrant cancellation, observer replacement,
 exceptions and rejected observer promises cannot transfer ownership to another Map. Disposal is
 idempotent and exposes a final safe empty snapshot plus the annotation removal plan.

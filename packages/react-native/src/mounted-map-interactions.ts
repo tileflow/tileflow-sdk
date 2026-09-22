@@ -1,9 +1,5 @@
-import type {
-  TileflowAnnotation,
-  TileflowInteractionDiagnosticCode,
-  TileflowInteractionEvent,
-} from '@tileflow/interactions';
-import type {MapInteractionProps} from './interaction-contract';
+import type {TileflowAnnotation, TileflowInteractionDiagnosticCode} from '@tileflow/interactions';
+import type {MapInteractionEvent, MapInteractionProps} from './interaction-contract';
 import {nativeInteractionDiagnostic} from './native-interaction-input';
 import {
   createNativeInteractionOwner,
@@ -30,7 +26,7 @@ type Touch = {
   mapActivated?: boolean;
 };
 
-/** Lazily initializes state ownership from the first committed props, never from placeholder props. */
+/** Lazily initializes one interaction owner from the first committed props. */
 export function createMountedMapInteractions(
   getStyle: () => NativeInteractionStyle | undefined,
   changed: () => void,
@@ -66,7 +62,6 @@ export function createMountedMapInteractions(
   };
   const foundationCallbacks: NativeInteractionCallbacks = {
     onInteractionEvent: (event) => invoke(() => callbacks.onInteractionEvent?.(event)),
-    onInteractionStateChange: (state) => invoke(() => callbacks.onInteractionStateChange?.(state)),
     onDiagnostic: (diagnostic) => invoke(() => callbacks.onDiagnostic?.(diagnostic)),
   };
   const report = (code: TileflowInteractionDiagnosticCode) =>
@@ -221,17 +216,13 @@ export function createMountedMapInteractions(
       const event = callback(
         'onInteractionEvent',
       ) as MapInteractionProps<TAnnotation>['onInteractionEvent'];
-      const state = callback(
-        'onInteractionStateChange',
-      ) as MapInteractionProps<TAnnotation>['onInteractionStateChange'];
       const diagnostic = callback(
         'onInteractionDiagnostic',
       ) as MapInteractionProps<TAnnotation>['onInteractionDiagnostic'];
       if (disposed || propsVersion !== version) return;
       callbacks = {
         // Stage A retains detached annotation JSON; this boundary restores the consumer's generic type.
-        onInteractionEvent: (value) => event?.(value as TileflowInteractionEvent<TAnnotation>),
-        onInteractionStateChange: state,
+        onInteractionEvent: (value) => event?.(value as MapInteractionEvent<TAnnotation>),
         onDiagnostic: diagnostic,
       };
       if (!owner) {

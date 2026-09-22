@@ -142,9 +142,8 @@ Do not add a second MapLibre Native CocoaPod. See [Private native resource admis
 
 ## Interactions and markers
 
-`Map` accepts portable `annotations`, semantic `interactions`, controlled `interactionState` or
-uncontrolled `defaultInteractionState`, and the corresponding event, state and diagnostic
-callbacks. Annotation data stays typed through a generic `Map` and optional `renderMarker`:
+`Map` accepts portable `annotations`, semantic `interactions`, activation and diagnostic callbacks,
+and an optional marker renderer. Annotation data stays typed through a generic `Map`:
 
 ```tsx
 <Map
@@ -152,7 +151,7 @@ callbacks. Annotation data stays typed through a generic `Map` and optional `ren
   annotations={places}
   interactions={bindings}
   onInteractionEvent={(event) => {
-    if (event.type === 'target:activate') selectPlace(event.target);
+    selectPlace(event.target);
   }}
   renderMarker={({annotation}) => <PlaceMarker place={annotation.data} />}
 />
@@ -163,8 +162,8 @@ wrapper. A bounded accessible marker is rendered when `renderMarker` is omitted.
 remain in native vector or GeoJSON layers and are selected through semantic rendered-feature
 queries rather than thousands of React marker views.
 
-The application owns all selection presentation. The SDK exposes normalized target data and
-portable state but no popup, callout, tooltip, sheet, panel or modal renderer. See
+The application owns persistent selection and its presentation. The SDK emits normalized
+annotation or POI targets but no popup, callout, tooltip, sheet, panel or modal renderer. See
 [Native interaction contract](./docs/native-interactions.md).
 
 ## Current boundary

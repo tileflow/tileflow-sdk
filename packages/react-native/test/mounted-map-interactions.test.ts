@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type {
-  TileflowAnnotation,
-  TileflowInteractionEvent,
-  TileflowInteractionState,
-} from '@tileflow/interactions';
+import type {TileflowAnnotation, TileflowInteractionEvent} from '@tileflow/interactions';
 import {
   createMountedMapInteractions,
   type NativeInteractionHost,
@@ -120,24 +116,6 @@ test('callbacks update without replacing ownership; retained IDs keep host plans
   f.owner.markerPress(old);
 });
 
-test('controlled state is initialized from the first props and requests rather than owns selection', () => {
-  const f = fixture();
-  const changes: TileflowInteractionState[] = [];
-  const props = {
-    annotations: [annotation],
-    interactionState: {popup: null},
-    onInteractionStateChange: (state: TileflowInteractionState) => changes.push(state),
-  };
-  f.owner.update(props);
-  assert.equal(f.owner.getSnapshot()!.ownership, 'controlled');
-  f.owner.beginTouch();
-  f.owner.markerPress(f.owner.getSnapshot()!.annotations[0]!);
-  assert.equal(f.owner.getSnapshot()!.state.popup, null);
-  assert.equal(changes.length, 1);
-  f.owner.update({...props, interactionState: changes[0]!});
-  assert.deepEqual(f.owner.getSnapshot()!.state.popup, {kind: 'annotation', id: 'place'});
-});
-
 test('invalid replacements retain detached last-valid data and bounded diagnostics', () => {
   const f = fixture();
   const diagnostics: unknown[] = [];
@@ -155,19 +133,19 @@ test('invalid replacements retain detached last-valid data and bounded diagnosti
   assert.equal(Object.isFrozen(valid[0]!.data), true);
 });
 
-test('new touch cancels semantic work without clearing an existing portable selection', async () => {
+test('new touch cancels semantic work without changing application-owned selection', async () => {
   const pending = barrier<unknown>();
   const f = fixture(() => pending.promise);
   f.owner.update({annotations: [annotation], interactions: [poiBinding]});
   f.owner.beginTouch();
   f.owner.markerPress(f.owner.getSnapshot()!.annotations[0]!);
-  const state = f.owner.getSnapshot()!.state;
+  const snapshot = f.owner.getSnapshot();
   f.owner.beginTouch();
   const query = f.owner.mapPress(touch);
   await Promise.resolve();
   f.owner.beginTouch();
   await query;
-  assert.equal(f.owner.getSnapshot()!.state, state);
+  assert.equal(f.owner.getSnapshot(), snapshot);
   pending.resolve([]);
 });
 
@@ -194,7 +172,7 @@ test('theme/source proof replacement and background make late results inert', as
   }
 });
 
-test('two maps have isolated state, callbacks, touch claims and retirement', async () => {
+test('two maps have isolated callbacks, touch claims and retirement', async () => {
   const left = fixture(),
     right = fixture();
   const events: unknown[] = [];
@@ -209,7 +187,7 @@ test('two maps have isolated state, callbacks, touch claims and retirement', asy
   right.owner.beginTouch();
   right.owner.markerPress(right.owner.getSnapshot()!.annotations[0]!);
   assert.ok(events.length);
-  assert.deepEqual(right.owner.getSnapshot()!.state.popup, {kind: 'annotation', id: 'place'});
+  assert.equal(events.length, 1);
 });
 
 test('observer failures never escape the mounted interaction boundary', async () => {
@@ -217,9 +195,6 @@ test('observer failures never escape the mounted interaction boundary', async ()
   f.owner.update({
     annotations: [annotation],
     onInteractionEvent() {
-      throw new Error('private');
-    },
-    onInteractionStateChange: async () => {
       throw new Error('private');
     },
   });

@@ -2,7 +2,6 @@ import {isValidElement, type ReactElement} from 'react';
 import type {
   TileflowAnnotation,
   TileflowInteractionDiagnosticCode,
-  TileflowInteractionState,
   TileflowResolvedAnnotationTarget,
 } from '@tileflow/interactions';
 import type {MapMarkerRenderContext, MapMarkerRenderer} from './interaction-contract';
@@ -10,7 +9,6 @@ import type {MapMarkerRenderContext, MapMarkerRenderer} from './interaction-cont
 /** Consumes only the Stage A snapshot. React keys implement its stable-ID annotation plan. */
 export function nativeMarkerModel<TAnnotation extends TileflowAnnotation>(
   annotation: TAnnotation,
-  state: TileflowInteractionState,
   enabled: boolean,
 ) {
   const lngLat: [number, number] = [annotation.coordinate[0], annotation.coordinate[1]];
@@ -36,7 +34,6 @@ export function nativeMarkerModel<TAnnotation extends TileflowAnnotation>(
       accessibilityRole: 'button' as const,
       accessibilityLabel: annotation.ariaLabel,
       accessibilityState: Object.freeze({
-        selected: state.popup?.kind === 'annotation' && state.popup.id === annotation.id,
         disabled: !enabled,
       }),
     }),

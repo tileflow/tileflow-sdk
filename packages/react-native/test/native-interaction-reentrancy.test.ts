@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type {TileflowInteractionState} from '@tileflow/interactions';
 import {createNativeInteractionOwner} from '../src/native-interaction-owner';
 import {createNativePoiAdapter} from '../src/native-interaction-poi';
 import {barrier, poiBinding, poiFeature, queryFixture, touch} from './native-interaction-fixture';
@@ -77,29 +76,24 @@ test('throwing current-style inspection is a structured diagnostic rather than a
   adapter.dispose();
 });
 
-test('controlled semantic activation stays pending until acknowledgement and cannot survive source retirement', async () => {
-  const requests: TileflowInteractionState[] = [];
+test('semantic activation cannot survive source retirement', async () => {
+  const events: unknown[] = [];
   const native = queryFixture();
   native.setFeatures([poiFeature('feature')]);
   const owner = createNativeInteractionOwner(
-    {interactions: [poiBinding], interactionState: {popup: null}},
-    {
-      onInteractionStateChange: (state) => requests.push(state),
-    },
+    {interactions: [poiBinding]},
+    {onInteractionEvent: (event) => events.push(event)},
   );
   owner.replaceStyle(native.lease);
   await owner.activateTouch(touch);
-  assert.deepEqual(owner.getSnapshot().state, {popup: null});
-  assert.equal(owner.getSnapshot().popup, null);
-  owner.update({interactions: [poiBinding], interactionState: requests[0]});
-  assert.equal(owner.getSnapshot().popup?.target.kind, 'semantic-feature');
+  assert.equal(events.length, 1);
   const pending = barrier<unknown>();
   native.setQuery(() => ({result: pending.promise, cancel() {}}));
   const query = owner.activateTouch(touch);
   owner.retireSource();
   await query;
   pending.resolve({request: native.requests.at(-1), features: [poiFeature('late')]});
-  assert.deepEqual(owner.getSnapshot().state, {popup: null});
+  assert.equal(events.length, 1);
   assert.equal(owner.getSnapshot().disposed, true);
 });
 
@@ -122,27 +116,26 @@ test('hostile input replacement cannot overwrite a newer owner reconciliation', 
   owner.dispose();
 });
 
-test('an activation observer starting a newer touch cancels the older popup request', async () => {
+test('an activation observer can start a newer touch without a stale follow-up', async () => {
   const native = queryFixture();
   native.setFeatures([poiFeature('first')]);
   const owner = createNativeInteractionOwner({interactions: [poiBinding]});
   owner.replaceStyle(native.lease);
   const later = barrier<unknown>();
+  const ids: Array<string | number | undefined> = [];
   let replacement: Promise<void> | undefined;
   owner.setCallbacks({
     onInteractionEvent(event) {
+      if (event.target.kind === 'semantic-feature') ids.push(event.target.feature.id);
       if (event.type !== 'target:activate' || replacement) return;
       native.setQuery(() => ({result: later.promise, cancel() {}}));
       replacement = owner.activateTouch(touch);
     },
   });
   await owner.activateTouch(touch);
-  assert.deepEqual(owner.getSnapshot().state, {popup: null});
   assert.ok(replacement);
   later.resolve({request: native.requests.at(-1), features: [poiFeature('second')]});
   await replacement;
-  assert.deepEqual(owner.getSnapshot().state, {
-    popup: {kind: 'semantic-feature', domain: 'poi', featureId: 'second'},
-  });
+  assert.deepEqual(ids, ['first', 'second']);
   owner.dispose();
 });

@@ -39,7 +39,7 @@ test('the interaction foundation imports only portable root contracts and its pr
   };
   await visitRoot('index');
   const owner = createNativeInteractionOwner();
-  assert.deepEqual(owner.getSnapshot().state, {popup: null});
+  assert.equal('state' in owner.getSnapshot(), false);
   owner.dispose();
 });
 
@@ -72,7 +72,7 @@ test('mounted public types do not export native handles, private ports or select
   );
   const exported = await import(new URL('dist/internal/interactions.js', root).href);
   const owner = exported.createNativeInteractionOwner();
-  assert.deepEqual(owner.getSnapshot().state, {popup: null});
+  assert.equal('state' in owner.getSnapshot(), false);
   owner.dispose();
   const declarations = await readFile(new URL('dist/index.d.ts', root), 'utf8');
   const contractName = declarations.match(/from '\.\/(contract-[^']+)\.js'/u)?.[1];
@@ -80,8 +80,11 @@ test('mounted public types do not export native handles, private ports or select
   const publicDeclarations = `${declarations}\n${await readFile(new URL(`dist/${contractName}.d.ts`, root), 'utf8')}`;
   assert.match(publicDeclarations, /MapMarkerRenderer/u);
   assert.match(publicDeclarations, /MapMarkerRenderContext/u);
-  assert.match(publicDeclarations, /onInteractionStateChange/u);
-  assert.match(publicDeclarations, /defaultInteractionState/u);
+  assert.match(publicDeclarations, /MapInteractionEvent/u);
+  assert.doesNotMatch(
+    publicDeclarations,
+    /onInteractionStateChange|defaultInteractionState|interactionState\??:/u,
+  );
   assert.match(publicDeclarations, /annotations\??:/u);
   assert.match(publicDeclarations, /TAnnotation extends TileflowAnnotation/u);
   assert.doesNotMatch(

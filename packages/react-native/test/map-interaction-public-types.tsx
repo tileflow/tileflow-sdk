@@ -1,6 +1,7 @@
 import * as Native from '@tileflow/react-native';
 import {
   Map,
+  type MapInteractionEvent,
   type MapMarkerRenderContext,
   type MapMarkerRenderer,
   type MapProps,
@@ -12,8 +13,6 @@ import type {
   TileflowAnnotation,
   TileflowInteractionBinding,
   TileflowInteractionDiagnostic,
-  TileflowInteractionEvent,
-  TileflowInteractionState,
 } from '@tileflow/interactions';
 
 type Place = TileflowAnnotation & {data: {name: string; capacity: number}};
@@ -27,7 +26,6 @@ const annotations: readonly Place[] = [
     data: {name: 'Example', capacity: 12},
   },
 ];
-const state: TileflowInteractionState = {popup: null};
 const interactions: readonly TileflowInteractionBinding[] = [
   {
     id: 'poi',
@@ -50,10 +48,11 @@ const props: MapProps<Place> = {
   source,
   annotations,
   interactions,
-  interactionState: state,
   renderMarker,
   onInteractionEvent(event) {
-    const portable: TileflowInteractionEvent<Place> = event;
+    const portable: MapInteractionEvent<Place> = event;
+    const activation: 'target:activate' = event.type;
+    void activation;
     if (portable.target.kind === 'annotation') {
       const capacity: number = portable.target.annotation.data.capacity;
       void capacity;
@@ -63,10 +62,6 @@ const props: MapProps<Place> = {
     }
     // @ts-expect-error Raw native events are private.
     void event.nativeEvent;
-  },
-  onInteractionStateChange(next) {
-    const portable: TileflowInteractionState = next;
-    void portable;
   },
   onInteractionDiagnostic(diagnostic) {
     const portable: TileflowInteractionDiagnostic = diagnostic;
@@ -88,14 +83,15 @@ const inferred = (
     }}
   />
 );
-const uncontrolled = (
-  <Map source={source} annotations={annotations} defaultInteractionState={state} />
-);
 const defaultMarker = <Map source={source} annotations={annotations} />;
-void [explicit, inferred, uncontrolled, defaultMarker];
+void [explicit, inferred, defaultMarker];
 
-// @ts-expect-error Controlled and uncontrolled state inputs are mutually exclusive.
-<Map source={source} interactionState={state} defaultInteractionState={state} />;
+// @ts-expect-error Selection state belongs to the application.
+<Map source={source} interactionState={{popup: null}} />;
+// @ts-expect-error Selection state belongs to the application.
+<Map source={source} defaultInteractionState={{popup: null}} />;
+// @ts-expect-error Selection state callbacks are not part of the mobile Map.
+<Map source={source} onInteractionStateChange={() => undefined} />;
 // @ts-expect-error Tileflow never renders native selection presentation.
 <Map source={source} renderPopup={() => <View />} />;
 // @ts-expect-error Tileflow never renders native selection presentation.

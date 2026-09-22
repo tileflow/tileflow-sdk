@@ -1,7 +1,7 @@
 import {Marker as NativeMarker} from '@maplibre/maplibre-react-native';
 import {type ReactElement, useLayoutEffect, useMemo} from 'react';
 import {Pressable, processColor, View} from 'react-native';
-import type {TileflowAnnotation, TileflowInteractionState} from '@tileflow/interactions';
+import type {TileflowAnnotation} from '@tileflow/interactions';
 import type {MapMarkerRenderer} from './interaction-contract';
 import type {createMapLifecycle} from './map-lifecycle';
 import {nativeMarkerModel, resolveNativeMarkerContent} from './native-marker-model';
@@ -25,23 +25,18 @@ const defaultColor = '#2563eb';
 /** One React/native host per portable annotation ID; no selected-content view exists here. */
 export function NativeAnnotationMarker<TAnnotation extends TileflowAnnotation>({
   annotation,
-  state,
   enabled,
   sceneKey,
   lifecycle,
   renderMarker,
 }: {
   annotation: TAnnotation;
-  state: TileflowInteractionState;
   enabled: boolean;
   sceneKey: string;
   lifecycle: Lifecycle;
   renderMarker?: MapMarkerRenderer<TAnnotation>;
 }): ReactElement {
-  const model = useMemo(
-    () => nativeMarkerModel(annotation, state, enabled),
-    [annotation, state, enabled],
-  );
+  const model = useMemo(() => nativeMarkerModel(annotation, enabled), [annotation, enabled]);
   const rendered = resolveNativeMarkerContent(model.context, renderMarker);
   let color = defaultColor;
   let invalidColor = false;

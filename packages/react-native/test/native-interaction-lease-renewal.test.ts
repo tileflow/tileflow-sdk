@@ -18,7 +18,7 @@ function fixture() {
   return {style, port};
 }
 
-test('renewal validates the same style while retaining selection and permanently retiring the old lease', async () => {
+test('renewal validates the same style without replaying activation and retires the old lease', async () => {
   const f = fixture();
   const events: unknown[] = [];
   const owner = createNativeInteractionOwner(
@@ -30,15 +30,15 @@ test('renewal validates the same style while retaining selection and permanently
   const old = f.port();
   owner.replaceStyle(old.lease);
   await owner.activateTouch(touch);
-  const state = owner.getSnapshot().state;
-  assert.deepEqual(state.popup, {kind: 'semantic-feature', domain: 'poi', featureId: 1});
+  const snapshot = owner.getSnapshot();
+  assert.equal(events.length, 1);
   const count = events.length;
   const next = f.port();
   assert.equal(owner.renewTouchLease(next.lease), true);
   old.retire();
   assert.equal(old.lease.isCurrent(), false);
   assert.equal(next.lease.isCurrent(), true);
-  assert.equal(owner.getSnapshot().state, state);
+  assert.equal(owner.getSnapshot(), snapshot);
   assert.equal(events.length, count);
   owner.dispose();
 });

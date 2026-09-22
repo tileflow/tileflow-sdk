@@ -5,7 +5,8 @@ import type {
   TileflowInteractionBinding,
   TileflowInteractionDiagnostic,
   TileflowInteractionEvent,
-  TileflowInteractionState,
+  TileflowResolvedAnnotationTarget,
+  TileflowResolvedPoiFeatureTarget,
 } from '@tileflow/interactions';
 
 /** Marker composition only. Selection presentation and native handles are not part of this context. */
@@ -22,24 +23,20 @@ export type MapMarkerRenderer<TAnnotation extends TileflowAnnotation = TileflowA
   context: MapMarkerRenderContext<TAnnotation>,
 ) => ReactElement;
 
-/** Ownership is fixed for a mounted Map. Popup-named fields are portable state, not native UI. */
-export type MapInteractionStateProps =
-  | Readonly<{
-      interactionState: TileflowInteractionState;
-      defaultInteractionState?: never;
-    }>
-  | Readonly<{
-      interactionState?: never;
-      defaultInteractionState?: TileflowInteractionState;
-    }>;
+/** Mobile reports activation; the application owns any persistent selection. */
+export type MapInteractionEvent<TAnnotation extends TileflowAnnotation = TileflowAnnotation> =
+  Readonly<
+    Omit<TileflowInteractionEvent<TAnnotation>, 'target' | 'type'> & {
+      target: TileflowResolvedAnnotationTarget<TAnnotation> | TileflowResolvedPoiFeatureTarget;
+      type: 'target:activate';
+    }
+  >;
 
 export type MapInteractionProps<TAnnotation extends TileflowAnnotation = TileflowAnnotation> =
-  MapInteractionStateProps &
-    Readonly<{
-      annotations?: readonly TAnnotation[];
-      interactions?: readonly TileflowInteractionBinding[];
-      onInteractionEvent?: (event: TileflowInteractionEvent<TAnnotation>) => void;
-      onInteractionStateChange?: (state: TileflowInteractionState) => void;
-      onInteractionDiagnostic?: (diagnostic: TileflowInteractionDiagnostic) => void;
-      renderMarker?: MapMarkerRenderer<TAnnotation>;
-    }>;
+  Readonly<{
+    annotations?: readonly TAnnotation[];
+    interactions?: readonly TileflowInteractionBinding[];
+    onInteractionEvent?: (event: MapInteractionEvent<TAnnotation>) => void;
+    onInteractionDiagnostic?: (diagnostic: TileflowInteractionDiagnostic) => void;
+    renderMarker?: MapMarkerRenderer<TAnnotation>;
+  }>;

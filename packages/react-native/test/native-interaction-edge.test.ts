@@ -4,9 +4,9 @@ import {prepareNativeInteractionInputs} from '../src/native-interaction-input';
 import {createNativePoiAdapter} from '../src/native-interaction-poi';
 import {barrier, poiBinding, queryFixture, touch} from './native-interaction-fixture';
 
-test('invalid initial controlled state preserves declared ownership without evaluating its accessor', () => {
+test('invalid annotation accessors never execute or leak their contents', () => {
   let reads = 0;
-  const input = Object.defineProperty({}, 'interactionState', {
+  const input = Object.defineProperty({}, 'annotations', {
     enumerable: true,
     get() {
       reads++;
@@ -14,15 +14,11 @@ test('invalid initial controlled state preserves declared ownership without eval
     },
   });
   const initial = prepareNativeInteractionInputs(input);
-  assert.equal(initial.ownership, 'controlled');
-  assert.deepEqual(initial.state, {popup: null});
+  assert.deepEqual(initial.annotations, []);
   assert.equal(initial.diagnostics[0]?.code, 'INVALID_DOCUMENT');
   assert.equal(reads, 0);
-  const repaired = prepareNativeInteractionInputs(
-    {interactionState: {popup: {kind: 'annotation', id: 'one'}}},
-    initial,
-  );
-  assert.deepEqual(repaired.state, {popup: {kind: 'annotation', id: 'one'}});
+  const repaired = prepareNativeInteractionInputs({annotations: []}, initial);
+  assert.deepEqual(repaired.annotations, []);
   assert.deepEqual(repaired.diagnostics, []);
 });
 

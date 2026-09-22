@@ -1,5 +1,4 @@
 import {
-  initialTileflowInteractionState,
   type TileflowAnnotation,
   type TileflowInteractionBinding,
   type TileflowInteractionDiagnostic,
@@ -7,8 +6,6 @@ import {
   type TileflowInteractionJsonValue,
   tileflowInteractionJsonValueSchema,
   tileflowInteractionLimits,
-  type TileflowInteractionState,
-  tileflowInteractionStateSchema,
   validateTileflowAnnotations,
   validateTileflowInteractionBindings,
 } from '@tileflow/interactions';
@@ -16,14 +13,10 @@ import {
 export type NativeInteractionInput = Readonly<{
   annotations?: unknown;
   interactions?: unknown;
-  interactionState?: unknown;
-  defaultInteractionState?: unknown;
 }>;
 export type NativePreparedInteractions = Readonly<{
   annotations: readonly TileflowAnnotation[];
   bindings: readonly TileflowInteractionBinding[];
-  state: TileflowInteractionState;
-  ownership: 'controlled' | 'uncontrolled';
   diagnostics: readonly TileflowInteractionDiagnostic[];
 }>;
 
@@ -31,13 +24,13 @@ const messages: Record<TileflowInteractionDiagnosticCode, string> = {
   DUPLICATE_ANNOTATION_ID: 'Annotation IDs must be unique.',
   INVALID_FIELD: 'An interaction field is invalid.',
   INVALID_ANNOTATION: 'An annotation is invalid.',
-  INVALID_DOCUMENT: 'The interaction document or state ownership is invalid.',
+  INVALID_DOCUMENT: 'The interaction document is invalid.',
   LIMIT_EXCEEDED: 'The portable interaction limit was exceeded.',
   MISSING_VIEW: 'The interaction view is unavailable.',
   OVERLAY_FAILURE: 'The interaction operation failed.',
   SEMANTIC_MANIFEST_MISMATCH: 'The current style cannot provide verified semantic POI queries.',
   STALE_TARGET: 'The interaction target is no longer available.',
-  UNSTABLE_FEATURE_IDENTITY: 'A stable feature ID is required for popup state.',
+  UNSTABLE_FEATURE_IDENTITY: 'A stable feature ID is unavailable.',
   UNSUPPORTED_MODE: 'This interaction input modality is unavailable.',
   UNSUPPORTED_TARGET: 'This interaction target is unavailable.',
 };
@@ -193,8 +186,6 @@ export function prepareNativeInteractionInputs(
 ): NativePreparedInteractions {
   let annotations = previous?.annotations ?? Object.freeze([]);
   let bindings = previous?.bindings ?? Object.freeze([]);
-  let state = previous?.state ?? initialTileflowInteractionState;
-  let ownership: NativePreparedInteractions['ownership'] = previous?.ownership ?? 'uncontrolled';
   const diagnostics: TileflowInteractionDiagnostic[] = [];
   const report = (code: TileflowInteractionDiagnosticCode) => {
     if (!diagnostics.some((value) => value.code === code))
@@ -224,36 +215,9 @@ export function prepareNativeInteractionInputs(
   } catch {
     report('INVALID_DOCUMENT');
   }
-  try {
-    // Declared ownership survives an invalid initial value; never evaluate its accessor.
-    if (!previous) {
-      const declaration = Object.getOwnPropertyDescriptor(input, 'interactionState');
-      if (declaration && (!('value' in declaration) || declaration.value !== undefined))
-        ownership = 'controlled';
-    }
-    const controlled = nativeInteractionField(input, 'interactionState');
-    const initial = nativeInteractionField(input, 'defaultInteractionState');
-    const requested = controlled !== undefined ? 'controlled' : 'uncontrolled';
-    if ((controlled !== undefined && initial !== undefined) || ownership !== requested)
-      throw new Error();
-    const value = controlled !== undefined ? controlled : initial;
-    if (value !== undefined) {
-      const parsed = tileflowInteractionStateSchema.safeParse(snapshotNativeInteractionJson(value));
-      if (!parsed.success) throw new Error();
-      if (
-        (!previous || ownership === 'controlled') &&
-        !nativeInteractionValuesEqual(state, parsed.data)
-      )
-        state = freezeNativeInteractionValue(parsed.data);
-    }
-  } catch {
-    report('INVALID_DOCUMENT');
-  }
   return Object.freeze({
     annotations,
     bindings,
-    state,
-    ownership,
     diagnostics: Object.freeze(diagnostics),
   });
 }

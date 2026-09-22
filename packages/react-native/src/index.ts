@@ -24,8 +24,8 @@ export type {
   MapViewChangeEvent,
 } from './contract';
 export type {
+  MapInteractionEvent,
   MapInteractionProps,
-  MapInteractionStateProps,
   MapMarkerRenderContext,
   MapMarkerRenderer,
 } from './interaction-contract';
@@ -34,9 +34,6 @@ export type {
   TileflowInteractionBinding,
   TileflowInteractionCoordinate,
   TileflowInteractionDiagnostic,
-  TileflowInteractionEvent,
-  TileflowInteractionState,
-  TileflowInteractionTargetRef,
   TileflowPoiCategory,
   TileflowResolvedAnnotationTarget,
   TileflowResolvedPoiFeatureTarget,

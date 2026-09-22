@@ -1,6 +1,6 @@
 import type {TileflowNativeSourceState} from '@tileflow/core/native';
+import {snapshotHostedNativeManifestIdentity} from './hosted-manifest-identity';
 import {
-  canonicalMobileApiOrigin,
   type MobileConfiguration,
   NativeConfigurationError,
   snapshotMobileConfiguration,
@@ -8,44 +8,6 @@ import {
 import type {HostedNativeSessionBinding} from './session-controller';
 
 type Metadata = Readonly<{mapId: string; apiOrigin: string}>;
-
-function field(record: unknown, key: string): unknown {
-  if (!record || typeof record !== 'object' || Array.isArray(record)) throw new Error();
-  const prototype = Object.getPrototypeOf(record);
-  if (prototype !== Object.prototype && prototype !== null) throw new Error();
-  const property = Object.getOwnPropertyDescriptor(record, key);
-  if (!property) return undefined;
-  if (!('value' in property)) throw new Error();
-  return property.value;
-}
-
-function snapshotMetadata(source: TileflowNativeSourceState): Metadata | null {
-  try {
-    if (field(source, 'status') !== 'ready') throw new Error();
-    const map = field(source, 'map');
-    const usageMode = field(map, 'usageMode');
-    // The accepted manifest grammar has only undefined (non-session) or "session".
-    // Do not read unrelated delivery metadata, much less app configuration, in direct mode.
-    if (usageMode === undefined) return null;
-    if (usageMode !== 'session') throw new Error();
-    const mapId = field(map, 'mapId');
-    const name = field(map, 'name');
-    if (
-      typeof mapId !== 'string' ||
-      mapId.length !== 20 ||
-      !/^map_[A-Za-z0-9_-]{16}$/u.test(mapId) ||
-      typeof name !== 'string' ||
-      name.length === 0 ||
-      name.length > 64 ||
-      name !== field(field(source, 'source'), 'map')
-    ) {
-      throw new Error();
-    }
-    return Object.freeze({mapId, apiOrigin: canonicalMobileApiOrigin(field(map, 'apiUrl'))});
-  } catch {
-    throw new NativeConfigurationError('NATIVE_CONFIGURATION_SOURCE_INVALID');
-  }
-}
 
 function bind(metadata: Metadata, configuration: MobileConfiguration): HostedNativeSessionBinding {
   const snapshot = snapshotMobileConfiguration(configuration);
@@ -99,7 +61,7 @@ export function createHostedNativeBindingResolver(
       previous?.reject(new NativeConfigurationError('NATIVE_CONFIGURATION_REPLACED'));
       let metadata: Metadata | null;
       try {
-        metadata = snapshotMetadata(source);
+        metadata = snapshotHostedNativeManifestIdentity(source);
       } catch {
         if (current()) {
           active = undefined;

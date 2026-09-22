@@ -36,11 +36,15 @@ test('normalizes one bounded forward request', () => {
   assert.equal(geocodingLimits.maximumQueryCharacters, 200);
 });
 
-test('defaults retention and accepts both retention modes', () => {
+test('temporary is the sole retention mode', () => {
   assert.equal(geocodingForwardRequestSchema.parse({query: 'Lisboa'}).retention, 'temporary');
   assert.equal(
-    geocodingForwardRequestSchema.parse({query: 'Lisboa', retention: 'persistent'}).retention,
-    'persistent',
+    geocodingForwardRequestSchema.safeParse({query: 'Lisboa', retention: 'persistent'}).success,
+    false,
+  );
+  assert.equal(
+    resolveSuggestionRequestSchema.safeParse({token: 'opaque', retention: 'persistent'}).success,
+    false,
   );
 });
 
@@ -75,7 +79,7 @@ test('accepts a strict normalized success including zero candidates', () => {
     results: [],
     schemaVersion: 1,
     source: {id: 'synthetic', revision: 'fixture-1'},
-    usage: {units: 1},
+    usage: {units: 25},
   });
   assert.equal(empty.results.length, 0);
 
@@ -105,7 +109,7 @@ test('accepts a strict normalized success including zero candidates', () => {
     ],
     schemaVersion: 1,
     source: {id: 'openstreetmap', revision: 'example-snapshot'},
-    usage: {units: 1},
+    usage: {units: 25},
   });
   assert.equal(result.results[0]?.kind, 'address');
 });
@@ -117,7 +121,7 @@ test('rejects provider leakage and unsafe or malformed results', () => {
     results: [],
     schemaVersion: 1,
     source: {id: 'synthetic', revision: 'fixture-1'},
-    usage: {units: 1},
+    usage: {units: 25},
   };
 
   for (const response of [
@@ -174,6 +178,7 @@ test('accepts strict empty autocomplete responses and rejects leaked fields or e
     schemaVersion: 1,
     source: {id: 'synthetic', revision: null},
     suggestions: [],
+    usage: {units: 10},
   });
   assert.deepEqual(empty.suggestions, []);
 
@@ -185,7 +190,7 @@ test('accepts strict empty autocomplete responses and rejects leaked fields or e
 
   for (const response of [
     {...empty, queryId},
-    {...empty, usage: {units: 1}},
+    {...empty, usage: {units: 25}},
     {...empty, suggestions: Array.from({length: 11}, () => suggestion)},
     {...empty, suggestions: [{...suggestion, token: 'has space'}]},
     {...empty, suggestions: [{...suggestion, token: 'x'.repeat(2049)}]},
@@ -195,14 +200,15 @@ test('accepts strict empty autocomplete responses and rejects leaked fields or e
   }
 });
 
-test('normalizes a strict suggestion resolution and requires one completed usage unit', () => {
+test('normalizes a strict suggestion resolution and requires 25 completed usage units', () => {
   assert.deepEqual(resolveSuggestionRequestSchema.parse({token: 'opaque-token_1'}), {
     retention: 'temporary',
     token: 'opaque-token_1',
   });
-  assert.deepEqual(
-    resolveSuggestionRequestSchema.parse({token: 'opaque-token_1', retention: 'persistent'}),
-    {retention: 'persistent', token: 'opaque-token_1'},
+  assert.equal(
+    resolveSuggestionRequestSchema.safeParse({token: 'opaque-token_1', retention: 'persistent'})
+      .success,
+    false,
   );
 
   for (const request of [
@@ -219,7 +225,7 @@ test('normalizes a strict suggestion resolution and requires one completed usage
     result: {address: {}, kind: 'place', label: 'Hospital La Paz', position: [-3.7, 40.4]},
     schemaVersion: 1,
     source: {id: 'synthetic', revision: 'fixture-1'},
-    usage: {units: 1},
+    usage: {units: 25},
   };
   assert.equal(resolveSuggestionResponseSchema.parse(response).result.label, 'Hospital La Paz');
 
@@ -327,7 +333,7 @@ test('rejects unsupported reverse options and preserves every output kind', () =
     results,
     schemaVersion: 1,
     source: {id: 'synthetic', revision: null},
-    usage: {units: 1},
+    usage: {units: 25},
   });
 
   assert.deepEqual(

@@ -1,5 +1,14 @@
 import {z} from 'zod';
 import {
+  nearbyLimits,
+  type NearbyRequest,
+  nearbyRequestSchema,
+  type NearbyResponse,
+  nearbyResponseSchema,
+  type SearchCategoriesResponse,
+  searchCategoriesResponseSchema,
+} from './contract';
+import {
   type AutocompleteRequest,
   autocompleteRequestSchema,
   type AutocompleteResponse,
@@ -12,14 +21,21 @@ import {
   type GeocodingReverseRequest,
   geocodingReverseRequestSchema,
   type GeocodingReverseResponse,
-  type ReverseGeocodingKind,
   type ResolveSuggestionRequest,
   resolveSuggestionRequestSchema,
   type ResolveSuggestionResponse,
   resolveSuggestionResponseSchema,
+  type ReverseGeocodingKind,
 } from './contract';
 
 export const GEOCODING_ERROR_CODES = [
+  'GEOCODING_FILTER_UNSUPPORTED',
+  'GEOCODING_PLAN_UNAVAILABLE',
+  'GEOCODING_EVALUATION_REQUIRED',
+  'GEOCODING_EVALUATION_EXPIRED',
+  'GEOCODING_EVALUATION_EXHAUSTED',
+  'GEOCODING_INVALID_CURSOR',
+  'GEOCODING_CURSOR_EXPIRED',
   'GEOCODING_ABORTED',
   'GEOCODING_DISABLED',
   'GEOCODING_INVALID_REQUEST',
@@ -28,7 +44,6 @@ export const GEOCODING_ERROR_CODES = [
   'GEOCODING_QUOTA_EXCEEDED',
   'GEOCODING_REQUEST_TOO_LARGE',
   'GEOCODING_SUGGESTION_EXPIRED',
-  'GEOCODING_TERRITORY_UNSUPPORTED',
   'GEOCODING_UNAVAILABLE',
   'GEOCODING_UPSTREAM_INVALID',
   'GEOCODING_UPSTREAM_THROTTLED',
@@ -40,6 +55,13 @@ export const GEOCODING_ERROR_CODES = [
 export type GeocodingErrorCode = (typeof GEOCODING_ERROR_CODES)[number];
 
 const geocodingErrorStatuses: Record<GeocodingErrorCode, number> = {
+  GEOCODING_FILTER_UNSUPPORTED: 422,
+  GEOCODING_PLAN_UNAVAILABLE: 403,
+  GEOCODING_EVALUATION_REQUIRED: 403,
+  GEOCODING_EVALUATION_EXPIRED: 403,
+  GEOCODING_EVALUATION_EXHAUSTED: 429,
+  GEOCODING_INVALID_CURSOR: 400,
+  GEOCODING_CURSOR_EXPIRED: 410,
   GEOCODING_ABORTED: 499,
   GEOCODING_DISABLED: 503,
   GEOCODING_INVALID_REQUEST: 400,
@@ -48,7 +70,6 @@ const geocodingErrorStatuses: Record<GeocodingErrorCode, number> = {
   GEOCODING_QUOTA_EXCEEDED: 429,
   GEOCODING_REQUEST_TOO_LARGE: 413,
   GEOCODING_SUGGESTION_EXPIRED: 410,
-  GEOCODING_TERRITORY_UNSUPPORTED: 422,
   GEOCODING_UNAVAILABLE: 503,
   GEOCODING_UPSTREAM_INVALID: 502,
   GEOCODING_UPSTREAM_THROTTLED: 429,
@@ -93,16 +114,23 @@ export class GeocodingError extends Error {
   readonly code: GeocodingErrorCode | null;
   readonly requestId: string | null;
   readonly status: number;
+  readonly retryAfterSeconds: number | null;
 
   constructor(
     message: string,
-    input: {code?: GeocodingErrorCode; requestId?: string; status: number},
+    input: {
+      code?: GeocodingErrorCode;
+      requestId?: string;
+      status: number;
+      retryAfterSeconds?: number | null;
+    },
   ) {
     super(message);
     this.name = 'GeocodingError';
     this.code = input.code ?? null;
     this.requestId = input.requestId ?? null;
     this.status = input.status;
+    this.retryAfterSeconds = input.retryAfterSeconds ?? null;
   }
 }
 
@@ -173,10 +201,49 @@ export async function resolveSuggestion(
   }
 
   return requestGeocoding(
-    '/v1/geocoding/resolve-suggestion',
+    '/v1/geocoding/resolve',
     parsedRequest.data,
     options,
     resolveSuggestionResponseSchema,
+  );
+}
+
+export const resolvePlace = resolveSuggestion;
+
+export async function searchNearby(
+  request: NearbyRequest,
+  options: GeocodeOptions,
+): Promise<NearbyResponse> {
+  const parsed = nearbyRequestSchema.safeParse(request);
+  if (!parsed.success) throw new Error('Invalid Tileflow Nearby request');
+  const query = parsed.data;
+  if (
+    (query.radiusMeters !== undefined && query.bounds !== undefined) ||
+    query.includeCategories?.some((id) => query.excludeCategories?.includes(id))
+  ) {
+    throw new GeocodingError('Unsupported geocoding filters', {
+      code: 'GEOCODING_FILTER_UNSUPPORTED',
+      status: 422,
+    });
+  }
+  return requestGeocoding(
+    '/v1/geocoding/nearby',
+    query,
+    options,
+    nearbyResponseSchema,
+    (response) => response.results.length <= query.limit,
+    nearbyLimits.maximumResponseBytes,
+  );
+}
+
+export function listCategories(options: GeocodeOptions): Promise<SearchCategoriesResponse> {
+  return requestGeocoding(
+    '/v1/geocoding/categories',
+    undefined,
+    options,
+    searchCategoriesResponseSchema,
+    () => true,
+    nearbyLimits.maximumResponseBytes,
   );
 }
 
@@ -184,26 +251,34 @@ async function requestGeocoding<T>(
   path:
     | '/v1/geocoding/autocomplete'
     | '/v1/geocoding/forward'
-    | '/v1/geocoding/resolve-suggestion'
-    | '/v1/geocoding/reverse',
+    | '/v1/geocoding/resolve'
+    | '/v1/geocoding/reverse'
+    | '/v1/geocoding/nearby'
+    | '/v1/geocoding/categories',
   request: unknown,
   options: GeocodeOptions,
   responseSchema: z.ZodType<T>,
   isExpectedResponse: (response: T) => boolean = () => true,
+  maximumResponseBytes = geocodingLimits.maximumResponseBytes,
 ): Promise<T> {
+  const bodyText = request === undefined ? undefined : JSON.stringify(request);
+  const maximumRequestBytes =
+    path === '/v1/geocoding/nearby' ? nearbyLimits.maximumRequestBytes : 8 * 1024;
+  if (bodyText && new TextEncoder().encode(bodyText).byteLength > maximumRequestBytes)
+    throw new Error('Tileflow Search request is too large');
   const apiKey = normalizeApiKey(options.apiKey);
   const apiUrl = normalizeApiUrl(options.apiUrl ?? 'https://api.tileflow.dev');
   const fetcher = options.fetch ?? fetch;
   let response: Response;
   try {
     response = await fetcher(`${apiUrl}${path}`, {
-      body: JSON.stringify(request),
+      ...(bodyText === undefined ? {} : {body: bodyText}),
       headers: {
         Accept: 'application/json',
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      method: 'POST',
+      method: request === undefined ? 'GET' : 'POST',
       redirect: 'error',
       signal: options.signal,
     });
@@ -223,7 +298,7 @@ async function requestGeocoding<T>(
 
   let body: unknown;
   try {
-    body = await readBoundedJson(response, geocodingLimits.maximumResponseBytes, options.signal);
+    body = await readBoundedJson(response, maximumResponseBytes, options.signal);
   } catch (error) {
     if (options.signal?.aborted) throw options.signal.reason ?? error;
     throw new GeocodingError('Tileflow geocoding returned an invalid response', {
@@ -284,12 +359,18 @@ function normalizeApiUrl(value: string) {
 }
 
 async function readGeocodingError(response: Response, signal?: AbortSignal) {
+  const value = response.headers.get('Retry-After');
+  const delay = value && /^\d{1,8}$/u.test(value) ? Number(value) : null;
+  const retryAfterSeconds = delay !== null && delay <= 31_536_000 ? delay : null;
   let body: unknown;
   try {
     body = await readBoundedJson(response, geocodingLimits.maximumSafeErrorBytes, signal);
   } catch (error) {
     if (signal?.aborted) throw signal.reason ?? error;
-    return new GeocodingError('Tileflow geocoding request failed', {status: response.status});
+    return new GeocodingError('Tileflow geocoding request failed', {
+      retryAfterSeconds,
+      status: response.status,
+    });
   }
 
   const geocoding = geocodingErrorResponseSchema.safeParse(body);
@@ -297,6 +378,7 @@ async function readGeocodingError(response: Response, signal?: AbortSignal) {
     return new GeocodingError(geocoding.data.error, {
       code: geocoding.data.code,
       requestId: geocoding.data.requestId,
+      retryAfterSeconds,
       status: response.status,
     });
   }
@@ -304,10 +386,14 @@ async function readGeocodingError(response: Response, signal?: AbortSignal) {
   if (credential.success && [401, 403, 429].includes(response.status)) {
     return new GeocodingError(credential.data.error, {
       requestId: credential.data.requestId,
+      retryAfterSeconds,
       status: response.status,
     });
   }
-  return new GeocodingError('Tileflow geocoding request failed', {status: response.status});
+  return new GeocodingError('Tileflow geocoding request failed', {
+    retryAfterSeconds,
+    status: response.status,
+  });
 }
 
 async function readBoundedJson(response: Response, maximumBytes: number, signal?: AbortSignal) {

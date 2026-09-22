@@ -85,6 +85,7 @@ import {
 import {registerAiCommands} from './ai-commands';
 import {installSignalAbortController, registerCaptureCommands} from './capture-command';
 import {writeAtomicFile} from './capture-output';
+import {isRootCliVersionRequest} from './cli-version';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 import {registerConfigInspectCommand} from './config-inspect-command';
 import {registerCoordinatesCommands} from './coordinates-command';
@@ -140,9 +141,10 @@ const defaultManifestPath = defaultTileflowManifestPath;
 program
   .name('tileflow')
   .description('Beautiful maps from config.')
-  .version(packageJson.version)
   .showHelpAfterError(pc.gray('\nRun tileflow <command> --help for usage.'))
   .showSuggestionAfterError();
+
+program.addHelpText('after', '\n  -V, --version  output the version number\n');
 
 registerLanguageCommand(program);
 registerTilesetCommands(program, {defaultApiUrl, loadAuthConfig});
@@ -1405,10 +1407,14 @@ registerProjectCommands(program, {
   loadAuthConfig,
 });
 
-program.parseAsync().catch((error: unknown) => {
-  printCliError(error);
-  process.exitCode = 1;
-});
+if (isRootCliVersionRequest(process.argv.slice(2))) {
+  process.stdout.write(`${packageJson.version}\n`);
+} else {
+  program.parseAsync().catch((error: unknown) => {
+    printCliError(error);
+    process.exitCode = 1;
+  });
+}
 
 type TileflowDevServer = ReturnType<typeof serve>;
 

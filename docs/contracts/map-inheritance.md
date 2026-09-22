@@ -6,8 +6,8 @@ single `defineMap()` constructor and the same design fields. The semantic compil
 Inheritance is resolved completely
 before validation, asset preparation, compilation, capture, build, or deploy.
 
-`streets`, `baedeker`, `cyberpunk`, `ferraris`, `harad`, `matrix`, `siegfried`, `soundings`,
-`verdant`, and `sanFrancisto` are first-party standalone maps. Streets and Siegfried own coordinated
+`streets`, `baedeker`, `civica`, `cyberpunk`, `ferraris`, `harad`, `matrix`, `siegfried`, `soundings`,
+`verdant`, `sanFrancisto`, and `superTileWorld` are first-party standalone maps. Streets and Siegfried own coordinated
 light and dark themes. Every official map defines its complete design directly: none imports or
 extends another official map, and each declares only its own asset providers. They are exported
 from `@tileflow/maps`; there is no public basemap,
@@ -87,12 +87,14 @@ Directories are read from left to right. `<id>.<ext>` publishes an ordinary icon
 `<id>.pattern.<ext>` publishes an intrinsic-size line/fill pattern as `<id>`. That published ID must
 already be canonical lower-kebab-case. A later directory replaces an earlier file only when the ID
 matches exactly; case-only collisions fail. The official directory descriptors `streetsIcons`,
-`baedekerIcons`, `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`,
-`cyberpunkIcons`, `matrixIcons`, `verdantIcons`, and `sanFrancistoIcons` let maps reuse package assets
+`baedekerIcons`, `civicaIcons`, `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`,
+`cyberpunkIcons`, `matrixIcons`, `verdantIcons`, `sanFrancistoIcons`, and `superTileWorldIcons` let maps reuse package assets
 without exposing installation paths. Baedeker, Ferraris, Härad, Siegfried, Soundings, Verdant, and
 San Francisto declare only `[baedekerIcons]`, `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
 `[soundingsIcons]`, `[verdantIcons]`, and `[sanFrancistoIcons]`, respectively; none of these
-standalone maps composes with Streets assets.
+standalone maps composes with Streets assets. Cívica likewise owns only `[civicaIcons]` and
+`[civicaFonts]` for its original civic-print artwork and packaged lettering. Super Tile World owns
+`[superTileWorldIcons]` and `[superTileWorldFonts]` for its pixel-art sprites, patterns, and lettering.
 Baedeker's eight original Tileflow patterns use historical Baedeker and Wagner & Debes maps only as
 visual references: no scan, source pixel, historical typeface, legend artwork, geospatial data, or
 source map is redistributed, and the map is not affiliated with or endorsed by Baedeker or Wagner

@@ -332,8 +332,8 @@ source classes into one civic color.
 
 World and text assets are independent contracts. `tileflowWorld()` selects `world-v1/current` or an
 exact `releaseId + descriptorSha256`; a `glyphs` declaration contains its own complete URL. Ordinary
-imports of Streets, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant,
-and San Francisto
+imports of Streets, Baedeker, Cívica, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant,
+San Francisto, and Super Tile World
 remain usable because each official map owns or inherits a URL or packaged-font provider.
 URL-backed maps become exact-byte reproducible
 when the immutable global base-asset set is published and their explicit URL is updated to its

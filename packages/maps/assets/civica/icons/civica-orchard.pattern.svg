@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="32" viewBox="0 0 64 32">
+  <title>Cívica orchard</title>
+  <desc>Original staggered small orchard crowns with a single ink seed.</desc>
+  <g fill="none" stroke="#73834D" stroke-width=".65" opacity=".5">
+    <circle cx="8" cy="7" r="2.2"/>
+    <circle cx="40" cy="7" r="2.2"/>
+    <circle cx="24" cy="23" r="2.2"/>
+    <circle cx="56" cy="23" r="2.2"/>
+  </g>
+  <g fill="#73834D" opacity=".35">
+    <circle cx="8" cy="7" r=".5"/>
+    <circle cx="40" cy="7" r=".5"/>
+    <circle cx="24" cy="23" r=".5"/>
+    <circle cx="56" cy="23" r=".5"/>
+  </g>
+</svg>

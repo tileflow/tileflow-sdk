@@ -8,6 +8,9 @@ import {
   baedeker,
   baedekerFonts,
   baedekerIcons,
+  civica,
+  civicaFonts,
+  civicaIcons,
   cyberpunk,
   cyberpunkFonts,
   cyberpunkIcons,
@@ -29,6 +32,9 @@ import {
   streets,
   streetsIcons,
   streetsThemes,
+  superTileWorld,
+  superTileWorldFonts,
+  superTileWorldIcons,
   verdant,
   verdantIcons,
 } from '../src';
@@ -42,6 +48,22 @@ const officialIconIds = [
   'baedeker-sand',
   'baedeker-water-lines',
   'baedeker-wetland',
+  'civica-industrial-hatch',
+  'civica-orchard',
+  'civica-paper-grain',
+  'civica-park-groves',
+  'civica-poi-airport',
+  'civica-poi-civic-star',
+  'civica-poi-dot',
+  'civica-poi-food',
+  'civica-poi-garden',
+  'civica-poi-hospital',
+  'civica-poi-lodging',
+  'civica-poi-monument',
+  'civica-poi-museum',
+  'civica-poi-shopping',
+  'civica-poi-transit',
+  'civica-water-lines',
   'coffee',
   'crosswalk',
   'culture',
@@ -120,6 +142,29 @@ const officialIconIds = [
   'soundings-rock-awash',
   'soundings-water-dots',
   'soundings-wreck',
+  'stw-airship',
+  'stw-book',
+  'stw-brick',
+  'stw-castle',
+  'stw-coin',
+  'stw-farmland',
+  'stw-flag',
+  'stw-flower',
+  'stw-forest',
+  'stw-ghost-house',
+  'stw-grass',
+  'stw-heart',
+  'stw-hill',
+  'stw-level-node',
+  'stw-meadow',
+  'stw-mushroom',
+  'stw-mushroom-house',
+  'stw-question-block',
+  'stw-sand',
+  'stw-star',
+  'stw-tree',
+  'stw-warp-pipe',
+  'stw-water',
   'verdant-field-hatch',
   'verdant-forest-canopy',
   'verdant-heath-tufts',
@@ -270,6 +315,7 @@ function compiledLayerForTarget(
 test('exports every official map as an independent standalone semantic map', async () => {
   const officialMaps = {
     baedeker,
+    civica,
     cyberpunk,
     ferraris,
     harad,
@@ -278,6 +324,7 @@ test('exports every official map as an independent standalone semantic map', asy
     siegfried,
     soundings,
     streets,
+    'super-tile-world': superTileWorld,
     verdant,
   } as const;
   const officialMapIds = new Set(Object.keys(officialMaps));
@@ -295,7 +342,7 @@ test('exports every official map as an independent standalone semantic map', asy
 
     const source = await readFile(new URL(`../src/official/${id}.ts`, import.meta.url), 'utf8');
     assert.match(source, /\bdefineMap\s*\(/u, `${id} is not authored as a standalone map`);
-    if (id === 'cyberpunk' || id === 'matrix' || id === 'san-francisto') {
+    if (['civica', 'cyberpunk', 'matrix', 'san-francisto', 'super-tile-world'].includes(id)) {
       assert.match(source, /\bwithRenderStack\s*\(/u, `${id} lost its semantic render stack`);
       assert.match(source, /\bfield\s*\(/u, `${id} lost its schema-bound field references`);
       assert.doesNotMatch(
@@ -318,7 +365,9 @@ test('exports every official map as an independent standalone semantic map', asy
 test('deep-freezes only the exported official map singletons', () => {
   for (const map of [
     streets,
+    superTileWorld,
     baedeker,
+    civica,
     ferraris,
     harad,
     siegfried,
@@ -368,7 +417,9 @@ test('deep-freezes only the exported official map singletons', () => {
 
 test('official maps declare their expected icon and typography providers', () => {
   const resolvedBaedeker = resolveMap(baedeker);
+  const resolvedCivica = resolveMap(civica);
   const resolvedStreets = resolveMap(streets);
+  const resolvedSuperTileWorld = resolveMap(superTileWorld);
   const resolvedCyberpunk = resolveMap(cyberpunk);
   const resolvedFerraris = resolveMap(ferraris);
   const resolvedHarad = resolveMap(harad);
@@ -379,7 +430,11 @@ test('official maps declare their expected icon and typography providers', () =>
   const resolvedVerdant = resolveMap(verdant);
 
   assert.deepEqual(resolvedBaedeker.icons, [baedekerIcons]);
+  assert.deepEqual(resolvedCivica.icons, [civicaIcons]);
   assert.deepEqual(resolvedStreets.icons, [streetsIcons]);
+  assert.deepEqual(resolvedSuperTileWorld.icons, [superTileWorldIcons]);
+  assert.deepEqual(resolvedSuperTileWorld.fonts, [superTileWorldFonts]);
+  assert.equal(resolvedSuperTileWorld.glyphs, undefined);
   assert.deepEqual(resolvedCyberpunk.icons, [cyberpunkIcons]);
   assert.deepEqual(resolvedFerraris.icons, [ferrarisIcons]);
   assert.deepEqual(resolvedHarad.icons, [haradIcons]);
@@ -401,6 +456,8 @@ test('official maps declare their expected icon and typography providers', () =>
     kind: 'url',
     url: officialGlyphsUrl,
   });
+  assert.deepEqual(resolvedCivica.fonts, [civicaFonts]);
+  assert.equal(resolvedCivica.glyphs, undefined);
   assert.deepEqual(resolvedFerraris.glyphs, resolvedStreets.glyphs);
   assert.deepEqual(resolvedHarad.glyphs, resolvedStreets.glyphs);
   assert.deepEqual(resolvedSoundings.glyphs, resolvedStreets.glyphs);
@@ -668,6 +725,7 @@ test('San Francisto is self-contained and references exactly its blueprint asset
 test('all official maps compile directly after their packaged sprite is prepared', () => {
   for (const [id, map] of Object.entries({
     baedeker,
+    civica,
     cyberpunk,
     ferraris,
     harad,
@@ -676,6 +734,7 @@ test('all official maps compile directly after their packaged sprite is prepared
     siegfried,
     soundings,
     streets,
+    'super-tile-world': superTileWorld,
     verdant,
   })) {
     const style = compileOfficialMap(map);
@@ -684,7 +743,12 @@ test('all official maps compile directly after their packaged sprite is prepared
     assert.equal(style.sprite, `/tileflow/icons/${id}/sprite`);
     assert.equal(
       style.glyphs,
-      id === 'baedeker' || id === 'cyberpunk' || id === 'matrix' || id === 'siegfried'
+      id === 'baedeker' ||
+        id === 'civica' ||
+        id === 'cyberpunk' ||
+        id === 'matrix' ||
+        id === 'siegfried' ||
+        id === 'super-tile-world'
         ? undefined
         : officialGlyphsUrl,
     );
@@ -794,7 +858,9 @@ test('Streets-family maps overlap ordinary road endpoints without extending stru
 test('official road maps avoid seam-prone caps on ordinary surface and bridge segments', () => {
   for (const [mapId, map] of Object.entries({
     streets,
+    'super-tile-world': superTileWorld,
     baedeker,
+    civica,
     cyberpunk,
     matrix,
     ferraris,
@@ -847,6 +913,7 @@ test('official maps compile against generic OpenMapTiles without optional capabi
 
   for (const [id, map] of Object.entries({
     baedeker,
+    civica,
     cyberpunk,
     ferraris,
     harad,
@@ -855,6 +922,7 @@ test('official maps compile against generic OpenMapTiles without optional capabi
     siegfried,
     soundings,
     streets,
+    'super-tile-world': superTileWorld,
     verdant,
   })) {
     const derived = defineMap({id: `${id}-generic`, version: 1, extends: map, data});
@@ -888,6 +956,15 @@ test('official maps emit only exact declared font-face stacks', () => {
       JSON.stringify(['Cormorant Garamond Regular']),
       JSON.stringify(['Cormorant Garamond SemiBold']),
     ]),
+    civica: new Set([
+      JSON.stringify(['DM Serif Text Regular']),
+      JSON.stringify(['DM Serif Text Regular', 'Noto Sans Regular']),
+      JSON.stringify(['DM Serif Text Italic', 'Noto Sans Regular']),
+      JSON.stringify(['Barlow Semi Condensed Regular']),
+      JSON.stringify(['Barlow Semi Condensed Regular', 'Noto Sans Regular']),
+      JSON.stringify(['Barlow Semi Condensed SemiBold']),
+      JSON.stringify(['Barlow Semi Condensed SemiBold', 'Noto Sans Regular']),
+    ]),
     cyberpunk: new Set([JSON.stringify(['Oxanium Medium']), JSON.stringify(['Oxanium SemiBold'])]),
     ferraris: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
     harad: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
@@ -903,11 +980,19 @@ test('official maps emit only exact declared font-face stacks', () => {
     ]),
     soundings: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
     streets: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
+    'super-tile-world': new Set([
+      JSON.stringify(['Pixelify Sans Regular']),
+      JSON.stringify(['Pixelify Sans Regular', 'Noto Sans Regular']),
+      JSON.stringify(['Pixelify Sans SemiBold', 'Noto Sans Regular']),
+      JSON.stringify(['Tile World Arcade Regular']),
+      JSON.stringify(['Tile World Arcade Regular', 'Noto Sans Regular']),
+    ]),
     verdant: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
   } as const;
 
   for (const [id, map] of Object.entries({
     baedeker,
+    civica,
     cyberpunk,
     ferraris,
     harad,
@@ -916,6 +1001,7 @@ test('official maps emit only exact declared font-face stacks', () => {
     siegfried,
     soundings,
     streets,
+    'super-tile-world': superTileWorld,
     verdant,
   })) {
     const actual = new Set(
@@ -995,6 +1081,8 @@ test('non-Streets official maps do not use Streets surface colors', () => {
 
   for (const [id, map, ownSignatures] of [
     ['baedeker', baedeker, ['#E8DABD', '#9DC8CC']],
+    ['civica', civica, ['#F7F3E8', '#B4C8D9']],
+    ['super-tile-world', superTileWorld, ['#A8DC73', '#58BCE0']],
     ['cyberpunk', cyberpunk, ['#071E31', '#0D2828']],
     ['harad', harad, ['#C4DED5', '#E1B23B']],
     ['matrix', matrix, ['#010704', '#63F77B']],

@@ -235,11 +235,12 @@ export default defineMap({
 Directories apply left to right. `<id>.<ext>` publishes an icon as `<id>`;
 `<id>.pattern.<ext>` publishes the intrinsic-size pattern as `<id>`. The published ID must already
 be canonical lower-kebab-case. A later file replaces an earlier file only for the same exact ID;
-case-only collisions fail. Package maps export `streetsIcons`, `baedekerIcons`, `ferrarisIcons`,
-`haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`, and
-`verdantIcons`, and `sanFrancistoIcons` directory descriptors from `@tileflow/maps`. Cyberpunk,
-Matrix, Baedeker, and Siegfried also export `cyberpunkFonts`, `matrixFonts`, `baedekerFonts`, and
-`siegfriedFonts`. Preparation
+case-only collisions fail. Package maps export `streetsIcons`, `baedekerIcons`, `civicaIcons`,
+`ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`,
+`verdantIcons`, `sanFrancistoIcons`, and `superTileWorldIcons` directory descriptors from
+`@tileflow/maps`. Cyberpunk, Matrix, Baedeker, Cívica, Siegfried, and Super Tile World also export
+`cyberpunkFonts`, `matrixFonts`, `baedekerFonts`, `civicaFonts`, `siegfriedFonts`, and
+`superTileWorldFonts`. Preparation
 resolves package descriptors inside their owning package, checks real-path containment, and
 compiles them through the same pipeline as a config-relative directory. There are no
 built-in/source/sprite selectors, mappings, icon-specific inheritance, or compatibility aliases.

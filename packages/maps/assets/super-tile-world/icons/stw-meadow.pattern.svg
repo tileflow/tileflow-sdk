@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="256" viewBox="0 0 128 256" shape-rendering="crispEdges">
+  <title>Meadow miniature grove and smiling hill</title>
+  <g fill="#82B968">
+    <path d="M104 38H106V40H108V34H110V40H112V37H114V42H104Z"/>
+    <path d="M91 87H93V89H95V83H97V89H99V86H101V91H91Z"/>
+    <path d="M51 214H53V216H55V210H57V216H59V213H61V218H51Z"/>
+    <path d="M30 173H32V175H34V169H36V175H38V172H40V177H30Z"/>
+  </g>
+  <g fill="#FFF7D4">
+    <path d="M91 121H93V127H91ZM89 123H95V125H89Z"/>
+    <path d="M23 215H25V221H23ZM21 217H27V219H21Z"/>
+  </g>
+  <g fill="#F5CC6B"><rect x="91" y="123" width="2" height="2"/><rect x="23" y="217" width="2" height="2"/></g>
+  <g transform="translate(18 51)">
+    <path d="M7 22H13V32H7Z" fill="#AA9263" stroke="#5B8D59" stroke-width="2"/>
+    <path d="M5 2H13V5H17V9H20V19H17V23H13V25H5V23H1V19H-1V9H1V5H5Z" fill="#73B665" stroke="#3F8755" stroke-width="2"/>
+    <path d="M4 5H10V8H5V12H2V9H4Z" fill="#B0D67D"/>
+    <path d="M14 8H17V12H19V19H16V22H12V24H7V22H12V19H15V13H14Z" fill="#559F5F"/>
+    <rect x="6" y="13" width="2" height="4" fill="#3F8755"/><rect x="12" y="13" width="2" height="4" fill="#3F8755"/>
+  </g>
+  <g transform="translate(36 44)">
+    <path d="M9 28H15V39H9Z" fill="#AA9263" stroke="#5B8D59" stroke-width="2"/>
+    <path d="M7 1H17V4H21V8H24V14H26V22H23V26H18V29H7V26H2V22H-1V14H1V8H4V4H7Z" fill="#7FBE6A" stroke="#3F8755" stroke-width="2"/>
+    <path d="M7 5H13V8H7V12H4V17H1V12H3V7H7Z" fill="#BDDFA0"/>
+    <path d="M18 7H21V11H23V16H25V22H22V25H17V28H9V25H16V22H20V17H21V13H18Z" fill="#5DA663"/>
+    <rect x="8" y="16" width="2" height="4" fill="#3F8755"/><rect x="15" y="16" width="2" height="4" fill="#3F8755"/>
+    <rect x="11" y="23" width="3" height="1" fill="#3F8755"/>
+  </g>
+  <g transform="translate(88 159)">
+    <path d="M0 26V17H3V10H6V5H10V2H16V5H20V10H23V17H26V26Z" fill="#8FC576" stroke="#4A955B" stroke-width="2"/>
+    <path d="M17 6H20V11H22V18H25V25H19V21H20V16H18V11H17Z" fill="#6EAD68"/>
+    <path d="M10 5H14V7H9V12H6V16H3V12H5V8H8V5Z" fill="#BDDFA0"/>
+    <rect x="9" y="16" width="2" height="4" fill="#4A955B"/><rect x="15" y="16" width="2" height="4" fill="#4A955B"/>
+    <rect x="12" y="22" width="3" height="1" fill="#4A955B"/>
+  </g>
+</svg>

@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" shape-rendering="crispEdges">
+  <title>Hill</title>
+  <path d="M4 41V29H7V20H10V13H15V7H20V4H28V7H33V13H38V20H41V29H44V41Z" fill="#55C56F" stroke="#28345C" stroke-width="2" stroke-linejoin="miter"/><path d="M30 9H33V14H37V21H40V30H43V40H32V34H35V23H32V18H30Z" fill="#278558"/><path d="M19 8H24V11H18V16H15V24H11V21H12V14H15V10H19Z" fill="#AFE776"/><rect x="20" y="24" width="2" height="5" fill="#28345C"/><rect x="28" y="24" width="2" height="5" fill="#28345C"/><rect x="23" y="32" width="5" height="2" fill="#28345C"/><rect x="14" y="33" width="3" height="2" fill="#AFE776"/>
+</svg>

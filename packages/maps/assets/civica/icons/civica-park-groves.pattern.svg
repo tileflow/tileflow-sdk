@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <title>Cívica park groves</title>
+  <desc>Original small tree rings scattered in loose civic garden groves.</desc>
+  <g fill="none" stroke="#657747" stroke-width=".65" opacity=".45">
+    <path d="M11 8a2.2 2.2 0 1 1-.1 0m3.8 4.6a1.6 1.6 0 1 1-.1 0M47 7a1.8 1.8 0 1 1-.1 0m4.3 3.5a2.2 2.2 0 1 1-.1 0M29 30a2 2 0 1 1-.1 0m4.3 4.6a1.7 1.7 0 1 1-.1 0M59 32a1.9 1.9 0 1 1-.1 0M8 47a1.7 1.7 0 1 1-.1 0m4 3.7a2.1 2.1 0 1 1-.1 0M47 52a2.2 2.2 0 1 1-.1 0"/>
+  </g>
+  <g fill="#657747" opacity=".3">
+    <circle cx="22" cy="16" r=".6"/>
+    <circle cx="58" cy="18" r=".55"/>
+    <circle cx="25" cy="43" r=".55"/>
+    <circle cx="54" cy="49" r=".6"/>
+  </g>
+</svg>

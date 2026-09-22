@@ -7,8 +7,8 @@ and visual evidence must change atomically. The canonical workbench is
 the official maps under `packages/maps/src/official/`. The Tileflow Tiles playground consumes
 exact npm packages after publication; it is not the place to invent SDK controls.
 
-Streets, Baedeker, Cyberpunk, Ferraris, Härad, Matrix, Siegfried, Soundings, Verdant, and San
-Francisto are Tileflow's first-party standalone maps, declared with `defineMap()` and compiled
+Streets, Baedeker, Cívica, Cyberpunk, Ferraris, Härad, Matrix, Siegfried, Soundings, Verdant, San
+Francisto, and Super Tile World are Tileflow's first-party standalone maps, declared with `defineMap()` and compiled
 directly from Tileflow-owned semantic modules. The sole semantic compiler is implicit, and they
 define their full designs independently: no official map imports or extends another official map,
 and each owns its asset providers. Streets owns coordinated light and dark appearances.
@@ -77,7 +77,9 @@ Official maps own their source assets in `@tileflow/maps/assets/<id>/`. Streets 
 `[matrixIcons]`. Baedeker, Ferraris, Härad, Siegfried, Soundings, Verdant, and San Francisto likewise
 declare only `[baedekerIcons]`, `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
 `[soundingsIcons]`, `[verdantIcons]`, and `[sanFrancistoIcons]`, respectively; none composes another
-official map's assets. Baedeker owns eight original patterns informed by historical Baedeker and
+official map's assets. Cívica declares `[civicaIcons]` for its original civic-print patterns and
+symbols and `[civicaFonts]` for its packaged lettering. Super Tile World declares
+`[superTileWorldIcons]` and `[superTileWorldFonts]` for its pixel-art sprites, patterns, and lettering. Baedeker owns eight original patterns informed by historical Baedeker and
 Wagner & Debes visual references without redistributing scans, source pixels, historical
 typefaces, legend artwork, geospatial data, or source maps; it is not affiliated with or endorsed
 by Baedeker or Wagner & Debes. Its separately licensed Cormorant files and OFL license live in its

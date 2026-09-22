@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+  <title>Cívica shopping</title>
+  <desc>Original paper shopping bag pictogram.</desc>
+  <path d="M11 11V9a3 3 0 0 1 6 0v2" fill="none" stroke="#F7F3E8" stroke-width="3.3" stroke-linecap="round"/>
+  <path d="M8 10h12l1 11H7Z" fill="#64716D" stroke="#F7F3E8" stroke-width="1.6" stroke-linejoin="round" paint-order="stroke fill"/>
+  <path d="M11 11V9a3 3 0 0 1 6 0v2" fill="none" stroke="#64716D" stroke-width="1.7" stroke-linecap="round"/>
+  <path d="M11 12v1.2M17 12v1.2" fill="none" stroke="#F7F3E8" stroke-width="1.4" stroke-linecap="round"/>
+</svg>

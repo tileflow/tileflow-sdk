@@ -50,6 +50,7 @@ FOUNDATION_EXPORT BOOL TFAdmissionHasReservedContext(NSString *url);
 FOUNDATION_EXPORT NSDictionary<NSString *, NSString *> *TFAdmissionStripContext(NSString *url);
 FOUNDATION_EXPORT NSString *TFAdmissionCleanURL(NSString *url);
 FOUNDATION_EXPORT NSString *TFAdmissionOrigin(NSString *url);
+FOUNDATION_EXPORT BOOL TFAdmissionStyleMatchesMap(NSString *url, NSString *mapId);
 FOUNDATION_EXPORT BOOL TFAdmissionValidToken(id value);
 FOUNDATION_EXPORT NSError *TFAdmissionSafeError(void);
 

@@ -850,7 +850,7 @@ program
   .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
   .option('--map-id <id>', 'managed Map destination')
-	.option('--with-native', 'publish web and native-v1 together for the selected managed Map')
+  .option('--with-native', 'publish web and native-v1 together for the selected managed Map')
   .option('--map <name>', 'configured map to connect when the repository contains multiple maps')
   .option(
     '--overwrite-self-hosted-manifest',
@@ -869,7 +869,7 @@ program
       map?: string;
       offline?: boolean;
       overwriteSelfHostedManifest?: boolean;
-			withNative?: boolean;
+      withNative?: boolean;
     }) => {
       const source = resolveDeploySource(process.env);
       const resolveApi = (selectedMap?: string) =>
@@ -889,7 +889,7 @@ program
             ...(options.overwriteSelfHostedManifest ? ['--overwrite-self-hosted-manifest'] : []),
             ...(options.mapId ? ['--map-id', options.mapId] : []),
             ...(options.map && selectedMap ? ['--map', selectedMap] : []),
-						...(options.withNative ? ['--with-native'] : []),
+            ...(options.withNative ? ['--with-native'] : []),
           ]),
         });
       const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
@@ -898,20 +898,25 @@ program
       // imports tileflow.config.ts or anything that file imports.
       delete process.env.TILEFLOW_API_KEY;
 
-			if (options.withNative) {
-				const result = await runHostedNativeDeploy({...options, apiUrl}, {
-					source,
-					resolveApi,
-					loadManifest: loadExistingDeployManifest,
-					writeManifest: writeDeployManifest,
-				});
-				if (result) {
-					logSuccess(`${result.changed ? 'Published' : 'Unchanged'} ${pc.bold(result.mapName)} web + native-v1 (v${result.version}).`);
-					printKeyValue('Manifest', pathLabel(result.manifestPath));
-					printKeyValue('Native', link(result.nativeManifestUrl));
-				}
-				return;
-			}
+      if (options.withNative) {
+        const result = await runHostedNativeDeploy(
+          {...options, apiUrl},
+          {
+            source,
+            resolveApi,
+            loadManifest: loadExistingDeployManifest,
+            writeManifest: writeDeployManifest,
+          },
+        );
+        if (result) {
+          logSuccess(
+            `${result.changed ? 'Published' : 'Unchanged'} ${pc.bold(result.mapName)} web + native-v1 (v${result.version}).`,
+          );
+          printKeyValue('Manifest', pathLabel(result.manifestPath));
+          printKeyValue('Native', link(result.nativeManifestUrl));
+        }
+        return;
+      }
 
       logInfo(`Deploying ${pathLabel(options.config)}.`);
       const loaded = await withTileflowConfigSecretsHidden(() =>

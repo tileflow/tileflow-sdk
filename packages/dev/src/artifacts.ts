@@ -88,6 +88,8 @@ import {
   validateTileflowStyle,
 } from './style-validation';
 
+export {prepareTileflowHostedNativeDeployment} from './hosted-native-artifacts';
+
 export type {
   PreparedTileflowCatalog,
   PreparedTileflowBuildCatalog,

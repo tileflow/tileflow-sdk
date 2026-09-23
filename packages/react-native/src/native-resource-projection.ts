@@ -83,7 +83,8 @@ function owned(
   const base = /^\/base\/[0-9a-f]{64}\/(.+)$/u.exec(path)?.[1];
   if (scope === 'style') {
     const prefix = `/maps/${policy.mapId}/`;
-    const legacy = path.startsWith(prefix) && /^[a-z0-9][a-z0-9-]{0,63}\.json$/u.test(path.slice(prefix.length));
+    const legacy =
+      path.startsWith(prefix) && /^[a-z0-9][a-z0-9-]{0,63}\.json$/u.test(path.slice(prefix.length));
     if (!legacy && !nativeVersionedStyleMatchesMap(url, policy.mapId)) throw invalid();
   } else if (scope === 'tilejson' || scope === 'tile') {
     const match = /^\/(?:v1\/)?tiles\/([A-Za-z0-9._:-]{1,255})\/(.+)$/u.exec(path);

@@ -38,20 +38,29 @@ export function nativeResourceOrigin(url: string): string {
 
 /** Query aliases and encoded path aliases do not identify a protected Native deployment style. */
 export function nativeVersionedStyleMatchesMap(url: string, mapId: string): boolean {
-	try {
-		const path = url.slice(nativeResourceOrigin(url).length);
-		const match = /^\/maps\/(map_[A-Za-z0-9_-]{16})\/native\/v([1-9][0-9]{0,15})\/([A-Za-z][A-Za-z0-9_-]{0,63})\.json$/u.exec(path);
-		return Boolean(match && match[1] === mapId && Number.isSafeInteger(Number(match[2])));
-	} catch { return false; }
+  try {
+    const path = url.slice(nativeResourceOrigin(url).length);
+    const match =
+      /^\/maps\/(map_[A-Za-z0-9_-]{16})\/native\/v([1-9][0-9]{0,15})\/([A-Za-z][A-Za-z0-9_-]{0,63})\.json$/u.exec(
+        path,
+      );
+    return Boolean(match && match[1] === mapId && Number.isSafeInteger(Number(match[2])));
+  } catch {
+    return false;
+  }
 }
 
 function styleScopeAllowsMap(url: string, mapId: string): boolean {
-	try {
-		const path = url.slice(nativeResourceOrigin(url).length);
-		// Existing exact catalogs remain valid; the reserved renderer route has a stronger identity.
-		return !/^\/maps\/[^/?#]+\/native(?:[/?#]|$)/u.test(decodeURIComponent(path)) ||
-			nativeVersionedStyleMatchesMap(url, mapId);
-	} catch { return false; }
+  try {
+    const path = url.slice(nativeResourceOrigin(url).length);
+    // Existing exact catalogs remain valid; the reserved renderer route has a stronger identity.
+    return (
+      !/^\/maps\/[^/?#]+\/native(?:[/?#]|$)/u.test(decodeURIComponent(path)) ||
+      nativeVersionedStyleMatchesMap(url, mapId)
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function normalizeNativeResources(
@@ -115,7 +124,7 @@ export function authorityAllowsResource(
     authority.mapId === mapId &&
     authority.resourceOrigins.includes(nativeResourceOrigin(resource.url)) &&
     authority.resourceScopes.includes(resource.scope) &&
-		(resource.scope !== 'style' || styleScopeAllowsMap(resource.url, mapId)) &&
+    (resource.scope !== 'style' || styleScopeAllowsMap(resource.url, mapId)) &&
     (resource.tilesetId === undefined || authority.tilesetIds.includes(resource.tilesetId))
   );
 }

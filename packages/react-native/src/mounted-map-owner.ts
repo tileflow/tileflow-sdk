@@ -389,7 +389,8 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
             } catch {
               // Only the root protected style can indicate obsolete discovery metadata.
               // Child resource failures and source/configuration failures never refresh authority.
-              if (url === source.theme.styleUrl && resource?.scope === 'style') styleReadFailed = true;
+              if (url === source.theme.styleUrl && resource?.scope === 'style')
+                styleReadFailed = true;
               throw new NativePreparationError();
             }
           },

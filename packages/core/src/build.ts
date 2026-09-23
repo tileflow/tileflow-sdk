@@ -265,13 +265,13 @@ function compareCodeUnits(left: string, right: string): number {
 
 export {tileflowSharedIconMapRevisionSchemaVersion} from './map-build-manifest';
 export {
-	parseTileflowRendererDeploymentArtifact,
-	tileflowRendererDeploymentArtifactSchema,
-	tileflowRendererDeploymentLimits,
-	tileflowRendererDeploymentResponseSchema,
-	TileflowRendererDeploymentError,
+  parseTileflowRendererDeploymentArtifact,
+  tileflowRendererDeploymentArtifactSchema,
+  tileflowRendererDeploymentLimits,
+  tileflowRendererDeploymentResponseSchema,
+  TileflowRendererDeploymentError,
 } from './renderer-deployment';
 export type {
-	TileflowRendererDeploymentArtifact,
-	TileflowRendererDeploymentResponse,
+  TileflowRendererDeploymentArtifact,
+  TileflowRendererDeploymentResponse,
 } from './renderer-deployment';

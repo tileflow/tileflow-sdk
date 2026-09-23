@@ -2,9 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createHash} from 'node:crypto';
 import {serializeCanonicalJson, type MapLibreStyle} from '@tileflow/core';
-import {createTileflowMapBuildManifest} from '@tileflow/core/build';
-import {defineMap} from '@tileflow/core';
-import {streets} from '@tileflow/maps';
+import {inferTileflowDataRequirements, inferTileflowSourceRequirements, type TileflowMapBuildManifestV1} from '@tileflow/core/build';
 import {prepareTileflowHostedNativeDeployment} from '@tileflow/dev';
 import {runHostedNativeDeploy, type PreparedNativeDeploy} from '../src/hosted-native-deploy';
 import type {TileflowRuntimeManifest} from '@tileflow/core/manifest';
@@ -15,21 +13,19 @@ const options = {config: 'tileflow.config.ts', manifest: 'tileflow.manifest.json
 const digest = (value: unknown) => createHash('sha256').update(serializeCanonicalJson(value)).digest('hex');
 
 async function prepared(): Promise<PreparedNativeDeploy> {
-	const map = defineMap({id: 'main', version: 1, extends: streets});
 	const style: MapLibreStyle = {version: 8, sources: {}, layers: [{id: 'background', type: 'background'}],
 		metadata: {'tileflow:map': 'main', 'tileflow:mapVersion': 1, 'tileflow:theme': 'light', 'tileflow:colorScheme': 'light'}};
-	const resolved = {...map, themes: {light: map.themes!.light!}, defaultTheme: 'light' as const};
-	// The command consumes a completed local preflight. The build helper validates its receipts.
-	const buildManifest = await createTileflowMapBuildManifest({main: {
-		map: resolved, lineage: [{id: 'main', mapVersion: 1}], styles: {light: style}, assets: [],
-		sourceAssets: {fonts: [], icons: []},
-	}});
+	const buildManifest: TileflowMapBuildManifestV1 = {schemaVersion: 1, maps: {main: {
+		assetSetSha256: 'a'.repeat(64), mapRevisionSha256: 'b'.repeat(64),
+		defaultTheme: 'light', lineage: [{id: 'main', mapVersion: 1}], mapVersion: 1,
+		semanticCompiler: {name: 'tileflow-semantic', version: 1}, sourceAssets: {fonts: [], icons: []},
+		themes: {light: {colorScheme: 'light', dataRequirements: inferTileflowDataRequirements(style),
+			sourceRequirements: inferTileflowSourceRequirements(style), styleSha256: digest(style),
+			themeId: 'light', themeVersion: 1}},
+	}}};
 	const artifact = await prepareTileflowHostedNativeDeployment({mapId: 'main', styles: {light: style}, buildManifest,
 		assets: [], teamSources: {}});
-	return {
-		mapName: 'main', artifact, packages: [],
-		async retarget() { return artifact; }, async dispose() {},
-	};
+	return {mapName: 'main', artifact, packages: [], async retarget() { return artifact; }, async dispose() {}};
 }
 function receipt() {
 	return {
@@ -105,6 +101,10 @@ test('failed, mismatched or legacy responses preserve the previous manifest and 
 		() => Response.json({mapId, themes: receipt().renderers.web.themes}),
 		() => Response.json({...receipt(), renderers: {...receipt().renderers,
 			native: {...receipt().renderers.native, manifestUrl: 'https://other.example/manifest.json'}}}),
+		() => Response.json({...receipt(), renderers: {...receipt().renderers,
+			native: {...receipt().renderers.native, themes: {light: {
+				styleUrl: `${apiUrl}/maps/${mapId}/native/v8/light.json`, revision: 'a'.repeat(64),
+			}}}}}),
 	]) {
 		let writes = 0;
 		let disposed = 0;

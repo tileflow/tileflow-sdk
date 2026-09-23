@@ -50,6 +50,20 @@ NSString *TFAdmissionOrigin(NSString *url) {
 	if (port && (port.integerValue < 1 || port.integerValue > 65535)) TFInvalidURL();
 	return [NSString stringWithFormat:@"https://%@%@", host, port && port.integerValue != 443 ? [NSString stringWithFormat:@":%@", port] : @""];
 }
+BOOL TFAdmissionStyleMatchesMap(NSString *url, NSString *mapId) {
+	@try {
+		if (![url isKindOfClass:NSString.class] || url.length > 2048) return NO;
+		NSString *origin = TFAdmissionOrigin(url);
+		if (![url hasPrefix:[origin stringByAppendingString:@"/"]]) return NO;
+		NSString *path = [url substringFromIndex:origin.length];
+		if (!TFMatches(TFDecodeKey(path), @"^/maps/[^/?#]+/native(?:[/?#]|$)")) return YES;
+		NSRegularExpression *pattern = [NSRegularExpression regularExpressionWithPattern:@"^/maps/(map_[A-Za-z0-9_-]{16})/native/v([1-9][0-9]{0,15})/([A-Za-z][A-Za-z0-9_-]{0,63})\\.json$" options:0 error:nil];
+		NSTextCheckingResult *match = [pattern firstMatchInString:path options:0 range:NSMakeRange(0, path.length)];
+		if (!match || ![[path substringWithRange:[match rangeAtIndex:1]] isEqual:mapId]) return NO;
+		long long version = [[path substringWithRange:[match rangeAtIndex:2]] longLongValue];
+		return version > 0 && version <= 9007199254740991LL;
+	} @catch (NSException *exception) { return NO; }
+}
 NSString *TFAdmissionCleanURL(NSString *url) {
 	if (![url isKindOfClass:NSString.class] || url.length > 2048 || !TFMatches(url, @"^[\\x21-\\x7e]+$") || [url containsString:@"\\"] || [url containsString:@"#"] || TFAdmissionHasReservedContext(url)) TFInvalidURL();
 	NSURLComponents *components = [NSURLComponents componentsWithString:url];

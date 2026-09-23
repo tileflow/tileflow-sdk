@@ -11,7 +11,8 @@ const policy = {mapId, resourceOrigins: [apiOrigin], resourceScopes: ['style'] a
 const authority: HostedNativeSessionAuthority = {
 	...policy, grant, sessionId: 'ses_fixture', surfaceId: 'fixture', credentialId: 'key_fixture',
 	credentialRevision: 1, deliveryPolicyRevision: 1,
-	issuedAt: '2026-09-15T20:00:00.000Z', expiresAt: '2026-09-15T20:15:00.000Z',
+	issuedAt: '2026-09-15T20:00:00.000Z', serverTime: '2026-09-15T20:00:00.000Z',
+	expiresAt: '2026-09-15T20:15:00.000Z', meterMode: 'disabled', disposition: 'unmetered',
 };
 
 test('the exact versioned style route admits safe positive versions and no aliases', () => {

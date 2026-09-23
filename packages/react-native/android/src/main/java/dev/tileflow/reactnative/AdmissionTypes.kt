@@ -56,6 +56,7 @@ internal class AdmissionAuthority(
 	fun allows(resource: AdmissionResource, expectedMap: String): Boolean =
 		mapId == expectedMap && resourceOrigins.contains(AdmissionUrl.origin(resource.url)) &&
 		resourceScopes.contains(resource.scope) &&
+		(resource.scope != "style" || AdmissionUrl.styleMatchesMap(resource.url, expectedMap)) &&
 		(resource.tilesetId == null || tilesetIds.contains(resource.tilesetId))
 	override fun toString() = "AdmissionAuthority(redacted)"
 }

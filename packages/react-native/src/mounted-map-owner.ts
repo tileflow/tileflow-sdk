@@ -8,6 +8,8 @@ import {
 import type {AppearanceSelection, AppearanceState} from './appearance';
 import {snapshotCameraProps} from './camera-input';
 import type {MapBaseProps, MapCameraProps, MapOptions, MapSourceState} from './contract';
+import {assertHostedNativeStyleDocument} from './hosted-manifest-identity';
+import {createHostedNativePreparationGuard} from './hosted-preparation';
 import type {NativeMapAdmission, NativeMapAdmissionInput} from './native-admission-owner';
 import {discriminateNativeResourceForTest} from './native-admission-url';
 import type {NativeDocumentScope} from './native-document-contract';
@@ -36,6 +38,7 @@ type Epoch = {
   live: boolean;
   cache: ReturnType<typeof createNativeManifestCache>;
   binding: BindingResolver;
+  hosted: ReturnType<typeof createHostedNativePreparationGuard>;
   operations: Set<TileflowNativeManifestOperation>;
   context?: Promise<NativeMapAdmission>;
   lease?: Lease;
@@ -283,6 +286,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
     const epoch: Epoch = {
       live: true,
       binding: ports.createBinding(),
+      hosted: createHostedNativePreparationGuard(),
       operations: new Set(),
       catalog: Promise.resolve(),
       cache: undefined as unknown as Epoch['cache'],
@@ -322,6 +326,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
     cancelJob(epoch);
     const job: Job = {live: true, operations: new Set()};
     epoch.job = job;
+    let styleReadFailed = false;
     const owns = () =>
       !disposed &&
       foreground &&
@@ -332,6 +337,9 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
       core.state === source;
     const work = Promise.resolve()
       .then(async () => {
+        if (!owns()) return;
+        // Recheck every resolution, including cache refreshes which reuse the original session.
+        epoch.hosted.validate(source);
         const map = await context(epoch, source);
         if (!owns()) return;
         const previous = epoch.renderer?.currentTarget;
@@ -369,12 +377,22 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
           },
           // Sprite bases are rewritten only after their four exact leaf URLs are acknowledged.
           discriminate: (url) => discriminateNativeResourceForTest(url, map.context),
-          read: (url, maximumBytes, resource) =>
-            readNativeStyleDocument(
-              acquire(epoch, url, {maximumBytes}, resource ? map.scope : undefined, job),
-              maximumBytes,
-              owns,
-            ),
+          async read(url, maximumBytes, resource) {
+            try {
+              const document = await readNativeStyleDocument(
+                acquire(epoch, url, {maximumBytes}, resource ? map.scope : undefined, job),
+                maximumBytes,
+                owns,
+              );
+              if (url === source.theme.styleUrl) assertHostedNativeStyleDocument(source, document);
+              return document;
+            } catch {
+              // Only the root protected style can indicate obsolete discovery metadata.
+              // Child resource failures and source/configuration failures never refresh authority.
+              if (url === source.theme.styleUrl && resource?.scope === 'style') styleReadFailed = true;
+              throw new NativePreparationError();
+            }
+          },
         });
         if (!owns()) return;
         ports.surfaces.available?.();
@@ -401,6 +419,15 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
       })
       .catch(() => {
         if (!owns()) return;
+        if (styleReadFailed && epoch.hosted.retryManifest()) {
+          cancelJob(epoch);
+          epoch.cache.clear();
+          // Do not call select(): only an explicit selection replenishes the one-reload budget.
+          if (!disposed && foreground && current === epoch && epoch.live && props) {
+            track(core.replace(props.source, {theme: props.theme, colorScheme}));
+          }
+          return;
+        }
         rendererError();
         epoch.renderer?.preparationFailed(source.generation);
       })
@@ -434,6 +461,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
   });
   function select() {
     if (disposed || !props || !current?.live) return;
+    current.hosted.select();
     track(core.replace(props.source, {theme: props.theme, colorScheme}));
   }
   function appearance(theme: string | undefined) {

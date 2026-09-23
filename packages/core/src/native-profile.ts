@@ -1,8 +1,5 @@
-import {
-  isExpression,
-  latest as specification,
-  validateStyleMin,
-} from '@maplibre/maplibre-gl-style-spec';
+import {isExpression, validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
+import specification from '@maplibre/maplibre-gl-style-spec/dist/latest.json' with {type: 'json'};
 import {z} from 'zod';
 import {
   tileflowNativeProfile,

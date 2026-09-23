@@ -34,6 +34,11 @@ test('publishes a build-only profile entry without widening the root or native U
     false,
   );
   assert.equal(specifiers.includes('@maplibre/maplibre-gl-style-spec/dist/latest.json'), false);
+  const build = await readFile(new URL('dist/build.js', packageRoot), 'utf8');
+  assert.equal(
+    runtimeSpecifiers(build).includes('@maplibre/maplibre-gl-style-spec/dist/latest.json'),
+    false,
+  );
 
   const script = `
     for (const name of ['window', 'document', 'navigator', 'fetch', 'FontFace']) {
@@ -49,6 +54,15 @@ test('publishes a build-only profile entry without widening the root or native U
     cwd: fileURLToPath(packageRoot),
     timeout: 10_000,
   });
+  await execFileAsync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '--eval',
+      "const build = await import('@tileflow/core/build'); if (typeof build.parseTileflowRendererDeploymentArtifact !== 'function') process.exit(3);",
+    ],
+    {cwd: fileURLToPath(packageRoot), timeout: 10_000},
+  );
 
   const root = await import('@tileflow/core');
   assert.equal('validateTileflowNativeStyle' in root, false);

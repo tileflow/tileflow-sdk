@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import test from 'node:test';
-import type {MapLibreStyle} from '@tileflow/core';
+import type {MapLibreStyle, TileflowPoiCategory} from '@tileflow/core';
 import {serializeCanonicalJson} from '@tileflow/core';
 import {
 	inferTileflowDataRequirements,
 	inferTileflowSourceRequirements,
+	parseTileflowRendererDeploymentArtifact,
 	type TileflowMapBuildManifestV1,
 } from '@tileflow/core/build';
 import {prepareTileflowHostedNativeDeployment} from '../src/hosted-native-artifacts';
@@ -13,7 +14,7 @@ import {prepareTileflowHostedNativeDeployment} from '../src/hosted-native-artifa
 const digest = (value: unknown) => createHash('sha256').update(serializeCanonicalJson(value)).digest('hex');
 function fixture() {
 	const style: MapLibreStyle = {
-		version: 8,
+		version: 8, name: 'Main',
 		metadata: {'tileflow:map': 'main', 'tileflow:mapVersion': 1, 'tileflow:theme': 'light',
 			'tileflow:colorScheme': 'light', 'tileflow:compiler': 'tileflow-semantic', 'tileflow:compilerVersion': 1},
 		sources: {}, layers: [{id: 'background', type: 'background', paint: {'background-color': '#ffffff'}}],
@@ -27,6 +28,38 @@ function fixture() {
 			themeId: 'light', themeVersion: 1}},
 	}}};
 	return {mapId: 'main', buildManifest, styles: {light: style}, teamSources: {}, assets: []};
+}
+
+function provenanceFixture() {
+	const input = fixture();
+	const style = input.styles.light;
+	style.sources.tileflow = {type: 'vector', url: 'https://tiles.example/tiles/world/tiles.json'};
+	style.layers.push(
+		{id: 'road', type: 'line', source: 'tileflow', 'source-layer': 'transportation',
+			layout: {'line-cap': ['case', ['==', ['get', 'class'], 'primary'], 'round', 'butt']}},
+		{id: 'poi', type: 'circle', source: 'tileflow', 'source-layer': 'poi'},
+	);
+	const semantic = {version: 2, domains: {poi: {
+		deduplication: {identity: ['source', 'source-layer', 'feature-id'],
+			representationPriority: ['marker', 'icon', 'combined', 'label']},
+		fields: {category: 'class', filterRank: 'rank', icon: 'icon', name: 'name', sizeRank: 'rank', type: 'subclass'},
+		hitTesting: {frequency: 'animation-frame', order: 'rendered-topmost'},
+		identity: 'maplibre-feature-id-if-present',
+		layers: [{anchor: 'pointer-coordinate', category: 'food-drink' satisfies TileflowPoiCategory,
+			layerId: 'poi', priority: 2, representation: 'marker', source: 'tileflow', sourceLayer: 'poi'}],
+	}}};
+	const anchors = {
+		'above-water': 'road', 'below-roads': 'road', 'above-roads': 'poi',
+		'above-buildings': 'poi', 'below-labels': 'poi', 'above-labels': null,
+	};
+	style.metadata = {...style.metadata, 'tileflow:interaction-manifest': semantic,
+		'tileflow:overlay-placement-manifest': {schemaVersion: 1, anchors},
+	};
+	Object.assign(input.buildManifest.maps.main!.themes.light!, {
+		styleSha256: digest(style), dataRequirements: inferTileflowDataRequirements(style),
+		sourceRequirements: inferTileflowSourceRequirements(style),
+	});
+	return {input, semantic, anchors};
 }
 
 test('native preparation preserves its web input and authored identity', async () => {
@@ -61,41 +94,64 @@ test('native preparation accepts only exact logical Hosted placeholders, not arb
 });
 
 test('the serialized renderer collection contains finalized overlay and semantic provenance', async () => {
-	const input = fixture();
-	const style = input.styles.light;
-	style.sources.tileflow = {type: 'vector', url: 'https://tiles.example/tiles/world/tiles.json'};
-	style.layers.push(
-		{id: 'road', type: 'line', source: 'tileflow', 'source-layer': 'transportation',
-			layout: {'line-cap': ['case', ['==', ['get', 'class'], 'primary'], 'round', 'butt']}},
-		{id: 'poi', type: 'circle', source: 'tileflow', 'source-layer': 'poi'},
-	);
-	const semantic = {version: 2, domains: {poi: {
-		deduplication: {identity: ['source', 'source-layer', 'feature-id'],
-			representationPriority: ['marker', 'icon', 'combined', 'label']},
-		fields: {category: 'class', filterRank: 'rank', icon: 'icon', name: 'name', sizeRank: 'rank', type: 'subclass'},
-		hitTesting: {frequency: 'animation-frame', order: 'rendered-topmost'},
-		identity: 'maplibre-feature-id-if-present',
-		layers: [{anchor: 'pointer-coordinate', category: 'food', layerId: 'poi', priority: 2,
-			representation: 'marker', source: 'tileflow', sourceLayer: 'poi'}],
-	}}};
-	style.metadata = {...style.metadata, 'tileflow:interaction-manifest': semantic,
-		'tileflow:overlay-placement-manifest': {schemaVersion: 1, anchors: {
-			'above-water': 'road', 'below-roads': 'road', 'above-roads': 'poi',
-			'above-buildings': 'poi', 'below-labels': 'poi', 'above-labels': null,
-		}},
-	};
-	Object.assign(input.buildManifest.maps.main!.themes.light!, {
-		styleSha256: digest(style), dataRequirements: inferTileflowDataRequirements(style),
-		sourceRequirements: inferTileflowSourceRequirements(style),
-	});
+	const {input, semantic, anchors} = provenanceFixture();
 	const before = serializeCanonicalJson(input);
 	const result = await prepareTileflowHostedNativeDeployment(input);
 	const native = result.renderers.native.styles.light!;
 	const metadata = native.metadata as Record<string, unknown>;
-	const manifest = metadata['tileflow:interaction-manifest'] as typeof semantic;
 	const layers = native.layers as {id: string}[];
-	assert.equal(manifest.domains.poi.layers[0]!.priority, layers.findIndex(({id}) => id === 'poi'));
-	assert.ok(manifest.domains.poi.layers[0]!.priority > 2);
+	const record = result.renderers.native.buildRecord;
+	const transformation = record.transformations[0]!;
+	const span = transformation.layers[0]!;
+	assert.equal(transformation.layers.length, 1);
+	assert.equal(span.inputLayer, 1);
+	assert.equal(span.outputStart, 1);
+	assert.ok(span.outputCount > 1);
+	assert.deepEqual(span.properties, ['line-cap']);
+	const priority = layers.findIndex(({id}) => id === 'poi');
+	assert.equal(priority, 1 + span.outputCount);
+	assert.deepEqual(metadata['tileflow:interaction-manifest'], {
+		...semantic, domains: {poi: {...semantic.domains.poi,
+			layers: [{...semantic.domains.poi.layers[0]!, priority}],
+		}},
+	});
+	assert.deepEqual(metadata['tileflow:overlay-placement-manifest'], {
+		schemaVersion: 1, anchors: {...anchors,
+			'above-water': layers[span.outputStart]!.id,
+			'below-roads': layers[span.outputStart]!.id,
+		},
+	});
+	assert.equal(transformation.inputLayers, input.styles.light.layers.length);
+	assert.equal(transformation.outputLayers, layers.length);
+	assert.equal(transformation.inputStyleSha256, digest(input.styles.light));
+	assert.equal(transformation.loweredStyleSha256, digest(native));
 	assert.equal(result.renderers.native.buildManifest.maps.main!.themes.light!.styleSha256, digest(native));
+	assert.equal(record.buildManifestSha256, digest(result.renderers.native.buildManifest));
+	assert.deepEqual(result.renderers.web.styles, input.styles);
 	assert.equal(serializeCanonicalJson(input), before);
+	assert.deepEqual(await parseTileflowRendererDeploymentArtifact(JSON.parse(serializeCanonicalJson(result))), result);
+});
+
+test('unknown POI categories fail rather than being silently normalized during preparation', async () => {
+	const {input, semantic} = provenanceFixture();
+	Object.assign(semantic.domains.poi.layers[0]!, {category: 'food'});
+	input.buildManifest.maps.main!.themes.light!.styleSha256 = digest(input.styles.light);
+	await assert.rejects(prepareTileflowHostedNativeDeployment(input), {code: 'RENDERER_DEPLOYMENT_INVALID'});
+});
+
+test('fresh hashes cannot authorize stale priorities or a different POI category', async () => {
+	const result = await prepareTileflowHostedNativeDeployment(provenanceFixture().input);
+	for (const patch of [{priority: 0}, {category: 'retail'}, {category: 'food'}]) {
+		const candidate = structuredClone(result);
+		const family = candidate.renderers.native;
+		const style = family.styles.light!;
+		const metadata = style.metadata as Record<string, unknown>;
+		const semantic = metadata['tileflow:interaction-manifest'] as ReturnType<typeof provenanceFixture>['semantic'];
+		Object.assign(semantic.domains.poi.layers[0]!, patch);
+		// Keep every receipt current so rejection depends on semantic invariants, not stale hashes.
+		family.buildManifest.maps.main!.themes.light!.styleSha256 = digest(style);
+		family.buildRecord.transformations[0]!.loweredStyleSha256 = digest(style);
+		family.buildRecord.buildManifestSha256 = digest(family.buildManifest);
+		await assert.rejects(parseTileflowRendererDeploymentArtifact(candidate), {code: 'RENDERER_DEPLOYMENT_INVALID'});
+	}
 });

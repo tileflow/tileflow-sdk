@@ -1,22 +1,29 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type {MapLibreStyle} from '@tileflow/core';
+import type {MapLibreStyle, TileflowPoiCategory} from '@tileflow/core';
 import {lowerTileflowNativeCompiledStyles} from '../src/native-artifacts';
 import {finalizeNativeHostedProvenance} from '../src/native-hosted-provenance';
 
 function fixture(): MapLibreStyle {
 	return {
-		version: 8,
+		version: 8, name: 'Main',
 		sources: {tileflow: {type: 'vector', url: 'https://tiles.example/tiles/world/tiles.json'}},
 		metadata: {
 			'tileflow:overlay-placement-manifest': {schemaVersion: 1, anchors: {
 				'above-water': 'road', 'below-roads': 'road', 'above-roads': 'poi',
 				'above-buildings': 'poi', 'below-labels': 'poi', 'above-labels': null,
 			}},
-			'tileflow:interaction-manifest': {version: 2, domains: {poi: {layers: [{
-				anchor: 'pointer-coordinate', category: 'food', layerId: 'poi', priority: 2,
-				representation: 'marker', source: 'tileflow', sourceLayer: 'poi',
-			}]}}},
+			'tileflow:interaction-manifest': {version: 2, domains: {poi: {
+				deduplication: {identity: ['source', 'source-layer', 'feature-id'],
+					representationPriority: ['marker', 'icon', 'combined', 'label']},
+				fields: {category: 'class', filterRank: 'rank', icon: 'icon', name: 'name', sizeRank: 'rank', type: 'subclass'},
+				hitTesting: {frequency: 'animation-frame', order: 'rendered-topmost'},
+				identity: 'maplibre-feature-id-if-present',
+				layers: [{
+					anchor: 'pointer-coordinate', category: 'food-drink' satisfies TileflowPoiCategory,
+					layerId: 'poi', priority: 2, representation: 'marker', source: 'tileflow', sourceLayer: 'poi',
+				}],
+			}}},
 		},
 		layers: [
 			{id: 'background', type: 'background'},

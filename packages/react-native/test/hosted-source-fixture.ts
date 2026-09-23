@@ -18,12 +18,13 @@ export function hostedSourceFixture(options: {
 		styleUrl: `${apiOrigin}/maps/${mapId}/native/v${version}/light.json`,
 		revision: options.revision ?? 'a'.repeat(64),
 	};
-	const map = {mapId, apiUrl: apiOrigin, usageMode: 'session' as const,
-		defaultTheme: 'light', themes: {light: theme}};
+	// Core requires these delivery fields together, including when the document is public metadata.
+	const map = {mapId, apiUrl: apiOrigin, usageMode: 'session' as const, worldGeneration: 'v1' as const,
+		environment: 'streets', defaultTheme: 'light', themes: {light: theme}};
 	return {
 		status: 'ready', generation: 1,
 		source: {map: 'streets', manifestUrl}, manifestUrl,
-		manifest: {version: 1, maps: {streets: map}},
+		manifest: {version: 1, apiUrl: apiOrigin, maps: {streets: map}},
 		map: {name: 'streets', ...map}, theme: {name: 'light', ...theme},
 	};
 }

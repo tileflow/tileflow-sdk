@@ -32,6 +32,7 @@ function fixture(options: {
 			'tileflow:mapId': mapId, 'tileflow:theme': 'light',
 			'tileflow:deploymentVersion': version, 'tileflow:nativeStyleSha256': 'a'.repeat(64),
 		}}};
+	};
 	const ports: MountedMapPorts = {
 		createBinding: () => createHostedNativeBindingResolver(async () => {
 			configurationReads++;

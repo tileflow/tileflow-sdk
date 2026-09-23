@@ -10,6 +10,8 @@ internal object AdmissionUrl {
 	private val compact = Regex("[A-Za-z0-9._:-]{1,255}")
 	private val scopes = setOf("style", "tilejson", "tile", "sprite", "glyph", "font")
 	private val percent = Regex("%([0-9a-fA-F]{2})")
+	private val nativeStyle = Regex("/maps/(map_[A-Za-z0-9_-]{16})/native/v([1-9][0-9]{0,15})/([A-Za-z][A-Za-z0-9_-]{0,63})\\.json")
+	private val reservedStyle = Regex("^/maps/[^/?#]+/native(?:[/?#]|$)")
 	private fun decoded(value: String) = percent.replace(value) { it.groupValues[1].toInt(16).toChar().toString() }
 	fun validToken(value: String) = token.matches(value) && !value.startsWith("tf_")
 	fun reserved(value: String): Boolean {
@@ -24,6 +26,17 @@ internal object AdmissionUrl {
 		val port = if (parsed.port == 443) "" else ":${parsed.port}"
 		val host = if (parsed.host.contains(':')) "[${parsed.host}]" else parsed.host
 		return "${parsed.scheme}://$host$port"
+	}
+	fun styleMatchesMap(value: String, mapId: String): Boolean {
+		return try {
+			val path = value.substring(origin(value).length)
+			if (!reservedStyle.containsMatchIn(decoded(path))) true
+			else {
+				val match = nativeStyle.matchEntire(path)
+				val version = match?.groupValues?.get(2)?.toLongOrNull()
+				match != null && match.groupValues[1] == mapId && version != null && version in 1L..9007199254740991L
+			}
+		} catch (_: Exception) { false }
 	}
 	fun clean(value: String): String {
 		if (value.length > AdmissionLimits.URL || value.any { it.code !in 33..126 || it == '\\' || it == '#' } || reserved(value)) invalid()

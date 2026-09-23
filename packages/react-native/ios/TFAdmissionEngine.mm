@@ -208,7 +208,9 @@ static BOOL TFGrantShape(NSString *value) {
 
 - (BOOL)authority:(NSDictionary *)authority allows:(NSDictionary *)resource context:(TFAdmissionContext *)context {
 	return resource && [authority[@"mapId"] isEqual:context.mapId] && [authority[@"resourceOrigins"] containsObject:TFAdmissionOrigin(resource[@"url"])] &&
-		[authority[@"resourceScopes"] containsObject:resource[@"scope"]] && (!resource[@"tilesetId"] || [authority[@"tilesetIds"] containsObject:resource[@"tilesetId"]]);
+		[authority[@"resourceScopes"] containsObject:resource[@"scope"]] &&
+		(![resource[@"scope"] isEqual:@"style"] || TFAdmissionStyleMatchesMap(resource[@"url"], context.mapId)) &&
+		(!resource[@"tilesetId"] || [authority[@"tilesetIds"] containsObject:resource[@"tilesetId"]]);
 }
 - (BOOL)validAuthority:(NSDictionary *)authority {
 	if (![authority isKindOfClass:NSDictionary.class] || !TFGrantShape(authority[@"grant"]) || !TFString(authority[@"mapId"], 64)) return NO;

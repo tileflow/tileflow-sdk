@@ -2,7 +2,7 @@
 
 This guide describes the private application-configuration reader used by the mounted Tileflow
 `Map` in `@tileflow/react-native`. The package is still a private pre-release workspace package, but
-its root now exports the mounted `Map` and its public types. Mobile credentials remain application
+its root exports the mounted `Map` and its public types. Mobile credentials remain application
 configuration: there is no credential prop, JavaScript setter, provider, public configuration
 object or public configuration subpath.
 
@@ -18,6 +18,7 @@ Hosted native production requires a claimed Tileflow account/project, a Hosted M
 revocable, publishable mobile application credential. The credential authenticates the distributed
 application, not an end user. There is no Tileflow end-user login, account provider or authentication
 hook in this integration. Web deployment with allowed-domain authorization is a different mechanism.
+A compatible SDK/API pair is required; this document is not a publication or availability claim.
 
 Use only the publishable mobile credential, whose exact grammar is `tf_public_` followed by
 48 lowercase hexadecimal characters, for a total of 58 ASCII characters. A CLI, deployment,
@@ -83,35 +84,75 @@ keys are case-sensitive. Split only at the first equals sign. Missing, empty, ad
 wrong-typed or duplicate entries fail closed. Each complete entry is limited to 2,080 UTF-16 code
 units.
 
-`apiOrigin` is at most 2,048 UTF-16 code units. Normalization is deliberately limited to the HTTPS
-scheme and ASCII hostname, omission of port 443 and removal of one optional root slash. For example,
-`HTTPS://API.Example.test:443/` becomes `https://api.example.test`. Port 8443 remains distinct.
-The grammar permits ASCII DNS labels or canonical dotted-decimal IPv4; IPv6 literals are outside
-this application-configuration grammar.
+The application-owned `apiOrigin` is at most 2,048 UTF-16 code units. Normalization is deliberately
+limited to the HTTPS scheme and ASCII hostname, omission of port 443 and removal of one optional
+root slash. For example, application configuration `HTTPS://API.Example.test:443/` becomes
+`https://api.example.test`. Port 8443 remains distinct. The grammar permits ASCII DNS labels or
+canonical dotted-decimal IPv4; IPv6 literals are outside this application-configuration grammar.
 
 Ports are decimal 1–65535 without leading zeroes. HTTP, user-info, non-root paths, query strings,
 fragments, whitespace, backslashes, percent escapes, wildcards, trailing host dots, Unicode hostname
-conversion and shortened/octal/hexadecimal/integer IPv4 forms are rejected. The manifest API URL is
-canonicalized under the same rules before comparison. Equality includes scheme, host and non-default
-port; there is no suffix or subdomain match.
+conversion and shortened/octal/hexadecimal/integer IPv4 forms are rejected.
+
+The **remote manifest is not normalized into trust**. Its declared `apiUrl` must already be the exact
+canonical string stored in the application snapshot. A trailing slash, explicit default port or
+case variation in the remote declaration is rejected, even if normalizing it would produce the same
+origin. Equality includes scheme, host and non-default port; there is no suffix or subdomain match.
+If both root and map-level API declarations are present, they must agree exactly.
 
 ## Source-to-session boundary
 
+Use the public Native manifest URL returned by an explicit compatible
+[`deploy --with-native`](../../cli/docs/native-artifacts.md#publish-web-and-native-together):
+
+```text
+https://api.example.test/maps/map_0123456789abcdef/native/manifest.json
+```
+
+The `Map` source remains `{map, manifestUrl}`. `map` is the authored map name, not the managed Map ID.
+The initial document is bounded, one-map, version-1 public metadata. It contains theme names,
+identity, revisions and references, not Style JSON or authority. It receives no credential or grant.
+
 The private binding resolver consumes the current resolved Core source, not an executable config or
 a renderer style. Only `map.usageMode === 'session'` can request application configuration. It
-requires the declared Hosted `mapId`, a complete `apiUrl` and agreement between the resolved logical
-map name and the selected Tileflow source. No Map identity is inferred from a URL.
+requires the declared Hosted `mapId`, exact `apiUrl`, agreement between the resolved logical map
+name and selected source, and both the original requested URL and final response URL equal to the
+canonical Hosted route for that managed Map. A redirect to another origin, Map, CDN route or query
+alias is rejected. URL identity is a selector checked against the document, not authority.
 
-A missing `usageMode` produces the existing direct binding without evaluating the native
-configuration lookup. Local, self-hosted and other non-session Tileflow sources therefore do not
-read mobile configuration, create commercial identity, bootstrap or acquire Hosted authority. An
-unknown delivery mode or malformed session metadata is an error, not a downgrade. An origin
-mismatch fails before a Hosted binding is delivered, so a manifest-selected origin cannot receive
-the configured credential.
+A missing `usageMode` produces the existing direct binding without evaluating configuration only for
+a non-Hosted source. A document obtained from the reserved Hosted Native route cannot omit that mode
+to downgrade into direct delivery. Local, self-hosted and other non-session sources otherwise keep
+their existing account-free behavior. Unknown modes, malformed session metadata, origin mismatches
+or conflicting Map identity fail before a Hosted binding is delivered.
+
+The publishable credential is sent **only** to the application's configured API origin at
+`POST /v1/sessions/start`. The existing bootstrap transport does not follow redirects. Neither a
+manifest URL nor a manifest-declared `apiUrl` can select a different credential destination. Styles,
+TileJSON, tiles, sprites, glyphs and fonts use the existing resource grant, never that credential.
 
 The resolver itself has no renderer or resource-admission authority. The mounted Map passes the
 acknowledged binding into its private admission/session owner only after source resolution. Creating
 a resolver does not call `acquire()`, and importing the package does not construct a resolver.
+
+## Deployment revisions and stale discovery
+
+Hosted themes carry mandatory revision hashes and versioned protected style URLs of the form
+`/maps/<mapId>/native/v<deploymentVersion>/<theme>.json`. Every theme in one manifest belongs to the
+same deployment version. The server checks current deployment ownership and verifies stored style
+bytes against the revision. The mounted owner checks the returned style URL and its
+Map/theme/deployment/revision metadata before projecting resources or creating a renderer.
+
+If the root protected style cannot be read or fails this correspondence, the owner may discard its
+cached discovery document and reload the canonical manifest **once per explicit source/theme
+selection**. This recovery retains the same session and admission context. A refresh cannot switch
+Map, origin or delivery mode, or move backwards to an older deployment. Child-resource failures do
+not replenish that retry budget. A second failure uses the existing safe error or theme-rollback
+path. It never composes a new active style with stale public metadata silently.
+
+A public manifest GET, session start or Map render is not itself a commercial completion event.
+Server completion remains conditional on an eligible protected GET returning 200/206 under the
+existing admission contract. Disabled mobile delivery fails closed even for valid public references.
 
 ## Mounted ownership, caching and cancellation
 
@@ -151,18 +192,19 @@ policy. Revoking an old credential may stop installed versions that still contai
 that failure with a JavaScript override or a second credential source.
 
 A future Expo plugin, if introduced, would write these same native values rather than create another
-runtime configuration channel. No plugin, deployment operation, account-management API or end-user
-login is part of this Stage C unit.
+runtime configuration channel. No plugin or end-user login is part of this integration. Selection
+presentation and foreground-location policy remain application-owned; this contract adds neither UI
+nor a location API.
 
 ## Validation boundary
 
-The authored source tests cover grammar, exact origin matching, lazy reads, safe failures, stale
-results, immutable snapshots, direct-source exclusion, independent resolvers and the absence of a
-public credential surface. Native tests cover parser boundaries, duplicate/wrong-typed values,
-resource literals, caching and reentrancy. Package tests protect autolinking, exact peers, private
-configuration declarations and archive contents.
+The authored source tests cover grammar, exact origin matching, source/final URL identity, lazy reads,
+safe failures, stale results, bounded discovery recovery, independent resolvers and the absence of a
+public credential surface. Native tests cover parser boundaries, versioned style ownership,
+duplicate/wrong-typed configuration, resource literals, caching and reentrancy. Package tests protect
+autolinking, exact peers, private configuration declarations and archive contents.
 
 Those sources are not execution evidence. Local qualification must additionally exercise the final
 iOS Info.plist and Android resource extraction, resource shrinking, bridge registration, cold starts,
-concurrent mounted Maps, direct versus session sources, replacement/disposal and corrected/revoked
-credentials in the pinned native host.
+concurrent mounted Maps, direct versus session sources, replacement/disposal, stale public metadata
+and corrected/revoked credentials in the pinned native host.

@@ -1319,7 +1319,10 @@ export async function readTileflowIconDirectory(
   if (!inspected || issues.length) throw new TileflowIconCompilationError(issues);
   if (inspected.icons.length > tileflowIconPackageLimits.maxIconCount)
     throw new TileflowIconCompilationError([
-      {path: configPath, message: 'One icon contributor supports at most 256 exports'},
+      {
+        path: configPath,
+        message: `One icon contributor supports at most ${tileflowIconPackageLimits.maxIconCount} exports`,
+      },
     ]);
   const entries = inspected.icons.map(
     (icon): TileflowIconDirectoryEntry => ({

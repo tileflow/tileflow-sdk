@@ -62,7 +62,7 @@ test('defines the exact four-file package protocol and alpha limits', () => {
     'sprite@2x.json',
     'sprite@2x.png',
   ]);
-  assert.equal(tileflowIconPackageLimits.maxIconCount, 256);
+  assert.equal(tileflowIconPackageLimits.maxIconCount, 1_000);
   assert.equal(tileflowIconPackageLimits.decodeConcurrency, 4);
   assert.equal(tileflowIconPackageLimits.maxGeneratedPackageBytes, 8 * 1024 * 1024);
   assert.equal(tileflowHostedAlphaCompatibility.maxMapsPerDeploy, 20);

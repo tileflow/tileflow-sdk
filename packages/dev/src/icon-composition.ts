@@ -6,23 +6,23 @@ import {
   compareCodeUnits,
   parseTileflowIconComposition,
   parseTileflowIconsLockfile,
-  TileflowIconSetError,
-  tileflowIconPackageLimits,
   type TileflowIconCompositionV1,
   type TileflowIconContributorIdentity,
+  tileflowIconPackageLimits,
+  TileflowIconSetError,
   type TileflowIconSource,
 } from '@tileflow/core';
 import type {TileflowEffectiveIconSourceIdentity} from '@tileflow/core/build';
 import {loadTileflowIconSetArtifact, type TileflowIconCacheOptions} from './icon-cache';
 import {readTileflowIconsLockfile} from './icon-lockfile';
+import {packTileflowRenderedIcons, type TileflowRenderedIcon} from './icon-sprite';
 import {
-  readTileflowIconDirectory,
   type CompiledTileflowIconPackage,
+  readTileflowIconDirectory,
   type TileflowIconCompilationTarget,
   type TileflowIconDirectoryEntry,
   type TileflowIconDirectorySourceFile,
 } from './icons';
-import {packTileflowRenderedIcons, type TileflowRenderedIcon} from './icon-sprite';
 
 export type ComposeTileflowIconSourcesOptions = TileflowIconCacheOptions & {
   cwd: string;
@@ -182,7 +182,7 @@ export async function composeTileflowIconSources(
       if (winners.size + selected.length > tileflowIconPackageLimits.maxIconCount)
         throw new TileflowIconSetError(
           'ICON_COMPOSITION_INVALID',
-          'Composed icon set exceeds 256 effective icons',
+          `Composed icon set exceeds ${tileflowIconPackageLimits.maxIconCount} effective icons`,
         );
       for (const item of await directory.render(selected)) {
         localSourceBytes += item.sourceBytes;

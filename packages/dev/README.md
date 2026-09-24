@@ -169,11 +169,12 @@ and atomic rename. A conflicting writer fails without overwriting pins. An inter
 the previous complete lock intact; remove a stale `.writing` guard only after confirming that its
 writer has exited. Ordinary reads and Core validation never acquire write guards.
 
-The existing 256-effective-icon, 2048-atlas-dimension, 4 MiB/file, and 8 MiB/package bounds still
-apply. Several individually valid sets can exceed the effective map limit; composition fails
-explicitly instead of clipping. Cache and composition do not create Team resources or publish
-anything. Every normal entry point composes declared shared descriptors through this path; catalog
-publication and lock maintenance stay in the `tileflow` CLI, which is the only writer of
+A package supports up to 1,000 effective icons, subject to a 2,048-pixel atlas dimension,
+4 MiB per generated file, and 8 MiB per package. Larger artwork can hit those limits before
+1,000 icons. Several individually valid sets can exceed the effective map limit; composition
+fails explicitly instead of clipping. Cache and composition do not create Team resources or
+publish anything. Every normal entry point composes declared shared descriptors through this path;
+catalog publication and lock maintenance stay in the `tileflow` CLI, which is the only writer of
 `tileflow.icons.lock.json` and the only caller that resolves `latest`.
 
 ## Detailed guides

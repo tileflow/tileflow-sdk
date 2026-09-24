@@ -184,7 +184,7 @@ export async function composeTileflowIconSources(
       if (winners.size + selected.length > tileflowIconPackageLimits.maxIconCount)
         throw new TileflowIconSetError(
           'ICON_COMPOSITION_INVALID',
-          'Composed icon set exceeds 256 effective icons',
+          `Composed icon set exceeds ${tileflowIconPackageLimits.maxIconCount} effective icons`,
         );
       for (const item of await directory.render(selected)) {
         localSourceBytes += item.sourceBytes;

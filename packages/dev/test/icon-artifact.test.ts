@@ -93,10 +93,10 @@ test('strict index JSON is checked even when its compressed file checksum is cor
 });
 
 test('packing enforces final count, density, ID and dimension limits', async () => {
-  const icons = Array.from({length: 256}, (_, index) =>
-    renderedIcon(`icon-${String(index).padStart(3, '0')}`, [1, 2, 3, 255], 1, 1),
+  const icons = Array.from({length: 1_000}, (_, index) =>
+    renderedIcon(`icon-${String(index).padStart(4, '0')}`, [1, 2, 3, 255], 1, 1),
   );
-  assert.equal((await packTileflowRenderedIcons(icons)).manifest.iconNames.length, 256);
+  assert.equal((await packTileflowRenderedIcons(icons)).manifest.iconNames.length, 1_000);
   await assert.rejects(
     packTileflowRenderedIcons([...icons, renderedIcon('extra', [1, 2, 3, 255])]),
   );

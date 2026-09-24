@@ -18,7 +18,7 @@ export const tileflowIconSpriteIndexSchema = z
     (index) =>
       Object.keys(index).length > 0 &&
       Object.keys(index).length <= tileflowIconPackageLimits.maxIconCount,
-    'A generated sprite index must contain 1 through 256 icons',
+    `A generated sprite index must contain 1 through ${tileflowIconPackageLimits.maxIconCount} icons`,
   );
 
 export type TileflowIconSpriteIndexEntry = z.infer<typeof tileflowIconSpriteIndexEntrySchema>;

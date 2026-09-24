@@ -31,7 +31,9 @@ export async function packTileflowRenderedIcons(
     icons.length > tileflowIconPackageLimits.maxIconCount ||
     new Set(icons.map((icon) => icon.id)).size !== icons.length
   )
-    throw new Error('Expected 1 through 256 unique rendered icons');
+    throw new Error(
+      `Expected 1 through ${tileflowIconPackageLimits.maxIconCount} unique rendered icons`,
+    );
   const renderedIcons = [];
   for (const icon of icons) {
     tileflowIconIdSchema.parse(icon.id);

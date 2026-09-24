@@ -579,7 +579,7 @@ test('rejects symlink escapes, nested directories, unsafe SVG content, and sourc
     const manyDirectory = join(cwd, 'many');
     await mkdir(manyDirectory);
     await Promise.all(
-      Array.from({length: 257}, (_, index) =>
+      Array.from({length: 1_001}, (_, index) =>
         writeFile(
           join(manyDirectory, `icon-${String(index).padStart(3, '0')}.svg`),
           simpleSvg('#0f172a'),
@@ -589,7 +589,7 @@ test('rejects symlink escapes, nested directories, unsafe SVG content, and sourc
     await assertIconIssue(
       () => compileTileflowIconPackages(localProject('./many'), {cwd, target: 'hosted'}),
       'maps.main.icons',
-      'at most 256 exports',
+      'at most 1000 exports',
     );
 
     const largeDirectory = join(cwd, 'large');

@@ -18,7 +18,7 @@ export const tileflowIconPackageLimits = {
   maxDecodedPixelsPerIcon: 4_194_304,
   maxGeneratedFileBytes: 4 * 1024 * 1024,
   maxGeneratedPackageBytes: 8 * 1024 * 1024,
-  maxIconCount: 256,
+  maxIconCount: 1_000,
   maxSourceBytes: 32 * 1024 * 1024,
   maxSourceFileBytes: 1024 * 1024,
 } as const;

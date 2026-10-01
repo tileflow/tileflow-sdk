@@ -10,6 +10,7 @@ import {
   type TileflowNativeSourceState,
 } from './native-source-types';
 import {freezeNativeSnapshot, nativeOwnRecord} from './native-source-utils';
+import {resolveTileflowNativeManifestUrl} from './native-urls';
 import {isTileflowPortableId} from './portable-identity-rules';
 import {
   resolveTileflowRuntimeTheme,
@@ -111,12 +112,22 @@ export function createTileflowNativeSourceController(options: {
           map: sourceInput.map,
           manifestUrl: sourceInput.manifestUrl as string,
         };
+        if (sourceInput.developmentOrigin !== undefined) {
+          try {
+            const developmentOrigin = sourceInput.developmentOrigin as string;
+            selectedSource.developmentOrigin = resolveTileflowNativeManifestUrl(developmentOrigin, {
+              developmentOrigin,
+            }).slice(0, -1);
+          } catch {
+            throw new TileflowNativeSourceError('NATIVE_MANIFEST_URL_INVALID', 'manifestUrl');
+          }
+        }
         detach = own.cancellation.link(selection.signal as TileflowNativeSourceOptions['signal']);
         const result = await loadNativeManifest(
           selectedSource.manifestUrl,
           acquire,
           {
-            developmentOrigin: selection.developmentOrigin as string | undefined,
+            developmentOrigin: selectedSource.developmentOrigin,
           },
           own.cancellation,
         );

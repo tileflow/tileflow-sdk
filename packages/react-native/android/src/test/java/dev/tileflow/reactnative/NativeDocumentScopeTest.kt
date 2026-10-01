@@ -8,7 +8,7 @@ class NativeDocumentScopeTest {
 		val scheduler = ManualAdmissionScheduler()
 		val callbacks = mutableListOf<(AdmissionHttpResponse?) -> Unit>()
 		var sequence = 0
-		val registry = NativeDocumentRegistry(scheduler, { _, _, _, _, done -> callbacks.add(done); AdmissionCancellation {} }, { "document-${++sequence}" })
+		val registry = NativeDocumentRegistry(scheduler, { _, _, _, _, _, done -> callbacks.add(done); AdmissionCancellation {} }, { "document-${++sequence}" })
 		val url = "https://api.example.test/maps/map_0123456789abcdef/style.json"
 		val one = NativeDocumentScope({ true }, { _, _ -> AdmissionCancellation {} }, "context-1")
 		val two = NativeDocumentScope({ true }, { _, _ -> AdmissionCancellation {} }, "context-2")
@@ -27,7 +27,7 @@ class NativeDocumentScopeTest {
 	@Test fun aFailedPhysicalCancellationKeepsItsHandleForTheNextAcknowledgement() {
 		val scheduler = ManualAdmissionScheduler()
 		var cancellations = 0
-		val registry = NativeDocumentRegistry(scheduler, { _, _, _, _, _ -> AdmissionCancellation {
+		val registry = NativeDocumentRegistry(scheduler, { _, _, _, _, _, _ -> AdmissionCancellation {
 			if (++cancellations == 1) throw IllegalStateException("Untrusted native details.")
 		} }, { "document-1" })
 		val id = registry.open("https://maps.example.test/manifest.json", 1024, null)

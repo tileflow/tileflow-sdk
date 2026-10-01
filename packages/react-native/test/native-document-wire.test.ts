@@ -50,11 +50,63 @@ function fixture() {
 }
 const url = 'https://maps.example.test/manifest.json';
 
+test('an exact development origin reaches only credential-free native document requests', async () => {
+  const f = fixture();
+  const origin = 'http://localhost:3333';
+  const manifestUrl = `${origin}/native/manifest.json`;
+  const operation = f.transport.acquire(manifestUrl, {
+    maximumBytes: 1024,
+    developmentOrigin: origin,
+  });
+  await f.opened.promise;
+  assert.deepEqual(f.requests, [[manifestUrl, 1024, null, null, origin]]);
+  f.identifier.resolve({document: 'document-1'});
+  f.headers.resolve({url: manifestUrl, status: 200});
+  assert.equal((await operation.response).url, manifestUrl);
+  await operation.cancel();
+
+  assert.throws(() => f.transport.acquire(manifestUrl, {maximumBytes: 1024}));
+  assert.throws(() =>
+    f.transport.acquire(manifestUrl, {
+      maximumBytes: 1024,
+      developmentOrigin: 'http://localhost:3334',
+    }),
+  );
+  assert.throws(() =>
+    f.transport.acquire(
+      manifestUrl,
+      {maximumBytes: 1024, developmentOrigin: origin},
+      {
+        installation: 'installation',
+        context: 'context-1',
+      },
+    ),
+  );
+});
+
+test('a development document cannot redirect to a different HTTP or HTTPS origin', async () => {
+  const origin = 'http://localhost:3333';
+  for (const finalUrl of [
+    'http://localhost:3334/manifest.json',
+    'https://localhost:3333/manifest.json',
+  ]) {
+    const f = fixture();
+    const operation = f.transport.acquire(`${origin}/manifest.json`, {
+      maximumBytes: 1024,
+      developmentOrigin: origin,
+    });
+    f.identifier.resolve({document: 'document-1'});
+    f.headers.resolve({url: finalUrl, status: 200});
+    await assert.rejects(operation.response, {code: 'NATIVE_DOCUMENT_INVALID'});
+    await operation.cancel();
+  }
+});
+
 test('an ordinary manifest read has no admission context and honors every requested chunk bound', async () => {
   const f = fixture();
   const operation = f.transport.acquire(url, {maximumBytes: 1024});
   await f.opened.promise;
-  assert.deepEqual(f.requests, [[url, 1024, null, null]]);
+  assert.deepEqual(f.requests, [[url, 1024, null, null, null]]);
   f.identifier.resolve({document: 'document-1'});
   f.headers.resolve({url, status: 200});
   const response = await operation.response;
@@ -76,7 +128,7 @@ test('a protected document preserves its context without carrying a grant throug
     {installation: 'installation', context: 'context-1'},
   );
   await f.opened.promise;
-  assert.deepEqual(f.requests, [[url, 1024, 'installation', 'context-1']]);
+  assert.deepEqual(f.requests, [[url, 1024, 'installation', 'context-1', null]]);
   f.identifier.resolve({document: 'document-1'});
   const cancelled = operation.cancel();
   await assert.rejects(operation.response, {code: 'NATIVE_DOCUMENT_CANCELLED'});

@@ -1,5 +1,6 @@
 #import "TFNativeDocumentRegistry.h"
 #import "TFDocumentBounds.h"
+#import "TFNativeDocumentURL.h"
 #import <atomic>
 
 static void TFDocumentInvalid(void) {
@@ -20,6 +21,7 @@ static void TFDocumentInvalid(void) {
 @interface TFNativeDocumentWork : NSObject { @public std::atomic_bool live; }
 @property (nonatomic, copy) NSString *identifier;
 @property (nonatomic, copy) NSString *origin;
+@property (nonatomic, copy, nullable) NSString *developmentOrigin;
 @property (nonatomic, copy) NSURLRequest *request;
 @property (nonatomic, strong, nullable) TFNativeDocumentScope *scope;
 @property (nonatomic) NSUInteger maximumBytes;
@@ -64,13 +66,18 @@ static void TFDocumentInvalid(void) {
 	} @catch (NSException *exception) { return NO; }
 }
 - (NSString *)open:(NSURLRequest *)request maximumBytes:(NSUInteger)maximumBytes scope:(TFNativeDocumentScope *)scope {
-	TFAdmissionCleanURL(request.URL.absoluteString);
+	return [self open:request maximumBytes:maximumBytes scope:scope developmentOrigin:nil];
+}
+- (NSString *)open:(NSURLRequest *)request maximumBytes:(NSUInteger)maximumBytes scope:(TFNativeDocumentScope *)scope developmentOrigin:(NSString *)developmentOrigin {
+	if (scope && developmentOrigin) TFDocumentInvalid();
+	TFNativeDocumentCleanURL(request.URL.absoluteString, developmentOrigin);
 	if (self->_closed.load() || !self->_foreground.load() || self.work.count >= 16 || maximumBytes < 1 || maximumBytes > 8388608 ||
 		![request.HTTPMethod isEqual:@"GET"] || request.HTTPBody || request.HTTPBodyStream || request.allHTTPHeaderFields.count ||
 		(scope && !scope.active())) TFDocumentInvalid();
 	TFNativeDocumentWork *work = [TFNativeDocumentWork new];
 	work.identifier = NSUUID.UUID.UUIDString;
-	work.origin = TFAdmissionOrigin(request.URL.absoluteString);
+	work.origin = TFNativeDocumentOrigin(request.URL.absoluteString);
+	work.developmentOrigin = developmentOrigin;
 	work.maximumBytes = maximumBytes; work.scope = scope; work.deadline = [self.scheduler nowMs] + 30000;
 	NSMutableURLRequest *copy = [request mutableCopy];
 	copy.timeoutInterval = 30; copy.cachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
@@ -109,14 +116,14 @@ static void TFDocumentInvalid(void) {
 	}
 	NSString *url = response.URL.absoluteString;
 	@try {
-		TFAdmissionCleanURL(url);
-		if (![TFAdmissionOrigin(url) isEqual:work.origin]) TFDocumentInvalid();
+		TFNativeDocumentCleanURL(url, work.developmentOrigin);
+		if (![TFNativeDocumentOrigin(url) isEqual:work.origin]) TFDocumentInvalid();
 		if (!work.scope && [@[@301, @302, @303, @307, @308] containsObject:@(response.statusCode)]) {
 			NSString *location = [response valueForHTTPHeaderField:@"Location"];
 			if (++work.redirects > 3 || ![location isKindOfClass:NSString.class] || !location.length || location.length > 2048 || [location containsString:@"\\"]) TFDocumentInvalid();
 			NSURL *target = [NSURL URLWithString:location relativeToURL:response.URL].absoluteURL;
-			TFAdmissionCleanURL(target.absoluteString);
-			if (![TFAdmissionOrigin(target.absoluteString) isEqual:work.origin]) TFDocumentInvalid();
+			TFNativeDocumentCleanURL(target.absoluteString, work.developmentOrigin);
+			if (![TFNativeDocumentOrigin(target.absoluteString) isEqual:work.origin]) TFDocumentInvalid();
 			NSMutableURLRequest *next = [work.request mutableCopy]; next.URL = target;
 			next.timeoutInterval = MAX(0.001, (work.deadline - [self.scheduler nowMs]) / 1000);
 			work.request = next; work.cancellation = nil;

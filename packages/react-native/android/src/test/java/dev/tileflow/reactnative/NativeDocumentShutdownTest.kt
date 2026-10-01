@@ -9,7 +9,7 @@ class NativeDocumentShutdownTest {
 			val scheduler = ManualAdmissionScheduler()
 			val guards = mutableListOf<() -> Boolean>()
 			var sequence = 0
-			val registry = NativeDocumentRegistry(scheduler, { _, _, _, guard, _ ->
+			val registry = NativeDocumentRegistry(scheduler, { _, _, _, _, guard, _ ->
 				guards.add(guard)
 				AdmissionCancellation { throw IllegalStateException("Untrusted cleanup failure.") }
 			}, { "document-${++sequence}" })

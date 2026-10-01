@@ -59,7 +59,10 @@ Native NDJSON lifecycle events additionally carry `renderer`, `profile`, `manife
 existing browser-preview contract.
 
 Metro remains the React Native application's JavaScript development server. The application points
-its Tileflow source at the native manifest URL using its own development networking setup. Tileflow
+its Tileflow source at the native manifest URL and sets `source.developmentOrigin` to its exact HTTP
+origin, for example `http://127.0.0.1:3333`. Both addresses must be reachable from the target device;
+an Android emulator may use a different host address. Other resource origins still require HTTPS.
+The application supplies its own development networking setup. Tileflow
 does not add a Metro plugin, device discovery or a tunnel.
 
 `preview` still binds to `127.0.0.1` by default. Existing explicit `--host <ip-or-localhost>` behavior

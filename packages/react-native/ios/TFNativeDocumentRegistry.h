@@ -15,6 +15,7 @@ typedef id<TFAdmissionCancel> _Nonnull (^TFNativeDocumentLoad)(NSURLRequest *req
 @interface TFNativeDocumentRegistry : NSObject
 - (instancetype)initWithScheduler:(id<TFAdmissionScheduler>)scheduler load:(TFNativeDocumentLoad)load;
 - (NSString *)open:(NSURLRequest *)request maximumBytes:(NSUInteger)maximumBytes scope:(nullable TFNativeDocumentScope *)scope;
+- (NSString *)open:(NSURLRequest *)request maximumBytes:(NSUInteger)maximumBytes scope:(nullable TFNativeDocumentScope *)scope developmentOrigin:(nullable NSString *)developmentOrigin;
 - (void)response:(NSString *)identifier completion:(void (^)(NSDictionary *_Nullable header))completion;
 - (NSDictionary *)chunk:(NSString *)identifier maximumBytes:(NSUInteger)maximumBytes;
 - (void)cancel:(NSString *)identifier;

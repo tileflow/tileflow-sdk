@@ -45,9 +45,14 @@ export type TileflowNativeManifestLoadOptions = TileflowNativeNetworkOptions & {
 };
 
 /** A published Tileflow map with an explicit manifest URL. Does not create a renderer. */
-export type TileflowNativeSource = {map: string; manifestUrl: string};
+export type TileflowNativeSource = {
+  map: string;
+  manifestUrl: string;
+  /** Exact HTTP origin permitted by this development source. HTTPS remains allowed. */
+  developmentOrigin?: string;
+};
 
-export type TileflowNativeSourceOptions = TileflowNativeNetworkOptions & {
+export type TileflowNativeSourceOptions = {
   theme?: string;
   /** Required only for theme="system"; no ambient appearance access. */
   colorScheme?: TileflowRuntimeColorScheme;

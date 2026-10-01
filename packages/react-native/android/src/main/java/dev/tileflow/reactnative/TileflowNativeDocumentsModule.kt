@@ -12,8 +12,8 @@ import com.facebook.react.common.LifecycleState
 class TileflowNativeDocumentsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(context), LifecycleEventListener {
 	private val scheduler = HandlerAdmissionScheduler()
 	private val network = NativeDocumentOkHttpNetwork()
-	private val registry = NativeDocumentRegistry(scheduler, { url, limit, scope, active, completion ->
-		if (scope == null) network.start(url, limit, active, completion)
+	private val registry = NativeDocumentRegistry(scheduler, { url, limit, scope, developmentOrigin, active, completion ->
+		if (scope == null) network.start(url, limit, active, completion, developmentOrigin)
 		else scope.load(url, completion)
 	})
 	@Volatile private var invalidated = false
@@ -24,7 +24,7 @@ class TileflowNativeDocumentsModule(context: ReactApplicationContext) : ReactCon
 	}
 	override fun getName() = "TileflowNativeDocuments"
 
-	@ReactMethod fun openDocument(url: String, maximumBytes: Double, installation: String?, context: String?, promise: Promise) = action(promise) {
+	@ReactMethod fun openDocument(url: String, maximumBytes: Double, installation: String?, context: String?, developmentOrigin: String?, promise: Promise) = action(promise) {
 		if (invalidated || !maximumBytes.isFinite() || maximumBytes != maximumBytes.toInt().toDouble() || maximumBytes < 1 || maximumBytes > 8388608 ||
 			(installation == null) != (context == null)) invalid()
 		val scope = if (installation == null) null else {
@@ -32,7 +32,7 @@ class TileflowNativeDocumentsModule(context: ReactApplicationContext) : ReactCon
 			val admission = reactApplicationContext.getNativeModule(TileflowNativeAdmissionModule::class.java) ?: invalid()
 			admission.documentScope(installation!!, context!!, maximumBytes.toInt())
 		}
-		Arguments.makeNativeMap(mapOf("document" to registry.open(url, maximumBytes.toInt(), scope)))
+		Arguments.makeNativeMap(mapOf("document" to registry.open(url, maximumBytes.toInt(), scope, developmentOrigin)))
 	}
 
 	@ReactMethod fun documentResponse(document: String, promise: Promise) {

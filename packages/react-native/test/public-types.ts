@@ -35,6 +35,16 @@ const source = {
   manifestUrl: 'https://maps.example.test/native/manifest.json',
 } as const;
 
+acceptsProps({
+  source: {
+    map: 'streets',
+    manifestUrl: 'http://localhost:3333/native/manifest.json',
+    developmentOrigin: 'http://localhost:3333',
+  },
+});
+// @ts-expect-error The development origin belongs to the source descriptor.
+acceptsProps({source, developmentOrigin: 'http://localhost:3333'});
+
 export function acceptsExistingCoreContracts(
   input: TileflowNativeSource,
   view: TileflowNativeInitialView,

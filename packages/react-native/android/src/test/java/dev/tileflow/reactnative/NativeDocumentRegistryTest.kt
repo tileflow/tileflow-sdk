@@ -10,13 +10,33 @@ class NativeDocumentRegistryTest {
 		val scheduler = ManualAdmissionScheduler()
 		val loads = mutableListOf<Load>()
 		var sequence = 0
-		val registry = NativeDocumentRegistry(scheduler, { _, _, _, guard, callback ->
+		val registry = NativeDocumentRegistry(scheduler, { _, _, _, _, guard, callback ->
 			val load = Load(guard, callback); loads.add(load)
 			AdmissionCancellation { load.cancelled = true }
 		}, { "document-${++sequence}" })
 		fun response(index: Int, bytes: ByteArray = "{}".toByteArray(), finalUrl: String = url) {
 			loads[index].callback(AdmissionHttpResponse(200, emptyMap(), bytes, finalUrl)); scheduler.flush()
 		}
+	}
+
+	@Test fun developmentOriginPermitsOnlyAnExactUnprotectedOrigin() {
+		val origin = "http://localhost:3333"
+		val local = "$origin/native/manifest.json"
+		val f = Fixture()
+		val id = f.registry.open(local, 1024, null, origin)
+		var header: NativeDocumentHeader? = null
+		f.registry.response(id) { header = it }
+		f.response(0, finalUrl = local)
+		assertEquals(local, header?.url)
+
+		for (candidate in listOf("http://localhost:3334/a", "http://127.0.0.1:3333/a")) {
+			try { f.registry.open(candidate, 1024, null, origin); fail("Expected exact origin rejection.") }
+			catch (_: IllegalArgumentException) { }
+		}
+		val scope = NativeDocumentScope({ true }, { _, _ -> AdmissionCancellation {} })
+		try { f.registry.open(local, 1024, scope, origin); fail("Expected protected HTTP rejection.") }
+		catch (_: IllegalArgumentException) { }
+		assertEquals(1, f.loads.size)
 	}
 
 	@Test fun allocationAndChunkingHaveIndependentAcknowledgements() {

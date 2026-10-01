@@ -16,6 +16,7 @@ export type NativeDocumentModule = Readonly<{
     maximumBytes: number,
     installation: string | null,
     context: string | null,
+    developmentOrigin: string | null,
   ): Promise<Readonly<{document: string}>>;
   documentResponse(document: string): Promise<Readonly<{url: string; status: number}>>;
   documentChunk(

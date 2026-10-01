@@ -6,6 +6,7 @@ import {
   nativeVersionedStyleMatchesMap,
   normalizeNativeResources,
 } from './native-admission-url';
+import {nativeDocumentOrigin} from './native-document-url';
 import {
   freezeNativePreparedJson,
   NativePreparationError,
@@ -17,6 +18,7 @@ type Json = Record<string, unknown>;
 type Document = Readonly<{url: string; value: Readonly<Json>; bytes: number}>;
 type Ports = Readonly<{
   styleUrl: string;
+  developmentOrigin?: string;
   policy: HostedNativeResourcePolicy | null;
   fontFaces?: readonly Record<string, unknown>[];
   current(): boolean;
@@ -60,9 +62,18 @@ const tileKinds = new Set(['vector', 'raster', 'raster-dem']);
 const fontStyles = new Set(['italic', 'normal', 'oblique']);
 const fontWeights = new Set(['100', '200', '300', '400', '500', '600', '700', '800', '900']);
 
-function resolve(value: unknown, documentUrl: string, template?: 'tile' | 'glyphs'): string {
+function resolve(
+  value: unknown,
+  documentUrl: string,
+  template?: 'tile' | 'glyphs',
+  developmentOrigin?: string,
+): string {
   if (typeof value !== 'string') throw invalid();
-  const result = resolveTileflowNativeResourceUrl(value, {documentUrl, template});
+  const result = resolveTileflowNativeResourceUrl(value, {
+    documentUrl,
+    template,
+    developmentOrigin,
+  });
   if (
     hasReservedNativeContext(result) ||
     /tf_native_|tf_public_/iu.test(decodeURIComponent(result))
@@ -76,7 +87,12 @@ function owned(
   scope: NativeSessionResourceScope,
   policy: HostedNativeResourcePolicy | null,
 ): NativeAdmissionResource | null {
-  if (!policy || !policy.resourceOrigins.includes(nativeResourceOrigin(url))) return null;
+  if (
+    !policy ||
+    !url.startsWith('https://') ||
+    !policy.resourceOrigins.includes(nativeResourceOrigin(url))
+  )
+    return null;
   if (!policy.resourceScopes.includes(scope)) throw invalid();
   const path = url.slice(nativeResourceOrigin(url).length).split('?', 1)[0];
   let tilesetId: string | undefined;
@@ -193,6 +209,7 @@ function fontFormat(url: string): 'otf' | 'ttf' {
 
 function fontMetadata(
   input: readonly Record<string, unknown>[] | undefined,
+  developmentOrigin?: string,
 ): readonly FontMetadata[] {
   if (input === undefined) return Object.freeze([]);
   if (!Array.isArray(input) || input.length > nativePreparationLimits.fontFaces) throw invalid();
@@ -224,7 +241,7 @@ function fontMetadata(
         (typeof value.id !== 'string' || value.id.length === 0 || value.id.length > 256))
     )
       throw invalid();
-    const url = resolve(rawUrl, rawUrl);
+    const url = resolve(rawUrl, rawUrl, undefined, developmentOrigin);
     const format = fontFormat(url);
     if (value.format !== undefined && value.format !== format) throw invalid();
     const style = value.style ?? 'normal';
@@ -252,6 +269,7 @@ function validateFontFaces(
   rewrites: Array<() => void>,
   policy: HostedNativeResourcePolicy | null,
   discriminate: (url: string) => string,
+  developmentOrigin?: string,
 ): void {
   if (Object.keys(faces).length > nativePreparationLimits.fontFaces) throw invalid();
   let count = 0;
@@ -277,7 +295,7 @@ function validateFontFaces(
         !fontWeights.has(String(definition['font-weight']))
       )
         throw invalid();
-      const url = resolve(definition.url, documentUrl);
+      const url = resolve(definition.url, documentUrl, undefined, developmentOrigin);
       const format = fontFormat(url);
       const expected = metadata.filter(
         (item) =>
@@ -303,6 +321,8 @@ function validateFontFaces(
 
 /** One style and one TileJSON edge per source; no recursive document discovery. */
 export async function projectNativeResources(ports: Ports) {
+  const resolveUrl = (value: unknown, documentUrl: string, template?: 'tile' | 'glyphs') =>
+    resolve(value, documentUrl, template, ports.developmentOrigin);
   const resources = new Map<string, NativeAdmissionResource>();
   const documents = new Map<string, Promise<Document>>();
   let totalBytes = 0;
@@ -339,8 +359,8 @@ export async function projectNativeResources(ports: Ports) {
       );
       current();
       if (
-        resolve(document.url, url) !== document.url ||
-        nativeResourceOrigin(document.url) !== nativeResourceOrigin(url)
+        resolveUrl(document.url, url) !== document.url ||
+        nativeDocumentOrigin(document.url) !== nativeDocumentOrigin(url)
       )
         throw invalid();
       if (resource && document.url !== url) throw invalid();
@@ -358,8 +378,8 @@ export async function projectNativeResources(ports: Ports) {
   };
   try {
     current();
-    const metadata = fontMetadata(ports.fontFaces);
-    const styleUrl = resolve(ports.styleUrl, ports.styleUrl);
+    const metadata = fontMetadata(ports.fontFaces, ports.developmentOrigin);
+    const styleUrl = resolveUrl(ports.styleUrl, ports.styleUrl);
     const document = await read(styleUrl, 'style');
     const style = JSON.parse(JSON.stringify(document.value)) as Json;
     if (
@@ -379,7 +399,7 @@ export async function projectNativeResources(ports: Ports) {
         let declaringUrl = document.url;
         if (source.url !== undefined) {
           if (source.tiles !== undefined) throw invalid();
-          const url = resolve(source.url, document.url);
+          const url = resolveUrl(source.url, document.url);
           const tileJson = await read(url, 'tilejson');
           if (tileJson.value.url !== undefined || !Array.isArray(tileJson.value.tiles))
             throw invalid();
@@ -393,7 +413,7 @@ export async function projectNativeResources(ports: Ports) {
         if (!Array.isArray(source.tiles) || source.tiles.length < 1 || source.tiles.length > 16)
           throw invalid();
         const tiles = source.tiles.map((entry: unknown) => {
-          const url = resolve(entry, declaringUrl, 'tile');
+          const url = resolveUrl(entry, declaringUrl, 'tile');
           const resource = owned(url, 'tile', ports.policy);
           add(
             resource
@@ -409,18 +429,18 @@ export async function projectNativeResources(ports: Ports) {
         });
       } else if (source.type === 'geojson') {
         if (typeof source.data === 'string') {
-          const url = resolve(source.data, document.url);
-          if (ports.policy?.resourceOrigins.includes(nativeResourceOrigin(url))) throw invalid();
+          const url = resolveUrl(source.data, document.url);
+          if (ports.policy?.resourceOrigins.includes(nativeDocumentOrigin(url))) throw invalid();
           source.data = url;
         } else if (!record(source.data)) throw invalid();
       } else if (source.type === 'image') {
-        const url = resolve(source.url, document.url);
-        if (ports.policy?.resourceOrigins.includes(nativeResourceOrigin(url))) throw invalid();
+        const url = resolveUrl(source.url, document.url);
+        if (ports.policy?.resourceOrigins.includes(nativeDocumentOrigin(url))) throw invalid();
         source.url = url;
       } else throw invalid();
     }
     if (style.sprite !== undefined) {
-      const base = resolve(style.sprite, document.url);
+      const base = resolveUrl(style.sprite, document.url);
       let protectedSprite = false;
       for (const extension of ['.json', '.png', '@2x.json', '@2x.png']) {
         const resource = owned(suffix(base, extension), 'sprite', ports.policy);
@@ -433,7 +453,7 @@ export async function projectNativeResources(ports: Ports) {
     }
     const stacks = fontStacks(style.layers);
     if (style.glyphs !== undefined) {
-      const url = resolve(style.glyphs, document.url, 'glyphs');
+      const url = resolveUrl(style.glyphs, document.url, 'glyphs');
       const resource = owned(url, 'glyph', ports.policy);
       if (resource) {
         if (!stacks.length) throw invalid();
@@ -454,6 +474,7 @@ export async function projectNativeResources(ports: Ports) {
         rewrites,
         ports.policy,
         ports.discriminate,
+        ports.developmentOrigin,
       );
     } else if (metadata.length) throw invalid();
     if (

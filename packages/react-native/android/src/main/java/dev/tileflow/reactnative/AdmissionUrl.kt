@@ -23,7 +23,7 @@ internal object AdmissionUrl {
 	}
 	fun origin(value: String): String {
 		val parsed = value.toHttpUrlOrNull() ?: invalid()
-		val port = if (parsed.port == 443) "" else ":${parsed.port}"
+		val port = if (parsed.port == if (parsed.scheme == "https") 443 else 80) "" else ":${parsed.port}"
 		val host = if (parsed.host.contains(':')) "[${parsed.host}]" else parsed.host
 		return "${parsed.scheme}://$host$port"
 	}
@@ -38,10 +38,22 @@ internal object AdmissionUrl {
 			}
 		} catch (_: Exception) { false }
 	}
-	fun clean(value: String): String {
+	fun clean(value: String): String = clean(value, null)
+
+	/** Development HTTP is limited to credential-free document reads. */
+	fun document(value: String, developmentOrigin: String?): String {
+		if (developmentOrigin != null) {
+			if (!developmentOrigin.startsWith("http://") || origin("$developmentOrigin/") != developmentOrigin) invalid()
+			clean("$developmentOrigin/", developmentOrigin)
+		}
+		return clean(value, developmentOrigin)
+	}
+
+	private fun clean(value: String, developmentOrigin: String?): String {
 		if (value.length > AdmissionLimits.URL || value.any { it.code !in 33..126 || it == '\\' || it == '#' } || reserved(value)) invalid()
 		val parsed = value.toHttpUrlOrNull() ?: invalid()
-		if (parsed.scheme != "https" || parsed.username.isNotEmpty() || parsed.password.isNotEmpty() || parsed.toString() != value) invalid()
+		if ((parsed.scheme != "https" && (parsed.scheme != "http" || origin(value) != developmentOrigin)) ||
+			parsed.username.isNotEmpty() || parsed.password.isNotEmpty() || parsed.toString() != value) invalid()
 		val text = decoded(value).lowercase(Locale.ROOT)
 		if (text.contains("tf_native_") || text.contains("tf_public_")) invalid()
 		return value

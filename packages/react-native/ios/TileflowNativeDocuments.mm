@@ -50,11 +50,10 @@ RCT_EXPORT_MODULE(TileflowNativeDocuments)
 	}
 	return self.registry;
 }
-RCT_REMAP_METHOD(openDocument, openDocumentURL:(NSString *)url maximumBytes:(double)maximumBytes installation:(NSString *)installation context:(NSString *)context resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
+RCT_REMAP_METHOD(openDocument, openDocumentURL:(NSString *)url maximumBytes:(double)maximumBytes installation:(NSString *)installation context:(NSString *)context developmentOrigin:(NSString *)developmentOrigin resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject) {
 	@try {
 		if (_invalidated.load() || !std::isfinite(maximumBytes) || std::floor(maximumBytes) != maximumBytes || maximumBytes < 1 || maximumBytes > 8388608 ||
 			(installation == nil) != (context == nil)) [self invalid];
-		TFAdmissionCleanURL(url);
 		TFNativeDocumentScope *scope = nil;
 		if (installation) {
 			if (!TFAdmissionValidToken(installation) || !TFAdmissionValidToken(context)) [self invalid];
@@ -64,7 +63,7 @@ RCT_REMAP_METHOD(openDocument, openDocumentURL:(NSString *)url maximumBytes:(dou
 			if (!scope) [self invalid];
 		}
 		NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:url]];
-		NSString *identifier = [[self ensureRegistry] open:request maximumBytes:(NSUInteger)maximumBytes scope:scope];
+		NSString *identifier = [[self ensureRegistry] open:request maximumBytes:(NSUInteger)maximumBytes scope:scope developmentOrigin:developmentOrigin];
 		resolve(@{@"document": identifier});
 	} @catch (NSException *exception) { [self reject:reject]; }
 }

@@ -8,7 +8,7 @@ import {createMountedMapOwner} from '../src/mounted-map-owner';
 import type {NativeMapAdmission, NativeMapAdmissionInput} from '../src/native-admission-owner';
 import {deferred} from './session-fixture';
 
-function fixture() {
+function fixture(origin = 'https://maps.example.test') {
   const calls: string[] = [];
   const events: Array<{type: string; [key: string]: unknown}> = [];
   const contexts: NativeMapAdmission[] = [];
@@ -30,10 +30,10 @@ function fixture() {
     },
   };
   const documents: Record<string, unknown> = {
-    'https://maps.example.test/manifest.json': manifest,
-    'https://maps.example.test/other.json': manifest,
-    'https://maps.example.test/light.json': {version: 8, sources: {}, layers: []},
-    'https://maps.example.test/dark.json': {version: 8, sources: {}, layers: []},
+    [`${origin}/manifest.json`]: manifest,
+    [`${origin}/other.json`]: manifest,
+    [`${origin}/light.json`]: {version: 8, sources: {}, layers: []},
+    [`${origin}/dark.json`]: {version: 8, sources: {}, layers: []},
   };
   const ports = {
     documents: {
@@ -133,7 +133,7 @@ function fixture() {
     now: () => new Date('2026-09-01T00:00:00.000Z'),
   };
   const owner = createMountedMapOwner(ports);
-  const source = {map: 'main', manifestUrl: 'https://maps.example.test/manifest.json'};
+  const source = {map: 'main', manifestUrl: `${origin}/manifest.json`};
   const update = (extras: Record<string, unknown> = {}) =>
     owner.update({source, onError: (event) => events.push(event), ...extras});
   return {
@@ -142,6 +142,7 @@ function fixture() {
     update,
     source,
     calls,
+    documents,
     contexts,
     events,
     configurationReads: () => configurationReads,
@@ -152,6 +153,56 @@ function fixture() {
     },
   };
 }
+
+test('development source prepares relative resources and keeps one owner across themes', async () => {
+  const origin = 'http://localhost:3333';
+  const f = fixture(origin);
+  const source = {...f.source, developmentOrigin: origin};
+  f.documents[`${origin}/light.json`] = {
+    version: 8,
+    sources: {world: {type: 'vector', url: './tiles/tiles.json'}},
+    sprite: './sprite',
+    glyphs: './fonts/{fontstack}/{range}.pbf',
+    layers: [],
+  };
+  f.documents[`${origin}/tiles/tiles.json`] = {tiles: ['./{z}/{x}/{y}.pbf']};
+
+  f.update({source});
+  await f.owner.whenIdle();
+  const renderer = f.owner.getSnapshot().renderer;
+  assert.ok(renderer, JSON.stringify(f.events));
+  assert.deepEqual(f.calls, [
+    source.manifestUrl,
+    `${origin}/light.json`,
+    `${origin}/tiles/tiles.json`,
+  ]);
+  assert.equal(f.configurationReads(), 0);
+
+  f.update({source: {...source, developmentOrigin: 'HTTP://LOCALHOST:3333/'}, theme: 'dark'});
+  await f.owner.whenIdle();
+  assert.equal(f.owner.getSnapshot().renderer?.key, renderer.key);
+  assert.equal(f.contexts.length, 1);
+  assert.equal(f.calls.filter((url) => url.endsWith('manifest.json')).length, 1);
+
+  f.update({source: f.source});
+  await f.owner.whenIdle();
+  assert.equal(f.owner.getSourceState()?.status, 'error');
+  assert.equal(f.owner.getSnapshot().renderer, undefined);
+  assert.equal(f.retired(), 1);
+  await f.owner.dispose();
+});
+
+test('HTTP without its exact source opt-in fails before acquisition', async () => {
+  for (const developmentOrigin of [undefined, 'http://localhost:3334', '*']) {
+    const f = fixture('http://localhost:3333');
+    f.update({source: {...f.source, developmentOrigin}});
+    await f.owner.whenIdle();
+    assert.equal(f.owner.getSourceState()?.status, 'error');
+    assert.deepEqual(f.calls, []);
+    assert.deepEqual(f.contexts, []);
+    await f.owner.dispose();
+  }
+});
 
 test('does not mount before context acknowledgement; direct delivery never reads configuration or authority', async () => {
   const f = fixture();

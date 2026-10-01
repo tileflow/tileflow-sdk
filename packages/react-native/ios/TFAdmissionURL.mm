@@ -1,4 +1,5 @@
 #import "TFAdmissionEngine.h"
+#import "TFNativeDocumentURL.h"
 
 NSString *const TFAdmissionGrantHeader = @"X-Tileflow-Native-Grant";
 
@@ -41,15 +42,18 @@ BOOL TFAdmissionHasReservedContext(NSString *url) {
 	}
 	return NO;
 }
-NSString *TFAdmissionOrigin(NSString *url) {
+static NSString *TFURLOrigin(NSString *url, BOOL permitsHTTP) {
 	NSURLComponents *components = [NSURLComponents componentsWithString:url];
-	if (![components.scheme isEqual:@"https"] || !components.host.length || components.user != nil || components.password != nil) TFInvalidURL();
+	if ((![[components scheme] isEqual:@"https"] && !(permitsHTTP && [components.scheme isEqual:@"http"])) || !components.host.length || components.user != nil || components.password != nil) TFInvalidURL();
 	NSString *host = components.host.lowercaseString;
 	if ([host containsString:@":"] && ![host hasPrefix:@"["]) host = [NSString stringWithFormat:@"[%@]", host];
 	NSNumber *port = components.port;
 	if (port && (port.integerValue < 1 || port.integerValue > 65535)) TFInvalidURL();
-	return [NSString stringWithFormat:@"https://%@%@", host, port && port.integerValue != 443 ? [NSString stringWithFormat:@":%@", port] : @""];
+	NSInteger defaultPort = [components.scheme isEqual:@"https"] ? 443 : 80;
+	return [NSString stringWithFormat:@"%@://%@%@", components.scheme, host, port && port.integerValue != defaultPort ? [NSString stringWithFormat:@":%@", port] : @""];
 }
+NSString *TFAdmissionOrigin(NSString *url) { return TFURLOrigin(url, NO); }
+NSString *TFNativeDocumentOrigin(NSString *url) { return TFURLOrigin(url, YES); }
 BOOL TFAdmissionStyleMatchesMap(NSString *url, NSString *mapId) {
 	@try {
 		if (![url isKindOfClass:NSString.class] || url.length > 2048) return NO;
@@ -64,10 +68,11 @@ BOOL TFAdmissionStyleMatchesMap(NSString *url, NSString *mapId) {
 		return version > 0 && version <= 9007199254740991LL;
 	} @catch (NSException *exception) { return NO; }
 }
-NSString *TFAdmissionCleanURL(NSString *url) {
+static NSString *TFCleanURL(NSString *url, NSString *developmentOrigin) {
 	if (![url isKindOfClass:NSString.class] || url.length > 2048 || !TFMatches(url, @"^[\\x21-\\x7e]+$") || [url containsString:@"\\"] || [url containsString:@"#"] || TFAdmissionHasReservedContext(url)) TFInvalidURL();
 	NSURLComponents *components = [NSURLComponents componentsWithString:url];
-	NSString *origin = TFAdmissionOrigin(url);
+	NSString *origin = TFURLOrigin(url, developmentOrigin != nil);
+	if ([components.scheme isEqual:@"http"] && ![origin isEqual:developmentOrigin]) TFInvalidURL();
 	if (![url hasPrefix:[origin stringByAppendingString:@"/"]] || ![components.URL.absoluteString isEqual:url]) TFInvalidURL();
 	for (NSString *segment in [components.percentEncodedPath componentsSeparatedByString:@"/"]) {
 		NSString *decoded = TFDecodeKey(segment);
@@ -76,6 +81,16 @@ NSString *TFAdmissionCleanURL(NSString *url) {
 	NSString *decoded = TFDecodeKey(url).lowercaseString;
 	if ([decoded containsString:@"tf_native_"] || [decoded containsString:@"tf_public_"]) TFInvalidURL();
 	return url;
+}
+NSString *TFAdmissionCleanURL(NSString *url) { return TFCleanURL(url, nil); }
+NSString *TFNativeDocumentCleanURL(NSString *url, NSString *developmentOrigin) {
+	if (developmentOrigin) {
+		if (![developmentOrigin isKindOfClass:NSString.class] || ![developmentOrigin hasPrefix:@"http://"]) TFInvalidURL();
+		NSString *root = [developmentOrigin stringByAppendingString:@"/"];
+		if (![TFNativeDocumentOrigin(root) isEqual:developmentOrigin]) TFInvalidURL();
+		TFCleanURL(root, developmentOrigin);
+	}
+	return TFCleanURL(url, developmentOrigin);
 }
 NSDictionary<NSString *, NSString *> *TFAdmissionStripContext(NSString *url) {
 	if (![url isKindOfClass:NSString.class] || url.length > 2048 || [url containsString:@"#"] || [url containsString:@"\\"]) TFInvalidURL();

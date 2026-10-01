@@ -1,35 +1,20 @@
 import {
-  resolveTileflowNativeManifestUrl,
   type TileflowNativeManifestOperation,
   type TileflowNativeManifestResponse,
+  type TileflowNativeNetworkOptions,
 } from '@tileflow/core/native';
-import {
-  hasReservedNativeContext,
-  isNativeToken,
-  nativeResourceOrigin,
-} from './native-admission-url';
+import {isNativeToken} from './native-admission-url';
 import {
   NativeDocumentError,
   nativeDocumentLimits,
   type NativeDocumentModule,
   type NativeDocumentScope,
 } from './native-document-contract';
+import {cleanNativeDocumentUrl, nativeDocumentOrigin} from './native-document-url';
 
 const invalid = () => new NativeDocumentError('NATIVE_DOCUMENT_INVALID');
 const unavailable = () => new NativeDocumentError('NATIVE_DOCUMENT_UNAVAILABLE');
 const cancelled = () => new NativeDocumentError('NATIVE_DOCUMENT_CANCELLED');
-
-function safeUrl(value: unknown): string {
-  if (
-    typeof value !== 'string' ||
-    value.length > 2048 ||
-    resolveTileflowNativeManifestUrl(value) !== value ||
-    hasReservedNativeContext(value) ||
-    /tf_native_|tf_public_/iu.test(decodeURIComponent(value))
-  )
-    throw invalid();
-  return value;
-}
 
 function decode(value: unknown, maximumBytes: number): Uint8Array {
   if (
@@ -68,13 +53,14 @@ export function createNativeDocumentTransport(locate: () => unknown) {
 
   function acquire(
     value: string,
-    options: Readonly<{maximumBytes: number}>,
+    options: Readonly<{maximumBytes: number} & TileflowNativeNetworkOptions>,
     scope?: NativeDocumentScope,
   ): TileflowNativeManifestOperation {
     let url: string;
     const maximumBytes = options.maximumBytes;
+    const developmentOrigin = options.developmentOrigin;
     try {
-      url = safeUrl(value);
+      url = cleanNativeDocumentUrl(value, scope ? undefined : developmentOrigin);
       if (
         !Number.isSafeInteger(maximumBytes) ||
         maximumBytes < 1 ||
@@ -157,7 +143,13 @@ export function createNativeDocumentTransport(locate: () => unknown) {
       }
       module = candidate as NativeDocumentModule;
       allocation = Promise.resolve(
-        module.openDocument(url, maximumBytes, scope?.installation ?? null, scope?.context ?? null),
+        module.openDocument(
+          url,
+          maximumBytes,
+          scope?.installation ?? null,
+          scope?.context ?? null,
+          scope ? null : (developmentOrigin ?? null),
+        ),
       ).then(
         (ack) => {
           if (!ack || !isNativeToken(ack.document)) throw invalid();
@@ -189,12 +181,12 @@ export function createNativeDocumentTransport(locate: () => unknown) {
         checkOwner();
         let finalUrl: string;
         try {
-          finalUrl = safeUrl(reply.url);
+          finalUrl = cleanNativeDocumentUrl(reply.url, scope ? undefined : developmentOrigin);
           if (
             !Number.isInteger(reply.status) ||
             reply.status < 100 ||
             reply.status > 599 ||
-            nativeResourceOrigin(finalUrl) !== nativeResourceOrigin(url)
+            nativeDocumentOrigin(finalUrl) !== nativeDocumentOrigin(url)
           )
             throw invalid();
         } catch {

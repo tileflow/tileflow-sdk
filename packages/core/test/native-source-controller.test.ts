@@ -6,7 +6,7 @@ import {
   type TileflowNativeManifestResponse,
   type TileflowNativeSourceState,
 } from '../src/native';
-import {deferred, manifest, source, transport} from './native-manifest-fixture';
+import {bytes, deferred, manifest, source, transport} from './native-manifest-fixture';
 
 function controlled() {
   const requests: Array<{
@@ -30,6 +30,25 @@ function controlled() {
   });
   return {controller, states, requests};
 }
+
+test('a source explicitly permits one development origin for its manifest and themes', async () => {
+  const origin = 'http://127.0.0.1:3333';
+  const input = {
+    ...source,
+    manifestUrl: `${origin}/native/manifest.json`,
+    developmentOrigin: origin,
+  };
+  const t = transport(bytes(), input.manifestUrl);
+  const controller = createTileflowNativeSourceController({acquire: t.acquire});
+
+  await controller.replace(input);
+  assert.equal(controller.state?.status, 'ready');
+  if (controller.state?.status !== 'ready') throw new Error('Expected development source.');
+  assert.equal(controller.state.theme.styleUrl, `${origin}/native/styles/streets/light.json`);
+  assert.equal(controller.state.source.developmentOrigin, origin);
+  assert.equal(t.calls, 1);
+  controller.dispose();
+});
 
 test('publishes immutable loading/ready snapshots and canonical manifest-driven selection', async () => {
   const t = transport();

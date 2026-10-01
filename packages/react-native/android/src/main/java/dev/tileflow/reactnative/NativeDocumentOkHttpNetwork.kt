@@ -3,6 +3,7 @@ package dev.tileflow.reactnative
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.net.URI
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import okhttp3.Authenticator
@@ -46,7 +47,7 @@ internal class NativeDocumentOkHttpNetwork {
 		}
 		.build()
 
-	fun start(url: String, maximumBytes: Int, active: () -> Boolean, completion: (AdmissionHttpResponse?) -> Unit): AdmissionCancellation {
+	fun start(url: String, maximumBytes: Int, active: () -> Boolean, completion: (AdmissionHttpResponse?) -> Unit, developmentOrigin: String? = null): AdmissionCancellation {
 		val live = AtomicBoolean(true)
 		val completed = AtomicBoolean(false)
 		var redirects = 0
@@ -58,7 +59,7 @@ internal class NativeDocumentOkHttpNetwork {
 		fun issue(target: String) {
 			if (!guard()) { finish(null); return }
 			try {
-				AdmissionUrl.clean(target)
+				AdmissionUrl.document(target, developmentOrigin)
 				val next = client.newCall(Request.Builder().url(target).get().tag(Guard::class.java, Guard(guard)).build())
 				call = next
 				next.enqueue(object : Callback {
@@ -70,7 +71,10 @@ internal class NativeDocumentOkHttpNetwork {
 								if (!guard()) throw IOException("Native document acquisition failed.")
 								if (reply.code in listOf(301, 302, 303, 307, 308)) {
 									if (++redirects > 3) throw IOException("Native document acquisition failed.")
-									redirect = AdmissionUrl.redirect(target, reply.header("Location") ?: "", "")
+									val location = reply.header("Location") ?: throw IOException("Native document acquisition failed.")
+									if (location.length > 2048 || location.any { it.code !in 33..126 || it == '\\' }) throw IOException("Native document acquisition failed.")
+									redirect = AdmissionUrl.document(URI(target).resolve(location).toString(), developmentOrigin)
+									if (AdmissionUrl.origin(redirect!!) != AdmissionUrl.origin(target)) throw IOException("Native document acquisition failed.")
 									null
 								} else {
 									val body = reply.body ?: throw IOException("Native document acquisition failed.")

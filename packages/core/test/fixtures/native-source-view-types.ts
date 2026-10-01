@@ -10,6 +10,12 @@ const input: TileflowNativeSource = {
   manifestUrl: 'https://maps.example.test/manifest.json',
 };
 void input;
+const development: TileflowNativeSource = {
+  ...input,
+  manifestUrl: 'http://localhost:3333/native/manifest.json',
+  developmentOrigin: 'http://localhost:3333',
+};
+void development;
 // @ts-expect-error A native source requires an explicit manifest URL.
 const missingUrl: TileflowNativeSource = {map: 'main'};
 void missingUrl;

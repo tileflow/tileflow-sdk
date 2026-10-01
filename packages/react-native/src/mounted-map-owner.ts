@@ -3,11 +3,12 @@ import {
   resolveTileflowNativeManifestUrl,
   type TileflowNativeManifestAcquire,
   type TileflowNativeManifestOperation,
+  type TileflowNativeNetworkOptions,
   type TileflowNativeSourceState,
 } from '@tileflow/core/native';
 import type {AppearanceSelection, AppearanceState} from './appearance';
 import {snapshotCameraProps} from './camera-input';
-import type {MapBaseProps, MapCameraProps, MapOptions, MapSourceState} from './contract';
+import type {MapBaseProps, MapCameraProps, MapOptions, MapSource, MapSourceState} from './contract';
 import {assertHostedNativeStyleDocument} from './hosted-manifest-identity';
 import {createHostedNativePreparationGuard} from './hosted-preparation';
 import type {NativeMapAdmission, NativeMapAdmissionInput} from './native-admission-owner';
@@ -36,6 +37,7 @@ type Renderer = ReturnType<typeof createNativeRendererOwner>;
 type Job = {live: boolean; operations: Set<TileflowNativeManifestOperation>};
 type Epoch = {
   live: boolean;
+  developmentOrigin?: string;
   cache: ReturnType<typeof createNativeManifestCache>;
   binding: BindingResolver;
   hosted: ReturnType<typeof createHostedNativePreparationGuard>;
@@ -52,7 +54,7 @@ export type MountedMapPorts = Readonly<{
   documents: {
     acquire(
       url: string,
-      options: {maximumBytes: number},
+      options: {maximumBytes: number} & TileflowNativeNetworkOptions,
       scope?: NativeDocumentScope,
     ): TileflowNativeManifestOperation;
   };
@@ -81,16 +83,21 @@ function cameraInput(props: MountedMapProps): MapCameraProps {
   snapshotCameraProps(input);
   return input;
 }
-function sourceIdentity(value: unknown): string | undefined {
+function snapshotSource(value: unknown): MapSource | undefined {
   try {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null) return undefined;
     const keys = Reflect.ownKeys(value);
-    if (keys.length !== 2 || !keys.includes('map') || !keys.includes('manifestUrl'))
+    if (
+      !keys.includes('map') ||
+      !keys.includes('manifestUrl') ||
+      keys.some((key) => !['map', 'manifestUrl', 'developmentOrigin'].includes(String(key)))
+    )
       return undefined;
     const map = Object.getOwnPropertyDescriptor(value, 'map');
     const url = Object.getOwnPropertyDescriptor(value, 'manifestUrl');
+    const development = Object.getOwnPropertyDescriptor(value, 'developmentOrigin');
     if (
       !map ||
       !url ||
@@ -100,10 +107,21 @@ function sourceIdentity(value: unknown): string | undefined {
       !('value' in url) ||
       typeof map.value !== 'string' ||
       typeof url.value !== 'string' ||
-      map.value.length > 64
+      map.value.length > 64 ||
+      (development && (!development.enumerable || !('value' in development)))
     )
       return undefined;
-    return `${map.value.length}:${map.value}${resolveTileflowNativeManifestUrl(url.value)}`;
+    const developmentOrigin =
+      development?.value === undefined
+        ? undefined
+        : resolveTileflowNativeManifestUrl(development.value, {
+            developmentOrigin: development.value,
+          }).slice(0, -1);
+    return Object.freeze({
+      map: map.value,
+      manifestUrl: resolveTileflowNativeManifestUrl(url.value, {developmentOrigin}),
+      ...(developmentOrigin === undefined ? {} : {developmentOrigin}),
+    });
   } catch {
     return undefined;
   }
@@ -196,7 +214,16 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
   ): TileflowNativeManifestOperation {
     if (!epoch.live || epoch.operations.size >= 16 || (job && !job.live))
       throw new NativePreparationError();
-    const request = ports.documents.acquire(url, options, scope);
+    const request = ports.documents.acquire(
+      url,
+      {
+        ...options,
+        ...(scope || epoch.developmentOrigin === undefined
+          ? {}
+          : {developmentOrigin: epoch.developmentOrigin}),
+      },
+      scope,
+    );
     let live = true;
     let cancellation: Promise<void> | undefined;
     const cancel = (): Promise<void> => {
@@ -282,9 +309,10 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
     });
     return track(attempt);
   }
-  function createEpoch(): Epoch {
+  function createEpoch(developmentOrigin?: string): Epoch {
     const epoch: Epoch = {
       live: true,
+      developmentOrigin,
       binding: ports.createBinding(),
       hosted: createHostedNativePreparationGuard(),
       operations: new Set(),
@@ -356,6 +384,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
         if (!owns()) return;
         const prepared = await projectNativeResources({
           styleUrl: source.theme.styleUrl,
+          developmentOrigin: source.source.developmentOrigin,
           policy,
           fontFaces: source.theme.fontFaces?.map((face) => ({
             family: face.family,
@@ -525,7 +554,8 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
     },
     update(next: MountedMapProps): void {
       if (disposed) return;
-      props = next;
+      const source = snapshotSource(next.source);
+      props = source ? {...next, source} : next;
       let options: MapOptions;
       let input: MapCameraProps;
       try {
@@ -535,7 +565,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
         rendererError();
         return;
       }
-      const key = sourceIdentity(next.source);
+      const key = source && JSON.stringify(source);
       const changedSource =
         !initialized || key !== sourceKey || (key === undefined && sourceObject !== next.source);
       const changedTheme = !initialized || next.theme !== selectedTheme;
@@ -546,7 +576,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
         const previous = current;
         current = undefined;
         if (previous) void retire(previous).catch(() => undefined);
-        current = createEpoch();
+        current = createEpoch(source?.developmentOrigin);
         sourceKey = key;
         sourceObject = next.source;
       }

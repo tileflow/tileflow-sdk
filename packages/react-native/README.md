@@ -49,6 +49,24 @@ Native sources keep the explicit shape:
 
 There is no implicit native manifest discovery. `theme` accepts one concrete published theme or `system`. A `system` selection subscribes to React Native Appearance only while that selection is mounted. Theme application is transactional: a new concrete style is prepared and applied on the same Map, becomes current only after native readiness, and attempts to restore the previous accepted style if the replacement fails.
 
+For the CLI's Native preview, explicitly permit its HTTP origin in the source:
+
+```tsx
+<Map
+  source={{
+    map: 'stores',
+    manifestUrl: 'http://127.0.0.1:3333/native/manifest.json',
+    developmentOrigin: 'http://127.0.0.1:3333',
+  }}
+/>
+```
+
+Use an address reachable from the target device. The exception covers only that exact scheme,
+host and port, including relative styles and resources; other origins still require HTTPS.
+Keep it in development configuration. The application owns any iOS ATS or Android cleartext
+exception. Changing or removing the origin retires the previous source owner. Hosted credentials
+and protected delivery still require HTTPS.
+
 `onThemeChange` reports only the safe public selection shape. It does not expose style URLs, style JSON, configuration, session authority or native error messages.
 
 ## Camera

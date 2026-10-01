@@ -230,7 +230,10 @@ on the adapter honoring its cancellation methods.
 ## Control a source
 
 `createTileflowNativeSourceController({acquire})` coordinates a manifest-backed Tileflow source:
-`{map, manifestUrl}`. Both fields are required. Renderer discriminators and direct style inputs
+`{map, manifestUrl, developmentOrigin?}`. The map and manifest URL are required. The optional
+development origin uses the exact HTTP exception described above and applies to manifest resources.
+It belongs to the source descriptor, while theme, color scheme and cancellation remain replacement
+options. Renderer discriminators and direct style inputs
 are not part of this public source contract; the obsolete `kind` and `style` fields are rejected.
 A completely unmanaged map uses upstream MapLibre directly, not another Tileflow source mode.
 

@@ -44,6 +44,76 @@ function fixture(
   return {ports, calls, accepted};
 }
 
+test('development transport applies to the full resource closure without granting authority', async () => {
+  const origin = 'http://localhost:3333';
+  const style = {
+    version: 8,
+    sources: {
+      local: {type: 'vector', url: './tiles.json'},
+      remote: {type: 'raster', tiles: ['https://tiles.example.test/{z}/{x}/{y}.png']},
+    },
+    layers: [
+      {
+        id: 'label',
+        type: 'symbol',
+        source: 'local',
+        layout: {'text-field': 'A', 'text-font': ['Brand Regular']},
+      },
+    ],
+    sprite: './sprite',
+    glyphs: './fonts/{fontstack}/{range}.pbf',
+    'font-faces': {
+      'Brand Regular': [
+        {url: './regular.ttf', 'font-family': 'Brand', 'font-style': 'normal', 'font-weight': 400},
+      ],
+    },
+  };
+  const documents: Record<string, Record<string, unknown>> = {
+    [`${origin}/style.json`]: style,
+    [`${origin}/tiles.json`]: {tiles: ['./{z}/{x}/{y}.pbf']},
+  };
+  const calls: string[] = [];
+  const result = await projectNativeResources({
+    styleUrl: `${origin}/style.json`,
+    developmentOrigin: origin,
+    policy: null,
+    fontFaces: [{family: 'Brand', source: `${origin}/regular.ttf`}],
+    current: () => true,
+    async accept() {
+      assert.fail('Development has no resource grant.');
+    },
+    discriminate() {
+      assert.fail('Development has no context discriminator.');
+    },
+    async read(url) {
+      calls.push(url);
+      return {url, value: documents[url], bytes: 1024};
+    },
+  });
+  assert.deepEqual(calls, [`${origin}/style.json`, `${origin}/tiles.json`]);
+  const sources = result.style.sources as Record<string, {tiles: string[]}>;
+  assert.deepEqual(sources.local.tiles, [`${origin}/{z}/{x}/{y}.pbf`]);
+  assert.deepEqual(sources.remote.tiles, ['https://tiles.example.test/{z}/{x}/{y}.png']);
+  assert.equal(result.style.sprite, `${origin}/sprite`);
+  assert.equal(result.style.glyphs, `${origin}/fonts/{fontstack}/{range}.pbf`);
+  assert.deepEqual(result.resources, []);
+
+  documents[`${origin}/tiles.json`] = {tiles: ['http://localhost:3334/{z}/{x}/{y}.pbf']};
+  await assert.rejects(
+    projectNativeResources({
+      styleUrl: `${origin}/style.json`,
+      developmentOrigin: origin,
+      policy: null,
+      current: () => true,
+      async accept() {},
+      discriminate: (url) => url,
+      async read(url) {
+        return {url, value: documents[url], bytes: 1024};
+      },
+    }),
+  );
+});
+
 test('projects exact style TileJSON tile sprite glyph and font closure without a second document fetch', async () => {
   const fontUrl = `${apiOrigin}/fonts/fb_example/regular.ttf`;
   const source = {

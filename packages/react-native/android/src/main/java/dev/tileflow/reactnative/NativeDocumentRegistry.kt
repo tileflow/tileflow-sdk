@@ -20,10 +20,10 @@ internal class NativeDocumentChunk(val bytes: ByteArray, val last: Boolean) {
 /** All registry mutations run on the native serial scheduler, independently of JavaScript. */
 internal class NativeDocumentRegistry(
 	private val scheduler: AdmissionScheduler,
-	private val load: (String, Int, NativeDocumentScope?, () -> Boolean, (AdmissionHttpResponse?) -> Unit) -> AdmissionCancellation,
+	private val load: (String, Int, NativeDocumentScope?, String?, () -> Boolean, (AdmissionHttpResponse?) -> Unit) -> AdmissionCancellation,
 	private val identifier: () -> String = { UUID.randomUUID().toString() },
 ) {
-	private class Work(val id: String, val url: String, val maximumBytes: Int, val scope: NativeDocumentScope?, val deadline: Long) {
+	private class Work(val id: String, val url: String, val maximumBytes: Int, val scope: NativeDocumentScope?, val developmentOrigin: String?, val deadline: Long) {
 		val live = AtomicBoolean(true)
 		var nativeFinished = false
 		var cancellation: AdmissionCancellation? = null
@@ -38,16 +38,17 @@ internal class NativeDocumentRegistry(
 	@Volatile private var foreground = true
 	@Volatile private var closed = false
 
-	fun open(url: String, maximumBytes: Int, scope: NativeDocumentScope?): String {
-		AdmissionUrl.clean(url)
+	fun open(url: String, maximumBytes: Int, scope: NativeDocumentScope?, developmentOrigin: String? = null): String {
+		if (scope != null && developmentOrigin != null) invalid()
+		AdmissionUrl.document(url, developmentOrigin)
 		if (closed || !foreground || work.size >= 16 || maximumBytes !in 1..8388608 || (scope != null && !scope.isActive())) invalid()
 		val id = identifier()
 		if (!AdmissionUrl.validToken(id) || work.containsKey(id)) invalid()
-		val item = Work(id, url, maximumBytes, scope, scheduler.nowMs() + 30000)
+		val item = Work(id, url, maximumBytes, scope, developmentOrigin, scheduler.nowMs() + 30000)
 		work[id] = item
 		item.timer = scheduler.after(30000) { retireQuietly(id) }
 		try {
-			val cancellation = load(url, maximumBytes, scope, { active(item) }) { response ->
+			val cancellation = load(url, maximumBytes, scope, developmentOrigin, { active(item) }) { response ->
 				scheduler.dispatch { received(item, response) }
 			}
 			item.cancellation = cancellation
@@ -123,7 +124,7 @@ internal class NativeDocumentRegistry(
 		}
 		val finalUrl = response.url ?: item.url
 		try {
-			AdmissionUrl.clean(finalUrl)
+			AdmissionUrl.document(finalUrl, item.developmentOrigin)
 			if (AdmissionUrl.origin(finalUrl) != AdmissionUrl.origin(item.url)) invalid()
 		} catch (_: Exception) { response.body.fill(0); retireQuietly(item.id); return }
 		item.body = response.body

@@ -37,6 +37,26 @@
 @interface TFNativeDocumentRegistryTests : XCTestCase
 @end
 @implementation TFNativeDocumentRegistryTests
+- (void)testDevelopmentHTTPIsLimitedToAnExactUnprotectedOrigin {
+	NSString *origin = @"http://localhost:3333";
+	NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:[origin stringByAppendingString:@"/native/manifest.json"]]];
+	TFDocumentTestScheduler *scheduler = [TFDocumentTestScheduler new];
+	__block NSUInteger reads = 0;
+	TFNativeDocumentRegistry *registry = [[TFNativeDocumentRegistry alloc] initWithScheduler:scheduler load:^id<TFAdmissionCancel>(NSURLRequest *input, TFNativeDocumentScope *scope, TFAdmissionStartGuard guard, TFAdmissionNetworkCompletion completion) {
+		reads++;
+		completion([[NSHTTPURLResponse alloc] initWithURL:input.URL statusCode:200 HTTPVersion:nil headerFields:nil], [@"{}" dataUsingEncoding:NSUTF8StringEncoding]);
+		return [TFDocumentTestCancel new];
+	}];
+	NSString *identifier = [registry open:request maximumBytes:1024 scope:nil developmentOrigin:origin];
+	[scheduler flush];
+	[registry response:identifier completion:^(NSDictionary *header) { XCTAssertEqualObjects(header[@"url"], request.URL.absoluteString); }];
+	XCTAssertThrows([registry open:request maximumBytes:1024 scope:nil]);
+	XCTAssertThrows([registry open:request maximumBytes:1024 scope:nil developmentOrigin:@"http://localhost:3334"]);
+	TFNativeDocumentScope *scope = [[TFNativeDocumentScope alloc] initWithContext:@"one" active:^BOOL { return YES; } load:^id<TFAdmissionCancel>(NSURLRequest *input, TFAdmissionNetworkCompletion completion) { return [TFDocumentTestCancel new]; }];
+	XCTAssertThrows([registry open:request maximumBytes:1024 scope:scope developmentOrigin:origin]);
+	XCTAssertEqual(reads, 1u);
+	[registry close];
+}
 - (NSURLRequest *)request { return [NSURLRequest requestWithURL:[NSURL URLWithString:@"https://maps.example.test/manifest.json"]]; }
 - (NSHTTPURLResponse *)response { return [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:200 HTTPVersion:nil headerFields:@{}]; }
 - (void)testHeadersChunksAndCancellationRemainBoundedAndIndependent {

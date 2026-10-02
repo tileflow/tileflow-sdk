@@ -132,10 +132,12 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
     discoverWatchPaths?: DiscoverWatchPaths,
   ) {
     this.#cwd = resolve(options.cwd ?? process.cwd());
-    this.#configPath = resolve(this.#cwd, options.config ?? 'tileflow.config.ts');
+    this.#configPath = canonicalPath(resolve(this.#cwd, options.config ?? 'tileflow.config.ts'));
     this.#debounceMs = Math.max(0, Math.min(options.debounceMs ?? 75, 1_000));
     this.#watchEnabled = options.watch ?? false;
-    this.#ignoredPaths = (options.ignoredPaths ?? []).map((path) => resolve(this.#cwd, path));
+    this.#ignoredPaths = (options.ignoredPaths ?? []).map((path) =>
+      canonicalPath(resolve(this.#cwd, path)),
+    );
     this.#buildArtifacts = buildArtifacts;
     this.#discoverWatchPaths = discoverWatchPaths;
     this.#buildOptions = {
@@ -317,7 +319,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
   }
 
   #ignoreWatchPath(path: string, isDirectory: boolean | undefined): boolean {
-    const resolvedPath = resolve(path);
+    const resolvedPath = canonicalPath(path);
     const relativePath = relative(dirname(this.#configPath), resolvedPath);
     const segments = relativePath.split(sep).filter(Boolean);
 
@@ -334,7 +336,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
   }
 
   #shouldRefreshForWatchEvent(path: string): boolean {
-    const resolvedPath = resolve(path);
+    const resolvedPath = canonicalPath(path);
     const extension = extname(resolvedPath).toLowerCase();
     if (!iconExtensions.has(extension) && !fontExtensions.has(extension)) return true;
     return [...this.#watchedArtifactPaths].some((path) => isSameOrInside(path, resolvedPath));
@@ -368,7 +370,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
 
   #updateArtifactWatchPaths(paths: readonly string[]): void {
     if (!this.#watcher) return;
-    const next = new Set(paths.map((path) => resolve(this.#cwd, path)));
+    const next = new Set(paths.map((path) => canonicalPath(resolve(this.#cwd, path))));
     const previous = this.#watchedArtifactPaths;
     this.#watchedArtifactPaths = next;
 

@@ -134,6 +134,19 @@ for (const representation of ['marker', 'sdf'] as const)
         assert.equal(response?.status(), 200);
         const map = page.locator('[data-tileflow-capture-id="semantic-poi"]');
         await map.waitFor({state: 'visible'});
+        await page.waitForFunction(() =>
+          Boolean(
+            (window as typeof window & {__tileflowSemanticMap?: MapLibreMap}).__tileflowSemanticMap,
+          ),
+        );
+        assert.equal(
+          await page.evaluate(() =>
+            (
+              window as typeof window & {__tileflowSemanticMap: MapLibreMap}
+            ).__tileflowSemanticMap.getZoom(),
+          ),
+          3,
+        );
         await page.waitForFunction(
           () =>
             document
@@ -374,6 +387,8 @@ function SemanticPopup({context}) {
 function App() {
   return <div style={{width: 320}}><Map
     captureId="semantic-poi"
+    center={[0, 0]}
+    zoom={3}
     height={240}
     interactions={interactions}
     onInteractionDiagnostic={(diagnostic) => proof.diagnostics.push(diagnostic.code)}

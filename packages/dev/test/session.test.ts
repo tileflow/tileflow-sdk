@@ -156,6 +156,14 @@ test('watches an immediately created sidecar through an aliased working director
       assert.equal(session.getState().status, 'ready');
       await writeFile(sidecar, '{}');
       await waitForState(session, (state) => state.status === 'invalid', 5_000);
+      t.diagnostic(`sidecar created: ${attempt}`);
+      await unlink(sidecar);
+      await waitForState(
+        session,
+        (state) => state.status === 'ready' && state.generation >= 3,
+        5_000,
+      );
+      t.diagnostic(`sidecar removed: ${attempt}`);
     } finally {
       await session.close();
     }

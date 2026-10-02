@@ -90,13 +90,14 @@ Shared-set content identifies the effective published artifact. Git owns origina
 source-only SVG edits producing the same artifact are not shared content changes. No original-source
 hash, source format, or filesystem path is added to a shared package. Local/package originals retain
 their existing source identity. Shared winners use explicit `rendered-icon` identity, while an
-ordered `tileflow-icon-composition-v1` receipt records consumed revisions separately, including
+ordered versioned icon-composition receipt records consumed revisions separately, including
 fully shadowed sets and dependency changes that preserve rendered pixels.
 
 Map revision hashing preserves the existing v1 result for maps without shared sets. Maps with sets
 require a complete receipt and use the domain-separated v2 revision contract. Build-manifest map
 entries identify that contract with `mapRevisionSchemaVersion: 2`; omission means legacy v1. The
-generated icon package remains `tileflow-icon-package-v1` and the asset-set hash is unchanged.
+Metadata-free RGBA icon packages retain `tileflow-icon-package-v1` identity. SDF appearance or text-fitting metadata uses
+`tileflow-icon-package-v2` and v2 composition receipts; defaults and layout participate in identity.
 
 These are portable contracts. `@tileflow/dev` composes declared contributors on its normal
 preparation path, and the `tileflow` CLI owns catalog management and exact lock maintenance.
@@ -218,3 +219,11 @@ revision; prefer the installed copy when working with an older release.
 - [Public API and browser subpath](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/public-api-and-browser-subpath.md)
 - [Hosted session authorization](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/hosted-session-authorization.md)
 - [Native resource URLs](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-resource-urls.md)
+
+## Native icon capabilities
+
+Prepared icon metadata identifies SDF assets and their default fill and halo. Core rejects any
+symbol layer that can select both SDF and RGBA, including fallbacks and effective local overrides,
+with `TF_ICON_REPRESENTATION_MIXED`. It preserves layers, collisions and interaction IDs. Omitted
+SDF paint follows the resolved image selection; supplied map paint stays independent from asset
+defaults. See [Author recolorable and adaptable icons](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-icons.md).

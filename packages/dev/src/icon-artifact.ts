@@ -3,17 +3,21 @@ import {
   type TileflowIconSpriteIndexEntry as Rectangle,
 } from '@tileflow/core';
 import {
+  assertTileflowSdfPixels,
   compareCodeUnits,
   hashTileflowIconPackageManifest,
   hashTileflowRenderedIconPixels,
   parseTileflowIconJson,
+  readTileflowIconLayout,
+  scaleTileflowIconLayout,
+  serializeCanonicalJson,
   sha256Hex,
-  TileflowIconSetError,
   tileflowIconPackageLimits,
   tileflowIconPackageManifestSchema,
+  TileflowIconSetError,
 } from '@tileflow/core';
-import type {CompiledTileflowIconPackage} from './icons';
 import {loadSharp, type TileflowRenderedIcon, type TileflowRenderedIconCell} from './icon-sprite';
+import type {CompiledTileflowIconPackage} from './icons';
 
 export type VerifiedTileflowIconArtifact = {
   package: CompiledTileflowIconPackage;
@@ -96,6 +100,25 @@ export async function verifyTileflowIconArtifact(
     for (const name of manifest.iconNames) {
       const one = oneIndex[name]!;
       const two = twoIndex[name]!;
+      const declared = manifest.renderedIcons.find((icon) => icon.name === name)!.appearance;
+      const declaredLayout = manifest.renderedIcons.find((icon) => icon.name === name)!.layout;
+      const oneLayout = readTileflowIconLayout(one);
+      const twoLayout = readTileflowIconLayout(two);
+      if (
+        serializeCanonicalJson(oneLayout ?? null) !==
+          serializeCanonicalJson(declaredLayout ?? null) ||
+        serializeCanonicalJson(twoLayout ?? null) !==
+          serializeCanonicalJson(oneLayout ? scaleTileflowIconLayout(oneLayout, 2) : null)
+      )
+        throw new Error(
+          'Sprite layout must match the manifest and scale exactly between densities',
+        );
+      if (
+        serializeCanonicalJson(one.tileflow ?? null) !==
+          serializeCanonicalJson(two.tileflow ?? null) ||
+        serializeCanonicalJson(one.tileflow ?? null) !== serializeCanonicalJson(declared ?? null)
+      )
+        throw new Error('Sprite appearance must match at both densities and in the manifest');
       if (
         two.x !== one.x * 2 ||
         two.y !== one.y * 2 ||
@@ -116,7 +139,19 @@ export async function verifyTileflowIconArtifact(
         (await hashTileflowRenderedIconPixels({...twoX, pixelRatio: 2})) !== expected.twoX
       )
         throw new Error(`Rendered pixels do not match the manifest for ${id}`);
-      icons.push({id, oneX, twoX});
+      const appearance = oneIndex[id]!.tileflow;
+      if (appearance) {
+        assertTileflowSdfPixels({...oneX, pixelRatio: 1});
+        assertTileflowSdfPixels({...twoX, pixelRatio: 2});
+      }
+      const layout = readTileflowIconLayout(oneIndex[id]!);
+      icons.push({
+        id,
+        oneX,
+        twoX,
+        ...(appearance ? {appearance} : {}),
+        ...(layout ? {layout} : {}),
+      });
     }
     return {package: {contentHash, manifest, files}, icons};
   } catch (cause) {

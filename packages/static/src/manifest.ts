@@ -186,8 +186,37 @@ const placementAnchorsSchema = z
   .refine(anchorsHaveTerminalNulls, {
     message: 'Placement anchors may become null only at the end of semantic order',
   });
+const iconCoordinate = z.number().int().nonnegative().max(2048);
+const iconStretchRegions = z
+  .array(z.tuple([iconCoordinate, iconCoordinate]))
+  .min(1)
+  .max(2048);
+const iconLayoutSchema = z
+  .object({
+    stretchX: iconStretchRegions.optional(),
+    stretchY: iconStretchRegions.optional(),
+    content: z.tuple([iconCoordinate, iconCoordinate, iconCoordinate, iconCoordinate]).optional(),
+  })
+  .strict();
+
 const resolvedIconSchema = z
   .object({
+    layout: iconLayoutSchema.optional(),
+    // Verified asset defaults supplied by the manifest producer, never scene input.
+    appearance: z
+      .object({
+        representation: z.literal('sdf'),
+        defaults: z
+          .object({
+            color: z.string().min(1).max(128).refine(hasNoControlCharacters),
+            haloColor: z.string().min(1).max(128).refine(hasNoControlCharacters),
+            haloWidth: z.number().finite().min(0).max(2),
+            haloBlur: z.number().finite().min(0).max(1),
+          })
+          .strict(),
+      })
+      .strict()
+      .optional(),
     height: z.number().int().positive().max(2048),
     icon: z
       .string()
@@ -196,7 +225,37 @@ const resolvedIconSchema = z
     overlayIndex: z.number().int().min(0).max(23),
     width: z.number().int().positive().max(2048),
   })
-  .strict();
+  .strict()
+  .superRefine((icon, context) => {
+    const layout = icon.layout;
+    if (!layout) return;
+    let valid = Object.values(layout).some((value) => value !== undefined);
+    const content = layout.content;
+    if (content)
+      valid &&=
+        content[0] < content[2] &&
+        content[1] < content[3] &&
+        content[2] <= icon.width &&
+        content[3] <= icon.height;
+    for (const [axis, bound, low, high] of [
+      ['stretchX', icon.width, content?.[0], content?.[2]],
+      ['stretchY', icon.height, content?.[1], content?.[3]],
+    ] as const) {
+      let end = 0;
+      for (const [from, to] of layout[axis] ?? []) {
+        valid &&= from >= end && from < to && to <= bound;
+        end = to;
+      }
+      if (layout[axis] && low !== undefined && high !== undefined)
+        valid &&= layout[axis].some(([from, to]) => from < high && to > low);
+    }
+    if (!valid)
+      context.addIssue({
+        code: 'custom',
+        path: ['layout'],
+        message: 'Invalid icon layout for the resolved sprite dimensions',
+      });
+  });
 
 export const staticRenderCompositionSchema = z
   .object({

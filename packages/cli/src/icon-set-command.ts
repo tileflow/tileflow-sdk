@@ -3,6 +3,7 @@ import {isAbsolute} from 'node:path';
 import pc from 'picocolors';
 import {z} from 'zod';
 import {
+  tileflowIconPackageLimits,
   tileflowIconSetPackageIdSchema,
   tileflowIconSetPinSchema,
   tileflowIconSetReferenceSchema,
@@ -588,7 +589,7 @@ const revisionBaseSchema = z
     version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     publishedAt: isoDateSchema,
     purgedAt: isoDateSchema.nullable(),
-    iconCount: z.number().int().min(0).max(256),
+    iconCount: z.number().int().min(0).max(tileflowIconPackageLimits.maxIconCount),
     totalBytes: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
     publisher: z
       .object({kind: z.enum(['credential', 'membership']), id: z.string().max(200).nullable()})

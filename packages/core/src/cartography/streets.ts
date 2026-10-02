@@ -50,6 +50,10 @@ import {
 } from './domain-registry';
 import {assembleTileflowLayerFamilies} from './graph';
 import {
+  applyTileflowIconCapabilities,
+  type TileflowPreparedIconCapabilities,
+} from './icon-capabilities';
+import {
   assertTileflowInteractionManifestLayers,
   createTileflowInteractionManifest,
   tileflowInteractionManifestMetadataKey,
@@ -71,7 +75,7 @@ import {tileflowSemanticCompilerIdentity} from './semantic-compiler';
 export type TileflowSemanticMapConfig = ResolvedTileflowMap;
 
 export type TileflowPreparedMapAssets = {
-  icons?: {
+  icons?: TileflowPreparedIconCapabilities & {
     ids: readonly string[];
     sprite: string;
   };
@@ -563,6 +567,9 @@ function compileSemanticStyleInternal(
   onReport?.(report);
   runCompilationPhase('assets', () =>
     assertPreparedIconReferences(style, config, options.preparedAssets),
+  );
+  runCompilationPhase('assets', () =>
+    applyTileflowIconCapabilities(style, options.preparedAssets?.icons),
   );
   runCompilationPhase('assets', () => assertTextAssets(style, config));
   runCompilationPhase('assets', () => assertGlyphFontStacks(style, config));

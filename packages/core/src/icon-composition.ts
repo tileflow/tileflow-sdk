@@ -1,4 +1,6 @@
 import {z} from 'zod';
+import {tileflowIconAppearanceSchema} from './icon-appearance';
+import {assertTileflowIconLayoutBounds, tileflowIconLayoutSchema} from './icon-layout';
 import {
   compareCodeUnits,
   serializeCanonicalJson,
@@ -56,6 +58,8 @@ export const tileflowRenderedIconIdentitySchema = z
   .object({
     kind: z.literal('rendered-icon'),
     id: tileflowIconIdSchema,
+    appearance: tileflowIconAppearanceSchema.optional(),
+    layout: tileflowIconLayoutSchema.optional(),
     width: z
       .number()
       .int()
@@ -78,8 +82,8 @@ export type TileflowRenderedIconIdentity = z.infer<typeof tileflowRenderedIconId
 
 export const tileflowIconCompositionSchema = z
   .object({
-    format: z.literal('tileflow-icon-composition-v1'),
-    compositionVersion: z.literal(1),
+    format: z.enum(['tileflow-icon-composition-v1', 'tileflow-icon-composition-v2']),
+    compositionVersion: z.union([z.literal(1), z.literal(2)]),
     packageHash: tileflowIconPackageContentHashSchema,
     contributors: z
       .array(
@@ -106,6 +110,33 @@ export const tileflowIconCompositionSchema = z
   })
   .strict()
   .superRefine((receipt, context) => {
+    const version = receipt.winners.some(
+      (winner) => winner.appearance !== undefined || winner.layout !== undefined,
+    )
+      ? 2
+      : 1;
+    if (
+      receipt.compositionVersion !== version ||
+      receipt.format !== `tileflow-icon-composition-v${version}`
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['compositionVersion'],
+        message: 'Composition version must match the effective icon capabilities',
+      });
+    for (const [index, winner] of receipt.winners.entries()) {
+      if (!winner.layout) continue;
+      try {
+        assertTileflowIconLayoutBounds(winner.layout, winner.width, winner.height);
+      } catch {
+        context.addIssue({
+          code: 'custom',
+          path: ['winners', index, 'layout'],
+          message: 'Icon layout must stay inside its cell dimensions',
+        });
+      }
+    }
+
     const expected = new Map<string, number>();
     const references = new Set<string>();
     const sets = new Set<string>();
@@ -180,6 +211,6 @@ export async function hashTileflowIconComposition(
   input: TileflowIconCompositionV1,
 ): Promise<string> {
   return sha256Hex(
-    `tileflow-icon-composition-v1\0${serializeCanonicalJson(parseTileflowIconComposition(input))}`,
+    `${input.format}\0${serializeCanonicalJson(parseTileflowIconComposition(input))}`,
   );
 }

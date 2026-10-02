@@ -9,6 +9,7 @@ import {
   sha256Hex,
 } from '@tileflow/core';
 import {storeTileflowIconSetArtifact} from '../src/icon-cache';
+import {packTileflowRenderedIcons} from '../src/icon-sprite';
 import {composeTileflowIconSources, verifyTileflowIconArtifact} from '../src/icons';
 import {lockFor, renderedIcon, setFixture, withIconSetFixture} from './icon-set-fixtures';
 
@@ -128,6 +129,42 @@ test('authoring diagnostics identify the icon with invalid layout or an insuffic
     await assert.rejects(
       composeTileflowIconSources(['./icons'], {cwd}),
       /shield\.svg:.*six transparent/i,
+    );
+  });
+});
+
+test('1,000 SDF icons with text-fitting metadata survive exact composition', async () => {
+  await withIconSetFixture(async (cwd) => {
+    await mkdir(join(cwd, 'icons'));
+    await writeFile(join(cwd, 'icons/shield.svg'), svg);
+    await writeFile(
+      join(cwd, 'icons/tileflow.icons.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        icons: {shield: {representation: 'sdf', defaults: {color: '#245fe5'}, layout}},
+      }),
+    );
+    const source = await composeTileflowIconSources(['./icons'], {cwd});
+    const seed = (await verifyTileflowIconArtifact(source.package!)).icons[0]!;
+    const icons = Array.from({length: 1_000}, (_, index) => ({
+      ...seed,
+      id: `shield-${String(index).padStart(4, '0')}`,
+    }));
+    const shared = await setFixture(1, icons);
+    await storeTileflowIconSetArtifact(shared.pin, shared.artifact, {cacheRoot: cwd});
+    const composed = await composeTileflowIconSources([iconSet('@acme/signs')], {
+      cwd,
+      cacheRoot: cwd,
+      offline: true,
+      lock: lockFor({'@acme/signs': shared.pin}),
+    });
+    assert.equal((await verifyTileflowIconArtifact(composed.package!)).icons.length, 1_000);
+    assert.equal(composed.composition!.winners.length, 1_000);
+    assert.equal(composed.composition!.compositionVersion, 2);
+    assert.deepEqual(composed.composition!.winners[999]!.layout, layout);
+    await assert.rejects(
+      packTileflowRenderedIcons([...icons, {...seed, id: 'shield-overflow'}]),
+      /1 through 1000/,
     );
   });
 });

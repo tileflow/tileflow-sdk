@@ -1,25 +1,30 @@
 import {
+  assertTileflowIconLayoutBounds,
+  assertTileflowSdfPixels,
   compareCodeUnits,
   hashTileflowIconPackageManifest,
   hashTileflowRenderedIconPixels,
+  scaleTileflowIconLayout,
   serializeCanonicalJson,
   sha256Hex,
+  type TileflowIconAppearance,
   tileflowIconIdSchema,
+  type TileflowIconLayoutMetadata,
   tileflowIconPackageLimits,
   tileflowIconPackageManifestSchema,
+  type TileflowIconSpriteIndex,
 } from '@tileflow/core';
 import type {CompiledTileflowIconPackage, CompiledTileflowIconPackageFile} from './icons';
 
 export type TileflowRenderedIconCell = {height: number; width: number; rgba: Uint8Array};
 export type TileflowRenderedIcon = {
   id: string;
+  appearance?: TileflowIconAppearance;
+  layout?: TileflowIconLayoutMetadata;
   oneX: TileflowRenderedIconCell;
   twoX: TileflowRenderedIconCell;
 };
-export type TileflowSpriteIndex = Record<
-  string,
-  {height: number; pixelRatio: 1 | 2; width: number; x: number; y: number}
->;
+export type TileflowSpriteIndex = TileflowIconSpriteIndex;
 
 /** Pack independently rendered densities without scaling or re-rasterizing either input. */
 export async function packTileflowRenderedIcons(
@@ -31,22 +36,41 @@ export async function packTileflowRenderedIcons(
     icons.length > tileflowIconPackageLimits.maxIconCount ||
     new Set(icons.map((icon) => icon.id)).size !== icons.length
   )
-    throw new Error('Expected 1 through 256 unique rendered icons');
+    throw new Error(
+      `Expected 1 through ${tileflowIconPackageLimits.maxIconCount} unique rendered icons`,
+    );
   const renderedIcons = [];
   for (const icon of icons) {
     tileflowIconIdSchema.parse(icon.id);
+    if (icon.layout) assertTileflowIconLayoutBounds(icon.layout, icon.oneX.width, icon.oneX.height);
+    if (icon.appearance) {
+      assertTileflowSdfPixels({...icon.oneX, pixelRatio: 1});
+      assertTileflowSdfPixels({...icon.twoX, pixelRatio: 2});
+    }
     if (icon.twoX.width !== icon.oneX.width * 2 || icon.twoX.height !== icon.oneX.height * 2)
       throw new Error('Rendered density geometry must double exactly');
     renderedIcons.push({
       name: icon.id,
+      ...(icon.appearance ? {appearance: icon.appearance} : {}),
+      ...(icon.layout ? {layout: icon.layout} : {}),
       pixelSha256: {
         oneX: await hashTileflowRenderedIconPixels({...icon.oneX, pixelRatio: 1}),
         twoX: await hashTileflowRenderedIconPixels({...icon.twoX, pixelRatio: 2}),
       },
     });
   }
-  const oneX = icons.map((icon) => ({...icon.oneX, name: icon.id}));
-  const twoX = icons.map((icon) => ({...icon.twoX, name: icon.id}));
+  const oneX = icons.map((icon) => ({
+    ...icon.oneX,
+    name: icon.id,
+    appearance: icon.appearance,
+    layout: icon.layout,
+  }));
+  const twoX = icons.map((icon) => ({
+    ...icon.twoX,
+    name: icon.id,
+    appearance: icon.appearance,
+    layout: icon.layout,
+  }));
   const layoutOneX = createSpriteLayout(oneX, 1);
   const layoutTwoX = createSpriteLayout(twoX, 2);
   if (layoutTwoX.width !== layoutOneX.width * 2 || layoutTwoX.height !== layoutOneX.height * 2)
@@ -75,7 +99,9 @@ export async function packTileflowRenderedIcons(
   ];
   assertGeneratedFileLimits(files);
   const manifest = tileflowIconPackageManifestSchema.parse({
-    format: 'tileflow-icon-package-v1',
+    format: icons.some((icon) => icon.appearance || icon.layout)
+      ? 'tileflow-icon-package-v2'
+      : 'tileflow-icon-package-v1',
     files: await Promise.all(
       files.map(async (file) => ({
         name: file.fileName,
@@ -96,7 +122,13 @@ export async function packTileflowRenderedIcons(
 
 /** Shared with the existing directory compiler; keep layout behavior byte-compatible. */
 export function createSpriteLayout(
-  icons: Array<{height: number; name: string; width: number}>,
+  icons: Array<{
+    height: number;
+    name: string;
+    width: number;
+    appearance?: TileflowIconAppearance;
+    layout?: TileflowIconLayoutMetadata;
+  }>,
   pixelRatio: 1 | 2,
 ) {
   const columns = Math.ceil(Math.sqrt(icons.length));
@@ -134,7 +166,15 @@ export function createSpriteLayout(
       const placement = placements[ordinal]!;
       return [
         icon.name,
-        {height: icon.height, pixelRatio, width: icon.width, x: placement.left, y: placement.top},
+        {
+          height: icon.height,
+          pixelRatio,
+          width: icon.width,
+          x: placement.left,
+          y: placement.top,
+          ...(icon.appearance ? {sdf: true as const, tileflow: icon.appearance} : {}),
+          ...(icon.layout ? scaleTileflowIconLayout(icon.layout, pixelRatio) : {}),
+        },
       ];
     }),
   );

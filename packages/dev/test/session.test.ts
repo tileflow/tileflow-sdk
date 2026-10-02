@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, readFile, rm, unlink, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
@@ -120,6 +120,46 @@ test('watches conservative transitive inputs and emits monotonic building/ready 
       (state, index) => index === 0 || state.generation >= states[index - 1]!.generation,
     ),
   );
+});
+
+test('watches an immediately created sidecar through an aliased working directory', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'tileflow-watch-alias-'));
+  t.after(() => rm(root, {recursive: true, force: true}));
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const project = join(root, `real-${attempt}`, 'project');
+    await mkdir(join(project, 'icons'), {recursive: true});
+    await writeFile(join(project, 'tileflow.config.ts'), 'export default {};');
+    const alias = join(root, `alias-${attempt}`);
+    await symlink(join(root, `real-${attempt}`), alias, 'dir');
+    const watched = await realpath(join(project, 'icons'));
+    const sidecar = join(watched, 'tileflow.icons.json');
+    const session = await createTileflowArtifactSessionWithBuilder(
+      {cwd: join(alias, 'project'), watch: true, debounceMs: 0},
+      async () => {
+        try {
+          await readFile(sidecar);
+          throw new Error('Invalid icon metadata');
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
+        return {
+          assets: [],
+          buildManifest: {maps: {}, schemaVersion: 1},
+          manifest: {version: 1, maps: {}},
+          project: {maps: {}},
+          styles: {},
+          watchPaths: [watched],
+        } as never;
+      },
+    );
+    try {
+      assert.equal(session.getState().status, 'ready');
+      await writeFile(sidecar, '{}');
+      await waitForState(session, (state) => state.status === 'invalid', 5_000);
+    } finally {
+      await session.close();
+    }
+  }
 });
 
 test('publishes only the newest overlapping refresh generation', async () => {

@@ -177,6 +177,23 @@ test('resolves icon directories relative to a nested config rather than process 
   );
 });
 
+test('lists the effective text-fitting layout from authored metadata', async (t) => {
+  const directory = await createDirectoryFixture(t, 'tileflow-icon-layout-list-');
+  const layout = {stretchX: [[9, 15]], content: [7, 7, 17, 17]};
+  await writeFileEnsured(join(directory, 'icons/price.svg'), simpleSvg('#245fe5'));
+  await writeFileEnsured(
+    join(directory, 'icons/tileflow.icons.json'),
+    JSON.stringify({schemaVersion: 1, icons: {price: {representation: 'rgba', layout}}}),
+  );
+  await writeFile(
+    join(directory, 'tileflow.config.ts'),
+    tileflowMapFixture({id: 'main', icons: 'authored', fields: "icons: ['./icons']"}),
+  );
+  const result = await runCli(directory, ['icons', 'list', '--json'], {});
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout).maps[0].icons.layouts, {price: layout});
+});
+
 test('keeps unsupported human surfaces off stdout', async (t) => {
   const directory = await createDirectoryFixture(t, 'tileflow-icon-list-usage-');
   const withoutJson = await runCli(directory, ['icons', 'list'], {});

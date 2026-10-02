@@ -1,18 +1,18 @@
 import {tileflowSemanticCompilerIdentity} from './cartography/semantic-compiler';
 import {
-  parseTileflowIconComposition,
-  tileflowRenderedIconIdentitySchema,
-  type TileflowIconCompositionV1,
-  type TileflowRenderedIconIdentity,
-} from './icon-composition';
-import {collectTileflowIconSetReferences} from './icon-set';
-import {
   inferTileflowDataRequirements,
   inferTileflowSourceRequirements,
   type TileflowDataRequirementsV1,
   type TileflowSourceRequirementsV1,
 } from './data/requirements';
+import {
+  parseTileflowIconComposition,
+  type TileflowIconCompositionV1,
+  type TileflowRenderedIconIdentity,
+  tileflowRenderedIconIdentitySchema,
+} from './icon-composition';
 import {compareCodeUnits, serializeCanonicalJson, sha256Hex} from './icon-package';
+import {collectTileflowIconSetReferences} from './icon-set';
 import {parseTileflowMap} from './map';
 import {type ResolvedTileflowMap, type TileflowMap, tileflowMapIdSchema} from './maps';
 import {parseResolvedTileflowMap} from './resolved-map-schema';
@@ -469,11 +469,13 @@ function assertIconCompositionMatchesMap(
         identity.width !== winner.width ||
         identity.height !== winner.height ||
         identity.pixelSha256.oneX !== winner.pixelSha256.oneX ||
-        identity.pixelSha256.twoX !== winner.pixelSha256.twoX
+        identity.pixelSha256.twoX !== winner.pixelSha256.twoX ||
+        serializeCanonicalJson(identity.appearance ?? null) !==
+          serializeCanonicalJson(winner.appearance ?? null) ||
+        serializeCanonicalJson(identity.layout ?? null) !==
+          serializeCanonicalJson(winner.layout ?? null)
       )
-        throw new Error(
-          'Shared icon identity must match verified rendered pixels, not original-source hashes',
-        );
+        throw new Error('Shared icon identity must match verified pixels, appearance and layout');
     } else if (identity.kind === 'rendered-icon')
       throw new Error('Local originals must retain their existing source identity');
   }

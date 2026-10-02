@@ -2,9 +2,14 @@ import {readdir, readFile, realpath, stat} from 'node:fs/promises';
 import {extname, isAbsolute, relative, resolve as resolvePath, sep} from 'node:path';
 import {SaxesParser} from 'saxes';
 import {
+  assertTileflowIconLayoutBounds,
   collectTileflowIconSetReferences,
+  type TileflowIconAppearance,
+  tileflowIconAuthorMetadataSchema,
   type TileflowIconCompositionV1,
   type TileflowIconDirectory,
+  type TileflowIconLayoutMetadata,
+  tileflowIconMetadataFileName,
   TileflowIconSetError,
   type TileflowIconSetReference,
   tileflowIconsLockfileName,
@@ -42,12 +47,15 @@ import {
   type TileflowComposedIconContributor,
   type TileflowComposedIconSources,
 } from './icon-composition';
+import {createIconDistanceField} from './icon-distance';
 import {readTileflowIconsLockfile} from './icon-lockfile';
 import {
   loadSharp,
   type TileflowSpriteIndex as SpriteIndex,
   type TileflowRenderedIcon,
 } from './icon-sprite';
+
+export {renderTileflowIconAtlasPreview} from './icon-preview';
 
 export {verifyTileflowIconArtifact, type VerifiedTileflowIconArtifact} from './icon-artifact';
 
@@ -137,6 +145,7 @@ export type CompiledTileflowIconPackage = {
 };
 
 export type TileflowMapIconPackageBinding = {
+  appearances?: Record<string, TileflowIconAppearance>;
   iconIds: readonly string[];
   label: string;
   mapName: string;
@@ -204,6 +213,8 @@ export type TileflowIconCatalogIconSource =
     };
 
 export type TileflowIconCatalogIcon = {
+  appearance?: TileflowIconAppearance;
+  layout?: TileflowIconLayoutMetadata;
   id: string;
   rendered: {
     oneX: TileflowIconCatalogRenderedDensity;
@@ -293,6 +304,8 @@ type ComposeMapIconSourcesResult = {
 };
 
 type IconInput = {
+  appearance?: TileflowIconAppearance;
+  layout?: TileflowIconLayoutMetadata;
   displayPath: string;
   fileName: string;
   format: TileflowIconCatalogSourceFormat;
@@ -351,9 +364,15 @@ export async function compileTileflowIconPackages(
       throw new Error(`Missing compiled icon package for map ${request.mapName}`);
     }
 
+    const appearances = Object.fromEntries(
+      composed.package.manifest.renderedIcons.flatMap((icon) =>
+        icon.appearance ? [[icon.name, icon.appearance]] : [],
+      ),
+    );
     return [
       {
         iconIds: composed.package.manifest.iconNames,
+        ...(Object.keys(appearances).length ? {appearances} : {}),
         label: request.mapName,
         mapName: request.mapName,
         packageHash: composed.package.contentHash,
@@ -441,6 +460,8 @@ export async function inspectTileflowIconCatalogs(
 
             return {
               id: winner.id,
+              ...(manifestIcon.appearance ? {appearance: manifestIcon.appearance} : {}),
+              ...(manifestIcon.layout ? {layout: manifestIcon.layout} : {}),
               rendered: {
                 oneX: {
                   atlas: atlasRectangle(oneXAtlas),
@@ -611,7 +632,13 @@ export async function prepareTileflowCatalogIcons(
     if (!iconPackage) throw new Error(`Missing compiled icon package for map ${binding.mapName}`);
 
     const spriteUrl = joinUrl(options.assetBaseUrl, `icons/${binding.mapName}/sprite`);
-    mapAssets[binding.mapName] = {icons: {ids: binding.iconIds, sprite: spriteUrl}};
+    mapAssets[binding.mapName] = {
+      icons: {
+        ids: binding.iconIds,
+        sprite: spriteUrl,
+        ...(binding.appearances ? {appearances: binding.appearances} : {}),
+      },
+    };
     mapIconSources[binding.mapName] = compiled.sourceIdentities[binding.mapName] ?? [];
     const composition = compiled.compositions[binding.mapName];
     if (composition) mapIconCompositions[binding.mapName] = composition;
@@ -800,6 +827,10 @@ async function inspectIconSource(
     size: number;
   }> = [];
   const names = new Set<string>();
+  let metadata: ReturnType<typeof tileflowIconAuthorMetadataSchema.parse> = {
+    schemaVersion: 1,
+    icons: {},
+  };
 
   for (const entry of entries) {
     const entryPath = resolvePath(directory.realPath, entry.name);
@@ -835,6 +866,25 @@ async function inspectIconSource(
     }
 
     const extension = extname(entry.name).toLowerCase();
+
+    if (entry.name === tileflowIconMetadataFileName) {
+      try {
+        if (entryStat.size > tileflowIconPackageLimits.maxSourceFileBytes)
+          throw new Error('Icon metadata exceeds its byte limit');
+        metadata = tileflowIconAuthorMetadataSchema.parse(
+          parseTileflowIconJson(
+            await readFile(realEntryPath, 'utf8'),
+            tileflowIconPackageLimits.maxSourceFileBytes,
+          ),
+        );
+      } catch (error) {
+        issues.push({
+          path,
+          message: `Invalid icon metadata: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+      continue;
+    }
 
     if (!iconFileExtensions.has(extension)) {
       continue;
@@ -883,6 +933,14 @@ async function inspectIconSource(
 
   candidates.sort((left, right) => compareCodeUnits(left.name, right.name));
 
+  for (const id of Object.keys(metadata.icons)) {
+    if (!names.has(id))
+      issues.push({
+        path: `${directory.configPath}/${tileflowIconMetadataFileName}`,
+        message: `Icon metadata references unknown ID "${id}"`,
+      });
+  }
+
   if (candidates.length === 0) {
     issues.push({
       message: 'No supported .svg, .png, .jpg, .jpeg, or .webp icon files were found',
@@ -913,7 +971,12 @@ async function inspectIconSource(
         validateHostedSvg(source, displayPath);
       }
 
+      const declared = metadata.icons[candidate.name];
       icons.push({
+        ...(declared?.representation === 'sdf'
+          ? {appearance: {representation: declared.representation, defaults: declared.defaults}}
+          : {}),
+        ...(declared?.layout ? {layout: declared.layout} : {}),
         displayPath,
         fileName: candidate.fileName,
         format: candidate.format,
@@ -985,8 +1048,30 @@ async function renderIcon(
     throw new Error(`Rendered icon ${icon.fileName} did not produce canonical RGBA pixels`);
   }
 
-  const rgba = new Uint8Array(data);
-  const png = await sharp(data, {
+  let rgba: Uint8Array;
+  try {
+    if (icon.appearance && icon.kind === 'pattern')
+      throw new Error('SDF metadata is only supported for icons, not patterns.');
+    if (icon.layout) {
+      if (icon.kind === 'pattern')
+        throw new Error('Text-fitting metadata is only supported for icons, not patterns.');
+      assertTileflowIconLayoutBounds(
+        icon.layout,
+        info.width / pixelRatio,
+        info.height / pixelRatio,
+      );
+    }
+    rgba = icon.appearance
+      ? createIconDistanceField(new Uint8Array(data), info.width, info.height, pixelRatio)
+      : new Uint8Array(data);
+  } catch (error) {
+    throw new Error(
+      `${icon.displayPath}: ${error instanceof Error ? error.message : 'Invalid icon capabilities'}`,
+      {cause: error},
+    );
+  }
+
+  const png = await sharp(rgba, {
     raw: {channels: 4, height: info.height, width: info.width},
   })
     .png({adaptiveFiltering: false, compressionLevel: 9, palette: false})
@@ -1249,7 +1334,12 @@ async function renderIconInputs(inputs: IconInput[]): Promise<CompiledIcon[]> {
           width: twoX.width,
         }),
       },
-      sourceSha256: await sha256Hex(icon.source),
+      sourceSha256:
+        icon.appearance || icon.layout
+          ? await sha256Hex(
+              `tileflow-icon-source-v2\0${await sha256Hex(icon.source)}\0${serializeCanonicalJson({...(icon.appearance ? {appearance: icon.appearance} : {}), ...(icon.layout ? {layout: icon.layout} : {})})}`,
+            )
+          : await sha256Hex(icon.source),
       twoX,
     };
   });
@@ -1319,7 +1409,10 @@ export async function readTileflowIconDirectory(
   if (!inspected || issues.length) throw new TileflowIconCompilationError(issues);
   if (inspected.icons.length > tileflowIconPackageLimits.maxIconCount)
     throw new TileflowIconCompilationError([
-      {path: configPath, message: 'One icon contributor supports at most 256 exports'},
+      {
+        path: configPath,
+        message: `One icon contributor supports at most ${tileflowIconPackageLimits.maxIconCount} exports`,
+      },
     ]);
   const entries = inspected.icons.map(
     (icon): TileflowIconDirectoryEntry => ({
@@ -1354,6 +1447,8 @@ export async function readTileflowIconDirectory(
       return (await renderIconInputs(inputs)).map((rendered) => ({
         icon: {
           id: rendered.input.name,
+          ...(rendered.input.appearance ? {appearance: rendered.input.appearance} : {}),
+          ...(rendered.input.layout ? {layout: rendered.input.layout} : {}),
           oneX: {
             height: rendered.oneX.height,
             width: rendered.oneX.width,

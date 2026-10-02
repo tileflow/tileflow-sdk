@@ -1,27 +1,19 @@
 import {randomUUID} from 'node:crypto';
 import {mkdir, readFile, rename, unlink, writeFile} from 'node:fs/promises';
 import {basename, dirname, join} from 'node:path';
-import {z} from 'zod';
 import {
   compareCodeUnits,
   sha256Hex,
-  tileflowIconIdSchema,
-  tileflowIconPackageLimits,
+  type TileflowIconSpriteIndex,
+  tileflowIconSpriteIndexSchema,
 } from '@tileflow/core';
-import type {CompiledTileflowIconPackage} from '@tileflow/dev/icons';
+import {
+  type CompiledTileflowIconPackage,
+  renderTileflowIconAtlasPreview,
+} from '@tileflow/dev/icons';
 import type {IconPackageBaselineResponse, TileflowIconDiffDocument} from './icon-diff-command';
 
-const spriteEntrySchema = z
-  .object({
-    height: z.number().int().positive().max(tileflowIconPackageLimits.maxAtlasDimension),
-    pixelRatio: z.union([z.literal(1), z.literal(2)]),
-    width: z.number().int().positive().max(tileflowIconPackageLimits.maxAtlasDimension),
-    x: z.number().int().nonnegative().max(tileflowIconPackageLimits.maxAtlasDimension),
-    y: z.number().int().nonnegative().max(tileflowIconPackageLimits.maxAtlasDimension),
-  })
-  .strict();
-const spriteIndexSchema = z.record(tileflowIconIdSchema, spriteEntrySchema);
-type SpriteIndex = z.infer<typeof spriteIndexSchema>;
+type SpriteIndex = TileflowIconSpriteIndex;
 
 type ReportSprite = {
   indexOneX: SpriteIndex;
@@ -83,7 +75,7 @@ async function loadRemoteSprite(
   );
 }
 
-function loadCompiledSprite(iconPackage: CompiledTileflowIconPackage): ReportSprite {
+function loadCompiledSprite(iconPackage: CompiledTileflowIconPackage): Promise<ReportSprite> {
   return reportSpriteFromFiles(
     Object.fromEntries(iconPackage.files.map((file) => [file.fileName, file.source])),
     iconPackage.manifest.sprites.oneX,
@@ -91,25 +83,28 @@ function loadCompiledSprite(iconPackage: CompiledTileflowIconPackage): ReportSpr
   );
 }
 
-function reportSpriteFromFiles(
+async function reportSpriteFromFiles(
   files: Partial<
     Record<'sprite.json' | 'sprite.png' | 'sprite@2x.json' | 'sprite@2x.png', Uint8Array>
   >,
   oneX: {height: number; width: number},
   twoX: {height: number; width: number},
-): ReportSprite {
+): Promise<ReportSprite> {
   const oneXJson = requiredFile(files, 'sprite.json');
   const oneXPng = requiredFile(files, 'sprite.png');
   const twoXJson = requiredFile(files, 'sprite@2x.json');
   const twoXPng = requiredFile(files, 'sprite@2x.png');
 
+  const indexOneX = parseIndex(oneXJson, 1, oneX.width, oneX.height);
+  const indexTwoX = parseIndex(twoXJson, 2, twoX.width, twoX.height);
+
   return {
-    indexOneX: parseIndex(oneXJson, 1, oneX.width, oneX.height),
-    indexTwoX: parseIndex(twoXJson, 2, twoX.width, twoX.height),
-    oneXDataUrl: pngDataUrl(oneXPng),
+    indexOneX,
+    indexTwoX,
+    oneXDataUrl: pngDataUrl(await renderTileflowIconAtlasPreview(oneXPng, indexOneX)),
     oneXHeight: oneX.height,
     oneXWidth: oneX.width,
-    twoXDataUrl: pngDataUrl(twoXPng),
+    twoXDataUrl: pngDataUrl(await renderTileflowIconAtlasPreview(twoXPng, indexTwoX)),
     twoXHeight: twoX.height,
     twoXWidth: twoX.width,
   };
@@ -129,7 +124,7 @@ function parseIndex(
     throw new Error('Sprite report index is not valid UTF-8 JSON');
   }
 
-  const parsed = spriteIndexSchema.safeParse(value);
+  const parsed = tileflowIconSpriteIndexSchema.safeParse(value);
 
   if (!parsed.success) {
     throw new Error('Sprite report index does not match the MapLibre schema');

@@ -6,23 +6,23 @@ import {
   compareCodeUnits,
   parseTileflowIconComposition,
   parseTileflowIconsLockfile,
-  TileflowIconSetError,
-  tileflowIconPackageLimits,
   type TileflowIconCompositionV1,
   type TileflowIconContributorIdentity,
+  tileflowIconPackageLimits,
+  TileflowIconSetError,
   type TileflowIconSource,
 } from '@tileflow/core';
 import type {TileflowEffectiveIconSourceIdentity} from '@tileflow/core/build';
 import {loadTileflowIconSetArtifact, type TileflowIconCacheOptions} from './icon-cache';
 import {readTileflowIconsLockfile} from './icon-lockfile';
+import {packTileflowRenderedIcons, type TileflowRenderedIcon} from './icon-sprite';
 import {
-  readTileflowIconDirectory,
   type CompiledTileflowIconPackage,
+  readTileflowIconDirectory,
   type TileflowIconCompilationTarget,
   type TileflowIconDirectoryEntry,
   type TileflowIconDirectorySourceFile,
 } from './icons';
-import {packTileflowRenderedIcons, type TileflowRenderedIcon} from './icon-sprite';
 
 export type ComposeTileflowIconSourcesOptions = TileflowIconCacheOptions & {
   cwd: string;
@@ -151,6 +151,8 @@ export async function composeTileflowIconSources(
             width: icon.oneX.width,
             height: icon.oneX.height,
             pixelSha256: {...pixels},
+            ...(icon.appearance ? {appearance: icon.appearance} : {}),
+            ...(icon.layout ? {layout: icon.layout} : {}),
           },
           null,
         );
@@ -182,7 +184,7 @@ export async function composeTileflowIconSources(
       if (winners.size + selected.length > tileflowIconPackageLimits.maxIconCount)
         throw new TileflowIconSetError(
           'ICON_COMPOSITION_INVALID',
-          'Composed icon set exceeds 256 effective icons',
+          `Composed icon set exceeds ${tileflowIconPackageLimits.maxIconCount} effective icons`,
         );
       for (const item of await directory.render(selected)) {
         localSourceBytes += item.sourceBytes;
@@ -204,8 +206,12 @@ export async function composeTileflowIconSources(
   const composition =
     references.length && iconPackage
       ? parseTileflowIconComposition({
-          format: 'tileflow-icon-composition-v1',
-          compositionVersion: 1,
+          format: sorted.some((winner) => winner.icon.appearance || winner.icon.layout)
+            ? 'tileflow-icon-composition-v2'
+            : 'tileflow-icon-composition-v1',
+          compositionVersion: sorted.some((winner) => winner.icon.appearance || winner.icon.layout)
+            ? 2
+            : 1,
           packageHash: iconPackage.contentHash,
           contributors,
           winners: sorted.map(({ordinal, icon}, index) => ({
@@ -214,6 +220,8 @@ export async function composeTileflowIconSources(
             width: icon.oneX.width,
             height: icon.oneX.height,
             pixelSha256: iconPackage.manifest.renderedIcons[index]!.pixelSha256,
+            ...(icon.appearance ? {appearance: icon.appearance} : {}),
+            ...(icon.layout ? {layout: icon.layout} : {}),
           })),
         })
       : null;

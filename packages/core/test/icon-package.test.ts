@@ -55,6 +55,33 @@ const manifest: TileflowIconPackageManifest = {
   },
 };
 
+test('SDF semantic metadata requires v2 and changes the diff without changing pixels', () => {
+  const appearance = {
+    representation: 'sdf',
+    defaults: {color: '#ff0000', haloColor: 'transparent', haloWidth: 0, haloBlur: 0},
+  };
+  const candidate = {
+    ...manifest,
+    format: 'tileflow-icon-package-v2',
+    renderedIcons: manifest.renderedIcons.map((entry) => ({
+      ...entry,
+      appearance: structuredClone(appearance),
+    })),
+  };
+  assert.equal(tileflowIconPackageManifestSchema.safeParse(candidate).success, true);
+  assert.equal(
+    tileflowIconPackageManifestSchema.safeParse({...candidate, format: 'tileflow-icon-package-v1'})
+      .success,
+    false,
+  );
+  const changed = structuredClone(candidate);
+  changed.renderedIcons[0]!.appearance.defaults.color = '#00ff00';
+  assert.deepEqual(
+    diffTileflowIconPackageManifests(candidate as never, changed as never).modified,
+    ['airport'],
+  );
+});
+
 test('defines the exact four-file package protocol and alpha limits', () => {
   assert.deepEqual(tileflowIconPackageFileNames, [
     'sprite.json',
@@ -62,7 +89,7 @@ test('defines the exact four-file package protocol and alpha limits', () => {
     'sprite@2x.json',
     'sprite@2x.png',
   ]);
-  assert.equal(tileflowIconPackageLimits.maxIconCount, 256);
+  assert.equal(tileflowIconPackageLimits.maxIconCount, 1_000);
   assert.equal(tileflowIconPackageLimits.decodeConcurrency, 4);
   assert.equal(tileflowIconPackageLimits.maxGeneratedPackageBytes, 8 * 1024 * 1024);
   assert.equal(tileflowHostedAlphaCompatibility.maxMapsPerDeploy, 20);

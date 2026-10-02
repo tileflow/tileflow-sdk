@@ -1,4 +1,14 @@
 export {createStyle, createStyleResult, parseTileflowMap, validateTileflowMap} from './map';
+export {
+  validateTileflowCompiledIconCapabilities,
+  type TileflowPreparedIconCapabilities,
+} from './cartography/icon-capabilities';
+export {
+  createTileflowIconPreviewRuntime,
+  renderTileflowIconAtlasPixels,
+  resolveTileflowIconPreviewPaint,
+  type TileflowIconPreviewPaint,
+} from './icon-preview';
 export type {TileflowCompilationOptions, TileflowStyleOptions} from './map';
 /** Validate an inheritance-free compiler input without applying authoring resolution again. */
 export {parseResolvedTileflowMap} from './resolved-map-schema';
@@ -551,3 +561,11 @@ export * from './icon-json';
 export * from './icon-composition';
 
 export * from './icon-sprite-index';
+export * from './icon-layout';
+export {
+  assertTileflowSdfPixels,
+  tileflowIconAppearanceSchema,
+  tileflowIconAuthorMetadataSchema,
+  tileflowIconMetadataFileName,
+  type TileflowIconAppearance,
+} from './icon-appearance';

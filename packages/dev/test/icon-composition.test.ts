@@ -222,11 +222,23 @@ test('aggregate winner limits are enforced instead of clipping otherwise valid i
   await withIconSetFixture(async (cwd) => {
     const a = await setFixture(
       1,
-      Array.from({length: 256}, (_, index) => renderedIcon(`icon-${index}`, [1, 2, 3, 255], 1, 1)),
+      Array.from({length: 1_000}, (_, index) =>
+        renderedIcon(`icon-${index}`, [1, 2, 3, 255], 1, 1),
+      ),
     );
     const b = await setFixture(2, [renderedIcon('extra', [1, 2, 3, 255], 1, 1)]);
     for (const set of [a, b])
       await storeTileflowIconSetArtifact(set.pin, set.artifact, {cacheRoot: cwd});
+    const accepted = await composeTileflowIconSources([iconSet('@acme/brand')], {
+      cwd,
+      cacheRoot: cwd,
+      offline: true,
+      lock: lockFor({'@acme/brand': a.pin}),
+    });
+    assert.equal(accepted.package?.manifest.iconNames.length, 1_000);
+    assert.ok(
+      new TextEncoder().encode(JSON.stringify(accepted.composition)).byteLength < 1024 * 1024,
+    );
     await assert.rejects(
       composeTileflowIconSources([iconSet('@acme/brand'), iconSet('@acme/transport')], {
         cwd,

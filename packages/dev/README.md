@@ -169,11 +169,12 @@ and atomic rename. A conflicting writer fails without overwriting pins. An inter
 the previous complete lock intact; remove a stale `.writing` guard only after confirming that its
 writer has exited. Ordinary reads and Core validation never acquire write guards.
 
-The existing 256-effective-icon, 2048-atlas-dimension, 4 MiB/file, and 8 MiB/package bounds still
-apply. Several individually valid sets can exceed the effective map limit; composition fails
-explicitly instead of clipping. Cache and composition do not create Team resources or publish
-anything. Every normal entry point composes declared shared descriptors through this path; catalog
-publication and lock maintenance stay in the `tileflow` CLI, which is the only writer of
+A package supports up to 1,000 effective icons, subject to a 2,048-pixel atlas dimension,
+4 MiB per generated file, and 8 MiB per package. Larger artwork can hit those limits before
+1,000 icons. Several individually valid sets can exceed the effective map limit; composition
+fails explicitly instead of clipping. Cache and composition do not create Team resources or
+publish anything. Every normal entry point composes declared shared descriptors through this path;
+catalog publication and lock maintenance stay in the `tileflow` CLI, which is the only writer of
 `tileflow.icons.lock.json` and the only caller that resolves `latest`.
 
 ## Detailed guides
@@ -188,3 +189,9 @@ These references are also included under `docs/` in the installed package:
 - [Feature and icon inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/bounded-vector-feature-inspection.md): supported sources, icon compilation, and delivered-pixel hashes.
 
 For an installed release, prefer its declarations and packaged guides over newer source on `main`.
+
+## Recolorable icons
+
+Declare SDF defaults and optional stretch/content layout in `tileflow.icons.json` beside ordinary artwork. Preparation
+verifies both densities and rejects mixed representations within one symbol layer, including
+fallbacks and local overrides. See [Author recolorable and adaptable icons](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-icons.md) for the input profile, diagnostics and recovery.

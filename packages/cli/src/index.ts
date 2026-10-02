@@ -1830,7 +1830,13 @@ function createCompiledMapAssets(
   return Object.fromEntries(
     compiled.bindings.map((binding) => [
       binding.mapName,
-      {icons: {ids: binding.iconIds, sprite: resolveSprite(binding)}},
+      {
+        icons: {
+          ids: binding.iconIds,
+          sprite: resolveSprite(binding),
+          ...(binding.appearances ? {appearances: binding.appearances} : {}),
+        },
+      },
     ]),
   );
 }

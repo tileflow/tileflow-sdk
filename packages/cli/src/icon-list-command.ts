@@ -1,6 +1,11 @@
 import type {Command} from 'commander';
 import {dirname} from 'node:path';
 import {compareCodeUnits} from '@tileflow/core';
+import type {
+  TileflowIconAppearance,
+  TileflowIconCompositionV1,
+  TileflowIconLayoutMetadata,
+} from '@tileflow/core';
 import {
   getTileflowMapNames,
   loadValidTileflowConfigWithInputs,
@@ -15,7 +20,6 @@ import {
   TileflowIconCompilationError,
   type TileflowIconResolutionOptions,
 } from '@tileflow/dev/icons';
-import type {TileflowIconCompositionV1} from '@tileflow/core';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 
 export type TileflowIconListJsonV3 = {
@@ -71,6 +75,8 @@ export type TileflowIconMapJson = {
         kind: 'sources';
         contributors: TileflowIconContributorJson[];
         finalIds: string[];
+        appearances?: Readonly<Record<string, TileflowIconAppearance>>;
+        layouts?: Readonly<Record<string, TileflowIconLayoutMetadata>>;
         insideWorkingTree: boolean;
         replacements: TileflowIconReplacementJson[];
         packageHash: string;
@@ -187,6 +193,22 @@ function createMapJson(
       kind: 'sources',
       contributors: mapIcons.contributors.map(createContributorJson),
       finalIds: [...mapIcons.iconIds],
+      ...(catalog.icons.some((icon) => icon.appearance)
+        ? {
+            appearances: Object.fromEntries(
+              catalog.icons.flatMap((icon) =>
+                icon.appearance ? [[icon.id, icon.appearance]] : [],
+              ),
+            ),
+          }
+        : {}),
+      ...(catalog.icons.some((icon) => icon.layout)
+        ? {
+            layouts: Object.fromEntries(
+              catalog.icons.flatMap((icon) => (icon.layout ? [[icon.id, icon.layout]] : [])),
+            ),
+          }
+        : {}),
       insideWorkingTree: catalog.insideWorkingTree,
       replacements: catalog.replacements.map((replacement) => ({
         id: replacement.id,

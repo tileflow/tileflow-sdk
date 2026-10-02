@@ -15,10 +15,11 @@ const success = {
   results: [],
   schemaVersion: 1,
   source: {id: 'synthetic', revision: 'fixture-1'},
-  usage: {units: 1},
+  usage: {units: 25},
 };
 
 const autocompleteSuccess = {
+  usage: {units: 10},
   attribution: [{text: 'Synthetic fixture'}],
   schemaVersion: 1,
   source: {id: 'synthetic', revision: 'fixture-1'},
@@ -30,7 +31,7 @@ const resolveSuccess = {
   result: {address: {}, kind: 'place', label: 'Hospital La Paz', position: [-3.7, 40.4]},
   schemaVersion: 1,
   source: {id: 'synthetic', revision: 'fixture-1'},
-  usage: {units: 1},
+  usage: {units: 25},
 };
 
 test('posts one normalized request with Team authorization and no retry', async () => {
@@ -213,13 +214,13 @@ test('preserves only bounded safe API error fields', async () => {
 test('preserves the deterministic unsupported-territory error', async () => {
   await assert.rejects(
     geocode(
-      {query: 'Tokyo', retention: 'persistent'},
+      {query: 'Tokyo', retention: 'temporary'},
       {
         apiKey: 'team_test_key',
         fetch: async () =>
           Response.json(
             {
-              code: 'GEOCODING_TERRITORY_UNSUPPORTED',
+              code: 'GEOCODING_FILTER_UNSUPPORTED',
               error: 'Persistent retention is unsupported for this territory',
               requestId: 'req_japan',
             },
@@ -230,7 +231,7 @@ test('preserves the deterministic unsupported-territory error', async () => {
     (error) => {
       assert.ok(error instanceof GeocodingError);
       assert.equal(error.status, 422);
-      assert.equal(error.code, 'GEOCODING_TERRITORY_UNSUPPORTED');
+      assert.equal(error.code, 'GEOCODING_FILTER_UNSUPPORTED');
       assert.equal(error.requestId, 'req_japan');
       return true;
     },
@@ -384,14 +385,14 @@ test('preserves safe reverse API errors after one call', async () => {
 
   await assert.rejects(
     geocodeReverse(
-      {position: [139.6917, 35.6895], retention: 'persistent'},
+      {position: [139.6917, 35.6895], retention: 'temporary'},
       {
         apiKey: 'team_test_key',
         fetch: async () => {
           calls += 1;
           return Response.json(
             {
-              code: 'GEOCODING_TERRITORY_UNSUPPORTED',
+              code: 'GEOCODING_FILTER_UNSUPPORTED',
               error: 'Persistent retention is unsupported for this territory',
               requestId: 'req_japan_reverse',
             },
@@ -403,7 +404,7 @@ test('preserves safe reverse API errors after one call', async () => {
     (error) => {
       assert.ok(error instanceof GeocodingError);
       assert.equal(error.status, 422);
-      assert.equal(error.code, 'GEOCODING_TERRITORY_UNSUPPORTED');
+      assert.equal(error.code, 'GEOCODING_FILTER_UNSUPPORTED');
       assert.equal(error.requestId, 'req_japan_reverse');
       return true;
     },
@@ -460,7 +461,7 @@ test('rejects autocomplete response envelopes with excess suggestions or usage',
   const suggestion = autocompleteSuccess.suggestions[0];
   for (const response of [
     {...autocompleteSuccess, suggestions: Array.from({length: 6}, () => suggestion)},
-    {...autocompleteSuccess, usage: {units: 1}},
+    {...autocompleteSuccess, usage: {units: 25}},
   ]) {
     await assert.rejects(
       autocomplete(
@@ -500,10 +501,10 @@ test('keeps only the selected newer suggestion after an aborted earlier autocomp
       });
     }
 
-    assert.equal(request.url.endsWith('/resolve-suggestion'), true);
+    assert.equal(request.url.endsWith('/resolve'), true);
     resolveCalls += 1;
     assert.equal(body.token, 'token-B');
-    assert.equal(body.retention, resolveCalls === 1 ? 'temporary' : 'persistent');
+    assert.equal(body.retention, 'temporary');
     return Response.json(resolveSuccess);
   };
 
@@ -526,7 +527,7 @@ test('keeps only the selected newer suggestion after an aborted earlier autocomp
     {apiKey: 'team_test_key', fetch, signal: second.signal},
   );
   await resolveSuggestion(
-    {retention: 'persistent', token: latest.suggestions[0]!.token},
+    {retention: 'temporary', token: latest.suggestions[0]!.token},
     {apiKey: 'team_test_key', fetch, signal: second.signal},
   );
 
@@ -537,7 +538,7 @@ test('keeps only the selected newer suggestion after an aborted earlier autocomp
 test('posts one suggestion resolution with retention and returns one candidate', async () => {
   const requests: Request[] = [];
   const result = await resolveSuggestion(
-    {retention: 'persistent', token: 'opaque-token_1'},
+    {retention: 'temporary', token: 'opaque-token_1'},
     {
       apiKey: 'team_test_key',
       apiUrl: 'https://api.example.test/root/',
@@ -549,11 +550,11 @@ test('posts one suggestion resolution with retention and returns one candidate',
   );
 
   assert.equal(result.result.label, 'Hospital La Paz');
-  assert.equal(result.usage.units, 1);
+  assert.equal(result.usage.units, 25);
   assert.equal(requests.length, 1);
-  assert.equal(requests[0]?.url, 'https://api.example.test/root/v1/geocoding/resolve-suggestion');
+  assert.equal(requests[0]?.url, 'https://api.example.test/root/v1/geocoding/resolve');
   assert.deepEqual(await requests[0]?.json(), {
-    retention: 'persistent',
+    retention: 'temporary',
     token: 'opaque-token_1',
   });
 });

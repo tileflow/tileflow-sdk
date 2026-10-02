@@ -8,8 +8,12 @@ import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {defineMap, parseTileflowMap} from '@tileflow/core';
+import {
+  type CompiledTileflowIconPackage,
+  compileTileflowIconPackages,
+  composeTileflowIconSources,
+} from '@tileflow/dev/icons';
 import {streets} from '@tileflow/maps';
-import {type CompiledTileflowIconPackage, compileTileflowIconPackages} from '@tileflow/dev/icons';
 import {
   iconPackageBaselineResponseSchema,
   tileflowIconDiffDocumentSchema,
@@ -265,6 +269,52 @@ test('report supports an unscoped empty comparison without legacy review section
   assert.match(html, /<title>Tileflow Icon Diff<\/title>/u);
   assert.doesNotMatch(html, /class="map-pill"|Map:/u);
   assert.doesNotMatch(html, /mapping|reference|Action required/iu);
+});
+
+test('report renders SDF defaults instead of embedding raw distance fields', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-sdf-report-'));
+  t.after(() => rm(cwd, {recursive: true, force: true}));
+  await mkdir(join(cwd, 'icons'));
+  await writeFile(
+    join(cwd, 'icons/health.svg'),
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="red" d="M6 6H18V18H6Z"/></svg>',
+  );
+  await writeFile(
+    join(cwd, 'icons/tileflow.icons.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      icons: {health: {representation: 'sdf', defaults: {color: '#c43d35'}}},
+    }),
+  );
+  const {package: proposedPackage} = await composeTileflowIconSources(['./icons'], {cwd});
+  assert.ok(proposedPackage);
+  const outputPath = join(cwd, 'report.html');
+  const bytes = proposedPackage.files.reduce((sum, file) => sum + file.source.byteLength, 0);
+  const document = tileflowIconDiffDocumentSchema.parse({
+    schemaVersion: 1,
+    environment: 'unscoped',
+    baseline: null,
+    proposed: {
+      package: {
+        contentHash: proposedPackage.contentHash,
+        iconCount: 1,
+        label: 'Health',
+        totalBytes: bytes,
+      },
+    },
+    icons: {added: ['health'], removed: [], modified: [], unchangedCount: 0},
+    generatedBytes: {before: 0, after: bytes, delta: bytes},
+    artifacts: {report: outputPath},
+    hasChanges: true,
+  });
+  await writeIconDiffReport({baseline: null, document, force: false, outputPath, proposedPackage});
+  const html = await readFile(outputPath, 'utf8');
+  assert.match(html, /data:image\/png;base64,/);
+  for (const file of proposedPackage.files.filter((file) => file.fileName.endsWith('.png')))
+    assert.ok(
+      !html.includes(Buffer.from(file.source).toString('base64')),
+      'raw distance field leaked into report',
+    );
 });
 
 test('unknown maps and removed flags fail before any request', async (t) => {

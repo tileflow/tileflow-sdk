@@ -187,3 +187,9 @@ These references are also included under `docs/` in the installed package:
 - [Feature and icon inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/bounded-vector-feature-inspection.md): supported sources, icon compilation, and delivered-pixel hashes.
 
 For an installed release, prefer its declarations and packaged guides over newer source on `main`.
+
+## Recolorable icons
+
+Declare SDF defaults and optional stretch/content layout in `tileflow.icons.json` beside ordinary artwork. Preparation
+verifies both densities and rejects mixed representations within one symbol layer, including
+fallbacks and local overrides. See [Author recolorable and adaptable icons](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-icons.md) for the input profile, diagnostics and recovery.

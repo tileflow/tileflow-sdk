@@ -1,10 +1,11 @@
 import type {Map as MapLibreMap} from 'maplibre-gl';
 import assert from 'node:assert/strict';
-import {mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {createServer as createViteServer} from 'vite';
+import {composeTileflowIconSources} from '@tileflow/dev/icons';
 import {launchTileflowCaptureBrowser} from '../src/browser';
 
 type SemanticProof = {
@@ -24,190 +25,232 @@ type SemanticProof = {
   states: unknown[];
 };
 
-test(
-  'opens a semantic POI popup from a real MapLibre GeoJSON hit test',
-  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
-  async () => {
-    const capturePackageRoot = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
-    const cwd = await mkdtemp(join(capturePackageRoot, '.tileflow-test-react-semantic-vite-'));
-    const reactSource = fileURLToPath(new URL('../../react/src/index.ts', import.meta.url));
-    let browser: Awaited<ReturnType<typeof launchTileflowCaptureBrowser>> | undefined;
-    let vite: Awaited<ReturnType<typeof createViteServer>> | undefined;
-
-    try {
-      await symlink(
-        join(capturePackageRoot, 'node_modules'),
-        join(cwd, 'node_modules'),
-        process.platform === 'win32' ? 'junction' : 'dir',
+for (const representation of ['marker', 'sdf'] as const)
+  test(
+    `opens a semantic POI popup from a real MapLibre ${representation} hit test`,
+    {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
+    async () => {
+      const capturePackageRoot = dirname(
+        fileURLToPath(new URL('../package.json', import.meta.url)),
       );
-      await Promise.all([
-        writeFile(
-          join(cwd, 'index.html'),
-          '<!doctype html><html><body><div id="root"></div><script type="module" src="/main.tsx"></script></body></html>',
-        ),
-        writeFile(join(cwd, 'main.tsx'), applicationSource),
-      ]);
+      const cwd = await mkdtemp(join(capturePackageRoot, '.tileflow-test-react-semantic-vite-'));
+      const reactSource = fileURLToPath(new URL('../../react/src/index.ts', import.meta.url));
+      let browser: Awaited<ReturnType<typeof launchTileflowCaptureBrowser>> | undefined;
+      let vite: Awaited<ReturnType<typeof createViteServer>> | undefined;
 
-      vite = await createViteServer({
-        configFile: false,
-        logLevel: 'silent',
-        resolve: {alias: {'@tileflow/react': reactSource}},
-        root: cwd,
-        server: {
-          host: '127.0.0.1',
-          port: 0,
-          watch: {usePolling: process.platform === 'win32'},
-        },
-      });
-      await vite.listen();
-      const address = vite.httpServer?.address();
-      assert.ok(address && typeof address === 'object');
-      const appOrigin = `http://127.0.0.1:${address.port}`;
-
-      browser = await launchTileflowCaptureBrowser({allowInstall: false});
-      const page = await browser.newPage({viewport: {height: 480, width: 640}});
-      const browserErrors: string[] = [];
-      const remoteOrigins = new Set<string>();
-      page.on('console', (message) => {
-        if (message.type() === 'error') browserErrors.push(message.text());
-      });
-      page.on('pageerror', (error) => browserErrors.push(error.message));
-      page.on('request', (request) => {
-        const url = new URL(request.url());
-        if ((url.protocol === 'http:' || url.protocol === 'https:') && url.origin !== appOrigin) {
-          remoteOrigins.add(url.origin);
-        }
-      });
-
-      const response = await page.goto(appOrigin, {waitUntil: 'domcontentloaded'});
-      assert.equal(response?.status(), 200);
-      const map = page.locator('[data-tileflow-capture-id="semantic-poi"]');
-      await map.waitFor({state: 'visible'});
-      await page.waitForFunction(
-        () =>
-          document
-            .querySelector('[data-tileflow-capture-id="semantic-poi"]')
-            ?.getAttribute('data-tileflow-state') === 'idle',
-      );
-      assert.equal(await page.locator('canvas.maplibregl-canvas').count(), 1);
-
-      const zoomLevelsToOverscale = await page.evaluate(() => {
-        const nativeMap = (
-          window as typeof window & {
-            __tileflowSemanticMap: MapLibreMap & {_zoomLevelsToOverscale?: unknown};
-          }
-        ).__tileflowSemanticMap;
-        return nativeMap._zoomLevelsToOverscale;
-      });
-      assert.equal(zoomLevelsToOverscale, 4);
-
-      const nativeHit = await page.evaluate(() => {
-        const nativeMap = (window as typeof window & {__tileflowSemanticMap: MapLibreMap})
-          .__tileflowSemanticMap;
-        const point = nativeMap.project([0, 0]);
-        return {
-          features: nativeMap
-            .queryRenderedFeatures(point, {layers: ['semantic-poi-layer']})
-            .map((feature) => ({
-              id: feature.id,
-              layerId: feature.layer.id,
-              name: feature.properties.name,
-              source: feature.source,
-              sourceLayer: feature.sourceLayer ?? null,
-            })),
-          point: {x: point.x, y: point.y},
-        };
-      });
-      assert.deepEqual(nativeHit.features, [
-        {
-          id: 42,
-          layerId: 'semantic-poi-layer',
-          name: 'Café Browser',
-          source: 'semantic-pois',
-          sourceLayer: null,
-        },
-      ]);
-
-      const bounds = await map.boundingBox();
-      assert.ok(bounds);
-      const featurePoint = {
-        x: bounds.x + nativeHit.point.x,
-        y: bounds.y + nativeHit.point.y,
-      };
-      await page.mouse.move(featurePoint.x, featurePoint.y);
-      await page.waitForFunction(
-        () =>
-          (
-            window as typeof window & {__tileflowSemanticProof?: SemanticProof}
-          ).__tileflowSemanticProof?.events.some(({type}) => type === 'target:enter'),
-        undefined,
-        {timeout: 5_000},
-      );
-      const hoverProof = await page.evaluate(
-        () =>
-          (window as typeof window & {__tileflowSemanticProof: SemanticProof})
-            .__tileflowSemanticProof,
-      );
-      assert.ok(hoverProof.events.some(({type}) => type === 'target:enter'));
-      await page.mouse.click(featurePoint.x, featurePoint.y);
-
-      const popup = page.locator('[data-tileflow-semantic-popup-proof]');
-      await popup.waitFor({state: 'visible'});
-      await page.waitForFunction(
-        () =>
-          document
-            .querySelector('[data-tileflow-capture-id="semantic-poi"]')
-            ?.getAttribute('data-tileflow-state') === 'idle',
-      );
-      assert.equal(await popup.textContent(), 'Tileflow semantic popup ready: Café Browser (42)');
-      assert.equal(await popup.getAttribute('data-feature-id'), '42');
-
-      const proof = await page.evaluate(
-        () =>
-          (window as typeof window & {__tileflowSemanticProof: SemanticProof})
-            .__tileflowSemanticProof,
-      );
-      assert.equal(proof.popupCommitState, 'loading');
-      assert.deepEqual(
-        proof.events.map(({type}) => type),
-        ['target:enter', 'target:activate', 'popup:open'],
-      );
-      for (const event of proof.events) {
-        assert.deepEqual(
-          {
-            bindingId: event.bindingId,
-            category: event.category,
-            domain: event.domain,
-            featureId: event.featureId,
-            hasPhysicalLayerId: event.hasPhysicalLayerId,
-            name: event.name,
-            targetKind: event.targetKind,
-          },
-          {
-            bindingId: 'semantic-poi-popup',
-            category: 'food-drink',
-            domain: 'poi',
-            featureId: 42,
-            hasPhysicalLayerId: false,
-            name: 'Café Browser',
-            targetKind: 'semantic-feature',
-          },
+      try {
+        await symlink(
+          join(capturePackageRoot, 'node_modules'),
+          join(cwd, 'node_modules'),
+          process.platform === 'win32' ? 'junction' : 'dir',
         );
+        let source = applicationSource;
+        if (representation === 'sdf') {
+          await mkdir(join(cwd, 'icons'));
+          await writeFile(
+            join(cwd, 'icons/health.svg'),
+            '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="red" d="M6 6H18V18H6Z"/></svg>',
+          );
+          await writeFile(
+            join(cwd, 'icons/tileflow.icons.json'),
+            JSON.stringify({
+              schemaVersion: 1,
+              icons: {health: {representation: 'sdf', defaults: {color: '#ffe100'}}},
+            }),
+          );
+          const composed = await composeTileflowIconSources(['./icons'], {cwd});
+          await mkdir(join(cwd, 'public/sdf'), {recursive: true});
+          for (const file of composed.package!.files)
+            await writeFile(join(cwd, 'public/sdf', file.fileName), file.source);
+          source = source
+            .replace(
+              'captureId="semantic-poi"',
+              'captureId="semantic-poi" center={[0, 0]} zoom={3}',
+            )
+            .replace(
+              "name: 'Tileflow semantic GeoJSON browser fixture',",
+              "name: 'Tileflow semantic GeoJSON browser fixture', sprite: location.origin + '/sdf/sprite',",
+            )
+            .replace("representation: 'marker',", "representation: 'icon',")
+            .replace(
+              "type: 'circle', source: 'semantic-pois', paint: {'circle-color': '#ffe100', 'circle-radius': 24, 'circle-stroke-color': '#111111', 'circle-stroke-width': 2}",
+              "type: 'symbol', source: 'semantic-pois', layout: {'icon-image': 'health', 'icon-size': 2}, paint: {'icon-color': '#ffe100'}",
+            );
+        }
+        await Promise.all([
+          writeFile(
+            join(cwd, 'index.html'),
+            '<!doctype html><html><body><div id="root"></div><script type="module" src="/main.tsx"></script></body></html>',
+          ),
+          writeFile(join(cwd, 'main.tsx'), source),
+        ]);
+
+        vite = await createViteServer({
+          configFile: false,
+          logLevel: 'silent',
+          resolve: {alias: {'@tileflow/react': reactSource}},
+          root: cwd,
+          server: {
+            host: '127.0.0.1',
+            port: 0,
+            watch: {usePolling: process.platform === 'win32'},
+          },
+        });
+        await vite.listen();
+        const address = vite.httpServer?.address();
+        assert.ok(address && typeof address === 'object');
+        const appOrigin = `http://127.0.0.1:${address.port}`;
+
+        browser = await launchTileflowCaptureBrowser({allowInstall: false});
+        const page = await browser.newPage({viewport: {height: 480, width: 640}});
+        const browserErrors: string[] = [];
+        const remoteOrigins = new Set<string>();
+        page.on('console', (message) => {
+          if (message.type() === 'error') browserErrors.push(message.text());
+        });
+        page.on('pageerror', (error) => browserErrors.push(error.message));
+        page.on('request', (request) => {
+          const url = new URL(request.url());
+          if ((url.protocol === 'http:' || url.protocol === 'https:') && url.origin !== appOrigin) {
+            remoteOrigins.add(url.origin);
+          }
+        });
+
+        const response = await page.goto(appOrigin, {waitUntil: 'domcontentloaded'});
+        assert.equal(response?.status(), 200);
+        const map = page.locator('[data-tileflow-capture-id="semantic-poi"]');
+        await map.waitFor({state: 'visible'});
+        await page.waitForFunction(
+          () =>
+            document
+              .querySelector('[data-tileflow-capture-id="semantic-poi"]')
+              ?.getAttribute('data-tileflow-state') === 'idle',
+        );
+        assert.equal(await page.locator('canvas.maplibregl-canvas').count(), 1);
+
+        const zoomLevelsToOverscale = await page.evaluate(() => {
+          const nativeMap = (
+            window as typeof window & {
+              __tileflowSemanticMap: MapLibreMap & {_zoomLevelsToOverscale?: unknown};
+            }
+          ).__tileflowSemanticMap;
+          return nativeMap._zoomLevelsToOverscale;
+        });
+        assert.equal(zoomLevelsToOverscale, 4);
+
+        const nativeHit = await page.evaluate(() => {
+          const nativeMap = (window as typeof window & {__tileflowSemanticMap: MapLibreMap})
+            .__tileflowSemanticMap;
+          const point = nativeMap.project([0, 0]);
+          return {
+            features: nativeMap
+              .queryRenderedFeatures(point, {layers: ['semantic-poi-layer']})
+              .map((feature) => ({
+                id: feature.id,
+                layerId: feature.layer.id,
+                name: feature.properties.name,
+                source: feature.source,
+                sourceLayer: feature.sourceLayer ?? null,
+              })),
+            point: {x: point.x, y: point.y},
+            images: nativeMap.listImages(),
+            loaded: nativeMap.loaded(),
+          };
+        });
+        assert.deepEqual(
+          nativeHit.features,
+          [
+            {
+              id: 42,
+              layerId: 'semantic-poi-layer',
+              name: 'Café Browser',
+              source: 'semantic-pois',
+              sourceLayer: null,
+            },
+          ],
+          JSON.stringify({browserErrors, nativeHit}),
+        );
+
+        const bounds = await map.boundingBox();
+        assert.ok(bounds);
+        const featurePoint = {
+          x: bounds.x + nativeHit.point.x,
+          y: bounds.y + nativeHit.point.y,
+        };
+        await page.mouse.move(featurePoint.x, featurePoint.y);
+        await page.waitForFunction(
+          () =>
+            (
+              window as typeof window & {__tileflowSemanticProof?: SemanticProof}
+            ).__tileflowSemanticProof?.events.some(({type}) => type === 'target:enter'),
+          undefined,
+          {timeout: 5_000},
+        );
+        const hoverProof = await page.evaluate(
+          () =>
+            (window as typeof window & {__tileflowSemanticProof: SemanticProof})
+              .__tileflowSemanticProof,
+        );
+        assert.ok(hoverProof.events.some(({type}) => type === 'target:enter'));
+        await page.mouse.click(featurePoint.x, featurePoint.y);
+
+        const popup = page.locator('[data-tileflow-semantic-popup-proof]');
+        await popup.waitFor({state: 'visible'});
+        await page.waitForFunction(
+          () =>
+            document
+              .querySelector('[data-tileflow-capture-id="semantic-poi"]')
+              ?.getAttribute('data-tileflow-state') === 'idle',
+        );
+        assert.equal(await popup.textContent(), 'Tileflow semantic popup ready: Café Browser (42)');
+        assert.equal(await popup.getAttribute('data-feature-id'), '42');
+
+        const proof = await page.evaluate(
+          () =>
+            (window as typeof window & {__tileflowSemanticProof: SemanticProof})
+              .__tileflowSemanticProof,
+        );
+        assert.equal(proof.popupCommitState, 'loading');
+        assert.deepEqual(
+          proof.events.map(({type}) => type),
+          ['target:enter', 'target:activate', 'popup:open'],
+        );
+        for (const event of proof.events) {
+          assert.deepEqual(
+            {
+              bindingId: event.bindingId,
+              category: event.category,
+              domain: event.domain,
+              featureId: event.featureId,
+              hasPhysicalLayerId: event.hasPhysicalLayerId,
+              name: event.name,
+              targetKind: event.targetKind,
+            },
+            {
+              bindingId: 'semantic-poi-popup',
+              category: 'food-drink',
+              domain: 'poi',
+              featureId: 42,
+              hasPhysicalLayerId: false,
+              name: 'Café Browser',
+              targetKind: 'semantic-feature',
+            },
+          );
+        }
+        assert.ok(proof.events.every(({inputModality}) => inputModality === 'pointer'));
+        assert.deepEqual(proof.states, [
+          {popup: {domain: 'poi', featureId: 42, kind: 'semantic-feature'}},
+        ]);
+        assert.deepEqual(proof.diagnostics, []);
+        assert.deepEqual([...remoteOrigins], []);
+        assert.deepEqual(browserErrors, []);
+      } finally {
+        await browser?.close();
+        await vite?.close();
+        await rm(cwd, {force: true, recursive: true});
       }
-      assert.ok(proof.events.every(({inputModality}) => inputModality === 'pointer'));
-      assert.deepEqual(proof.states, [
-        {popup: {domain: 'poi', featureId: 42, kind: 'semantic-feature'}},
-      ]);
-      assert.deepEqual(proof.diagnostics, []);
-      assert.deepEqual([...remoteOrigins], []);
-      assert.deepEqual(browserErrors, []);
-    } finally {
-      await browser?.close();
-      await vite?.close();
-      await rm(cwd, {force: true, recursive: true});
-    }
-  },
-);
+    },
+  );
 
 const applicationSource = `import React, {useLayoutEffect} from 'react';
 import {createRoot} from 'react-dom/client';

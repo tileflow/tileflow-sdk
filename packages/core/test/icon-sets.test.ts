@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {defineMap, parseTileflowMap} from '../src';
+import {hashTileflowMapRevision, type TileflowEffectiveMapSourceAssets} from '../src/build';
 import {
-  collectTileflowIconSetReferences,
-  iconSet,
-  tileflowIconSetSourceSchema,
-  type TileflowIconSource,
-} from '../src/icon-set';
+  hashTileflowIconComposition,
+  parseTileflowIconComposition,
+  type TileflowIconCompositionV1,
+} from '../src/icon-composition';
 import {parseTileflowIconJson} from '../src/icon-json';
 import {
   parseTileflowIconsLockfile,
@@ -14,15 +14,15 @@ import {
   type TileflowIconsLockfileV1,
 } from '../src/icon-lock';
 import {
-  hashTileflowIconComposition,
-  parseTileflowIconComposition,
-  type TileflowIconCompositionV1,
-} from '../src/icon-composition';
-import {
   hashTileflowIconPackageManifest,
   tileflowIconPackageManifestSchema,
 } from '../src/icon-package';
-import {hashTileflowMapRevision, type TileflowEffectiveMapSourceAssets} from '../src/build';
+import {
+  collectTileflowIconSetReferences,
+  iconSet,
+  tileflowIconSetSourceSchema,
+  type TileflowIconSource,
+} from '../src/icon-set';
 import {extendStreets} from './map-fixture';
 
 async function fixtureLock(): Promise<TileflowIconsLockfileV1> {
@@ -267,4 +267,24 @@ test('shared artifact content and consumed revisions are distinct map identity i
       sources,
     ),
   );
+});
+
+test('shared source identity cannot omit or forge the winning SDF defaults', async () => {
+  const receipt = fixtureReceipt(await fixtureLock());
+  receipt.format = 'tileflow-icon-composition-v2';
+  receipt.compositionVersion = 2;
+  receipt.winners[0]!.appearance = {
+    representation: 'sdf',
+    defaults: {color: '#ff0000', haloColor: 'transparent', haloWidth: 0, haloBlur: 0},
+  };
+  const map = parseTileflowMap(extendStreets({id: 'main', icons: [iconSet('@acme/brand')]}));
+  const {contributor: _contributor, ...identity} = structuredClone(receipt.winners[0]!);
+  const sources: TileflowEffectiveMapSourceAssets = {
+    fonts: [],
+    icons: [{kind: 'rendered-icon', ...identity}],
+    iconComposition: receipt,
+  };
+  await hashTileflowMapRevision(map, sources);
+  identity.appearance!.defaults.color = '#0000ff';
+  await assert.rejects(hashTileflowMapRevision(map, sources), /identity/);
 });

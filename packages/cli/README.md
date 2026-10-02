@@ -291,3 +291,14 @@ revision; prefer the installed copy when working with an older release.
 - [Hosted authentication and deploy](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/hosted-authentication-and-deploy.md)
 - [Agent icon composition](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/agent-icon-composition.md)
 - [Read-only icon comparison](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/read-only-icon-comparison.md)
+
+## Validate icon representations
+
+`tileflow validate`, development and build resolve icon capabilities before returning a map.
+`TF_ICON_REPRESENTATION_MIXED` means a layer can select SDF and RGBA icons, including a fallback or
+local override. Keep that selection homogeneous or use an explicit bounded mapping. Development
+reports the invalid generation while retaining its last valid artifact.
+
+Declare defaults in `tileflow.icons.json`; inspect effective appearances and text-fitting layouts with
+`tileflow icons list --json`. Diff reports detect default-only changes and show rendered previews.
+See [Author recolorable and adaptable icons](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-icons.md) for the source profile and halo bounds.

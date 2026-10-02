@@ -1,4 +1,6 @@
 import {z} from 'zod';
+import {tileflowIconAppearanceSchema} from './icon-appearance';
+import {tileflowIconLayoutSchema} from './icon-layout';
 
 export const tileflowIconPackageFileNames = [
   'sprite.json',
@@ -44,6 +46,8 @@ export const tileflowIconIdSchema = z.string().max(64).regex(tileflowIconIdPatte
 export const tileflowRenderedIconManifestEntrySchema = z
   .object({
     name: tileflowIconIdSchema,
+    appearance: tileflowIconAppearanceSchema.optional(),
+    layout: tileflowIconLayoutSchema.optional(),
     pixelSha256: z
       .object({
         oneX: sha256Schema,
@@ -110,7 +114,7 @@ export const tileflowIconPackageManifestSchema = z
       iconPackageFileSchema('sprite@2x.json', 'application/json'),
       iconPackageFileSchema('sprite@2x.png', 'image/png'),
     ]),
-    format: z.literal('tileflow-icon-package-v1'),
+    format: z.enum(['tileflow-icon-package-v1', 'tileflow-icon-package-v2']),
     iconNames: z.array(tileflowIconIdSchema).min(1).max(tileflowIconPackageLimits.maxIconCount),
     renderedIcons: z
       .array(tileflowRenderedIconManifestEntrySchema)
@@ -125,6 +129,18 @@ export const tileflowIconPackageManifestSchema = z
   })
   .strict()
   .superRefine((manifest, context) => {
+    if (
+      manifest.renderedIcons.some(
+        (icon) => icon.appearance !== undefined || icon.layout !== undefined,
+      ) !==
+      (manifest.format === 'tileflow-icon-package-v2')
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['format'],
+        message: 'Icon capability metadata requires package v2; unchanged RGBA uses v1',
+      });
+    }
     const sortedNames = [...manifest.iconNames].sort(compareCodeUnits);
 
     if (

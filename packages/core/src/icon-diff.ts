@@ -1,4 +1,8 @@
-import {compareCodeUnits, type TileflowIconPackageManifest} from './icon-package';
+import {
+  compareCodeUnits,
+  serializeCanonicalJson,
+  type TileflowIconPackageManifest,
+} from './icon-package';
 
 export type TileflowIconManifestDiff = {
   added: string[];
@@ -13,12 +17,8 @@ export function diffTileflowIconPackageManifests(
   before: TileflowIconPackageManifest | null,
   after: TileflowIconPackageManifest | null,
 ): TileflowIconManifestDiff {
-  const beforeIcons = new Map(
-    (before?.renderedIcons ?? []).map((entry) => [entry.name, entry.pixelSha256]),
-  );
-  const afterIcons = new Map(
-    (after?.renderedIcons ?? []).map((entry) => [entry.name, entry.pixelSha256]),
-  );
+  const beforeIcons = new Map((before?.renderedIcons ?? []).map((entry) => [entry.name, entry]));
+  const afterIcons = new Map((after?.renderedIcons ?? []).map((entry) => [entry.name, entry]));
   const names = [...new Set([...beforeIcons.keys(), ...afterIcons.keys()])].sort(compareCodeUnits);
   const added: string[] = [];
   const modified: string[] = [];
@@ -33,7 +33,7 @@ export function diffTileflowIconPackageManifests(
       added.push(name);
     } else if (!proposed) {
       removed.push(name);
-    } else if (previous.oneX !== proposed.oneX || previous.twoX !== proposed.twoX) {
+    } else if (serializeCanonicalJson(previous) !== serializeCanonicalJson(proposed)) {
       modified.push(name);
     } else {
       unchangedCount += 1;

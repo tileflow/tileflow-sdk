@@ -1,6 +1,6 @@
 import type {Map as MapLibreMap} from 'maplibre-gl';
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
@@ -72,21 +72,6 @@ for (const representation of ['marker', 'sdf'] as const)
           writeFile(join(cwd, 'main.tsx'), applicationSource),
         ]);
 
-        vite = await createViteServer({
-          configFile: false,
-          logLevel: 'silent',
-          resolve: {alias: {'@tileflow/react': reactSource}},
-          root: cwd,
-          server: {
-            host: '127.0.0.1',
-            port: 0,
-            watch: {usePolling: process.platform === 'win32'},
-          },
-        });
-        await vite.listen();
-        const address = vite.httpServer?.address();
-        assert.ok(address && typeof address === 'object');
-        const appOrigin = `http://127.0.0.1:${address.port}`;
         const style = structuredClone(semanticStyle);
         if (representation === 'sdf')
           for (const layer of style.metadata['tileflow:interaction-manifest'].domains.poi.layers)
@@ -96,7 +81,7 @@ for (const representation of ['marker', 'sdf'] as const)
           representation === 'sdf'
             ? {
                 ...style,
-                sprite: `${appOrigin}/sdf/sprite`,
+                sprite: '/sdf/sprite',
                 layers: [
                   style.layers[0],
                   {
@@ -110,6 +95,34 @@ for (const representation of ['marker', 'sdf'] as const)
               }
             : style,
         );
+
+        vite = await createViteServer({
+          configFile: false,
+          logLevel: 'silent',
+          resolve: {alias: {'@tileflow/react': reactSource}},
+          root: cwd,
+          server: {
+            host: '127.0.0.1',
+            port: 0,
+            watch: null,
+          },
+        });
+        await vite.listen();
+        const address = vite.httpServer?.address();
+        assert.ok(address && typeof address === 'object');
+        const appOrigin = `http://127.0.0.1:${address.port}`;
+        if (representation === 'sdf') {
+          const stylePath = join(cwd, 'public/tileflow-fixture/style.json');
+          const fixtureStyle = JSON.parse(await readFile(stylePath, 'utf8'));
+          await writeFile(
+            stylePath,
+            JSON.stringify({...fixtureStyle, sprite: `${appOrigin}/sdf/sprite`}),
+          );
+        }
+
+        const manifestResponse = await fetch(`${appOrigin}/tileflow-fixture/manifest.json`);
+        assert.equal(manifestResponse.status, 200);
+        assert.match(manifestResponse.headers.get('content-type') ?? '', /application\/json/);
 
         browser = await launchTileflowCaptureBrowser({allowInstall: false});
         const page = await browser.newPage({viewport: {height: 480, width: 640}});

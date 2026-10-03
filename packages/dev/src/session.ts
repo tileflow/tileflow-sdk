@@ -1,6 +1,7 @@
 import {type FSWatcher, watch} from 'chokidar';
-import {realpathSync} from 'node:fs';
-import {dirname, extname, isAbsolute, relative, resolve, sep, win32} from 'node:path';
+import {realpathSync, statSync} from 'node:fs';
+import {basename, dirname, extname, isAbsolute, relative, resolve, sep, win32} from 'node:path';
+import {tileflowIconMetadataFileName} from '@tileflow/core';
 import {TileflowNativeCompatibilityError} from '@tileflow/core/native-profile';
 import type {TileflowBuildArtifacts, TileflowBuildArtifactsOptions} from './artifacts';
 import {sanitizeDiagnosticSecrets} from './diagnostic-sanitization';
@@ -77,6 +78,7 @@ type ArtifactGeneration = {
 const configExtensions = new Set(['.cjs', '.cts', '.js', '.json', '.mjs', '.mts', '.ts', '.tsx']);
 const iconExtensions = new Set(['.jpeg', '.jpg', '.png', '.svg', '.webp']);
 const fontExtensions = new Set(['.otf', '.ttf', '.woff2']);
+const writeStabilityMs = 50;
 const excludedDirectories = new Set([
   '.cache',
   '.git',
@@ -116,6 +118,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
   #closed = false;
   #closing: Promise<void> | undefined;
   #debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  #startupCheckTimer: ReturnType<typeof setTimeout> | undefined;
   #generation = 0;
   #current: ArtifactGeneration | undefined;
   readonly #artifactGenerations = new Set<ArtifactGeneration>();
@@ -124,6 +127,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
   #refreshToken = 0;
   #state: TileflowArtifactSessionState = {generation: 0, status: 'building'};
   #watcher: FSWatcher | undefined;
+  #watchedArtifactDirectories = new Map<string, number | undefined>();
   #watchedArtifactPaths = new Set<string>();
 
   constructor(
@@ -157,7 +161,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
   async start(): Promise<void> {
     if (this.#watchEnabled) {
       this.#watcher = watch(dirname(this.#configPath), {
-        awaitWriteFinish: {pollInterval: 20, stabilityThreshold: 50},
+        awaitWriteFinish: {pollInterval: 20, stabilityThreshold: writeStabilityMs},
         followSymlinks: false,
         ignoreInitial: true,
         ignored: (path, stats) => this.#ignoreWatchPath(path, stats?.isDirectory()),
@@ -185,6 +189,29 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
         if (!this.#shouldRefreshForWatchEvent(path)) return;
         this.#scheduleRefresh(path);
       });
+      this.#watcher.on('raw', (event, path, details: unknown) => {
+        if (event !== 'rename' && event !== 'change') return;
+        const resolvedPath = resolveRawWatchPath(path, details);
+        if (!resolvedPath || this.#ignoreWatchPath(resolvedPath, undefined)) return;
+
+        const directoryChanged = this.#watchedArtifactDirectories.has(resolvedPath);
+        const metadataChanged =
+          event === 'rename' &&
+          basename(resolvedPath) === tileflowIconMetadataFileName &&
+          [...this.#watchedArtifactDirectories.keys()].some((directory) =>
+            isSameOrInside(directory, resolvedPath),
+          );
+        if (!directoryChanged && !metadataChanged) return;
+
+        if (directoryChanged && event === 'change') {
+          const modified = directoryModificationTime(resolvedPath);
+          if (modified === this.#watchedArtifactDirectories.get(resolvedPath)) return;
+          this.#watchedArtifactDirectories.set(resolvedPath, modified);
+        }
+
+        // Stabilization can suppress add/unlink after a build already read a transient sidecar.
+        this.#scheduleRefresh(resolvedPath);
+      });
       this.#watcher.on('error', (error) => {
         if (this.#closed) return;
         this.#refreshToken += 1;
@@ -194,6 +221,23 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
     }
 
     await this.refresh('initial');
+
+    if (this.#watcher && !this.#closed) {
+      // Reconcile one creation lost while native notifications were starting.
+      this.#startupCheckTimer = setTimeout(() => {
+        this.#startupCheckTimer = undefined;
+        if (this.#closed) return;
+
+        for (const [path, observed] of this.#watchedArtifactDirectories) {
+          if (this.#ignoreWatchPath(path, true)) continue;
+          const modified = directoryModificationTime(path);
+          if (modified === observed) continue;
+
+          this.#watchedArtifactDirectories.set(path, modified);
+          this.#scheduleRefresh(path);
+        }
+      }, writeStabilityMs);
+    }
   }
 
   getState(): TileflowArtifactSessionState {
@@ -306,6 +350,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
     this.#closed = true;
     this.#refreshToken += 1;
     if (this.#debounceTimer) clearTimeout(this.#debounceTimer);
+    if (this.#startupCheckTimer) clearTimeout(this.#startupCheckTimer);
     this.#listeners.clear();
     await this.#watcher?.close();
     const retained = [...this.#artifactGenerations];
@@ -373,6 +418,18 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
     const next = new Set(paths.map((path) => canonicalPath(resolve(this.#cwd, path))));
     const previous = this.#watchedArtifactPaths;
     this.#watchedArtifactPaths = next;
+    // Building must not consume a directory notification that is still queued.
+    const previousDirectories = this.#watchedArtifactDirectories;
+    this.#watchedArtifactDirectories = new Map();
+    for (const path of next) {
+      const modified = directoryModificationTime(path);
+      if (modified !== undefined) {
+        this.#watchedArtifactDirectories.set(
+          path,
+          previousDirectories.has(path) ? previousDirectories.get(path) : modified,
+        );
+      }
+    }
 
     for (const path of previous) {
       if (!next.has(path) && !isSameOrInside(dirname(this.#configPath), path)) {
@@ -572,6 +629,25 @@ function localPathAliases(path: string): string[] {
   return [...new Set([resolve(path), canonicalPath(path)])].sort(
     (left, right) => right.length - left.length,
   );
+}
+
+function directoryModificationTime(path: string): number | undefined {
+  try {
+    const stats = statSync(path);
+    return stats.isDirectory() ? stats.mtimeMs : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveRawWatchPath(path: unknown, details: unknown): string | undefined {
+  if (typeof path !== 'string' || !path) return undefined;
+  if (isAbsolute(path)) return canonicalPath(path);
+  if (!details || typeof details !== 'object') return undefined;
+  const watchedPath = (details as {watchedPath?: unknown}).watchedPath;
+  if (typeof watchedPath !== 'string' || !isAbsolute(watchedPath)) return undefined;
+
+  return canonicalPath(basename(watchedPath) === path ? watchedPath : resolve(watchedPath, path));
 }
 
 function canonicalPath(path: string): string {

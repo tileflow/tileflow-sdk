@@ -103,6 +103,9 @@ export async function createMapHandler() {
 The caller mounts `fetch` in its server and calls `close()` on shutdown. This factory does not open
 a listener. Sessions follow config imports and local asset inputs, retain the last good generation
 after invalid edits, and publish structured state changes through `subscribe()`.
+Watching follows aliased working directories, including newly created or removed icon metadata.
+A single startup consistency check complements ordinary watcher notifications; no recurring scan
+is added.
 
 `getState()` and `getLastGoodArtifacts()` return borrowed synchronous views. Before asynchronous
 work, call `acquireArtifacts(generation?)` and release the acquisition in `finally`. A replaced

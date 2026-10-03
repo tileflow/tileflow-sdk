@@ -51,7 +51,6 @@ import {
   resolveTileflowRuntimeTheme,
   resolveTileflowRuntimeView,
   resolveTileflowStaticImageUrl,
-  shouldLoadTileflowManifest,
   type TileflowAnalytics,
   type TileflowRuntimeManifestMap,
   type TileflowRuntimeSource,
@@ -88,7 +87,7 @@ export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>
 type TileflowManifestResolution = Readonly<{
   key: string;
   map: TileflowRuntimeManifestMap | null;
-  state: 'error' | 'loading' | 'not-needed' | 'ready';
+  state: 'error' | 'loading' | 'ready';
 }>;
 
 export type TileflowAnnotationRenderer<
@@ -206,22 +205,14 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   const generalRenderTooltip = renderTooltip as
     | TileflowInteractionRenderer<TAnnotation>
     | undefined;
-  const sourceKind = source.kind;
-  const sourceMap = source.kind === 'tileflow' ? source.map : undefined;
-  const sourceManifestUrl = source.kind === 'tileflow' ? source.manifestUrl : undefined;
-  const sourceStyle = source.kind === 'maplibre' ? source.style : undefined;
+  const sourceMap = source.map;
+  const sourceManifestUrl = source.manifestUrl;
   const runtimeSource = useMemo<TileflowRuntimeSource>(
-    () =>
-      sourceKind === 'tileflow'
-        ? {kind: 'tileflow', manifestUrl: sourceManifestUrl, map: sourceMap!}
-        : {kind: 'maplibre', style: sourceStyle!},
-    [sourceKind, sourceManifestUrl, sourceMap, sourceStyle],
+    () => ({manifestUrl: sourceManifestUrl, map: sourceMap}),
+    [sourceManifestUrl, sourceMap],
   );
-  const mapName = runtimeSource.kind === 'tileflow' ? runtimeSource.map : undefined;
-  const manifestUrl =
-    runtimeSource.kind === 'tileflow'
-      ? (runtimeSource.manifestUrl ?? defaultTileflowManifestUrl)
-      : defaultTileflowManifestUrl;
+  const mapName = runtimeSource.map;
+  const manifestUrl = runtimeSource.manifestUrl ?? defaultTileflowManifestUrl;
   const preparedAnnotations = useMemo(
     () => prepareTileflowReactAnnotations(annotations),
     [annotations],
@@ -303,28 +294,16 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   const resolvedCaptureId = normalizeTileflowCaptureId(captureId);
   const resolvedMode = resolveTileflowMapMode({mode});
   const isImageMode = resolvedMode === 'image';
-  const shouldLoadManifest = shouldLoadTileflowManifest({
-    source: runtimeSource,
-  });
-  const manifestRequestKey = shouldLoadManifest
-    ? JSON.stringify([manifestUrl, mapName])
-    : 'not-needed';
+  const manifestRequestKey = JSON.stringify([manifestUrl, mapName]);
   const currentManifestResolution: TileflowManifestResolution =
     manifestResolution.key === manifestRequestKey
       ? manifestResolution
-      : {
-          key: manifestRequestKey,
-          map: null,
-          state: shouldLoadManifest ? 'loading' : 'not-needed',
-        };
+      : {key: manifestRequestKey, map: null, state: 'loading'};
   const manifestMap =
     currentManifestResolution.state === 'ready' ? currentManifestResolution.map : null;
   const themeResolution = useMemo(() => {
-    if (!manifestMap || runtimeSource.kind !== 'tileflow') {
-      return {
-        error: false,
-        name: runtimeSource.kind === 'tileflow' && theme && theme !== 'system' ? theme : undefined,
-      } as const;
+    if (!manifestMap) {
+      return {error: false, name: theme && theme !== 'system' ? theme : undefined} as const;
     }
 
     try {
@@ -335,7 +314,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     } catch {
       return {error: true, name: undefined} as const;
     }
-  }, [manifestMap, runtimeSource, systemColorScheme, theme]);
+  }, [manifestMap, systemColorScheme, theme]);
   const resolvedThemeName = themeResolution.name;
   const manifestView = resolveTileflowRuntimeView({manifestMap});
   const manifestCenter = useStableMapOptionValue<[number, number]>(
@@ -466,11 +445,6 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   }, [declarativeInteractionDiagnostics]);
 
   useEffect(() => {
-    if (!shouldLoadManifest) {
-      setManifestResolution({key: manifestRequestKey, map: null, state: 'not-needed'});
-      return;
-    }
-
     let cancelled = false;
     setManifestResolution({key: manifestRequestKey, map: null, state: 'loading'});
 
@@ -498,7 +472,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     return () => {
       cancelled = true;
     };
-  }, [manifestRequestKey, manifestUrl, mapName, shouldLoadManifest]);
+  }, [manifestRequestKey, manifestUrl, mapName]);
 
   const runtimeStyle = useMemo(() => {
     if (isImageMode || themeResolution.error) {
@@ -513,10 +487,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     });
   }, [isImageMode, manifestMap, runtimeSource, systemColorScheme, themeResolution]);
   runtimeStyleRef.current = runtimeStyle;
-  const runtimeMapIdentity =
-    runtimeSource.kind === 'tileflow'
-      ? `${manifestUrl}\0${runtimeSource.map}`
-      : runtimeSource.style;
+  const runtimeMapIdentity = `${manifestUrl}\0${runtimeSource.map}`;
   const runtimeStyleReady =
     runtimeStyle !== null || (themeResolution.error && mapRef.current !== null);
 
@@ -576,7 +547,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     ],
   );
   const runtimeResolutionState: 'error' | 'idle' | 'loading' = (() => {
-    if (shouldLoadManifest && currentManifestResolution.state !== 'ready') {
+    if (currentManifestResolution.state !== 'ready') {
       return currentManifestResolution.state === 'error' ? 'error' : 'loading';
     }
     if (themeResolution.error) return 'error';

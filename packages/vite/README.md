@@ -48,9 +48,9 @@ export default defineConfig({plugins: [tileflow()]});
 ```
 
 Run the application's normal development or production-build command. At the default base, the
-component can use `source={{kind: 'tileflow', map: 'madrid'}}`; it reads
-`/tileflow/manifest.json`. Do not also run a CLI build that overwrites the same delivery manifest.
-Config loading executes trusted imports and is not a sandbox.
+component can use `source={{map: 'madrid'}}`; it reads `/tileflow/manifest.json`. The source selects
+a Tileflow map, not a renderer or direct style. Do not also run a CLI build that overwrites the same
+delivery manifest. Config loading executes trusted imports and is not a sandbox.
 
 ## Configure the worker
 
@@ -86,12 +86,15 @@ export default defineConfig({
 
 In the application, pass the resulting public URL explicitly:
 
+<!-- docs:check -->
+
 ```ts
+import type {TileflowRuntimeSource} from '@tileflow/core/runtime';
+
 const source = {
-  kind: 'tileflow' as const,
   map: 'madrid',
   manifestUrl: '/app/maps/manifest.json',
-};
+} satisfies TileflowRuntimeSource;
 ```
 
 Development and production expose the same prefixed URL. The browser does not infer Vite's base;

@@ -73,7 +73,7 @@ The worker and shared module must match the application's installed MapLibre ver
 </script>
 
 <TileflowMap
-  source={{kind: 'tileflow', map: 'madrid'}}
+  source={{map: 'madrid'}}
   theme="system"
   center={[-3.7038, 40.4168]}
   zoom={12}
@@ -81,18 +81,20 @@ The worker and shared module must match the application's installed MapLibre ver
 />
 ```
 
-Coordinates are `[longitude, latitude]`. `source.map` matches the config's portable ID, not a hosted
-`map_...` identifier. The default manifest URL is exactly `/tileflow/manifest.json`. Set
-`source.manifestUrl` for a subpath or external host; the browser does not infer bundler configuration.
+Coordinates are `[longitude, latitude]`. `source` is one object, `{map, manifestUrl?}`.
+`source.map` matches the config's portable ID, not a hosted `map_...` identifier. The default
+manifest URL is exactly `/tileflow/manifest.json`. Set `source.manifestUrl` for a subpath or external
+host; the browser does not infer bundler configuration.
 
 Omitting `theme` uses `defaultTheme`. `system` needs an explicit light/dark mapping, which Streets
 supplies. Theme changes keep the MapLibre instance, camera, and interactions, and roll back on
 failure. `onThemeChange` reports transitions.
 
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct props win over
-those options, then the manifest view, then shared defaults. An unmanaged source with
-`{kind: 'maplibre', style: styleUrl}` loads one style without Tileflow themes or manifest identity;
-do not pass a Tileflow theme with it.
+those options, then the manifest view, then shared defaults. `TileflowMap` always selects a Tileflow
+map through its manifest; it has no renderer discriminator or direct-style mode. The obsolete
+source fields `kind` and `style` are rejected. For a completely unmanaged map, use `maplibre-gl`
+directly rather than a Tileflow component.
 
 ## Add annotations and native popup UI
 
@@ -137,7 +139,7 @@ This Svelte 5 component uses the worker and CSS setup above:
 {/snippet}
 
 <TileflowMap
-  source={{kind: 'tileflow', map: 'madrid'}}
+  source={{map: 'madrid'}}
   {annotations}
   interactionState={state}
   onInteractionStateChange={(next) => (state = next)}
@@ -164,9 +166,10 @@ HTML. Keep tooltips non-interactive and put buttons, links, and forms in popups.
 
 ## Display an existing image
 
-`mode="image"` displays an explicit `imageUrl` or a published manifest image without loading
-MapLibre. A local style build does not generate that image. This mode does not submit or poll a
-Static Maps operation; use the server-side
+`mode="image"` displays an explicit `imageUrl` or derives an image URL from the selected manifest
+map's `mapId`, `apiUrl`, concrete theme and view, without loading MapLibre. It still requires a valid
+Tileflow source. A local style build does not generate that image. This mode does not submit or poll
+a Static Maps operation; use the server-side
 [Static Maps client](https://github.com/tileflow/tileflow-sdk/blob/main/packages/static/README.md)
 for new renders, keeping privileged credentials off the browser.
 

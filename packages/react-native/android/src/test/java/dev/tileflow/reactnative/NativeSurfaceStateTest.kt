@@ -1,0 +1,160 @@
+package dev.tileflow.reactnative
+
+import org.junit.Assert.*
+import org.junit.Test
+
+class NativeSurfaceStateTest {
+	@Test fun requiresLoadedStyleCommittedLayoutRequestedFrameAndMatchingFullyRenderedEvidence() {
+		val events = mutableListOf<Map<String, Any>>()
+		val state = NativeSurfaceState("surface", events::add)
+		val style = Any()
+		state.expect("one")
+		state.layout(true)
+		state.loaded("one", style)
+		state.frameStart(style)
+		state.frameEnd(style, true)
+		assertFalse(events.any { it["kind"] == "render" })
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		val layout = state.commit("one")
+		state.frameStart(style); state.frameEnd(style, true)
+		assertFalse(events.any { it["kind"] == "render" })
+		state.request("one")
+		state.frameStart(style)
+		state.frameEnd(style, true)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		assertTrue(events.any { it["kind"] == "render" && it["layout"] == layout })
+	}
+
+	@Test fun staleStylesFramesLayoutsAndBackgroundNeverBecomeReady() {
+		val events = mutableListOf<Map<String, Any>>()
+		val state = NativeSurfaceState("surface") { event -> events.add(event) }
+		val old = Any(); val current = Any()
+		state.expect("one"); state.layout(true); state.loaded("one", old)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		state.commit("one"); state.request("one"); state.frameStart(old)
+		state.expect("two"); state.loaded("two", current)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		state.commit("two"); state.request("two")
+		state.frameEnd(old, true)
+		state.frameStart(current)
+		state.layout(false); state.frameEnd(current, true)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		assertFalse(events.any { it["kind"] == "render" })
+		assertThrows(IllegalStateException::class.java) { state.commit("two") }
+		state.close()
+		assertFalse(state.active)
+	}
+
+	@Test fun layoutChangeRequiresFreshRequestedFullFrameAndClosesGesture() {
+		val events = mutableListOf<Map<String, Any>>()
+		val state = NativeSurfaceState("surface", events::add)
+		val style = Any()
+		val view = mapOf<String, Any>("center" to listOf(1.0, 2.0), "zoom" to 3.0, "bearing" to 4.0, "pitch" to 5.0)
+		state.expect("one"); state.layout(true); state.loaded("one", style)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		state.commit("one"); state.gestureStart(view)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		state.layout(true)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		val invalidation: Long = state.beginCommand(1)
+		assertTrue(invalidation > 0)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		assertEquals("invalidate", events.last()["kind"])
+		assertEquals(invalidation, events.last()["sequence"])
+		state.commit("one"); state.frameStart(style); state.frameEnd(style, true)
+		assertFalse(events.any { it["kind"] == "render" })
+		state.request("one"); state.frameStart(style); state.frameEnd(style, true)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		assertTrue(events.any { it["kind"] == "render" })
+	}
+
+	@Test fun successiveStyleTokensAcceptOnlyTheirOwnPostRequestFullFrame() {
+		val events = mutableListOf<Map<String, Any>>()
+		val state = NativeSurfaceState("surface", events::add)
+		val first = Any(); val second = Any()
+		state.expect("one"); state.layout(true); state.loaded("one", first)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		val firstInvalidation = state.beginCommand(1)
+		assertTrue(firstInvalidation > 0)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		state.commit("one"); state.request("one"); state.frameStart(first); state.frameEnd(first, true)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		assertEquals(1, events.count { it["kind"] == "render" })
+		assertEquals("one", events.last { it["kind"] == "render" }["style"])
+
+		state.expect("two"); state.loaded("two", second)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		val secondInvalidation = state.beginCommand(2)
+		assertTrue(secondInvalidation > firstInvalidation)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		state.commit("two")
+		state.frameStart(second); state.frameEnd(second, true)
+		assertEquals(1, events.count { it["kind"] == "render" })
+		state.request("two")
+		state.frameStart(first); state.frameEnd(first, true)
+		state.frameStart(second); state.frameEnd(second, false)
+		assertEquals(1, events.count { it["kind"] == "render" })
+		state.frameStart(second); state.frameEnd(second, true)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		assertEquals(2, events.count { it["kind"] == "render" })
+		assertEquals("two", events.last { it["kind"] == "render" }["style"])
+	}
+
+	@Test fun failedStyleCanBeRearmedForRollback() {
+		val state = NativeSurfaceState("surface") {}
+		state.expect("one")
+		state.fail()
+		assertFalse(state.active)
+		state.expect("rollback")
+		assertTrue(state.active)
+	}
+
+	@Test fun commandInvalidationReceiptIsOwnedByItsSurface() {
+		val firstEvents = mutableListOf<Map<String, Any>>()
+		val secondEvents = mutableListOf<Map<String, Any>>()
+		val first = NativeSurfaceState("first", firstEvents::add)
+		val second = NativeSurfaceState("second", secondEvents::add)
+		first.expect("one"); first.layout(true); first.loaded("one", Any())
+		second.expect("two"); second.layout(true); second.loaded("two", Any())
+		while (first.awaitingSequence != null) first.acknowledge(first.awaitingSequence!!)
+		while (second.awaitingSequence != null) second.acknowledge(second.awaitingSequence!!)
+		val firstInvalidation: Long = first.beginCommand(1)
+		val secondInvalidation: Long = second.beginCommand(1)
+		assertTrue(firstInvalidation > 0); assertTrue(secondInvalidation > 0)
+		while (first.awaitingSequence != null) first.acknowledge(first.awaitingSequence!!)
+		while (second.awaitingSequence != null) second.acknowledge(second.awaitingSequence!!)
+		assertEquals("first", firstEvents.last()["surface"])
+		assertEquals(firstInvalidation, firstEvents.last()["sequence"])
+		assertEquals("second", secondEvents.last()["surface"])
+		assertEquals(secondInvalidation, secondEvents.last()["sequence"])
+		first.close(); second.close()
+	}
+
+	@Test fun cameraTokensAreMonotonicAndGestureChangesCannotBeCommands() {
+		val events = mutableListOf<Map<String, Any>>()
+		val state = NativeSurfaceState("surface", events::add)
+		state.expect("one"); state.layout(true); state.loaded("one", Any())
+		assertTrue(state.beginCommand(1) > 0)
+		state.cancelCommand(2)
+		assertEquals(0L, state.beginCommand(2))
+		val view = mapOf<String, Any>("center" to listOf(1.0, 2.0), "zoom" to 3.0, "bearing" to 4.0, "pitch" to 5.0)
+		state.gestureStart(view)
+		assertEquals(0L, state.beginCommand(3))
+		state.gestureChange(view); state.gestureEnd(view)
+		assertTrue(state.beginCommand(4) > 0)
+		while (state.awaitingSequence != null) state.acknowledge(state.awaitingSequence!!)
+		assertEquals(listOf("gesture-start", "gesture-change", "gesture-end"), events.map { it["kind"] }.filter { it.toString().startsWith("gesture") })
+	}
+
+	@Test fun suspendedConsumersKeepOnlyBoundedNativeEventsAndNoValuesInDescriptions() {
+		val events = mutableListOf<Map<String, Any>>()
+		val state = NativeSurfaceState("surface", events::add)
+		state.expect("one"); state.layout(true); state.loaded("one", Any())
+		val view = mapOf<String, Any>("center" to listOf(1.0, 2.0), "zoom" to 3.0, "bearing" to 4.0, "pitch" to 5.0)
+		repeat(1000) { state.gestureStart(view); state.gestureChange(view); state.gestureEnd(view) }
+		assertTrue(state.pendingCount <= 32)
+		assertEquals(1, events.size)
+		assertEquals("NativeSurfaceState", state.toString())
+		state.close()
+	}
+}

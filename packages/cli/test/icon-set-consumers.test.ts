@@ -203,6 +203,46 @@ test('build writes the composed sprite and a schema-version-2 map revision', asy
   assert.deepEqual(Object.keys(sprite).sort(), ['bus', 'hospital', 'shop']);
 });
 
+test('native build preserves the locked Icon Set composition', async (t) => {
+  const {directory} = await fixture(t);
+
+  const result = await runCli(
+    directory,
+    [
+      'build',
+      '--renderer',
+      'native',
+      '--out',
+      'dist/tileflow',
+      '--cache-dir',
+      directory,
+      '--offline',
+      '--json',
+    ],
+    {},
+  );
+
+  assert.equal(result.code, 0, result.stderr);
+  const manifest = JSON.parse(
+    await readFile(join(directory, 'dist/tileflow/native/build-manifest.json'), 'utf8'),
+  ) as {
+    maps: Record<
+      string,
+      {
+        mapRevisionSchemaVersion?: number;
+        sourceAssets: {iconComposition?: {contributors: unknown[]}};
+      }
+    >;
+  };
+  const entry = manifest.maps.main!;
+  assert.equal(entry.mapRevisionSchemaVersion, 2);
+  assert.equal(entry.sourceAssets.iconComposition?.contributors.length, 3);
+  const sprite = JSON.parse(
+    await readFile(join(directory, 'dist/tileflow/native/icons/main/sprite.json'), 'utf8'),
+  ) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(sprite).sort(), ['bus', 'hospital', 'shop']);
+});
+
 function runCli(
   cwd: string,
   arguments_: string[],

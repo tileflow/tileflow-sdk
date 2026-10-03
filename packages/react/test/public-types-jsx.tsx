@@ -29,7 +29,7 @@ const annotationOnlyMap = (
   <Map
     annotations={properties}
     renderPopup={({annotation, close}) => <PropertyCard property={annotation.data} close={close} />}
-    source={{kind: 'maplibre', style: {layers: [], name: 'Direct', sources: {}, version: 8}}}
+    source={{map: 'main'}}
   />
 );
 

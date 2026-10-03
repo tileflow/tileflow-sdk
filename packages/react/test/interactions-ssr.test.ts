@@ -17,10 +17,7 @@ test('renders an explicit image-mode annotation diagnostic during SSR', async ()
       ],
       imageUrl: 'https://cdn.example.test/madrid.png',
       mode: 'image',
-      source: {
-        kind: 'maplibre',
-        style: {layers: [], sources: {}, version: 8},
-      },
+      source: {map: 'madrid'},
     }),
   );
 
@@ -43,10 +40,7 @@ test('rejects semantic interactions visibly in image mode without evaluating Map
         },
       ],
       mode: 'image',
-      source: {
-        kind: 'maplibre',
-        style: {layers: [], sources: {}, version: 8},
-      },
+      source: {map: 'madrid'},
     }),
   );
 
@@ -61,7 +55,7 @@ test('exposes a concrete requested theme to deterministic application capture', 
     createElement(Map, {
       imageUrl: 'https://cdn.example.test/madrid.png',
       mode: 'image',
-      source: {kind: 'tileflow', map: 'madrid'},
+      source: {map: 'madrid'},
       theme: 'dark',
     }),
   );

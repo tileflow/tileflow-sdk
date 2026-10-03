@@ -79,7 +79,7 @@ import {Map} from '@tileflow/react';
 export function App() {
   return (
     <Map
-      source={{kind: 'tileflow', map: 'madrid'}}
+      source={{map: 'madrid'}}
       theme="system"
       center={[-3.7038, 40.4168]}
       zoom={12}
@@ -89,19 +89,21 @@ export function App() {
 }
 ```
 
-Coordinates are `[longitude, latitude]`. `source.map` must match the config's portable map ID,
-not a hosted `map_...` identifier. The default manifest URL is exactly `/tileflow/manifest.json`.
-For a subpath or external host, provide `manifestUrl` in the source; the component does not infer
-bundler configuration or search for assets.
+Coordinates are `[longitude, latitude]`. `source` is one object, `{map, manifestUrl?}`.
+`source.map` must match the config's portable map ID, not a hosted `map_...` identifier.
+The default manifest URL is exactly `/tileflow/manifest.json`. For a subpath or external host,
+provide `manifestUrl` in the source; the component does not infer bundler configuration or search
+for assets.
 
 `theme` selects a published concrete theme. Omission uses `defaultTheme`; `system` requires an
 explicit light/dark mapping, which Streets supplies. Theme changes preserve the MapLibre instance,
 camera, and interactions, and roll back on failure. `onThemeChange` reports transitions.
 
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct camera props
-take priority over `mapOptions`, then the manifest view, then shared defaults. To load one unmanaged
-style, use `source={{kind: 'maplibre', style: styleUrl}}`; that source has no Tileflow theme switching
-or manifest identity. Do not supply a Tileflow theme with an unmanaged source.
+take priority over `mapOptions`, then the manifest view, then shared defaults. `Map` always selects
+a Tileflow map through its manifest; it has no renderer discriminator or direct-style mode.
+The obsolete source fields `kind` and `style` are rejected. For a completely unmanaged map, use
+`maplibre-gl` directly rather than a Tileflow component.
 
 ## Add annotations and popups
 
@@ -141,7 +143,7 @@ export function PropertyMap() {
 
   return (
     <Map
-      source={{kind: 'tileflow', map: 'madrid'}}
+      source={{map: 'madrid'}}
       annotations={annotations}
       interactionState={state}
       onInteractionStateChange={setState}
@@ -178,10 +180,11 @@ Keep tooltips non-interactive; put buttons, links, and forms in popups.
 
 ## Display an image or create a render
 
-`<Map mode="image">` displays an existing explicit `imageUrl` or an image URL in the published
-manifest. It does not create a static render, poll an operation, or load MapLibre. A local style
-build alone does not create that image. Annotations, semantic bindings, and interaction state are
-not supported in image mode.
+`<Map mode="image">` displays an explicit `imageUrl` or derives an image URL from the selected
+manifest map's `mapId`, `apiUrl`, concrete theme and view. It still requires a valid Tileflow source.
+It does not create a static render, poll an operation, or load MapLibre. A local style build alone
+does not create that image. Annotations, semantic bindings, and interaction state are not supported
+in image mode.
 
 To request a new static render, use `StaticMap` from `@tileflow/react/static`. First install the
 shared client/types used by this example:

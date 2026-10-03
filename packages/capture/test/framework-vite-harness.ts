@@ -7,6 +7,7 @@ import {PNG} from 'pngjs';
 import {createServer as createViteServer, type PluginOption} from 'vite';
 import {tileflow} from '@tileflow/vite';
 import {createTileflowCaptureSession} from '../src/index';
+import {writeFrameworkMapFixture} from './tileflow-source-fixture';
 
 type FrameworkViteFixtureOptions = {
   entry: string;
@@ -35,6 +36,7 @@ export async function verifyFrameworkViteCapture(
       'utf8',
     ),
     writeFile(join(cwd, 'tileflow.config.ts'), applicationConfig, 'utf8'),
+    writeFrameworkMapFixture(cwd),
     ...Object.entries(options.files).map(([file, source]) =>
       writeFile(join(cwd, file), source, 'utf8'),
     ),

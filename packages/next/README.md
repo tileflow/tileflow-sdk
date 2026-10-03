@@ -104,12 +104,13 @@ import {configureTileflowMapLibre, Map} from '@tileflow/react';
 configureTileflowMapLibre({workerUrl: '/maplibre/maplibre-gl-worker.mjs'});
 
 export function CityMap() {
-  return <Map source={{kind: 'tileflow', map: 'madrid'}} theme="system" />;
+  return <Map source={{map: 'madrid'}} theme="system" />;
 }
 ```
 
-The interactive map belongs behind a client boundary. It reads prepared assets, not executable
-config. For annotations, capture readiness, and static-image behavior, see the
+The interactive map belongs behind a client boundary. Its `source` is one Tileflow map selection,
+`{map, manifestUrl?}`, not a renderer selector or direct style. It reads prepared assets, not
+executable config. For annotations, capture readiness, and static-image behavior, see the
 [React guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/react/README.md).
 
 ## Use a base path

@@ -2,6 +2,7 @@ import {type FSWatcher, watch} from 'chokidar';
 import {realpathSync, statSync} from 'node:fs';
 import {basename, dirname, extname, isAbsolute, relative, resolve, sep, win32} from 'node:path';
 import {tileflowIconMetadataFileName} from '@tileflow/core';
+import {TileflowNativeCompatibilityError} from '@tileflow/core/native-profile';
 import type {TileflowBuildArtifacts, TileflowBuildArtifactsOptions} from './artifacts';
 import {sanitizeDiagnosticSecrets} from './diagnostic-sanitization';
 
@@ -12,6 +13,10 @@ export type TileflowArtifactDiagnostic = {
   message: string;
   path: string;
   phase?: string;
+  renderer?: 'native';
+  profile?: 'native-v1';
+  severity?: 'error';
+  suggestion?: string;
 };
 
 export type TileflowArtifactSessionState =
@@ -151,6 +156,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
       // Trusted shared Icon Set resolution settings, supplied once by the owning command.
       ...(options.icons ? {icons: options.icons} : {}),
       inspection: options.inspection,
+      ...(options.renderer === undefined ? {} : {renderer: options.renderer}),
       styleBaseUrl: options.styleBaseUrl,
       target: options.target,
     };
@@ -531,6 +537,10 @@ export function createTileflowArtifactDiagnostics(
   error: unknown,
   cwd: string,
 ): TileflowArtifactDiagnostic[] {
+  if (error instanceof TileflowNativeCompatibilityError) {
+    // Native paths are bounded JSON Pointers, not filesystem paths.
+    return error.issues.map((issue) => ({...issue}));
+  }
   const inheritedCode = optionalDiagnosticField(error, 'code');
   const inheritedPath = optionalDiagnosticPath(error);
   const inheritedPhase =

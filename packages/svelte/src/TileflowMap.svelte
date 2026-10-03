@@ -23,7 +23,6 @@
     resolveTileflowRuntimeTheme,
     resolveTileflowRuntimeView,
     resolveTileflowStaticImageUrl,
-    shouldLoadTileflowManifest,
     type TileflowRuntimeManifestMap,
   } from '@tileflow/core/runtime';
   import {
@@ -144,7 +143,7 @@
   let manifestMap: TileflowRuntimeManifestMap | null = null;
   let manifestLoadId = 0;
   let manifestResolutionKey = '';
-  let manifestResolutionState: 'error' | 'loading' | 'not-needed' | 'ready' = 'loading';
+  let manifestResolutionState: 'error' | 'loading' | 'ready' = 'loading';
   let mapLoadId = 0;
   let mounted = false;
   let refreshRunId = 0;
@@ -170,23 +169,11 @@
   $: assertTileflowMapStyleInputs({source, theme});
   $: resolvedCaptureId = normalizeTileflowCaptureId(captureId);
   $: isImageMode = resolvedMode === 'image';
-  $: mapName = source?.kind === 'tileflow' ? source.map : undefined;
-  $: manifestUrl =
-    source?.kind === 'tileflow'
-      ? (source.manifestUrl ?? defaultTileflowManifestUrl)
-      : defaultTileflowManifestUrl;
-  $: shouldLoadManifest = shouldLoadTileflowManifest({
-    source,
-  });
-  $: manifestRequestKey = shouldLoadManifest
-    ? JSON.stringify([manifestUrl, mapName])
-    : 'not-needed';
+  $: mapName = source.map;
+  $: manifestUrl = source.manifestUrl ?? defaultTileflowManifestUrl;
+  $: manifestRequestKey = JSON.stringify([manifestUrl, mapName]);
   $: currentManifestResolutionState =
-    manifestResolutionKey === manifestRequestKey
-      ? manifestResolutionState
-      : shouldLoadManifest
-        ? 'loading'
-        : 'not-needed';
+    manifestResolutionKey === manifestRequestKey ? manifestResolutionState : 'loading';
   $: manifestMap =
     manifestResolutionKey === manifestRequestKey && manifestResolutionState === 'ready'
       ? loadedManifestMap
@@ -194,7 +181,6 @@
   $: themeResolution = resolveThemeSelection({
     colorScheme: systemColorScheme,
     manifestMap,
-    source,
     theme,
   });
   $: resolvedThemeName = themeResolution.name;
@@ -237,7 +223,6 @@
     isImageMode,
     runtimeImageUrl,
     runtimeStyle,
-    shouldLoadManifest,
     themeResolutionError: themeResolution.error,
   });
   $: currentMapCaptureState =
@@ -384,17 +369,7 @@
   }
 
   async function refreshManifest() {
-    const shouldLoad = shouldLoadManifest;
     const requestKey = manifestRequestKey;
-
-    if (!shouldLoad) {
-      manifestLoadId += 1;
-      loadedManifestMap = null;
-      manifestResolutionKey = requestKey;
-      manifestResolutionState = 'not-needed';
-      return;
-    }
-
     const loadId = ++manifestLoadId;
     loadedManifestMap = null;
     manifestResolutionKey = requestKey;
@@ -1228,16 +1203,12 @@
   function resolveThemeSelection(input: {
     colorScheme: 'dark' | 'light';
     manifestMap: TileflowRuntimeManifestMap | null;
-    source: TileflowMapProps['source'];
     theme: TileflowMapProps['theme'];
   }): Readonly<{error: boolean; name: string | undefined}> {
-    if (!input.manifestMap || input.source.kind !== 'tileflow') {
+    if (!input.manifestMap) {
       return {
         error: false,
-        name:
-          input.source.kind === 'tileflow' && input.theme && input.theme !== 'system'
-            ? input.theme
-            : undefined,
+        name: input.theme && input.theme !== 'system' ? input.theme : undefined,
       };
     }
 
@@ -1252,16 +1223,15 @@
   }
 
   function resolveRuntimeResolutionState(input: {
-    currentManifestResolutionState: 'error' | 'loading' | 'not-needed' | 'ready';
+    currentManifestResolutionState: 'error' | 'loading' | 'ready';
     imageSize: {height: number; width: number} | null;
     imageUrl: string | undefined;
     isImageMode: boolean;
     runtimeImageUrl: string | undefined;
     runtimeStyle: ReturnType<typeof resolveTileflowRuntimeStyle>;
-    shouldLoadManifest: boolean;
     themeResolutionError: boolean;
   }): 'error' | 'idle' | 'loading' {
-    if (input.shouldLoadManifest && input.currentManifestResolutionState !== 'ready') {
+    if (input.currentManifestResolutionState !== 'ready') {
       return input.currentManifestResolutionState === 'error' ? 'error' : 'loading';
     }
     if (input.themeResolutionError) return 'error';

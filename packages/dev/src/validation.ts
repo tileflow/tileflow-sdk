@@ -1,6 +1,7 @@
 import {realpathSync} from 'node:fs';
 import {isAbsolute, relative, resolve, sep, win32} from 'node:path';
 import {compareCodeUnits} from '@tileflow/core';
+import {TileflowNativeCompatibilityError} from '@tileflow/core/native-profile';
 import {sanitizeDiagnosticSecrets} from './diagnostic-sanitization';
 
 export {sanitizeDiagnosticSecrets} from './diagnostic-sanitization';
@@ -28,6 +29,8 @@ export type TileflowStructuredDiagnostic = {
   severity: TileflowDiagnosticSeverity;
   message: string;
   suggestion: string;
+  renderer?: 'native';
+  profile?: 'native-v1';
 };
 
 export type TileflowCommandSummary = TileflowStructuredDiagnostic & {
@@ -89,6 +92,10 @@ export function createTileflowStructuredDiagnostics(
   cwd: string,
   defaults: TileflowDiagnosticDefaults,
 ): TileflowStructuredDiagnostic[] {
+  if (error instanceof TileflowNativeCompatibilityError) {
+    // The native validator owns bounded JSON Pointers, not local filesystem paths.
+    return error.issues.map((issue) => ({...issue}));
+  }
   const inheritedCode = optionalField(error, 'code');
   const inheritedDomain =
     optionalField(error, 'domain') ??
@@ -155,7 +162,7 @@ export function createTileflowCommandFailureDocument(
   defaults: TileflowDiagnosticDefaults,
 ): TileflowCommandFailureDocument {
   const diagnostics = createTileflowStructuredDiagnostics(error, cwd, defaults);
-  const primary = diagnostics[0] ?? {
+  const primary: TileflowStructuredDiagnostic = diagnostics[0] ?? {
     phase: normalizePhase(defaults.phase, 'command'),
     code: normalizeCode(defaults.code, 'COMMAND_FAILED'),
     path: '',
@@ -176,6 +183,7 @@ export function createTileflowCommandFailureDocument(
     message: primary.message,
     suggestion: primary.suggestion,
     diagnostics,
+    ...(primary.renderer ? {renderer: primary.renderer, profile: primary.profile} : {}),
   };
 }
 

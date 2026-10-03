@@ -55,7 +55,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 const cleanupState = ref('loading');
 const showProbe = ref(true);
-const style = {version: 8, sources: {}, layers: [{id: 'background', type: 'background', paint: {'background-color': '#2468ac'}}]};
+const source = {map: 'main', manifestUrl: '/tileflow-fixture/manifest.json'};
 const annotations = [{
   ariaLabel: 'Vue browser popup proof',
   coordinate: [0, 0],
@@ -86,7 +86,7 @@ function onProbeLoad(map: MapLibreMap) {
         capture-id="interactive"
         :default-interaction-state="defaultInteractionState"
         :height="180"
-        :source="{kind: 'maplibre', style}"
+        :source="source"
       >
         <template #popup="{target}">
           <div class="popup-probe" data-tileflow-popup-probe="vue">
@@ -95,11 +95,11 @@ function onProbeLoad(map: MapLibreMap) {
         </template>
       </TileflowMap>
     </div>
-    <div style="width: 150px"><TileflowMap capture-id="image" :height="80" image-url="${imageUrl}" mode="image" :source="{kind: 'tileflow', map: 'main'}" /></div>
-    <div style="width: 150px"><TileflowMap capture-id="missing-map" :height="80" :source="{kind: 'tileflow', map: 'missing'}" /></div>
-    <div style="width: 150px"><TileflowMap capture-id="unresolved-image" :height="80" mode="image" :source="{kind: 'maplibre', style}" /></div>
+    <div style="width: 150px"><TileflowMap capture-id="image" :height="80" image-url="${imageUrl}" mode="image" :source="source" /></div>
+    <div style="width: 150px"><TileflowMap capture-id="missing-map" :height="80" :source="{...source, map: 'missing'}" /></div>
+    <div style="width: 150px"><TileflowMap capture-id="unresolved-image" :height="80" mode="image" :source="source" /></div>
     <div id="cleanup-proof" :data-tileflow-state="cleanupState" style="display: block; height: 16px; width: 16px"></div>
-    <div v-if="showProbe" class="probe"><TileflowMap :height="64" :source="{kind: 'maplibre', style}" @load="onProbeLoad" /></div>
+    <div v-if="showProbe" class="probe"><TileflowMap :height="64" :source="source" @load="onProbeLoad" /></div>
   </main>
 </template>
 
@@ -125,7 +125,7 @@ const svelteApplicationSource = `<script>
 
   let cleanupState = 'loading';
   let showProbe = true;
-  const style = {version: 8, sources: {}, layers: [{id: 'background', type: 'background', paint: {'background-color': '#2468ac'}}]};
+  const source = {map: 'main', manifestUrl: '/tileflow-fixture/manifest.json'};
   const annotations = [{
     ariaLabel: 'Svelte browser popup proof',
     coordinate: [0, 0],
@@ -156,13 +156,13 @@ const svelteApplicationSource = `<script>
 {/snippet}
 
 <main>
-  <div style="width: 260px"><TileflowMap {annotations} captureId="interactive" {defaultInteractionState} height={180} {popup} source={{kind: 'maplibre', style}} /></div>
-  <div style="width: 150px"><TileflowMap captureId="image" height={80} imageUrl="${imageUrl}" mode="image" source={{kind: 'tileflow', map: 'main'}} /></div>
-  <div style="width: 150px"><TileflowMap captureId="missing-map" height={80} source={{kind: 'tileflow', map: 'missing'}} /></div>
-  <div style="width: 150px"><TileflowMap captureId="unresolved-image" height={80} mode="image" source={{kind: 'maplibre', style}} /></div>
+  <div style="width: 260px"><TileflowMap {annotations} captureId="interactive" {defaultInteractionState} height={180} {popup} {source} /></div>
+  <div style="width: 150px"><TileflowMap captureId="image" height={80} imageUrl="${imageUrl}" mode="image" {source} /></div>
+  <div style="width: 150px"><TileflowMap captureId="missing-map" height={80} source={{...source, map: 'missing'}} /></div>
+  <div style="width: 150px"><TileflowMap captureId="unresolved-image" height={80} mode="image" {source} /></div>
   <div id="cleanup-proof" data-tileflow-state={cleanupState} style="display: block; height: 16px; width: 16px"></div>
   {#if showProbe}
-    <div class="probe"><TileflowMap height={64} source={{kind: 'maplibre', style}} on:load={onProbeLoad} /></div>
+    <div class="probe"><TileflowMap height={64} {source} on:load={onProbeLoad} /></div>
   {/if}
 </main>
 

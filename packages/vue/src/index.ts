@@ -60,7 +60,6 @@ import {
   resolveTileflowRuntimeTheme,
   resolveTileflowRuntimeView,
   resolveTileflowStaticImageUrl,
-  shouldLoadTileflowManifest,
   type TileflowAnalytics,
   type TileflowRuntimeManifestMap,
   type TileflowRuntimeSource,
@@ -241,7 +240,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     const containerRef = ref<HTMLDivElement | null>(null);
     const loadedManifestMap = shallowRef<TileflowRuntimeManifestMap | null>(null);
     const manifestResolutionKey = ref('');
-    const manifestResolutionState = ref<'error' | 'loading' | 'not-needed' | 'ready'>('loading');
+    const manifestResolutionState = ref<'error' | 'loading' | 'ready'>('loading');
     const imageSize = shallowRef<{height: number; width: number} | null>(null);
     const mapRef = shallowRef<MapLibreMap | null>(null);
     const systemColorScheme = ref<'dark' | 'light'>('light');
@@ -358,28 +357,13 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         ? {interactionState: initialInteractionState}
         : {defaultInteractionState: initialInteractionState}),
     });
-    const mapName = computed(() =>
-      props.source.kind === 'tileflow' ? props.source.map : undefined,
-    );
-    const manifestUrl = computed(() =>
-      props.source.kind === 'tileflow'
-        ? (props.source.manifestUrl ?? defaultTileflowManifestUrl)
-        : defaultTileflowManifestUrl,
-    );
-    const shouldLoadManifest = computed(() =>
-      shouldLoadTileflowManifest({
-        source: props.source,
-      }),
-    );
-    const manifestRequestKey = computed(() =>
-      shouldLoadManifest.value ? JSON.stringify([manifestUrl.value, mapName.value]) : 'not-needed',
-    );
+    const mapName = computed(() => props.source.map);
+    const manifestUrl = computed(() => props.source.manifestUrl ?? defaultTileflowManifestUrl);
+    const manifestRequestKey = computed(() => JSON.stringify([manifestUrl.value, mapName.value]));
     const currentManifestResolutionState = computed(() =>
       manifestResolutionKey.value === manifestRequestKey.value
         ? manifestResolutionState.value
-        : shouldLoadManifest.value
-          ? 'loading'
-          : 'not-needed',
+        : 'loading',
     );
     const manifestMap = computed(() =>
       manifestResolutionKey.value === manifestRequestKey.value &&
@@ -388,13 +372,10 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         : null,
     );
     const themeResolution = computed(() => {
-      if (!manifestMap.value || props.source.kind !== 'tileflow') {
+      if (!manifestMap.value) {
         return {
           error: false,
-          name:
-            props.source.kind === 'tileflow' && props.theme && props.theme !== 'system'
-              ? props.theme
-              : undefined,
+          name: props.theme && props.theme !== 'system' ? props.theme : undefined,
         } as const;
       }
 
@@ -471,7 +452,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
           : undefined),
     );
     const runtimeResolutionState = computed<'error' | 'idle' | 'loading'>(() => {
-      if (shouldLoadManifest.value && currentManifestResolutionState.value !== 'ready') {
+      if (currentManifestResolutionState.value !== 'ready') {
         return currentManifestResolutionState.value === 'error' ? 'error' : 'loading';
       }
       if (themeResolution.value.error) return 'error';
@@ -626,17 +607,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     });
 
     const refreshManifest = async () => {
-      const shouldLoad = shouldLoadManifest.value;
       const requestKey = manifestRequestKey.value;
-
-      if (!shouldLoad) {
-        manifestLoadId += 1;
-        loadedManifestMap.value = null;
-        manifestResolutionKey.value = requestKey;
-        manifestResolutionState.value = 'not-needed';
-        return;
-      }
-
       const loadId = ++manifestLoadId;
       loadedManifestMap.value = null;
       manifestResolutionKey.value = requestKey;

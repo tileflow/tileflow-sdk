@@ -4,11 +4,8 @@ import {
   compileSemanticStyleWithInspection,
   type TileflowPreparedMapAssets,
 } from './cartography/streets';
-import {
-  parseTileflowRuntimeManifest,
-  type TileflowRuntimeManifest,
-  tileflowRuntimeManifestVersion,
-} from './manifest';
+import {parseTileflowRuntimeManifest, tileflowRuntimeManifestVersion} from './manifest';
+import type {TileflowRuntimeManifest} from './manifest-types';
 import {collectMapLineage, type TileflowStyleOptions} from './map';
 import {
   collectTileflowMapBuildLineage,
@@ -267,3 +264,14 @@ function compareCodeUnits(left: string, right: string): number {
 }
 
 export {tileflowSharedIconMapRevisionSchemaVersion} from './map-build-manifest';
+export {
+  parseTileflowRendererDeploymentArtifact,
+  tileflowRendererDeploymentArtifactSchema,
+  tileflowRendererDeploymentLimits,
+  tileflowRendererDeploymentResponseSchema,
+  TileflowRendererDeploymentError,
+} from './renderer-deployment';
+export type {
+  TileflowRendererDeploymentArtifact,
+  TileflowRendererDeploymentResponse,
+} from './renderer-deployment';

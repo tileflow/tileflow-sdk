@@ -333,8 +333,8 @@ async function verifyReact(directory) {
     `import {Map} from '@tileflow/react';
 import {StaticMap} from '@tileflow/react/static';
 
-export const interactive = <Map source={{kind: 'maplibre', style: 'https://example.com/style.json'}} center={[0, 0]} zoom={2} />;
-export const image = <Map source={{kind: 'maplibre', style: 'https://example.com/style.json'}} mode="image" imageUrl="https://example.com/map.png" />;
+export const interactive = <Map source={{map: 'main'}} center={[0, 0]} zoom={2} />;
+export const image = <Map source={{map: 'main'}} mode="image" imageUrl="https://example.com/map.png" />;
 export const staticMap = <StaticMap map="main" theme="light" camera={{type: 'center', center: [0, 0], zoom: 2}} size={{width: 256, height: 256}} imageUrl="https://example.com/static.png" />;
 `,
   );
@@ -347,7 +347,7 @@ import {renderToString} from 'react-dom/server';
 import {Map} from '@tileflow/react';
 import {StaticMap} from '@tileflow/react/static';
 
-const image = renderToString(createElement(Map, {source: {kind: 'maplibre', style: 'https://example.com/style.json'}, mode: 'image', imageUrl: 'https://example.com/map.png'}));
+const image = renderToString(createElement(Map, {source: {map: 'main'}, mode: 'image', imageUrl: 'https://example.com/map.png'}));
 const staticImage = renderToString(createElement(StaticMap, {map: 'main', theme: 'light', camera: {type: 'center', center: [0, 0], zoom: 2}, size: {width: 256, height: 256}, imageUrl: 'https://example.com/static.png'}));
 if (!image.includes('<img') || !staticImage.includes('<img')) throw new Error('React image SSR did not render an image');
 `,
@@ -362,7 +362,7 @@ async function verifyVue(directory) {
     `import {h} from 'vue';
 import {TileflowMap, type TileflowMapProps} from '@tileflow/vue';
 
-const props = {source: {kind: 'maplibre' as const, style: 'https://example.com/style.json'}, mode: 'image' as const, imageUrl: 'https://example.com/map.png'} satisfies TileflowMapProps;
+const props = {source: {map: 'main'}, mode: 'image' as const, imageUrl: 'https://example.com/map.png'} satisfies TileflowMapProps;
 export const image = h(TileflowMap, props);
 `,
   );
@@ -374,7 +374,7 @@ export const image = h(TileflowMap, props);
 import {renderToString} from '@vue/server-renderer';
 import {TileflowMap} from '@tileflow/vue';
 
-const html = await renderToString(createSSRApp({render: () => h(TileflowMap, {source: {kind: 'maplibre', style: 'https://example.com/style.json'}, mode: 'image', imageUrl: 'https://example.com/map.png'})}));
+const html = await renderToString(createSSRApp({render: () => h(TileflowMap, {source: {map: 'main'}, mode: 'image', imageUrl: 'https://example.com/map.png'})}));
 if (!html.includes('<img')) throw new Error('Vue image SSR did not render an image');
 `,
   );
@@ -388,7 +388,7 @@ async function verifySvelte(directory) {
     `import TileflowMap, {type TileflowMapProps} from '@tileflow/svelte';
 
 export const component = TileflowMap;
-export const props = {source: {kind: 'maplibre' as const, style: 'https://example.com/style.json'}, mode: 'image' as const, imageUrl: 'https://example.com/map.png'} satisfies TileflowMapProps;
+export const props = {source: {map: 'main'}, mode: 'image' as const, imageUrl: 'https://example.com/map.png'} satisfies TileflowMapProps;
 `,
   );
   await runTypeScript(directory);
@@ -403,7 +403,7 @@ const componentUrl = import.meta.resolve('@tileflow/svelte/TileflowMap.svelte');
 const source = await readFile(fileURLToPath(componentUrl), 'utf8');
 const processed = await preprocess(source, sveltePreprocess({typescript: {tsconfigFile: false}}), {filename: 'TileflowMap.svelte'});
 const component = compile(processed.code, {filename: 'TileflowMap.svelte', generate: 'server'});
-const consumer = compile(\`<script>import TileflowMap from '@tileflow/svelte';<\\/script><TileflowMap source={{kind: 'maplibre', style: 'https://example.com/style.json'}} mode="image" imageUrl="https://example.com/map.png" />\`, {filename: 'Consumer.svelte', generate: 'server'});
+const consumer = compile(\`<script>import TileflowMap from '@tileflow/svelte';<\\/script><TileflowMap source={{map: 'main'}} mode="image" imageUrl="https://example.com/map.png" />\`, {filename: 'Consumer.svelte', generate: 'server'});
 if (!component.js?.code || !consumer.js?.code) throw new Error('Svelte consumer compilation produced no JavaScript');
 `,
   );

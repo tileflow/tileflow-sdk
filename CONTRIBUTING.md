@@ -43,6 +43,26 @@ The first capture may install Playwright's exact pinned Chromium headless shell.
 `pnpm --filter @tileflow/capture exec playwright install --only-shell chromium` to provision it
 explicitly.
 
+## Opt-in packed mobile checks
+
+The [packed mobile smoke guide](docs/mobile-packed-smoke.md) documents separate checks for Expo and
+React Native Community consumers built from Core, Interactions and React Native tarballs:
+
+```sh
+pnpm run smoke:mobile:packed
+pnpm run smoke:mobile:android
+pnpm run smoke:mobile:ios
+```
+
+Read the guide's prerequisites first. Packed checks need Linux/macOS, Node, npm, the repository's
+exact pnpm and `tar`; Android additionally needs JDK 21 and the specified Android SDK components;
+iOS needs macOS, Xcode and CocoaPods. Missing or inapplicable prerequisites fail rather than skip.
+These commands are not included in ordinary checks or publication. They verify public compilation,
+autolinking and, only in the platform modes, Release/Hermes binaries. They do not launch an app,
+render a map, qualify a physical device, contact Hosted, publish to a registry or establish availability.
+Temporary consumers and artifacts are removed unless diagnostic preservation is explicitly requested
+with `--keep`. No source package versions or application credentials are changed.
+
 ## Public contracts
 
 Keep package exports and README examples aligned. Follow the

@@ -1,0 +1,336 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {
+  type ApplicationForegroundLocationAdapter,
+  type ApplicationLocationObservation,
+  type ApplicationLocationPermission,
+  createForegroundLocationController,
+  foregroundLocationAnnotations,
+  recenterForegroundLocationView,
+  validateForegroundLocationFix,
+} from '../harness/foreground-location-recipe';
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return {promise, reject, resolve};
+}
+
+test('foreground location is idle until the mounted application explicitly requests permission', async () => {
+  const permission = deferred<ApplicationLocationPermission>();
+  let permissionRequests = 0;
+  let observations = 0;
+  const adapter: ApplicationForegroundLocationAdapter = {
+    requestPermission() {
+      permissionRequests += 1;
+      return permission.promise;
+    },
+    observe() {
+      observations += 1;
+      return () => undefined;
+    },
+  };
+  const owner = createForegroundLocationController(adapter, true);
+
+  assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'idle'});
+  assert.equal(permissionRequests, 0);
+  assert.equal(observations, 0);
+  const unmount = owner.mount();
+  assert.equal(permissionRequests, 0);
+  assert.equal(observations, 0);
+
+  const request = owner.requestPermission();
+  assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'requesting'});
+  assert.equal(permissionRequests, 1);
+  assert.equal(observations, 0);
+
+  permission.resolve('granted-precise');
+  await request;
+  assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'granted-precise'});
+  assert.equal(observations, 1);
+  unmount();
+  owner.dispose();
+});
+
+test('only validated coordinates and accuracy become the stable accessible location annotation', async () => {
+  let listener: ((update: ApplicationLocationObservation) => void) | undefined;
+  const adapter: ApplicationForegroundLocationAdapter = {
+    async requestPermission() {
+      return 'granted-approximate';
+    },
+    observe(next) {
+      listener = next;
+      return () => undefined;
+    },
+  };
+  const owner = createForegroundLocationController(adapter, true);
+  const unmount = owner.mount();
+  await owner.requestPermission();
+  listener?.({
+    type: 'fix',
+    fix: {accuracy: 125, latitude: 38.7223, longitude: -9.1393},
+  });
+
+  const snapshot = owner.getSnapshot();
+  assert.equal(snapshot.status, 'granted-approximate');
+  assert.deepEqual(snapshot.fix, {accuracy: 125, latitude: 38.7223, longitude: -9.1393});
+  const annotations = foregroundLocationAnnotations(snapshot);
+  assert.equal(annotations.length, 1);
+  assert.equal(annotations[0]?.id, 'application-foreground-location');
+  assert.equal(annotations[0]?.ariaLabel, 'Approximate current location');
+  assert.deepEqual(annotations[0]?.coordinate, [-9.1393, 38.7223]);
+  assert.deepEqual(annotations[0]?.data, {accuracyMeters: 125, precision: 'approximate'});
+
+  for (const input of [
+    {accuracy: -1, latitude: 38, longitude: -9},
+    {accuracy: Number.POSITIVE_INFINITY, latitude: 38, longitude: -9},
+    {accuracy: 5, latitude: 91, longitude: -9},
+    {accuracy: 5, latitude: 38, longitude: 181},
+    {accuracy: 5, latitude: 38, longitude: -9, rawProviderValue: 'forbidden'},
+    Object.defineProperty({accuracy: 5, latitude: 38}, 'longitude', {get: () => -9}),
+  ])
+    assert.equal(validateForegroundLocationFix(input), undefined);
+
+  listener?.({type: 'fix', fix: {accuracy: -1, latitude: 38, longitude: -9}});
+  assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'unavailable'});
+  assert.deepEqual(foregroundLocationAnnotations(owner.getSnapshot()), []);
+  unmount();
+  owner.dispose();
+});
+
+test('denied permission remains mounted application state and never starts observation', async () => {
+  let observations = 0;
+  const owner = createForegroundLocationController(
+    {
+      async requestPermission() {
+        return 'denied';
+      },
+      observe() {
+        observations += 1;
+        return () => undefined;
+      },
+    },
+    true,
+  );
+  const unmount = owner.mount();
+  await owner.requestPermission();
+  assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'denied'});
+  assert.equal(observations, 0);
+  assert.deepEqual(foregroundLocationAnnotations(owner.getSnapshot()), []);
+  unmount();
+  owner.dispose();
+});
+
+test('background teardown, foreground restart and revocation ignore retired provider callbacks', async () => {
+  const listeners: Array<(update: ApplicationLocationObservation) => void> = [];
+  let releases = 0;
+  const adapter: ApplicationForegroundLocationAdapter = {
+    async requestPermission() {
+      return 'granted-precise';
+    },
+    observe(listener) {
+      listeners.push(listener);
+      return () => {
+        releases += 1;
+      };
+    },
+  };
+  const owner = createForegroundLocationController(adapter, true);
+  const unmount = owner.mount();
+  await owner.requestPermission();
+  assert.equal(listeners.length, 1);
+  listeners[0]?.({type: 'fix', fix: {accuracy: 4, latitude: 38.72, longitude: -9.14}});
+  assert.equal(owner.getSnapshot().status, 'granted-precise');
+
+  owner.setForeground(false);
+  assert.equal(releases, 1);
+  listeners[0]?.({type: 'revoked'});
+  assert.equal(owner.getSnapshot().status, 'granted-precise');
+  assert.equal(foregroundLocationAnnotations(owner.getSnapshot()).length, 1);
+
+  owner.setForeground(true);
+  assert.equal(listeners.length, 2);
+  listeners[1]?.({type: 'revoked'});
+  assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'revoked'});
+  assert.deepEqual(foregroundLocationAnnotations(owner.getSnapshot()), []);
+  assert.equal(releases, 2);
+  unmount();
+  owner.dispose();
+});
+
+test('effect replay remounts granted observation without requesting permission again', async () => {
+  const listeners: Array<(update: ApplicationLocationObservation) => void> = [];
+  let permissionRequests = 0;
+  let releases = 0;
+  const owner = createForegroundLocationController(
+    {
+      async requestPermission() {
+        permissionRequests += 1;
+        return 'granted-precise';
+      },
+      observe(listener) {
+        listeners.push(listener);
+        return () => {
+          releases += 1;
+        };
+      },
+    },
+    true,
+  );
+
+  const unmountFirst = owner.mount();
+  await owner.requestPermission();
+  assert.equal(permissionRequests, 1);
+  assert.equal(listeners.length, 1);
+  listeners[0]?.({type: 'fix', fix: {accuracy: 4, latitude: 38.72, longitude: -9.14}});
+  assert.equal(foregroundLocationAnnotations(owner.getSnapshot()).length, 1);
+
+  unmountFirst();
+  assert.equal(releases, 1);
+  listeners[0]?.({type: 'revoked'});
+  assert.equal(owner.getSnapshot().status, 'granted-precise');
+
+  const unmountReplay = owner.mount();
+  assert.equal(permissionRequests, 1);
+  assert.equal(listeners.length, 2);
+  listeners[0]?.({type: 'unavailable'});
+  assert.equal(owner.getSnapshot().status, 'granted-precise');
+  listeners[1]?.({type: 'fix', fix: {accuracy: 3, latitude: 38.73, longitude: -9.13}});
+  assert.deepEqual(owner.getSnapshot().fix, {accuracy: 3, latitude: 38.73, longitude: -9.13});
+
+  unmountReplay();
+  assert.equal(releases, 2);
+  owner.dispose();
+});
+
+test('unmount retires a pending permission epoch and replay does not prompt automatically', async () => {
+  const permission = deferred<ApplicationLocationPermission>();
+  let permissionRequests = 0;
+  let observations = 0;
+  const owner = createForegroundLocationController(
+    {
+      requestPermission() {
+        permissionRequests += 1;
+        return permission.promise;
+      },
+      observe() {
+        observations += 1;
+        return () => undefined;
+      },
+    },
+    true,
+  );
+
+  const unmount = owner.mount();
+  const request = owner.requestPermission();
+  assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'requesting'});
+  unmount();
+  assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'idle'});
+
+  permission.resolve('granted-precise');
+  await request;
+  assert.deepEqual(owner.getSnapshot(), {fix: null, status: 'idle'});
+  assert.equal(observations, 0);
+
+  const unmountReplay = owner.mount();
+  assert.equal(permissionRequests, 1);
+  assert.equal(observations, 0);
+  unmountReplay();
+  owner.dispose();
+});
+
+test('dispose is terminal, retires a live observation and makes late provider results inert', async () => {
+  let listener: ((update: ApplicationLocationObservation) => void) | undefined;
+  let releases = 0;
+  let observations = 0;
+  const owner = createForegroundLocationController(
+    {
+      async requestPermission() {
+        return 'granted-precise';
+      },
+      observe(next) {
+        observations += 1;
+        listener = next;
+        return () => {
+          releases += 1;
+        };
+      },
+    },
+    true,
+  );
+  owner.mount();
+  await owner.requestPermission();
+  const before = owner.getSnapshot();
+  owner.dispose();
+  assert.equal(releases, 1);
+  listener?.({type: 'fix', fix: {accuracy: 3, latitude: 38.7, longitude: -9.1}});
+  assert.equal(owner.getSnapshot(), before);
+  const terminalUnmount = owner.mount();
+  terminalUnmount();
+  await owner.requestPermission();
+  assert.equal(observations, 1);
+});
+
+test('provider failure is application state and late permission results cannot survive disposal', async () => {
+  const unavailable = createForegroundLocationController(
+    {
+      async requestPermission() {
+        throw new Error('provider detail must stay inside the application recipe');
+      },
+      observe() {
+        assert.fail('unavailable permission must not start observation');
+      },
+    },
+    true,
+  );
+  unavailable.mount();
+  await unavailable.requestPermission();
+  assert.deepEqual(unavailable.getSnapshot(), {fix: null, status: 'unavailable'});
+
+  const permission = deferred<ApplicationLocationPermission>();
+  let observations = 0;
+  const retired = createForegroundLocationController(
+    {
+      requestPermission: () => permission.promise,
+      observe() {
+        observations += 1;
+        return () => undefined;
+      },
+    },
+    true,
+  );
+  retired.mount();
+  const pending = retired.requestPermission();
+  retired.dispose();
+  permission.resolve('granted-precise');
+  await pending;
+  assert.equal(observations, 0);
+});
+
+test('recenter is an explicit immediate controlled-view transformation, never a fix side effect', () => {
+  const current = Object.freeze({
+    bearing: 12,
+    center: Object.freeze([-9.2, 38.7] as const),
+    pitch: 18,
+    zoom: 13,
+  });
+  const state = Object.freeze({
+    fix: Object.freeze({accuracy: 6, latitude: 38.7223, longitude: -9.1393}),
+    status: 'granted-precise' as const,
+  });
+
+  assert.deepEqual(current.center, [-9.2, 38.7]);
+  const next = recenterForegroundLocationView(current, state);
+  assert.deepEqual(next, {
+    bearing: 12,
+    center: [-9.1393, 38.7223],
+    pitch: 18,
+    zoom: 13,
+  });
+  assert.deepEqual(current.center, [-9.2, 38.7]);
+  assert.equal(recenterForegroundLocationView(current, {fix: null, status: 'denied'}), current);
+});

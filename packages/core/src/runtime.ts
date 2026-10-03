@@ -3,7 +3,7 @@ import type {
   TileflowRuntimeManifest,
   TileflowRuntimeManifestMapEntry,
   TileflowRuntimeManifestTheme,
-} from './manifest';
+} from './manifest-types';
 import {isTileflowPortableId, isTileflowThemeName} from './portable-identity-rules';
 import {type MapLibreStyle, type TileflowViewConfig} from './types';
 
@@ -13,7 +13,7 @@ export type {
   TileflowRuntimeManifestMapEntry,
   TileflowRuntimeManifestTheme,
   TileflowRuntimeSystemThemes,
-} from './manifest';
+} from './manifest-types';
 
 export const defaultTileflowManifestUrl = '/tileflow/manifest.json';
 export const defaultTileflowRuntimeView = Object.freeze({
@@ -127,17 +127,11 @@ export type TileflowStyleFontFace = {
   weight?: '100' | '200' | '300' | '400' | '500' | '600' | '700' | '800' | '900';
 };
 
-/** Browser input is either one published Tileflow map or one direct MapLibre style. */
-export type TileflowRuntimeSource =
-  | {
-      kind: 'tileflow';
-      manifestUrl?: string;
-      map: string;
-    }
-  | {
-      kind: 'maplibre';
-      style: MapLibreStyle | string;
-    };
+/** One published Tileflow map. Renderer-specific styles are not framework Map inputs. */
+export type TileflowRuntimeSource = {
+  manifestUrl?: string;
+  map: string;
+};
 
 export type TileflowRuntimeStyleOptions = {
   colorScheme?: TileflowRuntimeColorScheme;
@@ -189,7 +183,7 @@ const manifestCache = new globalThis.Map<
 const missingStaticMapIdWarnings = new Set<string>();
 
 export function shouldLoadTileflowManifest(options: TileflowManifestLoadOptions): boolean {
-  return options.source.kind === 'tileflow';
+  return validateTileflowRuntimeSource(options.source).ok;
 }
 
 export function validateTileflowRuntimeSource(source: unknown): TileflowRuntimeSourceValidation {
@@ -199,42 +193,21 @@ export function validateTileflowRuntimeSource(source: unknown): TileflowRuntimeS
   if (!isPlainRuntimeRecord(source)) {
     return {code: 'invalid-source', error: 'source must be an object', ok: false};
   }
-
-  if (source.kind === 'tileflow') {
-    if (
-      !isTileflowPortableId(source.map) ||
-      (source.manifestUrl !== undefined &&
-        (typeof source.manifestUrl !== 'string' || source.manifestUrl.length === 0))
-    ) {
-      return {
-        code: 'invalid-source',
-        error: 'a tileflow source requires a portable map id and an optional non-empty manifestUrl',
-        ok: false,
-      };
-    }
-    return {ok: true};
+  if (
+    'kind' in source ||
+    'style' in source ||
+    !isTileflowPortableId(source.map) ||
+    (source.manifestUrl !== undefined &&
+      (typeof source.manifestUrl !== 'string' || source.manifestUrl.length === 0))
+  ) {
+    return {
+      code: 'invalid-source',
+      error:
+        'source requires a portable map id and an optional non-empty manifestUrl; renderer inputs are not supported',
+      ok: false,
+    };
   }
-
-  if (source.kind === 'maplibre') {
-    const style = source.style;
-    if (
-      (typeof style !== 'string' || style.length === 0) &&
-      (!style || typeof style !== 'object' || Array.isArray(style))
-    ) {
-      return {
-        code: 'invalid-source',
-        error: 'a maplibre source requires a style object or non-empty style URL',
-        ok: false,
-      };
-    }
-    return {ok: true};
-  }
-
-  return {
-    code: 'invalid-source',
-    error: "source.kind must be 'tileflow' or 'maplibre'",
-    ok: false,
-  };
+  return {ok: true};
 }
 
 /** Validate the only runtime selection grammar: one concrete portable name or `system`. */
@@ -255,22 +228,6 @@ export function resolveTileflowRuntimeStyle(
   options: TileflowRuntimeStyleOptions,
 ): TileflowRuntimeStyle | null {
   assertValidTileflowRuntimeSource(options.source);
-
-  if (options.source.kind === 'maplibre') {
-    if (options.theme !== undefined) {
-      throw new TypeError('The theme option is only valid for a Tileflow map source.');
-    }
-    if (typeof options.source.style !== 'string') {
-      return {
-        fontFaces: getTileflowStyleFontFaces(options.source.style),
-        style: options.source.style,
-      };
-    }
-    return {
-      analytics: inferTileflowAnalyticsFromStyleUrl(options.source.style),
-      style: options.source.style,
-    };
-  }
 
   if (options.manifestMap) {
     const theme = resolveTileflowRuntimeTheme(

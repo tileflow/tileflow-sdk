@@ -28,6 +28,7 @@ import {
   type TileflowRuntimeManifestMapEntry as DeployedManifestMap,
   parseTileflowRuntimeManifest,
 } from '@tileflow/core/manifest';
+import {resolveTileflowRenderer} from '@tileflow/core/native-profile';
 import {
   createTileflowArtifactDiagnostics,
   createTileflowArtifactSession,
@@ -105,6 +106,7 @@ import {
   validateAccountSession,
   validateApiKey,
 } from './hosted-client';
+import {runHostedNativeDeploy} from './hosted-native-deploy';
 import {
   inspectTileflowHostedCompatibility,
   prepareTileflowHostedThemeFamily,
@@ -115,8 +117,15 @@ import {registerIconListCommand} from './icon-list-command';
 import {registerIconLockCommands} from './icon-lock-command';
 import {registerIconSetCommands} from './icon-set-command';
 import {registerLanguageCommand} from './language-command';
+import {
+  createTileflowNativePreviewRequestHandler,
+  getTileflowNativePreviewManifestUrl,
+  resolveTileflowNativePreviewSelection,
+  tileflowNativePreviewProfile,
+} from './native-preview-command';
 import {openTileflowExternal} from './open-external';
 import {registerProjectCommands, resolveAccountProjectTarget} from './project-commands';
+import {runRendererArtifactCommand} from './renderer-artifact-command';
 import {registerTilesetCommands} from './tileset-command';
 import {registerVisualCommands} from './visual-command';
 
@@ -292,6 +301,7 @@ program
   .description('Validate a Tileflow config')
   .option('-c, --config <path>', 'config path', defaultConfigPath)
   .option('--target <target>', 'validation target: local or hosted', 'local')
+  .option('--renderer <renderer>', 'artifact renderer: web or native', 'web')
   .option(
     '--api-base-url <url>',
     'Tileflow API base URL used to resolve official map assets',
@@ -307,8 +317,16 @@ program
       config: string;
       json?: boolean;
       offline?: boolean;
+      renderer: string;
       target: string;
     }) => {
+      if (options.renderer !== 'web') {
+        await runRendererArtifactCommand('validate', {
+          ...options,
+          icons: resolveIconOptions(options),
+        });
+        return;
+      }
       if (options.target !== 'local' && options.target !== 'hosted') {
         if (options.json) {
           const failure = createTileflowCommandFailureDocument(
@@ -472,6 +490,9 @@ program
   .description('Generate static Tileflow styles')
   .option('-c, --config <path>', 'config path', defaultConfigPath)
   .option('-o, --out <path>', 'output directory', 'dist/tileflow')
+  .option('--renderer <renderer>', 'artifact renderer: web or native', 'web')
+  .option('--target <target>', 'artifact target: local or hosted (build supports local)', 'local')
+  .option('--json', 'print deterministic schema-version-1 JSON')
   .option(
     '--api-base-url <url>',
     'Tileflow API base URL used to resolve official map assets',
@@ -484,11 +505,18 @@ program
       apiBaseUrl: string;
       cacheDir?: string;
       config: string;
+      json?: boolean;
       offline?: boolean;
       out: string;
+      renderer: string;
+      target: string;
     }) => {
-      logInfo(`Building ${pathLabel(options.config)}.`);
       const icons = resolveIconOptions(options);
+      if (options.renderer !== 'web' || options.target !== 'local' || options.json) {
+        await runRendererArtifactCommand('build', {...options, icons});
+        return;
+      }
+      logInfo(`Building ${pathLabel(options.config)}.`);
       await withTileflowConfigSecretsHidden(() =>
         writeTileflowBuildArtifacts({
           config: options.config,
@@ -516,6 +544,7 @@ program
   .option('--host <host>', 'bind host: an explicit IP address or localhost', defaultTileflowDevHost)
   .option('--map <name>', 'preview one configured map')
   .option('--theme <name>', 'preview one concrete theme; defaults to the map default')
+  .option('--renderer <renderer>', 'artifact renderer: web or native', 'web')
   .option('-p, --port <port>', 'preview port', '3333')
   .option('--scene <name>', 'preview one committed standalone map scene')
   .option(
@@ -540,9 +569,61 @@ program
       map?: string;
       offline?: boolean;
       port: string;
+      renderer: string;
       scene?: string;
       theme?: string;
     }) => {
+      let renderer: 'native' | 'web';
+      try {
+        renderer = resolveTileflowRenderer(options.renderer);
+      } catch (error) {
+        const diagnostics = createTileflowArtifactDiagnostics(error, process.cwd());
+        if (options.json) {
+          const first = diagnostics[0];
+          process.stdout.write(
+            `${JSON.stringify({
+              schemaVersion: 1,
+              command: 'dev',
+              event: 'error',
+              code: first?.code ?? 'NATIVE_RENDERER_UNSUPPORTED',
+              phase: first?.phase ?? 'command-validation',
+              diagnostics,
+            })}\n`,
+          );
+        } else {
+          logError(diagnostics[0]?.message ?? 'Unsupported artifact renderer.');
+        }
+        process.exitCode = 1;
+        return;
+      }
+
+      const comparisonRequested =
+        options.againstConfig !== undefined ||
+        options.againstMap !== undefined ||
+        options.againstScene !== undefined ||
+        options.againstTheme !== undefined;
+      if (renderer === 'native' && (options.scene !== undefined || comparisonRequested)) {
+        if (options.json) {
+          process.stdout.write(
+            `${JSON.stringify({
+              schemaVersion: 1,
+              command: 'dev',
+              event: 'error',
+              code: 'NATIVE_RENDERER_UNSUPPORTED',
+              phase: 'command-validation',
+              renderer: 'native',
+              profile: tileflowNativePreviewProfile,
+            })}\n`,
+          );
+        } else {
+          logError(
+            'Native preview serves assets only; scenes and comparison workbench options are unavailable.',
+          );
+        }
+        process.exitCode = 1;
+        return;
+      }
+
       const port = parsePort(options.port);
       if (port === null) {
         logError(`Invalid port: ${options.port}`);
@@ -595,11 +676,6 @@ program
         return;
       }
 
-      const comparisonRequested =
-        options.againstConfig !== undefined ||
-        options.againstMap !== undefined ||
-        options.againstScene !== undefined ||
-        options.againstTheme !== undefined;
       if (comparisonRequested) {
         await runTileflowComparisonPreview(options, {host, port});
         return;
@@ -607,24 +683,43 @@ program
 
       await withTileflowConfigSecretsHidden(async () => {
         const origin = tileflowDevOrigin(host, port);
+        const manifestUrl =
+          renderer === 'native' ? getTileflowNativePreviewManifestUrl(origin) : undefined;
+        const nativeLifecycleFields = manifestUrl
+          ? {
+              renderer: 'native' as const,
+              profile: tileflowNativePreviewProfile,
+              manifest: manifestUrl,
+              assetsOnly: true,
+            }
+          : {};
         const icons = resolveIconOptions(options);
         const session = await createTileflowArtifactSession({
           assetBaseUrl: origin,
           apiBaseUrl: options.apiBaseUrl,
           config: options.config,
           ...(icons ? {icons} : {}),
+          ...(renderer === 'native' ? {renderer: 'native' as const} : {}),
           styleBaseUrl: origin,
           watch: true,
         });
         const initialArtifacts = session.getLastGoodArtifacts();
+        let nativeSelection: ReturnType<typeof resolveTileflowNativePreviewSelection> | undefined;
 
         try {
           if (initialArtifacts) {
-            resolveTileflowPreview(initialArtifacts.project, {
-              map: options.map,
-              scene: options.scene,
-              theme: options.theme,
-            });
+            if (renderer === 'native') {
+              nativeSelection = resolveTileflowNativePreviewSelection(initialArtifacts.manifest, {
+                map: options.map,
+                theme: options.theme,
+              });
+            } else {
+              resolveTileflowPreview(initialArtifacts.project, {
+                map: options.map,
+                scene: options.scene,
+                theme: options.theme,
+              });
+            }
           }
         } catch (error) {
           await session.close();
@@ -633,15 +728,23 @@ program
           return;
         }
 
-        const fetch = createTileflowDevRequestHandler({
-          config: options.config,
-          apiBaseUrl: options.apiBaseUrl,
-          map: options.map,
-          onError: printTileflowPreviewError,
-          scene: options.scene,
-          session,
-          theme: options.theme,
-        });
+        const fetch =
+          renderer === 'native'
+            ? createTileflowNativePreviewRequestHandler({
+                config: options.config,
+                apiBaseUrl: options.apiBaseUrl,
+                onError: printTileflowPreviewError,
+                session,
+              })
+            : createTileflowDevRequestHandler({
+                config: options.config,
+                apiBaseUrl: options.apiBaseUrl,
+                map: options.map,
+                onError: printTileflowPreviewError,
+                scene: options.scene,
+                session,
+                theme: options.theme,
+              });
         let invalidSinceLastReady = false;
         const emitState = (state: TileflowArtifactSessionState) => {
           const recovered = invalidSinceLastReady && state.status === 'ready';
@@ -661,6 +764,7 @@ program
                 ...(firstDiagnostic?.code ? {code: firstDiagnostic.code} : {}),
                 ...(firstDiagnostic?.phase ? {phase: firstDiagnostic.phase} : {}),
                 ...(state.status === 'invalid' ? {diagnostics: state.diagnostics} : {}),
+                ...nativeLifecycleFields,
               })}\n`,
             );
             return;
@@ -668,14 +772,20 @@ program
           if (state.status === 'invalid') {
             console.error(
               [
-                `Tileflow generation ${state.generation} is invalid; preserving the last valid preview.`,
+                renderer === 'native'
+                  ? `Tileflow generation ${state.generation} is invalid; preserving the last valid native artifact family.`
+                  : `Tileflow generation ${state.generation} is invalid; preserving the last valid preview.`,
                 ...state.diagnostics.map(
                   (diagnostic) => `- ${diagnostic.path || '(root)'}: ${diagnostic.message}`,
                 ),
               ].join('\n'),
             );
           } else if (recovered) {
-            logSuccess(`Tileflow preview recovered at generation ${state.generation}.`);
+            logSuccess(
+              renderer === 'native'
+                ? `Tileflow native artifact preview recovered at generation ${state.generation}.`
+                : `Tileflow preview recovered at generation ${state.generation}.`,
+            );
           }
         };
         emitState(session.getState());
@@ -689,13 +799,26 @@ program
             server = createdServer;
           });
           if (!options.json) {
-            logSuccess('Tileflow preview is running and watching for changes.');
-            printKeyValue('Local', link(origin));
-            printKeyValue('Config', pathLabel(options.config));
-            if (options.map) printKeyValue('Map', options.map);
-            if (options.theme) printKeyValue('Theme', options.theme);
-            if (options.scene) printKeyValue('Scene', options.scene);
-            logMuted('Press Ctrl+C to stop.');
+            if (renderer === 'native') {
+              logSuccess('Tileflow native artifact preview is running and watching for changes.');
+              printKeyValue('Manifest', link(manifestUrl!));
+              printKeyValue('Profile', tileflowNativePreviewProfile);
+              printKeyValue('Endpoint', 'assets-only');
+              printKeyValue('Config', pathLabel(options.config));
+              if (nativeSelection) {
+                printKeyValue('Map', nativeSelection.mapName);
+                printKeyValue('Theme', nativeSelection.themeName);
+              }
+              logMuted('Metro remains the JavaScript development server. Press Ctrl+C to stop.');
+            } else {
+              logSuccess('Tileflow preview is running and watching for changes.');
+              printKeyValue('Local', link(origin));
+              printKeyValue('Config', pathLabel(options.config));
+              if (options.map) printKeyValue('Map', options.map);
+              if (options.theme) printKeyValue('Theme', options.theme);
+              if (options.scene) printKeyValue('Scene', options.scene);
+              logMuted('Press Ctrl+C to stop.');
+            }
           }
           await waitForTerminationSignal(server!);
         } finally {
@@ -705,7 +828,13 @@ program
           await session.close();
           if (options.json) {
             process.stdout.write(
-              `${JSON.stringify({schemaVersion: 1, command: 'dev', event: 'stopped', generation})}\n`,
+              `${JSON.stringify({
+                schemaVersion: 1,
+                command: 'dev',
+                event: 'stopped',
+                generation,
+                ...nativeLifecycleFields,
+              })}\n`,
             );
           }
         }
@@ -721,6 +850,7 @@ program
   .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
   .option('--map-id <id>', 'managed Map destination')
+  .option('--with-native', 'publish web and native-v1 together for the selected managed Map')
   .option('--map <name>', 'configured map to connect when the repository contains multiple maps')
   .option(
     '--overwrite-self-hosted-manifest',
@@ -739,6 +869,7 @@ program
       map?: string;
       offline?: boolean;
       overwriteSelfHostedManifest?: boolean;
+      withNative?: boolean;
     }) => {
       const source = resolveDeploySource(process.env);
       const resolveApi = (selectedMap?: string) =>
@@ -758,6 +889,7 @@ program
             ...(options.overwriteSelfHostedManifest ? ['--overwrite-self-hosted-manifest'] : []),
             ...(options.mapId ? ['--map-id', options.mapId] : []),
             ...(options.map && selectedMap ? ['--map', selectedMap] : []),
+            ...(options.withNative ? ['--with-native'] : []),
           ]),
         });
       const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
@@ -765,6 +897,26 @@ program
       // credential for the HTTP request, but do not expose it while Jiti
       // imports tileflow.config.ts or anything that file imports.
       delete process.env.TILEFLOW_API_KEY;
+
+      if (options.withNative) {
+        const result = await runHostedNativeDeploy(
+          {...options, apiUrl},
+          {
+            source,
+            resolveApi,
+            loadManifest: loadExistingDeployManifest,
+            writeManifest: writeDeployManifest,
+          },
+        );
+        if (result) {
+          logSuccess(
+            `${result.changed ? 'Published' : 'Unchanged'} ${pc.bold(result.mapName)} web + native-v1 (v${result.version}).`,
+          );
+          printKeyValue('Manifest', pathLabel(result.manifestPath));
+          printKeyValue('Native', link(result.nativeManifestUrl));
+        }
+        return;
+      }
 
       logInfo(`Deploying ${pathLabel(options.config)}.`);
       const loaded = await withTileflowConfigSecretsHidden(() =>

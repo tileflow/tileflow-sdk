@@ -69,7 +69,7 @@ import {TileflowMap} from '@tileflow/vue';
 
 <template>
   <TileflowMap
-    :source="{kind: 'tileflow', map: 'madrid'}"
+    :source="{map: 'madrid'}"
     theme="system"
     :center="[-3.7038, 40.4168]"
     :zoom="12"
@@ -79,19 +79,20 @@ import {TileflowMap} from '@tileflow/vue';
 </template>
 ```
 
-Coordinates are `[longitude, latitude]`. `source.map` is the config's portable ID, not a hosted
-`map_...` identifier. The default manifest URL is exactly `/tileflow/manifest.json`; provide
-`source.manifestUrl` explicitly for a subpath, reverse proxy, or external host. The component does
-not infer build-tool configuration.
+Coordinates are `[longitude, latitude]`. `source` is one object, `{map, manifestUrl?}`.
+`source.map` is the config's portable ID, not a hosted `map_...` identifier. The default manifest
+URL is exactly `/tileflow/manifest.json`; provide `source.manifestUrl` explicitly for a subpath,
+reverse proxy, or external host. The component does not infer build-tool configuration.
 
 Omitting `theme` uses `defaultTheme`. `system` needs the map's explicit light/dark mapping, which
 Streets supplies. Switching themes preserves the map, camera, and interactions, with rollback on
 failure. Listen to `themeChange` for transitions.
 
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct props take
-priority over those options, then the published view, then shared defaults. An unmanaged
-`source: {kind: 'maplibre', style: styleUrl}` loads a single style without Tileflow theme selection
-or manifest traceability; do not combine it with a Tileflow theme.
+priority over those options, then the published view, then shared defaults. `TileflowMap` always
+selects a Tileflow map through its manifest; it has no renderer discriminator or direct-style mode.
+The obsolete source fields `kind` and `style` are rejected. For a completely unmanaged map, use
+`maplibre-gl` directly rather than a Tileflow component.
 
 ## Add annotations and native popup UI
 
@@ -126,7 +127,7 @@ const state = ref<TileflowInteractionState>({popup: null});
 <template>
   <TileflowMap
     v-model:interaction-state="state"
-    :source="{kind: 'tileflow', map: 'madrid'}"
+    :source="{map: 'madrid'}"
     :annotations="annotations"
     @interaction-diagnostic="(diagnostic) => console.error(diagnostic.code)"
   >
@@ -157,9 +158,11 @@ links, buttons, or forms.
 
 ## Display an existing image
 
-`mode="image"` renders an explicit `imageUrl` or a published manifest image without loading MapLibre.
-A local style build does not generate an image. This mode does not create or poll a static render;
-use the server-side [Static Maps client](https://github.com/tileflow/tileflow-sdk/blob/main/packages/static/README.md)
+`mode="image"` renders an explicit `imageUrl` or derives an image URL from the selected manifest
+map's `mapId`, `apiUrl`, concrete theme and view, without loading MapLibre. It still requires a valid
+Tileflow source. A local style build does not generate an image. This mode does not create or poll
+a static render; use the server-side
+[Static Maps client](https://github.com/tileflow/tileflow-sdk/blob/main/packages/static/README.md)
 for that operation and keep privileged keys on the server.
 
 Do not pass annotations, semantic bindings, state, or interaction slots to image mode. Unsupported

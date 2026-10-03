@@ -39,6 +39,15 @@ import {
 } from '@tileflow/core/build';
 import {parseTileflowRuntimeManifest, type TileflowRuntimeManifest} from '@tileflow/core/manifest';
 import {
+  createTileflowNativeBuildRecord,
+  createTileflowNativeDiagnostic,
+  resolveTileflowRenderer,
+  type TileflowNativeBuildRecord,
+  tileflowNativeBuildRecordFileName,
+  TileflowNativeCompatibilityError,
+  type TileflowRenderer,
+} from '@tileflow/core/native-profile';
+import {
   defaultTileflowConfigPath,
   getTileflowMapNames,
   loadValidTileflowConfigWithInputs,
@@ -47,6 +56,7 @@ import {
   getTileflowFontWatchPaths,
   prepareTileflowStyleFonts,
   replaceTileflowStyleFontSources,
+  TileflowFontCompilationError,
 } from './fonts';
 import {
   getTileflowIconWatchPaths,
@@ -58,6 +68,13 @@ import {
   type TileflowSourceCatalog,
 } from './icons';
 import {prepareTileflowLocalTilesets, type TileflowLocalTilesetFile} from './local-tilesets';
+import {
+  assertTileflowNativeCompiledStyles,
+  assertTileflowNativeGeneratedStyle,
+  lowerTileflowNativeCompiledStyles,
+  prepareTileflowNativeStyles,
+  replaceTileflowNativeFontSources,
+} from './native-artifacts';
 import {isPathWithin} from './path-safety';
 import {
   createTileflowArtifactSessionWithBuilder,
@@ -70,6 +87,8 @@ import {
   type TileflowStyleValidationIssue,
   validateTileflowStyle,
 } from './style-validation';
+
+export {prepareTileflowHostedNativeDeployment} from './hosted-native-artifacts';
 
 export type {
   PreparedTileflowCatalog,
@@ -116,6 +135,8 @@ export type TileflowBuildArtifactsOptions = {
    * offline behavior, trusted delivery origins and the transport used to hydrate exact pins.
    */
   icons?: TileflowIconResolutionOptions;
+  /** Artifact renderer. Omission is identical to web; native uses a separate output directory. */
+  renderer?: TileflowRenderer;
   /** Build a memory-only compiler sidecar for local authoring tools. */
   inspection?: boolean;
   styleBaseUrl?: string;
@@ -129,6 +150,8 @@ export type TileflowBuildStyleInspections = Record<string, Record<string, Tilefl
 export type TileflowBuildArtifacts = {
   assets: TileflowBuildAsset[];
   buildManifest: TileflowMapBuildManifestV1;
+  /** Present only for native artifact preparation; never part of the runtime manifest. */
+  nativeBuild?: TileflowNativeBuildRecord;
   /** Releases local immutable snapshot references owned by this artifact generation. */
   dispose?: () => Promise<void>;
   manifest: TileflowRuntimeManifest;
@@ -164,7 +187,7 @@ export type TileflowArtifactPlan = TileflowBuildArtifacts & {
 
 export type CreateTileflowArtifactPlanOptions = Pick<
   TileflowBuildArtifactsOptions,
-  'apiBaseUrl' | 'assetBaseUrl' | 'inspection' | 'styleBaseUrl' | 'target'
+  'apiBaseUrl' | 'assetBaseUrl' | 'inspection' | 'renderer' | 'styleBaseUrl' | 'target'
 > & {
   inputFiles?: readonly string[];
 };
@@ -296,7 +319,16 @@ export async function createTileflowArtifactPlan(
   prepared: PreparedTileflowCatalog,
   options: CreateTileflowArtifactPlanOptions = {},
 ): Promise<TileflowArtifactPlan> {
-  if (options.target === 'production' && hasLocalTilesetSources(prepared.project)) {
+  const renderer = resolveTileflowRenderer(options.renderer);
+  if (renderer === 'native' && options.inspection) {
+    throw new TileflowNativeCompatibilityError([
+      createTileflowNativeDiagnostic('NATIVE_RENDERER_UNSUPPORTED', '/inspection'),
+    ]);
+  }
+  if (renderer === 'native') {
+    // Reject local archives before snapshotting or touching a production output directory.
+    assertTileflowNativeCompiledStyles(prepared.project, {});
+  } else if (options.target === 'production' && hasLocalTilesetSources(prepared.project)) {
     throw new TileflowLocalTilesetProductionError();
   }
 
@@ -306,26 +338,41 @@ export async function createTileflowArtifactPlan(
         mapAssets: prepared.mapAssets,
       })
     : undefined;
+  const compileStyles = renderer === 'native' ? createStylesFromCatalog : createTileflowStyles;
   const compiledStyles =
     inspected?.styles ??
-    createTileflowStyles(prepared.project, {
+    compileStyles(prepared.project, {
       apiBaseUrl: options.apiBaseUrl,
       mapAssets: prepared.mapAssets,
     });
-  const localTilesets = await prepareTileflowLocalTilesets(prepared.project, compiledStyles, {
-    assetBaseUrl: resolveAssetBaseUrl(options),
+  const nativeLowering =
+    renderer === 'native' ? lowerTileflowNativeCompiledStyles(compiledStyles) : undefined;
+  const rendererStyles = nativeLowering?.styles ?? compiledStyles;
+  if (renderer === 'native') assertTileflowNativeCompiledStyles(prepared.project, rendererStyles);
+  const localTilesets = await prepareTileflowLocalTilesets(prepared.project, rendererStyles, {
+    assetBaseUrl: resolveRendererAssetBaseUrl(options),
     baseDirectory: prepared.baseDirectory,
     cwd: prepared.cwd,
   });
   try {
     const preparedFonts = await prepareTileflowStyleFonts(prepared.project, localTilesets.styles, {
-      assetBaseUrl: resolveAssetBaseUrl(options),
+      assetBaseUrl: resolveRendererAssetBaseUrl(options),
       baseDirectory: prepared.baseDirectory,
       cwd: prepared.cwd,
       target: 'local',
+    }).catch((error: unknown) => {
+      if (renderer === 'native' && error instanceof TileflowFontCompilationError) {
+        throw new TileflowNativeCompatibilityError([
+          createTileflowNativeDiagnostic('NATIVE_FONT_UNAVAILABLE', '/fonts'),
+        ]);
+      }
+      throw error;
     });
-    const styles = preparedFonts.styles;
     const assets = [...prepared.assets, ...preparedFonts.assets];
+    const styles =
+      renderer === 'native'
+        ? prepareTileflowNativeStyles(preparedFonts.styles, assets)
+        : preparedFonts.styles;
     const provenance = await createTileflowBuildProvenance(prepared.cwd);
     const buildManifest = await createTileflowMapBuildManifest(
       Object.fromEntries(
@@ -360,10 +407,15 @@ export async function createTileflowArtifactPlan(
       ),
       {provenance},
     );
-    const stableManifest = createFontAwareManifest(
-      createManifest(prepared.project, {styleBaseUrl: options.styleBaseUrl}),
-      styles,
-    );
+    const stableManifest =
+      renderer === 'native'
+        ? createManifest(prepared.project, {
+            styleBaseUrl: nativePublicBase(options.styleBaseUrl ?? '.'),
+          })
+        : createFontAwareManifest(
+            createManifest(prepared.project, {styleBaseUrl: options.styleBaseUrl}),
+            styles,
+          );
     const inputs: TileflowArtifactInputGraph = {
       directories: uniqueStrings(
         [...prepared.watchPaths, ...preparedFonts.watchPaths].map(canonicalInputPath),
@@ -377,6 +429,14 @@ export async function createTileflowArtifactPlan(
     const partial: TileflowBuildArtifacts = {
       assets,
       buildManifest,
+      ...(renderer === 'native'
+        ? {
+            nativeBuild: createTileflowNativeBuildRecord(
+              hashBytes(serializeCanonicalJson(buildManifest)),
+              nativeLowering!.transformations,
+            ),
+          }
+        : {}),
       dispose: localTilesets.dispose,
       manifest: stableManifest,
       project: prepared.project,
@@ -386,7 +446,9 @@ export async function createTileflowArtifactPlan(
       watchPaths: uniqueStrings([...inputs.files, ...inputs.directories]),
     };
     const generation = hashArtifactGeneration(getStableTileflowArtifactFiles(partial));
-    const manifest = createGenerationManifest(stableManifest, generation, assets);
+    const generatedManifest = createGenerationManifest(stableManifest, generation, assets);
+    const manifest =
+      renderer === 'native' ? parseTileflowRuntimeManifest(generatedManifest) : generatedManifest;
     const generationArtifacts = {...partial, manifest};
 
     return {
@@ -406,6 +468,7 @@ export async function createTileflowArtifactPlan(
 export async function createTileflowBuildArtifacts(
   options: TileflowBuildArtifactsOptions = {},
 ): Promise<TileflowArtifactPlan> {
+  resolveTileflowRenderer(options.renderer);
   const loaded = await loadValidTileflowConfigWithInputs(
     options.config ?? defaultTileflowConfigPath,
     {
@@ -414,7 +477,7 @@ export async function createTileflowBuildArtifacts(
     },
   );
   const prepared = await prepareTileflowCatalogIcons(loaded.project, {
-    assetBaseUrl: resolveAssetBaseUrl(options),
+    assetBaseUrl: resolveRendererAssetBaseUrl(options),
     baseDirectory: dirname(loaded.configFile),
     cwd: options.cwd ?? process.cwd(),
     ...(options.icons ? {icons: options.icons} : {}),
@@ -452,6 +515,15 @@ function getStableTileflowArtifactFiles(artifacts: TileflowBuildArtifacts): Tile
       })),
     ),
     ...artifacts.assets,
+    ...(artifacts.nativeBuild
+      ? [
+          {
+            contentType: 'application/json; charset=utf-8',
+            fileName: tileflowNativeBuildRecordFileName,
+            source: `${serializeCanonicalJson(artifacts.nativeBuild)}\n`,
+          },
+        ]
+      : []),
   ];
   return validateArtifactFiles(files);
 }
@@ -534,9 +606,14 @@ function createGenerationArtifactFiles(
                 : insertGenerationInPublicUrl(sprite, `icons/${mapName}/sprite`, generation),
             }
           : style;
-      const generationStyle = replaceTileflowStyleFontSources(generationStyleWithSprite, (source) =>
+      const replaceFontSources = artifacts.nativeBuild
+        ? replaceTileflowNativeFontSources
+        : replaceTileflowStyleFontSources;
+      const generationStyle = replaceFontSources(generationStyleWithSprite, (source) =>
         retargetLocalFontAssetUrl(source, artifacts.assets, generation),
       );
+      if (artifacts.nativeBuild)
+        assertTileflowNativeGeneratedStyle(generationStyle, mapName, themeName);
       return {
         contentType: 'application/json; charset=utf-8',
         fileName: `${prefix}/styles/${mapName}/${themeName}.json`,
@@ -806,7 +883,10 @@ export async function writeTileflowArtifactPlan(
   assertNoLocalTilesetsForProduction(artifacts);
 
   const cwd = options.cwd ?? process.cwd();
-  const output = await prepareTileflowOutputDirectory(cwd, options.outDir);
+  const outDir = artifacts.nativeBuild
+    ? `${options.outDir.replace(/[\\/]$/u, '')}/native`
+    : options.outDir;
+  const output = await prepareTileflowOutputDirectory(cwd, outDir);
   const files = getTileflowArtifactFiles(artifacts);
 
   await assertTileflowSelfHostedManifestTarget(resolve(output.outDir, 'manifest.json'), options);
@@ -1185,6 +1265,7 @@ function assertTileflowArtifactFileName(fileName: string): void {
   if (
     fileName === 'manifest.json' ||
     fileName === tileflowMapBuildManifestFileName ||
+    fileName === tileflowNativeBuildRecordFileName ||
     (styleMatch &&
       tileflowMapIdSchema.safeParse(styleMatch[1]).success &&
       tileflowThemeNameSchema.safeParse(styleMatch[2]).success) ||
@@ -1245,6 +1326,16 @@ function hashArtifactGeneration(files: TileflowArtifactFile[]): string {
     hash.update(source);
   }
   return hash.digest('hex');
+}
+
+function resolveRendererAssetBaseUrl(options: TileflowBuildArtifactsOptions): string {
+  const base = resolveAssetBaseUrl(options);
+  return options.renderer === 'native' ? nativePublicBase(base) : base;
+}
+
+/** Relative resources already resolve within the renderer directory. Absolute roots include it. */
+function nativePublicBase(base: string): string {
+  return isRelativePublicUrl(base) ? base : `${base.replace(/\/+$/u, '')}/native`;
 }
 
 function resolveAssetBaseUrl(options: TileflowBuildArtifactsOptions): string {

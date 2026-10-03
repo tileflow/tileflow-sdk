@@ -12,7 +12,7 @@ test('compiles and renders the bounded framework-neutral loading contract', asyn
         captureId: 'proof-map',
         imageUrl: 'data:image/png;base64,iVBORw0KGgo=',
         mode: 'image',
-        source: {kind: 'tileflow', map: 'main'},
+        source: {map: 'main'},
         theme: 'dark',
       },
     });

@@ -1,12 +1,13 @@
 import type {Map as MapLibreMap} from 'maplibre-gl';
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {dirname, join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {createServer as createViteServer} from 'vite';
 import {composeTileflowIconSources} from '@tileflow/dev/icons';
 import {launchTileflowCaptureBrowser} from '../src/browser';
+import {writeFrameworkMapFixture} from './tileflow-source-fixture';
 
 type SemanticProof = {
   diagnostics: string[];
@@ -44,7 +45,6 @@ for (const representation of ['marker', 'sdf'] as const)
           join(cwd, 'node_modules'),
           process.platform === 'win32' ? 'junction' : 'dir',
         );
-        let source = applicationSource;
         if (representation === 'sdf') {
           await mkdir(join(cwd, 'icons'));
           await writeFile(
@@ -59,31 +59,42 @@ for (const representation of ['marker', 'sdf'] as const)
             }),
           );
           const composed = await composeTileflowIconSources(['./icons'], {cwd});
+          assert.ok(composed.package);
           await mkdir(join(cwd, 'public/sdf'), {recursive: true});
-          for (const file of composed.package!.files)
+          for (const file of composed.package.files)
             await writeFile(join(cwd, 'public/sdf', file.fileName), file.source);
-          source = source
-            .replace(
-              'captureId="semantic-poi"',
-              'captureId="semantic-poi" center={[0, 0]} zoom={3}',
-            )
-            .replace(
-              "name: 'Tileflow semantic GeoJSON browser fixture',",
-              "name: 'Tileflow semantic GeoJSON browser fixture', sprite: location.origin + '/sdf/sprite',",
-            )
-            .replace("representation: 'marker',", "representation: 'icon',")
-            .replace(
-              "type: 'circle', source: 'semantic-pois', paint: {'circle-color': '#ffe100', 'circle-radius': 24, 'circle-stroke-color': '#111111', 'circle-stroke-width': 2}",
-              "type: 'symbol', source: 'semantic-pois', layout: {'icon-image': 'health', 'icon-size': 2}, paint: {'icon-color': '#ffe100'}",
-            );
         }
         await Promise.all([
           writeFile(
             join(cwd, 'index.html'),
             '<!doctype html><html><body><div id="root"></div><script type="module" src="/main.tsx"></script></body></html>',
           ),
-          writeFile(join(cwd, 'main.tsx'), source),
+          writeFile(join(cwd, 'main.tsx'), applicationSource),
         ]);
+
+        const style = structuredClone(semanticStyle);
+        if (representation === 'sdf')
+          for (const layer of style.metadata['tileflow:interaction-manifest'].domains.poi.layers)
+            layer.representation = 'icon';
+        await writeFrameworkMapFixture(
+          cwd,
+          representation === 'sdf'
+            ? {
+                ...style,
+                sprite: '/sdf/sprite',
+                layers: [
+                  style.layers[0],
+                  {
+                    id: 'semantic-poi-layer',
+                    type: 'symbol',
+                    source: 'semantic-pois',
+                    layout: {'icon-image': 'health', 'icon-size': 2},
+                    paint: {'icon-color': '#ffe100'},
+                  },
+                ],
+              }
+            : style,
+        );
 
         vite = await createViteServer({
           configFile: false,
@@ -93,22 +104,38 @@ for (const representation of ['marker', 'sdf'] as const)
           server: {
             host: '127.0.0.1',
             port: 0,
-            watch: {usePolling: process.platform === 'win32'},
+            watch: null,
           },
         });
         await vite.listen();
         const address = vite.httpServer?.address();
         assert.ok(address && typeof address === 'object');
         const appOrigin = `http://127.0.0.1:${address.port}`;
+        if (representation === 'sdf') {
+          const stylePath = join(cwd, 'public/tileflow-fixture/style.json');
+          const fixtureStyle = JSON.parse(await readFile(stylePath, 'utf8'));
+          await writeFile(
+            stylePath,
+            JSON.stringify({...fixtureStyle, sprite: `${appOrigin}/sdf/sprite`}),
+          );
+        }
+
+        const manifestResponse = await fetch(`${appOrigin}/tileflow-fixture/manifest.json`);
+        assert.equal(manifestResponse.status, 200);
+        assert.match(manifestResponse.headers.get('content-type') ?? '', /application\/json/);
 
         browser = await launchTileflowCaptureBrowser({allowInstall: false});
         const page = await browser.newPage({viewport: {height: 480, width: 640}});
         const browserErrors: string[] = [];
         const remoteOrigins = new Set<string>();
+        const loadedResources = new Set<string>();
         page.on('console', (message) => {
           if (message.type() === 'error') browserErrors.push(message.text());
         });
         page.on('pageerror', (error) => browserErrors.push(error.message));
+        page.on('response', (response) => {
+          if (response.ok()) loadedResources.add(new URL(response.url()).pathname);
+        });
         page.on('request', (request) => {
           const url = new URL(request.url());
           if ((url.protocol === 'http:' || url.protocol === 'https:') && url.origin !== appOrigin) {
@@ -120,6 +147,19 @@ for (const representation of ['marker', 'sdf'] as const)
         assert.equal(response?.status(), 200);
         const map = page.locator('[data-tileflow-capture-id="semantic-poi"]');
         await map.waitFor({state: 'visible'});
+        await page.waitForFunction(() =>
+          Boolean(
+            (window as typeof window & {__tileflowSemanticMap?: MapLibreMap}).__tileflowSemanticMap,
+          ),
+        );
+        assert.equal(
+          await page.evaluate(() =>
+            (
+              window as typeof window & {__tileflowSemanticMap: MapLibreMap}
+            ).__tileflowSemanticMap.getZoom(),
+          ),
+          3,
+        );
         await page.waitForFunction(
           () =>
             document
@@ -127,6 +167,10 @@ for (const representation of ['marker', 'sdf'] as const)
               ?.getAttribute('data-tileflow-state') === 'idle',
         );
         assert.equal(await page.locator('canvas.maplibregl-canvas').count(), 1);
+        assert.ok(loadedResources.has('/tileflow-fixture/manifest.json'));
+        assert.ok(loadedResources.has('/tileflow-fixture/style.json'));
+        assert.equal(await map.getAttribute('data-tileflow-map'), 'main');
+        assert.equal(await map.getAttribute('data-tileflow-theme'), 'light');
 
         const zoomLevelsToOverscale = await page.evaluate(() => {
           const nativeMap = (
@@ -153,23 +197,17 @@ for (const representation of ['marker', 'sdf'] as const)
                 sourceLayer: feature.sourceLayer ?? null,
               })),
             point: {x: point.x, y: point.y},
-            images: nativeMap.listImages(),
-            loaded: nativeMap.loaded(),
           };
         });
-        assert.deepEqual(
-          nativeHit.features,
-          [
-            {
-              id: 42,
-              layerId: 'semantic-poi-layer',
-              name: 'Café Browser',
-              source: 'semantic-pois',
-              sourceLayer: null,
-            },
-          ],
-          JSON.stringify({browserErrors, nativeHit}),
-        );
+        assert.deepEqual(nativeHit.features, [
+          {
+            id: 42,
+            layerId: 'semantic-poi-layer',
+            name: 'Café Browser',
+            source: 'semantic-pois',
+            sourceLayer: null,
+          },
+        ]);
 
         const bounds = await map.boundingBox();
         assert.ok(bounds);
@@ -252,16 +290,7 @@ for (const representation of ['marker', 'sdf'] as const)
     },
   );
 
-const applicationSource = `import React, {useLayoutEffect} from 'react';
-import {createRoot} from 'react-dom/client';
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-import {configureTileflowMapLibre, Map} from '@tileflow/react';
-import 'maplibre-gl/dist/maplibre-gl.css';
-
-configureTileflowMapLibre({workerUrl});
-
-const proof = window.__tileflowSemanticProof = {diagnostics: [], events: [], states: []};
-const style = {
+const semanticStyle = {
   version: 8,
   name: 'Tileflow semantic GeoJSON browser fixture',
   center: [0, 0],
@@ -272,7 +301,7 @@ const style = {
         poi: {
           deduplication: {
             identity: ['source', 'source-layer', 'feature-id'],
-            representationPriority: ['marker', 'icon', 'combined', 'label']
+            representationPriority: ['marker', 'icon', 'combined', 'label'],
           },
           fields: {
             category: 'category',
@@ -284,45 +313,69 @@ const style = {
           },
           hitTesting: {frequency: 'animation-frame', order: 'rendered-topmost'},
           identity: 'maplibre-feature-id-if-present',
-          layers: [{
-            anchor: 'pointer-coordinate',
-            category: 'food-drink',
-            layerId: 'semantic-poi-layer',
-            priority: 10,
-            representation: 'marker',
-            source: 'semantic-pois'
-          }]
-        }
+          layers: [
+            {
+              anchor: 'pointer-coordinate',
+              category: 'food-drink',
+              layerId: 'semantic-poi-layer',
+              priority: 10,
+              representation: 'marker',
+              source: 'semantic-pois',
+            },
+          ],
+        },
       },
-      version: 2
-    }
+      version: 2,
+    },
   },
   sources: {
     'semantic-pois': {
       type: 'geojson',
       data: {
         type: 'FeatureCollection',
-        features: [{
-          type: 'Feature',
-          id: 42,
-          properties: {
-            category: 'food-drink',
-            filter_rank: 1,
-            icon: 'restaurant',
-            name: 'Café Browser',
-            size_rank: 16,
-            type: 'restaurant'
+        features: [
+          {
+            type: 'Feature',
+            id: 42,
+            properties: {
+              category: 'food-drink',
+              filter_rank: 1,
+              icon: 'restaurant',
+              name: 'Café Browser',
+              size_rank: 16,
+              type: 'restaurant',
+            },
+            geometry: {type: 'Point', coordinates: [0, 0]},
           },
-          geometry: {type: 'Point', coordinates: [0, 0]}
-        }]
-      }
-    }
+        ],
+      },
+    },
   },
   layers: [
     {id: 'background', type: 'background', paint: {'background-color': '#2468ac'}},
-    {id: 'semantic-poi-layer', type: 'circle', source: 'semantic-pois', paint: {'circle-color': '#ffe100', 'circle-radius': 24, 'circle-stroke-color': '#111111', 'circle-stroke-width': 2}}
-  ]
+    {
+      id: 'semantic-poi-layer',
+      type: 'circle',
+      source: 'semantic-pois',
+      paint: {
+        'circle-color': '#ffe100',
+        'circle-radius': 24,
+        'circle-stroke-color': '#111111',
+        'circle-stroke-width': 2,
+      },
+    },
+  ],
 };
+
+const applicationSource = `import React, {useLayoutEffect} from 'react';
+import {createRoot} from 'react-dom/client';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import {configureTileflowMapLibre, Map} from '@tileflow/react';
+import 'maplibre-gl/dist/maplibre-gl.css';
+
+configureTileflowMapLibre({workerUrl});
+
+const proof = window.__tileflowSemanticProof = {diagnostics: [], events: [], states: []};
 const interactions = [{
   id: 'semantic-poi-popup',
   popup: {content: {kind: 'view', name: 'semantic-poi-card'}},
@@ -347,6 +400,8 @@ function SemanticPopup({context}) {
 function App() {
   return <div style={{width: 320}}><Map
     captureId="semantic-poi"
+    center={[0, 0]}
+    zoom={3}
     height={240}
     interactions={interactions}
     onInteractionDiagnostic={(diagnostic) => proof.diagnostics.push(diagnostic.code)}
@@ -367,7 +422,7 @@ function App() {
     }}
     onInteractionStateChange={(state) => proof.states.push(state)}
     renderPopup={(context) => <SemanticPopup context={context} />}
-    source={{kind: 'maplibre', style}}
+    source={{map: 'main', manifestUrl: '/tileflow-fixture/manifest.json'}}
   /></div>;
 }
 

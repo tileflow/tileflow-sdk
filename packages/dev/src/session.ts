@@ -1,6 +1,6 @@
 import {type FSWatcher, watch} from 'chokidar';
 import {realpathSync} from 'node:fs';
-import {dirname, extname, isAbsolute, relative, resolve, sep, win32} from 'node:path';
+import {basename, dirname, extname, isAbsolute, relative, resolve, sep, win32} from 'node:path';
 import type {TileflowBuildArtifacts, TileflowBuildArtifactsOptions} from './artifacts';
 import {sanitizeDiagnosticSecrets} from './diagnostic-sanitization';
 
@@ -127,10 +127,16 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
     discoverWatchPaths?: DiscoverWatchPaths,
   ) {
     this.#cwd = resolve(options.cwd ?? process.cwd());
-    this.#configPath = resolve(this.#cwd, options.config ?? 'tileflow.config.ts');
+
+    // Match artifact input paths before the initial watcher scan completes.
+    const configPath = resolve(this.#cwd, options.config ?? 'tileflow.config.ts');
+    this.#configPath = resolve(canonicalWatchPath(dirname(configPath)), basename(configPath));
+
     this.#debounceMs = Math.max(0, Math.min(options.debounceMs ?? 75, 1_000));
     this.#watchEnabled = options.watch ?? false;
-    this.#ignoredPaths = (options.ignoredPaths ?? []).map((path) => resolve(this.#cwd, path));
+    this.#ignoredPaths = (options.ignoredPaths ?? []).map((path) =>
+      canonicalWatchPath(resolve(this.#cwd, path)),
+    );
     this.#buildArtifacts = buildArtifacts;
     this.#discoverWatchPaths = discoverWatchPaths;
     this.#buildOptions = {
@@ -426,6 +432,21 @@ async function disposeArtifacts(artifacts: TileflowBuildArtifacts): Promise<void
 function isSameOrInside(root: string, candidate: string): boolean {
   const path = relative(resolve(root), resolve(candidate));
   return path === '' || (!isAbsolute(path) && path !== '..' && !path.startsWith(`..${sep}`));
+}
+
+function canonicalWatchPath(path: string): string {
+  const resolved = resolve(path);
+  let ancestor = resolved;
+
+  while (true) {
+    try {
+      return resolve(realpathSync.native(ancestor), relative(ancestor, resolved));
+    } catch {
+      const parent = dirname(ancestor);
+      if (parent === ancestor) return resolved;
+      ancestor = parent;
+    }
+  }
 }
 
 export function createTileflowArtifactDiagnostics(

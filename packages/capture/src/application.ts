@@ -316,6 +316,9 @@ export async function captureApplicationTileflowScene(
     if (termination === 'aborted') {
       throw new TileflowCaptureError('ABORTED', 'Tileflow capture was aborted.', {cause: error});
     }
+
+    if (error instanceof TileflowCaptureError && error.code === 'APPLICATION_ERROR') throw error;
+
     if (termination === 'timeout') {
       throw new TileflowCaptureError(
         'CAPTURE_TIMEOUT',

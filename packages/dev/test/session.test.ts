@@ -1,8 +1,9 @@
 import {FSWatcher} from 'chokidar';
 import assert from 'node:assert/strict';
+import {writeFileSync} from 'node:fs';
 import {mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {basename, join} from 'node:path';
 import test from 'node:test';
 import {runInNewContext} from 'node:vm';
 import {
@@ -127,49 +128,78 @@ test('watches conservative transitive inputs and emits monotonic building/ready 
 test('watches an immediately created sidecar through an aliased working directory', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'tileflow-watch-alias-'));
   t.after(() => rm(root, {recursive: true, force: true}));
-  for (let attempt = 0; attempt < 6; attempt++) {
+  for (let attempt = 0; attempt < 12; attempt++) {
     const project = join(root, `real-${attempt}`, 'project');
     await mkdir(join(project, 'icons'), {recursive: true});
-    await writeFile(join(project, 'tileflow.config.ts'), 'export default {};');
+    if (attempt >= 6) {
+      await writeFile(join(project, 'tileflow.config.ts'), 'export default {};');
+    }
     const alias = join(root, `alias-${attempt}`);
     await symlink(join(root, `real-${attempt}`), alias, 'dir');
     const watched = await realpath(join(project, 'icons'));
     const sidecar = join(watched, 'tileflow.icons.json');
     const session = await createTileflowArtifactSessionWithBuilder(
       {cwd: join(alias, 'project'), watch: true, debounceMs: 0},
-      async () => {
-        try {
-          await readFile(sidecar);
-          throw new Error('Invalid icon metadata');
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        }
-        return {
-          assets: [],
-          buildManifest: {maps: {}, schemaVersion: 1},
-          manifest: {version: 1, maps: {}},
-          project: {maps: {}},
-          styles: {},
-          watchPaths: [watched],
-        } as never;
-      },
+      sidecarBuilder(watched),
     );
     try {
       assert.equal(session.getState().status, 'ready');
-      await writeFile(sidecar, '{}');
-      await waitForState(session, (state) => state.status === 'invalid', 5_000);
-      t.diagnostic(`sidecar created: ${attempt}`);
-      await unlink(sidecar);
-      await waitForState(
-        session,
-        (state) => state.status === 'ready' && state.generation >= 3,
-        5_000,
+      // Edit before any newly added watcher can finish its initial scan.
+      writeFileSync(sidecar, '{}');
+      await assert.doesNotReject(
+        waitForState(session, (state) => state.status === 'invalid', 5_000),
+        `Metadata creation was missed on attempt ${attempt}.`,
       );
-      t.diagnostic(`sidecar removed: ${attempt}`);
+
+      await unlink(sidecar);
+      await assert.doesNotReject(
+        waitForState(session, (state) => state.status === 'ready', 5_000),
+        `Metadata removal was missed on attempt ${attempt}.`,
+      );
     } finally {
       await session.close();
     }
   }
+});
+
+test('keeps future output directories ignored through an aliased working directory', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'tileflow-watch-ignored-alias-'));
+  const project = join(root, 'project');
+  const alias = join(root, 'alias');
+  await mkdir(project);
+  await symlink(project, alias, 'dir');
+
+  const ignored = join(alias, 'generated', 'nested');
+  const session = await createTileflowArtifactSessionWithBuilder(
+    {cwd: alias, ignoredPaths: [ignored], watch: true, debounceMs: 0},
+    async ({cwd}) => {
+      assert.equal(cwd, alias);
+      return {
+        assets: [],
+        buildManifest: {maps: {}, schemaVersion: 1},
+        manifest: {version: 1, maps: {}},
+        project: {maps: {}},
+        styles: {},
+        watchPaths: [],
+      } as never;
+    },
+  );
+  t.after(async () => {
+    await session.close();
+    await rm(root, {recursive: true, force: true});
+  });
+
+  await mkdir(ignored, {recursive: true});
+  await writeFile(join(ignored, 'output.json'), '{}');
+  await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+  assert.equal(session.getState().generation, 1);
+
+  await writeFile(join(alias, 'tileflow.config.ts'), 'export default {changed: true};');
+  await waitForState(session, (state) => state.status === 'ready' && state.generation === 2);
+
+  await rm(ignored, {recursive: true});
+  await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+  assert.equal(session.getState().generation, 2);
 });
 
 test('reconciles one missed startup creation and keeps subsequent notifications', async (t) => {
@@ -225,25 +255,10 @@ test('recovers when metadata disappears before its add notification settles', as
   const sidecar = join(icons, 'tileflow.icons.json');
   await mkdir(icons);
   await writeFile(config, 'export default {};');
+
   const session = await createTileflowArtifactSessionWithBuilder(
     {cwd, watch: true, debounceMs: 0},
-    async () => {
-      try {
-        await readFile(sidecar);
-        throw new Error('Invalid icon metadata');
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      }
-
-      return {
-        assets: [],
-        buildManifest: {maps: {}, schemaVersion: 1},
-        manifest: {version: 1, maps: {}},
-        project: {maps: {}},
-        styles: {},
-        watchPaths: [icons],
-      };
-    },
+    sidecarBuilder(icons),
   );
   t.after(async () => {
     await session.close();
@@ -254,10 +269,71 @@ test('recovers when metadata disappears before its add notification settles', as
   await waitForState(session, (state) => state.status === 'ready' && state.generation >= 2, 5_000);
   await writeFile(sidecar, '{}');
   await session.refresh('metadata read before watcher stabilization');
-  const invalid = session.getState();
+  const invalid = await waitForState(session, (state) => state.status === 'invalid', 5_000);
   assert.equal(invalid.status, 'invalid');
 
   await unlink(sidecar);
+  await waitForState(
+    session,
+    (state) => state.status === 'ready' && state.generation > invalid.generation,
+    5_000,
+  );
+});
+
+test('recovers deleted metadata from a raw notification through an alias', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'tileflow-watch-raw-alias-'));
+  const project = join(root, 'project');
+  const alias = join(root, 'alias');
+  await mkdir(join(project, 'icons'), {recursive: true});
+  await symlink(project, alias, 'dir');
+  const icons = await realpath(join(project, 'icons'));
+  const sidecar = join(icons, 'tileflow.icons.json');
+  const config = join(alias, 'tileflow.config.ts');
+  await writeFile(config, 'export default {};');
+
+  const emit = FSWatcher.prototype.emit;
+  const notifications = t.mock.method(
+    FSWatcher.prototype,
+    'emit',
+    function (this: FSWatcher, event: string, ...args: unknown[]) {
+      if (event === 'raw') return false;
+      if (
+        event === 'all' &&
+        (typeof args[1] !== 'string' || basename(args[1]) !== 'tileflow.config.ts')
+      ) {
+        return false;
+      }
+
+      return Reflect.apply(emit, this, [event, ...args]) as boolean;
+    },
+  );
+  const session = await createTileflowArtifactSessionWithBuilder(
+    {cwd: alias, watch: true, debounceMs: 0},
+    sidecarBuilder(icons),
+  );
+  t.after(async () => {
+    await session.close();
+    await rm(root, {recursive: true, force: true});
+  });
+
+  // Settle startup before isolating the metadata notification.
+  await writeFile(config, 'export default {updated: true};');
+  await waitForState(session, (state) => state.status === 'ready' && state.generation >= 2, 5_000);
+  writeFileSync(sidecar, '{}');
+  await session.refresh('metadata read without a stabilized add event');
+  const invalid = await waitForState(session, (state) => state.status === 'invalid', 5_000);
+
+  await unlink(sidecar);
+  const watcher = notifications.mock.calls.find((call) => call.arguments[0] === 'ready')?.this;
+  assert.ok(watcher instanceof FSWatcher);
+  Reflect.apply(emit, watcher, [
+    'raw',
+    'rename',
+    'tileflow.icons.json',
+    {
+      watchedPath: join(alias, 'icons'),
+    },
+  ]);
   await waitForState(
     session,
     (state) => state.status === 'ready' && state.generation > invalid.generation,

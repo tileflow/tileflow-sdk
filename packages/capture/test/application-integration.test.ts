@@ -14,7 +14,13 @@ test(
   async () => {
     const server = createServer((request, response) => {
       response.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'});
-      response.end(request.url?.startsWith('/error') ? errorHtml : applicationHtml);
+      response.end(
+        request.url?.startsWith('/startup-error')
+          ? startupErrorHtml
+          : request.url?.startsWith('/error')
+            ? errorHtml
+            : applicationHtml,
+      );
     });
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
@@ -95,6 +101,25 @@ test(
           }),
         (error: unknown) =>
           error instanceof TileflowCaptureError && error.code === 'APPLICATION_ERROR',
+      );
+      await assert.rejects(
+        () =>
+          captureApplicationTileflowScene({
+            appOrigin,
+            browser,
+            colorScheme: 'light',
+            timeoutMs: 250,
+            scene: {
+              ...applicationScene({frame: 'map'}),
+              target: {
+                kind: 'application',
+                path: '/startup-error',
+                captureId: 'missing',
+                frame: 'map',
+              },
+            },
+          }),
+        {code: 'APPLICATION_ERROR'},
       );
       await assert.rejects(
         () =>
@@ -203,3 +228,5 @@ const applicationHtml = `<!doctype html>
 </html>`;
 
 const errorHtml = `<!doctype html><div style="width:200px;height:100px" data-tileflow-map="main" data-tileflow-theme="light" data-tileflow-capture-id="broken" data-tileflow-state="error"></div>`;
+
+const startupErrorHtml = `<!doctype html><script>console.error('Application startup fixture failed.');</script>`;

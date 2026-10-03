@@ -136,11 +136,15 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
     discoverWatchPaths?: DiscoverWatchPaths,
   ) {
     this.#cwd = resolve(options.cwd ?? process.cwd());
-    this.#configPath = canonicalPath(resolve(this.#cwd, options.config ?? 'tileflow.config.ts'));
+
+    // Match artifact input paths before the initial watcher scan completes.
+    const configPath = resolve(this.#cwd, options.config ?? 'tileflow.config.ts');
+    this.#configPath = resolve(canonicalWatchPath(dirname(configPath)), basename(configPath));
+
     this.#debounceMs = Math.max(0, Math.min(options.debounceMs ?? 75, 1_000));
     this.#watchEnabled = options.watch ?? false;
     this.#ignoredPaths = (options.ignoredPaths ?? []).map((path) =>
-      canonicalPath(resolve(this.#cwd, path)),
+      canonicalWatchPath(resolve(this.#cwd, path)),
     );
     this.#buildArtifacts = buildArtifacts;
     this.#discoverWatchPaths = discoverWatchPaths;
@@ -364,7 +368,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
   }
 
   #ignoreWatchPath(path: string, isDirectory: boolean | undefined): boolean {
-    const resolvedPath = canonicalPath(path);
+    const resolvedPath = canonicalWatchPath(path);
     const relativePath = relative(dirname(this.#configPath), resolvedPath);
     const segments = relativePath.split(sep).filter(Boolean);
 
@@ -381,7 +385,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
   }
 
   #shouldRefreshForWatchEvent(path: string): boolean {
-    const resolvedPath = canonicalPath(path);
+    const resolvedPath = canonicalWatchPath(path);
     const extension = extname(resolvedPath).toLowerCase();
     if (!iconExtensions.has(extension) && !fontExtensions.has(extension)) return true;
     return [...this.#watchedArtifactPaths].some((path) => isSameOrInside(path, resolvedPath));
@@ -415,7 +419,7 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
 
   #updateArtifactWatchPaths(paths: readonly string[]): void {
     if (!this.#watcher) return;
-    const next = new Set(paths.map((path) => canonicalPath(resolve(this.#cwd, path))));
+    const next = new Set(paths.map((path) => canonicalWatchPath(resolve(this.#cwd, path))));
     const previous = this.#watchedArtifactPaths;
     this.#watchedArtifactPaths = next;
     // Building must not consume a directory notification that is still queued.
@@ -491,6 +495,42 @@ async function disposeArtifacts(artifacts: TileflowBuildArtifacts): Promise<void
 function isSameOrInside(root: string, candidate: string): boolean {
   const path = relative(resolve(root), resolve(candidate));
   return path === '' || (!isAbsolute(path) && path !== '..' && !path.startsWith(`..${sep}`));
+}
+
+function directoryModificationTime(path: string): number | undefined {
+  try {
+    const stats = statSync(path);
+    return stats.isDirectory() ? stats.mtimeMs : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveRawWatchPath(path: unknown, details: unknown): string | undefined {
+  if (typeof path !== 'string' || !path) return undefined;
+  if (isAbsolute(path)) return canonicalWatchPath(path);
+  if (!details || typeof details !== 'object') return undefined;
+  const watchedPath = (details as {watchedPath?: unknown}).watchedPath;
+  if (typeof watchedPath !== 'string' || !isAbsolute(watchedPath)) return undefined;
+
+  return canonicalWatchPath(
+    basename(watchedPath) === path ? watchedPath : resolve(watchedPath, path),
+  );
+}
+
+function canonicalWatchPath(path: string): string {
+  const resolved = resolve(path);
+  let ancestor = resolved;
+
+  while (true) {
+    try {
+      return resolve(realpathSync.native(ancestor), relative(ancestor, resolved));
+    } catch {
+      const parent = dirname(ancestor);
+      if (parent === ancestor) return resolved;
+      ancestor = parent;
+    }
+  }
 }
 
 export function createTileflowArtifactDiagnostics(
@@ -629,25 +669,6 @@ function localPathAliases(path: string): string[] {
   return [...new Set([resolve(path), canonicalPath(path)])].sort(
     (left, right) => right.length - left.length,
   );
-}
-
-function directoryModificationTime(path: string): number | undefined {
-  try {
-    const stats = statSync(path);
-    return stats.isDirectory() ? stats.mtimeMs : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function resolveRawWatchPath(path: unknown, details: unknown): string | undefined {
-  if (typeof path !== 'string' || !path) return undefined;
-  if (isAbsolute(path)) return canonicalPath(path);
-  if (!details || typeof details !== 'object') return undefined;
-  const watchedPath = (details as {watchedPath?: unknown}).watchedPath;
-  if (typeof watchedPath !== 'string' || !isAbsolute(watchedPath)) return undefined;
-
-  return canonicalPath(basename(watchedPath) === path ? watchedPath : resolve(watchedPath, path));
 }
 
 function canonicalPath(path: string): string {

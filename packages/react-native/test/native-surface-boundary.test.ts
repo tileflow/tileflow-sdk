@@ -85,7 +85,7 @@ test('surface code has private build wiring without widening peers or publishing
   const contract = await source('src/contract.ts');
   assert.doesNotMatch(contract, /NativeSurface|SurfaceHandle|attachSurface|applyCamera|prepare\(/u);
   const manifest = JSON.parse(await source('package.json'));
-  assert.equal(manifest.private, true);
+  assert.equal(manifest.private, undefined);
   assert.deepEqual(manifest.peerDependencies, {
     '@maplibre/maplibre-react-native': '11.3.10',
     react: '19.2.0',

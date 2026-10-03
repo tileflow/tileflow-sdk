@@ -7,6 +7,8 @@ import {homedir, tmpdir} from 'node:os';
 import {basename, delimiter, join, relative, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import semver from 'semver';
+import {mobileVersions} from './mobile-smoke-contract.mjs';
+import {stagePackageLicenseInputs} from './package-license.mjs';
 import {assertSelectedRuntimeDependencies, validateReleasePlan} from './reconcile-release.mjs';
 import {
   internalRuntimeRange,
@@ -19,7 +21,6 @@ import {
   runtimeDependencySnapshot,
   validatePublishedInternalRuntimeRange,
 } from './release-config.mjs';
-import {stagePackageLicenseInputs} from './package-license.mjs';
 import {runCommand} from './run-command.mjs';
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -104,7 +105,22 @@ try {
 
   await writeFile(
     join(consumerDirectory, 'package.json'),
-    `${JSON.stringify({name: 'tileflow-public-capture-smoke', private: true, type: 'module'}, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        name: 'tileflow-public-capture-smoke',
+        private: true,
+        type: 'module',
+        dependencies: {
+          '@maplibre/maplibre-react-native': mobileVersions.maplibre,
+          expo: mobileVersions.expo,
+          react: mobileVersions.react,
+          'react-dom': mobileVersions.react,
+          'react-native': mobileVersions.reactNative,
+        },
+      },
+      null,
+      2,
+    )}\n`,
   );
   await run(
     npmCommand(),
@@ -122,6 +138,23 @@ try {
       label: 'clean packed-package install',
     },
   );
+
+  const nativeManifest = JSON.parse(
+    await readTarballFile(tarballs.get('@tileflow/react-native'), 'package/package.json'),
+  );
+  for (const [name, version] of Object.entries(nativeManifest.peerDependencies)) {
+    const installed = JSON.parse(
+      await readFile(
+        join(consumerDirectory, 'node_modules', ...name.split('/'), 'package.json'),
+        'utf8',
+      ),
+    );
+    assert.equal(
+      installed.version,
+      version,
+      `Packed consumer must install exact ${name}@${version}.`,
+    );
+  }
 
   const coreBrowserImport = join(consumerDirectory, 'import-core-browser.mjs');
   await writeFile(

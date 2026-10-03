@@ -5,9 +5,9 @@ import {inspectPublicMapRuntime} from './map-runtime-fixture';
 
 const packageRoot = new URL('../', import.meta.url);
 
-test('native admission does not publish the package or add a public subpath', async () => {
+test('native admission remains private behind the public package root', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', packageRoot), 'utf8'));
-  assert.equal(manifest.private, true);
+  assert.equal(manifest.private, undefined);
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
 });
 

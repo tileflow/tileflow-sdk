@@ -2,7 +2,7 @@
 
 TypeScript packages and command-line tools for authoring, rendering, and deploying Tileflow maps.
 Define a map in `tileflow.config.ts`, preview it locally, and use the same definition in an
-application or a hosted deployment. Interactive maps use MapLibre GL JS.
+application or a hosted deployment. Browser maps use MapLibre GL JS; React Native uses MapLibre Native.
 
 > Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
 
@@ -68,6 +68,9 @@ prepared manifests and styles; they do not compile executable map configuration.
   [`@tileflow/vue`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/vue/README.md), and
   [`@tileflow/svelte`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/svelte/README.md):
   interactive maps, themes, annotations, and image display.
+- [`@tileflow/react-native`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/react-native/README.md):
+  pre-release iOS/Android maps with camera control, annotations and semantic activation. Its first
+  alpha publication has a separate bootstrap gate; Expo Go and Node rendering are unsupported.
 - [`@tileflow/vite`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/vite/README.md),
   [`@tileflow/next`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/next/README.md), and
   [`@tileflow/webpack`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/webpack/README.md):

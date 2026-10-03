@@ -1,6 +1,6 @@
 # Tileflow SDK
 
-> TypeScript map authoring, browser adapters, build integrations, and location-service clients.
+> TypeScript map authoring, browser and React Native adapters, build integrations, and location-service clients.
 
 This index describes the source on main. For a published release, use its installed README,
 declarations, packaged guides, and generated CLI contracts. Package versions advance independently.
@@ -20,6 +20,10 @@ from the presence of an npm package. Config files are trusted executable code.
 - [Vue](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/vue/README.md): Worker setup, TileflowMap, slots, and controlled interaction state.
 - [Svelte](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/svelte/README.md): Svelte 5 components, snippets, and interaction state.
 - [Interactions](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/interactions/README.md): Portable annotations, semantic POIs, validation, and popup state.
+
+## Native UI
+
+- [React Native](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/react-native/README.md): Pre-release iOS/Android Map, exact peers, native setup, application-owned selection, and Hosted credential configuration. First alpha publication requires bootstrap; this source index is not availability evidence.
 
 ## Build and capture
 

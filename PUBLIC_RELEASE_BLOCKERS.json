@@ -1,0 +1,10 @@
+{
+  "kind": "tileflow-public-release-blockers",
+  "schemaVersion": 1,
+  "blockers": [
+    {
+      "id": "react-native-initial-publisher",
+      "summary": "Complete the maintainer bootstrap for @tileflow/react-native and verify its npm Trusted Publisher before preparing the first alpha bundle."
+    }
+  ]
+}

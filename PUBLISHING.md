@@ -20,6 +20,7 @@ publication order and the independent first version for every package:
 - `@tileflow/core`
 - `@tileflow/maps`
 - `@tileflow/interactions`
+- `@tileflow/react-native`
 - `@tileflow/geoip`
 - `@tileflow/coordinates`
 - `@tileflow/coordinates-runtime`
@@ -48,7 +49,8 @@ keeps its npm version. While the SDK remains in alpha, the reconciler never choo
 major intent and never updates `latest`.
 
 A package with no published alpha does not inherit another package's counter. Its catalog entry
-supplies its own explicit `initialVersion`; `tileflow` begins at `0.1.0-alpha.0`. The release plan
+supplies its own explicit `initialVersion`; `tileflow` and `@tileflow/react-native` each begin at
+`0.1.0-alpha.0`. The release plan
 records `from: null`, `to: <initialVersion>`, and `package-unpublished`. npm requires a one-time
 maintainer bootstrap before OIDC trust can be configured, so `PUBLIC_RELEASE_BLOCKERS.json` must
 keep that package blocked until bootstrap and Trusted Publisher verification are complete.
@@ -197,6 +199,9 @@ Before preparation, the desired source must already be merged and the current `m
 one successful push run of `.github/workflows/ci.yml` containing exactly one successful job named
 `Required`.
 
+Keep squash commit messages free of CI-skip directives. A green pull-request run does not replace
+the exact-main push run required for publication.
+
 During migration from the former scheduled reconciler, the live GitHub `Publish` workflow remains
 manually disabled. Merge this reviewed manual-only workflow first, inspect the live trigger on
 `main`, and only then re-enable it. Keep the matching machine-readable release blocker until that
@@ -272,15 +277,32 @@ failed jobs**; the same idempotent preflight must classify visible targets as id
 npm cannot configure Trusted Publishing before a package exists. For each new catalog package:
 
 1. keep a specific item in `PUBLIC_RELEASE_BLOCKERS.json`;
-2. prepare and review a bootstrap-only version and the exact first alpha tarball;
+2. prepare and review a bootstrap-only version and the first-alpha candidate contents;
 3. have a maintainer publish the bootstrap-only version with 2FA under a non-default `bootstrap`
    tag; it must be distinct from the catalog's reserved `initialVersion`;
 4. configure and independently verify the package's Trusted Publisher;
-5. let the protected workflow reconcile and publish the reserved first alpha according to an
-   explicitly reviewed bootstrap runbook; and
-6. remove the blocker only in the reviewed change containing the evidence.
+5. remove the blocker only in the reviewed change containing that evidence; and
+6. let the protected workflow reconcile, validate and request approval for the exact first-alpha
+   bundle before publishing it.
 
 The normal OIDC job is not authority to invent or bootstrap a package.
+
+### React Native first alpha
+
+`react-native-initial-publisher` blocks the entire bundle until the maintainer bootstrap and Trusted
+Publisher verification are complete. Reserve `0.1.0-alpha.0` for the protected first alpha; never
+use that version for bootstrap or move `alpha` manually. Do not release the other changed packages
+separately to bypass this interlock.
+
+Before the maintainer publishes anything, review the bootstrap artifact, its distinct version and
+digest. Verify the npm package owner and the Trusted Publisher fields above independently. Remove
+the blocker through a reviewed PR only after that evidence is available. The subsequent protected
+workflow derives one coordinated bundle and requires its own approval.
+
+The existing `pnpm smoke:mobile:packed` checks the exact React Native peer tuple against Expo and
+Community CLI consumers, including declaration compilation and Android/iOS autolinking. It does not
+prove device rendering or Hosted availability. React Native is not a Node import target in the
+general public-package smoke.
 
 ## Local publication-free validation
 
@@ -291,6 +313,7 @@ Local validation never queries npm for authoritative release selection and never
     pnpm build
     pnpm check
     pnpm run smoke:capture-public
+    pnpm run smoke:mobile:packed
     pnpm run publish:alpha:dry-run
 
 The authoritative npm comparison exists only inside the deliberately dispatched protected workflow.
@@ -311,3 +334,8 @@ matters:
 After the first `@tileflow/search` alpha exists, install it through the same explicit channel:
 
     pnpm add @tileflow/search@alpha
+
+After the first React Native alpha exists, use the exact host versions in its
+[package README](packages/react-native/README.md), then install:
+
+    pnpm add --save-exact @tileflow/react-native@alpha @tileflow/core@alpha @tileflow/interactions@alpha @maplibre/maplibre-react-native@11.3.10

@@ -21,7 +21,7 @@ async function files(path: string): Promise<string[]> {
   return result.sort();
 }
 
-test('the actual private archive contains the mounted native sources and one public Map root', async (t) => {
+test('the public archive contains native runtime sources without development tests', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-native-pack-'));
   t.after(() => rm(directory, {recursive: true, force: true}));
   const archive = join(directory, 'native.tgz');
@@ -33,11 +33,9 @@ test('the actual private archive contains the mounted native sources and one pub
     .split('\n')
     .filter((path) => !path.endsWith('/'))
     .sort();
-  const ios = (await files('ios')).filter(
-    (path) => /^ios\/[^/]+\.(?:h|mm|rb)$/u.test(path) || /^ios\/Tests\/[^/]+\.mm$/u.test(path),
-  );
+  const ios = (await files('ios')).filter((path) => /^ios\/[^/]+\.(?:h|mm|rb)$/u.test(path));
   const native = [
-    ...(await files('android/src')),
+    ...(await files('android/src/main')),
     ...ios,
     'android/build.gradle',
     'TileflowNativeAdmission.podspec',
@@ -65,11 +63,9 @@ test('the actual private archive contains the mounted native sources and one pub
     'ios/TFAdmissionBootstrap.mm',
     'ios/TFAdmissionInstallation.mm',
     'ios/TileflowNativeSurface.mm',
-    'ios/Tests/TFAdmissionRollbackTests.mm',
     'ios/TFMobileConfiguration.h',
     'ios/TFMobileConfiguration.mm',
     'ios/TileflowNativeConfiguration.mm',
-    'ios/Tests/TFMobileConfigurationTests.mm',
     'dist/internal/hosted-binding.js',
     'dist/internal/native-configuration-bridge.js',
     'docs/native-admission.md',
@@ -77,7 +73,7 @@ test('the actual private archive contains the mounted native sources and one pub
   ])
     assert.ok(actual.includes(`package/${required}`), required);
   assert.equal(
-    actual.some((path) => path.startsWith('package/harness/')),
+    actual.some((path) => /(?:^|\/)(?:test|tests|harness)(?:\/|$)/iu.test(path)),
     false,
   );
   for (const path of [...native, ...documentation]) {
@@ -89,7 +85,7 @@ test('the actual private archive contains the mounted native sources and one pub
   const {stdout: manifestText} = await exec('tar', ['-xOzf', archive, 'package/package.json']);
   assert.doesNotMatch(manifestText, /tf_public_[0-9a-f]{48}/u);
   const manifest = JSON.parse(manifestText);
-  assert.equal(manifest.private, true);
+  assert.equal(manifest.private, undefined);
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
   const {stdout: runtime} = await exec('tar', ['-xOzf', archive, 'package/dist/index.js']);
   assert.match(runtime, /@maplibre\/maplibre-react-native/u);

@@ -69,7 +69,7 @@ test('private built camera runs with global traps and package import does not mo
 
 test('camera internals stay private while the root exports the mounted Map and public types', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
-  assert.equal(manifest.private, true);
+  assert.equal(manifest.private, undefined);
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
   const code = await readFile(new URL('dist/internal/camera.js', root), 'utf8');
   const imports: string[] = [];
@@ -113,7 +113,7 @@ test('camera internals stay private while the root exports the mounted Map and p
     );
   }
   const readme = await readFile(new URL('README.md', root), 'utf8');
-  assert.match(readme, /private workspace/u);
+  assert.match(readme, /first alpha release/u);
   assert.match(readme, /exports a mounted `Map`/u);
   assert.match(readme, /initialView/u);
   assert.match(readme, /onViewChange/u);

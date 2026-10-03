@@ -1,8 +1,8 @@
 # Native application configuration
 
 This guide describes the private application-configuration reader used by the mounted Tileflow
-`Map` in `@tileflow/react-native`. The package is still a private pre-release workspace package, but
-its root exports the mounted `Map` and its public types. Mobile credentials remain application
+`Map` in `@tileflow/react-native`. Its root exports the mounted `Map` and public types; the
+configuration reader remains private. Mobile credentials remain application
 configuration: there is no credential prop, JavaScript setter, provider, public configuration
 object or public configuration subpath.
 

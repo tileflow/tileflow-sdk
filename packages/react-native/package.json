@@ -1,9 +1,8 @@
 {
   "name": "@tileflow/react-native",
   "version": "0.0.0-development",
-  "private": true,
   "license": "Apache-2.0",
-  "description": "Pre-release mounted Tileflow Map and private native adapters for React Native.",
+  "description": "Tileflow maps, camera control and semantic interactions for React Native.",
   "type": "module",
   "sideEffects": false,
   "homepage": "https://tileflow.dev",
@@ -21,11 +20,10 @@
     "dist",
     "docs",
     "android/build.gradle",
-    "android/src",
+    "android/src/main",
     "ios/*.h",
     "ios/*.mm",
     "ios/*.rb",
-    "ios/Tests/*.mm",
     "TileflowNativeAdmission.podspec",
     "react-native.config.cjs",
     "LICENSE"
@@ -60,5 +58,8 @@
     "@types/react": "^19.2.17",
     "react": "19.2.0",
     "react-native": "0.83.10"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -29,7 +29,7 @@ export const configurationFiles = [
 
 test('configuration stays private with the exact peer matrix behind the inert public Map entry', async () => {
   const manifest = JSON.parse(await read('package.json'));
-  assert.equal(manifest.private, true);
+  assert.equal(manifest.private, undefined);
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
   assert.deepEqual(manifest.peerDependencies, {
     '@maplibre/maplibre-react-native': '11.3.10',

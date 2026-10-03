@@ -16,6 +16,11 @@ export const publicPackageCatalog = Object.freeze(
       initialVersion: '0.1.0-alpha.0',
       name: '@tileflow/interactions',
     },
+    {
+      directory: 'react-native',
+      initialVersion: '0.1.0-alpha.0',
+      name: '@tileflow/react-native',
+    },
     {directory: 'geoip', initialVersion: '0.1.0-alpha.0', name: '@tileflow/geoip'},
     {directory: 'coordinates', initialVersion: '0.1.0-alpha.0', name: '@tileflow/coordinates'},
     {

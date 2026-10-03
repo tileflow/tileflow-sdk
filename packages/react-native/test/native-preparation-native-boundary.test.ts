@@ -43,7 +43,7 @@ test('native document and catalog sources use the existing package globs and ins
   assert.match(contract, /chunkBytes: 65_536/u);
   assert.match(contract, /operations: 16/u);
   const manifest = JSON.parse(await read('package.json'));
-  assert.equal(manifest.private, true);
+  assert.equal(manifest.private, undefined);
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
   assert.deepEqual(manifest.peerDependencies, {
     '@maplibre/maplibre-react-native': '11.3.10',

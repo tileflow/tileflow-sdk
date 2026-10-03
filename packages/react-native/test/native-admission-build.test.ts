@@ -11,7 +11,7 @@ const text = (path: string) => readFile(new URL(path, root), 'utf8');
 test('native build metadata is explicit, pinned, and does not activate networking', async () => {
   const manifest = JSON.parse(await text('package.json'));
   assert.deepEqual(manifest.files, nativePackageFiles);
-  assert.equal(manifest.private, true);
+  assert.equal(manifest.private, undefined);
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
   assert.equal(manifest.codegenConfig, undefined);
   const config = createRequire(import.meta.url)(

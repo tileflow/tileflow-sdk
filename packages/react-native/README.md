@@ -1,10 +1,26 @@
 # @tileflow/react-native
 
-`@tileflow/react-native` is a private workspace package for the first mounted Tileflow React Native `Map`. It is pre-release and not listed in the public release catalog. The package targets exactly React 19.2.0, React Native 0.83.10 and `@maplibre/maplibre-react-native` 11.3.10, with MapLibre Native Android 13.2.0 and iOS 6.26.0 through the pinned integration described below.
+`@tileflow/react-native` provides a Tileflow `Map` backed by MapLibre Native on iOS and Android. It is pre-release. The first alpha release requires the bootstrap and Trusted Publisher checks in the [publishing guide](https://github.com/tileflow/tileflow-sdk/blob/main/PUBLISHING.md).
+
+The package targets exactly React 19.2.0, React Native 0.83.10 and `@maplibre/maplibre-react-native` 11.3.10, with MapLibre Native Android 13.2.0 and iOS 6.26.0 through the pinned integration below. Expo consumers use Expo 55.0.31 with a native development build; Expo Go does not contain the required native modules.
+
+> Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
+
+## Install
+
+Start with an Expo development build or a bare React Native application matching those peers. Once the first alpha is available, install the package and its direct dependencies:
+
+```sh
+npm install --save-exact @tileflow/react-native@alpha @tileflow/core@alpha @tileflow/interactions@alpha @maplibre/maplibre-react-native@11.3.10
+```
+
+Keep the lockfile. Complete the [native integration](#native-integration) before building the application. Source on `main` can precede npm; installation or local checks do not establish Hosted availability or physical-device acceptance.
 
 The package exports a mounted `Map` and its public types from the ordinary package root. Importing the package does not install native networking, read application configuration, create a Map, start a session, acquire admission, schedule timers or perform network I/O. Those effects begin only inside a mounted component lifecycle.
 
 Tileflow `Map` is **Tileflow-only**. Its `source` is the existing Tileflow descriptor object:
+
+<!-- docs:check -->
 
 ```tsx
 import {Map} from '@tileflow/react-native';
@@ -187,8 +203,7 @@ annotation or POI targets but no popup, callout, tooltip, sheet, panel or modal 
 ## Current boundary
 
 The mounted component does not add location, selection-presentation UI, offline product APIs, an
-Expo config plugin, CLI behavior, deployment or publication. The package remains private and
-pre-release.
+Expo config plugin, CLI behavior, deployment or publication. The package remains pre-release.
 
 Source and tests describe contracts; they do not establish that a native build, simulator/device run, Hosted service, app-store submission or package publication succeeded. Qualify the exact source revision in the intended host before relying on it.
 

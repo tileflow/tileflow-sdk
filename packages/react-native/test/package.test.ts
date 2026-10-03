@@ -28,13 +28,13 @@ function runtimeImports(text: string): string[] {
   return result;
 }
 
-test('remains private with exact native peers and one ordinary public root', async () => {
+test('is publishable with exact native peers and one ordinary public root', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
   assert.equal(manifest.name, '@tileflow/react-native');
-  assert.equal(manifest.private, true);
+  assert.equal(manifest.private, undefined);
   assert.equal(manifest.version, '0.0.0-development');
   assert.equal(manifest.license, 'Apache-2.0');
-  assert.equal(manifest.publishConfig, undefined);
+  assert.deepEqual(manifest.publishConfig, {access: 'public'});
   assert.equal(manifest.sideEffects, false);
   assert.deepEqual(manifest.peerDependencies, {
     '@maplibre/maplibre-react-native': '11.3.10',
@@ -54,10 +54,10 @@ test('remains private with exact native peers and one ordinary public root', asy
   assert.equal(manifest.scripts.prepack, 'node ../../scripts/package-license.mjs --prepare');
   assert.equal(manifest.scripts.postpack, 'node ../../scripts/package-license.mjs --clean');
   const release = await import('../../../scripts/release-config.mjs');
-  assert.equal(release.publicPackageNames.includes(manifest.name), false);
+  assert.equal(release.publicPackageNames.includes(manifest.name), true);
   const readme = await readFile(new URL('README.md', root), 'utf8');
   assert.match(readme, /^# @tileflow\/react-native\n/u);
-  assert.match(readme, /private workspace/u);
+  assert.match(readme, /first alpha release/u);
   assert.match(readme, /exports a mounted `Map`/u);
   for (const path of [
     'dist/index.js',

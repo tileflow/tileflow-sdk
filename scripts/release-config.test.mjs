@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {satisfies} from 'semver';
 import {
@@ -13,6 +14,7 @@ import {
   publicLicenseIdentifier,
   publicPackageCatalog,
   publicPackageNames,
+  validatePublicManifest,
   validatePublicManifests,
   validatePublishedInternalRuntimeRange,
 } from './release-config.mjs';
@@ -24,6 +26,12 @@ test('the public package catalog owns order and independent first versions', () 
   );
   assert.equal(initialVersionByPackageName.get('@tileflow/maps'), '0.1.0-alpha.0');
   assert.equal(initialVersionByPackageName.get('@tileflow/interactions'), '0.1.0-alpha.0');
+  assert.equal(initialVersionByPackageName.get('@tileflow/react-native'), '0.1.0-alpha.0');
+  assert.equal(packageNameForDirectory('react-native'), '@tileflow/react-native');
+  assert.ok(
+    publicPackageNames.indexOf('@tileflow/react-native') >
+      publicPackageNames.indexOf('@tileflow/interactions'),
+  );
   assert.equal(initialVersionByPackageName.get('@tileflow/geoip'), '0.1.0-alpha.0');
   assert.equal(initialVersionByPackageName.get('@tileflow/search'), '0.1.0-alpha.0');
   assert.equal(initialVersionByPackageName.get('tileflow'), '0.1.0-alpha.0');
@@ -34,6 +42,24 @@ test('the public package catalog owns order and independent first versions', () 
   );
   assert.equal(publicPackageNames.includes('@tileflow/cli'), false);
   assert.equal(new Set(publicPackageCatalog.map(({name}) => name)).size, publicPackageNames.length);
+});
+
+test('React Native is publishable without shipping development tests or widening its peers', async () => {
+  const manifest = JSON.parse(
+    await readFile(new URL('../packages/react-native/package.json', import.meta.url), 'utf8'),
+  );
+  validatePublicManifest('@tileflow/react-native', manifest, {source: true});
+  assert.deepEqual(Object.keys(manifest.exports), ['.']);
+  assert.deepEqual(manifest.peerDependencies, {
+    '@maplibre/maplibre-react-native': '11.3.10',
+    react: '19.2.0',
+    'react-native': '0.83.10',
+  });
+  assert.ok(manifest.files.includes('android/src/main'));
+  assert.ok(manifest.files.includes('TileflowNativeAdmission.podspec'));
+  assert.ok(manifest.files.includes('react-native.config.cjs'));
+  assert.ok(!manifest.files.includes('android/src'));
+  assert.ok(!manifest.files.some((path) => /(?:^|\/)(?:test|tests|harness)(?:\/|$)/iu.test(path)));
 });
 
 test('advances only the numeric alpha counter', () => {

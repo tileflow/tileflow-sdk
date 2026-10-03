@@ -51,7 +51,7 @@ test('mounted public types do not export native handles, private ports or select
   );
   assert.equal(manifest.dependencies['maplibre-gl'], undefined);
   assert.equal(manifest.peerDependencies['maplibre-gl'], undefined);
-  assert.equal(manifest.private, true);
+  assert.equal(manifest.private, undefined);
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
   assert.ok(manifest.files.includes('docs'));
   const lock = await readFile(new URL('../../pnpm-lock.yaml', root), 'utf8');

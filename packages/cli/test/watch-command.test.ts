@@ -3,6 +3,7 @@ import {type ChildProcess, spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
+import {connect} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
@@ -12,6 +13,46 @@ import {tileflowMapFixture} from './map-fixture';
 
 const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const tsxLoader = import.meta.resolve('tsx');
+
+test('capture fixture cleanup stops its consumer before closing the HTTP server', async () => {
+  let cleanup: (() => Promise<void>) | undefined;
+  const context = {
+    after: (callback: () => Promise<void>) => {
+      cleanup = callback;
+    },
+  } as unknown as TestContext;
+  let consumerStopping = false;
+  let releaseConsumer = () => {};
+  const consumerCompletion = new Promise<void>((resolveCompletion) => {
+    releaseConsumer = resolveCompletion;
+  });
+  let stopConsumer = async () => {};
+  const fixture = await createVectorFixtureServer(context, () => stopConsumer());
+  const socket = connect(Number(new URL(fixture.origin).port), '127.0.0.1');
+  await once(socket, 'connect');
+  socket.write('GET /tiles/world/0/0/0.pbf HTTP/1.1\r\nHost: localhost\r\n');
+  stopConsumer = async () => {
+    consumerStopping = true;
+    await consumerCompletion;
+    socket.destroy();
+  };
+  assert.ok(cleanup);
+  const closing = cleanup();
+
+  try {
+    await Promise.resolve();
+    assert.equal(consumerStopping, true);
+    const response = await fetch(`${fixture.origin}/tiles/world/0/0/0.pbf`);
+    assert.equal(response.status, 200);
+    await response.arrayBuffer();
+    releaseConsumer();
+    await closing;
+  } finally {
+    releaseConsumer();
+    socket.destroy();
+    await closing;
+  }
+});
 
 test('dev emits valid/invalid/recovered/stopped NDJSON and serves last-good local preview assets', async (t) => {
   const cwd = await createFixture('tileflow-dev-watch-');
@@ -222,7 +263,10 @@ test(
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 90_000},
   async (t) => {
     const cwd = await createFixture('tileflow-capture-watch-');
-    const fixture = await createVectorFixtureServer(t);
+    let stopCapture = async () => {};
+    const fixture = await createVectorFixtureServer(t, () => stopCapture());
+    t.after(() => rm(cwd, {force: true, maxRetries: 5, recursive: true, retryDelay: 100}));
+
     await writeWatchFixture(cwd, '#112233', fixture.origin);
     const running = startCli(
       cwd,
@@ -232,10 +276,7 @@ test(
         ...(process.env.USERPROFILE ? {USERPROFILE: process.env.USERPROFILE} : {}),
       },
     );
-    t.after(async () => {
-      await running.stop();
-      await rm(cwd, {force: true, maxRetries: 5, recursive: true, retryDelay: 100});
-    });
+    stopCapture = running.stop;
 
     const first = await running.waitFor(
       (event) => event.event === 'captured' || event.event === 'failed',
@@ -354,7 +395,10 @@ async function createFixture(prefix: string): Promise<string> {
   return directory;
 }
 
-async function createVectorFixtureServer(t: TestContext): Promise<{origin: string}> {
+async function createVectorFixtureServer(
+  t: TestContext,
+  stopConsumer: () => Promise<void>,
+): Promise<{origin: string}> {
   const server = createServer((request, response) => {
     response.setHeader('Access-Control-Allow-Origin', '*');
     if ((request.url?.split('?')[0] ?? '/').endsWith('.pbf')) {
@@ -368,7 +412,10 @@ async function createVectorFixtureServer(t: TestContext): Promise<{origin: strin
   await once(server, 'listening');
   const address = server.address();
   assert.ok(address && typeof address === 'object');
-  t.after(() => new Promise<void>((resolveClose) => server.close(() => resolveClose())));
+  t.after(async () => {
+    await stopConsumer();
+    await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
+  });
   return {origin: `http://127.0.0.1:${address.port}`};
 }
 

@@ -144,6 +144,10 @@ redirects must remain on the exact approved origin, and the bounded credential/f
 plus target readiness are checked again after screenshot production. An explicit unmarked selector
 may be captured once visible; Tileflow-owned map targets must remain `idle`.
 
+A known application failure remains `APPLICATION_ERROR` when target attachment exhausts the capture
+budget. A target that never appears without a reported application failure remains `CAPTURE_TIMEOUT`;
+explicit cancellation remains `ABORTED`.
+
 Standalone capture applies the committed camera itself. Application capture deliberately does not
 reach into an arbitrary framework component to rewrite its camera: the selected application route
 and props must render the committed camera. The camera remains part of scene identity, so changing

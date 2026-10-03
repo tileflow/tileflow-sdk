@@ -9,11 +9,38 @@ import {
   createTileflowArtifactSession,
   createTileflowBuildArtifacts,
   isTileflowArtifactInputPath,
+  type TileflowArtifactSession,
+  type TileflowBuildArtifacts,
 } from '@tileflow/dev/artifacts';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
 
 const cli = fileURLToPath(new URL('../src/index.ts', import.meta.url));
+
+test('the mixed-icon fixture waits for initial watched artifacts', async () => {
+  const artifacts: TileflowBuildArtifacts = {
+    assets: [],
+    buildManifest: {schemaVersion: 1, maps: {}},
+    manifest: {version: 1, maps: {}},
+    project: {maps: {}},
+    styles: {},
+    watchPaths: [],
+  };
+  let ready = false;
+  const session: Pick<TileflowArtifactSession, 'getState' | 'getLastGoodArtifacts'> = {
+    getState: () =>
+      ready
+        ? {status: 'ready', generation: 2, lastGoodGeneration: 2, artifacts}
+        : {status: 'building', generation: 2},
+    getLastGoodArtifacts: () => (ready ? artifacts : undefined),
+  };
+  const initial = getInitialArtifacts(session);
+  queueMicrotask(() => {
+    ready = true;
+  });
+
+  assert.equal(await initial, artifacts);
+});
 
 test('validate, build and development reject the same mixed composition and recover explicitly', async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-icon-admission-'));
@@ -36,18 +63,7 @@ test('validate, build and development reject the same mixed composition and reco
   await writeFile(join(cwd, 'tileflow.config.ts'), config(false));
   const session = await createTileflowArtifactSession({cwd, watch: true});
   t.after(() => session.close());
-  async function waitForStatus(status: 'ready' | 'invalid') {
-    const deadline = Date.now() + 30_000;
-    while (session.getState().status !== status) {
-      if (Date.now() > deadline)
-        throw new Error(
-          `Timed out waiting for watched ${status} generation: ${JSON.stringify({status: session.getState().status, generation: session.getState().generation})}`,
-        );
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    }
-  }
-  const previous = session.getLastGoodArtifacts();
-  assert.ok(previous);
+  const previous = await getInitialArtifacts(session);
   assert.ok(
     isTileflowArtifactInputPath(
       (previous as unknown as {inputs: {files: string[]; directories: string[]}}).inputs,
@@ -62,7 +78,7 @@ test('validate, build and development reject the same mixed composition and reco
       icons: {health: {representation: 'sdf', defaults: {color: '#c43d35'}}},
     }),
   );
-  await waitForStatus('invalid');
+  await waitForStatus(session, 'invalid');
   const invalid = session.getState();
   assert.equal(invalid.status, 'invalid');
   assert.match(JSON.stringify(invalid), /TF_ICON_REPRESENTATION_MIXED/);
@@ -94,10 +110,34 @@ test('validate, build and development reject the same mixed composition and reco
   }
 
   await writeFile(join(cwd, 'tileflow.config.ts'), config(true));
-  await waitForStatus('ready');
+  await waitForStatus(session, 'ready');
   assert.equal(session.getState().status, 'ready');
   assert.notEqual(session.getLastGoodArtifacts(), previous);
   const style = session.getLastGoodArtifacts()!.styles.main!.light!;
   const layer = style.layers.find((layer) => layer.id === 'tileflow-poi-medical');
   assert.equal((layer?.paint as Record<string, unknown>)['icon-color'], '#c43d35');
 });
+
+async function getInitialArtifacts(
+  session: Pick<TileflowArtifactSession, 'getState' | 'getLastGoodArtifacts'>,
+) {
+  await waitForStatus(session, 'ready');
+
+  const artifacts = session.getLastGoodArtifacts();
+  assert.ok(artifacts, JSON.stringify(session.getState()));
+  return artifacts;
+}
+
+async function waitForStatus(
+  session: Pick<TileflowArtifactSession, 'getState'>,
+  status: 'ready' | 'invalid',
+) {
+  const deadline = Date.now() + 30_000;
+  while (session.getState().status !== status) {
+    if (Date.now() > deadline)
+      throw new Error(
+        `Timed out waiting for watched ${status} generation: ${JSON.stringify({status: session.getState().status, generation: session.getState().generation})}`,
+      );
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}

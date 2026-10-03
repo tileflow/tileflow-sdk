@@ -35,7 +35,7 @@ const latitude = z.number().finite().min(-90).max(90);
 
 export const geocodingPositionSchema = z.tuple([longitude, latitude]);
 
-export const geocodingRetentionModes = ['temporary', 'persistent'] as const;
+export const geocodingRetentionModes = ['temporary'] as const;
 
 export const geocodingBoundsSchema = z
   .tuple([longitude, latitude, longitude, latitude])
@@ -140,8 +140,36 @@ export const geocodingAddressSchema = z
   })
   .strict();
 
+export const searchLiteralText = (maximum: number) =>
+  z
+    .string()
+    .min(1)
+    .max(maximum)
+    .refine((value) => !/[\p{Cc}\p{Cs}]/u.test(value));
+
+export const searchCategoryIdSchema = searchLiteralText(100);
+export const searchCategorySchema = z
+  .object({
+    id: searchCategoryIdSchema,
+    name: searchLiteralText(100),
+    localizedName: searchLiteralText(100).optional(),
+    primary: z.boolean().optional(),
+  })
+  .strict();
+
+export const searchPlaceMetadata = {
+  name: searchLiteralText(200).optional(),
+  categories: z.array(searchCategorySchema).min(1).max(100).optional(),
+  businessChains: z
+    .array(z.object({id: searchLiteralText(100), name: searchLiteralText(100)}).strict())
+    .min(1)
+    .max(100)
+    .optional(),
+};
+
 export const geocodingResultSchema = z
   .object({
+    ...searchPlaceMetadata,
     address: geocodingAddressSchema,
     bounds: geocodingBoundsSchema.optional(),
     kind: z.enum(geocodingResultKinds),
@@ -185,7 +213,7 @@ export const geocodingForwardResponseSchema = z
     results: z.array(geocodingResultSchema).max(geocodingLimits.maximumLimit),
     schemaVersion: z.literal(1),
     source: geocodingSourceSchema,
-    usage: z.object({units: z.literal(1)}).strict(),
+    usage: z.object({units: z.literal(25)}).strict(),
   })
   .strict();
 
@@ -212,6 +240,7 @@ export const autocompleteResponseSchema = z
     schemaVersion: z.literal(1),
     source: geocodingSourceSchema,
     suggestions: z.array(geocodingSuggestionSchema).max(geocodingLimits.maximumLimit),
+    usage: z.object({units: z.literal(10)}).strict(),
   })
   .strict();
 
@@ -235,7 +264,7 @@ export const resolveSuggestionResponseSchema = z
     result: geocodingResultSchema,
     schemaVersion: z.literal(1),
     source: geocodingSourceSchema,
-    usage: z.object({units: z.literal(1)}).strict(),
+    usage: z.object({units: z.literal(25)}).strict(),
   })
   .strict();
 
@@ -263,3 +292,98 @@ function isCredentialFreeHttpsUrl(value: string) {
     return false;
   }
 }
+
+export const nearbyLimits = Object.freeze({
+  defaultLimit: 20,
+  maximumLimit: 100,
+  maximumRadiusMeters: 21_000_000,
+  maximumCategoryCharacters: 100,
+  maximumFilterCategories: 10,
+  maximumCountries: 100,
+  maximumCursorCharacters: 8_192,
+  maximumRequestBytes: 32 * 1024,
+  maximumResponseBytes: 512 * 1024,
+});
+
+export const nearbyCursorSchema = z
+  .string()
+  .min(1)
+  .max(nearbyLimits.maximumCursorCharacters)
+  .regex(/^[\x21-\x7e]+$/u);
+
+const categoryFilter = z
+  .array(searchCategoryIdSchema)
+  .min(1)
+  .max(nearbyLimits.maximumFilterCategories);
+
+export const nearbyRequestSchema = z
+  .object({
+    position: geocodingPositionSchema,
+    radiusMeters: z.number().int().min(1).max(nearbyLimits.maximumRadiusMeters).optional(),
+    bounds: geocodingBoundsSchema.optional(),
+    includeCategories: categoryFilter.optional(),
+    excludeCategories: categoryFilter.optional(),
+    countries: z
+      .array(z.string().regex(/^(?:[A-Z]{2}|[A-Z]{3})$/u))
+      .min(1)
+      .max(nearbyLimits.maximumCountries)
+      .optional(),
+    language: geocodingForwardRequestSchema.shape.language,
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(nearbyLimits.maximumLimit)
+      .default(nearbyLimits.defaultLimit),
+    cursor: nearbyCursorSchema.optional(),
+  })
+  .strict();
+
+export const nearbyPlaceSchema = geocodingResultSchema
+  .omit({sourceRef: true})
+  .extend({
+    kind: z.literal('place'),
+    distanceMeters: z.number().finite().nonnegative().optional(),
+    token: geocodingSuggestionSchema.shape.token.optional(),
+  })
+  .strict();
+
+export const nearbyResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    provider: z.literal('aws'),
+    results: z.array(nearbyPlaceSchema).max(nearbyLimits.maximumLimit),
+    nextCursor: nearbyCursorSchema.optional(),
+    source: geocodingSourceSchema,
+    attribution: geocodingForwardResponseSchema.shape.attribution,
+    usage: z.object({units: z.literal(25)}).strict(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      new TextEncoder().encode(JSON.stringify(value)).byteLength <=
+      nearbyLimits.maximumResponseBytes,
+    {message: 'Nearby response exceeds the encoded byte limit'},
+  );
+
+export const searchCategoriesResponseSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    provider: z.literal('aws'),
+    categories: z.array(searchCategorySchema).min(1).max(2_000),
+    source: geocodingSourceSchema,
+    attribution: geocodingForwardResponseSchema.shape.attribution,
+    usage: z.object({units: z.literal(0)}).strict(),
+  })
+  .strict();
+
+export const resolvePlaceRequestSchema = resolveSuggestionRequestSchema;
+export const resolvePlaceResponseSchema = resolveSuggestionResponseSchema;
+export type NearbyRequest = z.input<typeof nearbyRequestSchema>;
+export type NormalizedNearbyRequest = z.output<typeof nearbyRequestSchema>;
+export type NearbyPlace = z.infer<typeof nearbyPlaceSchema>;
+export type NearbyResponse = z.infer<typeof nearbyResponseSchema>;
+export type SearchCategory = z.infer<typeof searchCategorySchema>;
+export type SearchCategoriesResponse = z.infer<typeof searchCategoriesResponseSchema>;
+export type ResolvePlaceRequest = ResolveSuggestionRequest;
+export type ResolvePlaceResponse = ResolveSuggestionResponse;

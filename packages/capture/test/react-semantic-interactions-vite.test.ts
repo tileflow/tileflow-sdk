@@ -1,7 +1,7 @@
 import type {Map as MapLibreMap} from 'maplibre-gl';
 import assert from 'node:assert/strict';
 import {mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
-import {dirname, join} from 'node:path';
+import {dirname, join, resolve} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {createServer as createViteServer} from 'vite';
@@ -97,6 +97,7 @@ for (const representation of ['marker', 'sdf'] as const)
         );
 
         vite = await createViteServer({
+          cacheDir: join(cwd, '.vite-cache'),
           configFile: false,
           logLevel: 'silent',
           resolve: {alias: {'@tileflow/react': reactSource}},
@@ -107,6 +108,7 @@ for (const representation of ['marker', 'sdf'] as const)
             watch: null,
           },
         });
+        assert.equal(resolve(vite.config.cacheDir), join(cwd, '.vite-cache'));
         await vite.listen();
         const address = vite.httpServer?.address();
         assert.ok(address && typeof address === 'object');

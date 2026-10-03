@@ -89,8 +89,11 @@ test(
       for (const scene of ['missing-map', 'unresolved-image']) {
         await assert.rejects(
           () => session.capture([scene]),
-          (error: unknown) =>
-            error instanceof Error && 'code' in error && error.code === 'APPLICATION_ERROR',
+          (error: unknown) => {
+            assert.ok(error instanceof Error && 'code' in error);
+            assert.equal(error.code, 'APPLICATION_ERROR', `React ${scene} error code`);
+            return true;
+          },
           `React ${scene} must become APPLICATION_ERROR`,
         );
       }

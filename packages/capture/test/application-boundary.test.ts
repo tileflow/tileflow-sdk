@@ -194,6 +194,74 @@ test('waits for an implicit map and theme target for the full capture budget', a
   assert.equal(result.height, 64);
 });
 
+test('preserves an application error reported while target attachment times out', async (t) => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const {browser, handlers, locator} = fakeApplicationBrowser();
+  locator.count = async () => 0;
+  locator.waitFor = async () => {
+    handlers.get('console')?.({type: () => 'error'});
+    t.mock.timers.tick(7_500);
+    throw new Error('Target attachment stopped when the context closed.');
+  };
+
+  await assert.rejects(
+    () =>
+      captureApplicationTileflowScene({
+        appOrigin: 'http://127.0.0.1:3000',
+        browser,
+        colorScheme: 'light',
+        scene: applicationScene,
+        timeoutMs: 7_500,
+      }),
+    {code: 'APPLICATION_ERROR'},
+  );
+});
+
+test('keeps the capture timeout when target attachment reports no application error', async (t) => {
+  t.mock.timers.enable({apis: ['setTimeout']});
+  const {browser, locator} = fakeApplicationBrowser();
+  locator.count = async () => 0;
+  locator.waitFor = async () => {
+    t.mock.timers.tick(7_500);
+    throw new Error('Target attachment stopped when the context closed.');
+  };
+
+  await assert.rejects(
+    () =>
+      captureApplicationTileflowScene({
+        appOrigin: 'http://127.0.0.1:3000',
+        browser,
+        colorScheme: 'light',
+        scene: applicationScene,
+        timeoutMs: 7_500,
+      }),
+    {code: 'CAPTURE_TIMEOUT'},
+  );
+});
+
+test('preserves explicit cancellation after an application error', async () => {
+  const controller = new AbortController();
+  const {browser, handlers, locator} = fakeApplicationBrowser();
+  locator.count = async () => 0;
+  locator.waitFor = async () => {
+    handlers.get('console')?.({type: () => 'error'});
+    controller.abort();
+    throw new Error('Target attachment stopped when the context closed.');
+  };
+
+  await assert.rejects(
+    () =>
+      captureApplicationTileflowScene({
+        appOrigin: 'http://127.0.0.1:3000',
+        browser,
+        colorScheme: 'light',
+        scene: applicationScene,
+        signal: controller.signal,
+      }),
+    {code: 'ABORTED'},
+  );
+});
+
 const applicationScene: NormalizedTileflowCaptureScene & {
   target: {kind: 'application'; path: string; captureId: string; frame: 'map'};
 } = {

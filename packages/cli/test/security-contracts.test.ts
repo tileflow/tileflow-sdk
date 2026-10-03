@@ -248,12 +248,17 @@ test('published package is CLI-only instead of executing a binary as an importab
 });
 
 test('root version does not consume a revision-valued Icon Set option', async (t) => {
+  const packageJson = JSON.parse(
+    await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+  ) as {version: string};
+  const versionOutput = `${packageJson.version}\n`;
+
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-cli-version-'));
   t.after(() => rm(directory, {force: true, recursive: true}));
 
   const root = await runCli(directory, ['--version'], {});
   assert.equal(root.code, 0);
-  assert.match(root.stdout, /^0\.0\.0-development\n$/u);
+  assert.equal(root.stdout, versionOutput);
 
   const purge = await runCli(
     directory,
@@ -274,7 +279,7 @@ test('root version does not consume a revision-valued Icon Set option', async (t
   );
 
   assert.equal(purge.code, 1);
-  assert.doesNotMatch(`${purge.stdout}\n${purge.stderr}`, /^0\.0\.0-development\n$/u);
+  assert.notEqual(purge.stdout, versionOutput);
   assert.match(`${purge.stdout}\n${purge.stderr}`, /account_session_missing/u);
 });
 

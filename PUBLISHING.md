@@ -179,8 +179,8 @@ removed:
   requires zero approving reviews so an operator or Codex can merge after self-review and green CI;
 - this zero-review policy applies only to merging code. It does not remove the independent approval
   gate configured on the `npm-publish` environment for public release bundles;
-- organization members use 2FA, Actions are limited to reviewed actions, and every third-party
-  action in this repository remains pinned by full commit SHA;
+- organization members use 2FA; GitHub Actions enforces full commit-SHA pinning, and action changes
+  are reviewed with their source pull request;
 - workflow `GITHUB_TOKEN` permissions default to read-only;
 - environment `npm-publish` accepts protected `main` only, has one required reviewer, and prevents
   the workflow initiator from approving their own deployment when GitHub plan support allows it;
@@ -289,7 +289,7 @@ The normal OIDC job is not authority to invent or bootstrap a package.
 
 ### React Native first alpha
 
-`react-native-initial-publisher` blocks the entire bundle until the maintainer bootstrap and Trusted
+Remove `react-native-initial-publisher` only after the maintainer bootstrap and independent Trusted
 Publisher verification are complete. Reserve `0.1.0-alpha.0` for the protected first alpha; never
 use that version for bootstrap or move `alpha` manually. Do not release the other changed packages
 separately to bypass this interlock.

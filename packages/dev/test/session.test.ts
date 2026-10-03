@@ -179,13 +179,12 @@ test('reconciles one missed startup creation and keeps subsequent notifications'
   await mkdir(icons);
   await writeFile(join(cwd, 'tileflow.config.ts'), 'export default {};');
 
-  let suppressNotifications = true;
   const emit = FSWatcher.prototype.emit;
-  t.mock.method(
+  const notifications = t.mock.method(
     FSWatcher.prototype,
     'emit',
     function (this: FSWatcher, event: string, ...args: unknown[]) {
-      if (suppressNotifications && (event === 'raw' || event === 'all')) return false;
+      if (event === 'raw' || event === 'all') return false;
       return Reflect.apply(emit, this, [event, ...args]) as boolean;
     },
   );
@@ -202,15 +201,17 @@ test('reconciles one missed startup creation and keeps subsequent notifications'
   await writeFile(sidecar, '{}');
   const invalid = await waitForState(session, (state) => state.status === 'invalid', 5_000);
 
-  suppressNotifications = false;
   await unlink(sidecar);
+  const watcher = notifications.mock.calls.find((call) => call.arguments[0] === 'ready')?.this;
+  assert.ok(watcher instanceof FSWatcher);
+  // Deliver one notification without racing native duplicates against the no-polling assertion.
+  Reflect.apply(emit, watcher, ['all', 'unlink', sidecar]);
   const ready = await waitForState(
     session,
     (state) => state.status === 'ready' && state.generation > invalid.generation,
     5_000,
   );
 
-  suppressNotifications = true;
   await writeFile(sidecar, '{}');
   await new Promise((resolveWait) => setTimeout(resolveWait, 150));
   assert.equal(session.getState().generation, ready.generation);

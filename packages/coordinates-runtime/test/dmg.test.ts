@@ -13,6 +13,242 @@ import {hashFile} from '../src/identity';
 
 const executable = Buffer.from('coordinates-engine');
 const database = Buffer.from('proj database');
+const busyDetach = {code: 1, stderr: 'hdiutil: detach failed - Resource busy\n', stdout: ''};
+const successfulCommand = {code: 0, stderr: '', stdout: ''};
+
+test('retries a busy detach once against the device belonging to the installed image', async () => {
+  const fixture = await createFixture({detachResults: [busyDetach, successfulCommand]});
+  try {
+    await fixture.extract({kind: 'development'});
+    assert.deepEqual(
+      fixture.commands.filter((command) => command.args[0] === 'detach').map(({args}) => args),
+      [
+        ['detach', fixture.mountpoint, '-force'],
+        ['detach', '/dev/disk42', '-force'],
+      ],
+    );
+    await assert.rejects(lstat(fixture.mountpoint));
+    assert.deepEqual(await readFile(join(fixture.destination, 'resources/proj.db')), database);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('a second busy detach still fails and preserves the mountpoint', async () => {
+  const fixture = await createFixture({detachResults: [busyDetach, busyDetach]});
+  try {
+    await assert.rejects(
+      fixture.extract({kind: 'development'}),
+      (error: unknown) =>
+        error instanceof CoordinatesDmgError && error.code === 'DMG_DETACH_FAILED',
+    );
+    assert.equal(fixture.commands.filter((command) => command.args[0] === 'detach').length, 2);
+    assert.equal((await lstat(fixture.mountpoint)).isDirectory(), true);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('recovering busy cleanup does not hide the original copy failure', async () => {
+  const fixture = await createFixture({
+    copyFails: true,
+    detachResults: [busyDetach, successfulCommand],
+  });
+  try {
+    await assert.rejects(
+      fixture.extract({kind: 'development'}),
+      (error: unknown) => error instanceof CoordinatesDmgError && error.code === 'DMG_COPY_FAILED',
+    );
+    await assert.rejects(lstat(fixture.destination));
+    await assert.rejects(lstat(fixture.mountpoint));
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('busy cleanup does not detach an unrelated or ambiguously identified image', async () => {
+  const reports = [
+    () => ({images: [imageReport('/another/image.dmg')]}),
+    (path: string) => ({images: [imageReport(path), imageReport(path, '/dev/disk43')]}),
+    (path: string) => ({images: [imageReport(path, '/dev/disk42s1')]}),
+    () => ({images: null}),
+  ];
+  for (const report of reports) {
+    const fixture = await createFixture({detachResults: [busyDetach], report});
+    try {
+      await assert.rejects(
+        fixture.extract({kind: 'development'}),
+        (error: unknown) =>
+          error instanceof CoordinatesDmgError && error.code === 'DMG_DETACH_FAILED',
+      );
+      assert.equal(fixture.commands.filter((command) => command.args[0] === 'detach').length, 1);
+      assert.equal((await lstat(fixture.mountpoint)).isDirectory(), true);
+    } finally {
+      await fixture.close();
+    }
+  }
+});
+
+test('other detach errors are neither inspected nor retried', async () => {
+  const fixture = await createFixture({
+    detachResults: [{code: 1, stderr: 'hdiutil: detach failed - Permission denied\n', stdout: ''}],
+  });
+  try {
+    await assert.rejects(
+      fixture.extract({kind: 'development'}),
+      (error: unknown) =>
+        error instanceof CoordinatesDmgError && error.code === 'DMG_DETACH_FAILED',
+    );
+    assert.equal(fixture.commands.filter((command) => command.args[0] === 'detach').length, 1);
+    assert.equal(
+      fixture.commands.some((command) => command.args[0] === 'info'),
+      false,
+    );
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('inspection and retry share the original two-second cleanup budget', async (context) => {
+  let elapsed = 0;
+  context.mock.method(performance, 'now', () => elapsed);
+  const fixture = await createFixture({
+    detachResults: [busyDetach, successfulCommand],
+    observe(command) {
+      if (command.args[0] === 'detach' && elapsed === 0) elapsed = 1_600;
+      else if (command.args[0] === 'info') elapsed += 50;
+      else if (command.file === '/usr/bin/plutil') elapsed += 25;
+    },
+  });
+  try {
+    await fixture.extract({kind: 'development'});
+    const cleanup = fixture.commands.filter(
+      ({args, file}) => args[0] === 'detach' || args[0] === 'info' || file === '/usr/bin/plutil',
+    );
+    assert.deepEqual(
+      cleanup.map(({timeoutMs}) => timeoutMs),
+      [2_000, 400, 350, 325],
+    );
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('an exhausted cleanup budget never starts image inspection or another detach', async (context) => {
+  let elapsed = 0;
+  context.mock.method(performance, 'now', () => elapsed);
+  const fixture = await createFixture({
+    detachResults: [busyDetach, successfulCommand],
+    observe(command) {
+      if (command.args[0] === 'detach') elapsed = 2_000;
+    },
+  });
+  try {
+    await assert.rejects(
+      fixture.extract({kind: 'development'}),
+      (error: unknown) =>
+        error instanceof CoordinatesDmgError && error.code === 'DMG_DETACH_FAILED',
+    );
+    assert.equal(fixture.commands.filter((command) => command.args[0] === 'detach').length, 1);
+    assert.equal(
+      fixture.commands.some((command) => command.args[0] === 'info'),
+      false,
+    );
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('expired cleanup does not start parsing or leave an unhandled rejection', async (context) => {
+  let elapsed = 0;
+  context.mock.method(performance, 'now', () => elapsed);
+  const fixture = await createFixture({
+    conversionOutput: 'invalid JSON',
+    detachResults: [busyDetach],
+    observe(command) {
+      if (command.file === '/usr/bin/plutil') elapsed = 2_000;
+    },
+  });
+  try {
+    await assert.rejects(
+      fixture.extract({kind: 'development'}),
+      (error: unknown) =>
+        error instanceof CoordinatesDmgError && error.code === 'DMG_DETACH_FAILED',
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(fixture.commands.filter((command) => command.args[0] === 'detach').length, 1);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('a pending retry is aborted when the shared cleanup budget expires', async (context) => {
+  let elapsed = 0;
+  context.mock.method(performance, 'now', () => elapsed);
+  context.mock.timers.enable({apis: ['setTimeout']});
+  let retryStarted: () => void;
+  let retrySignal: AbortSignal | undefined;
+  const started = new Promise<void>((resolve) => {
+    retryStarted = resolve;
+  });
+  const fixture = await createFixture({
+    detachResults: [busyDetach, successfulCommand],
+    async override(command) {
+      if (command.args[0] !== 'detach') return undefined;
+      if (command.args[1] !== '/dev/disk42') {
+        elapsed = 1_600;
+        return busyDetach;
+      }
+      retrySignal = command.signal;
+      retryStarted();
+      return await new Promise<CoordinatesDmgCommandResult>(() => undefined);
+    },
+  });
+  try {
+    const pending = fixture.extract({kind: 'development'});
+    const failed = assert.rejects(
+      pending,
+      (error: unknown) =>
+        error instanceof CoordinatesDmgError && error.code === 'DMG_DETACH_FAILED',
+    );
+    await started;
+    context.mock.timers.tick(400);
+    await failed;
+    assert.equal(retrySignal?.aborted, true);
+    assert.equal(fixture.commands.filter((command) => command.args[0] === 'detach').length, 2);
+    assert.equal((await lstat(fixture.mountpoint)).isDirectory(), true);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('inspection and conversion failures leave cleanup closed', async () => {
+  for (const failingFile of ['/usr/bin/hdiutil', '/usr/bin/plutil']) {
+    const fixture = await createFixture({
+      detachResults: [busyDetach],
+      async override(command) {
+        if (
+          command.file === failingFile &&
+          (command.args[0] === 'info' || command.args[0] === '-convert')
+        )
+          return {code: 1, stderr: 'private diagnostic', stdout: ''};
+        return undefined;
+      },
+    });
+    try {
+      await assert.rejects(fixture.extract({kind: 'development'}), (error: unknown) => {
+        assert.ok(error instanceof CoordinatesDmgError);
+        assert.deepEqual(error.toJSON(), {code: 'DMG_DETACH_FAILED'});
+        assert.equal(error.message.includes('private'), false);
+        return true;
+      });
+      assert.equal(fixture.commands.filter((command) => command.args[0] === 'detach').length, 1);
+      assert.equal((await lstat(fixture.mountpoint)).isDirectory(), true);
+    } finally {
+      await fixture.close();
+    }
+  }
+});
 
 test('verifies and copies only a declared payload with resource and extended-attribute ditto flags', async () => {
   const fixture = await createFixture();
@@ -203,20 +439,35 @@ test('invalid manifests fail safely before a subprocess is run', async () => {
 async function createFixture(
   input: {
     copyFails?: boolean;
+    conversionOutput?: string;
     detachFails?: boolean;
+    detachResults?: readonly CoordinatesDmgCommandResult[];
     extraPayload?: boolean;
     linkPayload?: boolean;
+    observe?: (command: CoordinatesDmgCommand) => void;
+    override?: (command: CoordinatesDmgCommand) => Promise<CoordinatesDmgCommandResult | undefined>;
+    report?: (artifactPath: string) => unknown;
     teamIdentifier?: string;
   } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-coordinates-dmg-'));
   const artifactPath = join(directory, 'artifact.dmg');
+  await writeFile(artifactPath, 'image');
   const destination = join(directory, 'stage');
   const commands: CoordinatesDmgCommand[] = [];
+  let detachAttempts = 0;
   let mountpoint = '';
   const files = await manifest();
+  const report = JSON.stringify(
+    input.report?.(artifactPath) ?? {
+      images: [imageReport('/another/image.dmg', '/dev/disk99'), imageReport(artifactPath)],
+    },
+  );
   const extract = createCoordinatesDmgExtractor(async (command) => {
     commands.push(command);
+    input.observe?.(command);
+    const overridden = await input.override?.(command);
+    if (overridden) return overridden;
     if (command.file === '/usr/bin/codesign' && command.args[0] === '--display') {
       return {
         code: 0,
@@ -232,6 +483,14 @@ async function createFixture(
       if (input.copyFails) return {code: 1, stderr: 'copy failed', stdout: ''};
       await cp(command.args[3]!, command.args[4]!, {preserveTimestamps: true, recursive: true});
     }
+    if (command.file === '/usr/bin/hdiutil' && command.args[0] === 'info')
+      return {code: 0, stderr: '', stdout: report};
+    if (command.file === '/usr/bin/plutil') {
+      assert.equal(command.input, report);
+      return {code: 0, stderr: '', stdout: input.conversionOutput ?? report};
+    }
+    if (command.file === '/usr/bin/hdiutil' && command.args[0] === 'detach' && input.detachResults)
+      return input.detachResults[detachAttempts++] ?? busyDetach;
     if (command.file === '/usr/bin/hdiutil' && command.args[0] === 'detach' && input.detachFails)
       return {code: 1, stderr: 'detach failed', stdout: ''};
     return {code: 0, stderr: '', stdout: ''};
@@ -247,6 +506,13 @@ async function createFixture(
     get mountpoint() {
       return mountpoint;
     },
+  };
+}
+
+function imageReport(path: string, device = '/dev/disk42') {
+  return {
+    'image-path': path,
+    'system-entities': [{'dev-entry': device}, {'dev-entry': `${device}s1`}],
   };
 }
 

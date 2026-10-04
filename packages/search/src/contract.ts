@@ -39,7 +39,7 @@ export const geocodingRetentionModes = ['temporary'] as const;
 
 export const geocodingBoundsSchema = z
   .tuple([longitude, latitude, longitude, latitude])
-  .refine(([west, south, east]) => west < east, {message: 'West must be less than east'})
+  .refine(([west, , east]) => west < east, {message: 'West must be less than east'})
   .refine(([, south, , north]) => south < north, {
     message: 'South must be less than north',
   });

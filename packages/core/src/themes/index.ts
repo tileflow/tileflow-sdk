@@ -557,49 +557,6 @@ function resolveBaseColors(
   };
 }
 
-function mergeColorConfigs(
-  defaults: TileflowColorConfig,
-  overrides: TileflowColorConfig = {},
-): TileflowColorConfig {
-  return {
-    ...defaults,
-    ...overrides,
-  };
-}
-
-function mergeThemeModules(
-  defaults: TileflowColorGroupsConfig = {},
-  overrides: TileflowColorGroupsConfig = {},
-): TileflowColorGroupsConfig {
-  return {
-    ...mergeThemeModuleGroup('boundaries', defaults, overrides),
-    ...mergeThemeModuleGroup('buildings', defaults, overrides),
-    ...mergeThemeModuleGroup('hydro', defaults, overrides),
-    ...mergeThemeModuleGroup('labels', defaults, overrides),
-    ...mergeThemeModuleGroup('landcover', defaults, overrides),
-    ...mergeThemeModuleGroup('landuse', defaults, overrides),
-    ...mergeThemeModuleGroup('poi', defaults, overrides),
-    ...mergeThemeModuleGroup('roads', defaults, overrides),
-  };
-}
-
-function mergeThemeModuleGroup<TKey extends keyof TileflowColorGroupsConfig>(
-  key: TKey,
-  defaults: TileflowColorGroupsConfig,
-  overrides: TileflowColorGroupsConfig,
-): Pick<TileflowColorGroupsConfig, TKey> | {} {
-  const value = {
-    ...(isRecord(defaults[key]) ? defaults[key] : {}),
-    ...(isRecord(overrides[key]) ? overrides[key] : {}),
-  };
-
-  return Object.keys(value).length > 0 ? {[key]: value} : {};
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
-}
-
 function resolveGroup<T extends Record<string, string>>(
   defaults: T,
   themeDefaults: Partial<T> | undefined,

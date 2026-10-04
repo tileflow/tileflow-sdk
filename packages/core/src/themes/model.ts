@@ -1575,15 +1575,6 @@ function assertColor(value: unknown, path: string): asserts value is string {
   }
 }
 
-function isColor(value: string): boolean {
-  try {
-    parseColor(value);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function assertFiniteNumber(value: unknown, path: string): asserts value is number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     throw themeTypeError(path, 'finite number', value);

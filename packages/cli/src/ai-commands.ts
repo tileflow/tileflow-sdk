@@ -4,7 +4,6 @@ import {
   createStyleResult,
   diffTileflowMaps,
   parseResolvedTileflowMap,
-  parseTileflowMap,
   tileflowAuthoringManifestSchemaVersion,
   type TileflowCompilationDiagnostic,
   type TileflowCompilationReport,

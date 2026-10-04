@@ -1,8 +1,8 @@
 import type {Command} from 'commander';
 import pc from 'picocolors';
+import {z} from 'zod';
 import {serializeCanonicalJson} from '@tileflow/core';
 import {inspectTileflowPmtiles} from '@tileflow/dev/tilesets';
-import {z} from 'zod';
 import type {AuthConfigV2} from './account-session';
 import {requestHostedJson} from './hosted-client';
 import {
@@ -12,16 +12,15 @@ import {
   type HostedTeamAuthority,
   type HostedTeamOptions,
   resolveTeamAuthority,
-  safeMessage,
 } from './hosted-team';
 import {
   createHostedTeamTilesetUploadTransport,
   inspectNodeTeamTilesetArchive,
   openNodeTeamTilesetArchive,
+  type PositionedUploadFile,
   prepareTeamTilesetUpload,
   publishPreparedTeamTilesetUpload,
   TeamTilesetUploadError,
-  type PositionedUploadFile,
 } from './tileset-upload';
 
 type HostedTilesetOptions = HostedTeamOptions;

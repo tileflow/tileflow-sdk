@@ -103,16 +103,6 @@ export async function readHostedJson<T>(
   return result.data;
 }
 
-export async function readHostedError(response: Response, label: string): Promise<string> {
-  try {
-    // Drain and bound the body, but never reflect remote response text into CLI output.
-    await readBoundedResponseText(response, label);
-  } catch {
-    return `${label}: ${response.status}.`;
-  }
-  return `${label}: ${response.status}.`;
-}
-
 export async function readBoundedResponseText(response: Response, label: string): Promise<string> {
   const contentLength = response.headers.get('content-length');
   if (

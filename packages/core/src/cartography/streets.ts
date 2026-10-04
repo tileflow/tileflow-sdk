@@ -1,7 +1,7 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
-import {resolveTileflowData, type TileflowDataConfig} from '../data';
+import {resolveTileflowData} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
-import {type ResolvedTileflowMap, resolveMap, type TileflowMap} from '../maps';
+import type {ResolvedTileflowMap} from '../maps';
 import {resolveMarine} from '../marine';
 import {
   insertTileflowOverlays,
@@ -43,11 +43,7 @@ import {
   createTileflowLayerFamilyIR,
   lowerTileflowDomainIR,
 } from './domain-ir';
-import {
-  compileSemanticDomains,
-  resolveSemanticModules,
-  type TileflowSemanticModules,
-} from './domain-registry';
+import {compileSemanticDomains, resolveSemanticModules} from './domain-registry';
 import {assembleTileflowLayerFamilies} from './graph';
 import {
   applyTileflowIconCapabilities,
@@ -99,32 +95,6 @@ export type TileflowSemanticCompilationOptions = TileflowSemanticCompileOptions 
   /** Include opt-in read-only physical diagnostics; emitted IDs are not authoring targets. */
   inspection?: boolean;
 };
-
-export function createSemanticStyle(
-  config: TileflowMap,
-  options: TileflowSemanticCompileOptions = {},
-): MapLibreStyle {
-  const parsed = parseResolvedTileflowMap(resolveMap(config));
-  return compileSemanticStyle(parsed, options);
-}
-
-/** Compile a public semantic map without throwing, preserving a stable machine-readable report. */
-export function createSemanticStyleResult(
-  config: TileflowMap,
-  options: TileflowSemanticCompilationOptions = {},
-): TileflowCompilationResult {
-  try {
-    const parsed = parseResolvedTileflowMap(resolveMap(config));
-    return compileSemanticStyleResult(parsed, options);
-  } catch (error) {
-    return createTileflowCompilationFailure({
-      error,
-      map: typeof config.id === 'string' ? config.id : '<unresolved>',
-      phase: 'input',
-      theme: options.theme,
-    });
-  }
-}
 
 /** Compile an already validated semantic map. Internal orchestration should use this entry point. */
 export function compileSemanticStyle(

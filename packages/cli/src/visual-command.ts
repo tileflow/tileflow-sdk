@@ -18,7 +18,6 @@ import {
   type TileflowVisualComparison,
   type TileflowVisualReferenceAnalysis,
   type TileflowVisualReferenceAnalysisDocument,
-  type TileflowVisualRegion,
   validateTileflowVisualReferencePng,
 } from '@tileflow/capture';
 import {compareCodeUnits} from '@tileflow/core';

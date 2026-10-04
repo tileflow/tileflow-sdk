@@ -15,7 +15,6 @@ import type {
   TileflowThemeFontValue,
   TileflowThemeImageValue,
   TileflowThemeNumberValue,
-  TileflowZoomValue,
 } from './cartography/values';
 
 export type TileflowColor = `#${string}`;

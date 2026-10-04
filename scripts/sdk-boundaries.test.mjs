@@ -3,6 +3,7 @@ import {readdir, readFile} from 'node:fs/promises';
 import {dirname, extname, join, relative, resolve, sep} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {packageDirectories} from './release-config.mjs';
 
 const workspaceRoot = new URL('../', import.meta.url);
 const workspaceRootPath = fileURLToPath(workspaceRoot);
@@ -16,10 +17,12 @@ const allowedTileflowDependencies = {
   'coordinates-runtime': new Set(['coordinates']),
   core: new Set(),
   dev: new Set(['core']),
+  geoip: new Set(),
   interactions: new Set(),
   maps: new Set(['core']),
   next: new Set(['dev']),
   react: new Set(['core', 'interactions', 'static']),
+  'react-native': new Set(['core', 'interactions']),
   search: new Set(),
   static: new Set(),
   svelte: new Set(['core', 'interactions']),
@@ -27,6 +30,10 @@ const allowedTileflowDependencies = {
   vue: new Set(['core', 'interactions']),
   webpack: new Set(['dev']),
 };
+
+test('every public package has an SDK responsibility boundary', () => {
+  assert.deepEqual(Object.keys(allowedTileflowDependencies).sort(), [...packageDirectories].sort());
+});
 
 test('Core and Static Maps share one semantic overlay placement vocabulary', async () => {
   const core = await readSourceStringTuple(
@@ -62,9 +69,11 @@ test('public package sources respect the SDK responsibility graph', async () => 
             [
               'coordinates',
               'core',
+              'geoip',
               'interactions',
               'maps',
               'react',
+              'react-native',
               'search',
               'static',
               'svelte',

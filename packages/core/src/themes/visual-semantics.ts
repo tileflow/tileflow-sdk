@@ -124,7 +124,7 @@ const visualNumberProperties = new Set([
 /** Return the semantic theme category for one visual property, or undefined for structure/data. */
 export function classifyTileflowVisualProperty(
   property: string,
-  value?: unknown,
+  _value?: unknown,
 ): TileflowVisualValueCategory | undefined {
   if (
     property === 'color' ||

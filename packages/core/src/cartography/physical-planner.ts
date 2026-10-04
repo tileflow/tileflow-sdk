@@ -980,12 +980,6 @@ function finiteMaximumZoom(layers: LayerFamily[]): number | undefined {
   return Number.isFinite(maximum) ? maximum : undefined;
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }

@@ -4,7 +4,7 @@ import {serve} from '@hono/node-server';
 import {Command} from 'commander';
 import {createHash, randomBytes} from 'node:crypto';
 import {existsSync, readFileSync, realpathSync} from 'node:fs';
-import {mkdir, readFile, writeFile} from 'node:fs/promises';
+import {readFile, writeFile} from 'node:fs/promises';
 import {hostname} from 'node:os';
 import {dirname, isAbsolute, relative, resolve, sep} from 'node:path';
 import {createInterface} from 'node:readline/promises';
@@ -14,8 +14,6 @@ import {
   auditTileflowMapThemeValues,
   getTileflowStyleFontFaces,
   parseResolvedTileflowMap,
-  parseTileflowMap,
-  serializeCanonicalJson,
   tileflowMapIdSchema,
 } from '@tileflow/core';
 import {

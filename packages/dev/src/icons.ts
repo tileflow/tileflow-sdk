@@ -19,7 +19,6 @@ import {
 } from '@tileflow/core';
 import {
   compareCodeUnits,
-  hashTileflowIconPackageManifest,
   hashTileflowRenderedIconPixels,
   parseResolvedTileflowMap,
   parseTileflowIconJson,
@@ -29,7 +28,6 @@ import {
   type TileflowIconPackageFileName,
   tileflowIconPackageLimits,
   type TileflowIconPackageManifest,
-  tileflowIconPackageManifestSchema,
 } from '@tileflow/core';
 import type {
   TileflowBuildCatalog,

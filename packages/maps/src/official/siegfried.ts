@@ -34,8 +34,6 @@ const siegfriedPalette = {
   ink: siegfriedVisual.color.ink,
   paper: siegfriedVisual.color.paper,
 } as const;
-
-const regularFont = siegfriedVisual.font.regular;
 const semiboldFont = siegfriedVisual.font.semibold;
 const italicFont = siegfriedVisual.font.italic;
 

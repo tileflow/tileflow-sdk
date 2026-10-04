@@ -62,50 +62,6 @@ export function createTileflowCompilerProvenance(
   return [{operations: [], owner, slot, target}];
 }
 
-/** Append one render operation to compiler-private provenance. */
-export function appendTileflowCompilerRenderOperation(
-  layer: Record<string, unknown>,
-  operation: TileflowStyleInspectionRenderOperation,
-  fallbackSlot?: string,
-): readonly TileflowStyleInspectionContribution[] | undefined {
-  const contributions = readTileflowCompilerProvenance(layer);
-  const matchingIndex = contributions.findIndex(
-    (contribution) =>
-      contribution.owner === operation.owner && contribution.target === operation.target,
-  );
-
-  if (matchingIndex >= 0) {
-    return contributions.map((contribution, index) =>
-      index === matchingIndex
-        ? {...contribution, operations: [...contribution.operations, {...operation}]}
-        : contribution,
-    );
-  }
-
-  const slot = requireLayerSlot(fallbackSlot);
-  if (!slot) return contributions.length > 0 ? contributions : undefined;
-  return [
-    ...contributions,
-    {operations: [{...operation}], owner: operation.owner, slot, target: operation.target},
-  ];
-}
-
-/** Preserve every semantic origin when the physical planner emits one physical cohort. */
-export function withMergedTileflowCompilerProvenance<T extends Record<string, unknown>>(
-  layer: T,
-  members: readonly Record<string, unknown>[],
-): T {
-  const contributions = members.flatMap((member) => readTileflowCompilerProvenance(member));
-  if (contributions.length === 0) return layer;
-  return {
-    ...layer,
-    metadata: {
-      ...asRecord(layer.metadata),
-      [tileflowCompilerProvenanceMetadataKey]: contributions,
-    },
-  };
-}
-
 export function readTileflowCompilerProvenance(
   layer: Record<string, unknown>,
 ): TileflowStyleInspectionContribution[] {

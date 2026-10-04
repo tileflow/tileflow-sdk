@@ -349,7 +349,7 @@ function runCli(
 ): Promise<{code: number | null; stderr: string; stdout: string}> {
   const environment: NodeJS.ProcessEnv = {...process.env};
   delete environment.TILEFLOW_API_KEY;
-  Object.assign(environment, overrides, {NO_COLOR: '1'});
+  Object.assign(environment, overrides, {HOME: cwd, NO_COLOR: '1', USERPROFILE: cwd});
 
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {

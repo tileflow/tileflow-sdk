@@ -2,7 +2,14 @@ import {featureFilter, validateStyleMin} from '@maplibre/maplibre-gl-style-spec'
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
-import {createStyle, defineMap, openMapTiles, resolveMap, vectorTiles} from '@tileflow/core';
+import {
+  createStyle,
+  defineMap,
+  inferTileflowDataRequirements,
+  openMapTiles,
+  resolveMap,
+  vectorTiles,
+} from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
 import {
   baedeker,
@@ -293,6 +300,30 @@ function compileOfficialMap(map: Parameters<typeof resolveMap>[0], theme?: strin
     theme,
   });
 }
+
+test('official World styles avoid fields absent from the V1 release contract', () => {
+  for (const [map, fields] of [
+    [streets, {building: ['has_parts'], transportation: ['clearance_extra_px_z15']}],
+    [cyberpunk, {transportation: ['clearance_extra_px_z15', 'importance_tier']}],
+    [matrix, {transportation: ['clearance_extra_px_z15', 'importance_tier']}],
+    [sanFrancisto, {building: ['height', 'name']}],
+    [civica, {building: ['building_kind']}],
+    [superTileWorld, {building: ['building_kind']}],
+  ] as const) {
+    const requirements = inferTileflowDataRequirements(compileOfficialMap(map));
+    for (const [layer, absentFields] of Object.entries(fields)) {
+      const required = requirements.sourceLayers.find(({id}) => id === layer);
+      assert.ok(required, `${map.id} must still render ${layer}`);
+      for (const field of absentFields) {
+        assert.equal(
+          required.fields.some(({name}) => name === field),
+          false,
+          `${map.id} requires unpublished ${layer}.${field}`,
+        );
+      }
+    }
+  }
+});
 
 function compiledTargets(compiled: ReturnType<typeof createStyleWithInspection>): Set<string> {
   return new Set(
@@ -790,17 +821,7 @@ test('Streets-family maps overlap ordinary road endpoints without extending stru
     ['zoom'],
     ['case', structuralButtCap, 'butt', 'round'],
     17,
-    [
-      'case',
-      [
-        'any',
-        structuralButtCap,
-        controlledSurfaceButtCap,
-        ['>', ['to-number', ['coalesce', ['get', 'clearance_extra_px_z15'], 0], 0], 0],
-      ],
-      'butt',
-      'round',
-    ],
+    ['case', ['any', structuralButtCap, controlledSurfaceButtCap], 'butt', 'round'],
   ];
 
   for (const [mapId, map] of Object.entries({streets, cyberpunk, matrix})) {

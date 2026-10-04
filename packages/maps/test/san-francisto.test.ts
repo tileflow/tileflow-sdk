@@ -157,7 +157,6 @@ test('San Francisto preserves its technical render targets, ordering, and patter
     'buildings.render.footprintHatch',
     'buildings.render.measuredEdge',
     'buildings.render.prominentOutline',
-    'buildings.render.buildingAnnotations',
     'buildings.render.heightAnnotations',
     'land.render.landscapeHatch',
     'land.render.parkHatch',
@@ -177,7 +176,6 @@ test('San Francisto preserves its technical render targets, ordering, and patter
     'buildings.flat.outline',
     'buildings.render.measuredEdge',
     'buildings.render.prominentOutline',
-    'buildings.render.buildingAnnotations',
     'buildings.render.heightAnnotations',
   ]);
   assertOrdered(compiled, [
@@ -481,15 +479,19 @@ test('San Francisto keeps technical overlays honest and inside canonical data co
     );
   }
 
-  assert.equal(matches(heightAnnotations, 3, {height: 24, importance_tier: 2}), true);
-  assert.equal(matches(heightAnnotations, 3, {height: 23, importance_tier: 2}), false);
-  assert.equal(matches(heightAnnotations, 3, {building_tone: 'destination', height: 24}), true);
-  assert.equal(matches(heightAnnotations, 3, {height: 100, render_height: 100}), false);
+  assert.equal(matches(heightAnnotations, 3, {render_height: 24, importance_tier: 2}), true);
+  assert.equal(matches(heightAnnotations, 3, {render_height: 23, importance_tier: 2}), false);
+  assert.equal(
+    matches(heightAnnotations, 3, {building_tone: 'destination', render_height: 24}),
+    true,
+  );
+  assert.equal(matches(heightAnnotations, 3, {height: 100, importance_tier: 2}), false);
+  assert.equal(matches(heightAnnotations, 3, {render_height: 100, importance_tier: 2}), true);
   assert.equal(matches(heightAnnotations, 3, {render_height: 100}), false);
   assert.deepEqual(heightAnnotations.layout?.['text-field'], [
     'concat',
     'H ≈ ',
-    ['to-string', ['to-number', ['get', 'height'], 0]],
+    ['to-string', ['to-number', ['get', 'render_height'], 0]],
     ' M',
   ]);
 });

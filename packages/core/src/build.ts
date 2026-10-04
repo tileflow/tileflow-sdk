@@ -7,13 +7,10 @@ import {
 import {parseTileflowRuntimeManifest, tileflowRuntimeManifestVersion} from './manifest';
 import type {TileflowRuntimeManifest} from './manifest-types';
 import {collectMapLineage, type TileflowStyleOptions} from './map';
-import {
-  collectTileflowMapBuildLineage,
-  type TileflowMapBuildLineageEntry,
-} from './map-build-manifest';
-import {type ResolvedTileflowMap, type TileflowMap, tileflowMapIdSchema} from './maps';
+import type {TileflowMapBuildLineageEntry} from './map-build-manifest';
+import {type ResolvedTileflowMap, tileflowMapIdSchema} from './maps';
 import {parseResolvedTileflowMap} from './resolved-map-schema';
-import {createStyleWithInspection, type TileflowInspectedStyle} from './style-inspection';
+import type {TileflowInspectedStyle} from './style-inspection';
 import type {MapLibreStyle} from './types';
 
 export {

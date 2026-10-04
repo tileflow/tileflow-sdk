@@ -15,7 +15,6 @@ import {
   emitFailure,
   emitJson,
   type HostedTeamAuthority,
-  type HostedTeamDependencies,
   type HostedTeamOptions,
   resolveTeamAuthority,
   safeMessage,

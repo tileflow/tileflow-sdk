@@ -10,7 +10,6 @@ export type DeploySource = {
 };
 
 type DeployEnvironment = Readonly<Record<string, string | undefined>>;
-type OptionalDeploySource = Omit<DeploySource, 'kind'>;
 
 const overrideFields = [
   ['TILEFLOW_DEPLOY_REPOSITORY', 'repository', 255],

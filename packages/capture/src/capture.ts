@@ -4,7 +4,6 @@ import {
   type NormalizedTileflowCaptureScene,
   normalizeTileflowCaptureScene,
   parseResolvedTileflowMap,
-  parseTileflowMap,
   resolveThemeSelection,
   serializeCanonicalJson,
   sha256Hex,

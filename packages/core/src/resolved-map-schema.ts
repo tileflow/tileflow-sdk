@@ -1,11 +1,5 @@
 import {z} from 'zod';
 import {
-  collectTileflowIconSetReferences,
-  tileflowIconSetSourceSchema,
-  tileflowIconSourceLimit,
-  type TileflowIconSource,
-} from './icon-set';
-import {
   tileflowRenderStackOperationNamePattern,
   tileflowSemanticTargetPattern,
 } from './cartography/contributions';
@@ -31,6 +25,12 @@ import {
   validatePublicVectorUrl,
 } from './data';
 import {tileflowWorldReleaseIdSchema} from './data/world-release-id';
+import {
+  collectTileflowIconSetReferences,
+  tileflowIconSetSourceSchema,
+  type TileflowIconSource,
+  tileflowIconSourceLimit,
+} from './icon-set';
 import {
   isTileflowLocalDirectory,
   tileflowLocalDirectoryMaximumLength,
@@ -408,22 +408,6 @@ const exactFontFaceSchema = z
       value === value.trim() && value === value.normalize('NFC') && !/[\p{Cc}\\]/u.test(value),
     'Expected an exact NFC font face name without surrounding whitespace, controls, or backslashes',
   );
-const fontFallbacksSchema = z
-  .array(exactFontFaceSchema)
-  .max(8)
-  .superRefine((fallbacks, context) => {
-    const seen = new Set<string>();
-    for (const [index, fallback] of fallbacks.entries()) {
-      if (seen.has(fallback)) {
-        context.addIssue({
-          code: 'custom',
-          message: `Duplicate exact fallback face "${fallback}"`,
-          path: [index],
-        });
-      }
-      seen.add(fallback);
-    }
-  });
 const moduleFontValueSchema = z.union([
   exactFontFaceSchema,
   fixedStringSchema,

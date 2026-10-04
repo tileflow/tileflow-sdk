@@ -67,7 +67,6 @@ const arterialRoadClasses = ['primary', 'secondary', 'tertiary'] as const;
 const majorRoadClasses = [...highwayRoadClasses, ...arterialRoadClasses] as const;
 const streetRoadClasses = ['minor', 'service'] as const;
 const serviceRoadClasses = ['track'] as const;
-const majorRoadClassSet = new Set<string>(majorRoadClasses);
 
 export function roadClassesForDetail(detail: TileflowRoadDetail): TileflowRoadClass[] {
   if (detail === 'none') return [];
@@ -94,10 +93,6 @@ export function visibleRoadClasses(options: ResolvedRoadsModuleOptions): Tileflo
       ...options.explicitClasses,
     ]),
   ].filter((roadClass) => !disabled.has(roadClass));
-}
-
-export function isMajorRoadClass(roadClass: string): boolean {
-  return majorRoadClassSet.has(roadClass);
 }
 
 export function roads(options: TileflowRoadsModuleOptions = {}): TileflowRoadsModuleConfig {

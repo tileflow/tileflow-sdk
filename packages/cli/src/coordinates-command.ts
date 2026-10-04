@@ -139,13 +139,13 @@ export function registerCoordinatesCommands(
   });
 
   registerOperation(coordinates, 'search', dependencies, (options: SearchOptions) =>
-    parseRequest('search', options, {query: options.query}),
+    parseCoordinatesRequest('search', {query: options.query}),
   );
   registerOperation(coordinates, 'describe', dependencies, (options: DescribeOptions) =>
-    parseRequest('describe', options, {id: options.id}),
+    parseCoordinatesRequest('describe', {id: options.id}),
   );
   registerOperation(coordinates, 'operations', dependencies, (options: PairOptions) =>
-    parseRequest('operations', options, {from: options.from, to: options.to}),
+    parseCoordinatesRequest('operations', {from: options.from, to: options.to}),
   );
   registerOperation(coordinates, 'transform', dependencies, (options: TransformOptions) =>
     parseTransformRequest(options),
@@ -274,14 +274,6 @@ function hasConvenienceOptions(command: CoordinatesCommand, options: RequestOpti
   return (
     transform.from !== undefined || transform.to !== undefined || transform.positions !== undefined
   );
-}
-
-function parseRequest(
-  command: CoordinatesCommand,
-  options: RequestOptions,
-  request: Record<string, unknown>,
-): unknown {
-  return parseCoordinatesRequest(command, request);
 }
 
 function parseTransformRequest(options: TransformOptions): unknown {

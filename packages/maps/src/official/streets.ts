@@ -247,15 +247,6 @@ const secondaryRoadSurfaceColor = mapboxRoadPalette.road;
 const tertiaryRoadSurfaceColor = mapboxRoadPalette.road;
 const buildingFillColor = mapboxBuildingPalette.fill;
 const buildingOutlineColor = mapboxBuildingPalette.outline;
-const buildingColors = {
-  active: buildingFillColor,
-  civic: buildingFillColor,
-  commercial: buildingFillColor,
-  destination: buildingFillColor,
-  generic: buildingFillColor,
-  industrial: buildingFillColor,
-  residential: buildingFillColor,
-} as const;
 const building3dColor = streetsVisual.building.extrusion;
 const buildingShadowColor = streetsVisual.building.shadow;
 const visibleBuilding3dSelector = {

@@ -212,6 +212,9 @@ compatible externally supplied vector data for local/self-hosted use; it does no
 eligible for hosted deployment. `hostedTileset()` and semantic overlay placement add named data
 sources. Local PMTiles inputs are for local tooling, not implicit production data publication.
 
+World attribution links to Tileflow's source notice, OpenMapTiles, and OpenStreetMap. External
+vector data retains the attribution supplied by its owner.
+
 `projection` accepts `mercator` or `globe`. Terrain supports `none`, `hillshade`, `3d`, and an object
 form for explicit hillshade and contour configuration. Browser-derived contours require a DEM tile
 template, zoom limits, thresholds, and the Tileflow contour protocol. Framework adapters and local

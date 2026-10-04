@@ -1,5 +1,5 @@
 import {spawn} from 'node:child_process';
-import {lstat, mkdir, readdir, rm} from 'node:fs/promises';
+import {lstat, mkdir, readdir, realpath, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {hashFile} from './identity';
@@ -24,6 +24,7 @@ export type CoordinatesDmgTrust =
 export type CoordinatesDmgCommand = Readonly<{
   args: readonly string[];
   file: string;
+  input?: string;
   signal: AbortSignal;
   timeoutMs: number;
 }>;
@@ -129,7 +130,8 @@ export function createCoordinatesDmgExtractor(run: CoordinatesDmgCommandRunner =
     } catch (error) {
       failure = normalizeError(error, input.signal);
     } finally {
-      const detached = !attachStarted || !mountpoint || (await detach(run, mountpoint));
+      const detached =
+        !attachStarted || !mountpoint || (await detach(run, mountpoint, input.artifactPath));
       if (mountpoint && detached)
         await rm(mountpoint, {force: true, recursive: true}).catch(() => undefined);
       if (destinationCreated && !completed)
@@ -211,18 +213,81 @@ async function checked(
   return result;
 }
 
-async function detach(run: CoordinatesDmgCommandRunner, mountpoint: string): Promise<boolean> {
+async function detach(
+  run: CoordinatesDmgCommandRunner,
+  mountpoint: string,
+  artifactPath: string,
+): Promise<boolean> {
+  const deadline = performance.now() + cleanupTimeoutMs;
+  const remaining = () => {
+    const budget = Math.floor(deadline - performance.now());
+    if (budget <= 0) throw new CoordinatesDmgError('DMG_COMMAND_TIMEOUT');
+    return budget;
+  };
+  const command = (file: string, args: readonly string[], input?: string) =>
+    bounded(run, file, args, undefined, remaining(), input);
+
   try {
-    const result = await bounded(
-      run,
-      '/usr/bin/hdiutil',
-      ['detach', mountpoint, '-force'],
-      undefined,
-      cleanupTimeoutMs,
+    const result = await command('/usr/bin/hdiutil', ['detach', mountpoint, '-force']);
+    if (result.code === 0) return true;
+    if (!/^hdiutil: detach failed - Resource busy\s*$/u.test(result.stderr)) return false;
+
+    // EBUSY can leave the volume unmounted. Resolve only this image's device before retrying.
+    const inventory = await command('/usr/bin/hdiutil', ['info', '-plist']);
+    if (inventory.code !== 0) return false;
+    const converted = await command(
+      '/usr/bin/plutil',
+      ['-convert', 'json', '-o', '-', '-'],
+      inventory.stdout,
     );
-    return result.code === 0;
+    if (converted.code !== 0) return false;
+
+    const inspectionBudget = remaining();
+    const device = await withinBudget(
+      findImageDevice(converted.stdout, artifactPath),
+      inspectionBudget,
+    );
+    if (!device) return false;
+    const retried = await command('/usr/bin/hdiutil', ['detach', device, '-force']);
+    return retried.code === 0;
   } catch {
     return false;
+  }
+}
+
+async function findImageDevice(
+  serialized: string,
+  artifactPath: string,
+): Promise<string | undefined> {
+  const document = JSON.parse(serialized) as {images?: unknown} | null;
+  if (!Array.isArray(document?.images)) return undefined;
+  const expected = await realpath(artifactPath);
+  let device: string | undefined;
+
+  for (const value of document.images) {
+    const image = value as {'image-path'?: unknown; 'system-entities'?: unknown} | null;
+    if (!image || typeof image['image-path'] !== 'string') continue;
+    if ((await realpath(image['image-path']).catch(() => undefined)) !== expected) continue;
+    if (device || !Array.isArray(image['system-entities'])) return undefined;
+
+    const entity = image['system-entities'][0] as {'dev-entry'?: unknown} | undefined;
+    const candidate = entity?.['dev-entry'];
+    if (typeof candidate !== 'string' || !/^\/dev\/disk\d+$/u.test(candidate)) return undefined;
+    device = candidate;
+  }
+
+  return device;
+}
+
+async function withinBudget<T>(pending: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stopped = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new CoordinatesDmgError('DMG_COMMAND_TIMEOUT')), timeoutMs);
+  });
+  try {
+    return await Promise.race([pending, stopped]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -232,6 +297,7 @@ async function bounded(
   args: readonly string[],
   signal: AbortSignal | undefined,
   timeoutMs: number,
+  input?: string,
 ): Promise<CoordinatesDmgCommandResult> {
   throwIfAborted(signal);
   const controller = new AbortController();
@@ -240,7 +306,7 @@ async function bounded(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let pending: Promise<CoordinatesDmgCommandResult>;
   try {
-    pending = Promise.resolve(run({args, file, signal: controller.signal, timeoutMs}));
+    pending = Promise.resolve(run({args, file, input, signal: controller.signal, timeoutMs}));
   } catch {
     clearTimeout(timer);
     signal?.removeEventListener('abort', abort);
@@ -415,7 +481,13 @@ async function mkdirMountpoint(): Promise<string> {
 
 function runCommand(command: CoordinatesDmgCommand): Promise<CoordinatesDmgCommandResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command.file, command.args, {stdio: ['ignore', 'pipe', 'pipe']});
+    const child = spawn(command.file, command.args, {
+      env:
+        command.file === '/usr/bin/hdiutil'
+          ? {...process.env, LANG: 'C', LC_ALL: 'C'}
+          : process.env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];
     let outputBytes = 0;
@@ -440,6 +512,11 @@ function runCommand(command: CoordinatesDmgCommand): Promise<CoordinatesDmgComma
         stdout: Buffer.concat(stdout).toString('utf8'),
       });
     });
+    child.stdin.once('error', (error) => {
+      child.kill('SIGKILL');
+      reject(error);
+    });
+    child.stdin.end(command.input);
   });
 }
 

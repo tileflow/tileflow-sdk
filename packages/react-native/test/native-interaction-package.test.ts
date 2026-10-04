@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
+import {assertPublicWorkspaceManifest} from '../../../test-support/public-workspace-manifest.mjs';
 import {createNativeInteractionOwner} from '../src/native-interaction-owner';
 
 const root = new URL('../', import.meta.url);
@@ -45,10 +46,8 @@ test('the interaction foundation imports only portable root contracts and its pr
 
 test('mounted public types do not export native handles, private ports or selection presentation', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
-  assert.equal(
-    manifest.dependencies['@tileflow/interactions'],
-    'workspace:>=0.1.0-alpha.16 <0.1.0-beta.0',
-  );
+  assertPublicWorkspaceManifest(manifest.name, manifest);
+  assert.ok(Object.hasOwn(manifest.dependencies, '@tileflow/interactions'));
   assert.equal(manifest.dependencies['maplibre-gl'], undefined);
   assert.equal(manifest.peerDependencies['maplibre-gl'], undefined);
   assert.equal(manifest.private, undefined);

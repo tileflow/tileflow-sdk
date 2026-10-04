@@ -149,7 +149,8 @@ test('native preview human output names the exact assets-only manifest and profi
       !stdout.includes('Profile:') ||
       !stdout.includes('native-v1') ||
       !stdout.includes('Endpoint:') ||
-      !stdout.includes('assets-only'))
+      !stdout.includes('assets-only') ||
+      !stdout.includes('Metro remains the JavaScript development server'))
   )
     await new Promise((resolve) => setTimeout(resolve, 25));
 

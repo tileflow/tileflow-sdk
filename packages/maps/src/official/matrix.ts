@@ -392,18 +392,15 @@ const matrixBuildingGhostCoreOpacity = expr.case<number>(
 );
 
 const matrixRoadClass = expr.coalesce(expr.get(field('class')), '');
-const matrixRoadImportanceTier = expr.case<number>(
-  [{when: expr.has(matrixImportanceTierField), value: matrixPublishedImportanceTier}],
-  expr.match<string, number>(
-    matrixRoadClass,
-    [
-      {labels: ['motorway', 'trunk'], value: 4},
-      {labels: 'primary', value: 3},
-      {labels: 'secondary', value: 2},
-      {labels: 'tertiary', value: 1},
-    ],
-    0,
-  ),
+const matrixRoadImportanceTier = expr.match<string, number>(
+  matrixRoadClass,
+  [
+    {labels: ['motorway', 'trunk'], value: 4},
+    {labels: 'primary', value: 3},
+    {labels: 'secondary', value: 2},
+    {labels: 'tertiary', value: 1},
+  ],
+  0,
 );
 
 const matrixPoiCategory = expr.coalesce(expr.get(field('poiCategory')), '');
@@ -444,10 +441,6 @@ const roadWidthInterpolationBase = 1.5;
 const expresswayWidthScale = 1.06;
 const tunnelBorderDash = [8, 5] as const;
 const tunnelBorderWidth = 1;
-const roadClearanceExtraAtZ15 = expr.toNumber(
-  expr.coalesce(expr.get(field('circularClearanceExtraAtZoom15')), 0),
-  0,
-);
 const roadNeedsStructuralButtCap = expr.any(
   expr.eq(expr.get(field('brunnel')), 'tunnel'),
   expr.eq(expr.get(field('class')), 'steps'),
@@ -487,11 +480,7 @@ const roadLineCap = expr.step<TileflowLineCap>(
       expr.case<TileflowLineCap>(
         [
           {
-            when: expr.any(
-              roadNeedsStructuralButtCap,
-              roadNeedsControlledSurfaceButtCap,
-              expr.gt(roadClearanceExtraAtZ15, 0),
-            ),
+            when: expr.any(roadNeedsStructuralButtCap, roadNeedsControlledSurfaceButtCap),
             value: 'butt',
           },
         ],
@@ -605,13 +594,7 @@ const matrixParkPathWidthStops = [
   [22, 20],
 ] as const satisfies WidthStops;
 
-function roadWidth(
-  widths: WidthStops,
-  oneWayScale: number,
-  casing = false,
-  clearance = true,
-  rampWidths?: WidthStops,
-) {
+function roadWidth(widths: WidthStops, oneWayScale: number, rampWidths?: WidthStops) {
   const augmentedWidths = [...widths].sort(([left], [right]) => left - right);
   const widthOutput = (level: number, width: number): TileflowDataExpressionInput<number> => {
     const ordinaryWidth =
@@ -630,39 +613,17 @@ function roadWidth(
             [{when: expr.eq(expr.get(field('ramp')), 1), value: rampWidth}],
             ordinaryWidth,
           );
-    if (!casing) return surfaceWidth;
-    return typeof surfaceWidth === 'number'
-      ? surfaceWidth + roadBorderTotalWidth
-      : expr.add(surfaceWidth, roadBorderTotalWidth);
+    return surfaceWidth;
   };
   const widthStops = augmentedWidths.map(
     ([level, width]) => [level, widthOutput(level, width)] as const,
   );
   const firstWidthStop = widthStops[0];
   if (firstWidthStop === undefined) throw new Error('Road widths require at least one zoom stop.');
-  const baseWidth = expr.interpolate(
-    {base: roadWidthInterpolationBase, kind: 'exponential'},
-    expr.zoom(),
-    [firstWidthStop, ...widthStops.slice(1)],
-  );
-  const clearanceWidth = clearance
-    ? expr.add(
-        baseWidth,
-        expr.step(expr.zoom(), 0, [
-          [
-            17,
-            expr.multiply(
-              roadClearanceExtraAtZ15,
-              expr.interpolate({base: 2, kind: 'exponential'}, expr.zoom(), [
-                [17, 4],
-                [22, 128],
-              ]),
-            ),
-          ],
-        ]),
-      )
-    : baseWidth;
-  return clearanceWidth;
+  return expr.interpolate({base: roadWidthInterpolationBase, kind: 'exponential'}, expr.zoom(), [
+    firstWidthStop,
+    ...widthStops.slice(1),
+  ]);
 }
 
 function roadCasingStrokeWidth() {
@@ -710,7 +671,7 @@ function matrixRoadStyle(
     color: matrixPalette.road,
     join: roadLineJoin,
     opacity,
-    width: roadWidth(widths, 1, false, false, rampWidths),
+    width: roadWidth(widths, 1, rampWidths),
   };
   const casing = {
     ...zoomRange,
@@ -782,7 +743,7 @@ function matrixPathRoadStyle(
   const cap = options.steps ? ('butt' as const) : pathLineCap;
   const tunnelCap = 'butt' as const;
   const join = options.steps ? ('round' as const) : pathLineJoin;
-  const fillWidth = options.width ?? roadWidth(widths, 1, false, false);
+  const fillWidth = options.width ?? roadWidth(widths, 1);
   const fill = {
     ...zoomRange,
     cap,
@@ -987,32 +948,7 @@ function matrixRoadImportanceSelector(minimum: 2 | 3): TileflowRenderSelector {
     kind: 'all',
     selectors: [
       {kind: 'geometry', geometry: 'line'},
-      {
-        kind: 'any',
-        selectors: [
-          {
-            kind: 'all',
-            selectors: [
-              {kind: 'has', field: 'importanceTier'},
-              {
-                kind: 'compare',
-                field: 'importanceTier',
-                operator: 'gte',
-                value: minimum,
-                coerce: 'number',
-                fallback: 0,
-              },
-            ],
-          },
-          {
-            kind: 'all',
-            selectors: [
-              {kind: 'not', selector: {kind: 'has', field: 'importanceTier'}},
-              {kind: 'in', field: 'class', values: legacyClasses, fallback: ''},
-            ],
-          },
-        ],
-      },
+      {kind: 'in', field: 'class', values: legacyClasses, fallback: ''},
       {
         kind: 'compare',
         field: 'ramp',
@@ -2250,7 +2186,7 @@ export const matrix = bindOfficialMapTheme(
             }),
             cycleway: matrixPathRoadStyle(matrixPalette.cyan, mapboxPathWidthStops, {
               casingColor: matrixPalette.roadCasing,
-              casingGapWidth: roadWidth(mapboxPathWidthStops, 1, false, false),
+              casingGapWidth: roadWidth(mapboxPathWidthStops, 1),
               fillOpacity: zoom.linear([
                 [15, 0],
                 [16, 1],
@@ -2262,7 +2198,7 @@ export const matrix = bindOfficialMapTheme(
                 join: pathLineJoin,
                 minZoom: 12,
                 opacity: 1,
-                width: roadWidth(mapboxPathWidthStops, 1, false, false),
+                width: roadWidth(mapboxPathWidthStops, 1),
               },
               width: zoom.linear([
                 [12, 0],

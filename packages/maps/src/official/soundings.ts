@@ -164,7 +164,7 @@ export const soundings = bindOfficialMapTheme(
     },
     glyphs: {
       kind: 'url',
-      url: 'https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf',
+      url: 'https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf',
       fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
     },
     icons: [soundingsIcons],

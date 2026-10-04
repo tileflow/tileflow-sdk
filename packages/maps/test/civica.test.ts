@@ -481,6 +481,6 @@ test('Cívica reserves vermilion building ink for civic and major destinations r
   assert.deepEqual(color('generic', 10), color('generic', 250, 3));
   assert.deepEqual(
     evaluate(building, 'fill-color', 16, {[fields.buildingKind]: 'civic'}),
-    color('civic'),
+    color('generic'),
   );
 });

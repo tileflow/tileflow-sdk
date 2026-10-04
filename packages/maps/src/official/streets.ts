@@ -255,11 +255,6 @@ const visibleBuilding3dSelector = {
     {field: 'hide3d', kind: 'compare', operator: 'ne', value: true},
     {field: 'hide3d', kind: 'compare', operator: 'ne', value: 1},
     {field: 'hide3d', kind: 'compare', operator: 'ne', value: '1'},
-    // A parent with parts is only an association footprint. Drawing
-    // it as a solid extrusion buries the richer building:part volumes.
-    {field: 'hasParts', kind: 'compare', operator: 'ne', value: true},
-    {field: 'hasParts', kind: 'compare', operator: 'ne', value: 1},
-    {field: 'hasParts', kind: 'compare', operator: 'ne', value: '1'},
   ],
 } as const satisfies TileflowRenderSelector;
 const building3dHeight = expr.max(
@@ -283,15 +278,9 @@ const circularRoadInnerRadiusMetres = expr.toNumber(
   expr.get(field('circularInnerRadiusMeters')),
   0,
 );
-const roadClearanceExtraAtZ15 = expr.toNumber(
-  expr.coalesce(expr.get(field('circularClearanceExtraAtZoom15')), 0),
-  0,
-);
 // Round caps overlap ordinary feature endpoints just enough to hide the
 // antialiasing seam between adjacent road segments. Tunnels and steps must not
-// extend beyond their structural endpoints, and at detailed zooms approaches
-// with precomputed circular clearance must still meet procedural roundabouts
-// without creating a lobe inside the ring.
+// extend beyond their structural endpoints.
 const roadNeedsStructuralButtCap = expr.any(
   expr.eq(expr.get(field('brunnel')), 'tunnel'),
   expr.eq(expr.get(field('class')), 'steps'),
@@ -331,11 +320,7 @@ const roadLineCap = expr.step<TileflowLineCap>(
       expr.case<TileflowLineCap>(
         [
           {
-            when: expr.any(
-              roadNeedsStructuralButtCap,
-              roadNeedsControlledSurfaceButtCap,
-              expr.gt(roadClearanceExtraAtZ15, 0),
-            ),
+            when: expr.any(roadNeedsStructuralButtCap, roadNeedsControlledSurfaceButtCap),
             value: 'butt',
           },
         ],
@@ -459,13 +444,7 @@ function circularRoadStrokeWidth(casing: boolean) {
   ]);
 }
 
-function roadWidth(
-  widths: WidthStops,
-  oneWayScale: number,
-  casing = false,
-  clearance = true,
-  rampWidths?: WidthStops,
-) {
+function roadWidth(widths: WidthStops, oneWayScale: number, rampWidths?: WidthStops) {
   const augmentedWidths = [...widths].sort(([left], [right]) => left - right);
   const widthOutput = (level: number, width: number): TileflowDataExpressionInput<number> => {
     const ordinaryWidth =
@@ -484,39 +463,17 @@ function roadWidth(
             [{when: expr.eq(expr.get(field('ramp')), 1), value: rampWidth}],
             ordinaryWidth,
           );
-    if (!casing) return surfaceWidth;
-    return typeof surfaceWidth === 'number'
-      ? surfaceWidth + roadBorderTotalWidth
-      : expr.add(surfaceWidth, roadBorderTotalWidth);
+    return surfaceWidth;
   };
   const widthStops = augmentedWidths.map(
     ([level, width]) => [level, widthOutput(level, width)] as const,
   );
   const firstWidthStop = widthStops[0];
   if (firstWidthStop === undefined) throw new Error('Road widths require at least one zoom stop.');
-  const baseWidth = expr.interpolate(
-    {base: roadWidthInterpolationBase, kind: 'exponential'},
-    expr.zoom(),
-    [firstWidthStop, ...widthStops.slice(1)],
-  );
-  const clearanceWidth = clearance
-    ? expr.add(
-        baseWidth,
-        expr.step(expr.zoom(), 0, [
-          [
-            17,
-            expr.multiply(
-              roadClearanceExtraAtZ15,
-              expr.interpolate({base: 2, kind: 'exponential'}, expr.zoom(), [
-                [17, 4],
-                [22, 128],
-              ]),
-            ),
-          ],
-        ]),
-      )
-    : baseWidth;
-  return clearanceWidth;
+  return expr.interpolate({base: roadWidthInterpolationBase, kind: 'exponential'}, expr.zoom(), [
+    firstWidthStop,
+    ...widthStops.slice(1),
+  ]);
 }
 
 function roadCasingStrokeWidth() {
@@ -1147,7 +1104,6 @@ function cityRoadStyle(
   options: {
     casingColorStops?: ColorStops;
     casingMinZoom?: number;
-    clearance?: boolean;
     colorStops?: ColorStops;
     minZoom?: number;
     oneWayScale?: number;
@@ -1160,7 +1116,6 @@ function cityRoadStyle(
   const {
     casingColorStops,
     casingMinZoom = roadBorderZoom,
-    clearance = true,
     colorStops,
     minZoom,
     oneWayScale = 1,
@@ -1184,7 +1139,7 @@ function cityRoadStyle(
     color: surfaceColor,
     join: roadLineJoin,
     opacity,
-    width: roadWidth(widths, oneWayScale, false, clearance, rampWidths),
+    width: roadWidth(widths, oneWayScale, rampWidths),
   };
   const casing = {
     ...zoomRange,
@@ -1210,7 +1165,7 @@ function cityRoadStyle(
             cap: roadLineCap,
             color: tunnelCasingColor,
             dash: tunnelBorderDash,
-            gapWidth: roadWidth(widths, oneWayScale, false, clearance, rampWidths),
+            gapWidth: roadWidth(widths, oneWayScale, rampWidths),
             opacity: 1,
             width: tunnelRoadCasingWidth,
           },
@@ -1258,7 +1213,7 @@ function pathRoadStyle(
   const cap = options.steps ? ('butt' as const) : pathLineCap;
   const tunnelCap = 'butt' as const;
   const join = options.steps ? ('round' as const) : pathLineJoin;
-  const fillWidth = options.width ?? roadWidth(widths, 1, false, false);
+  const fillWidth = options.width ?? roadWidth(widths, 1);
   const fill = {
     ...zoomRange,
     cap,
@@ -1342,7 +1297,7 @@ export const streets = bindOfficialMapTheme(
     name: 'Streets',
     glyphs: {
       kind: 'url',
-      url: 'https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf',
+      url: 'https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf',
       fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
     },
     themes: streetsThemes,
@@ -1871,7 +1826,6 @@ export const streets = bindOfficialMapTheme(
                 [22, 300],
               ],
               {
-                clearance: false,
                 casingColorStops: [
                   [15, mapboxRoadPalette.motorwayCasing],
                   [22, mapboxRoadPalette.motorwayCasing],
@@ -1895,7 +1849,6 @@ export const streets = bindOfficialMapTheme(
                 [22, 300],
               ],
               {
-                clearance: false,
                 casingColorStops: [
                   [15, mapboxRoadPalette.trunkCasing],
                   [22, mapboxRoadPalette.trunkCasing],
@@ -1919,7 +1872,6 @@ export const streets = bindOfficialMapTheme(
                 [22, 280],
               ],
               {
-                clearance: false,
                 casingColorStops: cityRoadCasingColorStops(5),
                 colorStops: cityRoadColorStops(
                   5,
@@ -1941,7 +1893,6 @@ export const streets = bindOfficialMapTheme(
                 [22, 260],
               ],
               {
-                clearance: false,
                 casingColorStops: cityRoadCasingColorStops(8),
                 colorStops: cityRoadColorStops(
                   8,
@@ -1963,7 +1914,6 @@ export const streets = bindOfficialMapTheme(
                 [22, 260],
               ],
               {
-                clearance: false,
                 casingColorStops: cityRoadCasingColorStops(8),
                 colorStops: cityRoadColorStops(
                   8,
@@ -1985,7 +1935,6 @@ export const streets = bindOfficialMapTheme(
                 [22, 200],
               ],
               {
-                clearance: false,
                 casingColorStops: cityRoadCasingColorStops(12),
                 casingMinZoom: 14.5,
                 colorStops: cityRoadColorStops(12, streetsCityRoadPalette.minor, roadSurfaceColor),
@@ -2012,7 +1961,6 @@ export const streets = bindOfficialMapTheme(
                   [14.5, mapboxRoadPalette.roadCasing],
                   [22, mapboxRoadPalette.roadCasing],
                 ],
-                clearance: false,
                 colorStops: [
                   [13.5, roadSurfaceColor],
                   [22, roadSurfaceColor],
@@ -2039,7 +1987,6 @@ export const streets = bindOfficialMapTheme(
                   [14.5, mapboxRoadPalette.roadCasing],
                   [22, mapboxRoadPalette.roadCasing],
                 ],
-                clearance: false,
                 colorStops: [
                   [13.5, mapboxRoadPalette.road],
                   [22, mapboxRoadPalette.road],
@@ -2061,7 +2008,7 @@ export const streets = bindOfficialMapTheme(
             }),
             cycleway: pathRoadStyle(mapboxRoadPalette.cycleway, mapboxPathWidthStops, {
               casingColor: mapboxRoadPalette.pathCasing,
-              casingGapWidth: roadWidth(mapboxPathWidthStops, 1, false, false),
+              casingGapWidth: roadWidth(mapboxPathWidthStops, 1),
               fillOpacity: zoom.linear([
                 [15, 0],
                 [16, 1],
@@ -2076,7 +2023,7 @@ export const streets = bindOfficialMapTheme(
                 join: pathLineJoin,
                 minZoom: 12,
                 opacity: 1,
-                width: roadWidth(mapboxPathWidthStops, 1, false, false),
+                width: roadWidth(mapboxPathWidthStops, 1),
               },
               width: zoom.linear([
                 [12, 0],

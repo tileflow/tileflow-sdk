@@ -9,6 +9,7 @@ sprites. Transit stations become warp pipes, landmarks become castles or stars, 
 places use a coordinated vocabulary of mushrooms, question blocks, coins, hearts, and flags.
 Its own semantic render stacks define the composition; it does not import an existing map or
 post-process screenshots. The normal World geography remains interactive at every zoom.
+Building colors use the published World `building_tone`, not an unpublished building-kind field.
 
 The map declares `[superTileWorldIcons]` for sixteen original SVG sprites and seven repeating
 pixel patterns, plus `[superTileWorldFonts]` for local Pixelify Sans Regular and SemiBold detail
@@ -73,7 +74,8 @@ have no stroke.
 
 The red building plate selects civic buildings directly and destination buildings only when
 `importanceTier` is at least 3. Tier-2 destinations use darker gray; lower-ranked destinations and
-ordinary buildings share the same warm-gray fill. Building height never determines landmark color.
+ordinary buildings share the same warm-gray fill. It uses World `building_tone`; building height
+never determines landmark color.
 The generalized footprint pass ends at z15 with the same opacity at which the
 detail pass begins.
 
@@ -181,6 +183,8 @@ Fine technical road strokes, survey-like uppercase labels, precise building foot
 dimensions, and dedicated landscape and water hatches replace naturalistic map color. It declares
 the canonical Noto Sans glyph provider and only `[sanFrancistoIcons]`, whose four original patterns
 and schematic POI node form its complete sprite vocabulary.
+Prominent building height callouts use World `render_height`; the map does not require unpublished
+building names or raw heights.
 
 ## cyberpunk
 
@@ -241,8 +245,8 @@ must be an explicit dated recalibration rather than an implicit network-dependen
 At detailed zooms, the road-bearing official maps round-cap ordinary surface-road and bridge
 feature endpoints so adjacent vector segments overlap their antialiasing fringe instead of exposing
 hairline cuts. Tunnel portals retain butt caps; Streets, Cyberpunk, and Matrix also keep butt caps on
-steps and approaches carrying circular-road clearance so those structural ends do not protrude into
-the connected geometry. Streets pairs its blue/slate road decks with a darker casing that grows from
+steps and controlled surface approaches so those structural ends do not protrude into connected
+geometry. Streets pairs its blue/slate road decks with a darker casing that grows from
 1 px at z15 to 2 px at z22; tunnel casings use the compact dashed rhythm of the calibrated reference.
 
 A theme is not a loose override cascade. Module styles explicitly reference roles such as

@@ -24,7 +24,12 @@ test('resolves omitted data to the World current TileJSON discovery selector', (
   assert.equal(resolved.schema.layers.bathymetry, 'bathymetry');
   assert.equal(resolved.schema.fields.bathymetryMinDepth, 'min_depth');
   assert.equal(resolved.schema.fields.bathymetrySortKey, 'sort_key');
-  assert.equal(resolved.attribution, '© OpenFreeMap, © OpenMapTiles, © OpenStreetMap contributors');
+  assert.equal(
+    resolved.attribution,
+    '<a href="https://tileflow.dev/copyright">© Tileflow</a> ' +
+      '<a href="https://www.openmaptiles.org/">© OpenMapTiles</a> ' +
+      '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a>',
+  );
   assert.deepEqual(resolved.identity, {
     generation: 'v1',
     kind: 'tileflow-world',

@@ -5,6 +5,15 @@ import test from 'node:test';
 const root = new URL('../', import.meta.url);
 const read = (path: string) => readFile(new URL(path, root), 'utf8');
 
+test('Android modules used by class lookup declare their React Native names', async () => {
+  for (const name of ['TileflowNativeAdmission', 'TileflowNativeDocuments']) {
+    const source = await read(`android/src/main/java/dev/tileflow/reactnative/${name}Module.kt`);
+
+    assert.match(source, new RegExp(`@ReactModule\\(name = "${name}"\\)`, 'u'));
+    assert.match(source, new RegExp(`getName\\(\\) = "${name}"`, 'u'));
+  }
+});
+
 test('native document modules carry no grant or application-configuration input', async () => {
   for (const path of [
     'android/src/main/java/dev/tileflow/reactnative/TileflowNativeDocumentsModule.kt',

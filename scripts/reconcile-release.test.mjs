@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
-import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
+import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {
   applyReleaseVersions,
@@ -23,6 +24,7 @@ import {
   internalWorkspaceRuntimeRange,
   packageDirectories,
   publicPackageNames,
+  runtimeDependencyGroups,
 } from './release-config.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -283,6 +285,132 @@ test('applies registry baselines and selected targets only in the ephemeral chec
   } finally {
     await rm(root, {force: true, recursive: true});
   }
+});
+
+test('package checks accept the materialized Native release without relaxing source validation', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'tileflow-release-workspace-test-'));
+  t.after(() => rm(root, {force: true, recursive: true}));
+  await sourceManifestTree(root);
+
+  const native = '@tileflow/react-native';
+  const manifestPath = join(root, 'packages/react-native/package.json');
+  const source = JSON.parse(
+    await readFile(new URL('../packages/react-native/package.json', import.meta.url), 'utf8'),
+  );
+  source.version = developmentVersion;
+  for (const group of runtimeDependencyGroups)
+    for (const name of Object.keys(source[group] ?? {}))
+      if (publicPackageNames.includes(name)) source[group][name] = internalWorkspaceRuntimeRange;
+  await writeFile(manifestPath, JSON.stringify(source));
+  await validateSourceManifests(root);
+
+  await writeFile(manifestPath, JSON.stringify({...source, version: '0.1.0-alpha.0'}));
+  await assert.rejects(validateSourceManifests(root), /react-native source version must be/u);
+  await writeFile(manifestPath, JSON.stringify(source));
+
+  await applyReleaseVersions(
+    {
+      schemaVersion: 4,
+      channel: 'alpha',
+      sourceSha,
+      baselines: publicPackageNames.map((name) => ({
+        name,
+        published: name !== native,
+        runtimeDependencies: {},
+        ...(name === native ? {initialVersion: '0.1.0-alpha.0'} : {version: '0.1.0-alpha.16'}),
+      })),
+      packages: [
+        {...releaseEntry('@tileflow/core'), runtimeDependencies: {}},
+        {...releaseEntry('@tileflow/interactions'), runtimeDependencies: {}},
+        {
+          name: native,
+          from: null,
+          to: '0.1.0-alpha.0',
+          differences: ['package-unpublished'],
+          runtimeDependencies: {
+            dependencies: {
+              '@tileflow/core': automaticInternalRuntimeRange('0.1.0-alpha.17'),
+              '@tileflow/interactions': automaticInternalRuntimeRange('0.1.0-alpha.17'),
+            },
+          },
+        },
+      ],
+    },
+    root,
+  );
+  await assert.rejects(validateSourceManifests(root), /source version must be/u);
+
+  for (const path of [
+    'scripts/release-config.mjs',
+    'scripts/release-config.test.mjs',
+    'test-support',
+    'pnpm-lock.yaml',
+    'packages/react-native/README.md',
+    'packages/react-native/dist',
+    'packages/react-native/test/package.test.ts',
+    'packages/react-native/test/native-admission-pack-files.ts',
+    'packages/react-native/test/native-interaction-package.test.ts',
+    'packages/react-native/src',
+    'packages/react-native/tsup.config.ts',
+    'packages/react-native/tsconfig.contract.json',
+    'packages/interactions/src',
+  ]) {
+    const destination = join(root, path);
+    await mkdir(join(destination, '..'), {recursive: true});
+    await cp(new URL(`../${path}`, import.meta.url), destination, {recursive: true});
+  }
+  await symlink(
+    fileURLToPath(new URL('../node_modules', import.meta.url)),
+    join(root, 'node_modules'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
+  await symlink(
+    fileURLToPath(new URL('../packages/react-native/node_modules', import.meta.url)),
+    join(root, 'packages/react-native/node_modules'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
+
+  await t.test('catalog package checks', async () => {
+    const {stdout} = await execFileAsync(
+      process.execPath,
+      [
+        '--test',
+        '--test-reporter=tap',
+        '--test-name-pattern=React Native is publishable',
+        'scripts/release-config.test.mjs',
+      ],
+      {cwd: root, env: {...process.env, NODE_TEST_CONTEXT: undefined}},
+    );
+    assert.match(stdout, /^# pass 1$/mu);
+  });
+  await t.test('Native package checks', async () => {
+    const {stdout} = await execFileAsync(
+      process.execPath,
+      [
+        fileURLToPath(new URL('../node_modules/tsx/dist/cli.mjs', import.meta.url)),
+        '--test',
+        '--test-reporter=tap',
+        '--test-name-pattern=is publishable with exact native peers',
+        'packages/react-native/test/package.test.ts',
+      ],
+      {cwd: root, env: {...process.env, NODE_TEST_CONTEXT: undefined}},
+    );
+    assert.match(stdout, /^# pass 1$/mu);
+  });
+  await t.test('Native interaction metadata checks', async () => {
+    const {stdout} = await execFileAsync(
+      process.execPath,
+      [
+        fileURLToPath(new URL('../node_modules/tsx/dist/cli.mjs', import.meta.url)),
+        '--test',
+        '--test-reporter=tap',
+        '--test-name-pattern=mounted public types',
+        'packages/react-native/test/native-interaction-package.test.ts',
+      ],
+      {cwd: root, env: {...process.env, NODE_TEST_CONTEXT: undefined}},
+    );
+    assert.match(stdout, /^# pass 1$/mu);
+  });
 });
 
 test('floors selected dependents at effective dependency versions and preserves unselected ranges', async () => {

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {satisfies} from 'semver';
+import {assertPublicWorkspaceManifest} from '../test-support/public-workspace-manifest.mjs';
 import {
   automaticInternalRuntimeRange,
   developmentVersion,
@@ -14,7 +15,6 @@ import {
   publicLicenseIdentifier,
   publicPackageCatalog,
   publicPackageNames,
-  validatePublicManifest,
   validatePublicManifests,
   validatePublishedInternalRuntimeRange,
 } from './release-config.mjs';
@@ -48,7 +48,7 @@ test('React Native is publishable without shipping development tests or widening
   const manifest = JSON.parse(
     await readFile(new URL('../packages/react-native/package.json', import.meta.url), 'utf8'),
   );
-  validatePublicManifest('@tileflow/react-native', manifest, {source: true});
+  assertPublicWorkspaceManifest('@tileflow/react-native', manifest);
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
   assert.deepEqual(manifest.peerDependencies, {
     '@maplibre/maplibre-react-native': '11.3.10',
@@ -60,6 +60,42 @@ test('React Native is publishable without shipping development tests or widening
   assert.ok(manifest.files.includes('react-native.config.cjs'));
   assert.ok(!manifest.files.includes('android/src'));
   assert.ok(!manifest.files.some((path) => /(?:^|\/)(?:test|tests|harness)(?:\/|$)/iu.test(path)));
+});
+
+test('workspace package checks remain strict before and after release materialization', () => {
+  const name = '@tileflow/react-native';
+  const source = fixtureManifests().get(name).manifest;
+  source.dependencies = {'@tileflow/core': internalWorkspaceRuntimeRange};
+  assertPublicWorkspaceManifest(name, source);
+  assert.throws(() =>
+    assertPublicWorkspaceManifest(name, {
+      ...source,
+      dependencies: {'@tileflow/core': 'workspace:*'},
+    }),
+  );
+
+  const released = {
+    ...source,
+    version: '0.1.0-alpha.0',
+    dependencies: {
+      '@tileflow/core': `workspace:${automaticInternalRuntimeRange('0.1.0-alpha.42')}`,
+    },
+  };
+  const original = structuredClone(released);
+  assertPublicWorkspaceManifest(name, released);
+  assert.deepEqual(released, original);
+
+  for (const version of ['0.0.0-bootstrap.0', '0.1.0', '0.1.0-beta.0'])
+    assert.throws(() => assertPublicWorkspaceManifest(name, {...released, version}));
+
+  for (const range of [
+    'workspace:*',
+    automaticInternalRuntimeRange('0.1.0-alpha.42'),
+    'workspace:>=0.1.0-alpha.42 <0.1.0',
+  ])
+    assert.throws(() =>
+      assertPublicWorkspaceManifest(name, {...released, dependencies: {'@tileflow/core': range}}),
+    );
 });
 
 test('advances only the numeric alpha counter', () => {

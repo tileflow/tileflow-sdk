@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import ts from 'typescript';
+import {assertPublicWorkspaceManifest} from '../../../test-support/public-workspace-manifest.mjs';
 import {nativePackageFiles} from './native-admission-pack-files';
 
 const root = new URL('../', import.meta.url);
@@ -32,7 +33,7 @@ test('is publishable with exact native peers and one ordinary public root', asyn
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
   assert.equal(manifest.name, '@tileflow/react-native');
   assert.equal(manifest.private, undefined);
-  assert.equal(manifest.version, '0.0.0-development');
+  assertPublicWorkspaceManifest(manifest.name, manifest);
   assert.equal(manifest.license, 'Apache-2.0');
   assert.deepEqual(manifest.publishConfig, {access: 'public'});
   assert.equal(manifest.sideEffects, false);
@@ -43,10 +44,10 @@ test('is publishable with exact native peers and one ordinary public root', asyn
   });
   for (const [name, version] of Object.entries(manifest.peerDependencies))
     assert.equal(manifest.devDependencies[name], version);
-  assert.deepEqual(manifest.dependencies, {
-    '@tileflow/core': 'workspace:>=0.1.0-alpha.16 <0.1.0-beta.0',
-    '@tileflow/interactions': 'workspace:>=0.1.0-alpha.16 <0.1.0-beta.0',
-  });
+  assert.deepEqual(Object.keys(manifest.dependencies).sort(), [
+    '@tileflow/core',
+    '@tileflow/interactions',
+  ]);
   assert.deepEqual(manifest.exports, {
     '.': {types: './dist/index.d.ts', import: './dist/index.js', default: './dist/index.js'},
   });

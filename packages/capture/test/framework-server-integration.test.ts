@@ -10,6 +10,7 @@ import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import webpack from 'webpack';
 import {TileflowWebpackPlugin} from '@tileflow/webpack';
+import {TileflowCaptureBrowserManager} from '../src/browser';
 import {createTileflowCaptureSession} from '../src/index';
 import {writeFrameworkMapFixture} from './tileflow-source-fixture';
 
@@ -18,7 +19,45 @@ const execFileAsync = promisify(execFile);
 test(
   'captures an interactive wrapper map through one Next application server and no Tileflow listener',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 90_000},
-  async () => {
+  async (t) => {
+    const browserFailures: string[] = [];
+    const observedBrowsers = new WeakSet();
+    const recordFailure = (message: string) => {
+      if (browserFailures.length < 12) browserFailures.push(message.slice(0, 800));
+    };
+    const getBrowser = TileflowCaptureBrowserManager.prototype.getBrowser;
+    t.mock.method(
+      TileflowCaptureBrowserManager.prototype,
+      'getBrowser',
+      async function (this: TileflowCaptureBrowserManager, signal?: AbortSignal) {
+        const browser = await getBrowser.call(this, signal);
+        if (observedBrowsers.has(browser)) return browser;
+        observedBrowsers.add(browser);
+        const newContext = browser.newContext.bind(browser);
+
+        t.mock.method(browser, 'newContext', async (...options: Parameters<typeof newContext>) => {
+          const context = await newContext(...options);
+          context.on('page', (page) => {
+            page.on('pageerror', (error) => recordFailure(`pageerror: ${error.message}`));
+            page.on('console', (message) => {
+              if (message.type() === 'error') recordFailure(`console: ${message.text()}`);
+            });
+            page.on('response', (response) => {
+              if (response.status() >= 400)
+                recordFailure(`response: ${response.status()} ${new URL(response.url()).pathname}`);
+            });
+            page.on('requestfailed', (request) => {
+              recordFailure(
+                `requestfailed: ${request.failure()?.errorText} ${new URL(request.url()).pathname}`,
+              );
+            });
+          });
+          return context;
+        });
+        return browser;
+      },
+    );
+
     const fixture = await createFrameworkFixture('next');
     await buildNextFixture(fixture.cwd, 'webpack');
     const port = await reservePort();
@@ -42,6 +81,9 @@ test(
       assert.equal(capture.target, 'application');
       assert.equal(capture.width, 222);
       assert.equal(capture.height, 240);
+    } catch (error) {
+      t.diagnostic(JSON.stringify(browserFailures));
+      throw error;
     } finally {
       await closeServer(server);
       await application.close();

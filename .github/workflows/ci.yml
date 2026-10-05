@@ -143,7 +143,7 @@ jobs:
         env:
           TILEFLOW_RUN_BROWSER_TESTS: '1'
           TILEFLOW_CLI_TEST_PROGRESS: ${{ runner.os == 'Windows' && '1' || '' }}
-          NODE_OPTIONS: ${{ runner.os == 'Windows' && format('--require="{0}/test-support/cli-test-progress.cjs"', github.workspace) || '' }}
+          NODE_OPTIONS: ${{ runner.os == 'Windows' && format('--require={0}/test-support/cli-test-progress.cjs', github.workspace) || '' }}
 
   capture-public-tarball:
     name: Clean packed capture consumer

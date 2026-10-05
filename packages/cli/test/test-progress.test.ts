@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
+import {readFileSync} from 'node:fs';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 
@@ -50,4 +51,28 @@ test('CLI progress is opt-in, bounded and excludes parent paths', () => {
       });
     }
   }
+});
+
+test('Windows CI preload preserves path separators', () => {
+  const workflow = readFileSync(
+    new URL('../../../.github/workflows/ci.yml', import.meta.url),
+    'utf8',
+  );
+  const template = workflow.match(/format\('(--require[^']+)', github\.workspace\)/u)?.[1];
+  assert.ok(template);
+  const workspace = 'C:\\tileflow-progress-fixture';
+  const requested = `${workspace}/test-support/cli-test-progress.cjs`;
+  const result = spawnSync(process.execPath, ['--eval', ''], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      NODE_OPTIONS: template.replace('{0}', workspace),
+      NODE_TEST_CONTEXT: '',
+      TILEFLOW_CLI_TEST_PROGRESS: '',
+    },
+  });
+
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /MODULE_NOT_FOUND/u);
+  assert.equal(result.stderr.match(/Cannot find module '([^']+)'/u)?.[1], requested);
 });

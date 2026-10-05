@@ -82,7 +82,14 @@ export type TileflowRenderedIconIdentity = z.infer<typeof tileflowRenderedIconId
 
 export const tileflowIconCompositionSchema = z
   .object({
-    format: z.enum(['tileflow-icon-composition-v1', 'tileflow-icon-composition-v2']),
+    // An explicit map keeps declaration order independent of TypeScript's literal cache.
+    format: z.enum<{
+      'tileflow-icon-composition-v1': 'tileflow-icon-composition-v1';
+      'tileflow-icon-composition-v2': 'tileflow-icon-composition-v2';
+    }>({
+      'tileflow-icon-composition-v1': 'tileflow-icon-composition-v1',
+      'tileflow-icon-composition-v2': 'tileflow-icon-composition-v2',
+    }),
     compositionVersion: z.union([z.literal(1), z.literal(2)]),
     packageHash: tileflowIconPackageContentHashSchema,
     contributors: z

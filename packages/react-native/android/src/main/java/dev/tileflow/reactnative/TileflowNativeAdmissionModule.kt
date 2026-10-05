@@ -12,8 +12,10 @@ import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.facebook.react.common.LifecycleState
+import com.facebook.react.module.annotations.ReactModule
 import org.maplibre.android.MapLibre
 
+@ReactModule(name = "TileflowNativeAdmission")
 class TileflowNativeAdmissionModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(context), LifecycleEventListener {
 	private val scheduler = HandlerAdmissionScheduler()
 	private var installation: String? = null

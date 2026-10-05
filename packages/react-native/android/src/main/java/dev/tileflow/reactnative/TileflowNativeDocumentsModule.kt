@@ -8,7 +8,9 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.common.LifecycleState
+import com.facebook.react.module.annotations.ReactModule
 
+@ReactModule(name = "TileflowNativeDocuments")
 class TileflowNativeDocumentsModule(context: ReactApplicationContext) : ReactContextBaseJavaModule(context), LifecycleEventListener {
 	private val scheduler = HandlerAdmissionScheduler()
 	private val network = NativeDocumentOkHttpNetwork()

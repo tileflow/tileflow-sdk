@@ -42,9 +42,80 @@ test('the mixed-icon fixture waits for initial watched artifacts', async () => {
   assert.equal(await initial, artifacts);
 });
 
+test('the mixed-icon fixture awaits watcher shutdown before removing files', async () => {
+  const hooks: Array<() => void | Promise<void>> = [];
+  const calls: string[] = [];
+  let releaseClose!: () => void;
+  const closed = new Promise<void>((resolve) => {
+    releaseClose = resolve;
+  });
+  let isClosed = false;
+
+  registerFixtureCleanup(
+    {after: (hook) => hooks.push(hook)},
+    'fixture',
+    () => ({
+      close: async () => {
+        calls.push('close');
+        await closed;
+        isClosed = true;
+      },
+    }),
+    async () => {
+      calls.push('remove');
+      assert.equal(isClosed, true, 'Removing files while the watcher is active');
+    },
+  );
+  const cleanup = (async () => {
+    for (const hook of hooks) await hook();
+  })();
+  const outcome = cleanup.then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+
+  try {
+    assert.deepEqual(calls, ['close']);
+  } finally {
+    releaseClose();
+    await outcome;
+  }
+
+  assert.equal(await outcome, undefined);
+  assert.deepEqual(calls, ['close', 'remove']);
+});
+
+test('the mixed-icon fixture preserves removal errors after closing the watcher', async () => {
+  const hooks: Array<() => void | Promise<void>> = [];
+  const failure = new Error('Cannot remove fixture');
+  let closed = false;
+
+  registerFixtureCleanup(
+    {after: (hook) => hooks.push(hook)},
+    'fixture',
+    () => ({
+      close: async () => {
+        closed = true;
+      },
+    }),
+    async () => {
+      throw failure;
+    },
+  );
+
+  await assert.rejects(
+    async () => {
+      for (const hook of hooks) await hook();
+    },
+    (error) => error === failure,
+  );
+  assert.equal(closed, true);
+});
+
 test('validate, build and development reject the same mixed composition and recover explicitly', async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-icon-admission-'));
-  t.after(() => rm(cwd, {recursive: true, force: true}));
+  let session: TileflowArtifactSession | undefined = undefined;
+  registerFixtureCleanup(t, cwd, () => session);
   await linkWorkspacePackages(cwd, ['core', 'maps']);
   await mkdir(join(cwd, 'icons'));
   await writeFile(
@@ -61,8 +132,7 @@ test('validate, build and development reject the same mixed composition and reco
       fields: `icons: [...streets.icons, './icons'], modules: {poi: poi({categories: ['medical'], placement: {coupleIconAndLabel: true}${bounded ? ", styles: {medical: {icon: {image: fixed('health', {reason: 'Chosen hospital icon'})}}}" : ''}})}`,
     });
   await writeFile(join(cwd, 'tileflow.config.ts'), config(false));
-  const session = await createTileflowArtifactSession({cwd, watch: true});
-  t.after(() => session.close());
+  session = await createTileflowArtifactSession({cwd, watch: true});
   const previous = await getInitialArtifacts(session);
   assert.ok(
     isTileflowArtifactInputPath(
@@ -117,6 +187,21 @@ test('validate, build and development reject the same mixed composition and reco
   const layer = style.layers.find((layer) => layer.id === 'tileflow-poi-medical');
   assert.equal((layer?.paint as Record<string, unknown>)['icon-color'], '#c43d35');
 });
+
+function registerFixtureCleanup(
+  context: {after: (hook: () => void | Promise<void>) => void},
+  cwd: string,
+  getSession: () => Pick<TileflowArtifactSession, 'close'> | undefined,
+  remove: typeof rm = rm,
+) {
+  context.after(async () => {
+    try {
+      await getSession()?.close();
+    } finally {
+      await remove(cwd, {recursive: true, force: true});
+    }
+  });
+}
 
 async function getInitialArtifacts(
   session: Pick<TileflowArtifactSession, 'getState' | 'getLastGoodArtifacts'>,

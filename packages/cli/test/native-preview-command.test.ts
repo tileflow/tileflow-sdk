@@ -270,17 +270,74 @@ test('default and explicit web preview lifecycle output remain compatible', asyn
   const cwd = await fixture('tileflow-web-preview-compat-');
   t.after(() => rm(cwd, {force: true, recursive: true}));
 
-  async function firstReady(renderer?: 'web') {
-    const port = await reservePort();
-    const running = startCli(cwd, [
-      'preview',
-      '--json',
-      ...(renderer ? ['--renderer', renderer] : []),
-      '--map',
-      'main',
-      '--port',
-      String(port),
-    ]);
+  assert.deepEqual(await firstWebPreviewReady(cwd, 'web'), await firstWebPreviewReady(cwd));
+});
+
+test('web preview awaits child shutdown when readiness fails', async () => {
+  const failure = new Error('Preview did not become ready');
+  let readyAttempted!: () => void;
+  const attempted = new Promise<void>((resolve) => {
+    readyAttempted = resolve;
+  });
+  let releaseStop!: () => void;
+  const stopped = new Promise<void>((resolve) => {
+    releaseStop = resolve;
+  });
+  let stopStarted = false;
+  let settled = false;
+  const running: ReturnType<typeof startCli> = {
+    completion: Promise.resolve({code: 1, stderr: ''}),
+    events: [],
+    requestStop: () => undefined,
+    stop: async () => {
+      stopStarted = true;
+      await stopped;
+    },
+    waitFor: async () => {
+      readyAttempted();
+      throw failure;
+    },
+  };
+  const outcome = firstWebPreviewReady('fixture', undefined, () => running).then(
+    () => {
+      settled = true;
+      return undefined;
+    },
+    (error: unknown) => {
+      settled = true;
+      return error;
+    },
+  );
+
+  try {
+    await attempted;
+    await Promise.resolve();
+    assert.equal(stopStarted, true);
+    assert.equal(settled, false);
+  } finally {
+    releaseStop();
+    await outcome;
+  }
+
+  assert.equal(await outcome, failure);
+});
+
+async function firstWebPreviewReady(
+  cwd: string,
+  renderer?: 'web',
+  startPreview: typeof startCli = startCli,
+) {
+  const port = await reservePort();
+  const running = startPreview(cwd, [
+    'preview',
+    '--json',
+    ...(renderer ? ['--renderer', renderer] : []),
+    '--map',
+    'main',
+    '--port',
+    String(port),
+  ]);
+  try {
     const ready = await running.waitFor((event) => event.event === 'ready');
     assert.equal(Object.hasOwn(ready, 'renderer'), false);
     assert.equal(Object.hasOwn(ready, 'profile'), false);
@@ -291,7 +348,7 @@ test('default and explicit web preview lifecycle output remain compatible', asyn
     const completion = await running.completion;
     assert.equal(completion.code, 0, completion.stderr);
     return ready;
+  } finally {
+    await running.stop();
   }
-
-  assert.deepEqual(await firstReady('web'), await firstReady());
-});
+}

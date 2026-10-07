@@ -26,6 +26,7 @@
     type TileflowRuntimeManifestMap,
   } from '@tileflow/core/runtime';
   import {
+    attachTileflowAtmosphere,
     attachTileflowFairUseNotice,
     attachTileflowMapLifecycle,
     createTileflowSessionStarter,
@@ -574,6 +575,7 @@
     });
 
     mapInstance = maplibreMap;
+    attachTileflowAtmosphere(maplibreMap);
     themeController =
       runtime.theme === undefined
         ? null

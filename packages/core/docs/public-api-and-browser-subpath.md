@@ -76,6 +76,7 @@ Framework adapters import the browser-only lifecycle kernel explicitly:
 
 ```ts
 import {
+  attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
   createTileflowSessionStarter,

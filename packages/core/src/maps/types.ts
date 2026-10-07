@@ -1,6 +1,8 @@
+import type {TileflowAtmosphere} from '../atmosphere';
 import type {TileflowCaptureScene} from '../capture-scene';
 import type {TileflowResolvedSemanticModuleOverrides} from '../cartography/domain-registry';
 import type {TileflowDataConfig} from '../data';
+import type {TileflowIconSource} from '../icon-set';
 import type {TileflowMarine} from '../marine';
 import type {
   TileflowHostedSourceCollection,
@@ -12,7 +14,6 @@ import {tileflowPortableIdSchema} from '../portable-identity';
 import type {TileflowTheme, TileflowThemeName} from '../themes';
 import type {TileflowProjection, TileflowTerrain, TileflowViewConfig} from '../types';
 import type {TileflowFontDirectory, TileflowGlyphs} from './assets';
-import type {TileflowIconSource} from '../icon-set';
 import type {TileflowAuthoringModules} from './operations';
 
 /** Portable, filesystem-safe identity shared by maps and their leaf-owned scenes. */
@@ -41,6 +42,8 @@ type TileflowMapTextAssets =
 
 /** Cartographic fields supported by the V1 semantic compiler. */
 export type TileflowMapDesign = TileflowMapTextAssets & {
+  /** Optional atmosphere for globe projection. False disables an inherited atmosphere. */
+  atmosphere?: TileflowAtmosphere;
   data?: TileflowDataConfig;
   /** Name used whenever a concrete theme is not explicitly requested. */
   defaultTheme?: TileflowThemeName;

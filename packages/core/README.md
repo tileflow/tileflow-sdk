@@ -67,7 +67,7 @@ Omitted fields inherit, but declaring a field does not imply a recursive merge:
   Spread the parent's list explicitly when composing contributors. Later contributors win for an
   exact icon ID.
 - `fonts` and `glyphs` are mutually exclusive text providers. Declaring either replaces the inherited
-  provider. `data`, `projection`, `terrain`, and `marine` are also atomic.
+  provider. `atmosphere`, `data`, `projection`, `terrain`, and `marine` are also atomic.
 
 Identity (`id`, `name`, `version`) and tooling `scenes` belong to the leaf map and do not inherit.
 Module object order does not determine rendering order. See the
@@ -222,6 +222,13 @@ tooling prepare browser resources; direct MapLibre integrations must register re
 before loading a style. See the
 [browser runtime contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/framework-browser-runtime.md).
 
+Set `projection: 'globe'` and `atmosphere: true` in `tileflow.config.ts` for a blue globe rim,
+space background, and stars. Use `atmosphere: false` to disable an inherited atmosphere, or an
+options object for theme-aware colors and bounded star brightness/motion. React, Vue, Svelte, and
+standalone capture apply the browser effect automatically. Direct MapLibre integrations call
+`attachTileflowAtmosphere(map)` from `@tileflow/core/browser`. See
+[globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md).
+
 A map with text must declare exactly one text provider. Streets, Ferraris, Härad, Soundings,
 and Blueprint use URL glyph providers. Baedeker and Siegfried use packaged Cormorant
 fonts; Cyberpunk and Matrix use packaged Oxanium fonts. Hosted deployment currently rejects
@@ -242,6 +249,7 @@ for exact options. Prefer the installed CLI's generated contracts when using a p
 These guides are also included in the installed package under `docs/`. They describe this source
 revision; prefer the installed copy when working with an older release.
 
+- [Globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md)
 - [Map and terrain examples](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-and-terrain-examples.md)
 - [Authoring model](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/authoring-model.md)
 - [Shared visual primitives](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/shared-visual-primitives.md)

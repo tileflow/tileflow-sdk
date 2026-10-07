@@ -5,9 +5,9 @@ import {dirname, join} from 'node:path';
 import type {Browser, BrowserContext} from 'playwright';
 import type {MapLibreStyle, NormalizedTileflowCaptureScene} from '@tileflow/core';
 import {getTileflowStyleFontFaces} from '@tileflow/core/runtime';
-import type {TileflowBuildAsset, TileflowLocalTilesetFile} from '@tileflow/dev/artifacts';
+import type {TileflowLocalTilesetFile} from '@tileflow/dev/artifacts';
 import {assertValidTileflowStyle, TileflowStyleValidationError} from '@tileflow/dev/validation';
-import {tileflowSyntheticAssetOrigin} from './assets';
+import {type TileflowCaptureAsset, tileflowSyntheticAssetOrigin} from './assets';
 import {
   TileflowCaptureError,
   type TileflowCapturePhase,
@@ -18,7 +18,7 @@ import {
 export {tileflowSyntheticAssetOrigin} from './assets';
 
 export type StandaloneTileflowCaptureInput = {
-  assets: TileflowBuildAsset[];
+  assets: TileflowCaptureAsset[];
   browser: Browser;
   localTilesets?: readonly TileflowLocalTilesetFile[];
   scene: NormalizedTileflowCaptureScene;
@@ -80,7 +80,7 @@ export async function captureStandaloneTileflowScene(
 
   const timeoutMs = input.timeoutMs ?? 30_000;
   const mapLibreRuntimeUrls = createMapLibreRuntimeUrls(
-    resolveMapLibreRuntimeDocumentOrigin(input.style, input.assets),
+    resolveMapLibreRuntimeDocumentOrigin(input.style),
   );
   let termination: 'aborted' | 'timeout' | undefined;
   let context: BrowserContext | undefined;
@@ -123,6 +123,9 @@ export async function captureStandaloneTileflowScene(
     timeout.unref?.();
 
     const assets = new Map(input.assets.map((asset) => [asset.fileName, asset]));
+    const frozenResources = new Map(
+      input.assets.filter((asset) => asset.url !== undefined).map((asset) => [asset.url!, asset]),
+    );
     const localTilesets = new Map(
       (input.localTilesets ?? []).map((tileset) => [tileset.fileName, tileset]),
     );
@@ -142,6 +145,20 @@ export async function captureStandaloneTileflowScene(
 
     await context.route('**/*', async (route) => {
       const url = new URL(route.request().url());
+      const frozenResource = frozenResources.get(url.toString());
+
+      if (frozenResource) {
+        await route.fulfill({
+          body:
+            typeof frozenResource.source === 'string'
+              ? frozenResource.source
+              : Buffer.from(frozenResource.source),
+          contentType: frozenResource.contentType,
+          headers: {'Access-Control-Allow-Origin': '*'},
+          status: 200,
+        });
+        return;
+      }
 
       if (url.origin === mapLibreRuntimeUrls.origin) {
         const runtime = getMapLibreRuntimeResponse(url.pathname, input.scene.viewport);
@@ -347,10 +364,7 @@ function createMapLibreRuntimeUrls(origin: string) {
   });
 }
 
-function resolveMapLibreRuntimeDocumentOrigin(
-  style: MapLibreStyle,
-  assets: readonly TileflowBuildAsset[],
-): string {
+function resolveMapLibreRuntimeDocumentOrigin(style: MapLibreStyle): string {
   const origins = new Set<string>();
   const loopbackOrigins = new Set<string>();
   const addOrigin = (value: unknown) => {
@@ -397,27 +411,6 @@ function resolveMapLibreRuntimeDocumentOrigin(
     }
     if (Array.isArray(candidate.urls)) {
       for (const url of candidate.urls) addOrigin(url);
-    }
-
-    // Frozen TileJSON keeps its tile origins inside the asset rather than inline in the style.
-    if (typeof candidate.url === 'string') {
-      const asset = assets.find(
-        (entry) => `${tileflowSyntheticAssetOrigin}/${entry.fileName}` === candidate.url,
-      );
-      if (asset?.contentType === 'application/json') {
-        try {
-          const tileJson = JSON.parse(
-            typeof asset.source === 'string'
-              ? asset.source
-              : new TextDecoder().decode(asset.source),
-          ) as {tiles?: unknown};
-          if (Array.isArray(tileJson.tiles)) {
-            for (const tile of tileJson.tiles) addOrigin(tile);
-          }
-        } catch {
-          // The browser reports an invalid asset as a resource failure.
-        }
-      }
     }
   }
 
@@ -763,8 +756,10 @@ window.__tileflowCaptureLoad = async function(input) {
     await loadTileflowFontFaces(input.fontFaces || []);
     window.__tileflowRegisterContourProtocol?.({addProtocol: window.maplibregl.addProtocol});
     window.__tileflowRegisterPmtilesProtocol?.({addProtocol: window.maplibregl.addProtocol});
+    const data = input.style.metadata?.["tileflow:data"];
+    const worldSourceId = data?.kind === "tileflow-world" ? data.sourceId : undefined;
     window.__tileflowCaptureLoopbackSourceIds = Object.entries(input.style.sources || {})
-      .filter(([, source]) => isLoopbackSourceUrl(source?.url))
+      .filter(([sourceId, source]) => sourceId !== worldSourceId && isLoopbackSourceUrl(source?.url))
       .map(([sourceId]) => sourceId);
     const map = new window.maplibregl.Map({
       attributionControl: false,

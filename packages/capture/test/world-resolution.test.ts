@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {MapLibreStyle} from '@tileflow/core';
-import {tileflowSyntheticAssetOrigin} from '../src/assets';
 import {
   resolveTileflowCaptureWorldTileJson,
   TileflowCaptureError,
@@ -41,10 +40,7 @@ test('resolves current once and reuses one exact World identity across scenes an
     const asset = prepared.assets?.[0];
     assert.ok(asset);
     assert.equal(asset.contentType, 'application/json');
-    assert.equal(
-      prepared.style.sources.tileflow!.url,
-      `${tileflowSyntheticAssetOrigin}/${asset.fileName}`,
-    );
+    assert.equal(prepared.style.sources.tileflow!.url, asset.url);
     assert.deepEqual(JSON.parse(String(asset.source)), exactTileJson());
   }
   assert.deepEqual(first.assets, retry.assets);
@@ -82,7 +78,7 @@ test('preserves complete TileJSON metadata and native source-option precedence w
   const {tiles: _tiles, ...expectedSource} = original.sources.tileflow!;
   assert.deepEqual(prepared.style.sources.tileflow, {
     ...expectedSource,
-    url: `${tileflowSyntheticAssetOrigin}/${asset.fileName}`,
+    url: asset.url,
   });
   assert.deepEqual(style, original);
 });
@@ -94,6 +90,17 @@ test('retains validated TileJSON response bytes without reserializing metadata',
   });
 
   assert.equal(resolution.tileJson, body);
+});
+
+test('keeps prepared World styles portable through an exact public TileJSON selector', async () => {
+  const world = new TileflowCaptureWorldSession(async () => jsonResponse(exactTileJson()));
+  const prepared = await world.prepare(currentStyle('portable'));
+  const url = new URL(String(prepared.style.sources.tileflow!.url));
+
+  assert.equal(url.origin, new URL(tileflowWorldCurrentTileJsonUrl).origin);
+  assert.equal(url.pathname, new URL(tileflowWorldCurrentTileJsonUrl).pathname);
+  assert.equal(url.searchParams.get('worldReleaseId'), releaseId);
+  assert.equal(url.searchParams.get('worldDescriptorSha256'), descriptorSha256);
 });
 
 test('freezes resolved TileJSON against caller mutation and later metadata changes', async () => {

@@ -12,6 +12,8 @@ import {
 } from './runtime';
 import type {MapLibreStyle} from './types';
 
+export {attachTileflowAtmosphere, type TileflowAtmosphereMap} from './atmosphere-browser';
+
 export * from './fair-use-browser';
 export {
   registerTileflowContourProtocol,

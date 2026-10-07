@@ -1,3 +1,4 @@
+export type {TileflowAtmosphere, TileflowAtmosphereOptions} from './atmosphere';
 export {createStyle, createStyleResult, parseTileflowMap, validateTileflowMap} from './map';
 export {
   validateTileflowCompiledIconCapabilities,

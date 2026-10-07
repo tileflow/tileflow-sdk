@@ -430,6 +430,7 @@ export type TileflowLight = {
   position?: readonly [number, number, number];
 };
 export type MapLibreStyle = {
+  sky?: Record<string, unknown>;
   version: 8;
   name: string;
   glyphs?: string;

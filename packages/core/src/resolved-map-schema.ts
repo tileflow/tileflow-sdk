@@ -1,3 +1,4 @@
+import {Color} from '@maplibre/maplibre-gl-style-spec';
 import {z} from 'zod';
 import {
   tileflowRenderStackOperationNamePattern,
@@ -2017,6 +2018,28 @@ const terrainSchema = z.union([
     })
     .strict(),
 ]);
+const atmosphereColorLiteralSchema = z
+  .string()
+  .refine((value) => Color.parse(value)?.a === 1, 'Expected an opaque color');
+const atmosphereColorSchema = z.union([
+  atmosphereColorLiteralSchema,
+  fixedStringSchema.extend({value: atmosphereColorLiteralSchema}),
+  themeTokenReferenceSchema.extend({category: z.literal('color')}),
+  themeColorOperationSchema,
+]);
+const atmosphereSchema = z.union([
+  z.boolean(),
+  z
+    .object({
+      skyColor: atmosphereColorSchema.optional(),
+      horizonColor: atmosphereColorSchema.optional(),
+      fogColor: atmosphereColorSchema.optional(),
+      spaceColor: atmosphereColorSchema.optional(),
+      starIntensity: z.number().finite().min(0).max(1).optional(),
+      starParallax: z.number().finite().min(0).max(1).optional(),
+    })
+    .strict(),
+]);
 const viewSchema = z
   .object({
     bearing: z.number().finite().min(-180).max(180).optional(),
@@ -2060,6 +2083,7 @@ const systemThemesSchema = z
 
 export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
   .object({
+    atmosphere: atmosphereSchema.optional(),
     data: dataSchema.optional(),
     defaultTheme: tileflowThemeNameSchema,
     fonts: fontDirectoriesSchema.optional(),
@@ -2085,6 +2109,13 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
         code: 'custom',
         message: 'Expected either fonts or glyphs, not both',
         path: ['fonts'],
+      });
+    }
+    if (map.atmosphere && map.projection !== 'globe') {
+      context.addIssue({
+        code: 'custom',
+        message: 'Atmosphere requires globe projection',
+        path: ['atmosphere'],
       });
     }
     if (!Object.hasOwn(map.themes, map.defaultTheme)) {

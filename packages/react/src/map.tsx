@@ -22,6 +22,7 @@ import type {
   StyleSpecification,
 } from 'maplibre-gl';
 import {
+  attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
   createTileflowSessionStarter,
@@ -783,6 +784,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         mapRef.current = map;
         setupResources.map = map;
         registerCleanup(() => map.remove());
+        registerCleanup(attachTileflowAtmosphere(map));
         const themeController =
           initialRuntimeStyle.theme === undefined
             ? undefined

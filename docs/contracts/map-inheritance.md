@@ -26,7 +26,8 @@ Each public field has one explicit merge rule:
   `defaultTheme` may independently select one inherited concrete theme, and an explicit
   `systemThemes` replaces the complete light/dark mapping. Every resolved selector must name a
   member of the final collection.
-- `data`, `projection`, and `terrain` replace atomically when declared.
+- `atmosphere`, `data`, `projection`, and `terrain` replace atomically when declared.
+  Enabled atmosphere requires globe projection; `false` disables an inherited atmosphere.
 - `modules` merges by domain name. Declaring `roads(...)`, for example, replaces that inherited
   module request and every compiler-owned contribution belonging to roads. Omitted domains remain
   inherited; `disable()` removes a domain and its complete owner-local render stack.

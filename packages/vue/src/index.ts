@@ -28,6 +28,7 @@ import {
   watchEffect,
 } from 'vue';
 import {
+  attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
   createTileflowSessionStarter,
@@ -852,6 +853,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       });
 
       mapRef.value = map;
+      attachTileflowAtmosphere(map);
       themeController =
         runtime.theme === undefined
           ? null

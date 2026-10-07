@@ -104,6 +104,7 @@ test('imports the packaged browser entry without reading browser globals', async
     }
     const entry = await import('@tileflow/core/browser');
     if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
+    if (typeof entry.attachTileflowAtmosphere !== 'function') process.exit(3);
   `;
 
   const {stderr, stdout} = await execFileAsync(

@@ -1,4 +1,6 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
+import {tileflowAtmosphereMetadataKey} from '../atmosphere';
+import {compileTileflowSky, resolveTileflowAtmosphere} from '../atmosphere-compile';
 import {resolveTileflowData} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
@@ -487,7 +489,9 @@ function compileSemanticStyleInternal(
     }),
   );
 
+  const atmosphere = resolveTileflowAtmosphere(config.atmosphere);
   const style: MapLibreStyle = {
+    ...(atmosphere ? {sky: compileTileflowSky(atmosphere)} : {}),
     version: 8,
     name: config.name ?? 'Streets',
     ...(glyphs ? {glyphs} : {}),
@@ -511,6 +515,7 @@ function compileSemanticStyleInternal(
               : {}),
           }
         : {}),
+      ...(atmosphere ? {[tileflowAtmosphereMetadataKey]: {version: 1, ...atmosphere}} : {}),
       'tileflow:theme': selected.name,
       'tileflow:colorScheme': resolvedTheme.colorScheme,
       'tileflow:data': data.identity,

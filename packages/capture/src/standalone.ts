@@ -47,7 +47,8 @@ const tileflowBrowserModule = `${readFileSync(
   join(dirname(tileflowCorePackagePath), 'dist', 'browser.js'),
   'utf8',
 )}\nglobalThis.__tileflowRegisterContourProtocol = registerTileflowContourProtocol;
-globalThis.__tileflowRegisterPmtilesProtocol = registerTileflowPmtilesProtocol;`;
+globalThis.__tileflowRegisterPmtilesProtocol = registerTileflowPmtilesProtocol;
+globalThis.__tileflowAttachAtmosphere = attachTileflowAtmosphere;`;
 
 type PagePhaseResult =
   | {status: 'ok'}
@@ -769,6 +770,7 @@ window.__tileflowCaptureLoad = async function(input) {
       style: input.style
     });
     window.__tileflowMap = map;
+    window.__tileflowAttachAtmosphere(map);
     return await waitForMapEvent(map, "load", input.mapEventTimeoutMs);
   } catch (error) {
     return {status: "failed", reason: "error", message: String(error?.message || error || "")};

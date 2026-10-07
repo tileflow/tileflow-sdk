@@ -22,8 +22,8 @@ session sending when tests need a fake, a commercial session controller when hos
 authorization, and marker construction/attachment/removal adapters.
 Browser globals may therefore be used only by an adapter after its framework has mounted.
 
-The browser entry contains lifecycle mechanics, not map ownership. It does not create MapLibre
-maps or controls, inspect DOM, create observers, load manifests, resolve styles or static images,
+The browser entry contains lifecycle mechanics and optional map decorations, not map ownership.
+It does not create MapLibre maps or controls, create observers, load manifests, resolve styles or static images,
 or choose when a framework should recreate a map.
 
 ## Delivery source boundary
@@ -143,6 +143,28 @@ Standalone capture applies the same metadata before constructing its page-local 
 bounds streamed font bytes. Native renderers do not use this browser contract and require a PBF
 glyph provider. Hosted deploy rejects package-owned web fonts before authentication until managed
 font storage has durable ownership, quota, references, retention, and deletion.
+
+## Globe atmosphere
+
+Map authoring owns optional `atmosphere` alongside `projection`. Enabled atmosphere requires globe
+projection and compiles to native `sky` plus `metadata['tileflow:atmosphere']` version 1. The
+metadata contains four normalized opaque hexadecimal colors (`skyColor`, `horizonColor`, `fogColor`,
+`spaceColor`) and bounded 0–1 `starIntensity` and `starParallax` values. Omission preserves prior
+behavior; false disables an inherited atmosphere; an options object replaces inherited options.
+
+`attachTileflowAtmosphere(map)` owns only an accessibility-hidden canvas inside the existing map
+container and a supplementary filter on its map canvas. Like the fair-use notice, this is an
+explicit DOM-owning browser helper; it reads no browser globals during import. React, Vue, Svelte,
+and standalone capture attach it once per map. Direct integrations can call it explicitly.
+
+The helper reads the current style on attachment and `style.load`, removes the effect for absent or
+invalid metadata or non-globe styles, coalesces move/resize events into one animation frame, and
+honors reduced motion. There is no idle animation loop. Space and stars fade between zooms 3–6;
+native sky scattering fades by zoom 7. Disposal cancels pending work, removes the canvas and event
+listeners, and restores the previous filter. A map `remove` event also disposes the helper.
+
+The native profile continues to reject `sky`. The capability does not change hosted Static Maps
+or native support. See Core's globe atmosphere guide for defaults and authoring examples.
 
 ## Session starts
 

@@ -198,7 +198,10 @@ query strings, response bodies, raw browser stacks, or DOM contents.
 New receipts use schema version 4. Version-2 and version-3 receipts remain readable as historical
 evidence, not as newly verified version-4 captures. Import `@tileflow/capture/receipt` for receipt-only
 tooling without loading the capture runtime. World selectors resolve once per capture session to
-an immutable release. Remote-dependent rendering is not a guarantee of globally identical pixels
+an immutable release. Capture retains the complete resolved TileJSON, including its zoom range,
+bounds, attribution and vector-layer metadata. Above the data's maximum zoom, MapLibre enlarges
+available tiles while preserving the scene camera. Retries reuse the same frozen metadata.
+Remote-dependent rendering is not a guarantee of globally identical pixels
 across platforms or future runs.
 
 Read the [capture contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/local-visual-capture.md)

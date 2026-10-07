@@ -252,10 +252,19 @@ Schema-v4 World data is always exact. Capture resolves a logical current or exac
 once for the lifetime of its session. The TileJSON must return one immutable tile template and the
 strict `tileflow.world` identity: `product: "world-v1"`, `releaseId`, `descriptorSha256`,
 `archiveSha256`, `dataContractSha256`, and `contractSha256`. Capture cross-checks the release and
-descriptor against the tile template, rewrites every standalone scene to that exact template, and
-reuses the same result for retries. It never derives these identifiers from a mutable URL. A second
+descriptor against the tile template and serves the complete resolved TileJSON as an immutable,
+content-addressed asset through its existing browser route. The pinned MapLibre loader retains
+zoom limits, bounds, scheme, attribution and vector-layer metadata, with explicit style source
+options retaining their native precedence. The scene camera is unchanged: above the advertised
+maximum, MapLibre renders the highest available tiles instead of requesting nonexistent levels.
+Every scene and retry reuses the same frozen TileJSON without another upstream lookup. Required
+resource and source-layer failures remain errors. Capture never derives these identifiers from a mutable URL. A second
 selector or a missing/conflicting identity fails closed. Schema-v2 `generation` and `revision`
 remain legacy baseline fields only and are not confused with the v3 contract.
+
+The prepared style hash includes the frozen TileJSON asset identity. Changed source metadata can
+therefore require baseline review even when the resulting pixels match. Capture never approves or
+replaces a baseline automatically.
 
 ## Visual comparison and baselines
 

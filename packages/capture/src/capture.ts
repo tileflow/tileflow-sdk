@@ -250,7 +250,7 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
               timeoutMs: this.#options.timeoutMs,
             })
           : await captureStandaloneTileflowScene({
-              assets: artifacts.assets,
+              assets: [...artifacts.assets, ...(prepared.assets ?? [])],
               browser,
               ...(artifacts.localTilesets ? {localTilesets: artifacts.localTilesets} : {}),
               scene,

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {MapLibreStyle} from '@tileflow/core';
+import {tileflowSyntheticAssetOrigin} from '../src/assets';
 import {
   resolveTileflowCaptureWorldTileJson,
   TileflowCaptureError,
@@ -36,9 +37,111 @@ test('resolves current once and reuses one exact World identity across scenes an
     assert.equal(first.data.descriptorSha256, descriptorSha256);
   }
   for (const prepared of [first, second, retry]) {
-    assert.equal('url' in prepared.style.sources.tileflow!, false);
-    assert.deepEqual(prepared.style.sources.tileflow!.tiles, [exactTileTemplate()]);
+    assert.equal('tiles' in prepared.style.sources.tileflow!, false);
+    const asset = prepared.assets?.[0];
+    assert.ok(asset);
+    assert.equal(asset.contentType, 'application/json');
+    assert.equal(
+      prepared.style.sources.tileflow!.url,
+      `${tileflowSyntheticAssetOrigin}/${asset.fileName}`,
+    );
+    assert.deepEqual(JSON.parse(String(asset.source)), exactTileJson());
   }
+  assert.deepEqual(first.assets, retry.assets);
+});
+
+test('preserves complete TileJSON metadata and native source-option precedence without mutation', async () => {
+  const tileJson = {
+    ...exactTileJson(),
+    minzoom: 2,
+    maxzoom: 12,
+    bounds: [-10, -20, 30, 40],
+    scheme: 'tms',
+    attribution: 'World metadata fixture',
+    vector_layers: [{id: 'water', fields: {class: 'String'}, minzoom: 2, maxzoom: 12}],
+    encoding: 'mvt',
+    description: 'Complete source metadata',
+  };
+  const world = new TileflowCaptureWorldSession(async () => jsonResponse(tileJson));
+  const style = currentStyle('overrides');
+  Object.assign(style.sources.tileflow!, {
+    minzoom: 3,
+    maxzoom: 10,
+    bounds: [-5, -10, 20, 30],
+    scheme: 'xyz',
+    attribution: 'Explicit attribution',
+    promoteId: 'id',
+    tiles: ['https://example.test/unverified/{z}/{x}/{y}.pbf'],
+  });
+  const original = structuredClone(style);
+  const prepared = await world.prepare(style);
+  const asset = prepared.assets?.[0];
+  assert.ok(asset);
+
+  assert.deepEqual(JSON.parse(String(asset.source)), tileJson);
+  const {tiles: _tiles, ...expectedSource} = original.sources.tileflow!;
+  assert.deepEqual(prepared.style.sources.tileflow, {
+    ...expectedSource,
+    url: `${tileflowSyntheticAssetOrigin}/${asset.fileName}`,
+  });
+  assert.deepEqual(style, original);
+});
+
+test('retains validated TileJSON response bytes without reserializing metadata', async () => {
+  const body = JSON.stringify({...exactTileJson(), maxzoom: 15}, null, 2);
+  const resolution = await resolveTileflowCaptureWorldTileJson(tileflowWorldCurrentTileJsonUrl, {
+    fetchTileJson: async () => ({ok: true, status: 200, text: async () => body}),
+  });
+
+  assert.equal(resolution.tileJson, body);
+});
+
+test('freezes resolved TileJSON against caller mutation and later metadata changes', async () => {
+  let tileJson: Record<string, unknown> = {...exactTileJson(), maxzoom: 12};
+  let requests = 0;
+  const world = new TileflowCaptureWorldSession(async () => {
+    requests += 1;
+    return jsonResponse(tileJson);
+  });
+  const first = await world.prepare(currentStyle('first'));
+  const originalUrl = first.style.sources.tileflow!.url;
+  const originalBody = first.assets?.[0]?.source;
+  assert.ok(originalBody);
+
+  first.assets![0]!.source = '{}';
+  first.style.sources.tileflow!.url = 'https://example.test/changed.json';
+  tileJson = {...exactTileJson(), maxzoom: 15};
+  const retry = await world.prepare(currentStyle('retry'));
+
+  assert.equal(requests, 1);
+  assert.equal(retry.style.sources.tileflow!.url, originalUrl);
+  assert.equal(retry.assets?.[0]?.source, originalBody);
+  assert.equal(JSON.parse(String(retry.assets?.[0]?.source)).maxzoom, 12);
+});
+
+test('retains a failed resolution without discovering a different release on retry', async () => {
+  let requests = 0;
+  const world = new TileflowCaptureWorldSession(async () => {
+    requests += 1;
+    return {ok: false, status: 503, text: async () => ''};
+  });
+
+  for (let retry = 0; retry < 2; retry += 1) {
+    await assert.rejects(world.prepare(currentStyle('failed')), /TileJSON returned HTTP 503/);
+  }
+  assert.equal(requests, 1);
+});
+
+test('leaves non-World sources unchanged without discovery or synthetic resources', async () => {
+  const world = new TileflowCaptureWorldSession(async () => {
+    assert.fail('Non-World capture must not discover World');
+  });
+  const style = currentStyle('vector');
+  style.metadata = {'tileflow:data': {kind: 'vector-tiles'}};
+  const prepared = await world.prepare(style);
+
+  assert.equal(prepared.style, style);
+  assert.equal(prepared.assets, undefined);
 });
 
 test('uses an exact TileJSON selection without replacing it with current', async () => {

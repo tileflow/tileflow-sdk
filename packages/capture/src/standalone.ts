@@ -7,6 +7,7 @@ import type {MapLibreStyle, NormalizedTileflowCaptureScene} from '@tileflow/core
 import {getTileflowStyleFontFaces} from '@tileflow/core/runtime';
 import type {TileflowBuildAsset, TileflowLocalTilesetFile} from '@tileflow/dev/artifacts';
 import {assertValidTileflowStyle, TileflowStyleValidationError} from '@tileflow/dev/validation';
+import {tileflowSyntheticAssetOrigin} from './assets';
 import {
   TileflowCaptureError,
   type TileflowCapturePhase,
@@ -14,7 +15,7 @@ import {
   type TileflowCaptureResourceKind,
 } from './errors';
 
-export const tileflowSyntheticAssetOrigin = 'https://tileflow.local.invalid';
+export {tileflowSyntheticAssetOrigin} from './assets';
 
 export type StandaloneTileflowCaptureInput = {
   assets: TileflowBuildAsset[];
@@ -79,7 +80,7 @@ export async function captureStandaloneTileflowScene(
 
   const timeoutMs = input.timeoutMs ?? 30_000;
   const mapLibreRuntimeUrls = createMapLibreRuntimeUrls(
-    resolveMapLibreRuntimeDocumentOrigin(input.style),
+    resolveMapLibreRuntimeDocumentOrigin(input.style, input.assets),
   );
   let termination: 'aborted' | 'timeout' | undefined;
   let context: BrowserContext | undefined;
@@ -346,7 +347,10 @@ function createMapLibreRuntimeUrls(origin: string) {
   });
 }
 
-function resolveMapLibreRuntimeDocumentOrigin(style: MapLibreStyle): string {
+function resolveMapLibreRuntimeDocumentOrigin(
+  style: MapLibreStyle,
+  assets: readonly TileflowBuildAsset[],
+): string {
   const origins = new Set<string>();
   const loopbackOrigins = new Set<string>();
   const addOrigin = (value: unknown) => {
@@ -393,6 +397,27 @@ function resolveMapLibreRuntimeDocumentOrigin(style: MapLibreStyle): string {
     }
     if (Array.isArray(candidate.urls)) {
       for (const url of candidate.urls) addOrigin(url);
+    }
+
+    // Frozen TileJSON keeps its tile origins inside the asset rather than inline in the style.
+    if (typeof candidate.url === 'string') {
+      const asset = assets.find(
+        (entry) => `${tileflowSyntheticAssetOrigin}/${entry.fileName}` === candidate.url,
+      );
+      if (asset?.contentType === 'application/json') {
+        try {
+          const tileJson = JSON.parse(
+            typeof asset.source === 'string'
+              ? asset.source
+              : new TextDecoder().decode(asset.source),
+          ) as {tiles?: unknown};
+          if (Array.isArray(tileJson.tiles)) {
+            for (const tile of tileJson.tiles) addOrigin(tile);
+          }
+        } catch {
+          // The browser reports an invalid asset as a resource failure.
+        }
+      }
     }
   }
 

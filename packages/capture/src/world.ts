@@ -1,8 +1,11 @@
+import {createHash} from 'node:crypto';
 import {
   isTileflowWorldReleaseId,
   type MapLibreStyle,
   tileflowWorldTileJsonUrl,
 } from '@tileflow/core';
+import type {TileflowBuildAsset} from '@tileflow/dev/artifacts';
+import {tileflowSyntheticAssetOrigin} from './assets';
 import {TileflowCaptureError} from './errors';
 import type {
   TileflowCaptureDataInput,
@@ -25,10 +28,12 @@ export type TileflowCaptureResolvedWorldV1 = Readonly<{
     'kind' | 'schema' | 'schemaVersion' | 'semantics' | 'sourceId'
   >;
   tileJsonUrl: string;
+  tileJson: string;
   tiles: readonly [string];
 }>;
 
 export type PreparedTileflowCaptureStyle = Readonly<{
+  assets?: TileflowBuildAsset[];
   data: TileflowCaptureDataInput;
   style: MapLibreStyle;
 }>;
@@ -65,13 +70,17 @@ export class TileflowCaptureWorldSession {
       sourceId: requireLiteral(metadata.sourceId, 'tileflow', 'sourceId'),
     };
     const {tiles: _mutableTiles, url: _mutableUrl, ...sourceWithoutSelector} = source;
+    const tileJsonSha256 = createHash('sha256').update(resolution.tileJson).digest('hex');
+    const fileName = `capture/world/${tileJsonSha256}.json`;
+
     return {
+      assets: [{contentType: 'application/json', fileName, source: resolution.tileJson}],
       data,
       style: {
         ...style,
         sources: {
           ...style.sources,
-          tileflow: {...sourceWithoutSelector, tiles: [...resolution.tiles]},
+          tileflow: {...sourceWithoutSelector, url: `${tileflowSyntheticAssetOrigin}/${fileName}`},
         },
       },
     };
@@ -172,6 +181,7 @@ export async function resolveTileflowCaptureWorldTileJson(
       releaseId,
     },
     tileJsonUrl: normalizedUrl,
+    tileJson: text,
     tiles: [tileTemplate],
   };
 }

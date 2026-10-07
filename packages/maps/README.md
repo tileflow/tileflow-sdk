@@ -120,7 +120,8 @@ Baedeker and Siegfried also export `baedekerFonts` and `siegfriedFonts` for thei
 Garamond faces. Cyberpunk and Matrix export `cyberpunkFonts` and `matrixFonts` for Oxanium.
 Cívica exports `civicaFonts` for DM Serif Text, Barlow Semi Condensed, and Noto Sans fallback.
 Super Tile World exports `superTileWorldFonts` for Pixelify Sans, Tile World Arcade, and Noto Sans fallback.
-Streets, Ferraris, Härad, Soundings, and Blueprint declare Noto Sans URL glyph providers.
+Streets, Ferraris, Härad, Soundings, and Blueprint declare Noto Sans URL glyph providers
+from one immutable Hosted base-asset set, versioned independently of World data.
 
 Omitting `icons` inherits the parent's directory list. Declaring a list replaces it; `[]` removes
 all icon directories. Compose explicitly when adding application icons:

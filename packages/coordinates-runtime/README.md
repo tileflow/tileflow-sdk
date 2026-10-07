@@ -130,5 +130,8 @@ an offline DMG into the cache and while staging its payload. A verified remote D
 quarantine metadata is marked through Foundation before it is mounted. This does not require Xcode,
 Python, Docker, or a separate runtime helper.
 
+Busy DMG detachment is retried once for the same image device within the existing two-second cleanup
+budget. Other detach failures, uncertain image identity, or an exhausted budget fail provisioning.
+
 Successful provisioning does not prove public Gatekeeper, signing, notarization, or offline
 acceptance. Validate those properties separately on a clean macOS environment before distribution.

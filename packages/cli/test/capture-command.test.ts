@@ -470,7 +470,10 @@ test('init creates a singular map and only creates a missing ignore file', async
   const style = JSON.parse(
     await readFile(join(fresh, 'dist/tileflow/styles/madrid/light.json'), 'utf8'),
   ) as {glyphs?: string};
-  assert.equal(style.glyphs, 'https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf');
+  assert.equal(
+    style.glyphs,
+    'https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf',
+  );
 
   const existing = await createDirectoryFixture(t, 'tileflow-capture-init-existing-ignore-');
   await writeFile(join(existing, '.gitignore'), 'owned-by-user\n');

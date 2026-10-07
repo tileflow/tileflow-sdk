@@ -229,11 +229,7 @@ function texture(
   });
 }
 
-const buildingTone = expr.coalesce(
-  expr.get(field('buildingTone')),
-  expr.get(field('buildingKind')),
-  'generic',
-);
+const buildingTone = expr.coalesce(expr.get(field('buildingTone')), 'generic');
 // Semantic destination/civic classification supplies the red plate. Height alone
 // never turns an ordinary office tower into a landmark.
 const buildingColor = expr.match(

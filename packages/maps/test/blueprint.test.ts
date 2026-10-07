@@ -71,7 +71,7 @@ test('Blueprint is a frozen standalone blueprint with its exact view and provide
   assert.deepEqual(resolved.glyphs, {
     fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
     kind: 'url',
-    url: 'https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf',
+    url: 'https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf',
   });
   assert.equal(resolved.defaultTheme, 'blueprint');
   assert.equal(resolved.themes.blueprint.id, 'san-francisto-blueprint');
@@ -110,7 +110,10 @@ test('Blueprint compiles to a valid self-contained MapLibre style', () => {
   assert.equal(style.metadata?.['tileflow:theme'], 'blueprint');
   assert.equal(style.metadata?.['tileflow:colorScheme'], 'dark');
   assert.equal(style.sprite, '/tileflow/icons/san-francisto/sprite');
-  assert.equal(style.glyphs, 'https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf');
+  assert.equal(
+    style.glyphs,
+    'https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf',
+  );
   assert.deepEqual(validateStyleMin(style as never), []);
 });
 
@@ -159,7 +162,6 @@ test('Blueprint preserves its technical render targets, ordering, and pattern vo
     'buildings.render.footprintHatch',
     'buildings.render.measuredEdge',
     'buildings.render.prominentOutline',
-    'buildings.render.buildingAnnotations',
     'buildings.render.heightAnnotations',
     'land.render.landscapeHatch',
     'land.render.parkHatch',
@@ -179,7 +181,6 @@ test('Blueprint preserves its technical render targets, ordering, and pattern vo
     'buildings.flat.outline',
     'buildings.render.measuredEdge',
     'buildings.render.prominentOutline',
-    'buildings.render.buildingAnnotations',
     'buildings.render.heightAnnotations',
   ]);
   assertOrdered(compiled, [
@@ -483,15 +484,19 @@ test('Blueprint keeps technical overlays honest and inside canonical data contra
     );
   }
 
-  assert.equal(matches(heightAnnotations, 3, {height: 24, importance_tier: 2}), true);
-  assert.equal(matches(heightAnnotations, 3, {height: 23, importance_tier: 2}), false);
-  assert.equal(matches(heightAnnotations, 3, {building_tone: 'destination', height: 24}), true);
-  assert.equal(matches(heightAnnotations, 3, {height: 100, render_height: 100}), false);
+  assert.equal(matches(heightAnnotations, 3, {render_height: 24, importance_tier: 2}), true);
+  assert.equal(matches(heightAnnotations, 3, {render_height: 23, importance_tier: 2}), false);
+  assert.equal(
+    matches(heightAnnotations, 3, {building_tone: 'destination', render_height: 24}),
+    true,
+  );
+  assert.equal(matches(heightAnnotations, 3, {height: 100, importance_tier: 2}), false);
+  assert.equal(matches(heightAnnotations, 3, {render_height: 100, importance_tier: 2}), true);
   assert.equal(matches(heightAnnotations, 3, {render_height: 100}), false);
   assert.deepEqual(heightAnnotations.layout?.['text-field'], [
     'concat',
     'H ≈ ',
-    ['to-string', ['to-number', ['get', 'height'], 0]],
+    ['to-string', ['to-number', ['get', 'render_height'], 0]],
     ' M',
   ]);
 });

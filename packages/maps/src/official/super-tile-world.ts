@@ -271,11 +271,7 @@ const featuredCategories: readonly string[] = [
   'transport',
 ];
 
-const tone = expr.coalesce(
-  expr.get(field('buildingTone')),
-  expr.get(field('buildingKind')),
-  'generic',
-);
+const tone = expr.coalesce(expr.get(field('buildingTone')), 'generic');
 const roofColor = expr.match(
   tone,
   [

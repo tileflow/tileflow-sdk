@@ -121,12 +121,12 @@ another. Browser adapters load local faces before MapLibre. Native releases use 
 `fontStacks`.
 
 Streets, Ferraris, Härad, Soundings, and Blueprint each declare
-`https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf` with the exact `Noto Sans Regular` and
-`Noto Sans Bold` stacks. That compatibility URL is canonical but not content-addressed; responses revalidate and
-do not make a resolved map byte-reproducible. Exact official glyph identity belongs to the
-separately published `/base/<assetSetSha256>/glyphs/...` global base-asset contract. In that URL,
-`assetSetSha256` identifies the standalone glyph collection; it is not the same-domain value as the
-per-map `assetSetSha256` in `build-manifest.json`.
+`https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf`
+with the exact `Noto Sans Regular` and `Noto Sans Bold` stacks. The full hash identifies one
+published, immutable glyph collection independent of World data. The older `/fonts/...` endpoint
+remains a mutable compatibility URL and does not make a resolved map byte-reproducible. The global
+glyph `assetSetSha256` is not the same-domain value as the per-map `assetSetSha256` in
+`build-manifest.json`.
 Cyberpunk and Matrix each replace the URL provider with their own packaged Oxanium directory and
 reference the exact local faces `Oxanium Medium` and `Oxanium SemiBold`. Baedeker and Siegfried
 each own a packaged directory containing Cormorant Garamond Regular, SemiBold, and Italic.

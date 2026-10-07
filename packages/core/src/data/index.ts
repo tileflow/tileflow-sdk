@@ -389,7 +389,10 @@ const canonicalFields = {
   toll: 'toll',
 } as const satisfies OpenMapTilesFieldBindings;
 
-const defaultAttribution = '© OpenFreeMap, © OpenMapTiles, © OpenStreetMap contributors';
+const worldAttribution =
+  '<a href="https://tileflow.dev/copyright">© Tileflow</a> ' +
+  '<a href="https://www.openmaptiles.org/">© OpenMapTiles</a> ' +
+  '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a>';
 
 export function openMapTiles(options: OpenMapTilesSchemaOptions = {}): OpenMapTilesSchema {
   const layers: OpenMapTilesLayerBindings = {...canonicalLayers, ...options.layers};
@@ -778,7 +781,7 @@ export function resolveTileflowData(
     }
 
     return {
-      attribution: defaultAttribution,
+      attribution: worldAttribution,
       generation: descriptor.generation,
       identity: dataIdentity(
         descriptor.type,

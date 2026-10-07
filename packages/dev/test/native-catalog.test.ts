@@ -15,7 +15,7 @@ test('records every official map/theme deterministically and requires Streets to
   const first = await evaluateNativeCatalog(cwd);
   const second = await evaluateNativeCatalog(cwd);
   assert.equal(serializeCanonicalJson(first), serializeCanonicalJson(second));
-  assert.equal(new Set(first.rows.map(({map}) => map)).size, 10);
+  assert.equal(new Set(first.rows.map(({map}) => map)).size, 9);
   const expected = nativeCatalogMaps
     .flatMap((map) =>
       Object.keys(parseTileflowMap(map).themes).map((theme) => `${map.id}/${theme}`),

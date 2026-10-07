@@ -54,8 +54,10 @@ captures always select a concrete theme.
   a JavaScript library.
 - [`@tileflow/core`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md): map
   definitions, semantic styling, validation, and MapLibre style compilation.
-- [`@tileflow/maps`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/README.md): twelve
-  official maps, including Cívica and Super Tile World, and their icon, pattern, and font assets.
+- [`@tileflow/maps`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/README.md):
+  official maps, including Cívica and Super Tile World, their assets, and compatibility snapshots
+  of Cyberpunk and Matrix. [Community Maps](https://github.com/tileflow/community-maps) maintains
+  those two designs as Neon Grid and Terminal.
 - [`@tileflow/capture`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/capture/README.md):
   Node API for headless capture, receipts, visual reviews, and baseline comparisons.
 

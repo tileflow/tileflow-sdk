@@ -16,7 +16,6 @@ import {
   soundings,
   streets,
   superTileWorld,
-  verdant,
 } from '../src';
 
 const officialMaps = [
@@ -31,7 +30,6 @@ const officialMaps = [
   soundings,
   streets,
   superTileWorld,
-  verdant,
 ] as const;
 
 test('official styles remain valid for MapLibre GL JS 6 style-spec', async () => {

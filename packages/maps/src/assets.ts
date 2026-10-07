@@ -7,14 +7,11 @@ function packageDirectory(path: string): TileflowPackageDirectory {
 /** Package-owned Streets icons. Filename stems are the canonical runtime IDs. */
 export const streetsIcons = packageDirectory('assets/streets/icons');
 
-/** Package-owned Cyberpunk icons and patterns. */
+/** @deprecated Compatibility assets; use `neonGridIcons` from @tileflow/community-maps. */
 export const cyberpunkIcons = packageDirectory('assets/cyberpunk/icons');
 
-/** Package-owned Matrix phosphor patterns and symbols. */
+/** @deprecated Compatibility assets; use `terminalIcons` from @tileflow/community-maps. */
 export const matrixIcons = packageDirectory('assets/matrix/icons');
-
-/** Package-owned Verdant icons and patterns. This root does not compose Streets assets. */
-export const verdantIcons = packageDirectory('assets/verdant/icons');
 
 /** Package-owned Ferraris patterns. This root does not compose Streets assets. */
 export const ferrarisIcons = packageDirectory('assets/ferraris/icons');
@@ -25,8 +22,10 @@ export const baedekerIcons = packageDirectory('assets/baedeker/icons');
 /** Package-owned Cívica print textures and landmark symbols. */
 export const civicaIcons = packageDirectory('assets/civica/icons');
 
-/** Package-owned San Francisto blueprint patterns and technical symbol. */
-export const sanFrancistoIcons = packageDirectory('assets/san-francisto/icons');
+/** Package-owned Blueprint patterns and technical symbol. The asset path is stable. */
+export const blueprintIcons = packageDirectory('assets/san-francisto/icons');
+/** @deprecated Use `blueprintIcons`. This alias preserves the same asset descriptor. */
+export const sanFrancistoIcons = blueprintIcons;
 
 /** Package-owned Soundings symbols and patterns. This root does not compose Streets assets. */
 export const soundingsIcons = packageDirectory('assets/soundings/icons');
@@ -44,10 +43,10 @@ export const civicaFonts = packageDirectory('assets/civica/fonts');
 export const superTileWorldIcons = packageDirectory('assets/super-tile-world/icons');
 export const superTileWorldFonts = packageDirectory('assets/super-tile-world/fonts');
 
-/** Package-owned Cyberpunk web fonts and their license. */
+/** @deprecated Compatibility assets; use `neonGridFonts` from @tileflow/community-maps. */
 export const cyberpunkFonts = packageDirectory('assets/cyberpunk/fonts');
 
-/** Package-owned Matrix web fonts and their license. */
+/** @deprecated Compatibility assets; use `terminalFonts` from @tileflow/community-maps. */
 export const matrixFonts = packageDirectory('assets/matrix/fonts');
 
 /** Package-owned Baedeker web fonts and their license. */

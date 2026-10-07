@@ -44,7 +44,7 @@ test('Baedeker is a deeply frozen standalone map with only its own assets', asyn
   assert.match(source, /\bdefineMap\s*\(/u);
   assert.doesNotMatch(
     source,
-    /from\s+['"]\.\/(?:cyberpunk|ferraris|harad|matrix|siegfried|soundings|streets|verdant)['"]/u,
+    /from\s+['"]\.\/(?:cyberpunk|ferraris|harad|matrix|siegfried|soundings|streets)['"]/u,
   );
   assert.doesNotMatch(source, /\bextends\s*:/u);
   assert.doesNotMatch(

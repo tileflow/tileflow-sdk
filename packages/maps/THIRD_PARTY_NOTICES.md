@@ -1,7 +1,7 @@
 # Third-party notices
 
 Except for the Streets POI pictograms documented below, the official themed Streets, Baedeker,
-Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant, San Francisto, Cívica, and Super Tile World icon and pattern
+Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Blueprint, Cívica, and Super Tile World icon and pattern
 artwork published under `assets/` is original Tileflow artwork.
 
 This file is shipped with `@tileflow/maps` so future third-party assets have a stable place for
@@ -68,20 +68,14 @@ artwork, fonts, geospatial data, or map data. The package contains only Tileflow
 and original SVG patterns for arable land, coniferous and deciduous woodland, orchards, paper grain,
 sand, settlements, water lines, and wetlands.
 
-The `verdant` map and its ten SVG icons and ten SVG patterns are original Tileflow code and artwork.
-Its contemporary field-atlas direction was informed by publicly documented park-map information
-design and general outdoor-navigation conventions. This package does not include or redistribute
-National Park Service or Lantmäteriet artwork, symbols, logos, fonts, source sheets, scans, style
-files, or map data.
+## Blueprint artwork and terrain data
 
-## San Francisto blueprint artwork and terrain data
-
-The `san-francisto` map and its four SVG patterns and one SVG technical symbol are original Tileflow
+The Blueprint map (stable ID `san-francisto`) and its four SVG patterns and one SVG technical symbol are original Tileflow
 code and artwork. Its architectural-blueprint direction uses general drafting conventions; this
 package does not include or redistribute an architectural drawing, CAD file, municipal plan,
 survey sheet, font, source image, or third-party symbol artwork.
 
-At runtime, San Francisto derives contour vectors in the browser from Mapterhorn terrain tiles. No
+At runtime, Blueprint derives contour vectors in the browser from Mapterhorn terrain tiles. No
 Mapterhorn tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
 catalog of its constituent open terrain sources and their individual attribution and license terms
 at <https://mapterhorn.com/attribution/>. The compiled Style carries that link as source

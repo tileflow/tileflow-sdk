@@ -174,28 +174,6 @@ test('publishes every official icon and font directory with provenance', async (
       'sidewalk-dot-dark.svg',
       'sidewalk-dot.svg',
     ],
-    verdant: [
-      'coffee.svg',
-      'crosswalk.svg',
-      'culture.svg',
-      'education.svg',
-      'food.svg',
-      'health.svg',
-      'lodging.svg',
-      'major-transit.svg',
-      'services.svg',
-      'shopping.svg',
-      'verdant-field-hatch.pattern.svg',
-      'verdant-forest-canopy.pattern.svg',
-      'verdant-heath-tufts.pattern.svg',
-      'verdant-meadow-tufts.pattern.svg',
-      'verdant-orchard.pattern.svg',
-      'verdant-paper-fiber.pattern.svg',
-      'verdant-residential-hatch.pattern.svg',
-      'verdant-scree.pattern.svg',
-      'verdant-water-lines.pattern.svg',
-      'verdant-wetland-reeds.pattern.svg',
-    ],
   } as const;
 
   for (const [mapId, fileNames] of Object.entries(expected)) {
@@ -351,7 +329,7 @@ test('keeps the Baedeker standalone source independent from other official maps'
   assert.match(source, /\bdefineMap\s*\(/u);
   assert.doesNotMatch(
     source,
-    /from\s+['"]\.\/(?:cyberpunk|ferraris|harad|matrix|san-francisto|siegfried|soundings|streets|verdant)['"]/u,
+    /from\s+['"]\.\/(?:blueprint|cyberpunk|ferraris|harad|matrix|siegfried|soundings|streets)['"]/u,
   );
   assert.doesNotMatch(source, /\bextends\s*:/u);
   assert.doesNotMatch(source, /\bstreets\.icons\b/u);
@@ -360,13 +338,6 @@ test('keeps the Baedeker standalone source independent from other official maps'
 test('keeps the Härad standalone source independent from Streets', async () => {
   const source = await readFile(new URL('../src/official/harad.ts', import.meta.url), 'utf8');
   assert.match(source, /\bdefineMap\s*\(/u);
-  assert.doesNotMatch(source, /from\s+['"]\.\/streets['"]/u);
-  assert.doesNotMatch(source, /\bextends\s*:\s*streets\b/u);
-  assert.doesNotMatch(source, /\bstreets\.icons\b/u);
-});
-
-test('keeps the Verdant standalone source independent from Streets', async () => {
-  const source = await readFile(new URL('../src/official/verdant.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /from\s+['"]\.\/streets['"]/u);
   assert.doesNotMatch(source, /\bextends\s*:\s*streets\b/u);
   assert.doesNotMatch(source, /\bstreets\.icons\b/u);
@@ -389,15 +360,12 @@ test('keeps the Siegfried standalone source independent from Streets', async () 
   assert.doesNotMatch(source, /\bstreets\.icons\b/u);
 });
 
-test('keeps the San Francisto standalone source independent from other official maps', async () => {
-  const source = await readFile(
-    new URL('../src/official/san-francisto.ts', import.meta.url),
-    'utf8',
-  );
+test('keeps the Blueprint standalone source independent from other official maps', async () => {
+  const source = await readFile(new URL('../src/official/blueprint.ts', import.meta.url), 'utf8');
   assert.match(source, /\bdefineMap\s*\(/u);
   assert.doesNotMatch(
     source,
-    /from\s+['"]\.\/(?:baedeker|cyberpunk|ferraris|harad|matrix|siegfried|soundings|streets|verdant)['"]/u,
+    /from\s+['"]\.\/(?:baedeker|cyberpunk|ferraris|harad|matrix|siegfried|soundings|streets)['"]/u,
   );
   assert.doesNotMatch(source, /\bextends\s*:/u);
 });
@@ -410,12 +378,11 @@ test('keeps Cyberpunk and Matrix independent from other official maps', async ()
     'ferraris',
     'harad',
     'matrix',
-    'san-francisto',
+    'blueprint',
     'siegfried',
     'soundings',
     'streets',
     'super-tile-world',
-    'verdant',
   ]);
   for (const id of ['cyberpunk', 'matrix']) {
     const source = await readFile(new URL(`../src/official/${id}.ts`, import.meta.url), 'utf8');
@@ -430,6 +397,9 @@ test('imports and compiles all packaged official maps against public Core APIs',
   const script = `
     const core = await import('@tileflow/core');
     const maps = await import('@tileflow/maps');
+    if (maps.blueprint !== maps.sanFrancisto || maps.blueprintIcons !== maps.sanFrancistoIcons) {
+      throw new Error('Blueprint compatibility aliases must preserve object identity.');
+    }
     for (const [name, id] of [
       ['baedeker', 'baedeker'],
       ['civica', 'civica'],
@@ -439,10 +409,10 @@ test('imports and compiles all packaged official maps against public Core APIs',
       ['ferraris', 'ferraris'],
       ['harad', 'harad'],
       ['matrix', 'matrix'],
+      ['blueprint', 'san-francisto'],
       ['sanFrancisto', 'san-francisto'],
       ['siegfried', 'siegfried'],
       ['soundings', 'soundings'],
-      ['verdant', 'verdant'],
     ]) {
       if (!maps[name] || typeof maps[name] !== 'object') process.exit(2);
       const style = core.createStyle(maps[name], {
@@ -511,10 +481,6 @@ test('imports and compiles all packaged official maps against public Core APIs',
               'stw-tree',
               'stw-warp-pipe',
               'stw-water',
-              'verdant-field-hatch', 'verdant-forest-canopy', 'verdant-heath-tufts',
-              'verdant-meadow-tufts', 'verdant-orchard', 'verdant-paper-fiber',
-              'verdant-residential-hatch', 'verdant-scree', 'verdant-water-lines',
-              'verdant-wetland-reeds',
             ],
             sprite: '/tileflow/test/official/sprite',
           },
@@ -529,7 +495,6 @@ test('imports and compiles all packaged official maps against public Core APIs',
     if ('extends' in maps.baedeker || 'root' in maps.baedeker) process.exit(29);
     if ('extends' in maps.matrix || 'root' in maps.matrix) process.exit(27);
     if ('extends' in maps.sanFrancisto || 'root' in maps.sanFrancisto) process.exit(31);
-    if ('extends' in maps.verdant || 'root' in maps.verdant) process.exit(6);
     if (!maps.streetsThemes?.light || !maps.streetsThemes?.dark) process.exit(7);
     if (maps.streets.defaultTheme !== 'light') process.exit(11);
     if (!maps.siegfriedThemes?.light || !maps.siegfriedThemes?.dark) process.exit(12);
@@ -641,13 +606,6 @@ test('imports and compiles all packaged official maps against public Core APIs',
       resolvedSiegfried.fonts[0]?.package !== '@tileflow/maps' ||
       resolvedSiegfried.fonts[0]?.path !== 'assets/siegfried/fonts'
     ) process.exit(26);
-    const resolvedVerdant = core.resolveMap(maps.verdant);
-    if (
-      resolvedVerdant.icons?.length !== 1 ||
-      resolvedVerdant.icons[0]?.kind !== 'package-directory' ||
-      resolvedVerdant.icons[0]?.package !== '@tileflow/maps' ||
-      resolvedVerdant.icons[0]?.path !== 'assets/verdant/icons'
-    ) process.exit(10);
   `;
 
   const {stderr, stdout} = await execFileAsync(

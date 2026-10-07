@@ -7,7 +7,7 @@ Inheritance is resolved completely
 before validation, asset preparation, compilation, capture, build, or deploy.
 
 `streets`, `baedeker`, `civica`, `cyberpunk`, `ferraris`, `harad`, `matrix`, `siegfried`, `soundings`,
-`verdant`, `sanFrancisto`, and `superTileWorld` are first-party standalone maps. Streets and Siegfried own coordinated
+`blueprint`, and `superTileWorld` are first-party standalone maps. Streets and Siegfried own coordinated
 light and dark themes. Every official map defines its complete design directly: none imports or
 extends another official map, and each declares only its own asset providers. They are exported
 from `@tileflow/maps`; there is no public basemap,
@@ -88,10 +88,10 @@ Directories are read from left to right. `<id>.<ext>` publishes an ordinary icon
 already be canonical lower-kebab-case. A later directory replaces an earlier file only when the ID
 matches exactly; case-only collisions fail. The official directory descriptors `streetsIcons`,
 `baedekerIcons`, `civicaIcons`, `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`,
-`cyberpunkIcons`, `matrixIcons`, `verdantIcons`, `sanFrancistoIcons`, and `superTileWorldIcons` let maps reuse package assets
-without exposing installation paths. Baedeker, Ferraris, Härad, Siegfried, Soundings, Verdant, and
-San Francisto declare only `[baedekerIcons]`, `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
-`[soundingsIcons]`, `[verdantIcons]`, and `[sanFrancistoIcons]`, respectively; none of these
+`cyberpunkIcons`, `matrixIcons`, `blueprintIcons`, and `superTileWorldIcons` let maps reuse package assets
+without exposing installation paths. Baedeker, Ferraris, Härad, Siegfried, Soundings, and
+Blueprint declare only `[baedekerIcons]`, `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
+`[soundingsIcons]`, and `[blueprintIcons]`, respectively; none of these
 standalone maps composes with Streets assets. Cívica likewise owns only `[civicaIcons]` and
 `[civicaFonts]` for its original civic-print artwork and packaged lettering. Super Tile World owns
 `[superTileWorldIcons]` and `[superTileWorldFonts]` for its pixel-art sprites, patterns, and lettering.
@@ -105,7 +105,7 @@ original Tileflow SVG patterns are inspired by Lantmäteriet's CC0 Häradsekonom
 fonts, or map data. Siegfried owns nine light/dark engraving-motif pairs in one directory; both
 themes select the same semantic image vocabulary without changing map structure. Soundings
 owns ten original nautical symbols and patterns; GEBCO-derived depth bands are broad visual context,
-not navigation-grade soundings. San Francisto owns four original drafting patterns and one
+not navigation-grade soundings. Blueprint owns four original drafting patterns and one
 schematic POI symbol in its blueprint asset closure. There is no `builtin`, `source`, `sprite`,
 icon-level `extends`, `mapping`, or additive operator.
 
@@ -160,7 +160,7 @@ Browser font files and native/PBF glyphs are different delivery mechanisms, so a
 combine them or fall back silently between them. After inheritance resolves, every map that emits
 text has exactly one provider; only a text-free map may have neither.
 
-Streets, Ferraris, Härad, Soundings, Verdant, and San Francisto each declare the canonical
+Streets, Ferraris, Härad, Soundings, and Blueprint each declare the canonical
 `https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf` URL with `Noto Sans Regular` and
 `Noto Sans Bold`. The URL is canonical rather than content-addressed; responses revalidate and the
 URL is not an exact-byte identity. It is stated directly in each standalone map, not synthesized as a

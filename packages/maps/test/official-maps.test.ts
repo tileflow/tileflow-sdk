@@ -42,8 +42,6 @@ import {
   superTileWorld,
   superTileWorldFonts,
   superTileWorldIcons,
-  verdant,
-  verdantIcons,
 } from '../src';
 
 const officialIconIds = [
@@ -172,16 +170,6 @@ const officialIconIds = [
   'stw-tree',
   'stw-warp-pipe',
   'stw-water',
-  'verdant-field-hatch',
-  'verdant-forest-canopy',
-  'verdant-heath-tufts',
-  'verdant-meadow-tufts',
-  'verdant-orchard',
-  'verdant-paper-fiber',
-  'verdant-residential-hatch',
-  'verdant-scree',
-  'verdant-water-lines',
-  'verdant-wetland-reeds',
 ] as const;
 const baedekerPatternIds = [
   'baedeker-hachures',
@@ -254,40 +242,6 @@ const siegfriedPatternIds = [
   'siegfried-water-lines',
   'siegfried-wetland',
 ] as const;
-const verdantIconIds = [
-  'coffee',
-  'crosswalk',
-  'culture',
-  'education',
-  'food',
-  'health',
-  'lodging',
-  'major-transit',
-  'services',
-  'shopping',
-  'verdant-field-hatch',
-  'verdant-forest-canopy',
-  'verdant-heath-tufts',
-  'verdant-meadow-tufts',
-  'verdant-orchard',
-  'verdant-paper-fiber',
-  'verdant-residential-hatch',
-  'verdant-scree',
-  'verdant-water-lines',
-  'verdant-wetland-reeds',
-] as const;
-const verdantPatternIds = [
-  'verdant-field-hatch',
-  'verdant-forest-canopy',
-  'verdant-heath-tufts',
-  'verdant-meadow-tufts',
-  'verdant-orchard',
-  'verdant-paper-fiber',
-  'verdant-residential-hatch',
-  'verdant-scree',
-  'verdant-water-lines',
-  'verdant-wetland-reeds',
-] as const;
 const officialGlyphsUrl =
   'https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf';
 
@@ -357,9 +311,10 @@ test('exports every official map as an independent standalone semantic map', asy
     soundings,
     streets,
     'super-tile-world': superTileWorld,
-    verdant,
   } as const;
-  const officialMapIds = new Set(Object.keys(officialMaps));
+  const officialMapSources = new Set(
+    Object.keys(officialMaps).map((id) => (id === 'san-francisto' ? 'blueprint' : id)),
+  );
 
   for (const [id, map] of Object.entries(officialMaps)) {
     assert.equal('root' in map, false);
@@ -372,7 +327,11 @@ test('exports every official map as an independent standalone semantic map', asy
     assert.equal('basemap' in resolved, false);
     assert.equal('root' in resolved, false);
 
-    const source = await readFile(new URL(`../src/official/${id}.ts`, import.meta.url), 'utf8');
+    const sourceName = id === 'san-francisto' ? 'blueprint' : id;
+    const source = await readFile(
+      new URL(`../src/official/${sourceName}.ts`, import.meta.url),
+      'utf8',
+    );
     assert.match(source, /\bdefineMap\s*\(/u, `${id} is not authored as a standalone map`);
     if (['civica', 'cyberpunk', 'matrix', 'san-francisto', 'super-tile-world'].includes(id)) {
       assert.match(source, /\bwithRenderStack\s*\(/u, `${id} lost its semantic render stack`);
@@ -386,7 +345,7 @@ test('exports every official map as an independent standalone semantic map', asy
     for (const match of source.matchAll(/\bfrom\s+['"]\.\/([^'"]+)['"]/gu)) {
       const importedModule = match[1]!.replace(/\.(?:js|ts)$/u, '');
       assert.equal(
-        officialMapIds.has(importedModule),
+        officialMapSources.has(importedModule),
         false,
         `${id} imports official map ${importedModule}`,
       );
@@ -407,7 +366,6 @@ test('deep-freezes only the exported official map singletons', () => {
     cyberpunk,
     matrix,
     sanFrancisto,
-    verdant,
   ]) {
     assertDeepFrozen(map);
   }
@@ -459,7 +417,6 @@ test('official maps declare their expected icon and typography providers', () =>
   const resolvedSanFrancisto = resolveMap(sanFrancisto);
   const resolvedSiegfried = resolveMap(siegfried);
   const resolvedSoundings = resolveMap(soundings);
-  const resolvedVerdant = resolveMap(verdant);
 
   assert.deepEqual(resolvedBaedeker.icons, [baedekerIcons]);
   assert.deepEqual(resolvedCivica.icons, [civicaIcons]);
@@ -474,7 +431,6 @@ test('official maps declare their expected icon and typography providers', () =>
   assert.deepEqual(resolvedSanFrancisto.icons, [sanFrancistoIcons]);
   assert.deepEqual(resolvedSiegfried.icons, [siegfriedIcons]);
   assert.deepEqual(resolvedSoundings.icons, [soundingsIcons]);
-  assert.deepEqual(resolvedVerdant.icons, [verdantIcons]);
   assert.deepEqual(resolvedCyberpunk.fonts, [cyberpunkFonts]);
   assert.deepEqual(resolvedBaedeker.fonts, [baedekerFonts]);
   assert.deepEqual(resolvedMatrix.fonts, [matrixFonts]);
@@ -494,8 +450,6 @@ test('official maps declare their expected icon and typography providers', () =>
   assert.deepEqual(resolvedHarad.glyphs, resolvedStreets.glyphs);
   assert.deepEqual(resolvedSoundings.glyphs, resolvedStreets.glyphs);
   assert.deepEqual(resolvedSanFrancisto.glyphs, resolvedStreets.glyphs);
-  assert.deepEqual(verdant.glyphs, resolvedStreets.glyphs);
-  assert.deepEqual(resolvedVerdant.glyphs, resolvedStreets.glyphs);
   assert.equal(resolvedCyberpunk.themes.dark.typography?.font, 'Oxanium Medium');
   assert.equal(resolvedBaedeker.themes.light.typography?.font, 'Cormorant Garamond Regular');
   assert.equal(
@@ -514,8 +468,6 @@ test('official maps declare their expected icon and typography providers', () =>
   assert.equal(resolvedSoundings.themes.light.typography?.font, 'Noto Sans Regular');
   assert.equal(resolvedSanFrancisto.themes.blueprint.typography?.font, 'Noto Sans Regular');
   assert.equal(resolvedSanFrancisto.themes.blueprint.typography?.places?.font, 'Noto Sans Bold');
-  assert.equal(resolvedVerdant.themes.light.typography?.font, 'Noto Sans Regular');
-  assert.equal(resolvedVerdant.themes.light.typography?.places?.font, 'Noto Sans Bold');
 });
 
 test('Baedeker is self-contained and references exactly its package-owned patterns', () => {
@@ -687,51 +639,6 @@ test('Soundings is self-contained and references only its bathymetric-map artwor
   }
 });
 
-test('Verdant is self-contained and references exactly its package-owned patterns', () => {
-  const resolved = resolveMap(verdant);
-  assert.equal('extends' in verdant, false);
-  assert.equal('root' in verdant, false);
-  assert.deepEqual(resolved.icons, [verdantIcons]);
-
-  const compiled = createStyleWithInspection(verdant, {
-    preparedAssets: {
-      icons: {ids: verdantIconIds, sprite: '/tileflow/icons/verdant/sprite'},
-    },
-  });
-  const {style} = compiled;
-  assert.equal(style.metadata?.['tileflow:extends'], undefined);
-  assert.equal(style.metadata?.['tileflow:compiler'], 'tileflow-semantic');
-  assert.deepEqual(validateStyleMin(style as never), []);
-
-  const patternIds = new Set(
-    style.layers.flatMap((layer) =>
-      Object.entries((layer.paint ?? {}) as Record<string, unknown>).flatMap(([property, value]) =>
-        property.endsWith('-pattern') && typeof value === 'string' ? [value] : [],
-      ),
-    ),
-  );
-  assert.deepEqual([...patternIds].sort(), [...verdantPatternIds]);
-
-  const targets = compiledTargets(compiled);
-  for (const target of [
-    'land.render.farmlandTexture',
-    'land.render.scrubTexture',
-    'land.render.meadowTexture',
-    'land.render.orchardTexture',
-    'land.render.rockTexture',
-    'land.render.wetlandTexture',
-    'land.render.woodTexture',
-    'land.render.residentialTexture',
-    'water.render.printLines',
-    'water.render.intermittentPrintLines',
-    'buildings.render.printShadow',
-    'roads.render.trailEmphasis',
-    'labels.render.landscape',
-  ]) {
-    assert.equal(targets.has(target), true, `Missing Verdant render target ${target}`);
-  }
-});
-
 test('San Francisto is self-contained and references exactly its blueprint assets', () => {
   const resolved = resolveMap(sanFrancisto);
   assert.equal('extends' in sanFrancisto, false);
@@ -767,7 +674,6 @@ test('all official maps compile directly after their packaged sprite is prepared
     soundings,
     streets,
     'super-tile-world': superTileWorld,
-    verdant,
   })) {
     const style = compileOfficialMap(map);
     assert.equal(style.metadata?.['tileflow:map'], id);
@@ -889,7 +795,6 @@ test('official road maps avoid seam-prone caps on ordinary surface and bridge se
     harad,
     siegfried,
     'san-francisto': sanFrancisto,
-    verdant,
   })) {
     const style = compileOfficialMap(map);
     const ordinaryRoadLayers = style.layers.filter(
@@ -945,7 +850,6 @@ test('official maps compile against generic OpenMapTiles without optional capabi
     soundings,
     streets,
     'super-tile-world': superTileWorld,
-    verdant,
   })) {
     const derived = defineMap({id: `${id}-generic`, version: 1, extends: map, data});
     const style = createStyle(derived, {preparedAssets: preparedAssets(id)});
@@ -1009,7 +913,6 @@ test('official maps emit only exact declared font-face stacks', () => {
       JSON.stringify(['Tile World Arcade Regular']),
       JSON.stringify(['Tile World Arcade Regular', 'Noto Sans Regular']),
     ]),
-    verdant: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
   } as const;
 
   for (const [id, map] of Object.entries({
@@ -1024,7 +927,6 @@ test('official maps emit only exact declared font-face stacks', () => {
     soundings,
     streets,
     'super-tile-world': superTileWorld,
-    verdant,
   })) {
     const actual = new Set(
       compileOfficialMap(map).layers.flatMap((layer) => {
@@ -1111,7 +1013,6 @@ test('non-Streets official maps do not use Streets surface colors', () => {
     ['san-francisto', sanFrancisto, ['#061D35', '#EEF3EA']],
     ['siegfried', siegfried, ['#F0EBE0', '#A96C4D']],
     ['streets-dark', streets, ['#2D3043', '#18223B']],
-    ['verdant', verdant, ['#B8DDE7', '#C8DCC4']],
   ] as const) {
     const serialized = JSON.stringify(
       compile(map, id === 'streets-dark' ? 'dark' : undefined),

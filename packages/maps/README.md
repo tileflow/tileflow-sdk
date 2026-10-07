@@ -57,17 +57,48 @@ resources available offline.
 - `harad`: the historical green-map design displayed as **Härad**.
 - `siegfried`: a terrain atlas with coordinated light/dark ink palettes, contours, and engraved patterns.
 - `soundings`: bathymetric reference cartography with depth bands, continuous relief, and port context.
-- `cyberpunk`: a dark heads-up-display design with destination beacons and Oxanium typography.
-- `matrix`: a monochrome green-screen design with scanline and dot patterns.
-- `verdant`: a contemporary field atlas emphasizing trails, vegetation, and hydrography.
-- `sanFrancisto`: a dark architectural-blueprint design centered on San Francisco. The export is
-  spelled `sanFrancisto`.
+- `cyberpunk`: the compatibility snapshot of the dark heads-up-display design now called Neon Grid.
+- `matrix`: the compatibility snapshot of the green-screen design now called Terminal.
+- `blueprint`: a dark architectural drawing style, with a default camera centered on San Francisco.
 - `superTileWorld`: a pixel-art overworld with layered shores, golden routes, destination sprites,
   and packaged arcade lettering.
 
 Every official map is a complete, independent root using the same Core compiler. Official map
 objects are deeply frozen shared instances. Do not mutate them; use `defineMap({extends: ...})`
 to create an application-owned map.
+
+### Blueprint naming and compatibility
+
+Use `blueprint` and `blueprintIcons` for the architectural drawing map. `sanFrancisto` and
+`sanFrancistoIcons` remain deprecated aliases of those same frozen objects. The display name is
+**Blueprint**; the stable map ID `san-francisto`, theme ID `san-francisto-blueprint`, theme key
+`blueprint`, and existing asset paths and icon IDs are preserved so saved references keep working.
+
+<!-- docs:check -->
+
+```ts
+import {defineMap} from '@tileflow/core';
+import {blueprint} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'city-plan',
+  version: 1,
+  extends: blueprint,
+  view: {center: [-3.7038, 40.4168], zoom: 14},
+});
+```
+
+### Community maps
+
+Neon Grid and Terminal are maintained in
+[Tileflow Community Maps](https://github.com/tileflow/community-maps), with editable source, assets,
+previews, and contribution instructions. The GitHub-distributed `@tileflow/community-maps` package
+exports `neonGrid` and `terminal`; its README documents installation and the compatible Core version.
+
+This package retains `cyberpunk`, `matrix`, and their font/icon descriptors as compatibility snapshots
+for existing consumers. Their IDs and artwork IDs are unchanged. They do not automatically track
+the community definitions. For a new project, use the community repository. When migrating, update
+the package import, export name, and any explicit map or icon IDs. Super Tile World remains here.
 
 Soundings is not a navigation product. Its depth-band edges are approximate reference geometry,
 not surveyed isolines or vessel-specific safety contours. Experimental nautical aids and hazards
@@ -82,14 +113,14 @@ mapping. `system` belongs to browser selection; captures and builds use concrete
 
 Every map exports an icon-directory descriptor: `streetsIcons`, `baedekerIcons`, `civicaIcons`,
 `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`,
-`verdantIcons`, `sanFrancistoIcons`, and `superTileWorldIcons`. The descriptors point into this installed package; they are not sprite URLs.
+`blueprintIcons`, and `superTileWorldIcons`. The descriptors point into this installed package; they are not sprite URLs.
 The CLI and build integrations compile the selected directories into runtime assets.
 
 Baedeker and Siegfried also export `baedekerFonts` and `siegfriedFonts` for their packaged Cormorant
 Garamond faces. Cyberpunk and Matrix export `cyberpunkFonts` and `matrixFonts` for Oxanium.
 Cívica exports `civicaFonts` for DM Serif Text, Barlow Semi Condensed, and Noto Sans fallback.
 Super Tile World exports `superTileWorldFonts` for Pixelify Sans, Tile World Arcade, and Noto Sans fallback.
-Streets, Ferraris, Härad, Soundings, Verdant, and San Francisto declare Noto Sans URL glyph providers
+Streets, Ferraris, Härad, Soundings, and Blueprint declare Noto Sans URL glyph providers
 from one immutable Hosted base-asset set, versioned independently of World data.
 
 Omitting `icons` inherits the parent's directory list. Declaring a list replaces it; `[]` removes

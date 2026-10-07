@@ -37,7 +37,6 @@ import {
   soundings,
   streets,
   superTileWorld,
-  verdant,
 } from '../src';
 
 const moduleFactories = {
@@ -70,7 +69,6 @@ const officialMaps = {
   'san-francisto': sanFrancisto,
   siegfried,
   soundings,
-  verdant,
 };
 
 const preparedOfficialAssets = {
@@ -201,16 +199,6 @@ const preparedOfficialAssets = {
         'stw-tree',
         'stw-warp-pipe',
         'stw-water',
-        'verdant-field-hatch',
-        'verdant-forest-canopy',
-        'verdant-heath-tufts',
-        'verdant-meadow-tufts',
-        'verdant-orchard',
-        'verdant-paper-fiber',
-        'verdant-residential-hatch',
-        'verdant-scree',
-        'verdant-water-lines',
-        'verdant-wetland-reeds',
       ],
       sprite: '/tileflow/test/official/sprite',
     },

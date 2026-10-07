@@ -57,8 +57,8 @@ resources available offline.
 - `harad`: the historical green-map design displayed as **Härad**.
 - `siegfried`: a terrain atlas with coordinated light/dark ink palettes, contours, and engraved patterns.
 - `soundings`: bathymetric reference cartography with depth bands, continuous relief, and port context.
-- `cyberpunk`: a dark heads-up-display design with destination beacons and Oxanium typography.
-- `matrix`: a monochrome green-screen design with scanline and dot patterns.
+- `cyberpunk`: the compatibility snapshot of the dark heads-up-display design now called Neon Grid.
+- `matrix`: the compatibility snapshot of the green-screen design now called Terminal.
 - `verdant`: a contemporary field atlas emphasizing trails, vegetation, and hydrography.
 - `sanFrancisto`: a dark architectural-blueprint design centered on San Francisco. The export is
   spelled `sanFrancisto`.
@@ -68,6 +68,18 @@ resources available offline.
 Every official map is a complete, independent root using the same Core compiler. Official map
 objects are deeply frozen shared instances. Do not mutate them; use `defineMap({extends: ...})`
 to create an application-owned map.
+
+### Community maps
+
+Neon Grid and Terminal are maintained in
+[Tileflow Community Maps](https://github.com/tileflow/community-maps), with editable source, assets,
+previews, and contribution instructions. The GitHub-distributed `@tileflow/community-maps` package
+exports `neonGrid` and `terminal`; its README documents installation and the compatible Core version.
+
+This package retains `cyberpunk`, `matrix`, and their font/icon descriptors as compatibility snapshots
+for existing consumers. Their IDs and artwork IDs are unchanged. They do not automatically track
+the community definitions. For a new project, use the community repository. When migrating, update
+the package import, export name, and any explicit map or icon IDs. Super Tile World remains here.
 
 Soundings is not a navigation product. Its depth-band edges are approximate reference geometry,
 not surveyed isolines or vessel-specific safety contours. Experimental nautical aids and hazards

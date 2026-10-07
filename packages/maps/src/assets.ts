@@ -7,10 +7,10 @@ function packageDirectory(path: string): TileflowPackageDirectory {
 /** Package-owned Streets icons. Filename stems are the canonical runtime IDs. */
 export const streetsIcons = packageDirectory('assets/streets/icons');
 
-/** Package-owned Cyberpunk icons and patterns. */
+/** @deprecated Compatibility assets; use `neonGridIcons` from @tileflow/community-maps. */
 export const cyberpunkIcons = packageDirectory('assets/cyberpunk/icons');
 
-/** Package-owned Matrix phosphor patterns and symbols. */
+/** @deprecated Compatibility assets; use `terminalIcons` from @tileflow/community-maps. */
 export const matrixIcons = packageDirectory('assets/matrix/icons');
 
 /** Package-owned Verdant icons and patterns. This root does not compose Streets assets. */
@@ -44,10 +44,10 @@ export const civicaFonts = packageDirectory('assets/civica/fonts');
 export const superTileWorldIcons = packageDirectory('assets/super-tile-world/icons');
 export const superTileWorldFonts = packageDirectory('assets/super-tile-world/fonts');
 
-/** Package-owned Cyberpunk web fonts and their license. */
+/** @deprecated Compatibility assets; use `neonGridFonts` from @tileflow/community-maps. */
 export const cyberpunkFonts = packageDirectory('assets/cyberpunk/fonts');
 
-/** Package-owned Matrix web fonts and their license. */
+/** @deprecated Compatibility assets; use `terminalFonts` from @tileflow/community-maps. */
 export const matrixFonts = packageDirectory('assets/matrix/fonts');
 
 /** Package-owned Baedeker web fonts and their license. */

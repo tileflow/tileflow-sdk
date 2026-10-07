@@ -40,10 +40,12 @@ export const civica = freezeOfficialMap(civicaDefinition);
 export const streets = freezeOfficialMap(streetsDefinition);
 export const ferraris = freezeOfficialMap(ferrarisDefinition);
 export const harad = freezeOfficialMap(haradDefinition);
+/** @deprecated Use `terminal` from the GitHub-distributed @tileflow/community-maps package. */
 export const matrix = freezeOfficialMap(matrixDefinition);
 export const sanFrancisto = freezeOfficialMap(sanFrancistoDefinition);
 export const siegfried = freezeOfficialMap(siegfriedDefinition);
 export const soundings = freezeOfficialMap(soundingsDefinition);
+/** @deprecated Use `neonGrid` from the GitHub-distributed @tileflow/community-maps package. */
 export const cyberpunk = freezeOfficialMap(cyberpunkDefinition);
 export const verdant = freezeOfficialMap(verdantDefinition);
 export const superTileWorld = freezeOfficialMap(superTileWorldDefinition);

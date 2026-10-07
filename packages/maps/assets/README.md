@@ -1,13 +1,12 @@
 # Official map assets
 
 These directories contain the package-owned sources required by the official Streets, Baedeker,
-Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant, Blueprint, Cívica, and Super Tile World maps. Their SVG icons and
+Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Blueprint, Cívica, and Super Tile World maps. Their SVG icons and
 patterns live under each map's `icons/` directory. Streets includes a pinned CC0 subset of Maki
 pictograms inside Tileflow-authored circular POI markers; its provenance is recorded in
 `../THIRD_PARTY_NOTICES.md` and the upstream license is kept at `streets/LICENSE-MAKI.txt`. A map
 refers to those directories through the exported `streetsIcons`, `baedekerIcons`, `ferrarisIcons`,
-`haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`, `verdantIcons`,
-`blueprintIcons`, `civicaIcons`, and `superTileWorldIcons` descriptors. Baedeker, Cívica, Cyberpunk, Matrix, Siegfried, and Super Tile World refer to their own
+`haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`, `blueprintIcons`, `civicaIcons`, and `superTileWorldIcons` descriptors. Baedeker, Cívica, Cyberpunk, Matrix, Siegfried, and Super Tile World refer to their own
 packaged font directories through `baedekerFonts`, `civicaFonts`, `cyberpunkFonts`, `matrixFonts`, and
 `siegfriedFonts`, and `superTileWorldFonts`; the files and their `LICENSE.txt` remain beside the map that owns them.
 
@@ -102,7 +101,7 @@ values are exact OpenType full names. Cyberpunk and Matrix each select their own
 stacks contain the two packaged Oxanium faces, so either map's primary-face local pipeline remains
 independent and never depends on an unfixed system or remote fallback.
 The compiler never manufactures a face ID by adding a weight. Streets, Ferraris, Härad, Soundings,
-Verdant, and Blueprint each declare the canonical Tileflow glyph URL with exact
+and Blueprint each declare the canonical Tileflow glyph URL with exact
 `Noto Sans Regular` and `Noto Sans Bold` stacks. Cyberpunk and Matrix name `Oxanium Medium` and
 `Oxanium SemiBold`, while Baedeker and Siegfried each name `Cormorant Garamond Regular`,
 `Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic` from their respective packaged

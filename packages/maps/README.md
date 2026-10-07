@@ -59,7 +59,6 @@ resources available offline.
 - `soundings`: bathymetric reference cartography with depth bands, continuous relief, and port context.
 - `cyberpunk`: the compatibility snapshot of the dark heads-up-display design now called Neon Grid.
 - `matrix`: the compatibility snapshot of the green-screen design now called Terminal.
-- `verdant`: a contemporary field atlas emphasizing trails, vegetation, and hydrography.
 - `blueprint`: a dark architectural drawing style, with a default camera centered on San Francisco.
 - `superTileWorld`: a pixel-art overworld with layered shores, golden routes, destination sprites,
   and packaged arcade lettering.
@@ -114,14 +113,14 @@ mapping. `system` belongs to browser selection; captures and builds use concrete
 
 Every map exports an icon-directory descriptor: `streetsIcons`, `baedekerIcons`, `civicaIcons`,
 `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`,
-`verdantIcons`, `blueprintIcons`, and `superTileWorldIcons`. The descriptors point into this installed package; they are not sprite URLs.
+`blueprintIcons`, and `superTileWorldIcons`. The descriptors point into this installed package; they are not sprite URLs.
 The CLI and build integrations compile the selected directories into runtime assets.
 
 Baedeker and Siegfried also export `baedekerFonts` and `siegfriedFonts` for their packaged Cormorant
 Garamond faces. Cyberpunk and Matrix export `cyberpunkFonts` and `matrixFonts` for Oxanium.
 Cívica exports `civicaFonts` for DM Serif Text, Barlow Semi Condensed, and Noto Sans fallback.
 Super Tile World exports `superTileWorldFonts` for Pixelify Sans, Tile World Arcade, and Noto Sans fallback.
-Streets, Ferraris, Härad, Soundings, Verdant, and Blueprint declare Noto Sans URL glyph providers.
+Streets, Ferraris, Härad, Soundings, and Blueprint declare Noto Sans URL glyph providers.
 
 Omitting `icons` inherits the parent's directory list. Declaring a list replaces it; `[]` removes
 all icon directories. Compose explicitly when adding application icons:

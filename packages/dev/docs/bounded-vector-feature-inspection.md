@@ -41,8 +41,8 @@ const result = await compileTileflowIconPackages(internalCatalog, {
 
 Streets declares `[streetsIcons]` and keeps light/dark image-token targets in that one closure;
 Cyberpunk and Matrix independently declare `[cyberpunkIcons]` and `[matrixIcons]`. Baedeker,
-Ferraris, Härad, Siegfried, Soundings, Verdant, and Blueprint declare only `[baedekerIcons]`,
-`[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`, `[soundingsIcons]`, `[verdantIcons]`, and
+Ferraris, Härad, Siegfried, Soundings, and Blueprint declare only `[baedekerIcons]`,
+`[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`, `[soundingsIcons]`, and
 `[blueprintIcons]`, respectively. No official root composes another map's assets even though all
 use the semantic compiler ABI. Baedeker's directory contains eight original travel-atlas patterns;
 its browser-derived Mapterhorn contours use runtime terrain tiles and are not part of the icon

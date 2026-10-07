@@ -144,7 +144,7 @@ test('packages the singular map engine without official maps or legacy authoring
     if (typeof entry.token !== 'object' || typeof entry.color !== 'object') process.exit(2);
     for (const removed of [
       'basemap', 'createStyleFromProject', 'cyberpunk', 'defineRootMap', 'defineTileflow', 'osm', 'streets',
-      'styleOverride', 'verdant', 'WorldGenerationDescriptor', 'parseWorldGenerationDescriptor',
+      'styleOverride', 'WorldGenerationDescriptor', 'parseWorldGenerationDescriptor',
       'tileflowStreetsCompilerVersion', 'tileflowWorldTileUrl',
       'expression', 'filter',
       'isMapLibreExpressionOperator',

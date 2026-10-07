@@ -15,7 +15,6 @@ import {
   streets,
   streetsThemes,
   superTileWorld,
-  verdant,
 } from '../src';
 
 type TokenReference = {
@@ -146,7 +145,6 @@ test('every official module, render stack, and terrain value has a valid semanti
     sanFrancisto,
     siegfried,
     soundings,
-    verdant,
   ]) {
     assert.deepEqual(
       auditTileflowMapThemeValues(resolveMap(map)),
@@ -232,7 +230,6 @@ test('every official map has a deterministic complete theme collection', () => {
     sanFrancisto,
     siegfried,
     soundings,
-    verdant,
   ]) {
     const resolved = resolveMap(map);
     assert.ok(Object.keys(resolved.themes).length > 0, `${map.id} has no themes`);

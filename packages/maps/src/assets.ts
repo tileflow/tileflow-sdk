@@ -13,9 +13,6 @@ export const cyberpunkIcons = packageDirectory('assets/cyberpunk/icons');
 /** @deprecated Compatibility assets; use `terminalIcons` from @tileflow/community-maps. */
 export const matrixIcons = packageDirectory('assets/matrix/icons');
 
-/** Package-owned Verdant icons and patterns. This root does not compose Streets assets. */
-export const verdantIcons = packageDirectory('assets/verdant/icons');
-
 /** Package-owned Ferraris patterns. This root does not compose Streets assets. */
 export const ferrarisIcons = packageDirectory('assets/ferraris/icons');
 

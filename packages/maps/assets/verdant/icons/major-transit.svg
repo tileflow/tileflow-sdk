@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
-  <title>Major transit</title>
-  <circle cx="12" cy="12" r="10.25" fill="#FCFCF9" stroke="#69766F" stroke-opacity=".34" stroke-width="1"/>
-  <rect x="6.7" y="5.5" width="10.6" height="10.7" rx="2.2" fill="none" stroke="#28332F" stroke-width="1.5"/>
-  <path d="M8.3 8h7.4v3.8H8.3ZM12 8v3.8" fill="#B8DDE7" stroke="#4D8392" stroke-width="1.05" stroke-linejoin="round"/>
-  <path d="M9 14.1h.1M14.9 14.1h.1M9.2 16.4l-1.5 2M14.8 16.4l1.5 2M7.4 18.4h9.2" fill="none" stroke="#28332F" stroke-width="1.4" stroke-linecap="round"/>
-</svg>

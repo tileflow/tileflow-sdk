@@ -9,7 +9,7 @@ public API; this contract records the relationships between those APIs.
 - A **map** is the only public cartographic authoring unit. It has its own identity and version and
   is either standalone or extends another imported map.
 - A **standalone map** terminates an inheritance lineage. Streets, Baedeker, Cívica, Cyberpunk, Ferraris,
-  Härad, Matrix, Siegfried, Soundings, Verdant, Blueprint, and Super Tile World are the first-party standalone
+  Härad, Matrix, Siegfried, Soundings, Blueprint, and Super Tile World are the first-party standalone
   maps. The sole semantic compiler is implicit; none imports or extends another official map, and
   each declares its own asset providers.
 - A **theme** is one complete named visual appearance for a map. Every theme in a map shares one
@@ -100,11 +100,10 @@ PMTiles contract.
 ### `@tileflow/maps`
 
 Owns the official Streets, Baedeker, Cívica, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix,
-Verdant, Blueprint, and Super Tile World map objects, their package-directory descriptors, and the icon, pattern,
+Blueprint, and Super Tile World map objects, their package-directory descriptors, and the icon, pattern,
 font, and notice files those maps require. All official maps are complete standalone maps.
-Baedeker, Ferraris, Härad, Siegfried, Soundings, Verdant, and Blueprint declare only their own
-`baedekerIcons`, `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, `verdantIcons`,
-and `blueprintIcons` directories. Cívica owns `[civicaIcons]` for its original civic-print artwork
+Baedeker, Ferraris, Härad, Siegfried, Soundings, and Blueprint declare only their own
+`baedekerIcons`, `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, and `blueprintIcons` directories. Cívica owns `[civicaIcons]` for its original civic-print artwork
 and `[civicaFonts]` for its packaged lettering. Super Tile World owns `[superTileWorldIcons]` and
 `[superTileWorldFonts]` for its pixel-art sprites, patterns, and lettering.
 Baedeker's eight patterns are original Tileflow artwork informed by historical Baedeker and Wagner

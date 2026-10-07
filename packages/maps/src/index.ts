@@ -11,7 +11,6 @@ import {soundings as soundingsDefinition} from './official/soundings';
 import {streets as streetsDefinition} from './official/streets';
 import {streetsThemes} from './official/streets-themes';
 import {superTileWorld as superTileWorldDefinition} from './official/super-tile-world';
-import {verdant as verdantDefinition} from './official/verdant';
 
 export {
   baedekerFonts,
@@ -32,7 +31,6 @@ export {
   streetsIcons,
   superTileWorldFonts,
   superTileWorldIcons,
-  verdantIcons,
 } from './assets';
 
 /** Immutable official map singletons. `defineMap` itself remains a mutable authoring identity. */
@@ -50,7 +48,6 @@ export const siegfried = freezeOfficialMap(siegfriedDefinition);
 export const soundings = freezeOfficialMap(soundingsDefinition);
 /** @deprecated Use `neonGrid` from the GitHub-distributed @tileflow/community-maps package. */
 export const cyberpunk = freezeOfficialMap(cyberpunkDefinition);
-export const verdant = freezeOfficialMap(verdantDefinition);
 export const superTileWorld = freezeOfficialMap(superTileWorldDefinition);
 
 export {streetsThemes};

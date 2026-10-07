@@ -74,8 +74,6 @@ import {
   superTileWorld,
   superTileWorldFonts,
   superTileWorldIcons,
-  verdant,
-  verdantIcons,
 } from '@tileflow/maps';
 ```
 

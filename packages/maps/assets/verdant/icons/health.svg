@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
-  <title>Health</title>
-  <circle cx="12" cy="12" r="10.25" fill="#FCFCF9" stroke="#69766F" stroke-opacity=".34" stroke-width="1"/>
-  <path d="M12 18.2c-1.7-1.2-5.7-4.3-5.7-7.7 0-2.2 1.4-3.6 3.3-3.6 1.1 0 1.9.5 2.4 1.4.5-.9 1.3-1.4 2.4-1.4 1.9 0 3.3 1.4 3.3 3.6 0 3.4-4 6.5-5.7 7.7Z" fill="none" stroke="#C55237" stroke-width="1.55" stroke-linejoin="round"/>
-  <path d="M7.5 12h2l1-2.1 1.5 4.2 1.3-2.9 1 1.4h2.2" fill="none" stroke="#28332F" stroke-width="1.15" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

@@ -165,15 +165,6 @@ charcoal paper. `[siegfriedIcons]` owns nine light and nine dark pattern variant
 `[siegfriedFonts]` owns the locally packaged Cormorant Garamond Regular, SemiBold, and Italic faces,
 and `[siegfriedThemes]` exposes the two complete visual vocabularies for safe derivation.
 
-## verdant
-
-`verdant` is a self-contained contemporary field-atlas design. It combines a park-map information
-hierarchy with a cool mineral substrate, clean blue hydrography, graphite buildings, and a
-trail-forward accent; its original botanical textures appear only where detailed zooms make them
-useful. It uses the same semantic compiler contract without importing or extending `streets`,
-declares its own Noto Sans glyph provider, and owns its complete icon and pattern set through
-`[verdantIcons]`.
-
 ## blueprint
 
 `blueprint` is a self-contained dark architectural-blueprint design centered on San Francisco.

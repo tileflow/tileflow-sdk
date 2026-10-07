@@ -237,7 +237,7 @@ Directories apply left to right. `<id>.<ext>` publishes an icon as `<id>`;
 be canonical lower-kebab-case. A later file replaces an earlier file only for the same exact ID;
 case-only collisions fail. Package maps export `streetsIcons`, `baedekerIcons`, `civicaIcons`,
 `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`,
-`verdantIcons`, `blueprintIcons`, and `superTileWorldIcons` directory descriptors from
+`blueprintIcons`, and `superTileWorldIcons` directory descriptors from
 `@tileflow/maps`. Cyberpunk, Matrix, Baedeker, Cívica, Siegfried, and Super Tile World also export
 `cyberpunkFonts`, `matrixFonts`, `baedekerFonts`, `civicaFonts`, `siegfriedFonts`, and
 `superTileWorldFonts`. Preparation

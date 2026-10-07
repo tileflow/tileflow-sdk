@@ -21,7 +21,6 @@ import {
   siegfried,
   soundings,
   streets,
-  verdant,
 } from '@tileflow/maps';
 import {
   compileTileflowIconPackages,
@@ -113,7 +112,6 @@ test('prepares every independent official root from its package-owned directorie
         siegfried: resolveFixtureMap(siegfried),
         soundings: resolveFixtureMap(soundings),
         streets: resolveFixtureMap(streets),
-        verdant: resolveFixtureMap(verdant),
       },
     };
     const compiled = await compileTileflowIconPackages(project, {cwd, target: 'hosted'});
@@ -195,32 +193,10 @@ test('prepares every independent official root from its package-owned directorie
         'soundings-wreck',
       ],
       streets: streetsIconIds,
-      verdant: [
-        'coffee',
-        'crosswalk',
-        'culture',
-        'education',
-        'food',
-        'health',
-        'lodging',
-        'major-transit',
-        'services',
-        'shopping',
-        'verdant-field-hatch',
-        'verdant-forest-canopy',
-        'verdant-heath-tufts',
-        'verdant-meadow-tufts',
-        'verdant-orchard',
-        'verdant-paper-fiber',
-        'verdant-residential-hatch',
-        'verdant-scree',
-        'verdant-water-lines',
-        'verdant-wetland-reeds',
-      ],
     } as const;
 
     assert.deepEqual(compiled.watchPaths, []);
-    assert.equal(compiled.packages.length, 10);
+    assert.equal(compiled.packages.length, 9);
     for (const binding of compiled.bindings) {
       assert.deepEqual(
         packagesByHash.get(binding.packageHash)?.manifest.iconNames,
@@ -229,7 +205,7 @@ test('prepares every independent official root from its package-owned directorie
     }
 
     const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
-    assert.equal(prepared.assets.length, 40);
+    assert.equal(prepared.assets.length, 36);
     for (const binding of compiled.bindings) {
       assert.deepEqual(prepared.mapAssets[binding.mapName]?.icons?.ids, binding.iconIds);
     }

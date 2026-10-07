@@ -16,7 +16,6 @@ import {
   siegfried,
   soundings,
   streets,
-  verdant,
 } from '@tileflow/maps';
 import {createTileflowArtifactPlan, disposeTileflowBuildArtifacts} from '../src/artifacts';
 import {prepareTileflowCatalogIcons} from '../src/icons';
@@ -31,7 +30,6 @@ export const nativeCatalogMaps = [
   siegfried,
   soundings,
   streets,
-  verdant,
 ] as const;
 
 export type NativeCatalogRow = {

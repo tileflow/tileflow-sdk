@@ -220,7 +220,7 @@ before loading a style. See the
 [browser runtime contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/framework-browser-runtime.md).
 
 A map with text must declare exactly one text provider. Streets, Ferraris, Härad, Soundings,
-Verdant, and Blueprint use URL glyph providers. Baedeker and Siegfried use packaged Cormorant
+and Blueprint use URL glyph providers. Baedeker and Siegfried use packaged Cormorant
 fonts; Cyberpunk and Matrix use packaged Oxanium fonts. Hosted deployment currently rejects
 package/local font bundles; use self-hosted output or explicitly replace the provider with compatible
 public glyphs. Tile URLs and font providers do not establish redistribution rights.

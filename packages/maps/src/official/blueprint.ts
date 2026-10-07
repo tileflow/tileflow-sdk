@@ -293,7 +293,7 @@ function technicalLandPattern(
 }
 
 export const blueprintTheme = defineOfficialTheme({
-  id: 'san-francisto-blueprint',
+  id: 'blueprint-dark',
   version: 1,
   colorScheme: 'dark',
   colors: {
@@ -420,11 +420,11 @@ export const blueprintTheme = defineOfficialTheme({
     },
   },
   images: {
-    'blueprint.background': 'san-francisto-blueprint-grid',
-    'blueprint.building': 'san-francisto-building-hatch',
-    'blueprint.landscape': 'san-francisto-landscape-hatch',
-    'blueprint.poi': 'san-francisto-poi-node',
-    'blueprint.water': 'san-francisto-water-hatch',
+    'blueprint.background': 'blueprint-grid',
+    'blueprint.building': 'blueprint-building-hatch',
+    'blueprint.landscape': 'blueprint-landscape-hatch',
+    'blueprint.poi': 'blueprint-poi-node',
+    'blueprint.water': 'blueprint-water-hatch',
   },
   typography: {
     font: 'Noto Sans Regular',
@@ -451,7 +451,7 @@ export const blueprintTheme = defineOfficialTheme({
  */
 export const blueprint = bindOfficialMapTheme(
   defineMap({
-    id: 'san-francisto',
+    id: 'blueprint',
     version: 1,
     name: 'Blueprint',
     data: {
@@ -496,7 +496,7 @@ export const blueprint = bindOfficialMapTheme(
           width: 0.28,
         },
         overzoom: 2,
-        sourceId: 'san-francisto-contours',
+        sourceId: 'blueprint-contours',
         thresholds: {
           9: [50, 250],
           11: [20, 100],
@@ -641,7 +641,7 @@ export const blueprint = bindOfficialMapTheme(
                 [17, 0.1],
                 [19, 0.16],
               ]),
-              pattern: 'san-francisto-building-hatch',
+              pattern: 'blueprint-building-hatch',
             },
           }),
           measuredEdge: renderPass({
@@ -937,7 +937,7 @@ export const blueprint = bindOfficialMapTheme(
       }),
       land: withRenderStack(
         land({
-          background: {opacity: 1, pattern: 'san-francisto-blueprint-grid'},
+          background: {opacity: 1, pattern: 'blueprint-grid'},
           globalLandcover: {
             color: expr.match(
               expr.get(field('class')),
@@ -1073,7 +1073,7 @@ export const blueprint = bindOfficialMapTheme(
           landscapeHatch: technicalLandPattern(
             'land.landcover.wood.fill',
             'landcover',
-            'san-francisto-landscape-hatch',
+            'blueprint-landscape-hatch',
             {
               fallback: '',
               field: 'class',
@@ -1086,7 +1086,7 @@ export const blueprint = bindOfficialMapTheme(
           parkHatch: technicalLandPattern(
             'land.landcover.urbanPark.fill',
             'landcover',
-            'san-francisto-landscape-hatch',
+            'blueprint-landscape-hatch',
             {
               kind: 'all',
               selectors: [
@@ -1111,7 +1111,7 @@ export const blueprint = bindOfficialMapTheme(
           recreationHatch: technicalLandPattern(
             'land.landuse.recreation.fill',
             'landuse',
-            'san-francisto-landscape-hatch',
+            'blueprint-landscape-hatch',
             {
               fallback: '',
               field: 'class',
@@ -1124,7 +1124,7 @@ export const blueprint = bindOfficialMapTheme(
           industrialHatch: technicalLandPattern(
             'land.landuse.industrial.fill',
             'landuse',
-            'san-francisto-building-hatch',
+            'blueprint-building-hatch',
             {
               fallback: '',
               field: 'class',
@@ -1309,7 +1309,7 @@ export const blueprint = bindOfficialMapTheme(
               icon: {
                 allowOverlap: false,
                 anchor: 'right',
-                image: 'san-francisto-poi-node',
+                image: 'blueprint-poi-node',
                 ignorePlacement: false,
                 opacity: zoom.linear([
                   [16, 0],
@@ -1440,7 +1440,7 @@ export const blueprint = bindOfficialMapTheme(
               opacity: 0.84,
             }),
           },
-          crossings: {image: 'san-francisto-blueprint-grid', visible: false},
+          crossings: {image: 'blueprint-grid', visible: false},
           detail: 'all',
           extras: {paths: true},
           hierarchy: 'strong',
@@ -1748,7 +1748,7 @@ export const blueprint = bindOfficialMapTheme(
                 [13, 0.24],
                 [18, 0.18],
               ]),
-              pattern: 'san-francisto-water-hatch',
+              pattern: 'blueprint-water-hatch',
             },
           }),
           intermittentWaterHatch: renderPass({
@@ -1767,7 +1767,7 @@ export const blueprint = bindOfficialMapTheme(
             style: {
               minZoom: 9,
               opacity: 0.2,
-              pattern: 'san-francisto-water-hatch',
+              pattern: 'blueprint-water-hatch',
             },
           }),
         },

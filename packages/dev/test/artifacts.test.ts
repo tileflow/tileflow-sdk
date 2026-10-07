@@ -109,11 +109,11 @@ test('resolves and watches local assets from a nested config directory within cw
   assert.ok(plan.files.some((file) => file.fileName.endsWith('/icons/nested/sprite.png')));
 });
 
-test('materializes package-owned Cyberpunk fonts and retargets immutable runtime metadata', async (t) => {
+test('materializes package-owned Baedeker fonts and retargets immutable runtime metadata', async (t) => {
   const cwd = await fixture(t, 'tileflow-artifact-fonts-');
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    "import {defineMap} from '@tileflow/core'; import {cyberpunk} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,extends:cyberpunk});\n",
+    "import {defineMap} from '@tileflow/core'; import {baedeker} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:1,extends:baedeker});\n",
   );
 
   const plan = await createTileflowBuildArtifacts({
@@ -125,16 +125,17 @@ test('materializes package-owned Cyberpunk fonts and retargets immutable runtime
   assert.deepEqual(
     stableFontAssets.map((asset) => asset.fileName),
     [
-      stableFontAssets[0]?.fileName,
-      `fonts/oxanium-medium-${'d0676de4894cd22591b4bb538dae5b8e06c44e0fb943300a7cff3945fe643689'}.ttf`,
-      `fonts/oxanium-semibold-${'e2d77ec4ee67b0152166adf5d6393360550a012c2066e0d4589053e14a733cdc'}.ttf`,
+      'fonts/cormorant-garamond-italic-50fccbdc299c232d25dd66868a2a2b55fd0e85d6238a58638986c5f66deca1bf.ttf',
+      'fonts/cormorant-garamond-regular-3f20a07914c56de160a4057f8fa48ec5372d77edf35c168fe4b0547b66502106.ttf',
+      'fonts/cormorant-garamond-semibold-159bda7bac64c80f02612c163bc21da028e9f990cbc4d469005de694428aee83.ttf',
+      stableFontAssets[3]?.fileName,
     ],
   );
   assert.match(
-    stableFontAssets[0]?.fileName ?? '',
+    stableFontAssets[3]?.fileName ?? '',
     /^fonts\/licenses\/license-[a-f0-9]{64}\.txt$/u,
   );
-  const stableFaces = plan.styles.night?.dark?.metadata?.['tileflow:fontFaces'] as Array<{
+  const stableFaces = plan.styles.night?.light?.metadata?.['tileflow:fontFaces'] as Array<{
     family: string;
     source: string;
     weight: string;
@@ -142,14 +143,17 @@ test('materializes package-owned Cyberpunk fonts and retargets immutable runtime
   assert.deepEqual(
     stableFaces.map(({family, weight}) => ({family, weight})),
     [
-      {family: 'Oxanium Medium', weight: '500'},
-      {family: 'Oxanium SemiBold', weight: '600'},
+      {family: 'Cormorant Garamond Italic', weight: '400'},
+      {family: 'Cormorant Garamond Regular', weight: '400'},
+      {family: 'Cormorant Garamond SemiBold', weight: '600'},
     ],
   );
-  assert.ok(stableFaces.every((face) => face.source.startsWith('/tileflow/fonts/oxanium-')));
+  assert.ok(
+    stableFaces.every((face) => face.source.startsWith('/tileflow/fonts/cormorant-garamond-')),
+  );
   assert.equal(
     await readFile(
-      new URL('../../maps/assets/cyberpunk/fonts/LICENSE.txt', import.meta.url),
+      new URL('../../maps/assets/baedeker/fonts/LICENSE.txt', import.meta.url),
       'utf8',
     ),
     new TextDecoder().decode(
@@ -157,7 +161,7 @@ test('materializes package-owned Cyberpunk fonts and retargets immutable runtime
     ),
   );
 
-  const immutableTheme = plan.manifest.maps.night!.themes.dark!;
+  const immutableTheme = plan.manifest.maps.night!.themes.light!;
   const immutableStyleUrl = immutableTheme.styleUrl;
   const immutableStyleFile = plan.files.find(
     (file) => `/${file.fileName}` === immutableStyleUrl.replace('/tileflow', ''),
@@ -169,7 +173,7 @@ test('materializes package-owned Cyberpunk fonts and retargets immutable runtime
   const immutableFaces = immutableStyle.metadata?.['tileflow:fontFaces'] ?? [];
   assert.ok(
     immutableFaces.every((face) =>
-      /^\/tileflow\/generations\/[a-f0-9]{64}\/fonts\/oxanium-/u.test(face.source),
+      /^\/tileflow\/generations\/[a-f0-9]{64}\/fonts\/cormorant-garamond-/u.test(face.source),
     ),
   );
   assert.deepEqual(immutableTheme.fontFaces, immutableFaces);
@@ -180,7 +184,7 @@ test('materializes package-owned Cyberpunk fonts and retargets immutable runtime
   }
 
   const relativePlan = await createTileflowBuildArtifacts({cwd, styleBaseUrl: '.'});
-  const relativeTheme = relativePlan.manifest.maps.night!.themes.dark!;
+  const relativeTheme = relativePlan.manifest.maps.night!.themes.light!;
   const relativeStyleFile = relativePlan.files.find(
     (file) => file.fileName === relativeTheme.styleUrl.replace(/^\.\//u, ''),
   );
@@ -200,15 +204,15 @@ test('materializes package-owned Cyberpunk fonts and retargets immutable runtime
 
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    "import {defineMap} from '@tileflow/core'; import {cyberpunk} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:2,extends:cyberpunk,glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Oxanium Medium','Oxanium SemiBold']}});\n",
+    "import {defineMap} from '@tileflow/core'; import {baedeker} from '@tileflow/maps'; export default defineMap({id:'night',name:'Night',version:2,extends:baedeker,glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Cormorant Garamond Regular','Cormorant Garamond Italic','Cormorant Garamond SemiBold']}});\n",
   );
   const remoteGlyphPlan = await createTileflowBuildArtifacts({cwd});
   assert.equal(
     remoteGlyphPlan.assets.some((asset) => asset.fileName.startsWith('fonts/')),
     false,
   );
-  assert.deepEqual(remoteGlyphPlan.manifest.maps.night?.themes.dark?.fontFaces, []);
-  assert.equal(remoteGlyphPlan.styles.night?.dark?.metadata?.['tileflow:fontFaces'], undefined);
+  assert.deepEqual(remoteGlyphPlan.manifest.maps.night?.themes.light?.fontFaces, []);
+  assert.equal(remoteGlyphPlan.styles.night?.light?.metadata?.['tileflow:fontFaces'], undefined);
 });
 
 test('keeps relative sprites valid inside the default content-addressed build layout', async (t) => {

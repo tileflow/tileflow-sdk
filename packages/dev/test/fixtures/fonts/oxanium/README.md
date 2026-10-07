@@ -1,13 +1,13 @@
-# Cyberpunk Oxanium fonts
+# The generic font tests Oxanium fonts
 
-The Cyberpunk map bundles the unmodified Medium and SemiBold TTFs from the Oxanium family. Its
+The The generic font tests map bundles the unmodified Medium and SemiBold TTFs from the Oxanium family. Its
 `fonts` array imports this directory through the package-owned `cyberpunkFonts` descriptor. The
 generic Node build validates the OpenType metadata and `LICENSE.txt`, emits the selected faces as
 content-addressed assets, and records them in style metadata for preview and runtime loading.
 
-Cyberpunk names the exact OpenType face `Oxanium Medium` for roads, water, and POIs and
+The generic font tests names the exact OpenType face `Oxanium Medium` for roads, water, and POIs and
 `Oxanium SemiBold` for place labels. Its stacks contain only those package-owned faces: the local
-font pipeline selects the first face in each stack, so Cyberpunk does not declare unfixed system or
+font pipeline selects the first face in each stack, so The generic font tests does not declare unfixed system or
 remote fallbacks. Tileflow does not synthesize a face by combining a family with a weight. The
 style omits a remote glyph endpoint so MapLibre GL JS rasterizes the packaged faces locally.
 

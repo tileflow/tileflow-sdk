@@ -4,35 +4,35 @@ import {readdir, readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {resolveMap} from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
-import {blueprint, blueprintIcons, sanFrancisto, sanFrancistoIcons} from '../src';
+import {blueprint, blueprintIcons} from '../src';
 
 const blueprintAssetIds = [
-  'san-francisto-blueprint-grid',
-  'san-francisto-building-hatch',
-  'san-francisto-landscape-hatch',
-  'san-francisto-poi-node',
-  'san-francisto-water-hatch',
+  'blueprint-grid',
+  'blueprint-building-hatch',
+  'blueprint-landscape-hatch',
+  'blueprint-poi-node',
+  'blueprint-water-hatch',
 ] as const;
 
 const expectedAssetFiles = [
-  'san-francisto-blueprint-grid.pattern.svg',
-  'san-francisto-building-hatch.pattern.svg',
-  'san-francisto-landscape-hatch.pattern.svg',
-  'san-francisto-poi-node.svg',
-  'san-francisto-water-hatch.pattern.svg',
+  'blueprint-grid.pattern.svg',
+  'blueprint-building-hatch.pattern.svg',
+  'blueprint-landscape-hatch.pattern.svg',
+  'blueprint-poi-node.svg',
+  'blueprint-water-hatch.pattern.svg',
 ] as const;
 
 const expectedPatternIds = [
-  'san-francisto-blueprint-grid',
-  'san-francisto-building-hatch',
-  'san-francisto-landscape-hatch',
-  'san-francisto-water-hatch',
+  'blueprint-grid',
+  'blueprint-building-hatch',
+  'blueprint-landscape-hatch',
+  'blueprint-water-hatch',
 ] as const;
 
 const preparedAssets = {
   icons: {
     ids: blueprintAssetIds,
-    sprite: '/tileflow/icons/san-francisto/sprite',
+    sprite: '/tileflow/icons/blueprint/sprite',
   },
 } as const;
 
@@ -44,9 +44,7 @@ function compileBlueprint() {
 }
 
 test('Blueprint is a frozen standalone blueprint with its exact view and providers', () => {
-  assert.equal(sanFrancisto, blueprint);
-  assert.equal(sanFrancistoIcons, blueprintIcons);
-  assert.equal(blueprint.id, 'san-francisto');
+  assert.equal(blueprint.id, 'blueprint');
   assert.equal(blueprint.name, 'Blueprint');
   assert.equal(blueprint.version, 1);
   assert.equal('root' in blueprint, false);
@@ -74,24 +72,24 @@ test('Blueprint is a frozen standalone blueprint with its exact view and provide
     url: 'https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf',
   });
   assert.equal(resolved.defaultTheme, 'blueprint');
-  assert.equal(resolved.themes.blueprint.id, 'san-francisto-blueprint');
+  assert.equal(resolved.themes.blueprint.id, 'blueprint-dark');
   assert.equal(resolved.themes.blueprint.colorScheme, 'dark');
   assert.equal(resolved.themes.blueprint.typography?.font, 'Noto Sans Regular');
 });
 
 test('Blueprint publishes exactly its five original technical assets', async () => {
   assert.deepEqual(
-    (await readdir(new URL('../assets/san-francisto/icons/', import.meta.url))).sort(),
-    [...expectedAssetFiles],
+    (await readdir(new URL('../assets/blueprint/icons/', import.meta.url))).sort(),
+    [...expectedAssetFiles].sort(),
   );
   assert.deepEqual(blueprintIcons, {
     kind: 'package-directory',
     package: '@tileflow/maps',
-    path: 'assets/san-francisto/icons',
+    path: 'assets/blueprint/icons',
   });
 
   const calloutSvg = await readFile(
-    new URL('../assets/san-francisto/icons/san-francisto-poi-node.svg', import.meta.url),
+    new URL('../assets/blueprint/icons/blueprint-poi-node.svg', import.meta.url),
     'utf8',
   );
   assert.match(calloutSvg, /width="36" height="18"/);
@@ -104,12 +102,12 @@ test('Blueprint publishes exactly its five original technical assets', async () 
 test('Blueprint compiles to a valid self-contained MapLibre style', () => {
   const {style} = compileBlueprint();
 
-  assert.equal(style.metadata?.['tileflow:map'], 'san-francisto');
+  assert.equal(style.metadata?.['tileflow:map'], 'blueprint');
   assert.equal(style.metadata?.['tileflow:compiler'], 'tileflow-semantic');
   assert.equal(style.metadata?.['tileflow:extends'], undefined);
   assert.equal(style.metadata?.['tileflow:theme'], 'blueprint');
   assert.equal(style.metadata?.['tileflow:colorScheme'], 'dark');
-  assert.equal(style.sprite, '/tileflow/icons/san-francisto/sprite');
+  assert.equal(style.sprite, '/tileflow/icons/blueprint/sprite');
   assert.equal(
     style.glyphs,
     'https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf',
@@ -119,7 +117,7 @@ test('Blueprint compiles to a valid self-contained MapLibre style', () => {
 
 test('Blueprint compiles survey contours without hillshade or 3D terrain', () => {
   const {style} = compileBlueprint();
-  const source = style.sources['san-francisto-contours'];
+  const source = style.sources['blueprint-contours'];
   const layerIds = style.layers.map(({id}) => id);
 
   assert.equal(style.terrain, undefined);
@@ -193,22 +191,22 @@ test('Blueprint preserves its technical render targets, ordering, and pattern vo
     'water.render.intermittentWaterHatch',
   ]);
 
-  assert.deepEqual(patternReferences(compiled.style), [...expectedPatternIds]);
+  assert.deepEqual(patternReferences(compiled.style), [...expectedPatternIds].sort());
   assert.equal(
     compiledLayer(compiled, 'buildings.render.footprintHatch')?.paint?.['fill-pattern'],
-    'san-francisto-building-hatch',
+    'blueprint-building-hatch',
   );
   assert.equal(
     compiledLayer(compiled, 'land.render.landscapeHatch')?.paint?.['fill-pattern'],
-    'san-francisto-landscape-hatch',
+    'blueprint-landscape-hatch',
   );
   assert.equal(
     compiledLayer(compiled, 'water.render.waterHatch')?.paint?.['fill-pattern'],
-    'san-francisto-water-hatch',
+    'blueprint-water-hatch',
   );
   assert.equal(
     compiledLayer(compiled, 'poi.render.architecturalCallouts')?.layout?.['icon-image'],
-    'san-francisto-poi-node',
+    'blueprint-poi-node',
   );
 });
 
@@ -523,7 +521,7 @@ test('Blueprint omits extrusion, shields, and default Maki pictograms', () => {
       collectStrings((layer.layout as Record<string, unknown> | undefined)?.['icon-image']),
     ),
   );
-  assert.deepEqual(iconImages, new Set(['san-francisto-poi-node']));
+  assert.deepEqual(iconImages, new Set(['blueprint-poi-node']));
 
   for (const makiId of [
     'coffee',

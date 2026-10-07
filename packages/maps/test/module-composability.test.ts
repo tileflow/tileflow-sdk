@@ -25,19 +25,7 @@ import {
   water,
 } from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
-import {
-  baedeker,
-  civica,
-  cyberpunk,
-  ferraris,
-  harad,
-  matrix,
-  sanFrancisto,
-  siegfried,
-  soundings,
-  streets,
-  superTileWorld,
-} from '../src';
+import {baedeker, blueprint, civica, ferraris, harad, siegfried, soundings, streets} from '../src';
 
 const moduleFactories = {
   addresses,
@@ -59,14 +47,14 @@ type Domain = keyof typeof moduleFactories;
 
 const officialMaps = {
   streets,
-  'super-tile-world': superTileWorld,
+
   baedeker,
   civica,
-  cyberpunk,
+
   ferraris,
   harad,
-  matrix,
-  'san-francisto': sanFrancisto,
+
+  blueprint: blueprint,
   siegfried,
   soundings,
 };
@@ -102,9 +90,7 @@ const preparedOfficialAssets = {
         'coffee',
         'crosswalk',
         'culture',
-        'cyber-circuit',
-        'cyber-data-grid',
-        'cyber-target-brackets',
+
         'education',
         'ferraris-crop-hatch',
         'ferraris-heath',
@@ -128,9 +114,7 @@ const preparedOfficialAssets = {
         'health',
         'lodging',
         'major-transit',
-        'matrix-crt-scanlines',
-        'matrix-data-grid',
-        'matrix-poi-node',
+
         'oneway',
         'parking',
         'road-shield-circle-neutral',
@@ -140,11 +124,11 @@ const preparedOfficialAssets = {
         'road-shield-rectangle-orange',
         'road-shield-rectangle-red',
         'road-shield-rectangle-yellow',
-        'san-francisto-blueprint-grid',
-        'san-francisto-building-hatch',
-        'san-francisto-landscape-hatch',
-        'san-francisto-poi-node',
-        'san-francisto-water-hatch',
+        'blueprint-grid',
+        'blueprint-building-hatch',
+        'blueprint-landscape-hatch',
+        'blueprint-poi-node',
+        'blueprint-water-hatch',
         'services',
         'shopping',
         'sidewalk-dot',
@@ -176,29 +160,6 @@ const preparedOfficialAssets = {
         'soundings-rock-awash',
         'soundings-water-dots',
         'soundings-wreck',
-        'stw-airship',
-        'stw-book',
-        'stw-brick',
-        'stw-castle',
-        'stw-coin',
-        'stw-farmland',
-        'stw-flag',
-        'stw-flower',
-        'stw-forest',
-        'stw-ghost-house',
-        'stw-grass',
-        'stw-heart',
-        'stw-hill',
-        'stw-level-node',
-        'stw-meadow',
-        'stw-mushroom',
-        'stw-mushroom-house',
-        'stw-question-block',
-        'stw-sand',
-        'stw-star',
-        'stw-tree',
-        'stw-warp-pipe',
-        'stw-water',
       ],
       sprite: '/tileflow/test/official/sprite',
     },

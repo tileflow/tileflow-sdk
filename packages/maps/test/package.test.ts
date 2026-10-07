@@ -351,7 +351,7 @@ test('keeps the Baedeker standalone source independent from other official maps'
   assert.match(source, /\bdefineMap\s*\(/u);
   assert.doesNotMatch(
     source,
-    /from\s+['"]\.\/(?:cyberpunk|ferraris|harad|matrix|san-francisto|siegfried|soundings|streets|verdant)['"]/u,
+    /from\s+['"]\.\/(?:blueprint|cyberpunk|ferraris|harad|matrix|siegfried|soundings|streets|verdant)['"]/u,
   );
   assert.doesNotMatch(source, /\bextends\s*:/u);
   assert.doesNotMatch(source, /\bstreets\.icons\b/u);
@@ -389,11 +389,8 @@ test('keeps the Siegfried standalone source independent from Streets', async () 
   assert.doesNotMatch(source, /\bstreets\.icons\b/u);
 });
 
-test('keeps the San Francisto standalone source independent from other official maps', async () => {
-  const source = await readFile(
-    new URL('../src/official/san-francisto.ts', import.meta.url),
-    'utf8',
-  );
+test('keeps the Blueprint standalone source independent from other official maps', async () => {
+  const source = await readFile(new URL('../src/official/blueprint.ts', import.meta.url), 'utf8');
   assert.match(source, /\bdefineMap\s*\(/u);
   assert.doesNotMatch(
     source,
@@ -410,7 +407,7 @@ test('keeps Cyberpunk and Matrix independent from other official maps', async ()
     'ferraris',
     'harad',
     'matrix',
-    'san-francisto',
+    'blueprint',
     'siegfried',
     'soundings',
     'streets',
@@ -430,6 +427,9 @@ test('imports and compiles all packaged official maps against public Core APIs',
   const script = `
     const core = await import('@tileflow/core');
     const maps = await import('@tileflow/maps');
+    if (maps.blueprint !== maps.sanFrancisto || maps.blueprintIcons !== maps.sanFrancistoIcons) {
+      throw new Error('Blueprint compatibility aliases must preserve object identity.');
+    }
     for (const [name, id] of [
       ['baedeker', 'baedeker'],
       ['civica', 'civica'],
@@ -439,6 +439,7 @@ test('imports and compiles all packaged official maps against public Core APIs',
       ['ferraris', 'ferraris'],
       ['harad', 'harad'],
       ['matrix', 'matrix'],
+      ['blueprint', 'san-francisto'],
       ['sanFrancisto', 'san-francisto'],
       ['siegfried', 'siegfried'],
       ['soundings', 'soundings'],

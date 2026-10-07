@@ -25,8 +25,10 @@ export const baedekerIcons = packageDirectory('assets/baedeker/icons');
 /** Package-owned Cívica print textures and landmark symbols. */
 export const civicaIcons = packageDirectory('assets/civica/icons');
 
-/** Package-owned San Francisto blueprint patterns and technical symbol. */
-export const sanFrancistoIcons = packageDirectory('assets/san-francisto/icons');
+/** Package-owned Blueprint patterns and technical symbol. The asset path is stable. */
+export const blueprintIcons = packageDirectory('assets/san-francisto/icons');
+/** @deprecated Use `blueprintIcons`. This alias preserves the same asset descriptor. */
+export const sanFrancistoIcons = blueprintIcons;
 
 /** Package-owned Soundings symbols and patterns. This root does not compose Streets assets. */
 export const soundingsIcons = packageDirectory('assets/soundings/icons');

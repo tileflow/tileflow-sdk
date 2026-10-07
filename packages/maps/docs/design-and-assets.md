@@ -174,12 +174,12 @@ useful. It uses the same semantic compiler contract without importing or extendi
 declares its own Noto Sans glyph provider, and owns its complete icon and pattern set through
 `[verdantIcons]`.
 
-## sanFrancisto
+## blueprint
 
-`sanFrancisto` is a self-contained dark architectural-blueprint design centered on San Francisco.
+`blueprint` is a self-contained dark architectural-blueprint design centered on San Francisco.
 Fine technical road strokes, survey-like uppercase labels, precise building footprints, contour
 dimensions, and dedicated landscape and water hatches replace naturalistic map color. It declares
-the canonical Noto Sans glyph provider and only `[sanFrancistoIcons]`, whose four original patterns
+the canonical Noto Sans glyph provider and only `[blueprintIcons]`, whose four original patterns
 and schematic POI node form its complete sprite vocabulary.
 
 ## cyberpunk

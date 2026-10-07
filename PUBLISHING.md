@@ -62,7 +62,7 @@ list.
 Official PBF glyphs are a Hosted base asset, not part of a project `fontBundleId` and not a mutable
 World release field. Before Maps can publish, Hosted must publish and verify the full-SHA asset set
 named by `official-glyph-base-asset`; every official root using Noto Sans—currently Streets,
-Ferraris, Härad, Soundings, Verdant, and San Francisto—must then reference that exact
+Ferraris, Härad, Soundings, Verdant, and Blueprint—must then reference that exact
 immutable URL. The compatibility `/fonts/...` endpoint is not sufficient release evidence.
 
 Stable SemVer is intentionally not automated yet. Before a stable channel exists, each public

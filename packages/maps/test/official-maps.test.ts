@@ -327,7 +327,9 @@ test('exports every official map as an independent standalone semantic map', asy
     'super-tile-world': superTileWorld,
     verdant,
   } as const;
-  const officialMapIds = new Set(Object.keys(officialMaps));
+  const officialMapSources = new Set(
+    Object.keys(officialMaps).map((id) => (id === 'san-francisto' ? 'blueprint' : id)),
+  );
 
   for (const [id, map] of Object.entries(officialMaps)) {
     assert.equal('root' in map, false);
@@ -340,7 +342,11 @@ test('exports every official map as an independent standalone semantic map', asy
     assert.equal('basemap' in resolved, false);
     assert.equal('root' in resolved, false);
 
-    const source = await readFile(new URL(`../src/official/${id}.ts`, import.meta.url), 'utf8');
+    const sourceName = id === 'san-francisto' ? 'blueprint' : id;
+    const source = await readFile(
+      new URL(`../src/official/${sourceName}.ts`, import.meta.url),
+      'utf8',
+    );
     assert.match(source, /\bdefineMap\s*\(/u, `${id} is not authored as a standalone map`);
     if (['civica', 'cyberpunk', 'matrix', 'san-francisto', 'super-tile-world'].includes(id)) {
       assert.match(source, /\bwithRenderStack\s*\(/u, `${id} lost its semantic render stack`);
@@ -354,7 +360,7 @@ test('exports every official map as an independent standalone semantic map', asy
     for (const match of source.matchAll(/\bfrom\s+['"]\.\/([^'"]+)['"]/gu)) {
       const importedModule = match[1]!.replace(/\.(?:js|ts)$/u, '');
       assert.equal(
-        officialMapIds.has(importedModule),
+        officialMapSources.has(importedModule),
         false,
         `${id} imports official map ${importedModule}`,
       );

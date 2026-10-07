@@ -4,9 +4,9 @@ import {readdir, readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {resolveMap} from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
-import {sanFrancisto, sanFrancistoIcons} from '../src';
+import {blueprint, blueprintIcons, sanFrancisto, sanFrancistoIcons} from '../src';
 
-const sanFrancistoAssetIds = [
+const blueprintAssetIds = [
   'san-francisto-blueprint-grid',
   'san-francisto-building-hatch',
   'san-francisto-landscape-hatch',
@@ -31,41 +31,43 @@ const expectedPatternIds = [
 
 const preparedAssets = {
   icons: {
-    ids: sanFrancistoAssetIds,
+    ids: blueprintAssetIds,
     sprite: '/tileflow/icons/san-francisto/sprite',
   },
 } as const;
 
 let compiledCache: ReturnType<typeof createStyleWithInspection> | undefined;
 
-function compileSanFrancisto() {
-  compiledCache ??= createStyleWithInspection(sanFrancisto, {preparedAssets});
+function compileBlueprint() {
+  compiledCache ??= createStyleWithInspection(blueprint, {preparedAssets});
   return compiledCache;
 }
 
-test('San Francisto is a frozen standalone blueprint with its exact view and providers', () => {
-  assert.equal(sanFrancisto.id, 'san-francisto');
-  assert.equal(sanFrancisto.name, 'Blueprint');
-  assert.equal(sanFrancisto.version, 1);
-  assert.equal('root' in sanFrancisto, false);
-  assert.equal('extends' in sanFrancisto, false);
-  assertDeepFrozen(sanFrancisto);
+test('Blueprint is a frozen standalone blueprint with its exact view and providers', () => {
+  assert.equal(sanFrancisto, blueprint);
+  assert.equal(sanFrancistoIcons, blueprintIcons);
+  assert.equal(blueprint.id, 'san-francisto');
+  assert.equal(blueprint.name, 'Blueprint');
+  assert.equal(blueprint.version, 1);
+  assert.equal('root' in blueprint, false);
+  assert.equal('extends' in blueprint, false);
+  assertDeepFrozen(blueprint);
 
-  assert.deepEqual(sanFrancisto.data, {
+  assert.deepEqual(blueprint.data, {
     generation: 'v1',
     selection: {kind: 'current', product: 'world-v1'},
     type: 'tileflow-world',
   });
-  assert.equal(sanFrancisto.projection, 'mercator');
-  assert.deepEqual(sanFrancisto.view, {
+  assert.equal(blueprint.projection, 'mercator');
+  assert.deepEqual(blueprint.view, {
     bearing: 0,
     center: [-122.3995, 37.795],
     pitch: 0,
     zoom: 15,
   });
 
-  const resolved = resolveMap(sanFrancisto);
-  assert.deepEqual(resolved.icons, [sanFrancistoIcons]);
+  const resolved = resolveMap(blueprint);
+  assert.deepEqual(resolved.icons, [blueprintIcons]);
   assert.deepEqual(resolved.glyphs, {
     fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
     kind: 'url',
@@ -77,12 +79,12 @@ test('San Francisto is a frozen standalone blueprint with its exact view and pro
   assert.equal(resolved.themes.blueprint.typography?.font, 'Noto Sans Regular');
 });
 
-test('San Francisto publishes exactly its five original technical assets', async () => {
+test('Blueprint publishes exactly its five original technical assets', async () => {
   assert.deepEqual(
     (await readdir(new URL('../assets/san-francisto/icons/', import.meta.url))).sort(),
     [...expectedAssetFiles],
   );
-  assert.deepEqual(sanFrancistoIcons, {
+  assert.deepEqual(blueprintIcons, {
     kind: 'package-directory',
     package: '@tileflow/maps',
     path: 'assets/san-francisto/icons',
@@ -99,8 +101,8 @@ test('San Francisto publishes exactly its five original technical assets', async
   assert.match(calloutSvg, /id="callout-terminal"/);
 });
 
-test('San Francisto compiles to a valid self-contained MapLibre style', () => {
-  const {style} = compileSanFrancisto();
+test('Blueprint compiles to a valid self-contained MapLibre style', () => {
+  const {style} = compileBlueprint();
 
   assert.equal(style.metadata?.['tileflow:map'], 'san-francisto');
   assert.equal(style.metadata?.['tileflow:compiler'], 'tileflow-semantic');
@@ -112,8 +114,8 @@ test('San Francisto compiles to a valid self-contained MapLibre style', () => {
   assert.deepEqual(validateStyleMin(style as never), []);
 });
 
-test('San Francisto compiles survey contours without hillshade or 3D terrain', () => {
-  const {style} = compileSanFrancisto();
+test('Blueprint compiles survey contours without hillshade or 3D terrain', () => {
+  const {style} = compileBlueprint();
   const source = style.sources['san-francisto-contours'];
   const layerIds = style.layers.map(({id}) => id);
 
@@ -149,8 +151,8 @@ test('San Francisto compiles survey contours without hillshade or 3D terrain', (
   assert.ok(contourIndex < layerIds.indexOf('tileflow-label-place-city'));
 });
 
-test('San Francisto preserves its technical render targets, ordering, and pattern vocabulary', () => {
-  const compiled = compileSanFrancisto();
+test('Blueprint preserves its technical render targets, ordering, and pattern vocabulary', () => {
+  const compiled = compileBlueprint();
   const targets = compiledTargets(compiled);
 
   for (const target of [
@@ -168,7 +170,7 @@ test('San Francisto preserves its technical render targets, ordering, and patter
     'water.render.waterHatch',
     'water.render.intermittentWaterHatch',
   ]) {
-    assert.ok(targets.has(target), `Missing San Francisto render target ${target}`);
+    assert.ok(targets.has(target), `Missing Blueprint render target ${target}`);
   }
 
   assertOrdered(compiled, [
@@ -209,8 +211,8 @@ test('San Francisto preserves its technical render targets, ordering, and patter
   );
 });
 
-test('San Francisto encodes an architectural line and label hierarchy', () => {
-  const compiled = compileSanFrancisto();
+test('Blueprint encodes an architectural line and label hierarchy', () => {
+  const compiled = compileBlueprint();
   const baseBuilding = compiledLayer(compiled, 'buildings.flat.outline');
   const prominentBuilding = compiledLayer(compiled, 'buildings.render.prominentOutline');
   const motorway = compiledLayer(compiled, 'roads.classes.motorway.surface.fill');
@@ -334,8 +336,8 @@ test('San Francisto encodes an architectural line and label hierarchy', () => {
   }
 });
 
-test('San Francisto keeps technical overlays honest and inside canonical data contracts', () => {
-  const compiled = compileSanFrancisto();
+test('Blueprint keeps technical overlays honest and inside canonical data contracts', () => {
+  const compiled = compileBlueprint();
   const callouts = compiledLayer(compiled, 'poi.render.architecturalCallouts');
   const footprintHatch = compiledLayer(compiled, 'buildings.render.footprintHatch');
   const prominentBuildings = compiledLayer(compiled, 'buildings.render.prominentOutline');
@@ -494,9 +496,9 @@ test('San Francisto keeps technical overlays honest and inside canonical data co
   ]);
 });
 
-test('San Francisto omits extrusion, shields, and default Maki pictograms', () => {
-  const {style} = compileSanFrancisto();
-  const resolved = resolveMap(sanFrancisto);
+test('Blueprint omits extrusion, shields, and default Maki pictograms', () => {
+  const {style} = compileBlueprint();
+  const resolved = resolveMap(blueprint);
   const layerIds = style.layers.map(({id}) => id);
 
   assert.equal(resolved.modules?.buildings?.mode, 'flat');
@@ -613,7 +615,7 @@ function relativeLuminance(color: string): number {
   return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
 }
 
-function patternReferences(style: ReturnType<typeof compileSanFrancisto>['style']): string[] {
+function patternReferences(style: ReturnType<typeof compileBlueprint>['style']): string[] {
   return [
     ...new Set(
       style.layers.flatMap((layer) =>

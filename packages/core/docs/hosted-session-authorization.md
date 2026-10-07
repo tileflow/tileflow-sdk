@@ -48,6 +48,8 @@ import {
   baedeker,
   baedekerFonts,
   baedekerIcons,
+  blueprint,
+  blueprintIcons,
   civica,
   civicaFonts,
   civicaIcons,
@@ -61,8 +63,6 @@ import {
   matrix,
   matrixFonts,
   matrixIcons,
-  sanFrancisto,
-  sanFrancistoIcons,
   siegfried,
   siegfriedFonts,
   siegfriedIcons,
@@ -90,8 +90,8 @@ declares `[civicaIcons]` for its original civic-print patterns and destination a
 `[civicaFonts]` for its packaged lettering. Super Tile World declares `[superTileWorldIcons]` and
 `[superTileWorldFonts]` for its pixel-art sprites, patterns, and lettering. Cyberpunk
 declares `[cyberpunkIcons]` and `[cyberpunkFonts]`; Matrix
-independently declares `[matrixIcons]` and `[matrixFonts]`. San Francisto declares
-`[sanFrancistoIcons]` for its four technical hatches and schematic POI node, derives contours from
+independently declares `[matrixIcons]` and `[matrixFonts]`. Blueprint declares
+`[blueprintIcons]` for its four technical hatches and schematic POI node, derives contours from
 unpackaged Mapterhorn tiles, and uses the canonical Noto Sans glyph provider. The same asset
 operation is available to applications:
 

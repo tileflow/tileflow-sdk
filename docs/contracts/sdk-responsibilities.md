@@ -9,7 +9,7 @@ public API; this contract records the relationships between those APIs.
 - A **map** is the only public cartographic authoring unit. It has its own identity and version and
   is either standalone or extends another imported map.
 - A **standalone map** terminates an inheritance lineage. Streets, Baedeker, Cívica, Cyberpunk, Ferraris,
-  Härad, Matrix, Siegfried, Soundings, Verdant, San Francisto, and Super Tile World are the first-party standalone
+  Härad, Matrix, Siegfried, Soundings, Verdant, Blueprint, and Super Tile World are the first-party standalone
   maps. The sole semantic compiler is implicit; none imports or extends another official map, and
   each declares its own asset providers.
 - A **theme** is one complete named visual appearance for a map. Every theme in a map shares one
@@ -100,11 +100,11 @@ PMTiles contract.
 ### `@tileflow/maps`
 
 Owns the official Streets, Baedeker, Cívica, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix,
-Verdant, San Francisto, and Super Tile World map objects, their package-directory descriptors, and the icon, pattern,
+Verdant, Blueprint, and Super Tile World map objects, their package-directory descriptors, and the icon, pattern,
 font, and notice files those maps require. All official maps are complete standalone maps.
-Baedeker, Ferraris, Härad, Siegfried, Soundings, Verdant, and San Francisto declare only their own
+Baedeker, Ferraris, Härad, Siegfried, Soundings, Verdant, and Blueprint declare only their own
 `baedekerIcons`, `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, `verdantIcons`,
-and `sanFrancistoIcons` directories. Cívica owns `[civicaIcons]` for its original civic-print artwork
+and `blueprintIcons` directories. Cívica owns `[civicaIcons]` for its original civic-print artwork
 and `[civicaFonts]` for its packaged lettering. Super Tile World owns `[superTileWorldIcons]` and
 `[superTileWorldFonts]` for its pixel-art sprites, patterns, and lettering.
 Baedeker's eight patterns are original Tileflow artwork informed by historical Baedeker and Wagner
@@ -121,7 +121,7 @@ context, not navigation-grade survey soundings. Every standalone map uses the im
 compiler but does not import, extend, or inherit
 assets from another official map. Streets owns light and dark theme documents over one map
 structure. Cyberpunk owns `cyberpunkIcons` and `cyberpunkFonts`; Matrix independently owns
-`matrixIcons` and `matrixFonts`. San Francisto owns four blueprint patterns and one schematic POI
+`matrixIcons` and `matrixFonts`. Blueprint owns four blueprint patterns and one schematic POI
 symbol, derives contours from unbundled Mapterhorn tiles, and declares the canonical Noto Sans
 glyph provider directly.
 

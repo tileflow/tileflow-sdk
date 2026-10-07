@@ -74,9 +74,9 @@ category image. Category styles are presentational and cannot replace producer s
 
 Official maps own their source assets in `@tileflow/maps/assets/<id>/`. Streets declares
 `icons: [streetsIcons]`; Cyberpunk and Matrix independently declare `[cyberpunkIcons]` and
-`[matrixIcons]`. Baedeker, Ferraris, Härad, Siegfried, Soundings, Verdant, and San Francisto likewise
+`[matrixIcons]`. Baedeker, Ferraris, Härad, Siegfried, Soundings, Verdant, and Blueprint likewise
 declare only `[baedekerIcons]`, `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
-`[soundingsIcons]`, `[verdantIcons]`, and `[sanFrancistoIcons]`, respectively; none composes another
+`[soundingsIcons]`, `[verdantIcons]`, and `[blueprintIcons]`, respectively; none composes another
 official map's assets. Cívica declares `[civicaIcons]` for its original civic-print patterns and
 symbols and `[civicaFonts]` for its packaged lettering. Super Tile World declares
 `[superTileWorldIcons]` and `[superTileWorldFonts]` for its pixel-art sprites, patterns, and lettering. Baedeker owns eight original patterns informed by historical Baedeker and
@@ -95,7 +95,7 @@ selects only its harbor and paper/water patterns; buoy, light, lighthouse, wreck
 remain available for the separate experimental Nautical canary and are not part of official
 Soundings. Its GEBCO-derived depth bands and labels provide broad visual context and are not
 navigation-grade survey soundings. Applications use the same rule with a config-relative
-directory, for example `icons: [...streets.icons, './icons']`. San Francisto's asset closure
+directory, for example `icons: [...streets.icons, './icons']`. Blueprint's asset closure
 contains four original drafting patterns and one schematic POI symbol for its dark blueprint
 design.
 
@@ -117,7 +117,7 @@ names as IDs, requires a
 faces used by the final style. `font` contains an exact face ID; local `fallbacks` contain exact face
 names or explicit CSS generic families. There is no weight field or family-plus-weight synthesis.
 After inheritance resolves, a map that emits text has exactly one provider. Streets, Ferraris,
-Härad, Soundings, Verdant, and San Francisto each declare the canonical Tileflow URL with exact
+Härad, Soundings, Verdant, and Blueprint each declare the canonical Tileflow URL with exact
 `Noto Sans Regular` and `Noto Sans Bold` stacks. Cyberpunk and Matrix use packaged `Oxanium Medium`
 and `Oxanium SemiBold` faces; Baedeker and Siegfried each use their own packaged
 `Cormorant Garamond Regular`, `Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic`

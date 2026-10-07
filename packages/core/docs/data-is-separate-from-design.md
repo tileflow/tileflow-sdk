@@ -120,7 +120,7 @@ another. Browser adapters load local faces before MapLibre. Native releases use 
 `glyphs` URL provider instead, which enumerates the exact comma-joined MapLibre request keys in
 `fontStacks`.
 
-Streets, Ferraris, Härad, Soundings, Verdant, and San Francisto each declare
+Streets, Ferraris, Härad, Soundings, Verdant, and Blueprint each declare
 `https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf` with the exact `Noto Sans Regular` and
 `Noto Sans Bold` stacks. That compatibility URL is canonical but not content-addressed; responses revalidate and
 do not make a resolved map byte-reproducible. Exact official glyph identity belongs to the
@@ -333,7 +333,7 @@ source classes into one civic color.
 World and text assets are independent contracts. `tileflowWorld()` selects `world-v1/current` or an
 exact `releaseId + descriptorSha256`; a `glyphs` declaration contains its own complete URL. Ordinary
 imports of Streets, Baedeker, Cívica, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Verdant,
-San Francisto, and Super Tile World
+Blueprint, and Super Tile World
 remain usable because each official map owns or inherits a URL or packaged-font provider.
 URL-backed maps become exact-byte reproducible
 when the immutable global base-asset set is published and their explicit URL is updated to its

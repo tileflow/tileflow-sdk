@@ -21,7 +21,7 @@ import {
   withRenderStack,
   zoom,
 } from '@tileflow/core';
-import {sanFrancistoIcons} from '../assets';
+import {blueprintIcons} from '../assets';
 import {bindOfficialMapTheme, defineOfficialTheme} from './theme-helpers';
 
 /**
@@ -31,7 +31,7 @@ import {bindOfficialMapTheme, defineOfficialTheme} from './theme-helpers';
  * prominent silhouettes, infrastructure, local streets, internal details,
  * land parcels, and auxiliary hatches each occupy a distinct visual tier.
  */
-const sanFrancistoPalette = {
+const blueprintPalette = {
   annotation: '#F2E6B9',
   background: '#061D35',
   boundary: '#7EA7BD',
@@ -67,7 +67,7 @@ function blueprintRoadStyle(
   } = {},
 ): TileflowRoadClassStyle {
   const casing = {
-    color: sanFrancistoPalette.roadCasing,
+    color: blueprintPalette.roadCasing,
     minZoom,
     opacity: options.casingOpacity ?? 0.8,
   };
@@ -80,20 +80,20 @@ function blueprintRoadStyle(
 
   return {
     bridge: {
-      casing: {...casing, color: sanFrancistoPalette.buildingMuted, opacity: 0.5},
+      casing: {...casing, color: blueprintPalette.buildingMuted, opacity: 0.5},
       fill,
     },
     surface: {casing, fill},
     tunnel: {
       casing: {
         ...casing,
-        color: sanFrancistoPalette.inkQuiet,
+        color: blueprintPalette.inkQuiet,
         dash: [3, 2],
         opacity: options.tunnelOpacity ?? 0.28,
       },
       fill: {
         ...fill,
-        color: sanFrancistoPalette.road,
+        color: blueprintPalette.road,
         dash: [3, 2],
         opacity: options.tunnelOpacity ?? 0.4,
       },
@@ -106,10 +106,10 @@ const blueprintRoadLabel = {
   priority: 60,
   spacing: 480,
   text: {
-    color: sanFrancistoPalette.inkMuted,
+    color: blueprintPalette.inkMuted,
     font: 'Noto Sans Regular',
     haloBlur: 0,
-    haloColor: sanFrancistoPalette.halo,
+    haloColor: blueprintPalette.halo,
     haloWidth: 1.2,
     letterSpacing: 0.075,
     maxAngle: 24,
@@ -128,7 +128,7 @@ const blueprintSecondaryRoadLabel = {
   spacing: 600,
   text: {
     ...blueprintRoadLabel.text,
-    color: sanFrancistoPalette.roadDetail,
+    color: blueprintPalette.roadDetail,
     haloWidth: 0.7,
     letterSpacing: 0.065,
     opacity: 0.5,
@@ -144,7 +144,7 @@ const blueprintDetailRoadLabel = {
   spacing: 720,
   text: {
     ...blueprintRoadLabel.text,
-    color: sanFrancistoPalette.inkQuiet,
+    color: blueprintPalette.inkQuiet,
     haloWidth: 0.45,
     letterSpacing: 0.055,
     opacity: zoom.linear([
@@ -164,9 +164,9 @@ const blueprintPoiLabel = {
   minZoom: 16,
   text: {
     anchor: 'left',
-    color: sanFrancistoPalette.inkQuiet,
+    color: blueprintPalette.inkQuiet,
     font: 'Noto Sans Regular',
-    haloColor: sanFrancistoPalette.halo,
+    haloColor: blueprintPalette.halo,
     haloWidth: 0.7,
     letterSpacing: 0.055,
     maxWidth: 10,
@@ -185,7 +185,7 @@ const blueprintPrimaryPoiLabel = {
   minZoom: 15.25,
   text: {
     ...blueprintPoiLabel.text,
-    color: sanFrancistoPalette.annotation,
+    color: blueprintPalette.annotation,
     font: 'Noto Sans Bold',
     opacity: 0.68,
   },
@@ -292,131 +292,131 @@ function technicalLandPattern(
   });
 }
 
-export const sanFrancistoTheme = defineOfficialTheme({
+export const blueprintTheme = defineOfficialTheme({
   id: 'san-francisto-blueprint',
   version: 1,
   colorScheme: 'dark',
   colors: {
-    background: sanFrancistoPalette.background,
-    boundary: sanFrancistoPalette.boundary,
-    building: sanFrancistoPalette.building,
-    land: sanFrancistoPalette.land,
-    park: sanFrancistoPalette.park,
-    road: sanFrancistoPalette.road,
-    roadCasing: sanFrancistoPalette.roadCasing,
-    roadMajor: sanFrancistoPalette.roadMajor,
-    text: sanFrancistoPalette.ink,
-    textHalo: sanFrancistoPalette.halo,
-    textMuted: sanFrancistoPalette.inkMuted,
-    water: sanFrancistoPalette.water,
+    background: blueprintPalette.background,
+    boundary: blueprintPalette.boundary,
+    building: blueprintPalette.building,
+    land: blueprintPalette.land,
+    park: blueprintPalette.park,
+    road: blueprintPalette.road,
+    roadCasing: blueprintPalette.roadCasing,
+    roadMajor: blueprintPalette.roadMajor,
+    text: blueprintPalette.ink,
+    textHalo: blueprintPalette.halo,
+    textMuted: blueprintPalette.inkMuted,
+    water: blueprintPalette.water,
   },
   modules: {
     boundaries: {
-      admin: sanFrancistoPalette.boundary,
-      disputed: sanFrancistoPalette.annotation,
-      major: sanFrancistoPalette.inkMuted,
-      maritime: sanFrancistoPalette.waterInk,
+      admin: blueprintPalette.boundary,
+      disputed: blueprintPalette.annotation,
+      major: blueprintPalette.inkMuted,
+      maritime: blueprintPalette.waterInk,
     },
     buildings: {
-      active: sanFrancistoPalette.buildingInk,
-      businessCorridor: sanFrancistoPalette.building,
-      businessCorridorOutline: sanFrancistoPalette.buildingMuted,
-      civic: sanFrancistoPalette.buildingInk,
-      commercial: sanFrancistoPalette.building,
-      destination: sanFrancistoPalette.buildingInk,
-      extrusion: sanFrancistoPalette.building,
-      fill: sanFrancistoPalette.building,
-      generic: sanFrancistoPalette.building,
-      highRise: sanFrancistoPalette.building,
-      highRiseOutline: sanFrancistoPalette.buildingInk,
-      industrial: sanFrancistoPalette.building,
-      lowRise: sanFrancistoPalette.building,
-      lowRiseOutline: sanFrancistoPalette.buildingMuted,
-      outline: sanFrancistoPalette.buildingInk,
-      residential: sanFrancistoPalette.building,
+      active: blueprintPalette.buildingInk,
+      businessCorridor: blueprintPalette.building,
+      businessCorridorOutline: blueprintPalette.buildingMuted,
+      civic: blueprintPalette.buildingInk,
+      commercial: blueprintPalette.building,
+      destination: blueprintPalette.buildingInk,
+      extrusion: blueprintPalette.building,
+      fill: blueprintPalette.building,
+      generic: blueprintPalette.building,
+      highRise: blueprintPalette.building,
+      highRiseOutline: blueprintPalette.buildingInk,
+      industrial: blueprintPalette.building,
+      lowRise: blueprintPalette.building,
+      lowRiseOutline: blueprintPalette.buildingMuted,
+      outline: blueprintPalette.buildingInk,
+      residential: blueprintPalette.building,
     },
     hydro: {
-      ferry: sanFrancistoPalette.waterInk,
-      label: sanFrancistoPalette.waterInk,
-      water: sanFrancistoPalette.water,
-      waterway: sanFrancistoPalette.waterInk,
+      ferry: blueprintPalette.waterInk,
+      label: blueprintPalette.waterInk,
+      water: blueprintPalette.water,
+      waterway: blueprintPalette.waterInk,
     },
     labels: {
-      country: sanFrancistoPalette.ink,
-      halo: sanFrancistoPalette.halo,
-      muted: sanFrancistoPalette.inkMuted,
-      neighborhood: sanFrancistoPalette.inkMuted,
-      poi: sanFrancistoPalette.annotation,
-      primary: sanFrancistoPalette.ink,
-      road: sanFrancistoPalette.inkMuted,
-      settlement: sanFrancistoPalette.ink,
-      water: sanFrancistoPalette.waterInk,
+      country: blueprintPalette.ink,
+      halo: blueprintPalette.halo,
+      muted: blueprintPalette.inkMuted,
+      neighborhood: blueprintPalette.inkMuted,
+      poi: blueprintPalette.annotation,
+      primary: blueprintPalette.ink,
+      road: blueprintPalette.inkMuted,
+      settlement: blueprintPalette.ink,
+      water: blueprintPalette.waterInk,
     },
     landcover: {
-      farmland: sanFrancistoPalette.landDetail,
-      flowerbed: sanFrancistoPalette.park,
-      grass: sanFrancistoPalette.park,
-      ice: sanFrancistoPalette.landDetail,
-      meadow: sanFrancistoPalette.park,
-      protected: sanFrancistoPalette.park,
-      recreationGround: sanFrancistoPalette.park,
-      rock: sanFrancistoPalette.landDetail,
-      sand: sanFrancistoPalette.landDetail,
-      scrub: sanFrancistoPalette.park,
-      urbanPark: sanFrancistoPalette.park,
-      villageGreen: sanFrancistoPalette.park,
-      wetland: sanFrancistoPalette.park,
-      wood: sanFrancistoPalette.park,
+      farmland: blueprintPalette.landDetail,
+      flowerbed: blueprintPalette.park,
+      grass: blueprintPalette.park,
+      ice: blueprintPalette.landDetail,
+      meadow: blueprintPalette.park,
+      protected: blueprintPalette.park,
+      recreationGround: blueprintPalette.park,
+      rock: blueprintPalette.landDetail,
+      sand: blueprintPalette.landDetail,
+      scrub: blueprintPalette.park,
+      urbanPark: blueprintPalette.park,
+      villageGreen: blueprintPalette.park,
+      wetland: blueprintPalette.park,
+      wood: blueprintPalette.park,
     },
     landuse: {
-      cemetery: sanFrancistoPalette.landDetail,
-      civic: sanFrancistoPalette.landDetail,
-      commercial: sanFrancistoPalette.landDetail,
-      education: sanFrancistoPalette.landDetail,
-      government: sanFrancistoPalette.landDetail,
-      industrial: sanFrancistoPalette.landDetail,
-      medical: sanFrancistoPalette.landDetail,
-      military: sanFrancistoPalette.landDetail,
-      parking: sanFrancistoPalette.land,
-      recreation: sanFrancistoPalette.park,
-      residential: sanFrancistoPalette.landDetail,
+      cemetery: blueprintPalette.landDetail,
+      civic: blueprintPalette.landDetail,
+      commercial: blueprintPalette.landDetail,
+      education: blueprintPalette.landDetail,
+      government: blueprintPalette.landDetail,
+      industrial: blueprintPalette.landDetail,
+      medical: blueprintPalette.landDetail,
+      military: blueprintPalette.landDetail,
+      parking: blueprintPalette.land,
+      recreation: blueprintPalette.park,
+      residential: blueprintPalette.landDetail,
     },
     poi: {
-      'arts-entertainment': sanFrancistoPalette.annotation,
-      education: sanFrancistoPalette.annotation,
-      'food-drink': sanFrancistoPalette.inkMuted,
-      halo: sanFrancistoPalette.halo,
-      icon: sanFrancistoPalette.annotation,
-      label: sanFrancistoPalette.annotation,
-      landmark: sanFrancistoPalette.annotation,
-      lodging: sanFrancistoPalette.inkMuted,
-      medical: sanFrancistoPalette.annotation,
-      'park-nature': sanFrancistoPalette.inkMuted,
-      'public-services': sanFrancistoPalette.inkMuted,
-      religion: sanFrancistoPalette.annotation,
-      retail: sanFrancistoPalette.inkMuted,
-      'sport-leisure': sanFrancistoPalette.inkMuted,
-      transport: sanFrancistoPalette.annotation,
-      'visitor-amenity': sanFrancistoPalette.inkMuted,
+      'arts-entertainment': blueprintPalette.annotation,
+      education: blueprintPalette.annotation,
+      'food-drink': blueprintPalette.inkMuted,
+      halo: blueprintPalette.halo,
+      icon: blueprintPalette.annotation,
+      label: blueprintPalette.annotation,
+      landmark: blueprintPalette.annotation,
+      lodging: blueprintPalette.inkMuted,
+      medical: blueprintPalette.annotation,
+      'park-nature': blueprintPalette.inkMuted,
+      'public-services': blueprintPalette.inkMuted,
+      religion: blueprintPalette.annotation,
+      retail: blueprintPalette.inkMuted,
+      'sport-leisure': blueprintPalette.inkMuted,
+      transport: blueprintPalette.annotation,
+      'visitor-amenity': blueprintPalette.inkMuted,
     },
     roads: {
-      bridge: sanFrancistoPalette.ink,
-      casing: sanFrancistoPalette.roadCasing,
-      ferry: sanFrancistoPalette.waterInk,
-      minor: sanFrancistoPalette.roadDetail,
-      motorway: sanFrancistoPalette.roadMajor,
-      path: sanFrancistoPalette.inkQuiet,
-      primary: sanFrancistoPalette.road,
-      rail: sanFrancistoPalette.rail,
-      secondary: sanFrancistoPalette.road,
-      trunk: sanFrancistoPalette.roadMajor,
-      tunnel: sanFrancistoPalette.inkQuiet,
+      bridge: blueprintPalette.ink,
+      casing: blueprintPalette.roadCasing,
+      ferry: blueprintPalette.waterInk,
+      minor: blueprintPalette.roadDetail,
+      motorway: blueprintPalette.roadMajor,
+      path: blueprintPalette.inkQuiet,
+      primary: blueprintPalette.road,
+      rail: blueprintPalette.rail,
+      secondary: blueprintPalette.road,
+      trunk: blueprintPalette.roadMajor,
+      tunnel: blueprintPalette.inkQuiet,
     },
     terrain: {
-      'contour.halo': sanFrancistoPalette.halo,
-      'contour.index': sanFrancistoPalette.contour,
-      'contour.label': sanFrancistoPalette.contour,
-      'contour.minor': sanFrancistoPalette.contour,
+      'contour.halo': blueprintPalette.halo,
+      'contour.index': blueprintPalette.contour,
+      'contour.label': blueprintPalette.contour,
+      'contour.minor': blueprintPalette.contour,
     },
   },
   images: {
@@ -437,7 +437,7 @@ export const sanFrancistoTheme = defineOfficialTheme({
   },
   lighting: {
     anchor: 'viewport',
-    color: sanFrancistoPalette.ink,
+    color: blueprintPalette.ink,
     intensity: 0.02,
     position: [1.15, 210, 35],
   },
@@ -449,7 +449,7 @@ export const sanFrancistoTheme = defineOfficialTheme({
  * contour dimensions, and original technical hatches instead of naturalistic
  * map colour.
  */
-export const sanFrancisto = bindOfficialMapTheme(
+export const blueprint = bindOfficialMapTheme(
   defineMap({
     id: 'san-francisto',
     version: 1,
@@ -464,8 +464,8 @@ export const sanFrancisto = bindOfficialMapTheme(
       url: 'https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf',
       fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
     },
-    icons: [sanFrancistoIcons],
-    themes: {blueprint: sanFrancistoTheme},
+    icons: [blueprintIcons],
+    themes: {blueprint: blueprintTheme},
     defaultTheme: 'blueprint',
     projection: 'mercator',
     terrain: {
@@ -474,14 +474,14 @@ export const sanFrancisto = bindOfficialMapTheme(
         demMaxZoom: 12,
         demUrl: 'https://tiles.mapterhorn.com/{z}/{x}/{y}.webp',
         index: {
-          color: sanFrancistoPalette.contour,
+          color: blueprintPalette.contour,
           opacity: 0.46,
           width: 0.62,
         },
         labels: {
-          color: sanFrancistoPalette.contour,
+          color: blueprintPalette.contour,
           font: 'Noto Sans Regular',
-          haloColor: sanFrancistoPalette.halo,
+          haloColor: blueprintPalette.halo,
           haloWidth: 0.75,
           minZoom: 12,
           opacity: 0.58,
@@ -491,7 +491,7 @@ export const sanFrancisto = bindOfficialMapTheme(
         maxZoom: 14,
         minZoom: 9,
         minor: {
-          color: sanFrancistoPalette.contour,
+          color: blueprintPalette.contour,
           opacity: 0.17,
           width: 0.28,
         },
@@ -512,9 +512,9 @@ export const sanFrancisto = bindOfficialMapTheme(
         labels: {
           minZoom: 18,
           text: {
-            color: sanFrancistoPalette.inkQuiet,
+            color: blueprintPalette.inkQuiet,
             font: 'Noto Sans Regular',
-            haloColor: sanFrancistoPalette.halo,
+            haloColor: blueprintPalette.halo,
             haloWidth: 0.8,
             letterSpacing: 0.08,
             size: 8,
@@ -523,9 +523,9 @@ export const sanFrancisto = bindOfficialMapTheme(
       }),
       aeroways: aeroways({
         area: {
-          fill: {color: sanFrancistoPalette.landDetail, minZoom: 9, opacity: 0.55},
+          fill: {color: blueprintPalette.landDetail, minZoom: 9, opacity: 0.55},
           outline: {
-            color: sanFrancistoPalette.boundary,
+            color: blueprintPalette.boundary,
             minZoom: 9,
             opacity: 0.5,
             width: 0.55,
@@ -533,18 +533,18 @@ export const sanFrancisto = bindOfficialMapTheme(
         },
         runway: {
           casing: {
-            color: sanFrancistoPalette.buildingMuted,
+            color: blueprintPalette.buildingMuted,
             minZoom: 9,
             opacity: 0.58,
           },
-          fill: {color: sanFrancistoPalette.land, minZoom: 9, opacity: 0.96},
+          fill: {color: blueprintPalette.land, minZoom: 9, opacity: 0.96},
         },
         runwayRef: {
           minZoom: 12,
           text: {
-            color: sanFrancistoPalette.annotation,
+            color: blueprintPalette.annotation,
             font: 'Noto Sans Bold',
-            haloColor: sanFrancistoPalette.halo,
+            haloColor: blueprintPalette.halo,
             haloWidth: 1,
             letterSpacing: 0.12,
             size: 9,
@@ -552,16 +552,16 @@ export const sanFrancisto = bindOfficialMapTheme(
         },
         taxiway: {
           casing: {
-            color: sanFrancistoPalette.inkQuiet,
+            color: blueprintPalette.inkQuiet,
             minZoom: 12,
             opacity: 0.46,
           },
-          fill: {color: sanFrancistoPalette.land, minZoom: 12, opacity: 0.9},
+          fill: {color: blueprintPalette.land, minZoom: 12, opacity: 0.9},
         },
       }),
       boundaries: boundaries({
         admin2: {
-          color: sanFrancistoPalette.boundary,
+          color: blueprintPalette.boundary,
           dash: [8, 2, 1, 2],
           minZoom: 2,
           opacity: 0.5,
@@ -571,21 +571,21 @@ export const sanFrancisto = bindOfficialMapTheme(
           ]),
         },
         admin4: {
-          color: sanFrancistoPalette.inkQuiet,
+          color: blueprintPalette.inkQuiet,
           dash: [3, 2],
           minZoom: 6,
           opacity: 0.38,
           width: 0.5,
         },
         disputed: {
-          color: sanFrancistoPalette.annotation,
+          color: blueprintPalette.annotation,
           dash: [2, 1],
           minZoom: 3,
           opacity: 0.7,
           width: 0.8,
         },
         maritime: {
-          color: sanFrancistoPalette.waterInk,
+          color: blueprintPalette.waterInk,
           dash: [7, 3, 1, 3],
           minZoom: 3,
           opacity: 0.48,
@@ -600,7 +600,7 @@ export const sanFrancisto = bindOfficialMapTheme(
           },
           flat: {
             fill: {
-              color: sanFrancistoPalette.building,
+              color: blueprintPalette.building,
               minZoom: 13,
               opacity: zoom.linear([
                 [13, 0],
@@ -609,7 +609,7 @@ export const sanFrancisto = bindOfficialMapTheme(
               ]),
             },
             outline: {
-              color: sanFrancistoPalette.buildingMuted,
+              color: blueprintPalette.buildingMuted,
               minZoom: 13.5,
               opacity: zoom.linear([
                 [13.5, 0],
@@ -651,7 +651,7 @@ export const sanFrancisto = bindOfficialMapTheme(
             renderer: 'line',
             selector: {geometry: 'polygon', kind: 'geometry'},
             style: {
-              color: sanFrancistoPalette.buildingMuted,
+              color: blueprintPalette.buildingMuted,
               dash: [1.2, 1.2],
               minZoom: 17,
               offset: zoom.linear([
@@ -672,7 +672,7 @@ export const sanFrancisto = bindOfficialMapTheme(
             renderer: 'line',
             selector: prominentBuildingSelector,
             style: {
-              color: sanFrancistoPalette.buildingInk,
+              color: blueprintPalette.buildingInk,
               join: 'miter',
               minZoom: 14,
               opacity: zoom.linear([
@@ -701,10 +701,10 @@ export const sanFrancisto = bindOfficialMapTheme(
               priority: 18,
               text: {
                 allowOverlap: false,
-                color: sanFrancistoPalette.buildingInk,
+                color: blueprintPalette.buildingInk,
                 field: expr.coalesce(expr.get(field('name')), ''),
                 font: 'Noto Sans Regular',
-                haloColor: sanFrancistoPalette.halo,
+                haloColor: blueprintPalette.halo,
                 haloWidth: 0.7,
                 letterSpacing: 0.08,
                 maxWidth: 8,
@@ -742,14 +742,14 @@ export const sanFrancisto = bindOfficialMapTheme(
               text: {
                 allowOverlap: false,
                 anchor: 'top',
-                color: sanFrancistoPalette.annotation,
+                color: blueprintPalette.annotation,
                 field: expr.concat(
                   'H ≈ ',
                   expr.toString(expr.toNumber(expr.get(field('height')), 0)),
                   ' M',
                 ),
                 font: 'Noto Sans Regular',
-                haloColor: sanFrancistoPalette.halo,
+                haloColor: blueprintPalette.halo,
                 haloWidth: 0.8,
                 letterSpacing: 0.08,
                 offset: [0, 0.8],
@@ -773,9 +773,9 @@ export const sanFrancisto = bindOfficialMapTheme(
           aerodrome: {
             minZoom: 9,
             text: {
-              color: sanFrancistoPalette.inkMuted,
+              color: blueprintPalette.inkMuted,
               font: 'Noto Sans Regular',
-              haloColor: sanFrancistoPalette.halo,
+              haloColor: blueprintPalette.halo,
               haloWidth: 1,
               letterSpacing: 0.09,
               size: 9,
@@ -787,9 +787,9 @@ export const sanFrancisto = bindOfficialMapTheme(
               maxZoom: 3.5,
               minZoom: 0,
               text: {
-                color: sanFrancistoPalette.inkQuiet,
+                color: blueprintPalette.inkQuiet,
                 font: 'Noto Sans Bold',
-                haloColor: sanFrancistoPalette.halo,
+                haloColor: blueprintPalette.halo,
                 haloWidth: 1,
                 letterSpacing: 0.2,
                 size: zoom.linear([
@@ -802,9 +802,9 @@ export const sanFrancisto = bindOfficialMapTheme(
             country: {
               minZoom: 1,
               text: {
-                color: sanFrancistoPalette.ink,
+                color: blueprintPalette.ink,
                 font: 'Noto Sans Bold',
-                haloColor: sanFrancistoPalette.halo,
+                haloColor: blueprintPalette.halo,
                 haloWidth: 1.25,
                 letterSpacing: 0.18,
                 size: zoom.linear([
@@ -817,9 +817,9 @@ export const sanFrancisto = bindOfficialMapTheme(
             state: {
               minZoom: 4,
               text: {
-                color: sanFrancistoPalette.inkMuted,
+                color: blueprintPalette.inkMuted,
                 font: 'Noto Sans Regular',
-                haloColor: sanFrancistoPalette.halo,
+                haloColor: blueprintPalette.halo,
                 haloWidth: 1.1,
                 letterSpacing: 0.15,
                 size: zoom.linear([
@@ -832,9 +832,9 @@ export const sanFrancisto = bindOfficialMapTheme(
             city: {
               minZoom: 4,
               text: {
-                color: sanFrancistoPalette.ink,
+                color: blueprintPalette.ink,
                 font: 'Noto Sans Bold',
-                haloColor: sanFrancistoPalette.halo,
+                haloColor: blueprintPalette.halo,
                 haloWidth: 1.35,
                 letterSpacing: 0.16,
                 size: zoom.linear([
@@ -847,9 +847,9 @@ export const sanFrancisto = bindOfficialMapTheme(
             town: {
               minZoom: 7,
               text: {
-                color: sanFrancistoPalette.ink,
+                color: blueprintPalette.ink,
                 font: 'Noto Sans Bold',
-                haloColor: sanFrancistoPalette.halo,
+                haloColor: blueprintPalette.halo,
                 haloWidth: 1.2,
                 letterSpacing: 0.12,
                 size: zoom.linear([
@@ -862,9 +862,9 @@ export const sanFrancisto = bindOfficialMapTheme(
             village: {
               minZoom: 9,
               text: {
-                color: sanFrancistoPalette.inkMuted,
+                color: blueprintPalette.inkMuted,
                 font: 'Noto Sans Regular',
-                haloColor: sanFrancistoPalette.halo,
+                haloColor: blueprintPalette.halo,
                 haloWidth: 1.1,
                 letterSpacing: 0.1,
                 opacity: 0.44,
@@ -875,9 +875,9 @@ export const sanFrancisto = bindOfficialMapTheme(
             neighborhood: {
               minZoom: 12.5,
               text: {
-                color: sanFrancistoPalette.inkMuted,
+                color: blueprintPalette.inkMuted,
                 font: 'Noto Sans Regular',
-                haloColor: sanFrancistoPalette.halo,
+                haloColor: blueprintPalette.halo,
                 haloWidth: 1,
                 letterSpacing: 0.16,
                 opacity: 0.74,
@@ -912,9 +912,9 @@ export const sanFrancisto = bindOfficialMapTheme(
             line: {
               minZoom: 12,
               text: {
-                color: sanFrancistoPalette.waterInk,
+                color: blueprintPalette.waterInk,
                 font: 'Noto Sans Regular',
-                haloColor: sanFrancistoPalette.halo,
+                haloColor: blueprintPalette.halo,
                 haloWidth: 1,
                 letterSpacing: 0.14,
                 opacity: 0.58,
@@ -924,9 +924,9 @@ export const sanFrancisto = bindOfficialMapTheme(
             },
             ocean: {
               text: {
-                color: sanFrancistoPalette.waterInk,
+                color: blueprintPalette.waterInk,
                 font: 'Noto Sans Regular',
-                haloColor: sanFrancistoPalette.halo,
+                haloColor: blueprintPalette.halo,
                 haloWidth: 1,
                 letterSpacing: 0.25,
                 size: zoom.linear([
@@ -939,9 +939,9 @@ export const sanFrancisto = bindOfficialMapTheme(
             other: {
               minZoom: 15.5,
               text: {
-                color: sanFrancistoPalette.waterInk,
+                color: blueprintPalette.waterInk,
                 font: 'Noto Sans Regular',
-                haloColor: sanFrancistoPalette.halo,
+                haloColor: blueprintPalette.halo,
                 haloWidth: 1,
                 letterSpacing: 0.18,
                 opacity: 0.42,
@@ -951,9 +951,9 @@ export const sanFrancisto = bindOfficialMapTheme(
             },
             waterway: {
               text: {
-                color: sanFrancistoPalette.waterInk,
+                color: blueprintPalette.waterInk,
                 font: 'Noto Sans Regular',
-                haloColor: sanFrancistoPalette.halo,
+                haloColor: blueprintPalette.halo,
                 haloWidth: 1,
                 letterSpacing: 0.12,
                 size: 8,
@@ -971,15 +971,15 @@ export const sanFrancisto = bindOfficialMapTheme(
             color: expr.match(
               expr.get(field('class')),
               [
-                {labels: 'barren', value: sanFrancistoPalette.landDetail},
-                {labels: 'crop', value: sanFrancistoPalette.landDetail},
-                {labels: 'grass', value: sanFrancistoPalette.park},
-                {labels: 'shrub', value: sanFrancistoPalette.park},
-                {labels: 'snow', value: sanFrancistoPalette.landDetail},
-                {labels: 'trees', value: sanFrancistoPalette.park},
-                {labels: 'urban', value: sanFrancistoPalette.land},
+                {labels: 'barren', value: blueprintPalette.landDetail},
+                {labels: 'crop', value: blueprintPalette.landDetail},
+                {labels: 'grass', value: blueprintPalette.park},
+                {labels: 'shrub', value: blueprintPalette.park},
+                {labels: 'snow', value: blueprintPalette.landDetail},
+                {labels: 'trees', value: blueprintPalette.park},
+                {labels: 'urban', value: blueprintPalette.land},
               ],
-              sanFrancistoPalette.land,
+              blueprintPalette.land,
             ),
             maxZoom: 8,
             minZoom: 0,
@@ -991,20 +991,20 @@ export const sanFrancisto = bindOfficialMapTheme(
           },
           landcover: {
             farmland: {
-              fill: {color: sanFrancistoPalette.landDetail, minZoom: 9, opacity: 0.38},
+              fill: {color: blueprintPalette.landDetail, minZoom: 9, opacity: 0.38},
             },
             flowerbed: {
-              fill: {color: sanFrancistoPalette.park, minZoom: 13, opacity: 0.5},
+              fill: {color: blueprintPalette.park, minZoom: 13, opacity: 0.5},
             },
-            grass: {fill: {color: sanFrancistoPalette.park, minZoom: 9, opacity: 0.44}},
+            grass: {fill: {color: blueprintPalette.park, minZoom: 9, opacity: 0.44}},
             ice: {
-              fill: {color: sanFrancistoPalette.landDetail, minZoom: 7, opacity: 0.52},
+              fill: {color: blueprintPalette.landDetail, minZoom: 7, opacity: 0.52},
             },
-            meadow: {fill: {color: sanFrancistoPalette.park, minZoom: 9, opacity: 0.44}},
+            meadow: {fill: {color: blueprintPalette.park, minZoom: 9, opacity: 0.44}},
             protected: {
-              fill: {color: sanFrancistoPalette.park, minZoom: 8, opacity: 0.48},
+              fill: {color: blueprintPalette.park, minZoom: 8, opacity: 0.48},
               outline: {
-                color: sanFrancistoPalette.inkQuiet,
+                color: blueprintPalette.inkQuiet,
                 dash: [4, 2],
                 minZoom: 9,
                 opacity: 0.32,
@@ -1012,34 +1012,34 @@ export const sanFrancisto = bindOfficialMapTheme(
               },
             },
             recreationGround: {
-              fill: {color: sanFrancistoPalette.park, minZoom: 10, opacity: 0.44},
+              fill: {color: blueprintPalette.park, minZoom: 10, opacity: 0.44},
             },
             rock: {
-              fill: {color: sanFrancistoPalette.landDetail, minZoom: 9, opacity: 0.36},
+              fill: {color: blueprintPalette.landDetail, minZoom: 9, opacity: 0.36},
             },
             sand: {
-              fill: {color: sanFrancistoPalette.landDetail, minZoom: 9, opacity: 0.38},
+              fill: {color: blueprintPalette.landDetail, minZoom: 9, opacity: 0.38},
             },
-            scrub: {fill: {color: sanFrancistoPalette.park, minZoom: 9, opacity: 0.4}},
+            scrub: {fill: {color: blueprintPalette.park, minZoom: 9, opacity: 0.4}},
             urbanPark: {
-              fill: {color: sanFrancistoPalette.park, minZoom: 9, opacity: 0.5},
+              fill: {color: blueprintPalette.park, minZoom: 9, opacity: 0.5},
               outline: {
-                color: sanFrancistoPalette.inkQuiet,
+                color: blueprintPalette.inkQuiet,
                 minZoom: 11,
                 opacity: 0.3,
                 width: 0.35,
               },
             },
             villageGreen: {
-              fill: {color: sanFrancistoPalette.park, minZoom: 11, opacity: 0.5},
+              fill: {color: blueprintPalette.park, minZoom: 11, opacity: 0.5},
             },
             wetland: {
-              fill: {color: sanFrancistoPalette.park, minZoom: 10, opacity: 0.38},
+              fill: {color: blueprintPalette.park, minZoom: 10, opacity: 0.38},
             },
             wood: {
-              fill: {color: sanFrancistoPalette.park, minZoom: 9, opacity: 0.44},
+              fill: {color: blueprintPalette.park, minZoom: 9, opacity: 0.44},
               outline: {
-                color: sanFrancistoPalette.inkQuiet,
+                color: blueprintPalette.inkQuiet,
                 minZoom: 12,
                 opacity: 0.26,
                 width: 0.3,
@@ -1048,33 +1048,33 @@ export const sanFrancisto = bindOfficialMapTheme(
           },
           landuse: {
             cemetery: {
-              fill: {color: sanFrancistoPalette.landDetail, minZoom: 11, opacity: 0.4},
+              fill: {color: blueprintPalette.landDetail, minZoom: 11, opacity: 0.4},
             },
             civic: {
-              fill: {color: sanFrancistoPalette.landDetail, minZoom: 10, opacity: 0.46},
+              fill: {color: blueprintPalette.landDetail, minZoom: 10, opacity: 0.46},
             },
             commercial: {
-              fill: {color: sanFrancistoPalette.landDetail, minZoom: 10, opacity: 0.42},
+              fill: {color: blueprintPalette.landDetail, minZoom: 10, opacity: 0.42},
             },
             education: {
-              fill: {color: sanFrancistoPalette.landDetail, minZoom: 10, opacity: 0.44},
+              fill: {color: blueprintPalette.landDetail, minZoom: 10, opacity: 0.44},
             },
             government: {
-              fill: {color: sanFrancistoPalette.landDetail, minZoom: 10, opacity: 0.46},
+              fill: {color: blueprintPalette.landDetail, minZoom: 10, opacity: 0.46},
             },
             industrial: {
-              fill: {color: sanFrancistoPalette.landDetail, minZoom: 10, opacity: 0.5},
+              fill: {color: blueprintPalette.landDetail, minZoom: 10, opacity: 0.5},
             },
             medical: {
-              fill: {color: sanFrancistoPalette.landDetail, minZoom: 11, opacity: 0.46},
+              fill: {color: blueprintPalette.landDetail, minZoom: 11, opacity: 0.46},
             },
             military: {
-              fill: {color: sanFrancistoPalette.landDetail, minZoom: 9, opacity: 0.4},
+              fill: {color: blueprintPalette.landDetail, minZoom: 9, opacity: 0.4},
             },
             parking: {
-              fill: {color: sanFrancistoPalette.land, minZoom: 16, opacity: 0.62},
+              fill: {color: blueprintPalette.land, minZoom: 16, opacity: 0.62},
               outline: {
-                color: sanFrancistoPalette.inkQuiet,
+                color: blueprintPalette.inkQuiet,
                 dash: [2, 2],
                 minZoom: 17,
                 opacity: 0.28,
@@ -1082,19 +1082,19 @@ export const sanFrancisto = bindOfficialMapTheme(
               },
             },
             railway: {
-              fill: {color: sanFrancistoPalette.landDetail, minZoom: 11, opacity: 0.42},
+              fill: {color: blueprintPalette.landDetail, minZoom: 11, opacity: 0.42},
             },
             recreation: {
-              fill: {color: sanFrancistoPalette.park, minZoom: 9, opacity: 0.48},
+              fill: {color: blueprintPalette.park, minZoom: 9, opacity: 0.48},
               outline: {
-                color: sanFrancistoPalette.inkQuiet,
+                color: blueprintPalette.inkQuiet,
                 minZoom: 12,
                 opacity: 0.3,
                 width: 0.34,
               },
             },
             residential: {
-              fill: {color: sanFrancistoPalette.landDetail, minZoom: 9, opacity: 0.36},
+              fill: {color: blueprintPalette.landDetail, minZoom: 9, opacity: 0.36},
             },
           },
         }),
@@ -1171,9 +1171,9 @@ export const sanFrancisto = bindOfficialMapTheme(
           arete: {
             minZoom: 13,
             text: {
-              color: sanFrancistoPalette.contour,
+              color: blueprintPalette.contour,
               font: 'Noto Sans Regular',
-              haloColor: sanFrancistoPalette.halo,
+              haloColor: blueprintPalette.halo,
               haloWidth: 0.8,
               letterSpacing: 0.08,
               size: 8,
@@ -1183,9 +1183,9 @@ export const sanFrancisto = bindOfficialMapTheme(
           cliff: {
             minZoom: 12,
             text: {
-              color: sanFrancistoPalette.contour,
+              color: blueprintPalette.contour,
               font: 'Noto Sans Regular',
-              haloColor: sanFrancistoPalette.halo,
+              haloColor: blueprintPalette.halo,
               haloWidth: 0.8,
               letterSpacing: 0.08,
               size: 8,
@@ -1195,9 +1195,9 @@ export const sanFrancisto = bindOfficialMapTheme(
           peak: {
             minZoom: 9,
             text: {
-              color: sanFrancistoPalette.annotation,
+              color: blueprintPalette.annotation,
               font: 'Noto Sans Bold',
-              haloColor: sanFrancistoPalette.halo,
+              haloColor: blueprintPalette.halo,
               haloWidth: 0.9,
               letterSpacing: 0.08,
               size: 9,
@@ -1207,9 +1207,9 @@ export const sanFrancisto = bindOfficialMapTheme(
           ridge: {
             minZoom: 13,
             text: {
-              color: sanFrancistoPalette.contour,
+              color: blueprintPalette.contour,
               font: 'Noto Sans Regular',
-              haloColor: sanFrancistoPalette.halo,
+              haloColor: blueprintPalette.halo,
               haloWidth: 0.8,
               letterSpacing: 0.08,
               size: 8,
@@ -1219,9 +1219,9 @@ export const sanFrancisto = bindOfficialMapTheme(
           saddle: {
             minZoom: 13,
             text: {
-              color: sanFrancistoPalette.contour,
+              color: blueprintPalette.contour,
               font: 'Noto Sans Regular',
-              haloColor: sanFrancistoPalette.halo,
+              haloColor: blueprintPalette.halo,
               haloWidth: 0.8,
               letterSpacing: 0.08,
               size: 8,
@@ -1231,9 +1231,9 @@ export const sanFrancisto = bindOfficialMapTheme(
           volcano: {
             minZoom: 8,
             text: {
-              color: sanFrancistoPalette.annotation,
+              color: blueprintPalette.annotation,
               font: 'Noto Sans Bold',
-              haloColor: sanFrancistoPalette.halo,
+              haloColor: blueprintPalette.halo,
               haloWidth: 0.9,
               letterSpacing: 0.08,
               size: 9,
@@ -1358,10 +1358,10 @@ export const sanFrancisto = bindOfficialMapTheme(
               text: {
                 allowOverlap: false,
                 anchor: 'left',
-                color: sanFrancistoPalette.inkMuted,
+                color: blueprintPalette.inkMuted,
                 field: blueprintPoiCalloutName,
                 font: 'Noto Sans Bold',
-                haloColor: sanFrancistoPalette.halo,
+                haloColor: blueprintPalette.halo,
                 haloWidth: 0.7,
                 ignorePlacement: false,
                 letterSpacing: 0.075,
@@ -1387,9 +1387,9 @@ export const sanFrancisto = bindOfficialMapTheme(
         roads({
           areas: {
             pedestrian: {
-              fill: {color: sanFrancistoPalette.landDetail, minZoom: 13, opacity: 0.7},
+              fill: {color: blueprintPalette.landDetail, minZoom: 13, opacity: 0.7},
               outline: {
-                color: sanFrancistoPalette.roadDetail,
+                color: blueprintPalette.roadDetail,
                 dash: [2, 2],
                 minZoom: 14,
                 opacity: 0.28,
@@ -1397,74 +1397,74 @@ export const sanFrancisto = bindOfficialMapTheme(
               },
             },
             pier: {
-              fill: {color: sanFrancistoPalette.land, minZoom: 12, opacity: 0.94},
+              fill: {color: blueprintPalette.land, minZoom: 12, opacity: 0.94},
               outline: {
-                color: sanFrancistoPalette.waterInk,
+                color: blueprintPalette.waterInk,
                 minZoom: 12,
                 opacity: 0.72,
                 width: 0.65,
               },
             },
             road: {
-              fill: {color: sanFrancistoPalette.land, minZoom: 13, opacity: 0.86},
+              fill: {color: blueprintPalette.land, minZoom: 13, opacity: 0.86},
             },
           },
           classes: {
-            cycleway: blueprintRoadStyle(sanFrancistoPalette.inkQuiet, 13, {
+            cycleway: blueprintRoadStyle(blueprintPalette.inkQuiet, 13, {
               casingOpacity: 0.1,
               dash: [3, 1.5],
               opacity: 0.42,
             }),
-            footway: blueprintRoadStyle(sanFrancistoPalette.inkQuiet, 14, {
+            footway: blueprintRoadStyle(blueprintPalette.inkQuiet, 14, {
               casingOpacity: 0.08,
               dash: [1.5, 1.5],
               opacity: 0.34,
             }),
-            minor: blueprintRoadStyle(sanFrancistoPalette.roadDetail, 12, {
+            minor: blueprintRoadStyle(blueprintPalette.roadDetail, 12, {
               casingOpacity: 0.26,
               opacity: 0.52,
             }),
-            motorway: blueprintRoadStyle(sanFrancistoPalette.roadMajor, 5, {
+            motorway: blueprintRoadStyle(blueprintPalette.roadMajor, 5, {
               casingOpacity: 0.72,
               opacity: 0.86,
             }),
-            pathway: blueprintRoadStyle(sanFrancistoPalette.inkQuiet, 13, {
+            pathway: blueprintRoadStyle(blueprintPalette.inkQuiet, 13, {
               casingOpacity: 0.08,
               dash: [3, 1.5],
               opacity: 0.36,
             }),
-            pedestrian: blueprintRoadStyle(sanFrancistoPalette.inkQuiet, 13, {
+            pedestrian: blueprintRoadStyle(blueprintPalette.inkQuiet, 13, {
               casingOpacity: 0.09,
               dash: [1, 1.5],
               opacity: 0.38,
             }),
-            primary: blueprintRoadStyle(sanFrancistoPalette.road, 7, {
+            primary: blueprintRoadStyle(blueprintPalette.road, 7, {
               casingOpacity: 0.62,
               opacity: 0.78,
             }),
-            secondary: blueprintRoadStyle(sanFrancistoPalette.road, 9, {
+            secondary: blueprintRoadStyle(blueprintPalette.road, 9, {
               casingOpacity: 0.44,
               opacity: 0.66,
             }),
-            service: blueprintRoadStyle(sanFrancistoPalette.roadDetail, 14, {
+            service: blueprintRoadStyle(blueprintPalette.roadDetail, 14, {
               casingOpacity: 0.18,
               opacity: 0.44,
             }),
-            steps: blueprintRoadStyle(sanFrancistoPalette.inkQuiet, 15, {
+            steps: blueprintRoadStyle(blueprintPalette.inkQuiet, 15, {
               casingOpacity: 0.06,
               dash: [0.5, 0.5],
               opacity: 0.32,
             }),
-            tertiary: blueprintRoadStyle(sanFrancistoPalette.roadDetail, 10, {
+            tertiary: blueprintRoadStyle(blueprintPalette.roadDetail, 10, {
               casingOpacity: 0.32,
               opacity: 0.56,
             }),
-            track: blueprintRoadStyle(sanFrancistoPalette.inkQuiet, 13, {
+            track: blueprintRoadStyle(blueprintPalette.inkQuiet, 13, {
               casingOpacity: 0.07,
               dash: [4, 2],
               opacity: 0.36,
             }),
-            trunk: blueprintRoadStyle(sanFrancistoPalette.roadMajor, 6, {
+            trunk: blueprintRoadStyle(blueprintPalette.roadMajor, 6, {
               casingOpacity: 0.7,
               opacity: 0.84,
             }),
@@ -1506,7 +1506,7 @@ export const sanFrancisto = bindOfficialMapTheme(
           roundabouts: {
             casing: {visible: false},
             fill: {
-              strokeColor: sanFrancistoPalette.roadDetail,
+              strokeColor: blueprintPalette.roadDetail,
               strokeOpacity: 0.42,
               strokeWidth: zoom.linear([
                 [15, 0.35],
@@ -1516,13 +1516,13 @@ export const sanFrancisto = bindOfficialMapTheme(
           },
           sidewalks: {
             outline: {
-              color: sanFrancistoPalette.inkQuiet,
+              color: blueprintPalette.inkQuiet,
               minZoom: 17,
               opacity: 0.3,
               width: 0.4,
             },
             surface: {
-              color: sanFrancistoPalette.landDetail,
+              color: blueprintPalette.landDetail,
               minZoom: 17,
               opacity: 0.52,
             },
@@ -1578,7 +1578,7 @@ export const sanFrancisto = bindOfficialMapTheme(
             },
             style: {
               cap: 'butt',
-              color: sanFrancistoPalette.roadCasing,
+              color: blueprintPalette.roadCasing,
               dash: [6, 2, 1, 2],
               join: 'miter',
               minZoom: 12,
@@ -1598,14 +1598,14 @@ export const sanFrancisto = bindOfficialMapTheme(
       ),
       transit: transit({
         cableway: {
-          color: sanFrancistoPalette.inkQuiet,
+          color: blueprintPalette.inkQuiet,
           dash: [2, 2],
           minZoom: 10,
           opacity: 0.42,
           width: 0.65,
         },
         ferry: {
-          color: sanFrancistoPalette.waterInk,
+          color: blueprintPalette.waterInk,
           dash: [7, 2, 1, 2],
           minZoom: 5,
           opacity: 0.62,
@@ -1616,19 +1616,19 @@ export const sanFrancisto = bindOfficialMapTheme(
         },
         rail: {
           bridge: {
-            color: sanFrancistoPalette.rail,
+            color: blueprintPalette.rail,
             minZoom: 7,
             opacity: 0.84,
             width: 1.1,
           },
           surface: {
-            color: sanFrancistoPalette.rail,
+            color: blueprintPalette.rail,
             minZoom: 7,
             opacity: 0.78,
             width: 0.95,
           },
           tunnel: {
-            color: sanFrancistoPalette.rail,
+            color: blueprintPalette.rail,
             dash: [3, 2],
             minZoom: 9,
             opacity: 0.34,
@@ -1637,13 +1637,13 @@ export const sanFrancisto = bindOfficialMapTheme(
         },
         railHatching: {
           bridge: {
-            color: sanFrancistoPalette.roadCasing,
+            color: blueprintPalette.roadCasing,
             dash: [1, 1.3],
             minZoom: 9,
             width: 0.55,
           },
           surface: {
-            color: sanFrancistoPalette.roadCasing,
+            color: blueprintPalette.roadCasing,
             dash: [1, 1.3],
             minZoom: 9,
             width: 0.5,
@@ -1652,19 +1652,19 @@ export const sanFrancisto = bindOfficialMapTheme(
         },
         serviceRail: {
           bridge: {
-            color: sanFrancistoPalette.rail,
+            color: blueprintPalette.rail,
             minZoom: 12,
             opacity: 0.46,
             width: 0.7,
           },
           surface: {
-            color: sanFrancistoPalette.rail,
+            color: blueprintPalette.rail,
             minZoom: 12,
             opacity: 0.42,
             width: 0.62,
           },
           tunnel: {
-            color: sanFrancistoPalette.rail,
+            color: blueprintPalette.rail,
             dash: [2, 2],
             minZoom: 12,
             opacity: 0.24,
@@ -1674,14 +1674,14 @@ export const sanFrancisto = bindOfficialMapTheme(
       }),
       vegetation: vegetation({
         flat: {
-          color: sanFrancistoPalette.park,
+          color: blueprintPalette.park,
           minZoom: 16,
           opacity: 0.2,
           radius: zoom.linear([
             [16, 1.2],
             [20, 3.3],
           ]),
-          strokeColor: sanFrancistoPalette.inkQuiet,
+          strokeColor: blueprintPalette.inkQuiet,
           strokeOpacity: 0.58,
           strokeWidth: 0.55,
         },
@@ -1691,15 +1691,15 @@ export const sanFrancisto = bindOfficialMapTheme(
       water: withRenderStack(
         water({
           bathymetry: {
-            color: sanFrancistoPalette.water,
+            color: blueprintPalette.water,
             maxZoom: 9,
             minZoom: 0,
             opacity: 0,
           },
           bodies: {
-            fill: {color: sanFrancistoPalette.water, opacity: 1},
+            fill: {color: blueprintPalette.water, opacity: 1},
             outline: {
-              color: sanFrancistoPalette.waterInk,
+              color: blueprintPalette.waterInk,
               minZoom: 6,
               opacity: 0.72,
               width: zoom.linear([
@@ -1710,16 +1710,16 @@ export const sanFrancisto = bindOfficialMapTheme(
             },
           },
           intermittent: {
-            bodies: {fill: {color: sanFrancistoPalette.water, opacity: 0.62}},
+            bodies: {fill: {color: blueprintPalette.water, opacity: 0.62}},
             waterways: {
-              color: sanFrancistoPalette.waterInk,
+              color: blueprintPalette.waterInk,
               dash: [3, 2],
               opacity: 0.46,
             },
           },
           waterways: {
             canal: {
-              color: sanFrancistoPalette.waterInk,
+              color: blueprintPalette.waterInk,
               minZoom: 8,
               opacity: 0.78,
               width: zoom.linear([
@@ -1728,7 +1728,7 @@ export const sanFrancisto = bindOfficialMapTheme(
               ]),
             },
             other: {
-              color: sanFrancistoPalette.waterInk,
+              color: blueprintPalette.waterInk,
               minZoom: 12,
               opacity: 0.56,
               width: zoom.linear([
@@ -1737,7 +1737,7 @@ export const sanFrancisto = bindOfficialMapTheme(
               ]),
             },
             river: {
-              color: sanFrancistoPalette.waterInk,
+              color: blueprintPalette.waterInk,
               minZoom: 6,
               opacity: 0.82,
               width: zoom.linear([
@@ -1746,7 +1746,7 @@ export const sanFrancisto = bindOfficialMapTheme(
               ]),
             },
             stream: {
-              color: sanFrancistoPalette.waterInk,
+              color: blueprintPalette.waterInk,
               minZoom: 10,
               opacity: 0.66,
               width: zoom.linear([

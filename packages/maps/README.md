@@ -60,14 +60,34 @@ resources available offline.
 - `cyberpunk`: the compatibility snapshot of the dark heads-up-display design now called Neon Grid.
 - `matrix`: the compatibility snapshot of the green-screen design now called Terminal.
 - `verdant`: a contemporary field atlas emphasizing trails, vegetation, and hydrography.
-- `sanFrancisto`: a dark architectural-blueprint design centered on San Francisco. The export is
-  spelled `sanFrancisto`.
+- `blueprint`: a dark architectural drawing style, with a default camera centered on San Francisco.
 - `superTileWorld`: a pixel-art overworld with layered shores, golden routes, destination sprites,
   and packaged arcade lettering.
 
 Every official map is a complete, independent root using the same Core compiler. Official map
 objects are deeply frozen shared instances. Do not mutate them; use `defineMap({extends: ...})`
 to create an application-owned map.
+
+### Blueprint naming and compatibility
+
+Use `blueprint` and `blueprintIcons` for the architectural drawing map. `sanFrancisto` and
+`sanFrancistoIcons` remain deprecated aliases of those same frozen objects. The display name is
+**Blueprint**; the stable map ID `san-francisto`, theme ID `san-francisto-blueprint`, theme key
+`blueprint`, and existing asset paths and icon IDs are preserved so saved references keep working.
+
+<!-- docs:check -->
+
+```ts
+import {defineMap} from '@tileflow/core';
+import {blueprint} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'city-plan',
+  version: 1,
+  extends: blueprint,
+  view: {center: [-3.7038, 40.4168], zoom: 14},
+});
+```
 
 ### Community maps
 
@@ -94,14 +114,14 @@ mapping. `system` belongs to browser selection; captures and builds use concrete
 
 Every map exports an icon-directory descriptor: `streetsIcons`, `baedekerIcons`, `civicaIcons`,
 `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`,
-`verdantIcons`, `sanFrancistoIcons`, and `superTileWorldIcons`. The descriptors point into this installed package; they are not sprite URLs.
+`verdantIcons`, `blueprintIcons`, and `superTileWorldIcons`. The descriptors point into this installed package; they are not sprite URLs.
 The CLI and build integrations compile the selected directories into runtime assets.
 
 Baedeker and Siegfried also export `baedekerFonts` and `siegfriedFonts` for their packaged Cormorant
 Garamond faces. Cyberpunk and Matrix export `cyberpunkFonts` and `matrixFonts` for Oxanium.
 Cívica exports `civicaFonts` for DM Serif Text, Barlow Semi Condensed, and Noto Sans fallback.
 Super Tile World exports `superTileWorldFonts` for Pixelify Sans, Tile World Arcade, and Noto Sans fallback.
-Streets, Ferraris, Härad, Soundings, Verdant, and San Francisto declare Noto Sans URL glyph providers.
+Streets, Ferraris, Härad, Soundings, Verdant, and Blueprint declare Noto Sans URL glyph providers.
 
 Omitting `icons` inherits the parent's directory list. Declaring a list replaces it; `[]` removes
 all icon directories. Compose explicitly when adding application icons:

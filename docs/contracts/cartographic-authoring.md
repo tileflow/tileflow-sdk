@@ -7,7 +7,7 @@ and visual evidence must change atomically. The canonical workbench is
 the official maps under `packages/maps/src/official/`. The Tileflow Tiles playground consumes
 exact npm packages after publication; it is not the place to invent SDK controls.
 
-Streets, Baedeker, Cívica, Cyberpunk, Ferraris, Härad, Matrix, Siegfried, Soundings, Blueprint, and Super Tile World are Tileflow's first-party standalone maps, declared with `defineMap()` and compiled
+Streets, Baedeker, Cívica, Ferraris, Härad, Siegfried, Soundings, and Blueprint are Tileflow's first-party standalone maps, declared with `defineMap()` and compiled
 directly from Tileflow-owned semantic modules. The sole semantic compiler is implicit, and they
 define their full designs independently: no official map imports or extends another official map,
 and each owns its asset providers. Streets owns coordinated light and dark appearances.
@@ -72,13 +72,11 @@ Producer `type` and `icon` values are snake_case; an unavailable icon falls back
 category image. Category styles are presentational and cannot replace producer selection.
 
 Official maps own their source assets in `@tileflow/maps/assets/<id>/`. Streets declares
-`icons: [streetsIcons]`; Cyberpunk and Matrix independently declare `[cyberpunkIcons]` and
-`[matrixIcons]`. Baedeker, Ferraris, Härad, Siegfried, Soundings, and Blueprint likewise
+`icons: [streetsIcons]`. Baedeker, Ferraris, Härad, Siegfried, Soundings, and Blueprint likewise
 declare only `[baedekerIcons]`, `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
 `[soundingsIcons]`, and `[blueprintIcons]`, respectively; none composes another
 official map's assets. Cívica declares `[civicaIcons]` for its original civic-print patterns and
-symbols and `[civicaFonts]` for its packaged lettering. Super Tile World declares
-`[superTileWorldIcons]` and `[superTileWorldFonts]` for its pixel-art sprites, patterns, and lettering. Baedeker owns eight original patterns informed by historical Baedeker and
+symbols and `[civicaFonts]` for its packaged lettering. Baedeker owns eight original patterns informed by historical Baedeker and
 Wagner & Debes visual references without redistributing scans, source pixels, historical
 typefaces, legend artwork, geospatial data, or source maps; it is not affiliated with or endorsed
 by Baedeker or Wagner & Debes. Its separately licensed Cormorant files and OFL license live in its
@@ -117,8 +115,7 @@ faces used by the final style. `font` contains an exact face ID; local `fallback
 names or explicit CSS generic families. There is no weight field or family-plus-weight synthesis.
 After inheritance resolves, a map that emits text has exactly one provider. Streets, Ferraris,
 Härad, Soundings, and Blueprint each declare the canonical Tileflow URL with exact
-`Noto Sans Regular` and `Noto Sans Bold` stacks. Cyberpunk and Matrix use packaged `Oxanium Medium`
-and `Oxanium SemiBold` faces; Baedeker and Siegfried each use their own packaged
+`Noto Sans Regular` and `Noto Sans Bold` stacks. Baedeker and Siegfried each use their own packaged
 `Cormorant Garamond Regular`, `Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic`
 faces. The glyph URL is canonical
 rather than content-addressed; the service uses revalidating cache semantics and does not claim an

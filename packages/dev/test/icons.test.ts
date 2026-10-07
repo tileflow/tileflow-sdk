@@ -11,17 +11,7 @@ import {
   type TileflowMap,
 } from '@tileflow/core';
 import {createStyleFromCatalog, type TileflowBuildCatalog} from '@tileflow/core/build';
-import {
-  baedeker,
-  cyberpunk,
-  ferraris,
-  harad,
-  matrix,
-  sanFrancisto,
-  siegfried,
-  soundings,
-  streets,
-} from '@tileflow/maps';
+import {baedeker, blueprint, ferraris, harad, siegfried, soundings, streets} from '@tileflow/maps';
 import {
   compileTileflowIconPackages,
   prepareTileflowCatalogIcons,
@@ -104,11 +94,11 @@ test('prepares every independent official root from its package-owned directorie
     const project: TileflowBuildCatalog = {
       maps: {
         baedeker: resolveFixtureMap(baedeker),
-        cyberpunk: resolveFixtureMap(cyberpunk),
+
         ferraris: resolveFixtureMap(ferraris),
         harad: resolveFixtureMap(harad),
-        matrix: resolveFixtureMap(matrix),
-        sanFrancisto: resolveFixtureMap(sanFrancisto),
+
+        blueprint: resolveFixtureMap(blueprint),
         siegfried: resolveFixtureMap(siegfried),
         soundings: resolveFixtureMap(soundings),
         streets: resolveFixtureMap(streets),
@@ -129,7 +119,7 @@ test('prepares every independent official root from its package-owned directorie
         'baedeker-water-lines',
         'baedeker-wetland',
       ],
-      cyberpunk: ['cyber-circuit', 'cyber-data-grid', 'cyber-target-brackets'],
+
       ferraris: [
         'ferraris-crop-hatch',
         'ferraris-heath',
@@ -152,13 +142,13 @@ test('prepares every independent official root from its package-owned directorie
         'harad-water-lines',
         'harad-wetland',
       ],
-      matrix: ['matrix-crt-scanlines', 'matrix-data-grid', 'matrix-poi-node'],
-      sanFrancisto: [
-        'san-francisto-blueprint-grid',
-        'san-francisto-building-hatch',
-        'san-francisto-landscape-hatch',
-        'san-francisto-poi-node',
-        'san-francisto-water-hatch',
+
+      blueprint: [
+        'blueprint-building-hatch',
+        'blueprint-grid',
+        'blueprint-landscape-hatch',
+        'blueprint-poi-node',
+        'blueprint-water-hatch',
       ],
       siegfried: [
         'siegfried-dark-forest',
@@ -196,7 +186,7 @@ test('prepares every independent official root from its package-owned directorie
     } as const;
 
     assert.deepEqual(compiled.watchPaths, []);
-    assert.equal(compiled.packages.length, 9);
+    assert.equal(compiled.packages.length, 7);
     for (const binding of compiled.bindings) {
       assert.deepEqual(
         packagesByHash.get(binding.packageHash)?.manifest.iconNames,
@@ -205,7 +195,7 @@ test('prepares every independent official root from its package-owned directorie
     }
 
     const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
-    assert.equal(prepared.assets.length, 36);
+    assert.equal(prepared.assets.length, 28);
     for (const binding of compiled.bindings) {
       assert.deepEqual(prepared.mapAssets[binding.mapName]?.icons?.ids, binding.iconIds);
     }

@@ -4,32 +4,19 @@ import {readdir} from 'node:fs/promises';
 import {basename} from 'node:path';
 import test from 'node:test';
 import {createStyle} from '@tileflow/core';
-import {
-  baedeker,
-  civica,
-  cyberpunk,
-  ferraris,
-  harad,
-  matrix,
-  sanFrancisto,
-  siegfried,
-  soundings,
-  streets,
-  superTileWorld,
-} from '../src';
+import {baedeker, blueprint, civica, ferraris, harad, siegfried, soundings, streets} from '../src';
 
 const officialMaps = [
   baedeker,
   civica,
-  cyberpunk,
+
   ferraris,
   harad,
-  matrix,
-  sanFrancisto,
+
+  blueprint,
   siegfried,
   soundings,
   streets,
-  superTileWorld,
 ] as const;
 
 test('official styles remain valid for MapLibre GL JS 6 style-spec', async () => {

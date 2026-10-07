@@ -55,11 +55,7 @@ test('publishes every official icon and font directory with provenance', async (
       'civica-poi-transit.svg',
       'civica-water-lines.pattern.svg',
     ],
-    cyberpunk: [
-      'cyber-circuit.pattern.svg',
-      'cyber-data-grid.pattern.svg',
-      'cyber-target-brackets.svg',
-    ],
+
     ferraris: [
       'ferraris-crop-hatch.pattern.svg',
       'ferraris-heath.pattern.svg',
@@ -82,17 +78,13 @@ test('publishes every official icon and font directory with provenance', async (
       'harad-water-lines.pattern.svg',
       'harad-wetland.pattern.svg',
     ],
-    matrix: [
-      'matrix-crt-scanlines.pattern.svg',
-      'matrix-data-grid.pattern.svg',
-      'matrix-poi-node.svg',
-    ],
-    'san-francisto': [
-      'san-francisto-blueprint-grid.pattern.svg',
-      'san-francisto-building-hatch.pattern.svg',
-      'san-francisto-landscape-hatch.pattern.svg',
-      'san-francisto-poi-node.svg',
-      'san-francisto-water-hatch.pattern.svg',
+
+    blueprint: [
+      'blueprint-grid.pattern.svg',
+      'blueprint-building-hatch.pattern.svg',
+      'blueprint-landscape-hatch.pattern.svg',
+      'blueprint-poi-node.svg',
+      'blueprint-water-hatch.pattern.svg',
     ],
     siegfried: [
       'siegfried-dark-forest.pattern.svg',
@@ -126,31 +118,7 @@ test('publishes every official icon and font directory with provenance', async (
       'soundings-water-dots.pattern.svg',
       'soundings-wreck.svg',
     ],
-    'super-tile-world': [
-      'stw-airship.svg',
-      'stw-book.svg',
-      'stw-brick.pattern.svg',
-      'stw-castle.svg',
-      'stw-coin.svg',
-      'stw-farmland.pattern.svg',
-      'stw-flag.svg',
-      'stw-flower.svg',
-      'stw-forest.pattern.svg',
-      'stw-ghost-house.svg',
-      'stw-grass.pattern.svg',
-      'stw-heart.svg',
-      'stw-hill.svg',
-      'stw-level-node.svg',
-      'stw-meadow.pattern.svg',
-      'stw-mushroom-house.svg',
-      'stw-mushroom.svg',
-      'stw-question-block.svg',
-      'stw-sand.pattern.svg',
-      'stw-star.svg',
-      'stw-tree.svg',
-      'stw-warp-pipe.svg',
-      'stw-water.pattern.svg',
-    ],
+
     streets: [
       'coffee.svg',
       'crosswalk.svg',
@@ -176,10 +144,17 @@ test('publishes every official icon and font directory with provenance', async (
     ],
   } as const;
 
+  assert.deepEqual(
+    (await readdir(new URL('../assets/', import.meta.url), {withFileTypes: true}))
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort(),
+    Object.keys(expected).sort(),
+  );
   for (const [mapId, fileNames] of Object.entries(expected)) {
     assert.deepEqual(
       (await readdir(new URL(`../assets/${mapId}/icons/`, import.meta.url))).sort(),
-      fileNames,
+      [...fileNames].sort(),
     );
   }
 
@@ -239,55 +214,6 @@ test('publishes every official icon and font directory with provenance', async (
     assert.ok(
       (await readFile(new URL(`../assets/civica/fonts/${font}`, import.meta.url))).byteLength >
         10_000,
-    );
-  }
-  assert.deepEqual(
-    (await readdir(new URL('../assets/super-tile-world/fonts/', import.meta.url))).sort(),
-    [
-      'LICENSE-NotoSans.txt',
-      'LICENSE-PixelifySans.txt',
-      'LICENSE-PressStart2P.txt',
-      'LICENSE.txt',
-      'NotoSans-Regular.ttf',
-      'PixelifySans-Regular.ttf',
-      'PixelifySans-SemiBold.ttf',
-      'README.md',
-      'TileWorldArcade-Regular.ttf',
-    ],
-  );
-  for (const font of [
-    'NotoSans-Regular.ttf',
-    'PixelifySans-Regular.ttf',
-    'PixelifySans-SemiBold.ttf',
-    'TileWorldArcade-Regular.ttf',
-  ]) {
-    assert.ok(
-      (await readFile(new URL(`../assets/super-tile-world/fonts/${font}`, import.meta.url)))
-        .byteLength > 10_000,
-    );
-  }
-  assert.deepEqual((await readdir(new URL('../assets/cyberpunk/fonts/', import.meta.url))).sort(), [
-    'LICENSE.txt',
-    'Oxanium-Medium.ttf',
-    'Oxanium-SemiBold.ttf',
-    'README.md',
-  ]);
-  for (const font of ['Oxanium-Medium.ttf', 'Oxanium-SemiBold.ttf']) {
-    assert.ok(
-      (await readFile(new URL(`../assets/cyberpunk/fonts/${font}`, import.meta.url))).byteLength >
-        20_000,
-    );
-  }
-  assert.deepEqual((await readdir(new URL('../assets/matrix/fonts/', import.meta.url))).sort(), [
-    'LICENSE.txt',
-    'Oxanium-Medium.ttf',
-    'Oxanium-SemiBold.ttf',
-    'README.md',
-  ]);
-  for (const font of ['Oxanium-Medium.ttf', 'Oxanium-SemiBold.ttf']) {
-    assert.ok(
-      (await readFile(new URL(`../assets/matrix/fonts/${font}`, import.meta.url))).byteLength >
-        20_000,
     );
   }
   assert.deepEqual((await readdir(new URL('../assets/siegfried/fonts/', import.meta.url))).sort(), [
@@ -370,47 +296,20 @@ test('keeps the Blueprint standalone source independent from other official maps
   assert.doesNotMatch(source, /\bextends\s*:/u);
 });
 
-test('keeps Cyberpunk and Matrix independent from other official maps', async () => {
-  const officialMapIds = new Set([
-    'baedeker',
-    'civica',
-    'cyberpunk',
-    'ferraris',
-    'harad',
-    'matrix',
-    'blueprint',
-    'siegfried',
-    'soundings',
-    'streets',
-    'super-tile-world',
-  ]);
-  for (const id of ['cyberpunk', 'matrix']) {
-    const source = await readFile(new URL(`../src/official/${id}.ts`, import.meta.url), 'utf8');
-    assert.match(source, /\bdefineMap\s*\(/u);
-    for (const match of source.matchAll(/\bfrom\s+['"]\.\/([^'"]+)['"]/gu)) {
-      assert.equal(officialMapIds.has(match[1]!), false, `${id} imports ${match[1]}`);
-    }
-  }
-});
-
 test('imports and compiles all packaged official maps against public Core APIs', async () => {
   const script = `
     const core = await import('@tileflow/core');
     const maps = await import('@tileflow/maps');
-    if (maps.blueprint !== maps.sanFrancisto || maps.blueprintIcons !== maps.sanFrancistoIcons) {
-      throw new Error('Blueprint compatibility aliases must preserve object identity.');
+    for (const name of ['cyberpunk', 'matrix', 'superTileWorld', 'cyberpunkFonts', 'matrixIcons', 'superTileWorldIcons', 'sanFrancisto', 'sanFrancistoIcons']) {
+      if (name in maps) throw new Error('Retired export remains in SDK Maps: ' + name);
     }
     for (const [name, id] of [
       ['baedeker', 'baedeker'],
       ['civica', 'civica'],
       ['streets', 'streets'],
-      ['superTileWorld', 'super-tile-world'],
-      ['cyberpunk', 'cyberpunk'],
       ['ferraris', 'ferraris'],
       ['harad', 'harad'],
-      ['matrix', 'matrix'],
-      ['blueprint', 'san-francisto'],
-      ['sanFrancisto', 'san-francisto'],
+      ['blueprint', 'blueprint'],
       ['siegfried', 'siegfried'],
       ['soundings', 'soundings'],
     ]) {
@@ -428,22 +327,20 @@ test('imports and compiles all packaged official maps against public Core APIs',
               'civica-poi-garden', 'civica-poi-hospital', 'civica-poi-lodging',
               'civica-poi-monument', 'civica-poi-museum', 'civica-poi-shopping',
               'civica-poi-transit',
-              'coffee', 'crosswalk', 'culture', 'cyber-circuit', 'cyber-data-grid',
-              'cyber-target-brackets', 'education', 'food', 'health', 'lodging',
+              'coffee', 'crosswalk', 'culture', 'education', 'food', 'health', 'lodging',
               'ferraris-crop-hatch', 'ferraris-heath', 'ferraris-orchard',
               'ferraris-paper-grain', 'ferraris-residential', 'ferraris-sand',
               'ferraris-water-ripples', 'ferraris-wetland', 'ferraris-woodland',
               'harad-arable', 'harad-conifer', 'harad-deciduous', 'harad-orchard',
               'harad-paper-grain', 'harad-sand', 'harad-settlement',
               'harad-water-lines', 'harad-wetland',
-              'matrix-crt-scanlines', 'matrix-data-grid', 'matrix-poi-node',
               'major-transit', 'oneway', 'parking', 'road-shield-circle-neutral',
               'road-shield-rectangle-blue', 'road-shield-rectangle-green',
               'road-shield-rectangle-neutral', 'road-shield-rectangle-orange',
               'road-shield-rectangle-red', 'road-shield-rectangle-yellow',
-              'san-francisto-blueprint-grid', 'san-francisto-building-hatch',
-              'san-francisto-landscape-hatch', 'san-francisto-poi-node',
-              'san-francisto-water-hatch',
+              'blueprint-grid', 'blueprint-building-hatch',
+              'blueprint-landscape-hatch', 'blueprint-poi-node',
+              'blueprint-water-hatch',
               'services', 'shopping', 'sidewalk-dot',
               'sidewalk-dot-dark',
               'siegfried-dark-forest', 'siegfried-dark-glacier',
@@ -458,30 +355,7 @@ test('imports and compiles all packaged official maps against public Core APIs',
               'soundings-buoy-starboard', 'soundings-harbor', 'soundings-light-flare',
               'soundings-lighthouse', 'soundings-paper-grain', 'soundings-rock-awash',
               'soundings-water-dots', 'soundings-wreck',
-              'stw-airship',
-              'stw-book',
-              'stw-brick',
-              'stw-castle',
-              'stw-coin',
-              'stw-farmland',
-              'stw-flag',
-              'stw-flower',
-              'stw-forest',
-              'stw-ghost-house',
-              'stw-grass',
-              'stw-heart',
-              'stw-hill',
-              'stw-level-node',
-              'stw-meadow',
-              'stw-mushroom',
-              'stw-mushroom-house',
-              'stw-question-block',
-              'stw-sand',
-              'stw-star',
-              'stw-tree',
-              'stw-warp-pipe',
-              'stw-water',
-            ],
+              ],
             sprite: '/tileflow/test/official/sprite',
           },
         },
@@ -489,12 +363,9 @@ test('imports and compiles all packaged official maps against public Core APIs',
       if (style.metadata['tileflow:map'] !== id) process.exit(3);
       if (!style.layers.length) process.exit(4);
     }
-    if ('extends' in maps.superTileWorld || 'root' in maps.superTileWorld) process.exit(35);
     if ('extends' in maps.civica || 'root' in maps.civica) process.exit(33);
-    if ('extends' in maps.cyberpunk || 'root' in maps.cyberpunk) process.exit(5);
     if ('extends' in maps.baedeker || 'root' in maps.baedeker) process.exit(29);
-    if ('extends' in maps.matrix || 'root' in maps.matrix) process.exit(27);
-    if ('extends' in maps.sanFrancisto || 'root' in maps.sanFrancisto) process.exit(31);
+    if ('extends' in maps.blueprint || 'root' in maps.blueprint) process.exit(31);
     if (!maps.streetsThemes?.light || !maps.streetsThemes?.dark) process.exit(7);
     if (maps.streets.defaultTheme !== 'light') process.exit(11);
     if (!maps.siegfriedThemes?.light || !maps.siegfriedThemes?.dark) process.exit(12);
@@ -537,19 +408,6 @@ test('imports and compiles all packaged official maps against public Core APIs',
       maps.civicaIcons?.path !== 'assets/civica/icons' ||
       maps.civicaFonts?.path !== 'assets/civica/fonts'
     ) process.exit(34);
-    const resolvedSuperTileWorld = core.resolveMap(maps.superTileWorld);
-    if (
-      resolvedSuperTileWorld.icons?.length !== 1 ||
-      resolvedSuperTileWorld.icons[0]?.kind !== 'package-directory' ||
-      resolvedSuperTileWorld.icons[0]?.package !== '@tileflow/maps' ||
-      resolvedSuperTileWorld.icons[0]?.path !== 'assets/super-tile-world/icons' ||
-      resolvedSuperTileWorld.fonts?.length !== 1 ||
-      resolvedSuperTileWorld.fonts[0]?.kind !== 'package-directory' ||
-      resolvedSuperTileWorld.fonts[0]?.package !== '@tileflow/maps' ||
-      resolvedSuperTileWorld.fonts[0]?.path !== 'assets/super-tile-world/fonts' ||
-      maps.superTileWorldIcons?.path !== 'assets/super-tile-world/icons' ||
-      maps.superTileWorldFonts?.path !== 'assets/super-tile-world/fonts'
-    ) process.exit(36);
     const resolvedFerraris = core.resolveMap(maps.ferraris);
     if (
       resolvedFerraris.icons?.length !== 1 ||
@@ -564,15 +422,6 @@ test('imports and compiles all packaged official maps against public Core APIs',
       resolvedHarad.icons[0]?.package !== '@tileflow/maps' ||
       resolvedHarad.icons[0]?.path !== 'assets/harad/icons'
     ) process.exit(21);
-    const resolvedMatrix = core.resolveMap(maps.matrix);
-    if (
-      resolvedMatrix.icons?.length !== 1 ||
-      resolvedMatrix.icons[0]?.kind !== 'package-directory' ||
-      resolvedMatrix.icons[0]?.package !== '@tileflow/maps' ||
-      resolvedMatrix.icons[0]?.path !== 'assets/matrix/icons' ||
-      resolvedMatrix.fonts?.length !== 1 ||
-      resolvedMatrix.fonts[0]?.path !== 'assets/matrix/fonts'
-    ) process.exit(28);
     const resolvedSoundings = core.resolveMap(maps.soundings);
     if (
       resolvedSoundings.icons?.length !== 1 ||
@@ -585,15 +434,15 @@ test('imports and compiles all packaged official maps against public Core APIs',
       maps.soundingsIcons?.package !== '@tileflow/maps' ||
       maps.soundingsIcons?.path !== 'assets/soundings/icons'
     ) process.exit(24);
-    const resolvedSanFrancisto = core.resolveMap(maps.sanFrancisto);
+    const resolvedBlueprint = core.resolveMap(maps.blueprint);
     if (
-      resolvedSanFrancisto.icons?.length !== 1 ||
-      resolvedSanFrancisto.icons[0]?.kind !== 'package-directory' ||
-      resolvedSanFrancisto.icons[0]?.package !== '@tileflow/maps' ||
-      resolvedSanFrancisto.icons[0]?.path !== 'assets/san-francisto/icons' ||
-      maps.sanFrancistoIcons?.kind !== 'package-directory' ||
-      maps.sanFrancistoIcons?.package !== '@tileflow/maps' ||
-      maps.sanFrancistoIcons?.path !== 'assets/san-francisto/icons'
+      resolvedBlueprint.icons?.length !== 1 ||
+      resolvedBlueprint.icons[0]?.kind !== 'package-directory' ||
+      resolvedBlueprint.icons[0]?.package !== '@tileflow/maps' ||
+      resolvedBlueprint.icons[0]?.path !== 'assets/blueprint/icons' ||
+      maps.blueprintIcons?.kind !== 'package-directory' ||
+      maps.blueprintIcons?.package !== '@tileflow/maps' ||
+      maps.blueprintIcons?.path !== 'assets/blueprint/icons'
     ) process.exit(32);
     const resolvedSiegfried = core.resolveMap(maps.siegfried);
     if (

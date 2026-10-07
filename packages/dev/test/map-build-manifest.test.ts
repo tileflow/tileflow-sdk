@@ -56,7 +56,7 @@ test('build manifest records effective package fonts and is emitted as canonical
   const cwd = await fixture(t, 'tileflow-map-revision-fonts-');
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    "import {defineMap} from '@tileflow/core'; import {cyberpunk} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:cyberpunk});\n",
+    "import {defineMap} from '@tileflow/core'; import {baedeker} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:baedeker});\n",
   );
 
   const plan = await writeTileflowBuildArtifacts({cwd, outDir: 'dist/tileflow'});
@@ -66,18 +66,22 @@ test('build manifest records effective package fonts and is emitted as canonical
   assert.equal(serialized, `${JSON.stringify(plan.buildManifest)}\n`);
   assert.deepEqual(entry.lineage, [
     {id: 'night', mapVersion: 1},
-    {id: 'cyberpunk', mapVersion: 1},
+    {id: 'baedeker', mapVersion: 1},
   ]);
   assert.deepEqual(
     entry.sourceAssets.fonts.map(({family, sha256}) => ({family, sha256})),
     [
       {
-        family: 'Oxanium Medium',
-        sha256: 'd0676de4894cd22591b4bb538dae5b8e06c44e0fb943300a7cff3945fe643689',
+        family: 'Cormorant Garamond Italic',
+        sha256: '50fccbdc299c232d25dd66868a2a2b55fd0e85d6238a58638986c5f66deca1bf',
       },
       {
-        family: 'Oxanium SemiBold',
-        sha256: 'e2d77ec4ee67b0152166adf5d6393360550a012c2066e0d4589053e14a733cdc',
+        family: 'Cormorant Garamond Regular',
+        sha256: '3f20a07914c56de160a4057f8fa48ec5372d77edf35c168fe4b0547b66502106',
+      },
+      {
+        family: 'Cormorant Garamond SemiBold',
+        sha256: '159bda7bac64c80f02612c163bc21da028e9f990cbc4d469005de694428aee83',
       },
     ],
   );
@@ -105,7 +109,7 @@ test('package-owned map revision is identical from a workspace package and unpac
   );
 
   const config =
-    "import {defineMap} from '@tileflow/core'; import {cyberpunk} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:cyberpunk});\n";
+    "import {defineMap} from '@tileflow/core'; import {baedeker} from '@tileflow/maps'; export default defineMap({id:'night',version:1,extends:baedeker});\n";
   await writeFile(join(sourceCwd, 'tileflow.config.ts'), config);
   await writeFile(join(unpackedCwd, 'tileflow.config.ts'), config);
   const source = await createTileflowBuildArtifacts({cwd: sourceCwd});

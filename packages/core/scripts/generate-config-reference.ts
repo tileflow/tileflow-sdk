@@ -966,7 +966,7 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
     [{kind: 'package-directory', package: '@tileflow/maps', path: 'assets/streets/icons'}],
     [
       {kind: 'package-directory', package: '@tileflow/maps', path: 'assets/streets/icons'},
-      {kind: 'package-directory', package: '@tileflow/maps', path: 'assets/cyberpunk/icons'},
+      {kind: 'package-directory', package: '@tileflow/maps', path: 'assets/blueprint/icons'},
     ],
   ];
   iconArray.examples = [
@@ -984,7 +984,7 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
       {
         kind: 'package-directory',
         package: '@tileflow/maps',
-        path: 'assets/cyberpunk/fonts',
+        path: 'assets/baedeker/fonts',
       },
     ],
   ];

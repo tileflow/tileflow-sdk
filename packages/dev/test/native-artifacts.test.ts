@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile} from 'node:fs/promises';
+import {cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {setTimeout as delay} from 'node:timers/promises';
-import {hostedTileset, serializeCanonicalJson, type MapLibreStyle} from '@tileflow/core';
+import {hostedTileset, type MapLibreStyle, serializeCanonicalJson} from '@tileflow/core';
 import {parseTileflowRuntimeManifest} from '@tileflow/core/manifest';
 import {
   createTileflowNativeDiagnostic,
-  TileflowNativeCompatibilityError,
   tileflowNativeBuildRecordSchema,
+  TileflowNativeCompatibilityError,
 } from '@tileflow/core/native-profile';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
@@ -170,11 +170,11 @@ test('maps a licensed custom TTF by its exact full name without changing map ide
   const cwd = await fixture(t);
   await mkdir(join(cwd, 'fonts'));
   await cp(
-    new URL('../../maps/assets/cyberpunk/fonts/Oxanium-Medium.ttf', import.meta.url),
+    new URL('./fixtures/fonts/oxanium/Oxanium-Medium.ttf', import.meta.url),
     join(cwd, 'fonts/face.ttf'),
   );
   await cp(
-    new URL('../../maps/assets/cyberpunk/fonts/LICENSE.txt', import.meta.url),
+    new URL('./fixtures/fonts/oxanium/LICENSE.txt', import.meta.url),
     join(cwd, 'fonts/LICENSE.txt'),
   );
   await writeFile(

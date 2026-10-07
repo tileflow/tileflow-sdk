@@ -1363,8 +1363,8 @@ test('recovers from an initially invalid local font through fallback watch paths
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
     `import {defineMap} from '@tileflow/core';
-import {cyberpunk} from '@tileflow/maps';
-export default defineMap({id:'main',version:1,extends:cyberpunk,fonts:['./fonts']});\n`,
+import {baedeker} from '@tileflow/maps';
+export default defineMap({id:'main',version:1,extends:baedeker,fonts:['./fonts']});\n`,
   );
 
   const session = await createTileflowArtifactSession({cwd, debounceMs: 10, watch: true});
@@ -1375,18 +1375,21 @@ export default defineMap({id:'main',version:1,extends:cyberpunk,fonts:['./fonts'
   assert.equal(session.getState().status, 'invalid');
   const invalidGeneration = session.getState().generation;
 
-  await writeFile(
-    join(cwd, 'fonts', 'medium.ttf'),
-    await readFile(
-      new URL('../../maps/assets/cyberpunk/fonts/Oxanium-Medium.ttf', import.meta.url),
-    ),
-  );
-  await writeFile(
-    join(cwd, 'fonts', 'semibold.ttf'),
-    await readFile(
-      new URL('../../maps/assets/cyberpunk/fonts/Oxanium-SemiBold.ttf', import.meta.url),
-    ),
-  );
+  for (const [file, source] of [
+    ['medium.ttf', 'Regular'],
+    ['semibold.ttf', 'SemiBold'],
+    ['italic.ttf', 'Italic'],
+  ]) {
+    await writeFile(
+      join(cwd, 'fonts', file),
+      await readFile(
+        new URL(
+          `../../maps/assets/baedeker/fonts/CormorantGaramond-${source}.ttf`,
+          import.meta.url,
+        ),
+      ),
+    );
+  }
 
   const ready = await waitForState(
     session,
@@ -1396,7 +1399,7 @@ export default defineMap({id:'main',version:1,extends:cyberpunk,fonts:['./fonts'
   assert.ok(
     session
       .getLastGoodArtifacts()
-      ?.assets.some((asset) => asset.fileName.startsWith('fonts/oxanium-medium-')),
+      ?.assets.some((asset) => asset.fileName.startsWith('fonts/cormorant-garamond-regular-')),
   );
 
   await writeFile(join(cwd, 'tileflow.config.ts'), invalidConfig, 'utf8');
@@ -1408,7 +1411,7 @@ export default defineMap({id:'main',version:1,extends:cyberpunk,fonts:['./fonts'
     await createTileflowDevRequestHandler({session})(new Request('http://localhost/'))
   ).text();
   assert.match(lastGoodPreview, /const previewFontFaces = \[\{/);
-  assert.match(lastGoodPreview, /fonts\/oxanium-medium-/);
+  assert.match(lastGoodPreview, /fonts\/cormorant-garamond-regular-/);
 });
 
 test('rejects and never watches icon directories outside the working tree', async (t) => {

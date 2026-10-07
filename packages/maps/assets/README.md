@@ -1,14 +1,13 @@
 # Official map assets
 
 These directories contain the package-owned sources required by the official Streets, Baedeker,
-Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Blueprint, Cívica, and Super Tile World maps. Their SVG icons and
+Ferraris, Härad, Siegfried, Soundings, Blueprint, and Cívica maps. Their SVG icons and
 patterns live under each map's `icons/` directory. Streets includes a pinned CC0 subset of Maki
 pictograms inside Tileflow-authored circular POI markers; its provenance is recorded in
 `../THIRD_PARTY_NOTICES.md` and the upstream license is kept at `streets/LICENSE-MAKI.txt`. A map
 refers to those directories through the exported `streetsIcons`, `baedekerIcons`, `ferrarisIcons`,
-`haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`, `blueprintIcons`, `civicaIcons`, and `superTileWorldIcons` descriptors. Baedeker, Cívica, Cyberpunk, Matrix, Siegfried, and Super Tile World refer to their own
-packaged font directories through `baedekerFonts`, `civicaFonts`, `cyberpunkFonts`, `matrixFonts`, and
-`siegfriedFonts`, and `superTileWorldFonts`; the files and their `LICENSE.txt` remain beside the map that owns them.
+`haradIcons`, `siegfriedIcons`, `soundingsIcons`, `blueprintIcons`, and `civicaIcons` descriptors. Baedeker, Cívica, and Siegfried refer to their own
+packaged font directories through `baedekerFonts`, `civicaFonts`, and `siegfriedFonts`; the files and their `LICENSE.txt` remain beside the map that owns them.
 
 The seven `road-shield-*` SVGs are original Tileflow artwork: a deliberately generic neutral,
 colored-rectangle, and neutral-circle vocabulary. They do not reproduce a national sign template
@@ -18,9 +17,7 @@ rectangle when no supported network classification is available.
 Official maps use the same public asset contract as application maps. Streets declares
 `icons: [streetsIcons]`; its light and dark themes select distinct semantic image IDs from that
 shared atlas. Every official map is an independent root and declares only its own asset descriptors.
-Cyberpunk uses `[cyberpunkIcons]`; Matrix uses `[matrixIcons]`, whose directory owns its full-screen
-CRT scanline mask, subtle data-grid pattern, and compact green-screen POI node. Neither imports nor
-inherits Streets assets. The Ferraris directory contains nine
+The Ferraris directory contains nine
 original intrinsic-size SVG patterns:
 `ferraris-crop-hatch`, `ferraris-heath`, `ferraris-orchard`, `ferraris-paper-grain`,
 `ferraris-residential`, `ferraris-sand`, `ferraris-water-ripples`, `ferraris-wetland`, and
@@ -65,8 +62,8 @@ World POI is deliberately not relabelled as a harbour. Soundings uses GEBCO-deri
 as broad cartographic context and is not a navigation product.
 
 The Blueprint directory contains four original intrinsic-size patterns and one original
-technical symbol: `san-francisto-blueprint-grid`, `san-francisto-building-hatch`,
-`san-francisto-landscape-hatch`, `san-francisto-water-hatch`, and `san-francisto-poi-node`.
+technical symbol: `blueprint-grid`, `blueprint-building-hatch`,
+`blueprint-landscape-hatch`, `blueprint-water-hatch`, and `blueprint-poi-node`.
 Together they provide drawing-paper grid, building, landscape, and water notation plus a schematic
 POI marker without importing another official map's sprite assets.
 
@@ -77,15 +74,6 @@ destination glyphs with fine ivory clearances and compact paper squares for tran
 Small marks and a quiet secondary point preserve the map's label hierarchy. The map also owns its packaged fonts; artwork and font
 provenance are recorded in `civica/README.md` and `civica/fonts/README.md`.
 
-The Super Tile World directory contains sixteen original pixel-art SVG sprites and seven
-intrinsic-size patterns for grass, water, forest, brick, sand, meadow, and farmland. Its `stw-*`
-asset vocabulary supports a game-board interpretation of real geography without importing another
-map's sprites. Pixelify Sans Regular and SemiBold supply detail lettering; Tile World Arcade Regular
-supplies display lettering, with Noto Sans Regular as a local fallback. Tile World Arcade is a
-name-table-only derivative of Press Start 2P, with its glyphs preserved and a distinct family name
-for reliable browser canvas rendering. All four font faces and their complete OFL notices are packaged
-locally. See `super-tile-world/README.md` and `super-tile-world/fonts/README.md`.
-
 `@tileflow/dev` resolves each package descriptor, verifies that its real path remains inside the
 installed package, and compiles the complete ordered directory composition into deterministic
 MapLibre sprite atlases. `<id>.<ext>` publishes an icon as `<id>` and
@@ -94,16 +82,12 @@ lower-kebab, and a later directory wins on an exact duplicate ID.
 
 Font preparation is generic: it reads any map's declared `fonts` directories, derives IDs from
 OpenType full names, includes only used faces, and publishes content-addressed font and license
-assets. A self-hosted Cyberpunk build therefore materializes its currently selected font files and
-license without a Cyberpunk or font-family special case. Its manifest and Style carry the strict
-`tileflow:fontFaces` public-asset contract; asset ownership remains in `@tileflow/maps`. Style `font`
-values are exact OpenType full names. Cyberpunk and Matrix each select their own directory, whose
-stacks contain the two packaged Oxanium faces, so either map's primary-face local pipeline remains
-independent and never depends on an unfixed system or remote fallback.
+assets. A self-hosted Baedeker build materializes its selected font files and license without
+a map-name special case. Its manifest and Style carry the strict `tileflow:fontFaces`
+public-asset contract; Style font values are exact OpenType full names.
 The compiler never manufactures a face ID by adding a weight. Streets, Ferraris, Härad, Soundings,
 and Blueprint each declare the canonical Tileflow glyph URL with exact
-`Noto Sans Regular` and `Noto Sans Bold` stacks. Cyberpunk and Matrix name `Oxanium Medium` and
-`Oxanium SemiBold`, while Baedeker and Siegfried each name `Cormorant Garamond Regular`,
+`Noto Sans Regular` and `Noto Sans Bold` stacks. Baedeker and Siegfried each name `Cormorant Garamond Regular`,
 `Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic` from their respective packaged
 directories. Cívica packages `DM Serif Text Regular` and `DM Serif Text Italic` for its place
 and water lettering, `Barlow Semi Condensed Regular` and `Barlow Semi Condensed SemiBold` for

@@ -15,21 +15,15 @@ import {
   baedeker,
   baedekerFonts,
   baedekerIcons,
+  blueprint,
+  blueprintIcons,
   civica,
   civicaFonts,
   civicaIcons,
-  cyberpunk,
-  cyberpunkFonts,
-  cyberpunkIcons,
   ferraris,
   ferrarisIcons,
   harad,
   haradIcons,
-  matrix,
-  matrixFonts,
-  matrixIcons,
-  sanFrancisto,
-  sanFrancistoIcons,
   siegfried,
   siegfriedFonts,
   siegfriedIcons,
@@ -39,9 +33,6 @@ import {
   streets,
   streetsIcons,
   streetsThemes,
-  superTileWorld,
-  superTileWorldFonts,
-  superTileWorldIcons,
 } from '../src';
 
 const officialIconIds = [
@@ -72,9 +63,7 @@ const officialIconIds = [
   'coffee',
   'crosswalk',
   'culture',
-  'cyber-circuit',
-  'cyber-data-grid',
-  'cyber-target-brackets',
+
   'education',
   'ferraris-crop-hatch',
   'ferraris-heath',
@@ -98,9 +87,7 @@ const officialIconIds = [
   'health',
   'lodging',
   'major-transit',
-  'matrix-crt-scanlines',
-  'matrix-data-grid',
-  'matrix-poi-node',
+
   'oneway',
   'parking',
   'road-shield-circle-neutral',
@@ -110,11 +97,11 @@ const officialIconIds = [
   'road-shield-rectangle-orange',
   'road-shield-rectangle-red',
   'road-shield-rectangle-yellow',
-  'san-francisto-blueprint-grid',
-  'san-francisto-building-hatch',
-  'san-francisto-landscape-hatch',
-  'san-francisto-poi-node',
-  'san-francisto-water-hatch',
+  'blueprint-grid',
+  'blueprint-building-hatch',
+  'blueprint-landscape-hatch',
+  'blueprint-poi-node',
+  'blueprint-water-hatch',
   'services',
   'shopping',
   'sidewalk-dot',
@@ -147,29 +134,6 @@ const officialIconIds = [
   'soundings-rock-awash',
   'soundings-water-dots',
   'soundings-wreck',
-  'stw-airship',
-  'stw-book',
-  'stw-brick',
-  'stw-castle',
-  'stw-coin',
-  'stw-farmland',
-  'stw-flag',
-  'stw-flower',
-  'stw-forest',
-  'stw-ghost-house',
-  'stw-grass',
-  'stw-heart',
-  'stw-hill',
-  'stw-level-node',
-  'stw-meadow',
-  'stw-mushroom',
-  'stw-mushroom-house',
-  'stw-question-block',
-  'stw-sand',
-  'stw-star',
-  'stw-tree',
-  'stw-warp-pipe',
-  'stw-water',
 ] as const;
 const baedekerPatternIds = [
   'baedeker-hachures',
@@ -215,12 +179,12 @@ const soundingsIconIds = [
   'soundings-water-dots',
   'soundings-wreck',
 ] as const;
-const sanFrancistoIconIds = [
-  'san-francisto-blueprint-grid',
-  'san-francisto-building-hatch',
-  'san-francisto-landscape-hatch',
-  'san-francisto-poi-node',
-  'san-francisto-water-hatch',
+const blueprintIconIds = [
+  'blueprint-grid',
+  'blueprint-building-hatch',
+  'blueprint-landscape-hatch',
+  'blueprint-poi-node',
+  'blueprint-water-hatch',
 ] as const;
 const siegfriedPatternIds = [
   'siegfried-dark-forest',
@@ -259,11 +223,9 @@ function compileOfficialMap(map: Parameters<typeof resolveMap>[0], theme?: strin
 test('official World styles avoid fields absent from the V1 release contract', () => {
   for (const [map, fields] of [
     [streets, {building: ['has_parts'], transportation: ['clearance_extra_px_z15']}],
-    [cyberpunk, {transportation: ['clearance_extra_px_z15', 'importance_tier']}],
-    [matrix, {transportation: ['clearance_extra_px_z15', 'importance_tier']}],
-    [sanFrancisto, {building: ['height', 'name']}],
+
+    [blueprint, {building: ['height', 'name']}],
     [civica, {building: ['building_kind']}],
-    [superTileWorld, {building: ['building_kind']}],
   ] as const) {
     const requirements = inferTileflowDataRequirements(compileOfficialMap(map));
     for (const [layer, absentFields] of Object.entries(fields)) {
@@ -302,19 +264,16 @@ test('exports every official map as an independent standalone semantic map', asy
   const officialMaps = {
     baedeker,
     civica,
-    cyberpunk,
+
     ferraris,
     harad,
-    matrix,
-    'san-francisto': sanFrancisto,
+
+    blueprint: blueprint,
     siegfried,
     soundings,
     streets,
-    'super-tile-world': superTileWorld,
   } as const;
-  const officialMapSources = new Set(
-    Object.keys(officialMaps).map((id) => (id === 'san-francisto' ? 'blueprint' : id)),
-  );
+  const officialMapSources = new Set(Object.keys(officialMaps));
 
   for (const [id, map] of Object.entries(officialMaps)) {
     assert.equal('root' in map, false);
@@ -327,13 +286,13 @@ test('exports every official map as an independent standalone semantic map', asy
     assert.equal('basemap' in resolved, false);
     assert.equal('root' in resolved, false);
 
-    const sourceName = id === 'san-francisto' ? 'blueprint' : id;
+    const sourceName = id;
     const source = await readFile(
       new URL(`../src/official/${sourceName}.ts`, import.meta.url),
       'utf8',
     );
     assert.match(source, /\bdefineMap\s*\(/u, `${id} is not authored as a standalone map`);
-    if (['civica', 'cyberpunk', 'matrix', 'san-francisto', 'super-tile-world'].includes(id)) {
+    if (['civica', 'blueprint'].includes(id)) {
       assert.match(source, /\bwithRenderStack\s*\(/u, `${id} lost its semantic render stack`);
       assert.match(source, /\bfield\s*\(/u, `${id} lost its schema-bound field references`);
       assert.doesNotMatch(
@@ -354,19 +313,7 @@ test('exports every official map as an independent standalone semantic map', asy
 });
 
 test('deep-freezes only the exported official map singletons', () => {
-  for (const map of [
-    streets,
-    superTileWorld,
-    baedeker,
-    civica,
-    ferraris,
-    harad,
-    siegfried,
-    soundings,
-    cyberpunk,
-    matrix,
-    sanFrancisto,
-  ]) {
+  for (const map of [streets, baedeker, civica, ferraris, harad, siegfried, soundings, blueprint]) {
     assertDeepFrozen(map);
   }
 
@@ -374,17 +321,17 @@ test('deep-freezes only the exported official map singletons', () => {
     (streets as {name: string}).name = 'Mutated Streets';
   }, TypeError);
   assert.throws(() => {
-    (cyberpunk as {extends: typeof ferraris}).extends = ferraris;
+    (streets as {extends: typeof ferraris}).extends = ferraris;
   }, TypeError);
   assert.throws(() => {
-    (cyberpunk.themes!.dark.typography as {font: string}).font = 'Unpinned Font';
+    (streets.themes!.dark.typography as {font: string}).font = 'Unpinned Font';
   }, TypeError);
 
   const applicationMap = defineMap({
     id: 'application-map',
     name: 'Application map',
     version: 1,
-    extends: cyberpunk,
+    extends: streets,
     themes: {
       dark: {
         ...streetsThemes.dark,
@@ -401,43 +348,31 @@ test('deep-freezes only the exported official map singletons', () => {
   const resolved = resolveMap(applicationMap);
   assert.equal(resolved.name, 'Renamed application map');
   assert.equal(resolved.themes.dark.typography?.font, 'Oxanium Medium');
-  assert.equal('extends' in cyberpunk, false);
-  assert.equal(cyberpunk.name, 'Cyberpunk');
+  assert.equal('extends' in streets, false);
+  assert.equal(streets.name, 'Streets');
 });
 
 test('official maps declare their expected icon and typography providers', () => {
   const resolvedBaedeker = resolveMap(baedeker);
   const resolvedCivica = resolveMap(civica);
   const resolvedStreets = resolveMap(streets);
-  const resolvedSuperTileWorld = resolveMap(superTileWorld);
-  const resolvedCyberpunk = resolveMap(cyberpunk);
   const resolvedFerraris = resolveMap(ferraris);
   const resolvedHarad = resolveMap(harad);
-  const resolvedMatrix = resolveMap(matrix);
-  const resolvedSanFrancisto = resolveMap(sanFrancisto);
+  const resolvedBlueprint = resolveMap(blueprint);
   const resolvedSiegfried = resolveMap(siegfried);
   const resolvedSoundings = resolveMap(soundings);
 
   assert.deepEqual(resolvedBaedeker.icons, [baedekerIcons]);
   assert.deepEqual(resolvedCivica.icons, [civicaIcons]);
   assert.deepEqual(resolvedStreets.icons, [streetsIcons]);
-  assert.deepEqual(resolvedSuperTileWorld.icons, [superTileWorldIcons]);
-  assert.deepEqual(resolvedSuperTileWorld.fonts, [superTileWorldFonts]);
-  assert.equal(resolvedSuperTileWorld.glyphs, undefined);
-  assert.deepEqual(resolvedCyberpunk.icons, [cyberpunkIcons]);
   assert.deepEqual(resolvedFerraris.icons, [ferrarisIcons]);
   assert.deepEqual(resolvedHarad.icons, [haradIcons]);
-  assert.deepEqual(resolvedMatrix.icons, [matrixIcons]);
-  assert.deepEqual(resolvedSanFrancisto.icons, [sanFrancistoIcons]);
+  assert.deepEqual(resolvedBlueprint.icons, [blueprintIcons]);
   assert.deepEqual(resolvedSiegfried.icons, [siegfriedIcons]);
   assert.deepEqual(resolvedSoundings.icons, [soundingsIcons]);
-  assert.deepEqual(resolvedCyberpunk.fonts, [cyberpunkFonts]);
   assert.deepEqual(resolvedBaedeker.fonts, [baedekerFonts]);
-  assert.deepEqual(resolvedMatrix.fonts, [matrixFonts]);
   assert.deepEqual(resolvedSiegfried.fonts, [siegfriedFonts]);
-  assert.equal(resolvedCyberpunk.glyphs, undefined);
   assert.equal(resolvedBaedeker.glyphs, undefined);
-  assert.equal(resolvedMatrix.glyphs, undefined);
   assert.equal(resolvedSiegfried.glyphs, undefined);
   assert.deepEqual(resolvedStreets.glyphs, {
     fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
@@ -449,15 +384,13 @@ test('official maps declare their expected icon and typography providers', () =>
   assert.deepEqual(resolvedFerraris.glyphs, resolvedStreets.glyphs);
   assert.deepEqual(resolvedHarad.glyphs, resolvedStreets.glyphs);
   assert.deepEqual(resolvedSoundings.glyphs, resolvedStreets.glyphs);
-  assert.deepEqual(resolvedSanFrancisto.glyphs, resolvedStreets.glyphs);
-  assert.equal(resolvedCyberpunk.themes.dark.typography?.font, 'Oxanium Medium');
+  assert.deepEqual(resolvedBlueprint.glyphs, resolvedStreets.glyphs);
   assert.equal(resolvedBaedeker.themes.light.typography?.font, 'Cormorant Garamond Regular');
   assert.equal(
     resolvedBaedeker.themes.light.typography?.places?.font,
     'Cormorant Garamond SemiBold',
   );
   assert.equal(resolvedFerraris.themes.light.typography?.font, 'Noto Sans Regular');
-  assert.equal(resolvedMatrix.themes.dark.typography?.font, 'Oxanium Medium');
   assert.equal(resolvedHarad.themes.light.typography?.font, 'Noto Sans Regular');
   assert.equal(resolvedSiegfried.themes.light.typography?.font, 'Cormorant Garamond Regular');
   assert.equal(resolvedSiegfried.themes.dark.typography?.font, 'Cormorant Garamond Regular');
@@ -466,8 +399,8 @@ test('official maps declare their expected icon and typography providers', () =>
   assert.equal(siegfriedThemes.light.colorScheme, 'light');
   assert.equal(siegfriedThemes.dark.colorScheme, 'dark');
   assert.equal(resolvedSoundings.themes.light.typography?.font, 'Noto Sans Regular');
-  assert.equal(resolvedSanFrancisto.themes.blueprint.typography?.font, 'Noto Sans Regular');
-  assert.equal(resolvedSanFrancisto.themes.blueprint.typography?.places?.font, 'Noto Sans Bold');
+  assert.equal(resolvedBlueprint.themes.blueprint.typography?.font, 'Noto Sans Regular');
+  assert.equal(resolvedBlueprint.themes.blueprint.typography?.places?.font, 'Noto Sans Bold');
 });
 
 test('Baedeker is self-contained and references exactly its package-owned patterns', () => {
@@ -639,23 +572,23 @@ test('Soundings is self-contained and references only its bathymetric-map artwor
   }
 });
 
-test('San Francisto is self-contained and references exactly its blueprint assets', () => {
-  const resolved = resolveMap(sanFrancisto);
-  assert.equal('extends' in sanFrancisto, false);
+test('Blueprint is self-contained and references exactly its blueprint assets', () => {
+  const resolved = resolveMap(blueprint);
+  assert.equal('extends' in blueprint, false);
   assert.equal('root' in resolved, false);
-  assert.deepEqual(resolved.icons, [sanFrancistoIcons]);
+  assert.deepEqual(resolved.icons, [blueprintIcons]);
 
-  const compiled = createStyleWithInspection(sanFrancisto, {
+  const compiled = createStyleWithInspection(blueprint, {
     preparedAssets: {
       icons: {
-        ids: sanFrancistoIconIds,
-        sprite: '/tileflow/icons/san-francisto/sprite',
+        ids: blueprintIconIds,
+        sprite: '/tileflow/icons/blueprint/sprite',
       },
     },
   });
   assert.equal(compiled.style.metadata?.['tileflow:extends'], undefined);
   const serialized = JSON.stringify(compiled.style);
-  for (const id of sanFrancistoIconIds) {
+  for (const id of blueprintIconIds) {
     assert.match(serialized, new RegExp(`"${id}"`, 'u'), `Missing blueprint asset ${id}`);
   }
   assert.deepEqual(validateStyleMin(compiled.style as never), []);
@@ -665,15 +598,14 @@ test('all official maps compile directly after their packaged sprite is prepared
   for (const [id, map] of Object.entries({
     baedeker,
     civica,
-    cyberpunk,
+
     ferraris,
     harad,
-    matrix,
-    'san-francisto': sanFrancisto,
+
+    blueprint: blueprint,
     siegfried,
     soundings,
     streets,
-    'super-tile-world': superTileWorld,
   })) {
     const style = compileOfficialMap(map);
     assert.equal(style.metadata?.['tileflow:map'], id);
@@ -681,14 +613,7 @@ test('all official maps compile directly after their packaged sprite is prepared
     assert.equal(style.sprite, `/tileflow/icons/${id}/sprite`);
     assert.equal(
       style.glyphs,
-      id === 'baedeker' ||
-        id === 'civica' ||
-        id === 'cyberpunk' ||
-        id === 'matrix' ||
-        id === 'siegfried' ||
-        id === 'super-tile-world'
-        ? undefined
-        : officialGlyphsUrl,
+      id === 'baedeker' || id === 'civica' || id === 'siegfried' ? undefined : officialGlyphsUrl,
     );
     assert.ok(
       style.layers.length > (id === 'soundings' ? 50 : 100),
@@ -731,7 +656,7 @@ test('Streets-family maps overlap ordinary road endpoints without extending stru
     ['case', ['any', structuralButtCap, controlledSurfaceButtCap], 'butt', 'round'],
   ];
 
-  for (const [mapId, map] of Object.entries({streets, cyberpunk, matrix})) {
+  for (const [mapId, map] of Object.entries({streets})) {
     const style = compileOfficialMap(map);
     const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
 
@@ -786,15 +711,14 @@ test('Streets-family maps overlap ordinary road endpoints without extending stru
 test('official road maps avoid seam-prone caps on ordinary surface and bridge segments', () => {
   for (const [mapId, map] of Object.entries({
     streets,
-    'super-tile-world': superTileWorld,
+
     baedeker,
     civica,
-    cyberpunk,
-    matrix,
+
     ferraris,
     harad,
     siegfried,
-    'san-francisto': sanFrancisto,
+    blueprint: blueprint,
   })) {
     const style = compileOfficialMap(map);
     const ordinaryRoadLayers = style.layers.filter(
@@ -841,15 +765,14 @@ test('official maps compile against generic OpenMapTiles without optional capabi
   for (const [id, map] of Object.entries({
     baedeker,
     civica,
-    cyberpunk,
+
     ferraris,
     harad,
-    matrix,
-    'san-francisto': sanFrancisto,
+
+    blueprint: blueprint,
     siegfried,
     soundings,
     streets,
-    'super-tile-world': superTileWorld,
   })) {
     const derived = defineMap({id: `${id}-generic`, version: 1, extends: map, data});
     const style = createStyle(derived, {preparedAssets: preparedAssets(id)});
@@ -891,14 +814,11 @@ test('official maps emit only exact declared font-face stacks', () => {
       JSON.stringify(['Barlow Semi Condensed SemiBold']),
       JSON.stringify(['Barlow Semi Condensed SemiBold', 'Noto Sans Regular']),
     ]),
-    cyberpunk: new Set([JSON.stringify(['Oxanium Medium']), JSON.stringify(['Oxanium SemiBold'])]),
+
     ferraris: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
     harad: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
-    matrix: new Set([JSON.stringify(['Oxanium Medium']), JSON.stringify(['Oxanium SemiBold'])]),
-    'san-francisto': new Set([
-      JSON.stringify(['Noto Sans Regular']),
-      JSON.stringify(['Noto Sans Bold']),
-    ]),
+
+    blueprint: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
     siegfried: new Set([
       JSON.stringify(['Cormorant Garamond Italic']),
       JSON.stringify(['Cormorant Garamond Regular']),
@@ -906,27 +826,19 @@ test('official maps emit only exact declared font-face stacks', () => {
     ]),
     soundings: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
     streets: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
-    'super-tile-world': new Set([
-      JSON.stringify(['Pixelify Sans Regular']),
-      JSON.stringify(['Pixelify Sans Regular', 'Noto Sans Regular']),
-      JSON.stringify(['Pixelify Sans SemiBold', 'Noto Sans Regular']),
-      JSON.stringify(['Tile World Arcade Regular']),
-      JSON.stringify(['Tile World Arcade Regular', 'Noto Sans Regular']),
-    ]),
   } as const;
 
   for (const [id, map] of Object.entries({
     baedeker,
     civica,
-    cyberpunk,
+
     ferraris,
     harad,
-    matrix,
-    'san-francisto': sanFrancisto,
+
+    blueprint: blueprint,
     siegfried,
     soundings,
     streets,
-    'super-tile-world': superTileWorld,
   })) {
     const actual = new Set(
       compileOfficialMap(map).layers.flatMap((layer) => {
@@ -1006,11 +918,10 @@ test('non-Streets official maps do not use Streets surface colors', () => {
   for (const [id, map, ownSignatures] of [
     ['baedeker', baedeker, ['#E8DABD', '#9DC8CC']],
     ['civica', civica, ['#F7F3E8', '#B4C8D9']],
-    ['super-tile-world', superTileWorld, ['#A8DC73', '#58BCE0']],
-    ['cyberpunk', cyberpunk, ['#071E31', '#0D2828']],
+
     ['harad', harad, ['#C4DED5', '#E1B23B']],
-    ['matrix', matrix, ['#010704', '#63F77B']],
-    ['san-francisto', sanFrancisto, ['#061D35', '#EEF3EA']],
+
+    ['blueprint', blueprint, ['#061D35', '#EEF3EA']],
     ['siegfried', siegfried, ['#F0EBE0', '#A96C4D']],
     ['streets-dark', streets, ['#2D3043', '#18223B']],
   ] as const) {
@@ -1161,52 +1072,4 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
   assert.match(transportIcon, /"icon"/u);
   assert.match(transportIcon, /major-transit/u);
   assert.deepEqual(validateStyleMin(style as never), []);
-});
-
-test('Cyberpunk HUD consumes canonical POI density and size ranks', () => {
-  const resolved = resolveMap(cyberpunk);
-  const renderOperationCount = Object.values(resolved.modules ?? {}).reduce(
-    (count, module) =>
-      count +
-      (module && 'renderStack' in module && module.renderStack
-        ? Object.keys(module.renderStack).length
-        : 0),
-    0,
-  );
-  assert.equal(renderOperationCount, 49);
-  assert.equal(resolved.modules?.poi?.density, 2);
-  assert.deepEqual(resolved.modules?.poi?.categories, ['transport', 'arts-entertainment']);
-
-  const compiled = createStyleWithInspection(cyberpunk, {
-    preparedAssets: preparedAssets('cyberpunk'),
-  });
-  const ring = compiledLayerForTarget(compiled, 'poi.render.destinationScanRing');
-  const core = compiledLayerForTarget(compiled, 'poi.render.destinationBeaconCore');
-  const brackets = compiledLayerForTarget(compiled, 'poi.render.destinationBrackets');
-  const culture = compiledLayerForTarget(compiled, 'poi.arts-entertainment.label');
-
-  assert.ok(ring, 'Cyberpunk lost its destination scan ring');
-  assert.ok(core, 'Cyberpunk lost its destination beacon core');
-  assert.ok(brackets, 'Cyberpunk lost its destination target brackets');
-  assert.deepEqual(ring?.filter, core?.filter);
-  assert.deepEqual(brackets?.filter, core?.filter);
-  const filter = JSON.stringify(core?.filter);
-  for (const signal of ['filter_rank', 'size_rank']) {
-    assert.match(filter, new RegExp(signal.replaceAll('[', '\\[').replaceAll(']', '\\]')));
-  }
-  assert.doesNotMatch(filter, /"class"|"subclass"|"rank"/u);
-  assert.equal(brackets?.layout?.['icon-allow-overlap'], false);
-  assert.equal(brackets?.layout?.['icon-ignore-placement'], false);
-  assert.equal(brackets?.layout?.['text-allow-overlap'], false);
-  assert.ok(brackets?.layout?.['symbol-sort-key']);
-  assert.match(JSON.stringify(culture?.filter), /filter_rank/u);
-
-  const matches = (zoom: number, properties: Record<string, unknown>) =>
-    featureFilter(core?.filter as never).filter({zoom}, {type: 1, properties} as never);
-  assert.equal(matches(14, {category: 'landmark', filter_rank: 0, size_rank: 0}), true);
-  assert.equal(matches(14, {category: 'transport', filter_rank: 2, size_rank: 16}), true);
-  assert.equal(matches(20, {category: 'transport', filter_rank: 3, size_rank: 16}), false);
-  assert.equal(matches(20, {category: 'transport', filter_rank: 2, size_rank: 17}), false);
-  assert.equal(matches(20, {category: 'transport', rank: 1}), false);
-  assert.deepEqual(validateStyleMin(compiled.style as never), []);
 });

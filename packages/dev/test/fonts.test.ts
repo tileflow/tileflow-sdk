@@ -14,7 +14,7 @@ import {
   type TileflowFontDirectory,
 } from '@tileflow/core';
 import type {TileflowBuildCatalog} from '@tileflow/core/build';
-import {cyberpunkFonts, siegfried, siegfriedFonts} from '@tileflow/maps';
+import {siegfried, siegfriedFonts} from '@tileflow/maps';
 import {
   bindTileflowStyleFontBundle,
   getTileflowFontWatchPaths,
@@ -25,10 +25,7 @@ import {getTileflowPreviewRuntimeResponse} from '../src/preview-assets';
 import {renderTileflowPreviewHtml} from '../src/preview-html';
 import {fixtureThemeFields} from './theme-fixture';
 
-const oxaniumMedium = new URL(
-  '../../maps/assets/cyberpunk/fonts/Oxanium-Medium.ttf',
-  import.meta.url,
-);
+const oxaniumMedium = new URL('./fixtures/fonts/oxanium/Oxanium-Medium.ttf', import.meta.url);
 const nextGeistWoff2 = new URL(
   '../../next/node_modules/next/dist/next-devtools/server/font/geist-latin.woff2',
   import.meta.url,
@@ -420,7 +417,7 @@ test('discovers mutable font directories before compilation and excludes package
   assert.deepEqual(await getTileflowFontWatchPaths(fontProject(['./fonts']), cwd), [
     await realpath(join(cwd, 'fonts')),
   ]);
-  assert.deepEqual(await getTileflowFontWatchPaths(fontProject([cyberpunkFonts]), cwd), []);
+  assert.deepEqual(await getTileflowFontWatchPaths(fontProject([siegfriedFonts]), cwd), []);
 });
 
 test('preview loads generic style metadata through the shared browser runtime', async () => {

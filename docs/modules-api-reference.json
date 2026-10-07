@@ -2066,7 +2066,7 @@
           {
             "kind": "package-directory",
             "package": "@tileflow/maps",
-            "path": "assets/cyberpunk/fonts"
+            "path": "assets/baedeker/fonts"
           }
         ]
       ]
@@ -2172,7 +2172,7 @@
           {
             "kind": "package-directory",
             "package": "@tileflow/maps",
-            "path": "assets/cyberpunk/icons"
+            "path": "assets/blueprint/icons"
           }
         ],
         [

@@ -126,7 +126,7 @@ export default defineMap({
 The standalone map above is complete as written. A map always owns its complete text provider; Core does not
 obtain fonts or sprites from World and never invents a fallback URL. The URL-backed first-party
 `streets`, `ferraris`, `harad`, `soundings`, and `blueprint` maps declare their glyph
-providers directly. `baedeker`, `civica`, `cyberpunk`, `matrix`, `siegfried`, and `superTileWorld`
+providers directly. `baedeker`, `civica`, and `siegfried`
 declare packaged fonts, so ordinary imports and derived maps compile without out-of-band release
 metadata.
 

@@ -3,18 +3,15 @@ import test from 'node:test';
 import {auditTileflowMapThemeValues, resolveMap, resolveTileflowTheme} from '@tileflow/core';
 import {
   baedeker,
+  blueprint,
   civica,
-  cyberpunk,
   ferraris,
   harad,
-  matrix,
-  sanFrancisto,
   siegfried,
   siegfriedThemes,
   soundings,
   streets,
   streetsThemes,
-  superTileWorld,
 } from '../src';
 
 type TokenReference = {
@@ -133,19 +130,7 @@ test('every official module, render stack, and terrain value has a valid semanti
     water: ['water', 'hydro', 'surface', 'labels'],
   };
 
-  for (const map of [
-    streets,
-    superTileWorld,
-    baedeker,
-    civica,
-    cyberpunk,
-    ferraris,
-    harad,
-    matrix,
-    sanFrancisto,
-    siegfried,
-    soundings,
-  ]) {
+  for (const map of [streets, baedeker, civica, ferraris, harad, blueprint, siegfried, soundings]) {
     assert.deepEqual(
       auditTileflowMapThemeValues(resolveMap(map)),
       [],
@@ -218,19 +203,7 @@ test('Siegfried light and dark expose identical semantic vocabularies', () => {
 });
 
 test('every official map has a deterministic complete theme collection', () => {
-  for (const map of [
-    streets,
-    superTileWorld,
-    baedeker,
-    civica,
-    cyberpunk,
-    ferraris,
-    harad,
-    matrix,
-    sanFrancisto,
-    siegfried,
-    soundings,
-  ]) {
+  for (const map of [streets, baedeker, civica, ferraris, harad, blueprint, siegfried, soundings]) {
     const resolved = resolveMap(map);
     assert.ok(Object.keys(resolved.themes).length > 0, `${map.id} has no themes`);
     assert.ok(resolved.themes[resolved.defaultTheme], `${map.id} has an invalid defaultTheme`);

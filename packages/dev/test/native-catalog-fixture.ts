@@ -3,30 +3,20 @@ import {parseTileflowMap, serializeCanonicalJson} from '@tileflow/core';
 import {collectTileflowMapBuildLineage} from '@tileflow/core/build';
 import {
   TileflowNativeCompatibilityError,
-  tileflowNativeProfile,
   type TileflowNativeDiagnostic,
+  tileflowNativeProfile,
 } from '@tileflow/core/native-profile';
-import {
-  baedeker,
-  cyberpunk,
-  ferraris,
-  harad,
-  matrix,
-  sanFrancisto,
-  siegfried,
-  soundings,
-  streets,
-} from '@tileflow/maps';
+import {baedeker, blueprint, ferraris, harad, siegfried, soundings, streets} from '@tileflow/maps';
 import {createTileflowArtifactPlan, disposeTileflowBuildArtifacts} from '../src/artifacts';
 import {prepareTileflowCatalogIcons} from '../src/icons';
 
 export const nativeCatalogMaps = [
   baedeker,
-  cyberpunk,
+
   ferraris,
   harad,
-  matrix,
-  sanFrancisto,
+
+  blueprint,
   siegfried,
   soundings,
   streets,

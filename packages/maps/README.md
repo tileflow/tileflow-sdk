@@ -57,22 +57,18 @@ resources available offline.
 - `harad`: the historical green-map design displayed as **Härad**.
 - `siegfried`: a terrain atlas with coordinated light/dark ink palettes, contours, and engraved patterns.
 - `soundings`: bathymetric reference cartography with depth bands, continuous relief, and port context.
-- `cyberpunk`: the compatibility snapshot of the dark heads-up-display design now called Neon Grid.
-- `matrix`: the compatibility snapshot of the green-screen design now called Terminal.
 - `blueprint`: a dark architectural drawing style, with a default camera centered on San Francisco.
-- `superTileWorld`: a pixel-art overworld with layered shores, golden routes, destination sprites,
-  and packaged arcade lettering.
 
 Every official map is a complete, independent root using the same Core compiler. Official map
 objects are deeply frozen shared instances. Do not mutate them; use `defineMap({extends: ...})`
 to create an application-owned map.
 
-### Blueprint naming and compatibility
+### Blueprint naming
 
-Use `blueprint` and `blueprintIcons` for the architectural drawing map. `sanFrancisto` and
-`sanFrancistoIcons` remain deprecated aliases of those same frozen objects. The display name is
-**Blueprint**; the stable map ID `san-francisto`, theme ID `san-francisto-blueprint`, theme key
-`blueprint`, and existing asset paths and icon IDs are preserved so saved references keep working.
+Use `blueprint` and `blueprintIcons` for the architectural drawing map. Its map ID and
+asset directory are `blueprint`, its theme key is `blueprint`, and its theme ID is `blueprint-dark`.
+The earlier `sanFrancisto` and `sanFrancistoIcons` aliases have been removed. Migrate explicit
+`san-francisto` resource references to `blueprint`; the former grid ID is now `blueprint-grid`.
 
 <!-- docs:check -->
 
@@ -90,15 +86,18 @@ export default defineMap({
 
 ### Community maps
 
-Neon Grid and Terminal are maintained in
-[Tileflow Community Maps](https://github.com/tileflow/community-maps), with editable source, assets,
-previews, and contribution instructions. The GitHub-distributed `@tileflow/community-maps` package
-exports `neonGrid` and `terminal`; its README documents installation and the compatible Core version.
+Cyberpunk, Terminal, and Super Tile World are maintained in
+[Tileflow Community Maps](https://github.com/tileflow/community-maps), with editable source,
+assets, previews, and contribution instructions. They are no longer included in this package.
+The GitHub-distributed `@tileflow/community-maps` package exports `cyberpunk`, `terminal`, and
+`superTileWorld`, plus each map's font and icon descriptors. Install an exact Git commit using
+the instructions and compatible Core version in that repository.
 
-This package retains `cyberpunk`, `matrix`, and their font/icon descriptors as compatibility snapshots
-for existing consumers. Their IDs and artwork IDs are unchanged. They do not automatically track
-the community definitions. For a new project, use the community repository. When migrating, update
-the package import, export name, and any explicit map or icon IDs. Super Tile World remains here.
+For existing applications, move imports to `@tileflow/community-maps`, rename `matrix` to
+`terminal`, and update explicit map and asset IDs. Cyberpunk uses the `cyberpunk-` asset prefix;
+Terminal uses `terminal-`. Super Tile World retains `super-tile-world` and its `stw-` artwork IDs.
+The earlier community `neonGrid` export is now `cyberpunk`. This is an explicit catalog migration;
+there are no compatibility snapshots or aliases for the removed maps in the SDK.
 
 Soundings is not a navigation product. Its depth-band edges are approximate reference geometry,
 not surveyed isolines or vessel-specific safety contours. Experimental nautical aids and hazards
@@ -112,14 +111,12 @@ replaces the inherited collection, so also declare the intended `defaultTheme` a
 mapping. `system` belongs to browser selection; captures and builds use concrete theme names.
 
 Every map exports an icon-directory descriptor: `streetsIcons`, `baedekerIcons`, `civicaIcons`,
-`ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, `cyberpunkIcons`, `matrixIcons`,
-`blueprintIcons`, and `superTileWorldIcons`. The descriptors point into this installed package; they are not sprite URLs.
+`ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, and `blueprintIcons`. The descriptors point into this installed package; they are not sprite URLs.
 The CLI and build integrations compile the selected directories into runtime assets.
 
 Baedeker and Siegfried also export `baedekerFonts` and `siegfriedFonts` for their packaged Cormorant
-Garamond faces. Cyberpunk and Matrix export `cyberpunkFonts` and `matrixFonts` for Oxanium.
+Garamond faces.
 Cívica exports `civicaFonts` for DM Serif Text, Barlow Semi Condensed, and Noto Sans fallback.
-Super Tile World exports `superTileWorldFonts` for Pixelify Sans, Tile World Arcade, and Noto Sans fallback.
 Streets, Ferraris, Härad, Soundings, and Blueprint declare Noto Sans URL glyph providers
 from one immutable Hosted base-asset set, versioned independently of World data.
 

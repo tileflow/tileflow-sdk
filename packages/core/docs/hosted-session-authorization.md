@@ -53,16 +53,10 @@ import {
   civica,
   civicaFonts,
   civicaIcons,
-  cyberpunk,
-  cyberpunkFonts,
-  cyberpunkIcons,
   ferraris,
   ferrarisIcons,
   harad,
   haradIcons,
-  matrix,
-  matrixFonts,
-  matrixIcons,
   siegfried,
   siegfriedFonts,
   siegfriedIcons,
@@ -71,9 +65,6 @@ import {
   streets,
   streetsIcons,
   streetsThemes,
-  superTileWorld,
-  superTileWorldFonts,
-  superTileWorldIcons,
 } from '@tileflow/maps';
 ```
 
@@ -85,10 +76,7 @@ without changing the asset collection. Baedeker declares `[baedekerIcons]`, whos
 patterns support its travel-atlas design, and `[baedekerFonts]`, its own Cormorant Garamond
 directory; it derives contours in the browser from unpackaged Mapterhorn terrain tiles. Cívica
 declares `[civicaIcons]` for its original civic-print patterns and destination artwork and
-`[civicaFonts]` for its packaged lettering. Super Tile World declares `[superTileWorldIcons]` and
-`[superTileWorldFonts]` for its pixel-art sprites, patterns, and lettering. Cyberpunk
-declares `[cyberpunkIcons]` and `[cyberpunkFonts]`; Matrix
-independently declares `[matrixIcons]` and `[matrixFonts]`. Blueprint declares
+`[civicaFonts]` for its packaged lettering. Blueprint declares
 `[blueprintIcons]` for its four technical hatches and schematic POI node, derives contours from
 unpackaged Mapterhorn tiles, and uses the canonical Noto Sans glyph provider. The same asset
 operation is available to applications:
@@ -115,6 +103,6 @@ explicit locked descriptor, not a generic source registry.
 and prepares ordinary public artifacts without serializing installation paths. It compiles one
 deterministic sprite from the final icon composition and validates every literal `icon-image`,
 `fill-pattern`, and `line-pattern` in the final style against it. It also prepares any declared font
-directories generically; `baedekerFonts`, `cyberpunkFonts`, `matrixFonts`, and `siegfriedFonts` are
+directories generically; `baedekerFonts`, `civicaFonts`, and `siegfriedFonts` are
 ordinary package descriptors rather than pipeline special cases. Calling the pure compiler for a map whose style needs unprepared
 assets fails instead of emitting broken runtime references.

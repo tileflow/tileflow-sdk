@@ -34,15 +34,10 @@ The generic font preparation pipeline reads map-owned TTF, OTF, and WOFF2 direct
 embed fonts in `@tileflow/dev`. Each source directory must carry its own `LICENSE.txt`, which is
 copied into the deterministic build artifacts whenever that directory contributes a selected face.
 
-The Cyberpunk map in `@tileflow/maps` currently owns unmodified Oxanium Medium and SemiBold TTFs.
-Oxanium is copyright 2019 The Oxanium Project Authors and is distributed under the SIL Open Font
-License 1.1. The source and binaries are pinned to upstream commit
-`a8f39e0c71186190027a093e9001459410192d1e`; the complete license accompanies the files at
-`@tileflow/maps/assets/cyberpunk/fonts/LICENSE.txt`.
-
-- Source: <https://github.com/sevmeyer/oxanium/tree/a8f39e0c71186190027a093e9001459410192d1e>
-- Google Fonts specimen: <https://fonts.google.com/specimen/Oxanium>
-- License: <https://github.com/sevmeyer/oxanium/blob/a8f39e0c71186190027a093e9001459410192d1e/OFL.txt>
+The source repository's generic font tests retain pinned Oxanium fixtures and their complete
+SIL Open Font License 1.1 notice under `test/fixtures/fonts/oxanium/`. These fixtures are not
+included in the published package. Community map fonts are owned by
+[Community Maps](https://github.com/tileflow/community-maps).
 
 ## fontkit 2.0.4
 

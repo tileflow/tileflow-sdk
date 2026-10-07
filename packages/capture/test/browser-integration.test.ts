@@ -464,7 +464,7 @@ const style: MapLibreStyle = {
 
 let fontSourceReads = 0;
 const oxaniumMedium = readFileSync(
-  new URL('../../maps/assets/cyberpunk/fonts/Oxanium-Medium.ttf', import.meta.url),
+  new URL('../../dev/test/fixtures/fonts/oxanium/Oxanium-Medium.ttf', import.meta.url),
 );
 
 const assets: TileflowBuildAsset[] = [

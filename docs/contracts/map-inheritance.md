@@ -136,7 +136,9 @@ font IDs from each file's OpenType full name, applies directories left to right,
 `LICENSE.txt` beside contributing fonts, and emits only the faces used by the final style. A later
 directory replaces an earlier face with the same exact ID; case-only collisions fail. `font` names
 an exact OpenType full name. Local `fallbacks` name exact faces or explicit CSS generic families.
-Tileflow does not combine a family name with a weight or synthesize font IDs.
+Tileflow does not combine a family name with a weight or synthesize font IDs. A line-fitted text
+background derives a `glyphs` stack, `<source> lines-v1-t<ls>-l<lh>-p<pad>`, from a declared source
+stack; it satisfies `fontStacks` through that source and is unavailable with `fonts`.
 
 `glyphs` is one complete URL provider owned by the map. It enumerates the exact comma-joined
 MapLibre request keys produced by `text-font` arrays in `fontStacks`:
@@ -159,13 +161,12 @@ Browser font files and native/PBF glyphs are different delivery mechanisms, so a
 combine them or fall back silently between them. After inheritance resolves, every map that emits
 text has exactly one provider; only a text-free map may have neither.
 
-Streets, Ferraris, Härad, Soundings, and Blueprint each declare the canonical
-`https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf` URL with `Noto Sans Regular` and
-`Noto Sans Bold`. The URL is canonical rather than content-addressed; responses revalidate and the
-URL is not an exact-byte identity. It is stated directly in each standalone map, not synthesized as a
-fallback. The reproducible replacement is an explicit
-`/base/<assetSetSha256>/glyphs/...` URL backed by one validated immutable global base-asset
-manifest.
+Streets, Ferraris, Härad, Soundings, and Blueprint each declare the immutable
+`https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf`
+URL with `Noto Sans Regular` and `Noto Sans Bold`. The hash names one validated, immutable global
+base-asset manifest. The URL is stated directly in each standalone map, not synthesized as a
+fallback. The older canonical `https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf` URL remains
+a revalidating compatibility URL and is not an exact-byte identity.
 Baedeker and Siegfried instead declare `[baedekerFonts]` and `[siegfriedFonts]`, respectively, and
 each uses its own package copy of the exact faces `Cormorant Garamond Regular`,
 `Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic`.

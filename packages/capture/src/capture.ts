@@ -253,6 +253,12 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
               assets: [...artifacts.assets, ...(prepared.assets ?? [])],
               browser,
               ...(artifacts.localTilesets ? {localTilesets: artifacts.localTilesets} : {}),
+              ...(artifacts.lineBackgroundGlyphs
+                ? {
+                    glyphCacheDirectory: resolve(this.#options.cwd ?? process.cwd()),
+                    lineBackgroundGlyphs: artifacts.lineBackgroundGlyphs,
+                  }
+                : {}),
               scene,
               signal,
               style,

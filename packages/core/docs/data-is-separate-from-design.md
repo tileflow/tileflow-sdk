@@ -116,7 +116,8 @@ to right; a later exact name replaces an earlier face and case-only collisions f
 faces used by the final style become content-addressed assets and strict `tileflow:fontFaces`
 metadata. `font` names an exact OpenType full name or glyph face; local `fallbacks` name exact faces
 or explicit CSS generic families. Tileflow never appends a weight suffix or derives one face from
-another. Browser adapters load local faces before MapLibre. Native releases use a locked PBF
+another; the only derived stacks are line-fitted text backgrounds on a `glyphs` provider, which keep
+their source faces' shapes. Browser adapters load local faces before MapLibre. Native releases use a locked PBF
 `glyphs` URL provider instead, which enumerates the exact comma-joined MapLibre request keys in
 `fontStacks`.
 

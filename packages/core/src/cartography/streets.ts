@@ -12,6 +12,7 @@ import {
 } from '../overlays';
 import {parseResolvedTileflowMap} from '../resolved-map-schema';
 import {compileTerrainContributions, resolveTerrain} from '../terrain';
+import {parseTileflowLineBackgroundFontStack} from '../text-background';
 import {
   auditTileflowMapThemeValues,
   resolveThemeColors,
@@ -754,7 +755,9 @@ function assertGlyphFontStacks(style: MapLibreStyle, config: ResolvedTileflowMap
     const font = layout?.['text-font'];
     if (!Array.isArray(font) || !font.every((entry) => typeof entry === 'string')) continue;
     const stack = font.join(',');
-    if (stack && !declared.has(stack)) missing.add(stack);
+    // A derived line-background stack is served from its declared source stack.
+    const source = parseTileflowLineBackgroundFontStack(stack)?.source ?? stack;
+    if (stack && !declared.has(source)) missing.add(source);
   }
   if (missing.size > 0) {
     throw new Error(
@@ -782,6 +785,21 @@ function assertTextAssets(style: MapLibreStyle, config: ResolvedTileflowMap): vo
   }
   if (textLayers.length === 0) return;
   if (config.fonts !== undefined) {
+    const backed = style.layers.find((layer) => {
+      const font = isRecord(layer.layout) ? layer.layout['text-font'] : undefined;
+      return (
+        Array.isArray(font) &&
+        font.length === 1 &&
+        typeof font[0] === 'string' &&
+        parseTileflowLineBackgroundFontStack(font[0]) !== undefined
+      );
+    });
+    if (backed) {
+      throw new Error(
+        `Tileflow map "${config.id}" layer "${String(backed.id)}" uses a line-fitted text background, ` +
+          'which needs a glyphs provider; browser-rendered fonts cannot draw its cells.',
+      );
+    }
     if (config.fonts.length > 0) return;
     throw new Error(
       `Tileflow map "${config.id}" contains text but declares an empty fonts directory array.`,

@@ -1,3 +1,11 @@
+import {Color} from '@maplibre/maplibre-gl-style-spec';
+import {
+  createTileflowLineBackgroundFontStack,
+  parseTileflowLineBackgroundFontStack,
+  scaleTileflowTextSizeForLineBackground,
+  tileflowLineBackgroundDefaults,
+  type TileflowLineBackgroundFontStack,
+} from '../text-background';
 import type {
   TileflowAreaStyle,
   TileflowBackgroundStyle,
@@ -112,7 +120,74 @@ export function applyTextStyle<TLayer extends Layer>(
   setPaint(paint, 'text-halo-color', style.haloColor);
   setPaint(paint, 'text-halo-width', style.haloWidth);
   setPaint(paint, 'text-opacity', style.opacity);
+  applyLineBackground(layer.id, layout, paint, style, backedFontStack(asRecord(layer.layout)));
   return applyLayerRange(withLayerParts(layer, layout, paint), style);
+}
+
+/**
+ * Lowers `text.background` to a derived glyph stack plus a halo sized to the text, and keeps both
+ * consistent when later refinements change size, tracking or leading. While a layer is backed,
+ * `text-halo-width` and `text-halo-blur` are derived and `text-halo-color` is the strip colour.
+ */
+function applyLineBackground(
+  id: string,
+  layout: Record<string, unknown>,
+  paint: Record<string, unknown>,
+  style: TileflowTextStyle,
+  previous: TileflowLineBackgroundFontStack | undefined,
+): void {
+  const fonts = layout['text-font'];
+  const single = Array.isArray(fonts) && fonts.length === 1 && typeof fonts[0] === 'string';
+  const current = backedFontStack(layout);
+  const background = style.background;
+  // A refinement that replaces the font of a backed layer keeps the background.
+  if (!background && !current && !previous) return;
+  if (!single) {
+    throw new Error(
+      `Layer "${id}" needs exactly one text font without fallbacks for a line-fitted background.`,
+    );
+  }
+  const padding =
+    background?.padding === undefined
+      ? ((current ?? previous)?.metrics.padding ?? tileflowLineBackgroundDefaults.padding)
+      : constantNumber(id, toMapLibreStyleValue(background.padding), 'background padding');
+  const stack = createTileflowLineBackgroundFontStack(current?.source ?? (fonts[0] as string), {
+    letterSpacing: constantNumber(id, layout['text-letter-spacing'] ?? 0, 'letterSpacing'),
+    lineHeight: constantNumber(id, layout['text-line-height'] ?? 1.2, 'lineHeight'),
+    padding,
+  });
+  const {metrics} = parseTileflowLineBackgroundFontStack(stack)!;
+  // Spacing and leading use the exact rounded values the derived cells were built for.
+  layout['text-font'] = [stack];
+  layout['text-letter-spacing'] = metrics.letterSpacing;
+  layout['text-line-height'] = metrics.lineHeight;
+  if (background) {
+    const color = toMapLibreStyleValue(background.color);
+    if (typeof color === 'string' && (Color.parse(color)?.a ?? 1) < 1) {
+      throw new Error(
+        `Layer "${id}" needs an opaque line-fitted background colour; "${color}" is translucent.`,
+      );
+    }
+    paint['text-halo-color'] = color;
+  }
+  paint['text-halo-width'] = scaleTileflowTextSizeForLineBackground(layout['text-size']);
+  paint['text-halo-blur'] = 0;
+}
+
+function backedFontStack(
+  layout: Record<string, unknown>,
+): TileflowLineBackgroundFontStack | undefined {
+  const fonts = layout['text-font'];
+  return Array.isArray(fonts) && fonts.length === 1 && typeof fonts[0] === 'string'
+    ? parseTileflowLineBackgroundFontStack(fonts[0])
+    : undefined;
+}
+
+function constantNumber(id: string, value: unknown, property: string): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  throw new Error(
+    `Layer "${id}" uses a line-fitted text background, so its ${property} must be a constant number.`,
+  );
 }
 
 export function applyIconStyle<TLayer extends Layer>(

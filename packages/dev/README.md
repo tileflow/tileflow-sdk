@@ -73,6 +73,12 @@ manifest pointer, tracks its own files, and refuses to replace a hosted manifest
 Production rejects unresolved local PMTiles; publish data explicitly or provide an application-owned
 production source. Local development snapshots do not publish or redistribute the original dataset.
 
+Maps whose labels use a line-fitted `text.background` draw text with derived glyph stacks. Local
+previews and captures route such a map's glyph URL through `__glyphs/<map>/…`. Ordinary stacks pass
+through from the declared provider; derived ranges are computed from their source ranges, which are
+cached under `.tileflow/cache/glyphs/v1`. Production output keeps the declared provider, which must
+serve derived stacks.
+
 ## Keep a watched request handler
 
 Use one session for repeated work and close it when the owning server stops:

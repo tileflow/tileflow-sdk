@@ -466,11 +466,26 @@ export type {
   TileflowSymbolStyle,
   TileflowSymbolZOrder,
   TileflowTextAnchor,
+  TileflowTextBackground,
   TileflowTextJustify,
   TileflowTextLayout,
   TileflowTextPaint,
   TileflowTextStyle,
 } from './cartography/styles';
+export {
+  createTileflowLineBackgroundFontStack,
+  deriveTileflowLineBackgroundGlyphs,
+  normalizeTileflowLineBackgroundMetrics,
+  parseTileflowLineBackgroundFontStack,
+  scaleTileflowTextSizeForLineBackground,
+  tileflowLineBackgroundDefaults,
+  tileflowLineBackgroundHaloRatio,
+  tileflowLineBackgroundLimits,
+} from './text-background';
+export type {
+  TileflowLineBackgroundFontStack,
+  TileflowLineBackgroundMetrics,
+} from './text-background';
 export {
   compareCodeUnits,
   hashTileflowIconPackageManifest,

@@ -544,6 +544,14 @@ const textStyleSchema = z
         'top-right',
       ])
       .optional(),
+    background: z
+      .object({
+        color: colorValueSchema,
+        fit: z.literal('lines'),
+        padding: themeNumberValueSchema.optional(),
+      })
+      .strict()
+      .optional(),
     color: colorValueSchema.optional(),
     fallbacks: moduleFontFallbacksSchema.optional(),
     field: stringValueSchema.optional(),

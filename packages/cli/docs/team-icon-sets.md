@@ -8,8 +8,9 @@ independently pinned revisions through `iconSet('@acme/brand')` without copying 
 
 Two command families cover this, and the split is deliberate. `icon-set` is a networked Team
 authority that changes the catalog. `icons list` stays local and needs no credential. `icons diff`
-compares prepared output with an active Hosted Map baseline, so it requires `--map-id` and a Map
-credential but never mutates that Map. `install`, `update` and `pin` maintain the exact
+compares prepared output with an active Hosted Map baseline, so it requires `--map-id`, the
+configured map ID in `--against`, and `status:read` authority through personal login or a scoped
+credential, but never mutates that Map. `install`, `update` and `pin` maintain the exact
 `tileflow.icons.lock.json` beside the selected config.
 
 Availability depends on your deployment and your Team's enabled features. Check
@@ -89,7 +90,9 @@ npx tileflow icons pin @acme/brand --version 3 --team @acme --json
 ```
 
 These commands read the `iconSet()` references your config declares. `install` resolves the current
-latest revision for every declared reference that has no pin yet and leaves existing pins alone.
+latest revision for declared references that have no pin yet and leaves existing pins alone.
+Both `install [references...]` and `update [references...]` accept an optional subset; omitted
+selection means every declared reference.
 `update` moves the selected references to their current latest revision; omit the references to
 select every declared one. `pin` selects one exact revision and never resolves a head.
 
@@ -97,7 +100,10 @@ They are the only build-adjacent commands that resolve `latest` or write the loc
 reference is resolved before a single compare-and-swap write of the whole snapshot, so a partial
 lock is never produced and a concurrent writer fails the command rather than losing its pins. An
 undeclared reference is rejected before any request. No lock command rewrites `tileflow.config.ts`;
-add `iconSet('@team/set')` to your config first.
+add `iconSet('@team/set')` to your config first. Lock commands do not hydrate sprite files.
+Serialization retains pins for other declared references and removes stale undeclared references.
+They accept `--config` (or `-c`), `--team`, `--api-url`, `--api-key` and `--json`.
+Do not combine `--team` with an explicit or ambient `TILEFLOW_API_KEY`.
 
 The JSON receipt lists each locked reference with its revision, version ID, package identity and
 content hash, plus any declared reference that is still missing a pin.
@@ -107,7 +113,10 @@ content hash, plus any declared reference that is still missing a pin.
 `validate`, `build`, `preview`, `deploy`, `icons list` and `icons diff` read the lock and compose
 one effective sprite. They never resolve a catalog head, so publishing a newer revision changes
 nothing in a repository until an explicit lock command runs. `--cache-dir` chooses the verified
-artifact cache root; `--offline` fails a cache miss instead of hydrating it.
+artifact cache root on commands that expose it (including `icons list` and `icons diff`);
+`--offline` fails a cache miss instead of hydrating it. These flags are not universal CLI options.
+Other entry points use their documented icon-resolution options or `TILEFLOW_ICON_CACHE_DIR`.
+Offline diff still needs its hosted baseline request.
 
 Hydration downloads only the four public files of the exact pinned artifact, from the trusted
 delivery origin, without credentials and without following redirects. Every file's length,

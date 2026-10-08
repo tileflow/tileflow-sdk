@@ -21,8 +21,10 @@ Metro remains the React Native JavaScript development server. See
 boundary.
 
 `icon-set` and `icons` are deliberately separate. `icon-set` needs Team authority and changes the
-remote catalog. `icons list` and `icons diff` are keyless local inspection, and
-`icons install|update|pin` are the only commands that resolve `latest` or write
+remote catalog. `icons list --json` needs no credential; a cold cache may download exact public
+artifacts. `icons diff` requires a managed `--map-id`, the configured map ID in `--against`, and
+`status:read` authority for its hosted baseline. `icons install|update|pin` use Team `icons:read`
+authority when resolving revisions and are the only commands that select revisions or write
 `tileflow.icons.lock.json`. See the
 [Team Icon Set workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/team-icon-sets.md).
 

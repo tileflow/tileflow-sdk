@@ -30,8 +30,10 @@ Each sorted map entry has one `id` and an `icons` value. `icons.kind` is `none` 
   byte length and intrinsic dimensions; an `icon-set` entry carries the exact `reference` and
   `version` and deliberately has no path, because a shared revision publishes verified generated
   cells rather than original artwork. Both carry the winning `contributor` ordinal.
-- `composition`, the exact ordered `tileflow-icon-composition-v1` receipt when the map declares a
-  shared set, and `null` otherwise; and
+- `composition`, the exact ordered receipt when the map declares a shared set, and `null`
+  otherwise. It uses `tileflow-icon-composition-v2` when an effective winner has SDF appearance
+  or stretch/content layout; metadata-free compositions retain v1;
+- optional `appearances` and `layouts`, keyed by effective icon ID; and
 - `insideWorkingTree` and the deterministic generated `packageHash`.
 
 Listing reads the exact `tileflow.icons.lock.json` beside the selected config. It never resolves a
@@ -51,9 +53,11 @@ uses `../` and `insideWorkingTree: false`; no absolute path is emitted. Listing 
 authoring semantics. Run `npx tileflow validate --target hosted` separately before a
 hosted deploy to check containment, portable IDs, SVG safety, and hosted limits.
 
-The Tileflow command performs no authentication, browser/server launch, or file write. It performs
-no network request when every locked artifact is already in the verified cache, and `--offline`
-forbids hydration entirely. It removes an ambient `TILEFLOW_API_KEY` before importing config. As with every config-aware
+The Tileflow command performs no authentication or browser/server launch and never writes config,
+repository locks or frontend manifests. A cold cache can download and store the exact public
+sprite artifacts. It performs no network request when every locked artifact is already in the
+verified cache, and `--offline` forbids hydration entirely. `--json` is required; use `--config`
+(or `-c`) to select another config file. It removes an ambient `TILEFLOW_API_KEY` before importing config. As with every config-aware
 command, loading `tileflow.config.ts` executes repository code and is not a sandbox; side effects in
 that code remain the repository's responsibility. Success emits no ANSI or progress prose. Usage,
 config, source, decode, and render failures exit 1, write diagnostics to stderr, and leave stdout

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {expression as maplibreExpression} from '@maplibre/maplibre-gl-style-spec';
 import {expr, field} from '../src';
 import {validateTileflowDataExpression} from '../src/cartography/data-expression';
 import {bindSemanticReferences} from '../src/cartography/semantic-bindings';
@@ -70,6 +71,47 @@ test('numeric aggregation builders preserve exact MapLibre operator structure', 
   assert.deepEqual(expr.divide(12, 3).value, ['/', 12, 3]);
   assert.deepEqual(expr.min(4, 3, 2).value, ['min', 4, 3, 2]);
   assert.deepEqual(expr.max(4, 3, 2).value, ['max', 4, 3, 2]);
+});
+
+test('feature identity and remainder remain portable closed expressions', () => {
+  const identity = expr.id();
+  const bucket = expr.modulo(expr.abs(expr.toNumber(identity, 0)), 7);
+
+  assert.deepEqual(identity.value, ['id']);
+  assert.deepEqual(bucket.value, ['%', ['abs', ['to-number', ['id'], 0]], 7]);
+  assert.deepEqual(validateTileflowDataExpression(bucket.value), []);
+  assert.deepEqual(bindSemanticReferences(bucket, data), bucket);
+
+  assert.match(validateTileflowDataExpression(['id', 1])[0]?.message ?? '', /expects 0 arguments/u);
+  assert.match(validateTileflowDataExpression(['%', 1])[0]?.message ?? '', /expects 2 arguments/u);
+});
+
+test('numeric identity mixing varies empty-property points without camera or mutable state', () => {
+  const modulus = 1_000_003;
+  const first = expr.modulo(
+    expr.multiply(expr.modulo(expr.abs(expr.toNumber(expr.id(), 0)), modulus), 73_771),
+    modulus,
+  );
+  const mixed = expr.modulo(expr.multiply(first, 73_771), modulus);
+  const compiled = maplibreExpression.createExpression(mixed.value);
+
+  assert.equal(compiled.result, 'success');
+  if (compiled.result !== 'success') return;
+
+  const ids = Array.from({length: 64}, (_, index) => 125_190_355_951 + index * 10);
+  const values = ids.map((id) => {
+    const feature = {id, type: 1 as const, properties: {}};
+    const value = compiled.value.evaluate({zoom: 15}, feature);
+
+    assert.equal(value, compiled.value.evaluate({zoom: 19}, feature));
+    assert.equal(value, compiled.value.evaluate({zoom: 15}, {...feature}));
+    assert.ok(Number.isSafeInteger(value) && value >= 0 && value < modulus);
+
+    return Math.floor((value / modulus) * 6);
+  });
+
+  assert.equal(new Set(values).size, 6);
+  assert.equal(compiled.value.evaluate({zoom: 15}, {type: 1, properties: {}}), 0);
 });
 
 test('feature state, boolean assertions, and scoped variables lower without raw arrays', () => {

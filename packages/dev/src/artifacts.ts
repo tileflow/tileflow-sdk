@@ -67,6 +67,10 @@ import {
   type TileflowIconResolutionOptions,
   type TileflowSourceCatalog,
 } from './icons';
+import {
+  prepareTileflowLineBackgroundGlyphs,
+  type TileflowLineBackgroundGlyphProviders,
+} from './line-background-glyphs';
 import {prepareTileflowLocalTilesets, type TileflowLocalTilesetFile} from './local-tilesets';
 import {
   assertTileflowNativeCompiledStyles,
@@ -87,6 +91,15 @@ import {
   type TileflowStyleValidationIssue,
   validateTileflowStyle,
 } from './style-validation';
+
+export {
+  createTileflowLineBackgroundGlyphResponder,
+  parseTileflowLineBackgroundGlyphPath,
+  tileflowLineBackgroundGlyphRoute,
+  usesTileflowLineBackgroundGlyphs,
+  type TileflowLineBackgroundGlyphProviders,
+  type TileflowLineBackgroundGlyphResponder,
+} from './line-background-glyphs';
 
 export {prepareTileflowHostedNativeDeployment} from './hosted-native-artifacts';
 
@@ -158,6 +171,8 @@ export type TileflowBuildArtifacts = {
   project: TileflowBuildCatalog;
   /** Local-only archive ports. Paths never enter serialized build artifacts. */
   localTilesets?: TileflowLocalTilesetFile[];
+  /** Local-only upstream glyph templates for maps whose text uses line-fitted backgrounds. */
+  lineBackgroundGlyphs?: TileflowLineBackgroundGlyphProviders;
   /** Optional local-only provenance. It is never serialized as a build artifact. */
   styleInspections?: TileflowBuildStyleInspections;
   styles: TileflowBuildStyles;
@@ -369,10 +384,18 @@ export async function createTileflowArtifactPlan(
       throw error;
     });
     const assets = [...prepared.assets, ...preparedFonts.assets];
+    // Local previews and captures derive line-background glyphs themselves; production output
+    // keeps the declared provider, which must serve derived stacks.
+    const lineBackgroundGlyphs =
+      renderer === 'native' || options.target === 'production'
+        ? {providers: {}, styles: preparedFonts.styles}
+        : prepareTileflowLineBackgroundGlyphs(preparedFonts.styles, {
+            assetBaseUrl: resolveRendererAssetBaseUrl(options),
+          });
     const styles =
       renderer === 'native'
         ? prepareTileflowNativeStyles(preparedFonts.styles, assets)
-        : preparedFonts.styles;
+        : lineBackgroundGlyphs.styles;
     const provenance = await createTileflowBuildProvenance(prepared.cwd);
     const buildManifest = await createTileflowMapBuildManifest(
       Object.fromEntries(
@@ -441,6 +464,9 @@ export async function createTileflowArtifactPlan(
       manifest: stableManifest,
       project: prepared.project,
       ...(localTilesets.files.length > 0 ? {localTilesets: localTilesets.files} : {}),
+      ...(Object.keys(lineBackgroundGlyphs.providers).length > 0
+        ? {lineBackgroundGlyphs: lineBackgroundGlyphs.providers}
+        : {}),
       ...(inspected ? {styleInspections: inspected.inspections} : {}),
       styles,
       watchPaths: uniqueStrings([...inputs.files, ...inputs.directories]),

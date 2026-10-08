@@ -15,6 +15,7 @@ const ownedPaths = [
   '/icons/main/sprite.png',
   '/styles/main/light.json',
   '/fonts/family/font.woff2',
+  '/__glyphs/main/Noto%20Sans%20Bold%20lines-v1-t80-l1200-p330/0-255.pbf',
   '/__runtime/maplibre-gl.mjs',
   '/__runtime/maplibre-gl-shared.mjs',
   '/__runtime/maplibre-gl-worker.mjs',

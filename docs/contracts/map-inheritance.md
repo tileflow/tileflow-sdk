@@ -136,7 +136,9 @@ font IDs from each file's OpenType full name, applies directories left to right,
 `LICENSE.txt` beside contributing fonts, and emits only the faces used by the final style. A later
 directory replaces an earlier face with the same exact ID; case-only collisions fail. `font` names
 an exact OpenType full name. Local `fallbacks` name exact faces or explicit CSS generic families.
-Tileflow does not combine a family name with a weight or synthesize font IDs.
+Tileflow does not combine a family name with a weight or synthesize font IDs. A line-fitted text
+background derives a `glyphs` stack, `<source> lines-v1-t<ls>-l<lh>-p<pad>`, from a declared source
+stack; it satisfies `fontStacks` through that source and is unavailable with `fonts`.
 
 `glyphs` is one complete URL provider owned by the map. It enumerates the exact comma-joined
 MapLibre request keys produced by `text-font` arrays in `fontStacks`:

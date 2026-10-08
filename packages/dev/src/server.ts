@@ -8,6 +8,11 @@ import {
 import {createTileflowArtifactSession, type TileflowBuildArtifacts} from './artifacts';
 import {defaultTileflowApiUrl, defaultTileflowConfigPath, TileflowValidationError} from './config';
 import type {TileflowBuildAsset} from './icons';
+import {
+  createTileflowLineBackgroundGlyphResponder,
+  parseTileflowLineBackgroundGlyphPath,
+  tileflowLineBackgroundGlyphRoute,
+} from './line-background-glyphs';
 import type {TileflowLocalTilesetFile} from './local-tilesets';
 import {normalizeTileflowBasePath} from './public-paths';
 import {
@@ -153,6 +158,7 @@ export function createTileflowDevRequestHandler(
   const cwd = options.cwd ?? process.cwd();
   const apiBaseUrl = options.apiBaseUrl ?? defaultTileflowApiUrl;
   let ownedSessionPromise: Promise<TileflowArtifactSession> | undefined;
+  const lineBackgroundGlyphs = createTileflowLineBackgroundGlyphResponder({cwd});
   let closed = false;
   let lastOrigin: string | undefined;
   const loadOwnedSession = (origin: string) => {
@@ -246,6 +252,15 @@ export function createTileflowDevRequestHandler(
       }
 
       if (!artifacts) return unavailableArtifactsResponse(state);
+
+      if (path.startsWith(`/${tileflowLineBackgroundGlyphRoute}/`)) {
+        const glyphRequest = parseTileflowLineBackgroundGlyphPath(path);
+        const upstream = glyphRequest
+          ? artifacts.lineBackgroundGlyphs?.[glyphRequest.mapName]
+          : undefined;
+        if (!glyphRequest || !upstream) return jsonResponse({error: 'Unknown glyph range.'}, 404);
+        return await lineBackgroundGlyphs(upstream, glyphRequest.fontStack, glyphRequest.range);
+      }
 
       if (path.startsWith('/tilesets/')) {
         const fileName = path.replace(/^\/+/, '');
@@ -503,6 +518,7 @@ function isOwnedTileflowRequestPath(path: string): boolean {
     path.startsWith('/tilesets/') ||
     getTileflowStyleSelection(path) !== undefined ||
     path.startsWith('/fonts/') ||
+    path.startsWith(`/${tileflowLineBackgroundGlyphRoute}/`) ||
     path.startsWith('/__runtime/')
   );
 }

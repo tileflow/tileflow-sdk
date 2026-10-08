@@ -3986,6 +3986,23 @@
             "top-right"
           ]
         },
+        "background": {
+          "type": "object",
+          "properties": {
+            "color": {
+              "$ref": "#/$defs/__schema47"
+            },
+            "fit": {
+              "type": "string",
+              "const": "lines"
+            },
+            "padding": {
+              "$ref": "#/$defs/__schema10"
+            }
+          },
+          "required": ["color", "fit"],
+          "additionalProperties": false
+        },
         "color": {
           "$ref": "#/$defs/__schema47"
         },
@@ -21590,6 +21607,50 @@
                 "top-left",
                 "top-right"
               ]
+            }
+          ]
+        },
+        "background": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "color": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "$ref": "#/$defs/TileflowModulePatchRef27"
+                    }
+                  ]
+                },
+                "fit": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "type": "string",
+                      "const": "lines"
+                    }
+                  ]
+                },
+                "padding": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "$ref": "#/$defs/TileflowModulePatchRef14"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
             }
           ]
         },

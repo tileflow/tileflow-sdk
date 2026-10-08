@@ -5,7 +5,14 @@ import {dirname, join} from 'node:path';
 import type {Browser, BrowserContext} from 'playwright';
 import type {MapLibreStyle, NormalizedTileflowCaptureScene} from '@tileflow/core';
 import {getTileflowStyleFontFaces} from '@tileflow/core/runtime';
-import type {TileflowLocalTilesetFile} from '@tileflow/dev/artifacts';
+import {
+  createTileflowLineBackgroundGlyphResponder,
+  parseTileflowLineBackgroundGlyphPath,
+  type TileflowLineBackgroundGlyphProviders,
+  type TileflowLineBackgroundGlyphResponder,
+  tileflowLineBackgroundGlyphRoute,
+  type TileflowLocalTilesetFile,
+} from '@tileflow/dev/artifacts';
 import {assertValidTileflowStyle, TileflowStyleValidationError} from '@tileflow/dev/validation';
 import {type TileflowCaptureAsset, tileflowSyntheticAssetOrigin} from './assets';
 import {
@@ -20,6 +27,10 @@ export {tileflowSyntheticAssetOrigin} from './assets';
 export type StandaloneTileflowCaptureInput = {
   assets: TileflowCaptureAsset[];
   browser: Browser;
+  /** Project root whose `.tileflow/cache` stores upstream glyph ranges. */
+  glyphCacheDirectory?: string;
+  /** Upstream glyph templates for maps whose text uses line-fitted backgrounds. */
+  lineBackgroundGlyphs?: TileflowLineBackgroundGlyphProviders;
   localTilesets?: readonly TileflowLocalTilesetFile[];
   scene: NormalizedTileflowCaptureScene;
   signal?: AbortSignal;
@@ -132,6 +143,7 @@ export async function captureStandaloneTileflowScene(
     );
     const fontFaces = getTileflowStyleFontFaces(input.style);
     const remoteOrigins = new Set<string>();
+    let lineBackgroundGlyphs: TileflowLineBackgroundGlyphResponder | undefined;
     let syntheticAssetFailure: string | undefined;
     const resourceFailures: TileflowCaptureResourceDiagnostic[] = [];
     let pageFailed = false;
@@ -167,6 +179,42 @@ export async function captureStandaloneTileflowScene(
           await route.fulfill(runtime);
           return;
         }
+      }
+
+      if (
+        url.origin === tileflowSyntheticAssetOrigin &&
+        url.pathname.startsWith(`/${tileflowLineBackgroundGlyphRoute}/`)
+      ) {
+        const glyphRequest = parseTileflowLineBackgroundGlyphPath(url.pathname);
+        const upstream = glyphRequest
+          ? input.lineBackgroundGlyphs?.[glyphRequest.mapName]
+          : undefined;
+        if (!glyphRequest || !upstream || url.search !== '') {
+          syntheticAssetFailure = url.pathname.slice(1) || 'unknown';
+          await route.abort('blockedbyclient');
+          return;
+        }
+        // Upstream ranges come from the declared provider, so the capture depends on it.
+        const provider = new URL(
+          upstream.replace('{fontstack}', 'stack').replace('{range}', '0-255'),
+        );
+        if (!isLoopbackUrl(provider)) remoteOrigins.add(provider.origin);
+        lineBackgroundGlyphs ??= createTileflowLineBackgroundGlyphResponder({
+          cwd: input.glyphCacheDirectory ?? process.cwd(),
+        });
+        const response = await lineBackgroundGlyphs(
+          upstream,
+          glyphRequest.fontStack,
+          glyphRequest.range,
+        );
+        if (response.status !== 200) recordResourceFailure(url.toString(), response.status);
+        await route.fulfill({
+          body: Buffer.from(await response.arrayBuffer()),
+          contentType: response.headers.get('content-type') ?? 'application/x-protobuf',
+          headers: {'Access-Control-Allow-Origin': '*'},
+          status: response.status,
+        });
+        return;
       }
 
       if (url.origin === tileflowSyntheticAssetOrigin) {

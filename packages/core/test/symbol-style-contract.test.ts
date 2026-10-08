@@ -42,6 +42,7 @@ const symbolCases = {
 const textCases = {
   allowOverlap: textCase({allowOverlap: true}),
   anchor: textCase({anchor: 'bottom-left'}),
+  background: textCase({background: {color: '#123456', fit: 'lines'}}),
   color: textCase({color: '#123456'}),
   fallbacks: textCase({fallbacks: ['Noto Sans Regular']}),
   field: textCase({field: 'contract-label'}),

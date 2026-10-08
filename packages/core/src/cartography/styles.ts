@@ -162,9 +162,26 @@ export type TileflowTextPaint = {
   haloWidth?: TileflowNumberStyleValue;
   opacity?: TileflowNumberStyleValue;
 };
+/**
+ * One opaque strip behind each shaped line of a label. Tileflow lowers it to a derived glyph stack
+ * whose cells MapLibre's text halo paints, so placement, wrapping and collision stay native.
+ */
+export type TileflowTextBackground = {
+  /** Strip colour. Cells overlap at their joins, so the colour must be opaque. */
+  color: TileflowColorStyleValue;
+  /** `lines` fits one strip to each shaped line. */
+  fit: 'lines';
+  /** Strip extension beyond the first and last glyph of each line, in ems. Defaults to 0.33. */
+  padding?: TileflowThemeNumberValue;
+};
 export type TileflowTextLayout = {
   allowOverlap?: boolean;
   anchor?: TileflowTextAnchor;
+  /**
+   * Replaces the text halo with line-fitted strips. Requires a map `glyphs` provider that serves
+   * derived stacks, one font without fallbacks, and constant `letterSpacing` and `lineHeight`.
+   */
+  background?: TileflowTextBackground;
   field?: TileflowStringStyleValue;
   font?: TileflowThemeFontValue;
   fallbacks?: readonly TileflowThemeFontValue[];

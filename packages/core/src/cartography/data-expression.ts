@@ -66,6 +66,10 @@ function zoom(): TileflowExpression<number> {
   return make<number>(['zoom']);
 }
 
+function id(): TileflowExpression<string | number | null> {
+  return make<string | number | null>(['id']);
+}
+
 function coalesce<T>(
   first: TileflowDataExpressionInput<T>,
   ...rest: readonly TileflowDataExpressionInput<T>[]
@@ -148,6 +152,13 @@ function divide(
   divisor: TileflowDataExpressionInput<number>,
 ): TileflowExpression<number> {
   return make<number>(['/', node(dividend), node(divisor)]);
+}
+
+function modulo(
+  dividend: TileflowDataExpressionInput<number>,
+  divisor: TileflowDataExpressionInput<number>,
+): TileflowExpression<number> {
+  return make<number>(['%', node(dividend), node(divisor)]);
 }
 
 function multiply(
@@ -451,6 +462,7 @@ function visitExpression(
       }
       return;
     }
+    case 'id':
     case 'zoom': {
       exact(1);
       return;
@@ -500,6 +512,7 @@ function visitExpression(
     }
     case '-':
     case '/':
+    case '%':
     case '!=':
     case '<':
     case '<=':
@@ -799,6 +812,7 @@ export const expr = Object.freeze({
   gte: <T>(left: TileflowDataExpressionInput<T>, right: TileflowDataExpressionInput<T>) =>
     compare('>=', left, right),
   has,
+  id,
   featureState,
   interpolate,
   let: letValue,
@@ -810,6 +824,7 @@ export const expr = Object.freeze({
   match,
   max: maximum,
   min: minimum,
+  modulo,
   multiply,
   ne: <T>(left: TileflowDataExpressionInput<T>, right: TileflowDataExpressionInput<T>) =>
     compare('!=', left, right),

@@ -15,7 +15,7 @@ test('language manifest exposes the complete deterministic AI authoring contract
   assert.deepEqual(manifest.compiler, {name: 'tileflow-semantic', version: 1});
   assert.equal(manifest.language, 'tileflow-semantic-v1');
   assert.equal(manifest.domains.length, 13);
-  assert.equal(manifest.expressions.builders.length, 32);
+  assert.equal(manifest.expressions.builders.length, 34);
   assert.equal(
     manifest.schemas.document,
     'https://tileflow.dev/schemas/tileflow-config-reference-v4.json',

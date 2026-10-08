@@ -441,6 +441,7 @@ const expressionBuilders: readonly TileflowAuthoringExpressionBuilder[] = [
     returns: 'boolean',
     serializedOperator: 'has',
   },
+  {arguments: [], name: 'id', returns: 'string | number | null', serializedOperator: 'id'},
   {
     arguments: [
       'interpolation: linear | exponential(base) | cubic-bezier(x1,y1,x2,y2)',
@@ -496,6 +497,12 @@ const expressionBuilders: readonly TileflowAuthoringExpressionBuilder[] = [
     name: 'min',
     returns: 'number',
     serializedOperator: 'min',
+  },
+  {
+    arguments: ['dividend: number', 'divisor: number'],
+    name: 'modulo',
+    returns: 'number',
+    serializedOperator: '%',
   },
   {
     arguments: ['first: number', 'second: number', '...rest: number[]'],

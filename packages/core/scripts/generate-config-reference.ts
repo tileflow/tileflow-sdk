@@ -735,6 +735,7 @@ function enrichDataExpressionSchemas(root: JsonSchema): void {
       exact('get', [{$ref: refs.field}]),
       exact('has', [{$ref: refs.field}]),
       exact('literal', [{$ref: refs.json}]),
+      exact('id', []),
       exact('zoom', []),
       exact('feature-state', [{minLength: 1, type: 'string'}]),
       exact('var', [{minLength: 1, type: 'string'}]),
@@ -744,7 +745,7 @@ function enrichDataExpressionSchemas(root: JsonSchema): void {
       exact('boolean', [operand, operand]),
       exact('to-number', [operand]),
       exact('to-number', [operand, operand]),
-      ...['-', '/', '!=', '<', '<=', '==', '>', '>='].map((operator) =>
+      ...['-', '/', '%', '!=', '<', '<=', '==', '>', '>='].map((operator) =>
         exact(operator, [operand, operand]),
       ),
       ...['+', '*', 'min', 'max', 'coalesce', 'concat'].map((operator) => variadic(operator, 2)),

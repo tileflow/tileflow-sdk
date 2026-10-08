@@ -158,6 +158,21 @@ Structural controls such as presets, visibility, and zoom gates remain ordinary 
 controls address stable concepts such as `roads.classes.primary.surface.fill`, not renderer layer
 IDs.
 
+`expr.id()` reads the source-owned feature identifier: a string, number, or `null` when absent.
+It performs no I/O and does not derive an identifier from geometry. `expr.modulo(dividend, divisor)`
+uses native numeric remainder, including its sign behavior. Normalize input and provide a deliberate
+fallback before using numeric IDs for decorative variation; missing or non-numeric IDs must not
+silently imply distinct features. Identity stability across data releases belongs to the producer.
+
+<!-- docs:check -->
+
+```ts
+import {expr} from '@tileflow/core';
+
+const numericIdentity = expr.abs(expr.toNumber(expr.id(), 0));
+const decorativeBucket = expr.modulo(numericIdentity, 7);
+```
+
 The `land` module exposes stable land-use targets for `cemetery`, `civic`, `commercial`,
 `education`, `government`, `industrial`, `medical`, `military`, `parking`, `railway`,
 `recreation`, and `residential`. Its land-cover taxonomy distinguishes physical cover from authored

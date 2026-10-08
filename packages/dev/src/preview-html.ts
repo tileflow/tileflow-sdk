@@ -45,7 +45,7 @@ export function renderTileflowPreviewHtml(
       body { font-family: ui-sans-serif, system-ui, sans-serif; }
       #map {
         --tileflow-globe-radius: 220px;
-        background-color: #2F5070;
+        background-color: var(--tileflow-space, #2F5070);
         background-image:
           radial-gradient(circle at 18% 24%, rgba(225, 240, 250, 0.34) 0 1px, transparent 1.4px),
           radial-gradient(circle at 72% 62%, rgba(225, 240, 250, 0.22) 0 1px, transparent 1.3px),
@@ -68,12 +68,12 @@ export function renderTileflowPreviewHtml(
         top: 50%;
         width: calc(var(--tileflow-globe-radius) * 2);
         height: calc(var(--tileflow-globe-radius) * 2);
-        border: 1px solid rgba(248, 252, 255, 0.88);
+        border: 1px solid var(--tileflow-rim-line, rgba(248, 252, 255, 0.88));
         border-radius: 50%;
         box-shadow:
-          0 0 9px 3px rgba(248, 252, 255, 0.9),
-          0 0 28px 10px rgba(176, 220, 246, 0.52),
-          0 0 58px 20px rgba(132, 195, 232, 0.2);
+          0 0 9px 3px var(--tileflow-rim-core, rgba(248, 252, 255, 0.9)),
+          0 0 28px 10px var(--tileflow-rim-glow, rgba(176, 220, 246, 0.52)),
+          0 0 58px 20px var(--tileflow-rim-haze, rgba(132, 195, 232, 0.2));
         pointer-events: none;
         transform: translate(-50%, -50%);
       }
@@ -866,6 +866,30 @@ export function renderTileflowPreviewHtml(
         );
         container.classList.add("tileflow-globe");
         container.style.setProperty("--tileflow-globe-radius", radius.toFixed(2) + "px");
+        applyAtmosphereBackdrop(map, container);
+      }
+
+      // Uses the map's declared atmosphere for the preview's space and rim, so a themed globe shows
+      // its own colours; maps without one keep the default backdrop.
+      function applyAtmosphereBackdrop(map, container) {
+        const atmosphere = map.getStyle?.()?.metadata?.["tileflow:atmosphere"];
+        const rgba = (hex, alpha) => {
+          const match = /^#([0-9a-f]{6})$/i.exec(String(hex ?? ""));
+          if (!match) return undefined;
+          const value = Number.parseInt(match[1], 16);
+          return "rgba(" + (value >> 16) + ", " + ((value >> 8) & 255) + ", " + (value & 255) + ", " + alpha + ")";
+        };
+        const properties = {
+          "--tileflow-space": rgba(atmosphere?.spaceColor, 1),
+          "--tileflow-rim-line": rgba(atmosphere?.horizonColor, 0.88),
+          "--tileflow-rim-core": rgba(atmosphere?.horizonColor, 0.9),
+          "--tileflow-rim-glow": rgba(atmosphere?.horizonColor, 0.52),
+          "--tileflow-rim-haze": rgba(atmosphere?.skyColor, 0.35),
+        };
+        for (const [name, value] of Object.entries(properties)) {
+          if (value) container.style.setProperty(name, value);
+          else container.style.removeProperty(name);
+        }
       }
 
       function createBuildingWireframeLayer(map, styleLayer) {

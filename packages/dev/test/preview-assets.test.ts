@@ -62,3 +62,11 @@ test('offers a theme switch only when a map preview has several themes', () => {
   assert.match(several, /const previewThemes = \["light","night"\];/u);
   assert.match(several, /if \(previewThemes\.length > 1\) map\.addControl\(new ThemeControl\(\)/u);
 });
+
+test('the preview globe backdrop follows the map atmosphere', () => {
+  const html = renderTileflowPreviewHtml(undefined, '/tileflow', {}, false);
+
+  assert.match(html, /background-color: var\(--tileflow-space, #2F5070\)/u);
+  assert.match(html, /metadata\?\.\["tileflow:atmosphere"\]/u);
+  assert.match(html, /"--tileflow-rim-glow": rgba\(atmosphere\?\.horizonColor, 0\.52\)/u);
+});

@@ -177,13 +177,14 @@ removed:
 - `main` is protected by a ruleset requiring pull requests, resolved conversations, the exact
   `CI / Required` check, linear history, and no force pushes or deletion. The ruleset deliberately
   requires zero approving reviews so an operator or Codex can merge after self-review and green CI;
-- this zero-review policy applies only to merging code. It does not remove the independent approval
+- this zero-review policy applies only to merging code. It does not remove the manual approval
   gate configured on the `npm-publish` environment for public release bundles;
 - organization members use 2FA; GitHub Actions enforces full commit-SHA pinning, and action changes
   are reviewed with their source pull request;
 - workflow `GITHUB_TOKEN` permissions default to read-only;
-- environment `npm-publish` accepts protected `main` only, has one required reviewer, and prevents
-  the workflow initiator from approving their own deployment when GitHub plan support allows it;
+- environment `npm-publish` accepts protected `main` only and requires approval by a listed reviewer.
+  A listed reviewer may approve a workflow they initiated; `prevent_self_review` is disabled.
+  Administrative bypass remains disabled;
 - only the publish job has `id-token: write`; preparation has no write permission;
 - there is no `NPM_TOKEN` secret or long-lived npm write credential; and
 - concurrent release runs share the non-cancelling `npm-publish` concurrency group.
@@ -233,6 +234,10 @@ the `Approve and publish exact bundle` job waits at `npm-publish`. The reviewer 
 source SHA, package table, and bundle digest, then approves or rejects the whole bundle once. There
 is no approval per package. Approval cannot alter the plan; any correction requires a new source PR
 and a new deliberate workflow run.
+
+The workflow initiator may perform this review when listed on the environment. Starting a workflow
+does not approve its bundle: the reviewer must separately approve the pending `npm-publish`
+deployment in GitHub after inspecting the prepared artifacts.
 
 After approval, the isolated publish job downloads the bundle, verifies its SHA-256 and source SHA,
 rechecks npm immediately, publishes in catalog order with OIDC and provenance, and waits

@@ -110,7 +110,8 @@ export function renderTileflowPreviewHtml(
         white-space: pre-wrap;
       }
       .maplibregl-ctrl-group .tileflow-3d-toggle,
-      .maplibregl-ctrl-group .tileflow-tree-toggle {
+      .maplibregl-ctrl-group .tileflow-tree-toggle,
+      .maplibregl-ctrl-group .tileflow-theme-toggle {
         width: auto;
         min-width: 58px;
         padding: 0 9px;
@@ -124,7 +125,8 @@ export function renderTileflowPreviewHtml(
         color: #174EA6;
       }
       .maplibregl-ctrl-group .tileflow-3d-toggle:hover,
-      .maplibregl-ctrl-group .tileflow-tree-toggle:hover {
+      .maplibregl-ctrl-group .tileflow-tree-toggle:hover,
+      .maplibregl-ctrl-group .tileflow-theme-toggle:hover {
         background-color: #F1F3F4;
       }
     </style>
@@ -152,6 +154,8 @@ export function renderTileflowPreviewHtml(
       const previewLabel = ${JSON.stringify(preview?.label)};
       const styleUrl = ${JSON.stringify(styleUrl)};
       const previewMapOptions = ${JSON.stringify(mapOptions)};
+      const previewTheme = ${serializeInlineJson(preview?.themeName ?? null)};
+      const previewThemes = ${serializeInlineJson(preview?.themeNames ?? [])};
       const isSemanticPreview = ${JSON.stringify(isSemanticPreview)};
       const previewFontFaces = ${serializeInlineJson(fontFaces)};
       const treeSearchParameters = new URL(location.href).searchParams;
@@ -3654,6 +3658,38 @@ export function renderTileflowPreviewHtml(
         }
       }
 
+      // Switches a map preview between its themes. The preview reloads with the next theme and keeps
+      // the camera and toggles already written to the URL; scene previews own their theme.
+      class ThemeControl {
+        onAdd(map) {
+          this.map = map;
+          this.container = document.createElement("div");
+          this.container.className = "maplibregl-ctrl maplibregl-ctrl-group";
+          this.button = document.createElement("button");
+          this.button.type = "button";
+          this.button.className = "tileflow-theme-toggle";
+          const next = previewThemes[(previewThemes.indexOf(previewTheme) + 1) % previewThemes.length];
+          this.button.textContent = String(previewTheme).toUpperCase();
+          this.button.title = "Switch to the " + next + " theme";
+          this.button.setAttribute("aria-label", "Switch to the " + next + " theme");
+          this.handleClick = () => {
+            writeCameraToUrl(map);
+            const url = new URL(location.href);
+            url.searchParams.set("theme", next);
+            location.assign(url.href);
+          };
+          this.button.addEventListener("click", this.handleClick);
+          this.container.appendChild(this.button);
+          return this.container;
+        }
+
+        onRemove() {
+          this.button?.removeEventListener("click", this.handleClick);
+          this.container?.remove();
+          this.map = undefined;
+        }
+      }
+
       const previewLayerGroupIds = [
         "labels", "pois", "roads", "transit", "buildings", "landuse", "water"
       ];
@@ -3790,6 +3826,7 @@ export function renderTileflowPreviewHtml(
           map.addControl(threeDimensionalControl, "top-right");
           map.addControl(treeControl, "top-right");
         }
+        if (previewThemes.length > 1) map.addControl(new ThemeControl(), "top-right");
         let ensuringThreeDimensionalLayers;
         const treeRuntimeMinimumZoom = 16;
         const ensureThreeDimensionalLayers = () => {

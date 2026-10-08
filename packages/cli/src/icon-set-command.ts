@@ -26,9 +26,9 @@ const pageSize = 100;
 /**
  * Register the Team Icon Set catalog family.
  *
- * `icon-set` manages remote Team authority. Repository-local inspection and explicit lock
- * maintenance stay in the keyless `icons` family, so a networked catalog mutation never looks
- * like a local read.
+ * `icon-set` manages the remote Team catalog. `icons list` is credential-free composition
+ * inspection; `icons diff` reads a hosted baseline with Map authority. Explicit lock maintenance
+ * uses Team read authority to select revisions without mutating the catalog.
  */
 export function registerIconSetCommands(
   program: Command,

@@ -137,8 +137,9 @@ This is the one normal icon-preparation path. `compileTileflowIconPackages`,
 `prepareTileflowCatalogIcons`, `inspectTileflowIconCatalogs` and `getTileflowIconWatchPaths` all use
 it, so `createTileflowBuildArtifacts`, `createTileflowArtifactSession`, and every adapter that
 enters them accept the same explicit `icons` resolution options: `cacheRoot`, `offline`,
-`deliveryOrigins`, `fetch` and `signal`. Nothing selects a cache, an origin, or a transport from
-implicit process state, and no build or watch polls a catalog head. `prepareTileflowCatalogIcons`
+`deliveryOrigins`, `fetch` and `signal`. An explicit `cacheRoot` takes precedence over
+`TILEFLOW_ICON_CACHE_DIR`, then the OS cache default. Origins and transport use their documented
+defaults unless supplied explicitly; no build or watch polls a catalog head. `prepareTileflowCatalogIcons`
 returns `mapIconCompositions` alongside `mapIconSources`, and build-manifest entries carry the
 receipt as `sourceAssets.iconComposition` with `mapRevisionSchemaVersion: 2`.
 
@@ -159,8 +160,8 @@ Applications may explicitly configure trusted `deliveryOrigins`; locks cannot ad
 forbids all fetches and fails on missing or corrupt entries. Complete-map offline rendering still
 depends on unrelated tiles, glyphs, and other external resources.
 
-The cache lives under the OS user cache with `tileflow/icons/v1/<contentHash>`. `cacheRoot` or
-`TILEFLOW_ICON_CACHE_DIR` overrides its parent. Atomic directory installation and exact-entry
+The cache lives under the OS user cache with `tileflow/icons/v1/<contentHash>`. `cacheRoot`, then
+`TILEFLOW_ICON_CACHE_DIR`, overrides its parent. Atomic directory installation and exact-entry
 retirement support concurrent writers and corruption repair. Symlink entries are rejected. This is
 a disposable cache, not a security sandbox against another process controlling the same user
 account. Incomplete temporary entries are never accepted as published cache entries.

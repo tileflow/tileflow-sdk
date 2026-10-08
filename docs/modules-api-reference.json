@@ -8985,6 +8985,17 @@
           "type": "array",
           "prefixItems": [
             {
+              "const": "id"
+            }
+          ],
+          "items": false,
+          "minItems": 1,
+          "maxItems": 1
+        },
+        {
+          "type": "array",
+          "prefixItems": [
+            {
               "const": "zoom"
             }
           ],
@@ -9169,6 +9180,23 @@
           "prefixItems": [
             {
               "const": "/"
+            },
+            {
+              "$ref": "#/$defs/TileflowDataExpressionOperand"
+            },
+            {
+              "$ref": "#/$defs/TileflowDataExpressionOperand"
+            }
+          ],
+          "items": false,
+          "minItems": 3,
+          "maxItems": 3
+        },
+        {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "%"
             },
             {
               "$ref": "#/$defs/TileflowDataExpressionOperand"

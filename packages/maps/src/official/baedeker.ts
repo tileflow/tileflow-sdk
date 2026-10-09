@@ -179,9 +179,8 @@ function landcoverPattern(
   const minZoom = options.minZoom ?? 9;
 
   return renderPass({
-    attachTo: target,
+    placement: {above: target},
     feature: 'landcover',
-    phase: 'overlay',
     renderer: 'fill',
     selector,
     style: {
@@ -203,9 +202,8 @@ function landusePattern(
   opacity: number,
 ) {
   return renderPass({
-    attachTo: target,
+    placement: {above: target},
     feature: 'landuse',
-    phase: 'overlay',
     renderer: 'fill',
     selector: {field: 'class', kind: 'in', values: classes},
     style: {
@@ -504,9 +502,8 @@ export const baedeker = bindOfficialMapTheme(
         }),
         {
           engravedBlocks: renderPass({
-            attachTo: 'buildings.flat.fill',
+            placement: {above: 'buildings.flat.fill'},
             feature: 'building',
-            phase: 'overlay',
             renderer: 'fill',
             style: {
               minZoom: 14,
@@ -1205,9 +1202,8 @@ export const baedeker = bindOfficialMapTheme(
         }),
         {
           printLines: renderPass({
-            attachTo: 'water.bodies.fill',
+            placement: {above: 'water.bodies.fill'},
             feature: 'water',
-            phase: 'overlay',
             renderer: 'fill',
             selector: {
               coerce: 'number',
@@ -1228,9 +1224,8 @@ export const baedeker = bindOfficialMapTheme(
             },
           }),
           intermittentPrintLines: renderPass({
-            attachTo: 'water.intermittent.bodies.fill',
+            placement: {above: 'water.intermittent.bodies.fill'},
             feature: 'water',
-            phase: 'overlay',
             renderer: 'fill',
             selector: {
               coerce: 'number',

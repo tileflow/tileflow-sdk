@@ -4,6 +4,10 @@ import type {
   ResolvedTileflowData,
 } from '../data';
 import {
+  type TileflowBandPlacement,
+  tileflowBandPlacementIndex,
+  tileflowBandPlacements,
+  tileflowBandPlacementSlot,
   type TileflowLayerSlot,
   tileflowLayerSlots,
   tileflowRenderStackOperationNamePattern,
@@ -35,13 +39,6 @@ import type {
   TileflowSymbolStyle,
 } from './styles';
 
-export const tileflowRenderStackPhases = [
-  'underlay',
-  'overlay',
-  'postRelief',
-  'annotation',
-  'finish',
-] as const;
 export const tileflowRenderStackRenderers = [
   'background',
   'circle',
@@ -75,7 +72,15 @@ export const tileflowRenderStackLimits = Object.freeze({
   maxStepStops: 16,
 } as const);
 
-export type TileflowRenderStackPhase = (typeof tileflowRenderStackPhases)[number];
+/**
+ * Where a render pass draws, or where a refinement moves its target: at a band edge, or
+ * immediately above or below one semantic target. Operations sharing a placement paint in
+ * declaration order, the first lowest.
+ */
+export type TileflowRenderPlacement =
+  | TileflowBandPlacement
+  | {readonly above: string; readonly below?: never}
+  | {readonly above?: never; readonly below: string};
 export type TileflowRenderStackRenderer = (typeof tileflowRenderStackRenderers)[number];
 export type TileflowRenderFeature = keyof OpenMapTilesLayerBindings;
 export type TileflowRenderField = keyof OpenMapTilesFieldBindings;
@@ -340,8 +345,11 @@ type TileflowRenderStyle<TStyle> = TStyle & {
 };
 
 type TileflowRenderPassCommon = {
-  readonly attachTo: string;
-  readonly phase: TileflowRenderStackPhase;
+  /**
+   * A band edge, or above/below one semantic target. Passes placed beside a target take its
+   * band and, without their own `feature`, its vector data.
+   */
+  readonly placement: TileflowRenderPlacement;
   /** Additional rendered domains required by this pass. Data `feature` bindings are independent. */
   readonly requirements?: readonly TileflowLayerDomain[];
 };
@@ -369,11 +377,23 @@ export type TileflowRenderPassInput =
 export type TileflowRenderPass = TileflowRenderPassInput & {readonly kind: 'render-pass'};
 
 type TileflowRefinementCommon<TRenderer extends string, TStyle> = {
+  /** Moves the target, with every pass placed beside it, to another position. */
+  readonly placement?: TileflowRenderPlacement;
   /** Rendered domains required for this refinement's semantic target to exist. */
   readonly requirements?: readonly TileflowLayerDomain[];
   readonly renderer: TRenderer;
   readonly selector?: TileflowRenderSelector;
   readonly style: TileflowRenderStyle<TStyle>;
+  readonly target: string;
+};
+
+/** A refinement that only moves its target, keeping its style and selection. */
+type TileflowPlacementRefinement = {
+  readonly placement: TileflowRenderPlacement;
+  readonly renderer?: never;
+  readonly requirements?: readonly TileflowLayerDomain[];
+  readonly selector?: never;
+  readonly style?: never;
   readonly target: string;
 };
 
@@ -385,7 +405,8 @@ export type TileflowRenderTargetRefinementInput =
   | TileflowRefinementCommon<'extrusion', TileflowExtrusionStyle>
   | TileflowRefinementCommon<'fill', TileflowFillStyle>
   | TileflowRefinementCommon<'line', TileflowLineStyle>
-  | TileflowRefinementCommon<'symbol', TileflowSymbolStyle>;
+  | TileflowRefinementCommon<'symbol', TileflowSymbolStyle>
+  | TileflowPlacementRefinement;
 
 export type TileflowRenderTargetRefinement = TileflowRenderTargetRefinementInput & {
   readonly kind: 'refine-render-target';
@@ -408,12 +429,11 @@ export type TileflowModuleWithRenderStack<
 > = TModule & {readonly renderStack: TStack};
 
 export type TileflowCompiledRenderLayer = {
-  readonly attachTo: string;
   readonly kind: 'layer';
   readonly name: string;
   readonly order: number;
   readonly owner: TileflowLayerDomain;
-  readonly phase: TileflowRenderStackPhase;
+  readonly placement: TileflowRenderPlacement;
   readonly renderer: TileflowRenderPassInput['renderer'];
   readonly requirements: readonly TileflowLayerDomain[];
   readonly target: string;
@@ -425,8 +445,10 @@ export type TileflowCompiledRenderRefinement = {
   readonly name: string;
   readonly order: number;
   readonly owner: TileflowLayerDomain;
-  readonly patch: TileflowLayerPatchIR;
-  readonly renderer: TileflowRenderTargetRefinementInput['renderer'];
+  /** Absent when the refinement only moves its target. */
+  readonly patch?: TileflowLayerPatchIR;
+  readonly placement?: TileflowRenderPlacement;
+  readonly renderer?: TileflowRenderPassInput['renderer'];
   readonly requirements: readonly TileflowLayerDomain[];
   readonly target: string;
 };
@@ -448,17 +470,16 @@ const geometryTypes: Record<TileflowRenderGeometry, string> = {
   point: 'Point',
   polygon: 'Polygon',
 };
-const phaseOrder = new Map(tileflowRenderStackPhases.map((phase, index) => [phase, index]));
 
 /** Define one ownerless render pass. Its owner and stable name are assigned by `withRenderStack`. */
 export function renderPass(input: TileflowRenderPassInput): TileflowRenderPass {
   assertOnlyKeys(
     input,
-    ['attachTo', 'feature', 'phase', 'renderer', 'requirements', 'selector', 'style'],
+    ['feature', 'placement', 'renderer', 'requirements', 'selector', 'style'],
     'renderPass',
   );
   requireRenderer(input.renderer);
-  requirePhase(input.phase);
+  requirePlacement(input.placement);
   validateStyle(input.renderer, input.style);
   if (input.renderer === 'background' && ('feature' in input || 'selector' in input)) {
     throw renderStackError(
@@ -477,11 +498,10 @@ export function refineRenderTarget(
 ): TileflowRenderTargetRefinement {
   assertOnlyKeys(
     input,
-    ['renderer', 'requirements', 'selector', 'style', 'target'],
+    ['placement', 'renderer', 'requirements', 'selector', 'style', 'target'],
     'refineRenderTarget',
   );
-  requireRenderer(input.renderer);
-  validateStyle(input.renderer, input.style);
+  validateRefinementShape(input);
   if (input.renderer === 'background' && 'selector' in input) {
     throw renderStackError(
       'invalid-background-refinement',
@@ -562,7 +582,7 @@ export function compileRenderSelector(
 }
 
 /**
- * Materialize compiled passes around their semantic anchors and apply refinements exactly.
+ * Position compiled passes and moved targets, then apply refinement styles exactly.
  * Input families retain semantic ownership and provenance directly; no Style
  * metadata or physical ID exists at this stage.
  */
@@ -571,98 +591,178 @@ export function applyCompiledRenderStacks(
   operations: readonly TileflowCompiledRenderOperation[],
 ): TileflowLayerFamilyIR[] {
   let layers = input.map(cloneJson);
-  const activeOwners = new Set(layers.map(({owner}) => owner));
-  const layerOperations = operations.filter(
+  const passes = operations.filter(
     (operation): operation is TileflowCompiledRenderLayer => operation.kind === 'layer',
   );
-  const suppressedTargets = new Set(
-    layerOperations
-      .filter((operation) =>
-        operation.requirements.some((requirement) => !activeOwners.has(requirement)),
-      )
-      .map((operation) => operation.target),
+  const refinements = operations.filter(
+    (operation): operation is TileflowCompiledRenderRefinement => operation.kind === 'refinement',
   );
-  let changed = true;
-  while (changed) {
+  requireUniqueCompiledLayers(layers, passes);
+  const passTargets = new Set(passes.map(({target}) => target));
+  const knownTargets = new Set([...layers.map(({target}) => target), ...passTargets]);
+
+  // An owner is active when it draws: through its own contributions or through passes alone.
+  // A pass draws once its requirements are active and the pass it is placed beside draws.
+  const activeOwners = new Set(layers.map(({owner}) => owner));
+  const drawn = new Set<string>();
+  for (let changed = true; changed; ) {
     changed = false;
-    for (const operation of layerOperations) {
-      if (!suppressedTargets.has(operation.target) && suppressedTargets.has(operation.attachTo)) {
-        suppressedTargets.add(operation.target);
-        changed = true;
-      }
+    for (const pass of passes) {
+      if (drawn.has(pass.target)) continue;
+      const anchor = placementAnchor(pass.placement);
+      if (pass.requirements.some((requirement) => !activeOwners.has(requirement))) continue;
+      if (anchor !== undefined && passTargets.has(anchor) && !drawn.has(anchor)) continue;
+      drawn.add(pass.target);
+      activeOwners.add(pass.owner);
+      changed = true;
     }
   }
-  const pending = layerOperations
-    .filter((operation) => !suppressedTargets.has(operation.target))
-    .sort(compareCompiledOperations);
-
-  requireUniqueCompiledLayers(layers, pending);
-  while (pending.length > 0) {
-    const ready = pending.find((operation) => findTargetIndex(layers, operation.attachTo) >= 0);
-    if (!ready) {
-      throw renderStackError(
-        'unknown-or-circular-anchor',
-        `Render passes target unknown or circular anchors: ${pending
-          .map((operation) => `${operation.target}->${operation.attachTo}`)
-          .join(', ')}.`,
-      );
-    }
-    const anchorTarget = ready.attachTo;
-    const group = pending
-      .filter((operation) => operation.attachTo === anchorTarget)
-      .sort(compareCompiledOperations);
-    const anchorIndex = findTargetIndex(layers, anchorTarget);
-    const anchor = layers[anchorIndex]!;
-    const before = group
-      .filter((operation) => operation.phase === 'underlay')
-      .map((operation) => materializeRenderLayer(operation, anchor));
-    const after = group
-      .filter((operation) => operation.phase !== 'underlay')
-      .map((operation) => materializeRenderLayer(operation, anchor));
-    layers = [
-      ...layers.slice(0, anchorIndex),
-      ...before,
-      anchor,
-      ...after,
-      ...layers.slice(anchorIndex + 1),
-    ];
-    for (const operation of group) pending.splice(pending.indexOf(operation), 1);
-  }
-
-  const refinements = operations
-    .filter(
-      (operation): operation is TileflowCompiledRenderRefinement => operation.kind === 'refinement',
-    )
-    .filter((operation) =>
-      operation.requirements.every((requirement) => activeOwners.has(requirement)),
+  const activeRefinements = refinements
+    .filter((refinement) =>
+      refinement.requirements.every((requirement) => activeOwners.has(requirement)),
     )
     .sort(compareCompiledOperations);
-  for (const refinement of refinements) {
+  for (const refinement of activeRefinements) {
     const index = findTargetIndex(layers, refinement.target);
-    if (index < 0) {
+    if (index < 0 && !passTargets.has(refinement.target)) {
       throw renderStackError(
         'unknown-refinement-target',
         `Render refinement targets unknown semantic contribution: ${refinement.target}.`,
       );
     }
-    const previous = layers[index]!;
-    const actualOwner = previous.owner;
-    if (actualOwner !== refinement.owner) {
+    if (
+      refinement.placement !== undefined &&
+      placementAnchor(refinement.placement) === refinement.target
+    ) {
       throw renderStackError(
-        'refinement-owner-mismatch',
-        `Render refinement ${refinement.target} belongs to ${actualOwner ?? 'no owner'}, not ${refinement.owner}.`,
+        'unknown-or-circular-anchor',
+        `Render refinement ${refinement.target} cannot be placed beside itself.`,
       );
     }
-    const expectedType = rendererLayerType(refinement.renderer);
+  }
+
+  // Operations sharing a placement paint in declaration order. A target moves before anything
+  // placed beside it, so passes and later moves follow it to its new position.
+  const isDrawn = (target: string) => !passTargets.has(target) || drawn.has(target);
+  const pending: Array<TileflowCompiledRenderLayer | TileflowCompiledRenderRefinement> = [
+    ...passes.filter(({target}) => drawn.has(target)),
+    ...activeRefinements.filter(({placement, target}) => {
+      if (placement === undefined || !isDrawn(target)) return false;
+      const anchor = placementAnchor(placement);
+      return anchor === undefined || isDrawn(anchor);
+    }),
+  ].sort(compareCompiledOperations);
+  for (const operation of pending) {
+    const anchor = placementAnchor(operation.placement);
+    if (anchor !== undefined && !knownTargets.has(anchor)) {
+      throw renderStackError(
+        'unknown-or-circular-anchor',
+        `${operation.target} is placed beside unknown semantic target ${anchor}.`,
+      );
+    }
+  }
+  const lastPlaced = new Map<string, string>();
+  const isMovePending = (target: string) =>
+    pending.some((operation) => operation.kind === 'refinement' && operation.target === target);
+  const isReady = (operation: (typeof pending)[number]) => {
+    if (operation.kind === 'refinement' && findTargetIndex(layers, operation.target) < 0) {
+      return false;
+    }
+    const anchor = placementAnchor(operation.placement!);
+    return anchor === undefined || (findTargetIndex(layers, anchor) >= 0 && !isMovePending(anchor));
+  };
+  while (pending.length > 0) {
+    const first = pending.find(isReady);
+    if (first === undefined) {
+      throw renderStackError(
+        'unknown-or-circular-anchor',
+        `Render operations are placed beside circular anchors: ${pending
+          .map((operation) => `${operation.target}->${placementKey(operation.placement!)}`)
+          .join(', ')}.`,
+      );
+    }
+    // Everything ready at one placement is placed together, in declaration order, before
+    // operations placed beside its members.
+    const key = placementKey(first.placement!);
+    const group = pending.filter(
+      (operation) => placementKey(operation.placement!) === key && isReady(operation),
+    );
+    for (const operation of group) pending.splice(pending.indexOf(operation), 1);
+    const moved = new Map<string, TileflowLayerFamilyIR>();
+    for (const operation of group) {
+      if (operation.kind !== 'refinement') continue;
+      const index = findTargetIndex(layers, operation.target);
+      moved.set(operation.target, requireRefinementOwner(layers[index]!, operation));
+      layers = [...layers.slice(0, index), ...layers.slice(index + 1)];
+      for (const [placed, target] of lastPlaced) {
+        if (target === operation.target) lastPlaced.delete(placed);
+      }
+    }
+    const placement = first.placement!;
+    const anchor = placementAnchor(placement);
+    const anchorLayer = anchor === undefined ? undefined : layers[findTargetIndex(layers, anchor)]!;
+    const slot =
+      anchorLayer === undefined
+        ? tileflowBandPlacementSlot(placement as TileflowBandPlacement)
+        : requireSemanticSlot(anchorLayer, anchor!);
+    const block = group.map((operation) =>
+      operation.kind === 'layer'
+        ? materializeRenderLayer(operation, anchorLayer, slot)
+        : moveLayer(moved.get(operation.target)!, operation, slot, anchorLayer),
+    );
+    const previous = lastPlaced.get(key);
+    const previousIndex = previous === undefined ? -1 : findTargetIndex(layers, previous);
+    const index =
+      anchorLayer !== undefined
+        ? findTargetIndex(layers, anchor!) + (key.startsWith('above:') ? 1 : 0)
+        : previousIndex >= 0
+          ? previousIndex + 1
+          : tileflowBandPlacementIndex(
+              layers.map((candidate) => tileflowLayerSlots.indexOf(candidate.slot)),
+              placement as TileflowBandPlacement,
+            );
+    layers = [...layers.slice(0, index), ...block, ...layers.slice(index)];
+    lastPlaced.set(key, block.at(-1)!.target);
+  }
+
+  for (const refinement of activeRefinements) {
+    if (refinement.patch === undefined) continue;
+    const index = findTargetIndex(layers, refinement.target);
+    if (index < 0) continue;
+    const previous = requireRefinementOwner(layers[index]!, refinement);
+    const expectedType = rendererLayerType(refinement.renderer!);
     if (previous.renderer !== expectedType) {
       throw renderStackError(
         'refinement-renderer-mismatch',
         `Render refinement ${refinement.target} expects ${expectedType}, found ${String(previous.renderer)}.`,
       );
     }
-    layers[index] = applyRefinement(previous, refinement);
+    layers[index] = applyRefinement(previous, {...refinement, patch: refinement.patch});
   }
   return layers;
+}
+
+function requireRefinementOwner(
+  layer: TileflowLayerFamilyIR,
+  refinement: TileflowCompiledRenderRefinement,
+): TileflowLayerFamilyIR {
+  if (layer.owner !== refinement.owner) {
+    throw renderStackError(
+      'refinement-owner-mismatch',
+      `Render refinement ${refinement.target} belongs to ${layer.owner ?? 'no owner'}, not ${refinement.owner}.`,
+    );
+  }
+  return layer;
+}
+
+function placementAnchor(placement: TileflowRenderPlacement | undefined): string | undefined {
+  if (placement === undefined || typeof placement === 'string') return undefined;
+  return placement.above ?? placement.below;
+}
+
+function placementKey(placement: TileflowRenderPlacement): string {
+  if (typeof placement === 'string') return placement;
+  return placement.above === undefined ? `below:${placement.below}` : `above:${placement.above}`;
 }
 
 function compileOperation(
@@ -676,17 +776,26 @@ function compileOperation(
   if (operation.kind === 'render-pass') {
     validateRenderPassOperation(operation);
     const requirements = normalizeRequirements(operation.requirements);
-    requireAttachTarget(owner, operation.attachTo, requirements);
+    requirePlacementAnchor(owner, operation.placement, requirements);
     const target = `${owner}.render.${name}`;
     requirePortableTarget(target, 'generated render target');
+    if (
+      typeof operation.placement === 'string' &&
+      operation.renderer !== 'background' &&
+      operation.feature === undefined
+    ) {
+      throw renderStackError(
+        'missing-inherited-feature',
+        `Render pass ${target} is placed at ${operation.placement} and must declare its feature.`,
+      );
+    }
     const template = compileRenderLayer(target, operation, data);
     return {
-      attachTo: operation.attachTo,
       kind: 'layer',
       name,
       order,
       owner,
-      phase: operation.phase,
+      placement: cloneJson(operation.placement),
       renderer: operation.renderer,
       requirements,
       target,
@@ -697,6 +806,22 @@ function compileOperation(
   validateRefinementOperation(operation);
   requireOwnedTarget(owner, operation.target, 'refinement target');
   const requirements = normalizeRequirements(operation.requirements);
+  if (operation.placement !== undefined) {
+    requirePlacementAnchor(owner, operation.placement, requirements);
+  }
+  const placement =
+    operation.placement === undefined ? {} : {placement: cloneJson(operation.placement)};
+  if (operation.renderer === undefined) {
+    return {
+      kind: 'refinement',
+      name,
+      order,
+      owner,
+      ...placement,
+      requirements,
+      target: operation.target,
+    };
+  }
   const template = applyRendererStyle(
     {id: 'tileflow-render-refinement-template', type: rendererLayerType(operation.renderer)},
     operation.renderer,
@@ -710,6 +835,7 @@ function compileOperation(
     order,
     owner,
     patch,
+    ...placement,
     renderer: operation.renderer,
     requirements,
     target: operation.target,
@@ -919,31 +1045,56 @@ function requireFieldBinding(
 
 function materializeRenderLayer(
   operation: TileflowCompiledRenderLayer,
-  anchor: TileflowLayerFamilyIR,
+  anchor: TileflowLayerFamilyIR | undefined,
+  slot: TileflowLayerSlot,
 ): TileflowLayerFamilyIR {
   let template = cloneJson(operation.template);
   if (operation.renderer !== 'background' && template.feature?.dataSource === undefined) {
-    if (anchor.feature?.dataSource === undefined || anchor.feature.dataLayer === undefined) {
+    if (anchor?.feature?.dataSource === undefined || anchor.feature.dataLayer === undefined) {
       throw renderStackError(
         'missing-inherited-feature',
-        `Render pass ${operation.target} has no feature and anchor ${operation.attachTo} has no vector feature to inherit.`,
+        `Render pass ${operation.target} has no feature and ${placementKey(operation.placement)} provides no vector feature to inherit.`,
       );
     }
     template = {...template, feature: cloneJson(anchor.feature)};
   }
-  const slot = requireSemanticSlot(anchor, operation.attachTo);
   return materializeTileflowLayerFamilyIR(template, {
     operations: [{kind: 'pass', owner: operation.owner, target: operation.target}],
-    order: anchor.order,
+    order: anchor?.order ?? 0,
     owner: operation.owner,
     slot,
     target: operation.target,
   });
 }
 
+function moveLayer(
+  layer: TileflowLayerFamilyIR,
+  refinement: TileflowCompiledRenderRefinement,
+  slot: TileflowLayerSlot,
+  anchor: TileflowLayerFamilyIR | undefined,
+): TileflowLayerFamilyIR {
+  return {
+    ...layer,
+    order: anchor?.order ?? layer.order,
+    origins: layer.origins.map((origin) =>
+      origin.owner === refinement.owner && origin.target === refinement.target
+        ? {
+            ...origin,
+            operations: [
+              ...origin.operations,
+              {kind: 'refinement' as const, owner: refinement.owner, target: refinement.target},
+            ],
+            slot,
+          }
+        : origin,
+    ),
+    slot,
+  };
+}
+
 function applyRefinement(
   previous: TileflowLayerFamilyIR,
-  refinement: TileflowCompiledRenderRefinement,
+  refinement: TileflowCompiledRenderRefinement & {readonly patch: TileflowLayerPatchIR},
 ): TileflowLayerFamilyIR {
   const patch = refinement.patch;
   const operation = {
@@ -963,7 +1114,10 @@ function applyRefinement(
     ...(patch.range === undefined ? {} : {range: {...(previous.range ?? {}), ...patch.range}}),
     ...(!Object.hasOwn(patch, 'selector') ? {} : {selector: cloneJson(patch.selector)}),
     origins: previous.origins.map((origin) =>
-      origin.owner === refinement.owner && origin.target === refinement.target
+      origin.owner === refinement.owner &&
+      origin.target === refinement.target &&
+      // A move already recorded this refinement on the target.
+      refinement.placement === undefined
         ? {...origin, operations: [...origin.operations, operation]}
         : origin,
     ),
@@ -1004,10 +1158,35 @@ function requireRenderer(value: string): asserts value is TileflowRenderPassInpu
   }
 }
 
-function requirePhase(value: string): asserts value is TileflowRenderStackPhase {
-  if (!tileflowRenderStackPhases.includes(value as TileflowRenderStackPhase)) {
-    throw renderStackError('invalid-phase', `Unknown render-stack phase: ${String(value)}.`);
+function requirePlacement(value: unknown): asserts value is TileflowRenderPlacement {
+  if (typeof value === 'string') {
+    if (tileflowBandPlacements.includes(value as TileflowBandPlacement)) return;
+  } else if (isRecord(value)) {
+    const keys = Object.keys(value);
+    if (keys.length === 1 && (keys[0] === 'above' || keys[0] === 'below')) {
+      requirePortableTarget(value[keys[0]] as string, 'render placement target');
+      return;
+    }
   }
+  throw renderStackError(
+    'invalid-placement',
+    `A render placement is a band edge (${tileflowBandPlacements.join(', ')}) or {above} / {below} one semantic target: ${JSON.stringify(value)}.`,
+  );
+}
+
+function validateRefinementShape(operation: TileflowRenderTargetRefinementInput): void {
+  if (operation.placement !== undefined) requirePlacement(operation.placement);
+  if (operation.renderer === undefined) {
+    if (operation.placement === undefined || 'style' in operation || 'selector' in operation) {
+      throw renderStackError(
+        'invalid-refinement',
+        'A render refinement declares a renderer with its style, a placement, or both.',
+      );
+    }
+    return;
+  }
+  requireRenderer(operation.renderer);
+  validateStyle(operation.renderer, operation.style as TileflowRenderPassInput['style']);
 }
 
 function validateStyle(
@@ -1137,17 +1316,19 @@ function requireRenderStackEntries(stack: unknown): [string, TileflowRenderStack
   return entries;
 }
 
-function requireAttachTarget(
+function requirePlacementAnchor(
   owner: TileflowLayerDomain,
-  target: string,
+  placement: TileflowRenderPlacement,
   requirements: readonly TileflowLayerDomain[],
 ): void {
-  requirePortableTarget(target, 'render attachment target');
+  requirePlacement(placement);
+  const target = placementAnchor(placement);
+  if (target === undefined) return;
   const targetOwner = target.split('.')[0] as TileflowLayerDomain;
   if (targetOwner !== owner && !requirements.includes(targetOwner)) {
     throw renderStackError(
       'cross-owner-attachment',
-      `Render pass owner ${owner} may attach to ${target} only with an explicit ${targetOwner} requirement.`,
+      `Render operation owner ${owner} may be placed beside ${target} only with an explicit ${targetOwner} requirement.`,
     );
   }
 }
@@ -1205,11 +1386,7 @@ function compareCompiledOperations(
   left: TileflowCompiledRenderOperation,
   right: TileflowCompiledRenderOperation,
 ): number {
-  const leftPhase = left.kind === 'layer' ? phaseOrder.get(left.phase)! : Number.MAX_SAFE_INTEGER;
-  const rightPhase =
-    right.kind === 'layer' ? phaseOrder.get(right.phase)! : Number.MAX_SAFE_INTEGER;
   return (
-    leftPhase - rightPhase ||
     left.order - right.order ||
     compareCodeUnits(left.owner, right.owner) ||
     compareCodeUnits(left.name, right.name)
@@ -1219,11 +1396,11 @@ function compareCompiledOperations(
 function validateRenderPassOperation(operation: TileflowRenderPass): void {
   assertOnlyKeys(
     operation,
-    ['attachTo', 'feature', 'kind', 'phase', 'renderer', 'requirements', 'selector', 'style'],
+    ['feature', 'kind', 'placement', 'renderer', 'requirements', 'selector', 'style'],
     'render pass operation',
   );
   requireRenderer(operation.renderer);
-  requirePhase(operation.phase);
+  requirePlacement(operation.placement);
   validateStyle(operation.renderer, operation.style);
   if (operation.renderer === 'background' && ('feature' in operation || 'selector' in operation)) {
     throw renderStackError(
@@ -1236,11 +1413,10 @@ function validateRenderPassOperation(operation: TileflowRenderPass): void {
 function validateRefinementOperation(operation: TileflowRenderTargetRefinement): void {
   assertOnlyKeys(
     operation,
-    ['kind', 'renderer', 'requirements', 'selector', 'style', 'target'],
+    ['kind', 'placement', 'renderer', 'requirements', 'selector', 'style', 'target'],
     'render refinement operation',
   );
-  requireRenderer(operation.renderer);
-  validateStyle(operation.renderer, operation.style);
+  validateRefinementShape(operation);
   if (operation.renderer === 'background' && 'selector' in operation) {
     throw renderStackError(
       'invalid-background-refinement',

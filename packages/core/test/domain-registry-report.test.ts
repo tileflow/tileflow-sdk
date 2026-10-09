@@ -150,8 +150,7 @@ test('reports disabled and capability-suppressed domains explicitly', () => {
 test('reports only semantic contributions and render operations present after planning', () => {
   const nauticalWithUnavailablePass = withRenderStack(nautical(), {
     unavailableCoverage: renderPass({
-      attachTo: 'nautical.coverage',
-      phase: 'overlay',
+      placement: {above: 'nautical.coverage'},
       renderer: 'fill',
       requirements: ['nautical'],
       style: {opacity: 0.5},

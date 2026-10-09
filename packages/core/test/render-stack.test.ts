@@ -40,9 +40,8 @@ test('withRenderStack infers its owner and lowers a physical-key-free pass throu
   const module = buildings({mode: '3d'});
   const configured = withRenderStack(module, {
     softShadow: renderPass({
-      attachTo: 'buildings.flat.fill',
+      placement: {below: 'buildings.flat.fill'},
       feature: 'building',
-      phase: 'underlay',
       renderer: 'line',
       selector: {
         kind: 'all',
@@ -189,20 +188,17 @@ test('closed selectors cover geometry, normalization, match, composition, and zo
 test('compiled stacks generate every renderer, stable phases, exact refinements, and provenance', () => {
   const configured = withRenderStack(buildings(), {
     shadowSoft: renderPass({
-      attachTo: 'buildings.flat.fill',
-      phase: 'underlay',
+      placement: {below: 'buildings.flat.fill'},
       renderer: 'line',
       style: {color: '#111111', translate: [3, 5], translateAnchor: 'viewport', width: 9},
     }),
     shadowCore: renderPass({
-      attachTo: 'buildings.flat.fill',
-      phase: 'underlay',
+      placement: {below: 'buildings.flat.fill'},
       renderer: 'fill',
       style: {color: '#222222', translate: [2, 4], translateAnchor: 'viewport'},
     }),
     beacon: renderPass({
-      attachTo: 'buildings.flat.fill',
-      phase: 'overlay',
+      placement: {above: 'buildings.flat.fill'},
       renderer: 'circle',
       style: {
         color: '#00FFFF',
@@ -213,14 +209,12 @@ test('compiled stacks generate every renderer, stable phases, exact refinements,
       },
     }),
     volume: renderPass({
-      attachTo: 'buildings.flat.fill',
-      phase: 'postRelief',
+      placement: {above: 'buildings.flat.fill'},
       renderer: 'extrusion',
       style: {color: '#333333', height: 12},
     }),
     annotation: renderPass({
-      attachTo: 'buildings.flat.fill',
-      phase: 'annotation',
+      placement: {above: 'buildings.flat.fill'},
       renderer: 'symbol',
       style: {
         priority: 3,
@@ -229,8 +223,7 @@ test('compiled stacks generate every renderer, stable phases, exact refinements,
       },
     }),
     finish: renderPass({
-      attachTo: 'buildings.flat.fill',
-      phase: 'finish',
+      placement: {above: 'buildings.flat.fill'},
       renderer: 'background',
       style: {color: '#000000', opacity: 0.02},
     }),
@@ -300,8 +293,7 @@ test('compiled stacks generate every renderer, stable phases, exact refinements,
 test('cross-owner attachment requires an explicit dependency and missing requirements suppress passes', () => {
   const unsafe = withRenderStack(labels(), {
     borrowed: renderPass({
-      attachTo: 'buildings.flat.fill',
-      phase: 'overlay',
+      placement: {above: 'buildings.flat.fill'},
       renderer: 'line',
       style: {width: 1},
     }),
@@ -310,15 +302,13 @@ test('cross-owner attachment requires an explicit dependency and missing require
 
   const safe = withRenderStack(labels(), {
     borrowed: renderPass({
-      attachTo: 'buildings.flat.fill',
-      phase: 'overlay',
+      placement: {above: 'buildings.flat.fill'},
       renderer: 'line',
       requirements: ['buildings'],
       style: {width: 1},
     }),
     borrowedAccent: renderPass({
-      attachTo: 'labels.render.borrowed',
-      phase: 'overlay',
+      placement: {above: 'labels.render.borrowed'},
       renderer: 'line',
       style: {color: '#FF00FF', width: 0.5},
     }),
@@ -356,9 +346,8 @@ test('cross-owner attachment requires an explicit dependency and missing require
 test('feature bindings are independent from whether the matching renderer domain is enabled', () => {
   const configured = withRenderStack(labels(), {
     sourceOnlyDependency: renderPass({
-      attachTo: 'labels.places.city',
+      placement: {below: 'labels.places.city'},
       feature: 'building',
-      phase: 'underlay',
       renderer: 'line',
       selector: {geometry: 'polygon', kind: 'geometry'},
       style: {width: 1},
@@ -382,9 +371,8 @@ test('builders reject physical layer escape hatches and selectors reject missing
   assert.throws(
     () =>
       renderPass({
-        attachTo: 'buildings.flat.fill',
+        placement: {above: 'buildings.flat.fill'},
         id: 'raw-layer',
-        phase: 'overlay',
         renderer: 'fill',
         style: {opacity: 0.5},
       } as never),
@@ -419,8 +407,7 @@ test('builders reject physical layer escape hatches and selectors reject missing
 
 test('runtime enforces lowercase semantic roots and dot-free render-stack operation names', () => {
   const passInput = {
-    attachTo: 'buildings.flat.fill',
-    phase: 'overlay' as const,
+    placement: {above: 'buildings.flat.fill'},
     renderer: 'fill' as const,
     style: {opacity: 0.5},
   };
@@ -435,17 +422,14 @@ test('runtime enforces lowercase semantic roots and dot-free render-stack operat
     });
   }
 
-  for (const attachTo of [
+  for (const above of [
     'Buildings.flat.fill',
     '1buildings.flat.fill',
     'buildings..fill',
     '.buildings.fill',
     'buildings flat.fill',
   ]) {
-    const configured = withRenderStack(buildings(), {
-      invalidTarget: renderPass({...passInput, attachTo}),
-    });
-    assert.throws(() => compileRenderStack(configured, data), {code: 'invalid-target'});
+    assert.throws(() => renderPass({...passInput, placement: {above}}), {code: 'invalid-target'});
   }
 });
 
@@ -460,8 +444,7 @@ test('builders and runtime enforce the public render-stack and selector budgets'
   };
   const defineSelectorPass = (selector: TileflowRenderSelector) =>
     renderPass({
-      attachTo: 'buildings.flat.fill',
-      phase: 'overlay',
+      placement: {above: 'buildings.flat.fill'},
       renderer: 'fill',
       selector,
       style: {opacity: 0.5},
@@ -599,8 +582,7 @@ test('builders and runtime enforce the public render-stack and selector budgets'
   });
 
   const pass = renderPass({
-    attachTo: 'buildings.flat.fill',
-    phase: 'overlay',
+    placement: {above: 'buildings.flat.fill'},
     renderer: 'fill',
     requirements: tileflowLayerDomains,
     style: {opacity: 0.5},
@@ -627,8 +609,7 @@ test('builders and runtime enforce the public render-stack and selector budgets'
   assert.throws(
     () =>
       renderPass({
-        attachTo: 'buildings.flat.fill',
-        phase: 'overlay',
+        placement: {above: 'buildings.flat.fill'},
         renderer: 'fill',
         requirements: [...tileflowLayerDomains, 'buildings'],
         style: {opacity: 0.5},
@@ -640,8 +621,7 @@ test('builders and runtime enforce the public render-stack and selector budgets'
 test('resolved map schema preserves public stacks and the semantic compiler materializes them', () => {
   const configured = withRenderStack(buildings(), {
     editorialWash: renderPass({
-      attachTo: 'buildings.flat.fill',
-      phase: 'overlay',
+      placement: {above: 'buildings.flat.fill'},
       renderer: 'fill',
       style: {
         color: fixed('#ABCDEF', {reason: 'Render-stack schema integration fixture.'}),
@@ -704,16 +684,14 @@ function compileAndBind(module: Parameters<typeof compileRenderStack>[0]) {
 function publicTypeAssertions(): void {
   // @ts-expect-error render passes never accept physical IDs.
   renderPass({
-    attachTo: 'buildings.flat.fill',
+    placement: {above: 'buildings.flat.fill'},
     id: 'raw-layer',
-    phase: 'overlay',
     renderer: 'fill',
     style: {opacity: 0.5},
   });
   // @ts-expect-error fill renderers do not accept line-only width.
   renderPass({
-    attachTo: 'buildings.flat.fill',
-    phase: 'overlay',
+    placement: {above: 'buildings.flat.fill'},
     renderer: 'fill',
     style: {width: 2},
   });

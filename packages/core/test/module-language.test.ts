@@ -829,9 +829,8 @@ test('generated JSON Schema rejects representable semantic false positives', asy
     ...renderStacks[0],
   });
   const renderOperation = {
-    attachTo: 'water',
+    placement: {above: 'water'},
     kind: 'render-pass',
-    phase: 'finish',
     renderer: 'background',
     style: {},
   };

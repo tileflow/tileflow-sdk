@@ -4,6 +4,7 @@ import {
   tileflowCompilationReportSchemaVersion,
 } from './cartography/compilation-report';
 import {
+  tileflowBandPlacements,
   tileflowRenderStackOperationNamePattern,
   tileflowSemanticTargetPattern,
 } from './cartography/contributions';
@@ -17,7 +18,6 @@ import {
   tileflowRenderSelectorGeometries,
   tileflowRenderSelectorKinds,
   tileflowRenderStackLimits,
-  tileflowRenderStackPhases,
   tileflowRenderStackRenderers,
 } from './cartography/render-stack';
 import {
@@ -177,7 +177,7 @@ export type TileflowAuthoringManifest = Readonly<{
     geometries: readonly string[];
     limits: typeof tileflowRenderStackLimits;
     operationNamePattern: string;
-    phases: readonly string[];
+    placements: Readonly<{bands: readonly string[]; targets: readonly string[]}>;
     renderers: readonly string[];
     selectorKinds: readonly string[];
     targetPattern: string;
@@ -286,13 +286,13 @@ const operations: readonly TileflowAuthoringOperation[] = [
   },
   {
     api: 'withRenderStack(module, { name: renderPass(...) })',
-    description: 'Add an owner-local semantic pass around a semantic target.',
+    description: 'Add an owner-local semantic pass at a band edge or beside a semantic target.',
     name: 'render-pass',
     scope: 'render-stack',
   },
   {
     api: 'withRenderStack(module, { name: refineRenderTarget(...) })',
-    description: 'Refine an owner-local semantic target without a physical layer patch.',
+    description: 'Refine or move an owner-local semantic target without a physical layer patch.',
     name: 'refine-render-target',
     scope: 'render-stack',
   },
@@ -659,7 +659,10 @@ export const tileflowAuthoringManifest: TileflowAuthoringManifest = deepFreeze({
     geometries: [...tileflowRenderSelectorGeometries],
     limits: tileflowRenderStackLimits,
     operationNamePattern: tileflowRenderStackOperationNamePattern.source,
-    phases: [...tileflowRenderStackPhases],
+    placements: {
+      bands: [...tileflowBandPlacements],
+      targets: ['{ above: target }', '{ below: target }'],
+    },
     renderers: [...tileflowRenderStackRenderers],
     selectorKinds: [...tileflowRenderSelectorKinds],
     targetPattern: tileflowSemanticTargetPattern.source,

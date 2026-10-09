@@ -144,7 +144,9 @@ The semantic domains are `land`, `water`, `nautical`, `roads`, `buildings`, `bou
 targets rather than compiler-generated MapLibre layer IDs. Shared primitives cover fills, lines,
 text, icons, circles, and extrusions. `zoom.*` supplies zoom curves; `expr.*` and `field(...)` supply
 the closed data-expression language. `renderPass`, `refineRenderTarget`, and `withRenderStack` add
-owner-local rendering behavior without bypassing the compiler.
+owner-local rendering behavior without bypassing the compiler. A pass, or a target its module moves,
+is placed at a band edge such as `'above-relief'` or `'below-labels'`, or `{above}` / `{below}` one
+semantic target.
 
 ## Compile and inspect
 

@@ -57,6 +57,8 @@ export type {
   TileflowDataMatchBranch,
   TileflowDataStop,
 } from './cartography/data-expression';
+export {tileflowBandPlacements, tileflowLayerBands} from './cartography/contributions';
+export type {TileflowBandPlacement, TileflowLayerBand} from './cartography/contributions';
 export {
   refineRenderTarget,
   renderPass,
@@ -64,7 +66,6 @@ export {
   tileflowRenderSelectorGeometries,
   tileflowRenderSelectorKinds,
   tileflowRenderStackLimits,
-  tileflowRenderStackPhases,
   tileflowRenderStackRenderers,
   withRenderStack,
 } from './cartography/render-stack';
@@ -79,8 +80,8 @@ export type {
   TileflowRenderPassInput,
   TileflowRenderScalar,
   TileflowRenderSelector,
+  TileflowRenderPlacement,
   TileflowRenderStackOperation,
-  TileflowRenderStackPhase,
   TileflowRenderTargetRefinement,
   TileflowRenderTargetRefinementInput,
   TileflowRenderVisibilityGroup,

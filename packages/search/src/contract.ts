@@ -18,6 +18,9 @@ export const geocodingLimits = Object.freeze({
   maximumSafeErrorBytes: 8 * 1024,
   maximumSourceCharacters: 128,
   maximumSuggestionTokenCharacters: 2048,
+  maximumDetailEntries: 100,
+  maximumOpeningHoursEntries: 20,
+  maximumOpeningHoursLines: 50,
 });
 
 const boundedText = (maximum: number) =>
@@ -44,9 +47,25 @@ export const geocodingBoundsSchema = z
     message: 'South must be less than north',
   });
 
+/**
+ * Optional place details. Requesting any of them makes the operation an extended one with a
+ * higher unit weight. Contacts and opening hours need a text search inside bounds, Nearby or an
+ * explicit resolution; time zones and access points are available to every place operation.
+ */
+export const searchPlaceDetails = ['contacts', 'openingHours', 'timeZone', 'accessPoints'] as const;
+export const searchPlaceDetailSchema = z.enum(searchPlaceDetails);
+export const searchPlaceDetailsSchema = z
+  .array(searchPlaceDetailSchema)
+  .min(1)
+  .max(searchPlaceDetails.length)
+  .refine((values) => new Set(values).size === values.length, {
+    message: 'Place details must be unique',
+  });
+
 export const geocodingForwardRequestSchema = z
   .object({
     bounds: geocodingBoundsSchema.optional(),
+    include: searchPlaceDetailsSchema.optional(),
     language: z
       .string()
       .max(geocodingLimits.maximumLanguageCharacters)
@@ -63,9 +82,13 @@ export const geocodingForwardRequestSchema = z
     path: ['proximity'],
   });
 
+/** Autocomplete returns each suggestion's place, with its position, when `place` is included. */
+export const autocompleteIncludeSchema = z.tuple([z.literal('place')]);
+
 export const autocompleteRequestSchema = z
   .object({
     bounds: geocodingBoundsSchema.optional(),
+    include: autocompleteIncludeSchema.optional(),
     language: z
       .string()
       .max(geocodingLimits.maximumLanguageCharacters)
@@ -90,6 +113,7 @@ export const reverseGeocodingKindSchema = z.enum(['address', 'street', 'locality
 
 export const geocodingReverseRequestSchema = z
   .object({
+    include: searchPlaceDetailsSchema.optional(),
     kinds: z.array(reverseGeocodingKindSchema).min(1).max(4).optional(),
     language: z
       .string()
@@ -160,6 +184,7 @@ export const searchCategorySchema = z
 export const searchPlaceMetadata = {
   name: searchLiteralText(200).optional(),
   categories: z.array(searchCategorySchema).min(1).max(100).optional(),
+  foodTypes: z.array(searchCategorySchema).min(1).max(100).optional(),
   businessChains: z
     .array(z.object({id: searchLiteralText(100), name: searchLiteralText(100)}).strict())
     .min(1)
@@ -167,9 +192,66 @@ export const searchPlaceMetadata = {
     .optional(),
 };
 
+const contactListSchema = z
+  .array(
+    z
+      .object({
+        value: searchLiteralText(2048),
+        label: searchLiteralText(256).optional(),
+      })
+      .strict(),
+  )
+  .min(1)
+  .max(geocodingLimits.maximumDetailEntries);
+
+/** Contact values are provider text, not validated links: check a scheme before linking one. */
+export const searchContactsSchema = z
+  .object({
+    phones: contactListSchema.optional(),
+    websites: contactListSchema.optional(),
+    emails: contactListSchema.optional(),
+  })
+  .strict();
+
+export const searchOpeningHoursSchema = z
+  .array(
+    z
+      .object({
+        display: z
+          .array(searchLiteralText(256))
+          .min(1)
+          .max(geocodingLimits.maximumOpeningHoursLines)
+          .optional(),
+        openNow: z.boolean().optional(),
+      })
+      .strict(),
+  )
+  .min(1)
+  .max(geocodingLimits.maximumOpeningHoursEntries);
+
+export const searchTimeZoneSchema = z
+  .object({
+    name: searchLiteralText(64),
+    utcOffsetSeconds: z.number().int().min(-86_400).max(86_400).optional(),
+  })
+  .strict();
+
+export const searchPlaceDetailFields = {
+  distanceMeters: z.number().finite().nonnegative().optional(),
+  contacts: searchContactsSchema.optional(),
+  openingHours: searchOpeningHoursSchema.optional(),
+  timeZone: searchTimeZoneSchema.optional(),
+  accessPoints: z
+    .array(z.object({position: geocodingPositionSchema}).strict())
+    .min(1)
+    .max(geocodingLimits.maximumDetailEntries)
+    .optional(),
+};
+
 export const geocodingResultSchema = z
   .object({
     ...searchPlaceMetadata,
+    ...searchPlaceDetailFields,
     address: geocodingAddressSchema,
     bounds: geocodingBoundsSchema.optional(),
     kind: z.enum(geocodingResultKinds),
@@ -203,6 +285,8 @@ export const geocodingAttributionSchema = z
   })
   .strict();
 
+const placeOperationUnitsSchema = z.union([z.literal(25), z.literal(75)]);
+
 export const geocodingForwardResponseSchema = z
   .object({
     attribution: z
@@ -213,7 +297,7 @@ export const geocodingForwardResponseSchema = z
     results: z.array(geocodingResultSchema).max(geocodingLimits.maximumLimit),
     schemaVersion: z.literal(1),
     source: geocodingSourceSchema,
-    usage: z.object({units: z.literal(25)}).strict(),
+    usage: z.object({units: placeOperationUnitsSchema}).strict(),
   })
   .strict();
 
@@ -223,6 +307,8 @@ export const geocodingSuggestionSchema = z
   .object({
     kind: z.enum(geocodingResultKinds),
     label: boundedText(512),
+    addressLabel: boundedText(512).optional(),
+    place: geocodingResultSchema.optional(),
     token: z
       .string()
       .min(1)
@@ -240,12 +326,13 @@ export const autocompleteResponseSchema = z
     schemaVersion: z.literal(1),
     source: geocodingSourceSchema,
     suggestions: z.array(geocodingSuggestionSchema).max(geocodingLimits.maximumLimit),
-    usage: z.object({units: z.literal(10)}).strict(),
+    usage: z.object({units: z.union([z.literal(10), z.literal(25)])}).strict(),
   })
   .strict();
 
 export const resolveSuggestionRequestSchema = z
   .object({
+    include: searchPlaceDetailsSchema.optional(),
     retention: z.enum(geocodingRetentionModes).default('temporary'),
     token: z
       .string()
@@ -264,7 +351,7 @@ export const resolveSuggestionResponseSchema = z
     result: geocodingResultSchema,
     schemaVersion: z.literal(1),
     source: geocodingSourceSchema,
-    usage: z.object({units: z.literal(25)}).strict(),
+    usage: z.object({units: placeOperationUnitsSchema}).strict(),
   })
   .strict();
 
@@ -274,6 +361,10 @@ export type ReverseGeocodingKind = z.infer<typeof reverseGeocodingKindSchema>;
 export type GeocodingReverseRequest = z.input<typeof geocodingReverseRequestSchema>;
 export type NormalizedGeocodingReverseRequest = z.output<typeof geocodingReverseRequestSchema>;
 export type GeocodingResult = z.infer<typeof geocodingResultSchema>;
+export type SearchPlaceDetail = z.infer<typeof searchPlaceDetailSchema>;
+export type SearchContacts = z.infer<typeof searchContactsSchema>;
+export type SearchOpeningHours = z.infer<typeof searchOpeningHoursSchema>;
+export type SearchTimeZone = z.infer<typeof searchTimeZoneSchema>;
 export type GeocodingForwardResponse = z.infer<typeof geocodingForwardResponseSchema>;
 export type GeocodingReverseResponse = GeocodingForwardResponse;
 export type AutocompleteRequest = z.input<typeof autocompleteRequestSchema>;
@@ -329,6 +420,7 @@ export const nearbyRequestSchema = z
       .max(nearbyLimits.maximumCountries)
       .optional(),
     language: geocodingForwardRequestSchema.shape.language,
+    include: searchPlaceDetailsSchema.optional(),
     limit: z
       .number()
       .int()
@@ -343,7 +435,6 @@ export const nearbyPlaceSchema = geocodingResultSchema
   .omit({sourceRef: true})
   .extend({
     kind: z.literal('place'),
-    distanceMeters: z.number().finite().nonnegative().optional(),
     token: geocodingSuggestionSchema.shape.token.optional(),
   })
   .strict();
@@ -356,7 +447,7 @@ export const nearbyResponseSchema = z
     nextCursor: nearbyCursorSchema.optional(),
     source: geocodingSourceSchema,
     attribution: geocodingForwardResponseSchema.shape.attribution,
-    usage: z.object({units: z.literal(25)}).strict(),
+    usage: z.object({units: placeOperationUnitsSchema}).strict(),
   })
   .strict()
   .refine(
@@ -387,3 +478,20 @@ export type SearchCategory = z.infer<typeof searchCategorySchema>;
 export type SearchCategoriesResponse = z.infer<typeof searchCategoriesResponseSchema>;
 export type ResolvePlaceRequest = ResolveSuggestionRequest;
 export type ResolvePlaceResponse = ResolveSuggestionResponse;
+
+/** Place details that need a provider text search or a selected place: not geocoding. */
+export const searchContactDetails: readonly SearchPlaceDetail[] = ['contacts', 'openingHours'];
+
+/**
+ * The shared API units a completed Search operation consumes. Autocomplete uses 10, or 25 with
+ * its places; every other place operation uses 25, or 75 with any place detail. Category
+ * discovery uses none.
+ */
+export function searchOperationUnits(
+  operation: 'autocomplete' | 'forward' | 'reverse' | 'resolve' | 'nearby' | 'categories',
+  include?: readonly string[],
+): 0 | 10 | 25 | 75 {
+  if (operation === 'categories') return 0;
+  if (operation === 'autocomplete') return include?.length ? 25 : 10;
+  return include?.length ? 75 : 25;
+}

@@ -190,7 +190,7 @@ test('accepts strict empty autocomplete responses and rejects leaked fields or e
 
   for (const response of [
     {...empty, queryId},
-    {...empty, usage: {units: 25}},
+    {...empty, usage: {units: 75}},
     {...empty, suggestions: Array.from({length: 11}, () => suggestion)},
     {...empty, suggestions: [{...suggestion, token: 'has space'}]},
     {...empty, suggestions: [{...suggestion, token: 'x'.repeat(2049)}]},

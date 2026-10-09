@@ -650,9 +650,8 @@ const namedCitySelector = {
 function streetsBoundaryRenderStack() {
   return {
     admin2Background: renderPass({
-      attachTo: 'boundaries.admin4',
+      placement: {below: 'boundaries.admin4'},
       feature: 'boundary',
-      phase: 'underlay',
       renderer: 'line',
       selector: {
         kind: 'all',
@@ -693,9 +692,8 @@ function streetsBoundaryRenderStack() {
       },
     }),
     admin4Background: renderPass({
-      attachTo: 'boundaries.admin4',
+      placement: {below: 'boundaries.admin4'},
       feature: 'boundary',
-      phase: 'underlay',
       renderer: 'line',
       selector: {
         kind: 'all',
@@ -741,9 +739,8 @@ function streetsBoundaryRenderStack() {
     // Standard uses the next tier as a restrained dotted municipal cue from
     // metro zooms onward, so Streets adds it as an explicit semantic pass.
     admin6: renderPass({
-      attachTo: 'boundaries.admin4',
+      placement: {above: 'boundaries.admin4'},
       feature: 'boundary',
-      phase: 'overlay',
       renderer: 'line',
       selector: {
         kind: 'all',
@@ -788,9 +785,8 @@ function streetsBoundaryRenderStack() {
 function streetsLandRenderStack() {
   return {
     businessArea: renderPass({
-      attachTo: 'land.landuse.residential.fill',
+      placement: {above: 'land.landuse.residential.fill'},
       feature: 'landuse',
-      phase: 'overlay',
       renderer: 'fill',
       selector: {field: 'class', kind: 'compare', operator: 'eq', value: 'business_area'},
       style: {
@@ -808,9 +804,8 @@ function streetsBuildingRenderStack() {
     // fill and its close-colour outline carry the 2D building hierarchy; a
     // dark shadow at z15 would turn every footprint into a heavy sticker.
     flatShadow: renderPass({
-      attachTo: 'buildings.flat.fill',
+      placement: {below: 'buildings.flat.fill'},
       feature: 'building',
-      phase: 'underlay',
       renderer: 'line',
       style: {
         blur: 2,
@@ -833,9 +828,8 @@ function streetsBuildingRenderStack() {
       },
     }),
     shadowSoft: renderPass({
-      attachTo: 'buildings.flat.fill',
+      placement: {below: 'buildings.flat.fill'},
       feature: 'building',
-      phase: 'underlay',
       renderer: 'line',
       selector: visibleBuilding3dSelector,
       style: {
@@ -850,9 +844,8 @@ function streetsBuildingRenderStack() {
       },
     }),
     shadowCore: renderPass({
-      attachTo: 'buildings.flat.fill',
+      placement: {below: 'buildings.flat.fill'},
       feature: 'building',
-      phase: 'underlay',
       renderer: 'fill',
       selector: visibleBuilding3dSelector,
       style: {
@@ -866,9 +859,8 @@ function streetsBuildingRenderStack() {
       },
     }),
     extrusion: renderPass({
-      attachTo: 'buildings.flat.outline',
+      placement: {above: 'buildings.flat.outline'},
       feature: 'building',
-      phase: 'overlay',
       renderer: 'extrusion',
       selector: visibleBuilding3dSelector,
       style: {
@@ -887,9 +879,8 @@ function streetsBuildingRenderStack() {
 function streetsLabelRenderStack() {
   return {
     settlementMarker: renderPass({
-      attachTo: 'labels.places.city',
+      placement: {below: 'labels.places.city'},
       feature: 'place',
-      phase: 'underlay',
       renderer: 'circle',
       selector: namedCitySelector,
       style: {

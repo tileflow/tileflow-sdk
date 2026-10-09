@@ -481,9 +481,8 @@ export const soundings = bindOfficialMapTheme(
         {
           // Ferry names are operational context, not a recommended track.
           ferryLabels: renderPass({
-            attachTo: 'transit.ferry',
+            placement: {above: 'transit.ferry'},
             feature: 'roadName',
-            phase: 'overlay',
             renderer: 'symbol',
             selector: {
               kind: 'all',
@@ -671,9 +670,8 @@ export const soundings = bindOfficialMapTheme(
           // Piers remain visible even though the terrestrial road family is disabled.
           // A dark outer stroke and ivory deck read as charted shoreline structures.
           pierOutline: renderPass({
-            attachTo: 'water.bodies.outline',
+            placement: {above: 'water.bodies.outline'},
             feature: 'road',
-            phase: 'overlay',
             renderer: 'line',
             selector: {
               kind: 'any',
@@ -700,9 +698,8 @@ export const soundings = bindOfficialMapTheme(
             },
           }),
           pierDeck: renderPass({
-            attachTo: 'water.render.pierOutline',
+            placement: {above: 'water.render.pierOutline'},
             feature: 'road',
-            phase: 'overlay',
             renderer: 'line',
             selector: {
               kind: 'any',
@@ -728,9 +725,8 @@ export const soundings = bindOfficialMapTheme(
             },
           }),
           chartDots: renderPass({
-            attachTo: 'water.bodies.fill',
+            placement: {above: 'water.bodies.fill'},
             feature: 'water',
-            phase: 'overlay',
             renderer: 'fill',
             selector: {
               coerce: 'number',
@@ -751,9 +747,8 @@ export const soundings = bindOfficialMapTheme(
             },
           }),
           intermittentChartDots: renderPass({
-            attachTo: 'water.intermittent.bodies.fill',
+            placement: {above: 'water.intermittent.bodies.fill'},
             feature: 'water',
-            phase: 'overlay',
             renderer: 'fill',
             selector: {
               coerce: 'number',

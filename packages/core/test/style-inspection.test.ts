@@ -30,9 +30,8 @@ function inspectionMap() {
     modules: {
       land: withRenderStack(land({}), {
         inspectionAdded: renderPass({
-          attachTo: 'land.background',
+          placement: {above: 'land.background'},
           feature: 'landuse',
-          phase: 'overlay',
           renderer: 'fill',
           style: {
             color: fixed('#008000', {reason: 'Inspection render-pass fixture.'}),

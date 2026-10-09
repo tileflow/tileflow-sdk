@@ -7,6 +7,8 @@ import {
   nearbyResponseSchema,
   type SearchCategoriesResponse,
   searchCategoriesResponseSchema,
+  searchContactDetails,
+  searchOperationUnits,
 } from './contract';
 import {
   type AutocompleteRequest,
@@ -142,6 +144,9 @@ export async function geocode(
   if (!parsedRequest.success) {
     throw new Error('Invalid Tileflow geocoding request');
   }
+  // Contacts and opening hours come from a text search inside bounds, not from geocoding.
+  if (!parsedRequest.data.bounds) rejectContactDetails(parsedRequest.data.include);
+  const units = searchOperationUnits('forward', parsedRequest.data.include);
 
   return requestGeocoding(
     '/v1/geocoding/forward',
@@ -149,6 +154,7 @@ export async function geocode(
     options,
     geocodingForwardResponseSchema,
     (response) =>
+      response.usage.units === units &&
       response.results.length <= (parsedRequest.data.limit ?? geocodingLimits.defaultLimit),
   );
 }
@@ -161,6 +167,8 @@ export async function geocodeReverse(
   if (!parsedRequest.success) {
     throw new Error('Invalid Tileflow geocoding request');
   }
+  rejectContactDetails(parsedRequest.data.include);
+  const units = searchOperationUnits('reverse', parsedRequest.data.include);
 
   return requestGeocoding(
     '/v1/geocoding/reverse',
@@ -168,6 +176,7 @@ export async function geocodeReverse(
     options,
     geocodingForwardResponseSchema,
     (response) =>
+      response.usage.units === units &&
       response.results.length <= parsedRequest.data.limit &&
       containsOnlyKinds(response, parsedRequest.data.kinds),
   );
@@ -181,13 +190,17 @@ export async function autocomplete(
   if (!parsedRequest.success) {
     throw new Error('Invalid Tileflow geocoding request');
   }
+  const withPlaces = parsedRequest.data.include !== undefined;
 
   return requestGeocoding(
     '/v1/geocoding/autocomplete',
     parsedRequest.data,
     options,
     autocompleteResponseSchema,
-    (response) => response.suggestions.length <= parsedRequest.data.limit,
+    (response) =>
+      response.usage.units === searchOperationUnits('autocomplete', parsedRequest.data.include) &&
+      response.suggestions.length <= parsedRequest.data.limit &&
+      response.suggestions.every((suggestion) => (suggestion.place !== undefined) === withPlaces),
   );
 }
 
@@ -199,12 +212,14 @@ export async function resolveSuggestion(
   if (!parsedRequest.success) {
     throw new Error('Invalid Tileflow geocoding request');
   }
+  const units = searchOperationUnits('resolve', parsedRequest.data.include);
 
   return requestGeocoding(
     '/v1/geocoding/resolve',
     parsedRequest.data,
     options,
     resolveSuggestionResponseSchema,
+    (response) => response.usage.units === units,
   );
 }
 
@@ -226,12 +241,13 @@ export async function searchNearby(
       status: 422,
     });
   }
+  const units = searchOperationUnits('nearby', query.include);
   return requestGeocoding(
     '/v1/geocoding/nearby',
     query,
     options,
     nearbyResponseSchema,
-    (response) => response.results.length <= query.limit,
+    (response) => response.usage.units === units && response.results.length <= query.limit,
     nearbyLimits.maximumResponseBytes,
   );
 }
@@ -313,6 +329,15 @@ async function requestGeocoding<T>(
   }
 
   return parsedResponse.data;
+}
+
+function rejectContactDetails(include: readonly string[] | undefined) {
+  if (include?.some((detail) => searchContactDetails.includes(detail as never))) {
+    throw new GeocodingError('Unsupported geocoding filters', {
+      code: 'GEOCODING_FILTER_UNSUPPORTED',
+      status: 422,
+    });
+  }
 }
 
 function containsOnlyKinds(

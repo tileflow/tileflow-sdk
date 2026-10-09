@@ -105,10 +105,12 @@ test('compiles named hosted sources and ordered MapLibre overlays at semantic bo
   });
 
   const ids = first.layers.map((layer) => String(layer.id));
+  assert.ok(ids.includes('tileflow-road-bridge-highzoom-major-fill'));
   assert.ok(ids.indexOf('delivery-zones-fill') < ids.indexOf('tileflow-road-area'));
   assert.equal(ids.indexOf('delivery-zones-outline'), ids.indexOf('delivery-zones-fill') + 1);
-  assert.ok(ids.indexOf('stores-points') > ids.indexOf('tileflow-label-road-junction'));
+  assert.ok(ids.indexOf('stores-points') > ids.indexOf('tileflow-road-bridge-highzoom-major-fill'));
   assert.ok(ids.indexOf('stores-points') < ids.indexOf('tileflow-boundary-admin4'));
+  assert.ok(ids.indexOf('stores-points') < ids.indexOf('tileflow-label-road-junction'));
 
   const sourceIdentities = first.metadata?.['tileflow:sources'] as Record<
     string,

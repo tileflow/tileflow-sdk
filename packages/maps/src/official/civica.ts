@@ -205,7 +205,7 @@ function destination(
 }
 
 function texture(
-  attachTo: string,
+  above: string,
   feature: 'landcover' | 'landuse',
   selector: TileflowRenderSelector,
   pattern: string,
@@ -213,9 +213,8 @@ function texture(
   opacity: number,
 ) {
   return renderPass({
-    attachTo,
     feature,
-    phase: 'overlay',
+    placement: {above},
     renderer: 'fill',
     selector,
     style: {
@@ -546,8 +545,7 @@ export const civica = bindOfficialMapTheme(
             0.15,
           ),
           paperGrain: renderPass({
-            attachTo: 'land.background',
-            phase: 'overlay',
+            placement: {above: 'land.background'},
             renderer: 'background',
             style: {pattern: 'civica-paper-grain', opacity: 0.12},
           }),
@@ -602,9 +600,8 @@ export const civica = bindOfficialMapTheme(
         }),
         {
           waterLines: renderPass({
-            attachTo: 'water.bodies.fill',
+            placement: {above: 'water.bodies.fill'},
             feature: 'water',
-            phase: 'overlay',
             renderer: 'fill',
             style: {
               pattern: 'civica-water-lines',
@@ -633,9 +630,8 @@ export const civica = bindOfficialMapTheme(
           // Core's ordinary building deck begins at z15. This separate plate lets
           // available generalized footprints describe the city at district scales.
           districtFootprints: renderPass({
-            attachTo: 'buildings.flat.fill',
+            placement: {below: 'buildings.flat.fill'},
             feature: 'building',
-            phase: 'underlay',
             renderer: 'fill',
             selector: {kind: 'geometry', geometry: 'polygon'},
             style: {

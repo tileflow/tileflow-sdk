@@ -174,9 +174,8 @@ function landcoverPattern(
   const minZoom = options.minZoom ?? 9;
 
   return renderPass({
-    attachTo: target,
+    placement: {above: target},
     feature: 'landcover',
-    phase: 'overlay',
     renderer: 'fill',
     selector,
     style: {
@@ -198,9 +197,8 @@ function landusePattern(
   opacity: number,
 ) {
   return renderPass({
-    attachTo: target,
+    placement: {above: target},
     feature: 'landuse',
-    phase: 'overlay',
     renderer: 'fill',
     selector: {field: 'class', kind: 'in', values: classes},
     style: {
@@ -470,9 +468,8 @@ export const ferraris = bindOfficialMapTheme(
         }),
         {
           printShadow: renderPass({
-            attachTo: 'buildings.flat.fill',
+            placement: {below: 'buildings.flat.fill'},
             feature: 'building',
-            phase: 'underlay',
             renderer: 'fill',
             style: {
               color: ferrarisPalette.ink,
@@ -1053,9 +1050,8 @@ export const ferraris = bindOfficialMapTheme(
         }),
         {
           ripples: renderPass({
-            attachTo: 'water.bodies.fill',
+            placement: {above: 'water.bodies.fill'},
             feature: 'water',
-            phase: 'overlay',
             renderer: 'fill',
             selector: {
               coerce: 'number',
@@ -1076,9 +1072,8 @@ export const ferraris = bindOfficialMapTheme(
             },
           }),
           intermittentRipples: renderPass({
-            attachTo: 'water.intermittent.bodies.fill',
+            placement: {above: 'water.intermittent.bodies.fill'},
             feature: 'water',
-            phase: 'overlay',
             renderer: 'fill',
             selector: {
               coerce: 'number',

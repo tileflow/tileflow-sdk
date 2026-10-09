@@ -13,11 +13,11 @@ import {
   poi,
   renderPass,
   roads,
+  tileflowBandPlacements,
   tileflowLandformClasses,
   tileflowRenderSelectorComparisons,
   tileflowRenderSelectorGeometries,
   tileflowRenderStackLimits,
-  tileflowRenderStackPhases,
   tileflowRenderStackRenderers,
   tileflowRoadClasses,
   tileflowThemeLimits,
@@ -536,9 +536,8 @@ test('serialized zoom ramps require ordered finite stops and interpolation-speci
 
 test('closes render-stack feature and selector fields over the semantic data vocabulary', () => {
   const validPass = renderPass({
-    attachTo: 'water.bodies.fill',
+    placement: {above: 'water.bodies.fill'},
     feature: 'water',
-    phase: 'overlay',
     renderer: 'fill',
     selector: {field: 'class', kind: 'compare', operator: 'eq', value: 'lake'},
     style: {opacity: 0.5},
@@ -571,14 +570,15 @@ test('closes render-stack feature and selector fields over the semantic data voc
 
 test('uses the V1 semantic-target and single-segment render-stack name grammar', () => {
   const pass = renderPass({
-    attachTo: 'water.bodies.fill',
-    phase: 'overlay',
+    placement: {above: 'water.bodies.fill'},
     renderer: 'fill',
     style: {opacity: 0.5},
   });
   const validatesTarget = (target: string) =>
     validateDesign({
-      modules: {water: {...water(), renderStack: {lakeOverlay: {...pass, attachTo: target}}}},
+      modules: {
+        water: {...water(), renderStack: {lakeOverlay: {...pass, placement: {above: target}}}},
+      },
     }).valid;
   const validatesName = (name: string) =>
     validateDesign({
@@ -618,9 +618,8 @@ test('accepts every value from the canonical render, roads, and landforms vocabu
       modules: {water: {...water(), renderStack: {canonical: operation}}},
     }).valid;
   const pass = {
-    attachTo: 'water.bodies.fill',
+    placement: {above: 'water.bodies.fill'},
     kind: 'render-pass',
-    phase: 'overlay',
     renderer: 'fill',
     style: {},
   };
@@ -642,9 +641,15 @@ test('accepts every value from the canonical render, roads, and landforms vocabu
       operator,
     );
   }
-  for (const phase of tileflowRenderStackPhases) {
-    assert.equal(validatesOperation({...pass, phase}), true, phase);
+  for (const placement of [...tileflowBandPlacements, {below: 'water.bodies.fill'}]) {
+    assert.equal(
+      validatesOperation({...pass, feature: 'water', placement}),
+      true,
+      JSON.stringify(placement),
+    );
   }
+  assert.equal(validatesOperation({...pass, placement: 'between-roads'}), false);
+  assert.equal(validatesOperation({...pass, placement: {beside: 'water.bodies.fill'}}), false);
   for (const renderer of tileflowRenderStackRenderers) {
     assert.equal(validatesOperation({...pass, renderer}), true, renderer);
   }
@@ -679,8 +684,7 @@ test('keeps serialized render-stack limits identical to builder and runtime limi
     return selector;
   };
   const pass = renderPass({
-    attachTo: 'water.bodies.fill',
-    phase: 'overlay',
+    placement: {above: 'water.bodies.fill'},
     renderer: 'fill',
     style: {opacity: 0.5},
   });

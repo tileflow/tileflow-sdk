@@ -10,6 +10,7 @@ import {compileLand} from '../src/modules/land/compiler';
 import {compilePoi} from '../src/modules/poi/compiler';
 import {compileRoads} from '../src/modules/roads/compiler';
 import {compileTransit} from '../src/modules/transit/compiler';
+import {compileVegetation} from '../src/modules/vegetation/compiler';
 import {compileWater} from '../src/modules/water/compiler';
 import {resolveColors} from '../src/themes';
 import {assembleTileflowLayers} from './layer-ir-fixture';
@@ -1065,6 +1066,68 @@ test('compiles global road-shield phases and allowlisted visuals without raw IDs
   assert.match(JSON.stringify(junction?.filter), /motorway_junction/);
   assert.match(JSON.stringify(junction?.filter), /detail/);
   assert.equal((junction?.paint as Record<string, unknown>)['text-color'], '#556677');
+});
+
+test('road names, shields and junctions draw above ground layers under every collision policy', () => {
+  const data = resolveTileflowData({
+    type: 'vector-tiles',
+    attribution: '© Test',
+    schema: openMapTiles({
+      fields: {shieldKind: 'shield_kind'},
+      layers: {roadShield: 'transportation_shield'},
+    }),
+    url: '/tiles.json',
+  });
+  const routeReferences = [
+    'tileflow-label-road-shield-overview',
+    'tileflow-label-road-shield-detail',
+    'tileflow-label-road-junction',
+  ];
+  const layerIds = (collisionPriority: 'balanced' | 'navigation') =>
+    assembleTileflowLayers([
+      ...compileBoundaries(undefined, {...context, data}),
+      ...compileBuildings(undefined, {...context, data}),
+      ...compileVegetation(undefined, {...context, data}),
+      ...compileLabels(
+        labels({collisionPriority, junctions: true, roads: 'all', shields: 'all'}),
+        roads({detail: 'all'}),
+        {...context, data},
+      ),
+    ]).map((layer) => String(layer.id));
+  const isRoadName = (id: string) =>
+    id.startsWith('tileflow-label-road-') && !routeReferences.includes(id);
+
+  for (const collisionPriority of ['balanced', 'navigation'] as const) {
+    const ids = layerIds(collisionPriority);
+    const groundEnd = ids.findLastIndex((id) =>
+      /^tileflow-(boundar|building|vegetation)/u.test(id),
+    );
+    const roadNames = ids.filter(isRoadName);
+    assert.ok(ids.includes('tileflow-vegetation-trees'));
+    assert.ok(roadNames.includes('tileflow-label-road-primary'));
+    for (const id of [...roadNames, ...routeReferences]) {
+      assert.ok(ids.indexOf(id) > groundEnd, `${collisionPriority}: ${id} draws under ground`);
+    }
+  }
+
+  // MapLibre places the top of the stack first. Balanced road names, then route
+  // references, still yield to every other label; navigation-priority road
+  // names outrank route references and every other label but places.
+  const labelOrder = (collisionPriority: 'balanced' | 'navigation') =>
+    layerIds(collisionPriority)
+      .filter((id) => id.startsWith('tileflow-label-'))
+      .map((id) => (isRoadName(id) ? 'road' : routeReferences.includes(id) ? 'route' : id));
+  const collapse = (order: string[]) => order.filter((id, index) => id !== order[index - 1]);
+  assert.deepEqual(collapse(labelOrder('balanced')).slice(0, 3), [
+    'road',
+    'route',
+    'tileflow-label-water-ocean',
+  ]);
+  assert.deepEqual(collapse(labelOrder('navigation')).slice(0, 2), [
+    'route',
+    'tileflow-label-water-ocean',
+  ]);
+  assert.ok(collapse(labelOrder('navigation')).indexOf('road') > 2);
 });
 
 test('generic OpenMapTiles degrades road shields to one neutral detail layer', () => {

@@ -204,9 +204,8 @@ function landcoverPattern(
 ) {
   const minZoom = options.minZoom ?? 9;
   return renderPass({
-    attachTo: target,
+    placement: {above: target},
     feature: 'landcover',
-    phase: 'overlay',
     renderer: 'fill',
     selector: landcoverFilter(classes, options),
     style: {
@@ -236,9 +235,8 @@ function postContourLandcoverPattern(
   },
 ) {
   return renderPass({
-    attachTo: target,
+    placement: {above: target},
     feature: 'landcover',
-    phase: 'postRelief',
     renderer: 'fill',
     requirements: ['land'],
     selector: landcoverFilter(classes, options),
@@ -907,9 +905,8 @@ export const siegfried = bindOfficialMapTheme(
         }),
         {
           rockMask: renderPass({
-            attachTo: 'water.bodies.fill',
+            placement: {below: 'water.bodies.fill'},
             feature: 'landcover',
-            phase: 'underlay',
             renderer: 'fill',
             requirements: ['land'],
             selector: {field: 'class', kind: 'in', values: ['rock']},
@@ -940,18 +937,16 @@ export const siegfried = bindOfficialMapTheme(
             },
           ),
           glacierMask: renderPass({
-            attachTo: 'water.bodies.fill',
+            placement: {below: 'water.bodies.fill'},
             feature: 'landcover',
-            phase: 'underlay',
             renderer: 'fill',
             requirements: ['land'],
             selector: {field: 'class', kind: 'in', values: ['ice', 'glacier']},
             style: {color: siegfriedPalette.paper, minZoom: 7, opacity: 0.98},
           }),
           glacierPattern: renderPass({
-            attachTo: 'water.render.glacierMask',
+            placement: {above: 'water.render.glacierMask'},
             feature: 'landcover',
-            phase: 'postRelief',
             renderer: 'fill',
             requirements: ['land'],
             selector: {field: 'class', kind: 'in', values: ['ice', 'glacier']},
@@ -966,9 +961,8 @@ export const siegfried = bindOfficialMapTheme(
             },
           }),
           glacierOutline: renderPass({
-            attachTo: 'water.render.glacierPattern',
+            placement: {above: 'water.render.glacierPattern'},
             feature: 'landcover',
-            phase: 'postRelief',
             renderer: 'line',
             requirements: ['land'],
             selector: {field: 'class', kind: 'in', values: ['ice', 'glacier']},
@@ -982,9 +976,8 @@ export const siegfried = bindOfficialMapTheme(
             },
           }),
           waterLines: renderPass({
-            attachTo: 'water.bodies.outline',
+            placement: {above: 'water.bodies.outline'},
             feature: 'water',
-            phase: 'overlay',
             renderer: 'fill',
             selector: {
               coerce: 'number',
@@ -1005,9 +998,8 @@ export const siegfried = bindOfficialMapTheme(
             },
           }),
           intermittentWaterLines: renderPass({
-            attachTo: 'water.intermittent.bodies.fill',
+            placement: {above: 'water.intermittent.bodies.fill'},
             feature: 'water',
-            phase: 'overlay',
             renderer: 'fill',
             selector: {
               coerce: 'number',

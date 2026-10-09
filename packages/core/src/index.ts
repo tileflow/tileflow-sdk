@@ -535,6 +535,7 @@ export {
   inferTileflowAnalyticsFromStyleUrl,
   loadTileflowManifest,
   mergeTileflowAnalytics,
+  nearestTileflowBlendTheme,
   normalizeTileflowStaticImageSize,
   normalizeTileflowRuntimeCenter,
   normalizeTileflowUrl,
@@ -543,13 +544,16 @@ export {
   resolveTileflowMapMode,
   resolveTileflowRuntimeStyle,
   resolveTileflowRuntimeTheme,
+  resolveTileflowRuntimeThemeBlend,
   resolveTileflowRuntimeView,
   resolveTileflowStaticImageUrl,
   shouldLoadTileflowManifest,
   startTileflowSession,
   tileflowStyleFontFaceLimits,
   tileflowStyleFontFacesMetadataKey,
+  tileflowThemeBlendLimits,
   validateTileflowRuntimeSource,
+  validateTileflowThemeBlendSelection,
   validateTileflowThemeSelection,
 } from './runtime';
 export type {
@@ -569,6 +573,7 @@ export type {
   TileflowSessionController,
   TileflowSessionGrantResponse,
   TileflowStyleFontFace,
+  TileflowThemeBlendSelection,
   TileflowThemeSelection,
 } from './runtime';
 

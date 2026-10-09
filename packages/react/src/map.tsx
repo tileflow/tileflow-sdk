@@ -44,17 +44,20 @@ import {
   defaultTileflowRuntimeView,
   loadTileflowManifest,
   mergeTileflowAnalytics,
+  nearestTileflowBlendTheme,
   normalizeTileflowRuntimeCenter,
   normalizeTileflowStaticImageSize,
   resolveTileflowManifestMap,
   resolveTileflowMapMode,
   resolveTileflowRuntimeStyle,
   resolveTileflowRuntimeTheme,
+  resolveTileflowRuntimeThemeBlend,
   resolveTileflowRuntimeView,
   resolveTileflowStaticImageUrl,
   type TileflowAnalytics,
   type TileflowRuntimeManifestMap,
   type TileflowRuntimeSource,
+  type TileflowRuntimeStyle,
 } from '@tileflow/core/runtime';
 import type {
   TileflowAnnotation,
@@ -192,6 +195,8 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     mapOptions,
     analytics,
     theme,
+    themeBlend,
+    themeTransition,
     interactionState,
     interactions = defaultInteractions,
     onInteractionDiagnostic,
@@ -302,20 +307,33 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       : {key: manifestRequestKey, map: null, state: 'loading'};
   const manifestMap =
     currentManifestResolution.state === 'ready' ? currentManifestResolution.map : null;
+  // A blend shows its nearest theme until the blend style is ready, and names it while blending.
+  const themeBlendKey = themeBlend ? JSON.stringify(themeBlend.themes) : undefined;
+  const themeBlendPosition = themeBlend?.position;
+  const blendThemeName = themeBlend ? nearestTileflowBlendTheme(themeBlend) : undefined;
   const themeResolution = useMemo(() => {
+    const selection = blendThemeName ?? theme;
     if (!manifestMap) {
-      return {error: false, name: theme && theme !== 'system' ? theme : undefined} as const;
+      return {
+        error: false,
+        name: selection && selection !== 'system' ? selection : undefined,
+      } as const;
     }
 
     try {
+      if (themeBlendKey) {
+        for (const name of JSON.parse(themeBlendKey) as string[]) {
+          resolveTileflowRuntimeTheme(manifestMap, name);
+        }
+      }
       return {
         error: false,
-        name: resolveTileflowRuntimeTheme(manifestMap, theme, systemColorScheme).name,
+        name: resolveTileflowRuntimeTheme(manifestMap, selection, systemColorScheme).name,
       } as const;
     } catch {
       return {error: true, name: undefined} as const;
     }
-  }, [manifestMap, systemColorScheme, theme]);
+  }, [blendThemeName, manifestMap, systemColorScheme, theme, themeBlendKey]);
   const resolvedThemeName = themeResolution.name;
   const manifestView = resolveTileflowRuntimeView({manifestMap});
   const manifestCenter = useStableMapOptionValue<[number, number]>(
@@ -488,6 +506,25 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     });
   }, [isImageMode, manifestMap, runtimeSource, systemColorScheme, themeResolution]);
   runtimeStyleRef.current = runtimeStyle;
+  const blendStyles = useMemo<TileflowRuntimeStyle[] | null>(() => {
+    if (isImageMode || !manifestMap || !themeBlendKey) return null;
+    try {
+      return resolveTileflowRuntimeThemeBlend({
+        blend: {position: 0, themes: JSON.parse(themeBlendKey) as string[]},
+        manifestMap,
+        source: runtimeSource,
+      });
+    } catch {
+      return null;
+    }
+  }, [isImageMode, manifestMap, runtimeSource, themeBlendKey]);
+  const blendRequestRef = useRef<{position: number; themes: TileflowRuntimeStyle[]} | null>(null);
+  blendRequestRef.current =
+    blendStyles && themeBlendPosition !== undefined
+      ? {position: themeBlendPosition, themes: blendStyles}
+      : null;
+  const themeTransitionRef = useRef(themeTransition);
+  themeTransitionRef.current = themeTransition;
   const runtimeMapIdentity = `${manifestUrl}\0${runtimeSource.map}`;
   const runtimeStyleReady =
     runtimeStyle !== null || (themeResolution.error && mapRef.current !== null);
@@ -1009,9 +1046,19 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         });
         registerCleanup(() => lifecycle.dispose());
         const latestRuntimeStyle = runtimeStyleRef.current;
-        if (themeController && latestRuntimeStyle && latestRuntimeStyle !== initialRuntimeStyle) {
+        const latestBlend = blendRequestRef.current;
+        if (themeController && latestBlend) {
+          if (latestRuntimeStyle) setActiveRuntimeResource(latestRuntimeStyle);
+          void themeController.setBlend(latestBlend, {transition: themeTransitionRef.current});
+        } else if (
+          themeController &&
+          latestRuntimeStyle &&
+          latestRuntimeStyle !== initialRuntimeStyle
+        ) {
           setActiveRuntimeResource(latestRuntimeStyle);
-          void themeController.setTheme(latestRuntimeStyle);
+          void themeController.setTheme(latestRuntimeStyle, {
+            transition: themeTransitionRef.current,
+          });
         }
       })
       .catch((error: unknown) => {
@@ -1035,19 +1082,39 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
 
   useEffect(() => {
     const controller = themeControllerRef.current;
-    if (!controller) return;
+    if (!controller || themeBlendKey) return;
     if (themeResolution.error) {
       void controller.setTheme(controller.getCurrent());
       return;
     }
-    if (!runtimeStyle || controller.getCurrent() === runtimeStyle) return;
+    // Leaving a blend applies the selected theme even when it is the blend's nearest one.
+    if (!runtimeStyle || (controller.getCurrent() === runtimeStyle && !controller.getBlend()))
+      return;
     setActiveRuntimeResource(runtimeStyle);
-    void controller.setTheme(runtimeStyle).then((result) => {
-      if (result.status === 'failed') {
-        console.error('Failed to change the Tileflow map theme', result.error);
-      }
-    });
-  }, [runtimeStyle, themeResolution.error]);
+    void controller
+      .setTheme(runtimeStyle, {transition: themeTransitionRef.current})
+      .then((result) => {
+        if (result.status === 'failed') {
+          console.error('Failed to change the Tileflow map theme', result.error);
+        }
+      });
+  }, [runtimeStyle, themeBlendKey, themeResolution.error]);
+
+  useEffect(() => {
+    const controller = themeControllerRef.current;
+    if (!controller || !blendStyles || themeBlendPosition === undefined) return;
+    if (runtimeStyle) setActiveRuntimeResource(runtimeStyle);
+    void controller
+      .setBlend(
+        {position: themeBlendPosition, themes: blendStyles},
+        {transition: themeTransitionRef.current},
+      )
+      .then((result) => {
+        if (result.status === 'failed') {
+          console.error('Failed to blend the Tileflow map themes', result.error);
+        }
+      });
+  }, [blendStyles, runtimeStyle, themeBlendPosition]);
 
   useLayoutEffect(() => {
     if (!isImageMode) return;

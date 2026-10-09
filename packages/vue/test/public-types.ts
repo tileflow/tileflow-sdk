@@ -24,7 +24,17 @@ const validProps = [
   {source},
   {source: {manifestUrl: 'https://cdn.example.test/manifest.json', map: 'main'}},
   {source, theme: 'system'},
+  {source, theme: 'night', themeTransition: {duration: 450}},
+  {source, themeBlend: {position: 1.25, themes: ['night', 'sunset', 'day']}},
 ] satisfies TileflowMapProps[];
+
+const textPosition: TileflowMapProps = {
+  source,
+  // @ts-expect-error a blend position is a number.
+  themeBlend: {position: '1', themes: ['night', 'day']},
+};
+// @ts-expect-error a transition is described by its duration.
+const textTransition: TileflowMapProps = {source, themeTransition: 450};
 
 // @ts-expect-error every map has one explicit delivery source.
 const missingSource: TileflowMapProps = {};
@@ -115,6 +125,8 @@ const propertySlots: TileflowMapSlots<PropertyAnnotation> = {
 void [
   validProps,
   missingSource,
+  textPosition,
+  textTransition,
   flattenedMap,
   configInput,
   rendererInput,

@@ -44,6 +44,7 @@ import {
   type TileflowMapLifecycleAttachment,
   type TileflowThemeController,
   type TileflowThemeTransition,
+  type TileflowThemeTransitionOptions,
   type TileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
@@ -53,17 +54,21 @@ import {
   defaultTileflowRuntimeView,
   loadTileflowManifest,
   mergeTileflowAnalytics,
+  nearestTileflowBlendTheme,
   normalizeTileflowRuntimeCenter,
   normalizeTileflowStaticImageSize,
   resolveTileflowManifestMap,
   resolveTileflowMapMode,
   resolveTileflowRuntimeStyle,
   resolveTileflowRuntimeTheme,
+  resolveTileflowRuntimeThemeBlend,
   resolveTileflowRuntimeView,
   resolveTileflowStaticImageUrl,
   type TileflowAnalytics,
   type TileflowRuntimeManifestMap,
   type TileflowRuntimeSource,
+  type TileflowRuntimeStyle,
+  type TileflowThemeBlendSelection,
 } from '@tileflow/core/runtime';
 import {
   initialTileflowInteractionState,
@@ -228,6 +233,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       type: Object as PropType<TileflowRuntimeSource>,
     },
     theme: String,
+    themeBlend: Object as PropType<TileflowThemeBlendSelection>,
+    themeTransition: Object as PropType<TileflowThemeTransitionOptions>,
     zoom: Number,
   },
   emits: {
@@ -372,18 +379,28 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         ? loadedManifestMap.value
         : null,
     );
+    // A blend shows its nearest theme until the blend style is ready, and names it while blending.
+    const themeBlendKey = computed(() =>
+      props.themeBlend ? JSON.stringify(props.themeBlend.themes) : undefined,
+    );
     const themeResolution = computed(() => {
+      const selection = props.themeBlend
+        ? nearestTileflowBlendTheme(props.themeBlend)
+        : props.theme;
       if (!manifestMap.value) {
         return {
           error: false,
-          name: props.theme && props.theme !== 'system' ? props.theme : undefined,
+          name: selection && selection !== 'system' ? selection : undefined,
         } as const;
       }
 
       try {
+        for (const name of props.themeBlend?.themes ?? []) {
+          resolveTileflowRuntimeTheme(manifestMap.value, name);
+        }
         return {
           error: false,
-          name: resolveTileflowRuntimeTheme(manifestMap.value, props.theme, systemColorScheme.value)
+          name: resolveTileflowRuntimeTheme(manifestMap.value, selection, systemColorScheme.value)
             .name,
         } as const;
       } catch {
@@ -435,6 +452,19 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
             theme: themeResolution.value.name,
           }),
     );
+    const blendStyles = computed<TileflowRuntimeStyle[] | null>(() => {
+      const key = themeBlendKey.value;
+      if (isImageMode.value || !manifestMap.value || !key) return null;
+      try {
+        return resolveTileflowRuntimeThemeBlend({
+          blend: {position: 0, themes: JSON.parse(key) as string[]},
+          manifestMap: manifestMap.value,
+          source: props.source,
+        });
+      } catch {
+        return null;
+      }
+    });
     const resolvedAnalytics = computed(() =>
       mergeTileflowAnalytics(props.analytics, runtimeStyle.value?.analytics),
     );
@@ -594,7 +624,12 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     };
 
     watchEffect(() => {
-      assertTileflowMapStyleInputs({source: props.source, theme: props.theme});
+      assertTileflowMapStyleInputs({
+        source: props.source,
+        theme: props.theme,
+        themeBlend: props.themeBlend,
+        themeTransition: props.themeTransition,
+      });
     });
 
     watchEffect(() => {
@@ -1016,14 +1051,35 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
           return () => subscription.unsubscribe();
         },
       });
-      if (themeController && runtimeStyle.value && runtimeStyle.value !== runtime) {
+      if (themeController && blendStyles.value && props.themeBlend) {
+        switchBlend();
+      } else if (themeController && runtimeStyle.value && runtimeStyle.value !== runtime) {
         activeRuntimeResource.value = runtimeStyle.value;
-        void themeController.setTheme(runtimeStyle.value);
+        void themeController.setTheme(runtimeStyle.value, {transition: props.themeTransition});
       }
+    };
+
+    const switchBlend = () => {
+      const themes = blendStyles.value;
+      const position = props.themeBlend?.position;
+      if (!themeController || !themes || position === undefined) return;
+      if (runtimeStyle.value) activeRuntimeResource.value = runtimeStyle.value;
+      void themeController
+        .setBlend({position, themes}, {transition: props.themeTransition})
+        .then((result) => {
+          if (result.status === 'failed') {
+            console.error('Failed to blend the Tileflow map themes', result.error);
+          }
+        });
     };
 
     const switchTheme = () => {
       if (!themeController) return;
+      if (props.themeBlend) {
+        // The blend names its nearest theme; the blend itself is applied by switchBlend.
+        if (runtimeStyle.value) activeRuntimeResource.value = runtimeStyle.value;
+        return;
+      }
       if (themeResolution.value.error) {
         void themeController.setTheme(themeController.getCurrent());
         return;
@@ -1031,7 +1087,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       const next = runtimeStyle.value;
       if (!next) return;
       activeRuntimeResource.value = next;
-      void themeController.setTheme(next).then((result) => {
+      void themeController.setTheme(next, {transition: props.themeTransition}).then((result) => {
         if (result.status === 'failed') {
           console.error('Failed to change the Tileflow map theme', result.error);
         }
@@ -1122,8 +1178,13 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       () => syncSystemColorSchemeSubscription(),
     );
     watch(
-      () => runtimeStyle.value,
+      () => [runtimeStyle.value, themeBlendKey.value],
       () => switchTheme(),
+      {flush: 'post'},
+    );
+    watch(
+      () => [blendStyles.value, props.themeBlend?.position],
+      () => switchBlend(),
       {flush: 'post'},
     );
     watch(

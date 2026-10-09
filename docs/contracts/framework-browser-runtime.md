@@ -78,6 +78,24 @@ identity. Font preparation and Style loading complete before the transition beco
 overlapping requests are latest-wins, and an unknown or failed theme enters the public `error`
 state without throwing during framework render. A successful later selection can recover.
 
+`themeTransition: {duration}` cross-fades each theme change over 0 to 5,000 milliseconds; the
+default, 0, changes at once. A snapshot of the current frame covers the canvas below annotations
+and controls, follows the camera through the ground plane's projective transform, and fades once
+the new Style is loaded and its tiles are drawn. The transition reports `ready` after the fade, so
+capture readiness waits for it. A browser preference for reduced motion, or a map without a
+drawable canvas, changes at once. No second map instance or tile request is created.
+
+`themeBlend: {themes, position}` shows a continuous blend of two to eight concrete themes of the
+same map instead of `theme`; `position` runs from 0 to `themes.length - 1`. The first request for a
+set of themes loads their Styles and fonts and replaces the Style once with a prepared Style that
+holds every theme; until then, and in `data-tileflow-theme` throughout, the theme nearest to the
+position is the resolved theme. Later position changes for the same themes apply synchronously
+without a Style replacement or a theme transition event. Removing `themeBlend` applies `theme` again.
+Blended themes must share sources, layers, filters, sprite, and glyphs; otherwise the blend fails
+without changing the map. Ground values follow the position; symbol values and values that read
+feature state change when the nearest theme changes, the latter with one source re-layout covered
+by a cross-fade.
+
 ## Renderer loading boundary
 
 React, Vue, and Svelte import MapLibre declarations as types only. Their executable entrypoints

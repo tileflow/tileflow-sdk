@@ -1,9 +1,10 @@
 import type {Map as MapLibreMap, MapOptions as MapLibreMapOptions} from 'maplibre-gl';
 import type {Snippet, SvelteComponentTyped} from 'svelte';
-import type {TileflowThemeTransition} from '@tileflow/core/browser';
+import type {TileflowThemeTransition, TileflowThemeTransitionOptions} from '@tileflow/core/browser';
 import type {
   TileflowAnalytics,
   TileflowRuntimeSource,
+  TileflowThemeBlendSelection,
   TileflowThemeSelection,
 } from '@tileflow/core/runtime';
 import type {
@@ -45,6 +46,13 @@ type TileflowMapBaseProps = {
   mapOptions?: TileflowMapOptions;
   onThemeChange?: (transition: TileflowThemeTransition) => void;
   theme?: TileflowThemeSelection;
+  /**
+   * Shows a continuous blend of the map's themes instead of `theme`. Moving `position` changes the
+   * map at once; changing `themes` prepares a new blend.
+   */
+  themeBlend?: TileflowThemeBlendSelection;
+  /** Cross-fades theme changes, including entering and leaving a blend. */
+  themeTransition?: TileflowThemeTransitionOptions;
   zoom?: number;
 };
 

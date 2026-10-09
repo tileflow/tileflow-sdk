@@ -215,6 +215,64 @@ export function validateTileflowThemeSelection(value: unknown): value is Tileflo
   return value === 'system' || isTileflowThemeName(value);
 }
 
+/**
+ * A continuous blend of named themes of one Tileflow map. `position` places the map between
+ * neighbouring themes: 0 is the first, 1 the second, and 1.25 a quarter of the way from the second
+ * to the third.
+ */
+export type TileflowThemeBlendSelection = Readonly<{
+  /** From 0 to `themes.length - 1`. */
+  position: number;
+  /** Two to eight concrete theme names of the map, in blend order. */
+  themes: readonly string[];
+}>;
+
+export const tileflowThemeBlendLimits = Object.freeze({maximumThemes: 8, minimumThemes: 2});
+
+export function validateTileflowThemeBlendSelection(
+  value: unknown,
+): value is TileflowThemeBlendSelection {
+  if (!value || typeof value !== 'object') return false;
+  const {position, themes} = value as {position?: unknown; themes?: unknown};
+  return (
+    Array.isArray(themes) &&
+    themes.length >= tileflowThemeBlendLimits.minimumThemes &&
+    themes.length <= tileflowThemeBlendLimits.maximumThemes &&
+    themes.every((theme) => isTileflowThemeName(theme)) &&
+    typeof position === 'number' &&
+    Number.isFinite(position) &&
+    position >= 0 &&
+    position <= themes.length - 1
+  );
+}
+
+/** The theme nearest to a blend position, which a blend shows when it cannot blend. */
+export function nearestTileflowBlendTheme(blend: TileflowThemeBlendSelection): string {
+  const index = Math.min(blend.themes.length - 1, Math.max(0, Math.round(blend.position)));
+  return blend.themes[index]!;
+}
+
+/** Resolves every theme of a blend to its published runtime style, in blend order. */
+export function resolveTileflowRuntimeThemeBlend(options: {
+  blend: TileflowThemeBlendSelection;
+  manifestMap: TileflowRuntimeManifestMap;
+  source: TileflowRuntimeSource;
+}): TileflowRuntimeStyle[] {
+  if (!validateTileflowThemeBlendSelection(options.blend)) {
+    throw new TypeError(
+      'A Tileflow theme blend requires two to eight concrete themes and a position.',
+    );
+  }
+  return options.blend.themes.map(
+    (theme) =>
+      resolveTileflowRuntimeStyle({
+        manifestMap: options.manifestMap,
+        source: options.source,
+        theme,
+      })!,
+  );
+}
+
 export function assertValidTileflowRuntimeSource(
   source: unknown,
 ): asserts source is TileflowRuntimeSource {

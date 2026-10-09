@@ -20,11 +20,20 @@ const validProps = [
   {source},
   {source: {manifestUrl: 'https://cdn.example.test/manifest.json', map: 'main'}},
   {source, theme: 'system'},
+  {source, theme: 'night', themeTransition: {duration: 450}},
+  {source, themeBlend: {position: 1.25, themes: ['night', 'sunset', 'day']}},
   {imageUrl: 'https://cdn.example.test/map.png', mode: 'image', source},
 ] satisfies TileflowMapProps[];
 
 // @ts-expect-error every map has one explicit delivery source.
 const missingSource: TileflowMapProps = {};
+const textPosition: TileflowMapProps = {
+  source,
+  // @ts-expect-error a blend position is a number.
+  themeBlend: {position: '1', themes: ['night', 'day']},
+};
+// @ts-expect-error a transition is described by its duration.
+const textTransition: TileflowMapProps = {source, themeTransition: 450};
 // @ts-expect-error top-level map is not a source.
 const flattenedMap: TileflowMapProps = {map: 'main'};
 // @ts-expect-error config compilation is not available in browser bindings.
@@ -120,6 +129,8 @@ const namedComponent: typeof TileflowMap = NamedTileflowMap;
 void [
   validProps,
   missingSource,
+  textPosition,
+  textTransition,
   flattenedMap,
   configInput,
   rendererInput,

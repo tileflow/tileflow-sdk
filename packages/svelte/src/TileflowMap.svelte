@@ -15,15 +15,18 @@
     defaultTileflowRuntimeView,
     loadTileflowManifest,
     mergeTileflowAnalytics,
+    nearestTileflowBlendTheme,
     normalizeTileflowRuntimeCenter,
     normalizeTileflowStaticImageSize,
     resolveTileflowManifestMap,
     resolveTileflowMapMode,
     resolveTileflowRuntimeStyle,
     resolveTileflowRuntimeTheme,
+    resolveTileflowRuntimeThemeBlend,
     resolveTileflowRuntimeView,
     resolveTileflowStaticImageUrl,
     type TileflowRuntimeManifestMap,
+    type TileflowRuntimeStyle,
   } from '@tileflow/core/runtime';
   import {
     attachTileflowAtmosphere,
@@ -96,6 +99,8 @@
   export let popup: TileflowMapProps['popup'] = undefined;
   export let source: TileflowMapProps['source'];
   export let theme: TileflowMapProps['theme'] = undefined;
+  export let themeBlend: TileflowMapProps['themeBlend'] = undefined;
+  export let themeTransition: TileflowMapProps['themeTransition'] = undefined;
   export let tooltip: TileflowMapProps['tooltip'] = undefined;
   export let zoom: TileflowMapProps['zoom'] = undefined;
 
@@ -167,7 +172,7 @@
         : {defaultInteractionState: initialInteractionState}),
     });
   $: resolvedMode = resolveTileflowMapMode({mode});
-  $: assertTileflowMapStyleInputs({source, theme});
+  $: assertTileflowMapStyleInputs({source, theme, themeBlend, themeTransition});
   $: resolvedCaptureId = normalizeTileflowCaptureId(captureId);
   $: isImageMode = resolvedMode === 'image';
   $: mapName = source.map;
@@ -183,7 +188,10 @@
     colorScheme: systemColorScheme,
     manifestMap,
     theme,
+    themeBlend,
   });
+  $: themeBlendKey = themeBlend ? JSON.stringify(themeBlend.themes) : undefined;
+  $: themeBlendPosition = themeBlend?.position;
   $: resolvedThemeName = themeResolution.name;
   $: manifestView = resolveTileflowRuntimeView({manifestMap});
   $: manifestCenter = normalizeTileflowRuntimeCenter(manifestView.center);
@@ -204,6 +212,7 @@
           source,
           theme: themeResolution.name,
         });
+  $: blendStyles = resolveBlendStyles({isImageMode, key: themeBlendKey, manifestMap, source});
   $: resolvedAnalytics = mergeTileflowAnalytics(analytics, runtimeStyle?.analytics);
   $: runtimeImageUrl =
     imageUrl ??
@@ -296,7 +305,14 @@
   }
 
   $: if (mounted) {
+    blendStyles;
+    themeBlendPosition;
+    void switchBlend();
+  }
+
+  $: if (mounted) {
     runtimeStyle;
+    themeBlendKey;
     void switchTheme();
   }
 
@@ -755,14 +771,34 @@
         return () => subscription.unsubscribe();
       },
     });
-    if (themeController && runtimeStyle && runtimeStyle !== runtime) {
+    if (themeController && blendStyles && themeBlend) {
+      void switchBlend();
+    } else if (themeController && runtimeStyle && runtimeStyle !== runtime) {
       activeRuntimeResource = runtimeStyle;
-      void themeController.setTheme(runtimeStyle);
+      void themeController.setTheme(runtimeStyle, {transition: themeTransition});
+    }
+  }
+
+  async function switchBlend() {
+    const position = themeBlendPosition;
+    if (!themeController || !blendStyles || position === undefined) return;
+    if (runtimeStyle) activeRuntimeResource = runtimeStyle;
+    const result = await themeController.setBlend(
+      {position, themes: blendStyles},
+      {transition: themeTransition},
+    );
+    if (result.status === 'failed') {
+      console.error('Failed to blend the Tileflow map themes', result.error);
     }
   }
 
   async function switchTheme() {
     if (!themeController) return;
+    if (themeBlend) {
+      // The blend names its nearest theme; the blend itself is applied by switchBlend.
+      if (runtimeStyle) activeRuntimeResource = runtimeStyle;
+      return;
+    }
     if (themeResolution.error) {
       await themeController.setTheme(themeController.getCurrent());
       return;
@@ -770,7 +806,7 @@
     const next = runtimeStyle;
     if (!next) return;
     activeRuntimeResource = next;
-    const result = await themeController.setTheme(next);
+    const result = await themeController.setTheme(next, {transition: themeTransition});
     if (result.status === 'failed') {
       console.error('Failed to change the Tileflow map theme', result.error);
     }
@@ -1206,21 +1242,45 @@
     colorScheme: 'dark' | 'light';
     manifestMap: TileflowRuntimeManifestMap | null;
     theme: TileflowMapProps['theme'];
+    themeBlend: TileflowMapProps['themeBlend'];
   }): Readonly<{error: boolean; name: string | undefined}> {
+    // A blend shows its nearest theme until the blend style is ready, and names it while blending.
+    const selection = input.themeBlend ? nearestTileflowBlendTheme(input.themeBlend) : input.theme;
     if (!input.manifestMap) {
       return {
         error: false,
-        name: input.theme && input.theme !== 'system' ? input.theme : undefined,
+        name: selection && selection !== 'system' ? selection : undefined,
       };
     }
 
     try {
+      for (const name of input.themeBlend?.themes ?? []) {
+        resolveTileflowRuntimeTheme(input.manifestMap, name);
+      }
       return {
         error: false,
-        name: resolveTileflowRuntimeTheme(input.manifestMap, input.theme, input.colorScheme).name,
+        name: resolveTileflowRuntimeTheme(input.manifestMap, selection, input.colorScheme).name,
       };
     } catch {
       return {error: true, name: undefined};
+    }
+  }
+
+  function resolveBlendStyles(input: {
+    isImageMode: boolean;
+    key: string | undefined;
+    manifestMap: TileflowRuntimeManifestMap | null;
+    source: TileflowMapProps['source'];
+  }): TileflowRuntimeStyle[] | null {
+    if (input.isImageMode || !input.manifestMap || !input.key) return null;
+    try {
+      return resolveTileflowRuntimeThemeBlend({
+        blend: {position: 0, themes: JSON.parse(input.key) as string[]},
+        manifestMap: input.manifestMap,
+        source: input.source,
+      });
+    } catch {
+      return null;
     }
   }
 

@@ -93,7 +93,7 @@ test('initial renderer loading converges on a theme selected while it is in flig
 
   assert.doesNotMatch(source, /runtimeStyle\s*!==\s*runtime\s*\|\|/u);
   assert.match(source, /runtimeStyle\s*&&\s*runtimeStyle\s*!==\s*runtime/u);
-  assert.match(source, /themeController\.setTheme\(runtimeStyle\)/u);
+  assert.match(source, /themeController\.setTheme\(runtimeStyle[,)]/u);
 });
 
 test('keeps component exports aligned with the public props declaration', async () => {

@@ -90,6 +90,12 @@ Omitting `theme` uses `defaultTheme`. `system` needs an explicit light/dark mapp
 supplies. Theme changes keep the MapLibre instance, camera, and interactions, and roll back on
 failure. `onThemeChange` reports transitions.
 
+`themeTransition={{duration: 450}}` cross-fades theme changes over that many milliseconds.
+`themeBlend={{themes: ['night', 'dusk', 'day'], position}}` shows a continuous blend of the map's
+themes instead of `theme`: position 0 is the first theme and 1.5 is halfway from the second to the
+third. Moving the position updates the map at once. See
+[theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md).
+
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct props win over
 those options, then the manifest view, then shared defaults. `TileflowMap` always selects a Tileflow
 map through its manifest; it has no renderer discriminator or direct-style mode. The obsolete

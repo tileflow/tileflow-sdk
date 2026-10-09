@@ -201,7 +201,7 @@ test('binds individual trees for the runtime 3d vegetation renderer', () => {
   assert.equal(trees?.metadata?.['tileflow:tree-species-field'], 'species');
   assert.equal(trees?.metadata?.['tileflow:tree-leaf-type-field'], 'leaf_type');
   assert.ok(roadIndex < buildingIndex);
-  assert.ok(roadLabelIndex < buildingIndex);
   assert.ok(buildingIndex < treeIndex);
+  assert.ok(treeIndex < roadLabelIndex);
   assert.ok(treeIndex < labelIndex);
 });

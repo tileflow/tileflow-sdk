@@ -209,6 +209,8 @@ broadleaf and conifer palettes, and independent height and crown scales. The leg
 shortcut remains available; `flat.minZoom` takes precedence when both are present. The binding
 includes height, crown diameter, genus, leaf type, and species fields so compatible runtimes can
 preserve source measurements and botanical form without hard-coding raw property names. The
-pitched-scene stack follows physical height: pedestrian and transport surfaces, transport markings
-and road names, buildings, then vegetation. Place, water, aerodrome, and POI annotations remain
-last so geographic names stay readable without making street paint or text float over 3D geometry.
+pitched-scene stack follows physical height: pedestrian and transport surfaces, transport markings,
+buildings, then vegetation, so street paint never floats over 3D geometry. Text draws last: road
+names, route shields, junction numbers, and place, water, aerodrome, and POI annotations stay above
+every ground layer, so building fills, boundaries, and trees cannot cover them.
+`labels.collisionPriority` only orders labels within that final stack.

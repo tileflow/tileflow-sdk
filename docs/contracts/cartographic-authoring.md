@@ -134,9 +134,9 @@ while POI owns stations and stops.
 
 The shared graph also preserves a physical pitched-scene stack. Ground areas and pedestrian
 surfaces sit below road and aeroway geometry; transport markings sit above their carriageways but
-below buildings; road names, shields, and junction references share that transport phase; buildings
-sit below vegetation; and geographic, water, aerodrome, runway, address, landform, and POI labels
-remain the final annotation
+below buildings; buildings sit below vegetation; and road names, shields, junction references, and
+geographic, water, aerodrome, runway, address, landform, and POI labels remain the final annotation
+phase, so no ground layer covers text. `labels.collisionPriority` orders labels only within that
 phase.
 Overview business-corridor areas use a separate background slot, so moving building volumes above
 roads cannot make a thematic wash cover the transport network.
@@ -239,8 +239,9 @@ does not provide glyphs or sprites: each map owns its text and icon providers in
 separate `Map by Tileflow` product credit does not replace upstream source attribution.
 
 Owner-local render stacks address semantic targets, bind every feature and field through the
-resolved data schema, and never accept a physical ID, source layer, raw filter, or positional layer
-anchor. The compiler preserves those references in Domain IR and resolves them at one lowering
+resolved data schema, and never accept a physical ID, source layer, raw filter, or physical layer
+anchor. A pass, or a target its owner moves, is placed at a band edge or above or below one semantic
+target. The compiler preserves those references in Domain IR and resolves them at one lowering
 boundary. The physical planner may split a target at a zoom handoff or combine proven-equivalent
 targets into a data-driven cohort; it never infers semantics from generated IDs. Map versions
 describe editorial revisions, while the implicit compiler versions physical-output compatibility

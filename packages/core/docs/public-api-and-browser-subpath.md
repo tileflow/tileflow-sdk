@@ -16,9 +16,9 @@ inside a named `maplibreOverlay()` bound to a named Team source.
 
 Advanced cartography remains in the same public language: `withRenderStack()`, `renderPass()`, and
 `refineRenderTarget()` address owner-local semantic targets without exposing physical layer IDs,
-sources, source layers, raw filters, or before/after anchors. Typed `field()` references and
-`expr.*` builders stay semantic until the compiler's single lowering boundary. There is no recipe
-subpath or alternate compiler integration API.
+sources, source layers, raw filters, or physical before/after layer anchors. Typed `field()`
+references and `expr.*` builders stay semantic until the compiler's single lowering boundary. There
+is no recipe subpath or alternate compiler integration API.
 
 `mapRevisionSha256` hashes only resolved cartography: the effective design after `extends`, the
 semantic language, compiler-owned effective contributions, and exact source icon/font identities.

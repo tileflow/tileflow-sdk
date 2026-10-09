@@ -1052,6 +1052,7 @@ test('selects map and scene previews with their configured cameras and viewport'
     label: 'second / light',
     mapName: 'second',
     themeName: 'light',
+    themeNames: ['light'],
   });
   assert.deepEqual(resolveTileflowPreview(project, {map: 'first'}).camera, {
     type: 'center',

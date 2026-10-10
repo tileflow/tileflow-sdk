@@ -78,6 +78,7 @@ import {
   lowerTileflowNativeCompiledStyles,
   prepareTileflowNativeStyles,
   replaceTileflowNativeFontSources,
+  type TileflowNativeArtifactUrlPolicy,
 } from './native-artifacts';
 import {isPathWithin} from './path-safety';
 import {
@@ -142,6 +143,12 @@ export type TileflowBuildArtifactsOptions = {
   config?: string;
   cwd?: string;
   /**
+   * Native local preview only: the exact HTTP origin serving these artifacts, such as
+   * `http://127.0.0.1:3333`. Native checks accept HTTP resources at this origin only; every other
+   * origin still requires HTTPS. It is never inferred, and web or production output rejects it.
+   */
+  developmentOrigin?: string;
+  /**
    * Explicit shared Icon Set resolution settings for this build.
    *
    * Builds never resolve a catalog head. These options only choose the verified cache root,
@@ -202,7 +209,13 @@ export type TileflowArtifactPlan = TileflowBuildArtifacts & {
 
 export type CreateTileflowArtifactPlanOptions = Pick<
   TileflowBuildArtifactsOptions,
-  'apiBaseUrl' | 'assetBaseUrl' | 'inspection' | 'renderer' | 'styleBaseUrl' | 'target'
+  | 'apiBaseUrl'
+  | 'assetBaseUrl'
+  | 'developmentOrigin'
+  | 'inspection'
+  | 'renderer'
+  | 'styleBaseUrl'
+  | 'target'
 > & {
   inputFiles?: readonly string[];
 };
@@ -340,9 +353,13 @@ export async function createTileflowArtifactPlan(
       createTileflowNativeDiagnostic('NATIVE_RENDERER_UNSUPPORTED', '/inspection'),
     ]);
   }
+  assertNativeDevelopmentOrigin(options);
+  const nativeUrls: TileflowNativeArtifactUrlPolicy = {
+    developmentOrigin: options.developmentOrigin,
+  };
   if (renderer === 'native') {
     // Reject local archives before snapshotting or touching a production output directory.
-    assertTileflowNativeCompiledStyles(prepared.project, {});
+    assertTileflowNativeCompiledStyles(prepared.project, {}, nativeUrls);
   } else if (options.target === 'production' && hasLocalTilesetSources(prepared.project)) {
     throw new TileflowLocalTilesetProductionError();
   }
@@ -361,9 +378,12 @@ export async function createTileflowArtifactPlan(
       mapAssets: prepared.mapAssets,
     });
   const nativeLowering =
-    renderer === 'native' ? lowerTileflowNativeCompiledStyles(compiledStyles) : undefined;
+    renderer === 'native'
+      ? lowerTileflowNativeCompiledStyles(compiledStyles, nativeUrls)
+      : undefined;
   const rendererStyles = nativeLowering?.styles ?? compiledStyles;
-  if (renderer === 'native') assertTileflowNativeCompiledStyles(prepared.project, rendererStyles);
+  if (renderer === 'native')
+    assertTileflowNativeCompiledStyles(prepared.project, rendererStyles, nativeUrls);
   const localTilesets = await prepareTileflowLocalTilesets(prepared.project, rendererStyles, {
     assetBaseUrl: resolveRendererAssetBaseUrl(options),
     baseDirectory: prepared.baseDirectory,
@@ -394,7 +414,7 @@ export async function createTileflowArtifactPlan(
           });
     const styles =
       renderer === 'native'
-        ? prepareTileflowNativeStyles(preparedFonts.styles, assets)
+        ? prepareTileflowNativeStyles(preparedFonts.styles, assets, nativeUrls)
         : lineBackgroundGlyphs.styles;
     const provenance = await createTileflowBuildProvenance(prepared.cwd);
     const buildManifest = await createTileflowMapBuildManifest(
@@ -479,7 +499,7 @@ export async function createTileflowArtifactPlan(
 
     return {
       ...generationArtifacts,
-      files: createGenerationArtifactFiles(generationArtifacts, generation),
+      files: createGenerationArtifactFiles(generationArtifacts, generation, nativeUrls),
       inputs,
       project: prepared.project,
       schemaVersion: tileflowArtifactPlanSchemaVersion,
@@ -495,6 +515,7 @@ export async function createTileflowBuildArtifacts(
   options: TileflowBuildArtifactsOptions = {},
 ): Promise<TileflowArtifactPlan> {
   resolveTileflowRenderer(options.renderer);
+  assertNativeDevelopmentOrigin(options);
   const loaded = await loadValidTileflowConfigWithInputs(
     options.config ?? defaultTileflowConfigPath,
     {
@@ -613,6 +634,7 @@ function createGenerationManifest(
 function createGenerationArtifactFiles(
   artifacts: TileflowBuildArtifacts,
   generation: string,
+  nativeUrls: TileflowNativeArtifactUrlPolicy,
 ): TileflowArtifactFile[] {
   const prefix = `generations/${generation}`;
   const stableFiles = getStableTileflowArtifactFiles(artifacts);
@@ -639,7 +661,7 @@ function createGenerationArtifactFiles(
         retargetLocalFontAssetUrl(source, artifacts.assets, generation),
       );
       if (artifacts.nativeBuild)
-        assertTileflowNativeGeneratedStyle(generationStyle, mapName, themeName);
+        assertTileflowNativeGeneratedStyle(generationStyle, mapName, themeName, nativeUrls);
       return {
         contentType: 'application/json; charset=utf-8',
         fileName: `${prefix}/styles/${mapName}/${themeName}.json`,
@@ -1352,6 +1374,20 @@ function hashArtifactGeneration(files: TileflowArtifactFile[]): string {
     hash.update(source);
   }
   return hash.digest('hex');
+}
+
+/** The HTTP exception belongs to a served native preview, never to web or written artifacts. */
+function assertNativeDevelopmentOrigin(
+  options: Pick<TileflowBuildArtifactsOptions, 'developmentOrigin' | 'renderer' | 'target'>,
+): void {
+  if (
+    options.developmentOrigin !== undefined &&
+    (resolveTileflowRenderer(options.renderer) !== 'native' || options.target === 'production')
+  ) {
+    throw new TileflowNativeCompatibilityError([
+      createTileflowNativeDiagnostic('NATIVE_RENDERER_UNSUPPORTED', '/developmentOrigin'),
+    ]);
+  }
 }
 
 function resolveRendererAssetBaseUrl(options: TileflowBuildArtifactsOptions): string {

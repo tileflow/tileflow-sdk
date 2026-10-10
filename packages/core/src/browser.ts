@@ -176,10 +176,25 @@ export type TileflowThemeBlendRequest = Readonly<{
   position: number;
   /** Two to eight concrete themes of one map, in blend order. */
   themes: readonly TileflowRuntimeStyle[];
+  /**
+   * Holds back what would make MapLibre lay tiles out again: the change of nearest theme, with
+   * the labels, icons, and values it switches, and mixed pattern artwork. Colours, numbers, the
+   * sky, and light keep following the position, so a camera move or a recording never waits on
+   * the blend. The next request without `hold` brings what was held back in at once.
+   */
+  hold?: boolean;
 }>;
 
 export type TileflowThemeBlendState = Readonly<{
+  /** Whether changes held back by `hold` are waiting for a request without it. */
+  held: boolean;
   position: number;
+  /**
+   * Positions where the nearest theme changes over values that make MapLibre lay tiles out
+   * again, such as icon names, layout values, and values that read feature data or state. Plan
+   * a camera move or a recording around them, or pass `hold` across them.
+   */
+  relayoutAt: readonly number[];
   themes: readonly string[];
 }>;
 
@@ -377,7 +392,9 @@ export function createTileflowThemeController(options: {
     getBlend() {
       if (!activeBlend) return undefined;
       return {
+        held: activeBlend.blender.held,
         position: activeBlend.blender.position,
+        relayoutAt: activeBlend.blender.relayoutAt,
         themes: activeBlend.themes.map((theme) => theme.theme!),
       };
     },
@@ -438,7 +455,7 @@ export function createTileflowThemeController(options: {
       if (activeBlend?.key === key) {
         // The same themes: only the position moves, at once, superseding older pending changes.
         requestId += 1;
-        activeBlend.blender.set(request.position);
+        activeBlend.blender.set(request.position, {hold: request.hold === true});
         current = activeBlend.themes[activeBlend.blender.dominant]!;
         images?.invalidate();
         return Promise.resolve({status: 'applied', theme: current.theme});

@@ -133,7 +133,12 @@ test('a blend loads every theme once and applies one style that holds all of the
   // A quarter of the way from night to dusk, and the first theme's icon name.
   assert.equal(applied.layers[0]!.paint!['fill-opacity'], 0.275);
   assert.equal((applied.layers[1]!.layout as Record<string, unknown>)['icon-image'], 'pin');
-  assert.deepEqual(controller.getBlend(), {position: 0.25, themes: ['night', 'dusk', 'day']});
+  assert.deepEqual(controller.getBlend(), {
+    held: false,
+    position: 0.25,
+    relayoutAt: [0.5, 1.5],
+    themes: ['night', 'dusk', 'day'],
+  });
   assert.equal(controller.getCurrent().theme, 'night');
   assert.deepEqual(transitions, ['preloading:night', 'applying:night', 'ready:night']);
 });
@@ -168,6 +173,71 @@ test('moving the same blend changes values at once without restyling the map', a
   assert.equal(map.images.get('pin')!.data[0], 128);
   assert.equal(controller.getCurrent().theme, 'dusk');
   assert.deepEqual(controller.getBlend()?.position, 0.5);
+});
+
+test('a held blend keeps the nearest theme and its artwork until a request without hold', async () => {
+  const map = new FakeMap();
+  for (const [name, value] of [
+    ['pin', 0],
+    ['pin-dusk', 128],
+    ['pin-day', 255],
+  ] as const)
+    map.images.set(name, pixels(value));
+  const {controller} = controllerFor(map);
+  const themes = [theme('night', night), theme('dusk', dusk), theme('day', day)];
+  await controller.setBlend({position: 0, themes});
+  map.paints.length = 0;
+  map.updatedImages.length = 0;
+
+  // Short of the next theme, with no pattern artwork to mix, nothing waits.
+  await controller.setBlend({hold: true, position: 0.25, themes});
+  assert.equal(controller.getBlend()?.held, false);
+  map.paints.length = 0;
+
+  const held = await controller.setBlend({hold: true, position: 0.75, themes});
+  assert.deepEqual(held, {status: 'applied', theme: 'night'});
+  // Ground values follow the position; the switch, the labels, and the artwork wait.
+  assert.deepEqual(
+    map.paints.find(([layer, name]) => layer === 'land' && name === 'fill-opacity'),
+    ['land', 'fill-opacity', 0.425],
+  );
+  assert.ok(!map.paints.some(([layer]) => layer === 'names'));
+  assert.deepEqual(map.updatedImages, []);
+  assert.equal(controller.getCurrent().theme, 'night');
+  assert.equal(controller.getBlend()?.held, true);
+
+  await controller.setBlend({position: 0.75, themes});
+  assert.ok(
+    map.paints.some(
+      ([layer, name, value]) =>
+        layer === 'names' && name === 'text-color' && JSON.stringify(value).includes('#f0e0ff'),
+    ),
+  );
+  assert.equal(map.images.get('pin')!.data[0], 128);
+  assert.equal(controller.getCurrent().theme, 'dusk');
+  assert.equal(controller.getBlend()?.held, false);
+});
+
+test('a blend uploads no artwork two themes share, by name or pixel for pixel', async () => {
+  const twin = ground('#402040', 0.5, '#f0e0ff', 'pin-twin');
+  const shared = ground('#402040', 0.5, '#f0e0ff', 'pin');
+  for (const second of [shared, twin]) {
+    const map = new FakeMap();
+    for (const [name, value] of [
+      ['pin', 0],
+      ['pin-twin', 0],
+      ['pin-day', 255],
+    ] as const)
+      map.images.set(name, pixels(value));
+    const {controller} = controllerFor(map);
+    const themes = [theme('night', night), theme('dusk', second), theme('day', day)];
+    await controller.setBlend({position: 0, themes});
+    for (const position of [0.3, 0.6, 1, 0.4]) await controller.setBlend({position, themes});
+    assert.deepEqual(map.updatedImages, []);
+    // Across the second pair the artwork differs and is mixed.
+    await controller.setBlend({position: 1.5, themes});
+    assert.ok(map.updatedImages.includes('pin'));
+  }
 });
 
 test('concurrent first requests for the same blend share one load and keep the latest position', async () => {

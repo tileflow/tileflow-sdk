@@ -83,7 +83,8 @@ While a blend is shown, `data-tileflow-theme` names the theme nearest to the pos
 - Colours and numbers of the ground, such as land, water, roads, buildings, and their widths and
   opacities, follow the position continuously. Colours mix in the OKLab colour space, so halfway
   between two themes looks halfway to the eye.
-- Patterns, the sky, and light follow the position too. Pattern artwork is mixed in its pixels.
+- Patterns, the sky, and light follow the position too. Pattern artwork is mixed in its pixels;
+  artwork two neighbouring themes share, by name or pixel for pixel, is not uploaded again.
 - Labels, icons, and other symbols change when the nearest theme changes, with a short cross-fade.
   Light lettering on a dark plate and dark lettering on a light plate would meet in the same grey
   halfway, so symbols do not follow the position.
@@ -195,7 +196,8 @@ export async function moveThroughTheDay(map: MapLibreMap, manifestMap: TileflowR
   await controller.setBlend({position: 0.5, themes});
   // The same themes: the position applies at once.
   await controller.setBlend({position: 0.6, themes});
-  return controller.getBlend(); // {position: 0.6, themes: ['night', 'dusk', 'day']}
+  // {held: false, position: 0.6, relayoutAt: [...], themes: ['night', 'dusk', 'day']}
+  return controller.getBlend();
 }
 ```
 
@@ -221,3 +223,34 @@ changes most ground layers on every frame. Measured in Chromium on Apple silicon
 a detailed city map, such a sweep kept 76 frames a second; with the processor slowed four times, as
 on a mid-range phone, it fell to about 11, against 28 for the same camera move without the sweep.
 On slower devices, prefer short sweeps or move the position less often.
+
+## Camera moves and recordings
+
+Some changes make MapLibre lay tiles out again: when the nearest theme changes, the values that
+switch with it (icon names, layout values, and values that read feature data or feature state),
+and each step of pattern or icon artwork that is mixed in pixels. A camera move or a screen
+recording shows that work as dropped frames. `getBlend().relayoutAt` lists the positions where the
+nearest theme changes over such values, so a sequence can be planned around them.
+
+Pass `hold: true` to hold that work back. Colours, numbers, the sky, and light keep following the
+position; the nearest theme, the values that switch with it, and mixed artwork wait.
+`getBlend().held` reports whether anything waits. The next request without `hold` brings it in at
+once, so make it while the camera rests:
+
+```ts
+import type {TileflowThemeController} from '@tileflow/core/browser';
+import type {TileflowRuntimeStyle} from '@tileflow/core/runtime';
+
+export async function duskWhileFlying(
+  controller: TileflowThemeController,
+  themes: readonly TileflowRuntimeStyle[],
+  flight: Promise<void>,
+) {
+  // Through the camera move the ground darkens towards night with no layout work.
+  for (const position of [0.25, 0.5, 0.75])
+    await controller.setBlend({hold: true, position, themes});
+  await flight;
+  // The camera rests: labels, icons, and artwork follow at once.
+  await controller.setBlend({position: 0.75, themes});
+}
+```

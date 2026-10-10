@@ -697,7 +697,10 @@ program
           apiBaseUrl: options.apiBaseUrl,
           config: options.config,
           ...(icons ? {icons} : {}),
-          ...(renderer === 'native' ? {renderer: 'native' as const} : {}),
+          // Locally built sprites and fonts are served over HTTP from this exact origin only.
+          ...(renderer === 'native'
+            ? {developmentOrigin: origin, renderer: 'native' as const}
+            : {}),
           styleBaseUrl: origin,
           watch: true,
         });

@@ -8,6 +8,7 @@ import {join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {parseTileflowRuntimeManifest} from '@tileflow/core/manifest';
+import {validateTileflowNativePreparedStyle} from '@tileflow/core/native-profile';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
 
@@ -243,6 +244,63 @@ test('native preview serves canonical native-v1 assets only and preserves last-k
   assert.equal(stopped.renderer, 'native');
   assert.equal(stopped.profile, 'native-v1');
   assert.equal(stopped.manifest, manifestUrl);
+  const completion = await running.completion;
+  assert.equal(completion.code, 0, completion.stderr);
+});
+
+test('native preview serves locally built sprites from its exact development origin', async (t) => {
+  const cwd = await fixture('tileflow-native-preview-sprite-');
+  await writeFile(
+    join(cwd, 'tileflow.config.ts'),
+    tileflowMapFixture({id: 'main', icons: 'official'}),
+    'utf8',
+  );
+  const port = await reservePort();
+  const origin = `http://127.0.0.1:${port}`;
+  const running = startCli(cwd, [
+    'preview',
+    '--renderer',
+    'native',
+    '--json',
+    '--host',
+    '127.0.0.1',
+    '--port',
+    String(port),
+  ]);
+  t.after(async () => {
+    await running.stop();
+    await rm(cwd, {force: true, recursive: true});
+  });
+
+  const first = await running.waitFor(
+    (event) => event.event === 'ready' || event.event === 'invalid',
+    30_000,
+  );
+  assert.equal(first.event, 'ready', JSON.stringify(first));
+
+  const manifestResponse = await fetchEventually(`${origin}/native/manifest.json`);
+  assert.equal(manifestResponse.status, 200);
+  const manifest = parseTileflowRuntimeManifest(await manifestResponse.json());
+  const themes = Object.values(manifest.maps.main?.themes ?? {});
+  assert.notEqual(themes.length, 0);
+  for (const {styleUrl} of themes) {
+    const style = (await (await fetch(styleUrl)).json()) as {sprite?: unknown};
+    assert.equal(typeof style.sprite, 'string');
+    const sprite = new URL(String(style.sprite));
+    assert.equal(sprite.origin, origin);
+    assert.match(sprite.pathname, /^\/native\/generations\/[a-f0-9]{64}\/icons\/main\/sprite$/u);
+    for (const suffix of ['.json', '.png', '@2x.json', '@2x.png'])
+      assert.equal((await fetch(`${sprite.href}${suffix}`)).status, 200, suffix);
+    assert.deepEqual(
+      validateTileflowNativePreparedStyle(style, {
+        documentUrl: styleUrl,
+        developmentOrigin: origin,
+      }),
+      [],
+    );
+  }
+
+  running.requestStop();
   const completion = await running.completion;
   assert.equal(completion.code, 0, completion.stderr);
 });

@@ -28,9 +28,24 @@ import {lowerNativeStyleRepresentation, NativeLoweringError} from './native-lowe
 
 type TileflowNativeStyleTransformation = TileflowNativeBuildRecord['transformations'][number];
 
+/** Omitting the origin keeps every absolute HTTP resource outside the native-v1 profile. */
+export type TileflowNativeArtifactUrlPolicy = Readonly<{
+  /** The exact HTTP origin serving a local native preview; it is never inferred. */
+  developmentOrigin?: string;
+}>;
+
 /** No delivery URL is inferred: this non-routable base is used only to check relative URL syntax. */
 function documentUrl(map: string, theme: string): string {
   return `https://artifacts.invalid/native/styles/${map}/${theme}.json`;
+}
+
+function urlOptions(map: string, theme: string, policy: TileflowNativeArtifactUrlPolicy) {
+  return {
+    documentUrl: documentUrl(map, theme),
+    ...(policy.developmentOrigin === undefined
+      ? {}
+      : {developmentOrigin: policy.developmentOrigin}),
+  };
 }
 
 function withContext(
@@ -46,7 +61,10 @@ function withContext(
  * Lower only the native representation; shared compilation and authored map identity stay intact.
  * Local artifacts and Hosted publication both receive styles whose layer references are rebound.
  */
-export function lowerTileflowNativeCompiledStyles(input: TileflowBuildStyles): {
+export function lowerTileflowNativeCompiledStyles(
+  input: TileflowBuildStyles,
+  policy: TileflowNativeArtifactUrlPolicy = {},
+): {
   styles: TileflowBuildStyles;
   transformations: TileflowNativeStyleTransformation[];
 } {
@@ -57,7 +75,7 @@ export function lowerTileflowNativeCompiledStyles(input: TileflowBuildStyles): {
     for (const theme of Object.keys(input[map]!).sort()) {
       const original = input[map]![theme]!;
       try {
-        const options = {documentUrl: documentUrl(map, theme), deferFontClosure: true};
+        const options = {...urlOptions(map, theme, policy), deferFontClosure: true};
         const pending = validateTileflowNativeStyle(original, options);
         // Only these representation-level diagnostics may be deferred. Bounds, source protocols,
         // other style properties and the final native validation are never bypassed.
@@ -165,13 +183,14 @@ export function lowerTileflowNativeCompiledStyles(input: TileflowBuildStyles): {
 export function assertTileflowNativeCompiledStyles(
   project: TileflowBuildCatalog,
   styles: TileflowBuildStyles,
+  policy: TileflowNativeArtifactUrlPolicy = {},
 ): void {
   const issues: TileflowNativeDiagnostic[] = [];
   for (const mapName of Object.keys(project.maps).sort()) {
     for (const theme of Object.keys(styles[mapName] ?? {}).sort()) {
       issues.push(
         ...validateTileflowNativePreparedStyle(styles[mapName]![theme], {
-          documentUrl: documentUrl(mapName, theme),
+          ...urlOptions(mapName, theme, policy),
           deferFontClosure: true,
         }).map((issue) => withContext(issue, mapName, theme)),
       );
@@ -184,6 +203,7 @@ export function assertTileflowNativeCompiledStyles(
 export function prepareTileflowNativeStyles(
   input: TileflowBuildStyles,
   assets: readonly TileflowBuildAsset[],
+  policy: TileflowNativeArtifactUrlPolicy = {},
 ): TileflowBuildStyles {
   const issues: TileflowNativeDiagnostic[] = [];
   const result: TileflowBuildStyles = {};
@@ -198,7 +218,7 @@ export function prepareTileflowNativeStyles(
     for (const theme of Object.keys(input[map]!).sort()) {
       const original = input[map]![theme]!;
       const preflight = validateTileflowNativePreparedStyle(original, {
-        documentUrl: documentUrl(map, theme),
+        ...urlOptions(map, theme, policy),
         deferFontClosure: true,
       });
       if (preflight.length) {
@@ -245,9 +265,9 @@ export function prepareTileflowNativeStyles(
         ...(faces.length ? {'font-faces': nativeFaces} : {}),
       } as MapLibreStyle;
       issues.push(
-        ...validateTileflowNativePreparedStyle(style, {
-          documentUrl: documentUrl(map, theme),
-        }).map((issue) => withContext(issue, map, theme)),
+        ...validateTileflowNativePreparedStyle(style, urlOptions(map, theme, policy)).map((issue) =>
+          withContext(issue, map, theme),
+        ),
       );
       result[map]![theme] = style;
     }
@@ -272,8 +292,9 @@ export function assertTileflowNativeGeneratedStyle(
   style: MapLibreStyle,
   map: string,
   theme: string,
+  policy: TileflowNativeArtifactUrlPolicy = {},
 ): void {
-  const issues = validateTileflowNativePreparedStyle(style, {documentUrl: documentUrl(map, theme)});
+  const issues = validateTileflowNativePreparedStyle(style, urlOptions(map, theme, policy));
   if (issues.length) {
     throw new TileflowNativeCompatibilityError(
       issues.map((issue) => withContext(issue, map, theme)),

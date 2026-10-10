@@ -162,6 +162,13 @@ URLs remain relative to their owning documents. An explicit absolute or host-rel
 an inert `.invalid` document base only to check relative URL syntax; it does not publish that base
 or infer the application's real delivery origin.
 
+A served local preview can use an absolute HTTP base, such as `http://127.0.0.1:3333`, only when it
+also passes that exact origin as `developmentOrigin`. Native checks then accept HTTP resource URLs,
+such as the sprite and fonts, with that scheme, host and port. Every other origin still requires
+HTTPS, and browser protocols remain rejected. The option is never inferred from a base URL.
+Web preparation, `target: 'production'` and `writeTileflowBuildArtifacts()` reject it with
+`NATIVE_RENDERER_UNSUPPORTED` at `/developmentOrigin`, so written artifacts never depend on it.
+
 Omitting `renderer`, or specifying `renderer: 'web'`, preserves the existing web artifact bytes and
 output layout. The native record is absent from web plans.
 

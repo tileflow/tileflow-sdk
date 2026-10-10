@@ -11,12 +11,14 @@ import {
   createTileflowNativeDiagnostic,
   tileflowNativeBuildRecordSchema,
   TileflowNativeCompatibilityError,
+  validateTileflowNativePreparedStyle,
 } from '@tileflow/core/native-profile';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   createTileflowArtifactSession,
   createTileflowBuildArtifacts,
   disposeTileflowBuildArtifacts,
+  getTileflowArtifactFiles,
   writeTileflowBuildArtifacts,
 } from '../src/artifacts';
 import {
@@ -413,6 +415,100 @@ test('preserves the authored portable view instead of applying native runtime ca
   t.after(() => disposeTileflowBuildArtifacts(artifacts));
   assert.equal(artifacts.manifest.maps.main!.view?.pitch, 70);
   assert.deepEqual(artifacts.manifest.maps.main!.view?.center, [-3.7, 40.4]);
+});
+
+test('accepts locally built sprites served over HTTP only from the explicit preview origin', async (t) => {
+  const cwd = await fixture(t);
+  const origin = 'http://127.0.0.1:3333';
+  // Native preview serves every locally built asset from its own absolute HTTP origin.
+  const preview = {cwd, renderer: 'native' as const, assetBaseUrl: origin, styleBaseUrl: origin};
+  for (const developmentOrigin of [undefined, 'http://127.0.0.1:3334', 'http://localhost:3333']) {
+    await assert.rejects(
+      createTileflowBuildArtifacts({...preview, developmentOrigin}),
+      (error: unknown) => {
+        assert.ok(error instanceof TileflowNativeCompatibilityError);
+        assert.ok(
+          error.issues.some(
+            ({code, path}) =>
+              code === 'NATIVE_UNSUPPORTED_SOURCE' &&
+              /^\/maps\/main\/themes\/[^/]+\/style\/sprite$/u.test(path),
+          ),
+        );
+        return true;
+      },
+    );
+  }
+
+  const session = await createTileflowArtifactSession({...preview, developmentOrigin: origin});
+  t.after(() => session.close());
+  const state = session.getState();
+  assert.equal(state.status, 'ready', JSON.stringify(state));
+  const artifacts = session.getLastGoodArtifacts();
+  assert.ok(artifacts);
+  const files = new Map(
+    getTileflowArtifactFiles(artifacts).map((file) => [`${origin}/native/${file.fileName}`, file]),
+  );
+  const themes = Object.values(artifacts.manifest.maps.main!.themes);
+  assert.equal(themes.length, Object.keys(artifacts.styles.main!).length);
+  for (const {styleUrl} of themes) {
+    const file = files.get(styleUrl);
+    assert.ok(file, styleUrl);
+    const style = JSON.parse(String(file.source)) as MapLibreStyle;
+    assert.match(
+      String(style.sprite),
+      /^http:\/\/127\.0\.0\.1:3333\/native\/generations\/[a-f0-9]{64}\/icons\/main\/sprite$/u,
+    );
+    for (const suffix of ['.json', '.png', '@2x.json', '@2x.png'])
+      assert.ok(files.has(`${style.sprite}${suffix}`), suffix);
+    // A native client configured with the same development origin applies the same check.
+    assert.deepEqual(
+      validateTileflowNativePreparedStyle(style, {
+        documentUrl: styleUrl,
+        developmentOrigin: origin,
+      }),
+      [],
+    );
+  }
+});
+
+test('keeps other origins, web and written output outside the native preview HTTP exception', async (t) => {
+  const cwd = await fixture(t);
+  const origin = 'http://127.0.0.1:3333';
+  const preview = {
+    cwd,
+    renderer: 'native' as const,
+    assetBaseUrl: origin,
+    styleBaseUrl: origin,
+    developmentOrigin: origin,
+  };
+  await assert.rejects(
+    createTileflowBuildArtifacts({...preview, apiBaseUrl: 'http://127.0.0.1:8787'}),
+    (error: unknown) => {
+      assert.ok(error instanceof TileflowNativeCompatibilityError);
+      assert.ok(
+        error.issues.some(
+          ({code, path}) =>
+            code === 'NATIVE_UNSUPPORTED_SOURCE' && /\/style\/sources\/[^/]+\/url$/u.test(path),
+        ),
+      );
+      return true;
+    },
+  );
+  const rejectsOrigin = (error: unknown) => {
+    assert.ok(error instanceof TileflowNativeCompatibilityError);
+    assert.deepEqual(
+      error.issues.map(({code, path}) => [code, path]),
+      [['NATIVE_RENDERER_UNSUPPORTED', '/developmentOrigin']],
+    );
+    return true;
+  };
+  await assert.rejects(createTileflowBuildArtifacts({...preview, renderer: 'web'}), rejectsOrigin);
+  await assert.rejects(
+    createTileflowBuildArtifacts({...preview, target: 'production'}),
+    rejectsOrigin,
+  );
+  await assert.rejects(writeTileflowBuildArtifacts({...preview, outDir: 'output'}), rejectsOrigin);
+  await assert.rejects(readdir(join(cwd, 'output')), {code: 'ENOENT'});
 });
 
 test('rejects an asset URL that exceeds the native limit only after generation retargeting', async (t) => {

@@ -381,6 +381,22 @@ export function fillTileflowThemeBlendTemplate(template: unknown, position: numb
   return fillTemplate(template, position);
 }
 
+/** Two CSS colours mixed in OKLab, `t` of the way from the first; undefined unless both parse. */
+export function mixTileflowColours(from: string, to: string, t: number): string | undefined {
+  const a = oklab(from);
+  const b = oklab(to);
+  if (!a || !b) return undefined;
+  return colourFromOklab(a.map((value, channel) => value + (b[channel]! - value) * t));
+}
+
+/**
+ * Whether MapLibre evaluates a value per feature: it reads feature properties, state, identity,
+ * or geometry. Writing such a value at run time re-lays its source out.
+ */
+export function readsTileflowFeatureData(value: unknown): boolean {
+  return isDataDriven(value) || reads(value, 'within') || reads(value, 'distance');
+}
+
 function fillLayer(
   layer: Record<string, unknown>,
   position: number,

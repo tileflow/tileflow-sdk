@@ -10,7 +10,20 @@ import {
   type TileflowSessionController,
   type TileflowStyleFontFace,
 } from './runtime';
-import {planTileflowThemeBlend, type TileflowThemeBlendPlan} from './theme-blend';
+import {
+  fillTileflowThemeBlendTemplate,
+  planTileflowThemeBlend,
+  type TileflowThemeBlendPlan,
+} from './theme-blend';
+import {
+  emphasizeTileflowValue,
+  firstColour,
+  planTileflowEmphasis,
+  type TileflowEmphasis,
+  tileflowEmphasisGround,
+  type TileflowEmphasisTarget,
+  validateTileflowEmphasis,
+} from './theme-emphasis';
 import {
   beginTileflowStyleCrossfade,
   canBlendTileflowThemes,
@@ -23,6 +36,13 @@ import {
 import type {MapLibreStyle} from './types';
 
 export {attachTileflowAtmosphere, type TileflowAtmosphereMap} from './atmosphere-browser';
+export {
+  validateTileflowEmphasis,
+  type TileflowEmphasis,
+  type TileflowEmphasisArea,
+  type TileflowEmphasisModule,
+} from './theme-emphasis';
+export {tileflowLayerDomainMetadataKey} from './layer-domain';
 
 export * from './fair-use-browser';
 export {
@@ -164,6 +184,8 @@ export type TileflowThemeController = {
   getBlend(): TileflowThemeBlendState | undefined;
   /** The theme the map shows; during a blend, the nearest theme. */
   getCurrent(): TileflowRuntimeStyle;
+  /** The emphasis requested last, or undefined when the map is shown as designed. */
+  getEmphasis(): TileflowEmphasis | undefined;
   /**
    * Shows a blend of themes. The first request for a set of themes loads their styles and
    * prepares one style that holds all of them; later requests for the same themes only move the
@@ -171,6 +193,16 @@ export type TileflowThemeController = {
    */
   setBlend(
     request: TileflowThemeBlendRequest,
+    options?: TileflowThemeChangeOptions,
+  ): Promise<TileflowThemeTransitionResult>;
+  /**
+   * Makes chosen modules of the map recede and its labels and icons fade, so an application's own
+   * content reads first; `undefined` returns the map to its design. The change eases over the
+   * transition, and the emphasis stays through later theme changes and blend positions. Values
+   * that MapLibre evaluates per feature change at once, under a cross-fade.
+   */
+  setEmphasis(
+    emphasis: TileflowEmphasis | undefined,
     options?: TileflowThemeChangeOptions,
   ): Promise<TileflowThemeTransitionResult>;
   setTheme(
@@ -240,12 +272,31 @@ export function createTileflowThemeController(options: {
   let disposed = false;
   let requestId = 0;
   let applyQueue: Promise<void> = Promise.resolve();
+  // The layers of the style the map shows, as they were applied, for emphasis.
+  let shownLayers: readonly unknown[] | undefined =
+    typeof options.initial.style === 'string' ? undefined : options.initial.style.layers;
+  // Emphasis: the latest request, the request whose values are on the map (kept while it eases
+  // out), its eased strength and goal, and the values it changes in the shown style.
+  let emphasis: TileflowEmphasis | undefined;
+  let emphasisShown: TileflowEmphasis | undefined;
+  let emphasisStrength = 0;
+  let emphasisGoal = 0;
+  let emphasisTargets = new Map<string, TileflowEmphasisTarget>();
+  let emphasisBase = new Map<string, unknown>();
+  let emphasisBlended = new Set<string>();
+  let emphasisGroundTemplate: unknown;
+  let emphasisStaticGround: string | undefined;
+  const emphasisWritten = new Map<string, string>();
+  let emphasisRun = 0;
+  let emphasisFrame: (() => void) | undefined;
+  let emphasisSettle: ((result: TileflowThemeTransitionResult) => void) | undefined;
 
   return {
     dispose() {
       disposed = true;
       requestId += 1;
       activeBlend?.blender.dispose();
+      stopEmphasisMotion({status: 'superseded', theme: current.theme});
     },
     getBlend() {
       if (!activeBlend) return undefined;
@@ -256,6 +307,21 @@ export function createTileflowThemeController(options: {
     },
     getCurrent() {
       return current;
+    },
+    getEmphasis() {
+      return emphasis;
+    },
+    setEmphasis(request, changeOptions) {
+      if (request !== undefined) {
+        const invalid = validateTileflowEmphasis(request);
+        if (invalid)
+          return Promise.resolve({error: invalid, status: 'failed', theme: current.theme});
+      }
+      if (disposed) return Promise.resolve(disposedResult(current.theme));
+      const transition = transitionOf(changeOptions);
+      if (transition instanceof TypeError)
+        return Promise.resolve({error: transition, status: 'failed', theme: current.theme});
+      return changeEmphasis(request, reducedMotion() ? 0 : transition);
     },
     setBlend(request, changeOptions) {
       const targetTheme = nearestTheme(request);
@@ -432,6 +498,9 @@ export function createTileflowThemeController(options: {
         current = target.themes[blender.dominant]!;
         if (pendingBlend?.key === target.key) pendingBlend = undefined;
       }
+      // A new style shows the design; an emphasis returns at once, under the same cross-fade.
+      shownLayers = typeof styleInput === 'string' ? undefined : styleInput.layers;
+      resetEmphasis();
       await cover?.finish({stop: () => disposed || runId !== requestId});
       options.onTransition?.({
         currentTheme: current.theme,
@@ -467,7 +536,12 @@ export function createTileflowThemeController(options: {
         void fade?.finish();
       },
       labelFadeMs: reducedMotion() ? 0 : blendLabelFadeMs,
+      // The ground colour moves with the blend, and colours that recede follow it.
+      onPosition: () => {
+        if (emphasisShown) writeEmphasis(false);
+      },
       position,
+      transform: (layer, property, value) => emphasisValue(layer, property, value),
     });
   }
 
@@ -479,11 +553,231 @@ export function createTileflowThemeController(options: {
       await applyMapStyle(options.map, style, timeoutMs);
       activeBlend = {...blend, blender: createBlender(blend.plan, position)};
       shown = {blend: activeBlend, style};
+      shownLayers = style.layers;
     } else {
       await applyMapStyle(options.map, previous.shown.style, timeoutMs);
       shown = previous.shown;
+      shownLayers = typeof shown.style === 'string' ? undefined : shown.style.layers;
     }
     current = previous.current;
+    resetEmphasis();
+  }
+
+  // --- Emphasis ---
+
+  function valueKey(layer: string, property: string): string {
+    return `${layer}\u0000${property}`;
+  }
+
+  /** The layers of the shown style, as applied: from the style document, or else from the map. */
+  function layersShown(): readonly unknown[] {
+    if (shownLayers) return shownLayers;
+    const getStyle = options.map.getStyle;
+    if (typeof getStyle !== 'function') return [];
+    const style = (getStyle as () => {layers?: unknown[]} | undefined).call(options.map);
+    shownLayers = Array.isArray(style?.layers) ? style.layers : [];
+    return shownLayers;
+  }
+
+  /**
+   * Plans the shown emphasis for the shown style. `onMap` holds the values on the map now; a value
+   * not in it shows the design.
+   */
+  function planEmphasis(onMap: ReadonlyMap<string, string> = new Map()): void {
+    const layers = layersShown();
+    const targets = emphasisShown ? planTileflowEmphasis(layers, emphasisShown) : [];
+    emphasisTargets = new Map(
+      targets.map((target) => [valueKey(target.layer, target.property), target]),
+    );
+    const paintOf = new Map<string, Record<string, unknown>>();
+    for (const layer of layers) {
+      if (layer && typeof layer === 'object' && typeof (layer as {id?: unknown}).id === 'string') {
+        const paint = (layer as {paint?: unknown}).paint;
+        paintOf.set(
+          (layer as {id: string}).id,
+          paint && typeof paint === 'object' ? (paint as Record<string, unknown>) : {},
+        );
+      }
+    }
+    emphasisBase = new Map(
+      targets.map((target) => [
+        valueKey(target.layer, target.property),
+        paintOf.get(target.layer)?.[target.property],
+      ]),
+    );
+    emphasisStaticGround = tileflowEmphasisGround(layers);
+    emphasisBlended = new Set(
+      activeBlend?.plan.paints.map((paint) => valueKey(paint.layer, paint.property)) ?? [],
+    );
+    const background = layers.find(
+      (layer) =>
+        layer && typeof layer === 'object' && (layer as {type?: unknown}).type === 'background',
+    ) as {id?: unknown} | undefined;
+    emphasisGroundTemplate = activeBlend?.plan.paints.find(
+      (paint) => paint.layer === background?.id && paint.property === 'background-color',
+    )?.template;
+    emphasisWritten.clear();
+    for (const [key, base] of emphasisBase) {
+      emphasisWritten.set(key, onMap.get(key) ?? JSON.stringify(base ?? null));
+    }
+  }
+
+  /** After a new style: its values show the design, so the emphasis is planned and written anew. */
+  function resetEmphasis(): void {
+    if (!emphasisShown) return;
+    planEmphasis();
+    writeEmphasis(true);
+  }
+
+  function emphasisGround(): string | undefined {
+    if (activeBlend && emphasisGroundTemplate !== undefined) {
+      return firstColour(
+        fillTileflowThemeBlendTemplate(emphasisGroundTemplate, activeBlend.blender.position),
+      );
+    }
+    return emphasisStaticGround;
+  }
+
+  /** A paint value as the emphasis shows it now. Values read per feature are already at the goal. */
+  function emphasisValue(layer: string, property: string, value: unknown): unknown {
+    const target = emphasisShown ? emphasisTargets.get(valueKey(layer, property)) : undefined;
+    if (!target) return value;
+    const strength = target.featureData ? emphasisGoal : emphasisStrength;
+    return emphasizeTileflowValue(target, value, {
+      ground: emphasisGround(),
+      keep: strength > 0 ? emphasisShown?.keep : undefined,
+      strength,
+    });
+  }
+
+  /** Writes every emphasised value that changed; `blended` also refreshes the blend's values. */
+  function writeEmphasis(blended: boolean): void {
+    if (blended && activeBlend && emphasisTargets.size > 0) {
+      activeBlend.blender.refresh((layer, property) =>
+        emphasisTargets.has(valueKey(layer, property)),
+      );
+    }
+    const setPaint = options.map.setPaintProperty as
+      | ((layer: string, name: string, value: unknown, options?: object) => unknown)
+      | undefined;
+    const getLayer = options.map.getLayer as ((layer: string) => unknown) | undefined;
+    if (typeof setPaint !== 'function') return;
+    for (const [key, target] of emphasisTargets) {
+      if (emphasisBlended.has(key)) continue;
+      const value = emphasisValue(target.layer, target.property, emphasisBase.get(key));
+      const serialized = JSON.stringify(value ?? null);
+      if (emphasisWritten.get(key) === serialized) continue;
+      if (typeof getLayer === 'function' && !getLayer.call(options.map, target.layer)) continue;
+      emphasisWritten.set(key, serialized);
+      setPaint.call(options.map, target.layer, target.property, value, {validate: false});
+    }
+  }
+
+  function stopEmphasisMotion(result?: TileflowThemeTransitionResult): void {
+    emphasisFrame?.();
+    emphasisFrame = undefined;
+    const settle = emphasisSettle;
+    emphasisSettle = undefined;
+    if (result) settle?.(result);
+  }
+
+  function changeEmphasis(
+    request: TileflowEmphasis | undefined,
+    duration: number,
+  ): Promise<TileflowThemeTransitionResult> {
+    stopEmphasisMotion({status: 'superseded', theme: current.theme});
+    const run = ++emphasisRun;
+    emphasis = request;
+    // Values the new request no longer changes go back to the design first.
+    const before = emphasisTargets;
+    if (request) {
+      const leaving = new Map(emphasisWritten);
+      const previous = emphasisShown;
+      emphasisShown = request;
+      planEmphasis(leaving);
+      if (previous) {
+        const setPaint = options.map.setPaintProperty as (
+          layer: string,
+          name: string,
+          value: unknown,
+          options?: object,
+        ) => unknown;
+        for (const [key, target] of before) {
+          if (emphasisTargets.has(key) || typeof setPaint !== 'function') continue;
+          const base = layerPaint(target.layer, target.property);
+          setPaint.call(options.map, target.layer, target.property, base, {validate: false});
+        }
+      }
+    }
+    if (!emphasisShown) return Promise.resolve({status: 'applied', theme: current.theme});
+
+    emphasisGoal = request ? 1 : 0;
+    const from = emphasisStrength;
+    const to = emphasisGoal;
+    // Values read per feature change once, at the start; a snapshot of the map covers them.
+    const switches = [...emphasisTargets.values()].some((target) => target.featureData);
+    const cover = switches ? beginTileflowStyleCrossfade(options.map, duration) : undefined;
+    const view = tileflowThemeMotionView(options.map);
+
+    return new Promise((resolve) => {
+      emphasisSettle = resolve;
+      const finish = () => {
+        emphasisFrame = undefined;
+        emphasisStrength = to;
+        writeEmphasis(true);
+        if (to === 0) {
+          // As designed again: nothing left to follow.
+          emphasisShown = undefined;
+          emphasisTargets = new Map();
+          emphasisWritten.clear();
+        }
+        emphasisSettle = undefined;
+        resolve({status: 'applied', theme: current.theme});
+      };
+      writeEmphasis(true);
+      void cover?.finish({stop: () => disposed || run !== emphasisRun});
+      if (duration <= 0 || !view || from === to) {
+        finish();
+        return;
+      }
+      const now = () => view.performance?.now?.() ?? Date.now();
+      const start = now();
+      let cancelled = false;
+      let frame: number | undefined;
+      const step = () => {
+        frame = undefined;
+        if (cancelled || disposed || run !== emphasisRun) return;
+        const t = Math.min(1, (now() - start) / duration);
+        const eased = t * t * (3 - 2 * t);
+        const strength = from + (to - from) * eased;
+        // A hundredth of the change is below what the eye sees; skipping it saves writes.
+        if (t >= 1) return finish();
+        if (Math.abs(strength - emphasisStrength) >= 0.01) {
+          emphasisStrength = strength;
+          writeEmphasis(true);
+        }
+        frame = view.requestAnimationFrame(step);
+      };
+      emphasisFrame = () => {
+        cancelled = true;
+        if (frame !== undefined) view.cancelAnimationFrame(frame);
+      };
+      frame = view.requestAnimationFrame(step);
+    });
+  }
+
+  /** A layer's paint value in the shown style, as designed. */
+  function layerPaint(layer: string, property: string): unknown {
+    const key = valueKey(layer, property);
+    if (activeBlend && emphasisBlended.has(key))
+      return activeBlend.blender.baseValue(layer, property);
+    for (const entry of layersShown()) {
+      if (entry && typeof entry === 'object' && (entry as {id?: unknown}).id === layer) {
+        const paint = (entry as {paint?: Record<string, unknown>}).paint;
+        return paint?.[property];
+      }
+    }
+    return undefined;
   }
 
   function reducedMotion(): boolean {

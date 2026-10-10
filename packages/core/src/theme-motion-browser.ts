@@ -13,6 +13,8 @@ export type TileflowThemeMotionMap = {
   areTilesLoaded?: unknown;
   getCanvas?: unknown;
   getImage?: unknown;
+  getLayer?: unknown;
+  getStyle?: unknown;
   isStyleLoaded?: unknown;
   off(event: string, listener: (event?: unknown) => void): unknown;
   on(event: string, listener: (event?: unknown) => void): unknown;
@@ -163,11 +165,22 @@ export function beginTileflowStyleCrossfade(
 
 /** Drives a map whose style came from `plan.styleAt`, moving it to other blend positions. */
 export type TileflowThemeBlender = {
+  /** The value the blend last set for a paint property, before any transform; undefined if none. */
+  baseValue(layer: string, property: string): unknown;
   dispose(): void;
   readonly dominant: number;
   readonly position: number;
+  /** Writes the blended values again through the transform, only those `include` selects. */
+  refresh(include: (layer: string, property: string) => boolean): void;
   set(position: number): void;
 };
+
+/** A change applied to each paint value a blend writes, such as an emphasis. */
+export type TileflowThemeBlendTransform = (
+  layer: string,
+  property: string,
+  value: unknown,
+) => unknown;
 
 type BlendMap = {
   getImage(name: string): {data?: {data: ArrayLike<number>; height: number; width: number}} | null;
@@ -199,7 +212,10 @@ export function createTileflowThemeBlender(
   options: {
     cover?: (change: () => void) => void;
     labelFadeMs: number;
+    /** Called after ground values have followed a new position. */
+    onPosition?: () => void;
     position: number;
+    transform?: TileflowThemeBlendTransform;
   },
 ): TileflowThemeBlender {
   if (!canBlendTileflowThemes(input)) {
@@ -213,6 +229,10 @@ export function createTileflowThemeBlender(
   const dominantPaints = plan.paints.filter((paint) => paint.follows === 'dominant');
   const pixels = createImageMixer(map, plan.images);
   const shownValues = new Map<TileflowThemeBlendPaint, string>();
+  const baseValues = new Map<string, unknown>();
+  const valueKey = (layer: string, property: string) => `${layer}\u0000${property}`;
+  const transformed = (layer: string, property: string, value: unknown) =>
+    options.transform ? options.transform(layer, property, value) : value;
   let position = clamp(options.position);
   let dominant = Math.round(position);
   let label = dominant;
@@ -226,7 +246,9 @@ export function createTileflowThemeBlender(
 
   const drive = (paints: readonly TileflowThemeBlendPaint[], at: number) => {
     for (const paint of paints) {
-      const value = fillTileflowThemeBlendTemplate(paint.template, at);
+      const base = fillTileflowThemeBlendTemplate(paint.template, at);
+      baseValues.set(valueKey(paint.layer, paint.property), base);
+      const value = transformed(paint.layer, paint.property, base);
       const key = JSON.stringify(value);
       if (shownValues.get(paint) === key) continue;
       shownValues.set(paint, key);
@@ -258,18 +280,49 @@ export function createTileflowThemeBlender(
   const applySwitches = (theme: number) => {
     for (const entry of plan.switches) {
       const value = entry.values[theme];
-      if (entry.group === 'paint')
-        map.setPaintProperty(entry.layer, entry.property, value, {validate: false});
-      else map.setLayoutProperty(entry.layer, entry.property, value, {validate: false});
+      if (entry.group === 'paint') {
+        baseValues.set(valueKey(entry.layer, entry.property), value);
+        map.setPaintProperty(
+          entry.layer,
+          entry.property,
+          transformed(entry.layer, entry.property, value),
+          {validate: false},
+        );
+      } else map.setLayoutProperty(entry.layer, entry.property, value, {validate: false});
     }
   };
+  const switchedPaints = plan.switches.filter((entry) => entry.group === 'paint');
 
   return {
+    baseValue(layer, property) {
+      return baseValues.get(valueKey(layer, property));
+    },
     get dominant() {
       return dominant;
     },
     get position() {
       return position;
+    },
+    refresh(include) {
+      if (disposed) return;
+      drive(
+        positionPaints.filter((paint) => include(paint.layer, paint.property)),
+        position,
+      );
+      drive(
+        dominantPaints.filter((paint) => include(paint.layer, paint.property)),
+        label,
+      );
+      for (const entry of switchedPaints) {
+        if (!include(entry.layer, entry.property)) continue;
+        const value = entry.values[dominant];
+        map.setPaintProperty(
+          entry.layer,
+          entry.property,
+          transformed(entry.layer, entry.property, value),
+          {validate: false},
+        );
+      }
     },
     dispose() {
       disposed = true;
@@ -294,6 +347,7 @@ export function createTileflowThemeBlender(
           map.setSky(fillTileflowThemeBlendTemplate(plan.sky, position), {validate: false});
         if (plan.light !== undefined && typeof map.setLight === 'function')
           map.setLight(fillTileflowThemeBlendTemplate(plan.light, position), {validate: false});
+        options.onPosition?.();
       }
       const nextDominant = Math.round(target);
       if (nextDominant === dominant) return;

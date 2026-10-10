@@ -365,34 +365,29 @@ export function compileRoads(
     },
     request?.areas,
   );
+  // `kind` selects an area among the road areas: in the polygons, and in their outer boundaries when
+  // the data publishes them as lines.
   const areaTargets = [
     {
       id: 'tileflow-road-area',
-      filter: ['==', ['geometry-type'], 'Polygon'],
+      kind: undefined,
       name: 'road',
       style: areaStyles.road,
     },
     {
       id: 'tileflow-road-pedestrian-area',
-      filter: [
-        'all',
-        ['==', ['geometry-type'], 'Polygon'],
-        tileflowRoadClassFilter(schema.fields, 'pedestrian'),
-      ],
+      kind: tileflowRoadClassFilter(schema.fields, 'pedestrian'),
       name: 'pedestrian',
       style: areaStyles.pedestrian,
     },
     {
       id: 'tileflow-road-pier-area',
-      filter: [
-        'all',
-        ['==', ['geometry-type'], 'Polygon'],
-        ['==', ['get', schema.fields.class], 'pier'],
-      ],
+      kind: ['==', ['get', schema.fields.class], 'pier'],
       name: 'pier',
       style: areaStyles.pier,
     },
   ] as const;
+  const polygons = ['==', ['geometry-type'], 'Polygon'];
   let areaOrder = 900;
   for (const target of areaTargets) {
     if (!target.style) continue;
@@ -402,13 +397,24 @@ export function compileRoads(
         type: 'fill',
         source,
         'source-layer': schema.layers.road,
-        filter: target.filter,
+        filter: target.kind ? ['all', polygons, target.kind] : polygons,
       },
       target.style,
     )) {
+      // A line over a polygon strokes every ring, holes included. With the outer boundaries in the
+      // data, the outline strokes only them.
+      const {filter: _polygonFilter, ...unfiltered} = area.layer;
+      const outline =
+        area.phase === 'outline' && schema.layers.transportationOutline
+          ? {
+              ...unfiltered,
+              'source-layer': schema.layers.transportationOutline,
+              ...(target.kind ? {filter: target.kind} : {}),
+            }
+          : area.layer;
       contributions.push({
         kind: 'layer',
-        layer: area.layer,
+        layer: outline,
         localOrder: areaOrder++,
         owner: 'roads',
         slot: 'transport-areas',

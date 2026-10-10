@@ -1812,6 +1812,7 @@ const layerBindingsSchema = z
     streetFurniture: z.string().trim().min(1).optional(),
     trafficControl: z.string().trim().min(1).optional(),
     tree: z.string().trim().min(1).optional(),
+    transportationOutline: z.string().trim().min(1).optional(),
     water: z.string().trim().min(1),
     waterName: z.string().trim().min(1),
     waterway: z.string().trim().min(1),

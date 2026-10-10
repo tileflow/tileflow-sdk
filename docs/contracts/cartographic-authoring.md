@@ -299,8 +299,8 @@ request to expose a reference style's layer ID.
 Reference-style inventories can reveal missing concepts, but they are not Tileflow APIs. Tileflow
 World already supplies the fields used by road treatments, road references, networks, and motorway
 junctions. Traffic signals, per-lane widths, and barriers are absent from its current public
-TileJSON contract. Detailed datasets may opt into the typed `streetFurniture`, `sidewalk`, and
-`circularFeature` bindings used by the semantic road controls above. Sidewalk coverage is
+TileJSON contract. Detailed datasets may opt into the typed `streetFurniture`, `sidewalk`,
+`circularFeature`, and `transportationOutline` bindings used by the semantic road controls above. Sidewalk coverage is
 source-backed and may be incomplete; never infer missing polygons by buffering road centerlines.
 Datasets may also publish the optional decorative `canopy` layer, whose `canopyRank`,
 `canopyClearanceAtZoom15`, and `canopyCoverPercent` fields size groves drawn by render passes. No

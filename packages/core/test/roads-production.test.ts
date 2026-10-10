@@ -6,7 +6,7 @@ import {
 } from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {openMapTiles, resolveTileflowData, roads, zoom} from '../src';
+import {openMapTiles, resolveTileflowData, roads, vectorTiles, zoom} from '../src';
 import {tileflowCompilerMetadataKeys} from '../src/cartography/contributions';
 import {createTileflowLayerFamilyIR, lowerTileflowDomainIR} from '../src/cartography/domain-ir';
 import {assembleTileflowLayerFamilies} from '../src/cartography/graph';
@@ -1204,4 +1204,46 @@ test('feature-dependent ring widths preserve data and authored stops without den
         }
       }
   }
+});
+
+test('strokes only the outer boundary of road areas when the data publishes it', () => {
+  const style = roads({
+    areas: {pier: {outline: {color: '#112233', width: 1}}},
+    detail: 'none',
+  });
+  const byId = (contributions: ReturnType<typeof compileRoads>, id: string) =>
+    contributions.find(({layer}) => layer.id === id)!.layer as Layer;
+
+  // Tileflow World publishes the outer rings as lines: the outlines read them, never the holes.
+  const world = compileRoads(style, context);
+  const pedestrianFill = byId(world, 'tileflow-road-pedestrian-area');
+  const pedestrianOutline = byId(world, 'tileflow-road-pedestrian-area-outline');
+  const pierOutline = byId(world, 'tileflow-road-pier-area-outline');
+  assert.equal(pedestrianFill['source-layer'], sourceLayer);
+  assert.equal(pedestrianOutline['source-layer'], 'transportation_outline');
+  assert.equal(pierOutline['source-layer'], 'transportation_outline');
+  assert.deepEqual(
+    pedestrianOutline.filter,
+    tileflowRoadClassFilter(context.data.schema.fields, 'pedestrian'),
+  );
+  assert.ok(matchesFilter(pedestrianOutline.filter, {class: 'path', subclass: 'pedestrian'}));
+  assert.ok(!matchesFilter(pedestrianOutline.filter, {class: 'pier'}));
+  assert.ok(matchesFilter(pierOutline.filter, {class: 'pier'}));
+  assert.ok(!matchesFilter(pierOutline.filter, {class: 'path', subclass: 'pedestrian'}));
+
+  // Other OpenMapTiles data has no such layer: the outline strokes the polygons.
+  const generic = compileRoads(style, {
+    ...context,
+    data: resolveTileflowData(
+      vectorTiles({attribution: '© Example', schema: openMapTiles(), url: '/tiles.json'}),
+    ),
+  });
+  const genericOutline = byId(generic, 'tileflow-road-pedestrian-area-outline');
+  assert.equal(genericOutline['source-layer'], sourceLayer);
+  assert.ok(
+    matchesFilter(genericOutline.filter, {class: 'path', subclass: 'pedestrian'}, 'Polygon'),
+  );
+  assert.ok(
+    !matchesFilter(genericOutline.filter, {class: 'path', subclass: 'pedestrian'}, 'LineString'),
+  );
 });

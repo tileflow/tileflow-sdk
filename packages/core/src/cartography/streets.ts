@@ -47,6 +47,11 @@ import {
   lowerTileflowDomainIR,
 } from './domain-ir';
 import {compileSemanticDomains, resolveSemanticModules} from './domain-registry';
+import {
+  type TileflowLayerDomain,
+  tileflowLayerDomainMetadataKey,
+  tileflowLayerDomains,
+} from './domains';
 import {assembleTileflowLayerFamilies} from './graph';
 import {
   applyTileflowIconCapabilities,
@@ -581,8 +586,12 @@ function finalizeTileflowLayers(
 
       const metadata = isRecord(layer.metadata) ? {...layer.metadata} : undefined;
       if (metadata) {
+        // The owning module outlives the compiler's provenance, for runtime features.
+        const owner = metadata[tileflowCompilerMetadataKeys.owner];
         delete metadata[tileflowCompilerProvenanceMetadataKey];
         for (const key of Object.values(tileflowCompilerMetadataKeys)) delete metadata[key];
+        if (tileflowLayerDomains.includes(owner as TileflowLayerDomain))
+          metadata[tileflowLayerDomainMetadataKey] = owner;
       }
       return {
         ...layer,

@@ -2,6 +2,8 @@ import {type TileflowSemanticModuleName, tileflowSemanticModuleNames} from './do
 
 export type TileflowLayerDomain = TileflowSemanticModuleName | 'terrain';
 
+export {tileflowLayerDomainMetadataKey} from '../layer-domain';
+
 /** The module portion is derived from the closed registry; terrain remains a compiler-owned domain. */
 export const tileflowLayerDomains: readonly TileflowLayerDomain[] = Object.freeze([
   ...tileflowSemanticModuleNames,

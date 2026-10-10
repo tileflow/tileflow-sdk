@@ -173,6 +173,21 @@ const numericIdentity = expr.abs(expr.toNumber(expr.id(), 0));
 const decorativeBucket = expr.modulo(numericIdentity, 7);
 ```
 
+`expr.featureState(name)` reads a value an application sets on one feature at runtime, such as a
+selection or a hover. `expr.globalState(name)` reads a value an application sets once for the whole
+style with MapLibre's `map.setGlobalStateProperty(name, value)`, such as whether anything is
+selected. Both read `null` until set, so wrap them in a typed assertion with a fallback. MapLibre
+applies a global-state change to paint properties at once, without the style's paint transition.
+
+<!-- docs:check -->
+
+```ts
+import {expr} from '@tileflow/core';
+
+const selecting = expr.toBoolean(expr.globalState('selection'), false);
+const captionInk = expr.case([{when: selecting, value: '#1f2a44'}], '#ffffff');
+```
+
 The `land` module exposes stable land-use targets for `cemetery`, `civic`, `commercial`,
 `education`, `government`, `industrial`, `medical`, `military`, `parking`, `railway`,
 `recreation`, and `residential`. Its land-cover taxonomy distinguishes physical cover from authored

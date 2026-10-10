@@ -1,6 +1,6 @@
+import {expression as maplibreExpression} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {expression as maplibreExpression} from '@maplibre/maplibre-gl-style-spec';
 import {expr, field} from '../src';
 import {validateTileflowDataExpression} from '../src/cartography/data-expression';
 import {bindSemanticReferences} from '../src/cartography/semantic-bindings';
@@ -144,7 +144,22 @@ test('feature state, boolean assertions, and scoped variables lower without raw 
     ],
   });
   assert.throws(() => expr.featureState('  '), /non-empty state key/u);
+  assert.throws(() => expr.globalState(''), /non-empty state key/u);
   assert.throws(() => expr.var<number>(''), /non-empty variable name/u);
+});
+
+test('global state reads a style-wide value an application sets at runtime', () => {
+  const plate = expr.case(
+    [{when: expr.toBoolean(expr.globalState('selection'), false), value: 'quiet'}],
+    'accent',
+  );
+
+  assert.deepEqual(bindSemanticReferences(plate, data), {
+    kind: 'expression',
+    value: ['case', ['boolean', ['global-state', 'selection'], false], 'quiet', 'accent'],
+  });
+  assert.deepEqual(validateTileflowDataExpression(['global-state', 'selection']), []);
+  assert.equal(validateTileflowDataExpression(['global-state', '']).length, 1);
 });
 
 test('serialized expressions reject physical fields, unknown operators, and unbound variables', () => {

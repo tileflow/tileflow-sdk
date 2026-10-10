@@ -424,6 +424,12 @@ const expressionBuilders: readonly TileflowAuthoringExpressionBuilder[] = [
     serializedOperator: 'get',
   },
   {
+    arguments: ['name: nonempty string'],
+    name: 'globalState',
+    returns: 'unknown',
+    serializedOperator: 'global-state',
+  },
+  {
     arguments: ['left: T', 'right: T'],
     name: 'gt',
     returns: 'boolean',

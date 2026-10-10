@@ -91,6 +91,7 @@ test('publishes a frozen V2 authoring manifest with semantic and MapLibre resour
     'eq',
     'featureState',
     'get',
+    'globalState',
     'gt',
     'gte',
     'has',

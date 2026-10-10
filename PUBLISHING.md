@@ -160,7 +160,10 @@ Tests, workflows, and repository-only documentation do not cause a release unles
 packed artifact. Package READMEs, `files`, exports, runtime dependencies, executable modes, built
 JavaScript, declarations, maps, icons, fonts, and other packaged resources do. Before selection, the
 workflow builds and packs every candidate twice. Each package's contents must match under the exact
-release comparison; otherwise preparation stops.
+release comparison; otherwise preparation stops. `tsconfig.base.json` sets TypeScript's
+`stableTypeOrdering` for every package: tsup emits each module's declarations in the order Rollup
+loads them, and without it TypeScript can print union members and mapped keys in a different order
+on each build.
 Candidate tarballs remain the immutability proof for unselected packages; their later final rebuild
 output is neither selected nor bundled.
 

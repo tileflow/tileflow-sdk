@@ -174,7 +174,7 @@ importers:
     dependencies:
       '@hono/node-server':
         specifier: 2.0.10
-        version: 2.0.10(hono@4.13.5)
+        version: 2.0.10(hono@4.13.7)
       '@tileflow/capture':
         specifier: workspace:>=0.1.0-alpha.16 <0.1.0-beta.0
         version: link:../capture
@@ -197,8 +197,8 @@ importers:
         specifier: ^15.0.0
         version: 15.0.0
       hono:
-        specifier: 4.13.5
-        version: 4.13.5
+        specifier: 4.13.7
+        version: 4.13.7
       picocolors:
         specifier: ^1.1.1
         version: 1.1.1
@@ -2427,8 +2427,8 @@ packages:
   hermes-parser@0.35.0:
     resolution: {integrity: sha512-9JLjeHxBx8T4CAsydZR49PNZUaix+WpQJwu9p2010lu+7Kwl6D/7wYFFJxoz+aXkaaClp9Zfg6W6/zVlSJORaA==}
 
-  hono@4.13.5:
-    resolution: {integrity: sha512-O6+/eCYRkzzzy0rPWwKLiGBR1nFuUPZynnwjxN1MBA62NNqbT0wQEzQyK2gSO5yDIDB336sXQleAhOHrzlYyKw==}
+  hono@4.13.7:
+    resolution: {integrity: sha512-c8/gF9ac8Y78/agExVocyLevgR+JlpNB444Py0FSX8pJoPdYUfUzRcXtYEYGwt6l19qIlVZPN5Mfsw9jFShmQQ==}
     engines: {node: '>=16.9.0'}
 
   hookified@1.15.1:
@@ -4033,9 +4033,9 @@ snapshots:
 
   '@fontsource/noto-sans@5.3.0': {}
 
-  '@hono/node-server@2.0.10(hono@4.13.5)':
+  '@hono/node-server@2.0.10(hono@4.13.7)':
     dependencies:
-      hono: 4.13.5
+      hono: 4.13.7
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -5583,7 +5583,7 @@ snapshots:
     dependencies:
       hermes-estree: 0.35.0
 
-  hono@4.13.5: {}
+  hono@4.13.7: {}
 
   hookified@1.15.1: {}
 

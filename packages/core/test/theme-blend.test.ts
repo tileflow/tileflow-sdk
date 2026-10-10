@@ -254,6 +254,179 @@ test('lets symbol values follow the label cross-fade and ground values follow th
       ['names', 'dominant'],
     ],
   );
+  // Between changes, symbols show the nearest theme while the ground shows the position.
+  const filled = byId(plan.styleAt(0.4));
+  assert.match(String(paintOf(filled.get('land'))['fill-color']), /^rgba\(/u);
+  assert.equal(paintOf(filled.get('names'))['text-color'], '#ffffff');
+  assert.equal(paintOf(byId(plan.styleAt(0.6)).get('names'))['text-color'], '#000000');
+});
+
+test('switches icon images by name when asked, keeping pattern artwork mixed', () => {
+  const blips = (suffix: string) =>
+    layer('blips', 'symbol', {}, {layout: {'icon-image': `cafe${suffix}`}});
+  const ground = (pattern: string) => layer('grass', 'fill', {'fill-pattern': pattern});
+  const plan = planTileflowThemeBlend(
+    [style([ground('grass-night'), blips('')]), style([ground('grass-day'), blips('-day')])],
+    {iconImages: 'switch'},
+  );
+
+  assert.deepEqual(
+    plan.images.map((image) => [image.names, image.follows]),
+    [[['grass-night', 'grass-day'], 'position']],
+  );
+  assert.deepEqual(
+    plan.switches.map((entry) => [entry.layer, entry.group, entry.property, entry.values]),
+    [['blips', 'layout', 'icon-image', ['cafe', 'cafe-day']]],
+  );
+  const layoutOf = (filled: MapLibreStyle) =>
+    byId(filled).get('blips')!.layout as Record<string, unknown>;
+  assert.equal(layoutOf(plan.styleAt(0.4))['icon-image'], 'cafe');
+  assert.equal(layoutOf(plan.styleAt(0.6))['icon-image'], 'cafe-day');
+});
+
+test('draws a layer once per theme when asked, showing only the nearest theme copy', () => {
+  // A decision that also reads zoom cannot be split into filtered layers, and a data-driven
+  // opacity rules out cross-faded copies.
+  const casing = (colour: string) => [
+    'case',
+    ['all', ['has', 'access'], ['!', ['match', ['get', 'access'], ['yes'], true, false]]],
+    colour,
+    ['>=', ['zoom'], 14],
+    '#101010',
+    '#000000',
+  ];
+  const roads = (colour: string, width: number) =>
+    layer('roads', 'line', {
+      'line-color': casing(colour),
+      'line-opacity': ['match', ['get', 'class'], 'path', 0.5, 1],
+      'line-width': width,
+    });
+  const styles = [style([roads('#203020', 1)]), style([roads('#a0d080', 3)])];
+
+  // By default the data-driven colour switches its value at the nearest theme.
+  assert.deepEqual(
+    planTileflowThemeBlend(styles).switches.map((entry) => [entry.layer, entry.property]),
+    [['roads', 'line-color']],
+  );
+
+  const plan = planTileflowThemeBlend(styles, {featureSwitches: 'layers'});
+  assert.deepEqual(
+    plan.switches.map((entry) => [entry.layer, entry.group, entry.property, entry.values]),
+    [
+      ['roads::theme-0', 'layout', 'visibility', ['visible', 'none']],
+      ['roads::theme-1', 'layout', 'visibility', ['none', 'visible']],
+    ],
+  );
+  assert.equal(plan.summary.switchedLayers, 2);
+  // The width still follows the position on both copies.
+  assert.deepEqual(
+    plan.paints.map((paint) => [paint.layer, paint.property]),
+    [
+      ['roads::theme-0', 'line-width'],
+      ['roads::theme-1', 'line-width'],
+    ],
+  );
+  const filled = byId(plan.styleAt(0.25));
+  const first = filled.get('roads::theme-0')!;
+  assert.deepEqual(paintOf(first)['line-color'], casing('#203020'));
+  assert.equal(paintOf(first)['line-width'], 1.5);
+  assert.equal((first.layout as Record<string, unknown>).visibility, 'visible');
+  assert.deepEqual(paintOf(filled.get('roads::theme-1'))['line-color'], casing('#a0d080'));
+  assert.equal(
+    (filled.get('roads::theme-1')!.layout as Record<string, unknown>).visibility,
+    'none',
+  );
+  assert.equal(
+    (byId(plan.styleAt(0.75)).get('roads::theme-1')!.layout as Record<string, unknown>).visibility,
+    'visible',
+  );
+});
+
+test('keeps interaction metadata pointing at the planned index of each POI layer', () => {
+  const choose = (a: string, b: string) => ['match', ['get', 'class'], 'grass', a, b];
+  const poi = {
+    anchor: 'pointer-coordinate',
+    category: 'food-drink',
+    layerId: 'cafes',
+    priority: 1,
+    representation: 'icon',
+    source: 'world',
+    sourceLayer: 'land',
+  };
+  const metadata = {
+    'tileflow:interaction-manifest': {version: 2, domains: {poi: {layers: [poi]}}},
+  };
+  const themed = (a: string, b: string) =>
+    style(
+      [
+        layer('land', 'fill', {'fill-color': choose(a, b)}),
+        layer('cafes', 'symbol', {}, {layout: {'icon-image': 'cafe'}}),
+      ],
+      {metadata},
+    );
+  const plan = planTileflowThemeBlend([themed('#203020', '#000000'), themed('#a0d080', '#ffffff')]);
+  const filled = plan.styleAt(0.5);
+  const index = filled.layers.findIndex((entry) => entry.id === 'cafes');
+
+  assert.equal(index, 2);
+  const manifest = filled.metadata!['tileflow:interaction-manifest'] as {
+    domains: {poi: {layers: {layerId: string; priority: number}[]}};
+  };
+  assert.deepEqual(manifest.domains.poi.layers, [{...poi, priority: 2}]);
+  assert.equal(poi.priority, 1, 'the input metadata is not changed');
+});
+
+test('lists every planned copy of a POI layer and anchors overlays at the first copy', () => {
+  const poi = {
+    anchor: 'pointer-coordinate',
+    category: 'food-drink',
+    layerId: 'cafes',
+    priority: 1,
+    representation: 'icon',
+    source: 'world',
+    sourceLayer: 'land',
+  };
+  const metadata = {
+    'tileflow:interaction-manifest': {version: 2, domains: {poi: {layers: [poi]}}},
+    'tileflow:overlay-placement-manifest': {
+      anchors: {'above-ground': 'cafes', 'below-labels': null},
+      schemaVersion: 1,
+    },
+  };
+  const themed = (icon: unknown) =>
+    style(
+      [
+        layer('land', 'fill', {'fill-color': '#000000'}),
+        layer('cafes', 'symbol', {}, {layout: {'icon-image': icon}}),
+      ],
+      {metadata},
+    );
+  const plan = planTileflowThemeBlend(
+    [
+      themed(['match', ['get', 'class'], 'cafe', 'cafe-night', 'shop-night']),
+      themed(['match', ['get', 'class'], 'cafe', 'cafe-day', 'shop-day']),
+    ],
+    {featureSwitches: 'layers', iconImages: 'switch'},
+  );
+  const filled = plan.styleAt(0);
+  assert.deepEqual(
+    filled.layers.map((entry) => entry.id),
+    ['land', 'cafes::theme-0', 'cafes::theme-1'],
+  );
+  const manifest = filled.metadata!['tileflow:interaction-manifest'] as {
+    domains: {poi: {layers: {layerId: string; priority: number}[]}};
+  };
+  assert.deepEqual(
+    manifest.domains.poi.layers.map((entry) => [entry.layerId, entry.priority]),
+    [
+      ['cafes::theme-0', 1],
+      ['cafes::theme-1', 2],
+    ],
+  );
+  assert.deepEqual(
+    (filled.metadata!['tileflow:overlay-placement-manifest'] as {anchors: unknown}).anchors,
+    {'above-ground': 'cafes::theme-0', 'below-labels': null},
+  );
 });
 
 test('mixes differing artwork in pixels and keeps the first theme image names', () => {

@@ -50,7 +50,6 @@ const require = createRequire(import.meta.url);
 const mapLibreRuntimePaths = Object.freeze({
   css: require.resolve('maplibre-gl/dist/maplibre-gl.css'),
   main: require.resolve('maplibre-gl/dist/maplibre-gl.mjs'),
-  shared: require.resolve('maplibre-gl/dist/maplibre-gl-shared.mjs'),
   worker: require.resolve('maplibre-gl/dist/maplibre-gl-worker.mjs'),
 });
 const tileflowCorePackagePath = require.resolve('@tileflow/core/package.json');
@@ -408,7 +407,6 @@ function createMapLibreRuntimeUrls(origin: string) {
     document: `${origin}/__runtime/document.html`,
     main: `${origin}/__runtime/maplibre-gl.mjs`,
     origin,
-    shared: `${origin}/__runtime/maplibre-gl-shared.mjs`,
     worker: `${origin}/__runtime/maplibre-gl-worker.mjs`,
   });
 }
@@ -482,13 +480,11 @@ function getMapLibreRuntimeResponse(
   const asset =
     pathname === '/__runtime/maplibre-gl.mjs'
       ? mapLibreRuntimePaths.main
-      : pathname === '/__runtime/maplibre-gl-shared.mjs'
-        ? mapLibreRuntimePaths.shared
-        : pathname === '/__runtime/maplibre-gl-worker.mjs'
-          ? mapLibreRuntimePaths.worker
-          : pathname === '/__runtime/maplibre-gl.css'
-            ? mapLibreRuntimePaths.css
-            : undefined;
+      : pathname === '/__runtime/maplibre-gl-worker.mjs'
+        ? mapLibreRuntimePaths.worker
+        : pathname === '/__runtime/maplibre-gl.css'
+          ? mapLibreRuntimePaths.css
+          : undefined;
   if (!asset) return undefined;
 
   return {

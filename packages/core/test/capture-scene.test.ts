@@ -192,6 +192,27 @@ test('rejects invalid scene geometry, targets, names, and cross-map references',
   }
 });
 
+test('bounds padding leaves room for the bounds in the viewport', () => {
+  const withPadding = (padding: number) => ({
+    ...map,
+    scenes: {
+      proof: {
+        theme: 'light',
+        camera: {type: 'bounds', bounds: [-3.8, 40.3, -3.6, 40.5], padding},
+        viewport: {width: 320, height: 200},
+      },
+    },
+  });
+
+  assert.deepEqual(validateTileflowMap(withPadding(99)), {valid: true, messages: []});
+  const tooWide = validateTileflowMap(withPadding(100));
+  assert.equal(tooWide.valid, false);
+  assert.match(
+    tooWide.messages.map((message) => message.message).join('\n'),
+    /less than half the viewport's shorter side \(100 pixels\)/u,
+  );
+});
+
 test('rejects non-canonical scene ids and non-plain scene records', () => {
   const scene = {
     theme: 'light',

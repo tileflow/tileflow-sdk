@@ -455,6 +455,10 @@
                 {
                   "path": "bounds",
                   "rule": "south < north and west !== east"
+                },
+                {
+                  "path": "padding",
+                  "rule": "padding * 2 < the viewport's shorter side"
                 }
               ]
             }

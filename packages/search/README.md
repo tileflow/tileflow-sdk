@@ -186,7 +186,8 @@ describes the moment of the request. Like every result, details are for temporar
 
 Forward/autocomplete text accepts 1–200 characters. Their limit defaults to 5 and accepts 1–10;
 reverse defaults to 1 and accepts 1–10. Reverse kinds are an OR of `address`, `street`, `locality`
-and `place`. Forward/autocomplete `bounds` and `proximity` are mutually exclusive.
+and `place`. Forward/autocomplete `proximity` biases ranking and `bounds` restricts results; they
+are mutually exclusive.
 
 Nearby requires `position`, defaults to 20 results and accepts 1–100. Optional `radiusMeters` accepts
 1–21,000,000. A bbox is `[west, south, east, north]`, with west < east and south < north; wrapping
@@ -251,6 +252,12 @@ Use an accessible combobox/listbox for suggestions: arrow keys change the active
 touch/click explicitly selects it, and Escape dismisses it. Give the input a label, maintain focus
 and active-option semantics, and announce loading, empty results and errors through a polite status
 region. Preserve attribution beside displayed results. Do not resolve on hover or focus changes.
+
+Text search over a map should favor the view without being confined to it. Send the map's centre as
+`proximity` while it shows a city or closer, and omit it at country or world scale; nearer matches
+then rank first, and a better match elsewhere, such as the city of Madrid typed over Lisbon, still
+appears. `bounds` excludes everything outside the box, so do not derive it from the view for typed
+search.
 
 An explicit category action can call Nearby. Moving a map offers a “Search this area” button; only
 pressing it submits the new bounds. A late reply must not move the camera after a newer selection or

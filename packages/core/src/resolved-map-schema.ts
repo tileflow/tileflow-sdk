@@ -1505,6 +1505,7 @@ const layerBindingsSchema = z
     sidewalk: z.string().trim().min(1).optional(),
     streetFurniture: z.string().trim().min(1).optional(),
     tree: z.string().trim().min(1).optional(),
+    transportationOutline: z.string().trim().min(1).optional(),
     water: z.string().trim().min(1),
     waterName: z.string().trim().min(1),
     waterway: z.string().trim().min(1),

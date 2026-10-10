@@ -51,6 +51,11 @@ export type OpenMapTilesLayerBindings = {
   streetFurniture?: string;
   /** Optional individual-tree point extension used by the vegetation module. */
   tree?: string;
+  /**
+   * Optional outer boundaries of `road` areas, as lines. When bound, area outlines are drawn from
+   * it, so the holes of an area (tree pits, planting beds) are never stroked.
+   */
+  transportationOutline?: string;
   water: string;
   waterName: string;
   waterway: string;
@@ -215,6 +220,7 @@ export type TileflowWorldV1Schema = Omit<OpenMapTilesSchema, 'fields' | 'layers'
     sidewalk: string;
     streetFurniture: string;
     roadShield: string;
+    transportationOutline: string;
   };
 };
 
@@ -452,6 +458,7 @@ export function tileflowWorldV1Schema(
       roadShield: 'transportation_shield',
       sidewalk: 'sidewalk',
       streetFurniture: 'street_furniture',
+      transportationOutline: 'transportation_outline',
       ...options.layers,
     },
     semantics: {...options.semantics, parkLayer: 'protected-only'},
@@ -474,6 +481,11 @@ export function validateTileflowWorldV1Tilejson(
   const roadName = requireTilejsonLayer(layers, schema.layers.roadName, issues);
   const roadShield = requireTilejsonLayer(layers, schema.layers.roadShield, issues);
   const canopy = optionalTilejsonLayer(layers, schema.layers.canopy, issues);
+  const transportationOutline = requireTilejsonLayer(
+    layers,
+    schema.layers.transportationOutline,
+    issues,
+  );
 
   if (bathymetry) {
     if (bathymetry.minzoom !== 0 || bathymetry.maxzoom !== 9) {
@@ -665,6 +677,29 @@ export function validateTileflowWorldV1Tilejson(
     ]) {
       requireTilejsonField(canopy, schema.layers.canopy, field, ['Number'], issues);
     }
+  }
+
+  if (transportationOutline) {
+    // The outer rings of the `road` areas, which exist from z13.
+    if (transportationOutline.minzoom !== 13 || transportationOutline.maxzoom !== 15) {
+      issues.push(
+        `Tileflow World V1 ${schema.layers.transportationOutline} must declare native z13-z15.`,
+      );
+    }
+    requireTilejsonField(
+      transportationOutline,
+      schema.layers.transportationOutline,
+      schema.fields.class,
+      ['String'],
+      issues,
+    );
+    requireTilejsonField(
+      transportationOutline,
+      schema.layers.transportationOutline,
+      schema.fields.subclass,
+      ['String'],
+      issues,
+    );
   }
   return issues;
 }

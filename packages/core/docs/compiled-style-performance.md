@@ -160,7 +160,9 @@ texture's marks remain approximately constant in screen pixels across classes, r
 
 `classes.pedestrian` styles line-like pedestrian ways. Polygon pedestrian plazas are a distinct
 geometry and use `areas.pedestrian`, including optional fill opacity, outline color, or sprite
-pattern. This prevents plazas from degrading into a thin polygon outline.
+pattern. This prevents plazas from degrading into a thin polygon outline. With a
+`transportationOutline` binding, as in Tileflow World, area outlines stroke only the outer boundary
+of each area, never its holes.
 
 Road treatments refine a class without creating another class or exposing source fields.
 `construction`, `expressway`, `indoor`, `official`, `ramp`, and `unpaved` live under `modifiers`;

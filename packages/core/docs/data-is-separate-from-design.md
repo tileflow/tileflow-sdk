@@ -180,8 +180,8 @@ layer is a protection tint, while urban parks and gardens come from
 `landcover.class=grass/subclass=park|garden`. The ambiguous legacy `park` class is therefore not
 a public land-cover target.
 
-Tileflow World V1 makes `bathymetry`, `globallandcover`, `circular_feature`, `sidewalk`, and
-`street_furniture` mandatory. Use `tileflowWorldV1Schema()` for that product instead of making raw
+Tileflow World V1 makes `bathymetry`, `globallandcover`, `circular_feature`, `sidewalk`,
+`street_furniture`, and `transportation_outline` mandatory. Use `tileflowWorldV1Schema()` for that product instead of making raw
 layer names part of a style. Publication tooling calls `validateTileflowWorldV1Tilejson(...)` and
 fails closed unless each layer occurs exactly once, declares its contracted native zooms, and
 advertises the typed fields consumed by the maps. This includes bathymetry z0–z9, global land cover
@@ -312,7 +312,10 @@ add `tileflow:sources` plus `tileflow:sourceRequirements` for independent produc
 Detailed city datasets can bind `sidewalk`, `streetFurniture`, and `circularFeature` source layers
 through `openMapTiles({layers, fields})`. When present, `roads.sidewalks` owns source-backed
 pedestrian polygons, `roads.crossings` owns oriented crossing icons, and `roads.roundabouts` owns
-metric circular road rings. These bindings are optional: a generic OpenMapTiles source remains
+metric circular road rings. A `transportationOutline` binding names lines that trace the outer
+boundary of each road area; when bound, `roads.areas` outlines stroke those lines instead of the
+area polygons, so the holes of a plaza (tree pits, planting beds) are not stroked. These bindings
+are optional: a generic OpenMapTiles source remains
 valid and the compiler omits unsupported detail instead of inventing geometry. Crossing icons are
 explicit because the data contract cannot assume a sprite name. They require positive physical
 `markings` evidence and reject `crossing=no`; both fields are semantic bindings, so custom schemas

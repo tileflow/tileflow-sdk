@@ -1,5 +1,7 @@
 import {
   createTileflowNativeSourceController,
+  nearestTileflowBlendTheme,
+  planTileflowThemeBlend,
   resolveTileflowNativeManifestUrl,
   type TileflowNativeManifestAcquire,
   type TileflowNativeManifestOperation,
@@ -9,6 +11,7 @@ import {
 import type {AppearanceSelection, AppearanceState} from './appearance';
 import {snapshotCameraProps} from './camera-input';
 import type {MapBaseProps, MapCameraProps, MapOptions, MapSource, MapSourceState} from './contract';
+import type {MapThemeBlend} from './contract';
 import {assertHostedNativeStyleDocument} from './hosted-manifest-identity';
 import {createHostedNativePreparationGuard} from './hosted-preparation';
 import type {NativeMapAdmission, NativeMapAdmissionInput} from './native-admission-owner';
@@ -20,11 +23,13 @@ import {
   createNativeRendererOwner,
   type NativeRendererEvent,
   type NativeRendererSurfaces,
+  type NativeRendererTarget,
 } from './native-renderer-owner';
 import {projectNativeResources} from './native-resource-projection';
 import {NativePreparationError, readNativeStyleDocument} from './native-style-document';
 import type {HostedNativeSessionBinding} from './session-controller';
 import {projectMapSourceState} from './source-state';
+import {snapshotThemeBlend, snapshotThemeTransition, themeBlendKey} from './theme-motion-input';
 
 type MountedMapProps = MapBaseProps & MapCameraProps;
 type ReadySource = Extract<TileflowNativeSourceState, {status: 'ready'}>;
@@ -63,13 +68,46 @@ export type MountedMapPorts = Readonly<{
     open(input: NativeMapAdmissionInput): Lease;
     retryRetirements(): Promise<void>;
   };
-  surfaces: NativeRendererSurfaces & {available?(): void};
+  /** `blending` is false when the native build cannot apply blend values; blends then show the nearest theme. */
+  surfaces: NativeRendererSurfaces & {available?(): void; blending?(): boolean};
   appearance(
     selection: AppearanceSelection,
     listener: (state: AppearanceState) => void,
   ): () => void;
   now(): Date;
 }>;
+
+/** The same ready source with another declared theme of its map. */
+function themeSource(source: ReadySource, name: string): ReadySource {
+  const theme = Object.hasOwn(source.map.themes, name) ? source.map.themes[name] : undefined;
+  if (!theme) throw new NativePreparationError();
+  return {...source, theme: {...theme, name}} as ReadySource;
+}
+function themeIdentity(source: ReadySource): string {
+  return JSON.stringify([source.theme.name, source.theme.styleUrl, source.theme.revision ?? null]);
+}
+/** A prepared style that the renderer already holds for a theme, if any. */
+function heldStyle(
+  targets: readonly (NativeRendererTarget | undefined)[],
+  source: ReadySource,
+): NativeRendererTarget['style'] | undefined {
+  const identity = themeIdentity(source);
+  for (const target of targets) {
+    if (!target) continue;
+    if (!target.blend && themeIdentity(target.source) === identity) return target.style;
+    const held = target.blend?.styles.get(identity);
+    if (held) return held;
+  }
+  return undefined;
+}
+
+function sameTheme(shown: ReadySource, source: ReadySource): boolean {
+  return (
+    shown.theme.name === source.theme.name &&
+    shown.theme.styleUrl === source.theme.styleUrl &&
+    shown.theme.revision === source.theme.revision
+  );
+}
 
 function cameraInput(props: MountedMapProps): MapCameraProps {
   const result: Record<string, unknown> = {};
@@ -134,6 +172,12 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
   let props: MountedMapProps | undefined;
   let camera: MapCameraProps = {};
   let mapOptions: MapOptions = Object.freeze({});
+  let transitionMs = 0;
+  // While a blend is shown, the source controller selects its nearest theme when its themes change.
+  let blendSelection: MapThemeBlend | undefined;
+  let blendTheme: string | undefined;
+  const blending = () => ports.surfaces.blending?.() !== false;
+  const selectionTheme = () => (blendSelection ? blendTheme : props?.theme);
   let sourceKey: string | undefined;
   let sourceObject: unknown;
   let selectedTheme: string | undefined;
@@ -355,6 +399,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
     const job: Job = {live: true, operations: new Set()};
     epoch.job = job;
     let styleReadFailed = false;
+    const blend = blending() ? blendSelection : undefined;
     const owns = () =>
       !disposed &&
       foreground &&
@@ -370,81 +415,132 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
         epoch.hosted.validate(source);
         const map = await context(epoch, source);
         if (!owns()) return;
-        const previous = epoch.renderer?.currentTarget;
-        if (
-          previous &&
-          previous.source.theme.name === source.theme.name &&
-          previous.source.theme.styleUrl === source.theme.styleUrl &&
-          previous.source.theme.revision === source.theme.revision
-        ) {
-          epoch.renderer!.reuseTarget(source);
-          return;
+        const renderer = epoch.renderer;
+        const shown = renderer?.activeTarget;
+        const held = [shown, renderer?.currentTarget];
+        type Policy = Awaited<ReturnType<typeof map.prepare>>;
+        const project = async (theme: ReadySource, policy: Policy) =>
+          (
+            await projectNativeResources({
+              styleUrl: theme.theme.styleUrl,
+              developmentOrigin: theme.source.developmentOrigin,
+              policy,
+              fontFaces: theme.theme.fontFaces?.map((face) => ({
+                family: face.family,
+                source: face.source,
+                ...(face.style === undefined ? {} : {style: face.style}),
+                ...(face.weight === undefined ? {} : {weight: face.weight}),
+              })),
+              current: owns,
+              accept(resources) {
+                const preceding = epoch.catalog;
+                const update = preceding
+                  .catch(() => undefined)
+                  .then(async () => {
+                    if (!owns()) throw new NativePreparationError();
+                    await map.extendResources(resources);
+                  });
+                epoch.catalog = update;
+                return update;
+              },
+              // Sprite bases are rewritten only after their four exact leaf URLs are acknowledged.
+              discriminate: (url) => discriminateNativeResourceForTest(url, map.context),
+              async read(url, maximumBytes, resource) {
+                try {
+                  const document = await readNativeStyleDocument(
+                    acquire(epoch, url, {maximumBytes}, resource ? map.scope : undefined, job),
+                    maximumBytes,
+                    owns,
+                  );
+                  if (url === theme.theme.styleUrl)
+                    assertHostedNativeStyleDocument(theme, document);
+                  return document;
+                } catch {
+                  // Only a root protected style can indicate obsolete discovery metadata.
+                  // Child resource failures and source/configuration failures never refresh authority.
+                  if (url === theme.theme.styleUrl && resource?.scope === 'style')
+                    styleReadFailed = true;
+                  throw new NativePreparationError();
+                }
+              },
+            })
+          ).style;
+        let target: NativeRendererTarget;
+        if (blend) {
+          const themes = blend.themes.map((name) => themeSource(source, name));
+          const key = JSON.stringify(themes.map(themeIdentity));
+          if (renderer && shown?.blend?.key === key) {
+            // The same blend is shown or loading: adopt the source and keep moving its position.
+            renderer.reuseTarget(source);
+            if (blendSelection) renderer.setBlendPosition(blendSelection.position);
+            return;
+          }
+          const policy = await map.prepare();
+          if (!owns()) return;
+          // Each theme extends the admission catalog in turn; styles already held are reused.
+          const styles: NativeRendererTarget['style'][] = [];
+          for (const theme of themes) {
+            styles.push(heldStyle(held, theme) ?? (await project(theme, policy)));
+            if (!owns()) return;
+          }
+          // MapLibre Native cannot keep an image's stretch metadata while replacing its pixels, and
+          // iOS cannot set every data-driven expression at run time: both switch with whole layers
+          // or names at the nearest theme instead.
+          type Styles = Parameters<typeof planTileflowThemeBlend>[0];
+          const plan = planTileflowThemeBlend(styles as unknown as Styles, {
+            featureSwitches: 'layers',
+            iconImages: 'switch',
+          });
+          const position =
+            blendSelection && themeBlendKey(blendSelection) === themeBlendKey(blend)
+              ? blendSelection.position
+              : blend.position;
+          target = {
+            source,
+            style: plan.styleAt(position) as unknown as NativeRendererTarget['style'],
+            blend: {
+              key,
+              plan,
+              position,
+              styles: new Map(themes.map((theme, index) => [themeIdentity(theme), styles[index]!])),
+            },
+          };
+        } else {
+          // The style shown or loading may differ from the last committed one, for example when
+          // a theme is selected again before the previous change finished.
+          if (renderer && shown && !shown.blend && sameTheme(shown.source, source)) {
+            renderer.reuseTarget(source);
+            return;
+          }
+          const style = heldStyle(held, source);
+          if (renderer && style) {
+            renderer.setTarget({source, style});
+            notify();
+            return;
+          }
+          const policy = await map.prepare();
+          if (!owns()) return;
+          target = {source, style: await project(source, policy)};
         }
-        const policy = await map.prepare();
-        if (!owns()) return;
-        const prepared = await projectNativeResources({
-          styleUrl: source.theme.styleUrl,
-          developmentOrigin: source.source.developmentOrigin,
-          policy,
-          fontFaces: source.theme.fontFaces?.map((face) => ({
-            family: face.family,
-            source: face.source,
-            ...(face.style === undefined ? {} : {style: face.style}),
-            ...(face.weight === undefined ? {} : {weight: face.weight}),
-          })),
-          current: owns,
-          accept(resources) {
-            const preceding = epoch.catalog;
-            const update = preceding
-              .catch(() => undefined)
-              .then(async () => {
-                if (!owns()) throw new NativePreparationError();
-                await map.extendResources(resources);
-              });
-            epoch.catalog = update;
-            return update;
-          },
-          // Sprite bases are rewritten only after their four exact leaf URLs are acknowledged.
-          discriminate: (url) => discriminateNativeResourceForTest(url, map.context),
-          async read(url, maximumBytes, resource) {
-            try {
-              const document = await readNativeStyleDocument(
-                acquire(epoch, url, {maximumBytes}, resource ? map.scope : undefined, job),
-                maximumBytes,
-                owns,
-              );
-              if (url === source.theme.styleUrl) assertHostedNativeStyleDocument(source, document);
-              return document;
-            } catch {
-              // Only the root protected style can indicate obsolete discovery metadata.
-              // Child resource failures and source/configuration failures never refresh authority.
-              if (url === source.theme.styleUrl && resource?.scope === 'style')
-                styleReadFailed = true;
-              throw new NativePreparationError();
-            }
-          },
-        });
         if (!owns()) return;
         ports.surfaces.available?.();
-        if (!epoch.renderer)
-          epoch.renderer = createNativeRendererOwner(
-            map.context,
-            {source, style: prepared.style},
-            camera,
-            {
-              surfaces: ports.surfaces,
-              emit(event) {
-                if (current === epoch && epoch.live && !disposed) emit(event);
-              },
-              changed() {
-                if (current === epoch && epoch.live) notify();
-              },
-              interactionsChanged() {
-                if (current === epoch && epoch.live && !disposed) notify();
-              },
+        if (!epoch.renderer) {
+          epoch.renderer = createNativeRendererOwner(map.context, target, camera, {
+            surfaces: ports.surfaces,
+            emit(event) {
+              if (current === epoch && epoch.live && !disposed) emit(event);
             },
-          );
-        else epoch.renderer.setTarget({source, style: prepared.style});
+            changed() {
+              if (current === epoch && epoch.live) notify();
+            },
+            interactionsChanged() {
+              if (current === epoch && epoch.live && !disposed) notify();
+            },
+          });
+          epoch.renderer.setTransition(transitionMs);
+        } else epoch.renderer.setTarget(target);
+        if (target.blend && blendSelection)
+          epoch.renderer.setBlendPosition(blendSelection.position);
         notify();
       })
       .catch(() => {
@@ -454,7 +550,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
           epoch.cache.clear();
           // Do not call select(): only an explicit selection replenishes the one-reload budget.
           if (!disposed && foreground && current === epoch && epoch.live && props) {
-            track(core.replace(props.source, {theme: props.theme, colorScheme}));
+            track(core.replace(props.source, {theme: selectionTheme(), colorScheme}));
           }
           return;
         }
@@ -492,7 +588,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
   function select() {
     if (disposed || !props || !current?.live) return;
     current.hosted.select();
-    track(core.replace(props.source, {theme: props.theme, colorScheme}));
+    track(core.replace(props.source, {theme: selectionTheme(), colorScheme}));
   }
   function appearance(theme: string | undefined) {
     if ((theme === 'system') === Boolean(appearanceRelease)) return;
@@ -558,17 +654,33 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
       props = source ? {...next, source} : next;
       let options: MapOptions;
       let input: MapCameraProps;
+      let transition: number;
+      let blend: MapThemeBlend | undefined;
       try {
         options = snapshotNativeMapOptions(next.mapOptions);
         input = cameraInput(next);
+        transition = snapshotThemeTransition(next.themeTransition);
+        blend = snapshotThemeBlend(next.themeBlend);
       } catch {
         rendererError();
         return;
       }
+      transitionMs = transition;
+      current?.renderer?.setTransition(transition);
+      // A blend selects its nearest theme when its themes change, or, without native blending,
+      // whenever the nearest theme changes. Other position changes move the shown blend.
+      const previousBlend = blendSelection;
+      const nearest = blend ? nearestTileflowBlendTheme(blend) : undefined;
+      const changedBlend =
+        Boolean(blend) !== Boolean(previousBlend) ||
+        (blend && previousBlend && themeBlendKey(blend) !== themeBlendKey(previousBlend)) ||
+        (blend && !blending() && nearest !== blendTheme);
+      blendSelection = blend;
+      if (changedBlend || !blend) blendTheme = nearest;
       const key = source && JSON.stringify(source);
       const changedSource =
         !initialized || key !== sourceKey || (key === undefined && sourceObject !== next.source);
-      const changedTheme = !initialized || next.theme !== selectedTheme;
+      const changedTheme = !initialized || (!blend && next.theme !== selectedTheme);
       const changedOptions = JSON.stringify(options) !== JSON.stringify(mapOptions);
       camera = input;
       mapOptions = options;
@@ -587,7 +699,8 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
       } catch {
         colorScheme = undefined;
       }
-      if (changedSource || changedTheme) select();
+      if (changedSource || changedTheme || changedBlend) select();
+      else if (blend && blending()) current?.renderer?.setBlendPosition(blend.position);
       if (changedOptions || changedSource) notify();
       current?.renderer?.afterCommit(camera);
     },

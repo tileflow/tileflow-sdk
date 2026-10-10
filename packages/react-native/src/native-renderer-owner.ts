@@ -1,4 +1,4 @@
-import type {TileflowNativeSourceState} from '@tileflow/core/native';
+import type {TileflowNativeSourceState, TileflowThemeBlendPlan} from '@tileflow/core/native';
 import {type CameraToken, createMapCameraController} from './camera-controller';
 import {snapshotCameraProps} from './camera-input';
 import type {
@@ -13,12 +13,26 @@ import type {
 import {createNativeCameraPort} from './native-camera-port';
 import {createNativeInteractionStyleOwner} from './native-interaction-style';
 import {createNativeReadiness} from './native-readiness';
-import {freezeNativePreparedJson, NativePreparationError} from './native-style-document';
+import {
+  freezeNativePreparedJson,
+  NativePreparationError,
+  nativePreparationLimits,
+} from './native-style-document';
 import type {NativeSurface, NativeSurfaceEvent} from './native-surface-contract';
+import {createNativeThemeBlender} from './native-theme-blend';
 
+/** A style prepared from a blend plan at `position`; later positions change values in place. */
+export type NativeRendererBlend = Readonly<{
+  key: string;
+  plan: TileflowThemeBlendPlan;
+  position: number;
+  /** Each blended theme's prepared style, by theme identity, for later reuse. */
+  styles: ReadonlyMap<string, Readonly<Record<string, unknown>>>;
+}>;
 export type NativeRendererTarget = Readonly<{
   source: Extract<TileflowNativeSourceState, {status: 'ready'}>;
   style: Readonly<Record<string, unknown>>;
+  blend?: NativeRendererBlend;
 }>;
 export type NativeRendererEvent =
   | MapErrorEvent
@@ -81,6 +95,15 @@ export function createNativeRendererOwner(
   let gesture: {native: number; token: CameraToken} | undefined;
   let settlement: CameraToken | undefined;
   let cameraProps = initialCamera;
+  // Theme motion: a cover hides a style replacement until the new style is drawn, then fades.
+  let transitionMs = 0;
+  let drawn = false;
+  let covering = false;
+  let coverMs = 0;
+  let revealing: {version: number; work: Promise<void>} | undefined;
+  // A blend target's style follows later positions through the native surface.
+  let blender: ReturnType<typeof createNativeThemeBlender> | undefined;
+  let blendPosition: number | undefined;
   const initial = snapshotCameraProps(initialCamera, {manifestView: initialTarget.source.map.view});
   const initialView = initial.view;
   let snapshot = Object.freeze({
@@ -118,6 +141,46 @@ export function createNativeRendererOwner(
   };
   const readiness = createNativeReadiness((status) => {
     if (disposed) return;
+    // A covered map is ready for the public only once the cover has faded.
+    if (status === 'ready' && covering) reveal();
+    else publishReadiness(status);
+  });
+  /**
+   * Fades the cover out once the map has drawn a complete frame of the current style. It starts
+   * when the style is accepted, so camera movement does not hold the cover back.
+   */
+  function reveal() {
+    const version = transaction;
+    const nativeSurface = surface;
+    if (revealing?.version === version) return;
+    if (!nativeSurface?.reveal) {
+      covering = false;
+      if (readiness.ready) publishReadiness('ready');
+      return;
+    }
+    const work = nativeSurface
+      .reveal(coverMs)
+      .catch(() => nativeSurface.discardCover?.())
+      .catch(() => undefined);
+    revealing = {version, work};
+    track(
+      work.then(() => {
+        if (revealing?.work === work) revealing = undefined;
+        if (disposed || version !== transaction) return;
+        covering = false;
+        if (readiness.ready) publishReadiness('ready');
+      }),
+    );
+  }
+  function discardCover() {
+    if (!covering) return;
+    covering = false;
+    revealing = undefined;
+    const nativeSurface = surface;
+    if (nativeSurface?.discardCover) track(nativeSurface.discardCover().catch(() => undefined));
+  }
+  function publishReadiness(status: 'loading' | 'ready' | 'error') {
+    if (disposed) return;
     const version = transaction;
     if (status === 'ready' && pendingSuccess && !rollback) {
       committed = active;
@@ -133,11 +196,13 @@ export function createNativeRendererOwner(
         });
       }
     } else emit({type: 'readiness-change', generation: eventGeneration, status});
-  });
+  }
   const cameraPort = createNativeCameraPort({
     applyCamera(command, view) {
-      if (!surface || disposed || terminal || !loaded || !foreground)
+      if (!surface || disposed || terminal || !foreground)
         return Promise.reject(new NativePreparationError());
+      // While a style change loads, its activation restores the latest controlled view.
+      if (!loaded) return Promise.resolve(Object.freeze({command, view}));
       return surface.applyCamera(command, view);
     },
     cancelCamera(command) {
@@ -199,6 +264,9 @@ export function createNativeRendererOwner(
     if (disposed || terminal || !foreground || !styleAccepted || loaded || version !== transaction)
       return;
     loaded = true;
+    drawn = true;
+    if (covering) reveal();
+    startBlender(version);
     publishInteractionStyle(version);
     if (disposed || version !== transaction || !foreground) return;
     emit({type: 'load', generation: eventGeneration, selection: selection(active)});
@@ -222,8 +290,46 @@ export function createNativeRendererOwner(
       fail();
     }
   }
+  function stopBlender() {
+    blender?.dispose();
+    blender = undefined;
+  }
+  function startBlender(version: number) {
+    const blend = active.blend;
+    const nativeSurface = surface;
+    if (!blend || blender || !nativeSurface?.applyThemeValues || version !== transaction) return;
+    const style = token;
+    const owned = () =>
+      !disposed && !terminal && version === transaction && surface === nativeSurface;
+    blender = createNativeThemeBlender(
+      blend.plan,
+      {
+        apply(values) {
+          if (!owned()) return Promise.resolve();
+          return nativeSurface.applyThemeValues!(style, values);
+        },
+        cover(duration) {
+          if (!owned() || !foreground || !nativeSurface.cover) return Promise.resolve(false);
+          return nativeSurface.cover(duration);
+        },
+        reveal(duration) {
+          if (!nativeSurface.reveal) return Promise.resolve();
+          return nativeSurface.reveal(duration);
+        },
+      },
+      {
+        baked: blend.position,
+        failed() {
+          if (owned()) fail();
+        },
+      },
+    );
+    if (blendPosition !== undefined) blender.set(blendPosition);
+  }
   function apply(target: NativeRendererTarget, restoring: boolean) {
     if (disposed) return;
+    stopBlender();
+    blendPosition = target.blend?.position;
     const version = ++transaction;
     if (styleSequence >= Number.MAX_SAFE_INTEGER) {
       terminal = true;
@@ -248,9 +354,20 @@ export function createNativeRendererOwner(
     readiness.begin(expected);
     if (!surface) return;
     const nativeSurface = surface;
+    const duration = restoring || !drawn || !foreground ? 0 : transitionMs;
     const work = Promise.resolve()
       .then(async () => {
         if (disposed || version !== transaction) return;
+        // The snapshot must show the current style, so it is taken before the surface expects
+        // the next one. A cover that a newer change supersedes stays until that change reveals.
+        if (duration > 0 && nativeSurface.cover) {
+          const covered = await nativeSurface.cover(duration).catch(() => false);
+          if (covered && !disposed) {
+            covering = true;
+            coverMs = duration;
+          }
+          if (disposed || version !== transaction || surface !== nativeSurface) return;
+        }
         await nativeSurface.expectStyle(expected);
         if (disposed || version !== transaction || surface !== nativeSurface) return;
         const layers = target.style.layers;
@@ -266,20 +383,23 @@ export function createNativeRendererOwner(
           )
         )
           throw new NativePreparationError();
-        const style = freezeNativePreparedJson({
-          ...target.style,
-          layers: [
-            ...layers,
-            {
-              id: `__tileflow_native_style_${expected}`,
-              type: 'background',
-              paint: {
-                'background-color': 'rgba(0,0,0,0)',
-                'background-opacity': 1,
+        const style = freezeNativePreparedJson(
+          {
+            ...target.style,
+            layers: [
+              ...layers,
+              {
+                id: `__tileflow_native_style_${expected}`,
+                type: 'background',
+                paint: {
+                  'background-color': 'rgba(0,0,0,0)',
+                  'background-opacity': 1,
+                },
               },
-            },
-          ],
-        });
+            ],
+          },
+          target.blend ? nativePreparationLimits.blendNodes : nativePreparationLimits.nodes,
+        );
         snapshot = Object.freeze({key, style, initialView, revision: ++revision});
         if (!restoring)
           emit({
@@ -303,6 +423,8 @@ export function createNativeRendererOwner(
     const previous = committed;
     const version = transaction;
     interactionStyles.retire();
+    discardCover();
+    stopBlender();
     if (disposed || version !== transaction) return;
     emit({type: 'renderer-error', generation});
     if (disposed || version !== transaction) return;
@@ -390,6 +512,21 @@ export function createNativeRendererOwner(
     get currentTarget() {
       return committed;
     },
+    /** The latest target applied, which may still be loading. */
+    get activeTarget(): NativeRendererTarget | undefined {
+      return terminal ? undefined : active;
+    },
+    /** Moves a blend target to another position; ignored while no blend is shown. */
+    setBlendPosition(position: number): void {
+      if (disposed || !Number.isFinite(position)) return;
+      blendPosition = position;
+      if (active.blend) blender?.set(position);
+    },
+    /** Cross-fade length for later style replacements, in milliseconds; 0 changes at once. */
+    setTransition(duration: number): void {
+      transitionMs =
+        Number.isSafeInteger(duration) && duration > 0 && duration <= 5000 ? duration : 0;
+    },
     bindRoot(rootTag: number): void {
       if (
         disposed ||
@@ -459,7 +596,17 @@ export function createNativeRendererOwner(
       apply(target, false);
     },
     reuseTarget(source: NativeRendererTarget['source']): void {
-      if (disposed || !committed || terminal) return;
+      if (disposed || terminal) return;
+      if (active !== committed || !committed) {
+        // The same style is still loading: keep that change and adopt the new source generation.
+        active = {...active, source};
+        eventGeneration = source.generation;
+        preloading = false;
+        interruptCamera();
+        invalidate();
+        publishInteractionStyle(transaction);
+        return;
+      }
       active = {...committed, source};
       committed = active;
       const target = active;
@@ -606,6 +753,7 @@ export function createNativeRendererOwner(
     async whenIdle(): Promise<void> {
       for (;;) {
         await cameraPort.whenIdle();
+        await blender?.whenIdle();
         if (!tasks.size) return;
         await Promise.allSettled([...tasks]);
       }
@@ -615,6 +763,7 @@ export function createNativeRendererOwner(
       disposed = true;
       ++transaction;
       ++barrierEpoch;
+      stopBlender();
       interactionStyles.retire();
       readiness.dispose();
       camera.dispose();

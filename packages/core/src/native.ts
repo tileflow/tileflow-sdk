@@ -18,6 +18,25 @@ export type {
   TileflowNativeInitialViewOptions,
 } from './native-initial-view';
 export {TileflowNativeSourceError} from './native-source-types';
+export {
+  fillTileflowThemeBlendTemplate,
+  planTileflowThemeBlend,
+  TileflowThemeBlendError,
+} from './theme-blend';
+export type {
+  TileflowThemeBlendClock,
+  TileflowThemeBlendImage,
+  TileflowThemeBlendOptions,
+  TileflowThemeBlendPaint,
+  TileflowThemeBlendPlan,
+  TileflowThemeBlendSwitch,
+} from './theme-blend';
+export {
+  nearestTileflowBlendTheme,
+  tileflowThemeBlendLimits,
+  validateTileflowThemeBlendSelection,
+} from './runtime';
+export type {TileflowThemeBlendSelection} from './runtime';
 export type {
   TileflowNativeAbortSignal,
   TileflowNativeManifestAcquire,

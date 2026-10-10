@@ -8,8 +8,9 @@ blend when the application controls the appearance continuously, such as a slide
 passes from night to day.
 
 Both work on the one MapLibre map the application already has. They create no second map, add no
-map views, and request the same tiles as a map that does not change theme. They need a browser
-document and MapLibre GL JS; the React Native package does not offer them.
+map views, and request the same tiles as a map that does not change theme. The React, Vue, and
+Svelte maps offer them with MapLibre GL JS, and the React Native map with MapLibre Native on iOS
+and Android; see [React Native](#react-native) for what differs there.
 
 ## Cross-fade a theme change
 
@@ -117,6 +118,48 @@ For a detailed city map this takes a few milliseconds on a mid-range phone. Posi
 four-hundredth of a theme are not applied, so a slowly moving position leaves the map at rest
 between changes.
 
+## React Native
+
+The `Map` of `@tileflow/react-native` accepts the same `themeTransition` and `themeBlend` props:
+
+```tsx
+import {Map} from '@tileflow/react-native';
+
+export function DayMap({position}: {position: number}) {
+  return (
+    <Map
+      source={{map: 'city', manifestUrl: 'https://maps.example.com/tileflow/manifest.json'}}
+      themeTransition={{duration: 450}}
+      themeBlend={{position, themes: ['night', 'dusk', 'day']}}
+      style={{flex: 1}}
+    />
+  );
+}
+```
+
+A transition covers the drawn map with a snapshot of its current frame, below markers and map
+controls. The snapshot follows the camera and fades out once the new style is drawn.
+`onReadinessChange` and `onThemeChange` report `ready` after the fade. The device's reduce-motion
+setting (iOS) or removed animations (Android) change at once.
+
+A blend loads every blended theme's style once and replaces the map's style once. Position changes
+then apply in batches on the main thread, at most one at a time, and later positions replace any
+that are still waiting. MapLibre Native's style transition smooths values between batches.
+
+What follows the position differs from the browser in a few ways:
+
+- Ground colours and numbers, pattern artwork, and light follow the position. Native maps have no
+  sky.
+- Labels, icons, and switched values change at the nearest theme under a short cross-fade of the
+  whole map. Icon artwork changes by image name instead of mixing pixels, so stretchable images
+  keep their stretch and content areas.
+- A value that depends on feature data and cannot be split by class, such as a road casing chosen
+  by access and zoom together, is drawn once per theme. Only the nearest theme's copy is shown.
+  The map has a few more layers while the blend is shown.
+
+If the application's native build predates these props, for example after an over-the-air
+JavaScript update, themes change at once and a blend shows its nearest theme.
+
 ## Use the core controller
 
 Framework adapters use `createTileflowThemeController` from `@tileflow/core/browser`. A direct
@@ -124,12 +167,12 @@ MapLibre integration can use it too. Resolve runtime styles from the published m
 `resolveTileflowRuntimeStyle` and `resolveTileflowRuntimeThemeBlend` from `@tileflow/core/runtime`:
 
 ```ts
+import type {Map as MapLibreMap} from 'maplibre-gl';
 import {createTileflowThemeController} from '@tileflow/core/browser';
 import {
   resolveTileflowRuntimeStyle,
   resolveTileflowRuntimeThemeBlend,
 } from '@tileflow/core/runtime';
-import type {Map as MapLibreMap} from 'maplibre-gl';
 import type {TileflowRuntimeManifestMap} from '@tileflow/core/runtime';
 
 export async function moveThroughTheDay(map: MapLibreMap, manifestMap: TileflowRuntimeManifestMap) {

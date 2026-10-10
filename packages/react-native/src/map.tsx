@@ -78,6 +78,12 @@ function NativeScene<TAnnotation extends TileflowAnnotation>({
       lifecycle.unbindInteractionHost(host);
     };
   }, [host, lifecycle]);
+  // Serialized once per style: MapLibre React Native would otherwise serialize an object on every
+  // render, and a blend re-renders the Map whenever its position moves.
+  const mapStyle = useMemo<NativeMapProps['mapStyle']>(
+    () => JSON.stringify(scene.style),
+    [scene.style],
+  );
   const [initialViewState] = useState<NonNullable<NativeCameraProps['initialViewState']>>(() => {
     const center: [number, number] = [scene.initialView.center[0], scene.initialView.center[1]];
     Object.freeze(center);
@@ -127,7 +133,7 @@ function NativeScene<TAnnotation extends TileflowAnnotation>({
         {...mapOptions}
         ref={nativeMap}
         style={fill}
-        mapStyle={scene.style as NativeMapProps['mapStyle']}
+        mapStyle={mapStyle}
         onPress={(event) => {
           if (!host.current()) return;
           try {

@@ -61,8 +61,7 @@ globalThis.__tileflowRegisterPmtilesProtocol = registerTileflowPmtilesProtocol;
 globalThis.__tileflowAttachAtmosphere = attachTileflowAtmosphere;`;
 
 type PagePhaseResult =
-  | {status: 'ok'}
-  | {message?: string; reason: 'error' | 'timeout'; status: 'failed'};
+  {status: 'ok'} | {message?: string; reason: 'error' | 'timeout'; status: 'failed'};
 
 export async function captureStandaloneTileflowScene(
   input: StandaloneTileflowCaptureInput,

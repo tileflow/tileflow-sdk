@@ -251,8 +251,7 @@ export function StaticMap({
 }
 
 type PreparedSceneRequest =
-  | {error: Error; ok: false}
-  | {ok: true; request: PreparedStaticMapRequest};
+  {error: Error; ok: false} | {ok: true; request: PreparedStaticMapRequest};
 
 function prepareSceneRequest(scene: StaticSceneInput): PreparedSceneRequest {
   try {

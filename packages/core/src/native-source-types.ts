@@ -112,14 +112,7 @@ const messages = {
 
 export type TileflowNativeSourceErrorCode = keyof typeof messages;
 export type TileflowNativeSourceErrorField =
-  | 'source'
-  | 'signal'
-  | 'manifestUrl'
-  | 'response'
-  | 'body'
-  | 'map'
-  | 'theme'
-  | 'view';
+  'source' | 'signal' | 'manifestUrl' | 'response' | 'body' | 'map' | 'theme' | 'view';
 
 /** Contains no body, URL, remote cause, parser details, or AbortSignal.reason. */
 export class TileflowNativeSourceError extends Error {

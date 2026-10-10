@@ -173,10 +173,15 @@ export type TileflowThemeBlendState = Readonly<{
 }>;
 
 export type TileflowStyleSwitchMap = TileflowThemeMotionMap & {
+  getGlobalState?: unknown;
   off(event: string, listener: (event?: unknown) => void): unknown;
   on(event: string, listener: (event?: unknown) => void): unknown;
+  setGlobalStateProperty?: unknown;
   setStyle: unknown;
 };
+
+/** A value an application sets for the whole style, which themes read with `expr.globalState`. */
+export type TileflowStyleStateValue = boolean | number | string | null;
 
 export type TileflowThemeController = {
   dispose(): void;
@@ -186,6 +191,8 @@ export type TileflowThemeController = {
   getCurrent(): TileflowRuntimeStyle;
   /** The emphasis requested last, or undefined when the map is shown as designed. */
   getEmphasis(): TileflowEmphasis | undefined;
+  /** The value a style state was set to last, or undefined when it has not been set. */
+  getState(name: string): TileflowStyleStateValue | undefined;
   /**
    * Shows a blend of themes. The first request for a set of themes loads their styles and
    * prepares one style that holds all of them; later requests for the same themes only move the
@@ -203,6 +210,19 @@ export type TileflowThemeController = {
    */
   setEmphasis(
     emphasis: TileflowEmphasis | undefined,
+    options?: TileflowThemeChangeOptions,
+  ): Promise<TileflowThemeTransitionResult>;
+  /**
+   * Sets a style-wide state that the map's themes read with `expr.globalState(name)`. A number
+   * eases from the value it shows to the new one over the transition, so a colour or size that a
+   * theme interpolates on it moves smoothly; other values, and a number set for the first time,
+   * change at once. A value that also reads feature data or feature state is laid out again by
+   * MapLibre at each change, so it follows late and costs more. States stay through theme changes
+   * and blends. Needs a MapLibre map with global state (GL JS 5.6 or later).
+   */
+  setState(
+    name: string,
+    value: TileflowStyleStateValue,
     options?: TileflowThemeChangeOptions,
   ): Promise<TileflowThemeTransitionResult>;
   setTheme(
@@ -229,6 +249,15 @@ type PendingBlend = {
   promise: Promise<TileflowThemeTransitionResult>;
 };
 type Shown = {blend?: ActiveBlend; style: MapLibreStyle | string};
+// A style state: the value it was set to, the value on the map (between the two while a number
+// eases), and the motion moving it.
+type StyleState = {
+  run: number;
+  settle?: (result: TileflowThemeTransitionResult) => void;
+  shown: TileflowStyleStateValue | undefined;
+  stop?: () => void;
+  value: TileflowStyleStateValue;
+};
 type Target =
   | {kind: 'theme'; style: TileflowRuntimeStyle; transition: number}
   | {
@@ -239,6 +268,19 @@ type Target =
       themes: readonly TileflowRuntimeStyle[];
       transition: number;
     };
+
+function validateStyleState(name: unknown, value: unknown): TypeError | undefined {
+  if (typeof name !== 'string' || !name.trim())
+    return new TypeError('Style state names must be non-empty strings.');
+  if (
+    value === null ||
+    typeof value === 'boolean' ||
+    typeof value === 'string' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  )
+    return undefined;
+  return new TypeError('Style state values must be booleans, finite numbers, strings, or null.');
+}
 
 /**
  * Transactionally changes a MapLibre style while preserving the map instance and camera.
@@ -290,6 +332,7 @@ export function createTileflowThemeController(options: {
   let emphasisRun = 0;
   let emphasisFrame: (() => void) | undefined;
   let emphasisSettle: ((result: TileflowThemeTransitionResult) => void) | undefined;
+  const states = new Map<string, StyleState>();
 
   return {
     dispose() {
@@ -297,6 +340,8 @@ export function createTileflowThemeController(options: {
       requestId += 1;
       activeBlend?.blender.dispose();
       stopEmphasisMotion({status: 'superseded', theme: current.theme});
+      for (const state of states.values())
+        stopStateMotion(state, {status: 'superseded', theme: current.theme});
     },
     getBlend() {
       if (!activeBlend) return undefined;
@@ -310,6 +355,25 @@ export function createTileflowThemeController(options: {
     },
     getEmphasis() {
       return emphasis;
+    },
+    getState(name) {
+      return typeof name === 'string' ? states.get(name.trim())?.value : undefined;
+    },
+    setState(name, value, changeOptions) {
+      const invalid = validateStyleState(name, value);
+      if (invalid) return Promise.resolve({error: invalid, status: 'failed', theme: current.theme});
+      if (disposed) return Promise.resolve(disposedResult(current.theme));
+      if (typeof options.map.setGlobalStateProperty !== 'function') {
+        return Promise.resolve({
+          error: new TypeError('Style states need a MapLibre map with global state (GL JS 5.6+).'),
+          status: 'failed',
+          theme: current.theme,
+        });
+      }
+      const transition = transitionOf(changeOptions);
+      if (transition instanceof TypeError)
+        return Promise.resolve({error: transition, status: 'failed', theme: current.theme});
+      return changeState(name.trim(), value, reducedMotion() ? 0 : transition);
     },
     setEmphasis(request, changeOptions) {
       if (request !== undefined) {
@@ -504,6 +568,7 @@ export function createTileflowThemeController(options: {
       // A new style shows the design; an emphasis returns at once, under the same cross-fade.
       shownLayers = typeof styleInput === 'string' ? undefined : styleInput.layers;
       resetEmphasis();
+      resetStates();
       await cover?.finish({stop: () => disposed || runId !== requestId});
       options.onTransition?.({
         currentTheme: current.theme,
@@ -565,6 +630,93 @@ export function createTileflowThemeController(options: {
     }
     current = previous.current;
     resetEmphasis();
+    resetStates();
+  }
+
+  // --- Style states ---
+
+  /** Writes a state to the map; a style still loading takes it once it is applied. */
+  function writeState(name: string, value: TileflowStyleStateValue): void {
+    const set = options.map.setGlobalStateProperty as
+      ((name: string, value: unknown) => unknown) | undefined;
+    try {
+      set?.call(options.map, name, value);
+    } catch {
+      // MapLibre refuses while a style loads; resetStates() writes the state after it.
+    }
+  }
+
+  /** After a new style: every state is written again, at the value it shows. */
+  function resetStates(): void {
+    for (const [name, state] of states) {
+      if (state.shown !== undefined) writeState(name, state.shown);
+    }
+  }
+
+  function stopStateMotion(state: StyleState, result?: TileflowThemeTransitionResult): void {
+    state.stop?.();
+    state.stop = undefined;
+    const settle = state.settle;
+    state.settle = undefined;
+    if (result) settle?.(result);
+  }
+
+  function changeState(
+    name: string,
+    value: TileflowStyleStateValue,
+    duration: number,
+  ): Promise<TileflowThemeTransitionResult> {
+    const state: StyleState = states.get(name) ?? {run: 0, shown: undefined, value};
+    states.set(name, state);
+    stopStateMotion(state, {status: 'superseded', theme: current.theme});
+    const run = ++state.run;
+    const from = state.shown;
+    state.value = value;
+    const view = tileflowThemeMotionView(options.map);
+    if (
+      duration <= 0 ||
+      !view ||
+      typeof from !== 'number' ||
+      typeof value !== 'number' ||
+      from === value
+    ) {
+      state.shown = value;
+      writeState(name, value);
+      return Promise.resolve({status: 'applied', theme: current.theme});
+    }
+
+    return new Promise((resolve) => {
+      state.settle = resolve;
+      const now = () => view.performance?.now?.() ?? Date.now();
+      const start = now();
+      // A hundredth of the change is below what the eye sees; skipping it saves writes.
+      const least = Math.abs(value - from) / 100;
+      let cancelled = false;
+      let frame: number | undefined;
+      const step = () => {
+        frame = undefined;
+        if (cancelled || disposed || run !== state.run) return;
+        const t = Math.min(1, (now() - start) / duration);
+        const eased = t * t * (3 - 2 * t);
+        const shown = t >= 1 ? value : from + (value - from) * eased;
+        if (t >= 1 || Math.abs(shown - (state.shown as number)) >= least) {
+          state.shown = shown;
+          writeState(name, shown);
+        }
+        if (t >= 1) {
+          state.stop = undefined;
+          state.settle = undefined;
+          resolve({status: 'applied', theme: current.theme});
+          return;
+        }
+        frame = view.requestAnimationFrame(step);
+      };
+      state.stop = () => {
+        cancelled = true;
+        if (frame !== undefined) view.cancelAnimationFrame(frame);
+      };
+      frame = view.requestAnimationFrame(step);
+    });
   }
 
   // --- Emphasis ---
@@ -662,8 +814,7 @@ export function createTileflowThemeController(options: {
       );
     }
     const setPaint = options.map.setPaintProperty as
-      | ((layer: string, name: string, value: unknown, options?: object) => unknown)
-      | undefined;
+      ((layer: string, name: string, value: unknown, options?: object) => unknown) | undefined;
     const getLayer = options.map.getLayer as ((layer: string) => unknown) | undefined;
     if (typeof setPaint !== 'function') return;
     for (const [key, target] of emphasisTargets) {
@@ -995,11 +1146,7 @@ function isRecordWithError(value: unknown): value is {error: unknown} {
 }
 
 export type TileflowMapLifecycleEvent =
-  | 'dataloading'
-  | 'error'
-  | 'idle'
-  | 'load'
-  | 'styledataloading';
+  'dataloading' | 'error' | 'idle' | 'load' | 'styledataloading';
 
 export type TileflowFrameScheduler<TFrame> = {
   cancelFrame: (frame: TFrame) => void;

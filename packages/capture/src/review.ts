@@ -20,11 +20,7 @@ import {
 export const tileflowVisualReviewSchemaVersion = 1 as const;
 
 export type TileflowVisualReviewStatus =
-  | 'comparable'
-  | 'frame-mismatch'
-  | 'dimensions-mismatch'
-  | 'runtime-mismatch'
-  | 'data-mismatch';
+  'comparable' | 'frame-mismatch' | 'dimensions-mismatch' | 'runtime-mismatch' | 'data-mismatch';
 
 export type TileflowVisualReviewDefinition = NormalizedTileflowCaptureScene & {
   theme: string;

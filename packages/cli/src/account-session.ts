@@ -168,8 +168,7 @@ export function resolveAccountSession(
   apiUrl: string,
   now = new Date(),
 ):
-  | {kind: 'expired' | 'missing'}
-  | {kind: 'selected'; origin: string; session: CliAccountSessionV2} {
+  {kind: 'expired' | 'missing'} | {kind: 'selected'; origin: string; session: CliAccountSessionV2} {
   const origin = normalizeApiOrigin(apiUrl);
   const session = config.sessions[origin];
   if (!session) return {kind: 'missing'};

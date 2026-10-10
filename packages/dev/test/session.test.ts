@@ -1599,8 +1599,7 @@ function runPreviewScript(
   let reloadCount = 0;
   let styleReady = false;
   let activeCamera:
-    | {bearing: number; center: [number, number]; pitch: number; zoom: number}
-    | undefined;
+    {bearing: number; center: [number, number]; pitch: number; zoom: number} | undefined;
   const controlButtons: FakeElement[] = [];
   const eventSourceListeners = new Map<string, Set<(event: {data: string}) => void>>();
   let currentUrl = href;

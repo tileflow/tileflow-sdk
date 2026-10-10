@@ -37,9 +37,7 @@ export type TileflowSemanticChange = Readonly<{
 }>;
 
 export type TileflowSemanticDifference =
-  | TileflowSemanticAdd
-  | TileflowSemanticChange
-  | TileflowSemanticRemove;
+  TileflowSemanticAdd | TileflowSemanticChange | TileflowSemanticRemove;
 
 export type TileflowSemanticDiff = Readonly<{
   changes: readonly TileflowSemanticDifference[];

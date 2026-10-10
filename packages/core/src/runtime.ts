@@ -167,9 +167,7 @@ export type TileflowRuntimeViewOptions = TileflowViewConfig & {
 };
 
 export type TileflowRuntimeCenterLike =
-  | readonly [number, number]
-  | {lat: number; lng: number}
-  | {lat: number; lon: number};
+  readonly [number, number] | {lat: number; lng: number} | {lat: number; lon: number};
 
 const maxStaticImageDimension = 1280;
 const maxStaticImagePixels = 1280 * 1280;
@@ -263,13 +261,12 @@ export function resolveTileflowRuntimeThemeBlend(options: {
       'A Tileflow theme blend requires two to eight concrete themes and a position.',
     );
   }
-  return options.blend.themes.map(
-    (theme) =>
-      resolveTileflowRuntimeStyle({
-        manifestMap: options.manifestMap,
-        source: options.source,
-        theme,
-      })!,
+  return options.blend.themes.map((theme) =>
+    resolveTileflowRuntimeStyle({
+      manifestMap: options.manifestMap,
+      source: options.source,
+      theme,
+    })!,
   );
 }
 

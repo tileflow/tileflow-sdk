@@ -10,15 +10,11 @@ import type {
 
 /** A color literal, semantic color token, color operation, expression, or zoom ramp. */
 export type TileflowColorStyleValue =
-  | TileflowExpression<string>
-  | TileflowThemeColorValue
-  | TileflowZoomValue<TileflowThemeColorValue>;
+  TileflowExpression<string> | TileflowThemeColorValue | TileflowZoomValue<TileflowThemeColorValue>;
 
 /** An image name, semantic image token, expression, or zoom ramp. */
 export type TileflowImageStyleValue =
-  | TileflowExpression<string>
-  | TileflowThemeImageValue
-  | TileflowZoomValue<TileflowThemeImageValue>;
+  TileflowExpression<string> | TileflowThemeImageValue | TileflowZoomValue<TileflowThemeImageValue>;
 
 /** A number, semantic number token, expression, or zoom ramp. */
 export type TileflowNumberStyleValue =
@@ -28,8 +24,7 @@ export type TileflowNumberStyleValue =
 
 /** A visual numeric array whose components may be themed, or whose full shape is fixed. */
 export type TileflowThemeNumberArrayValue =
-  | readonly TileflowThemeNumberValue[]
-  | TileflowFixedValue<readonly number[]>;
+  readonly TileflowThemeNumberValue[] | TileflowFixedValue<readonly number[]>;
 
 /** A visual numeric array, expression, or zoom ramp with explicit theme intent. */
 export type TileflowNumberArrayStyleValue =

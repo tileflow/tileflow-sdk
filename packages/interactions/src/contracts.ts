@@ -21,23 +21,7 @@ export const tileflowPoiCategories = [
 export type TileflowPoiCategory = (typeof tileflowPoiCategories)[number];
 export type TileflowPoiFilterRank = 0 | 1 | 2 | 3 | 4 | 5;
 export type TileflowPoiSizeRank =
-  | 0
-  | 1
-  | 2
-  | 3
-  | 4
-  | 5
-  | 6
-  | 7
-  | 8
-  | 9
-  | 10
-  | 11
-  | 12
-  | 13
-  | 14
-  | 15
-  | 16;
+  0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16;
 export type TileflowPoiProperties = Readonly<Record<string, TileflowInteractionJsonValue>> &
   Readonly<{
     category?: TileflowPoiCategory;
@@ -67,15 +51,10 @@ export const tileflowInteractionLimits = {
 } as const;
 
 export type TileflowJsonDocumentAuditFailureReason =
-  | 'bytes'
-  | 'depth'
-  | 'invalid'
-  | 'nodes'
-  | 'properties';
+  'bytes' | 'depth' | 'invalid' | 'nodes' | 'properties';
 
 export type TileflowJsonDocumentAuditResult =
-  | {bytes: number; ok: true}
-  | {ok: false; reason: TileflowJsonDocumentAuditFailureReason};
+  {bytes: number; ok: true} | {ok: false; reason: TileflowJsonDocumentAuditFailureReason};
 
 type TileflowJsonDocumentStackEntry = {depth: number; value: unknown};
 
@@ -324,9 +303,7 @@ export type TileflowInteractionViewContent = {
 };
 
 export type TileflowInteractionContent =
-  | TileflowInteractionTextContent
-  | TileflowInteractionFieldContent
-  | TileflowInteractionViewContent;
+  TileflowInteractionTextContent | TileflowInteractionFieldContent | TileflowInteractionViewContent;
 
 export type TileflowAnnotationMarker = {
   color?: string;
@@ -374,8 +351,7 @@ export type TileflowInteractionState = {
 };
 
 export type TileflowInteractionAction =
-  | {target: TileflowInteractionTargetRef; type: 'open-popup'}
-  | {type: 'close-popup'};
+  {target: TileflowInteractionTargetRef; type: 'open-popup'} | {type: 'close-popup'};
 
 export type TileflowInteractionInputModality = 'keyboard' | 'pointer' | 'programmatic' | 'touch';
 

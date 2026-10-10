@@ -30,11 +30,7 @@ export const tileflowVisualArtifactLimits = Object.freeze({
 });
 
 export type TileflowVisualComparisonStatus =
-  | 'unchanged'
-  | 'changed'
-  | 'missing-baseline'
-  | 'scene-mismatch'
-  | 'runtime-mismatch';
+  'unchanged' | 'changed' | 'missing-baseline' | 'scene-mismatch' | 'runtime-mismatch';
 
 export type TileflowVisualPixelMetric = {
   changedPixels: number;

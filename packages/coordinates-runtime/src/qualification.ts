@@ -159,8 +159,7 @@ export async function verifyQualifiedRuntimeProfile(
     return match?.[1] ?? match?.[2] ?? null;
   };
   const report = process.report?.getReport() as
-    | {header?: {glibcVersionRuntime?: string}}
-    | undefined;
+    {header?: {glibcVersionRuntime?: string}} | undefined;
   const observed = {
     platform: platform(),
     architecture: arch(),

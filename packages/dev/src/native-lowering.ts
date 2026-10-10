@@ -335,9 +335,12 @@ class Decisions {
       if (operation(value[1], 'zoom', 1)) fail(this.path);
       for (const item of value[2][1]) {
         this.tick(depth + 1);
-        if (
-          !(item === null || typeof item === 'boolean' || typeof item === 'string' || finite(item))
-        )
+        if (!(
+          item === null ||
+          typeof item === 'boolean' ||
+          typeof item === 'string' ||
+          finite(item)
+        ))
           fail(this.path);
       }
       return value;

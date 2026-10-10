@@ -14,7 +14,9 @@ test('serves the exact MapLibre v6 module closure to Preview', async () => {
   assert.ok(worker);
   assert.ok(stylesheet);
   assert.match(main.headers.get('content-type') ?? '', /javascript/u);
-  assert.match(await main.text(), /maplibre-gl-shared\.mjs/u);
+  // Since GL JS 6.13 the main module holds what the shared one did and names only its worker; the
+  // shared module still ships, empty.
+  assert.match(await main.text(), /maplibre-gl-worker\.mjs/u);
   assert.match(shared.headers.get('content-type') ?? '', /javascript/u);
   assert.match(worker.headers.get('content-type') ?? '', /javascript/u);
   assert.match(stylesheet.headers.get('content-type') ?? '', /text\/css/u);

@@ -3,7 +3,7 @@ import {Compression, findTile, PMTiles, TileType, zxyToTileId} from 'pmtiles';
 export type TileflowPmtilesProtocolHandler = (
   request: Readonly<{type?: string; url: string}>,
   abortController: AbortController,
-) => Promise<Readonly<{cacheControl?: string; data: unknown; expires?: string}>>;
+) => Promise<Readonly<{cacheControl?: string; data: object | string; expires?: string}>>;
 
 export type TileflowPmtilesProtocolRegistry = Readonly<{
   addProtocol: (name: string, handler: TileflowPmtilesProtocolHandler) => void;
@@ -16,9 +16,12 @@ export type TileflowPmtilesProtocolRegistrationOptions = Readonly<{
 type ProtocolRequest = Readonly<{type?: string; url: string}>;
 type ProtocolResponse = Readonly<{
   cacheControl?: string;
-  data: unknown;
+  data: object | string;
   expires?: string;
 }>;
+// A raster tile the archive does not hold resolves without data, which MapLibre draws as an empty
+// tile, as the PMTiles protocol itself does. MapLibre's handler type (GL JS 6.12+) names no null.
+const missingRasterTile = null as unknown as object;
 
 const registeredPmtilesProtocols = new WeakSet<TileflowPmtilesProtocolRegistry['addProtocol']>();
 const maximumSectionBytes = 16 * 1024 * 1024;
@@ -54,11 +57,10 @@ class TileflowPmtilesProtocol {
     if (request.type === 'json') {
       const archive = this.#archive(parseArchiveTarget(request.url));
       const header = await archive.getHeader();
-      const tileJson = await archive.getTileJson(request.url);
-      const data =
-        header.tileType === TileType.Mlt && isRecord(tileJson)
-          ? {...tileJson, encoding: 'mlt'}
-          : tileJson;
+      const tileJson: unknown = await archive.getTileJson(request.url);
+      if (!isRecord(tileJson))
+        throw new TypeError('A PMTiles archive described no TileJSON object.');
+      const data = header.tileType === TileType.Mlt ? {...tileJson, encoding: 'mlt'} : tileJson;
       abortController.signal.throwIfAborted();
       return {data};
     }
@@ -79,7 +81,7 @@ class TileflowPmtilesProtocol {
       data:
         header.tileType === TileType.Mvt || header.tileType === TileType.Mlt
           ? new Uint8Array()
-          : null,
+          : missingRasterTile,
     };
   };
 

@@ -959,9 +959,10 @@ test('serves pinned local preview assets and a cancellable session event stream'
     handler(new Request('http://localhost/__runtime/tileflow-browser.js')),
   ]);
   assert.match(mapLibreMain.headers.get('content-type') ?? '', /javascript/);
-  assert.match(await mapLibreMain.text(), /maplibre-gl-shared\.mjs/u);
+  const mainSource = await mapLibreMain.text();
+  assert.match(mainSource, /maplibre-gl-worker\.mjs/u);
+  assert.ok(mainSource.length > 100_000);
   assert.match(mapLibreShared.headers.get('content-type') ?? '', /javascript/);
-  assert.ok((await mapLibreShared.text()).length > 100_000);
   assert.match(mapLibreWorker.headers.get('content-type') ?? '', /javascript/);
   assert.ok((await mapLibreWorker.text()).length > 1_000);
   assert.match(stylesheet.headers.get('content-type') ?? '', /text\/css/);

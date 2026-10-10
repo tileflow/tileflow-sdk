@@ -5,6 +5,8 @@ export const nativePreparationLimits = Object.freeze({
   tileJsonBytes: 1_048_576,
   depth: 64,
   nodes: 540_000,
+  /** A blend style is planned locally from validated styles; split layers make it larger. */
+  blendNodes: 2_160_000,
   sources: 128,
   layers: 4096,
   fontFaces: 16,
@@ -93,11 +95,14 @@ export function nativeJsonBytes(value: unknown): number {
 }
 
 /** Prepared artifact budget, not authoring validation or a compiler import. */
-export function freezeNativePreparedJson(value: unknown): Readonly<Record<string, unknown>> {
+export function freezeNativePreparedJson(
+  value: unknown,
+  maximumNodes: number = nativePreparationLimits.nodes,
+): Readonly<Record<string, unknown>> {
   let nodes = 0;
   const parents = new Set<object>();
   const visit = (input: unknown, depth: number): void => {
-    if (++nodes > nativePreparationLimits.nodes || depth > nativePreparationLimits.depth)
+    if (++nodes > maximumNodes || depth > nativePreparationLimits.depth)
       throw new NativePreparationError();
     if (input === null || typeof input === 'boolean') return;
     if (typeof input === 'number' && Number.isFinite(input)) return;
@@ -112,10 +117,7 @@ export function freezeNativePreparedJson(value: unknown): Readonly<Record<string
     )
       throw new NativePreparationError();
     const keys = Reflect.ownKeys(input);
-    if (
-      array &&
-      (input.length > nativePreparationLimits.nodes || Object.keys(input).length !== input.length)
-    )
+    if (array && (input.length > maximumNodes || Object.keys(input).length !== input.length))
       throw new NativePreparationError();
     parents.add(input);
     for (const key of keys) {

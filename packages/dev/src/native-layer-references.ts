@@ -1,9 +1,5 @@
-import {serializeCanonicalJson, type MapLibreStyle} from '@tileflow/core';
-import {
-  createTileflowNativeDiagnostic,
-  TileflowNativeCompatibilityError,
-  type TileflowNativeBuildRecord,
-} from '@tileflow/core/native-profile';
+import type {MapLibreStyle} from '@tileflow/core';
+import type {TileflowNativeBuildRecord} from '@tileflow/core/native-profile';
 
 type Changes = TileflowNativeBuildRecord['transformations'][number]['layers'];
 type Json = Record<string, unknown>;
@@ -24,14 +20,16 @@ function identifier(layer: Json): string {
   return layer.id;
 }
 
-/** Rebind physical references only after the existing bounded representation lowering completes. */
-export function finalizeNativeHostedProvenance(
+/**
+ * Rebind physical layer references only after the existing bounded representation lowering
+ * completes. Ordered numeric spans are the only correspondence; anything unproven is undefined.
+ */
+export function rebindNativeLayerReferences(
   input: MapLibreStyle,
   lowered: MapLibreStyle,
   changes: Changes,
-): MapLibreStyle {
+): MapLibreStyle | undefined {
   try {
-    const result: MapLibreStyle = JSON.parse(serializeCanonicalJson(lowered));
     const originalIndexes = new Map<string, number>();
     const finalIndexes = new Map<string, number>();
     const starts = new Map<string, number>();
@@ -55,7 +53,7 @@ export function finalizeNativeHostedProvenance(
       previous = change.inputLayer;
       transformed.set(change.inputLayer, change);
     }
-    for (const [index, layer] of result.layers.entries()) {
+    for (const [index, layer] of lowered.layers.entries()) {
       const id = identifier(layer);
       if (finalIndexes.has(id)) throw new Error();
       finalIndexes.set(id, index);
@@ -69,9 +67,9 @@ export function finalizeNativeHostedProvenance(
       const change = transformed.get(index);
       if (change && (change.outputStart !== offset || layer.type !== 'line')) throw new Error();
       const count = change?.outputCount ?? 1;
-      if (offset + count > result.layers.length) throw new Error();
+      if (offset + count > lowered.layers.length) throw new Error();
       for (let branch = 0; branch < count; branch++) {
-        const candidate = result.layers[offset + branch]!;
+        const candidate = lowered.layers[offset + branch]!;
         if (!change && identifier(candidate) !== id) throw new Error();
         if (
           candidate.type !== layer.type ||
@@ -82,8 +80,9 @@ export function finalizeNativeHostedProvenance(
       }
       offset += count;
     }
-    if (offset !== result.layers.length) throw new Error();
-    const metadata = result.metadata === undefined ? undefined : object(result.metadata);
+    if (offset !== lowered.layers.length) throw new Error();
+    // Copy only the rewritten metadata; the lowered layers and key order are returned unchanged.
+    const metadata = lowered.metadata === undefined ? undefined : {...object(lowered.metadata)};
     const originalMetadata = input.metadata === undefined ? undefined : object(input.metadata);
     if (originalMetadata?.['tileflow:overlay-placement-manifest'] !== undefined) {
       if (!metadata) throw new Error();
@@ -104,22 +103,21 @@ export function finalizeNativeHostedProvenance(
         }
         if (typeof anchor !== 'string' || !starts.has(anchor)) throw new Error();
         // Anchors are insertion-before boundaries; an expanded layer starts at its first branch.
-        updated[key] = identifier(result.layers[starts.get(anchor)!]!);
+        updated[key] = identifier(lowered.layers[starts.get(anchor)!]!);
       }
       metadata['tileflow:overlay-placement-manifest'] = {...overlay, anchors: updated};
     }
     if (originalMetadata?.['tileflow:interaction-manifest'] !== undefined) {
       if (!metadata) throw new Error();
-      const manifest = object(
-        JSON.parse(serializeCanonicalJson(originalMetadata['tileflow:interaction-manifest'])),
-      );
+      const manifest = object(originalMetadata['tileflow:interaction-manifest']);
       if (manifest.version !== 2) throw new Error();
       const domains = object(manifest.domains);
+      let rebound = manifest;
       if (domains.poi !== undefined) {
         const poi = object(domains.poi);
         if (!Array.isArray(poi.layers) || poi.layers.length > 256) throw new Error();
         const seen = new Set<string>();
-        poi.layers = poi.layers.map((value) => {
+        const layers = poi.layers.map((value) => {
           const entry = object(value);
           if (typeof entry.layerId !== 'string' || seen.has(entry.layerId)) throw new Error();
           const index = originalIndexes.get(entry.layerId);
@@ -136,13 +134,12 @@ export function finalizeNativeHostedProvenance(
           seen.add(entry.layerId);
           return {...entry, priority: finalIndexes.get(entry.layerId)!};
         });
+        rebound = {...manifest, domains: {...domains, poi: {...poi, layers}}};
       }
-      metadata['tileflow:interaction-manifest'] = manifest;
+      metadata['tileflow:interaction-manifest'] = rebound;
     }
-    return result;
+    return metadata === undefined ? {...lowered} : {...lowered, metadata};
   } catch {
-    throw new TileflowNativeCompatibilityError([
-      createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE', '/metadata'),
-    ]);
+    return undefined;
   }
 }

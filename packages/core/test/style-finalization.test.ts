@@ -91,9 +91,8 @@ function compileImageReferenceLayer(input: {
       modules: {
         land: withRenderStack(land({}), {
           imageReference: renderPass({
-            attachTo: 'land.background',
+            placement: {above: 'land.background'},
             ...(renderer === 'background' ? {} : {feature: 'landuse'}),
-            phase: 'overlay',
             renderer,
             style: style as never,
           }),

@@ -276,9 +276,8 @@ function technicalLandPattern(
   opacity: number,
 ) {
   return renderPass({
-    attachTo: target,
+    placement: {above: target},
     feature,
-    phase: 'overlay',
     renderer: 'fill',
     selector,
     style: {
@@ -627,9 +626,8 @@ export const blueprint = bindOfficialMapTheme(
         }),
         {
           footprintHatch: renderPass({
-            attachTo: 'buildings.flat.fill',
+            placement: {above: 'buildings.flat.fill'},
             feature: 'building',
-            phase: 'overlay',
             renderer: 'fill',
             // A section hatch is reserved for the few footprints that carry
             // architectural emphasis; ordinary building fills remain quiet.
@@ -645,9 +643,8 @@ export const blueprint = bindOfficialMapTheme(
             },
           }),
           measuredEdge: renderPass({
-            attachTo: 'buildings.flat.outline',
+            placement: {above: 'buildings.flat.outline'},
             feature: 'building',
-            phase: 'overlay',
             renderer: 'line',
             selector: {geometry: 'polygon', kind: 'geometry'},
             style: {
@@ -666,9 +663,8 @@ export const blueprint = bindOfficialMapTheme(
             },
           }),
           prominentOutline: renderPass({
-            attachTo: 'buildings.render.measuredEdge',
+            placement: {above: 'buildings.render.measuredEdge'},
             feature: 'building',
-            phase: 'overlay',
             renderer: 'line',
             selector: prominentBuildingSelector,
             style: {
@@ -688,9 +684,8 @@ export const blueprint = bindOfficialMapTheme(
             },
           }),
           heightAnnotations: renderPass({
-            attachTo: 'buildings.render.prominentOutline',
+            placement: {above: 'buildings.render.prominentOutline'},
             feature: 'building',
-            phase: 'annotation',
             renderer: 'symbol',
             selector: {
               kind: 'all',
@@ -1246,9 +1241,8 @@ export const blueprint = bindOfficialMapTheme(
         }),
         {
           architecturalCallouts: renderPass({
-            attachTo: 'poi.visitor-amenity.label',
+            placement: {above: 'poi.visitor-amenity.label'},
             feature: 'poi',
-            phase: 'annotation',
             renderer: 'symbol',
             selector: {
               kind: 'all',
@@ -1517,9 +1511,8 @@ export const blueprint = bindOfficialMapTheme(
         }),
         {
           majorRoadCenterline: renderPass({
-            attachTo: 'roads.classes.motorway.surface.fill',
+            placement: {above: 'roads.classes.motorway.surface.fill'},
             feature: 'road',
-            phase: 'overlay',
             renderer: 'line',
             selector: {
               kind: 'all',
@@ -1729,9 +1722,8 @@ export const blueprint = bindOfficialMapTheme(
         }),
         {
           waterHatch: renderPass({
-            attachTo: 'water.bodies.fill',
+            placement: {above: 'water.bodies.fill'},
             feature: 'water',
-            phase: 'overlay',
             renderer: 'fill',
             selector: {
               coerce: 'number',
@@ -1752,9 +1744,8 @@ export const blueprint = bindOfficialMapTheme(
             },
           }),
           intermittentWaterHatch: renderPass({
-            attachTo: 'water.intermittent.bodies.fill',
+            placement: {above: 'water.intermittent.bodies.fill'},
             feature: 'water',
-            phase: 'overlay',
             renderer: 'fill',
             selector: {
               coerce: 'number',

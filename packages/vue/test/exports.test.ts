@@ -75,5 +75,5 @@ test('initial renderer loading converges on a theme selected while it is in flig
 
   assert.doesNotMatch(source, /runtimeStyle\.value\s*!==\s*runtime\s*\|\|/u);
   assert.match(source, /runtimeStyle\.value\s*&&\s*runtimeStyle\.value\s*!==\s*runtime/u);
-  assert.match(source, /themeController\.setTheme\(runtimeStyle\.value\)/u);
+  assert.match(source, /themeController\.setTheme\(runtimeStyle\.value[,)]/u);
 });

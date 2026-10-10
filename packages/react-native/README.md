@@ -85,6 +85,21 @@ and protected delivery still require HTTPS.
 
 `onThemeChange` reports only the safe public selection shape. It does not expose style URLs, style JSON, configuration, session authority or native error messages.
 
+## Theme transitions and blends
+
+`themeTransition={{duration: 450}}` cross-fades theme changes: a snapshot of the drawn map covers it, follows the camera and fades out once the new theme is drawn. `themeBlend={{themes: ['night', 'dusk', 'day'], position}}` shows a continuous blend of the map's themes instead of `theme`; position 0 is the first theme and 1.5 is halfway from the second to the third:
+
+```tsx
+<Map
+  source={source}
+  themeTransition={{duration: 450}}
+  themeBlend={{themes: ['night', 'dusk', 'day'], position}}
+  style={{flex: 1}}
+/>
+```
+
+The first blend of a set of themes prepares every theme's style and replaces the native style once; moving `position` later changes the map without loading. Removing `themeBlend` returns to `theme`. Both keep the same native Map, context and session, and `ready` events wait for the fade. The device's reduce-motion setting changes at once. See [theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md#react-native) for what follows the position on native maps.
+
 ## Camera
 
 The existing mount-stable camera contract is preserved. Use either an initial camera seed or complete controlled camera ownership for the lifetime of one mounted Map:

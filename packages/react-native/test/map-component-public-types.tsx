@@ -1,5 +1,11 @@
 import {Layer, VectorSource} from '@maplibre/maplibre-react-native';
-import {Map, type MapProps, type MapRef} from '@tileflow/react-native';
+import {
+  Map,
+  type MapProps,
+  type MapRef,
+  type MapThemeBlend,
+  type MapThemeTransition,
+} from '@tileflow/react-native';
 import {createRef, type ReactElement} from 'react';
 
 const source = {map: 'main', manifestUrl: 'https://maps.example.test/manifest.json'};
@@ -21,6 +27,17 @@ const controlled = (
   />
 );
 void controlled;
+// Theme motion: a cross-fade for theme changes and a blend shown instead of `theme`.
+const transition: MapThemeTransition = {duration: 450};
+const blend: MapThemeBlend = {themes: ['night', 'dusk', 'day'], position: 1.25};
+const motion = (
+  <Map source={source} theme="light" themeTransition={transition} themeBlend={blend} />
+);
+void motion;
+// @ts-expect-error A transition only has a duration.
+<Map source={source} themeTransition={{duration: 450, easing: 'linear'}} />;
+// @ts-expect-error A blend position is a number.
+<Map source={source} themeBlend={{themes: ['night', 'day'], position: '0.5'}} />;
 // Existing upstream source/layer primitives remain children, not another Tileflow source mode.
 const composition = (
   <Map source={source}>

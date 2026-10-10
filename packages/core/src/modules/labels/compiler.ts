@@ -266,10 +266,13 @@ export function compileLabels(
   }
 
   const visibleRoads = visibleRoadLabelClasses(semantics.roads, roads, semantics.roadClasses);
-  // In navigation-priority maps, MapLibre resolves collisions from the top of
-  // the final symbol stack. Put minor road names first and the structural
-  // classes last, after POIs, so dense destinations cannot erase orientation
-  // labels. The balanced default retains the established transport slot.
+  // Road names, shields and junction numbers draw in the final symbol stack,
+  // above boundaries, buildings and vegetation; the collision policy only
+  // orders them within it. MapLibre resolves collisions from the top of that
+  // stack. Balanced maps keep them at its bottom, below every other symbol
+  // family. Navigation-priority maps put minor road names first and the
+  // structural classes last, after POIs, so dense destinations cannot erase
+  // orientation labels.
   const orderedRoads = navigationPriority ? [...visibleRoads].reverse() : visibleRoads;
   for (const roadClass of orderedRoads as TileflowRoadClass[]) {
     const style = styles.roads?.[roadClass];
@@ -293,14 +296,16 @@ export function compileLabels(
           },
           mergeTileflowDesign(style, {text: {field}}),
         ),
-        navigationPriority ? 'symbols' : 'transport-symbols',
+        'symbols',
         {group: 'roads', kind: 'road-label', member: roadClass},
       ),
     );
   }
 
   // Shield visibility is independent from road-name visibility. A map may
-  // deliberately suppress road names while retaining route references.
+  // deliberately suppress road names while retaining route references. Shields
+  // and junction numbers sit below every symbol family except balanced road
+  // names, which they still outrank.
   const shieldRoads =
     semantics.shields === 'none'
       ? []
@@ -398,7 +403,6 @@ export function compileLabels(
             },
             style,
           ),
-          'transport-symbols',
         ),
       );
     }
@@ -444,7 +448,6 @@ export function compileLabels(
             },
           }),
         ),
-        'transport-symbols',
       ),
     );
   }

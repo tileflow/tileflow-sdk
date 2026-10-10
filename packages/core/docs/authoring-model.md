@@ -224,6 +224,18 @@ broadleaf and conifer palettes, and independent height and crown scales. The leg
 shortcut remains available; `flat.minZoom` takes precedence when both are present. The binding
 includes height, crown diameter, genus, leaf type, and species fields so compatible runtimes can
 preserve source measurements and botanical form without hard-coding raw property names. The
-pitched-scene stack follows physical height: pedestrian and transport surfaces, transport markings
-and road names, buildings, then vegetation. Place, water, aerodrome, and POI annotations remain
-last so geographic names stay readable without making street paint or text float over 3D geometry.
+pitched-scene stack follows physical height: pedestrian and transport surfaces, transport markings,
+buildings, then vegetation, so street paint never floats over 3D geometry. Text draws last: road
+names, route shields, junction numbers, and place, water, aerodrome, and POI annotations stay above
+every ground layer, so building fills, boundaries, and trees cannot cover them.
+`labels.collisionPriority` only orders labels within that final stack.
+
+Render passes, and refinements that move a target their module owns, share one `placement`
+vocabulary. A band edge is `below-` or `above-` one of `land`, `relief`, `water`, `roads`,
+`boundaries`, `buildings`, `vegetation`, and `labels`; it needs no anchor, so a vegetation pass can
+draw `'above-relief'` without depending on another module. `{above: target}` and `{below: target}`
+draw beside one semantic target and inherit its band and, without their own `feature`, its vector
+data; passes placed beside a moved target follow it. Operations sharing a placement paint in
+declaration order, the first lowest. For symbols, a higher layer is also placed first in MapLibre
+collisions, so placement decides both drawing and precedence. An owner whose layers are all
+render passes still satisfies other operations' `requirements`.

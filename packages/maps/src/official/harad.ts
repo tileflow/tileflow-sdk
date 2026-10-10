@@ -183,9 +183,8 @@ function landcoverPattern(
   }
 
   return renderPass({
-    attachTo: target,
+    placement: {above: target},
     feature: 'landcover',
-    phase: 'overlay',
     renderer: 'fill',
     selector,
     style: {
@@ -213,9 +212,8 @@ function landusePattern(
   }
 
   return renderPass({
-    attachTo: target,
+    placement: {above: target},
     feature: 'landuse',
-    phase: 'overlay',
     renderer: 'fill',
     selector: {field: 'class', kind: 'in', values: classes},
     style: {
@@ -679,9 +677,8 @@ export const harad = bindOfficialMapTheme(
         }),
         {
           fieldBoundaries: renderPass({
-            attachTo: 'land.landcover.farmland.fill',
+            placement: {above: 'land.landcover.farmland.fill'},
             feature: 'landcover',
-            phase: 'overlay',
             renderer: 'line',
             selector: {field: 'class', kind: 'in', values: ['farmland']},
             style: {
@@ -1016,9 +1013,8 @@ export const harad = bindOfficialMapTheme(
         }),
         {
           printLines: renderPass({
-            attachTo: 'water.bodies.fill',
+            placement: {above: 'water.bodies.fill'},
             feature: 'water',
-            phase: 'overlay',
             renderer: 'fill',
             selector: {
               coerce: 'number',
@@ -1039,9 +1035,8 @@ export const harad = bindOfficialMapTheme(
             },
           }),
           intermittentPrintLines: renderPass({
-            attachTo: 'water.intermittent.bodies.fill',
+            placement: {above: 'water.intermittent.bodies.fill'},
             feature: 'water',
-            phase: 'overlay',
             renderer: 'fill',
             selector: {
               coerce: 'number',

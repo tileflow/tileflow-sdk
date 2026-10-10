@@ -53,6 +53,11 @@ font, tileset and generation references use the existing renderer-specific `/nat
 preview-only manifest schema is introduced. `--map` and `--theme` validate a desired map/theme
 against that finalized manifest but do not narrow or fork the served artifact family.
 
+Locally built sprites and fonts are served from the preview's own HTTP origin. Native preview checks
+each generation with that exact origin as its development origin, the same exception the application
+configures below. Resources on any other origin still require HTTPS. `validate` and `build` never
+apply this exception.
+
 Human output identifies the exact manifest URL, profile `native-v1`, and `assets-only` endpoint.
 Native NDJSON lifecycle events additionally carry `renderer`, `profile`, `manifest` and
 `assetsOnly`; the default and explicit `--renderer web` lifecycle/output contract remains the

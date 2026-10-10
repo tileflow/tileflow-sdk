@@ -33,6 +33,8 @@ export type ResolvedTileflowPreview = {
   label: string;
   mapName: string;
   themeName: string;
+  /** Every theme of a map preview, in declaration order. A scene owns its theme and omits this. */
+  themeNames?: readonly string[];
   viewport?: NormalizedTileflowCaptureScene['viewport'];
 };
 
@@ -116,6 +118,7 @@ export function resolveTileflowPreview(
     label: `${mapName} / ${selectedTheme.name}`,
     mapName,
     themeName: selectedTheme.name,
+    themeNames: Object.keys(resolvedMap.themes),
   };
 }
 

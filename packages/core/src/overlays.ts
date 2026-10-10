@@ -1,5 +1,5 @@
 import {readTileflowCompilerProvenance} from './cartography/compiler-inspection';
-import {tileflowLayerSlots} from './cartography/contributions';
+import {tileflowBandPlacementIndex, tileflowLayerSlots} from './cartography/contributions';
 import {isTileflowPortableId} from './portable-identity';
 
 export const tileflowOverlayPlacements = [
@@ -339,22 +339,13 @@ export function tileflowOverlayInsertionIndex(
   layers: readonly Record<string, unknown>[],
   placement: TileflowOverlayPlacement,
 ): number {
-  const threshold = {
-    'above-water': tileflowLayerSlots.indexOf('building-areas'),
-    'below-roads': tileflowLayerSlots.indexOf('transport-areas'),
-    'above-roads': tileflowLayerSlots.indexOf('boundaries'),
-    'above-buildings': tileflowLayerSlots.indexOf('vegetation'),
-    'below-labels': tileflowLayerSlots.indexOf('symbols'),
-    'above-labels': Number.POSITIVE_INFINITY,
-  }[placement];
-  if (!Number.isFinite(threshold)) return layers.length;
-  const index = layers.findIndex((layer) => {
-    const ranks = readTileflowCompilerProvenance(layer).map(({slot}) =>
+  const ranks = layers.map((layer) => {
+    const slots = readTileflowCompilerProvenance(layer).map(({slot}) =>
       tileflowLayerSlots.indexOf(slot),
     );
-    return ranks.length > 0 && Math.min(...ranks) >= threshold;
+    return slots.length > 0 ? Math.min(...slots) : undefined;
   });
-  return index < 0 ? layers.length : index;
+  return tileflowBandPlacementIndex(ranks, placement);
 }
 
 function compareCodeUnits(left: string, right: string): number {

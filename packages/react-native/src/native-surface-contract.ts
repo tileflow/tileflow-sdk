@@ -13,6 +13,18 @@ export type NativeSurfaceEvent =
       view: MapView;
     }>;
 
+/** One themed value: a layer ID, a style-specification property name, and its plain value. */
+export type NativeThemeValue = readonly [layer: string, property: string, value: unknown];
+/** Pattern artwork mixed in pixels: `target` shows `from` and `to` mixed at `t` from 0 to 1. */
+export type NativeThemeImage = readonly [target: string, from: string, to: string, t: number];
+/** A batch of themed values applied together to the current style. */
+export type NativeThemeValues = Readonly<{
+  paint?: readonly NativeThemeValue[];
+  layout?: readonly NativeThemeValue[];
+  images?: readonly NativeThemeImage[];
+  light?: Readonly<Record<string, unknown>>;
+}>;
+
 // There is no renderer handle or imperative command in the public Map ref.
 export type NativeSurfaceModule = {
   attachSurface(root: number): Promise<Readonly<{surface: string}>>;
@@ -28,6 +40,15 @@ export type NativeSurfaceModule = {
   acknowledgeSurface(surface: string, sequence: number): Promise<Readonly<{acknowledged: true}>>;
   retireSurface(surface: string): Promise<Readonly<{detached: true}>>;
   retireRoot(root: number): Promise<Readonly<{detached: true}>>;
+  // Theme motion. Native builds that predate these methods change themes at once.
+  coverSurface?(surface: string, duration: number): Promise<Readonly<{covered: boolean}>>;
+  revealSurface?(surface: string, duration: number): Promise<Readonly<{revealed: true}>>;
+  discardSurfaceCover?(surface: string): Promise<Readonly<{discarded: true}>>;
+  applyThemeValues?(
+    surface: string,
+    style: string,
+    values: NativeThemeValues,
+  ): Promise<Readonly<{applied: number}>>;
 };
 
 export type NativeSurface = Readonly<{
@@ -38,6 +59,17 @@ export type NativeSurface = Readonly<{
   applyCamera(command: number, view: MapView): Promise<Readonly<{command: number; view: MapView}>>;
   cancelCamera(command: number): Promise<Readonly<{cancelled: true}>>;
   retire(): Promise<void>;
+  /**
+   * Covers the map with a snapshot of its current frame that follows the camera. Resolves false,
+   * without a cover, for reduced motion, a map that is not drawn, or a native build without it.
+   */
+  cover?(duration: number): Promise<boolean>;
+  /** Fades the covers out once the map has drawn a complete frame, then removes them. */
+  reveal?(duration: number): Promise<void>;
+  /** Removes every cover at once. */
+  discardCover?(): Promise<void>;
+  /** Applies themed values to the current style; only for the style the surface expects. */
+  applyThemeValues?(style: string, values: NativeThemeValues): Promise<number>;
 }>;
 
 export class NativeSurfaceError extends Error {

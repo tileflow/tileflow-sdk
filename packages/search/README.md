@@ -110,9 +110,77 @@ export const suggestPlaces = (query: string) => autocomplete({query, language: '
 export const resolveSelection = (token: string) => resolveSuggestion({token}, options);
 ```
 
-Text search and Nearby are distinct operations. Suggestions have no position. Resolve only the
-selected suggestion. Reverse results are candidates in provider order, without containment,
-entrance precision, routability, deliverability or address-validation guarantees.
+Text search and Nearby are distinct operations. A suggestion has a title, an optional one-line
+`addressLabel` that tells same-named places apart, and no position. Resolve only the selected
+suggestion. Reverse results are candidates in provider order, without containment, entrance
+precision, routability, deliverability or address-validation guarantees.
+
+To show positions, distances and categories while someone types, ask for each suggestion's place.
+A completed request then uses 25 units instead of 10, and choosing a suggestion needs no further
+resolution:
+
+<!-- docs:check -->
+
+```ts
+import {autocomplete} from '@tileflow/search';
+
+const apiKey = process.env.TILEFLOW_API_KEY;
+if (!apiKey) throw new Error('Set TILEFLOW_API_KEY on the server.');
+const options = {apiKey};
+
+export async function suggestNearbyPlaces(query: string, proximity: [number, number]) {
+  const {suggestions} = await autocomplete({query, proximity, include: ['place']}, options);
+  return suggestions.map(({label, addressLabel, place}) => ({
+    label,
+    addressLabel,
+    position: place?.position,
+    distanceMeters: place?.distanceMeters,
+  }));
+}
+```
+
+## Place details
+
+Results carry an optional `distanceMeters` when the provider reports one: from `proximity`, from
+the centre of `bounds`, or from the reverse or Nearby position. Places can also carry `foodTypes`.
+Other details are requested with `include` and make the operation an extended one:
+
+| Detail         | Returns                                                     | Available from                                           |
+| -------------- | ----------------------------------------------------------- | -------------------------------------------------------- |
+| `contacts`     | `phones`, `websites` and `emails`, each a `value` and label | Text search inside `bounds`, Nearby, explicit resolution |
+| `openingHours` | Display lines per schedule and `openNow` at request time    | Text search inside `bounds`, Nearby, explicit resolution |
+| `timeZone`     | IANA `name` and `utcOffsetSeconds`                          | Every place operation                                    |
+| `accessPoints` | Entrance or access positions, separate from `position`      | Every place operation                                    |
+
+Asking geocoding without `bounds`, or reverse geocoding, for contacts or opening hours fails with
+`GEOCODING_FILTER_UNSUPPORTED` before any request is sent. Each detail is optional in a response:
+a place whose hours the provider does not supply has no `openingHours`.
+
+<!-- docs:check -->
+
+```ts
+import {resolvePlace} from '@tileflow/search';
+
+const apiKey = process.env.TILEFLOW_API_KEY;
+if (!apiKey) throw new Error('Set TILEFLOW_API_KEY on the server.');
+const options = {apiKey};
+
+export async function placeCard(token: string) {
+  const {result} = await resolvePlace({token, include: ['contacts', 'openingHours']}, options);
+  const website = result.contacts?.websites?.find(({value}) => /^https?:\/\//iu.test(value));
+  return {
+    name: result.name ?? result.label,
+    openNow: result.openingHours?.some(({openNow}) => openNow) ?? false,
+    hours: result.openingHours?.flatMap(({display}) => display ?? []) ?? [],
+    phone: result.contacts?.phones?.[0]?.value,
+    website: website?.value,
+  };
+}
+```
+
+Contact values are provider text, not validated links: check the scheme before rendering one as
+a link, and expect several phones or websites for a place, not all equally relevant. `openNow`
+describes the moment of the request. Like every result, details are for temporary display.
 
 ## Limits and temporary use
 
@@ -140,15 +208,15 @@ retention, Advanced features and caller-selected provider options are rejected b
 
 ## Usage and errors
 
-| Completed operation                   | Shared API units |
-| ------------------------------------- | ---------------: |
-| Category discovery                    |                0 |
-| Autocomplete                          |               10 |
-| Forward, reverse, explicit resolution |               25 |
-| Each Nearby page                      |               25 |
+| Completed operation                   | Shared API units | With `include` |
+| ------------------------------------- | ---------------: | -------------: |
+| Category discovery                    |                0 |              — |
+| Autocomplete                          |               10 |             25 |
+| Forward, reverse, explicit resolution |               25 |             75 |
+| Each Nearby page                      |               25 |             75 |
 
-Valid empty responses consume the same units. Three autocomplete calls and one resolution consume
-55 units. These are part of Starter's shared API allowance, with no separate Search credits or
+`searchOperationUnits(operation, include)` returns the same weights. Valid empty responses consume
+the same units. Three autocomplete calls and one resolution consume 55 units. These are part of Starter's shared API allowance, with no separate Search credits or
 commercial search session. Hovering, displaying results and moving a map do not call Search.
 
 `GeocodingError` exposes `status`, nullable `code`, nullable `requestId` and nullable bounded

@@ -35,3 +35,38 @@ test('imports Preview MapLibre as a module and pins its matching worker', () => 
   );
   assert.doesNotMatch(html, /maplibre-gl\.js/u);
 });
+
+test('offers a theme switch only when a map preview has several themes', () => {
+  const camera = {type: 'center', center: [0, 0], zoom: 2, bearing: 0, pitch: 0} as const;
+  const single = renderTileflowPreviewHtml(
+    {camera, label: 'map / light', mapName: 'map', themeName: 'light', themeNames: ['light']},
+    '/tileflow',
+    {},
+    true,
+  );
+  const several = renderTileflowPreviewHtml(
+    {
+      camera,
+      label: 'map / night',
+      mapName: 'map',
+      themeName: 'night',
+      themeNames: ['light', 'night'],
+    },
+    '/tileflow',
+    {},
+    true,
+  );
+
+  assert.match(single, /const previewThemes = \["light"\];/u);
+  assert.match(several, /const previewTheme = "night";/u);
+  assert.match(several, /const previewThemes = \["light","night"\];/u);
+  assert.match(several, /if \(previewThemes\.length > 1\) map\.addControl\(new ThemeControl\(\)/u);
+});
+
+test('the preview globe backdrop follows the map atmosphere', () => {
+  const html = renderTileflowPreviewHtml(undefined, '/tileflow', {}, false);
+
+  assert.match(html, /background-color: var\(--tileflow-space, #2F5070\)/u);
+  assert.match(html, /metadata\?\.\["tileflow:atmosphere"\]/u);
+  assert.match(html, /"--tileflow-rim-glow": rgba\(atmosphere\?\.horizonColor, 0\.52\)/u);
+});

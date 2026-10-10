@@ -34,6 +34,39 @@ test('preserves concrete and system theme validation', () => {
   }
 });
 
+test('accepts theme blends of two to eight concrete themes with a position inside them', () => {
+  const source = {map: 'main'};
+  assert.deepEqual(
+    validateTileflowMapStyleInputs({
+      source,
+      themeBlend: {position: 1.25, themes: ['night', 'sunset', 'day']},
+    }),
+    {ok: true},
+  );
+  for (const themeBlend of [
+    {position: 0, themes: ['day']},
+    {position: 2, themes: ['night', 'day']},
+    {position: 0, themes: ['night', 'system']},
+    {themes: ['night', 'day']},
+  ]) {
+    assert.equal(
+      validateTileflowMapStyleInputs({source, themeBlend}).ok,
+      false,
+      JSON.stringify(themeBlend),
+    );
+  }
+});
+
+test('accepts theme transitions of zero to five seconds', () => {
+  const source = {map: 'main'};
+  assert.deepEqual(validateTileflowMapStyleInputs({source, themeTransition: {duration: 450}}), {
+    ok: true,
+  });
+  for (const themeTransition of [450, {duration: -1}, {duration: 5001}]) {
+    assert.equal(validateTileflowMapStyleInputs({source, themeTransition}).ok, false);
+  }
+});
+
 test('component rendering rejects renderer input before mounting', async () => {
   for (const source of [
     {kind: 'tileflow', map: 'main'},

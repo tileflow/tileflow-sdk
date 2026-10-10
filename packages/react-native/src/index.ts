@@ -18,8 +18,10 @@ export type {
   MapSourceProps,
   MapSourceState,
   MapTheme,
+  MapThemeBlend,
   MapThemeChangeEvent,
   MapThemeSelection,
+  MapThemeTransition,
   MapView,
   MapViewChangeEvent,
 } from './contract';

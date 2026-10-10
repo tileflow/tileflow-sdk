@@ -45,7 +45,7 @@ export function renderTileflowPreviewHtml(
       body { font-family: ui-sans-serif, system-ui, sans-serif; }
       #map {
         --tileflow-globe-radius: 220px;
-        background-color: #2F5070;
+        background-color: var(--tileflow-space, #2F5070);
         background-image:
           radial-gradient(circle at 18% 24%, rgba(225, 240, 250, 0.34) 0 1px, transparent 1.4px),
           radial-gradient(circle at 72% 62%, rgba(225, 240, 250, 0.22) 0 1px, transparent 1.3px),
@@ -68,12 +68,12 @@ export function renderTileflowPreviewHtml(
         top: 50%;
         width: calc(var(--tileflow-globe-radius) * 2);
         height: calc(var(--tileflow-globe-radius) * 2);
-        border: 1px solid rgba(248, 252, 255, 0.88);
+        border: 1px solid var(--tileflow-rim-line, rgba(248, 252, 255, 0.88));
         border-radius: 50%;
         box-shadow:
-          0 0 9px 3px rgba(248, 252, 255, 0.9),
-          0 0 28px 10px rgba(176, 220, 246, 0.52),
-          0 0 58px 20px rgba(132, 195, 232, 0.2);
+          0 0 9px 3px var(--tileflow-rim-core, rgba(248, 252, 255, 0.9)),
+          0 0 28px 10px var(--tileflow-rim-glow, rgba(176, 220, 246, 0.52)),
+          0 0 58px 20px var(--tileflow-rim-haze, rgba(132, 195, 232, 0.2));
         pointer-events: none;
         transform: translate(-50%, -50%);
       }
@@ -110,7 +110,8 @@ export function renderTileflowPreviewHtml(
         white-space: pre-wrap;
       }
       .maplibregl-ctrl-group .tileflow-3d-toggle,
-      .maplibregl-ctrl-group .tileflow-tree-toggle {
+      .maplibregl-ctrl-group .tileflow-tree-toggle,
+      .maplibregl-ctrl-group .tileflow-theme-toggle {
         width: auto;
         min-width: 58px;
         padding: 0 9px;
@@ -124,7 +125,8 @@ export function renderTileflowPreviewHtml(
         color: #174EA6;
       }
       .maplibregl-ctrl-group .tileflow-3d-toggle:hover,
-      .maplibregl-ctrl-group .tileflow-tree-toggle:hover {
+      .maplibregl-ctrl-group .tileflow-tree-toggle:hover,
+      .maplibregl-ctrl-group .tileflow-theme-toggle:hover {
         background-color: #F1F3F4;
       }
     </style>
@@ -152,6 +154,8 @@ export function renderTileflowPreviewHtml(
       const previewLabel = ${JSON.stringify(preview?.label)};
       const styleUrl = ${JSON.stringify(styleUrl)};
       const previewMapOptions = ${JSON.stringify(mapOptions)};
+      const previewTheme = ${serializeInlineJson(preview?.themeName ?? null)};
+      const previewThemes = ${serializeInlineJson(preview?.themeNames ?? [])};
       const isSemanticPreview = ${JSON.stringify(isSemanticPreview)};
       const previewFontFaces = ${serializeInlineJson(fontFaces)};
       const treeSearchParameters = new URL(location.href).searchParams;
@@ -862,6 +866,30 @@ export function renderTileflowPreviewHtml(
         );
         container.classList.add("tileflow-globe");
         container.style.setProperty("--tileflow-globe-radius", radius.toFixed(2) + "px");
+        applyAtmosphereBackdrop(map, container);
+      }
+
+      // Uses the map's declared atmosphere for the preview's space and rim, so a themed globe shows
+      // its own colours; maps without one keep the default backdrop.
+      function applyAtmosphereBackdrop(map, container) {
+        const atmosphere = map.getStyle?.()?.metadata?.["tileflow:atmosphere"];
+        const rgba = (hex, alpha) => {
+          const match = /^#([0-9a-f]{6})$/i.exec(String(hex ?? ""));
+          if (!match) return undefined;
+          const value = Number.parseInt(match[1], 16);
+          return "rgba(" + (value >> 16) + ", " + ((value >> 8) & 255) + ", " + (value & 255) + ", " + alpha + ")";
+        };
+        const properties = {
+          "--tileflow-space": rgba(atmosphere?.spaceColor, 1),
+          "--tileflow-rim-line": rgba(atmosphere?.horizonColor, 0.88),
+          "--tileflow-rim-core": rgba(atmosphere?.horizonColor, 0.9),
+          "--tileflow-rim-glow": rgba(atmosphere?.horizonColor, 0.52),
+          "--tileflow-rim-haze": rgba(atmosphere?.skyColor, 0.35),
+        };
+        for (const [name, value] of Object.entries(properties)) {
+          if (value) container.style.setProperty(name, value);
+          else container.style.removeProperty(name);
+        }
       }
 
       function createBuildingWireframeLayer(map, styleLayer) {
@@ -3654,6 +3682,38 @@ export function renderTileflowPreviewHtml(
         }
       }
 
+      // Switches a map preview between its themes. The preview reloads with the next theme and keeps
+      // the camera and toggles already written to the URL; scene previews own their theme.
+      class ThemeControl {
+        onAdd(map) {
+          this.map = map;
+          this.container = document.createElement("div");
+          this.container.className = "maplibregl-ctrl maplibregl-ctrl-group";
+          this.button = document.createElement("button");
+          this.button.type = "button";
+          this.button.className = "tileflow-theme-toggle";
+          const next = previewThemes[(previewThemes.indexOf(previewTheme) + 1) % previewThemes.length];
+          this.button.textContent = String(previewTheme).toUpperCase();
+          this.button.title = "Switch to the " + next + " theme";
+          this.button.setAttribute("aria-label", "Switch to the " + next + " theme");
+          this.handleClick = () => {
+            writeCameraToUrl(map);
+            const url = new URL(location.href);
+            url.searchParams.set("theme", next);
+            location.assign(url.href);
+          };
+          this.button.addEventListener("click", this.handleClick);
+          this.container.appendChild(this.button);
+          return this.container;
+        }
+
+        onRemove() {
+          this.button?.removeEventListener("click", this.handleClick);
+          this.container?.remove();
+          this.map = undefined;
+        }
+      }
+
       const previewLayerGroupIds = [
         "labels", "pois", "roads", "transit", "buildings", "landuse", "water"
       ];
@@ -3790,6 +3850,7 @@ export function renderTileflowPreviewHtml(
           map.addControl(threeDimensionalControl, "top-right");
           map.addControl(treeControl, "top-right");
         }
+        if (previewThemes.length > 1) map.addControl(new ThemeControl(), "top-right");
         let ensuringThreeDimensionalLayers;
         const treeRuntimeMinimumZoom = 16;
         const ensureThreeDimensionalLayers = () => {

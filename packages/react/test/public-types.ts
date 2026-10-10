@@ -18,8 +18,15 @@ const validProps = [
   {source},
   {source: {manifestUrl: 'https://cdn.example.test/manifest.json', map: 'main'}},
   {source, theme: 'system'},
+  {source, theme: 'night', themeTransition: {duration: 450}},
+  {source, themeBlend: {position: 1.25, themes: ['night', 'sunset', 'day']}},
   {mode: 'image', imageUrl: '/maps/main.png', source},
 ] satisfies MapProps[];
+
+// @ts-expect-error a blend position is a number.
+const textPosition: MapProps = {source, themeBlend: {position: '1', themes: ['night', 'day']}};
+// @ts-expect-error a transition is described by its duration.
+const textTransition: MapProps = {source, themeTransition: 450};
 
 // @ts-expect-error every map has one explicit delivery source.
 const missingSource: MapProps = {};
@@ -155,6 +162,8 @@ void [
   annotationOnlyProps,
   validProps,
   missingSource,
+  textPosition,
+  textTransition,
   flattenedMap,
   configInput,
   rendererInput,

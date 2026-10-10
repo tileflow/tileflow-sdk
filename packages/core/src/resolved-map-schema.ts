@@ -1,6 +1,8 @@
 import {Color} from '@maplibre/maplibre-gl-style-spec';
 import {z} from 'zod';
 import {
+  type TileflowBandPlacement,
+  tileflowBandPlacements,
   tileflowRenderStackOperationNamePattern,
   tileflowSemanticTargetPattern,
 } from './cartography/contributions';
@@ -10,7 +12,6 @@ import {
   tileflowRenderSelectorComparisons,
   tileflowRenderSelectorGeometries,
   tileflowRenderStackLimits,
-  tileflowRenderStackPhases,
   tileflowRenderStackRenderers,
   validateTileflowRenderSelectorConstraints,
 } from './cartography/render-stack';
@@ -878,15 +879,19 @@ const renderRequirementsSchema = z
       seen.add(requirement);
     }
   });
+const renderPlacementSchema = z.union([
+  z.enum(tileflowBandPlacements as [TileflowBandPlacement, ...TileflowBandPlacement[]]),
+  z.object({above: renderTargetSchema}).strict(),
+  z.object({below: renderTargetSchema}).strict(),
+]);
 const vectorRenderPassSchemas = tileflowRenderStackRenderers
   .filter((renderer) => renderer !== 'background')
   .map((renderer) =>
     z
       .object({
-        attachTo: renderTargetSchema,
         feature: z.enum(tileflowSemanticLayerNames).optional(),
         kind: z.literal('render-pass'),
-        phase: z.enum(tileflowRenderStackPhases),
+        placement: renderPlacementSchema,
         renderer: z.literal(renderer),
         requirements: renderRequirementsSchema.optional(),
         selector: renderSelectorSchema.optional(),
@@ -897,9 +902,8 @@ const vectorRenderPassSchemas = tileflowRenderStackRenderers
 const renderPassSchema = z.discriminatedUnion('renderer', [
   z
     .object({
-      attachTo: renderTargetSchema,
       kind: z.literal('render-pass'),
-      phase: z.enum(tileflowRenderStackPhases),
+      placement: renderPlacementSchema,
       renderer: z.literal('background'),
       requirements: renderRequirementsSchema.optional(),
       style: renderStyleSchemas.background,
@@ -911,6 +915,7 @@ const renderRefinementSchemas = tileflowRenderStackRenderers.map((renderer) =>
   z
     .object({
       kind: z.literal('refine-render-target'),
+      placement: renderPlacementSchema.optional(),
       requirements: renderRequirementsSchema.optional(),
       renderer: z.literal(renderer),
       ...(renderer === 'background' ? {} : {selector: renderSelectorSchema.optional()}),
@@ -919,7 +924,19 @@ const renderRefinementSchemas = tileflowRenderStackRenderers.map((renderer) =>
     })
     .strict(),
 );
-const renderStackOperationSchema = z.union([renderPassSchema, ...renderRefinementSchemas]);
+const renderPlacementRefinementSchema = z
+  .object({
+    kind: z.literal('refine-render-target'),
+    placement: renderPlacementSchema,
+    requirements: renderRequirementsSchema.optional(),
+    target: renderTargetSchema,
+  })
+  .strict();
+const renderStackOperationSchema = z.union([
+  renderPassSchema,
+  ...renderRefinementSchemas,
+  renderPlacementRefinementSchema,
+]);
 const renderStackSchema = z
   .record(renderStackOperationNameSchema, renderStackOperationSchema)
   .superRefine((stack, context) => {

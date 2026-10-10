@@ -14,7 +14,6 @@ import {
 } from '@tileflow/core/native-profile';
 import type {TileflowBuildAsset} from './icons';
 import {lowerTileflowNativeCompiledStyles, prepareTileflowNativeStyles} from './native-artifacts';
-import {finalizeNativeHostedProvenance} from './native-hosted-provenance';
 
 type Input = Readonly<{
   mapId: string;
@@ -57,15 +56,8 @@ export async function prepareTileflowHostedNativeDeployment(
       source.url = `https://artifacts.invalid/tiles/${sourceId}/tiles.json`;
     }
   }
+  // Lowering already rebinds POI priorities and overlay anchors, exactly as for local artifacts.
   const lowered = lowerTileflowNativeCompiledStyles({[input.mapId]: validationStyles});
-  for (const transformation of lowered.transformations) {
-    const name = transformation.theme;
-    lowered.styles[input.mapId]![name] = finalizeNativeHostedProvenance(
-      validationStyles[name]!,
-      lowered.styles[input.mapId]![name]!,
-      transformation.layers,
-    );
-  }
   const projected = prepareTileflowNativeStyles(lowered.styles, input.assets)[input.mapId]!;
   for (const [name, style] of Object.entries(projected)) {
     for (const sourceId of Object.keys(input.teamSources)) {

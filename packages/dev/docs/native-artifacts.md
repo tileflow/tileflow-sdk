@@ -73,6 +73,15 @@ layer ID, the lowering version and deterministic branch order, with collision ch
 whole input style. The original layer's replacements stay together; surrounding layers are not
 reordered. Existing sort-key expressions are retained, not simplified or replaced.
 
+Replacements shift the physical index of every later layer, so lowering rebinds the style's layer
+references from the recorded spans. Each `tileflow:interaction-manifest` POI `priority` becomes its
+layer's final index. An overlay placement anchor naming an expanded layer moves to that layer's first
+replacement, because anchors mark insertion-before boundaries. Metadata that the spans cannot prove,
+such as a POI priority that differs from its compiled layer index, a POI entry whose source does not
+match its layer or an anchor naming a missing layer, fails with `NATIVE_UNSUPPORTED_STYLE` at the
+style's `/metadata` pointer rather than being guessed. Local builds, watched sessions and native
+preview share this step with Hosted publication.
+
 Work is bounded per property by depth 16, 512 decision visits, 64 decision paths, 16 distinct
 outcomes and 64 dash elements; the product is limited to 32 physical layers and 32 zoom intervals
 per logical layer. Raw compiler input must fit 160,000 JSON nodes before any lowering. Its expanded
@@ -137,7 +146,8 @@ style SHA-256 values, input/output layer counts, projection normalization, and t
 output start/count and affected properties of each changed layer. Ordinals refer to the complete
 style layer arrays, including unchanged layers. These spans make the deterministic physical IDs
 traceable without duplicating layer definitions in the receipt. The input hash binds shared
-compiler output; the lowered hash precedes native font preparation and generation URL retargeting.
+compiler output; the lowered hash includes the rebound layer references and precedes native font
+preparation and generation URL retargeting.
 The build-manifest hash separately binds the final prepared styles and assets. All styles receive
 an entry, including styles for which no lowering was needed. Schema v1 build records do not imply
 this preparation policy and are not parsed as v2.

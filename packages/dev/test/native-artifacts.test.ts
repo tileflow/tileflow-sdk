@@ -99,6 +99,53 @@ test('prepares Streets and every theme deterministically without changing logica
   }
 });
 
+test('written native styles bind POI priorities and overlay anchors to lowered layer indexes', async (t) => {
+  const cwd = await fixture(t);
+  const native = await createTileflowBuildArtifacts({cwd, styleBaseUrl: '.', renderer: 'native'});
+  t.after(() => disposeTileflowBuildArtifacts(native));
+  assert.ok(native.nativeBuild);
+  for (const {theme, layers: spans} of native.nativeBuild.transformations) {
+    const files = native.files.filter(({fileName}) =>
+      fileName.endsWith(`styles/main/${theme}.json`),
+    );
+    assert.equal(files.length, 2, 'Stable and generation styles are both checked.');
+    for (const file of files) {
+      const style = JSON.parse(String(file.source)) as MapLibreStyle;
+      const metadata = style.metadata as {
+        'tileflow:interaction-manifest': {
+          domains: {poi: {layers: {layerId: string; priority: number}[]}};
+        };
+        'tileflow:overlay-placement-manifest': {anchors: Record<string, string | null>};
+      };
+      const ids = style.layers.map(({id}) => id as string);
+      const poi = metadata['tileflow:interaction-manifest'].domains.poi.layers;
+      const first = Math.min(...poi.map(({priority}) => priority));
+      const shift = spans
+        .filter(({outputStart}) => outputStart < first)
+        .reduce((total, {outputCount}) => total + outputCount - 1, 0);
+      assert.ok(shift > 0, 'Streets expands line layers below its POI layers.');
+      for (const {layerId, priority} of poi) assert.equal(ids[priority], layerId, file.fileName);
+
+      const anchors = Object.values(metadata['tileflow:overlay-placement-manifest'].anchors);
+      const boundaries = anchors.map((anchor) =>
+        anchor === null ? ids.length : ids.indexOf(anchor),
+      );
+      assert.ok(
+        boundaries.every((index) => index >= 0),
+        JSON.stringify(anchors),
+      );
+      assert.deepEqual(
+        boundaries,
+        [...boundaries].sort((left, right) => left - right),
+      );
+      for (const {outputStart, outputCount} of spans) {
+        for (const branch of ids.slice(outputStart + 1, outputStart + outputCount))
+          assert.equal(anchors.includes(branch), false, branch);
+      }
+    }
+  }
+});
+
 test('uses independent web/native output inventories and retargets absolute asset roots once', async (t) => {
   const cwd = await fixture(t);
   const common = {

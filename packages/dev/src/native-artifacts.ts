@@ -23,6 +23,7 @@ import {
   validateTileflowNativePreparedStyle,
 } from '@tileflow/core/native-profile';
 import type {TileflowBuildAsset} from './icons';
+import {rebindNativeLayerReferences} from './native-layer-references';
 import {lowerNativeStyleRepresentation, NativeLoweringError} from './native-lowering';
 
 type TileflowNativeStyleTransformation = TileflowNativeBuildRecord['transformations'][number];
@@ -41,7 +42,10 @@ function withContext(
   return {...issue, path: prefix.length + issue.path.length <= 300 ? prefix + issue.path : prefix};
 }
 
-/** Lower only the native representation; shared compilation and authored map identity stay intact. */
+/**
+ * Lower only the native representation; shared compilation and authored map identity stay intact.
+ * Local artifacts and Hosted publication both receive styles whose layer references are rebound.
+ */
 export function lowerTileflowNativeCompiledStyles(input: TileflowBuildStyles): {
   styles: TileflowBuildStyles;
   transformations: TileflowNativeStyleTransformation[];
@@ -92,12 +96,33 @@ export function lowerTileflowNativeCompiledStyles(input: TileflowBuildStyles): {
         const lowered = lowerNativeStyleRepresentation(original, (filter) =>
           convertFilter(structuredClone(filter) as FilterSpecification),
         );
-        const issues = validateTileflowNativePreparedStyle(lowered.style, options);
+        // Expanded line layers shift every later index, so POI priorities and overlay anchors
+        // must name the physical layers before validation, hashing or any artifact consumer.
+        const style = rebindNativeLayerReferences(
+          original,
+          lowered.style as unknown as MapLibreStyle,
+          lowered.layers,
+        );
+        if (!style)
+          throw new TileflowNativeCompatibilityError([
+            withContext(
+              {
+                ...createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE', '/metadata'),
+                message:
+                  'Tileflow POI interaction or overlay placement metadata does not match the compiled layers.',
+                suggestion:
+                  'Rebuild with the Tileflow compiler; native lowering only rebinds POI priorities and overlay anchors that match the compiled layer order.',
+              },
+              map,
+              theme,
+            ),
+          ]);
+        const issues = validateTileflowNativePreparedStyle(style, options);
         if (issues.length)
           throw new TileflowNativeCompatibilityError(
             issues.map((issue) => withContext(issue, map, theme)),
           );
-        styles[map]![theme] = lowered.style as unknown as MapLibreStyle;
+        styles[map]![theme] = style;
         transformations.push({
           map,
           theme,
@@ -105,7 +130,7 @@ export function lowerTileflowNativeCompiledStyles(input: TileflowBuildStyles): {
             .update(serializeCanonicalJson(original))
             .digest('hex'),
           loweredStyleSha256: createHash('sha256')
-            .update(serializeCanonicalJson(lowered.style))
+            .update(serializeCanonicalJson(style))
             .digest('hex'),
           inputLayers: lowered.inputLayers,
           outputLayers: lowered.outputLayers,

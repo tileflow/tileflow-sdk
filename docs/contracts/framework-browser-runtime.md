@@ -96,6 +96,13 @@ without changing the map. Ground values follow the position; symbol values and v
 feature state change when the nearest theme changes, the latter with one source re-layout covered
 by a cross-fade.
 
+The Core theme controller also offers map emphasis: `setEmphasis(emphasis, {transition})` makes
+named modules of the compiled map recede towards its ground colour and fades its labels and icons,
+except inside an optional keep area, and `setEmphasis(undefined)` restores the design. It changes
+only layers whose metadata names a module (`tileflow:domain`), stays through `setTheme`, follows
+every `setBlend` position, eases camera-only values every frame, and changes values read per
+feature once under a cross-fade. Framework adapters do not expose it yet.
+
 ## Renderer loading boundary
 
 React, Vue, and Svelte import MapLibre declarations as types only. Their executable entrypoints

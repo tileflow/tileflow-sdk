@@ -206,3 +206,16 @@ latest wins. A failed change restores the previous appearance and reports `faile
 The controller loads blended themes' style documents with the same request policy it uses for
 style font metadata: same-origin credentials, no redirects, and a bounded size. Pass `loadStyle`
 when styles need another loader.
+
+The controller also shows [map emphasis](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-emphasis.md),
+which stays through theme changes and follows every blend position.
+
+## Fast sweeps on slower devices
+
+Each position change makes MapLibre evaluate the paint of every layer whose value changed. A clock
+that moves slowly changes few values per frame, and positions closer than a four-hundredth of a
+theme are skipped. A sweep that crosses a whole theme in a few seconds while the camera also moves
+changes most ground layers on every frame. Measured in Chromium on Apple silicon at 1440 × 900 for
+a detailed city map, such a sweep kept 76 frames a second; with the processor slowed four times, as
+on a mid-range phone, it fell to about 11, against 28 for the same camera move without the sweep.
+On slower devices, prefer short sweeps or move the position less often.

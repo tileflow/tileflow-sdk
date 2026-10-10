@@ -142,6 +142,8 @@ receipts must use a concrete theme such as `light` or `dark`.
 Because every theme of a map shares one structure, a browser map can cross-fade between themes or
 show a continuous blend of them on the same MapLibre instance, with no extra requests. See
 [theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md).
+The same controller can make chosen modules recede and the map's labels fade so an application's
+own content reads first; see [map emphasis](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-emphasis.md).
 
 The semantic domains are `land`, `water`, `nautical`, `roads`, `buildings`, `boundaries`, `labels`,
 `poi`, `aeroways`, `transit`, `vegetation`, `addresses`, and `landforms`. Style stable geographic
@@ -262,6 +264,7 @@ revision; prefer the installed copy when working with an older release.
 - [Compiled-style performance](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/compiled-style-performance.md)
 - [Themes and module styles](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/themes-and-module-styles.md)
 - [Theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md)
+- [Map emphasis](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-emphasis.md)
 - [Data is separate from design](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/data-is-separate-from-design.md)
 - [Capture scenes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-scenes.md)
 - [Public API and browser subpath](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/public-api-and-browser-subpath.md)

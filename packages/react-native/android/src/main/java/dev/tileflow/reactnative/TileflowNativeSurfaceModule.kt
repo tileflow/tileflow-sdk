@@ -1,10 +1,17 @@
 package dev.tileflow.reactnative
 
+import android.graphics.Bitmap
+import android.graphics.PointF
 import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
+import android.view.PixelCopy
+import android.view.SurfaceView
+import android.view.TextureView
 import android.view.ViewTreeObserver
+import android.view.animation.AccelerateDecelerateInterpolator
+import android.widget.ImageView
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.Promise
@@ -19,9 +26,14 @@ import com.facebook.react.uimanager.UIManagerHelper
 import com.facebook.react.uimanager.common.UIManagerType
 import java.util.UUID
 import kotlin.math.abs
+import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.Layer
+import org.maplibre.android.style.layers.LayoutPropertyValue
+import org.maplibre.android.style.layers.PaintPropertyValue
+import org.maplibre.android.style.light.Position
 import org.maplibre.reactnative.components.camera.MLRNCamera
 import org.maplibre.reactnative.components.mapview.MLRNMapView
 
@@ -154,6 +166,35 @@ class TileflowNativeSurfaceModule(context: ReactApplicationContext) : ReactConte
 		surfaces[id]?.state?.cancelCommand(integer(sequence))
 		Arguments.makeNativeMap(mapOf("cancelled" to true))
 	}
+	private fun duration(value: Double): Long {
+		if (!value.isFinite() || value < 0 || value > 5000 || value != value.toLong().toDouble()) invalid()
+		return value.toLong()
+	}
+	@ReactMethod fun coverSurface(id: String, milliseconds: Double, promise: Promise) {
+		handler.post {
+			try {
+				val surface = current(id)
+				val covered = { value: Boolean -> promise.resolve(Arguments.makeNativeMap(mapOf("covered" to value))) }
+				if (duration(milliseconds) == 0L) covered(false) else surface.cover(covered)
+			} catch (_: Exception) { reject(promise) }
+		}
+	}
+	@ReactMethod fun revealSurface(id: String, milliseconds: Double, promise: Promise) {
+		handler.post {
+			try { current(id, allowFailed = true).reveal(duration(milliseconds), promise) }
+			catch (_: Exception) { reject(promise) }
+		}
+	}
+	@ReactMethod fun discardSurfaceCover(id: String, promise: Promise) = action(promise) {
+		if (!AdmissionUrl.validToken(id)) invalid()
+		surfaces[id]?.discardCovers()
+		Arguments.makeNativeMap(mapOf("discarded" to true))
+	}
+	@ReactMethod fun applyThemeValues(id: String, token: String, values: ReadableMap, promise: Promise) = action(promise) {
+		val surface = current(id)
+		if (surface.token != token) invalid()
+		Arguments.makeNativeMap(mapOf("applied" to surface.applyThemeValues(surface.style() ?: invalid(), values)))
+	}
 	private fun nearAngular(a: Double, b: Double): Boolean = abs(((a - b + 540) % 360) - 180) <= 0.000001
 	private fun view(input: ReadableMap): Map<String, Any> {
 		val keys = input.keySetIterator(); var count = 0
@@ -222,6 +263,13 @@ class TileflowNativeSurfaceModule(context: ReactApplicationContext) : ReactConte
 		var retiring = false
 		var deadline: Runnable? = null
 		var layoutWaiter: (() -> Unit)? = null
+		private val covers = mutableListOf<Cover>()
+		private val reveals = mutableListOf<Reveal>()
+		private val settling = mutableListOf<Reveal>()
+		private var revealDeadline: Runnable? = null
+		private var themedToken: String? = null
+		private val themedLayers = HashMap<String, Layer>()
+		private val themedImages = HashMap<String, Bitmap>()
 		private var layoutSnapshot: List<Int>? = null
 		fun marker() = "__tileflow_native_style_$token"
 		fun style(): Style? = sdk.style?.takeIf { it.isFullyLoaded && it.getLayer(marker()) != null }
@@ -233,13 +281,16 @@ class TileflowNativeSurfaceModule(context: ReactApplicationContext) : ReactConte
 		}
 		private fun guarded(action: () -> Unit) { if (!retiring) try { action() } catch (_: Exception) { state.fail() } }
 		private val loaded = MapView.OnDidFinishLoadingStyleListener { guarded { style()?.let { state.loaded(token, it) } } }
-		private val frameStart = MapView.OnWillStartRenderingFrameListener { guarded { sampleLayout(); state.frameStart(style()) } }
-		private val frameEnd = MapView.OnDidFinishRenderingFrameListener { fully, _, _ -> guarded { state.frameEnd(style(), fully) } }
+		private val frameStart = MapView.OnWillStartRenderingFrameListener { guarded { sampleLayout(); state.frameStart(style()); followCovers() } }
+		private val frameEnd = MapView.OnDidFinishRenderingFrameListener { fully, _, _ -> guarded {
+			state.frameEnd(style(), fully)
+			if (fully && reveals.isNotEmpty()) startReveals()
+		} }
 		private val cameraStart = MapLibreMap.OnCameraMoveStartedListener { reason -> guarded {
 			if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) state.gestureStart(view())
 			else state.gestureEnd(view())
 		} }
-		private val cameraMove = MapLibreMap.OnCameraMoveListener { guarded { state.gestureChange(view()) } }
+		private val cameraMove = MapLibreMap.OnCameraMoveListener { guarded { state.gestureChange(view()); followCovers() } }
 		private val cameraEnd = MapLibreMap.OnCameraIdleListener { guarded { state.gestureEnd(view()) } }
 		private val layout = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> guarded { sampleLayout() } }
 		fun sampleLayout() {
@@ -257,6 +308,7 @@ class TileflowNativeSurfaceModule(context: ReactApplicationContext) : ReactConte
 		}
 		fun retire() {
 			if (retiring) return
+			discardCovers()
 			retiring = true; state.close(); deadline?.let { handler.removeCallbacks(it) }; deadline = null
 			layoutWaiter?.invoke(); layoutWaiter = null
 			root.removeOnLayoutChangeListener(layout); map.removeOnLayoutChangeListener(layout)
@@ -265,6 +317,162 @@ class TileflowNativeSurfaceModule(context: ReactApplicationContext) : ReactConte
 			sdk.removeOnCameraMoveStartedListener(cameraStart); sdk.removeOnCameraMoveListener(cameraMove); sdk.removeOnCameraIdleListener(cameraEnd)
 			if (!root.isAttachedToWindow) onViewDetachedFromWindow(root)
 		}
+		/** A snapshot of one frame over the rendering view that follows four of its ground points. */
+		inner class Cover(val view: ImageView, val corners: FloatArray, val anchors: List<LatLng>) { var fading = false }
+		inner class Reveal(val duration: Long, val covers: List<Cover>, var promise: Promise?)
+
+		fun cover(covered: (Boolean) -> Unit) {
+			val render = map.renderView
+			if (!NativeTheme.motionEnabled(reactApplicationContext) || !foreground || style() == null || render == null ||
+				render.width < 1 || render.height < 1 || covers.size >= 4) { covered(false); return }
+			if (covers.any { !it.fading }) { covered(true); return }
+			// Only the drawn map is copied; logo, attribution and markers stay live above the cover.
+			when (render) {
+				is TextureView -> covered(render.bitmap?.let { addCover(it) } ?: false)
+				is SurfaceView -> {
+					val bitmap = Bitmap.createBitmap(render.width, render.height, Bitmap.Config.ARGB_8888)
+					PixelCopy.request(render, bitmap, { result ->
+						covered(try { result == PixelCopy.SUCCESS && addCover(bitmap) } catch (_: Exception) { false })
+					}, handler)
+				}
+				else -> covered(false)
+			}
+		}
+		private fun addCover(bitmap: Bitmap): Boolean {
+			val render = map.renderView
+			if (retiring || style() == null || render == null || !NativeTheme.motionEnabled(reactApplicationContext)) return false
+			val width = bitmap.width.toFloat(); val height = bitmap.height.toFloat()
+			// Ground points below the horizon at any supported pitch, in snapshot pixels.
+			val corners = floatArrayOf(width * 0.1f, height * 0.45f, width * 0.9f, height * 0.45f, width * 0.9f, height * 0.9f, width * 0.1f, height * 0.9f)
+			val projection = sdk.projection
+			val anchors = (0 until 4).map { projection.fromScreenLocation(PointF(corners[2 * it], corners[2 * it + 1])) }
+			if (anchors.any { !it.latitude.isFinite() || !it.longitude.isFinite() }) return false
+			val view = ImageView(map.context)
+			view.scaleType = ImageView.ScaleType.MATRIX
+			view.setImageBitmap(bitmap)
+			view.isClickable = false; view.isFocusable = false
+			view.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+			// Newer covers go below older ones, which keep fading on top.
+			map.addView(view, map.indexOfChild(render) + 1, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+			// React Native lays out only the views it manages, so the cover is sized here.
+			view.measure(View.MeasureSpec.makeMeasureSpec(map.width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(map.height, View.MeasureSpec.EXACTLY))
+			view.layout(0, 0, map.width, map.height)
+			covers.add(Cover(view, corners, anchors))
+			followCovers()
+			return true
+		}
+		private fun followCovers() {
+			if (covers.isEmpty()) return
+			val projection = sdk.projection
+			for (cover in covers) {
+				val target = FloatArray(8)
+				cover.anchors.forEachIndexed { index, anchor ->
+					val point = projection.toScreenLocation(anchor)
+					target[2 * index] = point.x; target[2 * index + 1] = point.y
+				}
+				NativeTheme.homography(cover.corners, target)?.let { cover.view.imageMatrix = it }
+			}
+		}
+		fun reveal(duration: Long, promise: Promise) {
+			val reveal = Reveal(duration, covers.toList(), promise)
+			if (reveal.covers.isEmpty()) { promise.resolve(Arguments.makeNativeMap(mapOf("revealed" to true))); return }
+			reveals.add(reveal)
+			// Fades start on the next complete frame, or after ten seconds at most.
+			if (revealDeadline == null) {
+				val timeout = Runnable { revealDeadline = null; startReveals() }
+				revealDeadline = timeout; handler.postDelayed(timeout, 10000)
+			}
+			sdk.triggerRepaint()
+		}
+		private fun startReveals() {
+			revealDeadline?.let { handler.removeCallbacks(it) }; revealDeadline = null
+			val pending = reveals.toList(); reveals.clear()
+			for (reveal in pending) {
+				for (cover in reveal.covers) {
+					if (cover.fading) continue
+					cover.fading = true
+					cover.view.animate().alpha(0f).setDuration(reveal.duration).setInterpolator(AccelerateDecelerateInterpolator())
+						.withEndAction { removeCover(cover) }.start()
+				}
+				settle(reveal)
+			}
+		}
+		private fun removeCover(cover: Cover) {
+			cover.view.animate().cancel(); map.removeView(cover.view); covers.remove(cover)
+			for (reveal in settling.toList()) settle(reveal)
+		}
+		// A reveal resolves once every cover that existed when it was requested is gone.
+		private fun settle(reveal: Reveal) {
+			if (reveal.covers.any { it in covers }) { if (reveal !in settling) settling.add(reveal); return }
+			settling.remove(reveal)
+			reveal.promise?.resolve(Arguments.makeNativeMap(mapOf("revealed" to true))); reveal.promise = null
+		}
+		fun discardCovers() {
+			revealDeadline?.let { handler.removeCallbacks(it) }; revealDeadline = null
+			for (cover in covers.toList()) { cover.view.animate().cancel(); map.removeView(cover.view) }
+			covers.clear()
+			for (reveal in reveals + settling) { reveal.promise?.resolve(Arguments.makeNativeMap(mapOf("revealed" to true))); reveal.promise = null }
+			reveals.clear(); settling.clear()
+		}
+
+		fun applyThemeValues(style: Style, values: ReadableMap): Int {
+			if (themedToken != token) {
+				// Layers and original artwork belong to one style.
+				themedToken = token; themedLayers.clear(); themedImages.clear()
+			}
+			var applied = 0
+			for (group in listOf("paint", "layout")) {
+				if (!values.hasKey(group)) continue
+				val entries = values.getArray(group) ?: invalid()
+				if (entries.size() > 8192) invalid()
+				for (index in 0 until entries.size()) {
+					val entry = entries.getArray(index) ?: invalid()
+					if (entry.size() != 3 || entry.getType(0) != ReadableType.String || entry.getType(1) != ReadableType.String) invalid()
+					val identifier = entry.getString(0) ?: invalid()
+					val layer = themedLayers[identifier] ?: style.getLayer(identifier)?.also { themedLayers[identifier] = it } ?: continue
+					val property = entry.getString(1) ?: invalid()
+					val value = NativeTheme.value(entry.getDynamic(2))
+					layer.setProperties(if (group == "paint") PaintPropertyValue(property, value) else LayoutPropertyValue(property, value))
+					applied++
+				}
+			}
+			if (values.hasKey("images")) {
+				val images = values.getArray("images") ?: invalid()
+				if (images.size() > 64) invalid()
+				// Originals are read before any artwork is replaced, so tuples can share names.
+				for (index in 0 until images.size()) {
+					val entry = images.getArray(index) ?: invalid()
+					if (entry.size() != 4 || (0 until 3).any { entry.getType(it) != ReadableType.String } || entry.getType(3) != ReadableType.Number) invalid()
+					for (name in (0 until 3).map { entry.getString(it) ?: invalid() })
+						if (!themedImages.containsKey(name)) style.getImage(name)?.let { themedImages[name] = it }
+				}
+				for (index in 0 until images.size()) {
+					val entry = images.getArray(index) ?: invalid()
+					val from = themedImages[entry.getString(1)] ?: continue
+					val to = themedImages[entry.getString(2)] ?: continue
+					val t = entry.getDouble(3)
+					if (!t.isFinite() || t < 0 || t > 1) invalid()
+					style.addImage(entry.getString(0) ?: invalid(), NativeTheme.mix(from, to, t))
+					applied++
+				}
+			}
+			if (values.hasKey("light")) {
+				val light = values.getMap("light") ?: invalid()
+				val target = style.light
+				if (target != null) {
+					if (light.hasKey("color") && light.getType("color") == ReadableType.String) target.setColor(light.getString("color") ?: invalid())
+					if (light.hasKey("intensity") && light.getType("intensity") == ReadableType.Number) target.intensity = light.getDouble("intensity").toFloat()
+					if (light.hasKey("position") && light.getType("position") == ReadableType.Array) {
+						val position = light.getArray("position") ?: invalid()
+						if (position.size() == 3 && (0 until 3).all { position.getType(it) == ReadableType.Number })
+							target.position = Position(position.getDouble(0).toFloat(), position.getDouble(1).toFloat(), position.getDouble(2).toFloat())
+					}
+					applied++
+				}
+			}
+			return applied
+		}
+
 		override fun onViewAttachedToWindow(view: View) { guarded { sampleLayout() } }
 		override fun onViewDetachedFromWindow(view: View) {
 			retire(); root.removeOnAttachStateChangeListener(this); surfaces.remove(id)

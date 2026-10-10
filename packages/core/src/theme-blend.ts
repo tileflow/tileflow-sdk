@@ -62,10 +62,29 @@ export type TileflowThemeBlendPlan = Readonly<{
   summary: Readonly<{
     splitLayers: number;
     copiedLayers: number;
+    /** Per-theme layers of which only the nearest theme's copy is shown. */
+    switchedLayers: number;
     switchedValues: number;
   }>;
   /** The style at a blend position: every template filled, every switch at the nearest theme. */
   styleAt(position: number): MapLibreStyle;
+}>;
+
+export type TileflowThemeBlendOptions = Readonly<{
+  /**
+   * How icon images that differ between themes change. `mix` (the default) mixes their artwork in
+   * pixels under the first theme's image names. `switch` changes the image names when the nearest
+   * theme changes, for renderers that cannot replace an image's pixels while keeping its stretch
+   * and content metadata.
+   */
+  iconImages?: 'mix' | 'switch';
+  /**
+   * How values that read feature data change when they can be neither split nor cross-faded.
+   * `values` (the default) sets each value when the nearest theme changes. `layers` draws such a
+   * layer once per theme and shows only the nearest theme's copy, for renderers that cannot set
+   * data-driven values at run time reliably.
+   */
+  featureSwitches?: 'layers' | 'values';
 }>;
 
 export class TileflowThemeBlendError extends Error {
@@ -105,18 +124,25 @@ const featureOperators = new Set([
 const maximumBranches = 24;
 
 /** Plans a blend of two or more compiled themes of one map, in blend order. */
-export function planTileflowThemeBlend(styles: readonly MapLibreStyle[]): TileflowThemeBlendPlan {
+export function planTileflowThemeBlend(
+  styles: readonly MapLibreStyle[],
+  options: TileflowThemeBlendOptions = {},
+): TileflowThemeBlendPlan {
   if (styles.length < 2)
     throw new TileflowThemeBlendError('A theme blend needs two or more themes.');
   const [base] = styles as [MapLibreStyle, ...MapLibreStyle[]];
   assertSameStructure(styles, base);
 
+  const mixedImages = new Set(imageProperties);
+  if (options.iconImages === 'switch') mixedImages.delete('icon-image');
   const paints: TileflowThemeBlendPaint[] = [];
   const switches: TileflowThemeBlendSwitch[] = [];
-  const imageGroups = collectImageNames(styles, base);
+  const imageGroups = collectImageNames(styles, base, mixedImages);
+  const symbolLayers = new Set<string>();
   const images = new Map<string, TileflowThemeBlendImage>();
   let splitLayers = 0;
   let copiedLayers = 0;
+  let switchedLayers = 0;
 
   const layers: Record<string, unknown>[] = [];
   for (const [index, layer] of base.layers.entries()) {
@@ -131,6 +157,7 @@ export function planTileflowThemeBlend(styles: readonly MapLibreStyle[]): Tilefl
   }
   const sky = differingRoot(styles, 'sky');
   const light = differingRoot(styles, 'light');
+  const metadata = alignInteractionManifest(base.metadata, layers);
 
   return {
     themes: styles.length,
@@ -139,14 +166,21 @@ export function planTileflowThemeBlend(styles: readonly MapLibreStyle[]): Tilefl
     switches,
     ...(sky === undefined ? {} : {sky}),
     ...(light === undefined ? {} : {light}),
-    summary: {splitLayers, copiedLayers, switchedValues: switches.length},
+    summary: {splitLayers, copiedLayers, switchedLayers, switchedValues: switches.length},
     styleAt(position) {
       const at = clampPosition(position, styles.length);
       const dominant = Math.round(at);
       const style: MapLibreStyle = {
         ...base,
+        ...(metadata === undefined ? {} : {metadata}),
+        // Symbols show the nearest theme, as the label cross-fade leaves them between changes.
         layers: layers.map((layer) =>
-          fillLayer(layer, at, dominant, switchesByLayer.get(String(layer.id))),
+          fillLayer(
+            layer,
+            symbolLayers.has(String(layer.id)) ? dominant : at,
+            dominant,
+            switchesByLayer.get(String(layer.id)),
+          ),
         ),
       };
       if (sky !== undefined) style.sky = fillTemplate(sky, at) as MapLibreStyle['sky'];
@@ -175,7 +209,7 @@ export function planTileflowThemeBlend(styles: readonly MapLibreStyle[]): Tilefl
           (variant) => (variant[group] as Record<string, unknown> | undefined)?.[property],
         );
         if (values.every((value) => same(value, values[0]))) continue;
-        if (imageProperties.has(property)) {
+        if (mixedImages.has(property)) {
           const tuples = imageTuples(values);
           if (tuples && tuples.every((names) => imageGroups.get(names[0]!)?.size === 1)) {
             for (const names of tuples) {
@@ -210,6 +244,8 @@ export function planTileflowThemeBlend(styles: readonly MapLibreStyle[]): Tilefl
     let results: {
       layer: Record<string, unknown>;
       extra: {property: string; template: unknown}[];
+      /** Per-theme copies switch their visibility instead of their values. */
+      visibility?: string[];
     }[] = [{layer: planned, extra: []}];
 
     if (driven.length > 0) {
@@ -224,18 +260,53 @@ export function planTileflowThemeBlend(styles: readonly MapLibreStyle[]): Tilefl
             values: variants.map((variant) => paintOf(variant)[property]),
           });
     }
+    if (
+      options.featureSwitches === 'layers' &&
+      results.length === 1 &&
+      ownSwitches.some((entry) => entry.values.some(isDataDriven))
+    )
+      results = switchLayer();
 
     for (const result of results) {
       const resultId = String(result.layer.id);
+      if (type === 'symbol') symbolLayers.add(resultId);
       const overridden = new Set(result.extra.map((entry) => entry.property));
       for (const entry of [
         ...ownPaints.filter((own) => !overridden.has(own.property)),
         ...result.extra,
       ])
         paints.push({layer: resultId, property: entry.property, template: entry.template, follows});
-      for (const entry of ownSwitches) switches.push({layer: resultId, ...entry});
+      if (result.visibility)
+        switches.push({
+          layer: resultId,
+          group: 'layout',
+          property: 'visibility',
+          values: result.visibility,
+        });
+      else for (const entry of ownSwitches) switches.push({layer: resultId, ...entry});
     }
     return results.map((result) => result.layer);
+
+    /** One copy per theme with that theme's switched values; only the nearest one is shown. */
+    function switchLayer() {
+      switchedLayers += variants.length;
+      return variants.map((_, theme) => {
+        const copyPaint: Record<string, unknown> = {...paint};
+        const copyLayout: Record<string, unknown> = {...layout};
+        for (const entry of ownSwitches) {
+          const target = entry.group === 'paint' ? copyPaint : copyLayout;
+          const value = entry.values[theme];
+          if (value === undefined) delete target[entry.property];
+          else target[entry.property] = value;
+        }
+        const shown = copyLayout.visibility === 'none' ? 'none' : 'visible';
+        return {
+          layer: {...planned, id: `${id}::theme-${theme}`, paint: copyPaint, layout: copyLayout},
+          extra: [],
+          visibility: variants.map((__, nearest) => (nearest === theme ? shown : 'none')),
+        };
+      });
+    }
 
     /** Data-driven values split into one camera-only layer per branch, or undefined. */
     function splitLayer() {
@@ -408,15 +479,16 @@ function differingRoot(styles: readonly MapLibreStyle[], key: 'light' | 'sky'): 
   return tryMixTemplate(values);
 }
 
-/** Each first-theme image name may stand for one set of artworks only, wherever it is used. */
+/** Each first-theme image name may stand for one set of artworks only, wherever it is mixed. */
 function collectImageNames(
   styles: readonly MapLibreStyle[],
   base: MapLibreStyle,
+  properties: ReadonlySet<string>,
 ): Map<string, Set<string>> {
   const uses = new Map<string, Set<string>>();
   for (const [index] of base.layers.entries()) {
     for (const group of ['layout', 'paint'] as const) {
-      for (const property of imageProperties) {
+      for (const property of properties) {
         const values = styles.map(
           (style) =>
             (style.layers[index]?.[group] as Record<string, unknown> | undefined)?.[property],
@@ -432,6 +504,64 @@ function collectImageNames(
   }
   return uses;
 }
+
+/**
+ * Tileflow's interaction metadata names each POI layer with a priority equal to its index in the
+ * style. Split and copied layers move later layers, so the planned style carries the new indices.
+ */
+function alignInteractionManifest(
+  metadata: unknown,
+  layers: readonly Record<string, unknown>[],
+): Record<string, unknown> | undefined {
+  if (!isRecord(metadata)) return undefined;
+  // A planned layer ID is the original, or the original followed by `::` and a branch or theme.
+  const planned = new Map<string, {id: string; index: number}[]>();
+  for (const [index, layer] of layers.entries()) {
+    const id = String(layer.id);
+    const original = /^(.+)::(?:branch|theme)-\d+$/u.exec(id)?.[1] ?? id;
+    planned.set(original, [...(planned.get(original) ?? []), {id, index}]);
+  }
+  let aligned: Record<string, unknown> | undefined;
+  const interactions = metadata['tileflow:interaction-manifest'];
+  const domains = isRecord(interactions) ? interactions.domains : undefined;
+  if (isRecord(interactions) && isRecord(domains) && isRecord(domains.poi)) {
+    const poi = domains.poi;
+    if (Array.isArray(poi.layers)) {
+      // Every planned copy of a POI layer answers for it; only the shown copies have features.
+      const poiLayers = poi.layers.flatMap((entry: unknown) => {
+        if (!isRecord(entry) || typeof entry.layerId !== 'string') return [entry];
+        const copies = planned.get(entry.layerId);
+        if (!copies) return [entry];
+        return copies.map(({id, index}) => ({...entry, layerId: id, priority: index}));
+      });
+      aligned = {
+        ...metadata,
+        'tileflow:interaction-manifest': {
+          ...interactions,
+          domains: {...domains, poi: {...poi, layers: poiLayers}},
+        },
+      };
+    }
+  }
+  const overlays = metadata['tileflow:overlay-placement-manifest'];
+  if (isRecord(overlays) && isRecord(overlays.anchors)) {
+    // Anchors insert before a layer; an expanded layer starts at its first planned copy.
+    const anchors = Object.fromEntries(
+      Object.entries(overlays.anchors).map(([placement, anchor]) => [
+        placement,
+        typeof anchor === 'string' ? (planned.get(anchor)?.[0]?.id ?? anchor) : anchor,
+      ]),
+    );
+    aligned = {
+      ...(aligned ?? metadata),
+      'tileflow:overlay-placement-manifest': {...overlays, anchors},
+    };
+  }
+  return aligned;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 
 /**
  * The image names an image value can show across themes, as tuples, read only from the output

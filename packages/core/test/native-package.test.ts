@@ -43,12 +43,18 @@ test('imports the native entrypoint without browser globals or network access', 
   assert.deepEqual(JSON.parse(stdout), [
     'TileflowNativeSourceError',
     'TileflowNativeUrlError',
+    'TileflowThemeBlendError',
     'createTileflowNativeSourceController',
+    'fillTileflowThemeBlendTemplate',
     'loadTileflowNativeManifest',
+    'nearestTileflowBlendTheme',
+    'planTileflowThemeBlend',
     'resolveTileflowNativeInitialView',
     'resolveTileflowNativeManifestUrl',
     'resolveTileflowNativeResourceUrl',
     'tileflowNativeManifestLimits',
     'tileflowNativeUrlLimits',
+    'tileflowThemeBlendLimits',
+    'validateTileflowThemeBlendSelection',
   ]);
 });

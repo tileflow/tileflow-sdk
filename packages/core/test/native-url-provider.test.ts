@@ -117,13 +117,19 @@ test('runs the standalone published native file with no installed dependencies o
     assert.deepEqual(Object.keys(native).sort(), [
       'TileflowNativeSourceError',
       'TileflowNativeUrlError',
+      'TileflowThemeBlendError',
       'createTileflowNativeSourceController',
+      'fillTileflowThemeBlendTemplate',
       'loadTileflowNativeManifest',
+      'nearestTileflowBlendTheme',
+      'planTileflowThemeBlend',
       'resolveTileflowNativeInitialView',
       'resolveTileflowNativeManifestUrl',
       'resolveTileflowNativeResourceUrl',
       'tileflowNativeManifestLimits',
       'tileflowNativeUrlLimits',
+      'tileflowThemeBlendLimits',
+      'validateTileflowThemeBlendSelection',
     ]);
     for (const origin of ['http://127.0.0.1:8765', 'http://10.0.2.2:8765']) {
       const results = checkNativeUrlContract(native, origin);

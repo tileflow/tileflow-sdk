@@ -19,7 +19,38 @@ export type MapView = TileflowNativeInitialView;
 /** Portable composition inputs, independent from source acquisition. */
 export type MapInitialViewInputs = TileflowNativeInitialViewOptions;
 
-export type MapSourceProps = Readonly<{source: MapSource; theme?: MapThemeSelection}>;
+/**
+ * How a theme change appears. With a `duration`, a snapshot of the current frame covers the map,
+ * follows the camera, and fades out once the new theme is drawn. The device's reduce-motion
+ * setting changes at once.
+ */
+export type MapThemeTransition = Readonly<{
+  /** Cross-fade length in milliseconds, from 0 (the default, an immediate change) to 5000. */
+  duration?: number;
+}>;
+
+/**
+ * A continuous blend of two to eight concrete themes of the map, shown instead of `theme`.
+ * `position` runs from 0 (the first theme) to `themes.length - 1`; 1.25 is a quarter of the way
+ * from the second theme to the third. Ground colours and widths follow the position; labels and
+ * icons cross-fade when the nearest theme changes.
+ */
+export type MapThemeBlend = Readonly<{
+  themes: readonly string[];
+  position: number;
+}>;
+
+export type MapSourceProps = Readonly<{
+  source: MapSource;
+  theme?: MapThemeSelection;
+  /** Cross-fades theme changes, including entering and leaving a blend. */
+  themeTransition?: MapThemeTransition;
+  /**
+   * Shows a blend of themes instead of `theme`. The first blend of a set of themes prepares one
+   * style that holds all of them; moving `position` later changes the map without loading.
+   */
+  themeBlend?: MapThemeBlend;
+}>;
 
 type AllowedMapOptions =
   | 'dragPan'

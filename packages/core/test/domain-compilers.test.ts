@@ -1,3 +1,4 @@
+import {featureFilter} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {labels, land, openMapTiles, poi, resolveTileflowData, roads, water, zoom} from '../src';
@@ -816,16 +817,36 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
   );
   assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /filter_rank/);
   assert.match(JSON.stringify(poiContributions[1]?.layer.filter), /size_rank/);
+  // The density threshold rises one rank at z16 and two from z17, past World's last POI zoom.
   assert.deepEqual((poiContributions[0]?.layer.filter as unknown[])[4], [
     '<=',
     ['to-number', ['get', 'filter_rank'], 6],
-    2,
+    ['+', ['step', ['zoom'], 0, 16, 1, 17, 2], 2],
   ]);
   assert.deepEqual((poiContributions[2]?.layer.filter as unknown[])[4], [
     '<=',
     ['to-number', ['get', 'filter_rank'], 6],
-    3,
+    ['+', ['step', ['zoom'], 0, 16, 1, 17, 2], 3],
   ]);
+});
+
+test('POI density shows more ranks as the camera passes World’s last POI zoom', () => {
+  const [contribution] = compilePoi(
+    poi({categories: ['food-drink'], density: 3, icons: true, labels: true}),
+    context,
+  );
+  const filter = featureFilter(contribution?.layer.filter as never);
+  const shownRanks = (zoom: number) =>
+    [0, 1, 2, 3, 4, 5].filter((rank) =>
+      filter.filter({zoom}, {
+        type: 1,
+        properties: {category: 'food-drink', filter_rank: rank, size_rank: 16},
+      } as never),
+    );
+  assert.deepEqual(shownRanks(15), [0, 1, 2, 3]);
+  assert.deepEqual(shownRanks(16), [0, 1, 2, 3, 4]);
+  assert.deepEqual(shownRanks(17), [0, 1, 2, 3, 4, 5]);
+  assert.deepEqual(shownRanks(19), [0, 1, 2, 3, 4, 5]);
 });
 
 test('partitions point and line water labels without duplicate candidates', () => {

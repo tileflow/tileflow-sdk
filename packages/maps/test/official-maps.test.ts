@@ -1048,7 +1048,11 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
     assert.deepEqual((layer.filter as unknown[])[4], [
       '<=',
       ['to-number', ['get', 'filter_rank'], 6],
-      category === 'arts-entertainment' || category === 'lodging' ? 2 : 3,
+      [
+        '+',
+        ['step', ['zoom'], 0, 16, 1, 17, 2],
+        category === 'arts-entertainment' || category === 'lodging' ? 2 : 3,
+      ],
     ]);
     assert.equal(layer.paint?.['text-color'], expectedPoiTextColors[category]);
     assert.equal(layer.paint?.['text-halo-color'], '#FFFFFF');

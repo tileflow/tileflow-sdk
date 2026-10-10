@@ -5,6 +5,7 @@ import {
   NativeSurfaceError,
   type NativeSurfaceEvent,
   type NativeSurfaceModule,
+  type NativeThemeValues,
 } from './native-surface-contract';
 
 const methods = [
@@ -20,6 +21,60 @@ const methods = [
 ] as const;
 const positive = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+const motionDuration = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 5000;
+export const nativeThemeValueLimits = Object.freeze({values: 8192, images: 64, depth: 32});
+const layerOrImage = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= 512;
+const propertyName = (value: unknown): value is string =>
+  typeof value === 'string' && /^[a-z][a-z-]{0,63}$/u.test(value);
+function plain(value: unknown, depth: number): boolean {
+  if (value === null || typeof value === 'boolean' || typeof value === 'string') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (depth >= nativeThemeValueLimits.depth || !value || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.every((item) => plain(item, depth + 1));
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) return false;
+  return Object.values(value).every((item) => plain(item, depth + 1));
+}
+/** Values come from the SDK's own blend plan; this bounds them before they cross the bridge. */
+function themeValues(values: unknown): values is NativeThemeValues {
+  if (!values || typeof values !== 'object' || Array.isArray(values)) return false;
+  const {paint = [], layout = [], images = [], light} = values as Record<string, unknown>;
+  if (
+    Object.keys(values).some((key) => !['paint', 'layout', 'images', 'light'].includes(key)) ||
+    !Array.isArray(paint) ||
+    !Array.isArray(layout) ||
+    !Array.isArray(images) ||
+    paint.length + layout.length > nativeThemeValueLimits.values ||
+    images.length > nativeThemeValueLimits.images
+  )
+    return false;
+  for (const entry of [...paint, ...layout]) {
+    if (
+      !Array.isArray(entry) ||
+      entry.length !== 3 ||
+      !layerOrImage(entry[0]) ||
+      !propertyName(entry[1]) ||
+      !plain(entry[2], 0)
+    )
+      return false;
+  }
+  for (const entry of images) {
+    if (
+      !Array.isArray(entry) ||
+      entry.length !== 4 ||
+      !layerOrImage(entry[0]) ||
+      !layerOrImage(entry[1]) ||
+      !layerOrImage(entry[2]) ||
+      typeof entry[3] !== 'number' ||
+      !(entry[3] >= 0 && entry[3] <= 1)
+    )
+      return false;
+  }
+  if (light === undefined) return true;
+  return Boolean(light) && typeof light === 'object' && !Array.isArray(light) && plain(light, 0);
+}
 function own(value: unknown, name: string): unknown {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new NativeSurfaceError();
   const property = Object.getOwnPropertyDescriptor(value, name);
@@ -96,6 +151,14 @@ export function createNativeSurfaceTransport(
   return Object.freeze({
     available(): void {
       module();
+    },
+    /** Whether the native build can apply blend values; older builds cannot. */
+    blending(): boolean {
+      try {
+        return typeof module().applyThemeValues === 'function';
+      } catch {
+        return false;
+      }
     },
     async attach(
       root: number,
@@ -238,6 +301,43 @@ export function createNativeSurfaceTransport(
           if (ack?.cancelled !== true) throw new NativeSurfaceError();
           return Object.freeze({cancelled: true as const});
         },
+        ...(typeof native.coverSurface === 'function' &&
+        typeof native.revealSurface === 'function' &&
+        typeof native.discardSurfaceCover === 'function'
+          ? {
+              async cover(duration: number) {
+                check();
+                if (!motionDuration(duration)) throw new NativeSurfaceError();
+                const ack = await safe(() => native.coverSurface!(surface, duration));
+                check();
+                if (typeof ack?.covered !== 'boolean') throw new NativeSurfaceError();
+                return ack.covered;
+              },
+              async reveal(duration: number) {
+                check();
+                if (!motionDuration(duration)) throw new NativeSurfaceError();
+                const ack = await safe(() => native.revealSurface!(surface, duration));
+                if (ack?.revealed !== true) throw new NativeSurfaceError();
+              },
+              async discardCover() {
+                const ack = await safe(() => native.discardSurfaceCover!(surface));
+                if (ack?.discarded !== true) throw new NativeSurfaceError();
+              },
+            }
+          : {}),
+        ...(typeof native.applyThemeValues === 'function'
+          ? {
+              async applyThemeValues(style: string, values: NativeThemeValues) {
+                check();
+                if (!isNativeToken(style) || !themeValues(values)) throw new NativeSurfaceError();
+                const ack = await safe(() => native.applyThemeValues!(surface, style, values));
+                check();
+                if (!Number.isSafeInteger(ack?.applied) || ack.applied < 0)
+                  throw new NativeSurfaceError();
+                return ack.applied;
+              },
+            }
+          : {}),
         retire(): Promise<void> {
           if (retirement) return retirement;
           live = false;

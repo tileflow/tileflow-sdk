@@ -111,6 +111,12 @@ function featureState(name: string): TileflowExpression<unknown> {
   return make<unknown>(['feature-state', key]);
 }
 
+function globalState(name: string): TileflowExpression<unknown> {
+  const key = name.trim();
+  if (!key) throw new Error('expr.globalState requires a non-empty state key.');
+  return make<unknown>(['global-state', key]);
+}
+
 function variable<T>(name: string): TileflowExpression<T> {
   const key = name.trim();
   if (!key) throw new Error('expr.var requires a non-empty variable name.');
@@ -473,6 +479,12 @@ function visitExpression(
       }
       return;
     }
+    case 'global-state': {
+      if (exact(2) && !isNonEmptyString(value[1])) {
+        addExpressionIssue(issues, [...path, 1], 'Global-state keys must be non-empty strings.');
+      }
+      return;
+    }
     case 'var': {
       if (exact(2)) {
         if (!isNonEmptyString(value[1])) {
@@ -814,6 +826,7 @@ export const expr = Object.freeze({
   has,
   id,
   featureState,
+  globalState,
   interpolate,
   let: letValue,
   literal,

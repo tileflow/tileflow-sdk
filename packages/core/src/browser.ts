@@ -460,6 +460,9 @@ export function createTileflowThemeController(options: {
   ): Promise<TileflowThemeTransitionResult> {
     const targetTheme = targetThemeOf(target);
     if (disposed || runId !== requestId) return {status: 'superseded', theme: targetTheme};
+    // A new style waits while the map's WebGL context is lost (see whenContextAvailable).
+    await whenContextAvailable(options.map);
+    if (disposed || runId !== requestId) return {status: 'superseded', theme: targetTheme};
     const previous = {current, shown};
     options.onTransition?.({currentTheme: previous.current.theme, phase: 'applying', targetTheme});
     const cover = beginTileflowStyleCrossfade(options.map, target.transition);
@@ -546,6 +549,7 @@ export function createTileflowThemeController(options: {
   }
 
   async function restore(previous: {current: TileflowRuntimeStyle; shown: Shown}): Promise<void> {
+    await whenContextAvailable(options.map);
     const blend = previous.shown.blend;
     if (blend) {
       const position = blend.blender.position;
@@ -894,6 +898,35 @@ function validateConcreteRuntimeTheme(
   return new TypeError(
     `Tileflow theme controller ${role} style requires a concrete portable theme name; received ${JSON.stringify(style.theme)}.`,
   );
+}
+
+/**
+ * Resolves once the map's WebGL context can draw. MapLibre GL JS 6.12 and 6.13 throw from the frame
+ * loop when `setStyle()` runs while the context is lost, so a style waits for
+ * `webglcontextrestored`. A map without a canvas, or one whose context cannot be read, is taken to
+ * be drawing.
+ */
+function whenContextAvailable(map: TileflowStyleSwitchMap): Promise<void> {
+  if (!isContextLost(map)) return Promise.resolve();
+  return new Promise((resolve) => {
+    const restored = () => {
+      map.off('webglcontextrestored', restored);
+      resolve();
+    };
+    map.on('webglcontextrestored', restored);
+  });
+}
+
+function isContextLost(map: TileflowStyleSwitchMap): boolean {
+  if (typeof map.getCanvas !== 'function') return false;
+  try {
+    const canvas = (map.getCanvas as () => HTMLCanvasElement | undefined).call(map);
+    // The context MapLibre made is returned again; the other kind is null on the same canvas.
+    const context = canvas?.getContext?.('webgl2') ?? canvas?.getContext?.('webgl');
+    return context?.isContextLost?.() === true;
+  } catch {
+    return false;
+  }
 }
 
 function applyMapStyle(

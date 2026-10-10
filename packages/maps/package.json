@@ -65,7 +65,7 @@
   },
   "devDependencies": {
     "@maplibre/maplibre-gl-style-spec": "24.8.5",
-    "@maplibre/maplibre-gl-style-spec-v6": "npm:@maplibre/maplibre-gl-style-spec@26.4.2",
+    "@maplibre/maplibre-gl-style-spec-v6": "npm:@maplibre/maplibre-gl-style-spec@26.4.4",
     "@tileflow/core": "workspace:*"
   }
 }

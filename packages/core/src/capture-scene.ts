@@ -180,6 +180,24 @@ export const tileflowCaptureSceneSchema = z
   })
   .strict();
 
+/**
+ * Why a scene's bounds padding leaves no room for its bounds, or undefined when it fits: padding on
+ * both sides must be less than the viewport's shorter side. MapLibre GL JS 6.11.2+ leaves a globe
+ * camera where it was when it cannot fit, so the capture would show the wrong view. Checked where
+ * scenes are validated rather than in the schema, so the published reference keeps its shape.
+ */
+export function tileflowCaptureSceneFitIssue(
+  scene: Pick<TileflowCaptureScene, 'camera' | 'viewport'>,
+): {message: string; path: ['camera', 'padding']} | undefined {
+  if (scene.camera.type !== 'bounds' || scene.camera.padding === undefined) return undefined;
+  const room = Math.min(scene.viewport.width, scene.viewport.height);
+  if (scene.camera.padding * 2 < room) return undefined;
+  return {
+    message: `Expected bounds padding less than half the viewport's shorter side (${room / 2} pixels)`,
+    path: ['camera', 'padding'],
+  };
+}
+
 export type TileflowCaptureCenterCamera = z.infer<typeof tileflowCaptureCenterCameraSchema>;
 export type TileflowCaptureBoundsCamera = z.infer<typeof tileflowCaptureBoundsCameraSchema>;
 export type TileflowCaptureCamera = z.infer<typeof tileflowCaptureCameraSchema>;
@@ -225,6 +243,8 @@ export function normalizeTileflowCaptureScene(
   input: TileflowCaptureScene,
 ): NormalizedTileflowCaptureScene {
   const scene = tileflowCaptureSceneSchema.parse(input);
+  const fit = tileflowCaptureSceneFitIssue(scene);
+  if (fit) throw new RangeError(`${fit.path.join('.')}: ${fit.message}`);
   const camera =
     scene.camera.type === 'center'
       ? {

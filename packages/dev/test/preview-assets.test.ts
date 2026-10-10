@@ -5,17 +5,17 @@ import {renderTileflowPreviewHtml} from '../src/preview-html';
 
 test('serves the exact MapLibre v6 module closure to Preview', async () => {
   const main = getTileflowPreviewRuntimeResponse('/__runtime/maplibre-gl.mjs');
-  const shared = getTileflowPreviewRuntimeResponse('/__runtime/maplibre-gl-shared.mjs');
   const worker = getTileflowPreviewRuntimeResponse('/__runtime/maplibre-gl-worker.mjs');
   const stylesheet = getTileflowPreviewRuntimeResponse('/__runtime/maplibre-gl.css');
 
   assert.ok(main);
-  assert.ok(shared);
   assert.ok(worker);
   assert.ok(stylesheet);
   assert.match(main.headers.get('content-type') ?? '', /javascript/u);
-  assert.match(await main.text(), /maplibre-gl-shared\.mjs/u);
-  assert.match(shared.headers.get('content-type') ?? '', /javascript/u);
+  // Since GL JS 6.13 the main module holds what the shared one did and names only its worker; the
+  // shared module ships empty and is not served.
+  assert.match(await main.text(), /maplibre-gl-worker\.mjs/u);
+  assert.equal(getTileflowPreviewRuntimeResponse('/__runtime/maplibre-gl-shared.mjs'), undefined);
   assert.match(worker.headers.get('content-type') ?? '', /javascript/u);
   assert.match(stylesheet.headers.get('content-type') ?? '', /text\/css/u);
   assert.equal(getTileflowPreviewRuntimeResponse('/__runtime/maplibre-gl.js'), undefined);

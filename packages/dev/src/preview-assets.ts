@@ -18,12 +18,6 @@ export function getTileflowPreviewRuntimeResponse(path: string): Response | unde
       'text/javascript; charset=utf-8',
     );
   }
-  if (path === '/__runtime/maplibre-gl-shared.mjs') {
-    return textAssetResponse(
-      getLocalMapLibreAsset('maplibre-gl-shared.mjs'),
-      'text/javascript; charset=utf-8',
-    );
-  }
   if (path === '/__runtime/maplibre-gl-worker.mjs') {
     return textAssetResponse(
       getLocalMapLibreAsset('maplibre-gl-worker.mjs'),
@@ -64,11 +58,7 @@ export function getTileflowPreviewRuntimeResponse(path: string): Response | unde
 }
 
 function getLocalMapLibreAsset(
-  fileName:
-    | 'maplibre-gl.css'
-    | 'maplibre-gl.mjs'
-    | 'maplibre-gl-shared.mjs'
-    | 'maplibre-gl-worker.mjs',
+  fileName: 'maplibre-gl.css' | 'maplibre-gl.mjs' | 'maplibre-gl-worker.mjs',
 ): string {
   const cached = localMapLibreAssets.get(fileName);
   if (cached !== undefined) return cached;

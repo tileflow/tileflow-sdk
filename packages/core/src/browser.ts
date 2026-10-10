@@ -638,8 +638,7 @@ export function createTileflowThemeController(options: {
   /** Writes a state to the map; a style still loading takes it once it is applied. */
   function writeState(name: string, value: TileflowStyleStateValue): void {
     const set = options.map.setGlobalStateProperty as
-      | ((name: string, value: unknown) => unknown)
-      | undefined;
+      ((name: string, value: unknown) => unknown) | undefined;
     try {
       set?.call(options.map, name, value);
     } catch {
@@ -815,8 +814,7 @@ export function createTileflowThemeController(options: {
       );
     }
     const setPaint = options.map.setPaintProperty as
-      | ((layer: string, name: string, value: unknown, options?: object) => unknown)
-      | undefined;
+      ((layer: string, name: string, value: unknown, options?: object) => unknown) | undefined;
     const getLayer = options.map.getLayer as ((layer: string) => unknown) | undefined;
     if (typeof setPaint !== 'function') return;
     for (const [key, target] of emphasisTargets) {
@@ -1148,11 +1146,7 @@ function isRecordWithError(value: unknown): value is {error: unknown} {
 }
 
 export type TileflowMapLifecycleEvent =
-  | 'dataloading'
-  | 'error'
-  | 'idle'
-  | 'load'
-  | 'styledataloading';
+  'dataloading' | 'error' | 'idle' | 'load' | 'styledataloading';
 
 export type TileflowFrameScheduler<TFrame> = {
   cancelFrame: (frame: TFrame) => void;

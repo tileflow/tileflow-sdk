@@ -89,7 +89,7 @@ function fixture() {
 test('9999/10000/10001 crosses a held bootstrap inside one logical batch without sharing admissions', async () => {
   const f = fixture();
   const map = await f.owner.openMap(f.input);
-  for (let count = 0; count < 9999; ) {
+  for (let count = 0; count < 9999;) {
     const size = Math.min(8, 9999 - count);
     await f.bridge.batch(
       map.context,

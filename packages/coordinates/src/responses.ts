@@ -189,8 +189,7 @@ export type CoordinatesSuccess<C extends keyof typeof coordinatesSuccessSchemas>
   (typeof coordinatesSuccessSchemas)[C]
 >;
 export type CoordinatesResponse<C extends keyof typeof coordinatesSuccessSchemas> =
-  | CoordinatesSuccess<C>
-  | z.infer<typeof coordinatesFailureSchema>;
+  CoordinatesSuccess<C> | z.infer<typeof coordinatesFailureSchema>;
 export type CoordinatesTransformResponse = z.infer<typeof coordinatesTransformResponseSchema>;
 export type CoordinatesSearchResponse = z.infer<typeof coordinatesSearchResponseSchema>;
 export type CoordinatesDescribeResponse = z.infer<typeof coordinatesDescribeResponseSchema>;

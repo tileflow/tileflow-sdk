@@ -48,12 +48,7 @@ const SUCCESS_KEYS = new Set([
 const RESTART_KEYS = new Set(['code', 'error', 'retryWithNewSession', 'sessionId']);
 
 export type NativeSessionResourceScope =
-  | 'style'
-  | 'tilejson'
-  | 'tile'
-  | 'sprite'
-  | 'glyph'
-  | 'font';
+  'style' | 'tilejson' | 'tile' | 'sprite' | 'glyph' | 'font';
 
 export type HostedNativeSessionBinding =
   | Readonly<{
@@ -1097,7 +1092,7 @@ async function readBoundedResponse(
 
 function decodeUtf8(bytes: Uint8Array) {
   let result = '';
-  for (let index = 0; index < bytes.length; ) {
+  for (let index = 0; index < bytes.length;) {
     const first = bytes[index++];
     let codePoint: number;
     let remaining: number;

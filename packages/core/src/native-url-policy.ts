@@ -21,10 +21,7 @@ export type TileflowNativeUrlErrorCode =
   | 'NATIVE_URL_TEMPLATE_INVALID';
 
 export type TileflowNativeUrlField =
-  | 'manifestUrl'
-  | 'documentUrl'
-  | 'resourceUrl'
-  | 'developmentOrigin';
+  'manifestUrl' | 'documentUrl' | 'resourceUrl' | 'developmentOrigin';
 
 const errorMessages: Record<TileflowNativeUrlErrorCode, string> = {
   NATIVE_URL_INVALID:

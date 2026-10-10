@@ -1,10 +1,7 @@
 import type {MapView, TileflowAnnotation} from '../src/index';
 
 export type ApplicationLocationPermission =
-  | 'granted-precise'
-  | 'granted-approximate'
-  | 'denied'
-  | 'unavailable';
+  'granted-precise' | 'granted-approximate' | 'denied' | 'unavailable';
 
 export type ApplicationLocationFix = Readonly<{
   accuracy: number;

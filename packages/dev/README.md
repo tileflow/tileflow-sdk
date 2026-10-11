@@ -180,7 +180,9 @@ the previous complete lock intact; remove a stale `.writing` guard only after co
 writer has exited. Ordinary reads and Core validation never acquire write guards.
 
 A package supports up to 1,000 effective icons, subject to a 2,048-pixel atlas dimension,
-4 MiB per generated file, and 8 MiB per package. Larger artwork can hit those limits before
+4 MiB per generated file, and 8 MiB per package. Paired densities share a logical layout capped
+at 1,024 pixels per dimension at 1× and 2,048 at 2×. Mixed-size artwork retains matching placements
+without resampling either density. Larger artwork can hit those limits before
 1,000 icons. Several individually valid sets can exceed the effective map limit; composition
 fails explicitly instead of clipping. Cache and composition do not create Team resources or
 publish anything. Every normal entry point composes declared shared descriptors through this path;

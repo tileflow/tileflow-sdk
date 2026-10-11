@@ -147,6 +147,9 @@ own content reads first; see [map emphasis](https://github.com/tileflow/tileflow
 It also sets the style-wide states that themes read with `expr.globalState`, easing numbers so the
 values a theme interpolates on them move smoothly; see
 [style states](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/style-states.md).
+For application-drawn RGBA symbols, it also manages fixed-size
+[dynamic style images](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/dynamic-style-images.md),
+including state refresh, theme changes and restoration without changing layer placement.
 
 The semantic domains are `land`, `water`, `nautical`, `roads`, `buildings`, `boundaries`, `labels`,
 `poi`, `aeroways`, `transit`, `vegetation`, `addresses`, and `landforms`. Style stable geographic

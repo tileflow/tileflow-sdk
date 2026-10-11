@@ -1,3 +1,9 @@
+import {
+  createTileflowDynamicImageRegistry,
+  type TileflowDynamicImage,
+  type TileflowDynamicImageHandle,
+  type TileflowDynamicImageMap,
+} from './dynamic-style-images';
 import type {TileflowWorldRequestBridge} from './fair-use-browser';
 import {isTileflowThemeName} from './portable-identity-rules';
 import {
@@ -36,6 +42,11 @@ import {
 import type {MapLibreStyle} from './types';
 
 export {attachTileflowAtmosphere, type TileflowAtmosphereMap} from './atmosphere-browser';
+export type {
+  TileflowDynamicImage,
+  TileflowDynamicImageContext,
+  TileflowDynamicImageHandle,
+} from './dynamic-style-images';
 export {
   validateTileflowEmphasis,
   type TileflowEmphasis,
@@ -172,19 +183,22 @@ export type TileflowThemeBlendState = Readonly<{
   themes: readonly string[];
 }>;
 
-export type TileflowStyleSwitchMap = TileflowThemeMotionMap & {
-  getGlobalState?: unknown;
-  off(event: string, listener: (event?: unknown) => void): unknown;
-  on(event: string, listener: (event?: unknown) => void): unknown;
-  setGlobalStateProperty?: unknown;
-  setStyle: unknown;
-};
+export type TileflowStyleSwitchMap = TileflowThemeMotionMap &
+  TileflowDynamicImageMap & {
+    getGlobalState?: unknown;
+    off(event: string, listener: (event?: unknown) => void): unknown;
+    on(event: string, listener: (event?: unknown) => void): unknown;
+    setGlobalStateProperty?: unknown;
+    setStyle: unknown;
+  };
 
 /** A value an application sets for the whole style, which themes read with `expr.globalState`. */
 export type TileflowStyleStateValue = boolean | number | string | null;
 
 export type TileflowThemeController = {
   dispose(): void;
+  /** Own a fixed-size RGBA image with a stable name across themes, restored after style reloads. */
+  registerImage(name: string, image: TileflowDynamicImage): TileflowDynamicImageHandle;
   /** The active blend, or undefined when the map shows one theme. */
   getBlend(): TileflowThemeBlendState | undefined;
   /** The theme the map shows; during a blend, the nearest theme. */
@@ -333,10 +347,27 @@ export function createTileflowThemeController(options: {
   let emphasisFrame: (() => void) | undefined;
   let emphasisSettle: ((result: TileflowThemeTransitionResult) => void) | undefined;
   const states = new Map<string, StyleState>();
+  let images: ReturnType<typeof createTileflowDynamicImageRegistry> | undefined;
+
+  function imageContext() {
+    return {
+      theme: current.theme!,
+      blend: activeBlend
+        ? Object.freeze({
+            position: activeBlend.blender.position,
+            themes: Object.freeze(activeBlend.themes.map((theme) => theme.theme!)),
+          })
+        : undefined,
+      states: Object.freeze(
+        Object.fromEntries([...states].map(([name, state]) => [name, state.shown])),
+      ),
+    };
+  }
 
   return {
     dispose() {
       disposed = true;
+      images?.dispose();
       requestId += 1;
       activeBlend?.blender.dispose();
       stopEmphasisMotion({status: 'superseded', theme: current.theme});
@@ -349,6 +380,14 @@ export function createTileflowThemeController(options: {
         position: activeBlend.blender.position,
         themes: activeBlend.themes.map((theme) => theme.theme!),
       };
+    },
+    registerImage(name, definition) {
+      if (disposed) throw new Error('Tileflow theme controller is disposed.');
+      if (activeBlend?.plan.images.some((image) => image.names.includes(name))) {
+        throw new TypeError('Dynamic image names must remain identical across blended themes.');
+      }
+      images ??= createTileflowDynamicImageRegistry(options.map, imageContext, resetStates);
+      return images.register(name, definition);
     },
     getCurrent() {
       return current;
@@ -401,6 +440,7 @@ export function createTileflowThemeController(options: {
         requestId += 1;
         activeBlend.blender.set(request.position);
         current = activeBlend.themes[activeBlend.blender.dominant]!;
+        images?.invalidate();
         return Promise.resolve({status: 'applied', theme: current.theme});
       }
       if (pendingBlend?.key === key) {
@@ -496,7 +536,9 @@ export function createTileflowThemeController(options: {
       ),
       Promise.all(themes.map((theme) => loadFonts(theme))),
     ]);
-    return planTileflowThemeBlend(styles);
+    const plan = planTileflowThemeBlend(styles);
+    images?.assertBlend(plan.images);
+    return plan;
   }
 
   function enqueue(runId: number, target: Target): Promise<TileflowThemeTransitionResult> {
@@ -536,6 +578,7 @@ export function createTileflowThemeController(options: {
       target.kind === 'theme' ? target.style.style : target.plan.styleAt(target.position());
 
     try {
+      if (target.kind === 'blend') images?.assertBlend(target.plan.images);
       await applyMapStyle(options.map, styleInput, timeoutMs);
       if (disposed) {
         cover?.cancel();
@@ -569,6 +612,7 @@ export function createTileflowThemeController(options: {
       shownLayers = typeof styleInput === 'string' ? undefined : styleInput.layers;
       resetEmphasis();
       resetStates();
+      images?.invalidate();
       await cover?.finish({stop: () => disposed || runId !== requestId});
       options.onTransition?.({
         currentTheme: current.theme,
@@ -631,6 +675,7 @@ export function createTileflowThemeController(options: {
     current = previous.current;
     resetEmphasis();
     resetStates();
+    images?.invalidate();
   }
 
   // --- Style states ---
@@ -644,6 +689,7 @@ export function createTileflowThemeController(options: {
     } catch {
       // MapLibre refuses while a style loads; resetStates() writes the state after it.
     }
+    images?.invalidate(name);
   }
 
   /** After a new style: every state is written again, at the value it shows. */

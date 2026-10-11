@@ -209,6 +209,8 @@ when styles need another loader.
 
 The controller also shows [map emphasis](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-emphasis.md),
 which stays through theme changes and follows every blend position.
+Its [dynamic style images](dynamic-style-images.md) receive theme, blend and declared state inputs
+under one resource owner, with fixed geometry and restoration after a style reload.
 
 ## Fast sweeps on slower devices
 

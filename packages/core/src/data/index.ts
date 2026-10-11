@@ -73,14 +73,14 @@ export type OpenMapTilesFieldBindings = {
    * in pixels of a 512-pixel tile at zoom 15: one of 4, 6, 8, 12, 16, or 24. A grove fits at zoom
    * `z` when its reach in screen pixels is at most this value × 2^(z − 15).
    */
-  canopyClearanceAtZoom15?: string;
+  canopyClearanceAtZoom15: string;
   /**
    * Lower bound, in percent, of canopy taller than 3 m within 10 m of a canopy point: 3, 30, or
    * 60. Absent where no measurement exists; treat absence as a middle density.
    */
-  canopyCoverPercent?: string;
+  canopyCoverPercent: string;
   /** Stable integer from 0 through 15 per canopy point. Lower ranks appear first by zoom. */
-  canopyRank?: string;
+  canopyRank: string;
   capital: string;
   /** Roundabout geometry kind in the optional circular-feature layer. */
   circularKind?: string;
@@ -205,9 +205,6 @@ export type TileflowWorldV1Schema = Omit<OpenMapTilesSchema, 'fields' | 'layers'
   fields: OpenMapTilesFieldBindings & {
     bathymetryMinDepth: string;
     bathymetrySortKey: string;
-    canopyClearanceAtZoom15: string;
-    canopyCoverPercent: string;
-    canopyRank: string;
     circularClearanceExtraAtZoom15: string;
     circularInnerRadiusMeters: string;
     circularKind: string;
@@ -287,6 +284,7 @@ export type TileflowDataIdentity = {
   capabilities?: {
     businessCorridor: boolean;
     bathymetry: boolean;
+    canopy: boolean;
     globalLandcover: boolean;
     tree: boolean;
   };
@@ -911,12 +909,10 @@ function dataIdentity(
             fields: {...schema.fields},
             layers: {...schema.layers},
           },
-          // Capture receipts validate these keys exactly, so a new key would make existing
-          // @tileflow/capture versions reject the identity. Later optional layers, such as
-          // `canopy`, are identified by their presence in `bindings.layers`.
           capabilities: {
             businessCorridor: Boolean(schema.layers.businessCorridor),
             bathymetry: Boolean(schema.layers.bathymetry),
+            canopy: Boolean(schema.layers.canopy),
             globalLandcover: Boolean(schema.layers.globalLandcover),
             tree: Boolean(schema.layers.tree),
           },

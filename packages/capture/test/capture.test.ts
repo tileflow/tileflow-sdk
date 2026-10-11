@@ -173,6 +173,7 @@ test('capture receipts preserve expanded vector source identity', () => {
     capabilities: {
       businessCorridor: true,
       bathymetry: true,
+      canopy: true,
       globalLandcover: false,
       tree: false,
     },
@@ -202,6 +203,53 @@ test('capture receipts preserve expanded vector source identity', () => {
   assert.match(receipt.data.source?.sha256 ?? '', /^[a-f0-9]{64}$/);
   assert.equal('url' in receipt.data, false);
   assert.deepEqual(receipt.verification, {data: 'rendered', style: 'rendered'});
+});
+
+test('schema-v4 receipts require the canopy capability that earlier schemas predate', () => {
+  const capabilities = {businessCorridor: true, canopy: false, globalLandcover: true, tree: true};
+  const receipt = createTileflowCaptureReceipt({
+    data: {...vectorDataIdentity, capabilities},
+    dpr: 1,
+    height: 64,
+    map: 'madrid',
+    theme: 'light',
+    networkDependent: false,
+    pngSha256: 'a'.repeat(64),
+    renderer: createTileflowCaptureRendererIdentity(),
+    scene: 'canopy',
+    sceneSha256: 'b'.repeat(64),
+    styleSha256: 'c'.repeat(64),
+    target: 'map',
+    width: 64,
+  });
+  assert.deepEqual(receipt.data.capabilities, capabilities);
+
+  const {canopy: _canopy, ...withoutCanopy} = capabilities;
+  assert.throws(
+    () =>
+      validateTileflowCaptureReceipt({
+        ...receipt,
+        data: {...receipt.data, capabilities: withoutCanopy},
+      }),
+    /missing or unsupported fields/u,
+  );
+  assert.throws(
+    () =>
+      validateTileflowCaptureReceipt({
+        ...receipt,
+        data: {...receipt.data, capabilities: {...capabilities, canopy: 'yes'}},
+      }),
+    /invalid data\.capabilities object/u,
+  );
+
+  const {theme: _theme, ...v3Scene} = receipt.scene;
+  const v3 = {...receipt, schemaVersion: 3, scene: v3Scene};
+  assert.deepEqual(
+    validateTileflowCaptureReceipt({...v3, data: {...receipt.data, capabilities: withoutCanopy}})
+      .data,
+    {...receipt.data, capabilities: withoutCanopy},
+  );
+  assert.throws(() => validateTileflowCaptureReceipt(v3), /missing or unsupported fields/u);
 });
 
 test('capture receipts accept the complete current Tileflow World binding vocabulary', () => {

@@ -238,23 +238,25 @@ test('preserves explicitly absent optional source-layer capabilities', () => {
   assert.equal(resolved.identity.capabilities?.globalLandcover, false);
   assert.equal(resolved.identity.capabilities?.businessCorridor, false);
   assert.equal(resolved.identity.capabilities?.bathymetry, false);
+  assert.equal(resolved.identity.capabilities?.canopy, false);
   assert.equal(resolved.identity.capabilities?.tree, false);
   assert.equal(resolved.identity.bindings?.layers.canopy, undefined);
 });
 
-test('identifies the optional canopy layer through bindings, not a new capability key', () => {
+test('records the optional canopy layer as a data identity capability', () => {
   const resolved = resolveTileflowData(
     vectorTiles({attribution: '© Example', schema: openMapTiles(), url: '/tiles.json'}),
   );
 
   assert.equal(resolved.identity.bindings?.layers.canopy, 'canopy');
   assert.equal(resolved.identity.bindings?.fields.canopyRank, 'rank');
-  assert.deepEqual(Object.keys(resolved.identity.capabilities ?? {}).sort(), [
-    'bathymetry',
-    'businessCorridor',
-    'globalLandcover',
-    'tree',
-  ]);
+  assert.deepEqual(resolved.identity.capabilities, {
+    businessCorridor: true,
+    bathymetry: false,
+    canopy: true,
+    globalLandcover: true,
+    tree: true,
+  });
 });
 
 test('defines and validates the required Tileflow World V1 surface extensions', () => {

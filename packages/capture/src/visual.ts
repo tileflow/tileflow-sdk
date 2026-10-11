@@ -12,7 +12,7 @@ import {TileflowCaptureError} from './errors';
 import {
   parseTileflowCaptureReceipt,
   type TileflowCaptureDataIdentityV2,
-  type TileflowCaptureDataIdentityV3,
+  type TileflowCaptureDataIdentityV4,
   type TileflowCaptureReceipt,
   type TileflowCaptureReceiptV4,
   validateTileflowCaptureReceipt,
@@ -1056,8 +1056,8 @@ function sameSceneIdentity(
 }
 
 function sameDataIdentity(
-  baseline: TileflowCaptureDataIdentityV2 | TileflowCaptureDataIdentityV3,
-  actual: TileflowCaptureDataIdentityV2 | TileflowCaptureDataIdentityV3,
+  baseline: TileflowCaptureReceipt['data'],
+  actual: TileflowCaptureReceipt['data'],
 ): boolean {
   if (
     baseline.kind !== actual.kind ||
@@ -1118,10 +1118,10 @@ function sameDataIdentity(
 }
 
 function exactWorldIdentity(
-  value: TileflowCaptureDataIdentityV2 | TileflowCaptureDataIdentityV3,
-): Extract<TileflowCaptureDataIdentityV3, {kind: 'tileflow-world'}> | undefined {
+  value: TileflowCaptureReceipt['data'],
+): Extract<TileflowCaptureDataIdentityV4, {kind: 'tileflow-world'}> | undefined {
   return value.kind === 'tileflow-world' && 'product' in value
-    ? (value as Extract<TileflowCaptureDataIdentityV3, {kind: 'tileflow-world'}>)
+    ? (value as Extract<TileflowCaptureDataIdentityV4, {kind: 'tileflow-world'}>)
     : undefined;
 }
 

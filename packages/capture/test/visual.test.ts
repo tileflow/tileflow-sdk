@@ -13,10 +13,10 @@ import {
   parseTileflowCaptureReceipt,
   serializeTileflowCaptureReceipt,
   serializeTileflowVisualComparison,
-  tileflowVisualEdgeThreshold,
   type TileflowCapture,
   type TileflowCaptureDataInput,
   type TileflowCaptureReceipt,
+  tileflowVisualEdgeThreshold,
 } from '../src/index';
 
 const dataIdentity: TileflowCaptureDataInput = {
@@ -341,7 +341,7 @@ test('keeps compatible data identity stable across additive bindings and capabil
     ...common,
     data: {
       bindings: {fields: {class: 'class'}, layers: {road: 'transportation'}},
-      capabilities: {businessCorridor: true, globalLandcover: true, tree: true},
+      capabilities: {businessCorridor: true, canopy: true, globalLandcover: true, tree: true},
       kind: 'vector-tiles',
       revision: 'archive-1',
       schema: 'openmaptiles',
@@ -360,6 +360,7 @@ test('keeps compatible data identity stable across additive bindings and capabil
       capabilities: {
         businessCorridor: true,
         bathymetry: true,
+        canopy: true,
         globalLandcover: true,
         tree: true,
       },

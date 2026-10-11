@@ -135,6 +135,7 @@ test('data identity distinguishes URLs and complete remapped bindings', () => {
   assert.equal(second.identity.bindings?.fields.maritime, 'is_maritime');
   assert.equal(first.identity.capabilities?.globalLandcover, true);
   assert.equal(first.identity.capabilities?.bathymetry, false);
+  assert.equal(first.identity.capabilities?.canopy, true);
   assert.equal(first.identity.capabilities?.tree, true);
   assert.notDeepEqual(first.identity, second.identity);
 

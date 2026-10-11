@@ -22,6 +22,24 @@ Compounds express common cartographic structures: `AreaStyle` has `fill` and `ou
 optional `text`, `icon`, and `marker`. Geographic selection remains owned by semantic modules;
 ordinary visual styles intentionally do not accept raw source filters.
 
+## Symbol overlap modes
+
+`text.allowOverlap` and `icon.allowOverlap` either hide a part that collides with a symbol placed
+before it or always show it. `overlap` selects one of three modes instead:
+
+- `never`: hide the part when it collides.
+- `always`: show the part even when it collides.
+- `cooperative`: show the part unless it collides with a symbol placed with `never`. It may overlap
+  symbols placed with `always` or `cooperative`.
+
+MapLibre places symbols from the top layer down, so a symbol placed before another is usually higher
+in the stack. `overlap` takes precedence over `allowOverlap` on the same part, including an
+`allowOverlap` default supplied by a module. Tileflow writes `text-overlap` or `icon-overlap` and,
+beside it, the matching `text-allow-overlap` or `icon-allow-overlap`: `false` for `never` and `true`
+for `always` and `cooperative`. MapLibre GL JS uses the mode. MapLibre Native has no overlap modes,
+so native artifact preparation keeps only the `*-allow-overlap` value; there a cooperative part no
+longer gives way to symbols placed with `never`.
+
 ## Line-fitted text backgrounds
 
 `text.background` draws one opaque strip behind each shaped line of a label, fitted to that line's

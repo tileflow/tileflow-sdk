@@ -87,6 +87,11 @@ export type TileflowTextJustify = 'auto' | 'center' | 'left' | 'right';
 export type TileflowIconAnchor = TileflowTextAnchor;
 export type TileflowAlignment = 'auto' | 'map' | 'viewport';
 export type TileflowIconTextFit = 'both' | 'height' | 'none' | 'width';
+/**
+ * How a symbol part treats collisions with symbols placed before it. `never` hides it, `always`
+ * shows it, and `cooperative` shows it unless the earlier symbol was placed with `never`.
+ */
+export type TileflowSymbolOverlap = 'always' | 'cooperative' | 'never';
 
 /** Visibility and zoom bounds shared by every visual primitive. */
 export type TileflowLayerRange = {
@@ -189,6 +194,11 @@ export type TileflowTextLayout = {
   maxWidth?: TileflowNumberStyleValue;
   offset?: TileflowNumberOffsetStyleValue;
   optional?: boolean;
+  /**
+   * Overlap mode. Takes precedence over `allowOverlap`. Renderers without overlap modes, such as
+   * MapLibre Native, receive `allowOverlap: false` for `never` and `true` otherwise.
+   */
+  overlap?: TileflowSymbolOverlap;
   padding?: TileflowNumberStyleValue;
   pitchAlignment?: TileflowAlignment;
   radialOffset?: TileflowNumberStyleValue;
@@ -215,6 +225,11 @@ export type TileflowIconLayout = {
   keepUpright?: boolean;
   offset?: TileflowNumberOffsetStyleValue;
   optional?: boolean;
+  /**
+   * Overlap mode. Takes precedence over `allowOverlap`. Renderers without overlap modes, such as
+   * MapLibre Native, receive `allowOverlap: false` for `never` and `true` otherwise.
+   */
+  overlap?: TileflowSymbolOverlap;
   padding?: TileflowNumberStyleValue;
   pitchAlignment?: TileflowAlignment;
   rotate?: TileflowNumberStyleValue;

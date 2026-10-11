@@ -487,3 +487,83 @@ test('keeps all branches exhaustive and disjoint even when their conditions over
   );
   assertEquivalent(original, lowerNativeStyleRepresentation(style(original)).style.layers);
 });
+
+test('replaces constant symbol overlap modes with their allow-overlap fallback in place', () => {
+  const symbol = (id: string, layout: RecordValue) => ({
+    id,
+    type: 'symbol',
+    source: 'world',
+    'source-layer': 'canopy',
+    layout,
+  });
+  const original = style(
+    line({'line-cap': caps}),
+    symbol('groves', {
+      'icon-allow-overlap': false,
+      'icon-image': 'grove',
+      'icon-overlap': 'always',
+      'text-field': 'o',
+      'text-overlap': 'cooperative',
+    }),
+    symbol('labels', {'text-field': 'name', 'text-overlap': 'never', 'text-allow-overlap': true}),
+    symbol('plain', {'icon-image': 'grove', 'icon-allow-overlap': true}),
+  );
+  const before = JSON.stringify(original);
+  const result = lowerNativeStyleRepresentation(original);
+
+  assert.deepEqual(result.symbolOverlap, [
+    {inputLayer: 1, properties: ['icon-overlap', 'text-overlap']},
+    {inputLayer: 2, properties: ['text-overlap']},
+  ]);
+  // Overlap replacement changes no layer count or order; only the line partition is a span.
+  assert.deepEqual(
+    result.layers.map(({inputLayer}) => inputLayer),
+    [0],
+  );
+  assert.deepEqual(
+    result.style.layers.slice(-3).map(({id, layout}) => [id, layout]),
+    [
+      [
+        'groves',
+        {
+          'icon-allow-overlap': true,
+          'icon-image': 'grove',
+          'text-field': 'o',
+          'text-allow-overlap': true,
+        },
+      ],
+      ['labels', {'text-field': 'name', 'text-allow-overlap': false}],
+      ['plain', {'icon-image': 'grove', 'icon-allow-overlap': true}],
+    ],
+  );
+  assert.equal(result.style.layers.at(-1), original.layers.at(-1));
+  assert.equal(JSON.stringify(original), before);
+
+  const unchanged = style(symbol('plain', {'icon-image': 'grove'}));
+  assert.equal(lowerNativeStyleRepresentation(unchanged).style, unchanged);
+});
+
+test('rejects overlap modes that are not constant instead of guessing a fallback', () => {
+  for (const mode of [
+    ['step', ['zoom'], 'never', 15, 'always'],
+    ['literal', 'always'],
+    'sometimes',
+  ]) {
+    assert.throws(
+      () =>
+        lowerNativeStyleRepresentation(
+          style({
+            id: 'groves',
+            type: 'symbol',
+            source: 'world',
+            'source-layer': 'canopy',
+            layout: {'icon-image': 'grove', 'icon-overlap': mode},
+          }),
+        ),
+      (error: unknown) =>
+        error instanceof NativeLoweringError &&
+        error.reason === 'shape' &&
+        error.path === '/layers/0/layout/icon-overlap',
+    );
+  }
+});

@@ -108,6 +108,56 @@ test('matches the pinned expression and filter evaluators at range and camera bo
   assert.equal(serializeCanonicalJson(original), before);
 });
 
+test('prepares symbol overlap modes as their allow-overlap fallback for native artifacts', () => {
+  const original = {
+    version: 8,
+    glyphs: 'https://example.test/fonts/{fontstack}/{range}.pbf',
+    sources: {world: {type: 'vector', tiles: ['https://example.test/{z}/{x}/{y}.pbf']}},
+    layers: [
+      {
+        id: 'groves',
+        type: 'symbol',
+        source: 'world',
+        'source-layer': 'canopy',
+        minzoom: 14,
+        layout: {
+          'icon-allow-overlap': true,
+          'icon-image': 'grove',
+          'icon-overlap': 'always',
+          'text-allow-overlap': true,
+          'text-field': 'o',
+          'text-font': ['Noto Sans Regular'],
+          'text-overlap': 'cooperative',
+        },
+      },
+    ],
+  } as MapLibreStyle;
+  assert.ok(
+    validateTileflowNativePreparedStyle(original).some(
+      ({path}) => path === '/layers/0/layout/icon-overlap',
+    ),
+  );
+  const before = serializeCanonicalJson(original);
+  const lowered = lowerTileflowNativeCompiledStyles({fixture: {light: original}});
+  const result = lowered.styles.fixture!.light!;
+
+  assert.deepEqual(validateTileflowNativePreparedStyle(result), []);
+  assert.deepEqual(result.layers[0]!.layout, {
+    'icon-allow-overlap': true,
+    'icon-image': 'grove',
+    'text-allow-overlap': true,
+    'text-field': 'o',
+    'text-font': ['Noto Sans Regular'],
+  });
+  // The build record keeps its schema: no layer span, but a distinct lowered style hash.
+  const [transformation] = lowered.transformations;
+  assert.deepEqual(transformation!.layers, []);
+  assert.equal(transformation!.inputLayers, transformation!.outputLayers);
+  assert.notEqual(transformation!.inputStyleSha256, transformation!.loweredStyleSha256);
+  assert.equal(transformation!.loweredStyleSha256, sha(result));
+  assert.equal(serializeCanonicalJson(original), before);
+});
+
 test('does not defer unsafe source, terrain or unknown projection semantics to lowering', () => {
   for (const [change, path] of [
     [

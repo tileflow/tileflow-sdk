@@ -84,7 +84,10 @@ export function lowerTileflowNativeCompiledStyles(
             issue.code !== 'NATIVE_UNSUPPORTED_STYLE' ||
             !(
               issue.path === '/projection' ||
-              /^\/layers\/\d+\/(?:layout\/line-cap|paint\/line-dasharray)(?:\/|$)/u.test(issue.path)
+              /^\/layers\/\d+\/(?:layout\/line-cap|paint\/line-dasharray)(?:\/|$)/u.test(
+                issue.path,
+              ) ||
+              /^\/layers\/\d+\/layout\/(?:icon|text)-overlap$/u.test(issue.path)
             ),
         );
         if (blockers.length)

@@ -111,7 +111,7 @@ export function applyTextStyle<TLayer extends Layer>(
     layout['text-variable-anchor'] = [...style.variableAnchors];
   }
   if (style.justify !== undefined) layout['text-justify'] = style.justify;
-  if (style.allowOverlap !== undefined) layout['text-allow-overlap'] = style.allowOverlap;
+  setOverlap(layout, 'text', style);
   if (style.ignorePlacement !== undefined) layout['text-ignore-placement'] = style.ignorePlacement;
   if (style.keepUpright !== undefined) layout['text-keep-upright'] = style.keepUpright;
   if (style.optional !== undefined) layout['text-optional'] = style.optional;
@@ -208,7 +208,7 @@ export function applyIconStyle<TLayer extends Layer>(
   if (style.rotationAlignment !== undefined) {
     layout['icon-rotation-alignment'] = style.rotationAlignment;
   }
-  if (style.allowOverlap !== undefined) layout['icon-allow-overlap'] = style.allowOverlap;
+  setOverlap(layout, 'icon', style);
   if (style.ignorePlacement !== undefined) layout['icon-ignore-placement'] = style.ignorePlacement;
   if (style.keepUpright !== undefined) layout['icon-keep-upright'] = style.keepUpright;
   if (style.optional !== undefined) layout['icon-optional'] = style.optional;
@@ -353,6 +353,23 @@ function resolveSymbolRange(style: TileflowSymbolStyle): TileflowLayerRange {
 function withoutRange<T extends TileflowLayerRange>(value: T): Omit<T, keyof TileflowLayerRange> {
   const {maxZoom: _maxZoom, minZoom: _minZoom, visible: _visible, ...rest} = value;
   return rest;
+}
+
+/**
+ * `overlap` takes precedence over `allowOverlap`, as `*-overlap` does in MapLibre GL JS. The
+ * equivalent `*-allow-overlap` is written beside it for renderers without overlap modes.
+ */
+function setOverlap(
+  layout: Record<string, unknown>,
+  part: 'icon' | 'text',
+  style: Pick<TileflowIconStyle | TileflowTextStyle, 'allowOverlap' | 'overlap'>,
+): void {
+  if (style.overlap !== undefined) {
+    layout[`${part}-overlap`] = style.overlap;
+    layout[`${part}-allow-overlap`] = style.overlap !== 'never';
+  } else if (style.allowOverlap !== undefined) {
+    layout[`${part}-allow-overlap`] = style.allowOverlap;
+  }
 }
 
 function setPaint(paint: Record<string, unknown>, property: string, value: unknown): void {

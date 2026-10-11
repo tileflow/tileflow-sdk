@@ -82,6 +82,14 @@ match its layer or an anchor naming a missing layer, fails with `NATIVE_UNSUPPOR
 style's `/metadata` pointer rather than being guessed. Local builds, watched sessions and native
 preview share this step with Hosted publication.
 
+MapLibre Native has no symbol overlap modes and reads only `icon-allow-overlap` and
+`text-allow-overlap`. Lowering removes each constant `icon-overlap` or `text-overlap` value and sets
+the matching `*-allow-overlap` to `false` for `never` and `true` for `always` and `cooperative`,
+replacing any value already present. A cooperative symbol therefore no longer gives way to symbols
+placed with `never` and can cover labels it avoids on the web. The layer keeps its ID and position,
+so this replacement adds no span to the build record; the lowered style hash reflects it. An overlap
+mode given as an expression fails with its property pointer.
+
 Work is bounded per property by depth 16, 512 decision visits, 64 decision paths, 16 distinct
 outcomes and 64 dash elements; the product is limited to 32 physical layers and 32 zoom intervals
 per logical layer. Raw compiler input must fit 160,000 JSON nodes before any lowering. Its expanded
@@ -91,10 +99,10 @@ and 8 MiB. No caller option raises either budget and no rejected input is retrie
 allowance. A failure occurs before output writes and leaves the previous valid generation intact.
 
 This is one shared authored map, not a second mobile catalog: the native-v1 representation adapts
-only finite `line-cap`/`line-dasharray` decisions, together with its explicit fixed-projection
-policy. Unsupported advanced expressions or other properties fail with their native diagnostic
-and JSON Pointer; their web behavior is unchanged. The raw and prepared validators share their
-semantic checks and bounded traversal. See the
+only finite `line-cap`/`line-dasharray` decisions and constant symbol overlap modes, together with
+its explicit fixed-projection policy. Unsupported advanced expressions or other properties fail
+with their native diagnostic and JSON Pointer; their web behavior is unchanged. The raw and
+prepared validators share their semantic checks and bounded traversal. See the
 [Core budget contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-artifact-profile.md#input-and-prepared-style-budgets)
 for the measured Streets sizes and the approximately 5.2% output margin.
 
@@ -143,9 +151,9 @@ schema version is 2 and its `preparationVersion` is `native-lowering-v1`.
 
 The `transformations` array is sorted uniquely by map/theme. Each entry records input and lowered
 style SHA-256 values, input/output layer counts, projection normalization, and the input ordinal,
-output start/count and affected properties of each changed layer. Ordinals refer to the complete
-style layer arrays, including unchanged layers. These spans make the deterministic physical IDs
-traceable without duplicating layer definitions in the receipt. The input hash binds shared
+output start/count and affected properties of each partitioned line layer. Ordinals refer to the
+complete style layer arrays, including unchanged layers. These spans make the deterministic
+physical IDs traceable without duplicating layer definitions in the receipt. The input hash binds shared
 compiler output; the lowered hash includes the rebound layer references and precedes native font
 preparation and generation URL retargeting.
 The build-manifest hash separately binds the final prepared styles and assets. All styles receive

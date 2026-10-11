@@ -462,6 +462,7 @@ export type {
   TileflowPriorityOrder,
   TileflowStringStyleValue,
   TileflowStructuralStyleValue,
+  TileflowSymbolOverlap,
   TileflowSymbolPlacement,
   TileflowSymbolPlacementStyle,
   TileflowSymbolStyle,

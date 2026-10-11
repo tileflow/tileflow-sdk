@@ -186,6 +186,48 @@ test('maps every reusable visual primitive to its MapLibre paint and layout cont
   assert.equal((extrusion.paint as Record<string, unknown>)['fill-extrusion-pattern'], 'facade');
 });
 
+test('lowers symbol overlap modes beside their allow-overlap equivalent', () => {
+  const overlapLayout = (layout: unknown) =>
+    Object.fromEntries(
+      Object.entries(layout as Record<string, unknown>).filter(([key]) => key.includes('overlap')),
+    );
+
+  for (const [overlap, allowOverlap] of [
+    ['never', false],
+    ['always', true],
+    ['cooperative', true],
+  ] as const) {
+    const symbol = applySymbolStyle(
+      {id: `overlap-${overlap}`, type: 'symbol'},
+      {icon: {image: 'grove', overlap}, text: {field: 'o', font: 'Noto Sans Regular', overlap}},
+    );
+    assert.deepEqual(overlapLayout(symbol.layout), {
+      'icon-allow-overlap': allowOverlap,
+      'icon-overlap': overlap,
+      'text-allow-overlap': allowOverlap,
+      'text-overlap': overlap,
+    });
+  }
+
+  // `overlap` takes precedence, so a default `allowOverlap` merged into a style cannot contradict it.
+  const precedence = applySymbolStyle(
+    {id: 'overlap-precedence', type: 'symbol'},
+    {
+      icon: {allowOverlap: false, image: 'grove', overlap: 'cooperative'},
+      text: {allowOverlap: true, field: 'o', font: 'Noto Sans Regular', overlap: 'never'},
+    },
+  );
+  assert.deepEqual(overlapLayout(precedence.layout), {
+    'icon-allow-overlap': true,
+    'icon-overlap': 'cooperative',
+    'text-allow-overlap': false,
+    'text-overlap': 'never',
+  });
+
+  const withoutMode = applyIconStyle({id: 'allow-overlap', type: 'symbol'}, {allowOverlap: true});
+  assert.deepEqual(withoutMode.layout, {'icon-allow-overlap': true});
+});
+
 test('preserves data-driven line-cap expressions for lateral-only widening', () => {
   const cap = expression<'butt' | 'round'>([
     'case',

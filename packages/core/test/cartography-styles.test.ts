@@ -186,43 +186,45 @@ test('maps every reusable visual primitive to its MapLibre paint and layout cont
   assert.equal((extrusion.paint as Record<string, unknown>)['fill-extrusion-pattern'], 'facade');
 });
 
-test('lowers symbol overlap modes beside their allow-overlap equivalent', () => {
+test('lowers symbol overlap modes alone, without a redundant allow-overlap', () => {
   const overlapLayout = (layout: unknown) =>
     Object.fromEntries(
       Object.entries(layout as Record<string, unknown>).filter(([key]) => key.includes('overlap')),
     );
 
-  for (const [overlap, allowOverlap] of [
-    ['never', false],
-    ['always', true],
-    ['cooperative', true],
-  ] as const) {
+  for (const overlap of ['never', 'always', 'cooperative'] as const) {
     const symbol = applySymbolStyle(
       {id: `overlap-${overlap}`, type: 'symbol'},
       {icon: {image: 'grove', overlap}, text: {field: 'o', font: 'Noto Sans Regular', overlap}},
     );
     assert.deepEqual(overlapLayout(symbol.layout), {
-      'icon-allow-overlap': allowOverlap,
       'icon-overlap': overlap,
-      'text-allow-overlap': allowOverlap,
       'text-overlap': overlap,
     });
   }
 
-  // `overlap` takes precedence, so a default `allowOverlap` merged into a style cannot contradict it.
+  // The mode governs: an allowOverlap merged from a module default, or already on the layout,
+  // is dropped rather than kept beside it.
   const precedence = applySymbolStyle(
-    {id: 'overlap-precedence', type: 'symbol'},
+    {
+      id: 'overlap-precedence',
+      layout: {'icon-allow-overlap': true, 'text-allow-overlap': true},
+      type: 'symbol',
+    },
     {
       icon: {allowOverlap: false, image: 'grove', overlap: 'cooperative'},
       text: {allowOverlap: true, field: 'o', font: 'Noto Sans Regular', overlap: 'never'},
     },
   );
   assert.deepEqual(overlapLayout(precedence.layout), {
-    'icon-allow-overlap': true,
     'icon-overlap': 'cooperative',
-    'text-allow-overlap': false,
     'text-overlap': 'never',
   });
+  const governed = applyIconStyle(
+    {id: 'governed', layout: {'icon-overlap': 'always'}, type: 'symbol'},
+    {allowOverlap: false},
+  );
+  assert.deepEqual(governed.layout, {'icon-overlap': 'always'});
 
   const withoutMode = applyIconStyle({id: 'allow-overlap', type: 'symbol'}, {allowOverlap: true});
   assert.deepEqual(withoutMode.layout, {'icon-allow-overlap': true});

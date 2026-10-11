@@ -356,20 +356,28 @@ function withoutRange<T extends TileflowLayerRange>(value: T): Omit<T, keyof Til
 }
 
 /**
- * `overlap` takes precedence over `allowOverlap`, as `*-overlap` does in MapLibre GL JS. The
- * equivalent `*-allow-overlap` is written beside it for renderers without overlap modes.
+ * `overlap` takes precedence over `allowOverlap`, including an `allowOverlap` default merged from a
+ * module, so the layout carries only the mode. Native lowering derives `*-allow-overlap` from it.
  */
 function setOverlap(
   layout: Record<string, unknown>,
   part: 'icon' | 'text',
   style: Pick<TileflowIconStyle | TileflowTextStyle, 'allowOverlap' | 'overlap'>,
 ): void {
-  if (style.overlap !== undefined) {
-    layout[`${part}-overlap`] = style.overlap;
-    layout[`${part}-allow-overlap`] = style.overlap !== 'never';
-  } else if (style.allowOverlap !== undefined) {
-    layout[`${part}-allow-overlap`] = style.allowOverlap;
+  if (style.overlap !== undefined) layout[`${part}-overlap`] = style.overlap;
+  else if (style.allowOverlap !== undefined) layout[`${part}-allow-overlap`] = style.allowOverlap;
+  if (layout[`${part}-overlap`] !== undefined) delete layout[`${part}-allow-overlap`];
+}
+
+/** A symbol overlap mode governs its part, so a layout never also carries `*-allow-overlap`. */
+export function withoutGovernedAllowOverlap(
+  layout: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const result = {...layout};
+  for (const part of ['icon', 'text'] as const) {
+    if (result[`${part}-overlap`] !== undefined) delete result[`${part}-allow-overlap`];
   }
+  return result;
 }
 
 function setPaint(paint: Record<string, unknown>, property: string, value: unknown): void {

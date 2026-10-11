@@ -61,9 +61,9 @@ marker can refine that range because it compiles to a separate circle layer; inc
 icon ranges fail because those parts share one MapLibre symbol layer.
 
 Text and icon `overlap` (`never`, `always`, or `cooperative`) takes precedence over `allowOverlap`
-on the same part, including a module default. The compiled layer carries the MapLibre overlap mode
-and the equivalent `*-allow-overlap`, which is `false` only for `never`. Native artifacts keep only
-the `*-allow-overlap` value because MapLibre Native has no overlap modes.
+on the same part, including a module default or a refined target's value, so the compiled layer
+carries only the MapLibre overlap mode. Native artifacts replace it with the equivalent
+`*-allow-overlap`, which is `false` only for `never`, because MapLibre Native has no overlap modes.
 
 Tileflow World's canonical POI projection owns classification, editorial zoom eligibility, and
 cross-source ranking. The SDK validates `category`, `type`, `icon`, `min_zoom`, `filter_rank`, and

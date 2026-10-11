@@ -34,11 +34,11 @@ before it or always show it. `overlap` selects one of three modes instead:
 
 MapLibre places symbols from the top layer down, so a symbol placed before another is usually higher
 in the stack. `overlap` takes precedence over `allowOverlap` on the same part, including an
-`allowOverlap` default supplied by a module. Tileflow writes `text-overlap` or `icon-overlap` and,
-beside it, the matching `text-allow-overlap` or `icon-allow-overlap`: `false` for `never` and `true`
-for `always` and `cooperative`. MapLibre GL JS uses the mode. MapLibre Native has no overlap modes,
-so native artifact preparation keeps only the `*-allow-overlap` value; there a cooperative part no
-longer gives way to symbols placed with `never`. The
+`allowOverlap` default supplied by a module or already present on a refined target, so the compiled
+layer carries only `text-overlap` or `icon-overlap`. MapLibre Native has no overlap modes, so native
+artifact preparation replaces the mode with the matching `text-allow-overlap` or
+`icon-allow-overlap`: `false` for `never` and `true` for `always` and `cooperative`. There a
+cooperative part no longer gives way to symbols placed with `never`. The
 [canopy grove recipe](data-is-separate-from-design.md) uses a cooperative text to decide where
 icons draw.
 

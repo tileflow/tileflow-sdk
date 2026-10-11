@@ -704,11 +704,9 @@ test('symbol passes bind the optional canopy layer and its fields, or fail witho
     assert.deepEqual(compiled.template.selector, ['<', ['get', 'rank'], 8]);
     assert.equal(compiled.template.range?.minZoom, 14);
     assert.deepEqual(compiled.template.style.placement, {
-      'icon-allow-overlap': true,
       'icon-image': 'grove',
       'icon-overlap': 'always',
       'icon-size': ['*', ['get', 'clearance_px_z15'], 0.05],
-      'text-allow-overlap': true,
       'text-field': 'o',
       'text-font': ['Noto Sans Regular'],
       'text-overlap': 'cooperative',
@@ -728,6 +726,38 @@ test('symbol passes bind the optional canopy layer and its fields, or fail witho
       message: 'Tileflow data schema does not provide feature canopy.',
     });
   }
+});
+
+test('refinements leave a governing overlap mode without a redundant allow-overlap', () => {
+  const city = (layout: Record<string, unknown>) =>
+    assembleTileflowLayers([
+      {
+        ...contribution('tileflow-city-label', 'symbol', 10, 'labels.places.city', 'labels'),
+        layer: {
+          id: 'tileflow-city-label',
+          type: 'symbol',
+          source: data.sourceId,
+          'source-layer': 'building_fixture',
+          layout,
+        },
+      },
+    ]);
+  const refine = (text: {allowOverlap?: boolean; overlap?: 'cooperative'}) =>
+    withRenderStack(labels(), {
+      cities: refineRenderTarget({renderer: 'symbol', style: {text}, target: 'labels.places.city'}),
+    });
+
+  const [cooperative] = applyCompiledRenderStacks(
+    city({'text-allow-overlap': false, 'text-field': 'City'}),
+    compileAndBind(refine({overlap: 'cooperative'})),
+  );
+  assert.deepEqual(cooperative?.layout, {'text-field': 'City', 'text-overlap': 'cooperative'});
+
+  const [governed] = applyCompiledRenderStacks(
+    city({'text-field': 'City', 'text-overlap': 'cooperative'}),
+    compileAndBind(refine({allowOverlap: false})),
+  );
+  assert.deepEqual(governed?.layout, {'text-field': 'City', 'text-overlap': 'cooperative'});
 });
 
 test('a map compiles canopy symbol passes with themed artwork against World data', () => {

@@ -83,7 +83,7 @@ a different composition even when every property value is retained.
 
 `native-build.json` uses strict schema version 2 and `preparationVersion: 'native-lowering-v1'`.
 Its `transformations` array is ordered by map/theme and binds the input/lowered style hashes,
-projection policy and physical layer spans. The runtime manifest remains version 1. An old v1
+projection policy, physical layer spans and symbol overlap replacements. The runtime manifest remains version 1. An old v1
 build-record decoder must reject v2 rather than silently ignore the preparation evidence.
 
 Text must use a valid glyph template containing `{fontstack}` and `{range}`, or a complete static

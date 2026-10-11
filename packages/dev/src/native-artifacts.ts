@@ -157,6 +157,7 @@ export function lowerTileflowNativeCompiledStyles(
           outputLayers: lowered.outputLayers,
           projection: lowered.projection,
           layers: lowered.layers,
+          symbolOverlap: lowered.symbolOverlap,
         });
       } catch (error) {
         if (!(error instanceof NativeLoweringError)) throw error;

@@ -195,8 +195,9 @@ export type TileflowTextLayout = {
   offset?: TileflowNumberOffsetStyleValue;
   optional?: boolean;
   /**
-   * Overlap mode. Takes precedence over `allowOverlap`. Renderers without overlap modes, such as
-   * MapLibre Native, receive `allowOverlap: false` for `never` and `true` otherwise.
+   * Overlap mode. Takes precedence over `allowOverlap`, so the compiled layer carries only the mode.
+   * Native artifacts, whose renderer has no overlap modes, use `allowOverlap: false` for `never`
+   * and `true` otherwise.
    */
   overlap?: TileflowSymbolOverlap;
   padding?: TileflowNumberStyleValue;
@@ -226,8 +227,9 @@ export type TileflowIconLayout = {
   offset?: TileflowNumberOffsetStyleValue;
   optional?: boolean;
   /**
-   * Overlap mode. Takes precedence over `allowOverlap`. Renderers without overlap modes, such as
-   * MapLibre Native, receive `allowOverlap: false` for `never` and `true` otherwise.
+   * Overlap mode. Takes precedence over `allowOverlap`, so the compiled layer carries only the mode.
+   * Native artifacts, whose renderer has no overlap modes, use `allowOverlap: false` for `never`
+   * and `true` otherwise.
    */
   overlap?: TileflowSymbolOverlap;
   padding?: TileflowNumberStyleValue;

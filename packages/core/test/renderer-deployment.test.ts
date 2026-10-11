@@ -75,6 +75,7 @@ function artifact() {
             outputLayers: 1,
             projection: 'none',
             layers: [],
+            symbolOverlap: [],
           },
         ]),
       },

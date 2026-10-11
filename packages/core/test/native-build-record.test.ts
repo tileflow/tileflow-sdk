@@ -16,6 +16,7 @@ function transformation(theme = 'light'): TileflowNativeStyleTransformation {
     outputLayers: 4,
     projection: 'globe-to-mercator',
     layers: [{inputLayer: 1, outputStart: 1, outputCount: 2, properties: ['line-cap']}],
+    symbolOverlap: [{inputLayer: 2, properties: ['icon-overlap', 'text-overlap']}],
   };
 }
 
@@ -53,6 +54,21 @@ test('binds the native-v1 preparation ABI and exact transformation scope in a st
       ],
     },
     {...record, transformations: [transformation(), transformation()]},
+    {...record, transformations: [{...transformation(), symbolOverlap: undefined}]},
+    ...[
+      // Unordered, outside the style, on a partitioned line layer, or with unknown properties.
+      [
+        {inputLayer: 2, properties: ['icon-overlap']},
+        {inputLayer: 0, properties: ['text-overlap']},
+      ],
+      [{inputLayer: 3, properties: ['icon-overlap']}],
+      [{inputLayer: 1, properties: ['icon-overlap']}],
+      [{inputLayer: 2, properties: ['text-overlap', 'icon-overlap']}],
+      [{inputLayer: 2, properties: ['line-cap']}],
+    ].map((symbolOverlap) => ({
+      ...record,
+      transformations: [{...transformation(), symbolOverlap}],
+    })),
   ])
     assert.equal(tileflowNativeBuildRecordSchema.safeParse(invalid).success, false);
 });

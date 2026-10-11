@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readTileflowCompilerProvenance} from '../src/cartography/compiler-inspection';
+import {expr} from '../src/cartography/data-expression';
 import {tileflowLayerDomains} from '../src/cartography/domains';
 import {
   compileRenderSelector,
@@ -11,14 +12,20 @@ import {
   tileflowRenderStackLimits,
   withRenderStack,
 } from '../src/cartography/render-stack';
-import {bindSemanticReferences, createSemanticDataView} from '../src/cartography/semantic-bindings';
-import {fixed} from '../src/cartography/values';
-import {openMapTiles, resolveTileflowData} from '../src/data';
+import {
+  bindSemanticReferences,
+  createSemanticDataView,
+  field,
+} from '../src/cartography/semantic-bindings';
+import {fixed, token} from '../src/cartography/values';
+import {openMapTiles, resolveTileflowData, tileflowWorldV1Schema, vectorTiles} from '../src/data';
 import {createStyle} from '../src/map';
 import {buildings} from '../src/modules/buildings';
 import {labels} from '../src/modules/labels';
+import {vegetation} from '../src/modules/vegetation';
+import {defineTheme} from '../src/themes/model';
 import {applyCompiledRenderStacks, assembleTileflowLayers} from './layer-ir-fixture';
-import {extendStreets} from './map-fixture';
+import {extendStreets, testLightTheme} from './map-fixture';
 
 const data = resolveTileflowData({
   type: 'vector-tiles',
@@ -654,6 +661,202 @@ test('resolved map schema preserves public stacks and the semantic compiler mate
   assert.equal(layer?.type, 'fill');
   assert.deepEqual(layer?.paint, {'fill-color': '#ABCDEF', 'fill-opacity': 0.123});
   assert.equal(layer?.['source-layer'], 'building');
+});
+
+test('symbol passes bind the optional canopy layer and its fields, or fail without it', () => {
+  const clearance = expr.get(field('canopyClearanceAtZoom15'));
+  const groves = withRenderStack(vegetation(), {
+    groves: renderPass({
+      placement: 'above-vegetation',
+      feature: 'canopy',
+      renderer: 'symbol',
+      selector: {field: 'canopyRank', kind: 'compare', operator: 'lt', value: 8},
+      style: {
+        minZoom: 14,
+        icon: {image: 'grove', overlap: 'always', size: expr.multiply(clearance, 0.05)},
+        text: {
+          field: 'o',
+          font: 'Noto Sans Regular',
+          opacity: 0,
+          overlap: 'cooperative',
+          size: expr.match(
+            expr.toNumber(expr.get(field('canopyCoverPercent')), 30),
+            [{labels: 60, value: 9}],
+            7,
+          ),
+        },
+      },
+    }),
+  });
+
+  for (const schema of [tileflowWorldV1Schema(), openMapTiles()]) {
+    const canopyData = resolveTileflowData(
+      vectorTiles({attribution: 'Canopy fixture', schema, url: '/canopy.json'}),
+    );
+    const [compiled] = bindSemanticReferences(
+      compileRenderStack(groves, createSemanticDataView(canopyData)),
+      canopyData,
+    );
+    assert.equal(compiled?.kind, 'layer');
+    if (!compiled || compiled.kind !== 'layer') return;
+    assert.equal(compiled.target, 'vegetation.render.groves');
+    assert.equal(compiled.template.feature?.dataLayer, 'canopy');
+    assert.deepEqual(compiled.template.selector, ['<', ['get', 'rank'], 8]);
+    assert.equal(compiled.template.range?.minZoom, 14);
+    assert.deepEqual(compiled.template.style.placement, {
+      'icon-image': 'grove',
+      'icon-overlap': 'always',
+      'icon-size': ['*', ['get', 'clearance_px_z15'], 0.05],
+      'text-field': 'o',
+      'text-font': ['Noto Sans Regular'],
+      'text-overlap': 'cooperative',
+      'text-size': ['match', ['to-number', ['get', 'cover_pct'], 30], 60, 9, 7],
+    });
+  }
+
+  for (const schema of [
+    tileflowWorldV1Schema({capabilities: {canopy: false}}),
+    openMapTiles({capabilities: {canopy: false}}),
+  ]) {
+    const withoutCanopy = resolveTileflowData(
+      vectorTiles({attribution: 'Canopy fixture', schema, url: '/canopy.json'}),
+    );
+    assert.throws(() => compileRenderStack(groves, createSemanticDataView(withoutCanopy)), {
+      code: 'missing-feature-binding',
+      message: 'Tileflow data schema does not provide feature canopy.',
+    });
+  }
+});
+
+test('refinements leave a governing overlap mode without a redundant allow-overlap', () => {
+  const city = (layout: Record<string, unknown>) =>
+    assembleTileflowLayers([
+      {
+        ...contribution('tileflow-city-label', 'symbol', 10, 'labels.places.city', 'labels'),
+        layer: {
+          id: 'tileflow-city-label',
+          type: 'symbol',
+          source: data.sourceId,
+          'source-layer': 'building_fixture',
+          layout,
+        },
+      },
+    ]);
+  const refine = (text: {allowOverlap?: boolean; overlap?: 'cooperative'}) =>
+    withRenderStack(labels(), {
+      cities: refineRenderTarget({renderer: 'symbol', style: {text}, target: 'labels.places.city'}),
+    });
+
+  const [cooperative] = applyCompiledRenderStacks(
+    city({'text-allow-overlap': false, 'text-field': 'City'}),
+    compileAndBind(refine({overlap: 'cooperative'})),
+  );
+  assert.deepEqual(cooperative?.layout, {'text-field': 'City', 'text-overlap': 'cooperative'});
+
+  const [governed] = applyCompiledRenderStacks(
+    city({'text-field': 'City', 'text-overlap': 'cooperative'}),
+    compileAndBind(refine({allowOverlap: false})),
+  );
+  assert.deepEqual(governed?.layout, {'text-field': 'City', 'text-overlap': 'cooperative'});
+});
+
+test('a map compiles canopy symbol passes with themed artwork against World data', () => {
+  const theme = defineTheme(testLightTheme, {
+    id: 'test-canopy-light',
+    version: 1,
+    colorScheme: 'light',
+    tokens: {
+      image: {'vegetation.canopy.grove': 'canopy-grove-light'},
+      number: {'vegetation.canopy.opacity': 0.9},
+    },
+  });
+  const clearance = expr.get(field('canopyClearanceAtZoom15'));
+  const grove = (minZoom: number, ranks: readonly [number, number]) =>
+    renderPass({
+      placement: 'above-vegetation',
+      feature: 'canopy',
+      renderer: 'symbol',
+      selector: {
+        kind: 'all',
+        selectors: [
+          {field: 'canopyRank', kind: 'compare', operator: 'gte', value: ranks[0]},
+          {field: 'canopyRank', kind: 'compare', operator: 'lt', value: ranks[1]},
+        ],
+      },
+      style: {
+        minZoom,
+        icon: {
+          ignorePlacement: true,
+          image: token.image('vegetation.canopy.grove'),
+          opacity: token.number('vegetation.canopy.opacity'),
+          overlap: 'always',
+          size: expr.interpolate({base: 2, kind: 'exponential'}, expr.zoom(), [
+            [14, expr.multiply(clearance, 0.025)],
+            [16, expr.multiply(clearance, 0.1)],
+          ]),
+        },
+        text: {
+          field: 'o',
+          font: token.font('default'),
+          opacity: fixed(0, {reason: 'The core text only decides placement.'}),
+          overlap: 'cooperative',
+          size: 6,
+        },
+      },
+    });
+  const style = createStyle(
+    extendStreets({
+      themes: {light: theme},
+      modules: {
+        vegetation: withRenderStack(vegetation(), {
+          canopyEntry14: grove(14, [0, 8]),
+          canopyEntry15: grove(15, [8, 16]),
+        }),
+      },
+    }),
+    {
+      preparedAssets: {
+        icons: {
+          ids: [
+            'canopy-grove-light',
+            'coffee',
+            'crosswalk',
+            'culture',
+            'education',
+            'food',
+            'health',
+            'lodging',
+            'major-transit',
+            'oneway',
+            'services',
+            'shopping',
+            'sidewalk-dot',
+          ],
+          sprite: '/tileflow/test/streets/sprite',
+        },
+      },
+    },
+  );
+
+  const passes = style.layers.filter(({id}) => id.startsWith('tileflow-vegetation-render-'));
+  assert.deepEqual(
+    passes.map((layer) => [layer.id, layer['source-layer'], layer.minzoom]),
+    [
+      ['tileflow-vegetation-render-canopyEntry14', 'canopy', 14],
+      ['tileflow-vegetation-render-canopyEntry15', 'canopy', 15],
+    ],
+  );
+  const layout = passes[0]?.layout as Record<string, unknown>;
+  assert.equal(layout['icon-image'], 'canopy-grove-light');
+  assert.equal(layout['icon-overlap'], 'always');
+  assert.equal(layout['text-overlap'], 'cooperative');
+  assert.deepEqual(layout['text-font'], ['Noto Sans Regular']);
+  assert.deepEqual(passes[0]?.paint, {'icon-opacity': 0.9, 'text-opacity': 0});
+  assert.deepEqual(passes[1]?.filter, [
+    'all',
+    ['>=', ['get', 'rank'], 8],
+    ['<', ['get', 'rank'], 16],
+  ]);
 });
 
 function contribution(

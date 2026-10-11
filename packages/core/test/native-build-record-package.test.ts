@@ -24,6 +24,7 @@ test('validates strict v2 records without browser probes or global Zod configura
       inputStyleSha256: 'a'.repeat(64), loweredStyleSha256: 'b'.repeat(64),
       inputLayers: 3, outputLayers: 4, projection: 'globe-to-mercator',
       layers: [{inputLayer: 1, outputStart: 1, outputCount: 2, properties: ['line-cap']}],
+      symbolOverlap: [],
     };
     const record = profile.createTileflowNativeBuildRecord('c'.repeat(64), [row]);
     assert.deepEqual(profile.tileflowNativeBuildRecordSchema.parse(record), record);

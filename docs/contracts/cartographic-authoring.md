@@ -60,6 +60,11 @@ Shared symbol ranges govern text and icon together and are inherited by an optio
 marker can refine that range because it compiles to a separate circle layer; incompatible text and
 icon ranges fail because those parts share one MapLibre symbol layer.
 
+Text and icon `overlap` (`never`, `always`, or `cooperative`) takes precedence over `allowOverlap`
+on the same part, including a module default or a refined target's value, so the compiled layer
+carries only the MapLibre overlap mode. Native artifacts replace it with the equivalent
+`*-allow-overlap`, which is `false` only for `never`, because MapLibre Native has no overlap modes.
+
 Tileflow World's canonical POI projection owns classification, editorial zoom eligibility, and
 cross-source ranking. The SDK validates `category`, `type`, `icon`, `min_zoom`, `filter_rank`, and
 `size_rank` on the `poi` layer. It does not reinterpret OpenMapTiles `class`, `subclass`, or
@@ -277,6 +282,10 @@ junctions. Traffic signals, per-lane widths, and barriers are absent from its cu
 TileJSON contract. Detailed datasets may opt into the typed `streetFurniture`, `sidewalk`, and
 `circularFeature` bindings used by the semantic road controls above. Sidewalk coverage is
 source-backed and may be incomplete; never infer missing polygons by buffering road centerlines.
+Datasets may also publish the optional decorative `canopy` layer, whose `canopyRank`,
+`canopyClearanceAtZoom15`, and `canopyCoverPercent` fields size groves drawn by render passes. No
+module draws it, its points are not surveyed trees, and a pass bound to it draws nothing when the
+selected dataset lacks the layer.
 Do not emulate missing concepts with copied layer IDs or silently claim support when the selected
 dataset does not expose the required feature.
 

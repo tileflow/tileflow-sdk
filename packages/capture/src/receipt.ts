@@ -29,6 +29,11 @@ export type TileflowCaptureDataCapabilitiesV2 = {
   tree: boolean;
 };
 
+/** Schema-v4 receipts also record whether the optional `canopy` layer is bound. */
+export type TileflowCaptureDataCapabilitiesV4 = TileflowCaptureDataCapabilitiesV2 & {
+  canopy: boolean;
+};
+
 export type TileflowCaptureDataSourceV2 = {
   kind: 'loopback' | 'opaque' | 'remote' | 'root-relative';
   /** SHA-256 of a credential-free, query-free endpoint identity. */
@@ -73,12 +78,7 @@ export type TileflowCaptureVectorIdentityV3 = {
     fields: Readonly<Record<string, string>>;
     layers: Readonly<Record<string, string>>;
   };
-  capabilities?: {
-    businessCorridor: boolean;
-    bathymetry?: boolean;
-    globalLandcover: boolean;
-    tree: boolean;
-  };
+  capabilities?: TileflowCaptureDataCapabilitiesV4;
   kind: 'vector-tiles';
   revision?: string;
   schema: 'openmaptiles';
@@ -93,8 +93,19 @@ export type TileflowCaptureVectorIdentityV3 = {
 export type TileflowCaptureDataInput =
   TileflowCaptureVectorIdentityV3 | TileflowCaptureWorldIdentityV3;
 
+type TileflowCaptureVectorReceiptIdentity = Omit<
+  TileflowCaptureVectorIdentityV3,
+  'capabilities' | 'url'
+> & {source?: TileflowCaptureDataSourceV2};
+
+/** Schema-v3 data identity. Its capabilities predate `canopy`. */
 export type TileflowCaptureDataIdentityV3 =
-  | (Omit<TileflowCaptureVectorIdentityV3, 'url'> & {source?: TileflowCaptureDataSourceV2})
+  | (TileflowCaptureVectorReceiptIdentity & {capabilities?: TileflowCaptureDataCapabilitiesV2})
+  | TileflowCaptureWorldIdentityV3;
+
+/** Schema-v4 data identity, written by every new receipt. */
+export type TileflowCaptureDataIdentityV4 =
+  | (TileflowCaptureVectorReceiptIdentity & {capabilities?: TileflowCaptureDataCapabilitiesV4})
   | TileflowCaptureWorldIdentityV3;
 
 export type TileflowCaptureVerificationV2 = {
@@ -136,7 +147,7 @@ export type TileflowCaptureReceiptV3 = TileflowCaptureReceiptCommon & {
 
 export type TileflowCaptureReceiptV4 = Omit<TileflowCaptureReceiptCommon, 'scene'> & {
   schemaVersion: 4;
-  data: TileflowCaptureDataIdentityV3;
+  data: TileflowCaptureDataIdentityV4;
   scene: TileflowCaptureReceiptCommon['scene'] & {theme: string};
 };
 
@@ -310,7 +321,7 @@ export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureR
   const data =
     schemaVersion === 2
       ? validateDataIdentityV2(receipt.data)
-      : validateDataIdentityV3(receipt.data);
+      : validateDataIdentityV3(receipt.data, schemaVersion);
 
   const normalized = {
     schemaVersion,
@@ -395,7 +406,7 @@ function validateDataIdentityV2(value: unknown): TileflowCaptureDataIdentityV2 {
   const capabilities =
     data.capabilities === undefined
       ? undefined
-      : validateDataCapabilities(data.capabilities, 'data.capabilities');
+      : validateDataCapabilities(data.capabilities, 'data.capabilities', 2);
   const source =
     data.source === undefined
       ? data.url === undefined
@@ -421,7 +432,10 @@ function validateDataIdentityV2(value: unknown): TileflowCaptureDataIdentityV2 {
   };
 }
 
-function validateDataIdentityV3(value: unknown): TileflowCaptureDataIdentityV3 {
+function validateDataIdentityV3(
+  value: unknown,
+  schemaVersion: 3 | typeof tileflowCaptureReceiptSchemaVersion,
+): TileflowCaptureDataIdentityV3 | TileflowCaptureDataIdentityV4 {
   const data = requireRecord(value, 'data');
   if (data.kind === 'tileflow-world') {
     requireExactKeys(data, [
@@ -484,7 +498,7 @@ function validateDataIdentityV3(value: unknown): TileflowCaptureDataIdentityV3 {
   const capabilities =
     data.capabilities === undefined
       ? undefined
-      : validateDataCapabilities(data.capabilities, 'data.capabilities');
+      : validateDataCapabilities(data.capabilities, 'data.capabilities', schemaVersion);
   const semantics =
     data.semantics === undefined
       ? undefined
@@ -502,7 +516,7 @@ function validateDataIdentityV3(value: unknown): TileflowCaptureDataIdentityV3 {
   };
 }
 
-function normalizeCaptureDataInput(input: TileflowCaptureDataInput): TileflowCaptureDataIdentityV3 {
+function normalizeCaptureDataInput(input: TileflowCaptureDataInput): TileflowCaptureDataIdentityV4 {
   if (input.kind === 'tileflow-world') return input;
   const {url, ...identity} = input;
   return {
@@ -559,20 +573,25 @@ function requireBindingValue(value: unknown, field: string): string {
   return value;
 }
 
+/** Schema-v4 receipts record `canopy`; schema-v2 and schema-v3 receipts predate it. */
 function validateDataCapabilities(
   value: unknown,
   field: string,
-): TileflowCaptureDataCapabilitiesV2 {
+  schemaVersion: 2 | 3 | typeof tileflowCaptureReceiptSchemaVersion,
+): TileflowCaptureDataCapabilitiesV2 | TileflowCaptureDataCapabilitiesV4 {
   const capabilities = requireRecord(value, field);
+  const recordsCanopy = schemaVersion === tileflowCaptureReceiptSchemaVersion;
   requireExactKeys(capabilities, [
     'businessCorridor',
     ...(capabilities.bathymetry === undefined ? [] : ['bathymetry']),
+    ...(recordsCanopy ? ['canopy'] : []),
     'globalLandcover',
     'tree',
   ]);
   if (
     typeof capabilities.businessCorridor !== 'boolean' ||
     (capabilities.bathymetry !== undefined && typeof capabilities.bathymetry !== 'boolean') ||
+    (recordsCanopy && typeof capabilities.canopy !== 'boolean') ||
     typeof capabilities.globalLandcover !== 'boolean' ||
     typeof capabilities.tree !== 'boolean'
   ) {
@@ -581,6 +600,7 @@ function validateDataCapabilities(
   return {
     businessCorridor: capabilities.businessCorridor,
     ...(capabilities.bathymetry === undefined ? {} : {bathymetry: capabilities.bathymetry}),
+    ...(recordsCanopy ? {canopy: capabilities.canopy as boolean} : {}),
     globalLandcover: capabilities.globalLandcover,
     tree: capabilities.tree,
   };

@@ -37,10 +37,18 @@ export type NativeLayerTransformation = {
   properties: Property[];
 };
 export type NativeProjectionTransformation = 'none' | 'mercator-to-implicit' | 'globe-to-mercator';
+const overlapProperties = ['icon-overlap', 'text-overlap'] as const;
+type OverlapProperty = (typeof overlapProperties)[number];
+/** A symbol layer whose overlap modes became `*-allow-overlap` values; its position is unchanged. */
+export type NativeSymbolOverlapTransformation = {
+  inputLayer: number;
+  properties: OverlapProperty[];
+};
 export type NativeStyleRepresentation = {
   style: JsonObject & {layers: NativeLayer[]};
   projection: NativeProjectionTransformation;
   layers: NativeLayerTransformation[];
+  symbolOverlap: NativeSymbolOverlapTransformation[];
   inputLayers: number;
   outputLayers: number;
 };
@@ -561,6 +569,31 @@ function lowerLayer(
   return {variants, properties};
 }
 
+/**
+ * MapLibre Native has no overlap modes and reads only `*-allow-overlap`. `never` becomes `false`;
+ * `always` and `cooperative` become `true`, so a cooperative symbol no longer gives way to symbols
+ * placed with `never`. Only constant modes are replaced.
+ */
+function replaceSymbolOverlap(
+  layer: NativeLayer,
+  index: number,
+): {layer: NativeLayer; properties: OverlapProperty[]} | undefined {
+  if (layer.type !== 'symbol' || !object(layer.layout)) return;
+  const properties = overlapProperties.filter((property) => layer.layout![property] !== undefined);
+  if (!properties.length) return;
+  const layout = {...layer.layout};
+  for (const property of properties) {
+    const mode = layout[property];
+    if (mode !== 'never' && mode !== 'always' && mode !== 'cooperative') {
+      fail(`/layers/${index}/layout/${property}`);
+    }
+    delete layout[property];
+    layout[property === 'icon-overlap' ? 'icon-allow-overlap' : 'text-allow-overlap'] =
+      mode !== 'never';
+  }
+  return {layer: {...layer, layout}, properties};
+}
+
 /** Filters supplied here must be expressions. The production adapter uses the pinned legacy converter. */
 export function lowerNativeStyleRepresentation(
   input: JsonObject,
@@ -588,6 +621,7 @@ export function lowerNativeStyleRepresentation(
   }
   const layers: NativeLayer[] = [];
   const transformations: NativeLayerTransformation[] = [];
+  const symbolOverlap: NativeSymbolOverlapTransformation[] = [];
   for (const [index, layer] of originalLayers.entries()) {
     const source =
       object(input.sources) && typeof layer.source === 'string'
@@ -595,7 +629,9 @@ export function lowerNativeStyleRepresentation(
         : undefined;
     const lowered = lowerLayer(layer, index, object(source) && source.type === 'vector');
     if (!lowered) {
-      layers.push(layer);
+      const replaced = replaceSymbolOverlap(layer, index);
+      if (replaced) symbolOverlap.push({inputLayer: index, properties: replaced.properties});
+      layers.push(replaced?.layer ?? layer);
       continue;
     }
     if (
@@ -629,7 +665,7 @@ export function lowerNativeStyleRepresentation(
       properties: lowered.properties,
     });
   }
-  const changed = projection !== 'none' || transformations.length > 0;
+  const changed = projection !== 'none' || transformations.length > 0 || symbolOverlap.length > 0;
   const output: JsonObject & {layers: NativeLayer[]} = changed
     ? {...input, layers}
     : (input as JsonObject & {layers: NativeLayer[]});
@@ -638,6 +674,7 @@ export function lowerNativeStyleRepresentation(
     style: output,
     projection,
     layers: transformations,
+    symbolOverlap,
     inputLayers: originalLayers.length,
     outputLayers: layers.length,
   };

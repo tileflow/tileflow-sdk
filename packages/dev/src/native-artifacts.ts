@@ -84,7 +84,10 @@ export function lowerTileflowNativeCompiledStyles(
             issue.code !== 'NATIVE_UNSUPPORTED_STYLE' ||
             !(
               issue.path === '/projection' ||
-              /^\/layers\/\d+\/(?:layout\/line-cap|paint\/line-dasharray)(?:\/|$)/u.test(issue.path)
+              /^\/layers\/\d+\/(?:layout\/line-cap|paint\/line-dasharray)(?:\/|$)/u.test(
+                issue.path,
+              ) ||
+              /^\/layers\/\d+\/layout\/(?:icon|text)-overlap$/u.test(issue.path)
             ),
         );
         if (blockers.length)
@@ -154,6 +157,7 @@ export function lowerTileflowNativeCompiledStyles(
           outputLayers: lowered.outputLayers,
           projection: lowered.projection,
           layers: lowered.layers,
+          symbolOverlap: lowered.symbolOverlap,
         });
       } catch (error) {
         if (!(error instanceof NativeLoweringError)) throw error;

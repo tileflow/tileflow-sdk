@@ -320,6 +320,104 @@ explicit because the data contract cannot assume a sprite name. They require pos
 `markings` evidence and reject `crossing=no`; both fields are semantic bindings, so custom schemas
 can remap them without weakening that rule.
 
+Datasets may also publish the optional, decorative `canopy` layer: points inside urban parks and
+gardens, at most one per cell of a grid of about 20 m that measured tree canopy covers. Each point
+tells how much room a drawn grove of tree crowns has and how dense the canopy around it is. The
+points are not surveyed trees, are unrelated to the optional `tree` layer, and are not search or
+interaction targets. `openMapTiles()` and `tileflowWorldV1Schema()` bind the layer as `canopy` and
+its numeric fields as follows:
+
+- `canopyRank` (`rank`): a stable integer from 0 through 15. Lower ranks appear at lower zooms, and
+  the rank can vary artwork.
+- `canopyClearanceAtZoom15` (`clearance_px_z15`): 4, 6, 8, 12, 16, or 24. This is the lower bound
+  of the distance from the point to the nearest edge a crown must not cover, such as a park edge,
+  water, a building, a plaza, a pitch, or a roadway, in pixels of a 512-pixel tile at zoom 15. A
+  grove fits at zoom `z` when its drawn reach in screen pixels is at most
+  `clearance_px_z15 × 2^(z − 15)`.
+- `canopyCoverPercent` (`cover_pct`): 3, 30, or 60, the lower bound of the share, in percent, of
+  canopy taller than 3 m within 10 m of the point. The field is absent where no measurement exists;
+  treat absence as a middle density.
+
+Features are MultiPoints, one per identical set of attributes. Native zoom 15 holds every point,
+zoom 14 holds the points whose rank is below 8 at the same positions, and clients overzoom zoom 15.
+`validateTileflowWorldV1Tilejson(...)` accepts a TileJSON without `canopy`; once declared, the layer
+must occur exactly once, declare native z14–z15, and advertise Number `rank`, `clearance_px_z15`, and
+`cover_pct`. No module draws the layer. A source without it remains valid, and render passes bound
+to it draw nothing. `capabilities: {canopy: false}` removes the binding, after which a pass with
+`feature: 'canopy'` fails with a missing-binding error.
+
+Draw groves with symbol render passes, one grove of whole crowns per point, sized to its room:
+
+<!-- docs:check -->
+
+```ts
+import {expr, field, fixed, renderPass, token, vegetation, withRenderStack} from '@tileflow/core';
+
+// The grove artwork reaches 32 pixels from its center at icon size 1.
+const clearance = expr.get(field('canopyClearanceAtZoom15'));
+// The size that fills the room at one zoom, never larger than the artwork itself.
+const fit = (divisor: number) => expr.min(expr.divide(clearance, divisor), 1);
+
+const groves = (minZoom: number, fromRank: number, toRank: number) =>
+  renderPass({
+    placement: 'above-vegetation',
+    feature: 'canopy',
+    renderer: 'symbol',
+    selector: {
+      kind: 'all',
+      selectors: [
+        {field: 'canopyRank', kind: 'compare', operator: 'gte', value: fromRank},
+        {field: 'canopyRank', kind: 'compare', operator: 'lt', value: toRank},
+      ],
+    },
+    style: {
+      minZoom,
+      icon: {
+        ignorePlacement: true,
+        image: token.image('vegetation.canopy.grove'),
+        overlap: 'always',
+        size: expr.interpolate({base: 2, kind: 'exponential'}, expr.zoom(), [
+          [14, fit(64)],
+          [15, fit(32)],
+          [16, fit(16)],
+          [17, fit(8)],
+          [18, fit(4)],
+        ]),
+      },
+      text: {
+        field: 'o',
+        font: token.font('default'),
+        opacity: fixed(0, {reason: 'The core text only decides placement'}),
+        overlap: 'cooperative',
+        size: fixed(8, {reason: 'Matches the solid core of the grove artwork'}),
+      },
+    },
+  });
+
+export const canopyGroves = withRenderStack(vegetation(), {
+  groves14: groves(14, 0, 4),
+  groves15: groves(15, 4, 8),
+  groves16: groves(16, 8, 16),
+});
+```
+
+- Give each rank range its own pass with `minZoom`, so its points appear whole at their entry zoom.
+  MapLibre evaluates expressions that combine zoom and feature data at whole zoom levels and
+  interpolates between them, so a fade per feature would leave symbols half transparent. Zoom 14
+  tiles carry the ranks below 8, so the first pass may cover ranks 0–7.
+- Size each grove from `canopyClearanceAtZoom15`. Here the size is `clearance / 32` at zoom 15 and
+  doubles with each zoom until the grove reaches the artwork's size, which keeps the reach within
+  the room.
+- Collision tests an icon's whole image, including the transparent margin around the crowns. A small
+  invisible text the size of the grove's core therefore decides placement with
+  `overlap: 'cooperative'`, while the icon draws with `overlap: 'always'` and `ignorePlacement: true`.
+  Groves may overlap each other but give way to labels, which draw above the vegetation band and are
+  therefore placed first, with the default `never`.
+
+Every theme of the map must define the image token, and the map's icon directories must provide the
+artwork. Native artifacts replace `cooperative` with `allowOverlap: true`, so there groves can cover
+labels; see [symbol overlap modes](shared-visual-primitives.md#symbol-overlap-modes).
+
 The optional `business_corridor` extension contains activity-selected source footprints below
 buildings. Its `activity_score`, `rank`, `min_zoom`, and `confidence` fields control a quiet local
 warm tint without drawing POI-radius circles. Current building footprints may carry sparse

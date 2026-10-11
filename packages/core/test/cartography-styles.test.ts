@@ -186,6 +186,50 @@ test('maps every reusable visual primitive to its MapLibre paint and layout cont
   assert.equal((extrusion.paint as Record<string, unknown>)['fill-extrusion-pattern'], 'facade');
 });
 
+test('lowers symbol overlap modes alone, without a redundant allow-overlap', () => {
+  const overlapLayout = (layout: unknown) =>
+    Object.fromEntries(
+      Object.entries(layout as Record<string, unknown>).filter(([key]) => key.includes('overlap')),
+    );
+
+  for (const overlap of ['never', 'always', 'cooperative'] as const) {
+    const symbol = applySymbolStyle(
+      {id: `overlap-${overlap}`, type: 'symbol'},
+      {icon: {image: 'grove', overlap}, text: {field: 'o', font: 'Noto Sans Regular', overlap}},
+    );
+    assert.deepEqual(overlapLayout(symbol.layout), {
+      'icon-overlap': overlap,
+      'text-overlap': overlap,
+    });
+  }
+
+  // The mode governs: an allowOverlap merged from a module default, or already on the layout,
+  // is dropped rather than kept beside it.
+  const precedence = applySymbolStyle(
+    {
+      id: 'overlap-precedence',
+      layout: {'icon-allow-overlap': true, 'text-allow-overlap': true},
+      type: 'symbol',
+    },
+    {
+      icon: {allowOverlap: false, image: 'grove', overlap: 'cooperative'},
+      text: {allowOverlap: true, field: 'o', font: 'Noto Sans Regular', overlap: 'never'},
+    },
+  );
+  assert.deepEqual(overlapLayout(precedence.layout), {
+    'icon-overlap': 'cooperative',
+    'text-overlap': 'never',
+  });
+  const governed = applyIconStyle(
+    {id: 'governed', layout: {'icon-overlap': 'always'}, type: 'symbol'},
+    {allowOverlap: false},
+  );
+  assert.deepEqual(governed.layout, {'icon-overlap': 'always'});
+
+  const withoutMode = applyIconStyle({id: 'allow-overlap', type: 'symbol'}, {allowOverlap: true});
+  assert.deepEqual(withoutMode.layout, {'icon-allow-overlap': true});
+});
+
 test('preserves data-driven line-cap expressions for lateral-only widening', () => {
   const cap = expression<'butt' | 'round'>([
     'case',

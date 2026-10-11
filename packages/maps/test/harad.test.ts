@@ -167,6 +167,7 @@ test('Härad stays valid against generic OpenMapTiles without optional capabilit
       capabilities: {
         bathymetry: false,
         businessCorridor: false,
+        canopy: false,
         globalLandcover: false,
         tree: false,
       },

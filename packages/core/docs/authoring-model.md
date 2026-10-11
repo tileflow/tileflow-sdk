@@ -223,7 +223,9 @@ that can upgrade the points to instanced 3D trees. `mode: 'flat'` keeps the MapL
 broadleaf and conifer palettes, and independent height and crown scales. The legacy `minZoom`
 shortcut remains available; `flat.minZoom` takes precedence when both are present. The binding
 includes height, crown diameter, genus, leaf type, and species fields so compatible runtimes can
-preserve source measurements and botanical form without hard-coding raw property names. The
+preserve source measurements and botanical form without hard-coding raw property names. The module
+does not draw the unrelated, decorative `canopy` layer; render passes can, as in the
+[canopy grove recipe](data-is-separate-from-design.md). The
 pitched-scene stack follows physical height: pedestrian and transport surfaces, transport markings,
 buildings, then vegetation, so street paint never floats over 3D geometry. Text draws last: road
 names, route shields, junction numbers, and place, water, aerodrome, and POI annotations stay above

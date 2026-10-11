@@ -230,7 +230,8 @@ it is not an alias of the evolving core authoring type.
 
 For external vector tiles, `data` records the provider kind, optional explicit revision, OpenMapTiles
 schema/version, stable primary source ID, optional schema bindings/capabilities, and an optional safe
-source fingerprint.
+source fingerprint. Schema-v4 capabilities state whether each optional source layer is bound,
+including `canopy`.
 The fingerprint contains only a source class plus SHA-256. Its input removes query and fragment;
 loopback sources also discard host and port. A raw URL, origin, path, query, signed token, or
 credential is never written by a new receipt. This identity participates in scene compatibility.
@@ -241,9 +242,10 @@ Canonical schema-v2 and schema-v3 receipts remain readable as historical evidenc
 reclassified as schema v4. Schema-v2 receipts predate source fingerprints, `verification`, and the
 bathymetry capability; parsing first validates their exact canonical legacy representation, then
 normalizes a legacy URL to the safe fingerprint and infers verification from the target. Schema-v3
-receipts already carry the safe data identity but predate the mandatory concrete scene theme. A
-three-capability baseline remains compatible when a fresh receipt adds bathymetry or new binding
-keys, provided every identity value recorded by the baseline still agrees. Conflicting recorded
+receipts already carry the safe data identity but predate the mandatory concrete scene theme.
+Neither earlier schema records the `canopy` capability, so their capabilities must not contain it. A
+three-capability baseline remains compatible when a fresh receipt adds bathymetry, canopy, or new
+binding keys, provided every identity value recorded by the baseline still agrees. Conflicting recorded
 values remain a scene mismatch. Serializing a parsed legacy receipt writes only the normalized safe
 shape; it never reproduces a v2 raw URL. Receipt parsing remains exact-key, UTF-8, size,
 portable-identifier, hash, dimension, and pixel-budget validated; parser-dependent duplicate keys

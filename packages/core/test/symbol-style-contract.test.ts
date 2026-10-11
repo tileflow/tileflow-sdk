@@ -62,6 +62,7 @@ const textCases = {
   offset: textCase({offset: [1, 2]}),
   opacity: textCase({opacity: 0.42}),
   optional: textCase({optional: false}),
+  overlap: textCase({overlap: 'cooperative'}),
   padding: textCase({padding: 11}),
   pitchAlignment: textCase({pitchAlignment: 'map'}),
   radialOffset: textCase({radialOffset: 1.25}),
@@ -88,6 +89,7 @@ const iconCases = {
   offset: iconCase({offset: [2, 3]}),
   opacity: iconCase({opacity: 0.38}),
   optional: iconCase({optional: false}),
+  overlap: iconCase({overlap: 'never'}),
   padding: iconCase({padding: 9}),
   pitchAlignment: iconCase({pitchAlignment: 'map'}),
   rotate: iconCase({rotate: 23}),
@@ -156,6 +158,32 @@ test('every schema-accepted TileflowSymbolStyle property is observable or diagno
     [],
     `Schema-accepted symbol properties were silently ignored: ${silent.join(', ')}`,
   );
+});
+
+test('overlap accepts three modes beside allowOverlap and rejects any other value', () => {
+  assertSchemaAccepts('symbol.text.overlap', {text: {allowOverlap: false, overlap: 'cooperative'}});
+  assertSchemaAccepts('symbol.icon.overlap', {
+    icon: {allowOverlap: true, image: 'contract-icon', overlap: 'never'},
+  });
+  for (const style of [
+    {text: {overlap: 'sometimes'}},
+    {icon: {image: 'contract-icon', overlap: true}},
+  ]) {
+    assert.throws(
+      () =>
+        parseTileflowMap(
+          extendStreets({
+            modules: {
+              labels: labels({
+                places: 'all',
+                styles: {places: {city: style as unknown as TileflowSymbolStyle}},
+              }),
+            },
+          }),
+        ),
+      /overlap/u,
+    );
+  }
 });
 
 test('marker is explicit to marker-capable POI and nautical point styles', () => {

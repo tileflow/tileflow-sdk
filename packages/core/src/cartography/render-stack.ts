@@ -28,6 +28,7 @@ import {
   applyFillStyle,
   applyLineStyle,
   applySymbolStyle,
+  withoutGovernedAllowOverlap,
 } from './layer-style';
 import {dataLayer, field} from './semantic-bindings';
 import type {
@@ -1125,10 +1126,10 @@ function applyRefinement(
       ...(patch.style?.placement === undefined
         ? {}
         : {
-            placement: {
+            placement: withoutGovernedAllowOverlap({
               ...(previous.style.placement ?? {}),
               ...patch.style.placement,
-            },
+            }),
           }),
       ...(patch.style?.appearance === undefined
         ? {}

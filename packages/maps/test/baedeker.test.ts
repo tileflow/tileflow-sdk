@@ -276,6 +276,7 @@ test('Baedeker stays valid against generic OpenMapTiles without optional capabil
       capabilities: {
         bathymetry: false,
         businessCorridor: false,
+        canopy: false,
         globalLandcover: false,
         tree: false,
       },

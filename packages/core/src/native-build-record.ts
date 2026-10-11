@@ -24,6 +24,21 @@ const layerTransformationSchema = strictNativeObject({
     ),
 });
 
+/** A symbol layer whose overlap modes became `*-allow-overlap` values in place. */
+const symbolOverlapTransformationSchema = strictNativeObject({
+  inputLayer: layerCountSchema,
+  properties: z
+    .array(z.enum(['icon-overlap', 'text-overlap']))
+    .min(1)
+    .max(2)
+    .refine(
+      (properties) =>
+        properties.length === 1 ||
+        (properties[0] === 'icon-overlap' && properties[1] === 'text-overlap'),
+      'Expected unique, ordered properties',
+    ),
+});
+
 export const tileflowNativeStyleTransformationSchema = strictNativeObject({
   map: tileflowPortableIdSchema,
   theme: tileflowThemeNameSchema,
@@ -33,6 +48,9 @@ export const tileflowNativeStyleTransformationSchema = strictNativeObject({
   outputLayers: layerCountSchema,
   projection: z.enum(['none', 'mercator-to-implicit', 'globe-to-mercator']),
   layers: z.array(layerTransformationSchema).max(tileflowNativeProfileLimits.maximumLayers),
+  symbolOverlap: z
+    .array(symbolOverlapTransformationSchema)
+    .max(tileflowNativeProfileLimits.maximumLayers),
 }).superRefine((style, context) => {
   let previous = -1;
   let added = 0;
@@ -58,6 +76,23 @@ export const tileflowNativeStyleTransformationSchema = strictNativeObject({
       path: ['outputLayers'],
       message: 'Layer counts do not match transformation spans',
     });
+  }
+  // Only line layers are partitioned and only symbol layers carry overlap modes.
+  const partitioned = new Set(style.layers.map(({inputLayer}) => inputLayer));
+  previous = -1;
+  for (const [index, layer] of style.symbolOverlap.entries()) {
+    if (
+      layer.inputLayer <= previous ||
+      layer.inputLayer >= style.inputLayers ||
+      partitioned.has(layer.inputLayer)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['symbolOverlap', index],
+        message: 'Invalid symbol overlap layer',
+      });
+    }
+    previous = layer.inputLayer;
   }
 });
 export type TileflowNativeStyleTransformation = z.infer<

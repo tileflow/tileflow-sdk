@@ -72,8 +72,10 @@ Dev's `native-lowering-v1` preparation policy explicitly converts a fixed `{type
 projection to Native's implicit Mercator before this validator runs. This is a recorded projection
 change, not globe support or visual equivalence. One authored map serves web and native preparation;
 no native-specific Streets definition is used. Preparation adapts only finite `line-cap` and
-`line-dasharray` decisions into constant-property layers. Other unsupported properties have no implicit fallback. The raw validator continues to reject
-unlowered unsupported expressions. See the [preparation contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-artifacts.md)
+`line-dasharray` decisions into constant-property layers, and replaces constant `icon-overlap` and
+`text-overlap` modes with their `*-allow-overlap` equivalent. Other unsupported properties have no
+implicit fallback. The raw validator continues to reject unlowered unsupported expressions and
+overlap modes. See the [preparation contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-artifacts.md)
 for the grammar, expansion limits and pending native visual checks. The lowering checks establish
 per-feature selection and cap/dash values, not global feature draw order. A copied `line-sort-key`
 cannot preserve ordering between simultaneous physical branches; overlapping features may produce
@@ -81,7 +83,7 @@ a different composition even when every property value is retained.
 
 `native-build.json` uses strict schema version 2 and `preparationVersion: 'native-lowering-v1'`.
 Its `transformations` array is ordered by map/theme and binds the input/lowered style hashes,
-projection policy and physical layer spans. The runtime manifest remains version 1. An old v1
+projection policy, physical layer spans and symbol overlap replacements. The runtime manifest remains version 1. An old v1
 build-record decoder must reject v2 rather than silently ignore the preparation evidence.
 
 Text must use a valid glyph template containing `{fontstack}` and `{range}`, or a complete static

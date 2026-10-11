@@ -1,19 +1,20 @@
+import {convertFilter, createExpression, featureFilter} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
-import {createHash} from 'node:crypto';
 import {execFile} from 'node:child_process';
-import {fileURLToPath} from 'node:url';
-import {promisify} from 'node:util';
+import {createHash} from 'node:crypto';
 import {copyFile, mkdtemp, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
-import {convertFilter, createExpression, featureFilter} from '@maplibre/maplibre-gl-style-spec';
-import {serializeCanonicalJson, type MapLibreStyle} from '@tileflow/core';
+import {fileURLToPath} from 'node:url';
+import {promisify} from 'node:util';
+import {type MapLibreStyle, serializeCanonicalJson} from '@tileflow/core';
 import {
-  TileflowNativeCompatibilityError,
+  createTileflowNativeBuildRecord,
   tileflowNativeBuildRecordSchema,
-  tileflowNativeProfileLimits,
+  TileflowNativeCompatibilityError,
   tileflowNativePreparedStyleLimits,
+  tileflowNativeProfileLimits,
   validateTileflowNativePreparedStyle,
 } from '@tileflow/core/native-profile';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
@@ -105,6 +106,63 @@ test('matches the pinned expression and filter evaluators at range and camera bo
       }
     }
   }
+  assert.equal(serializeCanonicalJson(original), before);
+});
+
+test('prepares symbol overlap modes as their allow-overlap fallback for native artifacts', () => {
+  const original = {
+    version: 8,
+    glyphs: 'https://example.test/fonts/{fontstack}/{range}.pbf',
+    sources: {world: {type: 'vector', tiles: ['https://example.test/{z}/{x}/{y}.pbf']}},
+    layers: [
+      {
+        id: 'groves',
+        type: 'symbol',
+        source: 'world',
+        'source-layer': 'canopy',
+        minzoom: 14,
+        layout: {
+          'icon-image': 'grove',
+          'icon-overlap': 'always',
+          'text-field': 'o',
+          'text-font': ['Noto Sans Regular'],
+          'text-overlap': 'cooperative',
+        },
+      },
+    ],
+  } as MapLibreStyle;
+  assert.ok(
+    validateTileflowNativePreparedStyle(original).some(
+      ({path}) => path === '/layers/0/layout/icon-overlap',
+    ),
+  );
+  const before = serializeCanonicalJson(original);
+  const lowered = lowerTileflowNativeCompiledStyles({fixture: {light: original}});
+  const result = lowered.styles.fixture!.light!;
+
+  assert.deepEqual(validateTileflowNativePreparedStyle(result), []);
+  assert.deepEqual(result.layers[0]!.layout, {
+    'icon-allow-overlap': true,
+    'icon-image': 'grove',
+    'text-allow-overlap': true,
+    'text-field': 'o',
+    'text-font': ['Noto Sans Regular'],
+  });
+  // The replacement is itemized without a layer span, so it stays valid for the build record.
+  const [transformation] = lowered.transformations;
+  assert.deepEqual(transformation!.layers, []);
+  assert.deepEqual(transformation!.symbolOverlap, [
+    {inputLayer: 0, properties: ['icon-overlap', 'text-overlap']},
+  ]);
+  assert.equal(transformation!.inputLayers, transformation!.outputLayers);
+  assert.deepEqual(
+    tileflowNativeBuildRecordSchema.parse(
+      createTileflowNativeBuildRecord('c'.repeat(64), [transformation!]),
+    ).transformations,
+    [transformation],
+  );
+  assert.notEqual(transformation!.inputStyleSha256, transformation!.loweredStyleSha256);
+  assert.equal(transformation!.loweredStyleSha256, sha(result));
   assert.equal(serializeCanonicalJson(original), before);
 });
 

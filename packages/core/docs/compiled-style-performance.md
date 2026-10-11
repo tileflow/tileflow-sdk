@@ -237,7 +237,10 @@ canonical `poi` layer exposes `category`, `type`, `icon`, `min_zoom`, `filter_ra
 Core validates that complete contract and never reconstructs those decisions from OpenMapTiles
 `class`, `subclass`, or `rank`. `filter_rank` is an
 integer from 0 through 5, with lower values reserved for the strongest candidates. The numeric
-`density` option is an inclusive threshold from 1 through 5 and defaults to 3. `size_rank` is an
+`density` option is an inclusive threshold from 1 through 5 and defaults to 3. World publishes
+every eligible POI at z15, its last POI zoom, and higher zooms overzoom those tiles with more room,
+so the threshold rises by one rank at z16 and by two from z17. At the default density every rank is
+eligible from z17, and collision placement keeps what fits. `size_rank` is an
 integer from 0 through 16 used to order eligible candidates before MapLibre performs final
 collision placement.
 

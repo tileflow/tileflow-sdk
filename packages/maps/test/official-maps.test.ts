@@ -755,6 +755,7 @@ test('official maps compile against generic OpenMapTiles without optional capabi
       capabilities: {
         bathymetry: false,
         businessCorridor: false,
+        canopy: false,
         globalLandcover: false,
         tree: false,
       },

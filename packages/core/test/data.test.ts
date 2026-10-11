@@ -175,7 +175,11 @@ test('supports explicit schema bindings and identifies canonical OpenMapTiles', 
   assert.equal(isCanonicalOpenMapTilesSchema(remapped), false);
   assert.equal(canonical.layers.globalLandcover, 'globallandcover');
   assert.equal(canonical.layers.businessCorridor, 'business_corridor');
+  assert.equal(canonical.layers.canopy, 'canopy');
   assert.equal(canonical.layers.tree, 'tree');
+  assert.equal(canonical.fields.canopyClearanceAtZoom15, 'clearance_px_z15');
+  assert.equal(canonical.fields.canopyCoverPercent, 'cover_pct');
+  assert.equal(canonical.fields.canopyRank, 'rank');
   assert.equal(remapped.layers.globalLandcover, 'worldcover_lowzoom');
   assert.equal(remapped.layers.road, 'roads_v2');
   assert.equal(remapped.fields.class, 'kind');
@@ -214,10 +218,11 @@ test('makes park-layer semantics explicit while normalizing legacy schemas', () 
 
 test('preserves explicitly absent optional source-layer capabilities', () => {
   const schema = openMapTiles({
-    capabilities: {businessCorridor: false, globalLandcover: false, tree: false},
+    capabilities: {businessCorridor: false, canopy: false, globalLandcover: false, tree: false},
   });
 
   assert.equal(isCanonicalOpenMapTilesSchema(schema), false);
+  assert.equal(isCanonicalOpenMapTilesSchema(openMapTiles({capabilities: {canopy: false}})), false);
 
   const resolved = resolveTileflowData(
     vectorTiles({
@@ -228,11 +233,28 @@ test('preserves explicitly absent optional source-layer capabilities', () => {
   );
   assert.equal(resolved.schema.layers.globalLandcover, undefined);
   assert.equal(resolved.schema.layers.businessCorridor, undefined);
+  assert.equal(resolved.schema.layers.canopy, undefined);
   assert.equal(resolved.schema.layers.tree, undefined);
   assert.equal(resolved.identity.capabilities?.globalLandcover, false);
   assert.equal(resolved.identity.capabilities?.businessCorridor, false);
   assert.equal(resolved.identity.capabilities?.bathymetry, false);
   assert.equal(resolved.identity.capabilities?.tree, false);
+  assert.equal(resolved.identity.bindings?.layers.canopy, undefined);
+});
+
+test('identifies the optional canopy layer through bindings, not a new capability key', () => {
+  const resolved = resolveTileflowData(
+    vectorTiles({attribution: '© Example', schema: openMapTiles(), url: '/tiles.json'}),
+  );
+
+  assert.equal(resolved.identity.bindings?.layers.canopy, 'canopy');
+  assert.equal(resolved.identity.bindings?.fields.canopyRank, 'rank');
+  assert.deepEqual(Object.keys(resolved.identity.capabilities ?? {}).sort(), [
+    'bathymetry',
+    'businessCorridor',
+    'globalLandcover',
+    'tree',
+  ]);
 });
 
 test('defines and validates the required Tileflow World V1 surface extensions', () => {
@@ -388,6 +410,81 @@ test('fails closed on malformed or duplicate Tileflow World V1 detail capabiliti
   ]);
 });
 
+test('accepts World V1 TileJSON without canopy and validates canopy when declared', () => {
+  const worldV1 = tileflowWorldV1Schema();
+  assert.equal(worldV1.layers.canopy, 'canopy');
+  assert.equal(worldV1.fields.canopyRank, 'rank');
+  assert.equal(worldV1.fields.canopyClearanceAtZoom15, 'clearance_px_z15');
+  assert.equal(worldV1.fields.canopyCoverPercent, 'cover_pct');
+  assert.equal(tileflowWorldV1Schema({capabilities: {canopy: false}}).layers.canopy, undefined);
+
+  assert.deepEqual(
+    validateTileflowWorldV1Tilejson({vector_layers: validWorldV1VectorLayers()}),
+    [],
+  );
+  assert.deepEqual(
+    validateTileflowWorldV1Tilejson({
+      vector_layers: [...validWorldV1VectorLayers(), validCanopyVectorLayer()],
+    }),
+    [],
+  );
+
+  const malformed = {
+    ...validCanopyVectorLayer(),
+    minzoom: 15,
+    fields: {clearance_px_z15: 'Number', rank: 'String'},
+  };
+  assert.deepEqual(
+    validateTileflowWorldV1Tilejson({vector_layers: [...validWorldV1VectorLayers(), malformed]}),
+    [
+      'Tileflow World V1 canopy must declare native z14-z15.',
+      'Tileflow World V1 requires Number rank on canopy.',
+      'Tileflow World V1 requires Number cover_pct on canopy.',
+    ],
+  );
+  assert.deepEqual(
+    validateTileflowWorldV1Tilejson({
+      vector_layers: [...validWorldV1VectorLayers(), {...validCanopyVectorLayer(), maxzoom: 16}],
+    }),
+    ['Tileflow World V1 canopy must declare native z14-z15.'],
+  );
+  assert.deepEqual(
+    validateTileflowWorldV1Tilejson({
+      vector_layers: [
+        ...validWorldV1VectorLayers(),
+        validCanopyVectorLayer(),
+        validCanopyVectorLayer(),
+      ],
+    }),
+    ['Tileflow World V1 requires exactly one canopy layer.'],
+  );
+
+  // A schema without the canopy binding ignores the layer; a remapped binding is validated.
+  assert.deepEqual(
+    validateTileflowWorldV1Tilejson(
+      {vector_layers: [...validWorldV1VectorLayers(), malformed]},
+      tileflowWorldV1Schema({capabilities: {canopy: false}}),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    validateTileflowWorldV1Tilejson(
+      {vector_layers: [...validWorldV1VectorLayers(), validCanopyVectorLayer()]},
+      tileflowWorldV1Schema({fields: {canopyRank: 'grove_rank'}, layers: {canopy: 'groves'}}),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    validateTileflowWorldV1Tilejson(
+      {
+        vector_layers: [...validWorldV1VectorLayers(), {...validCanopyVectorLayer(), id: 'groves'}],
+      },
+      tileflowWorldV1Schema({fields: {canopyRank: 'grove_rank'}, layers: {canopy: 'groves'}}),
+    ),
+    ['Tileflow World V1 requires Number grove_rank on groves.'],
+  );
+});
+
 test('rejects private URL credentials, invalid descriptors, and missing attribution', () => {
   assert.throws(
     () =>
@@ -417,6 +514,20 @@ test('rejects private URL credentials, invalid descriptors, and missing attribut
     /exactly one/,
   );
 });
+
+function validCanopyVectorLayer(): {
+  fields: Record<string, string>;
+  id: string;
+  maxzoom: number;
+  minzoom: number;
+} {
+  return {
+    id: 'canopy',
+    minzoom: 14,
+    maxzoom: 15,
+    fields: {clearance_px_z15: 'Number', cover_pct: 'Number', rank: 'Number'},
+  };
+}
 
 function validWorldV1VectorLayers(): Array<{
   fields: Record<string, string>;

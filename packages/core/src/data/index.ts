@@ -24,6 +24,12 @@ export type OpenMapTilesLayerBindings = {
   bathymetry?: string;
   /** Optional derived commercial-activity polygons rendered below buildings. */
   businessCorridor?: string;
+  /**
+   * Optional decorative points inside parks and gardens, where measured tree canopy covers the
+   * ground. Each point tells how much room a drawn grove of tree crowns has. The points are not
+   * surveyed trees and are unrelated to `tree`.
+   */
+  canopy?: string;
   /** Optional generated circle centers used for detailed roundabout rendering. */
   circularFeature?: string;
   /** Optional low-zoom global land-cover extension. Defaults to `globallandcover`. */
@@ -62,6 +68,19 @@ export type OpenMapTilesFieldBindings = {
   brunnel: string;
   buildingKind: string;
   buildingTone: string;
+  /**
+   * Lower bound of the distance from a canopy point to the nearest edge a crown must not cover,
+   * in pixels of a 512-pixel tile at zoom 15: one of 4, 6, 8, 12, 16, or 24. A grove fits at zoom
+   * `z` when its reach in screen pixels is at most this value × 2^(z − 15).
+   */
+  canopyClearanceAtZoom15?: string;
+  /**
+   * Lower bound, in percent, of canopy taller than 3 m within 10 m of a canopy point: 3, 30, or
+   * 60. Absent where no measurement exists; treat absence as a middle density.
+   */
+  canopyCoverPercent?: string;
+  /** Stable integer from 0 through 15 per canopy point. Lower ranks appear first by zoom. */
+  canopyRank?: string;
   capital: string;
   /** Roundabout geometry kind in the optional circular-feature layer. */
   circularKind?: string;
@@ -160,6 +179,7 @@ export type OpenMapTilesSchemaOptions = {
   capabilities?: {
     businessCorridor?: boolean;
     bathymetry?: boolean;
+    canopy?: boolean;
     globalLandcover?: boolean;
     tree?: boolean;
   };
@@ -185,6 +205,9 @@ export type TileflowWorldV1Schema = Omit<OpenMapTilesSchema, 'fields' | 'layers'
   fields: OpenMapTilesFieldBindings & {
     bathymetryMinDepth: string;
     bathymetrySortKey: string;
+    canopyClearanceAtZoom15: string;
+    canopyCoverPercent: string;
+    canopyRank: string;
     circularClearanceExtraAtZoom15: string;
     circularInnerRadiusMeters: string;
     circularKind: string;
@@ -300,6 +323,7 @@ const canonicalLayers = {
   boundary: 'boundary',
   building: 'building',
   businessCorridor: 'business_corridor',
+  canopy: 'canopy',
   globalLandcover: 'globallandcover',
   houseNumber: 'housenumber',
   landcover: 'landcover',
@@ -324,6 +348,9 @@ const canonicalFields = {
   brunnel: 'brunnel',
   buildingKind: 'building_kind',
   buildingTone: 'building_tone',
+  canopyClearanceAtZoom15: 'clearance_px_z15',
+  canopyCoverPercent: 'cover_pct',
+  canopyRank: 'rank',
   capital: 'capital',
   circularClearanceExtraAtZoom15: 'clearance_extra_px_z15',
   circularInnerRadiusMeters: 'inner_radius_m',
@@ -407,6 +434,7 @@ export function openMapTiles(options: OpenMapTilesSchemaOptions = {}): OpenMapTi
     delete fields.bathymetryMinDepth;
     delete fields.bathymetrySortKey;
   }
+  if (options.capabilities?.canopy === false) delete layers.canopy;
   if (options.capabilities?.globalLandcover === false) delete layers.globalLandcover;
   if (options.capabilities?.tree === false) delete layers.tree;
   return {
@@ -470,6 +498,7 @@ export function validateTileflowWorldV1Tilejson(
   const road = requireTilejsonLayer(layers, schema.layers.road, issues);
   const roadName = requireTilejsonLayer(layers, schema.layers.roadName, issues);
   const roadShield = requireTilejsonLayer(layers, schema.layers.roadShield, issues);
+  const canopy = optionalTilejsonLayer(layers, schema.layers.canopy, issues);
 
   if (bathymetry) {
     if (bathymetry.minzoom !== 0 || bathymetry.maxzoom !== 9) {
@@ -649,6 +678,19 @@ export function validateTileflowWorldV1Tilejson(
       requireTilejsonField(roadShield, schema.layers.roadShield, field, ['Number'], issues);
     }
   }
+  if (canopy && schema.layers.canopy) {
+    // z15 holds every point; z14 repeats the lower ranks at the same positions.
+    if (canopy.minzoom !== 14 || canopy.maxzoom !== 15) {
+      issues.push(`Tileflow World V1 ${schema.layers.canopy} must declare native z14-z15.`);
+    }
+    for (const field of [
+      schema.fields.canopyRank,
+      schema.fields.canopyClearanceAtZoom15,
+      schema.fields.canopyCoverPercent,
+    ]) {
+      requireTilejsonField(canopy, schema.layers.canopy, field, ['Number'], issues);
+    }
+  }
   return issues;
 }
 
@@ -677,6 +719,20 @@ function requireTilejsonLayer(
     return undefined;
   }
   return matches[0];
+}
+
+/** An optional extension may be absent; once declared, it must occur exactly once. */
+function optionalTilejsonLayer(
+  layers: readonly unknown[],
+  id: string | undefined,
+  issues: string[],
+): TilejsonVectorLayer | undefined {
+  if (id === undefined) return undefined;
+  const declared = layers.some(
+    (layer) =>
+      typeof layer === 'object' && layer !== null && (layer as TilejsonVectorLayer).id === id,
+  );
+  return declared ? requireTilejsonLayer(layers, id, issues) : undefined;
 }
 
 function requireNativeZoom15(layer: TilejsonVectorLayer, layerId: string, issues: string[]): void {
@@ -855,6 +911,9 @@ function dataIdentity(
             fields: {...schema.fields},
             layers: {...schema.layers},
           },
+          // Capture receipts validate these keys exactly, so a new key would make existing
+          // @tileflow/capture versions reject the identity. Later optional layers, such as
+          // `canopy`, are identified by their presence in `bindings.layers`.
           capabilities: {
             businessCorridor: Boolean(schema.layers.businessCorridor),
             bathymetry: Boolean(schema.layers.bathymetry),

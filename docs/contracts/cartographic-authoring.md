@@ -280,6 +280,10 @@ junctions. Traffic signals, per-lane widths, and barriers are absent from its cu
 TileJSON contract. Detailed datasets may opt into the typed `streetFurniture`, `sidewalk`, and
 `circularFeature` bindings used by the semantic road controls above. Sidewalk coverage is
 source-backed and may be incomplete; never infer missing polygons by buffering road centerlines.
+Datasets may also publish the optional decorative `canopy` layer, whose `canopyRank`,
+`canopyClearanceAtZoom15`, and `canopyCoverPercent` fields size groves drawn by render passes. No
+module draws it, its points are not surveyed trees, and a pass bound to it draws nothing when the
+selected dataset lacks the layer.
 Do not emulate missing concepts with copied layer IDs or silently claim support when the selected
 dataset does not expose the required feature.
 

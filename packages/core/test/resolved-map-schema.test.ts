@@ -268,6 +268,30 @@ test('accepts a resolved-map remap for the optional global land-cover extension'
   if (map.data?.type !== 'vector-tiles') return;
   assert.equal(map.data.schema.layers.globalLandcover, 'worldcover_lowzoom');
   assert.equal(map.data.schema.layers.landcover, 'landcover');
+  assert.equal(map.data.schema.layers.canopy, undefined);
+});
+
+test('accepts a resolved-map remap for the optional canopy extension', () => {
+  const map = parseDesign({
+    data: {
+      type: 'vector-tiles',
+      attribution: '© Example',
+      schema: {
+        type: 'openmaptiles',
+        contractVersion: 1,
+        fields: {canopyRank: 'grove_rank'},
+        layers: {canopy: 'groves'},
+      },
+      url: '/tiles.json',
+    },
+  });
+
+  assert.equal(map.data?.type, 'vector-tiles');
+  if (map.data?.type !== 'vector-tiles') return;
+  assert.equal(map.data.schema.layers.canopy, 'groves');
+  assert.equal(map.data.schema.fields.canopyRank, 'grove_rank');
+  assert.equal(map.data.schema.fields.canopyClearanceAtZoom15, 'clearance_px_z15');
+  assert.equal(map.data.schema.fields.canopyCoverPercent, 'cover_pct');
 });
 
 test('accepts the typed Tileflow World V1 bathymetry extension at runtime', () => {

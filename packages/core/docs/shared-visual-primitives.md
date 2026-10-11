@@ -38,7 +38,9 @@ in the stack. `overlap` takes precedence over `allowOverlap` on the same part, i
 beside it, the matching `text-allow-overlap` or `icon-allow-overlap`: `false` for `never` and `true`
 for `always` and `cooperative`. MapLibre GL JS uses the mode. MapLibre Native has no overlap modes,
 so native artifact preparation keeps only the `*-allow-overlap` value; there a cooperative part no
-longer gives way to symbols placed with `never`.
+longer gives way to symbols placed with `never`. The
+[canopy grove recipe](data-is-separate-from-design.md) uses a cooperative text to decide where
+icons draw.
 
 ## Line-fitted text backgrounds
 

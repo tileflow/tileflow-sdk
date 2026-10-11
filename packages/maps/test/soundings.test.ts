@@ -220,6 +220,7 @@ test('Soundings degrades cleanly on generic OpenMapTiles without bathymetry', ()
       capabilities: {
         bathymetry: false,
         businessCorridor: false,
+        canopy: false,
         globalLandcover: false,
         tree: false,
       },

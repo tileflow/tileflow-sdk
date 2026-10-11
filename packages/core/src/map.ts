@@ -1,4 +1,8 @@
-import {tileflowCaptureSceneNameSchema, tileflowCaptureSceneSchema} from './capture-scene';
+import {
+  tileflowCaptureSceneFitIssue,
+  tileflowCaptureSceneNameSchema,
+  tileflowCaptureSceneSchema,
+} from './capture-scene';
 import {
   createTileflowCompilationFailure,
   type TileflowCompilationResult,
@@ -135,8 +139,10 @@ function validateMapScenes(map: TileflowMap, mapId: string): void {
       );
     }
     const result = tileflowCaptureSceneSchema.safeParse({...input, map: mapId});
-    if (!result.success) {
-      const issue = result.error.issues[0];
+    const issue = result.success
+      ? tileflowCaptureSceneFitIssue(result.data)
+      : result.error.issues[0];
+    if (!result.success || issue) {
       throw new Error(
         `Invalid Tileflow map "${map.id}". scenes.${sceneName}${issue?.path.length ? `.${issue.path.join('.')}` : ''}: ${issue?.message ?? 'Invalid scene'}`,
       );

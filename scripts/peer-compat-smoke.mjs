@@ -47,12 +47,12 @@ const suites = {
           '@types/react': '19.0.0',
           '@types/react-dom': '19.0.0',
           '@types/geojson': geoJsonTypesVersion,
-          'maplibre-gl': '6.9.0',
+          'maplibre-gl': '6.13.0',
           react: '19.0.0',
           'react-dom': '19.0.0',
           typescript: typeScriptVersion,
         },
-        name: 'react-19-maplibre-6-9',
+        name: 'react-19-maplibre-6-13',
       },
     ],
     verify: verifyReact,
@@ -60,7 +60,7 @@ const suites = {
   vue: {
     build: ['core', 'interactions', 'vue'],
     packages: ['core', 'interactions', 'vue'],
-    scenarios: ['6.4.1', '6.9.0'].map((maplibreVersion) => ({
+    scenarios: ['6.4.1', '6.13.0'].map((maplibreVersion) => ({
       dependencies: {
         '@types/geojson': geoJsonTypesVersion,
         '@vue/server-renderer': '3.3.0',
@@ -75,7 +75,7 @@ const suites = {
   svelte: {
     build: ['core', 'interactions', 'svelte'],
     packages: ['core', 'interactions', 'svelte'],
-    scenarios: ['6.4.1', '6.9.0'].map((maplibreVersion) => ({
+    scenarios: ['6.4.1', '6.13.0'].map((maplibreVersion) => ({
       dependencies: {
         '@types/geojson': geoJsonTypesVersion,
         'maplibre-gl': maplibreVersion,

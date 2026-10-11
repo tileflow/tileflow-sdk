@@ -1,8 +1,7 @@
 import type {MapColorScheme, MapThemeSelection} from './contract';
 
 export type AppearanceState =
-  | Readonly<{status: 'available'; colorScheme: MapColorScheme}>
-  | Readonly<{status: 'unavailable'}>;
+  Readonly<{status: 'available'; colorScheme: MapColorScheme}> | Readonly<{status: 'unavailable'}>;
 
 export type AppearanceSelection = Readonly<{theme?: MapThemeSelection}>;
 

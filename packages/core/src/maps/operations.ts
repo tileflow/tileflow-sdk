@@ -39,8 +39,7 @@ export type TileflowDisableOperation = Readonly<{
 }>;
 
 export type TileflowModuleOperation<TModule extends object> =
-  | TileflowDisableOperation
-  | TileflowRefineOperation<TileflowModulePatch<TModule>>;
+  TileflowDisableOperation | TileflowRefineOperation<TileflowModulePatch<TModule>>;
 
 export type TileflowAuthoringModules = {
   readonly [TName in keyof TileflowSemanticModules]?:

@@ -166,8 +166,7 @@ type MapImageProps = MapSharedProps & {
 };
 
 export type MapProps<TAnnotation extends TileflowAnnotation = TileflowAnnotation> = (
-  | MapInteractiveProps<TAnnotation>
-  | MapImageProps
+  MapInteractiveProps<TAnnotation> | MapImageProps
 ) &
   TileflowMapStyleSourceProps;
 
@@ -209,8 +208,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   } = props;
   const generalRenderPopup = renderPopup as TileflowInteractionRenderer<TAnnotation> | undefined;
   const generalRenderTooltip = renderTooltip as
-    | TileflowInteractionRenderer<TAnnotation>
-    | undefined;
+    TileflowInteractionRenderer<TAnnotation> | undefined;
   const sourceMap = source.map;
   const sourceManifestUrl = source.manifestUrl;
   const runtimeSource = useMemo<TileflowRuntimeSource>(

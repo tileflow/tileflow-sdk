@@ -103,6 +103,14 @@ only layers whose metadata names a module (`tileflow:domain`), stays through `se
 every `setBlend` position, eases camera-only values every frame, and changes values read per
 feature once under a cross-fade. Framework adapters do not expose it yet.
 
+It also sets style states: `setState(name, value, {transition})` sets a MapLibre global state that
+themes read through `expr.globalState(name)`. A number eases frame by frame from the value shown to
+the new one, so values a theme interpolates on it move smoothly; other values change at once. Values
+that also read feature data or feature state are laid out again by MapLibre at each change and do
+not ease smoothly. States are written again after every new style, so they stay through
+`setTheme` and `setBlend`. A map without global state (MapLibre GL JS before 5.6) fails the call.
+Framework adapters do not expose it yet.
+
 ## Renderer loading boundary
 
 React, Vue, and Svelte import MapLibre declarations as types only. Their executable entrypoints

@@ -454,8 +454,7 @@ export type TileflowCompiledRenderRefinement = {
 };
 
 export type TileflowCompiledRenderOperation =
-  | TileflowCompiledRenderLayer
-  | TileflowCompiledRenderRefinement;
+  TileflowCompiledRenderLayer | TileflowCompiledRenderRefinement;
 
 const comparisonOperators: Record<TileflowRenderComparison, string> = {
   eq: '==',
@@ -605,7 +604,7 @@ export function applyCompiledRenderStacks(
   // A pass draws once its requirements are active and the pass it is placed beside draws.
   const activeOwners = new Set(layers.map(({owner}) => owner));
   const drawn = new Set<string>();
-  for (let changed = true; changed; ) {
+  for (let changed = true; changed;) {
     changed = false;
     for (const pass of passes) {
       if (drawn.has(pass.target)) continue;

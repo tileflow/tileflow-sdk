@@ -25,7 +25,7 @@ export class NativePreparationError extends Error {
 function decode(bytes: Uint8Array): string {
   const pieces: string[] = [];
   let text = '';
-  for (let index = 0; index < bytes.length; ) {
+  for (let index = 0; index < bytes.length;) {
     const first = bytes[index++];
     let code: number;
     let count: number;

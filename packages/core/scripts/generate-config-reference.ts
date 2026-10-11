@@ -1753,6 +1753,7 @@ function enrichCaptureSceneReference(schema: JsonSchema): void {
     'Bounds camera. South must be less than north; west and east must define a non-empty span.';
   boundsCamera['x-tileflow-refinements'] = [
     {path: 'bounds', rule: 'south < north and west !== east'},
+    {path: 'padding', rule: "padding * 2 < the viewport's shorter side"},
   ];
 
   const viewport = dereferenceSchema(

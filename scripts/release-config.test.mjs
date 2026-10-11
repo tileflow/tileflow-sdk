@@ -177,6 +177,27 @@ test('requires Apache-2.0 metadata and the packaged license', () => {
   );
 });
 
+test('every public package emits declarations with stable type ordering', async () => {
+  // tsup emits each module's declarations in Rollup's load order. Without stable ordering,
+  // TypeScript orders unions and mapped keys by type creation, so repeated builds can differ.
+  const base = JSON.parse(
+    await readFile(new URL('../tsconfig.base.json', import.meta.url), 'utf8'),
+  );
+  assert.equal(base.compilerOptions.stableTypeOrdering, true);
+
+  for (const {directory, name} of publicPackageCatalog) {
+    const tsconfig = JSON.parse(
+      await readFile(new URL(`../packages/${directory}/tsconfig.json`, import.meta.url), 'utf8'),
+    );
+    assert.equal(tsconfig.extends, '../../tsconfig.base.json', `${name} must extend the base.`);
+    assert.notEqual(
+      tsconfig.compilerOptions?.stableTypeOrdering,
+      false,
+      `${name} must keep stable type ordering.`,
+    );
+  }
+});
+
 function fixtureManifests() {
   return new Map(
     publicPackageNames.map((name) => [

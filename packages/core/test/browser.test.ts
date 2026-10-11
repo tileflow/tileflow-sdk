@@ -66,8 +66,7 @@ test('reloads one stable logical PMTiles URL when its generation ETag changes', 
   second[second.byteLength - 1] = 43;
   let generation: 'first' | 'second' = 'first';
   let handler:
-    | ((request: unknown, controller: AbortController) => Promise<{data: unknown}>)
-    | undefined;
+    ((request: unknown, controller: AbortController) => Promise<{data: unknown}>) | undefined;
   const addProtocol = (_name: string, value: typeof handler) => {
     handler = value;
   };
@@ -109,8 +108,7 @@ test('reloads one stable logical PMTiles URL when its generation ETag changes', 
 test('serves a validated directory chain deeper than the third-party default', async (t) => {
   const bytes = createDeepPmtiles();
   let handler:
-    | ((request: unknown, controller: AbortController) => Promise<{data: unknown}>)
-    | undefined;
+    ((request: unknown, controller: AbortController) => Promise<{data: unknown}>) | undefined;
   const addProtocol = (_name: string, value: typeof handler) => {
     handler = value;
   };
@@ -147,8 +145,7 @@ test('declares MapLibre Tile encoding for managed MLT archives', async (t) => {
   const bytes = createDeepPmtiles();
   new DataView(bytes.buffer).setUint8(99, 6);
   let handler:
-    | ((request: unknown, controller: AbortController) => Promise<{data: unknown}>)
-    | undefined;
+    ((request: unknown, controller: AbortController) => Promise<{data: unknown}>) | undefined;
   const addProtocol = (_name: string, value: typeof handler) => {
     handler = value;
   };
@@ -183,8 +180,7 @@ test('returns an empty vector payload for a missing managed MLT tile', async (t)
   new DataView(bytes.buffer).setUint8(99, 6);
   bytes[128] = 1;
   let handler:
-    | ((request: unknown, controller: AbortController) => Promise<{data: unknown}>)
-    | undefined;
+    ((request: unknown, controller: AbortController) => Promise<{data: unknown}>) | undefined;
   const addProtocol = (_name: string, value: typeof handler) => {
     handler = value;
   };

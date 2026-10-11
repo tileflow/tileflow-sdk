@@ -1035,11 +1035,7 @@
   }
 
   type BridgeInteractionDiagnosticSource =
-    | 'annotation-runtime'
-    | 'portal'
-    | 'renderers'
-    | 'semantic-runtime'
-    | 'state';
+    'annotation-runtime' | 'portal' | 'renderers' | 'semantic-runtime' | 'state';
 
   function setBridgeInteractionDiagnostic(
     source: BridgeInteractionDiagnosticSource,

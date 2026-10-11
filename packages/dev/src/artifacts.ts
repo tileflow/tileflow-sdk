@@ -669,9 +669,10 @@ function createGenerationArtifactFiles(
       } satisfies TileflowArtifactFile;
     }),
   );
-  const immutableAssets = artifacts.assets.map(
-    (asset): TileflowArtifactFile => ({...asset, fileName: `${prefix}/${asset.fileName}`}),
-  );
+  const immutableAssets = artifacts.assets.map((asset): TileflowArtifactFile => ({
+    ...asset,
+    fileName: `${prefix}/${asset.fileName}`,
+  }));
 
   return validateArtifactFiles([...stableFiles, ...immutableStyles, ...immutableAssets]);
 }

@@ -22,12 +22,7 @@ export type TileflowCaptureErrorCode =
   | 'WORLD_RESOLUTION_FAILED';
 
 export type TileflowCapturePhase =
-  | 'style-validation'
-  | 'browser-start'
-  | 'resource-load'
-  | 'map-load'
-  | 'map-idle'
-  | 'screenshot';
+  'style-validation' | 'browser-start' | 'resource-load' | 'map-load' | 'map-idle' | 'screenshot';
 
 export type TileflowCaptureDiagnostic = {
   message: string;
@@ -35,12 +30,7 @@ export type TileflowCaptureDiagnostic = {
 };
 
 export type TileflowCaptureResourceKind =
-  | 'glyph'
-  | 'other-http'
-  | 'sprite-image'
-  | 'sprite-json'
-  | 'tilejson'
-  | 'vector-tile';
+  'glyph' | 'other-http' | 'sprite-image' | 'sprite-json' | 'tilejson' | 'vector-tile';
 
 export type TileflowCaptureResourceDiagnostic = {
   context?: string;

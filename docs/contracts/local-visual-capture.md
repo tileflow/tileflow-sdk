@@ -92,7 +92,8 @@ Scene names are strict own properties and bounded ASCII artifact names, must be 
 folding, and cannot be a Windows device filename or `__proto__`; config records must be plain objects. Viewport sides are
 64–4096 CSS pixels, DPR is 1 or 2, and the physical image budget is 16,777,216 pixels. Center,
 bounds, zoom, bearing, pitch, padding, application path, and selector values are bounded and
-validated at their config path. Application paths are root-relative and cannot carry an origin,
+validated at their config path. Bounds padding must be less than half the viewport's shorter side,
+so the bounds keep room to fit. Application paths are root-relative and cannot carry an origin,
 credentials, fragment, control character, or backslash. `captureId` and `selector` are mutually
 exclusive. Defaults are DPR 1, zero bearing, zero pitch, zero bounds padding, map target, and map
 framing.
@@ -107,7 +108,7 @@ under a chosen `scenes.<name>` key. Tileflow does not rewrite executable TypeScr
 ## Standalone and application modes
 
 A standalone scene compiles the owning map into one artifact snapshot through `@tileflow/dev`, fulfills the
-exact installed MapLibre main module, shared module, worker module, and CSS closure in a fresh
+exact installed MapLibre main module, worker module, and CSS closure in a fresh
 browser context, fulfills generated local sprite assets from memory under a closed synthetic origin,
 applies the camera, waits for MapLibre `load` and `idle`, waits two animation frames, and captures
 the map. Multiple scenes and warm watch use one Browser with a fresh context per scene. No Node

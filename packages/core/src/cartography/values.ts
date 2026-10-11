@@ -57,22 +57,16 @@ export type TileflowThemeColorAlpha = {
 
 export type TileflowThemeColorOperation = TileflowThemeColorAlpha | TileflowThemeColorMix;
 export type TileflowThemeNumberValue =
-  | number
-  | TileflowFixedValue<number>
-  | TileflowThemeTokenReference<'number'>;
+  number | TileflowFixedValue<number> | TileflowThemeTokenReference<'number'>;
 export type TileflowThemeColorValue =
   | string
   | TileflowFixedValue<string>
   | TileflowThemeColorOperation
   | TileflowThemeTokenReference<'color'>;
 export type TileflowThemeFontValue =
-  | string
-  | TileflowFixedValue<string>
-  | TileflowThemeTokenReference<'font'>;
+  string | TileflowFixedValue<string> | TileflowThemeTokenReference<'font'>;
 export type TileflowThemeImageValue =
-  | string
-  | TileflowFixedValue<string>
-  | TileflowThemeTokenReference<'image'>;
+  string | TileflowFixedValue<string> | TileflowThemeTokenReference<'image'>;
 
 export type TileflowThemeValue<T> =
   | T
@@ -158,9 +152,7 @@ export type TileflowZoomValue<T> = TileflowZoomValueCommon<T> &
   );
 
 export type TileflowStyleValue<T> =
-  | TileflowExpression<T>
-  | TileflowThemeValue<T>
-  | TileflowZoomValue<TileflowThemeValue<T>>;
+  TileflowExpression<T> | TileflowThemeValue<T> | TileflowZoomValue<TileflowThemeValue<T>>;
 
 export const zoom = {
   exponential<T>(base: number, stops: readonly (readonly [number, T])[]): TileflowZoomValue<T> {

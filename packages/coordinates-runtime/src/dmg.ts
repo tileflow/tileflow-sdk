@@ -18,8 +18,7 @@ export type CoordinatesDmgFile = Readonly<{
 }>;
 
 export type CoordinatesDmgTrust =
-  | Readonly<{kind: 'development'}>
-  | Readonly<{kind: 'apple-notarized-dmg'; teamIdentifier: string}>;
+  Readonly<{kind: 'development'}> | Readonly<{kind: 'apple-notarized-dmg'; teamIdentifier: string}>;
 
 export type CoordinatesDmgCommand = Readonly<{
   args: readonly string[];

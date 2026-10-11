@@ -297,7 +297,7 @@ test('bridge errors and owner snapshots cannot expose grant material', async () 
 test('9999/10000/10001 rotate through the real controller and bounded batch boundary', async () => {
   const f = fixture();
   const map = await f.owner.openMap(f.input);
-  for (let total = 0; total < 10001; ) {
+  for (let total = 0; total < 10001;) {
     const count = Math.min(nativeAdmissionLimits.batchSize, 10001 - total);
     const results = await f.bridge.batch(
       map.context,

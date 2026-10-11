@@ -35,10 +35,7 @@ export type NativeRendererTarget = Readonly<{
   blend?: NativeRendererBlend;
 }>;
 export type NativeRendererEvent =
-  | MapErrorEvent
-  | MapLoadEvent
-  | MapReadinessChangeEvent
-  | MapThemeChangeEvent;
+  MapErrorEvent | MapLoadEvent | MapReadinessChangeEvent | MapThemeChangeEvent;
 export type NativeRendererSurfaces = Readonly<{
   attach(
     root: number,

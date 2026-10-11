@@ -31,17 +31,10 @@ import {tileflowHostedSourceLimit, tileflowOverlayPlacements} from './overlays';
 export const tileflowAuthoringManifestSchemaVersion = 2 as const;
 
 export type TileflowAuthoringCommandName =
-  | 'explain'
-  | 'inspect'
-  | 'language-manifest'
-  | 'language-schema'
-  | 'semantic-diff'
-  | 'validate';
+  'explain' | 'inspect' | 'language-manifest' | 'language-schema' | 'semantic-diff' | 'validate';
 
 export type TileflowAuthoringCommandOutputKind =
-  | 'command-envelope'
-  | 'raw-authoring-manifest'
-  | 'raw-config-reference';
+  'command-envelope' | 'raw-authoring-manifest' | 'raw-config-reference';
 
 export type TileflowAuthoringCommand = Readonly<{
   command: string;

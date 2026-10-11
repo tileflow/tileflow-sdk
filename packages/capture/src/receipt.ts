@@ -91,8 +91,7 @@ export type TileflowCaptureVectorIdentityV3 = {
 
 /** Exact data-identity input embedded in every newly written schema-v4 receipt. */
 export type TileflowCaptureDataInput =
-  | TileflowCaptureVectorIdentityV3
-  | TileflowCaptureWorldIdentityV3;
+  TileflowCaptureVectorIdentityV3 | TileflowCaptureWorldIdentityV3;
 
 export type TileflowCaptureDataIdentityV3 =
   | (Omit<TileflowCaptureVectorIdentityV3, 'url'> & {source?: TileflowCaptureDataSourceV2})
@@ -142,9 +141,7 @@ export type TileflowCaptureReceiptV4 = Omit<TileflowCaptureReceiptCommon, 'scene
 };
 
 export type TileflowCaptureReceipt =
-  | TileflowCaptureReceiptV2
-  | TileflowCaptureReceiptV3
-  | TileflowCaptureReceiptV4;
+  TileflowCaptureReceiptV2 | TileflowCaptureReceiptV3 | TileflowCaptureReceiptV4;
 
 export type CreateTileflowCaptureReceiptInput = {
   dpr: 1 | 2;

@@ -15,6 +15,7 @@
     "forceConsistentCasingInFileNames": true,
     "jsx": "react-jsx",
     "noEmit": true,
+    "stableTypeOrdering": true,
     "ignoreDeprecations": "6.0"
   }
 }

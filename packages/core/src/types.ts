@@ -274,25 +274,10 @@ export type TileflowRoadTreatmentStyle = Partial<
   widthScale?: TileflowThemeNumberValue;
 };
 export type TileflowRoadModifier =
-  | 'construction'
-  | 'expressway'
-  | 'indoor'
-  | 'official'
-  | 'ramp'
-  | 'unpaved';
+  'construction' | 'expressway' | 'indoor' | 'official' | 'ramp' | 'unpaved';
 export type TileflowRoadRestriction = 'access' | 'bicycle' | 'foot' | 'horse' | 'toll';
 export type TileflowMountainBikeScale =
-  | '0'
-  | '0+'
-  | '1'
-  | '1+'
-  | '2'
-  | '2+'
-  | '3'
-  | '3+'
-  | '4'
-  | '5'
-  | '6';
+  '0' | '0+' | '1' | '1+' | '2' | '2+' | '3' | '3+' | '4' | '5' | '6';
 export type TileflowRoadServiceType = 'alley' | 'crossover' | 'driveway' | 'parkingAisle' | 'yard';
 export type TileflowRoadClassStyle = Partial<
   Record<TileflowRoadStructure, TileflowRoadLayerStyle>
@@ -340,14 +325,7 @@ export type TileflowAerodromeCodeDetail = 'none' | 'iata' | 'all';
 export type TileflowRoadLabelDetail = TileflowRoadDetail;
 export type TileflowLabelLanguage = 'auto' | 'local' | 'en' | (string & {});
 export type TileflowPlaceLabelClass =
-  | 'city'
-  | 'continent'
-  | 'country'
-  | 'neighborhood'
-  | 'other'
-  | 'state'
-  | 'town'
-  | 'village';
+  'city' | 'continent' | 'country' | 'neighborhood' | 'other' | 'state' | 'town' | 'village';
 export type TileflowWaterLabelClass = 'line' | 'ocean' | 'other' | 'waterway';
 export type TileflowRoadShieldDetail = 'none' | 'major' | 'all';
 export type TileflowLabelCollisionPriority = 'balanced' | 'navigation';

@@ -72,12 +72,14 @@ installing dependencies and before development or production builds:
 
 ```js
 import {copyFile, mkdir} from 'node:fs/promises';
+import {createRequire} from 'node:module';
 
-await mkdir('public/maplibre', {recursive: true});
+const {version} = createRequire(import.meta.url)('maplibre-gl/package.json');
+await mkdir(`public/maplibre/${version}`, {recursive: true});
 for (const file of ['maplibre-gl-worker.mjs', 'maplibre-gl-shared.mjs']) {
   await copyFile(
     new URL(import.meta.resolve(`maplibre-gl/dist/${file}`)),
-    `public/maplibre/${file}`,
+    `public/maplibre/${version}/${file}`,
   );
 }
 ```
@@ -87,7 +89,22 @@ node scripts/copy-maplibre-worker.mjs
 ```
 
 Include that command in your existing `predev` and `prebuild` scripts. Copy both files from the same
-installed MapLibre version; do not combine a new main module with an old or CDN-hosted worker.
+installed MapLibre version; do not combine a new main module with an old or CDN-hosted worker. The
+version in the path keeps a browser from running a worker it cached for another version: GL JS 6.13
+folds the shared module into the main one and ships it empty, so a cached 6.12 worker would fail.
+
+Expose the installed version to the client in `next.config.mjs`:
+
+<!-- docs:check -->
+
+```js
+import {withTileflow} from '@tileflow/next';
+import {createRequire} from 'node:module';
+
+const {version} = createRequire(import.meta.url)('maplibre-gl/package.json');
+
+export default withTileflow({env: {NEXT_PUBLIC_MAPLIBRE_VERSION: version}});
+```
 
 ## Render a client component
 
@@ -98,10 +115,12 @@ Create `app/map.tsx` (or `src/app/map.tsx`) and render `CityMap` from a page:
 ```tsx
 'use client';
 
-import 'maplibre-gl/dist/maplibre-gl.css';
 import {configureTileflowMapLibre, Map} from '@tileflow/react';
+import 'maplibre-gl/dist/maplibre-gl.css';
 
-configureTileflowMapLibre({workerUrl: '/maplibre/maplibre-gl-worker.mjs'});
+configureTileflowMapLibre({
+  workerUrl: `/maplibre/${process.env.NEXT_PUBLIC_MAPLIBRE_VERSION}/maplibre-gl-worker.mjs`,
+});
 
 export function CityMap() {
   return <Map source={{map: 'madrid'}} theme="system" />;
@@ -126,7 +145,7 @@ export default withTileflow({basePath: '/app'}, {base: '/maps'});
 ```
 
 Set the component's `source.manifestUrl` to `/app/maps/manifest.json` and the worker URL to
-`/app/maplibre/maplibre-gl-worker.mjs`. Omitting `manifestUrl` is correct only for exactly
+`/app/maplibre/${process.env.NEXT_PUBLIC_MAPLIBRE_VERSION}/maplibre-gl-worker.mjs`. Omitting `manifestUrl` is correct only for exactly
 `/tileflow/manifest.json`. The browser does not discover `basePath`; explicit URLs also keep SSR and
 hydration consistent.
 

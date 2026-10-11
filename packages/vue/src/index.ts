@@ -156,8 +156,7 @@ type TileflowMapImageProps = TileflowMapSharedProps & {
 };
 
 export type TileflowMapProps<TAnnotation extends TileflowAnnotation = TileflowAnnotation> = (
-  | TileflowMapInteractiveProps<TAnnotation>
-  | TileflowMapImageProps
+  TileflowMapInteractiveProps<TAnnotation> | TileflowMapImageProps
 ) &
   TileflowMapStyleSourceProps;
 

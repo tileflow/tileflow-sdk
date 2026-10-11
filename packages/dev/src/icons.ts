@@ -1412,15 +1412,13 @@ export async function readTileflowIconDirectory(
         message: `One icon contributor supports at most ${tileflowIconPackageLimits.maxIconCount} exports`,
       },
     ]);
-  const entries = inspected.icons.map(
-    (icon): TileflowIconDirectoryEntry => ({
-      byteLength: icon.source.byteLength,
-      format: icon.format,
-      id: icon.name,
-      kind: icon.kind,
-      path: icon.displayPath,
-    }),
-  );
+  const entries = inspected.icons.map((icon): TileflowIconDirectoryEntry => ({
+    byteLength: icon.source.byteLength,
+    format: icon.format,
+    id: icon.name,
+    kind: icon.kind,
+    path: icon.displayPath,
+  }));
   return {
     containmentRoot: directory.containmentRoot,
     entries,

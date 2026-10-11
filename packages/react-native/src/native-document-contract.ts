@@ -27,9 +27,7 @@ export type NativeDocumentModule = Readonly<{
 }>;
 
 export type NativeDocumentCode =
-  | 'NATIVE_DOCUMENT_INVALID'
-  | 'NATIVE_DOCUMENT_UNAVAILABLE'
-  | 'NATIVE_DOCUMENT_CANCELLED';
+  'NATIVE_DOCUMENT_INVALID' | 'NATIVE_DOCUMENT_UNAVAILABLE' | 'NATIVE_DOCUMENT_CANCELLED';
 
 export class NativeDocumentError extends Error {
   readonly code: NativeDocumentCode;

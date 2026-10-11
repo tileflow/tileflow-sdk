@@ -355,6 +355,8 @@ import {expr, field, fixed, renderPass, token, vegetation, withRenderStack} from
 
 // The grove artwork reaches 32 pixels from its center at icon size 1.
 const clearance = expr.get(field('canopyClearanceAtZoom15'));
+// The size that fills the room at one zoom, never larger than the artwork itself.
+const fit = (divisor: number) => expr.min(expr.divide(clearance, divisor), 1);
 
 const groves = (minZoom: number, fromRank: number, toRank: number) =>
   renderPass({
@@ -375,8 +377,11 @@ const groves = (minZoom: number, fromRank: number, toRank: number) =>
         image: token.image('vegetation.canopy.grove'),
         overlap: 'always',
         size: expr.interpolate({base: 2, kind: 'exponential'}, expr.zoom(), [
-          [14, expr.divide(clearance, 64)],
-          [18, expr.divide(clearance, 4)],
+          [14, fit(64)],
+          [15, fit(32)],
+          [16, fit(16)],
+          [17, fit(8)],
+          [18, fit(4)],
         ]),
       },
       text: {
@@ -398,9 +403,11 @@ export const canopyGroves = withRenderStack(vegetation(), {
 
 - Give each rank range its own pass with `minZoom`, so its points appear whole at their entry zoom.
   MapLibre evaluates expressions that combine zoom and feature data at whole zoom levels and
-  interpolates between them, so a fade per feature would leave symbols half transparent.
+  interpolates between them, so a fade per feature would leave symbols half transparent. Zoom 14
+  tiles carry the ranks below 8, so the first pass may cover ranks 0–7.
 - Size each grove from `canopyClearanceAtZoom15`. Here the size is `clearance / 32` at zoom 15 and
-  doubles with each zoom, which keeps the reach within the room.
+  doubles with each zoom until the grove reaches the artwork's size, which keeps the reach within
+  the room.
 - Collision tests an icon's whole image, including the transparent margin around the crowns. A small
   invisible text the size of the grove's core therefore decides placement with
   `overlap: 'cooperative'`, while the icon draws with `overlap: 'always'` and `ignorePlacement: true`.

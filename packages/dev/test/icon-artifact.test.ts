@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {hashTileflowIconPackageManifest, sha256Hex} from '@tileflow/core';
 import {verifyTileflowIconArtifact} from '../src/icon-artifact';
-import {createSpriteLayout, packTileflowRenderedIcons} from '../src/icon-sprite';
+import {
+  createSpriteLayout,
+  packTileflowRenderedIcons,
+  type TileflowSpriteIndex,
+} from '../src/icon-sprite';
 import type {CompiledTileflowIconPackage} from '../src/icons';
 import {renderedIcon, setFixture} from './icon-set-fixtures';
 
@@ -51,6 +55,80 @@ test('verification rejects byte corruption and forged rendered hashes independen
   badPixels.manifest.renderedIcons[0]!.pixelSha256.twoX = 'f'.repeat(64);
   badPixels.contentHash = await hashTileflowIconPackageManifest(badPixels.manifest);
   await assert.rejects(verifyTileflowIconArtifact(badPixels), {code: 'ICON_PACKAGE_INTEGRITY'});
+});
+
+test('mixed-size atlases preserve paired geometry and independently rendered pixels', async () => {
+  const icons = [
+    renderedIcon('large', [10, 20, 30, 127], 128, 128, [40, 50, 60, 210]),
+    ...Array.from({length: 128}, (_, index) =>
+      renderedIcon(`small-${index}`, [index, 10, 20, 255], 32, 32, [20, index, 10, 127]),
+    ),
+  ];
+
+  const artifact = await packTileflowRenderedIcons(icons);
+  const {oneX, twoX} = artifact.manifest.sprites;
+  assert.equal(twoX.width, oneX.width * 2);
+  assert.equal(twoX.height, oneX.height * 2);
+  assert.ok(twoX.width <= 2048 && twoX.height <= 2048);
+
+  const readIndex = (name: string): TileflowSpriteIndex =>
+    JSON.parse(
+      new TextDecoder().decode(artifact.files.find((file) => file.fileName === name)!.source),
+    );
+  const indexOneX = readIndex('sprite.json');
+  const indexTwoX = readIndex('sprite@2x.json');
+  for (const [name, cell] of Object.entries(indexOneX)) {
+    assert.deepEqual(indexTwoX[name], {
+      height: cell.height * 2,
+      width: cell.width * 2,
+      x: cell.x * 2,
+      y: cell.y * 2,
+      pixelRatio: 2,
+    });
+  }
+
+  const decoded = await verifyTileflowIconArtifact(artifact);
+  for (const original of icons) {
+    assert.deepEqual(
+      decoded.icons.find((icon) => icon.id === original.id),
+      original,
+    );
+  }
+
+  const reordered = await packTileflowRenderedIcons([...icons].reverse());
+  assert.deepEqual(reordered, artifact);
+});
+
+test('paired layouts accept the density boundary and reject overflow on either axis', () => {
+  for (const ratio of [1, 2] as const) {
+    const limit = 1024 * ratio;
+    for (const [width, height] of [
+      [limit, 1],
+      [1, limit],
+    ] as const) {
+      const layout = createSpriteLayout([{name: 'boundary', width, height}], ratio);
+      assert.equal(layout.width, width);
+      assert.equal(layout.height, height);
+    }
+
+    for (const [width, height] of [
+      [limit + 1, 1],
+      [1, limit + 1],
+    ] as const) {
+      assert.throws(() => createSpriteLayout([{name: 'overflow', width, height}], ratio));
+    }
+
+    assert.throws(() =>
+      createSpriteLayout(
+        Array.from({length: 257}, (_, index) => ({
+          name: `icon-${index}`,
+          width: 64 * ratio,
+          height: 64 * ratio,
+        })),
+        ratio,
+      ),
+    );
+  }
 });
 
 test('verification rejects malformed, overlapping, mismatched and extra index metadata', async () => {

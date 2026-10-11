@@ -120,7 +120,7 @@ export async function packTileflowRenderedIcons(
   return {contentHash: await hashTileflowIconPackageManifest(manifest), manifest, files};
 }
 
-/** Shared with the existing directory compiler; keep layout behavior byte-compatible. */
+/** Use proportional density bounds; preserve layouts that already fit the paired limit. */
 export function createSpriteLayout(
   icons: Array<{
     height: number;
@@ -133,15 +133,17 @@ export function createSpriteLayout(
 ) {
   const columns = Math.ceil(Math.sqrt(icons.length));
   const widest = Math.max(...icons.map((icon) => icon.width));
-  const targetWidth = Math.min(tileflowIconPackageLimits.maxAtlasDimension, columns * widest);
+  const maxDimension = (tileflowIconPackageLimits.maxAtlasDimension / 2) * pixelRatio;
+  const targetWidth = Math.min(maxDimension, columns * widest);
+
   const placements: Array<{left: number; top: number}> = [];
   let left = 0;
   let rowHeight = 0;
   let top = 0;
   for (const icon of icons) {
-    if (icon.width > tileflowIconPackageLimits.maxAtlasDimension)
+    if (icon.width > maxDimension)
       throw new Error(
-        `Generated sprite exceeds ${tileflowIconPackageLimits.maxAtlasDimension} pixels per dimension`,
+        `Generated sprite exceeds ${maxDimension} pixels per dimension at ${pixelRatio}x`,
       );
     if (left > 0 && left + icon.width > targetWidth) {
       top += rowHeight;
@@ -154,12 +156,9 @@ export function createSpriteLayout(
   }
   const width = targetWidth;
   const height = top + rowHeight;
-  if (
-    width > tileflowIconPackageLimits.maxAtlasDimension ||
-    height > tileflowIconPackageLimits.maxAtlasDimension
-  )
+  if (width > maxDimension || height > maxDimension)
     throw new Error(
-      `Generated sprite exceeds ${tileflowIconPackageLimits.maxAtlasDimension} pixels per dimension`,
+      `Generated sprite exceeds ${maxDimension} pixels per dimension at ${pixelRatio}x`,
     );
   const index: TileflowSpriteIndex = Object.fromEntries(
     icons.map((icon, ordinal) => {

@@ -69,7 +69,9 @@ Tileflow World's canonical POI projection owns classification, editorial zoom el
 cross-source ranking. The SDK validates `category`, `type`, `icon`, `min_zoom`, `filter_rank`, and
 `size_rank` on the `poi` layer. It does not reinterpret OpenMapTiles `class`, `subclass`, or
 `rank`. `filter_rank` is bounded to 0–5; the module's numeric `density` is an inclusive 1–5
-threshold and defaults to 3. `size_rank` is bounded to 0–16 and orders eligible candidates before
+threshold and defaults to 3. World publishes every eligible POI at z15, its last POI zoom, so the
+threshold rises by one rank at z16 and by two from z17: at the default density every rank is
+eligible from z17. `size_rank` is bounded to 0–16 and orders eligible candidates before
 MapLibre collision placement, which remains authoritative. The closed category vocabulary is
 `arts-entertainment`, `education`, `food-drink`, `landmark`, `lodging`, `medical`, `park-nature`,
 `public-services`, `religion`, `retail`, `sport-leisure`, `transport`, and `visitor-amenity`.

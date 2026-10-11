@@ -216,13 +216,23 @@ function createPoiLayer(options: {
       ['==', ['get', options.categoryField], options.category],
       ['has', options.filterRankField],
       ['>=', filterRank, 0],
-      ['<=', filterRank, options.density],
+      ['<=', filterRank, poiRankThreshold(options.density)],
       ['has', options.sizeRankField],
       ['>=', sizeRank, 0],
       ['<=', sizeRank, 16],
     ],
     layout: {'symbol-sort-key': poiSortKey(options.filterRankField, options.sizeRankField)},
   };
+}
+
+/**
+ * The highest `filter_rank` a density shows at each zoom. Tileflow World's last zoom with POI data
+ * is z15 and its ranks are spaced for that zoom; higher zooms overzoom the same tiles with more
+ * room, so the threshold rises one rank at z16 and two from z17, as in Mapbox's Streets style. At
+ * the default density every rank is eligible from z17 and MapLibre collision keeps what fits.
+ */
+function poiRankThreshold(density: ResolvedPoiModuleOptions['density']): unknown[] {
+  return ['+', ['step', ['zoom'], 0, 16, 1, 17, 2], density];
 }
 
 function numericPoiField(field: string, fallback: number): unknown[] {

@@ -206,6 +206,34 @@ test('official OpenMapTiles road values map to disjoint existing semantics and f
   assert.equal(matchesFilter(serviceTunnel.filter, {crossing_kind: 'ford', kind: 'busway'}), false);
 });
 
+test('sidewalks take the pedestrian area colour, opaque, unless their surface is configured', () => {
+  const data = resolveTileflowData({
+    type: 'vector-tiles',
+    attribution: 'Test',
+    schema: openMapTiles({layers: {sidewalk: 'pedestrian_surfaces'}}),
+    url: '/tiles.json',
+  });
+  const surfacePaint = (config: Parameters<typeof roads>[0]) =>
+    compileRoads(roads(config), {...context, data}).find(
+      ({layer}) => layer.id === 'tileflow-sidewalk-surface',
+    )!.layer.paint as Record<string, unknown>;
+
+  const plain = surfacePaint({detail: 'none'});
+  assert.equal(plain['fill-color'], context.colors.road);
+  assert.equal(plain['fill-opacity'], 1);
+
+  const plaza = surfacePaint({detail: 'none', areas: {pedestrian: {fill: {color: '#c0ffee'}}}});
+  assert.equal(plaza['fill-color'], '#c0ffee');
+
+  const configured = surfacePaint({
+    detail: 'none',
+    areas: {pedestrian: {fill: {color: '#c0ffee'}}},
+    sidewalks: {surface: {color: '#234567', opacity: 0.5}},
+  });
+  assert.equal(configured['fill-color'], '#234567');
+  assert.equal(configured['fill-opacity'], 0.5);
+});
+
 test('detailed road extensions compile through remappable semantic contracts', () => {
   const data = resolveTileflowData({
     type: 'vector-tiles',

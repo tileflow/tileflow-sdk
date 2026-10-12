@@ -379,7 +379,7 @@ export function compileRoads(
     }
   }
 
-  compileSidewalks(request?.sidewalks, context, contributions);
+  compileSidewalks(request?.sidewalks, areaStyles.pedestrian?.fill?.color, context, contributions);
   compileRoundabouts(request?.roundabouts, context, contributions);
   compileCrossings(request?.crossings, context, contributions);
 
@@ -465,18 +465,21 @@ function roadPhysicalCohort(roadClass: string): string {
 
 function compileSidewalks(
   request: TileflowRoadSidewalkStyle | undefined,
+  pedestrianAreaColor: NonNullable<TileflowRoadSidewalkStyle['surface']>['color'],
   context: TileflowDomainCompileContext,
   contributions: TileflowLayerContribution[],
 ): void {
   const {fields, layers} = context.data.schema;
   if (!layers.sidewalk) return;
 
+  // Mapped sidewalks and plazas are the same walkable ground as pedestrian areas, so they take
+  // the pedestrian area's colour. Opaque, so abutting pieces leave no seams.
   const config = mergeTileflowDesign<TileflowRoadSidewalkStyle>(
     {
       surface: {
-        color: context.colors.roads.casing,
+        color: pedestrianAreaColor ?? context.colors.road,
         minZoom: 17,
-        opacity: 0.96,
+        opacity: 1,
       },
     },
     request,

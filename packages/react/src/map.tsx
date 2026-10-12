@@ -792,8 +792,6 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         });
         registerCleanup(() => worldRequestBridge.dispose());
         const transformRequest = createTileflowTransformRequest({
-          always: true,
-          asyncAnalyticsTiming: 'resolution',
           getAnalytics: () => resolvedAnalyticsRef.current,
           sessionController: session,
           sessionId: session.sessionId,

@@ -579,8 +579,6 @@
       pitch: resolvedPitch,
       style: runtime.style as StyleSpecification | string,
       transformRequest: createTileflowTransformRequest({
-        always: true,
-        asyncAnalyticsTiming: 'request',
         getAnalytics: () => resolvedAnalytics,
         sessionController: session,
         sessionId: session.sessionId,

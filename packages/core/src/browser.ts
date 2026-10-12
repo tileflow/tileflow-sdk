@@ -1428,8 +1428,6 @@ export type TileflowUserTransformRequest<
   TResourceType,
 > = (url: string, resourceType?: TResourceType) => Promise<TRequest> | TRequest | undefined;
 
-export type TileflowAsyncAnalyticsTiming = 'request' | 'resolution';
-
 export function createTileflowSessionStarter(options: {
   getSessionId?: () => string;
   sessionId: string;
@@ -1597,80 +1595,38 @@ export function attachTileflowMapLifecycle<TMap, TFrame>(options: {
   };
 }
 
+/**
+ * Compose the caller's request transform with Tileflow analytics, the Hosted session, and the
+ * World bridge. Analytics are read when each request starts, so an asynchronous user transform
+ * never attaches analytics that changed while it was pending.
+ */
 export function createTileflowTransformRequest<
   TRequest extends TileflowTransformRequestParameters = TileflowTransformRequestParameters,
   TResourceType = unknown,
 >(options: {
-  always: true;
-  asyncAnalyticsTiming?: TileflowAsyncAnalyticsTiming;
   getAnalytics: () => TileflowAnalytics | undefined;
   sessionController?: TileflowSessionController;
   sessionId: string;
   transformRequest?: TileflowUserTransformRequest<TRequest, TResourceType>;
   worldRequestBridge?: TileflowWorldRequestBridge;
-}): TileflowTransformRequest<TRequest, TResourceType>;
-export function createTileflowTransformRequest<
-  TRequest extends TileflowTransformRequestParameters = TileflowTransformRequestParameters,
-  TResourceType = unknown,
->(options: {
-  always?: boolean;
-  asyncAnalyticsTiming?: TileflowAsyncAnalyticsTiming;
-  getAnalytics: () => TileflowAnalytics | undefined;
-  sessionController?: TileflowSessionController;
-  sessionId: string;
-  transformRequest?: TileflowUserTransformRequest<TRequest, TResourceType>;
-  worldRequestBridge?: TileflowWorldRequestBridge;
-}): TileflowTransformRequest<TRequest, TResourceType> | undefined;
-export function createTileflowTransformRequest<
-  TRequest extends TileflowTransformRequestParameters = TileflowTransformRequestParameters,
-  TResourceType = unknown,
->(options: {
-  always?: boolean;
-  asyncAnalyticsTiming?: TileflowAsyncAnalyticsTiming;
-  getAnalytics: () => TileflowAnalytics | undefined;
-  sessionController?: TileflowSessionController;
-  sessionId: string;
-  transformRequest?: TileflowUserTransformRequest<TRequest, TResourceType>;
-  worldRequestBridge?: TileflowWorldRequestBridge;
-}): TileflowTransformRequest<TRequest, TResourceType> | undefined {
-  if (!options.always && !options.transformRequest && !options.worldRequestBridge) {
-    const analytics = options.getAnalytics();
-    const requiresCommercialSession = Boolean(options.sessionController && analytics?.mapId);
-
-    if (!requiresCommercialSession && (!analytics || analytics.enabled === false)) {
-      return undefined;
-    }
-  }
-
-  const asyncAnalyticsTiming = options.asyncAnalyticsTiming ?? 'request';
-
+}): TileflowTransformRequest<TRequest, TResourceType> {
   return (url, resourceType) => {
     const request = options.transformRequest?.(url, resourceType);
-    const analyticsAtRequest =
-      asyncAnalyticsTiming === 'request' ? options.getAnalytics() : undefined;
+    const analytics = options.getAnalytics();
+    const apply = (resolvedRequest: TRequest | undefined) =>
+      applyTileflowRequest(
+        url,
+        resolvedRequest,
+        analytics,
+        options.sessionId,
+        options.sessionController,
+        options.worldRequestBridge,
+      );
 
     if (isPromiseLike(request)) {
-      return request.then(
-        (resolvedRequest) =>
-          applyTileflowRequest(
-            url,
-            resolvedRequest,
-            asyncAnalyticsTiming === 'resolution' ? options.getAnalytics() : analyticsAtRequest,
-            options.sessionId,
-            options.sessionController,
-            options.worldRequestBridge,
-          ) ?? resolvedRequest,
-      );
+      return request.then((resolvedRequest) => apply(resolvedRequest) ?? resolvedRequest);
     }
-
-    return applyTileflowRequest(
-      url,
-      request,
-      asyncAnalyticsTiming === 'resolution' ? options.getAnalytics() : analyticsAtRequest,
-      options.sessionId,
-      options.sessionController,
-      options.worldRequestBridge,
-    );
+    return apply(request);
   };
 }
 

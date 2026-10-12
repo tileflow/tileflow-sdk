@@ -178,7 +178,9 @@ line stacks, so a plaza polygon cannot cover its pedestrian street axes or any c
 
 Optional detailed-city extensions remain schema-bound rather than hard-coded. `roads.sidewalks`
 uses the bound `sidewalk` polygon layer and renders its surface, optional pattern, and optional
-outline between tunnel decks and surface transport. `roads.roundabouts` uses the bound
+outline between tunnel decks and surface transport. Mapped sidewalks are the same walkable ground as
+pedestrian areas: unless configured, the surface takes the pedestrian area fill colour, opaque, from
+zoom 17, so a plaza mapped both ways keeps one tone and abutting pieces leave no seams. `roads.roundabouts` uses the bound
 `circularFeature` point layer plus metric radius fields to keep circular road rings aligned with
 the linear road stack. `roads.crossings` uses the bound `streetFurniture` layer and `direction`
 field; authors must provide its icon image because prepared sprites are independent of tile data.

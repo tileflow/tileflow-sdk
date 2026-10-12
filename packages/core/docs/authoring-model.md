@@ -153,8 +153,17 @@ independent place, water, aerodrome, and POI labels remain under the labels modu
 Every styling module supports semantic shortcuts and exact semantic targets. Visual style values
 accept typed token refs, documented `fixed(value, {reason})` values, closed data expressions through
 `expr.*` plus `field(...)`, and zoom functions through `zoom.step(...)`, `zoom.linear(...)`, or
-`zoom.exponential(...)`. Refs and fixed leaves also work inside typed expressions and zoom stops.
-Structural controls such as presets, visibility, and zoom gates remain ordinary literals. Exact
+`zoom.exponential(...)`. Refs and fixed leaves also work as the results of typed expressions and
+as zoom-stop values; conditions and other operands take plain values, such as `3` rather than
+`fixed(3)` in a rank test inside a colour expression. Structural controls such as presets,
+visibility, text fields, and zoom gates remain ordinary literals. Expression builders take at most
+16 branches, stops, or operands; an error names the received count and the config line of the
+call, and a larger lookup composes nested groups.
+
+Layout properties, such as text fields, text and icon sizes, and symbol placement, are evaluated at
+each tile's integer zoom: a step at zoom 17.5 takes effect at zoom 18. Paint properties follow the
+camera's exact zoom. `createStyleResult()` reports a `TF_LAYOUT_FRACTIONAL_ZOOM_STEP` warning with
+the semantic target for every layout step at a fractional zoom. Exact
 controls address stable concepts such as `roads.classes.primary.surface.fill`, not renderer layer
 IDs.
 

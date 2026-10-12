@@ -332,25 +332,56 @@ function validateStops(
 }
 
 function validateOperandCount(count: number, api: string): void {
-  if (count > tileflowDataExpressionLimits.maxOperands) {
-    throw new Error(
-      `${api} supports at most ${tileflowDataExpressionLimits.maxOperands} operands.`,
+  const limit = tileflowDataExpressionLimits.maxOperands;
+  if (count > limit) {
+    throw limitError(
+      `${api} received ${count} operands; it supports at most ${limit}. ` +
+        `Nest ${api} calls of at most ${limit} operands each.`,
     );
   }
 }
 
 function validateBranchCount(count: number, api: string): void {
-  if (count > tileflowDataExpressionLimits.maxBranches) {
-    throw new Error(
-      `${api} supports at most ${tileflowDataExpressionLimits.maxBranches} branches.`,
+  const limit = tileflowDataExpressionLimits.maxBranches;
+  if (count > limit) {
+    throw limitError(
+      `${api} received ${count} branches; it supports at most ${limit}. ` +
+        `Split the lookup into nested ${api} groups of at most ${limit} branches, ` +
+        'or reduce the mapping.',
     );
   }
 }
 
 function validateStopCount(count: number, api: string): void {
-  if (count > tileflowDataExpressionLimits.maxStops) {
-    throw new Error(`${api} supports at most ${tileflowDataExpressionLimits.maxStops} stops.`);
+  const limit = tileflowDataExpressionLimits.maxStops;
+  if (count > limit) {
+    throw limitError(
+      `${api} received ${count} stops; it supports at most ${limit}. Remove stops the curve ` +
+        'can interpolate.',
+    );
   }
+}
+
+/**
+ * An expression-limit error naming the authoring call site: the first stack frame outside the
+ * module that throws it, so a long config points at the offending builder call.
+ */
+function limitError(message: string): Error {
+  const site = authoringCallSite(new Error().stack);
+  return new Error(site ? `${message} Called at ${site}.` : message);
+}
+
+/** The first `file:line:column` of a V8 stack that is outside the file of its first frame. */
+export function authoringCallSite(stack: string | undefined): string | undefined {
+  const locations = (stack ?? '')
+    .split('\n')
+    .slice(1)
+    .map((line) => /\(?([^()\s]+?):(\d+):(\d+)\)?$/.exec(line.trim()))
+    .filter((match): match is RegExpExecArray => match !== null)
+    .map(([, file, line, column]) => ({file: file!.replace(/^file:\/\//, ''), line, column}));
+  const own = locations[0]?.file;
+  const site = locations.find(({file}) => file !== own && !file.startsWith('node:'));
+  return site ? `${site.file}:${site.line}:${site.column}` : undefined;
 }
 
 function node<T>(value: TileflowDataExpressionInput<T>): unknown {
@@ -578,7 +609,11 @@ function visitExpression(
         return;
       }
       if ((value.length - 2) / 2 > branchLimit) {
-        addExpressionIssue(issues, path, `Expression case exceeds ${branchLimit} branches.`);
+        addExpressionIssue(
+          issues,
+          path,
+          `Expression case has ${(value.length - 2) / 2} branches and exceeds ${branchLimit}.`,
+        );
         return;
       }
       for (let index = 1; index < value.length; index += 1) visit(value[index], index);
@@ -594,7 +629,11 @@ function visitExpression(
         return;
       }
       if ((value.length - 3) / 2 > branchLimit) {
-        addExpressionIssue(issues, path, `Expression match exceeds ${branchLimit} branches.`);
+        addExpressionIssue(
+          issues,
+          path,
+          `Expression match has ${(value.length - 3) / 2} branches and exceeds ${branchLimit}.`,
+        );
         return;
       }
       visit(value[1], 1);

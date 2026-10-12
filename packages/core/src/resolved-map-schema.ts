@@ -292,8 +292,10 @@ function validateExpressionThemeValues(
         code: 'custom',
         message:
           expectedCategory === undefined
-            ? 'Structural expressions cannot contain theme-token references'
-            : `Expected a ${expectedCategory} theme-token reference`,
+            ? `Structural expressions cannot contain theme-token references. ${structuralThemeValueHint}`
+            : parsed.success
+              ? `Expected a ${expectedCategory} theme-token reference, received ${parsed.data.category} token "${parsed.data.token}". ${expressionOperandHint(expectedCategory)}`
+              : `Expected a ${expectedCategory} theme-token reference`,
         path,
       });
     }
@@ -307,12 +309,16 @@ function validateExpressionThemeValues(
           ? fixedStringSchema.safeParse(candidate)
           : undefined;
     if (!parsed?.success) {
+      const received = fixedValueKind(candidate.value);
+      const literal = JSON.stringify(candidate.value);
       context.addIssue({
         code: 'custom',
         message:
           expectedCategory === undefined
-            ? 'Structural expressions cannot contain theme-fixed values'
-            : `Expected a fixed ${expectedCategory} value`,
+            ? `Structural expressions cannot contain theme-fixed values. ${structuralThemeValueHint}`
+            : received !== undefined && received !== expectedCategoryKind(expectedCategory)
+              ? `Expected a fixed ${expectedCategory} value, received a fixed ${received}. ${expressionOperandHint(expectedCategory)} Write ${literal} instead of fixed(${literal}).`
+              : `Expected a fixed ${expectedCategory} value`,
         path,
       });
     }
@@ -332,6 +338,31 @@ function validateExpressionThemeValues(
   for (const [key, entry] of Object.entries(candidate)) {
     validateExpressionThemeValues(entry, expectedCategory, context, [...path, key]);
   }
+}
+
+const structuralThemeValueHint =
+  'fixed() and theme tokens apply only to visual properties such as colours, sizes, and images; ' +
+  'write structural values directly.';
+
+function expressionOperandHint(category: string): string {
+  return (
+    `In ${category === 'image' ? 'an' : 'a'} ${category} expression, fixed() and theme tokens ` +
+    `belong in its ${category} results; ` +
+    'conditions and other operands take plain values.'
+  );
+}
+
+/** The primitive kind a fixed() value holds, as a category of visual value would name it. */
+function fixedValueKind(value: unknown): string | undefined {
+  if (typeof value === 'number') return 'number';
+  if (typeof value === 'string') return 'string';
+  if (typeof value === 'boolean') return 'boolean';
+  if (Array.isArray(value)) return 'array';
+  return undefined;
+}
+
+function expectedCategoryKind(category: string): string {
+  return category === 'number' ? 'number' : 'string';
 }
 
 const numberExpressionSchema = expressionSchemaFor('number');
@@ -2214,8 +2245,63 @@ function parseOrThrow(schema: z.ZodType, input: unknown, name: string): unknown 
   if (result.success) return result.data;
   throw new TileflowResolvedMapValidationError(
     name,
-    validationMessagesFromIssues(result.error.issues),
+    validationMessagesFromIssues(expandUnionIssues(result.error.issues, [], input)),
   );
+}
+
+/**
+ * Replaces a union's bare "Invalid input" with the issues of the branch the value was written
+ * for: the one branch whose literal tags and value type match, with the fewest issues. When no
+ * branch matches, the message says what was received instead.
+ */
+function expandUnionIssues(
+  issues: readonly z.core.$ZodIssue[],
+  base: readonly PropertyKey[],
+  input: unknown,
+): z.core.$ZodIssue[] {
+  return issues.flatMap((issue) => {
+    const path = [...base, ...issue.path];
+    if (issue.code !== 'invalid_union' || issue.errors.length === 0) return [{...issue, path}];
+    const candidates = issue.errors.filter((branch) => !branch.some(isUnionBranchMismatch));
+    if (candidates.length === 0) {
+      return [{...issue, path, message: unmatchedUnionMessage(valueAtPath(input, path))}];
+    }
+    const fewest = Math.min(...candidates.map((branch) => branch.length));
+    const best = candidates.filter((branch) => branch.length === fewest);
+    return best.length === 1 ? expandUnionIssues(best[0]!, path, input) : [{...issue, path}];
+  });
+}
+
+/** A branch the value was not written for: a different value type, or another literal tag. */
+function isUnionBranchMismatch(issue: z.core.$ZodIssue): boolean {
+  if (issue.path.length === 0)
+    return issue.code === 'invalid_type' || issue.code === 'invalid_value';
+  return (
+    issue.path.length === 1 &&
+    (issue.code === 'invalid_value' ||
+      (issue.code === 'invalid_union' && issue.errors.length === 0))
+  );
+}
+
+function unmatchedUnionMessage(value: unknown): string {
+  const kind =
+    value !== null && typeof value === 'object'
+      ? (value as Record<string, unknown>).kind
+      : undefined;
+  if (kind === 'theme-fixed' || kind === 'theme-token') {
+    return `This property is structural. ${structuralThemeValueHint}`;
+  }
+  const received = value === null ? 'null' : Array.isArray(value) ? 'an array' : typeof value;
+  return `Invalid input: no accepted form takes ${received === 'object' ? 'this object' : received}`;
+}
+
+function valueAtPath(input: unknown, path: readonly PropertyKey[]): unknown {
+  let value = input;
+  for (const key of path) {
+    if (value === null || typeof value !== 'object' || !Object.hasOwn(value, key)) return undefined;
+    value = (value as Record<PropertyKey, unknown>)[key];
+  }
+  return value;
 }
 
 function validationMessagesFromIssues(issues: z.core.$ZodIssue[]): ValidationMessage[] {

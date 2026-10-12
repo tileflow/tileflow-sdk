@@ -67,6 +67,7 @@ import {
   createTileflowInteractionManifest,
   tileflowInteractionManifestMetadataKey,
 } from './interaction-manifest';
+import {diagnoseFractionalLayoutZoomSteps} from './layout-zoom-diagnostics';
 import {
   assertTileflowOverlayPlacementManifestLayers,
   createTileflowOverlayPlacementManifest,
@@ -561,7 +562,15 @@ function compileSemanticStyleInternal(
   runCompilationPhase('assets', () => assertTextAssets(style, config));
   runCompilationPhase('assets', () => assertGlyphFontStacks(style, config));
   runCompilationPhase('validation', () => assertMapLibreStyle(style, config.id));
-  return {diagnostics, report, style, ...(inspection ? {inspection} : {})};
+  const layoutDiagnostics = runCompilationPhase('validation', () =>
+    diagnoseFractionalLayoutZoomSteps(plannedLayers),
+  );
+  return {
+    diagnostics: [...diagnostics, ...layoutDiagnostics],
+    report,
+    style,
+    ...(inspection ? {inspection} : {}),
+  };
 }
 
 function finalizeTileflowLayers(

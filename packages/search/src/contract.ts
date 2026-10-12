@@ -285,7 +285,7 @@ export const geocodingAttributionSchema = z
   })
   .strict();
 
-const placeOperationUnitsSchema = z.union([z.literal(25), z.literal(75)]);
+const placeOperationUnitsSchema = z.union([z.literal(10), z.literal(30)]);
 
 export const geocodingForwardResponseSchema = z
   .object({
@@ -326,7 +326,7 @@ export const autocompleteResponseSchema = z
     schemaVersion: z.literal(1),
     source: geocodingSourceSchema,
     suggestions: z.array(geocodingSuggestionSchema).max(geocodingLimits.maximumLimit),
-    usage: z.object({units: z.union([z.literal(10), z.literal(25)])}).strict(),
+    usage: z.object({units: z.union([z.literal(4), z.literal(10)])}).strict(),
   })
   .strict();
 
@@ -483,15 +483,15 @@ export type ResolvePlaceResponse = ResolveSuggestionResponse;
 export const searchContactDetails: readonly SearchPlaceDetail[] = ['contacts', 'openingHours'];
 
 /**
- * The shared API units a completed Search operation consumes. Autocomplete uses 10, or 25 with
- * its places; every other place operation uses 25, or 75 with any place detail. Category
+ * The shared API units a completed Search operation consumes. Autocomplete uses 4, or 10 with
+ * its places; every other place operation uses 10, or 30 with any place detail. Category
  * discovery uses none.
  */
 export function searchOperationUnits(
   operation: 'autocomplete' | 'forward' | 'reverse' | 'resolve' | 'nearby' | 'categories',
   include?: readonly string[],
-): 0 | 10 | 25 | 75 {
+): 0 | 4 | 10 | 30 {
   if (operation === 'categories') return 0;
-  if (operation === 'autocomplete') return include?.length ? 25 : 10;
-  return include?.length ? 75 : 25;
+  if (operation === 'autocomplete') return include?.length ? 10 : 4;
+  return include?.length ? 30 : 10;
 }

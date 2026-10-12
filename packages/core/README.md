@@ -243,6 +243,10 @@ standalone capture apply the browser effect automatically. Direct MapLibre integ
 `attachTileflowAtmosphere(map)` from `@tileflow/core/browser`. See
 [globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md).
 
+In a 3D scene, `createTileflowDepthMarkers` from `@tileflow/core/browser` draws application markers
+that nearer buildings hide, facing the viewer or lying on the ground. See
+[depth markers](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/depth-markers.md).
+
 A map with text must declare exactly one text provider. Streets, Ferraris, Härad, Soundings,
 and Blueprint use URL glyph providers. Baedeker and Siegfried use packaged Cormorant
 fonts; Cyberpunk and Matrix use packaged Oxanium fonts. Hosted deployment currently rejects
@@ -275,6 +279,7 @@ revision; prefer the installed copy when working with an older release.
 - [Data is separate from design](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/data-is-separate-from-design.md)
 - [Capture scenes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-scenes.md)
 - [Public API and browser subpath](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/public-api-and-browser-subpath.md)
+- [Depth markers](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/depth-markers.md)
 - [Hosted session authorization](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/hosted-session-authorization.md)
 - [Native resource URLs](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-resource-urls.md)
 - [Native artifact profile](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-artifact-profile.md)

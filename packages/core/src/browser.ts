@@ -42,6 +42,15 @@ import {
 import type {MapLibreStyle} from './types';
 
 export {attachTileflowAtmosphere, type TileflowAtmosphereMap} from './atmosphere-browser';
+export {
+  createTileflowDepthMarkers,
+  tileflowDepthMarkerPlacement,
+  type TileflowDepthMarker,
+  type TileflowDepthMarkerHandle,
+  type TileflowDepthMarkerMap,
+  type TileflowDepthMarkers,
+  type TileflowDepthMarkersOptions,
+} from './depth-markers-browser';
 export type {
   TileflowDynamicImage,
   TileflowDynamicImageContext,

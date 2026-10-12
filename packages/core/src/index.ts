@@ -309,6 +309,13 @@ export {
   tileflowThemeLimits,
   TileflowThemeAuditError,
 } from './themes';
+export {
+  resolveTileflowRouteInks,
+  tileflowDefaultRouteInks,
+  tileflowRouteMetadataKey,
+  tileflowRouteTokens,
+  type TileflowRouteInks,
+} from './route-inks';
 export type {
   ResolvedTileflowTheme,
   ResolvedTileflowThemeTokens,

@@ -1,4 +1,4 @@
-import type {TileflowMap, TileflowMapScene} from './types';
+import type {TileflowMap, TileflowMapScene, TileflowMapShot} from './types';
 
 type ExactTileflowMap<TContract, TMap extends TContract> = TMap &
   Record<Exclude<keyof TMap, keyof TContract>, never>;
@@ -13,9 +13,21 @@ type ExactTileflowMapScenes<TMap> = TMap extends {
     }
   : unknown;
 
+type ExactTileflowMapShots<TMap> = TMap extends {
+  shots: infer TShots extends Record<string, TileflowMapShot>;
+}
+  ? {
+      shots: {
+        [TName in keyof TShots]: ExactTileflowMap<TileflowMapShot, TShots[TName]>;
+      };
+    }
+  : unknown;
+
 /** Preserve the exact inferred type of a standalone or inherited semantic map. */
 export function defineMap<const TMap extends TileflowMap>(
-  map: ExactTileflowMap<TileflowMap, TMap> & ExactTileflowMapScenes<TMap>,
+  map: ExactTileflowMap<TileflowMap, TMap> &
+    ExactTileflowMapScenes<TMap> &
+    ExactTileflowMapShots<TMap>,
 ): TMap {
   return map;
 }

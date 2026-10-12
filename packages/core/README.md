@@ -69,7 +69,7 @@ Omitted fields inherit, but declaring a field does not imply a recursive merge:
 - `fonts` and `glyphs` are mutually exclusive text providers. Declaring either replaces the inherited
   provider. `atmosphere`, `data`, `projection`, `terrain`, and `marine` are also atomic.
 
-Identity (`id`, `name`, `version`) and tooling `scenes` belong to the leaf map and do not inherit.
+Identity (`id`, `name`, `version`) and tooling `scenes` and `shots` belong to the leaf map and do not inherit.
 Module object order does not determine rendering order. See the
 [map inheritance contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/map-inheritance.md)
 for the complete merge rules.
@@ -274,6 +274,7 @@ revision; prefer the installed copy when working with an older release.
 - [Style states](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/style-states.md)
 - [Data is separate from design](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/data-is-separate-from-design.md)
 - [Capture scenes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-scenes.md)
+- [Capture shots](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-shots.md)
 - [Public API and browser subpath](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/public-api-and-browser-subpath.md)
 - [Hosted session authorization](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/hosted-session-authorization.md)
 - [Native resource URLs](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-resource-urls.md)

@@ -1,5 +1,6 @@
 import type {TileflowAtmosphere} from '../atmosphere';
 import type {TileflowCaptureScene} from '../capture-scene';
+import type {TileflowCaptureShot} from '../capture-shot';
 import type {TileflowResolvedSemanticModuleOverrides} from '../cartography/domain-registry';
 import type {TileflowDataConfig} from '../data';
 import type {TileflowIconSource} from '../icon-set';
@@ -30,9 +31,13 @@ export type TileflowMapIdentity = {
 /** A capture scene owned by one singular map; its map id is implicit. */
 export type TileflowMapScene = Omit<TileflowCaptureScene, 'map'>;
 
+/** A timed capture shot owned by one singular map; its map id is implicit. */
+export type TileflowMapShot = Omit<TileflowCaptureShot, 'map'>;
+
 /** Tooling metadata belongs to the leaf definition and is never inherited. */
 export type TileflowMapTooling = {
   scenes?: Record<string, TileflowMapScene>;
+  shots?: Record<string, TileflowMapShot>;
 };
 
 type TileflowMapTextAssets =

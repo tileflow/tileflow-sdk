@@ -146,7 +146,7 @@ export type TileflowMapBuildManifestV1 = {
  * Create the portable map build identity document.
  *
  * `mapRevisionSha256` identifies the effective cartographic definition and effective source
- * icon/font bytes. Editorial identity, default view, capture scenes, package
+ * icon/font bytes. Editorial identity, default view, capture scenes and shots, package
  * versions, compiler ABI versions, compiled Style JSON, generated sprite/font outputs, filesystem
  * paths, and a concrete resolution of a floating World selector are outside that hash. They have
  * their own identities or remain tooling/delivery state.

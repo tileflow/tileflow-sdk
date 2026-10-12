@@ -17,7 +17,8 @@ normalization.
 
 Each public field has one explicit merge rule:
 
-- The leaf owns `id`, `name`, `version`, `scenes`, and `delivery`; those fields never inherit.
+- The leaf owns `id`, `name`, `version`, `scenes`, `shots`, and `delivery`; those fields never
+  inherit.
 - Omitted design fields inherit.
 - `view` merges recursively.
 - `themes` replaces as one complete collection when declared; omission inherits it. Replacing the
@@ -179,7 +180,7 @@ missing `icon-image`, `fill-pattern`, or `line-pattern` IDs and missing primary 
 
 The build manifest's `mapRevisionSha256` is a content identity for resolved cartography, not a
 second editorial version. It hashes the effective resolved semantic design, semantic language,
-public module/render-stack design, and source icon/font identities. Leaf `id`, `name`, `version`, `view`, `scenes`, and
+public module/render-stack design, and source icon/font identities. Leaf `id`, `name`, `version`, `view`, `scenes`, `shots`, and
 `delivery` remain on their owning manifest, Style, capture, or deployment contracts and do not
 change the cartographic revision. Each theme has its own `styleSha256`; the per-map
 `assetSetSha256` identifies that build's generated runtime resources. The latter uses the

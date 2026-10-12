@@ -10,20 +10,29 @@ import {fileURLToPath} from 'node:url';
 import {
   createTileflowCaptureReceipt,
   createTileflowCaptureRendererIdentity,
+  createTileflowShotReceipt,
+  parseTileflowShotReceipt,
   type TileflowCapture,
   TileflowCaptureError,
+  type TileflowShotCapture,
 } from '@tileflow/capture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   createExploratoryScene,
   createTileflowCaptureFailureJson,
   createTileflowCaptureJson,
+  createTileflowShotCaptureJson,
   relativePathForPlatform,
   serializeTileflowCaptureFailureJson,
   serializeTileflowCaptureJson,
+  serializeTileflowShotCaptureJson,
+  shotReceiptPath,
 } from '../src/capture-command';
 import {
   captureReceiptPath,
+  commitShotFrameDirectory,
+  shotFrameFileName,
+  stageShotFrameDirectory,
   writeAtomicFile,
   writeAtomicFileSet,
   writeCapturePair,
@@ -113,6 +122,51 @@ test('projects deterministic sanitized resource failure JSON', () => {
   ]);
   assert.equal(serialized, `${JSON.stringify(document, null, 2)}\n`);
   assert.doesNotMatch(serialized, /user:secret|token=hidden|private/);
+});
+
+test('projects deterministic relative-only shot JSON', () => {
+  const cwd = '/workspace/project';
+  const document = createTileflowShotCaptureJson(
+    [
+      {
+        capture: createShotCapture('fly-in'),
+        outputPath: '/workspace/project/.tileflow/captures/shots/fly-in.webm',
+        receiptPath: '/workspace/project/.tileflow/captures/shots/fly-in.receipt.json',
+      },
+    ],
+    cwd,
+  );
+  const serialized = serializeTileflowShotCaptureJson(document);
+
+  assert.deepEqual(Object.keys(document), ['schemaVersion', 'command', 'shots']);
+  assert.equal(document.command, 'capture.shot');
+  assert.deepEqual(Object.keys(document.shots[0] ?? {}), [
+    'shot',
+    'map',
+    'theme',
+    'status',
+    'format',
+    'codec',
+    'outputPath',
+    'receiptPath',
+    'sha256',
+    'framesSha256',
+    'frameCount',
+    'fps',
+    'durationMs',
+    'width',
+    'height',
+    'dpr',
+    'renderer',
+    'networkDependent',
+    'warnings',
+  ]);
+  assert.equal(document.shots[0]?.outputPath, '.tileflow/captures/shots/fly-in.webm');
+  assert.equal(document.shots[0]?.receiptPath, '.tileflow/captures/shots/fly-in.receipt.json');
+  assert.equal(serialized.endsWith('\n'), true);
+  assert.equal(serialized.includes(cwd), false);
+  assert.equal(shotReceiptPath('/out/fly-in.webm'), '/out/fly-in.receipt.json');
+  assert.equal(shotReceiptPath('/out/fly-in'), '/out/fly-in.receipt.json');
 });
 
 test('normalizes promotable exploratory center and bounds definitions', () => {
@@ -430,6 +484,141 @@ test('atomically replaces one managed manifest without a target-to-backup gap', 
   );
 });
 
+test('stages shot frames beside their directory and replaces it as one transaction', async (t) => {
+  const directory = await createDirectoryFixture(t, 'tileflow-shot-frames-');
+  const frames = join(directory, 'fly-in');
+  const receiptPath = shotReceiptPath(frames);
+  const stage = async (count: number, seed: number) => {
+    const staged = await stageShotFrameDirectory({boundaryPath: directory, directory: frames});
+    for (let index = 0; index < count; index += 1) {
+      await staged.write(index, new Uint8Array([137, 80, 78, 71, seed, index]));
+    }
+    return staged;
+  };
+  const listing = async () => (await readdir(directory)).sort();
+
+  const first = await stage(3, 1);
+  assert.equal(
+    await commitShotFrameDirectory({
+      force: false,
+      managed: false,
+      receipt: '{"version":1}\n',
+      receiptPath,
+      stage: first,
+    }),
+    true,
+  );
+  assert.deepEqual(await listing(), ['fly-in', 'fly-in.receipt.json', 'node_modules']);
+  assert.deepEqual((await readdir(frames)).sort(), [0, 1, 2].map(shotFrameFileName));
+  assert.equal(shotFrameFileName(12), 'frame-0012.png');
+
+  const unchanged = await stage(3, 1);
+  assert.equal(
+    await commitShotFrameDirectory({
+      force: false,
+      managed: false,
+      receipt: '{"version":1}\n',
+      receiptPath,
+      stage: unchanged,
+    }),
+    false,
+  );
+  assert.deepEqual(await listing(), ['fly-in', 'fly-in.receipt.json', 'node_modules']);
+
+  const shorter = await stage(2, 2);
+  await assert.rejects(
+    () =>
+      commitShotFrameDirectory({
+        force: false,
+        managed: false,
+        receipt: '{"version":2}\n',
+        receiptPath,
+        stage: shorter,
+      }),
+    /--force/,
+  );
+  assert.deepEqual((await readdir(frames)).sort(), [0, 1, 2].map(shotFrameFileName));
+  await commitShotFrameDirectory({
+    force: true,
+    managed: false,
+    receipt: '{"version":2}\n',
+    receiptPath,
+    stage: shorter,
+  });
+  assert.deepEqual((await readdir(frames)).sort(), [0, 1].map(shotFrameFileName));
+  assert.deepEqual([...(await readFile(join(frames, 'frame-0000.png')))], [137, 80, 78, 71, 2, 0]);
+  assert.equal(await readFile(receiptPath, 'utf8'), '{"version":2}\n');
+  assert.deepEqual(await listing(), ['fly-in', 'fly-in.receipt.json', 'node_modules']);
+
+  await writeFile(join(frames, 'notes.txt'), 'keep');
+  await assert.rejects(
+    () => stageShotFrameDirectory({boundaryPath: directory, directory: frames}),
+    /not Tileflow frames/,
+  );
+  await symlink(
+    frames,
+    join(directory, 'linked'),
+    process.platform === 'win32' ? 'junction' : 'dir',
+  );
+  await assert.rejects(
+    () => stageShotFrameDirectory({boundaryPath: directory, directory: join(directory, 'linked')}),
+    /symbolic link/,
+  );
+});
+
+test('validates shot selection before loading config', async (t) => {
+  const directory = await createDirectoryFixture(t, 'tileflow-shot-selection-');
+  const cases: Array<[string[], RegExp, string]> = [
+    [['--shot', 'fly-in', '--all-shots'], /either --shot or --all-shots/u, 'capture.shot'],
+    [['proof', '--shot', 'fly-in'], /take no scenes/u, 'capture.shot'],
+    [['--shot', 'fly-in', '--watch'], /does not render shots/u, 'capture.shot'],
+    [['--shot', 'fly-in', '--theme', 'light'], /apply to scenes/u, 'capture.shot'],
+    [['--shot', 'CON'], /portable Tileflow shot name/u, 'capture.shot'],
+    [['--shot', 'fly-in', '--format', 'gif'], /--format expects webm or frames/u, 'capture.shot'],
+    [
+      ['--shot', 'a', '--shot', 'b', '--out', 'a.webm'],
+      /only when rendering one shot/u,
+      'capture.shot',
+    ],
+    [['--all-shots', '--out', 'a.webm'], /only when rendering one shot/u, 'capture.shot'],
+    [['--shot', 'fly-in', '--out', 'fly-in.mp4'], /must name a \.webm file/u, 'capture.shot'],
+    [
+      ['--shot', 'fly-in', '--format', 'frames', '--out', 'fly-in.webm'],
+      /directory for --format frames/u,
+      'capture.shot',
+    ],
+    [['proof', '--format', 'frames'], /--format applies to --shot/u, 'capture'],
+  ];
+
+  for (const [arguments_, message, command] of cases) {
+    const result = await runCli(directory, ['capture', ...arguments_, '--json'], {});
+    assert.equal(result.code, 1, arguments_.join(' '));
+    assert.equal(result.stdout, '');
+    const document = parseFailureDocument(result.stderr, command);
+    assert.equal(document.code, 'INVALID_ARGUMENT');
+    assert.equal(document.phase, 'input-validation');
+    assert.match(document.diagnostics[0]?.message ?? '', message);
+  }
+
+  await writeFile(
+    join(directory, 'tileflow.config.ts'),
+    tileflowMapFixture({
+      id: 'proof',
+      fields: `shots: {'fly-in': {theme: 'light', viewport: {width: 64, height: 64}, keyframes: [
+    {at: 0, camera: {type: 'center', center: [0, 0], zoom: 1}},
+    {at: 100, camera: {type: 'center', center: [1, 1], zoom: 2}}
+  ]}}`,
+    }),
+  );
+  const unknown = await runCli(directory, ['capture', '--shot', 'orbit', '--json'], {});
+  assert.equal(unknown.code, 1);
+  assert.equal(unknown.stdout, '');
+  const unknownDocument = parseFailureDocument(unknown.stderr, 'capture.shot');
+  assert.equal(unknownDocument.code, 'SHOT_NOT_FOUND');
+  assert.equal(unknownDocument.phase, 'shot-resolution');
+  assert.match(unknownDocument.diagnostics[0]?.message ?? '', /Available shots: fly-in\./u);
+});
+
 test('init creates a singular map and only creates a missing ignore file', async (t) => {
   const fresh = await createDirectoryFixture(t, 'tileflow-capture-init-');
   const initialized = await runCli(fresh, ['init'], {});
@@ -680,6 +869,102 @@ test(
 );
 
 test(
+  'renders a committed shot through the CLI to WebM and to frames with receipts',
+  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 90_000},
+  async (t) => {
+    const directory = await createDirectoryFixture(t, 'tileflow-capture-shot-');
+    const fixture = await createVectorFixtureServer(t);
+    await writeFile(
+      join(directory, 'tileflow.config.ts'),
+      tileflowMapFixture({
+        id: 'proof',
+        fields: `data: {
+    type: 'vector-tiles',
+    tiles: [${JSON.stringify(`${fixture.origin}/tiles/world/{z}/{x}/{y}.pbf`)}],
+    minzoom: 0,
+    maxzoom: 14,
+    bounds: [-180, -85, 180, 85],
+    revision: 'fixture_1',
+    attribution: 'Fixture data',
+    schema: {type: 'openmaptiles', contractVersion: 1}
+  },
+  shots: {'fly-in': {theme: 'light', viewport: {width: 64, height: 64}, keyframes: [
+    {at: 0, camera: {type: 'center', center: [0, 0], zoom: 0}},
+    {at: 200, camera: {type: 'center', center: [20, 10], zoom: 2}}
+  ]}}`,
+      }),
+    );
+    const environment = {
+      ...(process.env.HOME ? {HOME: process.env.HOME} : {}),
+      ...(process.env.USERPROFILE ? {USERPROFILE: process.env.USERPROFILE} : {}),
+    };
+    type ShotDocument = {
+      command: string;
+      shots: Array<{
+        format: string;
+        frameCount: number;
+        framesSha256: string;
+        outputPath: string;
+        receiptPath: string;
+        sha256: string;
+      }>;
+    };
+
+    const video = await runCli(
+      directory,
+      ['capture', '--shot', 'fly-in', '--json', '--no-browser-install'],
+      environment,
+    );
+    assert.equal(video.code, 0, video.stderr);
+    const videoDocument = JSON.parse(video.stdout) as ShotDocument;
+    const videoEntry = videoDocument.shots[0]!;
+    assert.equal(videoDocument.command, 'capture.shot');
+    assert.equal(videoEntry.format, 'webm');
+    assert.equal(videoEntry.frameCount, 7);
+    assert.equal(videoEntry.outputPath, '.tileflow/captures/shots/fly-in.webm');
+    assert.deepEqual(
+      [...(await readFile(join(directory, videoEntry.outputPath))).subarray(0, 4)],
+      [0x1a, 0x45, 0xdf, 0xa3],
+    );
+    const videoReceipt = parseTileflowShotReceipt(
+      await readFile(join(directory, videoEntry.receiptPath)),
+    );
+    assert.equal(videoReceipt.output.sha256, videoEntry.sha256);
+    assert.equal(video.stdout.includes(directory), false);
+
+    const frames = await runCli(
+      directory,
+      [
+        'capture',
+        '--shot',
+        'fly-in',
+        '--format',
+        'frames',
+        '--out-dir',
+        'evidence',
+        '--json',
+        '--no-browser-install',
+      ],
+      environment,
+    );
+    assert.equal(frames.code, 0, frames.stderr);
+    const framesEntry = (JSON.parse(frames.stdout) as ShotDocument).shots[0]!;
+    assert.equal(framesEntry.outputPath, 'evidence/fly-in');
+    assert.equal(framesEntry.receiptPath, 'evidence/fly-in.receipt.json');
+    assert.equal(framesEntry.sha256, framesEntry.framesSha256);
+    assert.equal(framesEntry.framesSha256, videoEntry.framesSha256);
+    assert.deepEqual(
+      (await readdir(join(directory, 'evidence', 'fly-in'))).sort(),
+      Array.from({length: 7}, (_, index) => `frame-000${index}.png`),
+    );
+    assert.deepEqual((await readdir(join(directory, 'evidence'))).sort(), [
+      'fly-in',
+      'fly-in.receipt.json',
+    ]);
+  },
+);
+
+test(
   'captures Streets roads and emits a real promotable exploratory definition without setup',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 45_000},
   async (t) => {
@@ -878,7 +1163,7 @@ type FailureDocument = {
   status: string;
 };
 
-function parseFailureDocument(stderr: string): FailureDocument {
+function parseFailureDocument(stderr: string, command = 'capture'): FailureDocument {
   const document = JSON.parse(stderr) as FailureDocument;
   assert.equal(stderr, `${JSON.stringify(document, null, 2)}\n`);
   assert.deepEqual(Object.keys(document), [
@@ -890,9 +1175,59 @@ function parseFailureDocument(stderr: string): FailureDocument {
     'diagnostics',
   ]);
   assert.equal(document.schemaVersion, 1);
-  assert.equal(document.command, 'capture');
+  assert.equal(document.command, command);
   assert.equal(document.status, 'failed');
   return document;
+}
+
+function createShotCapture(shot: string): TileflowShotCapture {
+  const renderer = createTileflowCaptureRendererIdentity();
+  const receipt = createTileflowShotReceipt({
+    data: {
+      kind: 'vector-tiles',
+      schema: 'openmaptiles',
+      schemaVersion: 1,
+      sourceId: 'tileflow',
+    },
+    dpr: 1,
+    durationMs: 1_000,
+    fps: 30,
+    frameCount: 31,
+    framesSha256: 'b'.repeat(64),
+    height: 64,
+    map: 'proof',
+    networkDependent: false,
+    output: {codec: 'vp9', kind: 'webm', sha256: 'a'.repeat(64)},
+    renderer,
+    shot,
+    shotSha256: 'c'.repeat(64),
+    styleSha256: 'd'.repeat(64),
+    theme: 'light',
+    width: 64,
+  });
+  return {
+    shot,
+    map: 'proof',
+    theme: 'light',
+    format: 'webm',
+    video: new Uint8Array([0x1a, 0x45, 0xdf, 0xa3]),
+    codec: 'vp9',
+    sha256: 'a'.repeat(64),
+    framesSha256: 'b'.repeat(64),
+    frameSha256s: [],
+    shotSha256: 'c'.repeat(64),
+    styleSha256: 'd'.repeat(64),
+    fps: 30,
+    frameCount: 31,
+    durationMs: 1_000,
+    width: 64,
+    height: 64,
+    dpr: 1,
+    networkDependent: false,
+    renderer,
+    receipt,
+    warnings: [],
+  };
 }
 
 function createCapture(scene: string): TileflowCapture {

@@ -151,6 +151,23 @@ on that route. Capture does not start the server or discover ports. It accepts l
 selects exactly one target, verifies the concrete theme, and waits for the component's idle marker.
 Do not run a separate `tileflow preview` server beside the application.
 
+## Render a timed shot
+
+Commit a [capture shot](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-shots.md)
+under `shots` on the same map: a concrete theme, a viewport, and two or more center-camera
+keyframes, optionally with a theme blend. Then render it:
+
+```sh
+npx tileflow capture --shot dusk-flyover --json
+npx tileflow capture --shot dusk-flyover --format frames --out-dir evidence --json
+```
+
+The first command writes `.tileflow/captures/shots/dusk-flyover.webm`; the second writes
+`evidence/dusk-flyover/frame-0000.png` and the following frames. Each output has a sibling
+`.receipt.json` shot receipt. Repeat `--shot` or use `--all-shots` to render several shots; `--out`
+names the `.webm` file or frame directory of a single shot. Every frame waits for the map to be
+ready, so a slow machine renders more slowly without dropping frames.
+
 ## Review pixels without accepting changes
 
 After reviewing a render, create its baseline. Compare subsequent renders separately:

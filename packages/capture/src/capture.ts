@@ -1,14 +1,18 @@
 import {resolve} from 'node:path';
 import {
   compareCodeUnits,
+  type MapLibreStyle,
   type NormalizedTileflowCaptureScene,
+  type NormalizedTileflowCaptureShot,
   normalizeTileflowCaptureScene,
+  normalizeTileflowCaptureShot,
   parseResolvedTileflowMap,
   resolveThemeSelection,
   serializeCanonicalJson,
   sha256Hex,
   type TileflowCaptureScene,
   tileflowCaptureSceneNameSchema,
+  tileflowCaptureShotNameSchema,
 } from '@tileflow/core';
 import {
   createTileflowBuildArtifacts,
@@ -25,6 +29,12 @@ import {
   type TileflowCaptureRendererIdentity,
 } from './metadata';
 import {createTileflowCaptureReceipt, type TileflowCaptureReceiptV4} from './receipt';
+import {
+  renderTileflowShot,
+  type TileflowShotCapture,
+  type TileflowShotFormat,
+  type TileflowShotFrame,
+} from './shot';
 import {captureStandaloneTileflowScene, tileflowSyntheticAssetOrigin} from './standalone';
 import {type PreparedTileflowCaptureStyle, TileflowCaptureWorldSession} from './world';
 
@@ -78,6 +88,22 @@ export type TileflowCaptureResult = {
   captures: TileflowCapture[];
 };
 
+export type TileflowShotCaptureOptions = {
+  /** `webm` (the default) encodes a VP9 or VP8 video; `frames` delivers only PNG frames. */
+  format?: TileflowShotFormat;
+  /** Receives each frame's PNG in order while the shot renders. */
+  onFrame?: (frame: TileflowShotFrame) => Promise<void> | void;
+  signal?: AbortSignal;
+};
+
+export type TileflowShotCaptureResult = {
+  schemaVersion: 1;
+  shots: TileflowShotCapture[];
+};
+
+export type CaptureTileflowShotOptions = CreateTileflowCaptureSessionOptions &
+  Omit<TileflowShotCaptureOptions, 'signal'> & {shot: string};
+
 export type TileflowCaptureSession = {
   capture(scenes: string[], signal?: AbortSignal): Promise<TileflowCaptureResult>;
   captureAll(signal?: AbortSignal): Promise<TileflowCaptureResult>;
@@ -90,6 +116,14 @@ export type TileflowCaptureSession = {
     requestedScenes: string[],
     signal?: AbortSignal,
   ): Promise<TileflowCaptureResult>;
+  /** Renders one committed shot. */
+  captureShot(shot: string, options?: TileflowShotCaptureOptions): Promise<TileflowShotCapture>;
+  /** Renders committed shots in name order from one compiled artifact snapshot. */
+  captureShots(
+    shots: string[],
+    options?: TileflowShotCaptureOptions,
+  ): Promise<TileflowShotCaptureResult>;
+  captureAllShots(options?: TileflowShotCaptureOptions): Promise<TileflowShotCaptureResult>;
   close(): Promise<void>;
 };
 
@@ -100,6 +134,23 @@ export async function captureTileflowScenes(
 
   try {
     return await session.capture(options.scenes, options.signal);
+  } finally {
+    await session.close();
+  }
+}
+
+/** Renders one committed shot with a temporary session. */
+export async function captureTileflowShot(
+  options: CaptureTileflowShotOptions,
+): Promise<TileflowShotCapture> {
+  const {format, onFrame, shot, ...sessionOptions} = options;
+  const session = createTileflowCaptureSession(sessionOptions);
+
+  try {
+    return await session.captureShot(shot, {
+      ...(format ? {format} : {}),
+      ...(onFrame ? {onFrame} : {}),
+    });
   } finally {
     await session.close();
   }
@@ -308,6 +359,125 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
     return {schemaVersion: tileflowCaptureResultSchemaVersion, captures};
   }
 
+  async captureShot(
+    shot: string,
+    options: TileflowShotCaptureOptions = {},
+  ): Promise<TileflowShotCapture> {
+    const result = await this.captureShots([shot], options);
+    return result.shots[0]!;
+  }
+
+  async captureAllShots(
+    options: TileflowShotCaptureOptions = {},
+  ): Promise<TileflowShotCaptureResult> {
+    this.#assertOpen();
+    const artifacts = await this.#createArtifacts();
+    try {
+      return await this.#captureShotArtifacts(
+        artifacts,
+        Object.keys(artifacts.project.shots ?? {}),
+        options,
+      );
+    } finally {
+      await disposeCaptureArtifacts(artifacts);
+    }
+  }
+
+  async captureShots(
+    shots: string[],
+    options: TileflowShotCaptureOptions = {},
+  ): Promise<TileflowShotCaptureResult> {
+    this.#assertOpen();
+    const artifacts = await this.#createArtifacts();
+    try {
+      return await this.#captureShotArtifacts(artifacts, shots, options);
+    } finally {
+      await disposeCaptureArtifacts(artifacts);
+    }
+  }
+
+  async #captureShotArtifacts(
+    artifacts: TileflowBuildArtifacts,
+    requestedShots: string[],
+    options: TileflowShotCaptureOptions,
+  ): Promise<TileflowShotCaptureResult> {
+    const signal = options.signal ?? this.#options.signal;
+    const format = options.format ?? 'webm';
+    if (format !== 'webm' && format !== 'frames') {
+      throw new TypeError('Expected shot format "webm" or "frames".');
+    }
+    const shotNames = selectTileflowCaptureShotNames(artifacts, requestedShots);
+    const resolved: Array<{
+      name: string;
+      prepared: PreparedTileflowCaptureStyle[];
+      shot: NormalizedTileflowCaptureShot;
+      styles: Record<string, MapLibreStyle>;
+    }> = [];
+    const preparedStyles = new Map<string, PreparedTileflowCaptureStyle>();
+
+    for (const name of shotNames) {
+      const shot = normalizeShot(artifacts, name);
+      const themes = [...new Set([shot.theme, ...(shot.keyframes[0]?.blend?.themes ?? [])])];
+      const styles: Record<string, MapLibreStyle> = {};
+      const prepared: PreparedTileflowCaptureStyle[] = [];
+      for (const theme of themes) {
+        const styleKey = `${shot.map}/${theme}`;
+        let preparedStyle = preparedStyles.get(styleKey);
+        if (!preparedStyle) {
+          const style = artifacts.styles[shot.map]?.[theme];
+          if (!style) {
+            throw new TileflowCaptureError(
+              'SHOT_NOT_FOUND',
+              `Shot "${name}" references unavailable theme "${theme}" on map "${shot.map}".`,
+            );
+          }
+          preparedStyle = await this.#worldSession.prepare(style, signal);
+          try {
+            assertValidTileflowStyle(preparedStyle.style, styleKey);
+          } catch (error) {
+            throwCaptureStyleValidationError(error);
+          }
+          preparedStyles.set(styleKey, preparedStyle);
+        }
+        styles[theme] = preparedStyle.style;
+        prepared.push(preparedStyle);
+      }
+      resolved.push({name, prepared, shot, styles});
+    }
+
+    throwIfAborted(signal);
+    const browser = await this.#browserManager.getBrowser(signal);
+    const renderer = createTileflowCaptureRendererIdentity(browser);
+    const shots: TileflowShotCapture[] = [];
+
+    for (const {name, prepared, shot, styles} of resolved) {
+      throwIfAborted(signal);
+      const capture = await renderTileflowShot({
+        assets: [...artifacts.assets, ...prepared.flatMap((style) => style.assets ?? [])],
+        browser,
+        data: prepared[0]!.data,
+        format,
+        ...(artifacts.localTilesets ? {localTilesets: artifacts.localTilesets} : {}),
+        ...(artifacts.lineBackgroundGlyphs
+          ? {
+              glyphCacheDirectory: resolve(this.#options.cwd ?? process.cwd()),
+              lineBackgroundGlyphs: artifacts.lineBackgroundGlyphs,
+            }
+          : {}),
+        name,
+        ...(options.onFrame ? {onFrame: options.onFrame} : {}),
+        renderer,
+        shot,
+        ...(signal ? {signal} : {}),
+        styles,
+        ...(this.#options.timeoutMs === undefined ? {} : {timeoutMs: this.#options.timeoutMs}),
+      });
+      shots.push({...capture, warnings: [...capture.warnings].sort(compareCodeUnits)});
+    }
+
+    return {schemaVersion: tileflowCaptureResultSchemaVersion, shots};
+  }
+
   async close(): Promise<void> {
     if (this.#closed) {
       return;
@@ -423,6 +593,69 @@ export function selectTileflowCaptureSceneNames(
   }
 
   return sceneNames;
+}
+
+export function selectTileflowCaptureShotNames(
+  artifacts: Pick<TileflowBuildArtifacts, 'project'>,
+  requestedShots: readonly string[],
+): string[] {
+  const availableShots = Object.keys(artifacts.project.shots ?? {})
+    .filter((shotName) => tileflowCaptureShotNameSchema.safeParse(shotName).success)
+    .sort(compareCodeUnits);
+  const shotNames = [...new Set(requestedShots)].sort(compareCodeUnits);
+
+  if (shotNames.length === 0) {
+    throw new TileflowCaptureError(
+      'SHOT_NOT_FOUND',
+      'Select at least one capture shot or request every configured shot explicitly.',
+    );
+  }
+
+  for (const shotName of shotNames) {
+    if (!tileflowCaptureShotNameSchema.safeParse(shotName).success) {
+      throw new TileflowCaptureError('SHOT_NOT_FOUND', 'Expected a portable Tileflow shot name.');
+    }
+    if (!Object.hasOwn(artifacts.project.shots ?? {}, shotName)) {
+      const suffix =
+        availableShots.length > 0
+          ? ` Available shots: ${availableShots.join(', ')}.`
+          : ' The config defines no capture shots.';
+      throw new TileflowCaptureError(
+        'SHOT_NOT_FOUND',
+        `Unknown Tileflow capture shot "${shotName}".${suffix}`,
+      );
+    }
+  }
+
+  return shotNames;
+}
+
+function normalizeShot(
+  artifacts: Pick<TileflowBuildArtifacts, 'project'>,
+  shotName: string,
+): NormalizedTileflowCaptureShot {
+  const shot = artifacts.project.shots![shotName]!;
+  const normalized = normalizeTileflowCaptureShot(shot);
+  const resolvedMap = artifacts.project.maps[normalized.map];
+  if (!resolvedMap) {
+    throw new TileflowCaptureError(
+      'SHOT_NOT_FOUND',
+      `Shot "${shotName}" references unavailable map "${normalized.map}".`,
+    );
+  }
+  const map = parseResolvedTileflowMap(resolvedMap);
+  for (const theme of [normalized.theme, ...(normalized.keyframes[0]?.blend?.themes ?? [])]) {
+    try {
+      resolveThemeSelection(map, theme);
+    } catch (error) {
+      throw new TileflowCaptureError(
+        'SHOT_NOT_FOUND',
+        `Shot "${shotName}" has an invalid theme: ${error instanceof Error ? error.message : 'unknown theme'}`,
+        {cause: error},
+      );
+    }
+  }
+  return normalized;
 }
 
 function normalizeScene(

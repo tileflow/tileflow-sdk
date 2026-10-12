@@ -6,6 +6,7 @@ import {
   parseResolvedTileflowMap,
   parseTileflowMap,
   tileflowCaptureSceneNameSchema,
+  tileflowCaptureShotNameSchema,
   type TileflowMap,
   TileflowResolvedMapValidationError,
   type ValidationMessage,
@@ -123,6 +124,15 @@ export function assertValidTileflowConfig(project: TileflowBuildCatalog): void {
       });
     }
   }
+  for (const [shotId, shot] of Object.entries(project.shots ?? {})) {
+    if (!Object.hasOwn(project.maps, shot.map)) {
+      messages.push({
+        level: 'error',
+        path: `shots.${shotId}.map`,
+        message: `Unknown Tileflow map "${shot.map}".`,
+      });
+    }
+  }
   if (messages.length > 0) throw new TileflowValidationError(messages);
 }
 
@@ -160,6 +170,7 @@ function asTileflowBuildCatalog(
         resolved,
         collectTileflowMapBuildLineage(map),
         normalizeSingularMapScenes(map, resolved.id),
+        normalizeSingularMapShots(map, resolved.id),
       ] as const;
     });
     if (entries.length === 0) {
@@ -180,12 +191,25 @@ function asTileflowBuildCatalog(
         scenes.set(sceneId, scene);
       }
     }
+    const shots = new Map<string, NonNullable<TileflowBuildCatalog['shots']>[string]>();
+    for (const [mapId, , , , mapShots] of entries) {
+      for (const [shotId, shot] of Object.entries(mapShots ?? {})) {
+        if (shots.has(shotId)) {
+          throw tileflowConfigValidationError(
+            `maps.${mapId}.shots.${shotId}`,
+            new Error(`Tileflow workspace shot "${shotId}" is already defined by another map.`),
+          );
+        }
+        shots.set(shotId, shot);
+      }
+    }
     return {
       mapMetadata: Object.fromEntries(
         entries.map(([id, map, lineage]) => [id, {id, lineage, version: map.version}]),
       ),
       maps: Object.fromEntries(entries.map(([id, map]) => [id, map])),
       ...(scenes.size > 0 ? {scenes: Object.fromEntries(scenes)} : {}),
+      ...(shots.size > 0 ? {shots: Object.fromEntries(shots)} : {}),
     };
   }
 
@@ -197,6 +221,12 @@ function asTileflowBuildCatalog(
   } catch (error) {
     throw tileflowConfigValidationError('scenes', error);
   }
+  let shots: TileflowBuildCatalog['shots'] | undefined;
+  try {
+    shots = normalizeSingularMapShots(map, resolved.id);
+  } catch (error) {
+    throw tileflowConfigValidationError('shots', error);
+  }
   return {
     mapMetadata: {
       [resolved.id]: {
@@ -207,6 +237,7 @@ function asTileflowBuildCatalog(
     },
     maps: {[resolved.id]: resolved},
     ...(scenes ? {scenes} : {}),
+    ...(shots ? {shots} : {}),
   };
 }
 
@@ -268,6 +299,19 @@ function normalizeSingularMapScenes(
     Object.entries(map.scenes).map(([sceneId, scene]) => {
       const normalizedSceneId = tileflowCaptureSceneNameSchema.parse(sceneId);
       return [normalizedSceneId, {...scene, map: mapId}];
+    }),
+  );
+}
+
+function normalizeSingularMapShots(
+  map: TileflowMap,
+  mapId: string,
+): TileflowBuildCatalog['shots'] | undefined {
+  if (!map.shots) return undefined;
+  return Object.fromEntries(
+    Object.entries(map.shots).map(([shotId, shot]) => {
+      const normalizedShotId = tileflowCaptureShotNameSchema.parse(shotId);
+      return [normalizedShotId, {...shot, map: mapId}];
     }),
   );
 }

@@ -7,16 +7,23 @@ export {
 export type {TileflowBrowserInstallProgress, TileflowBrowserLaunchOptions} from './browser';
 export {
   captureTileflowScenes,
+  captureTileflowShot,
   createTileflowCaptureSession,
   tileflowCaptureResultSchemaVersion,
 } from './capture';
 export type {
+  CaptureTileflowShotOptions,
   CreateTileflowCaptureSessionOptions,
   TileflowCapture,
   TileflowCaptureOptions,
   TileflowCaptureResult,
   TileflowCaptureSession,
+  TileflowShotCaptureOptions,
+  TileflowShotCaptureResult,
 } from './capture';
+export {tileflowShotFramesSha256} from './shot';
+export type {TileflowShotCapture, TileflowShotFormat, TileflowShotFrame} from './shot';
+export type {TileflowShotVideoCodec} from './shot-encoder';
 export {captureErrorMessage, TileflowCaptureError} from './errors';
 export type {
   TileflowCaptureDiagnostic,
@@ -30,14 +37,21 @@ export {createTileflowCaptureRendererIdentity, tileflowCaptureRuntime} from './m
 export type {TileflowCaptureRendererIdentity} from './metadata';
 export {
   createTileflowCaptureReceipt,
+  createTileflowShotReceipt,
   parseTileflowCaptureReceipt,
+  parseTileflowShotReceipt,
   serializeTileflowCaptureReceipt,
+  serializeTileflowShotReceipt,
   tileflowCaptureReceiptLimits,
   tileflowCaptureReceiptSchemaVersion,
+  tileflowShotReceiptLimits,
+  tileflowShotReceiptSchemaVersion,
   validateTileflowCaptureReceipt,
+  validateTileflowShotReceipt,
 } from './receipt';
 export type {
   CreateTileflowCaptureReceiptInput,
+  CreateTileflowShotReceiptInput,
   TileflowCaptureDataBindingsV2,
   TileflowCaptureDataCapabilitiesV2,
   TileflowCaptureDataCapabilitiesV4,
@@ -54,6 +68,7 @@ export type {
   TileflowCaptureVerificationV2,
   TileflowCaptureVectorIdentityV3,
   TileflowCaptureWorldIdentityV3,
+  TileflowShotReceiptV1,
 } from './receipt';
 export {
   resolveTileflowCaptureWorldTileJson,

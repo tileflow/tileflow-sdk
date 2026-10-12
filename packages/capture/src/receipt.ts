@@ -6,6 +6,7 @@ import {
   tileflowCaptureIdSchema,
   tileflowCaptureSceneLimits,
   tileflowCaptureSceneNameSchema,
+  tileflowCaptureShotLimits,
   tileflowPortableIdSchema,
   tileflowThemeNameSchema,
 } from '@tileflow/core';
@@ -363,6 +364,304 @@ export function validateTileflowCaptureReceipt(value: unknown): TileflowCaptureR
   return normalized;
 }
 
+export const tileflowShotReceiptSchemaVersion = 1 as const;
+export const tileflowShotReceiptLimits = Object.freeze({maximumBytes: 64 * 1024});
+
+/**
+ * Durable evidence for one rendered shot. Frames are deterministic, so `frames.sha256` identifies
+ * the pixels; `output.sha256` identifies the written video or frame set, whose encoder bytes may
+ * differ between runs.
+ */
+export type TileflowShotReceiptV1 = {
+  schemaVersion: 1;
+  kind: 'shot';
+  shot: {name: string; map: string; theme: string; sha256: string};
+  /** The compiled style of the shot's theme. */
+  style: {sha256: string};
+  /** Present when the shot blends themes: each blended theme's compiled style, in blend order. */
+  blend?: {themes: Array<{name: string; styleSha256: string}>};
+  timing: {fps: 24 | 25 | 30 | 50 | 60; frameCount: number; durationMs: number};
+  image: {
+    cssWidth: number;
+    cssHeight: number;
+    physicalWidth: number;
+    physicalHeight: number;
+    dpr: 1 | 2;
+  };
+  /** SHA-256 of each frame's PNG SHA-256 in lowercase hex, one per line, in frame order. */
+  frames: {sha256: string};
+  output: {kind: 'frames'; sha256: string} | {kind: 'webm'; codec: 'vp8' | 'vp9'; sha256: string};
+  renderer: TileflowCaptureRendererIdentity;
+  platform: {os: string; architecture: string};
+  data: TileflowCaptureDataIdentityV4;
+  verification: {data: 'rendered'; style: 'rendered'};
+  networkDependent: boolean;
+};
+
+export type CreateTileflowShotReceiptInput = {
+  blend?: Array<{name: string; styleSha256: string}>;
+  data: TileflowCaptureDataInput;
+  dpr: 1 | 2;
+  durationMs: number;
+  fps: 24 | 25 | 30 | 50 | 60;
+  frameCount: number;
+  framesSha256: string;
+  height: number;
+  map: string;
+  networkDependent: boolean;
+  output: TileflowShotReceiptV1['output'];
+  renderer: TileflowCaptureRendererIdentity;
+  shot: string;
+  shotSha256: string;
+  styleSha256: string;
+  theme: string;
+  width: number;
+};
+
+export function createTileflowShotReceipt(
+  input: CreateTileflowShotReceiptInput,
+): TileflowShotReceiptV1 {
+  return validateTileflowShotReceipt({
+    schemaVersion: tileflowShotReceiptSchemaVersion,
+    kind: 'shot',
+    shot: {name: input.shot, map: input.map, theme: input.theme, sha256: input.shotSha256},
+    style: {sha256: input.styleSha256},
+    ...(input.blend ? {blend: {themes: input.blend}} : {}),
+    timing: {fps: input.fps, frameCount: input.frameCount, durationMs: input.durationMs},
+    image: {
+      cssWidth: input.width,
+      cssHeight: input.height,
+      physicalWidth: input.width * input.dpr,
+      physicalHeight: input.height * input.dpr,
+      dpr: input.dpr,
+    },
+    frames: {sha256: input.framesSha256},
+    output: input.output,
+    renderer: input.renderer,
+    platform: {os: process.platform, architecture: process.arch},
+    data: normalizeCaptureDataInput(input.data),
+    verification: {data: 'rendered', style: 'rendered'},
+    networkDependent: input.networkDependent,
+  });
+}
+
+export function serializeTileflowShotReceipt(receipt: TileflowShotReceiptV1): string {
+  const serialized = `${serializeCanonicalJson(validateTileflowShotReceipt(receipt))}\n`;
+  if (new TextEncoder().encode(serialized).byteLength > tileflowShotReceiptLimits.maximumBytes) {
+    throw invalidReceipt('The shot receipt exceeds the supported byte limit.');
+  }
+  return serialized;
+}
+
+export function parseTileflowShotReceipt(source: string | Uint8Array): TileflowShotReceiptV1 {
+  const byteLength =
+    typeof source === 'string' ? new TextEncoder().encode(source).byteLength : source.byteLength;
+  if (byteLength > tileflowShotReceiptLimits.maximumBytes) {
+    throw invalidReceipt('The shot receipt exceeds the supported byte limit.');
+  }
+  let value: unknown;
+  let text: string;
+  try {
+    text =
+      typeof source === 'string' ? source : new TextDecoder('utf-8', {fatal: true}).decode(source);
+    value = JSON.parse(text);
+  } catch (error) {
+    throw invalidReceipt('The shot receipt is not valid UTF-8 JSON.', error);
+  }
+
+  const receipt = validateTileflowShotReceipt(value);
+  if (text.trim() !== serializeCanonicalJson(value)) {
+    throw invalidReceipt('The shot receipt is not canonical JSON.');
+  }
+  return receipt;
+}
+
+export function validateTileflowShotReceipt(value: unknown): TileflowShotReceiptV1 {
+  assertPlainReceiptData(value, 'receipt', {
+    allowArrays: true,
+    ancestors: new WeakSet<object>(),
+    nodes: 0,
+  });
+  const receipt = requireRecord(value, 'receipt');
+  if (receipt.schemaVersion !== tileflowShotReceiptSchemaVersion || receipt.kind !== 'shot') {
+    throw invalidReceipt('The shot receipt schema version is unsupported.');
+  }
+  requireExactKeys(receipt, [
+    'schemaVersion',
+    'kind',
+    'shot',
+    'style',
+    ...(receipt.blend === undefined ? [] : ['blend']),
+    'timing',
+    'image',
+    'frames',
+    'output',
+    'renderer',
+    'platform',
+    'data',
+    'verification',
+    'networkDependent',
+  ]);
+
+  const shot = requireRecord(receipt.shot, 'shot');
+  requireExactKeys(shot, ['name', 'map', 'theme', 'sha256']);
+  const style = requireRecord(receipt.style, 'style');
+  requireExactKeys(style, ['sha256']);
+  const blend = receipt.blend === undefined ? undefined : validateShotBlend(receipt.blend);
+
+  const timing = requireRecord(receipt.timing, 'timing');
+  requireExactKeys(timing, ['fps', 'frameCount', 'durationMs']);
+  const fps = timing.fps;
+  if (fps !== 24 && fps !== 25 && fps !== 30 && fps !== 50 && fps !== 60) {
+    throw invalidReceipt('The shot receipt has an invalid timing.fps.');
+  }
+  const frameCount = requirePositiveInteger(timing.frameCount, 'timing.frameCount');
+  const durationMs = requirePositiveInteger(timing.durationMs, 'timing.durationMs');
+  if (
+    durationMs > tileflowCaptureShotLimits.durationMs.maximum ||
+    frameCount > tileflowCaptureShotLimits.maximumFrames ||
+    frameCount !== Math.floor((durationMs * fps) / 1_000 + 1e-9) + 1
+  ) {
+    throw invalidReceipt('The shot receipt timing is inconsistent.');
+  }
+
+  const image = requireRecord(receipt.image, 'image');
+  requireExactKeys(image, ['cssWidth', 'cssHeight', 'physicalWidth', 'physicalHeight', 'dpr']);
+  const cssWidth = requirePositiveInteger(image.cssWidth, 'image.cssWidth');
+  const cssHeight = requirePositiveInteger(image.cssHeight, 'image.cssHeight');
+  const physicalWidth = requirePositiveInteger(image.physicalWidth, 'image.physicalWidth');
+  const physicalHeight = requirePositiveInteger(image.physicalHeight, 'image.physicalHeight');
+  if (image.dpr !== 1 && image.dpr !== 2) {
+    throw invalidReceipt('The shot receipt has an invalid image DPR.');
+  }
+  if (cssWidth * image.dpr !== physicalWidth || cssHeight * image.dpr !== physicalHeight) {
+    throw invalidReceipt('The shot receipt image dimensions are inconsistent.');
+  }
+  if (
+    physicalWidth > tileflowCaptureSceneLimits.viewport.maximum ||
+    physicalHeight > tileflowCaptureSceneLimits.viewport.maximum ||
+    physicalWidth * physicalHeight > tileflowCaptureSceneLimits.maximumPhysicalPixels
+  ) {
+    throw invalidReceipt('The shot receipt image exceeds the supported pixel limit.');
+  }
+
+  const frames = requireRecord(receipt.frames, 'frames');
+  requireExactKeys(frames, ['sha256']);
+  const framesSha256 = requireHash(frames.sha256, 'frames.sha256');
+  const output = requireRecord(receipt.output, 'output');
+  if (output.kind === 'webm') {
+    requireExactKeys(output, ['kind', 'codec', 'sha256']);
+    if (output.codec !== 'vp8' && output.codec !== 'vp9') {
+      throw invalidReceipt('The shot receipt has an invalid output.codec.');
+    }
+  } else if (output.kind === 'frames') {
+    requireExactKeys(output, ['kind', 'sha256']);
+    if (output.sha256 !== framesSha256) {
+      throw invalidReceipt('The shot receipt frame output does not match its frames.');
+    }
+  } else {
+    throw invalidReceipt('The shot receipt has an invalid output.kind.');
+  }
+
+  const renderer = requireRecord(receipt.renderer, 'renderer');
+  requireExactKeys(renderer, [
+    'tileflow',
+    'maplibre',
+    'playwright',
+    'chromiumRevision',
+    'chromiumVersion',
+  ]);
+  const platform = requireRecord(receipt.platform, 'platform');
+  requireExactKeys(platform, ['os', 'architecture']);
+  const verification = requireRecord(receipt.verification, 'verification');
+  requireExactKeys(verification, ['data', 'style']);
+  if (verification.data !== 'rendered' || verification.style !== 'rendered') {
+    throw invalidReceipt('The shot receipt verification must record rendered style and data.');
+  }
+  if (typeof receipt.networkDependent !== 'boolean') {
+    throw invalidReceipt('The shot receipt has an invalid network dependency flag.');
+  }
+
+  const normalized: TileflowShotReceiptV1 = {
+    schemaVersion: tileflowShotReceiptSchemaVersion,
+    kind: 'shot',
+    shot: {
+      name: requireSceneName(shot.name),
+      map: requirePortableIdentifier(shot.map, 'shot.map'),
+      theme: requireShotTheme(shot.theme, 'shot.theme'),
+      sha256: requireHash(shot.sha256, 'shot.sha256'),
+    },
+    style: {sha256: requireHash(style.sha256, 'style.sha256')},
+    ...(blend ? {blend} : {}),
+    timing: {fps, frameCount, durationMs},
+    image: {cssWidth, cssHeight, physicalWidth, physicalHeight, dpr: image.dpr},
+    frames: {sha256: framesSha256},
+    output:
+      output.kind === 'webm'
+        ? {
+            kind: 'webm',
+            codec: output.codec as 'vp8' | 'vp9',
+            sha256: requireHash(output.sha256, 'output.sha256'),
+          }
+        : {kind: 'frames', sha256: framesSha256},
+    renderer: {
+      tileflow: requireBoundedString(renderer.tileflow, 'renderer.tileflow'),
+      maplibre: requireBoundedString(renderer.maplibre, 'renderer.maplibre'),
+      playwright: requireBoundedString(renderer.playwright, 'renderer.playwright'),
+      chromiumRevision: requireBoundedString(
+        renderer.chromiumRevision,
+        'renderer.chromiumRevision',
+      ),
+      chromiumVersion: requireBoundedString(renderer.chromiumVersion, 'renderer.chromiumVersion'),
+    },
+    platform: {
+      os: requireBoundedString(platform.os, 'platform.os'),
+      architecture: requireBoundedString(platform.architecture, 'platform.architecture'),
+    },
+    data: validateDataIdentityV3(
+      receipt.data,
+      tileflowCaptureReceiptSchemaVersion,
+    ) as TileflowCaptureDataIdentityV4,
+    verification: {data: 'rendered', style: 'rendered'},
+    networkDependent: receipt.networkDependent,
+  };
+  const serialized = `${serializeCanonicalJson(normalized)}\n`;
+  if (new TextEncoder().encode(serialized).byteLength > tileflowShotReceiptLimits.maximumBytes) {
+    throw invalidReceipt('The shot receipt exceeds the supported byte limit.');
+  }
+  return normalized;
+}
+
+function requireShotTheme(value: unknown, field: string): string {
+  const result = tileflowThemeNameSchema.safeParse(value);
+  if (!result.success) throw invalidReceipt(`The shot receipt has an invalid ${field}.`);
+  return result.data;
+}
+
+function validateShotBlend(value: unknown): NonNullable<TileflowShotReceiptV1['blend']> {
+  const blend = requireRecord(value, 'blend');
+  requireExactKeys(blend, ['themes']);
+  if (
+    !Array.isArray(blend.themes) ||
+    blend.themes.length < tileflowCaptureShotLimits.blendThemes.minimum ||
+    blend.themes.length > tileflowCaptureShotLimits.blendThemes.maximum
+  ) {
+    throw invalidReceipt('The shot receipt has an invalid blend.themes list.');
+  }
+  const themes = blend.themes.map((entry: unknown, index: number) => {
+    const theme = requireRecord(entry, `blend.themes.${index}`);
+    requireExactKeys(theme, ['name', 'styleSha256']);
+    return {
+      name: requireShotTheme(theme.name, `blend.themes.${index}.name`),
+      styleSha256: requireHash(theme.styleSha256, `blend.themes.${index}.styleSha256`),
+    };
+  });
+  if (new Set(themes.map((theme) => theme.name)).size !== themes.length) {
+    throw invalidReceipt('The shot receipt blends a theme more than once.');
+  }
+  return {themes};
+}
+
 function validateDataIdentityV2(value: unknown): TileflowCaptureDataIdentityV2 {
   const data = requireRecord(value, 'data');
   if (data.url !== undefined && data.source !== undefined) {
@@ -648,10 +947,12 @@ function assertCanonicalReceiptByteLimit(receipt: TileflowCaptureReceipt): void 
   }
 }
 
+/** Shot receipts contain arrays; still receipts never do. */
 function assertPlainReceiptData(
   value: unknown,
   path = 'receipt',
-  state: {ancestors: WeakSet<object>; nodes: number} = {
+  state: {allowArrays: boolean; ancestors: WeakSet<object>; nodes: number} = {
+    allowArrays: false,
     ancestors: new WeakSet<object>(),
     nodes: 0,
   },
@@ -664,6 +965,10 @@ function assertPlainReceiptData(
     typeof value === 'number' ||
     typeof value === 'boolean'
   ) {
+    return;
+  }
+  if (typeof value === 'object' && Array.isArray(value) && state.allowArrays) {
+    assertPlainReceiptArray(value, path, state, depth);
     return;
   }
   if (typeof value !== 'object' || Array.isArray(value)) {
@@ -699,6 +1004,41 @@ function assertPlainReceiptData(
         throw invalidReceipt('The baseline receipt contains an accessor or non-enumerable field.');
       }
       assertPlainReceiptData(descriptor.value, `${path}.${key}`, state, depth + 1);
+    }
+  } finally {
+    state.ancestors.delete(value);
+  }
+}
+
+function assertPlainReceiptArray(
+  value: unknown[],
+  path: string,
+  state: {allowArrays: boolean; ancestors: WeakSet<object>; nodes: number},
+  depth: number,
+): void {
+  if (nodeUtilTypes.isProxy(value)) {
+    throw invalidReceipt(`The baseline receipt has an executable proxy at ${path}.`);
+  }
+  if (Object.getPrototypeOf(value) !== Array.prototype) {
+    throw invalidReceipt(`The baseline receipt has a non-plain ${path} array.`);
+  }
+  if (depth > 32 || ++state.nodes > 4_096 || value.length > 4_096) {
+    throw invalidReceipt('The baseline receipt exceeds the supported structural limit.');
+  }
+  if (state.ancestors.has(value)) {
+    throw invalidReceipt('The baseline receipt must not contain cyclic data.');
+  }
+  if (Reflect.ownKeys(value).length !== value.length + 1) {
+    throw invalidReceipt(`The baseline receipt has a sparse or extended ${path} array.`);
+  }
+  state.ancestors.add(value);
+  try {
+    for (let index = 0; index < value.length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, index);
+      if (!descriptor || !('value' in descriptor) || !descriptor.enumerable) {
+        throw invalidReceipt('The baseline receipt contains an accessor or non-enumerable field.');
+      }
+      assertPlainReceiptData(descriptor.value, `${path}.${index}`, state, depth + 1);
     }
   } finally {
     state.ancestors.delete(value);

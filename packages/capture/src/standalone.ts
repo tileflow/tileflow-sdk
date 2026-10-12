@@ -2,9 +2,9 @@ import {readFileSync} from 'node:fs';
 import {open} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {dirname, join} from 'node:path';
-import type {Browser, BrowserContext} from 'playwright';
+import type {Browser, BrowserContext, Page} from 'playwright';
 import type {MapLibreStyle, NormalizedTileflowCaptureScene} from '@tileflow/core';
-import {getTileflowStyleFontFaces} from '@tileflow/core/runtime';
+import {getTileflowStyleFontFaces, type TileflowStyleFontFace} from '@tileflow/core/runtime';
 import {
   createTileflowLineBackgroundGlyphResponder,
   parseTileflowLineBackgroundGlyphPath,
@@ -46,6 +46,30 @@ export type StandaloneTileflowCaptureOutput = {
   width: number;
 };
 
+/** Everything one isolated standalone page needs: compiled assets, its style, and viewport. */
+export type StandaloneTileflowPageInput = Omit<StandaloneTileflowCaptureInput, 'scene'> & {
+  viewport: {height: number; width: number; dpr: 1 | 2};
+};
+
+/** One loaded standalone page, valid only inside `withStandaloneTileflowPage`. */
+export type StandaloneTileflowPage = {
+  readonly page: Page;
+  readonly mapEventTimeoutMs: number;
+  /** Runs the page's map loader for the style the page was opened with. */
+  load(fontFaces: readonly TileflowStyleFontFace[]): Promise<void>;
+  /** Runs one in-page step that resolves to a phase result, and fails with that phase. */
+  step(phase: StandaloneTileflowPagePhase, name: string, input: unknown): Promise<void>;
+  /** Captures the map element as PNG bytes of the viewport's physical size. */
+  screenshot(): Promise<Uint8Array>;
+  /** Restarts the timeout, so every frame of a shot receives the whole budget. */
+  restartTimeout(): void;
+  /** Runs caller work with the timeout paused; its errors pass through unchanged. */
+  outside<T>(work: () => Promise<T>): Promise<T>;
+  result(): {networkDependent: boolean; warnings: string[]};
+};
+
+type StandaloneTileflowPagePhase = 'map-load' | 'theme-blend' | 'map-idle';
+
 const require = createRequire(import.meta.url);
 const mapLibreRuntimePaths = Object.freeze({
   css: require.resolve('maplibre-gl/dist/maplibre-gl.css'),
@@ -58,7 +82,8 @@ const tileflowBrowserModule = `${readFileSync(
   'utf8',
 )}\nglobalThis.__tileflowRegisterContourProtocol = registerTileflowContourProtocol;
 globalThis.__tileflowRegisterPmtilesProtocol = registerTileflowPmtilesProtocol;
-globalThis.__tileflowAttachAtmosphere = attachTileflowAtmosphere;`;
+globalThis.__tileflowAttachAtmosphere = attachTileflowAtmosphere;
+globalThis.__tileflowCreateThemeController = createTileflowThemeController;`;
 
 type PagePhaseResult =
   {status: 'ok'} | {message?: string; reason: 'error' | 'timeout'; status: 'failed'};
@@ -73,8 +98,28 @@ export async function captureStandaloneTileflowScene(
     );
   }
 
+  assertValidCaptureStyle(input.style, input.scene.map);
+  const {scene, ...pageInput} = input;
+  return withStandaloneTileflowPage({...pageInput, viewport: scene.viewport}, async (page) => {
+    await page.load(getTileflowStyleFontFaces(input.style));
+    await page.step('map-idle', '__tileflowCaptureIdle', {
+      camera: scene.camera,
+      mapEventTimeoutMs: page.mapEventTimeoutMs,
+    });
+    const png = await page.screenshot();
+    return {
+      height: scene.viewport.height,
+      png,
+      width: scene.viewport.width,
+      ...page.result(),
+    };
+  });
+}
+
+/** Rejects a compiled style before any browser work, with the capture error contract. */
+export function assertValidCaptureStyle(style: MapLibreStyle, label: string): void {
   try {
-    assertValidTileflowStyle(input.style, input.scene.map);
+    assertValidTileflowStyle(style, label);
   } catch (error) {
     if (error instanceof TileflowStyleValidationError) {
       throw new TileflowCaptureError('STYLE_INVALID', error.message, {
@@ -87,8 +132,18 @@ export async function captureStandaloneTileflowScene(
     }
     throw error;
   }
+}
 
+/**
+ * Opens one fresh browser context and page for a standalone style, routes the MapLibre runtime and
+ * compiled assets into it, and closes it after `run`. Failures map to capture error codes by phase.
+ */
+export async function withStandaloneTileflowPage<T>(
+  input: StandaloneTileflowPageInput,
+  run: (page: StandaloneTileflowPage) => Promise<T>,
+): Promise<T> {
   const timeoutMs = input.timeoutMs ?? 30_000;
+  const mapEventTimeoutMs = Math.max(1, timeoutMs - 1_000);
   const mapLibreRuntimeUrls = createMapLibreRuntimeUrls(
     resolveMapLibreRuntimeDocumentOrigin(input.style),
   );
@@ -100,6 +155,18 @@ export async function captureStandaloneTileflowScene(
     termination = 'aborted';
     void context?.close().catch(() => undefined);
   };
+  const stopTimeout = () => {
+    if (timeout) clearTimeout(timeout);
+    timeout = undefined;
+  };
+  const restartTimeout = () => {
+    stopTimeout();
+    timeout = setTimeout(() => {
+      termination = 'timeout';
+      void context?.close().catch(() => undefined);
+    }, timeoutMs);
+    timeout.unref?.();
+  };
 
   if (input.signal?.aborted) {
     throw new TileflowCaptureError('ABORTED', 'Tileflow capture was aborted.');
@@ -109,7 +176,7 @@ export async function captureStandaloneTileflowScene(
     context = await input.browser.newContext({
       acceptDownloads: false,
       colorScheme: 'light',
-      deviceScaleFactor: input.scene.viewport.dpr,
+      deviceScaleFactor: input.viewport.dpr,
       ignoreHTTPSErrors: false,
       javaScriptEnabled: true,
       locale: 'en-US',
@@ -117,8 +184,8 @@ export async function captureStandaloneTileflowScene(
       serviceWorkers: 'block',
       timezoneId: 'UTC',
       viewport: {
-        height: input.scene.viewport.height,
-        width: input.scene.viewport.width,
+        height: input.viewport.height,
+        width: input.viewport.width,
       },
     });
     input.signal?.addEventListener('abort', onAbort, {once: true});
@@ -126,11 +193,7 @@ export async function captureStandaloneTileflowScene(
       onAbort();
       throw new TileflowCaptureError('ABORTED', 'Tileflow capture was aborted.');
     }
-    timeout = setTimeout(() => {
-      termination = 'timeout';
-      void context?.close().catch(() => undefined);
-    }, timeoutMs);
-    timeout.unref?.();
+    restartTimeout();
 
     const assets = new Map(input.assets.map((asset) => [asset.fileName, asset]));
     const frozenResources = new Map(
@@ -139,7 +202,6 @@ export async function captureStandaloneTileflowScene(
     const localTilesets = new Map(
       (input.localTilesets ?? []).map((tileset) => [tileset.fileName, tileset]),
     );
-    const fontFaces = getTileflowStyleFontFaces(input.style);
     const remoteOrigins = new Set<string>();
     let lineBackgroundGlyphs: TileflowLineBackgroundGlyphResponder | undefined;
     let syntheticAssetFailure: string | undefined;
@@ -172,7 +234,7 @@ export async function captureStandaloneTileflowScene(
       }
 
       if (url.origin === mapLibreRuntimeUrls.origin) {
-        const runtime = getMapLibreRuntimeResponse(url.pathname, input.scene.viewport);
+        const runtime = getMapLibreRuntimeResponse(url.pathname, input.viewport);
         if (runtime) {
           await route.fulfill(runtime);
           return;
@@ -289,71 +351,74 @@ globalThis.maplibregl = maplibregl;`,
     await page.addScriptTag({content: tileflowBrowserModule, type: 'module'});
     await page.addScriptTag({content: renderMapInPageScript});
 
-    phase = 'map-load';
-    const loadResult = await page.evaluate(
-      (renderInput) => {
-        const renderWindow = window as typeof window & {
-          __tileflowCaptureLoad: (value: typeof renderInput) => Promise<PagePhaseResult>;
-        };
-        return renderWindow.__tileflowCaptureLoad(renderInput);
-      },
-      {
-        fontFaces,
-        mapEventTimeoutMs: Math.max(1, timeoutMs - 1_000),
-        style: input.style,
-      },
-    );
-    assertPhaseSucceeded(loadResult, phase, syntheticAssetFailure, resourceFailures, pageFailed);
-
-    phase = 'map-idle';
-    const idleResult = await page.evaluate(
-      (renderInput) => {
-        const renderWindow = window as typeof window & {
-          __tileflowCaptureIdle: (value: typeof renderInput) => Promise<PagePhaseResult>;
-        };
-        return renderWindow.__tileflowCaptureIdle(renderInput);
-      },
-      {
-        camera: input.scene.camera,
-        mapEventTimeoutMs: Math.max(1, timeoutMs - 1_000),
-      },
-    );
-    assertPhaseSucceeded(idleResult, phase, syntheticAssetFailure, resourceFailures, pageFailed);
-
-    phase = 'screenshot';
-    let png: Uint8Array;
-    try {
-      png = new Uint8Array(
-        await page.locator('#map').screenshot({animations: 'disabled', type: 'png'}),
-      );
-    } catch (error) {
-      throw new TileflowCaptureError(
-        'SCREENSHOT_FAILED',
-        'Tileflow could not produce the map PNG.',
-        {
-          cause: error,
-          details: {phase},
+    const step = async (stepPhase: StandaloneTileflowPagePhase, name: string, value: unknown) => {
+      phase = stepPhase;
+      const result = await page.evaluate(
+        ({name: functionName, value: stepInput}) => {
+          const renderWindow = window as unknown as Record<
+            string,
+            (value: unknown) => Promise<PagePhaseResult>
+          >;
+          return renderWindow[functionName]!(stepInput);
         },
+        {name, value},
       );
-    }
-    assertPostScreenshotSucceeded(syntheticAssetFailure, resourceFailures, pageFailed);
-    assertPngDimensions(
-      png,
-      input.scene.viewport.width * input.scene.viewport.dpr,
-      input.scene.viewport.height * input.scene.viewport.dpr,
-    );
-
-    const warnings = [...remoteOrigins]
-      .sort(compareCodeUnits)
-      .map((origin) => `Capture requested remote resources from ${origin}.`);
-
-    return {
-      height: input.scene.viewport.height,
-      networkDependent: remoteOrigins.size > 0,
-      png,
-      warnings,
-      width: input.scene.viewport.width,
+      assertPhaseSucceeded(result, stepPhase, syntheticAssetFailure, resourceFailures, pageFailed);
     };
+
+    return await run({
+      page,
+      mapEventTimeoutMs,
+      load: (fontFaces) =>
+        step('map-load', '__tileflowCaptureLoad', {
+          fontFaces,
+          mapEventTimeoutMs,
+          style: input.style,
+        }),
+      step,
+      async screenshot() {
+        phase = 'screenshot';
+        let png: Uint8Array;
+        try {
+          png = new Uint8Array(
+            await page.locator('#map').screenshot({animations: 'disabled', type: 'png'}),
+          );
+        } catch (error) {
+          throw new TileflowCaptureError(
+            'SCREENSHOT_FAILED',
+            'Tileflow could not produce the map PNG.',
+            {
+              cause: error,
+              details: {phase},
+            },
+          );
+        }
+        assertPostScreenshotSucceeded(syntheticAssetFailure, resourceFailures, pageFailed);
+        assertPngDimensions(
+          png,
+          input.viewport.width * input.viewport.dpr,
+          input.viewport.height * input.viewport.dpr,
+        );
+        return png;
+      },
+      restartTimeout,
+      async outside(work) {
+        stopTimeout();
+        try {
+          return await work();
+        } catch (error) {
+          throw new CallerFailure(error);
+        }
+      },
+      result() {
+        return {
+          networkDependent: remoteOrigins.size > 0,
+          warnings: [...remoteOrigins]
+            .sort(compareCodeUnits)
+            .map((origin) => `Capture requested remote resources from ${origin}.`),
+        };
+      },
+    });
   } catch (error) {
     if (termination === 'aborted') {
       throw new TileflowCaptureError('ABORTED', 'Tileflow capture was aborted.', {cause: error});
@@ -364,6 +429,10 @@ globalThis.maplibregl = maplibregl;`,
         cause: error,
         details: {phase},
       });
+    }
+
+    if (error instanceof CallerFailure) {
+      throw error.error;
     }
 
     if (error instanceof TileflowCaptureError) {
@@ -387,17 +456,24 @@ globalThis.maplibregl = maplibregl;`,
         },
       );
     }
-    throw new TileflowCaptureError('MAP_LOAD_FAILED', mapFailureMessage(phase), {
-      cause: error,
-      details: {phase},
-    });
+    throw new TileflowCaptureError(
+      'MAP_LOAD_FAILED',
+      mapFailureMessage(phase === 'theme-blend' || phase === 'map-load' ? phase : 'map-idle'),
+      {
+        cause: error,
+        details: {phase},
+      },
+    );
   } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
+    stopTimeout();
     input.signal?.removeEventListener('abort', onAbort);
     await context?.close().catch(() => undefined);
   }
+}
+
+/** Carries an error thrown by caller work inside a page session past its phase mapping. */
+class CallerFailure {
+  constructor(readonly error: unknown) {}
 }
 
 function createMapLibreRuntimeUrls(origin: string) {
@@ -566,7 +642,7 @@ async function localTilesetCaptureResponse(
 
 function assertPhaseSucceeded(
   result: PagePhaseResult,
-  phase: 'map-load' | 'map-idle',
+  phase: StandaloneTileflowPagePhase,
   syntheticAssetFailure: string | undefined,
   resourceFailures: TileflowCaptureResourceDiagnostic[],
   pageFailed: boolean,
@@ -707,15 +783,16 @@ function resourceLabel(kind: TileflowCaptureResourceKind): string {
 
 function timeoutMessage(phase: TileflowCapturePhase): string {
   if (phase === 'map-load') return 'MapLibre did not finish loading before the capture timeout.';
+  if (phase === 'theme-blend') return 'The theme blend was not ready before the capture timeout.';
   if (phase === 'map-idle') return 'MapLibre did not become idle before the capture timeout.';
   if (phase === 'screenshot') return 'PNG production exceeded the capture timeout.';
   return 'Tileflow capture exceeded its timeout while creating the browser page.';
 }
 
-function mapFailureMessage(phase: 'map-load' | 'map-idle'): string {
-  return phase === 'map-load'
-    ? 'MapLibre failed while loading the compiled style.'
-    : 'MapLibre failed while waiting for the committed camera to become idle.';
+function mapFailureMessage(phase: StandaloneTileflowPagePhase): string {
+  if (phase === 'map-load') return 'MapLibre failed while loading the compiled style.';
+  if (phase === 'theme-blend') return 'Tileflow could not prepare the theme blend.';
+  return 'MapLibre failed while waiting for the committed camera to become idle.';
 }
 
 function safeMapError(value: string): string {
@@ -813,6 +890,7 @@ window.__tileflowCaptureLoad = async function(input) {
       style: input.style
     });
     window.__tileflowMap = map;
+    window.__tileflowCaptureStyle = input.style;
     window.__tileflowAttachAtmosphere(map);
     return await waitForMapEvent(map, "load", input.mapEventTimeoutMs);
   } catch (error) {
@@ -874,6 +952,58 @@ window.__tileflowCaptureIdle = async function(input) {
 
   try {
     applyCamera(map, input.camera);
+    const result = await waitForMapEvent(map, "idle", input.mapEventTimeoutMs);
+    if (result.status === "failed") return result;
+    await nextFrame();
+    await nextFrame();
+    return {status: "ok"};
+  } catch {
+    return {status: "failed", reason: "error"};
+  }
+};
+
+// A shot prepares its theme blend once; each frame then only moves the blend position.
+window.__tileflowCapturePrepareBlend = async function(input) {
+  const map = window.__tileflowMap;
+  if (!map) return {status: "failed", reason: "error"};
+
+  try {
+    const controller = window.__tileflowCreateThemeController({
+      initial: {style: window.__tileflowCaptureStyle, theme: input.theme},
+      loadFonts: () => Promise.resolve(),
+      map,
+      timeoutMs: input.mapEventTimeoutMs
+    });
+    const themes = input.themes.map((theme) => ({style: theme.style, theme: theme.theme}));
+    const result = await controller.setBlend({position: input.position, themes});
+    if (result.status !== "applied") {
+      controller.dispose();
+      return {status: "failed", reason: "error", message: String(result.error?.message || "")};
+    }
+    window.__tileflowShotBlend = {controller, themes};
+    return {status: "ok"};
+  } catch (error) {
+    return {status: "failed", reason: "error", message: String(error?.message || error || "")};
+  }
+};
+
+window.__tileflowCaptureFrame = async function(input) {
+  const map = window.__tileflowMap;
+  if (!map) return {status: "failed", reason: "error"};
+
+  try {
+    const blend = window.__tileflowShotBlend;
+    if (blend && input.blendPosition !== undefined) {
+      const result = await blend.controller.setBlend({
+        position: input.blendPosition,
+        themes: blend.themes
+      });
+      if (result.status !== "applied") {
+        return {status: "failed", reason: "error", message: String(result.error?.message || "")};
+      }
+    }
+    applyCamera(map, input.camera);
+    map.triggerRepaint();
     const result = await waitForMapEvent(map, "idle", input.mapEventTimeoutMs);
     if (result.status === "failed") return result;
     await nextFrame();

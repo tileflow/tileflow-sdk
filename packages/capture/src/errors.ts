@@ -17,12 +17,22 @@ export type TileflowCaptureErrorCode =
   | 'RESOURCE_FAILED'
   | 'SCENE_NOT_FOUND'
   | 'SCREENSHOT_FAILED'
+  | 'SHOT_NOT_FOUND'
   | 'STYLE_INVALID'
   | 'SYNTHETIC_ASSET_NOT_FOUND'
+  | 'VIDEO_ENCODE_FAILED'
+  | 'VIDEO_ENCODER_UNAVAILABLE'
   | 'WORLD_RESOLUTION_FAILED';
 
 export type TileflowCapturePhase =
-  'style-validation' | 'browser-start' | 'resource-load' | 'map-load' | 'map-idle' | 'screenshot';
+  | 'style-validation'
+  | 'browser-start'
+  | 'resource-load'
+  | 'map-load'
+  | 'theme-blend'
+  | 'map-idle'
+  | 'screenshot'
+  | 'video-encode';
 
 export type TileflowCaptureDiagnostic = {
   message: string;

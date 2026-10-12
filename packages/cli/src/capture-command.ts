@@ -4,11 +4,16 @@ import {isAbsolute, relative, resolve, sep} from 'node:path';
 import {
   createTileflowCaptureSession,
   serializeTileflowCaptureReceipt,
+  serializeTileflowShotReceipt,
   setupTileflowCaptureBrowser,
   type TileflowCapture,
   TileflowCaptureError,
   type TileflowCaptureRendererIdentity,
   type TileflowCaptureResourceDiagnostic,
+  type TileflowShotCapture,
+  type TileflowShotFormat,
+  type TileflowShotFrame,
+  type TileflowShotVideoCodec,
   tileflowSyntheticAssetOrigin,
   TileflowVisualReviewError,
 } from '@tileflow/capture';
@@ -18,6 +23,7 @@ import {
   normalizeTileflowCaptureScene,
   tileflowCaptureSceneNameSchema,
   tileflowCaptureSceneSchema,
+  tileflowCaptureShotNameSchema,
 } from '@tileflow/core';
 import {
   createTileflowArtifactDiagnostics,
@@ -29,11 +35,19 @@ import {
 import {TileflowValidationError} from '@tileflow/dev/config';
 import {TileflowIconCompilationError} from '@tileflow/dev/icons';
 import {TileflowStyleValidationError} from '@tileflow/dev/validation';
-import {captureReceiptPath, writeCapturePair} from './capture-output';
+import {
+  captureReceiptPath,
+  commitShotFrameDirectory,
+  stageShotFrameDirectory,
+  type StagedShotFrameDirectory,
+  writeAtomicFileSet,
+  writeCapturePair,
+} from './capture-output';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 
 export type CaptureCommandOptions = {
   all?: boolean;
+  allShots?: boolean;
   appOrigin?: string;
   bearing?: string;
   bounds?: string;
@@ -42,6 +56,7 @@ export type CaptureCommandOptions = {
   config: string;
   dpr?: string;
   force?: boolean;
+  format?: string;
   frame?: 'map' | 'viewport';
   height?: string;
   json?: boolean;
@@ -50,6 +65,7 @@ export type CaptureCommandOptions = {
   outDir?: string;
   pitch?: string;
   selector?: string;
+  shot?: string[];
   theme?: string;
   url?: string;
   width?: string;
@@ -83,9 +99,37 @@ export type TileflowCaptureJsonEntry = {
   warnings: string[];
 };
 
+export type TileflowShotCaptureJsonV1 = {
+  schemaVersion: 1;
+  command: 'capture.shot';
+  shots: TileflowShotCaptureJsonEntry[];
+};
+
+export type TileflowShotCaptureJsonEntry = {
+  shot: string;
+  map: string;
+  theme: string;
+  status: 'captured';
+  format: TileflowShotFormat;
+  codec?: TileflowShotVideoCodec;
+  outputPath: string;
+  receiptPath: string;
+  sha256: string;
+  framesSha256: string;
+  frameCount: number;
+  fps: number;
+  durationMs: number;
+  width: number;
+  height: number;
+  dpr: 1 | 2;
+  renderer: TileflowCaptureRendererIdentity;
+  networkDependent: boolean;
+  warnings: string[];
+};
+
 export type TileflowCaptureFailureJsonV1 = {
   schemaVersion: 1;
-  command: 'capture' | 'setup.capture' | 'visual.compare';
+  command: 'capture' | 'capture.shot' | 'setup.capture' | 'visual.compare';
   status: 'failed';
   code: string;
   phase: string;
@@ -149,10 +193,20 @@ export function registerCaptureCommands(
 
   program
     .command('capture')
-    .description('Render Tileflow scenes to PNG with a pinned headless browser')
+    .description(
+      'Render Tileflow scenes to PNG, or timed shots to video, with a pinned headless browser',
+    )
     .argument('[scenes...]', 'named committed capture scenes')
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)
     .option('--all', 'capture every configured scene')
+    .option(
+      '--shot <name>',
+      'render a committed timed shot; repeat for more shots',
+      collectOption,
+      [],
+    )
+    .option('--all-shots', 'render every committed timed shot')
+    .option('--format <format>', 'shot output: webm (default) or frames')
     .option('--map <name>', 'capture one map with an uncommitted camera')
     .option('--theme <name>', 'required concrete theme for exploratory --map capture')
     .option('--center <lng,lat>', 'exploratory center camera')
@@ -167,7 +221,7 @@ export function registerCaptureCommands(
     .option('--url <url>', 'one-off full loopback URL for exactly one named scene')
     .option('--selector <selector>', 'one-off application target selector')
     .option('--frame <frame>', 'application capture frame: map or viewport')
-    .option('--out <path>', 'PNG path for one capture')
+    .option('--out <path>', 'PNG path for one scene, or .webm/frame directory for one shot')
     .option('--out-dir <path>', 'directory for one or more captures')
     .option('--force', 'replace different explicit output files')
     .option('--json', 'print deterministic schema-version-1 JSON')
@@ -184,10 +238,241 @@ export function registerCaptureCommands(
       try {
         await runCaptureCommand(scenes ?? [], options);
       } catch (error) {
-        printCaptureError(error, {command: 'capture', json: options.json});
+        printCaptureError(error, {
+          command: isShotSelection(options) ? 'capture.shot' : 'capture',
+          json: options.json,
+        });
         process.exitCode = 1;
       }
     });
+}
+
+function collectOption(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+function isShotSelection(options: CaptureCommandOptions): boolean {
+  return Boolean(options.allShots) || (options.shot?.length ?? 0) > 0;
+}
+
+export function createTileflowShotCaptureJson(
+  shots: Array<{capture: TileflowShotCapture; outputPath: string; receiptPath: string}>,
+  cwd: string,
+): TileflowShotCaptureJsonV1 {
+  return {
+    schemaVersion: 1,
+    command: 'capture.shot',
+    shots: [...shots]
+      .sort((left, right) => compareCodeUnits(left.capture.shot, right.capture.shot))
+      .map(({capture, outputPath, receiptPath}) => ({
+        shot: capture.shot,
+        map: capture.map,
+        theme: capture.theme,
+        status: 'captured',
+        format: capture.format,
+        ...(capture.codec ? {codec: capture.codec} : {}),
+        outputPath: relativePath(cwd, outputPath),
+        receiptPath: relativePath(cwd, receiptPath),
+        sha256: capture.sha256,
+        framesSha256: capture.framesSha256,
+        frameCount: capture.frameCount,
+        fps: capture.fps,
+        durationMs: capture.durationMs,
+        width: capture.width,
+        height: capture.height,
+        dpr: capture.dpr,
+        renderer: capture.renderer,
+        networkDependent: capture.networkDependent,
+        warnings: [...capture.warnings].sort(compareCodeUnits),
+      })),
+  };
+}
+
+export function serializeTileflowShotCaptureJson(value: TileflowShotCaptureJsonV1): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
+/** Shot receipts sit beside their video or frame directory. */
+export function shotReceiptPath(outputPath: string): string {
+  return outputPath.toLowerCase().endsWith('.webm')
+    ? `${outputPath.slice(0, -5)}.receipt.json`
+    : `${outputPath}.receipt.json`;
+}
+
+async function runCaptureShotCommand(options: CaptureCommandOptions): Promise<void> {
+  const cwd = process.cwd();
+  const format: TileflowShotFormat = options.format === 'frames' ? 'frames' : 'webm';
+  const controller = installSignalAbortController();
+  const session = createTileflowCaptureSession({
+    allowBrowserInstall: options.browserInstall,
+    config: options.config,
+    cwd,
+    onBrowserInstallProgress: options.json ? undefined : printInstallProgress,
+    signal: controller.signal,
+  });
+  const stages = new Map<string, StagedShotFrameDirectory>();
+
+  try {
+    const onFrame =
+      format === 'frames'
+        ? async (frame: TileflowShotFrame) => {
+            let stage = stages.get(frame.shot);
+            if (!stage) {
+              const target = resolveShotOutputTarget(frame.shot, options, format, cwd);
+              stage = await stageShotFrameDirectory({
+                boundaryPath: target.boundaryPath,
+                directory: target.outputPath,
+              });
+              stages.set(frame.shot, stage);
+            }
+            await stage.write(frame.index, frame.png);
+          }
+        : undefined;
+    const shotOptions = {format, ...(onFrame ? {onFrame} : {}), signal: controller.signal};
+    const result = options.allShots
+      ? await session.captureAllShots(shotOptions)
+      : await session.captureShots(options.shot ?? [], shotOptions);
+    const written: Array<{capture: TileflowShotCapture; outputPath: string; receiptPath: string}> =
+      [];
+
+    for (const capture of result.shots) {
+      const target = resolveShotOutputTarget(capture.shot, options, format, cwd);
+      const receipt = serializeTileflowShotReceipt(capture.receipt);
+      if (capture.video) {
+        await writeAtomicFileSet({
+          boundaryPath: target.boundaryPath,
+          files: [
+            {path: target.outputPath, source: capture.video},
+            {path: target.receiptPath, source: receipt},
+          ],
+          force: Boolean(options.force),
+          label: 'Shot output',
+          managed: target.managed,
+        });
+      } else {
+        const stage = stages.get(capture.shot);
+        if (!stage) throw new Error(`Shot ${capture.shot} produced no frames.`);
+        await commitShotFrameDirectory({
+          force: Boolean(options.force),
+          managed: target.managed,
+          receipt,
+          receiptPath: target.receiptPath,
+          stage,
+        });
+        stages.delete(capture.shot);
+      }
+      written.push({capture, outputPath: target.outputPath, receiptPath: target.receiptPath});
+    }
+
+    if (!options.out && !options.outDir) await warnIfManagedCapturesAreNotIgnored(cwd);
+
+    const document = createTileflowShotCaptureJson(written, cwd);
+    if (options.json) {
+      process.stdout.write(serializeTileflowShotCaptureJson(document));
+      return;
+    }
+    for (const entry of document.shots) {
+      console.log(
+        `Rendered ${entry.shot} -> ${entry.outputPath} (${entry.frameCount} frames, ${entry.sha256.slice(0, 12)}).`,
+      );
+      if (entry.networkDependent) {
+        console.error(`Shot ${entry.shot} used remote map resources.`);
+      }
+    }
+  } finally {
+    await Promise.allSettled([...stages.values()].map((stage) => stage.discard()));
+    await session.close();
+    controller.close();
+  }
+}
+
+function resolveShotOutputTarget(
+  shot: string,
+  options: CaptureCommandOptions,
+  format: TileflowShotFormat,
+  cwd: string,
+): {boundaryPath: string; managed: boolean; outputPath: string; receiptPath: string} {
+  const managed = !options.out && !options.outDir;
+  const directory = resolve(cwd, options.outDir ?? '.tileflow/captures/shots');
+  const outputPath = options.out
+    ? resolve(cwd, options.out)
+    : resolve(directory, format === 'webm' ? `${shot}.webm` : shot);
+  const receiptPath = shotReceiptPath(outputPath);
+
+  if (managed) {
+    const relativeToRoot = relative(directory, outputPath);
+    if (relativeToRoot.startsWith('..') || relativeToRoot.includes(`..${sep}`)) {
+      throw new Error('Managed shot output escaped .tileflow/captures/shots.');
+    }
+  }
+  relativePath(cwd, outputPath);
+  relativePath(cwd, receiptPath);
+
+  return {
+    boundaryPath: managed ? cwd : options.outDir ? directory : resolve(outputPath, '..'),
+    managed,
+    outputPath,
+    receiptPath,
+  };
+}
+
+function validateShotSelectionOptions(
+  positionalScenes: readonly string[],
+  options: CaptureCommandOptions,
+): void {
+  const shots = options.shot ?? [];
+  if (options.allShots && shots.length > 0) {
+    throw new Error('Use either --shot or --all-shots, not both.');
+  }
+  if (positionalScenes.length > 0 || options.all || options.map) {
+    throw new Error('Render shots separately from scenes; --shot and --all-shots take no scenes.');
+  }
+  if (options.watch) {
+    throw new Error('--watch captures scenes; it does not render shots.');
+  }
+  const sceneOnlyOptions = [
+    options.center,
+    options.bounds,
+    options.zoom,
+    options.bearing,
+    options.pitch,
+    options.width,
+    options.height,
+    options.dpr,
+    options.theme,
+    options.url,
+    options.appOrigin,
+    options.selector,
+    options.frame,
+  ];
+  if (sceneOnlyOptions.some((value) => value !== undefined)) {
+    throw new Error(
+      'Shots render committed cameras and themes; camera, viewport, theme, and application flags apply to scenes.',
+    );
+  }
+  for (const shot of shots) {
+    if (!tileflowCaptureShotNameSchema.safeParse(shot).success) {
+      throw new Error('--shot expects a portable Tileflow shot name.');
+    }
+  }
+  if (options.format !== undefined && options.format !== 'webm' && options.format !== 'frames') {
+    throw new Error('--format expects webm or frames.');
+  }
+  if (options.out && options.outDir) {
+    throw new Error('Use either --out or --out-dir, not both.');
+  }
+  if (options.out) {
+    if (options.allShots || new Set(shots).size !== 1) {
+      throw new Error('--out can be used only when rendering one shot. Use --out-dir instead.');
+    }
+    const isVideoPath = options.out.toLowerCase().endsWith('.webm');
+    if ((options.format ?? 'webm') === 'webm' && !isVideoPath) {
+      throw new Error('--out must name a .webm file.');
+    }
+    if (options.format === 'frames' && (isVideoPath || /\.(?:json|png)$/iu.test(options.out))) {
+      throw new Error('--out must name a directory for --format frames.');
+    }
+  }
 }
 
 export function createTileflowCaptureJson(
@@ -262,6 +547,10 @@ async function runCaptureCommand(
 ): Promise<void> {
   validateSelectionOptions(positionalScenes, options);
   await withTileflowConfigSecretsHidden(async () => {
+    if (isShotSelection(options)) {
+      await runCaptureShotCommand(options);
+      return;
+    }
     if (options.watch) {
       await runCaptureWatchCommand(positionalScenes, options);
       return;
@@ -557,6 +846,13 @@ function validateSelectionOptions(
   positionalScenes: readonly string[],
   options: CaptureCommandOptions,
 ): void {
+  if (isShotSelection(options)) {
+    validateShotSelectionOptions(positionalScenes, options);
+    return;
+  }
+  if (options.format !== undefined) {
+    throw new Error('--format applies to --shot and --all-shots.');
+  }
   const exploratoryOptions = [
     options.center,
     options.bounds,
@@ -627,7 +923,9 @@ function validateSelectionOptions(
   }
 
   if (!options.all && positionalScenes.length === 0) {
-    throw new Error('Select at least one scene, use --all, or use --map for exploration.');
+    throw new Error(
+      'Select at least one scene, use --all, use --map for exploration, or select shots with --shot.',
+    );
   }
 }
 
@@ -830,6 +1128,8 @@ function captureFailurePhase(error: unknown, code: string): string {
   if (code === 'MAP_LOAD_FAILED') return 'map-load';
   if (code === 'SCREENSHOT_FAILED' || code === 'INVALID_PNG') return 'screenshot';
   if (code === 'SCENE_NOT_FOUND' || code.startsWith('APPLICATION_')) return 'scene-resolution';
+  if (code === 'SHOT_NOT_FOUND') return 'shot-resolution';
+  if (code.startsWith('VIDEO_')) return 'video-encode';
   if (code === 'ABORTED') return 'capture';
   return 'input-validation';
 }

@@ -67,6 +67,26 @@ export {
   tileflowStyleRouteInks,
   type TileflowRouteInks,
 } from './route-inks';
+export {
+  createTileflowTileReader,
+  readTileflowMapTileSource,
+  tileflowTilePointToLngLat,
+  tileflowTilesForBounds,
+  type TileflowTile,
+  type TileflowTileAddress,
+  type TileflowTileAreaRequest,
+  type TileflowTileReader,
+  type TileflowTileReaderOptions,
+  type TileflowTileRequestTransform,
+  type TileflowTileSourceMap,
+} from './tile-reader';
+export {
+  decodeTileflowVectorTile,
+  type TileflowTileFeature,
+  type TileflowTileGeometryType,
+  type TileflowTileLayer,
+  type TileflowVectorTileDecodeOptions,
+} from './vector-tile-decode';
 export type {
   TileflowDynamicImage,
   TileflowDynamicImageContext,

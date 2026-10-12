@@ -15,8 +15,9 @@ Use Node.js 22 or another runtime with `fetch`. Live requests require enabled Ti
 Team credential with `geocoding:read`. Keep privileged credentials on your application server.
 Browser and mobile interfaces call their own authorized server endpoint.
 
-Managed operations require paid Starter or a separate, finite Search evaluation grant. A Starter
-trial or complimentary assignment alone does not authorize Search. Free Teams can read categories.
+Free Teams, Starter trials and complimentary access run Search within their period's API units, up
+to 100,000 Search units, while Search without payment is open; a finite evaluation grant can extend
+them. Paid Starter runs Search within its shared API allowance and excess.
 Installing this package does not enable the service or grant access.
 
 ## Find nearby places
@@ -224,16 +225,19 @@ commercial search session. Hovering, displaying results and moving a map do not 
 `retryAfterSeconds`. The client never retries, including after throttling. Use `signal` for
 cancellation. Network failures can leave server completion uncertain.
 
-| Code                                                             | Action                                                              |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `GEOCODING_PLAN_UNAVAILABLE`                                     | Use paid Starter or request an eligible evaluation.                 |
-| `GEOCODING_EVALUATION_REQUIRED` / `GEOCODING_EVALUATION_EXPIRED` | Ask the Team's operator to review evaluation access.                |
-| `GEOCODING_EVALUATION_EXHAUSTED`                                 | Stop requests; review evaluation limits.                            |
-| `GEOCODING_PICK_LIMIT_EXCEEDED` / `GEOCODING_UPSTREAM_THROTTLED` | Respect `retryAfterSeconds`; retry only deliberately.               |
-| `GEOCODING_INVALID_CURSOR` / `GEOCODING_INVALID_SUGGESTION`      | Check the Team and original query; start a fresh search explicitly. |
-| `GEOCODING_CURSOR_EXPIRED` / `GEOCODING_SUGGESTION_EXPIRED`      | Request fresh results explicitly.                                   |
-| `GEOCODING_USAGE_UNCONFIRMED`                                    | Completion may already be charged. Inspect usage before repeating.  |
-| `GEOCODING_DISABLED`                                             | Search is disabled; installation does not activate it.              |
+| Code                                                             | Action                                                               |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `GEOCODING_PLAN_UNAVAILABLE`                                     | Use paid Starter or request an eligible evaluation.                  |
+| `GEOCODING_EVALUATION_REQUIRED` / `GEOCODING_EVALUATION_EXPIRED` | Ask the Team's operator to review evaluation access.                 |
+| `GEOCODING_EVALUATION_EXHAUSTED`                                 | Stop requests; review evaluation limits.                             |
+| `GEOCODING_UNPAID_LIMIT_REACHED`                                 | Search without payment reached its period limit; upgrade to Starter. |
+| `GEOCODING_UNPAID_BUDGET_EXHAUSTED`                              | Search without payment is paused; retry after `retryAfterSeconds`.   |
+| `GEOCODING_SUSPENDED`                                            | Search is suspended for the Team; contact support.                   |
+| `GEOCODING_PICK_LIMIT_EXCEEDED` / `GEOCODING_UPSTREAM_THROTTLED` | Respect `retryAfterSeconds`; retry only deliberately.                |
+| `GEOCODING_INVALID_CURSOR` / `GEOCODING_INVALID_SUGGESTION`      | Check the Team and original query; start a fresh search explicitly.  |
+| `GEOCODING_CURSOR_EXPIRED` / `GEOCODING_SUGGESTION_EXPIRED`      | Request fresh results explicitly.                                    |
+| `GEOCODING_USAGE_UNCONFIRMED`                                    | Completion may already be charged. Inspect usage before repeating.   |
+| `GEOCODING_DISABLED`                                             | Search is disabled; installation does not activate it.               |
 
 Rejected or failed operations do not return a completed usage record. Never translate an unconfirmed
 completion into zero units. Confirmed server completion is not undone by a later disconnection.

@@ -87,6 +87,15 @@ export {
   type TileflowTileLayer,
   type TileflowVectorTileDecodeOptions,
 } from './vector-tile-decode';
+export {
+  createTileflowDepthMarkers,
+  tileflowDepthMarkerPlacement,
+  type TileflowDepthMarker,
+  type TileflowDepthMarkerHandle,
+  type TileflowDepthMarkerMap,
+  type TileflowDepthMarkers,
+  type TileflowDepthMarkersOptions,
+} from './depth-markers-browser';
 export type {
   TileflowDynamicImage,
   TileflowDynamicImageContext,

@@ -254,3 +254,7 @@ export async function duskWhileFlying(
   await controller.setBlend({position: 0.75, themes});
 }
 ```
+
+The React, Vue, and Svelte maps take the same flag in `themeBlend`: pass
+`themeBlend={{hold: true, position, themes}}` while the camera moves and drop `hold` when it rests.
+The React Native `Map` blends natively and does not take `hold`.

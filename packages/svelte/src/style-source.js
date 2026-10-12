@@ -1,6 +1,6 @@
+import {validateTileflowBrowserThemeBlendSelection} from '@tileflow/core/browser';
 import {
   validateTileflowRuntimeSource,
-  validateTileflowThemeBlendSelection,
   validateTileflowThemeSelection,
 } from '@tileflow/core/runtime';
 
@@ -20,10 +20,13 @@ export function validateTileflowMapStyleInputs(input) {
   if (input.theme !== undefined && !validateTileflowThemeSelection(input.theme)) {
     return {error: 'theme must be a concrete portable theme name or "system"', ok: false};
   }
-  if (input.themeBlend !== undefined && !validateTileflowThemeBlendSelection(input.themeBlend)) {
+  if (
+    input.themeBlend !== undefined &&
+    !validateTileflowBrowserThemeBlendSelection(input.themeBlend)
+  ) {
     return {
       error:
-        'themeBlend must name two to eight concrete themes and a position from 0 to themes.length - 1',
+        'themeBlend must name two to eight concrete themes, a position from 0 to themes.length - 1, and an optional boolean hold',
       ok: false,
     };
   }

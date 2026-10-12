@@ -15,6 +15,8 @@ import {
   type TileflowRuntimeStyle,
   type TileflowSessionController,
   type TileflowStyleFontFace,
+  type TileflowThemeBlendSelection,
+  validateTileflowThemeBlendSelection,
 } from './runtime';
 import {
   fillTileflowThemeBlendTemplate,
@@ -184,6 +186,22 @@ export type TileflowThemeBlendRequest = Readonly<{
    */
   hold?: boolean;
 }>;
+
+/**
+ * A blend of named themes as the React, Vue, and Svelte maps take it: `hold` holds back what
+ * would make MapLibre lay tiles out again, as `TileflowThemeBlendRequest.hold` does, and the next
+ * selection without it brings what waited in at once.
+ */
+export type TileflowBrowserThemeBlendSelection = TileflowThemeBlendSelection &
+  Readonly<{hold?: boolean}>;
+
+export function validateTileflowBrowserThemeBlendSelection(
+  value: unknown,
+): value is TileflowBrowserThemeBlendSelection {
+  if (!validateTileflowThemeBlendSelection(value)) return false;
+  const {hold} = value as {hold?: unknown};
+  return hold === undefined || typeof hold === 'boolean';
+}
 
 export type TileflowThemeBlendState = Readonly<{
   /** Whether changes held back by `hold` are waiting for a request without it. */

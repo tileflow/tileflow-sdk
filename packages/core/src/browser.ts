@@ -15,6 +15,8 @@ import {
   type TileflowRuntimeStyle,
   type TileflowSessionController,
   type TileflowStyleFontFace,
+  type TileflowThemeBlendSelection,
+  validateTileflowThemeBlendSelection,
 } from './runtime';
 import {
   fillTileflowThemeBlendTemplate,
@@ -176,10 +178,41 @@ export type TileflowThemeBlendRequest = Readonly<{
   position: number;
   /** Two to eight concrete themes of one map, in blend order. */
   themes: readonly TileflowRuntimeStyle[];
+  /**
+   * Holds back what would make MapLibre lay tiles out again: the change of nearest theme, with
+   * the labels, icons, and values it switches, and mixed pattern artwork. Colours, numbers, the
+   * sky, and light keep following the position, so a camera move or a recording never waits on
+   * the blend. The next request without `hold` brings what was held back in at once.
+   */
+  hold?: boolean;
 }>;
 
+/**
+ * A blend of named themes as the React, Vue, and Svelte maps take it: `hold` holds back what
+ * would make MapLibre lay tiles out again, as `TileflowThemeBlendRequest.hold` does, and the next
+ * selection without it brings what waited in at once.
+ */
+export type TileflowBrowserThemeBlendSelection = TileflowThemeBlendSelection &
+  Readonly<{hold?: boolean}>;
+
+export function validateTileflowBrowserThemeBlendSelection(
+  value: unknown,
+): value is TileflowBrowserThemeBlendSelection {
+  if (!validateTileflowThemeBlendSelection(value)) return false;
+  const {hold} = value as {hold?: unknown};
+  return hold === undefined || typeof hold === 'boolean';
+}
+
 export type TileflowThemeBlendState = Readonly<{
+  /** Whether changes held back by `hold` are waiting for a request without it. */
+  held: boolean;
   position: number;
+  /**
+   * Positions where the nearest theme changes over values that make MapLibre lay tiles out
+   * again, such as icon names, layout values, and values that read feature data or state. Plan
+   * a camera move or a recording around them, or pass `hold` across them.
+   */
+  relayoutAt: readonly number[];
   themes: readonly string[];
 }>;
 
@@ -377,7 +410,9 @@ export function createTileflowThemeController(options: {
     getBlend() {
       if (!activeBlend) return undefined;
       return {
+        held: activeBlend.blender.held,
         position: activeBlend.blender.position,
+        relayoutAt: activeBlend.blender.relayoutAt,
         themes: activeBlend.themes.map((theme) => theme.theme!),
       };
     },
@@ -438,7 +473,7 @@ export function createTileflowThemeController(options: {
       if (activeBlend?.key === key) {
         // The same themes: only the position moves, at once, superseding older pending changes.
         requestId += 1;
-        activeBlend.blender.set(request.position);
+        activeBlend.blender.set(request.position, {hold: request.hold === true});
         current = activeBlend.themes[activeBlend.blender.dominant]!;
         images?.invalidate();
         return Promise.resolve({status: 'applied', theme: current.theme});
@@ -1428,8 +1463,6 @@ export type TileflowUserTransformRequest<
   TResourceType,
 > = (url: string, resourceType?: TResourceType) => Promise<TRequest> | TRequest | undefined;
 
-export type TileflowAsyncAnalyticsTiming = 'request' | 'resolution';
-
 export function createTileflowSessionStarter(options: {
   getSessionId?: () => string;
   sessionId: string;
@@ -1597,80 +1630,38 @@ export function attachTileflowMapLifecycle<TMap, TFrame>(options: {
   };
 }
 
+/**
+ * Compose the caller's request transform with Tileflow analytics, the Hosted session, and the
+ * World bridge. Analytics are read when each request starts, so an asynchronous user transform
+ * never attaches analytics that changed while it was pending.
+ */
 export function createTileflowTransformRequest<
   TRequest extends TileflowTransformRequestParameters = TileflowTransformRequestParameters,
   TResourceType = unknown,
 >(options: {
-  always: true;
-  asyncAnalyticsTiming?: TileflowAsyncAnalyticsTiming;
   getAnalytics: () => TileflowAnalytics | undefined;
   sessionController?: TileflowSessionController;
   sessionId: string;
   transformRequest?: TileflowUserTransformRequest<TRequest, TResourceType>;
   worldRequestBridge?: TileflowWorldRequestBridge;
-}): TileflowTransformRequest<TRequest, TResourceType>;
-export function createTileflowTransformRequest<
-  TRequest extends TileflowTransformRequestParameters = TileflowTransformRequestParameters,
-  TResourceType = unknown,
->(options: {
-  always?: boolean;
-  asyncAnalyticsTiming?: TileflowAsyncAnalyticsTiming;
-  getAnalytics: () => TileflowAnalytics | undefined;
-  sessionController?: TileflowSessionController;
-  sessionId: string;
-  transformRequest?: TileflowUserTransformRequest<TRequest, TResourceType>;
-  worldRequestBridge?: TileflowWorldRequestBridge;
-}): TileflowTransformRequest<TRequest, TResourceType> | undefined;
-export function createTileflowTransformRequest<
-  TRequest extends TileflowTransformRequestParameters = TileflowTransformRequestParameters,
-  TResourceType = unknown,
->(options: {
-  always?: boolean;
-  asyncAnalyticsTiming?: TileflowAsyncAnalyticsTiming;
-  getAnalytics: () => TileflowAnalytics | undefined;
-  sessionController?: TileflowSessionController;
-  sessionId: string;
-  transformRequest?: TileflowUserTransformRequest<TRequest, TResourceType>;
-  worldRequestBridge?: TileflowWorldRequestBridge;
-}): TileflowTransformRequest<TRequest, TResourceType> | undefined {
-  if (!options.always && !options.transformRequest && !options.worldRequestBridge) {
-    const analytics = options.getAnalytics();
-    const requiresCommercialSession = Boolean(options.sessionController && analytics?.mapId);
-
-    if (!requiresCommercialSession && (!analytics || analytics.enabled === false)) {
-      return undefined;
-    }
-  }
-
-  const asyncAnalyticsTiming = options.asyncAnalyticsTiming ?? 'request';
-
+}): TileflowTransformRequest<TRequest, TResourceType> {
   return (url, resourceType) => {
     const request = options.transformRequest?.(url, resourceType);
-    const analyticsAtRequest =
-      asyncAnalyticsTiming === 'request' ? options.getAnalytics() : undefined;
+    const analytics = options.getAnalytics();
+    const apply = (resolvedRequest: TRequest | undefined) =>
+      applyTileflowRequest(
+        url,
+        resolvedRequest,
+        analytics,
+        options.sessionId,
+        options.sessionController,
+        options.worldRequestBridge,
+      );
 
     if (isPromiseLike(request)) {
-      return request.then(
-        (resolvedRequest) =>
-          applyTileflowRequest(
-            url,
-            resolvedRequest,
-            asyncAnalyticsTiming === 'resolution' ? options.getAnalytics() : analyticsAtRequest,
-            options.sessionId,
-            options.sessionController,
-            options.worldRequestBridge,
-          ) ?? resolvedRequest,
-      );
+      return request.then((resolvedRequest) => apply(resolvedRequest) ?? resolvedRequest);
     }
-
-    return applyTileflowRequest(
-      url,
-      request,
-      asyncAnalyticsTiming === 'resolution' ? options.getAnalytics() : analyticsAtRequest,
-      options.sessionId,
-      options.sessionController,
-      options.worldRequestBridge,
-    );
+    return apply(request);
   };
 }
 

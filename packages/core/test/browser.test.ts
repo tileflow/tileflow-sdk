@@ -769,7 +769,6 @@ test('World bridge follows signed notice activation and shapes an empty tile', a
     onNotice: (notice) => notices.push(notice),
   });
   const transform = createTileflowTransformRequest({
-    always: true,
     getAnalytics: () => undefined,
     sessionId: 'ses_stateless',
     transformRequest: () => ({
@@ -1278,7 +1277,6 @@ test('session starter follows a rotated commercial session identity', () => {
 test('transform request preserves sync user fields and applies analytics to the user URL', () => {
   let resourceType: string | undefined;
   const transform = createTileflowTransformRequest({
-    always: true,
     getAnalytics: () => ({apiUrl: 'https://api.example.com', mapId: 'map_1', styleId: 'style_1'}),
     sessionId: 'ses_test',
     transformRequest: (_url: string, nextResourceType?: string) => {
@@ -1301,33 +1299,20 @@ test('transform request preserves sync user fields and applies analytics to the 
   assert.equal(requestUrl.searchParams.get('styleId'), 'style_1');
 });
 
-test('transform request preserves request-time and resolution-time async analytics policies', async () => {
+test('async transforms use the analytics read when the request starts', async () => {
   let analytics = {apiUrl: 'https://api.example.com', mapId: 'map_before'};
-  const requestDeferred = deferred<{url: string}>();
-  const resolutionDeferred = deferred<{url: string}>();
-  const requestTransform = createTileflowTransformRequest({
-    always: true,
-    asyncAnalyticsTiming: 'request',
+  const pending = deferred<{url: string}>();
+  const transform = createTileflowTransformRequest({
     getAnalytics: () => analytics,
     sessionId: 'ses_test',
-    transformRequest: () => requestDeferred.promise,
-  });
-  const resolutionTransform = createTileflowTransformRequest({
-    always: true,
-    asyncAnalyticsTiming: 'resolution',
-    getAnalytics: () => analytics,
-    sessionId: 'ses_test',
-    transformRequest: () => resolutionDeferred.promise,
+    transformRequest: () => pending.promise,
   });
 
-  const requestResult = requestTransform('https://api.example.com/tiles/a/0/0/0.pbf');
-  const resolutionResult = resolutionTransform('https://api.example.com/tiles/b/0/0/0.pbf');
+  const result = transform('https://api.example.com/tiles/a/0/0/0.pbf');
   analytics = {...analytics, mapId: 'map_after'};
-  requestDeferred.resolve({url: 'https://api.example.com/tiles/a/0/0/0.pbf'});
-  resolutionDeferred.resolve({url: 'https://api.example.com/tiles/b/0/0/0.pbf'});
+  pending.resolve({url: 'https://api.example.com/tiles/a/0/0/0.pbf'});
 
-  assert.equal(new URL((await requestResult)!.url!).searchParams.get('map'), 'map_before');
-  assert.equal(new URL((await resolutionResult)!.url!).searchParams.get('map'), 'map_after');
+  assert.equal(new URL((await result)!.url!).searchParams.get('map'), 'map_before');
 });
 
 test('transform request composes the user rewrite with commercial authorization', async () => {
@@ -1356,35 +1341,23 @@ test('transform request composes the user rewrite with commercial authorization'
     }),
   });
 
-  assert.ok(transform);
   const request = await transform('https://api.example.com/tiles/original/0/0/0.pbf', 'Tile');
   assert.equal(authorizedUrl, 'https://api.example.com/tiles/rewrite/0/0/0.pbf');
   assert.deepEqual(request?.headers, {'x-user': 'preserved'});
   assert.equal(new URL(request!.url).searchParams.get('grant'), 'grant_test');
 });
 
-test('transform request can be omitted, remains a no-op when forced, and propagates rejection', async () => {
-  assert.equal(
-    createTileflowTransformRequest({
-      getAnalytics: () => undefined,
-      sessionId: 'ses_test',
-    }),
-    undefined,
-  );
-  assert.equal(
-    createTileflowTransformRequest({
-      getAnalytics: () => ({enabled: false, mapId: 'map_1'}),
-      sessionId: 'ses_test',
-    }),
-    undefined,
-  );
-
-  const forced = createTileflowTransformRequest({
-    always: true,
+test('transform request is always installed, a no-op without work, and propagates rejection', async () => {
+  const idle = createTileflowTransformRequest({
     getAnalytics: () => undefined,
     sessionId: 'ses_test',
   });
-  assert.equal(forced('https://example.com/tile.pbf'), undefined);
+  assert.equal(idle('https://example.com/tile.pbf'), undefined);
+  const disabledAnalytics = createTileflowTransformRequest({
+    getAnalytics: () => ({enabled: false, mapId: 'map_1'}),
+    sessionId: 'ses_test',
+  });
+  assert.equal(disabledAnalytics('https://example.com/tile.pbf'), undefined);
 
   const original = {headers: {'x-test': 'yes'}, url: 'https://example.com/tile.pbf'};
   const disabled = createTileflowTransformRequest({
@@ -1392,11 +1365,10 @@ test('transform request can be omitted, remains a no-op when forced, and propaga
     sessionId: 'ses_test',
     transformRequest: () => original,
   });
-  assert.equal(disabled?.('https://example.com/original.pbf'), original);
+  assert.equal(disabled('https://example.com/original.pbf'), original);
 
   const expected = new Error('transform failed');
   const rejecting = createTileflowTransformRequest({
-    always: true,
     getAnalytics: () => undefined,
     sessionId: 'ses_test',
     transformRequest: () => Promise.reject(expected),

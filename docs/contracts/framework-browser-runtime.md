@@ -91,6 +91,8 @@ set of themes loads their Styles and fonts and replaces the Style once with a pr
 holds every theme; until then, and in `data-tileflow-theme` throughout, the theme nearest to the
 position is the resolved theme. Later position changes for the same themes apply synchronously
 without a Style replacement or a theme transition event. Removing `themeBlend` applies `theme` again.
+`themeBlend.hold: true` holds back the change of nearest theme and mixed artwork, as the theme
+controller's `setBlend({hold: true})` does; the next selection without `hold` applies them at once.
 Blended themes must share sources, layers, filters, sprite, and glyphs; otherwise the blend fails
 without changing the map. Ground values follow the position; symbol values and values that read
 feature state change when the nearest theme changes, the latter with one source re-layout covered
@@ -255,18 +257,11 @@ only the owner action is the underlined link. `MANAGED_REQUIRED` cannot regress 
 same controller. Disposal removes the protocol registration and notice; ordinary MapLibre errors and
 shaped empty tiles do not.
 
-Two policies are explicit compatibility inputs:
-
-- `always: true` returns a transform even when analytics and a user transform are absent. React and
-  Svelte use this policy.
-- Without `always`, the helper returns `undefined` when no user transform exists and neither
-  analytics nor a hosted commercial session requires it. Vue uses this policy.
-
-Async analytics timing is also explicit. `request` snapshots analytics after the user transform is
-invoked and before its promise settles; Svelte uses this behavior. `resolution` reads analytics
-when the promise settles; React uses this behavior. Vue passes a getter over the analytics snapshot
-captured for that map instance, so either phase resolves the same snapshot. Synchronous transforms
-read analytics after invoking the user transform.
+The helper always returns a transform; React, Vue, and Svelte install it on every interactive map.
+It reads analytics once per request, after invoking the user transform and before an asynchronous
+result settles, so a request never carries analytics that changed while it was pending. Adapters
+pass a getter over their current analytics: a changed analytics prop applies to the next request
+and never recreates the map.
 
 ## Interaction composition boundary
 
@@ -292,17 +287,15 @@ Image mode never attaches the interaction adapter. Interactive annotations or bi
 mode produce the structured incompatibility behavior in the interaction contract without
 evaluating MapLibre.
 
-## Adapter-owned compatibility
+## Framework-specific behavior
 
-The kernel does not normalize framework reactivity. The adapters preserve these alpha behaviors:
+The kernel does not normalize framework reactivity. Each adapter follows its framework's
+conventions:
 
-| Concern                   | React                  | Vue                   | Svelte              |
-| ------------------------- | ---------------------- | --------------------- | ------------------- |
-| `mapOptions` recreation   | Structural equivalence | Identity              | Assignment/identity |
-| Analytics prop recreation | No                     | Yes, by identity      | No                  |
-| Transform presence        | Always                 | Only when needed      | Always              |
-| Async analytics lookup    | Promise resolution     | Map-creation snapshot | Request snapshot    |
-| Public load surface       | `onLoad(map)`          | `load` emit           | `load` dispatch     |
+| Concern                 | React                  | Vue         | Svelte              |
+| ----------------------- | ---------------------- | ----------- | ------------------- |
+| `mapOptions` recreation | Structural equivalence | Identity    | Assignment/identity |
+| Public load surface     | `onLoad(map)`          | `load` emit | `load` dispatch     |
 
 All three resolve camera values in the same order: direct props, native `mapOptions`, the published
 manifest view, then `defaultTileflowRuntimeView`. Image mode applies the same center/zoom order and

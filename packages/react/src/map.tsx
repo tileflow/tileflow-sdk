@@ -308,6 +308,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   // A blend shows its nearest theme until the blend style is ready, and names it while blending.
   const themeBlendKey = themeBlend ? JSON.stringify(themeBlend.themes) : undefined;
   const themeBlendPosition = themeBlend?.position;
+  const themeBlendHold = themeBlend?.hold === true;
   const blendThemeName = themeBlend ? nearestTileflowBlendTheme(themeBlend) : undefined;
   const themeResolution = useMemo(() => {
     const selection = blendThemeName ?? theme;
@@ -516,10 +517,14 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       return null;
     }
   }, [isImageMode, manifestMap, runtimeSource, themeBlendKey]);
-  const blendRequestRef = useRef<{position: number; themes: TileflowRuntimeStyle[]} | null>(null);
+  const blendRequestRef = useRef<{
+    hold: boolean;
+    position: number;
+    themes: TileflowRuntimeStyle[];
+  } | null>(null);
   blendRequestRef.current =
     blendStyles && themeBlendPosition !== undefined
-      ? {position: themeBlendPosition, themes: blendStyles}
+      ? {hold: themeBlendHold, position: themeBlendPosition, themes: blendStyles}
       : null;
   const themeTransitionRef = useRef(themeTransition);
   themeTransitionRef.current = themeTransition;
@@ -792,8 +797,6 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         });
         registerCleanup(() => worldRequestBridge.dispose());
         const transformRequest = createTileflowTransformRequest({
-          always: true,
-          asyncAnalyticsTiming: 'resolution',
           getAnalytics: () => resolvedAnalyticsRef.current,
           sessionController: session,
           sessionId: session.sessionId,
@@ -1104,7 +1107,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     if (runtimeStyle) setActiveRuntimeResource(runtimeStyle);
     void controller
       .setBlend(
-        {position: themeBlendPosition, themes: blendStyles},
+        {hold: themeBlendHold, position: themeBlendPosition, themes: blendStyles},
         {transition: themeTransitionRef.current},
       )
       .then((result) => {
@@ -1112,7 +1115,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           console.error('Failed to blend the Tileflow map themes', result.error);
         }
       });
-  }, [blendStyles, runtimeStyle, themeBlendPosition]);
+  }, [blendStyles, runtimeStyle, themeBlendHold, themeBlendPosition]);
 
   useLayoutEffect(() => {
     if (!isImageMode) return;

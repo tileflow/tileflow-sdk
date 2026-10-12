@@ -44,6 +44,7 @@ import {
   type TileflowMapLifecycleAttachment,
   type TileflowThemeController,
   type TileflowThemeTransition,
+  type TileflowBrowserThemeBlendSelection,
   type TileflowThemeTransitionOptions,
   type TileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
@@ -68,7 +69,6 @@ import {
   type TileflowRuntimeManifestMap,
   type TileflowRuntimeSource,
   type TileflowRuntimeStyle,
-  type TileflowThemeBlendSelection,
 } from '@tileflow/core/runtime';
 import {
   initialTileflowInteractionState,
@@ -232,7 +232,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       type: Object as PropType<TileflowRuntimeSource>,
     },
     theme: String,
-    themeBlend: Object as PropType<TileflowThemeBlendSelection>,
+    themeBlend: Object as PropType<TileflowBrowserThemeBlendSelection>,
     themeTransition: Object as PropType<TileflowThemeTransitionOptions>,
     zoom: Number,
   },
@@ -1061,10 +1061,11 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     const switchBlend = () => {
       const themes = blendStyles.value;
       const position = props.themeBlend?.position;
+      const hold = props.themeBlend?.hold === true;
       if (!themeController || !themes || position === undefined) return;
       if (runtimeStyle.value) activeRuntimeResource.value = runtimeStyle.value;
       void themeController
-        .setBlend({position, themes}, {transition: props.themeTransition})
+        .setBlend({hold, position, themes}, {transition: props.themeTransition})
         .then((result) => {
           if (result.status === 'failed') {
             console.error('Failed to blend the Tileflow map themes', result.error);
@@ -1182,7 +1183,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       {flush: 'post'},
     );
     watch(
-      () => [blendStyles.value, props.themeBlend?.position],
+      () => [blendStyles.value, props.themeBlend?.position, props.themeBlend?.hold === true],
       () => switchBlend(),
       {flush: 'post'},
     );
@@ -1199,14 +1200,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       {flush: 'post'},
     );
     watch(
-      () => [
-        props.analytics,
-        props.interactive,
-        props.mapOptions,
-        props.mode,
-        props.source,
-        manifestMap.value,
-      ],
+      () => [props.interactive, props.mapOptions, props.mode, props.source, manifestMap.value],
       () => void recreateMap(),
       {flush: 'post'},
     );

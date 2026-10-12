@@ -3,6 +3,7 @@ import {
   tileflowCaptureSceneNameSchema,
   tileflowCaptureSceneSchema,
 } from './capture-scene';
+import {tileflowCaptureShotSchema} from './capture-shot';
 import {
   createTileflowCompilationFailure,
   type TileflowCompilationResult,
@@ -99,6 +100,7 @@ export function parseTileflowMap(map: TileflowMap): ResolvedTileflowMap {
   for (const node of lineage.reverse()) {
     const resolved = node === map ? resolvedLeaf : resolveMap(node);
     validateMapScenes(node, resolved.id);
+    validateMapShots(node, resolved.id);
     const parsed = parseResolvedTileflowMap(resolved);
     if (node === map) parsedLeaf = parsed;
   }
@@ -107,44 +109,65 @@ export function parseTileflowMap(map: TileflowMap): ResolvedTileflowMap {
 }
 
 function validateMapScenes(map: TileflowMap, mapId: string): void {
-  if (map.scenes === undefined) return;
-  if (!isPlainRecord(map.scenes)) {
-    throw new Error(`Invalid Tileflow map "${map.id}". scenes: Expected a plain object.`);
+  validateMapCaptureEntries(map, mapId, 'scenes', (input) => {
+    const result = tileflowCaptureSceneSchema.safeParse(input);
+    return result.success ? tileflowCaptureSceneFitIssue(result.data) : result.error.issues[0];
+  });
+}
+
+function validateMapShots(map: TileflowMap, mapId: string): void {
+  validateMapCaptureEntries(map, mapId, 'shots', (input) => {
+    const result = tileflowCaptureShotSchema.safeParse(input);
+    return result.success ? undefined : result.error.issues[0];
+  });
+}
+
+/** Scenes and shots are leaf-owned records keyed by portable names that imply their map id. */
+function validateMapCaptureEntries(
+  map: TileflowMap,
+  mapId: string,
+  key: 'scenes' | 'shots',
+  findIssue: (
+    input: Record<string, unknown>,
+  ) => {message: string; path: readonly PropertyKey[]} | undefined,
+): void {
+  const entries = map[key];
+  if (entries === undefined) return;
+  if (!isPlainRecord(entries)) {
+    throw new Error(`Invalid Tileflow map "${map.id}". ${key}: Expected a plain object.`);
   }
+  const label = key === 'scenes' ? 'scene' : 'shot';
 
   const namesByCaseFold = new Map<string, string>();
-  for (const [sceneName, input] of Object.entries(map.scenes)) {
-    const nameResult = tileflowCaptureSceneNameSchema.safeParse(sceneName);
+  for (const [name, input] of Object.entries(entries)) {
+    const nameResult = tileflowCaptureSceneNameSchema.safeParse(name);
     if (!nameResult.success) {
       throw new Error(
-        `Invalid Tileflow map "${map.id}". scenes.${sceneName}: ${nameResult.error.issues[0]?.message ?? 'Invalid scene name'}`,
+        `Invalid Tileflow map "${map.id}". ${key}.${name}: ${nameResult.error.issues[0]?.message ?? `Invalid ${label} name`}`,
       );
     }
-    const normalizedSceneName = nameResult.data;
-    const folded = normalizedSceneName.toLowerCase();
+    const normalizedName = nameResult.data;
+    const folded = normalizedName.toLowerCase();
     const existing = namesByCaseFold.get(folded);
     if (existing) {
       throw new Error(
-        `Invalid Tileflow map "${map.id}". scenes.${sceneName}: Expected an id that does not normalize to "${existing}".`,
+        `Invalid Tileflow map "${map.id}". ${key}.${name}: Expected an id that does not normalize to "${existing}".`,
       );
     }
-    namesByCaseFold.set(folded, normalizedSceneName);
+    namesByCaseFold.set(folded, normalizedName);
 
     if (!isPlainRecord(input)) {
-      throw new Error(`Invalid Tileflow map "${map.id}". scenes.${sceneName}: Expected an object.`);
+      throw new Error(`Invalid Tileflow map "${map.id}". ${key}.${name}: Expected an object.`);
     }
     if (Object.hasOwn(input, 'map')) {
       throw new Error(
-        `Invalid Tileflow map "${map.id}". scenes.${sceneName}.map: Unrecognized key; a singular map scene inherits its map id.`,
+        `Invalid Tileflow map "${map.id}". ${key}.${name}.map: Unrecognized key; a singular map ${label} inherits its map id.`,
       );
     }
-    const result = tileflowCaptureSceneSchema.safeParse({...input, map: mapId});
-    const issue = result.success
-      ? tileflowCaptureSceneFitIssue(result.data)
-      : result.error.issues[0];
-    if (!result.success || issue) {
+    const issue = findIssue({...input, map: mapId});
+    if (issue) {
       throw new Error(
-        `Invalid Tileflow map "${map.id}". scenes.${sceneName}${issue?.path.length ? `.${issue.path.join('.')}` : ''}: ${issue?.message ?? 'Invalid scene'}`,
+        `Invalid Tileflow map "${map.id}". ${key}.${name}${issue.path.length ? `.${issue.path.join('.')}` : ''}: ${issue.message}`,
       );
     }
   }

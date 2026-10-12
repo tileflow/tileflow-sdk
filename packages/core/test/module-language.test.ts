@@ -184,7 +184,7 @@ test('keeps the checked-in modules API reference in lockstep with the semantic r
   }
 });
 
-test('publishes authoring and resolved map entrypoints without hiding extends or scenes', async () => {
+test('publishes authoring and resolved map entrypoints without hiding extends, scenes, or shots', async () => {
   const reference = JSON.parse(
     await readFile(new URL('../../../docs/modules-api-reference.json', import.meta.url), 'utf8'),
   ) as {
@@ -241,22 +241,29 @@ test('publishes authoring and resolved map entrypoints without hiding extends or
   assert.equal(Object.hasOwn(standaloneMap?.properties ?? {}, 'root'), false);
   assert.equal(Object.hasOwn(standaloneMap?.properties ?? {}, 'extends'), false);
   assert.equal(Object.hasOwn(standaloneMap?.properties ?? {}, 'scenes'), true);
+  assert.equal(Object.hasOwn(standaloneMap?.properties ?? {}, 'shots'), true);
 
   const derivedMap = definitions.TileflowDerivedMap;
   assert.deepEqual(derivedMap?.required, ['extends', 'id', 'version']);
   assert.deepEqual(derivedMap?.properties?.extends, {$ref: authoringReference});
   assert.equal(Object.hasOwn(derivedMap?.properties ?? {}, 'root'), false);
   assert.equal(Object.hasOwn(derivedMap?.properties ?? {}, 'scenes'), true);
+  assert.equal(Object.hasOwn(derivedMap?.properties ?? {}, 'shots'), true);
 
   const scene = definitions.TileflowMapScene;
   assert.equal(Object.hasOwn(scene?.properties ?? {}, 'map'), false);
   assert.deepEqual(scene?.required, ['theme', 'camera', 'viewport']);
+
+  const shot = definitions.TileflowMapShot;
+  assert.equal(Object.hasOwn(shot?.properties ?? {}, 'map'), false);
+  assert.deepEqual(shot?.required, ['theme', 'viewport', 'keyframes']);
 
   const resolvedMap = definitions.ResolvedTileflowMap;
   assert.deepEqual(resolvedMap?.required, ['defaultTheme', 'id', 'name', 'themes', 'version']);
   assert.equal(Object.hasOwn(resolvedMap?.properties ?? {}, 'root'), false);
   assert.equal(Object.hasOwn(resolvedMap?.properties ?? {}, 'extends'), false);
   assert.equal(Object.hasOwn(resolvedMap?.properties ?? {}, 'scenes'), false);
+  assert.equal(Object.hasOwn(resolvedMap?.properties ?? {}, 'shots'), false);
 
   for (const localReference of collectLocalReferences(reference)) {
     assert.doesNotThrow(
@@ -290,6 +297,7 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     overlays: 'keyed-resources',
     projection: 'atomic',
     scenes: 'leaf',
+    shots: 'leaf',
     sources: 'keyed-resources',
     systemThemes: 'atomic',
     terrain: 'atomic',

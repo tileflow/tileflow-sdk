@@ -96,6 +96,20 @@ export {
   type TileflowDepthMarkers,
   type TileflowDepthMarkersOptions,
 } from './depth-markers-browser';
+export {
+  tileflowShotStateAt,
+  type TileflowShotCamera,
+  type TileflowShotKeyframe,
+  type TileflowShotMotion,
+  type TileflowShotState,
+} from './capture-shot-motion';
+export {
+  playTileflowShot,
+  type TileflowShotCue,
+  type TileflowShotPlayback,
+  type TileflowShotPlaybackOptions,
+  type TileflowShotPlayerMap,
+} from './shot-player-browser';
 export type {
   TileflowDynamicImage,
   TileflowDynamicImageContext,

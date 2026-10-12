@@ -32,7 +32,8 @@ network when the camera returns.
 - A new value, through `setPaintProperty`, for a paint property whose value reads feature data,
   such as `['get', ...]` or `['feature-state', ...]`.
 - `setStyle` with layers that differ. A style that is not diffed starts every source afresh.
-- In a theme blend, a change of the nearest theme over values like these. See
+- In a theme blend, a change of the nearest theme over values like these. `setBlend({hold: true})`
+  keeps them back during a move; see
   [theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md).
 
 **Changes that keep the cache:**

@@ -34,6 +34,42 @@ export default defineMap({
   assert.deepEqual(project.mapMetadata?.main?.lineage, [{id: 'main', mapVersion: 1}]);
 });
 
+test('loads map-owned shot ids and rejects a repeated shot map id', async (t) => {
+  const cwd = await fixture(t);
+  const configPath = join(cwd, 'tileflow.config.ts');
+  const config = (shot: string) => `import {defineMap, defineTheme} from '@tileflow/core';
+export default defineMap({
+  id: 'main',
+  version: 1,
+  defaultTheme: 'light',
+  themes: {light: defineTheme({id: 'fixture-light', version: 1, colorScheme: 'light'})},
+  shots: {
+    'fly-in': {${shot}
+      theme: 'light',
+      viewport: {width: 390, height: 844},
+      keyframes: [
+        {at: 0, camera: {type: 'center', center: [0, 0], zoom: 1}},
+        {at: 1000, camera: {type: 'center', center: [1, 1], zoom: 3}}
+      ]
+    }
+  }
+});
+`;
+  await writeFile(configPath, config(''));
+
+  const project = await loadValidTileflowConfig(undefined, {cwd});
+  assert.deepEqual(Object.keys(project.shots ?? {}), ['fly-in']);
+  assert.equal(project.shots?.['fly-in']?.map, 'main');
+  assert.equal(project.scenes, undefined);
+  assert.equal('shots' in (project.maps.main ?? {}), false);
+
+  await writeFile(configPath, config("\n      map: 'main',"));
+  await assert.rejects(
+    () => loadValidTileflowConfig(undefined, {cwd, fresh: true}),
+    (error: unknown) => hasValidationMessage(error, /shots.*map/u),
+  );
+});
+
 test('validates compiler-owned disabled state without resolving the catalog as authoring again', async (t) => {
   const cwd = await fixture(t);
   await writeFile(

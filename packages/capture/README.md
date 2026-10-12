@@ -106,6 +106,66 @@ The equivalent CLI command is `tileflow setup capture`. These settings control b
 not the network access required by a map's remote resources. Tileflow never deletes the shared
 per-user browser cache.
 
+## Render a timed shot
+
+A [capture shot](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-shots.md)
+is a committed camera move with keyframes and an optional theme blend. This module assumes a
+`dusk-flyover` shot in `tileflow.config.ts` and writes its WebM video and receipt:
+
+<!-- docs:check -->
+
+```ts
+import {mkdir, writeFile} from 'node:fs/promises';
+import {captureTileflowShot, serializeTileflowShotReceipt} from '@tileflow/capture';
+
+const shot = await captureTileflowShot({shot: 'dusk-flyover', allowBrowserInstall: true});
+if (!shot.video) throw new Error('The shot produced no video.');
+
+await mkdir('.tileflow/captures/shots', {recursive: true});
+await writeFile('.tileflow/captures/shots/dusk-flyover.webm', shot.video);
+await writeFile(
+  '.tileflow/captures/shots/dusk-flyover.receipt.json',
+  serializeTileflowShotReceipt(shot.receipt),
+);
+console.log(shot.frameCount, shot.codec, shot.framesSha256);
+```
+
+Every frame moves the camera with MapLibre `jumpTo`, moves the blend position, and waits for
+MapLibre `idle` and two animation frames before its screenshot, exactly as a scene does. A slow
+machine or network makes the render take longer; the video keeps its frame rate and shows every
+frame. `timeoutMs` bounds page setup and each frame separately.
+
+The pinned browser encodes the captured PNGs with WebCodecs: VP9, or VP8 where VP9 is unavailable.
+A browser that supports neither fails before the first frame with `VIDEO_ENCODER_UNAVAILABLE`.
+Use `format: 'frames'` to receive the PNG frames through `onFrame` instead of a video; frames are
+delivered in order and are not kept in memory:
+
+<!-- docs:check -->
+
+```ts
+import {mkdir, writeFile} from 'node:fs/promises';
+import {createTileflowCaptureSession} from '@tileflow/capture';
+
+await mkdir('frames', {recursive: true});
+const session = createTileflowCaptureSession({allowBrowserInstall: true});
+try {
+  const shot = await session.captureShot('dusk-flyover', {
+    format: 'frames',
+    onFrame: (frame) =>
+      writeFile(`frames/frame-${String(frame.index).padStart(4, '0')}.png`, frame.png),
+  });
+  console.log(shot.frameCount, shot.framesSha256);
+} finally {
+  await session.close();
+}
+```
+
+`captureShots` and `captureAllShots` render several shots from one compiled snapshot. A shot
+receipt records the shot, theme and blend styles, timing, dimensions, renderer, data identity, and
+`frames.sha256`, a digest of every frame's PNG SHA-256. Frames are reproducible under the same
+conditions as scene captures; encoder bytes may differ between runs, so `output.sha256` identifies
+the written video while `frames.sha256` identifies its pixels.
+
 ## Capture the running application
 
 Application capture uses the app's normal loopback server; it does not start a server or discover a
@@ -195,7 +255,8 @@ validation, browser startup, resource loading, MapLibre readiness, and screensho
 Resource diagnostics contain safe classification and origin/status information, not credentials,
 query strings, response bodies, raw browser stacks, or DOM contents.
 
-Receipts use schema version 4; parsing rejects any other version. Import
+Receipts use schema version 4; parsing rejects any other version. Shot receipts use their own
+schema version 1. Import
 `@tileflow/capture/receipt` for receipt-only tooling without loading the capture runtime. World selectors resolve once per capture session to
 an immutable release. Capture retains the complete resolved TileJSON, including its zoom range,
 bounds, attribution and vector-layer metadata. Above the data's maximum zoom, MapLibre enlarges

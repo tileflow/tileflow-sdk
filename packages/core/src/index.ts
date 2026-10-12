@@ -115,6 +115,17 @@ export {
   tileflowCaptureViewportSchema,
 } from './capture-scene';
 export {
+  normalizeTileflowCaptureShot,
+  tileflowCaptureShotBlendSchema,
+  tileflowCaptureShotFrameCount,
+  tileflowCaptureShotFrames,
+  tileflowCaptureShotKeyframeSchema,
+  tileflowCaptureShotLimits,
+  tileflowCaptureShotNameSchema,
+  tileflowCaptureShotSchema,
+  tileflowCaptureShotSchemaVersion,
+} from './capture-shot';
+export {
   isTileflowPortableId,
   isTileflowThemeName,
   tileflowPortableIdMaximumLength,
@@ -132,6 +143,15 @@ export type {
   TileflowCaptureTarget,
   TileflowCaptureViewport,
 } from './capture-scene';
+export type {
+  NormalizedTileflowCaptureShot,
+  NormalizedTileflowCaptureShotCamera,
+  TileflowCaptureShot,
+  TileflowCaptureShotBlend,
+  TileflowCaptureShotEasing,
+  TileflowCaptureShotFrame,
+  TileflowCaptureShotKeyframe,
+} from './capture-shot';
 export type {
   MapLibreStyle,
   TileflowAerodromeCodeDetail,
@@ -238,6 +258,7 @@ export type {
   TileflowMapDesign,
   TileflowMapIdentity,
   TileflowMapScene,
+  TileflowMapShot,
   TileflowStandaloneMap,
   TileflowMapTooling,
   TileflowRefineOperation,

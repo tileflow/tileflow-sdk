@@ -13,12 +13,12 @@
 
 Package-specific APIs live in each `packages/*/README.md`.
 
-`modules-api-reference.json` is generated from the executable `@tileflow/core` resolved-map and
-capture-scene Zod schemas. Its document root and `entrypoints.authoring` describe the singular map
-written in `tileflow.config.ts`, including exclusive standalone and `extends` branches plus
-leaf-owned `scenes`; `entrypoints.resolved` describes the standalone map after inheritance. Update
-it with `pnpm reference:generate`; `pnpm reference:check` rejects drift instead of maintaining a
-second handwritten field or module list.
+`modules-api-reference.json` is generated from the executable `@tileflow/core` resolved-map,
+capture-scene, and capture-shot Zod schemas. Its document root and `entrypoints.authoring` describe
+the singular map written in `tileflow.config.ts`, including exclusive standalone and `extends`
+branches plus leaf-owned `scenes` and `shots`; `entrypoints.resolved` describes the standalone map
+after inheritance. Update it with `pnpm reference:generate`; `pnpm reference:check` rejects drift
+instead of maintaining a second handwritten field or module list.
 
 [`tileflow.config.example.json`](tileflow.config.example.json) is the canonical import-free,
 machine-readable representation of one evaluated standalone map. It serializes the values produced by

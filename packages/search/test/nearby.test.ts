@@ -18,7 +18,7 @@ const success = {
   nextCursor: 'opaque-next',
   source,
   attribution,
-  usage: {units: 25},
+  usage: {units: 10},
 };
 
 test('category metadata makes one authenticated GET with zero units', async () => {
@@ -59,7 +59,7 @@ test('empty pages preserve continuation without automatically fetching another p
   };
   const first = await searchNearby({position: [0, 0]}, options);
   assert.deepEqual(requests, [{position: [0, 0], limit: 20}]);
-  assert.equal(first.usage.units, 25);
+  assert.equal(first.usage.units, 10);
   assert.equal(first.nextCursor, 'opaque-next');
   await searchNearby({position: [0, 0], cursor: first.nextCursor}, options);
   assert.equal(requests.length, 2);

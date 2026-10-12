@@ -79,7 +79,7 @@ test('accepts a strict normalized success including zero candidates', () => {
     results: [],
     schemaVersion: 1,
     source: {id: 'synthetic', revision: 'fixture-1'},
-    usage: {units: 25},
+    usage: {units: 10},
   });
   assert.equal(empty.results.length, 0);
 
@@ -109,7 +109,7 @@ test('accepts a strict normalized success including zero candidates', () => {
     ],
     schemaVersion: 1,
     source: {id: 'openstreetmap', revision: 'example-snapshot'},
-    usage: {units: 25},
+    usage: {units: 10},
   });
   assert.equal(result.results[0]?.kind, 'address');
 });
@@ -121,7 +121,7 @@ test('rejects provider leakage and unsafe or malformed results', () => {
     results: [],
     schemaVersion: 1,
     source: {id: 'synthetic', revision: 'fixture-1'},
-    usage: {units: 25},
+    usage: {units: 10},
   };
 
   for (const response of [
@@ -178,7 +178,7 @@ test('accepts strict empty autocomplete responses and rejects leaked fields or e
     schemaVersion: 1,
     source: {id: 'synthetic', revision: null},
     suggestions: [],
-    usage: {units: 10},
+    usage: {units: 4},
   });
   assert.deepEqual(empty.suggestions, []);
 
@@ -190,7 +190,7 @@ test('accepts strict empty autocomplete responses and rejects leaked fields or e
 
   for (const response of [
     {...empty, queryId},
-    {...empty, usage: {units: 75}},
+    {...empty, usage: {units: 30}},
     {...empty, suggestions: Array.from({length: 11}, () => suggestion)},
     {...empty, suggestions: [{...suggestion, token: 'has space'}]},
     {...empty, suggestions: [{...suggestion, token: 'x'.repeat(2049)}]},
@@ -200,7 +200,7 @@ test('accepts strict empty autocomplete responses and rejects leaked fields or e
   }
 });
 
-test('normalizes a strict suggestion resolution and requires 25 completed usage units', () => {
+test('normalizes a strict suggestion resolution and requires 10 completed usage units', () => {
   assert.deepEqual(resolveSuggestionRequestSchema.parse({token: 'opaque-token_1'}), {
     retention: 'temporary',
     token: 'opaque-token_1',
@@ -225,7 +225,7 @@ test('normalizes a strict suggestion resolution and requires 25 completed usage 
     result: {address: {}, kind: 'place', label: 'Hospital La Paz', position: [-3.7, 40.4]},
     schemaVersion: 1,
     source: {id: 'synthetic', revision: 'fixture-1'},
-    usage: {units: 25},
+    usage: {units: 10},
   };
   assert.equal(resolveSuggestionResponseSchema.parse(response).result.label, 'Hospital La Paz');
 
@@ -333,7 +333,7 @@ test('rejects unsupported reverse options and preserves every output kind', () =
     results,
     schemaVersion: 1,
     source: {id: 'synthetic', revision: null},
-    usage: {units: 25},
+    usage: {units: 10},
   });
 
   assert.deepEqual(

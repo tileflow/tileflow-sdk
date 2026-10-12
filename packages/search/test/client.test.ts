@@ -15,11 +15,11 @@ const success = {
   results: [],
   schemaVersion: 1,
   source: {id: 'synthetic', revision: 'fixture-1'},
-  usage: {units: 25},
+  usage: {units: 10},
 };
 
 const autocompleteSuccess = {
-  usage: {units: 10},
+  usage: {units: 4},
   attribution: [{text: 'Synthetic fixture'}],
   schemaVersion: 1,
   source: {id: 'synthetic', revision: 'fixture-1'},
@@ -31,7 +31,7 @@ const resolveSuccess = {
   result: {address: {}, kind: 'place', label: 'Hospital La Paz', position: [-3.7, 40.4]},
   schemaVersion: 1,
   source: {id: 'synthetic', revision: 'fixture-1'},
-  usage: {units: 25},
+  usage: {units: 10},
 };
 
 test('posts one normalized request with Team authorization and no retry', async () => {
@@ -461,7 +461,7 @@ test('rejects autocomplete response envelopes with excess suggestions or usage',
   const suggestion = autocompleteSuccess.suggestions[0];
   for (const response of [
     {...autocompleteSuccess, suggestions: Array.from({length: 6}, () => suggestion)},
-    {...autocompleteSuccess, usage: {units: 25}},
+    {...autocompleteSuccess, usage: {units: 10}},
   ]) {
     await assert.rejects(
       autocomplete(
@@ -550,7 +550,7 @@ test('posts one suggestion resolution with retention and returns one candidate',
   );
 
   assert.equal(result.result.label, 'Hospital La Paz');
-  assert.equal(result.usage.units, 25);
+  assert.equal(result.usage.units, 10);
   assert.equal(requests.length, 1);
   assert.equal(requests[0]?.url, 'https://api.example.test/root/v1/geocoding/resolve');
   assert.deepEqual(await requests[0]?.json(), {

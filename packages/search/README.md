@@ -63,7 +63,7 @@ are temporary. Do not build a permanent place catalog, cache results, or persist
 
 Save the original request in the current interaction. Another page repeats that request with the
 returned `nextCursor`; no page is fetched automatically. A successful empty page can have a cursor.
-Each explicit page costs 25 API units. There is no total-count or snapshot-consistency promise.
+Each explicit page costs 10 API units. There is no total-count or snapshot-consistency promise.
 
 <!-- docs:check -->
 
@@ -116,7 +116,7 @@ suggestion. Reverse results are candidates in provider order, without containmen
 precision, routability, deliverability or address-validation guarantees.
 
 To show positions, distances and categories while someone types, ask for each suggestion's place.
-A completed request then uses 25 units instead of 10, and choosing a suggestion needs no further
+A completed request then uses 10 units instead of 4, and choosing a suggestion needs no further
 resolution:
 
 <!-- docs:check -->
@@ -212,12 +212,12 @@ retention, Advanced features and caller-selected provider options are rejected b
 | Completed operation                   | Shared API units | With `include` |
 | ------------------------------------- | ---------------: | -------------: |
 | Category discovery                    |                0 |              — |
-| Autocomplete                          |               10 |             25 |
-| Forward, reverse, explicit resolution |               25 |             75 |
-| Each Nearby page                      |               25 |             75 |
+| Autocomplete                          |                4 |             10 |
+| Forward, reverse, explicit resolution |               10 |             30 |
+| Each Nearby page                      |               10 |             30 |
 
 `searchOperationUnits(operation, include)` returns the same weights. Valid empty responses consume
-the same units. Three autocomplete calls and one resolution consume 55 units. These are part of Starter's shared API allowance, with no separate Search credits or
+the same units. Three autocomplete calls and one resolution consume 22 units. These are part of Starter's shared API allowance, with no separate Search credits or
 commercial search session. Hovering, displaying results and moving a map do not call Search.
 
 `GeocodingError` exposes `status`, nullable `code`, nullable `requestId` and nullable bounded

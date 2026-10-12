@@ -63,6 +63,39 @@ test('posts one normalized request with Team authorization and no retry', async 
   });
 });
 
+test('identifies a native app for a publishable credential only when asked', async () => {
+  const requests: Request[] = [];
+  const fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    requests.push(new Request(input, init));
+    return Response.json(autocompleteSuccess);
+  };
+  const apiKey = `tf_public_${'c'.repeat(48)}`;
+  await autocomplete({query: 'La Paz'}, {apiKey, fetch});
+  await autocomplete({query: 'La Paz'}, {apiKey, fetch, app: {id: 'com.example.store'}});
+  await autocomplete(
+    {query: 'La Paz'},
+    {apiKey, fetch, app: {id: 'com.example.store', certificateSha256: 'AB:'.repeat(31) + 'AB'}},
+  );
+  assert.deepEqual(
+    requests.map((request) => [
+      request.headers.get('X-Tileflow-App'),
+      request.headers.get('X-Tileflow-App-Certificate'),
+    ]),
+    [
+      [null, null],
+      ['com.example.store', null],
+      ['com.example.store', 'ab'.repeat(32)],
+    ],
+  );
+  for (const app of [{id: 'store'}, {id: 'com.example.store', certificateSha256: 'abc'}]) {
+    await assert.rejects(
+      autocomplete({query: 'La Paz'}, {apiKey, fetch, app}),
+      /Invalid Tileflow app identity/,
+    );
+  }
+  assert.equal(requests.length, 3);
+});
+
 test('rejects a redirect response without replaying the authenticated request', async () => {
   let calls = 0;
   const response = Response.json(success);

@@ -11,14 +11,42 @@ selected-place resolution. It uses `fetch` and has no renderer or global interac
 npm install @tileflow/search@alpha
 ```
 
-Use Node.js 22 or another runtime with `fetch`. Live requests require enabled Tileflow Search and a
-Team credential with `geocoding:read`. Keep privileged credentials on your application server.
-Browser and mobile interfaces call their own authorized server endpoint.
+Use Node.js 22, a browser or another runtime with `fetch`. Live requests require enabled Tileflow
+Search and a Team credential with `geocoding:read`: a publishable credential in websites and apps,
+or a server credential on your server.
 
 Free Teams, Starter trials and complimentary access run Search within their period's API units, up
 to 100,000 Search units, while Search without payment is open; a finite evaluation grant can extend
 them. Paid Starter runs Search within its shared API allowance and excess.
 Installing this package does not enable the service or grant access.
+
+## Call Search from a browser or app
+
+A publishable credential (`tf_public_…`) is meant to be visible in client code. It grants Search
+only, works only from the websites and native apps listed for it, and always carries per-minute and
+per-day quotas. A Team Admin creates one under **Credentials** in the Tileflow dashboard.
+
+```ts
+import {autocomplete} from '@tileflow/search';
+
+const options = {apiKey: 'tf_public_…'};
+const page = await autocomplete({query: 'Hospital La Paz', proximity: [-3.7, 40.42]}, options);
+```
+
+Browsers send the page's origin, which must match one of the credential's websites exactly: scheme,
+host and port. Native apps send no origin, so name the app instead. The SDK then sends its bundle ID
+or package name and, on Android, the SHA-256 fingerprint of its signing certificate:
+
+```ts
+const options = {
+  apiKey: 'tf_public_…',
+  app: {id: 'com.example.store', certificateSha256: '14:6D:E9:…'},
+};
+```
+
+Anyone can read a publishable credential and imitate an origin or app outside a browser, so these
+restrictions limit casual reuse rather than prove identity. Its quotas and the Team's spending limit
+bound what a copied credential can consume. Keep server credentials (`tf_live_…`) on your server.
 
 ## Find nearby places
 
@@ -235,6 +263,7 @@ cancellation. Network failures can leave server completion uncertain.
 | `GEOCODING_SUSPENDED`                                            | Search is suspended for the Team; contact support.                    |
 | `GEOCODING_SPENDING_LIMIT_REACHED`                               | The Team reached its spending limit; raise it or wait for the period. |
 | `GEOCODING_CREDENTIAL_QUOTA_EXCEEDED`                            | The credential reached its quota; respect `retryAfterSeconds`.        |
+| `GEOCODING_ORIGIN_NOT_ALLOWED`                                   | Add this website or app to the publishable credential.                |
 | `GEOCODING_PICK_LIMIT_EXCEEDED` / `GEOCODING_UPSTREAM_THROTTLED` | Respect `retryAfterSeconds`; retry only deliberately.                 |
 | `GEOCODING_INVALID_CURSOR` / `GEOCODING_INVALID_SUGGESTION`      | Check the Team and original query; start a fresh search explicitly.   |
 | `GEOCODING_CURSOR_EXPIRED` / `GEOCODING_SUGGESTION_EXPIRED`      | Request fresh results explicitly.                                     |
@@ -268,7 +297,7 @@ search.
 An explicit category action can call Nearby. Moving a map offers a “Search this area” button; only
 pressing it submits the new bounds. A late reply must not move the camera after a newer selection or
 view change. Keep independent generations for independent widgets. The SDK's tests demonstrate
-cancellation and stale-suggestion handling; it does not supply a UI component or client credentials.
+cancellation and stale-suggestion handling; it does not supply a UI component.
 
 For a published package, its installed README and declarations describe that release; a link to
 GitHub `main` can describe newer source.

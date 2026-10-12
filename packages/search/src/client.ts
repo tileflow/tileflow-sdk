@@ -42,6 +42,7 @@ export const GEOCODING_ERROR_CODES = [
   'GEOCODING_DISABLED',
   'GEOCODING_INVALID_REQUEST',
   'GEOCODING_INVALID_SUGGESTION',
+  'GEOCODING_ORIGIN_NOT_ALLOWED',
   'GEOCODING_PICK_LIMIT_EXCEEDED',
   'GEOCODING_QUOTA_EXCEEDED',
   'GEOCODING_REQUEST_TOO_LARGE',
@@ -73,6 +74,7 @@ const geocodingErrorStatuses: Record<GeocodingErrorCode, number> = {
   GEOCODING_DISABLED: 503,
   GEOCODING_INVALID_REQUEST: 400,
   GEOCODING_INVALID_SUGGESTION: 400,
+  GEOCODING_ORIGIN_NOT_ALLOWED: 403,
   GEOCODING_PICK_LIMIT_EXCEEDED: 429,
   GEOCODING_QUOTA_EXCEEDED: 429,
   GEOCODING_REQUEST_TOO_LARGE: 413,
@@ -93,6 +95,11 @@ const geocodingErrorStatuses: Record<GeocodingErrorCode, number> = {
 export type GeocodeOptions = Readonly<{
   apiKey: string;
   apiUrl?: string;
+  /**
+   * The native app a publishable credential admits: its iOS bundle ID, or its Android package name
+   * with the SHA-256 fingerprint of its signing certificate. Browsers send their origin instead.
+   */
+  app?: Readonly<{id: string; certificateSha256?: string}>;
   fetch?: typeof fetch;
   signal?: AbortSignal;
 }>;
@@ -293,6 +300,7 @@ async function requestGeocoding<T>(
   if (bodyText && new TextEncoder().encode(bodyText).byteLength > maximumRequestBytes)
     throw new Error('Tileflow Search request is too large');
   const apiKey = normalizeApiKey(options.apiKey);
+  const app = normalizeApp(options.app);
   const apiUrl = normalizeApiUrl(options.apiUrl ?? 'https://api.tileflow.dev');
   const fetcher = options.fetch ?? fetch;
   let response: Response;
@@ -303,6 +311,8 @@ async function requestGeocoding<T>(
         Accept: 'application/json',
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+        ...(app ? {'X-Tileflow-App': app.id} : {}),
+        ...(app?.certificateSha256 ? {'X-Tileflow-App-Certificate': app.certificateSha256} : {}),
       },
       method: request === undefined ? 'GET' : 'POST',
       redirect: 'error',
@@ -358,6 +368,20 @@ function containsOnlyKinds(
 
   const kindFilter = new Set<string>(allowedKinds);
   return response.results.every(({kind}) => kindFilter.has(kind));
+}
+
+function normalizeApp(value: GeocodeOptions['app']) {
+  if (value === undefined) return null;
+  const certificate = value?.certificateSha256?.replaceAll(':', '').toLowerCase();
+  if (
+    typeof value?.id !== 'string' ||
+    value.id.length > 255 ||
+    !/^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z0-9_-]+)+$/u.test(value.id) ||
+    (certificate !== undefined && !/^[0-9a-f]{64}$/u.test(certificate))
+  ) {
+    throw new Error('Invalid Tileflow app identity');
+  }
+  return {id: value.id, certificateSha256: certificate};
 }
 
 function normalizeApiKey(value: string) {

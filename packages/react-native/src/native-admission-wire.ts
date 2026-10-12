@@ -177,10 +177,7 @@ export function createNativeAdmissionWire(
     },
     registerContext: (id, registration) => safe(() => native.registerContext(id, registration)),
     extendContext: (id, context, resources) =>
-      safe(() => {
-        if (!native.extendContext) throw unavailable();
-        return native.extendContext(id, context, resources);
-      }),
+      safe(() => native.extendContext(id, context, resources)),
     retireContext(id, context) {
       if (id === installation?.id) retireContext(context);
       return safe(() => native.retireContext(id, context));

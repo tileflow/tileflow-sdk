@@ -115,7 +115,7 @@ and an `app-desktop` application scene defined, run in another terminal:
 npx tileflow capture app-desktop --url http://127.0.0.1:5173/ --json
 ```
 
-Use the application's actual loopback URL. Do not start a second `tileflow dev` listener.
+Use the application's actual loopback URL. Do not start a second `tileflow preview` listener.
 Local preparation needs no Tileflow key; rendering can still fetch remote map resources.
 
 CI tests the accepted Vite major boundaries with packed packages and production builds. Future

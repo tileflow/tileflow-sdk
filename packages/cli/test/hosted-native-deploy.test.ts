@@ -7,7 +7,7 @@ import {
   inferTileflowSourceRequirements,
   type TileflowMapBuildManifestV1,
 } from '@tileflow/core/build';
-import {prepareTileflowHostedNativeDeployment} from '@tileflow/dev';
+import {prepareTileflowHostedNativeDeployment} from '@tileflow/dev/artifacts';
 import {runHostedNativeDeploy, type PreparedNativeDeploy} from '../src/hosted-native-deploy';
 import type {TileflowRuntimeManifest} from '@tileflow/core/manifest';
 

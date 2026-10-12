@@ -245,7 +245,7 @@ standalone capture apply the browser effect automatically. Direct MapLibre integ
 
 A map with text must declare exactly one text provider. Streets, Ferraris, Härad, Soundings,
 and Blueprint use URL glyph providers. Baedeker and Siegfried use packaged Cormorant
-fonts; Cyberpunk and Matrix use packaged Oxanium fonts. Hosted deployment currently rejects
+fonts, and Cívica uses its packaged lettering. Hosted deployment currently rejects
 package/local font bundles; use self-hosted output or explicitly replace the provider with compatible
 public glyphs. Tile URLs and font providers do not establish redistribution rights.
 

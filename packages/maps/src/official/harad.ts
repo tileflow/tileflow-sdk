@@ -929,7 +929,6 @@ export const harad = bindOfficialMapTheme(
           strokeOpacity: 0.5,
           strokeWidth: 0.55,
         },
-        minZoom: 15,
         mode: 'flat',
       }),
       water: withRenderStack(

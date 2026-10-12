@@ -9,7 +9,7 @@ import {
   tileflowIconSetReferenceSchema,
 } from '@tileflow/core';
 import {type CompiledTileflowIconPackage, composeTileflowIconSources} from '@tileflow/dev/icons';
-import type {AuthConfigV2} from './account-session';
+import type {AuthConfig} from './account-session';
 import {
   authorizedTeamRequest,
   emitFailure,
@@ -32,7 +32,7 @@ const pageSize = 100;
  */
 export function registerIconSetCommands(
   program: Command,
-  dependencies: {defaultApiUrl: string; loadAuthConfig: () => Promise<AuthConfigV2>},
+  dependencies: {defaultApiUrl: string; loadAuthConfig: () => Promise<AuthConfig>},
 ): void {
   const iconSet = program
     .command('icon-set')

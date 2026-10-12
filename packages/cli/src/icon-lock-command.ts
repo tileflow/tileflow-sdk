@@ -19,7 +19,7 @@ import {
   TileflowValidationError,
 } from '@tileflow/dev/config';
 import {readTileflowIconsLockfileText, writeTileflowIconsLockfile} from '@tileflow/dev/icons';
-import type {AuthConfigV2} from './account-session';
+import type {AuthConfig} from './account-session';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 import {
   authorizedTeamRequest,
@@ -45,7 +45,7 @@ export function registerIconLockCommands(
   dependencies: {
     defaultApiUrl: string;
     defaultConfigPath: string;
-    loadAuthConfig: () => Promise<AuthConfigV2>;
+    loadAuthConfig: () => Promise<AuthConfig>;
   },
 ): void {
   const icons =

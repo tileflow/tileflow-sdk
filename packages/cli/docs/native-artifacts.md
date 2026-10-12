@@ -30,7 +30,7 @@ The ordinary web commands and their default artifact bytes retain their existing
 
 ## Watch and serve native artifacts
 
-`preview` and its `dev` alias use the same renderer selector:
+`preview` selects the renderer with `--renderer`:
 
 ```sh
 npx tileflow preview --renderer native --map stores --theme light

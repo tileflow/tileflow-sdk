@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
-import {type CliAccountSessionV2, installAccountSession} from '../src/account-session';
+import {type CliAccountSession, installAccountSession} from '../src/account-session';
 
 const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const tsxLoader = import.meta.resolve('tsx');
@@ -203,14 +203,13 @@ test('whoami --json keeps authentication failures as parseable stdout JSON', asy
   assert.equal(result.stdout.includes('\u001b['), false);
 });
 
-test('legacy project login requires fresh account authorization and remains byte-for-byte intact', async (t) => {
+test('an unrecognized saved login fails closed and remains byte-for-byte intact', async (t) => {
   const fixture = await createFixture(t);
-  const legacy = `${JSON.stringify({
+  const unrecognized = `${JSON.stringify({
     apiKey: `tf_cli_${'z'.repeat(48)}`,
     apiUrl: 'https://api.example.test',
-    projectId: 'prj_web',
   })}\n`;
-  await writeFile(fixture.authPath, legacy, {mode: 0o600});
+  await writeFile(fixture.authPath, unrecognized, {mode: 0o600});
 
   const result = await runCli(
     fixture.projectDirectory,
@@ -219,9 +218,9 @@ test('legacy project login requires fresh account authorization and remains byte
   );
 
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /retired destination-credential model/);
+  assert.match(result.stderr, /auth state is invalid/);
   const {readFile} = await import('node:fs/promises');
-  assert.equal(await readFile(fixture.authPath, 'utf8'), legacy);
+  assert.equal(await readFile(fixture.authPath, 'utf8'), unrecognized);
 });
 
 test('rejected project-profile commands and selectors are not part of the CLI', async (t) => {
@@ -287,7 +286,7 @@ function project(slug: string, name = slug[0].toUpperCase() + slug.slice(1)) {
 }
 
 async function writeSession(fixture: Awaited<ReturnType<typeof createFixture>>, apiUrl: string) {
-  const value: CliAccountSessionV2 = {
+  const value: CliAccountSession = {
     account: {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'},
     accountSession: accountToken,
     apiOrigin: apiUrl,

@@ -10,7 +10,7 @@ import {
   compileTileflowIconPackages,
   inspectTileflowIconCatalogs,
   type TileflowIconCatalog,
-} from '../src/index';
+} from '../src/icons';
 
 function defineResolvedMap(input: TileflowMap) {
   return parseTileflowMap(defineMap(input));

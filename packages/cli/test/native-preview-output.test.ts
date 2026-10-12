@@ -78,7 +78,7 @@ test('preview rejects an unknown renderer before config execution without echoin
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /CONFIG_MUST_NOT_EXECUTE/u);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /tf_secret_renderer_do_not_print/u);
   const event = JSON.parse(result.stdout) as Record<string, unknown>;
-  assert.equal(event.command, 'dev');
+  assert.equal(event.command, 'preview');
   assert.equal(event.event, 'error');
   assert.equal(event.code, 'NATIVE_RENDERER_UNSUPPORTED');
 });

@@ -15,8 +15,7 @@ For Tileflow World, Capture resolves the map's TileJSON selector once per sessio
 `tileflow.world` to identify `world-v1` with exact release, descriptor, archive, data-contract, and
 product-contract SHA-256 values, and renders every standalone scene from the returned immutable tile
 template. Repeated scenes and retries reuse that one resolution; another selector in the same
-session fails instead of mixing releases. Existing canonical schema-v2 and schema-v3 receipts remain
-readable as historical evidence and are never reclassified as schema v4.
+session fails instead of mixing releases. Parsing accepts only schema version 4.
 
 Capture reuses Core's exact World V1 release-ID contract: 12–128 characters matching
 `^world-v1-[a-z0-9][a-z0-9._-]*[a-z0-9]$`. Selector responses and durable receipts reject rather

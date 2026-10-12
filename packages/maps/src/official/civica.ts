@@ -1061,9 +1061,9 @@ export const civica = bindOfficialMapTheme(
       ),
       vegetation: vegetation({
         mode: 'flat',
-        minZoom: 19,
         flat: {
           color: ink.greenInk,
+          minZoom: 19,
           opacity: 0.5,
           radius: zoom.linear([
             [19, 1.2],

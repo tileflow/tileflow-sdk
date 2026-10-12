@@ -48,7 +48,7 @@ function styleFor(contributions: readonly TileflowLayerContribution[]) {
 
 test('vegetation emits ordered radius stops when minZoom is 20 or greater', () => {
   for (const minZoom of [20, 21, 24]) {
-    const style = styleFor(compileVegetation(vegetation({minZoom}), context));
+    const style = styleFor(compileVegetation(vegetation({flat: {minZoom}}), context));
     const trees = style.layers.find((layer) => layer.id === 'tileflow-vegetation-trees');
 
     assert.equal(trees?.minzoom, minZoom);

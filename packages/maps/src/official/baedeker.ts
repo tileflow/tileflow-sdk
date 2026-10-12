@@ -1132,7 +1132,6 @@ export const baedeker = bindOfficialMapTheme(
           strokeOpacity: 0.78,
           strokeWidth: 0.8,
         },
-        minZoom: 15,
         mode: 'flat',
       }),
       water: withRenderStack(

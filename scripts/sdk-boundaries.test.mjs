@@ -102,29 +102,14 @@ test('public package sources respect the SDK responsibility graph', async () => 
           `${label} imports undeclared workspace dependency @tileflow/${dependencyName}`,
         );
 
-        if (subpath) {
-          const dependencyManifest = manifests.get(dependencyName);
-          assert.ok(
-            dependencyManifest?.exports?.[`.${subpath}`],
-            `${label} imports unexported public subpath ${specifier}`,
-          );
-        }
-
-        if (
-          dependencyName === 'dev' &&
-          ['capture', 'cli', 'next', 'vite', 'webpack'].includes(packageName)
-        ) {
-          assert.ok(subpath, `${label} must select an explicit @tileflow/dev responsibility`);
-        }
+        assert.ok(
+          manifests.get(dependencyName)?.exports?.[subpath ? `.${subpath}` : '.'],
+          `${label} imports unexported public entry point ${specifier}`,
+        );
       }
 
       if (['react', 'svelte', 'vue'].includes(packageName)) {
         assertTypeOnlyRootImports(source, label, '@tileflow/core');
-        assert.equal(
-          importedSpecifiers(source).includes('@tileflow/static'),
-          false,
-          `${label} must select an explicit @tileflow/static responsibility`,
-        );
         assertTypeOnlyStaticMapLibreImports(source, label);
         assertLazyMapLibreImportsStayIsolated(source, label);
       }
@@ -178,7 +163,7 @@ test('declared Tileflow package dependencies remain acyclic', async () => {
   for (const packageName of graph.keys()) visit(packageName);
 });
 
-test('focused static entrypoints stay independent from the facade and relative cycles', async () => {
+test('focused static entrypoints have no relative module cycles', async () => {
   const sourceRoot = new URL('../packages/static/src/', import.meta.url);
   const sourceRootPath = fileURLToPath(sourceRoot);
   const sourceFiles = await listSourceFiles(sourceRoot);
@@ -196,14 +181,13 @@ test('focused static entrypoints stay independent from the facade and relative c
     graph.set(sourcePath, [...new Set(dependencies)]);
   }
 
-  const facadePath = resolve(sourceRootPath, 'index.ts');
   for (const entrypoint of ['scene.ts', 'overlays.ts', 'manifest.ts', 'client.ts']) {
     const entrypointPath = resolve(sourceRootPath, entrypoint);
     assert.ok(
       sourcePaths.has(entrypointPath),
       `Missing focused @tileflow/static entrypoint ${entrypoint}`,
     );
-    assertRelativeGraphBoundary(entrypointPath, facadePath, graph, sourceRootPath);
+    assertRelativeGraphBoundary(entrypointPath, graph, sourceRootPath);
   }
 });
 
@@ -282,7 +266,7 @@ function resolveRelativeSource(sourcePath, specifier, sourcePaths) {
   return resolvedSource;
 }
 
-function assertRelativeGraphBoundary(entrypointPath, facadePath, graph, sourceRootPath) {
+function assertRelativeGraphBoundary(entrypointPath, graph, sourceRootPath) {
   const complete = new Set();
   const active = [];
   const entrypointLabel = portableRelative(sourceRootPath, entrypointPath);
@@ -301,14 +285,7 @@ function assertRelativeGraphBoundary(entrypointPath, facadePath, graph, sourceRo
     );
     if (complete.has(sourcePath)) return;
     active.push(sourcePath);
-    for (const dependency of graph.get(sourcePath) ?? []) {
-      assert.notEqual(
-        dependency,
-        facadePath,
-        `${entrypointLabel} must not import or re-export the compatibility facade ./index`,
-      );
-      visit(dependency);
-    }
+    for (const dependency of graph.get(sourcePath) ?? []) visit(dependency);
     active.pop();
     complete.add(sourcePath);
   };

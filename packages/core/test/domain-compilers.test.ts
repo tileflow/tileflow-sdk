@@ -364,14 +364,6 @@ test('colors building tones without making geometry visibility semantic', () => 
     context.colors.buildings.destination,
     ['==', ['coalesce', ['get', 'building_tone'], ''], 'commercial'],
     context.colors.buildings.commercial,
-    [
-      'any',
-      ['==', ['get', 'has_business'], true],
-      ['==', ['get', 'has_business'], 1],
-      ['==', ['get', 'has_business'], '1'],
-      ['==', ['coalesce', ['get', 'building_kind'], 'generic'], 'commercial'],
-    ],
-    context.colors.buildings.commercial,
     context.colors.buildings.generic,
   ]);
 });

@@ -31,12 +31,9 @@ silently share another scene's identity.
 <!-- docs:check -->
 
 ```ts
-import {
-  createStaticMap,
-  createStaticMapIdempotencyKey,
-  marker,
-  validateStaticScene,
-} from '@tileflow/static';
+import {createStaticMap, createStaticMapIdempotencyKey} from '@tileflow/static/client';
+import {marker} from '@tileflow/static/overlays';
+import {validateStaticScene} from '@tileflow/static/scene';
 
 const apiKey = process.env.TILEFLOW_API_KEY;
 if (!apiKey) throw new Error('Set TILEFLOW_API_KEY on the server.');
@@ -99,7 +96,7 @@ preserved within each placement; later overlays paint above earlier overlays in 
 Use `symbol` for a deployed sprite icon, renderer-owned text, or both:
 
 ```ts
-import {symbol} from '@tileflow/static';
+import {symbol} from '@tileflow/static/overlays';
 
 symbol({
   coordinate: [-3.7038, 40.4168],
@@ -155,7 +152,7 @@ Choose a corner when composition requires it:
 <!-- docs:check -->
 
 ```ts
-import type {StaticAttributionRequest} from '@tileflow/static';
+import type {StaticAttributionRequest} from '@tileflow/static/scene';
 
 const attribution = {
   mode: 'embedded',
@@ -168,7 +165,7 @@ Or request structured external attribution:
 <!-- docs:check -->
 
 ```ts
-import {createStaticMap, createStaticMapIdempotencyKey} from '@tileflow/static';
+import {createStaticMap, createStaticMapIdempotencyKey} from '@tileflow/static/client';
 
 const apiKey = process.env.TILEFLOW_API_KEY;
 if (!apiKey) throw new Error('Set TILEFLOW_API_KEY on the server.');
@@ -251,19 +248,18 @@ operation or API-unit charge. A different `403` is a credential or Map-coverage 
 
 ## API entry points
 
-The package has four deliberately separate surfaces, all available from the root for compatibility:
+The package has four deliberately separate entry points:
 
-- scene validation and normalization: `staticSceneSchema`, `validateStaticScene`, and
-  `normalizeStaticScene`;
-- overlay authoring and MapLibre compilation: `line`, `circle`, `marker`, `polygon`, `symbol`, and
-  `compileStaticOverlays`;
-- renderer identity: `createRenderManifest`,
+- `@tileflow/static/scene`, scene validation and normalization: `staticSceneSchema`,
+  `validateStaticScene`, and `normalizeStaticScene`;
+- `@tileflow/static/overlays`, overlay authoring and MapLibre compilation: `line`, `circle`,
+  `marker`, `polygon`, `symbol`, and `compileStaticOverlays`;
+- `@tileflow/static/manifest`, renderer identity: `createRenderManifest`,
   `validateStaticRenderManifest`, `hashRenderManifest`, and `hashStaticSceneRequest`;
-- bounded Hosted transport: `prepareStaticMapRequest`, `createStaticMap`, `precacheStaticMap`, and
-  `requestStaticMapUntilReady`.
+- `@tileflow/static/client`, bounded Hosted transport: `prepareStaticMapRequest`,
+  `createStaticMap`, `precacheStaticMap`, and `requestStaticMapUntilReady`.
 
-Applications that need only one surface can use `@tileflow/static/scene`, `/overlays`, `/manifest`,
-or `/client`. The root remains a compatibility entry point.
+The package has no root entry point.
 
 `StaticRenderManifest` is the single strict immutable input contract between a resolved Hosted style
 and a Static Maps renderer. It binds safe attribution, exact source identity, semantic placement

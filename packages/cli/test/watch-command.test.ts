@@ -54,11 +54,11 @@ test('capture fixture cleanup stops its consumer before closing the HTTP server'
   }
 });
 
-test('dev emits valid/invalid/recovered/stopped NDJSON and serves last-good local preview assets', async (t) => {
+test('preview emits valid/invalid/recovered/stopped NDJSON and serves last-good local preview assets', async (t) => {
   const cwd = await createFixture('tileflow-dev-watch-');
   await writeWatchFixture(cwd, '#112233');
   const port = await reservePort();
-  const running = startCli(cwd, ['dev', '--json', '--map', 'main', '--port', String(port)], {
+  const running = startCli(cwd, ['preview', '--json', '--map', 'main', '--port', String(port)], {
     TILEFLOW_API_KEY: 'watch-secret',
   });
   t.after(async () => {
@@ -129,8 +129,8 @@ test('preview comparison serves two watched sides and their memory-only inspecti
   });
 
   await Promise.all([
-    running.waitFor((event) => event.command === 'dev.compare' && event.side === 'left'),
-    running.waitFor((event) => event.command === 'dev.compare' && event.side === 'right'),
+    running.waitFor((event) => event.command === 'preview.compare' && event.side === 'left'),
+    running.waitFor((event) => event.command === 'preview.compare' && event.side === 'right'),
   ]);
   await fetchEventually(`http://127.0.0.1:${port}/left/__status`);
   await fetchEventually(`http://127.0.0.1:${port}/right/__status`);
@@ -161,7 +161,7 @@ test('preview comparison serves two watched sides and their memory-only inspecti
 
   running.requestStop();
   const stopped = await running.waitFor(
-    (event) => event.command === 'dev.compare' && event.event === 'stopped',
+    (event) => event.command === 'preview.compare' && event.event === 'stopped',
   );
   assert.deepEqual(Object.keys(stopped.generation as object).sort(), ['left', 'right']);
   const completion = await running.completion;
@@ -198,8 +198,8 @@ test('preview comparison publishes distinct cwd-relative config arguments for Co
   });
 
   await Promise.all([
-    running.waitFor((event) => event.command === 'dev.compare' && event.side === 'left'),
-    running.waitFor((event) => event.command === 'dev.compare' && event.side === 'right'),
+    running.waitFor((event) => event.command === 'preview.compare' && event.side === 'left'),
+    running.waitFor((event) => event.command === 'preview.compare' && event.side === 'right'),
   ]);
   await Promise.all([
     fetchEventually(`http://127.0.0.1:${port}/left/__status`),
@@ -211,7 +211,9 @@ test('preview comparison publishes distinct cwd-relative config arguments for Co
   assert.equal(shell.includes(cwd), false);
 
   running.requestStop();
-  await running.waitFor((event) => event.command === 'dev.compare' && event.event === 'stopped');
+  await running.waitFor(
+    (event) => event.command === 'preview.compare' && event.event === 'stopped',
+  );
   const completion = await running.completion;
   assert.equal(completion.code, 0, completion.stderr);
 });
@@ -236,7 +238,7 @@ test('preview comparison keeps initial invalid --json output structured and omit
   });
 
   const failure = await running.waitFor(
-    (event) => event.command === 'dev.compare' && event.event === 'error',
+    (event) => event.command === 'preview.compare' && event.event === 'error',
   );
   assert.equal(failure.code, 'COMPARISON_INITIAL_INVALID');
   assert.equal(failure.phase, 'initialization');
@@ -252,7 +254,7 @@ test('preview comparison keeps initial invalid --json output structured and omit
     false,
   );
   assert.equal(
-    running.events.every((event) => event.command === 'dev.compare'),
+    running.events.every((event) => event.command === 'preview.compare'),
     true,
   );
   assert.equal(JSON.stringify(running.events).includes(cwd), false);

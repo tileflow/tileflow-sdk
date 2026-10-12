@@ -10,7 +10,7 @@ export type ProjectIdentity = Readonly<{id: string; name: string; slug: string}>
 export const rejectedAccountSessionMessage =
   'The saved Tileflow account session is no longer valid. Run tileflow login to authorize this machine again.';
 
-export type CliAccountSessionV2 = Readonly<{
+export type CliAccountSession = Readonly<{
   account: AccountIdentity;
   accountSession: string;
   apiOrigin: string;
@@ -19,27 +19,14 @@ export type CliAccountSessionV2 = Readonly<{
   sessionId: string;
 }>;
 
-export type AuthConfigV2 = Readonly<{
-  sessions: Readonly<Record<string, CliAccountSessionV2>>;
+export type AuthConfig = Readonly<{
+  sessions: Readonly<Record<string, CliAccountSession>>;
   version: 2;
-}>;
-
-export type LegacyAuthConfigV1 = Readonly<{
-  apiKey: string;
-  apiUrl: string;
-  appUrl?: string;
-  createdAt?: string;
-  deviceName?: string;
-  keyPrefix?: string;
-  projectId?: string;
-  scopes?: readonly string[];
 }>;
 
 export type AuthFileState =
   | Readonly<{kind: 'empty'}>
-  | Readonly<{config: LegacyAuthConfigV1; kind: 'legacy_project_login'}>
-  | Readonly<{config: AuthConfigV2; kind: 'v2'}>
-  | Readonly<{kind: 'superseded_profiles'}>
+  | Readonly<{config: AuthConfig; kind: 'sessions'}>
   | Readonly<{kind: 'invalid'}>;
 
 const maximumAuthFileBytes = 1024 * 1024;
@@ -68,7 +55,7 @@ const sessionSchema = z
   .refine((value) => Date.parse(value.expiresAt) > Date.parse(value.createdAt), {
     message: 'session expiry must follow creation',
   });
-const authConfigV2Schema = z
+const authConfigSchema = z
   .object({
     sessions: z.record(z.string().max(2048), sessionSchema),
     version: z.literal(2),
@@ -84,20 +71,7 @@ const authConfigV2Schema = z
       }
     }
   });
-const legacyAuthConfigSchema = z
-  .object({
-    apiKey: z.string().min(16).max(4096),
-    apiUrl: z.string().min(1).max(2048),
-    appUrl: z.string().max(2048).optional(),
-    createdAt: z.string().max(64).optional(),
-    deviceName: z.string().max(200).optional(),
-    keyPrefix: z.string().max(64).optional(),
-    projectId: z.string().max(200).optional(),
-    scopes: z.array(z.string().max(128)).max(32).optional(),
-  })
-  .strict();
-
-export function emptyAuthConfig(): AuthConfigV2 {
+export function emptyAuthConfig(): AuthConfig {
   return Object.freeze({sessions: Object.freeze({}), version: 2});
 }
 
@@ -119,32 +93,19 @@ export async function readAuthFile(path = authConfigPath()): Promise<AuthFileSta
     return {kind: 'invalid'};
   }
 
-  const v2 = authConfigV2Schema.safeParse(parsed);
-  if (v2.success) return {config: freezeConfig(v2.data), kind: 'v2'};
-
-  const legacy = legacyAuthConfigSchema.safeParse(parsed);
-  if (legacy.success) {
-    return {config: Object.freeze(legacy.data), kind: 'legacy_project_login'};
-  }
-
-  if (isSupersededProfileState(parsed)) return {kind: 'superseded_profiles'};
-  return {kind: 'invalid'};
+  const config = authConfigSchema.safeParse(parsed);
+  return config.success ? {config: freezeConfig(config.data), kind: 'sessions'} : {kind: 'invalid'};
 }
 
-export async function loadAuthConfig(path = authConfigPath()): Promise<AuthConfigV2> {
+export async function loadAuthConfig(path = authConfigPath()): Promise<AuthConfig> {
   const state = await readAuthFile(path);
 
   if (state.kind === 'empty') return emptyAuthConfig();
-  if (state.kind === 'v2') return state.config;
-  if (state.kind === 'legacy_project_login' || state.kind === 'superseded_profiles') {
-    throw new Error(
-      'The saved login uses the retired destination-credential model. Run `tileflow login` to authorize your Tileflow account.',
-    );
-  }
+  if (state.kind === 'sessions') return state.config;
   throw new Error('Tileflow auth state is invalid; no changes were made.');
 }
 
-export async function installAccountSession(session: CliAccountSessionV2, path = authConfigPath()) {
+export async function installAccountSession(session: CliAccountSession, path = authConfigPath()) {
   const normalized = sessionSchema.parse({
     ...session,
     apiOrigin: normalizeApiOrigin(session.apiOrigin),
@@ -153,7 +114,7 @@ export async function installAccountSession(session: CliAccountSessionV2, path =
   if (state.kind === 'invalid') {
     throw new Error('Tileflow auth state is invalid; no changes were made.');
   }
-  const current = state.kind === 'v2' ? state.config : emptyAuthConfig();
+  const current = state.kind === 'sessions' ? state.config : emptyAuthConfig();
   const sessions = {...current.sessions, [normalized.apiOrigin]: normalized};
   if (Object.keys(sessions).length > maximumOrigins) {
     throw new Error('Tileflow CLI API-origin limit reached.');
@@ -164,11 +125,10 @@ export async function installAccountSession(session: CliAccountSessionV2, path =
 }
 
 export function resolveAccountSession(
-  config: AuthConfigV2,
+  config: AuthConfig,
   apiUrl: string,
   now = new Date(),
-):
-  {kind: 'expired' | 'missing'} | {kind: 'selected'; origin: string; session: CliAccountSessionV2} {
+): {kind: 'expired' | 'missing'} | {kind: 'selected'; origin: string; session: CliAccountSession} {
   const origin = normalizeApiOrigin(apiUrl);
   const session = config.sessions[origin];
   if (!session) return {kind: 'missing'};
@@ -177,7 +137,7 @@ export function resolveAccountSession(
     : {kind: 'selected', origin, session};
 }
 
-export function removeAccountSession(config: AuthConfigV2, apiUrl: string) {
+export function removeAccountSession(config: AuthConfig, apiUrl: string) {
   const origin = normalizeApiOrigin(apiUrl);
   const sessions = {...config.sessions};
   const removed = sessions[origin];
@@ -186,10 +146,10 @@ export function removeAccountSession(config: AuthConfigV2, apiUrl: string) {
 }
 
 export async function writeAuthFileAtomic(
-  config: AuthConfigV2,
+  config: AuthConfig,
   path = authConfigPath(),
 ): Promise<void> {
-  const normalized = normalizeConfig(authConfigV2Schema.parse(config));
+  const normalized = normalizeConfig(authConfigSchema.parse(config));
   const source = `${JSON.stringify(normalized, null, 2)}\n`;
 
   if (Buffer.byteLength(source, 'utf8') > maximumAuthFileBytes) {
@@ -250,18 +210,11 @@ export function parseProjectReference(value: unknown) {
   return match ? {organizationSlug: match[1], projectSlug: match[2]} : null;
 }
 
-export function projectReference(value: {
-  organization: Pick<ProjectIdentity, 'slug'>;
-  project: Pick<ProjectIdentity, 'slug'>;
-}) {
-  return `@${value.organization.slug}/${value.project.slug}`;
-}
-
 export function authConfigPath() {
   return resolve(homedir(), '.tileflow', 'config.json');
 }
 
-function normalizeConfig(config: AuthConfigV2): AuthConfigV2 {
+function normalizeConfig(config: AuthConfig): AuthConfig {
   return {
     sessions: Object.fromEntries(
       Object.entries(config.sessions)
@@ -272,7 +225,7 @@ function normalizeConfig(config: AuthConfigV2): AuthConfigV2 {
   };
 }
 
-function freezeConfig(config: AuthConfigV2): AuthConfigV2 {
+function freezeConfig(config: AuthConfig): AuthConfig {
   const normalized = normalizeConfig(config);
   const sessions = Object.fromEntries(
     Object.entries(normalized.sessions).map(([origin, session]) => [
@@ -281,16 +234,6 @@ function freezeConfig(config: AuthConfigV2): AuthConfigV2 {
     ]),
   );
   return Object.freeze({sessions: Object.freeze(sessions), version: 2 as const});
-}
-
-function isSupersededProfileState(value: unknown) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
-  return (
-    record.version === 2 &&
-    Boolean(record.profiles && typeof record.profiles === 'object') &&
-    Boolean(record.selections && typeof record.selections === 'object')
-  );
 }
 
 async function syncDirectory(path: string) {

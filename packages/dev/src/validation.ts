@@ -21,7 +21,7 @@ export type TileflowDiagnosticSeverity = 'error' | 'info' | 'warning';
 export type TileflowStructuredDiagnostic = {
   phase: string;
   code: string;
-  /** Semantic compiler domain. Legacy `owner` inputs are normalized to this field. */
+  /** Semantic compiler domain; a Core diagnostic's owning-module `owner` is reported here. */
   domain?: string;
   path: string;
   /** Semantic compiler target, when the diagnostic applies to one render contribution. */

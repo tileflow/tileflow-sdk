@@ -42,13 +42,11 @@ export type TileflowNumericDataFieldName =
   | 'circularOuterRadiusMeters'
   | 'circularRadiusAtZoom15'
   | 'circularRadiusMeters'
-  | 'classificationConfidence'
   | 'confidence'
   | 'circumference'
   | 'diameterCrown'
   | 'elevation'
   | 'elevationFeet'
-  | 'hasBusiness'
   | 'hasParts'
   | 'height'
   | 'hide3d'
@@ -63,7 +61,6 @@ export type TileflowNumericDataFieldName =
   | 'refLength'
   | 'renderHeight'
   | 'renderMinHeight'
-  | 'renderMinZoom'
   | 'shieldLineLengthMeters'
   | 'shieldRank';
 

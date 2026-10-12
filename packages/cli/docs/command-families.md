@@ -5,7 +5,7 @@ Start with the [tileflow guide](https://github.com/tileflow/tileflow-sdk/blob/ma
 | Family            | Commands                                                                                       |
 | ----------------- | ---------------------------------------------------------------------------------------------- |
 | Semantic language | `language manifest`, `language schema`                                                         |
-| Map authoring     | `init`, `validate`, `inspect`, `explain`, `semantic-diff`, `build`, `preview` (`dev` alias)    |
+| Map authoring     | `init`, `validate`, `inspect`, `explain`, `semantic-diff`, `build`, `preview`                  |
 | Local evidence    | `setup capture`, `capture`, `visual compare`, `visual analyze`, `visual diff`, `visual update` |
 | Data and assets   | `tileset inspect`, `tileset publish/list/status/purge`, `inspect features`, `icons list/diff`  |
 | Team Icon Sets    | `icon-set publish/list/status/versions/uses/archive/unarchive/purge`                           |
@@ -15,7 +15,7 @@ Start with the [tileflow guide](https://github.com/tileflow/tileflow-sdk/blob/ma
 
 Run `tileflow <command> --help` (or the family help, such as `tileflow icons --help`) for the exact
 arguments and bounded JSON modes. `preview` defaults to the existing web renderer. The explicit
-`preview --renderer native` / `dev --renderer native` mode serves watched `native-v1` artifacts only;
+`preview --renderer native` mode serves watched `native-v1` artifacts only;
 Metro remains the React Native JavaScript development server. See
 [Native artifacts and local preview](./native-artifacts.md) for the endpoint and qualification
 boundary.
@@ -28,5 +28,5 @@ authority when resolving revisions and are the only commands that select revisio
 `tileflow.icons.lock.json`. See the
 [Team Icon Set workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/team-icon-sets.md).
 
-The CLI retains the hidden `projects` command family as a compatibility and support surface for the
-internal application boundary. It is not part of the ordinary workflow or the product catalog.
+The hidden `projects` command family lists and manages the internal application destinations of an
+account for support. It is not part of the ordinary workflow or the product catalog.

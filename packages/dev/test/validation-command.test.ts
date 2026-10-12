@@ -123,7 +123,7 @@ test('preserves top-level theme-audit diagnostics and their actionable suggestio
   ]);
 });
 
-test('preserves semantic context and normalizes legacy owner to domain', () => {
+test('preserves semantic context and reports the owning module as domain', () => {
   const document = createTileflowCommandFailureDocument(
     'explain',
     {

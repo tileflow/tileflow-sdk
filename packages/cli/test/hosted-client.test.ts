@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {CompiledTileflowIconPackage} from '@tileflow/dev/icons';
-import type {CliAccountSessionV2} from '../src/account-session';
+import type {CliAccountSession} from '../src/account-session';
 import {
   publishHostedStyle,
   requestHostedJson,
   requestMapCapability,
-  requestProjectCapability,
   requestTeamCapability,
   uploadHostedIconPackage,
   validateAccountSession,
@@ -93,7 +92,7 @@ test('Hosted client pins requests and credentials to one normalized origin', asy
 });
 
 test('Map capability requests preserve the visible target and hide its Project', async () => {
-  const session: CliAccountSessionV2 = {
+  const session: CliAccountSession = {
     account: {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'},
     accountSession: `tf_session_${'a'.repeat(64)}`,
     apiOrigin: 'https://api.example.test',
@@ -171,7 +170,7 @@ test('Hosted client rejects chunked responses above the byte limit', async () =>
 });
 
 test('Hosted authentication failures never reflect an untrusted remote body', async () => {
-  const session: CliAccountSessionV2 = {
+  const session: CliAccountSession = {
     account: {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'},
     accountSession: `tf_session_${'a'.repeat(64)}`,
     apiOrigin: 'https://api.example.test',
@@ -180,16 +179,19 @@ test('Hosted authentication failures never reflect an untrusted remote body', as
     sessionId: 'cli_session_ada',
   };
   const secret = 'REMOTE_INTERNAL_SECRET_SHOULD_NOT_BE_REFLECTED';
-  const result = await requestProjectCapability(session, '@acme/maps', ['styles:write'], {
-    fetch: (async () => Response.json({error: secret}, {status: 403})) as typeof fetch,
-  });
+  const result = await requestMapCapability(
+    session,
+    {mapId: 'map_0123456789abcdef'},
+    ['styles:write'],
+    {fetch: (async () => Response.json({error: secret}, {status: 403})) as typeof fetch},
+  );
 
-  assert.deepEqual(result, {error: 'Project capability request failed (403).', ok: false});
+  assert.deepEqual(result, {error: 'Map capability request failed (403).', ok: false});
   assert.doesNotMatch(JSON.stringify(result), new RegExp(secret));
 });
 
 test('a revoked account session reports the stable reauthentication action', async () => {
-  const session: CliAccountSessionV2 = {
+  const session: CliAccountSession = {
     account: {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'},
     accountSession: `tf_session_${'a'.repeat(64)}`,
     apiOrigin: 'https://api.example.test',
@@ -201,9 +203,12 @@ test('a revoked account session reports the stable reauthentication action', asy
     Response.json({error: 'private reason'}, {status: 401})) as typeof globalThis.fetch;
 
   const account = await validateAccountSession(session, {fetch});
-  const capability = await requestProjectCapability(session, '@acme/maps', ['styles:write'], {
-    fetch,
-  });
+  const capability = await requestMapCapability(
+    session,
+    {mapId: 'map_0123456789abcdef'},
+    ['styles:write'],
+    {fetch},
+  );
 
   assert.deepEqual(account, {
     error:
@@ -214,7 +219,7 @@ test('a revoked account session reports the stable reauthentication action', asy
 });
 
 test('Team capability requests carry a Team selector and data-only scopes', async () => {
-  const session: CliAccountSessionV2 = {
+  const session: CliAccountSession = {
     account: {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'},
     accountSession: `tf_session_${'a'.repeat(64)}`,
     apiOrigin: 'https://api.example.test',

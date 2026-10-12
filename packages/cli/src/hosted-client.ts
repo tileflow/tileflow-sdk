@@ -4,7 +4,7 @@ import type {CompiledTileflowFontBundle} from '@tileflow/dev/fonts';
 import type {CompiledTileflowIconPackage} from '@tileflow/dev/icons';
 import {
   type AccountIdentity,
-  type CliAccountSessionV2,
+  type CliAccountSession,
   normalizeApiOrigin,
   type ProjectIdentity,
   rejectedAccountSessionMessage,
@@ -171,7 +171,7 @@ export async function pollDeviceToken(
 }
 
 export async function validateAccountSession(
-  session: CliAccountSessionV2,
+  session: CliAccountSession,
   options: HostedRequestOptions = {},
 ): Promise<
   | {ok: true; value: {account: AccountIdentity; session: {expiresAt: string; id: string}}}
@@ -305,7 +305,7 @@ export async function validateApiKey(
 }
 
 export async function requestMapCapability(
-  session: CliAccountSessionV2,
+  session: CliAccountSession,
   target: {mapId: string},
   scopes: HostedCapabilityScope[],
   options: HostedRequestOptions = {},
@@ -328,7 +328,13 @@ export async function requestMapCapability(
     return {error: safeTransportError(error, 'Map capability request failed.'), ok: false};
   }
   if (!response.ok) {
-    return {error: `Map capability request failed (${response.status}).`, ok: false};
+    return {
+      error:
+        response.status === 401
+          ? rejectedAccountSessionMessage
+          : `Map capability request failed (${response.status}).`,
+      ok: false,
+    };
   }
   const body = asRecord(response.body);
   if (
@@ -348,59 +354,8 @@ export async function requestMapCapability(
   return {capability: body.capability, mapId: body.mapId, ok: true};
 }
 
-export async function requestProjectCapability(
-  session: CliAccountSessionV2,
-  project: string,
-  scopes: HostedCapabilityScope[],
-  options: HostedRequestOptions = {},
-): Promise<{capability: string; ok: true} | {error: string; ok: false}> {
-  let response: HostedJsonResponse;
-  try {
-    response = await requestHostedJson(
-      session.apiOrigin,
-      '/v1/cli/project-capabilities',
-      {
-        ...jsonRequest('POST', {project, scopes}),
-        headers: {
-          ...authorizationHeaders(session.accountSession),
-          'Content-Type': 'application/json',
-        },
-      },
-      options,
-    );
-  } catch (error) {
-    return {
-      error: safeTransportError(error, 'Project capability request failed.'),
-      ok: false,
-    };
-  }
-  if (!response.ok) {
-    return {
-      error:
-        response.status === 401
-          ? rejectedAccountSessionMessage
-          : `Project capability request failed (${response.status}).`,
-      ok: false,
-    };
-  }
-  const body = asRecord(response.body);
-  if (
-    !response.json ||
-    typeof body.capability !== 'string' ||
-    !body.capability.startsWith('tf_cap_') ||
-    body.capability.length > 8_192 ||
-    body.reference !== project ||
-    !validIsoDate(body.expiresAt) ||
-    !Array.isArray(body.scopes) ||
-    body.scopes.join('\0') !== [...scopes].sort().join('\0')
-  ) {
-    return {error: 'Project capability response was invalid.', ok: false};
-  }
-  return {capability: body.capability, ok: true};
-}
-
 export async function requestTeamCapability(
-  session: CliAccountSessionV2,
+  session: CliAccountSession,
   team: string,
   scopes: HostedTeamCapabilityScope[],
   options: HostedRequestOptions = {},
@@ -445,7 +400,7 @@ export async function requestTeamCapability(
 }
 
 export async function listAccountTeams(
-  session: CliAccountSessionV2,
+  session: CliAccountSession,
   options: HostedRequestOptions = {},
 ): Promise<{ok: true; teams: ProjectIdentity[]} | {error: string; ok: false}> {
   const response = await requestHostedJson(

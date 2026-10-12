@@ -53,15 +53,26 @@ const dataIdentity: TileflowCaptureDataInput = {
   releaseId: 'world-v1-capture-fixture',
   schema: 'openmaptiles',
   schemaVersion: 1,
+  semantics: {parkLayer: 'protected-only'},
   sourceId: 'tileflow',
 };
 
-const vectorDataIdentity: TileflowCaptureDataInput = {
+const vectorDataIdentity = {
+  bindings: {fields: {class: 'class'}, layers: {road: 'transportation'}},
+  capabilities: {
+    businessCorridor: false,
+    bathymetry: false,
+    canopy: false,
+    globalLandcover: false,
+    tree: false,
+  },
   kind: 'vector-tiles',
   schema: 'openmaptiles',
   schemaVersion: 1,
+  semantics: {parkLayer: 'mixed'},
   sourceId: 'tileflow',
-};
+  url: '/tiles.json',
+} satisfies TileflowCaptureDataInput;
 
 test('sorts and validates scene selection deterministically', () => {
   assert.deepEqual(selectTileflowCaptureSceneNames({project}, ['narrow', 'desktop', 'narrow']), [
@@ -196,17 +207,46 @@ test('capture receipts preserve expanded vector source identity', () => {
     width: 64,
   });
 
+  assert.equal(receipt.data.kind, 'vector-tiles');
+  if (receipt.data.kind !== 'vector-tiles') return;
   assert.deepEqual(receipt.data.bindings, expanded.bindings);
   assert.deepEqual(receipt.data.capabilities, expanded.capabilities);
   assert.deepEqual(receipt.data.semantics, {parkLayer: 'protected-only'});
-  assert.equal(receipt.data.source?.kind, 'root-relative');
-  assert.match(receipt.data.source?.sha256 ?? '', /^[a-f0-9]{64}$/);
+  assert.equal(receipt.data.source.kind, 'root-relative');
+  assert.match(receipt.data.source.sha256, /^[a-f0-9]{64}$/);
   assert.equal('url' in receipt.data, false);
   assert.deepEqual(receipt.verification, {data: 'rendered', style: 'rendered'});
+
+  const {bathymetry: _bathymetry, ...withoutBathymetry} = expanded.capabilities;
+  assert.throws(
+    () =>
+      createTileflowCaptureReceipt({
+        data: {...expanded, capabilities: withoutBathymetry} as never,
+        dpr: 1,
+        height: 64,
+        map: 'madrid',
+        theme: 'light',
+        networkDependent: true,
+        pngSha256: 'a'.repeat(64),
+        renderer: createTileflowCaptureRendererIdentity(),
+        scene: 'expanded',
+        sceneSha256: 'b'.repeat(64),
+        styleSha256: 'c'.repeat(64),
+        target: 'map',
+        width: 64,
+      }),
+    /missing or unsupported/u,
+  );
 });
 
-test('schema-v4 receipts require the canopy capability that earlier schemas predate', () => {
-  const capabilities = {businessCorridor: true, canopy: false, globalLandcover: true, tree: true};
+test('receipts require the canopy capability', () => {
+  const capabilities = {
+    businessCorridor: true,
+    bathymetry: false,
+    canopy: false,
+    globalLandcover: true,
+    tree: true,
+  };
   const receipt = createTileflowCaptureReceipt({
     data: {...vectorDataIdentity, capabilities},
     dpr: 1,
@@ -241,15 +281,6 @@ test('schema-v4 receipts require the canopy capability that earlier schemas pred
       }),
     /invalid data\.capabilities object/u,
   );
-
-  const {theme: _theme, ...v3Scene} = receipt.scene;
-  const v3 = {...receipt, schemaVersion: 3, scene: v3Scene};
-  assert.deepEqual(
-    validateTileflowCaptureReceipt({...v3, data: {...receipt.data, capabilities: withoutCanopy}})
-      .data,
-    {...receipt.data, capabilities: withoutCanopy},
-  );
-  assert.throws(() => validateTileflowCaptureReceipt(v3), /missing or unsupported fields/u);
 });
 
 test('capture receipts accept the complete current Tileflow World binding vocabulary', () => {
@@ -275,6 +306,8 @@ test('capture receipts accept the complete current Tileflow World binding vocabu
     width: 64,
   });
 
+  assert.equal(receipt.data.kind, 'vector-tiles');
+  if (receipt.data.kind !== 'vector-tiles') return;
   assert.deepEqual(receipt.data.bindings, {
     fields: Object.fromEntries(Object.entries(schema.fields).sort()),
     layers: Object.fromEntries(Object.entries(schema.layers).sort()),
@@ -338,7 +371,8 @@ test('receipt source identity strips origins and rotating URL secrets', () => {
   });
   const serialized = serializeTileflowCaptureReceipt(first);
 
-  assert.deepEqual(first.data.source, second.data.source);
+  assert.equal(first.data.kind, 'vector-tiles');
+  assert.deepEqual(first.data, second.data);
   assert.equal(serialized.includes('tiles.example'), false);
   assert.equal(serialized.includes('private.json'), false);
   assert.equal(serialized.includes('first'), false);
@@ -349,14 +383,9 @@ test('receipt object creation and validation enforce the canonical UTF-8 byte li
   const bindings = Object.fromEntries(
     Array.from({length: 64}, (_, index) => [`a${index}`, '界'.repeat(256)]),
   );
+  const oversizedBindings = {fields: bindings, layers: bindings};
   const input = {
-    data: {
-      bindings: {fields: bindings, layers: bindings},
-      kind: 'vector-tiles' as const,
-      schema: 'openmaptiles' as const,
-      schemaVersion: 1,
-      sourceId: 'tileflow' as const,
-    },
+    data: {...vectorDataIdentity, bindings: oversizedBindings},
     dpr: 1 as const,
     height: 64,
     map: 'madrid',
@@ -375,7 +404,7 @@ test('receipt object creation and validation enforce the canonical UTF-8 byte li
   const receipt = createTileflowCaptureReceipt({...input, data: vectorDataIdentity});
   const oversizedObject = {
     ...receipt,
-    data: input.data,
+    data: {...receipt.data, bindings: oversizedBindings},
   };
   assert.throws(() => validateTileflowCaptureReceipt(oversizedObject), /byte limit/u);
 });
@@ -451,25 +480,19 @@ test('application receipts label configured style and data as expected but unver
     style: 'expected-unverified',
   });
 
-  const {verification: _verification, ...legacyCommon} = receipt;
-  const {theme: _theme, ...legacyScene} = receipt.scene;
-  const legacy = {
-    ...legacyCommon,
-    scene: legacyScene,
-    schemaVersion: 2,
-    data: {
-      generation: 'v1',
-      kind: 'tileflow-world',
-      schema: 'openmaptiles',
-      schemaVersion: 1,
-      sourceId: 'tileflow',
-      url: 'http://127.0.0.1:8080/tiles.json?token=legacy-secret',
-    },
-  };
-  const parsedLegacy = parseTileflowCaptureReceipt(serializeCanonicalJson(legacy));
-  assert.deepEqual(parsedLegacy.verification, receipt.verification);
-  assert.equal(parsedLegacy.data.source?.kind, 'loopback');
-  assert.equal(serializeTileflowCaptureReceipt(parsedLegacy).includes('legacy-secret'), false);
+  const {verification: _verification, ...withoutVerification} = receipt;
+  assert.throws(
+    () => parseTileflowCaptureReceipt(serializeCanonicalJson(withoutVerification)),
+    /missing or unsupported/u,
+  );
+  assert.throws(
+    () =>
+      validateTileflowCaptureReceipt({
+        ...receipt,
+        verification: {data: 'rendered', style: 'rendered'},
+      }),
+    /verification does not match its application capture target/u,
+  );
 });
 
 test('emits one exact receipt shape with explicit data identity', () => {
@@ -488,25 +511,16 @@ test('emits one exact receipt shape with explicit data identity', () => {
     target: 'map' as const,
     width: 64,
   };
-  const unpinned = createTileflowCaptureReceipt({
-    ...common,
-    data: {
-      kind: 'vector-tiles',
-      schema: 'openmaptiles',
-      schemaVersion: 1,
-      sourceId: 'tileflow',
-    },
-  });
+  const unpinned = createTileflowCaptureReceipt({...common, data: vectorDataIdentity});
   const pinned = createTileflowCaptureReceipt(common);
 
   assert.equal(unpinned.schemaVersion, 4);
   assert.equal(unpinned.scene.theme, 'light');
-  assert.deepEqual(unpinned.data, {
-    kind: 'vector-tiles',
-    schema: 'openmaptiles',
-    schemaVersion: 1,
-    sourceId: 'tileflow',
-  });
+  const {url: _url, ...vectorIdentityWithoutUrl} = vectorDataIdentity;
+  assert.equal(unpinned.data.kind, 'vector-tiles');
+  if (unpinned.data.kind !== 'vector-tiles') return;
+  assert.deepEqual(unpinned.data, {...vectorIdentityWithoutUrl, source: unpinned.data.source});
+  assert.equal(unpinned.data.source.kind, 'root-relative');
   assert.equal(pinned.schemaVersion, 4);
   assert.deepEqual(pinned.data, dataIdentity);
   assert.deepEqual(Object.keys(unpinned).sort(), Object.keys(pinned).sort());
@@ -518,6 +532,7 @@ test('emits one exact receipt shape with explicit data identity', () => {
     'descriptorSha256',
     'product',
     'releaseId',
+    'semantics',
   ] as const) {
     const incomplete = structuredClone(pinned) as unknown as {
       data: Record<string, unknown>;
@@ -558,30 +573,18 @@ test('emits one exact receipt shape with explicit data identity', () => {
     /data\.semantics\.parkLayer/,
   );
 
-  const {theme: _pinnedTheme, ...legacyPinnedScene} = pinned.scene;
-  const legacyWorld = parseTileflowCaptureReceipt(
-    serializeCanonicalJson({
-      ...pinned,
-      scene: legacyPinnedScene,
-      schemaVersion: 2,
-      data: {
-        kind: 'tileflow-world',
-        revision: '2026-06-07',
-        schema: 'openmaptiles',
-        schemaVersion: 1,
-        sourceId: 'tileflow',
-      },
-    }),
+  const {url: _vectorUrl, ...unfingerprinted} = vectorDataIdentity;
+  assert.throws(
+    () => createTileflowCaptureReceipt({...common, data: unfingerprinted as never}),
+    /invalid data\.url/u,
   );
-  assert.equal(legacyWorld.schemaVersion, 2);
-  assert.equal(JSON.parse(serializeTileflowCaptureReceipt(legacyWorld)).schemaVersion, 2);
-  assert.deepEqual(legacyWorld.data, {
-    kind: 'tileflow-world',
-    revision: '2026-06-07',
-    schema: 'openmaptiles',
-    schemaVersion: 1,
-    sourceId: 'tileflow',
-  });
+  for (const schemaVersion of [1, 2, 3, 5]) {
+    assert.throws(
+      () => validateTileflowCaptureReceipt({...pinned, schemaVersion}),
+      /schema version is unsupported/u,
+      String(schemaVersion),
+    );
+  }
 });
 
 test('reads PNG dimensions and rejects non-PNG bytes', () => {

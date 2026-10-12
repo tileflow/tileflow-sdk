@@ -4,7 +4,6 @@ import {dirname, join, resolve} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import * as client from '../src/client';
-import * as root from '../src/index';
 import * as manifest from '../src/manifest';
 import * as overlays from '../src/overlays';
 import * as scene from '../src/scene';
@@ -79,20 +78,29 @@ test('focused source entries preserve the exact public runtime surfaces', () => 
   assert.deepEqual(Object.keys(manifest).sort(), manifestExports);
   assert.deepEqual(Object.keys(overlays).sort(), overlayExports);
   assert.deepEqual(Object.keys(scene).sort(), sceneExports);
-  assert.deepEqual(
-    Object.keys(root).sort(),
-    [...clientExports, ...manifestExports, ...overlayExports, ...sceneExports].sort(),
-  );
 });
 
-test('source subpaths do not import the root and the internal graph is acyclic', async () => {
+test('the package has no root entry and its internal graph is acyclic', async () => {
+  const packageJson = JSON.parse(await readFile(join(packageRoot, 'package.json'), 'utf8')) as {
+    exports: Record<string, unknown>;
+    main?: string;
+    types?: string;
+  };
+  assert.deepEqual(Object.keys(packageJson.exports).sort(), [
+    './client',
+    './manifest',
+    './overlays',
+    './scene',
+  ]);
+  assert.equal(packageJson.main, undefined);
+  assert.equal(packageJson.types, undefined);
+
   const fileNames = (await readdir(sourceRoot)).filter((name) => name.endsWith('.ts'));
   const graph = new Map<string, string[]>();
 
   for (const fileName of fileNames) {
     const path = join(sourceRoot, fileName);
     const source = await readFile(path, 'utf8');
-    if (fileName !== 'index.ts') assert.doesNotMatch(source, /from ['"]\.\/index['"]/u);
     const dependencies = [...source.matchAll(/(?:from\s+|import\s*\(\s*)['"](\.\/[^'"]+)['"]/gu)]
       .map((match) => resolve(dirname(path), `${match[1]}.ts`))
       .filter((dependency) => dependency.startsWith(sourceRoot));
@@ -110,9 +118,6 @@ test('source subpaths do not import the root and the internal graph is acyclic',
     visited.add(path);
   };
   for (const path of graph.keys()) visit(path);
-
-  const index = await readFile(join(sourceRoot, 'index.ts'), 'utf8');
-  assert.equal(index.split('\n').filter((line) => line.trim()).length, 5);
 });
 
 test('built entry graphs exclude unrelated responsibilities and publish required types', async () => {
@@ -152,49 +157,6 @@ test('built entry graphs exclude unrelated responsibilities and publish required
   assert.match(sceneTypes, /\bStaticMapFormat\b/u);
   assert.match(sceneTypes, /\bStaticMapRequestErrorResponse\b/u);
   assert.match(sceneTypes, /\bStaticMapRequestError\b/u);
-});
-
-test('prepared requests work across root and client built entries in both directions', async () => {
-  const builtRoot = (await import('../dist/index.js')) as typeof root;
-  const builtClient = (await import('../dist/client.js')) as typeof client;
-  const staticScene = {
-    camera: {center: [0, 0] as [number, number], type: 'center' as const, zoom: 2},
-    map: 'main',
-    size: {height: 480, width: 640},
-    theme: 'light',
-  };
-  const fetcher = (async () =>
-    Response.json({
-      attribution: {
-        entries: [],
-        mode: 'embedded',
-        position: 'bottom-right',
-      },
-      cached: false,
-      hash: 'a'.repeat(43),
-      imageUrl: `https://cdn.example.test/static-maps/v1/${'a'.repeat(43)}.png`,
-      operationId: 'smo_12345678901234567890',
-      remainingUnits: 1,
-      resultVersion: 1,
-      status: 'ready',
-      unitCost: 15,
-    })) as typeof fetch;
-
-  const rootRequest = builtRoot.prepareStaticMapRequest(staticScene);
-  const clientResult = await builtClient.requestStaticMapUntilReady(rootRequest, {
-    createUrl: '/api/static-maps',
-    fetch: fetcher,
-    idempotencyKey: 'static_root_client',
-  });
-  const clientRequest = builtClient.prepareStaticMapRequest(staticScene);
-  const rootResult = await builtRoot.requestStaticMapUntilReady(clientRequest, {
-    createUrl: '/api/static-maps',
-    fetch: fetcher,
-    idempotencyKey: 'static_client_root',
-  });
-
-  assert.equal(clientResult.status, 'ready');
-  assert.equal(rootResult.status, 'ready');
 });
 
 async function readStaticImportGraph(entry: string): Promise<string> {

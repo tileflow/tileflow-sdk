@@ -21,8 +21,6 @@
     "maplibre",
     "tiles"
   ],
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "files": [
     "dist",
     "LICENSE"
@@ -30,17 +28,12 @@
   "scripts": {
     "prepack": "node ../../scripts/package-license.mjs --prepare",
     "postpack": "node ../../scripts/package-license.mjs --clean",
-    "build": "tsup src/index.ts src/scene.ts src/overlays.ts src/manifest.ts src/client.ts --format esm --dts --clean --splitting && node ../../scripts/canonicalize-zod-enums.mjs dist",
+    "build": "tsup src/scene.ts src/overlays.ts src/manifest.ts src/client.ts --format esm --dts --clean --splitting && node ../../scripts/canonicalize-zod-enums.mjs dist",
     "verify": "pnpm --silent --dir ../.. static-text:check && tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "default": "./dist/index.js"
-    },
     "./client": {
       "types": "./dist/client.d.ts",
       "import": "./dist/client.js",

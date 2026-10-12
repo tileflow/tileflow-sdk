@@ -11,10 +11,7 @@ import type {TileflowCapture} from './capture';
 import {TileflowCaptureError} from './errors';
 import {
   parseTileflowCaptureReceipt,
-  type TileflowCaptureDataIdentityV2,
-  type TileflowCaptureDataIdentityV4,
   type TileflowCaptureReceipt,
-  type TileflowCaptureReceiptV4,
   validateTileflowCaptureReceipt,
 } from './receipt';
 import {readPngDimensions} from './standalone';
@@ -196,8 +193,8 @@ export type TileflowVisualReviewImageAnalysis = {
 
 /** Internal review primitive: authenticate both images before optionally comparing their pixels. */
 export async function analyzeTileflowCapturePairForReview(
-  left: {png: Uint8Array; receipt: TileflowCaptureReceiptV4},
-  right: {png: Uint8Array; receipt: TileflowCaptureReceiptV4},
+  left: {png: Uint8Array; receipt: TileflowCaptureReceipt},
+  right: {png: Uint8Array; receipt: TileflowCaptureReceipt},
   options: {comparePixels: boolean; includeDiff: boolean; region?: TileflowVisualRegion},
 ): Promise<TileflowVisualReviewImageAnalysis> {
   if (options.region) {
@@ -269,7 +266,7 @@ export async function analyzeTileflowCapturePairForReview(
 
 async function inspectPngAgainstReceipt(
   png: Uint8Array,
-  receipt: TileflowCaptureReceiptV4,
+  receipt: TileflowCaptureReceipt,
   role: 'left' | 'right',
 ): Promise<TileflowVisualReviewImageAnalysis['left']> {
   const image = await validatePngAgainstReceipt(png, receipt, role);
@@ -278,7 +275,7 @@ async function inspectPngAgainstReceipt(
 
 function reviewImageAnalysisIdentity(
   image: {data: Uint8Array; height: number; width: number},
-  receipt: TileflowCaptureReceiptV4,
+  receipt: TileflowCaptureReceipt,
 ): TileflowVisualReviewImageAnalysis['left'] {
   return {
     sha256: receipt.image.sha256,
@@ -303,9 +300,6 @@ export async function analyzeTileflowCaptureReference(
 ): Promise<TileflowVisualReferenceAnalysis> {
   const requestedRegion = snapshotTileflowVisualReferenceAnalysisOptions(options);
   const receipt = validateTileflowCaptureReceipt(actualCapture.receipt);
-  if (receipt.schemaVersion !== 4) {
-    throw invalidBaseline('Visual reference analysis requires a schema-v4 capture receipt.');
-  }
   const actualImage = await validatePngAgainstReceipt(actualCapture.png, receipt, 'actual');
   const referenceImage = decodePng(referencePng, 'reference');
   const dimensionsMatch =
@@ -1049,94 +1043,11 @@ function sameSceneIdentity(
   return (
     baseline.scene.name === actual.scene.name &&
     baseline.scene.map === actual.scene.map &&
+    baseline.scene.theme === actual.scene.theme &&
     baseline.scene.target === actual.scene.target &&
     baseline.scene.sha256 === actual.scene.sha256 &&
-    sameDataIdentity(baseline.data, actual.data)
+    serializeCanonicalJson(baseline.data) === serializeCanonicalJson(actual.data)
   );
-}
-
-function sameDataIdentity(
-  baseline: TileflowCaptureReceipt['data'],
-  actual: TileflowCaptureReceipt['data'],
-): boolean {
-  if (
-    baseline.kind !== actual.kind ||
-    baseline.schema !== actual.schema ||
-    baseline.schemaVersion !== actual.schemaVersion ||
-    baseline.sourceId !== actual.sourceId
-  ) {
-    return false;
-  }
-  const baselineExactWorld = exactWorldIdentity(baseline);
-  const actualExactWorld = exactWorldIdentity(actual);
-  if (baselineExactWorld || actualExactWorld) {
-    if (!baselineExactWorld || !actualExactWorld) return false;
-    return (
-      baselineExactWorld.product === actualExactWorld.product &&
-      baselineExactWorld.releaseId === actualExactWorld.releaseId &&
-      baselineExactWorld.descriptorSha256 === actualExactWorld.descriptorSha256 &&
-      baselineExactWorld.archiveSha256 === actualExactWorld.archiveSha256 &&
-      baselineExactWorld.dataContractSha256 === actualExactWorld.dataContractSha256 &&
-      baselineExactWorld.contractSha256 === actualExactWorld.contractSha256 &&
-      sameOptionalSemantics(baselineExactWorld.semantics, actualExactWorld.semantics)
-    );
-  }
-  const baselineLegacy = baseline as TileflowCaptureDataIdentityV2;
-  const actualLegacy = actual as TileflowCaptureDataIdentityV2;
-  if (
-    baselineLegacy.generation !== actualLegacy.generation ||
-    baselineLegacy.revision !== actualLegacy.revision ||
-    !sameOptionalSemantics(baselineLegacy.semantics, actualLegacy.semantics)
-  ) {
-    return false;
-  }
-  if (
-    baselineLegacy.source &&
-    (!actualLegacy.source ||
-      baselineLegacy.source.kind !== actualLegacy.source.kind ||
-      baselineLegacy.source.sha256 !== actualLegacy.source.sha256)
-  ) {
-    return false;
-  }
-  if (
-    baselineLegacy.capabilities &&
-    (!actualLegacy.capabilities ||
-      !isRecordSubset(baselineLegacy.capabilities, actualLegacy.capabilities))
-  ) {
-    return false;
-  }
-  if (baselineLegacy.bindings) {
-    if (!actualLegacy.bindings) return false;
-    if (
-      !isRecordSubset(baselineLegacy.bindings.fields, actualLegacy.bindings.fields) ||
-      !isRecordSubset(baselineLegacy.bindings.layers, actualLegacy.bindings.layers)
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function exactWorldIdentity(
-  value: TileflowCaptureReceipt['data'],
-): Extract<TileflowCaptureDataIdentityV4, {kind: 'tileflow-world'}> | undefined {
-  return value.kind === 'tileflow-world' && 'product' in value
-    ? (value as Extract<TileflowCaptureDataIdentityV4, {kind: 'tileflow-world'}>)
-    : undefined;
-}
-
-function sameOptionalSemantics(
-  baseline: {parkLayer: string} | undefined,
-  actual: {parkLayer: string} | undefined,
-): boolean {
-  return baseline === undefined || baseline.parkLayer === actual?.parkLayer;
-}
-
-function isRecordSubset(
-  baseline: Readonly<Record<string, unknown>>,
-  actual: Readonly<Record<string, unknown>>,
-): boolean {
-  return Object.entries(baseline).every(([key, value]) => actual[key] === value);
 }
 
 function sameRuntimeIdentity(

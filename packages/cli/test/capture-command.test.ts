@@ -908,6 +908,7 @@ function createCapture(scene: string): TileflowCapture {
       releaseId: 'world-v1-cli-fixture',
       schema: 'openmaptiles',
       schemaVersion: 1,
+      semantics: {parkLayer: 'protected-only'},
       sourceId: 'tileflow',
     },
     dpr: 1,

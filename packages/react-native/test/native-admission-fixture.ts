@@ -60,6 +60,19 @@ export class AdmissionBridgeDouble implements NativeAdmissionBridge {
     return {context, generation: 1};
   }
 
+  async extendContext(
+    _installation: string,
+    context: string,
+    resources: readonly NativeAdmissionResource[],
+  ) {
+    const previous = this.registrations.get(context);
+    if (!previous) throw new Error('Retired context.');
+    const merged = new Map(previous.resources.map((entry) => [entry.url, entry]));
+    for (const entry of resources) merged.set(entry.url, entry);
+    this.registrations.set(context, {...previous, resources: [...merged.values()]});
+    return {resources: merged.size};
+  }
+
   async retireContext(_installation: string, context: string): Promise<{retired: true}> {
     await this.retireGate;
     this.retirements.push(context);

@@ -1,33 +1,32 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  circle,
-  compileStaticOverlays,
-  createRenderManifest,
   createStaticMap,
   createStaticMapIdempotencyKey,
-  hashRenderManifest,
-  hashStaticSceneRequest,
-  line,
-  marker,
-  polygon,
   prepareStaticMapRequest,
   requestStaticMapUntilReady,
   STATIC_MAP_RESULT_MEDIA_TYPE,
   StaticMapError,
-  staticOverlayPlacements,
+  validateStaticMapIdempotencyKey,
+} from '../src/client';
+import {
+  createRenderManifest,
+  hashRenderManifest,
+  hashStaticSceneRequest,
   staticRenderManifestSchema,
+  validateStaticRenderManifest,
+} from '../src/manifest';
+import {circle, compileStaticOverlays, line, marker, polygon, symbol} from '../src/overlays';
+import {
+  staticOverlayPlacements,
   staticSceneLimits,
   staticSceneSchema,
   staticSymbolAnchors,
   staticSymbolLabelAppearances,
   staticSymbolLabelPositions,
   staticSymbolLanguages,
-  symbol,
-  validateStaticMapIdempotencyKey,
-  validateStaticRenderManifest,
   validateStaticScene,
-} from '../src/index';
+} from '../src/scene';
 
 const baseScene = {
   camera: {center: [0, 0] as [number, number], type: 'center' as const, zoom: 2},

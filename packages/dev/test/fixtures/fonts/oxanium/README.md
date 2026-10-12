@@ -1,15 +1,10 @@
-# The generic font tests Oxanium fonts
+# Oxanium test fonts
 
-The The generic font tests map bundles the unmodified Medium and SemiBold TTFs from the Oxanium family. Its
-`fonts` array imports this directory through the package-owned `cyberpunkFonts` descriptor. The
-generic Node build validates the OpenType metadata and `LICENSE.txt`, emits the selected faces as
-content-addressed assets, and records them in style metadata for preview and runtime loading.
-
-The generic font tests names the exact OpenType face `Oxanium Medium` for roads, water, and POIs and
-`Oxanium SemiBold` for place labels. Its stacks contain only those package-owned faces: the local
-font pipeline selects the first face in each stack, so The generic font tests does not declare unfixed system or
-remote fallbacks. Tileflow does not synthesize a face by combining a family with a weight. The
-style omits a remote glyph endpoint so MapLibre GL JS rasterizes the packaged faces locally.
+These unmodified Medium and SemiBold TTFs from the Oxanium family exercise the local font pipeline
+in tests: OpenType metadata and `LICENSE.txt` validation, content-addressed asset output, and the
+style metadata used for preview and runtime loading. Tests reference the exact OpenType faces
+`Oxanium Medium` and `Oxanium SemiBold`; Tileflow does not synthesize a face by combining a family
+with a weight.
 
 - Upstream: <https://github.com/sevmeyer/oxanium>
 - Google Fonts specimen: <https://fonts.google.com/specimen/Oxanium>

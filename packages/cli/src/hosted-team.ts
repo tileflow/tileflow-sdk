@@ -1,6 +1,6 @@
 import pc from 'picocolors';
 import {serializeCanonicalJson} from '@tileflow/core';
-import {type AuthConfigV2, normalizeApiOrigin, resolveAccountSession} from './account-session';
+import {type AuthConfig, normalizeApiOrigin, resolveAccountSession} from './account-session';
 import type {ProjectIdentity} from './account-session';
 import {
   type HostedTeamCapabilityScope,
@@ -18,7 +18,7 @@ export type HostedTeamOptions = {
 
 export type HostedTeamDependencies = {
   defaultApiUrl: string;
-  loadAuthConfig: () => Promise<AuthConfigV2>;
+  loadAuthConfig: () => Promise<AuthConfig>;
 };
 
 export type HostedTeamAuthority = {
@@ -62,7 +62,7 @@ export async function resolveTeamAuthority(
     return {apiOrigin, credential: options.apiKey, team: null};
   }
 
-  let config: AuthConfigV2;
+  let config: AuthConfig;
   try {
     config = await dependencies.loadAuthConfig();
   } catch (error) {

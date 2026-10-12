@@ -91,6 +91,8 @@ set of themes loads their Styles and fonts and replaces the Style once with a pr
 holds every theme; until then, and in `data-tileflow-theme` throughout, the theme nearest to the
 position is the resolved theme. Later position changes for the same themes apply synchronously
 without a Style replacement or a theme transition event. Removing `themeBlend` applies `theme` again.
+`themeBlend.hold: true` holds back the change of nearest theme and mixed artwork, as the theme
+controller's `setBlend({hold: true})` does; the next selection without `hold` applies them at once.
 Blended themes must share sources, layers, filters, sprite, and glyphs; otherwise the blend fails
 without changing the map. Ground values follow the position; symbol values and values that read
 feature state change when the nearest theme changes, the latter with one source re-layout covered

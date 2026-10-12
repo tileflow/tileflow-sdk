@@ -1,10 +1,12 @@
-import type {TileflowThemeTransitionOptions} from '@tileflow/core/browser';
+import {
+  type TileflowBrowserThemeBlendSelection,
+  type TileflowThemeTransitionOptions,
+  validateTileflowBrowserThemeBlendSelection,
+} from '@tileflow/core/browser';
 import {
   type TileflowRuntimeSource,
-  type TileflowThemeBlendSelection,
   type TileflowThemeSelection,
   validateTileflowRuntimeSource,
-  validateTileflowThemeBlendSelection,
   validateTileflowThemeSelection,
 } from '@tileflow/core/runtime';
 
@@ -13,9 +15,10 @@ export type TileflowMapStyleSourceProps = {
   theme?: TileflowThemeSelection;
   /**
    * Shows a continuous blend of the map's themes instead of `theme`. Moving `position` changes the
-   * map at once; changing `themes` prepares a new blend.
+   * map at once; changing `themes` prepares a new blend. `hold` keeps labels, icons, and mixed
+   * artwork back during a camera move; clearing it brings them in at once.
    */
-  themeBlend?: TileflowThemeBlendSelection;
+  themeBlend?: TileflowBrowserThemeBlendSelection;
   /** Cross-fades theme changes, including entering and leaving a blend. */
   themeTransition?: TileflowThemeTransitionOptions;
 };
@@ -37,10 +40,13 @@ export function validateTileflowMapStyleInputs(
   if (input.theme !== undefined && !validateTileflowThemeSelection(input.theme)) {
     return {error: 'theme must be a concrete portable theme name or "system"', ok: false};
   }
-  if (input.themeBlend !== undefined && !validateTileflowThemeBlendSelection(input.themeBlend)) {
+  if (
+    input.themeBlend !== undefined &&
+    !validateTileflowBrowserThemeBlendSelection(input.themeBlend)
+  ) {
     return {
       error:
-        'themeBlend must name two to eight concrete themes and a position from 0 to themes.length - 1',
+        'themeBlend must name two to eight concrete themes, a position from 0 to themes.length - 1, and an optional boolean hold',
       ok: false,
     };
   }

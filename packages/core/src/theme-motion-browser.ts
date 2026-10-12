@@ -1,5 +1,6 @@
 import {
   fillTileflowThemeBlendTemplate,
+  readsTileflowFeatureData,
   type TileflowThemeBlendImage,
   type TileflowThemeBlendPaint,
   type TileflowThemeBlendPlan,
@@ -169,10 +170,23 @@ export type TileflowThemeBlender = {
   baseValue(layer: string, property: string): unknown;
   dispose(): void;
   readonly dominant: number;
+  /** Whether changes that make MapLibre lay tiles out again are waiting (see `set`). */
+  readonly held: boolean;
   readonly position: number;
+  /**
+   * Positions where the nearest theme changes over values that make MapLibre lay tiles out
+   * again: layout values, values that read feature data or state, patterns, and icon names or
+   * artwork that differ between the two themes.
+   */
+  readonly relayoutAt: readonly number[];
   /** Writes the blended values again through the transform, only those `include` selects. */
   refresh(include: (layer: string, property: string) => boolean): void;
-  set(position: number): void;
+  /**
+   * Moves the blend. With `hold`, what would make MapLibre lay tiles out again waits: the change of
+   * nearest theme and mixed pattern artwork. Colours, numbers, the sky, and light still follow the
+   * position. A later call without `hold` brings what waited in at once.
+   */
+  set(position: number, options?: {hold?: boolean}): void;
 };
 
 /** A change applied to each paint value a blend writes, such as an emphasis. */
@@ -228,6 +242,8 @@ export function createTileflowThemeBlender(
   const positionPaints = plan.paints.filter((paint) => paint.follows === 'position');
   const dominantPaints = plan.paints.filter((paint) => paint.follows === 'dominant');
   const pixels = createImageMixer(map, plan.images);
+  const mixesArtwork = plan.images.some((image) => image.follows === 'position');
+  const relayoutAt = relayoutPositions(plan);
   const shownValues = new Map<TileflowThemeBlendPaint, string>();
   const baseValues = new Map<string, unknown>();
   const valueKey = (layer: string, property: string) => `${layer}\u0000${property}`;
@@ -239,6 +255,8 @@ export function createTileflowThemeBlender(
   let fade: {from: number; start: number; to: number} | undefined;
   let frameRequest: number | undefined;
   let disposed = false;
+  let holding = false;
+  let artworkWaits = false;
 
   // The style already shows the starting position; only images must be painted.
   pixels.paint('position', position);
@@ -300,9 +318,13 @@ export function createTileflowThemeBlender(
     get dominant() {
       return dominant;
     },
+    get held() {
+      return holding && (artworkWaits || Math.round(position) !== dominant);
+    },
     get position() {
       return position;
     },
+    relayoutAt,
     refresh(include) {
       if (disposed) return;
       drive(
@@ -333,8 +355,10 @@ export function createTileflowThemeBlender(
       }
       frameRequest = undefined;
     },
-    set(next) {
+    set(next, setOptions) {
       if (disposed) return;
+      const hold = setOptions?.hold === true;
+      if (hold) holding = true;
       const target = clamp(next);
       // A four-hundredth of a theme is below what the eye sees; skipping it lets a slowly moving
       // blend leave the map at rest between changes. Whole themes are always reached exactly.
@@ -342,15 +366,23 @@ export function createTileflowThemeBlender(
       if (Math.abs(target - position) >= 0.0025 || reachesTheme) {
         position = target;
         drive(positionPaints, position);
-        pixels.paint('position', position);
+        // Mixed artwork makes MapLibre lay out the tiles that use it, so it waits while held.
+        if (holding) artworkWaits ||= mixesArtwork;
+        else pixels.paint('position', position);
         if (plan.sky !== undefined && typeof map.setSky === 'function')
           map.setSky(fillTileflowThemeBlendTemplate(plan.sky, position), {validate: false});
         if (plan.light !== undefined && typeof map.setLight === 'function')
           map.setLight(fillTileflowThemeBlendTemplate(plan.light, position), {validate: false});
         options.onPosition?.();
       }
+      if (!hold && holding) {
+        holding = false;
+        if (artworkWaits) pixels.paint('position', position);
+        artworkWaits = false;
+      }
+      // While held, the map keeps the nearest theme it shows; the change comes on release.
       const nextDominant = Math.round(target);
-      if (nextDominant === dominant) return;
+      if (nextDominant === dominant || holding) return;
       dominant = nextDominant;
       if (plan.switches.length > 0) {
         const change = () => applySwitches(nextDominant);
@@ -366,44 +398,74 @@ export function createTileflowThemeBlender(
 
 /**
  * Mixes theme artworks in the pixels of the first theme's images. Originals are copied before the
- * first change; a mix is uploaded only when it moves by a thirty-second of a theme. Images not yet
- * available are painted when a later call finds them.
+ * first change; a mix is uploaded only when it moves by a thirty-second of a theme, and only when
+ * what the image shows changes: two themes that share an artwork, by name or pixel for pixel,
+ * upload nothing between them, since each upload makes MapLibre lay out every tile that uses the
+ * image. Images not yet available are painted when a later call finds them.
  */
 function createImageMixer(map: BlendMap, images: readonly TileflowThemeBlendImage[]) {
-  const art = new Map<string, {data: Uint8Array; height: number; width: number}>();
-  const shown = new Map<TileflowThemeBlendImage, number>();
+  type Art = {data: Uint8Array; height: number; width: number};
+  const art = new Map<string, Art>();
+  // What each image shows: an original artwork, or the key of a mix.
+  const shown = new Map<TileflowThemeBlendImage, Art | string>();
   const unusable = new Set<TileflowThemeBlendImage>();
+  const names = new Map<Art, string>();
+  const alike = new Map<string, boolean>();
   const artOf = (name: string) => {
     if (!art.has(name)) {
       const image = map.getImage(name)?.data;
       if (!image) return undefined;
-      art.set(name, {data: Uint8Array.from(image.data), height: image.height, width: image.width});
+      const copy = {data: Uint8Array.from(image.data), height: image.height, width: image.width};
+      art.set(name, copy);
+      names.set(copy, name);
     }
     return art.get(name);
+  };
+  /** Whether two artworks hold the same pixels; compared once per pair of names. */
+  const same = (from: Art, to: Art) => {
+    if (from === to) return true;
+    const key = `${names.get(from)}\u0000${names.get(to)}`;
+    if (!alike.has(key)) {
+      let equal = from.data.length === to.data.length;
+      for (let byte = 0; equal && byte < from.data.length; byte += 1)
+        equal = from.data[byte] === to.data[byte];
+      alike.set(key, equal);
+    }
+    return alike.get(key)!;
   };
   return {
     paint(follows: 'dominant' | 'position', position: number) {
       const quantized = Math.round(position * 32) / 32;
       for (const image of images) {
-        if (image.follows !== follows || unusable.has(image) || shown.get(image) === quantized)
-          continue;
+        if (image.follows !== follows || unusable.has(image)) continue;
         const sources = image.names.map(artOf);
         if (sources.some((source) => !source)) continue;
-        const [first] = sources as [NonNullable<(typeof sources)[number]>];
+        const [first] = sources as [Art];
         if (
           sources.some((source) => source!.width !== first.width || source!.height !== first.height)
         ) {
           unusable.add(image);
           continue;
         }
-        shown.set(image, quantized);
+        // The map starts with the first theme's artwork under the first name.
+        if (!shown.has(image)) shown.set(image, first);
         const index = Math.min(sources.length - 2, Math.floor(quantized));
         const t = quantized - index;
         const from = sources[index]!;
         const to = sources[index + 1]!;
-        let data = from.data;
-        if (t >= 1) data = to.data;
-        else if (t > 0 && from !== to) {
+        let content: Art | string = from;
+        if (t >= 1) content = to;
+        else if (t > 0 && !same(from, to)) content = `${index}:${t}`;
+        const before = shown.get(image)!;
+        if (
+          before === content ||
+          (typeof before !== 'string' && typeof content !== 'string' && same(before, content))
+        )
+          continue;
+        shown.set(image, content);
+        let data: Uint8Array;
+        if (typeof content !== 'string') data = content.data;
+        else {
           data = new Uint8Array(from.data.length);
           for (let byte = 0; byte < data.length; byte += 1)
             data[byte] = from.data[byte]! + (to.data[byte]! - from.data[byte]!) * t;
@@ -412,6 +474,31 @@ function createImageMixer(map: BlendMap, images: readonly TileflowThemeBlendImag
       }
     },
   };
+}
+
+/**
+ * Positions where the nearest theme changes over values that make MapLibre lay tiles out again.
+ * Artwork is compared by name: two names that hold the same pixels are reported, though the
+ * mixer uploads nothing for them.
+ */
+function relayoutPositions(plan: TileflowThemeBlendPlan): number[] {
+  const positions: number[] = [];
+  const relays = (entry: TileflowThemeBlendPlan['switches'][number]) =>
+    entry.group === 'layout' ||
+    entry.property.endsWith('-pattern') ||
+    entry.values.some(readsTileflowFeatureData);
+  for (let index = 0; index + 1 < plan.themes; index += 1) {
+    const switched = plan.switches.some(
+      (entry) =>
+        relays(entry) &&
+        JSON.stringify(entry.values[index]) !== JSON.stringify(entry.values[index + 1]),
+    );
+    const icons = plan.images.some(
+      (image) => image.follows === 'dominant' && image.names[index] !== image.names[index + 1],
+    );
+    if (switched || icons) positions.push(index + 0.5);
+  }
+  return positions;
 }
 
 function isCrossfadeMap(map: TileflowThemeMotionMap): map is TileflowThemeMotionMap & CrossfadeMap {

@@ -41,6 +41,7 @@ test('accepts theme blends of two to eight concrete themes with a position insid
   for (const themeBlend of [
     {position: 0, themes: ['night', 'day']},
     {position: 1.25, themes: ['night', 'sunset', 'day']},
+    {hold: true, position: 0.5, themes: ['night', 'day']},
   ]) {
     assert.deepEqual(validateTileflowMapStyleInputs({source, themeBlend}), {ok: true});
   }
@@ -52,6 +53,7 @@ test('accepts theme blends of two to eight concrete themes with a position insid
     {position: 0, themes: ['night', 'system']},
     {position: 0, themes: ['night', 'Day']},
     {themes: ['night', 'day']},
+    {hold: 'yes', position: 0, themes: ['night', 'day']},
     {position: 0, themes: Array.from({length: 9}, (_, index) => `theme-${index}`)},
   ]) {
     assert.equal(

@@ -192,6 +192,7 @@
   });
   $: themeBlendKey = themeBlend ? JSON.stringify(themeBlend.themes) : undefined;
   $: themeBlendPosition = themeBlend?.position;
+  $: themeBlendHold = themeBlend?.hold === true;
   $: resolvedThemeName = themeResolution.name;
   $: manifestView = resolveTileflowRuntimeView({manifestMap});
   $: manifestCenter = normalizeTileflowRuntimeCenter(manifestView.center);
@@ -307,6 +308,7 @@
   $: if (mounted) {
     blendStyles;
     themeBlendPosition;
+    themeBlendHold;
     void switchBlend();
   }
 
@@ -782,7 +784,7 @@
     if (!themeController || !blendStyles || position === undefined) return;
     if (runtimeStyle) activeRuntimeResource = runtimeStyle;
     const result = await themeController.setBlend(
-      {position, themes: blendStyles},
+      {hold: themeBlendHold, position, themes: blendStyles},
       {transition: themeTransition},
     );
     if (result.status === 'failed') {

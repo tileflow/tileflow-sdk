@@ -20,6 +20,7 @@ const validProps = [
   {source, theme: 'system'},
   {source, theme: 'night', themeTransition: {duration: 450}},
   {source, themeBlend: {position: 1.25, themes: ['night', 'sunset', 'day']}},
+  {source, themeBlend: {hold: true, position: 0.5, themes: ['night', 'day']}},
   {mode: 'image', imageUrl: '/maps/main.png', source},
 ] satisfies MapProps[];
 

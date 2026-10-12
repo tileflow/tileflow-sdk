@@ -35,11 +35,19 @@ test('accepts theme blends of two to eight concrete themes with a position insid
     }),
     {ok: true},
   );
+  assert.deepEqual(
+    validateTileflowMapStyleInputs({
+      source,
+      themeBlend: {hold: true, position: 0.5, themes: ['night', 'day']},
+    }),
+    {ok: true},
+  );
   for (const themeBlend of [
     {position: 0, themes: ['day']},
     {position: 2, themes: ['night', 'day']},
     {position: 0, themes: ['night', 'system']},
     {themes: ['night', 'day']},
+    {hold: 'yes', position: 0, themes: ['night', 'day']},
   ]) {
     assert.equal(validateTileflowMapStyleInputs({source, themeBlend}).ok, false);
   }

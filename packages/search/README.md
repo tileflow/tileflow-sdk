@@ -11,13 +11,42 @@ selected-place resolution. It uses `fetch` and has no renderer or global interac
 npm install @tileflow/search@alpha
 ```
 
-Use Node.js 22 or another runtime with `fetch`. Live requests require enabled Tileflow Search and a
-Team credential with `geocoding:read`. Keep privileged credentials on your application server.
-Browser and mobile interfaces call their own authorized server endpoint.
+Use Node.js 22, a browser or another runtime with `fetch`. Live requests require enabled Tileflow
+Search and a Team credential with `geocoding:read`: a publishable credential in websites and apps,
+or a server credential on your server.
 
-Managed operations require paid Starter or a separate, finite Search evaluation grant. A Starter
-trial or complimentary assignment alone does not authorize Search. Free Teams can read categories.
+Free Teams, Starter trials and complimentary access run Search within their period's API units, up
+to 100,000 Search units, while Search without payment is open; a finite evaluation grant can extend
+them. Paid Starter runs Search within its shared API allowance and excess.
 Installing this package does not enable the service or grant access.
+
+## Call Search from a browser or app
+
+A publishable credential (`tf_public_…`) is meant to be visible in client code. It grants Search
+only, works only from the websites and native apps listed for it, and always carries per-minute and
+per-day quotas. A Team Admin creates one under **Credentials** in the Tileflow dashboard.
+
+```ts
+import {autocomplete} from '@tileflow/search';
+
+const options = {apiKey: 'tf_public_…'};
+const page = await autocomplete({query: 'Hospital La Paz', proximity: [-3.7, 40.42]}, options);
+```
+
+Browsers send the page's origin, which must match one of the credential's websites exactly: scheme,
+host and port. Native apps send no origin, so name the app instead. The SDK then sends its bundle ID
+or package name and, on Android, the SHA-256 fingerprint of its signing certificate:
+
+```ts
+const options = {
+  apiKey: 'tf_public_…',
+  app: {id: 'com.example.store', certificateSha256: '14:6D:E9:…'},
+};
+```
+
+Anyone can read a publishable credential and imitate an origin or app outside a browser, so these
+restrictions limit casual reuse rather than prove identity. Its quotas and the Team's spending limit
+bound what a copied credential can consume. Keep server credentials (`tf_live_…`) on your server.
 
 ## Find nearby places
 
@@ -63,7 +92,7 @@ are temporary. Do not build a permanent place catalog, cache results, or persist
 
 Save the original request in the current interaction. Another page repeats that request with the
 returned `nextCursor`; no page is fetched automatically. A successful empty page can have a cursor.
-Each explicit page costs 25 API units. There is no total-count or snapshot-consistency promise.
+Each explicit page costs 10 API units. There is no total-count or snapshot-consistency promise.
 
 <!-- docs:check -->
 
@@ -116,7 +145,7 @@ suggestion. Reverse results are candidates in provider order, without containmen
 precision, routability, deliverability or address-validation guarantees.
 
 To show positions, distances and categories while someone types, ask for each suggestion's place.
-A completed request then uses 25 units instead of 10, and choosing a suggestion needs no further
+A completed request then uses 10 units instead of 4, and choosing a suggestion needs no further
 resolution:
 
 <!-- docs:check -->
@@ -212,28 +241,34 @@ retention, Advanced features and caller-selected provider options are rejected b
 | Completed operation                   | Shared API units | With `include` |
 | ------------------------------------- | ---------------: | -------------: |
 | Category discovery                    |                0 |              — |
-| Autocomplete                          |               10 |             25 |
-| Forward, reverse, explicit resolution |               25 |             75 |
-| Each Nearby page                      |               25 |             75 |
+| Autocomplete                          |                4 |             10 |
+| Forward, reverse, explicit resolution |               10 |             30 |
+| Each Nearby page                      |               10 |             30 |
 
 `searchOperationUnits(operation, include)` returns the same weights. Valid empty responses consume
-the same units. Three autocomplete calls and one resolution consume 55 units. These are part of Starter's shared API allowance, with no separate Search credits or
+the same units. Three autocomplete calls and one resolution consume 22 units. These are part of Starter's shared API allowance, with no separate Search credits or
 commercial search session. Hovering, displaying results and moving a map do not call Search.
 
 `GeocodingError` exposes `status`, nullable `code`, nullable `requestId` and nullable bounded
 `retryAfterSeconds`. The client never retries, including after throttling. Use `signal` for
 cancellation. Network failures can leave server completion uncertain.
 
-| Code                                                             | Action                                                              |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `GEOCODING_PLAN_UNAVAILABLE`                                     | Use paid Starter or request an eligible evaluation.                 |
-| `GEOCODING_EVALUATION_REQUIRED` / `GEOCODING_EVALUATION_EXPIRED` | Ask the Team's operator to review evaluation access.                |
-| `GEOCODING_EVALUATION_EXHAUSTED`                                 | Stop requests; review evaluation limits.                            |
-| `GEOCODING_PICK_LIMIT_EXCEEDED` / `GEOCODING_UPSTREAM_THROTTLED` | Respect `retryAfterSeconds`; retry only deliberately.               |
-| `GEOCODING_INVALID_CURSOR` / `GEOCODING_INVALID_SUGGESTION`      | Check the Team and original query; start a fresh search explicitly. |
-| `GEOCODING_CURSOR_EXPIRED` / `GEOCODING_SUGGESTION_EXPIRED`      | Request fresh results explicitly.                                   |
-| `GEOCODING_USAGE_UNCONFIRMED`                                    | Completion may already be charged. Inspect usage before repeating.  |
-| `GEOCODING_DISABLED`                                             | Search is disabled; installation does not activate it.              |
+| Code                                                             | Action                                                                |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `GEOCODING_PLAN_UNAVAILABLE`                                     | Use paid Starter or request an eligible evaluation.                   |
+| `GEOCODING_EVALUATION_REQUIRED` / `GEOCODING_EVALUATION_EXPIRED` | Ask the Team's operator to review evaluation access.                  |
+| `GEOCODING_EVALUATION_EXHAUSTED`                                 | Stop requests; review evaluation limits.                              |
+| `GEOCODING_UNPAID_LIMIT_REACHED`                                 | Search without payment reached its period limit; upgrade to Starter.  |
+| `GEOCODING_UNPAID_BUDGET_EXHAUSTED`                              | Search without payment is paused; retry after `retryAfterSeconds`.    |
+| `GEOCODING_SUSPENDED`                                            | Search is suspended for the Team; contact support.                    |
+| `GEOCODING_SPENDING_LIMIT_REACHED`                               | The Team reached its spending limit; raise it or wait for the period. |
+| `GEOCODING_CREDENTIAL_QUOTA_EXCEEDED`                            | The credential reached its quota; respect `retryAfterSeconds`.        |
+| `GEOCODING_ORIGIN_NOT_ALLOWED`                                   | Add this website or app to the publishable credential.                |
+| `GEOCODING_PICK_LIMIT_EXCEEDED` / `GEOCODING_UPSTREAM_THROTTLED` | Respect `retryAfterSeconds`; retry only deliberately.                 |
+| `GEOCODING_INVALID_CURSOR` / `GEOCODING_INVALID_SUGGESTION`      | Check the Team and original query; start a fresh search explicitly.   |
+| `GEOCODING_CURSOR_EXPIRED` / `GEOCODING_SUGGESTION_EXPIRED`      | Request fresh results explicitly.                                     |
+| `GEOCODING_USAGE_UNCONFIRMED`                                    | Completion may already be charged. Inspect usage before repeating.    |
+| `GEOCODING_DISABLED`                                             | Search is disabled; installation does not activate it.                |
 
 Rejected or failed operations do not return a completed usage record. Never translate an unconfirmed
 completion into zero units. Confirmed server completion is not undone by a later disconnection.
@@ -262,7 +297,7 @@ search.
 An explicit category action can call Nearby. Moving a map offers a “Search this area” button; only
 pressing it submits the new bounds. A late reply must not move the camera after a newer selection or
 view change. Keep independent generations for independent widgets. The SDK's tests demonstrate
-cancellation and stale-suggestion handling; it does not supply a UI component or client credentials.
+cancellation and stale-suggestion handling; it does not supply a UI component.
 
 For a published package, its installed README and declarations describe that release; a link to
 GitHub `main` can describe newer source.

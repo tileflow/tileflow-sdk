@@ -15,11 +15,11 @@ const success = {
   results: [],
   schemaVersion: 1,
   source: {id: 'synthetic', revision: 'fixture-1'},
-  usage: {units: 25},
+  usage: {units: 10},
 };
 
 const autocompleteSuccess = {
-  usage: {units: 10},
+  usage: {units: 4},
   attribution: [{text: 'Synthetic fixture'}],
   schemaVersion: 1,
   source: {id: 'synthetic', revision: 'fixture-1'},
@@ -31,7 +31,7 @@ const resolveSuccess = {
   result: {address: {}, kind: 'place', label: 'Hospital La Paz', position: [-3.7, 40.4]},
   schemaVersion: 1,
   source: {id: 'synthetic', revision: 'fixture-1'},
-  usage: {units: 25},
+  usage: {units: 10},
 };
 
 test('posts one normalized request with Team authorization and no retry', async () => {
@@ -61,6 +61,39 @@ test('posts one normalized request with Team authorization and no retry', async 
     query: 'Lisboa',
     retention: 'temporary',
   });
+});
+
+test('identifies a native app for a publishable credential only when asked', async () => {
+  const requests: Request[] = [];
+  const fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    requests.push(new Request(input, init));
+    return Response.json(autocompleteSuccess);
+  };
+  const apiKey = `tf_public_${'c'.repeat(48)}`;
+  await autocomplete({query: 'La Paz'}, {apiKey, fetch});
+  await autocomplete({query: 'La Paz'}, {apiKey, fetch, app: {id: 'com.example.store'}});
+  await autocomplete(
+    {query: 'La Paz'},
+    {apiKey, fetch, app: {id: 'com.example.store', certificateSha256: 'AB:'.repeat(31) + 'AB'}},
+  );
+  assert.deepEqual(
+    requests.map((request) => [
+      request.headers.get('X-Tileflow-App'),
+      request.headers.get('X-Tileflow-App-Certificate'),
+    ]),
+    [
+      [null, null],
+      ['com.example.store', null],
+      ['com.example.store', 'ab'.repeat(32)],
+    ],
+  );
+  for (const app of [{id: 'store'}, {id: 'com.example.store', certificateSha256: 'abc'}]) {
+    await assert.rejects(
+      autocomplete({query: 'La Paz'}, {apiKey, fetch, app}),
+      /Invalid Tileflow app identity/,
+    );
+  }
+  assert.equal(requests.length, 3);
 });
 
 test('rejects a redirect response without replaying the authenticated request', async () => {
@@ -461,7 +494,7 @@ test('rejects autocomplete response envelopes with excess suggestions or usage',
   const suggestion = autocompleteSuccess.suggestions[0];
   for (const response of [
     {...autocompleteSuccess, suggestions: Array.from({length: 6}, () => suggestion)},
-    {...autocompleteSuccess, usage: {units: 25}},
+    {...autocompleteSuccess, usage: {units: 10}},
   ]) {
     await assert.rejects(
       autocomplete(
@@ -550,7 +583,7 @@ test('posts one suggestion resolution with retention and returns one candidate',
   );
 
   assert.equal(result.result.label, 'Hospital La Paz');
-  assert.equal(result.usage.units, 25);
+  assert.equal(result.usage.units, 10);
   assert.equal(requests.length, 1);
   assert.equal(requests[0]?.url, 'https://api.example.test/root/v1/geocoding/resolve');
   assert.deepEqual(await requests[0]?.json(), {

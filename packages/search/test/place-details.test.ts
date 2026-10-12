@@ -50,11 +50,11 @@ function respond(body: unknown, requests: Request[] = []) {
 
 test('prices each operation by what it returns', () => {
   assert.equal(searchOperationUnits('categories'), 0);
-  assert.equal(searchOperationUnits('autocomplete'), 10);
-  assert.equal(searchOperationUnits('autocomplete', ['place']), 25);
+  assert.equal(searchOperationUnits('autocomplete'), 4);
+  assert.equal(searchOperationUnits('autocomplete', ['place']), 10);
   for (const operation of ['forward', 'reverse', 'resolve', 'nearby'] as const) {
-    assert.equal(searchOperationUnits(operation), 25);
-    assert.equal(searchOperationUnits(operation, ['timeZone']), 75);
+    assert.equal(searchOperationUnits(operation), 10);
+    assert.equal(searchOperationUnits(operation, ['timeZone']), 30);
   }
 });
 
@@ -111,7 +111,7 @@ test('asks for contacts and hours only where a text search or selected place sup
     results: [{...place, ...details}],
     schemaVersion: 1,
     source,
-    usage: {units: 75},
+    usage: {units: 30},
   };
   const result = await geocode(
     {query: 'café', bounds: [-3.8, 40.3, -3.6, 40.5], include: ['contacts', 'openingHours']},
@@ -135,7 +135,7 @@ test('rejects a response whose units do not match the requested details', async 
     results: [place],
     schemaVersion: 1,
     source,
-    usage: {units: 25},
+    usage: {units: 10},
   };
   await assert.rejects(
     geocode(
@@ -145,7 +145,7 @@ test('rejects a response whose units do not match the requested details', async 
     /invalid response/u,
   );
   await assert.rejects(
-    geocode({query: 'café'}, respond({...body, usage: {units: 75}})),
+    geocode({query: 'café'}, respond({...body, usage: {units: 30}})),
     /invalid response/u,
   );
   await assert.rejects(
@@ -156,7 +156,7 @@ test('rejects a response whose units do not match the requested details', async 
         result: place,
         schemaVersion: 1,
         source,
-        usage: {units: 25},
+        usage: {units: 10},
       }),
     ),
     /invalid response/u,
@@ -170,7 +170,7 @@ test('rejects a response whose units do not match the requested details', async 
         results: [],
         schemaVersion: 1,
         source,
-        usage: {units: 25},
+        usage: {units: 10},
       }),
     ),
     /invalid response/u,
@@ -190,7 +190,7 @@ test('returns address lines with plain suggestions and places only when asked', 
         token: 'opaque-token_1',
       },
     ],
-    usage: {units: 10},
+    usage: {units: 4},
   };
   const result = await autocomplete({query: 'exam'}, respond(plain));
   assert.equal(result.suggestions[0]?.addressLabel, plain.suggestions[0]?.addressLabel);
@@ -198,7 +198,7 @@ test('returns address lines with plain suggestions and places only when asked', 
   const withPlaces = {
     ...plain,
     suggestions: [{...plain.suggestions[0], place}],
-    usage: {units: 25},
+    usage: {units: 10},
   };
   assert.equal(autocompleteResponseSchema.safeParse(withPlaces).success, true);
   const requests: Request[] = [];
@@ -211,14 +211,14 @@ test('returns address lines with plain suggestions and places only when asked', 
   assert.deepEqual((await requests[0].json()).include, ['place']);
 
   for (const [request, body] of [
-    [{query: 'exam'}, {...withPlaces, usage: {units: 10}}],
+    [{query: 'exam'}, {...withPlaces, usage: {units: 4}}],
     [
       {query: 'exam', include: ['place']},
-      {...plain, usage: {units: 25}},
+      {...plain, usage: {units: 10}},
     ],
     [
       {query: 'exam', include: ['place']},
-      {...withPlaces, usage: {units: 10}},
+      {...withPlaces, usage: {units: 4}},
     ],
   ] as const) {
     await assert.rejects(autocomplete(request, respond(body)), /invalid response/u);

@@ -3,7 +3,7 @@ import test from 'node:test';
 import {projectNativeResources} from '../src/native-resource-projection';
 import {apiOrigin, mapId} from './session-fixture';
 
-const styleUrl = `${apiOrigin}/maps/${mapId}/light.json`;
+const styleUrl = `${apiOrigin}/maps/${mapId}/native/v1/light.json`;
 const url = `${apiOrigin}/fonts/fb_example/regular.ttf`;
 const policy = {
   mapId,

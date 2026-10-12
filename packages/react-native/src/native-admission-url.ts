@@ -53,7 +53,7 @@ export function nativeVersionedStyleMatchesMap(url: string, mapId: string): bool
 function styleScopeAllowsMap(url: string, mapId: string): boolean {
   try {
     const path = url.slice(nativeResourceOrigin(url).length);
-    // Existing exact catalogs remain valid; the reserved renderer route has a stronger identity.
+    // An exact catalog may name any style URL; the reserved renderer route must match its Map.
     return (
       !/^\/maps\/[^/?#]+\/native(?:[/?#]|$)/u.test(decodeURIComponent(path)) ||
       nativeVersionedStyleMatchesMap(url, mapId)

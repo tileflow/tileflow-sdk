@@ -26,18 +26,13 @@ class ExtendingBridge extends AdmissionBridgeDouble {
   gate: Promise<void> | undefined;
   calls = 0;
   async extendContext(
-    _installation: string,
+    installation: string,
     context: string,
     resources: readonly NativeAdmissionResource[],
   ) {
     this.calls++;
     await this.gate;
-    const previous = this.registrations.get(context);
-    if (!previous) throw new Error('Retired context.');
-    const merged = new Map(previous.resources.map((entry) => [entry.url, entry]));
-    for (const entry of resources) merged.set(entry.url, entry);
-    this.registrations.set(context, {...previous, resources: [...merged.values()]});
-    return {resources: merged.size};
+    return super.extendContext(installation, context, resources);
   }
 }
 

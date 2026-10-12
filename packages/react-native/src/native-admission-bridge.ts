@@ -11,6 +11,7 @@ export function createReactNativeAdmissionTransport() {
   for (const name of [
     'install',
     'registerContext',
+    'extendContext',
     'retireContext',
     'completeBatch',
     'remove',

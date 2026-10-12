@@ -68,13 +68,11 @@ import {
   TileflowStyleValidationError,
 } from '@tileflow/dev/validation';
 import {
-  type AuthConfigV2,
-  type CliAccountSessionV2,
+  type AuthConfig,
+  type CliAccountSession,
   installAccountSession,
   loadAuthConfig,
   normalizeApiOrigin,
-  parseProjectReference,
-  projectReference,
   removeAccountSession,
   removeAuthFile,
   resolveAccountSession,
@@ -96,7 +94,6 @@ import {
   pollDeviceToken,
   publishHostedStyle,
   requestMapCapability,
-  requestProjectCapability,
   revokeHostedAccountSession,
   startDeviceAuthorization,
   uploadHostedFontBundle,
@@ -122,7 +119,7 @@ import {
   tileflowNativePreviewProfile,
 } from './native-preview-command';
 import {openTileflowExternal} from './open-external';
-import {registerProjectCommands, resolveAccountProjectTarget} from './project-commands';
+import {registerProjectCommands} from './project-commands';
 import {runRendererArtifactCommand} from './renderer-artifact-command';
 import {registerTilesetCommands} from './tileset-command';
 import {registerVisualCommands} from './visual-command';
@@ -532,7 +529,6 @@ program
 
 program
   .command('preview')
-  .alias('dev')
   .description('Run a local map preview')
   .option('-c, --config <path>', 'config path', defaultConfigPath)
   .option('--against-config <path>', 'second config for the comparison workbench')
@@ -581,7 +577,7 @@ program
           process.stdout.write(
             `${JSON.stringify({
               schemaVersion: 1,
-              command: 'dev',
+              command: 'preview',
               event: 'error',
               code: first?.code ?? 'NATIVE_RENDERER_UNSUPPORTED',
               phase: first?.phase ?? 'command-validation',
@@ -605,7 +601,7 @@ program
           process.stdout.write(
             `${JSON.stringify({
               schemaVersion: 1,
-              command: 'dev',
+              command: 'preview',
               event: 'error',
               code: 'NATIVE_RENDERER_UNSUPPORTED',
               phase: 'command-validation',
@@ -756,7 +752,7 @@ program
             process.stdout.write(
               `${JSON.stringify({
                 schemaVersion: 1,
-                command: 'dev',
+                command: 'preview',
                 event: recovered ? 'recovered' : state.status,
                 generation: state.generation,
                 ...('lastGoodGeneration' in state && state.lastGoodGeneration !== undefined
@@ -831,7 +827,7 @@ program
             process.stdout.write(
               `${JSON.stringify({
                 schemaVersion: 1,
-                command: 'dev',
+                command: 'preview',
                 event: 'stopped',
                 generation,
                 ...nativeLifecycleFields,
@@ -873,25 +869,11 @@ program
       withNative?: boolean;
     }) => {
       const source = resolveDeploySource(process.env);
-      const resolveApi = (selectedMap?: string) =>
+      const resolveApi = () =>
         requireApiOptions(options, {
           allowStoredCredential: allowsStoredDeployCredential(source),
           assertExplicitKeyMap: true,
           capabilityScopes: ['styles:write'],
-          retryCommand: cliInvocation([
-            'tileflow',
-            'deploy',
-            '--config',
-            options.config,
-            '--manifest',
-            options.manifest,
-            '--api-url',
-            options.apiUrl ?? defaultApiUrl,
-            ...(options.overwriteSelfHostedManifest ? ['--overwrite-self-hosted-manifest'] : []),
-            ...(options.mapId ? ['--map-id', options.mapId] : []),
-            ...(options.map && selectedMap ? ['--map', selectedMap] : []),
-            ...(options.withNative ? ['--with-native'] : []),
-          ]),
         });
       const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
       // The config is executable repository code. Keep the captured bearer
@@ -1021,7 +1003,7 @@ program
       // requests. Keep them after every deterministic config, asset, style,
       // font, compatibility, and existing-manifest check so invalid local
       // input always fails without network access.
-      const api = await resolveApi(mapNames[0]);
+      const api = await resolveApi();
       if (!api) return;
 
       const hostedSpriteByPackageHash = new Map<string, string>();
@@ -1340,13 +1322,6 @@ program
     try {
       api = await requireApiOptions(options, {
         capabilityScopes: ['status:read'],
-        retryCommand: cliInvocation([
-          'tileflow',
-          'status',
-          '--api-url',
-          options.apiUrl ?? defaultApiUrl,
-          ...(options.json ? ['--json'] : []),
-        ]),
         silent: options.json,
       });
     } catch (error) {
@@ -1401,18 +1376,6 @@ registerIconDiffCommand(iconsCommand, {
       assertExplicitKeyMap: true,
       allowStoredCredential: allowsStoredDeployCredential(source),
       capabilityScopes: ['status:read'],
-      retryCommand: cliInvocation([
-        'tileflow',
-        'icons',
-        'diff',
-        '--against',
-        options.against,
-        ...(options.config ? ['--config', options.config] : []),
-        '--map-id',
-        options.mapId,
-        '--api-url',
-        options.apiUrl ?? defaultApiUrl,
-      ]),
       silent: true,
     });
   },
@@ -1481,7 +1444,7 @@ async function runTileflowComparisonPreview(
     const emit = (event: Record<string, unknown>): void => {
       if (!options.json) return;
       process.stdout.write(
-        `${JSON.stringify({schemaVersion: 1, command: 'dev.compare', ...event})}\n`,
+        `${JSON.stringify({schemaVersion: 1, command: 'preview.compare', ...event})}\n`,
       );
     };
     const emitState = (side: 'left' | 'right', state: TileflowArtifactSessionState): void => {
@@ -1749,7 +1712,7 @@ async function loginWithDeviceFlow(options: {
     throw new Error(`The dashboard returned an unexpected Tileflow API origin: ${apiUrl}.`);
   }
 
-  const session: CliAccountSessionV2 = {
+  const session: CliAccountSession = {
     account: token.account,
     accountSession: token.accountSession,
     apiOrigin: apiUrl,
@@ -1948,34 +1911,25 @@ async function requireApiOptions(
     apiUrl?: string;
     apiKey?: string;
     mapId?: string;
-    project?: string;
   },
   behavior: {
     allowStoredCredential?: boolean;
     assertExplicitKeyMap?: boolean;
     capabilityScopes?: Array<'static:write' | 'status:read' | 'styles:write'>;
-    retryCommand?: string;
     silent?: boolean;
   } = {},
-): Promise<{apiUrl: string; apiKey: string; mapId?: string} | null> {
+): Promise<{apiUrl: string; apiKey: string; mapId: string} | null> {
   const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
   const requestedMapId = options.mapId;
-  const requested = options.project ? parseProjectReference(options.project) : null;
 
-  if (requestedMapId && !/^map_[A-Za-z0-9_-]{16}$/u.test(requestedMapId)) {
+  if (!requestedMapId || !/^map_[A-Za-z0-9_-]{16}$/u.test(requestedMapId)) {
     if (!behavior.silent) logError('Managed Map ID is invalid.');
     process.exitCode = 1;
     return null;
   }
 
-  if (options.project && !requested) {
-    if (!behavior.silent) logError('Managed destination must use @organization/project syntax.');
-    process.exitCode = 1;
-    return null;
-  }
-
   if (options.apiKey) {
-    if (requestedMapId && behavior.assertExplicitKeyMap) {
+    if (behavior.assertExplicitKeyMap) {
       const profile = await validateApiKey(apiUrl, options.apiKey);
       if (!profile.ok) {
         if (!behavior.silent) logError(profile.error);
@@ -1988,33 +1942,7 @@ async function requireApiOptions(
         return null;
       }
     }
-    if (requested) {
-      const profile = await validateApiKey(apiUrl, options.apiKey);
-      if (!profile.ok) {
-        if (!behavior.silent) logError(profile.error);
-        process.exitCode = 1;
-        return null;
-      }
-      if (profile.value.credentialType === 'team_api_key') {
-        if (!behavior.silent) logError('Team credentials require an explicit --map-id.');
-        process.exitCode = 1;
-        return null;
-      }
-      if (requested && projectReference(profile.value) !== options.project) {
-        if (!behavior.silent) {
-          logError(
-            `This project key belongs to ${projectReference(profile.value)}, not ${options.project}.`,
-          );
-        }
-        process.exitCode = 1;
-        return null;
-      }
-    }
-    return {
-      apiKey: options.apiKey,
-      apiUrl,
-      ...(requestedMapId ? {mapId: requestedMapId} : {}),
-    };
+    return {apiKey: options.apiKey, apiUrl, mapId: requestedMapId};
   }
 
   const allowStoredCredential =
@@ -2032,7 +1960,7 @@ async function requireApiOptions(
     return null;
   }
 
-  let config: AuthConfigV2;
+  let config: AuthConfig;
   try {
     config = await loadAuthConfig();
   } catch (error) {
@@ -2054,50 +1982,9 @@ async function requireApiOptions(
     return null;
   }
 
-  if (requestedMapId) {
-    const capability = await requestMapCapability(
-      resolvedSession.session,
-      {mapId: requestedMapId},
-      behavior.capabilityScopes ?? ['status:read'],
-    );
-    if (!capability.ok) {
-      if (!behavior.silent) logError(capability.error);
-      process.exitCode = 1;
-      return null;
-    }
-    return {apiKey: capability.capability, apiUrl, mapId: capability.mapId};
-  }
-
-  const target = await resolveAccountProjectTarget(resolvedSession.session, options.project);
-  if (target.kind === 'remote') {
-    if (!behavior.silent) logError(target.error);
-    process.exitCode = 1;
-    return null;
-  }
-  if (target.kind !== 'selected') {
-    if (!behavior.silent) {
-      const references = target.targets.map((candidate) => candidate.reference);
-      if (target.kind === 'ambiguous') {
-        const retry = `${behavior.retryCommand ?? 'tileflow <command>'} --project ${references[0]}`;
-        logError(`Managed destination is ambiguous: ${references.join(', ')}.`);
-        printNextSteps([`Retry exactly with ${command(retry)}.`]);
-      } else if (target.kind === 'invalid') {
-        logError('Managed destination must use @organization/project syntax.');
-      } else {
-        logError(
-          options.project
-            ? `Destination ${options.project} is not accessible to this account.`
-            : 'No active managed destination is accessible to this account.',
-        );
-      }
-    }
-    process.exitCode = 1;
-    return null;
-  }
-
-  const capability = await requestProjectCapability(
+  const capability = await requestMapCapability(
     resolvedSession.session,
-    target.target.reference,
+    {mapId: requestedMapId},
     behavior.capabilityScopes ?? ['status:read'],
   );
   if (!capability.ok) {
@@ -2105,8 +1992,7 @@ async function requireApiOptions(
     process.exitCode = 1;
     return null;
   }
-
-  return {apiKey: capability.capability, apiUrl};
+  return {apiKey: capability.capability, apiUrl, mapId: capability.mapId};
 }
 
 function printTileflowPreviewError(error: unknown) {
@@ -2224,7 +2110,7 @@ function printValidationErrors(messages: readonly {message: string; path: string
   }
 }
 
-function printAccountDetails(session: CliAccountSessionV2) {
+function printAccountDetails(session: CliAccountSession) {
   printKeyValue('Account', pc.bold(session.account.name));
   printKeyValue('Email', session.account.email);
   printKeyValue('API', link(session.apiOrigin));
@@ -2287,14 +2173,6 @@ function plural(count: number, singular: string, pluralForm = `${singular}s`) {
 
 function command(value: string) {
   return pc.cyan(value);
-}
-
-function cliInvocation(parts: string[]) {
-  return parts.map(quoteCliArgument).join(' ');
-}
-
-function quoteCliArgument(value: string) {
-  return /^[A-Za-z0-9_./:@%+=,-]+$/u.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
 function link(value: string) {

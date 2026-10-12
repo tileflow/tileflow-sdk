@@ -37,8 +37,8 @@ npx tileflow preview --scene madrid-mobile
 To work on another map, point `--config` at another singular config. Multi-map catalogs are internal
 orchestration used by this repository's workbench and are not a second public config shape.
 
-`tileflow dev` remains a compatibility alias. The `preview` name distinguishes this SDK preview
-server from an application's own `npm run dev` process.
+The `preview` name distinguishes this SDK preview server from an application's own `npm run dev`
+process.
 
 `--api-base-url` selects the origin used by official World, Bathymetry vector, Bathymetry DEM,
 Nautical, and terrain TileJSON sources in the generated preview style. In particular, a hybrid

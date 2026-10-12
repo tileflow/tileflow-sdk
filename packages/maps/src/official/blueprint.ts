@@ -1649,7 +1649,6 @@ export const blueprint = bindOfficialMapTheme(
           strokeOpacity: 0.58,
           strokeWidth: 0.55,
         },
-        minZoom: 16,
         mode: 'flat',
       }),
       water: withRenderStack(

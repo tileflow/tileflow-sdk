@@ -207,8 +207,7 @@ Static semantic rejection uses `STYLE_INVALID` and `style-validation`. Runtime p
 `browser-start`, `resource-load`, `map-load`, `map-idle`, and `screenshot`. Resource HTTP failures
 use `RESOURCE_FAILED`; MapLibre event failures use `MAP_LOAD_FAILED`; load and idle timeouts both
 use `CAPTURE_TIMEOUT` with their distinct phase; screenshot API failure uses `SCREENSHOT_FAILED`;
-and invalid PNG bytes/dimensions retain `INVALID_PNG` with the screenshot phase. Existing error
-codes remain accepted for compatibility.
+and invalid PNG bytes/dimensions retain `INVALID_PNG` with the screenshot phase.
 
 `tileflow capture --watch` keeps one warm Browser and a shared watched artifact session. It watches
 the config, transitive local TypeScript/JavaScript/JSON imports, and effective icon and font sources.
@@ -221,7 +220,7 @@ diagnostic levels; failed resource events may add the same safe `resources` arra
 SIGINT/SIGTERM closes the watcher, contexts, browser, and any explicitly started standalone preview
 server.
 
-New receipts are canonical schema-version-4 JSON and contain only concrete theme plus
+Receipts are canonical schema-version-4 JSON and contain only concrete theme plus
 scene/map/target identity, normalized
 scene and style hashes, PNG hash and CSS/physical dimensions, Tileflow/MapLibre/Playwright/Chromium
 identity, OS/architecture class, DPR, required resolved `data` identity, explicit `verification`,
@@ -229,29 +228,20 @@ and `networkDependent`. The durable receipt data type is owned and versioned by 
 it is not an alias of the evolving core authoring type.
 
 For external vector tiles, `data` records the provider kind, optional explicit revision, OpenMapTiles
-schema/version, stable primary source ID, optional schema bindings/capabilities, and an optional safe
-source fingerprint. Schema-v4 capabilities state whether each optional source layer is bound,
-including `canopy`.
+schema/version, stable primary source ID, park-layer semantics, the complete schema bindings, the
+`businessCorridor`, `bathymetry`, `canopy`, `globalLandcover`, and `tree` capabilities, and a safe
+source fingerprint. Each capability states whether that optional source layer is bound.
 The fingerprint contains only a source class plus SHA-256. Its input removes query and fragment;
 loopback sources also discard host and port. A raw URL, origin, path, query, signed token, or
-credential is never written by a new receipt. This identity participates in scene compatibility.
+credential is never written to a receipt. A baseline and a capture share a scene only when their
+data identities are equal.
 Receipts also omit time, user, repository, absolute filesystem path, environment, source pixels,
 and config source.
 
-Canonical schema-v2 and schema-v3 receipts remain readable as historical evidence and are never
-reclassified as schema v4. Schema-v2 receipts predate source fingerprints, `verification`, and the
-bathymetry capability; parsing first validates their exact canonical legacy representation, then
-normalizes a legacy URL to the safe fingerprint and infers verification from the target. Schema-v3
-receipts already carry the safe data identity but predate the mandatory concrete scene theme.
-Neither earlier schema records the `canopy` capability, so their capabilities must not contain it. A
-three-capability baseline remains compatible when a fresh receipt adds bathymetry, canopy, or new
-binding keys, provided every identity value recorded by the baseline still agrees. Conflicting recorded
-values remain a scene mismatch. Serializing a parsed legacy receipt writes only the normalized safe
-shape; it never reproduces a v2 raw URL. Receipt parsing remains exact-key, UTF-8, size,
-portable-identifier, hash, dimension, and pixel-budget validated; parser-dependent duplicate keys
-are rejected.
+Receipt parsing accepts only schema version 4 and is exact-key, UTF-8, size, portable-identifier,
+hash, dimension, and pixel-budget validated; parser-dependent duplicate keys are rejected.
 
-Schema-v4 World data is always exact. Capture resolves a logical current or exact TileJSON selector
+World data is always exact. Capture resolves a logical current or exact TileJSON selector
 once for the lifetime of its session. The TileJSON must return one immutable tile template and the
 strict `tileflow.world` identity: `product: "world-v1"`, `releaseId`, `descriptorSha256`,
 `archiveSha256`, `dataContractSha256`, and `contractSha256`. Capture cross-checks the release and
@@ -265,8 +255,8 @@ Every scene and retry reuses the same frozen TileJSON without another upstream l
 resource and source-layer failures remain errors. Exact World metadata remains authoritative even
 when served from loopback; the stale-metadata allowance for local development datasets does not apply.
 Capture never derives these identifiers from a mutable URL. A second
-selector or a missing/conflicting identity fails closed. Schema-v2 `generation` and `revision`
-remain legacy baseline fields only and are not confused with the v3 contract.
+selector or a missing/conflicting identity fails closed. World data identity also records the
+compiled park-layer semantics.
 
 The prepared style hash includes the frozen TileJSON asset identity. Changed source metadata can
 therefore require baseline review even when the resulting pixels match. Capture never approves or

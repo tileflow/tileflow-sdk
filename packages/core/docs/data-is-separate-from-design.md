@@ -128,9 +128,7 @@ published, immutable glyph collection independent of World data. The older `/fon
 remains a mutable compatibility URL and does not make a resolved map byte-reproducible. The global
 glyph `assetSetSha256` is not the same-domain value as the per-map `assetSetSha256` in
 `build-manifest.json`.
-Cyberpunk and Matrix each replace the URL provider with their own packaged Oxanium directory and
-reference the exact local faces `Oxanium Medium` and `Oxanium SemiBold`. Baedeker and Siegfried
-each own a packaged directory containing Cormorant Garamond Regular, SemiBold, and Italic.
+Baedeker and Siegfried each own a packaged directory containing Cormorant Garamond Regular, SemiBold, and Italic.
 
 Name the official generation deliberately, or use another OpenMapTiles-compatible vector source:
 
@@ -423,16 +421,14 @@ buildings. Its `activity_score`, `rank`, `min_zoom`, and `confidence` fields con
 warm tint without drawing POI-radius circles. Current building footprints may carry sparse
 `building_tone=commercial|destination|active`; absence means the neutral base building. The three
 values preserve why the warm tone was selected even when a theme maps them to the same color.
-Building visibility is fixed by the layer zoom contract and never by optional semantics. Immutable
-V8.9 archives carrying `building_kind` or `has_business` remain readable as a defensive
-compatibility path, but new candidates do not emit those fields. The land module also exposes
+Building visibility is fixed by the layer zoom contract and never by optional semantics. The land
+module also exposes
 `medical`, `education`, and `government` independently instead of collapsing their already distinct
 source classes into one civic color.
 
 World and text assets are independent contracts. `tileflowWorld()` selects `world-v1/current` or an
-exact `releaseId + descriptorSha256`; a `glyphs` declaration contains its own complete URL. Ordinary
-imports of Streets, Baedeker, Cívica, Ferraris, Härad, Siegfried, Soundings, Cyberpunk, Matrix, Blueprint, and Super Tile World
-remain usable because each official map owns or inherits a URL or packaged-font provider.
+exact `releaseId + descriptorSha256`; a `glyphs` declaration contains its own complete URL. Every
+official map compiles as imported because it owns or inherits a URL or packaged-font provider.
 URL-backed maps become exact-byte reproducible
 when the immutable global base-asset set is published and their explicit URL is updated to its
 `assetSetSha256` path; no World or compiler fallback participates in that rollout. The global

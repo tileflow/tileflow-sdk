@@ -18,11 +18,11 @@ import type {TileflowBuildArtifacts} from '../src/artifacts';
 import {
   createTileflowArtifactDiagnostics,
   createTileflowArtifactSession,
-  createTileflowDevRequestHandler,
-  resolveTileflowPreview,
   type TileflowArtifactSession,
   type TileflowArtifactSessionState,
-} from '../src/index';
+} from '../src/artifacts';
+import {resolveTileflowPreview} from '../src/preview';
+import {createTileflowDevRequestHandler} from '../src/server';
 import {createTileflowArtifactSessionWithBuilder} from '../src/session';
 import {fixtureThemeFields} from './theme-fixture';
 

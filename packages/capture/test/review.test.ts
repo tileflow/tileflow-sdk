@@ -32,6 +32,7 @@ const dataIdentity: TileflowCaptureDataInput = {
   releaseId: 'world-v1-review-fixture',
   schema: 'openmaptiles',
   schemaVersion: 1,
+  semantics: {parkLayer: 'protected-only'},
   sourceId: 'tileflow',
 };
 

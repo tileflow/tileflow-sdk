@@ -84,8 +84,7 @@ export type NativeAdmissionBridge = Readonly<{
     installation: string,
     registration: Readonly<{mapId: string | null; resources: readonly NativeAdmissionResource[]}>,
   ): Promise<NativeContextAck>;
-  // Older internal exact-resource fixtures may omit this capability; extension then fails closed.
-  extendContext?(
+  extendContext(
     installation: string,
     context: string,
     resources: readonly NativeAdmissionResource[],

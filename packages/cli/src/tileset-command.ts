@@ -3,7 +3,7 @@ import pc from 'picocolors';
 import {z} from 'zod';
 import {serializeCanonicalJson} from '@tileflow/core';
 import {inspectTileflowPmtiles} from '@tileflow/dev/tilesets';
-import type {AuthConfigV2} from './account-session';
+import type {AuthConfig} from './account-session';
 import {requestHostedJson} from './hosted-client';
 import {
   authorizedTeamRequest,
@@ -27,7 +27,7 @@ type HostedTilesetOptions = HostedTeamOptions;
 
 export function registerTilesetCommands(
   program: Command,
-  dependencies: {defaultApiUrl: string; loadAuthConfig: () => Promise<AuthConfigV2>},
+  dependencies: {defaultApiUrl: string; loadAuthConfig: () => Promise<AuthConfig>},
 ): void {
   const tileset = program.command('tileset').description('Inspect and manage geospatial tilesets');
 

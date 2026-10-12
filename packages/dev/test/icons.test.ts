@@ -16,7 +16,7 @@ import {
   compileTileflowIconPackages,
   prepareTileflowCatalogIcons,
   TileflowIconCompilationError,
-} from '../src/index';
+} from '../src/icons';
 
 const streetsIconIds = [
   'coffee',

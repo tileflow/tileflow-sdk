@@ -225,7 +225,6 @@ test('official World styles avoid fields absent from the V1 release contract', (
     [streets, {building: ['has_parts'], transportation: ['clearance_extra_px_z15']}],
 
     [blueprint, {building: ['height', 'name']}],
-    [civica, {building: ['building_kind']}],
   ] as const) {
     const requirements = inferTileflowDataRequirements(compileOfficialMap(map));
     for (const [layer, absentFields] of Object.entries(fields)) {

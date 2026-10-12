@@ -66,9 +66,8 @@ to create an application-owned map.
 ### Blueprint naming
 
 Use `blueprint` and `blueprintIcons` for the architectural drawing map. Its map ID and
-asset directory are `blueprint`, its theme key is `blueprint`, and its theme ID is `blueprint-dark`.
-The earlier `sanFrancisto` and `sanFrancistoIcons` aliases have been removed. Migrate explicit
-`san-francisto` resource references to `blueprint`; the former grid ID is now `blueprint-grid`.
+asset directory are `blueprint`, its theme key is `blueprint`, its theme ID is `blueprint-dark`,
+and its grid artwork ID is `blueprint-grid`.
 
 <!-- docs:check -->
 
@@ -88,16 +87,10 @@ export default defineMap({
 
 Cyberpunk, Terminal, and Super Tile World are maintained in
 [Tileflow Community Maps](https://github.com/tileflow/community-maps), with editable source,
-assets, previews, and contribution instructions. They are no longer included in this package.
+assets, previews, and contribution instructions. They are not part of this package.
 The GitHub-distributed `@tileflow/community-maps` package exports `cyberpunk`, `terminal`, and
 `superTileWorld`, plus each map's font and icon descriptors. Install an exact Git commit using
 the instructions and compatible Core version in that repository.
-
-For existing applications, move imports to `@tileflow/community-maps`, rename `matrix` to
-`terminal`, and update explicit map and asset IDs. Cyberpunk uses the `cyberpunk-` asset prefix;
-Terminal uses `terminal-`. Super Tile World retains `super-tile-world` and its `stw-` artwork IDs.
-The earlier community `neonGrid` export is now `cyberpunk`. This is an explicit catalog migration;
-there are no compatibility snapshots or aliases for the removed maps in the SDK.
 
 Soundings is not a navigation product. Its depth-band edges are approximate reference geometry,
 not surveyed isolines or vessel-specific safety contours. Experimental nautical aids and hazards

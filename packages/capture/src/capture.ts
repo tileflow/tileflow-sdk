@@ -24,7 +24,7 @@ import {
   createTileflowCaptureRendererIdentity,
   type TileflowCaptureRendererIdentity,
 } from './metadata';
-import {createTileflowCaptureReceipt, type TileflowCaptureReceiptV4} from './receipt';
+import {createTileflowCaptureReceipt, type TileflowCaptureReceipt} from './receipt';
 import {captureStandaloneTileflowScene, tileflowSyntheticAssetOrigin} from './standalone';
 import {type PreparedTileflowCaptureStyle, TileflowCaptureWorldSession} from './world';
 
@@ -69,7 +69,7 @@ export type TileflowCapture = {
   networkDependent: boolean;
   renderer: TileflowCaptureRendererIdentity;
   /** Newly captured evidence is always the concrete-theme receipt contract. */
-  receipt: TileflowCaptureReceiptV4;
+  receipt: TileflowCaptureReceipt;
   warnings: string[];
 };
 

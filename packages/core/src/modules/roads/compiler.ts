@@ -533,16 +533,7 @@ function compileRoundabouts(
   contributions: TileflowLayerContribution[],
 ): void {
   const {fields, layers} = context.data.schema;
-  if (
-    !layers.circularFeature ||
-    !fields.circularKind ||
-    !fields.circularRadiusAtZoom15 ||
-    !fields.circularRadiusMeters ||
-    !fields.circularOuterRadiusMeters ||
-    !fields.circularInnerRadiusMeters
-  ) {
-    return;
-  }
+  if (!layers.circularFeature) return;
 
   const circularFields: CircularRoadFields = {
     circularInnerRadiusMeters: fields.circularInnerRadiusMeters,
@@ -623,7 +614,7 @@ function compileCrossings(
   contributions: TileflowLayerContribution[],
 ): void {
   const {fields, layers} = context.data.schema;
-  if (!request || !layers.streetFurniture || !fields.direction) return;
+  if (!request || !layers.streetFurniture) return;
 
   const config = mergeTileflowDesign<TileflowRoadCrossingStyle>(
     {
@@ -703,7 +694,7 @@ function circularRoadInnerRadius(fields: CircularRoadFields, casing: boolean): r
     ];
     const baseWidth = circularRoadBaseWidth(fields.class);
     const fallbackWidth =
-      level === 15 ? baseWidth : ['*', baseWidth, circularRoadLegacyScale(level)];
+      level === 15 ? baseWidth : ['*', baseWidth, circularRoadFallbackScale(level)];
     const fallbackInnerRadius = ['-', centerlineRadius, ['/', fallbackWidth, 2]];
     const innerRadius = ['case', values.hasPhysicalRadii, physicalInnerRadius, fallbackInnerRadius];
     stops.push(level, [
@@ -728,7 +719,7 @@ function circularRoadStrokeWidth(fields: CircularRoadFields, casing: boolean): r
       ['/', ['-', values.outerRadiusMeters, values.innerRadiusMeters], values.radiusMeters],
     ];
     const fallbackWidth =
-      level === 15 ? baseWidth : ['*', baseWidth, circularRoadLegacyScale(level)];
+      level === 15 ? baseWidth : ['*', baseWidth, circularRoadFallbackScale(level)];
     stops.push(level, [
       'case',
       values.hasPhysicalRadii,
@@ -780,7 +771,7 @@ function circularRoadValues(fields: CircularRoadFields) {
   };
 }
 
-function circularRoadLegacyScale(level: number): number {
+function circularRoadFallbackScale(level: number): number {
   const interpolationBase = 1.35;
   const progress = (interpolationBase ** (level - 15) - 1) / (interpolationBase ** (22 - 15) - 1);
   return 1 + progress * 1.2;

@@ -12,7 +12,7 @@ from the presence of an npm package. Config files are trusted executable code.
 - [SDK overview and package selection](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/README.md): Local setup, package boundaries, and release guidance.
 - [CLI](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/cli/README.md): Validate, preview, build, capture, inspect, and deploy.
 - [Core](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/core/README.md): Map definitions, semantic modules, themes, inheritance, and compilation.
-- [Official maps](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/maps/README.md): Ten standalone maps, their assets, and customization boundaries.
+- [Official maps](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/maps/README.md): Eight standalone maps, their assets, and customization boundaries.
 
 ## Browser UI
 

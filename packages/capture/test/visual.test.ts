@@ -13,10 +13,10 @@ import {
   parseTileflowCaptureReceipt,
   serializeTileflowCaptureReceipt,
   serializeTileflowVisualComparison,
+  tileflowVisualEdgeThreshold,
   type TileflowCapture,
   type TileflowCaptureDataInput,
   type TileflowCaptureReceipt,
-  tileflowVisualEdgeThreshold,
 } from '../src/index';
 
 const dataIdentity: TileflowCaptureDataInput = {
@@ -29,8 +29,27 @@ const dataIdentity: TileflowCaptureDataInput = {
   releaseId: 'world-v1-visual-fixture',
   schema: 'openmaptiles',
   schemaVersion: 1,
+  semantics: {parkLayer: 'protected-only'},
   sourceId: 'tileflow',
 };
+
+const vectorDataIdentity = {
+  bindings: {fields: {class: 'class'}, layers: {road: 'transportation'}},
+  capabilities: {
+    businessCorridor: true,
+    bathymetry: false,
+    canopy: false,
+    globalLandcover: true,
+    tree: true,
+  },
+  kind: 'vector-tiles',
+  revision: 'archive-1',
+  schema: 'openmaptiles',
+  schemaVersion: 1,
+  semantics: {parkLayer: 'mixed'},
+  sourceId: 'tileflow',
+  url: 'http://127.0.0.1:8080/tiles.json?token=first',
+} satisfies TileflowCaptureDataInput;
 
 test('analyzes a bounded reference without treating it as a baseline', async () => {
   const actualPng = createPng(2, 2, [20, 40, 60, 255]);
@@ -271,13 +290,7 @@ test('classifies missing, dimension, scene, and runtime mismatches before pixel 
   assert.equal(runtime.rendererMatch, false);
 
   const pinnedActualReceipt = createTileflowCaptureReceipt({
-    data: {
-      kind: 'vector-tiles',
-      revision: 'archive-a',
-      schema: 'openmaptiles',
-      schemaVersion: 1,
-      sourceId: 'tileflow',
-    },
+    data: {...vectorDataIdentity, revision: 'archive-a'},
     dpr: actual.dpr,
     height: actual.height,
     map: actual.map,
@@ -293,13 +306,7 @@ test('classifies missing, dimension, scene, and runtime mismatches before pixel 
   });
   const pinnedActual = {...actual, receipt: pinnedActualReceipt};
   const pinnedBaseline = createTileflowCaptureReceipt({
-    data: {
-      kind: 'vector-tiles',
-      revision: 'archive-b',
-      schema: 'openmaptiles',
-      schemaVersion: 1,
-      sourceId: 'tileflow',
-    },
+    data: {...vectorDataIdentity, revision: 'archive-b'},
     dpr: actual.dpr,
     height: actual.height,
     map: actual.map,
@@ -321,7 +328,7 @@ test('classifies missing, dimension, scene, and runtime mismatches before pixel 
   assert.equal(sourceMismatch.sceneMatch, false);
 });
 
-test('keeps compatible data identity stable across additive bindings and capabilities', async () => {
+test('compares vector data identity exactly, apart from loopback ports and URL secrets', async () => {
   const png = createPng(2, 2, [20, 40, 60, 255]);
   const common = {
     dpr: 1 as const,
@@ -337,49 +344,42 @@ test('keeps compatible data identity stable across additive bindings and capabil
     target: 'map' as const,
     width: 2,
   };
-  const baselineReceipt = createTileflowCaptureReceipt({
-    ...common,
-    data: {
-      bindings: {fields: {class: 'class'}, layers: {road: 'transportation'}},
-      capabilities: {businessCorridor: true, canopy: true, globalLandcover: true, tree: true},
-      kind: 'vector-tiles',
-      revision: 'archive-1',
-      schema: 'openmaptiles',
-      schemaVersion: 1,
-      sourceId: 'tileflow',
-      url: 'http://127.0.0.1:8080/tiles.json?token=legacy',
-    },
+  const baselineReceipt = createTileflowCaptureReceipt({...common, data: vectorDataIdentity});
+  const compare = async (data: TileflowCaptureDataInput) =>
+    compareTileflowCaptureToBaseline(
+      {
+        ...(await createCapture(png, 2, 2)),
+        receipt: createTileflowCaptureReceipt({...common, data}),
+      },
+      {png, receipt: baselineReceipt},
+    );
+
+  const rotated = await compare({
+    ...vectorDataIdentity,
+    url: 'http://localhost:43123/tiles.json?token=rotated',
   });
-  const actualReceipt = createTileflowCaptureReceipt({
-    ...common,
-    data: {
+  assert.equal(rotated.status, 'unchanged');
+  assert.equal(rotated.sceneMatch, true);
+
+  for (const data of [
+    {
+      ...vectorDataIdentity,
       bindings: {
-        fields: {bathymetryMinDepth: 'min_depth', class: 'class'},
+        ...vectorDataIdentity.bindings,
         layers: {bathymetry: 'bathymetry', road: 'transportation'},
       },
-      capabilities: {
-        businessCorridor: true,
-        bathymetry: true,
-        canopy: true,
-        globalLandcover: true,
-        tree: true,
-      },
-      kind: 'vector-tiles',
-      revision: 'archive-1',
-      schema: 'openmaptiles',
-      schemaVersion: 1,
-      sourceId: 'tileflow',
-      url: 'http://localhost:43123/tiles.json?token=rotated',
     },
-  });
-  const actual = {...(await createCapture(png, 2, 2)), receipt: actualReceipt};
-  const comparison = await compareTileflowCaptureToBaseline(actual, {
-    png,
-    receipt: baselineReceipt,
-  });
-
-  assert.equal(comparison.status, 'unchanged');
-  assert.equal(comparison.sceneMatch, true);
+    {
+      ...vectorDataIdentity,
+      capabilities: {...vectorDataIdentity.capabilities, bathymetry: true},
+    },
+    {...vectorDataIdentity, semantics: {parkLayer: 'protected-only' as const}},
+    {...vectorDataIdentity, url: 'http://localhost:43123/other.json'},
+  ]) {
+    const comparison = await compare(data);
+    assert.equal(comparison.status, 'scene-mismatch');
+    assert.equal(comparison.sceneMatch, false);
+  }
 });
 
 test('treats a different exact World release as a scene identity mismatch', async () => {
@@ -387,7 +387,7 @@ test('treats a different exact World release as a scene identity mismatch', asyn
   const actual = await createCapture(png, 2, 2);
   const baseline = structuredClone(actual.receipt);
   assert.equal(baseline.data.kind, 'tileflow-world');
-  if (baseline.data.kind !== 'tileflow-world' || !('releaseId' in baseline.data)) {
+  if (baseline.data.kind !== 'tileflow-world') {
     throw new Error('Expected an exact World receipt fixture.');
   }
   baseline.data.releaseId = 'world-v1-different-release';
@@ -434,7 +434,10 @@ test('rejects corrupt PNGs, inconsistent hashes, and executable or additive rece
     /decoded safely/,
   );
 
-  assert.throws(() => parseTileflowCaptureReceipt('{"schemaVersion":2}'), /missing or unsupported/);
+  assert.throws(
+    () => parseTileflowCaptureReceipt('{"schemaVersion":3}'),
+    /schema version is unsupported/,
+  );
   assert.throws(
     () => parseTileflowCaptureReceipt(JSON.stringify({...actual.receipt, execute: 'never'})),
     /missing or unsupported/,

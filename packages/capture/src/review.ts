@@ -6,7 +6,7 @@ import {
   sha256Hex,
 } from '@tileflow/core';
 import type {TileflowCapture} from './capture';
-import {type TileflowCaptureReceiptV4, validateTileflowCaptureReceipt} from './receipt';
+import {type TileflowCaptureReceipt, validateTileflowCaptureReceipt} from './receipt';
 import {
   analyzeTileflowCapturePairForReview,
   tileflowVisualArtifactLimits,
@@ -45,13 +45,13 @@ export type TileflowVisualReviewFrameIdentity = {
 };
 
 export type TileflowVisualReviewSide = {
-  scene: TileflowCaptureReceiptV4['scene'];
-  style: TileflowCaptureReceiptV4['style'];
+  scene: TileflowCaptureReceipt['scene'];
+  style: TileflowCaptureReceipt['style'];
   frame: TileflowVisualReviewFrameIdentity;
   image: TileflowVisualImageIdentity;
-  runtime: Pick<TileflowCaptureReceiptV4, 'renderer' | 'platform'>;
-  data: TileflowCaptureReceiptV4['data'];
-  verification: TileflowCaptureReceiptV4['verification'];
+  runtime: Pick<TileflowCaptureReceipt, 'renderer' | 'platform'>;
+  data: TileflowCaptureReceipt['data'];
+  verification: TileflowCaptureReceipt['verification'];
   palette: TileflowVisualPaletteColor[];
 };
 
@@ -455,7 +455,7 @@ type ValidatedReviewCapture = {
   definition: TileflowVisualReviewDefinition;
   comparableFrame: TileflowVisualReviewFrameIdentity;
   png: Uint8Array;
-  receipt: TileflowCaptureReceiptV4;
+  receipt: TileflowCaptureReceipt;
 };
 
 async function validateReviewCapture(
@@ -479,9 +479,6 @@ async function validateReviewCapture(
     throw invalidReview(`The ${role} capture receipt is invalid.`, error);
   }
   const receipt = parsedReceipt;
-  if (receipt.schemaVersion !== 4) {
-    throw invalidReview(`The ${role} review capture requires a schema-v4 receipt.`);
-  }
 
   if (
     definition.map !== receipt.scene.map ||
@@ -559,7 +556,7 @@ function reviewFrameIdentity(
   };
 }
 
-function imageIdentity(receipt: TileflowCaptureReceiptV4): TileflowVisualImageIdentity {
+function imageIdentity(receipt: TileflowCaptureReceipt): TileflowVisualImageIdentity {
   return {
     sha256: receipt.image.sha256,
     cssWidth: receipt.image.cssWidth,
@@ -572,8 +569,8 @@ function imageIdentity(receipt: TileflowCaptureReceiptV4): TileflowVisualImageId
 }
 
 function runtimeIdentity(
-  receipt: TileflowCaptureReceiptV4,
-): Pick<TileflowCaptureReceiptV4, 'renderer' | 'platform'> {
+  receipt: TileflowCaptureReceipt,
+): Pick<TileflowCaptureReceipt, 'renderer' | 'platform'> {
   return {renderer: receipt.renderer, platform: receipt.platform};
 }
 
@@ -592,8 +589,8 @@ function reviewStatus(input: {
 
 function reviewWarnings(
   status: TileflowVisualReviewStatus,
-  left: TileflowCaptureReceiptV4,
-  right: TileflowCaptureReceiptV4,
+  left: TileflowCaptureReceipt,
+  right: TileflowCaptureReceipt,
 ): string[] {
   const warnings: string[] = [];
   if (left.networkDependent) {

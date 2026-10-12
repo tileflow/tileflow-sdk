@@ -1558,10 +1558,6 @@
               "type": "string",
               "minLength": 1
             },
-            "buildingKind": {
-              "type": "string",
-              "minLength": 1
-            },
             "buildingTone": {
               "type": "string",
               "minLength": 1
@@ -1614,10 +1610,6 @@
               "type": "string",
               "minLength": 1
             },
-            "classificationConfidence": {
-              "type": "string",
-              "minLength": 1
-            },
             "confidence": {
               "type": "string",
               "minLength": 1
@@ -1655,10 +1647,6 @@
               "minLength": 1
             },
             "height": {
-              "type": "string",
-              "minLength": 1
-            },
-            "hasBusiness": {
               "type": "string",
               "minLength": 1
             },
@@ -1799,10 +1787,6 @@
               "minLength": 1
             },
             "renderHeight": {
-              "type": "string",
-              "minLength": 1
-            },
-            "renderMinZoom": {
               "type": "string",
               "minLength": 1
             },
@@ -5626,9 +5610,6 @@
             "flat": {
               "$ref": "#/$defs/__schema218"
             },
-            "minZoom": {
-              "$ref": "#/$defs/__schema42"
-            },
             "mode": {
               "type": "string",
               "enum": ["3d", "flat"]
@@ -6497,7 +6478,6 @@
                 "bathymetrySortKey",
                 "bicycle",
                 "brunnel",
-                "buildingKind",
                 "buildingTone",
                 "canopyClearanceAtZoom15",
                 "canopyCoverPercent",
@@ -6511,7 +6491,6 @@
                 "circularRadiusMeters",
                 "circumference",
                 "class",
-                "classificationConfidence",
                 "confidence",
                 "crossing",
                 "diameterCrown",
@@ -6522,7 +6501,6 @@
                 "expressway",
                 "foot",
                 "genus",
-                "hasBusiness",
                 "hasParts",
                 "height",
                 "hide3d",
@@ -6559,7 +6537,6 @@
                 "refLength",
                 "renderHeight",
                 "renderMinHeight",
-                "renderMinZoom",
                 "service",
                 "shieldKind",
                 "shieldLineLengthMeters",
@@ -6758,7 +6735,6 @@
         "bathymetrySortKey",
         "bicycle",
         "brunnel",
-        "buildingKind",
         "buildingTone",
         "canopyClearanceAtZoom15",
         "canopyCoverPercent",
@@ -6772,7 +6748,6 @@
         "circularRadiusMeters",
         "circumference",
         "class",
-        "classificationConfidence",
         "confidence",
         "crossing",
         "diameterCrown",
@@ -6783,7 +6758,6 @@
         "expressway",
         "foot",
         "genus",
-        "hasBusiness",
         "hasParts",
         "height",
         "hide3d",
@@ -6820,7 +6794,6 @@
         "refLength",
         "renderHeight",
         "renderMinHeight",
-        "renderMinZoom",
         "service",
         "shieldKind",
         "shieldLineLengthMeters",
@@ -6901,7 +6874,6 @@
                 "bathymetrySortKey",
                 "bicycle",
                 "brunnel",
-                "buildingKind",
                 "buildingTone",
                 "canopyClearanceAtZoom15",
                 "canopyCoverPercent",
@@ -6915,7 +6887,6 @@
                 "circularRadiusMeters",
                 "circumference",
                 "class",
-                "classificationConfidence",
                 "confidence",
                 "crossing",
                 "diameterCrown",
@@ -6926,7 +6897,6 @@
                 "expressway",
                 "foot",
                 "genus",
-                "hasBusiness",
                 "hasParts",
                 "height",
                 "hide3d",
@@ -6963,7 +6933,6 @@
                 "refLength",
                 "renderHeight",
                 "renderMinHeight",
-                "renderMinZoom",
                 "service",
                 "shieldKind",
                 "shieldLineLengthMeters",
@@ -8783,7 +8752,6 @@
             "bathymetrySortKey",
             "bicycle",
             "brunnel",
-            "buildingKind",
             "buildingTone",
             "canopyClearanceAtZoom15",
             "canopyCoverPercent",
@@ -8797,7 +8765,6 @@
             "circularRadiusMeters",
             "circumference",
             "class",
-            "classificationConfidence",
             "confidence",
             "crossing",
             "diameterCrown",
@@ -8808,7 +8775,6 @@
             "expressway",
             "foot",
             "genus",
-            "hasBusiness",
             "hasParts",
             "height",
             "hide3d",
@@ -8845,7 +8811,6 @@
             "refLength",
             "renderHeight",
             "renderMinHeight",
-            "renderMinZoom",
             "service",
             "shieldKind",
             "shieldLineLengthMeters",
@@ -23631,7 +23596,6 @@
                     "bathymetrySortKey",
                     "bicycle",
                     "brunnel",
-                    "buildingKind",
                     "buildingTone",
                     "canopyClearanceAtZoom15",
                     "canopyCoverPercent",
@@ -23645,7 +23609,6 @@
                     "circularRadiusMeters",
                     "circumference",
                     "class",
-                    "classificationConfidence",
                     "confidence",
                     "crossing",
                     "diameterCrown",
@@ -23656,7 +23619,6 @@
                     "expressway",
                     "foot",
                     "genus",
-                    "hasBusiness",
                     "hasParts",
                     "height",
                     "hide3d",
@@ -23693,7 +23655,6 @@
                     "refLength",
                     "renderHeight",
                     "renderMinHeight",
-                    "renderMinZoom",
                     "service",
                     "shieldKind",
                     "shieldLineLengthMeters",
@@ -24069,7 +24030,6 @@
         "bathymetrySortKey",
         "bicycle",
         "brunnel",
-        "buildingKind",
         "buildingTone",
         "canopyClearanceAtZoom15",
         "canopyCoverPercent",
@@ -24083,7 +24043,6 @@
         "circularRadiusMeters",
         "circumference",
         "class",
-        "classificationConfidence",
         "confidence",
         "crossing",
         "diameterCrown",
@@ -24094,7 +24053,6 @@
         "expressway",
         "foot",
         "genus",
-        "hasBusiness",
         "hasParts",
         "height",
         "hide3d",
@@ -24131,7 +24089,6 @@
         "refLength",
         "renderHeight",
         "renderMinHeight",
-        "renderMinZoom",
         "service",
         "shieldKind",
         "shieldLineLengthMeters",
@@ -31476,9 +31433,6 @@
         "flat": {
           "$ref": "#/$defs/__schema218"
         },
-        "minZoom": {
-          "$ref": "#/$defs/__schema42"
-        },
         "mode": {
           "type": "string",
           "enum": ["3d", "flat"]
@@ -31584,9 +31538,6 @@
       "properties": {
         "flat": {
           "$ref": "#/$defs/__schema218"
-        },
-        "minZoom": {
-          "$ref": "#/$defs/__schema42"
         },
         "mode": {
           "type": "string",
@@ -31699,16 +31650,6 @@
             },
             {
               "$ref": "#/$defs/TileflowModulePatchRef136"
-            }
-          ]
-        },
-        "minZoom": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/TileflowReset"
-            },
-            {
-              "$ref": "#/$defs/TileflowModulePatchRef3"
             }
           ]
         },

@@ -8,8 +8,8 @@ import type {TileflowCaptureAsset} from './assets';
 import {TileflowCaptureError} from './errors';
 import type {
   TileflowCaptureDataInput,
-  TileflowCaptureDataSemanticsV2,
-  TileflowCaptureWorldIdentityV3,
+  TileflowCaptureDataSemantics,
+  TileflowCaptureWorldIdentity,
 } from './receipt';
 
 export const tileflowWorldCurrentTileJsonUrl = tileflowWorldTileJsonUrl;
@@ -23,7 +23,7 @@ type FetchTileJson = (
 
 export type TileflowCaptureResolvedWorldV1 = Readonly<{
   identity: Omit<
-    TileflowCaptureWorldIdentityV3,
+    TileflowCaptureWorldIdentity,
     'kind' | 'schema' | 'schemaVersion' | 'semantics' | 'sourceId'
   >;
   tileJsonUrl: string;
@@ -59,13 +59,12 @@ export class TileflowCaptureWorldSession {
     const source = requirePrimaryVectorSource(style);
     const lookupUrl = worldTileJsonLookupUrl(source, metadata);
     const resolution = await this.#resolveOne(lookupUrl, signal);
-    const semantics = validateSemantics(metadata.semantics);
-    const data: TileflowCaptureWorldIdentityV3 = {
+    const data: TileflowCaptureWorldIdentity = {
       ...resolution.identity,
       kind: 'tileflow-world',
       schema: requireLiteral(metadata.schema, 'openmaptiles', 'schema'),
       schemaVersion: requirePositiveInteger(metadata.schemaVersion, 'schemaVersion'),
-      ...(semantics ? {semantics} : {}),
+      semantics: validateSemantics(metadata.semantics),
       sourceId: requireLiteral(metadata.sourceId, 'tileflow', 'sourceId'),
     };
     const {tiles: _mutableTiles, url: _mutableUrl, ...sourceWithoutSelector} = source;
@@ -298,8 +297,7 @@ function validateExactTileTemplate(
   return value;
 }
 
-function validateSemantics(value: unknown): TileflowCaptureDataSemanticsV2 | undefined {
-  if (value === undefined) return undefined;
+function validateSemantics(value: unknown): TileflowCaptureDataSemantics {
   const semantics = requireRecord(value, 'data semantics');
   requireExactKeys(semantics, ['parkLayer']);
   if (semantics.parkLayer !== 'mixed' && semantics.parkLayer !== 'protected-only') {

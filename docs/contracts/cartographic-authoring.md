@@ -292,7 +292,7 @@ dataset does not expose the required feature.
 ## Preview, baselines, and promotion
 
 `tileflow preview` opens the map exported by the selected config; `--scene <name>` selects one of
-that map's committed scenes (`tileflow dev` remains an alias). The map uses its `view`; a scene uses
+that map's committed scenes. The map uses its `view`; a scene uses
 its committed camera and CSS viewport. Exact DPR
 belongs to capture. Valid watched edits reload the same selection; invalid edits preserve the last
 valid artifact and show diagnostics.

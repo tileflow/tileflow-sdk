@@ -417,13 +417,7 @@ test('current building tones use bound fields and the available semantic theme c
   const data = resolveTileflowData(
     vectorTiles({
       attribution: '© Test',
-      schema: openMapTiles({
-        fields: {
-          buildingKind: 'legacy_kind',
-          buildingTone: 'tone',
-          hasBusiness: 'legacy_business',
-        },
-      }),
+      schema: openMapTiles({fields: {buildingTone: 'tone'}}),
       url: '/tiles.json',
     }),
   );
@@ -435,8 +429,7 @@ test('current building tones use bound fields and the available semantic theme c
 
   for (const tone of ['active', 'commercial', 'destination']) assert.match(color, new RegExp(tone));
   assert.match(color, /tone/);
-  assert.match(color, /legacy_kind/);
-  assert.match(color, /legacy_business/);
+  assert.doesNotMatch(color, /building_kind|has_business/);
   assertValid([buildings]);
 });
 

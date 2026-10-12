@@ -208,7 +208,7 @@ Tileflow credentials on that server, not in React props or a browser bundle.
 ```tsx
 import {useState} from 'react';
 import {StaticMap} from '@tileflow/react/static';
-import type {StaticMapAttributionEntry} from '@tileflow/static';
+import type {StaticMapAttributionEntry} from '@tileflow/static/client';
 
 export function StaticPreview({idempotencyKey}: {idempotencyKey: string}) {
   const [entries, setEntries] = useState<readonly StaticMapAttributionEntry[]>([]);

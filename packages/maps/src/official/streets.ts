@@ -366,14 +366,14 @@ const circularRoadCasingWidth = circularRoadStrokeWidth(true);
 const expresswayWidthScale = 1.06;
 const tunnelBorderDash = [3, 3] as const;
 const tunnelBorderWidth = 1;
-function circularRoadLegacyScale(level: number) {
+function circularRoadFallbackScale(level: number) {
   const interpolationBase = 1.35;
   const progress = (interpolationBase ** (level - 15) - 1) / (interpolationBase ** (22 - 15) - 1);
   return 1 + progress * 1.2;
 }
 
 function circularRoadWidthAtLevel(level: number): TileflowDataExpressionInput<number> {
-  const scale = circularRoadLegacyScale(level);
+  const scale = circularRoadFallbackScale(level);
   return level === 15 ? circularRoadBaseWidth : expr.multiply(circularRoadBaseWidth, scale);
 }
 

@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {
-  type CliAccountSessionV2,
+  type CliAccountSession,
   emptyAuthConfig,
   installAccountSession,
   loadAuthConfig,
@@ -23,8 +23,8 @@ test('account auth state writes atomically with one project-free session per API
   await installAccountSession(replacement, fixture.authPath);
 
   const state = await readAuthFile(fixture.authPath);
-  assert.equal(state.kind, 'v2');
-  if (state.kind !== 'v2') return;
+  assert.equal(state.kind, 'sessions');
+  if (state.kind !== 'sessions') return;
   assert.equal(Object.keys(state.config.sessions).length, 1);
   assert.equal(state.config.sessions[first.apiOrigin].accountSession, replacement.accountSession);
   if (process.platform !== 'win32') {
@@ -63,33 +63,18 @@ test('sessions are selected only by normalized origin and expiry', async () => {
   assert.deepEqual(Object.keys(removed.config.sessions), [second.apiOrigin]);
 });
 
-test('legacy project login is recognized but never elevated or modified', async (t) => {
+test('an unrecognized saved login is invalid and is never replaced or modified', async (t) => {
   const fixture = await createFixture(t);
-  const legacy = `${JSON.stringify({
+  const unrecognized = `${JSON.stringify({
     apiKey: `tf_cli_${'z'.repeat(48)}`,
     apiUrl: 'https://api.example.test',
-    projectId: 'prj_legacy',
-    scopes: ['styles:write'],
   })}\n`;
-  await writeFile(fixture.authPath, legacy, {mode: 0o600});
+  await writeFile(fixture.authPath, unrecognized, {mode: 0o600});
 
-  assert.equal((await readAuthFile(fixture.authPath)).kind, 'legacy_project_login');
-  await assert.rejects(loadAuthConfig(fixture.authPath), /Run `tileflow login`/);
-  assert.equal(await readFile(fixture.authPath, 'utf8'), legacy);
-});
-
-test('a successful fresh login replaces the unpublished profile-selection shape', async (t) => {
-  const fixture = await createFixture(t);
-  await writeFile(
-    fixture.authPath,
-    `${JSON.stringify({profiles: {}, selections: {}, version: 2})}\n`,
-    {mode: 0o600},
-  );
-  assert.equal((await readAuthFile(fixture.authPath)).kind, 'superseded_profiles');
-
-  await installAccountSession(session(), fixture.authPath);
-  const loaded = await loadAuthConfig(fixture.authPath);
-  assert.equal(Object.keys(loaded.sessions).length, 1);
+  assert.equal((await readAuthFile(fixture.authPath)).kind, 'invalid');
+  await assert.rejects(loadAuthConfig(fixture.authPath), /auth state is invalid/);
+  await assert.rejects(installAccountSession(session(), fixture.authPath), /no changes were made/);
+  assert.equal(await readFile(fixture.authPath, 'utf8'), unrecognized);
 });
 
 test('empty account state remains a valid bounded document', async (t) => {
@@ -98,7 +83,7 @@ test('empty account state remains a valid bounded document', async (t) => {
   assert.deepEqual(await loadAuthConfig(fixture.authPath), emptyAuthConfig());
 });
 
-function session(overrides: Partial<CliAccountSessionV2> = {}): CliAccountSessionV2 {
+function session(overrides: Partial<CliAccountSession> = {}): CliAccountSession {
   return {
     account: {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'},
     accountSession: token('d'),

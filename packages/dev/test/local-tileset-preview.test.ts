@@ -17,10 +17,10 @@ import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   createTileflowArtifactSession,
   createTileflowBuildArtifacts,
-  createTileflowDevRequestHandler,
   prepareTileflowLocalTilesets,
   writeTileflowBuildArtifacts,
-} from '../src';
+} from '../src/artifacts';
+import {createTileflowDevRequestHandler} from '../src/server';
 
 test('resolves one local hosted tileset for build, preview ranges, and the PMTiles protocol', async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-local-tileset-'));

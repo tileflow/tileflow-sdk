@@ -122,7 +122,7 @@ Keep Webpack Dev Server running in one terminal. With the
 npx tileflow capture app-desktop --url http://127.0.0.1:8080/ --json
 ```
 
-Use your actual loopback URL. Capture neither starts the server nor needs a separate `tileflow dev`
+Use your actual loopback URL. Capture neither starts the server nor needs a separate `tileflow preview`
 process. Config imports are trusted executable code; local preparation needs no key, but rendered
 maps may still request remote resources.
 

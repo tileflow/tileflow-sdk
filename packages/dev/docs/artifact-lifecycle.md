@@ -26,8 +26,7 @@ The integration surfaces are deliberately split: use `@tileflow/dev/artifacts` f
 preparation and production outputs, `@tileflow/dev/server` for HTTP development handling,
 `@tileflow/dev/icons` for icon compilation, `@tileflow/dev/inspect` for safe resolved-config and
 bounded feature inspection, `@tileflow/dev/validation` for structured diagnostics, and
-`@tileflow/dev/preview` only for the local preview contract. The root entry keeps compatibility
-re-exports.
+`@tileflow/dev/preview` only for the local preview contract. The package has no root entry point.
 
 Artifact construction is an explicit `source map → resolved map → prepared map → ArtifactPlan`
 pipeline. Map inheritance resolves before its ordered local/package icon and font directories are
@@ -122,7 +121,7 @@ release. `close()` waits for outstanding acquisitions.
 The bounded watcher follows the config, transitive local TypeScript/JavaScript/JSON imports, and
 effective local icon/font directory inputs. Generations are monotonic, overlapping refreshes are latest-wins, invalid
 edits retain the last good snapshot, and caller-supplied output directories can be ignored to avoid
-feedback loops. `tileflow preview` (`tileflow dev` compatibility alias), `capture --watch`, and
+feedback loops. `tileflow preview`, `capture --watch`, and
 framework adapters use this shared status
 vocabulary. The built-in preview reloads after its live event stream reconnects following a server
 restart, even when the replacement process begins again at generation 1.

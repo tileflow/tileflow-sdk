@@ -377,10 +377,9 @@ export function createNativeAdmissionOwner(options: {
       if (options.sessionFetch) boundFetch = options.sessionFetch(registered.context);
       let retirement: Promise<Readonly<{retired: true}>> | undefined;
       let retirementNotified = false;
-      const catalog = createNativeAdmissionCatalog(resources, registered.context, (additions) => {
-        if (!bridge.extendContext) return Promise.reject(cancel('NATIVE_ADMISSION_UNAVAILABLE'));
-        return bridge.extendContext(ack.installation, registered.context, additions);
-      });
+      const catalog = createNativeAdmissionCatalog(resources, registered.context, (additions) =>
+        bridge.extendContext(ack.installation, registered.context, additions),
+      );
       const context: Context = {
         id: registered.context,
         generation: registered.generation,

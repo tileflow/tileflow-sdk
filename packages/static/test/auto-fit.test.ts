@@ -1,18 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {createStaticMap, prepareStaticMapRequest, StaticMapError} from '../src/client';
 import {
-  compileStaticOverlays,
   createRenderManifest,
-  createStaticMap,
   hashStaticSceneRequest,
-  marker,
-  prepareStaticMapRequest,
-  StaticMapError,
+  validateStaticRenderManifest,
+} from '../src/manifest';
+import {compileStaticOverlays, marker} from '../src/overlays';
+import {
   StaticMapRequestError,
   staticMapRequestErrorResponseSchema,
-  validateStaticRenderManifest,
   validateStaticScene,
-} from '../src/index';
+} from '../src/scene';
 
 const baseAutoScene = {
   camera: {type: 'auto' as const},

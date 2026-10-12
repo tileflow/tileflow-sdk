@@ -66,7 +66,6 @@ export type OpenMapTilesFieldBindings = {
   /** Stable shallow-to-deep ordering for GEBCO bands. */
   bathymetrySortKey?: string;
   brunnel: string;
-  buildingKind: string;
   buildingTone: string;
   /**
    * Lower bound of the distance from a canopy point to the nearest edge a crown must not cover,
@@ -83,40 +82,38 @@ export type OpenMapTilesFieldBindings = {
   canopyRank: string;
   capital: string;
   /** Roundabout geometry kind in the optional circular-feature layer. */
-  circularKind?: string;
+  circularKind: string;
   /** Precomputed roundabout radius in pixels at zoom 15. */
-  circularRadiusAtZoom15?: string;
+  circularRadiusAtZoom15: string;
   /** Extra precomputed clearance on road approaches to a circular road at zoom 15. */
-  circularClearanceExtraAtZoom15?: string;
+  circularClearanceExtraAtZoom15: string;
   /** Roundabout radius in metres. */
-  circularRadiusMeters?: string;
+  circularRadiusMeters: string;
   /** Roundabout inner radius in metres. */
-  circularInnerRadiusMeters?: string;
+  circularInnerRadiusMeters: string;
   /** Roundabout outer radius in metres. */
-  circularOuterRadiusMeters?: string;
+  circularOuterRadiusMeters: string;
   class: string;
   /** Crossing control classification on street-furniture points. */
   crossing: string;
   circumference: string;
-  classificationConfidence: string;
   confidence: string;
   diameterCrown: string;
   disputed: string;
   /** Direction in degrees for oriented street-furniture symbols. */
-  direction?: string;
+  direction: string;
   elevation: string;
   elevationFeet: string;
   expressway: string;
   foot: string;
   height: string;
   hide3d: string;
-  hasBusiness: string;
   /** Whether a building footprint owns separately materialized building parts. */
-  hasParts?: string;
+  hasParts: string;
   horse: string;
   houseNumber: string;
-  /** Optional sparse 1–4 semantic and locally normalized urban-importance tier. */
-  importanceTier?: string;
+  /** Sparse 1–4 semantic and locally normalized urban-importance tier. */
+  importanceTier: string;
   iata: string;
   icao: string;
   indoor: string;
@@ -153,7 +150,6 @@ export type OpenMapTilesFieldBindings = {
   ref: string;
   refLength: string;
   renderHeight: string;
-  renderMinZoom: string;
   renderMinHeight: string;
   /** Optional producer-normalized route-shield family. Required by Tileflow World V1. */
   shieldKind?: string;
@@ -205,14 +201,6 @@ export type TileflowWorldV1Schema = Omit<OpenMapTilesSchema, 'fields' | 'layers'
   fields: OpenMapTilesFieldBindings & {
     bathymetryMinDepth: string;
     bathymetrySortKey: string;
-    circularClearanceExtraAtZoom15: string;
-    circularInnerRadiusMeters: string;
-    circularKind: string;
-    circularOuterRadiusMeters: string;
-    circularRadiusAtZoom15: string;
-    circularRadiusMeters: string;
-    direction: string;
-    hasParts: string;
     shieldKind: string;
     shieldLineLengthMeters: string;
     shieldNetwork: string;
@@ -344,7 +332,6 @@ const canonicalFields = {
   adminLevel: 'admin_level',
   bicycle: 'bicycle',
   brunnel: 'brunnel',
-  buildingKind: 'building_kind',
   buildingTone: 'building_tone',
   canopyClearanceAtZoom15: 'clearance_px_z15',
   canopyCoverPercent: 'cover_pct',
@@ -359,9 +346,9 @@ const canonicalFields = {
   class: 'class',
   crossing: 'crossing',
   circumference: 'circumference',
-  classificationConfidence: 'classification_confidence',
   confidence: 'confidence',
   diameterCrown: 'diameter_crown',
+  direction: 'direction',
   disputed: 'disputed',
   elevation: 'ele',
   elevationFeet: 'ele_ft',
@@ -369,7 +356,6 @@ const canonicalFields = {
   foot: 'foot',
   height: 'height',
   hide3d: 'hide_3d',
-  hasBusiness: 'has_business',
   hasParts: 'has_parts',
   horse: 'horse',
   houseNumber: 'housenumber',
@@ -404,7 +390,6 @@ const canonicalFields = {
   ref: 'ref',
   refLength: 'ref_length',
   renderHeight: 'render_height',
-  renderMinZoom: 'render_min_zoom',
   renderMinHeight: 'render_min_height',
   service: 'service',
   species: 'species',
@@ -454,14 +439,6 @@ export function tileflowWorldV1Schema(
     ...options,
     capabilities: {...options.capabilities, bathymetry: true, globalLandcover: true},
     fields: {
-      circularClearanceExtraAtZoom15: 'clearance_extra_px_z15',
-      circularInnerRadiusMeters: 'inner_radius_m',
-      circularKind: 'circle_kind',
-      circularOuterRadiusMeters: 'outer_radius_m',
-      circularRadiusAtZoom15: 'radius_px_z15',
-      circularRadiusMeters: 'radius_m',
-      direction: 'direction',
-      hasParts: 'has_parts',
       shieldKind: 'shield_kind',
       shieldLineLengthMeters: 'shield_line_length_m',
       shieldNetwork: 'shield_network',
@@ -878,7 +855,7 @@ export function resolveTileflowData(
 
 export function isCanonicalOpenMapTilesSchema(schema: OpenMapTilesSchema): boolean {
   return (
-    (schema.semantics?.parkLayer ?? 'mixed') === 'mixed' &&
+    schema.semantics.parkLayer === 'mixed' &&
     Object.entries(canonicalLayers).every(
       ([key, value]) => schema.layers[key as keyof typeof canonicalLayers] === value,
     ) &&
@@ -1108,7 +1085,7 @@ function validateOpenMapTilesSchema(schema: OpenMapTilesSchema): OpenMapTilesSch
     );
   }
 
-  const parkLayer = schema.semantics?.parkLayer ?? 'mixed';
+  const parkLayer = schema.semantics?.parkLayer;
   if (parkLayer !== 'mixed' && parkLayer !== 'protected-only') {
     throw new Error('Tileflow OpenMapTiles semantics.parkLayer is invalid.');
   }

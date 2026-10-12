@@ -6,14 +6,16 @@ import test, {type TestContext} from 'node:test';
 import {defineMap, parseTileflowMap, roads} from '@tileflow/core';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
-  assertValidTileflowStyle,
   createTileflowBuildArtifacts,
   createTileflowStyle,
-  TileflowStyleValidationError,
-  TileflowValidationError,
-  validateTileflowStyle,
   writeTileflowBuildArtifacts,
-} from '../src/index';
+} from '../src/artifacts';
+import {TileflowValidationError} from '../src/config';
+import {
+  assertValidTileflowStyle,
+  TileflowStyleValidationError,
+  validateTileflowStyle,
+} from '../src/validation';
 import {fixtureThemeFields} from './theme-fixture';
 
 const fixtureGlyphs = {

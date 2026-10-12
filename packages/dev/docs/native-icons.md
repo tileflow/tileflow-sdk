@@ -46,7 +46,7 @@ It therefore requires a homogeneous inventory. To use a mixed package, select on
 an explicit `expr.match`/`expr.case` expression whose possible outputs and fallback are homogeneous.
 Sampling the current feature data does not prove this condition.
 
-`tileflow validate`, `tileflow dev`, `tileflow build`, framework preparation and Capture use the
+`tileflow validate`, `tileflow preview`, `tileflow build`, framework preparation and Capture use the
 same check. `TF_ICON_REPRESENTATION_MIXED` identifies the layer and image-selection path. Replace
 the conflicting override, align all selectable representations, or bound the selection explicitly.
 Compiled SDF admission rejects legacy token templates and function objects with

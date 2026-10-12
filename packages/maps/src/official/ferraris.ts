@@ -962,7 +962,6 @@ export const ferraris = bindOfficialMapTheme(
           strokeOpacity: 0.62,
           strokeWidth: 0.7,
         },
-        minZoom: 15,
         mode: 'flat',
       }),
       water: withRenderStack(

@@ -13,7 +13,6 @@ export type TileflowVegetationThreeDimensionalStyle = {
 
 export type TileflowVegetationModuleOptions = {
   flat?: TileflowCircleStyle;
-  minZoom?: number;
   mode?: TileflowVegetationMode;
   threeDimensional?: TileflowVegetationThreeDimensionalStyle;
 };

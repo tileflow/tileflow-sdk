@@ -4,7 +4,7 @@ import type {NativeAdmissionResource} from '../src/native-admission-contract';
 import {projectNativeResources} from '../src/native-resource-projection';
 import {apiOrigin, mapId} from './session-fixture';
 
-const styleUrl = `${apiOrigin}/maps/${mapId}/light.json`;
+const styleUrl = `${apiOrigin}/maps/${mapId}/native/v1/light.json`;
 const policy = Object.freeze({
   mapId,
   resourceOrigins: [apiOrigin, 'https://tiles.tileflow.test'],
@@ -209,7 +209,7 @@ test('owned origin does not authorize unknown paths other Maps or foreign tilese
   await assert.rejects(
     projectNativeResources({
       ...f.ports,
-      styleUrl: `${apiOrigin}/maps/map_fedcba9876543210/light.json`,
+      styleUrl: `${apiOrigin}/maps/map_fedcba9876543210/native/v1/light.json`,
     }),
   );
   assert.deepEqual(f.calls, []);

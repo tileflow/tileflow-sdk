@@ -145,15 +145,6 @@ function buildingColorExpression(context: TileflowDomainCompileContext): unknown
     colors.destination,
     ['==', ['coalesce', ['get', fields.buildingTone], ''], 'commercial'],
     colors.commercial,
-    // Defensive compatibility for immutable V8.9 archives. New candidates emit building_tone.
-    [
-      'any',
-      ['==', ['get', fields.hasBusiness], true],
-      ['==', ['get', fields.hasBusiness], 1],
-      ['==', ['get', fields.hasBusiness], '1'],
-      ['==', ['coalesce', ['get', fields.buildingKind], 'generic'], 'commercial'],
-    ],
-    colors.commercial,
     colors.generic,
   ];
 }

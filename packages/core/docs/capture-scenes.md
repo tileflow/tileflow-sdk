@@ -25,7 +25,7 @@ export default defineMap({
 });
 ```
 
-Use `tileflow preview --scene madrid-desktop` (`tileflow dev` remains an alias) for live review and
+Use `tileflow preview --scene madrid-desktop` for live review and
 `tileflow capture madrid-desktop` for exact pixels and a schema-version-4 receipt containing the
 concrete theme plus Streets, data, style, renderer, and image identities. World capture resolves the selected TileJSON
 once and records the exact `world-v1` release plus descriptor/archive/data-contract hashes;

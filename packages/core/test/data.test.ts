@@ -191,29 +191,29 @@ test('supports explicit schema bindings and identifies canonical OpenMapTiles', 
   assert.equal(canonical.fields.toll, 'toll');
 });
 
-test('makes park-layer semantics explicit while normalizing legacy schemas', () => {
+test('makes park-layer semantics explicit and requires them on every schema', () => {
   const world = tileflowWorldV1Schema();
   const protectedOnly = openMapTiles({semantics: {parkLayer: 'protected-only'}});
-  const legacy = openMapTiles();
+  const generic = openMapTiles();
 
   assert.equal(world.semantics.parkLayer, 'protected-only');
   assert.equal(protectedOnly.semantics.parkLayer, 'protected-only');
   assert.equal(isCanonicalOpenMapTilesSchema(protectedOnly), false);
-  assert.equal(legacy.semantics.parkLayer, 'mixed');
+  assert.equal(generic.semantics.parkLayer, 'mixed');
 
-  const legacyWithoutMarker = {
-    ...legacy,
+  const withoutSemantics = {
+    ...generic,
     semantics: undefined,
-  } as unknown as typeof legacy;
-  const resolvedLegacy = resolveTileflowData(
-    vectorTiles({
-      attribution: '© Legacy fixture',
-      schema: legacyWithoutMarker,
-      url: '/legacy.json',
-    }),
+  } as unknown as typeof generic;
+  assert.throws(
+    () =>
+      vectorTiles({
+        attribution: '© Example',
+        schema: withoutSemantics,
+        url: '/tiles.json',
+      }),
+    /semantics\.parkLayer is invalid/u,
   );
-  assert.deepEqual(resolvedLegacy.schema.semantics, {parkLayer: 'mixed'});
-  assert.deepEqual(resolvedLegacy.identity.semantics, {parkLayer: 'mixed'});
 });
 
 test('preserves explicitly absent optional source-layer capabilities', () => {
@@ -271,6 +271,20 @@ test('defines and validates the required Tileflow World V1 surface extensions', 
   assert.equal(generic.fields.shieldRank, undefined);
   assert.equal(generic.fields.shieldText, undefined);
   assert.equal(generic.fields.shieldTextColor, undefined);
+  for (const [field, binding] of [
+    ['circularClearanceExtraAtZoom15', 'clearance_extra_px_z15'],
+    ['circularInnerRadiusMeters', 'inner_radius_m'],
+    ['circularKind', 'circle_kind'],
+    ['circularOuterRadiusMeters', 'outer_radius_m'],
+    ['circularRadiusAtZoom15', 'radius_px_z15'],
+    ['circularRadiusMeters', 'radius_m'],
+    ['direction', 'direction'],
+    ['hasParts', 'has_parts'],
+    ['importanceTier', 'importance_tier'],
+  ] as const) {
+    assert.equal(generic.fields[field], binding, field);
+    assert.equal(worldV1.fields[field], binding, field);
+  }
   assert.equal(worldV1.layers.bathymetry, 'bathymetry');
   assert.equal(worldV1.layers.circularFeature, 'circular_feature');
   assert.equal(worldV1.layers.globalLandcover, 'globallandcover');

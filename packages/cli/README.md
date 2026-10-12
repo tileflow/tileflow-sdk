@@ -23,8 +23,8 @@ executable. With another package manager, use its local-execution command and th
 do not add a second lockfile or rely on a globally installed CLI.
 
 `init` creates a singular `tileflow.config.ts` extending the official Streets map. `preview` serves
-the exported map using its configured view. `dev` is a compatibility alias for `preview`, not a
-replacement for an application's normal development server.
+the exported map using its configured view; it does not replace an application's normal development
+server.
 
 Local validation, compilation, and asset preparation require no account or API key. Preview and
 capture may fetch configured remote tiles and fonts. Config files are executable trusted code,
@@ -264,7 +264,7 @@ for the verified platform, setup, and development-artifact restrictions.
 
 Run `npx tileflow --help` or `npx tileflow <command> --help` for the installed command surface.
 The families cover map authoring, semantic language discovery, local visual evidence, datasets and
-icons, account sessions, coordinates, and hosted delivery. Hidden compatibility commands are not a
+icons, account sessions, coordinates, and hosted delivery. Hidden support commands are not a
 recommended application workflow.
 
 A manifest 404 usually means assets were not built/served at the component's configured URL.

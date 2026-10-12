@@ -13,7 +13,7 @@ export function compileVegetation(
   request: TileflowResolvedModuleConfig<TileflowVegetationModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
 ): TileflowLayerContribution[] {
-  const minZoom = request?.flat?.minZoom ?? request?.minZoom ?? 16;
+  const minZoom = request?.flat?.minZoom ?? 16;
   const mode = request?.mode ?? '3d';
   const config = mergeTileflowDesign<TileflowResolvedModuleConfig<TileflowVegetationModuleConfig>>(
     {
@@ -36,7 +36,6 @@ export function compileVegetation(
         strokeOpacity: 0.55,
         strokeWidth: 0.8,
       },
-      minZoom,
       mode,
       threeDimensional: {
         barkColor: context.colors.vegetation.tree.bark,

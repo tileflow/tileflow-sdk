@@ -1,8 +1,8 @@
 import type {Command} from 'commander';
 import pc from 'picocolors';
 import {
-  type AuthConfigV2,
-  type CliAccountSessionV2,
+  type AuthConfig,
+  type CliAccountSession,
   parseProjectReference,
   rejectedAccountSessionMessage,
   resolveAccountSession,
@@ -28,7 +28,7 @@ export function registerProjectCommands(
   program: Command,
   dependencies: {
     defaultApiUrl: string;
-    loadAuthConfig: () => Promise<AuthConfigV2>;
+    loadAuthConfig: () => Promise<AuthConfig>;
   },
 ) {
   const projects = program
@@ -203,7 +203,7 @@ export function registerProjectCommands(
 }
 
 export async function fetchAccountProjects(
-  session: CliAccountSessionV2,
+  session: CliAccountSession,
   includeArchived: boolean,
 ): Promise<{items: AccountProjectTarget[]; ok: true} | {error: string; ok: false; status: number}> {
   const items: AccountProjectTarget[] = [];
@@ -229,34 +229,11 @@ export async function fetchAccountProjects(
   return {error: 'Destination discovery exceeded its safe page limit.', ok: false, status: 502};
 }
 
-export async function resolveAccountProjectTarget(
-  session: CliAccountSessionV2,
-  requestedProject?: string,
-): Promise<
-  | {kind: 'selected'; target: AccountProjectTarget}
-  | {kind: 'ambiguous'; targets: AccountProjectTarget[]}
-  | {kind: 'invalid' | 'missing'; targets: AccountProjectTarget[]}
-  | {error: string; kind: 'remote'; status: number}
-> {
-  const result = await fetchAccountProjects(session, false);
-  if (!result.ok) return {error: result.error, kind: 'remote', status: result.status};
-  if (requestedProject) {
-    const parsed = parseProjectReference(requestedProject);
-    if (!parsed) return {kind: 'invalid', targets: result.items};
-    const target = result.items.find((candidate) => candidate.reference === requestedProject);
-    return target ? {kind: 'selected', target} : {kind: 'missing', targets: result.items};
-  }
-  if (result.items.length === 1) return {kind: 'selected', target: result.items[0]};
-  return result.items.length
-    ? {kind: 'ambiguous', targets: result.items}
-    : {kind: 'missing', targets: []};
-}
-
 async function requireCommandSession(
   options: ProjectCommandOptions,
-  dependencies: {defaultApiUrl: string; loadAuthConfig: () => Promise<AuthConfigV2>},
+  dependencies: {defaultApiUrl: string; loadAuthConfig: () => Promise<AuthConfig>},
 ) {
-  let config: AuthConfigV2;
+  let config: AuthConfig;
   try {
     config = await dependencies.loadAuthConfig();
   } catch (error) {
@@ -277,7 +254,7 @@ async function requireCommandSession(
   return resolved.session;
 }
 
-async function accountRequest(session: CliAccountSessionV2, path: string, init: RequestInit) {
+async function accountRequest(session: CliAccountSession, path: string, init: RequestInit) {
   let response;
   try {
     response = await requestHostedJson(session.apiOrigin, path, {

@@ -143,7 +143,7 @@ test('enumerates every static branch of image expressions and rejects unthemed d
         [
           {
             value: fixed('missing-case', {reason: 'Static image-expression fixture.'}),
-            when: expr.toBoolean(expr.get(field('hasBusiness')), false),
+            when: expr.toBoolean(expr.get(field('hasParts')), false),
           },
         ],
         fixed('known', {reason: 'Static image-expression fixture.'}),

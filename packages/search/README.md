@@ -225,19 +225,21 @@ commercial search session. Hovering, displaying results and moving a map do not 
 `retryAfterSeconds`. The client never retries, including after throttling. Use `signal` for
 cancellation. Network failures can leave server completion uncertain.
 
-| Code                                                             | Action                                                               |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `GEOCODING_PLAN_UNAVAILABLE`                                     | Use paid Starter or request an eligible evaluation.                  |
-| `GEOCODING_EVALUATION_REQUIRED` / `GEOCODING_EVALUATION_EXPIRED` | Ask the Team's operator to review evaluation access.                 |
-| `GEOCODING_EVALUATION_EXHAUSTED`                                 | Stop requests; review evaluation limits.                             |
-| `GEOCODING_UNPAID_LIMIT_REACHED`                                 | Search without payment reached its period limit; upgrade to Starter. |
-| `GEOCODING_UNPAID_BUDGET_EXHAUSTED`                              | Search without payment is paused; retry after `retryAfterSeconds`.   |
-| `GEOCODING_SUSPENDED`                                            | Search is suspended for the Team; contact support.                   |
-| `GEOCODING_PICK_LIMIT_EXCEEDED` / `GEOCODING_UPSTREAM_THROTTLED` | Respect `retryAfterSeconds`; retry only deliberately.                |
-| `GEOCODING_INVALID_CURSOR` / `GEOCODING_INVALID_SUGGESTION`      | Check the Team and original query; start a fresh search explicitly.  |
-| `GEOCODING_CURSOR_EXPIRED` / `GEOCODING_SUGGESTION_EXPIRED`      | Request fresh results explicitly.                                    |
-| `GEOCODING_USAGE_UNCONFIRMED`                                    | Completion may already be charged. Inspect usage before repeating.   |
-| `GEOCODING_DISABLED`                                             | Search is disabled; installation does not activate it.               |
+| Code                                                             | Action                                                                |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `GEOCODING_PLAN_UNAVAILABLE`                                     | Use paid Starter or request an eligible evaluation.                   |
+| `GEOCODING_EVALUATION_REQUIRED` / `GEOCODING_EVALUATION_EXPIRED` | Ask the Team's operator to review evaluation access.                  |
+| `GEOCODING_EVALUATION_EXHAUSTED`                                 | Stop requests; review evaluation limits.                              |
+| `GEOCODING_UNPAID_LIMIT_REACHED`                                 | Search without payment reached its period limit; upgrade to Starter.  |
+| `GEOCODING_UNPAID_BUDGET_EXHAUSTED`                              | Search without payment is paused; retry after `retryAfterSeconds`.    |
+| `GEOCODING_SUSPENDED`                                            | Search is suspended for the Team; contact support.                    |
+| `GEOCODING_SPENDING_LIMIT_REACHED`                               | The Team reached its spending limit; raise it or wait for the period. |
+| `GEOCODING_CREDENTIAL_QUOTA_EXCEEDED`                            | The credential reached its quota; respect `retryAfterSeconds`.        |
+| `GEOCODING_PICK_LIMIT_EXCEEDED` / `GEOCODING_UPSTREAM_THROTTLED` | Respect `retryAfterSeconds`; retry only deliberately.                 |
+| `GEOCODING_INVALID_CURSOR` / `GEOCODING_INVALID_SUGGESTION`      | Check the Team and original query; start a fresh search explicitly.   |
+| `GEOCODING_CURSOR_EXPIRED` / `GEOCODING_SUGGESTION_EXPIRED`      | Request fresh results explicitly.                                     |
+| `GEOCODING_USAGE_UNCONFIRMED`                                    | Completion may already be charged. Inspect usage before repeating.    |
+| `GEOCODING_DISABLED`                                             | Search is disabled; installation does not activate it.                |
 
 Rejected or failed operations do not return a completed usage record. Never translate an unconfirmed
 completion into zero units. Confirmed server completion is not undone by a later disconnection.

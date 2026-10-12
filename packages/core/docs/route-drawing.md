@@ -3,7 +3,7 @@
 An application that draws a route on a Tileflow map can take the route's colours from the theme and
 draw the line on with a moving head. Themes set route inks; the theme controller returns them for
 the theme on screen; `createTileflowLineProgress` animates a group of line layers along their
-length.
+length; `createTileflowGroundLayers` keeps them on the ground, under the map's 3D buildings.
 
 ## Set route inks in a theme
 
@@ -109,6 +109,80 @@ export async function drawRoute(
 animation, or `dispose` stops it first; the line stays where it was stopped. A browser preference
 for reduced motion shows the target at once. `tileflowLineProgressGradient(state, options)` returns
 the same gradient for a single state, for styles built ahead of time.
+
+## Keep a route under 3D buildings
+
+MapLibre draws a 2D layer that comes after a 3D layer, such as extruded buildings or a custom layer
+drawn in 3D, without testing depth. A route added under the labels therefore crosses in front of
+the buildings. A route that lies on the ground goes before the first 3D layer: every building then
+hides it exactly where it stands in front of it.
+
+`tileflowGroundBeforeId(map)` returns that layer: the first 3D layer above the roads, or the start
+of the vegetation when the buildings are flat, so a ground layer still covers the roads and the
+flat buildings. Pass it as `beforeId` to `map.addLayer` for a single layer.
+
+`createTileflowGroundLayers(map, {layers, occludedOpacity})` keeps a group of layers there, bottom
+to top as given:
+
+- It adds the layers, or moves those already on the map. A layer whose source is not on the map yet
+  is added when the source is.
+- After a style change, it brings back the layers the change dropped, with the paint and layout
+  last written through the group.
+- When a 3D layer lands above the group, such as a custom layer added later, the group moves under
+  it.
+- `occludedOpacity` lets a line show through 3D content: by layer id, how much of the line shows
+  where buildings hide it, from 0 (nothing, the default) to 1. The group draws a copy of the line
+  over the 3D content at the line's opacity times that share, as a navigation app shows a route
+  through buildings. The copy lies over the group's other layers too, so where the line shows, it
+  tints the layers drawn above the line slightly; a line at the top of the group shows no change.
+  Only line layers whose `line-opacity` is a number can show through.
+
+Paint the group's layers through the group, so the copies follow them. A helper that paints layers
+takes the group in place of the map:
+
+<!-- docs:check -->
+
+```ts
+import {
+  createTileflowGroundLayers,
+  createTileflowLineProgress,
+  type TileflowGroundLayersMap,
+  type TileflowRouteInks,
+} from '@tileflow/core/browser';
+
+export function addRoute(map: TileflowGroundLayersMap, inks: TileflowRouteInks) {
+  // The map already holds a GeoJSON source named 'route' with `lineMetrics: true`.
+  const line = (id: string, width: number) => ({
+    id,
+    type: 'line',
+    source: 'route',
+    layout: {'line-cap': 'round', 'line-join': 'round'},
+    paint: {'line-width': width},
+  });
+  const ground = createTileflowGroundLayers(map, {
+    layers: [line('route-casing', 12), line('route-line', 8), line('route-core', 2)],
+    occludedOpacity: {'route-line': 0.35},
+  });
+  const route = createTileflowLineProgress(ground, {
+    layers: [
+      {id: 'route-casing', color: inks.casing},
+      {id: 'route-line', color: inks.line, highlight: inks.core},
+      {id: 'route-core', color: inks.core, opacity: inks.coreOpacity},
+    ],
+    initial: {end: 0},
+  });
+  return {
+    draw: () => route.animate({to: {end: 1}, duration: 2500}),
+    remove: () => {
+      route.dispose();
+      ground.dispose();
+    },
+  };
+}
+```
+
+`dispose` takes the group's layers and copies off the map. The copies keep the layer's id with
+`:occluded` after it.
 
 ## Cost
 

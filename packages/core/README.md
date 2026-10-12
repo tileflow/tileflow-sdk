@@ -151,7 +151,8 @@ For application-drawn RGBA symbols, it also manages fixed-size
 [dynamic style images](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/dynamic-style-images.md),
 including state refresh, theme changes and restoration without changing layer placement.
 Applications draw their own routes in the theme's inks, read with `getRouteInks()`, and draw them
-on with `createTileflowLineProgress`; see
+on with `createTileflowLineProgress`. `createTileflowGroundLayers` keeps them under 3D buildings,
+which hide them where they stand in front, and can show the hidden stretches faintly; see
 [route drawing](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/route-drawing.md).
 
 The semantic domains are `land`, `water`, `nautical`, `roads`, `buildings`, `boundaries`, `labels`,

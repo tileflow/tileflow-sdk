@@ -88,6 +88,15 @@ export {
   type TileflowVectorTileDecodeOptions,
 } from './vector-tile-decode';
 export {
+  createTileflowGroundLayers,
+  tileflowGroundBeforeId,
+  type TileflowGroundLayer,
+  type TileflowGroundLayers,
+  type TileflowGroundLayersMap,
+  type TileflowGroundLayersOptions,
+  type TileflowGroundOrderMap,
+} from './ground-layers-browser';
+export {
   createTileflowDepthMarkers,
   tileflowDepthMarkerPlacement,
   type TileflowDepthMarker,

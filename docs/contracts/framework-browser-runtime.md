@@ -113,6 +113,14 @@ not ease smoothly. States are written again after every new style, so they stay 
 `setTheme` and `setBlend`. A map without global state (MapLibre GL JS before 5.6) fails the call.
 Framework adapters do not expose it yet.
 
+It also returns route inks: `getRouteInks()` reads the resolved `route.*` tokens that the compiler
+publishes in each style's `tileflow:route` metadata, or the colour scheme's defaults for a style
+without them, and mixes them in OKLab between the neighbouring themes of a blend at its position.
+`createTileflowLineProgress(map, {layers})` is independent of the controller: it owns the
+`line-gradient` and `line-opacity` of the application's own line layers, writes only changed
+values, paints a layer again when a style change re-creates it, and shows targets at once under
+reduced motion.
+
 ## Renderer loading boundary
 
 React, Vue, and Svelte import MapLibre declarations as types only. Their executable entrypoints

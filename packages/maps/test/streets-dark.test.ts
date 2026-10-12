@@ -129,6 +129,11 @@ const approvedLightStyleColors = new Set([
   '#FFFFFF',
   'RGBA(0, 0, 0, 0)',
   'RGBA(244, 240, 239, 0.72)',
+  // Default route inks, published in the style's metadata for application routes.
+  '#1E3A8A',
+  '#2563EB',
+  '#94A3B8',
+  '#DBEAFE',
 ]);
 
 // This is the final compiler output, not only the authoring palette. It intentionally
@@ -214,6 +219,11 @@ const approvedDarkStyleColors = new Set([
   '#FFFFFF',
   'RGBA(0, 0, 0, 0)',
   'RGBA(37, 40, 57, 0.82)',
+  // Default route inks, published in the style's metadata for application routes.
+  '#0B1220',
+  '#60A5FA',
+  '#64748B',
+  '#EFF6FF',
 ]);
 
 function compile(theme: 'light' | 'dark') {

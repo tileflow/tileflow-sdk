@@ -280,6 +280,7 @@ revision; prefer the installed copy when working with an older release.
 - [Authoring model](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/authoring-model.md)
 - [Shared visual primitives](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/shared-visual-primitives.md)
 - [Compiled-style performance](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/compiled-style-performance.md)
+- [Camera moves and the tile cache](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/camera-moves-and-tile-cache.md)
 - [Themes and module styles](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/themes-and-module-styles.md)
 - [Theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md)
 - [Map emphasis](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-emphasis.md)

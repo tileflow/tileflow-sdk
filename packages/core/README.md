@@ -243,6 +243,11 @@ standalone capture apply the browser effect automatically. Direct MapLibre integ
 `attachTileflowAtmosphere(map)` from `@tileflow/core/browser`. See
 [globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md).
 
+Applications that need the map's data themselves, such as streets to route over or the place
+under the camera, read chosen layers of a vector source for an area at a fixed zoom with
+`createTileflowTileReader` from `@tileflow/core/browser`, which also runs in a module worker. See
+[application tile reading](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/application-tile-reading.md).
+
 A map with text must declare exactly one text provider. Streets, Ferraris, Härad, Soundings,
 and Blueprint use URL glyph providers. Baedeker and Siegfried use packaged Cormorant
 fonts; Cyberpunk and Matrix use packaged Oxanium fonts. Hosted deployment currently rejects
@@ -275,6 +280,7 @@ revision; prefer the installed copy when working with an older release.
 - [Data is separate from design](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/data-is-separate-from-design.md)
 - [Capture scenes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-scenes.md)
 - [Public API and browser subpath](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/public-api-and-browser-subpath.md)
+- [Application tile reading](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/application-tile-reading.md)
 - [Hosted session authorization](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/hosted-session-authorization.md)
 - [Native resource URLs](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-resource-urls.md)
 - [Native artifact profile](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-artifact-profile.md)

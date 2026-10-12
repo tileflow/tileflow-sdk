@@ -42,6 +42,26 @@ import {
 import type {MapLibreStyle} from './types';
 
 export {attachTileflowAtmosphere, type TileflowAtmosphereMap} from './atmosphere-browser';
+export {
+  createTileflowTileReader,
+  readTileflowMapTileSource,
+  tileflowTilePointToLngLat,
+  tileflowTilesForBounds,
+  type TileflowTile,
+  type TileflowTileAddress,
+  type TileflowTileAreaRequest,
+  type TileflowTileReader,
+  type TileflowTileReaderOptions,
+  type TileflowTileRequestTransform,
+  type TileflowTileSourceMap,
+} from './tile-reader';
+export {
+  decodeTileflowVectorTile,
+  type TileflowTileFeature,
+  type TileflowTileGeometryType,
+  type TileflowTileLayer,
+  type TileflowVectorTileDecodeOptions,
+} from './vector-tile-decode';
 export type {
   TileflowDynamicImage,
   TileflowDynamicImageContext,

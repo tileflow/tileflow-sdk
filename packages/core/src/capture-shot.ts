@@ -4,6 +4,7 @@ import {
   tileflowCaptureSceneNameSchema,
   tileflowCaptureViewportSchema,
 } from './capture-scene';
+import {type TileflowShotCamera, tileflowShotStateAt} from './capture-shot-motion';
 import {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
 
 export const tileflowCaptureShotSchemaVersion = 1 as const;
@@ -77,13 +78,7 @@ export type TileflowCaptureShotKeyframe = z.infer<typeof tileflowCaptureShotKeyf
 export type TileflowCaptureShot = z.infer<typeof tileflowCaptureShotSchema>;
 export type TileflowCaptureShotEasing = 'linear' | 'smooth';
 
-export type NormalizedTileflowCaptureShotCamera = {
-  type: 'center';
-  center: [number, number];
-  zoom: number;
-  bearing: number;
-  pitch: number;
-};
+export type NormalizedTileflowCaptureShotCamera = TileflowShotCamera;
 
 export type NormalizedTileflowCaptureShot = {
   map: string;
@@ -137,27 +132,12 @@ export function tileflowCaptureShotFrames(
 ): TileflowCaptureShotFrame[] {
   const {map: _map, ...fields} = shot as TileflowCaptureShot;
   const normalized = normalizeShotFields(tileflowMapShotSchema.parse(fields));
-  const {keyframes} = normalized;
   const count = tileflowCaptureShotFrameCount(normalized);
-  const duration = keyframes.at(-1)!.at;
-  const ease = normalized.easing === 'smooth' ? smoothstep : (t: number) => t;
+  const duration = normalized.keyframes.at(-1)!.at;
   const frames: TileflowCaptureShotFrame[] = [];
-  let segment = 0;
-
   for (let index = 0; index < count; index += 1) {
     const at = Math.min(duration, (index * 1_000) / normalized.fps);
-    while (segment < keyframes.length - 2 && at > keyframes[segment + 1]!.at) segment += 1;
-    const from = keyframes[segment]!;
-    const to = keyframes[segment + 1]!;
-    const t = ease(Math.min(1, Math.max(0, (at - from.at) / (to.at - from.at))));
-    frames.push({
-      index,
-      at,
-      camera: interpolateCamera(from.camera, to.camera, t),
-      ...(from.blend && to.blend
-        ? {blendPosition: interpolateNumber(from.blend.position, to.blend.position, t)}
-        : {}),
-    });
+    frames.push({index, ...tileflowShotStateAt(normalized, at)});
   }
   return frames;
 }
@@ -236,70 +216,4 @@ function checkShotTiming(
       path: ['keyframes', keyframes.length - 1, 'at'],
     });
   }
-}
-
-const maximumMercatorLatitude = 85.051129;
-
-function interpolateCamera(
-  from: NormalizedTileflowCaptureShotCamera,
-  to: NormalizedTileflowCaptureShotCamera,
-  t: number,
-): NormalizedTileflowCaptureShotCamera {
-  return {
-    type: 'center',
-    center: interpolateCenter(from.center, to.center, t),
-    zoom: interpolateNumber(from.zoom, to.zoom, t),
-    bearing: interpolateBearing(from.bearing, to.bearing, t),
-    pitch: interpolateNumber(from.pitch, to.pitch, t),
-  };
-}
-
-function interpolateNumber(from: number, to: number, t: number): number {
-  if (t <= 0 || from === to) return from;
-  if (t >= 1) return to;
-  return from + (to - from) * t;
-}
-
-function interpolateCenter(
-  from: [number, number],
-  to: [number, number],
-  t: number,
-): [number, number] {
-  if (t <= 0 || (from[0] === to[0] && from[1] === to[1])) return [from[0], from[1]];
-  if (t >= 1) return [to[0], to[1]];
-  const start = mercatorFromLngLat(from);
-  const end = mercatorFromLngLat(to);
-  let dx = end[0] - start[0];
-  if (dx > 0.5) dx -= 1;
-  else if (dx < -0.5) dx += 1;
-  return lngLatFromMercator([start[0] + dx * t, start[1] + (end[1] - start[1]) * t]);
-}
-
-function interpolateBearing(from: number, to: number, t: number): number {
-  if (t <= 0 || from === to) return from;
-  if (t >= 1) return to;
-  const delta = ((((to - from) % 360) + 540) % 360) - 180;
-  return wrapDegrees(from + delta * t);
-}
-
-function mercatorFromLngLat([longitude, latitude]: [number, number]): [number, number] {
-  const clamped = Math.max(-maximumMercatorLatitude, Math.min(maximumMercatorLatitude, latitude));
-  return [
-    (180 + longitude) / 360,
-    (180 - (180 / Math.PI) * Math.log(Math.tan(Math.PI / 4 + (clamped * Math.PI) / 360))) / 360,
-  ];
-}
-
-function lngLatFromMercator([x, y]: [number, number]): [number, number] {
-  const latitude = (360 / Math.PI) * Math.atan(Math.exp(((180 - y * 360) * Math.PI) / 180)) - 90;
-  return [wrapDegrees(x * 360 - 180), latitude];
-}
-
-function wrapDegrees(value: number): number {
-  if (value >= -180 && value <= 180) return value;
-  return ((((value + 180) % 360) + 360) % 360) - 180;
-}
-
-function smoothstep(t: number): number {
-  return t * t * (3 - 2 * t);
 }

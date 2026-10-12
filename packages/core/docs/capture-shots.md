@@ -79,7 +79,7 @@ anything, so tools can inspect a shot before capture:
 <!-- docs:check -->
 
 ```ts
-import {type TileflowMapShot, tileflowCaptureShotFrames} from '@tileflow/core';
+import {tileflowCaptureShotFrames, type TileflowMapShot} from '@tileflow/core';
 
 const shot = {
   theme: 'light',
@@ -124,3 +124,50 @@ network makes the render take longer but never drops or repeats frames. See the
 the Node API and the
 [capture contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/local-visual-capture.md)
 for output paths, encoding, and the shot receipt.
+
+## Play a shot in the browser
+
+`playTileflowShot(map, shot, options)` from `@tileflow/core/browser` plays the same shot live. The
+camera follows the keyframes frame by frame, with the same interpolation Capture renders, so the
+page and the video show the same film. This example assumes an existing MapLibre map named `map`,
+a theme controller, and the runtime styles of the blended themes:
+
+<!-- docs:check -->
+
+```ts
+import {
+  playTileflowShot,
+  type TileflowShotMotion,
+  type TileflowShotPlayerMap,
+  type TileflowThemeController,
+} from '@tileflow/core/browser';
+import type {TileflowRuntimeStyle} from '@tileflow/core/runtime';
+
+export function playDuskFlyover(
+  map: TileflowShotPlayerMap,
+  controller: TileflowThemeController,
+  themes: readonly TileflowRuntimeStyle[],
+  shot: TileflowShotMotion,
+  showTitle: () => void,
+) {
+  return playTileflowShot(map, shot, {
+    blend: (position) => void controller.setBlend({themes, position}),
+    cues: [{at: 2500, run: showTitle}],
+  });
+}
+```
+
+- **Blend.** `blend` receives the blend position at each frame of a shot that blends themes.
+- **Cues.** `cues` run once each, in time order, as the shot reaches them, for application events
+  such as drawing a route or showing a title.
+- **Stopping.** `stop()` or an aborted `signal` stops the shot where it is; `finished` resolves
+  `true` once the shot reaches its last keyframe and `false` when it was stopped first.
+- **Reduced motion.** With reduced motion requested, the shot shows its last keyframe at once and
+  runs every cue in order.
+
+`tileflowShotStateAt(shot, at)` returns the camera and blend position at any time, for players of
+one's own.
+
+Live playback runs at the browser's pace and does not wait for tiles, unlike a render. Load the
+tiles of the cameras a shot crosses before playing it, for example by visiting them while a title
+covers the map.

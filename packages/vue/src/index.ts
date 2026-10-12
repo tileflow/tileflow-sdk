@@ -1199,14 +1199,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       {flush: 'post'},
     );
     watch(
-      () => [
-        props.analytics,
-        props.interactive,
-        props.mapOptions,
-        props.mode,
-        props.source,
-        manifestMap.value,
-      ],
+      () => [props.interactive, props.mapOptions, props.mode, props.source, manifestMap.value],
       () => void recreateMap(),
       {flush: 'post'},
     );

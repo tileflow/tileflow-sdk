@@ -12,3 +12,12 @@ test('telemetry opt-out cannot remove the hosted commercial transform', async ()
   assert.match(source, /sessionController: session/u);
   assert.doesNotMatch(source, /analytics\.enabled === false/u);
 });
+
+test('analytics changes apply to later requests without recreating the map', async () => {
+  const source = await readFile(new URL('../src/index.ts', import.meta.url), 'utf8');
+  const recreation = /watch\(\s*\(\) => \[([^\]]*)\],\s*\(\) => void recreateMap\(\)/u.exec(source);
+
+  assert.ok(recreation, 'map recreation watcher not found');
+  assert.doesNotMatch(recreation[1]!, /analytics/u);
+  assert.match(source, /getAnalytics: \(\) => resolvedAnalytics\.value/u);
+});

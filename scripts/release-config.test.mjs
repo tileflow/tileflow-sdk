@@ -34,6 +34,7 @@ test('the public package catalog owns order and independent first versions', () 
   );
   assert.equal(initialVersionByPackageName.get('@tileflow/geoip'), '0.1.0-alpha.0');
   assert.equal(initialVersionByPackageName.get('@tileflow/search'), '0.1.0-alpha.0');
+  assert.equal(initialVersionByPackageName.get('@tileflow/routing'), '0.1.0-alpha.0');
   assert.equal(initialVersionByPackageName.get('tileflow'), '0.1.0-alpha.0');
   assert.equal(packageNameForDirectory('cli'), 'tileflow');
   assert.deepEqual(

@@ -694,6 +694,15 @@ function createBrowser(
     const state = {closed: false, kind};
     contexts.push(state);
     const pending = new Set<(error: Error) => void>();
+    // A real browser connection keeps the process alive while a call is pending, and the capture
+    // timeout timer does not, so the fake holds a handle in its place until the call settles.
+    let connection: NodeJS.Timeout | undefined;
+    const release = (reject: (error: Error) => void) => {
+      pending.delete(reject);
+      if (pending.size > 0 || !connection) return;
+      clearInterval(connection);
+      connection = undefined;
+    };
     const track = <T>(promise: Promise<T>): Promise<T> =>
       new Promise<T>((resolve, reject) => {
         if (state.closed) {
@@ -701,7 +710,8 @@ function createBrowser(
           return;
         }
         pending.add(reject);
-        promise.then(resolve, reject).finally(() => pending.delete(reject));
+        connection ??= setInterval(() => undefined, 60_000);
+        promise.then(resolve, reject).finally(() => release(reject));
       });
     let route: ((route: unknown) => Promise<void>) | undefined;
     let screenshots = 0;
@@ -773,8 +783,10 @@ function createBrowser(
     return {
       close: async () => {
         state.closed = true;
-        for (const reject of pending)
+        for (const reject of pending) {
           reject(new Error('Target page, context or browser has been closed'));
+          release(reject);
+        }
       },
       newPage: async () => page,
       route: async (_pattern: unknown, handler: (route: unknown) => Promise<void>) => {

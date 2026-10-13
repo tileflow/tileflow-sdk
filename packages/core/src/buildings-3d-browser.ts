@@ -86,6 +86,12 @@ export type TileflowBuildings3DOptions = Readonly<{
    * places to eat in amber.
    */
   nightLight?: number;
+  /**
+   * How strongly roof outlines and buildings' outer corners catch the light, from 0 (none) to 1;
+   * defaults to 1. They keep a constant width on screen, so where one building ends and the next
+   * starts stays legible at any distance, at night most of all.
+   */
+  edges?: number;
   /** Invented night windows, lit by rooms; decoration, not data. Defaults to false. */
   windows?: boolean;
   /** The zoom from which buildings stand; below it they sink into the flat map. Defaults to 14.5. */
@@ -125,6 +131,10 @@ const shadowFloor = 3;
 const shadowFade: readonly [number, number] = [0.5, 7];
 const occlusion = {ground: 8, groundStrength: 0.42, wall: 0.36, corner: 3};
 const flood = {reach: 10, colour: [1, 0.7, 0.4] as const};
+// Each building strays up to 6% lighter or darker than its colour.
+const variation = 0.06;
+// Roof outlines and outer corners are a CSS pixel wide, and half as strong by day as at night.
+const edgeLine = {width: 1, day: 0.5};
 const paletteWidth = 256;
 // Street lights draw over the buildings, so their lamps can hide behind them.
 const streetLightsLayerId = 'tileflow-street-lights';
@@ -179,6 +189,9 @@ export function createTileflowBuildings3D(
   if (!(nightLight >= 0 && nightLight <= 2))
     throw new RangeError('Tileflow 3D buildings nightLight must be from 0 to 2.');
   const floodOn = nightLight > 0;
+  const edges = options.edges ?? 1;
+  if (!(edges >= 0 && edges <= 1))
+    throw new RangeError('Tileflow 3D buildings edges must be from 0 to 1.');
   const windowsOn = options.windows === true;
 
   let scale = 0;
@@ -599,6 +612,13 @@ export function createTileflowBuildings3D(
     context.uniformMatrix4fv(uniforms.u_projection_fallback_matrix!, false, data.fallbackMatrix);
   }
 
+  /** Drawing buffer pixels per CSS pixel. */
+  function pixelRatio(context: WebGL2RenderingContext): number {
+    const canvas = context.canvas as {clientWidth?: number};
+    const width = canvas.clientWidth;
+    return width ? Math.min(4, Math.max(1, context.drawingBufferWidth / width)) : 1;
+  }
+
   function setShadow(context: WebGL2RenderingContext, program: Program, strength: number) {
     const uniforms = program.uniforms;
     const on = strength > 0 && shadow?.light && !shadow.failed;
@@ -636,6 +656,9 @@ export function createTileflowBuildings3D(
     context.uniform1f(u.u_windows!, windowsOn ? 1 : 0);
     context.uniform1f(u.u_flood!, light.night * nightLight);
     context.uniform3fv(u.u_flood_colour!, flood.colour);
+    context.uniform1f(u.u_variation!, variation);
+    context.uniform1f(u.u_edge!, edges * (edgeLine.day + (1 - edgeLine.day) * light.night));
+    context.uniform1f(u.u_edge_width!, edgeLine.width * pixelRatio(context));
     setShadow(context, buildings, light.strength);
     for (const {x, y, value: entry} of entries) {
       project(context, buildings, args, x, y);

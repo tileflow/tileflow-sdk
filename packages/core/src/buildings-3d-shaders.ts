@@ -14,6 +14,7 @@ export const tileflowBuildingAttributes = [
   ['a_paint', 2, 'UNSIGNED_BYTE', false, 20],
   ['a_corners', 2, 'UNSIGNED_BYTE', false, 22],
   ['a_feature', 1, 'UNSIGNED_SHORT', false, 24],
+  ['a_edge', 2, 'UNSIGNED_BYTE', false, 26],
 ] as const;
 
 const attributes = `
@@ -27,6 +28,7 @@ in vec2 a_centre; // the building's centre in the tile
 in vec2 a_paint; // tone; night use (none, dining, entertainment, nightlife)
 in vec2 a_corners; // the wall's tight corners (bit 0 at its start, bit 1 at its end) and courtyard (bit 2); its length in metres
 in float a_feature; // the building's feature in the tile
+in vec2 a_edge; // a roof triangle's corner and its sides on the outline; a wall's end and its ends on the tile's edge
 `;
 
 // How high a building stands for the renderer's height scale: buildings slide out of the ground in a
@@ -124,6 +126,7 @@ uniform highp sampler2D u_palette;
 uniform vec2 u_palette_rows; // rows per theme; texels per row
 uniform vec2 u_palette_themes; // the themes either side of the blend position
 uniform float u_palette_mix;
+uniform float u_variation; // how far buildings' brightness strays from their colour, either way
 ${growth}
 out vec3 v_colour;
 out vec3 v_facade; // metres along the wall, metres up as built, the building's top
@@ -131,6 +134,8 @@ out vec4 v_building; // seed, tone, wall, night use
 out vec3 v_normal;
 out vec3 v_shadow;
 flat out vec3 v_wall; // where the wall starts along its ring, its tight corners, its length
+out vec3 v_edge; // a roof triangle's corner weights; on a wall, from 0 at its start to 1 at its end
+flat out float v_outline; // a roof triangle's sides on the outline; a wall's ends on the tile's edge
 
 vec3 paletteColour(float theme) {
   float row = theme * u_palette_rows.x + floor(a_feature / u_palette_rows.y);
@@ -159,6 +164,10 @@ void main() {
   v_colour = u_palette_on > 0.5
     ? mix(paletteColour(u_palette_themes.x), paletteColour(u_palette_themes.y), u_palette_mix)
     : u_colour;
+  // Neighbours of one colour stay apart: each building a little lighter or darker than its colour.
+  v_colour *= 1.0 + (a_wave.x - 0.5) * 2.0 * u_variation;
+  v_edge = wall > 0.5 ? vec3(a_edge.x, 0.0, 0.0) : vec3(equal(vec3(a_edge.x), vec3(0.0, 1.0, 2.0)));
+  v_outline = a_edge.y;
   v_facade = vec3(a_along * 0.1, own, top);
   v_building = vec4(a_wave.y, a_paint.x, wall, a_paint.y);
   v_wall = vec3(a_along * 0.1, a_corners);
@@ -172,6 +181,8 @@ in vec4 v_building;
 in vec3 v_normal;
 in vec3 v_shadow;
 flat in vec3 v_wall;
+in vec3 v_edge;
+flat in float v_outline;
 uniform vec3 u_sun_dir;
 uniform vec3 u_sun_light;
 uniform vec3 u_sky_light;
@@ -180,6 +191,8 @@ uniform float u_corner;
 uniform float u_night; // 0 by day, 1 at night
 uniform float u_windows; // whether to draw night windows
 uniform float u_flood; // flood light strength at night
+uniform float u_edge; // how strongly roof outlines and outer corners catch the light, 0 for none
+uniform float u_edge_width; // their width, in the drawing buffer's pixels
 ${nightLight}
 ${shadowLookup}
 out vec4 fragColor;
@@ -189,19 +202,44 @@ float hash(vec2 p) {
 }
 
 // A surface's light over the light a sunlit roof takes, in the map's colours: a sunlit roof keeps
-// its colour, a wall turned to a low sun glows, and shade takes the sky's colour.
+// its colour, a wall turned to a low sun glows, and shade takes the sky's colour. A wall sees half
+// the sky; by day the ground's light makes up some of the rest, at night little does.
 vec3 shade(vec3 normal, float lit) {
   float facing = dot(normal, u_sun_dir);
-  vec3 sky = u_sky_light * mix(0.8, 1.0, normal.z);
+  vec3 sky = u_sky_light * mix(mix(0.8, 0.5, u_night), 1.0, normal.z);
   vec3 light = sky + u_sun_light * max(facing, 0.0) * (1.0 - u_shadow * (1.0 - lit));
   vec3 roof = u_sky_light + u_sun_light * max(u_sun_dir.z, 0.0);
   return min(pow(light / max(roof, vec3(1e-4)), vec3(1.0 / 2.2)), vec3(1.7));
+}
+
+// How near the fragment lies to its roof's outline, or to an outer corner of its wall, from 1 on the
+// line to 0 a line's width away: a constant width on screen at any distance. Inner corners, the
+// tile's edge and the diagonals inside a roof draw none.
+float edgeOf() {
+  int sides = int(v_outline + 0.5);
+  float near = 1e4;
+  if (v_building.z > 0.5) {
+    int corners = int(v_wall.y + 0.5);
+    float pixel = max(fwidth(v_edge.x), 1e-6);
+    if ((corners & 1) == 0 && (sides & 1) == 0) near = min(near, v_edge.x / pixel);
+    if ((corners & 2) == 0 && (sides & 2) == 0) near = min(near, (1.0 - v_edge.x) / pixel);
+  } else {
+    vec3 across = v_edge / max(fwidth(v_edge), vec3(1e-6));
+    if ((sides & 1) != 0) near = min(near, across.x);
+    if ((sides & 2) != 0) near = min(near, across.y);
+    if ((sides & 4) != 0) near = min(near, across.z);
+  }
+  return 1.0 - smoothstep(u_edge_width - 0.75, u_edge_width + 0.25, near);
 }
 
 void main() {
   vec3 normal = normalize(v_normal);
   float lit = dot(normal, u_sun_dir) > 0.0 ? visibility(v_shadow, 0.3) : 0.0;
   vec3 colour = v_colour * shade(normal, lit);
+  // Roof outlines and outer corners catch the light, so where one building ends and the next starts
+  // stays legible, at night most of all.
+  float edge = u_edge > 0.0 ? edgeOf() * u_edge : 0.0;
+  colour = mix(colour, max(colour, v_colour) * 1.2 + vec3(0.9, 0.95, 1.0) * mix(0.05, 0.13, u_night), edge);
   if (v_building.z > 0.5) {
     float up = v_facade.y;
     float top = v_facade.z;
@@ -213,7 +251,6 @@ void main() {
     if (mod(floor(v_wall.y / 2.0), 2.0) >= 1.0)
       corner = max(corner, 1.0 - smoothstep(0.0, u_corner, v_wall.z - along));
     colour *= foot * (1.0 - u_occlusion * 0.7 * corner * mix(1.0, 0.5, clamp(up / 30.0, 0.0, 1.0)));
-    if (top - up < 0.5) colour *= 1.12;
     if (u_windows > 0.5 && top > 5.5 && up > 3.2 && up < top - 1.0) {
       float tower = step(40.0, top);
       float column = mix(mix(4.6, 3.8, step(12.0, top)), 3.0, tower) + (seed - 0.5) * 0.8;

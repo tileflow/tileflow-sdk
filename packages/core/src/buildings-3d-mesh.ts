@@ -1,7 +1,9 @@
 // Meshes a vector tile's buildings for Tileflow's 3D buildings renderer: roofs triangulated, walls
 // as quads facing out of each building, each vertex packed in 28 bytes. A mesh lists its roofs'
 // triangles first and its walls' after `wallsFrom`, so the renderer can draw the walls again, laid on
-// the ground, as the band of contact shadow at their foot. It has no DOM dependency.
+// the ground, as the band of contact shadow at their foot. Each roof triangle has corners of its own,
+// marked with the sides that are the roof's outline, so the renderer can draw the outline a constant
+// width on screen. It has no DOM dependency.
 import earcut from 'earcut';
 import type {TileflowTileLayer} from './vector-tile-decode';
 
@@ -99,7 +101,13 @@ export type TileflowBuildingMesh = Readonly<{
  * entertainment, nightlife); 22 the wall's
  * tight corners, bit 0 at its start and bit 1 at its end, and bit 2 when it faces a courtyard, and
  * its length in metres up to 255
- * (uint8 ×2); 24 the building's feature index (uint16) and 26 reserved (uint16).
+ * (uint8 ×2); 24 the building's feature index (uint16); 26 on a roof, the vertex's corner of its
+ * triangle (0 to 2), on a wall, 0 at its start and 1 at its end (uint8); 27 on a roof, the triangle's
+ * sides that are the roof's outline, bit n for the side facing corner n, on a wall, bit 0 when its
+ * start and bit 1 when its end lies on the tile's edge (uint8).
+ *
+ * A building's jitter is the same for every piece of it a tile edge cuts, so the renderer can vary
+ * buildings' brightness with it without a seam along the tile's edge.
  */
 export function meshTileflowBuildings(
   layer: TileflowTileLayer,
@@ -125,8 +133,6 @@ export function meshTileflowBuildings(
     const use = uses.get(featureIndex) ?? 0;
     const index = features.length;
     let used = false;
-    // A little of each building's own timing, the same for every piece of it a tile edge cuts.
-    const jitter = hash(height * 7.31 + base * 3.17 + tone);
     for (const polygon of polygonsOf(feature.geometry, scale)) {
       const rings = polygon.map(clip).filter((ring) => ring.length >= 6);
       if (rings.length === 0 || area(rings[0]!) === 0) continue;
@@ -134,19 +140,53 @@ export function meshTileflowBuildings(
       tallest = Math.max(tallest, height);
       const [cx, cy] = centroid(rings[0]!);
       const seed = hash(cx * 0.0731 + cy * 0.19137 + index * 1.618);
+      // A little of each building's own: its seed, or for a building a tile edge cuts, a value the
+      // same for each of its pieces.
+      const jitter = rings[0]!.some((value) => value <= 0 || value >= tileflowBuildingExtent)
+        ? hash(height * 7.31 + base * 3.17 + tone)
+        : seed;
       const building: Building = {base, top: height, jitter, seed, tone, use, cx, cy, index};
 
-      // The roof.
+      // The roof: three corners of its own for each triangle, which knows its sides on the outline.
       const flat: number[] = [];
-      const holes: number[] = [];
+      const starts: number[] = [];
       for (const ring of rings) {
-        if (flat.length) holes.push(flat.length / 2);
+        starts.push(flat.length / 2);
         flat.push(...ring);
       }
-      const first = vertices.count;
-      for (let at = 0; at < flat.length; at += 2)
-        vertices.write(building, flat[at]!, flat[at + 1]!, 1, 0, 0, 0, 0, 0, 0);
-      for (const corner of earcut(flat, holes, 2)) roofs.push(first + corner);
+      starts.push(flat.length / 2);
+      const outline = (a: number, b: number) => {
+        const ring = starts.findIndex((start, at) => a >= start && a < starts[at + 1]!);
+        const [start, end] = [starts[ring]!, starts[ring + 1]! - 1];
+        if (b < start || b > end) return false;
+        const [low, high] = a < b ? [a, b] : [b, a];
+        if (high - low !== 1 && !(low === start && high === end)) return false;
+        return !onBorder(flat[a * 2]!, flat[a * 2 + 1]!, flat[b * 2]!, flat[b * 2 + 1]!);
+      };
+      const triangles = earcut(flat, starts.slice(1, -1), 2);
+      for (let at = 0; at + 2 < triangles.length; at += 3) {
+        const corners = [triangles[at]!, triangles[at + 1]!, triangles[at + 2]!];
+        let sides = 0;
+        for (let corner = 0; corner < 3; corner += 1)
+          if (outline(corners[(corner + 1) % 3]!, corners[(corner + 2) % 3]!)) sides |= 1 << corner;
+        for (const [corner, point] of corners.entries())
+          roofs.push(
+            vertices.write(
+              building,
+              flat[point * 2]!,
+              flat[point * 2 + 1]!,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              corner,
+              sides,
+            ),
+          );
+      }
 
       // The walls, facing out of the building: away from the outer ring, into each courtyard.
       // Edges along the tile's border are inside the building; the next tile carries it on.
@@ -181,6 +221,8 @@ export function meshTileflowBuildings(
           const normalY = ((bx - ax) / length) * outward;
           const metres = (length / tileflowBuildingExtent) * options.tileMetres;
           const corners = (tight(at) ? 1 : 0) | (tight(at + 1) ? 2 : 0) | (ringIndex > 0 ? 4 : 0);
+          const cut = (onEdge(ax, ay) ? 1 : 0) | (onEdge(bx, by) ? 2 : 0);
+          const end = along + metres;
           const v = vertices.write(
             building,
             ax,
@@ -192,10 +234,12 @@ export function meshTileflowBuildings(
             along,
             corners,
             metres,
+            0,
+            cut,
           );
-          vertices.write(building, bx, by, 0, normalX, normalY, 1, along + metres, corners, metres);
-          vertices.write(building, ax, ay, 1, normalX, normalY, 1, along, corners, metres);
-          vertices.write(building, bx, by, 1, normalX, normalY, 1, along + metres, corners, metres);
+          vertices.write(building, bx, by, 0, normalX, normalY, 1, end, corners, metres, 1, cut);
+          vertices.write(building, ax, ay, 1, normalX, normalY, 1, along, corners, metres, 0, cut);
+          vertices.write(building, bx, by, 1, normalX, normalY, 1, end, corners, metres, 1, cut);
           walls.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
           along += metres;
         }
@@ -244,6 +288,8 @@ class VertexWriter {
     along: number,
     corners: number,
     length: number,
+    corner = 0,
+    sides = 0,
   ): number {
     const stride = tileflowBuildingVertexBytes;
     if ((this.count + 1) * stride > this.#buffer.byteLength) {
@@ -272,7 +318,8 @@ class VertexWriter {
     view.setUint8(at + 22, corners);
     view.setUint8(at + 23, Math.min(255, Math.round(length)));
     view.setUint16(at + 24, building.index, true);
-    view.setUint16(at + 26, 0, true);
+    view.setUint8(at + 26, corner);
+    view.setUint8(at + 27, sides);
     this.count += 1;
     return this.count - 1;
   }
@@ -440,6 +487,10 @@ function centroid(ring: readonly number[]): [number, number] {
     y += ring[at * 2 + 1]!;
   }
   return [x / points, y / points];
+}
+
+function onEdge(x: number, y: number): boolean {
+  return x <= 0 || y <= 0 || x >= tileflowBuildingExtent || y >= tileflowBuildingExtent;
 }
 
 function onBorder(ax: number, ay: number, bx: number, by: number): boolean {

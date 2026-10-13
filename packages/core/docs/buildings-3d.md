@@ -52,6 +52,10 @@ application places by direction or by date and place (see
 A sunlit roof keeps the building's colour, a wall turned to a low sun glows, and shade takes the
 sky's colour. As the sun sets, shadows lengthen while they fade; a sun below the horizon casts none.
 
+A wall sees half the sky, so at night, when the ground gives back little light, walls in shade
+stay darker than roofs. A theme's night `lighting.sun` set high (60° or more) lights roofs more than
+any wall, so roofs and walls read apart under the moon.
+
 MapLibre's own layers take no shadows, so the renderer darkens the map it is drawn over: after its
 buildings, it multiplies the ground by the shadows and by a band at the foot of the walls. Labels
 and icons drawn above it keep their colours. Layers kept under 3D content with
@@ -60,6 +64,14 @@ and icons drawn above it keep their colours. Layers kept under 3D content with
 `shadows` and `occlusion` (the band at the foot of the walls and the darker tight corners) default
 to true and can be turned off. `windows: true` adds invented night windows, lit by rooms; they are
 decoration, not data, and are off by default.
+
+## Edges
+
+Where one building ends and the next starts stays legible at any distance: each roof's outline and
+each building's outer corners catch the light in a line one CSS pixel wide, whatever the zoom, and
+each building is a little lighter or darker than its colour (up to 6%), so neighbours of one colour
+stay apart. The lines are strongest at night; diagonals inside a roof, inner corners and the cuts at
+a tile's edge draw none. `edges` sets their strength from 0 (none) to 1, the default.
 
 ## Night light
 

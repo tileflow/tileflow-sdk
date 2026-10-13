@@ -45,6 +45,8 @@ function vertex(mesh: NonNullable<ReturnType<typeof meshTileflowBuildings>>, ind
     corners: view.getUint8(22),
     length: view.getUint8(23),
     feature: view.getUint16(24, true),
+    corner: view.getUint8(26),
+    sides: view.getUint8(27),
   };
 }
 
@@ -54,7 +56,8 @@ test('a building becomes a roof and four walls facing out of it', () => {
     {tileMetres: 1000},
   );
   assert.ok(mesh);
-  assert.equal(mesh.vertices.length, 20 * tileflowBuildingVertexBytes);
+  // Two roof triangles with corners of their own, and four walls of four corners.
+  assert.equal(mesh.vertices.length, 22 * tileflowBuildingVertexBytes);
   assert.equal(mesh.wallsFrom, 6);
   assert.equal(mesh.indices.length, 6 + 4 * 6);
   assert.equal(mesh.top, 30);
@@ -65,13 +68,17 @@ test('a building becomes a roof and four walls facing out of it', () => {
   assert.equal(roof.top, 30);
   assert.equal(roof.tone, 1);
   // Scaled from the 4096 extent to the renderer's 8192.
-  assert.equal(roof.x, 2000);
+  assert.ok([2000, 4000].includes(roof.x));
   // Every wall's normal points away from the square's centre.
   const centre = [(2000 + 4000) / 2, (2000 + 4000) / 2];
-  for (let index = 4; index < 20; index += 4) {
+  for (let index = 6; index < 22; index += 4) {
     const start = vertex(mesh, index);
     const end = vertex(mesh, index + 1);
     assert.equal(start.wall, 1);
+    assert.equal(start.corner, 0);
+    assert.equal(end.corner, 1);
+    // No end of these walls lies on the tile's edge.
+    assert.equal(start.sides, 0);
     const middle = [(start.x + end.x) / 2, (start.y + end.y) / 2];
     const outward =
       start.normal[0]! * (middle[0]! - centre[0]!) + start.normal[1]! * (middle[1]! - centre[1]!);
@@ -80,7 +87,51 @@ test('a building becomes a roof and four walls facing out of it', () => {
     assert.equal(start.corners, 0);
   }
   // 2000 units of 8192 at 1000 m per tile: about 244 m a side.
-  assert.equal(vertex(mesh, 4).length, Math.round((2000 / tileflowBuildingExtent) * 1000));
+  assert.equal(vertex(mesh, 6).length, Math.round((2000 / tileflowBuildingExtent) * 1000));
+});
+
+test("a roof's triangles mark the sides on its outline, not the diagonal between them", () => {
+  const mesh = meshTileflowBuildings(layerOf([{geometry: [square]}]), {tileMetres: 1000});
+  assert.ok(mesh);
+  let outline = 0;
+  for (let triangle = 0; triangle < 2; triangle += 1) {
+    const corners = [0, 1, 2].map((corner) => vertex(mesh, triangle * 3 + corner));
+    assert.deepEqual(
+      corners.map(({corner}) => corner),
+      [0, 1, 2],
+    );
+    // Every corner of a triangle carries the same sides.
+    assert.equal(new Set(corners.map(({sides}) => sides)).size, 1);
+    const sides = corners[0]!.sides;
+    // Two sides of each triangle are the square's; the third is the diagonal.
+    assert.equal([1, 2, 4].filter((bit) => sides & bit).length, 2);
+    outline += 2;
+  }
+  assert.equal(outline, 4);
+});
+
+test("a roof the tile's edge cuts has no outline along the edge", () => {
+  const across = [-2000, 0, 0, 0, 0, 1000, -2000, 1000, -2000, 0];
+  const mesh = meshTileflowBuildings(layerOf([{geometry: [across]}]), {tileMetres: 1000});
+  assert.ok(mesh);
+  const roofCorners = mesh.wallsFrom;
+  for (let index = 0; index < roofCorners; index += 3) {
+    const corners = [0, 1, 2].map((corner) => vertex(mesh, index + corner));
+    for (let corner = 0; corner < 3; corner += 1) {
+      if (!(corners[0]!.sides & (1 << corner))) continue;
+      const [a, b] = [corners[(corner + 1) % 3]!, corners[(corner + 2) % 3]!];
+      assert.ok(!(a.x === 0 && b.x === 0), 'an outline along the tile edge');
+    }
+  }
+  // The walls that end on the tile's edge say so.
+  const cut = [];
+  for (
+    let index = roofCorners;
+    index < mesh.vertices.length / tileflowBuildingVertexBytes;
+    index += 4
+  )
+    cut.push(vertex(mesh, index).sides);
+  assert.deepEqual(cut.sort(), [0, 1, 2]);
 });
 
 test("an L's inside corner is tight for the walls that meet there", () => {
@@ -89,7 +140,11 @@ test("an L's inside corner is tight for the walls that meet there", () => {
   const mesh = meshTileflowBuildings(layerOf([{geometry: [shape]}]), {tileMetres: 1000});
   assert.ok(mesh);
   const tight: number[] = [];
-  for (let index = 6; index < mesh.vertices.length / tileflowBuildingVertexBytes; index += 4) {
+  for (
+    let index = mesh.wallsFrom;
+    index < mesh.vertices.length / tileflowBuildingVertexBytes;
+    index += 4
+  ) {
     const start = vertex(mesh, index);
     if (start.corners) tight.push(start.corners);
   }
@@ -143,7 +198,7 @@ test('heights fall back to five metres and bases stay under the top', () => {
   );
   assert.ok(mesh);
   assert.equal(vertex(mesh, 0).top, 5);
-  const second = vertex(mesh, 20);
+  const second = vertex(mesh, 22);
   assert.equal(second.feature, 1);
   assert.equal(second.base, 20);
   assert.equal(second.top, 20);
@@ -311,6 +366,8 @@ test('renderer options are validated', () => {
   assert.throws(() => createTileflowBuildings3D({map: fakeMap(), maxTiles: 0}), RangeError);
   assert.throws(() => createTileflowBuildings3D({map: fakeMap(), maxTiles: 100}), RangeError);
   assert.throws(() => createTileflowBuildings3D({map: fakeMap(), nightLight: 3}), RangeError);
+  assert.throws(() => createTileflowBuildings3D({map: fakeMap(), edges: 2}), RangeError);
+  assert.throws(() => createTileflowBuildings3D({map: fakeMap(), edges: Number.NaN}), RangeError);
   assert.throws(
     () => createTileflowBuildings3D({map: fakeMap(), nightLight: Number.NaN}),
     RangeError,

@@ -1,7 +1,7 @@
 # Third-party notices
 
-`@tileflow/core/browser` embeds `maplibre-contour` 0.1.0, `PMTiles` 4.4.0, and `fflate` 0.8.3 so
-contour and local archive rendering remain self-contained. The complete upstream licenses follow.
+`@tileflow/core/browser` embeds `maplibre-contour` 0.1.0, `PMTiles` 4.4.0, `fflate` 0.8.3, and
+`earcut` 3.2.4 so contour, local archive, and 3D building rendering remain self-contained. The complete upstream licenses follow.
 
 ## maplibre-contour 0.1.0
 
@@ -202,6 +202,29 @@ IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISI
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ---
+
+## earcut 3.2.4
+
+Polygon triangulation for the 3D buildings renderer, bundled in `dist/browser.js`.
+<https://github.com/mapbox/earcut>
+
+```text
+ISC License
+
+Copyright (c) 2026, Mapbox
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+```
 
 ## fflate 0.8.3
 

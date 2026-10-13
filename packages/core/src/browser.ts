@@ -79,6 +79,23 @@ export {
   type TileflowRouteInks,
 } from './route-inks';
 export {
+  createTileflowBuildings3D,
+  tileflowBuildings3DLayerId,
+  tileflowSunLightMatrix,
+  type TileflowBuildings3D,
+  type TileflowBuildings3DChange,
+  type TileflowBuildings3DMap,
+  type TileflowBuildings3DOptions,
+  type TileflowBuildings3DThemes,
+} from './buildings-3d-browser';
+export {
+  meshTileflowBuildings,
+  tileflowBuildingExtent,
+  tileflowBuildingVertexBytes,
+  type TileflowBuildingMesh,
+  type TileflowBuildingMeshOptions,
+} from './buildings-3d-mesh';
+export {
   mixTileflowSunPresets,
   readTileflowSunPreset,
   resolveTileflowSun,

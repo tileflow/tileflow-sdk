@@ -154,6 +154,10 @@ Applications draw their own routes in the theme's inks, read with `getRouteInks(
 on with `createTileflowLineProgress`. `createTileflowGroundLayers` keeps them under 3D buildings,
 which hide them where they stand in front, and can show the hidden stretches faintly; see
 [route drawing](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/route-drawing.md).
+A theme can describe its sun and sky light (`lighting.sun`, `lighting.ambient`); the controller
+returns the sun the map shows with `getSun()`, mixed during a blend, for an application's own 3D
+layers, and `setSun()` places it by direction or by the real sun of a date and place; see
+[sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md).
 
 The semantic domains are `land`, `water`, `nautical`, `roads`, `buildings`, `boundaries`, `labels`,
 `poi`, `aeroways`, `transit`, `vegetation`, `addresses`, and `landforms`. Style stable geographic
@@ -287,6 +291,7 @@ revision; prefer the installed copy when working with an older release.
 - [Map emphasis](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-emphasis.md)
 - [Style states](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/style-states.md)
 - [Route drawing](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/route-drawing.md)
+- [Sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md)
 - [Data is separate from design](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/data-is-separate-from-design.md)
 - [Capture scenes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-scenes.md)
 - [Capture shots](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-shots.md)

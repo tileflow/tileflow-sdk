@@ -337,6 +337,18 @@ export {
   tileflowRouteTokens,
   type TileflowRouteInks,
 } from './route-inks';
+export {
+  mixTileflowSunPresets,
+  readTileflowSunPreset,
+  resolveTileflowSun,
+  tileflowDefaultSunPreset,
+  tileflowStyleSunPreset,
+  tileflowSunDirection,
+  tileflowSunMetadataKey,
+  tileflowSunPosition,
+  type TileflowSun,
+  type TileflowSunPreset,
+} from './sun';
 export type {
   ResolvedTileflowTheme,
   ResolvedTileflowThemeTokens,
@@ -346,8 +358,10 @@ export type {
   TileflowThemeAuditScope,
   TileflowThemeColorScheme,
   TileflowThemeDefinition,
+  TileflowThemeAmbient,
   TileflowThemeLighting,
   TileflowThemeName,
+  TileflowThemeSun,
   TileflowResolvedThemeSelection,
   TileflowThemeTokens,
   TileflowThemeTypography,

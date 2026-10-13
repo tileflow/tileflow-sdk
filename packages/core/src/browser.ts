@@ -20,6 +20,17 @@ import {
   validateTileflowThemeBlendSelection,
 } from './runtime';
 import {
+  mixTileflowAzimuths,
+  readTileflowSunPreset,
+  resolveTileflowSun,
+  tileflowStyleSunPreset,
+  type TileflowSun,
+  tileflowSunLight,
+  tileflowSunPosition,
+  type TileflowSunPreset,
+  tileflowSunPresetAt,
+} from './sun';
+import {
   fillTileflowThemeBlendTemplate,
   planTileflowThemeBlend,
   type TileflowThemeBlendPlan,
@@ -67,6 +78,50 @@ export {
   tileflowStyleRouteInks,
   type TileflowRouteInks,
 } from './route-inks';
+export {
+  createTileflowBuildings3D,
+  tileflowBuildings3DLayerId,
+  tileflowSunLightMatrix,
+  type TileflowBuildings3D,
+  type TileflowBuildings3DChange,
+  type TileflowBuildings3DMap,
+  type TileflowBuildings3DOptions,
+  type TileflowBuildings3DThemes,
+} from './buildings-3d-browser';
+export {
+  meshTileflowBuildings,
+  tileflowBuildingExtent,
+  tileflowBuildingVertexBytes,
+  type TileflowBuildingMesh,
+  type TileflowBuildingMeshOptions,
+} from './buildings-3d-mesh';
+export {
+  createTileflowStreetLights,
+  tileflowStreetLightsLayerId,
+  type TileflowStreetLights,
+  type TileflowStreetLightsMap,
+  type TileflowStreetLightsOptions,
+} from './street-lights-browser';
+export {
+  placeTileflowStreetLights,
+  tileflowStreetLightBytes,
+  type TileflowStreetLightEstimate,
+  type TileflowStreetLightLayers,
+  type TileflowStreetLightPlacement,
+  type TileflowStreetLightPlacementOptions,
+} from './street-lights';
+export {
+  mixTileflowSunPresets,
+  readTileflowSunPreset,
+  resolveTileflowSun,
+  tileflowDefaultSunPreset,
+  tileflowStyleSunPreset,
+  tileflowSunDirection,
+  tileflowSunMetadataKey,
+  tileflowSunPosition,
+  type TileflowSun,
+  type TileflowSunPreset,
+} from './sun';
 export {
   createTileflowTileReader,
   readTileflowMapTileSource,
@@ -293,6 +348,7 @@ export type TileflowThemeBlendState = Readonly<{
 
 export type TileflowStyleSwitchMap = TileflowThemeMotionMap &
   TileflowDynamicImageMap & {
+    getCenter?: unknown;
     getGlobalState?: unknown;
     off(event: string, listener: (event?: unknown) => void): unknown;
     on(event: string, listener: (event?: unknown) => void): unknown;
@@ -302,6 +358,15 @@ export type TileflowStyleSwitchMap = TileflowThemeMotionMap &
 
 /** A value an application sets for the whole style, which themes read with `expr.globalState`. */
 export type TileflowStyleStateValue = boolean | number | string | null;
+
+/**
+ * Where an application places the sun. `azimuth` (degrees clockwise from north) and `altitude`
+ * (degrees above the horizon) place it directly; `date` places the real sun of that instant over
+ * `location` ([longitude, latitude]), the map's centre when it is left out.
+ */
+export type TileflowSunRequest =
+  | Readonly<{altitude: number; azimuth: number}>
+  | Readonly<{date: Date | number; location?: readonly [number, number]}>;
 
 export type TileflowThemeController = {
   dispose(): void;
@@ -321,6 +386,13 @@ export type TileflowThemeController = {
   getRouteInks(): TileflowRouteInks;
   /** The value a style state was set to last, or undefined when it has not been set. */
   getState(name: string): TileflowStyleStateValue | undefined;
+  /**
+   * The sun the map shows, for an application's own 3D layers: its direction, the light it and
+   * the sky give, and how dark its shadows fall. It is the theme's sun (`lighting.sun`), mixed
+   * between neighbouring themes during a blend, unless `setSun` placed it. Read it when drawing;
+   * the map redraws whenever it changes.
+   */
+  getSun(): TileflowSun;
   /**
    * Shows a blend of themes. The first request for a set of themes loads their styles and
    * prepares one style that holds all of them; later requests for the same themes only move the
@@ -353,6 +425,16 @@ export type TileflowThemeController = {
     value: TileflowStyleStateValue,
     options?: TileflowThemeChangeOptions,
   ): Promise<TileflowThemeTransitionResult>;
+  /**
+   * Places the sun by direction or by the real sun of a date and place; `undefined` returns it to
+   * the themes' suns. The themes keep the sun's colours, strengths, and shadow strength, and the
+   * map's light turns to the new direction, anchored to the map. The sun turns the short way round
+   * over the transition; a request that follows an animation, such as a clock, passes none.
+   */
+  setSun(
+    request: TileflowSunRequest | undefined,
+    options?: TileflowThemeChangeOptions,
+  ): Promise<TileflowThemeTransitionResult>;
   setTheme(
     style: TileflowRuntimeStyle,
     options?: TileflowThemeChangeOptions,
@@ -377,6 +459,7 @@ type PendingBlend = {
   promise: Promise<TileflowThemeTransitionResult>;
 };
 type Shown = {blend?: ActiveBlend; style: MapLibreStyle | string};
+type SunDirection = {altitude: number; azimuth: number; source: TileflowSun['source']};
 // A style state: the value it was set to, the value on the map (between the two while a number
 // eases), and the motion moving it.
 type StyleState = {
@@ -464,6 +547,20 @@ export function createTileflowThemeController(options: {
   let emphasisSettle: ((result: TileflowThemeTransitionResult) => void) | undefined;
   const states = new Map<string, StyleState>();
   let images: ReturnType<typeof createTileflowDynamicImageRegistry> | undefined;
+  // The sun: the presets of each blend's themes, whether the themes describe a sun, the preset of
+  // a single theme on screen, and the direction an application placed it in (`shown` eases towards
+  // the request; undefined follows the themes).
+  const blendSuns = new WeakMap<
+    TileflowThemeBlendPlan,
+    {presets: readonly TileflowSunPreset[]; published: boolean}
+  >();
+  let themeSun: {preset: TileflowSunPreset; published: boolean} | undefined;
+  let sunRequest: SunDirection | undefined;
+  let sunShown: SunDirection | undefined;
+  let sunRun = 0;
+  let sunStop: (() => void) | undefined;
+  let sunSettle: ((result: TileflowThemeTransitionResult) => void) | undefined;
+  let sunLightWritten: string | undefined;
 
   function imageContext() {
     return {
@@ -489,6 +586,7 @@ export function createTileflowThemeController(options: {
       stopEmphasisMotion({status: 'superseded', theme: current.theme});
       for (const state of states.values())
         stopStateMotion(state, {status: 'superseded', theme: current.theme});
+      stopSunMotion({status: 'superseded', theme: current.theme});
     },
     getBlend() {
       if (!activeBlend) return undefined;
@@ -525,6 +623,19 @@ export function createTileflowThemeController(options: {
     },
     getState(name) {
       return typeof name === 'string' ? states.get(name.trim())?.value : undefined;
+    },
+    getSun() {
+      return sunNow();
+    },
+    setSun(request, changeOptions) {
+      if (disposed) return Promise.resolve(disposedResult(current.theme));
+      const target = sunDirectionOf(request);
+      if (target instanceof TypeError)
+        return Promise.resolve({error: target, status: 'failed', theme: current.theme});
+      const transition = transitionOf(changeOptions);
+      if (transition instanceof TypeError)
+        return Promise.resolve({error: transition, status: 'failed', theme: current.theme});
+      return changeSun(target, reducedMotion() ? 0 : transition);
     },
     setState(name, value, changeOptions) {
       const invalid = validateStyleState(name, value);
@@ -683,6 +794,10 @@ export function createTileflowThemeController(options: {
         tileflowStyleRouteInks(style, themes[index]!.colorScheme === 'dark' ? 'dark' : 'light'),
       ),
     );
+    blendSuns.set(plan, {
+      presets: styles.map((style) => tileflowStyleSunPreset(style)),
+      published: styles.some((style) => readTileflowSunPreset(style.metadata) !== undefined),
+    });
     return plan;
   }
 
@@ -757,6 +872,7 @@ export function createTileflowThemeController(options: {
       shownLayers = typeof styleInput === 'string' ? undefined : styleInput.layers;
       resetEmphasis();
       resetStates();
+      resetSun(target.kind === 'theme' ? styleInput : undefined);
       images?.invalidate();
       await cover?.finish({stop: () => disposed || runId !== requestId});
       options.onTransition?.({
@@ -796,6 +912,9 @@ export function createTileflowThemeController(options: {
       // The ground colour moves with the blend, and colours that recede follow it.
       onPosition: () => {
         if (emphasisShown) writeEmphasis(false);
+        // The blend wrote its own light; the sun's takes its place.
+        sunLightWritten = undefined;
+        writeSunLight();
       },
       position,
       transform: (layer, property, value) => emphasisValue(layer, property, value),
@@ -820,7 +939,202 @@ export function createTileflowThemeController(options: {
     current = previous.current;
     resetEmphasis();
     resetStates();
+    resetSun(blend ? undefined : previous.shown.style);
     images?.invalidate();
+  }
+
+  // --- Sun ---
+
+  /** The sun preset of the themes on screen, mixed at the blend's position. */
+  function themeSunPreset(): {preset: TileflowSunPreset; published: boolean} {
+    const blended = activeBlend && blendSuns.get(activeBlend.plan);
+    if (activeBlend && blended) {
+      return {
+        preset:
+          tileflowSunPresetAt(blended.presets, activeBlend.blender.position) ?? blended.presets[0]!,
+        published: blended.published,
+      };
+    }
+    if (!themeSun) {
+      // A theme given by URL is read from the map once its style is on it.
+      const style = typeof current.style === 'string' ? shownStyleDocument() : current.style;
+      themeSun = {
+        preset: tileflowStyleSunPreset(style as {light?: unknown; metadata?: unknown} | undefined),
+        published: readTileflowSunPreset(style?.metadata) !== undefined,
+      };
+    }
+    return themeSun;
+  }
+
+  function sunNow(): TileflowSun {
+    const {preset} = themeSunPreset();
+    if (!sunShown) return resolveTileflowSun(preset);
+    return resolveTileflowSun(preset, sunShown, sunShown.source);
+  }
+
+  /** The map's light points from the sun when the themes describe one or an application placed it. */
+  function writeSunLight(): void {
+    const {published} = themeSunPreset();
+    if (!published && !sunShown) return;
+    const setLight = options.map.setLight as
+      ((light: unknown, options?: object) => unknown) | undefined;
+    if (typeof setLight !== 'function') return;
+    const sun = sunNow();
+    const blendLight =
+      activeBlend?.plan.light !== undefined
+        ? fillTileflowThemeBlendTemplate(activeBlend.plan.light, activeBlend.blender.position)
+        : undefined;
+    const base = (blendLight ?? shownStyleLight()) as Parameters<typeof tileflowSunLight>[1];
+    const light = tileflowSunLight(sun, base);
+    const key = JSON.stringify(light);
+    if (key === sunLightWritten) return;
+    try {
+      setLight.call(options.map, light, {validate: false});
+      sunLightWritten = key;
+    } catch {
+      // MapLibre refuses while a style loads; resetSun() writes the light after it.
+    }
+  }
+
+  function shownStyleLight(): unknown {
+    const style = typeof shown.style === 'string' ? undefined : shown.style;
+    return style?.light;
+  }
+
+  /** After a new style: the themes' sun is read again and the light follows the sun on screen. */
+  function resetSun(style: MapLibreStyle | string | undefined): void {
+    themeSun =
+      style === undefined || typeof style === 'string'
+        ? undefined
+        : {
+            preset: tileflowStyleSunPreset(style),
+            published: readTileflowSunPreset(style.metadata) !== undefined,
+          };
+    sunLightWritten = undefined;
+    writeSunLight();
+  }
+
+  /** The direction a request asks for; undefined returns the sun to the themes. */
+  function sunDirectionOf(
+    request: TileflowSunRequest | undefined,
+  ): SunDirection | undefined | TypeError {
+    if (request === undefined) return undefined;
+    if (typeof request !== 'object' || request === null)
+      return new TypeError('Sun requests are objects with a direction or a date.');
+    if ('date' in request) {
+      const time = request.date instanceof Date ? request.date.getTime() : request.date;
+      if (typeof time !== 'number' || !Number.isFinite(time))
+        return new TypeError('A sun request date must be a valid Date or a time in milliseconds.');
+      const location = request.location ?? mapCentre();
+      if (!location)
+        return new TypeError('A sun request without a location needs a map with getCenter().');
+      try {
+        return {...tileflowSunPosition(time, location), source: 'date'};
+      } catch (error) {
+        return error as TypeError;
+      }
+    }
+    const {azimuth, altitude} = request as {altitude?: unknown; azimuth?: unknown};
+    if (typeof azimuth !== 'number' || !Number.isFinite(azimuth))
+      return new TypeError('A sun azimuth must be a finite number of degrees.');
+    if (typeof altitude !== 'number' || !Number.isFinite(altitude) || Math.abs(altitude) > 90)
+      return new TypeError('A sun altitude must be a number of degrees from -90 to 90.');
+    return {azimuth, altitude, source: 'direction'};
+  }
+
+  function mapCentre(): readonly [number, number] | undefined {
+    const getCenter = options.map.getCenter as (() => {lat?: unknown; lng?: unknown}) | undefined;
+    if (typeof getCenter !== 'function') return undefined;
+    const centre = getCenter.call(options.map);
+    return typeof centre?.lng === 'number' && typeof centre.lat === 'number'
+      ? [centre.lng, centre.lat]
+      : undefined;
+  }
+
+  function stopSunMotion(result?: TileflowThemeTransitionResult): void {
+    sunStop?.();
+    sunStop = undefined;
+    const settle = sunSettle;
+    sunSettle = undefined;
+    if (result) settle?.(result);
+  }
+
+  function changeSun(
+    target: SunDirection | undefined,
+    duration: number,
+  ): Promise<TileflowThemeTransitionResult> {
+    stopSunMotion({status: 'superseded', theme: current.theme});
+    const run = ++sunRun;
+    sunRequest = target;
+    const from: SunDirection = sunShown ?? {...themeSunPreset().preset, source: 'theme'};
+    const view = tileflowThemeMotionView(options.map);
+    const finish = () => {
+      sunShown = sunRequest;
+      sunLightWritten = undefined;
+      writeSunLight();
+      if (!sunShown) restoreThemeLight();
+    };
+    if (duration <= 0 || !view) {
+      finish();
+      return Promise.resolve({status: 'applied', theme: current.theme});
+    }
+    return new Promise((resolve) => {
+      sunSettle = resolve;
+      const now = () => view.performance?.now?.() ?? Date.now();
+      const start = now();
+      let cancelled = false;
+      let frame: number | undefined;
+      const step = () => {
+        frame = undefined;
+        if (cancelled || disposed || run !== sunRun) return;
+        const t = Math.min(1, (now() - start) / duration);
+        const eased = t * t * (3 - 2 * t);
+        // Returning to the themes follows their sun, which a blend may be moving.
+        const to = target ?? themeSunPreset().preset;
+        sunShown = {
+          azimuth: mixTileflowAzimuths(from.azimuth, to.azimuth, eased),
+          altitude: from.altitude + (to.altitude - from.altitude) * eased,
+          source: target?.source ?? from.source,
+        };
+        writeSunLight();
+        if (t >= 1) {
+          sunStop = undefined;
+          sunSettle = undefined;
+          finish();
+          resolve({status: 'applied', theme: current.theme});
+          return;
+        }
+        frame = view.requestAnimationFrame?.(step) ?? view.setTimeout(step, 16);
+      };
+      sunStop = () => {
+        cancelled = true;
+        if (frame !== undefined) {
+          view.cancelAnimationFrame?.(frame);
+          view.clearTimeout(frame);
+        }
+      };
+      step();
+    });
+  }
+
+  /** Puts back the light the themes compiled, once the sun follows them again. */
+  function restoreThemeLight(): void {
+    if (themeSunPreset().published) return;
+    const setLight = options.map.setLight as
+      ((light: unknown, options?: object) => unknown) | undefined;
+    if (typeof setLight !== 'function') return;
+    const themeLight =
+      activeBlend?.plan.light !== undefined
+        ? fillTileflowThemeBlendTemplate(activeBlend.plan.light, activeBlend.blender.position)
+        : shownStyleLight();
+    // MapLibre changes only the values it is given, so the ones the theme leaves unset return to
+    // MapLibre's defaults.
+    const light = {...mapLibreDefaultLight, ...(isPlainObject(themeLight) ? themeLight : {})};
+    try {
+      setLight.call(options.map, light, {validate: false});
+    } catch {
+      // The next style brings its own light.
+    }
   }
 
   // --- Style states ---
@@ -1146,6 +1460,18 @@ export function createTileflowThemeController(options: {
     });
     return {error: normalized, status: 'failed', theme: targetTheme};
   }
+}
+
+/** MapLibre's light where a style sets none. */
+const mapLibreDefaultLight = Object.freeze({
+  anchor: 'viewport',
+  color: '#ffffff',
+  intensity: 0.5,
+  position: [1.15, 210, 30],
+});
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function disposedResult(theme: string | undefined): TileflowThemeTransitionResult {

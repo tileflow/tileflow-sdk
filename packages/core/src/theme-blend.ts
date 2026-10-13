@@ -866,6 +866,18 @@ function colourFromOklab([lightness, a, b, alpha]: readonly number[]): string {
   return `rgba(${red}, ${green}, ${blue}, ${Number(alpha!.toFixed(3))})`;
 }
 
+/** A hex, rgb(a), or hsl(a) colour as sRGB channels and alpha, each from 0 to 1; null otherwise. */
+export function tileflowColourChannels(colour: string): [number, number, number, number] | null {
+  const rgba = parseColour(colour);
+  if (!rgba) return null;
+  return [
+    Math.min(1, Math.max(0, rgba[0] / 255)),
+    Math.min(1, Math.max(0, rgba[1] / 255)),
+    Math.min(1, Math.max(0, rgba[2] / 255)),
+    Math.min(1, Math.max(0, rgba[3])),
+  ];
+}
+
 /** Hex, rgb(a), and hsl(a) colours as 0–255 channels and 0–1 alpha. */
 function parseColour(colour: string): [number, number, number, number] | null {
   const text = colour.trim().toLowerCase();

@@ -8541,6 +8541,18 @@
         "lighting": {
           "type": "object",
           "properties": {
+            "ambient": {
+              "type": "object",
+              "properties": {
+                "color": {
+                  "$ref": "#/$defs/__schema8"
+                },
+                "intensity": {
+                  "$ref": "#/$defs/__schema10"
+                }
+              },
+              "additionalProperties": false
+            },
             "anchor": {
               "type": "string",
               "enum": ["map", "viewport"]
@@ -8567,6 +8579,27 @@
               "minItems": 3,
               "maxItems": 3,
               "items": false
+            },
+            "sun": {
+              "type": "object",
+              "properties": {
+                "altitude": {
+                  "$ref": "#/$defs/__schema10"
+                },
+                "azimuth": {
+                  "$ref": "#/$defs/__schema10"
+                },
+                "color": {
+                  "$ref": "#/$defs/__schema8"
+                },
+                "intensity": {
+                  "$ref": "#/$defs/__schema10"
+                },
+                "shadowIntensity": {
+                  "$ref": "#/$defs/__schema10"
+                }
+              },
+              "additionalProperties": false
             }
           },
           "additionalProperties": false

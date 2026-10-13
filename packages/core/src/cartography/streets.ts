@@ -16,6 +16,7 @@ import {
   tileflowRouteMetadata,
   tileflowRouteMetadataKey,
 } from '../route-inks';
+import {tileflowSunMetadata, tileflowSunMetadataKey} from '../sun';
 import {compileTerrainContributions, resolveTerrain} from '../terrain';
 import {parseTileflowLineBackgroundFontStack} from '../text-background';
 import {
@@ -531,6 +532,9 @@ function compileSemanticStyleInternal(
       'tileflow:theme': selected.name,
       'tileflow:colorScheme': resolvedTheme.colorScheme,
       [tileflowRouteMetadataKey]: tileflowRouteMetadata(resolveTileflowRouteInks(resolvedTheme)),
+      ...(resolvedTheme.sun
+        ? {[tileflowSunMetadataKey]: tileflowSunMetadata(resolvedTheme.sun)}
+        : {}),
       'tileflow:data': data.identity,
       'tileflow:sources': sourceIdentities,
       ...(Object.keys(loweredOverlays.identities).length > 0

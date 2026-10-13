@@ -92,6 +92,7 @@
   },
   "devDependencies": {
     "@mapbox/vector-tile": "3.0.0",
+    "earcut": "3.2.4",
     "maplibre-contour": "0.1.0",
     "pbf": "5.1.2",
     "pmtiles": "4.4.0",

@@ -182,6 +182,14 @@ response, accepts an injected Fetch implementation and AbortSignal, and performs
 It does not select or contact a geocoding provider, validate an address, render UI, or provide
 structured, category-discovery, or batch operations.
 
+### `@tileflow/routing`
+
+Owns strict route, isochrone, matrix, map-matching, and nearest-road request and answer schemas
+and one bounded headless HTTP client. It authenticates to Tileflow, validates that each answer
+matches its request, accepts an injected Fetch implementation and AbortSignal, and performs no
+automatic retry. It does not compute routes, select a routing engine, render a map, provide live
+navigation or traffic-aware travel times, or infer speed limits that OpenStreetMap does not record.
+
 ### Build integrations
 
 `@tileflow/vite`, `@tileflow/next`, and `@tileflow/webpack` translate host build/watch hooks into

@@ -490,11 +490,28 @@ const themeTypographySchema = themeTypographyStyleSchema.extend({
 });
 const themeLightingSchema = z
   .object({
+    ambient: z
+      .object({
+        color: themeColorValueSchema.optional(),
+        intensity: themeNumberValueSchema.optional(),
+      })
+      .strict()
+      .optional(),
     anchor: z.enum(['map', 'viewport']).optional(),
     color: themeColorValueSchema.optional(),
     intensity: themeNumberValueSchema.optional(),
     position: z
       .tuple([themeNumberValueSchema, themeNumberValueSchema, themeNumberValueSchema])
+      .optional(),
+    sun: z
+      .object({
+        altitude: themeNumberValueSchema.optional(),
+        azimuth: themeNumberValueSchema.optional(),
+        color: themeColorValueSchema.optional(),
+        intensity: themeNumberValueSchema.optional(),
+        shadowIntensity: themeNumberValueSchema.optional(),
+      })
+      .strict()
       .optional(),
   })
   .strict();

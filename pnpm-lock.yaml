@@ -240,6 +240,9 @@ importers:
       '@mapbox/vector-tile':
         specifier: 3.0.0
         version: 3.0.0
+      earcut:
+        specifier: 3.2.4
+        version: 3.2.4
       maplibre-contour:
         specifier: 0.1.0
         version: 0.1.0

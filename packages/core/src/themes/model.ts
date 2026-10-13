@@ -16,6 +16,12 @@ import {
   tileflowThemeTokenCategories,
 } from '../cartography/values';
 import {isTileflowThemeName} from '../portable-identity-rules';
+import {
+  normalizeTileflowAzimuth,
+  tileflowDefaultSunPreset,
+  tileflowSunLight,
+  type TileflowSunPreset,
+} from '../sun';
 import type {ResolvedTileflowTypography, TileflowLight, TileflowTypographyStyle} from '../types';
 import {classifyTileflowVisualProperty, type TileflowVisualValueCategory} from './visual-semantics';
 
@@ -44,8 +50,40 @@ export type TileflowThemeTypography = TileflowThemeTypographyStyle & {
   water?: TileflowThemeTypographyStyle;
 };
 
+/**
+ * The theme's sun: where it stands and the light it gives, as a light preset for the theme. A
+ * theme for the evening sets a low sun in the west in warm light; one for the night, a moon with
+ * faint shadows. Unset values take the defaults in `tileflowDefaultSunPreset`.
+ */
+export type TileflowThemeSun = {
+  /** Degrees clockwise from north. */
+  azimuth?: TileflowThemeNumberValue;
+  /** Degrees above the horizon, from -90 to 90; a sun below the horizon lights nothing. */
+  altitude?: TileflowThemeNumberValue;
+  /** The direct light's colour. */
+  color?: TileflowThemeColorValue;
+  /** The direct light's strength, from 0 to 1. */
+  intensity?: TileflowThemeNumberValue;
+  /** How dark the shadows the sun casts fall, from 0 (none) to 1. */
+  shadowIntensity?: TileflowThemeNumberValue;
+};
+
+/** The light from the sky, which reaches every surface and fills the shadows. */
+export type TileflowThemeAmbient = {
+  color?: TileflowThemeColorValue;
+  /** From 0 to 1. */
+  intensity?: TileflowThemeNumberValue;
+};
+
+/**
+ * How the theme lights the map. `anchor`, `color`, `intensity`, and `position` are MapLibre's light,
+ * which shades 3D extrusions. `sun` and `ambient` describe the theme's sun and sky light for 3D
+ * scenes (`themeController.getSun()`); with a `sun`, the map's light is anchored to the map and
+ * points from the sun, and `anchor` and the direction in `position` no longer apply.
+ */
 export type TileflowThemeLighting = {
   anchor?: 'map' | 'viewport';
+  ambient?: TileflowThemeAmbient;
   color?: TileflowThemeColorValue;
   intensity?: TileflowThemeNumberValue;
   position?: readonly [
@@ -53,6 +91,7 @@ export type TileflowThemeLighting = {
     TileflowThemeNumberValue,
     TileflowThemeNumberValue,
   ];
+  sun?: TileflowThemeSun;
 };
 
 /** A complete, inheritance-free appearance document. */
@@ -84,7 +123,10 @@ export type ResolvedTileflowThemeTokens = {
 };
 
 export type ResolvedTileflowTheme = Omit<TileflowTheme, 'lighting' | 'tokens' | 'typography'> & {
+  /** MapLibre's light; with a sun, anchored to the map and pointing from it. */
   lighting: TileflowLight;
+  /** The theme's sun and sky light, when the theme describes either. */
+  sun?: TileflowSunPreset;
   tokens: ResolvedTileflowThemeTokens;
   typography: ResolvedTileflowTypography;
 };
@@ -157,7 +199,9 @@ const themeTypographyKeys = [
   'water',
 ] as const;
 const themeTypographyDomains = ['places', 'poi', 'roads', 'water'] as const;
-const themeLightingKeys = ['anchor', 'color', 'intensity', 'position'] as const;
+const themeLightingKeys = ['ambient', 'anchor', 'color', 'intensity', 'position', 'sun'] as const;
+const themeSunKeys = ['altitude', 'azimuth', 'color', 'intensity', 'shadowIntensity'] as const;
+const themeAmbientKeys = ['color', 'intensity'] as const;
 
 export function defineTheme(definition: TileflowThemeDefinition): TileflowTheme;
 export function defineTheme(
@@ -176,7 +220,7 @@ export function defineTheme(
   const theme: TileflowTheme = {
     colorScheme: definition.colorScheme,
     id: definition.id,
-    lighting: mergeRecord(base?.lighting ?? {}, definition.lighting ?? {}),
+    lighting: mergeLighting(base?.lighting ?? {}, definition.lighting ?? {}),
     tokens: {
       color: mergeRecord(base?.tokens.color ?? {}, definition.tokens?.color ?? {}),
       font: mergeRecord(base?.tokens.font ?? {}, definition.tokens?.font ?? {}),
@@ -203,11 +247,12 @@ export function resolveTileflowTheme(theme: TileflowTheme): ResolvedTileflowThem
     number: resolver.resolveCategory('number'),
   };
   const typography = resolver.resolveTypography(theme.typography);
-  const lighting = resolver.resolveLighting(theme.lighting);
+  const {light: lighting, sun} = resolver.resolveLighting(theme.lighting);
   return {
     colorScheme: theme.colorScheme,
     id: theme.id,
     lighting,
+    ...(sun ? {sun} : {}),
     tokens,
     typography,
     version: theme.version,
@@ -893,7 +938,76 @@ class ThemeValueResolver {
     };
   }
 
-  resolveLighting(lighting: TileflowThemeLighting): TileflowLight {
+  resolveLighting(lighting: TileflowThemeLighting): {
+    light: TileflowLight;
+    sun?: TileflowSunPreset;
+  } {
+    const {ambient, sun, ...flat} = lighting;
+    const light = this.#resolveFlatLight(flat);
+    if (sun === undefined && ambient === undefined) return {light};
+    const resolvedSun = this.resolveTree(sun ?? {}, 'theme.lighting.sun') as Record<
+      string,
+      unknown
+    >;
+    const resolvedAmbient = this.resolveTree(ambient ?? {}, 'theme.lighting.ambient') as Record<
+      string,
+      unknown
+    >;
+    const defaults = tileflowDefaultSunPreset;
+    const number = (value: unknown, path: string, fallback: number, range?: [number, number]) => {
+      if (value === undefined) return fallback;
+      assertFiniteNumber(value, path);
+      if (range && (value < range[0] || value > range[1])) {
+        throw new Error(`Tileflow ${path} must be between ${range[0]} and ${range[1]}.`);
+      }
+      return value;
+    };
+    const colour = (value: unknown, path: string, fallback: string) => {
+      if (value === undefined) return fallback;
+      assertColor(value, path);
+      return value as string;
+    };
+    const preset: TileflowSunPreset = {
+      azimuth: normalizeTileflowAzimuth(
+        number(resolvedSun.azimuth, 'theme.lighting.sun.azimuth', defaults.azimuth),
+      ),
+      altitude: number(
+        resolvedSun.altitude,
+        'theme.lighting.sun.altitude',
+        defaults.altitude,
+        [-90, 90],
+      ),
+      color: colour(resolvedSun.color, 'theme.lighting.sun.color', defaults.color),
+      intensity: number(
+        resolvedSun.intensity,
+        'theme.lighting.sun.intensity',
+        defaults.intensity,
+        [0, 1],
+      ),
+      shadowIntensity: number(
+        resolvedSun.shadowIntensity,
+        'theme.lighting.sun.shadowIntensity',
+        defaults.shadowIntensity,
+        [0, 1],
+      ),
+      ambient: {
+        color: colour(
+          resolvedAmbient.color,
+          'theme.lighting.ambient.color',
+          defaults.ambient.color,
+        ),
+        intensity: number(
+          resolvedAmbient.intensity,
+          'theme.lighting.ambient.intensity',
+          defaults.ambient.intensity,
+          [0, 1],
+        ),
+      },
+    };
+    return {light: sun === undefined ? light : tileflowSunLight(preset, light), sun: preset};
+  }
+
+  #resolveFlatLight(lighting: Omit<TileflowThemeLighting, 'ambient' | 'sun'>): TileflowLight {
     const result = this.resolveTree(lighting, 'theme.lighting') as Record<string, unknown>;
     if (result.anchor !== undefined && result.anchor !== 'map' && result.anchor !== 'viewport') {
       throw themeTypeError('theme.lighting.anchor', 'map or viewport', result.anchor);
@@ -1125,6 +1239,24 @@ function assertThemeTypographyStyleFields(
 function assertThemeLighting(value: unknown, path: string): void {
   const lighting = assertPlainThemeRecord(value, path);
   assertExactThemeKeys(lighting, path, themeLightingKeys);
+  if (Object.hasOwn(lighting, 'sun')) {
+    const sun = assertPlainThemeRecord(lighting.sun, `${path}.sun`);
+    assertExactThemeKeys(sun, `${path}.sun`, themeSunKeys);
+    for (const key of ['altitude', 'azimuth', 'intensity', 'shadowIntensity'] as const) {
+      if (Object.hasOwn(sun, key))
+        assertThemeCategoryValue(sun[key], 'number', `${path}.sun.${key}`);
+    }
+    if (Object.hasOwn(sun, 'color'))
+      assertThemeCategoryValue(sun.color, 'color', `${path}.sun.color`);
+  }
+  if (Object.hasOwn(lighting, 'ambient')) {
+    const ambient = assertPlainThemeRecord(lighting.ambient, `${path}.ambient`);
+    assertExactThemeKeys(ambient, `${path}.ambient`, themeAmbientKeys);
+    if (Object.hasOwn(ambient, 'intensity'))
+      assertThemeCategoryValue(ambient.intensity, 'number', `${path}.ambient.intensity`);
+    if (Object.hasOwn(ambient, 'color'))
+      assertThemeCategoryValue(ambient.color, 'color', `${path}.ambient.color`);
+  }
   if (
     Object.hasOwn(lighting, 'anchor') &&
     lighting.anchor !== 'map' &&
@@ -1342,6 +1474,7 @@ function inferThemeCategoryFromPath(path: string): TileflowThemeTokenCategory | 
   const tokenCategory = path.match(/^theme\.tokens\.(color|font|image|number)(?:\.|$)/u)?.[1];
   if (isThemeTokenCategory(tokenCategory)) return tokenCategory;
   if (/^theme\.lighting\.position(?:\[\d+\])?$/u.test(path)) return 'number';
+  if (/^theme\.lighting\.sun\.(?:altitude|azimuth|shadowIntensity)$/u.test(path)) return 'number';
   const segments = path.replace(/\[\d+\]/g, '').split('.');
   return [...segments]
     .reverse()
@@ -1441,6 +1574,20 @@ function mergeOptionalStyle(
 ): Record<string, TileflowThemeTypographyStyle> {
   const value = mergeRecord(base[key] ?? {}, overlay?.[key] ?? {});
   return Object.keys(value).length ? {[key]: value} : {};
+}
+
+/** Lighting over a base: the sun and the ambient light merge value by value. */
+function mergeLighting(
+  base: TileflowThemeLighting,
+  overlay: TileflowThemeLighting,
+): TileflowThemeLighting {
+  const merged = mergeRecord(base, overlay);
+  for (const key of ['sun', 'ambient'] as const) {
+    if (base[key] !== undefined && overlay[key] !== undefined) {
+      (merged as Record<string, unknown>)[key] = mergeRecord(base[key]!, overlay[key]!);
+    }
+  }
+  return merged;
 }
 
 function mergeRecord<T extends object>(base: T, overlay: Partial<T>): T {

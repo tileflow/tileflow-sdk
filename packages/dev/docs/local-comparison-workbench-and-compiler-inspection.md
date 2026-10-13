@@ -94,82 +94,13 @@ The separate `TREES ON/OFF` control sits below the building `3D ON/OFF` control 
 refresh work while disabled. Both choices survive reloads and shared links through the
 `buildings3d=on|off` and `trees3d=on|off` URL parameters.
 
-Detailed trees retain the compiler's scene order: they render above road and pedestrian surfaces,
-ordinary building geometry, and detailed landmark models. Map labels and other annotations remain
-above the physical scene, while road names and route references stay attached to the carriageway
-below buildings and trees.
+Detailed trees retain the compiler's scene order: they render above road and pedestrian surfaces
+and ordinary building geometry. Map labels and other annotations remain above the physical scene,
+while road names and route references stay attached to the carriageway below buildings and trees.
 
 The same control toggles any compiled layer whose metadata contains
 `tileflow:3d-toggle = building`. It switches the building volumes independently from the camera,
 so enabling 3D never changes the pitch and users remain free to tilt the map with pointer controls.
-
-### Detailed landmark models
-
-A hidden style layer can opt the Streets preview into detailed GLB landmarks by setting
-`tileflow:landmark-manifest-url` in its metadata. The bounded version-2 manifest indexes GLB entries
-inside one or more PMTiles archives and is fetched only when the 3D building control is enabled near
-the landmark runtime zoom. Archive URLs may be absolute or relative to the manifest URL.
-
-```json
-{
-  "schemaVersion": 2,
-  "id": "madrid-landmarks-2026-08-19",
-  "minzoom": 16,
-  "maximumVisibleModels": 8,
-  "maximumCachedModels": 16,
-  "archives": [
-    {
-      "id": "madrid-v1",
-      "url": "./madrid-landmarks-v1.pmtiles",
-      "bytes": 14832912,
-      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    }
-  ],
-  "landmarks": [
-    {
-      "id": "palacio-cibeles",
-      "center": [-3.6921, 40.4193],
-      "bounds": [-3.693, 40.4186, -3.6912, 40.42],
-      "priority": 100,
-      "models": [
-        {
-          "minzoom": 16,
-          "archiveId": "madrid-v1",
-          "z": 0,
-          "x": 0,
-          "y": 0,
-          "bytes": 481024,
-          "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "axisConvention": "EUN_Y_UP"
-        },
-        {
-          "minzoom": 18,
-          "archiveId": "madrid-v1",
-          "z": 1,
-          "x": 0,
-          "y": 0,
-          "bytes": 1276416,
-          "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-          "axisConvention": "EUN_Y_UP"
-        }
-      ]
-    }
-  ]
-}
-```
-
-`maximumVisibleModels` is bounded to 1–64. `maximumCachedModels` defaults to twice that value,
-must be at least the visible limit, and is bounded to 128. Higher `priority` values win when more
-landmarks intersect the viewport than can be shown. `models[0]` is the base LOD and must start at the
-manifest `minzoom`; later entries replace it at their distinct `minzoom`. The parser bounds manifest,
-archive, landmark, model and GLB-entry sizes, rejects credential-bearing or non-HTTP archive URLs,
-and verifies each extracted entry's declared byte length and SHA-256 before parsing it.
-
-The preview starts the Three.js runtime and manifest request together one zoom before the landmark
-layer becomes visible. A landmark entering directly at a close zoom always displays its base LOD
-first and upgrades in place. Nearby base LODs are warmed in the parsed-model cache. Style layers
-marked with `tileflow:landmark-fallback = true` remain visible until the corresponding active GLB is
-ready, so a cold request never leaves an empty building volume.
 
 Embedded Streets previews also accept a same-origin parent command without reloading the document:
 
@@ -196,17 +127,6 @@ The command is applied atomically only for the embedding parent, with exact same
 range checks. `visibleLayerGroups` is optional and accepts only `labels`, `pois`, `roads`, `transit`,
 `buildings`, `landuse`, and `water`; omitted groups are hidden while base background and attribution
 remain. Camera and toggle state continue to be written to the preview URL after application.
-
-GLB base colors, textures, emissive values, metalness, and roughness are authoritative and are not
-rewritten by the preview. Models outside the active selection remain hidden in a least-recently-used
-cache; leaving the cache disposes their geometry, materials, and textures.
-
-The vector building represented by a detailed model must carry `hide_3d = true`. The ordinary
-building extrusion and both screen-space shadow passes filter on that field, preventing the coarse
-volume from intersecting the GLB while retaining the flat footprint below it. This flag belongs in
-the vector-tile dataset; the landmark endpoint cannot substitute for it. Version model and GLB URLs
-so they can be served with immutable caching. Cross-origin endpoints must allow credentialed GETs
-because the development renderer requests the manifest and models with credentials.
 
 If a map uses `icons: ['./icons/brand']`, build artifacts include the generated MapLibre
 `sprite.json`, `sprite.png`, `sprite@2x.json`, and `sprite@2x.png` beside its style. Ordinary sources

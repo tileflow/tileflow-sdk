@@ -1,9 +1,9 @@
 # Local visual capture contract
 
-Status: public alpha contract as of 2026-08-27.
+Status: public alpha contract as of 2026-10-12.
 
-This document owns Tileflow's repository-local scene, headless-browser, capture receipt, application
-readiness, watch, and visual-baseline behavior. The CLI is the recommended user and agent surface;
+This document owns Tileflow's repository-local scene, timed shot, headless-browser, capture receipt,
+application readiness, watch, and visual-baseline behavior. The CLI is the recommended user and agent surface;
 `@tileflow/core`, `@tileflow/dev`, and `@tileflow/capture` expose the same primitives to Node tools.
 
 ## Scope and trust boundary
@@ -204,7 +204,8 @@ can address the authored field directly. Filesystem paths remain relative to the
 directory when local and become `(external)` when they would escape it.
 
 Static semantic rejection uses `STYLE_INVALID` and `style-validation`. Runtime phases are
-`browser-start`, `resource-load`, `map-load`, `map-idle`, and `screenshot`. Resource HTTP failures
+`browser-start`, `resource-load`, `map-load`, `map-idle`, and `screenshot`; shots add
+`theme-blend` and `video-encode`. Resource HTTP failures
 use `RESOURCE_FAILED`; MapLibre event failures use `MAP_LOAD_FAILED`; load and idle timeouts both
 use `CAPTURE_TIMEOUT` with their distinct phase; screenshot API failure uses `SCREENSHOT_FAILED`;
 and invalid PNG bytes/dimensions retain `INVALID_PNG` with the screenshot phase.
@@ -261,6 +262,101 @@ compiled park-layer semantics.
 The prepared style hash includes the frozen TileJSON asset identity. Changed source metadata can
 therefore require baseline review even when the resulting pixels match. Capture never approves or
 replaces a baseline automatically.
+
+## Timed shots
+
+`TileflowMap.shots` is optional tooling metadata beside `scenes`, with the same ownership rules: it
+belongs to the singular exported map, does not inherit, is removed before cartographic
+compilation, and never changes style or manifest identity. A committed shot has this version-1
+shape:
+
+```ts
+type TileflowMapShot = {
+  theme: string; // concrete; never "system"
+  viewport: {width: number; height: number; dpr?: 1 | 2};
+  fps?: 24 | 25 | 30 | 50 | 60; // default 30
+  easing?: 'smooth' | 'linear'; // default "smooth"
+  keyframes: Array<{
+    at: number; // whole milliseconds from the start
+    camera: {
+      type: 'center';
+      center: [number, number];
+      zoom: number;
+      bearing?: number;
+      pitch?: number;
+    };
+    blend?: {themes: string[]; position: number};
+  }>;
+};
+```
+
+Shot names follow the scene-name rules and are distinct under case folding. The theme, viewport,
+and camera values use the scene limits. A shot has 2 to 64 keyframes; the first is at 0, each later
+keyframe is strictly later, and the last is at most 60000 ms. Keyframe cameras use only the center
+form: a bounds camera depends on the renderer's viewport fit, so interpolating between two of them
+would not be defined by the shot itself. Either every keyframe or none declares `blend`; every blend
+lists the same two to eight distinct concrete themes in the same order, and its position is from 0
+to one less than the number of themes. Theme existence is checked when the shot renders.
+
+A shot renders `floor(lastKeyframe.at × fps / 1000) + 1` frames, at most 3600. Frame `i` samples
+the shot at `i × 1000 / fps` ms. Within each keyframe segment the center is interpolated in Web
+Mercator coordinates along the shorter way around the world, zoom and pitch linearly, bearing along
+the shorter arc, and the blend position linearly. `smooth` applies smoothstep to each segment's
+progress; `linear` does not. A frame at a keyframe time shows that keyframe's camera exactly. Core's
+pure `tileflowCaptureShotFrames` is the only implementation of this sampling, and capture uses it.
+
+Shots always render in standalone mode. One fresh context and page load the shot theme's compiled
+style exactly as a standalone scene does, with the same routing, resource classification, and
+`networkDependent` rules. The page style differs only in a zero-duration style transition, so a
+changed paint value takes effect when the frame renders instead of animating for 300 ms. When the
+shot blends, the page prepares the blend once through Core's theme controller from the compiled
+styles of every blended theme, after loading the fonts of all those styles. Each frame then moves
+the blend position, applies its camera with `jumpTo`, waits for MapLibre `idle`, waits two
+animation frames, and captures the map element as a PNG, so every frame meets the scene readiness
+rule. Reduced motion removes label cross-fades. The capture timeout applies separately to page
+setup, to blend preparation, and to each frame; time spent delivering a frame to the caller does not
+count. Abort closes the page and fails with `ABORTED`.
+
+The default `webm` format opens a WebCodecs `VideoEncoder` in a separate, fully routed browser
+context before the first frame. It requests VP9 profile 0 and falls back to VP8, and fails with
+`VIDEO_ENCODER_UNAVAILABLE` in phase `video-encode` when neither is supported; the message suggests
+the `frames` format. Each captured PNG is decoded and encoded at timestamp `round(i × 10^6 / fps)`
+microseconds, with a key frame every second. Tileflow writes the chunks into a WebM file with known
+element sizes: an EBML header, then one Segment containing a SeekHead, Info with a 1 ms timestamp
+scale and the playback duration `frameCount × 1000 / fps` ms, one video track (`V_VP9` or `V_VP8`,
+physical pixel dimensions, and the frame duration), one Cluster per key frame holding SimpleBlocks,
+and Cues for each Cluster. Encoder failures use `VIDEO_ENCODE_FAILED`. The `frames` format skips
+encoding and delivers each PNG to the caller in order without retaining it.
+
+`tileflow capture --shot <name>` renders committed shots; repeat it or use `--all-shots`. Shot
+selection cannot be combined with scenes, `--all`, `--map`, `--watch`, or scene camera, viewport,
+theme, or application flags. `--format webm|frames` selects the output. Managed output goes to
+`.tileflow/captures/shots/<shot>.webm` or the directory `.tileflow/captures/shots/<shot>/` holding
+`frame-0000.png` onward, each with the sibling receipt `<shot>.receipt.json`; `--out-dir` replaces
+the managed directory, and `--out` names the `.webm` file or frame directory of exactly one shot,
+whose receipt replaces `.webm` with `.receipt.json` or appends it to the directory name. A video and
+its receipt are written as one atomic pair. Frames are written to a sibling staging directory while
+they render; the frame directory and receipt then replace any previous pair together, which removes
+frames left from a longer shot. An existing frame directory may contain only Tileflow frame files.
+Overwrite, symbolic-link, and boundary rules match still captures. JSON mode prints one
+schema-version-1 `capture.shot` document with sorted entries containing shot, map, concrete theme,
+format, optional codec, relative output and receipt paths, output and frame hashes, frame count,
+fps, duration, dimensions, renderer identity, `networkDependent`, and warnings. Failures use the
+one-shot failure document with command `capture.shot`; unknown shots report `SHOT_NOT_FOUND` with
+phase `shot-resolution`.
+
+A shot receipt is canonical schema-version-1 JSON with `kind: "shot"`, bounded to 64 KiB. It
+contains the shot name, map, concrete theme, and SHA-256 of the normalized shot; the SHA-256 of the
+shot theme's prepared style and, when the shot blends, each blended theme with its style SHA-256 in
+blend order; fps, frame count, and the duration of the last keyframe; CSS and physical dimensions
+and DPR; `frames.sha256`; the output kind (`webm` with its codec, or `frames`) and SHA-256;
+renderer and OS/architecture identity; the schema-v4 data identity; `rendered` style and data
+verification; and `networkDependent`. `frames.sha256` is the SHA-256 of each frame's lowercase
+hexadecimal PNG SHA-256 followed by a newline, in frame order. Frames follow the same
+reproducibility rules as scene captures, so `frames.sha256` is the comparable identity of a shot's
+pixels. Encoders may produce different bytes for the same frames, so a video's `output.sha256`
+identifies only that file; for the `frames` format it equals `frames.sha256`. Like scene receipts,
+shot receipts contain no time, user, repository, absolute path, environment, URL, or credential.
 
 ## Visual comparison and baselines
 
@@ -375,12 +471,14 @@ links, and ambiguous paths. It never stages, commits, pushes, or otherwise chang
 
 ## Programmatic surface and compatibility
 
-`@tileflow/capture` exports `captureTileflowScenes`, `createTileflowCaptureSession`, explicit browser
-setup/launch helpers, strict receipt APIs, `compareTileflowCaptureToBaseline`, and
-`compareTileflowCapturesForReview`. Capture results include PNG bytes for Node callers; CLI JSON
-projects only scene, map, concrete theme, target, hashes, dimensions, warnings, renderer identity,
-and relative artifact paths. A session can capture named scenes, all committed scenes, caller-provided
-definitions, or an existing `TileflowBuildArtifacts` snapshot, and must be closed.
+`@tileflow/capture` exports `captureTileflowScenes`, `captureTileflowShot`,
+`createTileflowCaptureSession`, explicit browser setup/launch helpers, strict scene and shot receipt
+APIs, `compareTileflowCaptureToBaseline`, and `compareTileflowCapturesForReview`. Capture results
+include PNG bytes for Node callers; shot results include the WebM bytes and per-frame hashes, while
+frames reach the caller's `onFrame`. CLI JSON projects only scene, map, concrete theme, target,
+hashes, dimensions, warnings, renderer identity, and relative artifact paths. A session can capture
+named scenes, all committed scenes, caller-provided definitions, or an existing
+`TileflowBuildArtifacts` snapshot, render one, several, or all committed shots, and must be closed.
 `TileflowCaptureError` exposes a stable additive code plus optional bounded details containing the
 phase, diagnostics, and safe resource metadata; raw nested causes are not a CLI contract.
 
@@ -388,10 +486,12 @@ phase, diagnostics, and safe resource metadata; raw nested causes are not a CLI 
 exploratory reference path to Node callers. `createTileflowVisualReferenceAnalysisDocument` removes
 diff bytes before JSON projection.
 
-Capture-result, baseline visual-comparison, visual-analysis, receipt-authenticated Review, and
-`visual.compare` command/watch documents use schema version 1; capture receipts use schema version 4. These are compatibility boundaries. Removing or renaming a field, changing an enum's meaning,
-weakening readiness, changing exact-pixel classification, or silently selecting another
-browser/runtime requires an explicit contract revision. Review exposes its version through
+Capture-result, baseline visual-comparison, visual-analysis, receipt-authenticated Review,
+`capture.shot`, and `visual.compare` command/watch documents use schema version 1; capture receipts
+use schema version 4 and shot receipts use schema version 1. These are compatibility boundaries.
+Removing or renaming a field, changing an enum's meaning, weakening readiness, changing exact-pixel
+classification, or silently selecting another browser/runtime requires an explicit contract
+revision. Review exposes its version through
 `tileflowVisualReviewSchemaVersion`, its 256 MiB aggregate PNG-input cap through
 `tileflowVisualReviewLimits.maximumAggregatePngBytes`, and invalid input through
 `TileflowVisualReviewError`/`VISUAL_REVIEW_INVALID`. New optional metadata must remain bounded,

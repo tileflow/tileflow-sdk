@@ -15,6 +15,13 @@ same token keys, so changing a theme can never change map structure or silently 
 role. `defineTheme(base, definition)` is an authoring convenience that returns a fully materialized
 document; it does not leave an inheritance edge in the resolved config.
 
+Some optional tokens are for the application rather than the map's own layers. Route inks
+(`route.line`, `route.casing`, `route.core`, `route.glow`, `route.alternative`,
+`route.glow.opacity` and `route.core.opacity`) set how an application draws its routes; a theme
+without them uses its colour scheme's defaults. The compiler publishes them in the style's metadata
+and the theme controller returns them; see
+[route drawing](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/route-drawing.md).
+
 The key in the `themes` record is its concrete runtime selector and output-path segment. The
 theme's own `id` and `version` are its editorial identity and build provenance, so they need not
 equal that key. Concrete keys may be names such as `day` and `night`; every `systemThemes.light` or

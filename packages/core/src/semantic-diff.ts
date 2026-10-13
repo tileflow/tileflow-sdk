@@ -88,7 +88,7 @@ function resolveSemanticDiffInput(input: TileflowMap | ResolvedTileflowMap): Res
 }
 
 /**
- * Derived maps, owner-local scenes, omitted resolved names, and module operations exist only in
+ * Derived maps, owner-local scenes and shots, omitted resolved names, and module operations exist only in
  * authoring. A standalone map without those features overlaps the resolved shape and can be
  * validated directly without catching and replacing a meaningful resolved-map validation error.
  */
@@ -97,7 +97,8 @@ function isAuthoringOnlyMapShape(input: unknown): boolean {
   if (
     !Object.hasOwn(input, 'name') ||
     Object.hasOwn(input, 'extends') ||
-    Object.hasOwn(input, 'scenes')
+    Object.hasOwn(input, 'scenes') ||
+    Object.hasOwn(input, 'shots')
   ) {
     return true;
   }

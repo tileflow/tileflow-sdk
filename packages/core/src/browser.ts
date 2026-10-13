@@ -6,6 +6,7 @@ import {
 } from './dynamic-style-images';
 import type {TileflowWorldRequestBridge} from './fair-use-browser';
 import {isTileflowThemeName} from './portable-identity-rules';
+import {type TileflowRouteInks, tileflowRouteInksAt, tileflowStyleRouteInks} from './route-inks';
 import {
   getTileflowStyleFontFaces,
   resolveTileflowAnalyticsRequestUrl,
@@ -44,6 +45,80 @@ import {
 import type {MapLibreStyle} from './types';
 
 export {attachTileflowAtmosphere, type TileflowAtmosphereMap} from './atmosphere-browser';
+export {
+  tileflowLineProgressGradient,
+  type TileflowLineProgressGradientOptions,
+  type TileflowLineProgressState,
+} from './line-progress';
+export {
+  createTileflowLineProgress,
+  type TileflowLineProgressAnimation,
+  type TileflowLineProgressController,
+  type TileflowLineProgressLayer,
+  type TileflowLineProgressMap,
+  type TileflowLineProgressOptions,
+  type TileflowLineProgressShown,
+} from './line-progress-browser';
+export {
+  mixTileflowRouteInks,
+  readTileflowRouteInks,
+  tileflowDefaultRouteInks,
+  tileflowRouteMetadataKey,
+  tileflowStyleRouteInks,
+  type TileflowRouteInks,
+} from './route-inks';
+export {
+  createTileflowTileReader,
+  readTileflowMapTileSource,
+  tileflowTilePointToLngLat,
+  tileflowTilesForBounds,
+  type TileflowTile,
+  type TileflowTileAddress,
+  type TileflowTileAreaRequest,
+  type TileflowTileReader,
+  type TileflowTileReaderOptions,
+  type TileflowTileRequestTransform,
+  type TileflowTileSourceMap,
+} from './tile-reader';
+export {
+  decodeTileflowVectorTile,
+  type TileflowTileFeature,
+  type TileflowTileGeometryType,
+  type TileflowTileLayer,
+  type TileflowVectorTileDecodeOptions,
+} from './vector-tile-decode';
+export {
+  createTileflowGroundLayers,
+  tileflowGroundBeforeId,
+  type TileflowGroundLayer,
+  type TileflowGroundLayers,
+  type TileflowGroundLayersMap,
+  type TileflowGroundLayersOptions,
+  type TileflowGroundOrderMap,
+} from './ground-layers-browser';
+export {
+  createTileflowDepthMarkers,
+  tileflowDepthMarkerPlacement,
+  type TileflowDepthMarker,
+  type TileflowDepthMarkerHandle,
+  type TileflowDepthMarkerMap,
+  type TileflowDepthMarkers,
+  type TileflowDepthMarkersOptions,
+} from './depth-markers-browser';
+export {
+  tileflowShotStateAt,
+  type TileflowShotCamera,
+  type TileflowShotKeyframe,
+  type TileflowShotMotion,
+  type TileflowShotState,
+} from './capture-shot-motion';
+export {
+  playTileflowShot,
+  type TileflowShotCue,
+  type TileflowShotPlayback,
+  type TileflowShotPlaybackOptions,
+  type TileflowShotPlayerMap,
+} from './shot-player-browser';
 export type {
   TileflowDynamicImage,
   TileflowDynamicImageContext,
@@ -238,6 +313,12 @@ export type TileflowThemeController = {
   getCurrent(): TileflowRuntimeStyle;
   /** The emphasis requested last, or undefined when the map is shown as designed. */
   getEmphasis(): TileflowEmphasis | undefined;
+  /**
+   * The route inks of the theme on screen, for an application's own route layers. During a blend
+   * they are mixed between the neighbouring themes at the blend's position, as the map's colours
+   * are. Read them again after a theme change or a blend move.
+   */
+  getRouteInks(): TileflowRouteInks;
   /** The value a style state was set to last, or undefined when it has not been set. */
   getState(name: string): TileflowStyleStateValue | undefined;
   /**
@@ -353,6 +434,8 @@ export function createTileflowThemeController(options: {
   const timeoutMs = normalizeThemeTransitionTimeout(options.timeoutMs);
   const defaultTransition = normalizeThemeTransitionDuration(options.transition);
   const styleIdentities = new WeakMap<object, number>();
+  // The route inks of each blended theme, in blend order, by the blend's plan.
+  const blendRouteInks = new WeakMap<TileflowThemeBlendPlan, readonly TileflowRouteInks[]>();
   let nextStyleIdentity = 0;
   let current = options.initial;
   let shown: Shown = {style: options.initial.style};
@@ -429,6 +512,16 @@ export function createTileflowThemeController(options: {
     },
     getEmphasis() {
       return emphasis;
+    },
+    getRouteInks() {
+      const scheme = current.colorScheme === 'dark' ? 'dark' : 'light';
+      const blended = activeBlend && blendRouteInks.get(activeBlend.plan);
+      if (activeBlend && blended)
+        return tileflowRouteInksAt(blended, activeBlend.blender.position) ?? blended[0]!;
+      return tileflowStyleRouteInks(
+        typeof current.style === 'string' ? shownStyleDocument() : current.style,
+        scheme,
+      );
     },
     getState(name) {
       return typeof name === 'string' ? states.get(name.trim())?.value : undefined;
@@ -557,6 +650,17 @@ export function createTileflowThemeController(options: {
     );
   }
 
+  // The style document the map shows, for a theme given by URL.
+  function shownStyleDocument(): {metadata?: unknown} | undefined {
+    const getStyle = options.map.getStyle;
+    if (typeof getStyle !== 'function') return undefined;
+    try {
+      return (getStyle as () => {metadata?: unknown} | undefined).call(options.map);
+    } catch {
+      return undefined;
+    }
+  }
+
   async function prepareBlend(
     themes: readonly TileflowRuntimeStyle[],
   ): Promise<TileflowThemeBlendPlan> {
@@ -573,6 +677,12 @@ export function createTileflowThemeController(options: {
     ]);
     const plan = planTileflowThemeBlend(styles);
     images?.assertBlend(plan.images);
+    blendRouteInks.set(
+      plan,
+      styles.map((style, index) =>
+        tileflowStyleRouteInks(style, themes[index]!.colorScheme === 'dark' ? 'dark' : 'light'),
+      ),
+    );
     return plan;
   }
 

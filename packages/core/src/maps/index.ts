@@ -28,6 +28,7 @@ export {
   type TileflowMapDesign,
   type TileflowMapIdentity,
   type TileflowMapScene,
+  type TileflowMapShot,
   type TileflowMapTooling,
   type TileflowStandaloneMap,
 } from './types';

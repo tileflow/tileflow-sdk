@@ -3,6 +3,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {format, resolveConfig} from 'prettier';
 import {z} from 'zod';
 import {tileflowCaptureSceneSchema} from '../src/capture-scene';
+import {tileflowCaptureShotLimits, tileflowCaptureShotSchema} from '../src/capture-shot';
 import {tileflowDataExpressionLimits} from '../src/cartography/data-expression';
 import {tileflowRenderStackLimits} from '../src/cartography/render-stack';
 import {tileflowSemanticFieldNames} from '../src/cartography/semantic-bindings';
@@ -20,6 +21,7 @@ type JsonSchema = Record<string, unknown>;
 const authoringMapReference = '#/$defs/TileflowAuthoringMap';
 const resolvedMapReference = '#/$defs/ResolvedTileflowMap';
 const mapSceneReference = '#/$defs/TileflowMapScene';
+const mapShotReference = '#/$defs/TileflowMapShot';
 const dataExpressionReference = '#/$defs/TileflowDataExpression';
 const expressionAstReferences = {
   color: '#/$defs/TileflowDataExpressionColor',
@@ -42,11 +44,21 @@ export function createTileflowConfigReference(): JsonSchema {
     }) as JsonSchema,
     'scene_',
   );
+  const generatedMapShot = namespaceLocalDefinitions(
+    z.toJSONSchema(tileflowCaptureShotSchema, {
+      io: 'input',
+      reused: 'ref',
+      unrepresentable: 'any',
+    }) as JsonSchema,
+    'shot_',
+  );
   enforceExactTuples(generatedResolvedMap);
   enforceExactTuples(generatedMapScene);
+  enforceExactTuples(generatedMapShot);
   enrichDataExpressionSchemas(generatedResolvedMap);
   enrichResolvedMapReference(generatedResolvedMap);
   enrichCaptureSceneReference(generatedMapScene);
+  enrichCaptureShotReference(generatedMapShot);
 
   const definitions = asRecord(generatedResolvedMap.$defs, 'resolved map definitions');
   if (Object.hasOwn(definitions, 'TileflowReset')) {
@@ -55,6 +67,7 @@ export function createTileflowConfigReference(): JsonSchema {
   definitions.TileflowReset = resetSchema;
   definitions.TileflowRemove = removeSchema;
   const sceneDefinitions = asOptionalRecord(generatedMapScene.$defs, 'capture scene definitions');
+  const shotDefinitions = asOptionalRecord(generatedMapShot.$defs, 'capture shot definitions');
   const properties = asRecord(generatedResolvedMap.properties, 'resolved map properties');
   const modulesReference = asRecord(properties.modules, 'modules schema').$ref;
   if (typeof modulesReference !== 'string') {
@@ -144,6 +157,8 @@ export function createTileflowConfigReference(): JsonSchema {
     ...captureSceneSchema
   } = generatedMapScene;
   const mapSceneSchema = omitRequiredProperty(captureSceneSchema, 'map', 'capture scene');
+  const {$schema: _shotDialect, $defs: _shotDefinitions, ...captureShotSchema} = generatedMapShot;
+  const mapShotSchema = omitRequiredProperty(captureShotSchema, 'map', 'capture shot');
   const authoringModulesReference = '#/$defs/TileflowAuthoringModules';
   const sharedAuthoringProperties = {
     ...properties,
@@ -167,7 +182,16 @@ export function createTileflowConfigReference(): JsonSchema {
     propertyNames: properties.id,
     additionalProperties: {$ref: mapSceneReference},
   };
-  const authoringProperties = {...sharedAuthoringProperties, scenes: scenesSchema};
+  const shotsSchema = {
+    type: 'object',
+    propertyNames: properties.id,
+    additionalProperties: {$ref: mapShotReference},
+  };
+  const authoringProperties = {
+    ...sharedAuthoringProperties,
+    scenes: scenesSchema,
+    shots: shotsSchema,
+  };
   const exclusiveTextProviders = {not: {required: ['fonts', 'glyphs']}};
   const standaloneMapSchema = {
     description:
@@ -197,7 +221,7 @@ export function createTileflowConfigReference(): JsonSchema {
     schemaVersion: 4,
     kind: 'tileflow.config.reference',
     authority:
-      '@tileflow/core resolvedTileflowMapSchema and tileflowCaptureSceneSchema (input); authoring branches are generated from their shared fields',
+      '@tileflow/core resolvedTileflowMapSchema, tileflowCaptureSceneSchema, and tileflowCaptureShotSchema (input); authoring branches are generated from their shared fields',
     description:
       'Generated machine-readable reference for writing and inspecting one singular Tileflow map. The document root is the authoring schema.',
     'x-tileflow-refinement-contract':
@@ -209,12 +233,12 @@ export function createTileflowConfigReference(): JsonSchema {
         role: 'tileflow.config.ts default export',
         schemaRef: authoringMapReference,
         description:
-          'A complete map omits extends; an inherited map references exactly one imported map object. Scenes belong only to the leaf definition.',
+          'A complete map omits extends; an inherited map references exactly one imported map object. Scenes and shots belong only to the leaf definition.',
       },
       resolved: {
         role: 'validate, inspect, build, and compiler input after inheritance',
         schemaRef: resolvedMapReference,
-        description: 'Standalone map with a required name, without extends or scenes.',
+        description: 'Standalone map with a required name, without extends, scenes, or shots.',
       },
     },
     expressions: {
@@ -236,6 +260,11 @@ export function createTileflowConfigReference(): JsonSchema {
           'Leaf-owned capture scene. Its map id is implicit from the containing map and must not be declared.',
         ...mapSceneSchema,
       },
+      TileflowMapShot: {
+        description:
+          'Leaf-owned timed capture shot. Its map id is implicit from the containing map and must not be declared.',
+        ...mapShotSchema,
+      },
       TileflowAuthoringModules: {
         additionalProperties: false,
         description:
@@ -245,12 +274,13 @@ export function createTileflowConfigReference(): JsonSchema {
       },
       ResolvedTileflowMap: {
         description:
-          'Standalone compiler input after inheritance. Tooling scenes and extends are no longer present.',
+          'Standalone compiler input after inheritance. Tooling scenes, shots, and extends are no longer present.',
         ...resolvedMapSchema,
         ...exclusiveTextProviders,
       },
       ...definitions,
       ...sceneDefinitions,
+      ...shotDefinitions,
     },
   };
 }
@@ -1802,6 +1832,59 @@ function enrichCaptureSceneReference(schema: JsonSchema): void {
   );
   selector.pattern = '.*\\S.*';
   selector.description = 'Non-empty CSS selector after trimming surrounding whitespace.';
+}
+
+function enrichCaptureShotReference(schema: JsonSchema): void {
+  enrichIdentifierConstraints(schema);
+  schema['x-tileflow-refinements'] = [
+    {
+      path: 'keyframes',
+      rule: 'The first keyframe is at 0 and each later keyframe is at a strictly greater time.',
+    },
+    {
+      path: 'keyframes[*].blend',
+      rule: 'Either every keyframe or none declares blend; every blend lists the same themes in the same order.',
+    },
+    {
+      path: 'keyframes',
+      rule: `floor(lastKeyframe.at * fps / 1000) + 1 <= ${tileflowCaptureShotLimits.maximumFrames} frames; fps defaults to ${tileflowCaptureShotLimits.defaultFps}.`,
+    },
+  ];
+  const properties = asRecord(schema.properties, 'capture shot properties');
+  const viewport = dereferenceSchema(
+    schema,
+    asRecord(properties.viewport, 'capture shot viewport'),
+    'capture shot viewport',
+  );
+  viewport.description =
+    'Logical viewport. Physical width and height (logical dimension multiplied by dpr) are each at most 4096.';
+  viewport.allOf = [
+    {
+      if: {properties: {dpr: {const: 2}}, required: ['dpr']},
+      then: {properties: {height: {maximum: 2048}, width: {maximum: 2048}}},
+    },
+  ];
+  const keyframes = dereferenceSchema(
+    schema,
+    asRecord(properties.keyframes, 'capture shot keyframes'),
+    'capture shot keyframes',
+  );
+  const keyframe = dereferenceSchema(
+    schema,
+    asRecord(keyframes.items, 'capture shot keyframe'),
+    'capture shot keyframe',
+  );
+  const blend = dereferenceSchema(
+    schema,
+    asRecord(asRecord(keyframe.properties, 'capture shot keyframe properties').blend, 'blend'),
+    'capture shot blend',
+  );
+  blend.description =
+    'Theme blend at this keyframe: distinct concrete themes of the map, in blend order, and a position from 0 to themes.length - 1.';
+  blend['x-tileflow-refinements'] = [
+    {path: 'themes', rule: 'Themes are distinct.'},
+    {path: 'position', rule: 'position <= themes.length - 1'},
+  ];
 }
 
 function enforceExactTuples(schema: JsonSchema): void {

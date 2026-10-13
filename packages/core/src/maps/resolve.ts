@@ -56,6 +56,7 @@ export const tileflowMapMergeStrategies = {
   overlays: 'keyed-resources',
   projection: 'atomic',
   scenes: 'leaf',
+  shots: 'leaf',
   sources: 'keyed-resources',
   systemThemes: 'atomic',
   terrain: 'atomic',

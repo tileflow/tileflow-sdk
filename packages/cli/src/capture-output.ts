@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto';
-import {lstat, mkdir, open, readFile, rename, unlink} from 'node:fs/promises';
-import {basename, dirname, relative, resolve, sep} from 'node:path';
+import {lstat, mkdir, open, readdir, readFile, rename, rm, unlink} from 'node:fs/promises';
+import {basename, dirname, join, relative, resolve, sep} from 'node:path';
 
 const maximumAtomicArtifactBytes = 256 * 1024 * 1024;
 
@@ -204,6 +204,167 @@ export async function writeAtomicFile(input: WriteAtomicFileInput): Promise<bool
   } finally {
     await removeOptional(temporary);
   }
+}
+
+const shotFrameFilePattern = /^frame-\d{4}\.png$/u;
+
+/** Frame files are numbered from zero with four digits, in frame order. */
+export function shotFrameFileName(index: number): string {
+  return `frame-${String(index).padStart(4, '0')}.png`;
+}
+
+/** A sibling directory that receives a shot's frames while it renders. */
+export type StagedShotFrameDirectory = {
+  readonly boundaryPath: string;
+  readonly directory: string;
+  readonly staging: string;
+  write(index: number, png: Uint8Array): Promise<void>;
+  discard(): Promise<void>;
+};
+
+export type CommitShotFrameDirectoryInput = {
+  force: boolean;
+  managed: boolean;
+  receipt: string;
+  receiptPath: string;
+  stage: StagedShotFrameDirectory;
+};
+
+/** Creates a staging directory beside the frame output, so frames need not stay in memory. */
+export async function stageShotFrameDirectory(input: {
+  boundaryPath: string;
+  directory: string;
+}): Promise<StagedShotFrameDirectory> {
+  const boundaryPath = resolve(input.boundaryPath);
+  const directory = resolve(input.directory);
+  await assertNoSymlinkComponents(dirname(directory), boundaryPath);
+  await listShotFrameDirectory(directory);
+  await mkdir(dirname(directory), {recursive: true});
+  await assertNoSymlinkComponents(dirname(directory), boundaryPath);
+  const staging = temporarySibling(directory, `${process.pid}.${randomUUID()}`, 'frames');
+  await mkdir(staging);
+  return {
+    boundaryPath,
+    directory,
+    staging,
+    write: (index, png) => writeSyncedExclusive(join(staging, shotFrameFileName(index)), png),
+    discard: () => rm(staging, {force: true, recursive: true}),
+  };
+}
+
+/**
+ * Installs staged frames and their receipt together. An existing frame directory may contain only
+ * Tileflow frame files; it is replaced as a whole, so frames left from a longer shot disappear.
+ */
+export async function commitShotFrameDirectory(
+  input: CommitShotFrameDirectoryInput,
+): Promise<boolean> {
+  const {stage} = input;
+  const receiptPath = resolve(input.receiptPath);
+  const receipt = new TextEncoder().encode(input.receipt);
+  await assertNoSymlinkComponents(dirname(stage.directory), stage.boundaryPath);
+  await assertNoSymlinkComponents(dirname(receiptPath), stage.boundaryPath);
+  await assertNotSymlink(receiptPath);
+  const existingFrames = await listShotFrameDirectory(stage.directory);
+  const existingReceipt = await readOptional(receiptPath);
+
+  if (
+    existingFrames &&
+    existingReceipt &&
+    Buffer.from(existingReceipt).equals(Buffer.from(receipt)) &&
+    (await sameShotFrames(stage.directory, existingFrames, stage.staging))
+  ) {
+    await stage.discard();
+    return false;
+  }
+  if ((existingFrames || existingReceipt) && !input.managed && !input.force) {
+    throw new Error(
+      'Shot output already exists with different contents. Use --force to replace it.',
+    );
+  }
+
+  const transaction = `${process.pid}.${randomUUID()}`;
+  const receiptTemporary = temporarySibling(receiptPath, transaction, 'new');
+  const directoryBackup = temporarySibling(stage.directory, transaction, 'previous');
+  const receiptBackup = temporarySibling(receiptPath, transaction, 'previous');
+  const state = {
+    directoryBackedUp: false,
+    directoryInstalled: false,
+    receiptBackedUp: false,
+    receiptInstalled: false,
+  };
+
+  try {
+    await writeSyncedExclusive(receiptTemporary, receipt);
+    await syncDirectory(stage.staging);
+    if (existingFrames) {
+      await rename(stage.directory, directoryBackup);
+      state.directoryBackedUp = true;
+    }
+    if (existingReceipt) {
+      await rename(receiptPath, receiptBackup);
+      state.receiptBackedUp = true;
+    }
+    await rename(stage.staging, stage.directory);
+    state.directoryInstalled = true;
+    await rename(receiptTemporary, receiptPath);
+    state.receiptInstalled = true;
+    await syncDirectory(dirname(stage.directory));
+    if (dirname(receiptPath) !== dirname(stage.directory))
+      await syncDirectory(dirname(receiptPath));
+  } catch (error) {
+    // Restore the previous pair; a backup that cannot be restored stays beside it for recovery.
+    if (state.receiptInstalled) await removeOptional(receiptPath).catch(() => undefined);
+    if (state.receiptBackedUp) await rename(receiptBackup, receiptPath).catch(() => undefined);
+    if (state.directoryInstalled) {
+      await rename(stage.directory, stage.staging).catch(() => undefined);
+    }
+    if (state.directoryBackedUp) {
+      await rename(directoryBackup, stage.directory).catch(() => undefined);
+    }
+    throw error;
+  } finally {
+    await removeOptional(receiptTemporary).catch(() => undefined);
+  }
+
+  await Promise.allSettled([
+    rm(directoryBackup, {force: true, recursive: true}),
+    removeOptional(receiptBackup),
+  ]);
+  return true;
+}
+
+async function listShotFrameDirectory(directory: string): Promise<string[] | undefined> {
+  const info = await lstatOptional(directory);
+  if (!info) return undefined;
+  if (info.isSymbolicLink()) throw new Error('Capture output cannot be a symbolic link.');
+  if (!info.isDirectory()) throw new Error('Shot frame output must be a directory.');
+  const entries = await readdir(directory, {withFileTypes: true});
+  if (entries.some((entry) => !entry.isFile() || !shotFrameFilePattern.test(entry.name))) {
+    throw new Error(
+      'Shot frame output contains files that are not Tileflow frames. Choose an empty or Tileflow-owned directory.',
+    );
+  }
+  return entries.map((entry) => entry.name).sort();
+}
+
+async function sameShotFrames(
+  directory: string,
+  names: readonly string[],
+  staging: string,
+): Promise<boolean> {
+  const staged = (await readdir(staging)).sort();
+  if (staged.length !== names.length || staged.some((name, index) => name !== names[index])) {
+    return false;
+  }
+  for (const name of names) {
+    const [existing, next] = await Promise.all([
+      readOptional(join(directory, name)),
+      readOptional(join(staging, name)),
+    ]);
+    if (!existing || !next || !Buffer.from(existing).equals(Buffer.from(next))) return false;
+  }
+  return true;
 }
 
 export function captureReceiptPath(outputPath: string): string {

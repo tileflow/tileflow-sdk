@@ -11,6 +11,11 @@ import {
   tileflowHostedSourceLimit,
 } from '../overlays';
 import {parseResolvedTileflowMap} from '../resolved-map-schema';
+import {
+  resolveTileflowRouteInks,
+  tileflowRouteMetadata,
+  tileflowRouteMetadataKey,
+} from '../route-inks';
 import {compileTerrainContributions, resolveTerrain} from '../terrain';
 import {parseTileflowLineBackgroundFontStack} from '../text-background';
 import {
@@ -525,6 +530,7 @@ function compileSemanticStyleInternal(
       ...(atmosphere ? {[tileflowAtmosphereMetadataKey]: {version: 1, ...atmosphere}} : {}),
       'tileflow:theme': selected.name,
       'tileflow:colorScheme': resolvedTheme.colorScheme,
+      [tileflowRouteMetadataKey]: tileflowRouteMetadata(resolveTileflowRouteInks(resolvedTheme)),
       'tileflow:data': data.identity,
       'tileflow:sources': sourceIdentities,
       ...(Object.keys(loweredOverlays.identities).length > 0

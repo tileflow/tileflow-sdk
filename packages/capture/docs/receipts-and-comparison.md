@@ -24,6 +24,14 @@ than normalize uppercase, whitespace, another generation, or an incomplete bound
 Receipt-only tooling can import these contracts from `@tileflow/capture/receipt` without loading the
 Playwright capture runtime.
 
+`createTileflowShotReceipt`, `parseTileflowShotReceipt`, `validateTileflowShotReceipt`, and
+`serializeTileflowShotReceipt` implement the separate schema-version-1 shot receipt, identified by
+`kind: "shot"` and bounded to 64 KiB. It records the shot and its theme and blend styles, timing,
+dimensions, renderer, platform, data identity, and two hashes: `frames.sha256`, computed from every
+frame's PNG SHA-256 in order, identifies the rendered pixels, and `output.sha256` identifies the
+written WebM file or, for the `frames` output, equals `frames.sha256`. The still-receipt parser
+rejects shot receipts, and the shot-receipt parser rejects still receipts.
+
 The following comparison fragments assume captures and PNG/receipt bytes that the caller has
 already loaded and validated. See the package README for a complete baseline-file example.
 

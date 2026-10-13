@@ -113,6 +113,26 @@ not ease smoothly. States are written again after every new style, so they stay 
 `setTheme` and `setBlend`. A map without global state (MapLibre GL JS before 5.6) fails the call.
 Framework adapters do not expose it yet.
 
+It also returns route inks: `getRouteInks()` reads the resolved `route.*` tokens that the compiler
+publishes in each style's `tileflow:route` metadata, or the colour scheme's defaults for a style
+without them, and mixes them in OKLab between the neighbouring themes of a blend at its position.
+`createTileflowLineProgress(map, {layers})` is independent of the controller: it owns the
+`line-gradient` and `line-opacity` of the application's own line layers, writes only changed
+values, paints a layer again when a style change re-creates it, and shows targets at once under
+reduced motion.
+
+`tileflowGroundBeforeId(map)` names the layer that application layers lying on the ground go
+before: the first 3D layer (a fill extrusion, or a custom layer drawn in 3D) from the style's
+`above-roads` overlay placement to its `above-buildings` placement, else `above-buildings`; without
+placements, the first 3D layer or the first symbol layer. MapLibre draws a 2D layer after a 3D layer
+without depth testing, so only this position lets buildings hide a route.
+`createTileflowGroundLayers(map, {layers, occludedOpacity})` keeps a group of 2D layers there: it
+restores dropped layers after style changes with the paint and layout written through it, moves
+the group under a 3D layer that lands above it, and leaves layers it does not own in place. A line
+with an occluded opacity gets a copy over the last 3D layer, with the id suffix `:occluded`, at its
+`line-opacity` times that opacity. A renderer that draws lines with depth testing and an occlusion
+opacity of its own would replace the copies without changing this API.
+
 ## Renderer loading boundary
 
 React, Vue, and Svelte import MapLibre declarations as types only. Their executable entrypoints

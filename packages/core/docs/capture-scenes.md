@@ -34,3 +34,7 @@ external fixtures may identify their explicit revision.
 Every exact World V1 release ID is already canonical at the producer boundary: 12–128 characters
 matching `^world-v1-[a-z0-9][a-z0-9._-]*[a-z0-9]$`. Core validates the literal value and never trims,
 lowercases, or upgrades it to another World generation.
+
+To record a timed camera move instead of one image, commit a
+[capture shot](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-shots.md)
+and render it with `tileflow capture --shot <name>`.

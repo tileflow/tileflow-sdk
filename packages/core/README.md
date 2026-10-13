@@ -69,7 +69,7 @@ Omitted fields inherit, but declaring a field does not imply a recursive merge:
 - `fonts` and `glyphs` are mutually exclusive text providers. Declaring either replaces the inherited
   provider. `atmosphere`, `data`, `projection`, `terrain`, and `marine` are also atomic.
 
-Identity (`id`, `name`, `version`) and tooling `scenes` belong to the leaf map and do not inherit.
+Identity (`id`, `name`, `version`) and tooling `scenes` and `shots` belong to the leaf map and do not inherit.
 Module object order does not determine rendering order. See the
 [map inheritance contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/map-inheritance.md)
 for the complete merge rules.
@@ -150,6 +150,10 @@ values a theme interpolates on them move smoothly; see
 For application-drawn RGBA symbols, it also manages fixed-size
 [dynamic style images](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/dynamic-style-images.md),
 including state refresh, theme changes and restoration without changing layer placement.
+Applications draw their own routes in the theme's inks, read with `getRouteInks()`, and draw them
+on with `createTileflowLineProgress`. `createTileflowGroundLayers` keeps them under 3D buildings,
+which hide them where they stand in front, and can show the hidden stretches faintly; see
+[route drawing](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/route-drawing.md).
 
 The semantic domains are `land`, `water`, `nautical`, `roads`, `buildings`, `boundaries`, `labels`,
 `poi`, `aeroways`, `transit`, `vegetation`, `addresses`, and `landforms`. Style stable geographic
@@ -243,6 +247,15 @@ standalone capture apply the browser effect automatically. Direct MapLibre integ
 `attachTileflowAtmosphere(map)` from `@tileflow/core/browser`. See
 [globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md).
 
+Applications that need the map's data themselves, such as streets to route over or the place
+under the camera, read chosen layers of a vector source for an area at a fixed zoom with
+`createTileflowTileReader` from `@tileflow/core/browser`, which also runs in a module worker. See
+[application tile reading](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/application-tile-reading.md).
+
+In a 3D scene, `createTileflowDepthMarkers` from `@tileflow/core/browser` draws application markers
+that nearer buildings hide, facing the viewer or lying on the ground. See
+[depth markers](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/depth-markers.md).
+
 A map with text must declare exactly one text provider. Streets, Ferraris, Härad, Soundings,
 and Blueprint use URL glyph providers. Baedeker and Siegfried use packaged Cormorant
 fonts, and Cívica uses its packaged lettering. Hosted deployment currently rejects
@@ -268,13 +281,18 @@ revision; prefer the installed copy when working with an older release.
 - [Authoring model](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/authoring-model.md)
 - [Shared visual primitives](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/shared-visual-primitives.md)
 - [Compiled-style performance](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/compiled-style-performance.md)
+- [Camera moves and the tile cache](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/camera-moves-and-tile-cache.md)
 - [Themes and module styles](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/themes-and-module-styles.md)
 - [Theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md)
 - [Map emphasis](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-emphasis.md)
 - [Style states](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/style-states.md)
+- [Route drawing](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/route-drawing.md)
 - [Data is separate from design](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/data-is-separate-from-design.md)
 - [Capture scenes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-scenes.md)
+- [Capture shots](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-shots.md)
 - [Public API and browser subpath](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/public-api-and-browser-subpath.md)
+- [Application tile reading](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/application-tile-reading.md)
+- [Depth markers](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/depth-markers.md)
 - [Hosted session authorization](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/hosted-session-authorization.md)
 - [Native resource URLs](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-resource-urls.md)
 - [Native artifact profile](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-artifact-profile.md)

@@ -1,4 +1,5 @@
 import type {TileflowCaptureScene} from './capture-scene';
+import type {TileflowCaptureShot} from './capture-shot';
 import {
   compileSemanticStyle,
   compileSemanticStyleWithInspection,
@@ -74,6 +75,7 @@ export type TileflowBuildCatalog = {
   maps: Record<string, ResolvedTileflowMap>;
   mapMetadata?: Record<string, TileflowCompiledMapMetadata>;
   scenes?: Record<string, TileflowCaptureScene>;
+  shots?: Record<string, TileflowCaptureShot>;
 };
 
 /** Complete compiled style family, addressed first by logical map and then by theme name. */

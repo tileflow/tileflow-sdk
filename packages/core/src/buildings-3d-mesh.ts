@@ -12,6 +12,55 @@ export const tileflowBuildingVertexBytes = 28;
 
 /** World's `building_tone`, which the renderer uses to choose the buildings it flood-lights. */
 const tones: Readonly<Record<string, number>> = {commercial: 1, active: 2, destination: 3};
+/** World's `night_use`: the strongest night use of the places a building holds. */
+const nightUses: Readonly<Record<string, number>> = {dining: 1, entertainment: 2, nightlife: 3};
+/**
+ * The night use of a place from its type, as World's `night_use` ranks it, for tiles whose buildings
+ * do not carry it: bars and clubs, then theatres and cinemas, then places to eat.
+ */
+const placeNightUses: Readonly<Record<string, number>> = {
+  ...Object.fromEntries(
+    [
+      'alcoholic_beverage_venue',
+      'bar',
+      'beer',
+      'biergarten',
+      'brewery',
+      'casino',
+      'cocktail_bar',
+      'dance_club',
+      'karaoke',
+      'lounge',
+      'music_venue',
+      'night_club',
+      'nightclub',
+      'pub',
+      'wine_bar',
+    ].map((type) => [type, 3]),
+  ),
+  ...Object.fromEntries(
+    [
+      'arts_centre',
+      'bowling_alley',
+      'cinema',
+      'comedy_club',
+      'concert_hall',
+      'movie_theater',
+      'opera',
+      'performing_arts_venue',
+      'theater',
+      'theatre',
+      'theatre_venue',
+    ].map((type) => [type, 2]),
+  ),
+  ...Object.fromEntries(
+    ['casual_eatery', 'fast_food', 'fast_food_restaurant', 'food_court', 'restaurant'].map(
+      (type) => [type, 1],
+    ),
+  ),
+};
+// A place this close to a building it is not inside, in metres, stands on its facade.
+const facadeReach = 6;
 // Where two walls meet at less than 150° in the open air, the corner is tight: the sine of the turn.
 const cornerTurn = 0.5;
 
@@ -20,6 +69,12 @@ export type TileflowBuildingMeshOptions = Readonly<{
   tileMetres: number;
   /** Height used where a building has none, in metres; defaults to 5, World's own fallback. */
   defaultHeight?: number;
+  /**
+   * The tile's places (World's `poi` layer), for the night use of buildings when the tile's
+   * buildings do not carry World's `night_use`: a place inside a building, or on its facade, gives
+   * the building its use.
+   */
+  places?: TileflowTileLayer;
 }>;
 
 /** One tile's buildings, ready to upload. */
@@ -36,12 +91,14 @@ export type TileflowBuildingMesh = Readonly<{
 
 /**
  * Meshes the buildings of one decoded tile layer, or returns undefined when it has none. It reads
- * World's `render_height`, `render_min_height`, `hide_3d` and `building_tone`. Vertex layout:
+ * World's `render_height`, `render_min_height`, `hide_3d`, `building_tone` and `night_use`. Vertex layout:
  * 0 position in the tile, 0 to 8192 (uint16 ×2); 4 base and top in decimetres (uint16 ×2); 8 the
  * wall's outward normal (int8 ×2, normalised); 10 raised to the top, part of a wall (uint8 ×2);
  * 12 decimetres along the wall (uint16); 14 a per-building jitter and seed (uint8 ×2, normalised);
- * 16 the building's centre in the tile (uint16 ×2); 20 tone and reserved (uint8 ×2); 22 the wall's
- * tight corners, bit 0 at its start and bit 1 at its end, and its length in metres up to 255
+ * 16 the building's centre in the tile (uint16 ×2); 20 tone and night use (uint8 ×2: none, dining,
+ * entertainment, nightlife); 22 the wall's
+ * tight corners, bit 0 at its start and bit 1 at its end, and bit 2 when it faces a courtyard, and
+ * its length in metres up to 255
  * (uint8 ×2); 24 the building's feature index (uint16) and 26 reserved (uint16).
  */
 export function meshTileflowBuildings(
@@ -55,8 +112,9 @@ export function meshTileflowBuildings(
   const walls = new IndexWriter();
   const features: Readonly<Record<string, string | number | boolean>>[] = [];
   let tallest = 0;
+  const uses = nightUsesOf(layer, options);
 
-  for (const feature of layer.features) {
+  for (const [featureIndex, feature] of layer.features.entries()) {
     if (feature.type !== 'Polygon' || features.length >= 65535) continue;
     const properties = feature.properties;
     const hidden = properties.hide_3d;
@@ -64,6 +122,7 @@ export function meshTileflowBuildings(
     const height = Math.min(6000, positive(properties.render_height) ?? fallback);
     const base = Math.min(height, positive(properties.render_min_height) ?? 0);
     const tone = tones[String(properties.building_tone ?? '')] ?? 0;
+    const use = uses.get(featureIndex) ?? 0;
     const index = features.length;
     let used = false;
     // A little of each building's own timing, the same for every piece of it a tile edge cuts.
@@ -75,7 +134,7 @@ export function meshTileflowBuildings(
       tallest = Math.max(tallest, height);
       const [cx, cy] = centroid(rings[0]!);
       const seed = hash(cx * 0.0731 + cy * 0.19137 + index * 1.618);
-      const building: Building = {base, top: height, jitter, seed, tone, cx, cy, index};
+      const building: Building = {base, top: height, jitter, seed, tone, use, cx, cy, index};
 
       // The roof.
       const flat: number[] = [];
@@ -121,7 +180,7 @@ export function meshTileflowBuildings(
           const normalX = (-(by - ay) / length) * outward;
           const normalY = ((bx - ax) / length) * outward;
           const metres = (length / tileflowBuildingExtent) * options.tileMetres;
-          const corners = (tight(at) ? 1 : 0) | (tight(at + 1) ? 2 : 0);
+          const corners = (tight(at) ? 1 : 0) | (tight(at + 1) ? 2 : 0) | (ringIndex > 0 ? 4 : 0);
           const v = vertices.write(
             building,
             ax,
@@ -163,6 +222,7 @@ type Building = {
   jitter: number;
   seed: number;
   tone: number;
+  use: number;
   cx: number;
   cy: number;
   index: number;
@@ -208,7 +268,7 @@ class VertexWriter {
     view.setUint16(at + 16, clampUnit(building.cx), true);
     view.setUint16(at + 18, clampUnit(building.cy), true);
     view.setUint8(at + 20, building.tone);
-    view.setUint8(at + 21, 0);
+    view.setUint8(at + 21, building.use);
     view.setUint8(at + 22, corners);
     view.setUint8(at + 23, Math.min(255, Math.round(length)));
     view.setUint16(at + 24, building.index, true);
@@ -238,6 +298,94 @@ class IndexWriter {
   values(): Uint32Array {
     return this.#array.subarray(0, this.length);
   }
+}
+
+/**
+ * Each building's night use by its index in the layer: World's `night_use` when the tile's buildings
+ * carry it, or else the strongest use of the places inside each building or on its facade.
+ */
+function nightUsesOf(
+  layer: TileflowTileLayer,
+  options: TileflowBuildingMeshOptions,
+): Map<number, number> {
+  const uses = new Map<number, number>();
+  if (layer.features.some((feature) => feature.properties.night_use !== undefined)) {
+    for (const [index, feature] of layer.features.entries()) {
+      const use = nightUses[String(feature.properties.night_use ?? '')];
+      if (use) uses.set(index, use);
+    }
+    return uses;
+  }
+  const places = options.places;
+  if (!places || places.features.length === 0) return uses;
+  const reach = (facadeReach / options.tileMetres) * layer.extent;
+  const shapes: {index: number; rings: readonly (readonly number[])[]; box: number[]}[] = [];
+  for (const [index, feature] of layer.features.entries()) {
+    if (feature.type !== 'Polygon') continue;
+    const hidden = feature.properties.hide_3d;
+    if (hidden === true || hidden === 1 || hidden === '1' || hidden === 'true') continue;
+    const box = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const ring of feature.geometry)
+      for (let at = 0; at + 1 < ring.length; at += 2) {
+        box[0] = Math.min(box[0]!, ring[at]!);
+        box[1] = Math.min(box[1]!, ring[at + 1]!);
+        box[2] = Math.max(box[2]!, ring[at]!);
+        box[3] = Math.max(box[3]!, ring[at + 1]!);
+      }
+    shapes.push({index, rings: feature.geometry, box});
+  }
+  const scale = layer.extent / places.extent;
+  for (const place of places.features) {
+    if (place.type !== 'Point') continue;
+    const properties = place.properties;
+    const use =
+      placeNightUses[String(properties.type ?? '')] ??
+      placeNightUses[String(properties.subclass ?? '')] ??
+      placeNightUses[String(properties.class ?? '')];
+    if (!use) continue;
+    for (const points of place.geometry)
+      for (let at = 0; at + 1 < points.length; at += 2) {
+        const x = points[at]! * scale;
+        const y = points[at + 1]! * scale;
+        let holder: number | undefined;
+        let nearest: number | undefined;
+        let nearestDistance = reach;
+        for (const shape of shapes) {
+          const [left, top, right, bottom] = shape.box;
+          if (x < left! - reach || x > right! + reach || y < top! - reach || y > bottom! + reach)
+            continue;
+          let inside = false;
+          for (const ring of shape.rings) {
+            for (let at = 0, before = ring.length - 2; at + 1 < ring.length; before = at, at += 2) {
+              const ax = ring[before]!;
+              const ay = ring[before + 1]!;
+              const bx = ring[at]!;
+              const by = ring[at + 1]!;
+              if (by > y !== ay > y && x < ((ax - bx) * (y - by)) / (ay - by) + bx)
+                inside = !inside;
+              const dx = bx - ax;
+              const dy = by - ay;
+              const length = dx * dx + dy * dy;
+              const t = length
+                ? Math.min(1, Math.max(0, ((x - ax) * dx + (y - ay) * dy) / length))
+                : 0;
+              const distance = Math.hypot(x - ax - t * dx, y - ay - t * dy);
+              if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearest = shape.index;
+              }
+            }
+          }
+          if (inside) {
+            holder = shape.index;
+            break;
+          }
+        }
+        const building = holder ?? nearest;
+        if (building !== undefined) uses.set(building, Math.max(uses.get(building) ?? 0, use));
+      }
+  }
+  return uses;
 }
 
 function clampUnit(value: number): number {

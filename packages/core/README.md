@@ -159,9 +159,12 @@ returns the sun the map shows with `getSun()`, mixed during a blend, for an appl
 layers, and `setSun()` places it by direction or by the real sun of a date and place; see
 [sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md).
 `createTileflowBuildings3D` raises the map's buildings round the camera and lights them from that
-sun, with shadows on the buildings and the flat map, contact shadow and night flood lights; it shows,
-hides and grows them without laying out any source; see
+sun, with shadows on the buildings and the flat map, contact shadow and night light from the places
+they hold; it shows, hides and grows them without laying out any source; see
 [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md).
+`createTileflowStreetLights` lights the streets as the sun sets, from the lamps and lit streets the
+map's data holds; see
+[street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md).
 
 The semantic domains are `land`, `water`, `nautical`, `roads`, `buildings`, `boundaries`, `labels`,
 `poi`, `aeroways`, `transit`, `vegetation`, `addresses`, and `landforms`. Style stable geographic
@@ -297,6 +300,7 @@ revision; prefer the installed copy when working with an older release.
 - [Route drawing](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/route-drawing.md)
 - [Sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md)
 - [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md)
+- [Street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md)
 - [Data is separate from design](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/data-is-separate-from-design.md)
 - [Capture scenes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-scenes.md)
 - [Capture shots](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-shots.md)

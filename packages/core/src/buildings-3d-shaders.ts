@@ -24,8 +24,8 @@ in vec2 a_flags; // raised to the top; part of a wall
 in float a_along; // decimetres along the wall
 in vec2 a_wave; // the building's jitter; seed
 in vec2 a_centre; // the building's centre in the tile
-in vec2 a_paint; // tone; reserved
-in vec2 a_corners; // the wall's tight corners (bit 0 at its start, bit 1 at its end); its length in metres
+in vec2 a_paint; // tone; night use (none, dining, entertainment, nightlife)
+in vec2 a_corners; // the wall's tight corners (bit 0 at its start, bit 1 at its end) and courtyard (bit 2); its length in metres
 in float a_feature; // the building's feature in the tile
 `;
 
@@ -47,6 +47,29 @@ float elevationOf(float own, float top, float p) {
 
 vec3 localOf(vec2 position, float elevation) {
   return vec3((position + u_offset) * u_metres * vec2(1.0, -1.0), elevation);
+}
+`;
+
+// The light a building gives the street at night. Shops, busy places, landmarks and towers, two in
+// three of them, are flood-lit at their foot in the layer's flood colour. The places busy at night
+// light their ground floor's windows: bars and clubs in a neon of their own or a warm light,
+// theatres and cinemas in a bright marquee white, places to eat in amber.
+const nightLight = `
+uniform vec3 u_flood_colour;
+
+vec3 floodOf(float tone, float top, float seed) {
+  return u_flood_colour * step(0.3, seed) * max(step(0.5, tone), step(25.0, top));
+}
+
+vec3 shopOf(float use, float seed) {
+  if (use > 2.5) {
+    float pick = fract(seed * 7.31);
+    vec3 neon = pick < 0.34 ? vec3(1.0, 0.3, 0.64) : pick < 0.67 ? vec3(0.64, 0.4, 1.0) : vec3(0.3, 0.85, 1.0);
+    return fract(seed * 3.7) < 0.5 ? neon * 1.1 : vec3(1.0, 0.72, 0.44);
+  }
+  if (use > 1.5) return vec3(1.0, 0.88, 0.66) * 1.2;
+  if (use > 0.5) return vec3(1.0, 0.68, 0.38) * 0.9;
+  return vec3(0.0);
 }
 `;
 
@@ -104,7 +127,7 @@ uniform float u_palette_mix;
 ${growth}
 out vec3 v_colour;
 out vec3 v_facade; // metres along the wall, metres up as built, the building's top
-out vec3 v_building; // seed, tone, wall
+out vec4 v_building; // seed, tone, wall, night use
 out vec3 v_normal;
 out vec3 v_shadow;
 flat out vec3 v_wall; // where the wall starts along its ring, its tight corners, its length
@@ -137,7 +160,7 @@ void main() {
     ? mix(paletteColour(u_palette_themes.x), paletteColour(u_palette_themes.y), u_palette_mix)
     : u_colour;
   v_facade = vec3(a_along * 0.1, own, top);
-  v_building = vec3(a_wave.y, a_paint.x, wall);
+  v_building = vec4(a_wave.y, a_paint.x, wall, a_paint.y);
   v_wall = vec3(a_along * 0.1, a_corners);
 }`;
 
@@ -145,7 +168,7 @@ export const tileflowBuildingFragment = `#version 300 es
 precision highp float;
 in vec3 v_colour;
 in vec3 v_facade;
-in vec3 v_building;
+in vec4 v_building;
 in vec3 v_normal;
 in vec3 v_shadow;
 flat in vec3 v_wall;
@@ -157,7 +180,7 @@ uniform float u_corner;
 uniform float u_night; // 0 by day, 1 at night
 uniform float u_windows; // whether to draw night windows
 uniform float u_flood; // flood light strength at night
-uniform vec3 u_flood_colour;
+${nightLight}
 ${shadowLookup}
 out vec4 fragColor;
 
@@ -187,7 +210,8 @@ void main() {
     float along = v_facade.x - v_wall.x;
     float corner = 0.0;
     if (mod(v_wall.y, 2.0) >= 1.0) corner = 1.0 - smoothstep(0.0, u_corner, along);
-    if (v_wall.y >= 2.0) corner = max(corner, 1.0 - smoothstep(0.0, u_corner, v_wall.z - along));
+    if (mod(floor(v_wall.y / 2.0), 2.0) >= 1.0)
+      corner = max(corner, 1.0 - smoothstep(0.0, u_corner, v_wall.z - along));
     colour *= foot * (1.0 - u_occlusion * 0.7 * corner * mix(1.0, 0.5, clamp(up / 30.0, 0.0, 1.0)));
     if (top - up < 0.5) colour *= 1.12;
     if (u_windows > 0.5 && top > 5.5 && up > 3.2 && up < top - 1.0) {
@@ -235,9 +259,19 @@ void main() {
       float useWindows = smoothstep(2.5, 6.0, cells.x) * smoothstep(3.4, 5.0, cells.y);
       colour = mix(mix(wallGlow, strips, useStrips), detailed, useWindows);
     }
-    // Flood lights wash the foot of lit buildings at night: shops, busy places, landmarks, towers.
-    float floodlit = step(0.3, seed) * max(step(0.5, v_building.y), step(25.0, top));
-    colour += u_flood_colour * u_flood * floodlit * 0.42 * (1.0 - smoothstep(0.0, 6.0, up));
+    // Flood lights wash the foot of lit buildings at night.
+    colour += floodOf(v_building.y, top, seed) * u_flood * 0.42 * (1.0 - smoothstep(0.0, 6.0, up));
+    // The places busy at night light their ground floor's windows: panes of about 3.6 m, which far
+    // away give way to their average so nothing shimmers.
+    if (v_building.w > 0.5 && v_wall.z > 3.0 && v_wall.y < 4.0 && u_flood > 0.0) {
+      float pane = v_facade.x / 3.6;
+      float wide = max(fwidth(pane), 1e-3);
+      float across = clamp(min(fract(pane) - 0.1, 0.9 - fract(pane)) / wide + 0.5, 0.0, 1.0);
+      across = mix(across, 0.8, smoothstep(0.3, 0.6, wide));
+      float tall = max(fwidth(up), 1e-3);
+      float rows = clamp(min(up - 0.6, 3.2 - up) / tall + 0.5, 0.0, 1.0);
+      colour = mix(colour, shopOf(v_building.w, seed) * u_flood * 1.2 + colour * 0.15, across * rows * 0.9);
+    }
   }
   fragColor = vec4(colour, 1.0);
 }`;
@@ -273,14 +307,19 @@ ${projected}
 ${attributes}
 uniform float u_band;
 ${growth}
+${nightLight}
 out float v_out;
 out float v_strength;
-out float v_floodlit;
+out vec3 v_flood;
+out vec3 v_shop;
 void main() {
   float base = a_height.x * 0.1;
   float top = a_height.y * 0.1;
   float p = progressOf();
-  v_floodlit = step(0.3, a_wave.y) * max(step(0.5, a_paint.x), step(25.0, top));
+  v_flood = floodOf(a_paint.x, top, a_wave.y);
+  // Shop windows spill a warm light, tinted by their own, a few metres onto the pavement.
+  v_shop = mix(vec3(1.0, 0.76, 0.5), shopOf(a_paint.y, a_wave.y), 0.35) * step(0.5, a_paint.y) *
+    step(a_corners.x, 3.5);
   if (p <= 0.0 || base > 0.5) {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     return;
@@ -294,7 +333,8 @@ export const tileflowBuildingBandFragment = `#version 300 es
 precision highp float;
 in float v_out;
 in float v_strength;
-in float v_floodlit;
+in vec3 v_flood;
+in vec3 v_shop;
 uniform float u_band_strength;
 out vec4 fragColor;
 void main() {
@@ -306,11 +346,12 @@ export const tileflowBuildingFloodFragment = `#version 300 es
 precision highp float;
 in float v_out;
 in float v_strength;
-in float v_floodlit;
+in vec3 v_flood;
+in vec3 v_shop;
 uniform float u_flood;
-uniform vec3 u_flood_colour;
 out vec4 fragColor;
 void main() {
   float near = 1.0 - v_out;
-  fragColor = vec4(u_flood_colour * 0.55 * u_flood * near * near * v_strength * v_floodlit, 0.0);
+  float close = near * near * near * near;
+  fragColor = vec4((v_flood * 0.55 * near * near + v_shop * 0.3 * close) * u_flood * v_strength, 0.0);
 }`;

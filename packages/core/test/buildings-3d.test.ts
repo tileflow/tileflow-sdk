@@ -149,6 +149,95 @@ test('heights fall back to five metres and bases stay under the top', () => {
   assert.equal(second.top, 20);
 });
 
+/** Each building's night use, as the mesh stores it: none, dining, entertainment, nightlife. */
+function usesOf(mesh: NonNullable<ReturnType<typeof meshTileflowBuildings>>) {
+  const uses = new Map<number, number>();
+  for (let index = 0; index < mesh.vertices.length / tileflowBuildingVertexBytes; index += 1) {
+    const view = new DataView(
+      mesh.vertices.buffer,
+      mesh.vertices.byteOffset + index * tileflowBuildingVertexBytes,
+    );
+    uses.set(view.getUint16(24, true), view.getUint8(21));
+  }
+  return [...uses.entries()].sort((a, b) => a[0] - b[0]).map(([, use]) => use);
+}
+
+// Four 1000-unit squares, 500 units apart, in a tile of 4096 units and 4096 metres.
+const row = [
+  [0, 0],
+  [1500, 0],
+  [0, 1500],
+  [1500, 1500],
+].map(([left, top]) => [
+  left!,
+  top!,
+  left! + 1000,
+  top!,
+  left! + 1000,
+  top! + 1000,
+  left!,
+  top! + 1000,
+  left!,
+  top!,
+]);
+const place = (x: number, y: number, type: string) => ({
+  type: 'Point' as const,
+  properties: {type},
+  geometry: [[x + 1000, y + 1000]],
+});
+
+test("buildings take World's night use, or the strongest use of the places inside or on their facade", () => {
+  const places = {
+    extent: 4096,
+    features: [
+      // Inside the first building: a restaurant and a bar, so nightlife.
+      place(500, 500, 'restaurant'),
+      place(400, 600, 'bar'),
+      // Three metres outside the second building's facade: a theatre.
+      place(2000, 1003, 'theatre_venue'),
+      // Twenty metres from the third building: nothing.
+      place(500, 2520, 'restaurant'),
+      // A shop gives no night use to the fourth.
+      place(2000, 2000, 'clothing_store'),
+    ],
+  };
+  const derived = meshTileflowBuildings(layerOf(row.map((ring) => ({geometry: [ring]}))), {
+    tileMetres: 4096,
+    places,
+  });
+  assert.ok(derived);
+  assert.deepEqual(usesOf(derived), [3, 2, 0, 0]);
+
+  // Once the tile's buildings carry `night_use`, the places are not read.
+  const carried = meshTileflowBuildings(
+    layerOf([
+      {geometry: [row[0]!], properties: {night_use: 'dining'}},
+      {geometry: [row[1]!]},
+      {geometry: [row[2]!], properties: {night_use: 'entertainment'}},
+      {geometry: [row[3]!], properties: {night_use: 'nightlife'}},
+    ]),
+    {tileMetres: 4096, places},
+  );
+  assert.ok(carried);
+  assert.deepEqual(usesOf(carried), [1, 0, 2, 3]);
+});
+
+test('walls round a courtyard are marked as facing it', () => {
+  // A 1000-unit square with a 200-unit courtyard, wound anticlockwise.
+  const courtyard = [400, 400, 400, 600, 600, 600, 600, 400, 400, 400];
+  const mesh = meshTileflowBuildings(layerOf([{geometry: [square, courtyard]}]), {
+    tileMetres: 1000,
+  });
+  assert.ok(mesh);
+  const flags: number[] = [];
+  for (let index = 0; index < mesh.vertices.length / tileflowBuildingVertexBytes; index += 1) {
+    const wall = vertex(mesh, index);
+    if (wall.wall) flags.push(wall.corners & 4);
+  }
+  // Four outer walls and four courtyard walls, four vertices each.
+  assert.deepEqual(flags.sort(), [...Array(16).fill(0), ...Array(16).fill(4)]);
+});
+
 test('the sun sees nearer points at a smaller depth and holds the whole box', () => {
   const box = {min: [-500, -500, 0], max: [500, 500, 100]};
   const light = tileflowSunLightMatrix([0, -0.5, 0.866], box);

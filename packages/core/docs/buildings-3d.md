@@ -3,9 +3,9 @@
 `createTileflowBuildings3D` raises the buildings of a Tileflow map's vector tiles round the camera
 and lights them from the theme controller's sun: walls and roofs take the light by how they face
 it, buildings cast shadows on each other and on the flat map, the ground darkens at the foot of the
-walls, and at night flood lights wash the foot of shops, busy places, landmarks and towers. Showing,
-hiding and growing the city lays out no source, so it works as a 3D switch and as an animated
-height.
+walls, and at night flood lights wash the foot of shops, busy places, landmarks and towers while
+the places busy at night light their ground floors. Showing, hiding and growing the city lays out
+no source, so it works as a 3D switch and as an animated height.
 
 It is a custom WebGL2 layer for MapLibre GL JS, drawn above the map's buildings and below its
 labels. It needs WebGL2 and the Mercator projection, which MapLibre's globe turns into from about
@@ -41,7 +41,8 @@ motion changes at once. `dispose()` takes the layer off the map.
 The renderer reads the source's z15 tiles round the camera (z15 is where World's buildings carry
 their heights; a source that stops earlier is read at its own maximum zoom), up to `maxTiles`
 tiles (25 by default), and meshes them a few milliseconds per frame. It reads World's
-`render_height`, `render_min_height`, `hide_3d` and `building_tone`.
+`render_height`, `render_min_height`, `hide_3d`, `building_tone` and `night_use`, and the places in
+World's `poi` layer (see [night light](#night-light)).
 
 ## Light and shadows
 
@@ -59,6 +60,28 @@ and icons drawn above it keep their colours. Layers kept under 3D content with
 Each effect can be turned off: `shadows`, `occlusion` (the band at the foot of the walls and the
 darker tight corners) and `floodLights` default to true. `windows: true` adds invented night
 windows, lit by rooms; they are decoration, not data, and are off by default.
+
+## Night light
+
+At night (as the sun's `brightness` falls), the buildings light the street from data:
+
+- Shops, busy places and landmarks (World's `building_tone`) and towers of 25 m or more, two in
+  three of them, are flood-lit at their foot, on the wall and the ground around it.
+- Buildings that hold places busy at night light the windows of their ground floor and spill their
+  light a few metres onto the pavement: bars and clubs in a neon of their own or a warm light,
+  theatres and cinemas in a bright white, places to eat in amber. A building takes the strongest
+  use of its places, nightlife before entertainment before dining. Walls round a courtyard stay
+  dark.
+
+The night use comes from World's `night_use` on each building. In tiles whose buildings do not
+carry it, the renderer finds it in the tile's places (`placesLayer`, `poi` by default): a place
+inside a building, or within a few metres of its facade, gives the building its use. `floodLights:
+false` turns all of this off.
+
+For the streets themselves, see
+[street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md),
+which draws over the buildings so they hide the lamps behind them; both layers share each tile's
+download.
 
 ## Colours
 

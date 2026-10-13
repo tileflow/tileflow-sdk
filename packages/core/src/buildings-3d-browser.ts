@@ -79,13 +79,13 @@ export type TileflowBuildings3DOptions = Readonly<{
   /** Contact shadow at the foot of the walls and in tight corners; defaults to true. */
   occlusion?: boolean;
   /**
-   * At night, flood light at the foot of shops, busy places and landmarks (World's
-   * `building_tone`) and of towers, on the wall and the ground, and the ground floor windows of
-   * buildings with places busy at night (World's `night_use`) lit and spilling onto the pavement:
-   * bars and clubs in neon or a warm light, theatres and cinemas in white, places to eat in amber.
-   * Defaults to true.
+   * How bright the buildings light the street at night, from 0 (none) to 2; defaults to 1, a quiet
+   * light. Landmarks (World's `building_tone`) and towers are flood-lit at their foot, and buildings
+   * with places busy at night (World's `night_use`) light their ground floor windows and the
+   * pavement in front: bars and clubs in neon or a warm light, theatres and cinemas in white,
+   * places to eat in amber.
    */
-  floodLights?: boolean;
+  nightLight?: number;
   /** Invented night windows, lit by rooms; decoration, not data. Defaults to false. */
   windows?: boolean;
   /** The zoom from which buildings stand; below it they sink into the flat map. Defaults to 14.5. */
@@ -175,7 +175,10 @@ export function createTileflowBuildings3D(
     throw new RangeError('Tileflow 3D buildings maxTiles must be from 1 to 64.');
   const shadowsOn = options.shadows !== false;
   const occlusionOn = options.occlusion !== false;
-  const floodOn = options.floodLights !== false;
+  const nightLight = options.nightLight ?? 1;
+  if (!(nightLight >= 0 && nightLight <= 2))
+    throw new RangeError('Tileflow 3D buildings nightLight must be from 0 to 2.');
+  const floodOn = nightLight > 0;
   const windowsOn = options.windows === true;
 
   let scale = 0;
@@ -631,7 +634,7 @@ export function createTileflowBuildings3D(
     context.uniform1f(u.u_corner!, occlusion.corner);
     context.uniform1f(u.u_night!, light.night);
     context.uniform1f(u.u_windows!, windowsOn ? 1 : 0);
-    context.uniform1f(u.u_flood!, floodOn ? light.night : 0);
+    context.uniform1f(u.u_flood!, light.night * nightLight);
     context.uniform3fv(u.u_flood_colour!, flood.colour);
     setShadow(context, buildings, light.strength);
     for (const {x, y, value: entry} of entries) {
@@ -711,7 +714,7 @@ export function createTileflowBuildings3D(
       context.uniform1f(program.uniforms.u_scale!, shown);
       context.uniform1f(program.uniforms.u_metres!, camera.metres);
       context.uniform1f(program.uniforms.u_band!, flood.reach);
-      context.uniform1f(program.uniforms.u_flood!, light.night);
+      context.uniform1f(program.uniforms.u_flood!, light.night * nightLight);
       context.uniform3fv(program.uniforms.u_flood_colour!, flood.colour);
       walls(program);
     }

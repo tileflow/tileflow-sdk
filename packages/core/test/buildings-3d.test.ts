@@ -310,4 +310,9 @@ test('renderer options are validated', () => {
   assert.throws(() => createTileflowBuildings3D({map: fakeMap(), minzoom: 30}), RangeError);
   assert.throws(() => createTileflowBuildings3D({map: fakeMap(), maxTiles: 0}), RangeError);
   assert.throws(() => createTileflowBuildings3D({map: fakeMap(), maxTiles: 100}), RangeError);
+  assert.throws(() => createTileflowBuildings3D({map: fakeMap(), nightLight: 3}), RangeError);
+  assert.throws(
+    () => createTileflowBuildings3D({map: fakeMap(), nightLight: Number.NaN}),
+    RangeError,
+  );
 });

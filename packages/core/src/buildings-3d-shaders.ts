@@ -50,25 +50,25 @@ vec3 localOf(vec2 position, float elevation) {
 }
 `;
 
-// The light a building gives the street at night. Shops, busy places, landmarks and towers, two in
-// three of them, are flood-lit at their foot in the layer's flood colour. The places busy at night
+// The light a building gives the street at night, kept quiet: landmarks and towers of 40 m or more,
+// one in two, are flood-lit at their foot in the layer's flood colour, and the places busy at night
 // light their ground floor's windows: bars and clubs in a neon of their own or a warm light,
-// theatres and cinemas in a bright marquee white, places to eat in amber.
+// theatres and cinemas in a marquee white, places to eat in amber.
 const nightLight = `
 uniform vec3 u_flood_colour;
 
 vec3 floodOf(float tone, float top, float seed) {
-  return u_flood_colour * step(0.3, seed) * max(step(0.5, tone), step(25.0, top));
+  return u_flood_colour * step(0.5, seed) * max(step(2.5, tone), step(40.0, top));
 }
 
 vec3 shopOf(float use, float seed) {
   if (use > 2.5) {
     float pick = fract(seed * 7.31);
     vec3 neon = pick < 0.34 ? vec3(1.0, 0.3, 0.64) : pick < 0.67 ? vec3(0.64, 0.4, 1.0) : vec3(0.3, 0.85, 1.0);
-    return fract(seed * 3.7) < 0.5 ? neon * 1.1 : vec3(1.0, 0.72, 0.44);
+    return fract(seed * 3.7) < 0.5 ? neon * 0.9 : vec3(1.0, 0.72, 0.44) * 0.85;
   }
-  if (use > 1.5) return vec3(1.0, 0.88, 0.66) * 1.2;
-  if (use > 0.5) return vec3(1.0, 0.68, 0.38) * 0.9;
+  if (use > 1.5) return vec3(1.0, 0.88, 0.66);
+  if (use > 0.5) return vec3(1.0, 0.68, 0.38) * 0.75;
   return vec3(0.0);
 }
 `;
@@ -260,7 +260,7 @@ void main() {
       colour = mix(mix(wallGlow, strips, useStrips), detailed, useWindows);
     }
     // Flood lights wash the foot of lit buildings at night.
-    colour += floodOf(v_building.y, top, seed) * u_flood * 0.42 * (1.0 - smoothstep(0.0, 6.0, up));
+    colour += floodOf(v_building.y, top, seed) * u_flood * 0.3 * (1.0 - smoothstep(0.0, 6.0, up));
     // The places busy at night light their ground floor's windows: panes of about 3.6 m, which far
     // away give way to their average so nothing shimmers.
     if (v_building.w > 0.5 && v_wall.z > 3.0 && v_wall.y < 4.0 && u_flood > 0.0) {
@@ -270,7 +270,7 @@ void main() {
       across = mix(across, 0.8, smoothstep(0.3, 0.6, wide));
       float tall = max(fwidth(up), 1e-3);
       float rows = clamp(min(up - 0.6, 3.2 - up) / tall + 0.5, 0.0, 1.0);
-      colour = mix(colour, shopOf(v_building.w, seed) * u_flood * 1.2 + colour * 0.15, across * rows * 0.9);
+      colour = mix(colour, shopOf(v_building.w, seed) * u_flood + colour * 0.15, across * rows * 0.6 * min(u_flood, 1.0));
     }
   }
   fragColor = vec4(colour, 1.0);
@@ -352,6 +352,6 @@ uniform float u_flood;
 out vec4 fragColor;
 void main() {
   float near = 1.0 - v_out;
-  float close = near * near * near * near;
-  fragColor = vec4((v_flood * 0.55 * near * near + v_shop * 0.3 * close) * u_flood * v_strength, 0.0);
+  float close = near * near * near * near * near * near;
+  fragColor = vec4((v_flood * 0.35 * near * near + v_shop * 0.12 * close) * u_flood * v_strength, 0.0);
 }`;

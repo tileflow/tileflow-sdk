@@ -57,16 +57,17 @@ buildings, it multiplies the ground by the shadows and by a band at the foot of 
 and icons drawn above it keep their colours. Layers kept under 3D content with
 `createTileflowGroundLayers` are darkened with the ground.
 
-Each effect can be turned off: `shadows`, `occlusion` (the band at the foot of the walls and the
-darker tight corners) and `floodLights` default to true. `windows: true` adds invented night
-windows, lit by rooms; they are decoration, not data, and are off by default.
+`shadows` and `occlusion` (the band at the foot of the walls and the darker tight corners) default
+to true and can be turned off. `windows: true` adds invented night windows, lit by rooms; they are
+decoration, not data, and are off by default.
 
 ## Night light
 
-At night (as the sun's `brightness` falls), the buildings light the street from data:
+At night (as the sun's `brightness` falls), the buildings light the street from data, quietly by
+default:
 
-- Shops, busy places and landmarks (World's `building_tone`) and towers of 25 m or more, two in
-  three of them, are flood-lit at their foot, on the wall and the ground around it.
+- Landmarks (World's `building_tone` `destination`) and towers of 40 m or more, one in two, are
+  flood-lit at their foot, on the wall and the ground around it.
 - Buildings that hold places busy at night light the windows of their ground floor and spill their
   light a few metres onto the pavement: bars and clubs in a neon of their own or a warm light,
   theatres and cinemas in a bright white, places to eat in amber. A building takes the strongest
@@ -75,8 +76,9 @@ At night (as the sun's `brightness` falls), the buildings light the street from 
 
 The night use comes from World's `night_use` on each building. In tiles whose buildings do not
 carry it, the renderer finds it in the tile's places (`placesLayer`, `poi` by default): a place
-inside a building, or within a few metres of its facade, gives the building its use. `floodLights:
-false` turns all of this off.
+inside a building, or within a few metres of its facade, gives the building its use.
+
+`nightLight` sets how bright all of this shines, from 0 (none) to 2; it defaults to 1.
 
 For the streets themselves, see
 [street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md),

@@ -380,7 +380,7 @@ test('the limits match the service', () => {
     maximumMatrixDistanceMeters: {
       driving: 200_000,
       walking: 10_000,
-      cycling: 20_000,
+      cycling: 10_000,
       truck: 200_000,
     },
     minimumTracePositions: 2,

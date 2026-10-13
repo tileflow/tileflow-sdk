@@ -176,12 +176,14 @@ answer.durations.forEach((row, depot) => {
 
 **Request:** one to 25 `sources` and one to 25 `targets`, a `mode`, and optionally `vehicle`,
 `avoid` and `traffic`. The straight-line distance between every source and every target must be
-within the mode's limit: 200 km for `driving` and `truck`, 20 km for `cycling` and 10 km for
-`walking` (`routingLimits.maximumMatrixDistanceMeters`).
+within the mode's limit: 200 km for `driving` and `truck`, and 10 km for `cycling` and `walking`
+(`routingLimits.maximumMatrixDistanceMeters`).
 
 **Answer:** `durations` in seconds and `distances` in metres, with one row per source and one
 column per target, in request order: `durations[source][target]`. A cell is `null` when no route
-connects that pair. The client rejects an answer whose rows or columns do not match the request.
+was found for that pair: none exists, or the service could not find one in time. Request a single
+route for a pair you still need. The client rejects an answer whose rows or columns do not match the
+request.
 
 ## Match a GPS trace to roads
 

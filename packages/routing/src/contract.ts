@@ -76,7 +76,7 @@ export const routingLimits = Object.freeze({
   maximumMatrixDistanceMeters: Object.freeze({
     driving: 200_000,
     walking: 10_000,
-    cycling: 20_000,
+    cycling: 10_000,
     truck: 200_000,
   } satisfies Record<RoutingMode, number>),
   minimumTracePositions: 2,
@@ -501,12 +501,15 @@ export type RoutingIsochroneResponse = z.infer<typeof routingIsochroneResponseSc
 export const routingMatrixResponseSchema = z
   .object({
     ...answer,
-    /** Seconds from each source (rows) to each target (columns); `null` where no route exists. */
+    /**
+     * Seconds from each source (rows) to each target (columns); `null` where no route was found,
+     * because none exists or because the service could not find it within its deadline.
+     */
     durations: z
       .array(z.array(seconds.nullable()).min(1).max(routingLimits.maximumMatrixTargets))
       .min(1)
       .max(routingLimits.maximumMatrixSources),
-    /** Metres, in the same order; `null` where no route exists. */
+    /** Metres, in the same order; `null` where no route was found. */
     distances: z
       .array(z.array(meters.nullable()).min(1).max(routingLimits.maximumMatrixTargets))
       .min(1)

@@ -26,11 +26,14 @@ test('publishes root, contract, client and package metadata entries', async () =
 test('preserves the exact source and built root surface', async () => {
   const built = await import('../dist/index.js');
   assert.deepEqual(Object.keys(built).sort(), Object.keys(source).sort());
-  assert.equal(typeof built.route, 'function');
-  assert.equal(typeof built.isochrone, 'function');
+  for (const operation of ['route', 'isochrone', 'matrix', 'match', 'nearest'] as const)
+    assert.equal(typeof built[operation], 'function', operation);
   assert.equal(typeof built.RoutingError, 'function');
   assert.equal(typeof built.routingRouteRequestSchema, 'object');
   assert.equal(typeof built.routingIsochroneResponseSchema, 'object');
+  assert.equal(typeof built.routingMatrixResponseSchema, 'object');
+  assert.equal(typeof built.routingMatchResponseSchema, 'object');
+  assert.equal(typeof built.routingNearestResponseSchema, 'object');
 });
 
 test('imports every built entry without reading browser globals', async () => {

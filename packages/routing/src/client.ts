@@ -8,6 +8,19 @@ import {
   type RoutingIsochroneResponse,
   routingIsochroneResponseSchema,
   routingLimits,
+  type RoutingMatchRequest,
+  routingMatchRequestSchema,
+  type RoutingMatchResponse,
+  routingMatchResponseSchema,
+  type RoutingMatrixRequest,
+  routingMatrixRequestSchema,
+  type RoutingMatrixResponse,
+  routingMatrixResponseSchema,
+  type RoutingNearestRequest,
+  routingNearestRequestSchema,
+  type RoutingNearestResponse,
+  routingNearestResponseSchema,
+  type RoutingOperation,
   type RoutingRouteRequest,
   routingRouteRequestSchema,
   type RoutingRouteResponse,
@@ -54,7 +67,8 @@ export class RoutingError extends Error {
 
 /**
  * The fastest route through two to five positions, with up to two alternatives between two
- * positions. Each route has its line, distance, duration and turn-by-turn steps.
+ * positions. Each route has its line, distance, duration, turn-by-turn steps and whether it uses
+ * tolls, highways or ferries.
  */
 export async function route(
   request: RoutingRouteRequest,
@@ -94,6 +108,64 @@ export async function isochrone(
   );
 }
 
+/**
+ * Travel times and distances from every source to every target: one row per source, one column
+ * per target, in request order, with `null` where no route connects a pair.
+ */
+export async function matrix(
+  request: RoutingMatrixRequest,
+  options: RoutingOptions,
+): Promise<RoutingMatrixResponse> {
+  const parsed = routingMatrixRequestSchema.safeParse(request);
+  if (!parsed.success) throw new Error('Invalid Tileflow matrix request');
+  const rows = parsed.data.sources.length;
+  const columns = parsed.data.targets.length;
+  const isGrid = (grid: ReadonlyArray<ReadonlyArray<number | null>>) =>
+    grid.length === rows && grid.every((row) => row.length === columns);
+  return requestRouting(
+    '/v1/routing/matrix',
+    parsed.data,
+    options,
+    routingMatrixResponseSchema,
+    (response) => isGrid(response.durations) && isGrid(response.distances),
+  );
+}
+
+/**
+ * The roads a GPS trace followed: the matched line, where each trace position was matched, and
+ * each road with what OpenStreetMap records about it, including tagged speed limits.
+ */
+export async function match(
+  request: RoutingMatchRequest,
+  options: RoutingOptions,
+): Promise<RoutingMatchResponse> {
+  const parsed = routingMatchRequestSchema.safeParse(request);
+  if (!parsed.success) throw new Error('Invalid Tileflow match request');
+  return requestRouting(
+    '/v1/routing/match',
+    parsed.data,
+    options,
+    routingMatchResponseSchema,
+    (response) => response.points.length === parsed.data.trace.length,
+  );
+}
+
+/** The nearest point of a road the mode can use, its distance and what OpenStreetMap records. */
+export async function nearest(
+  request: RoutingNearestRequest,
+  options: RoutingOptions,
+): Promise<RoutingNearestResponse> {
+  const parsed = routingNearestRequestSchema.safeParse(request);
+  if (!parsed.success) throw new Error('Invalid Tileflow nearest request');
+  return requestRouting(
+    '/v1/routing/nearest',
+    parsed.data,
+    options,
+    routingNearestResponseSchema,
+    () => true,
+  );
+}
+
 const safeErrorText = z
   .string()
   .trim()
@@ -110,7 +182,7 @@ const routingErrorResponseSchema = z
   .strict();
 
 async function requestRouting<T>(
-  path: '/v1/routing/route' | '/v1/routing/isochrone',
+  path: `/v1/routing/${RoutingOperation}`,
   request: unknown,
   options: RoutingOptions,
   responseSchema: z.ZodType<T>,

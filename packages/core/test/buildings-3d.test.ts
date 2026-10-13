@@ -369,6 +369,20 @@ test('renderer options are validated', () => {
   assert.throws(() => createTileflowBuildings3D({map: fakeMap(), edges: 2}), RangeError);
   assert.throws(() => createTileflowBuildings3D({map: fakeMap(), edges: Number.NaN}), RangeError);
   assert.throws(
+    () => createTileflowBuildings3D({map: fakeMap(), edgeColor: 'not a colour'}),
+    RangeError,
+  );
+  assert.throws(
+    () => createTileflowBuildings3D({map: fakeMap(), edgeColor: 3 as unknown as string}),
+    RangeError,
+  );
+  // A CSS colour, or one per theme, is accepted.
+  createTileflowBuildings3D({map: fakeMap(), edgeColor: '#7fd8ff'}).dispose();
+  createTileflowBuildings3D({
+    map: fakeMap(),
+    edgeColor: (theme) => (theme === 'night' ? '#7fd8ff' : 'white'),
+  }).dispose();
+  assert.throws(
     () => createTileflowBuildings3D({map: fakeMap(), nightLight: Number.NaN}),
     RangeError,
   );

@@ -92,6 +92,14 @@ export type TileflowBuildings3DOptions = Readonly<{
    * starts stays legible at any distance, at night most of all.
    */
   edges?: number;
+  /**
+   * The colour of roof outlines and outer corners, as a CSS colour or per theme, drawn as it is,
+   * unlit, at the full `edges` strength by day and night. The renderer asks for each theme's colour
+   * once and mixes the colours of the themes either side of a blend's position; a theme without a
+   * valid colour keeps the default. Without it, edges take the building's own colour, lightened as
+   * if catching the light, half as strong by day as at night.
+   */
+  edgeColor?: string | ((theme: string) => string);
   /** Invented night windows, lit by rooms; decoration, not data. Defaults to false. */
   windows?: boolean;
   /** The zoom from which buildings stand; below it they sink into the flat map. Defaults to 14.5. */
@@ -192,6 +200,14 @@ export function createTileflowBuildings3D(
   const edges = options.edges ?? 1;
   if (!(edges >= 0 && edges <= 1))
     throw new RangeError('Tileflow 3D buildings edges must be from 0 to 1.');
+  const edgeColor = options.edgeColor;
+  if (
+    edgeColor !== undefined &&
+    typeof edgeColor !== 'function' &&
+    !(typeof edgeColor === 'string' && tileflowColourChannels(edgeColor))
+  )
+    throw new RangeError('Tileflow 3D buildings edgeColor must be a CSS colour or a function.');
+  const edgeColours = new Map<string, readonly [number, number, number] | undefined>();
   const windowsOn = options.windows === true;
 
   let scale = 0;
@@ -393,6 +409,44 @@ export function createTileflowBuildings3D(
     }
     const theme = options.controller?.getCurrent?.().theme ?? 'default';
     return {themes: [theme], lower: 0, upper: 0, mix: 0};
+  }
+
+  /** The application's edge colour for a theme, once per theme, or undefined for the default. */
+  function edgeColourOf(theme: string): readonly [number, number, number] | undefined {
+    if (edgeColor === undefined) return undefined;
+    if (edgeColours.has(theme)) return edgeColours.get(theme);
+    let rgb: readonly [number, number, number] | undefined;
+    try {
+      const channels = tileflowColourChannels(
+        typeof edgeColor === 'string' ? edgeColor : edgeColor(theme),
+      );
+      if (channels) rgb = [channels[0], channels[1], channels[2]];
+    } catch {
+      // A colour the application cannot give keeps the default.
+    }
+    edgeColours.set(theme, rgb);
+    return rgb;
+  }
+
+  /**
+   * The application's edge colour on screen, mixed between the themes either side of a blend, and
+   * how much of the edges it colours: 1 where every theme on screen has one, 0 where none has.
+   */
+  function edgeColourNow(): {rgb: number[]; share: number} {
+    if (edgeColor === undefined) return {rgb: [1, 1, 1], share: 0};
+    const {themes, lower, upper, mix} = themesOnScreen();
+    const below = edgeColourOf(themes[lower]!);
+    const above = lower === upper ? undefined : edgeColourOf(themes[upper]!);
+    const weights = [below ? 1 - (lower === upper ? 0 : mix) : 0, above ? mix : 0];
+    const share = weights[0]! + weights[1]!;
+    if (share <= 0) return {rgb: [1, 1, 1], share: 0};
+    return {
+      rgb: [0, 1, 2].map(
+        (channel) =>
+          ((below?.[channel] ?? 0) * weights[0]! + (above?.[channel] ?? 0) * weights[1]!) / share,
+      ),
+      share,
+    };
   }
 
   /** A tile's colours per theme, one texel per building, when the application colours them. */
@@ -657,7 +711,11 @@ export function createTileflowBuildings3D(
     context.uniform1f(u.u_flood!, light.night * nightLight);
     context.uniform3fv(u.u_flood_colour!, flood.colour);
     context.uniform1f(u.u_variation!, variation);
-    context.uniform1f(u.u_edge!, edges * (edgeLine.day + (1 - edgeLine.day) * light.night));
+    const edgeColour = edgeColourNow();
+    const lightEdge = edges * (edgeLine.day + (1 - edgeLine.day) * light.night);
+    context.uniform1f(u.u_edge!, lightEdge + (edges - lightEdge) * edgeColour.share);
+    context.uniform3fv(u.u_edge_colour!, edgeColour.rgb);
+    context.uniform1f(u.u_edge_own!, edgeColour.share);
     context.uniform1f(u.u_edge_width!, edgeLine.width * pixelRatio(context));
     setShadow(context, buildings, light.strength);
     for (const {x, y, value: entry} of entries) {

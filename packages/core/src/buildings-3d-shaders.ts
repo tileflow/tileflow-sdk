@@ -193,6 +193,8 @@ uniform float u_windows; // whether to draw night windows
 uniform float u_flood; // flood light strength at night
 uniform float u_edge; // how strongly roof outlines and outer corners catch the light, 0 for none
 uniform float u_edge_width; // their width, in the drawing buffer's pixels
+uniform vec3 u_edge_colour; // the application's colour for them
+uniform float u_edge_own; // how much of them takes the application's colour, from 0 to 1
 ${nightLight}
 ${shadowLookup}
 out vec4 fragColor;
@@ -239,7 +241,8 @@ void main() {
   // Roof outlines and outer corners catch the light, so where one building ends and the next starts
   // stays legible, at night most of all.
   float edge = u_edge > 0.0 ? edgeOf() * u_edge : 0.0;
-  colour = mix(colour, max(colour, v_colour) * 1.2 + vec3(0.9, 0.95, 1.0) * mix(0.05, 0.13, u_night), edge);
+  vec3 caught = max(colour, v_colour) * 1.2 + vec3(0.9, 0.95, 1.0) * mix(0.05, 0.13, u_night);
+  colour = mix(colour, mix(caught, u_edge_colour, u_edge_own), edge);
   if (v_building.z > 0.5) {
     float up = v_facade.y;
     float top = v_facade.z;

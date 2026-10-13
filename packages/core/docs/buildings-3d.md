@@ -73,6 +73,31 @@ each building is a little lighter or darker than its colour (up to 6%), so neigh
 stay apart. The lines are strongest at night; diagonals inside a roof, inner corners and the cuts at
 a tile's edge draw none. `edges` sets their strength from 0 (none) to 1, the default.
 
+`edgeColor` gives the lines a colour of the application's own, as a CSS colour or per theme: a dark
+outline as on a printed map, or a neon one at night. It is drawn as it is, unlit, at the full
+`edges` strength by day and night. The renderer asks for each theme's colour once and mixes the
+colours of the themes either side of a blend's position; a theme without a valid colour keeps the
+default.
+
+<!-- docs:check -->
+
+```ts
+import {
+  createTileflowBuildings3D,
+  type TileflowBuildings3DMap,
+  type TileflowThemeController,
+} from '@tileflow/core/browser';
+
+export function neonEdges(map: TileflowBuildings3DMap, controller: TileflowThemeController) {
+  return createTileflowBuildings3D({
+    map,
+    controller,
+    // Cyan outlines at night, a dark ink by day.
+    edgeColor: (theme) => (theme === 'night' ? '#7fd8ff' : '#2b2a33'),
+  });
+}
+```
+
 ## Night light
 
 At night (as the sun's `brightness` falls), the buildings light the street from data, quietly by

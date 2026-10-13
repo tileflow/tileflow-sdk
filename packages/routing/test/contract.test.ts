@@ -28,6 +28,7 @@ import {
 const littleHavana: [number, number] = [-80.2195, 25.7655];
 const southBeach: [number, number] = [-80.1312, 25.7795];
 const orlando: [number, number] = [-81.3792, 28.5383];
+const fortLauderdale: [number, number] = [-80.1373, 26.1224];
 
 test('a route request takes two to five positions, a mode and nothing else', () => {
   assert.ok(
@@ -225,7 +226,7 @@ test('trucks may carry dimensions and every mode may avoid tolls, highways and f
 test('a matrix has up to 25 sources and 25 targets within its mode distance', () => {
   const parsed = routingMatrixRequestSchema.safeParse({
     sources: [littleHavana],
-    targets: [southBeach, orlando],
+    targets: [southBeach, fortLauderdale],
     mode: 'driving',
     avoid: ['tolls'],
     traffic: 'none',
@@ -233,7 +234,7 @@ test('a matrix has up to 25 sources and 25 targets within its mode distance', ()
   assert.equal(parsed.data?.targets.length, 2);
   const cycling = routingMatrixRequestSchema.safeParse({
     sources: [littleHavana],
-    targets: [orlando],
+    targets: [fortLauderdale],
     mode: 'cycling',
   });
   assert.equal(
@@ -280,6 +281,7 @@ test('a trace has 2 to 100 positions, matching timestamps and a bounded accuracy
     {trace, accuracy: 0},
     {trace, accuracy: 101},
     {trace: [littleHavana, orlando]},
+    {trace: [littleHavana, [-80.2195, 25.79]]},
     {trace, avoid: ['tolls']},
     {trace, traffic: 'none'},
     {trace, vehicle: {heightMeters: 4}},
@@ -376,16 +378,17 @@ test('the limits match the service', () => {
     maximumMatrixSources: 25,
     maximumMatrixTargets: 25,
     maximumMatrixDistanceMeters: {
-      driving: 400_000,
-      walking: 100_000,
-      cycling: 200_000,
-      truck: 400_000,
+      driving: 200_000,
+      walking: 10_000,
+      cycling: 20_000,
+      truck: 200_000,
     },
     minimumTracePositions: 2,
     maximumTracePositions: 100,
     maximumTraceDistanceMeters: 200_000,
+    maximumTraceGapMeters: 2_000,
     maximumTraceAccuracyMeters: 100,
-    maximumRoads: 500,
+    maximumRoads: 2_000,
     maximumContours: 4,
     minimumMinutes: 1,
     maximumMinutes: 60,

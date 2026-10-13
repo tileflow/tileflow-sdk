@@ -176,7 +176,7 @@ answer.durations.forEach((row, depot) => {
 
 **Request:** one to 25 `sources` and one to 25 `targets`, a `mode`, and optionally `vehicle`,
 `avoid` and `traffic`. The straight-line distance between every source and every target must be
-within the mode's limit: 400 km for `driving` and `truck`, 200 km for `cycling` and 100 km for
+within the mode's limit: 200 km for `driving` and `truck`, 20 km for `cycling` and 10 km for
 `walking` (`routingLimits.maximumMatrixDistanceMeters`).
 
 **Answer:** `durations` in seconds and `distances` in metres, with one row per source and one
@@ -219,8 +219,8 @@ for (const road of answer.roads) {
 
 **Request:**
 
-- `trace`: 2 to 100 positions in the order they were recorded. The straight-line distance through
-  them may not exceed 200 km.
+- `trace`: 2 to 100 positions in the order they were recorded. Consecutive positions must be within
+  2 km of each other, and the straight-line distance through them may not exceed 200 km.
 - `timestamps` (optional): seconds since the Unix epoch, one per position, never decreasing.
 - `accuracy` (optional): GPS accuracy in metres, 1–100. The default suits a phone outdoors.
 - `mode` and, for `truck`, an optional `vehicle`.

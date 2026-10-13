@@ -74,17 +74,19 @@ export const routingLimits = Object.freeze({
   maximumMatrixTargets: 25,
   /** Straight-line distance between any matrix source and target, per mode. */
   maximumMatrixDistanceMeters: Object.freeze({
-    driving: 400_000,
-    walking: 100_000,
-    cycling: 200_000,
-    truck: 400_000,
+    driving: 200_000,
+    walking: 10_000,
+    cycling: 20_000,
+    truck: 200_000,
   } satisfies Record<RoutingMode, number>),
   minimumTracePositions: 2,
   maximumTracePositions: 100,
   /** Sum of straight-line distances between consecutive trace positions. */
   maximumTraceDistanceMeters: 200_000,
+  /** Straight-line distance between consecutive trace positions. */
+  maximumTraceGapMeters: 2_000,
   maximumTraceAccuracyMeters: 100,
-  maximumRoads: 500,
+  maximumRoads: 2_000,
   maximumContours: 4,
   minimumMinutes: 1,
   maximumMinutes: 60,
@@ -274,7 +276,16 @@ export const routingMatchRequestSchema = z
     }
     let distance = 0;
     for (let index = 1; index < request.trace.length; index += 1) {
-      distance += routingDirectDistance(request.trace[index - 1]!, request.trace[index]!);
+      const gap = routingDirectDistance(request.trace[index - 1]!, request.trace[index]!);
+      if (gap > routingLimits.maximumTraceGapMeters) {
+        context.addIssue({
+          code: 'custom',
+          path: ['trace', index],
+          message: 'Consecutive trace positions are more than 2 km apart.',
+        });
+        return;
+      }
+      distance += gap;
     }
     if (distance > routingLimits.maximumTraceDistanceMeters) {
       context.addIssue({code: 'custom', path: ['trace'], message: 'The trace is too long.'});

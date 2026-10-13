@@ -305,9 +305,10 @@ test('answers without their traffic or road-use flags are refused', async () => 
 const littleHavana: [number, number] = [-80.2195, 25.7655];
 const southBeach: [number, number] = [-80.1312, 25.7795];
 const orlando: [number, number] = [-81.3792, 28.5383];
+const fortLauderdale: [number, number] = [-80.1373, 26.1224];
 const matrixRequest = {
   sources: [littleHavana, southBeach],
-  targets: [southBeach, orlando],
+  targets: [southBeach, fortLauderdale],
   mode: 'driving' as const,
 };
 const matrixAnswer = (

@@ -92,7 +92,8 @@ availability, attribution, and retry requirements before making requests.
 - [`@tileflow/search`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/search/README.md):
   forward/reverse geocoding and suggestion resolution, without a UI.
 - [`@tileflow/routing`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/routing/README.md):
-  routes and isochrones for driving, walking, and cycling, as GeoJSON.
+  routes, isochrones, travel-time matrices, map matching, and nearest-road lookups for driving,
+  walking, cycling, and trucks.
 - [`@tileflow/geoip`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/geoip/README.md):
   approximate location of the calling network connection; no private API key.
 - [`@tileflow/coordinates`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/coordinates/README.md):

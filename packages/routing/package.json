@@ -2,7 +2,7 @@
   "name": "@tileflow/routing",
   "version": "0.0.0-development",
   "license": "Apache-2.0",
-  "description": "Routes and isochrones client and wire contracts for Tileflow.",
+  "description": "Routes, isochrones, matrices, map matching and nearest-road client and wire contracts for Tileflow.",
   "type": "module",
   "sideEffects": false,
   "homepage": "https://tileflow.dev",
@@ -19,7 +19,10 @@
     "maps",
     "routing",
     "directions",
-    "isochrones"
+    "isochrones",
+    "distance-matrix",
+    "map-matching",
+    "truck-routing"
   ],
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

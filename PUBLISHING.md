@@ -295,6 +295,13 @@ npm cannot configure Trusted Publishing before a package exists. For each new ca
 
 The normal OIDC job is not authority to invent or bootstrap a package.
 
+### Routing first alpha
+
+Remove `routing-initial-publisher` only after the maintainer bootstrap and independent Trusted
+Publisher verification for `@tileflow/routing` are complete. Reserve `0.1.0-alpha.0` for the
+protected first alpha; never use that version for bootstrap or move `alpha` manually. Do not release
+the other changed packages separately to bypass this interlock.
+
 ### React Native first alpha
 
 Remove `react-native-initial-publisher` only after the maintainer bootstrap and independent Trusted

@@ -7,6 +7,22 @@ import {streets, streetsIcons, streetsThemes} from '../src';
 
 const streetsIconIds = [
   'coffee',
+  'nature',
+  'sport',
+  'worship',
+  'coffee-dark',
+  'culture-dark',
+  'education-dark',
+  'food-dark',
+  'health-dark',
+  'lodging-dark',
+  'major-transit-dark',
+  'parking-dark',
+  'services-dark',
+  'shopping-dark',
+  'nature-dark',
+  'worship-dark',
+  'sport-dark',
   'crosswalk',
   'culture',
   'education',
@@ -41,14 +57,16 @@ const preparedAssets = {
 // Symmetric physical-output review for the complete Standard-day calibration.
 const approvedLightStyleColors = new Set([
   '#000000',
+  '#A6AB91',
+  '#727B64',
   '#15AFFA59',
   '#29B5FD59',
   '#1B1D27',
   '#242624',
   '#303230',
-  '#4C9478',
+  '#659D51',
   '#505050',
-  '#557BC4',
+  '#6099CF',
   '#5A88A9',
   '#5C74D6',
   '#626361',
@@ -57,10 +75,10 @@ const approvedLightStyleColors = new Set([
   '#6D6E6C',
   '#729B78',
   '#6ECEFE59',
-  '#806DC4',
+  '#9175CD',
   '#81A880',
   '#83AD83',
-  '#8A756B',
+  '#7C929A',
   '#8B8E99',
   '#8D9EAE',
   '#8E909D',
@@ -69,20 +87,20 @@ const approvedLightStyleColors = new Set([
   '#91B68B',
   '#91BA8D',
   '#987A55',
-  '#98DCFE',
+  '#99DDFF',
   '#99DDFF59',
   '#ADB3C3',
   '#A1C99B',
-  '#A1B0C2',
+  '#A1B0C4',
   '#A3A6C2',
   '#AED7A5',
   '#AFD4A7',
-  '#9BE494',
-  '#B1EAAC',
-  '#B85CA4',
+  '#A7DFA0',
+  '#BDEAB5',
+  '#CB6DB5',
   '#B8E0AE',
   '#BDB7B1',
-  '#BEC5D8',
+  '#BFC6D9',
   '#BFE6AE',
   '#C1EFBE',
   '#C2E7B5',
@@ -90,8 +108,8 @@ const approvedLightStyleColors = new Set([
   '#C2C6D6',
   '#C6C8D4',
   '#C8C8CF',
-  '#C95E6B',
-  '#CDCED7',
+  '#DD7380',
+  '#C4C9D6',
   '#CCE5C6',
   '#CE9298',
   '#CE9698',
@@ -103,7 +121,7 @@ const approvedLightStyleColors = new Set([
   '#D5DCE0',
   '#D5E8D0',
   '#E2F3D1',
-  '#D7892C',
+  '#D99537',
   '#D7E9DE',
   '#D8E1D8',
   '#CFF0C6',
@@ -119,10 +137,10 @@ const approvedLightStyleColors = new Set([
   '#ECE4D2',
   '#EEE0DF',
   '#F0ECC6',
-  '#F3E9DF',
+  '#F2EBDD',
   '#F2F0EB',
   '#F5F0EF',
-  '#F4F0EF',
+  '#F5F1F0',
   '#F4F7F8',
   '#F8F6F8',
   '#FBEDE2',
@@ -140,6 +158,13 @@ const approvedLightStyleColors = new Set([
 // includes Core-derived blends and the unreachable #000000 expression fallback so any
 // new physical color requires an explicit dark-map review.
 const approvedDarkStyleColors = new Set([
+  '#252D36',
+  '#576374',
+  '#101827',
+  '#B6A783',
+  '#89B871',
+  '#94BCE3',
+  '#9DAAB0',
   '#000000',
   '#081022A8',
   '#0B1328A8',
@@ -202,7 +227,6 @@ const approvedDarkStyleColors = new Set([
   '#6F7188',
   '#70768A',
   '#76586D',
-  '#76B59A',
   '#777B89',
   '#7C7F8C',
   '#8296E6',
@@ -214,7 +238,7 @@ const approvedDarkStyleColors = new Set([
   '#AA94DA',
   '#C786BC',
   '#D0D0D6',
-  '#D69A58',
+  '#D8BD65',
   '#DC7C89',
   '#FFFFFF',
   'RGBA(0, 0, 0, 0)',
@@ -410,7 +434,7 @@ test('Streets Dark preserves Streets geometry, ordering, visibility, and label b
   const structuralContract = (layer: (typeof light.layers)[number]) => ({
     filter: layer.filter,
     id: layer.id,
-    layout: layer.layout,
+    layout: JSON.parse(JSON.stringify(layer.layout ?? {}).replace(/-dark(?=")/gu, '')),
     maxzoom: layer.maxzoom,
     minzoom: layer.minzoom,
     source: layer.source,
@@ -468,14 +492,14 @@ test('Streets Dark recolors every color-bearing Streets layer without major ligh
   const serialized = JSON.stringify(dark).toUpperCase();
   for (const lightSignature of [
     '#505050',
-    '#98DCFE',
+    '#99DDFF',
     '#ADB3C3',
-    '#B1EAAC',
-    '#BEC5D8',
+    '#BDEAB5',
+    '#BFC6D9',
     '#D49399',
     '#D5E8D0',
-    '#F3E9DF',
-    '#F4F0EF',
+    '#F2EBDD',
+    '#F5F1F0',
     '#F7F6F4',
     '#FBEDE2',
   ]) {
@@ -545,7 +569,7 @@ test('Streets Dark keeps a legible road hierarchy and high-contrast key labels',
 
 test('Streets uses blue road decks with darker casings that strengthen toward close zooms', () => {
   const expected = {
-    light: {casing: '#ADB3C3', deck: '#BEC5D8'},
+    light: {casing: '#ADB3C3', deck: '#BFC6D9'},
     dark: {casing: '#454A59', deck: '#636779'},
   } as const;
 
@@ -635,7 +659,8 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
   assert.equal(countryLabel.paint?.['text-color'], '#303230');
   assert.deepEqual(cityLabel.layout?.['text-font'], ['Noto Sans Regular']);
   assert.equal(cityLabel.layout?.['text-padding'], 1);
-  assert.equal(cityLabel.maxzoom, 16);
+  assert.equal(cityLabel.maxzoom, 14);
+  assert.deepEqual(cityLabel.layout?.['text-variable-anchor'], ['right']);
   assert.match(JSON.stringify(countryLabel.layout?.['text-size']), /,5,\["step"/u);
   assert.match(JSON.stringify(cityLabel.layout?.['text-size']), /,5,\["step"/u);
   assert.match(JSON.stringify(cityLabel.paint?.['text-color']), /#303230/u);
@@ -669,7 +694,7 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     ['primary', '#C1C6D3'],
     ['secondary', '#C2C6D6'],
     ['tertiary', '#C2C6D6'],
-    ['minor', '#CDCED7'],
+    ['minor', '#C4C9D6'],
   ] as const) {
     const layer = requireLayer(style, `tileflow-road-surface-${roadClass}-fill`);
     assert.match(JSON.stringify(layer.paint?.['line-color']), new RegExp(color));
@@ -684,7 +709,7 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     '#FBEDE2',
   );
   const buildingFill = requireLayer(style, 'tileflow-buildings-fill');
-  assert.equal(buildingFill.paint?.['fill-color'], '#F3E9DF');
+  assert.equal(buildingFill.paint?.['fill-color'], '#F2EBDD');
   assert.equal(buildingFill.minzoom, 14.25);
   assert.deepEqual(buildingFill.paint?.['fill-opacity'], [
     'interpolate',
@@ -829,7 +854,7 @@ test('Streets Dark retains every public render-stack contribution and refinement
   }
 });
 
-test('Streets Dark keeps canonical POI category colors around the same ranked sprites', () => {
+test('Streets Dark keeps canonical POI category colors with themed sprites and identical ranked placement', () => {
   const light = compile('light');
   const dark = compile('dark');
   const categories = [
@@ -849,16 +874,16 @@ test('Streets Dark keeps canonical POI category colors around the same ranked sp
   ] as const;
   const darkCategoryColors = {
     'arts-entertainment': '#C786BC',
-    education: '#8F9098',
-    'food-drink': '#D69A58',
+    education: '#B6A783',
+    'food-drink': '#D8BD65',
     landmark: '#C786BC',
     lodging: '#AA94DA',
     medical: '#DC7C89',
-    'park-nature': '#76B59A',
+    'park-nature': '#89B871',
     'public-services': '#8F9098',
-    religion: '#C786BC',
-    retail: '#76B59A',
-    'sport-leisure': '#76B59A',
+    religion: '#9DAAB0',
+    retail: '#94BCE3',
+    'sport-leisure': '#89B871',
     transport: '#8296E6',
     'visitor-amenity': '#8F9098',
   } as const;
@@ -871,7 +896,11 @@ test('Streets Dark keeps canonical POI category colors around the same ranked sp
     const id = `tileflow-poi-${category}`;
     const lightLayer = requireLayer(light, id);
     const darkLayer = requireLayer(dark, id);
-    assert.deepEqual(darkLayer.layout?.['icon-image'], lightLayer.layout?.['icon-image']);
+    assert.notDeepEqual(darkLayer.layout?.['icon-image'], lightLayer.layout?.['icon-image']);
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(darkLayer.layout?.['icon-image']).replace(/-dark(?=")/gu, '')),
+      lightLayer.layout?.['icon-image'],
+    );
     assert.deepEqual(darkLayer.layout?.['symbol-sort-key'], [
       '+',
       ['*', ['to-number', ['get', 'filter_rank'], 6], 17],
@@ -882,14 +911,35 @@ test('Streets Dark keeps canonical POI category colors around the same ranked sp
       ['linear'],
       ['zoom'],
       12,
-      1.04,
+      0.9,
       15,
-      1.1,
+      0.94,
       17,
-      1.14,
+      1,
     ]);
     assert.deepEqual(darkLayer.layout?.['icon-size'], lightLayer.layout?.['icon-size']);
     assert.equal(darkLayer.paint?.['text-color'], darkCategoryColors[category]);
     assert.equal(darkLayer.paint?.['text-halo-color'], '#252839');
+  }
+});
+
+test('Streets keeps ferries subordinate and limits attributed hillshade to regional zooms', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    const style = compile(theme);
+    const relief = requireLayer(style, 'tileflow-terrain-hillshade');
+    assert.equal(relief.type, 'hillshade');
+    assert.equal(relief.minzoom, 5);
+    assert.equal(relief.maxzoom, 14);
+    assert.equal(relief.paint?.['hillshade-exaggeration'], 0.23);
+    const source = style.sources['tileflow-terrain'] as Record<string, unknown>;
+    assert.equal(source.type, 'raster-dem');
+    assert.equal(source.encoding, 'terrarium');
+    assert.equal(source.url, 'https://tiles.mapterhorn.com/tilejson.json');
+    assert.match(String(source.attribution), /mapterhorn.com\/attribution/u);
+    assert.equal(style.terrain, undefined);
+    const ferry = style.layers.find(({id}) => id.includes('ferry') && !id.includes('label'));
+    assert.ok(ferry);
+    assert.equal(ferry.paint?.['line-opacity'], 0.25);
+    assert.deepEqual(ferry.paint?.['line-dasharray'], [1, 0]);
   }
 });

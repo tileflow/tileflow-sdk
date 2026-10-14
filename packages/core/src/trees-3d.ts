@@ -609,6 +609,8 @@ export type TileflowVegetation3D = Readonly<{
   edgeColor?: string;
   unknownForms: TileflowTreeFormMix;
   regions: readonly TileflowTreeRegion[];
+  /** The style's layers that draw the trees flat, which the 3D trees stand in for while shown. */
+  flatLayers: readonly string[];
 }>;
 
 /** The metadata a compiled style publishes for its 3D trees. */
@@ -681,6 +683,9 @@ export function readTileflowVegetation3D(metadata: unknown): TileflowVegetation3
     ...(typeof value.edgeColor === 'string' ? {edgeColor: value.edgeColor} : {}),
     unknownForms: (mix as TileflowTreeFormMix | undefined) ?? tileflowDefaultUnknownTreeForms,
     regions: zones,
+    flatLayers: Array.isArray(value.flatLayers)
+      ? value.flatLayers.filter((id): id is string => typeof id === 'string')
+      : [],
   };
 }
 

@@ -42,6 +42,10 @@ a share of their size, from 0 to 1. Each returns a promise that resolves once th
 newer call takes over from where the trees stand. A browser preference for reduced motion changes at
 once. `dispose()` takes the layer off the map.
 
+While they stand, the 3D trees stand in for the map's flat trees: the layers the vegetation module
+draws them with are hidden when the trees are shown, and come back as they were once the trees have
+sunk or the layer leaves the map.
+
 `stats.declared` tells whether the map's style describes 3D trees. When it is false the layer draws
 nothing: declare `vegetation({mode: '3d'})` in the map. `stats` also counts the tiles, the trees
 placed and the trees drawn in the last frame.

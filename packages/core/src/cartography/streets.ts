@@ -572,9 +572,19 @@ function compileSemanticStyleInternal(
         : {}),
       ...(vegetation3D
         ? {
-            [tileflowVegetationMetadataKey]: tileflowVegetationMetadata(
-              bindSemanticReferences(vegetation3D, semanticData),
-            ),
+            [tileflowVegetationMetadataKey]: tileflowVegetationMetadata({
+              ...bindSemanticReferences(vegetation3D, semanticData),
+              // The layers that draw the trees flat: the module's own and its render passes.
+              flatLayers: layers
+                .filter((layer) => {
+                  const metadata = (layer as {metadata?: Record<string, unknown>}).metadata;
+                  return (
+                    metadata?.['tileflow:vegetation-mode'] !== undefined ||
+                    metadata?.['tileflow:domain'] === 'vegetation'
+                  );
+                })
+                .map((layer) => String(layer.id)),
+            }),
           }
         : {}),
       'tileflow:data': data.identity,

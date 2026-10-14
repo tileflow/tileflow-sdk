@@ -42,6 +42,7 @@ export type TileflowTrees3DMap = {
   getBearing(): number;
   getCenter(): {lat: number; lng: number};
   getLayer(id: string): unknown;
+  getLayoutProperty?(layer: string, name: string): unknown;
   getPitch(): number;
   getSource(id: string): unknown;
   getStyle(): unknown;
@@ -50,6 +51,7 @@ export type TileflowTrees3DMap = {
   off(event: string, listener: () => void): unknown;
   on(event: string, listener: () => void): unknown;
   removeLayer(id: string): unknown;
+  setLayoutProperty?(layer: string, name: string, value: unknown): unknown;
   triggerRepaint(): unknown;
 };
 
@@ -908,6 +910,31 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     },
   };
 
+  // --- The flat trees ---
+
+  // The style's flat trees (the vegetation module's circles and render passes) give way while the
+  // 3D trees stand, and come back when they sink. Changing a layer's visibility lays its source out
+  // again once, so it happens when the trees are shown or hidden, not as they grow.
+  const flatVisibility = new Map<string, unknown>();
+  function standIn(shown: boolean): void {
+    if (!map.setLayoutProperty || !map.getLayoutProperty) return;
+    if (!shown) {
+      for (const [id, previous] of flatVisibility)
+        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', previous ?? 'visible');
+      flatVisibility.clear();
+      return;
+    }
+    const flat = new Set(vegetation()?.flatLayers ?? []);
+    if (flat.size === 0) return;
+    const layers = (map.getStyle() as {layers?: {id: string}[]} | undefined)?.layers ?? [];
+    for (const {id} of layers) {
+      if (!flat.has(id.split('::')[0]!)) continue;
+      const visibility = map.getLayoutProperty(id, 'visibility');
+      if (!flatVisibility.has(id)) flatVisibility.set(id, visibility);
+      if (visibility !== 'none') map.setLayoutProperty(id, 'visibility', 'none');
+    }
+  }
+
   // --- The layer on the map ---
 
   function beforeId(): string | undefined {
@@ -935,7 +962,10 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
 
   const onStyle = () => {
     attach();
-    if (target > 0) for (const set of ensureTiles()) set.update();
+    if (target > 0) {
+      standIn(true);
+      for (const set of ensureTiles()) set.update();
+    }
   };
   map.on('styledata', onStyle);
   map.on('idle', onStyle);
@@ -954,12 +984,16 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       return Promise.reject(new RangeError('A transition lasts from 0 to 10000 ms.'));
     attach();
     target = to;
-    if (to > 0) for (const set of ensureTiles()) set.update();
+    if (to > 0) {
+      standIn(true);
+      for (const set of ensureTiles()) set.update();
+    }
     const reduced =
       typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (duration === 0 || reduced) {
       scale = to;
       motion = undefined;
+      if (to === 0) standIn(false);
       map.triggerRepaint();
       return Promise.resolve();
     }
@@ -976,6 +1010,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
         map.triggerRepaint();
         if (t >= 1) {
           motion = undefined;
+          if (current.to === 0) standIn(false);
           resolve();
         } else cameraFrame(step);
       };
@@ -1016,6 +1051,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       if (disposed) return;
       disposed = true;
       motion?.done();
+      standIn(false);
       map.off('styledata', onStyle);
       map.off('idle', onStyle);
       unregister();

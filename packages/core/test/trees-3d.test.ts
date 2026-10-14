@@ -364,3 +364,56 @@ test('the trees put their layer on the map, report an undeclared style and leave
   assert.throws(() => createTileflowTrees3D({map, minzoom: 30}), RangeError);
   assert.throws(() => createTileflowTrees3D({map, maxTiles: 0}), RangeError);
 });
+
+test('the 3D trees stand in for the style flat trees while they are shown', async () => {
+  const visibility = new Map<string, unknown>([
+    ['tileflow-vegetation-trees', undefined],
+    ['tileflow-vegetation-trees::shade', 'visible'],
+    ['labels', 'visible'],
+  ]);
+  const map = {
+    addLayer() {},
+    getBearing: () => 0,
+    getCenter: () => ({lat: 40.42, lng: -3.7}),
+    getLayer: (id: string) => (visibility.has(id) ? {} : undefined),
+    getLayoutProperty: (id: string) => visibility.get(id),
+    getPitch: () => 60,
+    getSource: () => undefined,
+    getStyle: () => ({
+      layers: [...visibility.keys()].map((id) => ({id})),
+      metadata: {
+        [tileflowVegetationMetadataKey]: {
+          version: 1,
+          source: 'tileflow',
+          layers: {tree: 'tree'},
+          fields: {},
+          colors: {bark: '#554433', broadleaf: ['#335533'], conifer: ['#224422']},
+          flatLayers: ['tileflow-vegetation-trees'],
+        },
+      },
+    }),
+    getZoom: () => 16,
+    isStyleLoaded: () => true,
+    off() {},
+    on() {},
+    removeLayer() {},
+    setLayoutProperty(id: string, _name: string, value: unknown) {
+      visibility.set(id, value);
+    },
+    triggerRepaint() {},
+  };
+  const trees = createTileflowTrees3D({map});
+  assert.equal(trees.stats.declared, true);
+  // The flat trees and their render passes give way; other layers stay.
+  await trees.show({transition: {duration: 0}});
+  assert.equal(visibility.get('tileflow-vegetation-trees'), 'none');
+  assert.equal(visibility.get('tileflow-vegetation-trees::shade'), 'none');
+  assert.equal(visibility.get('labels'), 'visible');
+  // They come back as they were once the trees sink, and again when the layer leaves.
+  await trees.hide({transition: {duration: 0}});
+  assert.equal(visibility.get('tileflow-vegetation-trees'), 'visible');
+  assert.equal(visibility.get('tileflow-vegetation-trees::shade'), 'visible');
+  await trees.show({transition: {duration: 0}});
+  trees.dispose();
+  assert.equal(visibility.get('tileflow-vegetation-trees'), 'visible');
+});

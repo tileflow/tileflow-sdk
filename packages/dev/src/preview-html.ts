@@ -141,6 +141,8 @@ export function renderTileflowPreviewHtml(
       import {loadTileflowStyleFonts} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowContourProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowPmtilesProtocol} from "${basePath}/__runtime/tileflow-browser.js";
+      import {createTileflowBuildings3D, createTileflowStreetLights, createTileflowTrees3D} from "${basePath}/__runtime/tileflow-browser.js";
+      import {readTileflowSunPreset, resolveTileflowSun, tileflowDefaultSunPreset} from "${basePath}/__runtime/tileflow-browser.js";
 
       maplibregl.setWorkerUrl("${basePath}/__runtime/maplibre-gl-worker.mjs");
 
@@ -158,66 +160,42 @@ export function renderTileflowPreviewHtml(
       const previewThemes = ${serializeInlineJson(preview?.themeNames ?? [])};
       const isSemanticPreview = ${JSON.stringify(isSemanticPreview)};
       const previewFontFaces = ${serializeInlineJson(fontFaces)};
-      const treeSearchParameters = new URL(location.href).searchParams;
-      const requestedTreeRenderer = treeSearchParameters.get("treeRenderer");
-      const treeRendererMode = ["circle", "simple", "complex"].includes(
-        requestedTreeRenderer
-      ) ? requestedTreeRenderer : "circle";
-      const treeBackendMode = treeSearchParameters.get("treeBackend") === "three"
-        ? "three"
-        : "webgl2";
-      const treeBenchmarkEnabled = treeSearchParameters.get("treeBenchmark") === "1";
-      const mapBenchmarkEnabled = treeSearchParameters.get("mapBenchmark") === "1";
-      const mapSweepEnabled = treeSearchParameters.get("mapSweep") === "1";
-      const mapCompareEnabled = treeSearchParameters.get("mapCompare") === "1";
-      const requestedMapCompareLimit = Number(treeSearchParameters.get("mapCompareLimit"));
+      const previewSearchParameters = new URL(location.href).searchParams;
+      const mapBenchmarkEnabled = previewSearchParameters.get("mapBenchmark") === "1";
+      const mapSweepEnabled = previewSearchParameters.get("mapSweep") === "1";
+      const mapCompareEnabled = previewSearchParameters.get("mapCompare") === "1";
+      const requestedMapCompareLimit = Number(previewSearchParameters.get("mapCompareLimit"));
       const mapCompareLimit =
         Number.isInteger(requestedMapCompareLimit) &&
         requestedMapCompareLimit >= 1 &&
         requestedMapCompareLimit <= 64
           ? requestedMapCompareLimit
           : 16;
-      const requestedMapWorkerCount = Number(treeSearchParameters.get("mapWorkers"));
+      const requestedMapWorkerCount = Number(previewSearchParameters.get("mapWorkers"));
       const mapWorkerCountOverride =
         Number.isInteger(requestedMapWorkerCount) &&
         requestedMapWorkerCount >= 1 &&
         requestedMapWorkerCount <= 3
           ? requestedMapWorkerCount
           : undefined;
-      const mapBenchmarkLongitude = Number(treeSearchParameters.get("lng"));
-      const mapBenchmarkLatitude = Number(treeSearchParameters.get("lat"));
+      const mapBenchmarkLongitude = Number(previewSearchParameters.get("lng"));
+      const mapBenchmarkLatitude = Number(previewSearchParameters.get("lat"));
       const mapBenchmarkCenter =
-        treeSearchParameters.has("lng") &&
-        treeSearchParameters.has("lat") &&
+        previewSearchParameters.has("lng") &&
+        previewSearchParameters.has("lat") &&
         Number.isFinite(mapBenchmarkLongitude) &&
         Number.isFinite(mapBenchmarkLatitude)
           ? [mapBenchmarkLongitude, mapBenchmarkLatitude]
           : undefined;
       function readToggleFromUrl(name, fallback) {
-        const values = treeSearchParameters.getAll(name);
+        const values = previewSearchParameters.getAll(name);
         if (values.length !== 1) return fallback;
         if (values[0] === "on") return true;
         if (values[0] === "off") return false;
         return fallback;
       }
-      const treeFrameSamples = [];
-      const treeMetrics = {
-        buildMilliseconds: undefined,
-        backend: treeBackendMode,
-        frameP95Milliseconds: undefined,
-        mode: treeRendererMode,
-        queryMilliseconds: undefined,
-        refreshMilliseconds: undefined,
-        renderCalls: 0,
-        renderMilliseconds: undefined,
-        renderedTriangles: 0,
-        selectionMilliseconds: undefined,
-        terrainMilliseconds: undefined,
-        treeCount: 0
-      };
-      globalThis.__tileflowTreeMetrics = treeMetrics;
       let threeDimensionalEnabled = readToggleFromUrl("buildings3d", false);
-      let treesEnabled = readToggleFromUrl("trees3d", true);
+      let treesEnabled = readToggleFromUrl("trees3d", false);
       const landmarkState = {
         active: [],
         cacheLimit: undefined,
@@ -367,26 +345,6 @@ export function renderTileflowPreviewHtml(
         if (values.length === 0) return undefined;
         const sorted = [...values].sort((left, right) => left - right);
         return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * percentileValue) - 1)];
-      }
-
-      function updateTreeStatus(message, details = {}) {
-        globalThis.__tileflowTreeState = {message, ...details};
-      }
-
-      if (treeBenchmarkEnabled) {
-        let previousFrameTime;
-        function sampleTreeFrame(frameTime) {
-          if (previousFrameTime !== undefined) {
-            treeFrameSamples.push(frameTime - previousFrameTime);
-          }
-          previousFrameTime = frameTime;
-          if (treeFrameSamples.length < 360) {
-            requestAnimationFrame(sampleTreeFrame);
-            return;
-          }
-          treeMetrics.frameP95Milliseconds = percentile(treeFrameSamples, 0.95);
-        }
-        requestAnimationFrame(sampleTreeFrame);
       }
 
       function installMapBenchmark(map) {
@@ -1332,1719 +1290,6 @@ export function renderTileflowPreviewHtml(
         map.addLayer(createBuildingWireframeLayer(map, styleLayer), layerAboveBuildings);
       }
 
-      function createTreeLayer(map, styleLayer) {
-        const initialTreeInstanceCapacity = 64;
-        const maximumCachedTrees = 12000;
-        const sourceRefreshIntervalMilliseconds = 120;
-        const viewportBufferPixels = 96;
-        const treeLods = [
-          {
-            densityCellPixels: 12,
-            name: "low",
-            untilZoom: 16.5
-          },
-          {
-            densityCellPixels: 8,
-            name: "medium",
-            untilZoom: 17.5
-          },
-          {
-            densityCellPixels: 0,
-            name: "full",
-            untilZoom: Infinity
-          }
-        ];
-        const sourceId = styleLayer.source;
-        const heightField = styleLayer.metadata?.["tileflow:tree-height-field"] ?? "height";
-        const crownField = styleLayer.metadata?.["tileflow:tree-crown-field"] ?? "diameter_crown";
-        const genusField = styleLayer.metadata?.["tileflow:tree-genus-field"] ?? "genus";
-        const leafTypeField = styleLayer.metadata?.["tileflow:tree-leaf-type-field"] ?? "leaf_type";
-        const speciesField = styleLayer.metadata?.["tileflow:tree-species-field"] ?? "species";
-        const heightScaleValue = Number(
-          styleLayer.metadata?.["tileflow:tree-height-scale"] ?? 1
-        );
-        const crownScaleValue = Number(
-          styleLayer.metadata?.["tileflow:tree-crown-scale"] ?? 1
-        );
-        const heightScale = Number.isFinite(heightScaleValue) && heightScaleValue > 0
-          ? heightScaleValue
-          : 1;
-        const crownScale = Number.isFinite(crownScaleValue) && crownScaleValue > 0
-          ? crownScaleValue
-          : 1;
-        let scene;
-        let sceneElevation;
-        let sceneOriginMercator;
-        let camera;
-        let renderer;
-        let treeGroup;
-        let treeMaterial;
-        let treeGeometries = [];
-        let treeMeshes = [];
-        let treeMeshCapacities = [];
-        let treeShadowGeometry;
-        let treeShadowMesh;
-        let treeShadowCapacity = 0;
-        let treeShadowMaterial;
-        let activeTreeBackend = treeBackendMode;
-        let rawGl;
-        let rawProgram;
-        let rawMatrixUniform;
-        let rawTreeResources = [];
-        let rawShadowProgram;
-        let rawShadowMatrixUniform;
-        let rawShadowOpacityUniform;
-        let rawShadowResource;
-        let rawTreesVisible = false;
-        const fallbackCircleOpacity = styleLayer.paint?.["circle-opacity"] ?? 0.82;
-        const fallbackCircleStrokeOpacity =
-          styleLayer.paint?.["circle-stroke-opacity"] ?? 0.55;
-        let fallbackVisible = true;
-        let emptyRefreshAttempts = 0;
-        let emptyRefreshTimer;
-        let lastRefreshTime = 0;
-        let lastTreeSelectionSignature;
-        let refreshQueued = false;
-        let refreshTimer;
-        let renderedTreeCount = 0;
-        let sourceSettled = false;
-        const treeStateCache = new Map();
-        const matrix = new THREE.Matrix4();
-        const mapMatrix = new THREE.Matrix4();
-        const sceneMatrix = new THREE.Matrix4();
-        const combinedMatrix = new THREE.Matrix4();
-        const position = new THREE.Vector3();
-        const scale = new THREE.Vector3();
-        const crownRotation = new THREE.Quaternion();
-        const yAxis = new THREE.Vector3(0, 1, 0);
-        const instanceTint = new THREE.Color();
-        const shadowMatrix = new THREE.Matrix4();
-        const shadowPosition = new THREE.Vector3();
-        const shadowScale = new THREE.Vector3();
-        const shadowRotation = new THREE.Quaternion();
-        const treeShadowLiftMeters = 0.04;
-        const treeShadowOpacity = 0.17;
-        const barkColor = new THREE.Color(
-          styleLayer.metadata?.["tileflow:tree-bark-color"] ?? "#8F8E79"
-        );
-        const broadleafColorValues =
-          styleLayer.metadata?.["tileflow:tree-broadleaf-colors"];
-        const broadleafPalette = (
-          Array.isArray(broadleafColorValues) && broadleafColorValues.length > 0
-            ? broadleafColorValues
-            : ["#87BA8C", "#98C89A", "#AAD4A7", "#B8DDB1"]
-        ).map((color) => new THREE.Color(color));
-        const coniferColorValues = styleLayer.metadata?.["tileflow:tree-conifer-colors"];
-        const coniferPalette = (
-          Array.isArray(coniferColorValues) && coniferColorValues.length > 0
-            ? coniferColorValues
-            : ["#77A77E", "#87B58A", "#98C399"]
-        ).map((color) => new THREE.Color(color));
-        const palmPalette = ["#82B77C", "#91C487", "#A0D093"].map(
-          (color) => new THREE.Color(color)
-        );
-
-        function addGeometryPart(parts, geometry, partPosition, partScale, rotation, color) {
-          const partMatrix = new THREE.Matrix4().compose(
-            new THREE.Vector3(...partPosition),
-            rotation,
-            new THREE.Vector3(...partScale)
-          );
-          geometry.applyMatrix4(partMatrix);
-          if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
-          const renderGeometry = geometry.index ? geometry.toNonIndexed() : geometry;
-          const positions = renderGeometry.getAttribute("position").array;
-          const normals = renderGeometry.getAttribute("normal").array;
-          const colors = new Float32Array((positions.length / 3) * 3);
-          const indices = Uint32Array.from(
-            {length: positions.length / 3},
-            (_value, index) => index
-          );
-          for (let index = 0; index < colors.length; index += 3) {
-            colors[index] = color.r;
-            colors[index + 1] = color.g;
-            colors[index + 2] = color.b;
-          }
-          parts.push({
-            colors,
-            indices,
-            normals: new Float32Array(normals),
-            positions: new Float32Array(positions)
-          });
-          if (renderGeometry !== geometry) renderGeometry.dispose();
-          geometry.dispose();
-        }
-
-        function addTaperedBranchPart(
-          parts,
-          start,
-          end,
-          baseRadius,
-          tipRadius,
-          radialSegments = 6
-        ) {
-          const startPoint = new THREE.Vector3(...start);
-          const endPoint = new THREE.Vector3(...end);
-          const direction = new THREE.Vector3().subVectors(endPoint, startPoint);
-          const branchRotation = new THREE.Quaternion().setFromUnitVectors(
-            yAxis,
-            direction.clone().normalize()
-          );
-          const center = startPoint.clone().add(endPoint).multiplyScalar(0.5);
-          addGeometryPart(
-            parts,
-            new THREE.CylinderGeometry(tipRadius, baseRadius, 1, radialSegments, 1, true),
-            [center.x, center.y, center.z],
-            [1, direction.length(), 1],
-            branchRotation,
-            barkColor
-          );
-        }
-
-        function createOrganicCrownGeometry(seed, simple) {
-          const geometry = new THREE.SphereGeometry(
-            0.5,
-            simple ? 8 : 12,
-            simple ? 5 : 7
-          );
-          const positions = geometry.getAttribute("position");
-          for (let index = 0; index < positions.count; index += 1) {
-            const x = positions.getX(index);
-            const y = positions.getY(index);
-            const z = positions.getZ(index);
-            const angle = Math.atan2(z, x);
-            const normalizedHeight = Math.max(-1, Math.min(1, y * 2));
-            const latitudeWeight = 1 - normalizedHeight * normalizedHeight;
-            const ripple =
-              1 +
-              Math.sin(angle * 3 + seed * 1.73) * 0.065 * latitudeWeight +
-              Math.sin(angle * 5 - seed * 0.91) * 0.035 * latitudeWeight +
-              Math.sin(y * Math.PI * 4 + seed * 0.63) * 0.025;
-            positions.setXYZ(
-              index,
-              x * ripple,
-              y * (1 + Math.cos(angle * 2 + seed) * 0.035),
-              z * ripple
-            );
-          }
-          positions.needsUpdate = true;
-          geometry.deleteAttribute("normal");
-          geometry.computeVertexNormals();
-          return geometry;
-        }
-
-        function createScallopedConeGeometry(seed, simple) {
-          const geometry = new THREE.ConeGeometry(
-            0.5,
-            1,
-            simple ? 8 : 12,
-            simple ? 2 : 3
-          );
-          const positions = geometry.getAttribute("position");
-          for (let index = 0; index < positions.count; index += 1) {
-            const x = positions.getX(index);
-            const y = positions.getY(index);
-            const z = positions.getZ(index);
-            const angle = Math.atan2(z, x);
-            const progress = Math.max(0, Math.min(1, y + 0.5));
-            const ripple =
-              1 +
-              Math.sin(angle * 3 + seed * 1.31) * 0.08 +
-              Math.sin(angle * 5 - seed * 0.77) * 0.045 +
-              Math.sin(progress * Math.PI * 3 + seed) * 0.035;
-            positions.setXYZ(
-              index,
-              x * ripple,
-              y + Math.sin(angle * 2 + seed) * (1 - progress) * 0.018,
-              z * ripple
-            );
-          }
-          positions.needsUpdate = true;
-          geometry.deleteAttribute("normal");
-          geometry.computeVertexNormals();
-          return geometry;
-        }
-
-        function createCurvedPalmFrondGeometry(seed, simple, fan) {
-          const segments = simple ? 5 : 8;
-          const length = fan ? 0.49 + (seed % 3) * 0.025 : 0.58 + (seed % 3) * 0.03;
-          const droop = fan ? 0.16 + (seed % 2) * 0.025 : 0.25 + (seed % 3) * 0.025;
-          const sway = (((seed * 37) % 7) - 3) * 0.008;
-          const widthScale = fan ? 0.17 : 0.024;
-          const centerAt = (progress) => [
-            length * progress,
-            Math.sin(Math.PI * progress) * (fan ? 0.08 : 0.11) -
-              droop * Math.pow(progress, 1.7),
-            sway * Math.sin(Math.PI * progress)
-          ];
-          const points = [];
-          for (let step = 0; step <= segments; step += 1) {
-            const progress = step / segments;
-            const envelope = Math.pow(Math.sin(Math.PI * progress), 0.7) * (1 - 0.25 * progress);
-            const width = Math.max(0.008, widthScale * envelope);
-            const [centerX, centerY, centerZ] = centerAt(progress);
-            points.push(
-              [centerX, centerY, centerZ - width],
-              [centerX, centerY, centerZ + width]
-            );
-          }
-          const trianglePositions = [];
-          const appendTriangle = (first, second, third) => {
-            trianglePositions.push(...first, ...second, ...third);
-          };
-          const appendDoubleSidedQuad = (leftStart, rightStart, leftEnd, rightEnd) => {
-            appendTriangle(leftStart, rightStart, leftEnd);
-            appendTriangle(rightStart, rightEnd, leftEnd);
-            appendTriangle(leftEnd, rightStart, leftStart);
-            appendTriangle(leftEnd, rightEnd, rightStart);
-          };
-          for (let segment = 0; segment < segments; segment += 1) {
-            const leftStart = points[segment * 2];
-            const rightStart = points[segment * 2 + 1];
-            const leftEnd = points[(segment + 1) * 2];
-            const rightEnd = points[(segment + 1) * 2 + 1];
-            appendDoubleSidedQuad(leftStart, rightStart, leftEnd, rightEnd);
-          }
-          if (!fan) {
-            const leafletCount = simple ? 4 : 7;
-            for (let leaflet = 0; leaflet < leafletCount; leaflet += 1) {
-              const progress = 0.17 + (leaflet / (leafletCount - 1)) * 0.66;
-              const [centerX, centerY, centerZ] = centerAt(progress);
-              const leafletLength =
-                (0.075 + Math.sin(Math.PI * progress) * 0.095) *
-                (0.94 + ((leaflet + seed) % 3) * 0.035);
-              const leafletWidth = 0.018 + Math.sin(Math.PI * progress) * 0.012;
-              const leafletBack = 0.018 + ((leaflet + seed) % 2) * 0.012;
-              const leafletDrop = 0.022 + progress * 0.045;
-              for (const side of [-1, 1]) {
-                const base = [centerX - 0.014, centerY, centerZ + side * 0.007];
-                const midCenter = [
-                  centerX + 0.012,
-                  centerY - leafletDrop * 0.35,
-                  centerZ + side * leafletLength * 0.58
-                ];
-                const midLeft = [
-                  midCenter[0] - leafletWidth,
-                  midCenter[1],
-                  midCenter[2] - side * leafletWidth * 0.14
-                ];
-                const midRight = [
-                  midCenter[0] + leafletWidth,
-                  midCenter[1],
-                  midCenter[2] + side * leafletWidth * 0.14
-                ];
-                const tip = [
-                  centerX - leafletBack,
-                  centerY - leafletDrop,
-                  centerZ + side * leafletLength
-                ];
-                appendTriangle(base, midRight, midLeft);
-                appendTriangle(midLeft, midRight, tip);
-                appendTriangle(midLeft, midRight, base);
-                appendTriangle(tip, midRight, midLeft);
-              }
-            }
-          }
-          const geometry = new THREE.BufferGeometry();
-          geometry.setAttribute(
-            "position",
-            new THREE.Float32BufferAttribute(trianglePositions, 3)
-          );
-          geometry.computeVertexNormals();
-          return geometry;
-        }
-
-        function mergeGeometryParts(parts) {
-          const positionLength = parts.reduce((total, part) => total + part.positions.length, 0);
-          const positions = new Float32Array(positionLength);
-          const normals = new Float32Array(positionLength);
-          const colors = new Float32Array(positionLength);
-          const indexLength = parts.reduce((total, part) => total + part.indices.length, 0);
-          const indices = new Uint32Array(indexLength);
-          let offset = 0;
-          let indexOffset = 0;
-          let vertexOffset = 0;
-          for (const part of parts) {
-            positions.set(part.positions, offset);
-            normals.set(part.normals, offset);
-            colors.set(part.colors, offset);
-            for (let index = 0; index < part.indices.length; index += 1) {
-              indices[indexOffset + index] = part.indices[index] + vertexOffset;
-            }
-            indexOffset += part.indices.length;
-            vertexOffset += part.positions.length / 3;
-            offset += part.positions.length;
-          }
-          const geometry = new THREE.BufferGeometry();
-          geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-          geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
-          geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-          geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-          geometry.computeBoundingBox();
-          geometry.computeBoundingSphere();
-          return geometry;
-        }
-
-        function createBroadleafTreeGeometry(variant, geometryVariant, simple) {
-          const parts = [];
-          const trunkTops = [
-            [0.008, 0.56, -0.004],
-            [-0.012, 0.51, 0.008],
-            [0.006, 0.62, 0.004]
-          ];
-          const trunkTopBase = trunkTops[variant] ?? trunkTops[0];
-          const trunkTop = [
-            trunkTopBase[0] + (geometryVariant === 0 ? -0.008 : 0.012),
-            trunkTopBase[1] + (geometryVariant === 0 ? -0.012 : 0.016),
-            trunkTopBase[2] + (geometryVariant === 0 ? 0.006 : -0.01)
-          ];
-          addTaperedBranchPart(
-            parts,
-            [0, 0, 0],
-            trunkTop,
-            0.04 + variant * 0.001,
-            0.022,
-            simple ? 6 : 8
-          );
-
-          const branchTargetLayouts = [
-            [
-              [-0.2, 0.72, 0.03],
-              [0.01, 0.79, -0.04],
-              [0.21, 0.72, -0.02],
-              [-0.03, 0.7, 0.18],
-              [0.06, 0.73, -0.17]
-            ],
-            [
-              [-0.27, 0.68, 0.02],
-              [-0.09, 0.76, -0.08],
-              [0.25, 0.69, -0.03],
-              [0.06, 0.72, 0.2],
-              [0.13, 0.79, -0.13]
-            ],
-            [
-              [-0.15, 0.75, 0.02],
-              [0.04, 0.86, -0.04],
-              [0.16, 0.77, 0.01],
-              [0.02, 0.8, 0.15]
-            ]
-          ];
-          const branchTargets = branchTargetLayouts[variant] ?? branchTargetLayouts[0];
-          const branchCount = simple ? Math.min(4, branchTargets.length) : branchTargets.length;
-          for (let branch = 0; branch < branchCount; branch += 1) {
-            const branchTarget = branchTargets[branch];
-            const shelteredBranchTarget = [
-              branchTarget[0] * 0.86,
-              branchTarget[1] - 0.07,
-              branchTarget[2] * 0.86
-            ];
-            addTaperedBranchPart(
-              parts,
-              [trunkTop[0] * 0.55, 0.38 + branch * 0.018, trunkTop[2] * 0.55],
-              shelteredBranchTarget,
-              0.022 - branch * 0.0015,
-              0.0095 - branch * 0.00065,
-              simple ? 5 : 7
-            );
-          }
-
-          const roundCrownLayout = [
-            {position: [0, 0.8, 0.01], scale: [0.72, 0.39, 0.66]},
-            {position: [-0.27, 0.73, 0.05], scale: [0.45, 0.26, 0.42]},
-            {position: [0.27, 0.75, -0.06], scale: [0.44, 0.25, 0.41]},
-            {position: [-0.08, 0.7, 0.24], scale: [0.4, 0.23, 0.37]},
-            {position: [0.1, 0.72, -0.24], scale: [0.41, 0.24, 0.38]}
-          ];
-          const openCrownLayout = [
-            {position: [-0.29, 0.72, 0.03], scale: [0.47, 0.22, 0.39]},
-            {position: [-0.08, 0.83, -0.1], scale: [0.44, 0.24, 0.36]},
-            {position: [0.22, 0.79, -0.04], scale: [0.49, 0.22, 0.4]},
-            {position: [0.31, 0.67, 0.09], scale: [0.4, 0.19, 0.34]},
-            {position: [0.04, 0.68, 0.22], scale: [0.45, 0.21, 0.38]},
-            {position: [-0.19, 0.65, 0.18], scale: [0.38, 0.18, 0.32]}
-          ];
-          const tallCrownLayout = [
-            {position: [0, 0.79, 0.01], scale: [0.53, 0.58, 0.48]},
-            {position: [-0.19, 0.76, 0.05], scale: [0.34, 0.4, 0.32]},
-            {position: [0.18, 0.8, -0.05], scale: [0.34, 0.42, 0.31]},
-            {position: [-0.05, 0.94, -0.08], scale: [0.32, 0.34, 0.3]},
-            {position: [0.06, 0.69, 0.15], scale: [0.32, 0.35, 0.3]}
-          ];
-          const crownLayouts = [roundCrownLayout, openCrownLayout, tallCrownLayout];
-          const crownLayout = crownLayouts[variant] ?? crownLayouts[0];
-          const lobeCount = simple ? Math.max(4, crownLayout.length - 1) : crownLayout.length;
-          const crownColorPatterns = [
-            [2, 1, 3, 0, 1],
-            [1, 2, 0, 3, 1, 2],
-            [2, 1, 3, 1, 2]
-          ];
-          const crownColorPattern = crownColorPatterns[variant] ?? crownColorPatterns[0];
-          for (let lobe = 0; lobe < lobeCount; lobe += 1) {
-            const lobeShape = crownLayout[lobe];
-            const lobeSeed = variant * 23 + geometryVariant * 11 + lobe * 3;
-            const lobePosition = [
-              lobeShape.position[0] + Math.sin(lobeSeed * 1.7) * 0.018,
-              lobeShape.position[1] + Math.cos(lobeSeed * 1.1) * 0.012,
-              lobeShape.position[2] + Math.cos(lobeSeed * 1.9) * 0.018
-            ];
-            addGeometryPart(
-              parts,
-              createOrganicCrownGeometry(lobeSeed, simple),
-              lobePosition,
-              lobeShape.scale,
-              new THREE.Quaternion().setFromEuler(
-                new THREE.Euler(
-                  ((lobe % 3) - 1) * 0.09,
-                  variant * 0.41 + geometryVariant * 0.27 + lobe * 0.37,
-                  (((lobe + variant + geometryVariant) % 3) - 1) * 0.11
-                )
-              ),
-              broadleafPalette[
-                (crownColorPattern[lobe] + geometryVariant * 2) % broadleafPalette.length
-              ]
-            );
-          }
-          const crownCapShapes = [
-            {position: [0.01, 0.9, 0], scale: [0.3, 0.18, 0.28]},
-            {position: [0, 0.84, 0.01], scale: [0.29, 0.17, 0.27]},
-            {position: [0, 0.96, 0], scale: [0.24, 0.22, 0.23]}
-          ];
-          const crownCapShape = crownCapShapes[variant] ?? crownCapShapes[0];
-          addGeometryPart(
-            parts,
-            createOrganicCrownGeometry(149 + variant * 17 + geometryVariant * 7, simple),
-            crownCapShape.position,
-            crownCapShape.scale,
-            new THREE.Quaternion().setFromAxisAngle(
-              yAxis,
-              variant * 0.31 + geometryVariant * 0.43
-            ),
-            broadleafPalette[(1 + variant + geometryVariant * 2) % broadleafPalette.length]
-          );
-          return mergeGeometryParts(parts);
-        }
-
-        function createConiferTreeGeometry(variant, geometryVariant, simple) {
-          const parts = [];
-          const columnar = variant === 1;
-          addTaperedBranchPart(
-            parts,
-            [0, 0, 0],
-            [variant === 0 ? 0.006 : -0.006, columnar ? 0.54 : 0.43, 0],
-            0.035,
-            0.018,
-            simple ? 6 : 8
-          );
-          if (columnar) {
-            const columnarCrownLayout = [
-              {position: [-0.01, 0.5, 0.01], scale: [0.38, 0.48, 0.36]},
-              {position: [0.01, 0.66, -0.01], scale: [0.42, 0.5, 0.39]},
-              {position: [-0.015, 0.8, 0.01], scale: [0.34, 0.42, 0.32]},
-              {position: [0.008, 0.91, 0], scale: [0.22, 0.28, 0.21]}
-            ];
-            const massCount = simple ? 3 : columnarCrownLayout.length;
-            for (let mass = 0; mass < massCount; mass += 1) {
-              const crownMass = columnarCrownLayout[mass];
-              addGeometryPart(
-                parts,
-                createOrganicCrownGeometry(71 + geometryVariant * 13 + mass * 5, simple),
-                crownMass.position,
-                crownMass.scale,
-                new THREE.Quaternion().setFromAxisAngle(yAxis, mass * 0.43),
-                coniferPalette[(mass + 1) % coniferPalette.length]
-              );
-            }
-            return mergeGeometryParts(parts);
-          }
-          const tierCount = simple ? 3 : 5;
-          for (let tier = 0; tier < tierCount; tier += 1) {
-            const progress = tier / (tierCount - 1);
-            const tierDiameter = 0.94 - progress * 0.5;
-            const tierHeight = 0.35 - progress * 0.075;
-            addGeometryPart(
-              parts,
-              createScallopedConeGeometry(geometryVariant * 19 + tier * 7, simple),
-              [
-                Math.sin(tier * 2.1 + geometryVariant) * 0.012,
-                0.45 + progress * 0.44,
-                Math.cos(tier * 1.7 + geometryVariant) * 0.012
-              ],
-              [tierDiameter, tierHeight, tierDiameter],
-              new THREE.Quaternion().setFromAxisAngle(
-                yAxis,
-                variant * 0.6 + geometryVariant * 0.29 + tier * 0.31
-              ),
-              coniferPalette[(variant + tier) % coniferPalette.length]
-            );
-          }
-          return mergeGeometryParts(parts);
-        }
-
-        function createPalmTreeGeometry(geometryVariant, simple) {
-          const parts = [];
-          const fan = geometryVariant === 1;
-          const lowerTrunkTop = [fan ? -0.014 : 0.012, 0.42, fan ? 0.006 : -0.004];
-          const upperTrunkTop = [fan ? 0.014 : -0.012, fan ? 0.73 : 0.78, fan ? -0.008 : 0.012];
-          addTaperedBranchPart(parts, [0, 0, 0], lowerTrunkTop, 0.032, 0.026, simple ? 7 : 9);
-          addTaperedBranchPart(
-            parts,
-            lowerTrunkTop,
-            upperTrunkTop,
-            0.026,
-            0.016,
-            simple ? 7 : 9
-          );
-          addGeometryPart(
-            parts,
-            createOrganicCrownGeometry(113 + geometryVariant * 17, simple),
-            [upperTrunkTop[0], upperTrunkTop[1] + 0.018, upperTrunkTop[2]],
-            [fan ? 0.19 : 0.16, 0.1, fan ? 0.19 : 0.16],
-            new THREE.Quaternion(),
-            palmPalette[1]
-          );
-          const frondCount = simple ? (fan ? 8 : 7) : (fan ? 12 : 11);
-          for (let frond = 0; frond < frondCount; frond += 1) {
-            const angle =
-              (frond / frondCount) * Math.PI * 2 +
-              (((frond * 5 + geometryVariant) % 3) - 1) * 0.045;
-            addGeometryPart(
-              parts,
-              createCurvedPalmFrondGeometry(frond + geometryVariant * 17, simple, fan),
-              [upperTrunkTop[0], upperTrunkTop[1] + 0.018, upperTrunkTop[2]],
-              [0.94 + (frond % 3) * 0.035, 0.96 + (frond % 2) * 0.035, 1],
-              new THREE.Quaternion().setFromEuler(
-                new THREE.Euler(
-                  (((frond * 7 + geometryVariant) % 3) - 1) * 0.045,
-                  -angle,
-                  (((frond * 5 + geometryVariant) % 5) - 2) * 0.022
-                )
-              ),
-              palmPalette[(frond + geometryVariant) % palmPalette.length]
-            );
-          }
-          return mergeGeometryParts(parts);
-        }
-
-        function createTreeGeometries() {
-          const simple = treeRendererMode === "simple";
-          return [
-            createBroadleafTreeGeometry(0, 0, simple),
-            createBroadleafTreeGeometry(0, 1, simple),
-            createBroadleafTreeGeometry(1, 0, simple),
-            createBroadleafTreeGeometry(1, 1, simple),
-            createBroadleafTreeGeometry(2, 0, simple),
-            createBroadleafTreeGeometry(2, 1, simple),
-            createConiferTreeGeometry(0, 0, simple),
-            createConiferTreeGeometry(1, 0, simple),
-            createPalmTreeGeometry(0, simple),
-            createPalmTreeGeometry(1, simple)
-          ];
-        }
-
-        function compileRawShader(gl, type, source) {
-          const shader = gl.createShader(type);
-          if (!shader) throw new Error("Unable to create tree shader");
-          gl.shaderSource(shader, source);
-          gl.compileShader(shader);
-          if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-            const message = gl.getShaderInfoLog(shader) || "unknown shader error";
-            gl.deleteShader(shader);
-            throw new Error(message);
-          }
-          return shader;
-        }
-
-        function createRawTreeProgram(gl) {
-          const vertexShader = compileRawShader(
-            gl,
-            gl.VERTEX_SHADER,
-            "#version 300 es\\n" +
-              "precision highp float;\\n" +
-              "layout(location=0) in vec3 a_position;\\n" +
-              "layout(location=1) in vec3 a_normal;\\n" +
-              "layout(location=2) in vec3 a_color;\\n" +
-              "layout(location=3) in vec3 a_instance_position;\\n" +
-              "layout(location=4) in vec3 a_instance_scale;\\n" +
-              "layout(location=5) in vec2 a_instance_rotation;\\n" +
-              "layout(location=6) in float a_instance_tint;\\n" +
-              "uniform mat4 u_matrix;\\n" +
-              "out vec3 v_color;\\n" +
-              "void main() {\\n" +
-              "  vec2 horizontal = a_position.xz * a_instance_scale.xz;\\n" +
-              "  vec2 rotated = vec2(\\n" +
-              "    horizontal.x * a_instance_rotation.x - horizontal.y * a_instance_rotation.y,\\n" +
-              "    horizontal.x * a_instance_rotation.y + horizontal.y * a_instance_rotation.x\\n" +
-              "  );\\n" +
-              "  vec3 scaledNormal = normalize(a_normal / max(a_instance_scale, vec3(0.001)));\\n" +
-              "  vec2 normalHorizontal = vec2(\\n" +
-              "    scaledNormal.x * a_instance_rotation.x - scaledNormal.z * a_instance_rotation.y,\\n" +
-              "    scaledNormal.x * a_instance_rotation.y + scaledNormal.z * a_instance_rotation.x\\n" +
-              "  );\\n" +
-              "  vec3 mapNormal = normalize(vec3(normalHorizontal.x, normalHorizontal.y, scaledNormal.y));\\n" +
-              "  float sky = mapNormal.z * 0.5 + 0.5;\\n" +
-              "  float key = max(dot(mapNormal, normalize(vec3(-0.35, -0.5, 0.78))), 0.0);\\n" +
-              "  float heightOcclusion = mix(0.84, 1.0, smoothstep(0.16, 0.88, a_position.y));\\n" +
-              "  float light = (0.67 + sky * 0.18 + key * 0.23) * heightOcclusion;\\n" +
-              "  v_color = a_color * light * a_instance_tint;\\n" +
-              "  vec3 mapPosition = vec3(\\n" +
-              "    a_instance_position.x + rotated.x,\\n" +
-              "    a_instance_position.z + rotated.y,\\n" +
-              "    a_instance_position.y + a_position.y * a_instance_scale.y\\n" +
-              "  );\\n" +
-              "  gl_Position = u_matrix * vec4(mapPosition, 1.0);\\n" +
-              "}\\n"
-          );
-          const fragmentShader = compileRawShader(
-            gl,
-            gl.FRAGMENT_SHADER,
-            "#version 300 es\\n" +
-              "precision highp float;\\n" +
-              "in vec3 v_color;\\n" +
-              "out vec4 out_color;\\n" +
-              "vec3 linearToSrgb(vec3 color) {\\n" +
-              "  vec3 lower = color * 12.92;\\n" +
-              "  vec3 upper = 1.055 * pow(color, vec3(1.0 / 2.4)) - 0.055;\\n" +
-              "  return mix(lower, upper, step(vec3(0.0031308), color));\\n" +
-              "}\\n" +
-              "void main() { out_color = vec4(linearToSrgb(v_color), 1.0); }\\n"
-          );
-          const program = gl.createProgram();
-          if (!program) throw new Error("Unable to create tree program");
-          gl.attachShader(program, vertexShader);
-          gl.attachShader(program, fragmentShader);
-          gl.linkProgram(program);
-          gl.deleteShader(vertexShader);
-          gl.deleteShader(fragmentShader);
-          if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            const message = gl.getProgramInfoLog(program) || "unknown program error";
-            gl.deleteProgram(program);
-            throw new Error(message);
-          }
-          return program;
-        }
-
-        function createRawTreeShadowProgram(gl) {
-          const vertexShader = compileRawShader(
-            gl,
-            gl.VERTEX_SHADER,
-            "#version 300 es\\n" +
-              "precision highp float;\\n" +
-              "layout(location=0) in vec2 a_corner;\\n" +
-              "layout(location=1) in vec4 a_instance;\\n" +
-              "uniform mat4 u_matrix;\\n" +
-              "out vec2 v_shadow_coordinate;\\n" +
-              "void main() {\\n" +
-              "  v_shadow_coordinate = a_corner;\\n" +
-              "  vec2 shadowOffset = vec2(-0.28, 0.34) * a_instance.w;\\n" +
-              "  vec2 shadowPosition = a_corner * vec2(1.0, 0.76) * a_instance.w + shadowOffset;\\n" +
-              "  vec3 mapPosition = vec3(\\n" +
-              "    a_instance.x + shadowPosition.x,\\n" +
-              "    a_instance.z + shadowPosition.y,\\n" +
-              "    a_instance.y + 0.04\\n" +
-              "  );\\n" +
-              "  gl_Position = u_matrix * vec4(mapPosition, 1.0);\\n" +
-              "}\\n"
-          );
-          const fragmentShader = compileRawShader(
-            gl,
-            gl.FRAGMENT_SHADER,
-            "#version 300 es\\n" +
-              "precision mediump float;\\n" +
-              "in vec2 v_shadow_coordinate;\\n" +
-              "uniform float u_opacity;\\n" +
-              "out vec4 out_color;\\n" +
-              "void main() {\\n" +
-              "  float radiusSquared = dot(v_shadow_coordinate, v_shadow_coordinate);\\n" +
-              "  if (radiusSquared >= 1.0) discard;\\n" +
-              "  float coverage = 1.0 - smoothstep(0.90, 1.0, radiusSquared);\\n" +
-              "  float alpha = u_opacity * coverage;\\n" +
-              "  out_color = vec4(0.18, 0.21, 0.17, alpha);\\n" +
-              "}\\n"
-          );
-          const program = gl.createProgram();
-          if (!program) throw new Error("Unable to create tree shadow program");
-          gl.attachShader(program, vertexShader);
-          gl.attachShader(program, fragmentShader);
-          gl.linkProgram(program);
-          gl.deleteShader(vertexShader);
-          gl.deleteShader(fragmentShader);
-          if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            const message = gl.getProgramInfoLog(program) || "unknown tree shadow program error";
-            gl.deleteProgram(program);
-            throw new Error(message);
-          }
-          return program;
-        }
-
-        function createRawTreeShadowResource(gl) {
-          const vertexArray = gl.createVertexArray();
-          const cornerBuffer = gl.createBuffer();
-          const instanceBuffer = gl.createBuffer();
-          if (!vertexArray || !cornerBuffer || !instanceBuffer) {
-            throw new Error("Unable to allocate tree shadow buffers");
-          }
-          gl.bindVertexArray(vertexArray);
-          gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuffer);
-          gl.bufferData(
-            gl.ARRAY_BUFFER,
-            new Float32Array([-1, -1, 1, -1, 1, 1, -1, 1]),
-            gl.STATIC_DRAW
-          );
-          gl.enableVertexAttribArray(0);
-          gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-          gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
-          gl.bufferData(gl.ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW);
-          gl.enableVertexAttribArray(1);
-          gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 16, 0);
-          gl.vertexAttribDivisor(1, 1);
-          gl.bindVertexArray(null);
-          return {cornerBuffer, count: 0, instanceBuffer, vertexArray};
-        }
-
-        function createRawTreeResource(gl, geometry) {
-          const vertexArray = gl.createVertexArray();
-          const positionBuffer = gl.createBuffer();
-          const normalBuffer = gl.createBuffer();
-          const colorBuffer = gl.createBuffer();
-          const indexBuffer = gl.createBuffer();
-          const instanceBuffer = gl.createBuffer();
-          if (
-            !vertexArray ||
-            !positionBuffer ||
-            !normalBuffer ||
-            !colorBuffer ||
-            !indexBuffer ||
-            !instanceBuffer
-          ) {
-            throw new Error("Unable to allocate tree buffers");
-          }
-          gl.bindVertexArray(vertexArray);
-          const attributes = [
-            [0, positionBuffer, geometry.getAttribute("position").array],
-            [1, normalBuffer, geometry.getAttribute("normal").array],
-            [2, colorBuffer, geometry.getAttribute("color").array]
-          ];
-          for (const [location, buffer, values] of attributes) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-            gl.bufferData(gl.ARRAY_BUFFER, values, gl.STATIC_DRAW);
-            gl.enableVertexAttribArray(location);
-            gl.vertexAttribPointer(location, 3, gl.FLOAT, false, 0, 0);
-          }
-          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-          gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, geometry.index.array, gl.STATIC_DRAW);
-          gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuffer);
-          gl.bufferData(gl.ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW);
-          gl.enableVertexAttribArray(3);
-          gl.vertexAttribPointer(3, 3, gl.FLOAT, false, 36, 0);
-          gl.vertexAttribDivisor(3, 1);
-          gl.enableVertexAttribArray(4);
-          gl.vertexAttribPointer(4, 3, gl.FLOAT, false, 36, 12);
-          gl.vertexAttribDivisor(4, 1);
-          gl.enableVertexAttribArray(5);
-          gl.vertexAttribPointer(5, 2, gl.FLOAT, false, 36, 24);
-          gl.vertexAttribDivisor(5, 1);
-          gl.enableVertexAttribArray(6);
-          gl.vertexAttribPointer(6, 1, gl.FLOAT, false, 36, 32);
-          gl.vertexAttribDivisor(6, 1);
-          gl.bindVertexArray(null);
-          return {
-            colorBuffer,
-            count: 0,
-            indexBuffer,
-            indexCount: geometry.index.count,
-            instanceBuffer,
-            normalBuffer,
-            positionBuffer,
-            vertexArray
-          };
-        }
-
-        function disposeRawTreeResources() {
-          if (!rawGl) return;
-          for (const resource of rawTreeResources) {
-            rawGl.deleteBuffer(resource.positionBuffer);
-            rawGl.deleteBuffer(resource.normalBuffer);
-            rawGl.deleteBuffer(resource.colorBuffer);
-            rawGl.deleteBuffer(resource.indexBuffer);
-            rawGl.deleteBuffer(resource.instanceBuffer);
-            rawGl.deleteVertexArray(resource.vertexArray);
-          }
-          rawTreeResources = [];
-          if (rawProgram) rawGl.deleteProgram(rawProgram);
-          if (rawShadowResource) {
-            rawGl.deleteBuffer(rawShadowResource.cornerBuffer);
-            rawGl.deleteBuffer(rawShadowResource.instanceBuffer);
-            rawGl.deleteVertexArray(rawShadowResource.vertexArray);
-          }
-          if (rawShadowProgram) rawGl.deleteProgram(rawShadowProgram);
-          rawProgram = undefined;
-          rawMatrixUniform = undefined;
-          rawShadowProgram = undefined;
-          rawShadowMatrixUniform = undefined;
-          rawShadowOpacityUniform = undefined;
-          rawShadowResource = undefined;
-        }
-
-        function numberProperty(properties, name) {
-          const value = Number(properties?.[name]);
-          return Number.isFinite(value) && value > 0 ? value : undefined;
-        }
-
-        function stableTreeKey(feature, lng, lat) {
-          const properties = feature.properties ?? {};
-          const sourceFeatureId =
-            properties.osm_id ??
-            properties.osmId ??
-            properties.id ??
-            properties["@id"] ??
-            feature.id;
-          return sourceFeatureId === undefined || sourceFeatureId === null
-            ? lng.toFixed(6) + ":" + lat.toFixed(6)
-            : String(sourceFeatureId);
-        }
-
-        function stableUnit(key, salt = 0) {
-          let hash = (2166136261 ^ salt) >>> 0;
-          for (let index = 0; index < key.length; index += 1) {
-            hash ^= key.charCodeAt(index);
-            hash = Math.imul(hash, 16777619);
-          }
-          hash += hash << 13;
-          hash ^= hash >>> 7;
-          hash += hash << 3;
-          hash ^= hash >>> 17;
-          hash += hash << 5;
-          return (hash >>> 0) / 4294967296;
-        }
-
-        function treeLodForZoom(zoom) {
-          return treeLods.find((lod) => zoom < lod.untilZoom) ?? treeLods.at(-1);
-        }
-
-        function setFallbackVisible(visible) {
-          if (fallbackVisible === visible || !map.getLayer(styleLayer.id)) return;
-          map.setPaintProperty(
-            styleLayer.id,
-            "circle-opacity",
-            visible ? fallbackCircleOpacity : 0
-          );
-          map.setPaintProperty(
-            styleLayer.id,
-            "circle-stroke-opacity",
-            visible ? fallbackCircleStrokeOpacity : 0
-          );
-          fallbackVisible = visible;
-        }
-
-        function updateFallbackVisibility() {
-          // A non-empty query can still represent only one loaded tile. Keep
-          // the vector circles underneath until MapLibre reports the complete
-          // source settled, otherwise a partial 3D batch erases neighbouring
-          // tiles at source boundaries.
-          setFallbackVisible(!sourceSettled || renderedTreeCount === 0);
-        }
-
-        function treeSelectionSignature(trees, lodName) {
-          let hash = 2166136261;
-          for (const tree of trees) {
-            for (let index = 0; index < tree.key.length; index += 1) {
-              hash ^= tree.key.charCodeAt(index);
-              hash = Math.imul(hash, 16777619);
-            }
-            hash ^= 0xff;
-            hash = Math.imul(hash, 16777619);
-          }
-          return lodName + ":" + trees.length + ":" + (hash >>> 0);
-        }
-
-        function selectVisibleTrees(features, lod) {
-          const worldSize = 512 * Math.pow(2, map.getZoom());
-          const seen = new Set();
-          const candidates = [];
-          for (const feature of features) {
-            if (feature.geometry?.type !== "Point") continue;
-            const [lng, lat] = feature.geometry.coordinates;
-            const key = stableTreeKey(feature, lng, lat);
-            if (seen.has(key)) continue;
-            seen.add(key);
-            const latitudeSine = Math.sin(
-              (Math.max(-85.051129, Math.min(85.051129, lat)) * Math.PI) / 180
-            );
-            const worldX = ((lng + 180) / 360) * worldSize;
-            const worldY =
-              (0.5 - Math.log((1 + latitudeSine) / (1 - latitudeSine)) / (4 * Math.PI)) *
-              worldSize;
-            candidates.push({feature, key, lat, lng, worldX, worldY});
-          }
-          candidates.sort((left, right) =>
-            left.key < right.key ? -1 : left.key > right.key ? 1 : 0
-          );
-          if (lod.densityCellPixels === 0) return candidates;
-          const occupiedCells = new Set();
-          const selected = [];
-          for (const candidate of candidates) {
-            const cellKey =
-              Math.floor(candidate.worldX / lod.densityCellPixels) +
-              ":" +
-              Math.floor(candidate.worldY / lod.densityCellPixels);
-            if (occupiedCells.has(cellKey)) continue;
-            occupiedCells.add(cellKey);
-            selected.push(candidate);
-          }
-          return selected;
-        }
-
-        function nextTreeInstanceCapacity(requiredCapacity) {
-          let capacity = initialTreeInstanceCapacity;
-          while (capacity < requiredCapacity) capacity *= 2;
-          return capacity;
-        }
-
-        function createThreeTreeMesh(geometry, capacity) {
-          const treeMesh = new THREE.InstancedMesh(geometry, treeMaterial, capacity);
-          treeMesh.count = 0;
-          treeMesh.frustumCulled = false;
-          return treeMesh;
-        }
-
-        function ensureThreeTreeMeshCapacity(variantIndex, requiredCapacity) {
-          if (treeMeshCapacities[variantIndex] >= requiredCapacity) return;
-          const currentTreeMesh = treeMeshes[variantIndex];
-          const treeMesh = createThreeTreeMesh(
-            treeGeometries[variantIndex],
-            nextTreeInstanceCapacity(requiredCapacity)
-          );
-          treeGroup.remove(currentTreeMesh);
-          currentTreeMesh.dispose();
-          treeMeshes[variantIndex] = treeMesh;
-          treeMeshCapacities[variantIndex] = treeMesh.instanceMatrix.count;
-          treeGroup.add(treeMesh);
-        }
-
-        function ensureThreeTreeShadowCapacity(requiredCapacity) {
-          if (treeShadowCapacity >= requiredCapacity) return;
-          const shadowMesh = new THREE.InstancedMesh(
-            treeShadowGeometry,
-            treeShadowMaterial,
-            nextTreeInstanceCapacity(requiredCapacity)
-          );
-          shadowMesh.count = 0;
-          shadowMesh.frustumCulled = false;
-          shadowMesh.renderOrder = 1;
-          treeGroup.remove(treeShadowMesh);
-          treeShadowMesh.dispose();
-          treeShadowMesh = shadowMesh;
-          treeShadowCapacity = shadowMesh.instanceMatrix.count;
-          treeGroup.add(shadowMesh);
-        }
-
-        function rememberTreeState(key, state) {
-          if (treeStateCache.size >= maximumCachedTrees) {
-            treeStateCache.delete(treeStateCache.keys().next().value);
-          }
-          treeStateCache.set(key, state);
-          return state;
-        }
-
-        const treeFormDimensions = {
-          round: {crownMaximum: 0.9, crownMinimum: 0.66, heightMaximum: 12, heightMinimum: 6},
-          open: {crownMaximum: 1.05, crownMinimum: 0.8, heightMaximum: 10, heightMinimum: 5},
-          tall: {crownMaximum: 0.68, crownMinimum: 0.48, heightMaximum: 17, heightMinimum: 9},
-          conifer: {crownMaximum: 0.66, crownMinimum: 0.46, heightMaximum: 16, heightMinimum: 7},
-          columnar: {crownMaximum: 0.36, crownMinimum: 0.22, heightMaximum: 18, heightMinimum: 9},
-          palm: {crownMaximum: 0.5, crownMinimum: 0.34, heightMaximum: 16, heightMinimum: 8}
-        };
-
-        function resolveTreeState(feature, key, lng, lat, treeElevation) {
-          const cached = treeStateCache.get(key);
-          if (cached) return cached;
-          const variation = stableUnit(key, 1);
-          const form = resolveTreeForm(feature.properties, key);
-          const dimensions = treeFormDimensions[form] ?? treeFormDimensions.round;
-          const baseHeight = Math.min(
-            32,
-            numberProperty(feature.properties, heightField) ??
-              dimensions.heightMinimum +
-                variation * (dimensions.heightMaximum - dimensions.heightMinimum)
-          );
-          const baseCrownDiameter = Math.min(
-            20,
-            numberProperty(feature.properties, crownField) ??
-              baseHeight *
-                (dimensions.crownMinimum +
-                  stableUnit(key, 2) * (dimensions.crownMaximum - dimensions.crownMinimum))
-          );
-          return rememberTreeState(key, {
-            colorGain: 0.94 + stableUnit(key, 13) * 0.12,
-            crownAspect: 0.92 + stableUnit(key, 11) * 0.16,
-            crownDiameter:
-              baseCrownDiameter * crownScale * (0.94 + stableUnit(key, 5) * 0.12),
-            form,
-            height: baseHeight * heightScale,
-            lat,
-            lng,
-            treeElevation,
-            variantIndex: treeVariantIndex(form, key)
-          });
-        }
-
-        function ensureSceneOrigin(elevation) {
-          if (sceneOriginMercator) return;
-          const center = map.getCenter();
-          sceneElevation = elevation;
-          sceneOriginMercator = maplibregl.MercatorCoordinate.fromLngLat(
-            center,
-            sceneElevation
-          );
-        }
-
-        function localTreePosition(lng, lat, elevation) {
-          const mercator = maplibregl.MercatorCoordinate.fromLngLat([lng, lat]);
-          const mercatorPerMeter = sceneOriginMercator.meterInMercatorCoordinateUnits();
-          return new THREE.Vector3(
-            (mercator.x - sceneOriginMercator.x) / mercatorPerMeter,
-            elevation - sceneElevation,
-            (sceneOriginMercator.y - mercator.y) / mercatorPerMeter
-          );
-        }
-
-        function createTerrainSampler(trees, fallbackElevation) {
-          const gridSize = 5;
-          const longitudes = trees.map((tree) => tree.lng);
-          const latitudes = trees.map((tree) => tree.lat);
-          const minimumLongitude = Math.min(...longitudes);
-          const maximumLongitude = Math.max(...longitudes);
-          const minimumLatitude = Math.min(...latitudes);
-          const maximumLatitude = Math.max(...latitudes);
-          const longitudeSpan = Math.max(1e-9, maximumLongitude - minimumLongitude);
-          const latitudeSpan = Math.max(1e-9, maximumLatitude - minimumLatitude);
-          const elevations = new Float32Array(gridSize * gridSize);
-          for (let y = 0; y < gridSize; y += 1) {
-            for (let x = 0; x < gridSize; x += 1) {
-              const longitude = minimumLongitude + (x / (gridSize - 1)) * longitudeSpan;
-              const latitude = minimumLatitude + (y / (gridSize - 1)) * latitudeSpan;
-              elevations[y * gridSize + x] =
-                map.queryTerrainElevation([longitude, latitude]) ?? fallbackElevation;
-            }
-          }
-          return (longitude, latitude) => {
-            const gridX = Math.max(
-              0,
-              Math.min(gridSize - 1, ((longitude - minimumLongitude) / longitudeSpan) * (gridSize - 1))
-            );
-            const gridY = Math.max(
-              0,
-              Math.min(gridSize - 1, ((latitude - minimumLatitude) / latitudeSpan) * (gridSize - 1))
-            );
-            const x0 = Math.floor(gridX);
-            const y0 = Math.floor(gridY);
-            const x1 = Math.min(gridSize - 1, x0 + 1);
-            const y1 = Math.min(gridSize - 1, y0 + 1);
-            const xMix = gridX - x0;
-            const yMix = gridY - y0;
-            const bottom = elevations[y0 * gridSize + x0] * (1 - xMix) +
-              elevations[y0 * gridSize + x1] * xMix;
-            const top = elevations[y1 * gridSize + x0] * (1 - xMix) +
-              elevations[y1 * gridSize + x1] * xMix;
-            return bottom * (1 - yMix) + top * yMix;
-          };
-        }
-
-        function botanicalName(properties) {
-          return [properties?.[genusField], properties?.[speciesField]]
-            .filter(Boolean)
-            .join(" ")
-            .toLowerCase();
-        }
-
-        function resolveTreeForm(properties, key) {
-          const leafType = String(properties?.[leafTypeField] ?? "").toLowerCase();
-          const botanical = botanicalName(properties);
-          if (
-            leafType.includes("palm") ||
-            /(?:^| )(?:archontophoenix|arecaceae|butia|chamaerops|cocos|howea|livistona|phoenix|sabal|syagrus|trachycarpus|washingtonia)(?: |$)/.test(
-              botanical
-            )
-          ) return "palm";
-          if (/(?:^| )(?:cupressus|cypress)(?: |$)/.test(botanical)) return "columnar";
-          if (
-            leafType.includes("needle") ||
-            /(?:^| )(?:abies|cedrus|juniperus|picea|pinus|taxodium|taxus)(?: |$)/.test(botanical)
-          ) return "conifer";
-          if (
-            /(?:^| )(?:arbutus|olea|quercus|tamarix)(?: |$)/.test(botanical)
-          ) return "open";
-          if (
-            /(?:^| )(?:celtis|ginkgo|platanus|populus|ulmus)(?: |$)/.test(botanical)
-          ) return "tall";
-          return ["round", "open", "tall"][Math.floor(stableUnit(key, 67) * 3)];
-        }
-
-        function treeVariantIndex(form, key) {
-          const alternate = Math.floor(stableUnit(key, 101) * 2);
-          const base = {
-            round: 0,
-            open: 2,
-            tall: 4,
-            conifer: 6,
-            columnar: 7,
-            palm: 8
-          }[form] ?? 0;
-          return base + (["round", "open", "tall", "palm"].includes(form) ? alternate : 0);
-        }
-
-        function refresh() {
-          const refreshStartedAt = performance.now();
-          refreshQueued = false;
-          lastRefreshTime = performance.now();
-          if (
-            activeTreeBackend === "three"
-              ? !treeGroup || treeMeshes.length === 0
-              : rawTreeResources.length === 0
-          ) return;
-          if (!treesEnabled) {
-            if (treeGroup) treeGroup.visible = false;
-            rawTreesVisible = false;
-            setFallbackVisible(false);
-            return;
-          }
-          if (map.getZoom() < 15.5) {
-            for (const treeMesh of treeMeshes) treeMesh.count = 0;
-            for (const resource of rawTreeResources) resource.count = 0;
-            if (treeShadowMesh) treeShadowMesh.count = 0;
-            if (rawShadowResource) rawShadowResource.count = 0;
-            if (treeGroup) treeGroup.visible = false;
-            rawTreesVisible = false;
-            renderedTreeCount = 0;
-            treeMetrics.treeCount = 0;
-            treeMetrics.refreshMilliseconds = performance.now() - refreshStartedAt;
-            lastTreeSelectionSignature = undefined;
-            setFallbackVisible(true);
-            updateTreeStatus("zoom too low", {phase: "refresh", treeCount: 0});
-            map.triggerRepaint();
-            return;
-          }
-          let features;
-          const queryStartedAt = performance.now();
-          try {
-            const canvas = map.getCanvas();
-            const viewportWidth = canvas.clientWidth || canvas.width;
-            const viewportHeight = canvas.clientHeight || canvas.height;
-            features = map.queryRenderedFeatures(
-              [
-                [-viewportBufferPixels, -viewportBufferPixels],
-                [
-                  viewportWidth + viewportBufferPixels,
-                  viewportHeight + viewportBufferPixels
-                ]
-              ],
-              {layers: [styleLayer.id]}
-            );
-          } catch (error) {
-            updateTreeStatus("error reading source", {
-              error: String(error),
-              phase: "refresh",
-              treeCount: 0
-            });
-            return;
-          }
-          treeMetrics.queryMilliseconds = performance.now() - queryStartedAt;
-          sourceSettled = map.isSourceLoaded(sourceId);
-          const lod = treeLodForZoom(map.getZoom());
-          const selectionStartedAt = performance.now();
-          const visibleTrees = selectVisibleTrees(features, lod);
-          treeMetrics.selectionMilliseconds = performance.now() - selectionStartedAt;
-          if (visibleTrees.length === 0) {
-            updateFallbackVisibility();
-            if (emptyRefreshAttempts < 12) {
-              emptyRefreshAttempts += 1;
-              clearTimeout(emptyRefreshTimer);
-              emptyRefreshTimer = setTimeout(queueRefresh, 150);
-            }
-            updateTreeStatus("waiting for tiles", {
-              lod: lod.name,
-              phase: "refresh",
-              sourceFeatureCount: features.length,
-              sourceLoaded: sourceSettled,
-              treeCount: renderedTreeCount
-            });
-            map.triggerRepaint();
-            return;
-          }
-          const selectionSignature = treeSelectionSignature(visibleTrees, lod.name);
-          if (sourceSettled && selectionSignature === lastTreeSelectionSignature) {
-            if (treeGroup) treeGroup.visible = true;
-            rawTreesVisible = true;
-            treeMetrics.refreshMilliseconds = performance.now() - refreshStartedAt;
-            updateFallbackVisibility();
-            map.triggerRepaint();
-            return;
-          }
-          // The viewport elevation is only a fallback. Each tree uses its own
-          // terrain sample so sloped ground cannot clip different parts of the
-          // crown as the camera center moves.
-          const viewportElevation = map.queryTerrainElevation(map.getCenter()) ?? 0;
-          ensureSceneOrigin(viewportElevation);
-          const terrainStartedAt = performance.now();
-          const terrainElevationAt = createTerrainSampler(visibleTrees, viewportElevation);
-          treeMetrics.terrainMilliseconds = performance.now() - terrainStartedAt;
-          const buildStartedAt = performance.now();
-          let count = 0;
-          const variantCount = activeTreeBackend === "three"
-            ? treeMeshes.length
-            : rawTreeResources.length;
-          const variantCounts = Array.from({length: variantCount}, () => 0);
-          const rawInstanceValues = Array.from({length: variantCount}, () => []);
-          const rawShadowInstanceValues = [];
-          for (const {feature, key, lat, lng} of visibleTrees) {
-            const treeState = resolveTreeState(
-              feature,
-              key,
-              lng,
-              lat,
-              terrainElevationAt(lng, lat)
-            );
-            const {
-              colorGain,
-              crownAspect,
-              crownDiameter,
-              height,
-              lat: treeLat,
-              lng: treeLng,
-              treeElevation,
-              variantIndex
-            } = treeState;
-            const treePosition = localTreePosition(treeLng, treeLat, treeElevation);
-            const rotation = stableUnit(key, 3) * Math.PI * 2;
-            const crownWidth = crownDiameter * crownAspect;
-            const crownDepth = crownDiameter / crownAspect;
-            const shadowRadius = Math.max(0.75, Math.min(5.5, crownDiameter * 0.42));
-            if (activeTreeBackend === "three") {
-              ensureThreeTreeMeshCapacity(
-                variantIndex,
-                variantCounts[variantIndex] + 1
-              );
-              ensureThreeTreeShadowCapacity(count + 1);
-              crownRotation.setFromAxisAngle(yAxis, rotation);
-              position.copy(treePosition);
-              scale.set(crownWidth, height, crownDepth);
-              matrix.compose(position, crownRotation, scale);
-              const treeMesh = treeMeshes[variantIndex];
-              treeMesh.setMatrixAt(variantCounts[variantIndex], matrix);
-              instanceTint.setRGB(colorGain, colorGain, colorGain);
-              treeMesh.setColorAt(variantCounts[variantIndex], instanceTint);
-              shadowPosition.copy(treePosition);
-              shadowPosition.x -= shadowRadius * 0.28;
-              shadowPosition.y += treeShadowLiftMeters;
-              shadowPosition.z += shadowRadius * 0.34;
-              shadowScale.set(shadowRadius, 1, shadowRadius * 0.76);
-              shadowMatrix.compose(shadowPosition, shadowRotation, shadowScale);
-              treeShadowMesh.setMatrixAt(count, shadowMatrix);
-            } else {
-              rawInstanceValues[variantIndex].push(
-                treePosition.x,
-                treePosition.y,
-                treePosition.z,
-                crownWidth,
-                height,
-                crownDepth,
-                Math.cos(rotation),
-                Math.sin(rotation),
-                colorGain
-              );
-              rawShadowInstanceValues.push(
-                treePosition.x,
-                treePosition.y,
-                treePosition.z,
-                shadowRadius
-              );
-            }
-            variantCounts[variantIndex] += 1;
-            count += 1;
-          }
-          if (activeTreeBackend === "three") {
-            for (let variantIndex = 0; variantIndex < treeMeshes.length; variantIndex += 1) {
-              const treeMesh = treeMeshes[variantIndex];
-              treeMesh.count = variantCounts[variantIndex];
-              treeMesh.instanceMatrix.needsUpdate = true;
-              if (treeMesh.instanceColor) treeMesh.instanceColor.needsUpdate = true;
-            }
-            treeShadowMesh.count = count;
-            treeShadowMesh.instanceMatrix.needsUpdate = true;
-          } else {
-            for (let variantIndex = 0; variantIndex < rawTreeResources.length; variantIndex += 1) {
-              const resource = rawTreeResources[variantIndex];
-              resource.count = variantCounts[variantIndex];
-              rawGl.bindBuffer(rawGl.ARRAY_BUFFER, resource.instanceBuffer);
-              rawGl.bufferData(
-                rawGl.ARRAY_BUFFER,
-                new Float32Array(rawInstanceValues[variantIndex]),
-                rawGl.DYNAMIC_DRAW
-              );
-            }
-            rawShadowResource.count = count;
-            rawGl.bindBuffer(rawGl.ARRAY_BUFFER, rawShadowResource.instanceBuffer);
-            rawGl.bufferData(
-              rawGl.ARRAY_BUFFER,
-              new Float32Array(rawShadowInstanceValues),
-              rawGl.DYNAMIC_DRAW
-            );
-            rawGl.bindBuffer(rawGl.ARRAY_BUFFER, null);
-          }
-          treeMetrics.buildMilliseconds = performance.now() - buildStartedAt;
-          if (treeGroup) treeGroup.visible = true;
-          rawTreesVisible = true;
-          renderedTreeCount = count;
-          treeMetrics.treeCount = count;
-          treeMetrics.refreshMilliseconds = performance.now() - refreshStartedAt;
-          lastTreeSelectionSignature = selectionSignature;
-          emptyRefreshAttempts = 0;
-          clearTimeout(emptyRefreshTimer);
-          emptyRefreshTimer = undefined;
-          updateTreeStatus(count + " 3D trees", {
-            lod: lod.name,
-            phase: "refresh",
-            renderer: treeRendererMode,
-            sourceFeatureCount: features.length,
-            sourceLoaded: sourceSettled,
-            treeCount: count
-          });
-          updateFallbackVisibility();
-          if (!sourceSettled) {
-            clearTimeout(emptyRefreshTimer);
-            emptyRefreshTimer = setTimeout(() => queueRefresh(true), 150);
-          }
-          map.triggerRepaint();
-        }
-
-        function queueRefresh(immediate = false) {
-          if (refreshQueued) return;
-          if (immediate && refreshTimer !== undefined) {
-            clearTimeout(refreshTimer);
-            refreshTimer = undefined;
-          }
-          if (!immediate) {
-            if (refreshTimer !== undefined) return;
-            const elapsed = performance.now() - lastRefreshTime;
-            const delay = Math.max(0, sourceRefreshIntervalMilliseconds - elapsed);
-            if (delay > 0) {
-              refreshTimer = setTimeout(() => {
-                refreshTimer = undefined;
-                queueRefresh(true);
-              }, delay);
-              return;
-            }
-          }
-          refreshQueued = true;
-          requestAnimationFrame(refresh);
-        }
-
-        function handleMoveStart() {
-          if (!treesEnabled) return;
-          sourceSettled = false;
-          updateFallbackVisibility();
-        }
-
-        function handleMoveEnd() {
-          if (!treesEnabled) return;
-          emptyRefreshAttempts = 0;
-          sourceSettled = map.isSourceLoaded(sourceId);
-          updateFallbackVisibility();
-          queueRefresh(true);
-        }
-
-        function handleSourceLoading(event) {
-          if (!treesEnabled || event.sourceId !== sourceId) return;
-          sourceSettled = false;
-          updateFallbackVisibility();
-        }
-
-        function handleSourceData(event) {
-          if (!treesEnabled || event.sourceId !== sourceId) return;
-          sourceSettled = map.isSourceLoaded(sourceId);
-          if (map.isMoving()) return;
-          queueRefresh();
-        }
-
-        function handleTreesToggle() {
-          clearTimeout(emptyRefreshTimer);
-          clearTimeout(refreshTimer);
-          emptyRefreshTimer = undefined;
-          refreshTimer = undefined;
-          if (!treesEnabled) {
-            if (treeGroup) treeGroup.visible = false;
-            rawTreesVisible = false;
-            setFallbackVisible(false);
-            updateTreeStatus("disabled", {phase: "toggle", treeCount: renderedTreeCount});
-            map.triggerRepaint();
-            return;
-          }
-          if (treeGroup) treeGroup.visible = renderedTreeCount > 0;
-          rawTreesVisible = renderedTreeCount > 0;
-          updateFallbackVisibility();
-          updateTreeStatus(
-            renderedTreeCount > 0 ? renderedTreeCount + " 3D trees" : "enabling",
-            {phase: "toggle", treeCount: renderedTreeCount}
-          );
-          queueRefresh(true);
-          map.triggerRepaint();
-        }
-
-        return {
-          id: "tileflow-vegetation-trees-3d",
-          type: "custom",
-          renderingMode: "3d",
-          onAdd(_map, gl) {
-            updateTreeStatus("layer mounted", {phase: "onAdd", treeCount: 0});
-            const geometries = createTreeGeometries();
-            if (
-              activeTreeBackend === "webgl2" &&
-              typeof gl.createVertexArray === "function" &&
-              typeof gl.drawArraysInstanced === "function"
-            ) {
-              rawGl = gl;
-              rawProgram = createRawTreeProgram(gl);
-              rawMatrixUniform = gl.getUniformLocation(rawProgram, "u_matrix");
-              rawShadowProgram = createRawTreeShadowProgram(gl);
-              rawShadowMatrixUniform = gl.getUniformLocation(rawShadowProgram, "u_matrix");
-              rawShadowOpacityUniform = gl.getUniformLocation(rawShadowProgram, "u_opacity");
-              rawShadowResource = createRawTreeShadowResource(gl);
-              rawTreeResources = geometries.map((geometry) =>
-                createRawTreeResource(gl, geometry)
-              );
-              for (const geometry of geometries) geometry.dispose();
-            } else {
-              activeTreeBackend = "three";
-              treeMetrics.backend = activeTreeBackend;
-              treeGeometries = geometries;
-              camera = new THREE.Camera();
-              scene = new THREE.Scene();
-              scene.rotateX(Math.PI / 2);
-              scene.scale.multiply(new THREE.Vector3(1, 1, -1));
-              scene.add(new THREE.HemisphereLight(0xf4fff1, 0x808878, 1.35));
-              const sunlight = new THREE.DirectionalLight(0xfff3d8, 0.88);
-              sunlight.position.set(-2, -3, 6);
-              scene.add(sunlight);
-              treeGroup = new THREE.Group();
-              treeMaterial = new THREE.MeshLambertMaterial({
-                flatShading: false,
-                vertexColors: true
-              });
-              treeMeshes = geometries.map((geometry) =>
-                createThreeTreeMesh(geometry, initialTreeInstanceCapacity)
-              );
-              treeMeshCapacities = geometries.map(() => initialTreeInstanceCapacity);
-              treeShadowGeometry = new THREE.PlaneGeometry(2, 2);
-              treeShadowGeometry.rotateX(-Math.PI / 2);
-              treeShadowMaterial = new THREE.ShaderMaterial({
-                depthTest: true,
-                depthWrite: false,
-                fragmentShader:
-                  "varying vec2 v_shadow_coordinate;\\n" +
-                  "uniform float u_opacity;\\n" +
-                  "void main() {\\n" +
-                  "  float radiusSquared = dot(v_shadow_coordinate, v_shadow_coordinate);\\n" +
-                  "  if (radiusSquared >= 1.0) discard;\\n" +
-                  "  float coverage = 1.0 - smoothstep(0.90, 1.0, radiusSquared);\\n" +
-                  "  gl_FragColor = vec4(0.18, 0.21, 0.17, u_opacity * coverage);\\n" +
-                  "}\\n",
-                side: THREE.DoubleSide,
-                toneMapped: false,
-                transparent: true,
-                uniforms: {u_opacity: {value: treeShadowOpacity}},
-                vertexShader:
-                  "varying vec2 v_shadow_coordinate;\\n" +
-                  "void main() {\\n" +
-                  "  v_shadow_coordinate = uv * 2.0 - 1.0;\\n" +
-                  "  vec4 instancePosition = instanceMatrix * vec4(position, 1.0);\\n" +
-                  "  gl_Position = projectionMatrix * modelViewMatrix * instancePosition;\\n" +
-                  "}\\n"
-              });
-              treeShadowMesh = new THREE.InstancedMesh(
-                treeShadowGeometry,
-                treeShadowMaterial,
-                initialTreeInstanceCapacity
-              );
-              treeShadowCapacity = initialTreeInstanceCapacity;
-              treeShadowMesh.count = 0;
-              treeShadowMesh.frustumCulled = false;
-              treeShadowMesh.renderOrder = 1;
-              treeGroup.visible = false;
-              treeGroup.add(...treeMeshes, treeShadowMesh);
-              scene.add(treeGroup);
-              renderer = new THREE.WebGLRenderer({
-                canvas: map.getCanvas(),
-                context: gl
-              });
-              renderer.autoClear = false;
-            }
-            sourceSettled = map.isSourceLoaded(sourceId);
-            map.on("movestart", handleMoveStart);
-            map.on("moveend", handleMoveEnd);
-            map.on("sourcedataloading", handleSourceLoading);
-            map.on("sourcedata", handleSourceData);
-            map.on("tileflow:trees-toggle", handleTreesToggle);
-            if (treesEnabled) queueRefresh(true);
-            else handleTreesToggle();
-          },
-          render(_gl, options) {
-            if (
-              !treesEnabled ||
-              !sceneOriginMercator ||
-              (activeTreeBackend === "three" ? !treeGroup?.visible : !rawTreesVisible)
-            ) return;
-            const renderStartedAt = performance.now();
-            const meter = sceneOriginMercator.meterInMercatorCoordinateUnits();
-            mapMatrix.fromArray(options.defaultProjectionData.mainMatrix);
-            sceneMatrix
-              .makeTranslation(
-                sceneOriginMercator.x,
-                sceneOriginMercator.y,
-                sceneOriginMercator.z
-              )
-              .scale(new THREE.Vector3(meter, -meter, meter));
-            combinedMatrix.copy(mapMatrix).multiply(sceneMatrix);
-            if (activeTreeBackend === "three") {
-              camera.projectionMatrix.copy(combinedMatrix);
-              renderer.resetState();
-              renderer.render(scene, camera);
-              treeMetrics.renderCalls = renderer.info.render.calls;
-              treeMetrics.renderedTriangles = renderer.info.render.triangles;
-            } else {
-              rawGl.useProgram(rawProgram);
-              rawGl.uniformMatrix4fv(rawMatrixUniform, false, combinedMatrix.elements);
-              rawGl.enable(rawGl.DEPTH_TEST);
-              rawGl.depthFunc(rawGl.LEQUAL);
-              rawGl.depthMask(true);
-              rawGl.enable(rawGl.CULL_FACE);
-              rawGl.cullFace(rawGl.BACK);
-              rawGl.frontFace(rawGl.CCW);
-              rawGl.disable(rawGl.BLEND);
-              let renderCalls = 0;
-              let renderedTriangles = 0;
-              for (const resource of rawTreeResources) {
-                if (resource.count === 0) continue;
-                rawGl.bindVertexArray(resource.vertexArray);
-                rawGl.drawElementsInstanced(
-                  rawGl.TRIANGLES,
-                  resource.indexCount,
-                  rawGl.UNSIGNED_INT,
-                  0,
-                  resource.count
-                );
-                renderCalls += 1;
-                renderedTriangles += (resource.indexCount / 3) * resource.count;
-              }
-              rawGl.bindVertexArray(null);
-              if (rawShadowResource.count > 0) {
-                rawGl.useProgram(rawShadowProgram);
-                rawGl.uniformMatrix4fv(
-                  rawShadowMatrixUniform,
-                  false,
-                  combinedMatrix.elements
-                );
-                rawGl.uniform1f(rawShadowOpacityUniform, treeShadowOpacity);
-                rawGl.depthMask(false);
-                rawGl.disable(rawGl.CULL_FACE);
-                rawGl.enable(rawGl.BLEND);
-                rawGl.blendEquation(rawGl.FUNC_ADD);
-                rawGl.blendFuncSeparate(
-                  rawGl.SRC_ALPHA,
-                  rawGl.ONE_MINUS_SRC_ALPHA,
-                  rawGl.ONE,
-                  rawGl.ONE_MINUS_SRC_ALPHA
-                );
-                rawGl.bindVertexArray(rawShadowResource.vertexArray);
-                rawGl.drawArraysInstanced(
-                  rawGl.TRIANGLE_FAN,
-                  0,
-                  4,
-                  rawShadowResource.count
-                );
-                rawGl.bindVertexArray(null);
-                rawGl.depthMask(true);
-                rawGl.disable(rawGl.BLEND);
-                rawGl.enable(rawGl.CULL_FACE);
-                renderCalls += 1;
-                renderedTriangles += rawShadowResource.count * 2;
-              }
-              treeMetrics.renderCalls = renderCalls;
-              treeMetrics.renderedTriangles = renderedTriangles;
-            }
-            treeMetrics.renderMilliseconds = performance.now() - renderStartedAt;
-          },
-          onRemove() {
-            clearTimeout(emptyRefreshTimer);
-            clearTimeout(refreshTimer);
-            map.off("movestart", handleMoveStart);
-            map.off("moveend", handleMoveEnd);
-            map.off("sourcedataloading", handleSourceLoading);
-            map.off("sourcedata", handleSourceData);
-            map.off("tileflow:trees-toggle", handleTreesToggle);
-            if (!fallbackVisible && map.getLayer(styleLayer.id)) {
-              map.setPaintProperty(
-                styleLayer.id,
-                "circle-opacity",
-                fallbackCircleOpacity
-              );
-              map.setPaintProperty(
-                styleLayer.id,
-                "circle-stroke-opacity",
-                fallbackCircleStrokeOpacity
-              );
-            }
-            for (const treeMesh of treeMeshes) {
-              treeMesh.dispose();
-              treeMesh.geometry.dispose();
-            }
-            treeMeshes = [];
-            treeMeshCapacities = [];
-            treeGeometries = [];
-            treeShadowMesh?.dispose();
-            treeShadowMesh?.geometry.dispose();
-            treeShadowMesh = undefined;
-            treeShadowGeometry = undefined;
-            treeShadowCapacity = 0;
-            treeShadowMaterial?.dispose();
-            treeShadowMaterial = undefined;
-            treeMaterial?.dispose();
-            renderer?.dispose();
-            disposeRawTreeResources();
-          }
-        };
-      }
-
-      function addTreeLayerIfConfigured(map, styleLayers) {
-        const styleLayer = styleLayers.find(
-          (layer) => layer.id === "tileflow-vegetation-trees"
-        );
-        if (
-          !styleLayer ||
-          styleLayer.metadata?.["tileflow:vegetation-mode"] !== "3d" ||
-          map.getLayer("tileflow-vegetation-trees-3d")
-        ) return;
-        if (treeRendererMode === "circle") {
-          treeMetrics.treeCount = 0;
-          updateTreeStatus("native circles", {
-            phase: "configured",
-            renderer: treeRendererMode,
-            treeCount: 0
-          });
-          return;
-        }
-        updateTreeStatus("configured", {phase: "configured", treeCount: 0});
-        // Three.js consumes Mercator world coordinates directly. MapLibre's
-        // plain custom-layer matrix only supports those coordinates in the
-        // Mercator projection; globe requires a projection-aware shader.
-        if (map.getProjection().type !== "mercator") {
-          map.setProjection({type: "mercator"});
-        }
-        if (map.getLayer("tileflow-vegetation-trees-3d")) return;
-        const styleLayerIndex = styleLayers.findIndex((layer) => layer.id === styleLayer.id);
-        const layerAboveTrees = styleLayers[styleLayerIndex + 1]?.id;
-        map.addLayer(createTreeLayer(map, styleLayer), layerAboveTrees);
-      }
-
       function styleLayerZoomRange(layer) {
         return {
           minzoom: Number.isFinite(layer?.minzoom) ? layer.minzoom : 0,
@@ -3544,8 +1789,7 @@ export function renderTileflowPreviewHtml(
             spatialFallbacks:
               layer.metadata?.["tileflow:landmark-spatial-fallbacks"] ?? []
           }));
-        // Landmark custom layers use Mercator world coordinates. Switch here
-        // instead of relying on the optional detailed-tree renderer to do it.
+        // Landmark custom layers use Mercator world coordinates.
         if (map.getProjection().type !== "mercator") {
           map.setProjection({type: "mercator"});
         }
@@ -3555,12 +1799,55 @@ export function renderTileflowPreviewHtml(
               !layer.id.startsWith("tileflow-label-road-")) ||
             layer.id.startsWith("tileflow-poi-")
         )?.id;
-        const treeLayer = map.getLayer("tileflow-vegetation-trees-3d")
-          ? "tileflow-vegetation-trees-3d"
-          : map.getLayer("tileflow-vegetation-trees")
-            ? "tileflow-vegetation-trees"
-            : firstForegroundLabel;
+        const treeLayer = map.getLayer("tileflow-vegetation-trees")
+          ? "tileflow-vegetation-trees"
+          : firstForegroundLabel;
         map.addLayer(createLandmarkLayer(map, configLayer, fallbackLayers), treeLayer);
+      }
+
+      // Core's 3D layers, as an application mounts them: the map's style describes how its
+      // buildings, trees and street lights look, and the controls only show and hide them. With
+      // both controls off the preview draws what Capture draws. The preview shows one theme at a
+      // time, so the style on screen holds the sun and the design.
+      const coreScene = {buildings: undefined, trees: undefined, lights: undefined, buildingsShown: false, treesShown: false};
+      globalThis.__tileflowPreviewScene = coreScene;
+      function coreSceneThemes(map) {
+        return {
+          getSun() {
+            const preset = readTileflowSunPreset(map.getStyle()?.metadata);
+            return resolveTileflowSun(preset ?? tileflowDefaultSunPreset);
+          },
+          getThemeMetadata(key) {
+            return {values: [map.getStyle()?.metadata?.[key]], position: 0};
+          }
+        };
+      }
+      function mountCoreScene(map) {
+        const metadata = map.getStyle()?.metadata ?? {};
+        const controller = coreSceneThemes(map);
+        if (!coreScene.buildings && metadata["tileflow:buildings"]) {
+          coreScene.buildings = createTileflowBuildings3D({map, controller});
+        }
+        if (!coreScene.trees && metadata["tileflow:vegetation"]) {
+          coreScene.trees = createTileflowTrees3D({map, controller});
+        }
+        // Street lights have no capture fallback, so they shine only with the 3D control on.
+        if (!coreScene.lights && threeDimensionalEnabled && metadata["tileflow:street-lights"]) {
+          coreScene.lights = createTileflowStreetLights({map, controller});
+        } else if (coreScene.lights && !threeDimensionalEnabled) {
+          coreScene.lights.dispose();
+          coreScene.lights = undefined;
+        }
+        const instant = {transition: {duration: 0}};
+        // Only a change of the controls moves the layers, so a style event does not restart them.
+        if (coreScene.buildings && coreScene.buildingsShown !== threeDimensionalEnabled) {
+          coreScene.buildingsShown = threeDimensionalEnabled;
+          void (threeDimensionalEnabled ? coreScene.buildings.show() : coreScene.buildings.hide(instant));
+        }
+        if (coreScene.trees && coreScene.treesShown !== treesEnabled) {
+          coreScene.treesShown = treesEnabled;
+          void (treesEnabled ? coreScene.trees.show() : coreScene.trees.hide(instant));
+        }
       }
 
       class ThreeDimensionalControl {
@@ -3598,6 +1885,7 @@ export function renderTileflowPreviewHtml(
           this.update();
           writeToggleStateToUrl();
           this.map.fire("tileflow:3d-toggle", {enabled: this.enabled});
+          mountCoreScene(this.map);
           this.map.triggerRepaint();
         }
 
@@ -3605,11 +1893,14 @@ export function renderTileflowPreviewHtml(
           for (const layer of this.map.getStyle()?.layers || []) {
             const toggle = layer.metadata?.["tileflow:3d-toggle"];
             if (toggle !== "building" && toggle !== "landmark") continue;
-            const visibility = this.enabled ? "visible" : "none";
+            // Core's 3D buildings stand in for the compiled extrusion where the style describes them.
+            const replaced = toggle === "building" && this.map.getStyle()?.metadata?.["tileflow:buildings"];
+            const visibility = this.enabled && !replaced ? "visible" : "none";
             if (this.map.getLayoutProperty(layer.id, "visibility") !== visibility) {
               this.map.setLayoutProperty(layer.id, "visibility", visibility);
             }
           }
+          if (this.map.isStyleLoaded()) mountCoreScene(this.map);
           this.button.textContent = this.enabled ? "3D ON" : "3D OFF";
           this.button.setAttribute("aria-pressed", String(this.enabled));
           this.button.title = this.enabled ? "Disable 3D buildings" : "Enable 3D buildings";
@@ -3656,6 +1947,7 @@ export function renderTileflowPreviewHtml(
           this.update();
           writeToggleStateToUrl();
           this.map.fire("tileflow:trees-toggle", {enabled: this.enabled});
+          mountCoreScene(this.map);
           this.map.triggerRepaint();
         }
 
@@ -3663,15 +1955,15 @@ export function renderTileflowPreviewHtml(
           const treeLayer = this.map.getStyle()?.layers?.find(
             (layer) => layer.id === "tileflow-vegetation-trees"
           );
-          if (treeLayer) {
-            const visibility = this.enabled ? "visible" : "none";
-            if (this.map.getLayoutProperty(treeLayer.id, "visibility") !== visibility) {
-              this.map.setLayoutProperty(treeLayer.id, "visibility", visibility);
+          // Core's 3D trees hide the style's flat trees while they stand (mountCoreScene).
+          if (treeLayer && !this.map.getStyle()?.metadata?.["tileflow:vegetation"]) {
+            if (this.map.getLayoutProperty(treeLayer.id, "visibility") !== "visible") {
+              this.map.setLayoutProperty(treeLayer.id, "visibility", "visible");
             }
           }
           this.button.textContent = this.enabled ? "TREES ON" : "TREES OFF";
           this.button.setAttribute("aria-pressed", String(this.enabled));
-          this.button.title = this.enabled ? "Hide trees" : "Show trees";
+          this.button.title = this.enabled ? "Show flat trees" : "Show 3D trees";
         }
 
         onRemove() {
@@ -3796,8 +2088,15 @@ export function renderTileflowPreviewHtml(
           const groups = previewLayerGroups(layer);
           const threeDimensionalToggle = layer.metadata?.["tileflow:3d-toggle"];
           const authoredVisibility = defaultLayerVisibility.get(layer.id);
-          const toggleVisibility =
-            threeDimensionalToggle === "building" || threeDimensionalToggle === "landmark"
+          const styleMetadata = map.getStyle()?.metadata ?? {};
+          // Core's 3D buildings and trees stand in for compiled extrusions and flat trees.
+          const flatTrees = styleMetadata["tileflow:vegetation"]?.flatLayers ?? [];
+          const replacedByCore =
+            (threeDimensionalToggle === "building" && styleMetadata["tileflow:buildings"]) ||
+            (treesEnabled && flatTrees.includes(layer.id.split("::")[0]));
+          const toggleVisibility = replacedByCore
+            ? "none"
+            : threeDimensionalToggle === "building" || threeDimensionalToggle === "landmark"
               ? (threeDimensionalEnabled ? "visible" : "none")
               : authoredVisibility;
           const visibility = groups.some((group) => !visibleLayerGroups.has(group))
@@ -3852,7 +2151,6 @@ export function renderTileflowPreviewHtml(
         }
         if (previewThemes.length > 1) map.addControl(new ThemeControl(), "top-right");
         let ensuringThreeDimensionalLayers;
-        const treeRuntimeMinimumZoom = 16;
         const ensureThreeDimensionalLayers = () => {
           if (ensuringThreeDimensionalLayers) return ensuringThreeDimensionalLayers;
           const currentStyleLayers = map.getStyle()?.layers || [];
@@ -3871,11 +2169,6 @@ export function renderTileflowPreviewHtml(
             landmarkManifestUrl &&
             threeDimensionalEnabled &&
             map.getZoom() >= landmarkPreloadZoom;
-          const needsTrees =
-            treesEnabled &&
-            treeRendererMode !== "circle" &&
-            map.getZoom() >= treeRuntimeMinimumZoom &&
-            !map.getLayer("tileflow-vegetation-trees-3d");
           const needsLandmarks =
             landmarkConfigLayer &&
             threeDimensionalEnabled &&
@@ -3887,7 +2180,6 @@ export function renderTileflowPreviewHtml(
             styleLayerIsVisibleAtZoom(buildingWireframeConfigLayer, map.getZoom()) &&
             !map.getLayer("tileflow-buildings-wireframe-3d");
           if (
-            !needsTrees &&
             !needsLandmarks &&
             !needsBuildingWireframe &&
             !shouldPreloadLandmarks
@@ -3914,11 +2206,6 @@ export function renderTileflowPreviewHtml(
                 await loadBuildingWireframeRuntime();
                 addBuildingWireframeLayerIfConfigured(map, styleLayers);
               }
-              if (
-                treesEnabled &&
-                treeRendererMode !== "circle" &&
-                map.getZoom() >= treeRuntimeMinimumZoom
-              ) addTreeLayerIfConfigured(map, styleLayers);
               const landmarkConfigLayer = styleLayers.find(
                 (layer) => layer.metadata?.["tileflow:landmark-manifest-url"]
               );
@@ -3952,6 +2239,7 @@ export function renderTileflowPreviewHtml(
           writeCameraToUrl(map);
           updateGlobeBackdrop(map);
           ensureThreeDimensionalLayers();
+          mountCoreScene(map);
         });
         map.on("move", () => updateGlobeBackdrop(map));
         map.on("moveend", () => writeCameraToUrl(map));

@@ -9,10 +9,7 @@ import {
   tileflowWorldTreeFields,
 } from '../../trees-3d';
 import type {TileflowResolvedModuleConfig} from '../resolved';
-import type {
-  TileflowVegetationModuleConfig,
-  TileflowVegetationThreeDimensionalStyle,
-} from './index';
+import type {TileflowVegetationModuleConfig} from './index';
 
 export function compileVegetation(
   request: TileflowResolvedModuleConfig<TileflowVegetationModuleConfig> | undefined,
@@ -56,7 +53,6 @@ export function compileVegetation(
   if (config.enabled === false || !context.data.schema.layers.tree) return [];
 
   const resolvedMode = config.mode ?? '3d';
-  const threeDimensional = config.threeDimensional as TileflowVegetationThreeDimensionalStyle;
   return [
     {
       kind: 'layer',
@@ -69,16 +65,6 @@ export function compileVegetation(
           metadata: {
             'tileflow:vegetation-mode': resolvedMode,
             ...(resolvedMode === '3d' ? {'tileflow:vegetation-fallback': 'flat-circle'} : {}),
-            'tileflow:tree-bark-color': threeDimensional.barkColor,
-            'tileflow:tree-broadleaf-colors': threeDimensional.broadleafColors,
-            'tileflow:tree-conifer-colors': threeDimensional.coniferColors,
-            'tileflow:tree-crown-field': context.data.schema.fields.diameterCrown,
-            'tileflow:tree-crown-scale': threeDimensional.crownScale,
-            'tileflow:tree-genus-field': context.data.schema.fields.genus,
-            'tileflow:tree-height-field': context.data.schema.fields.height,
-            'tileflow:tree-height-scale': threeDimensional.heightScale,
-            'tileflow:tree-leaf-type-field': context.data.schema.fields.leafType,
-            'tileflow:tree-species-field': context.data.schema.fields.species,
           },
         },
         config.flat ?? {},
@@ -159,5 +145,7 @@ export function tileflowVegetationDescription(
     })(),
     unknownForms: style.unknownForms ?? tileflowDefaultUnknownTreeForms,
     regions: style.regions ?? [],
+    // Filled by the compiler once the style's layers are final.
+    flatLayers: [],
   };
 }

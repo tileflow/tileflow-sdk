@@ -204,8 +204,9 @@ test('a mix of forms names known forms with weights of zero or more', () => {
 test('tree meshes stay within their triangle budgets and their unit tree', () => {
   const meshes = tileflowTreeMeshes();
   for (const form of tileflowTreeForms) {
+    // Palms carry two tiers of folded fronds: their presence is in their crown.
     for (const [level, budget] of [
-      ['near', 160],
+      ['near', form === 'palm' ? 320 : 160],
       ['far', 40],
     ] as const) {
       const mesh = meshes[form][level];

@@ -11,8 +11,8 @@ import {type TileflowTreeForm, tileflowTreeForms} from './trees-3d';
  */
 export const tileflowTreeVertexBytes = 20;
 
-/** A part of a tree: bark, leaves, or palm fronds (leaves seen from both sides). */
-export const tileflowTreeParts = {bark: 0, leaves: 1, fronds: 2} as const;
+/** A part of a tree: bark, leaves, palm fronds (leaves seen from both sides), or a palm's stem. */
+export const tileflowTreeParts = {bark: 0, leaves: 1, fronds: 2, stem: 3} as const;
 
 export type TileflowTreeLevel = 'near' | 'far';
 
@@ -125,9 +125,15 @@ function build(form: TileflowTreeForm, level: TileflowTreeLevel): Builder {
       break;
     }
     case 'palm': {
-      palmTrunk(out, near ? 6 : 2, near ? 5 : 3);
-      fronds(out, near ? 9 : 6, near ? 3 : 1);
-      if (near) lobe(out, [0.08, 0, 0.9], [0.09, 0.09, 0.07], 3, -0.6, 0, 'octa');
+      palmTrunk(out, near ? 9 : 2, near ? 6 : 3);
+      if (near) {
+        // Two tiers of fronds: the upper ones rise, the lower ones hang, round a dark heart.
+        fronds(out, 6, 4, {tier: 0, length: 0.5, lift: 0.2, droop: 0.26, turn: 0});
+        fronds(out, 6, 4, {tier: 1, length: 0.54, lift: 0.04, droop: 0.42, turn: Math.PI / 6});
+        lobe(out, [palmTop[0], 0, palmTop[2] - 0.01], [0.05, 0.05, 0.05], 3, -0.8, 0, 'octa');
+      } else {
+        fronds(out, 7, 1, {tier: 0, length: 0.52, lift: 0.1, droop: 0.32, turn: 0});
+      }
       break;
     }
   }
@@ -310,80 +316,121 @@ function lathe(
   }
 }
 
-/** A palm's trunk, slender and leaning a little, in `rings` segments. */
-function palmTrunk(out: Builder, rings: number, sides: number): void {
-  const heights: number[] = [];
-  const radii: number[] = [];
-  for (let ring = 0; ring <= rings; ring += 1) {
-    const t = ring / rings;
-    heights.push(t * 0.9);
-    radii.push(0.06 - t * 0.02);
-  }
-  const start = out.positions.length;
-  lathe(out, heights, radii, sides, tileflowTreeParts.bark, 0);
-  // Lean the trunk: each point moves along x with the square of its height.
-  for (let at = start; at < out.positions.length; at += 3) {
-    const z = out.positions[at + 2]!;
-    out.positions[at] = out.positions[at]! + 0.08 * (z / 0.9) ** 2;
-  }
-}
+// Where a palm's trunk ends and its fronds start, in the unit tree.
+const palmTop: Vec = [0.07, 0, 0.88];
 
-/** A palm's fronds: strips that arch out from the top of the trunk and droop at their tips. */
-function fronds(out: Builder, count: number, segments: number): void {
-  const top: Vec = [0.08, 0, 0.9];
-  for (let frond = 0; frond < count; frond += 1) {
-    const angle = (frond * Math.PI * 2) / count + (frond % 2) * 0.2;
-    const dir: Vec = [Math.cos(angle), Math.sin(angle), 0];
-    const side: Vec = [-dir[1], dir[0], 0];
-    const length = 0.5 * (0.85 + fraction(frond * 3.7) * 0.3);
-    const lift = 0.1 + fraction(frond * 5.3) * 0.12;
-    const spine: Vec[] = [];
-    for (let step = 0; step <= segments; step += 1) {
-      const t = step / segments;
-      spine.push([
-        top[0] + dir[0] * length * t,
-        top[1] + dir[1] * length * t,
-        top[2] + lift * Math.sin(t * Math.PI * 0.6) - 0.32 * t * t,
-      ]);
-    }
-    const widthAt = (t: number) => 0.09 * Math.sin(Math.PI * Math.min(1, t * 1.15 + 0.05));
-    for (let step = 0; step < segments; step += 1) {
-      const t0 = step / segments;
-      const t1 = (step + 1) / segments;
-      const a = spine[step]!;
-      const b = spine[step + 1]!;
-      const offset = (point: Vec, width: number, sign: number): Vec => [
-        point[0] + side[0] * width * sign,
-        point[1] + side[1] * width * sign,
-        point[2] - Math.abs(width) * 0.35,
+/**
+ * A palm's trunk: slender, flared at its foot, curving gently, in rings that alternate light and
+ * dark as a palm's leaf scars do.
+ */
+function palmTrunk(out: Builder, rings: number, sides: number): void {
+  const at = (ring: number) => {
+    const t = ring / rings;
+    const z = t * palmTop[2];
+    // Flared over the first tenth, then tapering to the crown.
+    const radius = 0.03 + 0.012 * (1 - t) + 0.025 * Math.max(0, 1 - t * 10);
+    return {z, radius, lean: palmTop[0] * t * t};
+  };
+  for (let ring = 0; ring < rings; ring += 1) {
+    const [a, b] = [at(ring), at(ring + 1)];
+    const shade = rings > 2 ? (ring % 2 === 0 ? 0.35 : -0.25) : 0;
+    for (let side = 0; side < sides; side += 1) {
+      const a0 = (side * Math.PI * 2) / sides;
+      const a1 = ((side + 1) * Math.PI * 2) / sides;
+      const point = (angle: number, ringAt: typeof a): Vec => [
+        ringAt.lean + Math.cos(angle) * ringAt.radius,
+        Math.sin(angle) * ringAt.radius,
+        ringAt.z,
       ];
-      const quad: Vec[] = [
-        offset(a, widthAt(t0), -1),
-        offset(b, widthAt(t1), -1),
-        offset(b, widthAt(t1), 1),
-        offset(a, widthAt(t0), 1),
+      const normal = (angle: number): Vec => normalize([Math.cos(angle), Math.sin(angle), 0.05]);
+      const occlusion: Vec = [
+        0.7 + 0.3 * (a.z / palmTop[2]),
+        0.7 + 0.3 * (a.z / palmTop[2]),
+        0.7 + 0.3 * (b.z / palmTop[2]),
       ];
-      let facet = faceNormal([quad[0]!, quad[1]!, quad[2]!]);
-      if (facet[2] < 0) facet = [-facet[0], -facet[1], -facet[2]];
-      const normal = normalize(mix(facet, [0, 0, 1], 0.4));
-      const occlusion: Vec = [0.75 + 0.25 * t0, 0.75 + 0.25 * t1, 0.75 + 0.25 * t1];
-      const shade = frond % 3 === 0 ? -0.5 : frond % 3 === 1 ? 0.2 : 0.6;
       triangle(
         out,
-        [quad[0]!, quad[1]!, quad[2]!],
-        [normal, normal, normal],
-        tileflowTreeParts.fronds,
+        [point(a0, a), point(a1, a), point(a1, b)],
+        [normal(a0), normal(a1), normal(a1)],
+        tileflowTreeParts.stem,
         shade,
         occlusion,
       );
       triangle(
         out,
-        [quad[0]!, quad[2]!, quad[3]!],
-        [normal, normal, normal],
-        tileflowTreeParts.fronds,
+        [point(a0, a), point(a1, b), point(a0, b)],
+        [normal(a0), normal(a1), normal(a0)],
+        tileflowTreeParts.stem,
         shade,
-        [occlusion[0], occlusion[2], occlusion[0]],
+        [occlusion[0], occlusion[2], occlusion[2]],
       );
+    }
+  }
+}
+
+type FrondTier = {tier: number; length: number; lift: number; droop: number; turn: number};
+
+/**
+ * A palm's fronds: each arches out from the top of the trunk and droops towards its tip, its
+ * leaflets folded up from the midrib in a shallow V, widest a third of the way out.
+ */
+function fronds(out: Builder, count: number, segments: number, tier: FrondTier): void {
+  for (let frond = 0; frond < count; frond += 1) {
+    const angle =
+      tier.turn + (frond * Math.PI * 2) / count + (fraction(frond * 2.3 + tier.tier) - 0.5) * 0.3;
+    const dir: Vec = [Math.cos(angle), Math.sin(angle), 0];
+    const side: Vec = [-dir[1], dir[0], 0];
+    const length = tier.length * (0.88 + fraction(frond * 3.7 + tier.tier * 1.3) * 0.24);
+    const droop = tier.droop * (0.85 + fraction(frond * 5.3 + tier.tier) * 0.3);
+    const spine: Vec[] = [];
+    for (let step = 0; step <= segments; step += 1) {
+      const t = step / segments;
+      spine.push([
+        palmTop[0] + dir[0] * length * t,
+        palmTop[1] + dir[1] * length * t,
+        palmTop[2] + tier.lift * Math.sin(t * Math.PI * 0.7) - droop * t * t,
+      ]);
+    }
+    const widthAt = (t: number) =>
+      segments === 1 ? 0.1 : 0.12 * Math.sin(Math.PI * Math.min(1, t * 1.25 + 0.04));
+    const fold = segments === 1 ? 0 : 0.45;
+    const shade =
+      tier.tier === 1 ? -0.45 + fraction(frond * 1.7) * 0.3 : 0.15 + fraction(frond * 1.9) * 0.5;
+    for (let step = 0; step < segments; step += 1) {
+      const t0 = step / segments;
+      const t1 = (step + 1) / segments;
+      const edge = (point: Vec, t: number, sign: number): Vec => {
+        const width = widthAt(t);
+        return [
+          point[0] + side[0] * width * sign,
+          point[1] + side[1] * width * sign,
+          point[2] + width * fold,
+        ];
+      };
+      const [a, b] = [spine[step]!, spine[step + 1]!];
+      const occlusion: Vec = [0.72 + 0.28 * t0, 0.72 + 0.28 * t1, 0.72 + 0.28 * t1];
+      for (const sign of [-1, 1]) {
+        const quad: Vec[] = [a, b, edge(b, t1, sign), edge(a, t0, sign)];
+        let facet = faceNormal([quad[0]!, quad[1]!, quad[2]!]);
+        if (facet[2] < 0) facet = [-facet[0], -facet[1], -facet[2]];
+        const normal = normalize(mix(facet, [0, 0, 1], 0.3));
+        triangle(
+          out,
+          [quad[0]!, quad[1]!, quad[2]!],
+          [normal, normal, normal],
+          tileflowTreeParts.fronds,
+          shade,
+          occlusion,
+        );
+        triangle(
+          out,
+          [quad[0]!, quad[2]!, quad[3]!],
+          [normal, normal, normal],
+          tileflowTreeParts.fronds,
+          shade,
+          [occlusion[0], occlusion[2], occlusion[0]],
+        );
+      }
     }
   }
 }

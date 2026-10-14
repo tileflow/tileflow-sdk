@@ -18,7 +18,7 @@ export const tileflowTreeAttributes = [
 const attributes = `
 in vec3 a_vertex; // the unit tree: x east, y north, z up, from 0 to 1
 in vec3 a_normal;
-in float a_part; // 0 bark, 1 leaves, 2 fronds
+in float a_part; // 0 bark, 1 leaves, 2 fronds, 3 a palm's stem
 in vec2 a_look; // the lobe's shade, from 0 to 1 for -1 to 1; occlusion baked into the mesh
 in vec2 a_tree_pos; // the tree's point in the tile, in tile units
 in vec2 a_tree_size; // height and crown, in decimetres
@@ -173,9 +173,13 @@ void main() {
   if (v_fade * u_fade < dither(gl_FragCoord.xy)) discard;
   vec3 normal = normalize(v_normal);
   float part = v_look.x;
-  bool bark = part < 0.5;
-  bool fronds = part > 1.5;
-  vec3 base = bark ? u_bark : leafColour() * (1.0 + v_look.y * 0.09);
+  bool stem = part > 2.5;
+  bool bark = part < 0.5 || stem;
+  bool fronds = part > 1.5 && !stem;
+  // A palm's stem is paler than bark, ringed light and dark by its leaf scars.
+  vec3 base = stem
+    ? min(u_bark * 1.45 + 0.06, vec3(1.0)) * (1.0 + v_look.y * 0.12)
+    : bark ? u_bark : leafColour() * (1.0 + v_look.y * 0.09);
   float facing = dot(normal, u_sun_dir);
   // Leaves let light round and through them: wrapped light on the lit side, a glow against a low sun.
   float direct = bark ? max(facing, 0.0) : fronds ? abs(facing) * 0.85 : max((facing + 0.35) / 1.35, 0.0);

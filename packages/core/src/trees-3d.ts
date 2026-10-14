@@ -119,7 +119,7 @@ const formSizes: Readonly<
   tall: {height: [9, 17], crown: [0.48, 0.68]},
   conifer: {height: [7, 16], crown: [0.46, 0.66]},
   columnar: {height: [9, 18], crown: [0.22, 0.36]},
-  palm: {height: [8, 16], crown: [0.34, 0.5]},
+  palm: {height: [12, 20], crown: [0.42, 0.55]},
 };
 const heightBounds: readonly [number, number] = [2, 45];
 const crownBounds: readonly [number, number] = [1, 25];

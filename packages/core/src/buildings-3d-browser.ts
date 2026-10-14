@@ -23,6 +23,12 @@ import {
   tileflowBuildingVertex,
 } from './buildings-3d-shaders';
 import {cameraFrame, createCameraTiles} from './camera-tiles-browser';
+import {
+  tileflowScene3D,
+  type TileflowSceneCaster,
+  tileflowSceneLight,
+  tileflowSceneShadowFloor,
+} from './scene-3d-browser';
 import {resolveTileflowSun, tileflowDefaultSunPreset, type TileflowSun} from './sun';
 import {tileflowColourChannels} from './theme-blend';
 import type {TileflowTileRequestTransform} from './tile-reader';
@@ -133,10 +139,6 @@ export const tileflowBuildings3DLayerId = 'tileflow-buildings-3d';
 // World's buildings carry their heights at z15; a source that stops earlier is read at its maxzoom.
 const preferredZoom = 15;
 const defaultTransition = 800;
-// Shadows lengthen as the sun sets while they fade: they fall from a sun no lower than 3° and fade
-// out between 7° and half a degree.
-const shadowFloor = 3;
-const shadowFade: readonly [number, number] = [0.5, 7];
 const occlusion = {ground: 8, groundStrength: 0.42, wall: 0.36, corner: 3};
 const flood = {reach: 10, colour: [1, 0.7, 0.4] as const};
 // Each building strays up to 6% lighter or darker than its colour.
@@ -219,19 +221,14 @@ export function createTileflowBuildings3D(
   let programs: Partial<Record<'buildings' | 'depth' | 'ground' | 'band' | 'flood', Program>> = {};
   let variant: string | undefined;
   let linking: Linking[] | undefined;
-  let shadow:
-    | {
-        texture: WebGLTexture;
-        framebuffer: WebGLFramebuffer;
-        size: number;
-        failed: boolean;
-        key?: string;
-        light?: {matrix: Float32Array; depth: number; extent: number};
-      }
-    | undefined;
   let ground: {vao: WebGLVertexArrayObject; vbo: WebGLBuffer} | undefined;
   let disposed = false;
   let colourCache: {text: string; rgb: [number, number, number]} | undefined;
+  // Shadows are drawn in the map's shared 3D scene, with any other 3D layer on the map.
+  const scene = tileflowScene3D(map);
+  let generation = 0;
+  let registered = false;
+  let unregister = () => {};
 
   const layer = {
     id: tileflowBuildings3DLayerId,
@@ -240,7 +237,6 @@ export function createTileflowBuildings3D(
     onAdd(_: unknown, context: WebGLRenderingContext | WebGL2RenderingContext) {
       if (!isWebGL2(context)) return;
       gl = context;
-      createShadowMap(context);
       createGround(context);
       // A sampler always has a colour texture to read, palette or not.
       blank = context.createTexture()!;
@@ -263,10 +259,9 @@ export function createTileflowBuildings3D(
       for (const program of Object.values(programs))
         if (program) context.deleteProgram(program.program);
       for (const entry of linking ?? []) context.deleteProgram(entry.program);
-      if (shadow) {
-        context.deleteFramebuffer(shadow.framebuffer);
-        context.deleteTexture(shadow.texture);
-      }
+      unregister();
+      registered = false;
+      scene.release(context);
       if (ground) {
         context.deleteVertexArray(ground.vao);
         context.deleteBuffer(ground.vbo);
@@ -276,17 +271,14 @@ export function createTileflowBuildings3D(
       programs = {};
       linking = undefined;
       variant = undefined;
-      shadow = undefined;
       ground = undefined;
       gl = undefined;
     },
     prerender(context: WebGLRenderingContext | WebGL2RenderingContext) {
-      if (!isWebGL2(context) || !programs.depth || visibleScale() <= 0) return;
-      try {
-        renderShadows(context);
-      } catch {
-        if (shadow) shadow.failed = true;
-      }
+      if (!isWebGL2(context) || !programs.depth) return;
+      if (!registered) unregister = scene.register(caster);
+      registered = true;
+      scene.prepare(context, lighting(), camera.metres);
     },
     render(context: WebGLRenderingContext | WebGL2RenderingContext, args: ProjectionArgs) {
       if (!isWebGL2(context)) return;
@@ -333,7 +325,7 @@ export function createTileflowBuildings3D(
       if (gl) release(gl, value);
     },
     changed() {
-      if (shadow) shadow.key = undefined;
+      generation += 1;
     },
   });
 
@@ -383,7 +375,7 @@ export function createTileflowBuildings3D(
       context.bufferData(context.ELEMENT_ARRAY_BUFFER, entry.mesh.indices, context.STATIC_DRAW);
       context.bindVertexArray(null);
       entry.gl = {vao, vbo, ibo};
-      if (shadow) shadow.key = undefined;
+      generation += 1;
     }
   }
 
@@ -527,44 +519,7 @@ export function createTileflowBuildings3D(
   }
 
   function lighting() {
-    const sun = sunNow();
-    const linear = (value: number) =>
-      value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-    const sunLight = sun.rgb.map((channel) => linear(channel) * sun.intensity);
-    const skyLight = sun.ambient.rgb.map((channel) => linear(channel) * sun.ambient.intensity);
-    const up = sun.direction[2];
-    const groundShadow = skyLight.map((sky, channel) => {
-      const lit = sky + sunLight[channel]! * Math.max(0, up);
-      return lit > 1e-5 ? (sky / lit) ** (1 / 2.2) : 1;
-    });
-    const floor = (Math.max(shadowFloor, sun.altitude) * Math.PI) / 180;
-    const azimuth = (sun.azimuth * Math.PI) / 180;
-    const shadowDirection = [
-      Math.sin(azimuth) * Math.cos(floor),
-      Math.cos(azimuth) * Math.cos(floor),
-      Math.sin(floor),
-    ];
-    const low = Math.min(
-      1,
-      Math.max(0, (sun.altitude - shadowFade[0]) / (shadowFade[1] - shadowFade[0])),
-    );
-    const strength = shadowsOn
-      ? Math.min(1, sun.shadowIntensity) *
-        Math.min(1, sun.intensity * 4) *
-        low *
-        low *
-        (3 - 2 * low)
-      : 0;
-    const night = Math.min(1, Math.max(0, (0.14 - sun.brightness) / 0.09));
-    return {
-      direction: sun.direction,
-      sunLight,
-      skyLight,
-      groundShadow,
-      shadowDirection,
-      strength,
-      night,
-    };
+    return tileflowSceneLight(sunNow(), shadowsOn);
   }
 
   // --- Drawing ---
@@ -579,75 +534,46 @@ export function createTileflowBuildings3D(
     return camera.ready().filter((entry) => entry.value.gl);
   }
 
-  function box(entries: readonly TileEntry[]) {
-    let [left, top, right, bottom, tallest] = [Infinity, Infinity, -Infinity, -Infinity, 0];
-    for (const entry of entries) {
-      left = Math.min(left, entry.x);
-      top = Math.min(top, entry.y);
-      right = Math.max(right, entry.x);
-      bottom = Math.max(bottom, entry.y);
-      tallest = Math.max(tallest, entry.value.mesh.top);
-    }
-    const unit = tileflowBuildingExtent * camera.metres;
-    const origin = camera.origin;
-    return {
-      min: [(left - origin[0]) * unit, -(bottom + 1 - origin[1]) * unit, 0] as const,
-      max: [
-        (right + 1 - origin[0]) * unit,
-        -(top - origin[1]) * unit,
-        tallest * visibleScale(),
-      ] as const,
-      tiles: [left, top, right, bottom] as const,
-      tallest,
-    };
-  }
+  // --- Shadows, in the map's shared 3D scene ---
 
-  function renderShadows(context: WebGL2RenderingContext): void {
-    if (!shadow || shadow.failed) return;
-    const light = lighting();
-    const entries = drawn();
-    if (light.strength <= 0 || entries.length === 0) {
-      shadow.light = undefined;
-      return;
-    }
-    const scene = box(entries);
-    const key = [
-      ...light.shadowDirection.map((value) => value.toFixed(5)),
-      visibleScale().toFixed(4),
-      entries.length,
-      camera.origin.join(),
-    ].join();
-    if (key === shadow.key && shadow.light) return;
-    shadow.light = tileflowSunLightMatrix(light.shadowDirection, scene);
-    shadow.key = key;
-    const program = programs.depth!;
-    context.bindFramebuffer(context.FRAMEBUFFER, shadow.framebuffer);
-    context.viewport(0, 0, shadow.size, shadow.size);
-    context.disable(context.BLEND);
-    context.disable(context.CULL_FACE);
-    context.disable(context.STENCIL_TEST);
-    context.disable(context.SCISSOR_TEST);
-    context.enable(context.DEPTH_TEST);
-    context.depthFunc(context.LESS);
-    context.depthMask(true);
-    context.depthRange(0, 1);
-    context.clearDepth(1);
-    context.clear(context.DEPTH_BUFFER_BIT);
-    context.enable(context.POLYGON_OFFSET_FILL);
-    context.polygonOffset(1.5, 4);
-    context.useProgram(program.program);
-    context.uniform1f(program.uniforms.u_scale!, visibleScale());
-    context.uniform1f(program.uniforms.u_metres!, camera.metres);
-    context.uniformMatrix4fv(program.uniforms.u_light_matrix!, false, shadow.light.matrix);
-    for (const {x, y, value} of entries) {
-      context.uniform2f(program.uniforms.u_offset!, ...camera.offsetOf({x, y}));
-      context.bindVertexArray(value.gl!.vao);
-      context.drawElements(context.TRIANGLES, value.mesh.indices.length, context.UNSIGNED_INT, 0);
-    }
-    context.bindVertexArray(null);
-    context.disable(context.POLYGON_OFFSET_FILL);
-    context.bindFramebuffer(context.FRAMEBUFFER, null);
-    context.viewport(0, 0, context.drawingBufferWidth, context.drawingBufferHeight);
+  const caster: TileflowSceneCaster = {
+    groundOrder: 0,
+    bounds() {
+      const shown = visibleScale();
+      const entries = drawn();
+      if (shown <= 0 || entries.length === 0) return undefined;
+      let [left, top, right, bottom, tallest] = [Infinity, Infinity, -Infinity, -Infinity, 0];
+      for (const entry of entries) {
+        left = Math.min(left, entry.x);
+        top = Math.min(top, entry.y);
+        right = Math.max(right, entry.x);
+        bottom = Math.max(bottom, entry.y);
+        tallest = Math.max(tallest, entry.value.mesh.top);
+      }
+      return {zoom: camera.zoom, tiles: [left, top, right, bottom], tallest: tallest * shown};
+    },
+    key: () => `buildings:${visibleScale().toFixed(4)}:${generation}:${programs.depth ? 1 : 0}`,
+    drawDepth(context, frame) {
+      const program = programs.depth;
+      if (!program) return;
+      context.useProgram(program.program);
+      context.uniform1f(program.uniforms.u_scale!, visibleScale());
+      context.uniform1f(program.uniforms.u_metres!, frame.metres);
+      context.uniformMatrix4fv(program.uniforms.u_light_matrix!, false, frame.light.matrix);
+      for (const {x, y, value} of drawn()) {
+        context.uniform2f(program.uniforms.u_offset!, ...frame.offsetOf({x, y}, camera.zoom));
+        context.bindVertexArray(value.gl!.vao);
+        context.drawElements(context.TRIANGLES, value.mesh.indices.length, context.UNSIGNED_INT, 0);
+      }
+    },
+  };
+
+  /** A tile's corner and the metres per tile unit in the frame shadows are drawn in. */
+  function placed(x: number, y: number): {offset: [number, number]; metres: number} {
+    const frame = scene.frame();
+    return frame && frame.zoom === camera.zoom
+      ? {offset: frame.offsetOf({x, y}, camera.zoom), metres: frame.metres}
+      : {offset: camera.offsetOf({x, y}), metres: camera.metres};
   }
 
   function project(
@@ -673,20 +599,6 @@ export function createTileflowBuildings3D(
     return width ? Math.min(4, Math.max(1, context.drawingBufferWidth / width)) : 1;
   }
 
-  function setShadow(context: WebGL2RenderingContext, program: Program, strength: number) {
-    const uniforms = program.uniforms;
-    const on = strength > 0 && shadow?.light && !shadow.failed;
-    context.activeTexture(context.TEXTURE0);
-    context.bindTexture(context.TEXTURE_2D, shadow?.texture ?? null);
-    context.uniform1i(uniforms.u_shadow_map!, 0);
-    context.uniform1f(uniforms.u_shadow!, on ? strength : 0);
-    if (!on || !shadow?.light) return;
-    context.uniformMatrix4fv(uniforms.u_light_matrix!, false, shadow.light.matrix);
-    context.uniform2f(uniforms.u_shadow_texel!, 1 / shadow.size, 1 / shadow.size);
-    context.uniform1f(uniforms.u_depth_unit!, 1 / shadow.light.depth);
-    context.uniform1f(uniforms.u_normal_offset!, (shadow.light.extent / shadow.size) * 1.2);
-  }
-
   function draw(context: WebGL2RenderingContext, args: ProjectionArgs): void {
     const entries = drawn();
     if (entries.length === 0) return;
@@ -698,7 +610,7 @@ export function createTileflowBuildings3D(
     const u = buildings.uniforms;
     context.useProgram(buildings.program);
     context.uniform1f(u.u_scale!, shown);
-    context.uniform1f(u.u_metres!, camera.metres);
+    context.uniform1f(u.u_metres!, placed(0, 0).metres);
     context.uniform3fv(u.u_colour!, themeColour());
     context.uniform3fv(u.u_sun_dir!, [...light.direction]);
     context.uniform3fv(u.u_shadow_dir!, light.shadowDirection);
@@ -717,10 +629,10 @@ export function createTileflowBuildings3D(
     context.uniform3fv(u.u_edge_colour!, edgeColour.rgb);
     context.uniform1f(u.u_edge_own!, edgeColour.share);
     context.uniform1f(u.u_edge_width!, edgeLine.width * pixelRatio(context));
-    setShadow(context, buildings, light.strength);
+    scene.bindShadow(context, u, light.strength);
     for (const {x, y, value: entry} of entries) {
       project(context, buildings, args, x, y);
-      context.uniform2f(u.u_offset!, ...camera.offsetOf({x, y}));
+      context.uniform2f(u.u_offset!, ...placed(x, y).offset);
       const palette = themes ? paletteOf(context, entry, themes.themes) : undefined;
       context.uniform1f(u.u_palette_on!, palette ? 1 : 0);
       context.activeTexture(context.TEXTURE1);
@@ -739,28 +651,34 @@ export function createTileflowBuildings3D(
     context.depthMask(false);
     context.enable(context.BLEND);
     context.blendFuncSeparate(context.DST_COLOR, context.ZERO, context.ZERO, context.ONE);
-    if (light.strength > 0 && shadow?.light && !shadow.failed && ground) {
+    const frame = scene.frame();
+    if (
+      light.strength > 0 &&
+      frame &&
+      frame.zoom === camera.zoom &&
+      ground &&
+      scene.drawsGround(caster)
+    ) {
       const program = programs.ground!;
       context.useProgram(program.program);
-      context.uniform1f(program.uniforms.u_metres!, camera.metres);
+      context.uniform1f(program.uniforms.u_metres!, frame.metres);
       context.uniform3fv(program.uniforms.u_ground_shadow!, light.groundShadow);
-      setShadow(context, program, light.strength);
+      scene.bindShadow(context, program.uniforms, light.strength);
       context.bindVertexArray(ground.vao);
-      const scene = box(entries);
       const longest = Math.min(
         4,
         Math.ceil(
-          (scene.tallest * shown) /
-            Math.tan((shadowFloor * Math.PI) / 180) /
-            (tileflowBuildingExtent * camera.metres),
+          frame.tallest /
+            Math.tan((tileflowSceneShadowFloor * Math.PI) / 180) /
+            (tileflowBuildingExtent * frame.metres),
         ),
       );
       const margin = Math.max(1, longest);
-      const [left, top, right, bottom] = scene.tiles;
+      const [left, top, right, bottom] = frame.tiles;
       for (let x = left - margin; x <= right + margin; x += 1)
         for (let y = top - margin; y <= bottom + margin; y += 1) {
           project(context, program, args, x, y);
-          context.uniform2f(program.uniforms.u_offset!, ...camera.offsetOf({x, y}));
+          context.uniform2f(program.uniforms.u_offset!, ...frame.offsetOf({x, y}));
           context.drawArrays(context.TRIANGLE_STRIP, 0, 4);
         }
     }
@@ -880,40 +798,6 @@ export function createTileflowBuildings3D(
     return true;
   }
 
-  function createShadowMap(context: WebGL2RenderingContext): void {
-    if (shadow) return;
-    const size = Math.min(4096, context.getParameter(context.MAX_TEXTURE_SIZE) as number);
-    const texture = context.createTexture()!;
-    context.bindTexture(context.TEXTURE_2D, texture);
-    context.texStorage2D(context.TEXTURE_2D, 1, context.DEPTH_COMPONENT16, size, size);
-    context.texParameteri(context.TEXTURE_2D, context.TEXTURE_MIN_FILTER, context.LINEAR);
-    context.texParameteri(context.TEXTURE_2D, context.TEXTURE_MAG_FILTER, context.LINEAR);
-    context.texParameteri(context.TEXTURE_2D, context.TEXTURE_WRAP_S, context.CLAMP_TO_EDGE);
-    context.texParameteri(context.TEXTURE_2D, context.TEXTURE_WRAP_T, context.CLAMP_TO_EDGE);
-    context.texParameteri(
-      context.TEXTURE_2D,
-      context.TEXTURE_COMPARE_MODE,
-      context.COMPARE_REF_TO_TEXTURE,
-    );
-    context.texParameteri(context.TEXTURE_2D, context.TEXTURE_COMPARE_FUNC, context.LEQUAL);
-    context.bindTexture(context.TEXTURE_2D, null);
-    const framebuffer = context.createFramebuffer()!;
-    context.bindFramebuffer(context.FRAMEBUFFER, framebuffer);
-    context.framebufferTexture2D(
-      context.FRAMEBUFFER,
-      context.DEPTH_ATTACHMENT,
-      context.TEXTURE_2D,
-      texture,
-      0,
-    );
-    context.drawBuffers([context.NONE]);
-    context.readBuffer(context.NONE);
-    const complete =
-      context.checkFramebufferStatus(context.FRAMEBUFFER) === context.FRAMEBUFFER_COMPLETE;
-    context.bindFramebuffer(context.FRAMEBUFFER, null);
-    shadow = {texture, framebuffer, size, failed: !complete};
-  }
-
   function createGround(context: WebGL2RenderingContext): void {
     if (ground) return;
     const vao = context.createVertexArray()!;
@@ -1030,6 +914,7 @@ export function createTileflowBuildings3D(
       motion?.done();
       map.off('styledata', onStyle);
       map.off('idle', onStyle);
+      unregister();
       try {
         if (map.getLayer(tileflowBuildings3DLayerId)) map.removeLayer(tileflowBuildings3DLayerId);
       } catch {
@@ -1054,63 +939,4 @@ function isWebGL2(context: unknown): context is WebGL2RenderingContext {
   return typeof WebGL2RenderingContext !== 'undefined' && context instanceof WebGL2RenderingContext;
 }
 
-/**
- * The sun's view of a box of buildings: an orthographic projection along `direction` (towards the
- * sun; x east, y north, z up, in metres) as a column-major matrix to clip space, with the metres its
- * depth runs over and the metres its wider side spans. It follows only the sun, never the camera,
- * so shadows hold still while the camera moves.
- */
-export function tileflowSunLightMatrix(
-  direction: readonly number[],
-  box: Readonly<{min: readonly number[]; max: readonly number[]}>,
-): {matrix: Float32Array; depth: number; extent: number} {
-  const length = Math.hypot(direction[0]!, direction[1]!, direction[2]!) || 1;
-  const towards = direction.map((value) => value / length);
-  const forward = towards.map((value) => -value);
-  const cross = (a: readonly number[], b: readonly number[]) => [
-    a[1]! * b[2]! - a[2]! * b[1]!,
-    a[2]! * b[0]! - a[0]! * b[2]!,
-    a[0]! * b[1]! - a[1]! * b[0]!,
-  ];
-  const normalize = (v: readonly number[]) => {
-    const size = Math.hypot(v[0]!, v[1]!, v[2]!) || 1;
-    return v.map((value) => value / size);
-  };
-  const hint = Math.abs(towards[2]!) > 0.99 ? [0, 1, 0] : [0, 0, 1];
-  const right = normalize(cross(forward, hint));
-  const up = cross(right, forward);
-  const dot = (a: readonly number[], b: readonly number[]) =>
-    a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
-  const range = (axis: readonly number[]) => {
-    let low = Infinity;
-    let high = -Infinity;
-    for (const x of [box.min[0]!, box.max[0]!])
-      for (const y of [box.min[1]!, box.max[1]!])
-        for (const z of [box.min[2]!, box.max[2]!]) {
-          const value = dot([x, y, z], axis);
-          low = Math.min(low, value);
-          high = Math.max(high, value);
-        }
-    return [low, high] as const;
-  };
-  const pad = ([low, high]: readonly [number, number], extra: number) =>
-    [low - extra, high + extra] as const;
-  const [u0, u1] = range(right);
-  const [v0, v1] = range(up);
-  const [a0, a1] = pad([u0, u1], (u1 - u0) * 0.01 + 2);
-  const [b0, b1] = pad([v0, v1], (v1 - v0) * 0.01 + 2);
-  const [c0, c1] = pad(range(forward), 10);
-  const hu = (a1 - a0) / 2;
-  const hv = (b1 - b0) / 2;
-  const hd = (c1 - c0) / 2;
-  const rows = [
-    [...right.map((value) => value / hu), -(a1 + a0) / 2 / hu],
-    [...up.map((value) => value / hv), -(b1 + b0) / 2 / hv],
-    [...forward.map((value) => value / hd), -(c1 + c0) / 2 / hd],
-    [0, 0, 0, 1],
-  ];
-  const matrix = new Float32Array(16);
-  for (let row = 0; row < 4; row += 1)
-    for (let column = 0; column < 4; column += 1) matrix[column * 4 + row] = rows[row]![column]!;
-  return {matrix, depth: hd * 2, extent: Math.max(hu, hv) * 2};
-}
+export {tileflowSunLightMatrix} from './scene-3d-browser';

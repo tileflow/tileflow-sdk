@@ -186,5 +186,9 @@ void main() {
     mix(1.0, v_look.z, 0.75);
   vec3 roof = u_sky_light + u_sun_light * max(u_sun_dir.z, 0.0);
   vec3 colour = base * min(pow(light / max(roof, vec3(1e-4)), vec3(1.0 / 2.2)), vec3(1.5));
+  // At night the tops of crowns keep near their theme's colour, as a night theme draws them, so
+  // trees stay apart from the dark ground.
+  float crownTop = bark ? 0.0 : smoothstep(0.1, 0.9, normal.z);
+  colour = mix(colour, base * 0.95 + vec3(0.02, 0.03, 0.04), u_night * 0.45 * crownTop);
   fragColor = vec4(colour, 1.0);
 }`;

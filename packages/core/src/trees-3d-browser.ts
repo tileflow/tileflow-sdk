@@ -199,8 +199,12 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   let tiles: CameraTiles<TreeTile>[] = [];
   let tilesKey: string | undefined;
 
+  let describedLast: TileflowVegetation3D | undefined;
+
   function ensureTiles(): CameraTiles<TreeTile>[] {
     const described = vegetation();
+    if (described === describedLast && (described === undefined || tiles.length > 0)) return tiles;
+    describedLast = described;
     const key = described
       ? JSON.stringify([
           described.source,

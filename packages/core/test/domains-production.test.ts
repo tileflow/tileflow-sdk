@@ -382,6 +382,7 @@ test('default 3D vegetation preserves exact dark semantic tree tokens', () => {
     bark: '#3A3228',
     broadleaf: ['#284236', '#2F4B3C', '#365441', '#3C5B46'],
     conifer: ['#203A31', '#294237', '#314A3C'],
+    palm: ['#2B4A30', '#33563A', '#3C6243'],
   } as const;
   const darkTheme = defineTheme(testLightTheme, {
     colorScheme: 'dark',
@@ -396,6 +397,9 @@ test('default 3D vegetation preserves exact dark semantic tree tokens', () => {
         'vegetation.tree.conifer.a': tree.conifer[0],
         'vegetation.tree.conifer.b': tree.conifer[1],
         'vegetation.tree.conifer.c': tree.conifer[2],
+        'vegetation.tree.palm.a': tree.palm[0],
+        'vegetation.tree.palm.b': tree.palm[1],
+        'vegetation.tree.palm.c': tree.palm[2],
       },
     },
     version: 1,

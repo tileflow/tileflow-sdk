@@ -89,7 +89,8 @@ TypeScript imports.
 
 `icons` is an intentional exception to implicit array composition: omission inherits the exact
 parent array, any declaration replaces it atomically, and `[]` disables map icons. Compose with a
-spread when the child should keep a parent's directories. `fonts` and `glyphs` are mutually
+spread when the child should keep a parent's directories. `models`, the directories of a map's own
+3D models, follows the same rule. `fonts` and `glyphs` are mutually
 exclusive text providers; declaring either atomically replaces an inherited provider of either
 kind. Unknown keys and former compatibility shapes are rejected.
 

@@ -202,8 +202,22 @@ test('the controller returns the inks of the theme on screen, mixed during a ble
     map,
   });
   assert.equal(controller.getRouteInks().line, '#2563eb');
+  // The metadata of the style on screen, for an application's own layers.
+  const shown = controller.getThemeMetadata(tileflowRouteMetadataKey);
+  assert.equal(shown.position, 0);
+  assert.deepEqual(
+    shown.values.map((value) => (value as {line: string}).line),
+    ['#2563eb'],
+  );
 
   assert.equal((await controller.setBlend({position: 0.5, themes: [day, dusk]})).status, 'applied');
+  const metadata = controller.getThemeMetadata(tileflowRouteMetadataKey);
+  assert.equal(metadata.position, 0.5);
+  assert.deepEqual(
+    metadata.values.map((value) => (value as {line: string}).line),
+    ['#2563eb', '#ff4fae'],
+  );
+  assert.deepEqual(controller.getThemeMetadata('tileflow:missing').values, [undefined, undefined]);
   const half = controller.getRouteInks();
   assert.notEqual(half.line, '#2563eb');
   assert.notEqual(half.line, '#ff4fae');

@@ -20,7 +20,7 @@ import {compileBuildings} from '../src/modules/buildings/compiler';
 import {compileLand} from '../src/modules/land/compiler';
 import {compilePoi} from '../src/modules/poi/compiler';
 import {compileTransit} from '../src/modules/transit/compiler';
-import {compileVegetation} from '../src/modules/vegetation/compiler';
+import {compileVegetation, tileflowVegetationDescription} from '../src/modules/vegetation/compiler';
 import {compileWater} from '../src/modules/water/compiler';
 import {resolveColors, resolveThemeColors, resolveThemeImages} from '../src/themes';
 import {assembleTileflowLayers} from './layer-ir-fixture';
@@ -352,27 +352,36 @@ test('3D vegetation keeps a portable styled fallback and exposes runtime paramet
 
   assert.equal(portable.layer.metadata?.['tileflow:vegetation-mode'], '3d');
   assert.equal(portable.layer.metadata?.['tileflow:vegetation-fallback'], 'flat-circle');
-  assert.equal(portable.layer.metadata?.['tileflow:tree-bark-color'], '#654321');
-  assert.deepEqual(portable.layer.metadata?.['tileflow:tree-broadleaf-colors'], ['#112233']);
-  assert.deepEqual(portable.layer.metadata?.['tileflow:tree-conifer-colors'], ['#334455']);
-  assert.equal(portable.layer.metadata?.['tileflow:tree-crown-scale'], 1.2);
-  assert.equal(portable.layer.metadata?.['tileflow:tree-height-scale'], 1.4);
+  // The 3D trees' design is the style's `tileflow:vegetation` description, not layer metadata.
+  const description = tileflowVegetationDescription(
+    vegetation({
+      mode: '3d',
+      threeDimensional: {
+        barkColor: '#654321',
+        broadleafColors: ['#112233'],
+        coniferColors: ['#334455'],
+        crownScale: 1.2,
+        heightScale: 1.4,
+      },
+    }) as never,
+    {...context, data},
+  )!;
+  assert.equal(description.colors.bark, '#654321');
+  assert.deepEqual(description.colors.broadleaf, ['#112233']);
+  assert.deepEqual(description.colors.conifer, ['#334455']);
+  assert.equal(description.crownScale, 1.2);
+  assert.equal(description.heightScale, 1.4);
   assert.equal((portable.layer.paint as Record<string, unknown>)['circle-color'], '#123456');
   assert.equal((portable.layer.paint as Record<string, unknown>)['circle-opacity'], 0.74);
   assert.equal(hosted.layer.metadata?.['tileflow:vegetation-mode'], '3d');
   assert.equal(hosted.layer.metadata?.['tileflow:vegetation-fallback'], 'flat-circle');
-  assert.equal(
-    hosted.layer.metadata?.['tileflow:tree-bark-color'],
-    context.colors.vegetation.tree.bark,
-  );
-  assert.deepEqual(
-    hosted.layer.metadata?.['tileflow:tree-broadleaf-colors'],
-    context.colors.vegetation.tree.broadleaf,
-  );
-  assert.deepEqual(
-    hosted.layer.metadata?.['tileflow:tree-conifer-colors'],
-    context.colors.vegetation.tree.conifer,
-  );
+  const hostedDescription = tileflowVegetationDescription(
+    vegetation({mode: '3d'}) as never,
+    context,
+  )!;
+  assert.equal(hostedDescription.colors.bark, context.colors.vegetation.tree.bark);
+  assert.deepEqual(hostedDescription.colors.broadleaf, context.colors.vegetation.tree.broadleaf);
+  assert.deepEqual(hostedDescription.colors.conifer, context.colors.vegetation.tree.conifer);
   assertValid([portable]);
   assertValid([hosted]);
 });
@@ -382,6 +391,7 @@ test('default 3D vegetation preserves exact dark semantic tree tokens', () => {
     bark: '#3A3228',
     broadleaf: ['#284236', '#2F4B3C', '#365441', '#3C5B46'],
     conifer: ['#203A31', '#294237', '#314A3C'],
+    palm: ['#2B4A30', '#33563A', '#3C6243'],
   } as const;
   const darkTheme = defineTheme(testLightTheme, {
     colorScheme: 'dark',
@@ -396,6 +406,9 @@ test('default 3D vegetation preserves exact dark semantic tree tokens', () => {
         'vegetation.tree.conifer.a': tree.conifer[0],
         'vegetation.tree.conifer.b': tree.conifer[1],
         'vegetation.tree.conifer.c': tree.conifer[2],
+        'vegetation.tree.palm.a': tree.palm[0],
+        'vegetation.tree.palm.b': tree.palm[1],
+        'vegetation.tree.palm.c': tree.palm[2],
       },
     },
     version: 1,
@@ -407,9 +420,14 @@ test('default 3D vegetation preserves exact dark semantic tree tokens', () => {
   );
 
   assert.deepEqual(darkContext.colors.vegetation.tree, tree);
-  assert.equal(trees.layer.metadata?.['tileflow:tree-bark-color'], tree.bark);
-  assert.deepEqual(trees.layer.metadata?.['tileflow:tree-broadleaf-colors'], tree.broadleaf);
-  assert.deepEqual(trees.layer.metadata?.['tileflow:tree-conifer-colors'], tree.conifer);
+  const darkDescription = tileflowVegetationDescription(
+    vegetation({mode: '3d'}) as never,
+    darkContext,
+  )!;
+  assert.equal(darkDescription.colors.bark, tree.bark);
+  assert.deepEqual(darkDescription.colors.broadleaf, tree.broadleaf);
+  assert.deepEqual(darkDescription.colors.conifer, tree.conifer);
+  assert.deepEqual(darkDescription.colors.palm, tree.palm);
   assertValid([trees]);
 });
 

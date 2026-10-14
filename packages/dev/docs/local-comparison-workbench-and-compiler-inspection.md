@@ -62,42 +62,20 @@ prepared local-font bundle before authentication until managed font storage is a
 map that declares `glyphs` replaces the inherited local provider atomically; the URL-backed map is
 complete as declared and independent of its World selection.
 
-For Streets styles whose vegetation layer declares `tileflow:vegetation-mode = 3d`, the built-in
-preview uses the same portable circle fallback as capture and the published framework adapters by
-default. This makes an ordinary `tileflow preview` session WYSIWYG with production and visual
-baselines. Append `?treeRenderer=simple` or `?treeRenderer=complex` to opt into the experimental,
-preview-only instanced renderer described below; that explicit mode is not capture evidence.
+With both controls off, the built-in preview draws the style as compiled, as Capture and the
+published framework adapters draw it: flat trees, building layers marked for the 3D control left
+hidden, and no street lights. This keeps an ordinary `tileflow preview` session WYSIWYG with
+production and visual baselines.
 
-The experimental renderer uses source height and crown diameter when present, distinguishes palms,
-columnar cypresses, conifers, and three broadleaf silhouettes from the bound botanical fields, and
-falls back to deterministic broadleaf variety and dimensions when tags are missing. Bark color,
-crown palettes, height scale, and crown scale come from `vegetation.threeDimensional`; the preview
-does not maintain a second hard-coded appearance contract. During camera
-gestures the existing 3D batch remains visible while native circles cover newly arriving tiles; the
-batch refreshes when movement ends without waiting for the whole map to become idle. Source-tile
-events are rate-limited and unchanged instance selections do not upload new GPU buffers. The
-preview caps one view at 3,000 trees and uses zoom-dependent density. Both detailed modes use thin,
-tapered trunks, branches that enter the crown, softly shaded overlapping ellipsoids, and stable
-per-tree scale and rotation. `simple` reduces lobe and segment counts; `complex` keeps the complete
-round, open, avenue, pine, cypress, and palm silhouettes. Each archetype remains fused into one
-reusable geometry and every complete tree remains
-one GPU instance, so the additional detail introduces no extra draw calls. The experimental
-renderer defaults to its WebGL2 backend, which
-draws those instances directly without a Three.js scene traversal; append `&treeBackend=three` for
-the compatibility backend. Use `?treeRenderer=circle`, `?treeRenderer=simple`, or
-`?treeRenderer=complex&treeBenchmark=1` to compare identical scenes; the benchmark reports frame
-p95, query, selection, build and render time, draw calls, and triangle count in the tree status badge.
-Visible candidates come from MapLibre's worker-built tile index instead of a second copy of the
-vector source. Terrain height is sampled on a fixed 5-by-5 viewport grid and interpolated per tree,
-avoiding hundreds of synchronous terrain queries when a new batch first appears.
-The separate `TREES ON/OFF` control sits below the building `3D ON/OFF` control and pauses tree
-refresh work while disabled. Both choices survive reloads and shared links through the
-`buildings3d=on|off` and `trees3d=on|off` URL parameters.
-
-Detailed trees retain the compiler's scene order: they render above road and pedestrian surfaces,
-ordinary building geometry, and detailed landmark models. Map labels and other annotations remain
-above the physical scene, while road names and route references stay attached to the carriageway
-below buildings and trees.
+The `3D ON/OFF` and `TREES ON/OFF` controls mount Core's 3D layers as an application does, from
+the description the compiled style publishes. When the style describes 3D buildings
+(`tileflow:buildings`), `3D ON` raises them with `createTileflowBuildings3D` in place of the
+compiled extrusion and lights the streets with `createTileflowStreetLights` where the style
+describes them. When it describes 3D trees (`tileflow:vegetation`), `TREES ON` stands them with
+`createTileflowTrees3D`, which hides the style's flat trees while they stand. Every look the
+preview shows comes from the map's modules; the preview holds no appearance of its own, and the
+theme on screen supplies the sun. Neither mode is capture evidence. Both choices survive reloads
+and shared links through the `buildings3d=on|off` and `trees3d=on|off` URL parameters.
 
 The same control toggles any compiled layer whose metadata contains
 `tileflow:3d-toggle = building`. It switches the building volumes independently from the camera,

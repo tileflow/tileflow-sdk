@@ -2,6 +2,7 @@
 // under the camera), with the map's own tile address and request rules: chosen layers decoded,
 // a bounded cache, one request per tile however many readers wait for it, and cancellation.
 // It has no DOM dependency, so it also runs in a worker.
+import {fetchTileflowPmtilesTile, isTileflowPmtilesUrl} from './pmtiles-browser';
 import {decodeTileflowVectorTile, type TileflowTileLayer} from './vector-tile-decode';
 
 export type TileflowTileAddress = Readonly<{z: number; x: number; y: number}>;
@@ -37,7 +38,10 @@ export type TileflowTileReaderOptions = Readonly<{
   concurrency?: number;
   /** The map's request rules, applied to every tile request. */
   transformRequest?: TileflowTileRequestTransform;
-  /** Defaults to the global `fetch`. */
+  /**
+   * Defaults to the global `fetch`, and to Core's PMTiles protocol for a source served from a
+   * Tileflow PMTiles archive (`tileflow-pmtiles://`).
+   */
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
 }>;
 
@@ -271,8 +275,9 @@ function validated(options: TileflowTileReaderOptions) {
   const concurrency = options.concurrency ?? 6;
   if (!(Number.isInteger(concurrency) && concurrency >= 1 && concurrency <= 32))
     throw new RangeError('Tile reader concurrency runs from 1 to 32 requests.');
-  const fetcher = options.fetch ?? globalThis.fetch?.bind(globalThis);
-  if (typeof fetcher !== 'function') throw new TypeError('A tile reader needs fetch.');
+  if (typeof (options.fetch ?? globalThis.fetch) !== 'function')
+    throw new TypeError('A tile reader needs fetch.');
+  const fetcher = options.fetch ?? fetchTile;
   if (
     options.layers !== undefined &&
     (!Array.isArray(options.layers) || options.layers.some((layer) => typeof layer !== 'string'))
@@ -288,6 +293,12 @@ function validated(options: TileflowTileReaderOptions) {
     layers: options.layers,
     transformRequest: options.transformRequest,
   };
+}
+
+// A source served from a Tileflow PMTiles archive is read through Core's own PMTiles protocol,
+// sharing the map's archives; any other address through the global fetch.
+function fetchTile(url: string, init: RequestInit): Promise<Response> {
+  return isTileflowPmtilesUrl(url) ? fetchTileflowPmtilesTile(url) : globalThis.fetch(url, init);
 }
 
 /** Structural MapLibre capability; importing this module never loads a renderer. */

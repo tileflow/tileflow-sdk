@@ -990,6 +990,13 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
   glyphs.description =
     'One explicit PBF glyph provider. In authoring, declaration atomically replaces inherited fonts or glyphs; fonts and glyphs are mutually exclusive.';
 
+  const models = asRecord(properties.models, 'models property');
+  models.description =
+    "Ordered directories of the map's own 3D models: glTF binaries (.glb) whose file names are their ids, drawn where a module names them, such as modules.vegetation.threeDimensional.forms.palm.models. In authoring, omission inherits, declaration atomically replaces, [] selects no models, and a later directory wins by id. <id>.far.glb is the same model for far trees. Each material is named bark, leaves, fronds or stem and takes that part's theme colours.";
+  const modelArray = dereferenceSchema(schema, models, 'models array');
+  modelArray.description = models.description;
+  modelArray.examples = [[], ['./models'], ['./models', '../shared/trees']];
+
   const iconArray = dereferenceSchema(schema, icons, 'icons array');
   iconArray.description = icons.description;
   iconArray.examples = [

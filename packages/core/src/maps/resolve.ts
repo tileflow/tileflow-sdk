@@ -51,6 +51,7 @@ export const tileflowMapMergeStrategies = {
   icons: 'icons',
   id: 'identity',
   marine: 'atomic',
+  models: 'atomic',
   modules: 'modules',
   name: 'identity',
   overlays: 'keyed-resources',

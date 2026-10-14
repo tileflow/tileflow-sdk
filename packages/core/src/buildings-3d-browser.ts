@@ -22,7 +22,20 @@ import {
   tileflowBuildingGroundVertex,
   tileflowBuildingVertex,
 } from './buildings-3d-shaders';
+import {
+  readTileflowBuildings3D,
+  type TileflowBuildings3DDesign,
+  tileflowBuildingsMetadataKey,
+  tileflowDefaultBuildings3DDesign,
+} from './buildings-3d-design';
 import {cameraFrame, createCameraTiles} from './camera-tiles-browser';
+import {tileflowFeatureColour} from './feature-colour-browser';
+import {
+  tileflowScene3D,
+  type TileflowSceneCaster,
+  tileflowSceneLight,
+  tileflowSceneShadowFloor,
+} from './scene-3d-browser';
 import {resolveTileflowSun, tileflowDefaultSunPreset, type TileflowSun} from './sun';
 import {tileflowColourChannels} from './theme-blend';
 import type {TileflowTileRequestTransform} from './tile-reader';
@@ -45,63 +58,16 @@ export type TileflowBuildings3DMap = {
   triggerRepaint(): unknown;
 };
 
-/** Where the renderer reads the sun and the themes: a Tileflow theme controller. */
+/** Where the renderer reads the sun and the map's design: a Tileflow theme controller. */
 export type TileflowBuildings3DThemes = {
-  getBlend?(): {position: number; themes: readonly string[]} | undefined;
-  getCurrent?(): {theme?: string};
   getSun?(): TileflowSun;
+  getThemeMetadata?(key: string): Readonly<{values: readonly unknown[]; position: number}>;
 };
 
 export type TileflowBuildings3DOptions = Readonly<{
   map: TileflowBuildings3DMap;
-  /** The theme controller, for the sun and, with `color`, the themes on screen. */
+  /** The theme controller, for the sun and the buildings' design in every theme. */
   controller?: TileflowBuildings3DThemes;
-  /** The vector source to read; defaults to `tileflow`, a Tileflow map's World source. */
-  source?: string;
-  /** The source layer with the buildings; defaults to `building`. */
-  sourceLayer?: string;
-  /**
-   * The source layer with the places, for the night use of buildings in tiles whose buildings do
-   * not carry World's `night_use`; defaults to `poi`.
-   */
-  placesLayer?: string;
-  /**
-   * A building's colour for a theme, from its feature properties, as a CSS colour. Each building
-   * is coloured once per theme, and the renderer mixes the colours of the themes either side of
-   * a blend's position. Without it, buildings take the theme's 3D building colour.
-   */
-  color?: (
-    properties: Readonly<Record<string, string | number | boolean>>,
-    theme: string,
-  ) => string;
-  /** Shadows from the sun, on the buildings and the flat map; defaults to true. */
-  shadows?: boolean;
-  /** Contact shadow at the foot of the walls and in tight corners; defaults to true. */
-  occlusion?: boolean;
-  /**
-   * How bright the buildings light the street at night, from 0 (none) to 2; defaults to 1, a quiet
-   * light. Landmarks (World's `building_tone`) and towers are flood-lit at their foot, and buildings
-   * with places busy at night (World's `night_use`) light their ground floor windows and the
-   * pavement in front: bars and clubs in neon or a warm light, theatres and cinemas in white,
-   * places to eat in amber.
-   */
-  nightLight?: number;
-  /**
-   * How strongly roof outlines and buildings' outer corners catch the light, from 0 (none) to 1;
-   * defaults to 1. They keep a constant width on screen, so where one building ends and the next
-   * starts stays legible at any distance, at night most of all.
-   */
-  edges?: number;
-  /**
-   * The colour of roof outlines and outer corners, as a CSS colour or per theme, drawn as it is,
-   * unlit, at the full `edges` strength by day and night. The renderer asks for each theme's colour
-   * once and mixes the colours of the themes either side of a blend's position; a theme without a
-   * valid colour keeps the default. Without it, edges take the building's own colour, lightened as
-   * if catching the light, half as strong by day as at night.
-   */
-  edgeColor?: string | ((theme: string) => string);
-  /** Invented night windows, lit by rooms; decoration, not data. Defaults to false. */
-  windows?: boolean;
   /** The zoom from which buildings stand; below it they sink into the flat map. Defaults to 14.5. */
   minzoom?: number;
   /** The most tiles raised round the camera, from 1 to 64; defaults to 25. */
@@ -123,8 +89,11 @@ export type TileflowBuildings3D = {
   grow(scale: number, options?: TileflowBuildings3DChange): Promise<void>;
   /** The height scale shown now. */
   readonly scale: number;
-  /** Tiles raised, buildings and vertices, for diagnostics. */
-  readonly stats: Readonly<{tiles: number; buildings: number; vertices: number}>;
+  /**
+   * Whether the map's style describes its 3D buildings (the buildings module's
+   * `threeDimensional`), tiles raised, buildings and vertices, for diagnostics.
+   */
+  readonly stats: Readonly<{declared: boolean; tiles: number; buildings: number; vertices: number}>;
   /** Takes the layer off the map and lets go of its buffers. */
   dispose(): void;
 };
@@ -133,10 +102,6 @@ export const tileflowBuildings3DLayerId = 'tileflow-buildings-3d';
 // World's buildings carry their heights at z15; a source that stops earlier is read at its maxzoom.
 const preferredZoom = 15;
 const defaultTransition = 800;
-// Shadows lengthen as the sun sets while they fade: they fall from a sun no lower than 3° and fade
-// out between 7° and half a degree.
-const shadowFloor = 3;
-const shadowFade: readonly [number, number] = [0.5, 7];
 const occlusion = {ground: 8, groundStrength: 0.42, wall: 0.36, corner: 3};
 const flood = {reach: 10, colour: [1, 0.7, 0.4] as const};
 // Each building strays up to 6% lighter or darker than its colour.
@@ -182,33 +147,12 @@ export function createTileflowBuildings3D(
   options: TileflowBuildings3DOptions,
 ): TileflowBuildings3D {
   const {map} = options;
-  const sourceId = options.source ?? 'tileflow';
-  const sourceLayer = options.sourceLayer ?? 'building';
-  const placesLayer = options.placesLayer ?? 'poi';
   const minzoom = options.minzoom ?? 14.5;
   const maxTiles = Math.round(options.maxTiles ?? 25);
   if (!Number.isFinite(minzoom) || minzoom < 0 || minzoom > 24)
     throw new RangeError('Tileflow 3D buildings minzoom must be a zoom from 0 to 24.');
   if (!(maxTiles >= 1 && maxTiles <= 64))
     throw new RangeError('Tileflow 3D buildings maxTiles must be from 1 to 64.');
-  const shadowsOn = options.shadows !== false;
-  const occlusionOn = options.occlusion !== false;
-  const nightLight = options.nightLight ?? 1;
-  if (!(nightLight >= 0 && nightLight <= 2))
-    throw new RangeError('Tileflow 3D buildings nightLight must be from 0 to 2.');
-  const floodOn = nightLight > 0;
-  const edges = options.edges ?? 1;
-  if (!(edges >= 0 && edges <= 1))
-    throw new RangeError('Tileflow 3D buildings edges must be from 0 to 1.');
-  const edgeColor = options.edgeColor;
-  if (
-    edgeColor !== undefined &&
-    typeof edgeColor !== 'function' &&
-    !(typeof edgeColor === 'string' && tileflowColourChannels(edgeColor))
-  )
-    throw new RangeError('Tileflow 3D buildings edgeColor must be a CSS colour or a function.');
-  const edgeColours = new Map<string, readonly [number, number, number] | undefined>();
-  const windowsOn = options.windows === true;
 
   let scale = 0;
   let target = 0;
@@ -219,19 +163,13 @@ export function createTileflowBuildings3D(
   let programs: Partial<Record<'buildings' | 'depth' | 'ground' | 'band' | 'flood', Program>> = {};
   let variant: string | undefined;
   let linking: Linking[] | undefined;
-  let shadow:
-    | {
-        texture: WebGLTexture;
-        framebuffer: WebGLFramebuffer;
-        size: number;
-        failed: boolean;
-        key?: string;
-        light?: {matrix: Float32Array; depth: number; extent: number};
-      }
-    | undefined;
   let ground: {vao: WebGLVertexArrayObject; vbo: WebGLBuffer} | undefined;
   let disposed = false;
-  let colourCache: {text: string; rgb: [number, number, number]} | undefined;
+  // Shadows are drawn in the map's shared 3D scene, with any other 3D layer on the map.
+  const scene = tileflowScene3D(map);
+  let generation = 0;
+  let registered = false;
+  let unregister = () => {};
 
   const layer = {
     id: tileflowBuildings3DLayerId,
@@ -240,7 +178,6 @@ export function createTileflowBuildings3D(
     onAdd(_: unknown, context: WebGLRenderingContext | WebGL2RenderingContext) {
       if (!isWebGL2(context)) return;
       gl = context;
-      createShadowMap(context);
       createGround(context);
       // A sampler always has a colour texture to read, palette or not.
       blank = context.createTexture()!;
@@ -263,10 +200,9 @@ export function createTileflowBuildings3D(
       for (const program of Object.values(programs))
         if (program) context.deleteProgram(program.program);
       for (const entry of linking ?? []) context.deleteProgram(entry.program);
-      if (shadow) {
-        context.deleteFramebuffer(shadow.framebuffer);
-        context.deleteTexture(shadow.texture);
-      }
+      unregister();
+      registered = false;
+      scene.release(context);
       if (ground) {
         context.deleteVertexArray(ground.vao);
         context.deleteBuffer(ground.vbo);
@@ -276,17 +212,16 @@ export function createTileflowBuildings3D(
       programs = {};
       linking = undefined;
       variant = undefined;
-      shadow = undefined;
       ground = undefined;
       gl = undefined;
     },
     prerender(context: WebGLRenderingContext | WebGL2RenderingContext) {
-      if (!isWebGL2(context) || !programs.depth || visibleScale() <= 0) return;
-      try {
-        renderShadows(context);
-      } catch {
-        if (shadow) shadow.failed = true;
-      }
+      if (!isWebGL2(context)) return;
+      ensureCamera();
+      if (!programs.depth) return;
+      if (!registered) unregister = scene.register(caster);
+      registered = true;
+      scene.prepare(context, lighting(), camera.metres);
     },
     render(context: WebGLRenderingContext | WebGL2RenderingContext, args: ProjectionArgs) {
       if (!isWebGL2(context)) return;
@@ -311,31 +246,55 @@ export function createTileflowBuildings3D(
 
   // --- Tiles round the camera ---
 
-  const camera = createCameraTiles<BuildingTile>({
-    map,
-    source: sourceId,
-    layers: [sourceLayer, placesLayer],
-    zoom: preferredZoom,
-    minzoom,
-    maxTiles,
-    ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
-    active: () => target > 0 || scale > 0,
-    build(tile, tileMetres) {
-      const decoded = tile.layers[sourceLayer];
-      // A tile without buildings stays flat.
-      if (!decoded) return emptyTile;
-      const places = tile.layers[placesLayer];
-      const mesh = meshTileflowBuildings(decoded, {tileMetres, ...(places ? {places} : {})});
-      return mesh ? {mesh} : emptyTile;
-    },
-    empty: emptyTile,
-    release(value) {
-      if (gl) release(gl, value);
-    },
-    changed() {
-      if (shadow) shadow.key = undefined;
-    },
-  });
+  // The tiles are read from the source and layers the map's design names; a style that names
+  // others reads them anew.
+  const makeCamera = (layers: TileflowBuildings3DDesign['layers'], source: string) =>
+    createCameraTiles<BuildingTile>({
+      map,
+      source,
+      layers: [layers.building, ...(layers.places ? [layers.places] : [])],
+      zoom: preferredZoom,
+      minzoom,
+      maxTiles,
+      ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
+      active: () => target > 0 || scale > 0,
+      build(tile, tileMetres) {
+        const decoded = tile.layers[layers.building];
+        // A tile without buildings stays flat.
+        if (!decoded) return emptyTile;
+        const places = layers.places ? tile.layers[layers.places] : undefined;
+        const mesh = meshTileflowBuildings(decoded, {tileMetres, ...(places ? {places} : {})});
+        return mesh ? {mesh} : emptyTile;
+      },
+      empty: emptyTile,
+      release(value) {
+        if (gl) release(gl, value);
+      },
+      changed() {
+        generation += 1;
+      },
+    });
+  let cameraKey = JSON.stringify([
+    tileflowDefaultBuildings3DDesign.source,
+    tileflowDefaultBuildings3DDesign.layers,
+  ]);
+  let camera = makeCamera(
+    tileflowDefaultBuildings3DDesign.layers,
+    tileflowDefaultBuildings3DDesign.source,
+  );
+
+  /** Reads the tiles the map's design names. */
+  function ensureCamera(): void {
+    const {source, layers} = design();
+    const key = JSON.stringify([source, layers]);
+    if (key === cameraKey) return;
+    for (const entry of camera.all()) if (entry.value && gl) release(gl, entry.value);
+    camera.dispose();
+    cameraKey = key;
+    camera = makeCamera(layers, source);
+    generation += 1;
+    if (target > 0) camera.update();
+  }
 
   function release(context: WebGL2RenderingContext, tile: BuildingTile): void {
     if (tile.gl) {
@@ -383,60 +342,91 @@ export function createTileflowBuildings3D(
       context.bufferData(context.ELEMENT_ARRAY_BUFFER, entry.mesh.indices, context.STATIC_DRAW);
       context.bindVertexArray(null);
       entry.gl = {vao, vbo, ibo};
-      if (shadow) shadow.key = undefined;
+      generation += 1;
     }
   }
 
   // --- Colours ---
 
-  /** The themes a palette covers and where the blend stands between them. */
-  function themesOnScreen(): {
-    themes: readonly string[];
+  // --- The map's design ---
+
+  let designs:
+    | {values: readonly unknown[]; parsed: TileflowBuildings3DDesign[]; declared: boolean}
+    | undefined;
+
+  /**
+   * The design of every theme on screen and where the blend stands between them. A style compiled
+   * without a design takes the defaults, coloured as the map paints its buildings now.
+   */
+  function designsOnScreen(): {
+    themes: readonly TileflowBuildings3DDesign[];
     lower: number;
     upper: number;
     mix: number;
   } {
-    const blend = options.controller?.getBlend?.();
-    if (blend && blend.themes.length > 0) {
-      const position = Math.min(blend.themes.length - 1, Math.max(0, blend.position));
-      const lower = Math.floor(position);
-      return {
-        themes: blend.themes,
-        lower,
-        upper: Math.min(blend.themes.length - 1, lower + 1),
-        mix: position - lower,
+    const read = options.controller?.getThemeMetadata?.(tileflowBuildingsMetadataKey) ?? {
+      values: [
+        (map.getStyle() as {metadata?: Record<string, unknown>} | undefined)?.metadata?.[
+          tileflowBuildingsMetadataKey
+        ],
+      ],
+      position: 0,
+    };
+    if (
+      !designs ||
+      designs.values.length !== read.values.length ||
+      designs.values.some((value, index) => value !== read.values[index])
+    ) {
+      const parsed = read.values.map((value) =>
+        readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: value}),
+      );
+      designs = {
+        values: read.values,
+        parsed: parsed.map((entry) => entry ?? tileflowDefaultBuildings3DDesign),
+        declared: parsed.some((entry) => entry !== undefined),
       };
     }
-    const theme = options.controller?.getCurrent?.().theme ?? 'default';
-    return {themes: [theme], lower: 0, upper: 0, mix: 0};
+    const count = designs.parsed.length;
+    const position = Math.min(count - 1, Math.max(0, read.position));
+    const lower = Math.floor(position);
+    return {
+      themes: designs.parsed,
+      lower,
+      upper: Math.min(count - 1, lower + 1),
+      mix: position - lower,
+    };
   }
 
-  /** The application's edge colour for a theme, once per theme, or undefined for the default. */
-  function edgeColourOf(theme: string): readonly [number, number, number] | undefined {
-    if (edgeColor === undefined) return undefined;
-    if (edgeColours.has(theme)) return edgeColours.get(theme);
-    let rgb: readonly [number, number, number] | undefined;
-    try {
-      const channels = tileflowColourChannels(
-        typeof edgeColor === 'string' ? edgeColor : edgeColor(theme),
-      );
-      if (channels) rgb = [channels[0], channels[1], channels[2]];
-    } catch {
-      // A colour the application cannot give keeps the default.
+  /** The design of the theme nearest the blend's position, for what cannot be mixed. */
+  function design(): TileflowBuildings3DDesign {
+    const {themes, lower, upper, mix} = designsOnScreen();
+    return themes[mix < 0.5 ? lower : upper] ?? tileflowDefaultBuildings3DDesign;
+  }
+
+  /** A number of the design mixed between the themes either side of the blend's position. */
+  function mixed(read: (design: TileflowBuildings3DDesign) => number): number {
+    const {themes, lower, upper, mix} = designsOnScreen();
+    return read(themes[lower]!) * (1 - mix) + read(themes[upper]!) * mix;
+  }
+
+  const parsedColours = new Map<string, readonly [number, number, number] | undefined>();
+  function rgbOf(text: string | undefined): readonly [number, number, number] | undefined {
+    if (text === undefined) return undefined;
+    if (!parsedColours.has(text)) {
+      const channels = tileflowColourChannels(text);
+      parsedColours.set(text, channels ? [channels[0], channels[1], channels[2]] : undefined);
     }
-    edgeColours.set(theme, rgb);
-    return rgb;
+    return parsedColours.get(text);
   }
 
   /**
-   * The application's edge colour on screen, mixed between the themes either side of a blend, and
-   * how much of the edges it colours: 1 where every theme on screen has one, 0 where none has.
+   * The design's edge colour on screen, mixed between the themes either side of a blend, and how
+   * much of the edges it colours: 1 where every theme on screen has one, 0 where none has.
    */
   function edgeColourNow(): {rgb: number[]; share: number} {
-    if (edgeColor === undefined) return {rgb: [1, 1, 1], share: 0};
-    const {themes, lower, upper, mix} = themesOnScreen();
-    const below = edgeColourOf(themes[lower]!);
-    const above = lower === upper ? undefined : edgeColourOf(themes[upper]!);
+    const {themes, lower, upper, mix} = designsOnScreen();
+    const below = rgbOf(themes[lower]!.edgeColor);
+    const above = lower === upper ? undefined : rgbOf(themes[upper]!.edgeColor);
     const weights = [below ? 1 - (lower === upper ? 0 : mix) : 0, above ? mix : 0];
     const share = weights[0]! + weights[1]!;
     if (share <= 0) return {rgb: [1, 1, 1], share: 0};
@@ -449,27 +439,29 @@ export function createTileflowBuildings3D(
     };
   }
 
-  /** A tile's colours per theme, one texel per building, when the application colours them. */
+  /** Whether any theme on screen colours its buildings by their data. */
+  function colouredByData(): boolean {
+    return designsOnScreen().themes.some((entry) => typeof entry.color !== 'string');
+  }
+
+  /** A tile's colours per theme on screen, one texel per building, when they depend on data. */
   function paletteOf(
     context: WebGL2RenderingContext,
     entry: BuildingTile,
-    themes: readonly string[],
+    themes: readonly TileflowBuildings3DDesign[],
   ) {
-    const color = options.color;
-    if (!color) return undefined;
-    const key = themes.join('\u0000');
+    const key = JSON.stringify(themes.map((theme) => theme.color));
     if (entry.palette?.key === key) return entry.palette;
     const features = entry.mesh.features;
     const rows = Math.max(1, Math.ceil(features.length / paletteWidth));
     const data = new Uint8Array(paletteWidth * rows * themes.length * 4);
     for (const [themeIndex, theme] of themes.entries()) {
       for (const [index, properties] of features.entries()) {
-        let channels: readonly number[] = [0.85, 0.82, 0.76, 1];
-        try {
-          channels = tileflowColourChannels(color(properties, theme)) ?? channels;
-        } catch {
-          // A colour the application cannot give keeps the default.
-        }
+        const channels: readonly number[] = tileflowFeatureColour(
+          theme.color,
+          properties,
+          tileflowColourChannels,
+        ) ?? [0.85, 0.82, 0.76];
         const at =
           ((themeIndex * rows + Math.floor(index / paletteWidth)) * paletteWidth +
             (index % paletteWidth)) *
@@ -499,8 +491,29 @@ export function createTileflowBuildings3D(
     return entry.palette;
   }
 
-  /** The theme's 3D building colour, as the map shows it now, blends included. */
+  /**
+   * The buildings' colour when it does not depend on their data: the design's colour, mixed between
+   * the themes either side of a blend, or, for a style compiled without a design, the colour the map
+   * paints its buildings now.
+   */
   function themeColour(): [number, number, number] {
+    designsOnScreen();
+    if (designs?.declared) {
+      const {themes, lower, upper, mix} = designsOnScreen();
+      const below = rgbOf(
+        typeof themes[lower]!.color === 'string' ? (themes[lower]!.color as string) : undefined,
+      );
+      const above = rgbOf(
+        typeof themes[upper]!.color === 'string' ? (themes[upper]!.color as string) : undefined,
+      );
+      const a = below ?? above ?? [0.85, 0.82, 0.76];
+      const b = above ?? a;
+      return [0, 1, 2].map((channel) => a[channel]! + (b[channel]! - a[channel]!) * mix) as [
+        number,
+        number,
+        number,
+      ];
+    }
     let text: unknown;
     for (const [layerId, property] of [
       ['tileflow-buildings-render-extrusion', 'fill-extrusion-color'],
@@ -513,11 +526,11 @@ export function createTileflowBuildings3D(
         break;
       }
     }
-    const value = typeof text === 'string' ? text : '#d8d0c0';
-    if (colourCache?.text === value) return colourCache.rgb;
-    const channels = tileflowColourChannels(value) ?? [0.85, 0.82, 0.76, 1];
-    colourCache = {text: value, rgb: [channels[0], channels[1], channels[2]]};
-    return colourCache.rgb;
+    return [...(rgbOf(typeof text === 'string' ? text : '#d8d0c0') ?? [0.85, 0.82, 0.76])] as [
+      number,
+      number,
+      number,
+    ];
   }
 
   // --- Light ---
@@ -527,44 +540,7 @@ export function createTileflowBuildings3D(
   }
 
   function lighting() {
-    const sun = sunNow();
-    const linear = (value: number) =>
-      value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-    const sunLight = sun.rgb.map((channel) => linear(channel) * sun.intensity);
-    const skyLight = sun.ambient.rgb.map((channel) => linear(channel) * sun.ambient.intensity);
-    const up = sun.direction[2];
-    const groundShadow = skyLight.map((sky, channel) => {
-      const lit = sky + sunLight[channel]! * Math.max(0, up);
-      return lit > 1e-5 ? (sky / lit) ** (1 / 2.2) : 1;
-    });
-    const floor = (Math.max(shadowFloor, sun.altitude) * Math.PI) / 180;
-    const azimuth = (sun.azimuth * Math.PI) / 180;
-    const shadowDirection = [
-      Math.sin(azimuth) * Math.cos(floor),
-      Math.cos(azimuth) * Math.cos(floor),
-      Math.sin(floor),
-    ];
-    const low = Math.min(
-      1,
-      Math.max(0, (sun.altitude - shadowFade[0]) / (shadowFade[1] - shadowFade[0])),
-    );
-    const strength = shadowsOn
-      ? Math.min(1, sun.shadowIntensity) *
-        Math.min(1, sun.intensity * 4) *
-        low *
-        low *
-        (3 - 2 * low)
-      : 0;
-    const night = Math.min(1, Math.max(0, (0.14 - sun.brightness) / 0.09));
-    return {
-      direction: sun.direction,
-      sunLight,
-      skyLight,
-      groundShadow,
-      shadowDirection,
-      strength,
-      night,
-    };
+    return tileflowSceneLight(sunNow(), design().shadows);
   }
 
   // --- Drawing ---
@@ -579,75 +555,46 @@ export function createTileflowBuildings3D(
     return camera.ready().filter((entry) => entry.value.gl);
   }
 
-  function box(entries: readonly TileEntry[]) {
-    let [left, top, right, bottom, tallest] = [Infinity, Infinity, -Infinity, -Infinity, 0];
-    for (const entry of entries) {
-      left = Math.min(left, entry.x);
-      top = Math.min(top, entry.y);
-      right = Math.max(right, entry.x);
-      bottom = Math.max(bottom, entry.y);
-      tallest = Math.max(tallest, entry.value.mesh.top);
-    }
-    const unit = tileflowBuildingExtent * camera.metres;
-    const origin = camera.origin;
-    return {
-      min: [(left - origin[0]) * unit, -(bottom + 1 - origin[1]) * unit, 0] as const,
-      max: [
-        (right + 1 - origin[0]) * unit,
-        -(top - origin[1]) * unit,
-        tallest * visibleScale(),
-      ] as const,
-      tiles: [left, top, right, bottom] as const,
-      tallest,
-    };
-  }
+  // --- Shadows, in the map's shared 3D scene ---
 
-  function renderShadows(context: WebGL2RenderingContext): void {
-    if (!shadow || shadow.failed) return;
-    const light = lighting();
-    const entries = drawn();
-    if (light.strength <= 0 || entries.length === 0) {
-      shadow.light = undefined;
-      return;
-    }
-    const scene = box(entries);
-    const key = [
-      ...light.shadowDirection.map((value) => value.toFixed(5)),
-      visibleScale().toFixed(4),
-      entries.length,
-      camera.origin.join(),
-    ].join();
-    if (key === shadow.key && shadow.light) return;
-    shadow.light = tileflowSunLightMatrix(light.shadowDirection, scene);
-    shadow.key = key;
-    const program = programs.depth!;
-    context.bindFramebuffer(context.FRAMEBUFFER, shadow.framebuffer);
-    context.viewport(0, 0, shadow.size, shadow.size);
-    context.disable(context.BLEND);
-    context.disable(context.CULL_FACE);
-    context.disable(context.STENCIL_TEST);
-    context.disable(context.SCISSOR_TEST);
-    context.enable(context.DEPTH_TEST);
-    context.depthFunc(context.LESS);
-    context.depthMask(true);
-    context.depthRange(0, 1);
-    context.clearDepth(1);
-    context.clear(context.DEPTH_BUFFER_BIT);
-    context.enable(context.POLYGON_OFFSET_FILL);
-    context.polygonOffset(1.5, 4);
-    context.useProgram(program.program);
-    context.uniform1f(program.uniforms.u_scale!, visibleScale());
-    context.uniform1f(program.uniforms.u_metres!, camera.metres);
-    context.uniformMatrix4fv(program.uniforms.u_light_matrix!, false, shadow.light.matrix);
-    for (const {x, y, value} of entries) {
-      context.uniform2f(program.uniforms.u_offset!, ...camera.offsetOf({x, y}));
-      context.bindVertexArray(value.gl!.vao);
-      context.drawElements(context.TRIANGLES, value.mesh.indices.length, context.UNSIGNED_INT, 0);
-    }
-    context.bindVertexArray(null);
-    context.disable(context.POLYGON_OFFSET_FILL);
-    context.bindFramebuffer(context.FRAMEBUFFER, null);
-    context.viewport(0, 0, context.drawingBufferWidth, context.drawingBufferHeight);
+  const caster: TileflowSceneCaster = {
+    groundOrder: 0,
+    bounds() {
+      const shown = visibleScale();
+      const entries = drawn();
+      if (shown <= 0 || entries.length === 0) return undefined;
+      let [left, top, right, bottom, tallest] = [Infinity, Infinity, -Infinity, -Infinity, 0];
+      for (const entry of entries) {
+        left = Math.min(left, entry.x);
+        top = Math.min(top, entry.y);
+        right = Math.max(right, entry.x);
+        bottom = Math.max(bottom, entry.y);
+        tallest = Math.max(tallest, entry.value.mesh.top);
+      }
+      return {zoom: camera.zoom, tiles: [left, top, right, bottom], tallest: tallest * shown};
+    },
+    key: () => `buildings:${visibleScale().toFixed(4)}:${generation}:${programs.depth ? 1 : 0}`,
+    drawDepth(context, frame) {
+      const program = programs.depth;
+      if (!program) return;
+      context.useProgram(program.program);
+      context.uniform1f(program.uniforms.u_scale!, visibleScale());
+      context.uniform1f(program.uniforms.u_metres!, frame.metres);
+      context.uniformMatrix4fv(program.uniforms.u_light_matrix!, false, frame.light.matrix);
+      for (const {x, y, value} of drawn()) {
+        context.uniform2f(program.uniforms.u_offset!, ...frame.offsetOf({x, y}, camera.zoom));
+        context.bindVertexArray(value.gl!.vao);
+        context.drawElements(context.TRIANGLES, value.mesh.indices.length, context.UNSIGNED_INT, 0);
+      }
+    },
+  };
+
+  /** A tile's corner and the metres per tile unit in the frame shadows are drawn in. */
+  function placed(x: number, y: number): {offset: [number, number]; metres: number} {
+    const frame = scene.frame();
+    return frame && frame.zoom === camera.zoom
+      ? {offset: frame.offsetOf({x, y}, camera.zoom), metres: frame.metres}
+      : {offset: camera.offsetOf({x, y}), metres: camera.metres};
   }
 
   function project(
@@ -673,32 +620,21 @@ export function createTileflowBuildings3D(
     return width ? Math.min(4, Math.max(1, context.drawingBufferWidth / width)) : 1;
   }
 
-  function setShadow(context: WebGL2RenderingContext, program: Program, strength: number) {
-    const uniforms = program.uniforms;
-    const on = strength > 0 && shadow?.light && !shadow.failed;
-    context.activeTexture(context.TEXTURE0);
-    context.bindTexture(context.TEXTURE_2D, shadow?.texture ?? null);
-    context.uniform1i(uniforms.u_shadow_map!, 0);
-    context.uniform1f(uniforms.u_shadow!, on ? strength : 0);
-    if (!on || !shadow?.light) return;
-    context.uniformMatrix4fv(uniforms.u_light_matrix!, false, shadow.light.matrix);
-    context.uniform2f(uniforms.u_shadow_texel!, 1 / shadow.size, 1 / shadow.size);
-    context.uniform1f(uniforms.u_depth_unit!, 1 / shadow.light.depth);
-    context.uniform1f(uniforms.u_normal_offset!, (shadow.light.extent / shadow.size) * 1.2);
-  }
-
   function draw(context: WebGL2RenderingContext, args: ProjectionArgs): void {
     const entries = drawn();
     if (entries.length === 0) return;
     const light = lighting();
     const shown = visibleScale();
-    const themes = options.color ? themesOnScreen() : undefined;
+    const themes = colouredByData() ? designsOnScreen() : undefined;
+    const nightLight = mixed((entry) => entry.nightLight);
+    const edges = mixed((entry) => entry.edges);
+    const {occlusion: occlusionOn, windows: windowsOn} = design();
 
     const buildings = programs.buildings!;
     const u = buildings.uniforms;
     context.useProgram(buildings.program);
     context.uniform1f(u.u_scale!, shown);
-    context.uniform1f(u.u_metres!, camera.metres);
+    context.uniform1f(u.u_metres!, placed(0, 0).metres);
     context.uniform3fv(u.u_colour!, themeColour());
     context.uniform3fv(u.u_sun_dir!, [...light.direction]);
     context.uniform3fv(u.u_shadow_dir!, light.shadowDirection);
@@ -717,10 +653,10 @@ export function createTileflowBuildings3D(
     context.uniform3fv(u.u_edge_colour!, edgeColour.rgb);
     context.uniform1f(u.u_edge_own!, edgeColour.share);
     context.uniform1f(u.u_edge_width!, edgeLine.width * pixelRatio(context));
-    setShadow(context, buildings, light.strength);
+    scene.bindShadow(context, u, light.strength);
     for (const {x, y, value: entry} of entries) {
       project(context, buildings, args, x, y);
-      context.uniform2f(u.u_offset!, ...camera.offsetOf({x, y}));
+      context.uniform2f(u.u_offset!, ...placed(x, y).offset);
       const palette = themes ? paletteOf(context, entry, themes.themes) : undefined;
       context.uniform1f(u.u_palette_on!, palette ? 1 : 0);
       context.activeTexture(context.TEXTURE1);
@@ -739,28 +675,34 @@ export function createTileflowBuildings3D(
     context.depthMask(false);
     context.enable(context.BLEND);
     context.blendFuncSeparate(context.DST_COLOR, context.ZERO, context.ZERO, context.ONE);
-    if (light.strength > 0 && shadow?.light && !shadow.failed && ground) {
+    const frame = scene.frame();
+    if (
+      light.strength > 0 &&
+      frame &&
+      frame.zoom === camera.zoom &&
+      ground &&
+      scene.drawsGround(caster)
+    ) {
       const program = programs.ground!;
       context.useProgram(program.program);
-      context.uniform1f(program.uniforms.u_metres!, camera.metres);
+      context.uniform1f(program.uniforms.u_metres!, frame.metres);
       context.uniform3fv(program.uniforms.u_ground_shadow!, light.groundShadow);
-      setShadow(context, program, light.strength);
+      scene.bindShadow(context, program.uniforms, light.strength);
       context.bindVertexArray(ground.vao);
-      const scene = box(entries);
       const longest = Math.min(
         4,
         Math.ceil(
-          (scene.tallest * shown) /
-            Math.tan((shadowFloor * Math.PI) / 180) /
-            (tileflowBuildingExtent * camera.metres),
+          frame.tallest /
+            Math.tan((tileflowSceneShadowFloor * Math.PI) / 180) /
+            (tileflowBuildingExtent * frame.metres),
         ),
       );
       const margin = Math.max(1, longest);
-      const [left, top, right, bottom] = scene.tiles;
+      const [left, top, right, bottom] = frame.tiles;
       for (let x = left - margin; x <= right + margin; x += 1)
         for (let y = top - margin; y <= bottom + margin; y += 1) {
           project(context, program, args, x, y);
-          context.uniform2f(program.uniforms.u_offset!, ...camera.offsetOf({x, y}));
+          context.uniform2f(program.uniforms.u_offset!, ...frame.offsetOf({x, y}));
           context.drawArrays(context.TRIANGLE_STRIP, 0, 4);
         }
     }
@@ -788,7 +730,7 @@ export function createTileflowBuildings3D(
       context.uniform1f(program.uniforms.u_band_strength!, occlusion.groundStrength);
       walls(program);
     }
-    if (floodOn && light.night > 0.01) {
+    if (nightLight > 0 && light.night > 0.01) {
       const program = programs.flood!;
       context.useProgram(program.program);
       context.blendFuncSeparate(context.ONE, context.ONE, context.ZERO, context.ONE);
@@ -878,40 +820,6 @@ export function createTileflowBuildings3D(
     }
     variant = entries[0]!.variant;
     return true;
-  }
-
-  function createShadowMap(context: WebGL2RenderingContext): void {
-    if (shadow) return;
-    const size = Math.min(4096, context.getParameter(context.MAX_TEXTURE_SIZE) as number);
-    const texture = context.createTexture()!;
-    context.bindTexture(context.TEXTURE_2D, texture);
-    context.texStorage2D(context.TEXTURE_2D, 1, context.DEPTH_COMPONENT16, size, size);
-    context.texParameteri(context.TEXTURE_2D, context.TEXTURE_MIN_FILTER, context.LINEAR);
-    context.texParameteri(context.TEXTURE_2D, context.TEXTURE_MAG_FILTER, context.LINEAR);
-    context.texParameteri(context.TEXTURE_2D, context.TEXTURE_WRAP_S, context.CLAMP_TO_EDGE);
-    context.texParameteri(context.TEXTURE_2D, context.TEXTURE_WRAP_T, context.CLAMP_TO_EDGE);
-    context.texParameteri(
-      context.TEXTURE_2D,
-      context.TEXTURE_COMPARE_MODE,
-      context.COMPARE_REF_TO_TEXTURE,
-    );
-    context.texParameteri(context.TEXTURE_2D, context.TEXTURE_COMPARE_FUNC, context.LEQUAL);
-    context.bindTexture(context.TEXTURE_2D, null);
-    const framebuffer = context.createFramebuffer()!;
-    context.bindFramebuffer(context.FRAMEBUFFER, framebuffer);
-    context.framebufferTexture2D(
-      context.FRAMEBUFFER,
-      context.DEPTH_ATTACHMENT,
-      context.TEXTURE_2D,
-      texture,
-      0,
-    );
-    context.drawBuffers([context.NONE]);
-    context.readBuffer(context.NONE);
-    const complete =
-      context.checkFramebufferStatus(context.FRAMEBUFFER) === context.FRAMEBUFFER_COMPLETE;
-    context.bindFramebuffer(context.FRAMEBUFFER, null);
-    shadow = {texture, framebuffer, size, failed: !complete};
   }
 
   function createGround(context: WebGL2RenderingContext): void {
@@ -1022,7 +930,8 @@ export function createTileflowBuildings3D(
         buildings += value.mesh.features.length;
         vertices += value.mesh.vertices.length / tileflowBuildingVertexBytes;
       }
-      return {tiles: raised, buildings, vertices};
+      designsOnScreen();
+      return {declared: designs?.declared ?? false, tiles: raised, buildings, vertices};
     },
     dispose() {
       if (disposed) return;
@@ -1030,6 +939,7 @@ export function createTileflowBuildings3D(
       motion?.done();
       map.off('styledata', onStyle);
       map.off('idle', onStyle);
+      unregister();
       try {
         if (map.getLayer(tileflowBuildings3DLayerId)) map.removeLayer(tileflowBuildings3DLayerId);
       } catch {
@@ -1054,63 +964,4 @@ function isWebGL2(context: unknown): context is WebGL2RenderingContext {
   return typeof WebGL2RenderingContext !== 'undefined' && context instanceof WebGL2RenderingContext;
 }
 
-/**
- * The sun's view of a box of buildings: an orthographic projection along `direction` (towards the
- * sun; x east, y north, z up, in metres) as a column-major matrix to clip space, with the metres its
- * depth runs over and the metres its wider side spans. It follows only the sun, never the camera,
- * so shadows hold still while the camera moves.
- */
-export function tileflowSunLightMatrix(
-  direction: readonly number[],
-  box: Readonly<{min: readonly number[]; max: readonly number[]}>,
-): {matrix: Float32Array; depth: number; extent: number} {
-  const length = Math.hypot(direction[0]!, direction[1]!, direction[2]!) || 1;
-  const towards = direction.map((value) => value / length);
-  const forward = towards.map((value) => -value);
-  const cross = (a: readonly number[], b: readonly number[]) => [
-    a[1]! * b[2]! - a[2]! * b[1]!,
-    a[2]! * b[0]! - a[0]! * b[2]!,
-    a[0]! * b[1]! - a[1]! * b[0]!,
-  ];
-  const normalize = (v: readonly number[]) => {
-    const size = Math.hypot(v[0]!, v[1]!, v[2]!) || 1;
-    return v.map((value) => value / size);
-  };
-  const hint = Math.abs(towards[2]!) > 0.99 ? [0, 1, 0] : [0, 0, 1];
-  const right = normalize(cross(forward, hint));
-  const up = cross(right, forward);
-  const dot = (a: readonly number[], b: readonly number[]) =>
-    a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
-  const range = (axis: readonly number[]) => {
-    let low = Infinity;
-    let high = -Infinity;
-    for (const x of [box.min[0]!, box.max[0]!])
-      for (const y of [box.min[1]!, box.max[1]!])
-        for (const z of [box.min[2]!, box.max[2]!]) {
-          const value = dot([x, y, z], axis);
-          low = Math.min(low, value);
-          high = Math.max(high, value);
-        }
-    return [low, high] as const;
-  };
-  const pad = ([low, high]: readonly [number, number], extra: number) =>
-    [low - extra, high + extra] as const;
-  const [u0, u1] = range(right);
-  const [v0, v1] = range(up);
-  const [a0, a1] = pad([u0, u1], (u1 - u0) * 0.01 + 2);
-  const [b0, b1] = pad([v0, v1], (v1 - v0) * 0.01 + 2);
-  const [c0, c1] = pad(range(forward), 10);
-  const hu = (a1 - a0) / 2;
-  const hv = (b1 - b0) / 2;
-  const hd = (c1 - c0) / 2;
-  const rows = [
-    [...right.map((value) => value / hu), -(a1 + a0) / 2 / hu],
-    [...up.map((value) => value / hv), -(b1 + b0) / 2 / hv],
-    [...forward.map((value) => value / hd), -(c1 + c0) / 2 / hd],
-    [0, 0, 0, 1],
-  ];
-  const matrix = new Float32Array(16);
-  for (let row = 0; row < 4; row += 1)
-    for (let column = 0; column < 4; column += 1) matrix[column * 4 + row] = rows[row]![column]!;
-  return {matrix, depth: hd * 2, extent: Math.max(hu, hv) * 2};
-}
+export {tileflowSunLightMatrix} from './scene-3d-browser';

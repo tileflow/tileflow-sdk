@@ -5,6 +5,10 @@ import {resolveTileflowData} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
 import {resolveMarine} from '../marine';
+import {tileflowVegetationDescription} from '../modules/vegetation/compiler';
+import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
+import {tileflowStreetLightsMetadata, tileflowStreetLightsMetadataKey} from '../street-lights';
+import {tileflowBuildings3DDesignOf, tileflowStreetLightsDesignOf} from './scene-3d-metadata';
 import {
   insertTileflowOverlays,
   resolveTileflowHostedSources,
@@ -28,6 +32,12 @@ import {
   resolveTileflowTheme,
   TileflowThemeAuditError,
 } from '../themes';
+import {
+  type TileflowVegetation3D,
+  tileflowVegetationMetadata,
+  tileflowVegetationMetadataKey,
+} from '../trees-3d';
+import type {TileflowTreeModel} from '../trees-3d-model';
 import type {MapLibreStyle} from '../types';
 import {
   createTileflowCompilationFailure,
@@ -80,7 +90,7 @@ import {
   compileRenderStacks,
   type TileflowRenderStackModule,
 } from './render-stack';
-import {createSemanticDataView} from './semantic-bindings';
+import {bindSemanticReferences, createSemanticDataView} from './semantic-bindings';
 import {tileflowSemanticCompilerIdentity} from './semantic-compiler';
 
 export type TileflowSemanticMapConfig = ResolvedTileflowMap;
@@ -90,6 +100,8 @@ export type TileflowPreparedMapAssets = {
     ids: readonly string[];
     sprite: string;
   };
+  /** The map's own 3D models by id, prepared from its `models` directories. */
+  models?: Readonly<Record<string, TileflowTreeModel>>;
 };
 
 export type TileflowSemanticCompileOptions = {
@@ -287,6 +299,16 @@ function compileSemanticStyleInternal(
   const compiledDomains = runCompilationPhase('domains', () =>
     compileSemanticDomains(modules, context),
   );
+  const vegetation3D = runCompilationPhase('domains', () =>
+    withPreparedTreeModels(
+      tileflowVegetationDescription(
+        modules.vegetation as Parameters<typeof tileflowVegetationDescription>[0],
+        context as Parameters<typeof tileflowVegetationDescription>[1],
+      ),
+      config,
+      options.preparedAssets,
+    ),
+  );
   const renderStackModules = Object.values(modules).filter(
     (module): module is typeof module & TileflowRenderStackModule =>
       isRecord(module) &&
@@ -446,6 +468,16 @@ function compileSemanticStyleInternal(
     createTileflowOverlayPlacementManifest(plannedLayers),
   );
   const layers = runCompilationPhase('finalization', () => finalizeTileflowLayers(plannedLayers));
+  // What Core's 3D renderers draw: the buildings in their final colour, and the street lights.
+  const buildings3D = tileflowBuildings3DDesignOf(
+    modules.buildings,
+    context as Parameters<typeof tileflowBuildings3DDesignOf>[1],
+    layers as unknown as Parameters<typeof tileflowBuildings3DDesignOf>[2],
+  );
+  const streetLights = tileflowStreetLightsDesignOf(
+    modules.roads,
+    context as Parameters<typeof tileflowStreetLightsDesignOf>[1],
+  );
   runCompilationPhase('finalization', () =>
     assertTileflowInteractionManifestLayers(interactionManifest, layers),
   );
@@ -534,6 +566,37 @@ function compileSemanticStyleInternal(
       [tileflowRouteMetadataKey]: tileflowRouteMetadata(resolveTileflowRouteInks(resolvedTheme)),
       ...(resolvedTheme.sun
         ? {[tileflowSunMetadataKey]: tileflowSunMetadata(resolvedTheme.sun)}
+        : {}),
+      ...(buildings3D
+        ? {
+            [tileflowBuildingsMetadataKey]: tileflowBuildingsMetadata(
+              bindSemanticReferences(buildings3D, semanticData),
+            ),
+          }
+        : {}),
+      ...(streetLights
+        ? {
+            [tileflowStreetLightsMetadataKey]: tileflowStreetLightsMetadata(
+              bindSemanticReferences(streetLights, semanticData),
+            ),
+          }
+        : {}),
+      ...(vegetation3D
+        ? {
+            [tileflowVegetationMetadataKey]: tileflowVegetationMetadata({
+              ...bindSemanticReferences(vegetation3D, semanticData),
+              // The layers that draw the trees flat: the module's own and its render passes.
+              flatLayers: layers
+                .filter((layer) => {
+                  const metadata = (layer as {metadata?: Record<string, unknown>}).metadata;
+                  return (
+                    metadata?.['tileflow:vegetation-mode'] !== undefined ||
+                    metadata?.['tileflow:domain'] === 'vegetation'
+                  );
+                })
+                .map((layer) => String(layer.id)),
+            }),
+          }
         : {}),
       'tileflow:data': data.identity,
       'tileflow:sources': sourceIdentities,
@@ -653,6 +716,36 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function resolveGlyphs(config: ResolvedTileflowMap): string | undefined {
   if (config.fonts !== undefined) return undefined;
   return config.glyphs?.url;
+}
+
+/**
+ * The tree description with the models its forms draw, from the map's prepared models; a model the
+ * map does not prepare fails the compile, as a missing icon does.
+ */
+function withPreparedTreeModels(
+  vegetation: TileflowVegetation3D | undefined,
+  config: ResolvedTileflowMap,
+  prepared: TileflowPreparedMapAssets | undefined,
+): TileflowVegetation3D | undefined {
+  if (!vegetation) return undefined;
+  const referenced = [
+    ...new Set(Object.values(vegetation.forms).flatMap((form) => form?.models ?? [])),
+  ].sort();
+  if (referenced.length === 0) return vegetation;
+  const available = prepared?.models ?? {};
+  const missing = referenced.filter((id) => !Object.hasOwn(available, id));
+  if (missing.length > 0) {
+    const authoring = config.models?.length
+      ? `Add ${missing.map((id) => `${id}.glb`).join(', ')} to a map.models directory, or run the Node build so the directories are prepared.`
+      : 'Declare map.models with directories containing those .glb files.';
+    throw new Error(
+      `Tileflow map "${config.id}" draws missing 3D models: ${missing.join(', ')}. ${authoring}`,
+    );
+  }
+  return {
+    ...vegetation,
+    models: Object.fromEntries(referenced.map((id) => [id, available[id]!])),
+  };
 }
 
 function assertPreparedIconReferences(

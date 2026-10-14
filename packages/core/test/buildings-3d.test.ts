@@ -1,4 +1,8 @@
+import {createExpression} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
+import {readTileflowBuildings3D, tileflowBuildingsMetadataKey} from '../src/buildings-3d-design';
+import {tileflowFeatureColour} from '../src/feature-colour-browser';
+import {tileflowColourChannels} from '../src/theme-blend';
 import test from 'node:test';
 import {
   createTileflowBuildings3D,
@@ -355,7 +359,7 @@ test('the renderer puts its layer on the map, grows without a renderer and leave
   assert.equal(buildings.scale, 1);
   await assert.rejects(buildings.grow(Number.NaN), RangeError);
   await assert.rejects(buildings.grow(1, {transition: {duration: -1}}), RangeError);
-  assert.deepEqual(buildings.stats, {tiles: 0, buildings: 0, vertices: 0});
+  assert.deepEqual(buildings.stats, {declared: false, tiles: 0, buildings: 0, vertices: 0});
   buildings.dispose();
   assert.equal(map.layers.has(tileflowBuildings3DLayerId), false);
   for (const set of map.listeners.values()) assert.equal(set.size, 0);
@@ -365,25 +369,98 @@ test('renderer options are validated', () => {
   assert.throws(() => createTileflowBuildings3D({map: fakeMap(), minzoom: 30}), RangeError);
   assert.throws(() => createTileflowBuildings3D({map: fakeMap(), maxTiles: 0}), RangeError);
   assert.throws(() => createTileflowBuildings3D({map: fakeMap(), maxTiles: 100}), RangeError);
-  assert.throws(() => createTileflowBuildings3D({map: fakeMap(), nightLight: 3}), RangeError);
-  assert.throws(() => createTileflowBuildings3D({map: fakeMap(), edges: 2}), RangeError);
-  assert.throws(() => createTileflowBuildings3D({map: fakeMap(), edges: Number.NaN}), RangeError);
-  assert.throws(
-    () => createTileflowBuildings3D({map: fakeMap(), edgeColor: 'not a colour'}),
-    RangeError,
+});
+
+test('the 3D buildings design is read only in a known version and shape', () => {
+  const described = {
+    version: 1,
+    source: 'tileflow',
+    layers: {building: 'building', places: 'poi'},
+    color: ['case', ['==', ['get', 'building_tone'], 'destination'], '#ff0000', '#00ff00'],
+    edges: 3,
+    edgeColor: '#7fd8ff',
+    nightLight: 0.5,
+    windows: true,
+    shadows: false,
+  };
+  const read = readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: described})!;
+  assert.deepEqual(read.color, described.color);
+  // A value out of range keeps its default; an unset switch keeps its default.
+  assert.equal(read.edges, 1);
+  assert.equal(read.edgeColor, '#7fd8ff');
+  assert.equal(read.nightLight, 0.5);
+  assert.equal(read.windows, true);
+  assert.equal(read.shadows, false);
+  assert.equal(read.occlusion, true);
+  assert.equal(
+    readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: {...described, version: 2}}),
+    undefined,
   );
-  assert.throws(
-    () => createTileflowBuildings3D({map: fakeMap(), edgeColor: 3 as unknown as string}),
-    RangeError,
-  );
-  // A CSS colour, or one per theme, is accepted.
-  createTileflowBuildings3D({map: fakeMap(), edgeColor: '#7fd8ff'}).dispose();
-  createTileflowBuildings3D({
-    map: fakeMap(),
-    edgeColor: (theme) => (theme === 'night' ? '#7fd8ff' : 'white'),
-  }).dispose();
-  assert.throws(
-    () => createTileflowBuildings3D({map: fakeMap(), nightLight: Number.NaN}),
-    RangeError,
-  );
+  assert.equal(readTileflowBuildings3D({}), undefined);
+});
+
+test('a building colour expression evaluates as MapLibre evaluates it', () => {
+  const floors = ['/', ['to-number', ['get', 'render_height'], 0], 3.2];
+  const expressions: unknown[] = [
+    [
+      'case',
+      ['==', ['coalesce', ['get', 'building_tone'], ''], 'destination'],
+      '#d4a017',
+      ['step', ['%', floors, 5], '#f1d4cd', 1, '#d3e8da', 2, '#f6e0b5', 3, '#e2d5f0', 4, '#cfe3f2'],
+    ],
+    ['match', ['get', 'building_tone'], ['active', 'commercial'], '#ff8800', '#336699'],
+    [
+      'interpolate',
+      ['linear'],
+      ['to-number', ['get', 'render_height'], 0],
+      0,
+      '#000000',
+      100,
+      '#ffffff',
+    ],
+    [
+      'let',
+      'tall',
+      ['>=', floors, 10],
+      ['case', ['var', 'tall'], 'rgb(10, 20, 30)', 'hsl(0, 100%, 50%)'],
+    ],
+  ];
+  const buildings = [
+    {render_height: 3},
+    {render_height: 12.8},
+    {render_height: 40, building_tone: 'destination'},
+    {render_height: '25', building_tone: 'commercial'},
+    {},
+  ];
+  for (const expression of expressions)
+    for (const properties of buildings) {
+      const parsed = createExpression(
+        expression as never,
+        {
+          type: 'color',
+          'property-type': 'data-driven',
+          expression: {interpolated: true, parameters: ['zoom', 'feature']},
+          transition: false,
+        } as never,
+      );
+      assert.equal(parsed.result, 'success');
+      const reference = (
+        parsed.value as {
+          evaluate(globals: object, feature: object): {r: number; g: number; b: number};
+        }
+      ).evaluate({zoom: 16}, {type: 'Polygon', properties});
+      const ours = tileflowFeatureColour(
+        expression as unknown[],
+        properties,
+        tileflowColourChannels,
+      )!;
+      assert.ok(ours, JSON.stringify([expression, properties]));
+      for (const [index, channel] of (['r', 'g', 'b'] as const).entries())
+        assert.ok(
+          Math.abs(ours[index]! - reference[channel]) < 0.01,
+          JSON.stringify([expression, properties]),
+        );
+    }
+  // An expression Core does not compile gives no colour.
+  assert.equal(tileflowFeatureColour(['image', 'x'], {}, tileflowColourChannels), undefined);
 });

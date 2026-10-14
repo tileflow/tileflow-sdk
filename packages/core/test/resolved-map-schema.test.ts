@@ -12,6 +12,7 @@ import {
   parseTileflowMap as parseMap,
   poi,
   renderPass,
+  buildings,
   roads,
   tileflowBandPlacements,
   tileflowLandformClasses,
@@ -412,6 +413,49 @@ test('accepts detailed cartographic module styles and their optional data bindin
         modules: {vegetation: vegetation({threeDimensional: {heightScale: 11}})},
       }),
     /heightScale/,
+  );
+  const trees = (threeDimensional: object) =>
+    parseDesign({modules: {vegetation: vegetation({mode: '3d', threeDimensional} as never)}});
+  assert.doesNotThrow(() =>
+    trees({regions: [{bounds: [-81, 24.4, -79.8, 26.9], unknownForms: {palm: 3, round: 1}}]}),
+  );
+  assert.throws(() => trees({unknownForms: {oak: 1}}), /unknownForms/);
+  assert.doesNotThrow(() =>
+    trees({finish: 'toon', edges: 1, edgeColor: '#102010', forms: {palm: {heightScale: 1.2}}}),
+  );
+  assert.throws(() => trees({finish: 'glossy'}), /finish/);
+  // A form draws one to four of the map's own models, by the id of their .glb file.
+  assert.doesNotThrow(() => trees({forms: {palm: {models: ['royal-palm', 'coconut-palm']}}}));
+  assert.throws(() => trees({forms: {palm: {models: ['Royal Palm']}}}), /model id/);
+  assert.throws(() => trees({forms: {palm: {models: ['a', 'b', 'c', 'd', 'e']}}}), /models/);
+  assert.throws(() => trees({forms: {palm: {models: ['a', 'a']}}}), /each model once/);
+  assert.doesNotThrow(() => parseDesign({models: ['./models', '../shared/trees']}));
+  assert.throws(() => parseDesign({models: ['models']}), /models/);
+  assert.throws(() => trees({forms: {oak: {heightScale: 2}}}), /forms/);
+  assert.throws(() => trees({unknownForms: {palm: 0}}), /weight above 0/);
+  assert.throws(
+    () => trees({regions: [{bounds: [0, 50, 1, 40], unknownForms: {palm: 1}}]}),
+    /south below north/,
+  );
+  // Core's 3D buildings and street lights are designed in the buildings and roads modules.
+  assert.doesNotThrow(() =>
+    parseDesign({
+      modules: {
+        buildings: buildings({threeDimensional: {edges: 0.5, nightLight: 1.5, windows: true}}),
+        roads: roads({streetLights: {estimate: 'streets', intensity: 0.8}}),
+      },
+    }),
+  );
+  assert.throws(
+    () => parseDesign({modules: {buildings: buildings({threeDimensional: {edges: 2}})}}),
+    /edges/,
+  );
+  assert.throws(
+    () =>
+      parseDesign({
+        modules: {roads: roads({streetLights: {estimate: 'everywhere' as never}})},
+      }),
+    /estimate/,
   );
 });
 

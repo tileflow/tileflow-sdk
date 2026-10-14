@@ -55,6 +55,7 @@ import {
   isTileflowContourDensityWithinBudget,
 } from './terrain/contour-protocol';
 import {resolveTileflowTheme, type TileflowTheme, tileflowThemeLimits} from './themes';
+import {tileflowTreeModelIdPattern} from './trees-3d';
 import {tileflowPoiCategories, type ValidationMessage} from './types';
 
 /** Structured schema failure preserved for CLI/editor diagnostics. */
@@ -1138,6 +1139,21 @@ const waterModuleSchema = z
       .optional(),
   })
   .strict();
+// A theme number within bounds: a literal in range, a theme number token, or a fixed value in range.
+function boundedThemeNumberSchema(min: number, max: number) {
+  return z.union([
+    z.number().finite().min(min).max(max),
+    themeNumberReferenceSchema,
+    z
+      .object({
+        kind: z.literal('theme-fixed'),
+        reason: z.string().trim().min(1),
+        value: z.number().finite().min(min).max(max),
+      })
+      .strict(),
+  ]);
+}
+
 const buildingsModuleSchema = z
   .object({
     type: z.literal('buildings'),
@@ -1147,6 +1163,17 @@ const buildingsModuleSchema = z
     flat: areaStyleSchema.optional(),
     mode: z.enum(['3d', 'flat']).optional(),
     renderStack: renderStackSchema.optional(),
+    threeDimensional: z
+      .object({
+        edges: boundedThemeNumberSchema(0, 1).optional(),
+        edgeColor: themeColorValueSchema.optional(),
+        nightLight: boundedThemeNumberSchema(0, 2).optional(),
+        occlusion: z.boolean().optional(),
+        shadows: z.boolean().optional(),
+        windows: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 const addressesModuleSchema = z
@@ -1301,6 +1328,15 @@ const roadsModuleSchema = z
       })
       .strict()
       .optional(),
+    streetLights: z
+      .object({
+        color: themeColorValueSchema.optional(),
+        enabled: z.boolean().optional(),
+        estimate: z.enum(['lit', 'streets', 'none']).optional(),
+        intensity: boundedThemeNumberSchema(0, 2).optional(),
+      })
+      .strict()
+      .optional(),
     structures: roadStructureMapSchema.optional(),
     weight: z.enum(['thin', 'regular', 'bold']).optional(),
     widthScale: z.partialRecord(roadClassSchema, themeNumberValueSchema).optional(),
@@ -1420,6 +1456,21 @@ const nauticalModuleSchema = z
   })
   .strict();
 
+// Relative weights of tree forms, at least one above zero.
+const treeFormMixSchema = z
+  .object({
+    round: z.number().finite().min(0).optional(),
+    open: z.number().finite().min(0).optional(),
+    tall: z.number().finite().min(0).optional(),
+    conifer: z.number().finite().min(0).optional(),
+    columnar: z.number().finite().min(0).optional(),
+    palm: z.number().finite().min(0).optional(),
+  })
+  .strict()
+  .refine((mix) => Object.values(mix).some((weight) => (weight ?? 0) > 0), {
+    message: 'Expected at least one tree form with a weight above 0',
+  });
+
 const modulesSchema = z
   .object({
     addresses: addressesModuleSchema.optional(),
@@ -1445,6 +1496,59 @@ const modulesSchema = z
             barkColor: themeColorValueSchema.optional(),
             broadleafColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
             coniferColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
+            palmColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
+            finish: z.enum(['faceted', 'smooth', 'toon']).optional(),
+            edges: boundedThemeNumberSchema(0, 1).optional(),
+            edgeColor: themeColorValueSchema.optional(),
+            forms: z
+              .partialRecord(
+                z.enum(['round', 'open', 'tall', 'conifer', 'columnar', 'palm']),
+                z
+                  .object({
+                    crownScale: boundedThemeNumberSchema(0.1, 10).optional(),
+                    heightScale: boundedThemeNumberSchema(0.1, 10).optional(),
+                    models: z
+                      .array(
+                        z
+                          .string()
+                          .max(64)
+                          .regex(
+                            tileflowTreeModelIdPattern,
+                            'Expected a model id: its .glb file name in lowercase letters, digits and hyphens',
+                          ),
+                      )
+                      .min(1)
+                      .max(4)
+                      .refine((ids) => new Set(ids).size === ids.length, {
+                        message: 'Expected each model once',
+                      })
+                      .optional(),
+                  })
+                  .strict(),
+              )
+              .optional(),
+            unknownForms: treeFormMixSchema.optional(),
+            regions: z
+              .array(
+                z
+                  .object({
+                    bounds: z
+                      .tuple([
+                        z.number().finite().min(-180).max(180),
+                        z.number().finite().min(-90).max(90),
+                        z.number().finite().min(-180).max(180),
+                        z.number().finite().min(-90).max(90),
+                      ])
+                      .refine(([, south, , north]) => south <= north, {
+                        message:
+                          'Expected bounds as [west, south, east, north] with south below north',
+                      }),
+                    unknownForms: treeFormMixSchema,
+                  })
+                  .strict(),
+              )
+              .max(16)
+              .optional(),
             crownScale: z
               .union([
                 z.number().finite().positive().max(10),
@@ -1886,6 +1990,7 @@ const iconDirectoriesSchema = z
     }
   });
 const fontDirectoriesSchema = z.array(assetDirectorySchema).max(16);
+const modelDirectoriesSchema = z.array(assetDirectorySchema).max(16);
 const fontStacksSchema = z
   .array(
     z
@@ -2166,6 +2271,7 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
     icons: iconDirectoriesSchema.optional(),
     id: tileflowMapIdSchema,
     marine: marineSchema.optional(),
+    models: modelDirectoriesSchema.optional(),
     modules: modulesSchema.optional(),
     name: z.string().trim().min(1),
     overlays: overlaysSchema.optional(),

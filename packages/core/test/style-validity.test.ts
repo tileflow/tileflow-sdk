@@ -1,5 +1,6 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
+import {readTileflowVegetation3D} from '../src/trees-3d';
 import test from 'node:test';
 import {
   aeroways,
@@ -198,8 +199,13 @@ test('binds individual trees for the runtime 3d vegetation renderer', () => {
   assert.equal(trees?.['source-layer'], 'tree');
   assert.equal(trees?.minzoom, 16);
   assert.equal(trees?.metadata?.['tileflow:vegetation-mode'], '3d');
-  assert.equal(trees?.metadata?.['tileflow:tree-species-field'], 'species');
-  assert.equal(trees?.metadata?.['tileflow:tree-leaf-type-field'], 'leaf_type');
+  // World's tree layer also holds rows of trees as lines: the flat trees draw only its points.
+  assert.deepEqual(trees?.filter, ['==', ['geometry-type'], 'Point']);
+  // The 3D trees' description names the bound fields and the flat layers it stands in for.
+  const vegetation = readTileflowVegetation3D(style.metadata);
+  assert.equal(vegetation?.fields.species, 'species');
+  assert.equal(vegetation?.fields.leafType, 'leaf_type');
+  assert.ok(vegetation?.flatLayers.includes('tileflow-vegetation-trees'));
   assert.ok(roadIndex < buildingIndex);
   assert.ok(buildingIndex < treeIndex);
   assert.ok(treeIndex < roadLabelIndex);

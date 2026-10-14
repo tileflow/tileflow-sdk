@@ -576,7 +576,6 @@ test('serves pinned local preview assets and a cancellable session event stream'
     /shouldPreloadLandmarks[\s\S]*?loadLandmarkPrerequisites\(landmarkManifestUrl\)/,
   );
   assert.match(preview, /if \(shouldAddLandmarks\) \{[\s\S]*?await loadLandmarkPrerequisites\(/);
-  assert.match(preview, /tileflow-vegetation-trees-3d/);
   assert.match(preview, /function createBuildingWireframeLayer\(map, styleLayer\)/);
   assert.match(preview, /function addBuildingWireframeLayerIfConfigured\(map, styleLayers\)/);
   assert.match(preview, /const maximumBuildings = 10000/);
@@ -603,155 +602,20 @@ test('serves pinned local preview assets and a cancellable session event stream'
   );
   assert.match(preview, /tileflow:visible-layer-groups/);
   assert.match(preview, /threeDimensionalToggle === "building"[\s\S]*?threeDimensionalEnabled/);
-  assert.match(
-    preview,
-    /const styleLayerIndex = styleLayers\.findIndex\(\(layer\) => layer\.id === styleLayer\.id\);[\s\S]*?map\.addLayer\(createTreeLayer\(map, styleLayer\), layerAboveTrees\)/,
-  );
   assert.match(preview, /map\.queryRenderedFeatures\(/);
   assert.match(preview, /\{layers: \[styleLayer\.id\]\}/);
   assert.doesNotMatch(preview, /querySourceFeatures\(sourceId, \{sourceLayer\}\)/);
-  assert.doesNotMatch(preview, /maximumTrees/);
-  assert.equal(preview.match(/queryTerrainElevation/g)?.length, 3);
-  assert.match(
-    preview,
-    /const viewportElevation = map\.queryTerrainElevation\(map\.getCenter\(\)\) \?\? 0/,
-  );
-  assert.match(preview, /function createTerrainSampler\(trees, fallbackElevation\)/);
-  assert.match(preview, /const gridSize = 5/);
-  assert.match(preview, /terrainElevationAt\(lng, lat\)/);
-  assert.match(preview, /function createBroadleafTreeGeometry\(variant, geometryVariant, simple\)/);
-  assert.match(preview, /function addTaperedBranchPart\(/);
-  assert.match(
-    preview,
-    /if \(!geometry\.getAttribute\("normal"\)\) geometry\.computeVertexNormals\(\)/,
-  );
-  assert.match(preview, /geometry\.index \? geometry\.toNonIndexed\(\) : geometry/);
-  assert.doesNotMatch(preview, /facetedGeometry\.computeVertexNormals\(\)/);
-  assert.match(
-    preview,
-    /addTaperedBranchPart\(\s*parts,\s*\[0, 0, 0\],\s*trunkTop,\s*0\.04 \+ variant \* 0\.001,\s*0\.022/,
-  );
-  assert.match(
-    preview,
-    /new THREE\.CylinderGeometry\(tipRadius, baseRadius, 1, radialSegments, 1, true\)/,
-  );
-  assert.match(preview, /const branchCount = simple \? Math\.min\(4, branchTargets\.length\)/);
-  assert.match(preview, /for \(let branch = 0; branch < branchCount; branch \+= 1\)/);
-  assert.match(preview, /const shelteredBranchTarget = \[/);
-  assert.match(preview, /branchTarget\[1\] - 0\.07/);
-  const roundCrownLayout = /const roundCrownLayout = \[([\s\S]*?)\];\s*const openCrownLayout/.exec(
-    preview,
-  )?.[1];
-  const openCrownLayout = /const openCrownLayout = \[([\s\S]*?)\];\s*const tallCrownLayout/.exec(
-    preview,
-  )?.[1];
-  const tallCrownLayout = /const tallCrownLayout = \[([\s\S]*?)\];\s*const crownLayouts/.exec(
-    preview,
-  )?.[1];
-  assert.equal(roundCrownLayout?.match(/\{position:/g)?.length, 5);
-  assert.equal(openCrownLayout?.match(/\{position:/g)?.length, 6);
-  assert.equal(tallCrownLayout?.match(/\{position:/g)?.length, 5);
-  assert.match(
-    preview,
-    /const lobeCount = simple \? Math\.max\(4, crownLayout\.length - 1\) : crownLayout\.length/,
-  );
-  assert.match(preview, /function createOrganicCrownGeometry\(seed, simple\)/);
-  assert.match(preview, /new THREE\.SphereGeometry\(/);
-  assert.match(preview, /function createConiferTreeGeometry\(variant, geometryVariant, simple\)/);
-  assert.match(preview, /const columnar = variant === 1/);
-  assert.match(preview, /const tierCount = simple \? 3 : 5/);
-  assert.match(preview, /function createScallopedConeGeometry\(seed, simple\)/);
-  assert.match(preview, /function createPalmTreeGeometry\(geometryVariant, simple\)/);
-  assert.match(preview, /function createCurvedPalmFrondGeometry\(seed, simple, fan\)/);
-  assert.match(preview, /const frondCount = simple \? \(fan \? 8 : 7\) : \(fan \? 12 : 11\)/);
-  assert.match(preview, /createBroadleafTreeGeometry\(2, 1, simple\)/);
-  assert.match(preview, /createPalmTreeGeometry\(1, simple\)/);
-  assert.match(preview, /function mergeGeometryParts\(parts\)/);
-  assert.match(preview, /new THREE\.MeshLambertMaterial\(\{/);
-  assert.match(preview, /flatShading: false/);
-  assert.match(preview, /vertexColors: true/);
-  assert.doesNotMatch(preview, /new THREE\.CircleGeometry/);
-  assert.doesNotMatch(preview, /branches = new THREE\.InstancedMesh/);
-  assert.match(preview, /treeShadowMesh = new THREE\.InstancedMesh/);
-  assert.match(preview, /function createRawTreeShadowProgram\(gl\)/);
-  assert.match(preview, /rawGl\.drawArraysInstanced\(/);
-  assert.match(preview, /tileflow:tree-bark-color/);
-  assert.match(preview, /tileflow:tree-broadleaf-colors/);
-  assert.match(preview, /tileflow:tree-conifer-colors/);
-  assert.match(preview, /tileflow:tree-height-scale/);
-  assert.match(preview, /tileflow:tree-crown-scale/);
-  assert.match(preview, /const barkColor = new THREE\.Color\(/);
-  assert.match(preview, /const palmPalette = \[/);
-  assert.match(preview, /\["#87BA8C", "#98C89A", "#AAD4A7", "#B8DDB1"\]/);
-  assert.match(preview, /const crownColorPatterns = \[/);
-  assert.match(preview, /crownColorPattern\[lobe\] \+ geometryVariant \* 2/);
-  assert.match(preview, /const crownCapShapes = \[/);
-  assert.match(preview, /createOrganicCrownGeometry\(149 \+ variant \* 17/);
-  assert.match(preview, /colorGain: 0\.94 \+ stableUnit\(key, 13\) \* 0\.12/);
-  assert.equal(preview.match(/smoothstep\(0\.90, 1\.0, radiusSquared\)/g)?.length, 2);
-  assert.doesNotMatch(preview, /falloff \* falloff/);
-  assert.match(preview, /function resolveTreeForm\(properties, key\)/);
-  assert.match(preview, /function treeVariantIndex\(form, key\)/);
-  assert.match(preview, /palm: 8/);
-  assert.match(preview, /const treeFormDimensions = \{/);
-  assert.match(preview, /dimensions\.crownMinimum/);
-  assert.match(
-    preview,
-    /crownDiameter:\s*baseCrownDiameter \* crownScale \* \(0\.94 \+ stableUnit\(key, 5\) \* 0\.12\)/,
-  );
-  assert.match(preview, /height: baseHeight \* heightScale/);
-  assert.match(preview, /function stableTreeKey\(feature, lng, lat\)/);
-  assert.match(preview, /Math\.imul\(hash, 16777619\)/);
-  assert.match(preview, /combinedMatrix\.copy\(mapMatrix\)\.multiply\(sceneMatrix\)/);
-  assert.match(preview, /camera\.projectionMatrix\.copy\(combinedMatrix\)/);
   assert.match(preview, /scene\.rotateX\(Math\.PI \/ 2\)/);
   assert.match(preview, /scene\.scale\.multiply\(new THREE\.Vector3\(1, 1, -1\)\)/);
-  assert.match(preview, /function localTreePosition\(lng, lat, elevation\)/);
   assert.match(preview, /elevation - sceneElevation/);
   assert.match(preview, /new THREE\.Vector3\(meter, -meter, meter\)/);
-  assert.match(preview, /const maximumCachedTrees = 12000/);
-  assert.match(preview, /const sourceRefreshIntervalMilliseconds = 120/);
-  assert.match(preview, /const treeLods = \[/);
-  assert.match(preview, /densityCellPixels: 12/);
-  assert.match(preview, /densityCellPixels: 8/);
-  assert.match(preview, /if \(lod\.densityCellPixels === 0\) return candidates/);
-  assert.doesNotMatch(preview, /selected\.length >= lod\.maximumTrees/);
-  assert.match(preview, /function ensureThreeTreeMeshCapacity\(variantIndex, requiredCapacity\)/);
-  assert.match(preview, /function ensureThreeTreeShadowCapacity\(requiredCapacity\)/);
-  assert.match(preview, /function selectVisibleTrees\(features, lod\)/);
-  assert.match(preview, /const worldSize = 512 \* Math\.pow\(2, map\.getZoom\(\)\)/);
-  assert.match(preview, /Math\.floor\(candidate\.worldX \/ lod\.densityCellPixels\)/);
   assert.doesNotMatch(preview, /map\.project\(\[lng, lat\]\)/);
-  assert.match(preview, /function treeSelectionSignature\(trees, lodName\)/);
   assert.doesNotMatch(preview, /options\.modelViewProjectionMatrix/);
-  assert.match(preview, /treeMesh\.frustumCulled = false/);
-  assert.match(preview, /tileflow:tree-species-field/);
   assert.doesNotMatch(preview, /function queueRefreshWhenIdle\(\)/);
   assert.match(preview, /emptyRefreshAttempts < 12/);
-  assert.match(preview, /setTimeout\(queueRefresh, 150\)/);
-  assert.match(preview, /function setFallbackVisible\(visible\)/);
-  assert.match(preview, /function updateFallbackVisibility\(\)/);
-  assert.match(preview, /setFallbackVisible\(!sourceSettled \|\| renderedTreeCount === 0\)/);
-  assert.match(
-    preview,
-    /if \(sourceSettled && selectionSignature === lastTreeSelectionSignature\)/,
-  );
-  assert.match(
-    preview,
-    /if \(!sourceSettled\) \{[\s\S]*?setTimeout\(\(\) => queueRefresh\(true\), 150\)/,
-  );
   assert.match(preview, /queueRefresh\(\);/);
-  assert.match(preview, /function queueRefresh\(immediate = false\)/);
-  assert.match(preview, /if \(map\.isMoving\(\)\) return/);
-  assert.match(preview, /map\.on\("movestart", handleMoveStart\)/);
-  assert.match(
-    preview,
-    /activeTreeBackend === "three" \? !treeGroup\?\.visible : !rawTreesVisible/,
-  );
   assert.doesNotMatch(preview, /map\.on\("move", handleMove\)/);
-  assert.match(preview, /map\.on\("sourcedataloading", handleSourceLoading\)/);
   assert.match(preview, /map\.on\("sourcedata", handleSourceData\)/);
-  assert.match(preview, /if \(!treesEnabled \|\| event\.sourceId !== sourceId\) return/);
   assert.match(preview, /map\.setProjection\(\{type: "mercator"\}\)/);
   assert.match(
     preview,
@@ -759,13 +623,19 @@ test('serves pinned local preview assets and a cancellable session event stream'
   );
   assert.doesNotMatch(preview, /const projection = map\.getStyle/);
   assert.match(preview, /class ThreeDimensionalControl/);
+  // TREES and 3D mount Core's renderers, as an application does, from the style's description.
+  assert.match(preview, /createTileflowTrees3D\(\{map, controller\}\)/);
+  assert.match(preview, /createTileflowBuildings3D\(\{map, controller\}\)/);
+  assert.match(preview, /createTileflowStreetLights\(\{map, controller\}\)/);
+  assert.match(preview, /metadata\["tileflow:vegetation"\]/);
+  assert.doesNotMatch(preview, /treeRenderer/);
   assert.match(preview, /class TreeControl/);
   assert.match(preview, /setEnabled\(enabled\)/);
   assert.match(preview, /this\.setEnabled\(!this\.enabled\)/);
   assert.match(preview, /this\.enabled \? "3D ON" : "3D OFF"/);
   assert.match(preview, /this\.enabled \? "TREES ON" : "TREES OFF"/);
   assert.match(preview, /readToggleFromUrl\("buildings3d", false\)/);
-  assert.match(preview, /readToggleFromUrl\("trees3d", true\)/);
+  assert.match(preview, /readToggleFromUrl\("trees3d", false\)/);
   assert.match(preview, /map\.fire\("tileflow:trees-toggle"/);
   assert.match(preview, /treeControl = new TreeControl\(\)/);
   assert.match(preview, /map\.addControl\(treeControl, "top-right"\)/);
@@ -793,7 +663,6 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /event\.source !== window\.parent/);
   assert.match(preview, /event\.origin !== location\.origin/);
   assert.match(preview, /map\.jumpTo\(\{/);
-  assert.match(preview, /const treeRuntimeMinimumZoom = 16/);
   assert.doesNotMatch(preview, /landmarkRuntimeMinimumZoom/);
   assert.match(preview, /function styleLayerZoomRange\(layer\)/);
   assert.match(preview, /return zoom >= minzoom && zoom < maxzoom/);
@@ -812,10 +681,6 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(
     preview,
     /function addLandmarkLayerIfConfigured\(map, styleLayers\)[\s\S]*?if \(map\.getProjection\(\)\.type !== "mercator"\) \{[\s\S]*?map\.setProjection\(\{type: "mercator"\}\);[\s\S]*?map\.addLayer\(createLandmarkLayer/,
-  );
-  assert.match(
-    preview,
-    /const treeLayer = map\.getLayer\("tileflow-vegetation-trees-3d"\)[\s\S]*?map\.getLayer\("tileflow-vegetation-trees"\)[\s\S]*?map\.addLayer\(createLandmarkLayer\(map, configLayer, fallbackLayers\), treeLayer\)/,
   );
   assert.match(preview, /loader\.setMeshoptDecoder\(MeshoptDecoder\)/);
   assert.match(preview, /credentials: "include"/);
@@ -863,15 +728,10 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.doesNotMatch(preview, /material\.emissive\.setRGB/);
   assert.doesNotMatch(preview, /canvasContextAttributes: \{antialias: true\}/);
   assert.doesNotMatch(preview, /antialias: true/);
-  assert.match(preview, /const treeRendererMode = \["circle", "simple", "complex"\]/);
-  // Ordinary preview must match capture/framework rendering. The richer tree
-  // runtime remains an explicit, preview-only diagnostic mode.
-  assert.match(preview, /\? requestedTreeRenderer : "circle"/);
-  assert.match(preview, /treeSearchParameters\.get\("treeBenchmark"\) === "1"/);
-  assert.match(preview, /treeSearchParameters\.get\("mapBenchmark"\) === "1"/);
-  assert.match(preview, /treeSearchParameters\.get\("mapSweep"\) === "1"/);
-  assert.match(preview, /treeSearchParameters\.get\("mapCompare"\) === "1"/);
-  assert.match(preview, /treeSearchParameters\.get\("mapWorkers"\)/);
+  assert.match(preview, /previewSearchParameters\.get\("mapBenchmark"\) === "1"/);
+  assert.match(preview, /previewSearchParameters\.get\("mapSweep"\) === "1"/);
+  assert.match(preview, /previewSearchParameters\.get\("mapCompare"\) === "1"/);
+  assert.match(preview, /previewSearchParameters\.get\("mapWorkers"\)/);
   assert.match(preview, /mapWorkerCountOverride \?\?/);
   assert.match(preview, /mapBenchmarkCenter \? \{center: mapBenchmarkCenter\} : \{\}/);
   assert.match(
@@ -890,34 +750,6 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /if \(result\.errors\.length > 0\)/);
   assert.match(preview, /dataset\.tileflowMapSweepStatus = "failed"/);
   assert.match(preview, /installMapBenchmark\(map\)/);
-  assert.match(preview, /treeSearchParameters\.get\("treeBackend"\) === "three"/);
-  assert.match(preview, /globalThis\.__tileflowTreeMetrics = treeMetrics/);
-  assert.doesNotMatch(preview, /tree-status/);
-  assert.match(preview, /globalThis\.__tileflowTreeState = \{message, \.\.\.details\}/);
-  assert.match(preview, /treeMetrics\.renderCalls = renderer\.info\.render\.calls/);
-  assert.match(
-    preview,
-    /treeMetrics\.refreshMilliseconds = performance\.now\(\) - refreshStartedAt/,
-  );
-  assert.match(preview, /treeMetrics\.queryMilliseconds = performance\.now\(\) - queryStartedAt/);
-  assert.match(
-    preview,
-    /treeMetrics\.selectionMilliseconds = performance\.now\(\) - selectionStartedAt/,
-  );
-  assert.match(preview, /treeMetrics\.buildMilliseconds = performance\.now\(\) - buildStartedAt/);
-  assert.match(
-    preview,
-    /treeMetrics\.terrainMilliseconds = performance\.now\(\) - terrainStartedAt/,
-  );
-  assert.match(preview, /function createRawTreeProgram\(gl\)/);
-  assert.match(preview, /vec3 linearToSrgb\(vec3 color\)/);
-  assert.match(preview, /vec4\(linearToSrgb\(v_color\), 1\.0\)/);
-  assert.match(preview, /rawGl\.drawElementsInstanced\(/);
-  assert.match(preview, /geometry\.setIndex\(new THREE\.BufferAttribute\(indices, 1\)\)/);
-  assert.match(
-    preview,
-    /rawGl\.uniformMatrix4fv\(rawMatrixUniform, false, combinedMatrix\.elements\)/,
-  );
   assert.match(preview, /maplibregl\.setWorkerCount\?\.\(mapWorkerCount\)/);
   assert.match(preview, /const mapWorkerCount = mapWorkerCountOverride \?\? 1/);
 
@@ -1213,7 +1045,7 @@ test('selects map and scene previews with their configured cameras and viewport'
   persisted.emit('styledata');
   persisted.emit('load');
   assert.equal(persisted.threeDimensionalLabel(), '3D OFF');
-  assert.equal(persisted.treeLabel(), 'TREES ON');
+  assert.equal(persisted.treeLabel(), 'TREES OFF');
   assert.equal(persisted.buildingVisibility(), 'none');
   assert.equal(persisted.treeVisibility(), 'visible');
   persisted.toggleThreeDimensional();
@@ -1223,8 +1055,9 @@ test('selects map and scene previews with their configured cameras and viewport'
   persisted.emit('styledata');
   assert.equal(persisted.buildingVisibility(), 'visible');
   persisted.toggleTrees();
-  assert.equal(persisted.treeLabel(), 'TREES OFF');
-  assert.equal(persisted.treeVisibility(), 'none');
+  assert.equal(persisted.treeLabel(), 'TREES ON');
+  // A style without 3D trees keeps its flat trees.
+  assert.equal(persisted.treeVisibility(), 'visible');
   const persistedUrl = new URL(persisted.currentUrl());
   assert.equal(persistedUrl.searchParams.get('keep'), 'this');
   assert.equal(persistedUrl.searchParams.get('lng'), '-3.7038');
@@ -1233,15 +1066,15 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.equal(persistedUrl.searchParams.get('bearing'), '12');
   assert.equal(persistedUrl.searchParams.get('pitch'), '0');
   assert.equal(persistedUrl.searchParams.get('buildings3d'), 'on');
-  assert.equal(persistedUrl.searchParams.get('trees3d'), 'off');
+  assert.equal(persistedUrl.searchParams.get('trees3d'), 'on');
 
   const restoredToggles = runPreviewScript(boundsHtml, persistedUrl.href);
   restoredToggles.emit('styledata');
   restoredToggles.emit('load');
   assert.equal(restoredToggles.threeDimensionalLabel(), '3D ON');
-  assert.equal(restoredToggles.treeLabel(), 'TREES OFF');
+  assert.equal(restoredToggles.treeLabel(), 'TREES ON');
   assert.equal(restoredToggles.buildingVisibility(), 'visible');
-  assert.equal(restoredToggles.treeVisibility(), 'none');
+  assert.equal(restoredToggles.treeVisibility(), 'visible');
 
   restoredToggles.applyParentMapState({
     type: 'tileflow:set-map-state',
@@ -1251,7 +1084,7 @@ test('selects map and scene previews with their configured cameras and viewport'
       buildings3d: false,
       center: [-3.688344, 40.453053],
       pitch: 58,
-      trees3d: true,
+      trees3d: false,
       visibleLayerGroups: ['roads', 'transit', 'buildings', 'landuse', 'water'],
       zoom: 17.75,
     },
@@ -1261,11 +1094,48 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.equal(restoredToggles.pitch(), 58);
   assert.equal(restoredToggles.zoom(), 17.75);
   assert.equal(restoredToggles.threeDimensionalLabel(), '3D OFF');
-  assert.equal(restoredToggles.treeLabel(), 'TREES ON');
+  assert.equal(restoredToggles.treeLabel(), 'TREES OFF');
   assert.equal(restoredToggles.businessAreaVisibility(), 'visible');
   const controlledUrl = new URL(restoredToggles.currentUrl());
   assert.equal(controlledUrl.searchParams.get('buildings3d'), 'off');
-  assert.equal(controlledUrl.searchParams.get('trees3d'), 'on');
+  assert.equal(controlledUrl.searchParams.get('trees3d'), 'off');
+
+  // A style that describes its 3D scene: the controls show and hide Core's layers, which stand in
+  // for the compiled extrusion and the flat trees.
+  const coreScene = runPreviewScript(boundsHtml, 'http://localhost/?lng=-3.7&lat=40.4&zoom=16', {
+    coreScene: true,
+  });
+  coreScene.emit('styledata');
+  coreScene.emit('load');
+  // With both controls off the preview draws what Capture draws.
+  assert.deepEqual(coreScene.coreCalls(), ['buildings:create', 'trees:create']);
+  assert.equal(coreScene.treeVisibility(), 'visible');
+  coreScene.toggleThreeDimensional();
+  assert.equal(coreScene.buildingVisibility(), 'none');
+  coreScene.toggleTrees();
+  coreScene.emit('styledata');
+  assert.deepEqual(coreScene.coreCalls().slice(2), [
+    'lights:create',
+    'buildings:show',
+    'trees:show',
+  ]);
+  coreScene.applyParentMapState({
+    type: 'tileflow:set-map-state',
+    schemaVersion: 1,
+    state: {
+      bearing: 0,
+      buildings3d: false,
+      center: [-3.7, 40.4],
+      pitch: 0,
+      trees3d: false,
+      zoom: 16,
+    },
+  });
+  assert.deepEqual(coreScene.coreCalls().slice(5), [
+    'lights:dispose',
+    'buildings:hide',
+    'trees:hide',
+  ]);
 
   const cameraBeforeInvalidCommand = restoredToggles.center();
   restoredToggles.applyParentMapState({
@@ -1564,12 +1434,14 @@ export default defineMap({id: 'main', version: 1, extends: streets, icons: [...s
 function runPreviewScript(
   html: string,
   href: string,
+  options: {coreScene?: boolean} = {},
 ): {
   applyParentMapState(data: unknown): void;
   bearing(): number;
   businessAreaVisibility(): string;
   buildingVisibility(): string;
   center(): [number, number];
+  coreCalls(): string[];
   currentUrl(): string;
   emit(eventName: string): void;
   emitServerEvent(eventName: string, data?: unknown): void;
@@ -1595,6 +1467,22 @@ function runPreviewScript(
   let businessAreaVisibility = 'visible';
   let buildingVisibility = 'none';
   let treeVisibility = 'visible';
+  const coreCalls: string[] = [];
+  const coreLayer = (name: string) => {
+    coreCalls.push(`${name}:create`);
+    return {
+      dispose: () => void coreCalls.push(`${name}:dispose`),
+      hide: async () => void coreCalls.push(`${name}:hide`),
+      show: async () => void coreCalls.push(`${name}:show`),
+    };
+  };
+  const coreMetadata = options.coreScene
+    ? {
+        'tileflow:buildings': {version: 1},
+        'tileflow:street-lights': {version: 1},
+        'tileflow:vegetation': {version: 1, flatLayers: ['tileflow-vegetation-trees']},
+      }
+    : {};
   let currentPitch = 0;
   let reloadCount = 0;
   let styleReady = false;
@@ -1705,7 +1593,7 @@ function runPreviewScript(
         'source-layer'?: string;
         type: string;
       }>;
-      metadata?: Record<string, string>;
+      metadata?: Record<string, unknown>;
     } {
       if (!styleReady) return {};
       return {
@@ -1727,7 +1615,7 @@ function runPreviewScript(
             type: 'circle',
           },
         ],
-        metadata: {'tileflow:compiler': 'tileflow-semantic'},
+        metadata: {'tileflow:compiler': 'tileflow-semantic', ...coreMetadata},
       };
     }
 
@@ -1741,6 +1629,10 @@ function runPreviewScript(
 
     getZoom(): number {
       return this.camera.zoom;
+    }
+
+    isStyleLoaded(): boolean {
+      return styleReady;
     }
 
     getLayer(): undefined {
@@ -1787,6 +1679,12 @@ function runPreviewScript(
   const parentWindow = {};
   const sandbox: Record<string, any> = {
     EventSource: FakeEventSource,
+    createTileflowBuildings3D: () => coreLayer('buildings'),
+    createTileflowStreetLights: () => coreLayer('lights'),
+    createTileflowTrees3D: () => coreLayer('trees'),
+    readTileflowSunPreset: () => undefined,
+    resolveTileflowSun: (preset: unknown) => preset,
+    tileflowDefaultSunPreset: {},
     URL,
     addEventListener(name: string, listener: (event: any) => void) {
       const eventListeners = windowListeners.get(name) ?? new Set();
@@ -1835,6 +1733,7 @@ function runPreviewScript(
     businessAreaVisibility: () => businessAreaVisibility,
     buildingVisibility: () => buildingVisibility,
     center: () => activeCamera?.center ?? [0, 0],
+    coreCalls: () => [...coreCalls],
     currentUrl: () => currentUrl,
     emit(eventName) {
       if (eventName === 'load' || eventName === 'styledata') styleReady = true;

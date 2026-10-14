@@ -59,6 +59,7 @@ export type TileflowResolvedVegetationColors = {
     bark: string;
     broadleaf: readonly [string, string, string, string];
     conifer: readonly [string, string, string];
+    palm: readonly [string, string, string];
   };
 };
 
@@ -280,6 +281,7 @@ export function resolveColors(
           resolved.landcover.meadow,
         ],
         conifer: [resolved.landcover.protected, resolved.landcover.scrub, resolved.landcover.wood],
+        palm: [resolved.landcover.urbanPark, resolved.landcover.grass, resolved.landcover.meadow],
       },
     },
   };
@@ -454,6 +456,11 @@ export function resolveThemeColors(theme: TileflowTheme): TileflowResolvedColors
           optionalColor('vegetation.tree.conifer.a', colors.vegetation.tree.conifer[0]),
           optionalColor('vegetation.tree.conifer.b', colors.vegetation.tree.conifer[1]),
           optionalColor('vegetation.tree.conifer.c', colors.vegetation.tree.conifer[2]),
+        ],
+        palm: [
+          optionalColor('vegetation.tree.palm.a', colors.vegetation.tree.palm[0]),
+          optionalColor('vegetation.tree.palm.b', colors.vegetation.tree.palm[1]),
+          optionalColor('vegetation.tree.palm.c', colors.vegetation.tree.palm[2]),
         ],
       },
     },

@@ -103,7 +103,42 @@ export {
   type TileflowStreetLightsOptions,
 } from './street-lights-browser';
 export {
+  readTileflowBuildings3D,
+  tileflowBuildingsMetadataKey,
+  type TileflowBuildings3DDesign,
+} from './buildings-3d-design';
+export {
+  createTileflowTrees3D,
+  tileflowTrees3DLayerId,
+  type TileflowTrees3D,
+  type TileflowTrees3DChange,
+  type TileflowTrees3DMap,
+  type TileflowTrees3DOptions,
+  type TileflowTrees3DThemes,
+} from './trees-3d-browser';
+export {
+  placeTileflowTrees,
+  readTileflowVegetation3D,
+  tileflowTreeBytes,
+  tileflowTreeFormOf,
+  tileflowTreeForms,
+  tileflowVegetationMetadataKey,
+  type TileflowTreeFields,
+  type TileflowTreeForm,
+  type TileflowTreeFormMix,
+  type TileflowTreeFormRange,
+  type TileflowTreeLayers,
+  type TileflowTreePlacement,
+  type TileflowTreePlacementOptions,
+  type TileflowTreeRange,
+  type TileflowTreeRegion,
+  type TileflowVegetation3D,
+} from './trees-3d';
+export {
   placeTileflowStreetLights,
+  readTileflowStreetLights,
+  tileflowStreetLightsMetadataKey,
+  type TileflowStreetLightsDesign,
   tileflowStreetLightBytes,
   type TileflowStreetLightEstimate,
   type TileflowStreetLightLayers,
@@ -387,6 +422,13 @@ export type TileflowThemeController = {
   /** The value a style state was set to last, or undefined when it has not been set. */
   getState(name: string): TileflowStyleStateValue | undefined;
   /**
+   * What the compiled styles on screen hold under a metadata key, for an application's own layers
+   * drawn in the map's design (Core's 3D trees read their colours this way): one value outside a
+   * blend, and during a blend one per blended theme, in order, with the blend's position, so a layer
+   * can mix them as the map does. A style without the key gives undefined in its place.
+   */
+  getThemeMetadata(key: string): Readonly<{values: readonly unknown[]; position: number}>;
+  /**
    * The sun the map shows, for an application's own 3D layers: its direction, the light it and
    * the sky give, and how dark its shadows fall. It is the theme's sun (`lighting.sun`), mixed
    * between neighbouring themes during a blend, unless `setSun` placed it. Read it when drawing;
@@ -519,6 +561,7 @@ export function createTileflowThemeController(options: {
   const styleIdentities = new WeakMap<object, number>();
   // The route inks of each blended theme, in blend order, by the blend's plan.
   const blendRouteInks = new WeakMap<TileflowThemeBlendPlan, readonly TileflowRouteInks[]>();
+  const blendMetadata = new WeakMap<TileflowThemeBlendPlan, readonly unknown[]>();
   let nextStyleIdentity = 0;
   let current = options.initial;
   let shown: Shown = {style: options.initial.style};
@@ -623,6 +666,17 @@ export function createTileflowThemeController(options: {
     },
     getState(name) {
       return typeof name === 'string' ? states.get(name.trim())?.value : undefined;
+    },
+    getThemeMetadata(key) {
+      const read = (metadata: unknown) =>
+        typeof metadata === 'object' && metadata !== null && !Array.isArray(metadata)
+          ? (metadata as Record<string, unknown>)[key]
+          : undefined;
+      const blended = activeBlend && blendMetadata.get(activeBlend.plan);
+      if (activeBlend && blended)
+        return {values: blended.map(read), position: activeBlend.blender.position};
+      const style = typeof current.style === 'string' ? shownStyleDocument() : current.style;
+      return {values: [read(style?.metadata)], position: 0};
     },
     getSun() {
       return sunNow();
@@ -788,6 +842,10 @@ export function createTileflowThemeController(options: {
     ]);
     const plan = planTileflowThemeBlend(styles);
     images?.assertBlend(plan.images);
+    blendMetadata.set(
+      plan,
+      styles.map((style) => (style as {metadata?: unknown}).metadata),
+    );
     blendRouteInks.set(
       plan,
       styles.map((style, index) =>

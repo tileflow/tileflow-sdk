@@ -126,6 +126,8 @@ const approvedLightStyleColors = new Set([
   '#F4F7F8',
   '#F8F6F8',
   '#FBEDE2',
+  // The light of Core's street lights for lamps whose data gives no colour.
+  '#FFCF8F',
   '#FFFFFF',
   'RGBA(0, 0, 0, 0)',
   'RGBA(244, 240, 239, 0.72)',
@@ -216,6 +218,8 @@ const approvedDarkStyleColors = new Set([
   '#D0D0D6',
   '#D69A58',
   '#DC7C89',
+  // The light of Core's street lights for lamps whose data gives no colour.
+  '#FFCF8F',
   '#FFFFFF',
   'RGBA(0, 0, 0, 0)',
   'RGBA(37, 40, 57, 0.82)',

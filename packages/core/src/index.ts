@@ -188,6 +188,7 @@ export type {
   TileflowRoadRoundaboutStyle,
   TileflowRoadServiceType,
   TileflowRoadSidewalkStyle,
+  TileflowRoadStreetLightStyle,
   TileflowRoadsModuleConfig,
   TileflowRoadsModuleOptions,
   TileflowRoadStructure,
@@ -253,6 +254,7 @@ export type {
   TileflowIconDirectory,
   TileflowLocalDirectory,
   TileflowMap,
+  TileflowModelDirectory,
   TileflowModuleOperation,
   TileflowModulePatch,
   TileflowMapDesign,
@@ -451,6 +453,7 @@ export type {
   TileflowBuildingMode,
   TileflowBuildingsModuleConfig,
   TileflowBuildingsModuleOptions,
+  TileflowBuildingsThreeDimensionalStyle,
   TileflowLandcoverClass,
   TileflowLandformClass,
   TileflowLandformsModuleConfig,
@@ -634,3 +637,31 @@ export {
   tileflowIconMetadataFileName,
   type TileflowIconAppearance,
 } from './icon-appearance';
+export {
+  readTileflowVegetation3D,
+  tileflowTreeForms,
+  tileflowTreeModelIdPattern,
+  tileflowVegetationMetadataKey,
+  type TileflowTreeForm,
+  type TileflowTreeFormMix,
+  type TileflowTreeRegion,
+  type TileflowVegetation3D,
+} from './trees-3d';
+export {tileflowTreeParts} from './trees-3d-mesh';
+export {
+  decodeTileflowTreeModel,
+  encodeTileflowTreeModel,
+  tileflowTreeModelLimits,
+  type TileflowTreeModel,
+  type TileflowTreeModelMesh,
+} from './trees-3d-model';
+export {
+  readTileflowBuildings3D,
+  tileflowBuildingsMetadataKey,
+  type TileflowBuildings3DDesign,
+} from './buildings-3d-design';
+export {
+  readTileflowStreetLights,
+  tileflowStreetLightsMetadataKey,
+  type TileflowStreetLightsDesign,
+} from './street-lights';

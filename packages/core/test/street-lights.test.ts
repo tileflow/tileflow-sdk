@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   placeTileflowStreetLights,
+  readTileflowStreetLights,
+  tileflowStreetLightsMetadataKey,
   tileflowStreetLightBytes,
   type TileflowStreetLightLayers,
 } from '../src/street-lights';
@@ -201,7 +203,7 @@ test('the lights follow the sun, put their layer on the map and leave cleanly', 
   assert.equal(lights.on, 0);
   brightness = 0.02;
   assert.equal(lights.on, 1);
-  assert.deepEqual(lights.stats, {tiles: 0, lamps: 0, mapped: 0, estimated: 0});
+  assert.deepEqual(lights.stats, {declared: false, tiles: 0, lamps: 0, mapped: 0, estimated: 0});
   lights.dispose();
   assert.equal(map.layers.has(tileflowStreetLightsLayerId), false);
   for (const set of map.listeners.values()) assert.equal(set.size, 0);
@@ -210,13 +212,24 @@ test('the lights follow the sun, put their layer on the map and leave cleanly', 
 test('street light options are validated', () => {
   assert.throws(() => createTileflowStreetLights({map: fakeMap(), minzoom: -1}), RangeError);
   assert.throws(() => createTileflowStreetLights({map: fakeMap(), maxTiles: 65}), RangeError);
-  assert.throws(() => createTileflowStreetLights({map: fakeMap(), intensity: 3}), RangeError);
-  assert.throws(
-    () => createTileflowStreetLights({map: fakeMap(), color: 'not a colour'}),
-    RangeError,
-  );
-  assert.throws(
-    () => createTileflowStreetLights({map: fakeMap(), estimate: 'everywhere' as never}),
-    RangeError,
+});
+
+test('the street lights design is read only in a known version and shape', () => {
+  const described = {
+    version: 1,
+    source: 'tileflow',
+    layers: {streetFurniture: 'street_furniture', transportation: 'transportation'},
+    estimate: 'everywhere',
+    color: 'not a colour',
+    intensity: 1.5,
+  };
+  const read = readTileflowStreetLights({[tileflowStreetLightsMetadataKey]: described})!;
+  assert.equal(read.estimate, 'lit');
+  assert.equal(read.color, '#ffcf8f');
+  assert.equal(read.intensity, 1.5);
+  assert.equal(read.layers.sidewalk, undefined);
+  assert.equal(
+    readTileflowStreetLights({[tileflowStreetLightsMetadataKey]: {...described, version: 2}}),
+    undefined,
   );
 });

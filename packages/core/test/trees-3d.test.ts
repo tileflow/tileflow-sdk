@@ -247,28 +247,40 @@ test('tree meshes stay within their triangle budgets and their unit tree', () =>
   assert.ok(up > 0, 'the top of a crown faces up');
 });
 
-test('a row of trees stands a tree every few metres along its line, in its data’s form', () => {
-  const rows: TileflowTileLayer = {
+test('a row of trees in the tree layer stands a tree every few metres along its line', () => {
+  // World's `tree` holds trees as points and rows of trees as lines.
+  const trees: TileflowTileLayer = {
     extent: 4096,
     features: [
       {
         type: 'LineString',
-        properties: {genus: 'Platanus', height: 18},
+        properties: {genus: 'Platanus', height: 18, subclass: 'tree_row'},
         // 100 m east, then 40 m south, then out of the tile.
         geometry: [[1000, 1000, 1100, 1000, 1100, 1040, 1100, 5000]],
       },
+      {
+        type: 'Point',
+        properties: {leaf_type: 'needleleaved', height: 9, subclass: 'tree'},
+        geometry: [[3000, 3000]],
+      },
     ],
   };
-  const placement = placeTileflowTrees({rows}, {...options, rowSpacing: 10});
-  const trees = treesOf(placement);
+  const placement = placeTileflowTrees({trees}, {...options, rowSpacing: 10});
+  const placed = treesOf(placement);
+  const row = placed.filter((tree) => tree.form === 'tall');
   // Trees at 5, 15, … m along: 10 on the first leg, 4 on the second, then on to the tile's edge.
-  assert.ok(trees.every((tree) => tree.form === 'tall' && tree.height === 18));
-  assert.equal(trees.filter((tree) => tree.y === 1000).length, 10);
+  assert.ok(row.every((tree) => tree.height === 18));
+  assert.equal(row.filter((tree) => tree.y === 1000).length, 10);
   assert.ok(
-    trees.every((tree) => tree.y < 4096),
+    row.every((tree) => tree.y < 4096),
     'nothing stands outside the tile',
   );
-  assert.equal(placement.mapped, trees.length);
+  // The point stands once, not as a row.
+  assert.deepEqual(
+    placed.filter((tree) => tree.form === 'conifer').map(({x, y}) => [x, y]),
+    [[3000, 3000]],
+  );
+  assert.equal(placement.mapped, placed.length);
 });
 
 test('a taxon gives a form, and a canopy point’s measured height sizes its trees', () => {

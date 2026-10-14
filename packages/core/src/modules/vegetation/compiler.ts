@@ -62,6 +62,8 @@ export function compileVegetation(
           type: 'circle',
           source: context.data.sourceId,
           'source-layer': context.data.schema.layers.tree,
+          // The layer also holds rows of trees as lines; a circle on each vertex would misdraw them.
+          filter: ['==', ['geometry-type'], 'Point'],
           metadata: {
             'tileflow:vegetation-mode': resolvedMode,
             ...(resolvedMode === '3d' ? {'tileflow:vegetation-fallback': 'flat-circle'} : {}),

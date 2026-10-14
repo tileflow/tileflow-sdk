@@ -199,6 +199,8 @@ test('binds individual trees for the runtime 3d vegetation renderer', () => {
   assert.equal(trees?.['source-layer'], 'tree');
   assert.equal(trees?.minzoom, 16);
   assert.equal(trees?.metadata?.['tileflow:vegetation-mode'], '3d');
+  // World's tree layer also holds rows of trees as lines: the flat trees draw only its points.
+  assert.deepEqual(trees?.filter, ['==', ['geometry-type'], 'Point']);
   // The 3D trees' description names the bound fields and the flat layers it stands in for.
   const vegetation = readTileflowVegetation3D(style.metadata);
   assert.equal(vegetation?.fields.species, 'species');

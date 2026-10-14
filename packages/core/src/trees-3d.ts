@@ -1,8 +1,8 @@
 // Places a vector tile's trees for Tileflow's 3D trees: the trees the map's data maps one by one
-// (World's `tree`), each in the form and at the size its data gives, trees along mapped rows of trees
-// (`tree_row`), and one to three trees for each of World's decorative canopy points (`canopy`),
-// inside the room the point leaves. A tree keeps its form, size, turn and shade wherever and whenever
-// it is read. It has no DOM dependency.
+// (World's `tree` points), each in the form and at the size its data gives, trees along mapped
+// rows of trees (`tree` lines), and one to three trees for each of World's decorative canopy points
+// (`canopy`), inside the room the point leaves. A tree keeps its form, size, turn and shade
+// wherever and whenever it is read. It has no DOM dependency.
 import type {TileflowTreeModel} from './trees-3d-model';
 import type {TileflowTileLayer} from './vector-tile-decode';
 
@@ -86,10 +86,11 @@ export type TileflowTreePlacementOptions = Readonly<{
 
 /** A tile's layers trees come from, as World names them. */
 export type TileflowTreeLayers = Readonly<{
-  /** Trees mapped one by one (World's `tree`). */
+  /**
+   * World's `tree`: trees mapped one by one as points, and rows of trees as lines, planted every
+   * `rowSpacing` metres.
+   */
   trees?: TileflowTileLayer;
-  /** Rows of trees mapped as lines (World's `tree_row`), planted every `rowSpacing` metres. */
-  rows?: TileflowTileLayer;
   /** Decorative canopy points in parks and gardens (World's `canopy`). */
   canopy?: TileflowTileLayer;
 }>;
@@ -422,7 +423,7 @@ export function placeTileflowTrees(
   }
 
   // A row of trees stands a tree every `rowSpacing` metres along its line, from half a spacing in.
-  const rows = layers.rows;
+  const rows = layers.trees;
   if (rows) {
     const scale = extent / rows.extent;
     const step = (options.rowSpacing ?? 8) / (tileMetres / rows.extent);
@@ -637,7 +638,7 @@ export const tileflowVegetationMetadataKey = 'tileflow:vegetation';
 export type TileflowVegetation3D = Readonly<{
   /** The vector source and its layers with the trees and the canopy points. */
   source: string;
-  layers: Readonly<{tree: string; treeRow?: string; canopy?: string}>;
+  layers: Readonly<{tree: string; canopy?: string}>;
   fields: TileflowTreeFields;
   /** Sunlit colours: bark, and the leaves of each kind of tree from darkest to lightest. */
   colors: Readonly<{
@@ -748,7 +749,6 @@ export function readTileflowVegetation3D(metadata: unknown): TileflowVegetation3
     source,
     layers: {
       tree: layers.tree,
-      ...(typeof layers.treeRow === 'string' ? {treeRow: layers.treeRow} : {}),
       ...(typeof layers.canopy === 'string' ? {canopy: layers.canopy} : {}),
     },
     fields: named,

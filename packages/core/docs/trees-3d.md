@@ -54,16 +54,17 @@ placed and the trees drawn in the last frame.
 
 The renderer reads the source's z15 tiles round the camera:
 
-- World's `tree` layer: the trees OpenStreetMap maps one by one. A tree's `leaf_type`, `genus` and
-  `species` choose its form; its `height` and `diameter_crown` its size, and a trunk's
-  `circumference` sizes a tree with neither.
+- World's `tree` layer: the trees OpenStreetMap maps one by one, as points, and its rows of trees,
+  as lines, along which a tree stands every 8 metres. A tree's `leaf_type`, `genus`, `species` and
+  `taxon` choose its form; its `height` and `diameter_crown` its size, and a trunk's
+  `circumference` sizes a tree with neither. A row's attributes apply to each of its trees.
 - World's `canopy` layer, where the data has it: decorative points in urban parks and gardens, each
   standing one to three trees by its canopy cover, inside the room it leaves before a path, a
   building or the park's edge. They stand for measured canopy, not for mapped trees.
 
 | Form       | From the data                                                                    |
 | ---------- | -------------------------------------------------------------------------------- |
-| `palm`     | `leaf_type` `palm`, or a palm genus such as `Roystonea`, `Sabal`, `Washingtonia` |
+| `palm`     | `leaf_type` `palm`, `taxon` `Arecaceae`, or a palm genus such as `Roystonea`     |
 | `columnar` | the cypress genera `Cupressus`, `Calocedrus` and `Thuja`                         |
 | `conifer`  | `leaf_type` `needleleaved`, or a conifer genus such as `Pinus` or `Cedrus`       |
 | `open`     | spreading genera such as `Quercus`, `Olea`, `Ficus` or `Jacaranda`               |

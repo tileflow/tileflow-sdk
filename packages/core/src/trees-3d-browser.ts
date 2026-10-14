@@ -36,9 +36,9 @@ import {decodeTileflowTreeModel} from './trees-3d-model';
 import {
   tileflowTreeAttributes,
   tileflowTreeDepthFragment,
+  tileflowTreeDepthVertex,
   tileflowTreeEdgeFragment,
   tileflowTreeEdgeVertex,
-  tileflowTreeDepthVertex,
   tileflowTreeFragment,
   tileflowTreeVertex,
 } from './trees-3d-shaders';
@@ -248,13 +248,11 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     tilesKey = key;
     generation += 1;
     if (!described) return tiles;
-    const make = (source: string, layers: {tree?: string; treeRow?: string; canopy?: string}) =>
+    const make = (source: string, layers: {tree?: string; canopy?: string}) =>
       createCameraTiles<TreeTile>({
         map,
         source,
-        layers: [layers.tree, layers.treeRow, layers.canopy].filter(
-          (name): name is string => !!name,
-        ),
+        layers: [layers.tree, layers.canopy].filter((name): name is string => !!name),
         zoom: preferredZoom,
         minzoom,
         maxTiles,
@@ -262,11 +260,10 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
         active: () => target > 0 || scale > 0,
         build(tile, tileMetres) {
           const trees = layers.tree ? tile.layers[layers.tree] : undefined;
-          const rows = layers.treeRow ? tile.layers[layers.treeRow] : undefined;
           const canopy = layers.canopy ? tile.layers[layers.canopy] : undefined;
-          if (!trees && !rows && !canopy) return emptyTile;
+          if (!trees && !canopy) return emptyTile;
           const placement = placeTileflowTrees(
-            {...(trees ? {trees} : {}), ...(rows ? {rows} : {}), ...(canopy ? {canopy} : {})},
+            {...(trees ? {trees} : {}), ...(canopy ? {canopy} : {})},
             {
               tile,
               tileMetres,
@@ -296,7 +293,6 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     tiles.push(
       make(described.source, {
         tree: described.layers.tree,
-        ...(described.layers.treeRow ? {treeRow: described.layers.treeRow} : {}),
         ...(canopyElsewhere || !described.layers.canopy ? {} : {canopy: described.layers.canopy}),
       }),
     );

@@ -3,6 +3,11 @@ import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applyCircleStyle} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {zoom} from '../../cartography/values';
+import {
+  tileflowDefaultUnknownTreeForms,
+  type TileflowVegetation3D,
+  tileflowWorldTreeFields,
+} from '../../trees-3d';
 import type {TileflowResolvedModuleConfig} from '../resolved';
 import type {
   TileflowVegetationModuleConfig,
@@ -41,6 +46,7 @@ export function compileVegetation(
         barkColor: context.colors.vegetation.tree.bark,
         broadleafColors: context.colors.vegetation.tree.broadleaf,
         coniferColors: context.colors.vegetation.tree.conifer,
+        palmColors: context.colors.vegetation.tree.palm,
         crownScale: 1,
         heightScale: 1,
       },
@@ -83,4 +89,56 @@ export function compileVegetation(
       target: 'vegetation.trees',
     },
   ];
+}
+
+/**
+ * How a map's 3D trees look and where their data is, for the renderer that stands them: undefined
+ * when vegetation is off, flat, or the data has no trees.
+ */
+export function tileflowVegetationDescription(
+  request: TileflowResolvedModuleConfig<TileflowVegetationModuleConfig> | undefined,
+  context: TileflowDomainCompileContext,
+): TileflowVegetation3D | undefined {
+  const {schema} = context.data;
+  if (request?.enabled === false || (request?.mode ?? '3d') !== '3d' || !schema.layers.tree)
+    return undefined;
+  const tree = context.colors.vegetation.tree;
+  const style = request?.threeDimensional ?? {};
+  const colours = (value: unknown, fallback: readonly string[]) =>
+    Array.isArray(value) && value.length > 0 && value.every((entry) => typeof entry === 'string')
+      ? (value as string[])
+      : [...fallback];
+  const number = (value: unknown) => (typeof value === 'number' && value > 0 ? value : 1);
+  // Source, layers and fields are the data's semantic references here; the compiler binds them to
+  // the physical names with the rest of the style.
+  const field = (name: keyof typeof schema.fields, fallback: string) =>
+    (schema.fields[name] ?? fallback) as string;
+  return {
+    source: context.data.sourceId,
+    layers: {
+      tree: schema.layers.tree,
+      ...(schema.layers.canopy ? {canopy: schema.layers.canopy} : {}),
+    },
+    fields: {
+      ...tileflowWorldTreeFields,
+      height: field('height', tileflowWorldTreeFields.height),
+      diameterCrown: field('diameterCrown', tileflowWorldTreeFields.diameterCrown),
+      genus: field('genus', tileflowWorldTreeFields.genus),
+      species: field('species', tileflowWorldTreeFields.species),
+      leafType: field('leafType', tileflowWorldTreeFields.leafType),
+      canopyRank: field('canopyRank', tileflowWorldTreeFields.canopyRank),
+      canopyClearance: field('canopyClearanceAtZoom15', tileflowWorldTreeFields.canopyClearance),
+      canopyCover: field('canopyCoverPercent', tileflowWorldTreeFields.canopyCover),
+    },
+    colors: {
+      bark: typeof style.barkColor === 'string' ? style.barkColor : tree.bark,
+      broadleaf: colours(style.broadleafColors, tree.broadleaf),
+      conifer: colours(style.coniferColors, tree.conifer),
+      palm: colours(style.palmColors, tree.palm),
+    },
+    heightScale: number(style.heightScale),
+    crownScale: number(style.crownScale),
+    unknownForms: style.unknownForms ?? tileflowDefaultUnknownTreeForms,
+    regions: style.regions ?? [],
+  };
 }

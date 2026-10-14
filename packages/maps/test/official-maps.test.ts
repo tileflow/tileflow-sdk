@@ -7,6 +7,7 @@ import {
   defineMap,
   inferTileflowDataRequirements,
   openMapTiles,
+  readTileflowVegetation3D,
   resolveMap,
   vectorTiles,
 } from '@tileflow/core';
@@ -970,6 +971,15 @@ test('Streets keeps its runtime-toggle geometry and business surface in the comp
   assert.equal(trees.type, 'circle');
   assert.equal(trees.metadata?.['tileflow:vegetation-mode'], '3d');
   assert.equal(trees.metadata?.['tileflow:vegetation-fallback'], 'flat-circle');
+  // The 3D trees' description, bound to the style's own source and source layers.
+  const vegetation = readTileflowVegetation3D(style.metadata);
+  assert.ok(vegetation, 'Streets lost its 3D tree description');
+  assert.equal(vegetation.source, trees.source);
+  assert.equal(vegetation.layers.tree, trees['source-layer']);
+  assert.equal(vegetation.fields.leafType, 'leaf_type');
+  assert.equal(vegetation.colors.broadleaf.length, 4);
+  assert.equal(vegetation.colors.palm.length, 3);
+  assert.deepEqual(vegetation.regions, []);
 
   const businessArea = layerForTarget('land.render.businessArea');
   assert.ok(businessArea, 'Streets lost its business land-use surface');

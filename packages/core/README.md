@@ -165,6 +165,8 @@ they hold; it shows, hides and grows them without laying out any source; see
 `createTileflowStreetLights` lights the streets as the sun sets, from the lamps and lit streets the
 map's data holds; see
 [street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md).
+`createTileflowTrees3D` stands the map's trees in 3D in the same light; see
+[3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md).
 
 The semantic domains are `land`, `water`, `nautical`, `roads`, `buildings`, `boundaries`, `labels`,
 `poi`, `aeroways`, `transit`, `vegetation`, `addresses`, and `landforms`. Style stable geographic
@@ -301,6 +303,7 @@ revision; prefer the installed copy when working with an older release.
 - [Sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md)
 - [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md)
 - [Street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md)
+- [3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md)
 - [Data is separate from design](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/data-is-separate-from-design.md)
 - [Capture scenes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-scenes.md)
 - [Capture shots](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-shots.md)

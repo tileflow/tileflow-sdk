@@ -413,6 +413,17 @@ test('accepts detailed cartographic module styles and their optional data bindin
       }),
     /heightScale/,
   );
+  const trees = (threeDimensional: object) =>
+    parseDesign({modules: {vegetation: vegetation({mode: '3d', threeDimensional} as never)}});
+  assert.doesNotThrow(() =>
+    trees({regions: [{bounds: [-81, 24.4, -79.8, 26.9], unknownForms: {palm: 3, round: 1}}]}),
+  );
+  assert.throws(() => trees({unknownForms: {oak: 1}}), /unknownForms/);
+  assert.throws(() => trees({unknownForms: {palm: 0}}), /weight above 0/);
+  assert.throws(
+    () => trees({regions: [{bounds: [0, 50, 1, 40], unknownForms: {palm: 1}}]}),
+    /south below north/,
+  );
 });
 
 test('accepts category-safe theme values, expressions, and zoom ramps in style slots', () => {

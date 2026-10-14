@@ -1420,6 +1420,21 @@ const nauticalModuleSchema = z
   })
   .strict();
 
+// Relative weights of tree forms, at least one above zero.
+const treeFormMixSchema = z
+  .object({
+    round: z.number().finite().min(0).optional(),
+    open: z.number().finite().min(0).optional(),
+    tall: z.number().finite().min(0).optional(),
+    conifer: z.number().finite().min(0).optional(),
+    columnar: z.number().finite().min(0).optional(),
+    palm: z.number().finite().min(0).optional(),
+  })
+  .strict()
+  .refine((mix) => Object.values(mix).some((weight) => (weight ?? 0) > 0), {
+    message: 'Expected at least one tree form with a weight above 0',
+  });
+
 const modulesSchema = z
   .object({
     addresses: addressesModuleSchema.optional(),
@@ -1445,6 +1460,29 @@ const modulesSchema = z
             barkColor: themeColorValueSchema.optional(),
             broadleafColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
             coniferColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
+            palmColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
+            unknownForms: treeFormMixSchema.optional(),
+            regions: z
+              .array(
+                z
+                  .object({
+                    bounds: z
+                      .tuple([
+                        z.number().finite().min(-180).max(180),
+                        z.number().finite().min(-90).max(90),
+                        z.number().finite().min(-180).max(180),
+                        z.number().finite().min(-90).max(90),
+                      ])
+                      .refine(([, south, , north]) => south <= north, {
+                        message:
+                          'Expected bounds as [west, south, east, north] with south below north',
+                      }),
+                    unknownForms: treeFormMixSchema,
+                  })
+                  .strict(),
+              )
+              .max(16)
+              .optional(),
             crownScale: z
               .union([
                 z.number().finite().positive().max(10),

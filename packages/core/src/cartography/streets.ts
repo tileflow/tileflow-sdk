@@ -5,6 +5,7 @@ import {resolveTileflowData} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
 import {resolveMarine} from '../marine';
+import {tileflowVegetationDescription} from '../modules/vegetation/compiler';
 import {
   insertTileflowOverlays,
   resolveTileflowHostedSources,
@@ -28,6 +29,7 @@ import {
   resolveTileflowTheme,
   TileflowThemeAuditError,
 } from '../themes';
+import {tileflowVegetationMetadata, tileflowVegetationMetadataKey} from '../trees-3d';
 import type {MapLibreStyle} from '../types';
 import {
   createTileflowCompilationFailure,
@@ -80,7 +82,7 @@ import {
   compileRenderStacks,
   type TileflowRenderStackModule,
 } from './render-stack';
-import {createSemanticDataView} from './semantic-bindings';
+import {bindSemanticReferences, createSemanticDataView} from './semantic-bindings';
 import {tileflowSemanticCompilerIdentity} from './semantic-compiler';
 
 export type TileflowSemanticMapConfig = ResolvedTileflowMap;
@@ -286,6 +288,12 @@ function compileSemanticStyleInternal(
   const modules = runCompilationPhase('domains', () => resolveSemanticModules(config.modules));
   const compiledDomains = runCompilationPhase('domains', () =>
     compileSemanticDomains(modules, context),
+  );
+  const vegetation3D = runCompilationPhase('domains', () =>
+    tileflowVegetationDescription(
+      modules.vegetation as Parameters<typeof tileflowVegetationDescription>[0],
+      context as Parameters<typeof tileflowVegetationDescription>[1],
+    ),
   );
   const renderStackModules = Object.values(modules).filter(
     (module): module is typeof module & TileflowRenderStackModule =>
@@ -534,6 +542,13 @@ function compileSemanticStyleInternal(
       [tileflowRouteMetadataKey]: tileflowRouteMetadata(resolveTileflowRouteInks(resolvedTheme)),
       ...(resolvedTheme.sun
         ? {[tileflowSunMetadataKey]: tileflowSunMetadata(resolvedTheme.sun)}
+        : {}),
+      ...(vegetation3D
+        ? {
+            [tileflowVegetationMetadataKey]: tileflowVegetationMetadata(
+              bindSemanticReferences(vegetation3D, semanticData),
+            ),
+          }
         : {}),
       'tileflow:data': data.identity,
       'tileflow:sources': sourceIdentities,

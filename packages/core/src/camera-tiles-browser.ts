@@ -2,6 +2,7 @@
 // lights): the nearest round a point ahead of the centre, as far as the view reaches, read with the
 // map's own tile address and request rules and built a few milliseconds per frame. Layers reading
 // the same source share each tile's download.
+import {fetchTileflowPmtilesTile, isTileflowPmtilesUrl} from './pmtiles-browser';
 import {
   createTileflowTileReader,
   readTileflowMapTileSource,
@@ -286,11 +287,16 @@ async function sharedTileFetch(url: string, init: RequestInit): Promise<Response
   const now = Date.now();
   let entry = shared.get(key);
   if (!entry || now - entry.at > sharedFor) {
-    // The download itself is never cancelled: another layer may be waiting for it.
-    const bytes = fetch(url, {
-      ...(init.headers ? {headers: init.headers} : {}),
-      ...(init.credentials ? {credentials: init.credentials} : {}),
-    }).then(async (response) => ({
+    // The download itself is never cancelled: another layer may be waiting for it. A source served
+    // from a Tileflow PMTiles archive is read through Core's own PMTiles protocol.
+    const bytes = (
+      isTileflowPmtilesUrl(url)
+        ? fetchTileflowPmtilesTile(url)
+        : fetch(url, {
+            ...(init.headers ? {headers: init.headers} : {}),
+            ...(init.credentials ? {credentials: init.credentials} : {}),
+          })
+    ).then(async (response) => ({
       status: response.status,
       body: response.ok ? await response.arrayBuffer() : new ArrayBuffer(0),
     }));

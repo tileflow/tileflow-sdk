@@ -634,3 +634,12 @@ export {
   tileflowIconMetadataFileName,
   type TileflowIconAppearance,
 } from './icon-appearance';
+export {
+  readTileflowVegetation3D,
+  tileflowTreeForms,
+  tileflowVegetationMetadataKey,
+  type TileflowTreeForm,
+  type TileflowTreeFormMix,
+  type TileflowTreeRegion,
+  type TileflowVegetation3D,
+} from './trees-3d';

@@ -122,6 +122,58 @@ bounds in degrees, the first region holding a tree applying. They are a choice o
 they never change a tree whose data gives its form, and as mapping improves they apply to fewer
 trees.
 
+## Your own trees
+
+A map can draw a form with its own models. Put glTF binaries (`.glb`) in a directory, declare it in
+the map's `models`, and name the models a form draws by their file names:
+
+<!-- docs:check -->
+
+```ts
+import {defineMap, vegetation} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'palm-coast',
+  name: 'Palm coast',
+  version: 1,
+  extends: streets,
+  // ./models holds sabal-palm.glb and royal-palm.glb, and sabal-palm.far.glb for far trees.
+  models: ['./models'],
+  modules: {
+    vegetation: vegetation({
+      mode: '3d',
+      threeDimensional: {
+        forms: {palm: {models: ['sabal-palm', 'royal-palm'], heightScale: 1.1}},
+      },
+    }),
+  },
+});
+```
+
+Each tree of the form draws one of its models, one to four, by its stable hash, so a palm keeps its
+model wherever it is read. The data still chooses each tree's form and size: a model replaces how a
+form looks, not which trees take it.
+
+How to prepare a model:
+
+- **Materials name the parts.** Name each material `bark`, `leaves`, `fronds` or `stem` (an
+  exporter's `.001` suffix is ignored). Each part takes its theme colours, as Core's trees do; the
+  material's colour and any vertex colours set how light or dark each part of the model is within
+  them, so the model follows the theme from day to night.
+- **The origin is where the trunk meets the ground**, with the tree above it. Tileflow stands the
+  model as a unit tree: its top is the tree's height, and its widest leaf half its crown.
+- **Budgets.** A model has at most 1,000 triangles and 4,096 vertices; `<id>.far.glb`, drawn
+  beyond the nearest tiles, at most 120 triangles. Without a far model, the form's own far tree
+  stands in. A map draws at most 16 models.
+- **What is read.** Triangles of the default scene with their node transforms; textures,
+  animations and compressed geometry (Draco or meshopt) are not. Export without compression.
+
+`tileflow preview` and every build read the models, report a problem with the file and what to
+change, and watch the directories. The models travel inside the compiled style, so they need no
+files of their own when the map is deployed. A later directory's model replaces an earlier one of
+the same name; omitting `models` inherits them, and `[]` declares none.
+
 ## Light and shadows
 
 The light comes from `controller.getSun()`: the theme's sun, mixed during a blend, or the sun an
@@ -155,3 +207,4 @@ when the camera moves. Over the Champ de Mars in Paris, where OpenStreetMap maps
 - Mercator only; the layer draws nothing below its `minzoom`.
 - No terrain: trees stand on flat ground.
 - No wind or seasons; one form per tree.
+- Models replace a form's look; a model per genus or species is not available.

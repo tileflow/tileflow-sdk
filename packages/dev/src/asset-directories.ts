@@ -8,7 +8,7 @@ import {
   type TileflowPackageDirectory,
 } from '@tileflow/core';
 
-export type TileflowAssetDirectoryKind = 'fonts' | 'icons';
+export type TileflowAssetDirectoryKind = 'fonts' | 'icons' | 'models';
 
 export type ResolvedTileflowAssetDirectory = {
   authoring: TileflowIconDirectory;

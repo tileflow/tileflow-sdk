@@ -32,7 +32,12 @@ import {
   resolveTileflowTheme,
   TileflowThemeAuditError,
 } from '../themes';
-import {tileflowVegetationMetadata, tileflowVegetationMetadataKey} from '../trees-3d';
+import {
+  type TileflowVegetation3D,
+  tileflowVegetationMetadata,
+  tileflowVegetationMetadataKey,
+} from '../trees-3d';
+import type {TileflowTreeModel} from '../trees-3d-model';
 import type {MapLibreStyle} from '../types';
 import {
   createTileflowCompilationFailure,
@@ -95,6 +100,8 @@ export type TileflowPreparedMapAssets = {
     ids: readonly string[];
     sprite: string;
   };
+  /** The map's own 3D models by id, prepared from its `models` directories. */
+  models?: Readonly<Record<string, TileflowTreeModel>>;
 };
 
 export type TileflowSemanticCompileOptions = {
@@ -293,9 +300,13 @@ function compileSemanticStyleInternal(
     compileSemanticDomains(modules, context),
   );
   const vegetation3D = runCompilationPhase('domains', () =>
-    tileflowVegetationDescription(
-      modules.vegetation as Parameters<typeof tileflowVegetationDescription>[0],
-      context as Parameters<typeof tileflowVegetationDescription>[1],
+    withPreparedTreeModels(
+      tileflowVegetationDescription(
+        modules.vegetation as Parameters<typeof tileflowVegetationDescription>[0],
+        context as Parameters<typeof tileflowVegetationDescription>[1],
+      ),
+      config,
+      options.preparedAssets,
     ),
   );
   const renderStackModules = Object.values(modules).filter(
@@ -705,6 +716,36 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function resolveGlyphs(config: ResolvedTileflowMap): string | undefined {
   if (config.fonts !== undefined) return undefined;
   return config.glyphs?.url;
+}
+
+/**
+ * The tree description with the models its forms draw, from the map's prepared models; a model the
+ * map does not prepare fails the compile, as a missing icon does.
+ */
+function withPreparedTreeModels(
+  vegetation: TileflowVegetation3D | undefined,
+  config: ResolvedTileflowMap,
+  prepared: TileflowPreparedMapAssets | undefined,
+): TileflowVegetation3D | undefined {
+  if (!vegetation) return undefined;
+  const referenced = [
+    ...new Set(Object.values(vegetation.forms).flatMap((form) => form?.models ?? [])),
+  ].sort();
+  if (referenced.length === 0) return vegetation;
+  const available = prepared?.models ?? {};
+  const missing = referenced.filter((id) => !Object.hasOwn(available, id));
+  if (missing.length > 0) {
+    const authoring = config.models?.length
+      ? `Add ${missing.map((id) => `${id}.glb`).join(', ')} to a map.models directory, or run the Node build so the directories are prepared.`
+      : 'Declare map.models with directories containing those .glb files.';
+    throw new Error(
+      `Tileflow map "${config.id}" draws missing 3D models: ${missing.join(', ')}. ${authoring}`,
+    );
+  }
+  return {
+    ...vegetation,
+    models: Object.fromEntries(referenced.map((id) => [id, available[id]!])),
+  };
 }
 
 function assertPreparedIconReferences(

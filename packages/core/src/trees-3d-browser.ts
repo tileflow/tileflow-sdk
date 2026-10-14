@@ -20,12 +20,19 @@ import {
   readTileflowVegetation3D,
   tileflowTreeBytes,
   type TileflowTreeForm,
+  tileflowTreeFormProportion,
   tileflowTreeForms,
   type TileflowTreePlacement,
   type TileflowVegetation3D,
   tileflowVegetationMetadataKey,
 } from './trees-3d';
-import {type TileflowTreeLevel, tileflowTreeMeshes, tileflowTreeVertexBytes} from './trees-3d-mesh';
+import {
+  type TileflowTreeLevel,
+  tileflowTreeMeshes,
+  tileflowTreeModelMeshOf,
+  tileflowTreeVertexBytes,
+} from './trees-3d-mesh';
+import {decodeTileflowTreeModel} from './trees-3d-model';
 import {
   tileflowTreeAttributes,
   tileflowTreeDepthFragment,
@@ -115,9 +122,18 @@ const leafSlots = 4;
 const finishes = {faceted: {round: 0.5}, smooth: {round: 1}, toon: {round: 0.3}} as const;
 
 type Program = {program: WebGLProgram; uniforms: Record<string, WebGLUniformLocation | null>};
+type Mesh = {buffer: WebGLBuffer; count: number};
+type Drawing = {
+  vao: WebGLVertexArrayObject;
+  /** The mesh's vertices. */
+  count: number;
+  /** How much wider or narrower than the form's own trees the model stands. */
+  crown: number;
+};
 type TreeTile = {
   placement: TileflowTreePlacement;
-  gl?: {vbo: WebGLBuffer; vaos: Map<string, WebGLVertexArrayObject>};
+  /** A vertex array per form, model and level (`round:0:near`). */
+  gl?: {vbo: WebGLBuffer; vaos: Map<string, Drawing>};
 };
 type ProjectionArgs = {
   getProjectionData(params: {
@@ -152,9 +168,9 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   let gl: WebGL2RenderingContext | undefined;
   let programs: Partial<Record<'trees' | 'depth' | 'ground' | 'edges', Program>> = {};
   let variant: string | undefined;
-  let meshes:
-    | Record<TileflowTreeForm, Record<TileflowTreeLevel, {buffer: WebGLBuffer; count: number}>>
-    | undefined;
+  let meshes: Record<TileflowTreeForm, Record<TileflowTreeLevel, Mesh>> | undefined;
+  // The map's own models, uploaded once each, by level and prepared text, with their proportion.
+  const modelMeshes = new Map<string, (Mesh & {proportion: number}) | undefined>();
   let ground: {vao: WebGLVertexArrayObject; vbo: WebGLBuffer} | undefined;
   let disposed = false;
   let drawnLast = 0;
@@ -219,6 +235,8 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
           described.unknownForms,
           described.regions,
           options.canopySource,
+          Object.entries(described.forms).map(([form, own]) => [form, own?.models]),
+          described.models,
         ])
       : undefined;
     if (key === tilesKey) return tiles;
@@ -255,6 +273,12 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
               fields: described.fields,
               unknownForms: described.unknownForms,
               regions: described.regions,
+              variants: Object.fromEntries(
+                Object.entries(described.forms).map(([form, own]) => [
+                  form,
+                  own?.models?.length ?? 1,
+                ]),
+              ),
             },
           );
           return placement.trees.length > 0 ? {placement} : emptyTile;
@@ -284,7 +308,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
 
   function release(context: WebGL2RenderingContext, tile: TreeTile): void {
     if (!tile.gl) return;
-    for (const vao of tile.gl.vaos.values()) context.deleteVertexArray(vao);
+    for (const {vao} of tile.gl.vaos.values()) context.deleteVertexArray(vao);
     context.deleteBuffer(tile.gl.vbo);
     tile.gl = undefined;
   }
@@ -313,22 +337,56 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
         const vbo = context.createBuffer()!;
         context.bindBuffer(context.ARRAY_BUFFER, vbo);
         context.bufferData(context.ARRAY_BUFFER, tile.placement.trees, context.STATIC_DRAW);
-        const vaos = new Map<string, WebGLVertexArrayObject>();
-        for (const form of tileflowTreeForms) {
-          const range = tile.placement.forms[form];
-          if (range.count === 0) continue;
-          for (const level of ['near', 'far'] as const) {
-            const vao = context.createVertexArray()!;
-            context.bindVertexArray(vao);
-            bindMesh(context, meshes[form][level].buffer);
-            bindTrees(context, vbo, range.start * tileflowTreeBytes);
-            vaos.set(`${form}:${level}`, vao);
-          }
-        }
+        const vaos = new Map<string, Drawing>();
+        for (const form of tileflowTreeForms)
+          tile.placement.forms[form].variants.forEach((range, model) => {
+            if (range.count === 0) return;
+            // A model keeps the proportions its author gave it, near and far.
+            const own = modelOf(context, form, model, 'near');
+            const crown = own ? own.proportion / tileflowTreeFormProportion(form) : 1;
+            for (const level of ['near', 'far'] as const) {
+              const mesh = modelOf(context, form, model, level) ?? meshes![form][level];
+              const vao = context.createVertexArray()!;
+              context.bindVertexArray(vao);
+              bindMesh(context, mesh.buffer);
+              bindTrees(context, vbo, range.start * tileflowTreeBytes);
+              vaos.set(`${form}:${model}:${level}`, {vao, count: mesh.count, crown});
+            }
+          });
         context.bindVertexArray(null);
         tile.gl = {vbo, vaos};
         generation += 1;
       }
+  }
+
+  /**
+   * The map's own model a form's trees draw for that model and level, or undefined where Core's
+   * own tree stands in: the form has no model, the model no far version, or it cannot be read.
+   */
+  function modelOf(
+    context: WebGL2RenderingContext,
+    form: TileflowTreeForm,
+    model: number,
+    level: TileflowTreeLevel,
+  ): (Mesh & {proportion: number}) | undefined {
+    const described = vegetation();
+    const id = described?.forms[form]?.models?.[model];
+    const text = id === undefined ? undefined : described?.models[id]?.[level];
+    if (text === undefined) return undefined;
+    const key = `${level}:${text}`;
+    if (!modelMeshes.has(key)) {
+      const decoded = decodeTileflowTreeModel(text, level);
+      let mesh: (Mesh & {proportion: number}) | undefined;
+      if (decoded) {
+        const built = tileflowTreeModelMeshOf(decoded);
+        const buffer = context.createBuffer()!;
+        context.bindBuffer(context.ARRAY_BUFFER, buffer);
+        context.bufferData(context.ARRAY_BUFFER, built.vertices, context.STATIC_DRAW);
+        mesh = {buffer, count: built.count, proportion: decoded.proportion};
+      }
+      modelMeshes.set(key, mesh);
+    }
+    return modelMeshes.get(key);
   }
 
   function bindMesh(context: WebGL2RenderingContext, buffer: WebGLBuffer): void {
@@ -528,14 +586,14 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       const sizes = colours().sizes;
       for (const {x, y, set, value} of drawn()) {
         context.uniform2f(u.u_offset!, ...frame.offsetOf({x, y}, set.zoom));
-        for (const form of tileflowTreeForms) {
-          const range = value.placement.forms[form];
-          const vao = value.gl!.vaos.get(`${form}:far`);
-          if (range.count === 0 || !vao) continue;
-          context.uniform2fv(u.u_size_scale!, sizes[form]);
-          context.bindVertexArray(vao);
-          context.drawArraysInstanced(context.TRIANGLES, 0, meshes[form].far.count, range.count);
-        }
+        for (const form of tileflowTreeForms)
+          value.placement.forms[form].variants.forEach((range, model) => {
+            const drawing = value.gl!.vaos.get(`${form}:${model}:far`);
+            if (range.count === 0 || !drawing) return;
+            context.uniform2f(u.u_size_scale!, sizes[form][0]!, sizes[form][1]! * drawing.crown);
+            context.bindVertexArray(drawing.vao);
+            context.drawArraysInstanced(context.TRIANGLES, 0, drawing.count, range.count);
+          });
       }
     },
   };
@@ -602,9 +660,8 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       y: number;
       offset: number[];
       form: TileflowTreeForm;
-      level: TileflowTreeLevel;
       instances: number;
-      vao: WebGLVertexArrayObject;
+      drawing: Drawing;
     }[] = [];
     for (const {x, y, set, value} of entries) {
       project(context, program, args, x, y);
@@ -624,22 +681,24 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       const level: TileflowTreeLevel = distance < near * 0.45 ? 'near' : 'far';
       const rank = rankOf(distance);
       for (const form of tileflowTreeForms) {
-        const range = value.placement.forms[form];
-        const instances = range.upTo[rank] ?? 0;
-        const vao = value.gl!.vaos.get(`${form}:${level}`);
-        if (instances === 0 || !vao) continue;
         const leaves =
           form === 'palm'
             ? palette.palm
             : form === 'conifer' || form === 'columnar'
               ? palette.conifer
               : palette.broadleaf;
-        context.uniform3fv(u.u_leaves!, leaves.flat());
-        context.uniform2fv(u.u_size_scale!, palette.sizes[form]);
-        context.bindVertexArray(vao);
-        context.drawArraysInstanced(context.TRIANGLES, 0, meshes[form][level].count, instances);
-        count += instances;
-        draws.push({x, y, offset, form, level, instances, vao});
+        value.placement.forms[form].variants.forEach((range, model) => {
+          const instances = range.upTo[rank] ?? 0;
+          const drawing = value.gl!.vaos.get(`${form}:${model}:${level}`);
+          if (instances === 0 || !drawing) return;
+          context.uniform3fv(u.u_leaves!, leaves.flat());
+          const size = palette.sizes[form];
+          context.uniform2f(u.u_size_scale!, size[0]!, size[1]! * drawing.crown);
+          context.bindVertexArray(drawing.vao);
+          context.drawArraysInstanced(context.TRIANGLES, 0, drawing.count, instances);
+          count += instances;
+          draws.push({x, y, offset, form, instances, drawing});
+        });
       }
     }
     drawnLast = count;
@@ -685,14 +744,10 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
             (channel) => palette.edgeColor[channel]! * own + leaves[0]![channel]! * 0.4 * (1 - own),
           ),
         );
-        context.uniform2fv(e.u_size_scale!, palette.sizes[draw.form]);
-        context.bindVertexArray(draw.vao);
-        context.drawArraysInstanced(
-          context.TRIANGLES,
-          0,
-          meshes[draw.form][draw.level].count,
-          draw.instances,
-        );
+        const size = palette.sizes[draw.form];
+        context.uniform2f(e.u_size_scale!, size[0]!, size[1]! * draw.drawing.crown);
+        context.bindVertexArray(draw.drawing.vao);
+        context.drawArraysInstanced(context.TRIANGLES, 0, draw.drawing.count, draw.instances);
       }
       context.disable(context.CULL_FACE);
     }
@@ -871,6 +926,8 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       if (meshes)
         for (const levels of Object.values(meshes))
           for (const mesh of Object.values(levels)) context.deleteBuffer(mesh.buffer);
+      for (const mesh of modelMeshes.values()) if (mesh) context.deleteBuffer(mesh.buffer);
+      modelMeshes.clear();
       if (ground) {
         context.deleteVertexArray(ground.vao);
         context.deleteBuffer(ground.vbo);

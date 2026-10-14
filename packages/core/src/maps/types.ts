@@ -14,7 +14,7 @@ import type {
 import {tileflowPortableIdSchema} from '../portable-identity';
 import type {TileflowTheme, TileflowThemeName} from '../themes';
 import type {TileflowProjection, TileflowTerrain, TileflowViewConfig} from '../types';
-import type {TileflowFontDirectory, TileflowGlyphs} from './assets';
+import type {TileflowFontDirectory, TileflowGlyphs, TileflowModelDirectory} from './assets';
 import type {TileflowAuthoringModules} from './operations';
 
 /** Portable, filesystem-safe identity shared by maps and their leaf-owned scenes. */
@@ -56,6 +56,11 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
   icons?: readonly TileflowIconSource[];
   /** Independent Bathymetry and Nautical products composed by the compiler. */
   marine?: TileflowMarine;
+  /**
+   * Directories of the map's own 3D models, glTF binaries (`.glb`) named by id, such as the trees a
+   * vegetation form draws. Omission inherits; declaration replaces; [] means no models.
+   */
+  models?: readonly TileflowModelDirectory[];
   /** Semantic domains, expressed directly or with explicit refine/disable operations. */
   modules?: TileflowAuthoringModules;
   /** Keyed MapLibre overlay units. Omission inherits; entries replace atomically. */

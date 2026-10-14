@@ -130,9 +130,15 @@ export function tileflowVegetationDescription(
     forms: Object.fromEntries(
       Object.entries(style.forms ?? {}).map(([form, own]) => [
         form,
-        {heightScale: number(own?.heightScale), crownScale: number(own?.crownScale)},
+        {
+          heightScale: number(own?.heightScale),
+          crownScale: number(own?.crownScale),
+          ...(own?.models?.length ? {models: [...own.models]} : {}),
+        },
       ]),
     ),
+    // Filled by the compiler from the map's prepared models.
+    models: {},
     finish: style.finish ?? 'faceted',
     edges: (() => {
       const edges = toMapLibreStyleValue((style.edges ?? 0) as never);

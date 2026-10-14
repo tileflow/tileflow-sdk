@@ -442,6 +442,9 @@ export async function createTileflowArtifactPlan(
                   ...(prepared.mapIconCompositions[mapName]
                     ? {iconComposition: prepared.mapIconCompositions[mapName]}
                     : {}),
+                  ...(prepared.mapModelSources?.[mapName]?.length
+                    ? {models: prepared.mapModelSources[mapName]}
+                    : {}),
                 },
                 styles: style,
               },

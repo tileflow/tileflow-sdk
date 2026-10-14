@@ -55,6 +55,7 @@ import {
   isTileflowContourDensityWithinBudget,
 } from './terrain/contour-protocol';
 import {resolveTileflowTheme, type TileflowTheme, tileflowThemeLimits} from './themes';
+import {tileflowTreeModelIdPattern} from './trees-3d';
 import {tileflowPoiCategories, type ValidationMessage} from './types';
 
 /** Structured schema failure preserved for CLI/editor diagnostics. */
@@ -1506,6 +1507,22 @@ const modulesSchema = z
                   .object({
                     crownScale: boundedThemeNumberSchema(0.1, 10).optional(),
                     heightScale: boundedThemeNumberSchema(0.1, 10).optional(),
+                    models: z
+                      .array(
+                        z
+                          .string()
+                          .max(64)
+                          .regex(
+                            tileflowTreeModelIdPattern,
+                            'Expected a model id: its .glb file name in lowercase letters, digits and hyphens',
+                          ),
+                      )
+                      .min(1)
+                      .max(4)
+                      .refine((ids) => new Set(ids).size === ids.length, {
+                        message: 'Expected each model once',
+                      })
+                      .optional(),
                   })
                   .strict(),
               )
@@ -1973,6 +1990,7 @@ const iconDirectoriesSchema = z
     }
   });
 const fontDirectoriesSchema = z.array(assetDirectorySchema).max(16);
+const modelDirectoriesSchema = z.array(assetDirectorySchema).max(16);
 const fontStacksSchema = z
   .array(
     z
@@ -2253,6 +2271,7 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
     icons: iconDirectoriesSchema.optional(),
     id: tileflowMapIdSchema,
     marine: marineSchema.optional(),
+    models: modelDirectoriesSchema.optional(),
     modules: modulesSchema.optional(),
     name: z.string().trim().min(1),
     overlays: overlaysSchema.optional(),

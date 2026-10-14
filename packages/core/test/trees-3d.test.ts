@@ -10,7 +10,16 @@ import {
   tileflowVegetationMetadataKey,
 } from '../src/trees-3d';
 import {createTileflowTrees3D, tileflowTrees3DLayerId} from '../src/trees-3d-browser';
-import {tileflowTreeMeshes, tileflowTreeVertexBytes} from '../src/trees-3d-mesh';
+import {
+  tileflowTreeMeshes,
+  tileflowTreeModelMeshOf,
+  tileflowTreeVertexBytes,
+} from '../src/trees-3d-mesh';
+import {
+  decodeTileflowTreeModel,
+  encodeTileflowTreeModel,
+  type TileflowTreeModelMesh,
+} from '../src/trees-3d-model';
 import type {TileflowTileLayer} from '../src/vector-tile-decode';
 
 // A z15 tile over Miami Beach, 4096 metres wide so a unit of 4096 is a metre.
@@ -416,4 +425,109 @@ test('the 3D trees stand in for the style flat trees while they are shown', asyn
   await trees.show({transition: {duration: 0}});
   trees.dispose();
   assert.equal(visibility.get('tileflow-vegetation-trees'), 'visible');
+});
+
+// A unit tree of two triangles: a bark stem and a leaf facing the sky.
+const model: TileflowTreeModelMesh = {
+  proportion: 0.4,
+  positions: [0, 0, 0, 0.02, 0, 0.5, -0.02, 0, 0.5, -0.5, -0.5, 0.8, 0.5, -0.5, 0.8, 0, 0.5, 1],
+  normals: [0, -1, 0, 0, -1, 0, 0, -1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1],
+  parts: [0, 0, 0, 1, 1, 1],
+  shades: [0, 0, 0, -1, 0.5, 1],
+  occlusion: [0.8, 0.8, 0.8, 0.4, 0.7, 1],
+  // The leaf is wound to face down; its normals say up.
+  indices: [0, 1, 2, 3, 5, 4],
+};
+
+test('a tree model encodes compactly and decodes as it was, within its limits', () => {
+  const text = encodeTileflowTreeModel(model, 'near');
+  // 12 bytes a vertex and 2 an index, after a 16-byte header, in base64.
+  assert.equal(text.length, Math.ceil((16 + 6 * 12 + 6 * 2) / 3) * 4);
+  const decoded = decodeTileflowTreeModel(text, 'near')!;
+  assert.equal(decoded.proportion, 0.4);
+  assert.deepEqual(decoded.parts, model.parts);
+  assert.deepEqual(decoded.indices, model.indices);
+  decoded.positions.forEach((value, index) =>
+    assert.ok(Math.abs(value - model.positions[index]!) < 1e-4),
+  );
+  decoded.shades.forEach((value, index) =>
+    assert.ok(Math.abs(value - model.shades[index]!) < 0.01),
+  );
+  assert.equal(decodeTileflowTreeModel('not a model', 'near'), undefined);
+  assert.equal(decodeTileflowTreeModel(text.slice(0, -4), 'near'), undefined);
+  assert.equal(decodeTileflowTreeModel(42, 'near'), undefined);
+  const many = {
+    ...model,
+    indices: Array.from({length: 121 * 3}, (_, index) => index % 6),
+  };
+  assert.throws(() => encodeTileflowTreeModel(many, 'far'), /1 to 120 triangles/);
+  assert.equal(decodeTileflowTreeModel(encodeTileflowTreeModel(many, 'near'), 'far'), undefined);
+  assert.throws(
+    () => encodeTileflowTreeModel({...model, parts: [0, 0, 0, 1, 1, 9]}, 'near'),
+    /no tree part/,
+  );
+});
+
+test('a model draws as Core’s trees do, each triangle facing the way its normals point', () => {
+  const mesh = tileflowTreeModelMeshOf(model);
+  assert.equal(mesh.count, 6);
+  const view = new DataView(mesh.vertices.buffer);
+  const at = (vertex: number, offset: number) => vertex * tileflowTreeVertexBytes + offset;
+  // The leaf's facet normal points up, as its normals do, so it was turned round.
+  assert.ok(view.getInt8(at(3, 14)) > 100);
+  assert.equal(mesh.vertices[at(3, 15)], 1);
+  // The model's own normal is kept as the round shape.
+  assert.ok(view.getInt8(at(3, 20)) > 100);
+});
+
+test('a form drawing several models gives each tree one, in ranges thinned by rank', () => {
+  const trees = layer(
+    Array.from({length: 300}, (_, index) => ({
+      geometry: [[100 + (index % 20) * 150, 100 + Math.floor(index / 20) * 200]],
+      properties: {leaf_type: 'palm'},
+    })),
+  );
+  const single = placeTileflowTrees({trees}, options);
+  assert.equal(single.forms.palm.variants.length, 1);
+  assert.deepEqual(single.forms.palm.variants[0], {
+    start: single.forms.palm.start,
+    count: single.forms.palm.count,
+    upTo: single.forms.palm.upTo,
+  });
+  const placement = placeTileflowTrees({trees}, {...options, variants: {palm: 3}});
+  const palm = placement.forms.palm;
+  assert.equal(palm.variants.length, 3);
+  assert.equal(
+    palm.variants.reduce((sum, range) => sum + range.count, 0),
+    palm.count,
+  );
+  for (const [index, range] of palm.variants.entries()) {
+    assert.ok(range.count > 50, 'each model draws a share of the palms');
+    assert.equal(range.upTo[15], range.count);
+    for (let tree = range.start; tree < range.start + range.count; tree += 1)
+      assert.equal(placement.trees[tree * tileflowTreeBytes + 14], index);
+    if (index > 0)
+      assert.equal(range.start, palm.variants[index - 1]!.start + palm.variants[index - 1]!.count);
+  }
+  // A tree keeps its model wherever it is read.
+  const again = placeTileflowTrees({trees}, {...options, variants: {palm: 3}});
+  assert.deepEqual(again.trees, placement.trees);
+});
+
+test('the description reads the models a map draws and drops references to missing ones', () => {
+  const near = encodeTileflowTreeModel(model, 'near');
+  const read = readTileflowVegetation3D({
+    [tileflowVegetationMetadataKey]: {
+      version: 1,
+      source: 'tileflow',
+      layers: {tree: 'tree'},
+      fields: {},
+      colors: {bark: '#554433', broadleaf: ['#335533'], conifer: ['#224422']},
+      forms: {palm: {models: ['royal-palm', 'missing', 'royal-palm']}, open: {models: ['missing']}},
+      models: {'royal-palm': {near}, 'Bad Id': {near}, broken: {far: near}},
+    },
+  })!;
+  assert.deepEqual(Object.keys(read.models), ['royal-palm']);
+  assert.deepEqual(read.forms.palm?.models, ['royal-palm']);
+  assert.equal(read.forms.open?.models, undefined);
 });

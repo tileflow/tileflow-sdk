@@ -292,6 +292,7 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     icons: 'icons',
     id: 'identity',
     marine: 'atomic',
+    models: 'atomic',
     modules: 'modules',
     name: 'identity',
     overlays: 'keyed-resources',

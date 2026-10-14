@@ -4,6 +4,7 @@
 // Crowns are clusters of faceted lobes, shaded between their facets and a round crown, so they read
 // as drawn trees rather than as models. It has no DOM dependency.
 import {type TileflowTreeForm, tileflowTreeForms} from './trees-3d';
+import type {TileflowTreeModelMesh} from './trees-3d-model';
 
 /**
  * Bytes per vertex: position (3 floats), facet normal (3 signed bytes), part, a lobe's shade (from
@@ -44,6 +45,59 @@ export function tileflowTreeMeshes(): Readonly<
       {near: pack(build(form, 'near')), far: pack(build(form, 'far'))},
     ]),
   ) as Record<TileflowTreeForm, Record<TileflowTreeLevel, TileflowTreeMesh>>;
+}
+
+/**
+ * A map's own model as the renderer draws it: its triangles unindexed, each with its facet normal
+ * beside the model's own normals as the round shape, and wound to face the way they point.
+ */
+export function tileflowTreeModelMeshOf(model: TileflowTreeModelMesh): TileflowTreeMesh {
+  const out: Builder = {
+    positions: [],
+    normals: [],
+    rounds: [],
+    parts: [],
+    shades: [],
+    occlusion: [],
+  };
+  const vertex = (index: number): Vec => [
+    model.positions[index * 3]!,
+    model.positions[index * 3 + 1]!,
+    model.positions[index * 3 + 2]!,
+  ];
+  const normal = (index: number): Vec =>
+    normalize([
+      model.normals[index * 3]!,
+      model.normals[index * 3 + 1]!,
+      model.normals[index * 3 + 2]!,
+    ]);
+  for (let at = 0; at + 2 < model.indices.length; at += 3) {
+    const corners = [model.indices[at]!, model.indices[at + 1]!, model.indices[at + 2]!] as const;
+    const points = corners.map(vertex) as [Vec, Vec, Vec];
+    const rounds = corners.map(normal) as [Vec, Vec, Vec];
+    // The facet faces the way the model's normals point, whatever its winding.
+    const wound = faceNormal(points);
+    const facet: Vec =
+      dot(wound, [
+        rounds[0][0] + rounds[1][0] + rounds[2][0],
+        rounds[0][1] + rounds[1][1] + rounds[2][1],
+        rounds[0][2] + rounds[1][2] + rounds[2][2],
+      ]) < 0
+        ? [-wound[0], -wound[1], -wound[2]]
+        : wound;
+    // A vertex's shade varies within its triangle; the triangle takes their mean.
+    const shade = corners.reduce((sum, index) => sum + model.shades[index]!, 0) / 3;
+    triangle(
+      out,
+      points,
+      [facet, facet, facet],
+      model.parts[corners[0]]!,
+      shade,
+      corners.map((index) => model.occlusion[index]!) as [number, number, number],
+      rounds,
+    );
+  }
+  return pack(out);
 }
 
 function build(form: TileflowTreeForm, level: TileflowTreeLevel): Builder {

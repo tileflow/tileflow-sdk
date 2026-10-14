@@ -45,6 +45,7 @@ export type {
   TileflowEffectiveFontSourceIdentity,
   TileflowEffectiveIconSourceIdentity,
   TileflowEffectiveMapSourceAssets,
+  TileflowEffectiveModelSourceIdentity,
   TileflowHashableBuildAsset,
   TileflowMapBuildInput,
   TileflowMapBuildLineageEntry,

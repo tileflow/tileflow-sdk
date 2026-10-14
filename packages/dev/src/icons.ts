@@ -32,6 +32,7 @@ import {
 import type {
   TileflowBuildCatalog,
   TileflowEffectiveIconSourceIdentity,
+  TileflowEffectiveModelSourceIdentity,
   TileflowPreparedMapAssets,
 } from '@tileflow/core/build';
 import {
@@ -52,6 +53,7 @@ import {
   type TileflowSpriteIndex as SpriteIndex,
   type TileflowRenderedIcon,
 } from './icon-sprite';
+import {prepareTileflowMapTreeModels} from './tree-models';
 
 export {renderTileflowIconAtlasPreview} from './icon-preview';
 
@@ -108,6 +110,8 @@ export type PreparedTileflowCatalog = {
   /** Ordered shared dependency receipts, present only for maps that declare an Icon Set. */
   mapIconCompositions: Record<string, TileflowIconCompositionV1>;
   mapIconSources: Record<string, readonly TileflowEffectiveIconSourceIdentity[]>;
+  /** The files of each map's own 3D models, for its revision. */
+  mapModelSources?: Record<string, readonly TileflowEffectiveModelSourceIdentity[]>;
   project: PreparedTileflowBuildCatalog;
   sourceProject: TileflowSourceCatalog;
   /** Exact files whose contents select the composition, such as the icon lock. */
@@ -656,6 +660,22 @@ export async function prepareTileflowCatalogIcons(
     }
   }
 
+  // Each map's own 3D models travel in its style, so they need no files of their own.
+  const mapModelSources: Record<string, readonly TileflowEffectiveModelSourceIdentity[]> = {};
+  const modelWatchPaths: string[] = [];
+  for (const [mapName, map] of Object.entries(project.maps)) {
+    if (!map.models?.length) continue;
+    const models = await prepareTileflowMapTreeModels(map.models, {
+      baseDirectory: options.baseDirectory ?? options.cwd,
+      configPath: `maps.${mapName}.models`,
+      cwd: options.cwd,
+      target: 'local',
+    });
+    mapAssets[mapName] = {...mapAssets[mapName], models: models.models};
+    mapModelSources[mapName] = models.identities;
+    modelWatchPaths.push(...models.watchPaths);
+  }
+
   return {
     assets,
     baseDirectory: await realpath(options.baseDirectory ?? options.cwd),
@@ -663,10 +683,11 @@ export async function prepareTileflowCatalogIcons(
     mapAssets,
     mapIconCompositions,
     mapIconSources,
+    ...(Object.keys(mapModelSources).length > 0 ? {mapModelSources} : {}),
     project: project as PreparedTileflowBuildCatalog,
     sourceProject: project,
     watchFiles: compiled.watchFiles,
-    watchPaths: compiled.watchPaths,
+    watchPaths: [...compiled.watchPaths, ...modelWatchPaths],
   };
 }
 

@@ -29,11 +29,20 @@ export type TileflowVegetationThreeDimensionalStyle = {
   edges?: TileflowThemeNumberValue;
   /** The outline's colour; the crown's darkest colour, deepened, by default. */
   edgeColor?: TileflowThemeColorValue;
-  /** Each form's own scales, on top of `heightScale` and `crownScale`, such as taller palms. */
+  /**
+   * Each form's own scales, on top of `heightScale` and `crownScale`, such as taller palms, and the
+   * map's own models it draws: ids of `.glb` files in the map's `models` directories, one to four,
+   * each tree drawing one. A model's materials named `bark`, `leaves`, `fronds` or `stem` take
+   * those parts' colours.
+   */
   forms?: Partial<
     Record<
       TileflowTreeForm,
-      {heightScale?: TileflowThemeNumberValue; crownScale?: TileflowThemeNumberValue}
+      {
+        heightScale?: TileflowThemeNumberValue;
+        crownScale?: TileflowThemeNumberValue;
+        models?: readonly string[];
+      }
     >
   >;
   /**

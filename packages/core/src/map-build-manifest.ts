@@ -46,9 +46,18 @@ export type TileflowEffectiveFontSourceIdentity = {
   weight: '100' | '200' | '300' | '400' | '500' | '600' | '700' | '800' | '900';
 };
 
+/** One effective 3D model file a map declares, near or far. */
+export type TileflowEffectiveModelSourceIdentity = {
+  id: string;
+  level: 'far' | 'near';
+  sha256: string;
+};
+
 export type TileflowEffectiveMapSourceAssets = {
   fonts: readonly TileflowEffectiveFontSourceIdentity[];
   icons: readonly TileflowEffectiveIconSourceIdentity[];
+  /** The map's own 3D models; absent, as for maps without models, leaves revisions unchanged. */
+  models?: readonly TileflowEffectiveModelSourceIdentity[];
   /** Exact ordered shared dependencies, separate from original-source history and output bytes. */
   iconComposition?: TileflowIconCompositionV1;
 };
@@ -270,6 +279,7 @@ export async function hashTileflowMapRevision(
   const {
     fonts: _fonts,
     icons: _icons,
+    models: _models,
     id: _id,
     name: _name,
     version: _version,
@@ -297,7 +307,10 @@ export async function hashTileflowMapRevision(
 }
 
 function normalizeRevisionCartography(
-  input: Omit<ResolvedTileflowMap, 'fonts' | 'icons' | 'id' | 'name' | 'version' | 'view'>,
+  input: Omit<
+    ResolvedTileflowMap,
+    'fonts' | 'icons' | 'id' | 'models' | 'name' | 'version' | 'view'
+  >,
 ) {
   if (!input.sources) return input;
   return {
@@ -407,13 +420,31 @@ function normalizeSourceAssets(
   if (new Set(fonts.map(fontIdentity)).size !== fonts.length) {
     throw new Error('Effective Tileflow font source identities must have unique faces.');
   }
+  const models = [...(input.models ?? [])]
+    .map((model) => {
+      assertSha256(model.sha256, `model ${model.id}`);
+      if (model.level !== 'near' && model.level !== 'far')
+        throw new Error(`Tileflow model ${model.id} is near or far.`);
+      return {id: model.id, level: model.level, sha256: model.sha256};
+    })
+    .sort((left, right) =>
+      compareCodeUnits(`${left.id}\0${left.level}`, `${right.id}\0${right.level}`),
+    );
+  if (new Set(models.map((model) => `${model.id}\0${model.level}`)).size !== models.length) {
+    throw new Error('Effective Tileflow model source identities must be unique.');
+  }
   const iconComposition =
     input.iconComposition === undefined
       ? undefined
       : parseTileflowIconComposition(input.iconComposition);
   if (icons.some((icon) => icon.kind === 'rendered-icon') && !iconComposition)
     throw new Error('Rendered icon identities require an explicit composition receipt');
-  return {fonts, icons, ...(iconComposition ? {iconComposition} : {})};
+  return {
+    fonts,
+    icons,
+    ...(iconComposition ? {iconComposition} : {}),
+    ...(models.length > 0 ? {models} : {}),
+  };
 }
 
 function fontIdentity(font: TileflowEffectiveFontSourceIdentity): string {

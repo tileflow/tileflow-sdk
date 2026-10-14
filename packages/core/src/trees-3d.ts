@@ -3,6 +3,7 @@
 // (`tree_row`), and one to three trees for each of World's decorative canopy points (`canopy`),
 // inside the room the point leaves. A tree keeps its form, size, turn and shade wherever and whenever
 // it is read. It has no DOM dependency.
+import type {TileflowTreeModel} from './trees-3d-model';
 import type {TileflowTileLayer} from './vector-tile-decode';
 
 /** The forms a 3D tree takes. */
@@ -13,8 +14,13 @@ export type TileflowTreeForm = (typeof tileflowTreeForms)[number];
 export const tileflowTreeFinishes = ['faceted', 'smooth', 'toon'] as const;
 export type TileflowTreeFinish = (typeof tileflowTreeFinishes)[number];
 
-/** A form's own scales, on top of the map's. */
-export type TileflowTreeFormStyle = Readonly<{heightScale?: number; crownScale?: number}>;
+/** A form's own scales, on top of the map's, and the map's own models it draws. */
+export type TileflowTreeFormStyle = Readonly<{
+  heightScale?: number;
+  crownScale?: number;
+  /** Ids of the map's own models, one to four; each tree draws one by its stable seed. */
+  models?: readonly string[];
+}>;
 
 /** Relative weights of the forms given to trees whose data gives none. */
 export type TileflowTreeFormMix = Readonly<Partial<Record<TileflowTreeForm, number>>>;
@@ -74,6 +80,8 @@ export type TileflowTreePlacementOptions = Readonly<{
   regions?: readonly TileflowTreeRegion[];
   /** Metres between the trees of a row; defaults to 8. */
   rowSpacing?: number;
+  /** How many models each form draws from, 1 to 4; each tree draws one by its seed. */
+  variants?: Readonly<Partial<Record<TileflowTreeForm, number>>>;
 }>;
 
 /** A tile's layers trees come from, as World names them. */
@@ -86,17 +94,24 @@ export type TileflowTreeLayers = Readonly<{
   canopy?: TileflowTileLayer;
 }>;
 
-/** Where a form's trees are in a placement, and how many of them have each rank or a lower one. */
-export type TileflowTreeFormRange = Readonly<{
+/** Where some trees are in a placement, and how many of them have each rank or a lower one. */
+export type TileflowTreeRange = Readonly<{
   start: number;
   count: number;
-  /** `upTo[r]`: trees of this form with a rank of `r` or lower, from 0 to 15. */
+  /** `upTo[r]`: trees of the range with a rank of `r` or lower, from 0 to 15. */
   upTo: readonly number[];
 }>;
 
+/** Where a form's trees are in a placement, and those of each of its models in turn. */
+export type TileflowTreeFormRange = TileflowTreeRange &
+  Readonly<{
+    /** One range per model the form draws from, in order; one when it draws Core's own tree. */
+    variants: readonly TileflowTreeRange[];
+  }>;
+
 /** One tile's trees, ready to upload. */
 export type TileflowTreePlacement = Readonly<{
-  /** `tileflowTreeBytes` bytes per tree, ordered by form, then rank; see the layout below. */
+  /** `tileflowTreeBytes` bytes per tree, ordered by form, model, then rank; see the layout below. */
   trees: Uint8Array;
   forms: Readonly<Record<TileflowTreeForm, TileflowTreeFormRange>>;
   /** The tallest tree, in metres. */
@@ -109,8 +124,8 @@ export type TileflowTreePlacement = Readonly<{
 /**
  * Bytes per tree: x and y in tile units of 8192 (uint16 each), height and crown diameter in
  * decimetres (uint16 each), then one byte each for its turn (of a full turn), its shade among the
- * theme's colours, its form, its rank (0–15, lower shows first), a seed and whether it stands for
- * a canopy point (1) or a mapped tree (0), and two bytes of padding.
+ * theme's colours, its form, its rank (0–15, lower shows first), a seed, whether it stands for a
+ * canopy point (1) or a mapped tree (0), the model of its form it draws, and a byte of padding.
  */
 export const tileflowTreeBytes = 16;
 
@@ -128,6 +143,13 @@ const formSizes: Readonly<
   columnar: {height: [9, 18], crown: [0.22, 0.36]},
   palm: {height: [12, 20], crown: [0.42, 0.55]},
 };
+
+/** A form's typical crown width as a share of its height: the middle of its range. */
+export function tileflowTreeFormProportion(form: TileflowTreeForm): number {
+  const [low, high] = formSizes[form].crown;
+  return (low + high) / 2;
+}
+
 const heightBounds: readonly [number, number] = [2, 45];
 const crownBounds: readonly [number, number] = [1, 25];
 
@@ -492,17 +514,39 @@ export function placeTileflowTrees(
     }
   }
 
-  placed.sort((a, b) => a.form - b.form || a.rank - b.rank);
+  const variantsOf = (form: number) =>
+    clamp(Math.floor(options.variants?.[tileflowTreeForms[form]!] ?? 1), [1, 4]);
+  const variant = (tree: (typeof placed)[number]) =>
+    Math.min(
+      variantsOf(tree.form) - 1,
+      Math.floor(unit(Math.floor(tree.seed * 256), 9) * variantsOf(tree.form)),
+    );
+  const variants = placed.map(variant);
+  const order = placed.map((_, index) => index);
+  order.sort(
+    (a, b) =>
+      placed[a]!.form - placed[b]!.form ||
+      variants[a]! - variants[b]! ||
+      placed[a]!.rank - placed[b]!.rank,
+  );
   const bytes = new Uint8Array(placed.length * tileflowTreeBytes);
   const view = new DataView(bytes.buffer);
   let tallest = 0;
+  type Range = {start: number; count: number; upTo: number[]};
+  const range = (): Range => ({start: 0, count: 0, upTo: new Array<number>(ranks).fill(0)});
   const forms = Object.fromEntries(
-    tileflowTreeForms.map((form) => [
+    tileflowTreeForms.map((form, index) => [
       form,
-      {start: 0, count: 0, upTo: new Array<number>(ranks).fill(0)},
+      {...range(), variants: Array.from({length: variantsOf(index)}, range)},
     ]),
-  ) as Record<TileflowTreeForm, {start: number; count: number; upTo: number[]}>;
-  placed.forEach((tree, index) => {
+  ) as Record<TileflowTreeForm, Range & {variants: Range[]}>;
+  const count = (into: Range, index: number, rank: number) => {
+    if (into.count === 0) into.start = index;
+    into.count += 1;
+    for (let at = rank; at < ranks; at += 1) into.upTo[at]! += 1;
+  };
+  order.forEach((from, index) => {
+    const tree = placed[from]!;
     const at = index * tileflowTreeBytes;
     view.setUint16(at, Math.min(extent - 1, Math.round(tree.x)), true);
     view.setUint16(at + 2, Math.min(extent - 1, Math.round(tree.y)), true);
@@ -514,11 +558,11 @@ export function placeTileflowTrees(
     bytes[at + 11] = tree.rank;
     bytes[at + 12] = Math.floor(tree.seed * 256) & 255;
     bytes[at + 13] = tree.canopy;
+    bytes[at + 14] = variants[from]!;
     tallest = Math.max(tallest, tree.height);
-    const range = forms[tileflowTreeForms[tree.form]!];
-    if (range.count === 0) range.start = index;
-    range.count += 1;
-    for (let rank = tree.rank; rank < ranks; rank += 1) range.upTo[rank]! += 1;
+    const ranges = forms[tileflowTreeForms[tree.form]!];
+    count(ranges, index, tree.rank);
+    count(ranges.variants[variants[from]!]!, index, tree.rank);
   });
   return {trees: bytes, forms, tallest, mapped, canopy};
 }
@@ -583,6 +627,9 @@ function unit(seed: number, salt: number): number {
   return hash(seed, salt, 0x51ed) / 4294967296;
 }
 
+/** A model's id: its file's name, in lowercase letters, digits and hyphens. */
+export const tileflowTreeModelIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+
 /** The style metadata key under which a compiled map describes its 3D trees. */
 export const tileflowVegetationMetadataKey = 'tileflow:vegetation';
 
@@ -601,8 +648,10 @@ export type TileflowVegetation3D = Readonly<{
   }>;
   heightScale: number;
   crownScale: number;
-  /** Each form's own scales. */
+  /** Each form's own scales and models. */
   forms: Readonly<Partial<Record<TileflowTreeForm, TileflowTreeFormStyle>>>;
+  /** The map's own models its forms draw, by id, prepared from its `models` directories. */
+  models: Readonly<Record<string, TileflowTreeModel>>;
   finish: TileflowTreeFinish;
   /** How strongly an outline rings each tree, from 0 (none) to 1, and its colour. */
   edges: number;
@@ -643,12 +692,41 @@ export function readTileflowVegetation3D(metadata: unknown): TileflowVegetation3
   const scale = (number: unknown) =>
     typeof number === 'number' && number > 0 && number <= 10 ? number : 1;
   const mix = tileflowTreeFormMixProblem(unknownForms) === undefined ? unknownForms : undefined;
+  const models = Object.fromEntries(
+    Object.entries(isRecord(value.models) ? value.models : {})
+      .filter(
+        ([id, model]) =>
+          tileflowTreeModelIdPattern.test(id) &&
+          isRecord(model) &&
+          typeof model.near === 'string' &&
+          (model.far === undefined || typeof model.far === 'string'),
+      )
+      .slice(0, 16)
+      .map(([id, model]) => {
+        const {near, far} = model as {near: string; far?: string};
+        return [id, far === undefined ? {near} : {near, far}];
+      }),
+  ) as Record<string, TileflowTreeModel>;
   const ownScales = isRecord(value.forms) ? value.forms : {};
   const forms = Object.fromEntries(
     tileflowTreeForms.flatMap((form) => {
       const own = ownScales[form];
       if (!isRecord(own)) return [];
-      return [[form, {heightScale: scale(own.heightScale), crownScale: scale(own.crownScale)}]];
+      const drawn = Array.isArray(own.models)
+        ? [...new Set(own.models)]
+            .filter((id): id is string => typeof id === 'string' && id in models)
+            .slice(0, 4)
+        : [];
+      return [
+        [
+          form,
+          {
+            heightScale: scale(own.heightScale),
+            crownScale: scale(own.crownScale),
+            ...(drawn.length > 0 ? {models: drawn} : {}),
+          },
+        ],
+      ];
     }),
   ) as Partial<Record<TileflowTreeForm, TileflowTreeFormStyle>>;
   const finish = tileflowTreeFinishes.find((name) => name === value.finish) ?? 'faceted';
@@ -678,6 +756,7 @@ export function readTileflowVegetation3D(metadata: unknown): TileflowVegetation3
     heightScale: scale(heightScale),
     crownScale: scale(crownScale),
     forms,
+    models,
     finish,
     edges,
     ...(typeof value.edgeColor === 'string' ? {edgeColor: value.edgeColor} : {}),

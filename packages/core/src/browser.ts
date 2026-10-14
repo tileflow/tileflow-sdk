@@ -126,9 +126,11 @@ export {
   type TileflowTreeFields,
   type TileflowTreeForm,
   type TileflowTreeFormMix,
+  type TileflowTreeFormRange,
   type TileflowTreeLayers,
   type TileflowTreePlacement,
   type TileflowTreePlacementOptions,
+  type TileflowTreeRange,
   type TileflowTreeRegion,
   type TileflowVegetation3D,
 } from './trees-3d';

@@ -96,6 +96,69 @@ export default defineMap({
 - `threeDimensional.edges` and `edgeColor` set the [edges](#edges), and `nightLight` the
   [night light](#night-light). Numbers and colours may be theme tokens.
 
+## Building models
+
+A map can place its own 3D models of buildings in the city: a landmark the extruded footprints draw
+badly, or the buildings an application presents. Each model stands where the map says, in the same
+light, shadows and theme as the buildings round it, and the buildings under its footprint are no
+longer raised while it stands. Put glTF binaries (`.glb`) in a directory, declare it in the map's
+`models`, and say where each model stands:
+
+<!-- docs:check -->
+
+```ts
+import {defineMap, refine} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'paris-landmarks',
+  name: 'Paris landmarks',
+  version: 1,
+  extends: streets,
+  // ./models holds eiffel-tower.glb, and eiffel-tower.mid.glb and eiffel-tower.far.glb for
+  // farther views.
+  models: ['./models'],
+  modules: {
+    buildings: refine({
+      threeDimensional: {
+        models: [{model: 'eiffel-tower', at: [2.294481, 48.858258], heading: 0}],
+        modelColors: {surface: '#7a5c45', accent: '#5b4332'},
+      },
+    }),
+  },
+});
+```
+
+`at` is the longitude and latitude of the model's origin and `heading` the degrees clockwise from
+north its own north is turned to. A map places up to 256 models; one model may stand in several
+places.
+
+How to prepare a model:
+
+- **Materials name the parts.** Name each material `surface`, `secondary`, `glass`, `accent` or
+  `roof` (an exporter's `.001` suffix is ignored); a model whose materials name a tree's parts is a
+  [tree model](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md)
+  instead. Each part takes its colour from `modelColors`, or from the buildings' colour when the
+  design gives it none, so the model follows the theme from day to night; vertex colours lighter or
+  darker than the rest of their part shade it within that colour.
+- **Metres round an origin on the ground.** The origin is where the model stands, with the model
+  above it and its own north along +y once read Z up; nothing may lie more than half a metre below
+  it.
+- **What it stands in for.** A mesh whose material is named `footprint` is never drawn: it lays
+  out on the ground what the model stands in for, such as a landmark's whole base. Without one, the
+  model's own outline on the ground stands in, courtyards included.
+- **Levels of detail.** `<id>.mid.glb` and `<id>.far.glb`, when present, are drawn farther from the
+  camera's centre, from about 900 m and 2.6 km.
+- **Budgets.** A level has at most 200,000 triangles and 200,000 vertices, and a map at most 64
+  building models. Triangles of the default scene are read with their node transforms; textures,
+  animations and compressed geometry (Draco or meshopt) are not.
+
+The build reads each model, reports a problem with the file and what to change, works out its
+footprint and writes it beside the style as a file of its own. The renderer downloads a model only when it stands near the tiles round the
+camera, keeps the nearest dozen, and builds the tiles under it again without the buildings whose
+centre falls inside its footprint. A model that cannot be downloaded leaves those buildings
+standing.
+
 ## Light and shadows
 
 The light comes from `controller.getSun()`: the theme's sun, mixed during a blend, or the sun an
@@ -170,3 +233,5 @@ way kept the frame pacing of the same city drawn without shadows.
 - One building colour per feature and theme; facades, roof shapes and building parts as separate
   shapes are not drawn.
 - A colour expression is evaluated at zoom 16.
+- Building models take no edges or night light of their own yet, and cannot be picked or styled by
+  state.

@@ -660,8 +660,9 @@ function createGenerationArtifactFiles(
       const replaceFontSources = artifacts.nativeBuild
         ? replaceTileflowNativeFontSources
         : replaceTileflowStyleFontSources;
-      const generationStyle = replaceFontSources(generationStyleWithSprite, (source) =>
-        retargetLocalFontAssetUrl(source, artifacts.assets, generation),
+      const generationStyle = replaceFontSources(
+        withGenerationBuildingModels(generationStyleWithSprite, mapName, generation),
+        (source) => retargetLocalFontAssetUrl(source, artifacts.assets, generation),
       );
       if (artifacts.nativeBuild)
         assertTileflowNativeGeneratedStyle(generationStyle, mapName, themeName, nativeUrls);
@@ -834,6 +835,26 @@ async function findNearestLockfile(
     if (parent === directory) return undefined;
     directory = parent;
   }
+}
+
+/** A style whose building models are read from the generation's own copies of their files. */
+function withGenerationBuildingModels<T>(style: T, mapName: string, generation: string): T {
+  const metadata = (style as {metadata?: Record<string, unknown>}).metadata;
+  const buildings = metadata?.['tileflow:buildings'] as {models?: unknown} | undefined;
+  if (!buildings || !Array.isArray(buildings.models)) return style;
+  const models = buildings.models.map((entry: unknown) => {
+    const url = (entry as {url?: unknown}).url;
+    if (typeof url !== 'string' || isRelativePublicUrl(url)) return entry;
+    const file = url.slice(url.lastIndexOf('/') + 1);
+    return {
+      ...(entry as Record<string, unknown>),
+      url: insertGenerationInPublicUrl(url, `models/${mapName}/${file}`, generation),
+    };
+  });
+  return {
+    ...style,
+    metadata: {...metadata, 'tileflow:buildings': {...buildings, models}},
+  };
 }
 
 function insertGenerationInPublicUrl(url: string, logicalPath: string, generation: string): string {
@@ -1314,6 +1335,10 @@ function assertTileflowArtifactFileName(fileName: string): void {
   const logicalName = fileName.replace(/^generations\/[a-f0-9]{64}\//, '');
   const styleMatch = /^styles\/([^/]+)\/([^/]+)\.json$/u.exec(logicalName);
   const iconMatch = /^icons\/([^/]+)\/sprite(?:@2x)?\.(?:json|png)$/u.exec(logicalName);
+  // A map's building models, named by their id and the start of their SHA-256.
+  const modelMatch = /^models\/([^/]+)\/[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{16}\.tfmd$/u.exec(
+    logicalName,
+  );
   if (
     fileName === 'manifest.json' ||
     fileName === tileflowMapBuildManifestFileName ||
@@ -1322,6 +1347,7 @@ function assertTileflowArtifactFileName(fileName: string): void {
       tileflowMapIdSchema.safeParse(styleMatch[1]).success &&
       tileflowThemeNameSchema.safeParse(styleMatch[2]).success) ||
     (iconMatch && tileflowMapIdSchema.safeParse(iconMatch[1]).success) ||
+    (modelMatch && tileflowMapIdSchema.safeParse(modelMatch[1]).success) ||
     /^tilesets\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.pmtiles$/u.test(logicalName) ||
     /^fonts\/[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{64}\.(?:otf|ttf|woff2)$/.test(logicalName) ||
     /^fonts\/licenses\/license-[a-f0-9]{64}\.txt$/.test(logicalName)

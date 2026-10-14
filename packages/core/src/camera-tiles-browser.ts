@@ -68,6 +68,11 @@ export type CameraTiles<T> = {
   readonly metres: number;
   /** A tile's corner from the origin, in tile units of 8192. */
   offsetOf(tile: {x: number; y: number}): [number, number];
+  /**
+   * Builds the tiles `which` names again, from a fresh read; each keeps drawing what it held until
+   * its new build is ready.
+   */
+  refresh(which: (tile: Readonly<{x: number; y: number}>) => boolean): void;
   dispose(): void;
 };
 
@@ -166,6 +171,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
         if (disposed || tiles.get(key) !== entry) return;
         // An absent tile stays empty; it is not read again.
         if (!tile) {
+          if (entry.value && entry.value !== options.empty) options.release(entry.value);
           entry.value = options.empty;
           return;
         }
@@ -190,11 +196,15 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
         const {key, tile, metres: tileMetres} = queue.shift()!;
         const entry = tiles.get(key);
         if (!entry) continue;
+        // A tile built again lets go of what it held once the new build replaces it.
+        const previous = entry.value;
         try {
           entry.value = options.build(tile, tileMetres);
         } catch {
           entry.value = options.empty;
         }
+        if (previous && previous !== options.empty && previous !== entry.value)
+          options.release(previous);
         built = true;
       }
       if (built) options.changed();
@@ -258,6 +268,19 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
     },
     offsetOf(tile) {
       return [(tile.x - origin[0]) * extent, (tile.y - origin[1]) * extent];
+    },
+    refresh(which) {
+      const source = reader;
+      if (!source || disposed) return;
+      for (const [key, entry] of tiles) {
+        if (!which(entry)) continue;
+        entry.loading?.abort();
+        entry.retryAt = undefined;
+        // A tile's width in metres at its middle.
+        const latitude =
+          (Math.atan(Math.sinh(Math.PI * (1 - (2 * (entry.y + 0.5)) / 2 ** zoom))) * 180) / Math.PI;
+        load(source, key, entry, (earth * Math.cos((latitude * Math.PI) / 180)) / 2 ** zoom);
+      }
     },
     dispose() {
       if (disposed) return;

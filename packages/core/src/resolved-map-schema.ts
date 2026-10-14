@@ -1171,6 +1171,31 @@ const buildingsModuleSchema = z
         occlusion: z.boolean().optional(),
         shadows: z.boolean().optional(),
         windows: z.boolean().optional(),
+        models: z
+          .array(
+            z
+              .object({
+                model: z
+                  .string()
+                  .max(64)
+                  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
+                at: z.tuple([z.number().min(-180).max(180), z.number().min(-85).max(85)]),
+                heading: z.number().finite().optional(),
+              })
+              .strict(),
+          )
+          .max(256)
+          .optional(),
+        modelColors: z
+          .object({
+            surface: themeColorValueSchema.optional(),
+            secondary: themeColorValueSchema.optional(),
+            glass: themeColorValueSchema.optional(),
+            accent: themeColorValueSchema.optional(),
+            roof: themeColorValueSchema.optional(),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .optional(),

@@ -1,19 +1,31 @@
-// Prepares the 3D tree models a map declares: the glTF binaries (.glb) in its `models` directories,
-// read, checked and turned into Core's compact tree models, which the compiler carries in the
-// style. A file's name is its model's id; `<id>.far.glb` is the same model for far trees. A later
-// directory's model replaces an earlier one of the same id, as icons do.
+// Prepares the 3D models a map declares: the glTF binaries (.glb) in its `models` directories, read,
+// checked and turned into Core's models. A model's materials say what it is: one whose materials
+// name the parts of a tree (bark, leaves, fronds, stem) becomes a compact tree model the compiler
+// carries in the style; one whose materials name the parts of a building (surface, secondary, glass,
+// accent, roof) becomes a building model file the build writes beside the style. A file's name is
+// its model's id; `<id>.far.glb` is the same model for far trees, and `<id>.mid.glb` and
+// `<id>.far.glb` a building's farther levels of detail. A later directory's model replaces an
+// earlier one of the same id, as icons do.
 import {createHash} from 'node:crypto';
 import {lstat, readdir, readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {
+  encodeTileflowModel,
   encodeTileflowTreeModel,
   type TileflowModelDirectory,
+  type TileflowModelMesh,
   type TileflowTreeModel,
   tileflowTreeModelLimits,
 } from '@tileflow/core';
 import type {TileflowEffectiveModelSourceIdentity} from '@tileflow/core/build';
 import {resolveTileflowAssetDirectories} from './asset-directories';
-import {TileflowGltfError} from './gltf-reader';
+import {
+  isTileflowBuildingModel,
+  prepareTileflowBuildingModelMesh,
+  tileflowBuildingModelDeclaredFootprint,
+  tileflowBuildingModelFootprint,
+} from './building-model-mesh';
+import {readTileflowGltfTriangles, TileflowGltfError} from './gltf-reader';
 import {prepareTileflowTreeModelMesh} from './tree-model-mesh';
 
 export type TileflowTreeModelIssue = {message: string; path: string};
@@ -35,9 +47,21 @@ export class TileflowTreeModelError extends Error {
   }
 }
 
+/** A building model file, prepared for the build to write beside the style. */
+export type PreparedTileflowBuildingModel = {
+  /** Its file name, content-addressed: `<id>-<first 16 hex of its SHA-256>.tfmd`. */
+  fileName: string;
+  bytes: Uint8Array;
+};
+
+/** The most building models one map prepares. */
+export const tileflowBuildingModelLimit = 64;
+
 export type PreparedTileflowTreeModels = {
-  /** The prepared models by id. */
+  /** The prepared tree models by id. */
   models: Record<string, TileflowTreeModel>;
+  /** The prepared building models by id. */
+  buildings: Record<string, PreparedTileflowBuildingModel>;
   identities: TileflowEffectiveModelSourceIdentity[];
   /** Directories to watch for changes. */
   watchPaths: string[];
@@ -60,10 +84,8 @@ export async function prepareTileflowMapTreeModels(
   });
   const issues: TileflowTreeModelIssue[] = [];
   // id → level → file, the last directory winning.
-  const files = new Map<
-    string,
-    {near?: {path: string; display: string}; far?: {path: string; display: string}}
-  >();
+  type File = {path: string; display: string};
+  const files = new Map<string, {near?: File; mid?: File; far?: File}>();
   for (const directory of resolved) {
     let names: string[];
     try {
@@ -83,8 +105,8 @@ export async function prepareTileflowMapTreeModels(
         continue;
       }
       if (!lower.endsWith('.glb')) continue;
-      const far = name.endsWith('.far.glb');
-      const id = name.slice(0, name.length - (far ? 8 : 4));
+      const level = name.endsWith('.far.glb') ? 'far' : name.endsWith('.mid.glb') ? 'mid' : 'near';
+      const id = name.slice(0, name.length - (level === 'near' ? 4 : 8));
       if (!modelId.test(id) || id.length > 64) {
         issues.push({
           message:
@@ -104,15 +126,76 @@ export async function prepareTileflowMapTreeModels(
         continue;
       }
       const entry = files.get(id) ?? {};
-      entry[far ? 'far' : 'near'] = {path, display};
+      entry[level] = {path, display};
       files.set(id, entry);
     }
   }
   const models: Record<string, TileflowTreeModel> = {};
+  const buildings: Record<string, PreparedTileflowBuildingModel> = {};
   const identities: TileflowEffectiveModelSourceIdentity[] = [];
   for (const [id, entry] of [...files].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     if (!entry.near) {
-      issues.push({message: `has no ${id}.glb beside it`, path: entry.far!.display});
+      issues.push({message: `has no ${id}.glb beside it`, path: (entry.mid ?? entry.far)!.display});
+      continue;
+    }
+    // A model whose materials name the parts of a building is a building model.
+    let nearBytes: Uint8Array;
+    let primitives: ReturnType<typeof readTileflowGltfTriangles>;
+    try {
+      nearBytes = new Uint8Array(await readFile(entry.near.path));
+      primitives = readTileflowGltfTriangles(nearBytes);
+    } catch (error) {
+      issues.push({
+        message: error instanceof TileflowGltfError ? error.message : 'cannot be read',
+        path: entry.near.display,
+      });
+      continue;
+    }
+    if (isTileflowBuildingModel(primitives)) {
+      const levels: TileflowModelMesh[] = [];
+      let failed = false;
+      for (const level of ['near', 'mid', 'far'] as const) {
+        const file = entry[level];
+        if (!file) continue;
+        try {
+          const bytes = level === 'near' ? nearBytes : new Uint8Array(await readFile(file.path));
+          levels.push(prepareTileflowBuildingModelMesh(level === 'near' ? primitives : bytes));
+          identities.push({id, level, sha256: createHash('sha256').update(bytes).digest('hex')});
+        } catch (error) {
+          failed = true;
+          issues.push({
+            message:
+              error instanceof TileflowGltfError || error instanceof RangeError
+                ? error.message
+                : 'cannot be read',
+            path: file.display,
+          });
+        }
+      }
+      if (failed) continue;
+      try {
+        const bytes = encodeTileflowModel({
+          levels,
+          footprint: tileflowBuildingModelFootprint(
+            tileflowBuildingModelDeclaredFootprint(primitives) ?? levels[0]!,
+          ),
+        });
+        const digest = createHash('sha256').update(bytes).digest('hex').slice(0, 16);
+        buildings[id] = {fileName: `${id}-${digest}.tfmd`, bytes};
+      } catch (error) {
+        issues.push({
+          message: error instanceof RangeError ? error.message : 'cannot be prepared',
+          path: entry.near.display,
+        });
+      }
+      continue;
+    }
+    if (entry.mid) {
+      issues.push({
+        message:
+          'is a tree model; trees have a near model and a far one (<id>.far.glb), not a mid one',
+        path: entry.mid.display,
+      });
       continue;
     }
     const prepared: {near?: string; far?: string} = {};
@@ -141,12 +224,18 @@ export async function prepareTileflowMapTreeModels(
   }
   if (Object.keys(models).length > tileflowTreeModelLimits.models)
     issues.push({
-      message: `holds ${Object.keys(models).length} models; a map takes at most ${tileflowTreeModelLimits.models}`,
+      message: `holds ${Object.keys(models).length} tree models; a map takes at most ${tileflowTreeModelLimits.models}`,
+      path: options.configPath,
+    });
+  if (Object.keys(buildings).length > tileflowBuildingModelLimit)
+    issues.push({
+      message: `holds ${Object.keys(buildings).length} building models; a map takes at most ${tileflowBuildingModelLimit}`,
       path: options.configPath,
     });
   if (issues.length > 0) throw new TileflowTreeModelError(issues);
   return {
     models,
+    buildings,
     identities,
     watchPaths: resolved
       .filter((directory) => directory.watch)

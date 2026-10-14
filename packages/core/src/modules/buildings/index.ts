@@ -20,6 +20,26 @@ export type TileflowBuildingsThreeDimensionalStyle = {
   shadows?: boolean;
   /** Invented night windows, lit by rooms: decoration, not data. Defaults to false. */
   windows?: boolean;
+  /**
+   * Building models the map places in its city, from the glTF binaries in its `models`
+   * directories. Each stands in for the buildings under its footprint.
+   */
+  models?: readonly TileflowBuildingModelPlacementConfig[];
+  /** The colours of the models' parts; a part without one takes it from the building colour. */
+  modelColors?: Partial<Record<TileflowBuildingModelPart, TileflowThemeColorValue>>;
+};
+
+/** The parts of a building model, as its materials name them. */
+export type TileflowBuildingModelPart = 'surface' | 'secondary' | 'glass' | 'accent' | 'roof';
+
+/** Where a building model stands. */
+export type TileflowBuildingModelPlacementConfig = {
+  /** The model's id: the name of its `.glb` file in the map's `models` directories. */
+  model: string;
+  /** Longitude and latitude of the model's origin, where it stands on the ground. */
+  at: readonly [number, number];
+  /** Degrees clockwise from north that the model's own north (its +y) is turned to; defaults to 0. */
+  heading?: number;
 };
 
 export type TileflowBuildingsModuleOptions = {

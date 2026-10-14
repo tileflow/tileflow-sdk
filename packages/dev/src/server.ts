@@ -340,6 +340,17 @@ export function createTileflowDevRequestHandler(
         return assetResponse(asset);
       }
 
+      if (path.startsWith('/models/')) {
+        const assetName = path.replace(/^\/+/, '');
+        const asset = artifacts.assets.find((candidate) => candidate.fileName === assetName);
+
+        if (!asset) {
+          return jsonResponse({error: `Unknown model asset: ${assetName}`}, 404);
+        }
+
+        return assetResponse(asset);
+      }
+
       return jsonResponse({error: 'Not found'}, 404);
     } catch (error) {
       options.onError?.(error);
@@ -526,6 +537,7 @@ function isOwnedTileflowRequestPath(path: string): boolean {
     path.startsWith('/tilesets/') ||
     getTileflowStyleSelection(path) !== undefined ||
     path.startsWith('/fonts/') ||
+    path.startsWith('/models/') ||
     path.startsWith(`/${tileflowLineBackgroundGlyphRoute}/`) ||
     path.startsWith('/__runtime/')
   );

@@ -5,6 +5,7 @@
 // marked with the sides that are the roof's outline, so the renderer can draw the outline a constant
 // width on screen. It has no DOM dependency.
 import earcut from 'earcut';
+import {tileflowInsideRings} from './models-3d-model';
 import type {TileflowTileLayer} from './vector-tile-decode';
 
 /** The renderer's tile units: MapLibre projects custom layers' tiles over 8192. */
@@ -77,6 +78,11 @@ export type TileflowBuildingMeshOptions = Readonly<{
    * the building its use.
    */
   places?: TileflowTileLayer;
+  /**
+   * Footprints of the building models the map places here, as rings of tile units (0 to 8192):
+   * a building whose centre falls inside one is not raised, since the model stands in for it.
+   */
+  masks?: readonly (readonly number[])[];
 }>;
 
 /** One tile's buildings, ready to upload. */
@@ -136,9 +142,11 @@ export function meshTileflowBuildings(
     for (const polygon of polygonsOf(feature.geometry, scale)) {
       const rings = polygon.map(clip).filter((ring) => ring.length >= 6);
       if (rings.length === 0 || area(rings[0]!) === 0) continue;
+      const [cx, cy] = centroid(rings[0]!);
+      // A building a placed model stands in for is left to the model.
+      if (options.masks?.length && tileflowInsideRings(options.masks, cx, cy)) continue;
       used = true;
       tallest = Math.max(tallest, height);
-      const [cx, cy] = centroid(rings[0]!);
       const seed = hash(cx * 0.0731 + cy * 0.19137 + index * 1.618);
       // A little of each building's own: its seed, or for a building a tile edge cuts, a value the
       // same for each of its pieces.

@@ -451,6 +451,8 @@ export type {
   TileflowBoundariesModuleConfig,
   TileflowBoundariesModuleOptions,
   TileflowBuildingMode,
+  TileflowBuildingModelPart,
+  TileflowBuildingModelPlacementConfig,
   TileflowBuildingsModuleConfig,
   TileflowBuildingsModuleOptions,
   TileflowBuildingsThreeDimensionalStyle,
@@ -657,9 +659,23 @@ export {
 } from './trees-3d-model';
 export {
   readTileflowBuildings3D,
+  tileflowBuildingModelPlacementLimit,
   tileflowBuildingsMetadataKey,
+  type TileflowBuildingModelPlacement,
   type TileflowBuildings3DDesign,
 } from './buildings-3d-design';
+export {
+  decodeTileflowModel,
+  encodeTileflowModel,
+  tileflowInsideRings,
+  tileflowModelLimits,
+  tileflowModelParts,
+  tileflowModelVertexBytes,
+  type TileflowModel,
+  type TileflowModelBytes,
+  type TileflowModelMesh,
+  type TileflowModelPart,
+} from './models-3d-model';
 export {
   readTileflowStreetLights,
   tileflowStreetLightsMetadataKey,

@@ -100,8 +100,10 @@ export type TileflowPreparedMapAssets = {
     ids: readonly string[];
     sprite: string;
   };
-  /** The map's own 3D models by id, prepared from its `models` directories. */
+  /** The map's own 3D tree models by id, prepared from its `models` directories. */
   models?: Readonly<Record<string, TileflowTreeModel>>;
+  /** Where each of the map's own building models is served, by id. */
+  buildingModels?: Readonly<Record<string, string>>;
 };
 
 export type TileflowSemanticCompileOptions = {
@@ -473,6 +475,7 @@ function compileSemanticStyleInternal(
     modules.buildings,
     context as Parameters<typeof tileflowBuildings3DDesignOf>[1],
     layers as unknown as Parameters<typeof tileflowBuildings3DDesignOf>[2],
+    options.preparedAssets?.buildingModels,
   );
   const streetLights = tileflowStreetLightsDesignOf(
     modules.roads,

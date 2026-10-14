@@ -9,6 +9,7 @@ export type {
   TileflowBuildingMode,
   TileflowBuildingsModuleConfig,
   TileflowBuildingsModuleOptions,
+  TileflowBuildingsThreeDimensionalStyle,
 } from './buildings';
 export {labels} from './labels';
 export {land} from './land';

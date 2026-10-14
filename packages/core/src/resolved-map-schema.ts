@@ -1138,6 +1138,21 @@ const waterModuleSchema = z
       .optional(),
   })
   .strict();
+// A theme number within bounds: a literal in range, a theme number token, or a fixed value in range.
+function boundedThemeNumberSchema(min: number, max: number) {
+  return z.union([
+    z.number().finite().min(min).max(max),
+    themeNumberReferenceSchema,
+    z
+      .object({
+        kind: z.literal('theme-fixed'),
+        reason: z.string().trim().min(1),
+        value: z.number().finite().min(min).max(max),
+      })
+      .strict(),
+  ]);
+}
+
 const buildingsModuleSchema = z
   .object({
     type: z.literal('buildings'),
@@ -1147,6 +1162,17 @@ const buildingsModuleSchema = z
     flat: areaStyleSchema.optional(),
     mode: z.enum(['3d', 'flat']).optional(),
     renderStack: renderStackSchema.optional(),
+    threeDimensional: z
+      .object({
+        edges: boundedThemeNumberSchema(0, 1).optional(),
+        edgeColor: themeColorValueSchema.optional(),
+        nightLight: boundedThemeNumberSchema(0, 2).optional(),
+        occlusion: z.boolean().optional(),
+        shadows: z.boolean().optional(),
+        windows: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 const addressesModuleSchema = z
@@ -1298,6 +1324,15 @@ const roadsModuleSchema = z
         outline: lineStyleSchema.optional(),
         pattern: fillStyleSchema.optional(),
         surface: fillStyleSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    streetLights: z
+      .object({
+        color: themeColorValueSchema.optional(),
+        enabled: z.boolean().optional(),
+        estimate: z.enum(['lit', 'streets', 'none']).optional(),
+        intensity: boundedThemeNumberSchema(0, 2).optional(),
       })
       .strict()
       .optional(),

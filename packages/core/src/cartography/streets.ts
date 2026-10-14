@@ -6,6 +6,9 @@ import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
 import {resolveMarine} from '../marine';
 import {tileflowVegetationDescription} from '../modules/vegetation/compiler';
+import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
+import {tileflowStreetLightsMetadata, tileflowStreetLightsMetadataKey} from '../street-lights';
+import {tileflowBuildings3DDesignOf, tileflowStreetLightsDesignOf} from './scene-3d-metadata';
 import {
   insertTileflowOverlays,
   resolveTileflowHostedSources,
@@ -454,6 +457,16 @@ function compileSemanticStyleInternal(
     createTileflowOverlayPlacementManifest(plannedLayers),
   );
   const layers = runCompilationPhase('finalization', () => finalizeTileflowLayers(plannedLayers));
+  // What Core's 3D renderers draw: the buildings in their final colour, and the street lights.
+  const buildings3D = tileflowBuildings3DDesignOf(
+    modules.buildings,
+    context as Parameters<typeof tileflowBuildings3DDesignOf>[1],
+    layers as unknown as Parameters<typeof tileflowBuildings3DDesignOf>[2],
+  );
+  const streetLights = tileflowStreetLightsDesignOf(
+    modules.roads,
+    context as Parameters<typeof tileflowStreetLightsDesignOf>[1],
+  );
   runCompilationPhase('finalization', () =>
     assertTileflowInteractionManifestLayers(interactionManifest, layers),
   );
@@ -542,6 +555,20 @@ function compileSemanticStyleInternal(
       [tileflowRouteMetadataKey]: tileflowRouteMetadata(resolveTileflowRouteInks(resolvedTheme)),
       ...(resolvedTheme.sun
         ? {[tileflowSunMetadataKey]: tileflowSunMetadata(resolvedTheme.sun)}
+        : {}),
+      ...(buildings3D
+        ? {
+            [tileflowBuildingsMetadataKey]: tileflowBuildingsMetadata(
+              bindSemanticReferences(buildings3D, semanticData),
+            ),
+          }
+        : {}),
+      ...(streetLights
+        ? {
+            [tileflowStreetLightsMetadataKey]: tileflowStreetLightsMetadata(
+              bindSemanticReferences(streetLights, semanticData),
+            ),
+          }
         : {}),
       ...(vegetation3D
         ? {

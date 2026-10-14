@@ -12,6 +12,7 @@ import {
   parseTileflowMap as parseMap,
   poi,
   renderPass,
+  buildings,
   roads,
   tileflowBandPlacements,
   tileflowLandformClasses,
@@ -423,6 +424,26 @@ test('accepts detailed cartographic module styles and their optional data bindin
   assert.throws(
     () => trees({regions: [{bounds: [0, 50, 1, 40], unknownForms: {palm: 1}}]}),
     /south below north/,
+  );
+  // Core's 3D buildings and street lights are designed in the buildings and roads modules.
+  assert.doesNotThrow(() =>
+    parseDesign({
+      modules: {
+        buildings: buildings({threeDimensional: {edges: 0.5, nightLight: 1.5, windows: true}}),
+        roads: roads({streetLights: {estimate: 'streets', intensity: 0.8}}),
+      },
+    }),
+  );
+  assert.throws(
+    () => parseDesign({modules: {buildings: buildings({threeDimensional: {edges: 2}})}}),
+    /edges/,
+  );
+  assert.throws(
+    () =>
+      parseDesign({
+        modules: {roads: roads({streetLights: {estimate: 'everywhere' as never}})},
+      }),
+    /estimate/,
   );
 });
 

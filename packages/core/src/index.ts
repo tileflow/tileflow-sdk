@@ -188,6 +188,7 @@ export type {
   TileflowRoadRoundaboutStyle,
   TileflowRoadServiceType,
   TileflowRoadSidewalkStyle,
+  TileflowRoadStreetLightStyle,
   TileflowRoadsModuleConfig,
   TileflowRoadsModuleOptions,
   TileflowRoadStructure,
@@ -451,6 +452,7 @@ export type {
   TileflowBuildingMode,
   TileflowBuildingsModuleConfig,
   TileflowBuildingsModuleOptions,
+  TileflowBuildingsThreeDimensionalStyle,
   TileflowLandcoverClass,
   TileflowLandformClass,
   TileflowLandformsModuleConfig,
@@ -643,3 +645,13 @@ export {
   type TileflowTreeRegion,
   type TileflowVegetation3D,
 } from './trees-3d';
+export {
+  readTileflowBuildings3D,
+  tileflowBuildingsMetadataKey,
+  type TileflowBuildings3DDesign,
+} from './buildings-3d-design';
+export {
+  readTileflowStreetLights,
+  tileflowStreetLightsMetadataKey,
+  type TileflowStreetLightsDesign,
+} from './street-lights';

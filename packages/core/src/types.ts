@@ -293,6 +293,24 @@ export type TileflowRoadRoundaboutStyle = {
   casing?: TileflowCircleStyle;
   fill?: TileflowCircleStyle;
 };
+/**
+ * How Core's street lights renderer lights the map's streets at night, from the lamps and lit
+ * streets its data holds.
+ */
+export type TileflowRoadStreetLightStyle = {
+  /** The light of lamps whose data gives no colour; a warm white by default. */
+  color?: TileflowThemeColorValue;
+  /** Whether the map has street lights; defaults to true where the data binds street furniture. */
+  enabled?: boolean;
+  /**
+   * Where light is estimated where the data maps no lamps: `lit` (the default) along streets and
+   * pavements mapped as lit; `streets` also along streets the data says nothing about, in tiles
+   * that map few lamps, which invents light; `none` nowhere.
+   */
+  estimate?: 'lit' | 'streets' | 'none';
+  /** How bright the lights shine, from 0 to 2; defaults to 1. */
+  intensity?: TileflowThemeNumberValue;
+};
 export type TileflowRoadSidewalkStyle = {
   outline?: TileflowLineStyle;
   pattern?: TileflowFillStyle;
@@ -314,6 +332,7 @@ export type TileflowRoadsModuleConfig = {
   roundabouts?: TileflowRoadRoundaboutStyle;
   serviceTypes?: Partial<Record<TileflowRoadServiceType, TileflowRoadTreatmentStyle>>;
   sidewalks?: TileflowRoadSidewalkStyle;
+  streetLights?: TileflowRoadStreetLightStyle;
   structures?: Partial<Record<TileflowRoadStructure, TileflowRoadLayerStyle>>;
   weight?: TileflowRoadWeight;
   widthScale?: Partial<Record<TileflowRoadClass, TileflowThemeNumberValue>>;

@@ -103,6 +103,11 @@ export {
   type TileflowStreetLightsOptions,
 } from './street-lights-browser';
 export {
+  readTileflowBuildings3D,
+  tileflowBuildingsMetadataKey,
+  type TileflowBuildings3DDesign,
+} from './buildings-3d-design';
+export {
   createTileflowTrees3D,
   tileflowTrees3DLayerId,
   type TileflowTrees3D,
@@ -129,6 +134,9 @@ export {
 } from './trees-3d';
 export {
   placeTileflowStreetLights,
+  readTileflowStreetLights,
+  tileflowStreetLightsMetadataKey,
+  type TileflowStreetLightsDesign,
   tileflowStreetLightBytes,
   type TileflowStreetLightEstimate,
   type TileflowStreetLightLayers,

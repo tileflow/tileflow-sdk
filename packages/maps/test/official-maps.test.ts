@@ -7,6 +7,8 @@ import {
   defineMap,
   inferTileflowDataRequirements,
   openMapTiles,
+  readTileflowBuildings3D,
+  readTileflowStreetLights,
   readTileflowVegetation3D,
   resolveMap,
   vectorTiles,
@@ -980,6 +982,17 @@ test('Streets keeps its runtime-toggle geometry and business surface in the comp
   assert.equal(vegetation.colors.broadleaf.length, 4);
   assert.equal(vegetation.colors.palm.length, 3);
   assert.deepEqual(vegetation.regions, []);
+  // Core's 3D buildings take the colour of Streets' 3D building pass; its street lights are declared.
+  const buildings3D = readTileflowBuildings3D(style.metadata);
+  assert.ok(buildings3D, 'Streets lost its 3D buildings description');
+  const extrusion = byId.get('tileflow-buildings-render-extrusion');
+  assert.equal(buildings3D.color, extrusion?.paint?.['fill-extrusion-color']);
+  assert.equal(buildings3D.layers.building, extrusion?.['source-layer']);
+  assert.equal(buildings3D.windows, false);
+  const lights = readTileflowStreetLights(style.metadata);
+  assert.ok(lights, 'Streets lost its street lights description');
+  assert.equal(lights.estimate, 'lit');
+  assert.equal(lights.source, trees.source);
 
   const businessArea = layerForTarget('land.render.businessArea');
   assert.ok(businessArea, 'Streets lost its business land-use surface');

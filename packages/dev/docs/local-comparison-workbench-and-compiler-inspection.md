@@ -2,9 +2,10 @@
 
 Start with the [@tileflow/dev guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/README.md) for installation and a complete first example.
 
-The CLI exposes the complete authoring surface through `tileflow preview --against-map ...` or
-`--against-config ...`. Custom local servers can compose the same shell around two existing dev
-handlers:
+The CLI opens the Workbench through `tileflow preview`. It uses one map and one watched artifact
+session by default, with the full inspector, zoom curves, sprite atlas and capture helpers.
+Add `--against-map ...` or `--against-config ...` for synchronized comparison. Custom local servers
+can compose the same shell around existing dev handlers; omit `right` for a single-map Workbench:
 
 ```ts
 import {createTileflowComparisonRequestHandler} from '@tileflow/dev/server';
@@ -29,7 +30,7 @@ const fetch = createTileflowComparisonRequestHandler({
 
 Each side handler retains ownership of its styles, fonts, sprites, events, diagnostics, and
 last-known-good artifact generation. The comparison router only owns the root HTML and strict
-dispatch to two disjoint same-origin route prefixes. Its synchronized camera, URL state,
+dispatch to one or two disjoint same-origin route prefixes. Its synchronized camera, URL state,
 side-by-side/split/overlay/blink modes, rendered-feature inspector, zoom-curve sampling, sprite
 atlas, and scene/capture-command copying require no hosted service.
 

@@ -851,7 +851,7 @@ test(
     assert.equal(result.code, 0, result.stderr);
     const document = JSON.parse(result.stdout) as {
       schemaVersion: number;
-      captures: Array<{outputPath: string; receiptPath: string; sha256: string}>;
+      captures: Array<{captureId: string; outputPath: string; receiptPath: string; sha256: string}>;
     };
     assert.equal(document.schemaVersion, 1);
     assert.match(document.captures[0]?.sha256 ?? '', /^[a-f0-9]{64}$/);
@@ -865,6 +865,22 @@ test(
       document.captures[0]?.sha256,
     );
     assert.equal(result.stdout.includes(directory), false);
+    assert.match(document.captures[0]!.captureId, /^[a-f0-9]{64}$/);
+    await rm(join(directory, 'tileflow.config.ts'));
+    const reused = await runCli(
+      directory,
+      [
+        'compare',
+        '--before',
+        document.captures[0]!.captureId,
+        '--after',
+        document.captures[0]!.captureId,
+        '--json',
+      ],
+      {},
+    );
+    assert.equal(reused.code, 0, reused.stderr);
+    assert.equal(JSON.parse(reused.stdout).review.exact.ratio, 0);
   },
 );
 

@@ -46,6 +46,20 @@ npx tileflow preview
 Rendering can request remote tiles, glyphs, or terrain. Installing the package does not make those
 resources available offline.
 
+### Develop Streets in an SDK checkout
+
+After installing and building this workspace, run from its root:
+
+```sh
+node packages/cli/dist/index.js preview --config packages/maps/tileflow.config.ts
+```
+
+Open `http://127.0.0.1:3333`. This example imports Streets from source, so edits to the map reload in
+the generic Workbench without publishing a package. Add `--scene nyc` for the New York scene or
+`--against-theme dark --map streets-workbench` to compare themes. The example is a map configuration;
+the CLI owns the shared development interface. Changes to compiler or runtime packages require
+rebuilding those packages.
+
 ## Choose a map
 
 - `streets`: contemporary street cartography with coordinated light and dark themes, ranked POIs,

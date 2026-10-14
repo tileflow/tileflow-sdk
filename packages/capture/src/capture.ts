@@ -65,6 +65,8 @@ export type TileflowCaptureOptions = {
 export type CreateTileflowCaptureSessionOptions = Omit<TileflowCaptureOptions, 'scenes'>;
 
 export type TileflowCapture = {
+  /** Concrete normalized frame retained for later review without rendering again. */
+  definition?: NormalizedTileflowCaptureScene & {theme: string};
   scene: string;
   map: string;
   theme: string;
@@ -338,6 +340,7 @@ export class TileflowCaptureSessionImpl implements TileflowCaptureSession {
       });
 
       captures.push({
+        definition: scene,
         scene: sceneName,
         map: scene.map,
         theme: scene.theme,

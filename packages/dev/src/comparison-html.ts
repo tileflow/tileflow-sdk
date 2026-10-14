@@ -11,14 +11,14 @@ export type TileflowComparisonHtmlSide = {
 export type TileflowComparisonHtmlOptions = {
   basePath: string;
   cspNonce?: string;
-  initialMode: 'blink' | 'overlay' | 'side-by-side' | 'split';
+  initialMode: 'single' | 'blink' | 'overlay' | 'side-by-side' | 'split';
   left: TileflowComparisonHtmlSide;
-  right: TileflowComparisonHtmlSide;
+  right?: TileflowComparisonHtmlSide;
   schemaVersion: 1;
   title: string;
 };
 
-/** Render a dependency-free local comparison workbench around two same-origin previews. */
+/** Render the local Workbench around one or two same-origin previews. */
 export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOptions): string {
   const documentOptions = serializeInlineJson(options);
   const nonceAttribute = options.cspNonce ? ` nonce="${escapeHtml(options.cspNonce)}"` : '';
@@ -40,6 +40,8 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         --overlay-alpha: .5;
       }
       * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      .stage[data-mode="single"] .pane-right { display: none; }
       html, body { height: 100%; margin: 0; }
       body {
         display: grid;
@@ -165,9 +167,9 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
     </style>
   </head>
   <body>
-    <header class="toolbar" aria-label="Comparison controls">
+    <header class="toolbar" aria-label="Workbench controls">
       <span class="toolbar-title" id="title"></span>
-      <div class="toolbar-group" role="group" aria-label="Comparison mode">
+      <div class="toolbar-group" role="group" aria-label="Comparison mode" ${options.right ? '' : 'hidden'}>
         <button type="button" data-mode="side-by-side">Side by side</button>
         <button type="button" data-mode="split">Split</button>
         <button type="button" data-mode="overlay">Overlay</button>
@@ -177,13 +179,13 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       <div class="toolbar-group">
         <label id="split-control">Split <input id="split" type="range" min="5" max="95" value="50" aria-label="Split position" /></label>
         <label id="alpha-control">Opacity <input id="alpha" type="range" min="0" max="100" value="50" aria-label="Overlay opacity" /></label>
-        <button type="button" id="driver">Interact: left</button>
+        <button type="button" id="driver" ${options.right ? '' : 'hidden'}>Interact: left</button>
         <button type="button" id="blink-pause">Pause blink</button>
         <button type="button" id="inspect-toggle" aria-controls="inspector" aria-expanded="false" aria-pressed="false">Inspect</button>
       </div>
       <span class="toolbar-separator"></span>
       <div class="toolbar-group">
-        <input id="scene-name" type="text" value="comparison-view" aria-label="Scene name" />
+        <input id="scene-name" type="text" value="${options.right ? 'comparison-view' : 'map-view'}" aria-label="Scene name" />
         <label>DPR <select id="scene-dpr"><option value="1">1</option><option value="2">2</option></select></label>
         <button type="button" id="copy-scene">Copy scene</button>
         <button type="button" id="copy-command">Copy command</button>
@@ -194,7 +196,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       <main class="stage" id="stage" data-driver="left" data-tileflow-capture-id="tileflow-comparison" data-tileflow-state="loading">
         <section class="pane pane-left" data-side="left">
           <div class="pane-label"><span class="side-state" id="left-state" role="status" aria-live="polite"></span><span class="pane-label-text" id="left-label"></span><span class="side-state-text" id="left-status-text">Building</span></div>
-          <iframe id="left-frame" title="Left Tileflow preview" referrerpolicy="no-referrer"></iframe>
+          <iframe id="left-frame" title="${options.right ? 'Left Tileflow preview' : 'Tileflow map preview'}" referrerpolicy="no-referrer"></iframe>
         </section>
         <section class="pane pane-right" data-side="right">
           <div class="pane-label"><span class="side-state" id="right-state" role="status" aria-live="polite"></span><span class="pane-label-text" id="right-label"></span><span class="side-state-text" id="right-status-text">Building</span></div>
@@ -204,7 +206,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       </main>
       <aside class="inspector" id="inspector" tabindex="-1" aria-labelledby="inspector-title" hidden>
         <div class="inspector-heading"><h2 id="inspector-title">Cartographic inspector</h2><button type="button" id="inspector-close" aria-label="Close inspector">Close</button></div>
-        <div id="inspection" class="empty">Enable Inspect, then click either map.</div>
+        <div id="inspection" class="empty">Enable Inspect, then click the map.</div>
         <h3>Zoom curve</h3>
         <select id="curve-property" disabled><option>Select a rendered layer first</option></select>
         <div id="curve-output" class="empty">Paint and layout values appear here.</div>
@@ -241,7 +243,8 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       const sceneNameInput = document.getElementById("scene-name");
       const sceneDprInput = document.getElementById("scene-dpr");
       const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
-      const states = Object.fromEntries(["left", "right"].map((id) => {
+      const sideIds = options.right ? ["left", "right"] : ["left"];
+      const states = Object.fromEntries(sideIds.map((id) => {
         const definition = options[id];
         return [id, {
           id,
@@ -284,7 +287,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       applySliders();
       setMode(initialUi.mode || options.initialMode);
       updateBlinkMotionPreference();
-      for (const id of ["left", "right"]) {
+      for (const id of sideIds) {
         const side = states[id];
         document.getElementById(id + "-label").textContent = side.definition.label;
         side.frame.src = side.definition.previewUrl;
@@ -332,7 +335,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       });
 
       function selectSide(id, writeState = true) {
-        if (id !== "left" && id !== "right") return;
+        if (!states[id]) return;
         const changed = activeSideId !== id || stage.dataset.driver !== id;
         const previousSpriteOwner = spriteOwnerId;
         activeSideId = id;
@@ -370,7 +373,8 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       }
 
       function setMode(mode) {
-        if (!["side-by-side", "split", "overlay", "blink"].includes(mode)) return;
+        if (!options.right) mode = "single";
+        if (!["single", "side-by-side", "split", "overlay", "blink"].includes(mode)) return;
         stage.dataset.mode = mode;
         for (const button of document.querySelectorAll("[data-mode]")) {
           button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
@@ -1293,7 +1297,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         const modeValue = singleQueryValue(query, "mode");
         const mode = ["side-by-side", "split", "overlay", "blink"].includes(modeValue) ? modeValue : undefined;
         const driver = singleQueryValue(query, "driver");
-        selectSide(driver === "right" ? "right" : "left", false);
+        selectSide(driver === "right" && options.right ? "right" : "left", false);
         const split = singleQueryValue(query, "split");
         const alpha = singleQueryValue(query, "alpha");
         return {

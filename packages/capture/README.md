@@ -1,5 +1,10 @@
 # @tileflow/capture
 
+For the complete CLI workflow, use `describe`, `inspect`, `capture`, `compare`, and the `preview`
+Workbench described in the [CLI guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/README.md).
+New still captures include their normalized `definition` for later review. The CLI stores immutable
+capture IDs so `compare --before <id> --after <id>` can reuse evidence without rendering again.
+
 Headless Tileflow map capture for Node.js. Produce PNGs with versioned receipts, compare reviewed
 baselines, or inspect differences between deliberate renders. Use the
 [CLI](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/README.md) for ordinary terminal

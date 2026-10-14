@@ -82,10 +82,12 @@ import {registerAiCommands} from './ai-commands';
 import {installSignalAbortController, registerCaptureCommands} from './capture-command';
 import {writeAtomicFile} from './capture-output';
 import {isRootCliVersionRequest} from './cli-version';
+import {registerCaptureRecordComparison} from './compare-record-command';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 import {registerConfigInspectCommand} from './config-inspect-command';
 import {registerCoordinatesCommands} from './coordinates-command';
 import {allowsStoredDeployCredential, resolveDeploySource} from './deploy-source';
+import {registerDescribeCommand} from './describe-command';
 import {defaultTileflowDevHost, parseTileflowDevHost, tileflowDevOrigin} from './dev-host';
 import {registerFeatureInspectCommand} from './feature-inspect-command';
 import {
@@ -121,7 +123,7 @@ import {
 import {openTileflowExternal} from './open-external';
 import {registerProjectCommands} from './project-commands';
 import {runRendererArtifactCommand} from './renderer-artifact-command';
-import {registerTilesetCommands} from './tileset-command';
+import {registerTilesetCommands, registerTilesetInspectCommand} from './tileset-command';
 import {registerVisualCommands} from './visual-command';
 
 const packageJson = JSON.parse(
@@ -137,11 +139,13 @@ const defaultManifestPath = defaultTileflowManifestPath;
 program
   .name('tileflow')
   .description('Beautiful maps from config.')
+  .enablePositionalOptions()
   .showHelpAfterError(pc.gray('\nRun tileflow <command> --help for usage.'))
   .showSuggestionAfterError();
 
 program.addHelpText('after', '\n  -V, --version  output the version number\n');
 
+registerDescribeCommand(program);
 registerLanguageCommand(program);
 registerTilesetCommands(program, {defaultApiUrl, loadAuthConfig});
 registerIconSetCommands(program, {defaultApiUrl, loadAuthConfig});
@@ -529,7 +533,7 @@ program
 
 program
   .command('preview')
-  .description('Run a local map preview')
+  .description('Open the live map Workbench with inspection and optional comparison')
   .option('-c, --config <path>', 'config path', defaultConfigPath)
   .option('--against-config <path>', 'second config for the comparison workbench')
   .option('--against-map <name>', 'map on the right; defaults to --map')
@@ -677,6 +681,9 @@ program
 
       await withTileflowConfigSecretsHidden(async () => {
         const origin = tileflowDevOrigin(host, port);
+        const previewBasePath = renderer === 'web' ? '/map' : '';
+        const captureConfig =
+          renderer === 'web' ? comparisonCaptureConfigArgument(options.config) : undefined;
         const manifestUrl =
           renderer === 'native' ? getTileflowNativePreviewManifestUrl(origin) : undefined;
         const nativeLifecycleFields = manifestUrl
@@ -689,7 +696,7 @@ program
           : {};
         const icons = resolveIconOptions(options);
         const session = await createTileflowArtifactSession({
-          assetBaseUrl: origin,
+          assetBaseUrl: `${origin}${previewBasePath}`,
           apiBaseUrl: options.apiBaseUrl,
           config: options.config,
           ...(icons ? {icons} : {}),
@@ -697,7 +704,8 @@ program
           ...(renderer === 'native'
             ? {developmentOrigin: origin, renderer: 'native' as const}
             : {}),
-          styleBaseUrl: origin,
+          inspection: renderer === 'web',
+          styleBaseUrl: `${origin}${previewBasePath}`,
           watch: true,
         });
         const initialArtifacts = session.getLastGoodArtifacts();
@@ -725,7 +733,7 @@ program
           return;
         }
 
-        const fetch =
+        const previewHandler =
           renderer === 'native'
             ? createTileflowNativePreviewRequestHandler({
                 config: options.config,
@@ -734,6 +742,7 @@ program
                 session,
               })
             : createTileflowDevRequestHandler({
+                basePath: previewBasePath,
                 config: options.config,
                 apiBaseUrl: options.apiBaseUrl,
                 map: options.map,
@@ -741,6 +750,28 @@ program
                 scene: options.scene,
                 session,
                 theme: options.theme,
+              });
+        const selectedPreview =
+          renderer === 'web' && initialArtifacts
+            ? resolveTileflowPreview(initialArtifacts.project, {
+                map: options.map,
+                scene: options.scene,
+                theme: options.theme,
+              })
+            : undefined;
+        const fetch =
+          renderer === 'native'
+            ? previewHandler
+            : createTileflowComparisonRequestHandler({
+                left: {
+                  basePath: previewBasePath,
+                  captureConfig,
+                  handler: previewHandler,
+                  label: selectedPreview?.label ?? 'Map',
+                  previewUrl: `${previewBasePath}/`,
+                  sidecarUrl: `${previewBasePath}/__inspection/${selectedPreview?.mapName ?? 'pending'}/${selectedPreview?.themeName ?? 'pending'}.json`,
+                },
+                title: 'Tileflow Workbench',
               });
         let invalidSinceLastReady = false;
         const emitState = (state: TileflowArtifactSessionState) => {
@@ -808,7 +839,7 @@ program
               }
               logMuted('Metro remains the JavaScript development server. Press Ctrl+C to stop.');
             } else {
-              logSuccess('Tileflow preview is running and watching for changes.');
+              logSuccess('Tileflow Workbench is running and watching for changes.');
               printKeyValue('Local', link(origin));
               printKeyValue('Config', pathLabel(options.config));
               if (options.map) printKeyValue('Map', options.map);
@@ -1390,6 +1421,22 @@ registerVisualCommands(program, {
   defaultConfigPath,
   openReport: (path) => openBrowser(path, true),
 });
+const compareCommand = registerVisualCommands(
+  program,
+  {
+    defaultConfigPath,
+    openReport: (path) => openBrowser(path, true),
+  },
+  true,
+);
+registerAiCommands(
+  program,
+  {defaultApiUrl, defaultConfigPath},
+  {inspect: inspectCommand, compare: compareCommand},
+);
+registerCaptureRecordComparison(compareCommand);
+registerIconListCommand(inspectCommand, {defaultConfigPath}, 'icons');
+registerTilesetInspectCommand(inspectCommand, 'tileset');
 registerProjectCommands(program, {
   defaultApiUrl,
   loadAuthConfig,
@@ -1398,8 +1445,45 @@ registerProjectCommands(program, {
 if (isRootCliVersionRequest(process.argv.slice(2))) {
   process.stdout.write(`${packageJson.version}\n`);
 } else {
+  const structuredCommand = process.argv[2] ?? 'tileflow';
+  const structuredErrors =
+    process.argv.includes('--json') &&
+    [
+      'describe',
+      'inspect',
+      'capture',
+      'compare',
+      'preview',
+      'visual',
+      'explain',
+      'semantic-diff',
+      'language',
+    ].includes(structuredCommand);
+  if (structuredErrors) {
+    const configureStructuredErrors = (command: Command): void => {
+      command.exitOverride().configureOutput({writeErr: () => {}});
+      for (const child of command.commands) configureStructuredErrors(child);
+    };
+    configureStructuredErrors(program);
+  }
   program.parseAsync().catch((error: unknown) => {
-    printCliError(error);
+    if (structuredErrors) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'exitCode' in error &&
+        error.exitCode === 0
+      )
+        return;
+      process.stderr.write(
+        serializeTileflowCommandDocument(
+          createTileflowCommandFailureDocument(structuredCommand, error, process.cwd(), {
+            code: 'COMMAND_FAILED',
+            phase: 'command-validation',
+          }),
+        ),
+      );
+    } else printCliError(error);
     process.exitCode = 1;
   });
 }

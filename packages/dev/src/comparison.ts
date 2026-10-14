@@ -20,13 +20,13 @@ export type TileflowComparisonSide = {
   previewUrl: string;
 };
 
-export type TileflowComparisonMode = 'blink' | 'overlay' | 'side-by-side' | 'split';
+export type TileflowComparisonMode = 'single' | 'blink' | 'overlay' | 'side-by-side' | 'split';
 
 export type TileflowComparisonOptions = {
   basePath?: string;
   initialMode?: TileflowComparisonMode;
   left: TileflowComparisonSide;
-  right: TileflowComparisonSide;
+  right?: TileflowComparisonSide;
   title?: string;
 };
 
@@ -37,7 +37,7 @@ type NormalizedSide = Omit<TileflowComparisonSide, 'basePath'> & {
 };
 
 /**
- * Compose two existing Tileflow dev handlers behind one same-origin comparison shell.
+ * Compose one or two existing Tileflow dev handlers behind the same-origin Workbench.
  *
  * The side handlers retain ownership of styles, sprites, fonts, generations, live
  * events, and last-known-good behavior. This router owns only the shell document and
@@ -46,17 +46,19 @@ type NormalizedSide = Omit<TileflowComparisonSide, 'basePath'> & {
 export function createTileflowComparisonRequestHandler(options: TileflowComparisonOptions) {
   const comparisonBasePath = normalizeTileflowBasePath(options.basePath);
   const left = normalizeSide(options.left, 'left', comparisonBasePath);
-  const right = normalizeSide(options.right, 'right', comparisonBasePath);
-  assertDisjointSideRoutes(left.basePath, right.basePath);
+  const right = options.right
+    ? normalizeSide(options.right, 'right', comparisonBasePath)
+    : undefined;
+  if (right) assertDisjointSideRoutes(left.basePath, right.basePath);
   const title = normalizeLabel(options.title ?? 'Tileflow comparison', 'title');
-  const initialMode = options.initialMode ?? 'side-by-side';
+  const initialMode = right ? (options.initialMode ?? 'side-by-side') : 'single';
 
   return async function handleTileflowComparisonRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const pathname = url.pathname;
 
     if (matchesBasePath(pathname, left.basePath)) return await left.handler(request);
-    if (matchesBasePath(pathname, right.basePath)) return await right.handler(request);
+    if (right && matchesBasePath(pathname, right.basePath)) return await right.handler(request);
 
     if (isComparisonRoot(pathname, comparisonBasePath)) {
       if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -68,7 +70,7 @@ export function createTileflowComparisonRequestHandler(options: TileflowComparis
         cspNonce,
         initialMode,
         left: publicSide(left),
-        right: publicSide(right),
+        ...(right ? {right: publicSide(right)} : {}),
         schemaVersion: tileflowComparisonSchemaVersion,
         title,
       });

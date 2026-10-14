@@ -82,6 +82,35 @@ test('renders a self-contained comparison workbench with versioned bridge and re
   assert.doesNotThrow(() => new Script(script, {filename: 'comparison-browser.js'}));
 });
 
+test('single-map Workbench loads one viewer and retains camera and inspection controls', async () => {
+  const harness = runComparisonHarness('?mode=blink&driver=right', {single: true});
+  harness.load('left');
+  await harness.settle();
+  assert.equal(harness.element('stage').dataset.mode, 'single');
+  assert.equal(harness.element('stage').dataset.driver, 'left');
+  assert.equal(harness.element('right-frame').listeners.has('load'), false);
+  harness.element('inspect-toggle').dispatch('click');
+  assert.equal(harness.element('inspector').hidden, false);
+  harness.element('copy-command').dispatch('click');
+  await harness.settle();
+  assert.match(harness.clipboardText(), /tileflow capture/);
+  assert.equal(harness.maps.right.jumpCalls.length, 0);
+});
+
+test('single-map router serves only its configured side and advanced Workbench', async () => {
+  const handler = createTileflowComparisonRequestHandler({
+    left: {basePath: '/map', handler: leftHandler, label: 'Streets', previewUrl: '/map/'},
+  });
+  const shell = await handler(new Request('http://localhost/'));
+  assert.equal(shell.status, 200);
+  assert.match(await shell.text(), /Cartographic inspector/);
+  assert.equal(
+    (await handler(new Request('http://localhost/map/style.json'))).headers.get('x-side'),
+    'left',
+  );
+  assert.equal((await handler(new Request('http://localhost/right/'))).status, 404);
+});
+
 test('serializes labels and URLs without allowing an inline-script breakout', () => {
   const attack = '</script><script>globalThis.compromised=true</script>';
   const html = renderTileflowComparisonHtml({
@@ -529,6 +558,7 @@ test('validates same-origin owned URLs and disjoint bounded route prefixes', () 
 function runComparisonHarness(
   search = '',
   configs: {
+    single?: boolean;
     leftCaptureConfig?: string;
     leftSidecar?: unknown;
     rightCaptureConfig?: string;
@@ -620,17 +650,19 @@ function runComparisonHarness(
         : {sidecarUrl: '/left/__inspection/map/theme.json'}),
       statusUrl: '/left/__status',
     },
-    right: {
-      basePath: '/right',
-      ...(configs.rightCaptureConfig ? {captureConfig: configs.rightCaptureConfig} : {}),
-      eventsUrl: '/right/__events',
-      label: 'Right',
-      previewUrl: '/right/',
-      ...(configs.rightSidecar === undefined
-        ? {}
-        : {sidecarUrl: '/right/__inspection/map/theme.json'}),
-      statusUrl: '/right/__status',
-    },
+    right: configs.single
+      ? undefined
+      : {
+          basePath: '/right',
+          ...(configs.rightCaptureConfig ? {captureConfig: configs.rightCaptureConfig} : {}),
+          eventsUrl: '/right/__events',
+          label: 'Right',
+          previewUrl: '/right/',
+          ...(configs.rightSidecar === undefined
+            ? {}
+            : {sidecarUrl: '/right/__inspection/map/theme.json'}),
+          statusUrl: '/right/__status',
+        },
     schemaVersion: 1,
     title: 'Comparison',
   });

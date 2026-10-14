@@ -6,20 +6,19 @@ import type {
   TileflowIconCompositionV1,
   TileflowIconLayoutMetadata,
 } from '@tileflow/core';
-import {
-  getTileflowMapNames,
-  loadValidTileflowConfigWithInputs,
-  TileflowValidationError,
-} from '@tileflow/dev/config';
+import {getTileflowMapNames, loadValidTileflowConfigWithInputs} from '@tileflow/dev/config';
 import {
   inspectTileflowIconCatalogs,
   type TileflowIconCatalog,
   type TileflowIconCatalogContributor,
   type TileflowIconCatalogInspection,
   type TileflowIconCatalogMap,
-  TileflowIconCompilationError,
   type TileflowIconResolutionOptions,
 } from '@tileflow/dev/icons';
+import {
+  createTileflowCommandFailureDocument,
+  serializeTileflowCommandDocument,
+} from '@tileflow/dev/validation';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 
 export type TileflowIconListJsonV3 = {
@@ -100,9 +99,10 @@ type IconListOptions = {
 export function registerIconListCommand(
   icons: Command,
   dependencies: {defaultConfigPath: string},
+  name = 'list',
 ): void {
   icons
-    .command('list')
+    .command(name)
     .description('List each map icon directory composition as deterministic agent JSON')
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)
     .option('--map <id>', 'inspect one exact configured map')
@@ -121,7 +121,14 @@ export function registerIconListCommand(
       try {
         await runIconList(options);
       } catch (error) {
-        printIconListError(error);
+        process.stderr.write(
+          serializeTileflowCommandDocument(
+            createTileflowCommandFailureDocument('inspect.icons', error, process.cwd(), {
+              code: 'ICON_INSPECTION_FAILED',
+              phase: 'icon-inspection',
+            }),
+          ),
+        );
         process.exitCode = 1;
       }
     });
@@ -270,25 +277,5 @@ function sameContributors(
   return (
     left.length === right.length &&
     left.every((contributor, index) => contributor.label === right[index]?.label)
-  );
-}
-
-function printIconListError(error: unknown): void {
-  if (error instanceof TileflowValidationError) {
-    printIssues('Tileflow config has errors.', error.messages);
-    return;
-  }
-
-  if (error instanceof TileflowIconCompilationError) {
-    printIssues('Tileflow icon catalog has errors.', error.issues);
-    return;
-  }
-
-  console.error(error instanceof Error ? error.message : 'Icon catalog listing failed.');
-}
-
-function printIssues(heading: string, issues: readonly {message: string; path: string}[]): void {
-  console.error(
-    [heading, ...issues.map((issue) => `- ${issue.path || '(root)'}: ${issue.message}`)].join('\n'),
   );
 }

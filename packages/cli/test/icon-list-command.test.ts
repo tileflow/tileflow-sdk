@@ -137,7 +137,7 @@ test('filters by exact map id and reports an empty array as no icons', async (t)
   );
   assert.equal(unknown.code, 1);
   assert.equal(unknown.stdout, '');
-  assert.match(unknown.stderr, /Unknown map "missing-map"/u);
+  assert.match(JSON.parse(unknown.stderr).message, /Unknown map "missing-map"/u);
   assert.match(unknown.stderr, /Available maps: alpha/u);
 });
 
@@ -220,7 +220,7 @@ test('reports config, directory, and decode failures without partial JSON', asyn
   const missing = await runCli(missingDirectory, ['icons', 'list', '--json'], {});
   assert.equal(missing.code, 1);
   assert.equal(missing.stdout, '');
-  assert.match(missing.stderr, /Tileflow icon catalog has errors/u);
+  assert.equal(JSON.parse(missing.stderr).code, 'ICON_INVALID');
 
   const brokenImage = await createDirectoryFixture(t, 'tileflow-icon-list-broken-');
   await writeFileEnsured(join(brokenImage, 'icons', 'broken.png'), 'not a PNG');
@@ -231,7 +231,7 @@ test('reports config, directory, and decode failures without partial JSON', asyn
   const broken = await runCli(brokenImage, ['icons', 'list', '--json'], {});
   assert.equal(broken.code, 1);
   assert.equal(broken.stdout, '');
-  assert.match(broken.stderr, /Tileflow icon catalog has errors/u);
+  assert.equal(JSON.parse(broken.stderr).phase, 'icon-compilation');
 });
 
 async function createDirectoryFixture(t: TestContext, prefix: string): Promise<string> {

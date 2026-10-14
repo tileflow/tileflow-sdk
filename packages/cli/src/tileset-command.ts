@@ -25,14 +25,9 @@ import {
 
 type HostedTilesetOptions = HostedTeamOptions;
 
-export function registerTilesetCommands(
-  program: Command,
-  dependencies: {defaultApiUrl: string; loadAuthConfig: () => Promise<AuthConfig>},
-): void {
-  const tileset = program.command('tileset').description('Inspect and manage geospatial tilesets');
-
-  tileset
-    .command('inspect')
+export function registerTilesetInspectCommand(parent: Command, name = 'inspect'): void {
+  parent
+    .command(name)
     .description('Inspect one local PMTiles archive deterministically')
     .argument('<archive>', 'repository-local PMTiles archive')
     .option('--json', 'print deterministic inspection-schema-version-1 JSON')
@@ -88,6 +83,15 @@ export function registerTilesetCommands(
         }
       },
     );
+}
+
+export function registerTilesetCommands(
+  program: Command,
+  dependencies: {defaultApiUrl: string; loadAuthConfig: () => Promise<AuthConfig>},
+): void {
+  const tileset = program.command('tileset').description('Inspect and manage geospatial tilesets');
+
+  registerTilesetInspectCommand(tileset);
 
   tileset
     .command('publish')

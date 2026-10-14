@@ -7,7 +7,7 @@ const workspaceRoot = fileURLToPath(new URL('../', import.meta.url));
 /** Make an isolated config fixture resolve selected workspace packages like an installed project. */
 export async function linkWorkspacePackages(
   cwd: string,
-  packageNames: readonly string[] = ['maps'],
+  packageNames: readonly string[] = ['core', 'maps'],
 ): Promise<void> {
   const scope = join(cwd, 'node_modules', '@tileflow');
   await mkdir(scope, {recursive: true});

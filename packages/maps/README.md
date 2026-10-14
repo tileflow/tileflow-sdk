@@ -49,8 +49,7 @@ resources available offline.
 ## Choose a map
 
 - `streets`: contemporary street cartography with coordinated light and dark themes, ranked POIs,
-  and generic road-reference shields. The light theme uses orange motorways, yellow trunk roads,
-  white local streets, neutral footprints, and compact destination markers.
+  and generic road-reference shields.
 - `baedeker`: warm travel-atlas styling, serif labels, original engraved patterns, and contours.
 - `civica`: illustrated civic-print styling with warm paper, olive parks, blue annotations, and
   vermilion landmarks.
@@ -63,49 +62,6 @@ resources available offline.
 Every official map is a complete, independent root using the same Core compiler. Official map
 objects are deeply frozen shared instances. Do not mutate them; use `defineMap({extends: ...})`
 to create an application-owned map.
-
-### Streets cartography
-
-Streets light follows the visual hierarchy of Mapbox Streets v12 using Tileflow World geometry
-and Tileflow's own theme and assets. Its dark theme shares the same zoom gates and label layout.
-Country names give way to settlements, then neighborhoods and streets; road names keep their
-source casing. Labels prefer English with local-name fallback. Override `modules.labels.language`
-to choose another language.
-
-Ranked destinations use compact category markers and optional names. Buildings fade in between
-z15 and z16; pedestrian paving begins at z16 and house numbers at z17 where supplied by the data.
-Individual trees are disabled by default. Applications can explicitly enable the vegetation
-module or opt into the existing building extrusion toggle. Low-zoom bathymetry provides geographic context.
-Streets does not require a DEM or a hillshade source.
-
-For a web globe, opt into the blue atmosphere using the theme's appearance roles:
-
-<!-- docs:check -->
-
-```ts
-import {defineMap, token} from '@tileflow/core';
-import {streets} from '@tileflow/maps';
-
-export default defineMap({
-  id: 'streets-globe',
-  version: 1,
-  extends: streets,
-  atmosphere: {
-    skyColor: token.color('atmosphere.sky'),
-    horizonColor: token.color('atmosphere.horizon'),
-    fogColor: token.color('atmosphere.fog'),
-    spaceColor: token.color('atmosphere.space'),
-    starIntensity: 0.1,
-    starParallax: 0.1,
-  },
-});
-```
-
-Atmosphere is opt-in so the base map can also be extended with Mercator projection or prepared
-for the native renderer, whose current profile does not support sky.
-
-Tileflow World determines which destinations, addresses, and geometry exist at each zoom.
-The style does not manufacture missing features or replace them with another provider's data.
 
 ### Blueprint naming
 

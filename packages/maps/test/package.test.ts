@@ -167,8 +167,8 @@ test('publishes every official icon and font directory with provenance', async (
     'utf8',
   );
   assert.notEqual(darkSidewalkDot, lightSidewalkDot);
-  assert.match(lightSidewalkDot, /stroke="#B4B8C3"/u);
-  assert.match(darkSidewalkDot, /stroke="#747C91"/u);
+  assert.match(lightSidewalkDot, /fill="#C1C5D7"/u);
+  assert.match(darkSidewalkDot, /fill="#525664"/u);
 
   const neutralShield = await readFile(
     new URL('../assets/streets/icons/road-shield-rectangle-neutral.svg', import.meta.url),

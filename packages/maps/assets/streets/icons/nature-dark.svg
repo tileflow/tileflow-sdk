@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>Night Park</title>
+  <desc>Original Tileflow category pictogram and disc.</desc>
+  <circle cx="12" cy="12" r="9.5" fill="#252839"/>
+  <circle cx="12" cy="12" r="8" fill="#89B871"/>
+  <circle cx="12" cy="10" r="4" fill="#252839"/>
+  <path fill="#252839" d="M11 13h2v5h-2z"/>
+</svg>

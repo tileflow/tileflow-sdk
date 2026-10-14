@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>Sport</title>
+  <desc>Original Tileflow category pictogram and disc.</desc>
+  <circle cx="12" cy="12" r="9.5" fill="#FFFFFF"/>
+  <circle cx="12" cy="12" r="8" fill="#659D51"/>
+  <circle cx="12" cy="12" r="5.5" fill="none" stroke="#FFFFFF" stroke-width="1.2"/>
+  <path fill="none" stroke="#FFFFFF" stroke-width="1" d="M12 6.5v11M6.5 12h11M8 8c4 2 4 6 0 8M16 8c-4 2-4 6 0 8"/>
+</svg>

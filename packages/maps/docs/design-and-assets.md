@@ -149,15 +149,19 @@ lighting without changing a source, filter, layer order, zoom gate, collision ru
 sidewalk patterns live in the shared `[streetsIcons]` atlas and the selected theme resolves the
 semantic `roads.sidewalkPattern` image token to the correct asset.
 
-Streets uses one ranked destination hierarchy in both themes. Major transit and cultural anchors
-appear first; lodging, health, education, services, shopping, food, coffee, and parking enter
-progressively as the camera approaches street level. Each visible destination is one collision
-unit made from a colored circular pictogram and an optional neutral name, so the marker remains
-useful when the label cannot fit. The pictogram scale grows gently from 1× at z12 to 1.06× at z17,
-giving detailed street views a little more visual presence without increasing POI density.
-Portal-number labels are intentionally disabled. The ten POI
-pictograms are adapted from the pinned CC0 Maki subset documented in
-`THIRD_PARTY_NOTICES.md`; their containers, colors, sizing, and composition are Tileflow-authored.
+Streets uses the same ranked destination hierarchy in both themes. World supplies category,
+eligibility, and density ranks; culture and lodging use density 2, while other categories use 3. Each destination is one collision unit made from a colored disc and an optional name in its
+category color. Three-pixel icon and text padding keeps nearby names available without disabling
+collision. Disc scale grows from 0.9 at z12 to 1 at z17. The dark theme supplies pale discs with
+dark pictograms, including coffee and parking selected by data. Portal-number labels are disabled.
+The ten Maki-derived pictograms and their night variants retain the CC0 provenance documented in
+`THIRD_PARTY_NOTICES.md`; nature, sport, and worship pictograms are original Tileflow geometry.
+
+Regional hillshade uses the public Mapterhorn TileJSON endpoint with Terrarium encoding, from
+z5 to before z14. Day and night use separate highlight, accent, and shadow tokens. The DEM is a
+remote runtime dependency with its own attribution, and `terrain: 'none'` removes it. The layer
+adds shaded relief without displacing geometry. Flat building footprints, runtime-toggle
+extrusions, and the existing vegetation renderer remain separate from the hillshade.
 
 Road references use a compact Tileflow-owned family of generic rectangular and circular shields.
 The data's normalized `shield_kind` selects neutral, blue, green, red, orange, yellow, or circular
@@ -175,8 +179,8 @@ and the overview candidate schedule keep regional views legible while preserving
 at street scale.
 
 The two palettes are Tileflow-owned, deterministic snapshots calibrated from rendered Mapbox
-Standard `default/day` and `default/night` references on 2026-08-27. They do not import Mapbox style
-JSON, rules, assets, or runtime dependencies. Public roles such as `surface.background`,
+Standard `default/day` and `default/night` references on 2026-10-14. The [Standard playground](https://docs.mapbox.com/playground/standard-style/) is the visual
+reference; the map does not import its style JSON, assets, or runtime dependencies. Public roles such as `surface.background`,
 `landuse.industrial`, `landuse.medical`, `labels.settlement`, `labels.neighborhood`, and
 `labels.road` remain independently wired; `hydro.ocean` also separates Standard Night's deep sea
 from urban and inland water. An agent can alter one cartographic intent without

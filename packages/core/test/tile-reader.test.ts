@@ -386,6 +386,20 @@ test('a map source gives the reader its address and zooms once loaded', () => {
   assert.equal(readTileflowMapTileSource(map, 'missing'), undefined);
 });
 
+test("a source served from a Tileflow PMTiles archive is read through Core's protocol", async (t) => {
+  let requested = '';
+  t.mock.method(globalThis, 'fetch', async (input: unknown) => {
+    requested = String(input);
+    throw new Error('stop after URL resolution');
+  });
+  const reader = createTileflowTileReader({
+    tiles: 'tileflow-pmtiles://https://assets.example.test/canopy.pmtiles/{z}/{x}/{y}.mvt',
+  });
+  await assert.rejects(reader.readTile({z: 15, x: 16000, y: 12000}), /stop after URL resolution/u);
+  // The archive itself is requested, not the tile address.
+  assert.equal(requested, 'https://assets.example.test/canopy.pmtiles');
+});
+
 test('invalid reader options are refused', () => {
   assert.throws(() => createTileflowTileReader({tiles: 'https://x.test/tile.pbf'}), /\{z\}/u);
   assert.throws(

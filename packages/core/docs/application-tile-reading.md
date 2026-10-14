@@ -74,6 +74,9 @@ state on the map.
 - **Requests.** `transformRequest` rewrites each request as a MapLibre map's option does. Pass the
   map's own so tile reads follow the same rules. The browser's HTTP cache applies as for any
   request.
+- **Archives.** A source served from a Tileflow PMTiles archive (a `tileflow-pmtiles://` address)
+  is read through Core's PMTiles protocol, sharing the archives the page's map has opened. A
+  `fetch` of your own replaces both.
 
 The reader has no DOM dependency, so it also runs in a module worker: post the tile address and
 zooms to the worker and create the reader there. `decodeTileflowVectorTile(bytes, {layers})`

@@ -20,6 +20,8 @@ export type TileflowMapFixtureOptions = {
 /** Emit one executable singular Tileflow map config for CLI integration tests. */
 export function tileflowMapFixture(options: TileflowMapFixtureOptions): string {
   const fields = [
+    // Hermetic CLI fixtures do not need the official map's remote DEM.
+    `terrain: 'none'`,
     options.data === 'fixture'
       ? `data: vectorTiles({
   attribution: '© Tileflow CLI fixture',

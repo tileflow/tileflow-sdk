@@ -64,6 +64,22 @@ const officialIconIds = [
   'civica-poi-transit',
   'civica-water-lines',
   'coffee',
+  'nature',
+  'sport',
+  'worship',
+  'coffee-dark',
+  'culture-dark',
+  'education-dark',
+  'food-dark',
+  'health-dark',
+  'lodging-dark',
+  'major-transit-dark',
+  'parking-dark',
+  'services-dark',
+  'shopping-dark',
+  'nature-dark',
+  'worship-dark',
+  'sport-dark',
   'crosswalk',
   'culture',
 
@@ -1023,8 +1039,8 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
     'religion',
     'visitor-amenity',
   ]);
-  assert.equal(resolved.modules?.poi?.placement?.iconPadding, 10);
-  assert.equal(resolved.modules?.poi?.placement?.textPadding, 12);
+  assert.equal(resolved.modules?.poi?.placement?.iconPadding, 3);
+  assert.equal(resolved.modules?.poi?.placement?.textPadding, 3);
   assert.equal(resolved.modules?.poi?.styles?.['arts-entertainment']?.density, 2);
   assert.equal(resolved.modules?.poi?.styles?.lodging?.density, 2);
 
@@ -1035,19 +1051,19 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
   assert.equal(byId.has('tileflow-parking-symbol-label'), false);
 
   const expectedPoiTextColors = {
-    'arts-entertainment': '#B85CA4',
+    'arts-entertainment': '#CB6DB5',
     education: '#987A55',
-    'food-drink': '#D7892C',
-    landmark: '#B85CA4',
-    lodging: '#806DC4',
-    medical: '#C95E6B',
-    'park-nature': '#4C9478',
+    'food-drink': '#D99537',
+    landmark: '#CB6DB5',
+    lodging: '#9175CD',
+    medical: '#DD7380',
+    'park-nature': '#659D51',
     'public-services': '#667C9E',
-    religion: '#8A756B',
-    retail: '#557BC4',
-    'sport-leisure': '#4C9478',
+    religion: '#7C929A',
+    retail: '#6099CF',
+    'sport-leisure': '#659D51',
     transport: '#5C74D6',
-    'visitor-amenity': '#557BC4',
+    'visitor-amenity': '#6099CF',
   } as const;
   for (const category of resolved.modules?.poi?.categories ?? []) {
     const id = `tileflow-poi-${category}`;
@@ -1079,20 +1095,7 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
     ]);
     assert.equal(layer.paint?.['text-color'], expectedPoiTextColors[category]);
     assert.equal(layer.paint?.['text-halo-color'], '#FFFFFF');
-    assert.equal(
-      layer.minzoom,
-      [
-        'education',
-        'landmark',
-        'medical',
-        'park-nature',
-        'public-services',
-        'religion',
-        'visitor-amenity',
-      ].includes(category)
-        ? 15.5
-        : 0,
-    );
+    assert.equal(layer.minzoom, 0);
   }
 
   const transportIcon = JSON.stringify(byId.get('tileflow-poi-transport')?.layout?.['icon-image']);

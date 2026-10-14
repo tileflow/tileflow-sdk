@@ -49,7 +49,7 @@ resources available offline.
 ## Choose a map
 
 - `streets`: contemporary street cartography with coordinated light and dark themes, ranked POIs,
-  and generic road-reference shields.
+  generic road-reference shields, and regional hillshade.
 - `baedeker`: warm travel-atlas styling, serif labels, original engraved patterns, and contours.
 - `civica`: illustrated civic-print styling with warm paper, olive parks, blue annotations, and
   vermilion landmarks.
@@ -62,6 +62,31 @@ resources available offline.
 Every official map is a complete, independent root using the same Core compiler. Official map
 objects are deeply frozen shared instances. Do not mutate them; use `defineMap({extends: ...})`
 to create an application-owned map.
+
+### Streets appearance
+
+Streets follows the visual direction of [Mapbox Standard](https://docs.mapbox.com/playground/standard-style/)
+(default theme, day and night), reviewed on 2026-10-14. Its own semantic design retains slate-blue
+roads, uppercase road names, warm building footprints, green parks, and compact category-colored
+POI discs. Dark mode uses pale discs with dark pictograms. Parks, places of worship, and sports
+have distinct original pictograms; coffee and parking retain their data-selected symbols.
+
+Regional hillshade uses [Mapterhorn's public Terrarium DEM](https://mapterhorn.com/data-access/)
+from z5 through z13, with source attribution. This is an additional remote data request. To omit
+it, set `terrain: 'none'` in a map extending `streets`. Hillshade does not change road geometry or
+raise the terrain. Street views retain the flat footprints and optional building extrusion group;
+the preview's **3D** control enables those buildings, and its **Trees** control enables vegetation.
+Browser atmosphere is separately enabled with `atmosphere: true` on a globe map; the base definition
+also remains usable with Mercator and native targets.
+
+POI categories use World eligibility and ranks. Culture and lodging retain a lower density, while
+other categories no longer wait for an extra z15.5 gate. Collision still determines which names
+fit. City labels hand over at z14, and co-located city candidates share one anchor to prevent
+duplicate names at world scale. Local-language labels and disabled house numbers remain the defaults.
+
+The map uses Tileflow data and assets, including Noto Sans. Available POIs, abbreviated names,
+proprietary landmark models, transit branding, and building detail can differ from the reference.
+See [map design and asset provenance](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/docs/design-and-assets.md).
 
 ### Blueprint naming
 

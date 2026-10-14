@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>Place of worship</title>
+  <desc>Original Tileflow category pictogram and disc.</desc>
+  <circle cx="12" cy="12" r="9.5" fill="#FFFFFF"/>
+  <circle cx="12" cy="12" r="8" fill="#7C929A"/>
+  <path fill="#FFFFFF" d="M6 20v-9l6-6 6 6v9h-4v-5a2 2 0 0 0-4 0v5z"/>
+</svg>

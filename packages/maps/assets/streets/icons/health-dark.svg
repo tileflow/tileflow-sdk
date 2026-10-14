@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>Night Health</title>
+  <desc>Tileflow POI disc with a Maki hospital pictogram, CC0-1.0.</desc>
+  <circle cx="12" cy="12" r="9.5" fill="#252839"/>
+  <circle cx="12" cy="12" r="8" fill="#DC7C89"/>
+  <path
+    fill="#252839"
+    transform="translate(6.375 6.375) scale(.75)"
+    d="M7 1a1 1 0 0 0-1 1v4H2a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1h4v4a1 1 0 0 0 1 1h1a1 1 0 0 0 1-1V9h4a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1H9V2a1 1 0 0 0-1-1H7Z"
+  />
+</svg>

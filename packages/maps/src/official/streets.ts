@@ -16,11 +16,14 @@ import {
   type TileflowLineCap,
   type TileflowLineJoin,
   type TileflowLineStyle,
+  type TileflowPoiCategory,
   type TileflowPoiCategoryStyle,
   type TileflowRenderSelector,
   type TileflowRoadClassStyle,
   type TileflowSymbolStyle,
   type TileflowThemeColorValue,
+  type TileflowThemeImageValue,
+  token,
   transit,
   vegetation,
   water,
@@ -158,28 +161,29 @@ const protectedAreaOpacity = zoom.linear([
   [9, 0.32],
 ]);
 
-// The 24 px source artwork keeps a small transparent fringe around each POI.
-// Grow it gently at street zooms so the marker gains presence without turning
-// the overview into a denser visual field.
-const streetsPoiStyle = {
-  icon: {
-    size: zoom.linear([
-      [12, 1.04],
-      [15, 1.1],
-      [17, 1.14],
-    ]),
-  },
-} satisfies TileflowPoiCategoryStyle;
-
-const sparseStreetsPoiStyle = {
-  ...streetsPoiStyle,
-  density: 2,
-} satisfies TileflowPoiCategoryStyle;
-
-const deferredStreetsPoiStyle = {
-  ...streetsPoiStyle,
-  minZoom: 15.5,
-} satisfies TileflowPoiCategoryStyle;
+// Standard uses compact destination discs with nearby names. Keep the 24 px
+// artwork below its native size and leave eligibility to World's ranked POI data.
+function streetsPoiStyle(category: TileflowPoiCategory): TileflowPoiCategoryStyle {
+  return {
+    // Keep the two data-specific pictograms while resolving every image through
+    // the theme, including fields that would otherwise select a light SVG at night.
+    icon: {
+      image: expr.match<string, TileflowThemeImageValue>(
+        expr.get(field('poiIcon')),
+        [
+          {labels: 'coffee', value: token.image('poi.coffee')},
+          {labels: 'parking', value: token.image('poi.parking')},
+        ],
+        token.image(`poi.${category}`),
+      ),
+      size: zoom.linear([
+        [12, 0.9],
+        [15, 0.94],
+        [17, 1],
+      ]),
+    },
+  };
+}
 
 // Match Standard's warm 2D footprints here; authored 3D extrusions keep their
 // separate neutral palette. The light palette stores rendered day colours,
@@ -902,6 +906,14 @@ function streetsLabelRenderStack() {
         selectors: [
           {field: 'name', kind: 'has'},
           {field: 'class', kind: 'compare', operator: 'eq', value: 'country'},
+          {
+            fallback: rankAtMost(4),
+            kind: 'step',
+            stops: [
+              {selector: rankAtMost(4), zoom: 3},
+              {selector: {kind: 'literal', value: true}, zoom: 5},
+            ],
+          },
         ],
       },
       style: {},
@@ -1269,7 +1281,13 @@ function roadLabelStyle(kind: RoadLabelKind): TileflowSymbolStyle {
       font: streetsVisual.font.default,
       haloColor: streetsDetailPalette.halo,
       haloWidth: 1,
-      letterSpacing: path || pedestrian ? 0.01 : 0.15,
+      letterSpacing:
+        path || pedestrian
+          ? 0.01
+          : zoom.linear([
+              [12, 0.12],
+              [17, 0.035],
+            ]),
       maxAngle: 30,
       padding: 1,
       size: zoom.linear([
@@ -1301,9 +1319,24 @@ export const streets = bindOfficialMapTheme(
       type: 'tileflow-world',
     },
     icons: [streetsIcons],
-    // The development terrain archive currently returns uncached tiles in the reviewed cities.
-    // Keep it disabled until that archive is complete so navigation does not wait on failed DEM requests.
-    terrain: 'none',
+    // The same open DEM used by the other terrain maps. Restrict relief to
+    // regional zooms so street detail does not fetch high-resolution DEM tiles.
+    terrain: {
+      mode: 'hillshade',
+      encoding: 'terrarium',
+      url: 'https://tiles.mapterhorn.com/tilejson.json',
+      attribution: 'Terrain: <a href="https://mapterhorn.com/attribution">© Mapterhorn</a>',
+      hillshade: {
+        minZoom: 5,
+        maxZoom: 14,
+        accentColor: streetsVisual.terrain.accent,
+        highlightColor: streetsVisual.terrain.highlight,
+        shadowColor: streetsVisual.terrain.shadow,
+        exaggeration: 0.23,
+        illuminationAnchor: 'map',
+        illuminationDirection: 315,
+      },
+    },
     modules: {
       // Optional keys: addresses, aeroways, boundaries, buildings, labels, land,
       // landforms, poi, roads, transit, vegetation, water. Object order never
@@ -1921,7 +1954,9 @@ export const streets = bindOfficialMapTheme(
               roadSurfaceColor,
               [
                 [3, 0],
-                [12, 0.35],
+                [12, 0.8],
+                [13, 1.5],
+                [14, 2.2],
                 [18, 20],
                 [22, 200],
               ],
@@ -2045,7 +2080,20 @@ export const streets = bindOfficialMapTheme(
         }),
         streetsRoadRenderStack(),
       ),
-      transit: transit(mapboxRailTransitStyle(mapboxRailColor)),
+      transit: transit({
+        ...mapboxRailTransitStyle(mapboxRailColor),
+        // Dense overlapping ferry routes must remain subordinate to roads.
+        ferry: {
+          color: streetsVisual.road.ferry,
+          dash: [1, 0],
+          opacity: 0.25,
+          width: zoom.linear([
+            [6, 0.4],
+            [12, 0.6],
+            [16, 0.8],
+          ]),
+        },
+      }),
       buildings: withRenderStack(
         buildings({
           mode: 'flat', // 'flat' | '3d'.
@@ -2099,7 +2147,7 @@ export const streets = bindOfficialMapTheme(
           water: 'all', // 'none' | 'major' | 'all'.
           styles: {
             places: {
-              // Mapbox Streets v12 hierarchy: continents disappear first, then
+              // Standard overview hierarchy: continents disappear first, then
               // countries and administrative regions hand over to settlements.
               continent: {
                 minZoom: 0.75,
@@ -2129,9 +2177,10 @@ export const streets = bindOfficialMapTheme(
                 maxZoom: 10,
                 priority: 95,
                 text: {
+                  font: streetsVisual.font.default,
                   color: streetsOverviewPalette.label,
                   haloColor: streetsDetailPalette.halo,
-                  haloWidth: 1.25,
+                  haloWidth: 0.6,
                   lineHeight: 1.1,
                   maxWidth: 6,
                   padding: 3,
@@ -2212,7 +2261,7 @@ export const streets = bindOfficialMapTheme(
               },
               city: {
                 minZoom: 2,
-                maxZoom: 16,
+                maxZoom: 14,
                 priority: expr.subtract(100, expr.coalesce(expr.get(field('rank')), 20)),
                 text: {
                   color: zoom.linear([
@@ -2284,16 +2333,7 @@ export const streets = bindOfficialMapTheme(
                   // regional label field used by Standard. Capital dots and
                   // rank-driven size still carry the major-city hierarchy.
                   font: streetsVisual.font.default,
-                  variableAnchors: [
-                    'left',
-                    'right',
-                    'top',
-                    'bottom',
-                    'top-left',
-                    'top-right',
-                    'bottom-left',
-                    'bottom-right',
-                  ],
+                  variableAnchors: ['right'],
                 },
               },
               town: {
@@ -2674,23 +2714,23 @@ export const streets = bindOfficialMapTheme(
           // One collision unit: the circular icon is required while its name is
           // optional and may move around the marker when space is tight.
           coupleIconAndLabel: true,
-          iconPadding: 10,
-          textPadding: 12,
+          iconPadding: 3,
+          textPadding: 3,
         },
         styles: {
-          'arts-entertainment': sparseStreetsPoiStyle,
-          education: deferredStreetsPoiStyle,
-          'food-drink': streetsPoiStyle,
-          landmark: deferredStreetsPoiStyle,
-          lodging: sparseStreetsPoiStyle,
-          medical: deferredStreetsPoiStyle,
-          'park-nature': deferredStreetsPoiStyle,
-          'public-services': deferredStreetsPoiStyle,
-          religion: deferredStreetsPoiStyle,
-          retail: streetsPoiStyle,
-          'sport-leisure': streetsPoiStyle,
-          transport: streetsPoiStyle,
-          'visitor-amenity': deferredStreetsPoiStyle,
+          'arts-entertainment': {...streetsPoiStyle('arts-entertainment'), density: 2},
+          education: streetsPoiStyle('education'),
+          'food-drink': streetsPoiStyle('food-drink'),
+          landmark: streetsPoiStyle('landmark'),
+          lodging: {...streetsPoiStyle('lodging'), density: 2},
+          medical: streetsPoiStyle('medical'),
+          'park-nature': streetsPoiStyle('park-nature'),
+          'public-services': streetsPoiStyle('public-services'),
+          religion: streetsPoiStyle('religion'),
+          retail: streetsPoiStyle('retail'),
+          'sport-leisure': streetsPoiStyle('sport-leisure'),
+          transport: streetsPoiStyle('transport'),
+          'visitor-amenity': streetsPoiStyle('visitor-amenity'),
         },
       }),
     },

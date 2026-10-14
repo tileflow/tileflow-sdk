@@ -95,6 +95,8 @@ export default defineMap({
       threeDimensional: {
         barkColor: token.color('vegetation.tree.bark'),
         heightScale: 1.1,
+        finish: 'toon',
+        edges: 1,
         // Along this coast most trees the data does not describe are palms.
         regions: [{bounds: [-81.0, 24.4, -79.8, 26.9], unknownForms: {palm: 3, round: 1, open: 1}}],
       },
@@ -103,7 +105,14 @@ export default defineMap({
 });
 ```
 
-`heightScale` and `crownScale` stretch every tree. `unknownForms` sets, as relative weights, the
+`finish` sets how trees take the light: `faceted` (the default), low-poly facets softened towards a
+round crown; `smooth`, round crowns; or `toon`, three bands of light and a crisp shadow, as a drawn
+tree has them. `edges` rings each tree with an outline a constant width on screen, from 0 (none,
+the default) to 1, in `edgeColor` or the crown's darkest colour deepened; buildings use the same
+two words for their outlines.
+
+`heightScale` and `crownScale` stretch every tree, and `forms` each form on top of them, such as
+`forms: {palm: {heightScale: 1.2}}` for taller palms. `unknownForms` sets, as relative weights, the
 forms of trees whose data gives none, and `regions` sets them inside `[west, south, east, north]`
 bounds in degrees, the first region holding a tree applying. They are a choice of look, not data:
 they never change a tree whose data gives its form, and as mapping improves they apply to fewer

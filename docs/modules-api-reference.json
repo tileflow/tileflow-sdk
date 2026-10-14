@@ -5833,6 +5833,122 @@
                     "$ref": "#/$defs/__schema8"
                   }
                 },
+                "finish": {
+                  "type": "string",
+                  "enum": ["faceted", "smooth", "toon"]
+                },
+                "edges": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "edgeColor": {
+                  "$ref": "#/$defs/__schema8"
+                },
+                "forms": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "enum": ["round", "open", "tall", "conifer", "columnar", "palm"]
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "crownScale": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": 0.1,
+                            "maximum": 10
+                          },
+                          {
+                            "$ref": "#/$defs/__schema13"
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "theme-fixed"
+                              },
+                              "reason": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "value": {
+                                "type": "number",
+                                "minimum": 0.1,
+                                "maximum": 10
+                              }
+                            },
+                            "required": ["kind", "reason", "value"],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "heightScale": {
+                        "anyOf": [
+                          {
+                            "type": "number",
+                            "minimum": 0.1,
+                            "maximum": 10
+                          },
+                          {
+                            "$ref": "#/$defs/__schema13"
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "theme-fixed"
+                              },
+                              "reason": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "value": {
+                                "type": "number",
+                                "minimum": 0.1,
+                                "maximum": 10
+                              }
+                            },
+                            "required": ["kind", "reason", "value"],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
                 "unknownForms": {
                   "$ref": "#/$defs/__schema229"
                 },
@@ -32339,6 +32455,122 @@
                 "$ref": "#/$defs/__schema8"
               }
             },
+            "finish": {
+              "type": "string",
+              "enum": ["faceted", "smooth", "toon"]
+            },
+            "edges": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "$ref": "#/$defs/__schema13"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "theme-fixed"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": ["kind", "reason", "value"],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "edgeColor": {
+              "$ref": "#/$defs/__schema8"
+            },
+            "forms": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "enum": ["round", "open", "tall", "conifer", "columnar", "palm"]
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "crownScale": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0.1,
+                        "maximum": 10
+                      },
+                      {
+                        "$ref": "#/$defs/__schema13"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "theme-fixed"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "value": {
+                            "type": "number",
+                            "minimum": 0.1,
+                            "maximum": 10
+                          }
+                        },
+                        "required": ["kind", "reason", "value"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "heightScale": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0.1,
+                        "maximum": 10
+                      },
+                      {
+                        "$ref": "#/$defs/__schema13"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "theme-fixed"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "value": {
+                            "type": "number",
+                            "minimum": 0.1,
+                            "maximum": 10
+                          }
+                        },
+                        "required": ["kind", "reason", "value"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
             "unknownForms": {
               "$ref": "#/$defs/__schema229"
             },
@@ -32461,6 +32693,122 @@
               "type": "array",
               "items": {
                 "$ref": "#/$defs/__schema8"
+              }
+            },
+            "finish": {
+              "type": "string",
+              "enum": ["faceted", "smooth", "toon"]
+            },
+            "edges": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "$ref": "#/$defs/__schema13"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "theme-fixed"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": ["kind", "reason", "value"],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "edgeColor": {
+              "$ref": "#/$defs/__schema8"
+            },
+            "forms": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "enum": ["round", "open", "tall", "conifer", "columnar", "palm"]
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "crownScale": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0.1,
+                        "maximum": 10
+                      },
+                      {
+                        "$ref": "#/$defs/__schema13"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "theme-fixed"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "value": {
+                            "type": "number",
+                            "minimum": 0.1,
+                            "maximum": 10
+                          }
+                        },
+                        "required": ["kind", "reason", "value"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "heightScale": {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 0.1,
+                        "maximum": 10
+                      },
+                      {
+                        "$ref": "#/$defs/__schema13"
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "const": "theme-fixed"
+                          },
+                          "reason": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "value": {
+                            "type": "number",
+                            "minimum": 0.1,
+                            "maximum": 10
+                          }
+                        },
+                        "required": ["kind", "reason", "value"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "unknownForms": {
@@ -32638,6 +32986,231 @@
                       "type": "array",
                       "items": {
                         "$ref": "#/$defs/__schema8"
+                      }
+                    }
+                  ]
+                },
+                "finish": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["faceted", "smooth", "toon"]
+                    }
+                  ]
+                },
+                "edges": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "$ref": "#/$defs/TileflowModulePatchRef17"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "oneOf": [
+                                {
+                                  "$ref": "#/$defs/TileflowReset"
+                                },
+                                {
+                                  "type": "string",
+                                  "const": "theme-fixed"
+                                }
+                              ]
+                            },
+                            "reason": {
+                              "oneOf": [
+                                {
+                                  "$ref": "#/$defs/TileflowReset"
+                                },
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              ]
+                            },
+                            "value": {
+                              "oneOf": [
+                                {
+                                  "$ref": "#/$defs/TileflowReset"
+                                },
+                                {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                }
+                              ]
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "edgeColor": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "$ref": "#/$defs/TileflowModulePatchRef28"
+                    }
+                  ]
+                },
+                "forms": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string",
+                        "enum": ["round", "open", "tall", "conifer", "columnar", "palm"]
+                      },
+                      "additionalProperties": {
+                        "oneOf": [
+                          {
+                            "$ref": "#/$defs/TileflowReset"
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "crownScale": {
+                                "oneOf": [
+                                  {
+                                    "$ref": "#/$defs/TileflowReset"
+                                  },
+                                  {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "minimum": 0.1,
+                                        "maximum": 10
+                                      },
+                                      {
+                                        "$ref": "#/$defs/TileflowModulePatchRef17"
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "oneOf": [
+                                              {
+                                                "$ref": "#/$defs/TileflowReset"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "const": "theme-fixed"
+                                              }
+                                            ]
+                                          },
+                                          "reason": {
+                                            "oneOf": [
+                                              {
+                                                "$ref": "#/$defs/TileflowReset"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            ]
+                                          },
+                                          "value": {
+                                            "oneOf": [
+                                              {
+                                                "$ref": "#/$defs/TileflowReset"
+                                              },
+                                              {
+                                                "type": "number",
+                                                "minimum": 0.1,
+                                                "maximum": 10
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  }
+                                ]
+                              },
+                              "heightScale": {
+                                "oneOf": [
+                                  {
+                                    "$ref": "#/$defs/TileflowReset"
+                                  },
+                                  {
+                                    "anyOf": [
+                                      {
+                                        "type": "number",
+                                        "minimum": 0.1,
+                                        "maximum": 10
+                                      },
+                                      {
+                                        "$ref": "#/$defs/TileflowModulePatchRef17"
+                                      },
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "kind": {
+                                            "oneOf": [
+                                              {
+                                                "$ref": "#/$defs/TileflowReset"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "const": "theme-fixed"
+                                              }
+                                            ]
+                                          },
+                                          "reason": {
+                                            "oneOf": [
+                                              {
+                                                "$ref": "#/$defs/TileflowReset"
+                                              },
+                                              {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            ]
+                                          },
+                                          "value": {
+                                            "oneOf": [
+                                              {
+                                                "$ref": "#/$defs/TileflowReset"
+                                              },
+                                              {
+                                                "type": "number",
+                                                "minimum": 0.1,
+                                                "maximum": 10
+                                              }
+                                            ]
+                                          }
+                                        },
+                                        "additionalProperties": false
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        ]
                       }
                     }
                   ]

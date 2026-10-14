@@ -29,6 +29,8 @@ import {type TileflowTreeLevel, tileflowTreeMeshes, tileflowTreeVertexBytes} fro
 import {
   tileflowTreeAttributes,
   tileflowTreeDepthFragment,
+  tileflowTreeEdgeFragment,
+  tileflowTreeEdgeVertex,
   tileflowTreeDepthVertex,
   tileflowTreeFragment,
   tileflowTreeVertex,
@@ -107,6 +109,8 @@ const defaultTransition = 1000;
 // Street lights draw over the 3D scene, so their lamps can hide behind trees and buildings.
 const streetLightsLayerId = 'tileflow-street-lights';
 const leafSlots = 4;
+// How far each finish turns normals from the facets towards the round shape.
+const finishes = {faceted: {round: 0.5}, smooth: {round: 1}, toon: {round: 0.3}} as const;
 
 type Program = {program: WebGLProgram; uniforms: Record<string, WebGLUniformLocation | null>};
 type TreeTile = {
@@ -144,7 +148,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   let motion:
     {from: number; to: number; start: number; duration: number; done: () => void} | undefined;
   let gl: WebGL2RenderingContext | undefined;
-  let programs: Partial<Record<'trees' | 'depth' | 'ground', Program>> = {};
+  let programs: Partial<Record<'trees' | 'depth' | 'ground' | 'edges', Program>> = {};
   let variant: string | undefined;
   let meshes:
     | Record<TileflowTreeForm, Record<TileflowTreeLevel, {buffer: WebGLBuffer; count: number}>>
@@ -336,6 +340,8 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     context.vertexAttribPointer(2, 1, context.UNSIGNED_BYTE, false, stride, 15);
     context.enableVertexAttribArray(3);
     context.vertexAttribPointer(3, 2, context.UNSIGNED_BYTE, true, stride, 16);
+    context.enableVertexAttribArray(8);
+    context.vertexAttribPointer(8, 3, context.BYTE, true, stride, 18);
   }
 
   function bindTrees(context: WebGL2RenderingContext, buffer: WebGLBuffer, offset: number): void {
@@ -416,14 +422,35 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       conifer: slots(theme?.colors.conifer ?? ['#557f52']),
       palm: slots(theme?.colors.palm ?? ['#7fa45f']),
       size: [[theme?.heightScale ?? 1, theme?.crownScale ?? 1, 0]],
+      forms: tileflowTreeForms.map((form) => [
+        theme?.forms[form]?.heightScale ?? 1,
+        theme?.forms[form]?.crownScale ?? 1,
+        0,
+      ]),
+      edges: [[theme?.edges ?? 0, 0, 0]],
+      edgeColor: [[...(rgb(theme?.edgeColor ?? '#000000') ?? [0, 0, 0])]],
+      owned: [[theme?.edgeColor === undefined ? 0 : 1, 0, 0]],
     });
     const [x, y] = [of(a), of(b)];
+    const size = mixList(x.size, y.size)[0]!;
+    const forms = mixList(x.forms, y.forms);
     return {
       bark: mixList(x.bark, y.bark)[0]!,
       broadleaf: mixList(x.broadleaf, y.broadleaf),
       conifer: mixList(x.conifer, y.conifer),
       palm: mixList(x.palm, y.palm),
-      size: mixList(x.size, y.size)[0]!,
+      size,
+      /** Each form's height and crown scale: the map's times the form's own. */
+      sizes: Object.fromEntries(
+        tileflowTreeForms.map((form, index) => [
+          form,
+          [size[0]! * forms[index]![0]!, size[1]! * forms[index]![1]!],
+        ]),
+      ) as Record<TileflowTreeForm, number[]>,
+      finish: (t < 0.5 ? a : b)?.finish ?? 'faceted',
+      edges: mixList(x.edges, y.edges)[0]![0]!,
+      edgeColor: mixList(x.edgeColor, y.edgeColor)[0]!,
+      ownEdge: mixList(x.owned, y.owned)[0]![0]!,
     };
   }
 
@@ -480,8 +507,11 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     },
     // The shadow map is drawn again only when the trees it holds or their size change.
     key: () =>
-      `trees:${visibleScale().toFixed(4)}:${generation}:${programs.depth ? 1 : 0}:${colours()
-        .size.map((value) => value.toFixed(3))
+      `trees:${visibleScale().toFixed(4)}:${generation}:${programs.depth ? 1 : 0}:${Object.values(
+        colours().sizes,
+      )
+        .flat()
+        .map((value) => value.toFixed(3))
         .join()}:${drawn()
         .map(({x, y}) => `${x}/${y}`)
         .join(';')}`,
@@ -492,14 +522,15 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       const u = program.uniforms;
       context.uniform1f(u.u_scale!, visibleScale());
       context.uniform1f(u.u_metres!, frame.metres);
-      context.uniform2fv(u.u_size_scale!, colours().size.slice(0, 2));
       context.uniformMatrix4fv(u.u_light_matrix!, false, frame.light.matrix);
+      const sizes = colours().sizes;
       for (const {x, y, set, value} of drawn()) {
         context.uniform2f(u.u_offset!, ...frame.offsetOf({x, y}, set.zoom));
         for (const form of tileflowTreeForms) {
           const range = value.placement.forms[form];
           const vao = value.gl!.vaos.get(`${form}:far`);
           if (range.count === 0 || !vao) continue;
+          context.uniform2fv(u.u_size_scale!, sizes[form]);
           context.bindVertexArray(vao);
           context.drawArraysInstanced(context.TRIANGLES, 0, meshes[form].far.count, range.count);
         }
@@ -550,7 +581,8 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     context.disable(context.CULL_FACE);
     context.uniform1f(u.u_scale!, visibleScale());
     context.uniform1f(u.u_metres!, metres);
-    context.uniform2fv(u.u_size_scale!, palette.size.slice(0, 2));
+    context.uniform1f(u.u_round!, finishes[palette.finish].round);
+    context.uniform1f(u.u_toon!, palette.finish === 'toon' ? 1 : 0);
     context.uniform3fv(u.u_sun_dir!, [...light.direction]);
     context.uniform3fv(u.u_shadow_dir!, light.shadowDirection);
     context.uniform3fv(u.u_sun_light!, light.sunLight);
@@ -562,6 +594,16 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     context.uniform1f(u.u_leaf_count!, leafSlots);
     scene.bindShadow(context, u, light.strength);
     let count = 0;
+    // What each tile draws, for the outline pass that follows.
+    const draws: {
+      x: number;
+      y: number;
+      offset: number[];
+      form: TileflowTreeForm;
+      level: TileflowTreeLevel;
+      instances: number;
+      vao: WebGLVertexArrayObject;
+    }[] = [];
     for (const {x, y, set, value} of entries) {
       project(context, program, args, x, y);
       const offset = frame ? frame.offsetOf({x, y}, set.zoom) : [0, 0];
@@ -591,12 +633,67 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
               ? palette.conifer
               : palette.broadleaf;
         context.uniform3fv(u.u_leaves!, leaves.flat());
+        context.uniform2fv(u.u_size_scale!, palette.sizes[form]);
         context.bindVertexArray(vao);
         context.drawArraysInstanced(context.TRIANGLES, 0, meshes[form][level].count, instances);
         count += instances;
+        draws.push({x, y, offset, form, level, instances, vao});
       }
     }
     drawnLast = count;
+
+    // The outline: back faces pushed out a constant width on screen, behind each tree.
+    const edges = palette.edges;
+    if (edges > 0.01 && programs.edges && draws.length > 0) {
+      const edgeProgram = programs.edges;
+      const e = edgeProgram.uniforms;
+      context.useProgram(edgeProgram.program);
+      context.enable(context.CULL_FACE);
+      context.cullFace(context.FRONT);
+      context.uniform1f(e.u_scale!, visibleScale());
+      context.uniform1f(e.u_metres!, metres);
+      context.uniform1f(e.u_round!, finishes[palette.finish].round);
+      context.uniform1f(e.u_fade!, fadeIn());
+      context.uniform2fv(e.u_reach!, reach());
+      context.uniform2f(e.u_viewport!, context.drawingBufferWidth, context.drawingBufferHeight);
+      context.uniform1f(e.u_edge_width!, edges * 1.5 * pixelRatio(context));
+      let tile = '';
+      for (const draw of draws) {
+        if (tile !== `${draw.x}/${draw.y}`) {
+          tile = `${draw.x}/${draw.y}`;
+          project(context, edgeProgram, args, draw.x, draw.y);
+          context.uniform2f(e.u_offset!, draw.offset[0]!, draw.offset[1]!);
+          context.uniform2f(
+            e.u_centre!,
+            (cx - draw.x) * tileflowSceneExtent,
+            (cy - draw.y) * tileflowSceneExtent,
+          );
+        }
+        // The map's edge colour, or the form's darkest leaf colour deepened.
+        const leaves =
+          draw.form === 'palm'
+            ? palette.palm
+            : draw.form === 'conifer' || draw.form === 'columnar'
+              ? palette.conifer
+              : palette.broadleaf;
+        const own = palette.ownEdge;
+        context.uniform3fv(
+          e.u_edge_colour!,
+          [0, 1, 2].map(
+            (channel) => palette.edgeColor[channel]! * own + leaves[0]![channel]! * 0.4 * (1 - own),
+          ),
+        );
+        context.uniform2fv(e.u_size_scale!, palette.sizes[draw.form]);
+        context.bindVertexArray(draw.vao);
+        context.drawArraysInstanced(
+          context.TRIANGLES,
+          0,
+          meshes[draw.form][draw.level].count,
+          draw.instances,
+        );
+      }
+      context.disable(context.CULL_FACE);
+    }
 
     // The flat map under the trees' shadows, when no 3D buildings darken it.
     if (light.strength > 0 && frame && ground && programs.ground && scene.drawsGround(caster)) {
@@ -688,6 +785,12 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
         tileflowBuildingGroundFragment,
         ['a_pos'],
       ),
+      edges: compile(
+        context,
+        tileflowTreeEdgeVertex(projected),
+        tileflowTreeEdgeFragment,
+        tileflowTreeAttributes,
+      ),
       depth:
         programs.depth ??
         compile(
@@ -697,7 +800,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
           tileflowTreeAttributes,
         ),
     };
-    for (const name of ['trees', 'ground'] as const) {
+    for (const name of ['trees', 'ground', 'edges'] as const) {
       const previous = programs[name];
       if (previous) context.deleteProgram(previous.program);
     }
@@ -938,6 +1041,13 @@ const emptyTile: TreeTile = Object.freeze({
     canopy: 0,
   }),
 });
+
+/** Drawing buffer pixels per CSS pixel. */
+function pixelRatio(context: WebGL2RenderingContext): number {
+  const canvas = context.canvas as {clientWidth?: number};
+  const width = canvas.clientWidth;
+  return width ? Math.min(4, Math.max(1, context.drawingBufferWidth / width)) : 1;
+}
 
 function isWebGL2(context: unknown): context is WebGL2RenderingContext {
   return typeof WebGL2RenderingContext !== 'undefined' && context instanceof WebGL2RenderingContext;

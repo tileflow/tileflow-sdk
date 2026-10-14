@@ -301,6 +301,23 @@ test('the 3D tree description is read only in a known version and shape', () => 
   assert.equal(read.crownScale, 1);
   // An unknown form falls back to the default mix, and a region with south above north is dropped.
   assert.deepEqual(read.unknownForms, {round: 1, open: 1, tall: 1});
+  // Without a finish, edges or form scales, trees are faceted, unoutlined and as the map scales them.
+  assert.equal(read.finish, 'faceted');
+  assert.equal(read.edges, 0);
+  assert.deepEqual(read.forms, {});
+  const styled = readTileflowVegetation3D({
+    [tileflowVegetationMetadataKey]: {
+      ...described,
+      finish: 'toon',
+      edges: 0.8,
+      edgeColor: '#102010',
+      forms: {palm: {heightScale: 1.3}, oak: {heightScale: 2}},
+    },
+  })!;
+  assert.equal(styled.finish, 'toon');
+  assert.equal(styled.edges, 0.8);
+  assert.equal(styled.edgeColor, '#102010');
+  assert.deepEqual(styled.forms, {palm: {heightScale: 1.3, crownScale: 1}});
   assert.equal(read.regions.length, 1);
   assert.equal(
     readTileflowVegetation3D({[tileflowVegetationMetadataKey]: {...described, version: 2}}),

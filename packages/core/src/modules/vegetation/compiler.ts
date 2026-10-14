@@ -2,7 +2,7 @@ import type {TileflowDomainCompileContext} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applyCircleStyle} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
-import {zoom} from '../../cartography/values';
+import {toMapLibreStyleValue, zoom} from '../../cartography/values';
 import {
   tileflowDefaultUnknownTreeForms,
   type TileflowVegetation3D,
@@ -108,7 +108,10 @@ export function tileflowVegetationDescription(
     Array.isArray(value) && value.length > 0 && value.every((entry) => typeof entry === 'string')
       ? (value as string[])
       : [...fallback];
-  const number = (value: unknown) => (typeof value === 'number' && value > 0 ? value : 1);
+  const number = (value: unknown) => {
+    const resolved = value === undefined ? undefined : toMapLibreStyleValue(value as never);
+    return typeof resolved === 'number' && resolved > 0 ? resolved : 1;
+  };
   // Source, layers and fields are the data's semantic references here; the compiler binds them to
   // the physical names with the rest of the style.
   const field = (name: keyof typeof schema.fields, fallback: string) =>
@@ -138,6 +141,22 @@ export function tileflowVegetationDescription(
     },
     heightScale: number(style.heightScale),
     crownScale: number(style.crownScale),
+    forms: Object.fromEntries(
+      Object.entries(style.forms ?? {}).map(([form, own]) => [
+        form,
+        {heightScale: number(own?.heightScale), crownScale: number(own?.crownScale)},
+      ]),
+    ),
+    finish: style.finish ?? 'faceted',
+    edges: (() => {
+      const edges = toMapLibreStyleValue((style.edges ?? 0) as never);
+      return typeof edges === 'number' ? edges : 0;
+    })(),
+    ...(() => {
+      const edgeColor =
+        style.edgeColor === undefined ? undefined : toMapLibreStyleValue(style.edgeColor as never);
+      return typeof edgeColor === 'string' ? {edgeColor} : {};
+    })(),
     unknownForms: style.unknownForms ?? tileflowDefaultUnknownTreeForms,
     regions: style.regions ?? [],
   };

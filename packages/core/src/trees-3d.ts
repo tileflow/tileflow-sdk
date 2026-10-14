@@ -9,6 +9,13 @@ import type {TileflowTileLayer} from './vector-tile-decode';
 export const tileflowTreeForms = ['round', 'open', 'tall', 'conifer', 'columnar', 'palm'] as const;
 export type TileflowTreeForm = (typeof tileflowTreeForms)[number];
 
+/** How a tree's surfaces take the light: facets, a smooth round shape, or bands as drawn. */
+export const tileflowTreeFinishes = ['faceted', 'smooth', 'toon'] as const;
+export type TileflowTreeFinish = (typeof tileflowTreeFinishes)[number];
+
+/** A form's own scales, on top of the map's. */
+export type TileflowTreeFormStyle = Readonly<{heightScale?: number; crownScale?: number}>;
+
 /** Relative weights of the forms given to trees whose data gives none. */
 export type TileflowTreeFormMix = Readonly<Partial<Record<TileflowTreeForm, number>>>;
 
@@ -594,6 +601,12 @@ export type TileflowVegetation3D = Readonly<{
   }>;
   heightScale: number;
   crownScale: number;
+  /** Each form's own scales. */
+  forms: Readonly<Partial<Record<TileflowTreeForm, TileflowTreeFormStyle>>>;
+  finish: TileflowTreeFinish;
+  /** How strongly an outline rings each tree, from 0 (none) to 1, and its colour. */
+  edges: number;
+  edgeColor?: string;
   unknownForms: TileflowTreeFormMix;
   regions: readonly TileflowTreeRegion[];
 }>;
@@ -628,6 +641,17 @@ export function readTileflowVegetation3D(metadata: unknown): TileflowVegetation3
   const scale = (number: unknown) =>
     typeof number === 'number' && number > 0 && number <= 10 ? number : 1;
   const mix = tileflowTreeFormMixProblem(unknownForms) === undefined ? unknownForms : undefined;
+  const ownScales = isRecord(value.forms) ? value.forms : {};
+  const forms = Object.fromEntries(
+    tileflowTreeForms.flatMap((form) => {
+      const own = ownScales[form];
+      if (!isRecord(own)) return [];
+      return [[form, {heightScale: scale(own.heightScale), crownScale: scale(own.crownScale)}]];
+    }),
+  ) as Partial<Record<TileflowTreeForm, TileflowTreeFormStyle>>;
+  const finish = tileflowTreeFinishes.find((name) => name === value.finish) ?? 'faceted';
+  const edges =
+    typeof value.edges === 'number' && value.edges >= 0 && value.edges <= 1 ? value.edges : 0;
   const zones = Array.isArray(regions)
     ? regions.filter(
         (region): region is TileflowTreeRegion =>
@@ -651,6 +675,10 @@ export function readTileflowVegetation3D(metadata: unknown): TileflowVegetation3
     colors: {bark: colors.bark, broadleaf, conifer, palm},
     heightScale: scale(heightScale),
     crownScale: scale(crownScale),
+    forms,
+    finish,
+    edges,
+    ...(typeof value.edgeColor === 'string' ? {edgeColor: value.edgeColor} : {}),
     unknownForms: (mix as TileflowTreeFormMix | undefined) ?? tileflowDefaultUnknownTreeForms,
     regions: zones,
   };

@@ -420,6 +420,11 @@ test('accepts detailed cartographic module styles and their optional data bindin
     trees({regions: [{bounds: [-81, 24.4, -79.8, 26.9], unknownForms: {palm: 3, round: 1}}]}),
   );
   assert.throws(() => trees({unknownForms: {oak: 1}}), /unknownForms/);
+  assert.doesNotThrow(() =>
+    trees({finish: 'toon', edges: 1, edgeColor: '#102010', forms: {palm: {heightScale: 1.2}}}),
+  );
+  assert.throws(() => trees({finish: 'glossy'}), /finish/);
+  assert.throws(() => trees({forms: {oak: {heightScale: 2}}}), /forms/);
   assert.throws(() => trees({unknownForms: {palm: 0}}), /weight above 0/);
   assert.throws(
     () => trees({regions: [{bounds: [0, 50, 1, 40], unknownForms: {palm: 1}}]}),

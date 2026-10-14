@@ -1496,6 +1496,20 @@ const modulesSchema = z
             broadleafColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
             coniferColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
             palmColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
+            finish: z.enum(['faceted', 'smooth', 'toon']).optional(),
+            edges: boundedThemeNumberSchema(0, 1).optional(),
+            edgeColor: themeColorValueSchema.optional(),
+            forms: z
+              .partialRecord(
+                z.enum(['round', 'open', 'tall', 'conifer', 'columnar', 'palm']),
+                z
+                  .object({
+                    crownScale: boundedThemeNumberSchema(0.1, 10).optional(),
+                    heightScale: boundedThemeNumberSchema(0.1, 10).optional(),
+                  })
+                  .strict(),
+              )
+              .optional(),
             unknownForms: treeFormMixSchema.optional(),
             regions: z
               .array(

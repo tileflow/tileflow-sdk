@@ -13,6 +13,7 @@ export const tileflowTreeAttributes = [
   'a_tree_size',
   'a_tree_turn',
   'a_tree_seed',
+  'a_round',
 ] as const;
 
 const attributes = `
@@ -24,6 +25,7 @@ in vec2 a_tree_pos; // the tree's point in the tile, in tile units
 in vec2 a_tree_size; // height and crown, in decimetres
 in vec2 a_tree_turn; // turn, shade among the theme's colours
 in vec2 a_tree_seed; // seed; whether it stands for a canopy point
+in vec3 a_round; // the normal of the round shape the facet belongs to
 `;
 
 // Where a vertex of a tree stands, in metres from the tree's foot, as its height scale grows it.
@@ -31,7 +33,8 @@ const placement = `
 uniform float u_scale;
 uniform float u_metres; // metres per tile unit
 uniform vec2 u_offset; // this tile's corner from the scene's origin, in tile units
-uniform vec2 u_size_scale; // the map's height and crown scales
+uniform vec2 u_size_scale; // the map's height and crown scales, for this form
+uniform float u_round; // how far normals turn from the facets to the round shape, by finish
 
 float growthOf() {
   float p = clamp(u_scale * 1.25 - a_tree_seed.x * 0.25, 0.0, 1.0);
@@ -54,7 +57,8 @@ vec3 standing(float growth) {
 vec3 normalOf() {
   float height = max(a_tree_size.x * 0.1 * u_size_scale.x, 0.1);
   float crown = max(a_tree_size.y * 0.1 * u_size_scale.y, 0.1);
-  vec3 n = normalize(vec3(a_normal.xy / crown, a_normal.z / height));
+  vec3 blended = normalize(mix(a_normal, a_round, u_round));
+  vec3 n = normalize(vec3(blended.xy / crown, blended.z / height));
   return vec3(turned(n.xy), n.z);
 }
 
@@ -126,6 +130,7 @@ uniform vec3 u_sun_light;
 uniform vec3 u_sky_light;
 uniform float u_night;
 uniform float u_fade; // how far the layer has faded in, from 0 to 1
+uniform float u_toon; // 1 for light in bands, as a drawing has it
 uniform vec3 u_bark;
 uniform vec3 u_leaves[4]; // the form's colours, sunlit
 uniform float u_leaf_count;
@@ -185,6 +190,12 @@ void main() {
   float direct = bark ? max(facing, 0.0) : fronds ? abs(facing) * 0.85 : max((facing + 0.35) / 1.35, 0.0);
   float through = bark ? 0.0 : max(-facing, 0.0) * 0.22 * (1.0 - clamp(u_sun_dir.z * 2.0, 0.0, 1.0));
   float lit = visibility(v_shadow, 0.4);
+  if (u_toon > 0.5) {
+    // Three bands of light and a crisp shadow, as an illustrated tree has them.
+    direct = smoothstep(0.22, 0.28, direct) * 0.5 + smoothstep(0.62, 0.68, direct) * 0.5;
+    through = 0.0;
+    lit = smoothstep(0.4, 0.6, lit);
+  }
   vec3 sky = u_sky_light * mix(mix(0.75, 0.5, u_night), 1.0, max(normal.z, 0.0) * 0.6 + 0.4);
   vec3 light = (sky + u_sun_light * (direct + through) * (1.0 - u_shadow * (1.0 - lit))) *
     mix(1.0, v_look.z, 0.75);
@@ -195,4 +206,55 @@ void main() {
   float crownTop = bark ? 0.0 : smoothstep(0.1, 0.9, normal.z);
   colour = mix(colour, base * 0.95 + vec3(0.02, 0.03, 0.04), u_night * 0.45 * crownTop);
   fragColor = vec4(colour, 1.0);
+}`;
+
+// The outline of a tree: its back faces pushed out along their normals by a constant width on
+// screen, drawn in the edge colour behind the tree, so a ring shows round its silhouette.
+export const tileflowTreeEdgeVertex = (projected: string): string => `#version 300 es
+${projected}
+${attributes}
+uniform vec2 u_centre;
+uniform vec2 u_reach;
+uniform vec2 u_viewport; // the drawing buffer's size, in pixels
+uniform float u_edge_width; // the outline's width, in the drawing buffer's pixels
+${placement}
+out float v_fade;
+void main() {
+  float growth = growthOf();
+  // Fronds are seen from both sides: they keep no outline.
+  if (growth <= 0.0 || a_part > 1.5 && a_part < 2.5) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    return;
+  }
+  vec3 local = standing(growth);
+  vec2 tile = a_tree_pos + local.xy / u_metres * vec2(1.0, -1.0);
+  vec4 at = projectTileFor3D(tile, local.z);
+  vec3 normal = normalOf();
+  vec3 ahead = local + normal * 0.5;
+  vec4 towards = projectTileFor3D(a_tree_pos + ahead.xy / u_metres * vec2(1.0, -1.0), ahead.z);
+  vec2 screen = (towards.xy / towards.w - at.xy / at.w) * u_viewport;
+  vec2 push = length(screen) > 1e-6 ? normalize(screen) : vec2(0.0);
+  at.xy += push * u_edge_width * 2.0 / u_viewport * at.w;
+  gl_Position = at;
+  float distance = length((a_tree_pos - u_centre) * u_metres);
+  v_fade = 1.0 - smoothstep(u_reach.x, u_reach.y, distance);
+}`;
+
+export const tileflowTreeEdgeFragment = `#version 300 es
+precision highp float;
+in float v_fade;
+uniform float u_fade;
+uniform vec3 u_edge_colour;
+out vec4 fragColor;
+
+float dither(vec2 p) {
+  ivec2 i = ivec2(mod(p, 4.0));
+  int index = i.x + i.y * 4;
+  float table[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+  return (table[index] + 0.5) / 16.0;
+}
+
+void main() {
+  if (v_fade * u_fade < dither(gl_FragCoord.xy)) discard;
+  fragColor = vec4(u_edge_colour, 1.0);
 }`;

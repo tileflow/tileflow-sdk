@@ -6,10 +6,11 @@
 import {type TileflowTreeForm, tileflowTreeForms} from './trees-3d';
 
 /**
- * Bytes per vertex: position (3 floats), normal (3 signed bytes), part, then a lobe's shade (from 0
- * to 255 for -1 to 1) and occlusion (0 to 255), and 2 spare bytes.
+ * Bytes per vertex: position (3 floats), facet normal (3 signed bytes), part, a lobe's shade (from
+ * 0 to 255 for -1 to 1), occlusion (0 to 255), the normal of the round shape the facet belongs to
+ * (3 signed bytes), and 3 spare bytes. A finish mixes the two normals.
  */
-export const tileflowTreeVertexBytes = 20;
+export const tileflowTreeVertexBytes = 24;
 
 /** A part of a tree: bark, leaves, palm fronds (leaves seen from both sides), or a palm's stem. */
 export const tileflowTreeParts = {bark: 0, leaves: 1, fronds: 2, stem: 3} as const;
@@ -27,6 +28,7 @@ type Vec = [number, number, number];
 type Builder = {
   positions: number[];
   normals: number[];
+  rounds: number[];
   parts: number[];
   shades: number[];
   occlusion: number[];
@@ -45,7 +47,14 @@ export function tileflowTreeMeshes(): Readonly<
 }
 
 function build(form: TileflowTreeForm, level: TileflowTreeLevel): Builder {
-  const out: Builder = {positions: [], normals: [], parts: [], shades: [], occlusion: []};
+  const out: Builder = {
+    positions: [],
+    normals: [],
+    rounds: [],
+    parts: [],
+    shades: [],
+    occlusion: [],
+  };
   const near = level === 'near';
   switch (form) {
     case 'round': {
@@ -208,17 +217,14 @@ function lobe(
     const outward = normalize(mix(mix(round[a]!, round[b]!, 0.5), round[c]!, 1 / 3));
     let facet = faceNormal(points);
     if (dot(facet, outward) < 0) facet = [-facet[0], -facet[1], -facet[2]];
-    const normals = [a, b, c].map((index) => normalize(mix(facet, round[index]!, 0.5))) as [
-      Vec,
-      Vec,
-      Vec,
-    ];
+    const normals: [Vec, Vec, Vec] = [facet, facet, facet];
+    const rounds = [a, b, c].map((index) => round[index]!) as [Vec, Vec, Vec];
     const occlusion = points.map((point) => {
       const height = smooth(crownBase, 1, point[2]);
       const outward = Math.min(1, Math.hypot(point[0], point[1]) / 0.45);
       return 0.5 + 0.32 * height + 0.18 * outward;
     }) as Vec;
-    triangle(out, points, normals, tileflowTreeParts.leaves, shade, occlusion);
+    triangle(out, points, normals, tileflowTreeParts.leaves, shade, occlusion, rounds);
   }
 }
 
@@ -247,14 +253,11 @@ function cone(
     triangle(
       out,
       [p0, p1, tip],
-      [
-        normalize(mix(facet, side0, 0.5)),
-        normalize(mix(facet, side1, 0.5)),
-        normalize(mix(facet, up, 0.5)),
-      ],
+      [facet, facet, facet],
       tileflowTreeParts.leaves,
       shade,
       [0.55 + 0.3 * z0, 0.55 + 0.3 * z0, 1],
+      [side0, side1, up],
     );
     if (closed)
       triangle(
@@ -435,6 +438,10 @@ function fronds(out: Builder, count: number, segments: number, tier: FrondTier):
   }
 }
 
+/**
+ * Adds a triangle with its facet normals and the normals of the round shape it belongs to, wound
+ * so that it faces the way its normals do: an outline drawn from back faces needs it.
+ */
 function triangle(
   out: Builder,
   points: readonly [Vec, Vec, Vec],
@@ -442,10 +449,18 @@ function triangle(
   part: number,
   shade: number,
   occlusion: readonly [number, number, number] | Vec,
+  rounds: readonly [Vec, Vec, Vec] = normals,
 ): void {
-  for (let index = 0; index < 3; index += 1) {
+  const facing = dot(faceNormal(points), [
+    normals[0][0] + normals[1][0] + normals[2][0],
+    normals[0][1] + normals[1][1] + normals[2][1],
+    normals[0][2] + normals[1][2] + normals[2][2],
+  ]);
+  const order = facing < 0 ? [0, 2, 1] : [0, 1, 2];
+  for (const index of order) {
     out.positions.push(...points[index]!);
     out.normals.push(...normals[index]!);
+    out.rounds.push(...rounds[index]!);
     out.parts.push(part);
     out.shades.push(shade);
     out.occlusion.push(Math.min(1, Math.max(0, occlusion[index]!)));
@@ -469,6 +484,11 @@ function pack(out: Builder): TileflowTreeMesh {
     bytes[at + 15] = out.parts[index]!;
     bytes[at + 16] = Math.round(((Math.max(-1, Math.min(1, out.shades[index]!)) + 1) / 2) * 255);
     bytes[at + 17] = Math.round(out.occlusion[index]! * 255);
+    for (let axis = 0; axis < 3; axis += 1)
+      view.setInt8(
+        at + 18 + axis,
+        Math.round(Math.max(-1, Math.min(1, out.rounds[index * 3 + axis]!)) * 127),
+      );
   }
   return {vertices: bytes, count};
 }

@@ -62,14 +62,14 @@ The renderer reads the source's z15 tiles round the camera:
   standing one to three trees by its canopy cover, inside the room it leaves before a path, a
   building or the park's edge. They stand for measured canopy, not for mapped trees.
 
-| Form       | From the data                                                                    |
-| ---------- | -------------------------------------------------------------------------------- |
-| `palm`     | `leaf_type` `palm`, `taxon` `Arecaceae`, or a palm genus such as `Roystonea`     |
-| `columnar` | the cypress genera `Cupressus`, `Calocedrus` and `Thuja`                         |
-| `conifer`  | `leaf_type` `needleleaved`, or a conifer genus such as `Pinus` or `Cedrus`       |
-| `open`     | spreading genera such as `Quercus`, `Olea`, `Ficus` or `Jacaranda`               |
-| `tall`     | upright genera such as `Platanus`, `Populus`, `Ulmus` or `Ginkgo`                |
-| `round`    | rounded genera such as `Acer`, `Tilia`, `Aesculus` or `Prunus`                   |
+| Form       | From the data                                                                |
+| ---------- | ---------------------------------------------------------------------------- |
+| `palm`     | `leaf_type` `palm`, `taxon` `Arecaceae`, or a palm genus such as `Roystonea` |
+| `columnar` | the cypress genera `Cupressus`, `Calocedrus` and `Thuja`                     |
+| `conifer`  | `leaf_type` `needleleaved`, or a conifer genus such as `Pinus` or `Cedrus`   |
+| `open`     | spreading genera such as `Quercus`, `Olea`, `Ficus` or `Jacaranda`           |
+| `tall`     | upright genera such as `Platanus`, `Populus`, `Ulmus` or `Ginkgo`            |
+| `round`    | rounded genera such as `Acer`, `Tilia`, `Aesculus` or `Prunus`               |
 
 A tree whose data gives no form, and every canopy tree, takes one of the three broadleaf forms; a
 tree the data calls broadleaved keeps to them. Each tree's form, size, turn and shade come from a

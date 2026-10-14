@@ -149,15 +149,26 @@ lighting without changing a source, filter, layer order, zoom gate, collision ru
 sidewalk patterns live in the shared `[streetsIcons]` atlas and the selected theme resolves the
 semantic `roads.sidewalkPattern` image token to the correct asset.
 
-Streets uses one ranked destination hierarchy in both themes. Major transit and cultural anchors
-appear first; lodging, health, education, services, shopping, food, coffee, and parking enter
-progressively as the camera approaches street level. Each visible destination is one collision
-unit made from a colored circular pictogram and an optional neutral name, so the marker remains
-useful when the label cannot fit. The pictogram scale grows gently from 1× at z12 to 1.06× at z17,
-giving detailed street views a little more visual presence without increasing POI density.
-Portal-number labels are intentionally disabled. The ten POI
-pictograms are adapted from the pinned CC0 Maki subset documented in
-`THIRD_PARTY_NOTICES.md`; their containers, colors, sizing, and composition are Tileflow-authored.
+Streets light follows the road, land, and label hierarchy of Mapbox Streets v12: orange motorways,
+yellow trunk roads, white ordinary streets, fine warm casings, neutral gray footprints, and subdued
+land cover. The source reference is the [Streets v12 style](https://docs.mapbox.com/mapbox-gl-js/guides/styles/).
+Tileflow's semantic definitions and assets remain independent; no Mapbox tiles, fonts, or sprite
+atlas are bundled. The dark theme retains its coordinated night palette.
+
+Both themes use one producer-ranked destination hierarchy. Compact category discs and short text
+clearance leave more room for names; no category is held back by an extra street-only zoom gate.
+Marker scale increases from 0.68× at z12 to 0.76× at z17. Each visible destination is one collision
+unit with an optional category-colored name. The ten POI pictograms adapt the pinned CC0 Maki
+subset documented in `THIRD_PARTY_NOTICES.md`; their containers and composition are Tileflow-authored.
+
+English labels fall back to the available Latin or local name. Road names keep mixed case and
+narrow letter spacing. Settlement labels finish at z13 and neighborhood labels at z15. Buildings
+fade in from z15 to z16, fine diagonal pedestrian paving starts at z16, and house numbers start
+at z17. Trees are opt-in. Water labels remain subordinate to streets and destinations. Web applications can opt into blue atmosphere theme roles with faint stars; atmosphere is not
+required by the base map so Mercator and native consumers remain compatible. Generalized land
+cover blends softly into the base.
+Available World tiles determine POI coverage, geometry, and address availability. Streets does
+not add a DEM or hillshade dependency to approximate unavailable relief.
 
 Road references use a compact Tileflow-owned family of generic rectangular and circular shields.
 The data's normalized `shield_kind` selects neutral, blue, green, red, orange, yellow, or circular

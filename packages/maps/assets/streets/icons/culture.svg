@@ -1,9 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
   <title>Culture</title>
   <desc>Tileflow POI disc with a Maki museum pictogram, CC0-1.0.</desc>
-  <circle cx="12" cy="12.75" r="9.5" fill="#44515E" opacity=".16"/>
   <circle cx="12" cy="12" r="9.5" fill="#FFFFFF"/>
-  <circle cx="12" cy="12" r="8" fill="#B85CA4"/>
+  <circle cx="12" cy="12" r="8" fill="#E35FB7"/>
   <path
     fill="#FFFFFF"
     transform="translate(6.375 6.375) scale(.75)"

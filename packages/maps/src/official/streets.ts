@@ -1,4 +1,5 @@
 import {
+  addresses,
   boundaries,
   buildings,
   defineMap,
@@ -22,7 +23,6 @@ import {
   type TileflowSymbolStyle,
   type TileflowThemeColorValue,
   transit,
-  vegetation,
   water,
   withRenderStack,
   zoom,
@@ -48,10 +48,8 @@ const streetsDetailPalette = {
   waterText: streetsVisual.label.water,
 } as const;
 
-// Mapbox Standard's default/day and default/night presets expose
-// three road families rather than a different hue for every OSM hierarchy:
-// motorway, trunk, and all remaining drivable roads. Paths have their own
-// z15-z16 transition and cycleways retain the Standard green.
+// Motorways and trunk roads retain separate colors through every structure.
+// Ordinary streets use a neutral deck with a fine casing; paths stay subordinate.
 const mapboxRoadPalette = {
   motorway: streetsVisual.road.motorway,
   motorwayCasing: streetsVisual.road.motorwayCasing,
@@ -72,7 +70,7 @@ const mapboxRoadPalette = {
 const mapboxRailColor = streetsVisual.road.railTransit;
 
 // One semantic surface system from world view through city detail. Values are
-// calibrated against the dated Mapbox Standard snapshot, but their names describe Tileflow's
+// calibrated against Streets v12, but their names describe Tileflow's
 // data contract so the style does not depend on another vendor's taxonomy.
 const streetsSurfacePalette = {
   background: streetsVisual.surface.background,
@@ -127,18 +125,9 @@ const streetsGlobalLandcoverPalette = {
 } as const;
 
 const globalLandcoverOpacity = zoom.linear([
-  // At world and country zooms the source classes are the terrain palette.
-  // Blending them into the neutral land token desaturates forests and crops
-  // into one pale wash, so keep the authored colours intact until the detailed
-  // OSM handoff begins.
-  [0, 1],
-  [5, 1],
-  [7, 1],
-  [8, 0.85],
-  [9, 0.78],
-  [10, 1],
-  [10.5, 0.55],
-  [10.75, 0.25],
+  [0, 0.4],
+  [9, 0.4],
+  [10, 0.3],
   [11, 0],
 ]);
 const detailedLandcoverOpacity = zoom.linear([
@@ -158,33 +147,30 @@ const protectedAreaOpacity = zoom.linear([
   [9, 0.32],
 ]);
 
-// The 24 px source artwork keeps a small transparent fringe around each POI.
-// Grow it gently at street zooms so the marker gains presence without turning
-// the overview into a denser visual field.
+// Compact category discs and short label clearance leave room for destinations at
+// city zooms. World ranks still decide eligibility; the renderer resolves collisions.
 const streetsPoiStyle = {
   icon: {
     size: zoom.linear([
-      [12, 1.04],
-      [15, 1.1],
-      [17, 1.14],
+      [12, 0.68],
+      [17, 0.76],
     ]),
+  },
+  text: {
+    haloWidth: 0.5,
+    haloBlur: 0.5,
+    padding: 2,
+    radialOffset: 0.8,
+    size: zoom.linear([
+      [10, 10],
+      [14, 11],
+      [17, 12],
+    ]),
+    variableAnchors: ['top', 'bottom', 'right', 'left'],
   },
 } satisfies TileflowPoiCategoryStyle;
 
-const sparseStreetsPoiStyle = {
-  ...streetsPoiStyle,
-  density: 2,
-} satisfies TileflowPoiCategoryStyle;
-
-const deferredStreetsPoiStyle = {
-  ...streetsPoiStyle,
-  minZoom: 15.5,
-} satisfies TileflowPoiCategoryStyle;
-
-// Match Standard's warm 2D footprints here; authored 3D extrusions keep their
-// separate neutral palette. The light palette stores rendered day colours,
-// rather than the raw Standard configuration roles, so footprints remain
-// distinct from residential and commercial ground without relying on opacity.
+// Neutral footprints separate white carriageways from the warm land surface.
 const mapboxBuildingPalette = {
   fill: streetsVisual.building.fill,
   outline: streetsVisual.building.outline,
@@ -902,6 +888,14 @@ function streetsLabelRenderStack() {
         selectors: [
           {field: 'name', kind: 'has'},
           {field: 'class', kind: 'compare', operator: 'eq', value: 'country'},
+          {
+            fallback: rankAtMost(2),
+            kind: 'step',
+            stops: [
+              {selector: rankAtMost(4), zoom: 3},
+              {selector: {kind: 'literal', value: true}, zoom: 5},
+            ],
+          },
         ],
       },
       style: {},
@@ -1010,6 +1004,23 @@ function streetsLabelRenderStack() {
 function streetsRoadRenderStack() {
   return {
     ...googleParkPathRefinements(),
+    pedestrianPattern: renderPass({
+      placement: {above: 'roads.areas.pedestrian.fill'},
+      renderer: 'fill',
+      selector: {
+        kind: 'all',
+        selectors: [
+          {kind: 'geometry', geometry: 'polygon'},
+          {field: 'class', kind: 'in', values: ['path', 'path_construction']},
+          {field: 'subclass', kind: 'compare', operator: 'eq', value: 'pedestrian'},
+        ],
+      },
+      style: {
+        minZoom: 16,
+        pattern: streetsVisual.image.sidewalkPattern,
+        opacity: 0.3,
+      },
+    }),
     oneWayMarkers: refineRenderTarget({
       renderer: 'symbol',
       style: {
@@ -1257,7 +1268,7 @@ function roadLabelStyle(kind: RoadLabelKind): TileflowSymbolStyle {
   const major = kind === 'major';
   const pedestrian = kind === 'pedestrian';
   const path = kind === 'path';
-  const startSize = major ? 9 : pedestrian ? 9 : path ? 6.5 : 8;
+  const startSize = major ? 10 : pedestrian ? 9 : path ? 6.5 : 9;
   const endSize = major ? 16 : pedestrian ? 14 : path ? 13 : 14;
 
   return {
@@ -1269,14 +1280,14 @@ function roadLabelStyle(kind: RoadLabelKind): TileflowSymbolStyle {
       font: streetsVisual.font.default,
       haloColor: streetsDetailPalette.halo,
       haloWidth: 1,
-      letterSpacing: path || pedestrian ? 0.01 : 0.15,
+      letterSpacing: 0.01,
       maxAngle: 30,
       padding: 1,
       size: zoom.linear([
         [10, startSize],
         [18, endSize],
       ]),
-      transform: 'uppercase',
+      transform: 'none',
     },
   };
 }
@@ -1308,13 +1319,25 @@ export const streets = bindOfficialMapTheme(
       // Optional keys: addresses, aeroways, boundaries, buildings, labels, land,
       // landforms, poi, roads, transit, vegetation, water. Object order never
       // controls layer order.
-      // Streets deliberately omits parcel-level house numbers. POI and road/place
-      // labels carry the useful navigation hierarchy without close-zoom numeric noise.
-      addresses: disable(),
+      addresses: addresses({
+        labels: {
+          minZoom: 17,
+          text: {
+            color: streetsVisual.label.muted,
+            font: streetsVisual.font.default,
+            haloColor: streetsDetailPalette.halo,
+            haloWidth: 0.5,
+            size: 9,
+          },
+        },
+      }),
       land: withRenderStack(
         land({
           background: {
-            color: streetsSurfacePalette.background,
+            color: zoom.linear([
+              [9, streetsVisual.overviewSurface],
+              [11, streetsSurfacePalette.background],
+            ]),
             opacity: 1,
           },
           globalLandcover: {
@@ -1577,33 +1600,12 @@ export const streets = bindOfficialMapTheme(
           },
         },
       }),
-      vegetation: vegetation({
-        flat: {
-          color: streetsDetailPalette.greenspaceDark,
-          minZoom: 16,
-          opacity: 0.82,
-          pitchAlignment: 'map',
-          pitchScale: 'map',
-          radius: zoom.linear([
-            [16, 2.2],
-            [20, 8],
-          ]),
-          strokeColor: streetsDetailPalette.greenspace,
-          strokeOpacity: 0.55,
-          strokeWidth: 0.8,
-        },
-        mode: '3d',
-        threeDimensional: {
-          barkColor: streetsVisual.tree.bark,
-          broadleafColors: streetsVisual.tree.broadleaf,
-          coniferColors: streetsVisual.tree.conifer,
-          crownScale: 1,
-          heightScale: 1,
-        },
-      }),
+      // Streets is a flat basemap. Applications may explicitly enable the
+      // vegetation module when individual trees are part of their map design.
+      vegetation: disable(),
       boundaries: withRenderStack(
         boundaries({
-          // Mapbox Standard's admin-0/admin-1 layers map to OpenMapTiles
+          // Streets v12's admin-0/admin-1 layers map to OpenMapTiles
           // admin_level 2/4 respectively.
           admin2: {
             color: streetsOverviewPalette.admin0,
@@ -1611,9 +1613,9 @@ export const streets = bindOfficialMapTheme(
             minZoom: 1,
             opacity: 1,
             width: zoom.linear([
-              [3, 0.8],
-              [6, 1.35],
-              [12, 2.1],
+              [3, 0.5],
+              [6, 1],
+              [12, 2],
             ]),
           },
           admin4: {
@@ -1625,9 +1627,9 @@ export const streets = bindOfficialMapTheme(
               [3, 1],
             ]),
             width: zoom.linear([
-              [3, 0.7],
-              [6, 1.2],
-              [12, 1.8],
+              [3, 0.3],
+              [6, 0.7],
+              [12, 1.5],
             ]),
           },
           disputed: {
@@ -1686,14 +1688,14 @@ export const streets = bindOfficialMapTheme(
           },
           sidewalks: {
             pattern: {
-              minZoom: 17,
-              opacity: 0.62,
+              minZoom: 16,
+              opacity: 0.3,
               pattern: streetsVisual.image.sidewalkPattern,
             },
             surface: {
               color: streetsDetailPalette.roadCasing,
-              minZoom: 17,
-              opacity: 0.96,
+              minZoom: 16,
+              opacity: 0.45,
             },
           },
           modifiers: {
@@ -1790,11 +1792,8 @@ export const streets = bindOfficialMapTheme(
             },
             // Polygon pedestrian plazas; line-like pedestrian ways use classes.pedestrian.
             pedestrian: {
-              // The source contains very broad pedestrian complexes around
-              // Nuevos Ministerios. Leave their underlying land use visible;
-              // the actual pedestrian ways are still rendered as lines.
-              fill: {visible: false},
-              outline: {visible: false},
+              fill: {color: mapboxRoadPalette.pathCasing, minZoom: 15, opacity: 0.35},
+              outline: {color: mapboxRoadPalette.pathCasing, minZoom: 16, width: 0.8, dash: [1, 2]},
             },
             pier: {
               // The transport extract also classifies broad station/platform
@@ -2059,29 +2058,25 @@ export const streets = bindOfficialMapTheme(
           flat: {
             fill: {
               color: buildingFillColor,
-              minZoom: 14.25,
+              minZoom: 15,
               opacity: zoom.linear([
-                [14.25, 0],
-                [14.75, 0.5],
-                [15, 1],
+                [15, 0],
+                [16, 1],
               ]),
             },
             outline: {
               color: buildingOutlineColor,
-              minZoom: 14.5,
+              minZoom: 15,
               opacity: zoom.linear([
-                [14.5, 0],
-                [15, 0.6],
-                [16, 0.82],
-                [17, 0.96],
+                [15, 0],
+                [16, 0.7],
+                [17, 0.85],
                 [18, 1],
               ]),
               width: zoom.linear([
-                [14.5, 0.25],
                 [15, 0.4],
-                [16, 0.65],
-                [17, 0.9],
-                [20, 1],
+                [18, 0.6],
+                [20, 0.8],
               ]),
             },
           },
@@ -2091,7 +2086,7 @@ export const streets = bindOfficialMapTheme(
       labels: withRenderStack(
         labels({
           collisionPriority: 'navigation',
-          language: 'local', // 'auto' | 'local' | 'en' | another language field suffix.
+          language: 'en', // 'auto' | 'local' | 'en' | another language field suffix.
           places: 'all', // 'none' | 'major' | 'all'.
           roads: 'all', // 'none' | 'highways' | 'major' | 'streets' | 'all'.
           shields: 'major', // 'none' | 'major' | 'all'.
@@ -2131,7 +2126,8 @@ export const streets = bindOfficialMapTheme(
                 text: {
                   color: streetsOverviewPalette.label,
                   haloColor: streetsDetailPalette.halo,
-                  haloWidth: 1.25,
+                  font: streetsVisual.font.default,
+                  haloWidth: 0.6,
                   lineHeight: 1.1,
                   maxWidth: 6,
                   padding: 3,
@@ -2212,7 +2208,7 @@ export const streets = bindOfficialMapTheme(
               },
               city: {
                 minZoom: 2,
-                maxZoom: 16,
+                maxZoom: 13,
                 priority: expr.subtract(100, expr.coalesce(expr.get(field('rank')), 20)),
                 text: {
                   color: zoom.linear([
@@ -2284,21 +2280,14 @@ export const streets = bindOfficialMapTheme(
                   // regional label field used by Standard. Capital dots and
                   // rank-driven size still carry the major-city hierarchy.
                   font: streetsVisual.font.default,
-                  variableAnchors: [
-                    'left',
-                    'right',
-                    'top',
-                    'bottom',
-                    'top-left',
-                    'top-right',
-                    'bottom-left',
-                    'bottom-right',
-                  ],
+                  // A fixed side lets collocated producer candidates collide instead
+                  // of placing duplicate city names around the same point.
+                  variableAnchors: ['right'],
                 },
               },
               town: {
                 minZoom: 2,
-                maxZoom: 16,
+                maxZoom: 13,
                 priority: expr.subtract(80, expr.coalesce(expr.get(field('rank')), 20)),
                 text: {
                   color: streetsVisual.label.settlement,
@@ -2358,7 +2347,7 @@ export const streets = bindOfficialMapTheme(
               },
               village: {
                 minZoom: 2,
-                maxZoom: 16,
+                maxZoom: 13,
                 priority: expr.subtract(65, expr.coalesce(expr.get(field('rank')), 20)),
                 text: {
                   color: streetsVisual.label.settlement,
@@ -2418,9 +2407,10 @@ export const streets = bindOfficialMapTheme(
               },
               neighborhood: {
                 minZoom: 10,
-                maxZoom: 16,
+                maxZoom: 15,
                 priority: expr.subtract(65, expr.coalesce(expr.get(field('rank')), 20)),
                 text: {
+                  font: streetsVisual.font.default,
                   color: streetsVisual.label.neighborhood,
                   haloColor: streetsDetailPalette.halo,
                   haloBlur: 0.5,
@@ -2467,9 +2457,10 @@ export const streets = bindOfficialMapTheme(
               },
               other: {
                 minZoom: 11,
-                maxZoom: 16,
+                maxZoom: 15,
                 priority: 40,
                 text: {
+                  font: streetsVisual.font.default,
                   color: streetsVisual.label.neighborhood,
                   haloColor: streetsDetailPalette.halo,
                   haloBlur: 0.5,
@@ -2496,8 +2487,8 @@ export const streets = bindOfficialMapTheme(
             roads: {
               motorway: {...roadLabelStyle('major'), minZoom: 10},
               trunk: {...roadLabelStyle('major'), minZoom: 10},
-              primary: {...roadLabelStyle('major'), minZoom: 12},
-              secondary: {...roadLabelStyle('major'), minZoom: 12},
+              primary: {...roadLabelStyle('major'), minZoom: 10},
+              secondary: {...roadLabelStyle('major'), minZoom: 11},
               tertiary: {...roadLabelStyle('major'), minZoom: 13},
               minor: {...roadLabelStyle('street'), minZoom: 13},
               service: {...roadLabelStyle('street'), minZoom: 15},
@@ -2585,8 +2576,8 @@ export const streets = bindOfficialMapTheme(
                   haloColor: streetsVisual.label.waterHalo,
                   haloWidth: 0.5,
                   size: zoom.linear([
-                    [5, 11],
-                    [14, 16],
+                    [5, 10],
+                    [14, 12],
                   ]),
                 },
               },
@@ -2618,8 +2609,8 @@ export const streets = bindOfficialMapTheme(
                   haloColor: streetsVisual.label.waterHalo,
                   maxAngle: 30,
                   size: zoom.linear([
-                    [13, 12],
-                    [18, 18],
+                    [13, 10],
+                    [18, 13],
                   ]),
                 },
               },
@@ -2663,34 +2654,31 @@ export const streets = bindOfficialMapTheme(
           'religion',
           'visitor-amenity',
         ],
-        // Standard carries the POI category into both marker and label colour.
-        // A uniform grey treatment suppresses a meaningful amount of chroma
-        // and makes the whole light map read as if a pale overlay sat above it.
+        // Match label and pictogram categories with compact marker discs.
         color: 'category',
         density: 3,
         icons: true,
         labels: true,
         placement: {
-          // One collision unit: the circular icon is required while its name is
-          // optional and may move around the marker when space is tight.
+          // Keep each icon and its optional name in one collision unit.
           coupleIconAndLabel: true,
-          iconPadding: 10,
-          textPadding: 12,
+          iconPadding: 2,
+          textPadding: 2,
         },
         styles: {
-          'arts-entertainment': sparseStreetsPoiStyle,
-          education: deferredStreetsPoiStyle,
+          'arts-entertainment': streetsPoiStyle,
+          education: streetsPoiStyle,
           'food-drink': streetsPoiStyle,
-          landmark: deferredStreetsPoiStyle,
-          lodging: sparseStreetsPoiStyle,
-          medical: deferredStreetsPoiStyle,
-          'park-nature': deferredStreetsPoiStyle,
-          'public-services': deferredStreetsPoiStyle,
-          religion: deferredStreetsPoiStyle,
+          landmark: streetsPoiStyle,
+          lodging: streetsPoiStyle,
+          medical: streetsPoiStyle,
+          'park-nature': streetsPoiStyle,
+          'public-services': streetsPoiStyle,
+          religion: streetsPoiStyle,
           retail: streetsPoiStyle,
           'sport-leisure': streetsPoiStyle,
           transport: streetsPoiStyle,
-          'visitor-amenity': deferredStreetsPoiStyle,
+          'visitor-amenity': streetsPoiStyle,
         },
       }),
     },

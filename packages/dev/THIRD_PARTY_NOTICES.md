@@ -50,8 +50,8 @@ License.
 
 ## PMTiles JavaScript 4.5.0
 
-The local Streets preview loads the separately installed `pmtiles` browser decoder to retrieve
-individual landmark GLB entries with HTTP byte ranges. PMTiles is copyright Protomaps and
+Local tileset inspection and delivery use the separately installed `pmtiles` package to read
+vector and raster tiles with HTTP byte ranges or local file reads. PMTiles is copyright Protomaps and
 contributors and is distributed under the BSD 3-Clause License. Its `fflate` dependency is
 copyright 2020 Arjun Barrett and is distributed under the MIT License.
 

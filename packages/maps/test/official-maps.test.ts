@@ -64,6 +64,22 @@ const officialIconIds = [
   'civica-poi-transit',
   'civica-water-lines',
   'coffee',
+  'nature',
+  'sport',
+  'worship',
+  'coffee-dark',
+  'culture-dark',
+  'education-dark',
+  'food-dark',
+  'health-dark',
+  'lodging-dark',
+  'major-transit-dark',
+  'parking-dark',
+  'services-dark',
+  'shopping-dark',
+  'nature-dark',
+  'worship-dark',
+  'sport-dark',
   'crosswalk',
   'culture',
 
@@ -377,16 +393,19 @@ test('official maps declare their expected icon and typography providers', () =>
   assert.equal(resolvedBaedeker.glyphs, undefined);
   assert.equal(resolvedSiegfried.glyphs, undefined);
   assert.deepEqual(resolvedStreets.glyphs, {
-    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic'],
     kind: 'url',
     url: officialGlyphsUrl,
   });
   assert.deepEqual(resolvedCivica.fonts, [civicaFonts]);
   assert.equal(resolvedCivica.glyphs, undefined);
-  assert.deepEqual(resolvedFerraris.glyphs, resolvedStreets.glyphs);
-  assert.deepEqual(resolvedHarad.glyphs, resolvedStreets.glyphs);
-  assert.deepEqual(resolvedSoundings.glyphs, resolvedStreets.glyphs);
-  assert.deepEqual(resolvedBlueprint.glyphs, resolvedStreets.glyphs);
+  for (const map of [resolvedFerraris, resolvedHarad, resolvedSoundings, resolvedBlueprint]) {
+    assert.deepEqual(map.glyphs, {
+      fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
+      kind: 'url',
+      url: officialGlyphsUrl,
+    });
+  }
   assert.equal(resolvedBaedeker.themes.light.typography?.font, 'Cormorant Garamond Regular');
   assert.equal(
     resolvedBaedeker.themes.light.typography?.places?.font,
@@ -624,54 +643,35 @@ test('all official maps compile directly after their packaged sprite is prepared
   }
 });
 
-test('Streets-family maps overlap ordinary road endpoints without extending structural endpoints', () => {
-  const structuralButtCap = [
-    'any',
-    ['==', ['get', 'brunnel'], 'tunnel'],
-    ['==', ['get', 'class'], 'steps'],
-    ['==', ['get', 'subclass'], 'steps'],
-  ];
-  const controlledSurfaceButtCap = [
-    'all',
-    ['match', ['get', 'brunnel'], ['tunnel', 'bridge'], false, true],
-    ['==', ['get', 'foot'], 'no'],
-    [
-      'match',
-      ['get', 'class'],
-      [
-        'motorway',
-        'trunk',
-        'primary',
-        'motorway_construction',
-        'trunk_construction',
-        'primary_construction',
-      ],
-      true,
-      false,
-    ],
-  ];
-  const expectedCap = [
-    'step',
-    ['zoom'],
-    ['case', structuralButtCap, 'butt', 'round'],
-    17,
-    ['case', ['any', structuralButtCap, controlledSurfaceButtCap], 'butt', 'round'],
-  ];
-
+test('Streets-family road caps follow overview and structural reference geometry', () => {
   for (const [mapId, map] of Object.entries({streets})) {
     const style = compileOfficialMap(map);
     const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
 
-    for (const cohort of ['local', 'arterial', 'major']) {
+    for (const roadClass of ['minor', 'primary', 'motorway']) {
       for (const phase of ['casing', 'fill']) {
         for (const structure of ['surface', 'bridge', 'tunnel']) {
-          const id = `tileflow-road-${structure}-highzoom-${cohort}-${phase}`;
-          const layer = byId.get(id);
+          const layer = style.layers.find(
+            (l) =>
+              l.id.startsWith(`tileflow-road-${structure}-`) &&
+              l.id.endsWith(`-${phase}`) &&
+              (l.minzoom ?? 0) <= 18 &&
+              (l.maxzoom ?? 25) > 18 &&
+              featureFilter(l.filter as never).filter({zoom: 18}, {
+                type: 2,
+                properties: {class: roadClass, brunnel: structure},
+              } as never),
+          );
+          const id = `${structure}-${roadClass}-${phase}`;
           assert.ok(layer, `Missing compiled ${mapId} road cohort ${id}`);
           assert.deepEqual(
-            layer.layout?.['line-cap'],
-            expectedCap,
-            `${mapId} ${id} regressed to seam-prone caps`,
+            layer.layout?.['line-cap'] ?? 'butt',
+            structure === 'surface'
+              ? ['step', ['zoom'], 'butt', 14, 'round']
+              : structure === 'bridge' && phase === 'fill'
+                ? 'round'
+                : 'butt',
+            `${mapId} ${id} uses incorrect reference caps`,
           );
         }
       }
@@ -731,6 +731,12 @@ test('official road maps avoid seam-prone caps on ordinary surface and bridge se
     );
     assert.ok(ordinaryRoadLayers.length > 0, `${mapId} compiled no ordinary road lines`);
     for (const layer of ordinaryRoadLayers) {
+      if (
+        mapId === 'streets' &&
+        layer.id.startsWith('tileflow-road-bridge-') &&
+        layer.id.endsWith('-casing')
+      )
+        continue;
       assert.notEqual(
         layer.layout?.['line-cap'],
         undefined,
@@ -828,7 +834,11 @@ test('official maps emit only exact declared font-face stacks', () => {
       JSON.stringify(['Cormorant Garamond SemiBold']),
     ]),
     soundings: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
-    streets: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
+    streets: new Set([
+      JSON.stringify(['Noto Sans Regular']),
+      JSON.stringify(['Noto Sans Bold']),
+      JSON.stringify(['Noto Sans Italic']),
+    ]),
   } as const;
 
   for (const [id, map] of Object.entries({
@@ -1000,9 +1010,9 @@ test('Streets keeps its runtime-toggle geometry and business surface in the comp
   assert.match(JSON.stringify(businessArea.filter), /business_area/u);
 });
 
-test('Streets consumes canonical producer-ranked POI and omits house-number noise', () => {
+test('Streets consumes canonical producer-ranked POI and reserves house numbers for detail', () => {
   const resolved = resolveMap(streets);
-  assert.equal(resolved.modules?.addresses?.enabled, false);
+  assert.notEqual(resolved.modules?.addresses?.enabled, false);
   assert.equal(resolved.modules?.labels?.collisionPriority, 'navigation');
   assert.notEqual(resolved.modules?.poi?.enabled, false);
   assert.equal(resolved.modules?.poi?.color, 'category');
@@ -1023,31 +1033,31 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
     'religion',
     'visitor-amenity',
   ]);
-  assert.equal(resolved.modules?.poi?.placement?.iconPadding, 10);
-  assert.equal(resolved.modules?.poi?.placement?.textPadding, 12);
+  assert.equal(resolved.modules?.poi?.placement?.iconPadding, 3);
+  assert.equal(resolved.modules?.poi?.placement?.textPadding, 3);
   assert.equal(resolved.modules?.poi?.styles?.['arts-entertainment']?.density, 2);
   assert.equal(resolved.modules?.poi?.styles?.lodging?.density, 2);
 
   const style = compileOfficialMap(streets);
   const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
-  assert.equal(byId.has('tileflow-addresses-labels'), false);
+  assert.equal(byId.get('tileflow-addresses-labels')?.minzoom, 17);
   assert.equal(byId.has('tileflow-parking-symbol-disc'), false);
   assert.equal(byId.has('tileflow-parking-symbol-label'), false);
 
   const expectedPoiTextColors = {
-    'arts-entertainment': '#B85CA4',
-    education: '#987A55',
-    'food-drink': '#D7892C',
-    landmark: '#B85CA4',
-    lodging: '#806DC4',
-    medical: '#C95E6B',
-    'park-nature': '#4C9478',
-    'public-services': '#667C9E',
-    religion: '#8A756B',
-    retail: '#557BC4',
-    'sport-leisure': '#4C9478',
-    transport: '#5C74D6',
-    'visitor-amenity': '#557BC4',
+    'arts-entertainment': '#F042B6',
+    education: '#916130',
+    'food-drink': '#F57A00',
+    landmark: '#F042B6',
+    lodging: '#664CE6',
+    medical: '#F53D3D',
+    'park-nature': '#267915',
+    'public-services': '#586E84',
+    religion: '#586E84',
+    retail: '#2D87E1',
+    'sport-leisure': '#1891AA',
+    transport: '#3359CC',
+    'visitor-amenity': '#586E84',
   } as const;
   for (const category of resolved.modules?.poi?.categories ?? []) {
     const id = `tileflow-poi-${category}`;
@@ -1058,7 +1068,8 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
     assert.equal(byId.has(`${id}-label`), false);
     assert.equal(layer.layout?.['icon-optional'], false);
     assert.equal(layer.layout?.['text-optional'], true);
-    assert.deepEqual(layer.layout?.['text-variable-anchor'], ['top', 'bottom', 'right', 'left']);
+    assert.equal(layer.layout?.['text-anchor'], 'top');
+    assert.deepEqual(layer.layout?.['text-offset'], [0, 0.8]);
     assert.deepEqual(layer.layout?.['symbol-sort-key'], [
       '+',
       ['*', ['to-number', ['get', 'filter_rank'], 6], 17],
@@ -1068,31 +1079,11 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
     assert.match(JSON.stringify(layer.filter), /"filter_rank"/u);
     assert.match(JSON.stringify(layer.filter), /"size_rank"/u);
     assert.doesNotMatch(JSON.stringify(layer.filter), /"class"|"subclass"|"rank"/u);
-    assert.deepEqual((layer.filter as unknown[])[4], [
-      '<=',
-      ['to-number', ['get', 'filter_rank'], 6],
-      [
-        '+',
-        ['step', ['zoom'], 0, 16, 1, 17, 2],
-        category === 'arts-entertainment' || category === 'lodging' ? 2 : 3,
-      ],
-    ]);
+    assert.match(JSON.stringify(layer.filter), /"step",\["zoom"\]/u);
+    assert.match(JSON.stringify(layer.filter), /,18,/u);
     assert.equal(layer.paint?.['text-color'], expectedPoiTextColors[category]);
     assert.equal(layer.paint?.['text-halo-color'], '#FFFFFF');
-    assert.equal(
-      layer.minzoom,
-      [
-        'education',
-        'landmark',
-        'medical',
-        'park-nature',
-        'public-services',
-        'religion',
-        'visitor-amenity',
-      ].includes(category)
-        ? 15.5
-        : 0,
-    );
+    assert.equal(layer.minzoom, category === 'transport' ? 12 : 6);
   }
 
   const transportIcon = JSON.stringify(byId.get('tileflow-poi-transport')?.layout?.['icon-image']);

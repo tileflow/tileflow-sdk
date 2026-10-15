@@ -187,6 +187,20 @@ recreation without changing existing classes, callbacks, analytics, or native Ma
 
 ## Capture output and watch
 
+Still captures also retain their normalized concrete-theme scene definition. The CLI saves a
+schema-version-1 record containing that definition, receipt and warnings, plus the PNG, under
+`.tileflow/captures/records/<captureId>.json` and `<captureId>.png`. The ID is the SHA-256 of the
+canonical record JSON; the receipt binds the PNG and scene hashes. Identical records are reused,
+and different contents never replace an existing ID. JSON results and captured watch events expose
+`captureId`. Timed shots retain their separate frame/video contract.
+
+`tileflow compare --before <id> --after <id>` reads these saved records without executing a config,
+compiling, starting a browser or fetching data. It checks bounded regular files, hashes, receipt
+shape and normalized scene identity before invoking the same review comparator used for fresh
+renders. Camera, dimensions, renderer and data mismatch remain explicit nonzero outcomes. Comparable
+pixel changes are informational. `--capture-dir`, `--region` and `--diff` select the store, physical
+region and optional contextual diff. No comparison accepts or updates a baseline implicitly.
+
 One-shot capture writes an atomic PNG/receipt pair. Managed output defaults to
 `.tileflow/captures/<scene>.png` and `<scene>.receipt.json`; `tileflow init` ignores managed captures
 and diffs in a new `.gitignore`. Explicit output replacement requires `--force`, and symlink or
@@ -361,15 +375,31 @@ shot receipts contain no time, user, repository, absolute path, environment, URL
 ## Visual comparison and baselines
 
 Two deliberate Tileflow renders can be compared without pretending either one is an approved
-baseline. The live authoring surface is `tileflow preview` with any `--against-*` selection. It
-mounts two same-origin preview handlers with independent watched sessions, synchronizes their
-camera, persists workbench state in the URL, and provides side-by-side, split, opacity-overlay, and
+baseline. The live authoring surface is `tileflow preview`, opening Map DevTools with
+one watched session and one preview handler by default. Any `--against-*` selection adds a second
+same-origin preview handler with its own watched session, synchronizes their
+camera, persists Map DevTools state in the URL, and provides side-by-side, split, opacity-overlay, and
 blink views. An invalid edit retains that side's last valid artifacts and exposes only bounded
 diagnostics until it recovers. The opt-in compiler sidecar, rendered-feature inspector, zoom-curve
 samples, compiled sprite atlas, and scene/capture-command copy helpers are local diagnostics; the
 sidecar is never a build artifact or runtime manifest field.
 
-Durable review evidence uses an exact headless capture matrix:
+The **Capture** action in Map DevTools pins the displayed, ready artifact generation and invokes the same
+capture session with the selected map/theme, current camera and explicit fixed frame. Temporary
+preview visibility overrides are excluded. The renderer starts lazily and is reused until shutdown.
+The action stores the same immutable records as `tileflow capture`; history and saved comparison
+verify and reuse those records. Resizing the UI does not alter the capture frame. An invalid or
+stale revision cannot begin capture. Saved review retains the ordinary frame, renderer and data
+compatibility gates before exposing exact pixel metrics; the result is never baseline approval.
+
+The local Map DevTools adapter exposes version-1 catalog, history, capture, compare and context JSON.
+`tileflow inspect session --url <local-preview-origin> --json` reads browser observations with their
+generation, displayed generation, update time and stale flag. Bounded feature/style/provenance
+context is separate from deterministic receipts and does not assert exact source-file ownership.
+Limits and user workflow are documented in the
+[CLI guide](../../packages/cli/docs/map-authoring.md#work-with-a-person-and-an-agent).
+
+Durable review evidence also uses an exact headless capture matrix:
 
 ```sh
 npx tileflow visual compare \

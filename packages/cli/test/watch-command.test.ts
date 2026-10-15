@@ -68,9 +68,16 @@ test('preview emits valid/invalid/recovered/stopped NDJSON and serves last-good 
 
   const ready = await running.waitFor((event) => event.event === 'ready');
   assert.equal(ready.generation, 1);
-  const status = await fetchEventually(`http://127.0.0.1:${port}/__status`);
+  const status = await fetchEventually(`http://127.0.0.1:${port}/map/__status`);
   assert.equal(status.status, 'ready');
   const preview = await (await fetch(`http://127.0.0.1:${port}/`)).text();
+  assert.match(preview, /Tileflow Map DevTools/);
+  assert.match(preview, /"initialMode":"single"/);
+  assert.match(preview, /Inspect the map/);
+  assert.equal(
+    (await fetch(`http://127.0.0.1:${port}/map/__inspection/main/light.json`)).status,
+    200,
+  );
   assert.doesNotMatch(preview, /unpkg|fonts\.googleapis|fonts\.gstatic/);
 
   await writeFile(join(cwd, 'tileflow.config.ts'), invalidConfig, 'utf8');
@@ -85,11 +92,11 @@ test('preview emits valid/invalid/recovered/stopped NDJSON and serves last-good 
     'config-validation',
   );
   const invalidStatus = await fetchEventually(
-    `http://127.0.0.1:${port}/__status`,
+    `http://127.0.0.1:${port}/map/__status`,
     (body) => body.status === 'invalid',
   );
   assert.equal(invalidStatus.lastGoodGeneration, 1);
-  assert.equal((await fetch(`http://127.0.0.1:${port}/styles/main/light.json`)).status, 200);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/map/styles/main/light.json`)).status, 200);
 
   await writeFile(join(cwd, 'tileflow.config.ts'), createValidConfig(), 'utf8');
   const recovered = await running.waitFor((event) => event.event === 'recovered');
@@ -136,7 +143,7 @@ test('preview comparison serves two watched sides and their memory-only inspecti
   await fetchEventually(`http://127.0.0.1:${port}/right/__status`);
 
   const shell = await (await fetch(`http://127.0.0.1:${port}/`)).text();
-  assert.match(shell, /Tileflow visual workbench/u);
+  assert.match(shell, /Tileflow Map DevTools/u);
   assert.match(shell, /Side by side/u);
   assert.match(shell, /Copy scene/u);
   assert.doesNotMatch(shell, /"captureConfig":/u);

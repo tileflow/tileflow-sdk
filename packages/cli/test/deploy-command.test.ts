@@ -764,7 +764,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     assert.equal(typeof mapEntry?.themes?.light?.styleSha256, 'string');
     assert.ok(artifact.buildManifest?.provenance);
     assert.deepEqual(Object.keys(artifact.styles ?? {}), ['dark', 'light']);
-    for (const style of Object.values(artifact.styles ?? {})) {
+    for (const [theme, style] of Object.entries(artifact.styles ?? {})) {
       assert.equal(
         style.sprite,
         `${api.url}/sprites/icp_12345678-1234-1234-1234-123456789abc/sprite`,
@@ -774,7 +774,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
       );
       const iconImage = JSON.stringify(foodPoiLayer?.layout?.['icon-image']);
       assert.match(iconImage, /"get","icon"/u);
-      assert.match(iconImage, /"image","food"/u);
+      assert.match(iconImage, new RegExp(`"image","food${theme === 'dark' ? '-dark' : ''}"`, 'u'));
     }
     assert.deepEqual(parsed.iconPackage, {
       contentHash: requests[0]?.url?.split('/').pop(),
@@ -807,7 +807,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     requests.map((request) => `${request.method} ${request.url?.split('/').slice(0, 3).join('/')}`),
     [`PUT /v1/icon-packages`, `POST /v1/styles`],
   );
-  assert.match(result.stdout, /Uploaded icon package madrid \(2 icons,/);
+  assert.match(result.stdout, /Uploaded icon package madrid \(3 icons,/);
   assert.match(result.stdout, /Published madrid \(v1\)\./);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(fakeApiKey));
 });
@@ -1452,10 +1452,12 @@ async function createIconFixture(t: TestContext) {
   const fixture = await createFixture(t);
   const iconsDirectory = join(fixture.directory, 'icons');
   await mkdir(iconsDirectory);
-  await writeFile(
-    join(iconsDirectory, 'food.svg'),
-    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle id="source-secret" cx="8" cy="8" r="7" /></svg>',
-  );
+  for (const image of ['food', 'food-dark']) {
+    await writeFile(
+      join(iconsDirectory, `${image}.svg`),
+      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle id="source-secret" cx="8" cy="8" r="7" /></svg>',
+    );
+  }
   await writeFile(
     join(iconsDirectory, 'park.svg'),
     '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" /></svg>',

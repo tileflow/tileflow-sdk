@@ -63,10 +63,13 @@ test('offers a theme switch only when a map preview has several themes', () => {
   assert.match(several, /if \(previewThemes\.length > 1\) map\.addControl\(new ThemeControl\(\)/u);
 });
 
-test('the preview globe backdrop follows the map atmosphere', () => {
+test('the preview globe rim follows the rendered silhouette and map atmosphere', () => {
   const html = renderTileflowPreviewHtml(undefined, '/tileflow', {}, false);
 
   assert.match(html, /background-color: var\(--tileflow-space, #2F5070\)/u);
   assert.match(html, /metadata\?\.\["tileflow:atmosphere"\]/u);
-  assert.match(html, /"--tileflow-rim-glow": rgba\(atmosphere\?\.horizonColor, 0\.52\)/u);
+  assert.match(html, /#map\.tileflow-globe \.maplibregl-canvas\s*\{\s*filter:/u);
+  assert.match(html, /rgba\(atmosphere\?\.horizonColor \?\? "#B0DCF6", opacity \* 0\.4\)/u);
+  assert.match(html, /map\.on\("style\.load", \(\) => updateGlobeBackdrop\(map\)\)/u);
+  assert.doesNotMatch(html, /tileflow-globe::before|--tileflow-globe-radius|radius\.toFixed/u);
 });

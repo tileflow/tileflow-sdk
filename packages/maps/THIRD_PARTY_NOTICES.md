@@ -11,9 +11,10 @@ authoritative for the original Tileflow artwork.
 ## Maki POI pictograms
 
 The `coffee.svg`, `culture.svg`, `education.svg`, `food.svg`, `health.svg`, `lodging.svg`,
-`major-transit.svg`, `parking.svg`, `services.svg`, and `shopping.svg` assets under
-`assets/streets/icons/` contain pictograms adapted from the corresponding `cafe`, `museum`,
-`school`, `restaurant`, `hospital`, `lodging`, `rail-metro`, `parking`, `information`, and `shop`
+`major-transit.svg`, `nature.svg`, `parking.svg`, `services.svg`, `shopping.svg`, `sport.svg`, and
+`worship.svg` assets and their `-dark.svg` variants under `assets/streets/icons/` contain pictograms
+adapted from the corresponding `cafe`, `museum`, `college`, `restaurant`, `hospital`, `lodging`,
+`rail-metro`, `park`, `parking`, `information`, `shop`, `soccer`, and `place-of-worship`
 icons in `@mapbox/maki` 8.2.0, upstream commit
 `6ab50f392294aeb20b3af83e8a10067151876eb9`.
 
@@ -21,9 +22,18 @@ Maki is dedicated to the public domain under CC0-1.0. Tileflow authored the circ
 color system, sizing, composition, and SVG simplifications around those pictograms. The complete
 upstream license is included at `assets/streets/LICENSE-MAKI.txt`.
 
+POI discs occupy 20px inside a 24px cell. The 15px Maki source geometry is scaled to a centered
+12px box before rasterization, keeping space between the pictograms and the circular border.
+
 The `ferraris` map and its nine SVG patterns are original Tileflow code and artwork. This package
 does not include or redistribute any FerrarGIS assets, code, style files, textures, fonts, source
 scans, or map data.
+
+## Streets relief
+
+Streets requests hillshade DEM tiles from Mapterhorn at runtime. No DEM tile is packaged here.
+Mapterhorn's constituent open terrain sources, attribution, and license terms are listed at
+<https://mapterhorn.com/attribution/>. The compiled source carries that attribution link.
 
 ## Baedeker map references and terrain data
 

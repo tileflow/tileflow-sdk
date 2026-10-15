@@ -1320,7 +1320,7 @@ test('rejects and never watches icon directories outside the working tree', asyn
 });
 
 const tokenModule = `import tokens from './tokens.json';\nexport default tokens;\n`;
-const fixtureGlyphsSource = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold']}`;
+const fixtureGlyphsSource = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}`;
 const validConfig = `import {defineMap, disable} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 import tokens from './tokens.ts';
@@ -1692,6 +1692,7 @@ function runPreviewScript(
       windowListeners.set(name, eventListeners);
     },
     document: {
+      documentElement: {dataset: {}},
       createElement(tagName: string) {
         const element = new FakeElement();
         if (tagName === 'button') controlButtons.push(element);

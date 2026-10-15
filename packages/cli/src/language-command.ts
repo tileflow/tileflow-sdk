@@ -90,7 +90,7 @@ function printSchema(schema: JsonDocument, options: {json?: boolean}): void {
   console.log('Run tileflow language schema --json for the complete machine-readable document.');
 }
 
-async function loadPackagedSchema(): Promise<JsonDocument> {
+export async function loadPackagedSchema(): Promise<JsonDocument> {
   const schemaUrl = import.meta.resolve('@tileflow/core/config-reference.json');
   const parsed = JSON.parse(await readFile(fileURLToPath(schemaUrl), 'utf8')) as unknown;
   if (!isRecord(parsed))

@@ -22,6 +22,7 @@ import {
   type TileflowStructuredDiagnostic,
 } from '@tileflow/dev/validation';
 import {withTileflowConfigSecretsHidden} from './config-execution';
+import {boundJson, parseQueryInteger, selectJsonPointer} from './query-output';
 
 type ExplainOptions = {
   apiBaseUrl: string;
@@ -30,6 +31,10 @@ type ExplainOptions = {
   json?: boolean;
   map?: string;
   theme?: string;
+  domain?: string;
+  path?: string;
+  limit?: string;
+  depth?: string;
 };
 
 type SemanticDiffOptions = {
@@ -83,22 +88,27 @@ export function registerAiCommands(
     defaultApiUrl: string;
     defaultConfigPath: string;
   },
+  groups?: {inspect: Command; compare: Command},
 ): void {
-  program
-    .command('explain')
+  (groups?.inspect ?? program)
+    .command(groups ? 'compiled' : 'explain')
     .description('Compile one map/theme and explain semantic compiler decisions')
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)
     .option('--map <name>', 'compile one exact configured map')
     .option('--theme <name>', 'compile one exact concrete theme; defaults to the map default')
     .option('--inspection', 'include physical-layer provenance in the compilation report')
+    .option('--domain <name>', 'project one compiler domain report')
+    .option('--path <pointer>', 'project a JSON Pointer within compilation')
+    .option('--limit <count>', 'bound projected tree entries (1–500)')
+    .option('--depth <count>', 'maximum projection depth (1–12; default: 6)')
     .option('--api-base-url <url>', 'Tileflow API base URL', dependencies.defaultApiUrl)
     .option('--json', 'print deterministic schema-version-1 JSON')
     .action(async (options: ExplainOptions) =>
       runExplain(options, dependencies.createStyleResult ?? createStyleResult),
     );
 
-  program
-    .command('semantic-diff')
+  (groups?.compare ?? program)
+    .command(groups ? 'configs' : 'semantic-diff')
     .description('Compare resolved semantic maps from two configs or one workspace')
     .option('-c, --config <path>', 'workspace config path for the --from/--to shortcut')
     .option('--from <map>', 'before map ID in --config workspace mode')
@@ -197,7 +207,30 @@ async function runExplain(
       compilation: output.compilation,
       diagnostics: output.structuredDiagnostics,
     };
-    if (options.json) process.stdout.write(serializeTileflowCommandDocument(document));
+    if (
+      options.domain !== undefined ||
+      options.path !== undefined ||
+      options.limit !== undefined ||
+      options.depth !== undefined
+    ) {
+      if (options.domain !== undefined && options.path !== undefined)
+        throw new Error('Choose --domain or --path.');
+      const value = options.domain
+        ? output.compilation.report.domains.find((entry) => entry.name === options.domain)
+        : selectJsonPointer(output.compilation, options.path);
+      if (value === undefined) throw new Error(`Unknown compiler domain ${options.domain}.`);
+      process.stdout.write(
+        serializeTileflowCommandDocument({
+          ...summary,
+          selection,
+          ...(options.domain ? {domain: options.domain} : {path: options.path ?? ''}),
+          ...boundJson(value, {
+            limit: parseQueryInteger(options.limit ?? '100', '--limit', 500),
+            depth: parseQueryInteger(options.depth ?? '6', '--depth', 12),
+          }),
+        }),
+      );
+    } else if (options.json) process.stdout.write(serializeTileflowCommandDocument(document));
     else printHumanExplain(document);
   } catch (error) {
     const failure = createTileflowCommandFailureDocument('explain', error, process.cwd(), {

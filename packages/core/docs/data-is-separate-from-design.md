@@ -318,6 +318,15 @@ explicit because the data contract cannot assume a sprite name. They require pos
 `markings` evidence and reject `crossing=no`; both fields are semantic bindings, so custom schemas
 can remap them without weakening that rule.
 
+Metric road rings scale continuously with the map from zoom 15 through 24, including fractional
+zooms. Their casing is below surface road fills so approaching streets cover the outline at each
+junction. The ring fill stays below bridges and road markings.
+
+Road treatment `widthScale` scales both the stroke and an authored `gapWidth`, keeping hollow
+casings aligned with the carriageway at fractional zoom levels.
+When every dash treatment is continuous (`[1, 0]`), road layers omit the dash pattern so thin
+casings render as solid strokes. Actual construction and tunnel dashes remain patterned.
+
 Datasets may also publish the optional, decorative `canopy` layer: points inside urban parks and
 gardens, at most one per cell of a grid of about 20 m that measured tree canopy covers. Each point
 tells how much room a drawn grove of tree crowns has and how dense the canopy around it is. The

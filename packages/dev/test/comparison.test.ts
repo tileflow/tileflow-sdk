@@ -82,6 +82,35 @@ test('renders a self-contained comparison workbench with versioned bridge and re
   assert.doesNotThrow(() => new Script(script, {filename: 'comparison-browser.js'}));
 });
 
+test('single-map Workbench loads one viewer and retains camera and inspection controls', async () => {
+  const harness = runComparisonHarness('?mode=blink&driver=right', {single: true});
+  harness.load('left');
+  await harness.settle();
+  assert.equal(harness.element('stage').dataset.mode, 'single');
+  assert.equal(harness.element('stage').dataset.driver, 'left');
+  assert.equal(harness.element('right-frame').listeners.has('load'), false);
+  harness.element('inspect-toggle').dispatch('click');
+  assert.equal(harness.element('inspector').hidden, false);
+  harness.element('copy-command').dispatch('click');
+  await harness.settle();
+  assert.match(harness.clipboardText(), /tileflow capture/);
+  assert.equal(harness.maps.right.jumpCalls.length, 0);
+});
+
+test('single-map router serves only its configured side and advanced Workbench', async () => {
+  const handler = createTileflowComparisonRequestHandler({
+    left: {basePath: '/map', handler: leftHandler, label: 'Streets', previewUrl: '/map/'},
+  });
+  const shell = await handler(new Request('http://localhost/'));
+  assert.equal(shell.status, 200);
+  assert.match(await shell.text(), /Inspect the map/);
+  assert.equal(
+    (await handler(new Request('http://localhost/map/style.json'))).headers.get('x-side'),
+    'left',
+  );
+  assert.equal((await handler(new Request('http://localhost/right/'))).status, 404);
+});
+
 test('serializes labels and URLs without allowing an inline-script breakout', () => {
   const attack = '</script><script>globalThis.compromised=true</script>';
   const html = renderTileflowComparisonHtml({
@@ -150,7 +179,7 @@ test('keeps the selected driver when a mode resize emits a passive camera event'
   assert.equal(afterSplit.searchParams.get('mode'), 'split');
   assert.equal(afterSplit.searchParams.get('driver'), 'left');
   assert.equal(afterSplit.searchParams.get('lng'), '-5');
-  assert.equal(harness.element('driver').textContent, 'Interact: left');
+  assert.equal(harness.element('driver').textContent, 'Active map: left');
   assert.deepEqual(harness.maps.right.jumpCalls.at(-1), {
     bearing: 1,
     center: [-5, 40],
@@ -207,7 +236,7 @@ test('selects the inspected side and exposes every bounded rendered feature', ()
   harness.maps.right.emit('click', {lngLat: {lat: 10, lng: 20}, point: {x: 4, y: 5}});
 
   assert.equal(new URL(harness.currentUrl()).searchParams.get('driver'), 'right');
-  assert.equal(harness.element('driver').textContent, 'Interact: right');
+  assert.equal(harness.element('driver').textContent, 'Active map: right');
   const inspection = harness.element('inspection');
   const pickerLabel = inspection.children[1] as FakeElement;
   const picker = pickerLabel.children[1] as FakeElement;
@@ -526,10 +555,214 @@ test('validates same-origin owned URLs and disjoint bounded route prefixes', () 
   );
 });
 
+test('Workbench copies fixed-frame context, blocks capture while switching scenes and restores the left driver', async () => {
+  const requests: Array<{path: string; body: unknown}> = [];
+  const selection = {
+    id: 'scene:proof',
+    scene: 'proof',
+    label: 'Proof',
+    map: 'map',
+    theme: 'theme',
+    url: '/left/?scene=proof',
+    camera: {type: 'center', center: [2, 41], zoom: 7},
+    viewport: {width: 640, height: 480, dpr: 1},
+  };
+  const harness = runComparisonHarness('', {
+    single: true,
+    cleanupSecurityError: true,
+    workbenchRequest: (path, body) => {
+      requests.push({path, body});
+      if (path === '')
+        return {
+          busy: false,
+          sides: {left: {generation: 1, status: 'ready', selections: [selection]}},
+        };
+      if (path === '/context') return {saved: true};
+      if (path === '/capture') return {captureId: 'a'.repeat(64)};
+      if (path === '/captures') return {records: [], next: null, warnings: []};
+      throw new Error('Unexpected Workbench request ' + path);
+    },
+  });
+  harness.load('left');
+  await harness.settle();
+  await harness.click('wb-copy-context');
+  const context = JSON.parse(harness.clipboardText());
+  assert.equal(context.definition.viewport.width, 1280);
+  assert.equal(context.definition.viewport.height, 800);
+  assert.equal(context.displayedGeneration, 1);
+  assert.match(context.commands.capture, /--width=1280/);
+  harness.element('wb-view').value = selection.id;
+  harness.element('wb-view').dispatch('change');
+  assert.equal(harness.element('wb-width').value, '640');
+  assert.equal(harness.element('wb-capture').disabled, true);
+  await harness.click('wb-capture');
+  assert.equal(requests.filter((request) => request.path === '/capture').length, 0);
+  assert.match(harness.currentUrl(), /view=scene%3Aproof/);
+  harness.load('left');
+  await harness.settle();
+  await harness.click('wb-capture');
+  const capture = requests.find((request) => request.path === '/capture')!.body as {
+    generation: number;
+    definition: {viewport: {width: number}};
+  };
+  assert.equal(capture.generation, 1);
+  assert.equal(capture.definition.viewport.width, 640);
+  harness.element('wb-reference').value = 'left|scene:proof';
+  await harness.click('wb-add-reference');
+  harness.load('right');
+  await harness.settle();
+  harness.element('right-frame').dispatch('focus');
+  assert.equal(harness.element('stage').dataset.driver, 'right');
+  harness.clickMode('single');
+  assert.equal(harness.element('stage').dataset.driver, 'left');
+});
+
+test('Workbench compares a new revision using the pinned reference camera and frame after navigation', async () => {
+  const reference = {
+    id: 'a'.repeat(64),
+    scene: 'before-edit',
+    map: 'map',
+    theme: 'theme',
+    savedAt: '2026-10-14T10:00:00Z',
+    imageUrl: '/before.png',
+    definition: {
+      map: 'map',
+      theme: 'theme',
+      camera: {type: 'center', center: [3, 40], zoom: 12, bearing: 0, pitch: 0},
+      viewport: {width: 640, height: 480, dpr: 2},
+    },
+  };
+  const after = {...reference, id: 'b'.repeat(64), scene: 'after-edit', imageUrl: '/after.png'};
+  let captured: {definition: typeof reference.definition; generation: number} | undefined;
+  let compared: unknown;
+  const harness = runComparisonHarness('', {
+    single: true,
+    workbenchRequest: (path, body) => {
+      if (path === '')
+        return {
+          busy: false,
+          sides: {
+            left: {
+              generation: 1,
+              status: 'ready',
+              selections: [
+                {id: 'map:map:theme', map: 'map', theme: 'theme', label: 'Map', url: '/left/'},
+              ],
+            },
+          },
+        };
+      if (path === '/context') return {saved: true};
+      if (path === '/captures')
+        return {records: captured ? [after, reference] : [reference], next: null, warnings: []};
+      if (path === '/capture') {
+        captured = body as typeof captured;
+        return {captureId: after.id};
+      }
+      if (path === '/compare') {
+        compared = body;
+        return {review: {status: 'comparable', exact: {ratio: 0.1}, warnings: []}};
+      }
+      throw new Error('Unexpected request ' + path);
+    },
+  });
+  harness.load('left');
+  await harness.settle();
+  await harness.click('wb-compare-toggle');
+  harness.element('wb-before').value = reference.id;
+  await harness.click('wb-pin-reference');
+  harness.maps.left.camera.center = [-74, 41];
+  harness.maps.left.camera.zoom = 8;
+  harness.element('wb-width').value = '1000';
+  harness.element('wb-height').value = '700';
+  await harness.click('wb-capture-compare');
+  assert.deepEqual(JSON.parse(JSON.stringify(captured?.definition)), {
+    ...reference.definition,
+    target: {kind: 'map'},
+  });
+  assert.equal(captured?.generation, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(compared)), {before: reference.id, after: after.id});
+  assert.equal(harness.element('wb-review').hidden, false);
+  assert.equal(harness.element('wb-live-picker').hidden, true);
+  assert.match(harness.element('wb-review-result').textContent, /10.00%/);
+  await harness.click('wb-copy-context');
+  assert.equal(JSON.parse(harness.clipboardText()).review.referenceId, reference.id);
+});
+
+test('Workbench starts with the selected scene frame without reloading its preview', async () => {
+  const harness = runComparisonHarness('', {
+    single: true,
+    leftPreviewUrl: '/left/?scene=proof',
+    workbenchRequest: (path) =>
+      path === ''
+        ? {
+            busy: false,
+            sides: {
+              left: {
+                generation: 1,
+                status: 'ready',
+                selections: [
+                  {
+                    id: 'scene:proof',
+                    scene: 'proof',
+                    map: 'map',
+                    theme: 'theme',
+                    label: 'Proof',
+                    viewport: {width: 390, height: 844, dpr: 2},
+                  },
+                ],
+              },
+            },
+          }
+        : {saved: true},
+  });
+  harness.load('left');
+  await harness.settle();
+  assert.equal(harness.element('wb-width').value, '390');
+  assert.equal(harness.element('wb-height').value, '844');
+  assert.equal(harness.element('scene-dpr').value, '2');
+  assert.equal(harness.element('scene-name').value, 'proof');
+  await harness.click('wb-copy-context');
+  assert.equal(JSON.parse(harness.clipboardText()).definition.viewport.width, 390);
+});
+
+test('Workbench API routes cannot shadow previews and bundled UI fonts are served locally', async () => {
+  const left = {basePath: '/left', handler: leftHandler, label: 'Left', previewUrl: '/left/'};
+  for (const url of ['/', '/left/api', '/__workbench-fonts'])
+    assert.throws(() =>
+      createTileflowComparisonRequestHandler({
+        left,
+        workbench: {url, handle: () => new Response()},
+      }),
+    );
+  const handler = createTileflowComparisonRequestHandler({
+    left,
+    workbench: {url: '/__workbench', handle: () => Response.json({schemaVersion: 1})},
+  });
+  const response = await handler(new Request('http://localhost/__workbench-fonts/mona-sans.woff2'));
+  assert.equal(response.headers.get('content-type'), 'font/woff2');
+  assert.ok((await response.arrayBuffer()).byteLength > 1000);
+  assert.equal(
+    (
+      await handler(
+        new Request('http://localhost/__workbench-fonts/mona-sans.woff2', {method: 'POST'}),
+      )
+    ).status,
+    405,
+  );
+  assert.equal(
+    (await (await handler(new Request('http://localhost/__workbench'))).json()).schemaVersion,
+    1,
+  );
+});
+
 function runComparisonHarness(
   search = '',
   configs: {
+    single?: boolean;
+    cleanupSecurityError?: boolean;
+    workbenchRequest?: (path: string, body?: unknown) => unknown;
     leftCaptureConfig?: string;
+    leftPreviewUrl?: string;
     leftSidecar?: unknown;
     rightCaptureConfig?: string;
     rightSidecar?: unknown;
@@ -538,7 +771,7 @@ function runComparisonHarness(
   const origin = 'http://localhost';
   const location = {href: `${origin}/${search}`, origin};
   const elements = new Map<string, FakeElement>();
-  const modeButtons = ['side-by-side', 'split', 'overlay', 'blink'].map((mode) => {
+  const modeButtons = ['single', 'side-by-side', 'split', 'overlay', 'blink'].map((mode) => {
     const button = new FakeElement();
     button.dataset.mode = mode;
     return button;
@@ -573,6 +806,8 @@ function runComparisonHarness(
       },
       removeEventListener(type: string, listener: (event: unknown) => void) {
         if (type === 'message') messageListeners.delete(listener);
+        if (configs.cleanupSecurityError)
+          throw Object.assign(new Error('Previous frame navigated'), {name: 'SecurityError'});
       },
       postMessage(data: unknown, targetOrigin: string) {
         for (const listener of messageListeners) {
@@ -599,6 +834,11 @@ function runComparisonHarness(
   frames.right.contentWindow = childWindows.right;
   document.getElementById('scene-name').value = 'comparison-view';
   document.getElementById('scene-dpr').value = '1';
+  document.getElementById('wb-width').value = '1280';
+  document.getElementById('wb-height').value = '800';
+  frames.left.contentDocument = frames.right.contentDocument = {
+    documentElement: {dataset: {tileflowArtifactGeneration: '1'}},
+  };
   const maps = {
     left: new FakeMap({bearing: 1, center: [-5, 40], pitch: 2, zoom: 5}),
     right: new FakeMap({bearing: 3, center: [20, 10], pitch: 4, zoom: 7}),
@@ -614,25 +854,28 @@ function runComparisonHarness(
       ...(configs.leftCaptureConfig ? {captureConfig: configs.leftCaptureConfig} : {}),
       eventsUrl: '/left/__events',
       label: 'Left',
-      previewUrl: '/left/',
+      previewUrl: configs.leftPreviewUrl ?? '/left/',
       ...(configs.leftSidecar === undefined
         ? {}
         : {sidecarUrl: '/left/__inspection/map/theme.json'}),
       statusUrl: '/left/__status',
     },
-    right: {
-      basePath: '/right',
-      ...(configs.rightCaptureConfig ? {captureConfig: configs.rightCaptureConfig} : {}),
-      eventsUrl: '/right/__events',
-      label: 'Right',
-      previewUrl: '/right/',
-      ...(configs.rightSidecar === undefined
-        ? {}
-        : {sidecarUrl: '/right/__inspection/map/theme.json'}),
-      statusUrl: '/right/__status',
-    },
+    right: configs.single
+      ? undefined
+      : {
+          basePath: '/right',
+          ...(configs.rightCaptureConfig ? {captureConfig: configs.rightCaptureConfig} : {}),
+          eventsUrl: '/right/__events',
+          label: 'Right',
+          previewUrl: '/right/',
+          ...(configs.rightSidecar === undefined
+            ? {}
+            : {sidecarUrl: '/right/__inspection/map/theme.json'}),
+          statusUrl: '/right/__status',
+        },
     schemaVersion: 1,
     title: 'Comparison',
+    ...(configs.workbenchRequest ? {workbenchUrl: '/__workbench'} : {}),
   });
   const source = /<script type="module">\s*([\s\S]*?)<\/script>/u.exec(html)?.[1];
   assert.ok(source);
@@ -646,7 +889,13 @@ function runComparisonHarness(
       close() {}
     },
     Image: class {},
-    Option: class {},
+    Option: class extends FakeElement {
+      constructor(label: string, value = label) {
+        super();
+        this.textContent = label;
+        this.value = value;
+      }
+    },
     URL,
     addEventListener(type: string, listener: (event: unknown) => void) {
       const listeners = windowListeners.get(type) ?? new Set();
@@ -656,8 +905,20 @@ function runComparisonHarness(
     clearInterval() {},
     clearTimeout() {},
     document,
-    fetch: (input: string | URL | Request) => {
+    fetch: (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input instanceof Request ? input.url : input);
+      if (configs.workbenchRequest && url.startsWith('/__workbench')) {
+        const result = configs.workbenchRequest(
+          url.slice('/__workbench'.length),
+          init?.body ? JSON.parse(String(init.body)) : undefined,
+        );
+        return Promise.resolve(result).then((body) => ({ok: true, json: async () => body}));
+      }
+      if (configs.workbenchRequest && url.endsWith('/__status'))
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({status: 'ready', generation: 1, lastGoodGeneration: 1}),
+        });
       const sidecar = url.includes('/left/__inspection/')
         ? configs.leftSidecar
         : url.includes('/right/__inspection/')
@@ -670,7 +931,7 @@ function runComparisonHarness(
     history: {
       state: undefined,
       replaceState(_state: unknown, _unused: string, href: string) {
-        location.href = href;
+        location.href = String(href);
       },
     },
     location,
@@ -726,6 +987,7 @@ class FakeElement {
   children: unknown[] = [];
   className = '';
   contentWindow?: unknown;
+  contentDocument?: unknown;
   dataset: Record<string, string> = {};
   disabled = false;
   hidden = false;

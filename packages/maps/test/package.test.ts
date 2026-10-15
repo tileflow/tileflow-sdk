@@ -121,6 +121,22 @@ test('publishes every official icon and font directory with provenance', async (
 
     streets: [
       'coffee.svg',
+      'nature.svg',
+      'sport.svg',
+      'worship.svg',
+      'coffee-dark.svg',
+      'culture-dark.svg',
+      'education-dark.svg',
+      'food-dark.svg',
+      'health-dark.svg',
+      'lodging-dark.svg',
+      'major-transit-dark.svg',
+      'parking-dark.svg',
+      'services-dark.svg',
+      'shopping-dark.svg',
+      'nature-dark.svg',
+      'worship-dark.svg',
+      'sport-dark.svg',
       'crosswalk.svg',
       'culture.svg',
       'education.svg',
@@ -167,8 +183,8 @@ test('publishes every official icon and font directory with provenance', async (
     'utf8',
   );
   assert.notEqual(darkSidewalkDot, lightSidewalkDot);
-  assert.match(lightSidewalkDot, /fill="#C1C5D7"/u);
-  assert.match(darkSidewalkDot, /fill="#525664"/u);
+  assert.match(lightSidewalkDot, /fill="#000000" fill-opacity="0.2"/u);
+  assert.match(darkSidewalkDot, /fill="#FFFFFF" fill-opacity="0.2"/u);
 
   const neutralShield = await readFile(
     new URL('../assets/streets/icons/road-shield-rectangle-neutral.svg', import.meta.url),
@@ -327,7 +343,7 @@ test('imports and compiles all packaged official maps against public Core APIs',
               'civica-poi-garden', 'civica-poi-hospital', 'civica-poi-lodging',
               'civica-poi-monument', 'civica-poi-museum', 'civica-poi-shopping',
               'civica-poi-transit',
-              'coffee', 'crosswalk', 'culture', 'education', 'food', 'health', 'lodging',
+              'coffee', 'nature', 'sport', 'worship', 'coffee-dark', 'culture-dark', 'education-dark', 'food-dark', 'health-dark', 'lodging-dark', 'major-transit-dark', 'parking-dark', 'services-dark', 'shopping-dark', 'nature-dark', 'worship-dark', 'sport-dark', 'crosswalk', 'culture', 'education', 'food', 'health', 'lodging',
               'ferraris-crop-hatch', 'ferraris-heath', 'ferraris-orchard',
               'ferraris-paper-grain', 'ferraris-residential', 'ferraris-sand',
               'ferraris-water-ripples', 'ferraris-wetland', 'ferraris-woodland',

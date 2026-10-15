@@ -55,6 +55,8 @@ export type TileflowDevRequestHandlerOptions = {
   config?: string;
   cwd?: string;
   inspection?: boolean;
+  /** Fit scene previews to their pane; capture retains the declared scene frame. */
+  fitViewport?: boolean;
   map?: string;
   onError?: (error: unknown) => void;
   scene?: string;
@@ -218,18 +220,23 @@ export function createTileflowDevRequestHandler(
         const {renderTileflowPreviewHtml, resolveTileflowPreview} = await import('./preview');
         const requestedMaps = url.searchParams.getAll('map');
         const requestedThemes = url.searchParams.getAll('theme');
+        const requestedScenes = url.searchParams.getAll('scene');
+        if (requestedScenes.length > 1) {
+          return jsonResponse({error: 'Tileflow scene query must appear at most once.'}, 400);
+        }
         if (requestedMaps.length > 1) {
           return jsonResponse({error: 'Tileflow map query must appear at most once.'}, 400);
         }
         if (requestedThemes.length > 1) {
           return jsonResponse({error: 'Tileflow theme query must appear at most once.'}, 400);
         }
-        const requestedMap = requestedMaps.length === 1 ? requestedMaps[0] : options.map;
-        const requestedTheme = requestedThemes.length === 1 ? requestedThemes[0] : options.theme;
+        const requestedMap = requestedMaps[0] ?? (requestedScenes.length ? undefined : options.map);
+        const requestedTheme =
+          requestedThemes[0] ?? (requestedScenes.length ? undefined : options.theme);
         const preview = artifacts
           ? resolveTileflowPreview(artifacts.project, {
               map: requestedMap,
-              scene: options.scene,
+              scene: requestedScenes[0] ?? (requestedMaps.length ? undefined : options.scene),
               theme: requestedTheme,
             })
           : undefined;
@@ -247,6 +254,7 @@ export function createTileflowDevRequestHandler(
             createTileflowArtifactStatus(state),
             isSemanticPreview,
             fontFaces,
+            options.fitViewport,
           ),
         );
       }

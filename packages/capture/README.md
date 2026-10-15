@@ -248,7 +248,9 @@ the perceptual metric and optional diff image are additional evidence. Never upd
 merely to make a failing comparison pass.
 
 `compareTileflowCapturesForReview` compares two deliberate renders with different styles while
-requiring compatible framing, renderer, and data identity. `analyzeTileflowCaptureReference` analyzes
+requiring compatible framing, renderer, and data identity. It accepts captures with or without a
+retained `definition`; when present, that definition must match the explicit review definition.
+`analyzeTileflowCaptureReference` analyzes
 an external PNG without claiming receipt compatibility. Neither operation approves a baseline.
 See the [receipt and comparison reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/capture/docs/receipts-and-comparison.md),
 also included under `docs/` in the installed package, for identities, metrics, and limits.

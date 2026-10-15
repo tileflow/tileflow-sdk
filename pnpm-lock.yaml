@@ -250,8 +250,8 @@ importers:
         specifier: 5.1.2
         version: 5.1.2
       pmtiles:
-        specifier: 4.4.0
-        version: 4.4.0
+        specifier: 4.5.0
+        version: 4.5.0
       whatwg-url:
         specifier: 15.1.0
         version: 15.1.0
@@ -3098,9 +3098,6 @@ packages:
     resolution: {integrity: sha512-0M+L3LAD8/nm554LOla9Ayx0j0tmFZ0FBcoQ7F1VuVHpM/XpiC8RcDzBQB8W5+hA8L22THxELzeF+2WcUzvcLg==}
     engines: {node: '>=20'}
     hasBin: true
-
-  pmtiles@4.4.0:
-    resolution: {integrity: sha512-tCLI1C5134MR54i8izUWhse0QUtO/EC33n9yWp1N5dYLLvyc197U0fkF5gAJhq1TdWO9Tvl+9hgvFvM0fR27Zg==}
 
   pmtiles@4.5.0:
     resolution: {integrity: sha512-CBeD4SoUluFziGdy/8k7FOjQxQy486n+929W/tWophauvMICpkZ26vGBWhDt/6b1FZQWNaf4jFdT/5+q0Wii5w==}
@@ -6344,10 +6341,6 @@ snapshots:
       playwright-core: 1.62.1
     optionalDependencies:
       fsevents: 2.3.2
-
-  pmtiles@4.4.0:
-    dependencies:
-      fflate: 0.8.3
 
   pmtiles@4.5.0:
     dependencies:

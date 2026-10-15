@@ -475,7 +475,7 @@ export default {maps:{${mapNames
     .join(',')}}};\n`;
 }
 
-const fixtureGlyphsSource = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold']}`;
+const fixtureGlyphsSource = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}`;
 
 async function fixture(t: {after(callback: () => Promise<void>): void}, prefix: string) {
   const cwd = await mkdtemp(join(tmpdir(), prefix));

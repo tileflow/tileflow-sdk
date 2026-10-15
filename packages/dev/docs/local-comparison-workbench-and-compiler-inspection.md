@@ -1,11 +1,13 @@
-# Local comparison workbench and compiler inspection
+# Map DevTools and compiler inspection
 
 Start with the [@tileflow/dev guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/README.md) for installation and a complete first example.
 
-The CLI opens the Workbench through `tileflow preview`. It uses one map and one watched artifact
-session by default, with the full inspector, zoom curves, sprite atlas and capture helpers.
+The CLI opens Map DevTools through `tileflow preview`. It uses one map and one watched artifact
+session by default, with separate saved-view and theme controls, an opt-in inspector, zoom curves, sprite atlas, saved
+captures and before/after review. The shell uses bundled Mona Sans/Hubot Sans interface fonts and
+Tileflow's paper/ink palette. These fonts do not change cartographic text.
 Add `--against-map ...` or `--against-config ...` for synchronized comparison. Custom local servers
-can compose the same shell around existing dev handlers; omit `right` for a single-map Workbench:
+can compose the same shell around existing dev handlers; omit `right` for a single-map session:
 
 ```ts
 import {createTileflowComparisonRequestHandler} from '@tileflow/dev/server';
@@ -28,11 +30,24 @@ const fetch = createTileflowComparisonRequestHandler({
 });
 ```
 
+Set `fitViewport: true` on each dev handler embedded in a resizable Map DevTools pane. Scene previews
+then fit their pane while captures retain the scene's declared frame. Standalone dev handlers keep
+the fixed scene viewport by default.
+
 Each side handler retains ownership of its styles, fonts, sprites, events, diagnostics, and
-last-known-good artifact generation. The comparison router only owns the root HTML and strict
-dispatch to one or two disjoint same-origin route prefixes. Its synchronized camera, URL state,
+last-known-good artifact generation. The comparison router owns the shell, its bundled UI fonts and
+strict dispatch to disjoint same-origin route prefixes. An optional `workbench: {url, handle}`
+adapter enables catalog, capture/history, saved comparison and browser context. The CLI supplies
+this adapter using its existing capture-record and comparison APIs. Custom servers that omit it
+retain the inspector, live comparison and export helpers. Its synchronized camera, URL state,
 side-by-side/split/overlay/blink modes, rendered-feature inspector, zoom-curve sampling, sprite
 atlas, and scene/capture-command copying require no hosted service.
+
+See the [human/agent workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md#work-with-a-person-and-an-agent)
+for the fixed capture frame, temporary-preview exclusions, retained evidence, context bounds and
+`inspect session`. When launched through the CLI, captures pin the displayed artifact generation; a stale or
+invalid view cannot start capture. The rendered feature summary shows available semantic paths and
+keeps raw feature data in a disclosure. It does not infer exact source lines or token ownership.
 
 Set `inspection: true` on `createTileflowBuildArtifacts` or
 `createTileflowArtifactSession` to compute `artifacts.styleInspections[map][theme]`. A dev handler
@@ -226,3 +241,16 @@ Local directories resolve from the directory containing the selected `tileflow.c
 the workspace `cwd` remains their containment boundary. Canonical local syntax starts with `./` or
 one or more leading `../` segments and then uses only non-empty segments other than `.` or `..`;
 trailing or repeated slashes, backslashes, controls, and paths longer than 512 characters fail.
+
+## Inspect and review changes
+
+Toolbar actions pair icons with visible labels. **Inspect** starts off; **I** toggles it and
+**Escape** exits, including while the map has focus. Selected geometry is highlighted with a DOM
+overlay, leaving compiled styles and capture evidence unchanged. The inspector presents appearance
+and configuration sections before raw feature/compiler data; on narrow screens it uses a bottom panel.
+
+**Compare** separates saved changes from live maps. Saved captures are frozen; live maps both
+update with their configurations. Capture settings offers a fixed-frame preview and **Capture as
+reference**. **Use as reference** also selects an existing capture. **Capture & compare** uses the
+current map/theme and the selected reference camera/frame. The reference lasts for the browser
+session and appears in the same bounded context exposed by the CLI.

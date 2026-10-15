@@ -991,7 +991,7 @@ test(
       tileflowMapFixture({
         id: 'proof',
         icons: 'official',
-        fields: `glyphs: {kind: 'url', url: ${JSON.stringify(`${fixture.origin}/fonts/{fontstack}/{range}.pbf`)}, fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']},
+        fields: `glyphs: {kind: 'url', url: ${JSON.stringify(`${fixture.origin}/fonts/{fontstack}/{range}.pbf`)}, fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']},
       data: {
         type: 'vector-tiles',
         tiles: [${JSON.stringify(`${fixture.origin}/tiles/world/{z}/{x}/{y}.pbf`)}],

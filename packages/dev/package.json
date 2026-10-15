@@ -26,6 +26,7 @@
   },
   "files": [
     "dist",
+    "ui-fonts",
     "docs",
     "THIRD_PARTY_NOTICES.md",
     "LICENSE"

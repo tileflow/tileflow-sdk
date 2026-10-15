@@ -1,4 +1,5 @@
 import {randomBytes} from 'node:crypto';
+import {readFile} from 'node:fs/promises';
 import {renderTileflowComparisonHtml} from './comparison-html';
 import {normalizeTileflowBasePath} from './public-paths';
 
@@ -28,6 +29,8 @@ export type TileflowComparisonOptions = {
   left: TileflowComparisonSide;
   right?: TileflowComparisonSide;
   title?: string;
+  /** Optional local workflow adapter supplied by the CLI or an embedding server. */
+  workbench?: {url: string; handle: TileflowComparisonRequestHandler};
 };
 
 type NormalizedSide = Omit<TileflowComparisonSide, 'basePath'> & {
@@ -37,7 +40,7 @@ type NormalizedSide = Omit<TileflowComparisonSide, 'basePath'> & {
 };
 
 /**
- * Compose one or two existing Tileflow dev handlers behind the same-origin Workbench.
+ * Compose one or two existing Tileflow dev handlers behind the same-origin Map DevTools.
  *
  * The side handlers retain ownership of styles, sprites, fonts, generations, live
  * events, and last-known-good behavior. This router owns only the shell document and
@@ -50,12 +53,44 @@ export function createTileflowComparisonRequestHandler(options: TileflowComparis
     ? normalizeSide(options.right, 'right', comparisonBasePath)
     : undefined;
   if (right) assertDisjointSideRoutes(left.basePath, right.basePath);
-  const title = normalizeLabel(options.title ?? 'Tileflow comparison', 'title');
+  const workbenchUrl = options.workbench
+    ? normalizeTileflowBasePath(options.workbench.url)
+    : undefined;
+  if (workbenchUrl !== undefined) {
+    if (!workbenchUrl || (comparisonBasePath && !matchesBasePath(workbenchUrl, comparisonBasePath)))
+      throw new TypeError(
+        'Map DevTools API must own a non-root route inside the comparison base path.',
+      );
+    assertDisjointSideRoutes(workbenchUrl, left.basePath);
+    if (right) assertDisjointSideRoutes(workbenchUrl, right.basePath);
+    assertDisjointSideRoutes(workbenchUrl, `${comparisonBasePath}/__workbench-fonts`);
+  }
+  const title = normalizeLabel(options.title ?? 'Tileflow Map DevTools', 'title');
   const initialMode = right ? (options.initialMode ?? 'side-by-side') : 'single';
 
   return async function handleTileflowComparisonRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const pathname = url.pathname;
+
+    const font = pathname.slice(`${comparisonBasePath}/__workbench-fonts/`.length);
+    if (
+      pathname.startsWith(`${comparisonBasePath}/__workbench-fonts/`) &&
+      ['mona-sans.woff2', 'hubot-sans.woff2'].includes(font)
+    ) {
+      if (request.method !== 'GET' && request.method !== 'HEAD')
+        return jsonResponse({error: 'Method not allowed'}, 405);
+      const bytes = await readFile(new URL(`../ui-fonts/${font}`, import.meta.url));
+      return new Response(request.method === 'HEAD' ? null : bytes, {
+        headers: {
+          'Content-Type': 'font/woff2',
+          'Cache-Control': 'public, max-age=3600',
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
+    }
+
+    if (options.workbench && workbenchUrl && matchesBasePath(pathname, workbenchUrl))
+      return await options.workbench.handle(request);
 
     if (matchesBasePath(pathname, left.basePath)) return await left.handler(request);
     if (right && matchesBasePath(pathname, right.basePath)) return await right.handler(request);
@@ -73,6 +108,7 @@ export function createTileflowComparisonRequestHandler(options: TileflowComparis
         ...(right ? {right: publicSide(right)} : {}),
         schemaVersion: tileflowComparisonSchemaVersion,
         title,
+        ...(workbenchUrl ? {workbenchUrl} : {}),
       });
       return new Response(request.method === 'HEAD' ? null : html, {
         headers: {

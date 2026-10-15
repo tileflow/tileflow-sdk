@@ -18,7 +18,7 @@ npx tileflow validate
 npx tileflow preview
 ```
 
-`init` creates `tileflow.config.ts`. `preview` opens that map in the Workbench on a loopback interface. Local
+`init` creates `tileflow.config.ts`. `preview` opens that map in Map DevTools on a loopback interface. Local
 validation, compilation, and asset preparation need no Tileflow account or API key. Rendering may
 still fetch the tiles, glyphs, or other remote resources referenced by the map; local does not mean
 offline.

@@ -198,7 +198,7 @@ export default defineMap({
   glyphs: {
     kind: 'url',
     url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
-    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']
   }
 });
 `;

@@ -12,13 +12,15 @@ export function renderTileflowPreviewHtml(
   initialStatus: unknown,
   isSemanticPreview: boolean,
   fontFaces: readonly TileflowStyleFontFace[] = [],
+  fitViewport = false,
 ): string {
   const styleUrl = preview
     ? `${basePath}/styles/${preview.mapName}/${preview.themeName}.json`
     : undefined;
   const mapOptions = preview ? previewMapOptions(preview) : undefined;
-  const viewportCss = preview?.viewport
-    ? `
+  const viewportCss =
+    preview?.viewport && !fitViewport
+      ? `
       html, body { min-height: 100%; margin: 0; }
       body {
         display: grid;
@@ -31,7 +33,7 @@ export function renderTileflowPreviewHtml(
         height: ${preview.viewport.height}px;
         box-shadow: 0 24px 80px rgba(37, 34, 29, 0.18);
       }`
-    : 'html, body, #map { height: 100%; margin: 0; }';
+      : 'html, body, #map { height: 100%; margin: 0; }';
 
   return `<!doctype html>
 <html lang="en">
@@ -44,7 +46,6 @@ export function renderTileflowPreviewHtml(
       ${viewportCss}
       body { font-family: ui-sans-serif, system-ui, sans-serif; }
       #map {
-        --tileflow-globe-radius: 220px;
         background-color: var(--tileflow-space, #2F5070);
         background-image:
           radial-gradient(circle at 18% 24%, rgba(225, 240, 250, 0.34) 0 1px, transparent 1.4px),
@@ -60,22 +61,8 @@ export function renderTileflowPreviewHtml(
           radial-gradient(circle at 72% 62%, rgba(225, 240, 250, 0.22) 0 1px, transparent 1.3px),
           radial-gradient(circle at 42% 78%, rgba(225, 240, 250, 0.18) 0 0.8px, transparent 1.2px);
       }
-      #map.tileflow-globe::before {
-        content: "";
-        position: absolute;
-        z-index: 0;
-        left: 50%;
-        top: 50%;
-        width: calc(var(--tileflow-globe-radius) * 2);
-        height: calc(var(--tileflow-globe-radius) * 2);
-        border: 1px solid var(--tileflow-rim-line, rgba(248, 252, 255, 0.88));
-        border-radius: 50%;
-        box-shadow:
-          0 0 9px 3px var(--tileflow-rim-core, rgba(248, 252, 255, 0.9)),
-          0 0 28px 10px var(--tileflow-rim-glow, rgba(176, 220, 246, 0.52)),
-          0 0 58px 20px var(--tileflow-rim-haze, rgba(132, 195, 232, 0.2));
-        pointer-events: none;
-        transform: translate(-50%, -50%);
+      #map.tileflow-globe .maplibregl-canvas {
+        filter: var(--tileflow-globe-rim, none);
       }
       #map.tileflow-globe > .maplibregl-canvas-container {
         position: relative;
@@ -129,6 +116,12 @@ export function renderTileflowPreviewHtml(
       .maplibregl-ctrl-group .tileflow-theme-toggle:hover {
         background-color: #F1F3F4;
       }
+      .maplibregl-ctrl-group { background:#faf6eb; border:1px solid #e0d5c4; border-radius:3px; box-shadow:0 3px 12px #30251f18; }
+      .maplibregl-ctrl-group button { color:#30251f; }
+      .maplibregl-ctrl-group button + button { border-top-color:#e0d5c4; }
+      .maplibregl-ctrl-group .tileflow-3d-toggle,.maplibregl-ctrl-group .tileflow-tree-toggle,.maplibregl-ctrl-group .tileflow-theme-toggle { color:#30251f; font-weight:500; }
+      .maplibregl-ctrl-group .tileflow-3d-toggle[aria-pressed="true"],.maplibregl-ctrl-group .tileflow-tree-toggle[aria-pressed="true"] { background:#f0dfe0; color:#8c2e3f; }
+      .maplibregl-ctrl-group .tileflow-3d-toggle:hover,.maplibregl-ctrl-group .tileflow-tree-toggle:hover,.maplibregl-ctrl-group .tileflow-theme-toggle:hover { background:#eee4d3; }
     </style>
   </head>
   <body>
@@ -151,6 +144,7 @@ export function renderTileflowPreviewHtml(
       const readBoundedTileflowResponse = ${readBoundedTileflowResponse.toString()};
       const readBoundedTileflowJsonResponse = ${readBoundedTileflowJsonResponse.toString()};
       const initialGeneration = initialStatus.generation;
+      document.documentElement.dataset.tileflowArtifactGeneration = String(initialStatus.lastGoodGeneration ?? initialGeneration);
       const badge = document.getElementById("badge");
       const status = document.getElementById("status");
       const previewLabel = ${JSON.stringify(preview?.label)};
@@ -816,14 +810,7 @@ export function renderTileflowPreviewHtml(
           return;
         }
 
-        // A Web Mercator world is 512 * 2^zoom pixels wide. Dividing its
-        // circumference by 2π closely tracks MapLibre's on-screen globe radius.
-        const radius = Math.min(
-          4096,
-          ((512 * Math.pow(2, map.getZoom())) / (2 * Math.PI)) * 0.91
-        );
         container.classList.add("tileflow-globe");
-        container.style.setProperty("--tileflow-globe-radius", radius.toFixed(2) + "px");
         applyAtmosphereBackdrop(map, container);
       }
 
@@ -837,12 +824,16 @@ export function renderTileflowPreviewHtml(
           const value = Number.parseInt(match[1], 16);
           return "rgba(" + (value >> 16) + ", " + ((value >> 8) & 255) + ", " + (value & 255) + ", " + alpha + ")";
         };
+        // Use the rendered canvas alpha, as the shared browser atmosphere does.
+        // A zoom-only circle cannot track the globe's latitude, viewport or pitch.
+        const opacity = Math.max(0, Math.min(1, (6 - map.getZoom()) / 3));
+        const core = rgba(atmosphere?.horizonColor ?? "#F8FCFF", opacity * 0.65);
+        const glow = rgba(atmosphere?.horizonColor ?? "#B0DCF6", opacity * 0.4);
         const properties = {
           "--tileflow-space": rgba(atmosphere?.spaceColor, 1),
-          "--tileflow-rim-line": rgba(atmosphere?.horizonColor, 0.88),
-          "--tileflow-rim-core": rgba(atmosphere?.horizonColor, 0.9),
-          "--tileflow-rim-glow": rgba(atmosphere?.horizonColor, 0.52),
-          "--tileflow-rim-haze": rgba(atmosphere?.skyColor, 0.35),
+          "--tileflow-globe-rim": opacity > 0
+            ? "drop-shadow(0 0 2px " + core + ") drop-shadow(0 0 12px " + glow + ")"
+            : "none",
         };
         for (const [name, value] of Object.entries(properties)) {
           if (value) container.style.setProperty(name, value);
@@ -2242,6 +2233,7 @@ export function renderTileflowPreviewHtml(
           mountCoreScene(map);
         });
         map.on("move", () => updateGlobeBackdrop(map));
+        map.on("style.load", () => updateGlobeBackdrop(map));
         map.on("moveend", () => writeCameraToUrl(map));
         addEventListener("message", (event) => {
           if (

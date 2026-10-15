@@ -1,7 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
   <title>Place of worship</title>
-  <desc>Original Tileflow category pictogram and disc.</desc>
-  <circle cx="12" cy="12" r="9.5" fill="#FFFFFF"/>
-  <circle cx="12" cy="12" r="8" fill="#7C929A"/>
-  <path fill="#FFFFFF" d="M6 20v-9l6-6 6 6v9h-4v-5a2 2 0 0 0-4 0v5z"/>
+  <desc>Tileflow POI disc with a Maki place-of-worship pictogram, CC0-1.0.</desc>
+  <circle cx="12" cy="12" r="10" fill="#FFFFFF" />
+  <circle cx="12" cy="12" r="8.5" fill="#7D8F9F" />
+  <path
+    fill="#FFFFFF"
+    transform="translate(6 6) scale(.8)"
+    d="M7.5,0l-2,2v2h4V2  L7.5,0z M5.5,4.5L4,6h7L9.5,4.5H5.5z M2,6.5c-0.5523,0-1,0.4477-1,1V13h2V7.5C3,6.9477,2.5523,6.5,2,6.5z M4,6.5V13h7V6.5H4z   M13,6.5c-0.5523,0-1,0.4477-1,1V13h2V7.5C14,6.9477,13.5523,6.5,13,6.5z"
+  />
 </svg>

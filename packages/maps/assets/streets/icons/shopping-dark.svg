@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
   <title>Night Shopping</title>
   <desc>Tileflow POI disc with a Maki shop pictogram, CC0-1.0.</desc>
-  <circle cx="12" cy="12" r="9.5" fill="#252839"/>
-  <circle cx="12" cy="12" r="8" fill="#94BCE3"/>
+  <circle cx="12" cy="12" r="10" fill="#252839" />
+  <circle cx="12" cy="12" r="8.5" fill="#94BCE3" />
   <path
     fill="#252839"
-    transform="translate(6.375 6.375) scale(.75)"
+    transform="translate(6 6) scale(.8)"
     d="M13.33 5H11.5l-.39-2.33a2 2 0 0 0-1.41-1.49A3.7 3.7 0 0 0 8.62 1H6.38a3.7 3.7 0 0 0-1.08.18 2 2 0 0 0-1.41 1.49L3.5 5H1.67a.5.5 0 0 0-.48.65l1.88 6.3A1.5 1.5 0 0 0 4.5 13h6a1.5 1.5 0 0 0 1.42-1.05l1.88-6.3a.5.5 0 0 0-.47-.65ZM4.52 5l.36-2.17a1 1 0 0 1 .74-.7c.25-.08.5-.12.76-.13h2.24c.26.01.52.05.77.13a1 1 0 0 1 .74.7l.35 2.17H4.52Z"
   />
 </svg>

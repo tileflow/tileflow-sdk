@@ -48,7 +48,7 @@ export function tileflowMapFixture(options: TileflowMapFixtureOptions): string {
     `glyphs: {
   kind: 'url',
   url: 'https://fixtures.tileflow.test/fonts/{fontstack}/{range}.pbf',
-  fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']
+  fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']
 }`,
     options.fields?.trim() ?? '',
   ]

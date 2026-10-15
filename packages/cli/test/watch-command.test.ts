@@ -71,9 +71,9 @@ test('preview emits valid/invalid/recovered/stopped NDJSON and serves last-good 
   const status = await fetchEventually(`http://127.0.0.1:${port}/map/__status`);
   assert.equal(status.status, 'ready');
   const preview = await (await fetch(`http://127.0.0.1:${port}/`)).text();
-  assert.match(preview, /Tileflow Workbench/);
+  assert.match(preview, /Tileflow Map DevTools/);
   assert.match(preview, /"initialMode":"single"/);
-  assert.match(preview, /Cartographic inspector/);
+  assert.match(preview, /Inspect the map/);
   assert.equal(
     (await fetch(`http://127.0.0.1:${port}/map/__inspection/main/light.json`)).status,
     200,
@@ -143,7 +143,7 @@ test('preview comparison serves two watched sides and their memory-only inspecti
   await fetchEventually(`http://127.0.0.1:${port}/right/__status`);
 
   const shell = await (await fetch(`http://127.0.0.1:${port}/`)).text();
-  assert.match(shell, /Tileflow visual workbench/u);
+  assert.match(shell, /Tileflow Map DevTools/u);
   assert.match(shell, /Side by side/u);
   assert.match(shell, /Copy scene/u);
   assert.doesNotMatch(shell, /"captureConfig":/u);

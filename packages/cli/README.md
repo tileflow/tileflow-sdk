@@ -23,8 +23,8 @@ executable. With another package manager, use its local-execution command and th
 do not add a second lockfile or rely on a globally installed CLI.
 
 `init` creates a singular `tileflow.config.ts` extending the official Streets map. `preview` opens
-the Workbench with that map, live reload, rendered-feature inspection, compiler attribution, zoom
-curves, a sprite atlas, and scene/capture-command copying.
+Map DevTools with that map, live reload, rendered-feature inspection, compiler attribution, zoom
+curves, a sprite atlas, scene selection, saved captures, and before/after review.
 
 Local validation, compilation, and asset preparation require no account or API key. Preview and
 capture may fetch configured remote tiles and fonts. Config files are executable trusted code,
@@ -55,7 +55,7 @@ workspaces are advanced repository orchestration, not a second application autho
 
 Use `describe` for bounded language discovery, `inspect` for configuration and data, `capture`
 for reproducible evidence, and `compare` for saved captures, semantic edits, styles, references or
-baselines. `preview` opens the visual Workbench. These tools work in independent projects with
+baselines. `preview` opens Map DevTools. These tools work in independent projects with
 custom maps and data; official maps are optional.
 
 See the [map authoring workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md)
@@ -67,22 +67,41 @@ for command examples, bounded JSON queries, compatible aliases and efficient age
 it does not implicitly expose a public listener. `--theme <name>` selects a concrete theme.
 `--scene <name>` selects a committed standalone scene.
 
-Run from the project directory and keep selected configs inside it, so Workbench's copied capture
-commands resolve the same files. The project itself can live anywhere, independently of this SDK.
+Run from the project directory and keep selected configs inside it, so capture commands copied from
+Map DevTools resolve the same files. The project itself can live anywhere, independently of this SDK.
 
-The default is one Workbench pane, one watched artifact session, and one map renderer. Add an
-`--against-*` option to enable the comparison panes. The native renderer retains its assets-only
+The default is one Map DevTools pane, one watched artifact session, and one map renderer. Choose a
+saved view or theme in the toolbar. Map and theme pickers appear when there are multiple choices. **Compare → Compare live maps** adds a reference from the current
+project; `--against-*` also supports a reference from another config. The native renderer retains its assets-only
 preview endpoint.
 
-Compare two configs in the live workbench:
+Compare two configs live in Map DevTools:
 
 ```sh
 npx tileflow preview --config candidate/tileflow.config.ts --against-config reference/tileflow.config.ts
 ```
 
-The workbench shares a camera across side-by-side, split, overlay, or blink views. Its inspector
+Map DevTools shares a camera across side-by-side, split, overlay, or blink views. Its inspector
 shows bounded feature and compiler information; invalid edits keep the last valid generation.
-Use headless capture, not the live viewport, when exact dimensions and device-pixel ratio matter.
+**Capture as reference** saves a starting point. After editing, **Capture & compare** reuses its
+camera and frame to review the change. The selected reference lasts for this browser session.
+
+**Capture** renders the compiled map at the current camera and the fixed dimensions in **Capture settings** (the sliders icon).
+Temporary preview visibility switches are excluded. **Captures** retains local evidence across
+reloads; **Compare** checks saved captures before offering a before/after slider and pixel difference.
+It reports incompatible cameras, frames, renderers or data without presenting pixel metrics.
+
+**Copy context for AI** exports the selected feature, semantic configuration paths, camera, revision
+and reproducible commands. An agent can also read the active browser context:
+
+```sh
+npx tileflow inspect session --url http://127.0.0.1:3333 --json
+```
+
+Use the origin printed by your running preview. This reads browser observations, including their
+age and stale flag; exact source lines and token ownership are not inferred. See the
+[Map DevTools workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md#work-with-a-person-and-an-agent)
+for storage and context bounds.
 
 `--api-base-url` or `TILEFLOW_API_URL` changes the API origin used by the official preview sources.
 It does not change the map's authored data ownership or publish any data.

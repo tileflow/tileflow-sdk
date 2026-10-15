@@ -101,10 +101,12 @@ export default defineMap({
 
 Maps on Tileflow World show Tileflow's landmarks, such as the Eiffel Tower, as 3D models in place of
 the buildings under them. They come from a landmarks tileset kept apart from the map's data: each of
-its tiles carries the models standing in it, with their levels of detail and footprints. The
-renderer reads the tileset's TileJSON once the buildings show in 3D, then downloads only the
-landmark tiles near the camera, so a landmark in Paris costs nothing in Madrid. New and improved
-landmarks reach every map without a new build of the map.
+its tiles carries the models standing in it, with their levels of detail and footprints, and each
+region's index names its tiles by their hash. The renderer reads the tileset's TileJSON once the
+buildings show in 3D, then only the indexes of the regions round the camera and the landmark tiles
+near it, so a landmark in Paris costs nothing in Madrid. New and improved landmarks reach every map
+without a new build of the map. A tileset that cannot be read is tried again after five minutes,
+and the buildings stay drawn meanwhile.
 
 A map switches them off, or names the TileJSON of another landmarks tileset:
 

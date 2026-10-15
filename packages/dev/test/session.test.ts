@@ -969,7 +969,7 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.equal(unknownThemeResponse.status, 400);
   assert.match(
     ((await unknownThemeResponse.json()) as {error: string}).error,
-    /theme selection is invalid or unknown.*dark, light/u,
+    /theme selection is invalid or unknown.*dark, dark-faded, dark-monochrome, dawn, dawn-faded, dawn-monochrome, dusk, dusk-faded, dusk-monochrome, faded, light, monochrome/u,
   );
 
   const missingQueryMapResponse = await createTileflowDevRequestHandler({

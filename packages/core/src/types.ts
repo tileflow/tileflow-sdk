@@ -397,21 +397,50 @@ export const tileflowPoiCategories = [
 export type TileflowPoiCategory = (typeof tileflowPoiCategories)[number];
 export type TileflowPoiDensity = 1 | 2 | 3 | 4 | 5;
 export type TileflowPoiColorMode = 'uniform' | 'category';
-export type TileflowPoiCategoryStyle = Omit<TileflowMarkerSymbolStyle, 'priority'> & {
-  /** Optional category-local cap within the module's canonical density tiers. */
-  density?: TileflowPoiDensity;
-};
+/**
+ * How POI categories are placed against each other. `importance` places every category in one
+ * order, by World's ranks. `categories` gives each category its own layer and places the
+ * categories in the order they are listed, the first on top; ranks order each category only.
+ */
+export type TileflowPoiPlacementOrder = 'categories' | 'importance';
+/**
+ * The appearance of one POI category. With the default `importance` order every category shares
+ * one placement layer, so categories may differ only in properties MapLibre evaluates per feature
+ * (image, size, colors, font, offsets); layer-wide properties such as zoom ranges, padding,
+ * overlap or `optional` must match, or the module uses `placement.order: 'categories'`.
+ */
+export type TileflowPoiCategoryStyle = Omit<TileflowMarkerSymbolStyle, 'priority'>;
 export type TileflowPoiModuleConfig = {
   type: 'poi';
   categories?: readonly TileflowPoiCategory[];
   color?: TileflowPoiColorMode;
+  /** One density for the whole module: World's ranks decide what each category shows. */
   density?: TileflowPoiDensity;
   icons?: boolean;
   labels?: boolean;
   minZoom?: number;
   placement?: {
+    /**
+     * Places each pictogram with its name as one unit that needs room for both. Defaults to
+     * `false`.
+     */
     coupleIconAndLabel?: boolean;
     iconPadding?: number;
+    /**
+     * World POI `type` values whose pictogram explains them. When pictograms and names are both
+     * drawn, every other POI needs a name, and these types are drawn as a pictogram alone.
+     * Defaults to parking and public toilets.
+     */
+    iconOnlyTypes?: readonly string[];
+    /** Defaults to `importance`. */
+    order?: TileflowPoiPlacementOrder;
+    /**
+     * With the `importance` order, POIs whose World `filter_rank` is at most this value are placed
+     * before the map's road and place labels, and the others after them. A map that gives street
+     * names priority over POIs (labels `collisionPriority: 'navigation'`) keeps its landmarks this
+     * way. Unset, every POI is placed at the module's own position.
+     */
+    prominentRank?: 0 | 1 | 2 | 3 | 4 | 5;
     textPadding?: number;
   };
   styles?: Partial<Record<TileflowPoiCategory, TileflowPoiCategoryStyle>>;

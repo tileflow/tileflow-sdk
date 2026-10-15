@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>Church</title>
+  <desc>Tileflow POI disc with a Maki religious-christian pictogram, CC0-1.0.</desc>
+  <circle cx="12" cy="12" r="10" fill="#FFFFFF" />
+  <circle cx="12" cy="12" r="8.5" fill="#7D8F9F" />
+  <path
+    fill="#FFFFFF"
+    transform="translate(6 6) scale(.8)"
+    d="M6,0.9552V4H3v3h3v8h3V7h3V4H9V1 c0-1-0.9776-1-0.9776-1H6.9887C6.9887,0,6,0,6,0.9552z"
+  />
+</svg>

@@ -318,7 +318,6 @@ const semanticStyle = {
           layers: [
             {
               anchor: 'pointer-coordinate',
-              category: 'food-drink',
               layerId: 'semantic-poi-layer',
               priority: 10,
               representation: 'marker',
@@ -327,7 +326,7 @@ const semanticStyle = {
           ],
         },
       },
-      version: 2,
+      version: 3,
     },
   },
   sources: {

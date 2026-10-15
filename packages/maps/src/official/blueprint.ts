@@ -1210,13 +1210,14 @@ export const blueprint = bindOfficialMapTheme(
       }),
       poi: withRenderStack(
         poi({
+          // Placed in this order: the primary callouts first.
           categories: [
+            'transport',
+            'medical',
             'arts-entertainment',
             'education',
-            'medical',
             'park-nature',
             'public-services',
-            'transport',
             'visitor-amenity',
           ],
           color: 'category',
@@ -1227,6 +1228,9 @@ export const blueprint = bindOfficialMapTheme(
           placement: {
             coupleIconAndLabel: false,
             iconPadding: 3,
+            // Medical and transport callouts start earlier than the others, so each category
+            // keeps its own layer; the categories listed first are placed first.
+            order: 'categories',
             textPadding: 7,
           },
           styles: {
@@ -1241,7 +1245,8 @@ export const blueprint = bindOfficialMapTheme(
         }),
         {
           architecturalCallouts: renderPass({
-            placement: {above: 'poi.visitor-amenity.label'},
+            // Above every POI label: the first category listed is the top POI layer.
+            placement: {above: 'poi.transport.label'},
             feature: 'poi',
             renderer: 'symbol',
             selector: {

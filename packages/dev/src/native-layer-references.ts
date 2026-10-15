@@ -110,7 +110,7 @@ export function rebindNativeLayerReferences(
     if (originalMetadata?.['tileflow:interaction-manifest'] !== undefined) {
       if (!metadata) throw new Error();
       const manifest = object(originalMetadata['tileflow:interaction-manifest']);
-      if (manifest.version !== 2) throw new Error();
+      if (manifest.version !== 3) throw new Error();
       const domains = object(manifest.domains);
       let rebound = manifest;
       if (domains.poi !== undefined) {

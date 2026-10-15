@@ -43,7 +43,8 @@ never determines landmark color.
 The generalized footprint pass ends at z15 with the same opacity at which the
 detail pass begins.
 
-POI symbols and names form one collision unit. Each category retains its own filter, and candidates
+POI symbols and names form one collision unit. Each category retains its own filter and layer
+(`placement.order: 'categories'`), and destinations listed first are placed first. Candidates
 must carry the schema-bound `poiCategory`, `poiFilterRank`, and `poiSizeRank` fields (`category`,
 `filter_rank`, and `size_rank` in World V1). Size ranks must be 0–16, filter ranks must be
 nonnegative, and the producer's `minZoom` (`min_zoom`) is honored when present. Landmarks, culture,
@@ -66,7 +67,9 @@ Regular fallback.
 `baedeker` is a self-contained travel-atlas and town-plan design with open warm paper, fine coral
 building and residential hatching, paper-negative streets, dominant black railways, horizontally
 engraved cyan water, ring-stippled gardens, and browser-derived Mapterhorn contours. Travel POIs
-are rendered as compact serif labels without modern pictograms. It declares
+are rendered as compact serif labels without modern pictograms; stations and landmarks use the
+semibold face, so each category keeps its own layer and the categories listed first are placed
+first. It declares
 `[baedekerIcons]`, whose eight original Tileflow SVG patterns describe hachures, orchards, paper
 grain, public gardens, residential blocks, sand, water lines, and wetlands, plus
 `[baedekerFonts]`, its own package copy of Cormorant Garamond Regular, SemiBold, and Italic. Its
@@ -137,7 +140,8 @@ and `[siegfriedThemes]` exposes the two complete visual vocabularies for safe de
 Fine technical road strokes, survey-like uppercase labels, precise building footprints, contour
 dimensions, and dedicated landscape and water hatches replace naturalistic map color. It declares
 the canonical Noto Sans glyph provider and only `[blueprintIcons]`, whose four original patterns
-and schematic POI node form its complete sprite vocabulary.
+and schematic POI node form its complete sprite vocabulary. Medical and transport callouts start
+before the other POI labels, so each category keeps its own layer, placed in the listed order.
 Prominent building height callouts use World `render_height`; the map does not require unpublished
 building names or raw heights.
 
@@ -149,13 +153,26 @@ lighting without changing a source, filter, layer order, zoom gate, collision ru
 sidewalk patterns live in the shared `[streetsIcons]` atlas and the selected theme resolves the
 semantic `roads.sidewalkPattern` image token to the correct asset.
 
-Streets uses the same ranked destination hierarchy in both themes. World supplies category,
-eligibility, and density ranks; culture and lodging use density 2, while other categories use 3. Each destination is one collision unit made from a colored disc and an optional name in its
-category color. Three-pixel icon and text padding keeps nearby names available without disabling
-collision. Disc scale grows from 0.9 at z12 to 1 at z17. The dark theme supplies pale discs with
-dark pictograms, including coffee and parking selected by data. Portal-number labels are disabled.
-The ten Maki-derived pictograms and their night variants retain the CC0 provenance documented in
-`THIRD_PARTY_NOTICES.md`; nature, sport, and worship pictograms are original Tileflow geometry.
+Streets places every POI category in World's importance order, with one density for the whole
+module: `filter_rank` and then `size_rank` decide which destinations win, so a metro station is not
+displaced by a nearby cash machine because of its category, and no category waits for a later
+zoom. Its labels give street and place names priority over everyday destinations; World's two most
+important ranks (`prominentRank: 1`) are placed before them, so landmarks such as Palais du Louvre,
+Plaza Mayor, or Battery Park remain at z14. Each destination is one collision unit made from a
+colored disc and its name in the category color: both must fit. Parking and public toilets are
+self-explanatory and appear as a disc alone; other unnamed POIs are omitted. Three-pixel icon and
+text padding keeps nearby names available without disabling collision. Portal-number labels are
+disabled.
+
+Pictograms follow World's transport `mode` first, then its POI `type`, then the category. World's
+own `icon` field is coarser (one `shop` for every store, one `transport` for metro, bus, and cable
+car), so Streets reads the type. `src/official/streets-poi.ts` owns the type and mode tables, the
+85 pictograms, and their disc palette; `scripts/generate-streets-poi-icons.ts` writes each light
+disc and its `-dark` variant, a pale disc with a dark pictogram. Themes bind each type's pictogram
+through a `poi.pictogram.<id>` image token and each category's default pictogram through Core's
+`poi.<category>` image role, so a theme that replaces a category role replaces that category's
+default pictogram. The pictograms keep the CC0 Maki provenance documented in
+`THIRD_PARTY_NOTICES.md`.
 
 Regional hillshade uses the public Mapterhorn TileJSON endpoint with Terrarium encoding, from
 z5 to before z14. Day and night use separate highlight, accent, and shadow tokens. The DEM is a

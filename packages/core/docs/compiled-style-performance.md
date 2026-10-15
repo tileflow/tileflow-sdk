@@ -249,8 +249,19 @@ The closed category vocabulary is `arts-entertainment`, `education`, `food-drink
 `transport`, and `visitor-amenity`. Producer `type` and `icon` values use stable snake_case names.
 When an `icon` sprite exists it is used directly; an unknown or absent icon safely falls back to the
 category's themed image role. `labels` and `icons` are booleans. Category styles control only
-presentation and may hide or delay candidates, never promote them above the producer's selection.
-`placement.coupleIconAndLabel` keeps a POI's icon and label atomic during collision placement.
+presentation and never promote candidates above the producer's selection.
+`placement.coupleIconAndLabel` keeps a POI's icon and label atomic during collision placement:
+both are required.
+
+MapLibre orders symbol placement only within a layer, so the module compiles every category into
+one layer per representation and orders it by `filter_rank` and `size_rank`: a station is placed
+before a cash machine whatever their categories. Per-category appearance becomes a `match` on
+`category`; zoom curves are hoisted above it so each category keeps its exact curve. Categories that
+need different layer-wide properties use `placement.order: 'categories'`, one layer per category in
+listed order. `placement.prominentRank` places the most important ranks in a second layer above road
+and place labels, which keeps landmarks visible on maps whose labels give street names priority.
+When icons and labels are both drawn, unnamed POIs are omitted except the self-explanatory types in
+`placement.iconOnlyTypes` (parking and public toilets by default), which draw only their pictogram.
 
 ```ts
 poi({
@@ -263,4 +274,4 @@ poi({
 
 The same contract drives regular POI layers, custom HUD treatments, semantic interactions, and
 feature inspection. There is intentionally no compatibility path for the former class mapping,
-rank ceilings, or named density/detail presets.
+rank ceilings, per-category densities, or named density/detail presets.

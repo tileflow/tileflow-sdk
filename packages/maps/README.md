@@ -82,9 +82,10 @@ to create an application-owned map.
 Streets follows the visual direction of [Mapbox Standard](https://docs.mapbox.com/playground/standard-style/)
 (default theme, day and night), reviewed on 2026-10-14. Its own semantic design retains slate-blue
 roads, uppercase road names, warm building footprints, green parks, and compact category-colored
-POI discs. Dark mode uses pale discs with dark pictograms. Categories use Mapbox's public Maki
-pictograms, including parks, education, places of worship, and sports; coffee and parking retain
-their data-selected symbols.
+POI discs. Dark mode uses pale discs with dark pictograms. Pictograms adapted from Maki follow
+World's transport mode and POI type: metro, rail, tram, bus, ferry, cable-car, and airport stations
+are distinct, as are bars, cafés, museums, galleries, car dealers, and places of worship by
+religion.
 
 The reference uses DIN Pro Medium for POIs, roads, major settlements, and districts.
 Streets uses hosted Noto Sans Regular for these roles: Noto Sans Bold makes their strokes and
@@ -136,8 +137,10 @@ scales in 2D; replacing that module also replaces these passes. Disabling roads 
 Browser atmosphere is separately enabled with `atmosphere: true` on a globe map; the base definition
 also remains usable with Mercator and native targets.
 
-POI categories use World eligibility and ranks, with additional density tiers at z16 and z18.
-Culture, landmarks, and lodging retain a lower density; unnamed green-space markers are omitted.
+POI categories use World eligibility and ranks at one density and are placed in one importance
+order, so a category never displaces a more important place of another category. World's two most
+important ranks are placed before street and place names. Each disc needs its name; parking and
+toilets appear as a disc alone, and other unnamed POIs are omitted.
 Ordinary POI and transit names use 13 px lettering, with 18 px for the highest-priority destinations.
 World's size ranks differ from the reference, so a small park with size rank zero does not become
 a large destination label by that value alone. Text padding falls from 6 px to 4 px between z16

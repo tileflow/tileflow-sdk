@@ -12,6 +12,7 @@ import {
 import type {TileflowBuildCatalog} from '@tileflow/core/build';
 import {inspectTileflowFeatures} from '../src/feature-inspection';
 import {fixtureThemeFields} from './theme-fixture';
+import {readStreetsIconIds} from './streets-icon-ids';
 
 function defineResolvedMap(input: TileflowMap) {
   return parseTileflowMap(defineMap(input));
@@ -79,21 +80,7 @@ test('inspects bounded features deterministically and projects only requested pr
     properties: ['rank', 'name', 'missing'],
     preparedAssets: {
       icons: {
-        ids: [
-          'coffee',
-          'culture',
-          'education',
-          'food',
-          'health',
-          'lodging',
-          'major-transit',
-          'nature',
-          'parking',
-          'services',
-          'shopping',
-          'sport',
-          'worship',
-        ],
+        ids: readStreetsIconIds(),
         sprite: '/tileflow/icons/fixture/sprite',
       },
     },

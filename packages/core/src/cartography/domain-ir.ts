@@ -425,6 +425,7 @@ const exactPhysicalLayerIds: Readonly<Record<string, string>> = Object.freeze({
   'labels.junctions': 'tileflow-label-road-junction',
   'land.background': 'tileflow-background',
   'land.globalLandcover': 'tileflow-global-landcover',
+  poi: 'tileflow-poi',
   'landforms.classes': 'tileflow-landforms',
   'roads.crossings': 'tileflow-road-crossing',
   'roads.oneWayMarkers': 'tileflow-road-oneway',

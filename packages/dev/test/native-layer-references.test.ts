@@ -1,15 +1,14 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import test from 'node:test';
-import {serializeCanonicalJson, type MapLibreStyle, type TileflowPoiCategory} from '@tileflow/core';
+import {serializeCanonicalJson, type MapLibreStyle} from '@tileflow/core';
 import {TileflowNativeCompatibilityError} from '@tileflow/core/native-profile';
 import {lowerTileflowNativeCompiledStyles} from '../src/native-artifacts';
 import {rebindNativeLayerReferences} from '../src/native-layer-references';
 
-function poiEntry(layerId: string, priority: number, category: TileflowPoiCategory) {
+function poiEntry(layerId: string, priority: number) {
   return {
     anchor: 'pointer-coordinate',
-    category,
     layerId,
     priority,
     representation: 'marker',
@@ -36,7 +35,7 @@ function fixture(): MapLibreStyle {
         },
       },
       'tileflow:interaction-manifest': {
-        version: 2,
+        version: 3,
         domains: {
           poi: {
             deduplication: {
@@ -53,7 +52,7 @@ function fixture(): MapLibreStyle {
             },
             hitTesting: {frequency: 'animation-frame', order: 'rendered-topmost'},
             identity: 'maplibre-feature-id-if-present',
-            layers: [poiEntry('poi', 2, 'food-drink')],
+            layers: [poiEntry('poi', 2)],
           },
         },
       },
@@ -122,7 +121,7 @@ test('lowering a split line layer before POI layers moves every priority to its 
     },
     {id: 'poi-marker', type: 'circle', source: 'tileflow', 'source-layer': 'poi'},
   );
-  poiLayers(original).push(poiEntry('poi-marker', 4, 'lodging'));
+  poiLayers(original).push(poiEntry('poi-marker', 4));
   Object.assign(overlayAnchors(original), {
     'above-buildings': 'rail',
     'below-labels': 'poi-marker',

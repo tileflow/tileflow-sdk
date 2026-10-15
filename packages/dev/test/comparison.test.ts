@@ -850,6 +850,50 @@ test('Workbench copies fixed-frame context, blocks capture while switching scene
   assert.equal(harness.element('stage').dataset.driver, 'left');
 });
 
+test('Controls resolves the active map theme and populates its theme selector from the catalog', async () => {
+  const harness = runComparisonHarness('', {
+    single: true,
+    workbenchRequest: (path) =>
+      path === ''
+        ? {
+            busy: false,
+            sides: {
+              left: {
+                generation: 1,
+                status: 'ready',
+                selections: [
+                  {
+                    id: 'map:map:theme',
+                    map: 'map',
+                    theme: 'theme',
+                    label: 'Map · theme',
+                    url: '/left/?map=map&theme=theme',
+                  },
+                  {
+                    id: 'map:map:dark',
+                    map: 'map',
+                    theme: 'dark',
+                    label: 'Map · dark',
+                    url: '/left/?map=map&theme=dark',
+                  },
+                ],
+              },
+            },
+          }
+        : {saved: true},
+  });
+  harness.load('left');
+  await harness.settle();
+
+  assert.deepEqual(
+    (harness.element('wb-theme').options as FakeElement[]).map((option) => option.value),
+    ['theme', 'dark'],
+  );
+  assert.equal(harness.element('wb-theme').value, 'theme');
+  assert.equal(harness.element('wb-theme-field').hidden, false);
+  assert.equal(harness.element('wb-map-field').hidden, true);
+});
+
 test('Workbench compares a new revision using the pinned reference camera and frame after navigation', async () => {
   const reference = {
     id: 'a'.repeat(64),

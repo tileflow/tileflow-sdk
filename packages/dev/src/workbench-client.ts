@@ -181,8 +181,26 @@ export const workbenchClient = String.raw`
       function syncWorkbenchPickers() {
         const side = states[activeSideId];
         const selections = wbCatalog?.sides[side.serviceId || side.id]?.selections || [];
-        const selected = selections.find((entry) => entry.id === wb("view").value);
-        if (!selected) return;
+        const metadata = side.map?.getStyle?.()?.metadata;
+        const previewUrl = new URL(side.definition.previewUrl, location.href);
+        const startupScene = previewUrl.searchParams.get("scene");
+        const selected = selections.find((entry) => entry.id === wb("view").value)
+          || (startupScene ? selections.find((entry) => entry.scene === startupScene) : undefined)
+          || selections.find((entry) => !entry.scene && entry.map === metadata?.["tileflow:map"] && entry.theme === metadata?.["tileflow:theme"])
+          || selections.find((entry) => !entry.scene)
+          || selections[0];
+        if (!selected) {
+          wb("map").replaceChildren(new Option("Loading maps…", ""));
+          wb("theme").replaceChildren(new Option("Loading themes…", ""));
+          wb("scene").replaceChildren(new Option("No saved views", ""));
+          wb("map").disabled = wb("theme").disabled = wb("scene").disabled = true;
+          wb("map-field").hidden = false;
+          wb("theme-field").hidden = false;
+          wb("scene-field").hidden = true;
+          ctl("scene-help").hidden = true;
+          return;
+        }
+        wb("view").value = selected.id;
         const key = JSON.stringify([activeSideId, selected.id, selections]);
         if (key === wbPickerKey) return;
         wbPickerKey = key;
@@ -193,6 +211,7 @@ export const workbenchClient = String.raw`
         wb("scene").replaceChildren(new Option("Custom view", ""), ...selections.filter((entry) => entry.scene).map((entry) => new Option(entry.scene, entry.id)));
         wb("map").value = selected.map; wb("theme").value = selected.theme;
         wb("scene").value = selected.scene ? selected.id : "";
+        wb("map").disabled = wb("theme").disabled = wb("scene").disabled = false;
         wb("map-field").hidden = maps.length < 2;
         wb("theme-field").hidden = themes.length < 2;
         wb("scene-field").hidden = !selections.some((entry) => entry.scene);

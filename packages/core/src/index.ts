@@ -687,6 +687,17 @@ export {
   type TileflowModelEntry,
 } from './models-3d-file';
 export {
+  readTileflowLandmarkRegion,
+  readTileflowLandmarksTileJson,
+  serializeTileflowLandmarkRegion,
+  type TileflowLandmarkRegion,
+  tileflowLandmarkRegionOf,
+  tileflowLandmarkRegionZoom,
+  type TileflowLandmarksTileJson,
+  tileflowLandmarkTileOf,
+  tileflowLandmarkTileZoom,
+} from './models-3d-landmarks';
+export {
   readTileflowStreetLights,
   tileflowStreetLightsMetadataKey,
   type TileflowStreetLightsDesign,

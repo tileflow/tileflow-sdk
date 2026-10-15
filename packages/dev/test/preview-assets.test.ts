@@ -36,7 +36,7 @@ test('imports Preview MapLibre as a module and pins its matching worker', () => 
   assert.doesNotMatch(html, /maplibre-gl\.js/u);
 });
 
-test('offers a theme switch only when a map preview has several themes', () => {
+test('offers a theme switch in standalone previews, not the Map DevTools iframe', () => {
   const camera = {type: 'center', center: [0, 0], zoom: 2, bearing: 0, pitch: 0} as const;
   const single = renderTileflowPreviewHtml(
     {camera, label: 'map / light', mapName: 'map', themeName: 'light', themeNames: ['light']},
@@ -60,7 +60,11 @@ test('offers a theme switch only when a map preview has several themes', () => {
   assert.match(single, /const previewThemes = \["light"\];/u);
   assert.match(several, /const previewTheme = "night";/u);
   assert.match(several, /const previewThemes = \["light","night"\];/u);
-  assert.match(several, /if \(previewThemes\.length > 1\) map\.addControl\(new ThemeControl\(\)/u);
+  assert.match(
+    several,
+    /if \(previewThemes\.length > 1 && window\.parent === window\) map\.addControl\(new ThemeControl\(\)/u,
+  );
+  assert.match(single, /if \(previewThemes\.length > 1 && window\.parent === window\)/u);
 });
 
 test('the preview globe rim follows the rendered silhouette and map atmosphere', () => {

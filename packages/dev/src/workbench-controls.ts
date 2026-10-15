@@ -46,8 +46,8 @@ export const controlsPanel = `
       <select id="wb-view" aria-label="Scene or theme" hidden><option>Loading scenes…</option></select>
       <label class="control-field" id="wb-map-field">Map<select id="wb-map" aria-label="Map"></select></label>
       <label class="control-field" id="wb-theme-field">Theme<select id="wb-theme" aria-label="Theme"></select></label>
-      <label class="control-field" id="wb-scene-field">Scene<select id="wb-scene" aria-label="Scene" aria-describedby="controls-scene-help"></select></label>
-      <p class="controls-subtitle" id="controls-scene-help">Scenes restore a configured location, theme and capture frame.</p>
+      <label class="control-field" id="wb-scene-field">Saved view<select id="wb-scene" aria-label="Saved view" aria-describedby="controls-scene-help"></select></label>
+      <p class="controls-subtitle" id="controls-scene-help">A saved view restores a configured place, camera, theme and capture frame.</p>
     </div>
     <fieldset class="controls-runtime" id="controls-runtime">
       <div class="controls-section-title">Preview rendering</div>

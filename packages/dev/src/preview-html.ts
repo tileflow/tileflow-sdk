@@ -2152,7 +2152,9 @@ export function renderTileflowPreviewHtml(
             treeControl.container.hidden = true;
           }
         }
-        if (previewThemes.length > 1) map.addControl(new ThemeControl(), "top-right");
+        // Map DevTools has a shared theme selector in its Controls panel; keep the map-level
+        // cycling button for standalone previews only.
+        if (previewThemes.length > 1 && window.parent === window) map.addControl(new ThemeControl(), "top-right");
         let ensuringThreeDimensionalLayers;
         const ensureThreeDimensionalLayers = () => {
           if (ensuringThreeDimensionalLayers) return ensuringThreeDimensionalLayers;

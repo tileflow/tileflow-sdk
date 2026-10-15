@@ -16,6 +16,7 @@ import {
   type TileflowLineCap,
   type TileflowLineJoin,
   type TileflowLineStyle,
+  type TileflowPoiCategory,
   type TileflowPoiCategoryStyle,
   type TileflowRenderSelector,
   type TileflowRoadClassStyle,
@@ -29,6 +30,7 @@ import {
 } from '@tileflow/core';
 import {streetsIcons} from '../assets';
 import {mapboxRailTransitStyle} from './mapbox-rail';
+import {streetsPoiImage} from './streets-poi';
 import {streetsThemes, streetsVisual} from './streets-themes';
 import {bindOfficialMapTheme} from './theme-helpers';
 
@@ -158,11 +160,13 @@ const protectedAreaOpacity = zoom.linear([
   [9, 0.32],
 ]);
 
-// The 24 px source artwork keeps a small transparent fringe around each POI.
-// Grow it gently at street zooms so the marker gains presence without turning
-// the overview into a denser visual field.
+// One appearance for every POI category: the disc color comes with the pictogram, which
+// Streets chooses from World's transport mode and type (see streets-poi.ts). The 24 px source
+// artwork keeps a small transparent fringe around each POI; grow it gently at street zooms so
+// the marker gains presence without turning the overview into a denser visual field.
 const streetsPoiStyle = {
   icon: {
+    image: streetsPoiImage(),
     size: zoom.linear([
       [12, 1.04],
       [15, 1.1],
@@ -171,15 +175,21 @@ const streetsPoiStyle = {
   },
 } satisfies TileflowPoiCategoryStyle;
 
-const sparseStreetsPoiStyle = {
-  ...streetsPoiStyle,
-  density: 2,
-} satisfies TileflowPoiCategoryStyle;
-
-const deferredStreetsPoiStyle = {
-  ...streetsPoiStyle,
-  minZoom: 15.5,
-} satisfies TileflowPoiCategoryStyle;
+const streetsPoiCategories = [
+  'transport',
+  'food-drink',
+  'lodging',
+  'retail',
+  'arts-entertainment',
+  'landmark',
+  'park-nature',
+  'medical',
+  'education',
+  'public-services',
+  'sport-leisure',
+  'religion',
+  'visitor-amenity',
+] as const satisfies readonly TileflowPoiCategory[];
 
 // Match Standard's warm 2D footprints here; authored 3D extrusions keep their
 // separate neutral palette. The light palette stores rendered day colours,
@@ -2645,24 +2655,10 @@ export const streets = bindOfficialMapTheme(
         streetsLabelRenderStack(),
       ),
       poi: poi({
-        // World owns POI taxonomy, zoom eligibility and density tiers. Streets
-        // selects only the canonical categories and leaves final placement to
-        // MapLibre collision handling.
-        categories: [
-          'transport',
-          'food-drink',
-          'lodging',
-          'retail',
-          'arts-entertainment',
-          'landmark',
-          'park-nature',
-          'medical',
-          'education',
-          'public-services',
-          'sport-leisure',
-          'religion',
-          'visitor-amenity',
-        ],
+        // World owns POI taxonomy, zoom eligibility, density ranks and importance. Streets
+        // shows every category at one density and places them all in World's importance order,
+        // so collision keeps the most relevant places whatever their category.
+        categories: streetsPoiCategories,
         // Standard carries the POI category into both marker and label colour.
         // A uniform grey treatment suppresses a meaningful amount of chroma
         // and makes the whole light map read as if a pale overlay sat above it.
@@ -2671,27 +2667,19 @@ export const streets = bindOfficialMapTheme(
         icons: true,
         labels: true,
         placement: {
-          // One collision unit: the circular icon is required while its name is
-          // optional and may move around the marker when space is tight.
+          // One collision unit: a POI shows its disc and its name, or nothing. Parking and
+          // toilets, whose pictogram says what they are, show the disc alone.
           coupleIconAndLabel: true,
           iconPadding: 10,
+          order: 'importance',
+          // Street and place names outrank everyday destinations ('navigation' labels), but
+          // not the places that make a city recognisable: World's two most important ranks.
+          prominentRank: 1,
           textPadding: 12,
         },
-        styles: {
-          'arts-entertainment': sparseStreetsPoiStyle,
-          education: deferredStreetsPoiStyle,
-          'food-drink': streetsPoiStyle,
-          landmark: deferredStreetsPoiStyle,
-          lodging: sparseStreetsPoiStyle,
-          medical: deferredStreetsPoiStyle,
-          'park-nature': deferredStreetsPoiStyle,
-          'public-services': deferredStreetsPoiStyle,
-          religion: deferredStreetsPoiStyle,
-          retail: streetsPoiStyle,
-          'sport-leisure': streetsPoiStyle,
-          transport: streetsPoiStyle,
-          'visitor-amenity': deferredStreetsPoiStyle,
-        },
+        styles: Object.fromEntries(
+          streetsPoiCategories.map((category) => [category, streetsPoiStyle]),
+        ),
       }),
     },
     view: {

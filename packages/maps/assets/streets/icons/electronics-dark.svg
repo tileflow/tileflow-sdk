@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>Electronics store (night)</title>
+  <desc>Tileflow POI disc with a Maki mobile-phone pictogram, CC0-1.0.</desc>
+  <circle cx="12" cy="12" r="9.5" fill="#252839"/>
+  <circle cx="12" cy="12" r="8" fill="#76B59A"/>
+  <path
+    fill="#252839"
+    transform="translate(6.375 6.375) scale(.75)"
+    d="M10,2h0V1.5a.5.5,0,0,0-1,0V2H5A1,1,0,0,0,4,3V13a1,1,0,0,0,1,1h5a1,1,0,0,0,1-1V3A1,1,0,0,0,10,2ZM6,13H5V12H6Zm0-2H5V10H6ZM6,9H5V8H6Zm2,4H7V12H8Zm0-2H7V10H8ZM8,9H7V8H8Zm2,4H9V12h1Zm0-2H9V10h1Zm0-2H9V8h1Zm0-2.5a.5.5,0,0,1-.5.5h-4A.5.5,0,0,1,5,6.5v-3A.5.5,0,0,1,5.5,3h4a.5.5,0,0,1,.5.5Z"
+  />
+</svg>

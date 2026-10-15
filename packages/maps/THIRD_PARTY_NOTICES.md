@@ -10,12 +10,21 @@ authoritative for the original Tileflow artwork.
 
 ## Maki POI pictograms
 
-The `coffee.svg`, `culture.svg`, `education.svg`, `food.svg`, `health.svg`, `lodging.svg`,
-`major-transit.svg`, `parking.svg`, `services.svg`, and `shopping.svg` assets under
-`assets/streets/icons/` contain pictograms adapted from the corresponding `cafe`, `museum`,
-`school`, `restaurant`, `hospital`, `lodging`, `rail-metro`, `parking`, `information`, and `shop`
-icons in `@mapbox/maki` 8.2.0, upstream commit
-`6ab50f392294aeb20b3af83e8a10067151876eb9`.
+The 85 Streets POI discs under `assets/streets/icons/`, each with a light `<id>.svg` and a night
+`<id>-dark.svg` variant, contain pictograms adapted from the `aerialway`, `airport`,
+`amusement-park`, `aquarium`, `art-gallery`, `bank`, `bar`, `beach`, `building`, `bus`, `cafe`,
+`campsite`, `car`, `car-repair`, `casino`, `castle`, `cemetery`, `charging-station`, `cinema`,
+`clothing-store`, `college`, `convenience`, `dentist`, `doctor`, `dog-park`, `drinking-water`,
+`embassy`, `fast-food`, `ferry`, `fire-station`, `fitness-centre`, `florist`, `fuel`, `garden`,
+`golf`, `grocery`, `hairdresser`, `harbor`, `hardware`, `historic`, `hospital`, `information`,
+`landmark`, `laundry`, `library`, `lodging`, `mobile-phone`, `monument`, `mountain`, `museum`,
+`music`, `natural`, `nightclub`, `paint`, `park`, `parking`, `parking-garage`, `pharmacy`, `pitch`,
+`place-of-worship`, `playground`, `police`, `post`, `prison`, `rail`, `rail-light`, `rail-metro`,
+`religious-buddhist`, `religious-christian`, `religious-jewish`, `religious-muslim`, `restaurant`,
+`school`, `shop`, `stadium`, `star`, `swimming`, `theatre`, `toilet`, `town-hall`, `viewpoint`,
+`waterfall`, and `zoo` icons in `@mapbox/maki` 8.2.0, upstream commit
+`6ab50f392294aeb20b3af83e8a10067151876eb9`. Each SVG names its source icon in its description;
+`src/official/streets-poi.ts` maps every disc to its source.
 
 Maki is dedicated to the public domain under CC0-1.0. Tileflow authored the circular containers,
 color system, sizing, composition, and SVG simplifications around those pictograms. The complete

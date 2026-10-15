@@ -769,12 +769,10 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
         style.sprite,
         `${api.url}/sprites/icp_12345678-1234-1234-1234-123456789abc/sprite`,
       );
-      const foodPoiLayer = style.layers?.find(
-        (layer) => layer.id === 'tileflow-poi-food-drink-icon',
-      );
+      const foodPoiLayer = style.layers?.find((layer) => layer.id === 'tileflow-poi-icon');
       const iconImage = JSON.stringify(foodPoiLayer?.layout?.['icon-image']);
       assert.match(iconImage, /"get","icon"/u);
-      assert.match(iconImage, /"image","food"/u);
+      assert.match(iconImage, /"image","food(?:-dark)?"/u);
     }
     assert.deepEqual(parsed.iconPackage, {
       contentHash: requests[0]?.url?.split('/').pop(),
@@ -807,7 +805,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     requests.map((request) => `${request.method} ${request.url?.split('/').slice(0, 3).join('/')}`),
     [`PUT /v1/icon-packages`, `POST /v1/styles`],
   );
-  assert.match(result.stdout, /Uploaded icon package madrid \(2 icons,/);
+  assert.match(result.stdout, /Uploaded icon package madrid \(3 icons,/);
   assert.match(result.stdout, /Published madrid \(v1\)\./);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(fakeApiKey));
 });
@@ -1459,6 +1457,11 @@ async function createIconFixture(t: TestContext) {
   await writeFile(
     join(iconsDirectory, 'park.svg'),
     '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" /></svg>',
+  );
+  // Streets' dark theme draws each POI with its night pictogram.
+  await writeFile(
+    join(iconsDirectory, 'food-dark.svg'),
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle cx="8" cy="8" r="6" /></svg>',
   );
   await writeFile(
     fixture.configPath,

@@ -76,7 +76,24 @@ MapLibre collision placement, which remains authoritative. The closed category v
 `arts-entertainment`, `education`, `food-drink`, `landmark`, `lodging`, `medical`, `park-nature`,
 `public-services`, `religion`, `retail`, `sport-leisure`, `transport`, and `visitor-amenity`.
 Producer `type` and `icon` values are snake_case; an unavailable icon falls back safely to its
-category image. Category styles are presentational and cannot replace producer selection.
+category image. Category styles are presentational and cannot replace producer selection; there is
+no per-category density.
+
+POI placement follows one importance order across categories. With the default
+`placement.order: 'importance'`, every category shares one MapLibre symbol layer per representation
+(`poi`, or `poi.icon` and `poi.label`, plus `poi.marker` for markers), ordered by `filter_rank` and
+then `size_rank`, and each category's appearance becomes a per-feature `match` on `category`.
+Category styles may therefore differ only in properties MapLibre evaluates per feature. Zoom curves
+of one kind (linear, one exponential base, or step) are combined exactly at the union of their
+stops. A difference in a layer-wide property, such as a zoom range, collision padding, overlap,
+`optional`, or font, fails compilation with `TILEFLOW_POI_PLACEMENT_CONFLICT` and names the
+property. `placement.order: 'categories'` instead gives each category its own `poi.<category>`
+layer, places the first category listed first, and orders ranks only within each category.
+`placement.prominentRank` splits the importance order at a rank: POIs at or below it form a
+`poi.prominent` layer placed before road and place labels, and the others are placed after them.
+When pictograms and names are both drawn, a POI also needs a name, except the World `type` values
+in `placement.iconOnlyTypes` (by default parking and public toilets), which are drawn as a
+pictogram alone. A coupled POI requires both its pictogram and its name.
 
 Official maps own their source assets in `@tileflow/maps/assets/<id>/`. Streets declares
 `icons: [streetsIcons]`. Baedeker, Ferraris, Härad, Siegfried, Soundings, and Blueprint likewise

@@ -17,6 +17,7 @@ import {
   validateTileflowStyle,
 } from '../src/validation';
 import {fixtureThemeFields} from './theme-fixture';
+import {readStreetsIconIds} from './streets-icon-ids';
 
 const fixtureGlyphs = {
   kind: 'url',
@@ -26,32 +27,10 @@ const fixtureGlyphs = {
 
 const streetsPreparedAssets = {
   icons: {
-    ids: [
-      'coffee',
-      'crosswalk',
-      'culture',
-      'education',
-      'food',
-      'health',
-      'lodging',
-      'major-transit',
-      'oneway',
-      'parking',
-      'road-shield-circle-neutral',
-      'road-shield-rectangle-blue',
-      'road-shield-rectangle-green',
-      'road-shield-rectangle-neutral',
-      'road-shield-rectangle-orange',
-      'road-shield-rectangle-red',
-      'road-shield-rectangle-yellow',
-      'services',
-      'shopping',
-      'sidewalk-dot-dark',
-      'sidewalk-dot',
-    ],
+    ids: readStreetsIconIds(),
     sprite: '/tileflow/test/streets/sprite',
   },
-} as const;
+};
 
 test('direct style creation reports a stable layer/property diagnostic', () => {
   const style = {
@@ -304,7 +283,7 @@ export default soundings;
     false,
   );
   assert.equal(
-    style.layers.some((layer) => layer.id.startsWith('tileflow-poi-')),
+    style.layers.some((layer) => layer.id.startsWith('tileflow-poi')),
     false,
   );
   assert.equal(

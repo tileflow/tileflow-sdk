@@ -48,8 +48,9 @@ resources available offline.
 
 ## Choose a map
 
-- `streets`: contemporary street cartography with coordinated light and dark themes, ranked POIs,
-  and generic road-reference shields.
+- `streets`: contemporary street cartography with coordinated light and dark themes, POIs placed
+  in one importance order with pictograms by transport mode and type, and generic road-reference
+  shields.
 - `baedeker`: warm travel-atlas styling, serif labels, original engraved patterns, and contours.
 - `civica`: illustrated civic-print styling with warm paper, olive parks, blue annotations, and
   vermilion landmarks.

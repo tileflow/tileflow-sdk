@@ -15,8 +15,8 @@ test('queries only declared relevant layers and returns semantic targets without
   native.setFeatures([
     poiFeature(90, 'undeclared'),
     poiFeature(7, 'food-label'),
-    poiFeature(8, 'hotel'),
-    poiFeature(7, 'food-icon', {name: 'Preferred icon'}),
+    poiFeature(8, 'hotel', {category: 'lodging', name: 'Hotel'}),
+    poiFeature(7, 'food-icon', {category: 'food-drink', name: 'Preferred icon'}),
   ]);
   const adapter = createNativePoiAdapter();
   assert.deepEqual(adapter.replaceStyle(native.lease), []);
@@ -26,11 +26,16 @@ test('queries only declared relevant layers and returns semantic targets without
   assert.equal(result.status, 'match');
   if (result.status !== 'match') assert.fail();
   assert.equal(result.match.target.feature.id, 7);
-  assert.deepEqual(result.match.target.feature.properties, {name: 'Preferred icon'});
+  assert.deepEqual(result.match.target.feature.properties, {
+    category: 'food-drink',
+    name: 'Preferred icon',
+  });
   assert.equal(result.match.target.feature.category, 'food-drink');
   assert.equal(result.match.target.bindingId, 'places');
   assert.deepEqual(result.match.target.coordinate, [1, 2]);
-  assert.deepEqual(native.requests[0]?.layers, ['food-label', 'food-icon']);
+  // Any layer may draw any category, so every declared POI layer is queried and the binding's
+  // categories select among the features they return.
+  assert.deepEqual(native.requests[0]?.layers, ['food-label', 'food-icon', 'hotel']);
   assert.equal(native.requests[0]?.limit, nativePoiQueryLimit);
   assert.doesNotMatch(
     JSON.stringify(result.match.target),
@@ -45,8 +50,8 @@ test('rendered order wins between identities and numeric and string IDs stay dis
   const adapter = createNativePoiAdapter();
   adapter.replaceStyle(native.lease);
   native.setFeatures([
-    poiFeature('7', 'food-label', {name: 'String'}),
-    poiFeature(7, 'food-icon', {name: 'Number'}),
+    poiFeature('7', 'food-label', {category: 'food-drink', name: 'String'}),
+    poiFeature(7, 'food-icon', {category: 'food-drink', name: 'Number'}),
   ]);
   const result = await adapter.queryTouch(touch, [poiBinding]);
   assert.equal(result.status, 'match');
@@ -62,7 +67,7 @@ test('metadata version fields namespaces and every declared physical layer are v
       style.metadata['tileflow:interaction-manifest'].version = 1;
     },
     (style) => {
-      style.metadata['tileflow:interaction-manifest'].version = 3;
+      style.metadata['tileflow:interaction-manifest'].version = 2;
     },
     (style) => {
       style.metadata['tileflow:interaction-manifest'].domains.poi.identity = 'properties-id';
@@ -85,8 +90,8 @@ test('metadata version fields namespaces and every declared physical layer are v
       style.metadata['tileflow:interaction-manifest'].domains.poi.layers[0]!.layerId = 'missing';
     },
     (style) => {
-      style.metadata['tileflow:interaction-manifest'].domains.poi.layers[0]!.category =
-        'not-a-category';
+      style.metadata['tileflow:interaction-manifest'].domains.poi.layers[0]!.representation =
+        'not-a-representation';
     },
     (style) => {
       style.metadata['tileflow:interaction-manifest'].domains.poi.layers[0]!.sourceLayer =

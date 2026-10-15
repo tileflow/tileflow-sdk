@@ -128,6 +128,11 @@ export type OpenMapTilesFieldBindings = {
   markings: string;
   minHeight: string;
   minZoom: string;
+  /**
+   * Transport mode of World transit POIs and lines: `subway`, `train`, `light_rail`, `tram`,
+   * `monorail`, `funicular`, `bus`, `ferry` or `aerialway`.
+   */
+  mode: string;
   mtbScale: string;
   name: string;
   nameEnglish: string;
@@ -373,6 +378,7 @@ const canonicalFields = {
   markings: 'markings',
   minHeight: 'min_height',
   minZoom: 'min_zoom',
+  mode: 'mode',
   mtbScale: 'mtb_scale',
   name: 'name',
   nameEnglish: 'name:en',

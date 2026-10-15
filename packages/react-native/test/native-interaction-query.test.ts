@@ -13,7 +13,11 @@ export function finalizedStyle() {
   }
   return style;
 }
-const hit = (id: number) => ({type: 'Feature', id, properties: {name: `Place ${id}`}});
+const hit = (id: number) => ({
+  type: 'Feature',
+  id,
+  properties: {category: 'food-drink', name: `Place ${id}`},
+});
 
 test('single-layer filters reconstruct exact provenance and preserve layer and hit order', async () => {
   const style = finalizedStyle();
@@ -40,28 +44,28 @@ test('single-layer filters reconstruct exact provenance and preserve layer and h
   assert.deepEqual(result.features, [
     {
       id: 7,
-      properties: {name: 'Place 7'},
+      properties: {category: 'food-drink', name: 'Place 7'},
       layer: {id: 'food-label'},
       source: 'world',
       sourceLayer: 'poi',
     },
     {
       id: 8,
-      properties: {name: 'Place 8'},
+      properties: {category: 'food-drink', name: 'Place 8'},
       layer: {id: 'food-label'},
       source: 'world',
       sourceLayer: 'poi',
     },
     {
       id: 9,
-      properties: {name: 'Place 9'},
+      properties: {category: 'food-drink', name: 'Place 9'},
       layer: {id: 'food-icon'},
       source: 'world',
       sourceLayer: 'poi',
     },
     {
       id: 9,
-      properties: {name: 'Place 9'},
+      properties: {category: 'food-drink', name: 'Place 9'},
       layer: {id: 'hotel'},
       source: 'world',
       sourceLayer: 'poi',

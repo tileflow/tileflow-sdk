@@ -31,7 +31,7 @@ export type {
   TileflowNauticalModuleConfig,
   TileflowNauticalModuleOptions,
 } from './nautical';
-export {poi, tileflowPoiImageRoles} from './poi';
+export {poi, tileflowPoiIconOnlyTypes, tileflowPoiImageRoles} from './poi';
 export {roads, tileflowRoadClasses} from './roads';
 export {transit} from './transit';
 export type {

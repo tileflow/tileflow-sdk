@@ -21,7 +21,6 @@ export function poiStyle() {
       layerId: 'food-label',
       source: 'world',
       sourceLayer: 'poi',
-      category: 'food-drink',
       representation: 'label',
       priority: 30,
       anchor: 'pointer-coordinate',
@@ -30,7 +29,6 @@ export function poiStyle() {
       layerId: 'food-icon',
       source: 'world',
       sourceLayer: 'poi',
-      category: 'food-drink',
       representation: 'icon',
       priority: 20,
       anchor: 'pointer-coordinate',
@@ -39,7 +37,6 @@ export function poiStyle() {
       layerId: 'hotel',
       source: 'world',
       sourceLayer: 'poi',
-      category: 'lodging',
       representation: 'combined',
       priority: 10,
       anchor: 'pointer-coordinate',
@@ -59,7 +56,7 @@ export function poiStyle() {
     ],
     metadata: {
       'tileflow:interaction-manifest': {
-        version: 2,
+        version: 3,
         domains: {
           poi: {
             fields: {

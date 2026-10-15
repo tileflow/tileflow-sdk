@@ -107,7 +107,7 @@ test('POI image roles are theme-selectable with an explicit built-in fallback co
         ...context,
         images,
       }),
-      'tileflow-poi-food-drink-icon',
+      'tileflow-poi-icon',
     );
     return (layer.layer.layout as Record<string, unknown>)['icon-image'];
   };

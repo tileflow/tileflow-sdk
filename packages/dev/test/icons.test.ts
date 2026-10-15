@@ -17,30 +17,9 @@ import {
   prepareTileflowCatalogIcons,
   TileflowIconCompilationError,
 } from '../src/icons';
+import {readStreetsIconIds} from './streets-icon-ids';
 
-const streetsIconIds = [
-  'coffee',
-  'crosswalk',
-  'culture',
-  'education',
-  'food',
-  'health',
-  'lodging',
-  'major-transit',
-  'oneway',
-  'parking',
-  'road-shield-circle-neutral',
-  'road-shield-rectangle-blue',
-  'road-shield-rectangle-green',
-  'road-shield-rectangle-neutral',
-  'road-shield-rectangle-orange',
-  'road-shield-rectangle-red',
-  'road-shield-rectangle-yellow',
-  'services',
-  'shopping',
-  'sidewalk-dot',
-  'sidewalk-dot-dark',
-] as const;
+const streetsIconIds = readStreetsIconIds();
 
 function defineResolvedMap(input: TileflowMap) {
   return parseTileflowMap(defineMap(input));

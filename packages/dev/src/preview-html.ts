@@ -1797,6 +1797,7 @@ export function renderTileflowPreviewHtml(
           (layer) =>
             (layer.id.startsWith("tileflow-label-") &&
               !layer.id.startsWith("tileflow-label-road-")) ||
+            layer.id === "tileflow-poi" ||
             layer.id.startsWith("tileflow-poi-")
         )?.id;
         const treeLayer = map.getLayer("tileflow-vegetation-trees")

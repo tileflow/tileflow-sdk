@@ -1,9 +1,16 @@
-import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
+import {
+  Color,
+  createPropertyExpression,
+  latest,
+  validateStyleMin,
+} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createStyle, resolveMap, resolveTileflowTheme} from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
 import {streets, streetsIcons, streetsThemes} from '../src';
+import {streetsPoiPictograms} from '../src/official/streets-poi';
+import {streetsPoiImageIds} from './streets-poi-fixture';
 
 const streetsIconIds = [
   'coffee',
@@ -27,6 +34,7 @@ const streetsIconIds = [
   'shopping',
   'sidewalk-dot',
   'sidewalk-dot-dark',
+  ...streetsPoiImageIds,
 ] as const;
 
 const preparedAssets = {
@@ -411,10 +419,20 @@ test('Streets exposes complete light and dark themes on one map identity', () =>
 test('Streets Dark preserves Streets geometry, ordering, visibility, and label behavior', () => {
   const light = compile('light');
   const dark = compile('dark');
+  // The night theme selects night pictograms (`<id>-dark`) and nothing else in the layout.
+  const dayImages = (layout: (typeof light.layers)[number]['layout']) =>
+    layout?.['icon-image'] === undefined
+      ? layout
+      : {
+          ...layout,
+          'icon-image': JSON.parse(
+            JSON.stringify(layout['icon-image']).replace(/"([a-z0-9-]+)-dark"/gu, '"$1"'),
+          ),
+        };
   const structuralContract = (layer: (typeof light.layers)[number]) => ({
     filter: layer.filter,
     id: layer.id,
-    layout: layer.layout,
+    layout: dayImages(layer.layout),
     maxzoom: layer.maxzoom,
     minzoom: layer.minzoom,
     source: layer.source,
@@ -833,24 +851,9 @@ test('Streets Dark retains every public render-stack contribution and refinement
   }
 });
 
-test('Streets Dark keeps canonical POI category colors around the same ranked sprites', () => {
+test('Streets Dark keeps canonical POI category colors and ranked placement with night pictograms', () => {
   const light = compile('light');
   const dark = compile('dark');
-  const categories = [
-    'visitor-amenity',
-    'retail',
-    'food-drink',
-    'sport-leisure',
-    'religion',
-    'public-services',
-    'education',
-    'medical',
-    'lodging',
-    'arts-entertainment',
-    'park-nature',
-    'landmark',
-    'transport',
-  ] as const;
   const darkCategoryColors = {
     'arts-entertainment': '#C786BC',
     education: '#8F9098',
@@ -871,11 +874,23 @@ test('Streets Dark keeps canonical POI category colors around the same ranked sp
     dark.layers.some(({id}) => id === 'tileflow-addresses-labels'),
     false,
   );
-  for (const category of categories) {
-    const id = `tileflow-poi-${category}`;
+  // Every category shares one importance order: the prominent tier and the rest.
+  assert.deepEqual(
+    dark.layers.filter(({id}) => id.startsWith('tileflow-poi')).map(({id}) => id),
+    ['tileflow-poi', 'tileflow-poi-prominent'],
+  );
+  for (const id of ['tileflow-poi', 'tileflow-poi-prominent']) {
     const lightLayer = requireLayer(light, id);
     const darkLayer = requireLayer(dark, id);
-    assert.deepEqual(darkLayer.layout?.['icon-image'], lightLayer.layout?.['icon-image']);
+    // The same pictogram choice, drawn with each pictogram's night variant.
+    const darkImage = JSON.stringify(darkLayer.layout?.['icon-image']);
+    assert.equal(
+      darkImage.replace(/"([a-z0-9-]+)-dark"/gu, '"$1"'),
+      JSON.stringify(lightLayer.layout?.['icon-image']),
+    );
+    for (const id of Object.keys(streetsPoiPictograms)) {
+      assert.match(darkImage, new RegExp(`"${id}-dark"`, 'u'), id);
+    }
     assert.deepEqual(darkLayer.layout?.['symbol-sort-key'], [
       '+',
       ['*', ['to-number', ['get', 'filter_rank'], 6], 17],
@@ -893,7 +908,23 @@ test('Streets Dark keeps canonical POI category colors around the same ranked sp
       1.14,
     ]);
     assert.deepEqual(darkLayer.layout?.['icon-size'], lightLayer.layout?.['icon-size']);
-    assert.equal(darkLayer.paint?.['text-color'], darkCategoryColors[category]);
+    const textColor = createPropertyExpression(
+      darkLayer.paint?.['text-color'],
+      latest.paint_symbol['text-color'] as never,
+    );
+    assert.equal(textColor.result, 'success');
+    for (const [category, color] of Object.entries(darkCategoryColors)) {
+      assert.equal(
+        String(
+          (textColor.value as {evaluate: (...args: unknown[]) => unknown}).evaluate(
+            {zoom: 16},
+            {type: 1, properties: {category}},
+          ),
+        ),
+        String(Color.parse(color)),
+        category,
+      );
+    }
     assert.equal(darkLayer.paint?.['text-halo-color'], '#252839');
   }
 });

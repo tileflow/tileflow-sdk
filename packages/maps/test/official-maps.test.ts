@@ -1,4 +1,10 @@
-import {featureFilter, validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
+import {
+  Color,
+  createPropertyExpression,
+  featureFilter,
+  latest,
+  validateStyleMin,
+} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
@@ -37,6 +43,7 @@ import {
   streetsIcons,
   streetsThemes,
 } from '../src';
+import {streetsPoiImageIds} from './streets-poi-fixture';
 
 const officialIconIds = [
   'baedeker-hachures',
@@ -137,6 +144,7 @@ const officialIconIds = [
   'soundings-rock-awash',
   'soundings-water-dots',
   'soundings-wreck',
+  ...streetsPoiImageIds,
 ] as const;
 const baedekerPatternIds = [
   'baedeker-hachures',
@@ -1025,8 +1033,14 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
   ]);
   assert.equal(resolved.modules?.poi?.placement?.iconPadding, 10);
   assert.equal(resolved.modules?.poi?.placement?.textPadding, 12);
-  assert.equal(resolved.modules?.poi?.styles?.['arts-entertainment']?.density, 2);
-  assert.equal(resolved.modules?.poi?.styles?.lodging?.density, 2);
+  assert.equal(resolved.modules?.poi?.placement?.order, 'importance');
+  assert.equal(resolved.modules?.poi?.placement?.prominentRank, 1);
+  // One density for every category, and no category waits for a later zoom: World's ranks
+  // decide what each category shows.
+  for (const style of Object.values(resolved.modules?.poi?.styles ?? {})) {
+    assert.equal('density' in (style ?? {}), false);
+    assert.equal(style?.minZoom, undefined);
+  }
 
   const style = compileOfficialMap(streets);
   const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
@@ -1049,54 +1063,101 @@ test('Streets consumes canonical producer-ranked POI and omits house-number nois
     transport: '#5C74D6',
     'visitor-amenity': '#557BC4',
   } as const;
-  for (const category of resolved.modules?.poi?.categories ?? []) {
-    const id = `tileflow-poi-${category}`;
+  // Every category is placed in World's importance order: one layer for the most important
+  // ranks, placed before street and place names, and one for the rest.
+  assert.deepEqual(
+    style.layers.filter(({id}) => id.startsWith('tileflow-poi')).map(({id}) => id),
+    ['tileflow-poi', 'tileflow-poi-prominent'],
+  );
+  const layerIds = style.layers.map(({id}) => id);
+  assert.ok(
+    layerIds.indexOf('tileflow-poi-prominent') > layerIds.indexOf('tileflow-label-place-city'),
+  );
+  assert.ok(layerIds.indexOf('tileflow-poi') < layerIds.indexOf('tileflow-label-road-major'));
+  for (const [id, ranks] of [
+    ['tileflow-poi', '>'],
+    ['tileflow-poi-prominent', '<='],
+  ] as const) {
     const layer = byId.get(id);
-    assert.ok(layer, `Streets lost coupled POI layer ${id}`);
-    assert.equal(byId.has(`${id}-marker`), false);
-    assert.equal(byId.has(`${id}-icon`), false);
-    assert.equal(byId.has(`${id}-label`), false);
+    assert.ok(layer, `Streets lost POI layer ${id}`);
+    assert.equal(layer.minzoom, 0);
     assert.equal(layer.layout?.['icon-optional'], false);
-    assert.equal(layer.layout?.['text-optional'], true);
+    // A disc needs its name; parking and toilets are drawn as a disc alone.
+    assert.equal(layer.layout?.['text-optional'], false);
+    assert.match(JSON.stringify(layer.layout?.['text-field']), /"public_restroom"\],""/u);
     assert.deepEqual(layer.layout?.['text-variable-anchor'], ['top', 'bottom', 'right', 'left']);
     assert.deepEqual(layer.layout?.['symbol-sort-key'], [
       '+',
       ['*', ['to-number', ['get', 'filter_rank'], 6], 17],
       ['to-number', ['get', 'size_rank'], 17],
     ]);
-    assert.match(JSON.stringify(layer.filter), /"category"/u);
-    assert.match(JSON.stringify(layer.filter), /"filter_rank"/u);
-    assert.match(JSON.stringify(layer.filter), /"size_rank"/u);
-    assert.doesNotMatch(JSON.stringify(layer.filter), /"class"|"subclass"|"rank"/u);
-    assert.deepEqual((layer.filter as unknown[])[4], [
+    const filter = layer.filter as unknown[];
+    assert.deepEqual(filter[1], [
+      'match',
+      ['get', 'category'],
+      [...(resolved.modules?.poi?.categories ?? [])],
+      true,
+      false,
+    ]);
+    assert.doesNotMatch(JSON.stringify(filter), /"class"|"subclass"|"rank"/u);
+    assert.deepEqual(filter[4], [
       '<=',
       ['to-number', ['get', 'filter_rank'], 6],
-      [
-        '+',
-        ['step', ['zoom'], 0, 16, 1, 17, 2],
-        category === 'arts-entertainment' || category === 'lodging' ? 2 : 3,
-      ],
+      ['+', ['step', ['zoom'], 0, 16, 1, 17, 2], 3],
     ]);
-    assert.equal(layer.paint?.['text-color'], expectedPoiTextColors[category]);
+    assert.deepEqual(filter.at(-1), [ranks, ['to-number', ['get', 'filter_rank'], 6], 1]);
     assert.equal(layer.paint?.['text-halo-color'], '#FFFFFF');
-    assert.equal(
-      layer.minzoom,
-      [
-        'education',
-        'landmark',
-        'medical',
-        'park-nature',
-        'public-services',
-        'religion',
-        'visitor-amenity',
-      ].includes(category)
-        ? 15.5
-        : 0,
+    const textColor = createPropertyExpression(
+      layer.paint?.['text-color'],
+      latest.paint_symbol['text-color'] as never,
     );
+    assert.equal(textColor.result, 'success');
+    for (const [category, color] of Object.entries(expectedPoiTextColors)) {
+      assert.equal(
+        String(
+          (textColor.value as {evaluate: (...args: unknown[]) => unknown}).evaluate(
+            {zoom: 16},
+            {type: 1, properties: {category}},
+          ),
+        ),
+        String(Color.parse(color)),
+        category,
+      );
+    }
   }
 
-  const transportIcon = JSON.stringify(byId.get('tileflow-poi-transport')?.layout?.['icon-image']);
-  assert.match(transportIcon, /"icon"/u);
-  assert.match(transportIcon, /major-transit/u);
+  // Pictograms follow World's transport mode and type before falling back to the category.
+  const image = createPropertyExpression(
+    byId.get('tileflow-poi')?.layout?.['icon-image'],
+    latest.layout_symbol['icon-image'] as never,
+  );
+  assert.equal(image.result, 'success');
+  const pictogram = (properties: Record<string, string>) =>
+    String(
+      (image.value as {evaluate: (...args: unknown[]) => unknown}).evaluate(
+        {zoom: 16},
+        {type: 1, properties},
+      ),
+    );
+  for (const [properties, expected] of [
+    [{category: 'transport', mode: 'subway', type: 'public_transit_facility'}, 'major-transit'],
+    [{category: 'transport', mode: 'train', type: 'train_station'}, 'rail'],
+    [{category: 'transport', mode: 'tram', type: 'tram_stop'}, 'rail-light'],
+    [{category: 'transport', mode: 'bus', type: 'bus_stop'}, 'bus'],
+    [{category: 'transport', mode: 'ferry', type: 'ferry_terminal'}, 'ferry'],
+    [{category: 'transport', mode: 'aerialway', type: 'ground_transport_facility'}, 'aerialway'],
+    [{category: 'transport', type: 'airport'}, 'airport'],
+    [{category: 'food-drink', type: 'bar'}, 'bar'],
+    [{category: 'food-drink', type: 'restaurant'}, 'food'],
+    [{category: 'arts-entertainment', type: 'museum'}, 'culture'],
+    [{category: 'arts-entertainment', type: 'art_gallery'}, 'art-gallery'],
+    [{category: 'retail', type: 'vehicle_dealer'}, 'car'],
+    [{category: 'retail', type: 'specialty_store'}, 'shopping'],
+    [{category: 'religion', type: 'christian_place_of_worship'}, 'christian'],
+    [{category: 'visitor-amenity', type: 'public_restroom'}, 'toilet'],
+    [{category: 'park-nature', type: 'park'}, 'park'],
+  ] as const) {
+    assert.equal(pictogram(properties), expected, JSON.stringify(properties));
+  }
   assert.deepEqual(validateStyleMin(style as never), []);
 });

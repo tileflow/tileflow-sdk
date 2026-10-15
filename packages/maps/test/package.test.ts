@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {readdir, readFile} from 'node:fs/promises';
 import test from 'node:test';
+import {streetsThemes} from '../src';
+import {streetsPoiPictograms} from '../src/official/streets-poi';
+import {streetsPoiImageIds} from './streets-poi-fixture';
 import {promisify} from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -120,16 +123,9 @@ test('publishes every official icon and font directory with provenance', async (
     ],
 
     streets: [
-      'coffee.svg',
+      ...streetsPoiImageIds.map((id) => `${id}.svg`),
       'crosswalk.svg',
-      'culture.svg',
-      'education.svg',
-      'food.svg',
-      'health.svg',
-      'lodging.svg',
-      'major-transit.svg',
       'oneway.svg',
-      'parking.svg',
       'road-shield-circle-neutral.svg',
       'road-shield-rectangle-blue.svg',
       'road-shield-rectangle-green.svg',
@@ -137,8 +133,6 @@ test('publishes every official icon and font directory with provenance', async (
       'road-shield-rectangle-orange.svg',
       'road-shield-rectangle-red.svg',
       'road-shield-rectangle-yellow.svg',
-      'services.svg',
-      'shopping.svg',
       'sidewalk-dot-dark.svg',
       'sidewalk-dot.svg',
     ],
@@ -169,6 +163,28 @@ test('publishes every official icon and font directory with provenance', async (
   assert.notEqual(darkSidewalkDot, lightSidewalkDot);
   assert.match(lightSidewalkDot, /fill="#C1C5D7"/u);
   assert.match(darkSidewalkDot, /fill="#525664"/u);
+
+  // Each POI disc takes its category's theme color; its pictogram and provenance are Maki's.
+  const notices = await readFile(new URL('../THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8');
+  for (const [id, pictogram] of Object.entries(streetsPoiPictograms)) {
+    for (const [theme, file] of [
+      ['light', `${id}.svg`],
+      ['dark', `${id}-dark.svg`],
+    ] as const) {
+      const svg = await readFile(
+        new URL(`../assets/streets/icons/${file}`, import.meta.url),
+        'utf8',
+      );
+      const colors = streetsThemes[theme].tokens.color as Record<string, string>;
+      assert.match(
+        svg,
+        new RegExp(`r="8" fill="${colors[`poi.${pictogram.category}`]}"`, 'u'),
+        file,
+      );
+      assert.match(svg, new RegExp(`Maki ${pictogram.maki} pictogram, CC0-1.0`, 'u'), file);
+    }
+    assert.match(notices, new RegExp(`\`${pictogram.maki}\``, 'u'), pictogram.maki);
+  }
 
   const neutralShield = await readFile(
     new URL('../assets/streets/icons/road-shield-rectangle-neutral.svg', import.meta.url),
@@ -355,6 +371,7 @@ test('imports and compiles all packaged official maps against public Core APIs',
               'soundings-buoy-starboard', 'soundings-harbor', 'soundings-light-flare',
               'soundings-lighthouse', 'soundings-paper-grain', 'soundings-rock-awash',
               'soundings-water-dots', 'soundings-wreck',
+              ...${JSON.stringify(streetsPoiImageIds)},
               ],
             sprite: '/tileflow/test/official/sprite',
           },

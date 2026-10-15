@@ -810,11 +810,6 @@ const markerSymbolStyleSchema = symbolStyleSchema
   .strict();
 const poiCategoryStyleSchema = markerSymbolStyleSchema
   .omit({priority: true, priorityOrder: true})
-  .extend({
-    density: z
-      .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
-      .optional(),
-  })
   .strict();
 
 const renderScalarSchema = z.union([z.boolean(), z.number().finite(), z.string()]);
@@ -1418,7 +1413,13 @@ const poiModuleSchema = z
     placement: z
       .object({
         coupleIconAndLabel: z.boolean().optional(),
+        iconOnlyTypes: z
+          .array(z.string().regex(/^[a-z0-9]+(?:_[a-z0-9]+)*$/u, 'Expected a World POI type'))
+          .max(64)
+          .optional(),
         iconPadding: z.number().finite().min(0).optional(),
+        order: z.enum(['categories', 'importance']).optional(),
+        prominentRank: z.number().int().min(0).max(5).optional(),
         textPadding: z.number().finite().min(0).optional(),
       })
       .strict()
@@ -1664,6 +1665,7 @@ const fieldBindingsSchema = z
     markings: z.string().trim().min(1),
     minHeight: z.string().trim().min(1),
     minZoom: z.string().trim().min(1),
+    mode: z.string().trim().min(1),
     mtbScale: z.string().trim().min(1),
     name: z.string().trim().min(1),
     nameEnglish: z.string().trim().min(1),

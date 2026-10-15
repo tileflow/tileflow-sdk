@@ -123,14 +123,21 @@ test('POI compilation deduplicates canonical categories and honors remapped fiel
       {...context, data},
     ),
   );
-  const poiLayers = style.layers.filter((layer) => layer.id.startsWith('tileflow-poi-'));
-  const transport = poiLayers.find((layer) => layer.id === 'tileflow-poi-transport-label');
+  const poiLayers = style.layers.filter((layer) => layer.id.startsWith('tileflow-poi'));
+  const transport = poiLayers.find((layer) => layer.id === 'tileflow-poi-label');
   const serialized = JSON.stringify(poiLayers);
 
   assert.deepEqual(
     poiLayers.map((layer) => layer.id),
-    ['tileflow-poi-food-drink-label', 'tileflow-poi-transport-label'],
+    ['tileflow-poi-label'],
   );
+  assert.deepEqual((transport?.filter as unknown[])[1], [
+    'match',
+    ['get', 'poi_category'],
+    ['food-drink', 'transport'],
+    true,
+    false,
+  ]);
   assert.equal(new Set(poiLayers.map((layer) => layer.id)).size, poiLayers.length);
   assert.equal(transport?.minzoom, 20);
   assert.match(JSON.stringify(transport?.filter), /poi_category/);

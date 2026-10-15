@@ -1,4 +1,5 @@
 import {defineTheme, token} from '@tileflow/core';
+import {streetsPoiImageTokens} from './streets-poi';
 
 // Tileflow-owned semantic colors, calibrated from rendered Mapbox Standard
 // default/day and default/night references on 2026-08-27. Standard is evergreen;
@@ -313,19 +314,6 @@ const streetsFonts = {
 } as const;
 
 const streetsImages = {
-  'poi.arts-entertainment': 'culture',
-  'poi.education': 'education',
-  'poi.food-drink': 'food',
-  'poi.landmark': 'culture',
-  'poi.lodging': 'lodging',
-  'poi.medical': 'health',
-  'poi.park-nature': 'services',
-  'poi.public-services': 'services',
-  'poi.religion': 'culture',
-  'poi.retail': 'shopping',
-  'poi.sport-leisure': 'culture',
-  'poi.transport': 'major-transit',
-  'poi.visitor-amenity': 'services',
   'roads.crosswalk': 'crosswalk',
   'roads.oneway': 'oneway',
   'roads.shield.circleNeutral': 'road-shield-circle-neutral',
@@ -347,7 +335,7 @@ export const streetsThemes = Object.freeze({
       color: streetsLightColors,
       number: {},
       font: streetsFonts,
-      image: streetsImages,
+      image: {...streetsImages, ...streetsPoiImageTokens('light')},
     },
     typography: {
       font: token.font('default'),
@@ -373,6 +361,7 @@ export const streetsThemes = Object.freeze({
       font: streetsFonts,
       image: {
         ...streetsImages,
+        ...streetsPoiImageTokens('dark'),
         'roads.sidewalkPattern': 'sidewalk-dot-dark',
       },
     },

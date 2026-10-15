@@ -70,6 +70,8 @@ const variants = [
         density: 5,
         icons: true,
         labels: true,
+        // Only food and drink keeps its icons upright, a layer-wide property.
+        placement: {order: 'categories'},
         styles: {
           'food-drink': {
             icon: {
@@ -161,7 +163,7 @@ test('disabled domains are deliberately absent rather than silently replaced', (
     false,
   );
   assert.equal(
-    style.layers.some((layer) => layer.id.startsWith('tileflow-poi-')),
+    style.layers.some((layer) => layer.id.startsWith('tileflow-poi')),
     false,
   );
   assert.equal(

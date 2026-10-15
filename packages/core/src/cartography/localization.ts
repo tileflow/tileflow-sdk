@@ -7,6 +7,16 @@ export function labelField(language: TileflowLabelLanguage, context: TileflowDom
   return expression<string>(labelFieldExpression(language, context));
 }
 
+/** The source fields a label can take its name from, in the order the label prefers them. */
+export function labelNameFields(
+  language: TileflowLabelLanguage,
+  context: TileflowDomainCompileContext,
+): string[] {
+  return labelFieldExpression(language, context)
+    .slice(1)
+    .map((entry) => (entry as readonly [string, string])[1]);
+}
+
 export function labelFieldExpression(
   language: TileflowLabelLanguage,
   context: TileflowDomainCompileContext,

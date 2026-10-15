@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>Parking (night)</title>
+  <desc>Tileflow POI disc with a Maki parking pictogram, CC0-1.0.</desc>
+  <circle cx="12" cy="12" r="9.5" fill="#252839"/>
+  <circle cx="12" cy="12" r="8" fill="#8F9098"/>
+  <path
+    fill="#252839"
+    transform="translate(6.375 6.375) scale(.75)"
+    d="M4 2v11h2V9h2.5a3.5 3.5 0 1 0 0-7H4Zm2 5V4h2.5a1.5 1.5 0 1 1 0 3H6Z"
+  />
+</svg>

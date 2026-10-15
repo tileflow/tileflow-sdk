@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>Lodging (night)</title>
+  <desc>Tileflow POI disc with a Maki lodging pictogram, CC0-1.0.</desc>
+  <circle cx="12" cy="12" r="9.5" fill="#252839"/>
+  <circle cx="12" cy="12" r="8" fill="#AA94DA"/>
+  <path
+    fill="#252839"
+    transform="translate(6.375 6.375) scale(.75)"
+    d="M.5 2.5A.5.5 0 0 0 0 3v9.5a.5.5 0 0 0 1 0V11h13v1.5a.5.5 0 0 0 1 0v-2a.5.5 0 0 0-.5-.5H1V3a.5.5 0 0 0-.5-.5ZM3.5 3A1.5 1.5 0 1 0 5 4.5 1.5 1.5 0 0 0 3.5 3ZM7 4C5.5 4 5.5 5.5 5.5 5.5V7h-3a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5H15V6.5C15 4 12.5 4 12.5 4H7Z"
+  />
+</svg>

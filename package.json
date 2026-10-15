@@ -63,7 +63,7 @@
     "globals": "^17.9.0",
     "prettier": "^3.9.9",
     "prettier-plugin-svelte": "^3.5.2",
-    "semver": "7.8.0",
+    "semver": "7.8.5",
     "tsup": "^8.5.1",
     "tsx": "^4.23.12",
     "turbo": "^2.11.7",

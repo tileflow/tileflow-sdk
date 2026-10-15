@@ -46,10 +46,10 @@ export type TileflowEffectiveFontSourceIdentity = {
   weight: '100' | '200' | '300' | '400' | '500' | '600' | '700' | '800' | '900';
 };
 
-/** One effective 3D model file a map declares, near or far. */
+/** One effective 3D model file a map declares: a level of detail, near, mid or far. */
 export type TileflowEffectiveModelSourceIdentity = {
   id: string;
-  level: 'far' | 'near';
+  level: 'far' | 'mid' | 'near';
   sha256: string;
 };
 
@@ -423,8 +423,8 @@ function normalizeSourceAssets(
   const models = [...(input.models ?? [])]
     .map((model) => {
       assertSha256(model.sha256, `model ${model.id}`);
-      if (model.level !== 'near' && model.level !== 'far')
-        throw new Error(`Tileflow model ${model.id} is near or far.`);
+      if (model.level !== 'near' && model.level !== 'mid' && model.level !== 'far')
+        throw new Error(`Tileflow model ${model.id} is near, mid or far.`);
       return {id: model.id, level: model.level, sha256: model.sha256};
     })
     .sort((left, right) =>

@@ -1,0 +1,527 @@
+// The building models in a map's 3D city, for Tileflow's 3D buildings renderer: the models the map
+// places itself, and Tileflow's landmarks, which arrive in tiles of their own as other web maps'
+// batched models do. It chooses which stand near the camera, downloads their files once and keeps
+// them while they are near, uploads their buffers, picks the level of detail each draws at, and
+// gives the renderer the footprints it leaves to them. The map's own models come first: a landmark
+// with the same id as one of them, or whose footprint meets one's, is not drawn. A model or tile
+// that fails to load leaves the map's own buildings standing.
+import type {TileflowBuildingModelPlacement} from './buildings-3d-design';
+import {cameraTileAt} from './camera-tiles-browser';
+import {decodeTileflowModels} from './models-3d-file';
+import {
+  type TileflowModelBytes,
+  tileflowModelFootprintInTile,
+  tileflowModelVertexBytes,
+  tileflowRingsOverlap,
+} from './models-3d-model';
+import {tileflowModelAttributes} from './models-3d-shaders';
+import type {TileflowTileRequestTransform} from './tile-reader';
+
+const earth = 40_075_016.686;
+// Models are kept while near; beyond this many, the farthest are let go.
+const keptModels = 12;
+// Landmark tiles are kept while near; beyond this many, the least recently wanted are let go.
+const keptLandmarkTiles = 9;
+// A model is wanted when its origin lies within this many tiles of a tile round the camera.
+const reachTiles = 1;
+// Levels of detail by distance from the camera's centre, in metres.
+const levelDistances = [900, 2600];
+// A failed download is tried again after this long, in milliseconds; a landmarks tileset that
+// cannot be read, after longer.
+const retryAfter = 30_000;
+const indexRetryAfter = 300_000;
+
+export type TileflowPlacedModel = {
+  readonly placement: TileflowBuildingModelPlacement;
+  readonly key: string;
+  readonly model: TileflowModelBytes;
+  /** Whether it is one of Tileflow's landmarks rather than one the map places. */
+  readonly landmark: boolean;
+  gl?: {vao: WebGLVertexArrayObject; vbo: WebGLBuffer; ibo: WebGLBuffer; type: number}[];
+  used: number;
+};
+
+export type TileflowPlacedModels = {
+  /**
+   * Chooses the placements, and the landmarks of the tileset at `landmarks`, near the tiles round
+   * the camera (`tiles`, at `zoom`), and downloads the missing ones.
+   */
+  update(
+    placements: readonly TileflowBuildingModelPlacement[],
+    landmarks: string | undefined,
+    tiles: readonly Readonly<{x: number; y: number}>[],
+    zoom: number,
+  ): void;
+  /** The footprints standing in a tile, as rings of its tile units, or undefined when none does. */
+  masksIn(
+    tile: Readonly<{x: number; y: number; z: number}>,
+    extent: number,
+  ): number[][] | undefined;
+  /** The models loaded and wanted now. */
+  shown(): readonly TileflowPlacedModel[];
+  /** Uploads loaded models to the GPU. */
+  upload(context: WebGL2RenderingContext): void;
+  /** The level of detail to draw a model at, from the camera's centre. */
+  levelOf(model: TileflowPlacedModel, centre: Readonly<{lat: number; lng: number}>): number;
+  /** Changes whenever the models shown change. */
+  key(): string;
+  /** Lets go of every buffer. */
+  release(context: WebGL2RenderingContext): void;
+  dispose(): void;
+};
+
+/** A landmarks tileset as its TileJSON describes it. */
+type LandmarksIndex = Readonly<{
+  url: string;
+  template: string;
+  zoom: number;
+  available: Set<string>;
+}>;
+
+export function createTileflowPlacedModels(
+  options: Readonly<{
+    transformRequest?: TileflowTileRequestTransform;
+    /** Called with the tiles (at `zoom`) whose masks changed, and when a model is ready to draw. */
+    changed(tiles: readonly Readonly<{x: number; y: number}>[], zoom: number): void;
+  }>,
+): TileflowPlacedModels {
+  const loaded = new Map<string, TileflowPlacedModel>();
+  const loading = new Map<string, AbortController>();
+  const failed = new Map<string, number>();
+  let wanted = new Set<string>();
+  // Tileflow's landmarks: the tileset's index, and its tiles near the camera.
+  let index: LandmarksIndex | undefined;
+  let indexLoad: {url: string; controller: AbortController} | undefined;
+  let indexFailed: {url: string; until: number} | undefined;
+  const landmarkTiles = new Map<string, {entries: TileflowPlacedModel[]; used: number}>();
+  const tileLoading = new Map<string, AbortController>();
+  const tileFailed = new Map<string, number>();
+  let wantedTiles = new Set<string>();
+  // What stands now, the map's own models first.
+  let active: TileflowPlacedModel[] = [];
+  let dirty = true;
+  let ownIds = new Set<string>();
+  let lastPlacements: readonly TileflowBuildingModelPlacement[] | undefined;
+  let disposed = false;
+  let version = 0;
+  let lastZoom = 15;
+  // Models let go of while their buffers are still on the GPU; the next upload deletes them.
+  const released: TileflowPlacedModel[] = [];
+
+  const keyOf = (placement: TileflowBuildingModelPlacement) =>
+    JSON.stringify([placement.url, placement.at, placement.heading]);
+
+  /** The tiles at `zoom` that a model's footprint reaches. */
+  function tilesOf(model: TileflowPlacedModel, zoom: number): {x: number; y: number}[] {
+    const [x, y] = cameraTileAt(model.placement.at[0], model.placement.at[1], zoom);
+    const metres = (earth * Math.cos((model.placement.at[1] * Math.PI) / 180)) / 2 ** zoom;
+    const [minX, minY, , maxX, maxY] = model.model.bounds;
+    const radius = Math.hypot(Math.max(-minX, maxX), Math.max(-minY, maxY)) / metres;
+    const out: {x: number; y: number}[] = [];
+    for (let tx = Math.floor(x - radius); tx <= Math.floor(x + radius); tx += 1)
+      for (let ty = Math.floor(y - radius); ty <= Math.floor(y + radius); ty += 1)
+        out.push({x: tx, y: ty});
+    return out;
+  }
+
+  /** Downloads a file through the layer's request transform. */
+  function download(url: string, signal: AbortSignal): Promise<Response> {
+    const request = options.transformRequest?.(url, 'Tile') ?? {url};
+    return fetch(request.url, {
+      signal,
+      ...(request.headers ? {headers: request.headers} : {}),
+      ...(request.credentials ? {credentials: request.credentials} : {}),
+    }).then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response;
+    });
+  }
+
+  /** Something arrived: what stands is worked out again on the next update. */
+  function arrived(): void {
+    dirty = true;
+    version += 1;
+    options.changed([], lastZoom);
+  }
+
+  function load(placement: TileflowBuildingModelPlacement, key: string): void {
+    const controller = new AbortController();
+    loading.set(key, controller);
+    download(placement.url, controller.signal)
+      .then(async (response) => decodeTileflowModels(await response.arrayBuffer()))
+      .then((models) => {
+        loading.delete(key);
+        if (disposed) return;
+        const model = models?.find((entry) => entry.id === placement.model) ?? models?.[0];
+        if (!model) throw new Error('not a Tileflow model');
+        loaded.set(key, {placement, key, model, landmark: false, used: performance.now()});
+        arrived();
+      })
+      .catch(() => {
+        loading.delete(key);
+        // A model that failed is tried again after a while; the buildings stay meanwhile.
+        failed.set(key, performance.now() + retryAfter);
+      });
+  }
+
+  function loadIndex(url: string): void {
+    const controller = new AbortController();
+    indexLoad = {url, controller};
+    download(url, controller.signal)
+      .then((response) => response.json())
+      .then((json: unknown) => {
+        if (indexLoad?.controller !== controller) return;
+        indexLoad = undefined;
+        if (disposed) return;
+        const read = readLandmarksIndex(json, url);
+        if (!read) throw new Error('not a Tileflow landmarks tileset');
+        index = read;
+        arrived();
+      })
+      .catch(() => {
+        if (indexLoad?.controller !== controller) return;
+        indexLoad = undefined;
+        indexFailed = {url, until: performance.now() + indexRetryAfter};
+      });
+  }
+
+  function loadTile(tileKey: string, x: number, y: number): void {
+    const source = index!;
+    const url = new URL(
+      source.template
+        .replaceAll('{z}', String(source.zoom))
+        .replaceAll('{x}', String(x))
+        .replaceAll('{y}', String(y)),
+      source.url,
+    ).href;
+    const controller = new AbortController();
+    tileLoading.set(tileKey, controller);
+    download(url, controller.signal)
+      .then(async (response) => decodeTileflowModels(await response.arrayBuffer()))
+      .then((models) => {
+        tileLoading.delete(tileKey);
+        if (disposed || index !== source) return;
+        if (!models) throw new Error('not a Tileflow landmarks tile');
+        const now = performance.now();
+        const entries: TileflowPlacedModel[] = [];
+        for (const model of models) {
+          if (!model.at) continue;
+          const placement = {model: model.id, url, at: model.at, heading: model.heading ?? 0};
+          entries.push({placement, key: `landmark:${model.id}`, model, landmark: true, used: now});
+        }
+        landmarkTiles.set(tileKey, {entries, used: now});
+        arrived();
+      })
+      .catch(() => {
+        tileLoading.delete(tileKey);
+        tileFailed.set(tileKey, performance.now() + retryAfter);
+      });
+  }
+
+  /** The landmark tiles near the camera's tiles that the tileset holds. */
+  function landmarkTilesNear(
+    tiles: readonly Readonly<{x: number; y: number}>[],
+    zoom: number,
+  ): Map<string, [number, number]> {
+    const near = new Map<string, [number, number]>();
+    if (!index || tiles.length === 0) return near;
+    const scale = 2 ** (index.zoom - zoom);
+    let [left, top, right, bottom] = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const tile of tiles) {
+      left = Math.min(left, Math.floor(tile.x * scale));
+      top = Math.min(top, Math.floor(tile.y * scale));
+      right = Math.max(right, Math.ceil((tile.x + 1) * scale) - 1);
+      bottom = Math.max(bottom, Math.ceil((tile.y + 1) * scale) - 1);
+    }
+    // A landmark reaches into the tiles beside its own.
+    for (let x = left - 1; x <= right + 1 && near.size < 64; x += 1)
+      for (let y = top - 1; y <= bottom + 1 && near.size < 64; y += 1) {
+        const key = `${x}/${y}`;
+        if (index.available.has(key)) near.set(key, [x, y]);
+      }
+    return near;
+  }
+
+  /** What stands: the map's own models wanted and loaded, then the landmarks they leave. */
+  function standing(): TileflowPlacedModel[] {
+    const own: TileflowPlacedModel[] = [];
+    for (const key of wanted) {
+      const entry = loaded.get(key);
+      if (entry) own.push(entry);
+    }
+    const out = [...own];
+    const seen = new Set<string>();
+    for (const tileKey of wantedTiles)
+      for (const entry of landmarkTiles.get(tileKey)?.entries ?? []) {
+        if (seen.has(entry.key) || ownIds.has(entry.placement.model)) continue;
+        seen.add(entry.key);
+        if (own.some((model) => footprintsMeet(entry, model))) continue;
+        out.push(entry);
+      }
+    return out;
+  }
+
+  return {
+    update(placements, landmarks, tiles, zoom) {
+      if (disposed) return;
+      lastZoom = zoom;
+      const near = new Set<string>();
+      const now = performance.now();
+      if (placements !== lastPlacements) {
+        lastPlacements = placements;
+        ownIds = new Set(placements.map((placement) => placement.model));
+        dirty = true;
+      }
+      if (tiles.length > 0) {
+        let [left, top, right, bottom] = [Infinity, Infinity, -Infinity, -Infinity];
+        for (const tile of tiles) {
+          left = Math.min(left, tile.x);
+          top = Math.min(top, tile.y);
+          right = Math.max(right, tile.x);
+          bottom = Math.max(bottom, tile.y);
+        }
+        for (const placement of placements) {
+          const [x, y] = cameraTileAt(placement.at[0], placement.at[1], zoom);
+          if (
+            x < left - reachTiles ||
+            x >= right + 1 + reachTiles ||
+            y < top - reachTiles ||
+            y >= bottom + 1 + reachTiles
+          )
+            continue;
+          const key = keyOf(placement);
+          near.add(key);
+          const entry = loaded.get(key);
+          if (entry) entry.used = now;
+          else if (!loading.has(key) && (failed.get(key) ?? 0) <= now) load(placement, key);
+        }
+      }
+      if (near.size !== wanted.size || [...near].some((key) => !wanted.has(key))) {
+        wanted = near;
+        dirty = true;
+      }
+      // Downloads no longer wanted stop; the farthest models beyond the kept few are let go.
+      for (const [key, controller] of loading)
+        if (!near.has(key)) {
+          controller.abort();
+          loading.delete(key);
+        }
+      const spare = [...loaded.values()]
+        .filter((entry) => !near.has(entry.key))
+        .sort((a, b) => b.used - a.used);
+      for (const entry of spare.slice(Math.max(0, keptModels - near.size))) {
+        loaded.delete(entry.key);
+        released.push(entry);
+        dirty = true;
+      }
+
+      // Tileflow's landmarks: the tileset's index once, then its tiles near the camera.
+      if (index && index.url !== landmarks) {
+        for (const tile of landmarkTiles.values()) released.push(...tile.entries);
+        landmarkTiles.clear();
+        for (const controller of tileLoading.values()) controller.abort();
+        tileLoading.clear();
+        tileFailed.clear();
+        index = undefined;
+        dirty = true;
+      }
+      if (indexLoad && indexLoad.url !== landmarks) {
+        indexLoad.controller.abort();
+        indexLoad = undefined;
+      }
+      if (
+        landmarks &&
+        !index &&
+        !indexLoad &&
+        (indexFailed?.url !== landmarks || indexFailed.until <= now)
+      )
+        loadIndex(landmarks);
+      const nearTiles = landmarkTilesNear(tiles, zoom);
+      for (const [tileKey, [x, y]] of nearTiles) {
+        const tile = landmarkTiles.get(tileKey);
+        if (tile) tile.used = now;
+        else if (!tileLoading.has(tileKey) && (tileFailed.get(tileKey) ?? 0) <= now)
+          loadTile(tileKey, x, y);
+      }
+      if (
+        nearTiles.size !== wantedTiles.size ||
+        [...nearTiles.keys()].some((key) => !wantedTiles.has(key))
+      ) {
+        wantedTiles = new Set(nearTiles.keys());
+        dirty = true;
+      }
+      for (const [tileKey, controller] of tileLoading)
+        if (!nearTiles.has(tileKey)) {
+          controller.abort();
+          tileLoading.delete(tileKey);
+        }
+      const spareTiles = [...landmarkTiles.entries()]
+        .filter(([tileKey]) => !nearTiles.has(tileKey))
+        .sort(([, a], [, b]) => b.used - a.used);
+      for (const [tileKey, tile] of spareTiles.slice(
+        Math.max(0, keptLandmarkTiles - nearTiles.size),
+      )) {
+        landmarkTiles.delete(tileKey);
+        released.push(...tile.entries);
+      }
+
+      if (!dirty) return;
+      dirty = false;
+      const next = standing();
+      const before = new Map(active.map((entry) => [entry, true]));
+      const changed: {x: number; y: number}[] = [];
+      for (const entry of next) if (!before.delete(entry)) changed.push(...tilesOf(entry, zoom));
+      for (const entry of before.keys()) changed.push(...tilesOf(entry, zoom));
+      active = next;
+      if (changed.length > 0) {
+        version += 1;
+        options.changed(changed, zoom);
+      }
+    },
+    masksIn(tile, extent) {
+      let masks: number[][] | undefined;
+      for (const entry of active) {
+        if (entry.model.footprint.length === 0) continue;
+        const rings = tileflowModelFootprintInTile(
+          entry.model.footprint,
+          entry.placement,
+          {x: tile.x, y: tile.y, zoom: tile.z},
+          extent,
+        );
+        const inside = rings.some((ring) => {
+          let [left, top, right, bottom] = [Infinity, Infinity, -Infinity, -Infinity];
+          for (let at = 0; at + 1 < ring.length; at += 2) {
+            left = Math.min(left, ring[at]!);
+            right = Math.max(right, ring[at]!);
+            top = Math.min(top, ring[at + 1]!);
+            bottom = Math.max(bottom, ring[at + 1]!);
+          }
+          return right >= 0 && bottom >= 0 && left <= extent && top <= extent;
+        });
+        if (inside) (masks ??= []).push(...rings);
+      }
+      return masks;
+    },
+    shown: () => active,
+    upload(context) {
+      for (const entry of released.splice(0)) releaseBuffers(context, entry);
+      for (const entry of active) {
+        if (entry.gl) continue;
+        entry.gl = entry.model.levels.map((level) => {
+          const vao = context.createVertexArray()!;
+          context.bindVertexArray(vao);
+          const vbo = context.createBuffer()!;
+          context.bindBuffer(context.ARRAY_BUFFER, vbo);
+          context.bufferData(context.ARRAY_BUFFER, level.vertices, context.STATIC_DRAW);
+          for (const [
+            index,
+            [, size, type, normalised, offset],
+          ] of tileflowModelAttributes.entries()) {
+            context.enableVertexAttribArray(index);
+            context.vertexAttribPointer(
+              index,
+              size,
+              context[type],
+              normalised,
+              tileflowModelVertexBytes,
+              offset,
+            );
+          }
+          const ibo = context.createBuffer()!;
+          context.bindBuffer(context.ELEMENT_ARRAY_BUFFER, ibo);
+          context.bufferData(context.ELEMENT_ARRAY_BUFFER, level.indices, context.STATIC_DRAW);
+          context.bindVertexArray(null);
+          return {
+            vao,
+            vbo,
+            ibo,
+            type:
+              level.indices instanceof Uint32Array ? context.UNSIGNED_INT : context.UNSIGNED_SHORT,
+          };
+        });
+        version += 1;
+      }
+    },
+    levelOf(model, centre) {
+      const [longitude, latitude] = model.placement.at;
+      const north = (latitude - centre.lat) * 111_320;
+      const east = (longitude - centre.lng) * 111_320 * Math.cos((centre.lat * Math.PI) / 180);
+      const distance = Math.hypot(north, east);
+      const level = levelDistances.findIndex((limit) => distance < limit);
+      return Math.min(model.model.levels.length - 1, level < 0 ? levelDistances.length : level);
+    },
+    key: () => String(version),
+    release(context) {
+      const all = [...loaded.values(), ...released.splice(0)];
+      for (const tile of landmarkTiles.values()) all.push(...tile.entries);
+      for (const entry of all) releaseBuffers(context, entry);
+    },
+    dispose() {
+      disposed = true;
+      for (const controller of loading.values()) controller.abort();
+      for (const controller of tileLoading.values()) controller.abort();
+      indexLoad?.controller.abort();
+      loading.clear();
+      tileLoading.clear();
+      loaded.clear();
+      landmarkTiles.clear();
+      active = [];
+    },
+  };
+}
+
+/**
+ * Reads a landmarks tileset's TileJSON: one tile template at one zoom, and the tiles it holds.
+ * Undefined when it is not one.
+ */
+export function readLandmarksIndex(json: unknown, url: string): LandmarksIndex | undefined {
+  if (typeof json !== 'object' || json === null) return undefined;
+  const value = json as Record<string, unknown>;
+  const template = Array.isArray(value.tiles) ? value.tiles[0] : undefined;
+  const zoom = value.maxzoom;
+  if (
+    value.format !== 'tileflow-landmarks-v1' ||
+    typeof template !== 'string' ||
+    !template.includes('{x}') ||
+    !template.includes('{y}') ||
+    typeof zoom !== 'number' ||
+    !Number.isInteger(zoom) ||
+    zoom < 0 ||
+    zoom > 22 ||
+    value.minzoom !== zoom ||
+    !Array.isArray(value.available)
+  )
+    return undefined;
+  const available = new Set<string>();
+  for (const tile of value.available) {
+    if (!Array.isArray(tile) || tile.length !== 2) return undefined;
+    const [x, y] = tile as unknown[];
+    if (!Number.isInteger(x) || !Number.isInteger(y)) return undefined;
+    available.add(`${x as number}/${y as number}`);
+  }
+  return {url, template, zoom, available};
+}
+
+/** Whether a landmark's footprint meets a model's, both laid in the landmark's zoom-14 tile. */
+function footprintsMeet(landmark: TileflowPlacedModel, model: TileflowPlacedModel): boolean {
+  if (landmark.model.footprint.length === 0 || model.model.footprint.length === 0) return false;
+  const [x, y] = cameraTileAt(landmark.placement.at[0], landmark.placement.at[1], 14);
+  const tile = {x: Math.floor(x), y: Math.floor(y), zoom: 14};
+  const ours = tileflowModelFootprintInTile(
+    landmark.model.footprint,
+    landmark.placement,
+    tile,
+    8192,
+  );
+  const theirs = tileflowModelFootprintInTile(model.model.footprint, model.placement, tile, 8192);
+  return tileflowRingsOverlap(ours, theirs, 0);
+}
+
+function releaseBuffers(context: WebGL2RenderingContext, entry: TileflowPlacedModel): void {
+  for (const level of entry.gl ?? []) {
+    context.deleteVertexArray(level.vao);
+    context.deleteBuffer(level.vbo);
+    context.deleteBuffer(level.ibo);
+  }
+  entry.gl = undefined;
+}

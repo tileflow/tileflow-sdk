@@ -359,7 +359,13 @@ test('the renderer puts its layer on the map, grows without a renderer and leave
   assert.equal(buildings.scale, 1);
   await assert.rejects(buildings.grow(Number.NaN), RangeError);
   await assert.rejects(buildings.grow(1, {transition: {duration: -1}}), RangeError);
-  assert.deepEqual(buildings.stats, {declared: false, tiles: 0, buildings: 0, vertices: 0});
+  assert.deepEqual(buildings.stats, {
+    declared: false,
+    tiles: 0,
+    buildings: 0,
+    vertices: 0,
+    models: 0,
+  });
   buildings.dispose();
   assert.equal(map.layers.has(tileflowBuildings3DLayerId), false);
   for (const set of map.listeners.values()) assert.equal(set.size, 0);

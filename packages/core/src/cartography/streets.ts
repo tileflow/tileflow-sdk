@@ -1,14 +1,12 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import {tileflowAtmosphereMetadataKey} from '../atmosphere';
 import {compileTileflowSky, resolveTileflowAtmosphere} from '../atmosphere-compile';
+import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
 import {resolveTileflowData} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
 import {resolveMarine} from '../marine';
 import {tileflowVegetationDescription} from '../modules/vegetation/compiler';
-import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
-import {tileflowStreetLightsMetadata, tileflowStreetLightsMetadataKey} from '../street-lights';
-import {tileflowBuildings3DDesignOf, tileflowStreetLightsDesignOf} from './scene-3d-metadata';
 import {
   insertTileflowOverlays,
   resolveTileflowHostedSources,
@@ -20,6 +18,7 @@ import {
   tileflowRouteMetadata,
   tileflowRouteMetadataKey,
 } from '../route-inks';
+import {tileflowStreetLightsMetadata, tileflowStreetLightsMetadataKey} from '../street-lights';
 import {tileflowSunMetadata, tileflowSunMetadataKey} from '../sun';
 import {compileTerrainContributions, resolveTerrain} from '../terrain';
 import {parseTileflowLineBackgroundFontStack} from '../text-background';
@@ -90,6 +89,7 @@ import {
   compileRenderStacks,
   type TileflowRenderStackModule,
 } from './render-stack';
+import {tileflowBuildings3DDesignOf, tileflowStreetLightsDesignOf} from './scene-3d-metadata';
 import {bindSemanticReferences, createSemanticDataView} from './semantic-bindings';
 import {tileflowSemanticCompilerIdentity} from './semantic-compiler';
 
@@ -100,8 +100,10 @@ export type TileflowPreparedMapAssets = {
     ids: readonly string[];
     sprite: string;
   };
-  /** The map's own 3D models by id, prepared from its `models` directories. */
+  /** The map's own 3D tree models by id, prepared from its `models` directories. */
   models?: Readonly<Record<string, TileflowTreeModel>>;
+  /** Where each of the map's own building models is served, by id. */
+  buildingModels?: Readonly<Record<string, string>>;
 };
 
 export type TileflowSemanticCompileOptions = {
@@ -473,6 +475,8 @@ function compileSemanticStyleInternal(
     modules.buildings,
     context as Parameters<typeof tileflowBuildings3DDesignOf>[1],
     layers as unknown as Parameters<typeof tileflowBuildings3DDesignOf>[2],
+    options.preparedAssets?.buildingModels,
+    data.kind === 'tileflow-world' ? `${apiBaseUrl}/landmarks/tiles.json` : undefined,
   );
   const streetLights = tileflowStreetLightsDesignOf(
     modules.roads,

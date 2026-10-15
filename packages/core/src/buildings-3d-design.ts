@@ -1,8 +1,10 @@
 // How a compiled map's 3D buildings look, as the buildings module describes them for Core's 3D
 // buildings renderer: the colour of each building (the map's own 3D building colour, else its
 // roofs'), the strength and colour of roof outlines, the night light, the invented night windows,
-// and whether shadows and contact shadow fall. The compiler publishes it, resolved for one theme, in
-// the style's metadata; the renderer reads it for every theme on screen. It has no DOM dependency.
+// whether shadows and contact shadow fall, the building models the map places in its city with the
+// colours of their parts, and the tileset of Tileflow's landmarks it shows. The compiler publishes it, resolved for one theme, in the style's
+// metadata; the renderer reads it for every theme on screen. It has no DOM dependency.
+import {type TileflowModelPart, tileflowModelParts} from './models-3d-model';
 
 /** The style metadata key under which a compiled map describes its 3D buildings. */
 export const tileflowBuildingsMetadataKey = 'tileflow:buildings';
@@ -28,6 +30,27 @@ export type TileflowBuildings3DDesign = Readonly<{
   /** Shadows from the sun, and contact shadow at the foot of the walls. */
   shadows: boolean;
   occlusion: boolean;
+  /** Building models the map places in its city, each replacing the buildings under it. */
+  models?: readonly TileflowBuildingModelPlacement[];
+  /** The colours of the models' parts; a part without one takes it from the building colour. */
+  modelColors?: Readonly<Partial<Record<TileflowModelPart, string>>>;
+  /**
+   * Tileflow's landmarks, drawn as models in place of the buildings under them: the TileJSON of
+   * their tileset. Without it, the map shows none.
+   */
+  landmarks?: Readonly<{url: string}>;
+}>;
+
+/** A building model standing in the map's city. */
+export type TileflowBuildingModelPlacement = Readonly<{
+  /** The model's id, its file's name in the map's `models` directories. */
+  model: string;
+  /** Where the prepared model file is served, absolute or relative to the page. */
+  url: string;
+  /** Longitude and latitude of the model's origin, where it stands on the ground. */
+  at: readonly [number, number];
+  /** Degrees clockwise from north that the model's own north is turned to. */
+  heading: number;
 }>;
 
 /** The 3D buildings of a style compiled without this description. */
@@ -76,7 +99,53 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
     windows: value.windows === true,
     shadows: value.shadows !== false,
     occlusion: value.occlusion !== false,
+    ...modelsOf(value.models),
+    ...modelColorsOf(value.modelColors),
+    ...landmarksOf(value.landmarks),
   };
+}
+
+const modelId = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+/** The most models one map places. */
+export const tileflowBuildingModelPlacementLimit = 256;
+
+/** The placements a design names, skipping any it cannot read. */
+function modelsOf(value: unknown): {models?: readonly TileflowBuildingModelPlacement[]} {
+  if (!Array.isArray(value)) return {};
+  const models: TileflowBuildingModelPlacement[] = [];
+  for (const entry of value.slice(0, tileflowBuildingModelPlacementLimit)) {
+    if (!isRecord(entry)) continue;
+    const {model, url, at, heading} = entry;
+    if (typeof model !== 'string' || !modelId.test(model) || typeof url !== 'string' || !url)
+      continue;
+    if (!Array.isArray(at) || at.length !== 2) continue;
+    const [longitude, latitude] = at as unknown[];
+    if (
+      typeof longitude !== 'number' ||
+      typeof latitude !== 'number' ||
+      !(longitude >= -180 && longitude <= 180) ||
+      !(latitude >= -85 && latitude <= 85)
+    )
+      continue;
+    const turn = typeof heading === 'number' && Number.isFinite(heading) ? heading : 0;
+    models.push({model, url, at: [longitude, latitude], heading: ((turn % 360) + 360) % 360});
+  }
+  return models.length > 0 ? {models} : {};
+}
+
+function modelColorsOf(value: unknown): {
+  modelColors?: Readonly<Partial<Record<TileflowModelPart, string>>>;
+} {
+  if (!isRecord(value)) return {};
+  const colors: Partial<Record<TileflowModelPart, string>> = {};
+  for (const part of Object.keys(tileflowModelParts) as TileflowModelPart[])
+    if (typeof value[part] === 'string') colors[part] = value[part];
+  return Object.keys(colors).length > 0 ? {modelColors: colors} : {};
+}
+
+function landmarksOf(value: unknown): {landmarks?: Readonly<{url: string}>} {
+  if (!isRecord(value) || typeof value.url !== 'string' || !value.url) return {};
+  return {landmarks: {url: value.url}};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

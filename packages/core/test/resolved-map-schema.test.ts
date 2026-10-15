@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildings,
   color,
   defineTheme,
   expr,
@@ -12,7 +13,6 @@ import {
   parseTileflowMap as parseMap,
   poi,
   renderPass,
-  buildings,
   roads,
   tileflowBandPlacements,
   tileflowLandformClasses,
@@ -449,6 +449,26 @@ test('accepts detailed cartographic module styles and their optional data bindin
   assert.throws(
     () => parseDesign({modules: {buildings: buildings({threeDimensional: {edges: 2}})}}),
     /edges/,
+  );
+  // Tileflow's landmarks switch off, or come from a tileset served over HTTPS or locally.
+  for (const landmarks of [
+    false,
+    {url: 'https://landmarks.example.test/tiles.json'},
+    {url: 'http://localhost:8787/landmarks/tiles.json'},
+  ])
+    assert.doesNotThrow(() =>
+      parseDesign({modules: {buildings: buildings({threeDimensional: {landmarks}})}}),
+    );
+  assert.throws(
+    () =>
+      parseDesign({
+        modules: {
+          buildings: buildings({
+            threeDimensional: {landmarks: {url: 'http://landmarks.example.test/tiles.json'}},
+          }),
+        },
+      }),
+    /HTTPS address, or a local one/,
   );
   assert.throws(
     () =>

@@ -1,8 +1,12 @@
 // What a compiled style tells Core's 3D renderers about the map's 3D buildings and street lights:
 // their design from the buildings and roads modules, with the data's references still semantic
-// (the caller binds them with the rest of the style), and the buildings' colour as the map's own
-// final 3D building colour, else its roofs'.
-import type {TileflowBuildings3DDesign} from '../buildings-3d-design';
+// (the caller binds them with the rest of the style), the buildings' colour as the map's own final
+// 3D building colour, else its roofs', and the tileset of Tileflow's landmarks the map shows.
+import type {
+  TileflowBuildingModelPlacement,
+  TileflowBuildings3DDesign,
+} from '../buildings-3d-design';
+import type {TileflowModelPart} from '../models-3d-model';
 import type {TileflowStreetLightsDesign} from '../street-lights';
 import {tileflowDefaultStreetLightsDesign} from '../street-lights';
 import type {TileflowDomainCompileContext} from './context';
@@ -22,6 +26,10 @@ export function tileflowBuildings3DDesignOf(
   module: unknown,
   context: TileflowDomainCompileContext,
   layers: readonly Layer[],
+  /** Where each of the map's prepared building models is served, by id. */
+  buildingModels?: Readonly<Record<string, string>>,
+  /** The TileJSON of Tileflow's landmarks, when the map's data is Tileflow World. */
+  tileflowLandmarks?: string,
 ): TileflowBuildings3DDesign | undefined {
   const config = (isRecord(module) ? module : {}) as {
     enabled?: boolean;
@@ -56,7 +64,75 @@ export function tileflowBuildings3DDesignOf(
     windows: style.windows === true,
     shadows: style.shadows !== false,
     occlusion: style.occlusion !== false,
+    ...placedModels(style.models, buildingModels),
+    ...modelColours(style.modelColors),
+    ...landmarksOf(style.landmarks, tileflowLandmarks),
   };
+}
+
+/**
+ * The landmarks a map shows: Tileflow's with Tileflow World buildings unless it switches them
+ * off, or the tileset it names.
+ */
+function landmarksOf(
+  value: unknown,
+  tileflowLandmarks: string | undefined,
+): {landmarks?: {url: string}} {
+  if (value === false) return {};
+  if (isRecord(value) && typeof value.url === 'string') return {landmarks: {url: value.url}};
+  return tileflowLandmarks ? {landmarks: {url: tileflowLandmarks}} : {};
+}
+
+/** The models a map places, each with where its prepared file is served. */
+function placedModels(
+  value: unknown,
+  served: Readonly<Record<string, string>> | undefined,
+): {models?: TileflowBuildingModelPlacement[]} {
+  if (!Array.isArray(value) || value.length === 0) return {};
+  const placements = value as {
+    model: string;
+    at: [number, number];
+    heading?: number;
+    url?: string;
+  }[];
+  // A placement that names where its prepared file is served needs no model of the map's own.
+  const missing = [
+    ...new Set(
+      placements
+        .filter((entry) => !entry.url)
+        .map((entry) => entry.model)
+        .filter((id) => !served?.[id]),
+    ),
+  ].sort();
+  if (missing.length > 0)
+    throw new Error(
+      `The buildings module places missing 3D models: ${missing.join(', ')}. Add ${missing
+        .map((id) => `${id}.glb`)
+        .join(
+          ', ',
+        )} to a map.models directory, with materials named surface, secondary, glass, accent or roof, and run the Node build so the directories are prepared.`,
+    );
+  return {
+    models: placements.map((entry) => ({
+      model: entry.model,
+      url: entry.url ?? served![entry.model]!,
+      at: [entry.at[0], entry.at[1]] as const,
+      heading: (((entry.heading ?? 0) % 360) + 360) % 360,
+    })),
+  };
+}
+
+/** The colours of the models' parts, resolved for the theme. */
+function modelColours(value: unknown): {
+  modelColors?: Partial<Record<TileflowModelPart, string>>;
+} {
+  if (!isRecord(value)) return {};
+  const colours: Partial<Record<TileflowModelPart, string>> = {};
+  for (const [part, colour] of Object.entries(value)) {
+    const resolved = colour === undefined ? undefined : toMapLibreStyleValue(colour as never);
+    if (typeof resolved === 'string') colours[part as TileflowModelPart] = resolved;
+  }
+  return Object.keys(colours).length > 0 ? {modelColors: colours} : {};
 }
 
 /**

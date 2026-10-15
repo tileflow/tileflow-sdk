@@ -28,6 +28,7 @@ import {
   type TileflowIconPackageFileName,
   tileflowIconPackageLimits,
   type TileflowIconPackageManifest,
+  tileflowModelContentType,
 } from '@tileflow/core';
 import type {
   TileflowBuildCatalog,
@@ -660,7 +661,7 @@ export async function prepareTileflowCatalogIcons(
     }
   }
 
-  // Each map's own 3D models travel in its style, so they need no files of their own.
+  // Each map's own tree models travel in its style; its building models are files beside it.
   const mapModelSources: Record<string, readonly TileflowEffectiveModelSourceIdentity[]> = {};
   const modelWatchPaths: string[] = [];
   for (const [mapName, map] of Object.entries(project.maps)) {
@@ -671,7 +672,18 @@ export async function prepareTileflowCatalogIcons(
       cwd: options.cwd,
       target: 'local',
     });
-    mapAssets[mapName] = {...mapAssets[mapName], models: models.models};
+    // Building models are files of their own beside the style, downloaded only near the camera.
+    const buildingModels: Record<string, string> = {};
+    for (const [id, model] of Object.entries(models.buildings)) {
+      const fileName = `models/${mapName}/${model.fileName}`;
+      assets.push({contentType: tileflowModelContentType, fileName, source: model.bytes});
+      buildingModels[id] = joinUrl(options.assetBaseUrl, fileName);
+    }
+    mapAssets[mapName] = {
+      ...mapAssets[mapName],
+      models: models.models,
+      ...(Object.keys(buildingModels).length > 0 ? {buildingModels} : {}),
+    };
     mapModelSources[mapName] = models.identities;
     modelWatchPaths.push(...models.watchPaths);
   }

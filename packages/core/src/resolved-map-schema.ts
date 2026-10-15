@@ -1166,6 +1166,61 @@ const buildingsModuleSchema = z
         occlusion: z.boolean().optional(),
         shadows: z.boolean().optional(),
         windows: z.boolean().optional(),
+        models: z
+          .array(
+            z
+              .object({
+                model: z
+                  .string()
+                  .max(64)
+                  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
+                at: z.tuple([z.number().min(-180).max(180), z.number().min(-85).max(85)]),
+                heading: z.number().finite().optional(),
+                url: z
+                  .url()
+                  .max(2048)
+                  .refine((value) => new URL(value).protocol === 'https:', {
+                    message: 'A model served elsewhere has an HTTPS address.',
+                  })
+                  .optional(),
+              })
+              .strict(),
+          )
+          .max(256)
+          .optional(),
+        modelColors: z
+          .object({
+            surface: themeColorValueSchema.optional(),
+            secondary: themeColorValueSchema.optional(),
+            glass: themeColorValueSchema.optional(),
+            accent: themeColorValueSchema.optional(),
+            roof: themeColorValueSchema.optional(),
+          })
+          .strict()
+          .optional(),
+        landmarks: z
+          .union([
+            z.boolean(),
+            z
+              .object({
+                url: z
+                  .url()
+                  .max(2048)
+                  .refine(
+                    (value) => {
+                      const url = new URL(value);
+                      return (
+                        url.protocol === 'https:' ||
+                        (url.protocol === 'http:' &&
+                          ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+                      );
+                    },
+                    {message: 'A landmarks tileset has an HTTPS address, or a local one.'},
+                  ),
+              })
+              .strict(),
+          ])
+          .optional(),
       })
       .strict()
       .optional(),

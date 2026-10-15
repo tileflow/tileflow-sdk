@@ -4,8 +4,9 @@
 and lights them from the theme controller's sun: walls and roofs take the light by how they face
 it, buildings cast shadows on each other and on the flat map, the ground darkens at the foot of the
 walls, and at night flood lights wash the foot of shops, busy places, landmarks and towers while
-the places busy at night light their ground floors. Showing, hiding and growing the city lays out
-no source, so it works as a 3D switch and as an animated height.
+the places busy at night light their ground floors. Landmarks such as the Eiffel Tower, and the
+building models a map places itself, stand as 3D models in the same light. Showing, hiding and
+growing the city lays out no source, so it works as a 3D switch and as an animated height.
 
 It is a custom WebGL2 layer for MapLibre GL JS, drawn above the map's buildings and below its
 labels. It needs WebGL2 and the Mercator projection, which MapLibre's globe turns into from about
@@ -96,6 +97,105 @@ export default defineMap({
 - `threeDimensional.edges` and `edgeColor` set the [edges](#edges), and `nightLight` the
   [night light](#night-light). Numbers and colours may be theme tokens.
 
+## Landmarks
+
+Maps on Tileflow World show Tileflow's landmarks, such as the Eiffel Tower, as 3D models in place of
+the buildings under them. They come from a landmarks tileset kept apart from the map's data: each of
+its tiles carries the models standing in it, with their levels of detail and footprints. The
+renderer reads the tileset's TileJSON once the buildings show in 3D, then downloads only the
+landmark tiles near the camera, so a landmark in Paris costs nothing in Madrid. New and improved
+landmarks reach every map without a new build of the map.
+
+A map switches them off, or names the TileJSON of another landmarks tileset:
+
+<!-- docs:check -->
+
+```ts
+import {defineMap, refine} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'no-landmarks',
+  name: 'Streets without landmarks',
+  version: 1,
+  extends: streets,
+  modules: {
+    buildings: refine({threeDimensional: {landmarks: false}}),
+  },
+});
+```
+
+The map's own building models come first: a landmark with the same id as one of them, or whose
+footprint meets one's, is not drawn.
+
+## Building models
+
+A map can place its own 3D models of buildings in the city: a landmark the extruded footprints draw
+badly, or the buildings an application presents. Each model stands where the map says, in the same
+light, shadows and theme as the buildings round it, and the buildings under its footprint are no
+longer raised while it stands. Put glTF binaries (`.glb`) in a directory, declare it in the map's
+`models`, and say where each model stands:
+
+<!-- docs:check -->
+
+```ts
+import {defineMap, refine} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'paris-landmarks',
+  name: 'Paris landmarks',
+  version: 1,
+  extends: streets,
+  // ./models holds eiffel-tower.glb, and eiffel-tower.mid.glb and eiffel-tower.far.glb for
+  // farther views.
+  models: ['./models'],
+  modules: {
+    buildings: refine({
+      threeDimensional: {
+        models: [{model: 'eiffel-tower', at: [2.294481, 48.858258], heading: 0}],
+        modelColors: {surface: '#7a5c45', accent: '#5b4332'},
+      },
+    }),
+  },
+});
+```
+
+`at` is the longitude and latitude of the model's origin and `heading` the degrees clockwise from
+north its own north is turned to. A map places up to 256 models; one model may stand in several
+places. A placement may instead name a prepared model file served elsewhere with `url`, its HTTPS
+address; the map then needs no `.glb` of its own for it.
+
+How to prepare a model:
+
+- **Materials name the parts.** Name each material `surface`, `secondary`, `glass`, `accent` or
+  `roof` (an exporter's `.001` suffix is ignored); a model whose materials name a tree's parts is a
+  [tree model](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md)
+  instead. Each part takes its colour from `modelColors`, or from the buildings' colour when the
+  design gives it none, so the model follows the theme from day to night; vertex colours lighter or
+  darker than the rest of their part shade it within that colour.
+- **Metres round an origin on the ground.** The origin is where the model stands, with the model
+  above it and its own north along +y once read Z up; nothing may lie more than half a metre below
+  it.
+- **What it stands in for.** A mesh whose material is named `footprint` is never drawn: it lays
+  out on the ground what the model stands in for, such as a landmark's whole base. Without one, the
+  model's own outline on the ground stands in, courtyards included.
+- **Levels of detail.** `<id>.mid.glb` and `<id>.far.glb`, when present, are drawn farther from the
+  camera's centre, from about 900 m and 2.6 km.
+- **Budgets.** A level has at most 200,000 triangles and 200,000 vertices, and a map at most 64
+  building models. Triangles of the default scene are read with their node transforms; textures,
+  animations and compressed geometry (Draco or meshopt) are not.
+
+The build reads each model, reports a problem with the file and what to change, works out its
+footprint and writes it beside the style as a prepared model file: a glTF binary whose meshes are
+quantised (`KHR_mesh_quantization`) and compressed by meshoptimizer (`EXT_meshopt_compression`),
+which any glTF viewer opens. The renderer downloads a model only when it stands near the tiles round
+the camera, keeps the nearest dozen, and builds the tiles under it again without the buildings that
+reach more than half a metre into its footprint; a neighbour that only touches it stays. A model
+that cannot be downloaded leaves those buildings standing. Reading a prepared model file loads
+meshoptimizer's WebAssembly decoder, so a page with a Content Security Policy allows
+`'wasm-unsafe-eval'` in its `script-src`.
+
 ## Light and shadows
 
 The light comes from `controller.getSun()`: the theme's sun, mixed during a blend, or the sun an
@@ -170,3 +270,7 @@ way kept the frame pacing of the same city drawn without shadows.
 - One building colour per feature and theme; facades, roof shapes and building parts as separate
   shapes are not drawn.
 - A colour expression is evaluated at zoom 16.
+- Building models and landmarks take no edges or night light of their own yet, and cannot be
+  picked or styled by state.
+- Hosted deploys do not take a map's own model files yet: `tileflow validate --target hosted` reports
+  them. Models named by `url` deploy as they are.

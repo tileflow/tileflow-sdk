@@ -78,6 +78,7 @@ test('ships notices for every third-party component embedded in the browser entr
     'node-buffer-more-ints',
     'buffer <https://github.com/feross/buffer>',
     'TypeScript helper code',
+    'meshoptimizer 1.3.0',
   ]) {
     assert.equal(notices.includes(requiredNotice), true, `missing notice for ${requiredNotice}`);
   }

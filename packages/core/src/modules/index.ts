@@ -7,6 +7,8 @@ export type {TileflowBoundariesModuleConfig, TileflowBoundariesModuleOptions} fr
 export {buildings} from './buildings';
 export type {
   TileflowBuildingMode,
+  TileflowBuildingModelPart,
+  TileflowBuildingModelPlacementConfig,
   TileflowBuildingsModuleConfig,
   TileflowBuildingsModuleOptions,
   TileflowBuildingsThreeDimensionalStyle,

@@ -98,7 +98,7 @@ test('consumer matrix distinguishes the generator from the CLI pinned by the bar
   assert.equal(mobileVersions.expoTemplate, '55.0.43');
   assert.equal(mobileVersions.reactNative, '0.83.10');
   assert.equal(mobileVersions.react, '19.2.0');
-  assert.equal(mobileVersions.maplibre, '11.3.10');
+  assert.equal(mobileVersions.maplibre, '11.5.0');
   assert.equal(mobileVersions.generatorCli, '20.2.0');
   assert.equal(mobileVersions.consumerCli, '20.0.0');
   assertTemplateManifest('bare', template);
@@ -116,7 +116,7 @@ test('consumer matrix distinguishes the generator from the CLI pinned by the bar
   }));
   const consumer = createConsumerManifest('bare', template, tarballs, '/owned/consumers/bare');
   assert.equal(consumer.dependencies['@tileflow/core'], 'file:../../packs/core.tgz');
-  assert.equal(consumer.dependencies['@maplibre/maplibre-react-native'], '11.3.10');
+  assert.equal(consumer.dependencies['@maplibre/maplibre-react-native'], '11.5.0');
   assert.equal(consumer.devDependencies['@react-native-community/cli'], '20.0.0');
   assert.equal(consumer.devDependencies.typescript, '6.0.3');
   assert.equal(template.devDependencies.typescript, '^5.8.3');

@@ -15,10 +15,10 @@ test('package documentation describes the mounted Map without claiming executed 
   assert.doesNotMatch(readme, /does not export a `Map`|future renderer|publication is supported/u);
   const guide = await text('docs/native-admission.md');
   for (const term of [
-    '13.2.0',
-    '6.26.0',
+    '13.6.1',
+    '6.31.0',
     '0.83.10',
-    '11.3.10',
+    '11.5.0',
     'tileflow_native_admission_post_install',
     'X-Tileflow-Native-Grant',
     '10,000',

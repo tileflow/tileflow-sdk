@@ -353,4 +353,4 @@ After the first `@tileflow/search` alpha exists, install it through the same exp
 After the first React Native alpha exists, use the exact host versions in its
 [package README](packages/react-native/README.md), then install:
 
-    pnpm add --save-exact @tileflow/react-native@alpha @tileflow/core@alpha @tileflow/interactions@alpha @maplibre/maplibre-react-native@11.3.10
+    pnpm add --save-exact @tileflow/react-native@alpha @tileflow/core@alpha @tileflow/interactions@alpha @maplibre/maplibre-react-native@11.5.0

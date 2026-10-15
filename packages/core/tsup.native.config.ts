@@ -6,22 +6,27 @@ import {defineConfig, type Options} from 'tsup';
 const packageRoot = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const providerManifest = require('whatwg-url/package.json') as {version: string};
-if (providerManifest.version !== '15.1.0') throw new Error('Expected whatwg-url 15.1.0.');
+if (providerManifest.version !== '17.2.0') throw new Error('Expected whatwg-url 17.2.0.');
 const providerLib = dirname(require.resolve('whatwg-url/lib/url-state-machine.js'));
 const parserRequire = createRequire(resolve(providerLib, 'url-state-machine.js'));
 const tr46Path = parserRequire.resolve('tr46/package.json');
 const tr46 = parserRequire('tr46/package.json') as {version: string};
 const punycode = createRequire(tr46Path)('punycode/package.json') as {version: string};
-if (tr46.version !== '6.0.0' || punycode.version !== '2.3.1') {
-  throw new Error('Expected tr46 6.0.0 and punycode 2.3.1 for the native URL bundle.');
+if (tr46.version !== '7.0.0' || punycode.version !== '2.3.1') {
+  throw new Error('Expected tr46 7.0.0 and punycode 2.3.1 for the native URL bundle.');
 }
 const codecPath = resolve(packageRoot, 'src/native-url-utf8.ts');
-const expectedImporters = new Set([
-  resolve(providerLib, 'url-state-machine.js'),
-  resolve(providerLib, 'percent-encoding.js'),
+const parserPath = resolve(providerLib, 'url-state-machine.js');
+const expectedImporters = new Set([parserPath, resolve(providerLib, 'percent-encoding.js')]);
+
+const queryCodecImports = new Set(['@exodus/bytes/encoding.js', '@exodus/bytes/whatwg.js']);
+const allowedProviderInputs = new Set([
+  ...expectedImporters,
+  resolve(providerLib, 'infra.js'),
+  resolve(providerLib, 'url-miscellaneous.js'),
 ]);
 
-/** Match two relative imports in the pinned parser, never a package/global encoding alias. */
+/** Bind only the pinned parser's UTF-8 imports; legacy codec registration is unnecessary. */
 const codecPlugin: NonNullable<Options['esbuildPlugins']>[number] = {
   name: 'tileflow-native-url-codec',
   setup(build) {
@@ -31,14 +36,21 @@ const codecPlugin: NonNullable<Options['esbuildPlugins']>[number] = {
     });
     build.onResolve({filter: /^\.\/encoding(?:\.js)?$/}, (args) => {
       if (!expectedImporters.has(resolve(args.importer))) return;
-      replaced.add(resolve(args.importer));
+      replaced.add(`relative:${resolve(args.importer)}`);
+      return {path: codecPath};
+    });
+    build.onResolve({filter: /^@exodus\/bytes\/(?:encoding|whatwg)\.js$/}, (args) => {
+      if (resolve(args.importer) !== parserPath || !queryCodecImports.has(args.path)) return;
+      replaced.add(args.path);
       return {path: codecPath};
     });
     build.onEnd((result) => {
       if (result.errors.length) return;
       const metadata = result.metafile;
-      if (!metadata || replaced.size !== expectedImporters.size) {
-        return {errors: [{text: 'Native URL build did not replace the two pinned codec imports.'}]};
+      if (!metadata || replaced.size !== expectedImporters.size + queryCodecImports.size) {
+        return {
+          errors: [{text: 'Native URL build did not replace the four pinned codec imports.'}],
+        };
       }
       const workingDirectory = build.initialOptions.absWorkingDir ?? process.cwd();
       const inputs = Object.keys(metadata.inputs).map((path) => resolve(workingDirectory, path));
@@ -63,12 +75,7 @@ const codecPlugin: NonNullable<Options['esbuildPlugins']>[number] = {
         inputs.includes(resolve(providerLib, 'encoding.js')) ||
         !inputs.includes(codecPath) ||
         foreign.some((name) => !['whatwg-url', 'tr46', 'punycode', 'zod'].includes(name)) ||
-        inputs.some(
-          (path) =>
-            path.startsWith(providerLib) &&
-            !expectedImporters.has(path) &&
-            path !== resolve(providerLib, 'infra.js'),
-        ) ||
+        inputs.some((path) => path.startsWith(providerLib) && !allowedProviderInputs.has(path)) ||
         Object.values(metadata.outputs).some((output) =>
           output.imports.some((item) => item.external),
         )
@@ -93,7 +100,13 @@ export default defineConfig({
   target: 'es2020',
   splitting: false,
   dts: true,
-  noExternal: [/^whatwg-url(?:\/|$)/u, /^tr46(?:\/|$)/u, /^punycode(?:\/|$)/u, /^zod(?:\/|$)/u],
+  noExternal: [
+    /^whatwg-url(?:\/|$)/u,
+    /^@exodus\/bytes(?:\/|$)/u,
+    /^tr46(?:\/|$)/u,
+    /^punycode(?:\/|$)/u,
+    /^zod(?:\/|$)/u,
+  ],
   esbuildPlugins: [codecPlugin],
   esbuildOptions(options) {
     options.metafile = true;

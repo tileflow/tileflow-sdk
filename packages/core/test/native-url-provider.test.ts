@@ -147,7 +147,7 @@ test('runs the standalone published native file with no installed dependencies o
 
 test('bundles the provider only in native and keeps its declarations private', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', packageRoot), 'utf8'));
-  assert.equal(manifest.devDependencies['whatwg-url'], '15.1.0');
+  assert.equal(manifest.devDependencies['whatwg-url'], '17.2.0');
   assert.equal(manifest.dependencies['whatwg-url'], undefined);
   const native = await readFile(new URL('dist/native.js', packageRoot), 'utf8');
   const runtimeImports: string[] = [];
@@ -170,6 +170,7 @@ test('bundles the provider only in native and keeps its declarations private', a
   }
   visit(ts.createSourceFile('native.js', native, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS));
   assert.deepEqual(runtimeImports, []);
+  assert.doesNotMatch(native, /@exodus\/bytes/u);
   for (const name of [
     'index',
     'browser',
@@ -189,9 +190,9 @@ test('bundles the provider only in native and keeps its declarations private', a
   const declarations = await readFile(new URL('dist/native.d.ts', packageRoot), 'utf8');
   assert.doesNotMatch(
     declarations,
-    /whatwg-url|URLRecord|parseNativeUrl|utf8Encode|nativeUrlCodecMaximumLength/u,
+    /whatwg-url|URLRecord|parseNativeUrl|utf8Encode|percentEncodeAfterEncoding|nativeUrlCodecMaximumLength/u,
   );
   const notices = await readFile(new URL('THIRD_PARTY_NOTICES.md', packageRoot), 'utf8');
-  for (const name of ['whatwg-url 15.1.0', 'tr46 6.0.0', 'Punycode.js 2.3.1'])
+  for (const name of ['whatwg-url 17.2.0', 'tr46 7.0.0', 'Punycode.js 2.3.1'])
     assert.ok(notices.includes(name));
 });

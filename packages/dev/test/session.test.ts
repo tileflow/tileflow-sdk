@@ -624,10 +624,10 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.doesNotMatch(preview, /const projection = map\.getStyle/);
   assert.match(preview, /class ThreeDimensionalControl/);
   // TREES and 3D mount Core's renderers, as an application does, from the style's description.
-  assert.match(preview, /createTileflowTrees3D\(\{map, controller\}\)/);
+  assert.match(preview, /createTileflowVegetation\(\{map, controller, visible: treesEnabled/);
   assert.match(preview, /createTileflowBuildings3D\(\{map, controller\}\)/);
   assert.match(preview, /createTileflowStreetLights\(\{map, controller\}\)/);
-  assert.match(preview, /metadata\["tileflow:vegetation"\]/);
+  assert.match(preview, /metadata\["tileflow:vegetation-display"\]/);
   assert.doesNotMatch(preview, /treeRenderer/);
   assert.match(preview, /class TreeControl/);
   assert.match(preview, /setEnabled\(enabled\)/);
@@ -635,7 +635,7 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /this\.enabled \? "3D ON" : "3D OFF"/);
   assert.match(preview, /this\.enabled \? "TREES ON" : "TREES OFF"/);
   assert.match(preview, /readToggleFromUrl\("buildings3d", false\)/);
-  assert.match(preview, /readToggleFromUrl\("trees3d", false\)/);
+  assert.match(preview, /readToggleFromUrl\("trees3d", true\)/);
   assert.match(preview, /map\.fire\("tileflow:trees-toggle"/);
   assert.match(preview, /treeControl = new TreeControl\(\)/);
   assert.match(preview, /map\.addControl\(treeControl, "top-right"\)/);
@@ -1045,7 +1045,7 @@ test('selects map and scene previews with their configured cameras and viewport'
   persisted.emit('styledata');
   persisted.emit('load');
   assert.equal(persisted.threeDimensionalLabel(), '3D OFF');
-  assert.equal(persisted.treeLabel(), 'TREES OFF');
+  assert.equal(persisted.treeLabel(), 'TREES ON');
   assert.equal(persisted.buildingVisibility(), 'none');
   assert.equal(persisted.treeVisibility(), 'visible');
   persisted.toggleThreeDimensional();
@@ -1054,6 +1054,9 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.equal(persisted.buildingVisibility(), 'visible');
   persisted.emit('styledata');
   assert.equal(persisted.buildingVisibility(), 'visible');
+  persisted.toggleTrees();
+  assert.equal(persisted.treeLabel(), 'TREES OFF');
+  assert.equal(persisted.treeVisibility(), 'none');
   persisted.toggleTrees();
   assert.equal(persisted.treeLabel(), 'TREES ON');
   // A style without 3D trees keeps its flat trees.
@@ -1107,18 +1110,19 @@ test('selects map and scene previews with their configured cameras and viewport'
   });
   coreScene.emit('styledata');
   coreScene.emit('load');
-  // With both controls off the preview draws what Capture draws.
-  assert.deepEqual(coreScene.coreCalls(), ['buildings:create', 'trees:create']);
-  assert.equal(coreScene.treeVisibility(), 'visible');
+  // Model trees start enabled even with 3D buildings off and pitch zero.
+  assert.deepEqual(coreScene.coreCalls(), ['buildings:create', 'trees:create', 'trees:show']);
+  assert.equal(coreScene.treeVisibility(), 'none');
   coreScene.toggleThreeDimensional();
   assert.equal(coreScene.buildingVisibility(), 'none');
   coreScene.toggleTrees();
   coreScene.emit('styledata');
-  assert.deepEqual(coreScene.coreCalls().slice(2), [
+  assert.deepEqual(coreScene.coreCalls().slice(3), [
     'lights:create',
     'buildings:show',
-    'trees:show',
+    'trees:hide',
   ]);
+  assert.equal(coreScene.treeVisibility(), 'none');
   coreScene.applyParentMapState({
     type: 'tileflow:set-map-state',
     schemaVersion: 1,
@@ -1131,11 +1135,19 @@ test('selects map and scene previews with their configured cameras and viewport'
       zoom: 16,
     },
   });
-  assert.deepEqual(coreScene.coreCalls().slice(5), [
-    'lights:dispose',
-    'buildings:hide',
-    'trees:hide',
-  ]);
+  assert.deepEqual(coreScene.coreCalls().slice(6), ['lights:dispose', 'buildings:hide']);
+
+  const hiddenVegetation = runPreviewScript(boundsHtml, 'http://localhost/?zoom=16', {
+    coreScene: true,
+    vegetationVisible: false,
+  });
+  hiddenVegetation.emit('styledata');
+  hiddenVegetation.emit('load');
+  assert.equal(hiddenVegetation.treeLabel(), 'TREES OFF');
+  assert.equal(hiddenVegetation.treeVisibility(), 'none');
+  assert.equal(new URL(hiddenVegetation.currentUrl()).searchParams.get('trees3d'), 'off');
+  hiddenVegetation.toggleTrees();
+  assert.equal(hiddenVegetation.treeLabel(), 'TREES ON');
 
   const cameraBeforeInvalidCommand = restoredToggles.center();
   restoredToggles.applyParentMapState({
@@ -1330,7 +1342,7 @@ export default defineMap({
   extends: streets,
   icons: [],
   glyphs: ${fixtureGlyphsSource},
-  modules: {poi: {type: 'poi', icons: false}, roads: disable()},
+  modules: {poi: {type: 'poi', icons: false}, roads: disable(), vegetation: disable()},
   name: tokens.water
 });
 `;
@@ -1341,14 +1353,14 @@ const previewConfig = `import {defineMap, disable} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 export default {
   maps: {
-    first: defineMap({id: 'first', version: 1, extends: streets, icons: [], glyphs: ${fixtureGlyphsSource}, modules: {poi: {type: 'poi', icons: false}, roads: disable()}}),
+    first: defineMap({id: 'first', version: 1, extends: streets, icons: [], glyphs: ${fixtureGlyphsSource}, modules: {poi: {type: 'poi', icons: false}, roads: disable(), vegetation: disable()}}),
     second: defineMap({
       id: 'second',
       version: 1,
       extends: streets,
       icons: [],
       glyphs: ${fixtureGlyphsSource},
-      modules: {poi: {type: 'poi', icons: false}, roads: disable()},
+      modules: {poi: {type: 'poi', icons: false}, roads: disable(), vegetation: disable()},
       view: {bearing: 12, center: [2, 3], pitch: 35, zoom: 9},
       scenes: {
         bounds: {
@@ -1434,7 +1446,7 @@ export default defineMap({id: 'main', version: 1, extends: streets, icons: [...s
 function runPreviewScript(
   html: string,
   href: string,
-  options: {coreScene?: boolean} = {},
+  options: {coreScene?: boolean; vegetationVisible?: boolean} = {},
 ): {
   applyParentMapState(data: unknown): void;
   bearing(): number;
@@ -1615,7 +1627,17 @@ function runPreviewScript(
             type: 'circle',
           },
         ],
-        metadata: {'tileflow:compiler': 'tileflow-semantic', ...coreMetadata},
+        metadata: {
+          'tileflow:compiler': 'tileflow-semantic',
+          ...coreMetadata,
+          'tileflow:vegetation-display': {
+            version: 1,
+            mode: options.coreScene ? '3d' : 'flat',
+            visible: options.vegetationVisible ?? true,
+            fallback: 'none',
+            flatLayers: [{id: 'tileflow-vegetation-trees', visible: true}],
+          },
+        },
       };
     }
 
@@ -1681,11 +1703,24 @@ function runPreviewScript(
     EventSource: FakeEventSource,
     createTileflowBuildings3D: () => coreLayer('buildings'),
     createTileflowStreetLights: () => coreLayer('lights'),
-    createTileflowTrees3D: () => coreLayer('trees'),
+    createTileflowVegetation: ({visible}: {visible: boolean}) => {
+      if (options.coreScene) coreCalls.push('trees:create');
+      let enabled: boolean | undefined;
+      const setVisible = (value: boolean) => {
+        if (enabled !== value) {
+          enabled = value;
+          if (options.coreScene) coreCalls.push(`trees:${value ? 'show' : 'hide'}`);
+        }
+        treeVisibility = value && !options.coreScene ? 'visible' : 'none';
+      };
+      setVisible(visible);
+      return {setVisible, setViewMode() {}};
+    },
     readTileflowSunPreset: () => undefined,
     resolveTileflowSun: (preset: unknown) => preset,
     tileflowDefaultSunPreset: {},
     URL,
+    URLSearchParams,
     addEventListener(name: string, listener: (event: any) => void) {
       const eventListeners = windowListeners.get(name) ?? new Set();
       eventListeners.add(listener);

@@ -34,6 +34,8 @@
     attachTileflowMapLifecycle,
     createTileflowSessionStarter,
     createTileflowThemeController,
+    createTileflowVegetation,
+    type TileflowVegetationController,
     createTileflowTransformRequest,
     getTileflowSystemColorScheme,
     loadTileflowStyleFonts,
@@ -71,7 +73,7 @@
     type TileflowMapLibreSemanticDomRenderTarget,
     type TileflowMapLibreSemanticDomRuntime,
   } from '@tileflow/interactions/maplibre';
-  import type {TileflowMapProps} from './index.js';
+  import type {TileflowMapOptions, TileflowMapProps} from './index.js';
   import {loadTileflowMapLibre} from './maplibre.js';
   import {assertTileflowMapStyleInputs} from './style-source.js';
 
@@ -100,6 +102,8 @@
   export let source: TileflowMapProps['source'];
   export let theme: TileflowMapProps['theme'] = undefined;
   export let themeBlend: TileflowMapProps['themeBlend'] = undefined;
+  export let vegetation: TileflowMapProps['vegetation'] = undefined;
+  export let viewMode: NonNullable<TileflowMapProps['viewMode']> = '2d';
   export let themeTransition: TileflowMapProps['themeTransition'] = undefined;
   export let tooltip: TileflowMapProps['tooltip'] = undefined;
   export let zoom: TileflowMapProps['zoom'] = undefined;
@@ -142,6 +146,9 @@
   let interactionRuntimesDisposing = false;
   let mapResizeObserver: ResizeObserver | null = null;
   let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
+  let vegetationController: TileflowVegetationController | null = null;
+  $: vegetationController?.setVisible(vegetation);
+  $: vegetationController?.setViewMode(viewMode);
   let themeController: TileflowThemeController | null = null;
   let systemColorScheme: 'dark' | 'light' = 'light';
   let unsubscribeSystemColorScheme: (() => void) | null = null;
@@ -450,6 +457,8 @@
     const unsubscribeSemanticTargets = semanticRuntimeTargetsUnsubscribe;
     const currentMap = mapInstance;
     const currentThemeController = themeController;
+    const currentVegetationController = vegetationController;
+    vegetationController = null;
     const worldRequestBridge = mapWorldRequestBridge;
     interactionRuntimesDisposing = true;
     mapFairUseNotice = null;
@@ -492,6 +501,7 @@
       () => semanticInteractionsForMap?.dispose(),
       () => annotationInteractionsForMap?.dispose(),
       () => lifecycleAttachment?.dispose(),
+      () => currentVegetationController?.dispose(),
       () => currentThemeController?.dispose(),
       () => worldRequestBridge?.dispose(),
       () => fairUseNotice?.dispose(),
@@ -609,6 +619,23 @@
               }
             },
           });
+
+    vegetationController = createTileflowVegetation({
+      map: maplibreMap,
+      ...(themeController ? {controller: themeController} : {}),
+      visible: vegetation,
+      viewMode,
+      transformRequest: createTileflowTransformRequest({
+        getAnalytics: () => resolvedAnalytics,
+        sessionController: session,
+        sessionId: session.sessionId,
+        transformRequest: (url) =>
+          mapOptions?.transformRequest?.(
+            url,
+            'Tile' as Parameters<NonNullable<TileflowMapOptions['transformRequest']>>[1],
+          ),
+      }),
+    });
 
     setBridgeInteractionDiagnostic('annotation-runtime', null);
     try {

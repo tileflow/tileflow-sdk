@@ -3,6 +3,7 @@ import type {Snippet, SvelteComponentTyped} from 'svelte';
 import type {
   TileflowBrowserThemeBlendSelection,
   TileflowThemeTransition,
+  TileflowViewMode,
   TileflowThemeTransitionOptions,
 } from '@tileflow/core/browser';
 import type {
@@ -37,6 +38,8 @@ export type TileflowMapInteractionSnippet<
 > = Snippet<[context: TileflowInteractionViewContext<TAnnotation>]>;
 
 type TileflowMapBaseProps = {
+  vegetation?: boolean;
+  viewMode?: TileflowViewMode;
   alt?: string;
   analytics?: TileflowAnalytics;
   center?: [number, number];

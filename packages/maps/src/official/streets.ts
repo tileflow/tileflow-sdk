@@ -23,15 +23,15 @@ import {
   type TileflowSymbolStyle,
   type TileflowThemeColorValue,
   transit,
-  vegetation,
   water,
   withRenderStack,
   zoom,
 } from '@tileflow/core';
-import {streetsIcons} from '../assets';
+import {streetsIcons, streetsModels} from '../assets';
 import {mapboxRailTransitStyle} from './mapbox-rail';
 import {streetsPoiImage} from './streets-poi';
 import {streetsThemes, streetsVisual} from './streets-themes';
+import {streetsTrees} from './streets-trees';
 import {bindOfficialMapTheme} from './theme-helpers';
 
 // Shared detail roles for labels, POI, paths, trees, and transit. Every value
@@ -495,8 +495,7 @@ function roadCasingWidth(major: boolean) {
 }
 
 const pathCasingStrokeWidth = zoom.exponential(1.5, [
-  [15, 0],
-  [15.5, 0.5],
+  [14, 0.5],
   [18, 1],
   [22, 2],
 ]);
@@ -512,69 +511,20 @@ const mapboxPathWidthStops = [
   [18, 6],
   [22, 80],
 ] as const satisfies WidthStops;
-// Google keeps unpaved park paths subordinate to the street network. At z16
-// they read as a single 1 px green stroke instead of a small carriageway.
-const googleParkPathWidthStops = [
-  [12, 0],
-  [15, 0.75],
-  [16, 1],
-  [18, 2],
-  [22, 20],
-] as const satisfies WidthStops;
-const unpavedPathCondition = expr.eq(expr.get(field('surface')), 'unpaved');
-// Paved footways keep the same compact hierarchy but need enough carriageway
-// to retain their Mapbox-like casing. Use an explicit stop at every integer
-// zoom in the close-view range: the reference width is almost geometric from
-// z16 through z19, while z20 grows slightly less than another full doubling.
-const contextualPathLineWidth = expr.interpolate<number>(
-  {base: 1.5, kind: 'exponential'},
-  expr.zoom(),
-  [
-    [12, expr.case<number>([{when: unpavedPathCondition, value: 0}], 0)],
-    [15, expr.case<number>([{when: unpavedPathCondition, value: 0.75}], 1)],
-    [16, expr.case<number>([{when: unpavedPathCondition, value: 1}], 1.5)],
-    [17, expr.case<number>([{when: unpavedPathCondition, value: 1.4}], 3)],
-    [18, expr.case<number>([{when: unpavedPathCondition, value: 2}], 6)],
-    [19, expr.case<number>([{when: unpavedPathCondition, value: 3.7}], 12)],
-    [20, expr.case<number>([{when: unpavedPathCondition, value: 7.5}], 22)],
-    [22, expr.case<number>([{when: unpavedPathCondition, value: 20}], 60)],
-  ],
-);
+// Unpaved paths need the same contrast over grass as paved footways. A thin
+// green stroke without a casing disappears into park and lawn polygons.
+// Match Standard's continuous base-1.5 interpolation, including fractional
+// zooms. Extra hand-tuned stops overstate overview paths and flatten detail.
+const contextualPathLineWidth = zoom.exponential(1.5, mapboxPathWidthStops);
 const contextualPathColor = expr.interpolate<ColorValue>({kind: 'linear'}, expr.zoom(), [
-  [
-    15,
-    expr.case<ColorValue>(
-      [{when: unpavedPathCondition, value: streetsDetailPalette.parkPath}],
-      mapboxRoadPalette.pathAtZ15,
-    ),
-  ],
-  [
-    16,
-    expr.case<ColorValue>(
-      [{when: unpavedPathCondition, value: streetsDetailPalette.parkPath}],
-      mapboxRoadPalette.pathFromZ16,
-    ),
-  ],
+  [15, mapboxRoadPalette.pathAtZ15],
+  [16, mapboxRoadPalette.pathFromZ16],
 ]);
-const contextualPathCasingColor = expr.case<ColorValue>(
-  [{when: unpavedPathCondition, value: streetsDetailPalette.parkPath}],
-  mapboxRoadPalette.pathCasing,
-);
-const contextualPathCasingWidth = expr.interpolate<number>(
-  {base: 1.5, kind: 'exponential'},
-  expr.zoom(),
-  [
-    [15, expr.case<number>([{when: unpavedPathCondition, value: 0}], 0)],
-    [15.5, expr.case<number>([{when: unpavedPathCondition, value: 0}], 0.5)],
-    [18, expr.case<number>([{when: unpavedPathCondition, value: 0}], 1)],
-    [22, expr.case<number>([{when: unpavedPathCondition, value: 0}], 2)],
-  ],
-);
-const googleParkPathClasses = ['pathway', 'footway', 'steps', 'pedestrian'] as const;
+const parkPathClasses = ['pathway', 'footway', 'steps', 'pedestrian'] as const;
 
-function googleParkPathRefinements() {
+function parkPathRefinements() {
   return Object.fromEntries(
-    googleParkPathClasses.flatMap((roadClass) =>
+    parkPathClasses.flatMap((roadClass) =>
       (['surface', 'bridge'] as const).flatMap((structure) => [
         [
           `${roadClass}-${structure}-fill`,
@@ -582,6 +532,14 @@ function googleParkPathRefinements() {
             renderer: 'line',
             style: {
               color: roadClass === 'steps' ? mapboxRoadPalette.pathFromZ16 : contextualPathColor,
+              minZoom:
+                roadClass === 'steps'
+                  ? 14
+                  : structure === 'surface'
+                    ? 12
+                    : roadClass === 'pedestrian'
+                      ? 13
+                      : 14,
               ...(roadClass === 'steps' ? {dash: [0.18, 0.15]} : {}),
               width: contextualPathLineWidth,
             },
@@ -593,9 +551,13 @@ function googleParkPathRefinements() {
           refineRenderTarget({
             renderer: 'line',
             style: {
-              color: contextualPathCasingColor,
+              color: mapboxRoadPalette.pathCasing,
+              minZoom:
+                roadClass === 'steps' || (roadClass === 'pedestrian' && structure === 'surface')
+                  ? 14
+                  : 15,
               gapWidth: roadClass === 'steps' ? 0 : contextualPathLineWidth,
-              width: roadClass === 'steps' ? contextualPathLineWidth : contextualPathCasingWidth,
+              width: roadClass === 'steps' ? contextualPathLineWidth : pathCasingStrokeWidth,
             },
             target: `roads.classes.${roadClass}.${structure}.casing`,
           }),
@@ -1195,7 +1157,7 @@ function streetsRoadEligibility() {
 
 function streetsRoadRenderStack() {
   return {
-    ...googleParkPathRefinements(),
+    ...parkPathRefinements(),
     ...streetsRoadEligibility(),
     oneWayMarkers: refineRenderTarget({
       renderer: 'symbol',
@@ -1536,6 +1498,7 @@ export const streets = bindOfficialMapTheme(
       type: 'tileflow-world',
     },
     icons: [streetsIcons],
+    models: [streetsModels],
     // The same open DEM used by the other terrain maps. Restrict relief to
     // regional zooms so street detail does not fetch high-resolution DEM tiles.
     terrain: {
@@ -1843,30 +1806,7 @@ export const streets = bindOfficialMapTheme(
           },
         },
       }),
-      vegetation: vegetation({
-        flat: {
-          color: streetsDetailPalette.greenspaceDark,
-          minZoom: 16,
-          opacity: 0.82,
-          pitchAlignment: 'map',
-          pitchScale: 'map',
-          radius: zoom.linear([
-            [16, 2.2],
-            [20, 8],
-          ]),
-          strokeColor: streetsDetailPalette.greenspace,
-          strokeOpacity: 0.55,
-          strokeWidth: 0.8,
-        },
-        mode: '3d',
-        threeDimensional: {
-          barkColor: streetsVisual.tree.bark,
-          broadleafColors: streetsVisual.tree.broadleaf,
-          coniferColors: streetsVisual.tree.conifer,
-          crownScale: 1,
-          heightScale: 1,
-        },
-      }),
+      vegetation: streetsTrees,
       boundaries: withRenderStack(
         boundaries({
           // Mapbox Standard's admin-0/admin-1 layers map to OpenMapTiles
@@ -2252,14 +2192,10 @@ export const streets = bindOfficialMapTheme(
                 tunnelColor: mapboxRoadPalette.roadTunnel,
               },
             ),
-            pathway: pathRoadStyle(streetsDetailPalette.parkPath, googleParkPathWidthStops, {
-              casingColor: streetsDetailPalette.parkPath,
-              casingWidth: 0,
+            pathway: pathRoadStyle(mapboxRoadPalette.pathFromZ16, mapboxPathWidthStops, {
               minZoom: 12,
             }),
-            footway: pathRoadStyle(streetsDetailPalette.parkPath, googleParkPathWidthStops, {
-              casingColor: streetsDetailPalette.parkPath,
-              casingWidth: 0,
+            footway: pathRoadStyle(mapboxRoadPalette.pathFromZ16, mapboxPathWidthStops, {
               minZoom: 12,
             }),
             cycleway: pathRoadStyle(mapboxRoadPalette.cycleway, mapboxPathWidthStops, {
@@ -2287,10 +2223,10 @@ export const streets = bindOfficialMapTheme(
                 [22, 20],
               ]),
             }),
-            steps: pathRoadStyle(streetsDetailPalette.parkPath, googleParkPathWidthStops, {
+            steps: pathRoadStyle(mapboxRoadPalette.pathFromZ16, mapboxPathWidthStops, {
               casingMinZoom: 14,
-              casingColor: streetsDetailPalette.parkPath,
-              casingWidth: 0,
+              casingWidth: contextualPathLineWidth,
+              casingGapWidth: 0,
               // World V1 overzooms its native z15 tile above street level.
               // Keep this literal: a zoom-dependent dash is evaluated at the
               // source tile zoom and would remain a continuous line at z16+.
@@ -2300,10 +2236,8 @@ export const streets = bindOfficialMapTheme(
               minZoom: 14,
               steps: true,
             }),
-            pedestrian: pathRoadStyle(streetsDetailPalette.parkPath, googleParkPathWidthStops, {
+            pedestrian: pathRoadStyle(mapboxRoadPalette.pathFromZ16, mapboxPathWidthStops, {
               casingMinZoom: 14,
-              casingColor: streetsDetailPalette.parkPath,
-              casingWidth: 0,
               minZoom: 12,
             }),
           },

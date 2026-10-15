@@ -1160,6 +1160,8 @@ const buildingsModuleSchema = z
     renderStack: renderStackSchema.optional(),
     threeDimensional: z
       .object({
+        lighting: z.enum(['style', 'sun']).optional(),
+        colorVariation: boundedThemeNumberSchema(0, 1).optional(),
         edges: boundedThemeNumberSchema(0, 1).optional(),
         edgeColor: themeColorValueSchema.optional(),
         nightLight: boundedThemeNumberSchema(0, 2).optional(),
@@ -1545,7 +1547,9 @@ const modulesSchema = z
         type: z.literal('vegetation'),
         enabled: z.boolean().optional(),
         flat: circleStyleSchema.optional(),
-        mode: z.enum(['3d', 'flat']).optional(),
+        mode: z.enum(['3d', 'flat', 'auto']).optional(),
+        fallback: z.enum(['flat', 'none']).optional(),
+        visible: z.boolean().optional(),
         renderStack: renderStackSchema.optional(),
         threeDimensional: z
           .object({

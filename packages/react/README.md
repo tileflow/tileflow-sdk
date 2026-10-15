@@ -105,6 +105,13 @@ themes instead of `theme`: position 0 is the first theme and 1.5 is halfway from
 third. Moving the position updates the map at once. See
 [theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md).
 
+Interactive maps automatically render the map's vegetation. `vegetation` overrides visibility
+(omitting it uses the map default); false hides models and flat artwork alike. `viewMode` is `2d`
+by default and may be `3d`: only maps with `vegetation.mode: 'auto'` switch representation.
+Streets uses model trees in either view. Changing either prop updates the existing map immediately.
+These props do not change camera pitch, buildings or lighting and do not apply in image mode. See
+[vegetation controls](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md#visibility-and-representation).
+
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct camera props
 take priority over `mapOptions`, then the manifest view, then shared defaults. `Map` always selects
 a Tileflow map through its manifest; it has no renderer discriminator or direct-style mode.

@@ -7,7 +7,7 @@ import type {
   TileflowTreeRegion,
 } from '../../trees-3d';
 
-export type TileflowVegetationMode = '3d' | 'flat';
+export type TileflowVegetationMode = '3d' | 'flat' | 'auto';
 
 export type TileflowVegetationThreeDimensionalStyle = {
   barkColor?: TileflowThemeColorValue;
@@ -62,7 +62,12 @@ export type TileflowVegetationThreeDimensionalStyle = {
 
 export type TileflowVegetationModuleOptions = {
   flat?: TileflowCircleStyle;
+  /** `3d` uses models at every pitch; `auto` follows the runtime's explicit 2D/3D view mode. */
   mode?: TileflowVegetationMode;
+  /** Representation when a renderer cannot draw models. Defaults to `flat`. */
+  fallback?: 'flat' | 'none';
+  /** Initial visibility; a runtime control may override it. Defaults to true. */
+  visible?: boolean;
   threeDimensional?: TileflowVegetationThreeDimensionalStyle;
 };
 

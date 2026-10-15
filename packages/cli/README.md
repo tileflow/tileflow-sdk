@@ -323,6 +323,9 @@ revision; prefer the installed copy when working with an older release.
 ## Validate icon representations
 
 `tileflow validate`, development and build resolve icon capabilities before returning a map.
+Validation and deployment also prepare map-owned tree models before compiling styles or making
+remote writes. Invalid or missing model files report a local asset error; prepared geometry travels
+inside the style, including models inherited from Streets.
 `TF_ICON_REPRESENTATION_MIXED` means a layer can select SDF and RGBA icons, including a fallback or
 local override. Keep that selection homogeneous or use an explicit bounded mapping. Development
 reports the invalid generation while retaining its last valid artifact.

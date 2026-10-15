@@ -13,9 +13,10 @@ export function renderTileflowPreviewHtml(
   isSemanticPreview: boolean,
   fontFaces: readonly TileflowStyleFontFace[] = [],
   fitViewport = false,
+  controls?: string,
 ): string {
   const styleUrl = preview
-    ? `${basePath}/styles/${preview.mapName}/${preview.themeName}.json`
+    ? `${basePath}/styles/${preview.mapName}/${preview.themeName}.json${controls ? `?${new URLSearchParams({controls})}` : ''}`
     : undefined;
   const mapOptions = preview ? previewMapOptions(preview) : undefined;
   const viewportCss =
@@ -134,7 +135,7 @@ export function renderTileflowPreviewHtml(
       import {loadTileflowStyleFonts} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowContourProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowPmtilesProtocol} from "${basePath}/__runtime/tileflow-browser.js";
-      import {createTileflowBuildings3D, createTileflowStreetLights, createTileflowTrees3D} from "${basePath}/__runtime/tileflow-browser.js";
+      import {createTileflowBuildings3D, createTileflowStreetLights, createTileflowVegetation} from "${basePath}/__runtime/tileflow-browser.js";
       import {readTileflowSunPreset, resolveTileflowSun, tileflowDefaultSunPreset} from "${basePath}/__runtime/tileflow-browser.js";
 
       maplibregl.setWorkerUrl("${basePath}/__runtime/maplibre-gl-worker.mjs");
@@ -189,7 +190,7 @@ export function renderTileflowPreviewHtml(
         return fallback;
       }
       let threeDimensionalEnabled = readToggleFromUrl("buildings3d", false);
-      let treesEnabled = readToggleFromUrl("trees3d", false);
+      let treesEnabled = readToggleFromUrl("trees3d", true);
       const landmarkState = {
         active: [],
         cacheLimit: undefined,
@@ -1798,10 +1799,10 @@ export function renderTileflowPreviewHtml(
       }
 
       // Core's 3D layers, as an application mounts them: the map's style describes how its
-      // buildings, trees and street lights look, and the controls only show and hide them. With
-      // both controls off the preview draws what Capture draws. The preview shows one theme at a
+      // buildings, trees and street lights look, and the controls only show and hide them. The
+      // vegetation control hides all trees when off. The preview shows one theme at a
       // time, so the style on screen holds the sun and the design.
-      const coreScene = {buildings: undefined, trees: undefined, lights: undefined, buildingsShown: false, treesShown: false};
+      const coreScene = {buildings: undefined, trees: undefined, lights: undefined, buildingsShown: false};
       globalThis.__tileflowPreviewScene = coreScene;
       function coreSceneThemes(map) {
         return {
@@ -1814,32 +1815,40 @@ export function renderTileflowPreviewHtml(
           }
         };
       }
+      let mountingCoreScene = false;
       function mountCoreScene(map) {
-        const metadata = map.getStyle()?.metadata ?? {};
-        const controller = coreSceneThemes(map);
-        if (!coreScene.buildings && metadata["tileflow:buildings"]) {
-          coreScene.buildings = createTileflowBuildings3D({map, controller});
-        }
-        if (!coreScene.trees && metadata["tileflow:vegetation"]) {
-          coreScene.trees = createTileflowTrees3D({map, controller});
-        }
-        // Street lights have no capture fallback, so they shine only with the 3D control on.
-        if (!coreScene.lights && threeDimensionalEnabled && metadata["tileflow:street-lights"]) {
-          coreScene.lights = createTileflowStreetLights({map, controller});
-        } else if (coreScene.lights && !threeDimensionalEnabled) {
-          coreScene.lights.dispose();
-          coreScene.lights = undefined;
-        }
-        const instant = {transition: {duration: 0}};
-        // Only a change of the controls moves the layers, so a style event does not restart them.
-        if (coreScene.buildings && coreScene.buildingsShown !== threeDimensionalEnabled) {
-          coreScene.buildingsShown = threeDimensionalEnabled;
-          void (threeDimensionalEnabled ? coreScene.buildings.show() : coreScene.buildings.hide(instant));
-        }
-        if (coreScene.trees && coreScene.treesShown !== treesEnabled) {
-          coreScene.treesShown = treesEnabled;
-          void (treesEnabled ? coreScene.trees.show() : coreScene.trees.hide(instant));
-        }
+        if (mountingCoreScene) return;
+        mountingCoreScene = true;
+        try {
+          const metadata = map.getStyle()?.metadata ?? {};
+          const controller = coreSceneThemes(map);
+          if (!coreScene.buildings && metadata["tileflow:buildings"]) {
+            coreScene.buildings = createTileflowBuildings3D({map, controller});
+          }
+          if (!coreScene.trees) {
+            if (!previewSearchParameters.has("trees3d")) {
+              treesEnabled = metadata["tileflow:vegetation-display"]?.visible ?? true;
+            }
+            coreScene.trees = createTileflowVegetation({map, controller, visible: treesEnabled,
+              viewMode: threeDimensionalEnabled ? "3d" : "2d", transformRequest: previewTransformRequest});
+          }
+          coreScene.trees.setVisible(treesEnabled);
+          coreScene.trees.setViewMode(threeDimensionalEnabled ? "3d" : "2d");
+          // Street lights have no capture fallback, so they shine only with the 3D control on.
+          if (!coreScene.lights && threeDimensionalEnabled && metadata["tileflow:street-lights"]) {
+            coreScene.lights = createTileflowStreetLights({map, controller});
+          } else if (coreScene.lights && !threeDimensionalEnabled) {
+            coreScene.lights.dispose();
+            coreScene.lights = undefined;
+          }
+          const instant = {transition: {duration: 0}};
+          const duration = Math.min(3000, Math.max(0, Number(previewSearchParameters.get('animation')) || 0));
+          // Only a change of the controls moves the layers, so a style event does not restart them.
+          if (coreScene.buildings && coreScene.buildingsShown !== threeDimensionalEnabled) {
+            coreScene.buildingsShown = threeDimensionalEnabled;
+            void (threeDimensionalEnabled ? coreScene.buildings.show({transition: {duration}}) : coreScene.buildings.hide(instant));
+          }
+        } finally {mountingCoreScene = false;}
       }
 
       class ThreeDimensionalControl {
@@ -1944,18 +1953,11 @@ export function renderTileflowPreviewHtml(
         }
 
         update() {
-          const treeLayer = this.map.getStyle()?.layers?.find(
-            (layer) => layer.id === "tileflow-vegetation-trees"
-          );
-          // Core's 3D trees hide the style's flat trees while they stand (mountCoreScene).
-          if (treeLayer && !this.map.getStyle()?.metadata?.["tileflow:vegetation"]) {
-            if (this.map.getLayoutProperty(treeLayer.id, "visibility") !== "visible") {
-              this.map.setLayoutProperty(treeLayer.id, "visibility", "visible");
-            }
-          }
+          if (this.map.isStyleLoaded()) mountCoreScene(this.map);
+          this.enabled = treesEnabled;
           this.button.textContent = this.enabled ? "TREES ON" : "TREES OFF";
           this.button.setAttribute("aria-pressed", String(this.enabled));
-          this.button.title = this.enabled ? "Show flat trees" : "Show 3D trees";
+          this.button.title = this.enabled ? "Hide vegetation" : "Show vegetation";
         }
 
         onRemove() {
@@ -2051,6 +2053,7 @@ export function renderTileflowPreviewHtml(
             ...visibleLayerGroups,
           ].join(",");
         }
+        const vegetationLayers = map.getStyle()?.metadata?.["tileflow:vegetation-display"]?.flatLayers;
         for (const layer of map.getStyle()?.layers || []) {
           if (!defaultLayerVisibility.has(layer.id)) {
             defaultLayerVisibility.set(
@@ -2077,15 +2080,15 @@ export function renderTileflowPreviewHtml(
               map.setLayoutProperty(layer.id, "text-field", textField);
             }
           }
+          // The shared vegetation controller owns every flat representation.
+          if (vegetationLayers?.some((entry) => entry.id === layer.id.split("::")[0])) continue;
           const groups = previewLayerGroups(layer);
           const threeDimensionalToggle = layer.metadata?.["tileflow:3d-toggle"];
           const authoredVisibility = defaultLayerVisibility.get(layer.id);
           const styleMetadata = map.getStyle()?.metadata ?? {};
           // Core's 3D buildings and trees stand in for compiled extrusions and flat trees.
-          const flatTrees = styleMetadata["tileflow:vegetation"]?.flatLayers ?? [];
           const replacedByCore =
-            (threeDimensionalToggle === "building" && styleMetadata["tileflow:buildings"]) ||
-            (treesEnabled && flatTrees.includes(layer.id.split("::")[0]));
+            threeDimensionalToggle === "building" && styleMetadata["tileflow:buildings"];
           const toggleVisibility = replacedByCore
             ? "none"
             : threeDimensionalToggle === "building" || threeDimensionalToggle === "landmark"
@@ -2106,6 +2109,16 @@ export function renderTileflowPreviewHtml(
         map.fire("tileflow:visible-layer-groups", {groups: [...visibleLayerGroups]});
       }
 
+      function previewTransformRequest(url) {
+        try {
+          return new URL(url, location.href).hostname === "dev-tiles.tileflow.dev"
+            ? {credentials: "include", url}
+            : {url};
+        } catch {
+          return {url};
+        }
+      }
+
       if (styleUrl) {
         // Dense vector tiles finish in bursts with multiple workers, causing several
         // bucket uploads in one frame. One worker keeps navigation smooth; benchmarks
@@ -2119,15 +2132,7 @@ export function renderTileflowPreviewHtml(
           collectResourceTiming: mapBenchmarkEnabled,
           container: "map",
           style: styleUrl,
-          transformRequest: (url) => {
-            try {
-              return new URL(url, location.href).hostname === "dev-tiles.tileflow.dev"
-                ? {credentials: "include", url}
-                : {url};
-            } catch {
-              return {url};
-            }
-          },
+          transformRequest: previewTransformRequest,
           ...resolveInitialMapOptions(previewMapOptions)
         });
         globalThis.__tileflowPreviewMap = map;
@@ -2140,6 +2145,12 @@ export function renderTileflowPreviewHtml(
           treeControl = new TreeControl();
           map.addControl(threeDimensionalControl, "top-right");
           map.addControl(treeControl, "top-right");
+          // Embedded Map DevTools owns the common Controls sidebar. Keep the controls mounted
+          // for their renderer lifecycle and message bridge, but remove duplicate buttons.
+          if (window.parent !== window) {
+            threeDimensionalControl.container.hidden = true;
+            treeControl.container.hidden = true;
+          }
         }
         if (previewThemes.length > 1) map.addControl(new ThemeControl(), "top-right");
         let ensuringThreeDimensionalLayers;
@@ -2228,10 +2239,11 @@ export function renderTileflowPreviewHtml(
         map.on("tileflow:3d-toggle", ensureThreeDimensionalLayers);
         map.on("tileflow:trees-toggle", ensureThreeDimensionalLayers);
         map.on("load", () => {
+          mountCoreScene(map);
+          treeControl?.update();
           writeCameraToUrl(map);
           updateGlobeBackdrop(map);
           ensureThreeDimensionalLayers();
-          mountCoreScene(map);
         });
         map.on("move", () => updateGlobeBackdrop(map));
         map.on("style.load", () => updateGlobeBackdrop(map));

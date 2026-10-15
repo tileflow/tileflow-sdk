@@ -39,6 +39,10 @@ import {
 import type {TileflowTreeModel} from '../trees-3d-model';
 import type {MapLibreStyle} from '../types';
 import {
+  tileflowVegetationDisplayMetadataKey,
+  type TileflowVegetationDisplay,
+} from '../vegetation-display';
+import {
   createTileflowCompilationFailure,
   type TileflowCompilationDiagnostic,
   type TileflowCompilationDomainReport,
@@ -538,6 +542,35 @@ function compileSemanticStyleInternal(
     }),
   );
 
+  const flatVegetationLayers = layers.filter((layer) => {
+    const metadata = (layer as {metadata?: Record<string, unknown>}).metadata;
+    return (
+      metadata?.['tileflow:vegetation-mode'] !== undefined ||
+      metadata?.['tileflow:domain'] === 'vegetation'
+    );
+  });
+  const vegetationDisplay: TileflowVegetationDisplay | undefined =
+    flatVegetationLayers.length || vegetation3D
+      ? {
+          version: 1,
+          mode: modules.vegetation?.mode ?? '3d',
+          fallback: modules.vegetation?.fallback ?? 'flat',
+          visible: modules.vegetation?.visible ?? true,
+          flatLayers: flatVegetationLayers.map((layer) => ({
+            id: String(layer.id),
+            visible: (layer.layout as Record<string, unknown> | undefined)?.visibility !== 'none',
+          })),
+        }
+      : undefined;
+  if (
+    vegetationDisplay &&
+    (!vegetationDisplay.visible ||
+      (vegetationDisplay.mode === '3d' && vegetationDisplay.fallback === 'none'))
+  ) {
+    for (const layer of flatVegetationLayers)
+      layer.layout = {...(layer.layout as Record<string, unknown> | undefined), visibility: 'none'};
+  }
+
   const atmosphere = resolveTileflowAtmosphere(config.atmosphere);
   const style: MapLibreStyle = {
     ...(atmosphere ? {sky: compileTileflowSky(atmosphere)} : {}),
@@ -590,18 +623,11 @@ function compileSemanticStyleInternal(
             [tileflowVegetationMetadataKey]: tileflowVegetationMetadata({
               ...bindSemanticReferences(vegetation3D, semanticData),
               // The layers that draw the trees flat: the module's own and its render passes.
-              flatLayers: layers
-                .filter((layer) => {
-                  const metadata = (layer as {metadata?: Record<string, unknown>}).metadata;
-                  return (
-                    metadata?.['tileflow:vegetation-mode'] !== undefined ||
-                    metadata?.['tileflow:domain'] === 'vegetation'
-                  );
-                })
-                .map((layer) => String(layer.id)),
+              flatLayers: flatVegetationLayers.map((layer) => String(layer.id)),
             }),
           }
         : {}),
+      ...(vegetationDisplay ? {[tileflowVegetationDisplayMetadataKey]: vegetationDisplay} : {}),
       'tileflow:data': data.identity,
       'tileflow:sources': sourceIdentities,
       ...(Object.keys(loweredOverlays.identities).length > 0

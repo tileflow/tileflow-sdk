@@ -21,6 +21,7 @@ export {
   siegfriedIcons,
   soundingsIcons,
   streetsIcons,
+  streetsModels,
 } from './assets';
 
 /** Immutable official map singletons. `defineMap` itself remains a mutable authoring identity. */

@@ -82,6 +82,8 @@ export type TileflowTrees3DOptions = Readonly<{
   beforeId?: string;
   /** The map's request rules, for the tiles the layer reads. */
   transformRequest?: TileflowTileRequestTransform;
+  /** Let a vegetation controller own flat-layer visibility. Defaults to true. */
+  manageFlatLayers?: boolean;
 }>;
 
 export type TileflowTrees3DChange = Readonly<{transition?: Readonly<{duration?: number}>}>;
@@ -970,6 +972,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   // again once, so it happens when the trees are shown or hidden, not as they grow.
   const flatVisibility = new Map<string, unknown>();
   function standIn(shown: boolean): void {
+    if (options.manageFlatLayers === false) return;
     if (!map.setLayoutProperty || !map.getLayoutProperty) return;
     if (!shown) {
       for (const [id, previous] of flatVisibility)

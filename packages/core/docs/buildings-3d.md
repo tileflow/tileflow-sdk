@@ -1,12 +1,15 @@
 # 3D buildings
 
-`createTileflowBuildings3D` raises the buildings of a Tileflow map's vector tiles round the camera
-and lights them from the theme controller's sun: walls and roofs take the light by how they face
-it, buildings cast shadows on each other and on the flat map, the ground darkens at the foot of the
-walls, and at night flood lights wash the foot of shops, busy places, landmarks and towers while
-the places busy at night light their ground floors. Landmarks such as the Eiffel Tower, and the
-building models a map places itself, stand as 3D models in the same light. Showing, hiding and
-growing the city lays out no source, so it works as a 3D switch and as an animated height.
+`createTileflowBuildings3D` raises the buildings of a Tileflow map's vector tiles round the camera.
+By default it preserves the map's building colours and native extrusion lighting (`style.light`
+and its vertical wall gradient). Showing, hiding and changing height are immediate. Cast shadows,
+contact shadow, illuminated outlines, random colour variation and night lights are off.
+
+Scene sun lighting, shadows, decorative effects and animated height remain available through
+explicit options. They are independent of the map's trees.
+
+Tileflow landmarks and a map's own building models can stand in the same 3D scene, replacing
+the buildings under their footprints.
 
 It is a custom WebGL2 layer for MapLibre GL JS, drawn above the map's buildings and below its
 labels. It needs WebGL2 and the Mercator projection, which MapLibre's globe turns into from about
@@ -28,15 +31,15 @@ import {
 
 export function raiseTheCity(map: TileflowBuildings3DMap, controller: TileflowThemeController) {
   const buildings = createTileflowBuildings3D({map, controller});
-  // The buildings slide out of the ground over a second.
-  void buildings.show({transition: {duration: 1000}});
+  // No animation unless requested.
+  void buildings.show();
   return buildings;
 }
 ```
 
-`show()` raises the buildings, `hide()` sinks them back into the flat map, and `grow(scale)` eases
-them to a share of their height, from 0 to 1. Each returns a promise that resolves once the motion
-ends; a newer call takes over from where the buildings stand. A browser preference for reduced
+`show()`, `hide()` and `grow(scale)` change the height immediately by default (duration 0).
+To animate, pass `{transition: {duration: 800}}` explicitly; `grow(scale)` accepts a height share
+from 0 to 1. Each returns a promise that resolves once the change ends; a newer call takes over from where the buildings stand. A browser preference for reduced
 motion changes at once. `dispose()` takes the layer off the map.
 
 The renderer reads the source's z15 tiles round the camera (z15 is where World's buildings carry
@@ -44,7 +47,8 @@ their heights; a source that stops earlier is read at its own maximum zoom), up 
 tiles (25 by default), and meshes them a few milliseconds per frame. It reads World's
 `render_height`, `render_min_height`, `hide_3d`, `building_tone` and `night_use`, and the places in
 World's `poi` layer (see [night light](#night-light)). `stats.declared` tells whether the map's
-style describes its 3D buildings; a style compiled before this description gets the defaults below.
+style describes its 3D buildings. Recompile existing maps to pick up the new defaults: previously
+compiled metadata with explicit effects enabled continues to honour those values.
 
 ## Design the buildings in the map
 
@@ -67,7 +71,16 @@ export default defineMap({
   extends: streets,
   modules: {
     buildings: refine({
-      threeDimensional: {windows: true, nightLight: 0.6, edgeColor: '#2b2a33'},
+      threeDimensional: {
+        lighting: 'sun',
+        shadows: true,
+        occlusion: true,
+        edges: 1,
+        colorVariation: 0.06,
+        windows: true,
+        nightLight: 0.6,
+        edgeColor: '#2b2a33',
+      },
       renderStack: {
         // Core's 3D buildings take the colour of the map's 3D building pass.
         tints: refineRenderTarget({
@@ -92,7 +105,7 @@ export default defineMap({
   set of themes changes, and the themes either side of a blend's position mix on the GPU, so a
   moving blend costs nothing per frame.
 - `threeDimensional.shadows` and `occlusion` (the band at the foot of the walls and the darker tight
-  corners) default to true. `windows: true` adds invented night windows, lit by rooms; they are
+  corners) default to false. `windows: true` adds invented night windows, lit by rooms; they are
   decoration, not data, and are off by default.
 - `threeDimensional.edges` and `edgeColor` set the [edges](#edges), and `nightLight` the
   [night light](#night-light). Numbers and colours may be theme tokens.
@@ -140,7 +153,7 @@ longer raised while it stands. Put glTF binaries (`.glb`) in a directory, declar
 
 ```ts
 import {defineMap, refine} from '@tileflow/core';
-import {streets} from '@tileflow/maps';
+import {streets, streetsModels} from '@tileflow/maps';
 
 export default defineMap({
   id: 'paris-landmarks',
@@ -149,7 +162,8 @@ export default defineMap({
   extends: streets,
   // ./models holds eiffel-tower.glb, and eiffel-tower.mid.glb and eiffel-tower.far.glb for
   // farther views.
-  models: ['./models'],
+  // Keep Streets' tree models alongside the building models.
+  models: [streetsModels, './models'],
   modules: {
     buildings: refine({
       threeDimensional: {
@@ -198,7 +212,12 @@ meshoptimizer's WebAssembly decoder, so a page with a Content Security Policy al
 
 ## Light and shadows
 
-The light comes from `controller.getSun()`: the theme's sun, mixed during a blend, or the sun an
+`threeDimensional.lighting` defaults to `'style'`: it uses MapLibre's `light` position,
+anchor, colour and intensity, together with the authored extrusion's `verticalGradient`.
+Changing the scene sun does not change this base lighting. The style's native lighting defaults
+apply when it declares no light.
+
+With `lighting: 'sun'`, the light comes from `controller.getSun()`: the theme's sun, mixed during a blend, or the sun an
 application places by direction or by date and place (see
 [sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md)).
 A sunlit roof keeps the building's colour, a wall turned to a low sun glows, and shade takes the
@@ -213,15 +232,16 @@ buildings, it multiplies the ground by the shadows and by a band at the foot of 
 and icons drawn above it keep their colours. Layers kept under 3D content with
 `createTileflowGroundLayers` are darkened with the ground. Other Core 3D layers on the map, such as
 [3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md), share
-the buildings' shadows.
+the buildings' shadows when `shadows: true`. With it off, buildings neither cast nor receive
+scene shadows, even when another 3D layer uses them.
 
 ## Edges
 
 Where one building ends and the next starts stays legible at any distance: each roof's outline and
-each building's outer corners catch the light in a line one CSS pixel wide, whatever the zoom, and
-each building is a little lighter or darker than its colour (up to 6%), so neighbours of one colour
-stay apart. The lines are strongest at night; diagonals inside a roof, inner corners and the cuts at
-a tile's edge draw none. `edges` sets their strength from 0 (none) to 1, the default.
+each building's outer corners catch the light in a line one CSS pixel wide, whatever the zoom, when enabled. `colorVariation` independently varies building brightness by up to the specified
+fraction (0–1); it defaults to 0, so authored colours remain unchanged. Use 0.06 for the earlier
+6% variation. The lines are strongest at night; diagonals inside a roof, inner corners and the cuts at
+a tile's edge draw none. `edges` sets their strength from 0 (the default, none) to 1.
 
 `edgeColor` gives the lines a colour of the map's own, per theme through a token: a dark outline as
 on a printed map, or a neon one at night. It is drawn as it is, unlit, at the full `edges` strength
@@ -229,8 +249,8 @@ by day and night, mixed between the themes either side of a blend's position.
 
 ## Night light
 
-At night (as the sun's `brightness` falls), the buildings light the street from data, quietly by
-default:
+With `nightLight` above 0, the buildings light the street from data at night (as the sun's
+`brightness` falls):
 
 - Landmarks (World's `building_tone` `destination`) and towers of 40 m or more, one in two, are
   flood-lit at their foot, on the wall and the ground around it.
@@ -244,7 +264,7 @@ The night use comes from World's `night_use` on each building. In tiles whose bu
 carry it, the renderer finds it in the tile's places: a place inside a building, or within a few
 metres of its facade, gives the building its use.
 
-`nightLight` sets how bright all of this shines, from 0 (none) to 2; it defaults to 1.
+`nightLight` sets how bright all of this shines, from 0 (none) to 2; it defaults to 0.
 
 For the streets themselves, see
 [street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md),

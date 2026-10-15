@@ -4,6 +4,7 @@ import {readdir, readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {promisify} from 'node:util';
 import {streetsPoiDiscColors, streetsPoiPictograms} from '../src/official/streets-poi';
+import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
 import {streetsPoiImageIds} from './streets-poi-fixture';
 
 const execFileAsync = promisify(execFile);
@@ -123,6 +124,7 @@ test('publishes every official icon and font directory with provenance', async (
 
     streets: [
       ...streetsPoiImageIds.map((id) => `${id}.svg`),
+      ...streetsTreeIconIds.map((id) => `${id}.pattern.svg`),
       'crosswalk.svg',
       'oneway.svg',
       'road-shield-circle-neutral.svg',
@@ -331,8 +333,10 @@ test('imports and compiles all packaged official maps against public Core APIs',
       if (!maps[name] || typeof maps[name] !== 'object') process.exit(2);
       const style = core.createStyle(maps[name], {
         preparedAssets: {
+          models: ${JSON.stringify(streetsPreparedModels)},
           icons: {
             ids: [
+              ...${JSON.stringify(streetsTreeIconIds)},
               'baedeker-hachures', 'baedeker-orchard', 'baedeker-paper-grain',
               'baedeker-park-stipple', 'baedeker-residential', 'baedeker-sand',
               'baedeker-water-lines', 'baedeker-wetland',

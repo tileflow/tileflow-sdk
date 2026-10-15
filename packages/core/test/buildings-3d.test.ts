@@ -1,8 +1,5 @@
 import {createExpression} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
-import {readTileflowBuildings3D, tileflowBuildingsMetadataKey} from '../src/buildings-3d-design';
-import {tileflowFeatureColour} from '../src/feature-colour-browser';
-import {tileflowColourChannels} from '../src/theme-blend';
 import test from 'node:test';
 import {
   createTileflowBuildings3D,
@@ -10,10 +7,19 @@ import {
   tileflowSunLightMatrix,
 } from '../src/buildings-3d-browser';
 import {
+  readTileflowBuildings3D,
+  tileflowBuildingsMetadata,
+  tileflowBuildingsMetadataKey,
+  tileflowDefaultBuildings3DDesign,
+} from '../src/buildings-3d-design';
+import {tileflowBuildingStyleLight} from '../src/buildings-3d-light';
+import {
   meshTileflowBuildings,
   tileflowBuildingExtent,
   tileflowBuildingVertexBytes,
 } from '../src/buildings-3d-mesh';
+import {tileflowFeatureColour} from '../src/feature-colour-browser';
+import {tileflowColourChannels} from '../src/theme-blend';
 import type {TileflowTileLayer} from '../src/vector-tile-decode';
 
 // MVT exterior rings are clockwise in tile units (y down); this is a 1000 × 1000 square.
@@ -392,12 +398,12 @@ test('the 3D buildings design is read only in a known version and shape', () => 
   const read = readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: described})!;
   assert.deepEqual(read.color, described.color);
   // A value out of range keeps its default; an unset switch keeps its default.
-  assert.equal(read.edges, 1);
+  assert.equal(read.edges, 0);
   assert.equal(read.edgeColor, '#7fd8ff');
   assert.equal(read.nightLight, 0.5);
   assert.equal(read.windows, true);
   assert.equal(read.shadows, false);
-  assert.equal(read.occlusion, true);
+  assert.equal(read.occlusion, false);
   assert.equal(
     readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: {...described, version: 2}}),
     undefined,
@@ -469,4 +475,71 @@ test('a building colour expression evaluates as MapLibre evaluates it', () => {
     }
   // An expression Core does not compile gives no colour.
   assert.equal(tileflowFeatureColour(['image', 'x'], {}, tileflowColourChannels), undefined);
+});
+
+test('building effects are opt-in, including for metadata with omitted options', () => {
+  const metadata = {
+    version: 1,
+    source: 'tileflow',
+    layers: {building: 'building', places: 'poi'},
+    color: '#d8d0c0',
+  };
+  assert.deepEqual(
+    readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: metadata}),
+    tileflowDefaultBuildings3DDesign,
+  );
+  assert.equal(tileflowDefaultBuildings3DDesign.lighting, 'style');
+  for (const flag of ['shadows', 'occlusion', 'windows'] as const)
+    assert.equal(tileflowDefaultBuildings3DDesign[flag], false);
+  for (const amount of ['edges', 'nightLight', 'colorVariation'] as const)
+    assert.equal(tileflowDefaultBuildings3DDesign[amount], 0);
+  const enhanced = {
+    ...tileflowDefaultBuildings3DDesign,
+    lighting: 'sun' as const,
+    edges: 1,
+    nightLight: 1,
+    colorVariation: 0.06,
+    shadows: true,
+    occlusion: true,
+    windows: true,
+  };
+  assert.deepEqual(
+    readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: tileflowBuildingsMetadata(enhanced)}),
+    enhanced,
+  );
+});
+
+test('show, hide and grow are immediate unless animation is requested', async () => {
+  const buildings = createTileflowBuildings3D({map: fakeMap()});
+  try {
+    const shown = buildings.show();
+    assert.equal(buildings.scale, 1);
+    await shown;
+    const hidden = buildings.hide();
+    assert.equal(buildings.scale, 0);
+    await hidden;
+    await buildings.grow(0.4);
+    assert.equal(buildings.scale, 0.4);
+    const animated = buildings.show({transition: {duration: 40}});
+    assert.equal(buildings.scale, 0.4);
+    await animated;
+    assert.equal(buildings.scale, 1);
+  } finally {
+    buildings.dispose();
+  }
+});
+
+test('building style light preserves authored intensity, colour and anchoring', () => {
+  const light = {anchor: 'map', position: [1, 0, 90], color: '#804020', intensity: 0.08};
+  const fixed = tileflowBuildingStyleLight(light, 90);
+  assert.equal(fixed.intensity, 0.08);
+  assert.deepEqual(fixed.colour, [128 / 255, 64 / 255, 32 / 255]);
+  assert.ok(Math.abs(fixed.position[0]!) < 1e-10);
+  assert.ok(Math.abs(fixed.position[1]! - 1) < 1e-10);
+  const rotating = tileflowBuildingStyleLight({...light, anchor: 'viewport'}, 90);
+  assert.ok(Math.abs(rotating.position[0]! + 1) < 1e-10);
+  assert.ok(Math.abs(rotating.position[1]!) < 1e-10);
+  const fallback = tileflowBuildingStyleLight(undefined, 0);
+  assert.equal(fallback.intensity, 0.5);
+  assert.deepEqual(fallback.colour, [1, 1, 1]);
 });

@@ -125,8 +125,9 @@ export function createTileflowPlacedModels(
   }
 
   /** Downloads a file through the layer's request transform. */
-  function download(url: string, signal: AbortSignal): Promise<Response> {
-    const request = options.transformRequest?.(url, 'Tile') ?? {url};
+  async function download(url: string, signal: AbortSignal): Promise<Response> {
+    const request = (await options.transformRequest?.(url, 'Tile')) ?? {url};
+    signal.throwIfAborted();
     return fetch(request.url, {
       signal,
       ...(request.headers ? {headers: request.headers} : {}),

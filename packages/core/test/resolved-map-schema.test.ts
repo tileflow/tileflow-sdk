@@ -441,7 +441,15 @@ test('accepts detailed cartographic module styles and their optional data bindin
   assert.doesNotThrow(() =>
     parseDesign({
       modules: {
-        buildings: buildings({threeDimensional: {edges: 0.5, nightLight: 1.5, windows: true}}),
+        buildings: buildings({
+          threeDimensional: {
+            lighting: 'sun',
+            colorVariation: 0.06,
+            edges: 0.5,
+            nightLight: 1.5,
+            windows: true,
+          },
+        }),
         roads: roads({streetLights: {estimate: 'streets', intensity: 0.8}}),
       },
     }),
@@ -1374,5 +1382,20 @@ test('rejects unsafe authoring objects and unresolved map references', () => {
   assert.throws(
     () => parseMap(Object.create({id: 'madrid', version: 1, extends: extendStreets()})),
     /map object/,
+  );
+});
+
+test('building lighting and colour variation reject unknown modes and out-of-range values', () => {
+  for (const colorVariation of [-0.01, 1.01])
+    assert.throws(
+      () => parseDesign({modules: {buildings: buildings({threeDimensional: {colorVariation}})}}),
+      /colorVariation/,
+    );
+  assert.throws(
+    () =>
+      parseDesign({
+        modules: {buildings: buildings({threeDimensional: {lighting: 'cinematic' as never}})},
+      }),
+    /lighting/,
   );
 });

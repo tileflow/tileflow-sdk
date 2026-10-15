@@ -43,9 +43,11 @@ import {
   streetsIcons,
   streetsThemes,
 } from '../src';
+import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
 import {streetsPoiImageIds} from './streets-poi-fixture';
 
 const officialIconIds = [
+  ...streetsTreeIconIds,
   'baedeker-hachures',
   'baedeker-orchard',
   'baedeker-paper-grain',
@@ -237,7 +239,10 @@ const officialGlyphsUrl =
   'https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf';
 
 function preparedAssets(id: string) {
-  return {icons: {ids: officialIconIds, sprite: `/tileflow/icons/${id}/sprite`}};
+  return {
+    models: streetsPreparedModels,
+    icons: {ids: officialIconIds, sprite: `/tileflow/icons/${id}/sprite`},
+  };
 }
 
 function compileOfficialMap(map: Parameters<typeof resolveMap>[0], theme?: string) {

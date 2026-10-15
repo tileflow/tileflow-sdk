@@ -601,7 +601,7 @@ test('deploy rejects removed raw style overrides before any remote write', async
       id: 'madrid',
       icons: 'authored',
       fields: `icons: ['./icons'],
-modules: {poi: {type: 'poi', density: 3, icons: true, categories: ['food-drink']}, roads: disable()},
+modules: {poi: {type: 'poi', density: 3, icons: true, categories: ['food-drink']}, roads: disable(), vegetation: disable()},
 overrides: [{kind: 'patch', id: 'tileflow-background', patch: {paint: {'background-color': 42}}}]`,
     }),
   );
@@ -1471,7 +1471,7 @@ async function createIconFixture(t: TestContext) {
       id: 'madrid',
       icons: 'authored',
       fields: `icons: ['./icons'],
-modules: {poi: {type: 'poi', density: 3, icons: true, categories: ['food-drink']}, roads: disable()},
+modules: {poi: {type: 'poi', density: 3, icons: true, categories: ['food-drink']}, roads: disable(), vegetation: disable()},
 name: 'Madrid'`,
     }),
   );

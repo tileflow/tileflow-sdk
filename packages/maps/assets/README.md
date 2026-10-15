@@ -17,6 +17,25 @@ rectangle when no supported network classification is available.
 Official maps use the same public asset contract as application maps. Streets declares
 `icons: [streetsIcons]`; its light and dark themes select distinct semantic image IDs from that
 shared atlas. Every official map is an independent root and declares only its own asset descriptors.
+
+Streets also declares `models: [streetsModels]`. Its seven original tree models live in
+`streets/models/`, each with a lighter `.far.glb` companion. The `streets-tree-*.pattern.svg`
+files are light/dark top views of those same meshes. The pattern suffix preserves their 64px
+atlas size; the vegetation module uses them as individual symbols, not repeating fills.
+`streets/build-trees.mjs` generates the meshes and crowns deterministically from original
+geometry; no third-party model or texture is included. From the SDK root:
+
+```sh
+node packages/maps/assets/streets/build-trees.mjs
+node packages/maps/assets/streets/build-trees.mjs --check
+```
+
+The generator caps near models at 700 triangles and far models at 100. Current forms use
+120–386 and 44–96 respectively. Broadleaf companions retain all five crown clusters and their
+supporting branches, reducing tessellation at distance instead of dropping limbs.
+Package tests prepare and decode the real models, verify finite
+geometry and normals, and check the committed assets against the generator.
+
 The Ferraris directory contains nine
 original intrinsic-size SVG patterns:
 `ferraris-crop-hatch`, `ferraris-heath`, `ferraris-orchard`, `ferraris-paper-grain`,

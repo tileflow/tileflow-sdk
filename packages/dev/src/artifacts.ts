@@ -176,6 +176,8 @@ export type TileflowBuildStyleInspections = Record<string, Record<string, Tilefl
 
 /** Compatibility shape consumed by sessions and capture callers. */
 export type TileflowBuildArtifacts = {
+  /** Local-only prepared handles used to recompile module controls without resolving assets again. */
+  mapAssets?: Readonly<Record<string, TileflowPreparedMapAssets>>;
   assets: TileflowBuildAsset[];
   buildManifest: TileflowMapBuildManifestV1;
   /** Present only for native artifact preparation; never part of the runtime manifest. */
@@ -481,6 +483,7 @@ export async function createTileflowArtifactPlan(
       ),
     };
     const partial: TileflowBuildArtifacts = {
+      mapAssets: prepared.mapAssets,
       assets,
       buildManifest,
       ...(renderer === 'native'

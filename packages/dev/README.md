@@ -54,6 +54,12 @@ The artifact plan exposes files and observed inputs from the same generation. St
 `styles[map][theme]`, never as an implicit default-theme alias. Keep that generation alive for the
 whole operation, then release it. Do not reconstruct its asset list from directory guesses.
 
+Map-owned tree models are prepared alongside icons and embedded in the styles. Custom tools that
+compile icons separately can use `prepareTileflowMapTreeModels` from `@tileflow/dev/icons` with
+the map's model directories, base directory, working directory, target and diagnostic path. Pass
+its `models` result as `preparedAssets.models` when compiling the style; retain its source
+identities and watch paths when managing revisions. The artifact pipeline does this automatically.
+
 To write production output rather than manage it in memory:
 
 <!-- docs:check -->

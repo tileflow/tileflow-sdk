@@ -56,9 +56,19 @@ test('prepares inherited Streets directories without mutating the authored map',
     const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
     assert.equal(prepared.assets.length, 4);
     assert.equal(prepared.project, project);
-    assert.deepEqual(prepared.mapAssets.main, {
-      icons: {ids: streetsIconIds, sprite: '/tileflow/icons/main/sprite'},
+    assert.deepEqual(prepared.mapAssets.main?.icons, {
+      ids: streetsIconIds,
+      sprite: '/tileflow/icons/main/sprite',
     });
+    assert.deepEqual(Object.keys(prepared.mapAssets.main?.models ?? {}), [
+      'streets-tree-columnar',
+      'streets-tree-conifer',
+      'streets-tree-open',
+      'streets-tree-palm-fan',
+      'streets-tree-palm-feather',
+      'streets-tree-round',
+      'streets-tree-tall',
+    ]);
 
     const style = createStyleFromCatalog(prepared.project, 'main', {
       preparedAssets: prepared.mapAssets.main,

@@ -114,6 +114,7 @@ import {registerIconListCommand} from './icon-list-command';
 import {registerIconLockCommands} from './icon-lock-command';
 import {registerIconSetCommands} from './icon-set-command';
 import {registerLanguageCommand} from './language-command';
+import {prepareModelAssets} from './model-assets';
 import {
   createTileflowNativePreviewRequestHandler,
   getTileflowNativePreviewManifestUrl,
@@ -377,10 +378,17 @@ program
           icons: resolveIconOptions(options),
           target: options.target,
         });
-        const mapAssets = createCompiledMapAssets(compiledIcons, (binding) =>
-          options.target === 'hosted'
-            ? `${normalizeUrl(options.apiBaseUrl)}/sprites/preflight/${binding.packageHash}/sprite`
-            : `/tileflow/icons/${binding.mapName}/sprite`,
+        const modelAssets = await prepareModelAssets(project, {
+          baseDirectory,
+          target: options.target,
+        });
+        const mapAssets = createCompiledMapAssets(
+          compiledIcons,
+          (binding) =>
+            options.target === 'hosted'
+              ? `${normalizeUrl(options.apiBaseUrl)}/sprites/preflight/${binding.packageHash}/sprite`
+              : `/tileflow/icons/${binding.mapName}/sprite`,
+          modelAssets,
         );
         failureDefaults = {code: 'STYLE_INVALID', phase: 'style-validation'};
         const compiledStyles = createTileflowStyles(project, {
@@ -982,9 +990,14 @@ program
       // Validate the complete local style before the first remote write. Hosted
       // sprite URLs are substituted after upload, but they do not change layer
       // semantics.
+      const modelAssets = await prepareModelAssets(deploymentProject, {
+        baseDirectory,
+        target: 'hosted',
+      });
       const preflightMapAssets = createCompiledMapAssets(
         compiledIcons,
         (binding) => `${apiUrl}/sprites/preflight/${binding.packageHash}/sprite`,
+        modelAssets,
       );
       const compiledPreflightStyles = createTileflowStyles(deploymentProject, {
         apiBaseUrl: apiUrl,
@@ -1073,11 +1086,15 @@ program
         hostedSpriteByPackageHash.set(iconPackage.contentHash, uploaded.value.spriteUrl);
       }
 
-      const hostedMapAssets = createCompiledMapAssets(compiledIcons, (binding) => {
-        const sprite = hostedSpriteByPackageHash.get(binding.packageHash);
-        if (!sprite) throw new Error(`Missing hosted sprite URL for map ${binding.mapName}`);
-        return sprite;
-      });
+      const hostedMapAssets = createCompiledMapAssets(
+        compiledIcons,
+        (binding) => {
+          const sprite = hostedSpriteByPackageHash.get(binding.packageHash);
+          if (!sprite) throw new Error(`Missing hosted sprite URL for map ${binding.mapName}`);
+          return sprite;
+        },
+        modelAssets,
+      );
       const compiledHostedStyles = createTileflowStyles(deploymentProject, {
         apiBaseUrl: api.apiUrl,
         mapAssets: hostedMapAssets,
@@ -1904,19 +1921,24 @@ type CompiledProjectIcons = Awaited<ReturnType<typeof compileTileflowIconPackage
 function createCompiledMapAssets(
   compiled: CompiledProjectIcons,
   resolveSprite: (binding: CompiledProjectIcons['bindings'][number]) => string,
+  modelAssets: Record<string, TileflowPreparedMapAssets>,
 ): Record<string, TileflowPreparedMapAssets> {
-  return Object.fromEntries(
-    compiled.bindings.map((binding) => [
-      binding.mapName,
-      {
-        icons: {
-          ids: binding.iconIds,
-          sprite: resolveSprite(binding),
-          ...(binding.appearances ? {appearances: binding.appearances} : {}),
+  return {
+    ...modelAssets,
+    ...Object.fromEntries(
+      compiled.bindings.map((binding) => [
+        binding.mapName,
+        {
+          ...modelAssets[binding.mapName],
+          icons: {
+            ids: binding.iconIds,
+            sprite: resolveSprite(binding),
+            ...(binding.appearances ? {appearances: binding.appearances} : {}),
+          },
         },
-      },
-    ]),
-  );
+      ]),
+    ),
+  };
 }
 
 function selectManagedDeployMaps(

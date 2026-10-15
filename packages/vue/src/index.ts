@@ -33,6 +33,9 @@ import {
   attachTileflowMapLifecycle,
   createTileflowSessionStarter,
   createTileflowThemeController,
+  createTileflowVegetation,
+  type TileflowVegetationController,
+  type TileflowViewMode,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
   loadTileflowStyleFonts,
@@ -122,6 +125,8 @@ export type TileflowMapSlots<TAnnotation extends TileflowAnnotation = TileflowAn
 };
 
 type TileflowMapSharedProps = {
+  vegetation?: boolean;
+  viewMode?: TileflowViewMode;
   alt?: string;
   analytics?: TileflowAnalytics;
   center?: [number, number];
@@ -231,6 +236,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       required: true,
       type: Object as PropType<TileflowRuntimeSource>,
     },
+    vegetation: {type: Boolean as PropType<boolean | undefined>, default: undefined},
+    viewMode: {type: String as PropType<TileflowViewMode>, default: '2d'},
     theme: String,
     themeBlend: Object as PropType<TileflowBrowserThemeBlendSelection>,
     themeTransition: Object as PropType<TileflowThemeTransitionOptions>,
@@ -283,6 +290,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     let mapLifecycle: TileflowMapLifecycleAttachment | null = null;
     let mapResizeObserver: ResizeObserver | null = null;
     let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
+    let vegetationController: TileflowVegetationController | null = null;
     let themeController: TileflowThemeController | null = null;
     let unsubscribeSystemColorScheme: (() => void) | null = null;
     let mapLoadId = 0;
@@ -693,6 +701,14 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       updateImageSize();
     };
 
+    watch(
+      () => [props.vegetation, props.viewMode] as const,
+      ([visible, viewMode]) => {
+        vegetationController?.setVisible(visible);
+        vegetationController?.setViewMode(viewMode ?? '2d');
+      },
+    );
+
     const destroyMap = () => {
       mapLoadId += 1;
       readinessRunId += 1;
@@ -702,6 +718,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       const resizeObserver = mapResizeObserver;
       const map = mapRef.value;
       const controller = themeController;
+      const vegetation = vegetationController;
+      vegetationController = null;
       const annotationInteractionsForMap = annotationRuntime;
       const semanticInteractionsForMap = semanticRuntime;
       const worldRequestBridge = mapWorldRequestBridge;
@@ -719,6 +737,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         () => worldRequestBridge?.dispose(),
         () => fairUseNotice?.dispose(),
         () => lifecycle?.dispose(),
+        () => vegetation?.dispose(),
         () => controller?.dispose(),
         () => resizeObserver?.disconnect(),
         () => map?.remove(),
@@ -905,6 +924,23 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
                 }
               },
             });
+
+      vegetationController = createTileflowVegetation({
+        map,
+        ...(themeController ? {controller: themeController} : {}),
+        visible: props.vegetation,
+        viewMode: props.viewMode ?? '2d',
+        transformRequest: createTileflowTransformRequest({
+          getAnalytics: () => resolvedAnalytics.value,
+          sessionController: session,
+          sessionId: session.sessionId,
+          transformRequest: (url) =>
+            props.mapOptions?.transformRequest?.(
+              url,
+              'Tile' as Parameters<NonNullable<TileflowMapOptions['transformRequest']>>[1],
+            ),
+        }),
+      });
 
       try {
         const mapInteractions = createTileflowMapLibreDomRuntime<

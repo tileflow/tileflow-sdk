@@ -4718,6 +4718,42 @@
             "threeDimensional": {
               "type": "object",
               "properties": {
+                "lighting": {
+                  "type": "string",
+                  "enum": ["style", "sun"]
+                },
+                "colorVariation": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
                 "edges": {
                   "anyOf": [
                     {
@@ -5863,7 +5899,14 @@
             },
             "mode": {
               "type": "string",
-              "enum": ["3d", "flat"]
+              "enum": ["3d", "flat", "auto"]
+            },
+            "fallback": {
+              "type": "string",
+              "enum": ["flat", "none"]
+            },
+            "visible": {
+              "type": "boolean"
             },
             "renderStack": {
               "$ref": "#/$defs/__schema165"
@@ -26657,6 +26700,42 @@
         "threeDimensional": {
           "type": "object",
           "properties": {
+            "lighting": {
+              "type": "string",
+              "enum": ["style", "sun"]
+            },
+            "colorVariation": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "$ref": "#/$defs/__schema13"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "theme-fixed"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": ["kind", "reason", "value"],
+                  "additionalProperties": false
+                }
+              ]
+            },
             "edges": {
               "anyOf": [
                 {
@@ -26839,6 +26918,42 @@
         "threeDimensional": {
           "type": "object",
           "properties": {
+            "lighting": {
+              "type": "string",
+              "enum": ["style", "sun"]
+            },
+            "colorVariation": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "$ref": "#/$defs/__schema13"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "theme-fixed"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": ["kind", "reason", "value"],
+                  "additionalProperties": false
+                }
+              ]
+            },
             "edges": {
               "anyOf": [
                 {
@@ -27125,6 +27240,76 @@
             {
               "type": "object",
               "properties": {
+                "lighting": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["style", "sun"]
+                    }
+                  ]
+                },
+                "colorVariation": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "$ref": "#/$defs/TileflowModulePatchRef17"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "oneOf": [
+                                {
+                                  "$ref": "#/$defs/TileflowReset"
+                                },
+                                {
+                                  "type": "string",
+                                  "const": "theme-fixed"
+                                }
+                              ]
+                            },
+                            "reason": {
+                              "oneOf": [
+                                {
+                                  "$ref": "#/$defs/TileflowReset"
+                                },
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              ]
+                            },
+                            "value": {
+                              "oneOf": [
+                                {
+                                  "$ref": "#/$defs/TileflowReset"
+                                },
+                                {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                }
+                              ]
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  ]
+                },
                 "edges": {
                   "oneOf": [
                     {
@@ -32739,7 +32924,14 @@
         },
         "mode": {
           "type": "string",
-          "enum": ["3d", "flat"]
+          "enum": ["3d", "flat", "auto"]
+        },
+        "fallback": {
+          "type": "string",
+          "enum": ["flat", "none"]
+        },
+        "visible": {
+          "type": "boolean"
         },
         "renderStack": {
           "$ref": "#/$defs/__schema165"
@@ -32987,7 +33179,14 @@
         },
         "mode": {
           "type": "string",
-          "enum": ["3d", "flat"]
+          "enum": ["3d", "flat", "auto"]
+        },
+        "fallback": {
+          "type": "string",
+          "enum": ["flat", "none"]
+        },
+        "visible": {
+          "type": "boolean"
         },
         "renderStack": {
           "$ref": "#/$defs/__schema165"
@@ -33248,7 +33447,28 @@
             },
             {
               "type": "string",
-              "enum": ["3d", "flat"]
+              "enum": ["3d", "flat", "auto"]
+            }
+          ]
+        },
+        "fallback": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "type": "string",
+              "enum": ["flat", "none"]
+            }
+          ]
+        },
+        "visible": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "type": "boolean"
             }
           ]
         },

@@ -691,3 +691,12 @@ export {
   tileflowStreetLightsMetadataKey,
   type TileflowStreetLightsDesign,
 } from './street-lights';
+
+export {
+  readTileflowVegetationDisplay,
+  resolveTileflowVegetationRepresentation,
+  tileflowVegetationDisplayMetadataKey,
+  type TileflowVegetationDisplay,
+  type TileflowVegetationRepresentation,
+  type TileflowViewMode,
+} from './vegetation-display';

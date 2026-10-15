@@ -158,15 +158,15 @@ A theme can describe its sun and sky light (`lighting.sun`, `lighting.ambient`);
 returns the sun the map shows with `getSun()`, mixed during a blend, for an application's own 3D
 layers, and `setSun()` places it by direction or by the real sun of a date and place; see
 [sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md).
-`createTileflowBuildings3D` raises the map's buildings round the camera and lights them from that
-sun, with shadows on the buildings and the flat map, contact shadow and night light from the places
-they hold; it shows, hides and grows them without laying out any source; see
+`createTileflowBuildings3D` raises the map's buildings with their authored colours and native
+extrusion lighting. Height changes are immediate by default; scene sun lighting, shadows,
+illuminated edges, colour variation, night lights and animation are explicit options; see
 [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md).
 `createTileflowStreetLights` lights the streets as the sun sets, from the lamps and lit streets the
 map's data holds; see
 [street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md).
-`createTileflowTrees3D` stands the map's trees in 3D in the same light; see
-[3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md).
+`createTileflowVegetation` controls all trees using the map's `3d`, `flat` or `auto` policy; see
+[vegetation controls and 3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md).
 
 The semantic domains are `land`, `water`, `nautical`, `roads`, `buildings`, `boundaries`, `labels`,
 `poi`, `aeroways`, `transit`, `vegetation`, `addresses`, and `landforms`. Style stable geographic

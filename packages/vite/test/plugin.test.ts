@@ -423,7 +423,7 @@ const icon =
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="#000" d="M2 20h20L12 2z"/></svg>';
 
 function watchedConfig(source: string): string {
-  return `import {defineMap,disable} from '@tileflow/core'; import {streets} from '@tileflow/maps'; import {mapName} from './tokens'; export default defineMap({id:'main',name:mapName,version:1,extends:streets,glyphs:${externalGlyphProvider},icons:[${JSON.stringify(source)}],modules:{poi:disable(),roads:disable()}});\n`;
+  return `import {defineMap,disable} from '@tileflow/core'; import {streets} from '@tileflow/maps'; import {mapName} from './tokens'; export default defineMap({id:'main',name:mapName,version:1,extends:streets,glyphs:${externalGlyphProvider},icons:[${JSON.stringify(source)}],modules:{poi:disable(),roads:disable(),vegetation:disable()}});\n`;
 }
 
 function streetsConfig(): string {

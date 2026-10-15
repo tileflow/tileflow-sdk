@@ -97,9 +97,9 @@ export const workbenchClient = String.raw`
           }
           syncWorkbenchPickers();
           const displayed = Number(side.frame.contentDocument?.documentElement.dataset.tileflowArtifactGeneration);
-          wb("capture").disabled = wbBusy || wbCatalog.busy || !side.bridgeReady || side.runtimeFailed || owner?.status !== "ready" || displayed !== owner.generation;
+          wb("capture").disabled = hasMapControlOverrides(side) || wbBusy || wbCatalog.busy || !side.bridgeReady || side.runtimeFailed || owner?.status !== "ready" || displayed !== owner.generation;
           for (const name of ["save-reference", "first-reference", "capture-compare"]) wb(name).disabled = wb("capture").disabled;
-          wb("capture").title = wb("capture").disabled ? "Wait for the current map to finish loading" : "Save the compiled map at the selected capture size";
+          wb("capture").title = hasMapControlOverrides(side) ? "Reset Controls before capturing the source configuration" : wb("capture").disabled ? "Wait for the current map to finish loading" : "Save the compiled map at the selected capture size";
           wb("status").textContent = side.runtimeFailed ? "Preview error" : owner?.status === "ready"
             ? "Up to date · Local · " + (side.camera ? "z" + side.camera.zoom.toFixed(2) : "Loading map")
             : owner?.status === "invalid" ? "Configuration invalid · last valid map shown" : "Building map…";
@@ -313,6 +313,7 @@ export const workbenchClient = String.raw`
           if (!validPortableName(sceneNameInput.value)) throw new Error("Use a kebab-case capture name in Capture settings.");
           const side = states[activeSideId];
           if (!side.bridgeReady || side.runtimeFailed) throw new Error("Wait for the current map to finish loading.");
+          if (hasMapControlOverrides(side)) throw new Error("Reset Controls or adopt the changes in source before capturing.");
           let definition = currentWorkbenchDefinition();
           if (action.compare) {
             if (!reference) throw new Error("Choose a reference capture first.");

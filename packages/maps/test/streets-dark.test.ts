@@ -10,9 +10,11 @@ import test from 'node:test';
 import {createStyle, resolveMap, resolveTileflowTheme} from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
 import {streets, streetsIcons, streetsThemes} from '../src';
+import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
 import {streetsPoiImageIds} from './streets-poi-fixture';
 
 const streetsIconIds = [
+  ...streetsTreeIconIds,
   'coffee',
   'nature',
   'sport',
@@ -55,6 +57,7 @@ const streetsIconIds = [
 
 const preparedAssets = {
   preparedAssets: {
+    models: streetsPreparedModels,
     icons: {
       ids: streetsIconIds,
       sprite: '/tileflow/test/streets-dark/sprite',
@@ -109,7 +112,6 @@ const approvedLightStyleColors = new Set([
   '#A7DFA0',
   '#B3EAAD',
   '#F042B6',
-  '#B8E0AE',
   '#BDB7B1',
   '#BEC5D8',
   '#BFE6AE',
@@ -131,7 +133,6 @@ const approvedLightStyleColors = new Set([
   '#E2F3D1',
   '#F57A00',
   '#D7E9DE',
-  '#D8E1D8',
   '#C2EEBE',
   '#E0CDA5',
   '#DEE0E8',
@@ -208,7 +209,6 @@ const approvedDarkStyleColors = new Set([
   '#3E4B47',
   '#405348',
   '#434247',
-  '#44504C',
   '#453D48',
   '#45424E',
   '#454956',
@@ -218,7 +218,6 @@ const approvedDarkStyleColors = new Set([
   '#46564D',
   '#485650',
   '#4C505E',
-  '#4D5852',
   '#4D5D54',
   '#4D6255',
   '#4E5260',

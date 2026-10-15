@@ -2,9 +2,9 @@ import {mkdir, writeFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {
   serializeTileflowIconsLockfile,
-  tileflowIconsLockfileName,
   type TileflowIconPackageManifest,
   type TileflowIconSetPin,
+  tileflowIconsLockfileName,
 } from '@tileflow/core';
 import {
   type CompiledTileflowIconPackage,
@@ -17,7 +17,7 @@ import {linkWorkspacePackages} from './workspace-packages';
 export const tileflowIconSetFixtureGlyphs =
   "{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}";
 
-const unreferencedModules = "{poi:{type:'poi',icons:false},roads:disable()}";
+const unreferencedModules = "{poi:{type:'poi',icons:false},roads:disable(),vegetation:disable()}";
 const localOverrideSvg =
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" fill="#2563eb"/></svg>';
 

@@ -16,6 +16,21 @@ const tsxLoader = import.meta.resolve('tsx');
 const fakeApiKey = `tf_live_${'a'.repeat(48)}`;
 const accountSessionToken = `tf_session_${'b'.repeat(64)}`;
 const managedMapId = 'map_AbCdEfGhIjKlMnOp';
+const streetsThemeNames = [
+  'dark',
+  'dark-faded',
+  'dark-monochrome',
+  'dawn',
+  'dawn-faded',
+  'dawn-monochrome',
+  'dusk',
+  'dusk-faded',
+  'dusk-monochrome',
+  'faded',
+  'light',
+  'monochrome',
+] as const;
+const streetsNightThemes = new Set(['dark', 'dark-faded', 'dark-monochrome']);
 
 test('Map deploy auto-selects one map, preserves its theme family, and writes a session manifest', async (t) => {
   const fixture = await createFixture(t);
@@ -23,7 +38,7 @@ test('Map deploy auto-selects one map, preserves its theme family, and writes a 
   const api = await createFakeApi(t, async (request) => {
     requestBody = JSON.parse(await readRequestBody(request)) as Record<string, unknown>;
     return {
-      ...hostedDeploymentResponse(managedMapId, ['dark', 'light'], {
+      ...hostedDeploymentResponse(managedMapId, streetsThemeNames, {
         changed: true,
         version: 1,
       }),
@@ -61,7 +76,7 @@ test('Map deploy auto-selects one map, preserves its theme family, and writes a 
     Object.keys(
       (requestBody as {artifact?: {styles?: Record<string, unknown>}})?.artifact?.styles ?? {},
     ),
-    ['dark', 'light'],
+    streetsThemeNames,
   );
   assert.equal('policy' in (requestBody ?? {}), false);
   const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
@@ -241,7 +256,7 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
     }
   ).artifact;
   assert.equal(deployedStyles?.schemaVersion, 1);
-  assert.deepEqual(Object.keys(deployedStyles?.styles ?? {}), ['dark', 'light']);
+  assert.deepEqual(Object.keys(deployedStyles?.styles ?? {}), streetsThemeNames);
   for (const style of Object.values(deployedStyles?.styles ?? {})) {
     assert.equal(style.sprite, 'https://api.example.test/sprites/icp_1234567890abcdef/sprite');
     const source = (style as {sources?: Record<string, {tiles?: unknown; url?: unknown}>}).sources
@@ -274,16 +289,19 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
   assert.equal(manifestDocument.version, 1);
   assert.equal(manifestDocument.maps.madrid.defaultTheme, 'light');
   assert.deepEqual(manifestDocument.maps.madrid.systemThemes, {dark: 'dark', light: 'light'});
-  assert.deepEqual(Object.keys(manifestDocument.maps.madrid.themes), ['dark', 'light']);
+  assert.deepEqual(Object.keys(manifestDocument.maps.madrid.themes), streetsThemeNames);
   assert.equal(manifestDocument.maps.madrid.themes.dark?.colorScheme, 'dark');
   assert.equal(manifestDocument.maps.madrid.themes.light?.colorScheme, 'light');
   for (const theme of Object.values(manifestDocument.maps.madrid.themes)) {
     assert.deepEqual(theme.fontFaces, []);
     assert.match(theme.revision ?? '', /^[a-f0-9]{64}$/u);
-    assert.match(theme.styleId ?? '', new RegExp(`^${managedMapId}_(?:dark|light)$`, 'u'));
+    assert.ok(streetsThemeNames.some((name) => theme.styleId === `${managedMapId}_${name}`));
     assert.match(
       theme.styleUrl,
-      new RegExp(`^https://api\\.example\\.test/maps/${managedMapId}/(?:dark|light)\\.json$`, 'u'),
+      new RegExp(
+        `^https://api\\.example\\.test/maps/${managedMapId}/(?:${streetsThemeNames.join('|')})\\.json$`,
+        'u',
+      ),
     );
   }
   assert.deepEqual(manifestDocument.maps.madrid.view, {
@@ -298,7 +316,7 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
 test('deploy reports an idempotent hosted no-op without changing the manifest contract', async (t) => {
   const fixture = await createFixture(t);
   const api = await createFakeApi(t, async () => undefined, {
-    ...hostedDeploymentResponse(managedMapId, ['dark', 'light'], {
+    ...hostedDeploymentResponse(managedMapId, streetsThemeNames, {
       changed: false,
       version: 7,
     }),
@@ -334,7 +352,7 @@ test('deploy reports an idempotent hosted no-op without changing the manifest co
 test('deploy reports a changed hosted version for one atomic theme family', async (t) => {
   const fixture = await createFixture(t);
   const api = await createFakeApi(t, async () => undefined, {
-    ...hostedDeploymentResponse(managedMapId, ['dark', 'light'], {
+    ...hostedDeploymentResponse(managedMapId, streetsThemeNames, {
       changed: true,
       version: 8,
     }),
@@ -385,7 +403,7 @@ test('a failed singular deploy preserves the previous manifest and a retry conve
         changed,
         mapId: managedMapId,
         themes: Object.fromEntries(
-          ['dark', 'light'].map((theme) => [
+          streetsThemeNames.map((theme) => [
             theme,
             {
               styleId: `style_${body.environment}_${theme}`,
@@ -763,7 +781,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     assert.equal(typeof mapEntry?.themes?.dark?.styleSha256, 'string');
     assert.equal(typeof mapEntry?.themes?.light?.styleSha256, 'string');
     assert.ok(artifact.buildManifest?.provenance);
-    assert.deepEqual(Object.keys(artifact.styles ?? {}), ['dark', 'light']);
+    assert.deepEqual(Object.keys(artifact.styles ?? {}), streetsThemeNames);
     for (const [theme, style] of Object.entries(artifact.styles ?? {})) {
       assert.equal(
         style.sprite,
@@ -772,7 +790,9 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
       const foodPoiLayer = style.layers?.find((layer) => layer.id === 'tileflow-poi-icon');
       const iconImage = JSON.stringify(foodPoiLayer?.layout?.['icon-image']);
       assert.match(iconImage, /"get","icon"/u);
-      assert.match(iconImage, new RegExp(`"image","food${theme === 'dark' ? '-dark' : ''}"`, 'u'));
+      const paletteSuffix = theme.includes('monochrome') ? '-monochrome' : '';
+      const nightSuffix = streetsNightThemes.has(theme) ? '-dark' : '';
+      assert.match(iconImage, new RegExp(`"image","food${paletteSuffix}${nightSuffix}"`, 'u'));
     }
     assert.deepEqual(parsed.iconPackage, {
       contentHash: requests[0]?.url?.split('/').pop(),
@@ -780,7 +800,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     });
     assert.doesNotMatch(JSON.stringify(artifact), /\.\/icons|source-secret/);
     return {
-      ...hostedDeploymentResponse(managedMapId, ['dark', 'light'], {
+      ...hostedDeploymentResponse(managedMapId, streetsThemeNames, {
         changed: true,
         version: 1,
       }),
@@ -805,7 +825,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     requests.map((request) => `${request.method} ${request.url?.split('/').slice(0, 3).join('/')}`),
     [`PUT /v1/icon-packages`, `POST /v1/styles`],
   );
-  assert.match(result.stdout, /Uploaded icon package madrid \(3 icons,/);
+  assert.match(result.stdout, /Uploaded icon package madrid \(5 icons,/);
   assert.match(result.stdout, /Published madrid \(v1\)\./);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(fakeApiKey));
 });
@@ -827,7 +847,7 @@ test('deploy binds one composition receipt to the effective package in manifest 
     }
     deployBody = JSON.parse(bodyBytes.toString('utf8')) as Record<string, unknown>;
     return {
-      ...hostedDeploymentResponse(managedMapId, ['dark', 'light'], {changed: true, version: 1}),
+      ...hostedDeploymentResponse(managedMapId, streetsThemeNames, {changed: true, version: 1}),
     };
   });
 
@@ -1409,7 +1429,7 @@ function existingHostedManifest(apiUrl: string): string {
 
 function hostedDeploymentResponse(
   mapId: string,
-  themeNames: readonly string[] = ['dark', 'light'],
+  themeNames: readonly string[] = streetsThemeNames,
   options: {changed?: boolean; version?: number} = {},
 ): Record<string, unknown> {
   return {
@@ -1450,7 +1470,7 @@ async function createIconFixture(t: TestContext) {
   const fixture = await createFixture(t);
   const iconsDirectory = join(fixture.directory, 'icons');
   await mkdir(iconsDirectory);
-  for (const image of ['food', 'food-dark']) {
+  for (const image of ['food', 'food-dark', 'food-monochrome', 'food-monochrome-dark']) {
     await writeFile(
       join(iconsDirectory, `${image}.svg`),
       '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle id="source-secret" cx="8" cy="8" r="7" /></svg>',

@@ -26,6 +26,7 @@ import {
 } from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
 import {baedeker, blueprint, civica, ferraris, harad, siegfried, soundings, streets} from '../src';
+import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
 import {streetsPoiImageIds} from './streets-poi-fixture';
 
 const moduleFactories = {
@@ -62,8 +63,10 @@ const officialMaps = {
 
 const preparedOfficialAssets = {
   preparedAssets: {
+    models: streetsPreparedModels,
     icons: {
       ids: [
+        ...streetsTreeIconIds,
         'baedeker-hachures',
         'baedeker-orchard',
         'baedeker-paper-grain',

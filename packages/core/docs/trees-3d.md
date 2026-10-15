@@ -12,10 +12,68 @@ style it compiles, for every theme, and the renderer follows theme changes and b
 
 It is a custom WebGL2 layer for MapLibre GL JS, drawn above the map's buildings and below its
 labels. It needs WebGL2 and the Mercator projection, and the trees stand from zoom 15 by default.
-Elsewhere (Capture, Static Maps, Native, or a browser without WebGL2) the map draws the vegetation
-module's flat trees.
+When model trees are requested, Capture, Static Maps, Native, and browsers without WebGL2 use
+the module's `fallback`: `flat` by default, or `none` to omit trees. Static output uses the 2D view
+for `auto` maps. Streets chooses `none`, so it never substitutes flat crowns
+for its models unless an extension explicitly chooses `flat` or `auto`.
 
-## Stand the trees
+## Visibility and representation
+
+Use `createTileflowVegetation` for application controls. React, Vue and Svelte mount it automatically
+in interactive maps. The map chooses `vegetation.mode` independently of visibility:
+
+| Mode           | 2D view             | 3D view             |
+| -------------- | ------------------- | ------------------- |
+| `3d` (default) | Model trees         | Model trees         |
+| `flat`         | Flat crowns/circles | Flat crowns/circles |
+| `auto`         | Flat crowns/circles | Model trees         |
+
+`viewMode` is explicit application state (`2d` by default), not a pitch threshold. Tilting the camera
+does not change representation. Visibility defaults to `vegetation.visible ?? true`; OFF hides every
+representation. Turning trees off releases model buffers and tile readers. Controls apply immediately,
+without a grow/sink animation, and do not change building appearance or lighting.
+
+<!-- docs:check -->
+
+```ts
+import {createTileflowVegetation, type TileflowVegetationOptions} from '@tileflow/core/browser';
+
+export function mountVegetation(options: TileflowVegetationOptions) {
+  const trees = createTileflowVegetation({...options, viewMode: '2d'});
+  trees.setVisible(false); // Hide all vegetation, including flat artwork.
+  trees.setVisible(undefined); // Restore the map's authored visibility.
+  trees.setViewMode('3d'); // Only auto maps change representation.
+  return trees; // Call dispose() before removing the map, or let its remove event clean up.
+}
+```
+
+Pass the application's HTTP tile `transformRequest` when it supplies credentials or request headers;
+asynchronous transforms are supported. Use one vegetation controller per map and do not mount a second
+low-level tree renderer alongside it. Style replacement and theme changes retain visibility and view mode.
+
+To change an inherited map's policy while preserving its artwork:
+
+<!-- docs:check -->
+
+```ts
+import {defineMap, refine} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'adaptive-trees',
+  version: 1,
+  extends: streets,
+  modules: {vegetation: refine({mode: 'auto', fallback: 'flat'})},
+});
+```
+
+Use `refine({visible: false})` for initially hidden vegetation that can be enabled at runtime.
+Use `vegetation: disable()` to remove the module entirely; a runtime toggle cannot restore a module
+that is absent from the compiled map. Browser framework components accept `vegetation={false}` and
+`viewMode="3d"` (Vue: `:vegetation="false"`, `view-mode="3d"`). Image mode uses the compiled static
+fallback and does not apply these interactive controls.
+
+## Animate trees with the low-level renderer
 
 This example assumes an existing MapLibre map showing a Tileflow map whose vector source is called
 `tileflow`, as Tileflow's maps call World, and a theme controller for it:
@@ -42,7 +100,8 @@ a share of their size, from 0 to 1. Each returns a promise that resolves once th
 newer call takes over from where the trees stand. A browser preference for reduced motion changes at
 once. `dispose()` takes the layer off the map.
 
-While they stand, the 3D trees stand in for the map's flat trees: the layers the vegetation module
+This low-level API retains its flat-layer restoration behavior; use the vegetation controller for
+a visibility toggle. While they stand, the 3D trees stand in for the map's flat trees: the layers the vegetation module
 draws them with are hidden when the trees are shown, and come back as they were once the trees have
 sunk or the layer leaves the map.
 

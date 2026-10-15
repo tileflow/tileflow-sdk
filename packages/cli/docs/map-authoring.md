@@ -93,7 +93,11 @@ the first action; press **I** to toggle the inspector and **Escape** to close ca
 The inspector starts off. Select **Inspect** or press **I**, then click an element to highlight it
 and see its styling and available semantic configuration paths. Press **Escape** to exit inspection. Edit the config in
 your editor or coding agent; the existing watcher updates the map and retains the last valid view
-through invalid edits.
+through invalid edits. **Controls**, beside Inspect, opens a shared sidebar for module enablement
+and advanced building/vegetation settings. Changes automatically recompile a temporary preview after
+a brief pause; Reset restores the
+source. Copy module overrides exports the JSON patch for adoption in configuration. These preview
+edits do not rewrite source files, and capture is disabled while module overrides are displayed.
 
 Use **Capture** before and after an edit, then **Compare**. Captures use the current camera, selected
 map/theme and a fixed frame (1280×800 at DPR 1 initially, or the selected scene's viewport). Adjust

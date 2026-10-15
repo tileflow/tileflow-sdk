@@ -30,6 +30,8 @@ const annotationOnlyMap = (
     annotations={properties}
     renderPopup={({annotation, close}) => <PropertyCard property={annotation.data} close={close} />}
     source={{map: 'main'}}
+    vegetation={false}
+    viewMode="3d"
   />
 );
 

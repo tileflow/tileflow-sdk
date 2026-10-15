@@ -14,6 +14,11 @@ import {
   tileflowLineBackgroundGlyphRoute,
 } from './line-background-glyphs';
 import type {TileflowLocalTilesetFile} from './local-tilesets';
+import {
+  compilePreviewControls,
+  describePreviewControls,
+  parsePreviewControls,
+} from './preview-controls';
 import {normalizeTileflowBasePath} from './public-paths';
 import {
   type TileflowArtifactAcquisition,
@@ -163,6 +168,8 @@ export function createTileflowDevRequestHandler(
   const lineBackgroundGlyphs = createTileflowLineBackgroundGlyphResponder({cwd});
   let closed = false;
   let lastOrigin: string | undefined;
+  let controlsGeneration: number | undefined;
+  const controlsCache = new Map<string, ReturnType<typeof compilePreviewControls>>();
   const loadOwnedSession = (origin: string) => {
     lastOrigin = origin;
     ownedSessionPromise ??= createTileflowArtifactSession({
@@ -211,6 +218,23 @@ export function createTileflowDevRequestHandler(
       acquisition = session.acquireArtifacts();
       const artifacts: TileflowBuildArtifacts | undefined = acquisition?.artifacts;
       const state: TileflowArtifactSessionState = session.getState();
+      const controls = url.searchParams.get('controls');
+      if (controls !== null) parsePreviewControls(controls);
+      const controlled = (map: string, theme: string) => {
+        if (!artifacts || controls === null) return undefined;
+        if (controlsGeneration !== acquisition?.generation) {
+          controlsCache.clear();
+          controlsGeneration = acquisition?.generation;
+        }
+        const key = JSON.stringify([map, theme, controls]);
+        let value = controlsCache.get(key);
+        if (!value) {
+          value = compilePreviewControls(artifacts, map, theme, controls, apiBaseUrl);
+          if (controlsCache.size >= 8) controlsCache.delete(controlsCache.keys().next().value!);
+          controlsCache.set(key, value);
+        }
+        return value;
+      };
 
       if (path === '/__status') {
         return jsonResponse(createTileflowArtifactStatus(state));
@@ -241,7 +265,8 @@ export function createTileflowDevRequestHandler(
             })
           : undefined;
         const previewStyle = preview
-          ? artifacts?.styles[preview.mapName]?.[preview.themeName]
+          ? (controlled(preview.mapName, preview.themeName)?.style ??
+            artifacts?.styles[preview.mapName]?.[preview.themeName])
           : undefined;
         const isSemanticPreview =
           preview !== undefined &&
@@ -255,11 +280,23 @@ export function createTileflowDevRequestHandler(
             isSemanticPreview,
             fontFaces,
             options.fitViewport,
+            controls ?? undefined,
           ),
         );
       }
 
       if (!artifacts) return unavailableArtifactsResponse(state);
+
+      if (path === '/__controls') {
+        return compactJsonResponse({
+          ...describePreviewControls(
+            artifacts,
+            url.searchParams.get('map') ?? '',
+            url.searchParams.get('theme') ?? '',
+          ),
+          generation: acquisition?.generation,
+        });
+      }
 
       if (path.startsWith(`/${tileflowLineBackgroundGlyphRoute}/`)) {
         const glyphRequest = parseTileflowLineBackgroundGlyphPath(path);
@@ -299,7 +336,8 @@ export function createTileflowDevRequestHandler(
       if (path.startsWith('/__inspection/')) {
         const selection = getTileflowStyleInspectionSelection(path);
         const inspection = selection
-          ? artifacts.styleInspections?.[selection.mapName]?.[selection.themeName]
+          ? (controlled(selection.mapName, selection.themeName)?.inspection ??
+            artifacts.styleInspections?.[selection.mapName]?.[selection.themeName])
           : undefined;
         if (!selection || !inspection) {
           return jsonResponse({error: 'Compiler inspection is unavailable.'}, 404);
@@ -310,7 +348,8 @@ export function createTileflowDevRequestHandler(
       if (path.startsWith('/styles/')) {
         const selection = getTileflowStyleSelection(path);
         const style = selection
-          ? artifacts.styles[selection.mapName]?.[selection.themeName]
+          ? (controlled(selection.mapName, selection.themeName)?.style ??
+            artifacts.styles[selection.mapName]?.[selection.themeName])
           : undefined;
         if (!selection || !style) {
           return jsonResponse({error: 'Unknown map theme style.'}, 404);
@@ -354,6 +393,12 @@ export function createTileflowDevRequestHandler(
       return jsonResponse({error: 'Not found'}, 404);
     } catch (error) {
       options.onError?.(error);
+      if (url.searchParams.has('controls') || path === '/__controls') {
+        return jsonResponse(
+          {error: error instanceof Error ? error.message : 'Invalid map controls.'},
+          400,
+        );
+      }
       return tileflowErrorResponse(error);
     } finally {
       await acquisition?.release();
@@ -531,6 +576,7 @@ function isOwnedTileflowRequestPath(path: string): boolean {
     path === '/manifest.json' ||
     path === '/__events' ||
     path === '/__status' ||
+    path === '/__controls' ||
     getTileflowStyleInspectionSelection(path) !== undefined ||
     path.startsWith('/generations/') ||
     path.startsWith('/icons/') ||

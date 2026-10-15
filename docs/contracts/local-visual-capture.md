@@ -194,6 +194,13 @@ canonical record JSON; the receipt binds the PNG and scene hashes. Identical rec
 and different contents never replace an existing ID. JSON results and captured watch events expose
 `captureId`. Timed shots retain their separate frame/video contract.
 
+Map DevTools offers confirmed deletion of an individual capture. Its local
+`POST /__workbench/captures/delete` action accepts `{id}` with a full capture ID and removes only that
+record's JSON and PNG. It rejects symbolic links and paths outside the project, shares the
+capture/compare busy guard and same-origin JSON request checks, and is idempotent for missing files.
+Scene exports and source configuration are unchanged. Deleting the pinned reference clears it in
+the requesting browser; other saved captures remain available.
+
 `tileflow compare --before <id> --after <id>` reads these saved records without executing a config,
 compiling, starting a browser or fetching data. It checks bounded regular files, hashes, receipt
 shape and normalized scene identity before invoking the same review comparator used for fresh

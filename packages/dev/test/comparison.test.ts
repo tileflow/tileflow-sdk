@@ -97,6 +97,233 @@ test('single-map Workbench loads one viewer and retains camera and inspection co
   assert.equal(harness.maps.right.jumpCalls.length, 0);
 });
 
+test('Controls waits safely while the map is replacing its style', async () => {
+  const harness = runComparisonHarness('', {single: true});
+  harness.load('left');
+  await harness.settle();
+  harness.maps.left.getStyle = () => undefined as never;
+  harness.element('map-controls').hidden = true;
+  await harness.click('controls-toggle');
+  await harness.settle();
+  assert.equal(harness.element('map-controls').hidden, false);
+  assert.equal(harness.element('controls-modules').disabled, true);
+});
+
+test('Controls recovers after a temporary style gap without changing the map generation', async () => {
+  const harness = runComparisonHarness('', {
+    single: true,
+    controlsRequest: () => Response.json(controlsFixture),
+  });
+  harness.load('left');
+  harness.element('map-controls').hidden = true;
+  await harness.click('controls-toggle');
+  const getStyle = harness.maps.left.getStyle.bind(harness.maps.left);
+  await harness.settle();
+  harness.maps.left.getStyle = () => undefined as never;
+  harness.pollIntervals();
+  await harness.settle();
+  assert.equal(harness.element('controls-modules').disabled, true);
+  harness.maps.left.getStyle = getStyle;
+  harness.pollIntervals();
+  await harness.settle();
+  assert.equal(harness.element('controls-modules').disabled, false);
+});
+
+test('Controls opens above review and history and toggles on the first click', async () => {
+  const harness = runComparisonHarness('', {single: true});
+  harness.load('left');
+  await harness.settle();
+  harness.element('map-controls').hidden = true;
+  harness.element('wb-review').hidden = false;
+  harness.element('wb-history').hidden = false;
+  await harness.click('controls-toggle');
+  assert.equal(harness.element('map-controls').hidden, false);
+  assert.equal(harness.element('wb-review').hidden, true);
+  assert.equal(harness.element('wb-history').hidden, true);
+  assert.equal(harness.element('wb-history-toggle').attributes.get('aria-expanded'), 'false');
+  await harness.click('controls-toggle');
+  assert.equal(harness.element('map-controls').hidden, true);
+});
+
+const controlsFixture = {
+  map: 'map',
+  theme: 'theme',
+  modules: [
+    {id: 'roads', enabled: true, fields: []},
+    {
+      id: 'vegetation',
+      enabled: true,
+      fields: [
+        {
+          path: 'mode',
+          label: 'Tree representation',
+          value: '3d',
+          choices: ['3d', 'auto', 'flat'],
+          inherit: true,
+        },
+        {path: 'threeDimensional.heightScale', label: 'Height', value: 1, min: 0, max: 10},
+      ],
+    },
+  ],
+};
+
+test('Vegetation Auto inherits the map and returning to it removes only the mode override', async () => {
+  const harness = runComparisonHarness('', {
+    single: true,
+    controlsRequest: (url) =>
+      Response.json(url.pathname.endsWith('/__controls') ? controlsFixture : {}),
+  });
+  harness.load('left');
+  harness.element('map-controls').hidden = true;
+  await harness.click('controls-toggle');
+  await harness.settle();
+  const modules = harness.element('controls-modules');
+  const representation = () => modules.querySelectorAll('select')[0]!;
+  assert.equal(representation().value, 'inherit');
+  assert.equal((representation().options[0] as FakeElement).textContent, 'Auto · Always 3D');
+  // Keep another authored change while switching representation and back to Auto.
+  const height = modules.querySelectorAll('input').find((input) => input.type === 'number')!;
+  height.value = '1.2';
+  height.dispatch('input');
+  representation().value = 'auto';
+  representation().dispatch('change');
+  harness.flushTimeouts();
+  await harness.settle();
+  const patch = () =>
+    JSON.parse(new URL(harness.element('left-frame').src).searchParams.get('controls')!);
+  assert.equal(patch().vegetation.mode, 'auto');
+  harness.load('left');
+  harness.pollIntervals();
+  await harness.settle();
+  assert.equal(representation().value, 'auto');
+  representation().value = 'inherit';
+  representation().dispatch('change');
+  harness.flushTimeouts();
+  await harness.settle();
+  assert.deepEqual(patch(), {vegetation: {threeDimensional: {heightScale: 1.2}}});
+  harness.load('left');
+  harness.pollIntervals();
+  await harness.settle();
+  assert.equal(representation().value, 'inherit');
+});
+
+test('Controls automatically groups edits, preserves the camera and keeps details expanded', async () => {
+  const compiled: URL[] = [];
+  const harness = runComparisonHarness('', {
+    single: true,
+    controlsRequest: (url) => {
+      if (url.pathname.endsWith('/__controls')) return Response.json(controlsFixture);
+      compiled.push(url);
+      return Response.json({});
+    },
+  });
+  harness.load('left');
+  harness.element('map-controls').hidden = true;
+  await harness.click('controls-toggle');
+  await harness.settle();
+  const modules = harness.element('controls-modules');
+  const details = modules.querySelectorAll('details')[0]!;
+  details.open = true;
+  const height = modules.querySelectorAll('input').find((input) => input.type === 'number')!;
+  for (const value of ['1.2', '1.4', '1.6']) {
+    height.value = value;
+    height.dispatch('input');
+  }
+  assert.equal(compiled.length, 0);
+  harness.flushTimeouts();
+  await harness.settle();
+  assert.equal(compiled.length, 1);
+  assert.deepEqual(JSON.parse(compiled[0]!.searchParams.get('controls')!), {
+    vegetation: {threeDimensional: {heightScale: 1.6}},
+  });
+  const frame = harness.element('left-frame');
+  const url = new URL(frame.src);
+  assert.equal(url.searchParams.get('lng'), '-5');
+  assert.equal(url.searchParams.get('zoom'), '5');
+  assert.equal(modules.disabled, true);
+  harness.load('left');
+  harness.pollIntervals();
+  await harness.settle();
+  assert.equal(modules.disabled, false);
+  assert.equal(modules.querySelectorAll('details')[0]!.open, true);
+});
+
+test('Controls discards an obsolete compile and applies the latest edit without another click', async () => {
+  const requests: {url: URL; resolve: (response: Response) => void}[] = [];
+  const harness = runComparisonHarness('', {
+    single: true,
+    controlsRequest: (url) =>
+      url.pathname.endsWith('/__controls')
+        ? Response.json(controlsFixture)
+        : new Promise<Response>((resolve) => requests.push({url, resolve})),
+  });
+  harness.load('left');
+  harness.element('map-controls').hidden = true;
+  await harness.click('controls-toggle');
+  await harness.settle();
+  const frame = harness.element('left-frame'),
+    initial = frame.src;
+  const height = harness
+    .element('controls-modules')
+    .querySelectorAll('input')
+    .find((input) => input.type === 'number')!;
+  height.value = '2';
+  height.dispatch('input');
+  harness.flushTimeouts();
+  height.value = '3';
+  height.dispatch('input');
+  harness.flushTimeouts();
+  assert.equal(requests.length, 1);
+  requests[0]!.resolve(Response.json({}));
+  await harness.settle();
+  assert.equal(frame.src, initial);
+  assert.equal(requests.length, 2);
+  requests[1]!.resolve(Response.json({}));
+  await harness.settle();
+  assert.deepEqual(JSON.parse(new URL(frame.src).searchParams.get('controls')!), {
+    vegetation: {threeDimensional: {heightScale: 3}},
+  });
+});
+
+test('Controls rejects incomplete input and Reset supersedes a pending compilation', async () => {
+  const requests: {url: URL; resolve: (response: Response) => void}[] = [];
+  const harness = runComparisonHarness('', {
+    single: true,
+    controlsRequest: (url) =>
+      url.pathname.endsWith('/__controls')
+        ? Response.json(controlsFixture)
+        : new Promise<Response>((resolve) => requests.push({url, resolve})),
+  });
+  harness.load('left');
+  harness.element('map-controls').hidden = true;
+  await harness.click('controls-toggle');
+  await harness.settle();
+  const height = harness
+    .element('controls-modules')
+    .querySelectorAll('input')
+    .find((input) => input.type === 'number')!;
+  height.value = '2';
+  height.dispatch('input');
+  height.value = '';
+  height.dispatch('input');
+  harness.flushTimeouts();
+  assert.equal(requests.length, 0);
+  height.value = '3';
+  height.dispatch('input');
+  harness.flushTimeouts();
+  await harness.click('controls-reset');
+  harness.flushTimeouts();
+  requests[0]!.resolve(Response.json({}));
+  await harness.settle();
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1]!.url.searchParams.has('controls'), false);
+  requests[1]!.resolve(Response.json({}));
+  await harness.settle();
+  const url = new URL(harness.element('left-frame').src);
+  assert.equal(url.searchParams.has('controls'), false);
+  assert.equal(url.searchParams.get('buildings3d'), 'off');
+});
+
 test('single-map router serves only its configured side and advanced Workbench', async () => {
   const handler = createTileflowComparisonRequestHandler({
     left: {basePath: '/map', handler: leftHandler, label: 'Streets', previewUrl: '/map/'},
@@ -600,6 +827,12 @@ test('Workbench copies fixed-frame context, blocks capture while switching scene
   assert.match(harness.currentUrl(), /view=scene%3Aproof/);
   harness.load('left');
   await harness.settle();
+  const frame = harness.element('left-frame') as FakeElement & {src: string};
+  const source = frame.src;
+  frame.src = source + '&controls=' + encodeURIComponent('{"roads":{"enabled":false}}');
+  await harness.click('wb-capture');
+  assert.equal(requests.filter((request) => request.path === '/capture').length, 0);
+  frame.src = source;
   await harness.click('wb-capture');
   const capture = requests.find((request) => request.path === '/capture')!.body as {
     generation: number;
@@ -688,6 +921,74 @@ test('Workbench compares a new revision using the pinned reference camera and fr
   assert.equal(JSON.parse(harness.clipboardText()).review.referenceId, reference.id);
 });
 
+test('Deleting a capture confirms first and clears a deleted pinned reference', async () => {
+  const record = {
+    id: 'a'.repeat(64),
+    scene: 'reference',
+    map: 'map',
+    theme: 'theme',
+    savedAt: '2026-10-14T10:00:00Z',
+    imageUrl: '/before.png',
+    definition: {
+      map: 'map',
+      theme: 'theme',
+      camera: {type: 'center', center: [3, 40], zoom: 12},
+      viewport: {width: 640, height: 480, dpr: 1},
+    },
+  };
+  let records = [record],
+    accept = false,
+    deletions = 0;
+  const harness = runComparisonHarness('', {
+    single: true,
+    confirm: (message) => {
+      assert.match(message, /permanently removes/);
+      return accept;
+    },
+    workbenchRequest: (path, body) => {
+      if (path === '')
+        return {
+          busy: false,
+          sides: {
+            left: {
+              generation: 1,
+              status: 'ready',
+              selections: [
+                {id: 'map:map:theme', map: 'map', theme: 'theme', label: 'Map', url: '/left/'},
+              ],
+            },
+          },
+        };
+      if (path === '/captures') return {records, next: null, warnings: []};
+      if (path === '/captures/delete') {
+        assert.deepEqual(JSON.parse(JSON.stringify(body)), {id: record.id});
+        records = [];
+        deletions++;
+        return {deleted: record.id};
+      }
+      return {saved: true};
+    },
+  });
+  harness.load('left');
+  await harness.settle();
+  harness.element('wb-history').hidden = true;
+  await harness.click('wb-history-toggle');
+  const buttons = harness.element('wb-captures').querySelectorAll('button');
+  await Promise.all(
+    buttons.find((button) => button.className === 'capture-reference')!.dispatch('click'),
+  );
+  const remove = buttons.find((button) => button.className === 'capture-delete')!;
+  await Promise.all(remove.dispatch('click'));
+  assert.equal(deletions, 0);
+  assert.equal(harness.element('wb-captures').childElementCount, 1);
+  accept = true;
+  await Promise.all(remove.dispatch('click'));
+  assert.equal(deletions, 1);
+  assert.equal(harness.element('wb-captures').childElementCount, 0);
+  assert.equal(harness.element('wb-reference-bar').hidden, true);
+  assert.equal(harness.element('wb-run-compare').disabled, true);
+});
+
 test('Workbench starts with the selected scene frame without reloading its preview', async () => {
   const harness = runComparisonHarness('', {
     single: true,
@@ -759,6 +1060,8 @@ function runComparisonHarness(
   search = '',
   configs: {
     single?: boolean;
+    confirm?: (message: string) => boolean;
+    controlsRequest?: (url: URL) => Response | Promise<Response>;
     cleanupSecurityError?: boolean;
     workbenchRequest?: (path: string, body?: unknown) => unknown;
     leftCaptureConfig?: string;
@@ -780,7 +1083,7 @@ function runComparisonHarness(
   const document = {
     body: new FakeElement(),
     documentElement,
-    createElement: () => new FakeElement(),
+    createElement: (tag: string) => new FakeElement(tag),
     createElementNS: () => new FakeElement(),
     createTextNode: (text: string) => ({textContent: text}),
     getElementById(id: string) {
@@ -881,6 +1184,9 @@ function runComparisonHarness(
   assert.ok(source);
   const windowListeners = new Map<string, Set<(event: unknown) => void>>();
   let clipboardText = '';
+  const timeouts = new Map<number, () => void>();
+  const intervals: (() => void)[] = [];
+  let nextTimeout = 0;
   new Script(source).runInNewContext({
     AbortController,
     DOMException,
@@ -897,16 +1203,24 @@ function runComparisonHarness(
       }
     },
     URL,
+    URLSearchParams,
+    structuredClone,
     addEventListener(type: string, listener: (event: unknown) => void) {
       const listeners = windowListeners.get(type) ?? new Set();
       listeners.add(listener);
       windowListeners.set(type, listeners);
     },
     clearInterval() {},
-    clearTimeout() {},
+    confirm: (message: string) => configs.confirm?.(message) ?? false,
+    clearTimeout(id: number) {
+      timeouts.delete(id);
+    },
     document,
     fetch: (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input instanceof Request ? input.url : input);
+      if (configs.controlsRequest && (url.includes('/__controls?') || url.includes('/styles/'))) {
+        return Promise.resolve(configs.controlsRequest(new URL(url)));
+      }
       if (configs.workbenchRequest && url.startsWith('/__workbench')) {
         const result = configs.workbenchRequest(
           url.slice('/__workbench'.length),
@@ -944,14 +1258,30 @@ function runComparisonHarness(
       },
     },
     performance: {now: () => 0},
-    setInterval: () => 1,
+    setInterval(callback: () => void) {
+      intervals.push(callback);
+      return intervals.length;
+    },
     setTimeout(callback: () => void) {
+      if (configs.controlsRequest) {
+        const id = ++nextTimeout;
+        timeouts.set(id, callback);
+        return id;
+      }
       callback();
       return 1;
     },
   });
 
   return {
+    flushTimeouts() {
+      const pending = [...timeouts.values()];
+      timeouts.clear();
+      for (const callback of pending) callback();
+    },
+    pollIntervals() {
+      for (const callback of intervals) callback();
+    },
     async click(id: string) {
       await Promise.all(document.getElementById(id).dispatch('click'));
     },
@@ -973,6 +1303,7 @@ function runComparisonHarness(
       }
     },
     load(side: 'left' | 'right') {
+      childWindows[side].location.href = new URL(frames[side].src, origin).href;
       frames[side].dispatch('load');
     },
     maps,
@@ -983,6 +1314,14 @@ function runComparisonHarness(
 }
 
 class FakeElement {
+  constructor(readonly tagName = '') {}
+  src = '';
+  type = '';
+  open = false;
+  checked = false;
+  required = false;
+  min = '';
+  max = '';
   attributes = new Map<string, string>();
   children: unknown[] = [];
   className = '';
@@ -1003,6 +1342,26 @@ class FakeElement {
 
   get options() {
     return this.children;
+  }
+
+  checkValidity() {
+    return (
+      this.type !== 'number' ||
+      ((!this.required || this.value !== '') &&
+        Number(this.value) >= Number(this.min) &&
+        Number(this.value) <= Number(this.max))
+    );
+  }
+
+  querySelectorAll(selector: string): FakeElement[] {
+    return this.children.flatMap((child) => {
+      if (!(child instanceof FakeElement)) return [];
+      const matches =
+        selector === 'details[open]'
+          ? child.tagName === 'details' && child.open
+          : child.tagName === selector;
+      return [...(matches ? [child] : []), ...child.querySelectorAll(selector)];
+    });
   }
 
   addEventListener(type: string, listener: (event: unknown) => void) {

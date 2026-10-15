@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readTileflowBuildings3D, tileflowBuildingsMetadataKey} from '../src/buildings-3d-design';
 import {meshTileflowBuildings, tileflowBuildingExtent} from '../src/buildings-3d-mesh';
+import {createTileflowPlacedModels} from '../src/models-3d-browser';
 import {
   decodeTileflowModels,
   encodeTileflowModels,
@@ -358,11 +359,54 @@ test('the design reads the models a map places, the colours of their parts and i
     {model: 'eiffel-tower', url: '/models/eiffel-tower.glb', at: [2.2945, 48.8583], heading: 315},
   ]);
   assert.deepEqual(design?.modelColors, {accent: '#806040'});
+  assert.equal(design?.lighting, 'style');
+  assert.equal(design?.shadows, false);
+  assert.equal(design?.occlusion, false);
   assert.deepEqual(design?.landmarks, {url: 'https://api.tileflow.dev/landmarks/tiles.json'});
   assert.equal(read({}).models, undefined);
   assert.equal(read({models: 'none'})?.models, undefined);
   assert.equal(read({landmarks: true})?.landmarks, undefined);
 });
+
+test(
+  'model downloads await the request transform before using its URL and credentials',
+  {timeout: 2000},
+  async (t) => {
+    let fetched!: () => void;
+    const downloaded = new Promise<void>((resolve) => {
+      fetched = resolve;
+    });
+    let request: {url: unknown; init?: RequestInit} | undefined;
+    t.mock.method(globalThis, 'fetch', async (url: unknown, init?: RequestInit) => {
+      request = {url, init};
+      fetched();
+      return new Response(null, {status: 404});
+    });
+    const models = createTileflowPlacedModels({
+      async transformRequest(url, resourceType) {
+        assert.equal(resourceType, 'Tile');
+        return {
+          url: url + '?transformed=1',
+          headers: {Authorization: 'Bearer fixture'},
+          credentials: 'include',
+        };
+      },
+      changed() {},
+    });
+    t.after(() => models.dispose());
+    models.update(
+      [{model: 'tower', url: 'https://models.example.test/tower.glb', at: [0, 0], heading: 0}],
+      undefined,
+      [{x: 16384, y: 16384}],
+      15,
+    );
+    assert.equal(request, undefined);
+    await downloaded;
+    assert.equal(request!.url, 'https://models.example.test/tower.glb?transformed=1');
+    assert.deepEqual(request!.init?.headers, {Authorization: 'Bearer fixture'});
+    assert.equal(request!.init?.credentials, 'include');
+  },
+);
 
 test("a landmarks tileset's TileJSON names its tile address, its regions and those that hold landmarks", () => {
   const url = 'https://api.tileflow.dev/landmarks/tiles.json';

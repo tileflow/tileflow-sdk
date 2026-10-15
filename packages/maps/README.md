@@ -137,6 +137,35 @@ scales in 2D; replacing that module also replaces these passes. Disabling roads 
 Browser atmosphere is separately enabled with `atmosphere: true` on a globe map; the base definition
 also remains usable with Mercator and native targets.
 
+Streets enables model trees by default (`mode: '3d'`, `fallback: 'none'`). They stay three-dimensional
+in overhead and tilted interactive browser views. Disabling vegetation removes all trees. Renderers
+without model support omit them. Extensions can opt into the included flat crown artwork with
+`vegetation: refine({mode: 'flat'})`, or switch it with explicit view mode using `mode: 'auto'`.
+Seven original forms cover rounded, spreading and upright broadleaf trees, conifers, columns,
+feather palms and fan palms. Their light/dark crown images come from the same geometry as the
+models. Broadleaf trees have flared trunks, visible forks and separated crown clusters, with
+both compact and open silhouettes. This artwork does not change the map's lighting.
+
+The models have 120–386 triangles nearby and 44–96 at distance. They reuse Core's instanced tree
+renderer; flat crowns use the existing sprite atlas. Tree locations and attributes still come
+from the source tiles. The artwork does not add trees to parks whose data has none. See
+[3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md) for
+browser rendering and platform support. To remove both representations, extend the map:
+
+<!-- docs:check -->
+
+```ts
+import {defineMap, disable} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'streets-without-trees',
+  version: 1,
+  extends: streets,
+  modules: {vegetation: disable()},
+});
+```
+
 POI categories use World eligibility and ranks at one density and are placed in one importance
 order, so a category never displaces a more important place of another category. World's two most
 important ranks are placed before street and place names. Each disc needs its name; parking and

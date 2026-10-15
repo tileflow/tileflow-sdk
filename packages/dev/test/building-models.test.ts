@@ -13,6 +13,7 @@ import {
   tileflowBuildingModelFootprint,
 } from '../src/building-model-mesh';
 import {readTileflowGltfTriangles} from '../src/gltf-reader';
+import {compilePreviewControls} from '../src/preview-controls';
 import {
   encodeTileflowLandmarkRegion,
   packageTileflowLandmarkTile,
@@ -170,10 +171,11 @@ test('a map places its building models: the style names their files, which the b
   await mkdir(join(cwd, 'models'));
   await writeFile(join(cwd, 'models', 'tower.glb'), writeGlb(block(20, 20, 120)));
   const config = (model: string) =>
-    `import {buildings, defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'city',version:1,extends:streets,models:['./models'],modules:{buildings:buildings({mode:'3d',threeDimensional:{models:[{model:'${model}',at:[2.2945,48.8583],heading:45}],modelColors:{accent:'#806040'}}})},glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}});\n`;
+    `import {buildings, defineMap} from '@tileflow/core'; import {streets, streetsModels} from '@tileflow/maps'; export default defineMap({id:'city',version:1,extends:streets,models:[streetsModels,'./models'],modules:{buildings:buildings({mode:'3d',threeDimensional:{models:[{model:'${model}',at:[2.2945,48.8583],heading:45}],modelColors:{accent:'#806040'}}})},glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}});\n`;
   await writeFile(join(cwd, 'tileflow.config.ts'), config('tower'));
 
-  const plan = await createTileflowBuildArtifacts({cwd});
+  const plan = await createTileflowBuildArtifacts({cwd, assetBaseUrl: 'http://localhost:3333'});
+  t.after(() => plan.dispose?.());
   const style = Object.values(plan.styles.city!)[0]!;
   const design = (style.metadata as Record<string, any>)['tileflow:buildings'];
   assert.equal(design.models.length, 1);
@@ -191,8 +193,27 @@ test('a map places its building models: the style names their files, which the b
     maps: Record<string, {sourceAssets: {models?: {id: string; level: string}[]}}>;
   };
   assert.deepEqual(
-    manifest.maps.city!.sourceAssets.models?.map(({id, level}) => `${id}:${level}`),
+    manifest.maps
+      .city!.sourceAssets.models?.filter(({id}) => id === 'tower')
+      .map(({id, level}) => `${id}:${level}`),
     ['tower:near'],
+  );
+
+  assert.equal(
+    manifest.maps.city!.sourceAssets.models?.filter(({id}) => id.startsWith('streets-tree-'))
+      .length,
+    14,
+  );
+  const controlled = compilePreviewControls(
+    plan,
+    'city',
+    'light',
+    '{"buildings":{"threeDimensional":{"shadows":true}}}',
+    'https://api.tileflow.dev',
+  );
+  assert.deepEqual(
+    (controlled.style.metadata?.['tileflow:buildings'] as {models: unknown}).models,
+    design.models,
   );
 
   await writeFile(join(cwd, 'tileflow.config.ts'), config('palace'));
@@ -269,7 +290,8 @@ test('a map places a model served elsewhere by its address, with no file of its 
     join(cwd, 'tileflow.config.ts'),
     `import {buildings, defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'paris',version:1,extends:streets,modules:{buildings:buildings({mode:'3d',threeDimensional:{models:[{model:'eiffel-tower',at:[2.2945,48.8583],url:'${url}'}]}})},glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}});\n`,
   );
-  const plan = await createTileflowBuildArtifacts({cwd});
+  const plan = await createTileflowBuildArtifacts({cwd, assetBaseUrl: 'http://localhost:3333'});
+  t.after(() => plan.dispose?.());
   const style = Object.values(plan.styles.paris!)[0]!;
   const design = (style.metadata as Record<string, any>)['tileflow:buildings'];
   assert.deepEqual(design.models, [

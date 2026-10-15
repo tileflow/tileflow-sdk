@@ -56,6 +56,8 @@ import {
 } from './icon-sprite';
 import {prepareTileflowMapTreeModels} from './tree-models';
 
+export {prepareTileflowMapTreeModels} from './tree-models';
+
 export {renderTileflowIconAtlasPreview} from './icon-preview';
 
 export {verifyTileflowIconArtifact, type VerifiedTileflowIconArtifact} from './icon-artifact';

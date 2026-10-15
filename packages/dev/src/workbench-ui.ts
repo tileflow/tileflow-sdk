@@ -113,9 +113,6 @@ export const workbenchStyles = `
   .tool-icon { width:17px; height:17px; flex:none; vertical-align:middle; }
   button:has(.tool-icon), summary:has(.tool-icon) { display:inline-flex; align-items:center; justify-content:center; gap:7px; }
   .shortcut { font-size:11px; font-family:inherit; border:1px solid var(--border); border-radius:3px; padding:1px 4px; color:var(--muted); margin-left:3px; }
-  .toolbar .picker-group { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-right:auto; }
-  .picker-group label { display:grid; gap:3px; min-width:90px; color:var(--muted); font-size:11px; }
-  .picker-group select { max-width:220px; font-size:12px; }
   .toolbar .primary { margin-left:0; }
   .toolbar-actions { display:flex; align-items:center; gap:6px; }
   .toolbar-actions > .tool-divider { width:1px; height:24px; background:var(--border); margin:0 3px; }
@@ -140,7 +137,10 @@ export const workbenchStyles = `
   .review-display select { min-width:160px; }
   .capture-card { background:var(--paper); }
   .capture-card > button { width:100%; border:0; padding:0; text-align:left; background:transparent; }
-  .capture-card > .capture-reference { width:calc(100% - 20px); margin:0 10px 10px; padding:6px; border:1px solid var(--border); text-align:center; }
+  .capture-actions { display:flex; gap:6px; margin:0 10px 10px; }
+  .capture-actions button { padding:6px; font-size:12px; }
+  .capture-reference { flex:1; }
+  .capture-delete { color:var(--accent); }
   .capture-card[data-reference="true"] { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
   .review-images img { max-height:65vh; }
   .review-panel .capture-swipe { width:min(100%,calc(max(240px,100vh - 340px) * var(--capture-aspect,1.6))); margin:12px auto; }
@@ -180,9 +180,6 @@ export const workbenchStyles = `
     .statusbar .feedback { flex:1 1 100%; text-align:left; margin-left:0; }
     .export-menu { margin-left:auto; }
     .export-menu > div { width:min(280px,calc(100vw - 24px)); }
-    .toolbar .picker-group { width:100%; gap:6px; }
-    .picker-group label { flex:1; min-width:70px; }
-    .picker-group select { width:100%; max-width:none; }
     .toolbar-actions { width:100%; flex-wrap:wrap; }
     .toolbar-actions button { padding-inline:8px; }
     .toolbar-actions .primary { margin-left:auto; }

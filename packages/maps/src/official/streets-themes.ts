@@ -339,6 +339,12 @@ const streetsFonts = {
 } as const;
 
 const streetsImages = {
+  ...Object.fromEntries(
+    ['round', 'open', 'tall', 'conifer', 'columnar', 'palm-feather', 'palm-fan'].map((form) => [
+      `vegetation.tree.${form}`,
+      `streets-tree-${form}`,
+    ]),
+  ),
   'roads.crosswalk': 'crosswalk',
   'roads.oneway': 'oneway',
   'roads.shield.circleNeutral': 'road-shield-circle-neutral',
@@ -389,6 +395,11 @@ export const streetsThemes = Object.freeze({
       image: {
         ...streetsImages,
         ...streetsPoiImageTokens('dark'),
+        ...Object.fromEntries(
+          Object.entries(streetsImages)
+            .filter(([role]) => role.startsWith('vegetation.tree.'))
+            .map(([role, image]) => [role, `${image}-dark`]),
+        ),
         'roads.sidewalkPattern': 'sidewalk-dot-dark',
       },
     },

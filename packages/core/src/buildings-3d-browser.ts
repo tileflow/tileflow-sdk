@@ -1,17 +1,13 @@
 // Tileflow's 3D buildings renderer: a custom WebGL2 layer that raises the buildings of the map's
-// own vector tiles round the camera and lights them from the theme controller's sun, with shadows
-// cast on the buildings and on the flat map, contact shadow at the foot of the walls, and, at
-// night, flood lights at the foot of shops, busy places, landmarks and towers, and the ground floors
-// of the places busy at night lit in their own colours. The building models a map places in its city,
-// and Tileflow's landmarks, stand in the same light, in place of the buildings under their
-// footprints. It shows, hides and
-// grows the city without laying out any source, so it is a 3D switch and an animatable height.
+// own vector tiles round the camera. Native style lighting and immediate height changes are the
+// defaults; scene sun lighting, shadows, decorative effects and timed transitions are opt-in.
 import {
   readTileflowBuildings3D,
   type TileflowBuildings3DDesign,
   tileflowBuildingsMetadataKey,
   tileflowDefaultBuildings3DDesign,
 } from './buildings-3d-design';
+import {tileflowBuildingStyleLight} from './buildings-3d-light';
 import {
   meshTileflowBuildings,
   tileflowBuildingExtent,
@@ -56,6 +52,7 @@ export type TileflowBuildings3DMap = {
   addLayer(layer: object, beforeId?: string): unknown;
   getCenter(): {lat: number; lng: number};
   getBearing(): number;
+  getLight?(): unknown;
   getLayer(id: string): unknown;
   getPaintProperty(layer: string, name: string): unknown;
   getPitch(): number;
@@ -92,11 +89,11 @@ export type TileflowBuildings3DOptions = Readonly<{
 export type TileflowBuildings3DChange = Readonly<{transition?: Readonly<{duration?: number}>}>;
 
 export type TileflowBuildings3D = {
-  /** Raises the buildings out of the ground; resolves once they stand. */
+  /** Shows buildings immediately; pass a transition duration to animate their rise. */
   show(options?: TileflowBuildings3DChange): Promise<void>;
-  /** Sinks the buildings back into the flat map; resolves once they are gone. */
+  /** Hides buildings immediately; pass a transition duration to animate their descent. */
   hide(options?: TileflowBuildings3DChange): Promise<void>;
-  /** Eases the buildings to `scale` of their height, from 0 (flat) to 1. */
+  /** Sets the height scale, from 0 (flat) to 1; animation requires a transition duration. */
   grow(scale: number, options?: TileflowBuildings3DChange): Promise<void>;
   /** The height scale shown now. */
   readonly scale: number;
@@ -119,11 +116,9 @@ export type TileflowBuildings3D = {
 export const tileflowBuildings3DLayerId = 'tileflow-buildings-3d';
 // World's buildings carry their heights at z15; a source that stops earlier is read at its maxzoom.
 const preferredZoom = 15;
-const defaultTransition = 800;
+const defaultTransition = 0;
 const occlusion = {ground: 8, groundStrength: 0.42, wall: 0.36, corner: 3};
 const flood = {reach: 10, colour: [1, 0.7, 0.4] as const};
-// Each building strays up to 6% lighter or darker than its colour.
-const variation = 0.06;
 // Roof outlines and outer corners are a CSS pixel wide, and half as strong by day as at night.
 const edgeLine = {width: 1, day: 0.5};
 const paletteWidth = 256;
@@ -263,6 +258,12 @@ export function createTileflowBuildings3D(
       if (target > 0 || scale > 0)
         models.update(design().models ?? [], design().landmarks?.url, camera.ready(), camera.zoom);
       if (!programs.depth) return;
+      // A disabled building shadow pass must not claim the ground pass from the trees.
+      if (!design().shadows || visibleScale() <= 0) {
+        if (registered) unregister();
+        registered = false;
+        return;
+      }
       if (!registered) unregister = scene.register(caster);
       registered = true;
       scene.prepare(context, lighting(), camera.metres);
@@ -613,7 +614,8 @@ export function createTileflowBuildings3D(
       const shown = visibleScale();
       const entries = drawn();
       const standing = modelsDrawn();
-      if (shown <= 0 || (entries.length === 0 && standing.length === 0)) return undefined;
+      if (!design().shadows || shown <= 0 || (entries.length === 0 && standing.length === 0))
+        return undefined;
       let [left, top, right, bottom, tallest] = [Infinity, Infinity, -Infinity, -Infinity, 0];
       for (const entry of entries) {
         left = Math.min(left, entry.x);
@@ -793,7 +795,25 @@ export function createTileflowBuildings3D(
     context.uniform1f(u.u_windows!, windowsOn ? 1 : 0);
     context.uniform1f(u.u_flood!, light.night * nightLight);
     context.uniform3fv(u.u_flood_colour!, flood.colour);
-    context.uniform1f(u.u_variation!, variation);
+    context.uniform1f(
+      u.u_variation!,
+      mixed((entry) => entry.colorVariation),
+    );
+    const styleLight = tileflowBuildingStyleLight(
+      map.getLight?.() ?? fallbackStyleLight,
+      map.getBearing(),
+    );
+    context.uniform3fv(u.u_style_light_position!, styleLight.position);
+    context.uniform3fv(u.u_style_light_colour!, styleLight.colour);
+    context.uniform1f(u.u_style_light_intensity!, styleLight.intensity);
+    context.uniform1f(
+      u.u_style_gradient!,
+      mixed((entry) => (entry.verticalGradient ? 1 : 0)),
+    );
+    context.uniform1f(
+      u.u_sun_lighting!,
+      mixed((entry) => (entry.lighting === 'sun' ? 1 : 0)),
+    );
     const edgeColour = edgeColourNow();
     const lightEdge = edges * (edgeLine.day + (1 - edgeLine.day) * light.night);
     context.uniform1f(u.u_edge!, lightEdge + (edges - lightEdge) * edgeColour.share);
@@ -1046,10 +1066,15 @@ export function createTileflowBuildings3D(
   }
 
   // A style still loading takes the layer once it has loaded.
-  const onStyle = () => attach();
+  let fallbackStyleLight: unknown;
+  const onStyle = () => {
+    if (!map.getLight)
+      fallbackStyleLight = (map.getStyle() as {light?: unknown} | undefined)?.light;
+    attach();
+  };
   map.on('styledata', onStyle);
   map.on('idle', onStyle);
-  attach();
+  onStyle();
 
   // --- Motion ---
 

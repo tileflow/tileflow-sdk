@@ -78,20 +78,55 @@ prepared local-font bundle before authentication until managed font storage is a
 map that declares `glyphs` replaces the inherited local provider atomically; the URL-backed map is
 complete as declared and independent of its World selection.
 
-With both controls off, the built-in preview draws the style as compiled, as Capture and the
-published framework adapters draw it: flat trees, building layers marked for the 3D control left
-hidden, and no street lights. This keeps an ordinary `tileflow preview` session WYSIWYG with
-production and visual baselines.
+### Map controls
 
-The `3D ON/OFF` and `TREES ON/OFF` controls mount Core's 3D layers as an application does, from
-the description the compiled style publishes. When the style describes 3D buildings
-(`tileflow:buildings`), `3D ON` raises them with `createTileflowBuildings3D` in place of the
-compiled extrusion and lights the streets with `createTileflowStreetLights` where the style
-describes them. When it describes 3D trees (`tileflow:vegetation`), `TREES ON` stands them with
-`createTileflowTrees3D`, which hides the style's flat trees while they stand. Every look the
-preview shows comes from the map's modules; the preview holds no appearance of its own, and the
-theme on screen supplies the sun. Neither mode is capture evidence. Both choices survive reloads
-and shared links through the `buildings3d=on|off` and `trees3d=on|off` URL parameters.
+**Controls**, immediately after **Inspect**, opens a right sidebar shared by every map. Map and theme
+selection live at the top; **Scene** restores a configured location, theme and capture frame.
+Opening Controls closes inspection, capture history and saved review so they cannot cover it. It lists
+the semantic modules, including disabled ones, and offers building lighting, cast/contact shadows,
+night windows, edge definition and color variation, plus vegetation representation, fallback,
+finish and size. Changes automatically recompile the selected map/theme after a 300 ms pause,
+preserving the camera and expanded sections. Rapid edits are grouped and superseded compilation
+results are discarded. The inspector uses the resulting compiler sidecar. Invalid overrides keep
+the previous view and show the compiler error. The panel also controls the preview's 3D view and
+opt-in building animation; opening it does not change the map's authored appearance.
+
+Tree representation starts at **Auto**, which inherits the map's authored policy without creating
+an override. Streets resolves this to **Always 3D**, including in overhead views, and has no flat
+fallback. **Follow 2D / 3D view** is a separate explicit override (`mode: 'auto'` in the module
+API). Returning the panel to **Auto** removes that mode override and restores the map's policy.
+
+These are local preview edits. They neither rewrite `tileflow.config.ts` nor publish a map.
+**Reset** restores the source configuration and switches the preview to 2D with animation off.
+Changing the selected map/theme or reloading the outer DevTools clears the temporary controls.
+**Copy module overrides** copies the bounded JSON patch shown under **Configuration changes**.
+This JSON describes resolved compiler overrides, not a complete authoring file: use `disable()`
+to persist a disabled module, `refine({...})` for appearance edits, or the module constructor to
+enable a previously disabled module. Captures are unavailable while module overrides are applied;
+reset or adopt the changes in source before capturing. Runtime-only 3D controls remain excluded
+from static captures.
+
+Dev handlers expose `GET /__controls?map=<id>&theme=<name>` for descriptors and accept a `controls`
+JSON query on preview, style and inspection routes. Only module enablement and the panel's bounded
+appearance fields are accepted (8 KiB maximum). Recompilation reuses the current generation's
+prepared models/icons and delivery URLs, caches at most eight results per handler, and never writes
+artifacts. A map whose newly enabled module needs assets absent from the prepared generation reports
+a compilation error; declare those assets in source first. Native artifact previews do not support
+these web controls. Custom servers without these endpoints keep their other DevTools features.
+
+Standalone `/map/` previews retain `3D ON/OFF` and `TREES ON/OFF`; embedded previews use the sidebar.
+All controls use Core's renderers. `3D ON` raises
+buildings with `createTileflowBuildings3D` and enables street lights where the map describes them.
+`TREES ON` follows the vegetation module's `3d`, `flat` or `auto` policy through
+`createTileflowVegetation`; `TREES OFF` hides all trees. Vegetation starts at its authored visibility
+(true by default). Streets draws model trees in overhead and tilted views. For `auto` maps, the
+preview's 3D control supplies the view mode; pitch alone does not switch representation.
+
+Choices survive reloads and shared links through `buildings3d=on|off` and `trees3d=on|off`.
+The latter is retained for URL compatibility and now controls all vegetation. React, Vue and Svelte
+use the same vegetation controller. Capture and image/native rendering use the declared fallback;
+Streets omits trees there. Interactive 3D preview is not static capture evidence. Every appearance
+comes from the map's modules and the theme's sun.
 
 The same control toggles any compiled layer whose metadata contains
 `tileflow:3d-toggle = building`. It switches the building volumes independently from the camera,

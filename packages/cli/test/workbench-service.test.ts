@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, readdir, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
@@ -184,12 +184,36 @@ test('Workbench reuses pinned artifacts, saves verified history and compares wit
   const running = request('/capture', input);
   while (!finishCapture) await new Promise((done) => setTimeout(done, 1));
   assert.equal((await request('/capture', input)).status, 409);
+  assert.equal((await request('/captures/delete', {id: first.captureId})).status, 409);
   finishCapture();
   await running;
   blocked = false;
   rejectCapture = true;
   assert.equal((await request('/capture', input)).status, 400);
   assert.equal(releases, renders);
+
+  const deletion = {id: first.captureId};
+  assert.equal(
+    (await request('/captures/delete', deletion, {Origin: 'https://unrelated.example'})).status,
+    403,
+  );
+  assert.equal(
+    (await request('/captures/delete', deletion, {'X-Tileflow-Workbench': ''})).status,
+    400,
+  );
+  assert.equal((await request('/captures/delete', {id: '../other-file'})).status, 400);
+  assert.equal((await request('/captures/delete', deletion)).status, 200);
+  assert.equal((await request('/captures/delete', deletion)).status, 200);
+  const remaining = await readdir(join(cwd, '.tileflow/captures/records'));
+  assert.ok(!remaining.some((name) => name.startsWith(first.captureId)));
+  assert.ok(remaining.includes(second.captureId + '.json'));
+  assert.ok(remaining.includes(second.captureId + '.png'));
+  assert.ok(
+    !(await (await request('/captures')).json()).records.some(
+      (record: {id: string}) => record.id === first.captureId,
+    ),
+  );
+  assert.equal((await request('/captures/' + first.captureId + '.png')).status, 400);
 
   await request('/context', {
     client: 'test-client',

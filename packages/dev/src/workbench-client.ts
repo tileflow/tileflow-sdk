@@ -97,9 +97,9 @@ export const workbenchClient = String.raw`
           }
           syncWorkbenchPickers();
           const displayed = Number(side.frame.contentDocument?.documentElement.dataset.tileflowArtifactGeneration);
-          wb("capture").disabled = wbBusy || wbCatalog.busy || !side.bridgeReady || side.runtimeFailed || owner?.status !== "ready" || displayed !== owner.generation;
+          wb("capture").disabled = hasMapControlOverrides(side) || wbBusy || wbCatalog.busy || !side.bridgeReady || side.runtimeFailed || owner?.status !== "ready" || displayed !== owner.generation;
           for (const name of ["save-reference", "first-reference", "capture-compare"]) wb(name).disabled = wb("capture").disabled;
-          wb("capture").title = wb("capture").disabled ? "Wait for the current map to finish loading" : "Save the compiled map at the selected capture size";
+          wb("capture").title = hasMapControlOverrides(side) ? "Reset Controls before capturing the source configuration" : wb("capture").disabled ? "Wait for the current map to finish loading" : "Save the compiled map at the selected capture size";
           wb("status").textContent = side.runtimeFailed ? "Preview error" : owner?.status === "ready"
             ? "Up to date · Local · " + (side.camera ? "z" + side.camera.zoom.toFixed(2) : "Loading map")
             : owner?.status === "invalid" ? "Configuration invalid · last valid map shown" : "Building map…";
@@ -195,6 +195,8 @@ export const workbenchClient = String.raw`
         wb("scene").value = selected.scene ? selected.id : "";
         wb("map-field").hidden = maps.length < 2;
         wb("theme-field").hidden = themes.length < 2;
+        wb("scene-field").hidden = !selections.some((entry) => entry.scene);
+        ctl("scene-help").hidden = wb("scene-field").hidden;
         wb("project").textContent = selected.map + " · Local";
       }
 
@@ -313,6 +315,7 @@ export const workbenchClient = String.raw`
           if (!validPortableName(sceneNameInput.value)) throw new Error("Use a kebab-case capture name in Capture settings.");
           const side = states[activeSideId];
           if (!side.bridgeReady || side.runtimeFailed) throw new Error("Wait for the current map to finish loading.");
+          if (hasMapControlOverrides(side)) throw new Error("Reset Controls or adopt the changes in source before capturing.");
           let definition = currentWorkbenchDefinition();
           if (action.compare) {
             if (!reference) throw new Error("Choose a reference capture first.");
@@ -340,6 +343,7 @@ export const workbenchClient = String.raw`
       }
 
       async function toggleHistory(open) {
+        if (open) { toggleMapControls(false); setInspectionEnabled(false); wb("welcome").hidden = true; }
         wb("history").hidden = !open;
         wb("history-toggle").setAttribute("aria-expanded", String(open));
         if (open) { wb("review").hidden = true; try { await loadHistory(); } catch (error) { showWorkbenchError(error); } }
@@ -366,7 +370,11 @@ export const workbenchClient = String.raw`
           button.addEventListener("click", () => { wb("after").value = record.id; void openReview(false); });
           const pin = document.createElement("button"); pin.className = "capture-reference"; pin.textContent = record.id === wbPinnedReference?.id ? "Current reference" : "Use as reference";
           pin.addEventListener("click", () => pinReference(record));
-          card.append(button, pin); wb("captures").append(card);
+          const remove = document.createElement("button"); remove.className = "capture-delete"; remove.textContent = "Delete";
+          remove.setAttribute("aria-label", "Delete " + captureLabel(record));
+          remove.addEventListener("click", () => deleteSavedCapture(record, remove));
+          const actions = document.createElement("div"); actions.className = "capture-actions"; actions.append(pin, remove);
+          card.append(button, actions); wb("captures").append(card);
         }
         for (const name of ["before", "after"]) {
           const selected = wb(name).value;
@@ -382,10 +390,26 @@ export const workbenchClient = String.raw`
       }
 
       async function openReview(refresh = true) {
+        toggleMapControls(false);
+        wb("welcome").hidden = true;
         if (inspectionEnabled) setInspectionEnabled(false);
         setReviewTab("saved");
         wb("history").hidden = true; wb("history-toggle").setAttribute("aria-expanded", "false"); wb("review").hidden = false;
         try { if (refresh !== false) await loadHistory(); renderReviewImages(); } catch (error) { showWorkbenchError(error); }
+      }
+
+      async function deleteSavedCapture(record, button) {
+        if (wbBusy || !confirm("Delete " + captureLabel(record) + "? This permanently removes its saved image and capture record from this project.")) return;
+        wbBusy = true; button.disabled = true; button.textContent = "Deleting…";
+        try {
+          await workbenchRequest("/captures/delete", {id:record.id});
+          if (wbPinnedReference?.id === record.id) { wbPinnedReference = undefined; renderPinnedReference(); }
+          wbRecords = wbRecords.filter((entry) => entry.id !== record.id);
+          await loadHistory();
+          renderReviewImages();
+          setFeedback("Capture deleted.");
+        } catch (error) { showWorkbenchError(error); }
+        finally { wbBusy = false; button.disabled = false; button.textContent = "Delete"; void refreshWorkbench(); }
       }
 
       function renderReviewImages() {

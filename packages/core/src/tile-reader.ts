@@ -16,6 +16,14 @@ export type TileflowTileRequestTransform = (
   url: string,
   resourceType: 'Tile',
 ) =>
+  | Promise<
+      | Readonly<{
+          url: string;
+          headers?: Readonly<Record<string, string>>;
+          credentials?: RequestCredentials;
+        }>
+      | undefined
+    >
   | Readonly<{
       url: string;
       headers?: Readonly<Record<string, string>>;
@@ -159,7 +167,8 @@ export function createTileflowTileReader(options: TileflowTileReaderOptions): Ti
         .replaceAll('{z}', String(address.z))
         .replaceAll('{x}', String(address.x))
         .replaceAll('{y}', String(address.y));
-      const request = settings.transformRequest?.(template, 'Tile');
+      const request = await settings.transformRequest?.(template, 'Tile');
+      if (started !== generation) return undefined;
       const response = await settings.fetch(request?.url ?? template, {
         ...(request?.headers ? {headers: request.headers} : {}),
         ...(request?.credentials ? {credentials: request.credentials} : {}),

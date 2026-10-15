@@ -128,6 +128,11 @@ uniform vec2 u_palette_themes; // the themes either side of the blend position
 uniform float u_palette_mix;
 uniform float u_variation; // how far buildings' brightness strays from their colour, either way
 ${growth}
+uniform vec3 u_style_light_position;
+uniform vec3 u_style_light_colour;
+uniform float u_style_light_intensity;
+uniform float u_style_gradient;
+out vec3 v_style_colour;
 out vec3 v_colour;
 out vec3 v_facade; // metres along the wall, metres up as built, the building's top
 out vec4 v_building; // seed, tone, wall, night use
@@ -141,6 +146,22 @@ vec3 paletteColour(float theme) {
   float row = theme * u_palette_rows.x + floor(a_feature / u_palette_rows.y);
   float column = mod(a_feature, u_palette_rows.y);
   return texelFetch(u_palette, ivec2(int(column), int(row)), 0).rgb;
+}
+
+// MapLibre GL JS 6.13 fill-extrusion lighting, adapted to this mesh's normals and heights.
+// Copyright MapLibre contributors and Mapbox; BSD-3-Clause, see THIRD_PARTY_NOTICES.md.
+vec3 styleColour(vec3 colour, vec3 normal, float base, float top) {
+  float luminance = dot(colour, vec3(0.2126, 0.7152, 0.0722));
+  float facing = clamp(dot(normal * vec3(1.0, -1.0, 1.0), u_style_light_position), 0.0, 1.0);
+  float brightness = mix(1.0 - u_style_light_intensity,
+    max(1.0 - luminance + u_style_light_intensity, 1.0), facing);
+  if (a_flags.y > 0.5) {
+    float gradient = clamp((a_flags.x + base) * sqrt(top / 150.0),
+      mix(0.7, 0.98, 1.0 - u_style_light_intensity), 1.0);
+    brightness *= mix(1.0, gradient, u_style_gradient);
+  }
+  return clamp((colour + 0.03) * brightness * u_style_light_colour,
+    0.3 * (1.0 - u_style_light_colour), vec3(1.0));
 }
 
 void main() {
@@ -166,6 +187,7 @@ void main() {
     : u_colour;
   // Neighbours of one colour stay apart: each building a little lighter or darker than its colour.
   v_colour *= 1.0 + (a_wave.x - 0.5) * 2.0 * u_variation;
+  v_style_colour = styleColour(v_colour, normal, base, top);
   v_edge = wall > 0.5 ? vec3(a_edge.x, 0.0, 0.0) : vec3(equal(vec3(a_edge.x), vec3(0.0, 1.0, 2.0)));
   v_outline = a_edge.y;
   v_facade = vec3(a_along * 0.1, own, top);
@@ -176,6 +198,8 @@ void main() {
 export const tileflowBuildingFragment = `#version 300 es
 precision highp float;
 in vec3 v_colour;
+in vec3 v_style_colour;
+uniform float u_sun_lighting;
 in vec3 v_facade;
 in vec4 v_building;
 in vec3 v_normal;
@@ -237,7 +261,8 @@ float edgeOf() {
 void main() {
   vec3 normal = normalize(v_normal);
   float lit = dot(normal, u_sun_dir) > 0.0 ? visibility(v_shadow, 0.3) : 0.0;
-  vec3 colour = v_colour * shade(normal, lit);
+  vec3 colour = mix(v_style_colour * (1.0 - u_shadow * (1.0 - lit)),
+    v_colour * shade(normal, lit), u_sun_lighting);
   // Roof outlines and outer corners catch the light, so where one building ends and the next starts
   // stays legible, at night most of all.
   float edge = u_edge > 0.0 ? edgeOf() * u_edge : 0.0;

@@ -21,6 +21,12 @@ export type TileflowBuildings3DDesign = Readonly<{
   color: string | readonly unknown[];
   /** How strongly roof outlines and outer corners catch the light, from 0 to 1. */
   edges: number;
+  /** Style extrusion light by default; scene sun lighting is opt-in. */
+  lighting: 'style' | 'sun';
+  /** Per-building brightness variation, from 0 to 1; 0 preserves the authored colour. */
+  colorVariation: number;
+  /** The authored extrusion's vertical wall gradient. */
+  verticalGradient: boolean;
   /** Their own colour, drawn unlit; without it they take the building's colour, lightened. */
   edgeColor?: string;
   /** How bright the buildings light the street at night, from 0 to 2. */
@@ -58,11 +64,14 @@ export const tileflowDefaultBuildings3DDesign: TileflowBuildings3DDesign = Objec
   source: 'tileflow',
   layers: Object.freeze({building: 'building', places: 'poi'}),
   color: '#d8d0c0',
-  edges: 1,
-  nightLight: 1,
+  edges: 0,
+  lighting: 'style',
+  colorVariation: 0,
+  verticalGradient: true,
+  nightLight: 0,
   windows: false,
-  shadows: true,
-  occlusion: true,
+  shadows: false,
+  occlusion: false,
 });
 
 /** The metadata a compiled style publishes for its 3D buildings. */
@@ -93,12 +102,15 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
       ...(typeof layers.places === 'string' ? {places: layers.places} : {}),
     },
     color: color as string | readonly unknown[],
-    edges: within(value.edges, 1, 1),
+    edges: within(value.edges, 1, 0),
+    lighting: value.lighting === 'sun' ? 'sun' : 'style',
+    colorVariation: within(value.colorVariation, 1, 0),
+    verticalGradient: value.verticalGradient !== false,
     ...(typeof value.edgeColor === 'string' ? {edgeColor: value.edgeColor} : {}),
-    nightLight: within(value.nightLight, 2, 1),
+    nightLight: within(value.nightLight, 2, 0),
     windows: value.windows === true,
-    shadows: value.shadows !== false,
-    occlusion: value.occlusion !== false,
+    shadows: value.shadows === true,
+    occlusion: value.occlusion === true,
     ...modelsOf(value.models),
     ...modelColorsOf(value.modelColors),
     ...landmarksOf(value.landmarks),

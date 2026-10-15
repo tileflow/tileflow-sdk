@@ -32,7 +32,7 @@ async function captureFixture(t: {after(callback: () => Promise<void>): void}) {
     join(cwd, 'tileflow.config.ts'),
     `import {defineMap, disable, iconSet} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
-export default defineMap({id:'main',version:1,extends:streets,icons:[iconSet('@acme/brand'),iconSet('@acme/transport'),'./icons'],modules:{poi:{type:'poi',icons:false},roads:disable()},glyphs:${tileflowIconSetFixtureGlyphs},scenes:{${JSON.stringify(sceneName)}:{theme:'light',camera:{type:'center',center:[0,0],zoom:1},viewport:{width:320,height:240}}}});\n`,
+export default defineMap({id:'main',version:1,extends:streets,icons:[iconSet('@acme/brand'),iconSet('@acme/transport'),'./icons'],modules:{poi:{type:'poi',icons:false},roads:disable(),vegetation:disable()},glyphs:${tileflowIconSetFixtureGlyphs},scenes:{${JSON.stringify(sceneName)}:{theme:'light',camera:{type:'center',center:[0,0],zoom:1},viewport:{width:320,height:240}}}});\n`,
   );
   return {cwd, project};
 }

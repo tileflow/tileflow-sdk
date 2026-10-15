@@ -54,6 +54,12 @@ The artifact plan exposes files and observed inputs from the same generation. St
 `styles[map][theme]`, never as an implicit default-theme alias. Keep that generation alive for the
 whole operation, then release it. Do not reconstruct its asset list from directory guesses.
 
+Map-owned tree models are prepared alongside icons and embedded in the styles. Custom tools that
+compile icons separately can use `prepareTileflowMapTreeModels` from `@tileflow/dev/icons` with
+the map's model directories, base directory, working directory, target and diagnostic path. Pass
+its `models` result as `preparedAssets.models` when compiling the style; retain its source
+identities and watch paths when managing revisions. The artifact pipeline does this automatically.
+
 To write production output rather than manage it in memory:
 
 <!-- docs:check -->
@@ -126,6 +132,8 @@ contract, including experimental preview-only rendering; it does not promise hos
 The package has no root entry point. `/server` also exposes the reusable Map DevTools shell. The CLI
 connects scene selection, saved capture/review and shared browser context through its optional local
 workflow adapter; see the [Map DevTools guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md).
+**Controls** groups map, theme and scene selection with module settings in one sidebar.
+**Captures** includes confirmed deletion of individual saved captures through the local adapter.
 
 The preview's globe rim follows the rendered canvas silhouette, including camera and viewport
 changes, and fades between zooms 3 and 6. Its colors follow the map's atmosphere when declared.

@@ -2243,3 +2243,18 @@ function disposeFunctions(disposers: Array<() => void>): void {
 function isPromiseLike<T>(value: T | Promise<T> | undefined): value is Promise<T> {
   return Boolean(value && typeof (value as Promise<T>).then === 'function');
 }
+
+export {
+  readTileflowVegetationDisplay,
+  resolveTileflowVegetationRepresentation,
+  tileflowVegetationDisplayMetadataKey,
+  type TileflowVegetationDisplay,
+  type TileflowVegetationRepresentation,
+  type TileflowViewMode,
+} from './vegetation-display';
+
+export {
+  createTileflowVegetation,
+  type TileflowVegetationOptions,
+  type TileflowVegetationController,
+} from './vegetation-browser';

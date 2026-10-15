@@ -470,7 +470,7 @@ import {streets} from '@tileflow/maps';
 export default {maps:{${mapNames
     .map(
       (name) =>
-        `${JSON.stringify(name)}:defineMap({id:${JSON.stringify(name)},version:1,extends:streets,icons:[],modules:{poi:{type:'poi',icons:false},roads:disable()},glyphs:${fixtureGlyphsSource}})`,
+        `${JSON.stringify(name)}:defineMap({id:${JSON.stringify(name)},version:1,extends:streets,icons:[],modules:{poi:{type:'poi',icons:false},roads:disable(),vegetation:disable()},glyphs:${fixtureGlyphsSource}})`,
     )
     .join(',')}}};\n`;
 }

@@ -1,4 +1,5 @@
 import {workbenchClient} from './workbench-client';
+import {controlsClient, controlsPanel, controlsStyles} from './workbench-controls';
 import {workbenchIcon, workbenchPanels, workbenchStyles} from './workbench-ui';
 
 export type TileflowComparisonHtmlSide = {
@@ -175,20 +176,16 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
       }
       ${workbenchStyles}
+      ${controlsStyles}
     </style>
   </head>
   <body>
     <div class="brandbar"><span class="wordmark">Tileflow</span><span class="product-name">Map DevTools</span><details><summary id="wb-project">Local workspace</summary><div class="project-path" id="wb-project-path">Local project</div></details></div>
     <header class="toolbar" aria-label="Map DevTools controls">
       <span class="toolbar-title" id="title"></span>
-      <div class="picker-group workbench-only" ${options.workbenchUrl ? '' : 'hidden'}>
-        <select id="wb-view" aria-label="Scene or theme" hidden><option>Loading scenes…</option></select>
-        <label id="wb-map-field">Map<select id="wb-map" aria-label="Map"></select></label>
-        <label id="wb-theme-field">Theme<select id="wb-theme" aria-label="Theme"></select></label>
-        <label>Saved view<select id="wb-scene" aria-label="Saved view"></select></label>
-      </div>
       <div class="toolbar-actions">
       <button type="button" id="inspect-toggle" aria-controls="inspector" aria-expanded="false" aria-pressed="false" aria-keyshortcuts="i" title="Select a map element (I). Escape to stop.">${workbenchIcon('inspect')}<span>Inspect</span><kbd class="shortcut" aria-hidden="true">I</kbd></button>
+      <button type="button" id="controls-toggle" aria-controls="map-controls" aria-expanded="false">${workbenchIcon('settings')}<span>Controls</span></button>
       <button id="wb-compare-toggle" class="workbench-only" ${options.workbenchUrl ? '' : 'hidden'}>${workbenchIcon('compare')}Compare</button>
       <button id="wb-history-toggle" class="workbench-only" aria-controls="wb-history" aria-expanded="false" ${options.workbenchUrl ? '' : 'hidden'}>${workbenchIcon('history')}Captures</button>
       <span class="tool-divider" aria-hidden="true"></span>
@@ -247,6 +244,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         <div id="sprite-output" class="sprite-grid"></div></details>
       </aside>
       ${workbenchPanels}
+      ${controlsPanel}
     </div>
     <footer class="statusbar"><span id="wb-status">Local preview</span><button id="wb-help" class="workbench-only" ${options.workbenchUrl ? '' : 'hidden'}>Quick start</button><span class="feedback" id="feedback" role="status"></span></footer>
     <script type="module"${nonceAttribute}>
@@ -386,6 +384,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
 
       function setInspectionEnabled(enabled, manageFocus = false) {
         inspectionEnabled = enabled;
+        if (enabled) toggleMapControls(false);
         if (enabled && options.workbenchUrl) {
           document.getElementById("wb-review").hidden = true;
           document.getElementById("wb-history").hidden = true;
@@ -966,6 +965,8 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           return configured.href;
         }
         configured.pathname = configured.pathname.slice(0, markerIndex) + marker + map + "/" + theme + ".json";
+        const controls = new URL(side.frame.src, location.href).searchParams.get("controls");
+        if (controls) configured.searchParams.set("controls", controls);
         return configured.href;
       }
 
@@ -1592,6 +1593,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       function formatNumber(value) { return String(roundNumber(value)); }
       function wrapLongitude(value) { return ((value + 180) % 360 + 360) % 360 - 180; }
       function setFeedback(value) { feedback.textContent = value; setTimeout(() => { if (feedback.textContent === value) feedback.textContent = ""; }, 6000); }
+      ${controlsClient}
       ${workbenchClient}
     </script>
   </body>

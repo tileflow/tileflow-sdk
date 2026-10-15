@@ -14,6 +14,7 @@ import {
   water,
 } from '../src';
 import type {TileflowLayerContribution} from '../src/cartography/contributions';
+import {tileflowBuildings3DDesignOf} from '../src/cartography/scene-3d-metadata';
 import {compileAeroways} from '../src/modules/aeroways/compiler';
 import {compileBoundaries} from '../src/modules/boundaries/compiler';
 import {compileBuildings} from '../src/modules/buildings/compiler';
@@ -560,3 +561,37 @@ function evaluate(value: unknown, properties: Record<string, unknown>): unknown 
       throw new Error(`Unsupported test expression operator: ${String(operator)}`);
   }
 }
+
+test('compiled buildings keep style lighting and require explicit enhanced effects', () => {
+  const layers = [
+    {
+      id: 'tileflow-buildings-render-extrusion',
+      paint: {
+        'fill-extrusion-color': '#eee4da',
+        'fill-extrusion-vertical-gradient': false,
+      },
+    },
+  ];
+  const plain = tileflowBuildings3DDesignOf({}, context, layers)!;
+  assert.equal(plain.color, '#eee4da');
+  assert.equal(plain.verticalGradient, false);
+  assert.equal(plain.lighting, 'style');
+  assert.equal(plain.colorVariation, 0);
+  assert.equal(plain.edges, 0);
+  assert.equal(plain.nightLight, 0);
+  assert.equal(plain.shadows, false);
+  assert.equal(plain.occlusion, false);
+  const enhanced = {
+    lighting: 'sun',
+    colorVariation: 0.06,
+    edges: 1,
+    nightLight: 1,
+    shadows: true,
+    occlusion: true,
+    windows: true,
+  };
+  const compiled = tileflowBuildings3DDesignOf({threeDimensional: enhanced}, context, layers)!;
+  for (const [name, value] of Object.entries(enhanced))
+    assert.equal(compiled[name as keyof typeof compiled], value);
+  assert.equal(tileflowBuildings3DDesignOf({enabled: false}, context, layers), undefined);
+});

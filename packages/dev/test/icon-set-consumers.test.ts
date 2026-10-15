@@ -22,7 +22,7 @@ import {compileTileflowIconPackages, prepareTileflowCatalogIcons} from '../src/i
 import {lockFor, renderedIcon, setFixture} from './icon-set-fixtures';
 
 const glyphs = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}`;
-const unreferencedModules = `{poi:{type:'poi',icons:false},roads:disable()}`;
+const unreferencedModules = `{poi:{type:'poi',icons:false},roads:disable(),vegetation:disable()}`;
 const shopSvg =
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" fill="#2563eb"/></svg>';
 
@@ -126,7 +126,11 @@ test('one workspace lock composes the exact subset declared by each map', async 
     url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
     fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic'],
   };
-  const workspaceModules = {poi: {type: 'poi' as const, icons: false}, roads: disable()};
+  const workspaceModules = {
+    poi: {type: 'poi' as const, icons: false},
+    roads: disable(),
+    vegetation: disable(),
+  };
   const project: TileflowBuildCatalog = {
     maps: {
       brand: parseTileflowMap(

@@ -38,10 +38,14 @@ export function tileflowBuildings3DDesignOf(
   if (config.enabled === false) return undefined;
   const style = config.threeDimensional ?? {};
   let color: string | readonly unknown[] | undefined;
+  let verticalGradient = true;
   for (const [id, property] of colourSources) {
     const value = layers.find((layer) => layer.id === id)?.paint?.[property];
     if (typeof value === 'string' || Array.isArray(value)) {
       color = value as string | readonly unknown[];
+      verticalGradient =
+        layers.find((layer) => layer.id === id)?.paint?.['fill-extrusion-vertical-gradient'] !==
+        false;
       break;
     }
   }
@@ -58,12 +62,15 @@ export function tileflowBuildings3DDesignOf(
       ...(context.data.schema.layers.poi ? {places: context.data.schema.layers.poi} : {}),
     },
     color: color ?? context.colors.buildings.generic,
-    edges: number(style.edges, 1),
+    lighting: style.lighting === 'sun' ? 'sun' : 'style',
+    colorVariation: number(style.colorVariation, 0),
+    verticalGradient,
+    edges: number(style.edges, 0),
     ...(typeof edgeColor === 'string' ? {edgeColor} : {}),
-    nightLight: number(style.nightLight, 1),
+    nightLight: number(style.nightLight, 0),
     windows: style.windows === true,
-    shadows: style.shadows !== false,
-    occlusion: style.occlusion !== false,
+    shadows: style.shadows === true,
+    occlusion: style.occlusion === true,
     ...placedModels(style.models, buildingModels),
     ...modelColours(style.modelColors),
     ...landmarksOf(style.landmarks, tileflowLandmarks),

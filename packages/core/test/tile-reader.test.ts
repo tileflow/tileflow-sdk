@@ -256,7 +256,7 @@ test('the reader requests each tile once, caches it and applies the request rule
   const reader = createTileflowTileReader({
     tiles: 'https://tiles.example.test/{z}/{x}/{y}.pbf?release=1',
     layers: ['transportation'],
-    transformRequest: (url) => ({url: `${url}&signed=1`, headers: {'X-Map': 'demo'}}),
+    transformRequest: async (url) => ({url: `${url}&signed=1`, headers: {'X-Map': 'demo'}}),
     fetch: network.fetch,
   });
   network.hold(true);

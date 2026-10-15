@@ -27,6 +27,9 @@ import {
   attachTileflowMapLifecycle,
   createTileflowSessionStarter,
   createTileflowThemeController,
+  createTileflowVegetation,
+  type TileflowVegetationController,
+  type TileflowViewMode,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
   loadTileflowStyleFonts,
@@ -103,6 +106,8 @@ export type TileflowInteractionRenderer<
 > = (context: TileflowInteractionViewContext<TAnnotation>) => ReactNode;
 
 type MapSharedProps = {
+  vegetation?: boolean;
+  viewMode?: TileflowViewMode;
   captureId?: string;
   imageUrl?: string;
   alt?: string;
@@ -196,6 +201,8 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     theme,
     themeBlend,
     themeTransition,
+    vegetation,
+    viewMode = '2d',
     interactionState,
     interactions = defaultInteractions,
     onInteractionDiagnostic,
@@ -238,6 +245,13 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   const containerRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const vegetationRef = useRef<TileflowVegetationController | undefined>(undefined);
+  const vegetationInputsRef = useRef({vegetation, viewMode});
+  vegetationInputsRef.current = {vegetation, viewMode};
+  useEffect(() => {
+    vegetationRef.current?.setVisible(vegetation);
+    vegetationRef.current?.setViewMode(viewMode);
+  }, [vegetation, viewMode]);
   const themeControllerRef = useRef<TileflowThemeController | undefined>(undefined);
   const runtimeStyleRef = useRef<ReturnType<typeof resolveTileflowRuntimeStyle>>(null);
   const interactionRuntimeRef = useRef<TileflowMapLibreDomRuntime<TAnnotation> | undefined>(
@@ -849,6 +863,28 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
             }
           });
         }
+        const vegetationController = createTileflowVegetation({
+          map,
+          ...(themeController ? {controller: themeController} : {}),
+          visible: vegetationInputsRef.current.vegetation,
+          viewMode: vegetationInputsRef.current.viewMode,
+          // Direct tile readers use HTTP, not MapLibre's custom World protocol.
+          transformRequest: createTileflowTransformRequest({
+            getAnalytics: () => resolvedAnalyticsRef.current,
+            sessionController: session,
+            sessionId: session.sessionId,
+            transformRequest: (url) =>
+              stableMapOptions?.transformRequest?.(
+                url,
+                'Tile' as Parameters<NonNullable<TileflowMapOptions['transformRequest']>>[1],
+              ),
+          }),
+        });
+        vegetationRef.current = vegetationController;
+        registerCleanup(() => {
+          vegetationController.dispose();
+          if (vegetationRef.current === vegetationController) vegetationRef.current = undefined;
+        });
         const browserWindow = container.ownerDocument.defaultView;
         if (!browserWindow) {
           throw new Error('Tileflow semantic interactions require a browser document.');

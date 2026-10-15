@@ -24,7 +24,7 @@ import {streets} from '@tileflow/maps';
 export default defineMap({
   id:'main', version:1, extends:streets, icons:[],
   glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']},
-  modules:{poi:disable(),roads:disable()}
+  modules:{poi:disable(),roads:disable(),vegetation:disable()}
 });
 `,
   );
@@ -75,7 +75,7 @@ import {streets} from '@tileflow/maps';
 export default defineMap({
   id:'main', version:1, extends:streets, icons:[],
   glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']},
-  modules:{poi:disable(),roads:disable()}
+  modules:{poi:disable(),roads:disable(),vegetation:disable()}
 });
 `,
   );

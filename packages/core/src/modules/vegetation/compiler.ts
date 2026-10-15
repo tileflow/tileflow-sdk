@@ -88,7 +88,7 @@ export function tileflowVegetationDescription(
   context: TileflowDomainCompileContext,
 ): TileflowVegetation3D | undefined {
   const {schema} = context.data;
-  if (request?.enabled === false || (request?.mode ?? '3d') !== '3d' || !schema.layers.tree)
+  if (request?.enabled === false || request?.mode === 'flat' || !schema.layers.tree)
     return undefined;
   const tree = context.colors.vegetation.tree;
   const style = request?.threeDimensional ?? {};

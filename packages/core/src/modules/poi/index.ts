@@ -4,6 +4,7 @@ import type {
   TileflowPoiDensity,
   TileflowPoiModuleConfig,
   TileflowPoiModuleOptions,
+  TileflowPoiPlacementOrder,
 } from '../../types';
 import {tileflowPoiCategories} from '../../types';
 
@@ -36,10 +37,24 @@ export type ResolvedPoiModuleOptions = {
   minZoom: number;
   placement: {
     coupleIconAndLabel: boolean;
+    iconOnlyTypes: readonly string[];
     iconPadding: number;
+    order: TileflowPoiPlacementOrder;
+    prominentRank?: number;
     textPadding: number;
   };
 };
+
+/**
+ * World POI types whose pictogram explains them without a name: parking and public toilets.
+ * Applies when a map draws both pictograms and names.
+ */
+export const tileflowPoiIconOnlyTypes = Object.freeze([
+  'parking',
+  'parking_garage',
+  'parking_lot',
+  'public_restroom',
+] as const);
 
 export function poi(options: TileflowPoiModuleOptions = {}): TileflowPoiModuleConfig {
   return {type: 'poi', ...cloneJson(options)};
@@ -55,7 +70,12 @@ export function resolvePoi(request: TileflowPoiModuleConfig | undefined): Resolv
     minZoom: request?.minZoom ?? 0,
     placement: {
       coupleIconAndLabel: request?.placement?.coupleIconAndLabel ?? false,
+      iconOnlyTypes: [...(request?.placement?.iconOnlyTypes ?? tileflowPoiIconOnlyTypes)],
       iconPadding: request?.placement?.iconPadding ?? 2,
+      order: request?.placement?.order ?? 'importance',
+      ...(request?.placement?.prominentRank === undefined
+        ? {}
+        : {prominentRank: request.placement.prominentRank}),
       textPadding: request?.placement?.textPadding ?? 2,
     },
   };

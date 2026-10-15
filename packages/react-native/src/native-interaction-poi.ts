@@ -54,11 +54,11 @@ export type NativePoiQueryResult =
     }>;
 
 type Representation = 'combined' | 'icon' | 'label' | 'marker';
+/** A layer may draw several categories; a hit's category is the feature's own. */
 type Layer = Readonly<{
   layerId: string;
   source: string;
   sourceLayer?: string;
-  category: TileflowPoiCategory;
   representation: Representation;
   priority: number;
 }>;
@@ -116,11 +116,11 @@ function parseManifest(style: unknown): Manifest {
   if (field(style, 'version') !== 8) throw new Error();
   const metadata = field(style, 'metadata');
   const artifact = snapshotNativeInteractionJson(field(metadata, 'tileflow:interaction-manifest'));
-  if (field(artifact, 'version') !== 2) throw new Error();
+  if (field(artifact, 'version') !== 3) throw new Error();
   const poi = field(field(artifact, 'domains'), 'poi');
   if (field(poi, 'identity') !== 'maplibre-feature-id-if-present') throw new Error();
   const hitTesting = field(poi, 'hitTesting');
-  // This is the version-2 artifact vocabulary, not a native hover scheduling contract.
+  // This is the version-3 artifact vocabulary, not a native hover scheduling contract.
   if (
     field(hitTesting, 'order') !== 'rendered-topmost' ||
     field(hitTesting, 'frequency') !== 'animation-frame'
@@ -172,14 +172,12 @@ function parseManifest(style: unknown): Manifest {
     const layerId = field(input, 'layerId');
     const source = field(input, 'source');
     const sourceLayer = field(input, 'sourceLayer');
-    const layerCategory = field(input, 'category');
     const kind = field(input, 'representation');
     const priority = field(input, 'priority');
     if (
       !name(layerId) ||
       !name(source) ||
       (sourceLayer !== undefined && !name(sourceLayer)) ||
-      !category(layerCategory) ||
       !representation(kind) ||
       typeof priority !== 'number' ||
       !Number.isSafeInteger(priority) ||
@@ -209,7 +207,6 @@ function parseManifest(style: unknown): Manifest {
       layerId,
       source,
       ...(sourceLayer === undefined ? {} : {sourceLayer}),
-      category: layerCategory,
       representation: kind,
       priority,
     });
@@ -293,11 +290,14 @@ function choose(
       field(feature, 'sourceLayer') !== layer.sourceLayer
     )
       throw new Error();
+    const featureProperties = properties(field(feature, 'properties'), manifest.fields);
+    const featureCategory = featureProperties.category;
+    if (!category(featureCategory)) throw new Error();
     const binding = bindings.find(
       (value) =>
         value.target.kind === 'semantic-feature' &&
         value.target.domain === 'poi' &&
-        (!value.target.categories || value.target.categories.includes(layer.category)),
+        (!value.target.categories || value.target.categories.includes(featureCategory)),
     );
     if (!binding) continue;
     const stable = featureId(field(feature, 'id'));
@@ -307,9 +307,9 @@ function choose(
       coordinate,
       bindingId: binding.id,
       feature: {
-        category: layer.category,
+        category: featureCategory,
         ...(stable === undefined ? {} : {id: stable}),
-        properties: properties(field(feature, 'properties'), manifest.fields),
+        properties: featureProperties,
       },
     });
     const candidate: Candidate = {layer, renderedIndex, match: Object.freeze({binding, target})};
@@ -385,7 +385,8 @@ export function createNativePoiAdapter() {
         !!parsed &&
         inspect(lease, generation) === 'current' &&
         manifest === parsed &&
-        parsed.layers.some((layer) => layer.category === target.feature.category)
+        parsed.layers.length > 0 &&
+        category(target.feature.category)
       );
     },
     replaceStyle(next?: NativePoiStyleLease): readonly TileflowInteractionDiagnostic[] {
@@ -464,15 +465,8 @@ export function createNativePoiAdapter() {
       if (!owner || !selected) return answer(failure());
       const ownership = inspect(owner, expected);
       if (ownership !== 'current') return answer(ownership === 'error' ? failure() : stale);
-      const layers = selected.layers
-        .filter((layer) =>
-          bindings.some(
-            (binding) =>
-              binding.target.kind === 'semantic-feature' &&
-              (!binding.target.categories || binding.target.categories.includes(layer.category)),
-          ),
-        )
-        .map((layer) => layer.layerId);
+      // Layers may share categories; the bindings' categories select among returned features.
+      const layers = selected.layers.map((layer) => layer.layerId);
       if (!layers.length) return answer(miss);
       if (!invocationIsLive()) return Promise.resolve(stale);
       const request: NativePoiQueryRequest = Object.freeze({

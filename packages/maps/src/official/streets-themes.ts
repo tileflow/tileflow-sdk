@@ -1,4 +1,5 @@
 import {defineTheme, token} from '@tileflow/core';
+import {streetsPoiImageTokens} from './streets-poi';
 
 // Tileflow-owned semantic colors, calibrated from rendered Mapbox Standard
 // default/day and default/night references on 2026-10-14. Standard is evergreen;
@@ -338,21 +339,6 @@ const streetsFonts = {
 } as const;
 
 const streetsImages = {
-  'poi.coffee': 'coffee',
-  'poi.parking': 'parking',
-  'poi.arts-entertainment': 'culture',
-  'poi.education': 'education',
-  'poi.food-drink': 'food',
-  'poi.landmark': 'culture',
-  'poi.lodging': 'lodging',
-  'poi.medical': 'health',
-  'poi.park-nature': 'nature',
-  'poi.public-services': 'services',
-  'poi.religion': 'worship',
-  'poi.retail': 'shopping',
-  'poi.sport-leisure': 'sport',
-  'poi.transport': 'major-transit',
-  'poi.visitor-amenity': 'services',
   'roads.crosswalk': 'crosswalk',
   'roads.oneway': 'oneway',
   'roads.shield.circleNeutral': 'road-shield-circle-neutral',
@@ -374,7 +360,7 @@ export const streetsThemes = Object.freeze({
       color: streetsLightColors,
       number: {},
       font: streetsFonts,
-      image: streetsImages,
+      image: {...streetsImages, ...streetsPoiImageTokens('light')},
     },
     typography: {
       font: token.font('default'),
@@ -402,11 +388,7 @@ export const streetsThemes = Object.freeze({
       font: streetsFonts,
       image: {
         ...streetsImages,
-        ...Object.fromEntries(
-          Object.entries(streetsImages)
-            .filter(([role]) => role.startsWith('poi.'))
-            .map(([role, image]) => [role, `${image}-dark`]),
-        ),
+        ...streetsPoiImageTokens('dark'),
         'roads.sidewalkPattern': 'sidewalk-dot-dark',
       },
     },

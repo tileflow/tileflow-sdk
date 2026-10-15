@@ -33,7 +33,7 @@ test('emits a versioned post-planning POI interaction lookup without public phys
     tileflowInteractionManifestMetadataKey
   ] as TileflowInteractionManifest;
 
-  assert.equal(manifest.version, 2);
+  assert.equal(manifest.version, 3);
   assert.equal(manifest.domains.poi?.identity, 'maplibre-feature-id-if-present');
   assert.deepEqual(manifest.domains.poi?.deduplication, {
     identity: ['source', 'source-layer', 'feature-id'],
@@ -51,25 +51,15 @@ test('emits a versioned post-planning POI interaction lookup without public phys
     sizeRank: 'size_rank',
     type: 'type',
   });
+  // A layer may draw several categories, so a hit's category comes from the feature itself.
   assert.deepEqual(
-    manifest.domains.poi?.layers.map(({category, layerId, representation}) => ({
-      category,
-      layerId,
-      representation,
-    })),
+    manifest.domains.poi?.layers.map(({layerId, representation}) => ({layerId, representation})),
     [
-      {
-        category: 'food-drink',
-        layerId: 'tileflow-poi-food-drink-icon',
-        representation: 'icon',
-      },
-      {
-        category: 'food-drink',
-        layerId: 'tileflow-poi-food-drink-label',
-        representation: 'label',
-      },
+      {layerId: 'tileflow-poi-icon', representation: 'icon'},
+      {layerId: 'tileflow-poi-label', representation: 'label'},
     ],
   );
+  assert.ok(manifest.domains.poi?.layers.every((layer) => !('category' in layer)));
   assert.ok(
     manifest.domains.poi?.layers.every(({layerId}) =>
       style.layers.some((layer) => layer.id === layerId),
@@ -93,7 +83,7 @@ test('omits interaction metadata when POIs are disabled', () => {
   assert.equal(style.metadata?.[tileflowInteractionManifestMetadataKey], undefined);
 });
 
-test('tracks optimized combined and marker POI representations by semantic category', () => {
+test('tracks optimized combined and marker POI representations', () => {
   const style = createStyle(
     extendStreets({
       modules: {
@@ -113,24 +103,57 @@ test('tracks optimized combined and marker POI representations by semantic categ
   ] as TileflowInteractionManifest;
 
   assert.deepEqual(
-    manifest.domains.poi?.layers.map(({category, layerId, representation}) => ({
-      category,
-      layerId,
-      representation,
-    })),
+    manifest.domains.poi?.layers.map(({layerId, representation}) => ({layerId, representation})),
     [
-      {
-        category: 'food-drink',
-        layerId: 'tileflow-poi-food-drink-marker',
-        representation: 'marker',
-      },
-      {
-        category: 'food-drink',
-        layerId: 'tileflow-poi-food-drink',
-        representation: 'combined',
-      },
+      {layerId: 'tileflow-poi-marker', representation: 'marker'},
+      {layerId: 'tileflow-poi', representation: 'combined'},
     ],
   );
+});
+
+test('looks up the prominent tier and per-category layers by their representation', () => {
+  const prominent = createStyle(
+    extendStreets({
+      modules: {
+        poi: poi({
+          categories: ['food-drink', 'transport'],
+          placement: {coupleIconAndLabel: true, prominentRank: 1},
+        }),
+      },
+    }),
+    {
+      preparedAssets: {
+        icons: {ids: ['food', 'major-transit'], sprite: preparedAssets.icons.sprite},
+      },
+    },
+  );
+  const byCategory = createStyle(
+    extendStreets({
+      modules: {
+        poi: poi({
+          categories: ['food-drink', 'transport'],
+          placement: {coupleIconAndLabel: false, order: 'categories'},
+        }),
+      },
+    }),
+    {
+      preparedAssets: {
+        icons: {ids: ['food', 'major-transit'], sprite: preparedAssets.icons.sprite},
+      },
+    },
+  );
+  const lookup = (style: typeof prominent) =>
+    (
+      style.metadata?.[tileflowInteractionManifestMetadataKey] as TileflowInteractionManifest
+    ).domains.poi?.layers.map(({layerId, representation}) => `${layerId}:${representation}`);
+
+  assert.deepEqual(lookup(prominent), ['tileflow-poi:combined', 'tileflow-poi-prominent:combined']);
+  assert.deepEqual(lookup(byCategory), [
+    'tileflow-poi-transport-icon:icon',
+    'tileflow-poi-transport-label:label',
+    'tileflow-poi-food-drink-icon:icon',
+    'tileflow-poi-food-drink-label:label',
+  ]);
 });
 
 test('rejects semantic metadata that drifts from its finalized physical layer', () => {
@@ -154,7 +177,6 @@ test('rejects semantic metadata that drifts from its finalized physical layer', 
         layers: [
           {
             anchor: 'pointer-coordinate',
-            category: 'food-drink',
             layerId: 'poi-food-drink',
             priority: 1,
             representation: 'icon',
@@ -164,7 +186,7 @@ test('rejects semantic metadata that drifts from its finalized physical layer', 
         ],
       },
     },
-    version: 2,
+    version: 3,
   };
 
   assert.throws(
@@ -197,7 +219,6 @@ test('rejects multiple physical POI namespaces that would collide in public feat
         layers: [
           {
             anchor: 'pointer-coordinate',
-            category: 'food-drink',
             layerId: 'poi-food-drink',
             priority: 1,
             representation: 'icon',
@@ -206,7 +227,6 @@ test('rejects multiple physical POI namespaces that would collide in public feat
           },
           {
             anchor: 'pointer-coordinate',
-            category: 'retail',
             layerId: 'poi-retail',
             priority: 2,
             representation: 'label',
@@ -216,7 +236,7 @@ test('rejects multiple physical POI namespaces that would collide in public feat
         ],
       },
     },
-    version: 2,
+    version: 3,
   };
 
   assert.throws(

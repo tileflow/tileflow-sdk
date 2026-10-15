@@ -1,12 +1,15 @@
 import {tileflowCompilerMetadataKeys} from './contributions';
-import {tileflowPoiCategories, type TileflowPoiCategory} from '../types';
+import {tileflowPoiCategories} from '../types';
 
 export const tileflowInteractionManifestMetadataKey = 'tileflow:interaction-manifest' as const;
-export const tileflowInteractionManifestVersion = 2 as const;
+export const tileflowInteractionManifestVersion = 3 as const;
 
+/**
+ * One physical layer that draws POIs. A layer may draw several categories, so the category of a
+ * hit is read from the feature's own `category` field.
+ */
 export type TileflowPoiInteractionLayer = {
   anchor: 'pointer-coordinate';
-  category: TileflowPoiCategory;
   layerId: string;
   priority: number;
   representation: 'combined' | 'icon' | 'label' | 'marker';
@@ -56,7 +59,9 @@ export function createTileflowInteractionManifest(
     const sourceLayer =
       typeof layer['source-layer'] === 'string' ? layer['source-layer'] : undefined;
     const target = semanticTarget(layer);
-    if (!id || !source || !sourceLayer || !target?.startsWith('poi.')) return [];
+    if (!id || !source || !sourceLayer || (target !== 'poi' && !target?.startsWith('poi.'))) {
+      return [];
+    }
 
     const parsed = parsePoiTarget(target);
     if (!parsed) return [];
@@ -112,7 +117,6 @@ export function assertTileflowInteractionManifestLayers(
   }
   for (const layer of poiLayers) {
     if (
-      !isTileflowPoiCategory(layer.category) ||
       !isSafeArtifactName(layer.layerId) ||
       !isSafeArtifactName(layer.source) ||
       !isSafeArtifactName(layer.sourceLayer)
@@ -139,22 +143,29 @@ export function assertTileflowInteractionManifestLayers(
   }
 }
 
+/**
+ * `poi`, `poi.prominent` and their `.<part>` are the module's shared placement layers;
+ * `poi.<category>` and `poi.<category>.<part>` are per-category layers of
+ * `placement.order: 'categories'`.
+ */
 function parsePoiTarget(
   target: string,
-): Pick<TileflowPoiInteractionLayer, 'category' | 'representation'> | undefined {
+): Pick<TileflowPoiInteractionLayer, 'representation'> | undefined {
   const segments = target.split('.');
-  if (segments[0] !== 'poi' || segments.length < 2 || segments.length > 3) return undefined;
-  const category = segments[1];
-  if (!isTileflowPoiCategory(category)) return undefined;
-  const suffix = segments[2];
-  if (suffix === undefined) return {category, representation: 'combined'};
-  if (suffix === 'icon' || suffix === 'label' || suffix === 'marker') {
-    return {category, representation: suffix};
-  }
-  return undefined;
+  if (segments[0] !== 'poi' || segments.length > 3) return undefined;
+  const [, first, second] = segments;
+  if (first === undefined) return {representation: 'combined'};
+  if (segments.length === 2 && isRepresentationPart(first)) return {representation: first};
+  if (first !== 'prominent' && !isTileflowPoiCategory(first)) return undefined;
+  if (second === undefined) return {representation: 'combined'};
+  return isRepresentationPart(second) ? {representation: second} : undefined;
 }
 
-function isTileflowPoiCategory(value: unknown): value is TileflowPoiCategory {
+function isRepresentationPart(value: string): value is 'icon' | 'label' | 'marker' {
+  return value === 'icon' || value === 'label' || value === 'marker';
+}
+
+function isTileflowPoiCategory(value: unknown): boolean {
   return typeof value === 'string' && (tileflowPoiCategories as readonly string[]).includes(value);
 }
 

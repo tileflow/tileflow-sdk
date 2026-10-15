@@ -17,46 +17,9 @@ import {
   prepareTileflowCatalogIcons,
   TileflowIconCompilationError,
 } from '../src/icons';
+import {readStreetsIconIds} from './streets-icon-ids';
 
-const streetsIconIds = [
-  'coffee',
-  'coffee-dark',
-  'crosswalk',
-  'culture',
-  'culture-dark',
-  'education',
-  'education-dark',
-  'food',
-  'food-dark',
-  'health',
-  'health-dark',
-  'lodging',
-  'lodging-dark',
-  'major-transit',
-  'major-transit-dark',
-  'nature',
-  'nature-dark',
-  'oneway',
-  'parking',
-  'parking-dark',
-  'road-shield-circle-neutral',
-  'road-shield-rectangle-blue',
-  'road-shield-rectangle-green',
-  'road-shield-rectangle-neutral',
-  'road-shield-rectangle-orange',
-  'road-shield-rectangle-red',
-  'road-shield-rectangle-yellow',
-  'services',
-  'services-dark',
-  'shopping',
-  'shopping-dark',
-  'sidewalk-dot',
-  'sidewalk-dot-dark',
-  'sport',
-  'sport-dark',
-  'worship',
-  'worship-dark',
-] as const;
+const streetsIconIds = readStreetsIconIds();
 
 function defineResolvedMap(input: TileflowMap) {
   return parseTileflowMap(defineMap(input));

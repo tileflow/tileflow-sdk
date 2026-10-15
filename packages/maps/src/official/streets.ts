@@ -22,8 +22,6 @@ import {
   type TileflowRoadClassStyle,
   type TileflowSymbolStyle,
   type TileflowThemeColorValue,
-  type TileflowThemeImageValue,
-  token,
   transit,
   vegetation,
   water,
@@ -32,6 +30,7 @@ import {
 } from '@tileflow/core';
 import {streetsIcons} from '../assets';
 import {mapboxRailTransitStyle} from './mapbox-rail';
+import {streetsPoiImage} from './streets-poi';
 import {streetsThemes, streetsVisual} from './streets-themes';
 import {bindOfficialMapTheme} from './theme-helpers';
 
@@ -164,22 +163,17 @@ const protectedAreaOpacity = zoom.linear([
 // World size ranks are not Mapbox sizeranks: even small named parks can be
 // size_rank=0. Reserve the 18 px tier for the producer's highest priorities,
 // rather than enlarging every small green space in a city overview.
+// Every category shares one placement layer, so only per-feature properties vary: the
+// pictogram follows World's transport mode and type (streets-poi.ts) and transport keeps its
+// fixed label size.
 function streetsPoiStyle(category: TileflowPoiCategory): TileflowPoiCategoryStyle {
   const filterRank = expr.toNumber(expr.get(field('poiFilterRank')), 6);
   const sizeRank = expr.toNumber(expr.get(field('poiSizeRank')), 17);
   const featured = expr.all(expr.lte(filterRank, 0), expr.lt(sizeRank, 5));
   const featuredDetail = expr.all(expr.lte(filterRank, 1), expr.lt(sizeRank, 13));
   return {
-    minZoom: category === 'transport' ? 12 : 6,
     icon: {
-      image: expr.match<string, TileflowThemeImageValue>(
-        expr.get(field('poiIcon')),
-        [
-          {labels: 'coffee', value: token.image('poi.coffee')},
-          {labels: 'parking', value: token.image('poi.parking')},
-        ],
-        token.image(`poi.${category}`),
-      ),
+      image: streetsPoiImage(),
       // Keep the authored 24px cell at native scale. Fractional resizing
       // softens the small pictogram strokes even with a correct 2x atlas.
       // The SVG itself fits the Maki artwork into a centered 12px box.
@@ -206,71 +200,6 @@ function streetsPoiStyle(category: TileflowPoiCategory): TileflowPoiCategoryStyl
             ]),
     },
   };
-}
-
-// Keep eligibility in Streets: other maps retain the core density contract.
-// The reference introduces an extra rank at z16 and z18. World only has ranks
-// 0–5, and its landmark bucket also includes ordinary residential buildings.
-const streetsPoiDensities = {
-  transport: 3,
-  'food-drink': 3,
-  lodging: 2,
-  retail: 3,
-  'arts-entertainment': 2,
-  landmark: 2,
-  'park-nature': 5,
-  medical: 3,
-  education: 3,
-  'public-services': 3,
-  'sport-leisure': 3,
-  religion: 3,
-  'visitor-amenity': 3,
-} as const;
-
-function streetsPoiRenderStack() {
-  return Object.fromEntries(
-    Object.entries(streetsPoiDensities).map(([category, density]) => {
-      const atMost = (value: number): TileflowRenderSelector => ({
-        kind: 'compare',
-        field: 'poiFilterRank',
-        operator: 'lte',
-        value: Math.min(5, value),
-      });
-      return [
-        category,
-        refineRenderTarget({
-          renderer: 'symbol',
-          target: `poi.${category}`,
-          selector: {
-            kind: 'all',
-            selectors: [
-              {kind: 'compare', field: 'poiCategory', operator: 'eq', value: category},
-              {kind: 'has', field: 'poiFilterRank'},
-              {kind: 'compare', field: 'poiFilterRank', operator: 'gte', value: 0},
-              {kind: 'has', field: 'poiSizeRank'},
-              {kind: 'compare', field: 'poiSizeRank', operator: 'gte', value: 0},
-              {kind: 'compare', field: 'poiSizeRank', operator: 'lte', value: 16},
-              {
-                kind: 'step',
-                fallback: atMost(density),
-                stops: [
-                  {zoom: 16, selector: atMost(density + 1)},
-                  {zoom: 18, selector: atMost(density + 2)},
-                ],
-              },
-              ...(category === 'park-nature'
-                ? ([
-                    {kind: 'has', field: 'name'},
-                    {kind: 'compare', field: 'name', operator: 'ne', value: ''},
-                  ] as const)
-                : []),
-            ],
-          },
-          style: {},
-        }),
-      ];
-    }),
-  );
 }
 
 // Match Standard's warm 2D footprints here; authored 3D extrusions keep their
@@ -2946,57 +2875,59 @@ export const streets = bindOfficialMapTheme(
         }),
         streetsLabelRenderStack(),
       ),
-      poi: withRenderStack(
-        poi({
-          // World owns taxonomy and available candidates. Streets adapts their
-          // rank tiers below; MapLibre resolves the final symbol collisions.
-          categories: [
-            'transport',
-            'food-drink',
-            'lodging',
-            'retail',
-            'arts-entertainment',
-            'landmark',
-            'park-nature',
-            'medical',
-            'education',
-            'public-services',
-            'sport-leisure',
-            'religion',
-            'visitor-amenity',
-          ],
-          // Standard carries the POI category into both marker and label colour.
-          // A uniform grey treatment suppresses a meaningful amount of chroma
-          // and makes the whole light map read as if a pale overlay sat above it.
-          color: 'category',
-          density: 3,
-          icons: true,
-          labels: true,
-          placement: {
-            // One collision unit: the icon is required and the name below it
-            // yields when there is insufficient room.
-            coupleIconAndLabel: true,
-            iconPadding: 3,
-            textPadding: 3,
-          },
-          styles: {
-            'arts-entertainment': {...streetsPoiStyle('arts-entertainment'), density: 2},
-            education: streetsPoiStyle('education'),
-            'food-drink': streetsPoiStyle('food-drink'),
-            landmark: streetsPoiStyle('landmark'),
-            lodging: {...streetsPoiStyle('lodging'), density: 2},
-            medical: streetsPoiStyle('medical'),
-            'park-nature': streetsPoiStyle('park-nature'),
-            'public-services': streetsPoiStyle('public-services'),
-            religion: streetsPoiStyle('religion'),
-            retail: streetsPoiStyle('retail'),
-            'sport-leisure': streetsPoiStyle('sport-leisure'),
-            transport: streetsPoiStyle('transport'),
-            'visitor-amenity': streetsPoiStyle('visitor-amenity'),
-          },
-        }),
-        streetsPoiRenderStack(),
-      ),
+      poi: poi({
+        // World owns taxonomy, zoom eligibility, density ranks and importance. Streets
+        // shows every category at one density and places them all in World's importance
+        // order, so collision keeps the most relevant places whatever their category.
+        categories: [
+          'transport',
+          'food-drink',
+          'lodging',
+          'retail',
+          'arts-entertainment',
+          'landmark',
+          'park-nature',
+          'medical',
+          'education',
+          'public-services',
+          'sport-leisure',
+          'religion',
+          'visitor-amenity',
+        ],
+        // Standard carries the POI category into both marker and label colour.
+        // A uniform grey treatment suppresses a meaningful amount of chroma
+        // and makes the whole light map read as if a pale overlay sat above it.
+        color: 'category',
+        density: 3,
+        icons: true,
+        labels: true,
+        placement: {
+          // One collision unit: a POI shows its disc and its name, or nothing. Parking and
+          // toilets, whose pictogram says what they are, show the disc alone.
+          coupleIconAndLabel: true,
+          iconPadding: 3,
+          order: 'importance',
+          // Street and place names outrank everyday destinations ('navigation' labels), but
+          // not the places that make a city recognisable: World's two most important ranks.
+          prominentRank: 1,
+          textPadding: 3,
+        },
+        styles: {
+          'arts-entertainment': streetsPoiStyle('arts-entertainment'),
+          education: streetsPoiStyle('education'),
+          'food-drink': streetsPoiStyle('food-drink'),
+          landmark: streetsPoiStyle('landmark'),
+          lodging: streetsPoiStyle('lodging'),
+          medical: streetsPoiStyle('medical'),
+          'park-nature': streetsPoiStyle('park-nature'),
+          'public-services': streetsPoiStyle('public-services'),
+          religion: streetsPoiStyle('religion'),
+          retail: streetsPoiStyle('retail'),
+          'sport-leisure': streetsPoiStyle('sport-leisure'),
+          transport: streetsPoiStyle('transport'),
+          'visitor-amenity': streetsPoiStyle('visitor-amenity'),
+        },
+      }),
     },
     view: {
       center: [-3.69275, 40.40866],

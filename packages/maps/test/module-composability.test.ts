@@ -26,6 +26,7 @@ import {
 } from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
 import {baedeker, blueprint, civica, ferraris, harad, siegfried, soundings, streets} from '../src';
+import {streetsPoiImageIds} from './streets-poi-fixture';
 
 const moduleFactories = {
   addresses,
@@ -176,6 +177,7 @@ const preparedOfficialAssets = {
         'soundings-rock-awash',
         'soundings-water-dots',
         'soundings-wreck',
+        ...streetsPoiImageIds,
       ],
       sprite: '/tileflow/test/official/sprite',
     },

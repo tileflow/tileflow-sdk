@@ -32,7 +32,7 @@ test('rejects a dynamic POI selection across SDF and RGBA, including its fallbac
     () => compile(),
     (error: unknown) => {
       assert.equal((error as {code: string}).code, 'TF_ICON_REPRESENTATION_MIXED');
-      assert.match((error as Error).message, /tileflow-poi-medical/);
+      assert.match((error as Error).message, /tileflow-poi/);
       return true;
     },
   );
@@ -55,7 +55,7 @@ test('a mixed package allows a proven homogeneous selection without splitting la
   const layers = style.layers.filter((layer) => layer.id.startsWith('tileflow-poi'));
   assert.deepEqual(
     layers.map((layer) => layer.id),
-    ['tileflow-poi-medical'],
+    ['tileflow-poi'],
   );
   assert.ok(layers[0]?.layout?.['text-field']);
   assert.equal(layers[0]?.paint?.['icon-color'], '#c43d35');
@@ -67,7 +67,7 @@ test('default paint follows the resolved image fallback and preserves authored o
     health: sdf,
     brand: {...sdf, defaults: {...sdf.defaults, color: '#123456'}},
   });
-  const layer = style.layers.find((layer) => layer.id === 'tileflow-poi-medical')!;
+  const layer = style.layers.find((layer) => layer.id === 'tileflow-poi')!;
   assert.ok(Array.isArray(layer.paint?.['icon-color']));
   assert.match(JSON.stringify(layer.paint?.['icon-color']), /health|c43d35/);
   assert.doesNotThrow(() => compile(fixed('health', {reason: 'Invariant image'})));
@@ -75,7 +75,7 @@ test('default paint follows the resolved image fallback and preserves authored o
 
 test('legacy RGBA-only prepared assets retain the existing image expression and paint', () => {
   const style = compile(undefined, {});
-  const layer = style.layers.find((layer) => layer.id === 'tileflow-poi-medical')!;
+  const layer = style.layers.find((layer) => layer.id === 'tileflow-poi')!;
   assert.equal(layer.paint?.['icon-color'], undefined);
   assert.equal((layer.layout?.['icon-image'] as unknown[])[0], 'case');
 });
@@ -188,7 +188,7 @@ test('native text fitting keeps the existing semantic layer and authored label p
     }),
     {preparedAssets: {icons: {ids: ['health'], sprite: '/sprite', appearances: {health: sdf}}}},
   );
-  const layer = style.layers.find((layer) => layer.id === 'tileflow-poi-medical')!;
+  const layer = style.layers.find((layer) => layer.id === 'tileflow-poi')!;
   assert.equal(layer.layout?.['icon-text-fit'], 'both');
   assert.deepEqual(layer.layout?.['icon-text-fit-padding'], [4, 6, 4, 6]);
   assert.equal(layer.layout?.['text-anchor'], 'center');

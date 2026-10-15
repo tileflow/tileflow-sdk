@@ -51,7 +51,7 @@ function requestedLayers(style: unknown, request: NativePoiQueryRequest): Physic
   const physical = array(field(style, 'layers'), 4096);
   const sources = field(style, 'sources');
   const artifact = field(field(style, 'metadata'), 'tileflow:interaction-manifest');
-  if (field(artifact, 'version') !== 2) throw new Error();
+  if (field(artifact, 'version') !== 3) throw new Error();
   const semantic = array(field(field(field(artifact, 'domains'), 'poi'), 'layers'), 256);
   let previous = physical.length;
   return requested.map((id) => {

@@ -163,7 +163,6 @@ function destination(
   const principalPark = expr.lte(expr.toNumber(expr.get(field('poiSizeRank')), 16), 4);
   return {
     minZoom,
-    density: featured ? 3 : 2,
     icon: {
       image,
       allowOverlap: false,
@@ -931,7 +930,15 @@ export const civica = bindOfficialMapTheme(
           minZoom: 12,
           icons: true,
           labels: true,
-          placement: {coupleIconAndLabel: true, iconPadding: 3, textPadding: 4},
+          placement: {
+            coupleIconAndLabel: true,
+            iconPadding: 3,
+            // Cívica's destination schedule gives each category its own zoom range and
+            // collision padding, so each keeps its own layer; destinations listed first are
+            // placed first.
+            order: 'categories',
+            textPadding: 4,
+          },
           styles: {
             landmark: destination('civica-poi-monument', 13, ink.type, true),
             'arts-entertainment': destination('civica-poi-museum', 13.5, ink.type, true),

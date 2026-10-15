@@ -12,7 +12,6 @@ import {tileflowNativeBuildRecordSchema} from './native-build-record';
 import {validateTileflowNativePreparedStyle} from './native-profile';
 import {tileflowNativeProfileLimits} from './native-profile-helpers';
 import {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
-import {tileflowPoiCategories} from './types';
 
 /** These are transport/validation bounds, not renderer or commercial quotas. */
 export const tileflowRendererDeploymentLimits = Object.freeze({
@@ -358,7 +357,7 @@ const artifactName = z
   );
 const semanticSchema = z
   .object({
-    version: z.literal(2),
+    version: z.literal(3),
     domains: z
       .object({
         poi: z
@@ -400,7 +399,6 @@ const semanticSchema = z
                 z
                   .object({
                     anchor: z.literal('pointer-coordinate'),
-                    category: z.enum(tileflowPoiCategories),
                     layerId: artifactName,
                     priority: z.number().int().min(0).max(4095),
                     representation: z.enum(['combined', 'icon', 'label', 'marker']),

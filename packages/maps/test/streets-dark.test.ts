@@ -1,4 +1,5 @@
 import {
+  Color,
   createPropertyExpression,
   featureFilter,
   latest as styleSpec,
@@ -9,6 +10,7 @@ import test from 'node:test';
 import {createStyle, resolveMap, resolveTileflowTheme} from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
 import {streets, streetsIcons, streetsThemes} from '../src';
+import {streetsPoiImageIds} from './streets-poi-fixture';
 
 const streetsIconIds = [
   'coffee',
@@ -48,6 +50,7 @@ const streetsIconIds = [
   'shopping',
   'sidewalk-dot',
   'sidewalk-dot-dark',
+  ...streetsPoiImageIds,
 ] as const;
 
 const preparedAssets = {
@@ -1233,8 +1236,12 @@ test('Streets Dark keeps canonical POI category colors with themed sprites and i
     dark.layers.some(({id}) => id === 'tileflow-addresses-labels'),
     true,
   );
-  for (const category of categories) {
-    const id = `tileflow-poi-${category}`;
+  // Every category shares one importance order: the prominent tier and the rest.
+  assert.deepEqual(
+    dark.layers.filter(({id}) => id.startsWith('tileflow-poi')).map(({id}) => id),
+    ['tileflow-poi', 'tileflow-poi-prominent'],
+  );
+  for (const id of ['tileflow-poi', 'tileflow-poi-prominent']) {
     const lightLayer = requireLayer(light, id);
     const darkLayer = requireLayer(dark, id);
     assert.notDeepEqual(darkLayer.layout?.['icon-image'], lightLayer.layout?.['icon-image']);
@@ -1251,7 +1258,23 @@ test('Streets Dark keeps canonical POI category colors with themed sprites and i
     assert.deepEqual(lightLayer.layout?.['text-font'], ['Noto Sans Regular']);
     assert.deepEqual(darkLayer.layout?.['text-font'], lightLayer.layout?.['text-font']);
     assert.deepEqual(darkLayer.layout?.['icon-size'], lightLayer.layout?.['icon-size']);
-    assert.equal(darkLayer.paint?.['text-color'], darkCategoryColors[category]);
+    const textColor = createPropertyExpression(
+      darkLayer.paint?.['text-color'],
+      styleSpec.paint_symbol['text-color'] as never,
+    );
+    assert.equal(textColor.result, 'success');
+    for (const category of categories) {
+      assert.equal(
+        String(
+          (textColor.value as {evaluate: (...args: unknown[]) => unknown}).evaluate(
+            {zoom: 16},
+            {type: 1, properties: {category}},
+          ),
+        ),
+        String(Color.parse(darkCategoryColors[category])),
+        category,
+      );
+    }
     assert.equal(darkLayer.paint?.['text-halo-color'], '#252839');
   }
 });
@@ -1400,8 +1423,8 @@ test('Streets street names stay on the ground below buildings while destinations
       assert.equal(layer.layout?.['text-allow-overlap'] ?? false, false);
     }
     for (const id of [
-      'tileflow-poi-food-drink',
-      'tileflow-poi-landmark',
+      'tileflow-poi',
+      'tileflow-poi-prominent',
       'tileflow-label-road-shield-detail',
     ]) {
       assert.ok(
@@ -1459,42 +1482,56 @@ test('Streets street names stay on the ground below buildings while destinations
   }
 });
 
-test('Streets adapts POI size and density to World ranks without anonymous park clutter', () => {
+test('Streets places every POI category by World rank and density without anonymous clutter', () => {
   const style = compile('light');
-  const park = requireLayer(style, 'tileflow-poi-park-nature');
-  const landmark = requireLayer(style, 'tileflow-poi-landmark');
-  const food = requireLayer(style, 'tileflow-poi-food-drink');
+  const ordinary = requireLayer(style, 'tileflow-poi');
+  const prominent = requireLayer(style, 'tileflow-poi-prominent');
   const accepts = (
     layer: ReturnType<typeof requireLayer>,
     z: number,
     properties: Record<string, unknown>,
   ) => featureFilter(layer.filter as never).filter({zoom: z}, {type: 1, properties});
-  assert.equal(accepts(park, 15, {category: 'park-nature', filter_rank: 2, size_rank: 0}), false);
+  const park = {category: 'park-nature', name: 'Park', filter_rank: 2, size_rank: 0};
+  assert.equal(accepts(ordinary, 15, park), true);
+  const {name: _name, ...unnamedPark} = park;
+  const {filter_rank: _rank, ...unrankedPark} = park;
+  assert.equal(accepts(ordinary, 15, unnamedPark), false);
+  assert.equal(accepts(ordinary, 15, unrankedPark), false);
+  assert.equal(accepts(ordinary, 15, {...park, size_rank: 17}), false);
+  // One density for every category: rank 3 from World's last POI zoom, every rank from z17.
+  const ordinaryLandmark = {category: 'landmark', name: 'Building', filter_rank: 3, size_rank: 16};
+  assert.equal(accepts(ordinary, 15, ordinaryLandmark), true);
+  const smallBusiness = {category: 'food-drink', name: 'Cafe', filter_rank: 5, size_rank: 16};
+  assert.equal(accepts(ordinary, 16, smallBusiness), false);
+  assert.equal(accepts(ordinary, 17, smallBusiness), true);
+  // World's two most important ranks are placed before street and place names.
+  const louvre = {category: 'arts-entertainment', name: 'Musée', filter_rank: 0, size_rank: 0};
+  assert.equal(accepts(prominent, 14, louvre), true);
+  assert.equal(accepts(ordinary, 14, louvre), false);
+  assert.equal(accepts(prominent, 14, park), false);
+  // Parking and toilets explain themselves and need no name.
   assert.equal(
-    accepts(park, 15, {category: 'park-nature', name: '', filter_rank: 2, size_rank: 0}),
-    false,
-  );
-  assert.equal(
-    accepts(park, 15, {category: 'park-nature', name: 'Park', filter_rank: 2, size_rank: 0}),
+    accepts(ordinary, 17, {
+      category: 'visitor-amenity',
+      type: 'parking',
+      filter_rank: 4,
+      size_rank: 9,
+    }),
     true,
   );
-  assert.equal(accepts(park, 15, {category: 'park-nature', name: 'Park', size_rank: 0}), false);
+  const parkLabel = {category: 'park-nature', filter_rank: 1, size_rank: 0};
+  assert.equal(labelNumber(prominent, 'text-size', 15, parkLabel), 13);
+  assert.equal(labelNumber(prominent, 'text-size', 17, parkLabel), 18);
   assert.equal(
-    accepts(park, 15, {category: 'park-nature', name: 'Park', filter_rank: 0, size_rank: 17}),
-    false,
+    labelNumber(ordinary, 'text-size', 20, {category: 'food-drink', filter_rank: 3, size_rank: 16}),
+    13,
   );
-  const ordinaryLandmark = {category: 'landmark', name: 'Building', filter_rank: 3, size_rank: 16};
-  assert.equal(accepts(landmark, 15.99, ordinaryLandmark), false);
-  assert.equal(accepts(landmark, 16, ordinaryLandmark), true);
-  const smallBusiness = {category: 'food-drink', name: 'Cafe', filter_rank: 5, size_rank: 16};
-  assert.equal(accepts(food, 17.99, smallBusiness), false);
-  assert.equal(accepts(food, 18, smallBusiness), true);
-  assert.equal(labelNumber(park, 'text-size', 15, {filter_rank: 1, size_rank: 0}), 13);
-  assert.equal(labelNumber(park, 'text-size', 17, {filter_rank: 1, size_rank: 0}), 18);
-  assert.equal(labelNumber(food, 'text-size', 20, {filter_rank: 3, size_rank: 16}), 13);
-  assert.equal(labelNumber(food, 'text-padding', 16), 6);
-  assert.equal(labelNumber(food, 'text-padding', 17), 4);
-  assert.equal(requireLayer(style, 'tileflow-poi-transport').layout?.['text-size'], 13);
+  assert.equal(
+    labelNumber(ordinary, 'text-size', 17, {category: 'transport', filter_rank: 0, size_rank: 0}),
+    13,
+  );
+  assert.equal(labelNumber(ordinary, 'text-padding', 16), 6);
+  assert.equal(labelNumber(ordinary, 'text-padding', 17), 4);
 });
 
 test('Streets water uses a declared hosted italic face without a heavy halo', () => {

@@ -184,7 +184,7 @@ test('validate, build and development reject the same mixed composition and reco
   assert.equal(session.getState().status, 'ready');
   assert.notEqual(session.getLastGoodArtifacts(), previous);
   const style = session.getLastGoodArtifacts()!.styles.main!.light!;
-  const layer = style.layers.find((layer) => layer.id === 'tileflow-poi-medical');
+  const layer = style.layers.find((layer) => layer.id === 'tileflow-poi');
   assert.equal((layer?.paint as Record<string, unknown>)['icon-color'], '#c43d35');
 });
 

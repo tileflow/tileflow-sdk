@@ -769,9 +769,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
         style.sprite,
         `${api.url}/sprites/icp_12345678-1234-1234-1234-123456789abc/sprite`,
       );
-      const foodPoiLayer = style.layers?.find(
-        (layer) => layer.id === 'tileflow-poi-food-drink-icon',
-      );
+      const foodPoiLayer = style.layers?.find((layer) => layer.id === 'tileflow-poi-icon');
       const iconImage = JSON.stringify(foodPoiLayer?.layout?.['icon-image']);
       assert.match(iconImage, /"get","icon"/u);
       assert.match(iconImage, new RegExp(`"image","food${theme === 'dark' ? '-dark' : ''}"`, 'u'));
@@ -1461,6 +1459,11 @@ async function createIconFixture(t: TestContext) {
   await writeFile(
     join(iconsDirectory, 'park.svg'),
     '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" /></svg>',
+  );
+  // Streets' dark theme draws each POI with its night pictogram.
+  await writeFile(
+    join(iconsDirectory, 'food-dark.svg'),
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle cx="8" cy="8" r="6" /></svg>',
   );
   await writeFile(
     fixture.configPath,

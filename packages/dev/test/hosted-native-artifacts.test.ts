@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import test from 'node:test';
-import type {MapLibreStyle, TileflowPoiCategory} from '@tileflow/core';
+import type {MapLibreStyle} from '@tileflow/core';
 import {serializeCanonicalJson} from '@tileflow/core';
 import {
   inferTileflowDataRequirements,
@@ -70,7 +70,7 @@ function provenanceFixture() {
     {id: 'poi', type: 'circle', source: 'tileflow', 'source-layer': 'poi'},
   );
   const semantic = {
-    version: 2,
+    version: 3,
     domains: {
       poi: {
         deduplication: {
@@ -90,7 +90,6 @@ function provenanceFixture() {
         layers: [
           {
             anchor: 'pointer-coordinate',
-            category: 'food-drink' satisfies TileflowPoiCategory,
             layerId: 'poi',
             priority: 2,
             representation: 'marker',
@@ -203,7 +202,7 @@ test('the serialized renderer collection contains finalized overlay and semantic
   );
 });
 
-test('unknown POI categories fail rather than being silently normalized during preparation', async () => {
+test('POI lookups carry no category, which interactions read from each feature', async () => {
   const {input, semantic} = provenanceFixture();
   Object.assign(semantic.domains.poi.layers[0]!, {category: 'food'});
   input.buildManifest.maps.main!.themes.light!.styleSha256 = digest(input.styles.light);
@@ -212,7 +211,7 @@ test('unknown POI categories fail rather than being silently normalized during p
   });
 });
 
-test('fresh hashes cannot authorize stale priorities or a different POI category', async () => {
+test('fresh hashes cannot authorize stale priorities or a per-layer POI category', async () => {
   const result = await prepareTileflowHostedNativeDeployment(provenanceFixture().input);
   for (const patch of [{priority: 0}, {category: 'retail'}, {category: 'food'}]) {
     const candidate = structuredClone(result);

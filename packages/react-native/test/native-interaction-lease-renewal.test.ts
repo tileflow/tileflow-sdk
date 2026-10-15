@@ -13,7 +13,7 @@ function fixture() {
     createNativeInteractionQuery(
       style,
       () => true,
-      async () => [{type: 'Feature', id: 1, properties: {name: 'Place'}}],
+      async () => [{type: 'Feature', id: 1, properties: {category: 'food-drink', name: 'Place'}}],
     );
   return {style, port};
 }

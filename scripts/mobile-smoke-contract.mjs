@@ -11,7 +11,7 @@ export const mobileVersions = Object.freeze({
   // The 0.83.10 template pins these independently of the init executable.
   consumerCli: '20.0.0',
   react: '19.2.0',
-  maplibre: '11.3.10',
+  maplibre: '11.5.0',
   typescript: '6.0.3',
   reactTypes: '19.2.17',
   gradle: '9.0.0',

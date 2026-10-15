@@ -87,7 +87,7 @@ test('surface code has private build wiring without widening peers or publishing
   const manifest = JSON.parse(await source('package.json'));
   assert.equal(manifest.private, undefined);
   assert.deepEqual(manifest.peerDependencies, {
-    '@maplibre/maplibre-react-native': '11.3.10',
+    '@maplibre/maplibre-react-native': '11.5.0',
     react: '19.2.0',
     'react-native': '0.83.10',
   });

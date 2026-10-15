@@ -4,7 +4,7 @@
 def tileflow_native_admission_post_install(installer)
 	project = installer.pods_project
 	url = 'https://github.com/maplibre/maplibre-gl-native-distribution'
-	version = '6.26.0'
+	version = '6.31.0'
 	refs = project.root_object.package_references.select do |reference|
 		reference.respond_to?(:repositoryURL) && reference.repositoryURL == url
 	end
@@ -12,7 +12,7 @@ def tileflow_native_admission_post_install(installer)
 	reference = refs.first
 	requirement = reference.requirement.transform_keys(&:to_s)
 	unless requirement == { 'kind' => 'exactVersion', 'version' => version }
-		raise 'Tileflow native admission requires the exact MapLibre Native 6.26.0 SPM product'
+		raise 'Tileflow native admission requires the exact MapLibre Native 6.31.0 SPM product'
 	end
 	if defined?($MLRN_NATIVE_VERSION) && $MLRN_NATIVE_VERSION.to_s != version
 		raise 'Conflicting MapLibre Native version for Tileflow native admission'

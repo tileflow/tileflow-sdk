@@ -6,7 +6,7 @@ The mounted owner prepares a **bounded Style/TileJSON resource closure** before 
 
 ## Exact native dependencies
 
-The source targets React 19.2.0, React Native 0.83.10, MapLibre React Native 11.3.10, MapLibre Native Android 13.2.0 and MapLibre Native iOS 6.26.0. Android's HTTP dependency is OkHttp 4.12.0. These pins and the existence of source tests are **not evidence** of a successful build, device run, Hosted service or app-store acceptance; qualify the exact revision in the intended host.
+The source targets React 19.2.0, React Native 0.83.10, MapLibre React Native 11.5.0, MapLibre Native Android 13.6.1 and MapLibre Native iOS 6.31.0. Android's HTTP dependency is OkHttp 4.12.0. These pins and the existence of source tests are **not evidence** of a successful build, device run, Hosted service or app-store acceptance; qualify the exact revision in the intended host.
 
 Android's library build uses the host's Android Gradle/Kotlin plugins and SDK settings. `react-native.config.cjs` autolinks `TileflowNativeAdmissionPackage`, which registers the private admission, document, configuration and surface modules. The library depends on the autolinked `:maplibre_maplibre-react-native` project and rejects conflicting MapLibre Native versions rather than selecting another version silently.
 
@@ -17,7 +17,7 @@ $MLRN.post_install(installer)
 tileflow_native_admission_post_install(installer)
 ```
 
-The helper requires the MapLibre distribution reference with `exactVersion` 6.26.0 and reuses that product for the Tileflow pod/test targets. It does not add another SDK or change the pin.
+The helper requires the MapLibre distribution reference with `exactVersion` 6.31.0 and reuses that product for the Tileflow pod/test targets. It does not add another SDK or change the pin.
 
 ## Installation ownership
 

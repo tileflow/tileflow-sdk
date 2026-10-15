@@ -2,7 +2,7 @@
 
 `@tileflow/react-native` provides a Tileflow `Map` backed by MapLibre Native on iOS and Android. It is pre-release. The first alpha release requires the bootstrap and Trusted Publisher checks in the [publishing guide](https://github.com/tileflow/tileflow-sdk/blob/main/PUBLISHING.md).
 
-The package targets exactly React 19.2.0, React Native 0.83.10 and `@maplibre/maplibre-react-native` 11.3.10, with MapLibre Native Android 13.2.0 and iOS 6.26.0 through the pinned integration below. Expo consumers use Expo 55.0.31 with a native development build; Expo Go does not contain the required native modules.
+The package targets exactly React 19.2.0, React Native 0.83.10 and `@maplibre/maplibre-react-native` 11.5.0, with MapLibre Native Android 13.6.1 and iOS 6.31.0 through the pinned integration below. Expo consumers use Expo 55.0.31 with a native development build; Expo Go does not contain the required native modules.
 
 > Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
 
@@ -11,7 +11,7 @@ The package targets exactly React 19.2.0, React Native 0.83.10 and `@maplibre/ma
 Start with an Expo development build or a bare React Native application matching those peers. Once the first alpha is available, install the package and its direct dependencies:
 
 ```sh
-npm install --save-exact @tileflow/react-native@alpha @tileflow/core@alpha @tileflow/interactions@alpha @maplibre/maplibre-react-native@11.3.10
+npm install --save-exact @tileflow/react-native@alpha @tileflow/core@alpha @tileflow/interactions@alpha @maplibre/maplibre-react-native@11.5.0
 ```
 
 Keep the lockfile. Complete the [native integration](#native-integration) before building the application. Source on `main` can precede npm; installation or local checks do not establish Hosted availability or physical-device acceptance.
@@ -174,7 +174,7 @@ The public lifecycle surface remains:
 
 ## Native integration
 
-Autolinking registers the private Android/iOS modules used by the mounted lifecycle. Android depends on the exact MapLibre React Native project and MapLibre Native 13.2.0. iOS uses the existing MapLibre React Native CocoaPod plus the exact MapLibre Native 6.26.0 Swift Package Manager product.
+Autolinking registers the private Android/iOS modules used by the mounted lifecycle. Android depends on the exact MapLibre React Native project and MapLibre Native 13.6.1. iOS uses the existing MapLibre React Native CocoaPod plus the exact MapLibre Native 6.31.0 Swift Package Manager product.
 
 For the iOS post-install integration, retain the host's normal React Native/MapLibre setup and then call:
 

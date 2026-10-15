@@ -6,7 +6,7 @@ The harness imports the package root from source and mounts two independent Tile
 
 ## Host prerequisites
 
-Use the package's exact peer matrix: React 19.2.0, React Native 0.83.10 and MapLibre React Native 11.3.10, with MapLibre Native Android 13.2.0 or iOS 6.26.0. Autolink the private package in the existing host. On iOS retain the host's React Native and MapLibre CocoaPods/SPM setup and call `tileflow_native_admission_post_install(installer)` after `$MLRN.post_install(installer)`. Do not add another MapLibre Native dependency.
+Use the package's exact peer matrix: React 19.2.0, React Native 0.83.10 and MapLibre React Native 11.5.0, with MapLibre Native Android 13.6.1 or iOS 6.31.0. Autolink the private package in the existing host. On iOS retain the host's React Native and MapLibre CocoaPods/SPM setup and call `tileflow_native_admission_post_install(installer)` after `$MLRN.post_install(installer)`. Do not add another MapLibre Native dependency.
 
 Use the host's existing Metro setup with source-checkout access to this package and its peers. This directory is excluded from package exports and packed files and is not a released consumer example.
 

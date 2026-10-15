@@ -52,7 +52,7 @@ test('React Native is publishable without shipping development tests or widening
   assertPublicWorkspaceManifest('@tileflow/react-native', manifest);
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
   assert.deepEqual(manifest.peerDependencies, {
-    '@maplibre/maplibre-react-native': '11.3.10',
+    '@maplibre/maplibre-react-native': '11.5.0',
     react: '19.2.0',
     'react-native': '0.83.10',
   });

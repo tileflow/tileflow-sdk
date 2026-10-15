@@ -29,7 +29,7 @@ test('native build metadata is explicit, pinned, and does not activate networkin
     'new TileflowNativeAdmissionPackage()',
   );
   const gradle = await text('android/build.gradle');
-  for (const pin of ['0.83.10', '13.2.0', '4.12.0']) assert.ok(gradle.includes(pin), pin);
+  for (const pin of ['0.83.10', '13.6.1', '4.12.0']) assert.ok(gradle.includes(pin), pin);
   assert.match(gradle, /strictly/u);
   assert.match(gradle, /com\.android\.library/u);
   assert.match(
@@ -39,12 +39,12 @@ test('native build metadata is explicit, pinned, and does not activate networkin
   const podspec = await text('TileflowNativeAdmission.podspec');
   assert.match(podspec, /delete_suffix\(['"]-development['"]\)/u);
   assert.match(podspec, /platforms\s*=\s*\{\s*:ios\s*=>\s*['"]15\.1['"]\s*\}/u);
-  assert.match(podspec, /MapLibreReactNative['"],\s*['"]11\.3\.10/u);
+  assert.match(podspec, /MapLibreReactNative['"],\s*['"]11\.5\.0/u);
   assert.match(podspec, /React-Core['"],\s*['"]0\.83\.10/u);
   assert.doesNotMatch(podspec, /dependency\s+['"]MapLibre['"]/u);
   assert.match(podspec, /install_modules_dependencies/u);
   const spm = await text('ios/tileflow_native_admission.rb');
-  assert.match(spm, /6\.26\.0/u);
+  assert.match(spm, /6\.31\.0/u);
   assert.match(spm, /exactVersion/u);
   assert.match(spm, /package_product_dependencies/u);
   assert.match(spm, /frameworks_build_phase/u);

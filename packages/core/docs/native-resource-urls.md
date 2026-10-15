@@ -121,7 +121,7 @@ network request. Do not attach a credential merely because this helper accepted 
 
 ## Private parser and source builds
 
-The native entry embeds the low-level parser from `whatwg-url` 15.1.0, `tr46` 6.0.0 (Unicode 17
+The native entry embeds the low-level parser from `whatwg-url` 17.2.0, `tr46` 7.0.0 (Unicode 18
 IDNA processing) and Punycode.js 2.3.1. It exposes no URL class or parser configuration. Package
 consumers only install Core; the published `dist/native.js` has no external runtime imports.
 The parser is a development/build dependency, not an additional runtime package to install.
@@ -136,8 +136,10 @@ policy with its existing host parser; it does not embed the mobile parser in its
 
 From an SDK source checkout, run the ordinary Core build, not a direct source import in a native
 application. `tsup.native.config.ts` builds only the native entry with `platform: 'browser'`,
-`target: 'es2020'`, ESM and no splitting. Its plugin redirects exactly the two relative
-`./encoding` imports in the pinned parser modules to Core's private UTF-8 codec. It rejects an
+`target: 'es2020'`, ESM and no splitting. Its plugin redirects the two relative
+`./encoding` imports and the parser's two `@exodus/bytes` encoding imports to Core's private UTF-8
+codec. Query encoding accepts only UTF-8; the legacy encoding bootstrap has no side effects.
+Exodus and its legacy encoding tables are not embedded. The build rejects an
 unexpected dependency version, an unbound codec import or external runtime imports. It does not
 patch packages on disk, configure a global alias or change another entry's build.
 

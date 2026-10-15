@@ -254,7 +254,7 @@ for (const kind of ['expo', 'bare']) {
               await writeMobileFile(
                 root,
                 join(consumer.directory, 'ios', 'Podfile.lock'),
-                'TileflowNativeAdmission (0.1.0-alpha.16)\nMapLibreReactNative (11.3.10)\n',
+                'TileflowNativeAdmission (0.1.0-alpha.16)\nMapLibreReactNative (11.5.0)\n',
               );
               return output();
             }

@@ -38,7 +38,7 @@ test('is publishable with exact native peers and one ordinary public root', asyn
   assert.deepEqual(manifest.publishConfig, {access: 'public'});
   assert.equal(manifest.sideEffects, false);
   assert.deepEqual(manifest.peerDependencies, {
-    '@maplibre/maplibre-react-native': '11.3.10',
+    '@maplibre/maplibre-react-native': '11.5.0',
     react: '19.2.0',
     'react-native': '0.83.10',
   });

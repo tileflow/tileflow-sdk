@@ -39,6 +39,11 @@ preparing the referenced resources.
 
 The exported `tileflowNativeProfile` targets MapLibre React Native 11.3.10 with Native Android 13.2.0
 and iOS 6.26.0. These are static compatibility targets, not a supported application dependency matrix.
+The application integration uses MapLibre React Native 11.5.0 with Android 13.6.1 and iOS 6.31.0.
+The artifact profile retains its earlier validation targets and build-record engine values, keeping
+prepared artifacts compatible with existing Hosted validators. New application dependencies do not
+expand the accepted style vocabulary.
+
 The wrapper's Style Spec version is 26.2.1. Tileflow retains its existing compiler and parser at
 24.8.5: `native-v1` checks that compiler's vocabulary and the intersection of its recorded Android
 and iOS support. It does not expose every feature of Style Spec 26.2.1 or upgrade the web compiler.

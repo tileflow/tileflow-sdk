@@ -6,9 +6,9 @@ if (agpMajor < 9 || (agpMajor == 9 && !providers.gradleProperty('android.builtIn
 	apply plugin: 'org.jetbrains.kotlin.android'
 }
 
-def nativeVersion = rootProject.ext.has('org.maplibre.reactnative.nativeVersion') ? rootProject.ext.get('org.maplibre.reactnative.nativeVersion').toString() : '13.2.0'
+def nativeVersion = rootProject.ext.has('org.maplibre.reactnative.nativeVersion') ? rootProject.ext.get('org.maplibre.reactnative.nativeVersion').toString() : '13.6.1'
 def nativeVariant = rootProject.ext.has('org.maplibre.reactnative.nativeVariant') ? rootProject.ext.get('org.maplibre.reactnative.nativeVariant').toString() : 'opengl'
-if (nativeVersion != '13.2.0') throw new GradleException('Tileflow native admission requires MapLibre Native 13.2.0')
+if (nativeVersion != '13.6.1') throw new GradleException('Tileflow native admission requires MapLibre Native 13.6.1')
 
 android {
 	namespace 'dev.tileflow.reactnative'
@@ -35,7 +35,7 @@ repositories {
 dependencies {
 	implementation project(':maplibre_maplibre-react-native')
 	implementation('com.facebook.react:react-android:0.83.10') { version { strictly '0.83.10' } }
-	implementation("org.maplibre.gl:android-sdk-${nativeVariant}:13.2.0") { version { strictly '13.2.0' } }
+	implementation("org.maplibre.gl:android-sdk-${nativeVariant}:13.6.1") { version { strictly '13.6.1' } }
 	implementation('com.squareup.okhttp3:okhttp:4.12.0') { version { strictly '4.12.0' } }
 	testImplementation 'junit:junit:4.13.2'
 	testImplementation 'org.robolectric:robolectric:4.14.1'

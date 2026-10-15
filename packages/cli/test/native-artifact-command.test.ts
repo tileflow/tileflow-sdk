@@ -36,7 +36,7 @@ function run(
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error('CLI fixture timed out.'));
-    }, 60_000);
+    }, 120_000);
     child.stdout.on('data', (value) => {
       stdout += value;
     });

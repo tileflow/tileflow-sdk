@@ -96,6 +96,6 @@
     "maplibre-contour": "0.1.0",
     "pbf": "5.1.2",
     "pmtiles": "4.4.0",
-    "whatwg-url": "15.1.0"
+    "whatwg-url": "17.2.0"
   }
 }

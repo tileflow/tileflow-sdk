@@ -109,6 +109,42 @@ test('Controls waits safely while the map is replacing its style', async () => {
   assert.equal(harness.element('controls-modules').disabled, true);
 });
 
+test('Controls recovers after a temporary style gap without changing the map generation', async () => {
+  const harness = runComparisonHarness('', {
+    single: true,
+    controlsRequest: () => Response.json(controlsFixture),
+  });
+  harness.load('left');
+  harness.element('map-controls').hidden = true;
+  await harness.click('controls-toggle');
+  const getStyle = harness.maps.left.getStyle.bind(harness.maps.left);
+  await harness.settle();
+  harness.maps.left.getStyle = () => undefined as never;
+  harness.pollIntervals();
+  await harness.settle();
+  assert.equal(harness.element('controls-modules').disabled, true);
+  harness.maps.left.getStyle = getStyle;
+  harness.pollIntervals();
+  await harness.settle();
+  assert.equal(harness.element('controls-modules').disabled, false);
+});
+
+test('Controls opens above review and history and toggles on the first click', async () => {
+  const harness = runComparisonHarness('', {single: true});
+  harness.load('left');
+  await harness.settle();
+  harness.element('map-controls').hidden = true;
+  harness.element('wb-review').hidden = false;
+  harness.element('wb-history').hidden = false;
+  await harness.click('controls-toggle');
+  assert.equal(harness.element('map-controls').hidden, false);
+  assert.equal(harness.element('wb-review').hidden, true);
+  assert.equal(harness.element('wb-history').hidden, true);
+  assert.equal(harness.element('wb-history-toggle').attributes.get('aria-expanded'), 'false');
+  await harness.click('controls-toggle');
+  assert.equal(harness.element('map-controls').hidden, true);
+});
+
 const controlsFixture = {
   map: 'map',
   theme: 'theme',
@@ -885,6 +921,74 @@ test('Workbench compares a new revision using the pinned reference camera and fr
   assert.equal(JSON.parse(harness.clipboardText()).review.referenceId, reference.id);
 });
 
+test('Deleting a capture confirms first and clears a deleted pinned reference', async () => {
+  const record = {
+    id: 'a'.repeat(64),
+    scene: 'reference',
+    map: 'map',
+    theme: 'theme',
+    savedAt: '2026-10-14T10:00:00Z',
+    imageUrl: '/before.png',
+    definition: {
+      map: 'map',
+      theme: 'theme',
+      camera: {type: 'center', center: [3, 40], zoom: 12},
+      viewport: {width: 640, height: 480, dpr: 1},
+    },
+  };
+  let records = [record],
+    accept = false,
+    deletions = 0;
+  const harness = runComparisonHarness('', {
+    single: true,
+    confirm: (message) => {
+      assert.match(message, /permanently removes/);
+      return accept;
+    },
+    workbenchRequest: (path, body) => {
+      if (path === '')
+        return {
+          busy: false,
+          sides: {
+            left: {
+              generation: 1,
+              status: 'ready',
+              selections: [
+                {id: 'map:map:theme', map: 'map', theme: 'theme', label: 'Map', url: '/left/'},
+              ],
+            },
+          },
+        };
+      if (path === '/captures') return {records, next: null, warnings: []};
+      if (path === '/captures/delete') {
+        assert.deepEqual(JSON.parse(JSON.stringify(body)), {id: record.id});
+        records = [];
+        deletions++;
+        return {deleted: record.id};
+      }
+      return {saved: true};
+    },
+  });
+  harness.load('left');
+  await harness.settle();
+  harness.element('wb-history').hidden = true;
+  await harness.click('wb-history-toggle');
+  const buttons = harness.element('wb-captures').querySelectorAll('button');
+  await Promise.all(
+    buttons.find((button) => button.className === 'capture-reference')!.dispatch('click'),
+  );
+  const remove = buttons.find((button) => button.className === 'capture-delete')!;
+  await Promise.all(remove.dispatch('click'));
+  assert.equal(deletions, 0);
+  assert.equal(harness.element('wb-captures').childElementCount, 1);
+  accept = true;
+  await Promise.all(remove.dispatch('click'));
+  assert.equal(deletions, 1);
+  assert.equal(harness.element('wb-captures').childElementCount, 0);
+  assert.equal(harness.element('wb-reference-bar').hidden, true);
+  assert.equal(harness.element('wb-run-compare').disabled, true);
+});
+
 test('Workbench starts with the selected scene frame without reloading its preview', async () => {
   const harness = runComparisonHarness('', {
     single: true,
@@ -956,6 +1060,7 @@ function runComparisonHarness(
   search = '',
   configs: {
     single?: boolean;
+    confirm?: (message: string) => boolean;
     controlsRequest?: (url: URL) => Response | Promise<Response>;
     cleanupSecurityError?: boolean;
     workbenchRequest?: (path: string, body?: unknown) => unknown;
@@ -1106,6 +1211,7 @@ function runComparisonHarness(
       windowListeners.set(type, listeners);
     },
     clearInterval() {},
+    confirm: (message: string) => configs.confirm?.(message) ?? false,
     clearTimeout(id: number) {
       timeouts.delete(id);
     },

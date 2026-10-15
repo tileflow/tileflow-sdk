@@ -7,6 +7,9 @@ export const controlsStyles = `
   .controls-heading h2 { display:flex; align-items:center; gap:8px; font-size:16px; margin:0; }
   .controls-heading button { padding:6px; }
   .controls-subtitle { color:var(--muted); font-size:12px; line-height:1.5; margin:4px 0 14px; }
+  .controls-selection { border-bottom:1px solid var(--border); padding-bottom:8px; }
+  .controls-selection .control-field select { width:190px; max-width:70%; }
+  .controls-selection [hidden] { display:none; }
   .controls-section-title { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin:20px 0 9px; }
   .control-module { border:1px solid var(--border); border-radius:8px; margin:7px 0; background:#fffdf7; overflow:hidden; }
   .control-module-header { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; gap:8px; }
@@ -39,6 +42,13 @@ export const controlsPanel = `
   <aside class="map-controls" id="map-controls" aria-labelledby="controls-title" tabindex="-1" hidden>
     <div class="controls-heading"><h2 id="controls-title">${workbenchIcon('settings')}Map controls</h2><button id="controls-close" aria-label="Close map controls">${workbenchIcon('close')}</button></div>
     <p class="controls-subtitle" id="controls-owner">Loading map…</p>
+    <div class="controls-selection workbench-only" id="controls-selection" hidden>
+      <select id="wb-view" aria-label="Scene or theme" hidden><option>Loading scenes…</option></select>
+      <label class="control-field" id="wb-map-field">Map<select id="wb-map" aria-label="Map"></select></label>
+      <label class="control-field" id="wb-theme-field">Theme<select id="wb-theme" aria-label="Theme"></select></label>
+      <label class="control-field" id="wb-scene-field">Scene<select id="wb-scene" aria-label="Scene" aria-describedby="controls-scene-help"></select></label>
+      <p class="controls-subtitle" id="controls-scene-help">Scenes restore a configured location, theme and capture frame.</p>
+    </div>
     <fieldset class="controls-runtime" id="controls-runtime">
       <div class="controls-section-title">Preview rendering</div>
       <label class="control-field">3D view<input id="controls-3d" type="checkbox"></label>
@@ -63,6 +73,7 @@ export const controlsClient = String.raw`
       const controlsButton = document.getElementById("controls-toggle");
       let controlsKey = "", controlsSequence = 0, controlsModel, controlsDraft = {}, controlsBusy = false;
       let controlsApplyTimer, controlsRevision = 0, controlsPending = false, controlsResetPending = false;
+      ctl("selection").hidden = !options.workbenchUrl;
       controlsButton.addEventListener("click", () => toggleMapControls(controlsPanel.hidden, true));
       ctl("close").addEventListener("click", () => toggleMapControls(false, true));
       ctl("reset").addEventListener("click", () => {
@@ -102,6 +113,9 @@ export const controlsClient = String.raw`
         if (open) {
           setInspectionEnabled(false);
           document.getElementById("wb-welcome").hidden = true;
+          document.getElementById("wb-review").hidden = true;
+          document.getElementById("wb-history").hidden = true;
+          document.getElementById("wb-history-toggle").setAttribute("aria-expanded", "false");
         }
         controlsPanel.hidden = !open;
         controlsButton.setAttribute("aria-expanded", String(open));
@@ -124,11 +138,18 @@ export const controlsClient = String.raw`
         const side = states[activeSideId], identity = controlsIdentity(side);
         if (!side.bridgeReady || !identity?.map || !identity.theme) {
           setMapControlsDisabled(true);
+          controlsNotice("Waiting for the map to finish loading…");
           return;
         }
         const key = JSON.stringify([side.id, side.definition.basePath, identity, side.artifactGeneration, side.loadEpoch]);
         const epoch = side.loadEpoch;
-        if (key === controlsKey) return;
+        if (key === controlsKey) {
+          if (controlsModel && ctl("modules").disabled) {
+            setMapControlsDisabled(false);
+            controlsNotice(Object.keys(controlsDraft).length ? "Preview overrides applied." : "Using the map’s original settings.");
+          }
+          return;
+        }
         cancelMapControlsApply();
         controlsKey = key;
         const sequence = ++controlsSequence;

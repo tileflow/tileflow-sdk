@@ -1,5 +1,5 @@
 import {constants} from 'node:fs';
-import {open} from 'node:fs/promises';
+import {lstat, open, unlink} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {
   parseTileflowCaptureReceipt,
@@ -17,6 +17,27 @@ import {assertNoSymlinkComponents, writeAtomicFileSet} from './capture-output';
 
 export const captureRecordDirectory = '.tileflow/captures/records';
 const maximumRecordBytes = 128 * 1024;
+
+/** Deletes only the two local artifacts belonging to a capture ID, never scene exports. */
+export async function deleteCaptureRecord(id: string, cwd: string): Promise<void> {
+  if (!/^[a-f0-9]{64}$/u.test(id))
+    throw new Error('Capture ID must be the full 64-character ID returned by capture.');
+  const directory = resolve(cwd, captureRecordDirectory);
+  await assertNoSymlinkComponents(directory, cwd);
+  const paths = ['json', 'png'].map((extension) => resolve(directory, `${id}.${extension}`));
+  for (const path of paths) {
+    const info = await lstat(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+      return undefined;
+    });
+    if (info && !info.isFile()) throw new Error('Saved capture artifact is not a regular file.');
+  }
+  // Hide the record from history first. A retry also cleans up a missing or partial pair.
+  for (const path of paths)
+    await unlink(path).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error;
+    });
+}
 
 /** Immutable evidence is independent of the mutable scene output and the source config. */
 export async function saveCaptureRecord(capture: TileflowCapture, cwd: string): Promise<string> {

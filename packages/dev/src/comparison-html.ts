@@ -183,12 +183,6 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
     <div class="brandbar"><span class="wordmark">Tileflow</span><span class="product-name">Map DevTools</span><details><summary id="wb-project">Local workspace</summary><div class="project-path" id="wb-project-path">Local project</div></details></div>
     <header class="toolbar" aria-label="Map DevTools controls">
       <span class="toolbar-title" id="title"></span>
-      <div class="picker-group workbench-only" ${options.workbenchUrl ? '' : 'hidden'}>
-        <select id="wb-view" aria-label="Scene or theme" hidden><option>Loading scenes…</option></select>
-        <label id="wb-map-field">Map<select id="wb-map" aria-label="Map"></select></label>
-        <label id="wb-theme-field">Theme<select id="wb-theme" aria-label="Theme"></select></label>
-        <label>Saved view<select id="wb-scene" aria-label="Saved view"></select></label>
-      </div>
       <div class="toolbar-actions">
       <button type="button" id="inspect-toggle" aria-controls="inspector" aria-expanded="false" aria-pressed="false" aria-keyshortcuts="i" title="Select a map element (I). Escape to stop.">${workbenchIcon('inspect')}<span>Inspect</span><kbd class="shortcut" aria-hidden="true">I</kbd></button>
       <button type="button" id="controls-toggle" aria-controls="map-controls" aria-expanded="false">${workbenchIcon('settings')}<span>Controls</span></button>

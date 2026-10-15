@@ -132,6 +132,8 @@ contract, including experimental preview-only rendering; it does not promise hos
 The package has no root entry point. `/server` also exposes the reusable Map DevTools shell. The CLI
 connects scene selection, saved capture/review and shared browser context through its optional local
 workflow adapter; see the [Map DevTools guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md).
+**Controls** groups map, theme and scene selection with module settings in one sidebar.
+**Captures** includes confirmed deletion of individual saved captures through the local adapter.
 
 The preview's globe rim follows the rendered canvas silhouette, including camera and viewport
 changes, and fades between zooms 3 and 6. Its colors follow the map's atmosphere when declared.

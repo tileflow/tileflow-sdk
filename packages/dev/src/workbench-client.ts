@@ -195,6 +195,8 @@ export const workbenchClient = String.raw`
         wb("scene").value = selected.scene ? selected.id : "";
         wb("map-field").hidden = maps.length < 2;
         wb("theme-field").hidden = themes.length < 2;
+        wb("scene-field").hidden = !selections.some((entry) => entry.scene);
+        ctl("scene-help").hidden = wb("scene-field").hidden;
         wb("project").textContent = selected.map + " · Local";
       }
 
@@ -341,6 +343,7 @@ export const workbenchClient = String.raw`
       }
 
       async function toggleHistory(open) {
+        if (open) { toggleMapControls(false); setInspectionEnabled(false); wb("welcome").hidden = true; }
         wb("history").hidden = !open;
         wb("history-toggle").setAttribute("aria-expanded", String(open));
         if (open) { wb("review").hidden = true; try { await loadHistory(); } catch (error) { showWorkbenchError(error); } }
@@ -367,7 +370,11 @@ export const workbenchClient = String.raw`
           button.addEventListener("click", () => { wb("after").value = record.id; void openReview(false); });
           const pin = document.createElement("button"); pin.className = "capture-reference"; pin.textContent = record.id === wbPinnedReference?.id ? "Current reference" : "Use as reference";
           pin.addEventListener("click", () => pinReference(record));
-          card.append(button, pin); wb("captures").append(card);
+          const remove = document.createElement("button"); remove.className = "capture-delete"; remove.textContent = "Delete";
+          remove.setAttribute("aria-label", "Delete " + captureLabel(record));
+          remove.addEventListener("click", () => deleteSavedCapture(record, remove));
+          const actions = document.createElement("div"); actions.className = "capture-actions"; actions.append(pin, remove);
+          card.append(button, actions); wb("captures").append(card);
         }
         for (const name of ["before", "after"]) {
           const selected = wb(name).value;
@@ -383,10 +390,26 @@ export const workbenchClient = String.raw`
       }
 
       async function openReview(refresh = true) {
+        toggleMapControls(false);
+        wb("welcome").hidden = true;
         if (inspectionEnabled) setInspectionEnabled(false);
         setReviewTab("saved");
         wb("history").hidden = true; wb("history-toggle").setAttribute("aria-expanded", "false"); wb("review").hidden = false;
         try { if (refresh !== false) await loadHistory(); renderReviewImages(); } catch (error) { showWorkbenchError(error); }
+      }
+
+      async function deleteSavedCapture(record, button) {
+        if (wbBusy || !confirm("Delete " + captureLabel(record) + "? This permanently removes its saved image and capture record from this project.")) return;
+        wbBusy = true; button.disabled = true; button.textContent = "Deleting…";
+        try {
+          await workbenchRequest("/captures/delete", {id:record.id});
+          if (wbPinnedReference?.id === record.id) { wbPinnedReference = undefined; renderPinnedReference(); }
+          wbRecords = wbRecords.filter((entry) => entry.id !== record.id);
+          await loadHistory();
+          renderReviewImages();
+          setFeedback("Capture deleted.");
+        } catch (error) { showWorkbenchError(error); }
+        finally { wbBusy = false; button.disabled = false; button.textContent = "Delete"; void refreshWorkbench(); }
       }
 
       function renderReviewImages() {

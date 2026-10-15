@@ -11,7 +11,12 @@ import {
 import {tileflowCaptureSceneNameSchema, tileflowCaptureSceneSchema} from '@tileflow/core';
 import {resolveTileflowPreview} from '@tileflow/dev/preview';
 import type {TileflowArtifactSession} from '@tileflow/dev/server';
-import {captureRecordDirectory, readCaptureRecord, saveCaptureRecord} from './capture-record';
+import {
+  captureRecordDirectory,
+  deleteCaptureRecord,
+  readCaptureRecord,
+  saveCaptureRecord,
+} from './capture-record';
 
 const prefix = '/__workbench';
 const captureInput = z
@@ -25,6 +30,7 @@ const captureInput = z
 const compareInput = z
   .object({before: z.string().regex(/^[a-f0-9]{64}$/u), after: z.string().regex(/^[a-f0-9]{64}$/u)})
   .strict();
+const deleteInput = z.object({id: z.string().regex(/^[a-f0-9]{64}$/u)}).strict();
 const contextInput = z
   .object({
     client: z.string().regex(/^[a-zA-Z0-9-]{1,80}$/u),
@@ -155,6 +161,11 @@ export function createWorkbenchService(options: Options) {
   }
 
   async function action(path: string, input: unknown): Promise<Response> {
+    if (path === '/captures/delete') {
+      const {id} = deleteInput.parse(input);
+      await deleteCaptureRecord(id, options.cwd);
+      return json({deleted: id});
+    }
     if (path === '/capture') {
       const {side: id, generation, name, definition} = captureInput.parse(input);
       if (definition.target?.kind === 'application')
@@ -234,13 +245,21 @@ export function createWorkbenchService(options: Options) {
         if (request.method === 'GET') {
           if (path === '' || path === '/')
             return json({
-              capabilities: ['catalog', 'capture', 'history', 'compare', 'context'],
+              capabilities: [
+                'catalog',
+                'capture',
+                'history',
+                'delete-capture',
+                'compare',
+                'context',
+              ],
               busy: Boolean(pending),
               sides: catalog(),
               endpoints: {
                 context: `${prefix}/context`,
                 captures: `${prefix}/captures`,
                 capture: `${prefix}/capture`,
+                deleteCapture: `${prefix}/captures/delete`,
                 compare: `${prefix}/compare`,
               },
             });
@@ -302,13 +321,13 @@ export function createWorkbenchService(options: Options) {
           if (contexts.size > 8) contexts.delete(contexts.keys().next().value!);
           return json({saved: true});
         }
-        if (path !== '/capture' && path !== '/compare')
+        if (path !== '/capture' && path !== '/compare' && path !== '/captures/delete')
           return json({code: 'NOT_FOUND', message: 'Unknown Map DevTools action.'}, 404);
         if (pending)
           return json(
             {
               code: 'WORKBENCH_BUSY',
-              message: 'A capture or comparison is already running. Try again when it finishes.',
+              message: 'A capture operation is already running. Try again when it finishes.',
             },
             409,
           );

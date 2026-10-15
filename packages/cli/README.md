@@ -71,7 +71,7 @@ Run from the project directory and keep selected configs inside it, so capture c
 Map DevTools resolve the same files. The project itself can live anywhere, independently of this SDK.
 
 The default is one Map DevTools pane, one watched artifact session, and one map renderer. Choose a
-saved view or theme in the toolbar. Map and theme pickers appear when there are multiple choices. **Compare → Compare live maps** adds a reference from the current
+map, theme or configured scene in **Controls**. Map and theme pickers appear when there are multiple choices. **Compare → Compare live maps** adds a reference from the current
 project; `--against-*` also supports a reference from another config. The native renderer retains its assets-only
 preview endpoint.
 
@@ -89,6 +89,7 @@ camera and frame to review the change. The selected reference lasts for this bro
 **Capture** renders the compiled map at the current camera and the fixed dimensions in **Capture settings** (the sliders icon).
 Temporary preview visibility switches are excluded. **Captures** retains local evidence across
 reloads; **Compare** checks saved captures before offering a before/after slider and pixel difference.
+Each capture has a **Delete** action with confirmation that removes its saved image and record from this project.
 It reports incompatible cameras, frames, renderers or data without presenting pixel metrics.
 
 **Copy context for AI** exports the selected feature, semantic configuration paths, camera, revision

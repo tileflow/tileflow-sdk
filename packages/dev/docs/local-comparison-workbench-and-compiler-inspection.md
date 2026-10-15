@@ -80,7 +80,9 @@ complete as declared and independent of its World selection.
 
 ### Map controls
 
-**Controls**, immediately after **Inspect**, opens a right sidebar shared by every map. It lists
+**Controls**, immediately after **Inspect**, opens a right sidebar shared by every map. Map and theme
+selection live at the top; **Scene** restores a configured location, theme and capture frame.
+Opening Controls closes inspection, capture history and saved review so they cannot cover it. It lists
 the semantic modules, including disabled ones, and offers building lighting, cast/contact shadows,
 night windows, edge definition and color variation, plus vegetation representation, fallback,
 finish and size. Changes automatically recompile the selected map/theme after a 300 ms pause,

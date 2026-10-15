@@ -121,13 +121,18 @@ export {
 } from './public-paths';
 export {defaultTileflowConfigPath} from './config';
 export {
-  packageTileflowLandmarks,
+  encodeTileflowLandmarkRegion,
+  packageTileflowLandmarkTile,
   prepareTileflowBuildingModel,
   type TileflowBuildingModelLevels,
   type TileflowLandmarkSource,
-  type TileflowLandmarksIndex,
-  tileflowLandmarksZoom,
 } from './tree-models';
+export {
+  tileflowLandmarkRegionOf,
+  tileflowLandmarkRegionZoom,
+  tileflowLandmarkTileOf,
+  tileflowLandmarkTileZoom,
+} from '@tileflow/core';
 export {prepareTileflowLocalTilesets, type TileflowLocalTilesetFile} from './local-tilesets';
 export {createTileflowArtifactDiagnostics, tileflowArtifactSessionSchemaVersion} from './session';
 export type {

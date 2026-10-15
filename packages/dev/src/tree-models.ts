@@ -15,6 +15,9 @@ import {
   compareCodeUnits,
   encodeTileflowModels,
   encodeTileflowTreeModel,
+  serializeTileflowLandmarkRegion,
+  type TileflowLandmarkRegion,
+  tileflowLandmarkTileOf,
   type TileflowModelDirectory,
   type TileflowModelEntry,
   type TileflowModelMesh,
@@ -94,70 +97,56 @@ export type TileflowLandmarkSource = Readonly<{
   levels: TileflowBuildingModelLevels;
 }>;
 
-/** A landmarks tileset's index: its zoom, the tiles it holds and where each landmark stands. */
-export type TileflowLandmarksIndex = {
-  format: 'tileflow-landmarks-v1';
-  zoom: number;
-  tiles: [number, number][];
-  landmarks: {id: string; at: [number, number]; tile: [number, number]}[];
-};
-
-/** The zoom of a landmarks tileset's tiles. */
-export const tileflowLandmarksZoom = 14;
-
 /**
- * Packages landmarks into a landmarks tileset: one prepared model file per tile at
- * `tileflowLandmarksZoom` holding the landmarks whose origin falls in it, and the index that names
- * those tiles. The result depends only on its input.
+ * Packages the landmarks standing in one tile of a landmarks tileset into that tile's prepared
+ * model file, the landmarks in the order of their ids. Every landmark's origin must fall in the
+ * same zoom-14 tile. The result depends only on its input.
  */
-export async function packageTileflowLandmarks(
+export async function packageTileflowLandmarkTile(
   landmarks: readonly TileflowLandmarkSource[],
-): Promise<{
-  index: TileflowLandmarksIndex;
-  indexBytes: Uint8Array;
-  tiles: {x: number; y: number; z: number; bytes: Uint8Array; sha256: string}[];
-}> {
-  const zoom = tileflowLandmarksZoom;
+): Promise<{x: number; y: number; bytes: Uint8Array; sha256: string}> {
+  if (landmarks.length === 0) throw new RangeError('A landmark tile holds at least one landmark.');
   if (new Set(landmarks.map((landmark) => landmark.id)).size !== landmarks.length)
     throw new RangeError('Every landmark has an id of its own.');
-  const byTile = new Map<string, {x: number; y: number; models: TileflowModelEntry[]}>();
-  const placed: TileflowLandmarksIndex['landmarks'] = [];
+  let tile: [number, number] | undefined;
+  const models: TileflowModelEntry[] = [];
   for (const landmark of [...landmarks].sort((a, b) => compareCodeUnits(a.id, b.id))) {
-    const [longitude, latitude] = landmark.at;
-    if (!(longitude >= -180 && longitude < 180 && latitude >= -85 && latitude <= 85))
-      throw new RangeError(`Landmark ${landmark.id} stands at no place on the map.`);
     if (!(landmark.heading >= 0 && landmark.heading < 360))
       throw new RangeError(`Landmark ${landmark.id} is turned 0 to 360 degrees.`);
+    let own: [number, number];
+    try {
+      own = tileflowLandmarkTileOf(landmark.at);
+    } catch {
+      throw new RangeError(`Landmark ${landmark.id} stands at no place on the map.`);
+    }
+    tile ??= own;
+    if (own[0] !== tile[0] || own[1] !== tile[1])
+      throw new RangeError(
+        `Landmark ${landmark.id} stands in tile ${own.join('/')}, not ${tile.join('/')}.`,
+      );
     let model: TileflowModelEntry;
     try {
       model = buildingModelEntry(landmark.id, landmark.levels);
     } catch (error) {
       throw new RangeError(`Landmark ${landmark.id}: ${(error as Error).message}`);
     }
-    const n = 2 ** zoom;
-    const phi = (latitude * Math.PI) / 180;
-    const x = Math.floor(((longitude + 180) / 360) * n);
-    const y = Math.floor(((1 - Math.log(Math.tan(phi) + 1 / Math.cos(phi)) / Math.PI) / 2) * n);
-    const key = `${x}/${y}`;
-    const tile = byTile.get(key) ?? {x, y, models: []};
-    tile.models.push({...model, at: [longitude, latitude], heading: landmark.heading});
-    byTile.set(key, tile);
-    placed.push({id: landmark.id, at: [longitude, latitude], tile: [x, y]});
+    models.push({...model, at: [landmark.at[0], landmark.at[1]], heading: landmark.heading});
   }
   await MeshoptEncoder.ready;
-  const tiles = [...byTile.values()]
-    .sort((a, b) => a.x - b.x || a.y - b.y)
-    .map(({x, y, models}) => {
-      const bytes = encodeTileflowModels(models, MeshoptEncoder);
-      return {x, y, z: zoom, bytes, sha256: sha256Of(bytes)};
-    });
-  const index: TileflowLandmarksIndex = {
-    format: 'tileflow-landmarks-v1',
-    zoom,
-    tiles: tiles.map(({x, y}) => [x, y]),
-    landmarks: placed,
-  };
-  return {index, indexBytes: new TextEncoder().encode(`${JSON.stringify(index)}\n`), tiles};
+  const bytes = encodeTileflowModels(models, MeshoptEncoder);
+  return {x: tile![0], y: tile![1], bytes, sha256: sha256Of(bytes)};
+}
+
+/**
+ * Writes the index of one region of a landmarks tileset, `{region: [x, y], tiles: [[x, y,
+ * sha256], ...]}`, as the bytes the tileset serves, with their SHA-256.
+ */
+export function encodeTileflowLandmarkRegion(region: TileflowLandmarkRegion): {
+  bytes: Uint8Array;
+  sha256: string;
+} {
+  const bytes = serializeTileflowLandmarkRegion(region);
+  return {bytes, sha256: sha256Of(bytes)};
 }
 
 /** A building model, read from its glTF binaries, with its footprint. */

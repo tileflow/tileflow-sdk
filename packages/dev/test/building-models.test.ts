@@ -15,7 +15,8 @@ import {
 import {readTileflowGltfTriangles} from '../src/gltf-reader';
 import {compilePreviewControls} from '../src/preview-controls';
 import {
-  packageTileflowLandmarks,
+  encodeTileflowLandmarkRegion,
+  packageTileflowLandmarkTile,
   prepareTileflowBuildingModel,
   prepareTileflowMapTreeModels,
   TileflowTreeModelError,
@@ -237,46 +238,47 @@ test('one building model prepares from its levels into the file a build writes',
   );
 });
 
-test('landmarks package into the tiles they stand in, with the index that names them', async () => {
+test('landmarks standing in one tile package into its file, and a region names it by its hash', async () => {
   const tower = {near: writeGlb(block(20, 20, 120)), far: writeGlb(block(20, 20, 120))};
   const landmarks = [
-    {id: 'tour-montparnasse', at: [2.3219, 48.8421] as const, heading: 30, levels: tower},
+    {id: 'pont-d-iena', at: [2.2929, 48.8597] as const, heading: 30, levels: tower},
     {id: 'eiffel-tower', at: [2.2944962, 48.8582621] as const, heading: 0, levels: tower},
-    {id: 'palacio-real', at: [-3.7143, 40.418] as const, heading: 0, levels: tower},
   ];
-  const packaged = await packageTileflowLandmarks(landmarks);
-  assert.equal(packaged.index.zoom, 14);
-  // The Eiffel Tower stands in tile 14/8296/5636.
-  assert.deepEqual(packaged.index.landmarks[0], {
-    id: 'eiffel-tower',
-    at: [2.2944962, 48.8582621],
-    tile: [8296, 5636],
-  });
-  assert.deepEqual(
-    packaged.index.tiles,
-    packaged.tiles.map(({x, y}) => [x, y]),
-  );
-  assert.deepEqual(JSON.parse(new TextDecoder().decode(packaged.indexBytes)), packaged.index);
-  const eiffel = packaged.tiles.find(({x, y}) => x === 8296 && y === 5636)!;
-  const models = (await decodeTileflowModels(eiffel.bytes)) ?? [];
+  const tile = await packageTileflowLandmarkTile(landmarks);
+  assert.deepEqual([tile.x, tile.y], [8296, 5636]);
+  assert.match(tile.sha256, /^[0-9a-f]{64}$/u);
+  const models = (await decodeTileflowModels(tile.bytes)) ?? [];
   assert.deepEqual(
     models.map((model) => [model.id, model.at, model.heading]),
-    [['eiffel-tower', [2.2944962, 48.8582621], 0]],
+    [
+      ['eiffel-tower', [2.2944962, 48.8582621], 0],
+      ['pont-d-iena', [2.2929, 48.8597], 30],
+    ],
   );
   // The same landmarks package into the same bytes, in any order.
-  const again = await packageTileflowLandmarks([...landmarks].reverse());
-  assert.deepEqual(
-    again.tiles.map((tile) => tile.sha256),
-    packaged.tiles.map((tile) => tile.sha256),
+  const again = await packageTileflowLandmarkTile([...landmarks].reverse());
+  assert.equal(again.sha256, tile.sha256);
+  await assert.rejects(
+    packageTileflowLandmarkTile([
+      ...landmarks,
+      {id: 'tour-montparnasse', at: [2.3219, 48.8421], heading: 0, levels: tower},
+    ]),
+    /Landmark tour-montparnasse stands in tile 8297\/5637, not 8296\/5636/,
   );
   await assert.rejects(
-    packageTileflowLandmarks([{...landmarks[0]!, heading: 360}]),
+    packageTileflowLandmarkTile([{...landmarks[0]!, heading: 360}]),
     /turned 0 to 360 degrees/,
   );
   await assert.rejects(
-    packageTileflowLandmarks([{...landmarks[0]!, levels: {near: smallTree()}}]),
-    /Landmark tour-montparnasse: is not a building model/,
+    packageTileflowLandmarkTile([{...landmarks[0]!, levels: {near: smallTree()}}]),
+    /Landmark pont-d-iena: is not a building model/,
   );
+  const region = encodeTileflowLandmarkRegion({
+    region: [32, 22],
+    tiles: [[8296, 5636, tile.sha256]],
+  });
+  assert.match(region.sha256, /^[0-9a-f]{64}$/u);
+  assert.match(new TextDecoder().decode(region.bytes), new RegExp(tile.sha256));
 });
 
 test('a map places a model served elsewhere by its address, with no file of its own', async (t) => {

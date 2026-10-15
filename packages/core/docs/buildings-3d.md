@@ -131,7 +131,9 @@ export default defineMap({
 
 `at` is the longitude and latitude of the model's origin and `heading` the degrees clockwise from
 north its own north is turned to. A map places up to 256 models; one model may stand in several
-places.
+places. A placement may instead name a prepared model served elsewhere with `url`, the HTTPS address
+of its `.tfmd` file, such as a model Tileflow hosts for its own maps; the map then needs no `.glb`
+of its own for it.
 
 How to prepare a model:
 
@@ -235,3 +237,5 @@ way kept the frame pacing of the same city drawn without shadows.
 - A colour expression is evaluated at zoom 16.
 - Building models take no edges or night light of their own yet, and cannot be picked or styled by
   state.
+- Hosted deploys do not take a map's own model files yet: `tileflow validate --target hosted` reports
+  them. Models named by `url` deploy as they are.

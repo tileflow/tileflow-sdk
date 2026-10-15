@@ -73,9 +73,20 @@ function placedModels(
   served: Readonly<Record<string, string>> | undefined,
 ): {models?: TileflowBuildingModelPlacement[]} {
   if (!Array.isArray(value) || value.length === 0) return {};
-  const placements = value as {model: string; at: [number, number]; heading?: number}[];
+  const placements = value as {
+    model: string;
+    at: [number, number];
+    heading?: number;
+    url?: string;
+  }[];
+  // A placement that names where its prepared file is served needs no model of the map's own.
   const missing = [
-    ...new Set(placements.map((entry) => entry.model).filter((id) => !served?.[id])),
+    ...new Set(
+      placements
+        .filter((entry) => !entry.url)
+        .map((entry) => entry.model)
+        .filter((id) => !served?.[id]),
+    ),
   ].sort();
   if (missing.length > 0)
     throw new Error(
@@ -88,7 +99,7 @@ function placedModels(
   return {
     models: placements.map((entry) => ({
       model: entry.model,
-      url: served![entry.model]!,
+      url: entry.url ?? served![entry.model]!,
       at: [entry.at[0], entry.at[1]] as const,
       heading: (((entry.heading ?? 0) % 360) + 360) % 360,
     })),

@@ -1181,6 +1181,13 @@ const buildingsModuleSchema = z
                   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
                 at: z.tuple([z.number().min(-180).max(180), z.number().min(-85).max(85)]),
                 heading: z.number().finite().optional(),
+                url: z
+                  .url()
+                  .max(2048)
+                  .refine((value) => new URL(value).protocol === 'https:', {
+                    message: 'A model served elsewhere has an HTTPS address.',
+                  })
+                  .optional(),
               })
               .strict(),
           )

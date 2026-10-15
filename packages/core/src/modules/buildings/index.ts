@@ -36,6 +36,11 @@ export type TileflowBuildingModelPart = 'surface' | 'secondary' | 'glass' | 'acc
 export type TileflowBuildingModelPlacementConfig = {
   /** The model's id: the name of its `.glb` file in the map's `models` directories. */
   model: string;
+  /**
+   * The HTTPS address of the model's prepared file when it is served elsewhere, such as a model
+   * Tileflow hosts for its own maps; the map then needs no `.glb` of its own for it.
+   */
+  url?: string;
   /** Longitude and latitude of the model's origin, where it stands on the ground. */
   at: readonly [number, number];
   /** Degrees clockwise from north that the model's own north (its +y) is turned to; defaults to 0. */

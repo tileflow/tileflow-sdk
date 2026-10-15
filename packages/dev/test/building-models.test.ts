@@ -13,7 +13,11 @@ import {
   tileflowBuildingModelFootprint,
 } from '../src/building-model-mesh';
 import {readTileflowGltfTriangles} from '../src/gltf-reader';
-import {prepareTileflowMapTreeModels, TileflowTreeModelError} from '../src/tree-models';
+import {
+  prepareTileflowBuildingModel,
+  prepareTileflowMapTreeModels,
+  TileflowTreeModelError,
+} from '../src/tree-models';
 import {type GlbPart, writeGlb} from './tree-model-fixtures';
 import {smallTree} from './tree-model-fixtures';
 
@@ -193,4 +197,40 @@ test('a map places its building models: the style names their files, which the b
     /places missing 3D models: palace\. Add palace\.glb to a map\.models directory/,
   );
   await readFile(join(cwd, 'tileflow.config.ts'));
+});
+
+test('one building model prepares from its levels into the file a build writes', () => {
+  const prepared = prepareTileflowBuildingModel({
+    near: writeGlb(block(20, 20, 120)),
+    far: writeGlb(block(20, 20, 120)),
+  });
+  assert.match(prepared.sha256, /^[0-9a-f]{64}$/u);
+  assert.equal(decodeTileflowModel(prepared.bytes)?.levels.length, 2);
+  assert.throws(
+    () => prepareTileflowBuildingModel({near: smallTree()}),
+    /is not a building model; name each material surface, secondary, glass, accent or roof/,
+  );
+});
+
+test('a map places a model served elsewhere by its address, with no file of its own', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-hosted-model-build-'));
+  await linkWorkspacePackages(cwd);
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  const url = 'https://api.example.test/base/abc/models/eiffel-tower.tfmd';
+  await writeFile(
+    join(cwd, 'tileflow.config.ts'),
+    `import {buildings, defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'paris',version:1,extends:streets,modules:{buildings:buildings({mode:'3d',threeDimensional:{models:[{model:'eiffel-tower',at:[2.2945,48.8583],url:'${url}'}]}})},glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}});\n`,
+  );
+  const plan = await createTileflowBuildArtifacts({cwd});
+  const style = Object.values(plan.styles.paris!)[0]!;
+  const design = (style.metadata as Record<string, any>)['tileflow:buildings'];
+  assert.deepEqual(design.models, [
+    {model: 'eiffel-tower', url, at: [2.2945, 48.8583], heading: 0},
+  ]);
+  assert.equal(plan.assets.filter((entry) => entry.fileName.startsWith('models/')).length, 0);
+  // The generation's own copy of the style keeps the address.
+  const generation = plan.files.find((file) =>
+    /^generations\/[a-f0-9]{64}\/styles\/paris\//u.test(file.fileName),
+  );
+  assert.ok(generation && String(generation.source).includes(url));
 });

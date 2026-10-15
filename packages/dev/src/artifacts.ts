@@ -120,6 +120,7 @@ export {
   resolveTileflowArtifactPublicUrls,
 } from './public-paths';
 export {defaultTileflowConfigPath} from './config';
+export {prepareTileflowBuildingModel} from './tree-models';
 export {prepareTileflowLocalTilesets, type TileflowLocalTilesetFile} from './local-tilesets';
 export {createTileflowArtifactDiagnostics, tileflowArtifactSessionSchemaVersion} from './session';
 export type {
@@ -661,7 +662,12 @@ function createGenerationArtifactFiles(
         ? replaceTileflowNativeFontSources
         : replaceTileflowStyleFontSources;
       const generationStyle = replaceFontSources(
-        withGenerationBuildingModels(generationStyleWithSprite, mapName, generation),
+        withGenerationBuildingModels(
+          generationStyleWithSprite,
+          mapName,
+          generation,
+          artifacts.assets,
+        ),
         (source) => retargetLocalFontAssetUrl(source, artifacts.assets, generation),
       );
       if (artifacts.nativeBuild)
@@ -837,8 +843,16 @@ async function findNearestLockfile(
   }
 }
 
-/** A style whose building models are read from the generation's own copies of their files. */
-function withGenerationBuildingModels<T>(style: T, mapName: string, generation: string): T {
+/**
+ * A style whose own building models are read from the generation's copies of their files; models
+ * served elsewhere keep their address.
+ */
+function withGenerationBuildingModels<T>(
+  style: T,
+  mapName: string,
+  generation: string,
+  assets: readonly TileflowBuildAsset[],
+): T {
   const metadata = (style as {metadata?: Record<string, unknown>}).metadata;
   const buildings = metadata?.['tileflow:buildings'] as {models?: unknown} | undefined;
   if (!buildings || !Array.isArray(buildings.models)) return style;
@@ -846,9 +860,12 @@ function withGenerationBuildingModels<T>(style: T, mapName: string, generation: 
     const url = (entry as {url?: unknown}).url;
     if (typeof url !== 'string' || isRelativePublicUrl(url)) return entry;
     const file = url.slice(url.lastIndexOf('/') + 1);
+    const logical = `models/${mapName}/${file}`;
+    if (!url.endsWith(`/${logical}`) || !assets.some((asset) => asset.fileName === logical))
+      return entry;
     return {
       ...(entry as Record<string, unknown>),
-      url: insertGenerationInPublicUrl(url, `models/${mapName}/${file}`, generation),
+      url: insertGenerationInPublicUrl(url, logical, generation),
     };
   });
   return {

@@ -7890,6 +7890,11 @@
         },
         "heading": {
           "type": "number"
+        },
+        "url": {
+          "type": "string",
+          "maxLength": 2048,
+          "format": "uri"
         }
       },
       "required": ["model", "at"],

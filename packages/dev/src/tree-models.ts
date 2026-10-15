@@ -57,6 +57,31 @@ export type PreparedTileflowBuildingModel = {
 /** The most building models one map prepares. */
 export const tileflowBuildingModelLimit = 64;
 
+/**
+ * Prepares one building model from its glTF binaries, nearest level first, into the file a build
+ * writes beside the style. Its footprint is the near level's `footprint` mesh, or else its outline
+ * on the ground. Throws `TileflowGltfError` or `RangeError` with words an author can act on.
+ */
+export function prepareTileflowBuildingModel(
+  levels: Readonly<{near: Uint8Array; mid?: Uint8Array; far?: Uint8Array}>,
+): {bytes: Uint8Array; sha256: string} {
+  const primitives = readTileflowGltfTriangles(levels.near);
+  if (!isTileflowBuildingModel(primitives))
+    throw new TileflowGltfError(
+      'is not a building model; name each material surface, secondary, glass, accent or roof',
+    );
+  const meshes: TileflowModelMesh[] = [prepareTileflowBuildingModelMesh(primitives)];
+  for (const level of [levels.mid, levels.far])
+    if (level) meshes.push(prepareTileflowBuildingModelMesh(level));
+  const bytes = encodeTileflowModel({
+    levels: meshes,
+    footprint: tileflowBuildingModelFootprint(
+      tileflowBuildingModelDeclaredFootprint(primitives) ?? meshes[0]!,
+    ),
+  });
+  return {bytes, sha256: createHash('sha256').update(bytes).digest('hex')};
+}
+
 export type PreparedTileflowTreeModels = {
   /** The prepared tree models by id. */
   models: Record<string, TileflowTreeModel>;
@@ -152,40 +177,32 @@ export async function prepareTileflowMapTreeModels(
       continue;
     }
     if (isTileflowBuildingModel(primitives)) {
-      const levels: TileflowModelMesh[] = [];
-      let failed = false;
-      for (const level of ['near', 'mid', 'far'] as const) {
-        const file = entry[level];
-        if (!file) continue;
-        try {
-          const bytes = level === 'near' ? nearBytes : new Uint8Array(await readFile(file.path));
-          levels.push(prepareTileflowBuildingModelMesh(level === 'near' ? primitives : bytes));
-          identities.push({id, level, sha256: createHash('sha256').update(bytes).digest('hex')});
-        } catch (error) {
-          failed = true;
-          issues.push({
-            message:
-              error instanceof TileflowGltfError || error instanceof RangeError
-                ? error.message
-                : 'cannot be read',
-            path: file.display,
-          });
-        }
-      }
-      if (failed) continue;
+      const files: {near: Uint8Array; mid?: Uint8Array; far?: Uint8Array} = {near: nearBytes};
+      let failing = entry.near;
       try {
-        const bytes = encodeTileflowModel({
-          levels,
-          footprint: tileflowBuildingModelFootprint(
-            tileflowBuildingModelDeclaredFootprint(primitives) ?? levels[0]!,
-          ),
-        });
-        const digest = createHash('sha256').update(bytes).digest('hex').slice(0, 16);
-        buildings[id] = {fileName: `${id}-${digest}.tfmd`, bytes};
+        for (const level of ['near', 'mid', 'far'] as const) {
+          const file = entry[level];
+          if (!file) continue;
+          failing = file;
+          const bytes = level === 'near' ? nearBytes : new Uint8Array(await readFile(file.path));
+          files[level] = bytes;
+          // Each level is read on its own first, so a problem names its file.
+          if (level !== 'near') prepareTileflowBuildingModelMesh(bytes);
+          identities.push({id, level, sha256: createHash('sha256').update(bytes).digest('hex')});
+        }
+        failing = entry.near;
+        const prepared = prepareTileflowBuildingModel(files);
+        buildings[id] = {
+          fileName: `${id}-${prepared.sha256.slice(0, 16)}.tfmd`,
+          bytes: prepared.bytes,
+        };
       } catch (error) {
         issues.push({
-          message: error instanceof RangeError ? error.message : 'cannot be prepared',
-          path: entry.near.display,
+          message:
+            error instanceof TileflowGltfError || error instanceof RangeError
+              ? error.message
+              : 'cannot be read',
+          path: failing.display,
         });
       }
       continue;

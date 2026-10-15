@@ -115,6 +115,38 @@ test('one hosted preflight rejects external data for validation and deploy calle
       path: 'maps.main.themes.light.data',
     },
   ]);
+
+  // A model Tileflow hosts travels by its address; a map's own model file does not deploy yet.
+  const withModels = (url: string) => ({
+    ...compatible,
+    metadata: {
+      ...compatible.metadata,
+      'tileflow:buildings': {models: [{model: 'tower', url, at: [2.29, 48.86], heading: 0}]},
+    },
+  });
+  assert.deepEqual(
+    inspectTileflowHostedCompatibility(project, {
+      main: {light: withModels('https://api.tileflow.dev/base/abc/models/tower.tfmd')},
+    }),
+    [],
+  );
+  assert.deepEqual(
+    inspectTileflowHostedCompatibility(project, {
+      main: {
+        light: withModels(
+          'https://maps.example.test/tileflow/models/main/tower-0123456789abcdef.tfmd',
+        ),
+      },
+    }),
+    [
+      {
+        map: 'main',
+        message:
+          "Hosted deploy does not take a map's own 3D building models yet. Map main places tower; keep the map local or remove them from buildings.threeDimensional.models.",
+        path: 'maps.main.modules.buildings.threeDimensional.models',
+      },
+    ],
+  );
 });
 
 test('hosted success responses validate exact atomic theme families and bounded bodies', async () => {

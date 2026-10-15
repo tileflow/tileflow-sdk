@@ -126,7 +126,7 @@ test('one hosted preflight rejects external data for validation and deploy calle
   });
   assert.deepEqual(
     inspectTileflowHostedCompatibility(project, {
-      main: {light: withModels('https://api.tileflow.dev/base/abc/models/tower.tfmd')},
+      main: {light: withModels('https://models.example.test/tower.glb')},
     }),
     [],
   );
@@ -134,7 +134,7 @@ test('one hosted preflight rejects external data for validation and deploy calle
     inspectTileflowHostedCompatibility(project, {
       main: {
         light: withModels(
-          'https://maps.example.test/tileflow/models/main/tower-0123456789abcdef.tfmd',
+          'https://maps.example.test/tileflow/models/main/tower-0123456789abcdef.glb',
         ),
       },
     }),

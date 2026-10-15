@@ -4817,6 +4817,25 @@
                     }
                   },
                   "additionalProperties": false
+                },
+                "landmarks": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "url": {
+                          "type": "string",
+                          "maxLength": 2048,
+                          "format": "uri"
+                        }
+                      },
+                      "required": ["url"],
+                      "additionalProperties": false
+                    }
+                  ]
                 }
               },
               "additionalProperties": false
@@ -26735,6 +26754,25 @@
                 }
               },
               "additionalProperties": false
+            },
+            "landmarks": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "maxLength": 2048,
+                      "format": "uri"
+                    }
+                  },
+                  "required": ["url"],
+                  "additionalProperties": false
+                }
+              ]
             }
           },
           "additionalProperties": false
@@ -26898,6 +26936,25 @@
                 }
               },
               "additionalProperties": false
+            },
+            "landmarks": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string",
+                      "maxLength": 2048,
+                      "format": "uri"
+                    }
+                  },
+                  "required": ["url"],
+                  "additionalProperties": false
+                }
+              ]
             }
           },
           "additionalProperties": false
@@ -27294,6 +27351,38 @@
                         }
                       },
                       "additionalProperties": false
+                    }
+                  ]
+                },
+                "landmarks": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "url": {
+                              "oneOf": [
+                                {
+                                  "$ref": "#/$defs/TileflowReset"
+                                },
+                                {
+                                  "type": "string",
+                                  "maxLength": 2048,
+                                  "format": "uri"
+                                }
+                              ]
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      ]
                     }
                   ]
                 }

@@ -28,6 +28,7 @@ import {
   type TileflowIconPackageFileName,
   tileflowIconPackageLimits,
   type TileflowIconPackageManifest,
+  tileflowModelContentType,
 } from '@tileflow/core';
 import type {
   TileflowBuildCatalog,
@@ -675,7 +676,7 @@ export async function prepareTileflowCatalogIcons(
     const buildingModels: Record<string, string> = {};
     for (const [id, model] of Object.entries(models.buildings)) {
       const fileName = `models/${mapName}/${model.fileName}`;
-      assets.push({contentType: 'application/octet-stream', fileName, source: model.bytes});
+      assets.push({contentType: tileflowModelContentType, fileName, source: model.bytes});
       buildingModels[id] = joinUrl(options.assetBaseUrl, fileName);
     }
     mapAssets[mapName] = {

@@ -1,10 +1,10 @@
 // A building model a map places in its 3D city, such as a landmark or an application's own
-// building. Tileflow's Node tooling prepares each glTF binary (.glb) a map declares into this
-// compact binary file: one to three levels of detail, each an indexed mesh in metres round the
-// model's origin (where it stands on the ground; x east, y north and z up before its heading), whose
-// vertices carry their part, a shade and their occlusion, and the footprint the model replaces on
-// the ground. The file travels beside the compiled style and is downloaded only when the model is
-// near the camera. It has no DOM dependency.
+// building: one to three levels of detail, each an indexed mesh in metres round the model's origin
+// (where it stands on the ground; x east, y north and z up before its heading), whose vertices carry
+// their part, a shade and their occlusion, and the footprint the model replaces on the ground.
+// Tileflow's Node tooling prepares the glTF binaries a map declares, and its landmarks, into
+// prepared model files (models-3d-file.ts) that travel beside the compiled style or in the landmarks
+// tileset and are downloaded only near the camera. It has no DOM dependency.
 
 /** The parts of a model, each coloured by the theme: the model's materials name them. */
 export const tileflowModelParts = Object.freeze({
@@ -31,6 +31,8 @@ export const tileflowModelLimits = Object.freeze({
   radius: 2000,
   /** The model's height, in metres. */
   height: 1000,
+  /** Models in one prepared file, as a landmark tile holds them. */
+  models: 512,
   /** Bytes of one prepared file. */
   bytes: 16 * 1024 * 1024,
 });
@@ -56,224 +58,43 @@ export type TileflowModel = Readonly<{
   levels: readonly TileflowModelMesh[];
   /**
    * Closed rings on the ground, in metres round the origin as `[x, y, x, y, …]`: the outline of
-   * what the model stands in for. The map's own buildings whose centre falls inside it are not
-   * raised while the model stands.
+   * what the model stands in for. The map's own buildings that reach into it are not raised while
+   * the model stands.
    */
   footprint: readonly (readonly number[])[];
 }>;
 
 /** A decoded level, ready for the GPU: its vertex bytes as the file holds them. */
 export type TileflowModelLevelBytes = Readonly<{
-  /** 12 bytes a vertex: position (int16 ×3, over the model's bounds), normal (int8 ×3), part, shade and light (uint8 ×3). */
+  /**
+   * 16 bytes a vertex, in glTF's axes (x east, y up, z south): its position as whole steps from
+   * `centre` (int16 ×3, then two bytes of padding), its normal (int8 ×3, then one), and its part,
+   * shade and light (uint8 ×3, then one).
+   */
   vertices: Uint8Array;
   indices: Uint16Array | Uint32Array;
+  /** The point the positions count from, in glTF's axes, in metres. */
+  centre: readonly [number, number, number];
+  /** Metres in one step of a position. */
+  step: number;
 }>;
 
 /** A decoded model, as the renderer draws it. */
 export type TileflowModelBytes = Readonly<{
-  /** The model's bounds in metres, `[minX, minY, minZ, maxX, maxY, maxZ]`. */
+  /** The model's id. */
+  id: string;
+  /** Its bounds in metres round its origin, `[minX, minY, minZ, maxX, maxY, maxZ]` (x east, y north, z up). */
   bounds: readonly [number, number, number, number, number, number];
   levels: readonly TileflowModelLevelBytes[];
   footprint: readonly (readonly number[])[];
+  /** Where it stands, longitude and latitude, when the file says so, as a landmark tile does. */
+  at?: readonly [number, number];
+  /** Degrees clockwise from north its own north is turned to, when the file says so. */
+  heading?: number;
 }>;
 
 /** Bytes per vertex in a model file and on the GPU. */
-export const tileflowModelVertexBytes = 12;
-
-const magic = [0x54, 0x46, 0x4d, 0x44]; // "TFMD"
-const version = 1;
-const partCount = Object.keys(tileflowModelParts).length;
-
-/** Encodes a model as a file. Throws a `RangeError` when it breaks `tileflowModelLimits`. */
-export function encodeTileflowModel(model: TileflowModel): Uint8Array {
-  const {levels, footprint} = model;
-  if (levels.length < 1 || levels.length > tileflowModelLimits.levels)
-    throw new RangeError(`A model has 1 to ${tileflowModelLimits.levels} levels of detail.`);
-  const bounds = [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity];
-  for (const [at, level] of levels.entries()) {
-    const count = level.positions.length / 3;
-    const triangles = level.indices.length / 3;
-    if (!Number.isInteger(count) || count < 3 || count > tileflowModelLimits.vertices)
-      throw new RangeError(`Level ${at} has 3 to ${tileflowModelLimits.vertices} vertices.`);
-    if (!Number.isInteger(triangles) || triangles < 1 || triangles > tileflowModelLimits.triangles)
-      throw new RangeError(`Level ${at} has 1 to ${tileflowModelLimits.triangles} triangles.`);
-    if (level.normals.length !== count * 3)
-      throw new RangeError(`Every vertex of level ${at} needs a position and a normal.`);
-    for (const list of [level.parts, level.shades, level.occlusion])
-      if (list.length !== count)
-        throw new RangeError(`Every vertex of level ${at} needs a part, a shade and a light.`);
-    for (let index = 0; index < count; index += 1)
-      for (let axis = 0; axis < 3; axis += 1) {
-        const value = level.positions[index * 3 + axis]!;
-        if (!Number.isFinite(value)) throw new RangeError(`Level ${at} has a vertex at no place.`);
-        bounds[axis] = Math.min(bounds[axis]!, value);
-        bounds[axis + 3] = Math.max(bounds[axis + 3]!, value);
-      }
-  }
-  const radius = Math.max(...[0, 1, 3, 4].map((axis) => Math.abs(bounds[axis]!)));
-  if (radius > tileflowModelLimits.radius)
-    throw new RangeError(
-      `A model reaches at most ${tileflowModelLimits.radius} m from its origin.`,
-    );
-  if (bounds[2]! < -0.5)
-    throw new RangeError('A model stands on the ground: no vertex lies more than 0.5 m below it.');
-  if (bounds[5]! > tileflowModelLimits.height)
-    throw new RangeError(`A model is at most ${tileflowModelLimits.height} m tall.`);
-  const points = footprint.reduce((sum, ring) => sum + ring.length / 2, 0);
-  if (footprint.some((ring) => ring.length < 6 || ring.length % 2 !== 0))
-    throw new RangeError('A footprint ring has at least three points.');
-  if (points > tileflowModelLimits.footprintPoints)
-    throw new RangeError(
-      `A footprint has at most ${tileflowModelLimits.footprintPoints} points in all.`,
-    );
-
-  const levelSizes = levels.map((level) => {
-    const count = level.positions.length / 3;
-    const wide = count > 0xffff;
-    return {
-      count,
-      wide,
-      bytes: 12 + count * tileflowModelVertexBytes + level.indices.length * (wide ? 4 : 2),
-    };
-  });
-  const header = 4 + 2 + 2 + 24 + 4 + footprint.length * 4 + points * 8;
-  const size = levelSizes.reduce((sum, level) => sum + level.bytes, header);
-  if (size > tileflowModelLimits.bytes)
-    throw new RangeError(`A prepared model is at most ${tileflowModelLimits.bytes} bytes.`);
-  const bytes = new Uint8Array(size);
-  const view = new DataView(bytes.buffer);
-  bytes.set(magic, 0);
-  view.setUint16(4, version, true);
-  view.setUint16(6, levels.length, true);
-  for (let axis = 0; axis < 6; axis += 1) view.setFloat32(8 + axis * 4, bounds[axis]!, true);
-  view.setUint32(32, footprint.length, true);
-  let at = 36;
-  for (const ring of footprint) {
-    view.setUint32(at, ring.length / 2, true);
-    at += 4;
-  }
-  for (const ring of footprint)
-    for (const value of ring) {
-      if (!Number.isFinite(value)) throw new RangeError('A footprint point has no place.');
-      view.setFloat32(at, value, true);
-      at += 4;
-    }
-  for (const [index, level] of levels.entries()) {
-    const {count, wide} = levelSizes[index]!;
-    view.setUint32(at, count, true);
-    view.setUint32(at + 4, level.indices.length, true);
-    view.setUint32(at + 8, wide ? 4 : 2, true);
-    at += 12;
-    for (let vertex = 0; vertex < count; vertex += 1) {
-      for (let axis = 0; axis < 3; axis += 1) {
-        const low = bounds[axis]!;
-        const span = bounds[axis + 3]! - low;
-        const unit = span > 0 ? (level.positions[vertex * 3 + axis]! - low) / span : 0;
-        view.setInt16(at + axis * 2, Math.round(unit * 65535) - 32768, true);
-        view.setInt8(
-          at + 6 + axis,
-          Math.round(clamp(level.normals[vertex * 3 + axis]!, -1, 1) * 127),
-        );
-      }
-      const part = level.parts[vertex]!;
-      if (!Number.isInteger(part) || part < 0 || part >= partCount)
-        throw new RangeError(`Vertex ${vertex} of level ${index} has no part.`);
-      bytes[at + 9] = part;
-      bytes[at + 10] = Math.round(((clamp(level.shades[vertex]!, -1, 1) + 1) / 2) * 255);
-      bytes[at + 11] = Math.round(clamp(level.occlusion[vertex]!, 0, 1) * 255);
-      at += tileflowModelVertexBytes;
-    }
-    for (const [position, vertex] of level.indices.entries()) {
-      if (!Number.isInteger(vertex) || vertex < 0 || vertex >= count)
-        throw new RangeError(`Index ${position} of level ${index} names no vertex.`);
-      if (wide) view.setUint32(at, vertex, true);
-      else view.setUint16(at, vertex, true);
-      at += wide ? 4 : 2;
-    }
-  }
-  return bytes;
-}
-
-/**
- * Decodes a model file for drawing, or undefined when it is not a model of this version or breaks
- * `tileflowModelLimits`.
- */
-export function decodeTileflowModel(
-  buffer: ArrayBuffer | Uint8Array,
-): TileflowModelBytes | undefined {
-  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-  if (bytes.length < 36 || bytes.length > tileflowModelLimits.bytes) return undefined;
-  if (magic.some((byte, index) => bytes[index] !== byte)) return undefined;
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (view.getUint16(4, true) !== version) return undefined;
-  const levelCount = view.getUint16(6, true);
-  if (levelCount < 1 || levelCount > tileflowModelLimits.levels) return undefined;
-  const bounds = [0, 1, 2, 3, 4, 5].map((axis) => view.getFloat32(8 + axis * 4, true)) as [
-    number,
-    number,
-    number,
-    number,
-    number,
-    number,
-  ];
-  if (bounds.some((value) => !Number.isFinite(value))) return undefined;
-  const ringCount = view.getUint32(32, true);
-  let at = 36;
-  if (at + ringCount * 4 > bytes.length) return undefined;
-  const sizes: number[] = [];
-  for (let ring = 0; ring < ringCount; ring += 1) {
-    sizes.push(view.getUint32(at, true));
-    at += 4;
-  }
-  if (
-    sizes.some((size) => size < 3) ||
-    sizes.reduce((sum, size) => sum + size, 0) > tileflowModelLimits.footprintPoints
-  )
-    return undefined;
-  const footprint: number[][] = [];
-  for (const size of sizes) {
-    if (at + size * 8 > bytes.length) return undefined;
-    const ring: number[] = [];
-    for (let point = 0; point < size * 2; point += 1) {
-      ring.push(view.getFloat32(at, true));
-      at += 4;
-    }
-    footprint.push(ring);
-  }
-  const levels: TileflowModelLevelBytes[] = [];
-  for (let level = 0; level < levelCount; level += 1) {
-    if (at + 12 > bytes.length) return undefined;
-    const count = view.getUint32(at, true);
-    const indexCount = view.getUint32(at + 4, true);
-    const width = view.getUint32(at + 8, true);
-    at += 12;
-    if (
-      count < 3 ||
-      count > tileflowModelLimits.vertices ||
-      indexCount < 3 ||
-      indexCount % 3 !== 0 ||
-      indexCount / 3 > tileflowModelLimits.triangles ||
-      (width !== 2 && width !== 4) ||
-      (width === 2) !== count <= 0xffff ||
-      at + count * tileflowModelVertexBytes + indexCount * width > bytes.length
-    )
-      return undefined;
-    const vertices = bytes.slice(at, at + count * tileflowModelVertexBytes);
-    at += count * tileflowModelVertexBytes;
-    for (let vertex = 0; vertex < count; vertex += 1)
-      if (vertices[vertex * tileflowModelVertexBytes + 9]! >= partCount) return undefined;
-    const indices = width === 4 ? new Uint32Array(indexCount) : new Uint16Array(indexCount);
-    for (let index = 0; index < indexCount; index += 1) {
-      const vertex = width === 4 ? view.getUint32(at, true) : view.getUint16(at, true);
-      if (vertex >= count) return undefined;
-      indices[index] = vertex;
-      at += width;
-    }
-    levels.push({vertices, indices});
-  }
-  if (at !== bytes.length) return undefined;
-  return {bounds, levels, footprint};
-}
+export const tileflowModelVertexBytes = 16;
 
 /**
  * Turns a model's footprint into rings of tile units in the tile at `tile` (`x`, `y` at `zoom`,
@@ -323,6 +144,100 @@ export function tileflowInsideRings(
   return false;
 }
 
+/**
+ * Whether the rings `outline` (a building's) reach more than `margin` into any of the rings
+ * `footprints` (the models'), all as `[x, y, x, y, …]` in the same units: a corner of one deep
+ * inside the other, or an edge passing through it. A building that only touches a footprint, as a
+ * neighbour sharing a wall does, does not.
+ */
+export function tileflowRingsOverlap(
+  outline: readonly (readonly number[])[],
+  footprints: readonly (readonly number[])[],
+  margin: number,
+): boolean {
+  for (const footprint of footprints) {
+    const [fl, ft, fr, fb] = boxOf(footprint);
+    for (const ring of outline) {
+      const [left, top, right, bottom] = boxOf(ring);
+      if (left > fr - margin || right < fl + margin || top > fb - margin || bottom < ft + margin)
+        continue;
+      if (reachesInto(ring, footprint, margin) || reachesInto(footprint, ring, margin)) return true;
+    }
+  }
+  return false;
+}
+
+/** Whether a corner, or a stretch of an edge, of `ring` lies deeper than `margin` inside `into`. */
+function reachesInto(ring: readonly number[], into: readonly number[], margin: number): boolean {
+  const deep = (x: number, y: number) =>
+    tileflowInsideRings([into], x, y) && distanceToRing(into, x, y) > margin;
+  for (let a = 0; a + 1 < ring.length; a += 2) if (deep(ring[a]!, ring[a + 1]!)) return true;
+  // An edge that passes through without a corner inside: the middle of each stretch between its
+  // crossings of the other ring's edges.
+  for (let a = 0, b = ring.length - 2; a < ring.length; b = a, a += 2) {
+    const [ax, ay, bx, by] = [ring[b]!, ring[b + 1]!, ring[a]!, ring[a + 1]!];
+    const cuts = [0, 1];
+    for (let c = 0, d = into.length - 2; c < into.length; d = c, c += 2) {
+      const t = crossingOf(ax, ay, bx, by, into[d]!, into[d + 1]!, into[c]!, into[c + 1]!);
+      if (t !== undefined) cuts.push(t);
+    }
+    if (cuts.length === 2) continue;
+    cuts.sort((p, q) => p - q);
+    for (let at = 1; at < cuts.length; at += 1) {
+      const t = (cuts[at - 1]! + cuts[at]!) / 2;
+      if (deep(ax + (bx - ax) * t, ay + (by - ay) * t)) return true;
+    }
+  }
+  return false;
+}
+
+/** Where along a→b the segment c→d crosses it, from 0 to 1, or undefined when it does not. */
+function crossingOf(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number,
+  dx: number,
+  dy: number,
+): number | undefined {
+  const rx = bx - ax;
+  const ry = by - ay;
+  const sx = dx - cx;
+  const sy = dy - cy;
+  const denominator = rx * sy - ry * sx;
+  if (denominator === 0) return undefined;
+  const t = ((cx - ax) * sy - (cy - ay) * sx) / denominator;
+  const u = ((cx - ax) * ry - (cy - ay) * rx) / denominator;
+  return t > 0 && t < 1 && u >= 0 && u <= 1 ? t : undefined;
+}
+
+function distanceToRing(ring: readonly number[], px: number, py: number): number {
+  let nearest = Infinity;
+  for (let a = 0, b = ring.length - 2; a < ring.length; b = a, a += 2) {
+    const [ax, ay, bx, by] = [ring[b]!, ring[b + 1]!, ring[a]!, ring[a + 1]!];
+    const length = (bx - ax) ** 2 + (by - ay) ** 2;
+    const t =
+      length > 0
+        ? Math.max(0, Math.min(1, ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / length))
+        : 0;
+    nearest = Math.min(nearest, Math.hypot(px - (ax + (bx - ax) * t), py - (ay + (by - ay) * t)));
+  }
+  return nearest;
+}
+
+function boxOf(ring: readonly number[]): [number, number, number, number] {
+  let [left, top, right, bottom] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (let at = 0; at + 1 < ring.length; at += 2) {
+    left = Math.min(left, ring[at]!);
+    right = Math.max(right, ring[at]!);
+    top = Math.min(top, ring[at + 1]!);
+    bottom = Math.max(bottom, ring[at + 1]!);
+  }
+  return [left, top, right, bottom];
+}
+
 /** A point as fractional tile coordinates at a zoom. */
 function mercatorTile(longitude: number, latitude: number, zoom: number): [number, number] {
   const phi = (Math.min(85.05, Math.max(-85.05, latitude)) * Math.PI) / 180;
@@ -335,8 +250,4 @@ function mercatorTile(longitude: number, latitude: number, zoom: number): [numbe
 /** Metres across a tile at a latitude and zoom. */
 function tileMetresAt(latitude: number, zoom: number): number {
   return (40_075_016.686 * Math.cos((latitude * Math.PI) / 180)) / 2 ** zoom;
-}
-
-function clamp(value: number, low: number, high: number): number {
-  return Number.isFinite(value) ? Math.min(high, Math.max(low, value)) : 0;
 }

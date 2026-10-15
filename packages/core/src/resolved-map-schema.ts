@@ -1203,6 +1203,29 @@ const buildingsModuleSchema = z
           })
           .strict()
           .optional(),
+        landmarks: z
+          .union([
+            z.boolean(),
+            z
+              .object({
+                url: z
+                  .url()
+                  .max(2048)
+                  .refine(
+                    (value) => {
+                      const url = new URL(value);
+                      return (
+                        url.protocol === 'https:' ||
+                        (url.protocol === 'http:' &&
+                          ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+                      );
+                    },
+                    {message: 'A landmarks tileset has an HTTPS address, or a local one.'},
+                  ),
+              })
+              .strict(),
+          ])
+          .optional(),
       })
       .strict()
       .optional(),

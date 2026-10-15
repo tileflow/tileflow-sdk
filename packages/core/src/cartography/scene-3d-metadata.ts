@@ -1,7 +1,7 @@
 // What a compiled style tells Core's 3D renderers about the map's 3D buildings and street lights:
 // their design from the buildings and roads modules, with the data's references still semantic
-// (the caller binds them with the rest of the style), and the buildings' colour as the map's own
-// final 3D building colour, else its roofs'.
+// (the caller binds them with the rest of the style), the buildings' colour as the map's own final
+// 3D building colour, else its roofs', and the tileset of Tileflow's landmarks the map shows.
 import type {
   TileflowBuildingModelPlacement,
   TileflowBuildings3DDesign,
@@ -28,6 +28,8 @@ export function tileflowBuildings3DDesignOf(
   layers: readonly Layer[],
   /** Where each of the map's prepared building models is served, by id. */
   buildingModels?: Readonly<Record<string, string>>,
+  /** The TileJSON of Tileflow's landmarks, when the map's data is Tileflow World. */
+  tileflowLandmarks?: string,
 ): TileflowBuildings3DDesign | undefined {
   const config = (isRecord(module) ? module : {}) as {
     enabled?: boolean;
@@ -64,7 +66,21 @@ export function tileflowBuildings3DDesignOf(
     occlusion: style.occlusion !== false,
     ...placedModels(style.models, buildingModels),
     ...modelColours(style.modelColors),
+    ...landmarksOf(style.landmarks, tileflowLandmarks),
   };
+}
+
+/**
+ * The landmarks a map shows: Tileflow's with Tileflow World buildings unless it switches them
+ * off, or the tileset it names.
+ */
+function landmarksOf(
+  value: unknown,
+  tileflowLandmarks: string | undefined,
+): {landmarks?: {url: string}} {
+  if (value === false) return {};
+  if (isRecord(value) && typeof value.url === 'string') return {landmarks: {url: value.url}};
+  return tileflowLandmarks ? {landmarks: {url: tileflowLandmarks}} : {};
 }
 
 /** The models a map places, each with where its prepared file is served. */

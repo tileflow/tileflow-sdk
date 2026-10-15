@@ -120,7 +120,14 @@ export {
   resolveTileflowArtifactPublicUrls,
 } from './public-paths';
 export {defaultTileflowConfigPath} from './config';
-export {prepareTileflowBuildingModel} from './tree-models';
+export {
+  packageTileflowLandmarks,
+  prepareTileflowBuildingModel,
+  type TileflowBuildingModelLevels,
+  type TileflowLandmarkSource,
+  type TileflowLandmarksIndex,
+  tileflowLandmarksZoom,
+} from './tree-models';
 export {prepareTileflowLocalTilesets, type TileflowLocalTilesetFile} from './local-tilesets';
 export {createTileflowArtifactDiagnostics, tileflowArtifactSessionSchemaVersion} from './session';
 export type {
@@ -1353,7 +1360,7 @@ function assertTileflowArtifactFileName(fileName: string): void {
   const styleMatch = /^styles\/([^/]+)\/([^/]+)\.json$/u.exec(logicalName);
   const iconMatch = /^icons\/([^/]+)\/sprite(?:@2x)?\.(?:json|png)$/u.exec(logicalName);
   // A map's building models, named by their id and the start of their SHA-256.
-  const modelMatch = /^models\/([^/]+)\/[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{16}\.tfmd$/u.exec(
+  const modelMatch = /^models\/([^/]+)\/[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{16}\.glb$/u.exec(
     logicalName,
   );
   if (

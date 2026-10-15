@@ -999,6 +999,8 @@ test('Streets keeps its runtime-toggle geometry and business surface in the comp
   assert.equal(buildings3D.color, extrusion?.paint?.['fill-extrusion-color']);
   assert.equal(buildings3D.layers.building, extrusion?.['source-layer']);
   assert.equal(buildings3D.windows, false);
+  // Tileflow's landmarks stand on Streets' Tileflow World buildings.
+  assert.match(buildings3D.landmarks?.url ?? '', /\/landmarks\/tiles\.json$/u);
   const lights = readTileflowStreetLights(style.metadata);
   assert.ok(lights, 'Streets lost its street lights description');
   assert.equal(lights.estimate, 'lit');

@@ -2,17 +2,21 @@
 // checked and turned into Core's models. A model's materials say what it is: one whose materials
 // name the parts of a tree (bark, leaves, fronds, stem) becomes a compact tree model the compiler
 // carries in the style; one whose materials name the parts of a building (surface, secondary, glass,
-// accent, roof) becomes a building model file the build writes beside the style. A file's name is
+// accent, roof) becomes a prepared model file the build writes beside the style. A file's name is
 // its model's id; `<id>.far.glb` is the same model for far trees, and `<id>.mid.glb` and
 // `<id>.far.glb` a building's farther levels of detail. A later directory's model replaces an
-// earlier one of the same id, as icons do.
+// earlier one of the same id, as icons do. Tileflow's landmarks are packaged from the same building
+// models into the tiles of a landmarks tileset.
+import {MeshoptEncoder} from 'meshoptimizer/encoder';
 import {createHash} from 'node:crypto';
 import {lstat, readdir, readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {
-  encodeTileflowModel,
+  compareCodeUnits,
+  encodeTileflowModels,
   encodeTileflowTreeModel,
   type TileflowModelDirectory,
+  type TileflowModelEntry,
   type TileflowModelMesh,
   type TileflowTreeModel,
   tileflowTreeModelLimits,
@@ -49,22 +53,115 @@ export class TileflowTreeModelError extends Error {
 
 /** A building model file, prepared for the build to write beside the style. */
 export type PreparedTileflowBuildingModel = {
-  /** Its file name, content-addressed: `<id>-<first 16 hex of its SHA-256>.tfmd`. */
+  /** Its file name, content-addressed: `<id>-<first 16 hex of its SHA-256>.glb`. */
   fileName: string;
   bytes: Uint8Array;
 };
+
+/** A building model's glTF binaries, nearest level first. */
+export type TileflowBuildingModelLevels = Readonly<{
+  near: Uint8Array;
+  mid?: Uint8Array;
+  far?: Uint8Array;
+}>;
 
 /** The most building models one map prepares. */
 export const tileflowBuildingModelLimit = 64;
 
 /**
- * Prepares one building model from its glTF binaries, nearest level first, into the file a build
- * writes beside the style. Its footprint is the near level's `footprint` mesh, or else its outline
- * on the ground. Throws `TileflowGltfError` or `RangeError` with words an author can act on.
+ * Prepares one building model from its glTF binaries into the file a build writes beside the
+ * style: a glTF binary compressed with meshoptimizer. Its footprint is the near level's `footprint`
+ * mesh, or else its outline on the ground. Throws `TileflowGltfError` or `RangeError` with words an
+ * author can act on.
  */
-export function prepareTileflowBuildingModel(
-  levels: Readonly<{near: Uint8Array; mid?: Uint8Array; far?: Uint8Array}>,
-): {bytes: Uint8Array; sha256: string} {
+export async function prepareTileflowBuildingModel(
+  id: string,
+  levels: TileflowBuildingModelLevels,
+): Promise<{bytes: Uint8Array; sha256: string}> {
+  const model = buildingModelEntry(id, levels);
+  await MeshoptEncoder.ready;
+  const bytes = encodeTileflowModels([model], MeshoptEncoder);
+  return {bytes, sha256: sha256Of(bytes)};
+}
+
+/** A landmark to package: a building model and where it stands. */
+export type TileflowLandmarkSource = Readonly<{
+  id: string;
+  /** Longitude and latitude of its origin. */
+  at: readonly [number, number];
+  /** Degrees clockwise from north its own north is turned to, from 0 to 360. */
+  heading: number;
+  levels: TileflowBuildingModelLevels;
+}>;
+
+/** A landmarks tileset's index: its zoom, the tiles it holds and where each landmark stands. */
+export type TileflowLandmarksIndex = {
+  format: 'tileflow-landmarks-v1';
+  zoom: number;
+  tiles: [number, number][];
+  landmarks: {id: string; at: [number, number]; tile: [number, number]}[];
+};
+
+/** The zoom of a landmarks tileset's tiles. */
+export const tileflowLandmarksZoom = 14;
+
+/**
+ * Packages landmarks into a landmarks tileset: one prepared model file per tile at
+ * `tileflowLandmarksZoom` holding the landmarks whose origin falls in it, and the index that names
+ * those tiles. The result depends only on its input.
+ */
+export async function packageTileflowLandmarks(
+  landmarks: readonly TileflowLandmarkSource[],
+): Promise<{
+  index: TileflowLandmarksIndex;
+  indexBytes: Uint8Array;
+  tiles: {x: number; y: number; z: number; bytes: Uint8Array; sha256: string}[];
+}> {
+  const zoom = tileflowLandmarksZoom;
+  if (new Set(landmarks.map((landmark) => landmark.id)).size !== landmarks.length)
+    throw new RangeError('Every landmark has an id of its own.');
+  const byTile = new Map<string, {x: number; y: number; models: TileflowModelEntry[]}>();
+  const placed: TileflowLandmarksIndex['landmarks'] = [];
+  for (const landmark of [...landmarks].sort((a, b) => compareCodeUnits(a.id, b.id))) {
+    const [longitude, latitude] = landmark.at;
+    if (!(longitude >= -180 && longitude < 180 && latitude >= -85 && latitude <= 85))
+      throw new RangeError(`Landmark ${landmark.id} stands at no place on the map.`);
+    if (!(landmark.heading >= 0 && landmark.heading < 360))
+      throw new RangeError(`Landmark ${landmark.id} is turned 0 to 360 degrees.`);
+    let model: TileflowModelEntry;
+    try {
+      model = buildingModelEntry(landmark.id, landmark.levels);
+    } catch (error) {
+      throw new RangeError(`Landmark ${landmark.id}: ${(error as Error).message}`);
+    }
+    const n = 2 ** zoom;
+    const phi = (latitude * Math.PI) / 180;
+    const x = Math.floor(((longitude + 180) / 360) * n);
+    const y = Math.floor(((1 - Math.log(Math.tan(phi) + 1 / Math.cos(phi)) / Math.PI) / 2) * n);
+    const key = `${x}/${y}`;
+    const tile = byTile.get(key) ?? {x, y, models: []};
+    tile.models.push({...model, at: [longitude, latitude], heading: landmark.heading});
+    byTile.set(key, tile);
+    placed.push({id: landmark.id, at: [longitude, latitude], tile: [x, y]});
+  }
+  await MeshoptEncoder.ready;
+  const tiles = [...byTile.values()]
+    .sort((a, b) => a.x - b.x || a.y - b.y)
+    .map(({x, y, models}) => {
+      const bytes = encodeTileflowModels(models, MeshoptEncoder);
+      return {x, y, z: zoom, bytes, sha256: sha256Of(bytes)};
+    });
+  const index: TileflowLandmarksIndex = {
+    format: 'tileflow-landmarks-v1',
+    zoom,
+    tiles: tiles.map(({x, y}) => [x, y]),
+    landmarks: placed,
+  };
+  return {index, indexBytes: new TextEncoder().encode(`${JSON.stringify(index)}\n`), tiles};
+}
+
+/** A building model, read from its glTF binaries, with its footprint. */
+function buildingModelEntry(id: string, levels: TileflowBuildingModelLevels): TileflowModelEntry {
   const primitives = readTileflowGltfTriangles(levels.near);
   if (!isTileflowBuildingModel(primitives))
     throw new TileflowGltfError(
@@ -73,13 +170,17 @@ export function prepareTileflowBuildingModel(
   const meshes: TileflowModelMesh[] = [prepareTileflowBuildingModelMesh(primitives)];
   for (const level of [levels.mid, levels.far])
     if (level) meshes.push(prepareTileflowBuildingModelMesh(level));
-  const bytes = encodeTileflowModel({
+  return {
+    id,
     levels: meshes,
     footprint: tileflowBuildingModelFootprint(
       tileflowBuildingModelDeclaredFootprint(primitives) ?? meshes[0]!,
     ),
-  });
-  return {bytes, sha256: createHash('sha256').update(bytes).digest('hex')};
+  };
+}
+
+function sha256Of(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex');
 }
 
 export type PreparedTileflowTreeModels = {
@@ -191,9 +292,9 @@ export async function prepareTileflowMapTreeModels(
           identities.push({id, level, sha256: createHash('sha256').update(bytes).digest('hex')});
         }
         failing = entry.near;
-        const prepared = prepareTileflowBuildingModel(files);
+        const prepared = await prepareTileflowBuildingModel(id, files);
         buildings[id] = {
-          fileName: `${id}-${prepared.sha256.slice(0, 16)}.tfmd`,
+          fileName: `${id}-${prepared.sha256.slice(0, 16)}.glb`,
           bytes: prepared.bytes,
         };
       } catch (error) {

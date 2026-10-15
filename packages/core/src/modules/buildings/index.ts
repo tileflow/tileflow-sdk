@@ -27,6 +27,13 @@ export type TileflowBuildingsThreeDimensionalStyle = {
   models?: readonly TileflowBuildingModelPlacementConfig[];
   /** The colours of the models' parts; a part without one takes it from the building colour. */
   modelColors?: Partial<Record<TileflowBuildingModelPart, TileflowThemeColorValue>>;
+  /**
+   * Tileflow's landmarks, such as the Eiffel Tower, drawn as models in place of the buildings
+   * under them. On by default with Tileflow World data; `false` switches them off, and `url` names
+   * the TileJSON of another landmarks tileset. The map's own `models` come first: a landmark with
+   * the same id as one, or whose footprint meets one's, is not drawn.
+   */
+  landmarks?: boolean | {url: string};
 };
 
 /** The parts of a building model, as its materials name them. */

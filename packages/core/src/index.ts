@@ -665,17 +665,25 @@ export {
   type TileflowBuildings3DDesign,
 } from './buildings-3d-design';
 export {
-  decodeTileflowModel,
-  encodeTileflowModel,
   tileflowInsideRings,
   tileflowModelLimits,
   tileflowModelParts,
   tileflowModelVertexBytes,
+  tileflowRingsOverlap,
   type TileflowModel,
   type TileflowModelBytes,
+  type TileflowModelLevelBytes,
   type TileflowModelMesh,
   type TileflowModelPart,
 } from './models-3d-model';
+export {
+  decodeTileflowModels,
+  encodeTileflowModels,
+  tileflowModelContentType,
+  type TileflowModelCompressor,
+  type TileflowModelDecompressor,
+  type TileflowModelEntry,
+} from './models-3d-file';
 export {
   readTileflowStreetLights,
   tileflowStreetLightsMetadataKey,

@@ -1,8 +1,8 @@
 // How a compiled map's 3D buildings look, as the buildings module describes them for Core's 3D
 // buildings renderer: the colour of each building (the map's own 3D building colour, else its
 // roofs'), the strength and colour of roof outlines, the night light, the invented night windows,
-// whether shadows and contact shadow fall, and the building models the map places in its city with
-// the colours of their parts. The compiler publishes it, resolved for one theme, in the style's
+// whether shadows and contact shadow fall, the building models the map places in its city with the
+// colours of their parts, and the tileset of Tileflow's landmarks it shows. The compiler publishes it, resolved for one theme, in the style's
 // metadata; the renderer reads it for every theme on screen. It has no DOM dependency.
 import {type TileflowModelPart, tileflowModelParts} from './models-3d-model';
 
@@ -34,6 +34,11 @@ export type TileflowBuildings3DDesign = Readonly<{
   models?: readonly TileflowBuildingModelPlacement[];
   /** The colours of the models' parts; a part without one takes it from the building colour. */
   modelColors?: Readonly<Partial<Record<TileflowModelPart, string>>>;
+  /**
+   * Tileflow's landmarks, drawn as models in place of the buildings under them: the TileJSON of
+   * their tileset. Without it, the map shows none.
+   */
+  landmarks?: Readonly<{url: string}>;
 }>;
 
 /** A building model standing in the map's city. */
@@ -96,6 +101,7 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
     occlusion: value.occlusion !== false,
     ...modelsOf(value.models),
     ...modelColorsOf(value.modelColors),
+    ...landmarksOf(value.landmarks),
   };
 }
 
@@ -135,6 +141,11 @@ function modelColorsOf(value: unknown): {
   for (const part of Object.keys(tileflowModelParts) as TileflowModelPart[])
     if (typeof value[part] === 'string') colors[part] = value[part];
   return Object.keys(colors).length > 0 ? {modelColors: colors} : {};
+}
+
+function landmarksOf(value: unknown): {landmarks?: Readonly<{url: string}>} {
+  if (!isRecord(value) || typeof value.url !== 'string' || !value.url) return {};
+  return {landmarks: {url: value.url}};
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,15 +1,22 @@
+import {MeshoptEncoder} from 'meshoptimizer/encoder';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readTileflowBuildings3D, tileflowBuildingsMetadataKey} from '../src/buildings-3d-design';
 import {meshTileflowBuildings, tileflowBuildingExtent} from '../src/buildings-3d-mesh';
+import {readLandmarksIndex} from '../src/models-3d-browser';
 import {
-  decodeTileflowModel,
-  encodeTileflowModel,
-  type TileflowModelMesh,
+  decodeTileflowModels,
+  encodeTileflowModels,
+  type TileflowModelEntry,
+} from '../src/models-3d-file';
+import {
   tileflowInsideRings,
+  type TileflowModelBytes,
   tileflowModelFootprintInTile,
+  type TileflowModelMesh,
   tileflowModelParts,
   tileflowModelVertexBytes,
+  tileflowRingsOverlap,
 } from '../src/models-3d-model';
 import type {TileflowTileLayer} from '../src/vector-tile-decode';
 
@@ -60,6 +67,11 @@ function box(): TileflowModelMesh {
     }
     indices.push(first, first + 1, first + 2, first, first + 2, first + 3);
   }
+  // A duplicate of the roof's first corner, which the file welds into it.
+  positions.push(-10, -10, 10);
+  normals.push(0, 0, 1);
+  parts.push(tileflowModelParts.roof);
+  indices.push(positions.length / 3 - 1, 2, 3);
   const count = positions.length / 3;
   return {
     positions,
@@ -72,63 +84,155 @@ function box(): TileflowModelMesh {
 }
 
 const footprint = [[-10, -10, 10, -10, 10, 10, -10, 10]];
+const tower = (extra: Partial<TileflowModelEntry> = {}): TileflowModelEntry => ({
+  id: 'tower',
+  levels: [box(), box()],
+  footprint,
+  ...extra,
+});
 
-test('a model file holds its levels, bounds and footprint as they were encoded', () => {
-  const near = box();
-  const bytes = encodeTileflowModel({levels: [near, near], footprint});
-  const model = decodeTileflowModel(bytes);
+/** Each triangle as the bytes of its three vertices, sorted: what a file draws, whatever its order. */
+function triangles(model: TileflowModelBytes, level = 0): string[] {
+  const {vertices, indices} = model.levels[level]!;
+  const vertex = (index: number) => [...vertices.subarray(index * 16, index * 16 + 16)].join(',');
+  const out: string[] = [];
+  for (let at = 0; at < indices.length; at += 3)
+    out.push(
+      [vertex(indices[at]!), vertex(indices[at + 1]!), vertex(indices[at + 2]!)].sort().join('|'),
+    );
+  return out.sort();
+}
+
+test('a model file is a glTF binary of its levels, bounds and footprint', async () => {
+  const bytes = encodeTileflowModels([tower()]);
+  assert.equal(new TextDecoder().decode(bytes.subarray(0, 4)), 'glTF');
+  const json = JSON.parse(
+    new TextDecoder().decode(
+      bytes.subarray(20, 20 + new DataView(bytes.buffer).getUint32(12, true)),
+    ),
+  );
+  assert.deepEqual(json.extensionsRequired, ['KHR_mesh_quantization']);
+  assert.deepEqual(
+    json.nodes.map((node: {name: string}) => node.name),
+    ['near', 'mid', 'tower'],
+  );
+  const [model] = (await decodeTileflowModels(bytes))!;
   assert.ok(model);
-  assert.deepEqual(model.bounds, [-10, -10, 0, 10, 10, 10]);
+  assert.equal(model.id, 'tower');
+  assert.equal(model.at, undefined);
   assert.equal(model.levels.length, 2);
+  for (const [axis, value] of [-10, -10, 0, 10, 10, 10].entries())
+    assert.ok(Math.abs(model.bounds[axis]! - value) < 1e-3, `bound ${axis}`);
   assert.deepEqual(
     model.footprint.map((ring) => [...ring]),
     footprint,
   );
   const level = model.levels[0]!;
+  // Thirteen corners, one of them twice: twelve vertices, seven triangles.
   assert.equal(level.vertices.length, 12 * tileflowModelVertexBytes);
   assert.ok(level.indices instanceof Uint16Array);
-  assert.deepEqual([...level.indices], near.indices);
+  assert.equal(level.indices.length, 21);
   const view = new DataView(level.vertices.buffer, level.vertices.byteOffset);
-  // The first vertex sits at the bounds' minimum in x and y and at their top: -32768 and 32767.
-  assert.equal(view.getInt16(0, true), -32768);
-  assert.equal(view.getInt16(2, true), -32768);
-  assert.equal(view.getInt16(4, true), 32767);
-  assert.equal(view.getInt8(8), 127);
-  assert.equal(level.vertices[9], tileflowModelParts.roof);
-  assert.equal(level.vertices[10], 128);
-  assert.equal(level.vertices[11], 255);
+  // The roof's first corner, 10 m west, 10 m south and 10 m up: in glTF's axes x -10, y 10, z 10.
+  const metres = (axis: number) => level.centre[axis]! + view.getInt16(axis * 2, true) * level.step;
+  assert.ok(Math.abs(metres(0) + 10) < 1e-3);
+  assert.ok(Math.abs(metres(1) - 10) < 1e-3);
+  assert.ok(Math.abs(metres(2) - 10) < 1e-3);
+  // Its normal points up, glTF's +y; its part is the roof, unshaded and unoccluded.
+  assert.deepEqual([view.getInt8(8), view.getInt8(9), view.getInt8(10)], [0, 127, 0]);
+  assert.equal(level.vertices[12], tileflowModelParts.roof);
+  assert.equal(level.vertices[13], 128);
+  assert.equal(level.vertices[14], 255);
+});
+
+test('meshoptimizer compresses a model file into the same triangles', async () => {
+  await MeshoptEncoder.ready;
+  const plain = encodeTileflowModels([tower()]);
+  const packed = encodeTileflowModels([tower()], MeshoptEncoder);
+  const json = JSON.parse(
+    new TextDecoder().decode(
+      packed.subarray(20, 20 + new DataView(packed.buffer).getUint32(12, true)),
+    ),
+  );
+  assert.deepEqual(json.extensionsRequired, ['EXT_meshopt_compression', 'KHR_mesh_quantization']);
+  assert.equal(json.buffers[1].extensions.EXT_meshopt_compression.fallback, true);
+  const [a] = (await decodeTileflowModels(plain))!;
+  const [b] = (await decodeTileflowModels(packed))!;
+  assert.deepEqual(triangles(b!), triangles(a!));
+  assert.deepEqual(triangles(b!, 1), triangles(a!, 1));
+  assert.deepEqual(b!.bounds, a!.bounds);
+});
+
+test('a landmark tile holds several models, each where it stands', async () => {
+  await MeshoptEncoder.ready;
+  const bytes = encodeTileflowModels(
+    [
+      tower({id: 'eiffel-tower', at: [2.2944962, 48.8582621], heading: 0}),
+      tower({id: 'tour-montparnasse', at: [2.3219, 48.8421], heading: 30}),
+    ],
+    MeshoptEncoder,
+  );
+  const models = (await decodeTileflowModels(bytes))!;
+  assert.deepEqual(
+    models.map((model) => [model.id, model.at, model.heading]),
+    [
+      ['eiffel-tower', [2.2944962, 48.8582621], 0],
+      ['tour-montparnasse', [2.3219, 48.8421], 30],
+    ],
+  );
 });
 
 test('a model keeps to its limits and stands on the ground', () => {
   const near = box();
-  assert.throws(() => encodeTileflowModel({levels: [], footprint}), /1 to 3 levels/u);
+  assert.throws(() => encodeTileflowModels([tower({levels: []})]), /1 to 3 levels/u);
   assert.throws(
-    () => encodeTileflowModel({levels: [near, near, near, near], footprint}),
+    () => encodeTileflowModels([tower({levels: [near, near, near, near]})]),
     /1 to 3 levels/u,
   );
   const sunk = {
     ...near,
     positions: near.positions.map((value, index) => (index % 3 === 2 ? value - 5 : value)),
   };
-  assert.throws(() => encodeTileflowModel({levels: [sunk], footprint}), /stands on the ground/u);
+  assert.throws(() => encodeTileflowModels([tower({levels: [sunk]})]), /stands on the ground/u);
   assert.throws(
-    () => encodeTileflowModel({levels: [near], footprint: [[0, 0, 1, 1]]}),
+    () => encodeTileflowModels([tower({footprint: [[0, 0, 1, 1]]})]),
     /at least three points/u,
   );
   assert.throws(
-    () => encodeTileflowModel({levels: [{...near, parts: near.parts.map(() => 9)}], footprint}),
+    () => encodeTileflowModels([tower({levels: [{...near, parts: near.parts.map(() => 9)}]})]),
     /has no part/u,
   );
+  assert.throws(() => encodeTileflowModels([tower({id: 'Tower'})]), /not a model id/u);
+  assert.throws(() => encodeTileflowModels([tower(), tower()]), /different ids/u);
+  assert.throws(() => encodeTileflowModels([]), /1 to 512 models/u);
+  assert.throws(() => encodeTileflowModels([tower({at: [0, 89]})]), /no place on the map/u);
 });
 
-test('only a whole model file of this version decodes', () => {
-  const bytes = encodeTileflowModel({levels: [box()], footprint});
-  assert.equal(decodeTileflowModel(bytes.slice(0, bytes.length - 1)), undefined);
-  const other = bytes.slice();
-  other[4] = 9;
-  assert.equal(decodeTileflowModel(other), undefined);
-  assert.equal(decodeTileflowModel(new Uint8Array(64)), undefined);
-  assert.ok(decodeTileflowModel(bytes.buffer.slice(0)));
+test('only a whole model file of this layout decodes', async () => {
+  const bytes = encodeTileflowModels([tower()]);
+  assert.equal(await decodeTileflowModels(bytes.slice(0, bytes.length - 4)), undefined);
+  assert.equal(await decodeTileflowModels(new Uint8Array(64)), undefined);
+  assert.ok(await decodeTileflowModels(bytes.buffer.slice(0)));
+  const jsonLength = new DataView(bytes.buffer).getUint32(12, true);
+  const json = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + jsonLength)));
+  const rewritten = async (change: (json: any) => void) => {
+    const copy = structuredClone(json);
+    change(copy);
+    const text = new TextEncoder().encode(JSON.stringify(copy).padEnd(jsonLength, ' '));
+    if (text.length !== jsonLength) throw new Error('the change must keep the JSON short');
+    const out = bytes.slice();
+    out.set(text, 20);
+    return decodeTileflowModels(out);
+  };
+  assert.ok(await rewritten(() => {}));
+  assert.equal(await rewritten((value) => (value.extensionsRequired = ['KHR_draco'])), undefined);
+  assert.equal(await rewritten((value) => (value.nodes[0].name = 'far')), undefined);
+  assert.equal(await rewritten((value) => (value.accessors[1].byteOffset = 4)), undefined);
+  assert.equal(await rewritten((value) => (value.nodes[0].scale = [1, 2, 1])), undefined);
+  assert.equal(
+    await rewritten((value) => (value.nodes[2].extras.tileflow.model = 'No Id')),
+    undefined,
+  );
 });
 
 test("a footprint lands round its origin in the tile's units, turned by its heading", () => {
@@ -158,24 +262,55 @@ test("a footprint lands round its origin in the tile's units, turned by its head
   assert.ok(!tileflowInsideRings([ring!], origin[0]! + 20 / metres, origin[1]!));
 });
 
-test('buildings whose centre falls inside a placed model are not raised', () => {
-  const square = (left: number) => [
+test('a building meets a footprint when it reaches into it, not when it only touches it', () => {
+  const square = (left: number, top: number, side: number) => [
     left,
-    100,
-    left + 100,
-    100,
-    left + 100,
-    200,
+    top,
+    left + side,
+    top,
+    left + side,
+    top + side,
     left,
-    200,
+    top + side,
+  ];
+  const mask = [square(0, 0, 100)];
+  // A neighbour sharing the mask's east wall, and one that reaches 0.4 units into it.
+  assert.ok(!tileflowRingsOverlap([square(100, 0, 50)], mask, 0.5));
+  assert.ok(!tileflowRingsOverlap([square(99.6, 0, 50)], mask, 0.5));
+  // One whose corner is 5 units inside.
+  assert.ok(tileflowRingsOverlap([square(95, 95, 50)], mask, 0.5));
+  // A long bar passing through the mask with every corner outside it.
+  assert.ok(tileflowRingsOverlap([[-20, 40, 120, 40, 120, 60, -20, 60]], mask, 0.5));
+  // A mask inside a large building.
+  assert.ok(tileflowRingsOverlap([square(-50, -50, 300)], [square(10, 10, 20)], 0.5));
+  // Far away.
+  assert.ok(!tileflowRingsOverlap([square(500, 500, 10)], mask, 0.5));
+});
+
+test('buildings a model stands in for are not raised, and their neighbours are', () => {
+  const ring = (left: number, top: number, width: number, height: number) => [
     left,
-    100,
+    top,
+    left + width,
+    top,
+    left + width,
+    top + height,
+    left,
+    top + height,
+    left,
+    top,
   ];
   const layer: TileflowTileLayer = {
     extent: tileflowBuildingExtent,
     features: [
-      {type: 'Polygon', properties: {render_height: 30}, geometry: [square(100)]},
-      {type: 'Polygon', properties: {render_height: 30}, geometry: [square(1000)]},
+      // Its centre inside the footprint.
+      {type: 'Polygon', properties: {render_height: 30}, geometry: [ring(100, 100, 100, 100)]},
+      // Its centre outside, its corner well inside.
+      {type: 'Polygon', properties: {render_height: 30}, geometry: [ring(250, 250, 200, 200)]},
+      // Sharing the footprint's east wall.
+      {type: 'Polygon', properties: {render_height: 30}, geometry: [ring(300, 50, 100, 100)]},
+      // Far away.
+      {type: 'Polygon', properties: {render_height: 30}, geometry: [ring(1000, 1000, 100, 100)]},
     ],
   };
   const all = meshTileflowBuildings(layer, {tileMetres: 1000});
@@ -183,12 +318,11 @@ test('buildings whose centre falls inside a placed model are not raised', () => 
     tileMetres: 1000,
     masks: [[50, 50, 300, 50, 300, 300, 50, 300]],
   });
-  assert.equal(all?.features.length, 2);
-  assert.equal(masked?.features.length, 1);
-  assert.equal(masked!.vertices.length * 2, all!.vertices.length);
+  assert.equal(all?.features.length, 4);
+  assert.equal(masked?.features.length, 2);
 });
 
-test('the design reads the models a map places and the colours of their parts', () => {
+test('the design reads the models a map places, the colours of their parts and its landmarks', () => {
   const read = (extra: Record<string, unknown>) =>
     readTileflowBuildings3D({
       [tileflowBuildingsMetadataKey]: {
@@ -203,20 +337,42 @@ test('the design reads the models a map places and the colours of their parts', 
     models: [
       {
         model: 'eiffel-tower',
-        url: '/models/eiffel-tower.tfmd',
+        url: '/models/eiffel-tower.glb',
         at: [2.2945, 48.8583],
         heading: -45,
       },
-      {model: 'Not An Id', url: '/x.tfmd', at: [0, 0]},
-      {model: 'far-away', url: '/y.tfmd', at: [0, 89]},
+      {model: 'Not An Id', url: '/x.glb', at: [0, 0]},
+      {model: 'far-away', url: '/y.glb', at: [0, 89]},
       {model: 'no-file', at: [0, 0]},
     ],
     modelColors: {accent: '#806040', surface: 7, stone: '#ffffff'},
+    landmarks: {url: 'https://api.tileflow.dev/landmarks/tiles.json'},
   });
   assert.deepEqual(design?.models, [
-    {model: 'eiffel-tower', url: '/models/eiffel-tower.tfmd', at: [2.2945, 48.8583], heading: 315},
+    {model: 'eiffel-tower', url: '/models/eiffel-tower.glb', at: [2.2945, 48.8583], heading: 315},
   ]);
   assert.deepEqual(design?.modelColors, {accent: '#806040'});
+  assert.deepEqual(design?.landmarks, {url: 'https://api.tileflow.dev/landmarks/tiles.json'});
   assert.equal(read({}).models, undefined);
   assert.equal(read({models: 'none'})?.models, undefined);
+  assert.equal(read({landmarks: true})?.landmarks, undefined);
+});
+
+test("a landmarks tileset's TileJSON names one zoom, its tiles and those it holds", () => {
+  const url = 'https://api.tileflow.dev/landmarks/tiles.json';
+  const json = {
+    tilejson: '3.0.0',
+    format: 'tileflow-landmarks-v1',
+    minzoom: 14,
+    maxzoom: 14,
+    tiles: ['https://api.tileflow.dev/base/abc/landmarks/{z}/{x}/{y}.glb'],
+    available: [[8296, 5636]],
+  };
+  const index = readLandmarksIndex(json, url);
+  assert.equal(index?.zoom, 14);
+  assert.ok(index?.available.has('8296/5636'));
+  assert.equal(readLandmarksIndex({...json, format: 'other'}, url), undefined);
+  assert.equal(readLandmarksIndex({...json, minzoom: 13}, url), undefined);
+  assert.equal(readLandmarksIndex({...json, available: [[1.5, 2]]}, url), undefined);
+  assert.equal(readLandmarksIndex({...json, tiles: ['/tiles/{z}.glb']}, url), undefined);
 });

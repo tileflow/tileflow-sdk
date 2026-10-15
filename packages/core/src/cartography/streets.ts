@@ -1,14 +1,12 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import {tileflowAtmosphereMetadataKey} from '../atmosphere';
 import {compileTileflowSky, resolveTileflowAtmosphere} from '../atmosphere-compile';
+import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
 import {resolveTileflowData} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
 import {resolveMarine} from '../marine';
 import {tileflowVegetationDescription} from '../modules/vegetation/compiler';
-import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
-import {tileflowStreetLightsMetadata, tileflowStreetLightsMetadataKey} from '../street-lights';
-import {tileflowBuildings3DDesignOf, tileflowStreetLightsDesignOf} from './scene-3d-metadata';
 import {
   insertTileflowOverlays,
   resolveTileflowHostedSources,
@@ -20,6 +18,7 @@ import {
   tileflowRouteMetadata,
   tileflowRouteMetadataKey,
 } from '../route-inks';
+import {tileflowStreetLightsMetadata, tileflowStreetLightsMetadataKey} from '../street-lights';
 import {tileflowSunMetadata, tileflowSunMetadataKey} from '../sun';
 import {compileTerrainContributions, resolveTerrain} from '../terrain';
 import {parseTileflowLineBackgroundFontStack} from '../text-background';
@@ -90,6 +89,7 @@ import {
   compileRenderStacks,
   type TileflowRenderStackModule,
 } from './render-stack';
+import {tileflowBuildings3DDesignOf, tileflowStreetLightsDesignOf} from './scene-3d-metadata';
 import {bindSemanticReferences, createSemanticDataView} from './semantic-bindings';
 import {tileflowSemanticCompilerIdentity} from './semantic-compiler';
 
@@ -476,6 +476,7 @@ function compileSemanticStyleInternal(
     context as Parameters<typeof tileflowBuildings3DDesignOf>[1],
     layers as unknown as Parameters<typeof tileflowBuildings3DDesignOf>[2],
     options.preparedAssets?.buildingModels,
+    data.kind === 'tileflow-world' ? `${apiBaseUrl}/landmarks/tiles.json` : undefined,
   );
   const streetLights = tileflowStreetLightsDesignOf(
     modules.roads,

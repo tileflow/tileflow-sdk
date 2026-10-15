@@ -2,9 +2,16 @@
 // own vector tiles round the camera and lights them from the theme controller's sun, with shadows
 // cast on the buildings and on the flat map, contact shadow at the foot of the walls, and, at
 // night, flood lights at the foot of shops, busy places, landmarks and towers, and the ground floors
-// of the places busy at night lit in their own colours. The building models a map places in its city
-// stand in the same light, in place of the buildings under their footprints. It shows, hides and
+// of the places busy at night lit in their own colours. The building models a map places in its city,
+// and Tileflow's landmarks, stand in the same light, in place of the buildings under their
+// footprints. It shows, hides and
 // grows the city without laying out any source, so it is a 3D switch and an animatable height.
+import {
+  readTileflowBuildings3D,
+  type TileflowBuildings3DDesign,
+  tileflowBuildingsMetadataKey,
+  tileflowDefaultBuildings3DDesign,
+} from './buildings-3d-design';
 import {
   meshTileflowBuildings,
   tileflowBuildingExtent,
@@ -23,12 +30,6 @@ import {
   tileflowBuildingGroundVertex,
   tileflowBuildingVertex,
 } from './buildings-3d-shaders';
-import {
-  readTileflowBuildings3D,
-  type TileflowBuildings3DDesign,
-  tileflowBuildingsMetadataKey,
-  tileflowDefaultBuildings3DDesign,
-} from './buildings-3d-design';
 import {cameraFrame, cameraTileAt, createCameraTiles} from './camera-tiles-browser';
 import {tileflowFeatureColour} from './feature-colour-browser';
 import {createTileflowPlacedModels, type TileflowPlacedModel} from './models-3d-browser';
@@ -197,12 +198,12 @@ export function createTileflowBuildings3D(
   let generation = 0;
   let registered = false;
   let unregister = () => {};
-  // The models the map places stand in for the buildings under their footprints: once one loads,
-  // the tiles it reaches are built again without those buildings.
+  // The models the map places, and Tileflow's landmarks, stand in for the buildings under their
+  // footprints: once one stands, the tiles it reaches are built again without those buildings.
   const models = createTileflowPlacedModels({
     ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
     changed(tiles, zoom) {
-      if (zoom === camera.zoom) {
+      if (tiles.length > 0 && zoom === camera.zoom) {
         const keys = new Set(tiles.map((tile) => `${tile.x}/${tile.y}`));
         camera.refresh((tile) => keys.has(`${tile.x}/${tile.y}`));
       }
@@ -260,7 +261,7 @@ export function createTileflowBuildings3D(
       if (!isWebGL2(context)) return;
       ensureCamera();
       if (target > 0 || scale > 0)
-        models.update(design().models ?? [], camera.ready(), camera.zoom);
+        models.update(design().models ?? [], design().landmarks?.url, camera.ready(), camera.zoom);
       if (!programs.depth) return;
       if (!registered) unregister = scene.register(caster);
       registered = true;
@@ -659,7 +660,7 @@ export function createTileflowBuildings3D(
           modelDepth.uniforms.u_offset!,
           ...frame.offsetOf({x: stand.tileX, y: stand.tileY}, camera.zoom),
         );
-        drawModel(context, model, models.levelOf(model, centre));
+        drawModel(context, modelDepth, model, models.levelOf(model, centre));
       }
     },
   };
@@ -696,24 +697,24 @@ export function createTileflowBuildings3D(
     stand: ReturnType<typeof standOf>,
   ): void {
     const u = program.uniforms;
-    const [minX, minY, minZ, maxX, maxY, maxZ] = model.model.bounds;
     const turn = (model.placement.heading * Math.PI) / 180;
-    context.uniform3f(u.u_bounds_min!, minX, minY, minZ);
-    context.uniform3f(u.u_bounds_max!, maxX, maxY, maxZ);
     context.uniform2f(u.u_heading!, Math.cos(turn), Math.sin(turn));
     context.uniform2f(u.u_anchor!, stand.anchor[0], stand.anchor[1]);
     context.uniform1f(u.u_model_metres!, stand.metres);
   }
 
-  function drawModel(context: WebGL2RenderingContext, model: TileflowPlacedModel, level: number) {
+  function drawModel(
+    context: WebGL2RenderingContext,
+    program: Program,
+    model: TileflowPlacedModel,
+    level: number,
+  ) {
     const buffers = model.gl![level]!;
+    const mesh = model.model.levels[level]!;
+    context.uniform3f(program.uniforms.u_level_centre!, ...mesh.centre);
+    context.uniform1f(program.uniforms.u_level_step!, mesh.step);
     context.bindVertexArray(buffers.vao);
-    context.drawElements(
-      context.TRIANGLES,
-      model.model.levels[level]!.indices.length,
-      buffers.type,
-      0,
-    );
+    context.drawElements(context.TRIANGLES, mesh.indices.length, buffers.type, 0);
   }
 
   /** The colours of the models' parts, mixed between the themes either side of a blend. */
@@ -839,7 +840,7 @@ export function createTileflowBuildings3D(
         context.uniform2f(m.u_offset!, ...at.offset);
         context.uniform1f(m.u_metres!, at.metres);
         setPlacement(context, model, entry, stand);
-        drawModel(context, entry, models.levelOf(entry, centre));
+        drawModel(context, model, entry, models.levelOf(entry, centre));
       }
     }
 

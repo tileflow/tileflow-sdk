@@ -3,7 +3,7 @@ import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
-import {decodeTileflowModel, tileflowInsideRings, tileflowModelParts} from '@tileflow/core';
+import {decodeTileflowModels, tileflowInsideRings, tileflowModelParts} from '@tileflow/core';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {createTileflowBuildArtifacts} from '../src/artifacts';
 import {
@@ -14,6 +14,7 @@ import {
 } from '../src/building-model-mesh';
 import {readTileflowGltfTriangles} from '../src/gltf-reader';
 import {
+  packageTileflowLandmarks,
   prepareTileflowBuildingModel,
   prepareTileflowMapTreeModels,
   TileflowTreeModelError,
@@ -134,10 +135,11 @@ test('a map prepares its building models as files and its tree models for its st
   });
   assert.deepEqual(Object.keys(prepared.models), ['royal-palm']);
   assert.deepEqual(Object.keys(prepared.buildings), ['tower']);
-  assert.match(prepared.buildings.tower!.fileName, /^tower-[0-9a-f]{16}\.tfmd$/u);
-  const model = decodeTileflowModel(prepared.buildings.tower!.bytes);
+  assert.match(prepared.buildings.tower!.fileName, /^tower-[0-9a-f]{16}\.glb$/u);
+  const [model] = (await decodeTileflowModels(prepared.buildings.tower!.bytes)) ?? [];
+  assert.equal(model?.id, 'tower');
   assert.equal(model?.levels.length, 2);
-  assert.equal(model?.bounds[5], 120);
+  assert.ok(Math.abs(model!.bounds[5] - 120) < 0.01);
   assert.deepEqual(prepared.identities.map(({id, level}) => `${id}:${level}`).sort(), [
     'royal-palm:near',
     'tower:far',
@@ -177,12 +179,13 @@ test('a map places its building models: the style names their files, which the b
   assert.equal(design.models[0].model, 'tower');
   assert.deepEqual(design.models[0].at, [2.2945, 48.8583]);
   assert.equal(design.models[0].heading, 45);
-  assert.match(design.models[0].url, /models\/city\/tower-[0-9a-f]{16}\.tfmd$/u);
+  assert.match(design.models[0].url, /models\/city\/tower-[0-9a-f]{16}\.glb$/u);
   assert.equal(design.modelColors.accent, '#806040');
   const asset = plan.assets.find((entry) => entry.fileName.startsWith('models/city/tower-'));
   assert.ok(asset);
   assert.ok(design.models[0].url.endsWith(asset.fileName));
-  assert.ok(decodeTileflowModel(asset.source as Uint8Array));
+  assert.equal(asset.contentType, 'model/gltf-binary');
+  assert.ok(await decodeTileflowModels(asset.source as Uint8Array));
   const manifest = plan.buildManifest as unknown as {
     maps: Record<string, {sourceAssets: {models?: {id: string; level: string}[]}}>;
   };
@@ -199,16 +202,59 @@ test('a map places its building models: the style names their files, which the b
   await readFile(join(cwd, 'tileflow.config.ts'));
 });
 
-test('one building model prepares from its levels into the file a build writes', () => {
-  const prepared = prepareTileflowBuildingModel({
+test('one building model prepares from its levels into the file a build writes', async () => {
+  const prepared = await prepareTileflowBuildingModel('tower', {
     near: writeGlb(block(20, 20, 120)),
     far: writeGlb(block(20, 20, 120)),
   });
   assert.match(prepared.sha256, /^[0-9a-f]{64}$/u);
-  assert.equal(decodeTileflowModel(prepared.bytes)?.levels.length, 2);
-  assert.throws(
-    () => prepareTileflowBuildingModel({near: smallTree()}),
+  const [model] = (await decodeTileflowModels(prepared.bytes)) ?? [];
+  assert.equal(model?.levels.length, 2);
+  await assert.rejects(
+    prepareTileflowBuildingModel('tree', {near: smallTree()}),
     /is not a building model; name each material surface, secondary, glass, accent or roof/,
+  );
+});
+
+test('landmarks package into the tiles they stand in, with the index that names them', async () => {
+  const tower = {near: writeGlb(block(20, 20, 120)), far: writeGlb(block(20, 20, 120))};
+  const landmarks = [
+    {id: 'tour-montparnasse', at: [2.3219, 48.8421] as const, heading: 30, levels: tower},
+    {id: 'eiffel-tower', at: [2.2944962, 48.8582621] as const, heading: 0, levels: tower},
+    {id: 'palacio-real', at: [-3.7143, 40.418] as const, heading: 0, levels: tower},
+  ];
+  const packaged = await packageTileflowLandmarks(landmarks);
+  assert.equal(packaged.index.zoom, 14);
+  // The Eiffel Tower stands in tile 14/8296/5636.
+  assert.deepEqual(packaged.index.landmarks[0], {
+    id: 'eiffel-tower',
+    at: [2.2944962, 48.8582621],
+    tile: [8296, 5636],
+  });
+  assert.deepEqual(
+    packaged.index.tiles,
+    packaged.tiles.map(({x, y}) => [x, y]),
+  );
+  assert.deepEqual(JSON.parse(new TextDecoder().decode(packaged.indexBytes)), packaged.index);
+  const eiffel = packaged.tiles.find(({x, y}) => x === 8296 && y === 5636)!;
+  const models = (await decodeTileflowModels(eiffel.bytes)) ?? [];
+  assert.deepEqual(
+    models.map((model) => [model.id, model.at, model.heading]),
+    [['eiffel-tower', [2.2944962, 48.8582621], 0]],
+  );
+  // The same landmarks package into the same bytes, in any order.
+  const again = await packageTileflowLandmarks([...landmarks].reverse());
+  assert.deepEqual(
+    again.tiles.map((tile) => tile.sha256),
+    packaged.tiles.map((tile) => tile.sha256),
+  );
+  await assert.rejects(
+    packageTileflowLandmarks([{...landmarks[0]!, heading: 360}]),
+    /turned 0 to 360 degrees/,
+  );
+  await assert.rejects(
+    packageTileflowLandmarks([{...landmarks[0]!, levels: {near: smallTree()}}]),
+    /Landmark tour-montparnasse: is not a building model/,
   );
 });
 
@@ -216,7 +262,7 @@ test('a map places a model served elsewhere by its address, with no file of its 
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-hosted-model-build-'));
   await linkWorkspacePackages(cwd);
   t.after(() => rm(cwd, {force: true, recursive: true}));
-  const url = 'https://api.example.test/base/abc/models/eiffel-tower.tfmd';
+  const url = 'https://models.example.test/eiffel-tower.glb';
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
     `import {buildings, defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'paris',version:1,extends:streets,modules:{buildings:buildings({mode:'3d',threeDimensional:{models:[{model:'eiffel-tower',at:[2.2945,48.8583],url:'${url}'}]}})},glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}});\n`,

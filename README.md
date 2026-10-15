@@ -127,7 +127,7 @@ versions advance independently; do not assume every Tileflow package has the sam
 
 ## Contribute
 
-This workspace uses Node.js 22 or newer and pnpm 11.13.1:
+This workspace uses Node.js 22.14+ (22.x) or 24+ and pnpm 11.13.1:
 
 ```sh
 corepack enable

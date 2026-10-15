@@ -91,3 +91,24 @@ export function utf8DecodeWithoutBOM(input: Uint8Array): string {
   if (needed !== 0) output.push('\ufffd');
   return output.join('');
 }
+
+/** The private parser only exposes UTF-8 queries, never legacy encoding selection. */
+export function percentEncodeAfterEncoding(
+  encoding: string,
+  input: string,
+  percentEncodeSet: string,
+): string {
+  if (encoding !== 'utf-8') throw new TypeError('Native URL queries require UTF-8.');
+  checkLength(percentEncodeSet.length);
+
+  const output: string[] = [];
+  for (const byte of utf8Encode(input)) {
+    const character = String.fromCharCode(byte);
+    output.push(
+      byte < 0x20 || byte > 0x7e || percentEncodeSet.includes(character)
+        ? `%${byte.toString(16).toUpperCase().padStart(2, '0')}`
+        : character,
+    );
+  }
+  return output.join('');
+}

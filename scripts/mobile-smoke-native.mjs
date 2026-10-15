@@ -240,7 +240,7 @@ export async function buildMobileIos(context, consumer) {
   const lockPath = join(directory, 'Podfile.lock');
   const lock = (await readMobileFile(context.root, lockPath)).toString();
   requireMobile(
-    /TileflowNativeAdmission \(/u.test(lock) && /MapLibreReactNative \(11\.3\.10\)/u.test(lock),
+    /TileflowNativeAdmission \(/u.test(lock) && /MapLibreReactNative \(11\.5\.0\)/u.test(lock),
     'AUTOLINK_INVALID',
     step,
   );

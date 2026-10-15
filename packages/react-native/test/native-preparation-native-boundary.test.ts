@@ -55,7 +55,7 @@ test('native document and catalog sources use the existing package globs and ins
   assert.equal(manifest.private, undefined);
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
   assert.deepEqual(manifest.peerDependencies, {
-    '@maplibre/maplibre-react-native': '11.3.10',
+    '@maplibre/maplibre-react-native': '11.5.0',
     react: '19.2.0',
     'react-native': '0.83.10',
   });

@@ -4,7 +4,7 @@ Thank you for helping improve the Tileflow SDK.
 
 ## Development setup
 
-Use Node.js 22 or newer and the pnpm version declared in `package.json`:
+Use Node.js 22.14+ (22.x) or 24+ and the pnpm version declared in `package.json`:
 
 ```sh
 corepack enable

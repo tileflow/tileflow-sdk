@@ -1,6 +1,6 @@
 # Third-party notices
 
-`@tileflow/core/browser` embeds `maplibre-contour` 0.1.0, `PMTiles` 4.4.0, `fflate` 0.8.3, and
+`@tileflow/core/browser` embeds `maplibre-contour` 0.1.0, `PMTiles` 4.5.0, `fflate` 0.8.3, and
 `earcut` 3.2.4 so contour, local archive, and 3D building rendering remain self-contained. The complete upstream licenses follow.
 
 ## maplibre-contour 0.1.0
@@ -168,7 +168,7 @@ See <https://github.com/nodejs/node/blob/main/LICENSE> for more information.
 
 ---
 
-## PMTiles 4.4.0
+## PMTiles 4.5.0
 
 The below license (BSD-3) applies to the reference implementations in this repository.
 
@@ -267,11 +267,11 @@ OF THIS SOFTWARE.
 
 ---
 
-## whatwg-url 15.1.0 and tr46 6.0.0
+## whatwg-url 17.2.0 and tr46 7.0.0
 
 The native entry embeds the low-level `whatwg-url` parser and `tr46` IDNA processing. During the
-native build only, the parser's relative encoding module is replaced by Tileflow's private UTF-8
-codec. No upstream package is patched on disk and no global codec is installed. Both components
+native build only, the parser's encoding and query-encoding imports use Tileflow's private UTF-8
+codec; the legacy encoding bootstrap is replaced by that side-effect-free module. No upstream package is patched on disk and no global codec is installed. Both components
 are MIT-licensed:
 
 The MIT License (MIT)

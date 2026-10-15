@@ -3,12 +3,18 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readTileflowBuildings3D, tileflowBuildingsMetadataKey} from '../src/buildings-3d-design';
 import {meshTileflowBuildings, tileflowBuildingExtent} from '../src/buildings-3d-mesh';
-import {readLandmarksIndex} from '../src/models-3d-browser';
 import {
   decodeTileflowModels,
   encodeTileflowModels,
   type TileflowModelEntry,
 } from '../src/models-3d-file';
+import {
+  readTileflowLandmarkRegion,
+  readTileflowLandmarksTileJson,
+  serializeTileflowLandmarkRegion,
+  tileflowLandmarkRegionOf,
+  tileflowLandmarkTileOf,
+} from '../src/models-3d-landmarks';
 import {
   tileflowInsideRings,
   type TileflowModelBytes,
@@ -358,21 +364,87 @@ test('the design reads the models a map places, the colours of their parts and i
   assert.equal(read({landmarks: true})?.landmarks, undefined);
 });
 
-test("a landmarks tileset's TileJSON names one zoom, its tiles and those it holds", () => {
+test("a landmarks tileset's TileJSON names its tile address, its regions and those that hold landmarks", () => {
   const url = 'https://api.tileflow.dev/landmarks/tiles.json';
   const json = {
     tilejson: '3.0.0',
-    format: 'tileflow-landmarks-v1',
+    format: 'tileflow-landmarks-v2',
     minzoom: 14,
     maxzoom: 14,
-    tiles: ['https://api.tileflow.dev/base/abc/landmarks/{z}/{x}/{y}.glb'],
-    available: [[8296, 5636]],
+    tiles: ['https://api.tileflow.dev/landmarks/tiles/{sha256}.glb'],
+    regions: {
+      zoom: 6,
+      url: 'https://api.tileflow.dev/landmarks/releases/abc/regions/{z}/{x}/{y}.json',
+      available: [[32, 22]],
+    },
   };
-  const index = readLandmarksIndex(json, url);
-  assert.equal(index?.zoom, 14);
-  assert.ok(index?.available.has('8296/5636'));
-  assert.equal(readLandmarksIndex({...json, format: 'other'}, url), undefined);
-  assert.equal(readLandmarksIndex({...json, minzoom: 13}, url), undefined);
-  assert.equal(readLandmarksIndex({...json, available: [[1.5, 2]]}, url), undefined);
-  assert.equal(readLandmarksIndex({...json, tiles: ['/tiles/{z}.glb']}, url), undefined);
+  const tileset = readTileflowLandmarksTileJson(json, url);
+  assert.equal(tileset?.tileZoom, 14);
+  assert.equal(tileset?.regionZoom, 6);
+  assert.ok(tileset?.regions.has('32/22'));
+  assert.equal(
+    readTileflowLandmarksTileJson({...json, format: 'tileflow-landmarks-v1'}, url),
+    undefined,
+  );
+  assert.equal(readTileflowLandmarksTileJson({...json, minzoom: 13}, url), undefined);
+  assert.equal(
+    readTileflowLandmarksTileJson({...json, tiles: ['/tiles/{z}/{x}/{y}.glb']}, url),
+    undefined,
+  );
+  assert.equal(
+    readTileflowLandmarksTileJson(
+      {...json, regions: {...json.regions, available: [[1.5, 2]]}},
+      url,
+    ),
+    undefined,
+  );
+});
+
+test("a landmark's tile and region follow from where it stands, and a region's index names its tiles", () => {
+  const eiffel = tileflowLandmarkTileOf([2.2944962, 48.8582621]);
+  assert.deepEqual(eiffel, [8296, 5636]);
+  assert.deepEqual(tileflowLandmarkRegionOf(eiffel), [32, 22]);
+  assert.throws(() => tileflowLandmarkTileOf([0, 89]), /longitude and a latitude/u);
+  const hash = (digit: string) => digit.repeat(64);
+  const bytes = serializeTileflowLandmarkRegion({
+    region: [32, 22],
+    tiles: [
+      [8297, 5636, hash('b')],
+      [8296, 5636, hash('a')],
+    ],
+  });
+  assert.equal(
+    new TextDecoder().decode(bytes),
+    `{"format":"tileflow-landmark-region-v1","zoom":14,"region":[6,32,22],"tiles":[[8296,5636,"${hash('a')}"],[8297,5636,"${hash('b')}"]]}`,
+  );
+  const region = readTileflowLandmarkRegion(JSON.parse(new TextDecoder().decode(bytes)));
+  assert.deepEqual(region?.tiles[0], [8296, 5636, hash('a')]);
+  assert.throws(
+    () => serializeTileflowLandmarkRegion({region: [32, 22], tiles: [[0, 0, hash('a')]]}),
+    /outside region 32\/22/u,
+  );
+  assert.throws(
+    () =>
+      serializeTileflowLandmarkRegion({
+        region: [32, 22],
+        tiles: [
+          [8296, 5636, hash('a')],
+          [8296, 5636, hash('b')],
+        ],
+      }),
+    /appears twice/u,
+  );
+  assert.throws(
+    () => serializeTileflowLandmarkRegion({region: [32, 22], tiles: [[8296, 5636, 'x']]}),
+    /no SHA-256/u,
+  );
+  assert.equal(
+    readTileflowLandmarkRegion({
+      format: 'tileflow-landmark-region-v1',
+      zoom: 14,
+      region: [6, 32, 22],
+      tiles: [[0, 0, hash('a')]],
+    }),
+    undefined,
+  );
 });

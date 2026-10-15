@@ -1,6 +1,8 @@
 // The building models in a map's 3D city, for Tileflow's 3D buildings renderer: the models the map
 // places itself, and Tileflow's landmarks, which arrive in tiles of their own as other web maps'
-// batched models do. It chooses which stand near the camera, downloads their files once and keeps
+// batched models do: the landmarks tileset's TileJSON names the regions that hold landmarks, a
+// region's index names its tiles by their hash, and only the indexes and tiles near the camera are
+// downloaded. It chooses which stand near the camera, downloads their files once and keeps
 // them while they are near, uploads their buffers, picks the level of detail each draws at, and
 // gives the renderer the footprints it leaves to them. The map's own models come first: a landmark
 // with the same id as one of them, or whose footprint meets one's, is not drawn. A model or tile
@@ -8,6 +10,12 @@
 import type {TileflowBuildingModelPlacement} from './buildings-3d-design';
 import {cameraTileAt} from './camera-tiles-browser';
 import {decodeTileflowModels} from './models-3d-file';
+import {
+  readTileflowLandmarkRegion,
+  readTileflowLandmarksTileJson,
+  tileflowLandmarkRegionOf,
+  type TileflowLandmarksTileJson,
+} from './models-3d-landmarks';
 import {
   type TileflowModelBytes,
   tileflowModelFootprintInTile,
@@ -20,8 +28,10 @@ import type {TileflowTileRequestTransform} from './tile-reader';
 const earth = 40_075_016.686;
 // Models are kept while near; beyond this many, the farthest are let go.
 const keptModels = 12;
-// Landmark tiles are kept while near; beyond this many, the least recently wanted are let go.
+// Landmark tiles and region indexes are kept while near; beyond this many, the least recently
+// wanted are let go.
 const keptLandmarkTiles = 9;
+const keptLandmarkRegions = 8;
 // A model is wanted when its origin lies within this many tiles of a tile round the camera.
 const reachTiles = 1;
 // Levels of detail by distance from the camera's centre, in metres.
@@ -29,7 +39,7 @@ const levelDistances = [900, 2600];
 // A failed download is tried again after this long, in milliseconds; a landmarks tileset that
 // cannot be read, after longer.
 const retryAfter = 30_000;
-const indexRetryAfter = 300_000;
+const tilesetRetryAfter = 300_000;
 
 export type TileflowPlacedModel = {
   readonly placement: TileflowBuildingModelPlacement;
@@ -70,14 +80,6 @@ export type TileflowPlacedModels = {
   dispose(): void;
 };
 
-/** A landmarks tileset as its TileJSON describes it. */
-type LandmarksIndex = Readonly<{
-  url: string;
-  template: string;
-  zoom: number;
-  available: Set<string>;
-}>;
-
 export function createTileflowPlacedModels(
   options: Readonly<{
     transformRequest?: TileflowTileRequestTransform;
@@ -89,10 +91,14 @@ export function createTileflowPlacedModels(
   const loading = new Map<string, AbortController>();
   const failed = new Map<string, number>();
   let wanted = new Set<string>();
-  // Tileflow's landmarks: the tileset's index, and its tiles near the camera.
-  let index: LandmarksIndex | undefined;
-  let indexLoad: {url: string; controller: AbortController} | undefined;
-  let indexFailed: {url: string; until: number} | undefined;
+  // Tileflow's landmarks: the tileset's TileJSON, the indexes of its regions near the camera by
+  // `x/y`, and its tiles near the camera by their hash.
+  let tileset: TileflowLandmarksTileJson | undefined;
+  let tilesetLoad: {url: string; controller: AbortController} | undefined;
+  let tilesetFailed: {url: string; until: number} | undefined;
+  const regions = new Map<string, {tiles: Map<string, string>; used: number}>();
+  const regionLoading = new Map<string, AbortController>();
+  const regionFailed = new Map<string, number>();
   const landmarkTiles = new Map<string, {entries: TileflowPlacedModel[]; used: number}>();
   const tileLoading = new Map<string, AbortController>();
   const tileFailed = new Map<string, number>();
@@ -164,43 +170,66 @@ export function createTileflowPlacedModels(
       });
   }
 
-  function loadIndex(url: string): void {
+  function loadTileset(url: string): void {
     const controller = new AbortController();
-    indexLoad = {url, controller};
+    tilesetLoad = {url, controller};
     download(url, controller.signal)
       .then((response) => response.json())
       .then((json: unknown) => {
-        if (indexLoad?.controller !== controller) return;
-        indexLoad = undefined;
+        if (tilesetLoad?.controller !== controller) return;
+        tilesetLoad = undefined;
         if (disposed) return;
-        const read = readLandmarksIndex(json, url);
+        const read = readTileflowLandmarksTileJson(json, url);
         if (!read) throw new Error('not a Tileflow landmarks tileset');
-        index = read;
+        tileset = read;
         arrived();
       })
       .catch(() => {
-        if (indexLoad?.controller !== controller) return;
-        indexLoad = undefined;
-        indexFailed = {url, until: performance.now() + indexRetryAfter};
+        if (tilesetLoad?.controller !== controller) return;
+        tilesetLoad = undefined;
+        tilesetFailed = {url, until: performance.now() + tilesetRetryAfter};
       });
   }
 
-  function loadTile(tileKey: string, x: number, y: number): void {
-    const source = index!;
+  function loadRegion(regionKey: string, x: number, y: number): void {
+    const source = tileset!;
     const url = new URL(
-      source.template
-        .replaceAll('{z}', String(source.zoom))
+      source.region
+        .replaceAll('{z}', String(source.regionZoom))
         .replaceAll('{x}', String(x))
         .replaceAll('{y}', String(y)),
       source.url,
     ).href;
     const controller = new AbortController();
-    tileLoading.set(tileKey, controller);
+    regionLoading.set(regionKey, controller);
+    download(url, controller.signal)
+      .then((response) => response.json())
+      .then((json: unknown) => {
+        regionLoading.delete(regionKey);
+        if (disposed || tileset !== source) return;
+        const region = readTileflowLandmarkRegion(json);
+        if (!region || region.region[0] !== x || region.region[1] !== y)
+          throw new Error('not this landmarks region');
+        const tiles = new Map(region.tiles.map(([tx, ty, hash]) => [`${tx}/${ty}`, hash]));
+        regions.set(regionKey, {tiles, used: performance.now()});
+        arrived();
+      })
+      .catch(() => {
+        regionLoading.delete(regionKey);
+        regionFailed.set(regionKey, performance.now() + retryAfter);
+      });
+  }
+
+  function loadTile(hash: string): void {
+    const source = tileset!;
+    const url = new URL(source.tile.replaceAll('{sha256}', hash), source.url).href;
+    const controller = new AbortController();
+    tileLoading.set(hash, controller);
     download(url, controller.signal)
       .then(async (response) => decodeTileflowModels(await response.arrayBuffer()))
       .then((models) => {
-        tileLoading.delete(tileKey);
-        if (disposed || index !== source) return;
+        tileLoading.delete(hash);
+        if (disposed || tileset !== source) return;
         if (!models) throw new Error('not a Tileflow landmarks tile');
         const now = performance.now();
         const entries: TileflowPlacedModel[] = [];
@@ -209,23 +238,23 @@ export function createTileflowPlacedModels(
           const placement = {model: model.id, url, at: model.at, heading: model.heading ?? 0};
           entries.push({placement, key: `landmark:${model.id}`, model, landmark: true, used: now});
         }
-        landmarkTiles.set(tileKey, {entries, used: now});
+        landmarkTiles.set(hash, {entries, used: now});
         arrived();
       })
       .catch(() => {
-        tileLoading.delete(tileKey);
-        tileFailed.set(tileKey, performance.now() + retryAfter);
+        tileLoading.delete(hash);
+        tileFailed.set(hash, performance.now() + retryAfter);
       });
   }
 
-  /** The landmark tiles near the camera's tiles that the tileset holds. */
+  /** The tileset's tiles near the camera's tiles (`tiles` at `zoom`), as `x/y` with `[x, y]`. */
   function landmarkTilesNear(
     tiles: readonly Readonly<{x: number; y: number}>[],
     zoom: number,
   ): Map<string, [number, number]> {
     const near = new Map<string, [number, number]>();
-    if (!index || tiles.length === 0) return near;
-    const scale = 2 ** (index.zoom - zoom);
+    if (!tileset || tiles.length === 0) return near;
+    const scale = 2 ** (tileset.tileZoom - zoom);
     let [left, top, right, bottom] = [Infinity, Infinity, -Infinity, -Infinity];
     for (const tile of tiles) {
       left = Math.min(left, Math.floor(tile.x * scale));
@@ -235,10 +264,8 @@ export function createTileflowPlacedModels(
     }
     // A landmark reaches into the tiles beside its own.
     for (let x = left - 1; x <= right + 1 && near.size < 64; x += 1)
-      for (let y = top - 1; y <= bottom + 1 && near.size < 64; y += 1) {
-        const key = `${x}/${y}`;
-        if (index.available.has(key)) near.set(key, [x, y]);
-      }
+      for (let y = top - 1; y <= bottom + 1 && near.size < 64; y += 1)
+        near.set(`${x}/${y}`, [x, y]);
     return near;
   }
 
@@ -315,53 +342,84 @@ export function createTileflowPlacedModels(
         dirty = true;
       }
 
-      // Tileflow's landmarks: the tileset's index once, then its tiles near the camera.
-      if (index && index.url !== landmarks) {
+      // Tileflow's landmarks: the tileset's TileJSON once, then the indexes of the regions round
+      // the camera, then the tiles near it that those indexes name.
+      if (tileset && tileset.url !== landmarks) {
         for (const tile of landmarkTiles.values()) released.push(...tile.entries);
         landmarkTiles.clear();
-        for (const controller of tileLoading.values()) controller.abort();
+        regions.clear();
+        for (const controller of [...tileLoading.values(), ...regionLoading.values()])
+          controller.abort();
         tileLoading.clear();
+        regionLoading.clear();
         tileFailed.clear();
-        index = undefined;
+        regionFailed.clear();
+        tileset = undefined;
         dirty = true;
       }
-      if (indexLoad && indexLoad.url !== landmarks) {
-        indexLoad.controller.abort();
-        indexLoad = undefined;
+      if (tilesetLoad && tilesetLoad.url !== landmarks) {
+        tilesetLoad.controller.abort();
+        tilesetLoad = undefined;
       }
       if (
         landmarks &&
-        !index &&
-        !indexLoad &&
-        (indexFailed?.url !== landmarks || indexFailed.until <= now)
+        !tileset &&
+        !tilesetLoad &&
+        (tilesetFailed?.url !== landmarks || tilesetFailed.until <= now)
       )
-        loadIndex(landmarks);
-      const nearTiles = landmarkTilesNear(tiles, zoom);
-      for (const [tileKey, [x, y]] of nearTiles) {
-        const tile = landmarkTiles.get(tileKey);
+        loadTileset(landmarks);
+      const nearRegions = new Set<string>();
+      const nearHashes = new Set<string>();
+      for (const [tileKey, [x, y]] of landmarkTilesNear(tiles, zoom)) {
+        const [rx, ry] = tileflowLandmarkRegionOf([x, y]);
+        const regionKey = `${rx}/${ry}`;
+        if (!tileset?.regions.has(regionKey)) continue;
+        nearRegions.add(regionKey);
+        const region = regions.get(regionKey);
+        if (!region) {
+          if (!regionLoading.has(regionKey) && (regionFailed.get(regionKey) ?? 0) <= now)
+            loadRegion(regionKey, rx, ry);
+          continue;
+        }
+        region.used = now;
+        const hash = region.tiles.get(tileKey);
+        if (!hash) continue;
+        nearHashes.add(hash);
+        const tile = landmarkTiles.get(hash);
         if (tile) tile.used = now;
-        else if (!tileLoading.has(tileKey) && (tileFailed.get(tileKey) ?? 0) <= now)
-          loadTile(tileKey, x, y);
+        else if (!tileLoading.has(hash) && (tileFailed.get(hash) ?? 0) <= now) loadTile(hash);
       }
       if (
-        nearTiles.size !== wantedTiles.size ||
-        [...nearTiles.keys()].some((key) => !wantedTiles.has(key))
+        nearHashes.size !== wantedTiles.size ||
+        [...nearHashes].some((hash) => !wantedTiles.has(hash))
       ) {
-        wantedTiles = new Set(nearTiles.keys());
+        wantedTiles = nearHashes;
         dirty = true;
       }
-      for (const [tileKey, controller] of tileLoading)
-        if (!nearTiles.has(tileKey)) {
+      for (const [regionKey, controller] of regionLoading)
+        if (!nearRegions.has(regionKey)) {
           controller.abort();
-          tileLoading.delete(tileKey);
+          regionLoading.delete(regionKey);
         }
-      const spareTiles = [...landmarkTiles.entries()]
-        .filter(([tileKey]) => !nearTiles.has(tileKey))
+      for (const [hash, controller] of tileLoading)
+        if (!nearHashes.has(hash)) {
+          controller.abort();
+          tileLoading.delete(hash);
+        }
+      const spareRegions = [...regions.entries()]
+        .filter(([regionKey]) => !nearRegions.has(regionKey))
         .sort(([, a], [, b]) => b.used - a.used);
-      for (const [tileKey, tile] of spareTiles.slice(
-        Math.max(0, keptLandmarkTiles - nearTiles.size),
+      for (const [regionKey] of spareRegions.slice(
+        Math.max(0, keptLandmarkRegions - nearRegions.size),
+      ))
+        regions.delete(regionKey);
+      const spareTiles = [...landmarkTiles.entries()]
+        .filter(([hash]) => !nearHashes.has(hash))
+        .sort(([, a], [, b]) => b.used - a.used);
+      for (const [hash, tile] of spareTiles.slice(
+        Math.max(0, keptLandmarkTiles - nearHashes.size),
       )) {
-        landmarkTiles.delete(tileKey);
+        landmarkTiles.delete(hash);
         released.push(...tile.entries);
       }
 
@@ -459,47 +517,18 @@ export function createTileflowPlacedModels(
     dispose() {
       disposed = true;
       for (const controller of loading.values()) controller.abort();
-      for (const controller of tileLoading.values()) controller.abort();
-      indexLoad?.controller.abort();
+      for (const controller of [...tileLoading.values(), ...regionLoading.values()])
+        controller.abort();
+      tilesetLoad?.controller.abort();
       loading.clear();
       tileLoading.clear();
+      regionLoading.clear();
       loaded.clear();
       landmarkTiles.clear();
+      regions.clear();
       active = [];
     },
   };
-}
-
-/**
- * Reads a landmarks tileset's TileJSON: one tile template at one zoom, and the tiles it holds.
- * Undefined when it is not one.
- */
-export function readLandmarksIndex(json: unknown, url: string): LandmarksIndex | undefined {
-  if (typeof json !== 'object' || json === null) return undefined;
-  const value = json as Record<string, unknown>;
-  const template = Array.isArray(value.tiles) ? value.tiles[0] : undefined;
-  const zoom = value.maxzoom;
-  if (
-    value.format !== 'tileflow-landmarks-v1' ||
-    typeof template !== 'string' ||
-    !template.includes('{x}') ||
-    !template.includes('{y}') ||
-    typeof zoom !== 'number' ||
-    !Number.isInteger(zoom) ||
-    zoom < 0 ||
-    zoom > 22 ||
-    value.minzoom !== zoom ||
-    !Array.isArray(value.available)
-  )
-    return undefined;
-  const available = new Set<string>();
-  for (const tile of value.available) {
-    if (!Array.isArray(tile) || tile.length !== 2) return undefined;
-    const [x, y] = tile as unknown[];
-    if (!Number.isInteger(x) || !Number.isInteger(y)) return undefined;
-    available.add(`${x as number}/${y as number}`);
-  }
-  return {url, template, zoom, available};
 }
 
 /** Whether a landmark's footprint meets a model's, both laid in the landmark's zoom-14 tile. */

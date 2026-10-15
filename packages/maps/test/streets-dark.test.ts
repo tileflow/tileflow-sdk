@@ -311,13 +311,26 @@ function contrastRatio(first: string, second: string): number {
   );
 }
 
-test('Streets exposes complete light and dark themes on one map identity', () => {
+test('Streets exposes complete palette variants on one map identity', () => {
   const resolvedStreets = resolveMap(streets);
   assert.equal(resolvedStreets.id, 'streets');
   assert.equal('root' in resolvedStreets, false);
   assert.equal(resolvedStreets.defaultTheme, 'light');
   assert.deepEqual(resolvedStreets.systemThemes, {light: 'light', dark: 'dark'});
-  assert.deepEqual(Object.keys(resolvedStreets.themes), ['light', 'dark']);
+  assert.deepEqual(Object.keys(resolvedStreets.themes), [
+    'light',
+    'dark',
+    'dawn',
+    'dusk',
+    'faded',
+    'monochrome',
+    'dawn-faded',
+    'dawn-monochrome',
+    'dusk-faded',
+    'dusk-monochrome',
+    'dark-faded',
+    'dark-monochrome',
+  ]);
   assert.equal(streetsThemes.light.colorScheme, 'light');
   assert.equal(streetsThemes.dark.colorScheme, 'dark');
   assert.equal(streetsThemes.light.id, 'streets-light');
